@@ -53,6 +53,7 @@ import {
   profitByRoute,
 } from '@/modules/wms/accounting/reports';
 import { addTransaction } from '@/modules/wms/finance/service';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * Phase 2.4 management accounting. This is money code — the owner will make
@@ -296,7 +297,7 @@ describe('receivables', () => {
   });
 
   it('a client who owes nothing is not listed', async () => {
-    const aging = await arAging(new Date().toISOString().slice(0, 10));
+    const aging = await arAging(tashkentDay());
     expect(aging.every((row) => row.balance > 0)).toBe(true);
   });
 });
@@ -678,7 +679,7 @@ describe('profitability', () => {
     }
     await departBatch(batch!.id, ctx());
 
-    const today = new Date().toISOString().slice(0, 10);
+    const today = tashkentDay();
     await db
       .insert(fxRates)
       .values({ currency: 'USD', rateToUsd: '1', effectiveDate: today, enteredBy: actorId })
@@ -753,7 +754,7 @@ describe('profitability', () => {
    * with whatever else lives in the database.
    */
   it('a voided cargo cost drops out of the P&L, the cash flow and the batch profit', async () => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = tashkentDay();
     const round = (value: number) => Math.round(value * 100) / 100;
     const snapshot = async () => ({
       direct: (await profitAndLoss(today, today)).directTotal.total,
@@ -795,7 +796,7 @@ describe('profitability', () => {
    * still not be counted (the per-client report joins through the entry).
    */
   it('an allocation orphaned by a crash mid-void is not counted per client', async () => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = tashkentDay();
     const entry = await addCostEntry(
       {
         scope: 'batch',
@@ -879,7 +880,7 @@ describe('a cash box speaks one currency', () => {
           type: 'payment',
           amount: 500,
           currency: 'UZS',
-          txDate: new Date().toISOString().slice(0, 10),
+          txDate: tashkentDay(),
           accountId: till!.id,
         },
         ctx(),
@@ -960,7 +961,7 @@ describe('XLSX exports', () => {
   });
 
   it('receivables export matches the ageing report', async () => {
-    const asOf = new Date().toISOString().slice(0, 10);
+    const asOf = tashkentDay();
     const aging = await arAging(asOf);
     const rows = cells((await open(await buildReceivablesXlsx(asOf, 'en'))).worksheets[0]!);
     const debtor = aging.find((row) => row.clientCode === `AD${SUFFIX}`)!;

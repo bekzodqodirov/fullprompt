@@ -6,6 +6,7 @@ import { db, type Db, type Tx } from '../../platform/db/client';
 import {
   accountTransfers,
   clientTransactions,
+  costEntries,
   expenseCategories,
   expenses,
   moneyAccounts,
@@ -656,7 +657,7 @@ export const accountBalances = cache(async function accountBalances() {
     sql<string>`coalesce(sum(${amount}) FILTER (WHERE ${counted(dateCol)}), 0)`;
   const early = (dateCol: AnyColumn) =>
     sql<number>`count(*) FILTER (WHERE NOT ${counted(dateCol)})`;
-  const [accounts, clientRows, spentRows, inRows, outRows, partnerRows] = await Promise.all([
+  const [accounts, clientRows, spentRows, inRows, outRows, partnerRows, costRows] = await Promise.all([
     listAccounts(true),
     // Payments IN and refunds OUT (R6a) in one pass, split by type.
     db
@@ -714,6 +715,21 @@ export const accountBalances = cache(async function accountBalances() {
       .innerJoin(moneyAccounts, eq(moneyAccounts.id, partnerTransactions.accountId))
       .where(isNull(partnerTransactions.voidedAt))
       .groupBy(partnerTransactions.accountId, partnerTransactions.type),
+    // Cargo costs paid out of a kassa (0101, owner 3b), in the KASSA's
+    // currency — `account_amount`, not the cost's own amount, because customs
+    // typed in dollars left a som account. A seventh statement would be one
+    // more pooled connection per render of a page that already runs six
+    // (the pool is ten); the cost side is the cheapest to add as its own.
+    db
+      .select({
+        id: costEntries.accountId,
+        sum: sumCounted(costEntries.accountAmount, costEntries.costDate),
+        early: early(costEntries.costDate),
+      })
+      .from(costEntries)
+      .innerJoin(moneyAccounts, eq(moneyAccounts.id, costEntries.accountId))
+      .where(isNull(costEntries.voidedAt))
+      .groupBy(costEntries.accountId),
   ]);
 
   const total = (rows: { id: string | null; sum: string }[]) =>
@@ -721,12 +737,13 @@ export const accountBalances = cache(async function accountBalances() {
   const paid = total(clientRows.filter((row) => row.type === 'payment'));
   const refunded = total(clientRows.filter((row) => row.type === 'refund'));
   const spent = total(spentRows);
+  const costsPaid = total(costRows);
   const inbound = total(inRows);
   const outbound = total(outRows);
   const partnerIn = total(partnerRows.filter((row) => row.type === 'receipt'));
   const partnerOut = total(partnerRows.filter((row) => row.type === 'payment'));
   const earlyRows = new Map<string, number>();
-  for (const row of [...clientRows, ...spentRows, ...inRows, ...outRows, ...partnerRows]) {
+  for (const row of [...clientRows, ...spentRows, ...inRows, ...outRows, ...partnerRows, ...costRows]) {
     if (row.id) earlyRows.set(row.id, (earlyRows.get(row.id) ?? 0) + Number(row.early));
   }
 
@@ -734,6 +751,7 @@ export const accountBalances = cache(async function accountBalances() {
     const paidIn = paid.get(account.id) ?? 0;
     const refundedOut = refunded.get(account.id) ?? 0;
     const spentOut = spent.get(account.id) ?? 0;
+    const costsOut = costsPaid.get(account.id) ?? 0;
     const transferredIn = inbound.get(account.id) ?? 0;
     const transferredOut = outbound.get(account.id) ?? 0;
     const fromPartners = partnerIn.get(account.id) ?? 0;
@@ -742,7 +760,8 @@ export const accountBalances = cache(async function accountBalances() {
       Number(account.openingBalance) +
       paidIn -
       refundedOut -
-      spentOut +
+      spentOut -
+      costsOut +
       transferredIn -
       transferredOut +
       fromPartners -
@@ -765,6 +784,8 @@ export const accountBalances = cache(async function accountBalances() {
       partnerOut: toPartners,
       /** Money handed back to clients out of this box (R6a). */
       refundedOut,
+      /** Cargo costs paid out of this box, in its currency (0101). */
+      costsOut,
       openingDate: account.openingDate,
       /** Rows dated before the opening count — inside it, so not added (R4). */
       beforeOpening: earlyRows.get(account.id) ?? 0,

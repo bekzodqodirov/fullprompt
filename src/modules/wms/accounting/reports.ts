@@ -386,8 +386,15 @@ export async function cashFlow(from: string, to: string) {
     .groupBy(expenseCategories.name, expenseCategories.sortOrder)
     .orderBy(expenseCategories.sortOrder);
 
+  // ONE row, split in two for the reader (0101): the part a kassa has
+  // answered for and the part nobody has said the kassa of yet — the second
+  // is the accountant's queue, and a cash-flow line that hid it would read
+  // as if every dollar had a drawer. The total is unchanged.
   const [cargoCosts] = await db
-    .select({ sum: sql<string>`coalesce(sum(coalesce(${costEntries.amountUsd}, 0)), 0)` })
+    .select({
+      sum: sql<string>`coalesce(sum(coalesce(${costEntries.amountUsd}, 0)), 0)`,
+      fromTill: sql<string>`coalesce(sum(coalesce(${costEntries.amountUsd}, 0)) FILTER (WHERE ${costEntries.accountId} IS NOT NULL), 0)`,
+    })
     .from(costEntries)
     .where(
       and(
@@ -426,6 +433,9 @@ export async function cashFlow(from: string, to: string) {
     net: money(inflow - outflow),
     /** Informational: transfers are excluded from both sides on purpose. */
     transferCount: Number(transfers?.n ?? 0),
+    /** Of `cargoCosts`: the dollars a kassa answered for, and the rest (0101). */
+    cargoFromTillUsd: money(cargoCosts?.fromTill),
+    cargoUnplacedUsd: money(money(cargoCosts?.sum) - money(cargoCosts?.fromTill)),
     rows: [
       { label: 'clientPayments', kind: 'in' as const, amountUsd: money(received?.sum) },
       ...(partnerInflow

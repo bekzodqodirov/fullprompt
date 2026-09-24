@@ -20,6 +20,7 @@ import {
   moveLead,
   updateLead,
 } from '@/modules/wms/crm/service';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * Round 71: the filter panel's questions, asked of the service directly.
@@ -195,7 +196,7 @@ describe('what the panel filters by', () => {
   });
 
   it('a date range brackets created_at inclusively', async () => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = tashkentDay();
     const none = mine(await listLeads({ q: MARK, createdTo: '2020-01-01' }));
     expect(none).toEqual([]);
     const all = mine(await listLeads({ q: MARK, createdFrom: today, createdTo: today }));
