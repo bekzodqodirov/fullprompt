@@ -16,7 +16,7 @@ import { managedClients } from '../finance/client-cargo';
 import { unplacedPaymentSql } from '../finance/service';
 import { moneySnapshot, type MoneySnapshot } from '../reports/overview';
 import { costMissingCount } from '../reports/queries';
-import { internalLegSql } from '../batches/internal';
+import { sameCountryLegSql } from '../batches/internal';
 import { warehouseFlowCounts, type WarehouseFlowCounts } from './flow';
 
 /**
@@ -207,7 +207,7 @@ export async function vedFlowCounts(): Promise<VedFlowCounts> {
         and(
           inArray(batches.status, ['in_transit', 'arrived']),
           isNull(batches.sentToAgentAt),
-          not(internalLegSql(sql`${originWh}`, sql`${destWh}`)),
+          not(sameCountryLegSql(sql`${originWh}`, sql`${destWh}`)),
         ),
       ),
     db.execute<{ n: number }>(sql`

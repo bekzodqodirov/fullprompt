@@ -36,6 +36,8 @@ let actorId: string;
 let cnA: string;
 let cnB: string;
 let uz: string;
+let uz2: string;
+let uzLeg: string;
 let clientId: string;
 let internalBatch: string;
 let exportBatch: string;
@@ -87,6 +89,7 @@ beforeAll(async () => {
   // must not care how somebody typed it on /admin/warehouses.
   cnB = await mintWarehouse(`IB${S}`, 'cn');
   uz = await mintWarehouse(`IU${S}`, 'UZ');
+  uz2 = await mintWarehouse(`IV${S}`, 'UZ');
   clientId = (
     await db
       .insert(clients)
@@ -95,6 +98,8 @@ beforeAll(async () => {
   )[0]!.id;
   internalBatch = await mintBatch(`IA${S}-001`, cnA, cnB);
   exportBatch = await mintBatch(`IB${S}-001`, cnB, uz);
+  // Andijan → Tashkent: inside Uzbekistan, and PRICED (owner U1b).
+  uzLeg = await mintBatch(`IU${S}-001`, uz, uz2);
 
   receiptId = (
     await db
@@ -127,6 +132,7 @@ beforeAll(async () => {
   for (const [batch, from, to] of [
     [internalBatch, cnA, cnB],
     [exportBatch, cnB, uz],
+    [uzLeg, uz, uz2],
   ] as const) {
     await db.insert(boxMovements).values({
       boxId,
@@ -151,7 +157,7 @@ afterAll(async () => {
   await db.delete(receipts).where(eq(receipts.id, receiptId));
   await db.delete(batches).where(inArray(batches.id, madeBatches));
   await db.delete(clients).where(eq(clients.id, clientId));
-  await db.delete(warehouses).where(inArray(warehouses.id, [cnA, cnB, uz]));
+  await db.delete(warehouses).where(inArray(warehouses.id, [cnA, cnB, uz, uz2]));
   await pgClient.end();
 });
 
@@ -226,5 +232,23 @@ describe('the counters', () => {
     expect((await vedFlowCounts()).docsPending).toBe(before);
     await mintBatch(`ID${S}-002`, cnB, uz); // across the border
     expect((await vedFlowCounts()).docsPending).toBe(before + 1);
+  });
+});
+
+describe('a truck inside Uzbekistan is priced (owner U1b: «Andijondan berilganda qo‘yiladi»)', () => {
+  it('takes a price, and the client card reads it as an ordinary trip', async () => {
+    const priced = await addTransaction(
+      { clientId, type: 'charge', amount: 7, currency: 'USD', txDate: '2026-07-11', batchId: uzLeg },
+      ctx(),
+    );
+    madeTx.push(priced.id);
+    const trip = (await clientCargo(clientId)).trips.find((row) => row.batchId === uzLeg)!;
+    expect(trip).toMatchObject({ internal: false });
+  });
+
+  it('still carries no export papers for the VED to send', async () => {
+    const before = (await vedFlowCounts()).docsPending;
+    await mintBatch(`ID${S}-003`, uz, uz2);
+    expect((await vedFlowCounts()).docsPending).toBe(before);
   });
 });
