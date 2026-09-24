@@ -12,6 +12,7 @@ import {
   costTypes,
   crates,
   fxRates,
+  moneyAccounts,
   partnerTransactions,
   pickups,
   receiptLots,
@@ -114,8 +115,54 @@ export const costEntrySchema = z.object({
    * and the amount lands on that partner's ledger as a debt instead.
    */
   partnerId: z.string().uuid().optional().or(z.literal('')),
+  /**
+   * The kassa the money LEFT from (0101, owner 3b). Exclusive with the payer.
+   * `accountAmount` is what left it in the KASSA's currency — required when
+   * the kassa speaks another currency than the cost (customs typed in USD,
+   * paid out of the firm's som account), the amount itself otherwise.
+   */
+  accountId: z.string().uuid().optional().or(z.literal('')),
+  accountAmount: z.number().positive().max(1_000_000_000_000).optional(),
   note: z.string().trim().max(2000).optional().or(z.literal('')),
 });
+
+/**
+ * A kassa a cost may name: it exists and is open. Read on the POOL before any
+ * transaction (#714). The currency is returned so the caller can decide the
+ * kassa-side amount.
+ */
+export async function assertTill(accountId: string): Promise<{ currency: string }> {
+  const [till] = await db
+    .select({ currency: moneyAccounts.currency, active: moneyAccounts.active })
+    .from(moneyAccounts)
+    .where(eq(moneyAccounts.id, accountId))
+    .limit(1);
+  if (!till || !till.active) throw new CostError('account_not_found');
+  return { currency: till.currency };
+}
+
+/**
+ * What left the kassa, in the kassa's own currency. The same currency: the
+ * cost's amount (a typed figure that differs is a typo — refused, not
+ * silently preferred). Another currency: the person must say it, because
+ * only the bank statement knows the rate the bank used.
+ */
+export function tillAmountFor(
+  cost: { amount: number; currency: string },
+  tillCurrency: string,
+  typed: number | undefined,
+): number {
+  if (tillCurrency === cost.currency) {
+    if (typed !== undefined && Math.abs(typed - cost.amount) > 0.004) {
+      throw new CostError('account_amount_mismatch');
+    }
+    return cost.amount;
+  }
+  if (typed === undefined || !Number.isFinite(typed) || typed <= 0) {
+    throw new CostError('account_amount_required');
+  }
+  return typed;
+}
 
 export async function addCostEntry(input: z.infer<typeof costEntrySchema>, ctx: AuditContext) {
   if (!ctx.actorId) throw new CostError('unauthenticated');
@@ -134,6 +181,15 @@ export async function addCostEntry(input: z.infer<typeof costEntrySchema>, ctx: 
   if (input.partnerId && (await rateFor(input.currency, input.costDate)) === null) {
     throw new CostError('fx_missing');
   }
+  // Who paid is ONE of: a counterparty (a debt) or a kassa (cash out) — or
+  // nobody has said yet, which is the accountant's queue (the DB's
+  // cost_entries_payer_check says the same).
+  if (input.partnerId && input.accountId) throw new CostError('payer_conflict');
+  let accountAmount: number | null = null;
+  if (input.accountId) {
+    const till = await assertTill(input.accountId);
+    accountAmount = tillAmountFor(input, till.currency, input.accountAmount);
+  }
 
   const [entry] = await db
     .insert(costEntries)
@@ -150,6 +206,8 @@ export async function addCostEntry(input: z.infer<typeof costEntrySchema>, ctx: 
       allocationBasis: input.allocationBasis,
       clientId: input.clientId ?? null,
       partnerId: input.partnerId || null,
+      accountId: input.accountId || null,
+      accountAmount: accountAmount === null ? null : String(accountAmount),
       note: input.note || null,
       enteredBy: ctx.actorId,
     })
@@ -158,7 +216,12 @@ export async function addCostEntry(input: z.infer<typeof costEntrySchema>, ctx: 
     entityType: 'cost_entry',
     entityId: entry!.id,
     action: 'create',
-    after: { scope: input.scope, amount: input.amount, currency: input.currency },
+    after: {
+      scope: input.scope,
+      amount: input.amount,
+      currency: input.currency,
+      ...(input.accountId ? { accountId: input.accountId, accountAmount } : {}),
+    },
   });
   await recomputeEntry(entry!.id);
   // The debt side. Written AFTER the allocation so a partner never carries a
@@ -169,6 +232,55 @@ export async function addCostEntry(input: z.infer<typeof costEntrySchema>, ctx: 
     await chargeForCost(entry!.id, ctx);
   }
   return entry!;
+}
+
+/**
+ * Say, afterwards, which kassa a cost's money left from — or that it left
+ * none (`accountId` null clears it). The accountant's place-later door
+ * (0101): the warehouse and the logist type costs and hold no kassa grant,
+ * so their costs arrive with no kassa and wait in the queue.
+ *
+ * A CLAIM, like `placePayment`: the UPDATE demands the cost is live and has
+ * no counterparty, so a stale screen cannot put a partner-settled cost into
+ * a kassa as well (that would be the double debit #528 was about).
+ */
+export async function setCostAccount(
+  costId: string,
+  accountId: string | null,
+  typedAmount: number | undefined,
+  ctx: AuditContext,
+) {
+  if (!ctx.actorId) throw new CostError('unauthenticated');
+  const entry = await db.query.costEntries.findFirst({ where: eq(costEntries.id, costId) });
+  if (!entry) throw new CostError('not_found');
+  if (entry.voidedAt) throw new CostError('already_voided');
+  if (entry.partnerId) throw new CostError('payer_conflict');
+  let accountAmount: number | null = null;
+  if (accountId) {
+    const till = await assertTill(accountId);
+    accountAmount = tillAmountFor(
+      { amount: Number(entry.amount), currency: entry.currency },
+      till.currency,
+      typedAmount,
+    );
+  }
+  const [row] = await db
+    .update(costEntries)
+    .set({
+      accountId,
+      accountAmount: accountAmount === null ? null : String(accountAmount),
+      updatedAt: new Date(),
+    })
+    .where(and(eq(costEntries.id, costId), isNull(costEntries.voidedAt), isNull(costEntries.partnerId)))
+    .returning({ id: costEntries.id });
+  if (!row) throw new CostError('payer_conflict');
+  await writeAudit(db, ctx, {
+    entityType: 'cost_entry',
+    entityId: costId,
+    action: 'update',
+    before: { accountId: entry.accountId, accountAmount: entry.accountAmount },
+    after: { accountId, accountAmount },
+  });
 }
 
 export async function voidCostEntry(id: string, reason: string, ctx: AuditContext) {
@@ -923,6 +1035,12 @@ export const receiptCostGridSchema = z.object({
    * and the firm's ledger never heard of it.
    */
   partnerId: z.string().uuid().optional().or(z.literal('')),
+  /**
+   * Or the kassa the whole sheet was paid from (0101) — one per save, like
+   * the payer. The grid has ONE currency select, so the kassa must speak it:
+   * a per-cell amount in another currency is twenty more boxes on a phone.
+   */
+  accountId: z.string().uuid().optional().or(z.literal('')),
   cells: z
     .array(
       z.object({
@@ -956,6 +1074,12 @@ export async function addReceiptCostsBulk(
   const allowed = new Set((await batchReceiptRows(input.batchId)).map((row) => row.receiptId));
   for (const cell of input.cells) {
     if (!allowed.has(cell.receiptId)) throw new CostError('receipt_not_on_batch');
+  }
+  // Refused BEFORE the first cell, or a mismatched kassa would stop the save
+  // part-way with half the sheet written.
+  if (input.partnerId && input.accountId) throw new CostError('payer_conflict');
+  if (input.accountId && (await assertTill(input.accountId)).currency !== input.currency) {
+    throw new CostError('account_currency_mismatch');
   }
   // Each cell is its own `addCostEntry` — the engine cannot tell grid from
   // form (#398) and that is worth keeping — so a failure part-way leaves the
@@ -994,6 +1118,7 @@ async function addGridCell(
       // The engine cannot tell grid from form (#398), so the payer rides
       // the same field and derives the same partner charge per entry.
       partnerId: input.partnerId,
+      accountId: input.accountId,
       // ATTRIBUTION, not scope: allocation still spreads over the RECEIPT's
       // boxes, but the entry names the truck whose grid it was typed on —
       // this is the truck's own customs bill, and without the stamp it

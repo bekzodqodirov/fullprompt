@@ -13,14 +13,36 @@ import {
   CostError,
   costEntrySchema,
   receiptCostGridSchema,
+  setCostAccount,
   voidCostEntry,
 } from '@/modules/wms/costing/service';
+import { mayPickTill } from '@/modules/wms/accounting/till-door';
+import { isStaffPartner, maySeeStaffMoney } from '@/modules/wms/partners/staff';
 
 export interface CostActionResult {
   ok: boolean;
   error?: string;
   /** The grid only: cells that DID become entries before a failure. */
   saved?: string[];
+}
+
+/**
+ * The two payer rules every cost door asks AFTER its own grant (0101):
+ * a kassa is named only by the kassa holders (`mayPickTill`, owner M2a), and
+ * a colleague's staff account only by those who may see staff money (M3a) —
+ * «o'z pulimdan to'ladim» is said through the rasxod xabari, never picked on
+ * a cost form (M1a). The select offers neither to anybody else; this is the
+ * same refusal for a hand-built post (#531).
+ */
+async function payerRefusal(
+  input: { partnerId?: string; accountId?: string },
+  permissions: ReadonlySet<string>,
+): Promise<string | null> {
+  if (input.accountId && !mayPickTill(permissions)) return 'till_forbidden';
+  if (input.partnerId && !maySeeStaffMoney(permissions) && (await isStaffPartner(input.partnerId))) {
+    return 'staff_payer_forbidden';
+  }
+  return null;
 }
 
 export async function addCostEntryAction(input: unknown): Promise<CostActionResult> {
@@ -70,6 +92,8 @@ export async function addCostEntryAction(input: unknown): Promise<CostActionResu
     throw err;
   }
 
+  const refused = await payerRefusal(parsed.data, actor.permissions);
+  if (refused) return { ok: false, error: refused };
   const meta = await requestMeta();
   try {
     await addCostEntry(parsed.data, { actorId: actor.id, ...meta });
@@ -100,6 +124,8 @@ export async function saveReceiptCostGridAction(input: unknown): Promise<CostAct
     throw err;
   }
 
+  const refused = await payerRefusal(parsed.data, actor.permissions);
+  if (refused) return { ok: false, error: refused };
   const meta = await requestMeta();
   let result;
   try {
@@ -157,6 +183,12 @@ export async function voidCostEntryAction(input: unknown): Promise<CostActionRes
     throw err;
   }
 
+  // A cost paid out of a kassa: voiding it puts the money BACK into the till
+  // — a cash movement, and the kassa holders' alone (0101). The warehouse and
+  // the logist may still void the costs they typed with no kassa.
+  if (entry.accountId && !mayPickTill(actor.permissions)) {
+    return { ok: false, error: 'kassa_cost_needs_finance' };
+  }
   const meta = await requestMeta();
   try {
     await voidCostEntry(parsed.data.id, parsed.data.reason, { actorId: actor.id, ...meta });
@@ -190,4 +222,41 @@ async function voidReceiptCostDoor(receiptWarehouseId: string, stampedBatchId: s
     if (!batch) throw err;
     return authorize('costs.enter_batch', { warehouseId: batch.originWarehouseId });
   }
+}
+
+const placeSchema = z.object({
+  id: z.string().uuid(),
+  accountId: z.string().uuid().nullable(),
+  accountAmount: z.number().positive().max(1_000_000_000_000).optional(),
+});
+
+/**
+ * The accountant's place-later door (0101): which kassa a cost's money left
+ * from, said after the warehouse or the logist typed the cost. The kassa
+ * holders' grant only — the same `mayPickTill` the entry doors ask.
+ */
+export async function setCostAccountAction(input: unknown): Promise<CostActionResult> {
+  const parsed = placeSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: 'validation' };
+  let actor;
+  try {
+    actor = await authorize('finance.expenses');
+  } catch (err) {
+    if (err instanceof AuthError) return { ok: false, error: 'forbidden' };
+    throw err;
+  }
+  if (!mayPickTill(actor.permissions)) return { ok: false, error: 'till_forbidden' };
+  const meta = await requestMeta();
+  try {
+    await setCostAccount(parsed.data.id, parsed.data.accountId, parsed.data.accountAmount, {
+      actorId: actor.id,
+      ...meta,
+    });
+  } catch (err) {
+    if (err instanceof CostError) return { ok: false, error: err.code };
+    throw err;
+  }
+  revalidatePath('/accounting/xarajat-kassa');
+  revalidatePath('/accounting/accounts');
+  return { ok: true };
 }
