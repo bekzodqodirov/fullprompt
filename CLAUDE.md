@@ -1743,8 +1743,41 @@ call from any test. Pinned: `tests/integration/pickup.integration.test.ts`
 `m9zy-zavod-reysi`. The server needs `AMAP_WEB_KEY` in `.env` for good Chinese
 street geocoding (his Z1); without it Nominatim answers or nothing does.
 
-**Latest migration: 0100** (`factory_pickup` — factories, trips, stops, lines,
-the prixod's stop and the truck-cost scope; ledger must reach **101**). Before
+**Round — his evening answers R1-R7, U1, Z1, F, M1-M4 (2026-09-25; DECISIONS
+#1009-; migration 0101 `kassa_refund` — ledger must reach 102):** built by me
+plus four delegated agents in worktrees, each merged here by cherry-pick. R1: a
+cost's dollars are FROZEN at its first conversion; an FX save converts only
+what waited for a rate; a partner charge never follows a re-price (A0). R2:
+«Partiya foydasi» reads the pricing screen's landed cost
+(`batchLandedCostTotals`), a Chinese internal leg is cost-only and out of the
+totals. R3: a truck price names the ONE deal of the client's cargo aboard
+(`soleDealAboard`, never from the form). R4 (his «o'zing»): `accountBalances`
+counts box rows from `opening_date` on — a READER rule, not a door refusal.
+R5: «today» is `tashkentDay()` everywhere (`platform/time/tashkent.ts`), the
+failure window is 19:00-24:00 UTC — and four TEST files computed UTC today and
+failed only then; a test's clock must be the app's. R6: client ledger kind
+'refund' (kassa required, finance.expenses), the sign rule has ONE home
+(`signedUsdSql`) with a fence over `src/`. R7: the Balans splits debtors from
+«Mijozlar avansi», via `clientBalances()`. U1b: internal = both ends CN;
+`sameCountryLegSql` keeps the VED's paperwork rule. F: the cabinet's history is
+`issuedHandovers` (per handover, trucks from the issued boxes' own movements,
+batch code shown by his explicit ask) + `paidHistory` (payments only). Kassa
+package: `cost_entries.account_id/account_amount`, one «kim to'ladi» select,
+`mayPickTill` on every kassa write and on the void of a kassa-paid cost, the
+accountant's queue /accounting/xarajat-kassa from `cost_kassa_since` (the
+migration writes the deploy day), the M4a merge (`cost-merge.ts`, drawer
+unmoved), staff counterparties (`partners.user_id`, `partners/staff.ts`,
+`listPartners({includeStaff})` REQUIRED), «o'z pulimdan» only through the
+rasxod xabari. The 'staff' partner TYPE is the seed's — a migration row made
+the seed skip the four starter types (it fills only an EMPTY table).
+PROCESS: `git add -A` swept the agents' worktrees in as gitlinks (now in
+`.git/info/exclude`); an agent rewrote a shared scratchpad helper for its own
+worktree — helpers carry the owner's tag in their name now.
+
+**Latest migration: 0101** (`kassa_refund` — the refund kind, the cost's kassa
+and its merge provenance, the staff login link, the own-pocket request; ledger
+must reach **102**). Before it: **0100** (`factory_pickup` — factories, trips,
+stops, lines, the prixod's stop and the truck-cost scope; ledger 101). Before
 it: **0099** (`recurring_link` — a posting names its template,
 a template names its payer; ledger 100). Before it: **0098**
 (`staff_notes_simplify` — the note is a name, its
@@ -1851,8 +1884,8 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **101** since 0100, and his server last CONFIRMED 95 (2026-09-04),
-which means 0095-0100 are all pending and one deploy applies SIX of them.
+length — **102** since 0101, and his server last CONFIRMED 95 (2026-09-04),
+which means 0095-0101 are all pending and one deploy applies SEVEN of them.
 Never carry this number over from a previous session: read it
 (`ls src/modules/platform/db/migrations/*.sql | wc -l`) before writing the
 owner a step list, because the count is the only check that separates «the
