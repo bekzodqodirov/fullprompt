@@ -169,8 +169,11 @@ export default async function PickupCardPage({ params }: { params: Promise<{ id:
             {stop.lines.map((line) => (
               <li key={line.id} className="flex flex-wrap items-baseline gap-x-2 py-1" data-testid="stop-line">
                 <span className="font-mono font-semibold">{line.clientCode ?? line.marking}</span>
-                <span className="min-w-0 flex-1">{line.goods}</span>
-                <span className="text-xs text-ink-700">
+                {/* The goods may break anywhere, and the counts take their own
+                    line on a phone: a one-word Chinese or Uzbek name used to
+                    run INTO «zavod: 5» at 360 px (seen in the screenshot). */}
+                <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{line.goods}</span>
+                <span className="basis-full text-xs text-ink-700 sm:basis-auto">
                   {t('factoryShort')}: {line.factoryBoxes}
                   {line.driverBoxes !== null && (
                     <span className={line.driverBoxes !== line.factoryBoxes ? 'font-semibold text-warn' : ''}>
