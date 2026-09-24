@@ -48,8 +48,11 @@ test('a transport firm gets an account, a debt and a payment against it', async 
   const cardUrl = page.url();
   await expect(page.getByTestId('partner-balance')).toContainText('$0.00');
 
-  // A truck taken on credit: no cash box asked for, because none moved.
+  // The card's own form no longer takes a SERVICE debt (audit A31): a truck
+  // typed here raised the debt and reached no P&L. It says where that went.
   await page.getByTestId('partner-tx-new').click();
+  await expect(page.getByTestId('partner-charge-moved')).toBeVisible();
+  await expect(page.getByTestId('partner-tx-type').locator('option[value="charge"]')).toHaveCount(0);
 
   // The amount box must actually BE usable, measured rather than asserted
   // from its class list. `.input` carries w-full, so a currency select given
@@ -60,11 +63,22 @@ test('a transport firm gets an account, a debt and a payment against it', async 
   const currencyBox = await page.getByTestId('partner-tx-currency').boundingBox();
   expect(amountBox!.width, 'the amount field must own most of its row').toBeGreaterThan(180);
   expect(currencyBox!.width, 'the currency box must stay narrow').toBeLessThan(130);
-  await expect(page.getByTestId('partner-tx-account')).toHaveCount(0);
-  await page.getByTestId('partner-tx-amount').fill('3200');
-  await page.getByTestId('partner-tx-currency').selectOption('USD');
-  await page.getByTestId('partner-tx-save').click();
+
+  // A truck taken on credit is a COST with the firm as its payer: the expense
+  // form writes the debt onto the firm's account itself, and no cash box is
+  // asked for because none moved.
+  await page.goto('/accounting/expenses');
+  const expenseForm = page.locator('form').filter({ has: page.getByTestId('expense-partner') });
+  await page.getByTestId('expense-partner').selectOption({ label: name });
+  await expect(expenseForm.locator('select[name="accountId"]')).toHaveCount(0);
+  await expenseForm.getByTestId('expense-amount').fill('3200');
+  await expenseForm.locator('select[name="currency"]').selectOption('USD');
+  await expenseForm.getByTestId('save-expense').click();
+  await expect(expenseForm.getByText('✅')).toBeVisible({ timeout: 15_000 });
+  await page.goto(cardUrl);
   await expect(page.getByTestId('partner-balance')).toContainText('$3200.00', { timeout: 15_000 });
+  // Written by the expense, so it is not flagged as a debt no P&L can see.
+  await expect(page.getByTestId('partner-manual-charge')).toHaveCount(0);
 
   // Paying it asks WHICH cash box — the field appears with the kind that
   // moves money and only with it.

@@ -38,7 +38,7 @@ import {
 } from '@/modules/wms/partners/service';
 import { recordSettlement } from '@/modules/wms/partners/settlement';
 import { accountBalances } from '@/modules/wms/accounting/service';
-import { cashFlow, companyBalance } from '@/modules/wms/accounting/reports';
+import { cashFlow, companyBalance, pnlGaps } from '@/modules/wms/accounting/reports';
 import { effectiveCustoms, setReceiptCustoms } from '@/modules/wms/partners/customs';
 
 /**
@@ -123,6 +123,29 @@ async function newClient(code: string): Promise<string> {
     .values({ clientCode: code, name: `Mijoz ${code}`, phones: [`+9989${STAMP}1`] })
     .returning();
   madeClients.push(row!.id);
+  return row!.id;
+}
+
+/**
+ * A debt typed by hand on the partner's card — the kind the card no longer
+ * offers (audit A31) and production still holds. Inserted directly: these
+ * tests are about what a debt DOES (balances, settlements, the retire rule),
+ * not about which door wrote it.
+ */
+async function legacyCharge(partnerId: string, amount: number, txDate?: string): Promise<string> {
+  const [row] = await db
+    .insert(partnerTransactions)
+    .values({
+      partnerId,
+      type: 'charge',
+      amount: String(amount),
+      currency: 'USD',
+      rateToUsd: '1',
+      amountUsd: amount.toFixed(2),
+      txDate: txDate ?? new Date().toISOString().slice(0, 10),
+      createdBy: actorId,
+    })
+    .returning({ id: partnerTransactions.id });
   return row!.id;
 }
 
@@ -242,19 +265,7 @@ describe('uch tomonlama hisob — the client paid our supplier', () => {
       createdBy: actorId,
     });
     // And we owe the firm.
-    await addPartnerTx(
-      {
-        partnerId,
-        type: 'charge',
-        amount: 900,
-        currency: 'USD',
-        txDate: new Date().toISOString().slice(0, 10),
-        accountId: '',
-        batchId: '',
-        note: '',
-      },
-      ctx(),
-    );
+    await legacyCharge(partnerId, 900);
 
     const result = await recordSettlement(
       {
@@ -415,10 +426,58 @@ describe('the cash buyers — som in, dollars out', () => {
     const [account] = await db.select().from(moneyAccounts).limit(1);
     await expect(
       addPartnerTx(
-        { partnerId, type: 'charge', amount: 10, currency: 'USD', txDate: today, accountId: account!.id, batchId: '', note: '' },
+        { partnerId, type: 'adjust', amount: 10, currency: 'USD', txDate: today, accountId: account!.id, batchId: '', note: '' },
         ctx(),
       ),
     ).rejects.toThrow();
+  });
+});
+
+describe('a service debt comes from a cost, never from the card (audit A31)', () => {
+  it('the card refuses a hand-typed charge and a free-standing offset', async () => {
+    const partnerId = await newPartner('Qolda');
+    const today = new Date().toISOString().slice(0, 10);
+    const row = { partnerId, amount: 100, currency: 'USD', txDate: today, accountId: '', batchId: '', note: '' };
+    // A truck or a salary typed here raised the debt and reached no P&L,
+    // no tannarx and no profit screen.
+    await expect(addPartnerTx({ ...row, type: 'charge' }, ctx())).rejects.toMatchObject({
+      code: 'charge_via_cost',
+    });
+    // An offset has a client on its other end and its own screen naming one.
+    await expect(addPartnerTx({ ...row, type: 'offset' }, ctx())).rejects.toMatchObject({
+      code: 'offset_via_settlement',
+    });
+    expect(await partnerBalanceUsd(partnerId)).toBe(0);
+  });
+
+  it('the P&L names the hand-typed debts it cannot see, and not the ones a cost wrote', async () => {
+    const partnerId = await newPartner('Eski qarz');
+    // A month nothing else in the suite writes into, so the delta is ours.
+    const day = '2019-03-15';
+    const before = await pnlGaps('2019-03-01', '2019-03-31');
+
+    await legacyCharge(partnerId, 777, day);
+    // The debt the expense form writes has its cost in the P&L already.
+    const [category] = await db.select().from(expenseCategories).limit(1);
+    const expense = await addExpense(
+      {
+        categoryId: category!.id,
+        amount: 55,
+        currency: 'USD',
+        expenseDate: day,
+        warehouseId: '',
+        employeeId: '',
+        accountId: '',
+        partnerId,
+        note: 'ijara',
+      },
+      ctx(),
+    );
+    madeExpenses.push(expense.id);
+
+    const after = await pnlGaps('2019-03-01', '2019-03-31');
+    expect(after.manualCharges.count - before.manualCharges.count).toBe(1);
+    expect(after.manualCharges.usd - before.manualCharges.usd).toBeCloseTo(777, 2);
   });
 });
 
@@ -495,13 +554,9 @@ describe('the money reports know about counterparties', () => {
 
   it('the balance counts what we owe as well as what is owed to us', async () => {
     const partnerId = await newPartner('Balanschi');
-    const today = new Date().toISOString().slice(0, 10);
     const before = await companyBalance();
 
-    await addPartnerTx(
-      { partnerId, type: 'charge', amount: 450, currency: 'USD', txDate: today, accountId: '', batchId: '', note: 'fura' },
-      ctx(),
-    );
+    await legacyCharge(partnerId, 450);
 
     const after = await companyBalance();
     expect(after.payableUsd - before.payableUsd).toBeCloseTo(450, 2);
@@ -597,10 +652,7 @@ describe('what the audit found', () => {
     const today = new Date().toISOString().slice(0, 10);
 
     // We owe the firm $1000; the client owes us $1000.
-    await addPartnerTx(
-      { partnerId, type: 'charge', amount: 1000, currency: 'USD', txDate: today, accountId: '', batchId: '', note: '' },
-      ctx(),
-    );
+    await legacyCharge(partnerId, 1000);
     await addTransaction(
       { clientId, type: 'charge', amount: 1000, currency: 'USD', txDate: today },
       ctx(),
@@ -763,10 +815,7 @@ describe('what the audit found', () => {
 
     const clientId = await newClient(`GSQ${STAMP}`);
     const partnerId = await newPartner('Navbat');
-    await addPartnerTx(
-      { partnerId, type: 'charge', amount: 200, currency: 'USD', txDate: today, accountId: '', batchId: '', note: '' },
-      ctx(),
-    );
+    await legacyCharge(partnerId, 200);
     await recordSettlement(
       {
         txId: uuidv4(),
@@ -796,11 +845,7 @@ describe('what the audit found', () => {
 
   it('keeps the counterparty register and the balance sheet agreeing after a retire', async () => {
     const partnerId = await newPartner('Yashiriladigan');
-    const today = new Date().toISOString().slice(0, 10);
-    await addPartnerTx(
-      { partnerId, type: 'charge', amount: 8000, currency: 'USD', txDate: today, accountId: '', batchId: '', note: '' },
-      ctx(),
-    );
+    await legacyCharge(partnerId, 8000);
     await setPartnerActive(partnerId, false, ctx());
 
     // The register's own expression, read the way the page reads it. Active

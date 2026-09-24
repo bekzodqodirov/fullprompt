@@ -114,8 +114,42 @@ export function payableOffersSql(): SQL {
   // both anchors of one request. `answerFloorStandsSql` (version-set.ts)
   // carries the answer branch's own five clauses, including the cross-request
   // fences (no newer answer, no later seal on the same card).
+  //
+  // WHAT A JOB HAS ALREADY PAID is asked of the whole SALE, not of one
+  // request (audit 2026-09-24, A18). A correction is a NEW request
+  // (`recalcFromSealed`) and a Готово answer followed by a proper seal on the
+  // same card is two requests but one sale (`answerFloorStandsSql`'s own
+  // words) — so a payout counted per request let the seller be paid the
+  // whole difference AGAIN the moment the paid job was corrected or sealed.
+  // `job` walks `supersedes_request_id` down from each chain's root, the
+  // shape `calc/chain.ts` already uses (and caps the same way); `paid` is
+  // every payout with the chain it belongs to and, for an answer anchor, the
+  // card and the moment the answer was given.
   return sql`
-    WITH ranked AS (
+    WITH RECURSIVE job AS (
+      SELECT id, id AS root_id, 0 AS depth
+        FROM calc_requests
+       WHERE supersedes_request_id IS NULL
+      UNION ALL
+      SELECT cr.id, j.root_id, j.depth + 1
+        FROM calc_requests cr
+        JOIN job j ON cr.supersedes_request_id = j.id
+       WHERE j.depth < 64
+    ),
+    paid AS (
+      SELECT p2.payout_usd,
+             COALESCE(pj.root_id, pr.id) AS root_id,
+             p2.version_id IS NULL        AS on_answer,
+             pr.entity_type,
+             pr.entity_id,
+             pr.completed_at
+        FROM calc_offers p2
+        LEFT JOIN calc_versions pv ON pv.id = p2.version_id
+        JOIN calc_requests pr ON pr.id = COALESCE(pv.request_id, p2.request_id)
+        LEFT JOIN job pj ON pj.id = pr.id
+       WHERE p2.payout_expense_id IS NOT NULL
+    ),
+    base AS (
       SELECT o.id,
              o.version_id,
              o.offered_by,
@@ -134,8 +168,16 @@ export function payableOffersSql(): SQL {
              COALESCE(v.section, r.section) AS section,
              r.entity_type,
              r.entity_id,
+             -- Does this offer's promise still stand? Computed rather than
+             -- filtered, so a PAID offer whose promise was corrected away
+             -- stays on the owner's screen as the record of what was paid.
+             COALESCE(
+               (o.version_id IS NOT NULL AND ${currentVersionSql()} AND ${notSupersededSql()})
+               OR (o.version_id IS NULL AND ${answerFloorStandsSql()}),
+               false
+             ) AS stands,
              /**
-              * WHAT THIS JOB HAS ALREADY PAID (audit A1).
+              * WHAT THIS SALE HAS ALREADY PAID (audit A1, widened by A18).
               *
               * «One payable per job» was enforced by the rank alone, which
               * holds until the accountant PAYS: re-offering is the designed
@@ -144,51 +186,63 @@ export function payableOffersSql(): SQL {
               * became payable a SECOND time — one sale, two commissions.
               *
               * The remaining amount is the honest figure: what this promise
-              * is worth minus what this job has already paid out. A re-offer
-              * at a HIGHER price pays the difference; a re-offer at a lower
-              * one pays nothing (and nothing is clawed back — a payment made
-              * is a payment made).
+              * is worth minus what this sale has already paid out — on this
+              * request, on every request of its correction chain, and on any
+              * Готово answer this card gave before this floor existed. A
+              * re-offer at a HIGHER price pays the difference; a re-offer at
+              * a lower one pays nothing (and nothing is clawed back — a
+              * payment made is a payment made).
               */
              COALESCE((
-               SELECT sum(p2.payout_usd)
-                 FROM calc_offers p2
-                 LEFT JOIN calc_versions pv ON pv.id = p2.version_id
-                WHERE COALESCE(pv.request_id, p2.request_id)
-                      = COALESCE(v.request_id, o.request_id)
-                  AND p2.payout_expense_id IS NOT NULL
-             ), 0) AS paid_on_request,
-             row_number() OVER (
-               PARTITION BY COALESCE(v.request_id, o.request_id)
-               ORDER BY o.offered_at DESC, o.id DESC
-             ) AS rn
+               SELECT sum(pd.payout_usd)
+                 FROM paid pd
+                WHERE pd.root_id = COALESCE(j.root_id, r.id)
+                   OR (pd.on_answer
+                       AND pd.entity_type = r.entity_type
+                       AND pd.entity_id = r.entity_id
+                       AND pd.completed_at <= COALESCE(v.sealed_at, r.completed_at))
+             ), 0) AS paid_on_request
         FROM calc_offers   o
         LEFT JOIN calc_versions v ON v.id = o.version_id
         JOIN calc_requests r ON r.id = COALESCE(v.request_id, o.request_id)
-       WHERE (o.version_id IS NOT NULL AND ${currentVersionSql()} AND ${notSupersededSql()})
-          OR (o.version_id IS NULL AND ${answerFloorStandsSql()})
+        LEFT JOIN job j ON j.id = r.id
+    ),
+    ranked AS (
+      SELECT base.*,
+             row_number() OVER (
+               PARTITION BY base.request_id, base.stands
+               ORDER BY base.offered_at DESC, base.id DESC
+             ) AS rn
+        FROM base
     )
     SELECT ranked.*,
            round(ranked.client_price_usd - ranked.total_usd, 2) AS upsale_usd,
            -- What a payout would actually move: the promise's own difference
-           -- less whatever this job has already paid (audit A1).
-           round(ranked.client_price_usd - ranked.total_usd - ranked.paid_on_request, 2)
-             AS payable_usd
+           -- less whatever this sale has already paid (A1, A18). A paid row
+           -- moves nothing more.
+           CASE WHEN ranked.payout_expense_id IS NOT NULL THEN 0
+                ELSE round(ranked.client_price_usd - ranked.total_usd - ranked.paid_on_request, 2)
+           END AS payable_usd
       FROM ranked
-     WHERE ranked.rn = 1
-       AND (NOT ranked.below_floor OR ranked.approved_at IS NOT NULL)
-       AND (ranked.version_id IS NULL OR ranked.discount_usd <= ${MONEY_EPSILON})
-       AND (ranked.version_id IS NULL OR NOT (
-             ranked.band_override_min IS NOT NULL
-             AND (ranked.density IS NULL OR ranked.band_override_min < ranked.density - 0.0001)
-           ))
-       AND ranked.client_price_usd - ranked.total_usd > ${MONEY_EPSILON}
-       -- A row that has been PAID stays listed, because the owner's screen is
-       -- also the record of what was paid; an unpaid row survives only while
-       -- something is still owed on the job.
-       AND (
-         ranked.payout_expense_id IS NOT NULL
-         OR ranked.client_price_usd - ranked.total_usd - ranked.paid_on_request
-            > ${MONEY_EPSILON}
-       )
+     -- A row that has been PAID stays listed whatever became of its promise,
+     -- because the owner's screen is also the record of what was paid (a
+     -- corrected job used to drop its paid row and the «To'langan» total
+     -- with it). An unpaid row must be the standing promise of its job and
+     -- survive every rule below.
+     WHERE ranked.payout_expense_id IS NOT NULL
+        OR (
+          ranked.stands
+          AND ranked.rn = 1
+          AND (NOT ranked.below_floor OR ranked.approved_at IS NOT NULL)
+          AND (ranked.version_id IS NULL OR ranked.discount_usd <= ${MONEY_EPSILON})
+          AND (ranked.version_id IS NULL OR NOT (
+                ranked.band_override_min IS NOT NULL
+                AND (ranked.density IS NULL OR ranked.band_override_min < ranked.density - 0.0001)
+              ))
+          AND ranked.client_price_usd - ranked.total_usd > ${MONEY_EPSILON}
+          -- Something is still owed on the job.
+          AND ranked.client_price_usd - ranked.total_usd - ranked.paid_on_request
+              > ${MONEY_EPSILON}
+        )
   `;
 }

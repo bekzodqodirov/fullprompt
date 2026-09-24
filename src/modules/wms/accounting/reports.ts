@@ -70,6 +70,71 @@ export interface Pnl {
   netProfit: PnlRow;
 }
 
+/**
+ * What a period's P&L cannot see, said beside it instead of silently
+ * (audit 2026-09-24, A11 and A31).
+ *
+ * - A debt typed by hand on a partner's card before that kind left the card:
+ *   a service we took, with no cost row behind it, so it is in the Balans as
+ *   something we owe and in no cost line here. It is NOT added to the P&L,
+ *   because some of those services were ALSO typed as a cost by hand — adding
+ *   them would count those twice — so the screen names the sum and the fix.
+ * - A cost with no dollar figure because its currency had no rate: the P&L
+ *   reads it as $0 (`coalesce(amount_usd, 0)`). Named per currency in its own
+ *   money, since there is no dollar figure to name.
+ */
+export interface PnlGaps {
+  manualCharges: { count: number; usd: number };
+  unconverted: { count: number; byCurrency: { currency: string; count: number; amount: number }[] };
+}
+
+export async function pnlGaps(from: string, to: string): Promise<PnlGaps> {
+  const [manual, unconverted] = await Promise.all([
+    db
+      .select({
+        count: sql<number>`count(*)::int`,
+        usd: sql<string>`coalesce(sum(${partnerTransactions.amountUsd}), 0)`,
+      })
+      .from(partnerTransactions)
+      .where(
+        and(
+          eq(partnerTransactions.type, 'charge'),
+          isNull(partnerTransactions.costEntryId),
+          isNull(partnerTransactions.expenseId),
+          isNull(partnerTransactions.voidedAt),
+          gte(partnerTransactions.txDate, from),
+          lte(partnerTransactions.txDate, to),
+        ),
+      ),
+    db
+      .select({
+        currency: costEntries.currency,
+        count: sql<number>`count(*)::int`,
+        amount: sql<string>`sum(${costEntries.amount})`,
+      })
+      .from(costEntries)
+      .where(
+        and(
+          isNull(costEntries.amountUsd),
+          isNull(costEntries.voidedAt),
+          gte(costEntries.costDate, from),
+          lte(costEntries.costDate, to),
+        ),
+      )
+      .groupBy(costEntries.currency)
+      .orderBy(costEntries.currency),
+  ]);
+  const byCurrency = unconverted.map((row) => ({
+    currency: row.currency,
+    count: Number(row.count),
+    amount: money(row.amount),
+  }));
+  return {
+    manualCharges: { count: Number(manual[0]?.count ?? 0), usd: money(manual[0]?.usd) },
+    unconverted: { count: byCurrency.reduce((sum, row) => sum + row.count, 0), byCurrency },
+  };
+}
+
 /** P&L for a period, one column per month (owner: "PNL va shunga o'xshagan"). */
 export async function profitAndLoss(from: string, to: string): Promise<Pnl> {
   const months = monthsBetween(from, to);

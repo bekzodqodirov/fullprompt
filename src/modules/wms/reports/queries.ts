@@ -287,6 +287,11 @@ export async function landedCostByClient() {
       totalUsd: sql<string>`sum(${costAllocations.amountUsd})`,
     })
     .from(costAllocations)
+    // A voided entry's shares are not a cost (audit A24). A void is one
+    // transaction now (#529), but shares left by a crash before that — or by
+    // a recompute racing a void — are never revisited, and profitByClient
+    // has always dropped them: the two screens disagreed by exactly those.
+    .innerJoin(costEntries, and(eq(costAllocations.costEntryId, costEntries.id), isNull(costEntries.voidedAt)))
     .innerJoin(clients, eq(costAllocations.clientId, clients.id))
     .groupBy(clients.id, clients.clientCode, clients.name)
     .orderBy(desc(sql`sum(${costAllocations.amountUsd})`));
@@ -294,6 +299,30 @@ export async function landedCostByClient() {
     ...r,
     boxCount: Number(r.boxCount),
     totalUsd: Math.round(Number(r.totalUsd) * 100) / 100,
+  }));
+}
+
+/**
+ * Live costs that have no dollar figure because their currency had no rate
+ * (audit A25). They carry no allocation, so every landed-cost figure is short
+ * by exactly them — said on the report, per currency in its own money,
+ * instead of the silence `recomputeEntry`'s comment promised was a flag.
+ */
+export async function unconvertedCosts(): Promise<{ currency: string; count: number; amount: number }[]> {
+  const rows = await db
+    .select({
+      currency: costEntries.currency,
+      count: sql<number>`count(*)::int`,
+      amount: sql<string>`sum(${costEntries.amount})`,
+    })
+    .from(costEntries)
+    .where(and(isNull(costEntries.amountUsd), isNull(costEntries.voidedAt)))
+    .groupBy(costEntries.currency)
+    .orderBy(costEntries.currency);
+  return rows.map((row) => ({
+    currency: row.currency,
+    count: Number(row.count),
+    amount: Math.round(Number(row.amount) * 100) / 100,
   }));
 }
 
@@ -311,6 +340,7 @@ export async function landedCostByLot(clientId: string) {
       totalUsd: sql<string>`sum(${costAllocations.amountUsd})`,
     })
     .from(costAllocations)
+    .innerJoin(costEntries, and(eq(costAllocations.costEntryId, costEntries.id), isNull(costEntries.voidedAt)))
     .innerJoin(boxes, eq(costAllocations.boxId, boxes.id))
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
     .where(eq(costAllocations.clientId, clientId))

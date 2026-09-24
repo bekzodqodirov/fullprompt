@@ -10,6 +10,7 @@ import { getSetting } from '@/modules/platform/settings/service';
 import { mayApproveBelowFloor, upsaleScopeFor } from '@/modules/wms/calc/upsale-scope';
 import {
   bySeller,
+  earnedOf,
   pendingBelowFloor,
   upsaleRows,
   UPSALE_CAP,
@@ -104,10 +105,10 @@ export default async function UpsalePage({
 
   const money = (n: number) => `$${n.toFixed(2)}`;
   const totals = {
-    earned: Math.round(rows.reduce((s, r) => s + r.upsaleUsd, 0) * 100) / 100,
+    earned: Math.round(rows.reduce((s, r) => s + earnedOf(r), 0) * 100) / 100,
     paid: Math.round(rows.filter((r) => r.state === 'paid').reduce((s, r) => s + (r.paidUsd ?? 0), 0) * 100) / 100,
     waiting:
-      Math.round(rows.filter((r) => r.state !== 'paid').reduce((s, r) => s + r.upsaleUsd, 0) * 100) / 100,
+      Math.round(rows.filter((r) => r.state !== 'paid').reduce((s, r) => s + r.payableUsd, 0) * 100) / 100,
   };
   const payable = rows.filter((r) => r.state === 'payable');
   const current = { dan: period.dan, gacha: period.gacha, hodim: params.hodim ?? '' };

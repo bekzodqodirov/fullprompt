@@ -4,7 +4,13 @@ import { useActionState, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { addPartnerTxAction, type PartnerFormState } from '../actions';
 
-const TYPES = ['charge', 'receipt', 'payment', 'adjust'] as const;
+/**
+ * No `charge` here (audit A31): a debt for a service is written by the cost or
+ * expense form with its payer picked, so the same fact reaches the P&L too.
+ * The service refuses it as well — a kind removed from a form while the door
+ * still takes it is hidden, not removed.
+ */
+const TYPES = ['payment', 'receipt', 'adjust'] as const;
 /** Types that moved real money and so must name the cash box that moved. */
 const CASH = new Set<string>(['receipt', 'payment']);
 
@@ -32,7 +38,7 @@ export function PartnerTxForm({
   const t = useTranslations('partners');
   const tc = useTranslations('common');
   const [open, setOpen] = useState(false);
-  const [type, setType] = useState<string>('charge');
+  const [type, setType] = useState<string>('payment');
   const [state, formAction, pending] = useActionState<PartnerFormState, FormData>(
     addPartnerTxAction,
     {},
@@ -66,6 +72,9 @@ export function PartnerTxForm({
       <input type="hidden" name="partnerId" value={partnerId} />
       <p className="section-title">{t('newRow')}</p>
 
+      <p className="rounded-lg bg-surface-sunken p-2 text-xs text-ink-700" data-testid="partner-charge-moved">
+        ℹ️ {t('chargeMoved')}
+      </p>
       <select
         name="type"
         className="input"
@@ -76,11 +85,11 @@ export function PartnerTxForm({
       >
         {TYPES.map((code) => (
           <option key={code} value={code}>
-            {t(`kinds.${code}` as 'kinds.charge')}
+            {t(`kinds.${code}` as 'kinds.payment')}
           </option>
         ))}
       </select>
-      <p className="text-xs text-ink-500">{t(`kindHints.${type}` as 'kindHints.charge')}</p>
+      <p className="text-xs text-ink-500">{t(`kindHints.${type}` as 'kindHints.payment')}</p>
 
       {/* The sum is the point of the form, so it gets the room: its own line,
           typed big enough to read back at a glance. Sharing a row with the
@@ -166,7 +175,11 @@ export function PartnerTxForm({
       </div>
       {state.error && (
         <p className="text-sm font-semibold text-bad">
-          {state.error === 'fx_missing' ? t('fxMissing') : tc('error')}
+          {state.error === 'fx_missing'
+            ? t('fxMissing')
+            : state.error === 'charge_via_cost'
+              ? t('chargeMoved')
+              : tc('error')}
         </p>
       )}
       {state.ok && <p className="text-sm font-semibold text-good">✅ {tc('save')}</p>}

@@ -1,6 +1,12 @@
 import ExcelJS from 'exceljs';
+import { eq } from 'drizzle-orm';
+import { db } from '../../platform/db/client';
+import { expenseCategories } from '../../platform/db/schema';
 import { reportLabels } from '../reports/labels';
-import { listExpenses } from './service';
+import { expenseTotals, listExpenses } from './service';
+
+/** How many expense rows a file carries before it says it is a slice. */
+export const EXPENSES_XLSX_CAP = 5000;
 import { paymentsRegister } from '../finance/service';
 import { toUzs, uzsRate } from './period';
 import {
@@ -208,9 +214,18 @@ export async function buildExpensesXlsx(
   locale?: string,
 ): Promise<Buffer> {
   const L = reportLabels(locale);
-  const rows = await listExpenses({ from, to, categoryId, limit: 5000 });
+  const [rows, totals, category] = await Promise.all([
+    listExpenses({ from, to, categoryId, limit: EXPENSES_XLSX_CAP }),
+    expenseTotals({ from, to, categoryId }),
+    categoryId
+      ? db.query.expenseCategories.findFirst({ where: eq(expenseCategories.id, categoryId) })
+      : Promise.resolve(undefined),
+  ]);
   const workbook = new ExcelJS.Workbook();
-  const sheet = sheetSetup(workbook, 'Expenses', `${L.tExpenses} · ${period(from, to)}`);
+  // A filtered file says what it is (audit A15): the same title for «all
+  // categories» and «salaries only» is how one is read as the other.
+  const title = [L.tExpenses, category?.name, period(from, to)].filter(Boolean).join(' · ');
+  const sheet = sheetSetup(workbook, 'Expenses', title);
 
   const head = sheet.addRow([
     L.date, L.category, L.amount, L.currency, 'USD', L.account, L.warehouse, L.employee, L.note,
@@ -220,24 +235,30 @@ export async function buildExpensesXlsx(
     { width: 12 }, { width: 26 }, { width: 14 }, { width: 10 }, { width: 14 },
     { width: 20 }, { width: 10 }, { width: 22 }, { width: 40 },
   ];
-  for (const { expense, categoryName, warehouseCode, employeeName, accountName } of rows) {
+  for (const { expense, categoryName, warehouseCode, employeeName, accountName, partnerName } of rows) {
     sheet.addRow([
       expense.expenseDate,
       categoryName,
       Number(expense.amount),
       expense.currency,
       Number(expense.amountUsd),
-      accountName ?? '',
+      // The screen's own rule (audit A17): «a firm paid it» and «nobody named
+      // a till» are two facts, and the file reconciled against the tills must
+      // not print both as one blank cell. The payments file learned it in #532.
+      accountName ?? (partnerName ? `→ ${partnerName}` : ''),
       warehouseCode ?? '',
       employeeName ?? '',
       expense.note ?? '',
     ]);
   }
-  const total = sheet.addRow([
-    L.total, '', '', '',
-    Math.round(rows.reduce((acc, row) => acc + Number(row.expense.amountUsd), 0) * 100) / 100,
-  ]);
+  // The whole period's total, not the rows' — and a clipped list says so
+  // (audit A14; the payments file's shape).
+  const total = sheet.addRow([L.total, '', '', '', totals.totalUsd]);
   total.font = { bold: true };
+  if (totals.count > rows.length) {
+    const warn = sheet.addRow([`⚠ ${rows.length} / ${totals.count}`]);
+    warn.font = { bold: true };
+  }
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }
 

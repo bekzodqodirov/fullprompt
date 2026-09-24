@@ -8,6 +8,7 @@ import { Panel } from '@/components/panel';
 import {
   listAccounts,
   listCategories,
+  expenseTotals,
   listExpenses,
   listRecurring,
 } from '@/modules/wms/accounting/service';
@@ -43,7 +44,7 @@ export default async function ExpensesPage({
   const { from, to } = resolvePeriod(params);
   const categoryId = /^[0-9a-f-]{36}$/i.test(params.categoryId ?? '') ? params.categoryId : undefined;
 
-  const [categories, accounts, warehouseRows, employeeRows, currencyRows, rows, recurring] =
+  const [categories, accounts, warehouseRows, employeeRows, currencyRows, rows, recurring, totals] =
     await Promise.all([
       listCategories(),
       listAccounts(),
@@ -60,6 +61,7 @@ export default async function ExpensesPage({
       db.select({ code: currencies.code }).from(currencies).where(eq(currencies.active, true)),
       listExpenses({ from, to, categoryId }),
       listRecurring(),
+      expenseTotals({ from, to, categoryId }),
     ]);
 
   const today = new Date().toISOString().slice(0, 10);
@@ -73,8 +75,9 @@ export default async function ExpensesPage({
     // company, so the expense book has to be able to say who paid.
     partners: (await listPartners()).map((row) => ({ id: row.id, label: row.name })),
   };
-  const totalUsd =
-    Math.round(rows.reduce((acc, row) => acc + Number(row.expense.amountUsd), 0) * 100) / 100;
+  // The whole period's total, never the sum of the rows drawn: the list stops
+  // at its newest 500 (audit A14).
+  const totalUsd = totals.totalUsd;
 
   // The rasxod xabari queue (round 107). Caught: the table is minted this
   // release, and a half-applied deploy must not white-page the expense book
@@ -184,7 +187,11 @@ export default async function ExpensesPage({
       <PeriodForm
         from={from}
         to={to}
-        exportHref="/api/accounting/expenses"
+        // The file carries the screen's category too: without it a filtered
+        // screen downloaded every category under the same title (audit A15).
+        exportHref={
+          categoryId ? `/api/accounting/expenses?categoryId=${categoryId}` : '/api/accounting/expenses'
+        }
         extra={
           <label className="text-sm">
             <span className="block text-xs text-ink-500">{t('category')}</span>
@@ -203,6 +210,11 @@ export default async function ExpensesPage({
       <p className="text-sm font-semibold" data-testid="expenses-total">
         {t('total')}: {totalUsd.toLocaleString('en-US')} $
       </p>
+      {totals.count > rows.length && (
+        <p className="text-xs font-semibold text-warn" data-testid="expenses-truncated">
+          ⚠ {t('expensesTruncated', { shown: rows.length, total: totals.count })}
+        </p>
+      )}
 
       <div className="card !p-0">
         <div className="overflow-x-auto">

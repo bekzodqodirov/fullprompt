@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { landedCostByClient, landedCostByLot } from '@/modules/wms/reports/queries';
+import { landedCostByClient, landedCostByLot, unconvertedCosts } from '@/modules/wms/reports/queries';
 import { BackLink } from '@/components/back-link';
 import { PageHeader } from '@/components/ui/page';
 
@@ -22,7 +22,8 @@ export default async function LandedCostReportPage({
   const t = await getTranslations('reports');
   const { clientId } = await searchParams;
 
-  const clientRows = await landedCostByClient();
+  const [clientRows, unconverted] = await Promise.all([landedCostByClient(), unconvertedCosts()]);
+  const unconvertedCount = unconverted.reduce((sum, row) => sum + row.count, 0);
   const selected = clientId ? clientRows.find((c) => c.clientId === clientId) : null;
   const lots = selected ? await landedCostByLot(selected.clientId) : [];
 
@@ -38,6 +39,16 @@ export default async function LandedCostReportPage({
           ⬇️ XLSX
         </a>
       </div>
+
+      {unconvertedCount > 0 && (
+        <p className="card !p-3 text-sm font-semibold text-warn" data-testid="landed-unconverted">
+          ⚠{' '}
+          {t('landedUnconverted', {
+            count: unconvertedCount,
+            sums: unconverted.map((row) => `${row.amount} ${row.currency}`).join(', '),
+          })}
+        </p>
+      )}
 
       {selected ? (
         <>

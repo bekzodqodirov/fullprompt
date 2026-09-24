@@ -256,7 +256,8 @@
     "taskHours": "小时",
     "taskUndated": "无期限：{n} 项 — 不会出现在任何人的「我的一天」。",
     "taskStalest": "逾期最久",
-    "taskLateDays": "{n} 天"
+    "taskLateDays": "{n} 天",
+    "landedUnconverted": "没有汇率的费用（{count} 笔）未计入本报表：{sums}。录入该货币汇率后会自动计入。"
   },
   "warehouses": {
     "title": "仓库",
@@ -1231,7 +1232,13 @@
     "reject": "拒绝",
     "rejectReason": "为什么拒绝？仓管员会看到回复。",
     "fromRequest": "已从仓库报告填充——请核对并选择类别和账户。",
-    "requestTaken": "该报告已被他人入账"
+    "requestTaken": "该报告已被他人入账",
+    "gapManualCharges": "手工录入的对供应商欠款（{count} 笔，{usd}）未计入本报表——它们没有登记为费用。",
+    "gapManualChargesHint": "如果这项服务也已单独登记为费用，则没有遗漏。否则：在供应商卡片上作废该欠款，并在费用表单中选择「由谁支付」重新录入。",
+    "gapOpenPartners": "供应商 →",
+    "gapUnconverted": "没有汇率的费用（{count} 笔）按 $0 计算：{sums}。",
+    "gapUnconvertedHint": "请录入该货币的汇率——费用会自动重新计算。",
+    "expensesTruncated": "显示最新的 {shown} 条（共 {total} 条）；「合计」为整个期间。"
   },
   "crm": {
     "title": "CRM",
@@ -2531,7 +2538,6 @@
       "adjust": "调整 / 汇差"
     },
     "kindHints": {
-      "charge": "车辆、清关、租金、工资等已获服务。现金账不动。",
       "receipt": "对方把钱打入我们账户。现金增加，我们欠对方增加。",
       "payment": "我们从现金账付给对方。现金减少，欠款减少。",
       "adjust": "汇差或手工更正，可为负数。"
@@ -2545,7 +2551,9 @@
     "rateGapHint": "对方冲抵金额与客户汇出金额之差（美元）。",
     "proof": "收据 / 截图",
     "proofNote": "备注（无附件时必填）",
-    "proofRequired": "必须有附件或备注"
+    "proofRequired": "必须有附件或备注",
+    "chargeMoved": "服务欠款（车辆、清关、租金、工资）现在在费用表单中选择「由谁支付」录入。欠款会自动记到这里，也会计入利润报表。",
+    "manualCharge": "未关联费用——利润报表中没有"
   },
   "lists": {
     "allRecords": "全部",

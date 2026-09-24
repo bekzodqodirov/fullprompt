@@ -2,9 +2,10 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { profitByBatch, profitByClient, profitByRoute } from '@/modules/wms/accounting/reports';
+import { pnlGaps, profitByBatch, profitByClient, profitByRoute } from '@/modules/wms/accounting/reports';
 import { resolvePeriod } from '@/modules/wms/accounting/period';
 import { PeriodForm } from '../period-form';
+import { PnlGapsNote } from '../pnl-gaps';
 
 type View = 'batch' | 'client' | 'route';
 
@@ -46,6 +47,8 @@ export default async function ProfitPage({
         ? await profitByClient(from, to)
         : await profitByRoute(from, to);
 
+  const gaps = await pnlGaps(from, to);
+
   const totals = rows.reduce(
     (acc, row) => ({
       revenue: acc.revenue + row.revenueUsd,
@@ -76,6 +79,7 @@ export default async function ProfitPage({
       </div>
 
       <PeriodForm from={from} to={to} exportHref={`/api/accounting/profit?view=${view}`} />
+      <PnlGapsNote gaps={gaps} />
 
       <div className="card !p-0">
         <div className="overflow-x-auto">

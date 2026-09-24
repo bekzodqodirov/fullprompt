@@ -268,18 +268,43 @@ export async function voidExpense(id: string, reason: string, ctx: AuditContext)
   });
 }
 
-export async function listExpenses(filters: {
+export interface ExpenseFilters {
   from?: string;
   to?: string;
   categoryId?: string;
   warehouseId?: string;
-  limit?: number;
-}) {
+}
+
+/** One predicate for the rows AND their total (#513). */
+function expenseWhere(filters: ExpenseFilters) {
   const where = [isNull(expenses.voidedAt)];
   if (filters.from) where.push(gte(expenses.expenseDate, filters.from));
   if (filters.to) where.push(lte(expenses.expenseDate, filters.to));
   if (filters.categoryId) where.push(eq(expenses.categoryId, filters.categoryId));
   if (filters.warehouseId) where.push(eq(expenses.warehouseId, filters.warehouseId));
+  return and(...where);
+}
+
+/**
+ * The period's count and dollar total, over the same predicate as the rows
+ * and with NO cap (audit A14). The list stops at its newest 500 and the book
+ * holds ~20 salaries a month plus rent and every rasxod xabari, so a total
+ * summed from the rows on screen silently lost January by August — while the
+ * P&L's opex for the same dates, an uncapped sum, did not. The payments
+ * register got this shape in round 69 (#533); the expense book had not.
+ */
+export async function expenseTotals(filters: ExpenseFilters): Promise<{ count: number; totalUsd: number }> {
+  const [row] = await db
+    .select({
+      count: sql<number>`count(*)::int`,
+      total: sql<string>`coalesce(sum(${expenses.amountUsd}), 0)`,
+    })
+    .from(expenses)
+    .where(expenseWhere(filters));
+  return { count: Number(row?.count ?? 0), totalUsd: Math.round(Number(row?.total ?? 0) * 100) / 100 };
+}
+
+export async function listExpenses(filters: ExpenseFilters & { limit?: number }) {
   return db
     .select({
       expense: expenses,
@@ -298,7 +323,7 @@ export async function listExpenses(filters: {
     .leftJoin(users, eq(expenses.employeeId, users.id))
     .leftJoin(moneyAccounts, eq(expenses.accountId, moneyAccounts.id))
     .leftJoin(partners, eq(expenses.partnerId, partners.id))
-    .where(and(...where))
+    .where(expenseWhere(filters))
     .orderBy(sql`${expenses.expenseDate} DESC`, sql`${expenses.createdAt} DESC`)
     .limit(filters.limit ?? 500);
 }

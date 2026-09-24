@@ -44,6 +44,18 @@ const RAISING = ['charge', 'receipt'] as const;
 export const PARTNER_TX_TYPES = ['charge', 'receipt', 'payment', 'offset', 'adjust'] as const;
 export type PartnerTxType = (typeof PARTNER_TX_TYPES)[number];
 
+/**
+ * The kinds a person may write by hand on a partner's card (audit A31,
+ * 2026-09-24). A `charge` is a debt for a SERVICE we took — a truck, customs,
+ * rent, a salary — and a service is a cost: typed on the card it raised the
+ * debt and reached no P&L, no tannarx and no profit screen, which is exactly
+ * what DECISIONS #415 forbade («a cost and a debt are different facts — the
+ * cost form's payer writes the charge»). It is written by the cost and expense
+ * forms' «kim to'ladi» (`partners/link.ts`) and nowhere else. An `offset` is
+ * a debt closed through a CLIENT, and has its own screen that names one.
+ */
+export const MANUAL_TX_TYPES: PartnerTxType[] = ['payment', 'receipt', 'adjust'];
+
 /** Types that moved real money, and so must name the cash box that moved. */
 export const CASH_TYPES: PartnerTxType[] = ['receipt', 'payment'];
 
@@ -181,6 +193,9 @@ export type PartnerTxInput = z.infer<typeof partnerTxSchema>;
  */
 export async function addPartnerTx(input: PartnerTxInput, ctx: AuditContext) {
   if (!ctx.actorId) throw new PartnerError('unauthenticated');
+  if (!MANUAL_TX_TYPES.includes(input.type)) {
+    throw new PartnerError(input.type === 'charge' ? 'charge_via_cost' : 'offset_via_settlement');
+  }
   // A named cash box must speak the row's currency (the ledger rule).
   if (input.accountId) {
     const [account] = await db

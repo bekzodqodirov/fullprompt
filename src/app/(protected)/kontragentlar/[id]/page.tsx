@@ -205,6 +205,13 @@ export default async function PartnerCardPage({
                     {accountName && (
                       <span className="ml-1 text-xs text-ink-500">· {accountName}</span>
                     )}
+                    {tx.type === 'charge' && !tx.costEntryId && !tx.expenseId && !tx.voidedAt && (
+                      // Typed on this card before the kind left it (audit A31):
+                      // a debt with no cost behind it, so no P&L saw it.
+                      <p className="text-xs font-semibold text-warn" data-testid="partner-manual-charge">
+                        ⚠ {t('manualCharge')}
+                      </p>
+                    )}
                     {tx.note && <p className="text-xs text-ink-500">{tx.note}</p>}
                     {tx.voidedAt && (
                       <p className="text-xs font-semibold text-bad">

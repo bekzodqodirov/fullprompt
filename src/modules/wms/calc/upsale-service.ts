@@ -177,6 +177,17 @@ export async function upsaleRows(
   return { rows, truncated };
 }
 
+/**
+ * What one row adds to «earned»: the money actually handed over on a paid
+ * row, and what is still owed on an unpaid one — never the promise's whole
+ * difference. Since audit A18 a sale's paid row stays listed beside a later,
+ * higher re-offer of the same sale, and adding both promises would count the
+ * part already paid twice.
+ */
+export function earnedOf(row: UpsaleRow): number {
+  return row.state === 'paid' ? (row.paidUsd ?? 0) : row.payableUsd;
+}
+
 /** Per-seller totals for the scoreboard — ONE grouped pass over the rows. */
 export function bySeller(rows: UpsaleRow[]) {
   const out = new Map<
@@ -188,9 +199,9 @@ export function bySeller(rows: UpsaleRow[]) {
       out.get(r.sellerId) ??
       { sellerId: r.sellerId, sellerName: r.sellerName, jobs: 0, earnedUsd: 0, paidUsd: 0, waitingUsd: 0 };
     cur.jobs += 1;
-    cur.earnedUsd = money(cur.earnedUsd + r.upsaleUsd);
+    cur.earnedUsd = money(cur.earnedUsd + earnedOf(r));
     if (r.state === 'paid') cur.paidUsd = money(cur.paidUsd + (r.paidUsd ?? 0));
-    else cur.waitingUsd = money(cur.waitingUsd + r.upsaleUsd);
+    else cur.waitingUsd = money(cur.waitingUsd + r.payableUsd);
     out.set(r.sellerId, cur);
   }
   return [...out.values()].sort((a, b) => b.earnedUsd - a.earnedUsd);

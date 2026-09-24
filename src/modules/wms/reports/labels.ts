@@ -109,6 +109,12 @@ const DICT = {
     'zh-CN': '按客户成本',
     en: 'Landed cost by client',
   },
+  unconvertedCosts: {
+    ru: 'Расходы без курса — не вошли',
+    uz: 'Kursi yo‘q xarajatlar — kirmagan',
+    'zh-CN': '无汇率的费用——未计入',
+    en: 'Costs with no rate — not included',
+  },
   tStockAging: {
     ru: 'Остатки со сроком хранения',
     uz: 'Qoldiq va saqlash muddati',

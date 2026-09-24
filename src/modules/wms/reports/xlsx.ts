@@ -4,6 +4,7 @@ import {
   landedCostByClient,
   landedCostByLot,
   stockAging,
+  unconvertedCosts,
 } from './queries';
 import { reportLabels } from './labels';
 
@@ -27,6 +28,11 @@ export async function buildLandedCostXlsx(clientId?: string, locale?: string): P
   const L = reportLabels(locale);
   const workbook = new ExcelJS.Workbook();
   const stamp = new Date().toISOString().slice(0, 10);
+  // The screen's ⚠, in the file too: costs with no rate are in no row here.
+  const unconverted = await unconvertedCosts();
+  const gap = unconverted.length
+    ? `⚠ ${L.unconvertedCosts}: ${unconverted.map((row) => `${row.amount} ${row.currency}`).join(', ')}`
+    : null;
 
   if (clientId) {
     const lots = await landedCostByLot(clientId);
@@ -54,6 +60,7 @@ export async function buildLandedCostXlsx(clientId?: string, locale?: string): P
       '',
     ]);
     total.font = { bold: true };
+    if (gap) sheet.addRow([gap]).font = { bold: true };
   } else {
     const rows = await landedCostByClient();
     const sheet = sheetSetup(workbook, 'Landed cost', `${L.tLandedCostByClient} · ${stamp}`);
@@ -69,6 +76,7 @@ export async function buildLandedCostXlsx(clientId?: string, locale?: string): P
       Math.round(rows.reduce((a, r) => a + r.totalUsd, 0) * 100) / 100,
     ]);
     total.font = { bold: true };
+    if (gap) sheet.addRow([gap]).font = { bold: true };
   }
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }

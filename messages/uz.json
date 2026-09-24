@@ -256,7 +256,8 @@
     "taskHours": "soat",
     "taskUndated": "Muddatsiz: {n} ta — ular hech kimning «Mening kunim»iga tushmaydi.",
     "taskStalest": "Eng ko'p kechikkanlari",
-    "taskLateDays": "{n} kun"
+    "taskLateDays": "{n} kun",
+    "landedUnconverted": "Kursi kiritilmagan {count} ta xarajat bu hisobotga kirmagan: {sums}. Valyuta kursini kiriting — ular o‘zi qo‘shiladi."
   },
   "warehouses": {
     "title": "Skladlar",
@@ -1231,7 +1232,13 @@
     "reject": "Rad etish",
     "rejectReason": "Nega rad etyapsiz? Skladchi javobni ko'radi.",
     "fromRequest": "Sklad xabaridan to'ldirildi — tekshirib, kategoriya va kassani tanlang.",
-    "requestTaken": "Bu xabarni boshqa birov kiritib bo'ldi"
+    "requestTaken": "Bu xabarni boshqa birov kiritib bo'ldi",
+    "gapManualCharges": "Kontragentlarga qo‘lda yozilgan {count} ta qarz ({usd}) bu hisobotga kirmagan — ular xarajat sifatida yozilmagan.",
+    "gapManualChargesHint": "Agar shu xizmat alohida xarajat sifatida ham yozilgan bo‘lsa, hammasi joyida. Yozilmagan bo‘lsa: kontragent kartasida qarzni bekor qiling va xarajat formasida «Kim to‘ladi»ni tanlab qayta kiriting.",
+    "gapOpenPartners": "Kontragentlar →",
+    "gapUnconverted": "Kursi kiritilmagan {count} ta xarajat $0 deb hisoblangan: {sums}.",
+    "gapUnconvertedHint": "Shu valyutaning kursini kiriting — xarajatlar o‘zi qayta hisoblanadi.",
+    "expensesTruncated": "Eng yangi {shown} tasi ko‘rsatildi (jami {total}); «Jami» summa butun davr bo‘yicha."
   },
   "crm": {
     "title": "CRM",
@@ -2531,7 +2538,6 @@
       "adjust": "Tuzatish / kurs farqi"
     },
     "kindHints": {
-      "charge": "Mashina, rastamojka, arenda, oylik — biz olgan xizmat. Kassadan pul chiqmaydi.",
       "receipt": "U bizning hisobimizga pul tushirdi. Kassa ko‘payadi, unga qarzimiz oshadi.",
       "payment": "Biz unga kassadan to‘ladik. Kassa kamayadi, qarzimiz kamayadi.",
       "adjust": "Kurs farqi yoki qo‘lda tuzatish. Manfiy ham yozish mumkin."
@@ -2545,7 +2551,9 @@
     "rateGapHint": "Firma hisoblagan summa bilan mijoz yuborgan summa orasidagi farq (dollarda).",
     "proof": "Kvitansiya / skrinshot",
     "proofNote": "Izoh (fayl bo‘lmasa — majburiy)",
-    "proofRequired": "Fayl yoki izoh bo‘lishi shart"
+    "proofRequired": "Fayl yoki izoh bo‘lishi shart",
+    "chargeMoved": "Xizmat uchun qarz (mashina, rastamojka, ijara, oylik) endi xarajat formasida «Kim to‘ladi»ni tanlab yoziladi. Qarz shu yerga o‘zi tushadi va foyda hisobotiga ham kiradi.",
+    "manualCharge": "Xarajatga bog‘lanmagan — foyda hisobotida yo‘q"
   },
   "lists": {
     "allRecords": "Hammasi",
