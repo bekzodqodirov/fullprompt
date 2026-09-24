@@ -161,6 +161,18 @@ const DICT = {
     'zh-CN': '仓库支出报告——需要入账',
     en: 'Warehouse expense reported — needs entering',
   },
+  expenseRequestedStaff: {
+    ru: 'Расход сотрудника — нужно провести',
+    uz: 'Hodimdan rasxod xabari — kiritish kerak',
+    'zh-CN': '员工支出报告——需要入账',
+    en: 'Staff expense reported — needs entering',
+  },
+  expensePaidBySelf: {
+    ru: 'из своих денег',
+    uz: 'o‘z pulidan',
+    'zh-CN': '自己垫付',
+    en: 'out of own pocket',
+  },
   expenseEntered: {
     ru: 'Ваш расход проведён',
     uz: 'Rasxodingiz kiritildi',

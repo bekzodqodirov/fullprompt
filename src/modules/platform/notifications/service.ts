@@ -420,11 +420,14 @@ export function renderTelegramText(
         `\n\n${appUrl}/issue`
       );
     // Round 107: the rasxod xabari and its answer.
+    // 0101: a report from /profile names no warehouse — its heading says
+    // «from a colleague» instead of printing «— null» — and an own-pocket
+    // one says so, because it books a DEBT to the reporter, not cash.
     case 'ExpenseRequested':
       return (
-        `💸 ${L.expenseRequested} — ${payload.warehouseCode}\n` +
+        `💸 ${payload.warehouseCode ? `${L.expenseRequested} — ${payload.warehouseCode}` : L.expenseRequestedStaff}\n` +
         `${L.requestedByWord}: ${payload.requesterName}\n` +
-        `${payload.amount} ${payload.currency}\n` +
+        `${payload.amount} ${payload.currency}${payload.paidBySelf ? ` — 👤 ${L.expensePaidBySelf}` : ''}\n` +
         `${payload.note}\n\n${appUrl}/accounting/expenses`
       );
     case 'ExpenseRequestDecided':

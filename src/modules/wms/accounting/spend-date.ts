@@ -1,4 +1,4 @@
-import { dayIn } from '@/modules/platform/time/tashkent';
+import { dayIn, OFFICE_TZ } from '@/modules/platform/time/tashkent';
 
 /**
  * The day a warehouse spent the money it reported (audit A29), in THAT
@@ -17,7 +17,12 @@ import { dayIn } from '@/modules/platform/time/tashkent';
  * day an instant falls on»; an unknown zone name falls back to the UTC day
  * there rather than white-paging the expense book. The page and a unit test
  * both call it, and it stays free of server-only imports.
+ *
+ * A report filed from /profile names no warehouse (0101) — a seller's taxi,
+ * the VED's courier — and so no warehouse clock: those people work in the
+ * office, and the office's day is Tashkent's. Null, never a guess from
+ * somebody's other assignments.
  */
-export function spendDateOf(sentAt: Date, timeZone: string): string {
-  return dayIn(sentAt, timeZone);
+export function spendDateOf(sentAt: Date, timeZone: string | null): string {
+  return dayIn(sentAt, timeZone ?? OFFICE_TZ);
 }

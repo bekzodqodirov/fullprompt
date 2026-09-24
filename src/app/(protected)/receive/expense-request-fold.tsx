@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { compressPhoto, PhotoUnreadable } from '@/components/compress-photo';
 import { requestExpenseAction } from './actions';
+import { requestOwnExpenseAction } from '../profile/actions';
 
 /**
  * «💸 Rasxod xabari» — one folded line on the receive screen (round 107,
@@ -18,6 +19,13 @@ import { requestExpenseAction } from './actions';
  * rule — no form action, controlled state, verdict read first). The fold
  * also shows the operator's own recent reports, so «kiritildi» and «rad»
  * come back to the person who spent the money.
+ *
+ * Two doors, one fold (owner M1a): /receive, where the warehouse is the
+ * screen's own and required, and /profile, for the seller, the logist and
+ * the VED who spend money too and belong to no warehouse. «O'z pulimdan
+ * to'ladim» is said HERE and nowhere else — it is what turns the
+ * accountant's «Kiritish» into a debt to the reporter instead of cash out of
+ * a kassa.
  */
 export interface RecentExpenseRequest {
   id: string;
@@ -26,13 +34,22 @@ export interface RecentExpenseRequest {
   note: string;
   status: string;
   rejectReason: string | null;
+  paidBySelf?: boolean;
 }
 
 export function ExpenseRequestFold({
+  door,
   warehouses,
   currencies,
   recent,
 }: {
+  /**
+   * 'receive': the warehouse is required and the action authorises AT it.
+   * 'profile': no warehouse is an answer, the picker offers «none» first and
+   * the box starts ticked — somebody reporting from their profile is, nearly
+   * always, somebody who paid out of their own pocket.
+   */
+  door: 'receive' | 'profile';
   warehouses: { id: string; code: string }[];
   currencies: string[];
   recent: RecentExpenseRequest[];
@@ -41,7 +58,10 @@ export function ExpenseRequestFold({
   const tc = useTranslations('common');
   const router = useRouter();
   const [requestId, setRequestId] = useState(() => uuidv4());
-  const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? '');
+  const [warehouseId, setWarehouseId] = useState(
+    door === 'profile' ? '' : (warehouses[0]?.id ?? ''),
+  );
+  const [paidBySelf, setPaidBySelf] = useState(door === 'profile');
   const [amount, setAmount] = useState('');
   const [currency, setCurrency] = useState(currencies[0] ?? 'UZS');
   const [note, setNote] = useState('');
@@ -58,6 +78,7 @@ export function ExpenseRequestFold({
   // Literal map — the i18n tripwire cannot see a key built at runtime.
   const errors: Record<string, string> = {
     forbidden: t('errors.forbidden'),
+    unauthenticated: t('errors.forbidden'),
     validation: t('errors.validation'),
     warehouse_not_found: t('errors.validation'),
     failed: t('errors.failed'),
@@ -94,13 +115,18 @@ export function ExpenseRequestFold({
     setBusy(true);
     setError('');
     setSent(false);
-    const result = await requestExpenseAction({
+    const payload = {
       id: requestId,
-      warehouseId,
+      warehouseId: warehouseId || undefined,
+      paidBySelf,
       amount: Number(amount.replace(/\s/g, '').replace(',', '.')),
       currency,
       note,
-    });
+    };
+    const result =
+      door === 'profile'
+        ? await requestOwnExpenseAction(payload)
+        : await requestExpenseAction(payload);
     setBusy(false);
     if (!result.ok) {
       setError(errors[result.error ?? 'failed'] ?? result.error ?? '');
@@ -110,6 +136,7 @@ export function ExpenseRequestFold({
     setAmount('');
     setNote('');
     setPhotos(0);
+    setPaidBySelf(door === 'profile');
     // The next report is a NEW request — its photos must not join this one.
     setRequestId(uuidv4());
     router.refresh();
@@ -122,13 +149,15 @@ export function ExpenseRequestFold({
       </summary>
       <div className="space-y-2 p-3 pt-0 text-sm">
         <div className="flex flex-wrap gap-2">
-          {warehouses.length > 1 && (
+          {(door === 'profile' ? warehouses.length > 0 : warehouses.length > 1) && (
             <select
               className="input !w-auto"
               value={warehouseId}
               aria-label={t('warehouse')}
+              data-testid="rasxod-warehouse"
               onChange={(event) => setWarehouseId(event.target.value)}
             >
+              {door === 'profile' && <option value="">— {t('noWarehouse')} —</option>}
               {warehouses.map((wh) => (
                 <option key={wh.id} value={wh.id}>
                   {wh.code}
@@ -166,6 +195,18 @@ export function ExpenseRequestFold({
           placeholder={t('note')}
           onChange={(event) => setNote(event.target.value)}
         />
+        {/* A checkbox, never disabled (#171): unticked is a real answer —
+            the till's money, spent by a colleague. */}
+        <label className="flex min-h-10 items-center gap-2 font-semibold">
+          <input
+            type="checkbox"
+            className="h-5 w-5"
+            data-testid="rasxod-self"
+            checked={paidBySelf}
+            onChange={(event) => setPaidBySelf(event.target.checked)}
+          />
+          👤 {t('paidBySelf')}
+        </label>
         <div className="flex items-center gap-2">
           <label className="btn-secondary !min-h-10 cursor-pointer">
             📷 {t('photo')}
@@ -216,6 +257,7 @@ export function ExpenseRequestFold({
             {recent.map((row) => (
               <li key={row.id} className="[overflow-wrap:anywhere]">
                 {row.status === 'done' ? '✅' : row.status === 'rejected' ? '⛔' : '⏳'}{' '}
+                {row.paidBySelf ? '👤 ' : ''}
                 {Number(row.amount).toLocaleString('ru-RU')} {row.currency} — {row.note}
                 {row.status === 'rejected' && row.rejectReason ? ` (${row.rejectReason})` : ''}
               </li>

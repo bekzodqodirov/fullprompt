@@ -23,7 +23,8 @@ import { PageHeader } from '@/components/ui/page';
 import { LightboxImg } from '@/components/lightbox-img';
 import { openExpenseRequests } from '@/modules/wms/accounting/expense-requests';
 import { spendDateOf } from '@/modules/wms/accounting/spend-date';
-import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
+import { maySeeStaffMoney, staffPartnerOfUser } from '@/modules/wms/partners/staff';
+import { OpenStaffPartnerButton } from './open-staff-partner-button';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
@@ -97,6 +98,16 @@ export default async function ExpensesPage({
   const prefillRow = requestParam
     ? requests.find((row) => row.id === requestParam && row.status === 'open')
     : undefined;
+  // «O'z pulimdan to'ladim» (owner M1a): the payer is the REPORTER's staff
+  // account, looked up by the request row's own author — so «Kiritish» books a
+  // debt to them, and no kassa moves. The accountant may still switch the
+  // payer to a kassa; this is a default, not a lock. A retired account is not
+  // offered (the list is active-only) and is said so rather than silently
+  // dropped back to «we paid».
+  const reporterStaff = prefillRow?.paidBySelf
+    ? await staffPartnerOfUser(prefillRow.createdBy).catch(() => null)
+    : null;
+  const prefillPartnerId = reporterStaff?.active ? reporterStaff.id : undefined;
 
   return (
     <div className="mx-auto max-w-lg space-y-3 md:max-w-4xl">
@@ -113,13 +124,25 @@ export default async function ExpensesPage({
               className="flex flex-wrap items-center gap-2 border-b border-line py-1.5 text-sm last:border-0"
               data-testid="expense-request-row"
             >
-              <span className="font-mono text-xs text-ink-500">{request.warehouseCode}</span>
+              {/* A report from /profile names no warehouse (0101) — nothing
+                  printed rather than a dash that reads like a code. */}
+              {request.warehouseCode && (
+                <span className="font-mono text-xs text-ink-500">{request.warehouseCode}</span>
+              )}
               {/* When the money was spent, in the warehouse's clock — the
                   date «Kiritish» will file it under (audit A29). */}
               <span className="font-mono text-xs text-ink-500" data-testid="expense-request-date">
                 {spendDateOf(new Date(request.createdAt), request.warehouseTimezone)}
               </span>
               <span className="text-ink-700">{request.requesterName}</span>
+              {request.paidBySelf && (
+                <span
+                  className="rounded bg-warn/10 px-1.5 py-0.5 text-xs font-semibold"
+                  data-testid="expense-request-self"
+                >
+                  👤 {t('requestOwnPocket')}
+                </span>
+              )}
               <span className="font-mono font-bold">
                 {Number(request.amount).toLocaleString('ru-RU')} {request.currency}
               </span>
@@ -150,11 +173,22 @@ export default async function ExpensesPage({
         </div>
       )}
 
+      {prefillRow?.paidBySelf && !reporterStaff && (
+        <OpenStaffPartnerButton requestId={prefillRow.id} />
+      )}
+      {prefillRow?.paidBySelf && reporterStaff && !reporterStaff.active && (
+        <p className="rounded-lg bg-warn/10 p-2 text-xs font-semibold" data-testid="staff-partner-inactive">
+          ⚠ {t('staffPartnerInactive', { name: reporterStaff.name })}
+        </p>
+      )}
+
       {categories.length === 0 ? (
         <p className="card text-sm text-ink-700">{t('noCategories')}</p>
       ) : (
         <ExpenseForm
-          key={prefillRow?.id ?? 'plain'}
+          // The payer joins the key: minting the reporter's account re-renders
+          // the SAME request, and `useState` would keep the old «we paid».
+          key={prefillRow ? `${prefillRow.id}:${prefillPartnerId ?? ''}` : 'plain'}
           {...options}
           today={today}
           prefill={
@@ -165,6 +199,8 @@ export default async function ExpensesPage({
                   currency: prefillRow.currency,
                   note: prefillRow.note,
                   warehouseId: prefillRow.warehouseId,
+                  paidBySelf: prefillRow.paidBySelf,
+                  partnerId: prefillPartnerId,
                   expenseDate: spendDateOf(new Date(prefillRow.createdAt), prefillRow.warehouseTimezone),
                 }
               : undefined

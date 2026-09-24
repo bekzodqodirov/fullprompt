@@ -141,6 +141,7 @@ export default async function ReceivePage({
       <h1 className="mb-3 text-xl font-bold">{t('title')}</h1>
       {recentRequests !== null && (
         <ExpenseRequestFold
+          door="receive"
           warehouses={whs.map((wh) => ({ id: wh.id, code: wh.code }))}
           currencies={currencyRows.map((c) => c.code)}
           recent={recentRequests.map((row) => ({
@@ -150,6 +151,7 @@ export default async function ReceivePage({
             note: row.note,
             status: row.status,
             rejectReason: row.rejectReason,
+            paidBySelf: row.paidBySelf,
           }))}
         />
       )}

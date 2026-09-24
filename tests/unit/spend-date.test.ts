@@ -22,4 +22,10 @@ describe('spendDateOf', () => {
   it('an unknown zone falls back to the UTC day rather than failing the page', () => {
     expect(spendDateOf(new Date('2026-08-31T18:10:00Z'), 'Mars/Olympus')).toBe('2026-08-31');
   });
+
+  it('a report with no warehouse (filed from /profile) takes the office day, Tashkent', () => {
+    // 2026-08-31 19:30Z = 2026-09-01 00:30 in Tashkent: September, where the
+    // UTC day would still say August.
+    expect(spendDateOf(new Date('2026-08-31T19:30:00Z'), null)).toBe('2026-09-01');
+  });
 });

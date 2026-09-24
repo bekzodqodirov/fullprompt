@@ -506,7 +506,19 @@
     "callRecApp": "下载应用（安卓）",
     "telegramReconnect": "重新连接",
     "telegramReconnectHint": "更换了手机或 Telegram 账号？用新账号打开机器人，通知将发送到那里。在新账号连接之前，旧会话仍然有效。",
-    "notifMuteCalls": "早间来电清单"
+    "notifMuteCalls": "早间来电清单",
+    "rasxodHint": "为工作花了钱——告知财务，并附上小票照片。",
+    "staffAccountTitle": "我与公司的往来",
+    "staffOwes": "公司欠您：{amount}",
+    "staffAdvance": "您的预支余额：{amount}",
+    "staffSettled": "往来已结清",
+    "staffKindCharge": "您垫付的支出",
+    "staffKindPayment": "已发预支",
+    "staffKindReceipt": "您已退回",
+    "staffKindAdjust": "调整",
+    "staffKindOffset": "抵销",
+    "staffPendingTitle": "尚未入账",
+    "staffPendingHint": "这还不是公司的欠款——财务入账后才会计入。"
   },
   "receive": {
     "title": "收货",
@@ -1316,7 +1328,13 @@
     "queueErrDays": "日期相差超过 14 天。",
     "queueErrRate": "该费用币种未录入汇率。",
     "queueErrNotStaff": "所选往来单位不是员工账户。",
-    "queueErrForbidden": "此操作仅限会计或管理员。"
+    "queueErrForbidden": "此操作仅限会计或管理员。",
+    "requestOwnPocket": "自己垫付",
+    "fromRequestSelf": "员工自己垫付——付款方为其员工账户：入账后公司欠该员工。可改为现金账户。",
+    "staffPartnerMissing": "该员工还没有账户——开立后才能记录欠他的款项。",
+    "staffPartnerOpen": "开立员工账户",
+    "staffPartnerLinkedElsewhere": "该登录已关联到其他合作方——请在“合作方”中检查。",
+    "staffPartnerInactive": "员工账户“{name}”已停用——请启用或选择现金账户。"
   },
   "crm": {
     "title": "CRM",
@@ -2789,7 +2807,9 @@
       "forbidden": "没有该仓库的权限",
       "validation": "请检查金额和说明",
       "failed": "发送失败"
-    }
+    },
+    "noWarehouse": "不属于仓库",
+    "paidBySelf": "我自己垫付的"
   },
   "adminHome": {
     "money": "资金",

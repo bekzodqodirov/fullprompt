@@ -506,7 +506,19 @@
     "callRecApp": "Download the app (Android)",
     "telegramReconnect": "Reconnect",
     "telegramReconnectHint": "Changed phone or Telegram account? Open the bot from the new one — notifications go there. The old chat keeps working until the new one takes over.",
-    "notifMuteCalls": "Morning call list"
+    "notifMuteCalls": "Morning call list",
+    "rasxodHint": "Spent money for work? Tell finance, and attach a photo of the receipt.",
+    "staffAccountTitle": "My account with the company",
+    "staffOwes": "The company owes you: {amount}",
+    "staffAdvance": "Advance still with you: {amount}",
+    "staffSettled": "All settled",
+    "staffKindCharge": "Expense you paid",
+    "staffKindPayment": "Advance given",
+    "staffKindReceipt": "You returned",
+    "staffKindAdjust": "Correction",
+    "staffKindOffset": "Offset",
+    "staffPendingTitle": "Not confirmed yet",
+    "staffPendingHint": "Not yet a debt of the company — it counts once finance enters it."
   },
   "receive": {
     "title": "Receiving",
@@ -1316,7 +1328,13 @@
     "queueErrDays": "More than 14 days between the dates.",
     "queueErrRate": "The cost's currency has no exchange rate.",
     "queueErrNotStaff": "The chosen counterparty is not a staff account.",
-    "queueErrForbidden": "This is the accountant's or an admin's action."
+    "queueErrForbidden": "This is the accountant's or an admin's action.",
+    "requestOwnPocket": "own pocket",
+    "fromRequestSelf": "The employee paid out of pocket — the payer is their staff account: once entered, the company owes them. You can switch it to a till.",
+    "staffPartnerMissing": "This employee has no account yet — open one to record what we owe them.",
+    "staffPartnerOpen": "Open staff account",
+    "staffPartnerLinkedElsewhere": "This login is already linked to another counterparty — check it under Counterparties.",
+    "staffPartnerInactive": "Staff account “{name}” is retired — reactivate it or pick a till."
   },
   "crm": {
     "title": "CRM",
@@ -2789,7 +2807,9 @@
       "forbidden": "No rights for this warehouse",
       "validation": "Check the amount and the note",
       "failed": "Could not send"
-    }
+    },
+    "noWarehouse": "no warehouse",
+    "paidBySelf": "I paid out of my own pocket"
   },
   "adminHome": {
     "money": "Money",

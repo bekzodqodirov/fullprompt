@@ -506,7 +506,19 @@
     "callRecApp": "Ilovani yuklab olish (Android)",
     "telegramReconnect": "Qayta ulash",
     "telegramReconnectHint": "Telefon yoki Telegram akkaunt o‘zgardimi? Botni yangisidan oching — xabarnomalar o‘sha yerga keladi. Yangisi ulanmaguncha eski chat ishlab turaveradi.",
-    "notifMuteCalls": "Ertalabki qo‘ng‘iroqlar ro‘yxati"
+    "notifMuteCalls": "Ertalabki qo‘ng‘iroqlar ro‘yxati",
+    "rasxodHint": "Ish uchun pul sarfladingizmi — moliyaga xabar bering, chekni rasmga olib qo‘shing.",
+    "staffAccountTitle": "Kompaniya bilan hisob-kitobim",
+    "staffOwes": "Kompaniya sizga qarz: {amount}",
+    "staffAdvance": "Sizda avans qoldig‘i: {amount}",
+    "staffSettled": "Hisob-kitob yopilgan",
+    "staffKindCharge": "Siz to‘lagan xarajat",
+    "staffKindPayment": "Avans berildi",
+    "staffKindReceipt": "Qaytardingiz",
+    "staffKindAdjust": "Tuzatish",
+    "staffKindOffset": "Hisob-kitob",
+    "staffPendingTitle": "Hali tasdiqlanmagan",
+    "staffPendingHint": "Bu hali kompaniyaning qarzi emas — moliya kiritgach hisobga tushadi."
   },
   "receive": {
     "title": "Qabul",
@@ -1316,7 +1328,13 @@
     "queueErrDays": "Sanalar orasida 14 kundan ko‘p farq bor.",
     "queueErrRate": "Xarajat valyutasining kursi kiritilmagan.",
     "queueErrNotStaff": "Tanlangan kontragent hodim emas.",
-    "queueErrForbidden": "Bu amal buxgalter yoki adminniki."
+    "queueErrForbidden": "Bu amal buxgalter yoki adminniki.",
+    "requestOwnPocket": "o‘z pulidan",
+    "fromRequestSelf": "Hodim o‘z pulidan to‘lagan — to‘lovchi uning hodim hisobi: kiritilgach kompaniya unga qarz bo‘ladi. Kassaga almashtirish mumkin.",
+    "staffPartnerMissing": "Hodimning hali hisobi yo‘q — unga qarzni yozish uchun oching.",
+    "staffPartnerOpen": "Hodim kontragentini ochish",
+    "staffPartnerLinkedElsewhere": "Bu login boshqa kontragentga bog‘langan — «Kontragentlar»da tekshiring.",
+    "staffPartnerInactive": "«{name}» hodim hisobi o‘chirilgan — yoqing yoki kassani tanlang."
   },
   "crm": {
     "title": "CRM",
@@ -2789,7 +2807,9 @@
       "forbidden": "Bu skladga huquq yo'q",
       "validation": "Summa va izohni tekshiring",
       "failed": "Yuborib bo'lmadi"
-    }
+    },
+    "noWarehouse": "skladsiz",
+    "paidBySelf": "O‘z pulimdan to‘ladim"
   },
   "adminHome": {
     "money": "Pul",

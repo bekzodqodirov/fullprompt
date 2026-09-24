@@ -26,11 +26,13 @@ import { checkbox } from '@/modules/platform/forms/checkbox';
 import {
   claimExpenseRequest,
   ExpenseRequestError,
+  expenseRequestReporter,
   finishExpenseRequest,
   rejectExpenseRequest,
   releaseExpenseRequest,
 } from '@/modules/wms/accounting/expense-requests';
 import { enqueue, JOB_PROCESS_EVENTS } from '@/modules/platform/jobs/boss';
+import { openStaffPartner, StaffAccountError } from '@/modules/wms/partners/staff-account';
 
 export interface AccountingFormState {
   ok?: boolean;
@@ -108,6 +110,31 @@ export async function addExpenseAction(
     }
     await finishExpenseRequest(requestId, expenseId, ctx);
     await enqueue(JOB_PROCESS_EVENTS, {}).catch(() => {});
+  });
+}
+
+/**
+ * «Hodim kontragentini ochish» (owner M1a): an own-pocket report whose
+ * reporter has no staff account yet. Gated like every other door on this
+ * screen — `finance.expenses`, the accountant and the admin (M2a/M3a), never
+ * `finance.manage`, which the VED holds. The login comes from the REQUEST
+ * row, never from the post; the page then re-renders the same `?request=`
+ * with the new account pre-selected as the payer.
+ */
+export async function openStaffPartnerAction(requestId: string): Promise<AccountingFormState> {
+  if (!/^[0-9a-f-]{36}$/i.test(requestId)) return { error: 'validation' };
+  return run('finance.expenses', async (ctx) => {
+    const request = await expenseRequestReporter(requestId);
+    if (!request) throw new ExpenseRequestError('not_found');
+    // Only a report that says «o'z pulimdan»: an account minted off a till-
+    // paid report would invite the accountant to book a debt nobody is owed.
+    if (!request.paidBySelf) throw new ExpenseRequestError('not_own_pocket');
+    try {
+      await openStaffPartner(request.createdBy, ctx);
+    } catch (err) {
+      if (err instanceof StaffAccountError) throw new ExpenseRequestError(err.code);
+      throw err;
+    }
   });
 }
 
