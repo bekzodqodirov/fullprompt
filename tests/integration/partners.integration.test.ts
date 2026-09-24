@@ -959,7 +959,7 @@ describe('the pair rule holds in BOTH directions', () => {
     expect(live).toHaveLength(0);
   });
 
-  it('re-pricing the cost re-prices the derived charge — the debt follows its cost', async () => {
+  it('an FX correction re-prices neither the cost nor its debt — both keep the rate of their day (R1)', async () => {
     const partnerId = await newPartner('Kurs drift');
     const [type] = await db.select().from(costTypes).where(eq(costTypes.active, true)).limit(1);
     const [batch] = await db
@@ -992,12 +992,33 @@ describe('the pair rule holds in BOTH directions', () => {
     madeCosts.push(entry.id);
     expect(await partnerBalanceUsd(partnerId)).toBe(25);
 
-    // The rate was typed wrong and corrected. The P&L follows the recompute;
-    // the firm's account must not go on holding yesterday's number.
+    // The rate is corrected afterwards. The owner's rule (R1): a cost keeps
+    // the rate of the day it was paid, and so does the debt it made — the
+    // firm's payment was frozen at entry, so a re-priced charge would leave a
+    // fully paid firm holding a balance (audit A0).
     await upsertFxRate({ currency: DRIFT_CCY, rateToUsd: 0.5, effectiveDate: '2020-01-01' }, ctx());
     await recomputeAll({ currency: DRIFT_CCY });
     const [cost] = await db.select().from(costEntries).where(eq(costEntries.id, entry.id));
-    expect(cost!.amountUsd).toBe('50.00');
-    expect(await partnerBalanceUsd(partnerId)).toBe(50);
+    expect(cost!.amountUsd).toBe('25.00');
+    expect(await partnerBalanceUsd(partnerId)).toBe(25);
+
+    // A cost entered AFTER the correction is converted at the new rate.
+    const later = await addCostEntry(
+      {
+        scope: 'batch',
+        batchId: batch!.id,
+        costTypeId: type!.id,
+        amount: 100,
+        currency: DRIFT_CCY,
+        costDate: new Date().toISOString().slice(0, 10),
+        allocationBasis: 'weight',
+        partnerId,
+      },
+      ctx(),
+    );
+    madeCosts.push(later.id);
+    const [fresh] = await db.select().from(costEntries).where(eq(costEntries.id, later.id));
+    expect(fresh!.amountUsd).toBe('50.00');
+    expect(await partnerBalanceUsd(partnerId)).toBe(75);
   });
 });

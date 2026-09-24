@@ -64,6 +64,7 @@ export async function upsertFxRate(input: z.infer<typeof fxRateSchema>, ctx: Aud
 
 /**
  * Rate in force on a date: the latest rate with effective_date ≤ costDate;
+ * read ONCE per cost entry — its first conversion is frozen (R1);
  * falls back to the earliest known rate (better than nothing for entries
  * dated before the first rate). USD is always 1. Null = currency has no
  * rates at all — the entry stays unconverted and reports flag it.
@@ -358,12 +359,31 @@ export async function recomputeEntry(costEntryId: string): Promise<void> {
     return;
   }
 
-  const rate = await rateFor(entry.currency, entry.costDate);
-  const amountUsd = rate !== null ? toUsd(Number(entry.amount), rate) : null;
-  await db
-    .update(costEntries)
-    .set({ amountUsd: amountUsd !== null ? String(amountUsd) : null, fxRateUsed: rate !== null ? String(rate) : null })
-    .where(eq(costEntries.id, costEntryId));
+  // The dollar figure is FROZEN at the first conversion (owner, R1: «to'langan
+  // paytdagi kurs bo'yicha hisoblansin»). A cost is money that left at the
+  // rate of its day; a rate typed or corrected on /admin/fx later must not
+  // move a past month's P&L, and must not move the firm's derived charge
+  // while the payment that settled it stays where it was (audit A0 — a fully
+  // paid firm read −$111 after one FX save). Only a row with no dollars yet
+  // is converted; every later recompute re-SPLITS the frozen figure over its
+  // boxes (a base change still moves the shares, never their sum).
+  //
+  // Stated, not solved: an entry dated before the currency's FIRST rate was
+  // converted at the earliest rate on file (`rateFor`'s fallback) and is
+  // frozen at that guess too; correcting it is void and re-enter, like every
+  // other ledger row.
+  const frozen = entry.amountUsd !== null && entry.fxRateUsed !== null;
+  let amountUsd: number | null;
+  if (frozen) {
+    amountUsd = Number(entry.amountUsd);
+  } else {
+    const rate = await rateFor(entry.currency, entry.costDate);
+    amountUsd = rate !== null ? toUsd(Number(entry.amount), rate) : null;
+    await db
+      .update(costEntries)
+      .set({ amountUsd: amountUsd !== null ? String(amountUsd) : null, fxRateUsed: rate !== null ? String(rate) : null })
+      .where(eq(costEntries.id, costEntryId));
+  }
 
   await db.delete(costAllocations).where(eq(costAllocations.costEntryId, costEntryId));
   if (amountUsd === null) return; // unconverted — reports flag it
@@ -397,7 +417,7 @@ export async function recomputeEntry(costEntryId: string): Promise<void> {
   // The debt this cost owes its payer, posted the moment a dollar figure
   // exists. Rows entered before the entry-time refusal above shipped — and
   // any row whose rate arrived later — are repaired by the /admin/fx
-  // recompute, which is the only thing that ever revisits them.
+  // recompute and the nightly unconverted sweep, which convert them once.
   // `chargeForCost` is idempotent per cost, so a re-run costs nothing.
   if (entry.partnerId) {
     try {

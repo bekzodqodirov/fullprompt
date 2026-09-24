@@ -44,7 +44,7 @@ export async function saveFxRateAction(
   const meta = await requestMeta();
   // A rate a fifth away from the currency's own last one is asked about, and
   // saved only once the person has said yes (audit A1). Asked here and not
-  // only in the browser: a rate re-prices every cost in its currency.
+  // only in the browser: the rate prices every new cost in its currency.
   const [standing] = await db
     .select({ rateToUsd: fxRates.rateToUsd })
     .from(fxRates)
@@ -57,8 +57,10 @@ export async function saveFxRateAction(
   }
 
   await upsertFxRate(parsed.data, { actorId: actor.id, ...meta });
-  // Rate edits move every allocation in that currency (spec 6.9).
-  await enqueue(JOB_RECOMPUTE_COSTS, { currency: parsed.data.currency });
+  // A rate converts the costs that were WAITING for it and nothing else: a
+  // cost already converted keeps the rate of the day it was paid (owner, R1 —
+  // this used to re-price every cost in the currency, spec 6.9's old rule).
+  await enqueue(JOB_RECOMPUTE_COSTS, { currency: parsed.data.currency, unconverted: true });
   revalidatePath('/admin/fx');
   return { ok: true };
 }

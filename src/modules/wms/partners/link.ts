@@ -38,37 +38,12 @@ export async function chargeForCost(costEntryId: string, ctx: AuditContext): Pro
       ),
     )
     .limit(1);
-  if (existing) {
-    // The recompute that brought us here may have RE-PRICED the cost — an FX
-    // rate arriving or being corrected re-runs every entry in that currency —
-    // and a charge left at the old number lets the two facts drift: the P&L
-    // reads the new cost while the firm gets settled for the old one. The
-    // debt follows its cost, always, or the pair rule is only half a rule.
-    const drifted =
-      existing.amount !== entry.amount ||
-      existing.amountUsd !== entry.amountUsd ||
-      existing.rateToUsd !== entry.fxRateUsed ||
-      existing.currency !== entry.currency;
-    if (drifted) {
-      await db
-        .update(partnerTransactions)
-        .set({
-          amount: entry.amount,
-          currency: entry.currency,
-          rateToUsd: entry.fxRateUsed,
-          amountUsd: entry.amountUsd,
-        })
-        .where(eq(partnerTransactions.id, existing.id));
-      await writeAudit(db, ctx, {
-        entityType: 'partner_transaction',
-        entityId: existing.id,
-        action: 'update',
-        before: { amount: existing.amount, currency: existing.currency, amountUsd: existing.amountUsd },
-        after: { amount: entry.amount, currency: entry.currency, amountUsd: entry.amountUsd, from: 'cost_entry_reprice' },
-      });
-    }
-    return;
-  }
+  // One charge per cost, frozen at birth like every other ledger row (R1).
+  // This used to follow a re-priced cost, which re-priced the DEBT while the
+  // payment that settled it stayed put — a fully paid firm then read a
+  // balance (audit A0). The cost itself no longer moves once converted, so
+  // there is nothing to follow; a mistyped cost is void and re-enter.
+  if (existing) return;
 
   const [row] = await db
     .insert(partnerTransactions)

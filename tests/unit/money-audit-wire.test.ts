@@ -39,6 +39,17 @@ describe('audit 2026-09-24 — the doors', () => {
     expect(form).toContain('defaultValue={prefill?.expenseDate ?? today}');
   });
 
+  it('R1: a saved rate converts only the costs waiting for it — never a converted one', () => {
+    const action = read('src/app/(protected)/admin/fx/actions.ts');
+    expect(action).toContain('enqueue(JOB_RECOMPUTE_COSTS, { currency: parsed.data.currency, unconverted: true })');
+    const engine = read('src/modules/wms/costing/service.ts');
+    expect(engine).toContain('const frozen = entry.amountUsd !== null && entry.fxRateUsed !== null;');
+    // The derived debt is frozen at birth with its cost (audit A0).
+    const link = read('src/modules/wms/partners/link.ts');
+    expect(link).toContain('if (existing) return;');
+    expect(link).not.toContain('cost_entry_reprice');
+  });
+
   it('A1: the rate door asks before a jump, and the form makes the currency a choice', () => {
     const action = read('src/app/(protected)/admin/fx/actions.ts');
     expect(action).toMatch(/formData\.get\('confirmJump'\) !== '1' && isRateJump\(previous, quoted\)/);
