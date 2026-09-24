@@ -16,7 +16,7 @@ import { resolvePeriod } from '@/modules/wms/accounting/period';
 import { listPartners } from '@/modules/wms/partners/service';
 import { PeriodForm } from '../period-form';
 import { ExpenseForm } from './expense-form';
-import { GenerateRecurringButton, RecurringForm } from './recurring-form';
+import { GenerateRecurringButton, RecurringForm, RecurringRowEdit } from './recurring-form';
 import { VoidExpenseButton } from './void-expense-button';
 import { RejectRequestButton } from './reject-request-button';
 import { PageHeader } from '@/components/ui/page';
@@ -169,7 +169,7 @@ export default async function ExpensesPage({
       <Panel title={`🔁 ${t('recurring')}`} badge={recurring.length || undefined}>
         <GenerateRecurringButton month={today.slice(0, 7)} />
         <div className="space-y-1">
-          {recurring.map(({ recurring: template, categoryName, employeeName }) => (
+          {recurring.map(({ recurring: template, categoryName, employeeName, partnerName }) => (
             <div
               key={template.id}
               className={`flex flex-wrap items-baseline gap-2 border-b border-line py-1.5 text-sm last:border-0 ${
@@ -184,6 +184,17 @@ export default async function ExpensesPage({
               <span className="text-xs text-ink-500">
                 {t('dayOfMonth')}: {template.dayOfMonth}
               </span>
+              {partnerName && (
+                <span className="w-full text-xs text-ink-700">
+                  {t('paidBy')}: {partnerName}
+                </span>
+              )}
+              <RecurringRowEdit
+                id={template.id}
+                amount={template.amount}
+                dayOfMonth={template.dayOfMonth}
+                active={template.active}
+              />
             </div>
           ))}
           {recurring.length === 0 && <p className="text-sm text-ink-500">{tc('empty')}</p>}

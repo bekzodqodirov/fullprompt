@@ -1248,7 +1248,9 @@
     "expensesTruncated": "Showing the newest {shown} of {total}; the total covers the whole period.",
     "balUnplaced": "Payments not in a cash box",
     "futureDated": "{count} entries are dated after today ({usd}). Other screens count them as debt now, this report does not — correct their date.",
-    "transferAmountMismatch": "Between two cash boxes of one currency, the amount out must equal the amount in."
+    "transferAmountMismatch": "Between two cash boxes of one currency, the amount out must equal the amount in.",
+    "recurringEdit": "Amount, day or stop",
+    "recurringActive": "Active — posted every month"
   },
   "crm": {
     "title": "CRM",

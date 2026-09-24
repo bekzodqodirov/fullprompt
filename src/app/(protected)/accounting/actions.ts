@@ -1,6 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { z } from 'zod';
 import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
 import { requestMeta } from '@/modules/platform/auth/session';
 import {
@@ -11,11 +12,13 @@ import {
   categorySchema,
   expenseSchema,
   generateRecurring,
+  recurringPatchSchema,
   recurringSchema,
   saveAccount,
   saveCategory,
   saveRecurring,
   transferSchema,
+  updateRecurring,
   voidExpense,
   voidTransfer,
 } from '@/modules/wms/accounting/service';
@@ -167,12 +170,31 @@ export async function saveRecurringAction(
     warehouseId: String(formData.get('warehouseId') ?? ''),
     employeeId: String(formData.get('employeeId') ?? ''),
     accountId: String(formData.get('accountId') ?? ''),
+    // Who pays it, when a firm does (audit A36) — the schema always took it
+    // and the service dropped it.
+    partnerId: String(formData.get('partnerId') ?? ''),
     note: String(formData.get('note') ?? ''),
     active: checkbox(formData, 'active'),
   });
   if (!parsed.success) return { error: 'validation' };
   const id = String(formData.get('id') ?? '') || undefined;
   return run('finance.expenses', (ctx) => saveRecurring({ ...parsed.data, id }, ctx));
+}
+
+/** A template's amount, day or stop — `updateRecurring` (audit A32). */
+export async function updateRecurringAction(
+  _prev: AccountingFormState,
+  formData: FormData,
+): Promise<AccountingFormState> {
+  const id = z.string().uuid().safeParse(formData.get('id'));
+  const parsed = recurringPatchSchema.safeParse({
+    amount: num(formData.get('amount')),
+    dayOfMonth: num(formData.get('dayOfMonth')),
+    // Paired with a hidden 'off' (#171): an unticked box posts nothing.
+    active: checkbox(formData, 'active', false),
+  });
+  if (!id.success || !parsed.success) return { error: 'validation' };
+  return run('finance.expenses', (ctx) => updateRecurring(id.data, parsed.data, ctx));
 }
 
 export async function generateRecurringAction(

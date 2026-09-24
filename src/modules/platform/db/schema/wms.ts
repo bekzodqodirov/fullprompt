@@ -962,6 +962,12 @@ export const expenses = pgTable(
      */
     partnerId: uuid('partner_id').references(() => partners.id),
     note: text('note'),
+    /**
+     * The template that posted it (0099, audit A32/A33). «Posted this month»
+     * is a row of THIS template on that date, voided or not — never a slot any
+     * one-off on the same day could fill.
+     */
+    recurringId: uuid('recurring_id').references((): AnyPgColumn => recurringExpenses.id),
     createdBy: uuid('created_by')
       .notNull()
       .references(() => users.id),
@@ -975,6 +981,9 @@ export const expenses = pgTable(
     index('expenses_date_idx').on(t.expenseDate),
     index('expenses_category_idx').on(t.categoryId, t.expenseDate),
     index('expenses_account_idx').on(t.accountId, t.expenseDate),
+    index('expenses_recurring_idx')
+      .on(t.recurringId, t.expenseDate)
+      .where(sql`${t.recurringId} IS NOT NULL`),
   ],
 );
 
@@ -1052,6 +1061,8 @@ export const recurringExpenses = pgTable(
     warehouseId: uuid('warehouse_id').references(() => warehouses.id),
     employeeId: uuid('employee_id').references(() => users.id),
     accountId: uuid('account_id').references(() => moneyAccounts.id),
+    /** Paid through a firm (0099, audit A36) — the posting raises its debt. */
+    partnerId: uuid('partner_id').references(() => partners.id),
     note: text('note'),
     active: boolean('active').notNull().default(true),
     createdBy: uuid('created_by')

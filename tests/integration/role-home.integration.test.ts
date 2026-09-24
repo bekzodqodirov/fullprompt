@@ -271,7 +271,7 @@ describe('the accountant home', () => {
     expect((await moneyFlowCounts(TODAY)).unassignedPayments).toBe(before.unassignedPayments);
   });
 
-  it('a recurring template is due only until its month is posted', async () => {
+  it('a recurring template is due only until IT is posted for the month', async () => {
     const before = await moneyFlowCounts(TODAY);
 
     const [category] = await db
@@ -290,31 +290,38 @@ describe('the accountant home', () => {
       .returning({ id: recurringExpenses.id, dayOfMonth: recurringExpenses.dayOfMonth });
     expect((await moneyFlowCounts(TODAY)).recurringDue).toBe(before.recurringDue + 1);
 
-    // The posted expense — same category, same slot date, no employee —
-    // is exactly generateRecurring's own idempotence predicate.
+    // A one-off on the same slot — same category, same day, no employee — is
+    // NOT this template's posting (0099, audit A33): it used to satisfy the
+    // month and the real rent never posted.
     const slotDate = `${TODAY.slice(0, 7)}-05`;
+    const row = {
+      categoryId: category!.id,
+      amount: '700',
+      currency: 'USD',
+      rateToUsd: '1',
+      amountUsd: '700',
+      expenseDate: slotDate,
+      createdBy: managerId,
+    };
+    const [oneOff] = await db.insert(expenses).values(row).returning({ id: expenses.id });
+    expect((await moneyFlowCounts(TODAY)).recurringDue).toBe(before.recurringDue + 1);
+
+    // The template's own posting is — generateRecurring's own predicate.
     const [posted] = await db
       .insert(expenses)
-      .values({
-        categoryId: category!.id,
-        amount: '700',
-        currency: 'USD',
-        rateToUsd: '1',
-        amountUsd: '700',
-        expenseDate: slotDate,
-        createdBy: managerId,
-      })
+      .values({ ...row, recurringId: template!.id })
       .returning({ id: expenses.id });
     expect((await moneyFlowCounts(TODAY)).recurringDue).toBe(before.recurringDue);
 
-    // A VOIDED posting does not satisfy the month — the template is due again.
+    // A VOIDED posting still answers the month: voiding means «not this
+    // month», never «post it again» (A32).
     await db
       .update(expenses)
       .set({ voidedAt: new Date(), voidedBy: managerId, voidReason: 'sinov' })
       .where(eq(expenses.id, posted!.id));
-    expect((await moneyFlowCounts(TODAY)).recurringDue).toBe(before.recurringDue + 1);
+    expect((await moneyFlowCounts(TODAY)).recurringDue).toBe(before.recurringDue);
 
-    await db.delete(expenses).where(eq(expenses.id, posted!.id));
+    await db.delete(expenses).where(inArray(expenses.id, [posted!.id, oneOff!.id]));
     await db.delete(recurringExpenses).where(eq(recurringExpenses.id, template!.id));
     await db.delete(expenseCategories).where(and(eq(expenseCategories.id, category!.id)));
   });

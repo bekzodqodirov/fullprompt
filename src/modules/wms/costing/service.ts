@@ -410,6 +410,55 @@ export async function recomputeAll(filter?: {
   return rows.length;
 }
 
+/**
+ * Re-split every live cost that shares money over one lot's boxes (audit
+ * A22) — after its kg, m³ or box count was corrected.
+ *
+ * `recomputeAll({ receiptId })` reached only the receipt's OWN costs. The
+ * truck's freight (batch scope, no receipt id) and a crate's fee were split
+ * over the old measures and nothing ever split them again: the depart job
+ * runs once, and a USD entry is never touched by an FX save. So a 10 → 20 m³
+ * fix on a departed lot left hundreds of dollars of freight on the wrong
+ * client in every report that reads allocations — while the lot's row showed
+ * the corrected kg beside the stale dollars.
+ *
+ * Membership is read from the ledger that defines it (#440): an entry with a
+ * share on any of the lot's boxes, the lot's receipt's own costs, and the
+ * batch and crate entries of every truck and crate the lot's boxes were ever
+ * loaded into — a box that got no share because its old weight was zero is
+ * still on that truck.
+ */
+export async function recomputeForLot(lotId: string): Promise<number> {
+  const rows = await db.execute<{ id: string }>(sql`
+    SELECT DISTINCT ce.id
+      FROM cost_entries ce
+     WHERE ce.voided_at IS NULL
+       AND (
+         ce.receipt_id = (SELECT rl.receipt_id FROM receipt_lots rl WHERE rl.id = ${lotId})
+         OR ce.id IN (
+           SELECT ca.cost_entry_id
+             FROM cost_allocations ca
+             JOIN boxes b ON b.id = ca.box_id
+            WHERE b.lot_id = ${lotId}
+         )
+         OR (ce.scope = 'batch' AND ce.batch_id IN (
+           SELECT bm.ref_id
+             FROM box_movements bm
+             JOIN boxes b ON b.id = bm.box_id
+            WHERE b.lot_id = ${lotId} AND bm.cause = 'batch_departed' AND bm.ref_type = 'batch'
+         ))
+         OR (ce.scope = 'crate' AND ce.crate_id IN (
+           SELECT bm.ref_id
+             FROM box_movements bm
+             JOIN boxes b ON b.id = bm.box_id
+            WHERE b.lot_id = ${lotId} AND bm.cause = 'crate_packed' AND bm.ref_type = 'crate'
+         ))
+       )
+  `);
+  for (const row of rows) await recomputeEntry(row.id);
+  return rows.length;
+}
+
 // ---------------------------------------------------------------------------
 // Read models
 // ---------------------------------------------------------------------------

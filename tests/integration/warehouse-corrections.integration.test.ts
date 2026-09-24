@@ -7,6 +7,9 @@ import {
   boxes,
   boxMovements,
   clients,
+  costAllocations,
+  costEntries,
+  costTypes,
   crates,
   events,
   notifications,
@@ -19,6 +22,7 @@ import { removeLoadedCode } from '@/modules/wms/scanning/service';
 import { finishUnload } from '@/modules/wms/scanning/unload';
 import { acceptFoundBox, reconcileInventory } from '@/modules/wms/inventory/service';
 import { editLot } from '@/modules/wms/receipts/edit';
+import { addCostEntry } from '@/modules/wms/costing/service';
 import { markBoxLost } from '@/modules/wms/receipts/service';
 import { usersWithPermission } from '@/modules/platform/notifications/service';
 import type { Actor } from '@/modules/platform/rbac/authorize';
@@ -42,6 +46,7 @@ const madeReceipts: string[] = [];
 const madeBatches: string[] = [];
 const madeCrates: string[] = [];
 const madeWarehouses: string[] = [];
+const madeCosts: string[] = [];
 
 async function mintWarehouse(code: string, type: string) {
   const [row] = await db
@@ -159,6 +164,8 @@ beforeAll(async () => {
 afterAll(async () => {
   // Cleanup is ordered by the FKs; the warehouses an audited action touched
   // can only be DEACTIVATED (audit_log references them, round 107's lesson).
+  // Costs first: their shares point at boxes (cascade from the entry).
+  if (madeCosts.length) await db.delete(costEntries).where(inArray(costEntries.id, madeCosts));
   await db
     .delete(notifications)
     .where(
@@ -598,5 +605,71 @@ describe('editLot — the measure correction (owner’s 5b)', () => {
       code: 'structural_locked',
     });
     void receiptId;
+  });
+});
+
+describe('editLot — a measure fix re-splits the TRUCK\'s freight (audit A22)', () => {
+  it('a corrected weight moves the batch cost onto the heavier lot at once', async () => {
+    const heavy = await mintReceipt({ boxes: 1, kg: '100', m3: '1' });
+    const light = await mintReceipt({ boxes: 1, kg: '100', m3: '1' });
+    const batch = await mintBatch('in_transit');
+    // Both boxes rode this truck — the ledger that defines membership (#440).
+    for (const box of [...heavy.boxes, ...light.boxes]) {
+      await db.update(boxes).set({ status: 'in_transit', currentBatchId: batch.id }).where(eq(boxes.id, box.id));
+      await db.insert(boxMovements).values({
+        boxId: box.id,
+        fromWarehouseId: whOrigin,
+        fromStatus: 'loading',
+        toStatus: 'in_transit',
+        cause: 'batch_departed',
+        refType: 'batch',
+        refId: batch.id,
+        actorId,
+      });
+    }
+    const [type] = await db.select({ id: costTypes.id }).from(costTypes).limit(1);
+    const entry = await addCostEntry(
+      {
+        scope: 'batch',
+        batchId: batch.id,
+        costTypeId: type!.id,
+        amount: 200,
+        currency: 'USD',
+        costDate: new Date().toISOString().slice(0, 10),
+        allocationBasis: 'weight',
+      },
+      ctx(),
+    );
+    madeCosts.push(entry.id);
+    const shareOf = async (boxId: string) =>
+      Number(
+        (
+          await db
+            .select({ usd: costAllocations.amountUsd })
+            .from(costAllocations)
+            .where(and(eq(costAllocations.costEntryId, entry.id), eq(costAllocations.boxId, boxId)))
+        )[0]?.usd ?? 0,
+      );
+    expect(await shareOf(heavy.boxes[0]!.id)).toBe(100);
+
+    // The manager finds the lot really weighed 300 kg.
+    await editLot(
+      {
+        lotId: heavy.lotId,
+        productNameZh: '测试货',
+        productNameRu: '',
+        boxCount: 1,
+        totalWeightKg: 300,
+        totalVolumeM3: 1,
+        note: null,
+      } as Parameters<typeof editLot>[0],
+      managerActor(),
+      ctx(),
+    );
+
+    // Before the fix only the receipt's OWN costs were re-split: the truck's
+    // $200 stayed 100/100 for good, on every report that reads shares.
+    expect(await shareOf(heavy.boxes[0]!.id)).toBe(150);
+    expect(await shareOf(light.boxes[0]!.id)).toBe(50);
   });
 });

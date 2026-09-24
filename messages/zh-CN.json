@@ -1248,7 +1248,9 @@
     "expensesTruncated": "显示最新的 {shown} 条（共 {total} 条）；「合计」为整个期间。",
     "balUnplaced": "未归入账户的收款",
     "futureDated": "有 {count} 条记录的日期晚于今天（{usd}）。其他页面已把它们算作当前欠款，本报表没有——请更正日期。",
-    "transferAmountMismatch": "同一货币的账户之间，转出与转入金额必须相同。"
+    "transferAmountMismatch": "同一货币的账户之间，转出与转入金额必须相同。",
+    "recurringEdit": "金额、日期或停用",
+    "recurringActive": "启用——每月入账"
   },
   "crm": {
     "title": "CRM",

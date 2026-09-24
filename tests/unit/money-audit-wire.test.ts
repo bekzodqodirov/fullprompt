@@ -48,6 +48,19 @@ describe('audit 2026-09-24 — the doors', () => {
     expect(form).toMatch(/<option value="">—<\/option>/);
   });
 
+  it('A32/A36: a template row can be stopped, and the template form carries the payer', () => {
+    const form = read('src/app/(protected)/accounting/expenses/recurring-form.tsx');
+    // The unticked box posts nothing, so the hidden 'off' comes FIRST (#171).
+    expect(form.indexOf('<input type="hidden" name="active" value="off" />')).toBeGreaterThan(-1);
+    expect(form.indexOf('<input type="hidden" name="active" value="off" />')).toBeLessThan(
+      form.indexOf('name="active" defaultChecked'),
+    );
+    expect(form).toContain('name="partnerId"');
+    const action = read('src/app/(protected)/accounting/actions.ts');
+    expect(action).toContain("partnerId: String(formData.get('partnerId') ?? '')");
+    expect(action).toContain("active: checkbox(formData, 'active', false)");
+  });
+
   it('A31: the partner card offers no hand-typed charge', () => {
     const form = read('src/app/(protected)/kontragentlar/[id]/tx-form.tsx');
     expect(form).toContain("const TYPES = ['payment', 'receipt', 'adjust'] as const;");

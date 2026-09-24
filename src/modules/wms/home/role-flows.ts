@@ -143,19 +143,16 @@ export async function moneyFlowCounts(today: string): Promise<MoneyFlowCounts> {
           unplacedPaymentSql(),
         ),
       ),
-    // Mirrors generateRecurring's own idempotence check: a template counts
-    // as due only while no live expense sits on its (category, date,
-    // employee) slot for the current month.
+    // Mirrors generateRecurring's own idempotence check (0099): a template
+    // is due until a posting of IT exists on this month's day — voided or
+    // not, because a voided posting means «not this month» (audit A32/A33).
     db.execute<{ n: number }>(sql`
       SELECT count(*)::int AS n FROM recurring_expenses r
       WHERE r.active = true
         AND NOT EXISTS (
           SELECT 1 FROM expenses e
-          WHERE e.category_id = r.category_id
+          WHERE e.recurring_id = r.id
             AND e.expense_date = (${month} || '-' || lpad(r.day_of_month::text, 2, '0'))::date
-            AND e.voided_at IS NULL
-            AND ((r.employee_id IS NULL AND e.employee_id IS NULL) OR e.employee_id = r.employee_id)
-            AND ((r.warehouse_id IS NULL AND e.warehouse_id IS NULL) OR e.warehouse_id = r.warehouse_id)
         )
     `),
     costMissingCount(3),

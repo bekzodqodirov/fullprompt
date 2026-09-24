@@ -1248,7 +1248,9 @@
     "expensesTruncated": "Eng yangi {shown} tasi ko‘rsatildi (jami {total}); «Jami» summa butun davr bo‘yicha.",
     "balUnplaced": "Kassaga joylanmagan to‘lovlar",
     "futureDated": "{count} ta yozuv bugundan keyingi sana bilan ({usd}). Boshqa ekranlar ularni bugungi qarzga qo‘shadi, bu hisobot esa yo‘q — sanasini tuzating.",
-    "transferAmountMismatch": "Bir valyutadagi kassalar orasida chiqqan va tushgan summa bir xil bo‘lishi kerak."
+    "transferAmountMismatch": "Bir valyutadagi kassalar orasida chiqqan va tushgan summa bir xil bo‘lishi kerak.",
+    "recurringEdit": "Summa, kun yoki to‘xtatish",
+    "recurringActive": "Faol — har oy yoziladi"
   },
   "crm": {
     "title": "CRM",

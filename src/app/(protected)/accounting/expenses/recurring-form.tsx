@@ -1,8 +1,13 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { generateRecurringAction, saveRecurringAction, type AccountingFormState } from '../actions';
+import {
+  generateRecurringAction,
+  saveRecurringAction,
+  updateRecurringAction,
+  type AccountingFormState,
+} from '../actions';
 
 interface Option {
   id: string;
@@ -23,12 +28,14 @@ export function RecurringForm({
   warehouses,
   employees,
   currencies,
+  partners,
 }: {
   categories: Option[];
   accounts: Option[];
   warehouses: Option[];
   employees: Option[];
   currencies: string[];
+  partners: Option[];
 }) {
   const t = useTranslations('accounting');
   const tc = useTranslations('common');
@@ -36,6 +43,9 @@ export function RecurringForm({
     saveRecurringAction,
     {},
   );
+  // A rent paid through the transport company (audit A36): naming the firm
+  // takes the till away, the expense form's own rule.
+  const [partnerId, setPartnerId] = useState('');
 
   return (
     <form action={formAction} className="space-y-2">
@@ -75,14 +85,33 @@ export function RecurringForm({
         </label>
       </div>
       <div className="flex flex-wrap gap-2">
-        <select name="accountId" aria-label={t('account')} className="input min-w-36 flex-1">
-          <option value="">— {t('account')} —</option>
-          {accounts.map((option) => (
-            <option key={option.id} value={option.id}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+        {!partnerId && (
+          <select name="accountId" aria-label={t('account')} className="input min-w-36 flex-1">
+            <option value="">— {t('account')} —</option>
+            {accounts.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        )}
+        {partners.length > 0 && (
+          <select
+            name="partnerId"
+            aria-label={t('paidBy')}
+            data-testid="recurring-partner"
+            className="input min-w-36 flex-1"
+            value={partnerId}
+            onChange={(event) => setPartnerId(event.target.value)}
+          >
+            <option value="">— {t('paidByUs')} —</option>
+            {partners.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        )}
         <select name="warehouseId" aria-label={t('warehouse')} className="input !w-32">
           <option value="">— {t('warehouse')} —</option>
           {warehouses.map((option) => (
@@ -160,5 +189,71 @@ export function GenerateRecurringButton({ month }: { month: string }) {
         </p>
       )}
     </form>
+  );
+}
+
+/**
+ * A template's own row control (audit A32): its amount, its day, or stop it.
+ * The list was read-only and the only form could create, so a rent that
+ * changed or a person who left went on posting every month. WHAT the cost is
+ * stays fixed — a different cost is a new template.
+ */
+export function RecurringRowEdit({
+  id,
+  amount,
+  dayOfMonth,
+  active,
+}: {
+  id: string;
+  amount: string;
+  dayOfMonth: number;
+  active: boolean;
+}) {
+  const t = useTranslations('accounting');
+  const tc = useTranslations('common');
+  const [state, formAction, pending] = useActionState<AccountingFormState, FormData>(
+    updateRecurringAction,
+    {},
+  );
+  return (
+    <details className="w-full" data-testid="recurring-edit">
+      <summary className="cursor-pointer text-xs font-semibold text-brand-700">✏️ {t('recurringEdit')}</summary>
+      <form action={formAction} className="mt-1 flex flex-wrap items-end gap-2">
+        <input type="hidden" name="id" value={id} />
+        <input
+          name="amount"
+          inputMode="decimal"
+          defaultValue={Number(amount)}
+          aria-label={t('amount')}
+          className="input !w-32"
+          data-testid="recurring-edit-amount"
+          required
+        />
+        <label className="text-xs">
+          <span className="block text-ink-500">{t('dayOfMonth')}</span>
+          <input
+            name="dayOfMonth"
+            type="number"
+            min={1}
+            max={28}
+            defaultValue={dayOfMonth}
+            aria-label={t('dayOfMonth')}
+            className="input !w-20"
+            required
+          />
+        </label>
+        {/* The hidden 'off' first: an unticked box posts nothing (#171). */}
+        <input type="hidden" name="active" value="off" />
+        <label className="flex items-center gap-1 text-sm">
+          <input type="checkbox" name="active" defaultChecked={active} data-testid="recurring-edit-active" />
+          {t('recurringActive')}
+        </label>
+        <button type="submit" className="btn-secondary" disabled={pending} data-testid="recurring-edit-save">
+          {pending ? tc('loading') : tc('save')}
+        </button>
+        {state.ok && <span className="text-sm font-semibold text-good">✅</span>}
+        {state.error && <span className="text-sm font-semibold text-bad">{tc('error')}</span>}
+      </form>
+    </details>
   );
 }

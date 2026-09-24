@@ -178,6 +178,8 @@ export async function addExpenseTx(
   input: ExpenseInput,
   rate: number,
   ctx: AuditContext,
+  /** Set by `generateRecurring` only — never read from a form (audit A33). */
+  opts: { recurringId?: string } = {},
 ) {
   if (!ctx.actorId) throw new AccountingError('unauthenticated');
   const amountUsd = Math.round(input.amount * rate * 100) / 100;
@@ -198,6 +200,7 @@ export async function addExpenseTx(
       accountId: input.partnerId ? null : input.accountId || null,
       partnerId: input.partnerId || null,
       note: input.note || null,
+      recurringId: opts.recurringId ?? null,
       createdBy: ctx.actorId,
     })
     .returning();
@@ -210,7 +213,11 @@ export async function addExpenseTx(
   return row!;
 }
 
-export async function addExpense(input: ExpenseInput, ctx: AuditContext) {
+export async function addExpense(
+  input: ExpenseInput,
+  ctx: AuditContext,
+  opts: { recurringId?: string } = {},
+) {
   if (!ctx.actorId) throw new AccountingError('unauthenticated');
   // The same rule as the client ledger: a named cash box must speak the
   // row's currency, or the till balances stop meaning anything.
@@ -227,7 +234,7 @@ export async function addExpense(input: ExpenseInput, ctx: AuditContext) {
   const rate = await rateFor(input.currency, input.expenseDate);
   if (rate === null) throw new AccountingError('fx_missing');
 
-  const row = await addExpenseTx(db, input, rate, ctx);
+  const row = await addExpenseTx(db, input, rate, ctx, opts);
   if (input.partnerId) {
     const { chargeForExpense } = await import('../partners/link');
     await chargeForExpense(row.id, ctx);
@@ -340,10 +347,12 @@ export async function listRecurring() {
       recurring: recurringExpenses,
       categoryName: expenseCategories.name,
       employeeName: users.fullName,
+      partnerName: partners.name,
     })
     .from(recurringExpenses)
     .innerJoin(expenseCategories, eq(recurringExpenses.categoryId, expenseCategories.id))
     .leftJoin(users, eq(recurringExpenses.employeeId, users.id))
+    .leftJoin(partners, eq(recurringExpenses.partnerId, partners.id))
     .orderBy(asc(expenseCategories.sortOrder));
 }
 
@@ -357,7 +366,7 @@ export async function saveRecurring(
   // are unrelated controls over 86 cash boxes, so choosing a USD till for a
   // som rent is an ordinary slip; it used to be stored without a word and
   // only refused on the 1st, from inside the monthly run.
-  if (input.accountId) {
+  if (input.accountId && !input.partnerId) {
     const [account] = await db
       .select({ currency: moneyAccounts.currency })
       .from(moneyAccounts)
@@ -373,7 +382,10 @@ export async function saveRecurring(
     dayOfMonth: input.dayOfMonth,
     warehouseId: input.warehouseId || null,
     employeeId: input.employeeId || null,
-    accountId: input.accountId || null,
+    // Paid through a firm, so no till of ours — the expense form's own rule,
+    // or every posting would count the money twice in the cash flow (A36).
+    accountId: input.partnerId ? null : input.accountId || null,
+    partnerId: input.partnerId || null,
     note: input.note || null,
     active: input.active,
     createdBy: ctx.actorId,
@@ -393,6 +405,50 @@ export async function saveRecurring(
     after: { amount: input.amount, currency: input.currency, dayOfMonth: input.dayOfMonth },
   });
   return row;
+}
+
+/**
+ * Correct a template in place: its amount, its day, or stop it (audit A32).
+ *
+ * The screen listed templates read-only and the only form could CREATE, so a
+ * rent that changed or a person who left went on posting every month — and
+ * voiding that posting re-armed it. Deliberately narrow: WHAT the cost is
+ * (category, person, warehouse, payer) is a different template, made new
+ * while this one is stopped, so a month's history never reads as a different
+ * cost than the one that was posted.
+ */
+export const recurringPatchSchema = z.object({
+  amount: z.number().positive().max(1_000_000_000),
+  dayOfMonth: z.number().int().min(1).max(28),
+  active: z.boolean(),
+});
+
+export async function updateRecurring(
+  id: string,
+  patch: z.infer<typeof recurringPatchSchema>,
+  ctx: AuditContext,
+) {
+  if (!ctx.actorId) throw new AccountingError('unauthenticated');
+  const before = await db.query.recurringExpenses.findFirst({ where: eq(recurringExpenses.id, id) });
+  if (!before) throw new AccountingError('not_found');
+  const [row] = await db
+    .update(recurringExpenses)
+    .set({
+      amount: String(patch.amount),
+      dayOfMonth: patch.dayOfMonth,
+      active: patch.active,
+      updatedAt: new Date(),
+    })
+    .where(eq(recurringExpenses.id, id))
+    .returning();
+  await writeAudit(db, ctx, {
+    entityType: 'recurring_expense',
+    entityId: id,
+    action: 'update',
+    before: { amount: before.amount, dayOfMonth: before.dayOfMonth, active: before.active },
+    after: { amount: row!.amount, dayOfMonth: row!.dayOfMonth, active: row!.active },
+  });
+  return row!;
 }
 
 /**
@@ -428,28 +484,18 @@ export async function generateRecurring(month: string, ctx: AuditContext) {
   const failed: string[] = [];
   for (const template of templates) {
     const date = `${month}-${String(template.dayOfMonth).padStart(2, '0')}`;
-    // The slot is (category, date, employee, WAREHOUSE) — the warehouse is
-    // what tells two rents in one category apart. Without it, «Ijara YW» and
-    // «Ijara GZ» on the same day collided: the first posted, the second read
-    // as already-posted every month for ever, the P&L short its amount and
-    // the home counter — which mirrors this predicate — saying nothing was
-    // due.
+    // «Already posted» is a row of THIS template on that date (0099, audit
+    // A33) — VOIDED OR NOT. It used to be a SLOT, (category, date, employee,
+    // warehouse), which any one-off on the same day filled: a bonus typed on
+    // payday posted instead of the salary, and the P&L lost the salary. And a
+    // voided posting re-armed the template, so correcting a stale amount by
+    // voiding it posted the same stale amount on the next press (A32). A
+    // voided posting now means «not this month»; a wrong amount is fixed on
+    // the template (`updateRecurring`) and typed by hand for the month.
     const existing = await db
       .select({ id: expenses.id })
       .from(expenses)
-      .where(
-        and(
-          eq(expenses.categoryId, template.categoryId),
-          eq(expenses.expenseDate, date),
-          isNull(expenses.voidedAt),
-          template.employeeId
-            ? eq(expenses.employeeId, template.employeeId)
-            : isNull(expenses.employeeId),
-          template.warehouseId
-            ? eq(expenses.warehouseId, template.warehouseId)
-            : isNull(expenses.warehouseId),
-        ),
-      )
+      .where(and(eq(expenses.recurringId, template.id), eq(expenses.expenseDate, date)))
       .limit(1);
     if (existing.length > 0) {
       skipped.push(template.id);
@@ -465,9 +511,13 @@ export async function generateRecurring(month: string, ctx: AuditContext) {
           warehouseId: template.warehouseId ?? '',
           employeeId: template.employeeId ?? '',
           accountId: template.accountId ?? '',
+          // Who pays it (A36): a template paid through the transport company
+          // raises that firm's debt on every posting, as the form's would.
+          partnerId: template.partnerId ?? '',
           note: template.note ?? '',
         },
         ctx,
+        { recurringId: template.id },
       );
       created += 1;
     } catch (err) {

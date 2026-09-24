@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import ExcelJS from 'exceljs';
-import { eq, sql } from 'drizzle-orm';
+import { eq, sql, TransactionRollbackError } from 'drizzle-orm';
+import { readFileSync } from 'node:fs';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
@@ -12,9 +13,11 @@ import {
   expenses,
   fxRates,
   moneyAccounts,
+  partnerTypes,
   users,
   warehouses,
 } from '@/modules/platform/db/schema';
+import { partnerBalanceUsd, savePartner, setPartnerActive } from '@/modules/wms/partners/service';
 import { confirmReceipt } from '@/modules/wms/receipts/service';
 import { recordVerdict, submitPlan } from '@/modules/wms/planning/service';
 import { departBatch, ingestLoadScans } from '@/modules/wms/scanning/service';
@@ -29,6 +32,7 @@ import {
   saveAccount,
   saveCategory,
   saveRecurring,
+  updateRecurring,
   voidExpense,
 } from '@/modules/wms/accounting/service';
 import {
@@ -434,6 +438,147 @@ describe('recurring fixed costs', () => {
       .from(expenses)
       .where(sql`${expenses.categoryId} = ${category.id} AND ${expenses.voidedAt} IS NULL`);
     expect(posted).toHaveLength(2);
+  });
+
+  it('a one-off on the payday slot does not stand in for the salary (audit A33)', async () => {
+    const category = await saveCategory(
+      { name: `Oylik ${SUFFIX}`, cash: true, sortOrder: 32, active: true },
+      ctx(),
+    );
+    const salary = await saveRecurring(
+      { categoryId: category.id, amount: 900, currency: 'USD', dayOfMonth: 7, active: true },
+      ctx(),
+    );
+    // A bonus typed by hand on the same day, same category, same person.
+    await addExpense(
+      { categoryId: category.id, amount: 50, currency: 'USD', expenseDate: `${M2}-07` },
+      ctx(),
+    );
+    const run = await generateRecurring(M2, ctx());
+    expect(run.created).toBeGreaterThanOrEqual(1);
+    const posted = await db
+      .select()
+      .from(expenses)
+      .where(sql`${expenses.categoryId} = ${category.id} AND ${expenses.voidedAt} IS NULL`);
+    // Before 0099: only the $50 — the $900 salary read as «already posted».
+    expect(posted.map((row) => Number(row.amount)).sort((a, b) => a - b)).toEqual([50, 900]);
+    // A live template is configuration every later press posts (#183).
+    await updateRecurring(salary.id, { amount: 900, dayOfMonth: 7, active: false }, ctx());
+  });
+
+  it('a voided posting is «not this month», and a stopped template posts nothing (A32)', async () => {
+    const category = await saveCategory(
+      { name: `Eski ijara ${SUFFIX}`, cash: true, sortOrder: 33, active: true },
+      ctx(),
+    );
+    const template = await saveRecurring(
+      { categoryId: category.id, amount: 400, currency: 'USD', dayOfMonth: 8, active: true },
+      ctx(),
+    );
+    await generateRecurring(M1, ctx());
+    const [first] = await db
+      .select()
+      .from(expenses)
+      .where(sql`${expenses.recurringId} = ${template.id} AND ${expenses.expenseDate} = ${`${M1}-08`}`);
+    expect(first).toBeDefined();
+    await voidExpense(first!.id, 'eski narx', ctx());
+    // The next press used to post the same stale $400 again.
+    const again = await generateRecurring(M1, ctx());
+    const live = await db
+      .select()
+      .from(expenses)
+      .where(sql`${expenses.recurringId} = ${template.id} AND ${expenses.voidedAt} IS NULL`);
+    expect(live).toHaveLength(0);
+    expect(again.skipped).toBeGreaterThanOrEqual(1);
+
+    // Stopped on the row's own control: the next month posts nothing of it.
+    await updateRecurring(template.id, { amount: 450, dayOfMonth: 8, active: false }, ctx());
+    await generateRecurring(M2, ctx());
+    const stopped = await db
+      .select()
+      .from(expenses)
+      .where(sql`${expenses.recurringId} = ${template.id} AND ${expenses.expenseDate} = ${`${M2}-08`}`);
+    expect(stopped).toHaveLength(0);
+  });
+
+  it('a template paid through a firm raises the firm\'s debt and touches no till (A36)', async () => {
+    const category = await saveCategory(
+      { name: `Xitoy ijara ${SUFFIX}`, cash: true, sortOrder: 34, active: true },
+      ctx(),
+    );
+    const [type] = await db.select().from(partnerTypes).limit(1);
+    const firm = await savePartner(
+      null,
+      { name: `Recurring firma ${SUFFIX}`, typeId: type!.id, clientId: '', phone: '', note: '' },
+      ctx(),
+    );
+    const template = await saveRecurring(
+      {
+        categoryId: category.id,
+        amount: 1200,
+        currency: 'USD',
+        dayOfMonth: 9,
+        accountId,
+        partnerId: firm,
+        active: true,
+      },
+      ctx(),
+    );
+    expect(template.accountId).toBeNull();
+    await generateRecurring(M2, ctx());
+    const [posting] = await db
+      .select()
+      .from(expenses)
+      .where(sql`${expenses.recurringId} = ${template.id}`);
+    expect(posting!.partnerId).toBe(firm);
+    expect(posting!.accountId).toBeNull();
+    expect(await partnerBalanceUsd(firm)).toBe(1200);
+
+    // Leave nothing live behind (#183): an active firm adds a payer picker to
+    // every cost and expense form, an active template posts on every press.
+    await voidExpense(posting!.id, 'sinov', ctx());
+    await updateRecurring(template.id, { amount: 1200, dayOfMonth: 9, active: false }, ctx());
+    await setPartnerActive(firm, false, ctx());
+  });
+
+  it("0099's backfill links the rows the old slot rule recognised, and only those", async () => {
+    // The first press after the deploy must not post this month's rent a
+    // second time: a posting from before the column existed is linked by the
+    // migration — and a one-off with another amount is left alone.
+    const category = await saveCategory(
+      { name: `Backfill ${SUFFIX}`, cash: true, sortOrder: 35, active: true },
+      ctx(),
+    );
+    const template = await saveRecurring(
+      { categoryId: category.id, amount: 300, currency: 'USD', dayOfMonth: 11, active: false },
+      ctx(),
+    );
+    const old = await addExpense(
+      { categoryId: category.id, amount: 300, currency: 'USD', expenseDate: `${M1}-11` },
+      ctx(),
+    );
+    const oneOff = await addExpense(
+      { categoryId: category.id, amount: 25, currency: 'USD', expenseDate: `${M1}-11` },
+      ctx(),
+    );
+    // The migration's own statement, run and rolled back — not a restatement.
+    const migration = readFileSync('src/modules/platform/db/migrations/0099_recurring_link.sql', 'utf8');
+    const backfill = migration.slice(migration.indexOf('UPDATE expenses e'));
+    let seen: { id: string; recurringId: string | null }[] = [];
+    await db
+      .transaction(async (tx) => {
+        await tx.execute(sql.raw(backfill));
+        seen = await tx
+          .select({ id: expenses.id, recurringId: expenses.recurringId })
+          .from(expenses)
+          .where(sql`${expenses.id} IN (${old.id}, ${oneOff.id})`);
+        tx.rollback();
+      })
+      .catch((err: unknown) => {
+        if (!(err instanceof TransactionRollbackError)) throw err;
+      });
+    expect(seen.find((row) => row.id === old.id)!.recurringId).toBe(template.id);
+    expect(seen.find((row) => row.id === oneOff.id)!.recurringId).toBeNull();
   });
 
   it('rejects a malformed month rather than guessing', async () => {
