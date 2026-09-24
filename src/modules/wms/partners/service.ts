@@ -101,7 +101,36 @@ export const partnerSchema = z.object({
   clientId: z.string().uuid().optional().or(z.literal('')),
   phone: z.string().trim().max(40).optional().or(z.literal('')),
   note: z.string().trim().max(2000).optional().or(z.literal('')),
+  /**
+   * The login this account belongs to (0101). THREE states, on purpose:
+   * `undefined` = the form did not carry the field (it is drawn only for the
+   * accountant and the admin), and that must read «unchanged» — a replace-all
+   * save that took absence for «nobody» would unlink every staff account the
+   * first time a VED fixed a typo on it (#171's shape); `''` = unlinked; a
+   * uuid = linked.
+   */
+  userId: z.string().uuid().optional().or(z.literal('')),
 });
+
+/**
+ * The check above and the write below are two statements, so two accountants
+ * linking the same login at once both pass the check and the unique index
+ * answers the second — as the same sentence, not as the error page (#472).
+ */
+async function write<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (err) {
+    type PgError = { code?: string; constraint_name?: string };
+    const pg = err as PgError & { cause?: PgError };
+    const code = pg?.code ?? pg?.cause?.code;
+    const constraint = pg?.constraint_name ?? pg?.cause?.constraint_name;
+    if (code === '23505' && constraint === 'partners_user_uniq') {
+      throw new PartnerError('user_taken');
+    }
+    throw err;
+  }
+}
 
 export async function savePartner(
   id: string | null,
@@ -120,32 +149,64 @@ export async function savePartner(
       .limit(1);
     if (taken && taken.id !== id) throw new PartnerError('client_taken');
   }
+  const before = id ? await db.query.partners.findFirst({ where: eq(partners.id, id) }) : null;
+  if (id && !before) throw new PartnerError('not_found');
+
+  // Absent = unchanged (see the schema). Present: one account per login,
+  // checked here so the screen can say WHY rather than the unique index
+  // answering with a crash — and a login newly linked must be a live one (the
+  // form offers active people only; the one ALREADY linked stays linkable, or
+  // an unrelated edit on a leaver's account would be refused for ever).
+  const userId = input.userId === undefined ? undefined : input.userId || null;
+  if (userId) {
+    const [person] = await db
+      .select({ active: users.active })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    if (!person || (!person.active && before?.userId !== userId)) {
+      throw new PartnerError('user_not_found');
+    }
+    const [taken] = await db
+      .select({ id: partners.id })
+      .from(partners)
+      .where(eq(partners.userId, userId))
+      .limit(1);
+    if (taken && taken.id !== id) throw new PartnerError('user_taken');
+  }
   const values = {
     name: input.name,
     typeId: input.typeId,
     clientId,
     phone: input.phone || null,
     note: input.note || null,
+    ...(userId === undefined ? {} : { userId }),
   };
 
-  if (id) {
-    const before = await db.query.partners.findFirst({ where: eq(partners.id, id) });
-    if (!before) throw new PartnerError('not_found');
-    await db.update(partners).set(values).where(eq(partners.id, id));
+  if (id && before) {
+    await write(() => db.update(partners).set(values).where(eq(partners.id, id)));
     await writeAudit(db, ctx, {
       entityType: 'partner',
       entityId: id,
       action: 'update',
-      before: { name: before.name, typeId: before.typeId, clientId: before.clientId },
+      before: {
+        name: before.name,
+        typeId: before.typeId,
+        clientId: before.clientId,
+        userId: before.userId,
+      },
       after: values,
     });
     return id;
   }
 
-  const [row] = await db
-    .insert(partners)
-    .values({ ...values, createdBy: ctx.actorId })
-    .returning();
+  const createdBy = ctx.actorId;
+  const [row] = await write(() =>
+    db
+      .insert(partners)
+      .values({ ...values, createdBy })
+      .returning(),
+  );
   await writeAudit(db, ctx, {
     entityType: 'partner',
     entityId: row!.id,
@@ -240,6 +301,20 @@ export async function addPartnerTx(input: PartnerTxInput, ctx: AuditContext) {
     },
   });
   return row!;
+}
+
+/**
+ * Which account a ledger row sits on — read from the ROW, so a door that
+ * voids by transaction id judges the account the row really belongs to and
+ * never the `partnerId` the form carried beside it. Null when there is none.
+ */
+export async function partnerIdOfTx(txId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ partnerId: partnerTransactions.partnerId })
+    .from(partnerTransactions)
+    .where(eq(partnerTransactions.id, txId))
+    .limit(1);
+  return row?.partnerId ?? null;
 }
 
 export async function voidPartnerTx(id: string, reason: string, ctx: AuditContext) {

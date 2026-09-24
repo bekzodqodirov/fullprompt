@@ -2634,7 +2634,20 @@
     "proofRequired": "Fayl yoki izoh bo‘lishi shart",
     "chargeMoved": "Xizmat uchun qarz (mashina, rastamojka, ijara, oylik) endi xarajat formasida «Kim to‘ladi»ni tanlab yoziladi. Qarz shu yerga o‘zi tushadi va foyda hisobotiga ham kiradi.",
     "manualCharge": "Xarajatga bog‘lanmagan — foyda hisobotida yo‘q",
-    "owedToUs": "Bizga qarzdor"
+    "owedToUs": "Bizga qarzdor",
+    "login": "Hodim (login)",
+    "noLogin": "Hodim emas",
+    "loginHint": "Login bog‘lansa, bu hodimning hisobi bo‘ladi: qoldig‘ini faqat buxgalter, admin va hodimning o‘zi ko‘radi.",
+    "userTaken": "Bu hodimning hisobi allaqachon ochilgan — bitta hodimga bitta hisob.",
+    "staffForbidden": "Hodimlar hisobini faqat buxgalter va admin yuritadi.",
+    "staffKinds": {
+      "payment": "Avans berildi",
+      "receipt": "Qoldiqni qaytardi"
+    },
+    "staffKindHints": {
+      "payment": "Hodimga kassadan avans berdik. Kassa kamayadi, hodim bizga qarzdor bo‘ladi.",
+      "receipt": "Hodim ishlatmagan qoldiqni kassaga qaytardi. Kassa ko‘payadi, uning qarzi kamayadi."
+    }
   },
   "lists": {
     "allRecords": "Hammasi",

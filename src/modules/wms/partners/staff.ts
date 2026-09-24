@@ -60,3 +60,17 @@ export async function staffPartnersOfUsers(userIds: string[]) {
     .where(or(...ids.map((id) => eq(partners.userId, id))));
   return new Map(rows.filter((r) => r.userId).map((r) => [r.userId!, r.id]));
 }
+
+/**
+ * Does choosing this TYPE make an account staff? The type half of
+ * `staffPartnerSql`, asked of a form's posted type before the row exists —
+ * or a VED could open a «Hodim» account the screen would then hide from them.
+ */
+export async function isStaffType(typeId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ code: partnerTypes.code })
+    .from(partnerTypes)
+    .where(eq(partnerTypes.id, typeId))
+    .limit(1);
+  return row?.code === 'staff';
+}

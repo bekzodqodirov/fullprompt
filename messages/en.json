@@ -2634,7 +2634,20 @@
     "proofRequired": "A file or a note is required",
     "chargeMoved": "A debt for a service (a truck, customs, rent, a salary) is now entered in the cost or expense form with «Settled by» picked. The debt lands here by itself and reaches the profit report too.",
     "manualCharge": "Not linked to a cost — missing from the profit report",
-    "owedToUs": "Owe us"
+    "owedToUs": "Owe us",
+    "login": "Staff member (login)",
+    "noLogin": "Not a staff member",
+    "loginHint": "Linking a login makes this a staff account: its balance is seen only by the accountant, the admin and the person themselves.",
+    "userTaken": "This staff member already has an account — one account per person.",
+    "staffForbidden": "Staff accounts are kept by the accountant and the admin only.",
+    "staffKinds": {
+      "payment": "Advance given",
+      "receipt": "Returned the rest"
+    },
+    "staffKindHints": {
+      "payment": "We gave the staff member a cash advance. Cash down, they owe us.",
+      "receipt": "The staff member returned the unspent rest to the cash box. Cash up, their debt down."
+    }
   },
   "lists": {
     "allRecords": "All",

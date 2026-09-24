@@ -9,6 +9,7 @@ import {
   crmActivities,
   customFieldValues,
   handovers,
+  partnerTransactions,
   pickups,
   pickupStops,
   receiptLots,
@@ -23,6 +24,7 @@ import { cargoNearActor } from '../inventory/near';
 import { seesAllTg } from '../crm/conversations';
 import { seesAllMoney } from '../finance/scope';
 import { mayReadPickup } from '../pickups/service';
+import { isStaffPartner, maySeeStaffMoney } from '../partners/staff';
 
 /**
  * Per-record read authorization for GET /api/attachments/[id].
@@ -274,10 +276,21 @@ async function decide(
     // no seller's book. It must match the screen it backs (round 91's own
     // lesson: a scoped screen beside an open file is not scoping) — the
     // partner pages ask `seesAllMoney` too.
+    //
+    // A STAFF account's file (0101) asks the staff card's own narrower door,
+    // `finance.expenses` (owner M3a) — the VED and the logist pass
+    // `seesAllMoney` and must not read a colleague's payroll paper by uuid.
     case 'partner_transaction': {
-      return seesAllMoney(actor)
-        ? { allow: true, rule: 'partner-tx-finance' }
-        : { allow: false, rule: 'partner-tx-no-permission' };
+      if (!seesAllMoney(actor)) return { allow: false, rule: 'partner-tx-no-permission' };
+      const [row] = await db
+        .select({ partnerId: partnerTransactions.partnerId })
+        .from(partnerTransactions)
+        .where(eq(partnerTransactions.id, attachment.entityId))
+        .limit(1);
+      if (row && !maySeeStaffMoney(actor.permissions) && (await isStaffPartner(row.partnerId))) {
+        return { allow: false, rule: 'partner-tx-staff' };
+      }
+      return { allow: true, rule: 'partner-tx-finance' };
     }
     // The chek behind a rasxod xabari (round 107). The screen it backs is
     // /accounting/expenses, gated `finance.expenses` alone — NOT

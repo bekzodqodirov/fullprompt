@@ -2634,7 +2634,20 @@
     "proofRequired": "必须有附件或备注",
     "chargeMoved": "服务欠款（车辆、清关、租金、工资）现在在费用表单中选择「由谁支付」录入。欠款会自动记到这里，也会计入利润报表。",
     "manualCharge": "未关联费用——利润报表中没有",
-    "owedToUs": "欠我们"
+    "owedToUs": "欠我们",
+    "login": "员工（登录账号）",
+    "noLogin": "非员工",
+    "loginHint": "绑定登录账号后即为员工账户：余额仅会计、管理员及员工本人可见。",
+    "userTaken": "该员工已有账户——每位员工一个账户。",
+    "staffForbidden": "员工账户仅由会计和管理员管理。",
+    "staffKinds": {
+      "payment": "已发预支款",
+      "receipt": "退回余款"
+    },
+    "staffKindHints": {
+      "payment": "从现金账给员工发了预支款。现金减少，员工欠我们。",
+      "receipt": "员工把未用完的余款退回现金账。现金增加，其欠款减少。"
+    }
   },
   "lists": {
     "allRecords": "全部",

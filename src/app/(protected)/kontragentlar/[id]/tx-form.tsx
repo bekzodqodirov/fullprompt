@@ -28,11 +28,18 @@ const CASH = new Set<string>(['receipt', 'payment']);
  */
 export function PartnerTxForm({
   partnerId,
+  staff,
   accounts,
   currencies,
   today,
 }: {
   partnerId: string;
+  /**
+   * A colleague's account (0101): `payment` is a cash advance handed to them
+   * and `receipt` is the rest of it handed back — the ledger's own kinds and
+   * signs, said the way the accountant says them at the till (owner A1c).
+   */
+  staff: boolean;
   accounts: { id: string; name: string }[];
   currencies: string[];
   /** Tashkent's day from the server — the browser's clock is not the office's (R5). */
@@ -41,6 +48,14 @@ export function PartnerTxForm({
   const t = useTranslations('partners');
   const tc = useTranslations('common');
   const [open, setOpen] = useState(false);
+  const label = (code: string) =>
+    staff && (code === 'payment' || code === 'receipt')
+      ? t(`staffKinds.${code}` as 'staffKinds.payment')
+      : t(`kinds.${code}` as 'kinds.payment');
+  const hint = (code: string) =>
+    staff && (code === 'payment' || code === 'receipt')
+      ? t(`staffKindHints.${code}` as 'staffKindHints.payment')
+      : t(`kindHints.${code}` as 'kindHints.payment');
   const [type, setType] = useState<string>('payment');
   const [state, formAction, pending] = useActionState<PartnerFormState, FormData>(
     addPartnerTxAction,
@@ -88,11 +103,11 @@ export function PartnerTxForm({
       >
         {TYPES.map((code) => (
           <option key={code} value={code}>
-            {t(`kinds.${code}` as 'kinds.payment')}
+            {label(code)}
           </option>
         ))}
       </select>
-      <p className="text-xs text-ink-500">{t(`kindHints.${type}` as 'kindHints.payment')}</p>
+      <p className="text-xs text-ink-500">{hint(type)}</p>
 
       {/* The sum is the point of the form, so it gets the room: its own line,
           typed big enough to read back at a glance. Sharing a row with the
@@ -182,7 +197,9 @@ export function PartnerTxForm({
             ? t('fxMissing')
             : state.error === 'charge_via_cost'
               ? t('chargeMoved')
-              : tc('error')}
+              : state.error === 'forbidden'
+                ? t('staffForbidden')
+                : tc('error')}
         </p>
       )}
       {state.ok && <p className="text-sm font-semibold text-good">✅ {tc('save')}</p>}
