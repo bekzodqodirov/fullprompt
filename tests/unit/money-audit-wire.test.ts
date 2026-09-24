@@ -61,6 +61,16 @@ describe('audit 2026-09-24 — the doors', () => {
     expect(action).toContain("active: checkbox(formData, 'active', false)");
   });
 
+  it("/receive's draft survives a server refresh: the restore is keyed on strings, not on props' identity", () => {
+    // Found by the pickup design's judge: the rasxod fold's router.refresh()
+    // rebuilt `prefill`, the effect re-ran, and a promise's half-received
+    // draft — photos and recounts — was replaced by an empty one.
+    const wizard = read('src/app/(protected)/receive/receive-wizard.tsx');
+    expect(wizard).toContain('}, [prefillKey, warehouseKey]);');
+    expect(wizard).not.toContain('}, [warehouses, prefill]);');
+    expect(wizard).toMatch(/saved\?\.expectedArrivalId === prefill\.arrivalId/);
+  });
+
   it('A31: the partner card offers no hand-typed charge', () => {
     const form = read('src/app/(protected)/kontragentlar/[id]/tx-form.tsx');
     expect(form).toContain("const TYPES = ['payment', 'receipt', 'adjust'] as const;");

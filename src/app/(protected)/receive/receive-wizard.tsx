@@ -222,12 +222,30 @@ export function ReceiveWizard({
   const [error, setError] = useState<string | null>(null);
 
   // Draft restore — localStorage is client-only, hence the mount effect.
+  //
+  // Keyed on STRINGS, not on the two props' identity (found by the pickup
+  // design's judge, 2026-09-24): the page rebuilds `prefill` and `warehouses`
+  // as new objects on every server render, and the rasxod fold on the same
+  // page calls router.refresh() after a send — so the effect re-ran, the
+  // prefill branch minted a fresh receipt and fresh lot ids, and every photo
+  // and recount typed against the promise was gone. Latent since round 107.
+  const prefillKey = prefill?.arrivalId ?? '';
+  const warehouseKey = warehouses.map((wh) => wh.id).join(',');
   useEffect(() => {
+    const saved = (() => {
+      try {
+        const raw = localStorage.getItem(DRAFT_KEY);
+        return raw ? (JSON.parse(raw) as Partial<Draft>) : null;
+      } catch {
+        return null;
+      }
+    })();
     // Opened from a promise's «Qabul qilish»: the tap IS the intent, so the
-    // promise wins over whatever half-draft the browser was holding. Client,
-    // count and measures arrive filled; the totals land as a 'mixed' lot the
-    // operator corrects against the real boxes.
-    if (prefill) {
+    // promise wins over whatever half-draft the browser was holding — unless
+    // that draft IS this promise's, half-done. Client, count and measures
+    // arrive filled; the totals land as a 'mixed' lot the operator corrects
+    // against the real boxes.
+    if (prefill && !(saved?.expectedArrivalId === prefill.arrivalId && saved.receiptId && Array.isArray(saved.lots))) {
       const lot = newLot();
       if (prefill.boxCount) lot.boxCount = String(prefill.boxCount);
       if (prefill.weightKg !== null || prefill.volumeM3 !== null) {
@@ -247,10 +265,9 @@ export function ReceiveWizard({
       });
       return;
     }
-    const saved = localStorage.getItem(DRAFT_KEY);
     if (saved) {
       try {
-        const parsed = JSON.parse(saved) as Partial<Draft>;
+        const parsed = saved;
         if (parsed.receiptId && Array.isArray(parsed.lots)) {
           // Backfill fields added after this draft was saved (schema grows
           // over time; a stale localStorage draft must never crash the page).
@@ -278,7 +295,10 @@ export function ReceiveWizard({
     }
      
     setDraft(newDraft(warehouses[0]?.id ?? ''));
-  }, [warehouses, prefill]);
+    // The keys ARE the dependency: a re-render with equal values must not
+    // re-run this (see above).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillKey, warehouseKey]);
 
   useEffect(() => {
     if (draft) localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
