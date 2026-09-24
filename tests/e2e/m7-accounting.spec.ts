@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * Phase 2.4 management accounting: the accountant maintains the books, the
@@ -10,7 +11,7 @@ const ACCOUNTANT = '+998900000010';
 const SALES = '+998900000009';
 const PASSWORD = 'demo1234';
 const runId = Date.now().toString().slice(-6);
-const today = new Date().toISOString().slice(0, 10);
+const today = tashkentDay();
 const year = today.slice(0, 4);
 
 async function login(page: import('@playwright/test').Page, phone: string) {

@@ -79,6 +79,8 @@ test('cleanup: the cost is voided and the kassa gets its money back', async ({ p
   await page.goto(batchUrl);
   const entry = page.locator('div').filter({ hasText: `≈ $${AMOUNT}` }).last();
   page.once('dialog', (dialog) => void dialog.accept('e2e cleanup'));
-  await entry.getByRole('button', { name: /🗑/ }).click();
+  // The button's accessible name is its aria-label (the locale's «void»);
+  // the 🗑 is the one thing every locale shares.
+  await entry.locator('button').filter({ hasText: '🗑' }).click();
   await expect(page.getByText(`≈ $${AMOUNT}`)).toHaveCount(0, { timeout: 15_000 });
 });
