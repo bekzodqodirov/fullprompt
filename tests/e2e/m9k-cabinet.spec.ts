@@ -185,9 +185,35 @@ const PAYLOAD = {
       recent: [
         { type: 'charge', amount: 250, currency: 'USD', amountUsd: 250, txDate: '2026-07-20', voided: false },
       ],
+      // One handover (F): the goods, both trucks with their dates, who handed
+      // it over — and the money PAID in the same window, nothing else.
       history: [
-        { letter: 'B', productNameZh: '杂货', productNameRu: null, n: 3, lastAt: '2026-06-01T09:00:00Z' },
+        {
+          id: 'h1',
+          issuedAt: '2030-08-20T06:00:00Z',
+          place: 'Tashkent',
+          receiver: 'Aziz',
+          issuedBy: 'Sklad hodimi',
+          lots: [
+            {
+              lotId: 'lot-2',
+              letter: 'B',
+              productNameZh: '杂货',
+              productNameRu: null,
+              receivedAt: '2030-08-01T05:00:00Z',
+              n: 3,
+              weightKg: 21,
+              volumeM3: 0.3,
+              photoCount: 1,
+            },
+          ],
+          legs: [
+            { batchCode: 'YW-017', fromPlace: 'Yiwu', toPlace: 'Kashgar', domestic: true, departedAt: '2030-08-03T05:00:00Z', arrivedAt: '2030-08-09T05:00:00Z', n: 3 },
+            { batchCode: 'KA-042', fromPlace: 'Kashgar', toPlace: 'Tashkent', domestic: false, departedAt: '2030-08-11T05:00:00Z', arrivedAt: '2030-08-18T05:00:00Z', n: 3 },
+          ],
+        },
       ],
+      payments: [{ txDate: '2030-08-19', amount: 300, currency: 'USD' }],
     },
   ],
 };
@@ -276,6 +302,22 @@ test('the other two tabs carry the money and the history', async ({ page }) => {
   await expect(balance).toContainText(clientLabels('ru').debtYes);
 
   await page.getByTestId('cab-tab-history').click();
+  // The history is its own cards, never the live cargo's.
   await expect(page.getByTestId('cab-lot')).toHaveCount(0);
-  await expect(page.locator('.cab-body')).toContainText('杂货');
+  const handover = page.getByTestId('cab-handover');
+  await expect(handover).toHaveCount(1);
+  await expect(handover).toContainText('杂货');
+  await expect(handover).toContainText('20.08.2030');
+  await expect(handover).toContainText('Aziz');
+  await expect(handover).toContainText('Sklad hodimi');
+  await expect(handover.getByTestId('cab-handover-leg')).toHaveCount(2);
+  await expect(handover).toContainText('YW-017');
+  await expect(handover).toContainText('KA-042');
+  await expect(handover.getByTestId('cab-photos')).toBeVisible();
+  // Money: what was paid, never a charge.
+  await expect(page.getByTestId('cab-payments')).toContainText('+300 USD');
+  await expect(page.getByTestId('cab-payments')).not.toContainText('250');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+    await page.evaluate(() => window.innerWidth),
+  );
 });
