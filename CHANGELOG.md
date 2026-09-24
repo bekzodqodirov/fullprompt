@@ -1,5 +1,116 @@
 # CHANGELOG
 
+## Javoblaringiz bo'yicha: kassa va hodimlar, hisobotlar, kabinet tarixi — 2026-09-25
+
+Sizning M1–M4, R1–R7, U1, Z1 va F javoblaringiz. **Migratsiya 0101 — deploydan
+keyin ledger 102 bo'lishi kerak.** Serveringiz oxirgi marta 95 ni ko'rsatgan
+edi, demak bitta deployda 0095–0101 hammasi (7 ta) qo'llanadi.
+
+### Kassa (3-band va M2a)
+
+- **Yuk xarajati endi qaysi kassadan to'langanini aytadi.** Xarajat formasida
+  «Kim to'ladi» degan bitta tanlov: kassa, kontragent yoki «biz to'ladik —
+  kassani buxgalter ko'rsatadi». Kassani faqat buxgalter va admin tanlaydi.
+- Kassa boshqa valyutada bo'lsa (masalan, bojxona dollarda yozilgan, lekin
+  so'mli firma hisobidan to'langan), kassadan qancha chiqqani alohida yoziladi.
+- **Buxgalteriya → «Xarajat kassasi»** degan yangi navbat: sklad, logist yoki
+  VED kiritgan va kassasi ko'rsatilmagan xarajatlar shu yerga tushadi. Har biri
+  uchun buxgalter aytadi:
+  - qaysi kassadan to'langan;
+  - yoki hodim o'z pulidan to'lagan (unda kompaniya hodimga qarz bo'ladi);
+  - yoki bu xarajat «Xarajatlar»ga ikkinchi marta kiritilgan — unda
+    **birlashtiriladi**.
+- Navbat faqat deploy kunidan boshlab kiritilgan xarajatlarni oladi. Eskilari
+  allaqachon kassalarning boshlang'ich qoldig'i ichida, ularni qayta kassaga
+  yozish pulni ikki marta ayirardi. Sanani Sozlamalarda o'zgartirsa bo'ladi.
+- Bosh sahifada buxgalterga «Kassasi ko'rsatilmagan xarajatlar» soni chiqadi,
+  balansda va pul oqimida ham shu summa alohida yozilgan.
+- Kassadan to'langan xarajatni faqat buxgalter/admin bekor qila oladi (pul
+  kassaga qaytadi). Anulirovka bunday prixodni bekor qilmaydi va nima uchunligini
+  aytadi.
+
+### Takroriy xarajatlarni birlashtirish (A3, M4a)
+
+- Buxgalter bir xil pulni ham yuk xarajati, ham «Xarajatlar» sifatida kiritgan
+  bo'lsa, navbatda **«takror bo'lishi mumkin»** degan taklif chiqadi. Bir
+  bosishda birlashtiriladi.
+- Bir nechta xarajatni belgilab, bitta jamlangan xarajat bilan ham birlashtirish
+  mumkin.
+- Qoida (sizning M4a): bir xil valyutada summa tiyinigacha teng, har xil
+  valyutada farq 2% yoki $5 gacha, sanalar orasi 14 kundan oshmasin.
+- Birlashtirilganda «Xarajatlar»dagi yozuv o'chadi, uning kassasi yuk
+  xarajatiga o'tadi. **Kassa qoldig'i bir tiyin ham o'zgarmaydi**, foyda
+  hisobotida esa ikki marta hisoblangan pul yo'qoladi.
+
+### Hodim-kontragent (A1c, A2a, M1a, M3a)
+
+- Hodimning o'z hisobi bo'ladi: o'z pulidan to'lasa — kompaniya unga qarz,
+  avans olsa — u kompaniyaga qarz.
+- «O'z pulimdan to'ladim» faqat **Rasxod xabari** orqali aytiladi (skladda
+  yoki profil sahifasida). Buxgalter «Kiritish» bosganda to'lovchi o'sha hodim
+  bo'lib turadi va qarz yoziladi.
+- Hodimga avansni faqat buxgalter va admin beradi. Hodimlarning hisobini faqat
+  ular ko'radi — logist va VED kontragentlar ro'yxatida hodimlarni ko'rmaydi.
+- Har bir hodim **profilida** faqat o'z hisobini ko'radi: «Kompaniya sizga
+  qarz» yoki «Sizda avans qoldig'i».
+
+### Hisobotlar (R1–R7)
+
+- **R1 — kurs:** xarajat to'langan kundagi kurs bilan muzlatiladi. Keyinroq
+  kurs tuzatilsa, o'tgan oylar ham, kontragent qarzi ham o'zgarmaydi. Yangi
+  kurs faqat kursi hali yo'q xarajatlarni hisoblaydi.
+- **R2 — bitta mashina, bitta foyda:** «Partiya foydasi» hisoboti endi
+  «Partiya moliyasi» bilan bir xil tannarxni o'qiydi (oldingi reyslar, prixod,
+  yashik va zavod reysi xarajatlari, egasiz yuk ham ichida). Xitoy ichidagi
+  reys faqat xarajat bo'lib ko'rinadi, jami qatoriga qo'shilmaydi (uning puli
+  chegaradan o'tadigan mashinaning tannarxida turibdi). Hech bir qutiga
+  taqsimlanmagan xarajat bo'lsa, alohida ogohlantirish chiqadi.
+- **R3 — narx bitimga:** mashinada qo'yilgan narx, mijozning shu mashinadagi
+  yuki bitta bitimniki bo'lsa, o'sha bitimga ham yoziladi. Natijada:
+  bitim foydasi to'g'ri chiqadi, sotuvchining upsale haqi «hisob-faktura yo'q»
+  bo'lib qolib ketmaydi, kechiktirilgan bitimning narxi ham kechiktirilgan
+  hisoblanadi. Eski narxlar o'zgarmaydi.
+- **R4 — kassaning boshlang'ich qoldiq sanasi** (siz «o'zing to'g'risini qil»
+  dedingiz): kassaga boshlang'ich qoldiq va sana yozilgan bo'lsa, o'sha sanadan
+  **oldingi** yozuvlar qoldiqqa qayta qo'shilmaydi — ular allaqachon sanalgan
+  pul ichida. Mijoz hisobi va hisobotlarda ular turadi. Kassalar sahifasida
+  «N ta yozuv sanadan oldin» deb ogohlantiradi. Sanasi yo'q kassa avvalgidek.
+  Kiritishni taqiqlamadim: eski to'lovni mijoz hisobiga kiritish kerak bo'lishi
+  mumkin, u endi kassani buzmaydi.
+- **R5 — Toshkent vaqti hamma joyda:** «bugun», «shu oy», hisobot davrlari,
+  narx sanasi, bosh sahifa sanoqlari endi Toshkent vaqtida. Avval tunda
+  00:00–05:00 orasida yozilgan narx kechagi kunga (oyning boshida — o'tgan oyga)
+  tushib qolardi. Partiya narxi formasida sana endi ko'rinadi va o'zgartirsa
+  bo'ladi. Istisno: vazifalarning «butun kun» muddati va Xitoy skladlarining o'z
+  kuni (prixod raqami, rasxod xabari sanasi) — ular o'z vaqtida qoladi.
+- **R6 — pul qaytarish:** mijoz hisobida uchinchi tugma **«↩️ Pul qaytarildi»**.
+  Kassani ko'rsatish shart, faqat buxgalter/admin yozadi. Qarzni oshiradi,
+  kassadan ayiradi, daromad emas. Pul oqimida «Mijozlarga qaytarilgan» qatori.
+- **R7 — balans:** «Mijozlar qarzi» endi /finance dagi son bilan bir xil
+  (faqat qarzdorlar). Oldindan to'lagan mijozlarning puli alohida qatorda —
+  **«Mijozlar avansi (biz qarzmiz)»**. Umumiy natija o'zgarmadi.
+
+### Ichki reys (U1b)
+
+- Ichki reys endi **faqat Xitoy ichida** (Yiwu → Qashqar). Andijon → Toshkent
+  kabi O'zbekiston ichidagi reysga narx qo'yiladi. VED uchun «hujjat
+  yuborilmagan» ro'yxatiga bu reyslar tushmaydi.
+
+### Mijoz kabineti: topshirilgan yuklar tarixi (F)
+
+- Telegram kabinetidagi «Tarix» bo'limida so'nggi **3 oyda** berilgan yuklar
+  alohida-alohida: qachon va qayerda berildi, kim oldi, qaysi hodim berdi,
+  tovar, karobka soni, kg, kub, qabul qilingan sana, rasmlar va **qaysi
+  partiyada kelgani** — ichki yo'l (Yiwu → Qashqar) va xalqaro yo'l (Qashqar →
+  Toshkent) jo'nagan va kelgan sanalari bilan.
+- Pul: faqat mijoz **to'lagan** pullar ko'rinadi. Tannarx, bizning izohlar,
+  mashina raqami, haydovchi — ko'rinmaydi.
+- Botdagi «Tarix» tugmasi ham xuddi shuni matn bilan beradi.
+
+### Z1
+
+- Amap kaliti olinmaydi: OpenStreetMap va nuqtani qo'lda to'g'rilash qoladi.
+
 ## Zavod reysi: zavoddan yuk olib kelish, zavodlar bazasi, xaritada yo'l — 2026-09-24
 
 Sizning B1–B6 va D1 javoblaringiz. **Migratsiya 0100 — deploydan keyin ledger
