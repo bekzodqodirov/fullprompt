@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ROLE_MATRIX, type RoleCode } from '@/modules/platform/rbac/catalog';
 import { mayClassifyFx } from '@/modules/wms/finance/fx-door';
+import { moneyHidden } from '@/modules/platform/rbac/money-sight';
 
 /**
  * F7 + F8 (0103, owner-4 and owner-6): who may say money is «kurs farqi»,
@@ -39,6 +40,17 @@ describe('F7 — the classifier’s audience over the SEEDED roles', () => {
       expect(mayClassifyFx(new Set<string>(ROLE_MATRIX[role]))).toBe(EXPECTED[role]);
     });
   }
+
+  // The design's second half, deferred while the VED package was in flight:
+  // on every seeded role, «may say it is kurs farqi» is exactly «moves the
+  // ledger and is not the VED the owner blinded» (Q19) — so a grant that
+  // widens one without the other turns this red.
+  it('equals finance.manage AND not moneyHidden(results) on every seeded role', () => {
+    for (const role of Object.keys(ROLE_MATRIX) as RoleCode[]) {
+      const grants = new Set<string>(ROLE_MATRIX[role]);
+      expect(mayClassifyFx(grants), role).toBe(grants.has('finance.manage') && !moneyHidden('results', grants));
+    }
+  });
 });
 
 describe('F7 — both sides of each door', () => {
