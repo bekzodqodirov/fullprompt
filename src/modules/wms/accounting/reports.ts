@@ -1037,20 +1037,31 @@ export interface UnbatchedMoney {
   noTruckCost: { lostUsd: number; issuedUsd: number; waitingUsd: number };
 }
 
-export async function unbatchedMoney(from: string, to: string): Promise<UnbatchedMoney> {
-  const [[revenue], cost] = await Promise.all([
-    db
-      .select({ sum: sql<string>`coalesce(sum(${clientTransactions.amountUsd}), 0)` })
-      .from(clientTransactions)
-      .where(
-        and(
-          eq(clientTransactions.type, 'charge'),
-          isNull(clientTransactions.batchId),
-          isNull(clientTransactions.voidedAt),
-          gte(clientTransactions.txDate, from),
-          lte(clientTransactions.txDate, to),
-        ),
+/**
+ * The revenue half of `unbatchedMoney` alone: charges in the period that
+ * name no truck. The dashboard asks only this (it names the revenue beside
+ * the unpriced trucks); the cost half's ride probe is ~1 s over a year of a
+ * busy book, which a morning screen must not pay for a number it never shows.
+ */
+export async function unbatchedRevenue(from: string, to: string): Promise<number> {
+  const [revenue] = await db
+    .select({ sum: sql<string>`coalesce(sum(${clientTransactions.amountUsd}), 0)` })
+    .from(clientTransactions)
+    .where(
+      and(
+        eq(clientTransactions.type, 'charge'),
+        isNull(clientTransactions.batchId),
+        isNull(clientTransactions.voidedAt),
+        gte(clientTransactions.txDate, from),
+        lte(clientTransactions.txDate, to),
       ),
+    );
+  return money(revenue?.sum);
+}
+
+export async function unbatchedMoney(from: string, to: string): Promise<UnbatchedMoney> {
+  const [revenueUsd, cost] = await Promise.all([
+    unbatchedRevenue(from, to),
     // Summed per BOX first, then the ride probe once per box and not once
     // per allocation (a year is ~3 allocations a box).
     db.execute(sql`
@@ -1078,7 +1089,7 @@ export async function unbatchedMoney(from: string, to: string): Promise<Unbatche
     `) as unknown as Promise<{ lost: string; issued: string; waiting: string }[]>,
   ]);
   return {
-    revenueUsd: money(revenue?.sum),
+    revenueUsd,
     noTruckCost: {
       lostUsd: money(cost[0]?.lost),
       issuedUsd: money(cost[0]?.issued),

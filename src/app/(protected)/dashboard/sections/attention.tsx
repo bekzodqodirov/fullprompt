@@ -205,8 +205,8 @@ export async function AttentionSection({
     let unpricedText = t('att.unpriced', { n: rows.length, usd: usd(cost) });
     if (rows.length > 0) {
       const unbatched = await loadUnbatched();
-      if (unbatched.revenueUsd > 0.009) {
-        unpricedText += ` — ${t('att.unpricedUnbatched', { usd: usd(unbatched.revenueUsd) })}`;
+      if (unbatched > 0.009) {
+        unpricedText += ` — ${t('att.unpricedUnbatched', { usd: usd(unbatched) })}`;
       }
     }
     push({

@@ -7,7 +7,7 @@ import {
   pnlGaps,
   profitAndLoss,
   profitByBatch,
-  unbatchedMoney,
+  unbatchedRevenue,
 } from '../accounting/reports';
 import { targetsFor } from '../accounting/targets';
 import { decidedLeadsByMonth } from '../crm/analytics';
@@ -62,7 +62,7 @@ export const loadTrips = cache(() => {
 });
 export const loadUnbatched = cache(() => {
   const w = loadWindows();
-  return unbatchedMoney(w.m12Start, w.today);
+  return unbatchedRevenue(w.m12Start, w.today);
 });
 export const loadGaps = cache(() => {
   const w = loadWindows();
