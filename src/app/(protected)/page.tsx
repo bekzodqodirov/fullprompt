@@ -451,7 +451,21 @@ async function AccountantFlow({ flow }: { flow: MoneyFlowCounts }) {
           testid="acc-flow-hero"
           label={tacc('title')}
           count={0}
-          sub={`${td('monthCharged')} ${usd(flow.snapshot.revenueMonth)} · ${td('monthPaid')} ${usd(flow.snapshot.paidMonth)}`}
+          sub={
+            <>
+              {td('monthCharged')} {usd(flow.snapshot.revenueMonth)} · {td('monthPaidNet')}{' '}
+              {usd(flow.snapshot.paidMonth)}
+              {/* The net figure's three parts, each the number the cash flow
+                  and the register print for the same month (U26). */}
+              <span className="block" data-testid="acc-flow-paid-parts">
+                {td('monthPaidParts', {
+                  till: usd(flow.snapshot.paidParts.toTill),
+                  partner: usd(flow.snapshot.paidParts.viaPartner),
+                  refunded: usd(flow.snapshot.paidParts.refunded),
+                })}
+              </span>
+            </>
+          }
         />
         <FlowRow
           href="/accounting/receivables"
@@ -502,7 +516,9 @@ async function AccountantFlow({ flow }: { flow: MoneyFlowCounts }) {
           testid="acc-flow-payments"
           label={tfin('paymentsRegister')}
           count={0}
-          sub={`${td('monthPaid')} ${usd(flow.snapshot.paidMonth)}`}
+          // The register's OWN figure — every payment of the month, no
+          // refund — because that is the page this row opens (U26).
+          sub={`${td('monthPayments')} ${usd(flow.snapshot.paidParts.toTill + flow.snapshot.paidParts.viaPartner)}`}
         />
         <FlowRow
           href="/accounting/expenses"

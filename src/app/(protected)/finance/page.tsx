@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { clientBalances } from '@/modules/wms/finance/service';
+import { clientBalances, clientTotals } from '@/modules/wms/finance/service';
 import { moneyOwnerFilter } from '@/modules/wms/finance/scope';
 import { FinanceClientSearch } from './client-search';
 import { PageHeader } from '@/components/ui/page';
@@ -23,7 +23,10 @@ export default async function FinancePage() {
   // over every client's money (see finance/scope.ts). The total below sums
   // these rows, so it narrows with them and cannot contradict the table.
   const rows = await clientBalances(moneyOwnerFilter(actor));
-  const totalDebt = rows.filter((r) => r.balanceUsd > 0).reduce((a, r) => a + r.balanceUsd, 0);
+  // The Balans's own arithmetic over these rows (U15): «Jami qarzdorlik» is
+  // its «Mijozlar qarzi» line and the advances its «Mijozlar avansi» — that
+  // line links here, and a figure that can be checked nowhere is not checked.
+  const { receivable: totalDebt, advances: totalAdvances } = clientTotals(rows);
 
   return (
     <div className="mx-auto max-w-lg space-y-4 md:max-w-3xl">
@@ -37,11 +40,21 @@ export default async function FinancePage() {
         }
       />
       {actor.permissions.has('finance.manage') && <FinanceClientSearch />}
-      <div className="card flex items-baseline gap-2">
-        <span className="text-sm text-ink-700">{t('totalDebt')}:</span>
-        <span className="font-mono text-lg font-extrabold text-bad">
-          ${totalDebt.toFixed(2)}
+      <div className="card flex flex-wrap items-baseline gap-x-4 gap-y-1">
+        <span className="flex items-baseline gap-2">
+          <span className="text-sm text-ink-700">{t('totalDebt')}:</span>
+          <span className="font-mono text-lg font-extrabold text-bad">
+            ${totalDebt.toFixed(2)}
+          </span>
         </span>
+        {totalAdvances > 0 && (
+          <span className="flex items-baseline gap-2" data-testid="finance-total-advances">
+            <span className="text-sm text-ink-700">{t('totalAdvances')}:</span>
+            <span className="font-mono text-lg font-extrabold text-bad">
+              ${totalAdvances.toFixed(2)}
+            </span>
+          </span>
+        )}
       </div>
       <div className="card overflow-x-auto !p-0">
         <table className="w-full text-sm">

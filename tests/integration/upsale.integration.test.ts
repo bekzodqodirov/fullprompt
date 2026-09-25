@@ -29,8 +29,16 @@ import {
   sealCalc,
   setFreightZone,
 } from '@/modules/wms/calc/workspace';
-import { bySeller, payUpsale, upsaleRows } from '@/modules/wms/calc/upsale-service';
+import {
+  bySeller,
+  payUpsale,
+  UPSALE_CAP,
+  upsaleLiability,
+  upsaleRows,
+} from '@/modules/wms/calc/upsale-service';
 import { voidExpense } from '@/modules/wms/accounting/service';
+import { companyBalance } from '@/modules/wms/accounting/reports';
+import { addTransaction } from '@/modules/wms/finance/service';
 
 /**
  * VED phase D — the upsale, against a real database.
@@ -865,5 +873,107 @@ describe('a correction retires the released offer', () => {
 
     const card = await db.query.deals.findFirst({ where: eq(deals.id, dealId) });
     expect(Number(card!.quotedAmount)).toBe(next.floor);
+  });
+});
+
+describe('the Balans owes the sellers what the clients have paid for (U10)', () => {
+  const cents = (value: number) => Math.round(value * 100) / 100;
+  // A client of the test's own for every job: a client's balance decides the
+  // state of EVERY offer on its deals, so the file's shared client would move
+  // other tests' commissions under these deltas.
+  const madeClients: string[] = [];
+  let n = 0;
+  async function freshDeal() {
+    n += 1;
+    const [c] = await db
+      .insert(clients)
+      .values({ clientCode: `UQ${SUFFIX}${n}`, name: `Upsale balans ${SUFFIX} ${n}` })
+      .returning();
+    madeClients.push(c!.id);
+    const stage = await db.query.dealStages.findFirst({ where: eq(dealStages.kind, 'open') });
+    const [d] = await db
+      .insert(deals)
+      .values({ code: `UQ-${SUFFIX}-${n}`, clientId: c!.id, stageId: stage!.id, title: 'Upsale balans', createdBy: actorId })
+      .returning();
+    madeDeals.push(d!.id);
+    return { client: c!.id, deal: d!.id };
+  }
+  /** Sealed, quoted above the floor by `extra`, charged — and collected into the till. */
+  async function collectedJob(extra: number) {
+    const own = await freshDeal();
+    const job = await sealedJob({ dealId: own.deal });
+    const price = job.floor + extra;
+    const offer = await recordOffer({ versionId: job.versionId }, { clientPriceUsd: price, locale: 'uz' }, sellerCtx());
+    await addTransaction({ clientId: own.client, type: 'charge', amount: price, currency: 'USD', txDate: today(), dealId: own.deal }, ctx());
+    await addTransaction(
+      { clientId: own.client, type: 'payment', amount: price, currency: 'USD', txDate: today(), dealId: own.deal, accountId },
+      ctx(),
+    );
+    return { ...own, offerId: offer.id, versionId: job.versionId, price };
+  }
+
+  afterAll(async () => {
+    // The deals and the offers go with the file's own cleanup; the money and
+    // the clients are these tests'.
+    if (madeClients.length > 0) {
+      await db.delete(clientTransactions).where(inArray(clientTransactions.clientId, madeClients));
+      await db.update(clients).set({ active: false }).where(inArray(clients.id, madeClients));
+    }
+  });
+
+  it('a collected upsale is owed until it is paid out; the payout moves cash, not the net', async () => {
+    const own = await freshDeal();
+    const job = await sealedJob({ dealId: own.deal });
+    const price = job.floor + 600;
+    const offer = await recordOffer({ versionId: job.versionId }, { clientPriceUsd: price, locale: 'uz' }, sellerCtx());
+    await addTransaction({ clientId: own.client, type: 'charge', amount: price, currency: 'USD', txDate: today(), dealId: own.deal }, ctx());
+    const invoiced = await companyBalance();
+    await addTransaction(
+      { clientId: own.client, type: 'payment', amount: price, currency: 'USD', txDate: today(), dealId: own.deal, accountId },
+      ctx(),
+    );
+    const collected = await companyBalance();
+    // Not owed before the client paid («not owed until the sale is»)…
+    expect(cents(collected.sellerCommissionsUsd - invoiced.sellerCommissionsUsd)).toBe(600);
+    // …then +price of cash, −price of debt, −600 owed to the seller.
+    expect(cents(collected.netUsd - invoiced.netUsd)).toBe(-600);
+
+    const paid = await payUpsale([offer.id], { accountId, currency: 'USD', expenseDate: today() }, ctx());
+    madeExpenses.push(paid.expenseId);
+    const settled = await companyBalance();
+    expect(cents(settled.sellerCommissionsUsd - collected.sellerCommissionsUsd)).toBe(-600);
+    expect(cents(settled.netUsd - collected.netUsd)).toBe(0);
+  });
+
+  it('an old unpaid commission is not pushed off the Balans by the screen\'s cap of newer paid ones', async () => {
+    const before = await upsaleLiability();
+    const owed = await collectedJob(250);
+    const withOwed = await upsaleLiability();
+    expect(cents(withOwed.payableUsd - before.payableUsd)).toBe(250);
+
+    const done = await collectedJob(400);
+    const paid = await payUpsale([done.offerId], { accountId, currency: 'USD', expenseDate: today() }, ctx());
+    madeExpenses.push(paid.expenseId);
+    // A year of paid commissions, every one newer than the unpaid one — the
+    // screen keeps paid rows for ever and shows the newest UPSALE_CAP.
+    await db.execute(sql`
+      INSERT INTO calc_offers (id, version_id, entity_type, entity_id, client_price_usd, below_floor, locale, text,
+                               offered_by, offered_at, below_floor_reason, approved_at, approved_by,
+                               payout_expense_id, payout_at, payout_by, payout_usd, request_id)
+      SELECT gen_random_uuid(), version_id, entity_type, entity_id, client_price_usd, below_floor, locale, text,
+             offered_by, now() + (g || ' seconds')::interval, below_floor_reason, approved_at, approved_by,
+             payout_expense_id, payout_at, payout_by, 0.01, request_id
+        FROM calc_offers, generate_series(1, ${UPSALE_CAP + 1}) g
+       WHERE id = ${done.offerId}::uuid`);
+    try {
+      const screen = await upsaleRows('all', actorId, {});
+      // The premise: the screen's slice has lost the unpaid commission…
+      expect(screen.truncated).toBe(true);
+      expect(screen.rows.some((row) => row.offerId === owed.offerId)).toBe(false);
+      // …and the balance sheet has not.
+      expect((await upsaleLiability()).payableUsd).toBe(withOwed.payableUsd);
+    } finally {
+      await db.execute(sql`DELETE FROM calc_offers WHERE version_id = ${done.versionId}::uuid AND id <> ${done.offerId}::uuid`);
+    }
   });
 });

@@ -14,7 +14,9 @@ export type BalanceLineKey =
   | 'balReceivable'
   | 'balPartnerReceivable'
   | 'balPayable'
-  | 'balClientAdvances';
+  | 'balClientAdvances'
+  | 'balUnplacedCostsLine'
+  | 'balSellerCommissions';
 
 export interface BalanceLine {
   key: BalanceLineKey;
@@ -32,6 +34,9 @@ export interface BalanceFigures {
   partnerReceivableUsd: number;
   payableUsd: number;
   clientAdvancesUsd: number;
+  unplacedCostCount: number;
+  unplacedCostUsd: number;
+  sellerCommissionsUsd: number;
 }
 
 export function balanceLines(balance: BalanceFigures, cashHref = '/accounting/accounts'): BalanceLine[] {
@@ -47,6 +52,17 @@ export function balanceLines(balance: BalanceFigures, cashHref = '/accounting/ac
     // into «qarz» made the receivable disagree with the /finance total.
     ...(balance.clientAdvancesUsd > 0
       ? [{ key: 'balClientAdvances', value: -balance.clientAdvancesUsd, tone: 'text-bad', href: '/finance' } as const]
+      : []),
+    // Cargo costs spent from a kassa nobody has named yet (U02): money gone,
+    // so it leaves the net on the day it is SPENT — and leaves this line for
+    // its kassa's on the day the accountant places it, the net unmoved.
+    ...(balance.unplacedCostCount > 0
+      ? [{ key: 'balUnplacedCostsLine', value: -balance.unplacedCostUsd, tone: 'text-warn', href: '/accounting/xarajat-kassa' } as const]
+      : []),
+    // Commissions owed on jobs the client has paid for (U10): out of money
+    // already in the tills, so a liability until the accountant pays them.
+    ...(balance.sellerCommissionsUsd > 0
+      ? [{ key: 'balSellerCommissions', value: -balance.sellerCommissionsUsd, tone: 'text-bad', href: '/upsale' } as const]
       : []),
   ];
 }

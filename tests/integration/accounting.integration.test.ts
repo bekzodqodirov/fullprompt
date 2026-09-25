@@ -13,10 +13,13 @@ import {
   expenses,
   fxRates,
   moneyAccounts,
+  partnerTransactions,
   partnerTypes,
+  partners,
   users,
   warehouses,
 } from '@/modules/platform/db/schema';
+import { reportLabels } from '@/modules/wms/reports/labels';
 import { partnerBalanceUsd, savePartner, setPartnerActive } from '@/modules/wms/partners/service';
 import { confirmReceipt } from '@/modules/wms/receipts/service';
 import { recordVerdict, submitPlan } from '@/modules/wms/planning/service';
@@ -947,6 +950,40 @@ describe('XLSX exports', () => {
     expect(net, 'net profit row').toBeDefined();
     // Month column header, so a reader can tell which period they are holding.
     expect(rows.some((row) => row.includes(M2))).toBe(true);
+  });
+
+  it('the P&L file names what the screen names: a hand-typed partner debt no cost row carries (U22)', async () => {
+    const L = reportLabels('uz');
+    const [type] = await db.select().from(partnerTypes).limit(1);
+    const [partner] = await db
+      .insert(partners)
+      .values({ name: `Qo'lda qarz ${SUFFIX}`, typeId: type!.id, createdBy: actorId })
+      .returning();
+    // The legacy shape: a charge typed on the partner's card with no cost or
+    // expense behind it — written directly, the card door is closed (#999).
+    await db.insert(partnerTransactions).values({
+      partnerId: partner!.id,
+      type: 'charge',
+      amount: '75',
+      currency: 'USD',
+      rateToUsd: '1',
+      amountUsd: '75',
+      txDate: `${M2}-05`,
+      createdBy: actorId,
+    });
+    try {
+      const rows = cells((await open(await buildPnlXlsx(`${M2}-01`, `${M2}-28`, 'uz'))).worksheets[0]!);
+      const note = rows.find((row) => String(row[0]).startsWith(`⚠ ${L.gapManualCharges}`));
+      expect(note, 'the manual-charge warning').toBeDefined();
+      // One text cell: a figure beside it would be summed with the report.
+      expect(note!.filter((cell) => cell !== undefined && cell !== null && cell !== '').length).toBe(1);
+      // The net row is still found the way the file's reader finds it.
+      const pnl = await profitAndLoss(`${M2}-01`, `${M2}-28`);
+      expect(rows.some((row) => String(row[0]).toUpperCase().includes('FOYDA') && row.includes(pnl.netProfit.total))).toBe(true);
+    } finally {
+      await db.delete(partnerTransactions).where(eq(partnerTransactions.partnerId, partner!.id));
+      await db.delete(partners).where(eq(partners.id, partner!.id));
+    }
   });
 
   it('the expense register totals what it lists', async () => {

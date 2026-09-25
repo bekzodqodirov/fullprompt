@@ -483,13 +483,94 @@ export interface PaymentRegisterRow {
  * home counter, the Balans line and the register's unplaced view read this one
  * predicate. Since cash boxes exist only — a payment older than the first box
  * is inside some box's counted opening balance and has nowhere to be placed.
+ *
+ * And not when it is CERTAINLY inside a count (audit U09): R4 (#1012) keeps a
+ * row dated before a till's opening date out of that till, because the count
+ * already holds it — so a payment dated before EVERY count of its currency is
+ * money the drawers already show, and listing it as well put it on the Balans
+ * twice until somebody «placed» it and the net fell by the whole amount. Only
+ * tills of the payment's own currency can take it (`placePayment` refuses the
+ * rest), so only they are asked; a till with no opening date counts every row
+ * placed into it, so while one exists the payment stays on the line — and so
+ * does a payment in a currency with no active till at all, or it would drop
+ * out of the net silently. `${clientTransactions}.col`, the table, never the
+ * column: inside the subquery a bare column would bind to money_accounts (#128).
  */
 export function unplacedPaymentSql() {
   return and(
     isNull(clientTransactions.accountId),
     isNull(clientTransactions.partnerId),
     sql`${clientTransactions.txDate} >= (SELECT min(created_at)::date FROM money_accounts)`,
+    sql`(NOT EXISTS (SELECT 1 FROM money_accounts ma
+                      WHERE ma.active AND ma.currency = ${clientTransactions}.currency)
+         OR EXISTS (SELECT 1 FROM money_accounts ma
+                     WHERE ma.active AND ma.currency = ${clientTransactions}.currency
+                       AND coalesce(ma.opening_date, '-infinity'::date) <= ${clientTransactions}.tx_date))`,
   );
+}
+
+/**
+ * Client money over a period, said ONCE (audit U26, #513). Three screens
+ * printed «this month's payments» three ways — the homes net of refunds and
+ * with settlements, the cash flow only what reached a kassa, the register
+ * every payment and no refund — and each disagreed with the one it links to.
+ * One grouped query, split into the parts each of those screens prints, so
+ * every figure on a home can be found again where it leads:
+ *
+ * - `toTill` — payments into a kassa of ours: the cash flow's «Mijoz to'lovlari»
+ * - `viaPartner` — the client half of a three-cornered settlement: money that
+ *   closed the client's debt in a firm's account, never a till (round 39)
+ * - `refunded` — money handed back out of a kassa (R6a): the cash flow's own row
+ * - `netCollected` — what the clients closed, net: toTill + viaPartner −
+ *   refunded, i.e. `netPaidUsdSql`'s sum (the owner's answer A, 2026-09-25)
+ *
+ * The register's total is toTill + viaPartner (every payment, no refund).
+ */
+export async function clientMoneyInPeriod(from: string, to: string) {
+  const [row] = await db
+    .select({
+      charged: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) FILTER (WHERE ${clientTransactions.type} = 'charge'), 0)`,
+      toTill: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) FILTER (WHERE ${clientTransactions.type} = 'payment' AND ${clientTransactions.partnerId} IS NULL), 0)`,
+      viaPartner: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) FILTER (WHERE ${clientTransactions.type} = 'payment' AND ${clientTransactions.partnerId} IS NOT NULL), 0)`,
+      refunded: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) FILTER (WHERE ${clientTransactions.type} = 'refund'), 0)`,
+    })
+    .from(clientTransactions)
+    .where(
+      and(
+        isNull(clientTransactions.voidedAt),
+        gte(clientTransactions.txDate, from),
+        lte(clientTransactions.txDate, to),
+      ),
+    );
+  const cents = (value: unknown) => Math.round(Number(value ?? 0) * 100) / 100;
+  const toTill = cents(row?.toTill);
+  const viaPartner = cents(row?.viaPartner);
+  const refunded = cents(row?.refunded);
+  return {
+    charged: cents(row?.charged),
+    toTill,
+    viaPartner,
+    refunded,
+    netCollected: cents(toTill + viaPartner - refunded),
+  };
+}
+
+/**
+ * The /finance total and the Balans's two client lines, said once (audit U15,
+ * the client twin of `partnerTotals`, #996): debtors are the positive
+ * balances, advances the negative ones — money we owe back in service. Each
+ * row rounded to the cent first, the way both screens print it, so the
+ * figure a Balans line links to can be checked there to the cent.
+ */
+export function clientTotals(rows: { balanceUsd: number }[]): { receivable: number; advances: number } {
+  let receivable = 0;
+  let advances = 0;
+  for (const row of rows) {
+    const value = Math.round(row.balanceUsd * 100) / 100;
+    if (value > 0) receivable += value;
+    else advances += -value;
+  }
+  return { receivable: Math.round(receivable * 100) / 100, advances: Math.round(advances * 100) / 100 };
 }
 
 export async function paymentsRegister(

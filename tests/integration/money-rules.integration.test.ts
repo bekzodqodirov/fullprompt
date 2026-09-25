@@ -8,6 +8,7 @@ import {
   balancesForClients,
   clientBalances,
   clientBalanceUsd,
+  clientTotals,
 } from '@/modules/wms/finance/service';
 import { accountBalances } from '@/modules/wms/accounting/service';
 import { arAging, cashFlow, companyBalance } from '@/modules/wms/accounting/reports';
@@ -182,11 +183,22 @@ describe('R7a — the Balans splits debtors from advances', () => {
     expect(Math.round((after.netUsd - before.netUsd) * 100) / 100).toBe(100);
   });
 
-  it('«qarz» on the Balans is the /finance total, to the cent', async () => {
+  it('both client lines on the Balans are the /finance page\'s own two totals, to the cent (U15)', async () => {
+    // The page calls `clientTotals` over `clientBalances` and so does the
+    // Balans: the test calls the same function rather than restating the
+    // page's arithmetic (#166), and the advances half — the Balans line that
+    // links to /finance — is checked where it is printed.
     const balance = await companyBalance();
-    const finance = (await clientBalances())
-      .filter((r) => r.balanceUsd > 0)
-      .reduce((a, r) => a + r.balanceUsd, 0);
-    expect(balance.receivableUsd).toBe(Math.round(finance * 100) / 100);
+    const page = clientTotals(await clientBalances());
+    expect(balance.receivableUsd).toBe(page.receivable);
+    expect(balance.clientAdvancesUsd).toBe(page.advances);
+    expect(page.advances).toBeGreaterThan(0);
+  });
+
+  it('clientTotals puts debtors in one total and advances, as positive money, in the other', () => {
+    expect(clientTotals([{ balanceUsd: 100 }, { balanceUsd: -40 }, { balanceUsd: 0 }, { balanceUsd: -0.004 }])).toEqual({
+      receivable: 100,
+      advances: 40,
+    });
   });
 });

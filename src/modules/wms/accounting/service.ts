@@ -1,5 +1,5 @@
 import { cache } from 'react';
-import { and, asc, eq, gte, isNull, lte, sql, type AnyColumn } from 'drizzle-orm';
+import { and, asc, eq, gte, isNull, lte, sql, type AnyColumn, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
 import { db, type Db, type Tx } from '../../platform/db/client';
@@ -19,6 +19,13 @@ import {
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { rateFor } from '../costing/service';
 import { logger } from '../../platform/logger';
+import {
+  cashClientTxSql,
+  cashCostSql,
+  cashExpenseSql,
+  costCashDay,
+  mergedFrom,
+} from './cash-rules';
 
 /**
  * Management accounting (Phase 2.4, owner's answers).
@@ -625,6 +632,109 @@ export async function voidTransfer(id: string, reason: string, ctx: AuditContext
   });
 }
 
+/** A kassa-moving row's day: a column, or `costCashDay` for a merged cost. */
+type Day = AnyColumn | SQL;
+
+/**
+ * The R4 rule (#1012): a row dated before its box's opening count is already
+ * inside the counted figure, so the box does not add it again. No opening
+ * date = every row counts.
+ */
+const countedSql = (day: Day) => sql`${day} >= coalesce(${moneyAccounts.openingDate}, '-infinity'::date)`;
+
+/**
+ * The aggregate columns one reader wants of each kassa-moving statement:
+ * given the row's native amount, its day, its dollars and whether the CASH
+ * FLOW counts it (`cash-rules.ts`), return the SQL to sum.
+ */
+type LedgerPick = (amount: AnyColumn, day: Day, usd: SQL, inCashFlow: SQL) => Record<string, SQL>;
+type LedgerRow = { id: string | null; type?: string } & Record<string, unknown>;
+/** The six statements' rows, in `kassaLedger`'s order. */
+type Ledger<R> = [R[], R[], R[], R[], R[], R[]];
+
+/**
+ * Every statement that moves a kassa, ONCE — the balances today
+ * (`accountBalances`) and over a period (`accountBalancesBetween`) ask the
+ * SAME six grouped questions with different sums, so a box's period table
+ * cannot disagree with its balance by a rule one of them forgot (#513).
+ */
+function kassaLedger(pick: LedgerPick): Promise<Ledger<LedgerRow>> {
+  const usd = (column: AnyColumn) => sql`coalesce(${column}, 0)`;
+  return Promise.all([
+    // Payments IN and refunds OUT (R6a) in one pass, split by type.
+    db
+      .select({
+        id: clientTransactions.accountId,
+        type: clientTransactions.type,
+        ...pick(clientTransactions.amount, clientTransactions.txDate, usd(clientTransactions.amountUsd), cashClientTxSql()),
+      })
+      .from(clientTransactions)
+      .innerJoin(moneyAccounts, eq(moneyAccounts.id, clientTransactions.accountId))
+      .where(isNull(clientTransactions.voidedAt))
+      .groupBy(clientTransactions.accountId, clientTransactions.type),
+    db
+      .select({
+        id: expenses.accountId,
+        ...pick(expenses.amount, expenses.expenseDate, usd(expenses.amountUsd), cashExpenseSql()),
+      })
+      .from(expenses)
+      .innerJoin(moneyAccounts, eq(moneyAccounts.id, expenses.accountId))
+      .where(isNull(expenses.voidedAt))
+      .groupBy(expenses.accountId),
+    // A transfer is our own money changing drawers: never in the cash flow.
+    db
+      .select({
+        id: accountTransfers.toAccountId,
+        ...pick(accountTransfers.amountTo, accountTransfers.transferDate, usd(accountTransfers.amountUsd), sql`false`),
+      })
+      .from(accountTransfers)
+      .innerJoin(moneyAccounts, eq(moneyAccounts.id, accountTransfers.toAccountId))
+      .where(isNull(accountTransfers.voidedAt))
+      .groupBy(accountTransfers.toAccountId),
+    db
+      .select({
+        id: accountTransfers.fromAccountId,
+        ...pick(accountTransfers.amountFrom, accountTransfers.transferDate, usd(accountTransfers.amountUsd), sql`false`),
+      })
+      .from(accountTransfers)
+      .innerJoin(moneyAccounts, eq(moneyAccounts.id, accountTransfers.fromAccountId))
+      .where(isNull(accountTransfers.voidedAt))
+      .groupBy(accountTransfers.fromAccountId),
+    // Round 39: counterparty money moves the same boxes. A cash buyer wiring
+    // som into the company account raises it; paying the transport firm out
+    // of the till lowers it. Both directions in one pass, split by type —
+    // and only those two types carry a box (0054's CHECK), both of them in
+    // the cash flow.
+    db
+      .select({
+        id: partnerTransactions.accountId,
+        type: partnerTransactions.type,
+        ...pick(partnerTransactions.amount, partnerTransactions.txDate, usd(partnerTransactions.amountUsd), sql`true`),
+      })
+      .from(partnerTransactions)
+      .innerJoin(moneyAccounts, eq(moneyAccounts.id, partnerTransactions.accountId))
+      .where(isNull(partnerTransactions.voidedAt))
+      .groupBy(partnerTransactions.accountId, partnerTransactions.type),
+    // Cargo costs paid out of a kassa (0101, owner 3b), in the KASSA's
+    // currency — `account_amount`, not the cost's own amount, because customs
+    // typed in dollars left a som account. A seventh statement would be one
+    // more pooled connection per render of a page that already runs six
+    // (the pool is ten); the cost side is the cheapest to add as its own.
+    // Dated by the day the DRAWER paid (U07): a merged cost reads the day of
+    // the expense it replaced, or the merge moves money across the count.
+    db
+      .select({
+        id: costEntries.accountId,
+        ...pick(costEntries.accountAmount, costCashDay, usd(costEntries.amountUsd), cashCostSql()),
+      })
+      .from(costEntries)
+      .innerJoin(moneyAccounts, eq(moneyAccounts.id, costEntries.accountId))
+      .leftJoin(mergedFrom, eq(mergedFrom.id, costEntries.mergedExpenseId))
+      .where(isNull(costEntries.voidedAt))
+      .groupBy(costEntries.accountId),
+  ] as Promise<LedgerRow[]>[]) as Promise<Ledger<LedgerRow>>;
+}
+
 /**
  * Balance per account, in the account's OWN currency.
  *
@@ -651,86 +761,13 @@ export const accountBalances = cache(async function accountBalances() {
   // flow — they happened — and are only kept out of THIS sum; `early`
   // counts them so the accounts screen can say so. No opening date = every
   // row counts, exactly as before.
-  const counted = (dateCol: AnyColumn) =>
-    sql`${dateCol} >= coalesce(${moneyAccounts.openingDate}, '-infinity'::date)`;
-  const sumCounted = (amount: AnyColumn, dateCol: AnyColumn) =>
-    sql<string>`coalesce(sum(${amount}) FILTER (WHERE ${counted(dateCol)}), 0)`;
-  const early = (dateCol: AnyColumn) =>
-    sql<number>`count(*) FILTER (WHERE NOT ${counted(dateCol)})`;
-  const [accounts, clientRows, spentRows, inRows, outRows, partnerRows, costRows] = await Promise.all([
+  const [accounts, [clientRows, spentRows, inRows, outRows, partnerRows, costRows]] = await Promise.all([
     listAccounts(true),
-    // Payments IN and refunds OUT (R6a) in one pass, split by type.
-    db
-      .select({
-        id: clientTransactions.accountId,
-        type: clientTransactions.type,
-        sum: sumCounted(clientTransactions.amount, clientTransactions.txDate),
-        early: early(clientTransactions.txDate),
-      })
-      .from(clientTransactions)
-      .innerJoin(moneyAccounts, eq(moneyAccounts.id, clientTransactions.accountId))
-      .where(isNull(clientTransactions.voidedAt))
-      .groupBy(clientTransactions.accountId, clientTransactions.type),
-    db
-      .select({
-        id: expenses.accountId,
-        sum: sumCounted(expenses.amount, expenses.expenseDate),
-        early: early(expenses.expenseDate),
-      })
-      .from(expenses)
-      .innerJoin(moneyAccounts, eq(moneyAccounts.id, expenses.accountId))
-      .where(isNull(expenses.voidedAt))
-      .groupBy(expenses.accountId),
-    db
-      .select({
-        id: accountTransfers.toAccountId,
-        sum: sumCounted(accountTransfers.amountTo, accountTransfers.transferDate),
-        early: early(accountTransfers.transferDate),
-      })
-      .from(accountTransfers)
-      .innerJoin(moneyAccounts, eq(moneyAccounts.id, accountTransfers.toAccountId))
-      .where(isNull(accountTransfers.voidedAt))
-      .groupBy(accountTransfers.toAccountId),
-    db
-      .select({
-        id: accountTransfers.fromAccountId,
-        sum: sumCounted(accountTransfers.amountFrom, accountTransfers.transferDate),
-        early: early(accountTransfers.transferDate),
-      })
-      .from(accountTransfers)
-      .innerJoin(moneyAccounts, eq(moneyAccounts.id, accountTransfers.fromAccountId))
-      .where(isNull(accountTransfers.voidedAt))
-      .groupBy(accountTransfers.fromAccountId),
-    // Round 39: counterparty money moves the same boxes. A cash buyer wiring
-    // som into the company account raises it; paying the transport firm out
-    // of the till lowers it. Both directions in one pass, split by type.
-    db
-      .select({
-        id: partnerTransactions.accountId,
-        type: partnerTransactions.type,
-        sum: sumCounted(partnerTransactions.amount, partnerTransactions.txDate),
-        early: early(partnerTransactions.txDate),
-      })
-      .from(partnerTransactions)
-      .innerJoin(moneyAccounts, eq(moneyAccounts.id, partnerTransactions.accountId))
-      .where(isNull(partnerTransactions.voidedAt))
-      .groupBy(partnerTransactions.accountId, partnerTransactions.type),
-    // Cargo costs paid out of a kassa (0101, owner 3b), in the KASSA's
-    // currency — `account_amount`, not the cost's own amount, because customs
-    // typed in dollars left a som account. A seventh statement would be one
-    // more pooled connection per render of a page that already runs six
-    // (the pool is ten); the cost side is the cheapest to add as its own.
-    db
-      .select({
-        id: costEntries.accountId,
-        sum: sumCounted(costEntries.accountAmount, costEntries.costDate),
-        early: early(costEntries.costDate),
-      })
-      .from(costEntries)
-      .innerJoin(moneyAccounts, eq(moneyAccounts.id, costEntries.accountId))
-      .where(isNull(costEntries.voidedAt))
-      .groupBy(costEntries.accountId),
-  ]);
+    kassaLedger((amount, day) => ({
+      sum: sql<string>`coalesce(sum(${amount}) FILTER (WHERE ${countedSql(day)}), 0)`,
+      early: sql<number>`count(*) FILTER (WHERE NOT ${countedSql(day)})`,
+    })),
+  ]) as [Awaited<ReturnType<typeof listAccounts>>, Ledger<{ id: string | null; type?: string; sum: string; early: number }>];
 
   const total = (rows: { id: string | null; sum: string }[]) =>
     new Map(rows.filter((row) => row.id !== null).map((row) => [row.id!, Number(row.sum)]));
@@ -793,3 +830,144 @@ export const accountBalances = cache(async function accountBalances() {
     };
   });
 });
+
+/**
+ * A box the Balans still counts: every active one, and a retired one while it
+ * holds money (#428 on the accounts side) — ONE predicate for the Balans, the
+ * accounting hub's list and the cash-flow's kassa table (audit U13), which
+ * had each decided it differently: the hub and the cash flow listed active
+ * boxes only, so money the Balans counted was missing from both lists.
+ */
+export function countedAccount(account: { active: boolean; balance: number }): boolean {
+  return account.active || Math.abs(account.balance) > 0.009;
+}
+
+/** One box over a period, in its own money — the cash-flow page's kassa table. */
+export interface KassaPeriodRow {
+  id: string;
+  name: string;
+  currency: string;
+  kind: string;
+  active: boolean;
+  openingDate: string | null;
+  /** At the end of the day before `from`; 0 while the box is not yet counted. */
+  opening: number;
+  /** The box's own opening count when its date falls inside the period. */
+  countedInPeriod: number;
+  /** Counted rows dated in the period, transfers included. */
+  inflow: number;
+  outflow: number;
+  transfersIn: number;
+  transfersOut: number;
+  /** At the end of `to`. opening + countedInPeriod + inflow − outflow. */
+  closing: number;
+  /** Rows dated in the period but before the box's count (R4): not added. */
+  beforeOpeningInPeriod: number;
+  /**
+   * Dollars of the period's rows, signed as they move the box, UNROUNDED so
+   * the reconciliation can add them to the cent: what the cash flow counts
+   * and the box counts too (`cashCounted`), what the cash flow counts and the
+   * box does not because it is dated before the count (`cashEarly`), what the
+   * box counts and the cash flow does not (`tillOnly` — a non-cash category
+   * paid from a box), and the box's transfer halves (`transfers`).
+   */
+  usd: { cashCounted: number; cashEarly: number; tillOnly: number; transfers: number };
+}
+
+/**
+ * Every box's opening, movement and closing over a period (audit U13), from
+ * the SAME six statements `accountBalances` runs (`kassaLedger`) with the
+ * period's FILTERs — never a second pass of `accountBalances` (the pool is
+ * ten) and never a parameter on it (it is memoised per request and three
+ * screens call it bare). The R4 rule holds unchanged: a row before its box's
+ * count is inside the count.
+ *
+ * A box whose opening date falls INSIDE the period opens at 0 and receives
+ * its count as `countedInPeriod` — the count is an event of the period, not a
+ * balance the period started with.
+ */
+export async function accountBalancesBetween(from: string, to: string): Promise<KassaPeriodRow[]> {
+  const inRange = (day: Day) => sql`(${day} >= ${from}::date AND ${day} <= ${to}::date)`;
+  const [accounts, statements] = await Promise.all([
+    listAccounts(true),
+    kassaLedger((amount, day, usd, inCashFlow) => ({
+      open: sql<string>`coalesce(sum(${amount}) FILTER (WHERE ${countedSql(day)} AND ${day} < ${from}::date), 0)`,
+      within: sql<string>`coalesce(sum(${amount}) FILTER (WHERE ${countedSql(day)} AND ${inRange(day)}), 0)`,
+      close: sql<string>`coalesce(sum(${amount}) FILTER (WHERE ${countedSql(day)} AND ${day} <= ${to}::date), 0)`,
+      early: sql<number>`count(*) FILTER (WHERE NOT ${countedSql(day)} AND ${inRange(day)})`,
+      cashCounted: sql<string>`coalesce(sum(${usd}) FILTER (WHERE (${inCashFlow}) AND ${countedSql(day)} AND ${inRange(day)}), 0)`,
+      cashEarly: sql<string>`coalesce(sum(${usd}) FILTER (WHERE (${inCashFlow}) AND NOT ${countedSql(day)} AND ${inRange(day)}), 0)`,
+      tillOnly: sql<string>`coalesce(sum(${usd}) FILTER (WHERE NOT (${inCashFlow}) AND ${countedSql(day)} AND ${inRange(day)}), 0)`,
+    })),
+  ]);
+
+  // Which way each statement moves its box — `accountBalances`'s own signs.
+  const signOf = (index: number, type: string | undefined): number => {
+    if (index === 0) return type === 'payment' ? 1 : type === 'refund' ? -1 : 0;
+    if (index === 4) return type === 'receipt' ? 1 : type === 'payment' ? -1 : 0;
+    return index === 2 ? 1 : -1;
+  };
+  type Acc = Omit<KassaPeriodRow, 'id' | 'name' | 'currency' | 'kind' | 'active' | 'openingDate' | 'countedInPeriod'>;
+  const empty = (): Acc => ({
+    opening: 0,
+    inflow: 0,
+    outflow: 0,
+    transfersIn: 0,
+    transfersOut: 0,
+    closing: 0,
+    beforeOpeningInPeriod: 0,
+    usd: { cashCounted: 0, cashEarly: 0, tillOnly: 0, transfers: 0 },
+  });
+  const per = new Map<string, Acc>();
+  statements.forEach((rows, index) => {
+    const transfer = index === 2 || index === 3;
+    for (const row of rows) {
+      const sign = signOf(index, row.type);
+      if (!row.id || sign === 0) continue;
+      const entry = per.get(row.id) ?? empty();
+      const within = Number(row.within);
+      entry.opening += sign * Number(row.open);
+      entry.closing += sign * Number(row.close);
+      if (sign > 0) entry.inflow += within;
+      else entry.outflow += within;
+      if (transfer) {
+        if (sign > 0) entry.transfersIn += within;
+        else entry.transfersOut += within;
+        entry.usd.transfers += sign * Number(row.tillOnly);
+      } else {
+        entry.usd.tillOnly += sign * Number(row.tillOnly);
+      }
+      entry.usd.cashCounted += sign * Number(row.cashCounted);
+      entry.usd.cashEarly += sign * Number(row.cashEarly);
+      entry.beforeOpeningInPeriod += Number(row.early);
+      per.set(row.id, entry);
+    }
+  });
+
+  const cents = (value: number) => Math.round(value * 100) / 100;
+  return accounts.map((account) => {
+    const entry = per.get(account.id) ?? empty();
+    const count = Number(account.openingBalance);
+    const date = account.openingDate;
+    const opensBefore = date === null || date < from;
+    const countedInPeriod = date !== null && date >= from && date <= to ? count : 0;
+    const closesWith = date === null || date <= to;
+    return {
+      id: account.id,
+      name: account.name,
+      currency: account.currency,
+      kind: account.kind,
+      active: account.active,
+      openingDate: date,
+      opening: cents((opensBefore ? count : 0) + entry.opening),
+      countedInPeriod: cents(countedInPeriod),
+      inflow: cents(entry.inflow),
+      outflow: cents(entry.outflow),
+      transfersIn: cents(entry.transfersIn),
+      transfersOut: cents(entry.transfersOut),
+      closing: cents((closesWith ? count : 0) + entry.closing),
+      beforeOpeningInPeriod: entry.beforeOpeningInPeriod,
+      usd: entry.usd,
+    };
+  });
+}

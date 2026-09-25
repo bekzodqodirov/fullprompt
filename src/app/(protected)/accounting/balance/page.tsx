@@ -32,6 +32,14 @@ export default async function BalancePage() {
   };
 
   const lines = balanceLines(balance);
+  // Money in a till whose currency has no rate is OUT of the net (U14): said
+  // beside the net and the cash line, with the fix one tap away for whoever
+  // may type a rate — anybody else would bounce off /admin/fx (#737).
+  const unrated = balance.unratedTills.length > 0;
+  const unratedSums = balance.unratedTills
+    .map((row) => `${row.balance.toLocaleString('en-US', { maximumFractionDigits: 2 })} ${row.currency}`)
+    .join(', ');
+  const canFx = actor.permissions.has('costs.fx.manage');
 
   return (
     <div className="mx-auto max-w-lg space-y-3 md:max-w-3xl">
@@ -46,11 +54,30 @@ export default async function BalancePage() {
           data-testid="balance-net"
         >
           ${usd(balance.netUsd)}
+          {unrated && <span className="text-warn"> ⚠</span>}
         </p>
         {som(balance.netUsd) && (
           <p className="text-sm text-ink-500">≈ {som(balance.netUsd)} so‘m</p>
         )}
         <p className="pt-1 text-xs text-ink-500">{t('balHint')}</p>
+        {/* Allowed, summed as it stands, and never silent (U14, answer a). */}
+        {balance.negativeTills.length > 0 && (
+          <p className="text-xs font-semibold text-bad" data-testid="balance-negative-tills">
+            ⚠ {t('balNegativeTills', { n: balance.negativeTills.length })}
+          </p>
+        )}
+        {unrated && (
+          <p className="text-xs font-semibold text-warn" data-testid="balance-unrated">
+            ⚠{' '}
+            {canFx ? (
+              <Link href="/admin/fx" className="underline">
+                {t('balUnrated', { sums: unratedSums })}
+              </Link>
+            ) : (
+              t('balUnrated', { sums: unratedSums })
+            )}
+          </p>
+        )}
       </div>
 
       <div className="card !p-0">
@@ -61,6 +88,7 @@ export default async function BalancePage() {
                 <td className="p-0">
                   <Link href={line.href} className="block p-3 hover:bg-surface-sunken">
                     {t(line.key)}
+                    {line.key === 'balCash' && unrated && <span className="text-warn"> ⚠</span>}
                   </Link>
                 </td>
                 <td className={`p-3 text-right font-mono font-bold ${line.tone}`}>
@@ -72,8 +100,9 @@ export default async function BalancePage() {
         </table>
       </div>
 
-      {/* Not a line of the sheet — its kassa is exactly what is unknown — but
-          every such dollar may still sit in a till above on paper (0101). */}
+      {/* The line above takes these costs out of the net (U02); this says the
+          one case it cannot tell apart — the same money also typed as an
+          expense FROM a kassa counts twice until the queue merges it. */}
       {balance.unplacedCostCount > 0 && (
         <Link
           href="/accounting/xarajat-kassa"
@@ -99,11 +128,22 @@ export default async function BalancePage() {
                   </td>
                   {/* The box's OWN currency first: this is the number somebody
                       counts against the notes in the drawer. */}
-                  <td className="p-3 text-right font-mono font-bold">
+                  <td className={`p-3 text-right font-mono font-bold ${row.balance < -0.009 ? 'text-bad' : ''}`}>
                     {row.balance.toLocaleString('en-US', { maximumFractionDigits: 2 })} {row.currency}
+                    {row.balance < -0.009 && (
+                      <span className="block text-[11px] font-sans font-normal">⚠ {t('tillNegative')}</span>
+                    )}
                   </td>
                   <td className="p-3 text-right font-mono text-xs text-ink-500">
-                    {row.balanceUsd === null ? t('noRate') : `$${usd(row.balanceUsd)}`}
+                    {row.balanceUsd === null ? (
+                      // Out of the net — flagged when it holds money (U14).
+                      <span className={Math.abs(row.balance) > 0.009 ? 'font-semibold text-warn' : ''}>
+                        {Math.abs(row.balance) > 0.009 && '⚠ '}
+                        {t('noRate')}
+                      </span>
+                    ) : (
+                      `$${usd(row.balanceUsd)}`
+                    )}
                   </td>
                 </tr>
               ))}

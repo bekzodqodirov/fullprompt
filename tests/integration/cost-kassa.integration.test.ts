@@ -25,7 +25,7 @@ import {
   upsertFxRate,
 } from '@/modules/wms/costing/service';
 import { accountBalances, addExpense } from '@/modules/wms/accounting/service';
-import { cashFlow } from '@/modules/wms/accounting/reports';
+import { cashFlow, cashFlowByMonth } from '@/modules/wms/accounting/reports';
 import { mergeDuplicate } from '@/modules/wms/accounting/cost-merge';
 import { partnerBalanceUsd } from '@/modules/wms/partners/service';
 
@@ -54,6 +54,8 @@ let firmId = '';
 const madeWarehouses: string[] = [];
 const madeCosts: string[] = [];
 const madeExpenses: string[] = [];
+/** Tills with an opening count, for the merge-across-the-count cases (U07). */
+const countedTills: string[] = [];
 const ctx = () => ({ actorId });
 
 async function cost(amount: number, currency: string, over: Record<string, unknown> = {}) {
@@ -139,7 +141,7 @@ afterAll(async () => {
   if (madeCosts.length) await db.delete(costEntries).where(inArray(costEntries.id, madeCosts));
   if (madeExpenses.length) await db.delete(expenses).where(inArray(expenses.id, madeExpenses));
   await db.delete(partners).where(inArray(partners.id, [staffPartnerId, firmId]));
-  await db.delete(moneyAccounts).where(inArray(moneyAccounts.id, [usdTill, qkaTill]));
+  await db.delete(moneyAccounts).where(inArray(moneyAccounts.id, [usdTill, qkaTill, ...countedTills]));
   await db.delete(batches).where(eq(batches.id, batchId));
   await db.delete(warehouses).where(inArray(warehouses.id, madeWarehouses));
   await db.delete(expenseCategories).where(eq(expenseCategories.id, categoryId));
@@ -259,5 +261,80 @@ describe('the duplicate merge (A3, M4a)', () => {
     await expect(mergeDuplicate({ costIds: [id], expenseId: second }, ctx())).rejects.toMatchObject({
       code: 'cost_taken',
     });
+  });
+});
+
+describe('a merge dates the drawer by the day the drawer PAID (U07)', () => {
+  // The count sits BETWEEN the two days of each pair, which is exactly where
+  // reading the cost's day moved the money across it (R4, #1012).
+  const COUNT = '1650-09-01';
+  const countedTill = async (openingBalance: number) => {
+    const [row] = await db
+      .insert(moneyAccounts)
+      .values({
+        name: `Sanoq ${STAMP} ${countedTills.length}`,
+        currency: 'USD',
+        openingBalance: String(openingBalance),
+        openingDate: COUNT,
+      })
+      .returning();
+    countedTills.push(row!.id);
+    return row!.id;
+  };
+
+  it('an expense before the count, its cost after it: the drawer does not move', async () => {
+    const till = await countedTill(5000);
+    const expenseId = await expense(200, 'USD', till, { expenseDate: '1650-08-28' });
+    const costId = await cost(200, 'USD', { costDate: '1650-09-05' });
+    const drawer = await tillBalance(till);
+    expect(drawer).toBe(5000); // the expense is inside the count
+    await mergeDuplicate({ costIds: [costId], expenseId }, ctx());
+    expect(await tillBalance(till)).toBe(drawer);
+  });
+
+  it('a cost before the count, its expense after it: the drawer does not move', async () => {
+    const till = await countedTill(10000);
+    const costId = await cost(250, 'USD', { costDate: '1650-08-29' });
+    const expenseId = await expense(250, 'USD', till, { expenseDate: '1650-09-03' });
+    const drawer = await tillBalance(till);
+    expect(drawer).toBe(9750);
+    await mergeDuplicate({ costIds: [costId], expenseId }, ctx());
+    expect(await tillBalance(till)).toBe(drawer);
+  });
+
+  it('the cash flow keeps the outflow in the month the drawer paid, and counts it once', async () => {
+    const costId = await cost(300, 'USD', { costDate: '1650-10-02' });
+    const expenseId = await expense(300, 'USD', usdTill, { expenseDate: '1650-09-26' });
+    const months = () => cashFlowByMonth('1650-09-01', '1650-10-31');
+    const before = await months();
+    await mergeDuplicate({ costIds: [costId], expenseId }, ctx());
+    const after = await months();
+    // September: the expense left, the cost arrived on its day — one outflow.
+    expect(after.get('1650-09')!.outflow).toBe(before.get('1650-09')!.outflow);
+    // October: the double is gone.
+    expect(after.get('1650-10')!.outflow).toBe(Math.round((before.get('1650-10')!.outflow - 300) * 100) / 100);
+    expect((await cashFlow('1650-10-01', '1650-10-31')).outflow).toBe(after.get('1650-10')!.outflow);
+  });
+});
+
+describe("the cash flow's kassa-less figure is the queue's own (U23)", () => {
+  it('links exactly what the queue lists; history and kassa-less merges are named apart; the parts add up', async () => {
+    const cents = (value: number) => Math.round(value * 100) / 100;
+    const before = await cashFlow(DAY, DAY);
+    const queueBefore = await unplacedCostTotals();
+    await cost(41, 'USD');
+    const history = await cost(43, 'USD');
+    // Typed before kassas were asked for (#1018): inside a till's count.
+    await db.update(costEntries).set({ createdAt: new Date('2000-01-01T00:00:00Z') }).where(eq(costEntries.id, history));
+    const merged = await cost(47, 'USD');
+    await mergeDuplicate({ costIds: [merged], expenseId: await expense(47, 'USD', '') }, ctx());
+    const after = await cashFlow(DAY, DAY);
+    const queueAfter = await unplacedCostTotals();
+
+    expect(cents(after.cargoQueuedUsd - before.cargoQueuedUsd)).toBe(41);
+    expect(cents(after.cargoQueuedUsd - before.cargoQueuedUsd)).toBe(cents(queueAfter.usd - queueBefore.usd));
+    expect(cents(after.cargoKassaUnknownUsd - before.cargoKassaUnknownUsd)).toBe(90);
+    const row = after.rows.find((entry) => entry.label === 'cargoCosts')!.amountUsd;
+    expect(cents(after.cargoFromTillUsd + after.cargoQueuedUsd + after.cargoKassaUnknownUsd)).toBe(row);
   });
 });

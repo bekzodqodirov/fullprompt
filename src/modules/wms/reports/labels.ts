@@ -96,6 +96,167 @@ const DICT = {
     en: 'photos did not fit',
   },
 
+  // What a money file cannot count, said in it (audit U22/U23/U24) — the
+  // screen prints the same warnings, and a download that drops them is the
+  // screen and its file disagreeing (#532d). Kept in step with
+  // messages/*.json accounting.gap*, internalRowsNote, unallocatedNote,
+  // unbatchedNote and the reconciliation keys.
+  cargoQueued: {
+    ru: 'из них без кассы (в очереди бухгалтера)',
+    uz: 'shundan kassasi ko‘rsatilmagan (buxgalter navbatida)',
+    'zh-CN': '其中未指定现金账户（会计待办）',
+    en: 'of which with no cash box (the accountant’s queue)',
+  },
+  cargoKassaUnknown: {
+    ru: 'из них касса неизвестна (история до касс или дубль, слитый без кассы)',
+    uz: 'shundan kassasi noma’lum (kassalar so‘ralishidan oldingi tarix yoki kassasiz birlashtirilgan takror)',
+    'zh-CN': '其中账户未知（启用账户前的历史或无账户合并的重复）',
+    en: 'of which the cash box is unknown (history before cash boxes, or a duplicate merged with none)',
+  },
+  cashOpexNoKassa: {
+    ru: 'Расходы без кассы и без плательщика',
+    uz: 'Kassasi ko‘rsatilmagan xarajatlar',
+    'zh-CN': '未指定账户和付款人的费用',
+    en: 'Expenses with no cash box and no payer',
+  },
+  gapManualCharges: {
+    ru: 'Долги контрагентам, записанные вручную, — не вошли',
+    uz: 'Kontragentlarga qo‘lda yozilgan qarzlar — kirmagan',
+    'zh-CN': '手工录入的往来单位欠款——未计入',
+    en: 'Counterparty debts typed by hand — not included',
+  },
+  uzsAtRate: {
+    ru: 'UZS по сегодняшнему курсу',
+    uz: 'UZS bugungi kurs bo‘yicha',
+    'zh-CN': 'UZS 按今日汇率',
+    en: 'UZS at today’s rate',
+  },
+  internalCost: {
+    ru: 'Внутренний рейс, расход $',
+    uz: 'Ichki reys xarajati $',
+    'zh-CN': '国内车次费用 $',
+    en: 'Internal leg cost $',
+  },
+  prevLegs: {
+    ru: 'из них до этого рейса $',
+    uz: 'shundan shu reysgacha $',
+    'zh-CN': '其中本车次之前 $',
+    en: 'of which before this trip $',
+  },
+  unallocated: {
+    ru: '⚠ не распределено $',
+    uz: '⚠ taqsimlanmagan $',
+    'zh-CN': '⚠ 未分摊 $',
+    en: '⚠ not allocated $',
+  },
+  internalRowsNote: {
+    ru: 'Внутренние рейсы (внутри Китая) — только расход: он уже в себестоимости машины, пересекающей границу, как «до этого рейса», поэтому стоит отдельной колонкой и в итог не входит.',
+    uz: 'Ichki reyslar (Xitoy ichida) faqat xarajat: u chegaradan o‘tadigan mashina tannarxida «shu reysgacha» bo‘lib turibdi, shuning uchun alohida ustunda va jamiga kirmagan.',
+    'zh-CN': '国内车次（中国境内）只有费用：已作为「本车次之前」计入跨境车辆成本，因此单列一栏，不计入合计。',
+    en: 'Internal legs (inside China) are cost only: it is already inside the cross-border truck’s cost as «before this trip», so it has its own column and is left out of the total.',
+  },
+  unallocatedNote: {
+    ru: 'Расходы на машинах, не распределённые ни на одну коробку (нет ни в одной себестоимости)',
+    uz: 'Mashinalarga yozilgan, hech bir qutiga taqsimlanmagan xarajat (hech bir tannarxda yo‘q)',
+    'zh-CN': '记在车辆上、未分摊到任何箱子的费用（不在任何成本中）',
+    en: 'Truck costs that reached no box (in no cost figure)',
+  },
+  unbatchedNote: {
+    ru: 'Выручка без привязки к машине — в эту таблицу не вошла',
+    uz: 'Mashinaga bog‘lanmagan tushum — bu jadvalga kirmagan',
+    'zh-CN': '未关联车辆的收入——未计入本表',
+    en: 'Revenue tied to no truck — not in this table',
+  },
+  reconTitle: {
+    ru: 'Кассы: начало и конец периода',
+    uz: 'Kassalar: davr boshi va oxiri',
+    'zh-CN': '现金账户：期初与期末',
+    en: 'Cash boxes: start and end of the period',
+  },
+  reconOpen: { ru: 'Начало периода', uz: 'Davr boshi', 'zh-CN': '期初', en: 'Opening' },
+  reconClose: { ru: 'Конец периода', uz: 'Davr oxiri', 'zh-CN': '期末', en: 'Closing' },
+  inflow: { ru: 'Приход', uz: 'Kirim', 'zh-CN': '收入', en: 'In' },
+  outflow: { ru: 'Расход', uz: 'Chiqim', 'zh-CN': '支出', en: 'Out' },
+  retiredTill: { ru: 'неактивна', uz: 'faol emas', 'zh-CN': '已停用', en: 'retired' },
+  reconOpeningUsd: {
+    ru: 'Деньги на начало периода',
+    uz: 'Davr boshidagi pul',
+    'zh-CN': '期初现金',
+    en: 'Cash at the start',
+  },
+  reconClosingUsd: {
+    ru: 'Деньги на конец периода',
+    uz: 'Davr oxiridagi pul',
+    'zh-CN': '期末现金',
+    en: 'Cash at the end',
+  },
+  reconUnexplained: {
+    ru: '⚠ Необъяснённая разница',
+    uz: '⚠ Tushuntirilmagan farq',
+    'zh-CN': '⚠ 未解释差额',
+    en: '⚠ Unexplained difference',
+  },
+  reconCountedInPeriod: {
+    ru: 'Касса пересчитана внутри периода',
+    uz: 'Kassa davr ichida sanaldi',
+    'zh-CN': '期内盘点的账户',
+    en: 'A cash box counted inside the period',
+  },
+  reconNoKassaPayments: {
+    ru: 'Платежи, не попавшие в кассу',
+    uz: 'Kassaga tushmagan to‘lovlar',
+    'zh-CN': '未进入账户的收款',
+    en: 'Payments that reached no cash box',
+  },
+  reconQueuedCosts: {
+    ru: 'Расходы по грузам без кассы (очередь)',
+    uz: 'Kassasi ko‘rsatilmagan yuk xarajatlari (navbat)',
+    'zh-CN': '未指定账户的货物费用（待办）',
+    en: 'Cargo costs with no cash box (the queue)',
+  },
+  reconHistoryCosts: {
+    ru: 'Расходы по грузам, касса неизвестна (история)',
+    uz: 'Kassasi noma’lum yuk xarajatlari (tarix)',
+    'zh-CN': '账户未知的货物费用（历史）',
+    en: 'Cargo costs, cash box unknown (history)',
+  },
+  reconNoKassaExpenses: {
+    ru: 'Расходы, записанные без кассы',
+    uz: 'Kassasiz yozilgan xarajatlar',
+    'zh-CN': '未指定账户的费用',
+    en: 'Expenses entered with no cash box',
+  },
+  reconBeforeOpening: {
+    ru: 'Записи с датой до пересчёта кассы',
+    uz: 'Kassa sanog‘idan oldingi sanali yozuvlar',
+    'zh-CN': '日期早于账户盘点的记录',
+    en: 'Rows dated before their cash box was counted',
+  },
+  reconTillOnly: {
+    ru: 'Из кассы, но не в движении денег (неденежная статья)',
+    uz: 'Kassadan chiqqan, pul oqimiga kirmagan (naqdsiz tur)',
+    'zh-CN': '从账户支出但不在现金流中（非现金类别）',
+    en: 'Out of a cash box but not in the cash flow (non-cash category)',
+  },
+  reconOneSidedTransfers: {
+    ru: 'Переводы, один конец которых вне учтённых касс',
+    uz: 'Bir uchi sanoqdan tashqaridagi ko‘chirishlar',
+    'zh-CN': '一端不在已计账户内的转账',
+    en: 'Transfers with one end outside the counted cash boxes',
+  },
+  reconUnratedTills: {
+    ru: 'Движение касс без курса',
+    uz: 'Kursi yo‘q kassalar harakati',
+    'zh-CN': '无汇率账户的变动',
+    en: 'Movement through cash boxes with no rate',
+  },
+  reconFx: {
+    ru: 'Курсовая разница (переоценка, обмен)',
+    uz: 'Kurs farqi (qayta baholash, ayirboshlash)',
+    'zh-CN': '汇兑差额（重估、兑换）',
+    en: 'Exchange difference (revaluation, conversions)',
+  },
+
   // Sheet titles
   tLandedCostByLot: {
     ru: 'Себестоимость по лотам',

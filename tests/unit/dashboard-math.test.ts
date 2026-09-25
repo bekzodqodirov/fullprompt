@@ -163,6 +163,9 @@ describe('the Balans lines, one home for two screens', () => {
     partnerReceivableUsd: 0,
     payableUsd: 300,
     clientAdvancesUsd: 0,
+    unplacedCostCount: 0,
+    unplacedCostUsd: 0,
+    sellerCommissionsUsd: 0,
   };
   it('leaves out the lines that are empty by nature and signs what we owe', () => {
     expect(balanceLines(base).map((l) => [l.key, l.value])).toEqual([
@@ -177,6 +180,16 @@ describe('the Balans lines, one home for two screens', () => {
     expect(lines.find((l) => l.key === 'balUnplaced')?.value).toBe(80);
     expect(lines.find((l) => l.key === 'balClientAdvances')?.value).toBe(-40);
     expect(lines[0]?.href).toBe('/accounting/balance');
+  });
+  it('subtracts the kassa-less cargo costs and the owed commissions as lines of their own (U02, U10)', () => {
+    const lines = balanceLines({ ...base, unplacedCostCount: 1, unplacedCostUsd: 350, sellerCommissionsUsd: 600 });
+    expect(lines.find((l) => l.key === 'balUnplacedCostsLine')).toMatchObject({
+      value: -350,
+      href: '/accounting/xarajat-kassa',
+    });
+    expect(lines.find((l) => l.key === 'balSellerCommissions')).toMatchObject({ value: -600, href: '/upsale' });
+    // Nothing waiting, nothing owed: no permanent $0 lines.
+    expect(balanceLines(base).some((l) => l.key === 'balUnplacedCostsLine' || l.key === 'balSellerCommissions')).toBe(false);
   });
   it('sums the aging buckets the receivables page prints', () => {
     expect(

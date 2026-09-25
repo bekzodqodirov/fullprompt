@@ -65,7 +65,9 @@ export async function HeroTiles({
   const tiles: React.ReactNode[] = [];
 
   if (money && balance && pnl && prior && aging && flow) {
-    const unrated = balance.cashRows.some((row) => row.balanceUsd === null);
+    // The Balans's own list of money its net leaves out for want of a rate
+    // (U14) — an empty unrated till hides nothing and raises nothing.
+    const unrated = balance.unratedTills.length > 0;
     tiles.push(
       <StatTile
         key="cash"
@@ -82,7 +84,11 @@ export async function HeroTiles({
           <span key="net" className={balance.netUsd < 0 ? 'text-bad' : ''}>
             {t('tileNet', { amount: compactUsd(balance.netUsd) })}
           </span>,
-          t('tileMonthFlow', { in: compactUsd(flow.inflow), out: compactUsd(flow.outflow) }),
+          <span key="flow">
+            {t('tileMonthFlow', { in: compactUsd(flow.inflow), out: compactUsd(flow.outflow) })}
+            {/* A cost with no rate reads $0 in the outflow (U24). */}
+            {flow.unconverted.count > 0 && <span className="text-warn"> ⚠</span>}
+          </span>,
         ]}
       />,
     );

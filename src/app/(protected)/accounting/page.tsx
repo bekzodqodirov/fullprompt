@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { accountBalances } from '@/modules/wms/accounting/service';
+import { accountBalances, countedAccount } from '@/modules/wms/accounting/service';
 import { Icon, type IconName } from '@/components/ui/icon';
 import { Section } from '@/components/ui/page';
 
@@ -38,12 +38,18 @@ export default async function AccountingPage() {
       {balances.length > 0 && (
         <Section title={t('balance')}>
           <div className="card divide-y divide-line !py-1">
+            {/* The Balans's own list (U13): a retired box still holding money
+                is the company's money, so it is listed — marked — here too. */}
             {balances
-              .filter((row) => row.active)
+              .filter(countedAccount)
               .map((row) => (
                 <div key={row.id} className="flex items-baseline gap-3 py-2.5 text-sm">
-                  <span className="min-w-0 flex-1 truncate text-ink-700">{row.name}</span>
-                  <span className="font-mono font-bold tabular-nums">
+                  <span className="min-w-0 flex-1 truncate text-ink-700">
+                    {row.name}
+                    {!row.active && <span className="text-xs text-warn"> ⚠ {t('retiredTill')}</span>}
+                  </span>
+                  <span className={`font-mono font-bold tabular-nums ${row.balance < -0.009 ? 'text-bad' : ''}`}>
+                    {row.balance < -0.009 && <span className="font-sans text-xs">⚠ {t('tillNegative')} </span>}
                     {row.balance.toLocaleString('en-US')}
                   </span>
                   <span className="w-9 text-xs font-semibold text-ink-500">{row.currency}</span>

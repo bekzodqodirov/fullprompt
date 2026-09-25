@@ -1,6 +1,6 @@
 import { and, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
-import { netPaidUsdSql, signedUsdSql } from '../finance/service';
+import { clientMoneyInPeriod, signedUsdSql } from '../finance/service';
 import {
   batches,
   clientTransactions,
@@ -101,8 +101,14 @@ export async function todaySnapshot(warehouseIds?: string[]): Promise<TodaySnaps
 export interface MoneySnapshot {
   /** Charged this month, in USD, at the rate frozen when it was charged. */
   revenueMonth: number;
-  /** Received this month. */
+  /**
+   * What the clients closed this month, NET: into a kassa + into a firm's
+   * account − handed back (U26, the owner's answer A). Printed as «Mijozlar
+   * to'lagan (sof)», never as cash — the cash is `paidParts.toTill`.
+   */
   paidMonth: number;
+  /** `paidMonth`'s three parts, each the figure another screen prints (U26). */
+  paidParts: { toTill: number; viaPartner: number; refunded: number };
   /** Everything still owed to us, whenever it was charged. */
   receivable: number;
   /** Of that, charged more than 60 days ago. */
@@ -124,19 +130,9 @@ export async function moneySnapshot(): Promise<MoneySnapshot> {
   const monthStart = tashkentMonthStart();
   const oldCutoff = addDays(today, -60);
 
-  const [monthRow] = await db
-    .select({
-      revenue: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) filter (where ${clientTransactions.type} = 'charge'), 0)`,
-      paid: sql<string>`coalesce(sum(${netPaidUsdSql()}), 0)`,
-    })
-    .from(clientTransactions)
-    .where(
-      and(
-        isNull(clientTransactions.voidedAt),
-        gte(clientTransactions.txDate, monthStart),
-        lte(clientTransactions.txDate, today),
-      ),
-    );
+  // The month's client money from its ONE home (U26): the parts printed
+  // under the figure are the cash flow's and the register's own numbers.
+  const month = await clientMoneyInPeriod(monthStart, today);
 
   // Per-client balances, so "how many owe us" is a count of people and not a
   // count of invoices.
@@ -144,8 +140,13 @@ export async function moneySnapshot(): Promise<MoneySnapshot> {
     .select({
       clientId: clientTransactions.clientId,
       balance: sql<string>`sum(${signedUsdSql()})`,
-      oldCharges: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) filter (where ${clientTransactions.type} = 'charge' AND ${clientTransactions.txDate} < ${oldCutoff}), 0)`,
-      paid: sql<string>`coalesce(sum(${netPaidUsdSql()}), 0)`,
+      // What raised the debt before the cutoff: charges AND refunds — a
+      // refund is new money owed from its own day (#1014) — against every
+      // payment ever made, gross. Netting the refund into «paid» (U26) made a
+      // refund handed back TODAY read as debt older than 60 days, while
+      // /accounting/receivables (arAging) ages it from its own date.
+      oldDebits: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) filter (where ${clientTransactions.type} IN ('charge', 'refund') AND ${clientTransactions.txDate} < ${oldCutoff}), 0)`,
+      paid: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) filter (where ${clientTransactions.type} = 'payment'), 0)`,
     })
     .from(clientTransactions)
     .where(isNull(clientTransactions.voidedAt))
@@ -159,9 +160,10 @@ export async function moneySnapshot(): Promise<MoneySnapshot> {
     if (balance <= 0.004) continue;
     debtors += 1;
     receivable += balance;
-    // Payments settle the oldest charge first (DECISIONS #146), so what is
-    // left of the old charges after applying every payment is the old debt.
-    receivableOld += Math.max(0, Math.min(balance, Number(row.oldCharges) - Number(row.paid)));
+    // Payments settle the oldest debt first (DECISIONS #146), so what is
+    // left of the old debits after applying every payment is the old debt —
+    // arAging's own «balance minus what was raised since the cutoff».
+    receivableOld += Math.max(0, Math.min(balance, Number(row.oldDebits) - Number(row.paid)));
   }
 
   const top = await db
@@ -183,8 +185,9 @@ export async function moneySnapshot(): Promise<MoneySnapshot> {
     .limit(5);
 
   return {
-    revenueMonth: money(Number(monthRow?.revenue ?? 0)),
-    paidMonth: money(Number(monthRow?.paid ?? 0)),
+    revenueMonth: month.charged,
+    paidMonth: month.netCollected,
+    paidParts: { toTill: month.toTill, viaPartner: month.viaPartner, refunded: month.refunded },
     receivable: money(receivable),
     receivableOld: money(receivableOld),
     debtors,

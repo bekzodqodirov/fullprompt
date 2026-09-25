@@ -99,7 +99,8 @@ export async function MoneySection({ scopeKey, canExpenses }: { scopeKey: string
     href: line.href,
     testid: `dash-${line.key}`,
   }));
-  const unrated = balance.cashRows.filter((row) => row.balanceUsd === null);
+  // The Balans's own list (U14): an EMPTY till with no rate hides nothing.
+  const unrated = balance.unratedTills.reduce((sum, row) => sum + row.count, 0);
   const byCurrency = new Map<string, { native: number; usd: number | null }>();
   for (const row of balance.cashRows) {
     const entry = byCurrency.get(row.currency) ?? { native: 0, usd: 0 };
@@ -277,7 +278,7 @@ export async function MoneySection({ scopeKey, canExpenses }: { scopeKey: string
             net={{ label: ta('balNet'), value: balance.netUsd, href: '/accounting/balance' }}
             testid="dash-balance-rows"
           />
-          {unrated.length > 0 && <p className="text-2xs text-warn">⚠ {t('unratedTills', { n: unrated.length })}</p>}
+          {unrated > 0 && <p className="text-2xs text-warn">⚠ {t('unratedTills', { n: unrated })}</p>}
           {balance.unplacedCostCount > 0 && (
             <Link href="/accounting/xarajat-kassa" className="block text-2xs text-warn underline">
               ⚠ {ta('balUnplacedCosts', { count: balance.unplacedCostCount, usd: num(balance.unplacedCostUsd, 2) })}

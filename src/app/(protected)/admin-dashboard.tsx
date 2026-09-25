@@ -62,6 +62,7 @@ const num = (value: number) => Math.round(value).toLocaleString('en-US');
 
 export async function AdminDashboard({ actor }: { actor: Actor }) {
   const t = await getTranslations('adminHome');
+  const td = await getTranslations('dashboard');
   const perms = actor.permissions;
   const money = perms.has('finance.reports') && seesAllMoney(actor);
   const cargo = mayReadBatches(perms);
@@ -109,8 +110,9 @@ export async function AdminDashboard({ actor }: { actor: Actor }) {
 
   // The kassa figure drops any till whose currency has no entered rate —
   // the balance screen flags those per row, a lone number cannot, so the ⚠
-  // travels with it.
-  const unratedTill = Boolean(balance?.cashRows.some((row) => row.balanceUsd === null));
+  // travels with it. The Balans's own list (U14), so the two screens ask one
+  // predicate and an EMPTY unrated till raises nothing on either.
+  const unratedTill = (balance?.unratedTills.length ?? 0) > 0;
 
   const stockTotals = (stock ?? []).reduce(
     (acc, row) => ({
@@ -165,6 +167,8 @@ export async function AdminDashboard({ actor }: { actor: Actor }) {
           <div className="mt-1 space-y-0.5 text-xs">
             <Row href="/accounting" label={t('todayFlow')}>
               +{usd(flowToday.inflow)} · −{usd(flowToday.outflow)}
+              {/* A cost with no rate counts $0 in the day's outflow (U24). */}
+              {flowToday.unconverted.count > 0 && <span className="text-warn"> ⚠</span>}
             </Row>
             <Row href="/finance" label={t('debtors')}>
               {usd(moneySnap.receivable)} · {moneySnap.debtors} {t('clientsShort')}
@@ -175,6 +179,16 @@ export async function AdminDashboard({ actor }: { actor: Actor }) {
             <Row href="/accounting" label={t('monthMoney')}>
               {usd(moneySnap.revenueMonth)} / {usd(moneySnap.paidMonth)}
             </Row>
+            {/* «Paid» is NET of what went back and counts what closed a debt
+                in a firm's account — said beside it (U26), each part the
+                figure the cash flow and the register print. */}
+            <p className="pl-1 text-right text-2xs text-ink-500" data-testid="adm-paid-parts">
+              {td('monthPaidParts', {
+                till: usd(moneySnap.paidParts.toTill),
+                partner: usd(moneySnap.paidParts.viaPartner),
+                refunded: usd(moneySnap.paidParts.refunded),
+              })}
+            </p>
             {plan && (
               <Link
                 href="/accounting/reja"

@@ -158,7 +158,8 @@ test('cost → price → margin, and the client card knows which trip', async ({
   // …and the money now sits in the named cash box, visible to the accountant.
   await login(page, ACCOUNTANT);
   await page.goto('/accounting/cashflow');
-  const boxRow = page.locator('div.items-baseline').filter({ hasText: `M9 kassa ${runId}` });
+  // The period's kassa table (U13): the box closes the period holding it.
+  const boxRow = page.getByTestId('recon-kassa').filter({ hasText: `M9 kassa ${runId}` });
   await expect(boxRow).toContainText('150 USD');
 });
 

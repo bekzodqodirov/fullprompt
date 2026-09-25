@@ -22,6 +22,10 @@ import { addCostEntry, batchLandedCostByLot } from '@/modules/wms/costing/servic
 import { batchLots } from '@/modules/wms/batches/lots';
 import { pricingView } from '@/modules/wms/finance/pricing-view';
 import { profitByBatch, profitByRoute } from '@/modules/wms/accounting/reports';
+import { buildProfitXlsx } from '@/modules/wms/accounting/xlsx';
+import { reportLabels } from '@/modules/wms/reports/labels';
+import { tripTotals } from '@/modules/wms/reports/dashboard-math';
+import ExcelJS from 'exceljs';
 import { costMissingBatches, costMissingCount } from '@/modules/wms/reports/queries';
 import { moneyFlowCounts, vedFlowCounts } from '@/modules/wms/home/role-flows';
 
@@ -413,6 +417,38 @@ describe('one truck, one profit (R2a)', () => {
       marginPct: null,
       profitPerKg: null,
     });
+  });
+
+  it('the file sums like the screen: the internal leg has its own column, the total is the page’s JAMI (U22)', async () => {
+    const L = reportLabels('uz');
+    const read = async (view: 'batch' | 'route') => {
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load((await buildProfitXlsx(view, iso(-20), iso(0), 'uz')) as unknown as ArrayBuffer);
+      const out: unknown[][] = [];
+      workbook.worksheets[0]!.eachRow((row) => out.push((row.values as unknown[]).slice(1)));
+      return out;
+    };
+    for (const view of ['batch', 'route'] as const) {
+      const rows = view === 'batch' ? await profitByBatch(iso(-20), iso(0)) : await profitByRoute(iso(-20), iso(0));
+      const totals = tripTotals(rows);
+      const table = await read(view);
+      const head = table.findIndex((row) => row.includes(`${L.cost} $`));
+      const col = (label: string) => table[head]!.indexOf(label);
+      const jami = table.findIndex((row) => row[0] === L.total);
+      const data = table.slice(head + 1, jami);
+      const sum = (at: number) =>
+        Math.round(data.reduce((acc: number, row) => acc + (typeof row[at] === 'number' ? (row[at] as number) : 0), 0) * 100) / 100;
+      // A hand SUM of «Xarajat $» is the screen's JAMI — the internal leg is
+      // not in it twice — and the file's own total row says the same.
+      expect(sum(col(`${L.cost} $`)), view).toBe(totals.cost);
+      expect(table[jami]![col(`${L.cost} $`)], view).toBe(totals.cost);
+      expect(table[jami]![col(`${L.profit} $`)], view).toBe(totals.profit);
+      // …and the internal leg's money is still in the file, in its own column.
+      expect(sum(col(L.internalCost)), view).toBeGreaterThan(0);
+    }
+    const batch = await read('batch');
+    expect(batch.some((row) => String(row[0]).startsWith(`⚠ ${L.unallocatedNote}`))).toBe(true);
+    expect(batch.some((row) => row[0] === L.internalRowsNote)).toBe(true);
   });
 
   it('the corridor roll-up carries the same money, and a Chinese corridor stays cost-only', async () => {

@@ -124,9 +124,10 @@ export async function logistFlowCounts(
 
 export interface MoneyFlowCounts {
   snapshot: MoneySnapshot;
-  /** Payments with no cash box AND no counterparty behind them since cash
-   *  boxes exist (`unplacedPaymentSql`) — history from before any box is in
-   *  some box's opening balance, and a settlement is placed with its firm. */
+  /** Payments with no cash box AND no counterparty behind them that no box's
+   *  count already holds (`unplacedPaymentSql`, A2 + U09) — history dated
+   *  before every count of its currency is inside those counts, and a
+   *  settlement is placed with its firm. */
   unassignedPayments: number;
   /** Active recurring templates not yet posted this month. */
   recurringDue: number;

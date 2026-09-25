@@ -80,6 +80,23 @@ const money = (n: unknown) => Math.round(Number(n ?? 0) * 100) / 100;
 export const UPSALE_CAP = 300;
 
 /**
+ * Why one offer is or is not payable yet — the rule, ONCE, for the /upsale
+ * screen and the Balans's liability line (audit U10), so the screen and the
+ * balance sheet cannot drift about which commission is owed (#513). See
+ * `upsaleRows` for the three states and why each is asked of the DEAL.
+ */
+export function upsaleStateOf(
+  row: { payout_at: Date | null; entity_type: string; client_price_usd: string; charged_usd: string | null },
+  bal: { balanceUsd: number; deferredUsd: number } | undefined,
+): UpsaleState {
+  if (row.payout_at) return 'paid';
+  if (row.entity_type !== 'deal') return 'no_deal';
+  if (money(row.charged_usd) < money(row.client_price_usd) - MONEY_EPSILON) return 'no_invoice';
+  if ((bal?.balanceUsd ?? 0) - (bal?.deferredUsd ?? 0) > MONEY_EPSILON) return 'awaiting_payment';
+  return 'payable';
+}
+
+/**
  * Every upsale in the window, with why each one is or is not payable yet.
  *
  * The obvious single question — «has the client paid?» — is wrong asked
@@ -146,14 +163,7 @@ export async function upsaleRows(
 
   const rows = slice.map((r): UpsaleRow => {
     const clientPriceUsd = money(r.client_price_usd);
-    const bal = r.client_id ? balances.get(r.client_id) : undefined;
-    let state: UpsaleState;
-    if (r.payout_at) state = 'paid';
-    else if (r.entity_type !== 'deal') state = 'no_deal';
-    else if (money(r.charged_usd) < clientPriceUsd - MONEY_EPSILON) state = 'no_invoice';
-    else if ((bal?.balanceUsd ?? 0) - (bal?.deferredUsd ?? 0) > MONEY_EPSILON) {
-      state = 'awaiting_payment';
-    } else state = 'payable';
+    const state = upsaleStateOf(r, r.client_id ? balances.get(r.client_id) : undefined);
 
     return {
       offerId: r.id,
@@ -215,22 +225,59 @@ export function bySeller(rows: UpsaleRow[]) {
  *
  * `payableUsd` only — an upsale is payable exactly when the client's cash is
  * already in, so it is a real liability against real money. What is merely
- * ACCRUED (earned on a job nobody has invoiced or collected) is reported on
- * the upsale screen and deliberately kept off the balance sheet: it is not
- * owed until the sale is.
+ * ACCRUED (earned on a job nobody has invoiced or collected) is returned for
+ * a hint and deliberately kept off the balance sheet: it is not owed until
+ * the sale is.
+ *
+ * An UNCAPPED aggregate (audit U10): it used to read `upsaleRows`, whose list
+ * is the screen's — capped at UPSALE_CAP newest rows, paid ones kept for ever
+ * — so once a year of paid commissions had piled up, an older unpaid one fell
+ * off the slice and the liability read $0. Same fragment, same deal/charged
+ * LATERAL and the same state rule (`upsaleStateOf`) as the screen, with no
+ * ORDER BY and no LIMIT, over the unpaid DEAL offers only; two grouped
+ * queries for any number of rows (#432).
  */
-export async function upsaleLiability(): Promise<{ payableUsd: number; accruedUsd: number }> {
-  const { rows } = await upsaleRows('all', '', {});
+export async function upsaleLiability(): Promise<{ payableUsd: number; payableCount: number; accruedUsd: number }> {
+  const raw = await db.execute<{
+    entity_type: string;
+    client_price_usd: string;
+    payable_usd: string;
+    payout_at: Date | null;
+    client_id: string | null;
+    charged_usd: string | null;
+  }>(sql`
+    SELECT p.entity_type, p.client_price_usd, p.payable_usd, p.payout_at,
+           d.client_id,
+           inv.charged AS charged_usd
+      FROM (${payableOffersSql()}) p
+      LEFT JOIN deals d ON d.id = p.entity_id AND p.entity_type = 'deal'
+      LEFT JOIN LATERAL (
+        SELECT coalesce(sum(ct.amount_usd), 0) AS charged
+          FROM client_transactions ct
+         WHERE ct.deal_id = p.entity_id
+           AND ct.voided_at IS NULL
+           AND ct.type = 'charge'
+      ) inv ON p.entity_type = 'deal'
+     WHERE p.payout_expense_id IS NULL
+       AND p.entity_type = 'deal'
+  `);
+  const balances = await balancesForClients(
+    raw.map((r) => r.client_id).filter((x): x is string => Boolean(x)),
+  );
   let payableUsd = 0;
+  let payableCount = 0;
   let accruedUsd = 0;
-  for (const r of rows) {
+  for (const r of raw) {
     // The LIABILITY is what is still owed, so it reads the remaining figure —
     // a job that already paid a commission owes only what a later, higher
     // re-offer added (audit A1).
-    if (r.state === 'payable') payableUsd = money(payableUsd + r.payableUsd);
-    else if (r.state !== 'paid') accruedUsd = money(accruedUsd + r.payableUsd);
+    const state = upsaleStateOf(r, r.client_id ? balances.get(r.client_id) : undefined);
+    if (state === 'payable') {
+      payableUsd = money(payableUsd + money(r.payable_usd));
+      payableCount += 1;
+    } else if (state !== 'paid') accruedUsd = money(accruedUsd + money(r.payable_usd));
   }
-  return { payableUsd, accruedUsd };
+  return { payableUsd, payableCount, accruedUsd };
 }
 
 /**

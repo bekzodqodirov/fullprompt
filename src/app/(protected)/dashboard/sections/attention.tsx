@@ -137,20 +137,22 @@ export async function AttentionSection({
     push({ kind: 'stuck', level: 'warn', count: stuck.length, text: t('att.stuck', { n: stuck.length }), href: '/transit' });
   }
   if (balance) {
-    const negative = balance.cashRows.filter((row) => row.balance < -0.009);
+    // The Balans's own list (U14): one predicate for both screens.
+    const negative = balance.negativeTills.length;
     push({
       kind: 'negativeTills',
       level: 'bad',
-      count: negative.length,
-      text: t('att.negativeTills', { n: negative.length }),
+      count: negative,
+      text: t('att.negativeTills', { n: negative }),
       href: canExpenses ? '/accounting/accounts' : '/accounting/balance',
     });
-    const unrated = balance.cashRows.filter((row) => row.balanceUsd === null);
+    // The Balans's own list (U14): an EMPTY till with no rate hides nothing.
+    const unrated = balance.unratedTills.reduce((sum, row) => sum + row.count, 0);
     push({
       kind: 'unratedTills',
       level: 'warn',
-      count: unrated.length,
-      text: t('att.unratedTills', { n: unrated.length }),
+      count: unrated,
+      text: t('att.unratedTills', { n: unrated }),
       href: perms.has('costs.fx.manage') ? '/admin/fx' : '/accounting/balance',
     });
     push({

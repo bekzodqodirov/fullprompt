@@ -12,12 +12,17 @@ import { paymentsRegister } from '../finance/service';
 import { toUzs, uzsRate } from './period';
 import {
   arAging,
-  cashFlow,
+  cashReconciliation,
+  pnlGaps,
   profitAndLoss,
   profitByBatch,
   profitByClient,
   profitByRoute,
+  unbatchedMoney,
+  type PnlGaps,
+  type ReconLineKey,
 } from './reports';
+import { tripTotals } from '../reports/dashboard-math';
 
 /**
  * Accounting exports (owner: "otchetlarni excelda skachat qiladgan bolsin").
@@ -41,9 +46,32 @@ function sheetSetup(workbook: ExcelJS.Workbook, name: string, title: string) {
 
 const period = (from: string, to: string) => `${from} … ${to}`;
 
+/** A figure somebody reads in a note, not a cell somebody sums. */
+const usdText = (value: number) =>
+  value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/**
+ * What a period's report could not count, as ONE text cell per warning (audit
+ * U22) — the rows `PnlGapsNote` prints above the P&L and the profit tables.
+ * One cell and never a number beside it: the file is summed by hand, and a
+ * figure in a note row is a figure somebody adds to the total.
+ */
+function gapRows(sheet: ExcelJS.Worksheet, L: ReturnType<typeof reportLabels>, gaps: PnlGaps) {
+  if (gaps.manualCharges.count > 0) {
+    sheet.addRow([
+      `⚠ ${L.gapManualCharges}: ${gaps.manualCharges.count} · $${usdText(gaps.manualCharges.usd)}`,
+    ]).font = { bold: true };
+  }
+  if (gaps.unconverted.count > 0) {
+    sheet.addRow([
+      `⚠ ${L.unconvertedCosts}: ${gaps.unconverted.byCurrency.map((row) => `${row.amount} ${row.currency}`).join(', ')}`,
+    ]).font = { bold: true };
+  }
+}
+
 export async function buildPnlXlsx(from: string, to: string, locale?: string): Promise<Buffer> {
   const L = reportLabels(locale);
-  const [pnl, rate] = await Promise.all([profitAndLoss(from, to), uzsRate()]);
+  const [pnl, rate, gaps] = await Promise.all([profitAndLoss(from, to), uzsRate(), pnlGaps(from, to)]);
   const workbook = new ExcelJS.Workbook();
   const sheet = sheetSetup(workbook, 'P&L', `${L.tPnl} · ${period(from, to)}`);
 
@@ -81,18 +109,28 @@ export async function buildPnlXlsx(from: string, to: string, locale?: string): P
   line(L.opex, pnl.opexTotal.byPeriod, pnl.opexTotal.total, true);
   line(L.netProfit, pnl.netProfit.byPeriod, pnl.netProfit.total, true);
 
+  // The screen's own notes, AFTER the net row (U22): the file used to carry
+  // an unrated cost at $0 and leave a hand-typed partner debt out with no
+  // word, while the page said both. And the UZS column names its rate.
+  sheet.addRow([]);
+  gapRows(sheet, L, gaps);
+  if (rate) sheet.addRow([`${L.uzsAtRate}: 1 $ = ${rate} UZS`]);
+
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }
 
 export async function buildCashFlowXlsx(from: string, to: string, locale?: string): Promise<Buffer> {
   const L = reportLabels(locale);
-  const flow = await cashFlow(from, to);
+  // The page's own read (U13): the flow and the period's kassa table from
+  // one call, so the file and the screen reconcile the same figures.
+  const recon = await cashReconciliation(from, to);
+  const flow = recon.flow;
   const workbook = new ExcelJS.Workbook();
   const sheet = sheetSetup(workbook, 'Cash flow', `${L.tCashFlow} · ${period(from, to)}`);
 
   const head = sheet.addRow([L.category, `${L.amount} $`]);
   head.font = { bold: true };
-  sheet.columns = [{ width: 34 }, { width: 16 }];
+  sheet.columns = [{ width: 44 }, { width: 16 }, { width: 16 }, { width: 16 }, { width: 16 }, { width: 18 }];
 
   // The SAME list the cash-flow screen translates — a label the screen knows
   // and the file prints raw is the screen and its download disagreeing.
@@ -110,9 +148,67 @@ export async function buildCashFlowXlsx(from: string, to: string, locale?: strin
               : label;
   for (const row of flow.rows) {
     sheet.addRow([name(row.label), row.kind === 'in' ? row.amountUsd : -row.amountUsd]);
+    if (row.label !== 'cargoCosts') continue;
+    // The screen's three notes under the cargo row (U23, U24), as TEXT: each
+    // is «of which», and a number in the amount column would be summed twice.
+    if (flow.cargoQueuedUsd > 0) sheet.addRow([`   ⚠ ${L.cargoQueued}: $${usdText(flow.cargoQueuedUsd)}`]);
+    if (flow.cargoKassaUnknownUsd > 0) {
+      sheet.addRow([`   ${L.cargoKassaUnknown}: $${usdText(flow.cargoKassaUnknownUsd)}`]);
+    }
+    if (flow.unconverted.count > 0) {
+      sheet.addRow([
+        `   ⚠ ${L.unconvertedCosts}: ${flow.unconverted.byCurrency.map((entry) => `${entry.amount} ${entry.currency}`).join(', ')}`,
+      ]).font = { bold: true };
+    }
   }
   const total = sheet.addRow([L.netFlow, flow.net]);
   total.font = { bold: true };
+  if (flow.cashOpexNoKassaCount > 0) {
+    sheet.addRow([`⚠ ${L.cashOpexNoKassa}: ${flow.cashOpexNoKassaCount} · $${usdText(flow.cashOpexNoKassaUsd)}`]).font = {
+      bold: true,
+    };
+  }
+
+  // The kassas from the period's first day to its last — the block the page
+  // prints under the flow (U13; #532d: the screen and its download agree).
+  const LINE: Record<ReconLineKey, string> = {
+    countedInPeriod: L.reconCountedInPeriod,
+    noKassaPayments: L.reconNoKassaPayments,
+    queuedCosts: L.reconQueuedCosts,
+    historyCosts: L.reconHistoryCosts,
+    noKassaExpenses: L.reconNoKassaExpenses,
+    beforeOpening: L.reconBeforeOpening,
+    tillOnly: L.reconTillOnly,
+    oneSidedTransfers: L.reconOneSidedTransfers,
+    unratedTills: L.reconUnratedTills,
+    fx: L.reconFx,
+  };
+  sheet.addRow([]);
+  sheet.addRow([L.reconTitle]).font = { bold: true };
+  sheet.addRow([L.account, L.currency, L.reconOpen, L.inflow, L.outflow, L.reconClose]).font = { bold: true };
+  for (const kassa of recon.kassas) {
+    sheet.addRow([
+      kassa.active ? kassa.name : `${kassa.name} (${L.retiredTill})`,
+      kassa.currency,
+      kassa.opening,
+      kassa.inflow,
+      -kassa.outflow,
+      kassa.closing,
+    ]);
+  }
+  sheet.addRow([]);
+  sheet.addRow([L.reconOpeningUsd, recon.openingUsd]).font = { bold: true };
+  sheet.addRow([L.netFlow, recon.netFlowUsd]);
+  for (const line of recon.lines) sheet.addRow([LINE[line.key], line.usd]);
+  if (Math.abs(recon.unexplained) > 0.004) {
+    sheet.addRow([L.reconUnexplained, recon.unexplained]).font = { bold: true };
+  }
+  sheet.addRow([L.reconClosingUsd, recon.closingUsd]).font = { bold: true };
+  if (recon.unratedTills.length > 0) {
+    sheet.addRow([
+      `⚠ ${L.reconUnratedTills}: ${recon.unratedTills.map((row) => `${row.closing} ${row.currency}`).join(', ')}`,
+    ]);
+  }
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }
 
@@ -144,6 +240,15 @@ export async function buildReceivablesXlsx(asOf: string, locale?: string): Promi
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }
 
+/**
+ * The profit table as a file (audit U22): the page's rows AND its words.
+ *
+ * A Chinese internal leg's cost is already inside the cross-border truck's as
+ * «shu reysgacha» (R2a), so it no longer sits in the «Xarajat $» column — a
+ * hand SUM there counted it twice — but in a column of its own; the total row
+ * is `tripTotals`, the page's own JAMI, so a correction to that rule moves
+ * both. Kilograms and boxes are not totalled: the same box rides every leg.
+ */
 export async function buildProfitXlsx(
   view: 'batch' | 'client' | 'route',
   from: string,
@@ -154,17 +259,30 @@ export async function buildProfitXlsx(
   const workbook = new ExcelJS.Workbook();
   const title = view === 'batch' ? L.tProfitBatch : view === 'client' ? L.tProfitClient : L.tProfitRoute;
   const sheet = sheetSetup(workbook, 'Profit', `${title} · ${period(from, to)}`);
+  // Exactly what the page fetches beside its rows.
+  const [gaps, unbatched] = await Promise.all([
+    pnlGaps(from, to),
+    view === 'client' ? Promise.resolve(null) : unbatchedMoney(from, to),
+  ]);
+  const margin = (totals: { revenue: number; profit: number }) =>
+    totals.revenue ? Math.round((totals.profit / totals.revenue) * 1000) / 10 : 0;
+  const bold = (row: ExcelJS.Row) => {
+    row.font = { bold: true };
+  };
+  const notes: string[] = [];
 
   if (view === 'batch') {
     const rows = await profitByBatch(from, to);
     const head = sheet.addRow([
       L.batch, L.route, L.departed, L.boxes, L.kg, L.m3,
-      `${L.revenue} $`, `${L.cost} $`, `${L.profit} $`, L.margin, L.usdPerKg,
+      `${L.revenue} $`, `${L.cost} $`, L.prevLegs, L.unallocated, L.internalCost,
+      `${L.profit} $`, L.margin, L.usdPerKg,
     ]);
     head.font = { bold: true };
     sheet.columns = [
       { width: 14 }, { width: 14 }, { width: 12 }, { width: 10 }, { width: 10 }, { width: 10 },
-      { width: 14 }, { width: 14 }, { width: 14 }, { width: 10 }, { width: 10 },
+      { width: 14 }, { width: 14 }, { width: 16 }, { width: 16 }, { width: 16 },
+      { width: 14 }, { width: 10 }, { width: 10 },
     ];
     // An internal leg is a cost row (R2a): «—» where a profit would stand,
     // never a $0 that a SUM over the column would read as a real figure.
@@ -174,9 +292,23 @@ export async function buildProfitXlsx(
         row.route,
         row.departedAt ? dayIn(row.departedAt, OFFICE_TZ) : '',
         row.boxCount, row.kg, row.m3,
-        row.revenueUsd, row.costUsd,
+        row.revenueUsd,
+        row.internal ? '—' : row.costUsd,
+        row.internal ? '' : row.prevUsd,
+        row.unallocatedUsd > 0.009 ? row.unallocatedUsd : '',
+        row.internal ? row.costUsd : '',
         row.profitUsd ?? '—', row.marginPct ?? '—', row.profitPerKg ?? '—',
       ]);
+    }
+    if (rows.length > 0) {
+      const totals = tripTotals(rows);
+      bold(sheet.addRow([L.total, '', '', '', '', '', totals.revenue, totals.cost, '', '', '', totals.profit, margin(totals), '']));
+    }
+    if (rows.some((row) => row.internal)) notes.push(L.internalRowsNote);
+    const unallocated = rows.filter((row) => row.unallocatedUsd > 0.009);
+    if (unallocated.length > 0) {
+      const sum = unallocated.reduce((acc, row) => acc + row.unallocatedUsd, 0);
+      notes.push(`⚠ ${L.unallocatedNote}: $${usdText(sum)} · ${unallocated.length}`);
     }
   } else if (view === 'client') {
     const rows = await profitByClient(from, to);
@@ -192,25 +324,43 @@ export async function buildProfitXlsx(
         row.clientCode, row.clientName, row.revenueUsd, row.costUsd, row.profitUsd, row.marginPct,
       ]);
     }
+    if (rows.length > 0) {
+      const totals = tripTotals(rows);
+      bold(sheet.addRow([L.total, '', totals.revenue, totals.cost, totals.profit, margin(totals)]));
+    }
   } else {
     const rows = await profitByRoute(from, to);
     const head = sheet.addRow([
       L.route, L.batches, L.boxes, L.kg,
-      `${L.revenue} $`, `${L.cost} $`, `${L.profit} $`, L.margin, L.usdPerKg,
+      `${L.revenue} $`, `${L.cost} $`, L.internalCost, `${L.profit} $`, L.margin, L.usdPerKg,
     ]);
     head.font = { bold: true };
     sheet.columns = [
       { width: 16 }, { width: 10 }, { width: 10 }, { width: 12 },
-      { width: 14 }, { width: 14 }, { width: 14 }, { width: 10 }, { width: 10 },
+      { width: 14 }, { width: 14 }, { width: 16 }, { width: 14 }, { width: 10 }, { width: 10 },
     ];
     for (const row of rows) {
       sheet.addRow([
         row.route, row.batches, row.boxCount, row.kg,
-        row.revenueUsd, row.costUsd,
+        row.revenueUsd,
+        row.internal ? '—' : row.costUsd,
+        row.internal ? row.costUsd : '',
         row.profitUsd ?? '—', row.marginPct ?? '—', row.profitPerKg ?? '—',
       ]);
     }
+    if (rows.length > 0) {
+      const totals = tripTotals(rows);
+      bold(sheet.addRow([L.total, '', '', '', totals.revenue, totals.cost, '', totals.profit, margin(totals), '']));
+    }
+    if (rows.some((row) => row.internal)) notes.push(L.internalRowsNote);
   }
+
+  if (unbatched && unbatched.revenueUsd > 0) notes.push(`${L.unbatchedNote}: $${usdText(unbatched.revenueUsd)}`);
+  // The page's notes as TEXT rows under the table — never a number beside
+  // them, or a hand SUM of a column reaches into a note.
+  if (notes.length > 0 || gaps.manualCharges.count > 0 || gaps.unconverted.count > 0) sheet.addRow([]);
+  for (const note of notes) sheet.addRow([note]);
+  gapRows(sheet, L, gaps);
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }
 
