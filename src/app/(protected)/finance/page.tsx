@@ -6,6 +6,7 @@ import { clientBalances, clientTotals } from '@/modules/wms/finance/service';
 import { moneyOwnerFilter } from '@/modules/wms/finance/scope';
 import { FinanceClientSearch } from './client-search';
 import { PageHeader } from '@/components/ui/page';
+import { moneyHidden } from '@/modules/platform/rbac/money-sight';
 
 /**
  * Finance home (Phase 2.1): every client with ledger activity and their USD
@@ -34,9 +35,13 @@ export default async function FinancePage() {
         icon="wallet"
         title={t('title')}
         actions={
-          <Link href="/finance/reestr" className="btn-secondary px-3 text-sm">
-            📒 {t('paymentsRegister')}
-          </Link>
+          // The register is closed to a reader the kassa is hidden from
+          // (Q19) — a door that bounces is worse than none (#420).
+          moneyHidden('kassa', actor.permissions) ? undefined : (
+            <Link href="/finance/reestr" className="btn-secondary px-3 text-sm">
+              📒 {t('paymentsRegister')}
+            </Link>
+          )
         }
       />
       {actor.permissions.has('finance.manage') && <FinanceClientSearch />}

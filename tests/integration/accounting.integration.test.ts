@@ -786,7 +786,7 @@ describe('profitability', () => {
     expect(live.cargo).toBe(round(before.cargo + 111));
     expect(live.batchCost).toBe(round(before.batchCost + 111));
 
-    await voidCostEntry(entry.id, 'ikki marta kiritilgan', ctx());
+    await voidCostEntry(entry.id, 'ikki marta kiritilgan', ctx(), { mayMoveTill: true });
     const after = await snapshot();
     expect(after.direct).toBe(before.direct);
     expect(after.cargo).toBe(before.cargo);
@@ -856,7 +856,7 @@ describe('profitability', () => {
     expect(mine!.revenueUsd).toBe(0);
     expect(mine!.costUsd).toBe(77);
     expect(mine!.profitUsd).toBe(-77);
-    await voidCostEntry(entry.id, 'davr testi tugadi', ctx());
+    await voidCostEntry(entry.id, 'davr testi tugadi', ctx(), { mayMoveTill: true });
   });
 
 

@@ -54,3 +54,20 @@ export function seesAllMoney(actor: MoneyActor): boolean {
 export function moneyOwnerFilter(actor: MoneyActor): string | undefined {
   return seesAllMoney(actor) ? undefined : actor.id;
 }
+
+/**
+ * The COMPANY's money — the kassa totals, the P&L and its plan, the
+ * receivable in aggregate, the dollars at risk: the dashboard's money
+ * blocks, the admin home's «Pul» card and the cargo-risk report. Law 4's key
+ * `finance.reports` AND round 91's whole-ledger reader (audit A5: a seller's
+ * `finance.view` must not open the company's receivable).
+ *
+ * ONE predicate for the three screens that each restated it (#513), and the
+ * reason the VED sees none of them (owner's Q19, «kassa foyda zararni umuman
+ * ko'rmasin»): he holds `finance.manage` and never `finance.reports`, which
+ * `platform/rbac/money-sight.ts` makes the exemption — so whoever that rule
+ * blinds fails this one by construction, and the role test says so.
+ */
+export function seesCompanyMoney(actor: MoneyActor): boolean {
+  return seesAllMoney(actor) && actor.permissions.has('finance.reports');
+}

@@ -254,6 +254,20 @@ export async function placePayment(id: string, accountId: string, ctx: AuditCont
   });
 }
 
+/**
+ * The client-ledger rows a person who may NOT move a till may still void —
+ * `mayVoidLedgerRow` (finance/void-rule.ts) written as the void's WHERE: a
+ * price, a settlement half (routed through a firm, no till of ours), and
+ * their OWN payment while nobody has placed it into a kassa. An allow-list,
+ * so a kind a later round adds is the kassa holders' until decided.
+ */
+export function nonHolderVoidableSql(actorId: string): SQL {
+  return sql`(${clientTransactions.type} = 'charge'
+    OR (${clientTransactions.type} = 'payment' AND ${clientTransactions.partnerId} IS NOT NULL)
+    OR (${clientTransactions.type} = 'payment' AND ${clientTransactions.accountId} IS NULL
+        AND ${clientTransactions.createdBy} = ${actorId}::uuid))`;
+}
+
 export async function voidTransaction(
   id: string,
   reason: string,
@@ -269,6 +283,7 @@ export async function voidTransaction(
   door: { mayMoveTill: boolean },
 ) {
   if (!ctx.actorId) throw new FinanceError('unauthenticated');
+  const actorId = ctx.actorId;
   const row = await db.query.clientTransactions.findFirst({
     where: eq(clientTransactions.id, id),
   });
@@ -282,11 +297,35 @@ export async function voidTransaction(
   // ledger — read row by row — could ever show it. Matched on the FK that
   // DEFINES the pair, not on the client row's own partner_id, because only
   // `recordSettlement` ever sets `client_tx_id`.
+  //
+  // The client row's UPDATE is a CLAIM (Q19 review, money finding 2): it
+  // re-judges the row as it stands at the write. A non-holder may void only
+  // what `nonHolderVoidableSql` lists — the same list `mayVoidLedgerRow`
+  // draws the ✖ from — and «Kassaga joylash» can place an unplaced payment
+  // between the read above and this write: under READ COMMITTED the UPDATE
+  // waits for that transaction and re-evaluates the WHERE on the placed row,
+  // so the claim finds nothing. `voided_at IS NULL` closes a double void,
+  // which used to rewrite the first one's reason.
   const paired = await db.transaction(async (tx) => {
-    await tx
+    const claimed = await tx
       .update(clientTransactions)
-      .set({ voidedAt: new Date(), voidedBy: ctx.actorId, voidReason: reason })
-      .where(eq(clientTransactions.id, id));
+      .set({ voidedAt: new Date(), voidedBy: actorId, voidReason: reason })
+      .where(
+        and(
+          eq(clientTransactions.id, id),
+          isNull(clientTransactions.voidedAt),
+          door.mayMoveTill ? undefined : nonHolderVoidableSql(actorId),
+        ),
+      )
+      .returning({ id: clientTransactions.id });
+    if (claimed.length === 0) {
+      // Re-read on the transaction's own connection (#714), to say why.
+      const [now] = await tx
+        .select({ voidedAt: clientTransactions.voidedAt })
+        .from(clientTransactions)
+        .where(eq(clientTransactions.id, id));
+      throw new FinanceError(!now ? 'not_found' : now.voidedAt ? 'already_voided' : 'forbidden');
+    }
     return tx
       .update(partnerTransactions)
       .set({ voidedAt: new Date(), voidedBy: ctx.actorId, voidReason: reason })

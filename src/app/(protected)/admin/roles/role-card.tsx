@@ -8,6 +8,7 @@ import {
   setRoleScopedAction,
   type RoleFormState,
 } from './actions';
+import { moneyHidden } from '@/modules/platform/rbac/money-sight';
 
 export interface RoleCardProps {
   id: string;
@@ -46,6 +47,11 @@ export function RoleCard(props: RoleCardProps) {
   const [open, setOpen] = useState(false);
   const grantable = new Set(props.grantable);
   const locked = props.isOwnRole;
+  // Q19 (owner, 2026-09-25) keys on the `ved.docs` GRANT, so ticking it on a
+  // role that is not the VED's blinds that role to the kassa, the profit and
+  // the tannarx in silence. Said on the card, as the same function decides
+  // it — computed from what is SAVED, not from unsaved ticks.
+  const blind = moneyHidden('results', new Set(props.grants));
 
   return (
     <div className="card space-y-2" data-testid={`role-${props.code}`}>
@@ -71,6 +77,11 @@ export function RoleCard(props: RoleCardProps) {
             🏠 {t('scoped')}
           </span>
         )}
+        {blind && (
+          <span className="chip-warn" data-testid={`money-hidden-${props.code}`}>
+            {t('moneyHidden')}
+          </span>
+        )}
         <button
           type="button"
           data-testid={`toggle-${props.code}`}
@@ -80,6 +91,8 @@ export function RoleCard(props: RoleCardProps) {
           {open ? tc('cancel') : `⚙️ ${tc('edit')}`}
         </button>
       </div>
+
+      {blind && <p className="text-xs text-ink-500">{t('moneyHiddenHint')}</p>}
 
       {locked && open && (
         <p className="rounded-lg bg-warn/10 p-2 text-sm font-semibold text-warn">

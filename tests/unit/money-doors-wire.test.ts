@@ -411,6 +411,13 @@ describe('U33 — voiding a refund asks the grant that created it', () => {
   it('the ledger draws the ✖ on a refund only for the kassa holders', () => {
     const page = read('src/app/(protected)/finance/[clientId]/page.tsx');
     expect(page).toContain('const canRefund = mayPickTill(actor.permissions);');
-    expect(page).toMatch(/canManage &&\s*\(tx\.type !== 'refund' \|\| canRefund\) && \(\s*<span className="ml-auto">\s*<VoidButton/);
+    // Q19 widened the rule from «a refund» to every row that moved a till (a
+    // placed payment too): the ✖ now asks the one function whose SQL twin is
+    // the void's own claim (`mayVoidLedgerRow` ↔ `nonHolderVoidableSql`,
+    // proven to agree in ledger-void.integration.test.ts), with the kassa
+    // holders' grant as its door.
+    expect(page).toMatch(
+      /canManage &&\s*mayVoidLedgerRow\([\s\S]*?\{ mayMoveTill: canRefund, actorId: actor\.id \},?\s*\) && \(\s*<span className="ml-auto">\s*<VoidButton/,
+    );
   });
 });

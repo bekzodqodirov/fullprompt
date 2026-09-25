@@ -17,6 +17,7 @@ import {
   voidCostEntry,
 } from '@/modules/wms/costing/service';
 import { mayPickTill } from '@/modules/wms/accounting/till-door';
+import { costSightFor } from '@/modules/wms/costing/cost-sight';
 import { isStaffPartner, maySeeStaffMoney } from '@/modules/wms/partners/staff';
 import { firmDebtVoidRefusal } from '@/modules/wms/partners/service';
 import { amountRefusal, nativeAmount } from '@/modules/wms/finance/money-bounds';
@@ -185,6 +186,14 @@ export async function voidCostEntryAction(input: unknown): Promise<CostActionRes
     throw err;
   }
 
+  // A reader who sees only their OWN cost entries (the VED, owner's Q19 D1)
+  // cannot void one they cannot see: the card never draws a colleague's row
+  // for them, so a post naming one is hand-built. Their own typo stays theirs
+  // to take back.
+  if (costSightFor(actor).ownOnly && entry.enteredBy !== actor.id) {
+    return { ok: false, error: 'cost_not_yours' };
+  }
+
   // A cost paid out of a kassa: voiding it puts the money BACK into the till
   // — a cash movement, and the kassa holders' alone (0101). The warehouse and
   // the logist may still void the costs they typed with no kassa.
@@ -216,7 +225,15 @@ export async function voidCostEntryAction(input: unknown): Promise<CostActionRes
   }
   const meta = await requestMeta();
   try {
-    await voidCostEntry(parsed.data.id, parsed.data.reason, { actorId: actor.id, ...meta });
+    // The kassa gate above read the row BEFORE this; the service re-judges it
+    // in its own UPDATE, so a cost placed into a till in between is refused
+    // there and not voided back into the drawer (Q19 review).
+    await voidCostEntry(
+      parsed.data.id,
+      parsed.data.reason,
+      { actorId: actor.id, ...meta },
+      { mayMoveTill: mayPickTill(actor.permissions) },
+    );
   } catch (err) {
     if (err instanceof CostError) return { ok: false, error: err.code };
     throw err;

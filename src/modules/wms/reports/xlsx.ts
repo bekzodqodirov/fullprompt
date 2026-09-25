@@ -111,7 +111,17 @@ export async function buildStockAgingXlsx(warehouseIds?: string[], locale?: stri
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }
 
-export async function buildBatchRegisterXlsx(warehouseIds?: string[], locale?: string): Promise<Buffer> {
+/**
+ * The batch register file. `costs` is REQUIRED (Q19): the three cost columns
+ * are a truck's whole cost total and its tannarx per kilo and per cube, and
+ * the caller says whether this reader may see them — an optional flag fails
+ * open (#790).
+ */
+export async function buildBatchRegisterXlsx(
+  warehouseIds: string[] | undefined,
+  locale: string | undefined,
+  opts: { costs: boolean },
+): Promise<Buffer> {
   const L = reportLabels(locale);
   const rows = await batchRegister(warehouseIds);
   const workbook = new ExcelJS.Workbook();
@@ -122,13 +132,14 @@ export async function buildBatchRegisterXlsx(warehouseIds?: string[], locale?: s
   );
   const head = sheet.addRow([
     L.batch, L.route, L.status, L.created, L.departed,
-    L.loaded, L.shortLoaded, L.added, L.kg, L.m3, L.costsUsd, L.usdPerKg, L.usdPerM3,
+    L.loaded, L.shortLoaded, L.added, L.kg, L.m3,
+    ...(opts.costs ? [L.costsUsd, L.usdPerKg, L.usdPerM3] : []),
   ]);
   head.font = { bold: true };
   sheet.columns = [
     { width: 12 }, { width: 12 }, { width: 12 }, { width: 12 }, { width: 12 },
     { width: 10 }, { width: 10 }, { width: 10 }, { width: 10 }, { width: 8 },
-    { width: 12 }, { width: 8 }, { width: 8 },
+    ...(opts.costs ? [{ width: 12 }, { width: 8 }, { width: 8 }] : []),
   ];
   for (const row of rows) {
     sheet.addRow([
@@ -142,9 +153,7 @@ export async function buildBatchRegisterXlsx(warehouseIds?: string[], locale?: s
       row.added,
       row.kg,
       row.m3,
-      row.costUsd,
-      row.usdPerKg ?? '',
-      row.usdPerM3 ?? '',
+      ...(opts.costs ? [row.costUsd, row.usdPerKg ?? '', row.usdPerM3 ?? ''] : []),
     ]);
   }
   return Buffer.from(await workbook.xlsx.writeBuffer());

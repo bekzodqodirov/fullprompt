@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
@@ -6,14 +6,11 @@ import {
   attachments,
   boxes,
   clients,
-  costEntries,
   costTypes,
-  partners,
   crates,
   currencies,
   receiptLots,
   warehouses,
-  moneyAccounts,
 } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { AttachmentsPanel } from '@/components/attachments-panel';
@@ -27,7 +24,9 @@ import { TasksPanel } from '@/components/tasks-panel';
 import { inScope } from '@/modules/platform/rbac/scope';
 import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
-import { maySeeTillNames, tillOptionsFor } from '@/modules/wms/costing/till-props';
+import { tillOptionsFor } from '@/modules/wms/costing/till-props';
+import { costSightFor, tillView } from '@/modules/wms/costing/cost-sight';
+import { costEntriesFor } from '@/modules/wms/costing/service';
 
 /** Crate detail: contents, measured dims, label, dissolve (spec 6.2). */
 export default async function CrateDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -77,18 +76,11 @@ export default async function CrateDetailPage({ params }: { params: Promise<{ id
     .where(eq(attachments.entityId, id))
     .orderBy(asc(attachments.createdAt));
 
-  const costs = await db
-    .select({
-      entry: costEntries,
-      typeName: costTypes.name,
-      partnerName: partners.name,
-      accountName: moneyAccounts.name,
-    })
-    .from(costEntries)
-    .innerJoin(costTypes, eq(costEntries.costTypeId, costTypes.id))
-    .leftJoin(partners, eq(costEntries.partnerId, partners.id))
-    .leftJoin(moneyAccounts, eq(costEntries.accountId, moneyAccounts.id))
-    .where(and(eq(costEntries.crateId, id), isNull(costEntries.voidedAt)));
+  // The one reader every cost card lists from (Q19 D1). The crate card is
+  // closed to the VED today (`crates.manage`); it goes through the reader
+  // anyway, so the card fence has no exception to remember.
+  const { entries: costs, others: costOthers } = await costEntriesFor({ crateId: id }, costSightFor(actor));
+  const tcost = await getTranslations('costing');
 
   // A wrong yashik fee needs the same correction path as every other cost:
   // void with a reason, enter again. Gated like receipt-side local handling.
@@ -149,8 +141,7 @@ export default async function CrateDetailPage({ params }: { params: Promise<{ id
             allocationBasis: entry.allocationBasis,
             note: entry.note,
             partnerName,
-            accountName: maySeeTillNames(actor.permissions) ? accountName : null,
-            paidFromTill: entry.accountId !== null,
+            ...tillView(actor.permissions, { accountId: entry.accountId, accountName }),
           }))}
           costTypes={costMeta?.types ?? []}
           currencies={costMeta?.currencies ?? []}
@@ -161,6 +152,11 @@ export default async function CrateDetailPage({ params }: { params: Promise<{ id
           tillOptions={await tillOptionsFor(actor.permissions)}
           partnerOptions={partnerOptions}
         />
+        {costOthers.count > 0 && (
+          <p className="text-xs text-ink-500" data-testid="cost-others">
+            🔒 {tcost('othersEntered', { count: costOthers.count, types: costOthers.types.join(' · ') })}
+          </p>
+        )}
         {active && (
           <div className="flex flex-wrap gap-2 pt-1">
             <div className="flex-1">

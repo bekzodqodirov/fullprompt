@@ -375,7 +375,7 @@ describe('a queued cost every kassa count already holds is not taken off again (
     const typed = await companyBalance();
     expect(cents(typed.netUsd - before.netUsd)).toBe(-20);
     expect(cents(typed.unplacedCostInCountUsd - before.unplacedCostInCountUsd)).toBe(0);
-    await voidCostEntry(id, 'test', ctx());
+    await voidCostEntry(id, 'test', ctx(), { mayMoveTill: true });
   });
 
   it('dated before EVERY count, in any currency: inside the counts — typing it and placing it move nothing', async () => {

@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { ALL_COSTS } from '@/modules/wms/costing/cost-sight';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -235,10 +236,10 @@ describe("the accountant's grid writes ordinary cost entries", () => {
     expect(box2.totalUsd).toBe(200);
 
     // Typed on this truck's grid, so all of it is this truck's part.
-    const matrix = await receiptCostMatrix([receipt1, receipt2], fakeBatchId);
-    expect(matrix.get(`${receipt1}:${type1}`)).toEqual({ usd: 100, unconverted: false, hereUsd: 100 });
-    expect(matrix.get(`${receipt1}:${type2}`)).toEqual({ usd: 50, unconverted: false, hereUsd: 50 });
-    expect(matrix.get(`${receipt2}:${type1}`)).toEqual({ usd: 200, unconverted: false, hereUsd: 200 });
+    const matrix = await receiptCostMatrix([receipt1, receipt2], fakeBatchId, ALL_COSTS);
+    expect(matrix.get(`${receipt1}:${type1}`)).toEqual({ usd: 100, unconverted: false, hereUsd: 100, others: false });
+    expect(matrix.get(`${receipt1}:${type2}`)).toEqual({ usd: 50, unconverted: false, hereUsd: 50, others: false });
+    expect(matrix.get(`${receipt2}:${type1}`)).toEqual({ usd: 200, unconverted: false, hereUsd: 200, others: false });
 
     // The grid types THIS truck's customs, and the money screen must say so:
     // the entries stay receipt-scope for allocation, but carry the batch as

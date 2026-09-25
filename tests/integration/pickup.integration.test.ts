@@ -285,7 +285,7 @@ describe('zavod reysi', () => {
     expect(await shareOf(small)).toBe(100);
     expect(await shareOf(big)).toBe(0);
 
-    await voidCostEntry(entry.id, 'test', ctx());
+    await voidCostEntry(entry.id, 'test', ctx(), { mayMoveTill: true });
     await expect(cancelPickup(id, 'test', ctx())).rejects.toMatchObject({ code: 'pickup_has_receipts' });
   });
 
@@ -335,7 +335,7 @@ describe('zavod reysi', () => {
       .from(costEntries)
       .where(and(eq(costEntries.id, entry.id), isNull(costEntries.voidedAt)));
     expect(still).toHaveLength(1);
-    await voidCostEntry(entry.id, 'test', ctx());
+    await voidCostEntry(entry.id, 'test', ctx(), { mayMoveTill: true });
   });
 
   it('once received, the client is not told «olindi» after «keldi»', async () => {

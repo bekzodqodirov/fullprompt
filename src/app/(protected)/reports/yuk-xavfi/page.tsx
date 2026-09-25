@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { mayReadBatches } from '@/modules/wms/batches/read-door';
-import { seesAllMoney } from '@/modules/wms/finance/scope';
+import { seesCompanyMoney } from '@/modules/wms/finance/scope';
 import { cargoRiskList, type RiskKind, type RiskRow } from '@/modules/wms/reports/business';
 import { PageHeader } from '@/components/ui/page';
 import { m3, usd } from '@/components/charts/format';
@@ -28,7 +28,7 @@ export default async function CargoRiskPage() {
   const ownWh = actor.permissions.has('reports.own_warehouse');
   if ((!allWh && !ownWh) || !mayReadBatches(actor.permissions)) redirect('/reports');
   const t = await getTranslations('reports');
-  const money = actor.permissions.has('finance.reports') && seesAllMoney(actor);
+  const money = seesCompanyMoney(actor);
   // The two scope rules the lists' destinations use, intersected: a scoped
   // actor with no warehouse reads nothing (the query functions read an empty
   // list as «no filter», which would be the whole company).

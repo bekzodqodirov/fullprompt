@@ -20,6 +20,7 @@ export function TxForm({
   deals,
   today,
   canRefund,
+  canPickTill,
   advanceUsd,
 }: {
   clientId: string;
@@ -30,6 +31,12 @@ export function TxForm({
   today: string;
   /** Handing cash back is the kassa-holders' door (finance.expenses). */
   canRefund: boolean;
+  /**
+   * May this person name the kassa the money landed in (Q19: its holders)?
+   * Nobody else is shown the drawers: their payment is recorded unplaced and
+   * the accountant names the box through «Kassaga joylash».
+   */
+  canPickTill: boolean;
   /**
    * What the client has paid us in ADVANCE, in dollars (0 when he owes). A
    * refund hands back at most this (U04) — shown beside the button so the
@@ -111,10 +118,12 @@ export function TxForm({
           required
         />
       </div>
-      {/* Required for a NEW payment (audit A2): one saved with no kassa left
-          the Balans short by its amount for good. Rows from before cash boxes
-          existed keep their empty column — the action refuses, history stays. */}
-      {type !== 'charge' && (
+      {/* Required for a NEW payment by a kassa holder (audit A2): one saved
+          with no kassa left the Balans short by its amount for good. Rows
+          from before cash boxes existed keep their empty column — the action
+          refuses, history stays. Anybody else (the VED, Q19) is not shown the
+          drawers at all, and says where the money went instead. */}
+      {canPickTill && type !== 'charge' && (
         <select
           name="accountId"
           aria-label={t('account')}
@@ -129,6 +138,11 @@ export function TxForm({
             </option>
           ))}
         </select>
+      )}
+      {!canPickTill && type === 'payment' && (
+        <p className="text-xs text-ink-500" data-testid="tx-no-till">
+          {t('paymentNoTill')}
+        </p>
       )}
       {/* Which JOB the money answers. Optional — plenty of money arrives with
           no deal behind it — but for a DEFERRED deal this select is the whole
@@ -168,7 +182,9 @@ export function TxForm({
                       ? tc('amountTooLarge')
                       : state.error === 'refund_exceeds_advance'
                         ? t('refundExceedsAdvance')
-                        : tc('error')}
+                        : state.error === 'forbidden'
+                          ? tc('forbidden')
+                          : tc('error')}
         </p>
       )}
       <button type="submit" disabled={pending} className="btn-primary w-full disabled:opacity-60">

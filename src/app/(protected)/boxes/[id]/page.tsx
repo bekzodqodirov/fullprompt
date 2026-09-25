@@ -18,6 +18,7 @@ import { BackLink } from '@/components/back-link';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 import { PrintLabels } from '@/components/print-labels';
 import { inScope, warehouseScope } from '@/modules/platform/rbac/scope';
+import { moneyHidden } from '@/modules/platform/rbac/money-sight';
 
 /** Box card: identity + full movement timeline (spec 5.5 / §10). */
 export default async function BoxPage({ params }: { params: Promise<{ id: string }> }) {
@@ -60,10 +61,12 @@ export default async function BoxPage({ params }: { params: Promise<{ id: string
         ).map((w) => ({ id: w.id, label: `${w.code} — ${w.name}` }))
       : null;
 
+  // A box's landed cost IS the tannarx — never read for the VED (Q19).
   const canSeeCosts =
-    actor.permissions.has('costs.enter_batch') ||
-    actor.permissions.has('costs.enter_receipt') ||
-    actor.permissions.has('reports.all_warehouses');
+    (actor.permissions.has('costs.enter_batch') ||
+      actor.permissions.has('costs.enter_receipt') ||
+      actor.permissions.has('reports.all_warehouses')) &&
+    !moneyHidden('results', actor.permissions);
   const landed = canSeeCosts ? await boxLandedCost(box.id) : null;
   const tCost = await getTranslations('costing');
 

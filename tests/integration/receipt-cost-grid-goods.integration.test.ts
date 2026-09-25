@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { ALL_COSTS } from '@/modules/wms/costing/cost-sight';
 import { and, eq, inArray, or } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -285,8 +286,8 @@ describe("the grid's hints", () => {
       },
       ctx(),
     );
-    const cell = (await receiptCostMatrix([receiptA], batchId)).get(`${receiptA}:${type1}`);
-    expect(cell).toEqual({ usd: 100, unconverted: false, hereUsd: 60 });
+    const cell = (await receiptCostMatrix([receiptA], batchId, ALL_COSTS)).get(`${receiptA}:${type1}`);
+    expect(cell).toEqual({ usd: 100, unconverted: false, hereUsd: 60, others: false });
   });
 
   it("names the truck's own batch-wide bill, which no cell shows", async () => {
@@ -302,7 +303,7 @@ describe("the grid's hints", () => {
       },
       ctx(),
     );
-    expect((await batchScopeCostByType(batchId)).get(type2)).toBe(500);
+    expect((await batchScopeCostByType(batchId, ALL_COSTS)).get(type2)?.usd).toBe(500);
   });
 });
 

@@ -214,7 +214,7 @@ describe('what we owe a counterparty', () => {
 
     // Cancelling the cost cancels the debt with it: a truck we are no longer
     // paying for must stop standing on the firm's account.
-    await voidCostEntry(entry.id, 'mashina bekor qilindi', ctx());
+    await voidCostEntry(entry.id, 'mashina bekor qilindi', ctx(), { mayMoveTill: true });
     expect(await partnerBalanceUsd(partnerId)).toBe(-1200);
 
     madeBatches.push(batch!.id);

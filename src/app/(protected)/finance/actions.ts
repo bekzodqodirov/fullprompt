@@ -45,17 +45,9 @@ export async function addTransactionAction(
     note: String(formData.get('note') ?? ''),
   });
   if (!parsed.success) return { error: amountRefusal(parsed.error) ?? 'validation' };
-  // A payment names the cash box it landed in (audit A2). One saved with none
-  // took its amount off the Balans receivable and put it in no kassa, so the
-  // net fell by the payment while the cash flow said it came in — and no
-  // screen could place it afterwards. The rule lives at this door, the only
-  // one that takes a typed payment: rows entered before cash boxes existed
-  // have none, and the service still reads them (#171's history rule).
-  if (parsed.data.type === 'payment' && !parsed.data.accountId) return { error: 'account_required' };
-  // A refund is money LEAVING a kassa (R6a) — the same door as every other
-  // kassa outflow, and never a row without the box it left.
-  if (parsed.data.type === 'refund' && !parsed.data.accountId) return { error: 'account_required' };
 
+  // Who is asking comes FIRST: a refusal about the kassa must never be the
+  // first thing a person who may not name one reads (Q19 review).
   let actor;
   try {
     actor = await authorize('finance.manage');
@@ -69,6 +61,26 @@ export async function addTransactionAction(
   // The one predicate the void below asks too (U33, #513).
   if (parsed.data.type === 'refund' && !mayPickTill(actor.permissions)) {
     return { error: 'forbidden' };
+  }
+  // The kassa is named by its holders (owner's Q19: «VED kassani umuman
+  // ko'rmasin»; his Q6: the person responsible for the drawer). A non-holder
+  // — the VED — still records the client's payment, and it lands UNPLACED:
+  // the accountant names the box through «Kassaga joylash», the queue that
+  // exists for exactly this state (`unplacedPaymentSql` — her home counter,
+  // the Balans line, the register's view). A kassa posted by a non-holder is
+  // a forged post: the form never draws the picker for him.
+  if (!mayPickTill(actor.permissions) && parsed.data.accountId) return { error: 'forbidden' };
+  if (mayPickTill(actor.permissions)) {
+    // A HOLDER's payment names the cash box it landed in (audit A2). One
+    // saved with none took its amount off the Balans receivable and put it
+    // in no kassa, so the net fell by the payment while the cash flow said it
+    // came in. The rule lives at this door, the only one that takes a typed
+    // payment: rows entered before cash boxes existed have none, and the
+    // service still reads them (#171's history rule).
+    if (parsed.data.type === 'payment' && !parsed.data.accountId) return { error: 'account_required' };
+    // A refund is money LEAVING a kassa (R6a) — the same door as every other
+    // kassa outflow, and never a row without the box it left.
+    if (parsed.data.type === 'refund' && !parsed.data.accountId) return { error: 'account_required' };
   }
   const meta = await requestMeta();
   let row;
@@ -93,18 +105,25 @@ const voidSchema = z.object({
   reason: z.string().trim().min(2).max(500),
 });
 
-export async function voidTransactionAction(formData: FormData): Promise<void> {
+export async function voidTransactionAction(formData: FormData): Promise<TxFormState> {
   const parsed = voidSchema.safeParse({
     id: formData.get('id'),
     clientId: formData.get('clientId'),
     reason: formData.get('reason'),
   });
-  if (!parsed.success) return;
-  const actor = await authorize('finance.manage');
+  if (!parsed.success) return { error: 'validation' };
+  let actor;
+  try {
+    actor = await authorize('finance.manage');
+  } catch (err) {
+    if (err instanceof AuthError) return { error: 'forbidden' };
+    throw err;
+  }
   const meta = await requestMeta();
   try {
-    // A refund's void is a kassa movement (U33): the service judges the ROW's
-    // type against the same grant the refund door asks.
+    // A void that puts money back into a drawer or takes it out (a placed
+    // payment, a refund) is a kassa movement (U33, Q19): the service judges
+    // the ROW, inside its own UPDATE, against the grant that moves tills.
     await voidTransaction(
       parsed.data.id,
       parsed.data.reason,
@@ -112,11 +131,14 @@ export async function voidTransactionAction(formData: FormData): Promise<void> {
       { mayMoveTill: mayPickTill(actor.permissions) },
     );
   } catch (err) {
-    if (err instanceof FinanceError) return;
+    // Said in words on the button (#420) — it used to be swallowed, and a
+    // refused ✖ looked exactly like one that worked until the page reloaded.
+    if (err instanceof FinanceError) return { error: err.code };
     throw err;
   }
   revalidatePath('/finance');
   revalidatePath(`/finance/${parsed.data.clientId}`);
+  return { ok: true };
 }
 
 /** The register's «kassaga joylash» — see `placePayment` (audit A2). */
@@ -125,6 +147,9 @@ export async function placePaymentAction(formData: FormData): Promise<void> {
   const accountId = z.string().uuid().safeParse(formData.get('accountId'));
   if (!id.success || !accountId.success) return;
   const actor = await authorize('finance.manage');
+  // Naming the drawer the money landed in is the kassa holders' act (Q19) —
+  // the register offers the form to nobody else, and this refuses a post.
+  if (!mayPickTill(actor.permissions)) return;
   const meta = await requestMeta();
   try {
     await placePayment(id.data, accountId.data, { actorId: actor.id, ...meta });

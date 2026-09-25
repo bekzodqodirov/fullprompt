@@ -388,7 +388,7 @@ describe('money first — a prixod with live costs refuses to void', () => {
     const [still] = await db.select().from(receipts).where(eq(receipts.id, receiptId));
     expect(still!.voidedAt).toBeNull();
 
-    await voidCostEntry(entry.id, 'prixod bekor bolyapti', ctx());
+    await voidCostEntry(entry.id, 'prixod bekor bolyapti', ctx(), { mayMoveTill: true });
     await voidReceipt(receiptId, 'dublikat', ctx());
     const [gone] = await db.select().from(receipts).where(eq(receipts.id, receiptId));
     expect(gone!.voidedAt).not.toBeNull();

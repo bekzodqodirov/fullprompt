@@ -16,7 +16,7 @@ import {
 } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { cancelTasksFor } from '../../platform/tasks/service';
-import { recomputeAll, recomputeEntry, scopeBoxIds, voidCostEntryInTx } from '../costing/service';
+import { CostError, recomputeAll, recomputeEntry, scopeBoxIds, voidCostEntryInTx } from '../costing/service';
 import { voidBoxRows } from './void-box';
 
 /**
@@ -225,8 +225,10 @@ export async function annulReceipt(
     if (liveEntries.some((entry) => entry.accountId !== null)) {
       throw new AnnulError('cost_paid_from_till');
     }
+    // The super_admin's cascade, and the kassa-paid ones were refused just
+    // above — so it voids as a kassa holder would (the door is REQUIRED).
     for (const entry of liveEntries) {
-      await voidCostEntryInTx(tx, entry.id, `annul: ${why}`, ctx);
+      await voidCostEntryInTx(tx, entry.id, `annul: ${why}`, ctx, { mayMoveTill: true });
     }
 
     // Collected BEFORE the flip clears the live pointers.
@@ -415,9 +417,16 @@ export async function annulAftermath(receiptId: string, ctx: AuditContext): Prom
     if (entry.accountId) continue;
     const scope = await scopeBoxIds(entry);
     if (scope.length > 0) continue;
-    await db.transaction(async (tx) =>
-      voidCostEntryInTx(tx, entry.id, 'annul: yuk qolmadi (scope empty)', ctx),
-    );
+    // The void is a claim now: an entry somebody voided since the read above
+    // is already what this sweep wanted, and must not stop the aftermath.
+    try {
+      await db.transaction(async (tx) =>
+        voidCostEntryInTx(tx, entry.id, 'annul: yuk qolmadi (scope empty)', ctx, { mayMoveTill: true }),
+      );
+    } catch (err) {
+      if (err instanceof CostError && err.code === 'already_voided') continue;
+      throw err;
+    }
     emptyScopeVoided += 1;
   }
 

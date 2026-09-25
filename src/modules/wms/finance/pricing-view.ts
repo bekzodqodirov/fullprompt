@@ -1,5 +1,27 @@
 import type { BatchLot } from '../batches/lots';
 import type { LotLandedCost } from '../costing/service';
+import { moneyHidden } from '../../platform/rbac/money-sight';
+
+/**
+ * What «Partiya moliyasi» shows this reader (owner, 2026-09-25, Q19) — ONE
+ * answer for the page, its door on the batch card and every link that points
+ * at it (#513: a link that bounces is worse than no link, #1023).
+ *
+ * - `full`  — cost, price and margin: the accountant, the admins, the owner.
+ * - `price` — the goods, kg/m³, their fate, the price and its form, and no
+ *   cost at all: the VED. He forbade SEEING the tannarx, not pricing (the
+ *   VED prices trucks since Phase 2.1, #108), so the page stays his and
+ *   never READS the tannarx for him.
+ * - `none`  — no door: no `finance.manage`, or an internal leg for the VED,
+ *   whose page is a cost page and nothing else (C1a).
+ */
+export type PricingSight = 'full' | 'price' | 'none';
+
+export function pricingSight(permissions: ReadonlySet<string>, internal: boolean): PricingSight {
+  if (!permissions.has('finance.manage')) return 'none';
+  if (!moneyHidden('results', permissions)) return 'full';
+  return internal ? 'none' : 'price';
+}
 
 /**
  * «Partiya moliyasi», assembled (owner, 2026-09-24: the truck's money by

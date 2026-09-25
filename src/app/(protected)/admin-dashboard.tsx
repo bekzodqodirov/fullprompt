@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import type { Actor } from '@/modules/platform/rbac/authorize';
-import { seesAllMoney } from '@/modules/wms/finance/scope';
+import { seesCompanyMoney } from '@/modules/wms/finance/scope';
 import { mayReadBatches } from '@/modules/wms/batches/read-door';
 import { cashFlow, companyBalance } from '@/modules/wms/accounting/reports';
 import { moneySnapshot, todaySnapshot } from '@/modules/wms/reports/overview';
@@ -64,7 +64,8 @@ export async function AdminDashboard({ actor }: { actor: Actor }) {
   const t = await getTranslations('adminHome');
   const td = await getTranslations('dashboard');
   const perms = actor.permissions;
-  const money = perms.has('finance.reports') && seesAllMoney(actor);
+  // The dashboard's own predicate (#513) — the VED fails it (Q19).
+  const money = seesCompanyMoney(actor);
   const cargo = mayReadBatches(perms);
   const sales = perms.has('crm.manage');
   // Tashkent's day and month (R5) — the same ones `salesSnapshot` and the

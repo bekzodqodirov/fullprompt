@@ -29,6 +29,7 @@ import { allocateEntry, toUsd, type AllocBox, type AllocationBasis } from './eng
 import { leftBehindSql, riderCtesSql, riderFilter, riderLoad } from '../batches/riders';
 import { internalLegSql } from '../batches/internal';
 import { CUSTOMS_CODES_SETTING, parseCustomsCodes } from '../calc/customs-codes';
+import type { CostSight } from './cost-sight';
 
 export class CostError extends Error {
   constructor(public readonly code: string) {
@@ -432,12 +433,23 @@ export async function setCostStaffPayer(costId: string, partnerId: string, ctx: 
   await chargeForCost(costId, ctx);
 }
 
-export async function voidCostEntry(id: string, reason: string, ctx: AuditContext) {
+/**
+ * Who is voiding, as the kassa sees it (0101, #1018): a kassa holder
+ * (`mayPickTill`) may void a cost paid out of a till — the money goes back
+ * into it — and nobody else may. REQUIRED, never optional: an optional door
+ * fails open (#790). The annul cascade passes `true` (the super_admin's, and
+ * it refuses kassa-paid costs itself, #852).
+ */
+export interface CostVoidDoor {
+  mayMoveTill: boolean;
+}
+
+export async function voidCostEntry(id: string, reason: string, ctx: AuditContext, door: CostVoidDoor) {
   if (!ctx.actorId) throw new CostError('unauthenticated');
   const entry = await db.query.costEntries.findFirst({ where: eq(costEntries.id, id) });
   if (!entry) throw new CostError('not_found');
   if (entry.voidedAt) throw new CostError('already_voided');
-  await db.transaction(async (tx) => voidCostEntryInTx(tx, id, reason, ctx));
+  await db.transaction(async (tx) => voidCostEntryInTx(tx, id, reason, ctx, door));
 }
 
 /**
@@ -451,12 +463,44 @@ export async function voidCostEntry(id: string, reason: string, ctx: AuditContex
  * ITS transaction so a later refusal rolls the money back with the cargo —
  * auto-voiding money ahead of a refusable step was the design review's first
  * blocker.
+ *
+ * The UPDATE is a CLAIM (Q19 review, money finding 2): it re-judges the row
+ * as it stands at the write, not as a pre-read saw it. The action checks
+ * «no kassa» before calling here, and `setCostAccount` could place the cost
+ * into a till in between — the non-holder's void would then have put money
+ * back into a drawer. Under READ COMMITTED the UPDATE waits for the placing
+ * transaction and re-evaluates its WHERE on the new row, so the claim finds
+ * nothing and the refusal is decided inside the one statement. The same
+ * clause closes a double void, which used to rewrite the first one's reason.
  */
-export async function voidCostEntryInTx(tx: Tx, id: string, reason: string, ctx: AuditContext) {
-  await tx
+export async function voidCostEntryInTx(
+  tx: Tx,
+  id: string,
+  reason: string,
+  ctx: AuditContext,
+  door: CostVoidDoor,
+) {
+  const claimed = await tx
     .update(costEntries)
     .set({ voidedAt: new Date(), voidedBy: ctx.actorId, voidReason: reason })
-    .where(eq(costEntries.id, id));
+    .where(
+      and(
+        eq(costEntries.id, id),
+        isNull(costEntries.voidedAt),
+        door.mayMoveTill ? undefined : isNull(costEntries.accountId),
+      ),
+    )
+    .returning({ id: costEntries.id });
+  if (claimed.length === 0) {
+    // Re-read on the transaction's own connection (#714), to say why.
+    const [now] = await tx
+      .select({ voidedAt: costEntries.voidedAt, accountId: costEntries.accountId })
+      .from(costEntries)
+      .where(eq(costEntries.id, id));
+    if (!now) throw new CostError('not_found');
+    if (now.voidedAt) throw new CostError('already_voided');
+    throw new CostError('kassa_cost_needs_finance');
+  }
   await tx.delete(costAllocations).where(eq(costAllocations.costEntryId, id));
   // A cancelled cost cannot leave a live debt behind it: the truck we are
   // no longer paying for must stop appearing on the firm's account.
@@ -1232,8 +1276,53 @@ export async function batchCostEntryCount(batchId: string): Promise<number> {
   return Number(row?.n ?? 0);
 }
 
-/** Batch cost sheet: entries + totals + unit costs per kg / m³. */
-export async function batchCostSheet(batchId: string) {
+/** The cost entries a card lists: the target they hang on. */
+export type CostTarget =
+  | { batchId: string }
+  | { receiptId: string }
+  | { pickupId: string }
+  | { crateId: string };
+
+/** One cost row as every cost card draws it. */
+export interface CostRow {
+  entry: typeof costEntries.$inferSelect;
+  typeName: string;
+  clientCode: string | null;
+  partnerName: string | null;
+  accountName: string | null;
+}
+
+/** What colleagues wrote on the same target: how many, and of which types — never a sum. */
+export interface OthersEntered {
+  count: number;
+  types: string[];
+}
+
+function costTargetWhere(target: CostTarget): SQL {
+  // A truck's own sheet is what carries its stamp: the batch-scope bills
+  // AND the grid's receipt-scope cells typed on it (round 69's attribution).
+  if ('batchId' in target) return eq(costEntries.batchId, target.batchId);
+  if ('receiptId' in target) return eq(costEntries.receiptId, target.receiptId);
+  if ('pickupId' in target) return eq(costEntries.pickupId, target.pickupId);
+  return eq(costEntries.crateId, target.crateId);
+}
+
+/**
+ * The live cost entries on one batch / receipt / pickup / crate — the ONE
+ * reader the four cost cards list from (Q19 D1, owner 2026-09-25, «19 a»).
+ * `sight` is REQUIRED: the VED reads only the entries he typed, because
+ * everybody's entries beside the truck's kg/m³ ARE the tannarx one division
+ * away (#791). What colleagues wrote on the same target comes back as a
+ * count and its TYPE names — so he sees that «Rastamojka» is already there
+ * and does not type the bill a second time, without reading its amount.
+ * Index-served by the targets' own indexes; `others` is skipped when the
+ * sight is unrestricted.
+ */
+export async function costEntriesFor(
+  target: CostTarget,
+  sight: CostSight,
+): Promise<{ entries: CostRow[]; others: OthersEntered }> {
+  const where = and(costTargetWhere(target), isNull(costEntries.voidedAt));
   const entries = await db
     .select({
       entry: costEntries,
@@ -1247,8 +1336,31 @@ export async function batchCostSheet(batchId: string) {
     .leftJoin(clients, eq(costEntries.clientId, clients.id))
     .leftJoin(partners, eq(costEntries.partnerId, partners.id))
     .leftJoin(moneyAccounts, eq(costEntries.accountId, moneyAccounts.id))
-    .where(and(eq(costEntries.batchId, batchId), isNull(costEntries.voidedAt)))
+    .where(sight.ownOnly ? and(where, eq(costEntries.enteredBy, sight.ownOnly)) : where)
     .orderBy(asc(costEntries.createdAt));
+  if (!sight.ownOnly) return { entries, others: { count: 0, types: [] } };
+  const [row] = await db
+    .select({
+      count: sql<number>`count(*)::int`,
+      types: sql<string[] | null>`array_agg(DISTINCT ${costTypes.name} ORDER BY ${costTypes.name})`,
+    })
+    .from(costEntries)
+    .innerJoin(costTypes, eq(costEntries.costTypeId, costTypes.id))
+    .where(and(where, ne(costEntries.enteredBy, sight.ownOnly)));
+  return { entries, others: { count: Number(row?.count ?? 0), types: row?.types ?? [] } };
+}
+
+/**
+ * Batch cost sheet: entries + totals + unit costs per kg / m³.
+ *
+ * For an own-only sight (the VED, Q19) the truck's total and both per-unit
+ * figures are NULL — typed `number | null`, so a card that forgets the
+ * branch is a compile error rather than a leak: the sum of a list the reader
+ * only half sees would be a wrong number, and the whole of it is the
+ * tannarx per kilo he may not read (#791).
+ */
+export async function batchCostSheet(batchId: string, sight: CostSight) {
+  const { entries, others } = await costEntriesFor({ batchId }, sight);
 
   // The per-unit costs divide by what the freight was split over — the
   // truck's riders (a carton found back at the origin never rode, one
@@ -1258,15 +1370,17 @@ export async function batchCostSheet(batchId: string) {
   const totalUsd = entries.reduce((a, e) => a + Number(e.entry.amountUsd ?? 0), 0);
   const kg = load?.kg ?? 0;
   const m3 = load?.m3 ?? 0;
+  const whole = sight.ownOnly === null;
   return {
     entries,
-    totalUsd: Math.round(totalUsd * 100) / 100,
+    others,
+    totalUsd: whole ? Math.round(totalUsd * 100) / 100 : null,
     unconverted: entries.filter((e) => e.entry.amountUsd === null).length,
     boxCount: Number(load?.boxCount ?? 0),
     kg: Math.round(kg * 10) / 10,
     m3: Math.round(m3 * 1000) / 1000,
-    usdPerKg: kg > 0 ? Math.round((totalUsd / kg) * 1000) / 1000 : null,
-    usdPerM3: m3 > 0 ? Math.round((totalUsd / m3) * 100) / 100 : null,
+    usdPerKg: whole && kg > 0 ? Math.round((totalUsd / kg) * 1000) / 1000 : null,
+    usdPerM3: whole && m3 > 0 ? Math.round((totalUsd / m3) * 100) / 100 : null,
   };
 }
 
@@ -1339,6 +1453,12 @@ export interface GridCellWritten {
    * wizard — is still printed beside it, because it may be the same bill.
    */
   hereUsd: number;
+  /**
+   * A colleague wrote on this cell, for an own-only reader (Q19 D1): the
+   * three figures above are then the reader's OWN, and this says that more
+   * is there without saying how much. Always false for everybody else.
+   */
+  others: boolean;
 }
 
 /**
@@ -1349,19 +1469,26 @@ export interface GridCellWritten {
 export async function receiptCostMatrix(
   receiptIds: string[],
   batchId: string,
+  // REQUIRED (Q19 D1): an own-only reader's cells carry their OWN sums.
+  sight: CostSight,
 ): Promise<Map<string, GridCellWritten>> {
   if (receiptIds.length === 0) return new Map();
+  // The reader's own rows, or every row. A bound parameter, never a raw
+  // fragment built from the id (#156's family).
+  const mine = sight.ownOnly ? sql`${costEntries.enteredBy} = ${sight.ownOnly}` : sql`true`;
+  const theirs = sight.ownOnly ? sql`${costEntries.enteredBy} <> ${sight.ownOnly}` : sql`false`;
   const rows = await db
     .select({
       receiptId: costEntries.receiptId,
       costTypeId: costEntries.costTypeId,
-      usd: sql<string>`coalesce(sum(${costEntries.amountUsd}), 0)`,
-      hereUsd: sql<string>`coalesce(sum(${costEntries.amountUsd}) FILTER (WHERE ${costEntries.batchId} = ${batchId}), 0)`,
+      usd: sql<string>`coalesce(sum(${costEntries.amountUsd}) FILTER (WHERE ${mine}), 0)`,
+      hereUsd: sql<string>`coalesce(sum(${costEntries.amountUsd}) FILTER (WHERE ${costEntries.batchId} = ${batchId} AND ${mine}), 0)`,
       // A cell whose entry has no FX rate yet summed to «$0» — exactly the
       // face an EMPTY cell wears, on the hint whose whole job is stopping a
       // second session from double-entering blind (#86: unconverted money is
       // flagged, never silently zero).
-      unconverted: sql<number>`count(*) FILTER (WHERE ${costEntries.amountUsd} IS NULL)`,
+      unconverted: sql<number>`count(*) FILTER (WHERE ${costEntries.amountUsd} IS NULL AND ${mine})`,
+      others: sql<number>`count(*) FILTER (WHERE ${theirs})`,
     })
     .from(costEntries)
     .where(
@@ -1379,6 +1506,7 @@ export async function receiptCostMatrix(
         usd: Math.round(Number(row.usd) * 100) / 100,
         unconverted: Number(row.unconverted) > 0,
         hereUsd: Math.round(Number(row.hereUsd) * 100) / 100,
+        others: Number(row.others) > 0,
       },
     ]),
   );
@@ -1389,12 +1517,19 @@ export async function receiptCostMatrix(
  * every prixod aboard and so appear in no grid cell: a truck whose customs
  * was entered once on the batch card showed an empty «Rastamojka» column,
  * which is an invitation to type the same bill a second time per prixod.
+ * An own-only reader (Q19 D1) gets his own sum and a flag for the rest.
  */
-export async function batchScopeCostByType(batchId: string): Promise<Map<string, number>> {
+export async function batchScopeCostByType(
+  batchId: string,
+  sight: CostSight,
+): Promise<Map<string, { usd: number; others: boolean }>> {
+  const mine = sight.ownOnly ? sql`${costEntries.enteredBy} = ${sight.ownOnly}` : sql`true`;
+  const theirs = sight.ownOnly ? sql`${costEntries.enteredBy} <> ${sight.ownOnly}` : sql`false`;
   const rows = await db
     .select({
       costTypeId: costEntries.costTypeId,
-      usd: sql<string>`coalesce(sum(${costEntries.amountUsd}), 0)`,
+      usd: sql<string>`coalesce(sum(${costEntries.amountUsd}) FILTER (WHERE ${mine}), 0)`,
+      others: sql<number>`count(*) FILTER (WHERE ${theirs})`,
     })
     .from(costEntries)
     .where(
@@ -1405,7 +1540,12 @@ export async function batchScopeCostByType(batchId: string): Promise<Map<string,
       ),
     )
     .groupBy(costEntries.costTypeId);
-  return new Map(rows.map((row) => [row.costTypeId, Math.round(Number(row.usd) * 100) / 100]));
+  return new Map(
+    rows.map((row) => [
+      row.costTypeId,
+      { usd: Math.round(Number(row.usd) * 100) / 100, others: Number(row.others) > 0 },
+    ]),
+  );
 }
 
 export const receiptCostGridSchema = z.object({

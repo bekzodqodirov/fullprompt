@@ -10,6 +10,8 @@ import { placePaymentAction } from '../actions';
 import { moneyOwnerFilter } from '@/modules/wms/finance/scope';
 import { FinanceClientSearch } from '../client-search';
 import { calendarDay, tashkentDay, tashkentMonthStart } from '@/modules/platform/time/tashkent';
+import { moneyHidden } from '@/modules/platform/rbac/money-sight';
+import { mayPickTill } from '@/modules/wms/accounting/till-door';
 
 /**
  * The payments register (round 29) — the accountant's «kimdan qancha pul
@@ -25,7 +27,12 @@ export default async function PaymentsRegisterPage({
 }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
-  if (!actor.permissions.has('finance.view') && !actor.permissions.has('finance.manage')) {
+  // «Every payment with its cash box» is the register's whole shape, and the
+  // VED does not see the kassa (owner's Q19) — the screen is not his.
+  if (
+    (!actor.permissions.has('finance.view') && !actor.permissions.has('finance.manage')) ||
+    moneyHidden('kassa', actor.permissions)
+  ) {
     redirect('/');
   }
   const t = await getTranslations('finance');
@@ -38,7 +45,9 @@ export default async function PaymentsRegisterPage({
   const from = calendarDay(params.from) ?? monthStart;
   const to = calendarDay(params.to) ?? today;
 
-  const canPlace = actor.permissions.has('finance.manage');
+  // Placing a payment into a till is the kassa holders' act (Q19, the rule
+  // every kassa door asks — `placePaymentAction` refuses the rest).
+  const canPlace = mayPickTill(actor.permissions);
   // Every payment still in no till, whatever its date (audit A2) — the home
   // counter and the Balans line both open this view.
   const unplaced = params.joylanmagan === '1';

@@ -16,6 +16,7 @@ import { TxForm } from './tx-form';
 import { VoidButton } from './void-button';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { mayPickTill } from '@/modules/wms/accounting/till-door';
+import { mayVoidLedgerRow } from '@/modules/wms/finance/void-rule';
 
 /** One client's money ledger: balance, add charge/payment, full history. */
 export default async function ClientLedgerPage({
@@ -61,7 +62,9 @@ export default async function ClientLedgerPage({
     clientBalanceUsd(clientId),
     clientLedger(clientId),
     db.select({ code: currencies.code }).from(currencies).where(eq(currencies.active, true)),
-    listAccounts(),
+    // The drawers are the kassa holders' to name (Q19): nobody else's form
+    // offers them, so nobody else's page fetches them.
+    canRefund ? listAccounts() : Promise.resolve([]),
     canManage ? ledgerDealsForClient(clientId) : Promise.resolve([]),
     bothFiguresForDeals(clientDeals.map((d) => d.id)),
   ]);
@@ -109,6 +112,7 @@ export default async function ClientLedgerPage({
       {canManage && (
         <TxForm
           canRefund={canRefund}
+          canPickTill={canRefund}
           advanceUsd={balance < -0.009 ? -balance : 0}
           clientId={clientId}
           currencies={currencyRows.map((c) => c.code)}
@@ -169,8 +173,15 @@ export default async function ClientLedgerPage({
               {tx.voidedAt ? (
                 <span className="text-bad">✖ {t('voided')}: {tx.voidReason}</span>
               ) : (
+                // The ✖ is drawn exactly where the void's own claim would
+                // let it through (Q19: a placed payment and a refund are the
+                // kassa holders'; a non-holder keeps prices, settlement
+                // halves and his own not-yet-placed payment).
                 canManage &&
-                (tx.type !== 'refund' || canRefund) && (
+                mayVoidLedgerRow(
+                  { type: tx.type, accountId: tx.accountId, partnerId: tx.partnerId, createdBy: tx.createdBy },
+                  { mayMoveTill: canRefund, actorId: actor.id },
+                ) && (
                   <span className="ml-auto">
                     <VoidButton id={tx.id} clientId={clientId} />
                   </span>

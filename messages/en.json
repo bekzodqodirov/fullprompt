@@ -1010,7 +1010,11 @@
     "errFutureDate": "The date cannot be later than tomorrow.",
     "errAmountTooLarge": "The amount is too large for one row.",
     "errPartnerVoidNotYours": "A cost a firm paid is voided by the person who typed it, or by the accountant or an admin.",
-    "errPartnerVoidSettled": "This firm's account has moved since the cost (a payment or a settlement) — only the accountant or an admin may void it now."
+    "errPartnerVoidSettled": "This firm's account has moved since the cost (a payment or a settlement) — only the accountant or an admin may void it now.",
+    "othersEntered": "Entered by colleagues: {count} — {types}",
+    "othersWrote": "✍ entered by a colleague",
+    "voidByAccountant": "the accountant voids it",
+    "errCostNotYours": "A colleague entered this cost — only they or the accountant can void it."
   },
   "batches": {
     "title": "Batches",
@@ -1336,7 +1340,9 @@
     "perKgArrived": "/kg arrived",
     "perKgLoaded": "/kg loaded",
     "advanceNow": "advance ${amount}",
-    "refundExceedsAdvance": "There is no advance for this amount. For lost cargo, lower the price (the deal's discount, then correct the charge) and refund after. For an old advance from before the system, enter that payment first."
+    "refundExceedsAdvance": "There is no advance for this amount. For lost cargo, lower the price (the deal's discount, then correct the charge) and refund after. For an old advance from before the system, enter that payment first.",
+    "paymentNoTill": "The accountant records which cash box the money went into.",
+    "voidNeedsAccountant": "Only the accountant or an admin can void this."
   },
   "map": {
     "title": "Map",
@@ -2063,7 +2069,9 @@
     "scoped": "Warehouse-scoped",
     "scopedHint": "Grants apply only within the holder's assigned warehouses. Unticked, the role sees every warehouse.",
     "rota": "Inbound lead rota",
-    "rotaHint": "Leads from adverts and the public form are handed to holders of this role in turn."
+    "rotaHint": "Leads from adverts and the public form are handed to holders of this role in turn.",
+    "moneyHidden": "🙈 Sees no kassa, profit or landed cost",
+    "moneyHiddenHint": "A role holding «ved.docs» sees no kassa, profit/loss or landed cost (the owner’s decision of 2026-09-25). If this is not a VED role, remove «ved.docs» from it."
   },
   "fields": {
     "title": "Fields and objects",

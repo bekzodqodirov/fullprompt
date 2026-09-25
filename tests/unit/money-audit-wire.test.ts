@@ -16,6 +16,14 @@ describe('audit 2026-09-24 — the doors', () => {
   it('A2: the ledger door refuses a payment with no cash box, and the form asks for one', () => {
     const action = read('src/app/(protected)/finance/actions.ts');
     expect(action).toMatch(/type === 'payment' && !parsed\.data\.accountId\) return \{ error: 'account_required' \}/);
+    // Q19 refined A2, it did not drop it: a KASSA HOLDER still names the box;
+    // a non-holder (the VED) records the payment unplaced and the accountant
+    // places it. So the refusal must sit inside the holder's branch — and a
+    // kassa posted by a non-holder is refused as a forged post.
+    const holder = action.indexOf('if (mayPickTill(actor.permissions)) {');
+    expect(holder).toBeGreaterThan(0);
+    expect(action.indexOf("type === 'payment' && !parsed.data.accountId) return { error: 'account_required' }")).toBeGreaterThan(holder);
+    expect(action).toContain("if (!mayPickTill(actor.permissions) && parsed.data.accountId) return { error: 'forbidden' };");
     const form = read('src/app/(protected)/finance/[clientId]/tx-form.tsx');
     expect(form).toMatch(/name="accountId"[^>]*required/);
     expect(form).toContain('max={latestTxDate()}');
@@ -23,11 +31,16 @@ describe('audit 2026-09-24 — the doors', () => {
 
   it("A5: the dashboard's money block asks round 91's question, not finance.view", () => {
     const page = read('src/app/(protected)/dashboard/page.tsx');
-    expect(page).toContain('const seesMoney = seesAllMoney(actor);');
+    // Q19 (2026-09-25) moved «round 91's whole-ledger reader AND
+    // finance.reports» into ONE predicate the admin home and the risk report
+    // share (`seesCompanyMoney`); the pin names it, and the predicate's own
+    // halves are pinned below so the A5 rule cannot leave with the move.
     expect(page).not.toMatch(/seesMoney = actor\.permissions\.has\('finance\.view'\)/);
     // His answer 4a (2026-09-25): the money part is the owner's and the
     // admin's — the ROLE as well as the grants.
-    expect(page).toContain("const money = seesMoney && perms.has('finance.reports') && analyst;");
+    expect(page).toContain('const money = seesCompanyMoney(actor) && analyst;');
+    const scope = read('src/modules/wms/finance/scope.ts');
+    expect(scope).toContain("return seesAllMoney(actor) && actor.permissions.has('finance.reports');");
   });
 
   it('A15: the expense file carries the screen\'s category', () => {

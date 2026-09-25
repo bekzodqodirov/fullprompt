@@ -1010,7 +1010,11 @@
     "errFutureDate": "日期不能晚于明天。",
     "errAmountTooLarge": "金额过大——单行无法容纳。",
     "errPartnerVoidNotYours": "由公司支付的费用只能由录入人或会计/管理员作废。",
-    "errPartnerVoidSettled": "该公司账户在此费用之后已有付款或抵销——只能由会计或管理员作废。"
+    "errPartnerVoidSettled": "该公司账户在此费用之后已有付款或抵销——只能由会计或管理员作废。",
+    "othersEntered": "其他员工录入的费用 {count} 笔：{types}",
+    "othersWrote": "✍ 其他员工已录入",
+    "voidByAccountant": "由会计作废",
+    "errCostNotYours": "此费用由其他员工录入——只有该员工或会计可以作废。"
   },
   "batches": {
     "title": "车次",
@@ -1336,7 +1340,9 @@
     "perKgArrived": "/公斤（已到）",
     "perKgLoaded": "/公斤（已装）",
     "advanceNow": "预付款 ${amount}",
-    "refundExceedsAdvance": "没有这么多预付款。如果是丢失货物的赔偿——请先降低价格（交易折扣，再更正费用），然后退款。如果是系统之前的旧预付款——请先录入那笔付款。"
+    "refundExceedsAdvance": "没有这么多预付款。如果是丢失货物的赔偿——请先降低价格（交易折扣，再更正费用），然后退款。如果是系统之前的旧预付款——请先录入那笔付款。",
+    "paymentNoTill": "款项进入哪个现金账户由会计登记。",
+    "voidNeedsAccountant": "只有会计或管理员可以作废此项。"
   },
   "map": {
     "title": "地图",
@@ -2063,7 +2069,9 @@
     "scoped": "仅限所属仓库",
     "scopedHint": "权限仅在分配给员工的仓库内有效。不勾选则该角色可见所有仓库。",
     "rota": "来客线索轮值",
-    "rotaHint": "来自广告和网页表单的线索会按顺序分配给拥有该角色的人。"
+    "rotaHint": "来自广告和网页表单的线索会按顺序分配给拥有该角色的人。",
+    "moneyHidden": "🙈 看不到现金账户、利润和成本",
+    "moneyHiddenHint": "拥有「ved.docs」的角色看不到现金账户、损益和成本（所有者 2026-09-25 的决定）。如果这不是报关角色，请取消它的「ved.docs」。"
   },
   "fields": {
     "title": "字段与对象",

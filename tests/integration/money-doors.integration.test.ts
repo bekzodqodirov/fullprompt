@@ -141,7 +141,7 @@ afterAll(async () => {
     ] as const) {
       await saveCategory({ id, name, cash, sortOrder: 900, active: false }, ctx()).catch(() => undefined);
     }
-    for (const id of madeCosts) await voidCostEntry(id, 'money-doors tozalash', ctx()).catch(() => undefined);
+    for (const id of madeCosts) await voidCostEntry(id, 'money-doors tozalash', ctx(), { mayMoveTill: true }).catch(() => undefined);
     for (const id of madeBatches) await db.update(batches).set({ status: 'cancelled' }).where(eq(batches.id, id));
     for (const category of retiredCategories) {
       await saveCategory({ ...category, sortOrder: 900, active: false }, ctx()).catch(() => undefined);
@@ -628,7 +628,7 @@ describe('U30 — a settlement can name the deferred job it pays', () => {
 });
 
 describe('U33 — voiding a refund asks the grant that created it (#1014)', () => {
-  it('without the kassa grant a refund stays; a payment may still be voided; the holder voids the refund', async () => {
+  it('without the kassa grant a refund and a PLACED payment stay; his own unplaced payment goes; the holder voids them', async () => {
     // Its own advance to hand back (a refund is capped by it, U04).
     const advance = await addTransaction(
       { clientId, type: 'payment', amount: 20, currency: 'USD', txDate: DAY, accountId: usdTillId, method: 'cash' },
@@ -649,12 +649,30 @@ describe('U33 — voiding a refund asks the grant that created it (#1014)', () =
       .where(eq(clientTransactions.id, refund.id));
     expect(still?.voidedAt).toBeNull();
 
-    // Money coming IN is the VED's door by design (m9-client-money) — its void too.
-    const payment = await addTransaction(
+    // Q19 (owner, 2026-09-25: «VED kassani umuman ko'rmasin») changed this
+    // half: a payment that sits in a DRAWER is kassa money, voided by the
+    // kassa holders only — this line used to assert the VED could void it.
+    // What he keeps is his own payment until the accountant has placed it
+    // (the «records without a kassa» default), proven just below.
+    const placed = await addTransaction(
       { clientId, type: 'payment', amount: 20, currency: 'USD', txDate: DAY, accountId: usdTillId, method: 'cash' },
       ctx(),
     );
-    await voidTransaction(payment.id, 'xato summa', ctx(), { mayMoveTill: false });
+    liveClientTx.push(placed.id);
+    await expect(voidTransaction(placed.id, 'xato summa', ctx(), { mayMoveTill: false })).rejects.toMatchObject({
+      code: 'forbidden',
+    });
+    const [kept] = await db
+      .select({ voidedAt: clientTransactions.voidedAt })
+      .from(clientTransactions)
+      .where(eq(clientTransactions.id, placed.id));
+    expect(kept?.voidedAt).toBeNull();
+    const unplaced = await addTransaction(
+      { clientId, type: 'payment', amount: 20, currency: 'USD', txDate: DAY, method: 'cash' },
+      ctx(),
+    );
+    await voidTransaction(unplaced.id, 'xato summa', ctx(), { mayMoveTill: false });
+    await voidTransaction(placed.id, 'buxgalter bekor qildi', ctx(), { mayMoveTill: true });
 
     await voidTransaction(refund.id, 'buxgalter bekor qildi', ctx(), { mayMoveTill: true });
     const [gone] = await db

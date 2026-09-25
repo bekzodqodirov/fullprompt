@@ -5,7 +5,7 @@ import { getFormatter, getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { isAnalyst } from '@/modules/platform/ai/tools';
 import { getSetting } from '@/modules/platform/settings/service';
-import { seesAllMoney } from '@/modules/wms/finance/scope';
+import { seesCompanyMoney } from '@/modules/wms/finance/scope';
 import { mayReadBatches } from '@/modules/wms/batches/read-door';
 import { scopeKeyOf } from '@/modules/wms/reports/dashboard';
 import { PageHeader } from '@/components/ui/page';
@@ -29,7 +29,7 @@ export const dynamic = 'force-dynamic';
  *
  * Money is the owner's and the admin's alone (his answer 4a): the accountant
  * has the accounting screens, the logist and the warehouse keep the cargo
- * part. `seesAllMoney` stays in the gate (audit A5): a seller's `finance.view`
+ * part. `seesCompanyMoney` carries round 91's `seesAllMoney` (audit A5): a seller's `finance.view`
  * must not open the company's receivable, and the role matrix is edited with
  * checkboxes.
  */
@@ -42,9 +42,11 @@ export default async function DashboardPage() {
   if (!allWh && !ownWh) {
     redirect(perms.has('reports.own_clients') ? '/pipeline' : '/');
   }
-  const seesMoney = seesAllMoney(actor);
   const analyst = isAnalyst(actor);
-  const money = seesMoney && perms.has('finance.reports') && analyst;
+  // The company's money: `finance.reports` + the whole-ledger reader, one
+  // predicate with the admin home and the risk report — so the VED (Q19)
+  // reads no kassa and no profit here either.
+  const money = seesCompanyMoney(actor) && analyst;
   const seesBatches = mayReadBatches(perms);
   const seesFunnel = perms.has('crm.leads');
   const seesOutcome = analyst && perms.has('crm.manage');

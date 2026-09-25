@@ -42,6 +42,8 @@ export interface GridWritten {
   usd: number;
   unconverted: boolean;
   hereUsd: number;
+  /** A colleague wrote here too — set only for an own-only reader (Q19 D1). */
+  others: boolean;
 }
 
 type CellRead = { value: number | null; bad: boolean };
@@ -73,6 +75,7 @@ export function ReceiptCostGrid({
   canEdit,
   partners,
   tills = [],
+  ownOnly = false,
 }: {
   batchId: string;
   rows: GridReceiptRow[];
@@ -80,7 +83,7 @@ export function ReceiptCostGrid({
   /** `receiptId:costTypeId` → what is already written. */
   existing: Record<string, GridWritten>;
   /** costTypeId → this truck's BATCH-scope cost, which no cell shows. */
-  batchScope: Record<string, number>;
+  batchScope: Record<string, { usd: number; others: boolean }>;
   /** Whether the deal code may link to the deal card (the deal-write door). */
   dealLinks: boolean;
   currencies: string[];
@@ -91,6 +94,12 @@ export function ReceiptCostGrid({
   partners: { id: string; name: string }[];
   /** The kassas the sheet may have been paid from — kassa holders only (0101). */
   tills?: { id: string; name: string; currency: string }[];
+  /**
+   * The reader sees only their OWN entries (the VED, owner's Q19 D1): the
+   * written sums are theirs, a colleague's cell says «✍» without a figure,
+   * and the «Yozilgan» totals row — which describes the whole truck — goes.
+   */
+  ownOnly?: boolean;
 }) {
   const t = useTranslations('costing');
   const tc = useTranslations('common');
@@ -122,7 +131,10 @@ export function ReceiptCostGrid({
   const valueOf = (key: string) => read(key).value ?? 0;
 
   const matches = (row: GridReceiptRow) => {
-    if (emptyType && (existing[`${row.receiptId}:${emptyType}`]?.hereUsd ?? 0) > 0) return false;
+    // «Empty» for an own-only reader counts a colleague's cell as filled too:
+    // offering it as empty is the invitation to type the bill twice.
+    const written = existing[`${row.receiptId}:${emptyType}`];
+    if (emptyType && ((written?.hereUsd ?? 0) > 0 || written?.others)) return false;
     const needles = query.toLowerCase().split(/\s+/).filter(Boolean);
     if (needles.length === 0) return true;
     const id = codeIdentity(row.marking, row.clientCode);
@@ -285,7 +297,7 @@ export function ReceiptCostGrid({
               {types.map((type) => (
                 <th key={type.id} className="border-l border-line p-2 text-right">
                   {type.name}
-                  {(batchScope[type.id] ?? 0) > 0 && (
+                  {(batchScope[type.id]?.usd ?? 0) > 0 && (
                     // The truck's own batch-wide bill of this type: in no
                     // cell, so the column read empty and invited a second
                     // entry per prixod.
@@ -293,7 +305,12 @@ export function ReceiptCostGrid({
                       className="num block font-normal normal-case text-warn"
                       data-testid="grid-batch-scope"
                     >
-                      {t('gridBatchScope', { amount: batchScope[type.id]!.toFixed(2) })}
+                      {t('gridBatchScope', { amount: batchScope[type.id]!.usd.toFixed(2) })}
+                    </span>
+                  )}
+                  {batchScope[type.id]?.others && (
+                    <span className="block font-normal normal-case text-warn" data-testid="grid-others">
+                      {t('othersWrote')}
                     </span>
                   )}
                 </th>
@@ -401,12 +418,14 @@ export function ReceiptCostGrid({
                             }`}
                           />
                         ) : null}
-                        {done !== undefined && (
+                        {done !== undefined && (!ownOnly || done.hereUsd > 0 || done.unconverted) && (
                           // What is ALREADY on this prixod for this expense —
                           // the guard against paying the same bill twice. A
                           // cell holding money with no FX rate yet must not
                           // wear an empty cell's face: «≈ $0» invited the very
-                          // double entry this hint exists to stop.
+                          // double entry this hint exists to stop. An own-only
+                          // reader gets no «≈ $0» for a cell only a colleague
+                          // wrote — the «✍» below says it instead.
                           <p
                             className={`num text-xs ${done.unconverted ? 'font-semibold text-warn' : 'text-ink-400'}`}
                           >
@@ -425,6 +444,11 @@ export function ReceiptCostGrid({
                             {t('gridElsewhere', { amount: elsewhere.toFixed(2) })}
                           </p>
                         )}
+                        {done?.others && (
+                          <p className="text-[11px] font-semibold text-warn" data-testid="grid-others">
+                            {t('othersWrote')}
+                          </p>
+                        )}
                       </td>
                     );
                   })}
@@ -439,7 +463,7 @@ export function ReceiptCostGrid({
             {/* The Excel «jami» row: what is already written per column…
                 over the WHOLE truck, filter or not — the save posts all of
                 it, so the totals must describe all of it. */}
-            {doneGrand > 0 && (
+            {!ownOnly && doneGrand > 0 && (
               <tr className="border-t border-line bg-surface-sunken text-xs text-ink-500">
                 <td className="bg-surface-sunken p-2 md:sticky md:left-0 md:z-10">
                   {t('gridEntered')}

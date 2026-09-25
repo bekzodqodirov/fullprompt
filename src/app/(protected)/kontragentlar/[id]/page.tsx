@@ -22,6 +22,7 @@ import { setPartnerActiveAction } from '../actions';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
 import { mayPickTill } from '@/modules/wms/accounting/till-door';
+import { moneyHidden } from '@/modules/platform/rbac/money-sight';
 
 /**
  * One counterparty's account.
@@ -264,7 +265,9 @@ export default async function PartnerCardPage({
                         {batchCode}
                       </Link>
                     )}
-                    {accountName && (
+                    {/* The firm's debt history stays his (U33 B); which of
+                        our drawers paid it does not (Q19). */}
+                    {accountName && !moneyHidden('kassa', actor.permissions) && (
                       <span className="ml-1 text-xs text-ink-500">· {accountName}</span>
                     )}
                     {tx.type === 'charge' && !tx.costEntryId && !tx.expenseId && !tx.voidedAt && (

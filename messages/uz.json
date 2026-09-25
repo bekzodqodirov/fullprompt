@@ -1010,7 +1010,11 @@
     "errFutureDate": "Sana ertadan keyin bo‘lishi mumkin emas.",
     "errAmountTooLarge": "Summa juda katta — bitta qatorga sig‘maydi.",
     "errPartnerVoidNotYours": "Firma to‘lagan xarajatni uni yozgan hodim yoki buxgalter/admin bekor qiladi.",
-    "errPartnerVoidSettled": "Bu firmaning hisobida xarajatdan keyin to‘lov yoki hisob-kitob bo‘lgan — endi faqat buxgalter yoki admin bekor qiladi."
+    "errPartnerVoidSettled": "Bu firmaning hisobida xarajatdan keyin to‘lov yoki hisob-kitob bo‘lgan — endi faqat buxgalter yoki admin bekor qiladi.",
+    "othersEntered": "Boshqalar kiritgan {count} ta xarajat: {types}",
+    "othersWrote": "✍ boshqa hodim yozgan",
+    "voidByAccountant": "buxgalter bekor qiladi",
+    "errCostNotYours": "Bu xarajatni boshqa hodim kiritgan — uni o‘sha hodim yoki buxgalter bekor qiladi."
   },
   "batches": {
     "title": "Partiyalar",
@@ -1336,7 +1340,9 @@
     "perKgArrived": "/kg yetib kelgan",
     "perKgLoaded": "/kg yuklangan",
     "advanceNow": "avans ${amount}",
-    "refundExceedsAdvance": "Bu summaga avans yo‘q. Yo‘qolgan yuk uchun bo‘lsa — narxni tushiring (bitim chegirmasi, keyin hisobni to‘g‘rilang), so‘ng qaytaring. Eski (tizimdan oldingi) avans bo‘lsa — avval o‘sha to‘lovni kiriting."
+    "refundExceedsAdvance": "Bu summaga avans yo‘q. Yo‘qolgan yuk uchun bo‘lsa — narxni tushiring (bitim chegirmasi, keyin hisobni to‘g‘rilang), so‘ng qaytaring. Eski (tizimdan oldingi) avans bo‘lsa — avval o‘sha to‘lovni kiriting.",
+    "paymentNoTill": "Pul qaysi kassaga tushganini buxgalter belgilaydi.",
+    "voidNeedsAccountant": "Buni buxgalter yoki admin bekor qiladi."
   },
   "map": {
     "title": "Xarita",
@@ -2063,7 +2069,9 @@
     "scoped": "Sklad bilan chegaralangan",
     "scopedHint": "Huquqlar faqat xodimga biriktirilgan skladlarda amal qiladi. Belgisiz rol hamma skladni ko'radi.",
     "rota": "Kelgan arizalar navbati",
-    "rotaHint": "Reklama va saytdan kelgan arizalar shu roldagilarga navbat bilan biriktiriladi."
+    "rotaHint": "Reklama va saytdan kelgan arizalar shu roldagilarga navbat bilan biriktiriladi.",
+    "moneyHidden": "🙈 Kassa, foyda, tannarx ko‘rinmaydi",
+    "moneyHiddenHint": "«ved.docs» bor rolga kassa, foyda-zarar va tannarx ko‘rinmaydi (egasining 2026-09-25 qarori). Bu rol VED bo‘lmasa, undan «ved.docs» ni olib tashlang."
   },
   "fields": {
     "title": "Maydonlar va obyektlar",

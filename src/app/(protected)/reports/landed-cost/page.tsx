@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { moneyHidden } from '@/modules/platform/rbac/money-sight';
 import { landedCostByClient, landedCostByLot, unconvertedCosts } from '@/modules/wms/reports/queries';
 import { BackLink } from '@/components/back-link';
 import { PageHeader } from '@/components/ui/page';
@@ -18,7 +19,10 @@ export default async function LandedCostReportPage({
 }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
-  if (!actor.permissions.has('reports.all_warehouses')) redirect('/reports');
+  // The whole report is the tannarx, which the VED does not see (Q19).
+  if (!actor.permissions.has('reports.all_warehouses') || moneyHidden('results', actor.permissions)) {
+    redirect('/reports');
+  }
   const t = await getTranslations('reports');
   const { clientId } = await searchParams;
 

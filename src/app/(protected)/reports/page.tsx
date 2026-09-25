@@ -4,6 +4,7 @@ import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { PageHeader } from '@/components/ui/page';
 import { mayReadBatches } from '@/modules/wms/batches/read-door';
+import { moneyHidden } from '@/modules/platform/rbac/money-sight';
 
 /** Reports hub (§13) — owner's priority order: landed cost, stock/aging, batches. */
 export default async function ReportsPage() {
@@ -15,7 +16,10 @@ export default async function ReportsPage() {
   const t = await getTranslations('reports');
 
   const tiles = [
-    ...(allWh ? [{ href: '/reports/landed-cost', icon: '💰', label: t('landedCost') }] : []),
+    // The page's own door (Q19): a tile that bounces is worse than none.
+    ...(allWh && !moneyHidden('results', actor.permissions)
+      ? [{ href: '/reports/landed-cost', icon: '💰', label: t('landedCost') }]
+      : []),
     { href: '/reports/stock-aging', icon: '🕰', label: t('stockAging') },
     { href: '/reports/batches', icon: '🚛', label: t('batchRegister') },
     { href: '/reports/receipts-journal', icon: '📥', label: t('receiptsJournal') },

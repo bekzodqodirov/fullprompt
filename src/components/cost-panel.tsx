@@ -23,6 +23,12 @@ export interface CostEntryView {
   accountName?: string | null;
   /** A kassa answered for it, whether or not this reader may see which. */
   paidFromTill?: boolean;
+  /**
+   * False when this reader may not void the row and must be told who may
+   * (`tillView`: a kassa-paid cost, for a reader the kassa is hidden from —
+   * Q19). Undefined keeps the 🗑 exactly as every other caller has it.
+   */
+  voidable?: boolean;
 }
 
 export interface CostTypeOption {
@@ -54,6 +60,7 @@ const PAYER_ERRORS = {
   staff_cost_needs_finance: 'errStaffVoid',
   partner_cost_not_yours: 'errPartnerVoidNotYours',
   partner_cost_settled: 'errPartnerVoidSettled',
+  cost_not_yours: 'errCostNotYours',
   future_date: 'errFutureDate',
   amount_too_large: 'errAmountTooLarge',
 } as const;
@@ -220,7 +227,7 @@ export function CostPanel({
             </span>
           )}
           {entry.note && <span className="w-full text-xs text-ink-500">{entry.note}</span>}
-          {canEdit && (
+          {canEdit && entry.voidable !== false && (
             <button
               type="button"
               aria-label={t('void')}
@@ -229,6 +236,13 @@ export function CostPanel({
             >
               🗑 {t('void')}
             </button>
+          )}
+          {/* No silent dead end (#420): the row says who takes it back — the
+              person, never the drawer the reader may not see. */}
+          {canEdit && entry.voidable === false && (
+            <span className="ml-auto text-xs text-ink-500" data-testid="cost-void-locked">
+              🔒 {t('voidByAccountant')}
+            </span>
           )}
         </div>
       ))}

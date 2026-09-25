@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
@@ -7,15 +7,12 @@ import {
   attachments,
   boxes,
   clients,
-  costEntries,
   costTypes,
-  partners,
   currencies,
   deals,
   receiptLots,
   receipts,
   warehouses,
-  moneyAccounts,
 } from '@/modules/platform/db/schema';
 import { CostPanel } from '@/components/cost-panel';
 import { getActor } from '@/modules/platform/rbac/authorize';
@@ -45,7 +42,9 @@ import { mayReadReceipt } from '@/modules/wms/receipts/read-door';
 import { listPartners } from '@/modules/wms/partners/service';
 import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
-import { maySeeTillNames, tillOptionsFor } from '@/modules/wms/costing/till-props';
+import { tillOptionsFor } from '@/modules/wms/costing/till-props';
+import { costSightFor, tillView } from '@/modules/wms/costing/cost-sight';
+import { costEntriesFor } from '@/modules/wms/costing/service';
 
 export default async function ReceiptDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const actor = await getActor();
@@ -104,18 +103,16 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
     photosByLot.set(photo.entityId, [...(photosByLot.get(photo.entityId) ?? []), photo]);
   }
 
-  const costs = await db
-    .select({
-      entry: costEntries,
-      typeName: costTypes.name,
-      partnerName: partners.name,
-      accountName: moneyAccounts.name,
-    })
-    .from(costEntries)
-    .innerJoin(costTypes, eq(costEntries.costTypeId, costTypes.id))
-    .leftJoin(partners, eq(costEntries.partnerId, partners.id))
-    .leftJoin(moneyAccounts, eq(costEntries.accountId, moneyAccounts.id))
-    .where(and(eq(costEntries.receiptId, id), isNull(costEntries.voidedAt)));
+  // The one reader every cost card lists from (Q19 D1): the VED reads the
+  // entries he typed and the TYPES of the rest, never their amounts.
+  const { entries: costs, others: costOthers } = await costEntriesFor({ receiptId: id }, costSightFor(actor));
+  const tcost = await getTranslations('costing');
+  const othersLine =
+    costOthers.count > 0 ? (
+      <p className="text-xs text-ink-500" data-testid="cost-others">
+        🔒 {tcost('othersEntered', { count: costOthers.count, types: costOthers.types.join(' · ') })}
+      </p>
+    ) : null;
   const canEnterCosts = actor.permissions.has('costs.enter_receipt');
   const costMeta = canEnterCosts
     ? {
@@ -434,8 +431,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
                 allocationBasis: entry.allocationBasis,
                 note: entry.note,
                 partnerName,
-                accountName: maySeeTillNames(actor.permissions) ? accountName : null,
-                paidFromTill: entry.accountId !== null,
+                ...tillView(actor.permissions, { accountId: entry.accountId, accountName }),
               }))}
               costTypes={costMeta.types}
               currencies={costMeta.currencies}
@@ -446,8 +442,9 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
               tillOptions={await tillOptionsFor(actor.permissions)}
               partnerOptions={partnerOptions}
             />
+            {othersLine}
           </div>
-        ) : costs.length > 0 && (
+        ) : (costs.length > 0 || othersLine) && (
           <div className="border-t border-line pt-3">
             <h2 className="mb-2 text-lg font-bold">{t('costs')}</h2>
             <ul className="divide-y divide-line text-sm">
@@ -461,6 +458,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
                 </li>
               ))}
             </ul>
+            {othersLine}
           </div>
         )}
       </section>

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { AuthError, authorize, getActor } from '@/modules/platform/rbac/authorize';
+import { moneyHidden } from '@/modules/platform/rbac/money-sight';
 import { writeAudit } from '@/modules/platform/audit/service';
 import { requestMeta } from '@/modules/platform/auth/session';
 import {
@@ -58,6 +59,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ kind
     if (err instanceof AuthError) return new Response('Forbidden', { status: 403 });
     throw err;
   }
+  // The landed-cost file IS the tannarx (Q19): the VED holds the report
+  // grant and still gets no file — the screen refuses him the same way.
+  if (kind.data === 'landed-cost' && moneyHidden('results', actor.permissions)) {
+    return new Response('Forbidden', { status: 403 });
+  }
 
   const scope = actor.permissions.has('reports.all_warehouses') ? undefined : actor.warehouseIds;
   const url = new URL(request.url);
@@ -76,7 +82,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ kind
       xlsx = await buildStockAgingXlsx(scope, locale);
       break;
     case 'batches':
-      xlsx = await buildBatchRegisterXlsx(scope, locale);
+      // Keyed on the VED rule alone, not on the screen's `showCosts`: that one
+      // also hides the column from the warehouse manager, and changing his
+      // download is a separate decision (stated to the lead).
+      xlsx = await buildBatchRegisterXlsx(scope, locale, { costs: !moneyHidden('results', actor.permissions) });
       break;
     case 'receipts-journal':
       xlsx = await buildReceiptsJournalXlsx(

@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { ALL_COSTS } from '@/modules/wms/costing/cost-sight';
 import ExcelJS from 'exceljs';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
@@ -375,7 +376,7 @@ describe('U17 — a carton scanned onto a truck but found back at its origin nev
     expect(await allocated(customs.id, p.boxIds[1]!)).toBeCloseTo(87.5, 2);
     expect(await allocated(customs.id, q.boxIds[0]!)).toBeCloseTo(175, 2);
 
-    const sheet = await batchCostSheet(a.id);
+    const sheet = await batchCostSheet(a.id, ALL_COSTS);
     expect(sheet).toMatchObject({ boxCount: 4, kg: 350, usdPerKg: 12 });
     expect((await batchReceiptRows(a.id)).find((row) => row.receiptId === p.receiptId)).toMatchObject({ boxCount: 1, kg: 50 });
     const lotP = (await batchLots(a.id)).find((lot) => lot.lotId === p.lotId)!;
@@ -447,7 +448,7 @@ describe('U17 — a carton scanned onto a truck but found back at its origin nev
 
     expect(await allocated(freight.id, p.boxIds[1]!)).toBe(0);
     expect(await allocated(freight.id, p.boxIds[0]!)).toBeCloseTo(500, 2);
-    expect(await batchCostSheet(a.id)).toMatchObject({ boxCount: 4, kg: 350, usdPerKg: 10 });
+    expect(await batchCostSheet(a.id, ALL_COSTS)).toMatchObject({ boxCount: 4, kg: 350, usdPerKg: 10 });
     expect((await truckRows()).get(a.id)).toMatchObject({ boxCount: 4, kg: 350, costUsd: 3500 });
 
     // The prixod's grid cells on this truck follow the same two rules: a
@@ -517,7 +518,7 @@ describe('U25 — a carton that rode without a load scan is that truck\'s cargo'
     const lotU = (await batchLots(e.id)).find((lot) => lot.lotId === lu.lotId);
     expect(lotU).toMatchObject({ onBatch: 1, kg: 50 });
     expect((await truckRows()).get(e.id)).toMatchObject({ boxCount: 4, kg: 350, costUsd: 3000 });
-    expect(await batchCostSheet(e.id)).toMatchObject({ boxCount: 4, kg: 350 });
+    expect(await batchCostSheet(e.id, ALL_COSTS)).toMatchObject({ boxCount: 4, kg: 350 });
     // …so the client card asks for its price.
     expect((await clientCargo(u)).trips.map((trip) => trip.batchId)).toContain(e.id);
   });

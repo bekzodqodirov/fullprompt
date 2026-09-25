@@ -63,6 +63,17 @@ test('the owner invents a role, grants it a permission and takes it away again',
   await expect(page.getByTestId(`role-${ROLE}`)).toHaveCount(0);
 });
 
+test('the VED role says on its card that it sees no kassa, profit or tannarx', async ({ page }) => {
+  // Q19 keys on the ved.docs GRANT (owner, 2026-09-25), so ticking it on a
+  // role that is not the VED's blinds that role in silence — the card says so,
+  // on the VED's card and on no other seeded role's.
+  await login(page, OWNER);
+  await page.goto('/admin/roles');
+  await expect(page.getByTestId('money-hidden-ved_manager')).toBeVisible();
+  await expect(page.getByTestId('money-hidden-accountant')).toHaveCount(0);
+  await expect(page.getByTestId('money-hidden-admin')).toHaveCount(0);
+});
+
 test('nobody edits the powers of the role they hold', async ({ page }) => {
   await login(page, OWNER);
   await page.goto('/admin/roles');

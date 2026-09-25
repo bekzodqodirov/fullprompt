@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { ALL_COSTS } from '@/modules/wms/costing/cost-sight';
 import { eq } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -210,7 +211,7 @@ describe('landed cost across a two-leg journey (acceptance test 16)', () => {
     expect(landedQ.totalUsd).not.toBeCloseTo(landedP.totalUsd, 2);
 
     // Batch cost sheet has totals + unit costs.
-    const sheet = await batchCostSheet(leg2.id);
+    const sheet = await batchCostSheet(leg2.id, ALL_COSTS);
     expect(sheet.boxCount).toBe(2);
     expect(sheet.totalUsd).toBeCloseTo(3000 * 0.135, 2);
     expect(sheet.usdPerKg).toBeCloseTo((3000 * 0.135) / 1500, 3);
@@ -224,8 +225,8 @@ describe('landed cost across a two-leg journey (acceptance test 16)', () => {
     expect(landedP2.totalUsd).toBeCloseTo(30 * 0.14 + 60 * 0.135, 2);
 
     // Void the leg-1 entry → its share disappears.
-    const sheet1 = await batchCostSheet(leg1.id);
-    await voidCostEntry(sheet1.entries[0]!.entry.id, 'entered twice', ctx());
+    const sheet1 = await batchCostSheet(leg1.id, ALL_COSTS);
+    await voidCostEntry(sheet1.entries[0]!.entry.id, 'entered twice', ctx(), { mayMoveTill: true });
     const landedP3 = await boxLandedCost(lotP.boxIds[0]!);
     expect(landedP3.shares).toHaveLength(1);
     expect(landedP3.totalUsd).toBeCloseTo(60 * 0.135, 2);
@@ -252,7 +253,7 @@ describe('landed cost across a two-leg journey (acceptance test 16)', () => {
       },
       ctx(),
     );
-    const sheet = await batchCostSheet(batch.id);
+    const sheet = await batchCostSheet(batch.id, ALL_COSTS);
     expect(sheet.unconverted).toBe(1);
     const landed = await boxLandedCost(lot.boxIds[0]!);
     expect(landed.shares).toHaveLength(0);
