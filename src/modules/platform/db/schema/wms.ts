@@ -936,6 +936,35 @@ export const clientTransactions = pgTable(
 // ---------------------------------------------------------------------------
 
 /** Operating-expense categories — maintained by hand, not hardcoded (owner). */
+/**
+ * The owner's monthly plan (0102, his answer 5a): what the month should bring
+ * in and earn, beside what it did on the dashboard. Keyed on the month's first
+ * day; a null figure is «no plan», never a $0 plan.
+ */
+export const businessTargets = pgTable(
+  'business_targets',
+  {
+    month: date('month').primaryKey(),
+    revenueUsd: numeric('revenue_usd', { precision: 14, scale: 2 }),
+    netProfitUsd: numeric('net_profit_usd', { precision: 14, scale: 2 }),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check('business_targets_month_check', sql`${t.month} = date_trunc('month', ${t.month})::date`),
+    check(
+      'business_targets_revenue_check',
+      sql`${t.revenueUsd} IS NULL OR (${t.revenueUsd} >= 0 AND ${t.revenueUsd} <> 'NaN'::numeric)`,
+    ),
+    check(
+      'business_targets_profit_check',
+      sql`${t.netProfitUsd} IS NULL OR ${t.netProfitUsd} <> 'NaN'::numeric`,
+    ),
+  ],
+);
+
 export const expenseCategories = pgTable('expense_categories', {
   id: id(),
   name: text('name').notNull().unique(),
