@@ -138,7 +138,21 @@
     "salesTitle": "销售",
     "wonThisMonth": "本月成交",
     "logisticsTitle": "物流",
-    "oldestOf": "最早的 {shown} / 共 {total}"
+    "oldestOf": "最早的 {shown} / 共 {total}",
+    "months": {
+      "m01": "1月",
+      "m02": "2月",
+      "m03": "3月",
+      "m04": "4月",
+      "m05": "5月",
+      "m06": "6月",
+      "m07": "7月",
+      "m08": "8月",
+      "m09": "9月",
+      "m10": "10月",
+      "m11": "11月",
+      "m12": "12月"
+    }
   },
   "inventory": {
     "title": "盘点",
@@ -1334,7 +1348,24 @@
     "staffPartnerMissing": "该员工还没有账户——开立后才能记录欠他的款项。",
     "staffPartnerOpen": "开立员工账户",
     "staffPartnerLinkedElsewhere": "该登录已关联到其他合作方——请在“合作方”中检查。",
-    "staffPartnerInactive": "员工账户“{name}”已停用——请启用或选择现金账户。"
+    "staffPartnerInactive": "员工账户“{name}”已停用——请启用或选择现金账户。",
+    "reja": "月度计划",
+    "rejaHint": "留空表示「无计划」，而不是 $0。利润为 P&L 中的当月净利润。",
+    "rejaRevenue": "收入计划，$",
+    "rejaProfit": "净利润计划，$",
+    "rejaFactRevenue": "实际：收入",
+    "rejaFactProfit": "实际：净利润",
+    "rejaCurrent": "本月",
+    "rejaSave": "保存",
+    "rejaSaved": "已保存",
+    "rejaErr": {
+      "bad_number": "数字无效",
+      "negative": "收入计划不能为负数",
+      "too_large": "数字过大",
+      "bad_month": "月份无效",
+      "unauthenticated": "请重新登录",
+      "forbidden": "只有老板和管理员可以设置计划"
+    }
   },
   "crm": {
     "title": "CRM",

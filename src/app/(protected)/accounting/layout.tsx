@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { SubNav, type SubNavItem } from '@/components/ui/sub-nav';
+import { isAnalyst } from '@/modules/platform/ai/tools';
 
 /**
  * Management accounting section.
@@ -27,6 +28,10 @@ export default async function AccountingLayout({ children }: { children: React.R
           { href: '/accounting/receivables', label: t('receivables'), icon: 'clock' },
           { href: '/accounting/profit', label: t('profitBatch'), icon: 'truck' },
         ] as SubNavItem[])
+      : []),
+    // The owner's monthly plan (0102, 5a) — his and the admin's alone (4a).
+    ...(canReport && isAnalyst(actor)
+      ? ([{ href: '/accounting/reja', label: t('reja'), icon: 'calendar' }] as SubNavItem[])
       : []),
     ...(canEnter
       ? ([

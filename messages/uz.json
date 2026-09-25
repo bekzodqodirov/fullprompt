@@ -138,7 +138,21 @@
     "salesTitle": "Sotuv",
     "wonThisMonth": "shu oyda sotildi",
     "logisticsTitle": "Logistika",
-    "oldestOf": "eng eskisi {shown} / {total}"
+    "oldestOf": "eng eskisi {shown} / {total}",
+    "months": {
+      "m01": "Yan",
+      "m02": "Fev",
+      "m03": "Mar",
+      "m04": "Apr",
+      "m05": "May",
+      "m06": "Iyun",
+      "m07": "Iyul",
+      "m08": "Avg",
+      "m09": "Sen",
+      "m10": "Okt",
+      "m11": "Noy",
+      "m12": "Dek"
+    }
   },
   "inventory": {
     "title": "Inventarizatsiya",
@@ -1334,7 +1348,24 @@
     "staffPartnerMissing": "Hodimning hali hisobi yo‘q — unga qarzni yozish uchun oching.",
     "staffPartnerOpen": "Hodim kontragentini ochish",
     "staffPartnerLinkedElsewhere": "Bu login boshqa kontragentga bog‘langan — «Kontragentlar»da tekshiring.",
-    "staffPartnerInactive": "«{name}» hodim hisobi o‘chirilgan — yoqing yoki kassani tanlang."
+    "staffPartnerInactive": "«{name}» hodim hisobi o‘chirilgan — yoqing yoki kassani tanlang.",
+    "reja": "Oylik reja",
+    "rejaHint": "Bo‘sh qoldirilgan raqam «reja yo‘q» degani, $0 emas. Foyda — P&L dagi oylik sof foyda.",
+    "rejaRevenue": "Tushum rejasi, $",
+    "rejaProfit": "Sof foyda rejasi, $",
+    "rejaFactRevenue": "Fakt: tushum",
+    "rejaFactProfit": "Fakt: sof foyda",
+    "rejaCurrent": "shu oy",
+    "rejaSave": "Saqlash",
+    "rejaSaved": "Saqlandi",
+    "rejaErr": {
+      "bad_number": "Raqam noto‘g‘ri",
+      "negative": "Tushum rejasi manfiy bo‘lolmaydi",
+      "too_large": "Raqam juda katta",
+      "bad_month": "Oy noto‘g‘ri",
+      "unauthenticated": "Qaytadan kiring",
+      "forbidden": "Rejani faqat egasi va admin kiritadi"
+    }
   },
   "crm": {
     "title": "CRM",

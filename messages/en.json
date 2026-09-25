@@ -138,7 +138,21 @@
     "salesTitle": "Sales",
     "wonThisMonth": "won this month",
     "logisticsTitle": "Logistics",
-    "oldestOf": "oldest {shown} of {total}"
+    "oldestOf": "oldest {shown} of {total}",
+    "months": {
+      "m01": "Jan",
+      "m02": "Feb",
+      "m03": "Mar",
+      "m04": "Apr",
+      "m05": "May",
+      "m06": "Jun",
+      "m07": "Jul",
+      "m08": "Aug",
+      "m09": "Sep",
+      "m10": "Oct",
+      "m11": "Nov",
+      "m12": "Dec"
+    }
   },
   "inventory": {
     "title": "Stocktake",
@@ -1334,7 +1348,24 @@
     "staffPartnerMissing": "This employee has no account yet — open one to record what we owe them.",
     "staffPartnerOpen": "Open staff account",
     "staffPartnerLinkedElsewhere": "This login is already linked to another counterparty — check it under Counterparties.",
-    "staffPartnerInactive": "Staff account “{name}” is retired — reactivate it or pick a till."
+    "staffPartnerInactive": "Staff account “{name}” is retired — reactivate it or pick a till.",
+    "reja": "Monthly plan",
+    "rejaHint": "An empty field means «no plan», not $0. Profit is the P&L net profit for the month.",
+    "rejaRevenue": "Revenue plan, $",
+    "rejaProfit": "Net profit plan, $",
+    "rejaFactRevenue": "Actual: revenue",
+    "rejaFactProfit": "Actual: net profit",
+    "rejaCurrent": "current",
+    "rejaSave": "Save",
+    "rejaSaved": "Saved",
+    "rejaErr": {
+      "bad_number": "Invalid number",
+      "negative": "A revenue plan cannot be negative",
+      "too_large": "Number too large",
+      "bad_month": "Invalid month",
+      "unauthenticated": "Please sign in again",
+      "forbidden": "Only the owner and the admin set the plan"
+    }
   },
   "crm": {
     "title": "CRM",

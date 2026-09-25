@@ -196,6 +196,56 @@ export async function decidedLeadCounts(from: Date, to: Date) {
   };
 }
 
+export interface DecidedMonth {
+  month: string;
+  won: number;
+  lost: number;
+  wonUsd: number;
+  wonOtherCurrency: number;
+  /** Days 1..mtdDay of that month only — the like-for-like comparison. */
+  wonMtd: number;
+  lostMtd: number;
+  wonUsdMtd: number;
+}
+
+/**
+ * `decidedLeadCounts`, one row per Tashkent month over a window, in ONE
+ * statement — the dashboard's 12-month won trend and its «vs the same days
+ * last month» (the `*Mtd` columns) without twelve round trips. Same clock
+ * (`closed_at`), same predicate, same dollars-only rule: each row equals
+ * `decidedLeadCounts` over that month, and a test says so.
+ */
+export async function decidedLeadsByMonth(from: Date, to: Date, mtdDay = 31): Promise<DecidedMonth[]> {
+  const monthExpr = sql`to_char(${leads.closedAt} AT TIME ZONE 'Asia/Tashkent', 'YYYY-MM')`;
+  const dom = sql`extract(day FROM ${leads.closedAt} AT TIME ZONE 'Asia/Tashkent') <= ${mtdDay}`;
+  const rows = await db
+    .select({
+      month: sql<string>`${monthExpr}`,
+      won: sql<number>`count(*) FILTER (WHERE ${leadStages.kind} = 'won')`,
+      lost: sql<number>`count(*) FILTER (WHERE ${leadStages.kind} = 'lost')`,
+      wonUsd: leadWonUsdSql(),
+      wonOther: leadWonOtherCurrencySql(),
+      wonMtd: sql<number>`count(*) FILTER (WHERE ${leadStages.kind} = 'won' AND ${dom})`,
+      lostMtd: sql<number>`count(*) FILTER (WHERE ${leadStages.kind} = 'lost' AND ${dom})`,
+      wonUsdMtd: leadWonUsdSql(dom),
+    })
+    .from(leads)
+    .innerJoin(leadStages, eq(leads.stageId, leadStages.id))
+    .where(and(isNotNull(leads.closedAt), gte(leads.closedAt, from), lt(leads.closedAt, to)))
+    .groupBy(monthExpr)
+    .orderBy(monthExpr);
+  return rows.map((row) => ({
+    month: row.month,
+    won: Number(row.won),
+    lost: Number(row.lost),
+    wonUsd: money(row.wonUsd),
+    wonOtherCurrency: Number(row.wonOther),
+    wonMtd: Number(row.wonMtd),
+    lostMtd: Number(row.lostMtd),
+    wonUsdMtd: money(row.wonUsdMtd),
+  }));
+}
+
 export async function salesAnalytics({ from, to }: Period, f: AnalyticsFilters = {}) {
   const extra = leadFilterConds(f);
   const created = and(gte(leads.createdAt, from), lt(leads.createdAt, to), ...extra);

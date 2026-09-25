@@ -26,8 +26,14 @@ export function leadCurrencySql(): SQL<string> {
   return sql<string>`coalesce(${leads.quotedCurrency}, 'USD')`;
 }
 
-export function leadWonUsdSql(): SQL<string> {
-  return sql<string>`coalesce(sum(${leads.quotedAmount}) FILTER (WHERE ${leadStages.kind} = 'won' AND ${leadCurrencySql()} = 'USD'), 0)`;
+/**
+ * `extra` narrows the FILTER further (the dashboard's month-to-date column,
+ * which counts only days 1..N of each month in the same statement); absent,
+ * the sum is the one every report has always printed.
+ */
+export function leadWonUsdSql(extra?: SQL): SQL<string> {
+  const more = extra ? sql` AND ${extra}` : sql``;
+  return sql<string>`coalesce(sum(${leads.quotedAmount}) FILTER (WHERE ${leadStages.kind} = 'won' AND ${leadCurrencySql()} = 'USD'${more}), 0)`;
 }
 
 export function leadWonOtherCurrencySql(): SQL<number> {

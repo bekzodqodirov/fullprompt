@@ -43,6 +43,15 @@ export default {
           DEFAULT: token('line'),
           strong: token('line-strong'),
         },
+        // The dashboard's two series and its one ordinal ramp (globals.css).
+        viz: {
+          in: token('viz-in'),
+          out: token('viz-out'),
+          ord1: token('viz-ord-1'),
+          ord2: token('viz-ord-2'),
+          ord3: token('viz-ord-3'),
+          ord4: token('viz-ord-4'),
+        },
         good: token('good'),
         warn: token('warn'),
         bad: token('bad'),
