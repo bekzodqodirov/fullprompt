@@ -285,9 +285,17 @@ export function uncoveredCtes(boxScope: SQL, opts: { landedOnly: boolean }): SQL
     -- clauses 1 and 2 are the prixod's (answer 7), and one hash join here is
     -- what keeps the company-wide list off a per-carton scan of every charge
     -- (measured: 20 s → the budget on the 60k-carton clone).
+    --
+    -- \`names\` is two-valued on purpose. A prixod WITH a deal and a truck
+    -- charge with none compare a deal with NULL: «true AND NULL» is NULL, a
+    -- NULL \`names\` fired no branch of \`u_pair\`'s CASE and fell through to
+    -- «covered» — a deal prixod short-loaded off a truck priced without its
+    -- deal (Q21 with a mixed truck, R3a stamps nothing) went out of the
+    -- counter unpriced (U03's money judge). The WHERE below may stay
+    -- three-valued: NULL there is simply «not this pair».
     u_rc AS (
       SELECT ur.receipt_id, uc.id AS charge_id, uc.batch_id, uc.crosses, uc.created_at,
-             ((ur.deal_id IS NOT NULL AND uc.deal_id = ur.deal_id) OR coalesce(t.rode, false)) AS names,
+             (coalesce(ur.deal_id IS NOT NULL AND uc.deal_id = ur.deal_id, false) OR coalesce(t.rode, false)) AS names,
              (t.receipt_id IS NOT NULL) AS touched,
              coalesce(t.rode, false) AS rode
         FROM u_rcpt ur

@@ -594,6 +594,41 @@ describe('who is gated', () => {
     expect(await issue(c, W.tas, p.boxIds)).toBe('price_elsewhere');
     expect((await unattachedChargesByClient(db, [c])).get(c)).toEqual({ cardOnlyUsd: 0, elsewhereUsd: 600 });
   });
+
+  it('Q21 with a deal on the prixod and none on the price: the short-loaded prixod is NOT covered (U03 money judge 1)', async () => {
+    // The prixod carries a deal; the client's other prixod on the same truck
+    // carries none, so R3a stamps no deal onto the price (two deals aboard,
+    // `soleDealOf` answers null). The deal clause then compared a deal with
+    // NULL — «true AND NULL» — and a NULL `names` fell through the CASE to
+    // «covered»: the counter let the unpriced cartons out and the list never
+    // showed them.
+    const c = await mkClient('DN');
+    const dealId = await mkDeal(c);
+    const p = await mkLot(c, 2, W.yw, dealId);
+    const q = await mkLot(c, 1, W.yw);
+    const filler = await mkLot(await mkClient('DO'), 1, W.yw);
+    const t = await loadTruck(
+      [
+        { lotId: p.lotId, take: 2 },
+        { lotId: q.lotId, take: 1 },
+        { lotId: filler.lotId, take: 1 },
+      ],
+      [...q.codes, ...filler.codes],
+      W.yw,
+      W.tas,
+    );
+    const priced = await charge(c, 900, { batchId: t.id });
+    expect(priced.dealId).toBeNull();
+    await depart(t.id);
+    const t2 = await truck([{ lotId: p.lotId, take: 2 }], p.codes, W.yw, W.tas);
+    await unload(t2.id, p.codes);
+
+    // The counter first: this is the door that let the cargo out.
+    expect(await issue(c, W.tas, p.boxIds)).toBe('price_elsewhere');
+    const rows = await listed([c]);
+    expect(rows.map((r) => r.receiptId)).toEqual([p.receiptId]);
+    expect(rows[0]!.elsewhere).toEqual([{ batchId: t.id, code: t.code, usd: 900 }]);
+  });
 });
 
 describe('one approval, two questions', () => {
