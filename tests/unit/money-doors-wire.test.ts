@@ -119,6 +119,16 @@ describe('U28 — every typed amount on a money form is read the office\'s way',
     ];
     for (const [file, shape] of doors) expect(read(file), file).toMatch(shape);
   });
+
+  it('the rasxod fold greys its button with the SAME reader it sends with', () => {
+    // Review of wc: the send parsed «1 200» as 1200 while the button asked
+    // `Number(amount.replace(',', '.'))` — NaN — so a warehouse person typing
+    // the amount the way every other money box accepts it had a grey button
+    // and no sentence saying why.
+    const fold = read('src/app/(protected)/receive/expense-request-fold.tsx');
+    expect(fold).not.toMatch(/Number\(amount/);
+    expect(fold).toMatch(/disabled=\{[^}]*\(parseTypedMoney\(amount\) \?\? 0\) > 0/);
+  });
 });
 
 describe('U44 — one bound for a native amount, the ceiling in dollars', () => {
@@ -239,12 +249,13 @@ describe('U21 — every money form carries the door\'s own date limit', () => {
     }
   });
 
-  it('the monthly run keeps posting each template on its own day (the owner\'s A/B/C is open)', () => {
+  it('the monthly run keeps posting each template on its own day, and refuses a month not yet begun (Q6 is being rebuilt)', () => {
     const service = read('src/modules/wms/accounting/service.ts');
     const write = slice(service, 'export async function addExpenseTx', 'export async function addExpense(');
     expect(write).toContain("if (!opts.recurringId && input.expenseDate > latestTxDate()) {");
     const run = slice(service, 'export async function generateRecurring', '// --- Transfers');
     expect(run).toContain('{ recurringId: template.id }');
+    expect(run).toContain("if (`${month}-01` > latestTxDate()) throw new AccountingError('future_date');");
   });
 });
 
@@ -322,14 +333,20 @@ describe('U33 (owner b) — a kassa moved on a counterparty\u2019s card is the k
 
   it('the void judges the ROW\u2019s kassa', () => {
     const body = slice(action, 'export async function voidPartnerTxAction', 'export async function recordSettlementAction');
-    expect(body).toContain('return tillDoor(actor, Boolean(row?.accountId)) ?? staffDoor(actor, row?.partnerId ?? null);');
+    expect(body).toMatch(
+      /tillDoor\(actor, Boolean\(row\?\.accountId\)\) \?\?\s*\(row \? await firmDebtVoidRefusal\(actor, row\) : null\) \?\?\s*staffDoor\(actor, row\?\.partnerId \?\? null\)/,
+    );
   });
 
   it('the card offers no kassa, no cash kind and no ✕ on a cash row to a non-holder', () => {
     const page = read('src/app/(protected)/kontragentlar/[id]/page.tsx');
     expect(page).toContain('const movesTills = canManage && mayPickTill(actor.permissions);');
     expect(page).toMatch(/const accounts = movesTills\s*\?/);
-    expect(page).toMatch(/canManage && !tx\.voidedAt && \(!tx\.accountId \|\| movesTills\) && \(\s*<VoidTx/);
+    // …nor on a debt a cost or an expense wrote (review of wc): the action
+    // refuses it, and a fire-and-forget ✕ that silently does nothing is worse.
+    expect(page).toMatch(
+      /canManage &&\s*!tx\.voidedAt &&\s*\(!tx\.accountId \|\| movesTills\) &&\s*\(!\(tx\.costEntryId \|\| tx\.expenseId\) \|\| movesTills\) && \(\s*<VoidTx/,
+    );
     const form = read('src/app/(protected)/kontragentlar/[id]/tx-form.tsx');
     expect(form).toContain('const kinds = movesTills ? TYPES : TYPES.filter((code) => !CASH.has(code));');
     expect(form).toContain("state.error === 'till_forbidden'");
@@ -337,11 +354,17 @@ describe('U33 (owner b) — a kassa moved on a counterparty\u2019s card is the k
 });
 
 describe('U04 (owner A) — a refund hands back an advance, never more', () => {
-  it('fits: up to the advance plus a few dollars of FX residue, and never with no advance at all', () => {
+  it('fits: up to the advance plus the FX residue (2 % or $5, the looser), never with no advance', () => {
     expect(refundFitsAdvance(300, 300)).toBe(true);
     expect(refundFitsAdvance(301.88, 300)).toBe(true); // the same so'm after the rate moved
-    expect(refundFitsAdvance(305, 300)).toBe(true);
-    expect(refundFitsAdvance(305.01, 300)).toBe(false);
+    expect(refundFitsAdvance(306, 300)).toBe(true); // 2 % of 300 = $6 beats $5
+    expect(refundFitsAdvance(306.01, 300)).toBe(false);
+    expect(refundFitsAdvance(105, 100)).toBe(true); // $5 beats 2 % of 100
+    expect(refundFitsAdvance(105.01, 100)).toBe(false);
+    // 125,000,000 so'm paid at 12,600 ($9,920.63) and handed back at 12,450
+    // ($10,040.16): a flat $5 refused the most ordinary refund there is.
+    expect(refundFitsAdvance(10040.16, 9920.63)).toBe(true);
+    expect(refundFitsAdvance(10200, 9920.63)).toBe(false);
     expect(refundFitsAdvance(4, 0)).toBe(false);
     expect(refundFitsAdvance(1, -50)).toBe(false); // he owes us
   });

@@ -18,6 +18,7 @@ import { rateFor } from '../costing/service';
 import { staffPartnerSql } from './staff';
 import { latestTxDate } from '../finance/dates';
 import { exceedsRowUsd, signedNativeAmount } from '../finance/money-bounds';
+import { mayPickTill } from '../accounting/till-door';
 
 /**
  * Kontragentlar — the other side of the money (round 39, the owner's three
@@ -316,12 +317,23 @@ export async function addPartnerTx(input: PartnerTxInput, ctx: AuditContext) {
  * is and never the `partnerId` the form carried beside it. Null when there is
  * no such row.
  */
-export async function partnerTxDoorFacts(
-  txId: string,
-): Promise<{ partnerId: string; accountId: string | null } | null> {
+export async function partnerTxDoorFacts(txId: string): Promise<{
+  partnerId: string;
+  accountId: string | null;
+  costEntryId: string | null;
+  expenseId: string | null;
+  costEnteredBy: string | null;
+} | null> {
   const [row] = await db
-    .select({ partnerId: partnerTransactions.partnerId, accountId: partnerTransactions.accountId })
+    .select({
+      partnerId: partnerTransactions.partnerId,
+      accountId: partnerTransactions.accountId,
+      costEntryId: partnerTransactions.costEntryId,
+      expenseId: partnerTransactions.expenseId,
+      costEnteredBy: costEntries.enteredBy,
+    })
     .from(partnerTransactions)
+    .leftJoin(costEntries, eq(costEntries.id, partnerTransactions.costEntryId))
     .where(eq(partnerTransactions.id, txId))
     .limit(1);
   return row ?? null;
@@ -355,6 +367,30 @@ export async function firmMovedSinceCost(costEntryId: string, partnerId: string)
     ) AS moved
   `);
   return row?.moved === true;
+}
+
+export type FirmDebtVoidRefusal = 'forbidden' | 'partner_cost_not_yours' | 'partner_cost_settled';
+
+/**
+ * Who may cancel a debt a cost or an expense WROTE onto a firm's account —
+ * ONE answer for both doors that do it (#513): the cost's own ✕ (voiding the
+ * cost voids its charge) and the ✕ on the counterparty card (voiding the
+ * charge unlinks the cost's payer). Owner's answer B (U34): the accountant
+ * and the admin always; the person who typed the cost while the firm's
+ * account has not moved since it; an EXPENSE's debt only the accountant and
+ * the admin — nothing but the expense book writes one. The card's ✕ used to
+ * ask none of this, so the VED (who holds `finance.manage`) could make a
+ * paid firm owe us from a door the cost rule never saw (review of wc).
+ */
+export async function firmDebtVoidRefusal(
+  actor: { id: string; permissions: ReadonlySet<string> },
+  debt: { partnerId: string; costEntryId: string | null; expenseId: string | null; costEnteredBy: string | null },
+): Promise<FirmDebtVoidRefusal | null> {
+  if (mayPickTill(actor.permissions)) return null;
+  if (debt.expenseId) return 'forbidden';
+  if (!debt.costEntryId) return null;
+  if (debt.costEnteredBy !== actor.id) return 'partner_cost_not_yours';
+  return (await firmMovedSinceCost(debt.costEntryId, debt.partnerId)) ? 'partner_cost_settled' : null;
 }
 
 export async function voidPartnerTx(id: string, reason: string, ctx: AuditContext) {

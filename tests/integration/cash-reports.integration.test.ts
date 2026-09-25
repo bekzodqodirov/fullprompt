@@ -511,7 +511,7 @@ describe('«this month\'s payments» is one figure, and its parts are the other 
     )[0]!.id;
     madeClients.push(payer);
     const kassa = await till('Hisobot U26 eski', 'USD');
-    // A refund may pass the advance only by the FX residue (U04, ≤ $5): a $3
+    // A refund may pass the advance only by the FX residue (U04, 2 % or $5): a $3
     // advance, $7 handed back, $4 owed — from today, not from 70 days ago.
     await addTransaction({ clientId: payer, type: 'charge', amount: 1000, currency: 'USD', txDate: addDays(today, -70) }, ctx());
     await addTransaction(

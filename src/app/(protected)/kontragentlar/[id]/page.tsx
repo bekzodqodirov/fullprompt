@@ -281,9 +281,16 @@ export default async function PartnerCardPage({
                       </p>
                     )}
                     <p className="text-xs text-ink-500">{authorName}</p>
-                    {canManage && !tx.voidedAt && (!tx.accountId || movesTills) && (
-                      <VoidTx id={tx.id} partnerId={id} />
-                    )}
+                    {/* A debt a cost or an expense wrote is the accountant's
+                        and the admin's to cancel here (the action refuses the
+                        rest); the person who typed the cost takes it back
+                        from the cost itself, where its own rule is asked. */}
+                    {canManage &&
+                      !tx.voidedAt &&
+                      (!tx.accountId || movesTills) &&
+                      (!(tx.costEntryId || tx.expenseId) || movesTills) && (
+                        <VoidTx id={tx.id} partnerId={id} />
+                      )}
                   </td>
                   <td className="p-2 text-right font-mono whitespace-nowrap">
                     {tx.amount} {tx.currency}

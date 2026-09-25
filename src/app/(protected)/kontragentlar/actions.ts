@@ -8,6 +8,7 @@ import {
   CASH_TYPES,
   PartnerError,
   addPartnerTx,
+  firmDebtVoidRefusal,
   partnerTxDoorFacts,
   partnerSchema,
   partnerTxSchema,
@@ -197,10 +198,15 @@ export async function voidPartnerTxAction(formData: FormData): Promise<void> {
   const reason = String(formData.get('reason') ?? '').trim();
   if (!id.success || reason.length < 3) return;
   await run(
-    // Judged by the ROW: the kassa it moved, and the account it sits on.
+    // Judged by the ROW: the kassa it moved, the account it sits on, and —
+    // for a debt a cost or an expense wrote — the cost door's own rule.
     async (actor) => {
       const row = await partnerTxDoorFacts(id.data);
-      return tillDoor(actor, Boolean(row?.accountId)) ?? staffDoor(actor, row?.partnerId ?? null);
+      return (
+        tillDoor(actor, Boolean(row?.accountId)) ??
+        (row ? await firmDebtVoidRefusal(actor, row) : null) ??
+        staffDoor(actor, row?.partnerId ?? null)
+      );
     },
     (ctx) => voidPartnerTx(id.data, reason, ctx),
     [`/kontragentlar/${partnerId}`, '/kontragentlar', '/finance'],

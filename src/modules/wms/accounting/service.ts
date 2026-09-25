@@ -117,6 +117,18 @@ export async function saveCategory(
         .where(eq(expenses.categoryId, id))
         .limit(1);
       if (used) throw new AccountingError('cash_flag_locked');
+      // A monthly TEMPLATE locks it too, active or paused (review of wc): the
+      // owner is starting from empty (Q7), so the rent's template exists
+      // before its first posting. Unticked, every «Oyni yozish» fails the
+      // kassa template as `non_cash_category`; ticked, a kassa-less template
+      // posts a cash expense with no kassa and no payer every month — the
+      // one-sided row U13 forbids, which `addExpense` does not ask about.
+      const [template] = await tx
+        .select({ id: recurringExpenses.id })
+        .from(recurringExpenses)
+        .where(eq(recurringExpenses.categoryId, id))
+        .limit(1);
+      if (template) throw new AccountingError('cash_flag_locked');
     }
     const [updated] = await tx
       .update(expenseCategories)
@@ -357,11 +369,14 @@ export async function addExpenseTx(
   // leaves today's kassa and the Balans at once while the P&L, the cash flow
   // and the expense book — «1 January to today» — never show it. Asked in the
   // WRITE half, so the hand-typed expense, the upsale payout and the rasxod
-  // xabari's «Kiritish» are one door. The monthly run is the exception on
-  // purpose: it posts each template on its own day of the month, which is
-  // how «▶️ Oyni yozish» has always worked, and whether that should change
-  // is the owner's open question (A/B/C) — so a recurring posting, and only
-  // one (`recurringId` is never read from a form), keeps today's behaviour.
+  // xabari's «Kiritish» are one door. The monthly run is the exception for
+  // now: it posts each template on its own day of the month, which is how
+  // «▶️ Oyni yozish» has always worked. The owner answered Q6 (2026-09-25:
+  // money leaves a kassa only when the kassa holder actually pays it) and
+  // that run is being rebuilt around it; until then `generateRecurring`
+  // refuses any month that has not started, so the exception reaches at
+  // most the rest of the current month. `recurringId` is never read from a
+  // form.
   if (!opts.recurringId && input.expenseDate > latestTxDate()) {
     throw new AccountingError('future_date');
   }
@@ -671,6 +686,11 @@ export async function updateRecurring(
 export async function generateRecurring(month: string, ctx: AuditContext) {
   if (!ctx.actorId) throw new AccountingError('unauthenticated');
   if (!/^\d{4}-\d{2}$/.test(month)) throw new AccountingError('bad_month');
+  // A month that has not begun (review of wc, U21): the month box had no
+  // max, so September 30th's slip into October — or a mistyped year — posted
+  // every kassa template dated in the future, and the tills dropped today
+  // while the P&L and cash flow «to today» never showed it.
+  if (`${month}-01` > latestTxDate()) throw new AccountingError('future_date');
   const templates = await db
     .select()
     .from(recurringExpenses)

@@ -57,7 +57,7 @@ describe('the five doors that touch ONE account', () => {
     );
     // The void judges the account the ROW sits on, never the posted partnerId.
     expect(action('voidPartnerTxAction')).toContain('const row = await partnerTxDoorFacts(id.data);');
-    expect(action('voidPartnerTxAction')).toContain('?? staffDoor(actor, row?.partnerId ?? null)');
+    expect(action('voidPartnerTxAction')).toMatch(/\?\?\s*staffDoor\(actor, row\?\.partnerId \?\? null\)/);
   });
 
   it('the settlement asks staffDoor itself, after authorize and before the write', () => {

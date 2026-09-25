@@ -133,7 +133,7 @@ describe('R6a — a refund is money handed back out of a kassa', () => {
     ).rejects.toMatchObject({ code: 'refund_exceeds_advance' });
     await addTransaction({ clientId, type: 'payment', amount: 300, currency: 'USD', txDate: DAY, accountId: box }, ctx());
     await expect(
-      addTransaction({ clientId, type: 'refund', amount: 306, currency: 'USD', txDate: DAY, accountId: box }, ctx()),
+      addTransaction({ clientId, type: 'refund', amount: 306.5, currency: 'USD', txDate: DAY, accountId: box }, ctx()),
     ).rejects.toMatchObject({ code: 'refund_exceeds_advance' });
     // The same so'm handed back after the rate moved reads $301.88 (measured).
     await addTransaction({ clientId, type: 'refund', amount: 301.88, currency: 'USD', txDate: DAY, accountId: box }, ctx());

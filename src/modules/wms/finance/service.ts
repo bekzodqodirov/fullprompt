@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, inArray, isNull, lte, sql, type AnyColumn, type SQL } from 'drizzle-orm';
 import { latestTxDate } from './dates';
-import { exceedsRowUsd, nativeAmount } from './money-bounds';
+import { fxResidueAllowance, exceedsRowUsd, nativeAmount } from './money-bounds';
 import { z } from 'zod';
 import { db } from '../../platform/db/client';
 import {
@@ -63,16 +63,17 @@ export function signedUsd(row: { type: string; amountUsd: number }): number {
 }
 
 /**
- * The FX residue a refund may carry over the advance it hands back (U04): the
- * same so'm an advance was paid in, handed back after the rate moved, reads a
- * few dollars more than it came in as (measured: $300 → $301.88). The owner's
- * «bir necha dollarlik farq baribir o'tkaziladi».
+ * May a refund of `refundUsd` be handed out of an advance of `advanceUsd`?
+ * (U04, the owner's A.) The FX residue it may carry over the advance: the
+ * same so'm an advance was paid in, handed back after the rate moved, reads
+ * more dollars than it came in as (measured: $300 → $301.88) — the owner's
+ * «bir necha dollarlik farq baribir o'tkaziladi». The allowance is the
+ * merge's own (2 % or $5, the looser — `fxResidueAllowance`), because a flat
+ * $5 refused a 125-million-so'm advance handed back after a 1.2 % move. The
+ * FX package replaces this with a native-currency rule.
  */
-export const REFUND_FX_TOLERANCE_USD = 5;
-
-/** May a refund of `refundUsd` be handed out of an advance of `advanceUsd`? */
 export function refundFitsAdvance(refundUsd: number, advanceUsd: number): boolean {
-  return advanceUsd > 0.009 && refundUsd <= advanceUsd + REFUND_FX_TOLERANCE_USD + 0.004;
+  return advanceUsd > 0.009 && refundUsd <= advanceUsd + fxResidueAllowance(advanceUsd) + 0.004;
 }
 
 export const transactionSchema = z

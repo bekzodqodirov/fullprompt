@@ -59,13 +59,15 @@ describe('the cost doors ask the kassa rules after their own grant', () => {
 
   it('a FIRM-paid cost: its typist until the firm\u2019s account moves, then the kassa holders (U34, owner B)', () => {
     const body = slice(actions, 'export async function voidCostEntryAction', 'async function voidReceiptCostDoor');
-    const gate = body.indexOf('if (entry.partnerId && !mayPickTill(actor.permissions)) {');
+    // The rule itself is `firmDebtVoidRefusal` (partners/service.ts), shared
+    // with the counterparty card's ✕ and proven in money-doors.integration.
+    const gate = body.indexOf('const refusal = await firmDebtVoidRefusal(actor, {');
     expect(gate).toBeGreaterThan(body.indexOf('authorize('));
     expect(gate).toBeLessThan(body.indexOf('await voidCostEntry('));
     const rule = body.slice(gate, body.indexOf('await voidCostEntry('));
-    expect(rule).toContain("if (entry.enteredBy !== actor.id) return { ok: false, error: 'partner_cost_not_yours' };");
-    expect(rule).toContain('if (await firmMovedSinceCost(entry.id, entry.partnerId)) {');
-    expect(rule).toContain("return { ok: false, error: 'partner_cost_settled' };");
+    expect(rule).toContain('costEntryId: entry.id,');
+    expect(rule).toContain('costEnteredBy: entry.enteredBy,');
+    expect(rule).toContain('if (refusal) return { ok: false, error: refusal };');
     const panel = read('src/components/cost-panel.tsx');
     expect(panel).toContain("partner_cost_not_yours: 'errPartnerVoidNotYours',");
     expect(panel).toContain("partner_cost_settled: 'errPartnerVoidSettled',");

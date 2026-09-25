@@ -22,6 +22,7 @@ import {
   accountBalances,
   addExpense,
   addTransfer,
+  generateRecurring,
   needsKassaOrPayer,
   saveAccount,
   saveCategory,
@@ -37,7 +38,9 @@ import { blockingDebtUsd } from '@/modules/wms/issue/approvals';
 import { issueBoxes } from '@/modules/wms/issue/service';
 import {
   addPartnerTx,
+  firmDebtVoidRefusal,
   firmMovedSinceCost,
+  partnerTxDoorFacts,
   savePartner,
   setPartnerActive,
   voidPartnerTx,
@@ -221,9 +224,10 @@ describe('U21 — no money row dated after tomorrow, at every door (#995)', () =
 
   it('the monthly run keeps posting a template on its own later day, exactly as before', async () => {
     // What «▶️ Oyni yozish» does from the 1st: a template dated the 28th posts
-    // its expense dated the 28th. Whether that should change is the owner's
-    // open A/B/C question, so the posting door (the only one carrying a
-    // template id) keeps today's behaviour.
+    // its expense dated the 28th. The owner answered Q6 (money leaves a
+    // kassa when its holder pays) and the run is being rebuilt around it;
+    // until then the posting door (the only one carrying a template id)
+    // keeps today's behaviour, bounded to a month that has begun.
     const template = await saveRecurring(
       { categoryId: cashCategoryId, amount: 7, currency: 'USD', dayOfMonth: 28, active: false },
       ctx(),
@@ -393,6 +397,37 @@ describe('U06 (owner a) — a kind\u2019s «Naqd» mark is fixed once it has exp
     // The name, the order and the retirement stay editable.
     await saveCategory({ id: fresh.id, name, cash: true, sortOrder: 901, active: true }, ctx());
   });
+
+  it('a monthly template of the kind locks it too, even paused and before its first posting (review of wc)', async () => {
+    const name = `Naqd template ${SUFFIX}`;
+    const kind = await saveCategory({ name, cash: true, sortOrder: 902, active: true }, ctx());
+    retiredCategories.push({ id: kind.id, name, cash: true });
+    const template = await saveRecurring(
+      { categoryId: kind.id, amount: 9, currency: 'USD', dayOfMonth: 5, accountId: usdTillId, active: false },
+      ctx(),
+    );
+    templates.push(template.id);
+    await expect(
+      saveCategory({ id: kind.id, name, cash: false, sortOrder: 902, active: true }, ctx()),
+    ).rejects.toMatchObject({ code: 'cash_flag_locked' });
+  });
+});
+
+describe('U21 — the monthly run posts no month that has not begun', () => {
+  it('refuses next year\u2019s January before writing a row', async () => {
+    const month = `${Number(latestTxDate().slice(0, 4)) + 1}-01`;
+    try {
+      await expect(generateRecurring(month, ctx())).rejects.toMatchObject({ code: 'future_date' });
+    } finally {
+      // Only reached with rows when the guard is stripped (the red proof):
+      // the run would have posted every active template into that month.
+      const from = `${month}-01`;
+      const to = `${month}-31`;
+      await db.execute(sql`DELETE FROM partner_transactions WHERE expense_id IN
+        (SELECT id FROM expenses WHERE expense_date BETWEEN ${from} AND ${to})`);
+      await db.execute(sql`DELETE FROM expenses WHERE expense_date BETWEEN ${from} AND ${to}`);
+    }
+  });
 });
 
 describe('U13 (owner A) — a cash expense names a kassa or a payer', () => {
@@ -450,6 +485,58 @@ describe('U34 (owner B) — a firm-paid cost is its typist\u2019s until the firm
     expect(await firmMovedSinceCost(entry.id, partnerId)).toBe(true);
     await voidPartnerTx(paid.id, 'xato to‘lov', ctx());
     expect(await firmMovedSinceCost(entry.id, partnerId)).toBe(false);
+  });
+
+  it('the card\u2019s ✕ asks the same rule of the charge a cost or an expense wrote (review of wc)', async () => {
+    const [origin, dest] = await db.select({ id: warehouses.id }).from(warehouses).limit(2);
+    const [batch] = await db
+      .insert(batches)
+      .values({ code: `UE-${SUFFIX}`.slice(0, 20), originWarehouseId: origin!.id, destWarehouseId: dest!.id, status: 'forming', createdBy: actorId })
+      .returning();
+    madeBatches.push(batch!.id);
+    const [type] = await db.select().from(costTypes).where(eq(costTypes.active, true)).limit(1);
+    const entry = await addCostEntry(
+      { scope: 'batch', batchId: batch!.id, costTypeId: type!.id, amount: 60, currency: 'USD', costDate: DAY, allocationBasis: 'weight', partnerId },
+      ctx(),
+    );
+    madeCosts.push(entry.id);
+    const [charge] = await db
+      .select({ id: partnerTransactions.id })
+      .from(partnerTransactions)
+      .where(eq(partnerTransactions.costEntryId, entry.id));
+    const facts = (await partnerTxDoorFacts(charge!.id))!;
+    expect(facts).toMatchObject({ partnerId, costEntryId: entry.id, expenseId: null, costEnteredBy: actorId });
+
+    // The VED shape: finance.manage, no kassa grant.
+    const typist = { id: actorId, permissions: new Set(['finance.manage']) };
+    const colleague = { id: uuidv4(), permissions: new Set(['finance.manage']) };
+    const accountant = { id: uuidv4(), permissions: new Set(['finance.manage', 'finance.expenses']) };
+    expect(await firmDebtVoidRefusal(typist, facts)).toBeNull();
+    expect(await firmDebtVoidRefusal(colleague, facts)).toBe('partner_cost_not_yours');
+
+    const paid = await addPartnerTx(
+      { partnerId, type: 'payment', amount: 20, currency: 'USD', txDate: DAY, accountId: usdTillId },
+      ctx(),
+    );
+    try {
+      expect(await firmDebtVoidRefusal(typist, facts)).toBe('partner_cost_settled');
+      expect(await firmDebtVoidRefusal(accountant, facts)).toBeNull();
+    } finally {
+      await voidPartnerTx(paid.id, 'test tozalash', ctx());
+    }
+
+    const expense = await addExpense(
+      { categoryId: cashCategoryId, amount: 3, currency: 'USD', expenseDate: DAY, partnerId },
+      ctx(),
+    );
+    liveExpenses.push(expense.id);
+    const [expenseCharge] = await db
+      .select({ id: partnerTransactions.id })
+      .from(partnerTransactions)
+      .where(eq(partnerTransactions.expenseId, expense.id));
+    const expenseFacts = (await partnerTxDoorFacts(expenseCharge!.id))!;
+    expect(await firmDebtVoidRefusal(typist, expenseFacts)).toBe('forbidden');
+    expect(await firmDebtVoidRefusal(accountant, expenseFacts)).toBeNull();
   });
 });
 

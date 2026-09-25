@@ -21,6 +21,21 @@ import { z } from 'zod';
  * Zero imports besides zod: the schemas import it, and so could a form.
  */
 
+/**
+ * How far two dollar figures of the SAME money may drift apart after a rate
+ * moved — 2 % or $5, the looser (#1019). One home for the two doors that
+ * forgive a rate residue: the cost↔expense merge (a cost typed at the
+ * table's rate, its expense at the bank's) and the refund cap (the same so'm
+ * an advance came in as, handed back weeks later). A flat $5 alone refused
+ * the most ordinary refund there is on any advance above a few hundred
+ * dollars (review of U04).
+ */
+export const FX_RESIDUE_PCT = 0.02;
+export const FX_RESIDUE_USD = 5;
+export function fxResidueAllowance(usd: number): number {
+  return Math.max(Math.abs(usd) * FX_RESIDUE_PCT, FX_RESIDUE_USD);
+}
+
 /** numeric(14,2)'s largest value — every amount column the doors write. */
 export const MAX_NATIVE_AMOUNT = 999_999_999_999.99;
 

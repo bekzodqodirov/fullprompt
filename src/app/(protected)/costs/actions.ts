@@ -18,7 +18,7 @@ import {
 } from '@/modules/wms/costing/service';
 import { mayPickTill } from '@/modules/wms/accounting/till-door';
 import { isStaffPartner, maySeeStaffMoney } from '@/modules/wms/partners/staff';
-import { firmMovedSinceCost } from '@/modules/wms/partners/service';
+import { firmDebtVoidRefusal } from '@/modules/wms/partners/service';
 import { amountRefusal, nativeAmount } from '@/modules/wms/finance/money-bounds';
 
 export interface CostActionResult {
@@ -205,11 +205,14 @@ export async function voidCostEntryAction(input: unknown): Promise<CostActionRes
   // it; from then on the void reopens money already settled against — a paid
   // firm would read as owing US — so it is the accountant's and the admin's
   // (the kassa holders' grant, the same people who pay the firm).
-  if (entry.partnerId && !mayPickTill(actor.permissions)) {
-    if (entry.enteredBy !== actor.id) return { ok: false, error: 'partner_cost_not_yours' };
-    if (await firmMovedSinceCost(entry.id, entry.partnerId)) {
-      return { ok: false, error: 'partner_cost_settled' };
-    }
+  if (entry.partnerId) {
+    const refusal = await firmDebtVoidRefusal(actor, {
+      partnerId: entry.partnerId,
+      costEntryId: entry.id,
+      expenseId: null,
+      costEnteredBy: entry.enteredBy,
+    });
+    if (refusal) return { ok: false, error: refusal };
   }
   const meta = await requestMeta();
   try {

@@ -234,7 +234,7 @@ export function ExpenseRequestFold({
           <button
             type="button"
             data-testid="rasxod-send"
-            disabled={busy || uploading > 0 || note.trim().length < 2 || !(Number(amount.replace(',', '.')) > 0)}
+            disabled={busy || uploading > 0 || note.trim().length < 2 || !((parseTypedMoney(amount) ?? 0) > 0)}
             onClick={() => void send()}
             className="btn-primary !min-h-10 flex-1"
           >

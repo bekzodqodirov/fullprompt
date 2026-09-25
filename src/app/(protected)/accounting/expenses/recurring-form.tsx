@@ -183,7 +183,8 @@ export function GenerateRecurringButton({ month }: { month: string }) {
     <form action={formAction} className="flex flex-wrap items-end gap-2">
       <label className="text-sm">
         <span className="block text-xs text-ink-500">{t('period')}</span>
-        <input type="month" name="month" defaultValue={month} className="input !w-40" />
+        {/* `max` is the current month; the service refuses a later one anyway. */}
+        <input type="month" name="month" defaultValue={month} max={month} className="input !w-40" />
       </label>
       <button
         type="submit"
@@ -207,7 +208,11 @@ export function GenerateRecurringButton({ month }: { month: string }) {
       )}
       {state.error && (
         <p className="w-full text-sm font-semibold text-bad">
-          {state.error === 'fx_missing' ? t('fxMissing') : tc('error')}
+          {state.error === 'fx_missing'
+            ? t('fxMissing')
+            : state.error === 'future_date'
+              ? tc('futureDate')
+              : tc('error')}
         </p>
       )}
     </form>

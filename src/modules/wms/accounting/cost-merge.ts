@@ -2,6 +2,7 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { costEntries, expenses } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
+import { fxResidueAllowance } from '../finance/money-bounds';
 
 /**
  * «Xarajatlarda takror» — the owner's 3b, merged away (0101, A3 + M4a).
@@ -34,8 +35,6 @@ export class MergeError extends Error {
 }
 
 export const MERGE_DAYS = 14;
-const SAME_MONEY_PCT = 0.02;
-const SAME_MONEY_USD = 5;
 
 const cents = (value: number) => Math.round(value * 100) / 100;
 
@@ -65,7 +64,7 @@ export function sameMoney(costs: MergeCost[], expense: MergeExpense): string | n
   }
   if (costs.some((cost) => cost.amountUsd === null)) return 'no_rate';
   const usd = costs.reduce((sum, cost) => sum + (cost.amountUsd ?? 0), 0);
-  const allowed = Math.max(expense.amountUsd * SAME_MONEY_PCT, SAME_MONEY_USD);
+  const allowed = fxResidueAllowance(expense.amountUsd);
   return Math.abs(usd - expense.amountUsd) <= allowed + 0.005 ? null : 'amount_differs';
 }
 
