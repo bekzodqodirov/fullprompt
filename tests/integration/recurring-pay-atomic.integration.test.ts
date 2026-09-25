@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { eq, inArray, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
-import { expenses, partnerTypes, recurringExpenses, users } from '@/modules/platform/db/schema';
+import { expenseCategories, expenses, partnerTypes, recurringExpenses, users } from '@/modules/platform/db/schema';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { saveCategory, saveRecurring } from '@/modules/wms/accounting/service';
 import { payRecurring, recurringDue } from '@/modules/wms/accounting/recurring';
@@ -46,8 +46,15 @@ afterAll(async () => {
       await db.execute(sql`DELETE FROM recurring_skips WHERE recurring_id = ${templateId}::uuid`);
       await db.delete(recurringExpenses).where(eq(recurringExpenses.id, templateId));
     }
+    // A kind is CONFIGURATION while it exists (#183): deleted, and retired
+    // only if something this file does not know still points at it.
     if (categoryId) {
-      await saveCategory({ id: categoryId, name: `Rec atomic ${SUFFIX}`, cash: true, sortOrder: 951, active: false }, ctx());
+      await db
+        .delete(expenseCategories)
+        .where(eq(expenseCategories.id, categoryId))
+        .catch(() =>
+          saveCategory({ id: categoryId, name: `Rec atomic ${SUFFIX}`, cash: true, sortOrder: 951, active: false }, ctx()),
+        );
     }
     if (firm) await setPartnerActive(firm, false, ctx());
   } finally {

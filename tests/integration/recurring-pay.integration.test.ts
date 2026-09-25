@@ -6,7 +6,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
   currencies,
+  expenseCategories,
   expenses,
+  moneyAccounts,
   partnerTransactions,
   partnerTypes,
   recurringExpenses,
@@ -167,16 +169,45 @@ afterAll(async () => {
         )})`);
         await db.delete(recurringExpenses).where(inArray(recurringExpenses.id, templates));
       }
+      // A kassa and a kind are CONFIGURATION while they exist (#183), retired
+      // or not: a leftover so'm till is the next file's unordered `limit(1)`
+      // (partners.integration paid dollars out of this one and was refused).
+      // Anything still written on this file's own tills and kinds is this
+      // file's by construction, so it goes first; then the rows themselves.
+      // Retired only if something the sweep does not know still points at them.
+      const tillIds = tills.map((row) => row.id);
+      const kindIds = kinds.map((row) => row.id);
+      const stray = [
+        ...(tillIds.length > 0
+          ? await db.select({ id: expenses.id }).from(expenses).where(inArray(expenses.accountId, tillIds))
+          : []),
+        ...(kindIds.length > 0
+          ? await db.select({ id: expenses.id }).from(expenses).where(inArray(expenses.categoryId, kindIds))
+          : []),
+      ].map((row) => row.id);
+      if (stray.length > 0) {
+        await db.delete(partnerTransactions).where(inArray(partnerTransactions.expenseId, stray));
+        await db.delete(expenses).where(inArray(expenses.id, stray));
+      }
+      if (kindIds.length > 0) await db.delete(recurringExpenses).where(inArray(recurringExpenses.categoryId, kindIds));
       for (const row of tills) {
-        await saveAccount(
-          { name: row.name, currency: row.currency, kind: 'cash', openingBalance: 0, openingDate: '', sortOrder: 950, active: false, id: row.id },
-          ctx(),
-        ).catch(() => undefined);
+        await db
+          .delete(moneyAccounts)
+          .where(eq(moneyAccounts.id, row.id))
+          .catch(() =>
+            saveAccount(
+              { name: row.name, currency: row.currency, kind: 'cash', openingBalance: 0, openingDate: '', sortOrder: 950, active: false, id: row.id },
+              ctx(),
+            ),
+          )
+          .catch(() => undefined);
       }
       for (const row of kinds) {
-        await saveCategory({ id: row.id, name: row.name, cash: row.cash, sortOrder: 950, active: false }, ctx()).catch(
-          () => undefined,
-        );
+        await db
+          .delete(expenseCategories)
+          .where(eq(expenseCategories.id, row.id))
+          .catch(() => saveCategory({ id: row.id, name: row.name, cash: row.cash, sortOrder: 950, active: false }, ctx()))
+          .catch(() => undefined);
       }
       if (firm) await setPartnerActive(firm, false, ctx()).catch(() => undefined);
       if (noRateCurrency) await db.delete(currencies).where(eq(currencies.code, noRateCurrency)).catch(() => undefined);
