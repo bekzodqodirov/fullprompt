@@ -40,6 +40,10 @@ test('the dashboard covers the money, the cargo and the funnel', async ({ page }
     await expect(page.getByTestId(id)).toBeVisible();
   }
 
+  // Nothing on the page is wider than the phone (a row wider than 360 px
+  // rescales the whole screen, #400).
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(360);
+
   // The bridge's net is the Balans page's own figure (#513): one number, two
   // screens, compared to the dollar.
   const dollars = (text: string | null) => Math.round(Number((text ?? '').replace(/[^0-9.−-]/g, '').replace('−', '-')));
