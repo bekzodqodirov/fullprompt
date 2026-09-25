@@ -772,7 +772,10 @@ export async function cashReconciliation(from: string, to: string) {
       // earliest one): the kassa stays out of the dollar totals — as the
       // Balans leaves it out — and the cash flow's rows through it are named.
       raw.unratedTills -= kassa.usd.cashCounted + kassa.usd.cashEarly;
-      unrated.set(kassa.currency, (unrated.get(kassa.currency) ?? 0) + kassa.closing);
+      // Named only while it holds something: an empty one hides nothing (U14).
+      if (Math.abs(kassa.closing) > 0.009) {
+        unrated.set(kassa.currency, (unrated.get(kassa.currency) ?? 0) + kassa.closing);
+      }
       return { ...kassa, openingUsd: null, closingUsd: null };
     }
     const open = kassa.opening * rOpen;
