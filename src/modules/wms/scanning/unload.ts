@@ -6,6 +6,7 @@ import {
   batches,
   boxes,
   boxMovements,
+  clients,
   clientTransactions,
   costEntries,
   crates,
@@ -554,19 +555,55 @@ async function notifyUnloadSummary(
   });
 }
 
-export const resolveMissingSchema = z.object({
-  boxId: z.string().uuid(),
-  resolution: z.enum(['found_at_origin', 'found_here']),
-});
+/**
+ * The two «found» answers carry nothing but the box; the third — the carton
+ * is gone, lost on the road — carries a person's written reason, like every
+ * other write-off (`markBoxLost`, the box card). A discriminated union so the
+ * found buttons stay reason-free and a loss cannot be declared without one.
+ */
+export const resolveMissingSchema = z.discriminatedUnion('resolution', [
+  z.object({ boxId: z.string().uuid(), resolution: z.literal('found_at_origin') }),
+  z.object({ boxId: z.string().uuid(), resolution: z.literal('found_here') }),
+  z.object({
+    boxId: z.string().uuid(),
+    resolution: z.literal('lost_in_transit'),
+    reason: z.string().trim().min(3).max(500),
+  }),
+]);
 
-/** Resolve a missing-in-transit box (spec 6.5 resolution actions). */
+/**
+ * Resolve a missing-in-transit box (spec 6.5 resolution actions).
+ *
+ * `lost_in_transit` is the honest end a carton the truck arrived without
+ * never had (U38). Both older answers say it was FOUND — here, or back in
+ * China — and every door to `lost` (markBoxLost, the box card, the
+ * stocktake) needs a box standing on a shelf at a warehouse, which a departed
+ * box has neither of. So until somebody lied, the carton stayed «missing» for
+ * ever: on /transit, on the client card as «transit», in the cabinet as «in
+ * Uzbekistan», and its deal could never read «to'liq topshirildi». The lie
+ * cost too: «found here» then «lost» wrote a false arrival into the ledger
+ * and could send the client a «yukingiz keldi» for a carton nobody has.
+ *
+ * The box becomes `lost` in NO warehouse — it is in none — with the written
+ * reason, off its truck and out of its crate (markBoxLost's rule: a lost
+ * member jams its crate), and a movement row naming the truck. No arrival
+ * notice: nothing arrived. The MONEY does not move (owner, 6a): the lost
+ * carton keeps its freight share in the client's tannarx, and the loss is
+ * shown beside the P&L as information (`lossesInPeriod`), never subtracted.
+ */
 export async function resolveMissing(
   input: z.infer<typeof resolveMissingSchema>,
   ctx: AuditContext,
 ) {
   if (!ctx.actorId) throw new ScanError('unauthenticated');
   const actorId = ctx.actorId;
-  return db.transaction(async (tx) => {
+  // The schema says it for the form; the service says it again for every
+  // other caller (#531).
+  const lossReason = input.resolution === 'lost_in_transit' ? input.reason.trim() : null;
+  if (input.resolution === 'lost_in_transit' && (!lossReason || lossReason.length < 3)) {
+    throw new ScanError('reason_required');
+  }
+  const result = await db.transaction(async (tx) => {
     const rows = await tx.select().from(boxes).where(eq(boxes.id, input.boxId)).for('update');
     const box = rows[0];
     if (!box) throw new ScanError('box_not_found');
@@ -577,6 +614,58 @@ export async function resolveMissing(
     const batch = (await tx.query.batches.findFirst({
       where: eq(batches.id, box.currentBatchId),
     }))!;
+
+    if (input.resolution === 'lost_in_transit') {
+      const reason = lossReason!;
+      const [about] = await tx
+        .select({
+          clientCode: clients.clientCode,
+          salesManagerId: clients.salesManagerId,
+          product: receiptLots.productNameZh,
+          letter: receiptLots.letter,
+        })
+        .from(receiptLots)
+        .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+        .leftJoin(clients, eq(receipts.clientId, clients.id))
+        .where(eq(receiptLots.id, box.lotId));
+      await tx
+        .update(boxes)
+        .set({
+          status: 'lost',
+          statusReason: reason,
+          flags: [],
+          currentBatchId: null,
+          currentWarehouseId: null,
+          crateId: null,
+        })
+        .where(eq(boxes.id, box.id));
+      await tx.insert(boxMovements).values({
+        boxId: box.id,
+        fromWarehouseId: null,
+        toWarehouseId: null,
+        fromStatus: box.status,
+        toStatus: 'lost',
+        cause: 'lost_in_transit',
+        refType: 'batch',
+        refId: batch.id,
+        actorId,
+      });
+      await writeAudit(tx, { ...ctx, warehouseId: batch.destWarehouseId }, {
+        entityType: 'box',
+        entityId: box.id,
+        action: 'status_change',
+        // WHICH crate it was in and WHICH truck it rode, on the row that
+        // records the loss — both pointers are cleared by it.
+        before: { status: box.status, flags, crateId: box.crateId, batchId: batch.id },
+        after: { status: 'lost', resolution: input.resolution, reason, shortCode: box.shortCode },
+      });
+      return {
+        shortCode: box.shortCode,
+        resolution: input.resolution,
+        loss: { reason, batchCode: batch.code, about: about ?? null },
+      };
+    }
+
     const foundHere = input.resolution === 'found_here';
     const targetWh = foundHere ? batch.destWarehouseId : batch.originWarehouseId;
     // A box found at the destination has to land exactly where a scanned one
@@ -633,8 +722,30 @@ export async function resolveMissing(
         await claimArrivalNotice(tx, owner.clientId, batch.id, { actorId });
       }
     }
-    return { shortCode: box.shortCode, resolution: input.resolution };
+    return { shortCode: box.shortCode, resolution: input.resolution, loss: null };
   });
+
+  // The seller (compensation is their conversation) and whoever plans the
+  // trucks, in ONE message each to a union — markBoxLost's recipients and its
+  // reasons, after the commit and never to the presser.
+  if (result.loss) {
+    const { reason, batchCode, about } = result.loss;
+    const userIds = [
+      ...(about?.salesManagerId ? [about.salesManagerId] : []),
+      ...(await usersWithPermission('plans.manage')),
+    ];
+    if (userIds.length > 0) {
+      await notifyStaffTelegram({
+        userIds,
+        type: 'BoxLost',
+        exceptUserId: actorId,
+        text:
+          `❌ ${result.shortCode} (${about?.clientCode ?? '?'}-${about?.letter ?? ''}, ${about?.product ?? ''}) ` +
+          `${batchCode} reysida yo'lda yo'qoldi.\nSabab: ${reason}`,
+      }).catch(() => {});
+    }
+  }
+  return { shortCode: result.shortCode, resolution: result.resolution };
 }
 
 /** Close the batch (final state; costs stay attachable — recompute is M6). */

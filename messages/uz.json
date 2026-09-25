@@ -777,7 +777,8 @@
       "reason_required": "Sababni yozing.",
       "forbidden": "Ruxsat yo'q.",
       "box_not_found": "Karobka topilmadi."
-    }
+    },
+    "voidSharedCost": "{code} xarajati yuksiz qoladi — bu karobkalar uning butun yuki. Avval shu xarajatni bekor qiling (moliya), keyin prixodni."
   },
   "stock": {
     "title": "Sklad (qoldiqlar)",
@@ -816,7 +817,18 @@
     "pageOf": "{from}–{to} / {total}",
     "pageNext": "Keyingi →",
     "pagePrev": "← Oldingi",
-    "shownOfTotal": "Jadvalda {shown} / {total} qator"
+    "shownOfTotal": "Jadvalda {shown} / {total} qator",
+    "statusErrors": {
+      "transition_not_allowed": "Karobkaning hozirgi holatidan bunday o‘zgartirib bo‘lmaydi.",
+      "box_in_crate": "Karobka yashik ichida — avval yashikni tarqating.",
+      "box_has_no_warehouse": "Karobka qaysi skladda topilganini tanlang.",
+      "receipt_voided": "Bu karobkaning prixodi bekor qilingan — skladga qaytarib bo‘lmaydi.",
+      "receipt_has_costs": "Bu prixodning oxirgi tirik karobkasi, prixodning esa o‘z xarajatlari bor. Avval xarajatlarni bekor qiling (moliya), keyin karobkani.",
+      "shared_cost_orphaned": "{code} xarajati yuksiz qoladi — bu karobka uning butun yuki. Avval shu xarajatni bekor qiling (moliya).",
+      "box_not_found": "Karobka topilmadi.",
+      "failed": "Saqlanmadi — qaytadan urinib ko‘ring."
+    },
+    "foundAtWarehouse": "Qayerda topildi?"
   },
   "search": {
     "placeholder": "Qidiruv: GS777, GS777-A, YW26-000123, tovar…",
@@ -1138,7 +1150,19 @@
     "foreignCode": "Bu bizning kod emas (begona QR). GSR stikerini skanerlang.",
     "serverRefused": "Server {n} ta skanni qabul qilmadi — ular yozilmadi. Qo‘lda kiriting.",
     "notYourTruck": "Bu mashina sizning skladingiz uchun emas yoki sessiya tugagan — qayta kiring.",
-    "scanTheRest": "Qolgan karobkalarni skan qiling. Qabul qilinmagan karobka bilan tushirishni faqat boshliq yakunlay oladi."
+    "scanTheRest": "Qolgan karobkalarni skan qiling. Qabul qilinmagan karobka bilan tushirishni faqat boshliq yakunlay oladi.",
+    "lostInTransit": "Yo‘lda yo‘qoldi",
+    "lostReason": "Nima bo‘ldi (majburiy)",
+    "lostConfirm": "{code} yo‘lda yo‘qolgan deb hisobdan chiqarilsinmi? U mashinadan chiqadi, mijozga «yetib keldi» deyilmaydi; xarajati mijozning tannarxida qoladi.",
+    "errors": {
+      "not_missing": "Bu karobka endi yo‘qolgan deb belgilanmagan — sahifani yangilang.",
+      "reason_required": "Nima bo‘lganini yozing.",
+      "finish_needs_manager": "Qabul qilinmagan karobkalar bilan faqat rahbar yakunlay oladi.",
+      "finish_unload_first": "Avval razgruzkani yakunlang.",
+      "batch_not_unloading": "Mashina razgruzkada emas.",
+      "not_found": "Topilmadi — sahifani yangilang.",
+      "failed": "Saqlanmadi — qaytadan urinib ko‘ring."
+    }
   },
   "transit": {
     "title": "Yo‘ldagi yuklar",

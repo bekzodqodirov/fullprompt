@@ -10,6 +10,15 @@ export interface RecomputeCostsPayload {
   unconverted?: boolean;
   pickups?: boolean;
   pickupId?: string;
+  /** Converted costs with no share, and shares left on void boxes (U20/U41). */
+  orphaned?: boolean;
+  /**
+   * Every cost shared over one lot — the durable retry of a door's own
+   * post-commit re-split (editLot's measure fix) when that re-split failed:
+   * the correction is saved, so the money must follow it without a person
+   * pressing anything again.
+   */
+  lotId?: string;
 }
 
 /**
@@ -26,13 +35,25 @@ export async function registerCostRecomputeWorker(boss: PgBoss): Promise<void> {
   // and any whose rate arrived later. Nightly, before the backup. It also
   // re-splits every factory-truck cost (0100): that base grows as prixods are
   // linked, and this is the repair for a post-commit recompute a crash skipped.
-  await boss.schedule(JOB_RECOMPUTE_COSTS, '40 20 * * *', { unconverted: true, pickups: true });
+  // And it re-splits what a broken split left behind (U20/U41): a converted
+  // cost with no share at all, and a share sitting on a void box. The first
+  // night that is the backlog voidReceipt and the box card left before they
+  // learned to re-split — its trucks' tannarx moves, the RECORDED correction
+  // #849 already announced; dollars are frozen (R1), so only the split moves.
+  await boss.schedule(JOB_RECOMPUTE_COSTS, '40 20 * * *', {
+    unconverted: true,
+    pickups: true,
+    orphaned: true,
+  });
   await boss.work<RecomputeCostsPayload>(JOB_RECOMPUTE_COSTS, async (jobs) => {
-    const { recomputeAll, recomputeEntry } = await import('../../wms/costing/service');
+    const { recomputeAll, recomputeEntry, recomputeForLot } = await import('../../wms/costing/service');
     for (const job of jobs) {
       const p = job.data ?? {};
       if (p.costEntryId) {
         await recomputeEntry(p.costEntryId);
+      } else if (p.lotId) {
+        const n = await recomputeForLot(p.lotId);
+        logger.info({ lotId: p.lotId, n }, 'cost allocations recomputed for a lot');
       } else {
         const n = await recomputeAll(p);
         logger.info({ ...p, n }, 'cost allocations recomputed');

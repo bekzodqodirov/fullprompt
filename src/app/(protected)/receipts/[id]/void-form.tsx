@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useState } from 'react';
 import { voidReceiptAction, type VoidReceiptState } from './actions';
 
 /**
@@ -21,12 +21,23 @@ export function VoidReceiptForm({
     reason: string;
     button: string;
     errors: Record<string, string>;
+    /** Carries a `{code}` slot for the crate or truck the refusal names. */
+    sharedCostOrphaned: string;
   };
 }) {
   const [state, formAction, pending] = useActionState<VoidReceiptState, FormData>(
     voidReceiptAction,
     {},
   );
+  // Controlled: React resets an uncontrolled form after its action returns,
+  // and a REFUSED void must not eat the reason the manager typed (#463).
+  const [reason, setReason] = useState('');
+  const errorText =
+    state.error === 'shared_cost_orphaned'
+      ? labels.sharedCostOrphaned.replace('{code}', state.detail ?? '—')
+      : state.error
+        ? (labels.errors[state.error] ?? state.error)
+        : null;
 
   return (
     <form action={formAction} className="card space-y-2">
@@ -34,10 +45,18 @@ export function VoidReceiptForm({
       <label className="label" htmlFor="void-reason">
         {labels.reason}
       </label>
-      <input id="void-reason" name="reason" className="input" required minLength={3} />
-      {state.error && (
+      <input
+        id="void-reason"
+        name="reason"
+        className="input"
+        required
+        minLength={3}
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+      />
+      {errorText && (
         <p role="alert" data-testid="void-error" className="text-sm font-semibold text-bad">
-          {labels.errors[state.error] ?? state.error}
+          {errorText}
         </p>
       )}
       <button type="submit" disabled={pending} className="btn-danger w-full disabled:opacity-60">

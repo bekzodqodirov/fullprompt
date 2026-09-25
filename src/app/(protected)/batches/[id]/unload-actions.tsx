@@ -48,6 +48,33 @@ export function UnloadActions({
   const [pending, setPending] = useState(false);
   const [summary, setSummary] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The road-loss form is open for ONE box at a time, and holds what was
+  // typed until the server has answered (a refusal must not eat it).
+  const [lostFor, setLostFor] = useState<string | null>(null);
+  const [lostReason, setLostReason] = useState('');
+
+  // A refusal is a sentence (a literal map, #163), never the service's code.
+  function errorText(code: string): string {
+    switch (code) {
+      case 'not_missing':
+        return t('errors.not_missing');
+      case 'reason_required':
+        return t('errors.reason_required');
+      case 'finish_needs_manager':
+        return t('errors.finish_needs_manager');
+      case 'finish_unload_first':
+        return t('errors.finish_unload_first');
+      case 'batch_not_unloading':
+        return t('errors.batch_not_unloading');
+      case 'batch_not_found':
+      case 'box_not_found':
+        return t('errors.not_found');
+      case 'forbidden':
+        return tc('forbidden');
+      default:
+        return t('errors.failed');
+    }
+  }
 
   async function run(fn: () => Promise<{ ok: boolean; error?: string }>) {
     setPending(true);
@@ -189,6 +216,65 @@ export function UnloadActions({
                   </button>
                 </div>
               )}
+              {/* The third answer, and the only one that is not «found»: the
+                  carton is gone. Never part of the bulk «all here» — a loss
+                  is one person's written sentence about one box. */}
+              {canResolve && lostFor !== box.boxId && (
+                <button
+                  type="button"
+                  data-testid={`lost-road-${box.shortCode}`}
+                  className="btn-danger w-full !min-h-9 px-2 text-xs"
+                  disabled={pending}
+                  onClick={() => {
+                    setLostFor(box.boxId);
+                    setLostReason('');
+                  }}
+                >
+                  ❌ {t('lostInTransit')}
+                </button>
+              )}
+              {canResolve && lostFor === box.boxId && (
+                <div className="space-y-1.5">
+                  <input
+                    data-testid={`lost-road-reason-${box.shortCode}`}
+                    className="input"
+                    placeholder={t('lostReason')}
+                    value={lostReason}
+                    onChange={(e) => setLostReason(e.target.value)}
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      data-testid={`lost-road-confirm-${box.shortCode}`}
+                      className="btn-danger flex-1 !min-h-9 px-2 text-xs disabled:opacity-50"
+                      disabled={pending || lostReason.trim().length < 3}
+                      onClick={async () => {
+                        if (!window.confirm(t('lostConfirm', { code: box.shortCode }))) return;
+                        const res = await run(() =>
+                          resolveMissingAction({
+                            boxId: box.boxId,
+                            resolution: 'lost_in_transit',
+                            reason: lostReason,
+                          }),
+                        );
+                        if (res.ok) {
+                          setLostFor(null);
+                          setLostReason('');
+                        }
+                      }}
+                    >
+                      ❌ {t('lostInTransit')}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary flex-1 !min-h-9 px-2 text-xs"
+                      onClick={() => setLostFor(null)}
+                    >
+                      {tc('cancel')}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -206,7 +292,11 @@ export function UnloadActions({
         </button>
       )}
       {pending && <p className="text-sm">{tc('loading')}</p>}
-      {error && <p className="rounded-lg bg-bad/10 p-2 text-sm font-semibold text-bad">{error}</p>}
+      {error && (
+        <p data-testid="unload-error" className="rounded-lg bg-bad/10 p-2 text-sm font-semibold text-bad">
+          {errorText(error)}
+        </p>
+      )}
     </div>
   );
 }

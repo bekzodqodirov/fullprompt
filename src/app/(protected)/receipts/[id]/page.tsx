@@ -478,6 +478,9 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
               box_not_in_stock: t('voidBoxGone'),
               receipt_has_costs: t('voidHasCosts'),
             },
+            // The slot is filled in the browser with the code the refusal
+            // names; passed as a VALUE so next-intl leaves the braces alone.
+            sharedCostOrphaned: t('voidSharedCost', { code: '{code}' }),
           }}
         />
       )}

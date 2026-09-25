@@ -1,6 +1,6 @@
-import { and, asc, desc, eq, inArray, isNull, lte, ne, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
-import { db, type Tx } from '../../platform/db/client';
+import { db, type Db, type Tx } from '../../platform/db/client';
 import {
   batches,
   boxes,
@@ -424,10 +424,15 @@ interface BoxDims {
   volumeM3: number;
 }
 
-/** Per-box kg/m³ pro-rated from the lot; client from the receipt. */
-async function boxDims(boxIds: string[]): Promise<BoxDims[]> {
+/**
+ * Per-box kg/m³ pro-rated from the lot; client from the receipt. Ordered by
+ * box id so the same base always splits the same way — with the largest
+ * remainder the order decides only who carries a single $0.0001, but an
+ * unordered list made even that arbitrary between two recomputes.
+ */
+export async function boxDims(boxIds: string[], handle: Db | Tx = db): Promise<BoxDims[]> {
   if (boxIds.length === 0) return [];
-  const rows = await db
+  const rows = await handle
     .select({
       boxId: boxes.id,
       clientId: receipts.clientId,
@@ -438,7 +443,8 @@ async function boxDims(boxIds: string[]): Promise<BoxDims[]> {
     .from(boxes)
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
     .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
-    .where(inArray(boxes.id, boxIds));
+    .where(inArray(boxes.id, boxIds))
+    .orderBy(asc(boxes.id));
   return rows.map((r) => ({
     boxId: r.boxId,
     clientId: r.clientId,
@@ -447,8 +453,17 @@ async function boxDims(boxIds: string[]): Promise<BoxDims[]> {
   }));
 }
 
-/** Boxes in an entry's scope: receipt → its boxes; crate → its boxes; batch → everything that rode it. */
-export async function scopeBoxIds(entry: typeof costEntries.$inferSelect): Promise<string[]> {
+/**
+ * Boxes in an entry's scope: receipt → its boxes; crate → its boxes; batch →
+ * everything that rode it. `handle` is the recompute's own transaction (the
+ * base is read under the entry's lock, so the last writer is also the
+ * freshest) or a door's guard asking «would this void leave the money on no
+ * box»; everything else reads on the pool.
+ */
+export async function scopeBoxIds(
+  entry: typeof costEntries.$inferSelect,
+  handle: Db | Tx = db,
+): Promise<string[]> {
   if (entry.scope === 'receipt' && entry.receiptId) {
     // NOT the void ones. A lot-edit shrink voids the miscounted surplus, and
     // a share left (or re-swept) onto a void box is money on a box that never
@@ -458,7 +473,7 @@ export async function scopeBoxIds(entry: typeof costEntries.$inferSelect): Promi
     // profit-by-client (no box join) still counted all of it. Issued, loaded,
     // in-transit boxes all KEEP their shares — they are real cargo the money
     // was spent on; only `void` says «this box was a counting mistake».
-    const rows = await db
+    const rows = await handle
       .select({ id: boxes.id })
       .from(boxes)
       .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
@@ -475,7 +490,7 @@ export async function scopeBoxIds(entry: typeof costEntries.$inferSelect): Promi
     // on crated shelf boxes, or the annul) kept its share of the crating fee.
     // This is a RECORDED correction, not a no-op — old crates holding such
     // boxes re-split their fee onto the real members on the next recompute.
-    const packed = await db
+    const packed = await handle
       .selectDistinct({ id: boxMovements.boxId })
       .from(boxMovements)
       .innerJoin(boxes, eq(boxMovements.boxId, boxes.id))
@@ -488,7 +503,7 @@ export async function scopeBoxIds(entry: typeof costEntries.$inferSelect): Promi
         ),
       );
     if (packed.length) return packed.map((r) => r.id);
-    const live = await db.select({ id: boxes.id }).from(boxes).where(eq(boxes.crateId, entry.crateId));
+    const live = await handle.select({ id: boxes.id }).from(boxes).where(eq(boxes.crateId, entry.crateId));
     return live.map((r) => r.id);
   }
   if (entry.scope === 'pickup' && entry.pickupId) {
@@ -499,7 +514,7 @@ export async function scopeBoxIds(entry: typeof costEntries.$inferSelect): Promi
     // lands; nothing is voided for an empty base (the annul sweep is NOT
     // taught this scope — it would void the truck's freight and the firm's
     // debt on a truck that is merely half-unloaded).
-    const rows = await db
+    const rows = await handle
       .select({ id: boxes.id })
       .from(boxes)
       .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
@@ -521,7 +536,7 @@ export async function scopeBoxIds(entry: typeof costEntries.$inferSelect): Promi
     // share belongs to the cargo that actually was on board. Deliberate for
     // OLD data too — a void box already in this base repriced silently the
     // day it was voided under the old rule; now it leaves the base instead.
-    const departed = await db
+    const departed = await handle
       .selectDistinct({ id: boxMovements.boxId })
       .from(boxMovements)
       .innerJoin(boxes, eq(boxMovements.boxId, boxes.id))
@@ -534,7 +549,7 @@ export async function scopeBoxIds(entry: typeof costEntries.$inferSelect): Promi
         ),
       );
     if (departed.length) return departed.map((r) => r.id);
-    const current = await db
+    const current = await handle
       .select({ id: boxes.id })
       .from(boxes)
       .where(and(eq(boxes.currentBatchId, entry.batchId), ne(boxes.status, 'void')));
@@ -543,15 +558,30 @@ export async function scopeBoxIds(entry: typeof costEntries.$inferSelect): Promi
   return [];
 }
 
-/** Rebuild one entry's USD conversion + per-box allocation rows. */
+/**
+ * Rebuild one entry's USD conversion + per-box allocation rows.
+ *
+ * ONE transaction holding the entry's row lock (audit U41). It used to be
+ * four autocommitted statements — convert, DELETE the shares, re-read the
+ * base, INSERT — so a process killed in between (a deploy restart, a failed
+ * read) left a converted cost with NO shares: still in the P&L, gone from
+ * every tannarx, and no sweep looked for it. And two recomputes of one entry
+ * at once (two lot corrections on one truck, a correction during the depart
+ * job) collided on the (entry, box) unique index: the loser threw 23505
+ * after its warehouse correction had already committed, and in one measured
+ * round in twenty the survivor was the one that had read the OLD weights.
+ * Under the lock the second recompute waits, then reads the base the first
+ * one left behind — the last writer is also the freshest.
+ *
+ * The setting and the rate are read on the POOL before the transaction
+ * opens: a pool read inside it is #714's freeze (tests/unit/tx-pool.test.ts).
+ * Reading the rate early is safe because an entry's currency, date and
+ * amount have no edit door — a correction is void and re-enter.
+ */
 export async function recomputeEntry(costEntryId: string): Promise<void> {
-  const entry = await db.query.costEntries.findFirst({ where: eq(costEntries.id, costEntryId) });
-  if (!entry) return;
-  if (entry.voidedAt) {
-    await db.delete(costAllocations).where(eq(costAllocations.costEntryId, costEntryId));
-    return;
-  }
-
+  const peek = await db.query.costEntries.findFirst({ where: eq(costEntries.id, costEntryId) });
+  if (!peek) return;
+  const factor = Number(await getSetting('chargeable_weight_factor'));
   // The dollar figure is FROZEN at the first conversion (owner, R1: «to'langan
   // paytdagi kurs bo'yicha hisoblansin»). A cost is money that left at the
   // rate of its day; a rate typed or corrected on /admin/fx later must not
@@ -565,57 +595,87 @@ export async function recomputeEntry(costEntryId: string): Promise<void> {
   // converted at the earliest rate on file (`rateFor`'s fallback) and is
   // frozen at that guess too; correcting it is void and re-enter, like every
   // other ledger row.
-  const frozen = entry.amountUsd !== null && entry.fxRateUsed !== null;
-  let amountUsd: number | null;
-  if (frozen) {
-    amountUsd = Number(entry.amountUsd);
-  } else {
-    const rate = await rateFor(entry.currency, entry.costDate);
-    amountUsd = rate !== null ? toUsd(Number(entry.amount), rate) : null;
-    await db
-      .update(costEntries)
-      .set({ amountUsd: amountUsd !== null ? String(amountUsd) : null, fxRateUsed: rate !== null ? String(rate) : null })
-      .where(eq(costEntries.id, costEntryId));
-  }
+  const frozenWhenPeeked = peek.amountUsd !== null && peek.fxRateUsed !== null;
+  const rate =
+    !peek.voidedAt && !frozenWhenPeeked ? await rateFor(peek.currency, peek.costDate) : undefined;
 
-  await db.delete(costAllocations).where(eq(costAllocations.costEntryId, costEntryId));
-  if (amountUsd === null) return; // unconverted — reports flag it
+  const settled = await db.transaction(async (tx) => {
+    const [entry] = await tx
+      .select()
+      .from(costEntries)
+      .where(eq(costEntries.id, costEntryId))
+      .for('update');
+    if (!entry) return null;
+    // A void that committed first wins: it deleted the shares, and a
+    // recompute that read the entry before it must not put them back.
+    if (entry.voidedAt) {
+      await tx.delete(costAllocations).where(eq(costAllocations.costEntryId, costEntryId));
+      return null;
+    }
+    let amountUsd: number | null;
+    const frozen = entry.amountUsd !== null && entry.fxRateUsed !== null;
+    if (frozen) {
+      // Somebody else's conversion may have landed while we waited — the
+      // FIRST conversion wins (R1), so it is used as found.
+      amountUsd = Number(entry.amountUsd);
+    } else if (rate === undefined) {
+      // Frozen when peeked, unfrozen under the lock: nothing un-freezes a
+      // cost, so this is a state no door writes. Leave the row as it stands
+      // rather than read a rate on the pool from inside the transaction.
+      return entry;
+    } else {
+      amountUsd = rate !== null ? toUsd(Number(entry.amount), rate) : null;
+      await tx
+        .update(costEntries)
+        .set({
+          amountUsd: amountUsd !== null ? String(amountUsd) : null,
+          fxRateUsed: rate !== null ? String(rate) : null,
+        })
+        .where(eq(costEntries.id, costEntryId));
+    }
 
-  const ids = await scopeBoxIds(entry);
-  const dims = await boxDims(ids);
-  const factor = await getSetting('chargeable_weight_factor');
-  const pool: AllocBox[] = dims.map((d) => ({
-    ...d,
-    chargeableKg: Math.max(d.weightKg, d.volumeM3 * Number(factor)),
-  }));
-  const shares = allocateEntry(
-    {
-      amountUsd,
-      basis: entry.allocationBasis as AllocationBasis,
-      clientId: entry.clientId,
-    },
-    pool,
-  );
-  if (shares.length) {
-    await db.insert(costAllocations).values(
-      shares.map((s) => ({
-        costEntryId,
-        boxId: s.boxId,
-        clientId: s.clientId,
-        amountUsd: String(s.amountUsd),
-      })),
+    // The base is read INSIDE the lock, before the old shares go: whatever a
+    // concurrent correction committed while we waited is what we split over.
+    const ids = amountUsd === null ? [] : await scopeBoxIds(entry, tx);
+    const dims = await boxDims(ids, tx);
+    await tx.delete(costAllocations).where(eq(costAllocations.costEntryId, costEntryId));
+    if (amountUsd === null) return entry; // unconverted — reports flag it
+
+    const pool: AllocBox[] = dims.map((d) => ({
+      ...d,
+      chargeableKg: Math.max(d.weightKg, d.volumeM3 * factor),
+    }));
+    const shares = allocateEntry(
+      {
+        amountUsd,
+        basis: entry.allocationBasis as AllocationBasis,
+        clientId: entry.clientId,
+      },
+      pool,
     );
-  }
+    if (shares.length) {
+      await tx.insert(costAllocations).values(
+        shares.map((s) => ({
+          costEntryId,
+          boxId: s.boxId,
+          clientId: s.clientId,
+          amountUsd: String(s.amountUsd),
+        })),
+      );
+    }
+    return entry;
+  });
 
   // The debt this cost owes its payer, posted the moment a dollar figure
   // exists. Rows entered before the entry-time refusal above shipped — and
   // any row whose rate arrived later — are repaired by the /admin/fx
   // recompute and the nightly unconverted sweep, which convert them once.
-  // `chargeForCost` is idempotent per cost, so a re-run costs nothing.
-  if (entry.partnerId) {
+  // `chargeForCost` is idempotent per cost, so a re-run costs nothing. After
+  // the commit, never inside it: the partner side reads on the pool.
+  if (settled?.partnerId) {
     try {
       const { chargeForCost } = await import('../partners/link');
-      await chargeForCost(costEntryId, { actorId: entry.enteredBy });
+      await chargeForCost(costEntryId, { actorId: settled.enteredBy });
     } catch (error) {
       // Never let the partner side roll back an allocation rebuild — the same
       // fence every other costing→partners crossing uses.
@@ -642,7 +702,32 @@ export async function recomputeAll(filter?: {
    */
   pickups?: boolean;
   pickupId?: string;
+  /**
+   * The nightly repair of a split that went wrong (audits U20/U41), OR-ed
+   * like `pickups`: a converted cost with NO share at all (a recompute that
+   * died between its old DELETE and INSERT, before it was one transaction),
+   * and a cost with a share still sitting on a VOID box (voidReceipt and the
+   * box card never re-split — money on a box that was a counting mistake,
+   * counted by every client-side report and dropped by the truck-side ones).
+   * A cost whose base is legitimately empty (a direct_to_client fee on a
+   * client with no box in scope, a truck cost typed before anything was
+   * reserved) is re-swept every night for nothing — cheap and idempotent,
+   * and it is NEVER voided here: the empty-scope void is the annul's alone
+   * (#848), and the pickup scope is kept out of even that (#1004).
+   */
+  orphaned?: boolean;
 }) {
+  const repairs = [
+    filter?.unconverted ? isNull(costEntries.amountUsd) : undefined,
+    filter?.pickups ? eq(costEntries.scope, 'pickup') : undefined,
+    filter?.orphaned
+      ? sql`((${costEntries.amountUsd} IS NOT NULL AND NOT EXISTS (
+            SELECT 1 FROM cost_allocations ca WHERE ca.cost_entry_id = ${costEntries}.id))
+          OR EXISTS (
+            SELECT 1 FROM cost_allocations ca JOIN boxes b ON b.id = ca.box_id
+             WHERE ca.cost_entry_id = ${costEntries}.id AND b.status = 'void'))`
+      : undefined,
+  ].filter((c): c is NonNullable<typeof c> => c !== undefined);
   const rows = await db
     .select({ id: costEntries.id })
     .from(costEntries)
@@ -653,17 +738,36 @@ export async function recomputeAll(filter?: {
         filter?.batchId ? eq(costEntries.batchId, filter.batchId) : undefined,
         filter?.receiptId ? eq(costEntries.receiptId, filter.receiptId) : undefined,
         filter?.pickupId ? eq(costEntries.pickupId, filter.pickupId) : undefined,
-        filter?.unconverted && filter.pickups
-          ? sql`(${costEntries.amountUsd} IS NULL OR ${costEntries.scope} = 'pickup')`
-          : filter?.unconverted
-            ? isNull(costEntries.amountUsd)
-            : filter?.pickups
-              ? eq(costEntries.scope, 'pickup')
-              : undefined,
+        repairs.length ? or(...repairs) : undefined,
       ),
     );
-  for (const row of rows) await recomputeEntry(row.id);
+  await recomputeEach(rows.map((r) => r.id));
   return rows.length;
+}
+
+/**
+ * One entry's failure costs ONE entry (U41): the loop used to stop at the
+ * first throw, so a single bad row left every entry after it on its old
+ * split. Each failure is logged by id, the rest still run, and ONE error is
+ * thrown at the end so a job still fails and pg-boss still retries it.
+ */
+export async function recomputeEach(ids: string[]): Promise<void> {
+  const failed: string[] = [];
+  let first: unknown;
+  for (const id of ids) {
+    try {
+      await recomputeEntry(id);
+    } catch (error) {
+      failed.push(id);
+      first ??= error;
+      console.error('[costing] recompute failed', id, error);
+    }
+  }
+  if (failed.length) {
+    throw new Error(`recompute failed for ${failed.length} of ${ids.length} cost entries: ${failed.join(', ')}`, {
+      cause: first,
+    });
+  }
 }
 
 /**

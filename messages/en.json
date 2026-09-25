@@ -777,7 +777,8 @@
       "reason_required": "Write the reason.",
       "forbidden": "No access.",
       "box_not_found": "Box not found."
-    }
+    },
+    "voidSharedCost": "A cost of {code} would be left with no cargo — these boxes are all it carries. Void that cost first (finance), then the receipt."
   },
   "stock": {
     "title": "Warehouse stock",
@@ -816,7 +817,18 @@
     "pageOf": "{from}–{to} / {total}",
     "pageNext": "Next →",
     "pagePrev": "← Previous",
-    "shownOfTotal": "Table shows {shown} of {total} rows"
+    "shownOfTotal": "Table shows {shown} of {total} rows",
+    "statusErrors": {
+      "transition_not_allowed": "This change is not possible from the box's current status.",
+      "box_in_crate": "The box is inside a crate — dissolve the crate first.",
+      "box_has_no_warehouse": "Choose the warehouse where the box was found.",
+      "receipt_voided": "This box's receipt has been voided — it cannot come back to stock.",
+      "receipt_has_costs": "This is the receipt's last live box and the receipt has its own costs. Void those costs first (finance), then the box.",
+      "shared_cost_orphaned": "A cost of {code} would be left with no cargo — this box is all it carries. Void that cost first (finance).",
+      "box_not_found": "Box not found.",
+      "failed": "Could not save — try again."
+    },
+    "foundAtWarehouse": "Where was it found?"
   },
   "search": {
     "placeholder": "Search: GS777, GS777-A, YW26-000123, product…",
@@ -1138,7 +1150,19 @@
     "foreignCode": "That is not our code (a foreign QR). Scan the GSR sticker.",
     "serverRefused": "The server refused {n} scan(s) — they were not recorded. Enter them by hand.",
     "notYourTruck": "This truck is not for your warehouse, or the session expired — sign in again.",
-    "scanTheRest": "Scan the remaining boxes. Only a manager may close an unload with boxes outstanding."
+    "scanTheRest": "Scan the remaining boxes. Only a manager may close an unload with boxes outstanding.",
+    "lostInTransit": "Lost on the road",
+    "lostReason": "What happened (required)",
+    "lostConfirm": "Write off {code} as lost on the road? It leaves the truck and the client is not told it arrived; its cost stays in the client's landed cost.",
+    "errors": {
+      "not_missing": "This box is no longer marked missing — reload the page.",
+      "reason_required": "Write what happened.",
+      "finish_needs_manager": "Only a manager can finish with boxes still not accepted.",
+      "finish_unload_first": "Finish the unload first.",
+      "batch_not_unloading": "The truck is not being unloaded.",
+      "not_found": "Not found — reload the page.",
+      "failed": "Could not save — try again."
+    }
   },
   "transit": {
     "title": "Cargo in transit",

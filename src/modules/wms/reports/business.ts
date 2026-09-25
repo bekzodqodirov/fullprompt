@@ -122,12 +122,27 @@ function riskCtes(warehouseIds: string[] | undefined, sinceIso: string): SQL {
       WHERE b.flags @> '["missing_in_transit"]'::jsonb AND b.status <> 'void' ${truckScope('bt')}
     ),
     lost AS (
-      SELECT b.id AS box_id, NULL::uuid AS batch_id
+      -- A carton lost ON THE ROAD (U38) stands in no warehouse, so the shelf
+      -- rule would count it in EVERY warehouse's scope; it belongs to its
+      -- truck's two ends instead, /transit's rule, and its row names the truck.
+      SELECT b.id AS box_id, road.ref_id AS batch_id
       FROM boxes b
+      LEFT JOIN LATERAL (
+        SELECT lm.ref_id FROM box_movements lm
+        WHERE lm.box_id = b.id AND lm.cause = 'lost_in_transit' AND lm.ref_type = 'batch'
+        ORDER BY lm.created_at DESC LIMIT 1
+      ) road ON true
+      LEFT JOIN batches rbt ON rbt.id = road.ref_id
       WHERE b.status = 'lost'
         AND EXISTS (SELECT 1 FROM box_movements lm
                     WHERE lm.box_id = b.id AND lm.to_status = 'lost' AND lm.created_at >= ${sinceIso}::timestamptz)
-        ${shelfScope}
+        ${
+          scoped
+            ? sql`AND (CASE WHEN rbt.id IS NOT NULL AND b.current_warehouse_id IS NULL
+                   THEN (rbt.origin_warehouse_id IN (${idList(scoped)}) OR rbt.dest_warehouse_id IN (${idList(scoped)}))
+                   ELSE (b.current_warehouse_id IN (${idList(scoped)}) OR b.current_warehouse_id IS NULL) END)`
+            : sql``
+        }
     ),
     phantom AS (
       SELECT DISTINCT fm.box_id, fm.ref_id AS batch_id

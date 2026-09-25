@@ -24,6 +24,8 @@ const voidSchema = z.object({
 export interface VoidReceiptState {
   ok?: boolean;
   error?: string;
+  /** What the refusal names — the crate or truck whose cost would be orphaned. */
+  detail?: string;
 }
 
 export async function voidReceiptAction(
@@ -50,7 +52,7 @@ export async function voidReceiptAction(
     // exactly as it was. NAMED, because a silent refusal reads as a broken
     // button — a box left the shelf, or the prixod still carries live costs
     // (money first, the batch-cancel rule).
-    if (err instanceof VoidError) return { error: err.code };
+    if (err instanceof VoidError) return { error: err.code, detail: err.detail };
     throw err;
   }
   revalidatePath(`/receipts/${parsed.data.receiptId}`);

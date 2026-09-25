@@ -113,6 +113,9 @@ describe('«a void box is not cargo» — the closed set', () => {
       'src/modules/wms/tracking/truck.ts',
       'src/modules/wms/arrivals/service.ts',
       'src/modules/wms/bot/lookup.ts',
+      // The dashboard's cargo-at-risk and losses read the truck through
+      // movements too, and every branch there says `status <> 'void'`.
+      'src/modules/wms/reports/business.ts',
     ];
     // History-keepers and writers, deliberately WITHOUT the exclusion: the
     // manifest and the customs documents record what rode (round 92 — a
@@ -133,6 +136,9 @@ describe('«a void box is not cargo» — the closed set', () => {
       'src/modules/wms/planning/service.ts',
       'src/modules/wms/receipts/annul.ts',
       'src/modules/platform/ai/schema-card.ts',
+      // Which costs touch a lot (U20/U39): ids, deliberately including the
+      // boxes about to be voided — the question is what their void orphans.
+      'src/modules/wms/costing/void-guard.ts',
     ];
     const found: string[] = [];
     const walk = (dir: string) => {

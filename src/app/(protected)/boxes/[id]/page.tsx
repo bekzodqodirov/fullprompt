@@ -1,4 +1,4 @@
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
@@ -17,7 +17,7 @@ import { BoxStatusActions } from './status-actions';
 import { BackLink } from '@/components/back-link';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 import { PrintLabels } from '@/components/print-labels';
-import { inScope } from '@/modules/platform/rbac/scope';
+import { inScope, warehouseScope } from '@/modules/platform/rbac/scope';
 
 /** Box card: identity + full movement timeline (spec 5.5 / §10). */
 export default async function BoxPage({ params }: { params: Promise<{ id: string }> }) {
@@ -45,6 +45,20 @@ export default async function BoxPage({ params }: { params: Promise<{ id: string
   const wh = box.currentWarehouseId
     ? await db.query.warehouses.findFirst({ where: eq(warehouses.id, box.currentWarehouseId) })
     : null;
+
+  // A carton lost ON THE ROAD stands in no warehouse, so bringing it back has
+  // to say where it turned up — offered from the warehouses this manager may
+  // act at (the action authorises there again).
+  const landingOptions =
+    box.status === 'lost' && !box.currentWarehouseId && actor.permissions.has('receipts.void')
+      ? (
+          await db
+            .select({ id: warehouses.id, code: warehouses.code, name: warehouses.name })
+            .from(warehouses)
+            .where(and(eq(warehouses.active, true), warehouseScope(actor, warehouses.id)))
+            .orderBy(asc(warehouses.code))
+        ).map((w) => ({ id: w.id, label: `${w.code} — ${w.name}` }))
+      : null;
 
   const canSeeCosts =
     actor.permissions.has('costs.enter_batch') ||
@@ -102,7 +116,12 @@ export default async function BoxPage({ params }: { params: Promise<{ id: string
       )}
 
       {actor.permissions.has('receipts.void') && (
-        <BoxStatusActions boxId={box.id} status={box.status} inCrate={box.crateId !== null} />
+        <BoxStatusActions
+          boxId={box.id}
+          status={box.status}
+          inCrate={box.crateId !== null}
+          landingOptions={landingOptions}
+        />
       )}
 
       {landed && landed.shares.length > 0 && (

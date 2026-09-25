@@ -777,7 +777,8 @@
       "reason_required": "请填写原因。",
       "forbidden": "无权限。",
       "box_not_found": "未找到箱子。"
-    }
+    },
+    "voidSharedCost": "{code} 的费用将没有货物承担——这些箱子是它的全部货物。请先作废该费用（财务），再作废入库单。"
   },
   "stock": {
     "title": "库存",
@@ -816,7 +817,18 @@
     "pageOf": "{from}–{to} / {total}",
     "pageNext": "下一页 →",
     "pagePrev": "← 上一页",
-    "shownOfTotal": "表中显示 {shown} / {total} 行"
+    "shownOfTotal": "表中显示 {shown} / {total} 行",
+    "statusErrors": {
+      "transition_not_allowed": "箱子当前状态不允许此操作。",
+      "box_in_crate": "箱子在木箱内——请先拆散木箱。",
+      "box_has_no_warehouse": "请选择箱子被找到的仓库。",
+      "receipt_voided": "该箱子的入库单已作废——无法退回库存。",
+      "receipt_has_costs": "这是入库单最后一个有效箱子，而入库单有自己的费用。请先作废这些费用（财务），再作废箱子。",
+      "shared_cost_orphaned": "{code} 的费用将没有货物承担——这个箱子是它的全部货物。请先作废该费用（财务）。",
+      "box_not_found": "未找到箱子。",
+      "failed": "保存失败——请重试。"
+    },
+    "foundAtWarehouse": "在哪里找到的？"
   },
   "search": {
     "placeholder": "搜索：GS777、GS777-A、YW26-000123、货物…",
@@ -1138,7 +1150,19 @@
     "foreignCode": "这不是我们的编码（其他二维码）。请扫描 GSR 标签。",
     "serverRefused": "服务器拒绝了 {n} 次扫描，未被记录。请手动输入。",
     "notYourTruck": "这辆车不属于你的仓库，或登录已过期，请重新登录。",
-    "scanTheRest": "请扫描剩余箱子。仅主管可在有未接收箱子时结束卸车。"
+    "scanTheRest": "请扫描剩余箱子。仅主管可在有未接收箱子时结束卸车。",
+    "lostInTransit": "途中丢失",
+    "lostReason": "发生了什么（必填）",
+    "lostConfirm": "将 {code} 登记为途中丢失？它将离开这辆车，不会通知客户到货；其费用仍计入客户的成本。",
+    "errors": {
+      "not_missing": "该箱子已不再标记为丢失——请刷新页面。",
+      "reason_required": "请写明发生了什么。",
+      "finish_needs_manager": "只有主管可以在仍有未接收箱子时完成卸货。",
+      "finish_unload_first": "请先完成卸货。",
+      "batch_not_unloading": "车辆不在卸货中。",
+      "not_found": "未找到——请刷新页面。",
+      "failed": "保存失败——请重试。"
+    }
   },
   "transit": {
     "title": "在途货物",

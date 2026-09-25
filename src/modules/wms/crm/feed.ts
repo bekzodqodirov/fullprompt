@@ -239,6 +239,9 @@ export async function clientFeed(
           WHEN 'batch_cancelled' THEN 'cancelled'
           WHEN 'marked_lost' THEN 'lost'
           WHEN 'inventory_missing' THEN 'lost'
+          -- Lost on the road (U38): grouped by the truck's ref_id like a
+          -- departure, so the line names the truck it went missing from.
+          WHEN 'lost_in_transit' THEN 'lost'
           ELSE 'arrived'
         END,
         mv.at, NULL, NULL,
@@ -266,7 +269,7 @@ export async function clientFeed(
           AND bm.created_at < ${cutoff}
           AND bm.cause IN (
             'batch_departed', 'unload_scan', 'undocumented_transfer',
-            'batch_cancelled', 'marked_lost', 'inventory_missing'
+            'batch_cancelled', 'marked_lost', 'inventory_missing', 'lost_in_transit'
           )
         -- By batch where there is one; by DAY where there is not, because a
         -- loss carries ref_id NULL and would otherwise collapse a client's

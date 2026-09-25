@@ -1,10 +1,11 @@
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../../platform/db/client';
 import {
   boxes,
   boxMovements,
   clients,
+  costEntries,
   crates,
   receiptLots,
   receipts,
@@ -286,8 +287,25 @@ export async function editLot(
     if (result.labelsToPrint > 0 || result.labelsToDestroy.length > 0 || totalsChanged) {
       // Every cost shared over this lot — the truck's freight and a crate's
       // fee too, not only the receipt's own (audit A22).
-      const { recomputeForLot } = await import('../costing/service');
-      await recomputeForLot(lot.id);
+      //
+      // A failure here is NOT the manager's: the correction has committed,
+      // so rethrowing it painted a saved fix as an error page and skipped the
+      // author's notice below (U41, measured on overlapping corrections). It
+      // is logged and handed to the job queue as a durable retry of the same
+      // re-split, which pg-boss repeats until it lands.
+      try {
+        const { recomputeForLot } = await import('../costing/service');
+        await recomputeForLot(lot.id);
+      } catch (error) {
+        console.error('[lot-edit] recompute failed, queued for retry', lot.id, error);
+        try {
+          const { enqueue, JOB_RECOMPUTE_COSTS } = await import('../../platform/jobs/boss');
+          await enqueue(JOB_RECOMPUTE_COSTS, { lotId: lot.id });
+        } catch (queueError) {
+          // The nightly orphan sweep is the last net under this one.
+          console.error('[lot-edit] recompute retry could not be queued', lot.id, queueError);
+        }
+      }
     }
     // A correction made over the author's head is told to the author — the
     // arrival-diff rule: the person whose record changed hears it first,
@@ -348,6 +366,31 @@ export async function assignReceiptClient(
     if (crated) throw new EditError('boxes_crated');
   }
 
+  // A cost typed «only for this client» (direct_to_client) after a client
+  // correction (U39). The share UPDATE below re-stamps the SNAPSHOT, but the
+  // entry still names the OLD client and the engine splits it over that
+  // client's boxes only — so the next recompute (the depart job, a lot fix,
+  // the nightly pickup sweep) either deleted every share and wrote none (the
+  // dollars stayed in the P&L and left every tannarx) or moved the whole fee
+  // back onto the old client's other cargo: two writers of one fact, and
+  // whichever ran last decided. Decided here, ONCE, on the POOL before the
+  // transaction (scopeBoxIds and the recompute read on it, #714):
+  //  - the prixod's OWN direct cost moves (the receipt card only ever offers
+  //    the receipt's own client, so on anyone else it could never split);
+  //  - a truck / crate / factory-trip direct cost moves when the old client
+  //    has NO other cargo left in its scope — otherwise the money lands on
+  //    nobody;
+  //  - when the old client still has cargo there, the cost STAYS theirs —
+  //    whoever typed it wrote «for GS100» (owner's answer A, 2026-09-25) —
+  //    and is re-split onto that remaining cargo straight after the commit,
+  //    so the corrected prixod never carries a share of a cost addressed to
+  //    somebody else.
+  const direct =
+    receipt.clientId && receipt.clientId !== clientId
+      ? await directCostsAfterClientChange(receiptId, receipt.clientId)
+      : { move: [], keep: [] };
+  const directToMove = direct.move;
+
   await db.transaction(async (tx) => {
     // The marking is KEPT, not nulled (round 98, owner: «gs500maniken-al
     // shaklida qolib, client faqat gs500 ni yuki deb belgilay olamizmi»). The
@@ -382,6 +425,33 @@ export async function assignReceiptClient(
         WHERE rl.receipt_id = ${receiptId}
       )
     `);
+
+    // …and the direct costs decided above, re-checked in the WHERE so a cost
+    // voided or re-pointed meanwhile is left alone. Audited on the cost row:
+    // whose tannarx a fee belongs to is a money fact, not a cargo one.
+    if (directToMove.length && receipt.clientId) {
+      const moved = await tx
+        .update(costEntries)
+        .set({ clientId, updatedAt: new Date() })
+        .where(
+          and(
+            inArray(costEntries.id, directToMove),
+            eq(costEntries.clientId, receipt.clientId),
+            eq(costEntries.allocationBasis, 'direct_to_client'),
+            isNull(costEntries.voidedAt),
+          ),
+        )
+        .returning({ id: costEntries.id });
+      for (const row of moved) {
+        await writeAudit(tx, { ...ctx, warehouseId: warehouse.id }, {
+          entityType: 'cost_entry',
+          entityId: row.id,
+          action: 'update',
+          before: { clientId: receipt.clientId },
+          after: { clientId, from: 'receipt_client_change', receiptId },
+        });
+      }
+    }
 
     await writeAudit(tx, { ...ctx, warehouseId: warehouse.id }, {
       entityType: 'receipt',
@@ -420,6 +490,91 @@ export async function assignReceiptClient(
       actorId: ctx.actorId,
     });
   });
+
+  // Both kinds re-split by the ENGINE, not by the snapshot's guess: a moved
+  // cost onto the new client's cargo, a kept one onto the old client's
+  // remaining cargo. After the commit (#714), and never able to roll the
+  // correction back: a failure is logged, and the nightly orphan sweep
+  // re-splits a cost it left on no box.
+  const resplit = [...direct.move, ...direct.keep];
+  if (resplit.length) {
+    try {
+      const { recomputeEach } = await import('../costing/service');
+      await recomputeEach(resplit);
+    } catch (error) {
+      console.error('[receipt-client] direct cost recompute failed', receiptId, error);
+    }
+  }
+}
+
+/**
+ * The live direct_to_client costs of `oldClientId` this prixod is part of,
+ * split into those that follow it to its new client (`move`) and those that
+ * stay on the old client's remaining cargo (`keep`) — U39, see
+ * `assignReceiptClient`. Membership is the lot-level one
+ * (`costEntriesTouchingLots`, so an UNCONVERTED cost with no share yet is
+ * found too), and the base each cost would split over is the engine's own
+ * (`scopeBoxIds`).
+ */
+async function directCostsAfterClientChange(
+  receiptId: string,
+  oldClientId: string,
+): Promise<{ move: string[]; keep: string[] }> {
+  const lotIds = (
+    await db.select({ id: receiptLots.id }).from(receiptLots).where(eq(receiptLots.receiptId, receiptId))
+  ).map((l) => l.id);
+  const { costEntriesTouchingLots } = await import('../costing/void-guard');
+  const touching = await costEntriesTouchingLots(lotIds);
+  if (touching.length === 0) return { move: [], keep: [] };
+  const direct = await db
+    .select()
+    .from(costEntries)
+    .where(
+      and(
+        inArray(costEntries.id, touching),
+        eq(costEntries.allocationBasis, 'direct_to_client'),
+        eq(costEntries.clientId, oldClientId),
+        isNull(costEntries.voidedAt),
+      ),
+    );
+  if (direct.length === 0) return { move: [], keep: [] };
+  const own = new Set(
+    (
+      await db
+        .select({ id: boxes.id })
+        .from(boxes)
+        .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+        .where(and(eq(receiptLots.receiptId, receiptId), ne(boxes.status, 'void')))
+    ).map((b) => b.id),
+  );
+  const { scopeBoxIds } = await import('../costing/service');
+  const move: string[] = [];
+  const keep: string[] = [];
+  for (const entry of direct) {
+    if (entry.scope === 'receipt') {
+      if (entry.receiptId === receiptId) move.push(entry.id);
+      continue;
+    }
+    const base = await scopeBoxIds(entry);
+    // Only a cost this prixod is actually part of.
+    if (!base.some((id) => own.has(id))) continue;
+    const [elsewhere] = await db
+      .select({ id: boxes.id })
+      .from(boxes)
+      .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+      .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+      .where(
+        and(
+          inArray(boxes.id, base),
+          eq(receipts.clientId, oldClientId),
+          ne(receiptLots.receiptId, receiptId),
+        ),
+      )
+      .limit(1);
+    if (elsewhere) keep.push(entry.id);
+    else move.push(entry.id);
+  }
+  return { move, keep };
 }
 
 /** Most recent lots first for the stock table (helper reused by pages). */
