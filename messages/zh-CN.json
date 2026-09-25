@@ -1394,7 +1394,22 @@
     "droppedShort": "⚠ 定价后有 {n} 箱未装上此车——请将其价格转到 {codes}",
     "droppedFoundBack": "⚠ {n} 箱被扫描为已装车，但在 {origin} 仓库找到——请从此价格中扣除：运费和本车清关费用份额都在 {codes} 计费",
     "pricedElsewhereShort": "⚠ 该客户在 {code} 已定价（{usd}），但有 {n} 箱未随其发出——请将价格转到此车次",
-    "pricedElsewhereFoundBack": "⚠ {n} 箱被扫描装上 {code}，但留在仓库——在此车次定价：运费及 {code} 的清关份额（成本中的「至本车次」）"
+    "pricedElsewhereFoundBack": "⚠ {n} 箱被扫描装上 {code}，但留在仓库——在此车次定价：运费及 {code} 的清关份额（成本中的「至本车次」）",
+    "fxDiff": "⚖️ 汇兑差额",
+    "fxDiffNote": "{currency} 账户已按原币归零——美元余差已结清",
+    "nativeBalances": "原币余额：",
+    "fxResidueOld": "历史汇兑余差",
+    "fxCol": "汇兑差额",
+    "fxClose": "作为汇兑差额结清（{usd}）",
+    "fxCloseHint": "客户按一种货币计费、以另一种货币付款：两种汇率之差留下的 {usd} 将作为“汇兑差额”结清并计入损益表。",
+    "fxCloseNote": "双币种账户余差已手工结清",
+    "fxCloseUndo": "撤销结清",
+    "fxCloseNothing": "没有需要结清的余差。",
+    "fxCloseSingleCurrency": "该账户为单一币种——汇兑差额将随付款自动结清。",
+    "fxCloseTooLarge": "余差超出汇兑差额（超过付款的 2 % 或 $5）——这是真实债务，请核对付款或价格。",
+    "fxCloseLegacyFirst": "该账户有历史汇兑余差——请先在“汇兑余差”中处理。",
+    "fxCloseRefused": "无法结清——请刷新页面后重试。",
+    "fxLegacyLink": "汇兑余差"
   },
   "map": {
     "title": "地图",
@@ -1714,7 +1729,27 @@
     "cargoUnrated": "货物费用——尚无汇率（已从现金柜支出）",
     "gapAdjustUnclassified": "{count} 笔调整未注明类型（汇兑差额或更正）：{usd}——未计入损益表",
     "gapKassaUsdMissing": "{count} 笔现金柜支付的费用缺少现金柜币种汇率——未计算汇兑差额",
-    "gapTransferUsdMissing": "{count} 笔现金柜间转账缺少收款币种汇率——未计算汇兑差额"
+    "gapTransferUsdMissing": "{count} 笔现金柜间转账缺少收款币种汇率——未计算汇兑差额",
+    "fxEffect": "{kind, select, gain {我方收益 {usd}} other {我方损失 {usd}}}",
+    "gapLegacyFx": "{count} 个账户已按原币结清但仍有美元余差：{usd}——尚未计入损益表",
+    "gapOpenFx": "查看",
+    "fxLegacyTitle": "汇兑余差",
+    "fxLegacyHint": "这些账户按原币已结清但仍有美元余差。客户的由系统自动结清。公司的在此结清——若此前已手工录入汇兑差额，会标记为“请核对”。",
+    "fxLegacyRow": "{currency} 账户于 {date} 归零 · 余差 {usd} · 计入 {month} 利润",
+    "fxLegacyAuto": "系统自动结清",
+    "fxLegacyCheck": "请核对",
+    "fxLegacyCheckAdjust": "{date} 手工录入了 {usd} 的调整——是否已用它结清此余差？",
+    "fxLegacyCheckUsdRow": "{date} 有一笔 {usd} 的美元记录——若为结清此余差而录入，请先作废",
+    "fxLegacyAdjustFx": "是的，那是汇兑差额",
+    "fxLegacyAdjustCorrection": "不，是其他更正",
+    "fxLegacyHand": "已手工以汇兑差额结清 ✓",
+    "fxLegacyClose": "作为汇兑差额结清",
+    "fxLegacyCloseAll": "全部结清（{count} 笔，{usd}）",
+    "fxLegacyDone": "已结清 {closed} 笔，{changed} 笔已变化——请重新查看",
+    "fxLegacyEmpty": "没有历史汇兑余差",
+    "fxUnclassifiedTitle": "未注明类型的调整",
+    "fxLegacyChanged": "该账户已变化——请刷新列表后重新查看",
+    "fxLegacyCheckFirst": "请先注明手工调整的类型（汇兑差额还是其他更正）"
   },
   "crm": {
     "title": "CRM",
@@ -3022,12 +3057,13 @@
       "receipt": "打入我们账户",
       "payment": "我们已付",
       "offset": "通过客户抵账",
-      "adjust": "调整 / 汇差"
+      "adjust": "调整",
+      "fx_diff": "汇兑差额（自动）"
     },
     "kindHints": {
       "receipt": "对方把钱打入我们账户。现金增加，我们欠对方增加。",
       "payment": "我们从现金账付给对方。现金减少，欠款减少。",
-      "adjust": "汇差或手工更正，可为负数。"
+      "adjust": "汇兑差额或更正。可为负数。"
     },
     "whoPaid": "哪位客户付款",
     "paidTo": "打入谁的账户",
@@ -3059,7 +3095,23 @@
     "forDealDeferredHint": "⏳ — 延期交易：如果这笔钱是付该交易的，请选择它，否则延期会继续掩盖其他欠款。",
     "dealMismatch": "该交易属于其他客户。",
     "tillForbidden": "往来方的账户收支只能由会计或管理员记录。",
-    "recurringChargeNote": "固定费用付款——请在“费用”页面作废该费用本身"
+    "recurringChargeNote": "固定费用付款——请在“费用”页面作废该费用本身",
+    "adjustKindLabel": "这是什么？",
+    "adjustKinds": {
+      "fx": "汇兑差额——计入利润",
+      "correction": "更正或期初余额——不计入利润",
+      "unset": "未注明类型"
+    },
+    "adjustFxHint": "单一币种账户的汇兑差额随付款自动结清。仅在双币种账户（如现金兑换人）以美元录入“汇兑差额”。",
+    "nativeBalances": "原币余额：",
+    "adjustKindRequired": "请选择调整类型",
+    "fxAdjustSingleCurrency": "该账户为单一币种——汇兑差额将随付款自动结清。",
+    "fxAdjustLegacy": "该账户有历史汇兑余差——由会计在“汇兑余差”中结清。",
+    "fxAdjustUsdOnly": "汇兑差额只能以美元录入。",
+    "fxLegacyLink": "汇兑余差",
+    "classifyFx": "汇兑差额",
+    "classifyCorrection": "更正",
+    "alreadyClassified": "此调整已注明类型。"
   },
   "lists": {
     "allRecords": "全部",

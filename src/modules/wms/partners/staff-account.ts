@@ -119,8 +119,12 @@ export interface StaffAccountView {
   headline: StaffHeadline;
   /** Absolute dollars for the headline; the sign is the headline's word. */
   amountUsd: number;
-  /** Signed native sums per currency, same sign as the balance. */
-  perCurrency: { currency: string; amount: number }[];
+  /**
+   * Signed native sums per currency, same sign as the balance. A currency at
+   * 0 in its own money but not in dollars stays (0103): only a pre-deploy
+   * residue can be that, and without it the headline's dollars read wrong.
+   */
+  perCurrency: { currency: string; amount: number; usd: number }[];
   rows: {
     id: string;
     txDate: string;
@@ -186,6 +190,7 @@ export async function staffAccountView(userId: string): Promise<StaffAccountView
           // The balance's own sign rule (`partnerSignedSql`), on the native
           // amount: an `adjust` carries its sign in the amount.
           amount: sql<string>`sum(${partnerSignedSql('amount')})`,
+          usd: sql<string>`sum(${partnerSignedSql('amount_usd')})`,
         })
         .from(partnerTransactions)
         .where(
@@ -197,12 +202,17 @@ export async function staffAccountView(userId: string): Promise<StaffAccountView
     ]);
     balanceUsd = balance;
     perCurrency = sums
-      .map((row) => ({ currency: row.currency, amount: Math.round(Number(row.amount) * 100) / 100 }))
-      .filter((row) => row.amount !== 0);
+      .map((row) => ({
+        currency: row.currency,
+        amount: Math.round(Number(row.amount) * 100) / 100,
+        usd: Math.round(Number(row.usd) * 100) / 100,
+      }))
+      .filter((row) => row.amount !== 0 || row.usd !== 0);
     rows = ledger
       // A voided row is history the accountant keeps; to the person it is a
       // line that never happened, and it is not in the balance above either.
-      .filter(({ tx }) => !tx.voidedAt)
+      // A kurs farqi row (0103) moves no money of theirs — noise to them.
+      .filter(({ tx }) => !tx.voidedAt && tx.type !== 'fx_diff')
       .slice(0, 10)
       .map(({ tx }) => ({
         id: tx.id,

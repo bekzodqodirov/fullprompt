@@ -1394,7 +1394,22 @@
     "droppedShort": "⚠ {n} boxes were not loaded after this was priced — move their price to {codes}",
     "droppedFoundBack": "⚠ {n} boxes were scanned as loaded but found in {origin} — take them out of this price: both the freight and this truck’s customs share are billed on {codes}",
     "pricedElsewhereShort": "⚠ This client was priced on {code} ({usd}), but {n} boxes did not ride it — move the price to this truck",
-    "pricedElsewhereFoundBack": "⚠ {n} boxes were scanned onto {code} but stayed in the warehouse — they are priced on this truck: the freight and {code}’s customs share (in the cost as «up to this trip»)"
+    "pricedElsewhereFoundBack": "⚠ {n} boxes were scanned onto {code} but stayed in the warehouse — they are priced on this truck: the freight and {code}’s customs share (in the cost as «up to this trip»)",
+    "fxDiff": "⚖️ Exchange difference",
+    "fxDiffNote": "The {currency} account reached zero — the dollar residue was closed",
+    "nativeBalances": "In own currency:",
+    "fxResidueOld": "old exchange residue",
+    "fxCol": "Exchange diff.",
+    "fxClose": "Close as exchange difference ({usd})",
+    "fxCloseHint": "The client was billed in one currency and paid in another: the {usd} left by the two rates is closed as an «exchange difference» and goes to the P&L.",
+    "fxCloseNote": "The two-currency account residue was closed by hand",
+    "fxCloseUndo": "Undo the close",
+    "fxCloseNothing": "There is no residue to close.",
+    "fxCloseSingleCurrency": "This account is in one currency — the exchange difference closes itself with the payment.",
+    "fxCloseTooLarge": "The residue is larger than an exchange difference (over 2 % of the payments or $5) — it is a real debt; check the payment or the price.",
+    "fxCloseLegacyFirst": "This account has an old exchange residue — review it under «Exchange residues» first.",
+    "fxCloseRefused": "Could not close it — refresh the page and try again.",
+    "fxLegacyLink": "Exchange residues"
   },
   "map": {
     "title": "Map",
@@ -1714,7 +1729,27 @@
     "cargoUnrated": "Cargo costs — no rate yet (paid from a till)",
     "gapAdjustUnclassified": "{count} adjustments have no kind (exchange difference or correction): {usd} — not in the P&L",
     "gapKassaUsdMissing": "{count} till-paid costs have no rate for the till's currency — their exchange difference is not counted",
-    "gapTransferUsdMissing": "{count} transfers between tills have no rate for the receiving till's currency — their exchange difference is not counted"
+    "gapTransferUsdMissing": "{count} transfers between tills have no rate for the receiving till's currency — their exchange difference is not counted",
+    "fxEffect": "{kind, select, gain {gain to us {usd}} other {loss to us {usd}}}",
+    "gapLegacyFx": "{count} accounts settled in their own currency still carry a dollar residue: {usd} — not in the P&L yet",
+    "gapOpenFx": "Review",
+    "fxLegacyTitle": "Exchange residues",
+    "fxLegacyHint": "These accounts reached zero in their own currency but kept a dollar residue. Clients' are closed by the system. Firms' you close here — if one was already closed by hand with an exchange-difference entry, it is marked «Check».",
+    "fxLegacyRow": "{currency} account hit zero on {date} · residue {usd} · to {month} profit",
+    "fxLegacyAuto": "The system closes it",
+    "fxLegacyCheck": "Check",
+    "fxLegacyCheckAdjust": "A {usd} adjustment was entered by hand on {date} — did it close this residue?",
+    "fxLegacyCheckUsdRow": "There is a {usd} dollar entry on {date} — if it was entered to close this residue, void it first",
+    "fxLegacyAdjustFx": "Yes, it was the exchange difference",
+    "fxLegacyAdjustCorrection": "No, a different correction",
+    "fxLegacyHand": "Closed by hand as an exchange difference ✓",
+    "fxLegacyClose": "Close as exchange difference",
+    "fxLegacyCloseAll": "Close all ({count}, {usd})",
+    "fxLegacyDone": "{closed} closed, {changed} changed — review again",
+    "fxLegacyEmpty": "No old exchange residues",
+    "fxUnclassifiedTitle": "Adjustments with no kind",
+    "fxLegacyChanged": "This account has changed — refresh the list and review it again",
+    "fxLegacyCheckFirst": "First say what the hand-entered adjustment is (an exchange difference or another correction)"
   },
   "crm": {
     "title": "CRM",
@@ -3022,12 +3057,13 @@
       "receipt": "Paid into our account",
       "payment": "We paid them",
       "offset": "Settled through a client",
-      "adjust": "Correction / rate difference"
+      "adjust": "Adjustment",
+      "fx_diff": "Exchange difference (automatic)"
     },
     "kindHints": {
       "receipt": "They put money into our account. Cash up, our debt to them up.",
       "payment": "We paid them from a cash box. Cash down, debt down.",
-      "adjust": "Rate difference or a manual correction. May be negative."
+      "adjust": "An exchange difference or a correction. May be negative."
     },
     "whoPaid": "Which client paid",
     "paidTo": "Into whose account",
@@ -3059,7 +3095,23 @@
     "forDealDeferredHint": "⏳ — a deferred deal: if the money is for it, choose it, or the deferral keeps covering other debt.",
     "dealMismatch": "That deal belongs to another client.",
     "tillForbidden": "Money out of or into a cash box on a counterparty is written by the accountant or an admin only.",
-    "recurringChargeNote": "A fixed-cost payment — cancel it on the Expenses page by voiding the expense itself"
+    "recurringChargeNote": "A fixed-cost payment — cancel it on the Expenses page by voiding the expense itself",
+    "adjustKindLabel": "What is it?",
+    "adjustKinds": {
+      "fx": "Exchange difference — goes to profit",
+      "correction": "Correction or opening balance — not in profit",
+      "unset": "kind not stated"
+    },
+    "adjustFxHint": "On a one-currency account the exchange difference closes itself with the payment. Enter an «exchange difference» only on a two-currency account (e.g. a cash buyer), and only in dollars.",
+    "nativeBalances": "In own currency:",
+    "adjustKindRequired": "Choose what this adjustment is",
+    "fxAdjustSingleCurrency": "This account is in one currency — the exchange difference closes itself with the payment.",
+    "fxAdjustLegacy": "This account has an old exchange residue — the accountant closes it under «Exchange residues».",
+    "fxAdjustUsdOnly": "An exchange difference is entered in dollars only.",
+    "fxLegacyLink": "Exchange residues",
+    "classifyFx": "Exchange difference",
+    "classifyCorrection": "Correction",
+    "alreadyClassified": "This adjustment already has a kind."
   },
   "lists": {
     "allRecords": "All",

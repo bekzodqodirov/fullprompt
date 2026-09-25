@@ -9,6 +9,9 @@ import { PnlGapsNote } from '../pnl-gaps';
 import { PnlLossesNote } from '../pnl-losses';
 import { lossesInPeriod } from '@/modules/wms/reports/business';
 import { PageHeader } from '@/components/ui/page';
+import { mayClassifyFx } from '@/modules/wms/finance/fx-door';
+import { legacyFxCount } from '@/modules/wms/finance/fx-legacy';
+import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
 
 /**
  * P&L, one column per month.
@@ -28,11 +31,15 @@ export default async function PnlPage({
   if (!actor.permissions.has('finance.reports')) redirect('/accounting');
   const t = await getTranslations('accounting');
   const { from, to } = resolvePeriod(await searchParams);
-  const [pnl, rate, gaps, losses] = await Promise.all([
+  // The legacy kurs farqi residues (0103) are the classifier's to close, so
+  // the walk is paid only on that person's P&L (fence F8).
+  const mayOpenFx = mayClassifyFx(actor.permissions);
+  const [pnl, rate, gaps, losses, legacyFx] = await Promise.all([
     profitAndLoss(from, to),
     uzsRate(),
     pnlGaps(from, to),
     lossesInPeriod(from, to),
+    mayOpenFx ? legacyFxCount({ includeStaff: maySeeStaffMoney(actor.permissions) }) : Promise.resolve(null),
   ]);
 
   const usd = (value: number) =>
@@ -68,7 +75,7 @@ export default async function PnlPage({
     <div className="mx-auto max-w-lg space-y-3 md:max-w-5xl">
       <PageHeader icon="chart" title={t('pnl')} />
       <PeriodForm from={from} to={to} exportHref="/api/accounting/pnl" />
-      <PnlGapsNote gaps={gaps} />
+      <PnlGapsNote gaps={gaps} legacyFx={legacyFx} mayOpenFx={mayOpenFx} />
 
       <div className="card !p-0">
         <div className="overflow-x-auto">

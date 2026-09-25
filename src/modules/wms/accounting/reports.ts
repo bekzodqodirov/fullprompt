@@ -36,6 +36,7 @@ import {
   transferFxUsd,
 } from './cash-rules';
 import { FX_PNL_SIGN } from '../finance/fx-sign';
+import { isDebit, signedUsd } from '../finance/ledger-kinds';
 import { rideMovementSql, riderLoad } from '../batches/riders';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 
@@ -1147,15 +1148,17 @@ export async function arAging(asOf: string) {
         buckets: [0, 0, 0, 0],
       };
     // A refund (R6a) RAISES what the client owes, like a charge: money handed
-    // back is owed again from that day — it ages from its own date.
-    if (row.type !== 'payment') {
-      entry.balance += money(row.amountUsd);
+    // back is owed again from that day — it ages from its own date. A kurs
+    // farqi row (0103) is judged by its SIGN: a positive one ages like a
+    // charge, a negative one only lowers the balance, like a payment — a
+    // negative «charge» would break the oldest-first walk below.
+    const signed = { type: row.type, amountUsd: money(row.amountUsd) };
+    entry.balance += signedUsd(signed);
+    if (isDebit(signed)) {
       charges.set(row.clientId, [
         ...(charges.get(row.clientId) ?? []),
-        { date: row.txDate, amount: money(row.amountUsd) },
+        { date: row.txDate, amount: signedUsd(signed) },
       ]);
-    } else {
-      entry.balance -= money(row.amountUsd);
     }
     byClient.set(row.clientId, entry);
   }

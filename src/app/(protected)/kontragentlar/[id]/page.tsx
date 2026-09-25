@@ -11,8 +11,14 @@ import {
   partnerBalanceUsd,
   partnerById,
   partnerLedger,
+  partnerNativeBalances,
   raisesBalance,
 } from '@/modules/wms/partners/service';
+import type { PartnerTxType } from '@/modules/wms/partners/ledger-sign';
+import { mayClassifyFx } from '@/modules/wms/finance/fx-door';
+import { fxPnlEffect } from '@/modules/wms/finance/fx-sign';
+import { hasLegacyFx } from '@/modules/wms/finance/fx-legacy';
+import { ClassifyAdjust } from './classify-adjust';
 import { BackLink } from '@/components/back-link';
 import { HistoryTab } from '@/components/history-tab';
 import { PartnerForm } from '../partner-form';
@@ -53,6 +59,7 @@ export default async function PartnerCardPage({
   if (row.staff && !seesStaff) notFound();
 
   const t = await getTranslations('partners');
+  const ta = await getTranslations('accounting');
   const tc = await getTranslations('common');
   const format = await getFormatter();
   const canManage = actor.permissions.has('finance.manage');
@@ -61,9 +68,18 @@ export default async function PartnerCardPage({
   // VED keeps the card and the «kurs farqi» adjust; the kassas are not
   // offered, and the action refuses them anyway.
   const movesTills = canManage && mayPickTill(actor.permissions);
+  // Kurs farqi (0103): who says what a correction IS (Q12's split) and who
+  // reads what a kurs farqi row did to the P&L.
+  const mayClassify = canManage && mayClassifyFx(actor.permissions);
+  const readsPnl = actor.permissions.has('finance.reports');
 
-  const balance = await partnerBalanceUsd(id);
-  const ledger = await partnerLedger(id);
+  const [balance, ledger, natives, legacy] = await Promise.all([
+    partnerBalanceUsd(id),
+    partnerLedger(id),
+    partnerNativeBalances(id),
+    mayClassify ? hasLegacyFx('partner', id) : Promise.resolve(false),
+  ]);
+  const nativeParts = natives.filter((row) => row.native !== 0 || (row.currency !== 'USD' && row.usd !== 0));
   const accounts = movesTills
     ? await db
         .select({ id: moneyAccounts.id, name: moneyAccounts.name })
@@ -120,10 +136,20 @@ export default async function PartnerCardPage({
     : null;
   // On a staff card the two cash kinds are said in payroll words — the same
   // rows and the same signs, only what a person calls them (owner A1c).
-  const kindLabel = (type: string) =>
-    row.staff && (type === 'payment' || type === 'receipt')
-      ? t(`staffKinds.${type}` as 'staffKinds.payment')
-      : t(`kinds.${type}` as 'kinds.charge');
+  // Literal maps (#163): a kind the ledger learns is a type error here.
+  const KIND: Record<PartnerTxType, string> = {
+    charge: t('kinds.charge'),
+    receipt: row.staff ? t('staffKinds.receipt') : t('kinds.receipt'),
+    payment: row.staff ? t('staffKinds.payment') : t('kinds.payment'),
+    offset: t('kinds.offset'),
+    adjust: t('kinds.adjust'),
+    fx_diff: t('kinds.fx_diff'),
+  };
+  const kindLabel = (type: string) => KIND[type as PartnerTxType] ?? type;
+  const ADJUST_KIND: Record<'fx' | 'correction', string> = {
+    fx: t('adjustKinds.fx'),
+    correction: t('adjustKinds.correction'),
+  };
   const editClients = canManage
     ? await db
         .select({ id: clients.id, clientCode: clients.clientCode, name: clients.name })
@@ -199,6 +225,27 @@ export default async function PartnerCardPage({
             ${balance.toFixed(2)}
           </span>
         </p>
+        {nativeParts.some((part) => part.currency !== 'USD') && (
+          <p className="text-xs text-ink-700" data-testid="partner-native-balances">
+            <span className="text-ink-500">{t('nativeBalances')}</span>{' '}
+            <span className="font-mono">
+              {nativeParts
+                .map((part) =>
+                  part.native === 0 && part.currency !== 'USD'
+                    ? `0 ${part.currency} (${part.usd > 0 ? '+' : '−'}$${Math.abs(part.usd).toFixed(2)})`
+                    : `${part.native.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ${part.currency}`,
+                )
+                .join(' · ')}
+            </span>
+          </p>
+        )}
+        {mayClassify && legacy && (
+          <p className="text-xs">
+            <Link href="/accounting/kurs-farqi" className="text-brand-700 underline" data-testid="partner-fx-legacy-link">
+              ⚖️ {t('fxLegacyLink')}
+            </Link>
+          </p>
+        )}
       </div>
 
       {canManage && (
@@ -223,6 +270,7 @@ export default async function PartnerCardPage({
           partnerId={id}
           staff={row.staff}
           movesTills={movesTills}
+          mayClassify={mayClassify}
           accounts={accounts}
           currencies={currencyCodes}
           today={tashkentDay()}
@@ -277,6 +325,23 @@ export default async function PartnerCardPage({
                         ⚠ {t('manualCharge')}
                       </p>
                     )}
+                    {tx.type === 'adjust' && !tx.voidedAt && (
+                      // What the correction IS (0103): the P&L reads the kind.
+                      <p className="text-xs text-ink-500" data-testid="partner-adjust-kind">
+                        {tx.adjustKind === 'fx' || tx.adjustKind === 'correction'
+                          ? ADJUST_KIND[tx.adjustKind]
+                          : t('adjustKinds.unset')}
+                        {!tx.adjustKind && mayClassify && <ClassifyAdjust id={tx.id} />}
+                      </p>
+                    )}
+                    {tx.type === 'fx_diff' && !tx.voidedAt && readsPnl && (
+                      <p className="text-xs font-semibold text-ink-700" data-testid="partner-fx-effect">
+                        {ta('fxEffect', {
+                          kind: fxPnlEffect('partner', usd) >= 0 ? 'gain' : 'loss',
+                          usd: `$${Math.abs(fxPnlEffect('partner', usd)).toFixed(2)}`,
+                        })}
+                      </p>
+                    )}
                     {tx.note && <p className="text-xs text-ink-500">{tx.note}</p>}
                     {tx.voidedAt && (
                       <p className="text-xs font-semibold text-bad">
@@ -300,6 +365,8 @@ export default async function PartnerCardPage({
                     ) : (
                       canManage &&
                       !tx.voidedAt &&
+                      // The system's kurs farqi row changes only with its cycle (Q14).
+                      tx.type !== 'fx_diff' &&
                       (!tx.accountId || movesTills) &&
                       (!(tx.costEntryId || tx.expenseId) || movesTills) && (
                         <VoidTx id={tx.id} partnerId={id} />

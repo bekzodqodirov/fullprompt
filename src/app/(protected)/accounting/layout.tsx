@@ -3,6 +3,7 @@ import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { SubNav, type SubNavItem } from '@/components/ui/sub-nav';
 import { isAnalyst } from '@/modules/platform/ai/tools';
+import { mayClassifyFx } from '@/modules/wms/finance/fx-door';
 
 /**
  * Management accounting section.
@@ -28,6 +29,10 @@ export default async function AccountingLayout({ children }: { children: React.R
           { href: '/accounting/receivables', label: t('receivables'), icon: 'clock' },
           { href: '/accounting/profit', label: t('profitBatch'), icon: 'truck' },
         ] as SubNavItem[])
+      : []),
+    // «Kurs qoldiqlari» (0103) — the classifier's: a close writes the P&L.
+    ...(mayClassifyFx(actor.permissions)
+      ? ([{ href: '/accounting/kurs-farqi', label: t('fxLegacyTitle'), icon: 'exchange' }] as SubNavItem[])
       : []),
     // The owner's monthly plan (0102, 5a) — his and the admin's alone (4a).
     ...(canReport && isAnalyst(actor)

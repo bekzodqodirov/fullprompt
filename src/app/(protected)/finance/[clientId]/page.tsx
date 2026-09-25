@@ -5,7 +5,13 @@ import { db } from '@/modules/platform/db/client';
 import { clients, currencies, deals } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { moneyOwnerFilter } from '@/modules/wms/finance/scope';
-import { clientBalanceUsd, clientLedger } from '@/modules/wms/finance/service';
+import { clientBalanceUsd, clientLedger, clientNativeBalances } from '@/modules/wms/finance/service';
+import Link from 'next/link';
+import type { ClientKind } from '@/modules/wms/finance/ledger-kinds';
+import { mayClassifyFx } from '@/modules/wms/finance/fx-door';
+import { fxPnlEffect } from '@/modules/wms/finance/fx-sign';
+import { hasLegacyFx } from '@/modules/wms/finance/fx-legacy';
+import { crossCloseOffer } from '@/modules/wms/finance/fx-close';
 import { listAccounts } from '@/modules/wms/accounting/service';
 import { ledgerDealsForClient } from '@/modules/wms/deals/service';
 import { bothFiguresForDeals } from '@/modules/wms/calc/upsale-service';
@@ -16,6 +22,7 @@ import { clientCargo } from '@/modules/wms/finance/client-cargo';
 import { MoveChargeForm } from '../move-charge-form';
 import { TxForm } from './tx-form';
 import { VoidButton } from './void-button';
+import { FxCloseButton, FxCloseUndo } from './fx-close-button';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { mayPickTill } from '@/modules/wms/accounting/till-door';
 import { mayVoidLedgerRow } from '@/modules/wms/finance/void-rule';
@@ -36,7 +43,12 @@ export default async function ClientLedgerPage({
   const canRefund = mayPickTill(actor.permissions);
   if (!actor.permissions.has('finance.view') && !canManage) redirect('/');
   const t = await getTranslations('finance');
+  const ta = await getTranslations('accounting');
   const tcargo = await getTranslations('cargo');
+  // Kurs farqi (0103): who may SAY money is FX (the close, the links) and who
+  // reads what it did to the P&L («bizga foyda/zarar», law 4's audience).
+  const mayClassify = mayClassifyFx(actor.permissions);
+  const readsPnl = actor.permissions.has('finance.reports');
   const format = await getFormatter();
 
   const client = await db.query.clients.findFirst({ where: eq(clients.id, clientId) });
@@ -60,7 +72,7 @@ export default async function ClientLedgerPage({
         .from(deals)
         .where(eq(deals.clientId, clientId))
     : [];
-  const [balance, ledger, currencyRows, accounts, openDeals, figures, cargo] = await Promise.all([
+  const [balance, ledger, currencyRows, accounts, openDeals, figures, cargo, natives, legacy, closeOffer] = await Promise.all([
     clientBalanceUsd(clientId),
     clientLedger(clientId),
     db.select({ code: currencies.code }).from(currencies).where(eq(currencies.active, true)),
@@ -71,6 +83,9 @@ export default async function ClientLedgerPage({
     bothFiguresForDeals(clientDeals.map((d) => d.id)),
     // Read once for the cargo block AND the card form's trucks (0104).
     clientCargo(clientId),
+    clientNativeBalances(clientId),
+    mayClassify ? hasLegacyFx('client', clientId) : Promise.resolve(false),
+    canManage && mayClassify ? crossCloseOffer(clientId) : Promise.resolve(null),
   ]);
   // The trucks a charge may name, and «🚚 Ko'chirish»'s targets: the
   // client's own ride trucks (never an internal leg — never priced, C1a) and
@@ -97,6 +112,18 @@ export default async function ClientLedgerPage({
     .map(({ at: _at, ...truck }) => truck);
   // A price moved off the card or off a truck its cargo never rode (0104).
   const noCargoTrucks = new Set(cargo.offTrip.filter((off) => off.reason === 'no_cargo').map((off) => off.batchId));
+  // The account in its OWN money (0103, Q14): «12 500 000 UZS · 150 USD». A
+  // currency at 0 natively with dollars left is a pre-deploy residue.
+  const foreign = natives.some((row) => row.currency !== 'USD');
+  const nativeParts = natives.filter((row) => row.native !== 0 || (row.currency !== 'USD' && row.usd !== 0));
+  // Literal map (#163): a kind added to the ledger is a type error here, not
+  // a «➕ payment» drawn in the ELSE (the pre-0103 reading of a kurs farqi row).
+  const KIND: Record<ClientKind, { label: string; tone: string }> = {
+    charge: { label: `🧾 ${t('charge')}`, tone: 'text-bad' },
+    payment: { label: `➕ ${t('payment')}`, tone: 'text-good' },
+    refund: { label: `↩️ ${t('refund')}`, tone: 'text-warn' },
+    fx_diff: { label: t('fxDiff'), tone: 'text-ink-700' },
+  };
   const quoted = clientDeals
     .map((d) => ({ ...d, fig: figures.get(d.id) }))
     .filter((d): d is typeof d & { fig: { floorUsd: number; clientPriceUsd: number } } => Boolean(d.fig));
@@ -117,6 +144,33 @@ export default async function ClientLedgerPage({
         </span>
         {balance > 0.009 && <span className="text-sm font-semibold text-bad">{t('debtor')}</span>}
       </div>
+      {foreign && nativeParts.length > 0 && (
+        <p className="text-xs text-ink-700" data-testid="finance-native-balances">
+          <span className="text-ink-500">{t('nativeBalances')}</span>{' '}
+          {nativeParts.map((row, index) => (
+            <span key={row.currency} className="font-mono">
+              {index > 0 ? ' · ' : ''}
+              {row.native.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} {row.currency}
+              {row.native === 0 && row.currency !== 'USD' ? (
+                <>
+                  {' '}
+                  ({row.usd > 0 ? '+' : '−'}${Math.abs(row.usd).toFixed(2)}, {t('fxResidueOld')})
+                </>
+              ) : null}
+            </span>
+          ))}
+        </p>
+      )}
+      {mayClassify && legacy && (
+        <p className="text-xs">
+          <Link href="/accounting/kurs-farqi" className="text-brand-700 underline" data-testid="finance-fx-legacy-link">
+            ⚖️ {t('fxLegacyLink')}
+          </Link>
+        </p>
+      )}
+      {closeOffer && closeOffer.refusal === null && (
+        <FxCloseButton clientId={clientId} amountUsd={closeOffer.balanceUsd} />
+      )}
 
       {quoted.length > 0 ? (
         <section className="card !p-3" data-testid="both-figures">
@@ -171,15 +225,29 @@ export default async function ClientLedgerPage({
             className={`border-b border-line py-2 text-sm last:border-0 ${tx.voidedAt ? 'opacity-50' : ''}`}
           >
             <div className="flex items-baseline gap-2">
-              <span
-                className={`font-bold ${tx.type === 'charge' ? 'text-bad' : tx.type === 'refund' ? 'text-warn' : 'text-good'}`}
-              >
-                {tx.type === 'charge' ? `🧾 ${t('charge')}` : tx.type === 'refund' ? `↩️ ${t('refund')}` : `➕ ${t('payment')}`}
+              <span className={`font-bold ${KIND[tx.type as ClientKind]?.tone ?? 'text-ink-700'}`}>
+                {KIND[tx.type as ClientKind]?.label ?? tx.type}
               </span>
-              <span className={`font-mono font-extrabold ${tx.voidedAt ? 'line-through' : ''}`}>
-                {Number(tx.amount)} {tx.currency}
-              </span>
-              {tx.currency !== 'USD' && (
+              {tx.type === 'fx_diff' ? (
+                // Native 0 by CHECK: the dollars ARE the row, signed as the
+                // ledger adds them.
+                <span className={`font-mono font-extrabold ${tx.voidedAt ? 'line-through' : ''}`}>
+                  {Number(tx.amountUsd) > 0 ? '+' : '−'}${Math.abs(Number(tx.amountUsd)).toFixed(2)}
+                </span>
+              ) : (
+                <span className={`font-mono font-extrabold ${tx.voidedAt ? 'line-through' : ''}`}>
+                  {Number(tx.amount)} {tx.currency}
+                </span>
+              )}
+              {tx.type === 'fx_diff' && readsPnl && !tx.voidedAt && (
+                <span className="text-xs font-semibold text-ink-700" data-testid="tx-fx-effect">
+                  {ta('fxEffect', {
+                    kind: fxPnlEffect('client', Number(tx.amountUsd)) >= 0 ? 'gain' : 'loss',
+                    usd: `$${Math.abs(fxPnlEffect('client', Number(tx.amountUsd))).toFixed(2)}`,
+                  })}
+                </span>
+              )}
+              {tx.type !== 'fx_diff' && tx.currency !== 'USD' && (
                 <span className="font-mono text-xs text-ink-500">≈ ${Number(tx.amountUsd).toFixed(2)}</span>
               )}
               {tx.method && (
@@ -198,10 +266,23 @@ export default async function ClientLedgerPage({
                   {dealCode}
                 </span>
               )}
+              {tx.type === 'fx_diff' && (
+                <span>{tx.currency === 'USD' ? t('fxCloseNote') : t('fxDiffNote', { currency: tx.currency })}</span>
+              )}
               {tx.note && <span className="truncate">{tx.note}</span>}
               <span>{createdByName}</span>
               {tx.voidedAt ? (
                 <span className="text-bad">✖ {t('voided')}: {tx.voidReason}</span>
+              ) : tx.type === 'fx_diff' ? (
+                // The system's row changes only with its cycle; the hand close
+                // (a DOLLAR row) has its own undo, for its own audience.
+                canManage &&
+                mayClassify &&
+                tx.currency === 'USD' && (
+                  <span className="ml-auto">
+                    <FxCloseUndo id={tx.id} clientId={clientId} />
+                  </span>
+                )
               ) : (
                 // The ✖ is drawn exactly where the void's own claim would
                 // let it through (Q19: a placed payment and a refund are the

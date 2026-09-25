@@ -7,14 +7,29 @@ import type { PnlGaps } from '@/modules/wms/accounting/reports';
  * Renders nothing when there is nothing to say — a warning that is always
  * there is one nobody reads.
  */
-export async function PnlGapsNote({ gaps }: { gaps: PnlGaps }) {
+export async function PnlGapsNote({
+  gaps,
+  legacyFx = null,
+  mayOpenFx = false,
+}: {
+  gaps: PnlGaps;
+  /**
+   * The legacy kurs farqi residues (0103) — `legacyFxCount`, which the P&L
+   * PAGE computes and `pnlGaps` never does (fence F8): the dashboard and the
+   * XLSX read `pnlGaps` too and must not pay for a walk of all history.
+   */
+  legacyFx?: { accounts: number; usd: number } | null;
+  /** `mayClassifyFx` — the links to «Kurs qoldiqlari» are its audience's. */
+  mayOpenFx?: boolean;
+}) {
   if (
     gaps.manualCharges.count === 0 &&
     gaps.unconverted.count === 0 &&
     gaps.onNoBox.count === 0 &&
     gaps.unclassifiedAdjusts.count === 0 &&
     gaps.kassaUsdMissing.count === 0 &&
-    gaps.transferUsdMissing.count === 0
+    gaps.transferUsdMissing.count === 0 &&
+    !(legacyFx && legacyFx.accounts > 0)
   ) {
     return null;
   }
@@ -71,6 +86,27 @@ export async function PnlGapsNote({ gaps }: { gaps: PnlGaps }) {
             count: gaps.unclassifiedAdjusts.count,
             usd: `$${usd(gaps.unclassifiedAdjusts.usd)}`,
           })}
+          {mayOpenFx && (
+            <>
+              {' '}
+              <Link href="/accounting/kurs-farqi#adjusts" className="font-normal text-brand-700 underline">
+                {t('gapOpenFx')}
+              </Link>
+            </>
+          )}
+        </p>
+      )}
+      {legacyFx && legacyFx.accounts > 0 && (
+        <p className="font-semibold text-warn" data-testid="pnl-gap-legacy-fx">
+          ⚠ {t('gapLegacyFx', { count: legacyFx.accounts, usd: `$${usd(legacyFx.usd)}` })}
+          {mayOpenFx && (
+            <>
+              {' '}
+              <Link href="/accounting/kurs-farqi" className="font-normal text-brand-700 underline">
+                {t('gapOpenFx')}
+              </Link>
+            </>
+          )}
         </p>
       )}
       {gaps.kassaUsdMissing.count > 0 && (

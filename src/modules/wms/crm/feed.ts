@@ -200,7 +200,9 @@ export async function clientFeed(
         )
       FROM client_transactions t
       JOIN users u ON u.id = t.created_by
-      WHERE t.client_id = ${clientId} AND t.created_at < ${cutoff}
+      -- A kurs farqi row (0103) moves dollars, not money: the ELSE above
+      -- would draw it as a «0 UZS» charge on the seller's card.
+      WHERE t.client_id = ${clientId} AND t.created_at < ${cutoff} AND t.type <> 'fx_diff'
 
       UNION ALL
 

@@ -16,6 +16,8 @@ import {
 import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 import { mayPickTill } from '@/modules/wms/accounting/till-door';
 import { amountRefusal } from '@/modules/wms/finance/money-bounds';
+import { mayClassifyFx } from '@/modules/wms/finance/fx-door';
+import { closeCrossCurrencyResidue, FxCloseError, voidFxClose } from '@/modules/wms/finance/fx-close';
 
 export interface TxFormState {
   ok?: boolean;
@@ -204,4 +206,71 @@ export async function placePaymentAction(formData: FormData): Promise<void> {
   revalidatePath('/finance/reestr');
   revalidatePath('/accounting/balance');
   revalidatePath('/accounting');
+}
+
+const fxCloseSchema = z.object({ clientId: z.string().uuid() });
+
+/**
+ * «Kurs farqi bilan yopish» (Q24 b): the accountant and the admin only
+ * (`mayClassifyFx` — a kurs farqi row moves the P&L, and the VED holds
+ * finance.manage without the P&L), every admission re-derived by the service.
+ */
+export async function closeFxResidueAction(input: unknown): Promise<TxFormState> {
+  const parsed = fxCloseSchema.safeParse(input);
+  if (!parsed.success) return { error: 'validation' };
+  let actor;
+  try {
+    actor = await authorize('finance.manage');
+  } catch (err) {
+    if (err instanceof AuthError) return { error: 'forbidden' };
+    throw err;
+  }
+  try {
+    await closeCrossCurrencyResidue(
+      parsed.data.clientId,
+      { actorId: actor.id, ...(await requestMeta()) },
+      { mayClassify: mayClassifyFx(actor.permissions) },
+    );
+  } catch (err) {
+    if (err instanceof FxCloseError) return { error: err.code };
+    throw err;
+  }
+  revalidatePath('/finance');
+  revalidatePath(`/finance/${parsed.data.clientId}`);
+  revalidatePath('/accounting/pnl');
+  return { ok: true };
+}
+
+const fxUndoSchema = z.object({
+  id: z.string().uuid(),
+  clientId: z.string().uuid(),
+  reason: z.string().trim().min(2).max(500),
+});
+
+/** The hand close's own undo (the ledger's void refuses every kurs farqi row). */
+export async function voidFxCloseAction(input: unknown): Promise<TxFormState> {
+  const parsed = fxUndoSchema.safeParse(input);
+  if (!parsed.success) return { error: 'validation' };
+  let actor;
+  try {
+    actor = await authorize('finance.manage');
+  } catch (err) {
+    if (err instanceof AuthError) return { error: 'forbidden' };
+    throw err;
+  }
+  try {
+    await voidFxClose(
+      parsed.data.id,
+      parsed.data.reason,
+      { actorId: actor.id, ...(await requestMeta()) },
+      { mayClassify: mayClassifyFx(actor.permissions) },
+    );
+  } catch (err) {
+    if (err instanceof FxCloseError) return { error: err.code };
+    throw err;
+  }
+  revalidatePath('/finance');
+  revalidatePath(`/finance/${parsed.data.clientId}`);
+  revalidatePath('/accounting/pnl');
+  return { ok: true };
 }

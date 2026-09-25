@@ -97,6 +97,12 @@ export default async function FinancePage() {
                   }`}
                 >
                   ${r.balanceUsd.toFixed(2)}
+                  {/* Kurs farqi (0103): the columns still add up to the balance. */}
+                  {r.fxUsd !== 0 && (
+                    <span className="block text-2xs font-normal text-ink-500" data-testid="finance-fx-col">
+                      {t('fxCol')} {r.fxUsd > 0 ? '+' : '−'}${Math.abs(r.fxUsd).toFixed(2)}
+                    </span>
+                  )}
                 </td>
               </tr>
             ))}

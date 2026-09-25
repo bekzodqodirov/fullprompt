@@ -329,6 +329,8 @@ export async function reconcileFxResidueTx(
   tx: Tx,
   owners: { clientIds?: string[]; partnerIds?: string[] },
   ctx: AuditContext,
+  /** What the audit rows say wrote them — the deploy script says `fx_history`. */
+  source: 'fx_residue' | 'fx_history' = 'fx_residue',
 ): Promise<FxChange[]> {
   const clientIds = [...new Set(owners.clientIds ?? [])].filter(Boolean);
   const partnerIds = [...new Set(owners.partnerIds ?? [])].filter(Boolean);
@@ -392,7 +394,7 @@ export async function reconcileFxResidueTx(
           entityType: ledger === 'client' ? 'client_transaction' : 'partner_transaction',
           entityId: row.id,
           action: 'void',
-          after: { from: 'fx_residue', anchorId: row.anchor_id, currency: row.currency, residueUsd: -Number(row.amount_usd) },
+          after: { from: source, anchorId: row.anchor_id, currency: row.currency, residueUsd: -Number(row.amount_usd) },
         });
       }
     }
@@ -433,7 +435,7 @@ export async function reconcileFxResidueTx(
           entityType: ledger === 'client' ? 'client_transaction' : 'partner_transaction',
           entityId: base.id,
           action: 'create',
-          after: { from: 'fx_residue', anchorId: base.fxAnchorId, currency: base.currency, residueUsd: cycle.residueCents / 100 },
+          after: { from: source, anchorId: base.fxAnchorId, currency: base.currency, residueUsd: cycle.residueCents / 100 },
         });
       }
     }

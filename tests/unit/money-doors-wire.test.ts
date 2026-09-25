@@ -351,8 +351,10 @@ describe('U33 (owner b) — a kassa moved on a counterparty\u2019s card is the k
     expect(page).toMatch(/const accounts = movesTills\s*\?/);
     // …nor on a debt a cost or an expense wrote (review of wc): the action
     // refuses it, and a fire-and-forget ✕ that silently does nothing is worse.
+    // 0103 put the system's kurs farqi row out of the ✕'s reach as well (it
+    // changes only with its cycle, Q14) — one more clause, the same door.
     expect(page).toMatch(
-      /canManage &&\s*!tx\.voidedAt &&\s*\(!tx\.accountId \|\| movesTills\) &&\s*\(!\(tx\.costEntryId \|\| tx\.expenseId\) \|\| movesTills\) && \(\s*<VoidTx/,
+      /canManage &&\s*!tx\.voidedAt &&\s*(?:\/\/[^\n]*\n\s*)?tx\.type !== 'fx_diff' &&\s*\(!tx\.accountId \|\| movesTills\) &&\s*\(!\(tx\.costEntryId \|\| tx\.expenseId\) \|\| movesTills\) && \(\s*<VoidTx/,
     );
     const form = read('src/app/(protected)/kontragentlar/[id]/tx-form.tsx');
     expect(form).toContain('const kinds = movesTills ? TYPES : TYPES.filter((code) => !CASH.has(code));');

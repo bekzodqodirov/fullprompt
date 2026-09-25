@@ -145,8 +145,10 @@ export async function moneySnapshot(): Promise<MoneySnapshot> {
       // payment ever made, gross. Netting the refund into «paid» (U26) made a
       // refund handed back TODAY read as debt older than 60 days, while
       // /accounting/receivables (arAging) ages it from its own date.
-      oldDebits: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) filter (where ${clientTransactions.type} IN ('charge', 'refund') AND ${clientTransactions.txDate} < ${oldCutoff}), 0)`,
-      paid: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) filter (where ${clientTransactions.type} = 'payment'), 0)`,
+      // A kurs farqi row (0103) by its sign, as arAging judges it: > 0 is a
+      // debit that ages from its own date, < 0 settles like a payment.
+      oldDebits: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) filter (where (${clientTransactions.type} IN ('charge', 'refund') OR (${clientTransactions.type} = 'fx_diff' AND ${clientTransactions.amountUsd} > 0)) AND ${clientTransactions.txDate} < ${oldCutoff}), 0)`,
+      paid: sql<string>`coalesce(sum(CASE WHEN ${clientTransactions.type} = 'payment' THEN ${clientTransactions.amountUsd} WHEN ${clientTransactions.type} = 'fx_diff' AND ${clientTransactions.amountUsd} < 0 THEN -${clientTransactions.amountUsd} ELSE 0 END), 0)`,
     })
     .from(clientTransactions)
     .where(isNull(clientTransactions.voidedAt))

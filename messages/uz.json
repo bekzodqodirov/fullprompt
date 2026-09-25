@@ -1394,7 +1394,22 @@
     "droppedShort": "⚠ Narx qo‘yilgandan keyin {n} karobka bu mashinaga yuklanmadi — ularning narxini {codes} ga ko‘chiring",
     "droppedFoundBack": "⚠ {n} karobka yuklandi deb skanerlangan, lekin {origin} omborida topildi — ularni bu narxdan chiqaring: yo‘lkirasi ham, bu mashina rastamojkasi ulushi ham {codes} da yoziladi",
     "pricedElsewhereShort": "⚠ Bu mijozga {code} da narx qo‘yilgan ({usd}), lekin {n} karobka o‘sha mashinada ketmagan — narxni shu mashinaga ko‘chiring",
-    "pricedElsewhereFoundBack": "⚠ {n} karobka {code} ga yuklandi deb skanerlangan, lekin omborda qolgan — ular shu mashinada narxlanadi: yo‘lkira ham, {code} rastamojka ulushi ham (tannarxda «shu reysgacha»)"
+    "pricedElsewhereFoundBack": "⚠ {n} karobka {code} ga yuklandi deb skanerlangan, lekin omborda qolgan — ular shu mashinada narxlanadi: yo‘lkira ham, {code} rastamojka ulushi ham (tannarxda «shu reysgacha»)",
+    "fxDiff": "⚖️ Kurs farqi",
+    "fxDiffNote": "{currency} hisobi o‘z valyutasida 0 ga tushdi — dollar qoldig‘i yopildi",
+    "nativeBalances": "O‘z valyutasida:",
+    "fxResidueOld": "eski kurs qoldig‘i",
+    "fxCol": "Kurs farqi",
+    "fxClose": "Kurs farqi bilan yopish ({usd})",
+    "fxCloseHint": "Mijoz bir valyutada hisoblangan, boshqasida to‘lagan: ikki kurs farqidan qolgan {usd} «Kurs farqi» bo‘lib yopiladi va P&L ga tushadi.",
+    "fxCloseNote": "Ikki valyutali hisob qoldig‘i qo‘lda yopildi",
+    "fxCloseUndo": "Yopishni bekor qilish",
+    "fxCloseNothing": "Yopadigan qoldiq yo‘q.",
+    "fxCloseSingleCurrency": "Bu hisob bitta valyutada — kurs farqi to‘lov bilan o‘zi yopiladi.",
+    "fxCloseTooLarge": "Qoldiq kurs farqidan katta (to‘lovning 2 % yoki $5 dan ortiq) — bu haqiqiy qarz, to‘lovni yoki narxni tekshiring.",
+    "fxCloseLegacyFirst": "Bu hisobda eski kurs qoldig‘i bor — avval uni «Kurs qoldiqlari»da ko‘rib chiqing.",
+    "fxCloseRefused": "Yopib bo‘lmadi — sahifani yangilab, qaytadan urinib ko‘ring.",
+    "fxLegacyLink": "Kurs qoldiqlari"
   },
   "map": {
     "title": "Xarita",
@@ -1714,7 +1729,27 @@
     "cargoUnrated": "Yuk xarajatlari — kursi hali yo‘q (kassadan chiqqan)",
     "gapAdjustUnclassified": "{count} ta tuzatishning turi aytilmagan (kurs farqimi yoki xato tuzatishmi): {usd} — P&L ga qo‘shilmadi",
     "gapKassaUsdMissing": "{count} ta kassadan to‘langan xarajatning kassa valyutasida kursi yo‘q — kurs farqi hisoblanmadi",
-    "gapTransferUsdMissing": "{count} ta kassalararo o‘tkazmaning qabul qilgan kassa valyutasida kursi yo‘q — kurs farqi hisoblanmadi"
+    "gapTransferUsdMissing": "{count} ta kassalararo o‘tkazmaning qabul qilgan kassa valyutasida kursi yo‘q — kurs farqi hisoblanmadi",
+    "fxEffect": "{kind, select, gain {bizga foyda {usd}} other {bizga zarar {usd}}}",
+    "gapLegacyFx": "{count} ta hisob o‘z valyutasida 0 ga tushgan, lekin dollar qoldig‘i bor: {usd} — hali P&L ga tushmagan",
+    "gapOpenFx": "Ko‘rib chiqish",
+    "fxLegacyTitle": "Kurs qoldiqlari",
+    "fxLegacyHint": "Bu hisoblar o‘z valyutasida 0 ga tushgan, lekin dollar qoldig‘i qolgan. Mijozlarnikini tizim o‘zi yopadi. Firmalarnikini bu yerda yopasiz — agar ular ilgari qo‘lda «kurs farqi» bilan yopilgan bo‘lsa, «Tekshiring» deb turadi.",
+    "fxLegacyRow": "{currency} hisobi {date} kuni 0 ga tushgan · qoldiq {usd} · {month} foydasiga",
+    "fxLegacyAuto": "Tizim o‘zi yopadi",
+    "fxLegacyCheck": "Tekshiring",
+    "fxLegacyCheckAdjust": "{date} kuni qo‘lda yozilgan {usd} tuzatish bor — u shu qoldiqni yopganmi?",
+    "fxLegacyCheckUsdRow": "{date} kuni {usd} lik dollar yozuvi bor — agar u shu qoldiqni yopish uchun yozilgan bo‘lsa, avval uni bekor qiling",
+    "fxLegacyAdjustFx": "Ha, bu kurs farqi edi",
+    "fxLegacyAdjustCorrection": "Yo‘q, boshqa tuzatish",
+    "fxLegacyHand": "Qo‘lda kurs farqi bilan yopilgan ✓",
+    "fxLegacyClose": "Kurs farqi bilan yopish",
+    "fxLegacyCloseAll": "Hammasini yopish ({count} ta, {usd})",
+    "fxLegacyDone": "{closed} tasi yopildi, {changed} tasi o‘zgargan — qayta ko‘ring",
+    "fxLegacyEmpty": "Eski kurs qoldig‘i yo‘q",
+    "fxUnclassifiedTitle": "Turi aytilmagan tuzatishlar",
+    "fxLegacyChanged": "Bu hisob o‘zgargan — ro‘yxatni yangilab, qaytadan ko‘ring",
+    "fxLegacyCheckFirst": "Avval qo‘lda yozilgan tuzatishning turini ayting (kurs farqimi yoki boshqa tuzatishmi)"
   },
   "crm": {
     "title": "CRM",
@@ -3022,12 +3057,13 @@
       "receipt": "Hisobimizga pul tushirdi",
       "payment": "To‘ladik",
       "offset": "Mijoz orqali yopildi",
-      "adjust": "Tuzatish / kurs farqi"
+      "adjust": "Tuzatish",
+      "fx_diff": "Kurs farqi (avtomatik)"
     },
     "kindHints": {
       "receipt": "U bizning hisobimizga pul tushirdi. Kassa ko‘payadi, unga qarzimiz oshadi.",
       "payment": "Biz unga kassadan to‘ladik. Kassa kamayadi, qarzimiz kamayadi.",
-      "adjust": "Kurs farqi yoki qo‘lda tuzatish. Manfiy ham yozish mumkin."
+      "adjust": "Kurs farqi yoki xato tuzatish. Manfiy ham yozish mumkin."
     },
     "whoPaid": "Qaysi mijoz to‘ladi",
     "paidTo": "Kimning hisobiga",
@@ -3059,7 +3095,23 @@
     "forDealDeferredHint": "⏳ — kechiktirilgan bitim: pul shu bitim uchun bo‘lsa, uni tanlang, aks holda kechiktirish boshqa qarzni yopib turaveradi.",
     "dealMismatch": "Bu bitim boshqa mijozniki.",
     "tillForbidden": "Kontragent bo‘yicha kassadan chiqqan va kassaga kirgan pulni faqat buxgalter yoki admin yozadi.",
-    "recurringChargeNote": "Doimiy xarajat to‘lovi — uni «Xarajatlar» sahifasida xarajatning o‘zini bekor qilib bekor qiling"
+    "recurringChargeNote": "Doimiy xarajat to‘lovi — uni «Xarajatlar» sahifasida xarajatning o‘zini bekor qilib bekor qiling",
+    "adjustKindLabel": "Bu nima?",
+    "adjustKinds": {
+      "fx": "Kurs farqi — foydaga tushadi",
+      "correction": "Xato tuzatish yoki boshlang‘ich qoldiq — foydaga tushmaydi",
+      "unset": "turi aytilmagan"
+    },
+    "adjustFxHint": "Bitta valyutadagi hisobda kurs farqi to‘lov bilan o‘zi yopiladi. «Kurs farqi»ni faqat ikki valyutali hisobda (masalan, naqd almashtiruvchi) va faqat dollarda yozing.",
+    "nativeBalances": "O‘z valyutasida:",
+    "adjustKindRequired": "Tuzatish nima ekanini tanlang",
+    "fxAdjustSingleCurrency": "Bu hisob bitta valyutada — kurs farqi to‘lov bilan o‘zi yopiladi.",
+    "fxAdjustLegacy": "Bu hisobda eski kurs qoldig‘i bor — uni buxgalter «Kurs qoldiqlari»da yopadi.",
+    "fxAdjustUsdOnly": "Kurs farqi faqat dollarda yoziladi.",
+    "fxLegacyLink": "Kurs qoldiqlari",
+    "classifyFx": "Kurs farqi",
+    "classifyCorrection": "Tuzatish",
+    "alreadyClassified": "Bu tuzatishning turi allaqachon aytilgan."
   },
   "lists": {
     "allRecords": "Hammasi",

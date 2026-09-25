@@ -13,6 +13,7 @@ import {
   warehouses,
 } from '../../platform/db/schema';
 import { isInternalLeg } from '../batches/internal';
+import { settlesUsd } from './ledger-kinds';
 import { rideMovementSql } from '../batches/riders';
 import { offTruckPrices } from './off-truck';
 import { uncoveredTripsOn } from './unpriced';
@@ -237,12 +238,10 @@ export async function clientCargo(clientId: string): Promise<ClientCargo> {
     .map((row) => ({ batchId: row.batchId, owed: Number(row.amountUsd) }));
   const chargedUsd = charges.reduce((a, c) => a + c.owed, 0);
   // Net of what was handed back (R6a): a refund puts money the client paid
-  // back into their hands, so it no longer settles anything.
-  const paidUsd = ledger.reduce(
-    (a, row) =>
-      a + (row.type === 'payment' ? Number(row.amountUsd) : row.type === 'refund' ? -Number(row.amountUsd) : 0),
-    0,
-  );
+  // back into their hands, so it no longer settles anything. A kurs farqi row
+  // (0103) settles by its own dollars, or the trips keep showing the residue
+  // after the account closed.
+  const paidUsd = ledger.reduce((a, row) => a + settlesUsd({ type: row.type, amountUsd: Number(row.amountUsd) }), 0);
 
   let unapplied = paidUsd;
   for (const charge of charges) {

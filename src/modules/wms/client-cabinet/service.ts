@@ -540,7 +540,9 @@ export async function debtSummary(clientId: string): Promise<DebtSummary> {
   ]);
   return {
     balanceUsd,
-    recent: ledger.slice(0, 5).map(({ tx }) => ({
+    // A kurs farqi row (0103) is the company's bookkeeping: the balance above
+    // already reads it, and a «0 UZS» line is noise to a customer.
+    recent: ledger.filter(({ tx }) => tx.type !== 'fx_diff').slice(0, 5).map(({ tx }) => ({
       type: tx.type,
       amount: Number(tx.amount),
       currency: tx.currency,
