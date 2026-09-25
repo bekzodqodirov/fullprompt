@@ -1321,7 +1321,13 @@
     "refund": "Pul qaytarildi",
     "refundAccount": "Qaysi kassadan qaytarildi",
     "refundOnBatch": "Qaytarish partiyaga yozilmaydi — u narx emas.",
-    "totalAdvances": "Avanslar (biz qarzmiz)"
+    "totalAdvances": "Avanslar (biz qarzmiz)",
+    "fateLost": "{count} ta yo‘qolgan",
+    "fateMissing": "{count} ta yetib kelmagan",
+    "fateLeftBehind": "{count} ta jo‘nash skladida qolgan — bu mashinada ketmagan",
+    "arrivedLine": "Yetib kelgan: {boxes} 📦 · {kg} kg — narxni shunga qarab qo‘ying",
+    "perKgArrived": "/kg yetib kelgan",
+    "perKgLoaded": "/kg yuklangan"
   },
   "map": {
     "title": "Xarita",
@@ -1472,7 +1478,7 @@
     "recurringActive": "Faol — har oy yoziladi",
     "internalRowsNote": "Ichki reyslar (Xitoy ichida) faqat xarajat sifatida ko‘rsatiladi: ularga narx qo‘yilmaydi, xarajati esa chegaradan o‘tadigan mashinaning tannarxida «shu reysgacha» bo‘lib turibdi — shuning uchun jami qatoriga qo‘shilmagan.",
     "unallocatedNote": "Mashinalarga yozilgan {usd} xarajat hech bir qutiga taqsimlanmagan — u hech bir tannarxda yo‘q (mashinalar: {count} ta). Xarajatni partiya kartasida tekshiring.",
-    "unbatchedNote": "Bu jadvalga kirmagan (shu davr sanalari bo‘yicha): mashinaga bog‘lanmagan tushum {revenue} — mijoz hisobida partiyasiz qo‘yilgan narxlar. Prixod, qabul, yashik va zavod reysi xarajatlari esa yuk qaysi mashinada ketgan bo‘lsa, o‘sha mashinaning tannarxida turibdi.",
+    "unbatchedNote": "Bu jadvalga kirmagan (shu davr sanalari bo‘yicha): mashinaga bog‘lanmagan tushum {revenue} — mijoz hisobida partiyasiz qo‘yilgan narxlar.",
     "clientRefunds": "Mijozlarga qaytarilgan",
     "balClientAdvances": "Mijozlar avansi (biz qarzmiz)",
     "beforeOpening": "{count} ta yozuv boshlang‘ich qoldiq sanasidan oldin — ular shu qoldiq ichida, qayta qo‘shilmaydi",
@@ -1559,7 +1565,17 @@
     "noRateOutOfNet": "kurs yo‘q — Balansga kirmagan",
     "cashOpexNoKassa": "kassasi ko‘rsatilmagan xarajatlar: {count} ta, {usd} — chiqimda bor, hech bir kassa kamaymagan",
     "tillNegative": "minusda",
-    "balNegativeTills": "{n} ta kassa minusda — chiqim kirimdan ko‘p yozilgan, tekshiring"
+    "balNegativeTills": "{n} ta kassa minusda — chiqim kirimdan ko‘p yozilgan, tekshiring",
+    "unbatchedCostNote": "Hech bir narxli mashinaga chiqmagan yuk ustidagi xarajat (xarajat sanasi bo‘yicha): hisobdan chiqarilgan {lost}, mashinasiz topshirilgan yoki qaytarilgan {issued}, hali mashinani kutayotgan {waiting}. Qolgan prixod, qabul, yashik va zavod reysi xarajatlari yuk qaysi mashinada ketgan bo‘lsa, o‘sha mashinaning tannarxida turibdi.",
+    "unclaimedRow": "Egasiz yuk (markirovka)",
+    "unclaimedRowHint": "{receipts} ta prixod — mijozga biriktirilganda xarajati unga o‘tadi",
+    "clientUnallocatedNote": "Hech bir qutiga taqsimlanmagan {usd} xarajat ({count} ta: {scopes}) — u hech bir mijozda yo‘q, P&L bilan farq shu summa.",
+    "gapScope": {
+      "batch": "yuki yo‘q mashina",
+      "pickup": "prixodi ulanmagan zavod reysi",
+      "receipt": "prixod qutilariga tushmagan",
+      "crate": "yashik qutilariga tushmagan"
+    }
   },
   "crm": {
     "title": "CRM",

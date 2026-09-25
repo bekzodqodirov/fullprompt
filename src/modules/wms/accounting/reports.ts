@@ -25,6 +25,7 @@ import {
 import { clientBalances, clientTotals, unplacedPaymentSql } from '../finance/service';
 import { internalLegSql } from '../batches/internal';
 import { cashClientTxSql, cashCostSql, cashExpenseSql, costCashDay, mergedFrom } from './cash-rules';
+import { rideMovementSql, riderLoad } from '../batches/riders';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
@@ -913,7 +914,14 @@ export async function arAging(asOf: string) {
  * it is a cost row and never a margin: its profit, margin and per-kg are
  * null. Its cost is already inside the export truck's figure as «shu
  * reysgacha» (`prevUsd`), which is why the screens leave internal rows out of
- * their totals — summing both counts that money twice.
+ * their totals — summing both counts that money twice. Every OTHER row is
+ * disjoint from its neighbours (U16: an allocation counts on exactly one
+ * priced truck, `batchLandedCostTotals`), so their sum is the money once.
+ *
+ * Boxes, kg and m³ are the truck's RIDERS (`riderLoad`) — the base the freight
+ * was split over, so a per-kg profit divides the right money by the right
+ * kilos (a carton found back at the origin never rode; one scanned off
+ * without a load scan did).
  */
 export async function profitByBatch(from: string, to: string) {
   const rows = await db
@@ -946,23 +954,6 @@ export async function profitByBatch(from: string, to: string) {
         WHERE ce.batch_id = ${batches}.id AND ce.voided_at IS NULL AND ce.amount_usd IS NOT NULL
           AND NOT EXISTS (SELECT 1 FROM cost_allocations ca WHERE ca.cost_entry_id = ce.id)
       ), 0)`,
-      boxCount: sql<number>`coalesce((
-        SELECT count(*) FROM box_movements bm
-        JOIN boxes b ON b.id = bm.box_id AND b.status <> 'void'
-        WHERE bm.ref_type = 'batch' AND bm.ref_id = ${batches}.id AND bm.cause = 'batch_departed'
-      ), 0)`,
-      kg: sql<string>`coalesce((
-        SELECT sum(rl.total_weight_kg / rl.box_count) FROM box_movements bm
-        JOIN boxes b ON b.id = bm.box_id AND b.status <> 'void'
-        JOIN receipt_lots rl ON rl.id = b.lot_id
-        WHERE bm.ref_type = 'batch' AND bm.ref_id = ${batches}.id AND bm.cause = 'batch_departed'
-      ), 0)`,
-      m3: sql<string>`coalesce((
-        SELECT sum(rl.total_volume_m3 / rl.box_count) FROM box_movements bm
-        JOIN boxes b ON b.id = bm.box_id AND b.status <> 'void'
-        JOIN receipt_lots rl ON rl.id = b.lot_id
-        WHERE bm.ref_type = 'batch' AND bm.ref_id = ${batches}.id AND bm.cause = 'batch_departed'
-      ), 0)`,
     })
     .from(batches)
     .where(
@@ -978,7 +969,8 @@ export async function profitByBatch(from: string, to: string) {
     )
     .orderBy(sql`${batches.departedAt} DESC`);
 
-  const landed = await batchLandedCostTotals(rows.map((row) => row.batchId));
+  const ids = rows.map((row) => row.batchId);
+  const [landed, loads] = await Promise.all([batchLandedCostTotals(ids), riderLoad(ids)]);
 
   return rows.map((row) => {
     const revenue = money(row.revenueUsd);
@@ -989,8 +981,9 @@ export async function profitByBatch(from: string, to: string) {
     const prev = money(lots.reduce((sum, lot) => sum + (lot.totalUsd - lot.batchUsd), 0));
     const internal = Boolean(row.internal);
     const profit = internal ? null : money(revenue - cost);
-    const kg = Math.round(Number(row.kg) * 10) / 10;
-    const m3 = Math.round(Number(row.m3) * 1000) / 1000;
+    const load = loads.get(row.batchId);
+    const kg = Math.round((load?.kg ?? 0) * 10) / 10;
+    const m3 = Math.round((load?.m3 ?? 0) * 1000) / 1000;
     return {
       batchId: row.batchId,
       code: row.code,
@@ -998,7 +991,7 @@ export async function profitByBatch(from: string, to: string) {
       status: row.status,
       departedAt: row.departedAt,
       internal,
-      boxCount: Number(row.boxCount),
+      boxCount: load?.boxCount ?? 0,
       kg,
       m3,
       revenueUsd: revenue,
@@ -1015,38 +1008,162 @@ export async function profitByBatch(from: string, to: string) {
 }
 
 /**
- * Profit per client — charges against the costs allocated to that client's
- * boxes by the M6 engine, so shared truck costs are split fairly by weight or
- * volume rather than guessed.
- */
-/**
  * The money the batch and route tables cannot see, by the period's dates
  * (audit A8/A27). A price typed on a client's ledger names no truck, so it
  * belongs to no truck row in ANY period — named under the tables instead of
  * left to be discovered.
  *
- * Revenue only since R2a (2026-09-24): the COST half used to name every
- * receipt, receive-wizard, crate and pickup cost here, because the table
- * summed only entries stamped with a truck. It reads landed cost now, and
- * that money reaches the truck its cargo rode through the allocations — so
- * naming it here as well would describe the same dollars twice.
+ * The COST half came back as allocations (audit U37). R2a (#1010) had
+ * removed the old entry-based half — naming every receipt, receive-wizard,
+ * crate and pickup cost here — because the table reads landed cost now and
+ * that money reaches the truck its cargo rode through the allocations, so the
+ * entries would be the same dollars twice (and it must not come back in that
+ * shape). The premise holds only for cargo that RIDES: a carton written off
+ * at the origin, a prixod handed over where it was received, unclaimed cargo
+ * returned to the sender, and the remainder still on the shelf carry their
+ * share on no truck's row at all, and nothing said so. It is summed from the
+ * allocations of live entries on the P&L's clock (`cost_date`), on boxes that
+ * are not void (a void box is not cargo — the truck readers' rule, so the
+ * figures reconcile) and that rode NO priced truck by the money rule
+ * (`rideMovementSql`: a carton found back at the origin never rode; an
+ * internal leg's rows are left out of every total, so riding only inside
+ * China is riding no priced truck either). Split by the carton's state:
+ * written off, handed over or returned without a truck, and still waiting —
+ * the last is TEMPORARY, it reaches the truck it rides next.
  */
-export async function unbatchedMoney(from: string, to: string): Promise<{ revenueUsd: number }> {
-  const [revenue] = await db
-    .select({ sum: sql<string>`coalesce(sum(${clientTransactions.amountUsd}), 0)` })
-    .from(clientTransactions)
-    .where(
-      and(
-        eq(clientTransactions.type, 'charge'),
-        isNull(clientTransactions.batchId),
-        isNull(clientTransactions.voidedAt),
-        gte(clientTransactions.txDate, from),
-        lte(clientTransactions.txDate, to),
-      ),
-    );
-  return { revenueUsd: money(revenue?.sum) };
+export interface UnbatchedMoney {
+  /** Charges that name no truck. The dashboard reads this name — keep it. */
+  revenueUsd: number;
+  noTruckCost: { lostUsd: number; issuedUsd: number; waitingUsd: number };
 }
 
+export async function unbatchedMoney(from: string, to: string): Promise<UnbatchedMoney> {
+  const [[revenue], cost] = await Promise.all([
+    db
+      .select({ sum: sql<string>`coalesce(sum(${clientTransactions.amountUsd}), 0)` })
+      .from(clientTransactions)
+      .where(
+        and(
+          eq(clientTransactions.type, 'charge'),
+          isNull(clientTransactions.batchId),
+          isNull(clientTransactions.voidedAt),
+          gte(clientTransactions.txDate, from),
+          lte(clientTransactions.txDate, to),
+        ),
+      ),
+    // Summed per BOX first, then the ride probe once per box and not once
+    // per allocation (a year is ~3 allocations a box).
+    db.execute(sql`
+      WITH spent AS (
+        SELECT ca.box_id, sum(ca.amount_usd) AS usd
+          FROM cost_allocations ca
+          JOIN cost_entries ce ON ce.id = ca.cost_entry_id AND ce.voided_at IS NULL
+         WHERE ce.cost_date >= ${from}::date AND ce.cost_date <= ${to}::date
+         GROUP BY ca.box_id
+      )
+      SELECT coalesce(sum(spent.usd) FILTER (WHERE b.status = 'lost'), 0) AS lost,
+             coalesce(sum(spent.usd) FILTER (WHERE b.status = 'issued'), 0) AS issued,
+             coalesce(sum(spent.usd) FILTER (WHERE b.status NOT IN ('lost', 'issued')), 0) AS waiting
+        FROM spent
+        JOIN boxes b ON b.id = spent.box_id AND b.status <> 'void'
+       WHERE NOT EXISTS (
+           SELECT 1 FROM box_movements rm
+             JOIN batches rb ON rb.id = rm.ref_id
+             JOIN warehouses ro ON ro.id = rb.origin_warehouse_id
+             JOIN warehouses rd ON rd.id = rb.dest_warehouse_id
+            WHERE rm.box_id = b.id AND rm.cause IN ('batch_departed', 'undocumented_transfer')
+              AND ${rideMovementSql('rm')}
+              AND NOT ${internalLegSql('ro', 'rd')}
+         )
+    `) as unknown as Promise<{ lost: string; issued: string; waiting: string }[]>,
+  ]);
+  return {
+    revenueUsd: money(revenue?.sum),
+    noTruckCost: {
+      lostUsd: money(cost[0]?.lost),
+      issuedUsd: money(cost[0]?.issued),
+      waitingUsd: money(cost[0]?.waiting),
+    },
+  };
+}
+
+/**
+ * What «Mijoz foydasi» cannot put on any client, by the same period and
+ * clocks as its rows (audit U19) — so the tab reconciles to the P&L:
+ * Σ rows.cost + unclaimed + unallocated = the P&L's direct cost, and
+ * Σ rows.revenue = its revenue.
+ *
+ * - unclaimed: allocations on cargo nobody has claimed (client_id NULL). It
+ *   cost us money (#980/#1010) and it moves onto the client when somebody
+ *   claims it (`assignReceiptClient` rewrites the allocations). Kept OUT of
+ *   `profitByClient`'s array on purpose: `sellerPerformanceAll` files a null
+ *   client under the «—» cohort of unassigned clients, and unclaimed cargo is
+ *   not a client of anybody's.
+ * - unallocated: a live, converted entry that reached no box, or reached them
+ *   short — a truck cost typed while the truck is empty, a factory truck with
+ *   no prixod linked, a direct-to-client share with no box of that client in
+ *   scope, a base with no measure. Named by scope, never guessed onto
+ *   somebody; it stays here until the base appears.
+ */
+export interface ClientProfitGaps {
+  unclaimed: { usd: number; receipts: number };
+  unallocated: { usd: number; count: number; byScope: { scope: string; usd: number; count: number }[] };
+}
+
+export async function clientProfitGaps(from: string, to: string): Promise<ClientProfitGaps> {
+  const [unclaimed, unallocated] = await Promise.all([
+    db.execute(sql`
+      SELECT coalesce(sum(ca.amount_usd), 0) AS usd, count(DISTINCT rl.receipt_id)::int AS receipts
+        FROM cost_allocations ca
+        JOIN cost_entries ce ON ce.id = ca.cost_entry_id
+        JOIN boxes b ON b.id = ca.box_id
+        JOIN receipt_lots rl ON rl.id = b.lot_id
+       WHERE ca.client_id IS NULL AND ce.voided_at IS NULL
+         AND ce.cost_date >= ${from}::date AND ce.cost_date <= ${to}::date
+    `) as unknown as Promise<{ usd: string; receipts: number }[]>,
+    // One grouped pass over the period's entries against one grouped pass
+    // over their allocations — never a per-entry subquery in a join (#152).
+    db.execute(sql`
+      WITH spent AS (
+        SELECT ce.id, ce.scope, ce.amount_usd
+          FROM cost_entries ce
+         WHERE ce.voided_at IS NULL AND ce.amount_usd IS NOT NULL
+           AND ce.cost_date >= ${from}::date AND ce.cost_date <= ${to}::date
+      ),
+      allocated AS (
+        SELECT ca.cost_entry_id, sum(ca.amount_usd) AS usd
+          FROM cost_allocations ca
+          JOIN spent ON spent.id = ca.cost_entry_id
+         GROUP BY ca.cost_entry_id
+      )
+      SELECT spent.scope, count(*)::int AS n,
+             sum(spent.amount_usd - coalesce(allocated.usd, 0)) AS usd
+        FROM spent
+        LEFT JOIN allocated ON allocated.cost_entry_id = spent.id
+       WHERE spent.amount_usd - coalesce(allocated.usd, 0) > 0.005
+       GROUP BY spent.scope
+       ORDER BY spent.scope
+    `) as unknown as Promise<{ scope: string; n: number; usd: string }[]>,
+  ]);
+  const byScope = unallocated.map((row) => ({ scope: row.scope, usd: money(row.usd), count: Number(row.n) }));
+  return {
+    unclaimed: { usd: money(unclaimed[0]?.usd), receipts: Number(unclaimed[0]?.receipts ?? 0) },
+    unallocated: {
+      usd: money(byScope.reduce((sum, row) => sum + row.usd, 0)),
+      count: byScope.reduce((sum, row) => sum + row.count, 0),
+      byScope,
+    },
+  };
+}
+
+/**
+ * Profit per client — charges against the costs allocated to that client's
+ * boxes by the M6 engine, so shared truck costs are split fairly by weight or
+ * volume rather than guessed.
+ *
+ * What it cannot put on any client — unclaimed cargo, money that reached no
+ * box — is `clientProfitGaps`, named beside the tab rather than folded in.
+ */
 export async function profitByClient(from: string, to: string) {
   const revenueRows = await db
     .select({

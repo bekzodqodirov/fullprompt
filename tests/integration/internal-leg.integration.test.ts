@@ -406,6 +406,20 @@ describe('one truck, one profit (R2a)', () => {
     });
   });
 
+  it('the Uzbek leg carries its own road only — the earlier legs are the export truck’s (U16)', async () => {
+    const rows = await profitByBatch(iso(-20), iso(0));
+    const row = rows.find((entry) => entry.batchId === uzLeg)!;
+    expect(row.costUsd).toBe((await header(uzLeg)).costUsd);
+    // Its own $7, and NOT the receipt's 5, the internal 30 and the export's
+    // 100 again: the export truck is the box's previous PRICED truck, so
+    // everything before it stops there.
+    expect(row).toMatchObject({ internal: false, revenueUsd: 7, costUsd: 7, prevUsd: 0, profitUsd: 0 });
+    const across = rows.find((entry) => entry.batchId === exportBatch)!;
+    // The priced rows are disjoint: together they are every allocated dollar
+    // once — 5 + 30 + 100 + 7 on the client's box, 3 on the unclaimed one.
+    expect(Math.round((across.costUsd + row.costUsd) * 100) / 100).toBe(145);
+  });
+
   it('the internal leg is a cost row: its own header’s cost, and no profit at all', async () => {
     const rows = await profitByBatch(iso(-20), iso(0));
     const row = rows.find((entry) => entry.batchId === internalBatch)!;

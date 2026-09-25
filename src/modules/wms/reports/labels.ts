@@ -61,6 +61,12 @@ const DICT = {
   shortLoaded: { ru: 'Недогруз', uz: 'Yuklanmagan', 'zh-CN': '短装', en: 'Short-loaded' },
   status: { ru: 'Статус', uz: 'Holat', 'zh-CN': '状态', en: 'Status' },
   total: { ru: 'ИТОГО', uz: 'JAMI', 'zh-CN': '合计', en: 'TOTAL' },
+  unclaimedCargo: {
+    ru: 'Бесхозный груз (маркировка)',
+    uz: 'Egasiz yuk (markirovka)',
+    'zh-CN': '无主货物（标记）',
+    en: 'Unclaimed cargo (marking)',
+  },
   usdPerBox: { ru: '$ / коробка', uz: '$ / karobka', 'zh-CN': '$ / 箱', en: '$ / box' },
   usdPerKg: { ru: '$/кг', uz: '$/kg', 'zh-CN': '$/公斤', en: '$/kg' },
   usdPerM3: { ru: '$/м³', uz: '$/m³', 'zh-CN': '$/立方米', en: '$/m³' },
@@ -166,6 +172,53 @@ const DICT = {
     uz: 'Mashinaga bog‘lanmagan tushum — bu jadvalga kirmagan',
     'zh-CN': '未关联车辆的收入——未计入本表',
     en: 'Revenue tied to no truck — not in this table',
+  },
+  // The cost half of «unbatched» and the client tab's reconciliation (audit
+  // U37, U19) — in step with messages/*.json accounting.unbatchedCostNote,
+  // clientUnallocatedNote and gapScope.*.
+  unbatchedCostNote: {
+    ru: 'Расходы на груз, не уехавший ни на одной машине с ценой (по дате расхода)',
+    uz: 'Hech bir narxli mashinaga chiqmagan yuk ustidagi xarajat (xarajat sanasi bo‘yicha)',
+    'zh-CN': '未随任何定价车辆出发的货物上的费用（按费用日期）',
+    en: 'Cost on cargo that rode no priced truck (by cost date)',
+  },
+  noTruckLost: { ru: 'списано', uz: 'hisobdan chiqarilgan', 'zh-CN': '已核销', en: 'written off' },
+  noTruckIssued: {
+    ru: 'выдано или возвращено без машины',
+    uz: 'mashinasiz topshirilgan yoki qaytarilgan',
+    'zh-CN': '无车交付或退回',
+    en: 'handed over or returned without a truck',
+  },
+  noTruckWaiting: {
+    ru: 'ещё ждёт машину',
+    uz: 'hali mashinani kutayotgan',
+    'zh-CN': '仍在等车',
+    en: 'still waiting for a truck',
+  },
+  clientUnallocatedNote: {
+    ru: 'Расходы, не распределённые ни на одну коробку — их нет ни у одного клиента, это и есть разница с P&L',
+    uz: 'Hech bir qutiga taqsimlanmagan xarajat — u hech bir mijozda yo‘q, P&L bilan farq shu summa',
+    'zh-CN': '未分摊到任何箱子的费用——不在任何客户名下，这就是与损益表的差额',
+    en: 'Cost that reached no box — it is on no client; that is the difference from the P&L',
+  },
+  gapScopeBatch: { ru: 'машина без груза', uz: 'yuki yo‘q mashina', 'zh-CN': '无货车辆', en: 'a truck with no cargo' },
+  gapScopePickup: {
+    ru: 'заводской рейс без привязанного прихода',
+    uz: 'prixodi ulanmagan zavod reysi',
+    'zh-CN': '未关联入库单的工厂提货',
+    en: 'a factory pickup with no receipt linked',
+  },
+  gapScopeReceipt: {
+    ru: 'не попало на коробки прихода',
+    uz: 'prixod qutilariga tushmagan',
+    'zh-CN': '未落到入库单箱子上',
+    en: 'not on the receipt’s boxes',
+  },
+  gapScopeCrate: {
+    ru: 'не попало на коробки ящика',
+    uz: 'yashik qutilariga tushmagan',
+    'zh-CN': '未落到木箱箱子上',
+    en: 'not on the crate’s boxes',
   },
   reconTitle: {
     ru: 'Кассы: начало и конец периода',

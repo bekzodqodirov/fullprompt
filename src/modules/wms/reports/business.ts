@@ -1,6 +1,8 @@
 import { sql, type SQL } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { tashkentDayStart, addDays } from '@/modules/platform/time/tashkent';
+import { leftBehindSql } from '../batches/riders';
+import { customsCostTypeIds } from '../costing/service';
 
 /**
  * The owner's dashboard reads (2026-09-25): where the cargo is, what is at
@@ -99,14 +101,29 @@ export interface RiskSummary {
  * - missing: flagged `missing_in_transit` on unload and not resolved — the
  *   truck arrived without it (scoped by the truck's two ends, /transit's rule).
  * - lost: written off as lost in the last N days.
- * - phantom: recorded as departed on a truck, then found at the ORIGIN — it
- *   never rode that truck, yet may still carry that truck's freight share.
- *   Counted only while it still does: that is money actually misallocated.
+ * - phantom: recorded as departed on a truck, then found back at the ORIGIN
+ *   (`leftBehindSql` — the money readers' own rule: the manager's
+ *   `found_at_origin` AND the loader's accept-found / the stocktake) — it
+ *   never rode that truck, yet may still carry that truck's ROAD cost share
+ *   (freight and every non-customs bill). Its CUSTOMS share is right to stay
+ *   — the carton was declared, and the owner's rule (2026-09-25) is that it
+ *   is billed on the next truck — so a customs allocation is not counted.
+ *   Counted only while a road share remains: money a re-split has not moved.
+ *   Since the found-back doors re-split the truck after their commit (U17)
+ *   and `pnpm repair-riders` fixes the old ones, this reads zero on repaired
+ *   data — a non-zero count is a re-split that failed and wants the script.
  * - undocumented: arrived on a truck without a load scan.
  *
  * A void carton is never cargo (the annul round's rule) and counts nowhere.
  */
-function riskCtes(warehouseIds: string[] | undefined, sinceIso: string): SQL {
+/** A cost entry (by alias) that is a ROAD cost of its truck — not a customs type. */
+function roadCostSql(entryAlias: string, customsTypeIds: string[]): SQL {
+  return customsTypeIds.length
+    ? sql`AND ${sql.raw(entryAlias)}.cost_type_id NOT IN (${idList(customsTypeIds)})`
+    : sql``;
+}
+
+function riskCtes(warehouseIds: string[] | undefined, sinceIso: string, customsTypeIds: string[]): SQL {
   const scoped = warehouseIds?.length ? warehouseIds : null;
   const truckScope = (alias: string) =>
     scoped
@@ -145,15 +162,19 @@ function riskCtes(warehouseIds: string[] | undefined, sinceIso: string): SQL {
         }
     ),
     phantom AS (
-      SELECT DISTINCT fm.box_id, fm.ref_id AS batch_id
-      FROM box_movements fm
-      JOIN boxes b ON b.id = fm.box_id AND b.status <> 'void'
-      JOIN batches bt ON bt.id = fm.ref_id
-      WHERE fm.cause = 'found_at_origin' AND fm.ref_type = 'batch' ${truckScope('bt')}
+      SELECT DISTINCT dm.box_id, dm.ref_id AS batch_id
+      FROM box_movements fb
+      JOIN box_movements dm ON dm.box_id = fb.box_id
+                           AND dm.ref_type = 'batch' AND dm.cause = 'batch_departed'
+      JOIN boxes b ON b.id = dm.box_id
+      JOIN batches bt ON bt.id = dm.ref_id
+      WHERE fb.cause IN ('found_at_origin', 'inventory_found') ${truckScope('bt')}
+        AND ${leftBehindSql(sql`dm.ref_id`, 'b')}
         AND EXISTS (
           SELECT 1 FROM cost_allocations ca
           JOIN cost_entries ce ON ce.id = ca.cost_entry_id AND ce.voided_at IS NULL
-          WHERE ca.box_id = fm.box_id AND ce.batch_id = fm.ref_id AND ce.scope = 'batch')
+          WHERE ca.box_id = dm.box_id AND ce.batch_id = dm.ref_id AND ce.scope = 'batch'
+            ${roadCostSql('ce', customsTypeIds)})
     ),
     undocumented AS (
       SELECT b.id AS box_id, NULL::uuid AS batch_id
@@ -163,11 +184,12 @@ function riskCtes(warehouseIds: string[] | undefined, sinceIso: string): SQL {
 }
 
 /** The money a set of cartons carries: every live allocation, or only the named truck's (phantom). */
-function riskUsd(kind: RiskKind): SQL {
+function riskUsd(kind: RiskKind, customsTypeIds: string[]): SQL {
   return kind === 'phantom'
     ? sql`(SELECT coalesce(sum(ca.amount_usd), 0) FROM cost_allocations ca
            JOIN cost_entries ce ON ce.id = ca.cost_entry_id AND ce.voided_at IS NULL
-           WHERE ca.box_id = r.box_id AND ce.batch_id = r.batch_id AND ce.scope = 'batch')`
+           WHERE ca.box_id = r.box_id AND ce.batch_id = r.batch_id AND ce.scope = 'batch'
+             ${roadCostSql('ce', customsTypeIds)})`
     : sql`(SELECT coalesce(sum(ca.amount_usd), 0) FROM cost_allocations ca
            JOIN cost_entries ce ON ce.id = ca.cost_entry_id AND ce.voided_at IS NULL
            WHERE ca.box_id = r.box_id)`;
@@ -181,12 +203,13 @@ export async function cargoAtRisk(
   now: Date = new Date(),
 ): Promise<Record<RiskKind, RiskSummary>> {
   const sinceIso = new Date(now.getTime() - lostDays * 86_400_000).toISOString();
+  const customsTypeIds = await customsCostTypeIds();
   const branches = sql.join(
     RISK_KINDS.map(
       (kind) => sql`
         SELECT ${kind}::text AS kind, count(DISTINCT r.box_id)::int AS boxes,
                coalesce(sum(rl.total_volume_m3 / rl.box_count), 0) AS m3,
-               coalesce(sum(${riskUsd(kind)}), 0) AS usd
+               coalesce(sum(${riskUsd(kind, customsTypeIds)}), 0) AS usd
         FROM ${sql.raw(kind)} r
         JOIN boxes b ON b.id = r.box_id
         JOIN receipt_lots rl ON rl.id = b.lot_id`,
@@ -194,7 +217,7 @@ export async function cargoAtRisk(
     sql` UNION ALL `,
   );
   const rows = await db.execute<{ kind: RiskKind; boxes: number; m3: string; usd: string }>(
-    sql`WITH ${riskCtes(warehouseIds, sinceIso)} ${branches}`,
+    sql`WITH ${riskCtes(warehouseIds, sinceIso, customsTypeIds)} ${branches}`,
   );
   const out = Object.fromEntries(RISK_KINDS.map((kind) => [kind, { boxes: 0, m3: 0, usd: 0 }])) as Record<
     RiskKind,
@@ -226,6 +249,7 @@ export async function cargoRiskList(
   now: Date = new Date(),
 ): Promise<RiskRow[]> {
   const sinceIso = new Date(now.getTime() - lostDays * 86_400_000).toISOString();
+  const customsTypeIds = await customsCostTypeIds();
   const rows = await db.execute<{
     box_id: string;
     short_code: string;
@@ -236,10 +260,10 @@ export async function cargoRiskList(
     m3: string;
     usd: string;
   }>(sql`
-    WITH ${riskCtes(warehouseIds, sinceIso)}
+    WITH ${riskCtes(warehouseIds, sinceIso, customsTypeIds)}
     SELECT r.box_id, b.short_code, c.client_code, rc.unclaimed_marking AS marking,
            coalesce(r.batch_id, b.current_batch_id) AS batch_id, bt.code AS batch_code,
-           rl.total_volume_m3 / rl.box_count AS m3, ${riskUsd(kind)} AS usd
+           rl.total_volume_m3 / rl.box_count AS m3, ${riskUsd(kind, customsTypeIds)} AS usd
     FROM ${sql.raw(kind)} r
     JOIN boxes b ON b.id = r.box_id
     JOIN receipt_lots rl ON rl.id = b.lot_id

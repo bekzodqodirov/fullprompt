@@ -11,10 +11,11 @@ import { boxDims, scopeBoxIds } from './service';
  * part of — including an UNCONVERTED entry, which has no share yet and would
  * split over them the day its rate arrives.
  *
- * The same membership `recomputeForLot` reads (#440 — from the ledger that
- * defines it, never the live pointer), for a LIST of lots and on a caller's
- * handle, because the two doors that void boxes ask it from inside their own
- * transaction and a receipt correction asks it for every lot at once.
+ * The ONE membership (#513): `recomputeForLot` calls it too (#440 — from the
+ * ledger that defines it, never the live pointer alone), for a LIST of lots
+ * and on a caller's handle, because the two doors that void boxes ask it from
+ * inside their own transaction and a receipt correction asks it for every lot
+ * at once.
  */
 export async function costEntriesTouchingLots(
   lotIds: string[],
@@ -37,8 +38,10 @@ export async function costEntriesTouchingLots(
             WHERE ca.cost_entry_id = ce.id
          )
          OR (ce.scope = 'batch' AND ce.batch_id IN (
+           -- Every truck the boxes departed on, or were scanned off without
+           -- a load scan (U25 — a rider too, batches/riders.ts).
            SELECT bm.ref_id FROM box_movements bm JOIN lot_boxes lb ON lb.id = bm.box_id
-            WHERE bm.cause = 'batch_departed' AND bm.ref_type = 'batch'
+            WHERE bm.cause IN ('batch_departed', 'undocumented_transfer') AND bm.ref_type = 'batch'
          ))
          OR (ce.scope = 'batch' AND ce.batch_id IN (
            SELECT b.current_batch_id FROM boxes b

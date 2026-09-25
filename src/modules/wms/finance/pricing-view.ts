@@ -25,6 +25,13 @@ export interface PricingClientGroup {
   boxes: number;
   kg: number;
   m3: number;
+  /**
+   * The cartons' fate (U35), counted over the same lots: lost and still
+   * missing are INSIDE `boxes`/`kg` (their cost stays, #833), left-behind
+   * ones are not on this truck at all. `arrivedKg` is what a per-kilo price
+   * is honestly measured against.
+   */
+  fate: { lost: number; missing: number; leftBehind: number; arrivedBoxes: number; arrivedKg: number };
   costUsd: number;
   /** The part of `costUsd` the cargo brought with it — «shu reysgacha». */
   prevUsd: number;
@@ -67,6 +74,19 @@ export function soleDealOf(lots: { dealId: string | null }[]): string | null {
   const ids = new Set(lots.map((lot) => lot.dealId));
   if (ids.size !== 1) return null;
   return [...ids][0] ?? null;
+}
+
+/** The fate counts of a set of lots (U35), summed as the rows print them. */
+export function fateOf(lots: BatchLot[]): PricingClientGroup['fate'] {
+  const lost = lots.reduce((a, l) => a + l.lostCount, 0);
+  const missing = lots.reduce((a, l) => a + l.missingCount, 0);
+  return {
+    lost,
+    missing,
+    leftBehind: lots.reduce((a, l) => a + l.leftBehindCount, 0),
+    arrivedBoxes: lots.reduce((a, l) => a + l.onBatch, 0) - lost - missing,
+    arrivedKg: Math.round(lots.reduce((a, l) => a + l.arrivedKg, 0) * 10) / 10,
+  };
 }
 
 export function pricingView(
@@ -125,6 +145,7 @@ export function pricingView(
       boxes: group.lots.reduce((a, l) => a + l.onBatch, 0),
       kg: Math.round(group.lots.reduce((a, l) => a + l.kg, 0) * 10) / 10,
       m3: Math.round(group.lots.reduce((a, l) => a + l.m3, 0) * 1000) / 1000,
+      fate: fateOf(group.lots),
       costUsd,
       prevUsd: sumPrev(group.lots),
       chargedUsd,

@@ -13,6 +13,7 @@ import { toUzs, uzsRate } from './period';
 import {
   arAging,
   cashReconciliation,
+  clientProfitGaps,
   pnlGaps,
   profitAndLoss,
   profitByBatch,
@@ -311,7 +312,7 @@ export async function buildProfitXlsx(
       notes.push(`⚠ ${L.unallocatedNote}: $${usdText(sum)} · ${unallocated.length}`);
     }
   } else if (view === 'client') {
-    const rows = await profitByClient(from, to);
+    const [rows, clientGaps] = await Promise.all([profitByClient(from, to), clientProfitGaps(from, to)]);
     const head = sheet.addRow([
       L.client, L.name, `${L.revenue} $`, `${L.cost} $`, `${L.profit} $`, L.margin,
     ]);
@@ -324,9 +325,38 @@ export async function buildProfitXlsx(
         row.clientCode, row.clientName, row.revenueUsd, row.costUsd, row.profitUsd, row.marginPct,
       ]);
     }
-    if (rows.length > 0) {
-      const totals = tripTotals(rows);
+    // The screen's own two lines (U19), so the file reconciles to the P&L as
+    // the tab does: unclaimed cargo is a row inside the JAMI (its cost
+    // counts), money that reached no box is a NOTE under the table — text,
+    // never a number a hand SUM of the cost column would reach into.
+    const unclaimedUsd = clientGaps.unclaimed.usd > 0.009 ? clientGaps.unclaimed.usd : 0;
+    if (unclaimedUsd > 0) {
+      sheet.addRow([
+        L.unclaimedCargo,
+        `${L.receipts}: ${clientGaps.unclaimed.receipts}`,
+        0,
+        unclaimedUsd,
+        -unclaimedUsd,
+        '—',
+      ]);
+    }
+    if (rows.length > 0 || unclaimedUsd > 0) {
+      const totals = tripTotals(
+        unclaimedUsd > 0 ? [...rows, { revenueUsd: 0, costUsd: unclaimedUsd, profitUsd: -unclaimedUsd }] : rows,
+      );
       bold(sheet.addRow([L.total, '', totals.revenue, totals.cost, totals.profit, margin(totals)]));
+    }
+    if (clientGaps.unallocated.usd > 0.009) {
+      const scopeWord: Record<string, string> = {
+        batch: L.gapScopeBatch,
+        pickup: L.gapScopePickup,
+        receipt: L.gapScopeReceipt,
+        crate: L.gapScopeCrate,
+      };
+      const scopes = clientGaps.unallocated.byScope
+        .map((row) => `${scopeWord[row.scope] ?? row.scope} ×${row.count}`)
+        .join(', ');
+      notes.push(`⚠ ${L.clientUnallocatedNote}: $${usdText(clientGaps.unallocated.usd)} · ${scopes}`);
     }
   } else {
     const rows = await profitByRoute(from, to);
@@ -356,6 +386,15 @@ export async function buildProfitXlsx(
   }
 
   if (unbatched && unbatched.revenueUsd > 0) notes.push(`${L.unbatchedNote}: $${usdText(unbatched.revenueUsd)}`);
+  // …and its cost half (U37): money on cargo that rode no priced truck, in the
+  // screen's three parts — no truck row carries it, so the file names it.
+  const noTruck = unbatched?.noTruckCost;
+  if (noTruck && noTruck.lostUsd + noTruck.issuedUsd + noTruck.waitingUsd > 0.009) {
+    notes.push(
+      `${L.unbatchedCostNote}: ${L.noTruckLost} $${usdText(noTruck.lostUsd)} · ` +
+        `${L.noTruckIssued} $${usdText(noTruck.issuedUsd)} · ${L.noTruckWaiting} $${usdText(noTruck.waitingUsd)}`,
+    );
+  }
   // The page's notes as TEXT rows under the table — never a number beside
   // them, or a hand SUM of a column reaches into a note.
   if (notes.length > 0 || gaps.manualCharges.count > 0 || gaps.unconverted.count > 0) sheet.addRow([]);

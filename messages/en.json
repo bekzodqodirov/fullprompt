@@ -1321,7 +1321,13 @@
     "refund": "Refund to client",
     "refundAccount": "Paid back from which cash box",
     "refundOnBatch": "A refund is not written to a batch — it is not a price.",
-    "totalAdvances": "Advances (we owe)"
+    "totalAdvances": "Advances (we owe)",
+    "fateLost": "{count} lost",
+    "fateMissing": "{count} not arrived",
+    "fateLeftBehind": "{count} stayed at the departure warehouse — did not ride this truck",
+    "arrivedLine": "Arrived: {boxes} 📦 · {kg} kg — price against this",
+    "perKgArrived": "/kg arrived",
+    "perKgLoaded": "/kg loaded"
   },
   "map": {
     "title": "Map",
@@ -1472,7 +1478,7 @@
     "recurringActive": "Active — posted every month",
     "internalRowsNote": "Internal legs (inside China) are shown as cost only: they are never priced, and their cost is already inside the cross-border truck's cost as «before this trip» — so they are left out of the total.",
     "unallocatedNote": "{usd} of costs typed on trucks reached no box — it is in no cost figure (trucks: {count}). Check the costs on the batch card.",
-    "unbatchedNote": "Not in this table (by the period's dates): revenue {revenue} tied to no truck — prices set on a client's ledger. Receipt, receiving, crate and factory-pickup costs are already in the cost of the truck the cargo rode.",
+    "unbatchedNote": "Not in this table (by the period's dates): revenue {revenue} tied to no truck — prices set on a client's ledger.",
     "clientRefunds": "Refunds to clients",
     "balClientAdvances": "Client advances (we owe)",
     "beforeOpening": "{count} entries dated before the opening count — already inside it, not added again",
@@ -1559,7 +1565,17 @@
     "noRateOutOfNet": "no rate — left out of the balance",
     "cashOpexNoKassa": "expenses with no cash box: {count}, {usd} — in the outflow, and no cash box went down",
     "tillNegative": "below zero",
-    "balNegativeTills": "{n} cash boxes are below zero — more was entered out than in; check them"
+    "balNegativeTills": "{n} cash boxes are below zero — more was entered out than in; check them",
+    "unbatchedCostNote": "Cost on cargo that rode no priced truck (by cost date): written off {lost}, handed over or returned without a truck {issued}, still waiting for a truck {waiting}. Every other receipt, receiving, crate and factory-pickup cost is in the cost of the truck the cargo rode.",
+    "unclaimedRow": "Unclaimed cargo (marking)",
+    "unclaimedRowHint": "{receipts} receipts — the cost moves to the client once claimed",
+    "clientUnallocatedNote": "{usd} of costs reached no box ({count}: {scopes}) — it is on no client; that is the difference from the P&L.",
+    "gapScope": {
+      "batch": "a truck with no cargo",
+      "pickup": "a factory pickup with no receipt linked",
+      "receipt": "not on the receipt's boxes",
+      "crate": "not on the crate's boxes"
+    }
   },
   "crm": {
     "title": "CRM",

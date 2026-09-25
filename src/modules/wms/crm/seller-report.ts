@@ -96,9 +96,12 @@ async function clientsByManager(managerId?: string) {
 
 /**
  * The full table: every manager, the «—» cohort, and a totals row that
- * reconciles with /accounting/profit — 1,402 of the book's 1,692 clients
- * carried no manager on deploy day, so a roll-up that dropped NULL would
- * silently shed most of the company and read as a complete answer.
+ * reconciles with /accounting/profit's CLIENT rows — 1,402 of the book's
+ * 1,692 clients carried no manager on deploy day, so a roll-up that dropped
+ * NULL would silently shed most of the company and read as a complete answer.
+ * Not with that tab's Jami: unclaimed cargo and money that reached no box
+ * (`clientProfitGaps`) are nobody's client and nobody's score, so they stay
+ * out of every seller row and are named on the profit tab alone (U19).
  */
 export async function sellerPerformanceAll(period: {
   from: Date;

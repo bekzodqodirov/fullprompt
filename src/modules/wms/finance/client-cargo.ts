@@ -13,6 +13,7 @@ import {
   warehouses,
 } from '../../platform/db/schema';
 import { isInternalLeg } from '../batches/internal';
+import { rideMovementSql } from '../batches/riders';
 
 /**
  * Where a client's cargo is, what it weighs, and which money belongs to it.
@@ -120,9 +121,12 @@ export async function clientCargo(clientId: string): Promise<ClientCargo> {
       )
       .groupBy(boxes.currentWarehouseId, warehouses.code, STATE_SQL),
 
-    // Trips: what DEPARTED is the ground truth (DECISIONS #121) — accepting a
+    // Trips: what RODE is the ground truth (DECISIONS #121) — accepting a
     // box clears its batch pointer, so a live-pointer query would lose the
-    // client's whole history the moment the cargo arrived.
+    // client's whole history the moment the cargo arrived. The money rule
+    // (`rideMovementSql`): a carton scanned onto a truck and found back at
+    // its origin did not travel on it (U17), one scanned off without a load
+    // scan did, and the card must then say «narx qo'yilmagan» for it (U25).
     db
       .select({
         batchId: batches.id,
@@ -148,7 +152,8 @@ export async function clientCargo(clientId: string): Promise<ClientCargo> {
         and(
           eq(receipts.clientId, clientId),
           eq(boxMovements.refType, 'batch'),
-          eq(boxMovements.cause, 'batch_departed'),
+          sql`${boxMovements.cause} IN ('batch_departed', 'undocumented_transfer')`,
+          rideMovementSql('box_movements'),
           // An annulled box leaves the trip history's figures too.
           ne(boxes.status, 'void'),
         ),

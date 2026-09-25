@@ -39,9 +39,16 @@ import { PageHeader } from '@/components/ui/page';
  * allocation nobody made (deals/service.ts refuses the same invention).
  *
  * Membership is ONE rule for every figure here — rows, tannarx and the
- * header: the truck's lots through `batchMemberFilter`, an annulled box
- * excluded. The old page had a second rule of its own (departed movements,
- * else the live pointer) and a third for the header.
+ * header: the truck's RIDERS (`batches/riders.ts`, the rule its bills are
+ * split over), an annulled box excluded. The old page had a second rule of
+ * its own (departed movements, else the live pointer) and a third for the
+ * header.
+ *
+ * A carton's fate is SAID, never subtracted (U35): a lost or still-missing
+ * box keeps its cost share (#833) and stays in the row's kilos, so this page,
+ * the grid and «Partiya foydasi» go on agreeing to the cent — but the person
+ * typing a price per kilo sees how many kilos arrived, and the price/kg is
+ * measured against those.
  */
 export default async function BatchPricingPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -97,6 +104,13 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
   const today = tashkentDay();
   const currencyCodes = currencyRows.map((c) => c.code);
 
+  const fateWords = (fate: { lost: number; missing: number; leftBehind: number }) =>
+    [
+      fate.lost > 0 ? t('fateLost', { count: fate.lost }) : null,
+      fate.missing > 0 ? t('fateMissing', { count: fate.missing }) : null,
+      fate.leftBehind > 0 ? t('fateLeftBehind', { count: fate.leftBehind }) : null,
+    ].filter(Boolean);
+
   const lotRows = (list: BatchLot[]) => (
     <ul className="divide-y divide-line rounded-lg border border-line" data-testid="pricing-lots">
       {list.map((lot) => {
@@ -151,6 +165,16 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                 📦 {lot.onBatch}
                 {lot.onBatch < lot.lotBoxCount && `/${lot.lotBoxCount}`} · {lot.kg} kg · {lot.m3} m³
               </p>
+              {(lot.lostCount > 0 || lot.missingCount > 0 || lot.leftBehindCount > 0) && (
+                <p className="text-xs font-semibold text-warn" data-testid="lot-fate">
+                  ⚠{' '}
+                  {fateWords({
+                    lost: lot.lostCount,
+                    missing: lot.missingCount,
+                    leftBehind: lot.leftBehindCount,
+                  }).join(' · ')}
+                </p>
+              )}
             </div>
             <div className="shrink-0 text-right">
               <p className="num text-sm font-bold" data-testid="lot-cost">
@@ -244,6 +268,11 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
         const { chargedUsd: charged, costUsd, prevUsd, kg, m3, boxes, marginUsd: margin } = group;
         const balance = balances.get(group.clientId);
         const parts = breakdown.get(group.clientId) ?? [];
+        // Some kilos did not arrive: the per-kilo PRICE is measured against
+        // what did, the per-kilo COST stays over what was carried — and each
+        // says which it is.
+        const shortfall = group.fate.lost + group.fate.missing > 0;
+        const priceKg = shortfall ? group.fate.arrivedKg : kg;
         return (
           <div key={group.clientId} className="card space-y-2" data-testid="pricing-client">
             <div className="flex flex-wrap items-baseline gap-x-2">
@@ -261,6 +290,22 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
 
             {lotRows(group.lots)}
 
+            {shortfall && (
+              <p className="text-xs font-semibold text-warn" data-testid="pricing-arrived">
+                ⚠ {t('arrivedLine', { boxes: group.fate.arrivedBoxes, kg: group.fate.arrivedKg })}
+                {' — '}
+                {fateWords(group.fate).join(' · ')}
+                {group.dealId && group.dealCode && dealLinks && (
+                  <>
+                    {' · '}
+                    <Link href={`/bitimlar/${group.dealId}`} className="num text-brand-700 underline">
+                      {group.dealCode}
+                    </Link>
+                  </>
+                )}
+              </p>
+            )}
+
             {/* Cost → price → margin, the three numbers the price is decided
                 from (owner). The customs entered once for the whole truck
                 reaches each lot as its own share. */}
@@ -274,7 +319,8 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                 </p>
                 {kg > 0 && costUsd > 0 && (
                   <p className="num text-xs text-ink-500">
-                    {(costUsd / kg).toFixed(2)}/kg
+                    {(costUsd / kg).toFixed(2)}
+                    {shortfall ? t('perKgLoaded') : '/kg'}
                     {m3 > 0 && ` · ${(costUsd / m3).toFixed(0)}/m³`}
                   </p>
                 )}
@@ -309,8 +355,11 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
               <div>
                 <p className="text-xs text-ink-500">{t('priceLabel')}</p>
                 <p className="num font-bold">{charged > 0 ? money(charged) : '—'}</p>
-                {charged > 0 && kg > 0 && (
-                  <p className="num text-xs text-ink-500">{(charged / kg).toFixed(2)}/kg</p>
+                {charged > 0 && priceKg > 0 && (
+                  <p className="num text-xs text-ink-500">
+                    {(charged / priceKg).toFixed(2)}
+                    {shortfall ? t('perKgArrived') : '/kg'}
+                  </p>
                 )}
               </div>
               <div>

@@ -1,7 +1,7 @@
 import { asc, eq, ne, sql, and } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { boxes, clients, deals, receiptLots, receipts } from '../../platform/db/schema';
-import { batchMemberFilter } from '../scanning/unload';
+import { leftBehindSql, riderFilter } from './riders';
 import { soleDealOf } from '../finance/pricing-view';
 
 /**
@@ -15,11 +15,20 @@ import { soleDealOf } from '../finance/pricing-view';
  * query on purpose — it counts planned/loaded boxes, which nothing here needs,
  * and its photo order is the LOADER's (tests/unit/loading-photo-order).
  *
- * Membership is `batchMemberFilter` (#152/#440: an unloaded box no longer
- * points at its truck), and an annulled box is not cargo — `voidBoxRows`
- * clears the live pointer, but the `batch_departed` movement stays for ever,
- * so without the status clause an annulled prixod would go on being offered
- * a customs cell with nobody left to carry it.
+ * Membership is the truck's RIDERS (`riders.ts`) — the money rule, which
+ * the cost engine splits the truck's bills over (U17/U25): an unloaded box no
+ * longer points at its truck (#152/#440), a carton found back at the origin
+ * never rode it, one scanned off without a load scan did. An annulled box is
+ * not cargo — `voidBoxRows` clears the live pointer, but the `batch_departed`
+ * movement stays for ever, so without the status clause an annulled prixod
+ * would go on being offered a customs cell with nobody left to carry it.
+ *
+ * A carton's FATE rides beside it and moves nothing (U35): lost, still
+ * missing from the unload, or found back where the truck started. The cost
+ * stays where the engine put it (#833 — whether the client's bill shrinks is
+ * the deal's damage discount), and the three money screens go on agreeing to
+ * the cent; what changes is that the person typing a price per kilo is told
+ * how many of those kilos did not arrive.
  *
  * kg / m³ are a SHARE of the lot (boxes aboard ÷ boxes in the lot), the same
  * arithmetic as the batch card and the stock table: a lot split over two
@@ -49,6 +58,18 @@ export interface BatchLot {
   lotBoxCount: number;
   kg: number;
   m3: number;
+  /** Of `onBatch`: written off as lost. */
+  lostCount: number;
+  /** Of `onBatch`: not scanned off this truck — flagged missing, unresolved. */
+  missingCount: number;
+  /**
+   * NOT in `onBatch`: scanned as loaded onto this truck and found back at its
+   * origin — it never rode, and neither its cost nor its kilos are here.
+   */
+  leftBehindCount: number;
+  /** `kg` / `m3` over the boxes that arrived: `onBatch − lost − missing`. */
+  arrivedKg: number;
+  arrivedM3: number;
   /** The goods themselves (the receipt_lot photo) — «what is it». */
   goodsPhotoId: string | null;
   /** The carton's outside (the receipt's general photo) — the fallback. */
@@ -75,6 +96,17 @@ export async function batchLots(batchId: string): Promise<BatchLot[]> {
       dealCode: deals.code,
       dealTitle: deals.title,
       onBatch: sql<number>`count(*)`,
+      lostCount: sql<number>`count(*) FILTER (WHERE ${boxes.status} = 'lost')`,
+      // Flagged by `finishUnload` and still pointing at THIS truck: a box
+      // merely in transit before the unload is on the road, not missing.
+      missingCount: sql<number>`count(*) FILTER (
+        WHERE ${boxes.flags} @> '["missing_in_transit"]'::jsonb AND ${boxes.currentBatchId} = ${batchId}
+          AND ${boxes.status} <> 'lost'
+      )`,
+      leftBehindCount: sql<number>`(
+        SELECT count(*) FROM boxes lb
+         WHERE lb.lot_id = ${receiptLots.id} AND ${leftBehindSql(sql`${batchId}::uuid`, 'lb')}
+      )`,
       goodsPhotoId: sql<string | null>`(
         SELECT a.id FROM attachments a
         WHERE a.entity_type = 'receipt_lot' AND a.entity_id = ${receiptLots.id} AND a.kind = 'photo'
@@ -91,7 +123,7 @@ export async function batchLots(batchId: string): Promise<BatchLot[]> {
     .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
     .leftJoin(clients, eq(receipts.clientId, clients.id))
     .leftJoin(deals, eq(receipts.dealId, deals.id))
-    .where(and(batchMemberFilter(batchId), ne(boxes.status, 'void')))
+    .where(and(riderFilter(batchId), ne(boxes.status, 'void')))
     .groupBy(receiptLots.id, receipts.id, clients.id, deals.id)
     // Client code first with the unclaimed last, then the prixod, then its
     // letter — the order the accountant's Excel is kept in.
@@ -103,7 +135,11 @@ export async function batchLots(batchId: string): Promise<BatchLot[]> {
 
   return rows.map((row) => {
     const onBatch = Number(row.onBatch);
+    const lostCount = Number(row.lostCount);
+    const missingCount = Number(row.missingCount);
     const share = row.lotBoxCount > 0 ? onBatch / row.lotBoxCount : 0;
+    const arrived = onBatch - lostCount - missingCount;
+    const arrivedShare = row.lotBoxCount > 0 ? arrived / row.lotBoxCount : 0;
     return {
       lotId: row.lotId,
       letter: row.letter,
@@ -122,6 +158,11 @@ export async function batchLots(batchId: string): Promise<BatchLot[]> {
       lotBoxCount: row.lotBoxCount,
       kg: Math.round(Number(row.lotWeightKg) * share * 10) / 10,
       m3: Math.round(Number(row.lotVolumeM3) * share * 1000) / 1000,
+      lostCount,
+      missingCount,
+      leftBehindCount: Number(row.leftBehindCount),
+      arrivedKg: Math.round(Number(row.lotWeightKg) * arrivedShare * 10) / 10,
+      arrivedM3: Math.round(Number(row.lotVolumeM3) * arrivedShare * 1000) / 1000,
       goodsPhotoId: row.goodsPhotoId,
       boxPhotoId: row.boxPhotoId,
     };
@@ -131,7 +172,7 @@ export async function batchLots(batchId: string): Promise<BatchLot[]> {
 /**
  * The deal a price set on this truck for this client is ALSO written to
  * (owner's R3a) — `soleDealOf` over the deals of the client's cargo aboard,
- * read by the same membership rule as `batchLots` (the screen that announces
+ * read by the same rider rule as `batchLots` (the screen that announces
  * it), so the page and the ledger cannot answer differently. A deal whose
  * client is not this one is never written: the receipt's link is somebody
  * else's data and no price may reach another client's job through it.
@@ -143,7 +184,7 @@ export async function soleDealAboard(batchId: string, clientId: string): Promise
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
     .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
     .leftJoin(deals, eq(receipts.dealId, deals.id))
-    .where(and(batchMemberFilter(batchId), ne(boxes.status, 'void'), eq(receipts.clientId, clientId)));
+    .where(and(riderFilter(batchId), ne(boxes.status, 'void'), eq(receipts.clientId, clientId)));
   const dealId = soleDealOf(rows);
   if (!dealId) return null;
   return rows.find((row) => row.dealId === dealId)?.dealClientId === clientId ? dealId : null;

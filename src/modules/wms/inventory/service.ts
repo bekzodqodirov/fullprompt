@@ -178,7 +178,8 @@ export async function reconcileInventory(
   // up as ready for one.
   const landedStatus = landedStatusFor(warehouse.type);
 
-  return db.transaction(async (tx) => {
+  const movedIds: string[] = [];
+  const result = await db.transaction(async (tx) => {
     const movedCodes: string[] = [];
     const skippedCodes: string[] = [];
     if (input.foundHereCodes.length) {
@@ -216,6 +217,7 @@ export async function reconcileInventory(
           actorId,
         });
         movedCodes.push(box.shortCode);
+        movedIds.push(box.id);
       }
     }
 
@@ -273,6 +275,22 @@ export async function reconcileInventory(
     });
     return summary;
   });
+  // A carton counted HERE that the record had on a truck out of here never
+  // left: it stops riding that truck, whose costs re-split over the cargo
+  // that did (U17) — after the commit, never failing the stocktake.
+  await recomputeFoundBack(movedIds, input.warehouseId, 'inventory');
+  return result;
+}
+
+/** `acceptFoundBox`'s and the stocktake's shared post-commit tail. */
+async function recomputeFoundBack(boxIds: string[], warehouseId: string, why: string): Promise<void> {
+  if (boxIds.length === 0) return;
+  try {
+    const { recomputeRiderChange, trucksFoundBackAt } = await import('../costing/service');
+    await recomputeRiderChange(await trucksFoundBackAt(boxIds, warehouseId), why);
+  } catch (err) {
+    console.error('[inventory] found-back re-split failed', why, err);
+  }
 }
 
 export interface FoundBoxSummary {
@@ -315,6 +333,7 @@ export async function acceptFoundBox(
   if (!warehouse) throw new InventoryError('warehouse_not_found');
   const landedStatus = landedStatusFor(warehouse.type);
 
+  let foundBoxId: string | null = null;
   const summary = await db.transaction(async (tx) => {
     const rows = await tx
       .select()
@@ -389,6 +408,7 @@ export async function acceptFoundBox(
       refType: 'manual',
       actorId,
     });
+    foundBoxId = box.id;
     await writeAudit(tx, { ...ctx, warehouseId: input.warehouseId }, {
       entityType: 'box',
       entityId: box.id,
@@ -423,6 +443,12 @@ export async function acceptFoundBox(
       landedStatus,
     } satisfies FoundBoxSummary;
   });
+
+  // Found back where its truck started (the owner's «yukladim deb skan qildim
+  // … tushirib qoldirdi»): it never rode that truck, so the truck's costs
+  // re-split over the cargo that did (U17). The bulk-accepted variant — the
+  // pointer already cleared at the destination — is found by its departure.
+  if (foundBoxId) await recomputeFoundBack([foundBoxId], input.warehouseId, 'accept_found');
 
   // A box pulled OFF an in-transit truck changes what the destination will
   // receive — the people who plan the trucks hear it, after the transaction

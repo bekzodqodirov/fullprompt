@@ -1321,7 +1321,13 @@
     "refund": "退款给客户",
     "refundAccount": "从哪个账户退款",
     "refundOnBatch": "退款不能记在批次上——它不是价格。",
-    "totalAdvances": "预付款（我们欠）"
+    "totalAdvances": "预付款（我们欠）",
+    "fateLost": "{count} 箱丢失",
+    "fateMissing": "{count} 箱未到",
+    "fateLeftBehind": "{count} 箱留在发货仓库——未随本车",
+    "arrivedLine": "已到：{boxes} 📦 · {kg} 公斤——按此定价",
+    "perKgArrived": "/公斤（已到）",
+    "perKgLoaded": "/公斤（已装）"
   },
   "map": {
     "title": "地图",
@@ -1472,7 +1478,7 @@
     "recurringActive": "启用——每月入账",
     "internalRowsNote": "国内车次（中国境内）只显示费用：不对其定价，其费用已作为「本车次之前」计入跨境车辆的成本——因此不计入合计。",
     "unallocatedNote": "记在车辆上的 {usd} 费用未分摊到任何箱子——不在任何成本中（车辆：{count}）。请在车次卡片上检查费用。",
-    "unbatchedNote": "未计入本表（按期间日期）：未关联车辆的收入 {revenue}——在客户账上定的价格。入库单、收货、木箱和工厂提货的费用已计入货物所乘车辆的成本。",
+    "unbatchedNote": "未计入本表（按期间日期）：未关联车辆的收入 {revenue}——在客户账上定的价格。",
     "clientRefunds": "退还客户",
     "balClientAdvances": "客户预付款（我们欠）",
     "beforeOpening": "{count} 条记录早于期初日期——已包含在期初余额中，不再重复计算",
@@ -1559,7 +1565,17 @@
     "noRateOutOfNet": "无汇率——未计入资产负债",
     "cashOpexNoKassa": "未指定账户的费用：{count} 笔，{usd}——已计入支出，但没有任何账户减少",
     "tillNegative": "为负",
-    "balNegativeTills": "{n} 个账户为负——记录的支出多于收入，请核对"
+    "balNegativeTills": "{n} 个账户为负——记录的支出多于收入，请核对",
+    "unbatchedCostNote": "未随任何定价车辆出发的货物上的费用（按费用日期）：已核销 {lost}，无车交付或退回 {issued}，仍在等车 {waiting}。其余入库单、收货、木箱和工厂提货费用计入货物所乘车辆的成本。",
+    "unclaimedRow": "无主货物（标记）",
+    "unclaimedRowHint": "{receipts} 张入库单——认领后费用转给客户",
+    "clientUnallocatedNote": "{usd} 费用未分摊到任何箱子（{count} 笔：{scopes}）——不在任何客户名下，这就是与损益表的差额。",
+    "gapScope": {
+      "batch": "无货车辆",
+      "pickup": "未关联入库单的工厂提货",
+      "receipt": "未落到入库单箱子上",
+      "crate": "未落到木箱箱子上"
+    }
   },
   "crm": {
     "title": "CRM",

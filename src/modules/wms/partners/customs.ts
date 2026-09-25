@@ -2,7 +2,7 @@ import { asc, eq } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { batches, boxes, clients, partners, receiptLots, receipts } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
-import { batchMemberFilter } from '../scanning/unload';
+import { riderFilter } from '../batches/riders';
 import { PartnerError } from './service';
 
 /**
@@ -91,9 +91,11 @@ export interface CustomsRow {
 /**
  * Every prixod on a truck with the customs answer that applies to it.
  *
- * Membership is a JOIN through `box_movements` (#152), never a subquery in a
- * join predicate — the same rule the cost grid follows, and for the same
- * reason: it is the difference between 0.36 s and half a minute.
+ * Membership is the truck's RIDERS (`riders.ts`), the rule its bills are split
+ * over — the cost grid's own: whose customs is our cost is a money question,
+ * so a prixod found back at the origin is not asked it on this truck, and one
+ * that rode without a load scan is (U25). Written as the indexed lookups,
+ * never a subquery in a join predicate (#152).
  */
 export async function batchCustomsRows(batchId: string): Promise<CustomsRow[]> {
   const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
@@ -112,7 +114,7 @@ export async function batchCustomsRows(batchId: string): Promise<CustomsRow[]> {
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
     .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
     .leftJoin(clients, eq(receipts.clientId, clients.id))
-    .where(batchMemberFilter(batchId))
+    .where(riderFilter(batchId))
     .groupBy(
       receipts.id,
       receipts.number,

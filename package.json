@@ -16,6 +16,7 @@
     "db:seed:demo": "tsx scripts/seed-demo.ts",
     "create-admin": "tsx scripts/create-admin.ts",
     "close-stale-calc-tasks": "tsx scripts/close-stale-calc-tasks.ts",
+    "repair-riders": "tsx scripts/repair-riders.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test",

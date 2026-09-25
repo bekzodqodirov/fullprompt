@@ -65,7 +65,11 @@ interface AnnulActor {
   roles: string[];
 }
 
-/** Batches this receipt's boxes ever rode (durable movements + live pointer). */
+/**
+ * Batches this receipt's boxes ever rode (durable movements + live pointer) —
+ * including a truck a box came off without a load scan: its costs were split
+ * over that box too (U25), so annulling it must re-split them.
+ */
 async function riddenBatchIds(exec: Tx | typeof db, boxIds: string[]): Promise<string[]> {
   if (boxIds.length === 0) return [];
   const departed = await exec
@@ -75,7 +79,7 @@ async function riddenBatchIds(exec: Tx | typeof db, boxIds: string[]): Promise<s
       and(
         inArray(boxMovements.boxId, boxIds),
         eq(boxMovements.refType, 'batch'),
-        eq(boxMovements.cause, 'batch_departed'),
+        inArray(boxMovements.cause, ['batch_departed', 'undocumented_transfer']),
       ),
     );
   const live = await exec
@@ -270,7 +274,8 @@ export async function annulReceipt(
     // A departed truck whose EVERY member is now void is a phantom: nobody
     // will ever unload it, cancelBatch refuses anything past loading, and
     // /transit, the map and the silent-truck alarm would serve it for ever.
-    // Retiring it here is the annul finishing its own sentence.
+    // Retiring it here is the annul finishing its own sentence. A box that
+    // came off it without a load scan is live cargo of it too (U25).
     const batchesRetired: string[] = [];
     for (const batchId of batchIds) {
       const batch = await tx.query.batches.findFirst({ where: eq(batches.id, batchId) });
@@ -288,7 +293,7 @@ export async function annulReceipt(
               select 1 from ${boxMovements} bm
               where bm.box_id = ${boxes}.id
                 and bm.ref_type = 'batch' and bm.ref_id = ${batchId}
-                and bm.cause = 'batch_departed'))`,
+                and bm.cause in ('batch_departed', 'undocumented_transfer')))`,
           ),
         );
       if (Number(live!.n) > 0) continue;
@@ -485,7 +490,7 @@ export async function annulPreview(receiptId: string): Promise<AnnulPreview | nu
               select 1 from ${boxMovements} bm
               where bm.box_id = ${boxes}.id
                 and bm.ref_type = 'batch' and bm.ref_id = ${batchId}
-                and bm.cause = 'batch_departed'))`,
+                and bm.cause in ('batch_departed', 'undocumented_transfer')))`,
           ),
         );
       willRetire = Number(live!.n) === 0;

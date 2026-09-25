@@ -75,6 +75,9 @@ export async function ingestUnloadScans(
   if (!ctx.actorId) throw new ScanError('unauthenticated');
   const actorId = ctx.actorId;
   const acks: UnloadAck[] = [];
+  // Trucks a carton came off WITHOUT a load scan: that carton is their cargo
+  // for money now (U25), so their costs re-split once the scans are in.
+  const rogueTrucks = new Set<string>();
 
   for (const input of inputs) {
     const ack = await db.transaction(async (tx): Promise<UnloadAck> => {
@@ -333,6 +336,7 @@ export async function ingestUnloadScans(
         });
       }
       const letters = await lettersFor(tx, members);
+      if (rogue.length > 0) rogueTrucks.add(input.batchId);
       return {
         clientEventUuid: input.clientEventUuid,
         result: onManifest ? 'ok' : 'auto_transfer',
@@ -341,6 +345,11 @@ export async function ingestUnloadScans(
       };
     });
     acks.push(ack);
+  }
+  // After every commit, never inside one (#714), and never failing the scan.
+  if (rogueTrucks.size > 0) {
+    const { recomputeRiderChange } = await import('../costing/service');
+    await recomputeRiderChange([...rogueTrucks], 'undocumented_transfer');
   }
   return acks;
 }
@@ -662,6 +671,7 @@ export async function resolveMissing(
       return {
         shortCode: box.shortCode,
         resolution: input.resolution,
+        batchId: batch.id,
         loss: { reason, batchCode: batch.code, about: about ?? null },
       };
     }
@@ -722,8 +732,17 @@ export async function resolveMissing(
         await claimArrivalNotice(tx, owner.clientId, batch.id, { actorId });
       }
     }
-    return { shortCode: box.shortCode, resolution: input.resolution, loss: null };
+    return { shortCode: box.shortCode, resolution: input.resolution, batchId: batch.id, loss: null };
   });
+
+  // Found at the ORIGIN, the carton never rode this truck: its share of the
+  // truck's road costs goes back to the cargo that did (DECISIONS #15, U17).
+  // In the SERVICE, so no door can forget it (#531); after the commit (#714).
+  // A carton lost ON the road did ride it and keeps its share (owner, 6a).
+  if (result.resolution === 'found_at_origin') {
+    const { recomputeRiderChange } = await import('../costing/service');
+    await recomputeRiderChange([result.batchId], 'found_at_origin');
+  }
 
   // The seller (compensation is their conversation) and whoever plans the
   // trucks, in ONE message each to a union — markBoxLost's recipients and its

@@ -17,12 +17,15 @@ import {
   pickups,
   receiptLots,
   receipts,
+  settings,
 } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { getSetting } from '../../platform/settings/service';
 import { tashkentDayStart } from '../../platform/time/tashkent';
 import { allocateEntry, toUsd, type AllocBox, type AllocationBasis } from './engine';
-import { batchMemberFilter } from '../scanning/unload';
+import { leftBehindSql, riderCtesSql, riderFilter, riderLoad } from '../batches/riders';
+import { internalLegSql } from '../batches/internal';
+import { CUSTOMS_CODES_SETTING, parseCustomsCodes } from '../calc/customs-codes';
 
 export class CostError extends Error {
   constructor(public readonly code: string) {
@@ -454,6 +457,41 @@ export async function boxDims(boxIds: string[], handle: Db | Tx = db): Promise<B
 }
 
 /**
+ * The cost types that are «rastamojka» — the ONE list the calc control
+ * already reads (`calc_customs_cost_type_codes`, parsed by
+ * `calc/customs-codes.ts` for both readers; DATA because the owner mints his
+ * own types), resolved to ids. On the caller's handle: the recompute asks it
+ * from inside its own transaction, where a pool read is #714's freeze — so
+ * the setting row is read directly and not through `getSetting`.
+ */
+export async function customsCostTypeIds(handle: Db | Tx = db): Promise<string[]> {
+  const [row] = await handle
+    .select({ value: settings.value })
+    .from(settings)
+    .where(eq(settings.key, CUSTOMS_CODES_SETTING));
+  const codes = parseCustomsCodes(row?.value);
+  const types = await handle.select({ id: costTypes.id }).from(costTypes).where(inArray(costTypes.code, codes));
+  return types.map((type) => type.id);
+}
+
+/**
+ * The boxes a truck's bill is split over. A ROAD cost — freight and every
+ * other non-customs bill — covers what rode it (`riderFilter`). A CUSTOMS
+ * bill covers the truck's DECLARATION, i.e. its manifest: a carton scanned
+ * aboard and found back at the origin was declared and its customs was paid,
+ * so it keeps that share, and when it rides the next truck the share rides
+ * with it as «shu reysgacha» and is billed there (owner, 2026-09-25: «a
+ * mashinaga yuklanganda … ywda qolib ketgani aniqlansa uni yolkira narxi
+ * yozilmasin, b partiyada yozilsin, lekin rastamojka qilib qoygan bolsak shu
+ * rastamojka narxi ham partiyada yozilishi kerak»).
+ */
+function truckBaseSql(batchId: string, customs: boolean): SQL {
+  return customs
+    ? or(riderFilter(batchId), leftBehindSql(sql`${batchId}::uuid`, 'boxes'))!
+    : riderFilter(batchId);
+}
+
+/**
  * Boxes in an entry's scope: receipt → its boxes; crate → its boxes; batch →
  * everything that rode it. `handle` is the recompute's own transaction (the
  * base is read under the entry's lock, so the last writer is also the
@@ -464,6 +502,34 @@ export async function scopeBoxIds(
   entry: typeof costEntries.$inferSelect,
   handle: Db | Tx = db,
 ): Promise<string[]> {
+  if (entry.scope === 'receipt' && entry.receiptId && entry.batchId) {
+    // A grid cell (the only writer of a receipt entry stamped with a truck)
+    // is THAT truck's part of the prixod — #979's «hereUsd» hint already
+    // reads it so. #532 spread it over the whole prixod as «attribution, not
+    // scope», which was harmless while the truck report summed stamped
+    // entries and wrong once it read allocations (R2a): a prixod split over
+    // two trucks put half of each truck's customs on the other truck's
+    // boxes, and the half on cargo that rode EARLIER was on no truck at all
+    // (audit U18). Only its cargo that rode that truck carries it — and when
+    // none did (a cell typed before anything was loaded, or on cargo that
+    // never went), it stays on the prixod as before: an empty scope would
+    // let the annul's empty-scope sweep void another prixod's customs. A
+    // customs cell covers the prixod's DECLARED cartons, the truck bill's
+    // own rule (`truckBaseSql`).
+    const customs = (await customsCostTypeIds(handle)).includes(entry.costTypeId);
+    const aboard = await handle
+      .select({ id: boxes.id })
+      .from(boxes)
+      .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+      .where(
+        and(
+          eq(receiptLots.receiptId, entry.receiptId),
+          ne(boxes.status, 'void'),
+          truckBaseSql(entry.batchId, customs),
+        ),
+      );
+    if (aboard.length) return aboard.map((r) => r.id);
+  }
   if (entry.scope === 'receipt' && entry.receiptId) {
     // NOT the void ones. A lot-edit shrink voids the miscounted surplus, and
     // a share left (or re-swept) onto a void box is money on a box that never
@@ -529,31 +595,22 @@ export async function scopeBoxIds(
     return rows.map((r) => r.id);
   }
   if (entry.scope === 'batch' && entry.batchId) {
-    // Departed boxes are the ground truth; before departure fall back to the
-    // currently loaded/reserved members so early-entered costs still show.
-    // Minus the `void` ones (the annul round, completing #530): a box voided
-    // after departing was a counting mistake riding a real truck, and its
-    // share belongs to the cargo that actually was on board. Deliberate for
-    // OLD data too — a void box already in this base repriced silently the
-    // day it was voided under the old rule; now it leaves the base instead.
-    const departed = await handle
-      .selectDistinct({ id: boxMovements.boxId })
-      .from(boxMovements)
-      .innerJoin(boxes, eq(boxMovements.boxId, boxes.id))
-      .where(
-        and(
-          eq(boxMovements.refType, 'batch'),
-          eq(boxMovements.refId, entry.batchId),
-          eq(boxMovements.cause, 'batch_departed'),
-          ne(boxes.status, 'void'),
-        ),
-      );
-    if (departed.length) return departed.map((r) => r.id);
-    const current = await handle
+    // What really rode it (`batches/riders.ts`): the departed boxes, minus a
+    // carton found back at the origin (it paid the freight of a truck it
+    // never boarded, U17), plus one that rode without a load scan (it paid
+    // none, U25); before departure, the loaded/reserved members, so an
+    // early-entered cost still shows. Minus the `void` ones (the annul
+    // round, completing #530): a box voided after departing was a counting
+    // mistake riding a real truck, and its share belongs to the cargo that
+    // actually was on board. Deliberate for OLD data too — each of these
+    // bases re-splits the next time the truck's costs are recomputed. A
+    // customs bill keeps the found-back carton (`truckBaseSql`).
+    const customs = (await customsCostTypeIds(handle)).includes(entry.costTypeId);
+    const base = await handle
       .select({ id: boxes.id })
       .from(boxes)
-      .where(and(eq(boxes.currentBatchId, entry.batchId), ne(boxes.status, 'void')));
-    return current.map((r) => r.id);
+      .where(and(truckBaseSql(entry.batchId, customs), ne(boxes.status, 'void')));
+    return base.map((r) => r.id);
   }
   return [];
 }
@@ -771,6 +828,51 @@ export async function recomputeEach(ids: string[]): Promise<void> {
 }
 
 /**
+ * Re-split every live cost stamped with these trucks after their RIDERS
+ * changed — the half of DECISIONS #15 that was never built («missing-in-
+ * transit resolved, undocumented transfer … re-triggers the recompute»,
+ * audit U17/U25). A carton found back at the origin leaves the base of the
+ * truck it never boarded, one scanned off without a load scan joins it; the
+ * truck's freight and its stamped grid cells re-split over what really rode.
+ * The dollars are frozen (R1), so only the per-box shares move.
+ *
+ * Called AFTER the commit that moved the carton — it reads settings and rates
+ * on the pool (#714) — and never allowed to fail the door that called it: a
+ * miss is a late re-split, logged, and `pnpm repair-riders` finds it.
+ */
+export async function recomputeRiderChange(batchIds: (string | null | undefined)[], why: string): Promise<void> {
+  for (const batchId of new Set(batchIds.filter((id): id is string => !!id))) {
+    try {
+      await recomputeAll({ batchId });
+    } catch (err) {
+      console.error('[costing] rider re-split failed', why, batchId, err);
+    }
+  }
+}
+
+/**
+ * The trucks these boxes may just have stopped riding: every truck they
+ * departed on (or came off unscanned) that STARTS at the warehouse they were
+ * found in. Read after the commit, for `recomputeRiderChange`.
+ */
+export async function trucksFoundBackAt(boxIds: string[], warehouseId: string): Promise<string[]> {
+  if (boxIds.length === 0) return [];
+  const rows = await db
+    .selectDistinct({ id: boxMovements.refId })
+    .from(boxMovements)
+    .innerJoin(batches, eq(batches.id, boxMovements.refId))
+    .where(
+      and(
+        inArray(boxMovements.boxId, boxIds),
+        eq(boxMovements.refType, 'batch'),
+        inArray(boxMovements.cause, ['batch_departed', 'undocumented_transfer']),
+        eq(batches.originWarehouseId, warehouseId),
+      ),
+    );
+  return rows.map((row) => row.id).filter((id): id is string => !!id);
+}
+
+/**
  * Re-split every live cost that shares money over one lot's boxes (audit
  * A22) — after its kg, m³ or box count was corrected.
  *
@@ -782,48 +884,19 @@ export async function recomputeEach(ids: string[]): Promise<void> {
  * client in every report that reads allocations — while the lot's row showed
  * the corrected kg beside the stale dollars.
  *
- * Membership is read from the ledger that defines it (#440): an entry with a
- * share on any of the lot's boxes, the lot's receipt's own costs, and the
- * batch and crate entries of every truck and crate the lot's boxes were ever
- * loaded into — a box that got no share because its old weight was zero is
- * still on that truck.
+ * Membership is `costEntriesTouchingLots` (void-guard.ts) — ONE home for
+ * «which costs share money over these boxes», read from the ledger that
+ * defines it (#440): an entry with a share on any of the lot's boxes, the
+ * lot's receipt's own costs, and the batch, crate and pickup entries of every
+ * truck, crate and factory trip the lot's boxes were part of — including a
+ * truck they rode without a load scan (U25). A box that got no share because
+ * its old weight was zero is still on that truck.
  */
 export async function recomputeForLot(lotId: string): Promise<number> {
-  const rows = await db.execute<{ id: string }>(sql`
-    SELECT DISTINCT ce.id
-      FROM cost_entries ce
-     WHERE ce.voided_at IS NULL
-       AND (
-         ce.receipt_id = (SELECT rl.receipt_id FROM receipt_lots rl WHERE rl.id = ${lotId})
-         OR ce.id IN (
-           SELECT ca.cost_entry_id
-             FROM cost_allocations ca
-             JOIN boxes b ON b.id = ca.box_id
-            WHERE b.lot_id = ${lotId}
-         )
-         OR (ce.scope = 'batch' AND ce.batch_id IN (
-           SELECT bm.ref_id
-             FROM box_movements bm
-             JOIN boxes b ON b.id = bm.box_id
-            WHERE b.lot_id = ${lotId} AND bm.cause = 'batch_departed' AND bm.ref_type = 'batch'
-         ))
-         OR (ce.scope = 'crate' AND ce.crate_id IN (
-           SELECT bm.ref_id
-             FROM box_movements bm
-             JOIN boxes b ON b.id = bm.box_id
-            WHERE b.lot_id = ${lotId} AND bm.cause = 'crate_packed' AND bm.ref_type = 'crate'
-         ))
-         OR (ce.scope = 'pickup' AND ce.pickup_id IN (
-           SELECT ps.pickup_id
-             FROM receipt_lots rl
-             JOIN receipts r ON r.id = rl.receipt_id
-             JOIN pickup_stops ps ON ps.id = r.pickup_stop_id
-            WHERE rl.id = ${lotId}
-         ))
-       )
-  `);
-  for (const row of rows) await recomputeEntry(row.id);
-  return rows.length;
+  const { costEntriesTouchingLots } = await import('./void-guard');
+  const ids = await costEntriesTouchingLots([lotId]);
+  await recomputeEach(ids);
+  return ids.length;
 }
 
 // ---------------------------------------------------------------------------
@@ -873,59 +946,118 @@ export interface ClientLandedCost {
  * Two figures because they answer different questions: `totalUsd` is what the
  * cargo cost us end to end (China-side receipt costs included) and is the one
  * a price has to beat; `batchUsd` is what this trip added.
+ *
+ * The same allocations `batchLandedCostTotals` sums, through the same fence,
+ * grouped by client instead of by lot.
  */
-/**
- * «Shu reysgacha» must not read the future. `batchMemberFilter` is
- * membership-for-ever, so re-opening an internal leg's money screen AFTER the
- * export departed showed the export's customs inside the internal leg's cost
- * column — every last-month leg read loss-making by exactly the later leg's
- * money, under a label that says «before this trip». An entry attributed to
- * another batch counts only when that batch departed BEFORE this one did (or
- * before now, while this one is still forming); an entry with no batch at all
- * is cargo money and rides everywhere it always did.
- */
-function notLaterLeg(batchId: string | SQL) {
-  return sql`(
-    ${costEntries.batchId} IS NULL
-    OR ${costEntries.batchId} = ${batchId}
-    OR EXISTS (
-      SELECT 1 FROM batches later
-      WHERE later.id = ${costEntries.batchId}
-        AND later.departed_at IS NOT NULL
-        AND later.departed_at <= coalesce(
-          (SELECT b0.departed_at FROM batches b0 WHERE b0.id = ${batchId}), now()
-        )
-    )
-  )`;
-}
-
 export async function batchLandedCostByClient(batchId: string): Promise<Map<string, ClientLandedCost>> {
-  const rows = await db
-    .select({
-      clientId: receipts.clientId,
-      totalUsd: sql<string>`coalesce(sum(${costAllocations.amountUsd}), 0)`,
-      batchUsd: sql<string>`coalesce(sum(${costAllocations.amountUsd}) filter (where ${costEntries.batchId} = ${batchId}), 0)`,
-    })
-    .from(costAllocations)
-    .innerJoin(costEntries, eq(costAllocations.costEntryId, costEntries.id))
-    .innerJoin(boxes, eq(costAllocations.boxId, boxes.id))
-    .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
-    .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
-    .where(
-      and(isNull(costEntries.voidedAt), batchMemberFilter(batchId), notLaterLeg(batchId)),
-    )
-    .groupBy(receipts.clientId);
+  const landed = landedAllocationsSql(sql`${batchId}::uuid`);
+  const rows = (await db.execute(sql`
+    WITH ${landed.with}
+    SELECT rc.client_id,
+           coalesce(sum(ca.amount_usd), 0) AS total_usd,
+           coalesce(sum(ca.amount_usd) FILTER (WHERE ce.batch_id = m.batch_id), 0) AS batch_usd
+      ${landed.joins}
+      JOIN receipt_lots rl ON rl.id = bx.lot_id
+      JOIN receipts rc ON rc.id = rl.receipt_id
+     WHERE ${landed.where}
+     GROUP BY rc.client_id
+  `)) as unknown as { client_id: string | null; total_usd: string; batch_usd: string }[];
 
   const out = new Map<string, ClientLandedCost>();
   for (const row of rows) {
-    if (!row.clientId) continue;
-    out.set(row.clientId, {
-      clientId: row.clientId,
-      totalUsd: Math.round(Number(row.totalUsd) * 100) / 100,
-      batchUsd: Math.round(Number(row.batchUsd) * 100) / 100,
+    if (!row.client_id) continue;
+    out.set(row.client_id, {
+      clientId: row.client_id,
+      totalUsd: Math.round(Number(row.total_usd) * 100) / 100,
+      batchUsd: Math.round(Number(row.batch_usd) * 100) / 100,
     });
   }
   return out;
+}
+
+/**
+ * The allocations each listed truck's landed cost is made of — ONE home for
+ * «Partiya moliyasi» (per lot, per client, and the breakdown under the
+ * tannarx) and «Partiya foydasi» (owner's R2a: «bitta mashina bitta foyda»),
+ * so none of the four readers can say something the others do not (#513).
+ *
+ * Members are the truck's RIDERS (`riderCtesSql`, audit U17/U25), written as
+ * a CTE of the indexed lookups rather than an OR: joined to
+ * `cost_allocations`, the OR leaves the planner guessing that half of all
+ * boxes ride every truck and it scans the allocations table whole (#152).
+ * An annulled box is not cargo (the annul round).
+ *
+ * Which of a member box's allocations the truck carries — «shu reysgacha»:
+ * - its own entries, always;
+ * - never a LATER leg's: an entry stamped with a truck that departed after
+ *   this one (or at all, while this one is still forming) is the future
+ *   (#532e — re-opening an internal leg after the export had left printed
+ *   the export's customs as «before this trip»);
+ * - and each allocation on exactly ONE priced truck (audit U16). Since U1b a
+ *   truck inside Uzbekistan is priced, and the old fence let every later
+ *   priced leg count again everything an earlier one had carried — the
+ *   cross-border freight, the prixod's own money, the Chinese legs — so
+ *   Andijan → Tashkent printed the whole journey against a price for one
+ *   road, and the page's Jami counted the first truck's cost twice. The rule
+ *   is per BOX, because it is «what this carton brought with it since the
+ *   last truck that was priced»: a truckless entry (receipt, crate, pickup)
+ *   counts only while the box has no earlier priced truck, and another
+ *   truck's entry only when that truck departed after the box's previous
+ *   priced one (in practice a Chinese internal leg in between). The rows are
+ *   then disjoint, so the priced rows add up to the distinct allocations —
+ *   the P&L's direct cost for a fully priced, fully allocated set of trucks.
+ *   The answer does not depend on whether the later truck IS priced (the
+ *   owner's pending A/B): the money is counted once either way.
+ *
+ * An INTERNAL truck (both ends in China) looks for no previous priced truck —
+ * it keeps the plain fence, as #1010 has it: a cost row, shown and left out
+ * of every total.
+ *
+ * Stated, not refined: truckless money spent in Uzbekistan between two legs
+ * (a crate built in Andijan, a receipt cost typed later) lands on the FIRST
+ * priced truck — conserved and never doubled, but attributed early.
+ */
+function landedAllocationsSql(list: SQL): { with: SQL; joins: SQL; where: SQL } {
+  return {
+    with: sql`
+      ${riderCtesSql(list)},
+      clock AS (
+        SELECT t.id AS batch_id, coalesce(t.departed_at, now()) AS at,
+               ${internalLegSql('tow', 'tdw')} AS internal
+          FROM batches t
+          JOIN warehouses tow ON tow.id = t.origin_warehouse_id
+          JOIN warehouses tdw ON tdw.id = t.dest_warehouse_id
+         WHERE t.id IN (${list})
+      ),
+      prev_priced AS (
+        SELECT m.batch_id, m.box_id, max(pb.departed_at) AS prev_at
+          FROM members m
+          JOIN clock c ON c.batch_id = m.batch_id AND NOT c.internal
+          JOIN box_rides r ON r.box_id = m.box_id AND r.batch_id <> m.batch_id
+          JOIN batches pb ON pb.id = r.batch_id
+          JOIN warehouses po ON po.id = pb.origin_warehouse_id
+          JOIN warehouses pd ON pd.id = pb.dest_warehouse_id
+         WHERE pb.departed_at IS NOT NULL AND pb.departed_at < c.at
+           AND NOT ${internalLegSql('po', 'pd')}
+         GROUP BY m.batch_id, m.box_id
+      )`,
+    joins: sql`
+      FROM members m
+      JOIN clock c ON c.batch_id = m.batch_id
+      JOIN boxes bx ON bx.id = m.box_id
+      JOIN cost_allocations ca ON ca.box_id = m.box_id
+      JOIN cost_entries ce ON ce.id = ca.cost_entry_id
+      LEFT JOIN batches eb ON eb.id = ce.batch_id
+      LEFT JOIN prev_priced pp ON pp.batch_id = m.batch_id AND pp.box_id = m.box_id`,
+    where: sql`ce.voided_at IS NULL
+       AND (
+         ce.batch_id = m.batch_id
+         OR (ce.batch_id IS NULL AND pp.prev_at IS NULL)
+         OR (eb.departed_at IS NOT NULL AND eb.departed_at <= c.at
+             AND (pp.prev_at IS NULL OR eb.departed_at > pp.prev_at))
+       )`,
+  };
 }
 
 /** One lot's share of what the cargo cost us, as it stands on one truck. */
@@ -955,15 +1087,8 @@ export async function batchLandedCostByLot(batchId: string): Promise<Map<string,
 /**
  * `batchLandedCostByLot` for MANY trucks at once — per truck, per lot — so
  * the profit report reads every truck of a period in ONE grouped query and
- * not one per row (#432: a list's length is the business growing).
- *
- * Membership is written as a CTE of the two indexed lookups rather than
- * `batchMemberFilter`'s OR: joined to `cost_allocations`, the OR leaves the
- * planner guessing that half of all boxes ride every truck and it scans the
- * allocations table whole (CLAUDE.md: batch membership is a JOIN through
- * box_movements). An annulled box is not cargo (the annul round). The
- * «shu reysgacha» fence is asked per MEMBER truck — a box that rode two of
- * the listed trucks is counted on each, each time with that truck's own clock.
+ * not one per row (#432: a list's length is the business growing). The
+ * members, the clock and the fence are `landedAllocationsSql`'s.
  */
 export async function batchLandedCostTotals(
   batchIds: string[],
@@ -975,25 +1100,14 @@ export async function batchLandedCostTotals(
     ids.map((id) => sql`${id}::uuid`),
     sql`, `,
   );
+  const landed = landedAllocationsSql(list);
   const rows = (await db.execute(sql`
-    WITH members AS (
-      SELECT b.current_batch_id AS batch_id, b.id AS box_id FROM boxes b
-       WHERE b.current_batch_id IN (${list}) AND b.status <> 'void'
-      UNION
-      SELECT bm.ref_id, bm.box_id FROM box_movements bm
-        JOIN boxes b ON b.id = bm.box_id
-       WHERE bm.ref_type = 'batch' AND bm.ref_id IN (${list})
-         AND bm.cause = 'batch_departed' AND b.status <> 'void'
-    )
+    WITH ${landed.with}
     SELECT m.batch_id, bx.lot_id,
            coalesce(sum(ca.amount_usd), 0) AS total_usd,
-           coalesce(sum(ca.amount_usd) FILTER (WHERE ${costEntries}.batch_id = m.batch_id), 0) AS batch_usd
-      FROM members m
-      JOIN boxes bx ON bx.id = m.box_id
-      JOIN cost_allocations ca ON ca.box_id = m.box_id
-      JOIN ${costEntries} ON ${costEntries}.id = ca.cost_entry_id
-     WHERE ${costEntries}.voided_at IS NULL
-       AND ${notLaterLeg(sql`m.batch_id`)}
+           coalesce(sum(ca.amount_usd) FILTER (WHERE ce.batch_id = m.batch_id), 0) AS batch_usd
+      ${landed.joins}
+     WHERE ${landed.where}
      GROUP BY m.batch_id, bx.lot_id
   `)) as unknown as { batch_id: string; lot_id: string; total_usd: string; batch_usd: string }[];
   for (const row of rows) {
@@ -1061,29 +1175,14 @@ export async function batchCostSheet(batchId: string) {
     .where(and(eq(costEntries.batchId, batchId), isNull(costEntries.voidedAt)))
     .orderBy(asc(costEntries.createdAt));
 
-  const [load] = await db
-    .select({
-      boxCount: sql<number>`count(*)`,
-      kg: sql<string>`coalesce(sum(${receiptLots.totalWeightKg} / ${receiptLots.boxCount}), 0)`,
-      m3: sql<string>`coalesce(sum(${receiptLots.totalVolumeM3} / ${receiptLots.boxCount}), 0)`,
-    })
-    .from(boxMovements)
-    .innerJoin(boxes, eq(boxMovements.boxId, boxes.id))
-    .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
-    .where(
-      and(
-        eq(boxMovements.refType, 'batch'),
-        eq(boxMovements.refId, batchId),
-        eq(boxMovements.cause, 'batch_departed'),
-        // A void (annulled) box is not cargo: it must not fatten the kg/m³
-        // the per-unit costs divide by.
-        ne(boxes.status, 'void'),
-      ),
-    );
+  // The per-unit costs divide by what the freight was split over — the
+  // truck's riders (a carton found back at the origin never rode, one
+  // scanned off without a load scan did; a void box is not cargo).
+  const load = (await riderLoad([batchId])).get(batchId);
 
   const totalUsd = entries.reduce((a, e) => a + Number(e.entry.amountUsd ?? 0), 0);
-  const kg = Number(load?.kg ?? 0);
-  const m3 = Number(load?.m3 ?? 0);
+  const kg = load?.kg ?? 0;
+  const m3 = load?.m3 ?? 0;
   return {
     entries,
     totalUsd: Math.round(totalUsd * 100) / 100,
@@ -1118,8 +1217,9 @@ export interface BatchReceiptRow {
   m3: number;
 }
 
-/** The batch's receipts, one grid row each — membership through the
- * movement rows (#152), same ground truth as the cost engine itself. */
+/** The batch's receipts, one grid row each — its riders, the same ground
+ * truth as the cost engine itself: a grid cell splits over exactly these
+ * boxes of the prixod (U18), so the row must count exactly them. */
 export async function batchReceiptRows(batchId: string): Promise<BatchReceiptRow[]> {
   const rows = await db
     .select({
@@ -1138,7 +1238,7 @@ export async function batchReceiptRows(batchId: string): Promise<BatchReceiptRow
     // An annulled box keeps its `batch_departed` row for ever: without the
     // status clause its prixod stayed on the grid and took a customs cell
     // whose allocation pool is empty.
-    .where(and(batchMemberFilter(batchId), ne(boxes.status, 'void')))
+    .where(and(riderFilter(batchId), ne(boxes.status, 'void')))
     .groupBy(receipts.id, receipts.number, clients.clientCode, clients.name)
     .orderBy(asc(clients.clientCode), asc(receipts.number));
   return rows.map((row) => ({
@@ -1358,46 +1458,40 @@ export interface ClientCostPart {
 export async function batchClientCostBreakdown(
   batchId: string,
 ): Promise<Map<string, ClientCostPart[]>> {
-  const rows = await db
-    .select({
-      clientId: costAllocations.clientId,
-      typeName: costTypes.name,
-      batchCode: batches.code,
-      receiptNumber: receipts.number,
-      crateCode: crates.code,
-      usd: sql<string>`sum(${costAllocations.amountUsd})`,
-    })
-    .from(costAllocations)
-    .innerJoin(costEntries, eq(costAllocations.costEntryId, costEntries.id))
-    .innerJoin(costTypes, eq(costEntries.costTypeId, costTypes.id))
-    .innerJoin(boxes, eq(costAllocations.boxId, boxes.id))
-    .leftJoin(batches, eq(costEntries.batchId, batches.id))
-    .leftJoin(receipts, eq(costEntries.receiptId, receipts.id))
-    .leftJoin(crates, eq(costEntries.crateId, crates.id))
-    .where(
-      and(
-        batchMemberFilter(batchId),
-        isNull(costEntries.voidedAt),
-        notLaterLeg(batchId),
-        sql`${costAllocations.clientId} IS NOT NULL`,
-      ),
-    )
-    .groupBy(
-      costAllocations.clientId,
-      costTypes.name,
-      batches.code,
-      receipts.number,
-      crates.code,
-    );
+  // The header's own allocations through the header's own fence
+  // (`landedAllocationsSql`), or the parts would not add up to the tannarx
+  // printed above them.
+  const landed = landedAllocationsSql(sql`${batchId}::uuid`);
+  const rows = (await db.execute(sql`
+    WITH ${landed.with}
+    SELECT ca.client_id, ct.name AS type_name, eb.code AS batch_code,
+           er.number AS receipt_number, cr.code AS crate_code, pk.code AS pickup_code,
+           sum(ca.amount_usd) AS usd
+      ${landed.joins}
+      JOIN cost_types ct ON ct.id = ce.cost_type_id
+      LEFT JOIN receipts er ON er.id = ce.receipt_id
+      LEFT JOIN crates cr ON cr.id = ce.crate_id
+      LEFT JOIN pickups pk ON pk.id = ce.pickup_id
+     WHERE ${landed.where} AND ca.client_id IS NOT NULL
+     GROUP BY ca.client_id, ct.name, eb.code, er.number, cr.code, pk.code
+  `)) as unknown as {
+    client_id: string;
+    type_name: string;
+    batch_code: string | null;
+    receipt_number: string | null;
+    crate_code: string | null;
+    pickup_code: string | null;
+    usd: string;
+  }[];
   const out = new Map<string, ClientCostPart[]>();
   for (const row of rows) {
-    const list = out.get(row.clientId!) ?? [];
+    const list = out.get(row.client_id) ?? [];
     list.push({
-      source: row.batchCode ?? row.receiptNumber ?? row.crateCode ?? '—',
-      typeName: row.typeName,
+      source: row.batch_code ?? row.receipt_number ?? row.crate_code ?? row.pickup_code ?? '—',
+      typeName: row.type_name,
       usd: Math.round(Number(row.usd) * 100) / 100,
     });
-    out.set(row.clientId!, list);
+    out.set(row.client_id, list);
   }
   for (const list of out.values()) list.sort((a, b) => b.usd - a.usd);
   return out;

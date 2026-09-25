@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
@@ -110,9 +110,22 @@ async function boxOf(receiptId: string): Promise<string> {
   return row!.id;
 }
 
+async function chineseWarehouses(): Promise<string[]> {
+  const rows = await db
+    .select({ id: warehouses.id })
+    .from(warehouses)
+    .where(eq(warehouses.country, 'CN'))
+    .orderBy(asc(warehouses.code))
+    .limit(2);
+  return rows.map((row) => row.id);
+}
+
 beforeAll(async () => {
   actorId = (await db.select({ id: users.id }).from(users).where(eq(users.active, true)).limit(1))[0]!.id;
-  warehouseId = (await db.select({ id: warehouses.id }).from(warehouses).limit(1))[0]!.id;
+  // Two CHINESE warehouses, pinned: both legs here are internal (CN → CN), so
+  // the earlier one is no priced truck for «shu reysgacha» to stop at (U16) —
+  // a bare `limit(2)` picked whatever came back first on a long-lived db.
+  warehouseId = (await chineseWarehouses())[0]!;
   clientId = (
     await createClient(
       { clientCode: `RG${String(STAMP).slice(-7)}`, name: `Jadval mijoz ${STAMP}`, phones: [] },
@@ -126,12 +139,12 @@ beforeAll(async () => {
   // typed on (attribution for /accounting/profit), and the FK refuses a
   // batch that does not exist — as it would in production, where the grid
   // only renders on a batch's own page.
-  const [, secondWh] = await db.select({ id: warehouses.id }).from(warehouses).limit(2);
+  const [, secondWh] = await chineseWarehouses();
   await db.insert(batches).values({
     id: fakeBatchId,
     code: `RGB-${STAMP}`,
     originWarehouseId: warehouseId,
-    destWarehouseId: secondWh!.id,
+    destWarehouseId: secondWh!,
     status: 'in_transit',
     departedAt: new Date(),
     createdBy: actorId,
@@ -288,12 +301,12 @@ describe('«shu reysgacha» does not read the future', () => {
     // leg's screen used to show the later customs inside its cost column —
     // every internal leg read loss-making by money spent after it landed.
     const laterBatchId = uuidv4();
-    const [, secondWh] = await db.select({ id: warehouses.id }).from(warehouses).limit(2);
+    const [, secondWh] = await chineseWarehouses();
     await db.insert(batches).values({
       id: laterBatchId,
       code: `RGB2-${STAMP}`,
       originWarehouseId: warehouseId,
-      destWarehouseId: secondWh!.id,
+      destWarehouseId: secondWh!,
       status: 'in_transit',
       departedAt: new Date(Date.now() + 60 * 60 * 1000),
       createdBy: actorId,
@@ -332,7 +345,9 @@ describe('«shu reysgacha» does not read the future', () => {
     // The first leg keeps its own story…
     const first = (await batchLandedCostByClient(fakeBatchId)).get(clientId)!;
     expect(first.totalUsd).toBe(350);
-    // …and the later leg tells the whole journey, earlier legs included.
+    // …and the later leg tells the whole journey, earlier legs included —
+    // both legs are inside China, so the earlier one was never priced and its
+    // money rides on to the next truck that is (U16).
     const second = (await batchLandedCostByClient(laterBatchId)).get(clientId)!;
     expect(second.totalUsd).toBe(1349);
     expect(second.batchUsd).toBe(999);

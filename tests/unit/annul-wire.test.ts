@@ -107,6 +107,14 @@ describe('«a void box is not cargo» — the closed set', () => {
       // The pricing screen and the prixod cost grid read the truck through
       // ONE helper since 2026-09-24; the rule lives there, not in the page.
       'src/modules/wms/batches/lots.ts',
+      // Who really rode a truck for money (U17/U25) — every money reader's
+      // membership, so the void exclusion lives in the rule itself.
+      'src/modules/wms/batches/riders.ts',
+      // The one-off repair's plan names cartons by the same rule.
+      'src/modules/wms/costing/rider-repair.ts',
+      // The dashboard's risk and unbilled reads (the phantom row asks the
+      // riders' own left-behind rule).
+      'src/modules/wms/reports/business.ts',
       'src/app/(protected)/batches/page.tsx',
       'src/app/(protected)/trucks/page.tsx',
       'src/modules/wms/finance/client-cargo.ts',

@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import {
+  clientProfitGaps,
   pnlGaps,
   profitByBatch,
   profitByClient,
@@ -55,16 +56,38 @@ export default async function ProfitPage({
         ? await profitByClient(from, to)
         : await profitByRoute(from, to);
 
-  const [gaps, unbatched] = await Promise.all([
+  const [gaps, unbatched, clientGaps] = await Promise.all([
     pnlGaps(from, to),
     view === 'client' ? Promise.resolve(null) : unbatchedMoney(from, to),
+    view === 'client' ? clientProfitGaps(from, to) : Promise.resolve(null),
   ]);
 
   // An internal leg is a cost row with no profit (R2a), and its cost is
   // already inside the cross-border truck's figure as «shu reysgacha» — so it
-  // stays out of the totals, or that money would be counted twice.
+  // stays out of the totals, or that money would be counted twice. Every
+  // other truck row is disjoint (U16), so summing them counts money once.
   const isInternal = (row: (typeof rows)[number]) => 'internal' in row && row.internal;
-  const totals = tripTotals(rows);
+  // Unclaimed cargo cost us money too (#980/#1010): on the client tab it is a
+  // row of its own inside the Jami, so the tab reconciles to the P&L (U19).
+  // Never a row of `profitByClient` — the seller report would file it under
+  // the «—» cohort of unassigned clients.
+  const unclaimedUsd = clientGaps && clientGaps.unclaimed.usd > 0.009 ? clientGaps.unclaimed.usd : 0;
+  const totals = tripTotals(
+    unclaimedUsd > 0
+      ? [...rows, { revenueUsd: 0, costUsd: unclaimedUsd, profitUsd: -unclaimedUsd }]
+      : rows,
+  );
+  const unbatchedCost = unbatched?.noTruckCost;
+  const unbatchedCostUsd = unbatchedCost
+    ? unbatchedCost.lostUsd + unbatchedCost.issuedUsd + unbatchedCost.waitingUsd
+    : 0;
+  // A literal map — a runtime key is a key no bundle test can see (#163).
+  const gapScope: Record<string, string> = {
+    batch: t('gapScope.batch'),
+    pickup: t('gapScope.pickup'),
+    receipt: t('gapScope.receipt'),
+    crate: t('gapScope.crate'),
+  };
   const anyInternal = rows.some(isInternal);
   const unallocated = rows.filter((row) => 'unallocatedUsd' in row && row.unallocatedUsd > 0.009);
   const unallocatedUsd = unallocated.reduce(
@@ -113,7 +136,7 @@ export default async function ProfitPage({
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 && (
+              {rows.length === 0 && unclaimedUsd === 0 && (
                 <tr>
                   <td colSpan={8} className="p-3 text-center text-ink-500">
                     {t('empty')}
@@ -174,7 +197,23 @@ export default async function ProfitPage({
                   )}
                 </tr>
               ))}
-              {rows.length > 0 && (
+              {unclaimedUsd > 0 && clientGaps && (
+                <tr className="border-b border-line" data-testid="profit-unclaimed">
+                  <td className="p-2">
+                    <span className="font-semibold">{t('unclaimedRow')}</span>
+                    <span className="block text-xs text-ink-500">
+                      {t('unclaimedRowHint', { receipts: clientGaps.unclaimed.receipts })}
+                    </span>
+                  </td>
+                  <td className="p-2 text-right font-mono">{usd(0)}</td>
+                  <td className="p-2 text-right font-mono">{usd(unclaimedUsd)}</td>
+                  <td className={`p-2 text-right font-mono font-bold ${profitClass(-unclaimedUsd)}`}>
+                    {usd(-unclaimedUsd)}
+                  </td>
+                  <td className="p-2 text-right">—</td>
+                </tr>
+              )}
+              {(rows.length > 0 || unclaimedUsd > 0) && (
                 <tr className="border-t-2 border-line-strong font-bold">
                   <td className="p-2" colSpan={view === 'batch' ? 3 : view === 'route' ? 2 : 1}>
                     {t('total')}
@@ -205,10 +244,37 @@ export default async function ProfitPage({
           {t('unallocatedNote', { usd: `$${usd(unallocatedUsd)}`, count: unallocated.length })}
         </p>
       )}
-      {unbatched && unbatched.revenueUsd > 0 && (
-        <p className="card !p-3 text-sm text-ink-700" data-testid="profit-unbatched">
-          ℹ️ {t('unbatchedNote', { revenue: `$${usd(unbatched.revenueUsd)}` })}
+      {clientGaps && clientGaps.unallocated.usd > 0.009 && (
+        <p className="card !p-3 text-sm font-semibold text-warn" data-testid="profit-client-unallocated">
+          ⚠{' '}
+          {t('clientUnallocatedNote', {
+            usd: `$${usd(clientGaps.unallocated.usd)}`,
+            count: clientGaps.unallocated.count,
+            scopes: clientGaps.unallocated.byScope
+              .map((row) => gapScope[row.scope] ?? row.scope)
+              .join(', '),
+          })}
         </p>
+      )}
+      {/* Said when EITHER half has money (U37): the cost half — cargo that
+          rode no priced truck — used to be silent whenever the revenue half
+          was zero. */}
+      {unbatched && (unbatched.revenueUsd > 0.009 || unbatchedCostUsd > 0.009) && (
+        <div className="card space-y-1 !p-3 text-sm text-ink-700" data-testid="profit-unbatched">
+          {unbatched.revenueUsd > 0.009 && (
+            <p>ℹ️ {t('unbatchedNote', { revenue: `$${usd(unbatched.revenueUsd)}` })}</p>
+          )}
+          {unbatchedCost && unbatchedCostUsd > 0.009 && (
+            <p data-testid="profit-unbatched-cost">
+              ℹ️{' '}
+              {t('unbatchedCostNote', {
+                lost: `$${usd(unbatchedCost.lostUsd)}`,
+                issued: `$${usd(unbatchedCost.issuedUsd)}`,
+                waiting: `$${usd(unbatchedCost.waitingUsd)}`,
+              })}
+            </p>
+          )}
+        </div>
       )}
     </div>
   );
