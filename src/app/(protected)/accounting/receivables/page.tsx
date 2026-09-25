@@ -4,6 +4,7 @@ import { getTranslations } from 'next-intl/server';
 import { futureDatedEntries } from '@/modules/wms/finance/service';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { arAging } from '@/modules/wms/accounting/reports';
+import { agingTotals } from '@/modules/wms/accounting/balance-lines';
 import { toUzs, uzsRate } from '@/modules/wms/accounting/period';
 import { PageHeader } from '@/components/ui/page';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
@@ -33,16 +34,7 @@ export default async function ReceivablesPage({
 
   const usd = (value: number) =>
     value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const totals = rows.reduce(
-    (acc, row) => {
-      acc.balance += row.balance;
-      row.buckets.forEach((value, index) => {
-        acc.buckets[index] = (acc.buckets[index] ?? 0) + value;
-      });
-      return acc;
-    },
-    { balance: 0, buckets: [0, 0, 0, 0] as number[] },
-  );
+  const totals = agingTotals(rows);
 
   return (
     <div className="mx-auto max-w-lg space-y-3 md:max-w-4xl">

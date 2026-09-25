@@ -135,6 +135,26 @@ export interface MoneyFlowCounts {
   unplacedCosts: number;
 }
 
+/**
+ * Active recurring templates not yet posted in `month` (YYYY-MM). Mirrors
+ * generateRecurring's own idempotence check (0099): a template is due until a
+ * posting of IT exists on this month's day — voided or not, because a voided
+ * posting means «not this month» (audit A32/A33). One home, read by the
+ * accountant's home and the owner's dashboard alike (#513).
+ */
+export async function recurringDueCount(month: string): Promise<number> {
+  const rows = await db.execute<{ n: number }>(sql`
+    SELECT count(*)::int AS n FROM recurring_expenses r
+    WHERE r.active = true
+      AND NOT EXISTS (
+        SELECT 1 FROM expenses e
+        WHERE e.recurring_id = r.id
+          AND e.expense_date = (${month} || '-' || lpad(r.day_of_month::text, 2, '0'))::date
+      )
+  `);
+  return Number(rows[0]?.n ?? 0);
+}
+
 export async function moneyFlowCounts(today: string): Promise<MoneyFlowCounts> {
   const month = today.slice(0, 7);
   const [snapshot, unassigned, recurring, costMissing, unplacedCosts] = await Promise.all([
@@ -157,25 +177,14 @@ export async function moneyFlowCounts(today: string): Promise<MoneyFlowCounts> {
           unplacedPaymentSql(),
         ),
       ),
-    // Mirrors generateRecurring's own idempotence check (0099): a template
-    // is due until a posting of IT exists on this month's day — voided or
-    // not, because a voided posting means «not this month» (audit A32/A33).
-    db.execute<{ n: number }>(sql`
-      SELECT count(*)::int AS n FROM recurring_expenses r
-      WHERE r.active = true
-        AND NOT EXISTS (
-          SELECT 1 FROM expenses e
-          WHERE e.recurring_id = r.id
-            AND e.expense_date = (${month} || '-' || lpad(r.day_of_month::text, 2, '0'))::date
-        )
-    `),
+    recurringDueCount(month),
     costMissingCount(3),
     unplacedCostTotals(),
   ]);
   return {
     snapshot,
     unassignedPayments: Number(unassigned[0]?.n ?? 0),
-    recurringDue: Number(recurring[0]?.n ?? 0),
+    recurringDue: recurring,
     costMissing,
     unplacedCosts: unplacedCosts.count,
   };

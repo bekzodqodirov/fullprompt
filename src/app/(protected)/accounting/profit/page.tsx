@@ -10,6 +10,7 @@ import {
   unbatchedMoney,
 } from '@/modules/wms/accounting/reports';
 import { resolvePeriod } from '@/modules/wms/accounting/period';
+import { tripTotals } from '@/modules/wms/reports/dashboard-math';
 import { PeriodForm } from '../period-form';
 import { PnlGapsNote } from '../pnl-gaps';
 
@@ -63,16 +64,7 @@ export default async function ProfitPage({
   // already inside the cross-border truck's figure as «shu reysgacha» — so it
   // stays out of the totals, or that money would be counted twice.
   const isInternal = (row: (typeof rows)[number]) => 'internal' in row && row.internal;
-  const totals = rows
-    .filter((row) => !isInternal(row))
-    .reduce(
-      (acc, row) => ({
-        revenue: acc.revenue + row.revenueUsd,
-        cost: acc.cost + row.costUsd,
-        profit: acc.profit + (row.profitUsd ?? 0),
-      }),
-      { revenue: 0, cost: 0, profit: 0 },
-    );
+  const totals = tripTotals(rows);
   const anyInternal = rows.some(isInternal);
   const unallocated = rows.filter((row) => 'unallocatedUsd' in row && row.unallocatedUsd > 0.009);
   const unallocatedUsd = unallocated.reduce(

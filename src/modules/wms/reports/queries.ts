@@ -183,6 +183,10 @@ export async function inTransitBatches(warehouseIds?: string[]) {
       originCode: warehouses.code,
       destCode: dest.code,
       departedAt: batches.departedAt,
+      // Additive (dashboard): a truck standing at the gate unloaded for days
+      // is the «stuck» attention row.
+      status: batches.status,
+      arrivedAt: batches.arrivedAt,
       /**
        * What DEPARTED on this truck — never the live pointer. Landing NULLs
        * `current_batch_id` box by box, so the old count drained 180 → 0 while

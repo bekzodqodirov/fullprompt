@@ -49,7 +49,11 @@ export function ColumnPairs({
   testid,
 }: ColumnPairsProps) {
   const h = (value: number) => `${Math.max(0, Math.min(100, (Math.max(0, value) / top) * 100))}%`;
-  const netH = (value: number) => `${netMax > 0 ? Math.min(50, (Math.abs(value) / netMax) * 50) : 0}%`;
+  // The strip's bars reach 30 % of its height each way, which leaves the rest
+  // of the half for a label AT the bar's end — a label on top of its own bar
+  // was unreadable (the round's screenshot).
+  const netPct = (value: number) => (netMax > 0 ? Math.min(30, (Math.abs(value) / netMax) * 30) : 0);
+  const netH = (value: number) => `${netPct(value)}%`;
   // Direct labels only where the story is: the current month, and the largest
   // |net| when it is not the current month's neighbour (never a number on
   // every bar — dataviz rule).
@@ -62,18 +66,16 @@ export function ColumnPairs({
 
   return (
     <div data-testid={testid} className="select-none">
-      {/* The plot: 150 px, gridlines + ticks, then the bands. */}
-      <div className="relative h-[150px]">
+      {/* The plot: 150 px, gridlines, then the bands, then the tick labels ON
+          TOP of the bars (drawn under them, a tall month hid «$50K» — seen in
+          the round's own screenshot). The top padding is the top label's room. */}
+      <div className="relative mt-4 h-[150px]">
         {ticks.map((tick) => (
           <div
             key={tick}
             className="absolute inset-x-0 border-t border-line"
             style={{ bottom: `${(tick / top) * 100}%` }}
-          >
-            <span className="absolute -top-3.5 left-0 font-mono text-2xs tabular-nums text-ink-500">
-              {compactUsd(tick)}
-            </span>
-          </div>
+          />
         ))}
         <div className="absolute inset-x-0 bottom-0 border-t border-line-strong" />
         <div className="absolute inset-0 flex">
@@ -90,16 +92,26 @@ export function ColumnPairs({
             </div>
           ))}
         </div>
+        {ticks.map((tick) => (
+          <span
+            key={tick}
+            className="pointer-events-none absolute left-0 rounded-sm bg-surface-raised/85 pr-1 font-mono text-2xs leading-none tabular-nums text-ink-500"
+            style={{ bottom: `calc(${(tick / top) * 100}% + 2px)` }}
+          >
+            {compactUsd(tick)}
+          </span>
+        ))}
       </div>
 
-      {/* The net strip: 48 px, zero in the middle, profit up, loss down. */}
+      {/* The net strip: 64 px, zero in the middle, profit up, loss down. */}
       <p className="mt-2 text-2xs text-ink-500">{netLabel}</p>
-      <div className="relative h-12">
+      <div className="relative h-16">
         <div className="absolute inset-x-0 top-1/2 border-t border-line-strong" />
         <div className="absolute inset-0 flex">
           {months.map((month, i) => {
             const value = net[i] ?? 0;
             const up = value >= 0;
+            const end = `calc(50% + ${netPct(value)}% + 1px)`;
             return (
               <div key={month.key} className="relative flex min-w-0 flex-1 justify-center">
                 <div
@@ -108,9 +120,10 @@ export function ColumnPairs({
                 />
                 {netLabelled.has(i) && Math.abs(value) > 0.5 && (
                   <span
-                    className={`pointer-events-none absolute whitespace-nowrap font-mono text-2xs tabular-nums ${
+                    className={`pointer-events-none absolute whitespace-nowrap font-mono text-2xs leading-none tabular-nums ${
                       value < 0 ? 'text-bad' : 'text-ink-700'
-                    } ${up ? 'top-0' : 'bottom-0'} ${i === last ? 'right-0' : ''}`}
+                    } ${i === last ? 'right-0' : ''}`}
+                    style={up ? { bottom: end } : { top: end }}
                   >
                     {compactUsd(value)}
                   </span>

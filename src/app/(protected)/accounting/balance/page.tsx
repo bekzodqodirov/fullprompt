@@ -4,6 +4,7 @@ import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { companyBalance } from '@/modules/wms/accounting/reports';
 import { toUzs } from '@/modules/wms/accounting/period';
+import { balanceLines } from '@/modules/wms/accounting/balance-lines';
 import { PageHeader } from '@/components/ui/page';
 
 /**
@@ -30,27 +31,7 @@ export default async function BalancePage() {
     return converted === null ? null : converted.toLocaleString('ru-RU');
   };
 
-  const lines = [
-    { key: 'balCash', value: balance.cashUsd, tone: 'text-ink-900', href: '/accounting/accounts' },
-    // Only while there is something to place (A2): a permanent $0.00 line is
-    // a line nobody reads.
-    ...(balance.unplacedCount > 0
-      ? [{ key: 'balUnplaced', value: balance.unplacedUsd, tone: 'text-warn', href: '/finance/reestr?joylanmagan=1' } as const]
-      : []),
-    { key: 'balReceivable', value: balance.receivableUsd, tone: 'text-good', href: '/finance' },
-    {
-      key: 'balPartnerReceivable',
-      value: balance.partnerReceivableUsd,
-      tone: 'text-good',
-      href: '/kontragentlar',
-    },
-    { key: 'balPayable', value: -balance.payableUsd, tone: 'text-bad', href: '/kontragentlar' },
-    // Clients who paid ahead (R7a): a liability, on its own line — netting it
-    // into «qarz» made the receivable disagree with the /finance total.
-    ...(balance.clientAdvancesUsd > 0
-      ? [{ key: 'balClientAdvances', value: -balance.clientAdvancesUsd, tone: 'text-bad', href: '/finance' } as const]
-      : []),
-  ] as const;
+  const lines = balanceLines(balance);
 
   return (
     <div className="mx-auto max-w-lg space-y-3 md:max-w-3xl">

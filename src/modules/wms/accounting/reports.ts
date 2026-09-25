@@ -310,8 +310,110 @@ export interface CashFlowRow {
  * `expense_categories.cash` exists.
  */
 export async function cashFlow(from: string, to: string) {
-  const [received] = await db
-    .select({ sum: sql<string>`coalesce(sum(${clientTransactions.amountUsd}), 0)` })
+  const core = await cashFlowCore(from, to, false);
+  const parts = core.parts.get('total') ?? emptyCashParts();
+  const outRows = core.opexRows;
+
+  const [transfers] = await db
+    .select({ n: sql<number>`count(*)` })
+    .from(accountTransfers)
+    .where(
+      and(
+        isNull(accountTransfers.voidedAt),
+        gte(accountTransfers.transferDate, from),
+        lte(accountTransfers.transferDate, to),
+      ),
+    );
+
+  const partnerInflow = parts.partnerIn;
+  const partnerOutflow = parts.partnerOut;
+  const refundOutflow = parts.clientRefunds;
+  return {
+    inflow: parts.inflow,
+    outflow: parts.outflow,
+    net: parts.net,
+    /** Informational: transfers are excluded from both sides on purpose. */
+    transferCount: Number(transfers?.n ?? 0),
+    /** Of `cargoCosts`: the dollars a kassa answered for, and the rest (0101). */
+    cargoFromTillUsd: parts.cargoFromTill,
+    cargoUnplacedUsd: money(parts.cargoCosts - parts.cargoFromTill),
+    rows: [
+      { label: 'clientPayments', kind: 'in' as const, amountUsd: parts.clientPayments },
+      ...(partnerInflow
+        ? [{ label: 'partnerIn', kind: 'in' as const, amountUsd: partnerInflow }]
+        : []),
+      { label: 'cargoCosts', kind: 'out' as const, amountUsd: parts.cargoCosts },
+      ...(partnerOutflow
+        ? [{ label: 'partnerOut', kind: 'out' as const, amountUsd: partnerOutflow }]
+        : []),
+      ...(refundOutflow
+        ? [{ label: 'clientRefunds', kind: 'out' as const, amountUsd: refundOutflow }]
+        : []),
+      ...outRows.map((row) => ({
+        label: row.label,
+        kind: 'out' as const,
+        amountUsd: row.amountUsd,
+      })),
+    ],
+  };
+}
+
+/** The cash flow's parts for one period (a month, or the whole range). */
+export interface CashParts {
+  clientPayments: number;
+  clientRefunds: number;
+  partnerIn: number;
+  partnerOut: number;
+  cargoCosts: number;
+  cargoFromTill: number;
+  /** Cash overheads: the `cash` expense categories. */
+  cashOpex: number;
+  inflow: number;
+  outflow: number;
+  net: number;
+}
+
+function emptyCashParts(): CashParts {
+  return {
+    clientPayments: 0,
+    clientRefunds: 0,
+    partnerIn: 0,
+    partnerOut: 0,
+    cargoCosts: 0,
+    cargoFromTill: 0,
+    cashOpex: 0,
+    inflow: 0,
+    outflow: 0,
+    net: 0,
+  };
+}
+
+/**
+ * The cash flow month by month (the dashboard's second chart), from the SAME
+ * statements `cashFlow` runs — one core, bucketed by month instead of summed
+ * over the range — so a month's bar and the report over that month cannot
+ * disagree, and a correction to the report's rules moves both (#513). Seven
+ * grouped statements whatever the number of months.
+ */
+export async function cashFlowByMonth(from: string, to: string): Promise<Map<string, CashParts>> {
+  const core = await cashFlowCore(from, to, true);
+  return new Map(monthsBetween(from, to).map((month) => [month, core.parts.get(month) ?? emptyCashParts()]));
+}
+
+/**
+ * Money that actually moved, not what was billed, per period key — 'total'
+ * for the whole range, or 'YYYY-MM' when `byMonth`. Every rule of the report
+ * lives here and only here; `cashFlow` and `cashFlowByMonth` only arrange it.
+ */
+async function cashFlowCore(from: string, to: string, byMonth: boolean) {
+  const key = (column: unknown) =>
+    byMonth ? sql<string>`to_char(${column}, 'YYYY-MM')` : sql<string>`'total'`;
+
+  const receivedQ = db
+    .select({
+      period: key(clientTransactions.txDate),
+      sum: sql<string>`coalesce(sum(${clientTransactions.amountUsd}), 0)`,
+    })
     .from(clientTransactions)
     .where(
       and(
@@ -328,8 +430,11 @@ export async function cashFlow(from: string, to: string) {
 
   // Money handed BACK to clients (R6a). Always out of a kassa of ours — the
   // refund CHECK demands one — so it is cash that left, never a price.
-  const [refunded] = await db
-    .select({ sum: sql<string>`coalesce(sum(${clientTransactions.amountUsd}), 0)` })
+  const refundedQ = db
+    .select({
+      period: key(clientTransactions.txDate),
+      sum: sql<string>`coalesce(sum(${clientTransactions.amountUsd}), 0)`,
+    })
     .from(clientTransactions)
     .where(
       and(
@@ -343,8 +448,11 @@ export async function cashFlow(from: string, to: string) {
   // Money a counterparty put INTO one of our accounts — the cash buyers' first
   // leg. It is real cash in, and we owe it, but the debt is not this report's
   // business; this report answers only "what moved".
-  const [partnerIn] = await db
-    .select({ sum: sql<string>`coalesce(sum(${partnerTransactions.amountUsd}), 0)` })
+  const partnerInQ = db
+    .select({
+      period: key(partnerTransactions.txDate),
+      sum: sql<string>`coalesce(sum(${partnerTransactions.amountUsd}), 0)`,
+    })
     .from(partnerTransactions)
     .where(
       and(
@@ -354,8 +462,11 @@ export async function cashFlow(from: string, to: string) {
         lte(partnerTransactions.txDate, to),
       ),
     );
-  const [partnerOut] = await db
-    .select({ sum: sql<string>`coalesce(sum(${partnerTransactions.amountUsd}), 0)` })
+  const partnerOutQ = db
+    .select({
+      period: key(partnerTransactions.txDate),
+      sum: sql<string>`coalesce(sum(${partnerTransactions.amountUsd}), 0)`,
+    })
     .from(partnerTransactions)
     .where(
       and(
@@ -366,9 +477,11 @@ export async function cashFlow(from: string, to: string) {
       ),
     );
 
-  const outRows = await db
+  const opexQ = db
     .select({
+      period: key(expenses.expenseDate),
       label: expenseCategories.name,
+      sortOrder: expenseCategories.sortOrder,
       sum: sql<string>`sum(${expenses.amountUsd})`,
     })
     .from(expenses)
@@ -382,16 +495,15 @@ export async function cashFlow(from: string, to: string) {
         gte(expenses.expenseDate, from),
         lte(expenses.expenseDate, to),
       ),
-    )
-    .groupBy(expenseCategories.name, expenseCategories.sortOrder)
-    .orderBy(expenseCategories.sortOrder);
+    );
 
   // ONE row, split in two for the reader (0101): the part a kassa has
   // answered for and the part nobody has said the kassa of yet — the second
   // is the accountant's queue, and a cash-flow line that hid it would read
   // as if every dollar had a drawer. The total is unchanged.
-  const [cargoCosts] = await db
+  const cargoQ = db
     .select({
+      period: key(costEntries.costDate),
       sum: sql<string>`coalesce(sum(coalesce(${costEntries.amountUsd}, 0)), 0)`,
       fromTill: sql<string>`coalesce(sum(coalesce(${costEntries.amountUsd}, 0)) FILTER (WHERE ${costEntries.accountId} IS NOT NULL), 0)`,
     })
@@ -407,53 +519,60 @@ export async function cashFlow(from: string, to: string) {
       ),
     );
 
-  const [transfers] = await db
-    .select({ n: sql<number>`count(*)` })
-    .from(accountTransfers)
-    .where(
-      and(
-        isNull(accountTransfers.voidedAt),
-        gte(accountTransfers.transferDate, from),
-        lte(accountTransfers.transferDate, to),
-      ),
-    );
+  const [received, refunded, partnerIn, partnerOut, opex, cargo] = await Promise.all(
+    byMonth
+      ? [
+          receivedQ.groupBy(key(clientTransactions.txDate)),
+          refundedQ.groupBy(key(clientTransactions.txDate)),
+          partnerInQ.groupBy(key(partnerTransactions.txDate)),
+          partnerOutQ.groupBy(key(partnerTransactions.txDate)),
+          opexQ
+            .groupBy(key(expenses.expenseDate), expenseCategories.name, expenseCategories.sortOrder)
+            .orderBy(expenseCategories.sortOrder),
+          cargoQ.groupBy(key(costEntries.costDate)),
+        ]
+      : [
+          receivedQ,
+          refundedQ,
+          partnerInQ,
+          partnerOutQ,
+          opexQ.groupBy(expenseCategories.name, expenseCategories.sortOrder).orderBy(expenseCategories.sortOrder),
+          cargoQ,
+        ],
+  );
 
-  const partnerInflow = money(partnerIn?.sum);
-  const partnerOutflow = money(partnerOut?.sum);
-  const refundOutflow = money(refunded?.sum);
-  const inflow = money(received?.sum) + partnerInflow;
-  const outflow =
-    money(cargoCosts?.sum) +
-    partnerOutflow +
-    refundOutflow +
-    outRows.reduce((acc, row) => acc + money(row.sum), 0);
+  const parts = new Map<string, CashParts>();
+  const at = (period: string) => {
+    let entry = parts.get(period);
+    if (!entry) {
+      entry = emptyCashParts();
+      parts.set(period, entry);
+    }
+    return entry;
+  };
+  for (const row of received) at(row.period).clientPayments += money(row.sum);
+  for (const row of refunded) at(row.period).clientRefunds += money(row.sum);
+  for (const row of partnerIn) at(row.period).partnerIn += money(row.sum);
+  for (const row of partnerOut) at(row.period).partnerOut += money(row.sum);
+  for (const row of cargo) {
+    at(row.period).cargoCosts += money(row.sum);
+    at(row.period).cargoFromTill += money((row as { fromTill: string }).fromTill);
+  }
+  const opexRows = new Map<string, number>();
+  for (const row of opex as { period: string; label: string; sum: string }[]) {
+    at(row.period).cashOpex += money(row.sum);
+    opexRows.set(row.label, (opexRows.get(row.label) ?? 0) + money(row.sum));
+  }
+  for (const entry of parts.values()) {
+    entry.cashOpex = money(entry.cashOpex);
+    entry.inflow = money(entry.clientPayments + entry.partnerIn);
+    entry.outflow = money(entry.cargoCosts + entry.partnerOut + entry.clientRefunds + entry.cashOpex);
+    entry.net = money(entry.inflow - entry.outflow);
+  }
   return {
-    inflow: money(inflow),
-    outflow: money(outflow),
-    net: money(inflow - outflow),
-    /** Informational: transfers are excluded from both sides on purpose. */
-    transferCount: Number(transfers?.n ?? 0),
-    /** Of `cargoCosts`: the dollars a kassa answered for, and the rest (0101). */
-    cargoFromTillUsd: money(cargoCosts?.fromTill),
-    cargoUnplacedUsd: money(money(cargoCosts?.sum) - money(cargoCosts?.fromTill)),
-    rows: [
-      { label: 'clientPayments', kind: 'in' as const, amountUsd: money(received?.sum) },
-      ...(partnerInflow
-        ? [{ label: 'partnerIn', kind: 'in' as const, amountUsd: partnerInflow }]
-        : []),
-      { label: 'cargoCosts', kind: 'out' as const, amountUsd: money(cargoCosts?.sum) },
-      ...(partnerOutflow
-        ? [{ label: 'partnerOut', kind: 'out' as const, amountUsd: partnerOutflow }]
-        : []),
-      ...(refundOutflow
-        ? [{ label: 'clientRefunds', kind: 'out' as const, amountUsd: refundOutflow }]
-        : []),
-      ...outRows.map((row) => ({
-        label: row.label,
-        kind: 'out' as const,
-        amountUsd: money(row.sum),
-      })),
-    ],
+    parts,
+    /** Per category over the whole range, in the categories' own order. */
+    opexRows: [...opexRows.entries()].map(([label, amountUsd]) => ({ label, amountUsd: money(amountUsd) })),
   };
 }
 
@@ -475,7 +594,7 @@ export async function arAging(asOf: string) {
   const asOfMs = new Date(`${asOf}T00:00:00Z`).getTime();
   const byClient = new Map<
     string,
-    { clientCode: string; clientName: string; balance: number; buckets: number[] }
+    { clientId: string; clientCode: string; clientName: string; balance: number; buckets: number[] }
   >();
 
   // Payments settle the OLDEST charge first (standard AR practice), so a
@@ -484,6 +603,7 @@ export async function arAging(asOf: string) {
   for (const row of rows) {
     const entry =
       byClient.get(row.clientId) ?? {
+        clientId: row.clientId,
         clientCode: row.clientCode,
         clientName: row.clientName,
         balance: 0,

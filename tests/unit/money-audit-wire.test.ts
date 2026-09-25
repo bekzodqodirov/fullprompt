@@ -25,6 +25,9 @@ describe('audit 2026-09-24 — the doors', () => {
     const page = read('src/app/(protected)/dashboard/page.tsx');
     expect(page).toContain('const seesMoney = seesAllMoney(actor);');
     expect(page).not.toMatch(/seesMoney = actor\.permissions\.has\('finance\.view'\)/);
+    // His answer 4a (2026-09-25): the money part is the owner's and the
+    // admin's — the ROLE as well as the grants.
+    expect(page).toContain("const money = seesMoney && perms.has('finance.reports') && analyst;");
   });
 
   it('A15: the expense file carries the screen\'s category', () => {

@@ -1,4 +1,4 @@
-import { addDays } from '@/modules/platform/time/tashkent';
+import { addDays, tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * The dashboard's arithmetic, PURE: windows, plan pace, deltas, scale ticks and
@@ -160,7 +160,7 @@ const LEVEL_ORDER: Record<AttentionLevel, number> = { bad: 0, warn: 1, info: 2 }
  * «0 ta yo'qolgan» is a row nobody reads. `visibleCount` (what the header chip
  * counts) excludes info rows: they are orientation, not work.
  */
-export function rankAttention<K extends string>(items: AttentionItem<K>[], visible = 7) {
+export function rankAttention<T extends AttentionItem>(items: T[], visible = 7) {
   const live = items
     .filter((item) => item.count > 0 || (item.usd ?? 0) > 0.009)
     .sort(
@@ -195,4 +195,81 @@ export function tripKind(row: { internal: boolean; revenueUsd: number; profitUsd
   if (row.internal) return 'internal';
   if (!(Math.abs(row.revenueUsd) > 0.009)) return 'unpriced';
   return (row.profitUsd ?? 0) < 0 ? 'loss' : 'profit';
+}
+
+export interface TripTotals {
+  /** Non-internal trucks in the window. */
+  trips: number;
+  revenue: number;
+  cost: number;
+  /** Σ profit with an unpriced truck counted at −cost — the profit page's JAMI. */
+  profit: number;
+  marginPct: number | null;
+  /** Σ profit / Σ kg over PRICED trucks only (an unpriced truck has no per-kg). */
+  perKg: number | null;
+  losses: number;
+  unpriced: number;
+  internal: number;
+}
+
+/**
+ * The truck report's totals, said once for the profit page's JAMI row and the
+ * dashboard's strip. An internal leg is a cost row with no profit (R2a) and
+ * its cost already rides inside the export truck as «shu reysgacha», so it
+ * stays out — summing it would count that money twice. An unpriced truck IS
+ * summed, at −cost, exactly as the page does; the separate «Narxsiz N» count
+ * is what explains a low total.
+ */
+export function tripTotals(
+  rows: { internal?: boolean; revenueUsd: number; costUsd: number; profitUsd: number | null; kg?: number }[],
+): TripTotals {
+  let trips = 0;
+  let revenue = 0;
+  let cost = 0;
+  let profit = 0;
+  let pricedProfit = 0;
+  let pricedKg = 0;
+  let losses = 0;
+  let unpriced = 0;
+  let internal = 0;
+  for (const row of rows) {
+    const kind = tripKind({ internal: !!row.internal, revenueUsd: row.revenueUsd, profitUsd: row.profitUsd });
+    if (kind === 'internal') {
+      internal += 1;
+      continue;
+    }
+    trips += 1;
+    revenue += row.revenueUsd;
+    cost += row.costUsd;
+    profit += row.profitUsd ?? 0;
+    if (kind === 'unpriced') unpriced += 1;
+    else {
+      if (kind === 'loss') losses += 1;
+      pricedProfit += row.profitUsd ?? 0;
+      pricedKg += row.kg ?? 0;
+    }
+  }
+  const cents = (value: number) => Math.round(value * 100) / 100;
+  return {
+    trips,
+    revenue: cents(revenue),
+    cost: cents(cost),
+    profit: cents(profit),
+    marginPct: revenue > 0.009 ? Math.round((profit / revenue) * 1000) / 10 : null,
+    perKg: pricedKg > 0 ? Math.round((pricedProfit / pricedKg) * 100) / 100 : null,
+    losses,
+    unpriced,
+    internal,
+  };
+}
+
+/**
+ * Whole Tashkent calendar days from `at` to `today` (0 = today). The «stuck
+ * truck» rule and the transit chip both count this way, so the attention row
+ * and the chip beside the truck can never disagree about the same truck.
+ */
+export function daysSince(at: Date | string | null | undefined, today: string): number {
+  if (!at) return 0;
+  const from = tashkentDay(new Date(at));
+  return Math.max(0, daysBetween(from, today).length - 1);
 }

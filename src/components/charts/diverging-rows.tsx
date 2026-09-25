@@ -78,6 +78,7 @@ function Row({
           {row.note && <span className="ml-1 text-bad">⚠ {row.note}</span>}
         </span>
         <span
+          data-value
           className={`whitespace-nowrap font-mono text-xs tabular-nums ${bold ? 'font-bold' : 'font-semibold'} ${
             bold ? (row.value < 0 ? 'text-bad' : 'text-good') : 'text-ink-900'
           }`}

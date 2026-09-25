@@ -127,8 +127,3 @@ export function ChartTip() {
     />
   );
 }
-
-/** Builds a `data-tip` string: a heading, then value/label rows. */
-export function tipText(heading: string, rows: [value: string, label: string][]): string {
-  return [heading, ...rows.map(([value, label]) => `${value}\t${label}`)].join('\n');
-}

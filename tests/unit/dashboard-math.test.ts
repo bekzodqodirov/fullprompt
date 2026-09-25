@@ -5,9 +5,12 @@ import {
   niceTicks,
   pctDelta,
   planProgress,
+  daysSince,
   rankAttention,
   tripKind,
+  tripTotals,
 } from '@/modules/wms/reports/dashboard-math';
+import { agingTotals, balanceLines } from '@/modules/wms/accounting/balance-lines';
 import { compactUsd, pct, signedUsd, usd } from '@/components/charts/format';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 
@@ -114,5 +117,73 @@ describe('money formatting', () => {
     expect(compactUsd(999_999_999).length).toBeLessThanOrEqual(7);
     expect(pct(4.52)).toBe('4.5%');
     expect(pct(-27.4)).toBe('−27%');
+  });
+});
+
+describe('trip totals — the profit page\'s JAMI and the dashboard strip', () => {
+  const rows = [
+    { internal: false, revenueUsd: 1000, costUsd: 700, profitUsd: 300, kg: 100 },
+    { internal: false, revenueUsd: 500, costUsd: 600, profitUsd: -100, kg: 50 },
+    // Unpriced: summed at −cost, exactly as the page does, and counted apart.
+    { internal: false, revenueUsd: 0, costUsd: 400, profitUsd: -400, kg: 40 },
+    // Internal: a cost row with no profit, already inside the export truck.
+    { internal: true, revenueUsd: 0, costUsd: 250, profitUsd: null, kg: 30 },
+  ];
+  it('keeps internal legs out and counts unpriced trucks at −cost', () => {
+    const t = tripTotals(rows);
+    expect(t).toMatchObject({ trips: 3, revenue: 1500, cost: 1700, profit: -200, losses: 1, unpriced: 1, internal: 1 });
+    expect(t.marginPct).toBe(-13.3);
+    // Per kg over PRICED trucks only: (300 − 100) / 150.
+    expect(t.perKg).toBe(1.33);
+  });
+  it('has no margin and no per-kg with nothing priced', () => {
+    const t = tripTotals([{ internal: false, revenueUsd: 0, costUsd: 10, profitUsd: -10 }]);
+    expect(t.marginPct).toBeNull();
+    expect(t.perKg).toBeNull();
+  });
+});
+
+describe('daysSince — Tashkent calendar days', () => {
+  it('counts the day an instant falls on in Tashkent, not in UTC', () => {
+    // 20:30 UTC on the 24th is 01:30 on the 25th in Tashkent: arrived today.
+    expect(daysSince('2026-09-24T20:30:00Z', '2026-09-25')).toBe(0);
+    expect(daysSince('2026-09-23T10:00:00Z', '2026-09-25')).toBe(2);
+    expect(daysSince(null, '2026-09-25')).toBe(0);
+    // A date after today (a clock skew) is never a negative wait.
+    expect(daysSince('2026-09-27T10:00:00Z', '2026-09-25')).toBe(0);
+  });
+});
+
+describe('the Balans lines, one home for two screens', () => {
+  const base = {
+    cashUsd: 1000,
+    unplacedUsd: 0,
+    unplacedCount: 0,
+    receivableUsd: 500,
+    partnerReceivableUsd: 0,
+    payableUsd: 300,
+    clientAdvancesUsd: 0,
+  };
+  it('leaves out the lines that are empty by nature and signs what we owe', () => {
+    expect(balanceLines(base).map((l) => [l.key, l.value])).toEqual([
+      ['balCash', 1000],
+      ['balReceivable', 500],
+      ['balPartnerReceivable', 0],
+      ['balPayable', -300],
+    ]);
+  });
+  it('adds the unplaced payments and the advances when there are any', () => {
+    const lines = balanceLines({ ...base, unplacedCount: 2, unplacedUsd: 80, clientAdvancesUsd: 40 }, '/accounting/balance');
+    expect(lines.find((l) => l.key === 'balUnplaced')?.value).toBe(80);
+    expect(lines.find((l) => l.key === 'balClientAdvances')?.value).toBe(-40);
+    expect(lines[0]?.href).toBe('/accounting/balance');
+  });
+  it('sums the aging buckets the receivables page prints', () => {
+    expect(
+      agingTotals([
+        { balance: 100, buckets: [100, 0, 0, 0] },
+        { balance: 50, buckets: [0, 20, 0, 30] },
+      ]),
+    ).toEqual({ balance: 150, buckets: [100, 20, 0, 30] });
   });
 });

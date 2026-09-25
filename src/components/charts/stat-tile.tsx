@@ -34,10 +34,12 @@ export function StatTile({
   return (
     <div className="card flex min-w-0 flex-col !p-0" data-testid={testid}>
       <Link href={href} className="block min-w-0 flex-1 rounded-[inherit] p-3 hover:bg-surface-sunken">
-        <p className="truncate text-2xs font-semibold uppercase tracking-wide text-ink-500">{label}</p>
+        <p className="text-2xs font-semibold uppercase leading-tight tracking-wide text-ink-500">{label}</p>
         <p className={`mt-0.5 whitespace-nowrap font-mono text-xl font-bold tabular-nums ${valueTone}`}>{value}</p>
         {lines?.map((line, i) => (
-          <p key={i} className="truncate text-2xs text-ink-500">
+          // Wraps rather than truncates: at 360 px a truncated line hid the
+          // 60+ day debt, the number the tile exists to show (screenshot).
+          <p key={i} className="break-words text-2xs leading-snug text-ink-500">
             {line}
           </p>
         ))}
