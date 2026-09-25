@@ -114,10 +114,10 @@ const DICT = {
     en: 'of which with no cash box (the accountant’s queue)',
   },
   cargoKassaUnknown: {
-    ru: 'из них касса неизвестна (история до касс или дубль, слитый без кассы)',
-    uz: 'shundan kassasi noma’lum (kassalar so‘ralishidan oldingi tarix yoki kassasiz birlashtirilgan takror)',
-    'zh-CN': '其中账户未知（启用账户前的历史或无账户合并的重复）',
-    en: 'of which the cash box is unknown (history before cash boxes, or a duplicate merged with none)',
+    ru: 'из них касса неизвестна (история до касс — расход или его дубль)',
+    uz: 'shundan kassasi noma’lum (kassalar so‘ralishidan oldingi tarix — xarajat yoki uning takrori)',
+    'zh-CN': '其中账户未知（启用账户前的历史——费用或其重复记录）',
+    en: 'of which the cash box is unknown (history before cash boxes — the cost or its duplicate)',
   },
   cashOpexNoKassa: {
     ru: 'Расходы без кассы и без плательщика',
@@ -320,6 +320,12 @@ const DICT = {
     uz: 'Kursi yo‘q kassalar harakati',
     'zh-CN': '无汇率账户的变动',
     en: 'Movement through cash boxes with no rate',
+  },
+  reconTillUnconverted: {
+    ru: 'Из кассы на расходы в валюте без курса (по курсу кассы)',
+    uz: 'Kassadan kursi yo‘q valyutadagi xarajatlarga (kassa kursida)',
+    'zh-CN': '从账户支付的无汇率币种费用（按账户汇率）',
+    en: 'Paid from a cash box for costs in a currency with no rate (at the box’s rate)',
   },
   reconFx: {
     ru: 'Курсовая разница (переоценка, обмен)',

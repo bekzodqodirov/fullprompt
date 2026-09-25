@@ -4,7 +4,7 @@ import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { companyBalance } from '@/modules/wms/accounting/reports';
 import { toUzs } from '@/modules/wms/accounting/period';
-import { balanceLines } from '@/modules/wms/accounting/balance-lines';
+import { balanceLines, unplacedCostsTakenOff } from '@/modules/wms/accounting/balance-lines';
 import { PageHeader } from '@/components/ui/page';
 
 /**
@@ -32,6 +32,7 @@ export default async function BalancePage() {
   };
 
   const lines = balanceLines(balance);
+  const costsOut = unplacedCostsTakenOff(balance);
   // Money in a till whose currency has no rate is OUT of the net (U14): said
   // beside the net and the cash line, with the fix one tap away for whoever
   // may type a rate — anybody else would bounce off /admin/fx (#737).
@@ -103,13 +104,29 @@ export default async function BalancePage() {
       {/* The line above takes these costs out of the net (U02); this says the
           one case it cannot tell apart — the same money also typed as an
           expense FROM a kassa counts twice until the queue merges it. */}
-      {balance.unplacedCostCount > 0 && (
+      {costsOut.count > 0 && (
         <Link
           href="/accounting/xarajat-kassa"
           className="card block text-sm text-warn underline"
           data-testid="balance-unplaced-costs"
         >
-          ⚠ {t('balUnplacedCosts', { count: balance.unplacedCostCount, usd: usd(balance.unplacedCostUsd) })}
+          ⚠ {t('balUnplacedCosts', { count: costsOut.count, usd: usd(costsOut.usd) })}
+        </Link>
+      )}
+      {/* The queued costs every kassa's count already holds: on the queue,
+          NOT taken off again (the pair rule, #528) — said, so the queue's
+          total and the line above can be told apart. */}
+      {balance.unplacedCostInCountCount > 0 && (
+        <Link
+          href="/accounting/xarajat-kassa"
+          className="card block text-sm text-ink-700 underline"
+          data-testid="balance-unplaced-costs-in-count"
+        >
+          ℹ️{' '}
+          {t('balUnplacedCostsInCount', {
+            count: balance.unplacedCostInCountCount,
+            usd: usd(balance.unplacedCostInCountUsd),
+          })}
         </Link>
       )}
 

@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
-import { agingTotals, balanceLines } from '@/modules/wms/accounting/balance-lines';
+import { agingTotals, balanceLines, unplacedCostsTakenOff } from '@/modules/wms/accounting/balance-lines';
 import {
   loadAging,
   loadBalance,
@@ -92,6 +92,7 @@ export async function MoneySection({ scopeKey, canExpenses }: { scopeKey: string
 
   // ── C3: the Balans as a bridge ───────────────────────────────────────────
   const lines = balanceLines(balance, canExpenses ? '/accounting/accounts' : '/accounting/balance');
+  const costsOut = unplacedCostsTakenOff(balance);
   const bridge = lines.map((line) => ({
     key: line.key,
     label: line.key === 'balCash' && line.value < 0 ? `⚠ ${t('cashNegative')}` : ta(line.key),
@@ -279,9 +280,18 @@ export async function MoneySection({ scopeKey, canExpenses }: { scopeKey: string
             testid="dash-balance-rows"
           />
           {unrated > 0 && <p className="text-2xs text-warn">⚠ {t('unratedTills', { n: unrated })}</p>}
-          {balance.unplacedCostCount > 0 && (
+          {costsOut.count > 0 && (
             <Link href="/accounting/xarajat-kassa" className="block text-2xs text-warn underline">
-              ⚠ {ta('balUnplacedCosts', { count: balance.unplacedCostCount, usd: num(balance.unplacedCostUsd, 2) })}
+              ⚠ {ta('balUnplacedCosts', { count: costsOut.count, usd: num(costsOut.usd, 2) })}
+            </Link>
+          )}
+          {balance.unplacedCostInCountCount > 0 && (
+            <Link href="/accounting/xarajat-kassa" className="block text-2xs text-ink-500 underline">
+              ℹ️{' '}
+              {ta('balUnplacedCostsInCount', {
+                count: balance.unplacedCostInCountCount,
+                usd: num(balance.unplacedCostInCountUsd, 2),
+              })}
             </Link>
           )}
           <details className="group" data-testid="dash-tills">

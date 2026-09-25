@@ -348,8 +348,9 @@ export async function cashFlow(from: string, to: string) {
      * screen, the home counter and the Balans read (`unplacedCostSql`, audit
      * U23), so the linked figure is the queue's and can be cleared from it;
      * and the kassa-less rest nobody will be asked about — history typed
-     * before kassas were asked for (inside the tills' counted openings, #1018)
-     * and costs whose duplicate expense named no kassa (#1019).
+     * before kassas were asked for (inside the tills' counted openings, #1018),
+     * a cost or its merged duplicate expense alike. A duplicate merged since
+     * then naming no kassa is the QUEUE's, not this (U02).
      */
     cargoFromTillUsd: parts.cargoFromTill,
     cargoQueuedUsd: parts.cargoQueued,
@@ -695,18 +696,29 @@ export type ReconLineKey =
   | 'tillOnly'
   | 'oneSidedTransfers'
   | 'unratedTills'
+  | 'tillUnconverted'
   | 'fx';
 
 /**
  * Why the tills moved by a different amount than the cash flow says (audit
  * U13): opening cash + the cash flow + these lines = closing cash, in dollars,
- * to the cent. Every line is COMPUTED from its own rows, never the residual —
- * the residual is returned separately (`unexplained`) and is zero, which is
- * the test's whole assertion and the screen's proof that nothing is missing.
+ * to the cent. Every line but `fx` is computed from its own rows. `fx` is each
+ * kassa's REMAINDER — its native money valued at the period's rates, less the
+ * dollars its rows were frozen at, less every other line — which is exactly
+ * revaluation, exchange gains and costs paid out of a kassa in another
+ * currency once every row HAS a dollar figure; a row with none is taken out
+ * first onto its own line (`tillUnconverted`), or a spent cost would be read
+ * as a currency loss. The residual is returned separately (`unexplained`) and
+ * is zero, which is the test's whole assertion — but it checks the DOLLAR
+ * side (the cash flow against the kassa predicates): a slip in a row's native
+ * amount cancels out of it and lands in `fx`.
  *
- * Its own read and not a part of `cashFlow`: the admin home, the AI's
- * cash_flow tool (sliced at 6,000 characters) and the XLSX call that, and none
- * of them should pay for or be truncated by the kassa rows.
+ * Its own read and not a part of `cashFlow`: the admin home, the dashboard's
+ * hero and the AI's cash_flow tool (sliced at 6,000 characters) call
+ * `cashFlow`, and none of them should pay for or be truncated by the kassa
+ * rows. The cash-flow page and its XLSX call THIS, so the screen and its
+ * download print the same kassa block from one read (#532d) — a change here
+ * changes the file too.
  *
  * - The cash flow counts rows no kassa counts: payments and cargo costs and
  *   overheads with no kassa, rows dated before their kassa's opening count
@@ -758,6 +770,7 @@ export async function cashReconciliation(from: string, to: string) {
     tillOnly: 0,
     oneSidedTransfers: 0,
     unratedTills: 0,
+    tillUnconverted: 0,
     fx: 0,
   };
   const unrated = new Map<string, number>();
@@ -783,13 +796,20 @@ export async function cashReconciliation(from: string, to: string) {
     const close = kassa.closing * rTo;
     const count = kassa.countedInPeriod * (rCount ?? rTo);
     const within = kassa.usd.cashCounted + kassa.usd.tillOnly + kassa.usd.transfers;
+    // Rows that moved this kassa with NO dollar figure (a cost in a currency
+    // never rated, U24): `within` holds them at $0, so their whole native
+    // amount would otherwise sit in the remainder below. Valued at the
+    // kassa's own rate on `to`, the rate `close` is valued at — the kassa's
+    // money, never the cost's currency guessed (#86).
+    const unconverted = kassa.noUsdInPeriod * rTo;
     openingUsd += open;
     closingUsd += close;
     raw.countedInPeriod += count;
     raw.beforeOpening -= kassa.usd.cashEarly;
     raw.tillOnly += kassa.usd.tillOnly;
     raw.oneSidedTransfers += kassa.usd.transfers;
-    raw.fx += close - open - count - within;
+    raw.tillUnconverted += unconverted;
+    raw.fx += close - open - count - within - unconverted;
     return { ...kassa, openingUsd: money(open), closingUsd: money(close) };
   });
   const rows = all.filter(
@@ -1467,7 +1487,14 @@ export async function companyBalance() {
   // (#1018). One exception, said beside the line and not guessed at: a cost
   // also re-typed as an expense FROM a kassa is counted twice until it is
   // merged on the queue — the same double the P&L and the cash flow show.
+  // And the pair rule U09 gave the payments above (#528): a queued cost dated
+  // before EVERY active kassa's count is inside the counts already (R4 keeps
+  // it out of whichever it is placed into), so it stays on the queue and is
+  // NOT taken off again — named beside the line instead. Saying a colleague
+  // paid it is then new information (a debt no count holds) and moves the
+  // net, as placing does for U09's ambiguous payments.
   const unplacedCosts = await unplacedCostTotals();
+  const unplacedCostsOut = money(unplacedCosts.usd - unplacedCosts.insideCounts.usd);
 
   // What the sellers have earned on jobs the client has already paid for
   // (audit U10, #793 — derived, never stored): owed from money already in
@@ -1481,7 +1508,7 @@ export async function companyBalance() {
     owedToUsByPartners -
     owedByUs -
     clientAdvances -
-    unplacedCosts.usd -
+    unplacedCostsOut -
     commissions.payableUsd;
 
   // The totals FIRST: the AI's company_balance tool cuts the JSON at 6,000
@@ -1495,9 +1522,15 @@ export async function companyBalance() {
     receivableUsd: receivable,
     /** Clients who paid ahead — money we owe them back in service (R7a). */
     clientAdvancesUsd: clientAdvances,
-    /** Cargo costs waiting for the accountant to name their kassa (0101) — in the net (U02). */
+    /** Cargo costs waiting for the accountant to name their kassa (0101) — the whole queue. */
     unplacedCostCount: unplacedCosts.count,
     unplacedCostUsd: unplacedCosts.usd,
+    /**
+     * …of which every kassa's count already holds (dated before each count,
+     * R4): on the queue, NOT in the net. The rest is taken off (U02).
+     */
+    unplacedCostInCountCount: unplacedCosts.insideCounts.count,
+    unplacedCostInCountUsd: unplacedCosts.insideCounts.usd,
     /** Counterparties we still have to pay. */
     payableUsd: money(owedByUs),
     /** Counterparties who are in front on their account. */

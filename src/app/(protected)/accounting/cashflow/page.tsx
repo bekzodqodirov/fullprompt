@@ -48,6 +48,7 @@ export default async function CashFlowPage({
     tillOnly: t('reconTillOnly'),
     oneSidedTransfers: t('reconOneSidedTransfers'),
     unratedTills: t('reconUnratedTills'),
+    tillUnconverted: t('reconTillUnconverted'),
     fx: t('reconFx'),
   };
   const canFx = actor.permissions.has('costs.fx.manage');
@@ -78,8 +79,9 @@ export default async function CashFlowPage({
                     </Link>
                   )}
                   {/* The kassa-less rest nobody will be asked about: history
-                      from before kassas were asked for, and duplicates merged
-                      with an expense that named none. Said, not linked — no
+                      from before kassas were asked for — a cost, or the
+                      duplicate expense it was merged with (U02: one merged
+                      since then is the queue's). Said, not linked — no
                       screen can place it. */}
                   {row.label === 'cargoCosts' && flow.cargoKassaUnknownUsd > 0 && (
                     <span className="block text-xs text-ink-500" data-testid="cashflow-cargo-unknown">

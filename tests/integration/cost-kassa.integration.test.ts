@@ -25,7 +25,7 @@ import {
   upsertFxRate,
 } from '@/modules/wms/costing/service';
 import { accountBalances, addExpense } from '@/modules/wms/accounting/service';
-import { cashFlow, cashFlowByMonth } from '@/modules/wms/accounting/reports';
+import { cashFlow, cashFlowByMonth, companyBalance } from '@/modules/wms/accounting/reports';
 import { mergeDuplicate } from '@/modules/wms/accounting/cost-merge';
 import { partnerBalanceUsd } from '@/modules/wms/partners/service';
 
@@ -86,6 +86,15 @@ async function expense(amount: number, currency: string, accountId: string, over
 }
 
 const tillBalance = async (id: string) => (await accountBalances()).find((row) => row.id === id)!.balance;
+
+/**
+ * An expense typed BEFORE kassas were asked for (`cost_kassa_since`): its
+ * entry clock moved back, the stand-in for pre-0101 production history (the
+ * same move the history COST gets below).
+ */
+const typedBeforeKassas = (expenseId: string) =>
+  db.update(expenses).set({ createdAt: new Date('2000-01-01T00:00:00Z') }).where(eq(expenses.id, expenseId));
+const cents = (value: number) => Math.round(value * 100) / 100;
 
 beforeAll(async () => {
   actorId = (await db.select({ id: users.id }).from(users).where(eq(users.active, true)).limit(1))[0]!.id;
@@ -249,18 +258,49 @@ describe('the duplicate merge (A3, M4a)', () => {
     });
   });
 
-  it('a merged cost left the queue — even when the expense named no kassa — and cannot be merged twice', async () => {
+  it('merged with a kassa-less expense typed BEFORE kassas were asked for: history, off the queue — and never merged twice', async () => {
     const before = await unplacedCostTotals();
     const id = await cost(15, 'USD');
-    // An expense typed before kassas were asked for: the merge removes the
-    // double and the cost stays kassa-less, but it is ANSWERED — off the queue.
+    // The expense is history inside a counted opening (#1018): the merge
+    // removes the double and the cost is answered with it — placing it now
+    // would debit a drawer that already counted the money.
     const first = await expense(15, 'USD', '');
+    await typedBeforeKassas(first);
     const second = await expense(15, 'USD', usdTill);
     await mergeDuplicate({ costIds: [id], expenseId: first }, ctx());
     expect((await unplacedCostTotals()).count).toBe(before.count);
     await expect(mergeDuplicate({ costIds: [id], expenseId: second }, ctx())).rejects.toMatchObject({
       code: 'cost_taken',
     });
+  });
+
+  it('merged with a kassa-less expense typed SINCE: still unplaced money — on the queue, the net unmoved, a colleague can still be named (U02)', async () => {
+    const id = await cost(17, 'USD');
+    const typed = await companyBalance();
+    const queued = await unplacedCostTotals();
+    // The same money typed again as an expense naming no kassa (a non-cash
+    // kind, a direct service caller, or a firm-paid one whose charge was
+    // voided): it moved no drawer, so the Balans does not move either.
+    const twin = await expense(17, 'USD', '');
+    expect(cents((await companyBalance()).netUsd - typed.netUsd)).toBe(0);
+
+    await mergeDuplicate({ costIds: [id], expenseId: twin }, ctx());
+    // The double is gone, the kassa is still unsaid: the cost stays where the
+    // accountant can answer it, and «Sof holat» does not jump on a press that
+    // moved no money.
+    const merged = await unplacedCostTotals();
+    expect(merged.count).toBe(queued.count);
+    expect(cents(merged.usd - queued.usd)).toBe(0);
+    expect(cents((await companyBalance()).netUsd - typed.netUsd)).toBe(0);
+    const [row] = await db.select().from(costEntries).where(eq(costEntries.id, id));
+    expect(row).toMatchObject({ accountId: null, mergedExpenseId: twin });
+
+    // Its answers still work on it — the colleague's pocket here.
+    const owed = await partnerBalanceUsd(staffPartnerId);
+    await setCostStaffPayer(id, staffPartnerId, ctx());
+    expect(await partnerBalanceUsd(staffPartnerId)).toBe(owed + 17);
+    expect((await unplacedCostTotals()).count).toBe(queued.count - 1);
+    expect(cents((await companyBalance()).netUsd - typed.netUsd)).toBe(0);
   });
 });
 
@@ -318,20 +358,25 @@ describe('a merge dates the drawer by the day the drawer PAID (U07)', () => {
 });
 
 describe("the cash flow's kassa-less figure is the queue's own (U23)", () => {
-  it('links exactly what the queue lists; history and kassa-less merges are named apart; the parts add up', async () => {
-    const cents = (value: number) => Math.round(value * 100) / 100;
+  it('links exactly what the queue lists; history — a cost or its merged duplicate — is named apart; the parts add up', async () => {
     const before = await cashFlow(DAY, DAY);
     const queueBefore = await unplacedCostTotals();
     await cost(41, 'USD');
     const history = await cost(43, 'USD');
     // Typed before kassas were asked for (#1018): inside a till's count.
     await db.update(costEntries).set({ createdAt: new Date('2000-01-01T00:00:00Z') }).where(eq(costEntries.id, history));
-    const merged = await cost(47, 'USD');
-    await mergeDuplicate({ costIds: [merged], expenseId: await expense(47, 'USD', '') }, ctx());
+    // Merged with a kassa-less duplicate typed before kassas: history too.
+    const mergedOld = await cost(47, 'USD');
+    const oldTwin = await expense(47, 'USD', '');
+    await typedBeforeKassas(oldTwin);
+    await mergeDuplicate({ costIds: [mergedOld], expenseId: oldTwin }, ctx());
+    // Merged with one typed since: still the queue's (U02).
+    const mergedNew = await cost(53, 'USD');
+    await mergeDuplicate({ costIds: [mergedNew], expenseId: await expense(53, 'USD', '') }, ctx());
     const after = await cashFlow(DAY, DAY);
     const queueAfter = await unplacedCostTotals();
 
-    expect(cents(after.cargoQueuedUsd - before.cargoQueuedUsd)).toBe(41);
+    expect(cents(after.cargoQueuedUsd - before.cargoQueuedUsd)).toBe(94);
     expect(cents(after.cargoQueuedUsd - before.cargoQueuedUsd)).toBe(cents(queueAfter.usd - queueBefore.usd));
     expect(cents(after.cargoKassaUnknownUsd - before.cargoKassaUnknownUsd)).toBe(90);
     const row = after.rows.find((entry) => entry.label === 'cargoCosts')!.amountUsd;

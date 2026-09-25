@@ -868,10 +868,12 @@ const countedSql = (day: Day) => sql`${day} >= coalesce(${moneyAccounts.openingD
 
 /**
  * The aggregate columns one reader wants of each kassa-moving statement:
- * given the row's native amount, its day, its dollars and whether the CASH
- * FLOW counts it (`cash-rules.ts`), return the SQL to sum.
+ * given the row's native amount, its day, its dollars, whether the CASH
+ * FLOW counts it (`cash-rules.ts`) and whether its dollars are MISSING (a
+ * cost in a currency with no rate yet — `usd` reads it as 0), return the SQL
+ * to sum.
  */
-type LedgerPick = (amount: AnyColumn, day: Day, usd: SQL, inCashFlow: SQL) => Record<string, SQL>;
+type LedgerPick = (amount: AnyColumn, day: Day, usd: SQL, inCashFlow: SQL, noUsd: SQL) => Record<string, SQL>;
 type LedgerRow = { id: string | null; type?: string } & Record<string, unknown>;
 /** The six statements' rows, in `kassaLedger`'s order. */
 type Ledger<R> = [R[], R[], R[], R[], R[], R[]];
@@ -884,13 +886,22 @@ type Ledger<R> = [R[], R[], R[], R[], R[], R[]];
  */
 function kassaLedger(pick: LedgerPick): Promise<Ledger<LedgerRow>> {
   const usd = (column: AnyColumn) => sql`coalesce(${column}, 0)`;
+  // Only a cost's dollars can be missing today (every other amount_usd is
+  // NOT NULL); asked of every statement so a reader never has to know that.
+  const noUsd = (column: AnyColumn) => sql`${column} IS NULL`;
   return Promise.all([
     // Payments IN and refunds OUT (R6a) in one pass, split by type.
     db
       .select({
         id: clientTransactions.accountId,
         type: clientTransactions.type,
-        ...pick(clientTransactions.amount, clientTransactions.txDate, usd(clientTransactions.amountUsd), cashClientTxSql()),
+        ...pick(
+          clientTransactions.amount,
+          clientTransactions.txDate,
+          usd(clientTransactions.amountUsd),
+          cashClientTxSql(),
+          noUsd(clientTransactions.amountUsd),
+        ),
       })
       .from(clientTransactions)
       .innerJoin(moneyAccounts, eq(moneyAccounts.id, clientTransactions.accountId))
@@ -899,7 +910,7 @@ function kassaLedger(pick: LedgerPick): Promise<Ledger<LedgerRow>> {
     db
       .select({
         id: expenses.accountId,
-        ...pick(expenses.amount, expenses.expenseDate, usd(expenses.amountUsd), cashExpenseSql()),
+        ...pick(expenses.amount, expenses.expenseDate, usd(expenses.amountUsd), cashExpenseSql(), noUsd(expenses.amountUsd)),
       })
       .from(expenses)
       .innerJoin(moneyAccounts, eq(moneyAccounts.id, expenses.accountId))
@@ -909,7 +920,13 @@ function kassaLedger(pick: LedgerPick): Promise<Ledger<LedgerRow>> {
     db
       .select({
         id: accountTransfers.toAccountId,
-        ...pick(accountTransfers.amountTo, accountTransfers.transferDate, usd(accountTransfers.amountUsd), sql`false`),
+        ...pick(
+          accountTransfers.amountTo,
+          accountTransfers.transferDate,
+          usd(accountTransfers.amountUsd),
+          sql`false`,
+          noUsd(accountTransfers.amountUsd),
+        ),
       })
       .from(accountTransfers)
       .innerJoin(moneyAccounts, eq(moneyAccounts.id, accountTransfers.toAccountId))
@@ -918,7 +935,13 @@ function kassaLedger(pick: LedgerPick): Promise<Ledger<LedgerRow>> {
     db
       .select({
         id: accountTransfers.fromAccountId,
-        ...pick(accountTransfers.amountFrom, accountTransfers.transferDate, usd(accountTransfers.amountUsd), sql`false`),
+        ...pick(
+          accountTransfers.amountFrom,
+          accountTransfers.transferDate,
+          usd(accountTransfers.amountUsd),
+          sql`false`,
+          noUsd(accountTransfers.amountUsd),
+        ),
       })
       .from(accountTransfers)
       .innerJoin(moneyAccounts, eq(moneyAccounts.id, accountTransfers.fromAccountId))
@@ -933,7 +956,13 @@ function kassaLedger(pick: LedgerPick): Promise<Ledger<LedgerRow>> {
       .select({
         id: partnerTransactions.accountId,
         type: partnerTransactions.type,
-        ...pick(partnerTransactions.amount, partnerTransactions.txDate, usd(partnerTransactions.amountUsd), sql`true`),
+        ...pick(
+          partnerTransactions.amount,
+          partnerTransactions.txDate,
+          usd(partnerTransactions.amountUsd),
+          sql`true`,
+          noUsd(partnerTransactions.amountUsd),
+        ),
       })
       .from(partnerTransactions)
       .innerJoin(moneyAccounts, eq(moneyAccounts.id, partnerTransactions.accountId))
@@ -949,7 +978,7 @@ function kassaLedger(pick: LedgerPick): Promise<Ledger<LedgerRow>> {
     db
       .select({
         id: costEntries.accountId,
-        ...pick(costEntries.accountAmount, costCashDay, usd(costEntries.amountUsd), cashCostSql()),
+        ...pick(costEntries.accountAmount, costCashDay, usd(costEntries.amountUsd), cashCostSql(), noUsd(costEntries.amountUsd)),
       })
       .from(costEntries)
       .innerJoin(moneyAccounts, eq(moneyAccounts.id, costEntries.accountId))
@@ -1096,6 +1125,14 @@ export interface KassaPeriodRow {
    * paid from a box), and the box's transfer halves (`transfers`).
    */
   usd: { cashCounted: number; cashEarly: number; tillOnly: number; transfers: number };
+  /**
+   * The box's OWN money on counted rows dated in the period that carry NO
+   * dollar figure (a cost in a currency never rated — U24), signed as they
+   * move the box. `usd` above reads each of them as $0, so without this the
+   * reconciliation could only find them as a remainder and called that an
+   * exchange difference.
+   */
+  noUsdInPeriod: number;
 }
 
 /**
@@ -1114,7 +1151,7 @@ export async function accountBalancesBetween(from: string, to: string): Promise<
   const inRange = (day: Day) => sql`(${day} >= ${from}::date AND ${day} <= ${to}::date)`;
   const [accounts, statements] = await Promise.all([
     listAccounts(true),
-    kassaLedger((amount, day, usd, inCashFlow) => ({
+    kassaLedger((amount, day, usd, inCashFlow, noUsd) => ({
       open: sql<string>`coalesce(sum(${amount}) FILTER (WHERE ${countedSql(day)} AND ${day} < ${from}::date), 0)`,
       within: sql<string>`coalesce(sum(${amount}) FILTER (WHERE ${countedSql(day)} AND ${inRange(day)}), 0)`,
       close: sql<string>`coalesce(sum(${amount}) FILTER (WHERE ${countedSql(day)} AND ${day} <= ${to}::date), 0)`,
@@ -1122,6 +1159,7 @@ export async function accountBalancesBetween(from: string, to: string): Promise<
       cashCounted: sql<string>`coalesce(sum(${usd}) FILTER (WHERE (${inCashFlow}) AND ${countedSql(day)} AND ${inRange(day)}), 0)`,
       cashEarly: sql<string>`coalesce(sum(${usd}) FILTER (WHERE (${inCashFlow}) AND NOT ${countedSql(day)} AND ${inRange(day)}), 0)`,
       tillOnly: sql<string>`coalesce(sum(${usd}) FILTER (WHERE NOT (${inCashFlow}) AND ${countedSql(day)} AND ${inRange(day)}), 0)`,
+      noUsd: sql<string>`coalesce(sum(${amount}) FILTER (WHERE (${noUsd}) AND ${countedSql(day)} AND ${inRange(day)}), 0)`,
     })),
   ]);
 
@@ -1141,6 +1179,7 @@ export async function accountBalancesBetween(from: string, to: string): Promise<
     closing: 0,
     beforeOpeningInPeriod: 0,
     usd: { cashCounted: 0, cashEarly: 0, tillOnly: 0, transfers: 0 },
+    noUsdInPeriod: 0,
   });
   const per = new Map<string, Acc>();
   statements.forEach((rows, index) => {
@@ -1163,6 +1202,7 @@ export async function accountBalancesBetween(from: string, to: string): Promise<
       }
       entry.usd.cashCounted += sign * Number(row.cashCounted);
       entry.usd.cashEarly += sign * Number(row.cashEarly);
+      entry.noUsdInPeriod += sign * Number(row.noUsd);
       entry.beforeOpeningInPeriod += Number(row.early);
       per.set(row.id, entry);
     }
@@ -1192,6 +1232,7 @@ export async function accountBalancesBetween(from: string, to: string): Promise<
       closing: cents((closesWith ? count : 0) + entry.closing),
       beforeOpeningInPeriod: entry.beforeOpeningInPeriod,
       usd: entry.usd,
+      noUsdInPeriod: entry.noUsdInPeriod,
     };
   });
 }

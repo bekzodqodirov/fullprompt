@@ -10,7 +10,7 @@ import {
   tripKind,
   tripTotals,
 } from '@/modules/wms/reports/dashboard-math';
-import { agingTotals, balanceLines } from '@/modules/wms/accounting/balance-lines';
+import { agingTotals, balanceLines, unplacedCostsTakenOff } from '@/modules/wms/accounting/balance-lines';
 import { compactUsd, pct, signedUsd, usd } from '@/components/charts/format';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 
@@ -165,6 +165,8 @@ describe('the Balans lines, one home for two screens', () => {
     clientAdvancesUsd: 0,
     unplacedCostCount: 0,
     unplacedCostUsd: 0,
+    unplacedCostInCountCount: 0,
+    unplacedCostInCountUsd: 0,
     sellerCommissionsUsd: 0,
   };
   it('leaves out the lines that are empty by nature and signs what we owe', () => {
@@ -190,6 +192,14 @@ describe('the Balans lines, one home for two screens', () => {
     expect(lines.find((l) => l.key === 'balSellerCommissions')).toMatchObject({ value: -600, href: '/upsale' });
     // Nothing waiting, nothing owed: no permanent $0 lines.
     expect(balanceLines(base).some((l) => l.key === 'balUnplacedCostsLine' || l.key === 'balSellerCommissions')).toBe(false);
+  });
+  it('the cost line is what the net took off — not the part every kassa count already holds (#528)', () => {
+    const queue = { ...base, unplacedCostCount: 3, unplacedCostUsd: 650, unplacedCostInCountCount: 1, unplacedCostInCountUsd: 300 };
+    expect(unplacedCostsTakenOff(queue)).toEqual({ count: 2, usd: 350 });
+    expect(balanceLines(queue).find((l) => l.key === 'balUnplacedCostsLine')?.value).toBe(-350);
+    // Every queued cost inside the counts: nothing taken off, no $0 line.
+    const allCounted = { ...queue, unplacedCostInCountCount: 3, unplacedCostInCountUsd: 650 };
+    expect(balanceLines(allCounted).some((l) => l.key === 'balUnplacedCostsLine')).toBe(false);
   });
   it('sums the aging buckets the receivables page prints', () => {
     expect(

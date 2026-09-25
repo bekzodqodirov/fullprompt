@@ -53,15 +53,20 @@ export default async function CostKassaPage({
     };
     // The 1:1 shape (A3): one expense, the same money by the owner's M4a
     // rule — offered as a suggestion, merged only when the accountant says.
-    const twin = candidates.find(
-      (e) =>
-        sameMoney([cost], {
-          amount: Number(e.amount),
-          currency: e.currency,
-          amountUsd: Number(e.amountUsd),
-          expenseDate: e.expenseDate,
-        }) === null,
-    );
+    // Never for a row already merged (U02): its double is gone, only its
+    // kassa is missing, and the merge would refuse it (`cost_taken`).
+    const merged = row.mergedExpenseId !== null;
+    const twin = merged
+      ? undefined
+      : candidates.find(
+          (e) =>
+            sameMoney([cost], {
+              amount: Number(e.amount),
+              currency: e.currency,
+              amountUsd: Number(e.amountUsd),
+              expenseDate: e.expenseDate,
+            }) === null,
+        );
     return {
       id: row.id,
       typeName: row.typeName,
@@ -81,6 +86,7 @@ export default async function CostKassaPage({
               ? { href: `/zavod/${row.pickupId}`, label: row.pickupCode ?? '' }
               : null,
       suggestion: twin ? { expenseId: twin.id, label: expenseLabel(twin) } : null,
+      merged,
     };
   });
 

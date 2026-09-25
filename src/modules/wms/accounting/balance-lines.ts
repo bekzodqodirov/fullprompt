@@ -36,10 +36,27 @@ export interface BalanceFigures {
   clientAdvancesUsd: number;
   unplacedCostCount: number;
   unplacedCostUsd: number;
+  /** Of the queue, what every kassa's count already holds — not in the net. */
+  unplacedCostInCountCount: number;
+  unplacedCostInCountUsd: number;
   sellerCommissionsUsd: number;
 }
 
+/**
+ * The queued cargo costs the Balans takes off (U02): the queue less what
+ * every kassa's count already holds (the pair rule, #528). ONE reading for
+ * the line, the Balans page's note and the dashboard's — the line has to be
+ * what the net subtracted, or the bridge does not add up to the net.
+ */
+export function unplacedCostsTakenOff(balance: BalanceFigures): { count: number; usd: number } {
+  return {
+    count: balance.unplacedCostCount - balance.unplacedCostInCountCount,
+    usd: Math.round((balance.unplacedCostUsd - balance.unplacedCostInCountUsd) * 100) / 100,
+  };
+}
+
 export function balanceLines(balance: BalanceFigures, cashHref = '/accounting/accounts'): BalanceLine[] {
+  const costsOut = unplacedCostsTakenOff(balance);
   return [
     { key: 'balCash', value: balance.cashUsd, tone: 'text-ink-900', href: cashHref },
     ...(balance.unplacedCount > 0
@@ -55,9 +72,10 @@ export function balanceLines(balance: BalanceFigures, cashHref = '/accounting/ac
       : []),
     // Cargo costs spent from a kassa nobody has named yet (U02): money gone,
     // so it leaves the net on the day it is SPENT — and leaves this line for
-    // its kassa's on the day the accountant places it, the net unmoved.
-    ...(balance.unplacedCostCount > 0
-      ? [{ key: 'balUnplacedCostsLine', value: -balance.unplacedCostUsd, tone: 'text-warn', href: '/accounting/xarajat-kassa' } as const]
+    // its kassa's on the day the accountant places it, the net unmoved. Not
+    // the part every kassa's count already holds: that is in the cash above.
+    ...(costsOut.count > 0
+      ? [{ key: 'balUnplacedCostsLine', value: -costsOut.usd, tone: 'text-warn', href: '/accounting/xarajat-kassa' } as const]
       : []),
     // Commissions owed on jobs the client has paid for (U10): out of money
     // already in the tills, so a liability until the accountant pays them.

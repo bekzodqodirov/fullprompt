@@ -22,6 +22,7 @@ import {
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { getSetting } from '../../platform/settings/service';
 import { tashkentDayStart } from '../../platform/time/tashkent';
+import { costCashDay, mergedFrom } from '../accounting/cash-rules';
 import { latestTxDate } from '../finance/dates';
 import { exceedsRowUsd, nativeAmount } from '../finance/money-bounds';
 import { allocateEntry, toUsd, type AllocBox, type AllocationBasis } from './engine';
@@ -255,23 +256,57 @@ export async function addCostEntry(input: z.infer<typeof costEntrySchema>, ctx: 
 
 /**
  * A cost nobody has said the kassa of (0101): live, no counterparty, no
- * kassa, not merged into an expense — and entered on or after
- * `cost_kassa_since`. ONE predicate for the queue screen, the accountant's
- * home counter and the Balans line (#513). The bound is the deploy day the
- * migration wrote: every older cost has no kassa BY CONSTRUCTION and is
- * inside some till's counted opening, so placing it would debit the drawer a
- * second time (the design judge's blocker).
+ * kassa — and entered on or after `cost_kassa_since`. ONE predicate for the
+ * queue screen, the accountant's home counter, the Balans line and the cash
+ * flow's queue figure (#513, U23). The bound is the deploy day the migration
+ * wrote: every older cost has no kassa BY CONSTRUCTION and is inside some
+ * till's counted opening, so placing it would debit the drawer a second time
+ * (the design judge's blocker).
+ *
+ * A cost MERGED into a kassa-less expense (M4a) is judged by the EXPENSE's
+ * entry day on the same bound (audit U02, reversing #1019's blanket clause):
+ * one typed before kassas were asked for is history inside a counted opening,
+ * like any older cost; one typed since is simply money no kassa has been
+ * named for — the merge removed the double and said nothing about the
+ * drawer. Dropping every merged cost let one press take spent money out of
+ * the Balans net with no drawer moving. `${costEntries}` the table, so the
+ * subquery binds to the outer row in a single-table select too (#128).
  */
 export function unplacedCostSql(since: string): SQL {
+  const start = /^\d{4}-\d{2}-\d{2}$/.test(since) ? tashkentDayStart(since).toISOString() : null;
   return and(
     isNull(costEntries.voidedAt),
     isNull(costEntries.partnerId),
     isNull(costEntries.accountId),
-    isNull(costEntries.mergedExpenseId),
-    /^\d{4}-\d{2}-\d{2}$/.test(since)
-      ? sql`${costEntries.createdAt} >= ${tashkentDayStart(since).toISOString()}::timestamptz`
+    start ? sql`${costEntries.createdAt} >= ${start}::timestamptz` : undefined,
+    start
+      ? sql`(${costEntries}.merged_expense_id IS NULL
+             OR EXISTS (SELECT 1 FROM expenses me
+                         WHERE me.id = ${costEntries}.merged_expense_id
+                           AND me.created_at >= ${start}::timestamptz))`
       : undefined,
   )!;
+}
+
+/**
+ * Of the queue, a cost whose money is certainly INSIDE a kassa's count
+ * already (audit U02 × U09, the #528 pair rule): at least one active kassa
+ * exists — the only kind a cost can be placed into (`assertTill`) — and every
+ * one of them was counted AFTER the day the drawer paid (`costCashDay`). R4
+ * (#1012) keeps such a row out of whichever kassa it is placed into, so the
+ * count already holds the money; taking it off the Balans as well counted it
+ * twice while it waited and made the net jump on the placing press. A kassa
+ * with no count takes every row, so while one exists the cost may land in
+ * it and stays money gone. Any currency: a queued cost's kassa is unknown,
+ * and a kassa in another currency takes it too (`account_amount`).
+ *
+ * Needs `mergedFrom` LEFT JOINed (the day is `costCashDay`).
+ */
+export function insideEveryCountSql(): SQL {
+  return sql`(EXISTS (SELECT 1 FROM money_accounts ma WHERE ma.active)
+              AND NOT EXISTS (SELECT 1 FROM money_accounts ma
+                               WHERE ma.active
+                                 AND coalesce(ma.opening_date, '-infinity'::date) <= ${costCashDay}))`;
 }
 
 /** The queue's start day, as the setting holds it ('' = no bound). */
@@ -280,17 +315,30 @@ export async function unplacedCostSince(): Promise<string> {
   return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : '';
 }
 
-/** How many costs wait for a kassa, and their dollars — the counter and the Balans. */
+/**
+ * How many costs wait for a kassa, and their dollars — the counter and the
+ * Balans — and, of them, the part every kassa's count already holds
+ * (`insideEveryCountSql`): still on the queue to be placed, but not money
+ * the Balans may take off a second time.
+ */
 export async function unplacedCostTotals() {
   const since = await unplacedCostSince();
   const [row] = await db
     .select({
       n: sql<number>`count(*)::int`,
       usd: sql<string>`coalesce(sum(coalesce(${costEntries.amountUsd}, 0)), 0)`,
+      inN: sql<number>`(count(*) FILTER (WHERE ${insideEveryCountSql()}))::int`,
+      inUsd: sql<string>`coalesce(sum(coalesce(${costEntries.amountUsd}, 0)) FILTER (WHERE ${insideEveryCountSql()}), 0)`,
     })
     .from(costEntries)
+    .leftJoin(mergedFrom, eq(mergedFrom.id, costEntries.mergedExpenseId))
     .where(unplacedCostSql(since));
-  return { count: Number(row?.n ?? 0), usd: Math.round(Number(row?.usd ?? 0) * 100) / 100 };
+  const cents = (value: unknown) => Math.round(Number(value ?? 0) * 100) / 100;
+  return {
+    count: Number(row?.n ?? 0),
+    usd: cents(row?.usd),
+    insideCounts: { count: Number(row?.inN ?? 0), usd: cents(row?.inUsd) },
+  };
 }
 
 /**
@@ -357,6 +405,9 @@ export async function setCostStaffPayer(costId: string, partnerId: string, ctx: 
   if (!entry) throw new CostError('not_found');
   // A debt needs a dollar figure (the entry-time rule, #427).
   if (entry.amountUsd === null) throw new CostError('fx_missing');
+  // A cost merged into a kassa-less expense stays on the queue (U02), so it
+  // must take this answer too — or the row sits there with a button that
+  // refuses. No kassa and no counterparty is the whole claim.
   const [row] = await db
     .update(costEntries)
     .set({ partnerId, updatedAt: new Date() })
@@ -366,7 +417,6 @@ export async function setCostStaffPayer(costId: string, partnerId: string, ctx: 
         isNull(costEntries.voidedAt),
         isNull(costEntries.partnerId),
         isNull(costEntries.accountId),
-        isNull(costEntries.mergedExpenseId),
       ),
     )
     .returning({ id: costEntries.id });

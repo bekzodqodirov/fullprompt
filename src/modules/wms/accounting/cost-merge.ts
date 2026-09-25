@@ -198,8 +198,10 @@ export async function mergeDuplicate(input: { costIds: string[]; expenseId: stri
       await tx
         .update(costEntries)
         .set({
-          // An expense with no kassa (typed before kassas were asked for)
-          // leaves the costs unplaced — the merge still removes the double.
+          // An expense with no kassa leaves the costs kassa-less — the merge
+          // still removes the double. One typed since kassas were asked for
+          // keeps them on the queue, where a kassa or a colleague can still
+          // be named; an older one is history (`unplacedCostSql`, U02).
           accountId: expense.accountId,
           accountAmount: expense.accountId && share !== null ? String(share) : null,
           mergedExpenseId: expense.id,

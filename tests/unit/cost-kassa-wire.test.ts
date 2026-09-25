@@ -89,6 +89,21 @@ describe('the cost doors ask the kassa rules after their own grant', () => {
   });
 });
 
+describe('a cost merged into a kassa-less expense stays on the queue (U02)', () => {
+  // The service half (it stays queued, the staff answer takes it) is proven
+  // in cost-kassa.integration; the screen calls `getActor`, so its half —
+  // no second merge offered, the row says what is left to answer — is here.
+  it('the queue offers it no merge — only its kassa or the colleague', () => {
+    expect(read('src/modules/wms/accounting/cost-queue.ts')).toContain('mergedExpenseId: costEntries.mergedExpenseId,');
+    const page = read('src/app/(protected)/accounting/xarajat-kassa/page.tsx');
+    expect(page).toContain('const merged = row.mergedExpenseId !== null;');
+    expect(page).toMatch(/const twin = merged\s*\?\s*undefined\s*:\s*candidates\.find\(/);
+    const rows = read('src/app/(protected)/accounting/xarajat-kassa/cost-queue.tsx');
+    expect(rows).toMatch(/\{!row\.merged && \(\s*<input\s+type="checkbox"/);
+    expect(rows).toContain("t('queueMergedNoKassa')");
+  });
+});
+
 describe('the owner\'s M4a rule for «the same money»', () => {
   const expense = { amount: 100, currency: 'USD', amountUsd: 100, expenseDate: '2026-09-10' };
   const cost = (amount: number, currency = 'USD', amountUsd: number | null = amount, costDate = '2026-09-09') => ({

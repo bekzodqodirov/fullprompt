@@ -202,6 +202,7 @@ export async function buildCashFlowXlsx(from: string, to: string, locale?: strin
     tillOnly: L.reconTillOnly,
     oneSidedTransfers: L.reconOneSidedTransfers,
     unratedTills: L.reconUnratedTills,
+    tillUnconverted: L.reconTillUnconverted,
     fx: L.reconFx,
   };
   sheet.addRow([]);

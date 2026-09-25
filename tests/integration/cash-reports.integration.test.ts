@@ -21,7 +21,7 @@ import {
   users,
   warehouses,
 } from '@/modules/platform/db/schema';
-import { addCostEntry, setCostAccount, setCostStaffPayer } from '@/modules/wms/costing/service';
+import { addCostEntry, setCostAccount, setCostStaffPayer, voidCostEntry } from '@/modules/wms/costing/service';
 import { accountBalancesBetween, addExpense, addTransfer } from '@/modules/wms/accounting/service';
 import {
   cashFlow,
@@ -41,7 +41,7 @@ import { addDays, tashkentDay, tashkentMonthStart } from '@/modules/platform/tim
  * costs (U02) and unrated tills (U14), and which kassa-less payment is still
  * money to place (U09).
  *
- * Periods live in 1640-1643, a stretch no other file dates anything in, so a
+ * Periods live in 1640-1644, a stretch no other file dates anything in, so a
  * whole-period report here reads this file's rows alone. Currencies are this
  * file's own (QW*), rated or deliberately not, so no shared rate is moved
  * (#380, #183) — and removed at the end, because a currency shows up in every
@@ -306,6 +306,17 @@ describe('a cost with no rate is named in the cash flow, never a silent $0 (U24)
     expect(flow.rows.find((row) => row.label === 'cargoCosts')!.amountUsd).toBe(100);
     // …and the month bucket carries the same count as the report.
     expect((await cashFlowByMonth('1641-05-01', '1641-05-31')).get('1641-05')!.unconvertedCount).toBe(2);
+
+    // The $50 that left the dollar till against the unrated cost is its OWN
+    // line on the reconciliation — every kassa that day is in dollars, so an
+    // exchange difference there would send the accountant hunting a currency
+    // loss that does not exist.
+    const recon = await cashReconciliation(DAY, DAY);
+    const line = (key: string) => recon.lines.find((entry) => entry.key === key)?.usd ?? 0;
+    expect(line('tillUnconverted')).toBe(-50);
+    expect(line('fx')).toBe(0);
+    expect(recon.unexplained).toBe(0);
+    expect(recon.kassas.find((kassa) => kassa.id === usdTill)).toMatchObject({ noUsdInPeriod: -50, closing: -50 });
   });
 });
 
@@ -335,6 +346,92 @@ describe('the Balans counts kassa-less cargo costs as money gone (U02)', () => {
     expect(cents(owed.netUsd - typed.netUsd)).toBe(0);
     expect(cents(owed.payableUsd - typed.payableUsd)).toBe(80);
     expect(cents(owed.unplacedCostUsd - typed.unplacedCostUsd)).toBe(-80);
+  });
+});
+
+describe('a queued cost every kassa count already holds is not taken off again (U02 × U09, #528)', () => {
+  // The rule reads EVERY active kassa — a queued cost's kassa is unknown, and
+  // any of them could take it — so the seeded ones (no count date: they take
+  // every row) would make it undecidable. Parked for this block and put back
+  // exactly as found, whatever the tests do (#183).
+  const COUNT = '1644-02-01';
+  let parked: string[] = [];
+  let counted = '';
+  const park = async () => {
+    parked = (
+      await db.select({ id: moneyAccounts.id }).from(moneyAccounts).where(eq(moneyAccounts.active, true))
+    ).map((row) => row.id);
+    if (parked.length) await db.update(moneyAccounts).set({ active: false }).where(inArray(moneyAccounts.id, parked));
+  };
+
+  beforeAll(park);
+  afterAll(async () => {
+    if (parked.length) await db.update(moneyAccounts).set({ active: true }).where(inArray(moneyAccounts.id, parked));
+  });
+
+  it('with no active kassa at all, nothing can hold it: money gone', async () => {
+    const before = await companyBalance();
+    const id = await cost(20, 'USD', '1644-01-10');
+    const typed = await companyBalance();
+    expect(cents(typed.netUsd - before.netUsd)).toBe(-20);
+    expect(cents(typed.unplacedCostInCountUsd - before.unplacedCostInCountUsd)).toBe(0);
+    await voidCostEntry(id, 'test', ctx());
+  });
+
+  it('dated before EVERY count, in any currency: inside the counts — typing it and placing it move nothing', async () => {
+    counted = await till('Hisobot U02 sanoq', 'USD', { openingBalance: '1000', openingDate: COUNT });
+    await till('Hisobot U02 sanoq QWR', RATED, { openingDate: COUNT });
+    const before = await companyBalance();
+    const id = await cost(300, 'USD', '1644-01-20');
+    const typed = await companyBalance();
+    expect(cents(typed.netUsd - before.netUsd)).toBe(0);
+    // Still on the queue — somebody still has to say which drawer — and
+    // named as the part the net leaves alone.
+    expect(typed.unplacedCostCount - before.unplacedCostCount).toBe(1);
+    expect(cents(typed.unplacedCostUsd - before.unplacedCostUsd)).toBe(300);
+    expect(typed.unplacedCostInCountCount - before.unplacedCostInCountCount).toBe(1);
+    expect(cents(typed.unplacedCostInCountUsd - before.unplacedCostInCountUsd)).toBe(300);
+
+    await setCostAccount(id, counted, undefined, ctx());
+    const placed = await companyBalance();
+    // R4: the count already holds it — the drawer does not move, nor the net.
+    expect(cents(placed.cashUsd - typed.cashUsd)).toBe(0);
+    expect(cents(placed.netUsd - typed.netUsd)).toBe(0);
+    expect(cents(placed.unplacedCostInCountUsd - typed.unplacedCostInCountUsd)).toBe(-300);
+  });
+
+  it('«a colleague paid it» is a debt no count holds: saying so lowers the net (the ambiguity U09 accepts)', async () => {
+    const id = await cost(70, 'USD', '1644-01-21');
+    const typed = await companyBalance();
+    await setCostStaffPayer(id, staffPartnerId, ctx());
+    const owed = await companyBalance();
+    expect(cents(owed.payableUsd - typed.payableUsd)).toBe(70);
+    expect(cents(owed.netUsd - typed.netUsd)).toBe(-70);
+    expect(cents(owed.unplacedCostInCountUsd - typed.unplacedCostInCountUsd)).toBe(-70);
+  });
+
+  it('dated ON the count day: the count does not hold it (R4 counts that day) — money gone', async () => {
+    const before = await companyBalance();
+    const id = await cost(40, 'USD', COUNT);
+    const typed = await companyBalance();
+    expect(cents(typed.netUsd - before.netUsd)).toBe(-40);
+    await setCostAccount(id, counted, undefined, ctx());
+    const placed = await companyBalance();
+    expect(cents(placed.cashUsd - typed.cashUsd)).toBe(-40);
+    expect(cents(placed.netUsd - typed.netUsd)).toBe(0);
+  });
+
+  it('while ONE active kassa was counted on or before its day, it may land there: money gone, and placing moves cash, not the net', async () => {
+    const early = await till('Hisobot U02 erta', 'USD', { openingDate: '1644-01-01' });
+    const before = await companyBalance();
+    const id = await cost(50, 'USD', '1644-01-22');
+    const typed = await companyBalance();
+    expect(cents(typed.netUsd - before.netUsd)).toBe(-50);
+    expect(cents(typed.unplacedCostInCountUsd - before.unplacedCostInCountUsd)).toBe(0);
+    await setCostAccount(id, early, undefined, ctx());
+    const placed = await companyBalance();
+    expect(cents(placed.cashUsd - typed.cashUsd)).toBe(-50);
+    expect(cents(placed.netUsd - typed.netUsd)).toBe(0);
   });
 });
 
