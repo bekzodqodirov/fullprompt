@@ -54,6 +54,9 @@ export default async function DashboardPage() {
   const scoped = !allWh || actor.warehouseScoped;
   const scopeKey = scopeKeyOf(scoped ? actor.warehouseIds : undefined);
   const staleDays = Number(await getSetting('stale_stock_days')) || 30;
+  // The trucks-with-no-cost list: company-wide count (costMissingCount takes
+  // no scope), so only an unscoped all-warehouse viewer gets it.
+  const seesCostMissing = allWh && !scoped && seesBatches;
 
   const t = await getTranslations('dashboard');
   const format = await getFormatter();
@@ -90,7 +93,13 @@ export default async function DashboardPage() {
       </Suspense>
 
       <Suspense fallback={<Skeleton rows={1} />}>
-        <AttentionSection money={money} cargo={seesBatches} scopeKey={scopeKey} perms={perms} />
+        <AttentionSection
+          money={money}
+          cargo={seesBatches}
+          scopeKey={scopeKey}
+          perms={perms}
+          seesCostMissing={seesCostMissing}
+        />
       </Suspense>
 
       {money && (
@@ -104,7 +113,7 @@ export default async function DashboardPage() {
           scopeKey={scopeKey}
           staleDays={staleDays}
           seesBatches={seesBatches}
-          seesCostMissing={allWh && !scoped && seesBatches}
+          seesCostMissing={seesCostMissing}
           canEditCapacity={perms.has('admin.warehouses.manage')}
         />
       </Suspense>

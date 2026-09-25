@@ -56,11 +56,14 @@ export async function AttentionSection({
   cargo,
   scopeKey,
   perms,
+  seesCostMissing,
 }: {
   money: boolean;
   cargo: boolean;
   scopeKey: string;
   perms: Set<string>;
+  /** The cargo section's own condition for drawing the list this row jumps to. */
+  seesCostMissing: boolean;
 }) {
   const t = await getTranslations('dashboard');
   const w = loadWindows();
@@ -79,7 +82,7 @@ export async function AttentionSection({
       cargo ? loadRisk(scopeKey) : null,
       cargo ? loadTransit(scopeKey) : null,
       loadUnclaimed(scopeKey),
-      allWh ? loadCostMissing(scopeKey) : null,
+      seesCostMissing ? loadCostMissing(scopeKey) : null,
       allWh ? taskPulse(new Date()) : null,
       money && canExpenses ? recurringDueCount(w.month) : null,
       canApprove ? pendingApprovals() : null,
