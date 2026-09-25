@@ -195,7 +195,10 @@ describe('the cash flow page reconciles the kassas (U13)', () => {
     await pay(100, '1640-02-15', k1); // before K1's count: inside it
     await pay(50, '1640-03-12'); // reached no kassa (the pre-#994 shape)
     await expense(200, 'USD', '1640-03-15'); // a cash overhead with no kassa
-    await expense(100, 'USD', '1640-03-16', { categoryId: nonCashCategory, accountId: k1 }); // non-cash, from a kassa
+    // Non-cash, from a kassa: the shape typed before the door refused it
+    // (U06) — so it is written through the cash category and moved after.
+    const legacy = await expense(100, 'USD', '1640-03-16', { accountId: k1 });
+    await db.update(expenses).set({ categoryId: nonCashCategory }).where(eq(expenses.id, legacy));
     await expense(250_000, RATED, '1640-03-17', { accountId: k2 });
     await cost(1000, 'USD', '1640-03-18', { accountId: k1 });
     await cost(600, 'USD', '1640-03-19'); // the accountant's queue
@@ -461,7 +464,9 @@ describe('«this month\'s payments» is one figure, and its parts are the other 
     const kassa = await till('Hisobot U26', 'USD');
 
     const before = await moneySnapshot();
-    await addTransaction({ clientId: payer, type: 'charge', amount: 5000, currency: 'USD', txDate: today }, ctx());
+    // 4,800 billed against 5,080 closed leaves a $280 advance for the refund
+    // to come out of — a refund past the advance is refused (U04).
+    await addTransaction({ clientId: payer, type: 'charge', amount: 4800, currency: 'USD', txDate: today }, ctx());
     await addTransaction(
       { clientId: payer, type: 'payment', amount: 4800, currency: 'USD', txDate: today, accountId: kassa },
       ctx(),
@@ -506,18 +511,20 @@ describe('«this month\'s payments» is one figure, and its parts are the other 
     )[0]!.id;
     madeClients.push(payer);
     const kassa = await till('Hisobot U26 eski', 'USD');
+    // A refund may pass the advance only by the FX residue (U04, ≤ $5): a $3
+    // advance, $7 handed back, $4 owed — from today, not from 70 days ago.
     await addTransaction({ clientId: payer, type: 'charge', amount: 1000, currency: 'USD', txDate: addDays(today, -70) }, ctx());
     await addTransaction(
-      { clientId: payer, type: 'payment', amount: 1000, currency: 'USD', txDate: addDays(today, -65), accountId: kassa },
+      { clientId: payer, type: 'payment', amount: 1003, currency: 'USD', txDate: addDays(today, -65), accountId: kassa },
       ctx(),
     );
     const before = await moneySnapshot();
     await addTransaction(
-      { clientId: payer, type: 'refund', amount: 200, currency: 'USD', txDate: today, accountId: kassa },
+      { clientId: payer, type: 'refund', amount: 7, currency: 'USD', txDate: today, accountId: kassa },
       ctx(),
     );
     const after = await moneySnapshot();
-    expect(cents(after.receivable - before.receivable)).toBe(200);
+    expect(cents(after.receivable - before.receivable)).toBe(4);
     expect(cents(after.receivableOld - before.receivableOld)).toBe(0);
   });
 });
