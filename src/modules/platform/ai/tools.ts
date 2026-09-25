@@ -141,7 +141,7 @@ export function buildTools(actor: AssistantActor): AssistantTool[] {
     {
       name: 'company_balance',
       description:
-        'Остатки всех касс сейчас (в своей валюте и в USD по сегодняшнему курсу) и итог. Единственный надёжный источник «сколько денег в компании».',
+        'Остатки всех касс сейчас (в своей валюте и в USD по сегодняшнему курсу) и итог. Деньги в кассах — это `cashUsd`; на вопрос «сколько денег в компании» отвечай им. `netUsd` («Sof holat») — не деньги в кассах: в нём долги клиентов и наши долги, и `unpricedCargoUsd` — деньги, уже потраченные на перевозку груза, которому цена ещё не записана (вернутся ценой; это не прибыль). `unpricedCargo` говорит, что в него не вошло.',
       input_schema: { type: 'object', properties: {} },
       run: async () => {
         const { companyBalance } = await import('../../wms/accounting/reports');

@@ -15,6 +15,7 @@ import { AttentionSection } from './sections/attention';
 import { MoneySection } from './sections/money';
 import { CargoSection } from './sections/cargo';
 import { SalesSection } from './sections/sales';
+import { mayReadUnpricedList } from '@/modules/wms/finance/unpriced-door';
 
 export const dynamic = 'force-dynamic';
 
@@ -109,7 +110,7 @@ export default async function DashboardPage() {
           <MoneySection
             scopeKey={scopeKey}
             canExpenses={perms.has('finance.expenses')}
-            canUnpricedList={perms.has('finance.view') || perms.has('finance.manage')}
+            canUnpricedList={mayReadUnpricedList(perms)}
           />
         </Suspense>
       )}

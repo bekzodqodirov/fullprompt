@@ -4,6 +4,7 @@ import {
   arAging,
   cashFlowByMonth,
   companyBalance,
+  companyBalanceParts,
   pnlGaps,
   profitAndLoss,
   profitByBatch,
@@ -40,8 +41,12 @@ const NO_WAREHOUSE = '00000000-0000-0000-0000-000000000000';
 export const scopeKeyOf = (ids: string[] | undefined) =>
   ids === undefined ? '' : ids.length === 0 ? NO_WAREHOUSE : [...ids].sort().join(',');
 
-// Money — the owner's and the admin's (his answer 4a).
+// Money — the owner's and the admin's (his answer 4a). The full balance waits
+// for the Balans line's company-wide unpriced-cargo read (U03); a section that
+// prints no net — the hero's cash value, the attention list — reads the parts,
+// which the full balance shares through their own `cache`, and does not wait.
 export const loadBalance = cache(() => companyBalance());
+export const loadBalanceParts = cache(() => companyBalanceParts());
 export const loadPnl12 = cache(() => {
   const w = loadWindows();
   return profitAndLoss(w.m12Start, w.today);

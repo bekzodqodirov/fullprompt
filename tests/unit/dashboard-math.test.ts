@@ -10,7 +10,13 @@ import {
   tripKind,
   tripTotals,
 } from '@/modules/wms/reports/dashboard-math';
-import { agingTotals, balanceLines, unplacedCostsTakenOff } from '@/modules/wms/accounting/balance-lines';
+import {
+  agingTotals,
+  balanceLines,
+  unplacedCostsTakenOff,
+  unpricedNotesCount,
+  unpricedNotesDrawn,
+} from '@/modules/wms/accounting/balance-lines';
 import { compactUsd, pct, signedUsd, usd } from '@/components/charts/format';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 
@@ -170,9 +176,12 @@ describe('the Balans lines, one home for two screens', () => {
     sellerCommissionsUsd: 0,
     recurringArrearsUsd: 0,
     recurringArrearsCount: 0,
+    unpricedCargoUsd: 0,
   };
+  // REQUIRED since U03: an optional href fell back to a page some viewers bounce off.
+  const hrefs = { cash: '/accounting/accounts', cargo: '#balance-unpriced' };
   it('leaves out the lines that are empty by nature and signs what we owe', () => {
-    expect(balanceLines(base).map((l) => [l.key, l.value])).toEqual([
+    expect(balanceLines(base, hrefs).map((l) => [l.key, l.value])).toEqual([
       ['balCash', 1000],
       ['balReceivable', 500],
       ['balPartnerReceivable', 0],
@@ -180,37 +189,75 @@ describe('the Balans lines, one home for two screens', () => {
     ]);
   });
   it('adds the unplaced payments and the advances when there are any', () => {
-    const lines = balanceLines({ ...base, unplacedCount: 2, unplacedUsd: 80, clientAdvancesUsd: 40 }, '/accounting/balance');
+    const lines = balanceLines({ ...base, unplacedCount: 2, unplacedUsd: 80, clientAdvancesUsd: 40 }, { ...hrefs, cash: '/accounting/balance' });
     expect(lines.find((l) => l.key === 'balUnplaced')?.value).toBe(80);
     expect(lines.find((l) => l.key === 'balClientAdvances')?.value).toBe(-40);
     expect(lines[0]?.href).toBe('/accounting/balance');
   });
   it('subtracts the kassa-less cargo costs and the owed commissions as lines of their own (U02, U10)', () => {
-    const lines = balanceLines({ ...base, unplacedCostCount: 1, unplacedCostUsd: 350, sellerCommissionsUsd: 600 });
+    const lines = balanceLines({ ...base, unplacedCostCount: 1, unplacedCostUsd: 350, sellerCommissionsUsd: 600 }, hrefs);
     expect(lines.find((l) => l.key === 'balUnplacedCostsLine')).toMatchObject({
       value: -350,
       href: '/accounting/xarajat-kassa',
     });
     expect(lines.find((l) => l.key === 'balSellerCommissions')).toMatchObject({ value: -600, href: '/upsale' });
     // Nothing waiting, nothing owed: no permanent $0 lines.
-    expect(balanceLines(base).some((l) => l.key === 'balUnplacedCostsLine' || l.key === 'balSellerCommissions')).toBe(false);
+    expect(balanceLines(base, hrefs).some((l) => l.key === 'balUnplacedCostsLine' || l.key === 'balSellerCommissions')).toBe(false);
   });
   it('the cost line is what the net took off — not the part every kassa count already holds (#528)', () => {
     const queue = { ...base, unplacedCostCount: 3, unplacedCostUsd: 650, unplacedCostInCountCount: 1, unplacedCostInCountUsd: 300 };
     expect(unplacedCostsTakenOff(queue)).toEqual({ count: 2, usd: 350 });
-    expect(balanceLines(queue).find((l) => l.key === 'balUnplacedCostsLine')?.value).toBe(-350);
+    expect(balanceLines(queue, hrefs).find((l) => l.key === 'balUnplacedCostsLine')?.value).toBe(-350);
     // Every queued cost inside the counts: nothing taken off, no $0 line.
     const allCounted = { ...queue, unplacedCostInCountCount: 3, unplacedCostInCountUsd: 650 };
-    expect(balanceLines(allCounted).some((l) => l.key === 'balUnplacedCostsLine')).toBe(false);
+    expect(balanceLines(allCounted, hrefs).some((l) => l.key === 'balUnplacedCostsLine')).toBe(false);
   });
   it('subtracts the due, unpaid rent and salaries on a line of their own, and none when nothing is due (owner Q6)', () => {
-    const lines = balanceLines({ ...base, recurringArrearsCount: 2, recurringArrearsUsd: 1300 });
+    const lines = balanceLines({ ...base, recurringArrearsCount: 2, recurringArrearsUsd: 1300 }, hrefs);
     expect(lines.find((l) => l.key === 'balRecurringArrears')).toMatchObject({
       value: -1300,
       href: '/accounting/expenses#recurring',
       tone: 'text-bad',
     });
-    expect(balanceLines(base).some((l) => l.key === 'balRecurringArrears')).toBe(false);
+    expect(balanceLines(base, hrefs).some((l) => l.key === 'balRecurringArrears')).toBe(false);
+  });
+  it('adds the money spent on cargo not priced yet right after the receivable, as an asset (U03, owner Q16 A)', () => {
+    const lines = balanceLines({ ...base, unpricedCargoUsd: 1234.5 }, { ...hrefs, cargo: '/accounting/balance#balance-unpriced' });
+    const keys = lines.map((l) => l.key);
+    expect(keys.indexOf('balUnpricedCargo')).toBe(keys.indexOf('balReceivable') + 1);
+    // text-good like every other asset line: most of it is cargo on the road
+    // nobody can price before rastamojka, and a permanent orange line teaches
+    // the owner to ignore orange.
+    expect(lines.find((l) => l.key === 'balUnpricedCargo')).toEqual({
+      key: 'balUnpricedCargo',
+      value: 1234.5,
+      tone: 'text-good',
+      href: '/accounting/balance#balance-unpriced',
+    });
+    // Nothing spent on unpriced cargo: no permanent $0 line.
+    expect(balanceLines(base, hrefs).some((l) => l.key === 'balUnpricedCargo')).toBe(false);
+  });
+  it('counts the notes the Balans card prints beside the arithmetic — the dashboard\'s one line (U03)', () => {
+    const quiet = {
+      grossUsd: 900,
+      cardUsd: 0,
+      elsewhereUsd: 0,
+      unclaimed: { usd: 0 },
+      oldNoKassa: { count: 0 },
+      tillUnrated: { count: 0 },
+      noDebt: { count: 0 },
+      pickupNoBox: { count: 0 },
+      noBox: { count: 0 },
+      unconverted: 0,
+      gate: 'on' as const,
+    };
+    // Arithmetic alone is the card, not a note.
+    expect(unpricedNotesCount(quiet)).toBe(0);
+    expect(unpricedNotesDrawn(quiet)).toBe(true);
+    expect(unpricedNotesDrawn({ ...quiet, grossUsd: 0 })).toBe(false);
+    expect(unpricedNotesCount({ ...quiet, cardUsd: 50, oldNoKassa: { count: 2 }, gate: 'off' })).toBe(3);
+    // A left-out figure alone draws the card even with nothing on the line.
+    expect(unpricedNotesDrawn({ ...quiet, grossUsd: 0, unclaimed: { usd: 340 } })).toBe(true);
   });
   it('sums the aging buckets the receivables page prints', () => {
     expect(

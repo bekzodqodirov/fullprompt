@@ -45,12 +45,18 @@ test('the dashboard covers the money, the cargo and the funnel', async ({ page }
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(360);
 
   // The bridge's net is the Balans page's own figure (#513): one number, two
-  // screens, compared to the dollar.
+  // screens, compared to the dollar. Re-read until they agree: the net now
+  // carries the cost of unpriced cargo (U03), and a queued re-split landing
+  // between the two loads moves a share between priced and unpriced cargo —
+  // information, not a disagreement between the screens.
   const dollars = (text: string | null) => Math.round(Number((text ?? '').replace(/[^0-9.−-]/g, '').replace('−', '-')));
-  const dashNet = dollars(await page.getByTestId('dash-balance-net').locator('[data-value]').textContent());
-  await page.goto('/accounting/balance');
-  const pageNet = dollars(await page.getByTestId('balance-net').textContent());
-  expect(dashNet).toBe(pageNet);
+  await expect(async () => {
+    await page.goto('/dashboard');
+    const dashNet = dollars(await page.getByTestId('dash-balance-net').locator('[data-value]').textContent());
+    await page.goto('/accounting/balance');
+    const pageNet = dollars(await page.getByTestId('balance-net').textContent());
+    expect(dashNet).toBe(pageNet);
+  }).toPass({ timeout: 30_000 });
 });
 
 test('the money is the owner\'s and the admin\'s: the accountant sees none of it', async ({ page }) => {

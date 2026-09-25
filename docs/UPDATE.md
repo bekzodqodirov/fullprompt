@@ -74,6 +74,23 @@ Brauzerda: saytni **Ctrl+F5** bilan oching → **Profil** sahifasi pastida
 `build: ...` sanasi bugungi bo'lsin. Keyin bitta prixod va bitta partiyani
 ochib ko'ring.
 
+### Balans hisoboti (Balansni ochishdan OLDIN)
+
+Balansda «Narxi hali yozilmagan yukka sarflangan» qatori paydo bo'lgan
+deploydan keyin (U03) — Balansni ochishdan oldin shu buyruqni yurgizing va
+chiqqan matnni chatga tashlang:
+
+```bash
+docker compose run --rm migrate pnpm balans-hisobot
+```
+
+U faqat o'qiydi — bazaga hech narsa yozmaydi (har bir ulanish «read only»
+rejimida ochiladi). Balansning har bir qatorini, yangi qatorning hisobini
+ikkala qoida bo'yicha (kartadagi narx), topshirishdagi taqiqdan oldin
+narxsiz topshirilgan yukni va qatorga kirmagan hamma narsani chiqaradi.
+Bir necha qator bir kunda o'zgaradi — shu hisobot bilan har bir qatorning
+raqamini oldindan bilasiz.
+
 ## 5. Demo hisoblarni yopish (bir marta)
 
 Server birinchi marta bo'sh bazadan ko'tarilgani uchun unda demo hisoblar

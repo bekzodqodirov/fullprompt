@@ -12,6 +12,7 @@ export type BalanceLineKey =
   | 'balCash'
   | 'balUnplaced'
   | 'balReceivable'
+  | 'balUnpricedCargo'
   | 'balPartnerReceivable'
   | 'balPayable'
   | 'balClientAdvances'
@@ -44,6 +45,20 @@ export interface BalanceFigures {
   /** Due, unpaid recurring months (0106) — their money and how many carry it. */
   recurringArrearsUsd: number;
   recurringArrearsCount: number;
+  /** Spent on cargo whose price is not written yet (U03) — what the net added. */
+  unpricedCargoUsd: number;
+}
+
+/**
+ * Where two of the lines lead, REQUIRED: an optional href fell back to a
+ * page some viewers bounce off. `cash` is the kassa list (or the Balans for
+ * a reader who may not open it); `cargo` is the Balans's own notes card —
+ * never /finance/narxsiz, which lists landed cargo only, scoped to the
+ * viewer's clients and with no money, so it cannot confirm this figure.
+ */
+export interface BalanceHrefs {
+  cash: string;
+  cargo: string;
 }
 
 /**
@@ -59,14 +74,23 @@ export function unplacedCostsTakenOff(balance: BalanceFigures): { count: number;
   };
 }
 
-export function balanceLines(balance: BalanceFigures, cashHref = '/accounting/accounts'): BalanceLine[] {
+export function balanceLines(balance: BalanceFigures, hrefs: BalanceHrefs): BalanceLine[] {
   const costsOut = unplacedCostsTakenOff(balance);
   return [
-    { key: 'balCash', value: balance.cashUsd, tone: 'text-ink-900', href: cashHref },
+    { key: 'balCash', value: balance.cashUsd, tone: 'text-ink-900', href: hrefs.cash },
     ...(balance.unplacedCount > 0
       ? [{ key: 'balUnplaced', value: balance.unplacedUsd, tone: 'text-warn', href: '/finance/reestr?joylanmagan=1' } as const]
       : []),
     { key: 'balReceivable', value: balance.receivableUsd, tone: 'text-good', href: '/finance' },
+    // U03, the owner's Q16 A: the money we already spent carrying cargo whose
+    // price is not written yet — «what they owe» followed by «what they will
+    // owe once priced». The net added exactly this. `text-good` like every
+    // other asset line: most of it is cargo on the road that nobody can price
+    // before rastamojka, and a permanent orange line teaches the owner to
+    // ignore orange — the risk colour is the notes card's handed-over part.
+    ...(balance.unpricedCargoUsd > 0.004
+      ? [{ key: 'balUnpricedCargo', value: balance.unpricedCargoUsd, tone: 'text-good', href: hrefs.cargo } as const]
+      : []),
     { key: 'balPartnerReceivable', value: balance.partnerReceivableUsd, tone: 'text-good', href: '/kontragentlar' },
     { key: 'balPayable', value: -balance.payableUsd, tone: 'text-bad', href: '/kontragentlar' },
     // Clients who paid ahead (R7a): a liability, on its own line — netting it
@@ -93,6 +117,52 @@ export function balanceLines(balance: BalanceFigures, cashHref = '/accounting/ac
       ? [{ key: 'balRecurringArrears', value: -balance.recurringArrearsUsd, tone: 'text-bad', href: '/accounting/expenses#recurring' } as const]
       : []),
   ];
+}
+
+/**
+ * What the Balans line «narxi hali yozilmagan yukka sarflangan» (U03) prints
+ * beside its arithmetic — `companyBalance().unpricedCargo`'s shape, restated
+ * structurally so this file stays pure.
+ */
+export interface UnpricedCargoNotes {
+  grossUsd: number;
+  cardUsd: number;
+  elsewhereUsd: number;
+  unclaimed: { usd: number };
+  oldNoKassa: { count: number };
+  tillUnrated: { count: number };
+  noDebt: { count: number };
+  pickupNoBox: { count: number };
+  noBox: { count: number };
+  unconverted: number;
+  gate: 'on' | 'off' | 'invalid';
+}
+
+/**
+ * How many notes the Balans's card prints besides the arithmetic — the
+ * dashboard's one «ℹ️ … N ta izoh» line, so the owner learns the line has
+ * explanations without the card being copied onto a second screen. The
+ * dated ban sentence is always true and carries no figure, so it is not a
+ * note; the ban being OFF (or unreadable) is.
+ */
+export function unpricedNotesCount(notes: UnpricedCargoNotes): number {
+  return [
+    notes.cardUsd > 0.004,
+    notes.elsewhereUsd > 0.004,
+    notes.unclaimed.usd > 0.004,
+    notes.oldNoKassa.count > 0,
+    notes.tillUnrated.count > 0,
+    notes.noDebt.count > 0,
+    notes.pickupNoBox.count > 0,
+    notes.noBox.count > 0,
+    notes.unconverted > 0,
+    notes.gate !== 'on',
+  ].filter(Boolean).length;
+}
+
+/** The Balans draws the card when the line has arithmetic to show or anything was left out. */
+export function unpricedNotesDrawn(notes: UnpricedCargoNotes): boolean {
+  return notes.grossUsd > 0.004 || unpricedNotesCount(notes) > 0;
 }
 
 /** Receivables by age, summed over the aging rows (the receivables page's Σ). */

@@ -15,11 +15,13 @@ import { ISSUABLE_STATUSES } from '../issue/parties';
  * Four readers ask it and must never answer differently (#513): the handover
  * gate (`issueBoxes`), the accountant's list (`/finance/narxsiz`), the
  * dashboard's «yetib kelgan, narx yozilmagan» (`unbilledArrived`), and the
- * Balans line «narxi hali yozilmagan yukka sarflangan» (U03), which sums the
- * cost of exactly the cartons this fragment calls uncovered. Two screens one
- * tap apart that disagree about which cargo is unpriced are worse than either
- * alone — the operator refused at the counter looks for the row, the
- * accountant clears the row and expects the counter to open.
+ * Balans line «narxi hali yozilmagan yukka sarflangan» (U03,
+ * `unpricedCargoMoney` in accounting/reports.ts), which sums the cost of
+ * exactly the cartons this fragment calls uncovered — the part whose money
+ * already left Sof holat, over the Balans's scope (`handedOverSinceSql`).
+ * Two screens one tap apart that disagree about which cargo is unpriced are
+ * worse than either alone — the operator refused at the counter looks for
+ * the row, the accountant clears the row and expects the counter to open.
  *
  * The grain is the CARTON. A carton k of a confirmed prixod R with a client C
  * is COVERED when a live charge of C satisfies clause 1 or clause 2, and —
@@ -137,8 +139,12 @@ const idList = (ids: string[]) =>
     sql`, `,
   );
 
-/** The statuses a carton can be in and still be cargo to bill. */
-const CARGO_STATUSES = sql`('in_stock', 'planned', 'loading', 'in_transit', 'ready_for_pickup', 'issued')`;
+/**
+ * The statuses a carton can be in and still be cargo to bill. Exported for
+ * the Balans line's unclaimed note, which asks about cargo the fragment
+ * cannot (no client yet) and must mean the same cartons by «cargo».
+ */
+export const CARGO_STATUSES = sql`('in_stock', 'planned', 'loading', 'in_transit', 'ready_for_pickup', 'issued')`;
 
 /**
  * The WHERE over `b` (boxes), `rl` (its lot), `r` (its receipt) and `lm`
@@ -180,7 +186,9 @@ export function unpricedScopeSql(scope: UnpricedScope): SQL {
  * (per carton: `covered`, and `elsewhere_tx` — the ids of the client's live
  * truck charges that sit on a truck the prixod touched and do not cover this
  * carton). Written as `WITH ${uncoveredCtes(…)}`; «uncovered» is
- * `u_cov WHERE NOT covered`.
+ * `u_cov WHERE NOT covered` — and, for a reader that joins further (the
+ * Balans line), `u_unc` of `uncoveredMoneyCtes()`, the same set spelt so the
+ * planner does not nest-loop over it.
  *
  * `landedOnly` = only cartons that have landed in Uzbekistan (the gate, the
  * list); false keeps cargo still in China (the client card's trip chip, the
@@ -344,6 +352,94 @@ export function uncoveredCtes(boxScope: SQL, opts: { landedOnly: boolean }): SQL
       SELECT ub.*, coalesce(ua.covered, false) AS covered, coalesce(ua.elsewhere_tx, '{}'::uuid[]) AS elsewhere_tx
         FROM u_box ub
         LEFT JOIN u_agg ua ON ua.box_id = ub.box_id
+    )`;
+}
+
+/**
+ * The Balans's scope over the fragment (U03): the company, and a HANDED-OVER
+ * carton only if it went out on or after the ban's instant — the gate's own
+ * reading of «guarded». Before it, or with the ban off or invalid,
+ * handed-over cargo is left out: nothing asked about it and it may have been
+ * settled outside the system (Q16, «ehtiyotkor»). Not a second rule: a
+ * narrower scope, as `landedFrom` is for the list — and a SCOPE, so the
+ * fragment never reads that history at all (1.3 s at two years, design-u03
+ * §11). Over `b` (boxes), like every scope here.
+ */
+export function handedOverSinceSql(gate: GateSince): SQL {
+  return gate.state === 'on'
+    ? sql`(b.status <> 'issued' OR EXISTS (
+            SELECT 1 FROM box_movements im
+             WHERE im.box_id = b.id AND im.to_status = 'issued'
+               AND im.created_at >= ${gate.since.toISOString()}::timestamptz))`
+    : sql`b.status <> 'issued'`;
+}
+
+/**
+ * Appended to `uncoveredCtes(…)` in the same WITH: the money readers' shapes
+ * over the fragment's own CTEs — cargo facts only, no money rule lives here.
+ *
+ * - `u_unc`: the uncovered cartons, spelt as the ANTI-JOIN `ua.box_id IS NULL
+ *   OR NOT ua.covered` and never `u_cov WHERE NOT covered`. Postgres guesses
+ *   `u_agg` at ~200 rows, and a reader that joins further from `u_cov` met a
+ *   nested loop — 4.2 s at 15k cartons (design-u03 T9). `covers` is never
+ *   NULL (the `names` fix above), so the two spellings are the same set
+ *   (pinned by balance-unpriced-cargo's test 33).
+ * - `u_tag`: DISTINCT (prixod, charge) — a live truck charge of the client on
+ *   a truck the prixod touched that covers none of its unpriced cartons
+ *   («narx T da»), each pair once however many cartons carry the tag.
+ * - `u_nocargo`: every live charge of these clients that NAMES NO CARGO,
+ *   with its Tashkent day: no truck and no deal; or a deal no prixod was
+ *   ever linked to; or a truck none of the client's cartons ever touched
+ *   (only from before `client_not_aboard`). The `u_rc` anti-join runs first,
+ *   so the two probes run only for the handful of charges no in-scope prixod
+ *   answers to. A price that named cargo — now lost, voided or handed over
+ *   before the ban — has a prixod behind its deal or a movement on its truck,
+ *   so it never frees itself (design-u03 §3.2, S4).
+ */
+export function uncoveredMoneyCtes(): SQL {
+  return sql`
+    u_unc AS (
+      SELECT ub.box_id, ub.receipt_id, ub.client_id, ub.status, ub.landed_at,
+             coalesce(ua.elsewhere_tx, '{}'::uuid[]) AS elsewhere_tx
+        FROM u_box ub
+        LEFT JOIN u_agg ua ON ua.box_id = ub.box_id
+       WHERE ua.box_id IS NULL OR NOT ua.covered
+    ),
+    u_tag AS (
+      SELECT DISTINCT u.receipt_id, x.charge_id
+        FROM u_unc u, unnest(u.elsewhere_tx) AS x(charge_id)
+    ),
+    -- The anti-join FIRST, materialized, and the probes FENCED (\`OFFSET 0\`)
+    -- so each stays a per-row index lookup: left to itself the planner ran
+    -- the CASE before the anti-join and hashed the truck probe over every
+    -- batch movement of the company — 260k rows, 244 ms at two years — for
+    -- the ~130 charges it had to answer (measured).
+    u_free AS MATERIALIZED (
+      SELECT uc.id, uc.client_id, uc.batch_id, uc.deal_id, uc.amount_usd
+        FROM u_charge uc
+       WHERE NOT EXISTS (SELECT 1 FROM u_rc r WHERE r.charge_id = uc.id)
+    ),
+    u_nocargo AS (
+      SELECT uf.client_id, ct.tx_date AS day, uf.amount_usd AS usd
+        FROM u_free uf
+        JOIN client_transactions ct ON ct.id = uf.id
+       WHERE CASE
+               WHEN uf.batch_id IS NOT NULL THEN
+                 NOT EXISTS (SELECT 1 FROM box_movements nm
+                               JOIN boxes nb ON nb.id = nm.box_id
+                               JOIN receipt_lots nl ON nl.id = nb.lot_id
+                               JOIN receipts nr ON nr.id = nl.receipt_id
+                              WHERE nm.ref_type = 'batch' AND nm.ref_id = uf.batch_id AND nr.client_id = uf.client_id
+                             OFFSET 0)
+                 AND NOT EXISTS (SELECT 1 FROM boxes nb
+                                   JOIN receipt_lots nl ON nl.id = nb.lot_id
+                                   JOIN receipts nr ON nr.id = nl.receipt_id
+                                  WHERE nb.current_batch_id = uf.batch_id AND nr.client_id = uf.client_id
+                                 OFFSET 0)
+               WHEN uf.deal_id IS NOT NULL THEN
+                 NOT EXISTS (SELECT 1 FROM receipts dr WHERE dr.deal_id = uf.deal_id OFFSET 0)
+               ELSE true
+             END
     )`;
 }
 
@@ -516,10 +612,12 @@ export async function unpricedReceiptsOn(
  * - `elsewhereUsd`: the distinct live truck charges (each counted once) that
  *   sit on a truck one of the client's uncovered prixods touched.
  *
- * U03's netting, stated here so it is not reinvented: WIP(client) =
- * max(0, Σ uncovered cost − cardOnlyUsd − elsewhereUsd). Each dollar in the
- * receivable retires at most one dollar of cost — an under-count, never a
- * double count.
+ * The Balans (U03) does not net this figure. By the owner's Q16 (i), a price
+ * that names no cargo takes every prixod of its client confirmed on or
+ * before its date off the line (dated exclusion), and a price on a touched
+ * truck retires the prixods it tags, each charge once. `cardOnlyUsd` here is
+ * the list's display figure beside a client and is never subtracted. The
+ * netting is a documented switch (`CARD_PRICE_RULE`, design-u03 §3.2).
  */
 export async function unattachedChargesByClient(
   exec: Exec,

@@ -15,6 +15,7 @@ import {
   type UnpricedReceipt,
 } from '@/modules/wms/finance/unpriced';
 import { daysSince } from '@/modules/wms/reports/dashboard-math';
+import { mayReadUnpricedList } from '@/modules/wms/finance/unpriced-door';
 
 /** The render is paged; the fetch covers everything (round 68's rule). */
 const PAGE = 150;
@@ -40,7 +41,7 @@ export default async function UnpricedCargoPage({
 }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
-  if (!actor.permissions.has('finance.view') && !actor.permissions.has('finance.manage')) redirect('/');
+  if (!mayReadUnpricedList(actor.permissions)) redirect('/');
   const t = await getTranslations('unpriced');
   const tf = await getTranslations('finance');
   const params = await searchParams;

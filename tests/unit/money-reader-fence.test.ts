@@ -34,6 +34,10 @@ const MONEY_READERS = [
   'cashFlowByMonth',
   'cashFlowCore',
   'companyBalance',
+  // U03: the cash half (the admin home, the attention list, the hero tile)
+  // and the Balans line itself — both money, both kept from the VED.
+  'companyBalanceParts',
+  'unpricedCargoMoney',
   'accountBalances',
   'balanceLines',
   'moneySnapshot',

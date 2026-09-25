@@ -1,5 +1,7 @@
+import { cache } from 'react';
 import { and, eq, gte, inArray, isNull, lte, sql, type SQL } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
+import { withoutJit } from '../../platform/db/no-jit';
 import {
   accountTransfers,
   batches,
@@ -9,6 +11,7 @@ import {
   costEntries,
   expenseCategories,
   expenses,
+  moneyAccounts,
   partnerTransactions,
   partners,
 } from '../../platform/db/schema';
@@ -17,11 +20,21 @@ import { uzsRate } from './period';
 // branch — the branch is how a CNY till came to be worth nothing.
 import {
   batchLandedCostTotals,
+  oldInsideEveryCountSql,
   rateFor,
   unplacedCostSince,
   unplacedCostSql,
   unplacedCostTotals,
 } from '../costing/service';
+import {
+  CARGO_STATUSES,
+  handedOverSinceSql,
+  uncoveredCtes,
+  uncoveredMoneyCtes,
+  unpricedGate,
+  unpricedScopeSql,
+  type GateSince,
+} from '../finance/unpriced';
 import { clientBalances, clientTotals, unplacedPaymentSql } from '../finance/service';
 import { internalLegSql } from '../batches/internal';
 import { partnerSignedSql } from '../partners/ledger-sign';
@@ -1692,20 +1705,404 @@ export async function profitByRoute(from: string, to: string) {
  * existed, "we owe" had no number at all, so a page like this could only ever
  * have shown half the picture and would have flattered every month.
  *
- * Deliberately management accounting, not a balance sheet: cargo in the
- * warehouse is NOT valued here. It is not ours — it is the client's goods —
- * and the money side of it is already in what they owe us. Adding a stock
- * valuation would double-count the same shipment and read as profit that
- * belongs to somebody else.
+ * Deliberately management accounting, not a balance sheet: the cargo in the
+ * warehouses is NOT valued here — it is the client's goods, and a stock
+ * valuation would read as profit that belongs to somebody else. What IS
+ * counted (U03, the owner's Q16 A) is the money WE already spent carrying
+ * cargo whose price is not written yet — the freight, the customs, the China
+ * costs — because until the price is posted that money is in no receivable:
+ * the price is agreed after customs (#126, answer 6), so «its money side is
+ * already in what they owe us» was true only of priced cargo (the premise
+ * #416 rested on, corrected). It comes back as the price, and on the day the
+ * cargo is priced Sof holat moves by the price minus that cost — the margin
+ * the pricing screen shows — and paying a truck's cost moves it by nothing.
  *
  * Cash boxes are converted at TODAY's rate for the total only; each box also
  * comes back in its own currency, because that is the figure someone counts
  * against the notes in the drawer.
  */
-export async function companyBalance() {
+
+/**
+ * Today's rate for EVERY kassa's currency — active or retired, since a
+ * retired, emptied drawer may have paid a cost the Balans line values (U03).
+ * ONE map per request (`cache`, the `accountBalances` memo): the cash sum
+ * reads it for the counted tills, the line for which kassa-paid costs it can
+ * value. null = no rate entered for that currency.
+ */
+export const kassaRatesToday = cache(async function kassaRatesToday(): Promise<Map<string, number | null>> {
+  const rows = await db.selectDistinct({ currency: moneyAccounts.currency }).from(moneyAccounts);
+  const today = tashkentDay();
+  return new Map(
+    await Promise.all(rows.map(async ({ currency }) => [currency, await rateFor(currency, today)] as const)),
+  );
+});
+
+/** The kassa currencies the Balans can value today — a rate entered and above zero. */
+function ratedCurrenciesOf(rates: Map<string, number | null>): string[] {
+  return [...rates].filter(([, rate]) => rate !== null && rate > 0).map(([code]) => code);
+}
+
+/**
+ * Q16 (i). 'exclude' is the owner's answer and what ships: a price that
+ * names no cargo takes the whole of its client's cargo confirmed on or
+ * before its date off the line — «ehtiyotkor, hech qachon ikki marta
+ * sanalmaydi». 'net' is the switch he is asked about (design-u03 §10.1): the
+ * same prices retire cost dated on or before them, dollar for dollar. The
+ * deploy report prints both from his data (`pnpm balans-hisobot`).
+ */
+export type CardRule = 'exclude' | 'net';
+export const CARD_PRICE_RULE: CardRule = 'exclude';
+
+/** A figure named beside the line, never in it. */
+export interface LeftOut {
+  count: number;
+  usd: number;
+}
+
+export interface UnpricedCargoMoney {
+  /** The line: in Sof holat, cents. = grossUsd − cardUsd − elsewhereUsd. */
+  lineUsd: number;
+  /**
+   * What the line starts from, split EXCLUSIVELY by where the cargo is —
+   * handed over first, then not yet landed in Uzbekistan, then landed:
+   * `awayUsd + stockUsd + issuedUsd = grossUsd`.
+   */
+  grossUsd: number;
+  awayUsd: number;
+  stockUsd: number;
+  issuedUsd: number;
+  /** Taken off by prices that name no cargo (his (i)), and how many clients. */
+  cardUsd: number;
+  cardClients: number;
+  /** Those clients' no-cargo prices dated on or after their oldest cargo here — the report's (i) fact. */
+  cardPriceUsd: number;
+  /** Retired by prices on another truck the cargo touched (Q21/Q2), each charge once. */
+  elsewhereUsd: number;
+  /** Prixods with money on the line before the two subtractions. */
+  prixods: number;
+  /** Named beside the line, never in it — only money that WOULD join (§3.1 rows 1/3/4/6/7/11). */
+  unclaimed: { usd: number; prixods: number };
+  /** Old kassa-less costs some kassa's count does not certainly hold (§3.1 row 12). */
+  oldNoKassa: LeftOut;
+  /** Paid from a kassa whose currency has no rate — that kassa is out of the net too (row 2). */
+  tillUnrated: LeftOut;
+  /** A counterparty named and no debt written — the nightly repair writes it (row 5). */
+  noDebt: LeftOut;
+  /** Factory-trip costs no prixod is linked to yet — they lower the net until linked (row 21). */
+  pickupNoBox: LeftOut;
+  /** Costs that sit on no carton at all (a found-back truck cell, row 22). */
+  noBox: LeftOut;
+  /** Live costs with no dollar figure yet — no rate for their currency (row 13). */
+  unconverted: number;
+  /** Only with history 'all' (the deploy report): handed over before the ban, out of the line. */
+  issuedBeforeGate: { usd: number; prixods: number } | null;
+}
+
+/**
+ * «Narxi hali yozilmagan yukka sarflangan» (U03): the cost of the cartons the
+ * handover gate calls unpriced (`finance/unpriced.ts`, #513), counted only
+ * where the cost's money is ALREADY out of Sof holat — the pair rule (#528):
+ *
+ *   - paid from a kassa whose currency the Balans can value today;
+ *   - owed to a counterparty whose derived charge exists;
+ *   - no payer, and on the kassa queue (the Balans subtracts it, or every
+ *     count holds it), or OLD with every kassa counted after its day.
+ *
+ * Each allocation row once, at the carton grain (`(cost, box)` is unique and
+ * `u_unc` has one row per box — nothing joins through `box_movements`, so an
+ * internal leg and the export truck on one carton count once each). Then his
+ * (i), `CARD_PRICE_RULE`, and the Q21/Q2 retirement: a price on a truck the
+ * prixod touched retires the prixods it tags, per charge at most its amount,
+ * per client at most the tagged cargo — never below zero.
+ *
+ * Scope: the company's confirmed prixods with a client, cargo statuses,
+ * landed or not, and a HANDED-OVER carton only if it went out on or after
+ * the ban's instant (`handedOverSinceSql`) — the page's `history:
+ * 'since_gate'`. The deploy report's 'all' reads the older history too and
+ * splits it out as `issuedBeforeGate`, with the same `lineUsd`.
+ *
+ * Every option is REQUIRED — an optional one fails open. `since`,
+ * `ratedCurrencies` and `gate` are read on the POOL by the caller before this
+ * opens its transaction (#714). One statement through `withoutJit`: it is a
+ * company-wide read past JIT's cost line by shape.
+ */
+export async function unpricedCargoMoney(opts: {
+  since: string;
+  ratedCurrencies: string[];
+  gate: GateSince;
+  cardRule: CardRule;
+  history: 'since_gate' | 'all';
+}): Promise<UnpricedCargoMoney> {
+  const cut = opts.history === 'since_gate';
+  const company = unpricedScopeSql({ kind: 'company', warehouseIds: undefined, ownerId: undefined, landedFrom: undefined });
+  const ban = handedOverSinceSql(opts.gate);
+  const scope = cut ? sql`${company} AND ${ban}` : company;
+  // An empty list is `false`, never `IN (NULL)`: NULL there made the whole
+  // CASE NULL and a FILTER dropped the row silently (the draft lost $100,211).
+  const rated = opts.ratedCurrencies.length
+    ? sql`ta.currency IN (${sql.join(
+        opts.ratedCurrencies.map((code) => sql`${code}`),
+        sql`, `,
+      )})`
+    : sql`false`;
+  // Is a handed-over carton inside the line? With the scope cut every one
+  // left is (it went out after the ban); reading all history, the same
+  // question is asked of its issue movement instead.
+  const issuedIn = cut
+    ? sql`true`
+    : opts.gate.state === 'on'
+      ? sql`(wi.issued_at >= ${opts.gate.since.toISOString()}::timestamptz)`
+      : sql`false`;
+  const net = opts.cardRule === 'net';
+
+  const [row] = (await withoutJit((exec) =>
+    exec.execute(sql`
+    WITH ${uncoveredCtes(scope, { landedOnly: false })},
+    ${uncoveredMoneyCtes()},
+    w_debt AS (
+      SELECT DISTINCT cost_entry_id FROM partner_transactions
+       WHERE type = 'charge' AND voided_at IS NULL AND cost_entry_id IS NOT NULL
+    ),
+    -- ONE classification for the line, the notes and the unclaimed figure.
+    -- \`cost_entries\` UNALIASED and the merged expense as \`merged_from\`:
+    -- the queue's predicates render those names (the #128 family). The ORDER
+    -- is part of the rule: the old-cost test reads kassa count days only, so
+    -- it is reached only by what the queue does not hold (typed before
+    -- \`cost_kassa_since\`, or merged into an expense typed before it).
+    w_cost AS (
+      SELECT cost_entries.id, cost_entries.scope, cost_entries.amount_usd AS usd,
+             CASE
+               WHEN cost_entries.account_id IS NOT NULL
+                 THEN CASE WHEN ${rated} THEN 'in' ELSE 'till_unrated' END
+               WHEN cost_entries.partner_id IS NOT NULL
+                 THEN CASE WHEN wd.cost_entry_id IS NOT NULL THEN 'in' ELSE 'no_debt' END
+               WHEN ${unplacedCostSql(opts.since)} THEN 'in'
+               WHEN ${oldInsideEveryCountSql()} THEN 'in'
+               ELSE 'old_no_kassa'
+             END AS why
+        FROM cost_entries
+        LEFT JOIN expenses merged_from ON merged_from.id = cost_entries.merged_expense_id
+        LEFT JOIN money_accounts ta ON ta.id = cost_entries.account_id
+        LEFT JOIN w_debt wd ON wd.cost_entry_id = cost_entries.id
+       WHERE cost_entries.voided_at IS NULL AND cost_entries.amount_usd IS NOT NULL
+    ),
+    ${
+      cut
+        ? sql``
+        : sql`w_issue AS (
+      SELECT m.box_id, max(m.created_at) AS issued_at
+        FROM box_movements m JOIN u_unc u ON u.box_id = m.box_id AND u.status = 'issued'
+       WHERE m.to_status = 'issued'
+       GROUP BY m.box_id
+    ),`
+    }
+    w_alloc AS (
+      SELECT u.receipt_id, u.client_id, u.status, (u.landed_at IS NOT NULL) AS landed,
+             ca.amount_usd, ca.cost_entry_id, wc.why,
+             (u.status <> 'issued' OR ${issuedIn}) AS in_scope
+        FROM u_unc u
+        JOIN cost_allocations ca ON ca.box_id = u.box_id
+        JOIN w_cost wc ON wc.id = ca.cost_entry_id
+        ${cut ? sql`` : sql`LEFT JOIN w_issue wi ON wi.box_id = u.box_id`}
+    ),
+    -- Per prixod; the three parts are exclusive, handed over first.
+    w_p AS (
+      SELECT a.receipt_id, a.client_id,
+             (coalesce(r.confirmed_at, r.created_at) AT TIME ZONE 'Asia/Tashkent')::date AS day,
+             coalesce(sum(a.amount_usd) FILTER (WHERE a.why = 'in' AND a.in_scope), 0) AS w,
+             coalesce(sum(a.amount_usd) FILTER (WHERE a.why = 'in' AND a.in_scope AND a.status = 'issued'), 0) AS w_issued,
+             coalesce(sum(a.amount_usd) FILTER (WHERE a.why = 'in' AND a.in_scope AND a.status <> 'issued' AND NOT a.landed), 0) AS w_away,
+             coalesce(sum(a.amount_usd) FILTER (WHERE a.why = 'in' AND a.in_scope AND a.status <> 'issued' AND a.landed), 0) AS w_stock,
+             coalesce(sum(a.amount_usd) FILTER (WHERE a.why = 'in' AND NOT a.in_scope), 0) AS w_before_gate
+        FROM w_alloc a JOIN receipts r ON r.id = a.receipt_id
+       GROUP BY a.receipt_id, a.client_id, r.confirmed_at, r.created_at
+    ),
+    -- His (i): a price naming no cargo, dated on or after the prixod's day,
+    -- means we cannot tell which cargo it was for.
+    w_px AS (
+      SELECT p.*, EXISTS (SELECT 1 FROM u_nocargo c WHERE c.client_id = p.client_id AND c.day >= p.day) AS card_after
+        FROM w_p p
+    ),
+    -- «Narx boshqa mashinada»: each tagging charge's money once, capped by the
+    -- cargo it tags; per client capped by the DISTINCT tagged prixods (a sum
+    -- over w_tagp itself counts a prixod once per charge that tags it).
+    w_tagp AS (
+      SELECT DISTINCT t.receipt_id, t.charge_id, px.client_id, px.w
+        FROM u_tag t JOIN w_px px ON px.receipt_id = t.receipt_id
+       WHERE px.w > 0 AND ${net ? sql`true` : sql`NOT px.card_after`}
+    ),
+    w_else_c AS (
+      SELECT tp.client_id, tp.charge_id, least(max(uc.amount_usd), sum(tp.w)) AS usable
+        FROM w_tagp tp JOIN u_charge uc ON uc.id = tp.charge_id
+       GROUP BY tp.client_id, tp.charge_id
+    ),
+    w_else AS (
+      SELECT e.client_id, least(e.usable, t.w) AS retired
+        FROM (SELECT client_id, sum(usable) AS usable FROM w_else_c GROUP BY client_id) e
+        JOIN (SELECT client_id, sum(w) AS w
+                FROM (SELECT DISTINCT client_id, receipt_id, w FROM w_tagp) d
+               GROUP BY client_id) t ON t.client_id = e.client_id
+    ),
+    ${
+      net
+        ? sql`-- The switch: + the cost of each prixod on its day, − each no-cargo price
+    -- on its day; what no later-or-equal price can retire is the max suffix.
+    w_day AS (
+      SELECT client_id, day, sum(amt) AS amt FROM (
+        SELECT client_id, day, w AS amt FROM w_px
+        UNION ALL
+        SELECT c.client_id, c.day, -c.usd FROM u_nocargo c WHERE c.client_id IN (SELECT client_id FROM w_px)
+      ) x GROUP BY client_id, day
+    ),
+    w_dated AS (
+      SELECT client_id, greatest(0, max(suffix)) AS left_after_card FROM (
+        SELECT client_id, sum(amt) OVER (PARTITION BY client_id ORDER BY day DESC ROWS UNBOUNDED PRECEDING) AS suffix
+          FROM w_day) s
+       GROUP BY client_id
+    ),`
+        : sql``
+    }
+    w_client AS (
+      SELECT g.client_id, g.w AS gross, coalesce(e.retired, 0) AS retired,
+             ${
+               net
+                 ? sql`greatest(0, coalesce(d.left_after_card, 0) - coalesce(e.retired, 0))`
+                 : sql`greatest(0, g.w_kept - coalesce(e.retired, 0))`
+             } AS line
+        FROM (SELECT client_id, sum(w) AS w, coalesce(sum(w) FILTER (WHERE NOT card_after), 0) AS w_kept
+                FROM w_px GROUP BY client_id) g
+        LEFT JOIN w_else e ON e.client_id = g.client_id
+        ${net ? sql`LEFT JOIN w_dated d ON d.client_id = g.client_id` : sql``}
+    ),
+    w_cardp AS (
+      SELECT coalesce(sum(c.usd), 0) AS usd
+        FROM u_nocargo c
+        JOIN (SELECT client_id, min(day) AS first_day FROM w_px WHERE w > 0 GROUP BY client_id) f
+          ON f.client_id = c.client_id
+       WHERE c.day >= f.first_day
+    ),
+    w_off AS (
+      SELECT why, count(DISTINCT cost_entry_id)::int AS n, coalesce(sum(amount_usd), 0)::float8 AS usd
+        FROM w_alloc WHERE why <> 'in' AND in_scope GROUP BY why
+    ),
+    -- Cargo with no client yet: the fragment cannot ask about it, so the
+    -- note reads the same cargo statuses and the same classification — only
+    -- money that joins the line when the client is named (S13). Driven from
+    -- the unclaimed prixods (a handful) and FENCED: the planner guesses
+    -- \`w_cost WHERE why = 'in'\` at ~17 rows, started from it and walked
+    -- every allocation of the company's costs — 149,503 rows for ~8,000
+    -- kept, 390 ms at 60k cartons (measured; ~27 ms fenced).
+    w_unc_alloc AS MATERIALIZED (
+      SELECT r.id AS receipt_id, ca.cost_entry_id, ca.amount_usd
+        FROM receipts r
+        JOIN receipt_lots rl ON rl.receipt_id = r.id
+        JOIN boxes b ON b.lot_id = rl.id AND b.status IN ${CARGO_STATUSES}
+        JOIN cost_allocations ca ON ca.box_id = b.id
+       WHERE r.status = 'confirmed' AND r.client_id IS NULL ${cut ? sql`AND ${ban}` : sql``}
+    ),
+    w_unclaimed AS (
+      SELECT coalesce(sum(ua.amount_usd), 0)::float8 AS usd, count(DISTINCT ua.receipt_id)::int AS prixods
+        FROM w_unc_alloc ua
+        JOIN w_cost wc ON wc.id = ua.cost_entry_id AND wc.why = 'in'
+    ),
+    -- Money out of the net that sits on no carton at all.
+    w_nobox AS (
+      SELECT count(*) FILTER (WHERE wc.scope = 'pickup')::int AS pickup_n,
+             coalesce(sum(wc.usd) FILTER (WHERE wc.scope = 'pickup'), 0)::float8 AS pickup_usd,
+             count(*) FILTER (WHERE wc.scope <> 'pickup')::int AS other_n,
+             coalesce(sum(wc.usd) FILTER (WHERE wc.scope <> 'pickup'), 0)::float8 AS other_usd
+        FROM w_cost wc
+       WHERE wc.why = 'in' AND NOT EXISTS (SELECT 1 FROM cost_allocations ca WHERE ca.cost_entry_id = wc.id)
+    )
+    SELECT (SELECT coalesce(sum(line), 0) FROM w_client)::float8 AS line,
+           (SELECT coalesce(sum(retired), 0) FROM w_client)::float8 AS elsewhere,
+           (SELECT coalesce(sum(w_away), 0) FROM w_p)::float8 AS away,
+           (SELECT coalesce(sum(w_stock), 0) FROM w_p)::float8 AS stock,
+           (SELECT coalesce(sum(w_issued), 0) FROM w_p)::float8 AS issued,
+           (SELECT count(*) FROM w_p WHERE w > 0)::int AS prixods,
+           (SELECT count(DISTINCT client_id) FROM w_px WHERE card_after AND w > 0)::int AS card_clients,
+           (SELECT usd FROM w_cardp)::float8 AS card_price,
+           (SELECT coalesce(sum(w_before_gate), 0) FROM w_p)::float8 AS before_gate_usd,
+           (SELECT count(*) FROM w_p WHERE w_before_gate > 0)::int AS before_gate_prixods,
+           (SELECT coalesce(json_agg(json_build_object('why', why, 'n', n, 'usd', usd)), '[]'::json) FROM w_off) AS off,
+           (SELECT usd FROM w_unclaimed) AS unclaimed_usd,
+           (SELECT prixods FROM w_unclaimed) AS unclaimed_prixods,
+           (SELECT pickup_n FROM w_nobox) AS pickup_n,
+           (SELECT pickup_usd FROM w_nobox) AS pickup_usd,
+           (SELECT other_n FROM w_nobox) AS nobox_n,
+           (SELECT other_usd FROM w_nobox) AS nobox_usd,
+           (SELECT count(*) FROM cost_entries WHERE voided_at IS NULL AND amount_usd IS NULL)::int AS unconverted
+  `),
+  )) as unknown as {
+    line: number;
+    elsewhere: number;
+    away: number;
+    stock: number;
+    issued: number;
+    prixods: number;
+    card_clients: number;
+    card_price: number;
+    before_gate_usd: number;
+    before_gate_prixods: number;
+    off: { why: string; n: number; usd: number }[];
+    unclaimed_usd: number;
+    unclaimed_prixods: number;
+    pickup_n: number;
+    pickup_usd: number;
+    nobox_n: number;
+    nobox_usd: number;
+    unconverted: number;
+  }[];
+
+  // Rounded HERE, each part once, so the arithmetic the page prints adds up
+  // to the cent — and the net adds the rounded line, or a sub-cent of
+  // numeric(14,4) shares would sit in the net and not in the bridge.
+  const lineUsd = money(row!.line);
+  const awayUsd = money(row!.away);
+  const stockUsd = money(row!.stock);
+  const issuedUsd = money(row!.issued);
+  const grossUsd = money(awayUsd + stockUsd + issuedUsd);
+  const elsewhereUsd = money(row!.elsewhere);
+  const off = (why: string): LeftOut => {
+    const hit = row!.off.find((entry) => entry.why === why);
+    return { count: Number(hit?.n ?? 0), usd: money(hit?.usd) };
+  };
+  return {
+    lineUsd,
+    grossUsd,
+    awayUsd,
+    stockUsd,
+    issuedUsd,
+    cardUsd: money(grossUsd - elsewhereUsd - lineUsd),
+    cardClients: Number(row!.card_clients),
+    cardPriceUsd: money(row!.card_price),
+    elsewhereUsd,
+    prixods: Number(row!.prixods),
+    unclaimed: { usd: money(row!.unclaimed_usd), prixods: Number(row!.unclaimed_prixods) },
+    oldNoKassa: off('old_no_kassa'),
+    tillUnrated: off('till_unrated'),
+    noDebt: off('no_debt'),
+    pickupNoBox: { count: Number(row!.pickup_n), usd: money(row!.pickup_usd) },
+    noBox: { count: Number(row!.nobox_n), usd: money(row!.nobox_usd) },
+    unconverted: Number(row!.unconverted),
+    issuedBeforeGate: cut
+      ? null
+      : { usd: money(row!.before_gate_usd), prixods: Number(row!.before_gate_prixods) },
+  };
+}
+
+/**
+ * Everything the Balans holds EXCEPT the net — the kassa figures, the
+ * receivables and the liabilities. The admin home, the dashboard's attention
+ * list and its hero cash tile print these and no net, so they must not wait
+ * for the Balans line's company-wide read (regress judge 1, design-u03 §5.4).
+ * `cache` (the `accountBalances` memo): one request pays for it once, however
+ * many sections ask.
+ */
+export const companyBalanceParts = cache(async function companyBalanceParts() {
   const { accountBalances, countedAccount } = await import('./service');
   const { upsaleLiability } = await import('../calc/upsale-service');
-  const [accounts, rate] = await Promise.all([accountBalances(), uzsRate()]);
+  const [accounts, rate, rates] = await Promise.all([accountBalances(), uzsRate(), kassaRatesToday()]);
 
   // Per box in its own money, and a USD total. EVERY currency converts at
   // today's rate for that currency, not just USD and UZS: the comment here
@@ -1722,13 +2119,6 @@ export async function companyBalance() {
   // cash out.
   const counted = accounts.filter(countedAccount);
   const today = tashkentDay();
-  const rates = new Map(
-    await Promise.all(
-      [...new Set(counted.map((account) => account.currency))].map(
-        async (code) => [code, await rateFor(code, today)] as const,
-      ),
-    ),
-  );
 
   let cashUsd = 0;
   const cashRows = counted
@@ -1841,7 +2231,6 @@ export async function companyBalance() {
   // paid it is then new information (a debt no count holds) and moves the
   // net, as placing does for U09's ambiguous payments.
   const unplacedCosts = await unplacedCostTotals();
-  const unplacedCostsOut = money(unplacedCosts.usd - unplacedCosts.insideCounts.usd);
 
   // What the sellers have earned on jobs the client has already paid for
   // (audit U10, #793 — derived, never stored): owed from money already in
@@ -1857,19 +2246,6 @@ export async function companyBalance() {
   const { recurringArrears } = await import('./recurring');
   const arrears = await recurringArrears(today);
 
-  const net =
-    cashUsd +
-    unplacedUsd +
-    receivable +
-    owedToUsByPartners -
-    owedByUs -
-    clientAdvances -
-    unplacedCostsOut -
-    commissions.payableUsd -
-    arrears.usd;
-
-  // The totals FIRST: the AI's company_balance tool cuts the JSON at 6,000
-  // characters, and with ~86 tills the rows used to push every total past it.
   return {
     cashUsd: money(cashUsd),
     /** Payments received and placed in no till yet (A2). */
@@ -1902,11 +2278,83 @@ export async function companyBalance() {
     recurringArrearsTotal: arrears.count,
     /** Due months in a currency with no rate — OUT of the net, named. */
     recurringArrearsUnrated: arrears.unrated,
-    netUsd: money(net),
     uzsRate: rate,
     /** Money in boxes with no rate for their currency — OUT of the net, named (U14). */
     unratedTills: [...unratedByCurrency.values()],
     /** Boxes below zero — IN the net as they stand, flagged (U14, answer a). */
+    negativeTills,
+    cashRows,
+  };
+});
+
+/**
+ * The Balans with its net — the parts above plus the Balans line
+ * «narxi hali yozilmagan yukka sarflangan» (U03), which is the one figure
+ * that waits for the company-wide unpriced-cargo read. Only the net's
+ * readers call this: the Balans page, the dashboard's bridge and the hero
+ * tile's net sub-line, the AI tool, and the deploy report.
+ */
+export async function companyBalance() {
+  // POOL reads, before any transaction opens (#714). `kassaRatesToday` is the
+  // ONE rate map (cached): the parts use it for the cash sum, this for which
+  // kassa-paid costs the line may value.
+  const [since, gate, rates] = await Promise.all([unplacedCostSince(), unpricedGate(), kassaRatesToday()]);
+  const ratedCurrencies = ratedCurrenciesOf(rates);
+  // Side by side, so the page costs max(parts, line), not their sum — and
+  // both awaited in ONE Promise.all: a promise started early and awaited
+  // later is an unhandled rejection while another await is pending.
+  const [parts, cargo] = await Promise.all([
+    companyBalanceParts(),
+    unpricedCargoMoney({ since, ratedCurrencies, gate, cardRule: CARD_PRICE_RULE, history: 'since_gate' }),
+  ]);
+  const unplacedCostsOut = money(parts.unplacedCostUsd - parts.unplacedCostInCountUsd);
+
+  const net =
+    parts.cashUsd +
+    parts.unplacedUsd +
+    parts.receivableUsd +
+    parts.partnerReceivableUsd -
+    parts.payableUsd -
+    parts.clientAdvancesUsd -
+    unplacedCostsOut -
+    parts.sellerCommissionsUsd -
+    parts.recurringArrearsUsd +
+    // U03: exactly the allocations whose money already left this net (the
+    // pair rule, #528) — the cost of cargo whose price is not written yet.
+    cargo.lineUsd;
+
+  const { uzsRate: rate, unratedTills, negativeTills, cashRows, ...totals } = parts;
+  // The totals FIRST: the AI's company_balance tool cuts the JSON at 6,000
+  // characters, and with ~86 tills the rows used to push every total past it.
+  // The line and what it left out come before the net, in ~450 characters.
+  return {
+    ...totals,
+    /** Spent on cargo whose price is not written yet (U03) — IN the net. */
+    unpricedCargoUsd: cargo.lineUsd,
+    /** The line's arithmetic and what it names beside it. */
+    unpricedCargo: {
+      grossUsd: cargo.grossUsd,
+      awayUsd: cargo.awayUsd,
+      stockUsd: cargo.stockUsd,
+      issuedUsd: cargo.issuedUsd,
+      cardUsd: cargo.cardUsd,
+      cardClients: cargo.cardClients,
+      elsewhereUsd: cargo.elsewhereUsd,
+      prixods: cargo.prixods,
+      unclaimed: cargo.unclaimed,
+      oldNoKassa: cargo.oldNoKassa,
+      tillUnrated: cargo.tillUnrated,
+      noDebt: cargo.noDebt,
+      pickupNoBox: cargo.pickupNoBox,
+      noBox: cargo.noBox,
+      unconverted: cargo.unconverted,
+      gate: gate.state,
+      gateSince: gate.state === 'on' ? gate.since.toISOString() : null,
+      rule: CARD_PRICE_RULE,
+    },
+    netUsd: money(net),
+    uzsRate: rate,
+    unratedTills,
     negativeTills,
     cashRows,
   };

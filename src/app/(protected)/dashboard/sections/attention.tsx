@@ -4,7 +4,7 @@ import { pendingApprovals } from '@/modules/wms/issue/approvals';
 import { calcQueueCounts } from '@/modules/wms/calc/service';
 import {
   loadAging,
-  loadBalance,
+  loadBalanceParts,
   loadCostMissing,
   loadGaps,
   loadRisk,
@@ -80,7 +80,9 @@ export async function AttentionSection({
 
   const [balance, aging, trips, gaps, unbilled, risk, transit, unclaimed, costMissing, tasks, approvals, calc] =
     await Promise.all([
-      money ? loadBalance() : null,
+      // The cash half only — the list prints no net, so it does not wait
+      // for the Balans line's company-wide read (U03).
+      money ? loadBalanceParts() : null,
       money ? loadAging() : null,
       money ? loadTrips() : null,
       money ? loadGaps() : null,

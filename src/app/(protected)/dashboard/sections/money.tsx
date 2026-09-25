@@ -1,6 +1,11 @@
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
-import { agingTotals, balanceLines, unplacedCostsTakenOff } from '@/modules/wms/accounting/balance-lines';
+import {
+  agingTotals,
+  balanceLines,
+  unplacedCostsTakenOff,
+  unpricedNotesCount,
+} from '@/modules/wms/accounting/balance-lines';
 import {
   loadAging,
   loadBalance,
@@ -126,8 +131,13 @@ export async function MoneySection({
   const range = `from=${w.m12Start}&to=${w.today}`;
 
   // ── C3: the Balans as a bridge ───────────────────────────────────────────
-  const lines = balanceLines(balance, canExpenses ? '/accounting/accounts' : '/accounting/balance');
+  const lines = balanceLines(balance, {
+    cash: canExpenses ? '/accounting/accounts' : '/accounting/balance',
+    cargo: '/accounting/balance#balance-unpriced',
+  });
   const costsOut = unplacedCostsTakenOff(balance);
+  // U03: the line's notes live on the Balans; here one line says how many.
+  const cargoNotes = unpricedNotesCount(balance.unpricedCargo);
   const bridge = lines.map((line) => ({
     key: line.key,
     label: line.key === 'balCash' && line.value < 0 ? `⚠ ${t('cashNegative')}` : ta(line.key),
@@ -321,6 +331,15 @@ export async function MoneySection({
             testid="dash-balance-rows"
           />
           {unrated > 0 && <p className="text-2xs text-warn">⚠ {t('unratedTills', { n: unrated })}</p>}
+          {cargoNotes > 0 && (
+            <Link
+              href="/accounting/balance#balance-unpriced"
+              className="block text-2xs text-ink-500 underline"
+              data-testid="dash-unpriced-notes"
+            >
+              {ta('balUnpricedDash', { n: cargoNotes })}
+            </Link>
+          )}
           {costsOut.count > 0 && (
             <Link href="/accounting/xarajat-kassa" className="block text-2xs text-warn underline">
               ⚠ {ta('balUnplacedCosts', { count: costsOut.count, usd: num(costsOut.usd, 2) })}

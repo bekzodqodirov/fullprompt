@@ -1,8 +1,10 @@
+import { Suspense } from 'react';
 import { getTranslations } from 'next-intl/server';
 import { cashFlow } from '@/modules/wms/accounting/reports';
 import {
   loadAging,
   loadBalance,
+  loadBalanceParts,
   loadDecided,
   loadIntake,
   loadPipeline,
@@ -44,7 +46,10 @@ export async function HeroTiles({
   const w = loadWindows();
 
   const [balance, pnl, prior, target, aging, flow, intake, decided, pipeline, transit] = await Promise.all([
-    money ? loadBalance() : null,
+    // The cash half: the tile's value and its ⚠ need no net, so the row does
+    // not wait for the Balans line's company-wide read (U03); the net
+    // sub-line streams in on its own (`TileNet`).
+    money ? loadBalanceParts() : null,
     money ? loadPnl12() : null,
     money ? loadPnlPrior() : null,
     money ? loadTarget() : null,
@@ -81,9 +86,9 @@ export async function HeroTiles({
           </>
         }
         lines={[
-          <span key="net" className={balance.netUsd < 0 ? 'text-bad' : ''}>
-            {t('tileNet', { amount: compactUsd(balance.netUsd) })}
-          </span>,
+          <Suspense key="net" fallback={<span className="text-ink-500">…</span>}>
+            <TileNet />
+          </Suspense>,
           <span key="flow">
             {t('tileMonthFlow', { in: compactUsd(flow.inflow), out: compactUsd(flow.outflow) })}
             {/* A cost with no rate reads $0 in the outflow (U24). */}
@@ -261,6 +266,22 @@ export async function HeroTiles({
     <div data-testid="kpi-row" className="grid grid-cols-2 gap-2.5 lg:grid-cols-3">
       {tiles}
     </div>
+  );
+}
+
+/**
+ * The net under the cash tile — the one figure on this row that waits for the
+ * Balans line (U03), so it streams in under its own Suspense and the six
+ * tiles draw on the parts. A nested boundary, not a segment `loading.tsx`
+ * (#98 is about the latter).
+ */
+async function TileNet() {
+  const t = await getTranslations('dashboard');
+  const balance = await loadBalance();
+  return (
+    <span className={balance.netUsd < 0 ? 'text-bad' : ''}>
+      {t('tileNet', { amount: compactUsd(balance.netUsd) })}
+    </span>
   );
 }
 

@@ -3,7 +3,7 @@ import { getTranslations } from 'next-intl/server';
 import type { Actor } from '@/modules/platform/rbac/authorize';
 import { seesCompanyMoney } from '@/modules/wms/finance/scope';
 import { mayReadBatches } from '@/modules/wms/batches/read-door';
-import { cashFlow, companyBalance } from '@/modules/wms/accounting/reports';
+import { cashFlow, companyBalanceParts } from '@/modules/wms/accounting/reports';
 import { moneySnapshot, todaySnapshot } from '@/modules/wms/reports/overview';
 import { inTransitBatches, stockByWarehouse, warehouseFill } from '@/modules/wms/reports/queries';
 import { cargoPipeline } from '@/modules/wms/reports/business';
@@ -84,7 +84,9 @@ export async function AdminDashboard({ actor }: { actor: Actor }) {
   const w = dashboardWindows(today);
   const [balance, flowToday, moneySnap, cargoToday, stock, transit, fills, deals, decided, tasks, unsent, backup, targets, pipeline] =
     await Promise.all([
-      money ? companyBalance() : null,
+      // The parts: this home prints the kassa and the partner figures and no
+      // net, so it must not wait for the Balans line's company-wide read (U03).
+      money ? companyBalanceParts() : null,
       money ? cashFlow(today, today) : null,
       money ? moneySnapshot() : null,
       cargo ? todaySnapshot() : null,

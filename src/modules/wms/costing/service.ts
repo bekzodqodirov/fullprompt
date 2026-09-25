@@ -349,6 +349,32 @@ export function insideEveryCountSql(): SQL {
                                  AND coalesce(ma.opening_date, '-infinity'::date) <= ${costCashDay}))`;
 }
 
+/**
+ * An OLD cost (before `cost_kassa_since`, so never on the queue) whose money
+ * is certainly inside EVERY kassa's count (U03, the Balans line): at least
+ * one kassa exists, and every kassa — active or retired, since a retired
+ * drawer may have paid it — was counted after the day the drawer paid
+ * (`costCashDay`). A kassa's count day is its `opening_date`, else the
+ * Tashkent day it was created: its opening balance was typed then.
+ *
+ * NOT the queue's `insideEveryCountSql`: that one asks whether a NEW kassa
+ * could still take a queued cost, and flips when a kassa is opened or
+ * retired. An old cost can never be placed (`before_kassa_since`), and a
+ * kassa that did not exist on its day can neither have paid it nor be stale
+ * about it. A kassa created later with a BACKDATED `opening_date` before the
+ * day is caught as «before», which «existed on the day» would miss.
+ * Measured: opening or retiring a kassa moves this by 0 (design-u03 S5);
+ * only a count typed before the cost moves it — information.
+ *
+ * Needs `mergedFrom` LEFT JOINed (the day is `costCashDay`).
+ */
+export function oldInsideEveryCountSql(): SQL {
+  return sql`(EXISTS (SELECT 1 FROM money_accounts oa)
+              AND NOT EXISTS (SELECT 1 FROM money_accounts oa
+                               WHERE coalesce(oa.opening_date, (oa.created_at AT TIME ZONE 'Asia/Tashkent')::date)
+                                     <= ${costCashDay}))`;
+}
+
 /** The queue's start day, as the setting holds it ('' = no bound). */
 export async function unplacedCostSince(): Promise<string> {
   const value = String((await getSetting('cost_kassa_since')) ?? '');
@@ -1058,8 +1084,9 @@ export async function recomputeAll(filter?: {
    * The nightly repair of a split that went wrong (audits U20/U41), OR-ed
    * like `pickups`: a converted cost with NO share at all (a recompute that
    * died between its old DELETE and INSERT, before it was one transaction),
-   * and a cost with a share still sitting on a VOID box (voidReceipt and the
-   * box card never re-split — money on a box that was a counting mistake,
+   * and a cost with a share still sitting on a VOID box (the box card
+   * re-splits after its commit — `boxes/status.ts` — and this is the net
+   * under a re-split that died: money on a box that was a counting mistake,
    * counted by every client-side report and dropped by the truck-side ones).
    * A cost whose base is legitimately empty (a direct_to_client fee on a
    * client with no box in scope, a truck cost typed before anything was
@@ -1075,6 +1102,15 @@ export async function recomputeAll(filter?: {
    * And (0103, Q18) a cost whose shares no longer add up to its dollars —
    * a /admin/fx re-price whose post-commit re-split died. Exact under the
    * largest-remainder split (U42: Σ shares = amount_usd).
+   *
+   * And (U03) a converted cost that names a counterparty with NO live debt
+   * to it: `chargeForCost` runs after the allocation commits and a failure
+   * there is only logged, so the firm's money was never written — out of
+   * «what we owe» and, therefore, out of the Balans line «narxi hali
+   * yozilmagan yukka sarflangan» («qarzi yozilmagan»). A voided derived
+   * charge unlinks the payer in its own transaction (#528), so this is the
+   * only way to get here; `recomputeEntry` ends in the idempotent
+   * `chargeForCost`, which writes the debt, and the note clears by itself.
    */
   orphaned?: boolean;
 }) {
@@ -1090,7 +1126,10 @@ export async function recomputeAll(filter?: {
           OR ${riderWithoutShareSql(sql`${costEntries}`)}
           OR (EXISTS (SELECT 1 FROM cost_allocations ca WHERE ca.cost_entry_id = ${costEntries}.id)
               AND (SELECT sum(ca.amount_usd) FROM cost_allocations ca WHERE ca.cost_entry_id = ${costEntries}.id)
-                  <> ${costEntries}.amount_usd))`
+                  <> ${costEntries}.amount_usd)
+          OR (${costEntries}.partner_id IS NOT NULL AND ${costEntries}.amount_usd IS NOT NULL
+              AND NOT EXISTS (SELECT 1 FROM partner_transactions pt
+                               WHERE pt.cost_entry_id = ${costEntries}.id AND pt.voided_at IS NULL)))`
       : undefined,
   ].filter((c): c is NonNullable<typeof c> => c !== undefined);
   const rows = await db
