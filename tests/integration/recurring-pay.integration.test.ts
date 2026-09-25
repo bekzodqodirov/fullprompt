@@ -482,11 +482,18 @@ describe('the doors refuse in words', () => {
     expect(await postings(t.id)).toHaveLength(1);
   });
 
-  it('R26: the same part payment pressed twice within the lock is written once (M10)', async () => {
+  it('R26: the same part payment pressed twice within two minutes is written once — a real second instalment later is not refused (M10)', async () => {
     const t = await template({ categoryId: await kind('r26'), dayOfMonth: 1, amount: 900 });
-    await pay(t.id, { amount: 200, partial: true });
+    const first = await pay(t.id, { amount: 200, partial: true });
     await expect(pay(t.id, { amount: 200, partial: true })).rejects.toMatchObject({ code: 'recurring_duplicate_press' });
     expect((await postings(t.id)).filter((row) => row.recurringPartial)).toHaveLength(1);
+    // The design's red proof for this one (drop the two-minute clause) could
+    // never go red — removing a clause that NARROWS a refusal only widens it
+    // (#166). The clause's own proof: the same 200 paid again once the first
+    // is five minutes old is an ordinary second instalment, and is written.
+    await db.execute(sql`UPDATE expenses SET created_at = now() - interval '5 minutes' WHERE id = ${first.id}::uuid`);
+    await pay(t.id, { amount: 200, partial: true });
+    expect((await postings(t.id)).filter((row) => row.recurringPartial)).toHaveLength(2);
   });
 
   it('bad_month: postgres would read «2031-3» as March — the door asks the shape itself', async () => {

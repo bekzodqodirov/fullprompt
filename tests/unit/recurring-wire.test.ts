@@ -243,12 +243,15 @@ describe('W12 — a recurring payment’s charge is not voided on the partner ca
     const fn = body(service, 'voidPartnerTx');
     expect(fn.indexOf("new PartnerError('recurring_payment')")).toBeGreaterThan(0);
     expect(fn.indexOf("new PartnerError('recurring_payment')")).toBeLessThan(fn.indexOf('db.transaction('));
+    // The ✕ lives in the ELSE of the recurring-charge ternary — the guard
+    // itself, not merely the name somewhere above it (the first version of
+    // this fence matched the row's destructuring and stayed green).
     const page = read('src/app/(protected)/kontragentlar/[id]/page.tsx');
+    const guard = page.indexOf('{tx.expenseId && expenseRecurringId && !tx.voidedAt ? (');
     const at = page.indexOf('<VoidTx');
-    expect(at).toBeGreaterThan(0);
-    const guard = page.lastIndexOf('expenseRecurringId', at);
-    expect(guard, 'no expenseRecurringId condition before <VoidTx').toBeGreaterThan(0);
-    expect(page.slice(guard, at)).toMatch(/\? \(/);
+    expect(guard, 'the recurring-charge guard').toBeGreaterThan(0);
+    expect(at).toBeGreaterThan(guard);
+    expect(page.slice(guard, at)).toContain(') : (');
   });
 });
 
