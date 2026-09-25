@@ -504,6 +504,13 @@ const DICT = {
   directCosts: { ru: 'Себестоимость грузов', uz: 'Yuk tannarxi', 'zh-CN': '货物成本', en: 'Direct cargo costs' },
   grossProfit: { ru: 'ВАЛОВАЯ ПРИБЫЛЬ', uz: 'YALPI FOYDA', 'zh-CN': '毛利', en: 'GROSS PROFIT' },
   margin: { ru: 'Маржа %', uz: 'Marja %', 'zh-CN': '毛利率 %', en: 'Margin %' },
+  grossCharges: { ru: 'Выставленные цены', uz: 'Hisoblangan narxlar', 'zh-CN': '已开价格', en: 'Prices charged' },
+  compensation: {
+    ru: 'Компенсации (потерянный груз)',
+    uz: 'Kompensatsiya (yo‘qolgan yuk)',
+    'zh-CN': '赔偿（丢失货物）',
+    en: 'Compensation (lost cargo)',
+  },
   month: { ru: 'Месяц', uz: 'Oy', 'zh-CN': '月份', en: 'Month' },
   netFlow: { ru: 'Чистый поток', uz: 'Sof oqim', 'zh-CN': '净流量', en: 'Net flow' },
   netProfit: { ru: 'ЧИСТАЯ ПРИБЫЛЬ', uz: 'SOF FOYDA', 'zh-CN': '净利润', en: 'NET PROFIT' },

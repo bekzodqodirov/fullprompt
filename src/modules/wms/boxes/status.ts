@@ -217,6 +217,19 @@ export async function setBoxStatus(input: SetBoxStatusInput, ctx: AuditContext) 
     const { recomputeRiderChange } = await import('../costing/service');
     await recomputeRiderChange([result.foundBackOn], 'restore_found_at_origin');
   }
+  // A carton found on a prixod the client was COMPENSATED for (0105, Q6:
+  // «sistema real hayotda bo'layotgan narsalarni aniqlasin»): the accountant
+  // and the seller are told at once, or the client could collect the cargo
+  // AND keep the money. After the commit and on the pool; the box IS
+  // restored — a notice failure is logged, never rolled back into it.
+  if (input.to === 'in_stock') {
+    try {
+      const { compensatedCargoFound } = await import('../finance/compensation');
+      await compensatedCargoFound(input.boxId, ctx.actorId);
+    } catch (error) {
+      console.error('[box-status] compensation notice failed', input.boxId, error);
+    }
+  }
   // A write-off (lost or void) can be the deal's last outstanding carton —
   // the funnel's own ear hears only a handover, so the deal would park at
   // «qisman topshirildi» for good (U38's shape). A restore moves a deal

@@ -1,4 +1,5 @@
 import { addDays, tashkentDay } from '@/modules/platform/time/tashkent';
+import { marginPct } from '../accounting/margin';
 
 /**
  * The dashboard's arithmetic, PURE: windows, plan pace, deltas, scale ticks and
@@ -271,7 +272,7 @@ export function tripTotals(
     revenue: cents(revenue),
     cost: cents(cost),
     profit: cents(profit),
-    marginPct: revenue > 0.009 ? Math.round((profit / revenue) * 1000) / 10 : null,
+    marginPct: marginPct(profit, revenue),
     perKg: pricedKg > 0 ? Math.round((pricedProfit / pricedKg) * 100) / 100 : null,
     losses,
     unpriced,

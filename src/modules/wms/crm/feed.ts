@@ -1,5 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
+import { FEED_KINDS } from '../finance/ledger-kinds';
+import { kindList } from '../finance/ledger-sql';
 
 /**
  * One client, everything that happened, in order — the «lenta».
@@ -58,7 +60,8 @@ export type FeedKind =
   | 'handover'
   | 'charge'
   | 'payment'
-  | 'refund';
+  | 'refund'
+  | 'compensation';
 
 export interface FeedItem {
   /** Source-prefixed, so two tables can never collide on a React key. */
@@ -192,7 +195,7 @@ export async function clientFeed(
       -- and then somebody undid it, and both are part of the story.
       SELECT
         'tx-' || t.id::text,
-        CASE WHEN t.type IN ('payment', 'refund') THEN t.type ELSE 'charge' END,
+        t.type,
         t.created_at, u.full_name, t.note,
         jsonb_build_object(
           'amount', t.amount, 'currency', t.currency, 'amountUsd', t.amount_usd,
@@ -200,9 +203,11 @@ export async function clientFeed(
         )
       FROM client_transactions t
       JOIN users u ON u.id = t.created_by
-      -- A kurs farqi row (0103) moves dollars, not money: the ELSE above
-      -- would draw it as a «0 UZS» charge on the seller's card.
-      WHERE t.client_id = ${clientId} AND t.created_at < ${cutoff} AND t.type <> 'fx_diff'
+      -- The kinds the lenta shows (LEDGER_FEED): a kurs farqi row (0103)
+      -- moves dollars, not money, and stays off it; a compensation (0105) is
+      -- drawn as itself — the old «else it is a charge» CASE read it as a
+      -- price on the seller's card.
+      WHERE t.client_id = ${clientId} AND t.created_at < ${cutoff} AND t.type IN (${kindList(FEED_KINDS)})
 
       UNION ALL
 

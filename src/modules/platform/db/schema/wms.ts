@@ -934,6 +934,12 @@ export const clientTransactions = pgTable(
      * cross-currency residue the accountant closes by hand (Q24 b) is in USD.
      */
     fxAnchorId: uuid('fx_anchor_id').references((): AnyPgColumn => clientTransactions.id),
+    /**
+     * A «Kompensatsiya» row (0105, Q15): the prixod whose cargo was lost. Only
+     * a compensation names a prixod (the CHECK), and its deal follows the
+     * prixod's (`followCompensationDealTx`), while its client never moves.
+     */
+    receiptId: uuid('receipt_id').references(() => receipts.id),
     note: text('note'),
     createdBy: uuid('created_by')
       .notNull()
@@ -948,7 +954,19 @@ export const clientTransactions = pgTable(
     // It raises the balance like a charge and lowers a till like an expense.
     // 'fx_diff' (0103, Q14): the dollar residue of an account that reached
     // zero in its own currency — native 0, a signed amount_usd.
-    check('client_transactions_type_check', sql`${t.type} IN ('charge', 'payment', 'refund', 'fx_diff')`),
+    // 'compensation' (0105, Q15): what we pay a client back for LOST cargo
+    // above our own price — lowers the balance and the revenue, moves no kassa.
+    check(
+      'client_transactions_type_check',
+      sql`${t.type} IN ('charge', 'payment', 'refund', 'fx_diff', 'compensation')`,
+    ),
+    check(
+      'client_transactions_compensation_check',
+      sql`(${t.type} = 'compensation') = (${t.receiptId} IS NOT NULL) AND (${t.type} <> 'compensation' OR (${t.accountId} IS NULL AND ${t.partnerId} IS NULL AND ${t.batchId} IS NULL AND ${t.method} IS NULL AND length(btrim(coalesce(${t.note}, ''))) >= 3))`,
+    ),
+    index('client_transactions_receipt_idx')
+      .on(t.receiptId)
+      .where(sql`${t.receiptId} IS NOT NULL`),
     check(
       'client_transactions_refund_check',
       sql`${t.type} <> 'refund' OR (${t.accountId} IS NOT NULL AND ${t.partnerId} IS NULL AND ${t.batchId} IS NULL)`,

@@ -223,6 +223,7 @@ const DICT = {
   charged: { uz: '🧾 hisoblandi', ru: '🧾 начислено', en: '🧾 charged' },
   paid: { uz: '➕ to‘lov', ru: '➕ оплата', en: '➕ payment' },
   refunded: { uz: '↩️ qaytarildi', ru: '↩️ возврат', en: '↩️ refunded' },
+  compensated: { uz: '🤝 kompensatsiya', ru: '🤝 компенсация', en: '🤝 compensation' },
   noPhotos: { uz: 'Bu yuk uchun rasm topilmadi.', ru: 'Фото для этого груза нет.', en: 'No photos for this cargo.' },
   photoError: {
     uz: 'Rasm yuborishda xatolik. Birozdan so‘ng qayta urinib ko‘ring.',
@@ -416,6 +417,28 @@ const DICT = {
 export type ClientLabels = { [K in keyof typeof DICT]: string };
 
 /** Is this a language the cabinet speaks? */
+/**
+ * How each ledger kind a CUSTOMER sees reads — the label and the sign — ONE
+ * table for the Mini App and the bot's «💰 Balans» (they had two ternaries
+ * that read every unknown kind as «to'lov», so a compensation would have
+ * printed as a payment in the bot and as an unsigned charge in the app).
+ * `+` exactly when the row lowers what he owes. Platform cannot import the
+ * ledger's rules (wms), so a unit test holds this to them: the keys are the
+ * kinds the lenta shows, and `+` iff that kind's balance sign is −1.
+ */
+export const TX_VIEW = {
+  charge: { label: 'charged', sign: '' },
+  payment: { label: 'paid', sign: '+' },
+  refund: { label: 'refunded', sign: '' },
+  compensation: { label: 'compensated', sign: '+' },
+} as const satisfies Record<string, { label: keyof typeof DICT; sign: '' | '+' }>;
+
+/** The label and sign of a ledger row for a customer; null = a kind he is not shown. */
+export function txView(type: string, labels: ClientLabels): { text: string; sign: '' | '+' } | null {
+  const view = (TX_VIEW as Record<string, { label: keyof typeof DICT; sign: '' | '+' }>)[type];
+  return view ? { text: labels[view.label], sign: view.sign } : null;
+}
+
 export function isClientLocale(value: unknown): value is ClientLocale {
   return typeof value === 'string' && (CLIENT_LOCALES as readonly string[]).includes(value);
 }

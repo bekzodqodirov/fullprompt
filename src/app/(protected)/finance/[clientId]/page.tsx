@@ -26,6 +26,7 @@ import { FxCloseButton, FxCloseUndo } from './fx-close-button';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { mayPickTill } from '@/modules/wms/accounting/till-door';
 import { mayVoidLedgerRow } from '@/modules/wms/finance/void-rule';
+import { lostCargoChargesOn, lostCargoForClient } from '@/modules/wms/finance/compensation';
 
 /** One client's money ledger: balance, add charge/payment, full history. */
 export default async function ClientLedgerPage({
@@ -87,6 +88,12 @@ export default async function ClientLedgerPage({
     mayClassify ? hasLegacyFx('client', clientId) : Promise.resolve(false),
     canManage && mayClassify ? crossCloseOffer(clientId) : Promise.resolve(null),
   ]);
+  // The lost-cargo door's list and the prices of that cargo (0105) — for the
+  // kassa holders only, who alone may write a compensation. Two queries.
+  const lostReceipts = canManage && canRefund ? await lostCargoForClient(clientId) : null;
+  const lostCharges = lostReceipts
+    ? await lostCargoChargesOn(db, clientId, lostReceipts.rows.map((row) => row.receiptId))
+    : [];
   // The trucks a charge may name, and «🚚 Ko'chirish»'s targets: the
   // client's own ride trucks (never an internal leg — never priced, C1a) and
   // a truck its cargo is loading on now. Cross-border first, unpriced first
@@ -123,6 +130,8 @@ export default async function ClientLedgerPage({
     payment: { label: `➕ ${t('payment')}`, tone: 'text-good' },
     refund: { label: `↩️ ${t('refund')}`, tone: 'text-warn' },
     fx_diff: { label: t('fxDiff'), tone: 'text-ink-700' },
+    // It LOWERS what the client owes — the good colour; the brand red read as a debt.
+    compensation: { label: `🤝 ${t('compensation')}`, tone: 'text-good' },
   };
   const quoted = clientDeals
     .map((d) => ({ ...d, fig: figures.get(d.id) }))
@@ -203,6 +212,23 @@ export default async function ClientLedgerPage({
           deals={openDeals.map((d) => ({ id: d.id, code: d.code, title: d.title, cargo: d.cargo }))}
           today={tashkentDay()}
           trips={chargeTrucks}
+          lost={
+            lostReceipts
+              ? {
+                  receipts: lostReceipts.rows,
+                  charges: lostCharges.map((charge) => ({
+                    id: charge.id,
+                    receiptId: charge.receiptId,
+                    batchCode: charge.batchCode,
+                    dealCode: charge.dealCode,
+                    amount: charge.amount,
+                    currency: charge.currency,
+                    txDate: charge.txDate,
+                  })),
+                  truncated: lostReceipts.truncated,
+                }
+              : undefined
+          }
         />
       )}
 
@@ -219,7 +245,7 @@ export default async function ClientLedgerPage({
       <div className="card space-y-1 !p-3">
         <h2 className="text-sm font-bold uppercase text-ink-500">{t('history')}</h2>
         {ledger.length === 0 && <p className="text-sm text-ink-500">{t('empty')}</p>}
-        {ledger.map(({ tx, createdByName, batchCode, dealCode }) => (
+        {ledger.map(({ tx, createdByName, batchCode, dealCode, receiptNumber, lostNow, boxesTotal, foundSince }) => (
           <div
             key={tx.id}
             className={`border-b border-line py-2 text-sm last:border-0 ${tx.voidedAt ? 'opacity-50' : ''}`}
@@ -259,8 +285,16 @@ export default async function ClientLedgerPage({
                 {format.dateTime(new Date(tx.createdAt), { dateStyle: 'short' })}
               </span>
             </div>
-            <div className="mt-0.5 flex items-baseline gap-2 text-xs text-ink-500">
+            <div className="mt-0.5 flex flex-wrap items-baseline gap-2 text-xs text-ink-500">
               {batchCode && <span className="font-mono font-semibold">{batchCode}</span>}
+              {tx.type === 'compensation' && tx.receiptId && (
+                <span data-testid="tx-compensation-receipt">
+                  <Link href={`/receipts/${tx.receiptId}`} className="font-mono font-semibold text-brand-700 underline">
+                    {receiptNumber ?? '—'}
+                  </Link>{' '}
+                  {t('compensationLostCount', { count: lostNow ?? 0, total: boxesTotal ?? 0 })}
+                </span>
+              )}
               {dealCode && (
                 <span className="font-mono font-semibold text-brand-700" data-testid="tx-deal-code">
                   {dealCode}
@@ -294,11 +328,18 @@ export default async function ClientLedgerPage({
                   { mayMoveTill: canRefund, actorId: actor.id },
                 ) && (
                   <span className="ml-auto">
-                    <VoidButton id={tx.id} clientId={clientId} />
+                    <VoidButton id={tx.id} clientId={clientId} kind={tx.type} />
                   </span>
                 )
               )}
             </div>
+            {/* A carton of the compensated prixod came back from «yo'qolgan»
+                (0105, Q6): said on the row, on its own line. */}
+            {tx.type === 'compensation' && !tx.voidedAt && (foundSince ?? 0) > 0 && (
+              <p className="mt-0.5 w-full text-xs font-semibold text-warn" data-testid="tx-compensation-found">
+                {t('compensationFound', { count: foundSince ?? 0 })}
+              </p>
+            )}
             {/* A price on the card, or on a truck the cargo never rode (0104):
                 one press onto the truck it did. */}
             {!tx.voidedAt &&

@@ -16,6 +16,7 @@ import { emitEvent } from '../../platform/events/service';
 import { getSetting } from '../../platform/settings/service';
 import type { Actor } from '../../platform/rbac/authorize';
 import { nextBoxCodes } from '../codes';
+import { receiptHasCompensation } from '../finance/compensation-follow';
 import { computeLotTotals } from './math';
 
 export const editLotSchema = z.object({
@@ -42,7 +43,8 @@ export class EditError extends Error {
       | 'structural_locked'
       | 'boxes_not_editable'
       | 'boxes_crated'
-      | 'receipt_not_confirmed',
+      | 'receipt_not_confirmed'
+      | 'receipt_has_compensation',
   ) {
     super(code);
   }
@@ -369,6 +371,11 @@ export async function assignReceiptClient(
       .where(and(eq(receiptLots.receiptId, receiptId), eq(crates.status, 'active')))
       .limit(1);
     if (crated) throw new EditError('boxes_crated');
+    // A compensation (0105) names this prixod and is money we owe THIS
+    // client: changing the client is money, corrected by void + re-entry on
+    // the right client by the accountant — never carried along by a click.
+    // Asked before the direct-cost decision so the refusal comes first.
+    if (await receiptHasCompensation(db, receiptId)) throw new EditError('receipt_has_compensation');
   }
 
   // A cost typed «only for this client» (direct_to_client) after a client
@@ -406,6 +413,12 @@ export async function assignReceiptClient(
     // `clientId IS NULL` everywhere, never by the marking's presence — so a
     // claimed receipt that keeps its marking is still counted as claimed.
     await tx.update(receipts).set({ clientId }).where(eq(receipts.id, receiptId));
+    // Re-asked under the row lock the UPDATE just took: a compensation
+    // written between the pre-check and here waited on the prixod's lock
+    // (`addCompensation` takes it FOR UPDATE first) or is seen now.
+    if (receipt.clientId && receipt.clientId !== clientId && (await receiptHasCompensation(tx, receiptId))) {
+      throw new EditError('receipt_has_compensation');
+    }
 
     /**
      * The money follows the cargo.

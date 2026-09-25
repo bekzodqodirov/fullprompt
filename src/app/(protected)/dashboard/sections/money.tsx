@@ -27,6 +27,7 @@ import { TableTwin } from '@/components/charts/table-twin';
 import { tipText } from '@/components/charts/tip-text';
 import { monthLabel, monthNames } from '@/components/charts/month-names';
 import { compactUsd, m3, num, pct, signedUsd, usd } from '@/components/charts/format';
+import { marginPct } from '@/modules/wms/accounting/margin';
 
 /**
  * «Pul» (spec «C»): month by month, are we billing more than we spend and
@@ -87,7 +88,8 @@ export async function MoneySection({
   const cashNet = cashRows.map((row) => row?.net ?? 0);
   const { ticks, top } = niceTicks(Math.max(1, ...revenue, ...cost, ...inflow, ...outflow));
   const netMax = Math.max(1, ...net.map(Math.abs), ...cashNet.map(Math.abs));
-  const margin = (i: number) => ((revenue[i] ?? 0) > 0.009 ? ((net[i] ?? 0) / (revenue[i] ?? 1)) * 100 : null);
+  // ONE margin rule (0105): none over revenue that is not positive.
+  const margin = (i: number) => marginPct(net[i] ?? 0, revenue[i] ?? 0);
   const heading = (i: number) => monthLabel(names, months[i] ?? '', true);
   const pnlTips = months.map((_, i) =>
     tipText(heading(i), [

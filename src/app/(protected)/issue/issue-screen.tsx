@@ -94,6 +94,7 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
   /** The price half of the holder's tick (0104) — its own box, its own words. */
   const [priceOk, setPriceOk] = useState(false);
   const [unpriced, setUnpriced] = useState<UnpricedHere[]>([]);
+  const [compensated, setCompensated] = useState<{ receiptNumber: string }[]>([]);
   const [gate, setGate] = useState<{ state: 'on' | 'off' | 'invalid'; since: string | null }>({
     state: 'off',
     since: null,
@@ -223,6 +224,7 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
             canOverrideDebt: boolean;
             approval: ApprovalState | null;
             unpriced?: UnpricedHere[];
+            compensated?: { receiptNumber: string }[];
             gate?: { state: 'on' | 'off' | 'invalid'; since: string | null };
           };
           setList(data.boxes);
@@ -231,6 +233,7 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
           setCanOverrideDebt(data.canOverrideDebt);
           setApproval(data.approval ?? null);
           setUnpriced(data.unpriced ?? []);
+          setCompensated(data.compensated ?? []);
           setGate(data.gate ?? { state: 'off', since: null });
           // What is still here stays selected: a box handed over leaves the
           // list and the selection by the same rule, a refresh keeps the rest.
@@ -607,6 +610,17 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
             </label>
           )}
         </div>
+      )}
+      {/* 0105: a carton found after its loss was compensated. A warning and
+          not a gate — the cargo is the client's; the money is the
+          accountant's, who has been told. No amount on a warehouse screen. */}
+      {client && compensated.length > 0 && (
+        <p
+          className="rounded-lg border border-warn/30 bg-warn/10 p-3 text-sm font-semibold text-warn"
+          data-testid="issue-compensated"
+        >
+          {t('compensatedFound', { receipts: compensated.map((row) => row.receiptNumber).join(', ') })}
+        </p>
       )}
       {client && gate.state === 'invalid' && (
         <p className="rounded-lg border border-warn/30 bg-warn/10 p-3 text-sm font-semibold text-warn">

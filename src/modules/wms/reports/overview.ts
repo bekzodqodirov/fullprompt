@@ -1,6 +1,6 @@
 import { and, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
-import { clientMoneyInPeriod, signedUsdSql } from '../finance/service';
+import { clientMoneyInPeriod, creditUsdSql, debitUsdSql, signedUsdSql } from '../finance/service';
 import {
   batches,
   clientTransactions,
@@ -147,8 +147,11 @@ export async function moneySnapshot(): Promise<MoneySnapshot> {
       // /accounting/receivables (arAging) ages it from its own date.
       // A kurs farqi row (0103) by its sign, as arAging judges it: > 0 is a
       // debit that ages from its own date, < 0 settles like a payment.
-      oldDebits: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) filter (where (${clientTransactions.type} IN ('charge', 'refund') OR (${clientTransactions.type} = 'fx_diff' AND ${clientTransactions.amountUsd} > 0)) AND ${clientTransactions.txDate} < ${oldCutoff}), 0)`,
-      paid: sql<string>`coalesce(sum(CASE WHEN ${clientTransactions.type} = 'payment' THEN ${clientTransactions.amountUsd} WHEN ${clientTransactions.type} = 'fx_diff' AND ${clientTransactions.amountUsd} < 0 THEN -${clientTransactions.amountUsd} ELSE 0 END), 0)`,
+      // Both halves from the ONE sign rule (0105): a compensation for lost
+      // cargo lowers the debt like a payment, so it settles the oldest debits
+      // too — restated by hand, it would have read as nothing.
+      oldDebits: sql<string>`coalesce(sum(${debitUsdSql()}) filter (where ${clientTransactions.txDate} < ${oldCutoff}), 0)`,
+      paid: sql<string>`coalesce(sum(${creditUsdSql()}), 0)`,
     })
     .from(clientTransactions)
     .where(isNull(clientTransactions.voidedAt))
@@ -187,7 +190,8 @@ export async function moneySnapshot(): Promise<MoneySnapshot> {
     .limit(5);
 
   return {
-    revenueMonth: month.charged,
+    // The P&L month's own figure (#513): prices minus compensations (0105).
+    revenueMonth: Math.round((month.charged - month.compensated) * 100) / 100,
     paidMonth: month.netCollected,
     paidParts: { toTill: month.toTill, viaPartner: month.viaPartner, refunded: month.refunded },
     receivable: money(receivable),

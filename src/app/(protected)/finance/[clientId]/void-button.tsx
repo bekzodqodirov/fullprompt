@@ -9,7 +9,7 @@ import { voidTransactionAction } from '../actions';
  * refusal is said in WORDS beside the ✖ (#420): the action used to swallow
  * it, and a refused void looked exactly like one that worked.
  */
-export function VoidButton({ id, clientId }: { id: string; clientId: string }) {
+export function VoidButton({ id, clientId, kind }: { id: string; clientId: string; kind?: string }) {
   const t = useTranslations('finance');
   const tc = useTranslations('common');
   const [error, setError] = useState<string | null>(null);
@@ -19,7 +19,10 @@ export function VoidButton({ id, clientId }: { id: string; clientId: string }) {
         type="button"
         className="text-xs font-semibold text-bad underline"
         onClick={async () => {
-          const reason = window.prompt(t('voidReason'));
+          // A compensation's void is guarded (0105): say so before the prompt.
+          const reason = window.prompt(
+            kind === 'compensation' ? `${t('compensationVoidWarn')}\n\n${t('voidReason')}` : t('voidReason'),
+          );
           if (!reason || reason.trim().length < 2) return;
           const fd = new FormData();
           fd.set('id', id);
@@ -27,7 +30,7 @@ export function VoidButton({ id, clientId }: { id: string; clientId: string }) {
           fd.set('reason', reason.trim());
           setError(null);
           const res = await voidTransactionAction(fd);
-          if (res.error) setError(res.error === 'forbidden' ? t('voidNeedsAccountant') : tc('error'));
+          if (res.error) setError(voidErrorText(res.error, t, tc));
         }}
       >
         ✖ {t('void')}
@@ -39,4 +42,15 @@ export function VoidButton({ id, clientId }: { id: string; clientId: string }) {
       )}
     </span>
   );
+}
+
+/** The void's refusals in words — a literal map (#163). */
+const VOID_ERRORS = {
+  forbidden: 'voidNeedsAccountant',
+  compensation_paid_out: 'compensationPaidOut',
+} as const;
+
+function voidErrorText(code: string, t: (key: string) => string, tc: (key: string) => string): string {
+  const key = VOID_ERRORS[code as keyof typeof VOID_ERRORS];
+  return key ? t(key) : tc('error');
 }

@@ -26,6 +26,7 @@ import { AssignClient } from './assign-client';
 import { LotEditForm } from './lot-edit-form';
 import { MarkLostForm, type LostBoxOption } from './mark-lost-form';
 import { DealLink } from './deal-link';
+import { receiptHasCompensation } from '@/modules/wms/finance/compensation-follow';
 import { receiptPickupInfo, stopOptionsForWarehouse } from '@/modules/wms/pickups/service';
 import { ReceiptPickupControl } from '@/app/(protected)/zavod/pickup-forms';
 import { CalcLink } from './calc-link';
@@ -203,6 +204,10 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
     ? ((await db.query.deals.findFirst({ where: eq(deals.id, receipt.dealId) })) ?? null)
     : null;
   const dealOptions = canLinkDeal ? await openDealsForClient(receipt.clientId!) : [];
+  // 0105: a compensation for this prixod's lost cargo follows it to another
+  // deal — said under the picker BEFORE the press. Caught: the column is
+  // minted this release (#472).
+  const hasCompensation = canLinkDeal ? await receiptHasCompensation(db, id).catch(() => false) : false;
   // A deal that has since been won or lost is not in the open list, and
   // hiding it would hide the very mistake being corrected.
   // Phase E1: which CALCULATION priced this cargo. A separate door from the
@@ -321,6 +326,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
           receiptId={id}
           current={linkedDeal ? { id: linkedDeal.id, code: linkedDeal.code } : null}
           options={dealChoices}
+          hasCompensation={hasCompensation}
         />
       )}
 
@@ -477,6 +483,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
             errors: {
               box_not_in_stock: t('voidBoxGone'),
               receipt_has_costs: t('voidHasCosts'),
+              receipt_has_compensation: t('voidHasCompensation'),
             },
             // The slot is filled in the browser with the code the refusal
             // names; passed as a VALUE so next-intl leaves the braces alone.
@@ -518,6 +525,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
               box_on_active_plan: ta('onActivePlan'),
               cost_paid_from_till: ta('paidFromTill'),
               cost_merged: ta('mergedCost'),
+              receipt_has_compensation: ta('hasCompensation'),
               reason_required: ta('reasonRequired'),
               not_found: ta('notFound'),
               validation: ta('reasonRequired'),

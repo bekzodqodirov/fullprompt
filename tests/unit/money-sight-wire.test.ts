@@ -129,7 +129,11 @@ describe('3 — kassa: /finance, the register, the ledger and its doors', () => 
     expect(body).toContain('Promise<TxFormState>');
     expect(body).toContain('if (err instanceof FinanceError) return { error: err.code };');
     const button = read('src/app/(protected)/finance/[clientId]/void-button.tsx');
-    expect(button).toContain("res.error === 'forbidden' ? t('voidNeedsAccountant')");
+    // 0105: a second refusal (`compensation_paid_out`) joined the first, so
+    // the words are a literal map now (#163) — both codes, both keys.
+    expect(button).toContain("forbidden: 'voidNeedsAccountant',");
+    expect(button).toContain("compensation_paid_out: 'compensationPaidOut',");
+    expect(button).toContain('if (res.error) setError(voidErrorText(res.error, t, tc));');
     expect(button).toContain('role="alert"');
   });
 

@@ -89,7 +89,17 @@ export default async function FinancePage() {
                     <span className="text-ink-700">{r.clientName}</span>
                   </Link>
                 </td>
-                <td className="p-3 text-right font-mono">${r.chargesUsd.toFixed(2)}</td>
+                <td className="p-3 text-right font-mono">
+                  ${r.chargesUsd.toFixed(2)}
+                  {/* Compensation for lost cargo (0105): the charges stay the
+                      price asked, and the part taken back is said under them —
+                      the columns still add up to the balance, as on the card. */}
+                  {r.compensatedUsd > 0.009 && (
+                    <span className="block text-2xs font-normal text-ink-500" data-testid="finance-compensated-col">
+                      {t('compensatedCol', { amount: `$${r.compensatedUsd.toFixed(2)}` })}
+                    </span>
+                  )}
+                </td>
                 <td className="p-3 text-right font-mono">${r.paymentsUsd.toFixed(2)}</td>
                 <td
                   className={`p-3 text-right font-mono font-bold ${

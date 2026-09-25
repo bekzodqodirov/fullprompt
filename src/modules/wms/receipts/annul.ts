@@ -18,6 +18,7 @@ import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { cancelTasksFor } from '../../platform/tasks/service';
 import { CostError, recomputeAll, recomputeEntry, scopeBoxIds, voidCostEntryInTx } from '../costing/service';
 import { voidBoxRows } from './void-box';
+import { receiptHasCompensation } from '../finance/compensation-follow';
 
 /**
  * Anulirovka — the super-admin cascade void of a receipt (owner, 2026-08-26:
@@ -45,7 +46,8 @@ export class AnnulError extends Error {
       | 'not_found'
       | 'box_on_active_plan'
       | 'cost_paid_from_till'
-      | 'cost_merged',
+      | 'cost_merged'
+      | 'receipt_has_compensation',
   ) {
     super(code);
   }
@@ -162,9 +164,13 @@ export async function annulReceipt(
   }
 
   const outcome = await db.transaction(async (tx) => {
-    const receipt = await tx.query.receipts.findFirst({ where: eq(receipts.id, receiptId) });
+    // LOCKED (0105): the lost-cargo door locks the prixod first too.
+    const [receipt] = await tx.select().from(receipts).where(eq(receipts.id, receiptId)).for('update');
     if (!receipt) throw new AnnulError('not_found');
     if (receipt.voidedAt) return null; // raced with another annul — aftermath below
+    // Client money is never auto-voided (#852): a compensation paid for this
+    // prixod's lost cargo is voided by the accountant first, on purpose.
+    if (await receiptHasCompensation(tx, receiptId)) throw new AnnulError('receipt_has_compensation');
 
     const lotRows = await tx
       .select({ id: receiptLots.id })

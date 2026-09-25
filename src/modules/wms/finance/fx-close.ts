@@ -6,6 +6,7 @@ import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { fxCyclesFor, fxSettingsTx, lockOwnersTx, ownersSql, reconcileFxResidueTx } from './fx-residue';
 import { isLegacyCycle } from './fx-legacy';
 import { fxResidueAllowance } from './money-bounds';
+import { ledgerAlias, signedUsdSql } from './ledger-sql';
 
 /**
  * «Kurs farqi bilan yopish» (the design's open question 1, answer b — the
@@ -37,7 +38,7 @@ type Money = { balanceUsd: number; paidUsd: number; currencies: number };
 
 async function accountMoney(handle: Db | Tx, clientId: string): Promise<Money> {
   const [row] = (await handle.execute(sql`
-    SELECT coalesce(sum(CASE WHEN t.type = 'payment' THEN -t.amount_usd ELSE t.amount_usd END), 0) AS balance,
+    SELECT coalesce(sum(${signedUsdSql(ledgerAlias('t'))}), 0) AS balance,
            coalesce(sum(t.amount_usd) FILTER (WHERE t.type = 'payment'), 0) AS paid,
            count(DISTINCT t.currency) FILTER (WHERE t.type <> 'fx_diff') AS currencies
       FROM client_transactions t

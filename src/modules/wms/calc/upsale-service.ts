@@ -51,6 +51,8 @@ export interface UpsaleRow {
   payableUsd: number;
   paidAt: Date | null;
   paidUsd: number | null;
+  /** Taken back for the job's lost cargo (0105) — why a commission waits. */
+  compensatedUsd: number;
   state: UpsaleState;
 }
 
@@ -73,6 +75,7 @@ interface RawRow extends Record<string, unknown> {
   client_code: string | null;
   client_name: string | null;
   charged_usd: string | null;
+  compensated_usd: string | null;
 }
 
 const money = (n: unknown) => Math.round(Number(n ?? 0) * 100) / 100;
@@ -87,12 +90,27 @@ export const UPSALE_CAP = 300;
  * `upsaleRows` for the three states and why each is asked of the DEAL.
  */
 export function upsaleStateOf(
-  row: { payout_at: Date | null; entity_type: string; client_price_usd: string; charged_usd: string | null },
+  row: {
+    payout_at: Date | null;
+    entity_type: string;
+    client_price_usd: string;
+    charged_usd: string | null;
+    /**
+     * Taken back for the job's lost cargo (0105). REQUIRED: both readers
+     * must pass it, or a job whose price was taken back pays a commission.
+     */
+    compensated_usd: string | null;
+  },
   bal: { balanceUsd: number; deferredUsd: number } | undefined,
 ): UpsaleState {
   if (row.payout_at) return 'paid';
   if (row.entity_type !== 'deal') return 'no_deal';
-  if (money(row.charged_usd) < money(row.client_price_usd) - MONEY_EPSILON) return 'no_invoice';
+  // The job's NET price (his own rule, a lowered price holds the upsale):
+  // whether the price was lowered or kept and compensated above it, a job
+  // whose money was taken back is «Hisob-faktura yo'q» until it is whole.
+  if (money(money(row.charged_usd) - money(row.compensated_usd)) < money(row.client_price_usd) - MONEY_EPSILON) {
+    return 'no_invoice';
+  }
   if ((bal?.balanceUsd ?? 0) - (bal?.deferredUsd ?? 0) > MONEY_EPSILON) return 'awaiting_payment';
   return 'payable';
 }
@@ -138,17 +156,22 @@ export async function upsaleRows(
            c.id        AS client_id,
            c.client_code,
            c.name      AS client_name,
-           inv.charged AS charged_usd
+           inv.charged AS charged_usd,
+           inv.compensated AS compensated_usd
       FROM (${payableOffersSql()}) p
       JOIN users u ON u.id = p.offered_by
       LEFT JOIN deals d   ON d.id = p.entity_id AND p.entity_type = 'deal'
       LEFT JOIN clients c ON c.id = d.client_id
       LEFT JOIN LATERAL (
-        SELECT coalesce(sum(ct.amount_usd), 0) AS charged
+        -- The job's prices AND what was taken back for its lost cargo (0105),
+        -- in both readers — the screen and the Balans liability decide in
+        -- ONE place (upsaleStateOf) on the job's NET price.
+        SELECT coalesce(sum(ct.amount_usd) FILTER (WHERE ct.type = 'charge'), 0) AS charged,
+               coalesce(sum(ct.amount_usd) FILTER (WHERE ct.type = 'compensation'), 0) AS compensated
           FROM client_transactions ct
          WHERE ct.deal_id = p.entity_id
            AND ct.voided_at IS NULL
-           AND ct.type = 'charge'
+           AND ct.type IN ('charge', 'compensation')
       ) inv ON p.entity_type = 'deal'
      WHERE ${sql.join(where, sql` AND `)}
      ORDER BY p.offered_at DESC
@@ -184,6 +207,7 @@ export async function upsaleRows(
       payableUsd: money(r.payable_usd),
       paidAt: r.payout_at ? new Date(r.payout_at) : null,
       paidUsd: r.payout_usd === null ? null : money(r.payout_usd),
+      compensatedUsd: money(r.compensated_usd),
       state,
     };
   });
@@ -246,18 +270,24 @@ export async function upsaleLiability(): Promise<{ payableUsd: number; payableCo
     payout_at: Date | null;
     client_id: string | null;
     charged_usd: string | null;
+    compensated_usd: string | null;
   }>(sql`
     SELECT p.entity_type, p.client_price_usd, p.payable_usd, p.payout_at,
            d.client_id,
-           inv.charged AS charged_usd
+           inv.charged AS charged_usd,
+           inv.compensated AS compensated_usd
       FROM (${payableOffersSql()}) p
       LEFT JOIN deals d ON d.id = p.entity_id AND p.entity_type = 'deal'
       LEFT JOIN LATERAL (
-        SELECT coalesce(sum(ct.amount_usd), 0) AS charged
+        -- The job's prices AND what was taken back for its lost cargo (0105),
+        -- in both readers — the screen and the Balans liability decide in
+        -- ONE place (upsaleStateOf) on the job's NET price.
+        SELECT coalesce(sum(ct.amount_usd) FILTER (WHERE ct.type = 'charge'), 0) AS charged,
+               coalesce(sum(ct.amount_usd) FILTER (WHERE ct.type = 'compensation'), 0) AS compensated
           FROM client_transactions ct
          WHERE ct.deal_id = p.entity_id
            AND ct.voided_at IS NULL
-           AND ct.type = 'charge'
+           AND ct.type IN ('charge', 'compensation')
       ) inv ON p.entity_type = 'deal'
      WHERE p.payout_expense_id IS NULL
        AND p.entity_type = 'deal'

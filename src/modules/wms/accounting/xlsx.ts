@@ -1,4 +1,5 @@
 import ExcelJS from 'exceljs';
+import { marginPct } from './margin';
 import { eq } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { expenseCategories } from '../../platform/db/schema';
@@ -126,14 +127,26 @@ export async function buildPnlXlsx(from: string, to: string, locale?: string): P
     return row;
   };
 
+  // Compensation for lost cargo (0105): gross − compensation = revenue, by
+  // this file's own «— rows sum into the bold line that follows» (U22). With
+  // no compensation the file is exactly as before.
+  if (pnl.compensation.total !== 0) {
+    line(`— ${L.grossCharges}`, pnl.grossCharges.byPeriod, pnl.grossCharges.total);
+    line(
+      `— ${L.compensation}`,
+      Object.fromEntries(Object.entries(pnl.compensation.byPeriod).map(([month, usd]) => [month, -usd])),
+      -pnl.compensation.total,
+    );
+  }
   line(L.revenue, pnl.revenue.byPeriod, pnl.revenue.total, true);
   for (const row of pnl.directCosts) line(`— ${row.label}`, row.byPeriod, row.total);
   line(L.directCosts, pnl.directTotal.byPeriod, pnl.directTotal.total, true);
   line(L.grossProfit, pnl.grossProfit.byPeriod, pnl.grossProfit.total, true);
   sheet.addRow([
     L.margin,
-    ...pnl.months.map((month) => pnl.grossMarginPct[month] ?? 0),
-    pnl.grossMarginPct.total ?? 0,
+    // «—» over a month whose net revenue is not positive (0105, `marginPct`).
+    ...pnl.months.map((month) => pnl.grossMarginPct[month] ?? '—'),
+    pnl.grossMarginPct.total ?? '—',
     '',
   ]);
   for (const row of pnl.opex) line(`— ${row.label}`, row.byPeriod, row.total);
@@ -316,8 +329,8 @@ export async function buildProfitXlsx(
     pnlGaps(from, to),
     view === 'client' ? Promise.resolve(null) : unbatchedMoney(from, to),
   ]);
-  const margin = (totals: { revenue: number; profit: number }) =>
-    totals.revenue ? Math.round((totals.profit / totals.revenue) * 1000) / 10 : 0;
+  // The one margin rule (0105): «—» over revenue that is not positive.
+  const margin = (totals: { revenue: number; profit: number }) => marginPct(totals.profit, totals.revenue) ?? '—';
   const bold = (row: ExcelJS.Row) => {
     row.font = { bold: true };
   };
@@ -385,7 +398,7 @@ export async function buildProfitXlsx(
     ];
     for (const row of rows) {
       sheet.addRow([
-        row.clientCode, row.clientName, row.revenueUsd, row.costUsd, row.profitUsd, row.marginPct,
+        row.clientCode, row.clientName, row.revenueUsd, row.costUsd, row.profitUsd, row.marginPct ?? '—',
       ]);
     }
     // The screen's own two lines (U19), so the file reconciles to the P&L as

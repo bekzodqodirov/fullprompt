@@ -1,3 +1,4 @@
+import { marginPct } from '@/modules/wms/accounting/margin';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
@@ -251,7 +252,7 @@ export default async function ProfitPage({
                     {usd(totals.profit)}
                   </td>
                   <td className="p-2 text-right">
-                    {totals.revenue ? Math.round((totals.profit / totals.revenue) * 1000) / 10 : 0}%
+                    {marginPct(totals.profit, totals.revenue) === null ? '—' : `${marginPct(totals.profit, totals.revenue)}%`}
                   </td>
                   {view !== 'client' && <td />}
                 </tr>
@@ -291,10 +292,17 @@ export default async function ProfitPage({
       {/* Said when EITHER half has money (U37): the cost half — cargo that
           rode no priced truck — used to be silent whenever the revenue half
           was zero. */}
-      {unbatched && (unbatched.revenueUsd > 0.009 || unbatchedCostUsd > 0.009) && (
+      {unbatched && (unbatched.revenueUsd > 0.009 || unbatchedCostUsd > 0.009 || unbatched.compensationUsd > 0.009) && (
         <div className="card space-y-1 !p-3 text-sm text-ink-700" data-testid="profit-unbatched">
           {unbatched.revenueUsd > 0.009 && (
             <p>ℹ️ {t('unbatchedNote', { revenue: `$${usd(unbatched.revenueUsd)}` })}</p>
+          )}
+          {/* Compensation for lost cargo (0105): on no truck and taken off the
+              P&L's revenue, so the tables and the P&L still reconcile. */}
+          {unbatched.compensationUsd > 0.009 && (
+            <p data-testid="profit-unbatched-compensation">
+              ℹ️ {t('unbatchedCompensation', { amount: `$${usd(unbatched.compensationUsd)}` })}
+            </p>
           )}
           {unbatchedCost && unbatchedCostUsd > 0.009 && (
             <p data-testid="profit-unbatched-cost">

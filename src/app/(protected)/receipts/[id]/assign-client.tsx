@@ -48,6 +48,11 @@ export function AssignClient({ receiptId, current }: { receiptId: string; curren
       {state.error === 'boxes_crated' && (
         <p className="text-sm font-semibold text-bad">{t('assignCrated')}</p>
       )}
+      {/* 0105: the compensation is money paid to THIS client for THIS
+          prixod's lost cargo — moving the cargo would leave it behind. */}
+      {state.error === 'receipt_has_compensation' && (
+        <p className="text-sm font-semibold text-bad">{t('assignHasCompensation')}</p>
+      )}
       {selected ? (
         <form action={formAction} className="flex items-center gap-2">
           <input type="hidden" name="receiptId" value={receiptId} />

@@ -20,6 +20,7 @@ import {
 } from '../finance/fx-residue';
 import { FX_PNL_SIGN } from '../finance/fx-sign';
 import { partnerSignedSql } from '../partners/ledger-sign';
+import { ledgerAlias, signedUsdSql } from '../finance/ledger-sql';
 
 /**
  * Q18 (the owner's answer, 2026-09-25): «qarzdorliklarning qiymati o'zgarsa
@@ -412,7 +413,7 @@ async function balancesTx(tx: Tx, ledger: FxLedger, owners: string[]): Promise<M
     ledger === 'client'
       ? await rows<{ id: string; b: string }>(
           tx,
-          sql`SELECT client_id AS id, coalesce(sum(CASE WHEN type = 'payment' THEN -amount_usd ELSE amount_usd END), 0) AS b
+          sql`SELECT client_id AS id, coalesce(sum(${signedUsdSql(ledgerAlias(''))}), 0) AS b
                 FROM client_transactions WHERE voided_at IS NULL AND client_id IN (${ids(owners)}) GROUP BY client_id`,
         )
       : await rows<{ id: string; b: string }>(

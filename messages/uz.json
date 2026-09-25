@@ -795,7 +795,10 @@
       "forbidden": "Ruxsat yo'q.",
       "box_not_found": "Karobka topilmadi."
     },
-    "voidSharedCost": "{code} xarajati yuksiz qoladi — bu karobkalar uning butun yuki. Avval shu xarajatni bekor qiling (moliya), keyin prixodni."
+    "voidSharedCost": "{code} xarajati yuksiz qoladi — bu karobkalar uning butun yuki. Avval shu xarajatni bekor qiling (moliya), keyin prixodni.",
+    "voidHasCompensation": "Bu prixod bo‘yicha mijozga kompensatsiya yozilgan. Avval buxgalter uni bekor qilsin.",
+    "assignHasCompensation": "Bu prixod bo‘yicha mijozga kompensatsiya yozilgan — mijozni almashtirishdan oldin buxgalter uni bekor qilsin va to‘g‘ri mijozga qayta yozsin.",
+    "dealLinkCompensation": "Bu prixod bo‘yicha kompensatsiya yozilgan — u ham yangi bitimga o‘tadi."
   },
   "stock": {
     "title": "Sklad (qoldiqlar)",
@@ -1282,7 +1285,8 @@
     "approvalDebt": "Qarz: ${amount}",
     "approvalUnpriced": "Narx qo‘yilmagan: {receipts} prixod · {boxes} karobka",
     "approvalPriceLink": "Narx qo‘yish →",
-    "approvalPriced": "✅ narx qo‘yildi"
+    "approvalPriced": "✅ narx qo‘yildi",
+    "compensatedFound": "⚠ {receipts} prixod(lar)i bo‘yicha mijozga kompensatsiya yozilgan va karobka topilgan — berishdan oldin buxgalter bilan gaplashing."
   },
   "pipeline": {
     "title": "Mening klientlarim",
@@ -1410,7 +1414,7 @@
     "perKgArrived": "/kg yetib kelgan",
     "perKgLoaded": "/kg yuklangan",
     "advanceNow": "avans ${amount}",
-    "refundExceedsAdvance": "Bu summaga avans yo‘q. Yo‘qolgan yuk uchun bo‘lsa — narxni tushiring (bitim chegirmasi, keyin hisobni to‘g‘rilang), so‘ng qaytaring. Eski (tizimdan oldingi) avans bo‘lsa — avval o‘sha to‘lovni kiriting.",
+    "refundExceedsAdvance": "Bu summaga avans yo‘q. Yo‘qolgan yuk uchun bo‘lsa — avval «Yo‘qolgan yuk» orqali narxni tushiring yoki narxdan ortiq qismiga kompensatsiya yozing, so‘ng qaytaring. Eski (tizimdan oldingi) avans bo‘lsa — avval o‘sha to‘lovni kiriting.",
     "paymentNoTill": "Pul qaysi kassaga tushganini buxgalter belgilaydi.",
     "voidNeedsAccountant": "Buni buxgalter yoki admin bekor qiladi.",
     "clientNotAboard": "Bu mijozning yuki bu mashinada yo‘q — narx yuk ketgan mashinaga qo‘yiladi",
@@ -1447,7 +1451,33 @@
     "fxCloseTooLarge": "Qoldiq kurs farqidan katta (to‘lovning 2 % yoki $5 dan ortiq) — bu haqiqiy qarz, to‘lovni yoki narxni tekshiring.",
     "fxCloseLegacyFirst": "Bu hisobda eski kurs qoldig‘i bor — avval uni «Kurs qoldiqlari»da ko‘rib chiqing.",
     "fxCloseRefused": "Yopib bo‘lmadi — sahifani yangilab, qaytadan urinib ko‘ring.",
-    "fxLegacyLink": "Kurs qoldiqlari"
+    "fxLegacyLink": "Kurs qoldiqlari",
+    "compensation": "Kompensatsiya",
+    "lostCargoDoor": "Yo‘qolgan yuk: narx va kompensatsiya",
+    "compensationReceipt": "Qaysi prixodning yuki yo‘qolgan",
+    "compensationCharges": "Shu yuk uchun qo‘yilgan narxlar — yo‘qolgan qism uchun tushiring",
+    "compensationNewPrice": "Yangi narx",
+    "compensationZeroHint": "0 — narx butunlay olib tashlanadi; shu reysda mijozning boshqa yuki bo‘lsa, u narxsiz qoladi.",
+    "compensationAmount": "Kompensatsiya (narximizdan ortiq qismi)",
+    "compensationTotal": "Mijozga: narx −{lowered}, kompensatsiya {comp}",
+    "compensationReason": "Sabab (majburiy)",
+    "compensationHint": "Narximiz doirasidagi qismi — yuqorida narxni tushiring: reys va bitim foydasi o‘zgaradi. Undan ortig‘i — «Kompensatsiya»: mijoz hisobidan va bitim tushumidan ayiriladi, kassaga tegmaydi. Naqd pulni keyin «Pul qaytarildi» bilan bering.",
+    "compensationNoLost": "Bu mijozning «yo‘qolgan» deb belgilangan yuki yo‘q. Sklad mudiri yoki logist karobkani prixod sahifasida «yo‘qolgan» deb belgilasin, keyin shu yerda yozing.",
+    "compensationLostCount": "yo‘qolgan: {count} / {total}",
+    "compensationTruncated": "Eng yangi 100 ta prixod ko‘rsatildi — undan eskisi kerak bo‘lsa, admin bilan gaplashing.",
+    "compensationFound": "⚠ kompensatsiyadan keyin {count} ta karobka topildi — tekshiring",
+    "compensationSaved": "Saqlandi. Naqd pul berilsa — «Pul qaytarildi» bilan kassadan chiqaring.",
+    "compensationReceiptMismatch": "Bu prixod bu mijozniki emas yoki bekor qilingan.",
+    "compensationNoLostCargo": "Bu prixodda «yo‘qolgan» karobka yo‘q — kompensatsiya faqat yo‘qolgan yuk uchun yoziladi.",
+    "compensationChargeNotForCargo": "Bu narx shu prixod yukiga tegishli emas — sahifani yangilang.",
+    "compensationPriceNotLower": "Yangi narx hozirgisidan past bo‘lishi kerak.",
+    "compensationChargeTaken": "Bu narx allaqachon o‘zgartirilgan yoki bekor qilingan — sahifani yangilang.",
+    "compensationNothing": "Narxni tushiring yoki kompensatsiya summasini yozing.",
+    "compensationReasonRequired": "Sababini yozing (kamida 3 harf).",
+    "payoutForbidden": "Mijozga pul qaytarish va kompensatsiyani faqat buxgalter yoki admin yozadi.",
+    "compensationPaidOut": "Bu kompensatsiya hisobidan mijozga naqd pul berilgan — bekor qilinsa, mijoz o‘sha pulga qarzdor bo‘lib qoladi. Summa xato bo‘lsa: avval to‘g‘risini yozing, keyin buni bekor qiling. Yuk topilib, mijoz pulni qaytargan bo‘lsa: avval uning to‘lovini kassaga kiriting. Mijoz pulni qaytarishi kerak, lekin hali qaytarmagan bo‘lsa: buni bekor qilmang — «Hisoblandi» bilan shu summani yozing.",
+    "compensationVoidWarn": "Kompensatsiya bekor qilinadi. Naqd pul berilgan bo‘lsa, tizim to‘xtatadi va yo‘lini aytadi.",
+    "compensatedCol": "🤝 −{amount}"
   },
   "map": {
     "title": "Xarita",
@@ -1795,7 +1825,10 @@
     "unmergeDone": "Bekor qilindi: xarajat tiklandi, {count} ta yuk xarajati navbatga qaytdi. Takrorni yuk xarajatining o‘zini (kartasida 🗑) bekor qilib yoki qayta birlashtirib olib tashlang — xarajatni bekor qilmang, rasxod xabari qayta ochiladi. Boshqa reysga qayta kiritsangiz, sanani {dates} qo‘ying.",
     "unmergeOld": "{count} tasi kassa sanasidan oldin kiritilgan — navbatga tushmaydi.",
     "unmergeErrGone": "Bu birlashtirish allaqachon bekor qilingan — sahifani yangilang.",
-    "unmergeErrChanged": "Birlashtirilgandan keyin yuk xarajati yoki xarajat o‘zgargan — admin bilan tekshiring."
+    "unmergeErrChanged": "Birlashtirilgandan keyin yuk xarajati yoki xarajat o‘zgargan — admin bilan tekshiring.",
+    "pnlGrossCharges": "Hisoblangan narxlar",
+    "pnlCompensation": "− Kompensatsiya (yo‘qolgan yuk)",
+    "unbatchedCompensation": "Mijozlarga kompensatsiya {amount} — hech bir reysga yozilmaydi, tushumdan ayirilgan."
   },
   "crm": {
     "title": "CRM",
@@ -2139,7 +2172,8 @@
     "dayOthers": "Sotuvchilar bo‘yicha",
     "dayBack": "Faqat meniki",
     "wonOtherCurrency": "+{count} boshqa valyutada",
-    "feedRefund": "Pul qaytarildi"
+    "feedRefund": "Pul qaytarildi",
+    "feedCompensation": "Kompensatsiya"
   },
   "navShort": {
     "home": "Bosh",
@@ -2192,7 +2226,8 @@
     "offTripNoCargo": "⚠ yuki ketmagan",
     "offTripLoading": "yuklanmoqda",
     "tripDropped": "⚠ narx qo‘yilgandan keyin {n} karobka tushib qoldi",
-    "pricedElsewhere": "narx boshqa reysda yoki bitimda"
+    "pricedElsewhere": "narx boshqa reysda yoki bitimda",
+    "compensatedTotal": "🤝 Kompensatsiya:"
   },
   "arrivals": {
     "title": "Kelayotgan yuklar",
@@ -2520,7 +2555,9 @@
     "cardAlarms": "Ogohlantirishlar",
     "cardFields": "Kartochkada nima",
     "volumeM3": "Hajm (m³)",
-    "weightKg": "Og'irlik (kg)"
+    "weightKg": "Og'irlik (kg)",
+    "profitCompensation": "− kompensatsiya (yo‘qolgan yuk)",
+    "profitNetRevenue": "Tushum (kompensatsiyadan keyin)"
   },
   "automation": {
     "title": "Avtomatlashtirish qoidalari",
@@ -3370,7 +3407,8 @@
     "categoryHint": "Ulush oddiy xarajat bo‘lib yoziladi. Alohida tur majburiy: «Oyliklar» ichidan to‘lansa, o‘sha sotuvchining o‘sha oygi maoshi jimgina to‘langan deb hisoblanadi.",
     "categoryAsk": "Faqat administrator tanlay oladi.",
     "periodByOffer": "Taklif sanasi",
-    "periodHint": "Davr taklif berilgan kun bo‘yicha. Xarajatlar va P&L esa to‘lovni pul berilgan kun bo‘yicha ko‘rsatadi."
+    "periodHint": "Davr taklif berilgan kun bo‘yicha. Xarajatlar va P&L esa to‘lovni pul berilgan kun bo‘yicha ko‘rsatadi.",
+    "compensated": "⚠ bitimda kompensatsiya: −{amount} (yo‘qolgan yuk)"
   },
   "sellerReport": {
     "title": "Sotuvchilar: natija",
@@ -3430,7 +3468,8 @@
     "colWho": "Kim",
     "colMoney": "Jonli pullar",
     "paidFromTill": "Bu prixodning kassadan to‘langan xarajati bor. Avval buxgalter uni bekor qilsin — pul kassaga qaytadi.",
-    "mergedCost": "Bu prixodning buxgalter xarajati bilan birlashtirilgan xarajati bor. Avval buxgalter birlashtirishni bekor qilsin."
+    "mergedCost": "Bu prixodning buxgalter xarajati bilan birlashtirilgan xarajati bor. Avval buxgalter birlashtirishni bekor qilsin.",
+    "hasCompensation": "Bu prixod bo‘yicha mijozga kompensatsiya yozilgan. Avval buxgalter uni bekor qilsin."
   },
   "customsImport": {
     "title": "Bojxona bazasi (import)",

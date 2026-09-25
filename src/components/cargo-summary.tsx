@@ -171,6 +171,11 @@ export async function CargoSummary({
           <span className="num">
             {t('paidTotal')} <b>${cargo.paidUsd.toFixed(2)}</b>
           </span>
+          {cargo.compensatedUsd > 0.009 && (
+            <span className="num text-ink-500" data-testid="cargo-compensated">
+              {t('compensatedTotal')} <b>${cargo.compensatedUsd.toFixed(2)}</b>
+            </span>
+          )}
           <span className={`num ml-auto font-extrabold ${cargo.balanceUsd > 0.009 ? 'text-bad' : 'text-good'}`}>
             {t('balance')} ${cargo.balanceUsd.toFixed(2)}
           </span>

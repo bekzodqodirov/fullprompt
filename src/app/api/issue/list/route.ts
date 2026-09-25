@@ -7,6 +7,7 @@ import { clientBalanceUsd, deferredBalanceUsd } from '@/modules/wms/finance/serv
 import { approvalStateFor } from '@/modules/wms/issue/approvals';
 import { ISSUABLE_STATUSES } from '@/modules/wms/issue/parties';
 import { gatedAt, uncoveredBoxesOn, unpricedGate, unpricedReceiptsOn } from '@/modules/wms/finance/unpriced';
+import { compensatedReceiptsAmong } from '@/modules/wms/finance/compensation';
 
 const querySchema = z.object({
   warehouseId: z.string().uuid(),
@@ -95,6 +96,10 @@ export async function GET(request: Request) {
     };
   });
 
+  // 0105: a carton found after its prixod's loss was compensated — the
+  // screen says so (no amount); the accountant was told by Telegram.
+  const compensated = await compensatedReceiptsAmong(rows.map((row) => row.boxId));
+
   return Response.json({
     boxes: rows.map((row) => ({
       ...row,
@@ -106,6 +111,7 @@ export async function GET(request: Request) {
     canOverrideDebt,
     approval,
     unpriced,
+    compensated,
     gate: gate.state === 'on' ? { state: 'on', since: gate.since.toISOString() } : { state: gate.state, since: null },
   });
 }

@@ -15,9 +15,14 @@
  *   the VED can still take back under the «records without a kassa, the
  *   accountant places it» default. Once placed, it is cash in a drawer.
  * Everything else — a placed payment, a refund, somebody else's unplaced
- * payment, and any kind a later round adds (e.g. «Kompensatsiya») — is the
- * holders'. An ALLOW-list on purpose: a new kind is refused until somebody
- * decides otherwise.
+ * payment, a «Kompensatsiya» (0105), and any kind a later round adds — is
+ * the holders'. An ALLOW-list on purpose: a new kind is refused until
+ * somebody decides otherwise.
+ *
+ * The compensation was DECIDED, not defaulted (Q15): it is the other half of
+ * the refund it funds — money given to a client, written only by the kassa
+ * holders (`mayPickTill`) — so it is voided only by them, and even then only
+ * while the cash handed back stays covered (`compensationVoidFits`).
  *
  * A «kurs farqi» row (0103) is NOBODY's ✖, the kassa holders' included:
  * the system writes it when a currency closes and voids it when the cycle

@@ -36,7 +36,9 @@ import {
   transferFxUsd,
 } from './cash-rules';
 import { FX_PNL_SIGN } from '../finance/fx-sign';
-import { isDebit, signedUsd } from '../finance/ledger-kinds';
+import { isDebit, REVENUE_TYPES, signedUsd } from '../finance/ledger-kinds';
+import { kindList, ledgerAlias, revenueUsdSql } from '../finance/ledger-sql';
+import { marginPct } from './margin';
 import { rideMovementSql, riderLoad } from '../batches/riders';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 
@@ -83,11 +85,20 @@ export function monthsBetween(from: string, to: string): string[] {
 
 export interface Pnl {
   months: string[];
+  /**
+   * NET of compensation (0105, Q15): the prices charged minus what was taken
+   * back for lost cargo. Every reader of the P&L — the gross and net profit,
+   * the dashboard, the monthly plan — follows this row.
+   */
   revenue: PnlRow;
+  /** The prices charged (gross) and the compensations (positive), the two parts of `revenue`. */
+  grossCharges: PnlRow;
+  compensation: PnlRow;
   directCosts: PnlRow[];
   directTotal: PnlRow;
   grossProfit: PnlRow;
-  grossMarginPct: Record<string, number>;
+  /** Null over a month whose net revenue is not positive (`marginPct`). */
+  grossMarginPct: Record<string, number | null>;
   opex: PnlRow[];
   opexTotal: PnlRow;
   /**
@@ -313,15 +324,19 @@ export async function profitAndLoss(from: string, to: string): Promise<Pnl> {
   const months = monthsBetween(from, to);
   const empty = () => Object.fromEntries(months.map((m) => [m, 0]));
 
+  // ONE statement for both parts of revenue (0105): the prices and the
+  // compensations for lost cargo (a price taken back — contra-revenue, never
+  // opex, DEALS.md answer 3). Revenue = gross − compensation, in its month.
   const revenueRows = await db
     .select({
       month: sql<string>`to_char(${clientTransactions.txDate}, 'YYYY-MM')`,
-      sum: sql<string>`sum(${clientTransactions.amountUsd})`,
+      gross: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) FILTER (WHERE ${clientTransactions.type} = 'charge'), 0)`,
+      comp: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) FILTER (WHERE ${clientTransactions.type} = 'compensation'), 0)`,
     })
     .from(clientTransactions)
     .where(
       and(
-        eq(clientTransactions.type, 'charge'),
+        inArray(clientTransactions.type, [...REVENUE_TYPES]),
         isNull(clientTransactions.voidedAt),
         gte(clientTransactions.txDate, from),
         lte(clientTransactions.txDate, to),
@@ -329,11 +344,18 @@ export async function profitAndLoss(from: string, to: string): Promise<Pnl> {
     )
     .groupBy(sql`to_char(${clientTransactions.txDate}, 'YYYY-MM')`);
 
+  const grossCharges: PnlRow = { key: 'grossCharges', label: 'grossCharges', byPeriod: empty(), total: 0 };
+  const compensation: PnlRow = { key: 'compensation', label: 'compensation', byPeriod: empty(), total: 0 };
   const revenue: PnlRow = { key: 'revenue', label: 'revenue', byPeriod: empty(), total: 0 };
   for (const row of revenueRows) {
-    if (row.month in revenue.byPeriod) revenue.byPeriod[row.month] = money(row.sum);
+    if (!(row.month in revenue.byPeriod)) continue;
+    grossCharges.byPeriod[row.month] = money(row.gross);
+    compensation.byPeriod[row.month] = money(row.comp);
+    revenue.byPeriod[row.month] = money(money(row.gross) - money(row.comp));
   }
-  revenue.total = money(Object.values(revenue.byPeriod).reduce((a, b) => a + b, 0));
+  for (const part of [grossCharges, compensation, revenue]) {
+    part.total = money(Object.values(part.byPeriod).reduce((a, b) => a + b, 0));
+  }
 
   // Direct cargo costs, split by cost type so the P&L shows WHERE the money
   // went, not just a lump "cost of sales".
@@ -468,21 +490,16 @@ export async function profitAndLoss(from: string, to: string): Promise<Pnl> {
     ),
     total: money(beforeFx.total + fxTotal.total),
   };
-  const grossMarginPct = Object.fromEntries(
-    months.map((month) => [
-      month,
-      revenue.byPeriod[month]
-        ? Math.round((grossProfit.byPeriod[month]! / revenue.byPeriod[month]!) * 1000) / 10
-        : 0,
-    ]),
+  const grossMarginPct: Record<string, number | null> = Object.fromEntries(
+    months.map((month) => [month, marginPct(grossProfit.byPeriod[month]!, revenue.byPeriod[month]!)]),
   );
-  grossMarginPct.total = revenue.total
-    ? Math.round((grossProfit.total / revenue.total) * 1000) / 10
-    : 0;
+  grossMarginPct.total = marginPct(grossProfit.total, revenue.total);
 
   return {
     months,
     revenue,
+    grossCharges,
+    compensation,
     directCosts,
     directTotal,
     grossProfit,
@@ -1233,9 +1250,13 @@ export async function profitByBatch(from: string, to: string) {
         SELECT ${internalLegSql('o', 'd')} FROM warehouses o, warehouses d
         WHERE o.id = ${batches}.origin_warehouse_id AND d.id = ${batches}.dest_warehouse_id
       ), false)`,
+      // Through the one revenue rule (0105) — identical today, because a
+      // compensation names no truck (its CHECK): the lost cargo's part within
+      // our price reaches the truck by LOWERING its charge.
       revenueUsd: sql<string>`coalesce((
-        SELECT sum(ct.amount_usd) FROM client_transactions ct
-        WHERE ct.batch_id = ${batches}.id AND ct.type = 'charge' AND ct.voided_at IS NULL
+        SELECT sum(${revenueUsdSql(ledgerAlias('ct'))}) FROM client_transactions ct
+        WHERE ct.batch_id = ${batches}.id AND ct.type IN (${kindList(REVENUE_TYPES)})
+          AND ct.voided_at IS NULL
       ), 0)`,
       // Money typed against this truck that reached NO box — the engine had
       // nothing to split it over — so no landed cost carries it. Named beside
@@ -1321,7 +1342,7 @@ export async function profitByBatch(from: string, to: string) {
       prevUsd: prev,
       unallocatedUsd: money(row.unallocatedUsd),
       profitUsd: profit,
-      marginPct: profit === null ? null : revenue ? Math.round((profit / revenue) * 1000) / 10 : 0,
+      marginPct: profit === null ? null : marginPct(profit, revenue),
       profitPerKg: profit === null ? null : kg ? Math.round((profit / kg) * 100) / 100 : 0,
       profitPerM3: profit === null ? null : m3 ? Math.round((profit / m3) * 100) / 100 : 0,
     };
@@ -1355,6 +1376,12 @@ export async function profitByBatch(from: string, to: string) {
 export interface UnbatchedMoney {
   /** Charges that name no truck. The dashboard reads this name — keep it. */
   revenueUsd: number;
+  /**
+   * Compensations for lost cargo in the period (0105): on no truck by their
+   * CHECK and taken off the P&L's revenue — so Σ truck revenue + `revenueUsd`
+   * − this = the P&L's (net) revenue, and the reconciliation still closes.
+   */
+  compensationUsd: number;
   noTruckCost: { lostUsd: number; issuedUsd: number; waitingUsd: number };
 }
 
@@ -1381,8 +1408,19 @@ export async function unbatchedRevenue(from: string, to: string): Promise<number
 }
 
 export async function unbatchedMoney(from: string, to: string): Promise<UnbatchedMoney> {
-  const [revenueUsd, cost] = await Promise.all([
+  const [revenueUsd, compensated, cost] = await Promise.all([
     unbatchedRevenue(from, to),
+    db
+      .select({ sum: sql<string>`coalesce(sum(${clientTransactions.amountUsd}), 0)` })
+      .from(clientTransactions)
+      .where(
+        and(
+          eq(clientTransactions.type, 'compensation'),
+          isNull(clientTransactions.voidedAt),
+          gte(clientTransactions.txDate, from),
+          lte(clientTransactions.txDate, to),
+        ),
+      ),
     // Summed per BOX first, then the ride probe once per box and not once
     // per allocation (a year is ~3 allocations a box).
     db.execute(sql`
@@ -1411,6 +1449,7 @@ export async function unbatchedMoney(from: string, to: string): Promise<Unbatche
   ]);
   return {
     revenueUsd,
+    compensationUsd: money(compensated[0]?.sum),
     noTruckCost: {
       lostUsd: money(cost[0]?.lost),
       issuedUsd: money(cost[0]?.issued),
@@ -1502,13 +1541,15 @@ export async function profitByClient(from: string, to: string) {
       clientId: clientTransactions.clientId,
       clientCode: clients.clientCode,
       clientName: clients.name,
-      revenueUsd: sql<string>`sum(${clientTransactions.amountUsd})`,
+      // NET of compensation (0105): a client whose only row in the period is
+      // a compensation for lost cargo is a red row, which is the truth.
+      revenueUsd: sql<string>`sum(${revenueUsdSql()})`,
     })
     .from(clientTransactions)
     .innerJoin(clients, eq(clientTransactions.clientId, clients.id))
     .where(
       and(
-        eq(clientTransactions.type, 'charge'),
+        inArray(clientTransactions.type, [...REVENUE_TYPES]),
         isNull(clientTransactions.voidedAt),
         gte(clientTransactions.txDate, from),
         lte(clientTransactions.txDate, to),
@@ -1579,7 +1620,7 @@ export async function profitByClient(from: string, to: string) {
         revenueUsd: revenue,
         costUsd: cost,
         profitUsd: profit,
-        marginPct: revenue ? Math.round((profit / revenue) * 1000) / 10 : 0,
+        marginPct: marginPct(profit, revenue),
       };
     })
     .sort((a, b) => b.profitUsd - a.profitUsd);
@@ -1632,8 +1673,7 @@ export async function profitByRoute(from: string, to: string) {
       return {
         ...entry,
         profitUsd: profit,
-        marginPct:
-          profit === null ? null : entry.revenueUsd ? Math.round((profit / entry.revenueUsd) * 1000) / 10 : 0,
+        marginPct: profit === null ? null : marginPct(profit, entry.revenueUsd),
         profitPerKg: profit === null ? null : entry.kg ? Math.round((profit / entry.kg) * 100) / 100 : 0,
       };
     })

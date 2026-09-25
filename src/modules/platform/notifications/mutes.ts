@@ -99,6 +99,10 @@ export const MUTE_GROUPS = {
     // the author, the arrival-diff rule).
     'BoxFoundHere',
     'BoxLost',
+    // 0105: a carton turned up on a prixod whose client was compensated for
+    // it — the accountant and the seller must act before the cargo AND the
+    // money leave. BoxLost's alarm, run backwards.
+    'CompensatedCargoFound',
     'ReceiptMeasureCorrected',
   ],
   operations: [

@@ -795,7 +795,10 @@
       "forbidden": "无权限。",
       "box_not_found": "未找到箱子。"
     },
-    "voidSharedCost": "{code} 的费用将没有货物承担——这些箱子是它的全部货物。请先作废该费用（财务），再作废入库单。"
+    "voidSharedCost": "{code} 的费用将没有货物承担——这些箱子是它的全部货物。请先作废该费用（财务），再作废入库单。",
+    "voidHasCompensation": "此入库单有给客户的赔偿记录。请先由会计作废。",
+    "assignHasCompensation": "此入库单有赔偿记录——更换客户前，请会计作废并记到正确的客户。",
+    "dealLinkCompensation": "此入库单有赔偿——将一并转到新交易。"
   },
   "stock": {
     "title": "库存",
@@ -1282,7 +1285,8 @@
     "approvalDebt": "欠款：${amount}",
     "approvalUnpriced": "未定价：{receipts} 张入库单 · {boxes} 箱",
     "approvalPriceLink": "去定价 →",
-    "approvalPriced": "✅ 已定价"
+    "approvalPriced": "✅ 已定价",
+    "compensatedFound": "⚠ 入库单 {receipts} 已给客户记录赔偿且箱子已找到——交付前请与会计沟通。"
   },
   "pipeline": {
     "title": "我的客户",
@@ -1410,7 +1414,7 @@
     "perKgArrived": "/公斤（已到）",
     "perKgLoaded": "/公斤（已装）",
     "advanceNow": "预付款 ${amount}",
-    "refundExceedsAdvance": "没有这么多预付款。如果是丢失货物的赔偿——请先降低价格（交易折扣，再更正费用），然后退款。如果是系统之前的旧预付款——请先录入那笔付款。",
+    "refundExceedsAdvance": "没有这么多预付款。如果是丢失货物——请先通过「丢失货物」降低价格或为超出价格的部分记录赔偿，然后退款。如果是系统之前的旧预付款——请先录入那笔付款。",
     "paymentNoTill": "款项进入哪个现金账户由会计登记。",
     "voidNeedsAccountant": "只有会计或管理员可以作废此项。",
     "clientNotAboard": "该客户在此车上没有货物——请在货物实际所乘车次上定价",
@@ -1447,7 +1451,33 @@
     "fxCloseTooLarge": "余差超出汇兑差额（超过付款的 2 % 或 $5）——这是真实债务，请核对付款或价格。",
     "fxCloseLegacyFirst": "该账户有历史汇兑余差——请先在“汇兑余差”中处理。",
     "fxCloseRefused": "无法结清——请刷新页面后重试。",
-    "fxLegacyLink": "汇兑余差"
+    "fxLegacyLink": "汇兑余差",
+    "compensation": "赔偿",
+    "lostCargoDoor": "丢失货物：价格与赔偿",
+    "compensationReceipt": "哪个入库单的货物丢失",
+    "compensationCharges": "为此货物设定的价格——请为丢失部分降低",
+    "compensationNewPrice": "新价格",
+    "compensationZeroHint": "0 表示完全取消价格；若该车次还有该客户的其他货物，则其将无价格。",
+    "compensationAmount": "赔偿（超出我方价格部分）",
+    "compensationTotal": "给客户：降价 −{lowered}，赔偿 {comp}",
+    "compensationReason": "原因（必填）",
+    "compensationHint": "我方价格以内——请在上方降价：车次和交易利润随之变化。超出部分——「赔偿」：减少客户欠款和交易收入，不动账户。现金之后用「退款给客户」支付。",
+    "compensationNoLost": "该客户没有标记为「丢失」的货物。请仓库主管或物流在入库单页面将箱子标记为丢失，然后在此记录。",
+    "compensationLostCount": "丢失：{count}/{total}",
+    "compensationTruncated": "仅显示最新的 100 个入库单——如需更早的，请联系管理员。",
+    "compensationFound": "⚠ 赔偿后已找到 {count} 箱——请核对",
+    "compensationSaved": "已保存。如支付现金，请用「退款给客户」从账户支出。",
+    "compensationReceiptMismatch": "该入库单不属于此客户或已作废。",
+    "compensationNoLostCargo": "该入库单没有标记为丢失的箱子——赔偿只针对丢失的货物。",
+    "compensationChargeNotForCargo": "该价格不属于此入库单的货物——请刷新页面。",
+    "compensationPriceNotLower": "新价格必须低于当前价格。",
+    "compensationChargeTaken": "该价格已被更改或作废——请刷新页面。",
+    "compensationNothing": "请降低价格或填写赔偿金额。",
+    "compensationReasonRequired": "请填写原因（至少3个字符）。",
+    "payoutForbidden": "只有会计或管理员可以记录退款或赔偿。",
+    "compensationPaidOut": "已按此赔偿向客户支付现金——作废后客户将欠这笔钱。金额错误：请先录入正确金额，再作废此条。货物已找到且客户已退款：请先将其付款录入账户。客户应退还但尚未退还：不要作废——请以「应收」记录该金额。",
+    "compensationVoidWarn": "将作废此赔偿。如已支付现金，系统会阻止并说明做法。",
+    "compensatedCol": "🤝 −{amount}"
   },
   "map": {
     "title": "地图",
@@ -1795,7 +1825,10 @@
     "unmergeDone": "已取消：费用已恢复，{count} 笔回到队列。请作废货物费用本身（其卡片上的 🗑）或重新合并来去除重复——不要作废会计费用，否则报销申请会重新打开。在其他车次重新录入时，日期填 {dates}。",
     "unmergeOld": "{count} 笔在账户日期之前录入，不进入队列。",
     "unmergeErrGone": "此合并已被取消——请刷新页面。",
-    "unmergeErrChanged": "合并后货物费用或费用已变更——请与管理员核对。"
+    "unmergeErrChanged": "合并后货物费用或费用已变更——请与管理员核对。",
+    "pnlGrossCharges": "已开价格",
+    "pnlCompensation": "− 赔偿（丢失货物）",
+    "unbatchedCompensation": "给客户的赔偿 {amount}——不属于任何车次，已从收入中扣除。"
   },
   "crm": {
     "title": "CRM",
@@ -2139,7 +2172,8 @@
     "dayOthers": "按销售",
     "dayBack": "仅我的",
     "wonOtherCurrency": "另有 {count} 笔为其他货币",
-    "feedRefund": "退款给客户"
+    "feedRefund": "退款给客户",
+    "feedCompensation": "给客户的赔偿"
   },
   "navShort": {
     "home": "首页",
@@ -2192,7 +2226,8 @@
     "offTripNoCargo": "⚠ 货物未随车",
     "offTripLoading": "装车中",
     "tripDropped": "⚠ 定价后 {n} 箱被留下",
-    "pricedElsewhere": "已在其他车次或交易中定价"
+    "pricedElsewhere": "已在其他车次或交易中定价",
+    "compensatedTotal": "🤝 赔偿："
   },
   "arrivals": {
     "title": "待收货物",
@@ -2520,7 +2555,9 @@
     "cardAlarms": "提醒",
     "cardFields": "卡片显示",
     "volumeM3": "方数（m³）",
-    "weightKg": "重量（kg）"
+    "weightKg": "重量（kg）",
+    "profitCompensation": "− 赔偿（丢失货物）",
+    "profitNetRevenue": "收入（扣除赔偿后）"
   },
   "automation": {
     "title": "自动化规则",
@@ -3370,7 +3407,8 @@
     "categoryHint": "分成按普通费用记账。必须使用专用类别：若从「工资」中支付，该销售当月的工资会被悄悄视为已发放。",
     "categoryAsk": "只有管理员可以选择。",
     "periodByOffer": "报价日期",
-    "periodHint": "期间按报价日期计算。费用和损益表按实际发放日期显示佣金。"
+    "periodHint": "期间按报价日期计算。费用和损益表按实际发放日期显示佣金。",
+    "compensated": "⚠ 该交易有赔偿：−{amount}（丢失货物）"
   },
   "sellerReport": {
     "title": "销售业绩",
@@ -3430,7 +3468,8 @@
     "colWho": "操作人",
     "colMoney": "在册资金",
     "paidFromTill": "该入库单有从账户支付的费用。请先由会计作废——款项会退回账户。",
-    "mergedCost": "该入库单有与会计费用合并的费用。请先由会计取消合并。"
+    "mergedCost": "该入库单有与会计费用合并的费用。请先由会计取消合并。",
+    "hasCompensation": "此入库单有给客户的赔偿记录。请先由会计作废。"
   },
   "customsImport": {
     "title": "海关基价库（导入）",

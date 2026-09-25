@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, isNull, lte, sql, type AnyColumn, type SQL } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull, lte, sql, type SQL } from 'drizzle-orm';
 import { latestTxDate } from './dates';
 import { fxResidueAllowance, exceedsRowUsd, nativeAmount } from './money-bounds';
 import { z } from 'zod';
@@ -9,13 +9,15 @@ import {
   clientTransactions,
   deals,
   moneyAccounts,
+  receipts,
   partnerTransactions,
   partners,
   users,
 } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import type { Db, Tx } from '../../platform/db/client';
-import { LEDGER_TYPES, PRICE_KINDS } from './ledger-kinds';
+import { LEDGER_TYPES, isClientPayout } from './ledger-kinds';
+import { ledgerAlias, netPaidUsdSql, signedUsdSql } from './ledger-sql';
 import { fxWalkSql, lockOwnersTx, nativeSql, ownersSql, reconcileFxResidueTx } from './fx-residue';
 import { rateFor } from '../costing/service';
 import { batchRoute } from '../batches/internal';
@@ -38,41 +40,26 @@ export class FinanceError extends Error {
 
 /**
  * The one sign rule of the client ledger (0101): a charge and a refund RAISE
- * what the client owes us, a payment lowers it. Every balance restates this
- * through `signedUsdSql` — `CASE WHEN type = 'charge' … ELSE -…` read a refund
- * as a payment, i.e. money we handed back as money we received, and
- * `tests/unit/client-ledger-sign.test.ts` keeps that shape out of `src/`.
+ * what the client owes us, a payment and a compensation (0105) lower it, a
+ * kurs farqi row carries its own sign. Every balance restates this through
+ * `signedUsdSql` — `CASE WHEN type = 'charge' … ELSE -…` read a refund as a
+ * payment, and `CASE WHEN type = 'payment' THEN -… ELSE …` read a
+ * compensation as a charge; `tests/unit/client-ledger-sign.test.ts` keeps
+ * both shapes out of `src/`. Every SQL builder below is BUILT from
+ * `LEDGER_RULES` (the lists are compile-time constants, never input), so a
+ * kind added there needs no second answer here.
  */
 export { LEDGER_TYPES, type LedgerType, signedUsd, settlesUsd } from './ledger-kinds';
-
-/** +amount_usd for a charge or a refund, −amount_usd for a payment. */
-export function signedUsdSql(table: { type: AnyColumn; amountUsd: AnyColumn } = clientTransactions): SQL {
-  return sql`(CASE WHEN ${table.type} = 'payment' THEN -${table.amountUsd} ELSE ${table.amountUsd} END)`;
-}
-
-/**
- * Money RECEIVED net of money handed back: +payment, −refund, 0 for a charge.
- * «To'landi» on a screen that also shows a balance must be this, or the two
- * columns stop adding up to it.
- */
-export function netPaidUsdSql(table: { type: AnyColumn; amountUsd: AnyColumn } = clientTransactions): SQL {
-  return sql`(CASE WHEN ${table.type} = 'payment' THEN ${table.amountUsd} WHEN ${table.type} = 'refund' THEN -${table.amountUsd} ELSE 0 END)`;
-}
-
-/**
- * What a row takes off the balance, in SQL (0103): payment +, refund −, a kurs
- * farqi −(its signed dollars), a charge 0 — for the walks that settle charges
- * oldest-first. The JS twin is `settlesUsd` in ledger-kinds.ts.
- */
-export function settlesUsdSql(table: { type: AnyColumn; amountUsd: AnyColumn } = clientTransactions): SQL {
-  // −(the sign rule) for every non-price kind, exactly as the JS twin says:
-  // derived from LEDGER_RULES, so a kind added there needs no second answer.
-  const prices = sql.join(
-    PRICE_KINDS.map((kind) => sql`${kind}`),
-    sql`, `,
-  );
-  return sql`(CASE WHEN ${table.type} IN (${prices}) THEN 0 ELSE -${signedUsdSql(table)} END)`;
-}
+export {
+  creditUsdSql,
+  debitUsdSql,
+  ledgerAlias,
+  netPaidUsdSql,
+  revenueUsdSql,
+  settlesUsdSql,
+  signedUsdSql,
+  type LedgerCols,
+} from './ledger-sql';
 
 /**
  * A client's money per currency — its OWN money (the kinds' native signs, a
@@ -86,7 +73,7 @@ export async function clientMoneyByCurrency(
 ): Promise<{ currency: string; native: number; usd: number }[]> {
   const rows = (await handle.execute(sql`
     SELECT t.currency, coalesce(sum(${nativeSql('client')}), 0) AS native,
-           coalesce(sum(CASE WHEN t.type = 'payment' THEN -t.amount_usd ELSE t.amount_usd END), 0) AS usd
+           coalesce(sum(${signedUsdSql(ledgerAlias('t'))}), 0) AS usd
       FROM client_transactions t
      WHERE t.client_id = ${clientId}::uuid AND t.voided_at IS NULL
      GROUP BY t.currency
@@ -495,7 +482,9 @@ export async function voidTransaction(
    * the money back into the drawer on paper — the till reads more cash than
    * it holds and the client's ledger forgets the money was handed back — so
    * it asks the grant that created it (#1014), the pair #1018 closed for a
-   * kassa-paid cost. Judged by the ROW's type, never the form's.
+   * kassa-paid cost. Judged by the ROW's type, never the form's. A
+   * COMPENSATION (0105) is the other half of that one decision — money given
+   * to the client, written by the kassa holders — and is voided by them too.
    */
   door: { mayMoveTill: boolean },
 ) {
@@ -509,7 +498,7 @@ export async function voidTransaction(
   // A kurs farqi row is the system's (Q14) or the accountant's own close
   // (Q24 b, its own undo door): it changes only when its cycle changes.
   if (row.type === 'fx_diff') throw new FinanceError('fx_system_row');
-  if (row.type === 'refund' && !door.mayMoveTill) throw new FinanceError('forbidden');
+  if (isClientPayout(row.type) && !door.mayMoveTill) throw new FinanceError('forbidden');
   // A three-cornered settlement is ONE agreement with two halves (#415), and
   // `voidPartnerTx` has always taken the client half with it. This is the
   // mirror, which was missing: voiding the client half alone left our debt to
@@ -536,6 +525,16 @@ export async function voidTransaction(
   const partnerIds = halves.map((half) => half.partnerId);
   await db.transaction(async (tx) => {
     await lockOwnersTx(tx, { clientIds: [row.clientId], partnerIds });
+    // Voiding a COMPENSATION must not turn cash we already handed the client
+    // into a debt (owner's Q15 (1)): under the client's money lock — the
+    // refund cap's own — the refunds since compensations began must stay
+    // covered by what remains. Refused in words, with the three honest paths.
+    if (row.type === 'compensation') {
+      const { compensationCoverTx, compensationVoidFits } = await import('./compensation');
+      if (!compensationVoidFits(await compensationCoverTx(tx, row.clientId, row.id))) {
+        throw new FinanceError('compensation_paid_out');
+      }
+    }
     const claimed = await tx
       .update(clientTransactions)
       .set({ voidedAt: new Date(), voidedBy: actorId, voidReason: reason })
@@ -710,11 +709,18 @@ export async function clientBalances(ownerId?: string) {
       clientCode: clients.clientCode,
       clientName: clients.name,
       chargesUsd: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) FILTER (WHERE ${clientTransactions.type} = 'charge'), 0)`,
-      paymentsUsd: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) FILTER (WHERE ${clientTransactions.type} = 'payment'), 0)`,
+      // NET of what was handed back (R6a) — the one «received» rule.
+      paymentsUsd: sql<string>`coalesce(sum(${netPaidUsdSql()}), 0)`,
       refundsUsd: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) FILTER (WHERE ${clientTransactions.type} = 'refund'), 0)`,
+      // Compensations for lost cargo (0105): not money, not a price — a
+      // column of their own, so charges − payments − compensated (+ fx) is
+      // still the balance beside them.
+      compensatedUsd: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) FILTER (WHERE ${clientTransactions.type} = 'compensation'), 0)`,
       // The kurs farqi rows (0103, Q14), signed: a column of their own so the
       // screen's columns still add up to the balance beside them.
       fxUsd: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) FILTER (WHERE ${clientTransactions.type} = 'fx_diff'), 0)`,
+      // The balance is the ONE sign rule, never JS arithmetic over columns.
+      balanceUsd: sql<string>`coalesce(sum(${signedUsdSql()}), 0)`,
       lastAt: sql<string>`max(${clientTransactions.createdAt})`,
     })
     .from(clientTransactions)
@@ -735,13 +741,13 @@ export async function clientBalances(ownerId?: string) {
       clientCode: r.clientCode,
       clientName: r.clientName,
       chargesUsd: Math.round(Number(r.chargesUsd) * 100) / 100,
-      // NET of what was handed back (R6a), so the screen's two columns still
-      // add up to the balance beside them.
-      paymentsUsd: Math.round((Number(r.paymentsUsd) - Number(r.refundsUsd)) * 100) / 100,
+      // NET of what was handed back (R6a), so the screen's columns still add
+      // up to the balance beside them.
+      paymentsUsd: Math.round(Number(r.paymentsUsd) * 100) / 100,
       refundsUsd: Math.round(Number(r.refundsUsd) * 100) / 100,
+      compensatedUsd: Math.round(Number(r.compensatedUsd) * 100) / 100,
       fxUsd: Math.round(Number(r.fxUsd) * 100) / 100,
-      balanceUsd:
-        Math.round((Number(r.chargesUsd) - Number(r.paymentsUsd) + Number(r.refundsUsd) + Number(r.fxUsd)) * 100) / 100,
+      balanceUsd: Math.round(Number(r.balanceUsd) * 100) / 100,
       lastAt: r.lastAt,
     }))
     .sort((a, b) => b.balanceUsd - a.balanceUsd);
@@ -754,6 +760,28 @@ export async function clientLedger(clientId: string) {
       tx: clientTransactions,
       createdByName: users.fullName,
       batchCode: batches.code,
+      /** A compensation's prixod (0105): the lost cargo it pays for. */
+      receiptNumber: receipts.number,
+      /** …how many of its cartons are lost NOW, and of how many. */
+      lostNow: sql<number | null>`CASE WHEN ${clientTransactions}.type = 'compensation' THEN (
+        SELECT count(*)::int FROM boxes b JOIN receipt_lots rl ON rl.id = b.lot_id
+         WHERE rl.receipt_id = ${clientTransactions}.receipt_id AND b.status = 'lost') END`,
+      boxesTotal: sql<number | null>`CASE WHEN ${clientTransactions}.type = 'compensation' THEN (
+        SELECT count(*)::int FROM boxes b JOIN receipt_lots rl ON rl.id = b.lot_id
+         WHERE rl.receipt_id = ${clientTransactions}.receipt_id AND b.status <> 'void') END`,
+      /**
+       * Cartons of that prixod that came back from «yo'qolgan» since the
+       * compensation was written — the ⚠ «tekshiring» (Q6), whichever door
+       * restored them. Exact for a partial find, where «lost now = 0» was
+       * not. `${clientTransactions}` the table (#128).
+       */
+      foundSince: sql<number | null>`CASE WHEN ${clientTransactions}.type = 'compensation' THEN (
+        SELECT count(*)::int FROM box_movements bm
+          JOIN boxes b ON b.id = bm.box_id
+          JOIN receipt_lots rl ON rl.id = b.lot_id
+         WHERE rl.receipt_id = ${clientTransactions}.receipt_id
+           AND bm.from_status = 'lost' AND bm.to_status NOT IN ('lost', 'void')
+           AND bm.created_at > ${clientTransactions}.created_at) END`,
       /**
        * WHICH JOB this money answers. `deal_id` has been written by the
        * payment form since #531 and read by nobody but the deferral netting —
@@ -767,6 +795,7 @@ export async function clientLedger(clientId: string) {
     .innerJoin(users, eq(clientTransactions.createdBy, users.id))
     .leftJoin(batches, eq(clientTransactions.batchId, batches.id))
     .leftJoin(deals, eq(clientTransactions.dealId, deals.id))
+    .leftJoin(receipts, eq(clientTransactions.receiptId, receipts.id))
     .where(eq(clientTransactions.clientId, clientId))
     .orderBy(desc(clientTransactions.createdAt))
     .limit(500);
@@ -868,6 +897,9 @@ export async function clientMoneyInPeriod(from: string, to: string) {
   const [row] = await db
     .select({
       charged: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) FILTER (WHERE ${clientTransactions.type} = 'charge'), 0)`,
+      // A price taken back for lost cargo (0105) — the homes' «this month's
+      // revenue» is charged − compensated, the P&L month's own figure (#513).
+      compensated: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) FILTER (WHERE ${clientTransactions.type} = 'compensation'), 0)`,
       toTill: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) FILTER (WHERE ${clientTransactions.type} = 'payment' AND ${clientTransactions.partnerId} IS NULL), 0)`,
       viaPartner: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) FILTER (WHERE ${clientTransactions.type} = 'payment' AND ${clientTransactions.partnerId} IS NOT NULL), 0)`,
       refunded: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) FILTER (WHERE ${clientTransactions.type} = 'refund'), 0)`,
@@ -886,6 +918,7 @@ export async function clientMoneyInPeriod(from: string, to: string) {
   const refunded = cents(row?.refunded);
   return {
     charged: cents(row?.charged),
+    compensated: cents(row?.compensated),
     toTill,
     viaPartner,
     refunded,

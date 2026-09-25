@@ -108,8 +108,12 @@ const LEDGER_CASES: { name: string; row: (me: string, other: string) => LedgerRo
     nonHolder: true,
   },
   { name: 'refund', row: (me) => ({ type: 'refund', accountId: 'till-1', partnerId: null, createdBy: me }), nonHolder: false },
+  // 0105 DECIDED the compensation (Q15): the other half of the refund it
+  // funds, so its ✖ is the kassa holders' — the row this table's «unknown
+  // kind» used to stand in for, pinned now under its own name.
+  { name: 'compensation', row: (me) => ({ type: 'compensation', accountId: null, partnerId: null, createdBy: me }), nonHolder: false },
   // A kind a later round adds is the kassa holders' until somebody decides.
-  { name: 'an unknown kind', row: (me) => ({ type: 'compensation', accountId: null, partnerId: null, createdBy: me }), nonHolder: false },
+  { name: 'an unknown kind', row: (me) => ({ type: 'x_later_kind', accountId: null, partnerId: null, createdBy: me }), nonHolder: false },
 ];
 
 describe('mayVoidLedgerRow — who may ✖ which ledger row', () => {

@@ -102,3 +102,13 @@ describe('0104 — the unpriced-cargo pushes can be muted', () => {
     expect(MUTE_GROUPS.alerts).toContain('PricedCargoLeft');
   });
 });
+
+describe('0105 — «kompensatsiya yozilgan karobka topildi» can be muted', () => {
+  it('is an alert, beside BoxLost', () => {
+    // Sent through notifyStaffTelegram (compensatedCargoFound), so the
+    // routing scan cannot see it either — named here.
+    expect(MUTE_GROUPS.alerts).toContain('CompensatedCargoFound');
+    const sender = readFileSync(resolve(__dirname, '../../src/modules/wms/finance/compensation.ts'), 'utf8');
+    expect(sender).toContain("type: 'CompensatedCargoFound',");
+  });
+});

@@ -38,4 +38,66 @@ describe('the client ledger sign rule', () => {
     );
     expect(offenders).toEqual([]);
   });
+
+  /**
+   * U-K1 (iii), 0105: the mirror image — «a payment is the ONLY credit». True
+   * of a three-kind ledger and wrong the moment the compensation exists: it
+   * lowers the balance like a payment, so every CASE that named 'payment'
+   * alone read it as a debt. The credit list is `CREDIT_KINDS`, rendered by
+   * `signedUsdSql` (ledger-sql.ts). Allowed where the sentence means
+   * something else:
+   * - finance/service.ts, ledger-kinds.ts, ledger-sql.ts — the rule's homes;
+   * - accounting/service.ts — `accountBalancesBetween`'s `signOf` is the
+   *   KASSA's sign (index 0 the client till, where a compensation correctly
+   *   moves nothing; index 4 the partner ledger), not the client balance.
+   */
+  it("no file in src/ decides the balance by «'payment' then −»", () => {
+    const allowed = [
+      'src/modules/wms/finance/service.ts',
+      'src/modules/wms/finance/ledger-kinds.ts',
+      'src/modules/wms/finance/ledger-sql.ts',
+      'src/modules/wms/accounting/service.ts',
+    ];
+    const offenders = files('src')
+      .filter((path) => !allowed.includes(path))
+      .filter((path) => {
+        const text = strip(readFileSync(path, 'utf8'));
+        return /'payment'\s*then\s*-/i.test(text) || /type\s*===\s*'payment'\s*\?\s*-/.test(text);
+      });
+    expect(offenders).toEqual([]);
+  });
+
+  /**
+   * U-K1 (iv), 0105: every named REVENUE reader knows a price can be taken
+   * back — it asks `revenueUsdSql` / `REVENUE_TYPES` / the compensation by
+   * name. A reader left on `type = 'charge'` alone reports the lost cargo's
+   * price as earned. Sliced by function name, comments stripped (#725);
+   * anchored on the names (#720), so a rename turns this red rather than
+   * silently checking nothing.
+   */
+  it('every revenue reader counts the price taken back', () => {
+    const readers: [string, string][] = [
+      ['src/modules/wms/accounting/reports.ts', 'profitAndLoss'],
+      ['src/modules/wms/accounting/reports.ts', 'profitByBatch'],
+      ['src/modules/wms/accounting/reports.ts', 'unbatchedMoney'],
+      ['src/modules/wms/accounting/reports.ts', 'profitByClient'],
+      ['src/modules/wms/deals/service.ts', 'dealProfit'],
+      ['src/modules/wms/crm/seller-report.ts', 'sellerPerformanceOwn'],
+      ['src/modules/wms/finance/service.ts', 'clientMoneyInPeriod'],
+      ['src/modules/wms/finance/service.ts', 'clientBalances'],
+      ['src/modules/wms/finance/client-cargo.ts', 'clientCargo'],
+      ['src/modules/wms/reports/overview.ts', 'moneySnapshot'],
+      ['src/modules/wms/calc/upsale-service.ts', 'upsaleStateOf'],
+    ];
+    const blind: string[] = [];
+    for (const [path, name] of readers) {
+      const text = strip(readFileSync(path, 'utf8'));
+      const start = text.search(new RegExp(`export (async )?function ${name}\\b`));
+      expect(start, `${name} not found in ${path}`).toBeGreaterThanOrEqual(0);
+      const next = text.indexOf('\nexport ', start + 1);
+      const body = text.slice(start, next < 0 ? text.length : next);
+      if (!/revenueUsdSql\(|REVENUE_TYPES|compensat/.test(body)) blind.push(`${path}: ${name}`);
+    }
+    expect(blind).toEqual([]);
+  });
 });

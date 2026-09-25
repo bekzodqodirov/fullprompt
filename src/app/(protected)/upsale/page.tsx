@@ -264,6 +264,13 @@ export default async function UpsalePage({
                     {format.dateTime(r.offeredAt, { dateStyle: 'short' })}
                   </span>
                 </div>
+                {/* Why the commission waits (0105): neutral words, both scopes —
+                    the amount is on the seller's own client's ledger already. */}
+                {r.compensatedUsd > 0.009 && (
+                  <p className="text-2xs text-warn" data-testid="upsale-compensated">
+                    {t('compensated', { amount: money(r.compensatedUsd) })}
+                  </p>
+                )}
                 <p className="text-2xs text-ink-600">
                   {r.clientCode ?? ''} {r.clientName ?? ''}
                   {scope === 'all' ? ` · ${r.sellerName ?? '—'}` : ''}
@@ -317,6 +324,11 @@ export default async function UpsalePage({
                       </td>
                       <td className="p-2">
                         <span className={STATE_CLASS[r.state]}>{t(STATE_KEY[r.state])}</span>
+                        {r.compensatedUsd > 0.009 && (
+                          <span className="block text-2xs text-warn">
+                            {t('compensated', { amount: money(r.compensatedUsd) })}
+                          </span>
+                        )}
                       </td>
                     </tr>
                   ))}

@@ -2,6 +2,9 @@ import { and, eq, gte, inArray, isNull, lt, lte, sql } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
 import { clients, clientTransactions, receiptLots, receipts, users } from '@/modules/platform/db/schema';
 import { profitByClient } from '../accounting/reports';
+import { marginPct } from '../accounting/margin';
+import { REVENUE_TYPES } from '../finance/ledger-kinds';
+import { revenueUsdSql } from '../finance/ledger-sql';
 
 /**
  * Sotuvchi samaradorligi (docs/VED.md, the Reports line; owner 2026-08-25:
@@ -42,7 +45,8 @@ export interface SellerAllRow extends SellerCargo {
   managerName: string | null;
   costUsd: number;
   profitUsd: number;
-  marginPct: number;
+  /** Null over revenue that is not positive (`marginPct`, 0105). */
+  marginPct: number | null;
 }
 
 /** The seller's own shape. NO cost-derived property exists on it. */
@@ -141,7 +145,7 @@ export async function sellerPerformanceAll(period: {
         revenueUsd: 0,
         costUsd: 0,
         profitUsd: 0,
-        marginPct: 0,
+        marginPct: null,
       };
       byManager.set(managerId, row);
     }
@@ -181,7 +185,7 @@ export async function sellerPerformanceAll(period: {
   const rows = [...byManager.values()]
     .map((row) => ({
       ...row,
-      marginPct: row.revenueUsd ? Math.round((row.profitUsd / row.revenueUsd) * 1000) / 10 : 0,
+      marginPct: marginPct(row.profitUsd, row.revenueUsd),
     }))
     // Named sellers by profit; the «—» cohort LAST, where a footer row would
     // sit — it is the book's unassigned remainder, not somebody's score.
@@ -210,12 +214,10 @@ export async function sellerPerformanceAll(period: {
       revenueUsd: 0,
       costUsd: 0,
       profitUsd: 0,
-      marginPct: 0,
+      marginPct: null,
     } as SellerAllRow,
   );
-  totals.marginPct = totals.revenueUsd
-    ? Math.round((totals.profitUsd / totals.revenueUsd) * 1000) / 10
-    : 0;
+  totals.marginPct = marginPct(totals.profitUsd, totals.revenueUsd);
 
   return { rows, totals, unassignedClients };
 }
@@ -232,8 +234,9 @@ export async function sellerPerformanceAll(period: {
  * charges are on the client cards they own) — cost and profit are not, and
  * cannot be produced here at all.
  *
- * The charges predicate restates `profitByClient`'s revenue side (non-void
- * `charge` rows, inclusive day bounds) — cross-referenced there, and pinned
+ * The revenue predicate restates `profitByClient`'s revenue side (non-void
+ * rows through the one revenue rule — prices minus compensations for lost
+ * cargo, 0105 — inclusive day bounds) — cross-referenced there, and pinned
  * by an integration test asserting the two agree on one fixture — because
  * importing the whole profit function to use a third of it would put the
  * cost query INTO this path, which is the one thing this path must not hold.
@@ -246,13 +249,13 @@ export async function sellerPerformanceOwn(
     cargoByManager(period, actorId),
     clientsByManager(actorId),
     db
-      .select({ revenueUsd: sql<string>`coalesce(sum(${clientTransactions.amountUsd}), 0)` })
+      .select({ revenueUsd: sql<string>`coalesce(sum(${revenueUsdSql()}), 0)` })
       .from(clientTransactions)
       .innerJoin(clients, eq(clientTransactions.clientId, clients.id))
       .where(
         and(
           eq(clients.salesManagerId, actorId),
-          eq(clientTransactions.type, 'charge'),
+          inArray(clientTransactions.type, [...REVENUE_TYPES]),
           isNull(clientTransactions.voidedAt),
           gte(clientTransactions.txDate, period.dan),
           lte(clientTransactions.txDate, period.gacha),

@@ -414,14 +414,19 @@ describe('U33 — voiding a refund asks the grant that created it', () => {
     expect(gate).toBeGreaterThan(body.indexOf('await voidTransaction('));
     const service = read('src/modules/wms/finance/service.ts');
     const voidBody = slice(service, 'export async function voidTransaction', 'export async function futureDatedEntries');
-    expect(voidBody).toContain("if (row.type === 'refund' && !door.mayMoveTill) throw new FinanceError('forbidden');");
+    // 0105 widened «a refund» to every payout to a client — a refund OR a
+    // compensation (`isClientPayout`, the one list in ledger-kinds.ts): the
+    // compensation is the same grant's money, so its void is the same door.
+    expect(voidBody).toContain("if (isClientPayout(row.type) && !door.mayMoveTill) throw new FinanceError('forbidden');");
     // REQUIRED, never optional — an optional door fails open.
     expect(voidBody).toContain('door: { mayMoveTill: boolean },');
   });
 
   it('the create door asks the same predicate (#513)', () => {
     const body = slice(action, 'export async function addTransactionAction', 'const voidSchema');
-    expect(body).toContain("if (parsed.data.type === 'refund' && !mayPickTill(actor.permissions)) {");
+    expect(body).toContain("if (isClientPayout(parsed.data.type) && !mayPickTill(actor.permissions)) {");
+    const comp = slice(action, 'export async function addCompensationAction', 'const voidSchema');
+    expect(comp).toContain("if (!mayPickTill(actor.permissions)) return { ok: false, error: 'forbidden' };");
     expect(body).not.toContain("actor.permissions.has('finance.expenses')");
   });
 
@@ -436,5 +441,42 @@ describe('U33 — voiding a refund asks the grant that created it', () => {
     expect(page).toMatch(
       /canManage &&\s*mayVoidLedgerRow\([\s\S]*?\{ mayMoveTill: canRefund, actorId: actor\.id \},?\s*\) && \(\s*<span className="ml-auto">\s*<VoidButton/,
     );
+  });
+});
+
+describe('U-K3 (0105) — the lost-cargo door is the kassa holders’, and its form moves no kassa', () => {
+  const action = read('src/app/(protected)/finance/actions.ts');
+
+  it('authorize, then the holders’ refusal, then the service with the same predicate — in that order', () => {
+    const body = slice(action, 'export async function addCompensationAction', 'const voidSchema');
+    const auth = body.indexOf("authorize('finance.manage')");
+    const refuse = body.indexOf("if (!mayPickTill(actor.permissions)) return { ok: false, error: 'forbidden' };");
+    const call = body.indexOf('await addCompensation(');
+    const door = body.indexOf('{ mayPayClient: mayPickTill(actor.permissions) }');
+    expect(auth).toBeGreaterThanOrEqual(0);
+    expect(refuse).toBeGreaterThan(auth);
+    expect(call).toBeGreaterThan(refuse);
+    expect(door).toBeGreaterThan(call);
+    // The service's own door is REQUIRED — an optional one fails open.
+    const service = read('src/modules/wms/finance/compensation.ts');
+    expect(service).toContain('door: { mayPayClient: boolean },');
+    expect(service).toContain("if (!door.mayPayClient) throw new CompensationError('forbidden');");
+  });
+
+  it('the void door answers its code and never swallows it', () => {
+    const body = slice(action, 'export async function voidTransactionAction', 'export async function placePaymentAction');
+    expect(body).toContain('if (err instanceof FinanceError) return { error: err.code };');
+    expect(body).not.toContain('if (err instanceof FinanceError) return;');
+  });
+
+  it('the form posts no kassa, no method and no deal — the deal is the prixod’s, derived under its lock', () => {
+    const form = read('src/app/(protected)/finance/[clientId]/compensation-form.tsx');
+    for (const name of ['accountId', 'method', 'dealId']) expect(form, name).not.toContain(`name="${name}"`);
+    // …and the ledger form's own fields never render beside it: the
+    // compensation branch returns before the generic <form>.
+    const txForm = read('src/app/(protected)/finance/[clientId]/tx-form.tsx');
+    const branch = txForm.indexOf("if (type === 'compensation' && canRefund && lost) {");
+    expect(branch).toBeGreaterThan(0);
+    expect(txForm.indexOf('<CompensationForm', branch)).toBeLessThan(txForm.indexOf('<form action={formAction}', branch));
   });
 });

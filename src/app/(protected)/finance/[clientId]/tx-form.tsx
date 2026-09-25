@@ -5,6 +5,7 @@ import { dealOptionLabel } from '@/modules/wms/deals/cargo-label';
 import { latestTxDate } from '@/modules/wms/finance/dates';
 import { useTranslations } from 'next-intl';
 import { addTransactionAction, type TxFormState } from '../actions';
+import { CompensationForm, type LostChargeOption, type LostReceiptOption } from './compensation-form';
 
 /**
  * Add a charge or a payment to a client's ledger (Phase 2.1). No tariffs —
@@ -23,6 +24,7 @@ export function TxForm({
   canPickTill,
   advanceUsd,
   trips,
+  lost,
 }: {
   clientId: string;
   currencies: string[];
@@ -52,10 +54,15 @@ export function TxForm({
    * that names neither a truck nor a deal covers nothing (said below).
    */
   trips: { batchId: string; code: string; unpriced: boolean; crossesBorder: boolean }[];
+  /**
+   * The lost-cargo door's data (0105) — loaded by the page only for the kassa
+   * holders (`canRefund`), who alone may write a compensation.
+   */
+  lost?: { receipts: LostReceiptOption[]; charges: LostChargeOption[]; truncated: boolean };
 }) {
   const t = useTranslations('finance');
   const tc = useTranslations('common');
-  const [type, setType] = useState<'payment' | 'charge' | 'refund'>('payment');
+  const [type, setType] = useState<'payment' | 'charge' | 'refund' | 'compensation'>('payment');
   const [batchId, setBatchId] = useState('');
   const [dealId, setDealId] = useState('');
   const picked = trips.find((trip) => trip.batchId === batchId);
@@ -66,10 +73,7 @@ export function TxForm({
     {},
   );
 
-  return (
-    <form action={formAction} className="card space-y-2">
-      <input type="hidden" name="clientId" value={clientId} />
-      <input type="hidden" name="type" value={type} />
+  const toggles = (
       <div className="grid grid-cols-2 gap-2">
         <button
           type="button"
@@ -98,7 +102,42 @@ export function TxForm({
             </span>
           </button>
         )}
+        {/* Money for LOST cargo (0105) — the refund's other half, the same
+            holders. Its own door: it names a prixod and lowers prices. */}
+        {canRefund && lost && (
+          <button
+            type="button"
+            data-testid="tx-type-compensation"
+            className={`col-span-2 min-h-11 rounded-lg border-2 text-sm font-bold ${type === 'compensation' ? 'border-green-600 bg-good/10 text-good' : 'border-line text-ink-500'}`}
+            onClick={() => setType('compensation')}
+          >
+            🤝 {t('lostCargoDoor')}
+          </button>
+        )}
       </div>
+  );
+
+  if (type === 'compensation' && canRefund && lost) {
+    return (
+      <div className="card space-y-2">
+        {toggles}
+        <CompensationForm
+          clientId={clientId}
+          currencies={currencies}
+          today={today}
+          receipts={lost.receipts}
+          charges={lost.charges}
+          truncated={lost.truncated}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <form action={formAction} className="card space-y-2">
+      <input type="hidden" name="clientId" value={clientId} />
+      <input type="hidden" name="type" value={type} />
+      {toggles}
       <div className="flex gap-2">
         <input
           name="amount"

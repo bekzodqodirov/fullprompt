@@ -28,10 +28,13 @@ export function DealLink({
   receiptId,
   current,
   options,
+  hasCompensation = false,
 }: {
   receiptId: string;
   current: { id: string; code: string } | null;
   options: { id: string; code: string; title: string | null; cargo: string }[];
+  /** 0105: a live compensation names this prixod — it follows the cargo. */
+  hasCompensation?: boolean;
 }) {
   const t = useTranslations('receipts');
   const td = useTranslations('deals');
@@ -87,6 +90,13 @@ export function DealLink({
           {pending ? tc('loading') : tc('save')}
         </button>
       </div>
+      {/* Said BEFORE the press (0105): re-filing the cargo re-files the money
+          paid back for its lost cartons with it (`followCompensationDealTx`). */}
+      {hasCompensation && (
+        <p className="text-xs text-warn" data-testid="receipt-deal-compensation">
+          {t('dealLinkCompensation')}
+        </p>
+      )}
       {error && <p className="text-sm font-semibold text-bad">{tc('error')}</p>}
     </div>
   );

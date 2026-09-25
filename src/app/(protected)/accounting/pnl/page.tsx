@@ -93,6 +93,18 @@ export default async function PnlPage({
               </tr>
             </thead>
             <tbody>
+              {/* Compensation for lost cargo (0105): the file's own «— rows sum
+                  into the bold line that follows» convention, so gross −
+                  compensation = the net revenue adds up by eye (U22). */}
+              {pnl.compensation.total !== 0 &&
+                line(pnl.grossCharges, `— ${t('pnlGrossCharges')}`, 'text-ink-700', 'pnl-gross-charges')}
+              {pnl.compensation.total !== 0 &&
+                line(
+                  { ...pnl.compensation, byPeriod: Object.fromEntries(Object.entries(pnl.compensation.byPeriod).map(([k, v]) => [k, -v])), total: -pnl.compensation.total },
+                  `— ${t('pnlCompensation')}`,
+                  'text-ink-700',
+                  'pnl-compensation',
+                )}
               {line(pnl.revenue, t('revenue'), 'bg-good/10 font-semibold')}
               {pnl.directCosts.map((row) => line(row, `— ${row.label}`, 'text-ink-700'))}
               {line(pnl.directTotal, t('directCosts'), 'font-semibold')}
@@ -102,7 +114,10 @@ export default async function PnlPage({
                   <td key={month} className="p-2 text-right font-mono">
                     {usd(pnl.grossProfit.byPeriod[month] ?? 0)}
                     <span className="ml-1 text-xs font-normal text-ink-500">
-                      {pnl.grossMarginPct[month] ?? 0}%
+                      {/* No margin over revenue that is not positive (0105). */}
+                      {pnl.grossMarginPct[month] === null || pnl.grossMarginPct[month] === undefined
+                        ? '—'
+                        : `${pnl.grossMarginPct[month]}%`}
                     </span>
                   </td>
                 ))}

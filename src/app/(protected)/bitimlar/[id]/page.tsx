@@ -355,10 +355,31 @@ export default async function DealPage({
       {profit && (
         <section className="card space-y-1 text-sm" data-testid="deal-profit-panel">
           <p className="section-title">💰 {t('profitTitle')}</p>
-          <div className="flex justify-between">
-            <span className="text-ink-500">{t('profitRevenue')}</span>
-            <span className="num">{profit.revenueUsd.toFixed(2)} $</span>
-          </div>
+          {/* Compensation for the job's lost cargo (0105): what was charged
+              keeps its old word, the part taken back follows, and the net
+              revenue the profit reads gets its own — «Charged» over a net
+              figure would say the client was billed less than he was. */}
+          {profit.compensationUsd > 0.009 ? (
+            <>
+              <div className="flex justify-between" data-testid="deal-profit-gross">
+                <span className="text-ink-500">{t('profitRevenue')}</span>
+                <span className="num">{(profit.revenueUsd + profit.compensationUsd).toFixed(2)} $</span>
+              </div>
+              <div className="flex justify-between" data-testid="deal-profit-compensation">
+                <span className="text-ink-500">{t('profitCompensation')}</span>
+                <span className="num">−{profit.compensationUsd.toFixed(2)} $</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-ink-500">{t('profitNetRevenue')}</span>
+                <span className="num">{profit.revenueUsd.toFixed(2)} $</span>
+              </div>
+            </>
+          ) : (
+            <div className="flex justify-between">
+              <span className="text-ink-500">{t('profitRevenue')}</span>
+              <span className="num">{profit.revenueUsd.toFixed(2)} $</span>
+            </div>
+          )}
           <div className="flex justify-between">
             <span className="text-ink-500">{t('profitCost')}</span>
             <span className="num">{profit.costUsd.toFixed(2)} $</span>

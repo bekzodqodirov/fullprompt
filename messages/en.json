@@ -795,7 +795,10 @@
       "forbidden": "No access.",
       "box_not_found": "Box not found."
     },
-    "voidSharedCost": "A cost of {code} would be left with no cargo — these boxes are all it carries. Void that cost first (finance), then the receipt."
+    "voidSharedCost": "A cost of {code} would be left with no cargo — these boxes are all it carries. Void that cost first (finance), then the receipt.",
+    "voidHasCompensation": "A compensation to the client names this receipt. The accountant voids it first.",
+    "assignHasCompensation": "A compensation names this receipt — before changing the client, the accountant voids it and records it on the right client.",
+    "dealLinkCompensation": "A compensation names this receipt — it moves to the new deal too."
   },
   "stock": {
     "title": "Warehouse stock",
@@ -1282,7 +1285,8 @@
     "approvalDebt": "Debt: ${amount}",
     "approvalUnpriced": "No price: {receipts} receipts · {boxes} boxes",
     "approvalPriceLink": "Set the price →",
-    "approvalPriced": "✅ priced"
+    "approvalPriced": "✅ priced",
+    "compensatedFound": "⚠ A compensation was recorded for receipt(s) {receipts} and a box has been found — speak to the accountant before handing over."
   },
   "pipeline": {
     "title": "My clients",
@@ -1410,7 +1414,7 @@
     "perKgArrived": "/kg arrived",
     "perKgLoaded": "/kg loaded",
     "advanceNow": "advance ${amount}",
-    "refundExceedsAdvance": "There is no advance for this amount. For lost cargo, lower the price (the deal's discount, then correct the charge) and refund after. For an old advance from before the system, enter that payment first.",
+    "refundExceedsAdvance": "There is no advance for this amount. For lost cargo, first lower the price or record a compensation above it through «Lost cargo», then refund. For an old advance from before the system, enter that payment first.",
     "paymentNoTill": "The accountant records which cash box the money went into.",
     "voidNeedsAccountant": "Only the accountant or an admin can void this.",
     "clientNotAboard": "This client has no cargo on this truck — price the truck the cargo rode",
@@ -1447,7 +1451,33 @@
     "fxCloseTooLarge": "The residue is larger than an exchange difference (over 2 % of the payments or $5) — it is a real debt; check the payment or the price.",
     "fxCloseLegacyFirst": "This account has an old exchange residue — review it under «Exchange residues» first.",
     "fxCloseRefused": "Could not close it — refresh the page and try again.",
-    "fxLegacyLink": "Exchange residues"
+    "fxLegacyLink": "Exchange residues",
+    "compensation": "Compensation",
+    "lostCargoDoor": "Lost cargo: price and compensation",
+    "compensationReceipt": "Which receipt's cargo was lost",
+    "compensationCharges": "Prices set for this cargo — lower them for the lost part",
+    "compensationNewPrice": "New price",
+    "compensationZeroHint": "0 removes the price entirely; any other cargo of this client on that truck is then left unpriced.",
+    "compensationAmount": "Compensation (above our price)",
+    "compensationTotal": "To the client: price −{lowered}, compensation {comp}",
+    "compensationReason": "Reason (required)",
+    "compensationHint": "Within our price, lower the price above: the truck's and the deal's profit follow. Above it, «Compensation» lowers what the client owes and the deal's revenue and moves no cash box. Hand the cash out afterwards with «Refund to client».",
+    "compensationNoLost": "This client has no cargo marked lost. The warehouse manager or the logist marks the box lost on the receipt's page first; then record it here.",
+    "compensationLostCount": "lost: {count} of {total}",
+    "compensationTruncated": "The newest 100 receipts are shown — for an older one, ask an admin.",
+    "compensationFound": "⚠ {count} box(es) found after this compensation — check it",
+    "compensationSaved": "Saved. If cash is handed over, record it as «Refund to client» from a cash box.",
+    "compensationReceiptMismatch": "That receipt is not this client's, or it was voided.",
+    "compensationNoLostCargo": "That receipt has no box marked lost — a compensation is only for lost cargo.",
+    "compensationChargeNotForCargo": "That price is not for this receipt's cargo — refresh the page.",
+    "compensationPriceNotLower": "The new price must be lower than the current one.",
+    "compensationChargeTaken": "That price was already changed or voided — refresh the page.",
+    "compensationNothing": "Lower a price or enter a compensation amount.",
+    "compensationReasonRequired": "Write the reason (at least 3 characters).",
+    "payoutForbidden": "Only the accountant or an admin records a refund or a compensation.",
+    "compensationPaidOut": "Cash was handed to the client against this compensation — voiding it would make him owe that money. Wrong amount: record the correct one first, then void this. Cargo found and the client returned the cash: record his payment into the kassa first. He must return it but has not yet: do not void this — record the amount as a «Charge».",
+    "compensationVoidWarn": "The compensation will be voided. If cash was already handed over, the system stops and says what to do.",
+    "compensatedCol": "🤝 −{amount}"
   },
   "map": {
     "title": "Map",
@@ -1795,7 +1825,10 @@
     "unmergeDone": "Undone: the expense is back and {count} cargo cost(s) are on the queue. Remove the double by voiding the cargo cost itself (🗑 on its card) or merging again — do not void the expense, or its expense request reopens. When re-entering it on another truck, date it {dates}.",
     "unmergeOld": "{count} were entered before the kassa date and stay off the queue.",
     "unmergeErrGone": "This merge was already undone — refresh the page.",
-    "unmergeErrChanged": "The cargo cost or the expense changed after the merge — check with an admin."
+    "unmergeErrChanged": "The cargo cost or the expense changed after the merge — check with an admin.",
+    "pnlGrossCharges": "Prices charged",
+    "pnlCompensation": "− Compensation (lost cargo)",
+    "unbatchedCompensation": "Compensation to clients {amount} — on no truck, taken off revenue."
   },
   "crm": {
     "title": "CRM",
@@ -2139,7 +2172,8 @@
     "dayOthers": "By seller",
     "dayBack": "Only mine",
     "wonOtherCurrency": "+{count} in another currency",
-    "feedRefund": "Refund to client"
+    "feedRefund": "Refund to client",
+    "feedCompensation": "Compensation to client"
   },
   "navShort": {
     "home": "Home",
@@ -2192,7 +2226,8 @@
     "offTripNoCargo": "⚠ cargo did not ride",
     "offTripLoading": "loading",
     "tripDropped": "⚠ {n} boxes left the truck after it was priced",
-    "pricedElsewhere": "priced on another truck or the deal"
+    "pricedElsewhere": "priced on another truck or the deal",
+    "compensatedTotal": "🤝 Compensation:"
   },
   "arrivals": {
     "title": "Incoming cargo",
@@ -2520,7 +2555,9 @@
     "cardAlarms": "Alerts",
     "cardFields": "What is on a card",
     "volumeM3": "Volume (m³)",
-    "weightKg": "Weight (kg)"
+    "weightKg": "Weight (kg)",
+    "profitCompensation": "− compensation (lost cargo)",
+    "profitNetRevenue": "Revenue (after compensation)"
   },
   "automation": {
     "title": "Automation rules",
@@ -3370,7 +3407,8 @@
     "categoryHint": "A payout is written as an ordinary expense. A dedicated category is mandatory: paid out of «Salaries» it would occupy that seller’s salary slot for the month and the salary would be silently counted as posted.",
     "categoryAsk": "Only an administrator can choose it.",
     "periodByOffer": "Offer date",
-    "periodHint": "The period is by the day of the offer. Expenses and the P&L show a payout on the day the money was handed over."
+    "periodHint": "The period is by the day of the offer. Expenses and the P&L show a payout on the day the money was handed over.",
+    "compensated": "⚠ compensation on this deal: −{amount} (lost cargo)"
   },
   "sellerReport": {
     "title": "Sellers: results",
@@ -3430,7 +3468,8 @@
     "colWho": "Who",
     "colMoney": "Live money",
     "paidFromTill": "This receipt has a cost paid from a cash box. The accountant voids it first — the money returns to the box.",
-    "mergedCost": "This receipt has a cost merged with the accountant's expense. The accountant undoes the merge first."
+    "mergedCost": "This receipt has a cost merged with the accountant's expense. The accountant undoes the merge first.",
+    "hasCompensation": "A compensation to the client names this receipt. The accountant voids it first."
   },
   "customsImport": {
     "title": "Customs base (import)",

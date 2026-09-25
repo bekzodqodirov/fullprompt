@@ -18,6 +18,8 @@ import { mayPickTill } from '@/modules/wms/accounting/till-door';
 import { amountRefusal } from '@/modules/wms/finance/money-bounds';
 import { mayClassifyFx } from '@/modules/wms/finance/fx-door';
 import { closeCrossCurrencyResidue, FxCloseError, voidFxClose } from '@/modules/wms/finance/fx-close';
+import { addCompensation, CompensationError } from '@/modules/wms/finance/compensation';
+import { isClientPayout } from '@/modules/wms/finance/ledger-kinds';
 
 export interface TxFormState {
   ok?: boolean;
@@ -63,7 +65,7 @@ export async function addTransactionAction(
   // admin's (`finance.expenses`, the kassa screens' own door) — the VED holds
   // finance.manage and prices jobs, but does not pay money out of a drawer.
   // The one predicate the void below asks too (U33, #513).
-  if (parsed.data.type === 'refund' && !mayPickTill(actor.permissions)) {
+  if (isClientPayout(parsed.data.type) && !mayPickTill(actor.permissions)) {
     return { error: 'forbidden' };
   }
   // The kassa is named by its holders (owner's Q19: «VED kassani umuman
@@ -100,6 +102,71 @@ export async function addTransactionAction(
   // A truck price can land on a deal the form never named (R3a) — the deal
   // card's money is what it now says.
   if (row.dealId) revalidatePath(`/bitimlar/${row.dealId}`);
+  return { ok: true };
+}
+
+/**
+ * «Yo'qolgan yuk: narx va kompensatsiya» (0105, owner's Q15). Money given to
+ * a client is the kassa holders' act — the refund's own pair — asked in
+ * order: the grant, then the kassa predicate, then the service with the same
+ * answer as its REQUIRED door. A separate action from the ledger form's: it
+ * names a prixod and may lower prices in the same press, and it returns its
+ * answer instead of resetting the form, so a refusal keeps every typed figure.
+ * The typed amounts are read like every money door's («1 200», «1,200»).
+ */
+export async function addCompensationAction(input: {
+  clientId: string;
+  receiptId: string;
+  amount: string;
+  currency: string;
+  txDate: string;
+  note: string;
+  reprices: { chargeId: string; newAmount: string }[];
+}): Promise<{ ok: boolean; error?: string }> {
+  let actor;
+  try {
+    actor = await authorize('finance.manage');
+  } catch (err) {
+    if (err instanceof AuthError) return { ok: false, error: 'forbidden' };
+    throw err;
+  }
+  if (!mayPickTill(actor.permissions)) return { ok: false, error: 'forbidden' };
+  const typed = String(input?.amount ?? '').trim();
+  const amount = typed ? parseTypedMoney(typed) : undefined;
+  if (typed && (amount === null || amount === undefined)) return { ok: false, error: 'validation' };
+  const reprices: { chargeId: string; newAmount: number }[] = [];
+  for (const change of Array.isArray(input?.reprices) ? input.reprices : []) {
+    const text = String(change?.newAmount ?? '').trim();
+    // An empty box is «leave this price», never «make it 0».
+    if (!text) continue;
+    const value = text === '0' ? 0 : parseTypedMoney(text);
+    if (value === null || value === undefined) return { ok: false, error: 'validation' };
+    reprices.push({ chargeId: String(change.chargeId), newAmount: value });
+  }
+  const meta = await requestMeta();
+  let result;
+  try {
+    result = await addCompensation(
+      {
+        clientId: String(input?.clientId ?? ''),
+        receiptId: String(input?.receiptId ?? ''),
+        amount: amount ?? undefined,
+        currency: String(input?.currency ?? 'USD'),
+        txDate: String(input?.txDate ?? ''),
+        note: String(input?.note ?? ''),
+        reprices,
+      },
+      { actorId: actor.id, ...meta },
+      { mayPayClient: mayPickTill(actor.permissions) },
+    );
+  } catch (err) {
+    if (err instanceof CompensationError) return { ok: false, error: err.code };
+    throw err;
+  }
+  revalidatePath('/finance');
+  revalidatePath(`/finance/${input.clientId}`);
+  if (result.dealId) revalidatePath(`/bitimlar/${result.dealId}`);
+  for (const batchId of result.batchIds) revalidatePath(`/batches/${batchId}/pricing`);
   return { ok: true };
 }
 

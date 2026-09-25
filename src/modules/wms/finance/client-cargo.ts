@@ -14,6 +14,7 @@ import {
 } from '../../platform/db/schema';
 import { isInternalLeg } from '../batches/internal';
 import { settlesUsd } from './ledger-kinds';
+import { ledgerAlias, signedUsdSql } from './ledger-sql';
 import { rideMovementSql } from '../batches/riders';
 import { offTruckPrices } from './off-truck';
 import { uncoveredTripsOn } from './unpriced';
@@ -105,6 +106,8 @@ export interface ClientCargo {
   totals: { boxCount: number; kg: number; m3: number };
   chargedUsd: number;
   paidUsd: number;
+  /** Taken off for lost cargo (0105) — its own line, never «To‘langan». */
+  compensatedUsd: number;
   balanceUsd: number;
   /** Debt that belongs to no trip (a manual charge). */
   unassignedOwedUsd: number;
@@ -241,9 +244,17 @@ export async function clientCargo(clientId: string): Promise<ClientCargo> {
   // back into their hands, so it no longer settles anything. A kurs farqi row
   // (0103) settles by its own dollars, or the trips keep showing the residue
   // after the account closed.
-  const paidUsd = ledger.reduce((a, row) => a + settlesUsd({ type: row.type, amountUsd: Number(row.amountUsd) }), 0);
+  const settledUsd = ledger.reduce((a, row) => a + settlesUsd({ type: row.type, amountUsd: Number(row.amountUsd) }), 0);
+  // A compensation for lost cargo (0105) settles the oldest trips like a
+  // payment, but it is NOT money the client paid: «To‘langan» stays money
+  // (and the kurs farqi, as before), and the compensation gets its own line —
+  // a client who paid nothing must read «To‘langan $0», not the compensation.
+  const compensatedUsd = ledger
+    .filter((row) => row.type === 'compensation')
+    .reduce((a, row) => a + Number(row.amountUsd), 0);
+  const paidUsd = settledUsd - compensatedUsd;
 
-  let unapplied = paidUsd;
+  let unapplied = settledUsd;
   for (const charge of charges) {
     if (unapplied <= 0) break;
     const applied = Math.min(unapplied, charge.owed);
@@ -383,7 +394,8 @@ export async function clientCargo(clientId: string): Promise<ClientCargo> {
     },
     chargedUsd: cents(chargedUsd),
     paidUsd: cents(paidUsd),
-    balanceUsd: cents(chargedUsd - paidUsd),
+    compensatedUsd: cents(compensatedUsd),
+    balanceUsd: cents(chargedUsd - settledUsd),
     unassignedOwedUsd: cents(unassignedOwedUsd),
   };
 }
@@ -435,7 +447,7 @@ export async function managedClients(managerId?: string): Promise<ManagedClient[
           AND b.status IN ('in_stock','planned','loading','in_transit','ready_for_pickup')
       ), 0)`,
       balanceUsd: sql<string>`coalesce((
-        SELECT sum(CASE WHEN ct.type = 'payment' THEN -ct.amount_usd ELSE ct.amount_usd END)
+        SELECT sum(${signedUsdSql(ledgerAlias('ct'))})
         FROM client_transactions ct
         WHERE ct.client_id = ${clients}.id AND ct.voided_at IS NULL
       ), 0)`,

@@ -43,6 +43,7 @@ const MARK: Record<FeedKind, string> = {
   charge: '🧾',
   payment: '💵',
   refund: '↩️',
+  compensation: '🤝',
 };
 
 const TONE: Record<FeedKind, string> = {
@@ -57,6 +58,7 @@ const TONE: Record<FeedKind, string> = {
   charge: 'bg-surface-sunken',
   payment: 'bg-good/10',
   refund: 'bg-warn/10',
+  compensation: 'bg-good/10',
 };
 
 /**
@@ -76,6 +78,7 @@ export const FEED_LABELS: Record<FeedKind, string> = {
   charge: 'feedCharge',
   payment: 'feedPayment',
   refund: 'feedRefund',
+  compensation: 'feedCompensation',
 };
 
 function money(meta: Record<string, unknown>): string {
@@ -254,7 +257,7 @@ function FeedRow({
           {item.meta.debtOverride === true && ` · ⚠ ${t('feedDebtOverride')}`}
         </p>
       )}
-      {(item.kind === 'charge' || item.kind === 'payment' || item.kind === 'refund') && (
+      {(item.kind === 'charge' || item.kind === 'payment' || item.kind === 'refund' || item.kind === 'compensation') && (
         <p className="font-semibold">{money(item.meta)}</p>
       )}
       {item.body && <p className="whitespace-pre-wrap break-words">{item.body}</p>}

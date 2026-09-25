@@ -64,6 +64,7 @@ export const LEAD_SOURCES_GRANTED_COLUMNS = [
 const TRAPS = `Правила этой базы — запрос, который их нарушает, вернёт правдоподобную ЛОЖЬ:
 - ДЕНЬГИ НЕ СКЛАДЫВАЮТ из сырых колонок. Долг клиента — только view v_client_balance_usd(client_id, balance_usd). Приход/расход денег и остатки касс — только инструменты cash_flow и company_balance. Отсрочки, партнёрские платежи, курсы и закрытые кассы делают ручную сумму неверной без единой ошибки SQL. Если вопрос о деньгах не решается этими тремя — скажи, что надёжного ответа нет.
 - Аннулированные строки исключай ВСЕГДА: cost_entries.voided_at IS NULL, client_transactions.voided_at IS NULL, partner_transactions.voided_at IS NULL.
+- client_transactions.type: charge и refund поднимают долг, payment и compensation снижают, fx_diff — курсовая разница со своим знаком; выручка = charge − compensation (компенсация за потерянный груз, денег не двигает; receipt_id — приход потерянного груза).
 - Что ехало в машине (batches) — через box_movements (ref_type='batch', ref_id=batches.id, cause='batch_departed'), НИКОГДА через boxes.current_batch_id: разгрузка обнуляет его, у прибывшей машины он пуст.
 - leads/deals: справочники стадий lead_stages/deal_stages несут kind ('open'/'won'/'lost'); created_at — когда обратился, closed_at — когда решили; месяц продаж считают по closed_at.
 - numeric приходит СТРОКОЙ — приводи ::numeric при арифметике в выводе не нужно, но сравнивай числа в SQL, не в голове.

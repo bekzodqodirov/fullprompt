@@ -78,6 +78,9 @@ describe('F2 — every ledger writer locks the account and reconciles its kurs f
       'closeLegacyFxResidue',
       'closeCrossCurrencyResidue',
       'voidFxClose',
+      // The lost-cargo door (0105): lowers prices by void + re-post and
+      // writes the compensation — both can close a cycle.
+      'addCompensation',
     ]) {
       expect(names.has(name), name).toBe(true);
     }

@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import { leadWonUsdSql } from './won-money';
+import { ledgerAlias, signedUsdSql } from '../finance/ledger-sql';
 import { z } from 'zod';
 import { db } from '../../platform/db/client';
 import {
@@ -1412,7 +1413,7 @@ export async function dormantClients(days: number, ownerId?: string) {
         WHERE r.client_id = ${clients}.id AND r.status = 'confirmed'
       )`,
       balanceUsd: sql<string>`coalesce((
-        SELECT sum(CASE WHEN ct.type = 'payment' THEN -ct.amount_usd ELSE ct.amount_usd END)
+        SELECT sum(${signedUsdSql(ledgerAlias('ct'))})
         FROM client_transactions ct
         WHERE ct.client_id = ${clients}.id AND ct.voided_at IS NULL
       ), 0)`,

@@ -35,6 +35,7 @@ import { recomputeAll } from '../costing/service';
 import { costOrphanedByVoid, lockCostsTouchingLots } from '../costing/void-guard';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { MAX_NATIVE_AMOUNT } from '../finance/money-bounds';
+import { receiptHasCompensation } from '../finance/compensation-follow';
 
 export const lotInputSchema = z
   .object({
@@ -511,6 +512,8 @@ export class VoidError extends Error {
     public readonly code:
       | 'box_not_in_stock'
       | 'receipt_has_costs'
+      // A compensation to the client names this prixod (0105) — money first.
+      | 'receipt_has_compensation'
       // A crate's or a truck's cost would be left with no cargo (U20).
       | 'shared_cost_orphaned'
       // markBoxLost's refusals ride the same class: one write-off vocabulary.
@@ -538,7 +541,9 @@ export async function voidReceipt(
   const factor = Number(await getSetting('chargeable_weight_factor'));
   const voidedBoxIds: string[] = [];
   const voidedLots = await db.transaction(async (tx): Promise<string[]> => {
-    const receipt = await tx.query.receipts.findFirst({ where: eq(receipts.id, receiptId) });
+    // LOCKED (0105): a compensation written against this prixod takes the
+    // same lock first, so the two cannot pass each other.
+    const [receipt] = await tx.select().from(receipts).where(eq(receipts.id, receiptId)).for('update');
     if (!receipt || receipt.voidedAt) return [];
 
     // Money first — the batch-cancel rule (#288), which this door never had.
@@ -554,6 +559,10 @@ export async function voidReceipt(
       .where(and(eq(costEntries.receiptId, receiptId), isNull(costEntries.voidedAt)))
       .limit(1);
     if (liveCost) throw new VoidError('receipt_has_costs');
+    // A compensation paid for this prixod's lost cargo is client money, and
+    // client money is never voided by a warehouse button (#852): the
+    // accountant voids it first, on purpose.
+    if (await receiptHasCompensation(tx, receiptId)) throw new VoidError('receipt_has_compensation');
 
     await tx
       .update(receipts)
