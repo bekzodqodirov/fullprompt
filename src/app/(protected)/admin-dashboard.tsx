@@ -6,6 +6,11 @@ import { mayReadBatches } from '@/modules/wms/batches/read-door';
 import { cashFlow, companyBalance } from '@/modules/wms/accounting/reports';
 import { moneySnapshot, todaySnapshot } from '@/modules/wms/reports/overview';
 import { inTransitBatches, stockByWarehouse, warehouseFill } from '@/modules/wms/reports/queries';
+import { cargoPipeline } from '@/modules/wms/reports/business';
+import { targetsFor } from '@/modules/wms/accounting/targets';
+import { dashboardWindows, planProgress } from '@/modules/wms/reports/dashboard-math';
+import { PlanMeter } from '@/components/charts/plan-meter';
+import { StackBar } from '@/components/charts/stack-bar';
 import { getSetting } from '@/modules/platform/settings/service';
 import { WarehouseFillRows } from '@/components/warehouse-fill';
 import { decidedLeadCounts } from '@/modules/wms/crm/analytics';
@@ -74,7 +79,8 @@ export async function AdminDashboard({ actor }: { actor: Actor }) {
   const staleDays = Number(await getSetting('stale_stock_days')) || 30;
   const whScope = actor.warehouseScoped ? actor.warehouseIds : undefined;
 
-  const [balance, flowToday, moneySnap, cargoToday, stock, transit, fills, deals, decided, tasks, unsent, backup] =
+  const w = dashboardWindows(today);
+  const [balance, flowToday, moneySnap, cargoToday, stock, transit, fills, deals, decided, tasks, unsent, backup, targets, pipeline] =
     await Promise.all([
       money ? companyBalance() : null,
       money ? cashFlow(today, today) : null,
@@ -92,7 +98,14 @@ export async function AdminDashboard({ actor }: { actor: Actor }) {
       perms.has('admin.settings.manage')
         ? backupStatus().catch((): BackupStatus | null => null)
         : null,
+      // His answer 5a: the month's plan beside the month's figure.
+      money ? targetsFor([w.month]) : null,
+      // The journey in one bar — the /dashboard's own read (#513).
+      cargo ? cargoPipeline() : null,
     ]);
+  const plan = moneySnap
+    ? planProgress(moneySnap.revenueMonth, targets?.get(w.month)?.revenueUsd, w.dom, w.daysInMonth)
+    : null;
 
   // The kassa figure drops any till whose currency has no entered rate —
   // the balance screen flags those per row, a lone number cannot, so the ⚠
@@ -162,6 +175,23 @@ export async function AdminDashboard({ actor }: { actor: Actor }) {
             <Row href="/accounting" label={t('monthMoney')}>
               {usd(moneySnap.revenueMonth)} / {usd(moneySnap.paidMonth)}
             </Row>
+            {plan && (
+              <Link
+                href="/accounting/reja"
+                className="-mx-1 block rounded-lg px-1 py-0.5 hover:bg-surface-sunken"
+                data-testid="adm-plan"
+              >
+                <span className="flex items-baseline justify-between gap-2">
+                  <span className="min-w-0 truncate text-ink-500">{t('plan')}</span>
+                  <span
+                    className={`whitespace-nowrap font-mono font-semibold tabular-nums ${plan.behind ? 'text-warn' : ''}`}
+                  >
+                    {Math.round(plan.pct)}%
+                  </span>
+                </span>
+                <PlanMeter progress={plan} className="mt-1" />
+              </Link>
+            )}
           </div>
         </section>
       )}
@@ -171,12 +201,29 @@ export async function AdminDashboard({ actor }: { actor: Actor }) {
           <Head href="/stock" icon="📦" title={t('cargo')}>
             {round2(stockTotals.m3)} m³
           </Head>
+          {pipeline && (
+            <div className="mt-2" data-testid="adm-pipeline">
+              <StackBar
+                height="h-1.5"
+                parts={[
+                  { key: 'ord1', value: pipeline.cn.m3 },
+                  { key: 'ord2', value: pipeline.road.m3 },
+                  { key: 'ord3', value: pipeline.uz.m3 },
+                  { key: 'muted', value: pipeline.other.m3 },
+                ]}
+              />
+            </div>
+          )}
           <div className="mt-1 space-y-0.5 text-xs">
             <Row href="/stock" label={t('stock')}>
               {num(stockTotals.boxes)} 📦 · {num(stockTotals.kg)} kg
             </Row>
+            {/* The boxes still ON the road (the pipeline's own count), not
+                what departed: a truck being unloaded drains box by box, and
+                the home must agree with /dashboard and /transit meanwhile
+                (#440). */}
             <Row href="/transit" label={t('onRoad')}>
-              {(transit ?? []).length} {t('trucksShort')} · {num(transitBoxes)} 📦
+              {(transit ?? []).length} {t('trucksShort')} · {num(pipeline?.road.boxes ?? transitBoxes)} 📦
             </Row>
             <Row href="/receipts" label={t('todayReceipts')}>
               {cargoToday.receipts}
@@ -221,6 +268,17 @@ export async function AdminDashboard({ actor }: { actor: Actor }) {
             </Row>
           </div>
         </section>
+      )}
+
+      {(perms.has('reports.all_warehouses') || perms.has('reports.own_warehouse')) && (
+        <Link
+          href="/dashboard"
+          className="card flex min-h-11 items-center justify-between gap-2 !p-3 text-sm font-semibold text-brand-700 hover:bg-surface-sunken sm:col-span-2"
+          data-testid="adm-dashboard-door"
+        >
+          <span>📊 {t('fullDashboard')}</span>
+          <span aria-hidden>→</span>
+        </Link>
       )}
 
       {(tasks || unsent !== null || backupState) && (

@@ -150,12 +150,19 @@ export async function buildBatchRegisterXlsx(warehouseIds?: string[], locale?: s
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }
 
-export async function buildReceiptsJournalXlsx(days: number, warehouseIds?: string[], locale?: string): Promise<Buffer> {
+export async function buildReceiptsJournalXlsx(
+  window: import('./queries').JournalWindow,
+  warehouseIds?: string[],
+  locale?: string,
+): Promise<Buffer> {
   const L = reportLabels(locale);
   const { receiptsJournal } = await import('./queries');
-  const rows = await receiptsJournal(days, warehouseIds);
+  const rows = await receiptsJournal(window, warehouseIds);
   const workbook = new ExcelJS.Workbook();
-  const sheet = sheetSetup(workbook, 'Receipts', `${L.tReceiptsJournal} (${days} ${L.daysSuffix}) · ${tashkentDay()}`);
+  // The file names its window the way the screen does — a range when one was
+  // asked for, else the last N days.
+  const span = typeof window === 'number' ? `${window} ${L.daysSuffix}` : `${window.from} — ${window.to}`;
+  const sheet = sheetSetup(workbook, 'Receipts', `${L.tReceiptsJournal} (${span}) · ${tashkentDay()}`);
   const head = sheet.addRow([L.number, L.date, L.warehouse, L.client, L.operator, L.lots, L.boxes, L.kg, L.m3, L.status]);
   head.font = { bold: true };
   sheet.columns = [

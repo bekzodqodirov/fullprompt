@@ -407,7 +407,9 @@
     "riskPhantomHint": "Karobka furaga yuklangan deb skanerlangan, keyin jo‘nash skladida topilgan. Reys xarajati hali unga taqsimlangan bo‘lsa, u shu yukning tannarxida noto‘g‘ri turibdi.",
     "riskUndocumented": "Hujjatsiz ko‘chirilgan",
     "riskEmpty": "Yo‘q",
-    "riskCost": "Bu karobkani tashishga sarflangan (tannarx)"
+    "riskCost": "Bu karobkani tashishga sarflangan (tannarx)",
+    "journalTotals": "Tasdiqlangan: {receipts} prixod · {boxes} 📦",
+    "journalCapped": "Ro‘yxatda eng yangi {n} tasi ko‘rsatilgan — yuqoridagi jami butun davr uchun."
   },
   "warehouses": {
     "title": "Skladlar",
@@ -3003,7 +3005,9 @@
     "fillNoCapacity": "sig'im kiritilmagan",
     "daysShort": "kun",
     "oldestTitle": "Shu skladdagi eng qari yuk",
-    "oldestNote": "🕓 — eng qari yuk SHU skladda necha kun turgani; qavsda — {days} kundan ko'p turgan karobkalar soni."
+    "oldestNote": "🕓 — eng qari yuk SHU skladda necha kun turgani; qavsda — {days} kundan ko'p turgan karobkalar soni.",
+    "plan": "Oylik reja · tushum",
+    "fullDashboard": "To‘liq dashboard"
   },
   "upsale": {
     "title": "Sotuvchi ulushi",

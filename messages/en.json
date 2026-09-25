@@ -407,7 +407,9 @@
     "riskPhantomHint": "The box was scanned as loaded and later found at the departure warehouse. While the truck’s cost is still allocated to it, that cost sits in the wrong cargo’s landed cost.",
     "riskUndocumented": "Moved without a document",
     "riskEmpty": "None",
-    "riskCost": "Spent carrying this box (landed cost)"
+    "riskCost": "Spent carrying this box (landed cost)",
+    "journalTotals": "Confirmed: {receipts} receipts · {boxes} 📦",
+    "journalCapped": "The list shows the newest {n} — the total above covers the whole period."
   },
   "warehouses": {
     "title": "Warehouses",
@@ -3003,7 +3005,9 @@
     "fillNoCapacity": "capacity not set",
     "daysShort": "d",
     "oldestTitle": "The oldest cargo at this warehouse",
-    "oldestNote": "🕓 — days the oldest cargo has stood AT THIS warehouse; in brackets, how many boxes are past {days} days."
+    "oldestNote": "🕓 — days the oldest cargo has stood AT THIS warehouse; in brackets, how many boxes are past {days} days.",
+    "plan": "Monthly plan · revenue",
+    "fullDashboard": "Full dashboard"
   },
   "upsale": {
     "title": "Seller’s share",

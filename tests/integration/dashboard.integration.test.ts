@@ -16,8 +16,8 @@ import {
   warehouses,
 } from '@/modules/platform/db/schema';
 import { cashFlow, cashFlowByMonth } from '@/modules/wms/accounting/reports';
-import { cargoPipeline, unbilledArrived } from '@/modules/wms/reports/business';
-import { stockByWarehouse } from '@/modules/wms/reports/queries';
+import { cargoPipeline, intakeByMonth, unbilledArrived } from '@/modules/wms/reports/business';
+import { receiptsJournalTotals, stockByWarehouse } from '@/modules/wms/reports/queries';
 
 /**
  * The dashboard draws the reports' OWN numbers (#513). These fences hold the
@@ -41,6 +41,7 @@ let clientId: string;
 let receiptId: string;
 let batchId: string;
 const madeBoxes: string[] = [];
+const madeReceipts: string[] = [];
 
 beforeAll(async () => {
   actorId = (await db.select({ id: users.id }).from(users).where(eq(users.active, true)).limit(1))[0]!.id;
@@ -98,9 +99,10 @@ afterAll(async () => {
     await db.delete(boxMovements).where(inArray(boxMovements.boxId, madeBoxes));
     await db.delete(boxes).where(inArray(boxes.id, madeBoxes));
   }
-  if (receiptId) {
-    await db.delete(receiptLots).where(eq(receiptLots.receiptId, receiptId));
-    await db.delete(receipts).where(eq(receipts.id, receiptId));
+  const allReceipts = [...madeReceipts, ...(receiptId ? [receiptId] : [])];
+  if (allReceipts.length) {
+    await db.delete(receiptLots).where(inArray(receiptLots.receiptId, allReceipts));
+    await db.delete(receipts).where(inArray(receipts.id, allReceipts));
   }
   if (batchId) await db.execute(sql`DELETE FROM batches WHERE id = ${batchId}`);
   await db.delete(clients).where(eq(clients.id, clientId));
@@ -285,5 +287,39 @@ describe('arrived, not billed (owner 8a)', () => {
       createdBy: actorId,
     });
     expect((await unbilledArrived()).some((row) => row.clientId === clientId)).toBe(false);
+  });
+});
+
+describe('the intake tile and the receipts journal count the same thing', () => {
+  it('a Tashkent month in intakeByMonth equals the journal header over that range', async () => {
+    // One receipt at 23:30 Tashkent on the last day (18:30 UTC) and one at
+    // 00:30 on the next month's first day (19:30 UTC the day before): the
+    // month boundary is Tashkent's in BOTH readers (R5).
+    for (const [at, count] of [
+      ['1652-05-31T18:30:00Z', 3],
+      ['1652-05-31T19:30:00Z', 5],
+    ] as const) {
+      const id = (
+        await db
+          .insert(receipts)
+          .values({ warehouseId: whId, clientId, status: 'confirmed', createdBy: actorId, receivedAt: new Date(at) })
+          .returning({ id: receipts.id })
+      )[0]!.id;
+      madeReceipts.push(id);
+      await db.insert(receiptLots).values({
+        receiptId: id,
+        seq: 1,
+        productNameZh: `货${STAMP}`,
+        boxCount: count,
+        dimsMode: 'mixed',
+        totalWeightKg: String(count * 10),
+        totalVolumeM3: String(count / 10),
+      });
+    }
+    const [may] = await intakeByMonth('1652-05-01', '1652-05-31');
+    const journal = await receiptsJournalTotals({ from: '1652-05-01', to: '1652-05-31' });
+    expect(may).toMatchObject({ month: '1652-05', receipts: 1, boxes: 3 });
+    expect(journal).toMatchObject({ receipts: may!.receipts, boxes: may!.boxes, m3: may!.m3, kg: may!.kg });
+    expect((await receiptsJournalTotals({ from: '1652-06-01', to: '1652-06-30' })).boxes).toBe(5);
   });
 });

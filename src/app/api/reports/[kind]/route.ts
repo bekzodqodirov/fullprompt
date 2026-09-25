@@ -14,6 +14,7 @@ import {
   buildUnclaimedXlsx,
 } from '@/modules/wms/reports/xlsx';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
+import { readJournalWindow } from '@/modules/wms/reports/queries';
 
 const kindSchema = z.enum([
   'landed-cost',
@@ -78,7 +79,15 @@ export async function GET(request: Request, { params }: { params: Promise<{ kind
       xlsx = await buildBatchRegisterXlsx(scope, locale);
       break;
     case 'receipts-journal':
-      xlsx = await buildReceiptsJournalXlsx(days, scope, locale);
+      xlsx = await buildReceiptsJournalXlsx(
+        readJournalWindow({
+          from: url.searchParams.get('from'),
+          to: url.searchParams.get('to'),
+          days: url.searchParams.get('days'),
+        }),
+        scope,
+        locale,
+      );
       break;
     case 'unclaimed':
       xlsx = await buildUnclaimedXlsx(scope, locale);

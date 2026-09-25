@@ -407,7 +407,9 @@
     "riskPhantomHint": "该箱被扫描为已装车，之后在发货仓库被找到。只要车次费用仍分摊在它上面，这笔费用就错误地计入了该货物的成本。",
     "riskUndocumented": "无单据移动",
     "riskEmpty": "无",
-    "riskCost": "运输此箱已花费（成本）"
+    "riskCost": "运输此箱已花费（成本）",
+    "journalTotals": "已确认：{receipts}张入库单 · {boxes} 📦",
+    "journalCapped": "列表仅显示最新{n}条——上方合计为整个期间。"
   },
   "warehouses": {
     "title": "仓库",
@@ -3003,7 +3005,9 @@
     "fillNoCapacity": "未设置容量",
     "daysShort": "天",
     "oldestTitle": "本仓库最久的货物",
-    "oldestNote": "🕓 — 最久货物在本仓库停放的天数；括号内为超过 {days} 天的箱数。"
+    "oldestNote": "🕓 — 最久货物在本仓库停放的天数；括号内为超过 {days} 天的箱数。",
+    "plan": "月度计划 · 收入",
+    "fullDashboard": "完整仪表板"
   },
   "upsale": {
     "title": "销售提成",

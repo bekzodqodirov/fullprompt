@@ -1,6 +1,8 @@
 import { and, asc, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { aliasedTable } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
+import { addDays, tashkentDayStart } from '../../platform/time/tashkent';
+import { resolvePeriod } from '../accounting/period';
 import {
   batches,
   boxes,
@@ -511,7 +513,64 @@ export async function batchRegister(warehouseIds?: string[]) {
 // label reprint log (§13) — same scoping convention as above.
 // ---------------------------------------------------------------------------
 
-export async function receiptsJournal(days: number, warehouseIds?: string[]) {
+/**
+ * The journal's window: the last N days (the preset buttons), or a Tashkent
+ * calendar range — the one the dashboard's «Qabul · bu oy» tile links with,
+ * so the tile's number and the journal's header are the same query's (#513).
+ */
+export type JournalWindow = number | { from: string; to: string };
+
+/**
+ * One reader for the page and its XLSX: a `from`/`to` pair (validated like
+ * every accounting period — `resolvePeriod`) wins; otherwise `days`, 1..365,
+ * default 30, exactly as before.
+ */
+export function readJournalWindow(params: { from?: string | null; to?: string | null; days?: string | null }): JournalWindow {
+  if (params.from || params.to) return resolvePeriod({ from: params.from ?? undefined, to: params.to ?? undefined });
+  return Math.min(365, Math.max(1, Number(params.days) || 30));
+}
+
+function journalWindowWhere(window: JournalWindow) {
+  if (typeof window === 'number') return sql`${receipts.receivedAt} > now() - make_interval(days => ${window})`;
+  // Tashkent's midnight (R5), bound as ISO instants (#156) — intakeByMonth's own bounds.
+  const start = tashkentDayStart(window.from).toISOString();
+  const end = tashkentDayStart(addDays(window.to, 1)).toISOString();
+  return sql`${receipts.receivedAt} >= ${start}::timestamptz AND ${receipts.receivedAt} < ${end}::timestamptz`;
+}
+
+/**
+ * What was CONFIRMED in the window, from ONE aggregate — never a sum of the
+ * 500 rows the list is capped at, which on a busy quarter would print a total
+ * that quietly stops at the cap.
+ */
+export async function receiptsJournalTotals(window: JournalWindow, warehouseIds?: string[]) {
+  const [row] = await db
+    .select({
+      receipts: sql<number>`count(DISTINCT ${receipts.id})`,
+      boxes: sql<string>`coalesce(sum(${receiptLots.boxCount}), 0)`,
+      kg: sql<string>`coalesce(sum(${receiptLots.totalWeightKg}), 0)`,
+      m3: sql<string>`coalesce(sum(${receiptLots.totalVolumeM3}), 0)`,
+    })
+    .from(receipts)
+    .leftJoin(receiptLots, eq(receiptLots.receiptId, receipts.id))
+    .where(
+      and(
+        eq(receipts.status, 'confirmed'),
+        journalWindowWhere(window),
+        warehouseIds?.length ? inArray(receipts.warehouseId, warehouseIds) : undefined,
+      ),
+    );
+  return {
+    receipts: Number(row?.receipts ?? 0),
+    boxes: Number(row?.boxes ?? 0),
+    kg: Math.round(Number(row?.kg ?? 0) * 10) / 10,
+    m3: Math.round(Number(row?.m3 ?? 0) * 1000) / 1000,
+  };
+}
+
+export const JOURNAL_CAP = 500;
+
+export async function receiptsJournal(window: JournalWindow, warehouseIds?: string[]) {
   const rows = await db
     .select({
       id: receipts.id,
@@ -532,12 +591,12 @@ export async function receiptsJournal(days: number, warehouseIds?: string[]) {
     .leftJoin(clients, eq(receipts.clientId, clients.id))
     .where(
       and(
-        sql`${receipts.receivedAt} > now() - make_interval(days => ${days})`,
+        journalWindowWhere(window),
         warehouseIds?.length ? inArray(receipts.warehouseId, warehouseIds) : undefined,
       ),
     )
     .orderBy(desc(receipts.receivedAt))
-    .limit(500);
+    .limit(JOURNAL_CAP);
   return rows.map((r) => ({
     ...r,
     lots: Number(r.lots),
