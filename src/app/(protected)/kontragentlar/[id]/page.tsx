@@ -21,6 +21,7 @@ import { VoidTx } from './void-tx';
 import { setPartnerActiveAction } from '../actions';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
+import { mayPickTill } from '@/modules/wms/accounting/till-door';
 
 /**
  * One counterparty's account.
@@ -54,10 +55,15 @@ export default async function PartnerCardPage({
   const tc = await getTranslations('common');
   const format = await getFormatter();
   const canManage = actor.permissions.has('finance.manage');
+  // A till moved on this card — a payment, a receipt, and the void of one —
+  // is the accountant's and the admin's (owner's answer b, 2026-09-25). The
+  // VED keeps the card and the «kurs farqi» adjust; the kassas are not
+  // offered, and the action refuses them anyway.
+  const movesTills = canManage && mayPickTill(actor.permissions);
 
   const balance = await partnerBalanceUsd(id);
   const ledger = await partnerLedger(id);
-  const accounts = canManage
+  const accounts = movesTills
     ? await db
         .select({ id: moneyAccounts.id, name: moneyAccounts.name })
         .from(moneyAccounts)
@@ -215,6 +221,7 @@ export default async function PartnerCardPage({
         <PartnerTxForm
           partnerId={id}
           staff={row.staff}
+          movesTills={movesTills}
           accounts={accounts}
           currencies={currencyCodes}
           today={tashkentDay()}
@@ -274,7 +281,9 @@ export default async function PartnerCardPage({
                       </p>
                     )}
                     <p className="text-xs text-ink-500">{authorName}</p>
-                    {canManage && !tx.voidedAt && <VoidTx id={tx.id} partnerId={id} />}
+                    {canManage && !tx.voidedAt && (!tx.accountId || movesTills) && (
+                      <VoidTx id={tx.id} partnerId={id} />
+                    )}
                   </td>
                   <td className="p-2 text-right font-mono whitespace-nowrap">
                     {tx.amount} {tx.currency}

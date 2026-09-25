@@ -5,9 +5,10 @@ import { z } from 'zod';
 import { AuthError, authorize, type Actor } from '@/modules/platform/rbac/authorize';
 import { requestMeta } from '@/modules/platform/auth/session';
 import {
+  CASH_TYPES,
   PartnerError,
   addPartnerTx,
-  partnerIdOfTx,
+  partnerTxDoorFacts,
   partnerSchema,
   partnerTxSchema,
   savePartner,
@@ -18,6 +19,7 @@ import { recordSettlement, settlementSchema } from '@/modules/wms/partners/settl
 import { isStaffPartner, isStaffType, maySeeStaffMoney } from '@/modules/wms/partners/staff';
 import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 import { amountRefusal } from '@/modules/wms/finance/money-bounds';
+import { mayPickTill } from '@/modules/wms/accounting/till-door';
 
 /**
  * Every door into the partner ledger.
@@ -51,6 +53,18 @@ export interface PartnerFormState {
 async function staffDoor(actor: Actor, partnerId: string | null): Promise<string | null> {
   if (!partnerId || maySeeStaffMoney(actor.permissions)) return null;
   return (await isStaffPartner(partnerId)) ? 'forbidden' : null;
+}
+
+/**
+ * The kassa half of a counterparty door (owner's answer b, 2026-09-25): money
+ * that leaves a till for a firm, or enters one from it, and the void that puts
+ * it back, are the accountant's and the admin's — `mayPickTill`, the kassa
+ * screens' own grant, the same one every cost door asks. The VED keeps the
+ * card and may still write a firm's DEBT (through a cost) and the «kurs farqi»
+ * adjust; it never moves a till. Refused here, not only hidden (#531).
+ */
+function tillDoor(actor: Actor, movesTill: boolean): string | null {
+  return movesTill && !mayPickTill(actor.permissions) ? 'till_forbidden' : null;
 }
 
 /**
@@ -170,7 +184,8 @@ export async function addPartnerTxAction(
     return { error: named?.message ?? 'validation' };
   }
   return run(
-    (actor) => staffDoor(actor, parsed.data.partnerId),
+    async (actor) =>
+      tillDoor(actor, CASH_TYPES.includes(parsed.data.type)) ?? staffDoor(actor, parsed.data.partnerId),
     (ctx) => addPartnerTx(parsed.data, ctx),
     [`/kontragentlar/${partnerId}`, '/kontragentlar'],
   );
@@ -182,7 +197,11 @@ export async function voidPartnerTxAction(formData: FormData): Promise<void> {
   const reason = String(formData.get('reason') ?? '').trim();
   if (!id.success || reason.length < 3) return;
   await run(
-    async (actor) => staffDoor(actor, await partnerIdOfTx(id.data)),
+    // Judged by the ROW: the kassa it moved, and the account it sits on.
+    async (actor) => {
+      const row = await partnerTxDoorFacts(id.data);
+      return tillDoor(actor, Boolean(row?.accountId)) ?? staffDoor(actor, row?.partnerId ?? null);
+    },
     (ctx) => voidPartnerTx(id.data, reason, ctx),
     [`/kontragentlar/${partnerId}`, '/kontragentlar', '/finance'],
   );

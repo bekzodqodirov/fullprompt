@@ -62,6 +62,19 @@ export function signedUsd(row: { type: string; amountUsd: number }): number {
   return row.type === 'payment' ? -row.amountUsd : row.amountUsd;
 }
 
+/**
+ * The FX residue a refund may carry over the advance it hands back (U04): the
+ * same so'm an advance was paid in, handed back after the rate moved, reads a
+ * few dollars more than it came in as (measured: $300 → $301.88). The owner's
+ * «bir necha dollarlik farq baribir o'tkaziladi».
+ */
+export const REFUND_FX_TOLERANCE_USD = 5;
+
+/** May a refund of `refundUsd` be handed out of an advance of `advanceUsd`? */
+export function refundFitsAdvance(refundUsd: number, advanceUsd: number): boolean {
+  return advanceUsd > 0.009 && refundUsd <= advanceUsd + REFUND_FX_TOLERANCE_USD + 0.004;
+}
+
 export const transactionSchema = z
   .object({
     clientId: z.string().uuid(),
@@ -141,24 +154,43 @@ export async function addTransaction(input: TransactionInput, ctx: AuditContext)
   const amountUsd = Math.round(input.amount * rate * 100) / 100;
   if (exceedsRowUsd(amountUsd)) throw new FinanceError('amount_too_large');
 
-  const [row] = await db
-    .insert(clientTransactions)
-    .values({
-      clientId: input.clientId,
-      type: input.type,
-      amount: String(input.amount),
-      currency: input.currency,
-      rateToUsd: String(rate),
-      amountUsd: String(amountUsd),
-      method: input.type === 'charge' ? null : (input.method ?? 'cash'),
-      txDate: input.txDate,
-      batchId: input.batchId ?? null,
-      dealId,
-      accountId: input.accountId || null,
-      note: input.note || null,
-      createdBy: ctx.actorId,
-    })
-    .returning();
+  const values = {
+    clientId: input.clientId,
+    type: input.type,
+    amount: String(input.amount),
+    currency: input.currency,
+    rateToUsd: String(rate),
+    amountUsd: String(amountUsd),
+    method: input.type === 'charge' ? null : (input.method ?? 'cash'),
+    txDate: input.txDate,
+    batchId: input.batchId ?? null,
+    dealId,
+    accountId: input.accountId || null,
+    note: input.note || null,
+    createdBy: ctx.actorId,
+  };
+  // A refund hands back an ADVANCE (U04, owner's answer A, 2026-09-25). One
+  // larger than the client's credit used to become a new debt in silence —
+  // a settled client handed $300 for lost cartons then «owed» $300 on five
+  // screens and the handover gate stopped his next cargo. So it is refused,
+  // and the sentence names the right path. The check and the insert share
+  // one transaction under a per-client lock, or two presses at once would
+  // each see the whole advance; the balance is read on the transaction's own
+  // connection (#714), with the one sign rule (#1014).
+  const [row] =
+    input.type !== 'refund'
+      ? await db.insert(clientTransactions).values(values).returning()
+      : await db.transaction(async (tx) => {
+          await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`refund:${input.clientId}`}))`);
+          const [held] = await tx
+            .select({ balance: sql<string>`coalesce(sum(${signedUsdSql()}), 0)` })
+            .from(clientTransactions)
+            .where(and(eq(clientTransactions.clientId, input.clientId), isNull(clientTransactions.voidedAt)));
+          if (!refundFitsAdvance(amountUsd, -Number(held?.balance ?? 0))) {
+            throw new FinanceError('refund_exceeds_advance');
+          }
+          return tx.insert(clientTransactions).values(values).returning();
+        });
   await writeAudit(db, ctx, {
     entityType: 'client_transaction',
     entityId: row!.id,

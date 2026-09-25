@@ -1008,7 +1008,9 @@
     "errPayerConflict": "This cost already names who paid it.",
     "errStaffVoid": "A cost a colleague paid out of their own pocket is voided only by the accountant or an admin.",
     "errFutureDate": "The date cannot be later than tomorrow.",
-    "errAmountTooLarge": "The amount is too large for one row."
+    "errAmountTooLarge": "The amount is too large for one row.",
+    "errPartnerVoidNotYours": "A cost a firm paid is voided by the person who typed it, or by the accountant or an admin.",
+    "errPartnerVoidSettled": "This firm's account has moved since the cost (a payment or a settlement) — only the accountant or an admin may void it now."
   },
   "batches": {
     "title": "Batches",
@@ -1332,7 +1334,9 @@
     "fateLeftBehind": "{count} stayed at the departure warehouse — did not ride this truck",
     "arrivedLine": "Arrived: {boxes} 📦 · {kg} kg — price against this",
     "perKgArrived": "/kg arrived",
-    "perKgLoaded": "/kg loaded"
+    "perKgLoaded": "/kg loaded",
+    "advanceNow": "advance ${amount}",
+    "refundExceedsAdvance": "There is no advance for this amount. For lost cargo, lower the price (the deal's discount, then correct the charge) and refund after. For an old advance from before the system, enter that payment first."
   },
   "map": {
     "title": "Map",
@@ -1583,7 +1587,9 @@
     },
     "nonCashCategory": "This expense kind moves no money (depreciation, say): it takes no cash box and no payer.",
     "nonCashHint": "A non-cash expense kind: no cash box and no payer.",
-    "currencyLocked": "Money has already moved through this cash box — its currency cannot change. Open a new cash box."
+    "currencyLocked": "Money has already moved through this cash box — its currency cannot change. Open a new cash box.",
+    "accountOrPayerRequired": "Say which cash box the money left, or who paid it (a counterparty).",
+    "cashFlagLocked": "This kind already has expenses — its «Cash» mark cannot change. Make a new kind instead."
   },
   "crm": {
     "title": "CRM",
@@ -2920,7 +2926,8 @@
     },
     "forDeal": "For which deal",
     "forDealDeferredHint": "⏳ — a deferred deal: if the money is for it, choose it, or the deferral keeps covering other debt.",
-    "dealMismatch": "That deal belongs to another client."
+    "dealMismatch": "That deal belongs to another client.",
+    "tillForbidden": "Money out of or into a cash box on a counterparty is written by the accountant or an admin only."
   },
   "lists": {
     "allRecords": "All",

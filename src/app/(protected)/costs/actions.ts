@@ -18,6 +18,7 @@ import {
 } from '@/modules/wms/costing/service';
 import { mayPickTill } from '@/modules/wms/accounting/till-door';
 import { isStaffPartner, maySeeStaffMoney } from '@/modules/wms/partners/staff';
+import { firmMovedSinceCost } from '@/modules/wms/partners/service';
 import { amountRefusal, nativeAmount } from '@/modules/wms/finance/money-bounds';
 
 export interface CostActionResult {
@@ -195,10 +196,20 @@ export async function voidCostEntryAction(input: unknown): Promise<CostActionRes
   // which the owner gave to the accountant and the admin alone (M3a, #1020),
   // the same pair `staffDoor` and `payerRefusal` ask. Without this a
   // warehouse user's void bypassed that door and the colleague's /profile
-  // said he owed the company (U34). Who may void a FIRM-paid cost is the
-  // owner's open question and stays exactly as it was.
+  // said he owed the company (U34).
   if (entry.partnerId && !maySeeStaffMoney(actor.permissions) && (await isStaffPartner(entry.partnerId))) {
     return { ok: false, error: 'staff_cost_needs_finance' };
+  }
+  // A cost a FIRM paid (owner's answer B, 2026-09-25): the person who typed
+  // it may take back their own typo until the firm's account has moved after
+  // it; from then on the void reopens money already settled against — a paid
+  // firm would read as owing US — so it is the accountant's and the admin's
+  // (the kassa holders' grant, the same people who pay the firm).
+  if (entry.partnerId && !mayPickTill(actor.permissions)) {
+    if (entry.enteredBy !== actor.id) return { ok: false, error: 'partner_cost_not_yours' };
+    if (await firmMovedSinceCost(entry.id, entry.partnerId)) {
+      return { ok: false, error: 'partner_cost_settled' };
+    }
   }
   const meta = await requestMeta();
   try {

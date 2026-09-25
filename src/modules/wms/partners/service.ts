@@ -311,17 +311,50 @@ export async function addPartnerTx(input: PartnerTxInput, ctx: AuditContext) {
 }
 
 /**
- * Which account a ledger row sits on — read from the ROW, so a door that
- * voids by transaction id judges the account the row really belongs to and
- * never the `partnerId` the form carried beside it. Null when there is none.
+ * Which account a ledger row sits on, and which kassa it moved — read from
+ * the ROW, so a door that voids by transaction id judges what the row really
+ * is and never the `partnerId` the form carried beside it. Null when there is
+ * no such row.
  */
-export async function partnerIdOfTx(txId: string): Promise<string | null> {
+export async function partnerTxDoorFacts(
+  txId: string,
+): Promise<{ partnerId: string; accountId: string | null } | null> {
   const [row] = await db
-    .select({ partnerId: partnerTransactions.partnerId })
+    .select({ partnerId: partnerTransactions.partnerId, accountId: partnerTransactions.accountId })
     .from(partnerTransactions)
     .where(eq(partnerTransactions.id, txId))
     .limit(1);
-  return row?.partnerId ?? null;
+  return row ?? null;
+}
+
+/**
+ * Has this firm's account MOVED since a cost named it as the payer? (U34,
+ * owner's answer B, 2026-09-25)
+ *
+ * The person who typed a firm-paid cost may cancel their own typo until the
+ * firm's account has been touched after it; from then on the void would
+ * reopen money that has already been settled against (a paid firm then reads
+ * as owing US), so it is the accountant's and the admin's. «Touched» is a
+ * LIVE row that moves or settles the balance — a payment, a receipt, an
+ * offset (the settlement's firm leg) or an adjust — written AFTER the cost's
+ * own charge (or the cost itself, when an old one has no charge). A later
+ * CHARGE is another debt, not a settlement, and does not count. Compared on
+ * `created_at`, never `tx_date`: a date can be typed into the past.
+ */
+export async function firmMovedSinceCost(costEntryId: string, partnerId: string): Promise<boolean> {
+  const [row] = await db.execute<{ moved: boolean }>(sql`
+    SELECT EXISTS (
+      SELECT 1 FROM partner_transactions later
+       WHERE later.partner_id = ${partnerId}::uuid
+         AND later.voided_at IS NULL
+         AND later.type IN ('payment', 'receipt', 'offset', 'adjust')
+         AND later.created_at > coalesce(
+               (SELECT min(charge.created_at) FROM partner_transactions charge
+                 WHERE charge.cost_entry_id = ${costEntryId}::uuid AND charge.voided_at IS NULL),
+               (SELECT entry.created_at FROM cost_entries entry WHERE entry.id = ${costEntryId}::uuid))
+    ) AS moved
+  `);
+  return row?.moved === true;
 }
 
 export async function voidPartnerTx(id: string, reason: string, ctx: AuditContext) {

@@ -84,18 +84,53 @@ export async function saveCategory(
     sortOrder: input.sortOrder,
     active: input.active,
   };
-  const [row] = input.id
-    ? await db
-        .update(expenseCategories)
-        .set(values)
-        .where(eq(expenseCategories.id, input.id))
-        .returning()
-    : await db.insert(expenseCategories).values(values).returning();
-  if (!row) throw new AccountingError('not_found');
+  if (!input.id) {
+    const [row] = await db.insert(expenseCategories).values(values).returning();
+    await writeAudit(db, ctx, {
+      entityType: 'expense_category',
+      entityId: row!.id,
+      action: 'create',
+      after: values,
+    });
+    return row!;
+  }
+  const id = input.id;
+  // The «Naqd» flag is read at REPORT time: flipping it on a kind that has
+  // expenses rewrote every past month's cash flow — off deleted the
+  // till-paid outflows while the tills stayed moved, on added past
+  // depreciation to closed months (U06). Owner's answer (a), 2026-09-25:
+  // once any expense of the kind exists, live OR voided, the flag is fixed —
+  // make a new kind instead, the same rule as exchange rates (#126). The
+  // check and the write share one lock on the category row; a first expense
+  // racing this very save is a residual window, stated.
+  const { row, before } = await db.transaction(async (tx) => {
+    const [stored] = await tx
+      .select()
+      .from(expenseCategories)
+      .where(eq(expenseCategories.id, id))
+      .for('update');
+    if (!stored) throw new AccountingError('not_found');
+    if (stored.cash !== input.cash) {
+      const [used] = await tx
+        .select({ id: expenses.id })
+        .from(expenses)
+        .where(eq(expenses.categoryId, id))
+        .limit(1);
+      if (used) throw new AccountingError('cash_flag_locked');
+    }
+    const [updated] = await tx
+      .update(expenseCategories)
+      .set(values)
+      .where(eq(expenseCategories.id, id))
+      .returning();
+    return { row: updated!, before: stored };
+  });
   await writeAudit(db, ctx, {
     entityType: 'expense_category',
     entityId: row.id,
-    action: input.id ? 'update' : 'create',
+    action: 'update',
+    // It was null, so a flipped flag could not be traced afterwards.
+    before: { name: before.name, cash: before.cash, sortOrder: before.sortOrder, active: before.active },
     after: values,
   });
   return row;
@@ -267,6 +302,32 @@ export async function namesMoneyOnNonCash(
     .where(eq(expenseCategories.id, categoryId))
     .limit(1);
   return category?.cash === false;
+}
+
+/**
+ * Does this expense leave its money nowhere? (U13, owner's answer A)
+ *
+ * A CASH kind with neither a kassa nor a payer: the cash flow counts it as
+ * money out while no till moved and no firm is owed — one-sided for ever.
+ * The owner made the kassa or the payer MANDATORY, as #994 did for a
+ * payment. Asked at the DOORS a person types into (the expense form and the
+ * template form), never inside `addExpense`: the monthly run posts old
+ * templates through it (his Q6 redesigns that separately), and a non-cash
+ * kind (depreciation) names neither by U06's rule. Read on the POOL, before
+ * any claim or transaction (#714). A category that does not exist answers
+ * false — the insert's FK refuses it.
+ */
+export async function needsKassaOrPayer(
+  categoryId: string,
+  payer: { accountId?: string | null; partnerId?: string | null },
+): Promise<boolean> {
+  if (payer.accountId || payer.partnerId) return false;
+  const [category] = await db
+    .select({ cash: expenseCategories.cash })
+    .from(expenseCategories)
+    .where(eq(expenseCategories.id, categoryId))
+    .limit(1);
+  return category?.cash === true;
 }
 
 /**

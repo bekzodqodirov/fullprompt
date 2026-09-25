@@ -57,6 +57,20 @@ describe('the cost doors ask the kassa rules after their own grant', () => {
     expect(panel).toContain("staff_cost_needs_finance: 'errStaffVoid',");
   });
 
+  it('a FIRM-paid cost: its typist until the firm\u2019s account moves, then the kassa holders (U34, owner B)', () => {
+    const body = slice(actions, 'export async function voidCostEntryAction', 'async function voidReceiptCostDoor');
+    const gate = body.indexOf('if (entry.partnerId && !mayPickTill(actor.permissions)) {');
+    expect(gate).toBeGreaterThan(body.indexOf('authorize('));
+    expect(gate).toBeLessThan(body.indexOf('await voidCostEntry('));
+    const rule = body.slice(gate, body.indexOf('await voidCostEntry('));
+    expect(rule).toContain("if (entry.enteredBy !== actor.id) return { ok: false, error: 'partner_cost_not_yours' };");
+    expect(rule).toContain('if (await firmMovedSinceCost(entry.id, entry.partnerId)) {');
+    expect(rule).toContain("return { ok: false, error: 'partner_cost_settled' };");
+    const panel = read('src/components/cost-panel.tsx');
+    expect(panel).toContain("partner_cost_not_yours: 'errPartnerVoidNotYours',");
+    expect(panel).toContain("partner_cost_settled: 'errPartnerVoidSettled',");
+  });
+
   it('placing, the staff answer and the merge are behind the same predicate', () => {
     const place = slice(actions, 'export async function setCostAccountAction');
     expect(place).toContain("authorize('finance.expenses')");

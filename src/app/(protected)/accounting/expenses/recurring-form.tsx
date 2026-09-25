@@ -159,9 +159,11 @@ export function RecurringForm({
               ? t('accountCurrencyMismatch')
               : state.error === 'non_cash_category'
                 ? t('nonCashCategory')
-                : state.error === 'amount_too_large'
-                  ? tc('amountTooLarge')
-                  : tc('error')}
+                : state.error === 'account_or_payer_required'
+                  ? t('accountOrPayerRequired')
+                  : state.error === 'amount_too_large'
+                    ? tc('amountTooLarge')
+                    : tc('error')}
         </p>
       )}
     </form>

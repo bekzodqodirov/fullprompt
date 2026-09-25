@@ -109,6 +109,7 @@ export default async function ClientLedgerPage({
       {canManage && (
         <TxForm
           canRefund={canRefund}
+          advanceUsd={balance < -0.009 ? -balance : 0}
           clientId={clientId}
           currencies={currencyRows.map((c) => c.code)}
           accounts={accounts.map((a) => ({ id: a.id, name: a.name, currency: a.currency }))}

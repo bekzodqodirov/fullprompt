@@ -234,7 +234,9 @@ export function ExpenseForm({
                     ? tc('amountTooLarge')
                     : state.error === 'non_cash_category'
                       ? t('nonCashCategory')
-                      : tc('error')}
+                      : state.error === 'account_or_payer_required'
+                        ? t('accountOrPayerRequired')
+                        : tc('error')}
         </p>
       )}
     </form>

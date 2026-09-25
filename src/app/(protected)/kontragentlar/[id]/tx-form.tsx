@@ -30,11 +30,18 @@ const CASH = new Set<string>(['receipt', 'payment']);
 export function PartnerTxForm({
   partnerId,
   staff,
+  movesTills,
   accounts,
   currencies,
   today,
 }: {
   partnerId: string;
+  /**
+   * May this person move a kassa (owner's answer b)? Without it the card
+   * offers the correction alone — a payment or a receipt must name the kassa
+   * it moved, and the kassas are the accountant's and the admin's.
+   */
+  movesTills: boolean;
   /**
    * A colleague's account (0101): `payment` is a cash advance handed to them
    * and `receipt` is the rest of it handed back — the ledger's own kinds and
@@ -57,7 +64,8 @@ export function PartnerTxForm({
     staff && (code === 'payment' || code === 'receipt')
       ? t(`staffKindHints.${code}` as 'staffKindHints.payment')
       : t(`kindHints.${code}` as 'kindHints.payment');
-  const [type, setType] = useState<string>('payment');
+  const kinds = movesTills ? TYPES : TYPES.filter((code) => !CASH.has(code));
+  const [type, setType] = useState<string>(kinds[0] ?? 'adjust');
   const [state, formAction, pending] = useActionState<PartnerFormState, FormData>(
     addPartnerTxAction,
     {},
@@ -102,7 +110,7 @@ export function PartnerTxForm({
         value={type}
         onChange={(event) => setType(event.target.value)}
       >
-        {TYPES.map((code) => (
+        {kinds.map((code) => (
           <option key={code} value={code}>
             {label(code)}
           </option>
@@ -201,11 +209,13 @@ export function PartnerTxForm({
               ? t('chargeMoved')
               : state.error === 'forbidden'
                 ? t('staffForbidden')
-                : state.error === 'future_date'
-                  ? tc('futureDate')
-                  : state.error === 'amount_too_large'
-                    ? tc('amountTooLarge')
-                    : tc('error')}
+                : state.error === 'till_forbidden'
+                  ? t('tillForbidden')
+                  : state.error === 'future_date'
+                    ? tc('futureDate')
+                    : state.error === 'amount_too_large'
+                      ? tc('amountTooLarge')
+                      : tc('error')}
         </p>
       )}
       {state.ok && <p className="text-sm font-semibold text-good">✅ {tc('save')}</p>}

@@ -20,6 +20,7 @@ export function TxForm({
   deals,
   today,
   canRefund,
+  advanceUsd,
 }: {
   clientId: string;
   currencies: string[];
@@ -29,6 +30,12 @@ export function TxForm({
   today: string;
   /** Handing cash back is the kassa-holders' door (finance.expenses). */
   canRefund: boolean;
+  /**
+   * What the client has paid us in ADVANCE, in dollars (0 when he owes). A
+   * refund hands back at most this (U04) — shown beside the button so the
+   * refusal is never the first time the accountant hears the figure.
+   */
+  advanceUsd: number;
 }) {
   const t = useTranslations('finance');
   const tc = useTranslations('common');
@@ -65,6 +72,9 @@ export function TxForm({
             onClick={() => setType('refund')}
           >
             ↩️ {t('refund')}
+            <span className="ml-1 font-mono text-xs font-normal" data-testid="tx-refund-advance">
+              · {t('advanceNow', { amount: advanceUsd.toFixed(2) })}
+            </span>
           </button>
         )}
       </div>
@@ -156,7 +166,9 @@ export function TxForm({
                     ? t('futureDate')
                     : state.error === 'amount_too_large'
                       ? tc('amountTooLarge')
-                      : tc('error')}
+                      : state.error === 'refund_exceeds_advance'
+                        ? t('refundExceedsAdvance')
+                        : tc('error')}
         </p>
       )}
       <button type="submit" disabled={pending} className="btn-primary w-full disabled:opacity-60">

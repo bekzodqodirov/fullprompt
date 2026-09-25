@@ -52,6 +52,8 @@ const PAYER_ERRORS = {
   account_currency_mismatch: 'errTillCurrency',
   payer_conflict: 'errPayerConflict',
   staff_cost_needs_finance: 'errStaffVoid',
+  partner_cost_not_yours: 'errPartnerVoidNotYours',
+  partner_cost_settled: 'errPartnerVoidSettled',
   future_date: 'errFutureDate',
   amount_too_large: 'errAmountTooLarge',
 } as const;

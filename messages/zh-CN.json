@@ -1008,7 +1008,9 @@
     "errPayerConflict": "该费用已指定付款方。",
     "errStaffVoid": "员工自付的费用只能由会计或管理员作废。",
     "errFutureDate": "日期不能晚于明天。",
-    "errAmountTooLarge": "金额过大——单行无法容纳。"
+    "errAmountTooLarge": "金额过大——单行无法容纳。",
+    "errPartnerVoidNotYours": "由公司支付的费用只能由录入人或会计/管理员作废。",
+    "errPartnerVoidSettled": "该公司账户在此费用之后已有付款或抵销——只能由会计或管理员作废。"
   },
   "batches": {
     "title": "车次",
@@ -1332,7 +1334,9 @@
     "fateLeftBehind": "{count} 箱留在发货仓库——未随本车",
     "arrivedLine": "已到：{boxes} 📦 · {kg} 公斤——按此定价",
     "perKgArrived": "/公斤（已到）",
-    "perKgLoaded": "/公斤（已装）"
+    "perKgLoaded": "/公斤（已装）",
+    "advanceNow": "预付款 ${amount}",
+    "refundExceedsAdvance": "没有这么多预付款。如果是丢失货物的赔偿——请先降低价格（交易折扣，再更正费用），然后退款。如果是系统之前的旧预付款——请先录入那笔付款。"
   },
   "map": {
     "title": "地图",
@@ -1583,7 +1587,9 @@
     },
     "nonCashCategory": "该费用类型不涉及现金（例如折旧）：不能指定账户或付款方。",
     "nonCashHint": "非现金费用类型：不填写账户和付款方。",
-    "currencyLocked": "该账户已有资金往来——不能更改币种。请新开一个账户。"
+    "currencyLocked": "该账户已有资金往来——不能更改币种。请新开一个账户。",
+    "accountOrPayerRequired": "请指明资金从哪个账户支出，或由谁支付（往来方）。",
+    "cashFlagLocked": "该类型已有费用——不能更改“现金”标记。请新建一个费用类型。"
   },
   "crm": {
     "title": "CRM",
@@ -2920,7 +2926,8 @@
     },
     "forDeal": "对应哪笔交易",
     "forDealDeferredHint": "⏳ — 延期交易：如果这笔钱是付该交易的，请选择它，否则延期会继续掩盖其他欠款。",
-    "dealMismatch": "该交易属于其他客户。"
+    "dealMismatch": "该交易属于其他客户。",
+    "tillForbidden": "往来方的账户收支只能由会计或管理员记录。"
   },
   "lists": {
     "allRecords": "全部",

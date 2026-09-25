@@ -12,6 +12,7 @@ import {
   categorySchema,
   expenseSchema,
   generateRecurring,
+  needsKassaOrPayer,
   recurringPatchSchema,
   recurringSchema,
   saveAccount,
@@ -115,6 +116,11 @@ export async function addExpenseAction(
   const rawRequest = String(formData.get('requestId') ?? '');
   const requestId = /^[0-9a-f-]{36}$/i.test(rawRequest) ? rawRequest : null;
   return run('finance.expenses', async (ctx) => {
+    // A kassa or a payer is MANDATORY on a cash kind (U13, owner's A) — asked
+    // before the rasxod xabari's claim, so a refusal leaves it open.
+    if (await needsKassaOrPayer(parsed.data.categoryId, parsed.data)) {
+      throw new AccountingError('account_or_payer_required');
+    }
     if (!requestId) {
       await addExpense(parsed.data, ctx);
       return;
@@ -228,7 +234,13 @@ export async function saveRecurringAction(
   });
   if (!parsed.success) return refusal(parsed.error);
   const id = String(formData.get('id') ?? '') || undefined;
-  return run('finance.expenses', (ctx) => saveRecurring({ ...parsed.data, id }, ctx));
+  return run('finance.expenses', async (ctx) => {
+    // Every posting of the template would be one-sided (U13, owner's A).
+    if (await needsKassaOrPayer(parsed.data.categoryId, parsed.data)) {
+      throw new AccountingError('account_or_payer_required');
+    }
+    await saveRecurring({ ...parsed.data, id }, ctx);
+  });
 }
 
 /** A template's amount, day or stop — `updateRecurring` (audit A32). */

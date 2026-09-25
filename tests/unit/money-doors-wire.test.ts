@@ -11,7 +11,7 @@ import {
 import { expenseRequestSchema } from '@/modules/wms/accounting/expense-requests';
 import { costEntrySchema, receiptCostGridSchema } from '@/modules/wms/costing/service';
 import { createCrateSchema } from '@/modules/wms/crates/service';
-import { transactionSchema } from '@/modules/wms/finance/service';
+import { refundFitsAdvance, transactionSchema } from '@/modules/wms/finance/service';
 import { amountRefusal, exceedsRowUsd, MAX_NATIVE_AMOUNT, MAX_ROW_USD } from '@/modules/wms/finance/money-bounds';
 import { partnerTxSchema } from '@/modules/wms/partners/service';
 import { settlementSchema } from '@/modules/wms/partners/settlement';
@@ -279,6 +279,88 @@ describe('U06 — a non-cash kind names no kassa and no payer', () => {
     const form = read('src/app/(protected)/upsale/pay-form.tsx');
     expect(form).not.toContain('{state.error}</span>');
     expect(form).toContain('data-testid="upsale-category-error"');
+  });
+});
+
+describe('U13 (owner A) — the two expense doors ask for a kassa or a payer', () => {
+  const action = read('src/app/(protected)/accounting/actions.ts');
+
+  it('addExpenseAction asks it after authorize and BEFORE the rasxod xabari\u2019s claim', () => {
+    const body = slice(action, 'export async function addExpenseAction', 'export async function openStaffPartnerAction');
+    const ask = body.indexOf('if (await needsKassaOrPayer(parsed.data.categoryId, parsed.data)) {');
+    expect(ask).toBeGreaterThan(body.indexOf("return run('finance.expenses'"));
+    expect(ask).toBeLessThan(body.indexOf('await claimExpenseRequest('));
+    expect(ask).toBeLessThan(body.indexOf('await addExpense('));
+    expect(body).toContain("throw new AccountingError('account_or_payer_required');");
+  });
+
+  it('saveRecurringAction asks it before the template is written', () => {
+    const body = slice(action, 'export async function saveRecurringAction', 'export async function updateRecurringAction');
+    const ask = body.indexOf('if (await needsKassaOrPayer(parsed.data.categoryId, parsed.data)) {');
+    expect(ask).toBeGreaterThan(0);
+    expect(ask).toBeLessThan(body.indexOf('await saveRecurring('));
+  });
+
+  it('both forms say it in words', () => {
+    for (const file of [
+      'src/app/(protected)/accounting/expenses/expense-form.tsx',
+      'src/app/(protected)/accounting/expenses/recurring-form.tsx',
+    ]) {
+      expect(read(file), file).toContain("state.error === 'account_or_payer_required'");
+    }
+  });
+});
+
+describe('U33 (owner b) — a kassa moved on a counterparty\u2019s card is the kassa holders\u2019', () => {
+  const action = read('src/app/(protected)/kontragentlar/actions.ts');
+
+  it('the write door refuses a payment or a receipt without the grant, before the staff door', () => {
+    expect(action).toContain("return movesTill && !mayPickTill(actor.permissions) ? 'till_forbidden' : null;");
+    const body = slice(action, 'export async function addPartnerTxAction', 'export async function voidPartnerTxAction');
+    expect(body).toContain('tillDoor(actor, CASH_TYPES.includes(parsed.data.type)) ?? staffDoor(actor, parsed.data.partnerId)');
+  });
+
+  it('the void judges the ROW\u2019s kassa', () => {
+    const body = slice(action, 'export async function voidPartnerTxAction', 'export async function recordSettlementAction');
+    expect(body).toContain('return tillDoor(actor, Boolean(row?.accountId)) ?? staffDoor(actor, row?.partnerId ?? null);');
+  });
+
+  it('the card offers no kassa, no cash kind and no ✕ on a cash row to a non-holder', () => {
+    const page = read('src/app/(protected)/kontragentlar/[id]/page.tsx');
+    expect(page).toContain('const movesTills = canManage && mayPickTill(actor.permissions);');
+    expect(page).toMatch(/const accounts = movesTills\s*\?/);
+    expect(page).toMatch(/canManage && !tx\.voidedAt && \(!tx\.accountId \|\| movesTills\) && \(\s*<VoidTx/);
+    const form = read('src/app/(protected)/kontragentlar/[id]/tx-form.tsx');
+    expect(form).toContain('const kinds = movesTills ? TYPES : TYPES.filter((code) => !CASH.has(code));');
+    expect(form).toContain("state.error === 'till_forbidden'");
+  });
+});
+
+describe('U04 (owner A) — a refund hands back an advance, never more', () => {
+  it('fits: up to the advance plus a few dollars of FX residue, and never with no advance at all', () => {
+    expect(refundFitsAdvance(300, 300)).toBe(true);
+    expect(refundFitsAdvance(301.88, 300)).toBe(true); // the same so'm after the rate moved
+    expect(refundFitsAdvance(305, 300)).toBe(true);
+    expect(refundFitsAdvance(305.01, 300)).toBe(false);
+    expect(refundFitsAdvance(4, 0)).toBe(false);
+    expect(refundFitsAdvance(1, -50)).toBe(false); // he owes us
+  });
+
+  it('the ledger form shows the advance beside the button and says the refusal in words', () => {
+    const form = read('src/app/(protected)/finance/[clientId]/tx-form.tsx');
+    expect(form).toContain("t('advanceNow', { amount: advanceUsd.toFixed(2) })");
+    expect(form).toContain("state.error === 'refund_exceeds_advance'");
+    const page = read('src/app/(protected)/finance/[clientId]/page.tsx');
+    expect(page).toContain('advanceUsd={balance < -0.009 ? -balance : 0}');
+  });
+
+  it('the service checks and inserts under one per-client lock, on the transaction\u2019s own connection', () => {
+    const service = read('src/modules/wms/finance/service.ts');
+    const body = slice(service, 'export async function addTransaction', 'export async function placePayment');
+    const lock = body.indexOf('pg_advisory_xact_lock(hashtext(');
+    expect(lock).toBeGreaterThan(0);
+    expect(body.indexOf('refundFitsAdvance(amountUsd,')).toBeGreaterThan(lock);
+    expect(body.slice(lock)).not.toContain('clientBalanceUsd(');
   });
 });
 

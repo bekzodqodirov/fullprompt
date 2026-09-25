@@ -118,13 +118,29 @@ describe('R6a — a refund is money handed back out of a kassa', () => {
     expect(flow.rows.find((r) => r.label === 'clientRefunds')?.amountUsd).toBeGreaterThanOrEqual(50);
   });
 
-  it('a refund to a client who owed nothing ages as a debt from its own day', async () => {
+  // This test used to pin the defect as intended (#974): «a refund to a
+  // client who owed nothing ages as a debt from its own day». The owner's
+  // answer A (U04, 2026-09-25) is that it is REFUSED — a settled client
+  // handed money for lost cartons then «owed» it on five screens and the
+  // handover gate stopped his next cargo. What still ages is the few-dollar
+  // FX residue the refusal deliberately lets through, so arAging's refund
+  // branch keeps a reason to exist.
+  it('a refund larger than the client\u2019s advance is refused; the FX residue passes and ages', async () => {
     const clientId = await client('C');
     const box = await till('R6 aging');
-    await addTransaction({ clientId, type: 'refund', amount: 30, currency: 'USD', txDate: DAY, accountId: box }, ctx());
+    await expect(
+      addTransaction({ clientId, type: 'refund', amount: 30, currency: 'USD', txDate: DAY, accountId: box }, ctx()),
+    ).rejects.toMatchObject({ code: 'refund_exceeds_advance' });
+    await addTransaction({ clientId, type: 'payment', amount: 300, currency: 'USD', txDate: DAY, accountId: box }, ctx());
+    await expect(
+      addTransaction({ clientId, type: 'refund', amount: 306, currency: 'USD', txDate: DAY, accountId: box }, ctx()),
+    ).rejects.toMatchObject({ code: 'refund_exceeds_advance' });
+    // The same so'm handed back after the rate moved reads $301.88 (measured).
+    await addTransaction({ clientId, type: 'refund', amount: 301.88, currency: 'USD', txDate: DAY, accountId: box }, ctx());
+    expect(await clientBalanceUsd(clientId)).toBeCloseTo(1.88, 2);
     const aging = await arAging(DAY);
     const mine = aging.find((r) => r.clientCode === codes.get(clientId));
-    expect(mine?.balance).toBe(30);
+    expect(mine?.balance).toBe(1.88);
   });
 });
 

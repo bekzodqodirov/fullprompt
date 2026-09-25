@@ -5,9 +5,12 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
   auditLog,
+  batches,
   clients,
   clientTransactions,
+  costTypes,
   expenses,
+  partnerTransactions,
   partnerTypes,
   recurringExpenses,
   users,
@@ -19,19 +22,26 @@ import {
   accountBalances,
   addExpense,
   addTransfer,
+  needsKassaOrPayer,
   saveAccount,
   saveCategory,
   saveRecurring,
   voidExpense,
 } from '@/modules/wms/accounting/service';
-import { addCostEntry, addReceiptCostsBulk } from '@/modules/wms/costing/service';
+import { addCostEntry, addReceiptCostsBulk, voidCostEntry } from '@/modules/wms/costing/service';
 import { payUpsale, setUpsaleCategory } from '@/modules/wms/calc/upsale-service';
 import { createDeal, deferPayment } from '@/modules/wms/deals/service';
 import { latestTxDate } from '@/modules/wms/finance/dates';
 import { addTransaction, deferredBalanceUsd, voidTransaction } from '@/modules/wms/finance/service';
 import { blockingDebtUsd } from '@/modules/wms/issue/approvals';
 import { issueBoxes } from '@/modules/wms/issue/service';
-import { addPartnerTx, savePartner, setPartnerActive } from '@/modules/wms/partners/service';
+import {
+  addPartnerTx,
+  firmMovedSinceCost,
+  savePartner,
+  setPartnerActive,
+  voidPartnerTx,
+} from '@/modules/wms/partners/service';
 import { recordSettlement } from '@/modules/wms/partners/settlement';
 
 /**
@@ -65,6 +75,9 @@ const liveClientTx: string[] = [];
 const liveExpenses: string[] = [];
 const deletableExpenses: string[] = [];
 const templates: string[] = [];
+const retiredCategories: { id: string; name: string; cash: boolean }[] = [];
+const madeCosts: string[] = [];
+const madeBatches: string[] = [];
 let upsaleSetting: unknown;
 
 async function mintTill(label: string, currency: string, openingBalance = 0) {
@@ -124,6 +137,11 @@ afterAll(async () => {
       [nonCashCategoryId, `Amortizatsiya doors ${SUFFIX}`, false],
     ] as const) {
       await saveCategory({ id, name, cash, sortOrder: 900, active: false }, ctx()).catch(() => undefined);
+    }
+    for (const id of madeCosts) await voidCostEntry(id, 'money-doors tozalash', ctx()).catch(() => undefined);
+    for (const id of madeBatches) await db.update(batches).set({ status: 'cancelled' }).where(eq(batches.id, id));
+    for (const category of retiredCategories) {
+      await saveCategory({ ...category, sortOrder: 900, active: false }, ctx()).catch(() => undefined);
     }
     await setPartnerActive(partnerId, false, ctx()).catch(() => undefined);
     await setSetting('upsale_expense_category_id', upsaleSetting ?? '', actorId);
@@ -348,6 +366,93 @@ describe('U06 — a non-cash kind names no kassa and no payer', () => {
   });
 });
 
+describe('U06 (owner a) — a kind\u2019s «Naqd» mark is fixed once it has expenses', () => {
+  it('refused once any expense — live OR voided — uses the kind; free while none does; history keeps the before', async () => {
+    const name = `Naqd flip ${SUFFIX}`;
+    const fresh = await saveCategory({ name, cash: true, sortOrder: 900, active: true }, ctx());
+    retiredCategories.push({ id: fresh.id, name, cash: true });
+    // No expense yet: a wrong tick is still just a wrong tick.
+    await saveCategory({ id: fresh.id, name, cash: false, sortOrder: 900, active: true }, ctx());
+    await saveCategory({ id: fresh.id, name, cash: true, sortOrder: 900, active: true }, ctx());
+    const [audit] = await db
+      .select({ before: auditLog.before })
+      .from(auditLog)
+      .where(and(eq(auditLog.entityType, 'expense_category'), eq(auditLog.entityId, fresh.id), eq(auditLog.action, 'update')))
+      .orderBy(sql`${auditLog.createdAt} DESC`)
+      .limit(1);
+    expect(audit?.before).toMatchObject({ cash: false });
+
+    const expense = await addExpense(
+      { categoryId: fresh.id, amount: 4, currency: 'USD', expenseDate: DAY, accountId: usdTillId },
+      ctx(),
+    );
+    await voidExpense(expense.id, 'xato', ctx());
+    await expect(
+      saveCategory({ id: fresh.id, name, cash: false, sortOrder: 900, active: true }, ctx()),
+    ).rejects.toMatchObject({ code: 'cash_flag_locked' });
+    // The name, the order and the retirement stay editable.
+    await saveCategory({ id: fresh.id, name, cash: true, sortOrder: 901, active: true }, ctx());
+  });
+});
+
+describe('U13 (owner A) — a cash expense names a kassa or a payer', () => {
+  it('the doors\u2019 predicate: a cash kind with neither needs one; a payer or a kassa answers it; a book entry needs neither', async () => {
+    expect(await needsKassaOrPayer(cashCategoryId, {})).toBe(true);
+    expect(await needsKassaOrPayer(cashCategoryId, { accountId: usdTillId })).toBe(false);
+    expect(await needsKassaOrPayer(cashCategoryId, { partnerId })).toBe(false);
+    expect(await needsKassaOrPayer(nonCashCategoryId, {})).toBe(false);
+  });
+});
+
+describe('U34 (owner B) — a firm-paid cost is its typist\u2019s until the firm\u2019s account moves', () => {
+  it('moved: no before a payment, yes after one, no again once that payment is voided', async () => {
+    const [origin, dest] = await db.select({ id: warehouses.id }).from(warehouses).limit(2);
+    const [batch] = await db
+      .insert(batches)
+      .values({ code: `UD-${SUFFIX}`.slice(0, 20), originWarehouseId: origin!.id, destWarehouseId: dest!.id, status: 'forming', createdBy: actorId })
+      .returning();
+    madeBatches.push(batch!.id);
+    const [type] = await db.select().from(costTypes).where(eq(costTypes.active, true)).limit(1);
+    const entry = await addCostEntry(
+      {
+        scope: 'batch',
+        batchId: batch!.id,
+        costTypeId: type!.id,
+        amount: 800,
+        currency: 'USD',
+        costDate: DAY,
+        allocationBasis: 'weight',
+        partnerId,
+        note: 'Fura qarzga',
+      },
+      ctx(),
+    );
+    madeCosts.push(entry.id);
+    const [charge] = await db
+      .select({ id: partnerTransactions.id })
+      .from(partnerTransactions)
+      .where(eq(partnerTransactions.costEntryId, entry.id));
+    expect(charge).toBeTruthy();
+    expect(await firmMovedSinceCost(entry.id, partnerId)).toBe(false);
+
+    // A later DEBT is not a settlement: another cost on the same firm.
+    const other = await addCostEntry(
+      { scope: 'batch', batchId: batch!.id, costTypeId: type!.id, amount: 5, currency: 'USD', costDate: DAY, allocationBasis: 'weight', partnerId },
+      ctx(),
+    );
+    madeCosts.push(other.id);
+    expect(await firmMovedSinceCost(entry.id, partnerId)).toBe(false);
+
+    const paid = await addPartnerTx(
+      { partnerId, type: 'payment', amount: 300, currency: 'USD', txDate: DAY, accountId: usdTillId },
+      ctx(),
+    );
+    expect(await firmMovedSinceCost(entry.id, partnerId)).toBe(true);
+    await voidPartnerTx(paid.id, 'xato to‘lov', ctx());
+    expect(await firmMovedSinceCost(entry.id, partnerId)).toBe(false);
+  });
+});
+
 describe('U30 — a settlement can name the deferred job it pays', () => {
   it('money paid through the firm for a deferred job stops excusing the other debt', async () => {
     const dealId = await createDeal(
@@ -437,6 +542,12 @@ describe('U30 — a settlement can name the deferred job it pays', () => {
 
 describe('U33 — voiding a refund asks the grant that created it (#1014)', () => {
   it('without the kassa grant a refund stays; a payment may still be voided; the holder voids the refund', async () => {
+    // Its own advance to hand back (a refund is capped by it, U04).
+    const advance = await addTransaction(
+      { clientId, type: 'payment', amount: 20, currency: 'USD', txDate: DAY, accountId: usdTillId, method: 'cash' },
+      ctx(),
+    );
+    liveClientTx.push(advance.id);
     const refund = await addTransaction(
       { clientId, type: 'refund', amount: 20, currency: 'USD', txDate: DAY, accountId: usdTillId, method: 'cash' },
       ctx(),

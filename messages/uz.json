@@ -1008,7 +1008,9 @@
     "errPayerConflict": "Bu xarajatning to‘lovchisi allaqachon ko‘rsatilgan.",
     "errStaffVoid": "Hodim o‘z pulidan to‘lagan xarajatni faqat buxgalter yoki admin bekor qiladi.",
     "errFutureDate": "Sana ertadan keyin bo‘lishi mumkin emas.",
-    "errAmountTooLarge": "Summa juda katta — bitta qatorga sig‘maydi."
+    "errAmountTooLarge": "Summa juda katta — bitta qatorga sig‘maydi.",
+    "errPartnerVoidNotYours": "Firma to‘lagan xarajatni uni yozgan hodim yoki buxgalter/admin bekor qiladi.",
+    "errPartnerVoidSettled": "Bu firmaning hisobida xarajatdan keyin to‘lov yoki hisob-kitob bo‘lgan — endi faqat buxgalter yoki admin bekor qiladi."
   },
   "batches": {
     "title": "Partiyalar",
@@ -1332,7 +1334,9 @@
     "fateLeftBehind": "{count} ta jo‘nash skladida qolgan — bu mashinada ketmagan",
     "arrivedLine": "Yetib kelgan: {boxes} 📦 · {kg} kg — narxni shunga qarab qo‘ying",
     "perKgArrived": "/kg yetib kelgan",
-    "perKgLoaded": "/kg yuklangan"
+    "perKgLoaded": "/kg yuklangan",
+    "advanceNow": "avans ${amount}",
+    "refundExceedsAdvance": "Bu summaga avans yo‘q. Yo‘qolgan yuk uchun bo‘lsa — narxni tushiring (bitim chegirmasi, keyin hisobni to‘g‘rilang), so‘ng qaytaring. Eski (tizimdan oldingi) avans bo‘lsa — avval o‘sha to‘lovni kiriting."
   },
   "map": {
     "title": "Xarita",
@@ -1583,7 +1587,9 @@
     },
     "nonCashCategory": "Bu xarajat turi pul emas (masalan, amortizatsiya): unda kassa ham, to‘lovchi ham bo‘lmaydi.",
     "nonCashHint": "Pulsiz xarajat turi: kassa va to‘lovchi yozilmaydi.",
-    "currencyLocked": "Bu kassada pul harakati bor — valyutani o‘zgartirib bo‘lmaydi. Yangi kassa oching."
+    "currencyLocked": "Bu kassada pul harakati bor — valyutani o‘zgartirib bo‘lmaydi. Yangi kassa oching.",
+    "accountOrPayerRequired": "Pul qaysi kassadan chiqqanini yoki kim to‘laganini (kontragent) ko‘rsating.",
+    "cashFlagLocked": "Bu turda xarajatlar bor — «Naqd» belgisini o‘zgartirib bo‘lmaydi. Yangi xarajat turi oching."
   },
   "crm": {
     "title": "CRM",
@@ -2920,7 +2926,8 @@
     },
     "forDeal": "Qaysi bitim uchun",
     "forDealDeferredHint": "⏳ — kechiktirilgan bitim: pul shu bitim uchun bo‘lsa, uni tanlang, aks holda kechiktirish boshqa qarzni yopib turaveradi.",
-    "dealMismatch": "Bu bitim boshqa mijozniki."
+    "dealMismatch": "Bu bitim boshqa mijozniki.",
+    "tillForbidden": "Kontragent bo‘yicha kassadan chiqqan va kassaga kirgan pulni faqat buxgalter yoki admin yozadi."
   },
   "lists": {
     "allRecords": "Hammasi",
