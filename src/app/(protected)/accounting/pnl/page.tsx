@@ -3,8 +3,11 @@ import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { pnlGaps, profitAndLoss, type PnlRow } from '@/modules/wms/accounting/reports';
 import { resolvePeriod, toUzs, uzsRate } from '@/modules/wms/accounting/period';
+import { perUsd } from '@/modules/wms/costing/fx-display';
 import { PeriodForm } from '../period-form';
 import { PnlGapsNote } from '../pnl-gaps';
+import { PnlLossesNote } from '../pnl-losses';
+import { lossesInPeriod } from '@/modules/wms/reports/business';
 import { PageHeader } from '@/components/ui/page';
 
 /**
@@ -25,7 +28,12 @@ export default async function PnlPage({
   if (!actor.permissions.has('finance.reports')) redirect('/accounting');
   const t = await getTranslations('accounting');
   const { from, to } = resolvePeriod(await searchParams);
-  const [pnl, rate, gaps] = await Promise.all([profitAndLoss(from, to), uzsRate(), pnlGaps(from, to)]);
+  const [pnl, rate, gaps, losses] = await Promise.all([
+    profitAndLoss(from, to),
+    uzsRate(),
+    pnlGaps(from, to),
+    lossesInPeriod(from, to),
+  ]);
 
   const usd = (value: number) =>
     value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -110,8 +118,15 @@ export default async function PnlPage({
         </div>
       </div>
 
+      <PnlLossesNote losses={losses} />
+
       <p className="text-xs text-ink-500">ℹ️ {t('pnlNote')}</p>
-      {rate && <p className="text-xs text-ink-400">{t('uzsNote', { rate })}</p>}
+      {rate && (
+        <p className="text-xs text-ink-400">
+          {/* The stored rate is dollars per ONE so'm; the reader quotes so'm per dollar. */}
+          {t('uzsNote', { rate: `1 $ = ${(perUsd(rate) ?? 0).toLocaleString('en-US')} UZS` })}
+        </p>
+      )}
     </div>
   );
 }

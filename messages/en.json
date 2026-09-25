@@ -1589,7 +1589,12 @@
     "nonCashHint": "A non-cash expense kind: no cash box and no payer.",
     "currencyLocked": "Money has already moved through this cash box — its currency cannot change. Open a new cash box.",
     "accountOrPayerRequired": "Say which cash box the money left, or who paid it (a counterparty).",
-    "cashFlagLocked": "This kind already has expenses — its «Cash» mark cannot change. Make a new kind instead."
+    "cashFlagLocked": "This kind already has expenses or a monthly template — its «Cash» mark cannot change. Make a new kind instead.",
+    "lossesTitle": "Losses",
+    "lossesLost": "{boxes} cartons ({m3} m³) were lost in the period — {usd} was already spent carrying them.",
+    "lossesMissing": "Missing in transit, not found yet: {boxes} cartons ({m3} m³), {usd} spent.",
+    "lossesHint": "For information: this money is already inside the cargo costs in the table above and is not subtracted from profit again.",
+    "lossesOpen": "Cargo at risk →"
   },
   "crm": {
     "title": "CRM",

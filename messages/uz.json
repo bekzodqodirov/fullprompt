@@ -1589,7 +1589,12 @@
     "nonCashHint": "Pulsiz xarajat turi: kassa va to‘lovchi yozilmaydi.",
     "currencyLocked": "Bu kassada pul harakati bor — valyutani o‘zgartirib bo‘lmaydi. Yangi kassa oching.",
     "accountOrPayerRequired": "Pul qaysi kassadan chiqqanini yoki kim to‘laganini (kontragent) ko‘rsating.",
-    "cashFlagLocked": "Bu turda xarajatlar bor — «Naqd» belgisini o‘zgartirib bo‘lmaydi. Yangi xarajat turi oching."
+    "cashFlagLocked": "Bu turda xarajatlar yoki doimiy xarajat shabloni bor — «Naqd» belgisini o‘zgartirib bo‘lmaydi. Yangi xarajat turi oching.",
+    "lossesTitle": "Yo‘qotishlar",
+    "lossesLost": "Davrda {boxes} ta karobka ({m3} m³) yo‘qolgan — ularni tashishga {usd} sarflangan.",
+    "lossesMissing": "Yo‘lda qolgan, hali topilmagan: {boxes} ta karobka ({m3} m³), {usd} sarflangan.",
+    "lossesHint": "Bu ma’lumot uchun: bu pul yuqoridagi jadvalda yuk xarajatlari ichida bor va foydadan qayta ayrilmaydi.",
+    "lossesOpen": "Xavfdagi yuklar ro‘yxati →"
   },
   "crm": {
     "title": "CRM",

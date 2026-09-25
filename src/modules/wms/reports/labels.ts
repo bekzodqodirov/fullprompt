@@ -131,6 +131,24 @@ const DICT = {
     'zh-CN': '手工录入的往来单位欠款——未计入',
     en: 'Counterparty debts typed by hand — not included',
   },
+  lossesLost: {
+    ru: 'Потеряно за период (коробок · м³ · уже потрачено на их перевозку)',
+    uz: 'Davrda yo‘qolgan (karobka · m³ · tashishga sarflangan)',
+    'zh-CN': '本期丢失（箱 · m³ · 已花费的运输成本）',
+    en: 'Lost in the period (cartons · m³ · already spent carrying them)',
+  },
+  lossesMissing: {
+    ru: 'Не доехали и пока не найдены (коробок · м³ · потрачено)',
+    uz: 'Yo‘lda qolgan, hali topilmagan (karobka · m³ · sarflangan)',
+    'zh-CN': '途中缺失、尚未找到（箱 · m³ · 已花费）',
+    en: 'Missing in transit, not found yet (cartons · m³ · spent)',
+  },
+  lossesInCosts: {
+    ru: 'Эти деньги уже внутри расходов на груз выше — из прибыли повторно не вычитаются.',
+    uz: 'Bu pul yuqoridagi yuk xarajatlari ichida bor — foydadan qayta ayrilmaydi.',
+    'zh-CN': '这些金额已包含在上面的货物成本中——不再从利润中重复扣除。',
+    en: 'This money is already inside the cargo costs above — it is not subtracted from profit again.',
+  },
   uzsAtRate: {
     ru: 'UZS по сегодняшнему курсу',
     uz: 'UZS bugungi kurs bo‘yicha',

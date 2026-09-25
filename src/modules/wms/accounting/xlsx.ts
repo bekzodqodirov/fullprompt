@@ -10,6 +10,7 @@ import { dayIn, OFFICE_TZ } from '@/modules/platform/time/tashkent';
 export const EXPENSES_XLSX_CAP = 5000;
 import { paymentsRegister } from '../finance/service';
 import { toUzs, uzsRate } from './period';
+import { perUsd } from '../costing/fx-display';
 import {
   arAging,
   cashReconciliation,
@@ -24,6 +25,7 @@ import {
   type ReconLineKey,
 } from './reports';
 import { tripTotals } from '../reports/dashboard-math';
+import { lossesInPeriod } from '../reports/business';
 
 /**
  * Accounting exports (owner: "otchetlarni excelda skachat qiladgan bolsin").
@@ -72,7 +74,12 @@ function gapRows(sheet: ExcelJS.Worksheet, L: ReturnType<typeof reportLabels>, g
 
 export async function buildPnlXlsx(from: string, to: string, locale?: string): Promise<Buffer> {
   const L = reportLabels(locale);
-  const [pnl, rate, gaps] = await Promise.all([profitAndLoss(from, to), uzsRate(), pnlGaps(from, to)]);
+  const [pnl, rate, gaps, losses] = await Promise.all([
+    profitAndLoss(from, to),
+    uzsRate(),
+    pnlGaps(from, to),
+    lossesInPeriod(from, to),
+  ]);
   const workbook = new ExcelJS.Workbook();
   const sheet = sheetSetup(workbook, 'P&L', `${L.tPnl} · ${period(from, to)}`);
 
@@ -115,7 +122,20 @@ export async function buildPnlXlsx(from: string, to: string, locale?: string): P
   // word, while the page said both. And the UZS column names its rate.
   sheet.addRow([]);
   gapRows(sheet, L, gaps);
-  if (rate) sheet.addRow([`${L.uzsAtRate}: 1 $ = ${rate} UZS`]);
+  // The page's «Yo'qotishlar» (owner 6a), one text cell each for the same
+  // reason as the gaps: the dollars are already inside the costs above.
+  if (losses.lost.boxes > 0) {
+    sheet.addRow([`❌ ${L.lossesLost}: ${losses.lost.boxes} · ${losses.lost.m3} m³ · $${usdText(losses.lost.usd)}`]);
+  }
+  if (losses.missing.boxes > 0) {
+    sheet.addRow([
+      `⚠ ${L.lossesMissing}: ${losses.missing.boxes} · ${losses.missing.m3} m³ · $${usdText(losses.missing.usd)}`,
+    ]);
+  }
+  if (losses.lost.boxes > 0 || losses.missing.boxes > 0) sheet.addRow([L.lossesInCosts]);
+  // `rate` is dollars per ONE so'm (0.00008); printed raw the file said
+  // «1 $ = 0.00008 UZS», inverted by five orders of magnitude.
+  if (rate) sheet.addRow([`${L.uzsAtRate}: 1 $ = ${perUsd(rate)} UZS`]);
 
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }

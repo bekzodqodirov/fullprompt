@@ -102,3 +102,17 @@ describe('audit 2026-09-25 — what the reports say', () => {
     expect(profit).toContain('gapRows(sheet, L, gaps)');
   });
 });
+
+describe('owner 6a — the P&L page carries the losses beside its table', () => {
+  it('the page and its file both read lossesInPeriod; the page renders the note after the table', () => {
+    const page = read('src/app/(protected)/accounting/pnl/page.tsx');
+    expect(page).toContain('lossesInPeriod(from, to),');
+    const table = page.indexOf('</table>');
+    const note = page.indexOf('<PnlLossesNote losses={losses} />');
+    expect(note).toBeGreaterThan(table);
+    // Information, never a row: the table's body must not name it.
+    expect(page.slice(page.indexOf('<tbody>'), table)).not.toContain('losses');
+    const file = read('src/modules/wms/accounting/xlsx.ts');
+    expect(file).toContain('lossesInPeriod(from, to),');
+  });
+});
