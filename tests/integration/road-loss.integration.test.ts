@@ -9,6 +9,7 @@ import {
   boxMovements,
   clientNotices,
   clients,
+  costAllocations,
   costEntries,
   costTypes,
   deals,
@@ -23,9 +24,13 @@ import {
 import { addCostEntry } from '@/modules/wms/costing/service';
 import { resolveMissing, resolveMissingSchema } from '@/modules/wms/scanning/unload';
 import { setBoxStatus } from '@/modules/wms/boxes/status';
-import { dealFullyIssued } from '@/modules/wms/deals/service';
+import { dealFullyIssued, moveDeal } from '@/modules/wms/deals/service';
 import { clientFeed } from '@/modules/wms/crm/feed';
 import { cargoRiskList } from '@/modules/wms/reports/business';
+import { globalSearch } from '@/modules/wms/search/service';
+import { mayOpenBoxCard } from '@/modules/wms/boxes/road-loss';
+import { botLookup } from '@/modules/wms/bot/lookup';
+import { ROLE_MATRIX } from '@/modules/platform/rbac/catalog';
 
 /**
  * Audit U38: a carton the truck arrived without had no honest end state —
@@ -46,6 +51,9 @@ let whOther = '';
 let clientA = '';
 let clientC = '';
 let dealId = '';
+/** The owner's round-27 funnel, minted: CONFIGURATION while it exists (#183). */
+let stPartial = '';
+let stHanded = '';
 let batchId = '';
 let batchCode = '';
 let freightEntry = '';
@@ -161,6 +169,18 @@ beforeAll(async () => {
   clientA = a!.id;
   clientC = c!.id;
   const stage = await db.query.dealStages.findFirst({ where: eq(dealStages.kind, 'open') });
+  // Far right of every seeded stage, so each cargo move here is FORWARD; and
+  // left of the deal-auto-stage file's own, so a leftover of that file cannot
+  // answer for these.
+  const mkStage = async (name: string, sortOrder: number, cargoTrigger: string) =>
+    (
+      await db
+        .insert(dealStages)
+        .values({ name: `${name} ${STAMP}`, kind: 'open', color: 'blue', sortOrder, cargoTrigger })
+        .returning({ id: dealStages.id })
+    )[0]!.id;
+  stPartial = await mkStage('RL-qisman', 9180, 'handed_partial');
+  stHanded = await mkStage('RL-topshirildi', 9190, 'handed');
   dealId = (
     await db
       .insert(deals)
@@ -230,12 +250,24 @@ afterAll(async () => {
   const boxIds = (
     await db.select({ id: boxes.id }).from(boxes).where(inArray(boxes.lotId, lotIds))
   ).map((b) => b.id);
-  await db.delete(events).where(inArray(events.entityId, boxIds));
+  // The deal's own moves emitted DealStageChanged about it.
+  const eventIds = (
+    await db
+      .select({ id: events.id })
+      .from(events)
+      .where(inArray(events.entityId, [...boxIds, dealId]))
+  ).map((e) => e.id);
+  if (eventIds.length) {
+    await db.delete(notifications).where(inArray(notifications.eventId, eventIds));
+  }
+  await db.delete(events).where(inArray(events.entityId, [...boxIds, dealId]));
   await db.delete(boxMovements).where(inArray(boxMovements.boxId, boxIds));
   await db.delete(boxes).where(inArray(boxes.id, boxIds));
   await db.delete(receiptLots).where(inArray(receiptLots.id, lotIds));
   await db.delete(receipts).where(inArray(receipts.id, madeReceipts));
   await db.delete(deals).where(eq(deals.id, dealId));
+  // CONFIGURATION last — the deal pointed at it.
+  await db.delete(dealStages).where(inArray(dealStages.id, [stPartial, stHanded].filter(Boolean)));
   await db.delete(batches).where(eq(batches.id, batchId));
   await db
     .update(clients)
@@ -342,13 +374,46 @@ describe('lost on the road — the third resolution', () => {
     expect([...after.values()].reduce((a, v) => a + v, 0)).toBeCloseTo(300, 6);
   });
 
-  it('lets the deal finish: the lost carton leaves the outstanding count', async () => {
+  it('lets the deal finish: the lost carton leaves the outstanding count, and the deal MOVES', async () => {
+    // The arrived carton was handed out first, and its BoxIssued parked the
+    // deal at «qisman topshirildi» — the ordinary order of a road loss.
+    await moveDeal(dealId, stPartial, ctx());
     expect(await dealFullyIssued(dealId)).toBe(false);
     await resolveMissing(
       { boxId: missingA, resolution: 'lost_in_transit', reason: 'yo‘lda yo‘qoldi' },
       ctx(),
     );
     expect(await dealFullyIssued(dealId)).toBe(true);
+    // No handover follows a loss, so the funnel's ear never re-asks: the loss
+    // itself moves the deal on to «to'liq topshirildi» (U38's review).
+    expect((await db.query.deals.findFirst({ where: eq(deals.id, dealId) }))?.stageId).toBe(
+      stHanded,
+    );
+  });
+
+  it('the destination manager can still find and open the carton they wrote off', async () => {
+    // The manager at the truck's destination recorded the loss (receipts.void
+    // at the destination); the carton now stands in no warehouse and rides no
+    // truck, so it is reached through the truck it was lost from.
+    const perms = new Set<string>(ROLE_MATRIX.warehouse_manager);
+    const at = (wh: string) => ({
+      id: actorId,
+      permissions: perms,
+      warehouseScoped: true,
+      warehouseIds: [wh],
+    });
+    const box = (await db.query.boxes.findFirst({ where: eq(boxes.id, missingA) }))!;
+    expect(box).toMatchObject({ status: 'lost', currentWarehouseId: null, currentBatchId: null });
+    const hits = async (wh: string) =>
+      (await globalSearch(at(wh), box.shortCode)).filter((h) => h.kind === 'box').map((h) => h.id);
+    expect(await hits(whDest)).toEqual([missingA]);
+    expect(await hits(whOrigin)).toEqual([missingA]);
+    expect(await hits(whOther)).toEqual([]);
+    expect(await mayOpenBoxCard(at(whDest), box, whOrigin)).toBe(true);
+    expect(await mayOpenBoxCard(at(whOther), box, whOrigin)).toBe(false);
+    // …and the staff bot, the third reader of the same rule.
+    expect(await botLookup(at(whDest), box.shortCode)).toContain('yo‘qolgan');
+    expect(await botLookup(at(whOther), box.shortCode)).toContain('omboringizda emas');
   });
 
   it('the client’s lenta says «lost», on the truck’s line', async () => {
@@ -378,10 +443,52 @@ describe('lost on the road — the third resolution', () => {
       currentWarehouseId: whOrigin,
       statusReason: null,
     });
+    // Back where its truck STARTED: it never rode it — written as the
+    // manager's own «found at origin», naming the truck, so the riders rule
+    // and the cargo-risk report both see it…
     const [found] = await db
       .select()
       .from(boxMovements)
-      .where(and(eq(boxMovements.boxId, missingC), eq(boxMovements.cause, 'found')));
-    expect(found?.toWarehouseId).toBe(whOrigin);
+      .where(and(eq(boxMovements.boxId, missingC), eq(boxMovements.fromStatus, 'lost')));
+    expect(found).toMatchObject({
+      cause: 'found_at_origin',
+      refType: 'batch',
+      refId: batchId,
+      toWarehouseId: whOrigin,
+    });
+    // …and it stops paying for that truck: the freight re-splits over what
+    // really rode (the lost carton A keeps its share, 6a), all of it.
+    const after = await shares(freightEntry);
+    expect(after.has(missingC)).toBe(false);
+    expect([...after.values()].reduce((a, v) => a + v, 0)).toBeCloseTo(300, 6);
+    // A share a failed re-split left behind is what the cargo-risk report's
+    // «phantom» exists to name — and it can, now that the find says where.
+    expect((await cargoRiskList('phantom', [whOrigin])).some((r) => r.boxId === missingC)).toBe(
+      false,
+    );
+    const [planted] = await db
+      .insert(costAllocations)
+      .values({ costEntryId: freightEntry, boxId: missingC, clientId: clientC, amountUsd: '1' })
+      .returning({ id: costAllocations.id });
+    try {
+      const phantom = await cargoRiskList('phantom', [whOrigin]);
+      expect(phantom.find((r) => r.boxId === missingC)?.batchCode).toBe(batchCode);
+    } finally {
+      await db.delete(costAllocations).where(eq(costAllocations.id, planted!.id));
+    }
+  });
+
+  it('found at the destination it DID ride: a plain «found», and its share stays', async () => {
+    const before = await shares(freightEntry);
+    await setBoxStatus(
+      { boxId: missingA, to: 'in_stock', reason: 'Toshkentda topildi', foundAtWarehouseId: whDest },
+      ctx(),
+    );
+    const [found] = await db
+      .select()
+      .from(boxMovements)
+      .where(and(eq(boxMovements.boxId, missingA), eq(boxMovements.fromStatus, 'lost')));
+    expect(found).toMatchObject({ cause: 'found', refType: 'manual', toWarehouseId: whDest });
+    expect(await shares(freightEntry)).toEqual(before);
   });
 });

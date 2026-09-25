@@ -17,8 +17,9 @@ import { BoxStatusActions } from './status-actions';
 import { BackLink } from '@/components/back-link';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 import { PrintLabels } from '@/components/print-labels';
-import { inScope, warehouseScope } from '@/modules/platform/rbac/scope';
+import { warehouseScope } from '@/modules/platform/rbac/scope';
 import { moneyHidden } from '@/modules/platform/rbac/money-sight';
+import { mayOpenBoxCard } from '@/modules/wms/boxes/road-loss';
 
 /** Box card: identity + full movement timeline (spec 5.5 / §10). */
 export default async function BoxPage({ params }: { params: Promise<{ id: string }> }) {
@@ -34,10 +35,9 @@ export default async function BoxPage({ params }: { params: Promise<{ id: string
 
   const lot = (await db.query.receiptLots.findFirst({ where: eq(receiptLots.id, box.lotId) }))!;
   const receipt = (await db.query.receipts.findFirst({ where: eq(receipts.id, lot.receiptId) }))!;
-  // Where it IS, or where it came from. A box in transit has left its origin,
-  // and the warehouse that received it must not lose sight of it the moment
-  // the truck pulls away.
-  if (!inScope(actor, box.currentWarehouseId) && !inScope(actor, receipt.warehouseId)) {
+  // Where it IS, or where it came from — or, lost on the road, the truck it
+  // was lost from (U38): the rule lives beside the one that names the truck.
+  if (!(await mayOpenBoxCard(actor, box, receipt.warehouseId))) {
     notFound();
   }
   const client = receipt.clientId

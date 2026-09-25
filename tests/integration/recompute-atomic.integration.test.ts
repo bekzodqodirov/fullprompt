@@ -318,6 +318,68 @@ describe('a recompute is one transaction under the entry’s lock', () => {
     }
   });
 
+  it('one entry that fails costs that entry: the lot’s others still re-split (recomputeForLot)', async () => {
+    const a = await mintLot(clientA, 2, 10);
+    const truck = await mintDeparted(a.boxIds);
+    // The truck's freight first — the lower id, so it is walked FIRST — and
+    // the prixod's own cost after it.
+    const road = await freightOn(truck.id, 100);
+    const own = await addCostEntry(
+      {
+        scope: 'receipt',
+        receiptId: a.receiptId,
+        costTypeId: freight,
+        amount: 60,
+        currency: 'USD',
+        costDate: DAY,
+        allocationBasis: 'weight',
+      },
+      ctx(),
+    );
+    madeCosts.push(own.id);
+    const roadBefore = await splitOf([road.id]);
+    // The prixod's cost has lost its shares (the pre-U41 crash window): the
+    // re-split must put them back even though the entry before it fails.
+    await db.delete(costAllocations).where(eq(costAllocations.costEntryId, own.id));
+
+    // Only a TRUCK cost reads the customs types (its base depends on them), so
+    // holding that table fails the freight's re-split and nothing else.
+    const helper = postgres(
+      process.env.DATABASE_URL ?? 'postgres://postgres@127.0.0.1:5432/gsr_dev',
+      { max: 1, onnotice: () => {} },
+    );
+    const held = await helper.reserve();
+    try {
+      await held`BEGIN`;
+      await held`LOCK TABLE cost_types IN ACCESS EXCLUSIVE MODE`;
+      const outcome = recomputeForLot(a.lotId).then(
+        () => 'resolved',
+        (err: Error) => err.message,
+      );
+      let pid: number | null = null;
+      for (let i = 0; i < 250 && pid === null; i += 1) {
+        const rows = await db.execute<{ pid: number }>(sql`
+          SELECT pid FROM pg_stat_activity
+           WHERE datname = current_database() AND wait_event_type = 'Lock'
+             AND query ILIKE '%cost_types%' AND pid <> pg_backend_pid()
+        `);
+        pid = rows[0]?.pid ?? null;
+        if (pid === null) await new Promise((r) => setTimeout(r, 20));
+      }
+      expect(pid, 'the freight re-split never reached the customs types').not.toBeNull();
+      await held`SELECT pg_cancel_backend(${pid})`;
+      // ONE aggregated error naming the one entry, after the rest ran.
+      expect(await outcome).toMatch(/recompute failed for 1 of 2 cost entries/);
+      await held`COMMIT`;
+    } finally {
+      held.release();
+      await helper.end();
+    }
+
+    expect(Object.values((await splitOf([own.id]))[own.id] ?? {})).toEqual([30, 30]);
+    expect(await splitOf([road.id])).toEqual(roadBefore);
+  });
+
   it('a void that lands first wins: the recompute after it puts no share back', async () => {
     const a = await mintLot(clientA, 2, 10);
     const truck = await mintDeparted(a.boxIds);

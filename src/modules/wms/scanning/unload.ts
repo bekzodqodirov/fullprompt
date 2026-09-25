@@ -744,6 +744,19 @@ export async function resolveMissing(
     await recomputeRiderChange([result.batchId], 'found_at_origin');
   }
 
+  // The loss can be the deal's last outstanding carton — the rest handed over
+  // before anybody gave up on this one — and then the deal is fully handed
+  // and must say so; the funnel's own ear hears only a handover (U38).
+  // After the commit, and never able to fail the door that recorded the loss.
+  if (result.loss) {
+    try {
+      const { advanceDealsAfterWriteOff } = await import('../deals/auto-stage');
+      await advanceDealsAfterWriteOff([input.boxId], ctx);
+    } catch (error) {
+      console.error('[unload] deal stage after a road loss failed', input.boxId, error);
+    }
+  }
+
   // The seller (compensation is their conversation) and whoever plans the
   // trucks, in ONE message each to a union — markBoxLost's recipients and its
   // reasons, after the commit and never to the presser.

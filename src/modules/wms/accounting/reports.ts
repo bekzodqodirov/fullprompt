@@ -93,14 +93,22 @@ export interface Pnl {
  * - A cost with no dollar figure because its currency had no rate: the P&L
  *   reads it as $0 (`coalesce(amount_usd, 0)`). Named per currency in its own
  *   money, since there is no dollar figure to name.
+ * - A cost WITH dollars that is split onto no box at all (audits U20/U39): in
+ *   the P&L, in no client's tannarx and in no truck's pricing screen. Only a
+ *   truck-stamped one was ever named (`profitByBatch`'s «unallocated»); a
+ *   prixod's or a crate's said nothing. Stated, not alarmed: a factory truck
+ *   with no prixod linked yet, or a truck cost typed before anything was
+ *   loaded, has no cargo for a while by design — and splits by itself when it
+ *   does. Nothing here voids it: the empty-scope void is the annul's alone.
  */
 export interface PnlGaps {
   manualCharges: { count: number; usd: number };
   unconverted: { count: number; byCurrency: { currency: string; count: number; amount: number }[] };
+  onNoBox: { count: number; usd: number };
 }
 
 export async function pnlGaps(from: string, to: string): Promise<PnlGaps> {
-  const [manual, unconverted] = await Promise.all([
+  const [manual, unconverted, onNoBox] = await Promise.all([
     db
       .select({
         count: sql<number>`count(*)::int`,
@@ -134,6 +142,22 @@ export async function pnlGaps(from: string, to: string): Promise<PnlGaps> {
       )
       .groupBy(costEntries.currency)
       .orderBy(costEntries.currency),
+    db
+      .select({
+        count: sql<number>`count(*)::int`,
+        usd: sql<string>`coalesce(sum(${costEntries.amountUsd}), 0)`,
+      })
+      .from(costEntries)
+      .where(
+        and(
+          isNull(costEntries.voidedAt),
+          sql`${costEntries.amountUsd} IS NOT NULL`,
+          gte(costEntries.costDate, from),
+          lte(costEntries.costDate, to),
+          sql`NOT EXISTS (
+            SELECT 1 FROM cost_allocations ca WHERE ca.cost_entry_id = ${costEntries}.id)`,
+        ),
+      ),
   ]);
   const byCurrency = unconverted.map((row) => ({
     currency: row.currency,
@@ -143,6 +167,7 @@ export async function pnlGaps(from: string, to: string): Promise<PnlGaps> {
   return {
     manualCharges: { count: Number(manual[0]?.count ?? 0), usd: money(manual[0]?.usd) },
     unconverted: { count: byCurrency.reduce((sum, row) => sum + row.count, 0), byCurrency },
+    onNoBox: { count: Number(onNoBox[0]?.count ?? 0), usd: money(onNoBox[0]?.usd) },
   };
 }
 

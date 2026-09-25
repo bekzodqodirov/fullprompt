@@ -1012,8 +1012,19 @@ export async function trucksFoundBackAt(boxIds: string[], warehouseId: string): 
  * its old weight was zero is still on that truck.
  */
 export async function recomputeForLot(lotId: string): Promise<number> {
+  return recomputeForLots([lotId]);
+}
+
+/**
+ * `recomputeForLot` for several lots at once — a voided or corrected prixod's
+ * — so a cost the lots SHARE (the truck's freight, a crate's fee) is re-split
+ * once and not once per lot. Per-entry like `recomputeAll`: one entry's
+ * failure costs that entry, the rest still run, and one error is thrown at
+ * the end.
+ */
+export async function recomputeForLots(lotIds: string[]): Promise<number> {
   const { costEntriesTouchingLots } = await import('./void-guard');
-  const ids = await costEntriesTouchingLots([lotId]);
+  const ids = await costEntriesTouchingLots(lotIds);
   await recomputeEach(ids);
   return ids.length;
 }

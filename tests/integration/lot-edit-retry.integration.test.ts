@@ -5,6 +5,7 @@ import { db, pgClient } from '@/modules/platform/db/client';
 import {
   boxes,
   clients,
+  events,
   notifications,
   receiptLots,
   receipts,
@@ -39,9 +40,12 @@ vi.mock('@/modules/wms/costing/service', async (original) => ({
       'duplicate key value violates unique constraint "cost_allocations_entry_box_unique"',
     );
   }),
+  recomputeForLots: vi.fn(async () => {
+    throw new Error('deadlock detected');
+  }),
 }));
 
-const { editLot } = await import('@/modules/wms/receipts/edit');
+const { assignReceiptClient, editLot } = await import('@/modules/wms/receipts/edit');
 const { JOB_RECOMPUTE_COSTS } = await import('@/modules/platform/jobs/boss');
 
 const STAMP = String(Date.now()).slice(-6);
@@ -49,6 +53,8 @@ let managerId = '';
 let authorId = '';
 let whId = '';
 let clientId = '';
+/** Whom the client correction moves the prixod to. */
+let otherClientId = '';
 let receiptId = '';
 let lotId = '';
 
@@ -84,6 +90,11 @@ beforeAll(async () => {
     .values({ clientCode: `LR${STAMP}`, name: `LR ${STAMP}` })
     .returning();
   clientId = client!.id;
+  const [other] = await db
+    .insert(clients)
+    .values({ clientCode: `LQ${STAMP}`, name: `LQ ${STAMP}` })
+    .returning();
+  otherClientId = other!.id;
   const [receipt] = await db
     .insert(receipts)
     .values({
@@ -123,10 +134,15 @@ afterAll(async () => {
     .where(
       and(eq(notifications.type, 'ReceiptMeasureCorrected'), eq(notifications.userId, authorId)),
     );
+  // The client correction announced itself as a ReceiptConfirmed.
+  await db.delete(events).where(eq(events.entityId, receiptId));
   await db.delete(boxes).where(eq(boxes.lotId, lotId));
   await db.delete(receiptLots).where(eq(receiptLots.id, lotId));
   await db.delete(receipts).where(eq(receipts.id, receiptId));
-  await db.update(clients).set({ active: false }).where(eq(clients.id, clientId));
+  await db
+    .update(clients)
+    .set({ active: false })
+    .where(inArray(clients.id, [clientId, otherClientId].filter(Boolean)));
   await db.update(warehouses).set({ active: false }).where(eq(warehouses.id, whId));
   await db
     .update(users)
@@ -176,5 +192,23 @@ describe('a saved lot correction whose re-split fails', () => {
         and(eq(notifications.type, 'ReceiptMeasureCorrected'), eq(notifications.userId, authorId)),
       );
     expect(told).toHaveLength(1);
+  });
+});
+
+describe('a saved client correction whose re-split fails', () => {
+  it('stays saved and queues the same re-split — the nightly sweep cannot see a wrong stamp', async () => {
+    enqueued.length = 0;
+    await expect(
+      assignReceiptClient(receiptId, otherClientId, {
+        actorId: managerId,
+        ip: null,
+        userAgent: null,
+      }),
+    ).resolves.toBeUndefined();
+    const receipt = await db.query.receipts.findFirst({ where: eq(receipts.id, receiptId) });
+    expect(receipt?.clientId).toBe(otherClientId);
+    expect(enqueued.filter((j) => j.name === JOB_RECOMPUTE_COSTS)).toEqual([
+      { name: JOB_RECOMPUTE_COSTS, data: { lotId } },
+    ]);
   });
 });

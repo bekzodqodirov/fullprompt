@@ -70,6 +70,11 @@ function gapRows(sheet: ExcelJS.Worksheet, L: ReturnType<typeof reportLabels>, g
       `⚠ ${L.unconvertedCosts}: ${gaps.unconverted.byCurrency.map((row) => `${row.amount} ${row.currency}`).join(', ')}`,
     ]).font = { bold: true };
   }
+  if (gaps.onNoBox.count > 0) {
+    sheet.addRow([
+      `⚠ ${L.gapNoBox}: ${gaps.onNoBox.count} · $${usdText(gaps.onNoBox.usd)}`,
+    ]).font = { bold: true };
+  }
 }
 
 export async function buildPnlXlsx(from: string, to: string, locale?: string): Promise<Buffer> {

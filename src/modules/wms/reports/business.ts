@@ -2,6 +2,7 @@ import { sql, type SQL } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { tashkentDayStart, addDays } from '@/modules/platform/time/tashkent';
 import { leftBehindSql } from '../batches/riders';
+import { roadLossBatchSql } from '../boxes/road-loss';
 import { customsCostTypeIds } from '../costing/service';
 
 /**
@@ -141,21 +142,17 @@ function riskCtes(warehouseIds: string[] | undefined, sinceIso: string, customsT
     lost AS (
       -- A carton lost ON THE ROAD (U38) stands in no warehouse, so the shelf
       -- rule would count it in EVERY warehouse's scope; it belongs to its
-      -- truck's two ends instead, /transit's rule, and its row names the truck.
-      SELECT b.id AS box_id, road.ref_id AS batch_id
+      -- truck's two ends instead, /transit's rule, and its row names the truck
+      -- (boxes/road-loss.ts — the box card and the search read the same one).
+      SELECT b.id AS box_id, rbt.id AS batch_id
       FROM boxes b
-      LEFT JOIN LATERAL (
-        SELECT lm.ref_id FROM box_movements lm
-        WHERE lm.box_id = b.id AND lm.cause = 'lost_in_transit' AND lm.ref_type = 'batch'
-        ORDER BY lm.created_at DESC LIMIT 1
-      ) road ON true
-      LEFT JOIN batches rbt ON rbt.id = road.ref_id
+      LEFT JOIN batches rbt ON rbt.id = ${roadLossBatchSql('b')}
       WHERE b.status = 'lost'
         AND EXISTS (SELECT 1 FROM box_movements lm
                     WHERE lm.box_id = b.id AND lm.to_status = 'lost' AND lm.created_at >= ${sinceIso}::timestamptz)
         ${
           scoped
-            ? sql`AND (CASE WHEN rbt.id IS NOT NULL AND b.current_warehouse_id IS NULL
+            ? sql`AND (CASE WHEN rbt.id IS NOT NULL
                    THEN (rbt.origin_warehouse_id IN (${idList(scoped)}) OR rbt.dest_warehouse_id IN (${idList(scoped)}))
                    ELSE (b.current_warehouse_id IN (${idList(scoped)}) OR b.current_warehouse_id IS NULL) END)`
             : sql``

@@ -1,6 +1,7 @@
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
-import { receipts } from '@/modules/platform/db/schema';
+import { boxes, receiptLots, receipts } from '@/modules/platform/db/schema';
+import type { AuditContext } from '@/modules/platform/audit/service';
 import { applyCargoTrigger, dealFullyIssued, type CargoTrigger } from './service';
 
 /**
@@ -135,4 +136,35 @@ export async function runDealAutoStage(event: {
   }
 
   return applyCargoTrigger(dealIds, trigger, ctx);
+}
+
+/**
+ * A write-off can be the LAST outstanding carton of a deal whose other cargo
+ * was already handed over — the ordinary order on a road loss: the truck
+ * arrives short, what came is handed out (BoxIssued parks the deal at
+ * «qisman topshirildi»), and days later the manager declares the missing
+ * carton lost. `dealFullyIssued` leaves a lost box out of the count, so the
+ * deal IS fully handed from that moment — but the funnel only ever re-asks on
+ * a BoxIssued, and none follows a loss, so the deal stayed parked for good
+ * (U38's review). The loss asks the same question the ear asks, for the deals
+ * of the cartons it wrote off, and moves only the fully handed ones — forward
+ * only, open deals only, through `moveDeal`, like every cargo move. A deal
+ * still waiting on other cargo stays where it is: its last BoxIssued moves it.
+ */
+export async function advanceDealsAfterWriteOff(
+  boxIds: string[],
+  ctx: AuditContext,
+): Promise<number> {
+  if (boxIds.length === 0) return 0;
+  const rows = await db
+    .selectDistinct({ dealId: receipts.dealId })
+    .from(boxes)
+    .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+    .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+    .where(and(inArray(boxes.id, boxIds), isNotNull(receipts.dealId)));
+  const fully: string[] = [];
+  for (const row of rows) {
+    if (row.dealId && (await dealFullyIssued(row.dealId))) fully.push(row.dealId);
+  }
+  return fully.length > 0 ? applyCargoTrigger(fully, 'handed', ctx) : 0;
 }

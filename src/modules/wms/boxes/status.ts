@@ -6,7 +6,8 @@ import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { emitEvent } from '../../platform/events/service';
 import { getSetting } from '../../platform/settings/service';
 import { landedStatusFor } from '../warehouses/landed';
-import { costOrphanedByVoid } from '../costing/void-guard';
+import { costOrphanedByVoid, lockCostsTouchingLots, type LockedCosts } from '../costing/void-guard';
+import { roadLossTruck } from './road-loss';
 
 export class BoxStatusError extends Error {
   constructor(
@@ -59,6 +60,18 @@ export async function setBoxStatus(input: SetBoxStatusInput, ctx: AuditContext) 
   // splits the base the way the engine would, and the engine needs it.
   const factor = input.to === 'void' ? Number(await getSetting('chargeable_weight_factor')) : 0;
   const result = await db.transaction(async (tx) => {
+    // A void first locks every cost shared over the carton's lot, BEFORE the
+    // carton itself (U20's race; the order is lockCostsTouchingLots' own
+    // reason). The lot is read unlocked to find them — a box never changes lot.
+    let costs: LockedCosts | null = null;
+    if (input.to === 'void') {
+      const [peek] = await tx
+        .select({ lotId: boxes.lotId })
+        .from(boxes)
+        .where(eq(boxes.id, input.boxId));
+      if (!peek) throw new BoxStatusError('box_not_found');
+      costs = await lockCostsTouchingLots([peek.lotId], tx);
+    }
     const rows = await tx.select().from(boxes).where(eq(boxes.id, input.boxId)).for('update');
     const box = rows[0];
     if (!box) throw new BoxStatusError('box_not_found');
@@ -75,8 +88,8 @@ export async function setBoxStatus(input: SetBoxStatusInput, ctx: AuditContext) 
     // aboard a truck or in a crate — the money would sit in the P&L on no box
     // and in no tannarx. voidReceipt has refused the prixod case since #530;
     // the box card was the door that let it through. Same code, same word.
-    if (input.to === 'void') {
-      const orphan = await costOrphanedByVoid([box.lotId], [box.id], factor, tx);
+    if (costs) {
+      const orphan = await costOrphanedByVoid(costs, [box.id], factor, tx);
       if (orphan?.scope === 'receipt') throw new BoxStatusError('receipt_has_costs');
       if (orphan) throw new BoxStatusError('shared_cost_orphaned', orphan.code ?? undefined);
     }
@@ -89,6 +102,15 @@ export async function setBoxStatus(input: SetBoxStatusInput, ctx: AuditContext) 
     // the manager THERE). Never the truck's destination by default: a road
     // loss that turns up back in Yiwu must not land in Tashkent (U38).
     const landingWarehouseId = box.currentWarehouseId ?? input.foundAtWarehouseId ?? null;
+    // Lost on the road and found back where its truck STARTED: it never rode
+    // that truck, which is exactly `resolveMissing`'s `found_at_origin` — and
+    // it is written as one, naming the truck, so the riders rule
+    // (batches/riders.ts) takes it off the truck's freight and the cargo-risk
+    // report can see a share a re-split has not yet moved. As a plain
+    // «found» it kept the freight of a truck it never boarded and paid the
+    // next truck's too, with no report able to name it. Found anywhere else
+    // it did ride, and a restore changes no base.
+    let foundBackOn: string | null = null;
     if (input.to === 'in_stock') {
       if (!landingWarehouseId) throw new BoxStatusError('box_has_no_warehouse');
       const [home] = await tx
@@ -99,6 +121,10 @@ export async function setBoxStatus(input: SetBoxStatusInput, ctx: AuditContext) 
         throw new BoxStatusError('box_has_no_warehouse');
       }
       restoredStatus = landedStatusFor(home.type);
+      if (!box.currentWarehouseId) {
+        const truck = await roadLossTruck(box.id, tx);
+        if (truck && truck.originWarehouseId === landingWarehouseId) foundBackOn = truck.id;
+      }
 
       const [parent] = await tx
         .select({ status: receipts.status, voidedAt: receipts.voidedAt, warehouseId: receipts.warehouseId })
@@ -132,8 +158,13 @@ export async function setBoxStatus(input: SetBoxStatusInput, ctx: AuditContext) 
       toWarehouseId: input.to === 'in_stock' ? landingWarehouseId : box.currentWarehouseId,
       fromStatus: box.status,
       toStatus: input.to === 'in_stock' ? restoredStatus : input.to,
-      cause: input.to === 'in_stock' ? 'found' : `marked_${input.to}`,
-      refType: 'manual',
+      cause: foundBackOn
+        ? 'found_at_origin'
+        : input.to === 'in_stock'
+          ? 'found'
+          : `marked_${input.to}`,
+      refType: foundBackOn ? 'batch' : 'manual',
+      refId: foundBackOn,
       actorId: ctx.actorId,
     });
     const auditWarehouseId = input.to === 'in_stock' ? landingWarehouseId : box.currentWarehouseId;
@@ -161,6 +192,7 @@ export async function setBoxStatus(input: SetBoxStatusInput, ctx: AuditContext) 
       from: box.status,
       to: input.to === 'in_stock' ? restoredStatus : input.to,
       lotId: box.lotId,
+      foundBackOn,
     };
   });
   // A void box carries no cost share anywhere (#530/#849), so every cost that
@@ -170,7 +202,9 @@ export async function setBoxStatus(input: SetBoxStatusInput, ctx: AuditContext) 
   // must never be able to roll back a warehouse's status change. A failure is
   // logged, not thrown — the box IS void — and the nightly orphan sweep
   // (`recomputeAll({ orphaned })`) is the repair. `lost` moves no money: a
-  // lost carton keeps its share (owner, 6a), and a restore changes no base.
+  // lost carton keeps its share (owner, 6a), and a restore changes no base —
+  // except the road-lost carton found back at its truck's origin, which
+  // leaves that truck's riders (resolveMissing's own tail, U17).
   if (input.to === 'void') {
     try {
       const { recomputeForLot } = await import('../costing/service');
@@ -178,6 +212,10 @@ export async function setBoxStatus(input: SetBoxStatusInput, ctx: AuditContext) 
     } catch (error) {
       console.error('[box-status] recompute failed', input.boxId, error);
     }
+  }
+  if (result.foundBackOn) {
+    const { recomputeRiderChange } = await import('../costing/service');
+    await recomputeRiderChange([result.foundBackOn], 'restore_found_at_origin');
   }
   return { from: result.from, to: result.to };
 }

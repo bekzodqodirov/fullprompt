@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { eq, inArray, sql } from 'drizzle-orm';
+import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
@@ -23,6 +24,7 @@ import {
   recomputeAll,
 } from '@/modules/wms/costing/service';
 import { setBoxStatus } from '@/modules/wms/boxes/status';
+import { pnlGaps } from '@/modules/wms/accounting/reports';
 import { voidReceipt } from '@/modules/wms/receipts/service';
 
 /**
@@ -38,6 +40,8 @@ import { voidReceipt } from '@/modules/wms/receipts/service';
 const STAMP = String(Date.now()).slice(-6);
 const DAY = '1637-03-14';
 let actorId = '';
+/** A second manager — the race needs two people pressing at once. */
+let otherActorId = '';
 let whOrigin = '';
 let whHub = '';
 let whDest = '';
@@ -191,6 +195,16 @@ beforeAll(async () => {
     })
     .returning();
   actorId = u!.id;
+  const [other] = await db
+    .insert(users)
+    .values({
+      phone: `+99893${STAMP}6`,
+      fullName: `VR manager 2 ${STAMP}`,
+      passwordHash: 'x',
+      active: true,
+    })
+    .returning();
+  otherActorId = other!.id;
   whOrigin = await mintWarehouse(`VRO${STAMP}`.slice(0, 8), 'CN', 'origin');
   whHub = await mintWarehouse(`VRH${STAMP}`.slice(0, 8), 'CN', 'hub');
   whDest = await mintWarehouse(`VRD${STAMP}`.slice(0, 8), 'UZ', 'customs');
@@ -241,9 +255,32 @@ afterAll(async () => {
     .update(warehouses)
     .set({ active: false })
     .where(inArray(warehouses.id, [whOrigin, whHub, whDest]));
-  await db.update(users).set({ active: false }).where(eq(users.id, actorId));
+  await db
+    .update(users)
+    .set({ active: false })
+    .where(inArray(users.id, [actorId, otherActorId].filter(Boolean)));
   await pgClient.end();
 });
+
+/**
+ * The backend that is waiting on a given backend — read through the POOL:
+ * pg_stat_activity freezes inside an open transaction (#873).
+ */
+async function blockedBy(pid: number): Promise<number | null> {
+  const rows = await db.execute<{ pid: number }>(sql`
+    SELECT pid FROM pg_stat_activity WHERE ${pid}::int = ANY(pg_blocking_pids(pid))
+  `);
+  return rows[0] ? Number(rows[0].pid) : null;
+}
+
+async function until<T>(probe: () => Promise<T | null | false>, what: string): Promise<T> {
+  for (let i = 0; i < 250; i += 1) {
+    const value = await probe();
+    if (value) return value;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`never happened: ${what}`);
+}
 
 describe('the box card: a void re-splits, and refuses to orphan money', () => {
   it('A1 — the real box takes the void box’s share, and the truck’s tannarx is whole', async () => {
@@ -475,5 +512,112 @@ describe('the nightly repair', () => {
       allocationBasis: 'weight',
     });
     expect(await recomputeAll({ orphaned: true, receiptId: lot.receiptId })).toBe(0);
+  });
+});
+
+describe('two voids at once — the guard holds its costs while it judges them', () => {
+  it('the second void of a cost’s last cargo waits for the first, then is refused', async () => {
+    const lot = await mintLot(clientG, 2, 10, whOrigin);
+    const e = await cost({
+      scope: 'receipt',
+      receiptId: lot.receiptId,
+      costTypeId: customs,
+      amount: 400,
+      currency: 'USD',
+      costDate: DAY,
+      allocationBasis: 'weight',
+    });
+    const [first, second] = lot.boxIds as [string, string];
+
+    // A helper holds the FIRST void's actor row, so that void parks on its
+    // movement row's foreign key — after its guard passed, before its commit:
+    // the window in which the second void used to read the first carton as
+    // live, pass, and leave $400 on no box. Deterministic, not a burst.
+    const helper = postgres(
+      process.env.DATABASE_URL ?? 'postgres://postgres@127.0.0.1:5432/gsr_dev',
+      { max: 1, onnotice: () => {} },
+    );
+    const held = await helper.reserve();
+    try {
+      await held`BEGIN`;
+      await held`SELECT 1 FROM users WHERE id = ${actorId} FOR UPDATE`;
+      const holder = Number((await held`SELECT pg_backend_pid() AS pid`)[0]!.pid);
+      const one = setBoxStatus({ boxId: first, to: 'void', reason: 'counted twice' }, ctx())
+        .then(() => 'ok')
+        .catch((err: { code?: string }) => err.code ?? String(err));
+      const firstPid = await until(() => blockedBy(holder), 'the first void to park');
+
+      let twoDone = false;
+      const two = setBoxStatus(
+        { boxId: second, to: 'void', reason: 'counted twice' },
+        { actorId: otherActorId, ip: null, userAgent: null },
+      )
+        .then(() => 'ok')
+        .catch((err: { code?: string }) => err.code ?? String(err))
+        .finally(() => {
+          twoDone = true;
+        });
+      // Fixed, it waits on the first void's lock on the cost; unfixed, it
+      // finishes on its own. Either way the helper lets the first one go.
+      await until(async () => twoDone || (await blockedBy(firstPid)), 'the second void to wait');
+      await held`ROLLBACK`;
+
+      expect(await one).toBe('ok');
+      expect(await two).toBe('receipt_has_costs');
+    } finally {
+      held.release();
+      await helper.end();
+    }
+    expect((await db.query.boxes.findFirst({ where: eq(boxes.id, second) }))?.status).toBe(
+      'in_stock',
+    );
+    expect([...(await shares(e.id)).entries()]).toEqual([[second, 400]]);
+  });
+});
+
+describe('the P&L says what stands on no box', () => {
+  // A month nothing else in the suite writes into, so the deltas are ours (#713).
+  const FROM = '1647-06-01';
+  const TO = '1647-06-30';
+
+  it('a cost with dollars and no share is named beside the P&L; a split one is not', async () => {
+    const before = await pnlGaps(FROM, TO);
+    // A truck cost typed before anything was loaded: dollars, and no cargo to
+    // split them over — in the P&L, in nobody's tannarx.
+    const [bare] = await db
+      .insert(batches)
+      .values({
+        code: `VRB${STAMP}-bare`,
+        originWarehouseId: whOrigin,
+        destWarehouseId: whDest,
+        status: 'forming',
+        createdBy: actorId,
+      })
+      .returning();
+    madeBatches.push(bare!.id);
+    await cost({
+      scope: 'batch',
+      batchId: bare!.id,
+      costTypeId: freight,
+      amount: 77,
+      currency: 'USD',
+      costDate: '1647-06-15',
+      allocationBasis: 'weight',
+    });
+    // …and the same month, a cost that did split — none of the note's business.
+    const lot = await mintLot(clientY, 2, 10, whOrigin);
+    await cost({
+      scope: 'receipt',
+      receiptId: lot.receiptId,
+      costTypeId: customs,
+      amount: 5,
+      currency: 'USD',
+      costDate: '1647-06-16',
+      allocationBasis: 'weight',
+    });
+
+    const after = await pnlGaps(FROM, TO);
+    expect(after.onNoBox.count - before.onNoBox.count).toBe(1);
+    expect(Math.round((after.onNoBox.usd - before.onNoBox.usd) * 100) / 100).toBe(77);
   });
 });

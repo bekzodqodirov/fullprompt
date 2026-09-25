@@ -1,4 +1,4 @@
-import { eq, inArray, sql } from 'drizzle-orm';
+import { asc, eq, inArray, sql } from 'drizzle-orm';
 import { db, type Db, type Tx } from '../../platform/db/client';
 import { batches, costEntries, crates } from '../../platform/db/schema';
 import { allocateEntry, type AllocationBasis } from './engine';
@@ -62,8 +62,58 @@ export async function costEntriesTouchingLots(
             WHERE rl.id IN (${lots})
          ))
        )
+     -- In id order: a re-split walks the list one entry lock at a time, and
+     -- the void doors lock the whole list — the same order everywhere.
+     ORDER BY ce.id
   `);
   return rows.map((r) => r.id);
+}
+
+/**
+ * The costs a void may orphan, LOCKED — what `costOrphanedByVoid` judges.
+ * Branded so the guard cannot be asked without the lock (a check that reads
+ * the base unlocked is the defect this exists for).
+ */
+export interface LockedCosts {
+  readonly ids: string[];
+  readonly __locked: true;
+}
+
+/**
+ * Lock every live cost that shares money over these lots (U20's race). The
+ * guard below checks-then-acts: «would this void leave a cost on no box» is
+ * read from the rest of the cost's base, and under READ COMMITTED two voids
+ * that TOGETHER take a cost's last cargo — the two cartons of one prixod on
+ * the box card at once, two duplicate prixods of one crate or one truck —
+ * each saw the other's carton still live, both passed, and the money was left
+ * on nothing (measured: both 'ok', $400 on zero shares). With the entries
+ * locked, the second void waits for the first to commit, reads the base again
+ * in its next statement, finds the first carton void and refuses.
+ *
+ * Taken FIRST in the door's transaction, before its box locks — the order a
+ * recompute takes them in (`recomputeEntry` locks the entry, then its INSERT
+ * reaches the boxes through their foreign key). Locked the other way round,
+ * a door holding a carton and waiting for the entry, against a re-split
+ * holding the entry and writing a share onto that carton, is a deadlock; in
+ * id order, two voids sharing several costs cannot deadlock each other.
+ * A lot's costs are read by its id, which no door changes, so reading them
+ * before the box is locked reads the same list. The handle is the door's
+ * transaction, passed last — the idiom tests/unit/tx-pool.test.ts reads; a
+ * lock taken on the pool would end with its own statement.
+ */
+export async function lockCostsTouchingLots(
+  lotIds: string[],
+  tx: Db | Tx = db,
+): Promise<LockedCosts> {
+  const touching = await costEntriesTouchingLots(lotIds, tx);
+  if (touching.length === 0) return { ids: [], __locked: true };
+  const locked = await tx
+    .select({ id: costEntries.id })
+    .from(costEntries)
+    .where(inArray(costEntries.id, touching))
+    .orderBy(asc(costEntries.id))
+    .for('update');
+  return { ids: locked.map((row) => row.id), __locked: true };
 }
 
 export interface OrphanedCost {
@@ -86,7 +136,8 @@ export interface OrphanedCost {
  * button never voids money (#288/#530), finance does, on the cost panel.
  *
  * Asked INSIDE the door's transaction — its handle passed last, the idiom
- * tests/unit/tx-pool.test.ts reads — over the boxes the door has locked: the
+ * tests/unit/tx-pool.test.ts reads — over the costs `lockCostsTouchingLots`
+ * locked and the boxes the door has locked: the
  * base comes from the ONE definition of a cost's cargo (`scopeBoxIds`) and
  * the split from the ONE splitter, so «would split onto nothing» means what
  * the recompute would actually do — a direct_to_client fee whose client's
@@ -100,17 +151,17 @@ export interface OrphanedCost {
  * pool before the transaction opens (#714).
  */
 export async function costOrphanedByVoid(
-  lotIds: string[],
+  costs: LockedCosts,
   voidIds: string[],
   factor: number,
   tx: Db | Tx = db,
 ): Promise<OrphanedCost | null> {
-  if (voidIds.length === 0) return null;
-  const ids = await costEntriesTouchingLots(lotIds, tx);
-  if (ids.length === 0) return null;
-  const entries = await tx.select().from(costEntries).where(inArray(costEntries.id, ids));
+  if (voidIds.length === 0 || costs.ids.length === 0) return null;
+  // Read under the lock, so a cost voided while we waited is seen as void.
+  const entries = await tx.select().from(costEntries).where(inArray(costEntries.id, costs.ids));
   const gone = new Set(voidIds);
   for (const entry of entries) {
+    if (entry.voidedAt) continue;
     if (entry.scope !== 'receipt' && entry.scope !== 'crate' && entry.scope !== 'batch') continue;
     const base = await scopeBoxIds(entry, tx);
     if (!base.some((id) => gone.has(id))) continue;

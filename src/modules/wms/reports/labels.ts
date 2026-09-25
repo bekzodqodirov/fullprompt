@@ -125,6 +125,12 @@ const DICT = {
     'zh-CN': '未指定账户和付款人的费用',
     en: 'Expenses with no cash box and no payer',
   },
+  gapNoBox: {
+    ru: 'Расходы, не распределённые ни на одну коробку, — нет в себестоимости',
+    uz: 'Hech qaysi karobkaga taqsimlanmagan xarajatlar — tannarxda yo‘q',
+    'zh-CN': '未分摊到任何箱子的费用——不在任何成本中',
+    en: 'Costs split onto no box — in no landed cost',
+  },
   gapManualCharges: {
     ru: 'Долги контрагентам, записанные вручную, — не вошли',
     uz: 'Kontragentlarga qo‘lda yozilgan qarzlar — kirmagan',

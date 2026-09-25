@@ -32,7 +32,7 @@ import { priceControlOnReceipt } from '../deals/service';
 import { stampCalcLink } from '../calc/link';
 import { computeLotTotals } from './math';
 import { recomputeAll } from '../costing/service';
-import { costOrphanedByVoid } from '../costing/void-guard';
+import { costOrphanedByVoid, lockCostsTouchingLots } from '../costing/void-guard';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { MAX_NATIVE_AMOUNT } from '../finance/money-bounds';
 
@@ -565,6 +565,10 @@ export async function voidReceipt(
       .where(eq(receiptLots.receiptId, receiptId));
     const lotIds = lotRows.map((l) => l.id);
     if (lotIds.length) {
+      // Every cost shared over these lots, locked BEFORE the boxes — U20's
+      // race: two voids that together take a cost's last cargo each read the
+      // other's boxes as live. The order is lockCostsTouchingLots' own reason.
+      const costs = await lockCostsTouchingLots(lotIds, tx);
       const boxRows = await tx
         .select({ id: boxes.id, status: boxes.status, statusReason: boxes.statusReason })
         .from(boxes)
@@ -583,7 +587,7 @@ export async function voidReceipt(
       // these boxes ARE the rest of its cargo, where the money would be left
       // on no box: the crate of one prixod, the truck that carried only this
       // duplicate. Finance voids that cost first, the batch-cancel rule.
-      const orphan = await costOrphanedByVoid(lotIds, act.map((b) => b.id), factor, tx);
+      const orphan = await costOrphanedByVoid(costs, act.map((b) => b.id), factor, tx);
       if (orphan) throw new VoidError('shared_cost_orphaned', orphan.code ?? undefined);
       // The terminal write lives in ONE place (void-box.ts) — the annul door
       // writes the same shape over a wider set, and two writers of a terminal
@@ -610,13 +614,15 @@ export async function voidReceipt(
   // cost has no next recompute, so the truck-side screens (which drop void
   // boxes) and the client-side ones (which do not) disagreed for ever. After
   // the commit (#714), and a failure is logged, never thrown: the receipt IS
-  // void, and the nightly orphan sweep is the repair.
-  for (const lotId of voidedLots) {
+  // void, and the nightly orphan sweep is the repair. All the lots at once, so
+  // the truck's freight shared by three of them re-splits once and not three
+  // times; one entry's failure still costs one entry (`recomputeEach`).
+  if (voidedLots.length) {
     try {
-      const { recomputeForLot } = await import('../costing/service');
-      await recomputeForLot(lotId);
+      const { recomputeForLots } = await import('../costing/service');
+      await recomputeForLots(voidedLots);
     } catch (error) {
-      console.error('[receipt-void] recompute failed', receiptId, lotId, error);
+      console.error('[receipt-void] recompute failed', receiptId, error);
     }
   }
   // A voided prixod leaves its factory truck's base; its share of the truck

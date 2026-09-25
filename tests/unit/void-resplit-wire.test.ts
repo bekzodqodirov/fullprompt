@@ -22,7 +22,8 @@ const read = (path: string) => strip(readFileSync(path, 'utf8'));
 
 /** file → the exported door that voids, and the call that re-splits after it. */
 const DOORS: Record<string, { fn: string; resplit: string }> = {
-  'src/modules/wms/receipts/service.ts': { fn: 'voidReceipt', resplit: 'recomputeForLot(' },
+  // Every voided lot at once, so a cost the lots share re-splits once.
+  'src/modules/wms/receipts/service.ts': { fn: 'voidReceipt', resplit: 'recomputeForLots(' },
   'src/modules/wms/receipts/edit.ts': { fn: 'editLot', resplit: 'recomputeForLot(' },
   'src/modules/wms/boxes/status.ts': { fn: 'setBoxStatus', resplit: 'recomputeForLot(' },
   // The annul has its own aftermath (#847-852), re-runnable by design.

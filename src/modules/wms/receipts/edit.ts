@@ -491,18 +491,44 @@ export async function assignReceiptClient(
     });
   });
 
-  // Both kinds re-split by the ENGINE, not by the snapshot's guess: a moved
-  // cost onto the new client's cargo, a kept one onto the old client's
-  // remaining cargo. After the commit (#714), and never able to roll the
-  // correction back: a failure is logged, and the nightly orphan sweep
-  // re-splits a cost it left on no box.
-  const resplit = [...direct.move, ...direct.keep];
-  if (resplit.length) {
+  // EVERY cost shared over this prixod re-splits by the ENGINE after the
+  // commit, not only the direct ones: the share UPDATE above is a first draft,
+  // and it is not the only writer. A recompute of the truck's freight that
+  // overlapped this correction (the depart job, a lot fix aboard the same
+  // truck, a void's re-split, the nightly sweep) read the OLD client under its
+  // entry lock, waited on the draft's row locks, and inserted its shares
+  // stamped with the old client after we committed — rows the draft's
+  // statement never saw, on no void box and never empty, so no sweep would
+  // ever look at them again: profit-by-client and the client's landed cost
+  // kept the corrected prixod's freight on the wrong customer (U39's review).
+  // Re-split here, each entry under its lock, this is the LAST writer and it
+  // reads the committed client. A moved direct cost lands on the new client's
+  // cargo, a kept one on the old client's remaining cargo. Never able to roll
+  // the correction back (#714); a failure is logged and handed to the job
+  // queue as the same re-split, which pg-boss repeats until it lands — the
+  // nightly sweep cannot see a wrong stamp.
+  const lotIds = (
+    await db
+      .select({ id: receiptLots.id })
+      .from(receiptLots)
+      .where(eq(receiptLots.receiptId, receiptId))
+  ).map((lot) => lot.id);
+  if (lotIds.length) {
     try {
-      const { recomputeEach } = await import('../costing/service');
-      await recomputeEach(resplit);
+      const { recomputeForLots } = await import('../costing/service');
+      await recomputeForLots(lotIds);
     } catch (error) {
-      console.error('[receipt-client] direct cost recompute failed', receiptId, error);
+      console.error('[receipt-client] recompute failed, queued for retry', receiptId, error);
+      try {
+        const { enqueue, JOB_RECOMPUTE_COSTS } = await import('../../platform/jobs/boss');
+        for (const lotId of lotIds) await enqueue(JOB_RECOMPUTE_COSTS, { lotId });
+      } catch (queueError) {
+        console.error(
+          '[receipt-client] recompute retry could not be queued',
+          receiptId,
+          queueError,
+        );
+      }
     }
   }
 }

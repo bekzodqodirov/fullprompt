@@ -1485,6 +1485,8 @@
     "gapOpenPartners": "Counterparties →",
     "gapUnconverted": "Costs with no exchange rate ({count}) are counted as $0: {sums}.",
     "gapUnconvertedHint": "Enter that currency's rate — the costs recompute by themselves.",
+    "gapNoBox": "Costs split onto no box ({count}, {usd}) are in this report but in no client's landed cost.",
+    "gapNoBoxHint": "Usually a cost whose cargo is not linked yet: a factory pickup with no prixod linked, or a truck cost entered before loading — it splits by itself once the cargo is there. If there is no cargo at all, check the cost.",
     "expensesTruncated": "Showing the newest {shown} of {total}; the total covers the whole period.",
     "balUnplaced": "Payments not in a cash box",
     "futureDated": "{count} entries are dated after today ({usd}). Other screens count them as debt now, this report does not — correct their date.",

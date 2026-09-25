@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { and, eq, inArray, sql } from 'drizzle-orm';
+import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
@@ -16,7 +17,7 @@ import {
   users,
   warehouses,
 } from '@/modules/platform/db/schema';
-import { addCostEntry, recomputeAll } from '@/modules/wms/costing/service';
+import { addCostEntry, recomputeAll, recomputeEntry } from '@/modules/wms/costing/service';
 import { assignReceiptClient, editLot } from '@/modules/wms/receipts/edit';
 import type { Actor } from '@/modules/platform/rbac/authorize';
 
@@ -355,5 +356,80 @@ describe('a direct cost follows the corrected prixod when it has nowhere else to
     // The depart job's recompute agrees with it: nothing moves.
     await depart(truck.id, [...r1.boxIds, ...r2.boxIds]);
     expect(await boxShares(e.id)).toEqual(now);
+  });
+});
+
+/**
+ * The backend that is waiting on a given backend — read through the POOL:
+ * pg_stat_activity freezes inside an open transaction (#873).
+ */
+async function blockedBy(pid: number): Promise<number | null> {
+  const rows = await db.execute<{ pid: number }>(sql`
+    SELECT pid FROM pg_stat_activity WHERE ${pid}::int = ANY(pg_blocking_pids(pid))
+  `);
+  return rows[0] ? Number(rows[0].pid) : null;
+}
+
+async function until<T>(probe: () => Promise<T | null>, what: string): Promise<T> {
+  for (let i = 0; i < 250; i += 1) {
+    const value = await probe();
+    if (value) return value;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`never happened: ${what}`);
+}
+
+describe('every cost the corrected prixod shares ends on the corrected client', () => {
+  it('D — a truck-freight re-split that overlaps the correction cannot leave the OLD client’s stamp', async () => {
+    const r = await mintLot(clientX, 2);
+    const z = await mintLot(clientZ, 2);
+    const truck = await mintForming([...r.boxIds, ...z.boxIds]);
+    const e = await cost({
+      scope: 'batch',
+      batchId: truck.id,
+      costTypeId: freight,
+      amount: 200,
+      currency: 'USD',
+      costDate: DAY,
+      allocationBasis: 'weight',
+    });
+    expect(await byClient(e.id)).toEqual({ [clientX]: 100, [clientZ]: 100 });
+
+    // A helper holds the corrector's own row, so the correction parks on its
+    // first audit row — AFTER it re-stamped the shares, BEFORE it commits.
+    // Then an ordinary re-split of the truck's freight starts (the depart
+    // job, a lot fix aboard, a void's re-split): it locks the entry, reads
+    // the receipt's client — still X to it — and waits on the re-stamped rows.
+    const helper = postgres(
+      process.env.DATABASE_URL ?? 'postgres://postgres@127.0.0.1:5432/gsr_dev',
+      { max: 1, onnotice: () => {} },
+    );
+    const held = await helper.reserve();
+    try {
+      await held`BEGIN`;
+      await held`SELECT 1 FROM users WHERE id = ${actorId} FOR UPDATE`;
+      const holder = Number((await held`SELECT pg_backend_pid() AS pid`)[0]!.pid);
+      const corrected = assignReceiptClient(r.receiptId, clientY, ctx()).then(
+        () => 'ok',
+        (err: unknown) => String(err),
+      );
+      const corrector = await until(() => blockedBy(holder), 'the correction to park');
+      const resplit = recomputeEntry(e.id).then(
+        () => 'ok',
+        (err: unknown) => String(err),
+      );
+      await until(() => blockedBy(corrector), 'the re-split to wait on the correction');
+      await held`ROLLBACK`;
+      expect(await corrected).toBe('ok');
+      expect(await resplit).toBe('ok');
+    } finally {
+      held.release();
+      await helper.end();
+    }
+
+    // The overlapping re-split committed its shares stamped X after the
+    // correction did; the correction's own re-split of every cost it shares
+    // ran last, under the same lock, and read Y.
+    expect(await byClient(e.id)).toEqual({ [clientY]: 100, [clientZ]: 100 });
   });
 });
