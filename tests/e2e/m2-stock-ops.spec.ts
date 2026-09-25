@@ -114,7 +114,13 @@ test('unclaimed receipt can be returned to the sender', async ({ page }) => {
   await page.locator('a[href^="/receipts/"]').first().click();
   await expect(page).toHaveURL(/\/receipts\//, { timeout: 10_000 });
 
-  await page.getByRole('button', { name: /↩️/ }).click();
+  // A tap before the receipt card has hydrated does nothing (the button is a
+  // client component) — the full suite reached it that early; press until
+  // the form opens rather than trusting the first press.
+  await expect(async () => {
+    await page.getByRole('button', { name: /↩️/ }).click();
+    await expect(page.getByTestId('handover-name')).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 20_000 });
   await page.getByTestId('handover-name').fill('Ali Qaytaruvchi');
   await page.getByTestId('handover-phone').fill('+998901234567');
   await page.getByTestId('handover-confirm').click();

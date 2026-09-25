@@ -14,8 +14,9 @@ import { useEffect, useRef } from 'react';
  * are data typed by people (dataviz rule: labels are untrusted).
  *
  * Mouse and keyboard open it on hover/focus; a TOUCH opens it on click, so a
- * scroll gesture that starts on a chart band never flashes a tip. It closes on
- * scroll, on Escape and on a tap outside. The tooltip only ENHANCES — every
+ * scroll gesture that starts on a chart band never flashes a tip. It follows
+ * its mark on scroll and closes once the mark leaves the screen, on Escape
+ * and on a tap outside. The tooltip only ENHANCES — every
  * value is also in the chart's table twin.
  */
 export function ChartTip() {
@@ -57,6 +58,10 @@ export function ChartTip() {
         el.appendChild(line);
       }
       el.style.display = 'block';
+      place(target);
+    };
+
+    const place = (target: HTMLElement) => {
       const rect = target.getBoundingClientRect();
       const tip = el.getBoundingClientRect();
       const margin = 8;
@@ -105,7 +110,21 @@ export function ChartTip() {
     document.addEventListener('focusout', onFocusOut, true);
     document.addEventListener('click', onClick, true);
     document.addEventListener('keydown', onKey);
-    window.addEventListener('scroll', hide, { passive: true, capture: true });
+    /*
+     * A scroll FOLLOWS the tip to its mark and hides it only once the mark
+     * has left the screen. Hiding on every scroll was wrong in a way no
+     * person at a desk notices: a scroll event is dispatched on the NEXT
+     * frame, so bringing a mark into view and pointing at it — a keyboard
+     * Tab to a month band, which scrolls it into view — showed the tip and
+     * then hid it one frame later (found by the round's own e2e).
+     */
+    const onScroll = () => {
+      if (!current) return;
+      const rect = current.getBoundingClientRect();
+      if (rect.bottom < 0 || rect.top > window.innerHeight || !current.isConnected) hide();
+      else place(current);
+    };
+    window.addEventListener('scroll', onScroll, { passive: true, capture: true });
     return () => {
       document.removeEventListener('pointerover', onOver, true);
       document.removeEventListener('pointerout', onOut, true);
@@ -113,7 +132,7 @@ export function ChartTip() {
       document.removeEventListener('focusout', onFocusOut, true);
       document.removeEventListener('click', onClick, true);
       document.removeEventListener('keydown', onKey);
-      window.removeEventListener('scroll', hide, { capture: true });
+      window.removeEventListener('scroll', onScroll, { capture: true });
     };
   }, []);
 

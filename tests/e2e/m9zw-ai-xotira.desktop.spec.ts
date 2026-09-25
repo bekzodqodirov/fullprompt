@@ -98,18 +98,19 @@ test('the NEXT job about the same product fills itself, and says where from', as
   secondLead = job.name;
 
   // The code arrives from the exact-key book the seal just taught, so the
-  // row is already coded — the SWEEP places it and the memory answers its
-  // baza, both inside one ordinary save.
-  await page.getByTestId('calc-save-table').click();
-  // The save bar's announcement FIRST, because it is the one transient fact
-  // here: `lastSave` is client state and a later revalidation remounts the
-  // table and takes it with it. Asserted after the two waits below, this line
-  // failed on a full run and passed alone — the fact was true and the test was
-  // late (#166's shape: the assertion, not the code).
-  await expect(page.getByTestId('calc-save-note')).toContainText('🧠', { timeout: 15_000 });
-  await expect(page.getByTestId('calc-group-row').first()).toContainText('8528520000', {
-    timeout: 15_000,
-  });
+  // row is already coded — and TWO writers race to place it, by design: the
+  // queued pass (JOB_CALC_PREFILL, whose memory step needs no AI key) and
+  // this press, both through the same saveTable. Whichever wins, the row ends
+  // coded and priced from memory. When the queued pass won there is nothing
+  // left to save and the button is disabled — the full suite hit exactly that
+  // — so the press is made only when there is something to press, and the
+  // assertions read the persisted state, not the press's transient note.
+  const save = page.getByTestId('calc-save-table');
+  if (await save.isEnabled()) await save.click({ timeout: 5_000 }).catch(() => {});
+  await expect(async () => {
+    await page.reload();
+    await expect(page.getByTestId('calc-group-row').first()).toContainText('8528520000', { timeout: 3_000 });
+  }).toPass({ timeout: 30_000 });
 
   // $20 that nobody typed on this screen — and the chip that says so.
   await expect(page.getByTestId('calc-group-baza')).toContainText('20', { timeout: 15_000 });
