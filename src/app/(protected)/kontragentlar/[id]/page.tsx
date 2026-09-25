@@ -244,7 +244,7 @@ export default async function PartnerCardPage({
             </tr>
           </thead>
           <tbody data-testid="partner-ledger">
-            {ledger.map(({ tx, accountName, batchCode, authorName }) => {
+            {ledger.map(({ tx, accountName, batchCode, authorName, expenseRecurringId }) => {
               const usd = Number(tx.amountUsd);
               // The same predicate the BALANCE uses, not a second opinion.
               const raises = raisesBalance(tx.type, usd);
@@ -288,12 +288,23 @@ export default async function PartnerCardPage({
                         and the admin's to cancel here (the action refuses the
                         rest); the person who typed the cost takes it back
                         from the cost itself, where its own rule is asked. */}
-                    {canManage &&
+                    {/* A recurring month paid through this firm (0106) is
+                        cancelled by voiding the EXPENSE, which takes this
+                        debt with it and re-opens the month; the service
+                        refuses it here, and a refusal this form cannot
+                        print must not be offered at all. */}
+                    {tx.expenseId && expenseRecurringId && !tx.voidedAt ? (
+                      <p className="text-xs text-ink-500" data-testid="partner-recurring-charge">
+                        {t('recurringChargeNote')}
+                      </p>
+                    ) : (
+                      canManage &&
                       !tx.voidedAt &&
                       (!tx.accountId || movesTills) &&
                       (!(tx.costEntryId || tx.expenseId) || movesTills) && (
                         <VoidTx id={tx.id} partnerId={id} />
-                      )}
+                      )
+                    )}
                   </td>
                   <td className="p-2 text-right font-mono whitespace-nowrap">
                     {tx.amount} {tx.currency}

@@ -11,7 +11,6 @@ import {
   addTransfer,
   categorySchema,
   expenseSchema,
-  generateRecurring,
   needsKassaOrPayer,
   recurringPatchSchema,
   recurringSchema,
@@ -36,6 +35,13 @@ import { enqueue, JOB_PROCESS_EVENTS } from '@/modules/platform/jobs/boss';
 import { openStaffPartner, StaffAccountError } from '@/modules/wms/partners/staff-account';
 import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 import { amountRefusal } from '@/modules/wms/finance/money-bounds';
+import {
+  linkRecurringPayment,
+  payRecurring,
+  payRecurringSchema,
+  skipRecurring,
+  unskipRecurring,
+} from '@/modules/wms/accounting/recurring';
 
 export interface AccountingFormState {
   ok?: boolean;
@@ -231,19 +237,28 @@ export async function saveRecurringAction(
     partnerId: String(formData.get('partnerId') ?? ''),
     note: String(formData.get('note') ?? ''),
     active: checkbox(formData, 'active'),
+    // «Birinchi to'lov» (G10). A select always posts its value; anything but
+    // 'next' is this month.
+    firstMonth: String(formData.get('firstMonth') ?? 'this') === 'next' ? 'next' : 'this',
   });
   if (!parsed.success) return refusal(parsed.error);
-  const id = String(formData.get('id') ?? '') || undefined;
+  // CREATE only (M9): no `id` is read from the post. A template's own row
+  // control is `updateRecurringAction`, which asks what an edit must.
   return run('finance.expenses', async (ctx) => {
-    // Every posting of the template would be one-sided (U13, owner's A).
+    // Every payment of the template would be one-sided (U13, owner's A).
     if (await needsKassaOrPayer(parsed.data.categoryId, parsed.data)) {
       throw new AccountingError('account_or_payer_required');
     }
-    await saveRecurring({ ...parsed.data, id }, ctx);
+    await saveRecurring(parsed.data, ctx);
   });
 }
 
-/** A template's amount, day or stop — `updateRecurring` (audit A32). */
+/**
+ * A template's amount, day, stop — and its currency and usual payer
+ * (`updateRecurring`, audit A32 + Q6's G1). An absent field means «keep the
+ * stored value»: a book entry's row posts no payer, and the row edit always
+ * re-posts the stored ones even when their kassa has since been closed.
+ */
 export async function updateRecurringAction(
   _prev: AccountingFormState,
   formData: FormData,
@@ -254,31 +269,102 @@ export async function updateRecurringAction(
     dayOfMonth: int(formData.get('dayOfMonth')),
     // Paired with a hidden 'off' (#171): an unticked box posts nothing.
     active: checkbox(formData, 'active', false),
+    currency: formData.has('currency') ? String(formData.get('currency')) : undefined,
+    payer: formData.has('payer') ? String(formData.get('payer')) : undefined,
   });
   if (!id.success) return { error: 'validation' };
   if (!parsed.success) return refusal(parsed.error);
-  return run('finance.expenses', (ctx) => updateRecurring(id.data, parsed.data, ctx));
+  const state = await run('finance.expenses', (ctx) => updateRecurring(id.data, parsed.data, ctx));
+  if (state.ok) revalidateRecurring();
+  return state;
 }
 
-export async function generateRecurringAction(
-  month: string,
-): Promise<AccountingFormState & { created?: number; skipped?: number }> {
-  let who;
-  try {
-    who = await actor('finance.expenses');
-  } catch (err) {
-    if (err instanceof AuthError) return { error: 'forbidden' };
-    throw err;
-  }
-  const meta = await requestMeta();
-  try {
-    const result = await generateRecurring(month, { actorId: who.id, ...meta });
-    revalidatePath('/accounting', 'layout');
-    return { ok: true, ...result };
-  } catch (err) {
-    if (err instanceof AccountingError) return { error: err.code };
-    throw err;
-  }
+// --- Recurring months: «To'landi», «Bog'lash», «Bu oy yo'q», «Qaytarish» ----
+//
+// Owner's Q6: money leaves a kassa only when the person responsible for it
+// actually pays. `finance.expenses` is exactly the kassa holders
+// (`mayPickTill`, M2a — the accountant and the admin; the VED holds
+// `finance.manage` and not this), and the same permission sees staff
+// counterparties (`maySeeStaffMoney`), so a salary paid on a colleague's
+// behalf can be recorded by whoever opens these doors.
+
+/** The screens that print the counter, beside the `/accounting` layout `run` already refreshes. */
+function revalidateRecurring(firmMoved = false) {
+  revalidatePath('/');
+  revalidatePath('/dashboard');
+  if (firmMoved) revalidatePath('/kontragentlar', 'layout');
+}
+
+export async function payRecurringAction(
+  _prev: AccountingFormState,
+  formData: FormData,
+): Promise<AccountingFormState> {
+  const payer = String(formData.get('payer') ?? '');
+  const parsed = payRecurringSchema.safeParse({
+    recurringId: formData.get('recurringId'),
+    month: formData.get('month'),
+    payer,
+    amount: money(formData.get('amount')),
+    currency: String(formData.get('currency') ?? ''),
+    expenseDate: formData.get('expenseDate'),
+    // Two NAMED submit buttons post 'on'/'off'; the single one posts nothing,
+    // which means «the person did not say» and lets the amount decide (O3).
+    partial: formData.has('partial') ? checkbox(formData, 'partial', false) : undefined,
+    confirmNew: checkbox(formData, 'confirmNew', false),
+    note: String(formData.get('note') ?? ''),
+  });
+  if (!parsed.success) return refusal(parsed.error);
+  const state = await run('finance.expenses', (ctx) => payRecurring(parsed.data, ctx));
+  if (state.ok) revalidateRecurring(payer.startsWith('partner:'));
+  return state;
+}
+
+export async function linkRecurringAction(
+  _prev: AccountingFormState,
+  formData: FormData,
+): Promise<AccountingFormState> {
+  const parsed = z
+    .object({ recurringId: z.string().uuid(), month: z.string(), expenseId: z.string().uuid() })
+    .safeParse({
+      recurringId: formData.get('recurringId'),
+      month: formData.get('month'),
+      expenseId: formData.get('expenseId'),
+    });
+  if (!parsed.success) return { error: 'validation' };
+  const partial = formData.has('partial') ? checkbox(formData, 'partial', false) : undefined;
+  const state = await run('finance.expenses', (ctx) =>
+    linkRecurringPayment({ ...parsed.data, partial }, ctx),
+  );
+  if (state.ok) revalidateRecurring();
+  return state;
+}
+
+export async function skipRecurringAction(
+  _prev: AccountingFormState,
+  formData: FormData,
+): Promise<AccountingFormState> {
+  const parsed = z
+    .object({ recurringId: z.string().uuid(), month: z.string(), reason: z.string().max(2000) })
+    .safeParse({
+      recurringId: formData.get('recurringId'),
+      month: formData.get('month'),
+      reason: String(formData.get('reason') ?? ''),
+    });
+  if (!parsed.success) return { error: 'validation' };
+  const state = await run('finance.expenses', (ctx) => skipRecurring(parsed.data, ctx));
+  if (state.ok) revalidateRecurring();
+  return state;
+}
+
+export async function unskipRecurringAction(
+  _prev: AccountingFormState,
+  formData: FormData,
+): Promise<AccountingFormState> {
+  const id = z.string().uuid().safeParse(formData.get('id'));
+  if (!id.success) return { error: 'validation' };
+  const state = await run('finance.expenses', (ctx) => unskipRecurring(id.data, ctx));
+  if (state.ok) revalidateRecurring();
+  return state;
 }
 
 export async function addTransferAction(

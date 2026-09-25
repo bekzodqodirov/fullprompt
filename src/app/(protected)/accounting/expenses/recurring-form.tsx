@@ -2,13 +2,9 @@
 
 import { useActionState, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import {
-  generateRecurringAction,
-  saveRecurringAction,
-  updateRecurringAction,
-  type AccountingFormState,
-} from '../actions';
+import { saveRecurringAction, updateRecurringAction, type AccountingFormState } from '../actions';
 import type { CategoryOption } from './expense-form';
+import { RecurringError, type PayPartner, type PayTill } from './recurring-due';
 
 interface Option {
   id: string;
@@ -16,12 +12,11 @@ interface Option {
 }
 
 /**
- * A fixed cost (rent, a salary) as a template.
+ * A fixed cost (rent, a salary) as a template — a promise with a day.
  *
- * Nothing is posted automatically — the accountant presses "create this
- * month's fixed costs" and looks at what landed. A silent monthly insert
- * would quietly falsify the P&L of any month where the rent changed or
- * someone left.
+ * Nothing posts (owner's Q6): each month appears on the due list, and
+ * «To'landi» or «Bog'lash» writes it on the day the money actually left.
+ * The kassa and the payer named here are only the DEFAULT a press offers.
  */
 export function RecurringForm({
   categories,
@@ -30,6 +25,7 @@ export function RecurringForm({
   employees,
   currencies,
   partners,
+  today,
 }: {
   categories: CategoryOption[];
   accounts: Option[];
@@ -37,6 +33,8 @@ export function RecurringForm({
   employees: Option[];
   currencies: string[];
   partners: Option[];
+  /** Tashkent's day, `YYYY-MM-DD` — the «Birinchi to'lov» default reads it. */
+  today: string;
 }) {
   const t = useTranslations('accounting');
   const tc = useTranslations('common');
@@ -50,6 +48,18 @@ export function RecurringForm({
   // A non-cash kind names no kassa and no payer (U06) — the expense form's rule.
   const [categoryId, setCategoryId] = useState(categories[0]?.id ?? '');
   const bookEntry = categories.find((option) => option.id === categoryId)?.cash === false;
+  // «Birinchi to'lov» (G10): until the person touches it, it follows the
+  // typed day — a payday already past this month starts next month, so a
+  // template created on the 20th for the 5th does not arrive overdue.
+  const [day, setDay] = useState('1');
+  const [firstMonth, setFirstMonth] = useState<'this' | 'next' | null>(null);
+  const suggested = Number(day) > 0 && Number(day) < Number(today.slice(8)) ? 'next' : 'this';
+  const monthLabel = (offset: number) => {
+    const year = Number(today.slice(0, 4));
+    const month = Number(today.slice(5, 7)) + offset;
+    const rolled = month > 12 ? { y: year + 1, m: month - 12 } : { y: year, m: month };
+    return `${String(rolled.m).padStart(2, '0')}.${rolled.y}`;
+  };
 
   return (
     <form action={formAction} className="space-y-2">
@@ -89,12 +99,28 @@ export function RecurringForm({
             type="number"
             min={1}
             max={28}
-            defaultValue={1}
+            value={day}
+            onChange={(event) => setDay(event.target.value)}
             aria-label={t('dayOfMonth')}
             className="input !w-20"
           />
         </label>
       </div>
+      <label className="block text-sm">
+        <span className="block text-xs text-ink-500">{t('recurringFirstMonth')}</span>
+        {/* A select always posts its value and is never disabled (#171). */}
+        <select
+          name="firstMonth"
+          data-testid="recurring-first-month"
+          aria-label={t('recurringFirstMonth')}
+          className="input"
+          value={firstMonth ?? suggested}
+          onChange={(event) => setFirstMonth(event.target.value === 'next' ? 'next' : 'this')}
+        >
+          <option value="this">{t('recurringFirstThis', { month: monthLabel(0) })}</option>
+          <option value="next">{t('recurringFirstNext', { month: monthLabel(1) })}</option>
+        </select>
+      </label>
       <div className="flex flex-wrap gap-2">
         {!partnerId && !bookEntry && (
           <select name="accountId" aria-label={t('account')} className="input min-w-36 flex-1">
@@ -170,71 +196,50 @@ export function RecurringForm({
   );
 }
 
-/** Posts every active template into the chosen month, skipping what is there. */
-export function GenerateRecurringButton({ month }: { month: string }) {
-  const t = useTranslations('accounting');
-  const tc = useTranslations('common');
-  const [state, formAction, pending] = useActionState<
-    AccountingFormState & { created?: number; skipped?: number; failed?: number },
-    FormData
-  >(async (_prev, formData) => generateRecurringAction(String(formData.get('month') ?? month)), {});
-
-  return (
-    <form action={formAction} className="flex flex-wrap items-end gap-2">
-      <label className="text-sm">
-        <span className="block text-xs text-ink-500">{t('period')}</span>
-        {/* `max` is the current month; the service refuses a later one anyway. */}
-        <input type="month" name="month" defaultValue={month} max={month} className="input !w-40" />
-      </label>
-      <button
-        type="submit"
-        data-testid="generate-recurring"
-        className="btn-primary"
-        disabled={pending}
-      >
-        {pending ? tc('loading') : `▶️ ${t('generateMonth')}`}
-      </button>
-      {state.ok && (
-        <p className="w-full text-sm font-semibold text-good">
-          ✅ {t('generated', { n: state.created ?? 0 })}
-          {state.skipped ? ` · ${t('alreadyPosted', { n: state.skipped })}` : ''}
-          {/* One template that could not post no longer takes the rest of the
-              month with it — but it must be SAID, or the missing rent is
-              found in the P&L months later. */}
-          {state.failed ? (
-            <span className="text-bad"> · {t('generateFailed', { n: state.failed })}</span>
-          ) : null}
-        </p>
-      )}
-      {state.error && (
-        <p className="w-full text-sm font-semibold text-bad">
-          {state.error === 'fx_missing'
-            ? t('fxMissing')
-            : state.error === 'future_date'
-              ? tc('futureDate')
-              : tc('error')}
-        </p>
-      )}
-    </form>
-  );
-}
-
 /**
- * A template's own row control (audit A32): its amount, its day, or stop it.
- * The list was read-only and the only form could create, so a rent that
- * changed or a person who left went on posting every month. WHAT the cost is
- * stays fixed — a different cost is a new template.
+ * A template's own row control (audit A32): its amount, its day, or stop it —
+ * and, since the kassa and the payer are only a press's DEFAULTS (owner's
+ * Q6), its currency and its usual payer (G1). WHAT the cost is stays fixed —
+ * a different cost is a new template.
+ *
+ * Both selects ALWAYS carry the stored value, even a closed kassa or firm
+ * marked «(yopilgan)», and default to it: an edit of the amount or a stop
+ * re-posts them unchanged, and the service asks nothing about a payer nobody
+ * touched. A select whose value is not among its options would fall back to
+ * its first one and silently re-point the template.
  */
 export function RecurringRowEdit({
   id,
   amount,
   dayOfMonth,
   active,
+  cash,
+  currency,
+  currencies,
+  stored,
+  tills,
+  partners,
 }: {
   id: string;
   amount: string;
   dayOfMonth: number;
   active: boolean;
+  /** False = a book entry: no payer at all (U06), so the row posts none. */
+  cash: boolean;
+  currency: string;
+  currencies: string[];
+  /** The template's own kassa or firm, open or closed. */
+  stored: {
+    accountId: string | null;
+    accountName: string | null;
+    accountCurrency: string | null;
+    accountActive: boolean | null;
+    partnerId: string | null;
+    partnerName: string | null;
+    partnerActive: boolean | null;
+  };
+  tills: PayTill[];
+  partners: PayPartner[];
 }) {
   const t = useTranslations('accounting');
   const tc = useTranslations('common');
@@ -242,6 +247,25 @@ export function RecurringRowEdit({
     updateRecurringAction,
     {},
   );
+  const storedPayer = stored.partnerId
+    ? `partner:${stored.partnerId}`
+    : stored.accountId
+      ? `till:${stored.accountId}`
+      : '';
+  const tillOptions = tills.some((row) => row.id === stored.accountId) || !stored.accountId
+    ? tills
+    : [
+        {
+          id: stored.accountId,
+          name: `${stored.accountName ?? '—'} ${t('recurringClosedMark')}`,
+          currency: stored.accountCurrency ?? currency,
+        },
+        ...tills,
+      ];
+  const partnerOptions = partners.some((row) => row.id === stored.partnerId) || !stored.partnerId
+    ? partners
+    : [{ id: stored.partnerId, name: `${stored.partnerName ?? '—'} ${t('recurringClosedMark')}` }, ...partners];
+  const currencyOptions = currencies.includes(currency) ? currencies : [currency, ...currencies];
   return (
     <details className="w-full" data-testid="recurring-edit">
       <summary className="cursor-pointer text-xs font-semibold text-brand-700">✏️ {t('recurringEdit')}</summary>
@@ -256,6 +280,17 @@ export function RecurringRowEdit({
           data-testid="recurring-edit-amount"
           required
         />
+        <select
+          name="currency"
+          aria-label={t('currency')}
+          defaultValue={currency}
+          className="input !w-24"
+          data-testid="recurring-edit-currency"
+        >
+          {currencyOptions.map((code) => (
+            <option key={code}>{code}</option>
+          ))}
+        </select>
         <label className="text-xs">
           <span className="block text-ink-500">{t('dayOfMonth')}</span>
           <input
@@ -269,6 +304,38 @@ export function RecurringRowEdit({
             required
           />
         </label>
+        {cash && (
+          <label className="w-full text-xs">
+            <span className="block text-ink-500">{t('recurringDefaultPayer')}</span>
+            <select
+              name="payer"
+              aria-label={t('recurringDefaultPayer')}
+              defaultValue={storedPayer}
+              className="input"
+              data-testid="recurring-edit-payer"
+            >
+              <option value="">{t('recurringNoPayer')}</option>
+              {tillOptions.length > 0 && (
+                <optgroup label={t('recurringTillGroup')}>
+                  {tillOptions.map((row) => (
+                    <option key={row.id} value={`till:${row.id}`}>
+                      {row.name} ({row.currency})
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {partnerOptions.length > 0 && (
+                <optgroup label={t('recurringPartnerGroup')}>
+                  {partnerOptions.map((row) => (
+                    <option key={row.id} value={`partner:${row.id}`}>
+                      {row.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
+          </label>
+        )}
         {/* The hidden 'off' first: an unticked box posts nothing (#171). */}
         <input type="hidden" name="active" value="off" />
         <label className="flex items-center gap-1 text-sm">
@@ -279,11 +346,7 @@ export function RecurringRowEdit({
           {pending ? tc('loading') : tc('save')}
         </button>
         {state.ok && <span className="text-sm font-semibold text-good">✅</span>}
-        {state.error && (
-          <span className="text-sm font-semibold text-bad">
-            {state.error === 'amount_too_large' ? tc('amountTooLarge') : tc('error')}
-          </span>
-        )}
+        <RecurringError code={state.error} />
       </form>
     </details>
   );

@@ -722,6 +722,13 @@
       "when": 1785190000081,
       "tag": "0102_business_targets",
       "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1785190000085,
+      "tag": "0106_recurring_paid",
+      "breakpoints": true
     }
   ]
 }

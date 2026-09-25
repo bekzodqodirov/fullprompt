@@ -168,6 +168,8 @@ describe('the Balans lines, one home for two screens', () => {
     unplacedCostInCountCount: 0,
     unplacedCostInCountUsd: 0,
     sellerCommissionsUsd: 0,
+    recurringArrearsUsd: 0,
+    recurringArrearsCount: 0,
   };
   it('leaves out the lines that are empty by nature and signs what we owe', () => {
     expect(balanceLines(base).map((l) => [l.key, l.value])).toEqual([
@@ -200,6 +202,15 @@ describe('the Balans lines, one home for two screens', () => {
     // Every queued cost inside the counts: nothing taken off, no $0 line.
     const allCounted = { ...queue, unplacedCostInCountCount: 3, unplacedCostInCountUsd: 650 };
     expect(balanceLines(allCounted).some((l) => l.key === 'balUnplacedCostsLine')).toBe(false);
+  });
+  it('subtracts the due, unpaid rent and salaries on a line of their own, and none when nothing is due (owner Q6)', () => {
+    const lines = balanceLines({ ...base, recurringArrearsCount: 2, recurringArrearsUsd: 1300 });
+    expect(lines.find((l) => l.key === 'balRecurringArrears')).toMatchObject({
+      value: -1300,
+      href: '/accounting/expenses#recurring',
+      tone: 'text-bad',
+    });
+    expect(balanceLines(base).some((l) => l.key === 'balRecurringArrears')).toBe(false);
   });
   it('sums the aging buckets the receivables page prints', () => {
     expect(

@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
@@ -271,29 +271,31 @@ describe('the accountant home', () => {
     expect((await moneyFlowCounts(TODAY)).unassignedPayments).toBe(before.unassignedPayments);
   });
 
-  it('a recurring template is due only until IT is posted for the month', async () => {
+  it('a recurring template is due until IT is paid or skipped for the month — a void re-opens it (owner Q6)', async () => {
     const before = await moneyFlowCounts(TODAY);
 
     const [category] = await db
       .insert(expenseCategories)
       .values({ name: `RH ijara ${STAMP}`, cash: true, sortOrder: 999 })
       .returning({ id: expenseCategories.id });
+    // Day 1 and a window from this month's first: due for the TODAY passed
+    // on ANY day of the month — the counter counts only what has come due.
     const [template] = await db
       .insert(recurringExpenses)
       .values({
         categoryId: category!.id,
         amount: '700',
         currency: 'USD',
-        dayOfMonth: 5,
+        dayOfMonth: 1,
+        dueFrom: `${TODAY.slice(0, 7)}-01`,
         createdBy: managerId,
       })
       .returning({ id: recurringExpenses.id, dayOfMonth: recurringExpenses.dayOfMonth });
     expect((await moneyFlowCounts(TODAY)).recurringDue).toBe(before.recurringDue + 1);
 
-    // A one-off on the same slot — same category, same day, no employee — is
-    // NOT this template's posting (0099, audit A33): it used to satisfy the
-    // month and the real rent never posted.
-    const slotDate = `${TODAY.slice(0, 7)}-05`;
+    // A one-off of the same kind is NOT this template's payment (0099, audit
+    // A33): it used to satisfy the month and the real rent never posted.
+    const slotDate = `${TODAY.slice(0, 7)}-01`;
     const row = {
       categoryId: category!.id,
       amount: '700',
@@ -306,21 +308,29 @@ describe('the accountant home', () => {
     const [oneOff] = await db.insert(expenses).values(row).returning({ id: expenses.id });
     expect((await moneyFlowCounts(TODAY)).recurringDue).toBe(before.recurringDue + 1);
 
-    // The template's own posting is — generateRecurring's own predicate.
+    // The template's own payment closes it. Written with NO month, as the old
+    // app writes during the migrate window: its date's month answers (M8).
     const [posted] = await db
       .insert(expenses)
       .values({ ...row, recurringId: template!.id })
       .returning({ id: expenses.id });
     expect((await moneyFlowCounts(TODAY)).recurringDue).toBe(before.recurringDue);
 
-    // A VOIDED posting still answers the month: voiding means «not this
-    // month», never «post it again» (A32).
+    // Rewritten with the owner's Q6: a VOIDED payment now says «that payment
+    // was a mistake» and the month is owed again (it read «not this month»
+    // under #999, while a button re-posted the stale amount by itself).
     await db
       .update(expenses)
       .set({ voidedAt: new Date(), voidedBy: managerId, voidReason: 'sinov' })
       .where(eq(expenses.id, posted!.id));
+    expect((await moneyFlowCounts(TODAY)).recurringDue).toBe(before.recurringDue + 1);
+
+    // «Not this month» is its own record now.
+    await db.execute(sql`INSERT INTO recurring_skips (recurring_id, month, reason, created_by)
+      VALUES (${template!.id}::uuid, ${`${TODAY.slice(0, 7)}-01`}::date, 'sinov', ${managerId}::uuid)`);
     expect((await moneyFlowCounts(TODAY)).recurringDue).toBe(before.recurringDue);
 
+    await db.execute(sql`DELETE FROM recurring_skips WHERE recurring_id = ${template!.id}::uuid`);
     await db.delete(expenses).where(inArray(expenses.id, [posted!.id, oneOff!.id]));
     await db.delete(recurringExpenses).where(eq(recurringExpenses.id, template!.id));
     await db.delete(expenseCategories).where(and(eq(expenseCategories.id, category!.id)));

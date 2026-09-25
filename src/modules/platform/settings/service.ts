@@ -131,12 +131,12 @@ export const SETTING_DEFAULTS = {
   /**
    * The expense category an upsale payout is written into (VED phase D).
    *
-   * MANDATORY and deliberately not overridable at the moment of paying:
-   * `generateRecurring`'s idempotence slot is (category, date, employee,
-   * warehouse) with no discriminator, so a commission paid to a seller out of
-   * «Oyliklar» would occupy that month's salary slot and the salary would be
-   * silently counted as already posted. Empty = nobody has chosen one, and
-   * the payout refuses with a sentence rather than guessing.
+   * MANDATORY and deliberately not overridable at the moment of paying: a
+   * commission paid to a seller out of «Oyliklar» would read as salary on the
+   * P&L's line, and on the recurring due list it would sit beside that
+   * seller's monthly salary (a template since 0099, paid by «To'landi» since
+   * 0106) as a look-alike payment. Empty = nobody has chosen one, and the
+   * payout refuses with a sentence rather than guessing.
    */
   upsale_expense_category_id: '',
   /**

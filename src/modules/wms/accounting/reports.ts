@@ -1526,6 +1526,15 @@ export async function companyBalance() {
   // the tills above, so until the payout it is a liability, not profit.
   const commissions = await upsaleLiability();
 
+  // Rent and salaries whose day has come and nobody has paid (owner's Q6,
+  // 0106) — the same noun as the commissions above: a debt whose day has
+  // come, owed out of money already in the tills. Nothing leaves a kassa by
+  // itself any more, so until «To'landi» the money is still counted in the
+  // drawer; without this line Sof holat would stand too high by every unpaid
+  // salary. Book entries (depreciation) are counted in the list, never here.
+  const { recurringArrears } = await import('./recurring');
+  const arrears = await recurringArrears(today);
+
   const net =
     cashUsd +
     unplacedUsd +
@@ -1534,7 +1543,8 @@ export async function companyBalance() {
     owedByUs -
     clientAdvances -
     unplacedCostsOut -
-    commissions.payableUsd;
+    commissions.payableUsd -
+    arrears.usd;
 
   // The totals FIRST: the AI's company_balance tool cuts the JSON at 6,000
   // characters, and with ~86 tills the rows used to push every total past it.
@@ -1563,6 +1573,13 @@ export async function companyBalance() {
     /** Seller commissions owed on jobs the client has paid for (U10) — in the net. */
     sellerCommissionsUsd: commissions.payableUsd,
     sellerCommissionsCount: commissions.payableCount,
+    /** Due, unpaid recurring months with money behind them (0106) — in the net. */
+    recurringArrearsUsd: arrears.usd,
+    recurringArrearsCount: arrears.cashCount,
+    /** Every due, unpaid recurring month — the accountant's counter's N, book entries included. */
+    recurringArrearsTotal: arrears.count,
+    /** Due months in a currency with no rate — OUT of the net, named. */
+    recurringArrearsUnrated: arrears.unrated,
     netUsd: money(net),
     uzsRate: rate,
     /** Money in boxes with no rate for their currency — OUT of the net, named (U14). */

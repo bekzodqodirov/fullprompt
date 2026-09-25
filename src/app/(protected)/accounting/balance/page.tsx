@@ -101,6 +101,19 @@ export default async function BalancePage() {
         </table>
       </div>
 
+      {/* A due rent or salary in a currency with no rate is OUT of the
+          arrears line — named in its own money, never counted as $0 (U14). */}
+      {balance.recurringArrearsUnrated.length > 0 && (
+        <p className="text-xs font-semibold text-warn" data-testid="balance-recurring-unrated">
+          ⚠{' '}
+          {t('balRecurringUnrated', {
+            sums: balance.recurringArrearsUnrated
+              .map((row) => `${row.amount.toLocaleString('en-US', { maximumFractionDigits: 2 })} ${row.currency}`)
+              .join(', '),
+          })}
+        </p>
+      )}
+
       {/* The line above takes these costs out of the net (U02); this says the
           one case it cannot tell apart — the same money also typed as an
           expense FROM a kassa counts twice until the queue merges it. */}

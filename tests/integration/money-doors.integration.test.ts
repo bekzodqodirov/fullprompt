@@ -22,7 +22,6 @@ import {
   accountBalances,
   addExpense,
   addTransfer,
-  generateRecurring,
   needsKassaOrPayer,
   saveAccount,
   saveCategory,
@@ -46,6 +45,7 @@ import {
   voidPartnerTx,
 } from '@/modules/wms/partners/service';
 import { recordSettlement } from '@/modules/wms/partners/settlement';
+import { payRecurring } from '@/modules/wms/accounting/recurring';
 
 /**
  * The finance audit's money DOORS, proven through the services they call
@@ -125,6 +125,7 @@ afterAll(async () => {
     for (const id of liveExpenses) await voidExpense(id, 'money-doors tozalash', ctx()).catch(() => undefined);
     for (const id of deletableExpenses) await db.delete(expenses).where(eq(expenses.id, id));
     for (const id of templates) {
+      await db.execute(sql`DELETE FROM recurring_skips WHERE recurring_id = ${id}::uuid`);
       await db.delete(expenses).where(eq(expenses.recurringId, id));
       await db.delete(recurringExpenses).where(eq(recurringExpenses.id, id));
     }
@@ -222,24 +223,27 @@ describe('U21 — no money row dated after tomorrow, at every door (#995)', () =
     ).rejects.toMatchObject({ code: 'future_date' });
   });
 
-  it('the monthly run keeps posting a template on its own later day, exactly as before', async () => {
-    // What «▶️ Oyni yozish» does from the 1st: a template dated the 28th posts
-    // its expense dated the 28th. The owner answered Q6 (money leaves a
-    // kassa when its holder pays) and the run is being rebuilt around it;
-    // until then the posting door (the only one carrying a template id)
-    // keeps today's behaviour, bounded to a month that has begun.
+  it('a recurring payment obeys the date rule like every door (owner Q6)', async () => {
+    // Rewritten, not deleted: this test pinned the monthly run's exemption —
+    // «a template dated the 28th posts its expense dated the 28th» — while
+    // Q6 was open. The owner answered «money leaves a kassa only when the
+    // kassa holder actually pays it»; the run is gone and «To'landi» is dated
+    // the day the money left, so the date after tomorrow is refused here as
+    // at every door, before any read of the month. The in-transaction half
+    // and «tomorrow itself is accepted» live in recurring-pay (R3).
     const template = await saveRecurring(
-      { categoryId: cashCategoryId, amount: 7, currency: 'USD', dayOfMonth: 28, active: false },
+      { categoryId: cashCategoryId, amount: 7, currency: 'USD', dayOfMonth: 28, accountId: usdTillId, active: false },
       ctx(),
     );
     templates.push(template.id);
-    const posted = await addExpense(
-      { categoryId: cashCategoryId, amount: 7, currency: 'USD', expenseDate: FUTURE },
-      ctx(),
-      { recurringId: template.id },
-    );
-    deletableExpenses.push(posted.id);
-    expect(posted.expenseDate).toBe(FUTURE);
+    await expect(
+      payRecurring(
+        { recurringId: template.id, month: FUTURE.slice(0, 7), payer: `till:${usdTillId}`, amount: 7, expenseDate: FUTURE },
+        ctx(),
+      ),
+    ).rejects.toMatchObject({ code: 'future_date' });
+    const written = await db.select({ id: expenses.id }).from(expenses).where(eq(expenses.recurringId, template.id));
+    expect(written).toHaveLength(0);
   });
 });
 
@@ -313,7 +317,10 @@ describe('U29 — a kassa that holds money keeps its currency', () => {
     await expect(edit(till, nameOf(till), 'UZS')).rejects.toMatchObject({ code: 'currency_locked' });
   });
 
-  it('a TEMPLATE locks it — re-read in another currency, every monthly post would fail', async () => {
+  // Reworded with owner Q6: nothing posts monthly any more, but the
+  // template's DEFAULT kassa would be offered on every «To'landi» in a
+  // currency it no longer speaks.
+  it('a TEMPLATE locks it — its default kassa would be offered in a currency it no longer speaks', async () => {
     const till = await mintTill('template', 'USD');
     const template = await saveRecurring(
       { categoryId: cashCategoryId, amount: 40, currency: 'USD', dayOfMonth: 5, accountId: till, active: false },
@@ -413,20 +420,26 @@ describe('U06 (owner a) — a kind\u2019s «Naqd» mark is fixed once it has exp
   });
 });
 
-describe('U21 — the monthly run posts no month that has not begun', () => {
+describe('U21 — no recurring month is paid before it has begun', () => {
   it('refuses next year\u2019s January before writing a row', async () => {
+    // Rewritten, not deleted: this pinned the monthly run's refusal of a
+    // month not yet begun. The run is gone (owner Q6); its successor is the
+    // pay door, whose months run through NEXT month only — an advance for
+    // the month after is refused in words, before a row is written.
     const month = `${Number(latestTxDate().slice(0, 4)) + 1}-01`;
-    try {
-      await expect(generateRecurring(month, ctx())).rejects.toMatchObject({ code: 'future_date' });
-    } finally {
-      // Only reached with rows when the guard is stripped (the red proof):
-      // the run would have posted every active template into that month.
-      const from = `${month}-01`;
-      const to = `${month}-31`;
-      await db.execute(sql`DELETE FROM partner_transactions WHERE expense_id IN
-        (SELECT id FROM expenses WHERE expense_date BETWEEN ${from} AND ${to})`);
-      await db.execute(sql`DELETE FROM expenses WHERE expense_date BETWEEN ${from} AND ${to}`);
-    }
+    const template = await saveRecurring(
+      { categoryId: cashCategoryId, amount: 5, currency: 'USD', dayOfMonth: 5, accountId: usdTillId, active: true, firstMonth: 'next' },
+      ctx(),
+    );
+    templates.push(template.id);
+    await expect(
+      payRecurring(
+        { recurringId: template.id, month, payer: `till:${usdTillId}`, amount: 5, expenseDate: latestTxDate() },
+        ctx(),
+      ),
+    ).rejects.toMatchObject({ code: 'recurring_not_due' });
+    const written = await db.select({ id: expenses.id }).from(expenses).where(eq(expenses.recurringId, template.id));
+    expect(written).toHaveLength(0);
   });
 });
 

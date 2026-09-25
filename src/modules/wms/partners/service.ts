@@ -400,6 +400,21 @@ export async function voidPartnerTx(id: string, reason: string, ctx: AuditContex
   });
   if (!row) throw new PartnerError('not_found');
   if (row.voidedAt) throw new PartnerError('already_voided');
+  // A recurring month paid THROUGH a firm (0106, M4). «The firm did not pay»
+  // means the payment did not happen, and that is voided on the EXPENSE:
+  // `voidExpense` takes this charge with it, re-opens a rasxod xabari, and
+  // re-opens the month on the due list. Unlinking the payer here instead
+  // left the month «paid» on a one-sided expense no kassa and no firm stood
+  // behind. Refused, never voided in-line — that would bypass the expense
+  // door's pair rules and its `finance.expenses` gate. On top of, not
+  // instead of, `firmDebtVoidRefusal` at the action (who may cancel it).
+  if (row.expenseId) {
+    const [source] = await db
+      .select({ recurringId: expenses.recurringId })
+      .from(expenses)
+      .where(eq(expenses.id, row.expenseId));
+    if (source?.recurringId) throw new PartnerError('recurring_payment');
+  }
   await db.transaction(async (tx) => {
     await tx
       .update(partnerTransactions)
@@ -557,11 +572,14 @@ export async function partnerLedger(partnerId: string, limit = 200) {
       accountName: moneyAccounts.name,
       batchCode: batches.code,
       authorName: users.fullName,
+      /** A recurring month's payment (0106): voided on the expense, never here. */
+      expenseRecurringId: expenses.recurringId,
     })
     .from(partnerTransactions)
     .leftJoin(moneyAccounts, eq(partnerTransactions.accountId, moneyAccounts.id))
     .leftJoin(batches, eq(partnerTransactions.batchId, batches.id))
     .leftJoin(users, eq(partnerTransactions.createdBy, users.id))
+    .leftJoin(expenses, eq(partnerTransactions.expenseId, expenses.id))
     .where(eq(partnerTransactions.partnerId, partnerId))
     .orderBy(desc(partnerTransactions.txDate), desc(partnerTransactions.createdAt))
     .limit(limit);

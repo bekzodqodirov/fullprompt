@@ -520,12 +520,16 @@ async function AccountantFlow({ flow }: { flow: MoneyFlowCounts }) {
           // refund — because that is the page this row opens (U26).
           sub={`${td('monthPayments')} ${usd(flow.snapshot.paidParts.toTill + flow.snapshot.paidParts.viaPartner)}`}
         />
+        {/* Rent and salaries whose day has come and nobody has paid (owner's
+            Q6): nothing posts by itself, so this is the list a kassa holder
+            works from — «To'landi» on the day the money actually leaves. */}
         <FlowRow
-          href="/accounting/expenses"
+          href="/accounting/expenses#recurring"
           icon="calendar"
           testid="acc-flow-recurring"
           label={t('flowRecurringDue')}
           count={flow.recurringDue}
+          warn={flow.recurringDue > 0}
           sub={flow.recurringDue > 0 ? tacc('recurring') : null}
         />
         <FlowRow

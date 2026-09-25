@@ -19,6 +19,7 @@ import { costMissingCount } from '../reports/queries';
 import { sameCountryLegSql } from '../batches/internal';
 import { warehouseFlowCounts, type WarehouseFlowCounts } from './flow';
 import { unplacedCostTotals } from '../costing/service';
+import { recurringDueCount } from '../accounting/recurring';
 
 /**
  * The other three workflow homes (owner: "har bir hodim qiladigan ishiga
@@ -129,35 +130,17 @@ export interface MoneyFlowCounts {
    *  before every count of its currency is inside those counts, and a
    *  settlement is placed with its firm. */
   unassignedPayments: number;
-  /** Active recurring templates not yet posted this month. */
+  /**
+   * Recurring months whose day has come that nobody has paid, linked or
+   * skipped (accounting/recurring.ts, owner's Q6) — arrears included.
+   */
   recurringDue: number;
   costMissing: number;
   /** Cargo costs waiting for their kassa (0101) — the accountant's queue. */
   unplacedCosts: number;
 }
 
-/**
- * Active recurring templates not yet posted in `month` (YYYY-MM). Mirrors
- * generateRecurring's own idempotence check (0099): a template is due until a
- * posting of IT exists on this month's day — voided or not, because a voided
- * posting means «not this month» (audit A32/A33). One home, read by the
- * accountant's home and the owner's dashboard alike (#513).
- */
-export async function recurringDueCount(month: string): Promise<number> {
-  const rows = await db.execute<{ n: number }>(sql`
-    SELECT count(*)::int AS n FROM recurring_expenses r
-    WHERE r.active = true
-      AND NOT EXISTS (
-        SELECT 1 FROM expenses e
-        WHERE e.recurring_id = r.id
-          AND e.expense_date = (${month} || '-' || lpad(r.day_of_month::text, 2, '0'))::date
-      )
-  `);
-  return Number(rows[0]?.n ?? 0);
-}
-
 export async function moneyFlowCounts(today: string): Promise<MoneyFlowCounts> {
-  const month = today.slice(0, 7);
   const [snapshot, unassigned, recurring, costMissing, unplacedCosts] = await Promise.all([
     moneySnapshot(),
     db
@@ -178,7 +161,9 @@ export async function moneyFlowCounts(today: string): Promise<MoneyFlowCounts> {
           unplacedPaymentSql(),
         ),
       ),
-    recurringDueCount(month),
+    // The DAY, not the month: «due» is «its day has come and nobody closed
+    // it» — the same fragment the Balans line and the stop guard read (#513).
+    recurringDueCount(today),
     costMissingCount(3),
     unplacedCostTotals(),
   ]);

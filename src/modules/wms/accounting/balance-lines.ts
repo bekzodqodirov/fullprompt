@@ -16,7 +16,8 @@ export type BalanceLineKey =
   | 'balPayable'
   | 'balClientAdvances'
   | 'balUnplacedCostsLine'
-  | 'balSellerCommissions';
+  | 'balSellerCommissions'
+  | 'balRecurringArrears';
 
 export interface BalanceLine {
   key: BalanceLineKey;
@@ -40,6 +41,9 @@ export interface BalanceFigures {
   unplacedCostInCountCount: number;
   unplacedCostInCountUsd: number;
   sellerCommissionsUsd: number;
+  /** Due, unpaid recurring months (0106) — their money and how many carry it. */
+  recurringArrearsUsd: number;
+  recurringArrearsCount: number;
 }
 
 /**
@@ -81,6 +85,12 @@ export function balanceLines(balance: BalanceFigures, cashHref = '/accounting/ac
     // already in the tills, so a liability until the accountant pays them.
     ...(balance.sellerCommissionsUsd > 0
       ? [{ key: 'balSellerCommissions', value: -balance.sellerCommissionsUsd, tone: 'text-bad', href: '/upsale' } as const]
+      : []),
+    // Rent and salaries whose day has come and nobody has paid (owner's Q6,
+    // 0106): nothing leaves a kassa by itself, so the money is still in the
+    // drawer above — owed, the commissions' own noun, until «To'landi».
+    ...(balance.recurringArrearsCount > 0
+      ? [{ key: 'balRecurringArrears', value: -balance.recurringArrearsUsd, tone: 'text-bad', href: '/accounting/expenses#recurring' } as const]
       : []),
   ];
 }

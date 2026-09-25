@@ -1,5 +1,5 @@
 import { and, eq, isNull } from 'drizzle-orm';
-import { db } from '../../platform/db/client';
+import { db, type Db, type Tx } from '../../platform/db/client';
 import { costEntries, expenses, partnerTransactions } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 
@@ -96,18 +96,34 @@ export async function voidChargeForCost(
 export async function chargeForExpense(expenseId: string, ctx: AuditContext): Promise<void> {
   if (!ctx.actorId) return;
   const row = await db.query.expenses.findFirst({ where: eq(expenses.id, expenseId) });
-  if (!row?.partnerId) return;
+  if (!row) return;
+  await chargeForExpenseTx(db, row, ctx);
+}
 
-  const existing = await db
+/**
+ * The WRITE half, on whichever connection the caller holds, for the expense
+ * ROW it is given — never read again. «To'landi» (accounting/recurring.ts)
+ * writes the expense and the firm's debt in ONE transaction (0106, M7): after
+ * a commit, a failed charge left the month closed on an expense that owed the
+ * firm nothing, and the press could not be made again to repair it.
+ */
+export async function chargeForExpenseTx(
+  dbOrTx: Db | Tx,
+  row: typeof expenses.$inferSelect,
+  ctx: AuditContext,
+): Promise<void> {
+  if (!ctx.actorId || !row.partnerId) return;
+
+  const existing = await dbOrTx
     .select({ id: partnerTransactions.id })
     .from(partnerTransactions)
     .where(
-      and(eq(partnerTransactions.expenseId, expenseId), isNull(partnerTransactions.voidedAt)),
+      and(eq(partnerTransactions.expenseId, row.id), isNull(partnerTransactions.voidedAt)),
     )
     .limit(1);
   if (existing.length > 0) return;
 
-  const [created] = await db
+  const [created] = await dbOrTx
     .insert(partnerTransactions)
     .values({
       partnerId: row.partnerId,
@@ -117,16 +133,16 @@ export async function chargeForExpense(expenseId: string, ctx: AuditContext): Pr
       rateToUsd: row.rateToUsd,
       amountUsd: row.amountUsd,
       txDate: row.expenseDate,
-      expenseId,
+      expenseId: row.id,
       note: row.note,
       createdBy: ctx.actorId,
     })
     .returning();
-  await writeAudit(db, ctx, {
+  await writeAudit(dbOrTx, ctx, {
     entityType: 'partner_transaction',
     entityId: created!.id,
     action: 'create',
-    after: { from: 'expense', expenseId, partnerId: row.partnerId },
+    after: { from: 'expense', expenseId: row.id, partnerId: row.partnerId },
   });
 }
 

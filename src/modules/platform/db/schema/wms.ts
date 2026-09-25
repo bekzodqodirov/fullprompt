@@ -1033,11 +1033,26 @@ export const expenses = pgTable(
     partnerId: uuid('partner_id').references(() => partners.id),
     note: text('note'),
     /**
-     * The template that posted it (0099, audit A32/A33). «Posted this month»
-     * is a row of THIS template on that date, voided or not — never a slot any
-     * one-off on the same day could fill.
+     * The template this payment answers (0099, audit A32/A33). A LIVE
+     * non-partial row closes its month (`recurringMonth`); a voided one
+     * re-opens it (0106, owner's Q6) — never a slot any one-off on the same
+     * day could fill. Written only by accounting/recurring.ts.
      */
     recurringId: uuid('recurring_id').references((): AnyPgColumn => recurringExpenses.id),
+    /**
+     * WHICH month it answers (0106), the first of that month. Since Q6 the
+     * date is the day the money actually left, so a September salary paid on
+     * 3 October carries October's date and September's month. A row with a
+     * template and no month (the old app during the migrate window) is read
+     * as its date's month by every reader (`postingMonth`).
+     */
+    recurringMonth: date('recurring_month'),
+    /**
+     * A part payment the person SAID was partial: it leaves the month open
+     * for the rest. A person's statement, never inferred from the sum — a
+     * deliberately reduced last salary must be able to close its month.
+     */
+    recurringPartial: boolean('recurring_partial').notNull().default(false),
     createdBy: uuid('created_by')
       .notNull()
       .references(() => users.id),
@@ -1051,9 +1066,17 @@ export const expenses = pgTable(
     index('expenses_date_idx').on(t.expenseDate),
     index('expenses_category_idx').on(t.categoryId, t.expenseDate),
     index('expenses_account_idx').on(t.accountId, t.expenseDate),
-    index('expenses_recurring_idx')
-      .on(t.recurringId, t.expenseDate)
+    index('expenses_recurring_month_idx')
+      .on(t.recurringId, t.recurringMonth)
       .where(sql`${t.recurringId} IS NOT NULL`),
+    // One-directional (0106): a month needs a template, not the reverse — the
+    // old app may write a template with no month while `migrate` runs.
+    check(
+      'expenses_recurring_month_check',
+      sql`(${t.recurringMonth} IS NULL OR ${t.recurringId} IS NOT NULL)
+        AND (${t.recurringMonth} IS NULL OR extract(day FROM ${t.recurringMonth}) = 1)
+        AND (NOT ${t.recurringPartial} OR ${t.recurringId} IS NOT NULL)`,
+    ),
   ],
 );
 
@@ -1116,10 +1139,11 @@ export const expenseRequests = pgTable(
 );
 
 /**
- * Rent, salaries and the like. A template, not an automatic posting: the
- * accountant presses "create this month's fixed costs" and reviews what
- * landed — a silent monthly insert would quietly falsify a P&L the month
- * something changed.
+ * Rent, salaries and the like. A PROMISE WITH A DAY, never a posting (owner's
+ * Q6, 0106): every month from `dueFrom` appears on the due list, and only a
+ * kassa holder's «To'landi» (or «Bog'lash» onto a payment already typed)
+ * writes money — on the day it actually left. Nothing is ever deducted by
+ * itself.
  */
 export const recurringExpenses = pgTable(
   'recurring_expenses',
@@ -1140,6 +1164,15 @@ export const recurringExpenses = pgTable(
     partnerId: uuid('partner_id').references(() => partners.id),
     note: text('note'),
     active: boolean('active').notNull().default(true),
+    /**
+     * The first month this template can be due (0106) — its month, the day
+     * is not compared. The create form's «Birinchi to'lov» picks this month
+     * or next; a reactivation restarts it at today, so the stopped months
+     * never come back as arrears.
+     */
+    dueFrom: date('due_from')
+      .notNull()
+      .default(sql`((now() AT TIME ZONE 'Asia/Tashkent')::date)`),
     createdBy: uuid('created_by')
       .notNull()
       .references(() => users.id),
@@ -1149,6 +1182,38 @@ export const recurringExpenses = pgTable(
   (t) => [
     check('recurring_expenses_amount_check', sql`${t.amount} > 0`),
     check('recurring_expenses_day_check', sql`${t.dayOfMonth} BETWEEN 1 AND 28`),
+  ],
+);
+
+/**
+ * «Bu oy yo'q» (0106): a template-month closed with no money, with the
+ * reason in words — a person who left mid-month, a lease paused. Its own
+ * record, so a VOIDED payment can mean «that payment was a mistake» (the
+ * month re-opens) instead of #999's «not this month». Undone by voiding the
+ * skip, never by deleting it.
+ */
+export const recurringSkips = pgTable(
+  'recurring_skips',
+  {
+    id: id(),
+    recurringId: uuid('recurring_id')
+      .notNull()
+      .references(() => recurringExpenses.id),
+    month: date('month').notNull(),
+    reason: text('reason').notNull(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+    voidedAt: timestamp('voided_at', { withTimezone: true }),
+    voidedBy: uuid('voided_by').references(() => users.id),
+  },
+  (t) => [
+    check('recurring_skips_month_check', sql`extract(day FROM ${t.month}) = 1`),
+    check('recurring_skips_reason_check', sql`length(btrim(${t.reason})) > 0`),
+    uniqueIndex('recurring_skips_live_idx')
+      .on(t.recurringId, t.month)
+      .where(sql`voided_at IS NULL`),
   ],
 );
 

@@ -9,6 +9,7 @@ import {
   transferSchema,
 } from '@/modules/wms/accounting/service';
 import { expenseRequestSchema } from '@/modules/wms/accounting/expense-requests';
+import { payRecurringSchema } from '@/modules/wms/accounting/recurring';
 import { costEntrySchema, receiptCostGridSchema } from '@/modules/wms/costing/service';
 import { createCrateSchema } from '@/modules/wms/crates/service';
 import { refundFitsAdvance, transactionSchema } from '@/modules/wms/finance/service';
@@ -139,6 +140,7 @@ describe('U44 — one bound for a native amount, the ceiling in dollars', () => 
     ['expense', (amount) => expenseSchema.safeParse({ categoryId: UUID, amount, currency: 'UZS', expenseDate: DAY })],
     ['recurring', (amount) => recurringSchema.safeParse({ categoryId: UUID, amount, currency: 'UZS' })],
     ['recurring patch', (amount) => recurringPatchSchema.safeParse({ amount, dayOfMonth: 5, active: true })],
+    ['recurring pay', (amount) => payRecurringSchema.safeParse({ recurringId: UUID, month: '2026-09', amount, expenseDate: DAY })],
     ['transfer', (amount) => transferSchema.safeParse({ fromAccountId: UUID, toAccountId: UUID, amountFrom: amount, amountTo: amount, transferDate: DAY })],
     ['client ledger', (amount) => transactionSchema.safeParse({ clientId: UUID, type: 'payment', amount, currency: 'UZS', txDate: DAY })],
     ['cost', (amount) => costEntrySchema.safeParse({ scope: 'receipt', receiptId: UUID, costTypeId: UUID, amount, currency: 'UZS', costDate: DAY, allocationBasis: 'weight' })],
@@ -249,13 +251,18 @@ describe('U21 — every money form carries the door\'s own date limit', () => {
     }
   });
 
-  it('the monthly run keeps posting each template on its own day, and refuses a month not yet begun (Q6 is being rebuilt)', () => {
+  it('a recurring payment obeys the date rule like every door — the monthly run and its exception are gone (owner Q6)', () => {
+    // Rewritten, not deleted: this test pinned the monthly run's exemption
+    // while Q6 was open. The owner answered «money leaves a kassa only when
+    // the kassa holder actually pays it», the run that posted each template
+    // on its own later day is deleted, and «To'landi» is dated the day the
+    // money left — so the write half asks the date rule of EVERY row.
+    // `!opts.recurring` catches both spellings of the old exemption (G4).
     const service = read('src/modules/wms/accounting/service.ts');
     const write = slice(service, 'export async function addExpenseTx', 'export async function addExpense(');
-    expect(write).toContain("if (!opts.recurringId && input.expenseDate > latestTxDate()) {");
-    const run = slice(service, 'export async function generateRecurring', '// --- Transfers');
-    expect(run).toContain('{ recurringId: template.id }');
-    expect(run).toContain("if (`${month}-01` > latestTxDate()) throw new AccountingError('future_date');");
+    expect(write).toContain('if (input.expenseDate > latestTxDate()) {');
+    expect(write).not.toContain('!opts.recurring');
+    expect(service).not.toContain('export async function generateRecurring');
   });
 });
 

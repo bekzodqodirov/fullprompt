@@ -308,10 +308,12 @@ export async function payUpsale(
 
   // The payout is an ordinary expense in a category the owner names once, so
   // the P&L, the cash flow and /accounting/expenses all see it for free. It is
-  // MANDATORY and not overridable: paid into «Oyliklar» it would land on
-  // `generateRecurring`'s idempotence slot — (category, date, employee,
-  // warehouse), with no discriminator — and that seller's salary for the month
-  // would be counted as already posted and silently skipped.
+  // MANDATORY and not overridable: paid into «Oyliklar» the P&L's salary line
+  // would carry commissions, and the seller's monthly salary — a recurring
+  // template since 0099, paid by «To'landi» since 0106 — would see the payout
+  // offered as its own payment on the due list were it not for the candidate
+  // rule's payout fence (accounting/recurring-sql.ts). A kind of its own keeps
+  // both honest without leaning on that fence.
   const categoryId = String((await getSetting('upsale_expense_category_id')) ?? '').trim();
   if (!categoryId) throw new CalcError('upsale_category_unset');
 

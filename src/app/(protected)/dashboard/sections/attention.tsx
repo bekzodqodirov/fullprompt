@@ -1,6 +1,5 @@
 import { getTranslations } from 'next-intl/server';
 import { taskPulse } from '@/modules/platform/tasks/analytics';
-import { recurringDueCount } from '@/modules/wms/home/role-flows';
 import { pendingApprovals } from '@/modules/wms/issue/approvals';
 import { calcQueueCounts } from '@/modules/wms/calc/service';
 import {
@@ -72,7 +71,7 @@ export async function AttentionSection({
   const canApprove = perms.has('finance.debt_override');
   const canCalc = perms.has('ved.docs');
 
-  const [balance, aging, trips, gaps, unbilled, risk, transit, unclaimed, costMissing, tasks, recurring, approvals, calc] =
+  const [balance, aging, trips, gaps, unbilled, risk, transit, unclaimed, costMissing, tasks, approvals, calc] =
     await Promise.all([
       money ? loadBalance() : null,
       money ? loadAging() : null,
@@ -84,7 +83,6 @@ export async function AttentionSection({
       loadUnclaimed(scopeKey),
       seesCostMissing ? loadCostMissing(scopeKey) : null,
       allWh ? taskPulse(new Date()) : null,
-      money && canExpenses ? recurringDueCount(w.month) : null,
       canApprove ? pendingApprovals() : null,
       canCalc ? calcQueueCounts() : null,
     ]);
@@ -271,13 +269,18 @@ export async function AttentionSection({
       href: '/reports/vazifalar',
     });
   }
-  if (recurring !== null) {
+  // Rent and salaries whose day has come and nobody has paid (owner's Q6):
+  // the Balans line's own figures, so this row, the home counter and the
+  // subtracted line are one count (#513). Book entries count here and carry
+  // no money — hence the total beside the Balans line's dollars.
+  if (money && canExpenses && balance) {
     push({
       kind: 'recurringDue',
       level: 'warn',
-      count: recurring,
-      text: t('att.recurringDue', { n: recurring }),
-      href: '/accounting/expenses',
+      count: balance.recurringArrearsTotal,
+      usd: balance.recurringArrearsUsd,
+      text: t('att.recurringDue', { n: balance.recurringArrearsTotal, usd: usd(balance.recurringArrearsUsd) }),
+      href: '/accounting/expenses#recurring',
     });
   }
   if (approvals) {
