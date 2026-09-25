@@ -42,7 +42,12 @@ async function openRecurring(page: Page) {
   }
 }
 
-const dueRow = (page: Page) => page.getByTestId('recurring-due-row').filter({ hasText: KIND });
+// Scoped to «to'lash vaqti keldi»: the next month of the same template is
+// drawn with the same row in its own fold (O4: payable in advance, never
+// counted), so on every day but the last of a month an unscoped locator
+// finds this template twice — the first CI-order run found exactly that.
+const dueRow = (page: Page) =>
+  page.getByTestId('recurring-due-now').getByTestId('recurring-due-row').filter({ hasText: KIND });
 
 test('a template waits on the list; a short payment asks, the rest closes the month', async ({ page }) => {
   await login(page, ACCOUNTANT);
@@ -95,10 +100,13 @@ test('a template waits on the list; a short payment asks, the rest closes the mo
   await expect(dueRow(page)).toHaveCount(0);
 
   // Both payments are ordinary expenses of the day, marked with their month.
-  const table = page.locator('table').filter({ hasText: KIND });
-  await expect(table.getByText('650 USD')).toBeVisible();
-  await expect(table.getByText('50 USD', { exact: true })).toBeVisible();
-  await expect(table.getByText('🔁').first()).toBeVisible();
+  // Asked of THIS run's rows, by cell: a row's text runs its cells together
+  // («09.2026» + «50 USD» reads «…202650 USD»), and a table-wide locator also
+  // meets any earlier run's template on a long-lived database.
+  const ours = page.locator('tr').filter({ hasText: KIND });
+  await expect(ours.filter({ has: page.getByRole('cell', { name: '650 USD', exact: true }) })).toHaveCount(1);
+  await expect(ours.filter({ has: page.getByRole('cell', { name: '50 USD', exact: true }) })).toHaveCount(1);
+  await expect(ours.getByText('🔁').first()).toBeVisible();
 });
 
 test('a person who is not a kassa holder never sees the list', async ({ page }) => {
@@ -146,6 +154,11 @@ test('cleanup: void the payments, skip the month, stop the template, retire the 
   await kindForm.getByTestId('update-category').click();
   await page.goto('/accounting/accounts');
   const kassaForm = page.locator('form').filter({ has: page.locator(`input[name="name"][value="${KASSA}"]`) });
+  // The edit forms live in the collapsed «✏️» panel.
+  const editPanel = page.locator('details').filter({ has: kassaForm });
+  if (!(await editPanel.evaluate((el) => (el as HTMLDetailsElement).open))) {
+    await editPanel.locator('summary').first().click();
+  }
   await kassaForm.locator('input[name="active"][type="checkbox"]').uncheck();
   await kassaForm.getByTestId('update-account').click();
 
