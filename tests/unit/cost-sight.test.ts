@@ -11,8 +11,11 @@ import { pricingSight } from '@/modules/wms/finance/pricing-view';
  * before the rule existed — so the move changed nobody but him.
  */
 const perms = (role: RoleCode) => new Set<string>(ROLE_MATRIX[role]);
-const kassaRow = { accountId: 'till-1', accountName: 'Naqd USD' };
-const plainRow = { accountId: null, accountName: null };
+// `mergedExpenseId` joined the row (Q8, the un-merge): a new FIELD, so the
+// expectations below carry it; what each role reads about the kassa is the
+// same as before.
+const kassaRow = { accountId: 'till-1', accountName: 'Naqd USD', mergedExpenseId: null };
+const plainRow = { accountId: null, accountName: null, mergedExpenseId: null };
 
 /** The two lines each cost card carried before `tillView` (0101). */
 function oldInline(p: ReadonlySet<string>, row: { accountId: string | null; accountName: string | null }) {
@@ -28,14 +31,32 @@ describe('tillView — the kassa as a cost row speaks it', () => {
         expect(tillView(perms(role), row), `${role} ${row.accountId ?? 'plain'}`).toEqual({
           ...oldInline(perms(role), row),
           voidable: true,
+          mergedExpenseId: null,
         });
       }
     }
   });
 
   it('the VED: no drawer, no «kassadan» fact, and the kassa-paid row names who voids it', () => {
-    expect(tillView(perms('ved_manager'), kassaRow)).toEqual({ accountName: null, paidFromTill: false, voidable: false });
-    expect(tillView(perms('ved_manager'), plainRow)).toEqual({ accountName: null, paidFromTill: false, voidable: true });
+    expect(tillView(perms('ved_manager'), kassaRow)).toEqual({
+      accountName: null,
+      paidFromTill: false,
+      voidable: false,
+      mergedExpenseId: null,
+    });
+    expect(tillView(perms('ved_manager'), plainRow)).toEqual({
+      accountName: null,
+      paidFromTill: false,
+      voidable: true,
+      mergedExpenseId: null,
+    });
+  });
+
+  it('a merged row names its expense for EVERY reader — the 🔗 and the words, whoever presses 🗑 (Q8)', () => {
+    for (const role of Object.keys(ROLE_MATRIX) as RoleCode[]) {
+      expect(tillView(perms(role), { ...kassaRow, mergedExpenseId: 'exp-1' }).mergedExpenseId, role).toBe('exp-1');
+      expect(tillView(perms(role), { ...plainRow, mergedExpenseId: 'exp-2' }).mergedExpenseId, role).toBe('exp-2');
+    }
   });
 });
 

@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl';
 import { addCostEntryAction, voidCostEntryAction } from '@/app/(protected)/costs/actions';
 import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 import { latestTxDate } from '@/modules/wms/finance/dates';
+import { UnmergeButton } from '@/app/(protected)/accounting/xarajat-kassa/unmerge-button';
 
 export interface CostEntryView {
   id: string;
@@ -29,6 +30,12 @@ export interface CostEntryView {
    * Q19). Undefined keeps the 🗑 exactly as every other caller has it.
    */
   voidable?: boolean;
+  /**
+   * The accountant's expense this cost was merged with (Q8). While set, the
+   * cost is the only record of that money: nobody voids it until the merge
+   * is undone, and the row says so in words that fit the reader.
+   */
+  mergedExpenseId?: string | null;
 }
 
 export interface CostTypeOption {
@@ -63,6 +70,8 @@ const PAYER_ERRORS = {
   cost_not_yours: 'errCostNotYours',
   future_date: 'errFutureDate',
   amount_too_large: 'errAmountTooLarge',
+  merged_cost: 'errMergedCost',
+  merged_cost_ask: 'errMergedCostAsk',
 } as const;
 
 function payerErrorText(code: string | undefined, t: (key: string) => string): string {
@@ -88,6 +97,7 @@ export function CostPanel({
   partnerOptions = [],
   tillOptions = [],
   today,
+  canUnmerge = false,
 }: {
   scope: 'batch' | 'receipt' | 'crate' | 'pickup';
   targetId: string;
@@ -115,6 +125,11 @@ export function CostPanel({
    * browser's own clock is neither the office's nor reliably set.
    */
   today: string;
+  /**
+   * May this reader undo a merge (`mayPickTill` — the kassa holders, Q8)? The
+   * server passes it; the door refuses anybody else anyway.
+   */
+  canUnmerge?: boolean;
 }) {
   const t = useTranslations('costing');
   const tc = useTranslations('common');
@@ -226,6 +241,12 @@ export function CostPanel({
               🏦 {entry.accountName ?? t('paidFromTill')}
             </span>
           )}
+          {entry.mergedExpenseId && (
+            <span className="rounded bg-surface-sunken px-1.5 text-xs font-semibold text-ink-700" data-testid="cost-merged">
+              🔗 {t('mergedChip')}
+            </span>
+          )}
+          {entry.mergedExpenseId && canUnmerge && <UnmergeButton expenseId={entry.mergedExpenseId} />}
           {entry.note && <span className="w-full text-xs text-ink-500">{entry.note}</span>}
           {canEdit && entry.voidable !== false && (
             <button

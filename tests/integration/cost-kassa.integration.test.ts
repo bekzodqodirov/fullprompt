@@ -1,11 +1,14 @@
 import 'dotenv/config';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
+import postgres from 'postgres';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
+  auditLog,
   batches,
   costEntries,
+  expenseRequests,
   costTypes,
   currencies,
   expenseCategories,
@@ -19,14 +22,16 @@ import {
 } from '@/modules/platform/db/schema';
 import {
   addCostEntry,
+  placeCostAccount,
   setCostAccount,
   setCostStaffPayer,
   unplacedCostTotals,
   upsertFxRate,
+  voidCostEntry,
 } from '@/modules/wms/costing/service';
-import { accountBalances, addExpense } from '@/modules/wms/accounting/service';
+import { accountBalances, addExpense, voidExpense } from '@/modules/wms/accounting/service';
 import { cashFlow, cashFlowByMonth, companyBalance } from '@/modules/wms/accounting/reports';
-import { mergeDuplicate } from '@/modules/wms/accounting/cost-merge';
+import { mergeCandidates, mergeDuplicate, sameMoney, unmergeDuplicate } from '@/modules/wms/accounting/cost-merge';
 import { partnerBalanceUsd } from '@/modules/wms/partners/service';
 
 /**
@@ -145,7 +150,11 @@ beforeAll(async () => {
   )[0]!.id;
 });
 
+/** Rasxod xabari rows the Q8 claim test ties to an expense (FK first). */
+const madeRequests: string[] = [];
+
 afterAll(async () => {
+  if (madeRequests.length) await db.delete(expenseRequests).where(inArray(expenseRequests.id, madeRequests));
   await db.delete(partnerTransactions).where(inArray(partnerTransactions.partnerId, [staffPartnerId, firmId]));
   if (madeCosts.length) await db.delete(costEntries).where(inArray(costEntries.id, madeCosts));
   if (madeExpenses.length) await db.delete(expenses).where(inArray(expenses.id, madeExpenses));
@@ -381,5 +390,221 @@ describe("the cash flow's kassa-less figure is the queue's own (U23)", () => {
     expect(cents(after.cargoKassaUnknownUsd - before.cargoKassaUnknownUsd)).toBe(90);
     const row = after.rows.find((entry) => entry.label === 'cargoCosts')!.amountUsd;
     expect(cents(after.cargoFromTillUsd + after.cargoQueuedUsd + after.cargoKassaUnknownUsd)).toBe(row);
+  });
+});
+
+/**
+ * The owner's Q8 (the lead's A, 2026-09-25): a merge made by mistake is
+ * UNDONE — the expense restored, the cost back on the queue, the drawer
+ * unmoved by a cent — and until then nothing voids, moves or clears the kassa
+ * of a merged cost. Each red proof below was taken by a string edit.
+ */
+describe('the un-merge (Q8)', () => {
+  const costRow = async (id: string) => (await db.select().from(costEntries).where(eq(costEntries.id, id)))[0]!;
+  const expenseRow = async (id: string) => (await db.select().from(expenses).where(eq(expenses.id, id)))[0]!;
+
+  it('M1 1:1 — the exact inverse: the expense back, the cost on the queue, the drawer the same before, during and after', async () => {
+    const costId = await cost(200, 'USD');
+    const expenseId = await expense(200, 'USD', usdTill);
+    const drawer = await tillBalance(usdTill);
+    await mergeDuplicate({ costIds: [costId], expenseId }, ctx());
+    expect(await tillBalance(usdTill)).toBe(drawer);
+    const queued = await unplacedCostTotals();
+
+    const result = await unmergeDuplicate(expenseId, ctx());
+    expect(result).toMatchObject({ expenseId, costIds: [costId], costDates: [DAY], queued: 1 });
+    expect(await tillBalance(usdTill)).toBe(drawer);
+    expect(await expenseRow(expenseId)).toMatchObject({ voidedAt: null, voidedBy: null, voidReason: null });
+    expect(await costRow(costId)).toMatchObject({
+      accountId: null,
+      accountAmount: null,
+      accountAmountUsd: null,
+      accountRateUsed: null,
+      mergedExpenseId: null,
+    });
+    expect((await unplacedCostTotals()).count).toBe(queued.count + 1);
+    const audits = await db
+      .select({ entityId: auditLog.entityId, after: auditLog.after })
+      .from(auditLog)
+      .where(and(inArray(auditLog.entityId, [costId, expenseId]), eq(auditLog.action, 'update')));
+    expect(audits.some((row) => row.entityId === expenseId && (row.after as { unmerged?: boolean }).unmerged === true)).toBe(true);
+    expect(audits.some((row) => row.entityId === costId && (row.after as { unmergedFrom?: string }).unmergedFrom === expenseId)).toBe(true);
+  });
+
+  it('M2 N:1 across currencies — both costs cleared, the QKA drawer unchanged', async () => {
+    const a = await cost(60, 'USD');
+    const b = await cost(40, 'USD');
+    const expenseId = await expense(101_500, CCY, qkaTill);
+    const drawer = await tillBalance(qkaTill);
+    await mergeDuplicate({ costIds: [a, b], expenseId }, ctx());
+    const result = await unmergeDuplicate(expenseId, ctx());
+    expect(result.costIds.sort()).toEqual([a, b].sort());
+    expect(await tillBalance(qkaTill)).toBe(drawer);
+    for (const id of [a, b]) {
+      expect(await costRow(id)).toMatchObject({ accountId: null, accountAmount: null, accountAmountUsd: null, mergedExpenseId: null });
+    }
+  });
+
+  it('M3 across an opening count, both directions — the drawer identical on every step (U07)', async () => {
+    const COUNT = '1650-11-01';
+    const counted = async (openingBalance: number) => {
+      const [row] = await db
+        .insert(moneyAccounts)
+        .values({ name: `Q8 sanoq ${STAMP} ${countedTills.length}`, currency: 'USD', openingBalance: String(openingBalance), openingDate: COUNT })
+        .returning();
+      countedTills.push(row!.id);
+      return row!.id;
+    };
+    for (const [expenseDate, costDate, opening] of [
+      ['1650-10-28', '1650-11-05', 5000],
+      ['1650-11-03', '1650-10-29', 10000],
+    ] as const) {
+      const till = await counted(opening);
+      const expenseId = await expense(250, 'USD', till, { expenseDate });
+      const costId = await cost(250, 'USD', { costDate });
+      const drawer = await tillBalance(till);
+      await mergeDuplicate({ costIds: [costId], expenseId }, ctx());
+      expect(await tillBalance(till), `${expenseDate} merged`).toBe(drawer);
+      await unmergeDuplicate(expenseId, ctx());
+      expect(await tillBalance(till), `${expenseDate} un-merged`).toBe(drawer);
+    }
+  });
+
+  it('M4 a merged cost cannot be voided, moved or cleared until un-merged — then it can, and the drawer holds', async () => {
+    const costId = await cost(210, 'USD');
+    const expenseId = await expense(210, 'USD', usdTill);
+    const drawer = await tillBalance(usdTill);
+    await mergeDuplicate({ costIds: [costId], expenseId }, ctx());
+    await expect(voidCostEntry(costId, 'xato', ctx(), { mayMoveTill: true })).rejects.toMatchObject({ code: 'merged_cost' });
+    await expect(setCostAccount(costId, qkaTill, 210_000, ctx())).rejects.toMatchObject({ code: 'merged_cost' });
+    await expect(setCostAccount(costId, null, undefined, ctx())).rejects.toMatchObject({ code: 'merged_cost' });
+    await expect(placeCostAccount(costId, usdTill, undefined, ctx())).rejects.toMatchObject({ code: 'already_placed' });
+    expect(await costRow(costId)).toMatchObject({ accountId: usdTill, voidedAt: null, mergedExpenseId: expenseId });
+    expect(await tillBalance(usdTill)).toBe(drawer);
+
+    await unmergeDuplicate(expenseId, ctx());
+    await voidCostEntry(costId, 'takror', ctx(), { mayMoveTill: true });
+    expect((await costRow(costId)).voidedAt).not.toBeNull();
+    expect(await tillBalance(usdTill)).toBe(drawer);
+  });
+
+  it('M4b the kassa-less merge (U02) still takes its kassa on the queue — and stays unvoidable', async () => {
+    const costId = await cost(19, 'USD');
+    const twin = await expense(19, 'USD', '');
+    await mergeDuplicate({ costIds: [costId], expenseId: twin }, ctx());
+    await expect(voidCostEntry(costId, 'xato', ctx(), { mayMoveTill: true })).rejects.toMatchObject({ code: 'merged_cost' });
+    const drawer = await tillBalance(usdTill);
+    await placeCostAccount(costId, usdTill, undefined, ctx());
+    expect(await tillBalance(usdTill)).toBe(drawer - 19);
+    // Placed after the merge by another door: the un-merge would move a
+    // drawer it never touched, so it refuses and names it.
+    await expect(unmergeDuplicate(twin, ctx())).rejects.toMatchObject({ code: 'merge_changed' });
+  });
+
+  it("M5 the queue's «Saqlash» is a claim: once, and never for a cost typed before kassas were asked for", async () => {
+    const id = await cost(33, 'USD');
+    const drawer = await tillBalance(usdTill);
+    await placeCostAccount(id, usdTill, undefined, ctx());
+    expect(await tillBalance(usdTill)).toBe(drawer - 33);
+    await expect(placeCostAccount(id, qkaTill, 33_000, ctx())).rejects.toMatchObject({ code: 'already_placed' });
+    expect(await tillBalance(usdTill)).toBe(drawer - 33);
+
+    const history = await cost(34, 'USD');
+    await db.update(costEntries).set({ createdAt: new Date('1650-01-01T00:00:00Z') }).where(eq(costEntries.id, history));
+    await expect(placeCostAccount(history, usdTill, undefined, ctx())).rejects.toMatchObject({ code: 'already_placed' });
+    await expect(setCostAccount(history, usdTill, undefined, ctx())).rejects.toMatchObject({ code: 'before_kassa_since' });
+    expect((await costRow(history)).accountId).toBeNull();
+  });
+
+  it('M6 un-merge twice, a changed merge, or a person’s void is refused — and nothing is written', async () => {
+    const costId = await cost(220, 'USD');
+    const expenseId = await expense(220, 'USD', usdTill);
+    await mergeDuplicate({ costIds: [costId], expenseId }, ctx());
+    await unmergeDuplicate(expenseId, ctx());
+    await expect(unmergeDuplicate(expenseId, ctx())).rejects.toMatchObject({ code: 'not_merged' });
+
+    // A merged cost re-pointed by a hand-built write.
+    const moved = await cost(230, 'USD');
+    const movedExpense = await expense(230, 'USD', usdTill);
+    await mergeDuplicate({ costIds: [moved], expenseId: movedExpense }, ctx());
+    // Only the kassa moves — the amount still adds up, so the accountId clause
+    // alone must catch it.
+    await db.update(costEntries).set({ accountId: qkaTill }).where(eq(costEntries.id, moved));
+    await expect(unmergeDuplicate(movedExpense, ctx())).rejects.toMatchObject({ code: 'merge_changed' });
+    expect((await expenseRow(movedExpense)).voidedAt).not.toBeNull();
+    expect((await costRow(moved)).mergedExpenseId).toBe(movedExpense);
+
+    // A void that is a PERSON's, not the merge's stamp: never silently un-voided.
+    const personal = await cost(240, 'USD');
+    const personalExpense = await expense(240, 'USD', usdTill);
+    await mergeDuplicate({ costIds: [personal], expenseId: personalExpense }, ctx());
+    await db.update(expenses).set({ voidReason: 'noto‘g‘ri kiritilgan' }).where(eq(expenses.id, personalExpense));
+    await expect(unmergeDuplicate(personalExpense, ctx())).rejects.toMatchObject({ code: 'merge_changed' });
+    expect(await expenseRow(personalExpense)).toMatchObject({ voidReason: 'noto‘g‘ri kiritilgan' });
+    expect((await costRow(personal)).accountId).toBe(usdTill);
+  });
+
+  it('M7 voidExpense is a claim: a merge landing mid-press keeps its stamp, and the rasxod xabari stays closed', async () => {
+    const expenseId = await expense(250, 'USD', usdTill);
+    const [request] = await db
+      .insert(expenseRequests)
+      .values({ amount: '250', currency: 'USD', note: `Q8 ${STAMP}`, status: 'done', createdBy: actorId, decidedBy: actorId, decidedAt: new Date(), expenseId })
+      .returning({ id: expenseRequests.id });
+    madeRequests.push(request!.id);
+    const helper = postgres(process.env.DATABASE_URL ?? 'postgres://postgres@127.0.0.1:5432/gsr_dev', { max: 1, onnotice: () => {} });
+    const held = await helper.reserve();
+    const stamp = 'takror → xarajat(lar): 1 ta';
+    try {
+      await held`BEGIN`;
+      // The merge's void, committing while the person's press is in flight.
+      await held`UPDATE expenses SET voided_at = now(), voided_by = ${actorId}, void_reason = ${stamp} WHERE id = ${expenseId}`;
+      const voiding = voidExpense(expenseId, 'bekor', ctx());
+      let waiting = false;
+      for (let i = 0; i < 250 && !waiting; i += 1) {
+        const rows = await db.execute<{ n: number }>(sql`
+          SELECT count(*)::int AS n FROM pg_stat_activity
+           WHERE datname = current_database() AND wait_event_type = 'Lock'
+             AND query ILIKE '%expenses%' AND pid <> pg_backend_pid()`);
+        waiting = Number(rows[0]?.n ?? 0) > 0;
+        if (!waiting) await new Promise((r) => setTimeout(r, 20));
+      }
+      expect(waiting, 'the void never reached the row lock').toBe(true);
+      await held`COMMIT`;
+      await expect(voiding).rejects.toMatchObject({ code: 'already_voided' });
+    } finally {
+      held.release();
+      await helper.end();
+    }
+    expect((await expenseRow(expenseId)).voidReason).toBe(stamp);
+    const [after] = await db.select().from(expenseRequests).where(eq(expenseRequests.id, request!.id));
+    expect(after).toMatchObject({ status: 'done', expenseId });
+  });
+
+  it('M8 the round trip holds past the 14-day window: un-merge, void the cost, re-enter it later, merge again', async () => {
+    const costId = await cost(260, 'USD');
+    const expenseId = await expense(260, 'USD', usdTill);
+    await mergeDuplicate({ costIds: [costId], expenseId }, ctx());
+    await unmergeDuplicate(expenseId, ctx());
+    await voidCostEntry(costId, 'boshqa reysga', ctx(), { mayMoveTill: true });
+    const later = '1650-06-30';
+    const again = await cost(260, 'USD', { costDate: later });
+    // A never-merged expense of the same money on the same day: the control.
+    const control = await expense(260, 'USD', usdTill);
+
+    const candidates = await mergeCandidates(later, later);
+    const restored = candidates.find((row) => row.id === expenseId);
+    expect(restored?.restored).toBe(true);
+    expect(candidates.some((row) => row.id === control)).toBe(false);
+    const money = { amount: 260, currency: 'USD', amountUsd: 260, expenseDate: DAY };
+    const theCost = { id: again, amount: 260, currency: 'USD', amountUsd: 260, costDate: later };
+    expect(sameMoney([theCost], money)).toBe('too_far_apart');
+    expect(sameMoney([theCost], money, { window: false })).toBeNull();
+
+    const drawer = await tillBalance(usdTill);
+    await mergeDuplicate({ costIds: [again], expenseId }, ctx());
+    expect(await tillBalance(usdTill)).toBe(drawer);
+    // The control is not the round trip's: the window still refuses it.
+    const other = await cost(260, 'USD', { costDate: later });
+    await expect(mergeDuplicate({ costIds: [other], expenseId: control }, ctx())).rejects.toMatchObject({ code: 'too_far_apart' });
   });
 });

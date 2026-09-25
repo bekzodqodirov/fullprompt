@@ -35,6 +35,7 @@ import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { tillOptionsFor } from '@/modules/wms/costing/till-props';
 import { costSightFor, tillView } from '@/modules/wms/costing/cost-sight';
+import { mayPickTill } from '@/modules/wms/accounting/till-door';
 import { costEntriesFor } from '@/modules/wms/costing/service';
 
 export const dynamic = 'force-dynamic';
@@ -250,7 +251,7 @@ export default async function PickupCardPage({ params }: { params: Promise<{ id:
             allocationBasis: entry.allocationBasis,
             note: entry.note,
             partnerName,
-            ...tillView(actor.permissions, { accountId: entry.accountId, accountName }),
+            ...tillView(actor.permissions, { accountId: entry.accountId, accountName, mergedExpenseId: entry.mergedExpenseId }),
           }))}
           costTypes={costMeta?.types ?? []}
           currencies={costMeta?.currencies ?? []}
@@ -265,6 +266,7 @@ export default async function PickupCardPage({ params }: { params: Promise<{ id:
           defaultCurrency={costMeta?.currencies.includes('CNY') ? 'CNY' : 'USD'}
           canEdit={Boolean(canCost && live)}
           today={tashkentDay()}
+          canUnmerge={mayPickTill(actor.permissions)}
           tillOptions={await tillOptionsFor(actor.permissions)}
           partnerOptions={costMeta?.partners ?? []}
         />

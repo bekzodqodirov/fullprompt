@@ -1061,7 +1061,10 @@
       "expense": "Expense from a till",
       "cost_kassa": "Cargo cost — the till side",
       "cost_legacy": "Old cargo cost with no till"
-    }
+    },
+    "mergedChip": "merged",
+    "errMergedCost": "This cost is merged with the accountant's expense entry — undo the merge first (↩ on this row).",
+    "errMergedCostAsk": "This cost is merged with the accountant's entry — ask the accountant to cancel it."
   },
   "batches": {
     "title": "Batches",
@@ -1624,7 +1627,7 @@
     "queueStaff": "A colleague paid out of pocket",
     "queueErrTillAmount": "The cash box is in another currency — type what actually left it.",
     "queueErrTill": "The cash box does not exist or is closed.",
-    "queueErrTaken": "This cost was already placed or voided — refresh the page.",
+    "queueErrTaken": "This cost is already placed, merged or voided — refresh the page.",
     "queueErrNotCandidate": "That expense cannot be merged (paid by a counterparty, a recurring posting, an upsale payout, or voided).",
     "queueErrAmount": "The amounts do not match: to the cent in one currency, within 2% or $5 across currencies.",
     "queueErrDays": "More than 14 days between the dates.",
@@ -1784,7 +1787,15 @@
     "fxLegacyEmpty": "No old exchange residues",
     "fxUnclassifiedTitle": "Adjustments with no kind",
     "fxLegacyChanged": "This account has changed — refresh the list and review it again",
-    "fxLegacyCheckFirst": "First say what the hand-entered adjustment is (an exchange difference or another correction)"
+    "fxLegacyCheckFirst": "First say what the hand-entered adjustment is (an exchange difference or another correction)",
+    "mergeRestored": "↩ expense whose merge was undone",
+    "unmerge": "Undo the merge",
+    "unmergeConfirm": "The expense comes back and {count} cargo cost(s) return to the queue. No cash box moves.",
+    "unmergeConfirmCard": "The accountant's expense comes back and the cargo costs of this merge return to the queue. No cash box moves.",
+    "unmergeDone": "Undone: the expense is back and {count} cargo cost(s) are on the queue. Remove the double by voiding the cargo cost itself (🗑 on its card) or merging again — do not void the expense, or its expense request reopens. When re-entering it on another truck, date it {dates}.",
+    "unmergeOld": "{count} were entered before the kassa date and stay off the queue.",
+    "unmergeErrGone": "This merge was already undone — refresh the page.",
+    "unmergeErrChanged": "The cargo cost or the expense changed after the merge — check with an admin."
   },
   "crm": {
     "title": "CRM",
@@ -3418,7 +3429,8 @@
     "colCargo": "Cargo",
     "colWho": "Who",
     "colMoney": "Live money",
-    "paidFromTill": "This receipt has a cost paid from a cash box. The accountant voids it first — the money returns to the box."
+    "paidFromTill": "This receipt has a cost paid from a cash box. The accountant voids it first — the money returns to the box.",
+    "mergedCost": "This receipt has a cost merged with the accountant's expense. The accountant undoes the merge first."
   },
   "customsImport": {
     "title": "Customs base (import)",

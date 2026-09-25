@@ -54,6 +54,7 @@ import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { tillOptionsFor } from '@/modules/wms/costing/till-props';
 import { costSightFor, tillView } from '@/modules/wms/costing/cost-sight';
+import { mayPickTill } from '@/modules/wms/accounting/till-door';
 import { pricingSight } from '@/modules/wms/finance/pricing-view';
 
 /**
@@ -579,7 +580,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
               note: entry.note,
               clientCode,
               partnerName,
-              ...tillView(actor.permissions, { accountId: entry.accountId, accountName }),
+              ...tillView(actor.permissions, { accountId: entry.accountId, accountName, mergedExpenseId: entry.mergedExpenseId }),
             }))}
             costTypes={costMeta.types}
             currencies={costMeta.currencies}
@@ -587,6 +588,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
             defaultCurrency={costMeta.currencies.includes('CNY') ? 'CNY' : 'USD'}
             canEdit={canEnterCosts}
             today={tashkentDay()}
+            canUnmerge={mayPickTill(actor.permissions)}
             tillOptions={await tillOptionsFor(actor.permissions)}
             partnerOptions={partnerOptions}
           />

@@ -26,6 +26,7 @@ import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { tillOptionsFor } from '@/modules/wms/costing/till-props';
 import { costSightFor, tillView } from '@/modules/wms/costing/cost-sight';
+import { mayPickTill } from '@/modules/wms/accounting/till-door';
 import { costEntriesFor } from '@/modules/wms/costing/service';
 
 /** Crate detail: contents, measured dims, label, dissolve (spec 6.2). */
@@ -141,7 +142,7 @@ export default async function CrateDetailPage({ params }: { params: Promise<{ id
             allocationBasis: entry.allocationBasis,
             note: entry.note,
             partnerName,
-            ...tillView(actor.permissions, { accountId: entry.accountId, accountName }),
+            ...tillView(actor.permissions, { accountId: entry.accountId, accountName, mergedExpenseId: entry.mergedExpenseId }),
           }))}
           costTypes={costMeta?.types ?? []}
           currencies={costMeta?.currencies ?? []}
@@ -149,6 +150,7 @@ export default async function CrateDetailPage({ params }: { params: Promise<{ id
           defaultCurrency={costMeta?.currencies.includes('CNY') ? 'CNY' : 'USD'}
           canEdit={canEditCosts}
           today={tashkentDay()}
+          canUnmerge={mayPickTill(actor.permissions)}
           tillOptions={await tillOptionsFor(actor.permissions)}
           partnerOptions={partnerOptions}
         />

@@ -1061,7 +1061,10 @@
       "expense": "Kassadan xarajat",
       "cost_kassa": "Yuk xarajati — kassa tomoni",
       "cost_legacy": "Eski kassasiz yuk xarajati"
-    }
+    },
+    "mergedChip": "birlashtirilgan",
+    "errMergedCost": "Bu xarajat buxgalterning «Xarajatlar»dagi yozuvi bilan birlashtirilgan — avval birlashtirishni bekor qiling (↩ shu qatorda).",
+    "errMergedCostAsk": "Bu xarajat buxgalterning yozuvi bilan birlashtirilgan — bekor qilish uchun buxgalterga ayting."
   },
   "batches": {
     "title": "Partiyalar",
@@ -1624,7 +1627,7 @@
     "queueStaff": "Hodim o‘z pulidan to‘lagan",
     "queueErrTillAmount": "Kassa boshqa valyutada — kassadan qancha chiqqanini to‘g‘ri yozing.",
     "queueErrTill": "Kassa topilmadi yoki yopilgan.",
-    "queueErrTaken": "Bu xarajat allaqachon joylangan yoki bekor qilingan — sahifani yangilang.",
+    "queueErrTaken": "Bu xarajat allaqachon joylangan, birlashtirilgan yoki bekor qilingan — sahifani yangilang.",
     "queueErrNotCandidate": "Bu xarajatni birlashtirib bo‘lmaydi (kontragent to‘lagan, takroriy oylik yoki upsale to‘lovi, yoki bekor qilingan).",
     "queueErrAmount": "Summalar mos kelmadi: bir xil valyutada tiyinigacha, har xilda 2% yoki $5 gacha farq bo‘lishi kerak.",
     "queueErrDays": "Sanalar orasida 14 kundan ko‘p farq bor.",
@@ -1784,7 +1787,15 @@
     "fxLegacyEmpty": "Eski kurs qoldig‘i yo‘q",
     "fxUnclassifiedTitle": "Turi aytilmagan tuzatishlar",
     "fxLegacyChanged": "Bu hisob o‘zgargan — ro‘yxatni yangilab, qaytadan ko‘ring",
-    "fxLegacyCheckFirst": "Avval qo‘lda yozilgan tuzatishning turini ayting (kurs farqimi yoki boshqa tuzatishmi)"
+    "fxLegacyCheckFirst": "Avval qo‘lda yozilgan tuzatishning turini ayting (kurs farqimi yoki boshqa tuzatishmi)",
+    "mergeRestored": "↩ birlashtirishi bekor qilingan xarajat",
+    "unmerge": "Birlashtirishni bekor qilish",
+    "unmergeConfirm": "Xarajat qayta tiklanadi, {count} ta yuk xarajati navbatga qaytadi. Kassa o‘zgarmaydi.",
+    "unmergeConfirmCard": "Buxgalterning xarajati qayta tiklanadi, shu birlashtirishdagi yuk xarajatlari navbatga qaytadi. Kassa o‘zgarmaydi.",
+    "unmergeDone": "Bekor qilindi: xarajat tiklandi, {count} ta yuk xarajati navbatga qaytdi. Takrorni yuk xarajatining o‘zini (kartasida 🗑) bekor qilib yoki qayta birlashtirib olib tashlang — xarajatni bekor qilmang, rasxod xabari qayta ochiladi. Boshqa reysga qayta kiritsangiz, sanani {dates} qo‘ying.",
+    "unmergeOld": "{count} tasi kassa sanasidan oldin kiritilgan — navbatga tushmaydi.",
+    "unmergeErrGone": "Bu birlashtirish allaqachon bekor qilingan — sahifani yangilang.",
+    "unmergeErrChanged": "Birlashtirilgandan keyin yuk xarajati yoki xarajat o‘zgargan — admin bilan tekshiring."
   },
   "crm": {
     "title": "CRM",
@@ -3418,7 +3429,8 @@
     "colCargo": "Yuk",
     "colWho": "Kim",
     "colMoney": "Jonli pullar",
-    "paidFromTill": "Bu prixodning kassadan to‘langan xarajati bor. Avval buxgalter uni bekor qilsin — pul kassaga qaytadi."
+    "paidFromTill": "Bu prixodning kassadan to‘langan xarajati bor. Avval buxgalter uni bekor qilsin — pul kassaga qaytadi.",
+    "mergedCost": "Bu prixodning buxgalter xarajati bilan birlashtirilgan xarajati bor. Avval buxgalter birlashtirishni bekor qilsin."
   },
   "customsImport": {
     "title": "Bojxona bazasi (import)",

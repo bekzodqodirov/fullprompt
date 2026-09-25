@@ -9,6 +9,7 @@ import { mergeCandidates, recentMerges, sameMoney } from '@/modules/wms/accounti
 import { tillOptionsFor } from '@/modules/wms/costing/till-props';
 import { listPartners } from '@/modules/wms/partners/service';
 import { CostQueue, type QueueRow } from './cost-queue';
+import { UnmergeButton } from './unmerge-button';
 
 export const dynamic = 'force-dynamic';
 
@@ -56,16 +57,23 @@ export default async function CostKassaPage({
     // Never for a row already merged (U02): its double is gone, only its
     // kassa is missing, and the merge would refuse it (`cost_taken`).
     const merged = row.mergedExpenseId !== null;
+    // An expense an un-merge restored may be merged again whatever the dates
+    // (Q8): the round trip it promised happens weeks later. The server
+    // re-decides it on the merge's own transaction.
     const twin = merged
       ? undefined
       : candidates.find(
           (e) =>
-            sameMoney([cost], {
-              amount: Number(e.amount),
-              currency: e.currency,
-              amountUsd: Number(e.amountUsd),
-              expenseDate: e.expenseDate,
-            }) === null,
+            sameMoney(
+              [cost],
+              {
+                amount: Number(e.amount),
+                currency: e.currency,
+                amountUsd: Number(e.amountUsd),
+                expenseDate: e.expenseDate,
+              },
+              { window: !e.restored },
+            ) === null,
         );
     return {
       id: row.id,
@@ -87,6 +95,7 @@ export default async function CostKassaPage({
               : null,
       suggestion: twin ? { expenseId: twin.id, label: expenseLabel(twin) } : null,
       merged,
+      restored: twin?.restored === true,
     };
   });
 
@@ -120,9 +129,13 @@ export default async function CostKassaPage({
           </summary>
           <ul className="mt-2 divide-y divide-line text-sm">
             {merges.map((m) => (
-              <li key={m.expenseId} className="py-1.5">
-                {m.expenseDate} · {Number(m.amount)} {m.currency} · {t('mergedCosts', { count: m.costs })}
-                {m.note && <span className="block text-xs text-ink-500">{m.note}</span>}
+              <li key={m.expenseId} className="flex flex-wrap items-baseline gap-x-2 py-1.5" data-testid="merged-row">
+                <span className="min-w-0 flex-1">
+                  {m.expenseDate} · {Number(m.amount)} {m.currency} · {t('mergedCosts', { count: m.costs })}
+                  {m.note && <span className="block text-xs text-ink-500">{m.note}</span>}
+                </span>
+                {/* Only a merge that still stands can be undone. */}
+                {m.voidedAt !== null && <UnmergeButton expenseId={m.expenseId} count={m.costs} />}
               </li>
             ))}
           </ul>

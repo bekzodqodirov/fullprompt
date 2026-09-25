@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
 import { requestMeta } from '@/modules/platform/auth/session';
 import { mayPickTill } from '@/modules/wms/accounting/till-door';
-import { MergeError, mergeDuplicate } from '@/modules/wms/accounting/cost-merge';
+import { MergeError, mergeDuplicate, unmergeDuplicate } from '@/modules/wms/accounting/cost-merge';
 import { CostError, setCostStaffPayer } from '@/modules/wms/costing/service';
 
 export interface QueueActionResult {
@@ -56,6 +56,43 @@ const mergeSchema = z.object({
   costIds: z.array(z.string().uuid()).min(1).max(50),
   expenseId: z.string().uuid(),
 });
+
+export interface UnmergeResult extends QueueActionResult {
+  /** How many of the costs the queue took back (typed since kassas were asked for). */
+  queued?: number;
+  total?: number;
+  /** The costs' own days — the truthful day to re-enter the money on. */
+  dates?: string[];
+}
+
+const unmergeSchema = z.object({ expenseId: z.string().uuid() });
+
+/**
+ * «Birlashtirishni bekor qilish» (owner's Q8, the lead's A): the merge undone
+ * by its exact inverse — the kassa holders' door like every other queue door.
+ */
+export async function unmergeDuplicateAction(input: unknown): Promise<UnmergeResult> {
+  const parsed = unmergeSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: 'validation' };
+  let actor;
+  try {
+    actor = await door();
+  } catch (err) {
+    if (err instanceof AuthError) return { ok: false, error: 'forbidden' };
+    throw err;
+  }
+  try {
+    const result = await unmergeDuplicate(parsed.data.expenseId, { actorId: actor.id, ...(await requestMeta()) });
+    done();
+    // The cost cards show the merged chip; they are where the double is removed.
+    revalidatePath('/batches', 'layout');
+    revalidatePath('/receipts', 'layout');
+    return { ok: true, queued: result.queued, total: result.costIds.length, dates: result.costDates };
+  } catch (err) {
+    if (err instanceof MergeError) return { ok: false, error: err.code };
+    throw err;
+  }
+}
 
 export async function mergeDuplicateAction(input: unknown): Promise<QueueActionResult> {
   const parsed = mergeSchema.safeParse(input);

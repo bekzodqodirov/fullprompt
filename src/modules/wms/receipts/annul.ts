@@ -44,7 +44,8 @@ export class AnnulError extends Error {
       | 'reason_required'
       | 'not_found'
       | 'box_on_active_plan'
-      | 'cost_paid_from_till',
+      | 'cost_paid_from_till'
+      | 'cost_merged',
   ) {
     super(code);
   }
@@ -216,9 +217,16 @@ export async function annulReceipt(
     // with its allocations and its partner charge (voidCostEntryInTx keeps
     // the #529 pairing). A refusal above or a crash rolls it all back.
     const liveEntries = await tx
-      .select({ id: costEntries.id, accountId: costEntries.accountId })
+      .select({ id: costEntries.id, accountId: costEntries.accountId, mergedExpenseId: costEntries.mergedExpenseId })
       .from(costEntries)
       .where(and(eq(costEntries.receiptId, receiptId), isNull(costEntries.voidedAt)));
+    // A cost MERGED with the accountant's expense (Q8) is the only record of
+    // that money — voiding it here would drop the expense out of the P&L with
+    // nothing left behind. The accountant undoes the merge first, on purpose;
+    // asked before the kassa, so a kassa-less merge is refused in its own words.
+    if (liveEntries.some((entry) => entry.mergedExpenseId !== null)) {
+      throw new AnnulError('cost_merged');
+    }
     // A cost paid out of a KASSA is refused, not voided (0101): voiding it
     // puts the money back into the till, i.e. the test-data cleanup would
     // quietly credit a real drawer — #852 refused exactly this for client
@@ -432,7 +440,7 @@ export async function annulAftermath(receiptId: string, ctx: AuditContext): Prom
   for (const entry of candidates) {
     // A kassa-paid truck cost is left alone even with nothing aboard (0101):
     // its void would credit the till — a person's decision, never a sweep's.
-    if (entry.accountId) continue;
+    if (entry.accountId || entry.mergedExpenseId) continue;
     // A prixod's grid cell stamped with one of these trucks is ANOTHER
     // prixod's money: this receipt's own receipt-scope entries were all
     // voided inside the annul's transaction. Its base can be empty for a

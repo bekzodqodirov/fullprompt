@@ -13,7 +13,7 @@ import {
   CostError,
   costEntrySchema,
   receiptCostGridSchema,
-  setCostAccount,
+  placeCostAccount,
   voidCostEntry,
 } from '@/modules/wms/costing/service';
 import { mayPickTill } from '@/modules/wms/accounting/till-door';
@@ -194,6 +194,13 @@ export async function voidCostEntryAction(input: unknown): Promise<CostActionRes
     return { ok: false, error: 'cost_not_yours' };
   }
 
+  // A MERGED cost (Q8) is nobody's to void until the merge is undone — the
+  // service refuses it for everyone. Asked FIRST, so each reader is told what
+  // to do in words that fit who they are: the kassa holder undoes the merge
+  // (the ↩ beside the row), anybody else asks the accountant.
+  if (entry.mergedExpenseId) {
+    return { ok: false, error: mayPickTill(actor.permissions) ? 'merged_cost' : 'merged_cost_ask' };
+  }
   // A cost paid out of a kassa: voiding it puts the money BACK into the till
   // — a cash movement, and the kassa holders' alone (0101). The warehouse and
   // the logist may still void the costs they typed with no kassa.
@@ -268,7 +275,9 @@ async function voidReceiptCostDoor(receiptWarehouseId: string, stampedBatchId: s
 
 const placeSchema = z.object({
   id: z.string().uuid(),
-  accountId: z.string().uuid().nullable(),
+  // The queue PLACES, it never clears: moving or clearing a cost's kassa is
+  // the service's correction path (`setCostAccount`), not a queue press.
+  accountId: z.string().uuid(),
   // The shared bound (U44) — the literal 1e12 was one unit past the column.
   accountAmount: nativeAmount().optional(),
 });
@@ -276,7 +285,9 @@ const placeSchema = z.object({
 /**
  * The accountant's place-later door (0101): which kassa a cost's money left
  * from, said after the warehouse or the logist typed the cost. The kassa
- * holders' grant only — the same `mayPickTill` the entry doors ask.
+ * holders' grant only — the same `mayPickTill` the entry doors ask. A CLAIM
+ * under the queue's own predicate (`placeCostAccount`, Q8): a second press or
+ * a stale screen is told `already_placed`, never moves money twice.
  */
 export async function setCostAccountAction(input: unknown): Promise<CostActionResult> {
   const parsed = placeSchema.safeParse(input);
@@ -291,7 +302,7 @@ export async function setCostAccountAction(input: unknown): Promise<CostActionRe
   if (!mayPickTill(actor.permissions)) return { ok: false, error: 'till_forbidden' };
   const meta = await requestMeta();
   try {
-    await setCostAccount(parsed.data.id, parsed.data.accountId, parsed.data.accountAmount, {
+    await placeCostAccount(parsed.data.id, parsed.data.accountId, parsed.data.accountAmount, {
       actorId: actor.id,
       ...meta,
     });

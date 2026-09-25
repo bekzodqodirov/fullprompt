@@ -1061,7 +1061,10 @@
       "expense": "现金柜支出",
       "cost_kassa": "货物费用——现金柜一侧",
       "cost_legacy": "无现金柜的旧货物费用"
-    }
+    },
+    "mergedChip": "已合并",
+    "errMergedCost": "该费用已与会计的费用记录合并——请先取消合并（本行的 ↩）。",
+    "errMergedCostAsk": "该费用已与会计记录合并——如需作废请告知会计。"
   },
   "batches": {
     "title": "车次",
@@ -1624,7 +1627,7 @@
     "queueStaff": "员工自付",
     "queueErrTillAmount": "账户币种不同——请填写正确的支出金额。",
     "queueErrTill": "账户不存在或已停用。",
-    "queueErrTaken": "该费用已被处理或作废——请刷新页面。",
+    "queueErrTaken": "该费用已被放置、合并或作废——请刷新页面。",
     "queueErrNotCandidate": "该费用不可合并（由往来单位支付、固定费用、upsale 支付或已作废）。",
     "queueErrAmount": "金额不符：同币种须精确一致，不同币种差额不超过 2% 或 $5。",
     "queueErrDays": "日期相差超过 14 天。",
@@ -1784,7 +1787,15 @@
     "fxLegacyEmpty": "没有历史汇兑余差",
     "fxUnclassifiedTitle": "未注明类型的调整",
     "fxLegacyChanged": "该账户已变化——请刷新列表后重新查看",
-    "fxLegacyCheckFirst": "请先注明手工调整的类型（汇兑差额还是其他更正）"
+    "fxLegacyCheckFirst": "请先注明手工调整的类型（汇兑差额还是其他更正）",
+    "mergeRestored": "↩ 已取消合并的费用",
+    "unmerge": "取消合并",
+    "unmergeConfirm": "费用将恢复，{count} 笔货物费用回到队列。账户不变。",
+    "unmergeConfirmCard": "会计的费用将恢复，此合并中的货物费用回到队列。账户不变。",
+    "unmergeDone": "已取消：费用已恢复，{count} 笔回到队列。请作废货物费用本身（其卡片上的 🗑）或重新合并来去除重复——不要作废会计费用，否则报销申请会重新打开。在其他车次重新录入时，日期填 {dates}。",
+    "unmergeOld": "{count} 笔在账户日期之前录入，不进入队列。",
+    "unmergeErrGone": "此合并已被取消——请刷新页面。",
+    "unmergeErrChanged": "合并后货物费用或费用已变更——请与管理员核对。"
   },
   "crm": {
     "title": "CRM",
@@ -3418,7 +3429,8 @@
     "colCargo": "货物",
     "colWho": "操作人",
     "colMoney": "在册资金",
-    "paidFromTill": "该入库单有从账户支付的费用。请先由会计作废——款项会退回账户。"
+    "paidFromTill": "该入库单有从账户支付的费用。请先由会计作废——款项会退回账户。",
+    "mergedCost": "该入库单有与会计费用合并的费用。请先由会计取消合并。"
   },
   "customsImport": {
     "title": "海关基价库（导入）",

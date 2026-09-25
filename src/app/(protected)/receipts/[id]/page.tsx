@@ -44,6 +44,7 @@ import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { tillOptionsFor } from '@/modules/wms/costing/till-props';
 import { costSightFor, tillView } from '@/modules/wms/costing/cost-sight';
+import { mayPickTill } from '@/modules/wms/accounting/till-door';
 import { costEntriesFor } from '@/modules/wms/costing/service';
 
 export default async function ReceiptDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -431,7 +432,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
                 allocationBasis: entry.allocationBasis,
                 note: entry.note,
                 partnerName,
-                ...tillView(actor.permissions, { accountId: entry.accountId, accountName }),
+                ...tillView(actor.permissions, { accountId: entry.accountId, accountName, mergedExpenseId: entry.mergedExpenseId }),
               }))}
               costTypes={costMeta.types}
               currencies={costMeta.currencies}
@@ -439,6 +440,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
               defaultCurrency={warehouse.country === 'CN' ? 'CNY' : 'USD'}
               canEdit={receipt.status === 'confirmed'}
               today={tashkentDay()}
+              canUnmerge={mayPickTill(actor.permissions)}
               tillOptions={await tillOptionsFor(actor.permissions)}
               partnerOptions={partnerOptions}
             />
@@ -515,6 +517,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
               annul_forbidden: ta('forbidden'),
               box_on_active_plan: ta('onActivePlan'),
               cost_paid_from_till: ta('paidFromTill'),
+              cost_merged: ta('mergedCost'),
               reason_required: ta('reasonRequired'),
               not_found: ta('notFound'),
               validation: ta('reasonRequired'),

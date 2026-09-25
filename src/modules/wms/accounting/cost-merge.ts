@@ -1,8 +1,10 @@
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
-import { db } from '../../platform/db/client';
+import { and, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
+import { db, type Tx } from '../../platform/db/client';
 import { costEntries, expenses } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
+import { tashkentDayStart } from '../../platform/time/tashkent';
 import { fxResidueAllowance } from '../finance/money-bounds';
+import { unplacedCostSince } from '../costing/service';
 
 /**
  * «Xarajatlarda takror» — the owner's 3b, merged away (0101, A3 + M4a).
@@ -26,6 +28,13 @@ import { fxResidueAllowance } from '../finance/money-bounds';
  * nobody's debt (a partner-paid expense is a debt, not cash), not a recurring
  * posting (rent is not cargo) and not an upsale payout; and it was spent
  * within 14 days of every cost it absorbs.
+ *
+ * A merge made by mistake is UNDONE, never worked around (owner's Q8, the
+ * lead's A, 2026-09-25): `unmergeDuplicate` is its exact inverse — the
+ * expense comes back, the cost returns to the queue, the drawer does not
+ * move by a cent. Until then nothing may void a merged cost or move the
+ * kassa the merge put on it (`voidCostEntryInTx`, `setCostAccount`), because
+ * the cost is the only surviving record of that money.
  */
 
 export class MergeError extends Error {
@@ -35,6 +44,14 @@ export class MergeError extends Error {
 }
 
 export const MERGE_DAYS = 14;
+
+/**
+ * The merge's own stamp on the expense it retires — ONE home, because the
+ * un-merge must tell the merge's void from a person's (a void that raced the
+ * merge is a decision about money, and un-merging must never silently
+ * un-void it).
+ */
+export const MERGE_VOID_PREFIX = 'takror → ';
 
 const cents = (value: number) => Math.round(value * 100) / 100;
 
@@ -52,12 +69,25 @@ export interface MergeExpense {
   expenseDate: string;
 }
 
-/** The M4a arithmetic, pure: null = the same money, else the reason word. */
-export function sameMoney(costs: MergeCost[], expense: MergeExpense): string | null {
+/**
+ * The M4a arithmetic, pure: null = the same money, else the reason word.
+ * `window: false` skips ONLY the day check, for an expense an un-merge
+ * restored: the promised round trip (un-merge, void the cost, re-enter it on
+ * the right truck, merge again) happens weeks later, and refusing it then
+ * invited «Saqlash» into the kassa the restored expense already debits — a
+ * double debit. The money rule stays whole.
+ */
+export function sameMoney(
+  costs: MergeCost[],
+  expense: MergeExpense,
+  opts: { window?: boolean } = {},
+): string | null {
   if (costs.length === 0) return 'no_costs';
   const days = (a: string, b: string) =>
     Math.abs(new Date(`${a}T00:00:00Z`).getTime() - new Date(`${b}T00:00:00Z`).getTime()) / 86_400_000;
-  if (costs.some((cost) => days(cost.costDate, expense.expenseDate) > MERGE_DAYS)) return 'too_far_apart';
+  if (opts.window !== false && costs.some((cost) => days(cost.costDate, expense.expenseDate) > MERGE_DAYS)) {
+    return 'too_far_apart';
+  }
   if (costs.every((cost) => cost.currency === expense.currency)) {
     const total = cents(costs.reduce((sum, cost) => sum + cost.amount, 0));
     return Math.abs(total - cents(expense.amount)) < 0.005 ? null : 'amount_differs';
@@ -124,8 +154,21 @@ function mergeableExpenseSql() {
 }
 
 /**
+ * «An un-merge restored this expense» — read off the audit row the un-merge
+ * writes, so no column says it twice. `${expenses}` the table (#128), on the
+ * audit's (entity_type, entity_id) index.
+ */
+function restoredSql() {
+  return sql`EXISTS (SELECT 1 FROM audit_log a
+                      WHERE a.entity_type = 'expense' AND a.entity_id = ${expenses}.id
+                        AND a.after->>'unmerged' = 'true')`;
+}
+
+/**
  * Expenses a merge may absorb near these days — the picker's list. Bounded:
- * the window of the costs on screen, 14 days either side, newest first.
+ * the window of the costs on screen, 14 days either side, newest first —
+ * and, whatever its date, a live expense an un-merge restored (`restored`),
+ * or the round trip past the window could never close.
  */
 export async function mergeCandidates(fromDay: string, toDay: string, limit = 200) {
   return db
@@ -137,16 +180,27 @@ export async function mergeCandidates(fromDay: string, toDay: string, limit = 20
       expenseDate: expenses.expenseDate,
       note: expenses.note,
       accountId: expenses.accountId,
+      restored: sql<boolean>`${restoredSql()}`,
     })
     .from(expenses)
     .where(
       and(
         mergeableExpenseSql(),
-        sql`${expenses.expenseDate} BETWEEN ${fromDay}::date - ${MERGE_DAYS}::int AND ${toDay}::date + ${MERGE_DAYS}::int`,
+        sql`(${expenses.expenseDate} BETWEEN ${fromDay}::date - ${MERGE_DAYS}::int AND ${toDay}::date + ${MERGE_DAYS}::int
+             OR ${restoredSql()})`,
       ),
     )
     .orderBy(sql`${expenses.expenseDate} DESC`)
     .limit(limit);
+}
+
+/** The same question on the merge's own transaction — the server decides, not the browser. */
+async function restoredTx(tx: Tx, expenseId: string): Promise<boolean> {
+  const rows = (await tx.execute(sql`
+    SELECT 1 FROM audit_log a
+     WHERE a.entity_type = 'expense' AND a.entity_id = ${expenseId}::uuid AND a.after->>'unmerged' = 'true'
+     LIMIT 1`)) as unknown as unknown[];
+  return [...rows].length > 0;
 }
 
 /**
@@ -197,10 +251,10 @@ export async function mergeDuplicate(input: { costIds: string[]; expenseId: stri
       amountUsd: Number(expense.amountUsd),
       expenseDate: expense.expenseDate,
     };
-    const refusal = sameMoney(costs, money);
+    const refusal = sameMoney(costs, money, { window: !(await restoredTx(tx, expense.id)) });
     if (refusal) throw new MergeError(refusal);
 
-    const reason = `takror → xarajat(lar): ${costs.length} ta`;
+    const reason = `${MERGE_VOID_PREFIX}xarajat(lar): ${costs.length} ta`;
     await tx
       .update(expenses)
       .set({ voidedAt: new Date(), voidedBy: ctx.actorId, voidReason: reason })
@@ -244,6 +298,97 @@ export async function mergeDuplicate(input: { costIds: string[]; expenseId: stri
       });
     }
     return { expenseId: expense.id, costIds: costs.map((cost) => cost.id) };
+  });
+}
+
+/**
+ * Undo a merge (owner's Q8, the lead's A): the EXACT inverse of
+ * `mergeDuplicate`, keyed by the expense so 1:1 and N:1 are the same code — a
+ * single cost out of an N:1 merge cannot come back alone, because the expense
+ * is one amount; the accountant un-merges all of them and merges the rest
+ * again. One transaction: both sides locked, the merge's shape re-checked on
+ * the locked rows, the expense un-voided, and on the costs exactly what the
+ * merge wrote cleared — the kassa it moved (with its dollars, F1) and the
+ * link. The drawer reads the same money on the same day before and after
+ * (`costCashDay`, U07): the expense debits the kassa the costs did.
+ *
+ * Refused (`merge_changed`) when anything moved after the merge: a cost
+ * voided, re-pointed, given a payer, or placed into a kassa the merge did not
+ * put there; the shares no longer adding up to the expense; or the expense's
+ * void not being the merge's own stamp. After this package no door produces
+ * any of those — the refusal protects history and a hand-built write.
+ *
+ * The rasxod xabari and the upsale are untouched: the merge never re-opened
+ * them, and `mergeableExpenseSql` never let a recurring or payout expense in.
+ * No recompute: allocations never depended on the kassa.
+ */
+export async function unmergeDuplicate(
+  expenseId: string,
+  ctx: AuditContext,
+): Promise<{ expenseId: string; costIds: string[]; costDates: string[]; queued: number }> {
+  if (!ctx.actorId) throw new MergeError('unauthenticated');
+  // The queue's start day, on the pool BEFORE the transaction (#714).
+  const since = await unplacedCostSince();
+  return db.transaction(async (tx) => {
+    const [expense] = await tx.select().from(expenses).where(eq(expenses.id, expenseId)).for('update');
+    if (!expense) throw new MergeError('not_found');
+    const rows = await tx
+      .select()
+      .from(costEntries)
+      .where(eq(costEntries.mergedExpenseId, expenseId))
+      .orderBy(costEntries.createdAt)
+      .for('update');
+    if (rows.length === 0 || expense.voidedAt === null) throw new MergeError('not_merged');
+    if (!expense.voidReason?.startsWith(MERGE_VOID_PREFIX)) throw new MergeError('merge_changed');
+    const kassaSide = cents(rows.reduce((sum, row) => sum + Number(row.accountAmount ?? 0), 0));
+    const changed =
+      rows.some((row) => row.voidedAt !== null || row.partnerId !== null || row.accountId !== expense.accountId) ||
+      (expense.accountId === null
+        ? rows.some((row) => row.accountAmount !== null)
+        : kassaSide !== cents(Number(expense.amount)));
+    if (changed) throw new MergeError('merge_changed');
+
+    await tx
+      .update(expenses)
+      .set({ voidedAt: null, voidedBy: null, voidReason: null })
+      .where(and(eq(expenses.id, expenseId), isNotNull(expenses.voidedAt)));
+    await writeAudit(tx, ctx, {
+      entityType: 'expense',
+      entityId: expenseId,
+      action: 'update',
+      before: { voidedAt: expense.voidedAt, voidReason: expense.voidReason },
+      // `unmerged: true` is what `restoredSql` reads — the round trip's key.
+      after: { unmerged: true, costIds: rows.map((row) => row.id) },
+    });
+    for (const row of rows) {
+      await tx
+        .update(costEntries)
+        .set({
+          accountId: null,
+          accountAmount: null,
+          accountAmountUsd: null,
+          accountRateUsed: null,
+          mergedExpenseId: null,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(costEntries.id, row.id), eq(costEntries.mergedExpenseId, expenseId)));
+      await writeAudit(tx, ctx, {
+        entityType: 'cost_entry',
+        entityId: row.id,
+        action: 'update',
+        before: { accountId: row.accountId, accountAmount: row.accountAmount, mergedExpenseId: expenseId },
+        after: { accountId: null, accountAmount: null, unmergedFrom: expenseId },
+      });
+    }
+    // Which costs the queue takes back: those typed since kassas were asked
+    // for — an older one is history inside a counted opening (`unplacedCostSql`).
+    const start = since ? tashkentDayStart(since).getTime() : -Infinity;
+    return {
+      expenseId,
+      costIds: rows.map((row) => row.id),
+      costDates: [...new Set(rows.map((row) => row.costDate))].sort(),
+      queued: rows.filter((row) => row.createdAt.getTime() >= start).length,
+    };
   });
 }
 

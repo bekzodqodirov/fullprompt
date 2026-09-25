@@ -467,10 +467,16 @@ export async function voidExpense(id: string, reason: string, ctx: AuditContext)
   const row = await db.query.expenses.findFirst({ where: eq(expenses.id, id) });
   if (!row) throw new AccountingError('not_found');
   if (row.voidedAt) throw new AccountingError('already_voided');
-  await db
+  // A CLAIM (Q8): a person's void racing a merge must never overwrite the
+  // merge's «takror» stamp (the un-merge reads it) and re-open the rasxod
+  // xabari of money that was not taken back — nor a merge a person's void.
+  // Everything after this runs only for a void that happened.
+  const [hit] = await db
     .update(expenses)
     .set({ voidedAt: new Date(), voidedBy: ctx.actorId, voidReason: reason.trim() })
-    .where(eq(expenses.id, id));
+    .where(and(eq(expenses.id, id), isNull(expenses.voidedAt)))
+    .returning({ id: expenses.id });
+  if (!hit) throw new AccountingError('already_voided');
   if (row.partnerId) {
     const { voidChargeForExpense } = await import('../partners/link');
     await voidChargeForExpense(id, reason.trim(), ctx);

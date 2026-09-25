@@ -50,14 +50,24 @@ export function maySeeTillNames(permissions: ReadonlySet<string>): boolean {
  */
 export function tillView(
   permissions: ReadonlySet<string>,
-  row: { accountId: string | null; accountName: string | null },
-): { accountName: string | null; paidFromTill: boolean; voidable: boolean } {
+  /**
+   * `mergedExpenseId` REQUIRED (Q8): a merged row carries its «🔗» and the ↩
+   * that undoes it on every cost card — optional, one card would forget it.
+   */
+  row: { accountId: string | null; accountName: string | null; mergedExpenseId: string | null },
+): { accountName: string | null; paidFromTill: boolean; voidable: boolean; mergedExpenseId: string | null } {
   if (moneyHidden('kassa', permissions)) {
-    return { accountName: null, paidFromTill: false, voidable: row.accountId === null };
+    return {
+      accountName: null,
+      paidFromTill: false,
+      voidable: row.accountId === null,
+      mergedExpenseId: row.mergedExpenseId,
+    };
   }
   return {
     accountName: maySeeTillNames(permissions) ? row.accountName : null,
     paidFromTill: row.accountId !== null,
     voidable: true,
+    mergedExpenseId: row.mergedExpenseId,
   };
 }

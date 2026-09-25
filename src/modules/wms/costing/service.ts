@@ -383,13 +383,21 @@ export async function unplacedCostTotals() {
 
 /**
  * Say, afterwards, which kassa a cost's money left from — or that it left
- * none (`accountId` null clears it). The accountant's place-later door
- * (0101): the warehouse and the logist type costs and hold no kassa grant,
- * so their costs arrive with no kassa and wait in the queue.
+ * none (`accountId` null clears it), or that it left ANOTHER one. The
+ * service's correction path (0101); the queue's own press is
+ * `placeCostAccount`, a claim under the queue's predicate.
  *
  * A CLAIM, like `placePayment`: the UPDATE demands the cost is live and has
  * no counterparty, so a stale screen cannot put a partner-settled cost into
  * a kassa as well (that would be the double debit #528 was about).
+ *
+ * A MERGED cost's kassa is the merge's (Q8): moving or clearing it would
+ * leave the retired expense's money with no drawer, so it is refused until
+ * the merge is undone (`merged_cost`). Placing a kassa onto a merged cost
+ * that has none — a merge into a kassa-less expense typed since (U02) — is
+ * still the queue's own answer, so that one shape passes. And a kassa is
+ * never put onto a cost typed before kassas were asked for: it is inside
+ * some till's counted opening already (`before_kassa_since`, #1018).
  */
 export async function setCostAccount(
   costId: string,
@@ -402,6 +410,13 @@ export async function setCostAccount(
   if (!entry) throw new CostError('not_found');
   if (entry.voidedAt) throw new CostError('already_voided');
   if (entry.partnerId) throw new CostError('payer_conflict');
+  const merged = entry.mergedExpenseId !== null;
+  if (merged && (entry.accountId !== null || !accountId)) throw new CostError('merged_cost');
+  if (accountId) {
+    // Pooled, and no transaction here (#714).
+    const since = await unplacedCostSince();
+    if (since && entry.createdAt < tashkentDayStart(since)) throw new CostError('before_kassa_since');
+  }
   let accountAmount: number | null = null;
   let sameCurrency = false;
   let kassaUsd: { usd: number; rate: number } | null = null;
@@ -443,15 +458,85 @@ export async function setCostAccount(
             : String(kassaUsd.rate),
       updatedAt: new Date(),
     })
-    .where(and(eq(costEntries.id, costId), isNull(costEntries.voidedAt), isNull(costEntries.partnerId)))
+    .where(
+      and(
+        eq(costEntries.id, costId),
+        isNull(costEntries.voidedAt),
+        isNull(costEntries.partnerId),
+        // Re-judged at the write: a merge that landed after the read above
+        // makes the kassa the merge's; a placement onto a merged kassa-less
+        // cost demands it is still kassa-less.
+        merged ? isNull(costEntries.accountId) : isNull(costEntries.mergedExpenseId),
+      ),
+    )
     .returning({ id: costEntries.id });
-  if (!row) throw new CostError('payer_conflict');
+  if (!row) {
+    const [now] = await db
+      .select({ merged: costEntries.mergedExpenseId })
+      .from(costEntries)
+      .where(eq(costEntries.id, costId));
+    throw new CostError(now?.merged ? 'merged_cost' : 'payer_conflict');
+  }
   await writeAudit(db, ctx, {
     entityType: 'cost_entry',
     entityId: costId,
     action: 'update',
     before: { accountId: entry.accountId, accountAmount: entry.accountAmount },
     after: { accountId, accountAmount },
+  });
+}
+
+/**
+ * The queue's «Saqlash» (0101 + Q8): put a queued cost into the kassa its
+ * money left from — ONCE, and only while the cost is still on the queue. The
+ * claim is the queue's own predicate (`unplacedCostSql`, #513), so a second
+ * press, a stale screen, a cost placed or merged in the meantime, or one typed
+ * before kassas were asked for all find nothing (`already_placed`) instead of
+ * moving money a second time. Moving a placed cost is not this door's job.
+ */
+export async function placeCostAccount(
+  costId: string,
+  accountId: string,
+  typedAmount: number | undefined,
+  ctx: AuditContext,
+) {
+  if (!ctx.actorId) throw new CostError('unauthenticated');
+  // Pooled reads BEFORE the write (#714).
+  const since = await unplacedCostSince();
+  const entry = await db.query.costEntries.findFirst({ where: eq(costEntries.id, costId) });
+  if (!entry) throw new CostError('not_found');
+  const till = await assertTill(accountId);
+  const accountAmount = tillAmountFor({ amount: Number(entry.amount), currency: entry.currency }, till.currency, typedAmount);
+  const sameCurrency = till.currency === entry.currency;
+  const kassaUsd = sameCurrency ? null : tillUsd(till.currency, accountAmount, await rateFor(till.currency, entry.costDate));
+  const [row] = await db
+    .update(costEntries)
+    .set({
+      accountId,
+      accountAmount: String(accountAmount),
+      // The payment's dollars (0103, Q18), as `setCostAccount` writes them:
+      // the same currency from the ROW at UPDATE time, another from its rate.
+      accountAmountUsd: sameCurrency
+        ? sql`CASE WHEN ${costEntries.fxRateUsed} IS NULL THEN NULL ELSE ${costEntries.amountUsd} END`
+        : kassaUsd === null
+          ? null
+          : String(kassaUsd.usd),
+      accountRateUsed: sameCurrency
+        ? sql`CASE WHEN ${costEntries.amountUsd} IS NULL THEN NULL ELSE ${costEntries.fxRateUsed} END`
+        : kassaUsd === null
+          ? null
+          : String(kassaUsd.rate),
+      updatedAt: new Date(),
+    })
+    .where(and(eq(costEntries.id, costId), unplacedCostSql(since)))
+    .returning({ id: costEntries.id });
+  if (!row) throw new CostError('already_placed');
+  await writeAudit(db, ctx, {
+    entityType: 'cost_entry',
+    entityId: costId,
+    action: 'update',
+    before: { accountId: null },
+    after: { accountId, accountAmount, via: 'queue' },
   });
 }
 
@@ -554,6 +639,11 @@ export async function voidCostEntryInTx(
   ).map((row) => row.partnerId);
   const { lockOwnersTx, reconcileFxResidueTx } = await import('../finance/fx-residue');
   await lockOwnersTx(tx, { partnerIds: charged });
+  // A MERGED cost is the only surviving record of money that left a kassa
+  // (or, merged into a kassa-less expense, of that expense in the P&L): the
+  // expense it absorbed is voided. Nobody voids it — the kassa holders
+  // included — until the merge is undone (Q8, `merged_cost`); the claim says
+  // so in the same statement, for every caller (the cost card and the annul).
   const claimed = await tx
     .update(costEntries)
     .set({ voidedAt: new Date(), voidedBy: ctx.actorId, voidReason: reason })
@@ -561,6 +651,7 @@ export async function voidCostEntryInTx(
       and(
         eq(costEntries.id, id),
         isNull(costEntries.voidedAt),
+        isNull(costEntries.mergedExpenseId),
         door.mayMoveTill ? undefined : isNull(costEntries.accountId),
       ),
     )
@@ -568,11 +659,16 @@ export async function voidCostEntryInTx(
   if (claimed.length === 0) {
     // Re-read on the transaction's own connection (#714), to say why.
     const [now] = await tx
-      .select({ voidedAt: costEntries.voidedAt, accountId: costEntries.accountId })
+      .select({
+        voidedAt: costEntries.voidedAt,
+        accountId: costEntries.accountId,
+        merged: costEntries.mergedExpenseId,
+      })
       .from(costEntries)
       .where(eq(costEntries.id, id));
     if (!now) throw new CostError('not_found');
     if (now.voidedAt) throw new CostError('already_voided');
+    if (now.merged) throw new CostError('merged_cost');
     throw new CostError('kassa_cost_needs_finance');
   }
   await tx.delete(costAllocations).where(eq(costAllocations.costEntryId, id));

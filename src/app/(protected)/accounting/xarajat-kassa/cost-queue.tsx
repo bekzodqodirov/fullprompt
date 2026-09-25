@@ -25,6 +25,8 @@ export interface QueueRow {
    * nothing is left to merge, only the kassa — or the colleague — to say.
    */
   merged: boolean;
+  /** The suggested expense is one an un-merge restored (Q8): no day window. */
+  restored?: boolean;
 }
 
 export interface QueueOption {
@@ -210,7 +212,10 @@ function Row({
 
       {row.suggestion && (
         <div className="flex flex-wrap items-center gap-2 rounded bg-warn/10 p-2 text-sm" data-testid="queue-suggestion">
-          <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">⚠ {t('mergeSuggest', { expense: row.suggestion.label })}</span>
+          <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">
+            ⚠ {t('mergeSuggest', { expense: row.suggestion.label })}
+            {row.restored && <span className="block text-xs text-ink-500">{t('mergeRestored')}</span>}
+          </span>
           <button
             type="button"
             className="btn-secondary !min-h-9"
@@ -316,6 +321,9 @@ const QUEUE_ERRORS = {
   not_staff: 'queueErrNotStaff',
   forbidden: 'queueErrForbidden',
   till_forbidden: 'queueErrForbidden',
+  already_placed: 'queueErrTaken',
+  merged_cost: 'queueErrTaken',
+  before_kassa_since: 'queueErrTaken',
 } as const;
 
 function queueError(code: string | undefined, t: (key: string) => string): string {
