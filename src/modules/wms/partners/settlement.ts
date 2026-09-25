@@ -14,6 +14,7 @@ import { rateFor } from '../costing/service';
 import { latestTxDate } from '../finance/dates';
 import { exceedsRowUsd, nativeAmount } from '../finance/money-bounds';
 import { PartnerError } from './service';
+import { lockOwnersTx, reconcileFxResidueTx } from '../finance/fx-residue';
 
 /**
  * Uch tomonlama hisob — the three-cornered settlement.
@@ -135,6 +136,8 @@ export async function recordSettlement(
   }
 
   const result = await db.transaction(async (tx) => {
+    // Both accounts' money locks first, clients before partners (0103).
+    await lockOwnersTx(tx, { clientIds: [input.clientId], partnerIds: [input.partnerId] });
     const [clientRow] = await tx
       .insert(clientTransactions)
       .values({
@@ -176,6 +179,8 @@ export async function recordSettlement(
       })
       .returning();
 
+    // Either half can bring its account's currency back to zero (Q14).
+    await reconcileFxResidueTx(tx, { clientIds: [input.clientId], partnerIds: [input.partnerId] }, ctx);
     return { partnerTxId: partnerRow!.id, clientTxId: clientRow!.id };
   });
 

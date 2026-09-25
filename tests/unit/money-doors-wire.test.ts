@@ -384,12 +384,20 @@ describe('U04 (owner A) — a refund hands back an advance, never more', () => {
     expect(page).toContain('advanceUsd={balance < -0.009 ? -balance : 0}');
   });
 
+  // Rewritten with 0103 (design §5.5.7): wc's own `hashtext('refund:'…)` lock
+  // became the client's ONE money lock (`lockOwnersTx`, the kurs farqi
+  // reconciler's), and the USD rule became `refundFits` — native when the
+  // client holds an advance in the refund's currency and owes nothing else,
+  // wc's USD rule otherwise. The balance is still read on the transaction.
   it('the service checks and inserts under one per-client lock, on the transaction\u2019s own connection', () => {
     const service = read('src/modules/wms/finance/service.ts');
     const body = slice(service, 'export async function addTransaction', 'export async function placePayment');
-    const lock = body.indexOf('pg_advisory_xact_lock(hashtext(');
+    const lock = body.indexOf('lockOwnersTx(tx, { clientIds: [input.clientId] })');
     expect(lock).toBeGreaterThan(0);
-    expect(body.indexOf('refundFitsAdvance(amountUsd,')).toBeGreaterThan(lock);
+    const held = body.indexOf('clientMoneyByCurrency(tx, input.clientId)');
+    expect(held).toBeGreaterThan(lock);
+    expect(body.indexOf('refundFits({ amount: input.amount, currency: input.currency, amountUsd }, held)')).toBeGreaterThan(held);
+    expect(body.indexOf('tx.insert(clientTransactions)')).toBeGreaterThan(held);
     expect(body.slice(lock)).not.toContain('clientBalanceUsd(');
   });
 });

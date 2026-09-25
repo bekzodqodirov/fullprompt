@@ -429,11 +429,11 @@ describe('a till adds up and keeps its money (A34, A35)', () => {
     const id = await till('A34');
     await addPartnerTx(
       { partnerId, type: 'receipt', amount: 700, currency: 'USD', txDate: today, accountId: id, batchId: '', note: '' },
-      ctx(),
+      ctx(), { mayClassify: true },
     );
     await addPartnerTx(
       { partnerId, type: 'payment', amount: 200, currency: 'USD', txDate: today, accountId: id, batchId: '', note: '' },
-      ctx(),
+      ctx(), { mayClassify: true },
     );
     const row = (await accountBalances()).find((r) => r.id === id)!;
     const shownIn = row.paidIn + row.transferredIn + row.partnerIn;

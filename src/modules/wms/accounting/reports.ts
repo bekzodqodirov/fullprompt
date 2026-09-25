@@ -24,7 +24,7 @@ import {
 } from '../costing/service';
 import { clientBalances, clientTotals, unplacedPaymentSql } from '../finance/service';
 import { internalLegSql } from '../batches/internal';
-import { partnerSignedSql } from '../partners/service';
+import { partnerSignedSql } from '../partners/ledger-sign';
 import {
   cashClientTxSql,
   cashCostSql,

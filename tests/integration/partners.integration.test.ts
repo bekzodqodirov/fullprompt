@@ -39,7 +39,7 @@ import {
 } from '@/modules/wms/partners/service';
 import { recordSettlement } from '@/modules/wms/partners/settlement';
 import { accountBalances } from '@/modules/wms/accounting/service';
-import { cashFlow, companyBalance, pnlGaps } from '@/modules/wms/accounting/reports';
+import { cashFlow, companyBalance, pnlGaps, profitAndLoss } from '@/modules/wms/accounting/reports';
 import { effectiveCustoms, setReceiptCustoms } from '@/modules/wms/partners/customs';
 
 /**
@@ -222,7 +222,7 @@ describe('what we owe a counterparty', () => {
         batchId: '',
         note: '',
       },
-      ctx(),
+      ctx(), { mayClassify: true },
     );
     expect(await partnerBalanceUsd(partnerId)).toBe(2000);
 
@@ -374,24 +374,41 @@ describe('uch tomonlama hisob — the client paid our supplier', () => {
 });
 
 describe('the cash buyers — som in, dollars out', () => {
+  // Rewritten with the owner's Q12 A (0103): the cash buyer wires SO'M (a
+  // currency of its own here, QAD) into a so'm till and collects DOLLARS —
+  // the two-currency account the hand «kurs farqi» exists for. Before 0103
+  // both legs were dollars, which the new guard refuses: on a one-currency
+  // account the residue closes itself with the payment.
   it('owes them from the moment the money lands, and the rate gain is what is left', async () => {
+    const SOM = 'QAD';
+    await db.insert(currencies).values({ code: SOM, name: 'Cash buyer som', active: false }).onConflictDoNothing();
+    await db
+      .insert(fxRates)
+      .values({ currency: SOM, rateToUsd: '0.0001', effectiveDate: '2020-01-01', enteredBy: actorId })
+      .onConflictDoNothing();
+    const somTill = (
+      await db.insert(moneyAccounts).values({ name: `Naqdchi som ${STAMP}`, currency: SOM }).returning()
+    )[0]!.id;
+    const usdTill = (
+      await db.insert(moneyAccounts).values({ name: `Naqdchi usd ${STAMP}`, currency: 'USD' }).returning()
+    )[0]!.id;
+    madeAccounts.push(somTill, usdTill);
     const partnerId = await newPartner('Naqdchi');
-    const accounts = await usdTills(2);
     const today = new Date().toISOString().slice(0, 10);
 
-    // He wired money into our account: our cash is up and we owe him.
+    // He wired so'm into our account: our cash is up and we owe him.
     await addPartnerTx(
       {
         partnerId,
         type: 'receipt',
-        amount: 1000,
-        currency: 'USD',
+        amount: 10_000_000,
+        currency: SOM,
         txDate: today,
-        accountId: accounts[0]!.id,
+        accountId: somTill,
         batchId: '',
         note: 'Firma hisobiga tushdi',
       },
-      ctx(),
+      ctx(), { mayClassify: true },
     );
     expect(await partnerBalanceUsd(partnerId)).toBe(1000);
 
@@ -403,20 +420,25 @@ describe('the cash buyers — som in, dollars out', () => {
         amount: 980,
         currency: 'USD',
         txDate: today,
-        accountId: (accounts[1] ?? accounts[0])!.id,
+        accountId: usdTill,
         batchId: '',
         note: 'Naqd berildi',
       },
-      ctx(),
+      ctx(), { mayClassify: true },
     );
     // What is left is what we gained on the rate — visible, not swallowed.
     expect(await partnerBalanceUsd(partnerId)).toBe(20);
 
-    // Closing it as profit is a deliberate, signed correction.
+    // Closing it as profit is a deliberate, signed correction — classified
+    // «kurs farqi», so it reaches the P&L's FX line (+$20, a gain).
+    const pnlFx = async () =>
+      (await profitAndLoss(today, today)).fx.find((line) => line.key === 'fx:adjust')?.total ?? 0;
+    const fxBefore = await pnlFx();
     await addPartnerTx(
       {
         partnerId,
         type: 'adjust',
+        adjustKind: 'fx',
         amount: -20,
         currency: 'USD',
         txDate: today,
@@ -424,9 +446,11 @@ describe('the cash buyers — som in, dollars out', () => {
         batchId: '',
         note: 'Kurs farqi — foyda',
       },
-      ctx(),
+      ctx(), { mayClassify: true },
     );
     expect(await partnerBalanceUsd(partnerId)).toBe(0);
+    expect(Math.round(((await pnlFx()) - fxBefore) * 100) / 100).toBe(20);
+    await db.delete(partnerTransactions).where(eq(partnerTransactions.partnerId, partnerId));
   });
 
   it('refuses money that moved without saying which cash box, and the reverse', async () => {
@@ -435,14 +459,14 @@ describe('the cash buyers — som in, dollars out', () => {
     await expect(
       addPartnerTx(
         { partnerId, type: 'payment', amount: 10, currency: 'USD', txDate: today, accountId: '', batchId: '', note: '' },
-        ctx(),
+        ctx(), { mayClassify: true },
       ),
     ).rejects.toThrow();
     const [account] = await usdTills();
     await expect(
       addPartnerTx(
-        { partnerId, type: 'adjust', amount: 10, currency: 'USD', txDate: today, accountId: account!.id, batchId: '', note: '' },
-        ctx(),
+        { partnerId, type: 'adjust', adjustKind: 'correction', amount: 10, currency: 'USD', txDate: today, accountId: account!.id, batchId: '', note: '' },
+        ctx(), { mayClassify: true },
       ),
     ).rejects.toThrow();
   });
@@ -455,11 +479,11 @@ describe('a service debt comes from a cost, never from the card (audit A31)', ()
     const row = { partnerId, amount: 100, currency: 'USD', txDate: today, accountId: '', batchId: '', note: '' };
     // A truck or a salary typed here raised the debt and reached no P&L,
     // no tannarx and no profit screen.
-    await expect(addPartnerTx({ ...row, type: 'charge' }, ctx())).rejects.toMatchObject({
+    await expect(addPartnerTx({ ...row, type: 'charge' }, ctx(), { mayClassify: true })).rejects.toMatchObject({
       code: 'charge_via_cost',
     });
     // An offset has a client on its other end and its own screen naming one.
-    await expect(addPartnerTx({ ...row, type: 'offset' }, ctx())).rejects.toMatchObject({
+    await expect(addPartnerTx({ ...row, type: 'offset' }, ctx(), { mayClassify: true })).rejects.toMatchObject({
       code: 'offset_via_settlement',
     });
     expect(await partnerBalanceUsd(partnerId)).toBe(0);
@@ -517,12 +541,12 @@ describe('the money reports know about counterparties', () => {
     // Real cash IN: the buyer wired money into this account.
     await addPartnerTx(
       { partnerId, type: 'receipt', amount: 700, currency: 'USD', txDate: today, accountId: account!.id, batchId: '', note: '' },
-      ctx(),
+      ctx(), { mayClassify: true },
     );
     // Real cash OUT of the same box.
     await addPartnerTx(
       { partnerId, type: 'payment', amount: 200, currency: 'USD', txDate: today, accountId: account!.id, batchId: '', note: '' },
-      ctx(),
+      ctx(), { mayClassify: true },
     );
 
     const after = (await accountBalances()).find((a) => a.id === account!.id)!.balance;
@@ -868,6 +892,7 @@ describe('what the audit found', () => {
       {
         partnerId: aheadId,
         type: 'adjust',
+        adjustKind: 'correction',
         amount: -300,
         currency: 'USD',
         txDate: new Date().toISOString().slice(0, 10),
@@ -875,7 +900,7 @@ describe('what the audit found', () => {
         batchId: '',
         note: '',
       },
-      ctx(),
+      ctx(), { mayClassify: true },
     );
 
     // The register's own expression, read the way the page reads it. Active

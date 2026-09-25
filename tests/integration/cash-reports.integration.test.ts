@@ -647,11 +647,17 @@ describe('«this month\'s payments» is one figure, and its parts are the other 
     )[0]!.id;
     madeClients.push(payer);
     const kassa = await till('Hisobot U26 eski', 'USD');
+    const somKassa = await till('Hisobot U26 eski som', PAY);
     // A refund may pass the advance only by the FX residue (U04, 2 % or $5): a $3
     // advance, $7 handed back, $4 owed — from today, not from 70 days ago.
+    // Rewritten with 0103 (the owner's Q14 A, design §5.5.7): the advance is
+    // PAID IN ANOTHER CURRENCY (2006 QWP = $1003) against a dollar bill,
+    // which is the only case the residue allowance exists for. An all-dollar
+    // account carries no rate to drift, so its refund is capped in dollars
+    // exactly (the native rule) and $7 out of a $3 advance is refused.
     await addTransaction({ clientId: payer, type: 'charge', amount: 1000, currency: 'USD', txDate: addDays(today, -70) }, ctx());
     await addTransaction(
-      { clientId: payer, type: 'payment', amount: 1003, currency: 'USD', txDate: addDays(today, -65), accountId: kassa },
+      { clientId: payer, type: 'payment', amount: 2006, currency: PAY, txDate: addDays(today, -65), accountId: somKassa },
       ctx(),
     );
     const before = await moneySnapshot();

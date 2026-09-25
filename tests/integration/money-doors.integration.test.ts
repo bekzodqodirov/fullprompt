@@ -177,7 +177,7 @@ describe('U21 — no money row dated after tomorrow, at every door (#995)', () =
     await expect(
       addPartnerTx(
         { partnerId, type: 'payment', amount: 5, currency: 'USD', txDate: FUTURE, accountId: usdTillId },
-        ctx(),
+        ctx(), { mayClassify: true },
       ),
     ).rejects.toMatchObject({ code: 'future_date' });
     await expect(
@@ -273,7 +273,7 @@ describe('U44 — the native bound is the column, the ceiling is in dollars', ()
       addTransaction({ clientId, type: 'charge', amount: huge, currency: 'USD', txDate: DAY }, ctx()),
     ).rejects.toMatchObject({ code: 'amount_too_large' });
     await expect(
-      addPartnerTx({ partnerId, type: 'adjust', amount: -huge, currency: 'USD', txDate: DAY }, ctx()),
+      addPartnerTx({ partnerId, type: 'adjust', adjustKind: 'correction', amount: -huge, currency: 'USD', txDate: DAY }, ctx(), { mayClassify: true }),
     ).rejects.toMatchObject({ code: 'amount_too_large' });
   });
 });
@@ -496,7 +496,7 @@ describe('U34 (owner B) — a firm-paid cost is its typist\u2019s until the firm
 
     const paid = await addPartnerTx(
       { partnerId, type: 'payment', amount: 300, currency: 'USD', txDate: DAY, accountId: usdTillId },
-      ctx(),
+      ctx(), { mayClassify: true },
     );
     expect(await firmMovedSinceCost(entry.id, partnerId)).toBe(true);
     await voidPartnerTx(paid.id, 'xato to‘lov', ctx());
@@ -532,7 +532,7 @@ describe('U34 (owner B) — a firm-paid cost is its typist\u2019s until the firm
 
     const paid = await addPartnerTx(
       { partnerId, type: 'payment', amount: 20, currency: 'USD', txDate: DAY, accountId: usdTillId },
-      ctx(),
+      ctx(), { mayClassify: true },
     );
     try {
       expect(await firmDebtVoidRefusal(typist, facts)).toBe('partner_cost_settled');

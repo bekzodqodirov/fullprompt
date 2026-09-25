@@ -223,7 +223,7 @@ describe('the profile panel', () => {
         accountId: tillId,
         note: `avans ${SUFFIX}`,
       },
-      ctx(),
+      ctx(), { mayClassify: true },
     );
     const advance = (await staffAccountView(reporterId))!;
     expect(advance.headline).toBe('advance_left');

@@ -544,6 +544,16 @@ export async function voidCostEntryInTx(
   ctx: AuditContext,
   door: CostVoidDoor,
 ) {
+  // The firms whose derived charge this void cancels — their money locks
+  // BEFORE any row is written (0103), read through the caller's transaction.
+  const charged = (
+    await tx
+      .select({ partnerId: partnerTransactions.partnerId })
+      .from(partnerTransactions)
+      .where(and(eq(partnerTransactions.costEntryId, id), isNull(partnerTransactions.voidedAt)))
+  ).map((row) => row.partnerId);
+  const { lockOwnersTx, reconcileFxResidueTx } = await import('../finance/fx-residue');
+  await lockOwnersTx(tx, { partnerIds: charged });
   const claimed = await tx
     .update(costEntries)
     .set({ voidedAt: new Date(), voidedBy: ctx.actorId, voidReason: reason })
@@ -572,7 +582,9 @@ export async function voidCostEntryInTx(
     .update(partnerTransactions)
     .set({ voidedAt: new Date(), voidedBy: ctx.actorId, voidReason: reason })
     .where(and(eq(partnerTransactions.costEntryId, id), isNull(partnerTransactions.voidedAt)))
-    .returning({ id: partnerTransactions.id });
+    .returning({ id: partnerTransactions.id, partnerId: partnerTransactions.partnerId });
+  // A cancelled charge can reopen a firm's closed currency (Q14).
+  await reconcileFxResidueTx(tx, { partnerIds: [...charged, ...voidedCharges.map((row) => row.partnerId)] }, ctx);
   for (const row of voidedCharges) {
     await writeAudit(tx, ctx, {
       entityType: 'partner_transaction',

@@ -67,5 +67,8 @@ export const isDebit = (row: Row) => signedUsd(row) > 0;
 /** A PRICE row — what the trips' walk settles. */
 export const isPrice = (type: string) => rule(type)?.revenue === 1;
 
+/** The price kinds, DERIVED — for SQL that must say `isPrice` in a CASE. */
+export const PRICE_KINDS = CLIENT_KINDS.filter((kind) => LEDGER_RULES[kind].revenue === 1);
+
 /** What a non-price row takes off the balance: payment +, refund −, kurs farqi −signed. */
 export const settlesUsd = (row: Row) => (isPrice(row.type) ? 0 : -signedUsd(row));

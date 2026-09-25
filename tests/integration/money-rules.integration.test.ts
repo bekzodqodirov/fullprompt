@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { eq, inArray, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
-import { clientTransactions, clients, moneyAccounts, users } from '@/modules/platform/db/schema';
+import { clientTransactions, clients, currencies, fxRates, moneyAccounts, users } from '@/modules/platform/db/schema';
 import {
   addTransaction,
   balancesForClients,
@@ -25,6 +25,10 @@ import { arAging, cashFlow, companyBalance } from '@/modules/wms/accounting/repo
 
 const STAMP = `${Date.now()}`.slice(-7);
 const DAY = '1690-03-10';
+// A so'm of this file's own (inactive, never in a picker): 0.0001 until the
+// 20th, then the rate that makes 3,000,000 of it read $301.88 (measured, U04).
+const SOM = 'QRF';
+const MOVED_DAY = '1690-03-20';
 let actorId: string;
 const madeClients: string[] = [];
 const codes = new Map<string, string>();
@@ -52,6 +56,13 @@ async function till(name: string, over: Partial<typeof moneyAccounts.$inferInser
 
 beforeAll(async () => {
   actorId = (await db.select({ id: users.id }).from(users).where(eq(users.active, true)).limit(1))[0]!.id;
+  await db.insert(currencies).values({ code: SOM, name: `Pul qoidasi ${SOM}`, active: false }).onConflictDoNothing();
+  for (const [effectiveDate, rateToUsd] of [
+    ['1690-03-01', '0.0001'],
+    [MOVED_DAY, '0.000100626667'],
+  ] as const) {
+    await db.insert(fxRates).values({ currency: SOM, rateToUsd, effectiveDate, enteredBy: actorId }).onConflictDoNothing();
+  }
 });
 
 afterAll(async () => {
@@ -60,6 +71,8 @@ afterAll(async () => {
     await db.delete(clients).where(inArray(clients.id, madeClients));
   }
   if (madeAccounts.length) await db.delete(moneyAccounts).where(inArray(moneyAccounts.id, madeAccounts));
+  await db.delete(fxRates).where(eq(fxRates.currency, SOM));
+  await db.delete(currencies).where(eq(currencies.code, SOM));
   await pgClient.end();
 });
 
@@ -125,21 +138,61 @@ describe('R6a — a refund is money handed back out of a kassa', () => {
   // handover gate stopped his next cargo. What still ages is the few-dollar
   // FX residue the refusal deliberately lets through, so arAging's refund
   // branch keeps a reason to exist.
+  //
+  // Rewritten with 0103 (the owner's Q14 A, design §5.5.7), in two halves,
+  // because «the same so'm handed back after the rate moved» used to be
+  // modelled as DOLLARS and the residue it measured is now two different
+  // things: a so'm advance handed back in so'm is capped in SO'M and its
+  // $1.88 is closed by the system's «kurs farqi» (nothing ages), while a
+  // dollar bill paid in so'm keeps wc's dollar rule and its residue ages.
   it('a refund larger than the client\u2019s advance is refused; the FX residue passes and ages', async () => {
     const clientId = await client('C');
     const box = await till('R6 aging');
     await expect(
       addTransaction({ clientId, type: 'refund', amount: 30, currency: 'USD', txDate: DAY, accountId: box }, ctx()),
     ).rejects.toMatchObject({ code: 'refund_exceeds_advance' });
-    await addTransaction({ clientId, type: 'payment', amount: 300, currency: 'USD', txDate: DAY, accountId: box }, ctx());
+
+    // (1) The native rule: 3,000,000 so'm in ($300), the same 3,000,000 out
+    // after the rate moved ($301.88) — accepted in full, one so'm more is not.
+    const somBox = await till('R6 aging som', { currency: SOM });
+    await addTransaction(
+      { clientId, type: 'payment', amount: 3_000_000, currency: SOM, txDate: DAY, accountId: somBox },
+      ctx(),
+    );
     await expect(
-      addTransaction({ clientId, type: 'refund', amount: 306.5, currency: 'USD', txDate: DAY, accountId: box }, ctx()),
+      addTransaction(
+        { clientId, type: 'refund', amount: 3_000_001, currency: SOM, txDate: MOVED_DAY, accountId: somBox },
+        ctx(),
+      ),
     ).rejects.toMatchObject({ code: 'refund_exceeds_advance' });
-    // The same so'm handed back after the rate moved reads $301.88 (measured).
-    await addTransaction({ clientId, type: 'refund', amount: 301.88, currency: 'USD', txDate: DAY, accountId: box }, ctx());
-    expect(await clientBalanceUsd(clientId)).toBeCloseTo(1.88, 2);
+    await addTransaction(
+      { clientId, type: 'refund', amount: 3_000_000, currency: SOM, txDate: MOVED_DAY, accountId: somBox },
+      ctx(),
+    );
+    // So'm back at zero: the reconciler closed the $1.88 in the same commit.
+    expect(await clientBalanceUsd(clientId)).toBe(0);
+    const [closing] = await db
+      .select({ amountUsd: clientTransactions.amountUsd })
+      .from(clientTransactions)
+      .where(sql`${clientTransactions.clientId} = ${clientId} AND ${clientTransactions.type} = 'fx_diff'`);
+    expect(Number(closing!.amountUsd)).toBe(-1.88);
+
+    // (2) wc's dollar rule: a $100 bill paid with $400 of so'm holds a $300
+    // advance in DOLLARS only; a dollar refund may pass it by the residue
+    // allowance (2 % or $5) and no further — and what passes ages.
+    const billed = await client('CB');
+    await addTransaction({ clientId: billed, type: 'charge', amount: 100, currency: 'USD', txDate: DAY }, ctx());
+    await addTransaction(
+      { clientId: billed, type: 'payment', amount: 4_000_000, currency: SOM, txDate: DAY, accountId: somBox },
+      ctx(),
+    );
+    await expect(
+      addTransaction({ clientId: billed, type: 'refund', amount: 306.5, currency: 'USD', txDate: DAY, accountId: box }, ctx()),
+    ).rejects.toMatchObject({ code: 'refund_exceeds_advance' });
+    await addTransaction({ clientId: billed, type: 'refund', amount: 301.88, currency: 'USD', txDate: DAY, accountId: box }, ctx());
+    expect(await clientBalanceUsd(billed)).toBeCloseTo(1.88, 2);
     const aging = await arAging(DAY);
-    const mine = aging.find((r) => r.clientCode === codes.get(clientId));
+    const mine = aging.find((r) => r.clientCode === codes.get(billed));
     expect(mine?.balance).toBe(1.88);
   });
 });

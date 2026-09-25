@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNull, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../../platform/db/client';
 import {
@@ -19,6 +19,15 @@ import { staffPartnerSql } from './staff';
 import { latestTxDate } from '../finance/dates';
 import { exceedsRowUsd, signedNativeAmount } from '../finance/money-bounds';
 import { mayPickTill } from '../accounting/till-door';
+import { partnerSignedSql, type PartnerTxType } from './ledger-sign';
+import {
+  fxCyclesFor,
+  fxSettingsTx,
+  legacyState,
+  lockOwnersTx,
+  ownersSql,
+  reconcileFxResidueTx,
+} from '../finance/fx-residue';
 
 /**
  * Kontragentlar — the other side of the money (round 39, the owner's three
@@ -45,40 +54,9 @@ export class PartnerError extends Error {
 /** Rows that RAISE what we owe. The rest lower it (`adjust` and `fx_diff` do either). */
 const RAISING = ['charge', 'receipt'] as const;
 
-/**
- * Every kind a partner row may STORE. `fx_diff` (0103, the owner's Q14 A) is
- * the system's own «kurs farqi»: native 0, a signed dollar figure that closes
- * the residue of an account back at zero in its own currency. Nobody types it.
- */
-export const PARTNER_TX_TYPES = ['charge', 'receipt', 'payment', 'offset', 'adjust', 'fx_diff'] as const;
-export type PartnerTxType = (typeof PARTNER_TX_TYPES)[number];
+export { PARTNER_NATIVE_SIGN, PARTNER_TX_TYPES, partnerSignedSql, type PartnerTxType } from './ledger-sign';
 /** The kinds a row may be POSTED as through any form (never `fx_diff`). */
 const POSTED_TX_TYPES = ['charge', 'receipt', 'payment', 'offset', 'adjust'] as const satisfies readonly PartnerTxType[];
-
-/**
- * The partner ledger's one sign rule, in SQL (0103 — it was restated inline in
- * four readers): + raises what WE owe, − lowers it; `adjust` and `fx_diff`
- * carry their sign in the amount. `column` names the native amount or the
- * dollars; `alias` the table alias of a raw correlated subquery (#128),
- * omitted for the drizzle table itself.
- */
-export function partnerSignedSql(column: 'amount_usd' | 'amount', alias?: string): SQL {
-  const col = (name: string) =>
-    alias ? sql.raw(`${alias}.${name}`) : sql`${partnerTransactions}.${sql.raw(name)}`;
-  return sql`(CASE WHEN ${col('type')} IN ('charge', 'receipt', 'adjust', 'fx_diff') THEN ${col(column)} ELSE -${col(column)} END)`;
-}
-
-/**
- * Which way each kind moves the account's OWN currency — the walk that finds
- * where a currency returns to zero (Q14). `fx_diff` never walks (native 0).
- */
-export const PARTNER_NATIVE_SIGN: Record<Exclude<PartnerTxType, 'fx_diff'>, 1 | -1 | 'signed'> = {
-  charge: 1,
-  receipt: 1,
-  payment: -1,
-  offset: -1,
-  adjust: 'signed',
-};
 
 /**
  * The kinds a person may write by hand on a partner's card (audit A31,
@@ -106,6 +84,10 @@ export const CASH_TYPES: PartnerTxType[] = ['receipt', 'payment'];
  * balance it had just pushed up, so the rows stopped adding to the figure
  * above them. Exported so the screen and the sum cannot drift again.
  */
+/** What a hand-typed `adjust` IS (0103, Q12's split). */
+export const ADJUST_KINDS = ['fx', 'correction'] as const;
+export type AdjustKind = (typeof ADJUST_KINDS)[number];
+
 export function raisesBalance(type: string, amountUsd: number): boolean {
   if (type === 'adjust' || type === 'fx_diff') return amountUsd > 0;
   return (RAISING as readonly string[]).includes(type);
@@ -274,6 +256,12 @@ export const partnerTxSchema = z
     accountId: z.string().uuid().optional().or(z.literal('')),
     batchId: z.string().uuid().optional().or(z.literal('')),
     note: z.string().trim().max(2000).optional().or(z.literal('')),
+    /**
+     * What a correction IS (0103, the lead's reading of Q12): «kurs farqi»
+     * reaches the P&L, «xato tuzatish / boshlang'ich qoldiq» does not. Asked
+     * only of a person who may classify (`addPartnerTx`'s door).
+     */
+    adjustKind: z.enum(ADJUST_KINDS).optional(),
   })
   // Zero is never an entry; only a correction may be negative.
   .refine((v) => (v.type === 'adjust' ? v.amount !== 0 : v.amount > 0), {
@@ -287,13 +275,61 @@ export const partnerTxSchema = z
 export type PartnerTxInput = z.infer<typeof partnerTxSchema>;
 
 /**
+ * Does this account carry a closed, non-zero cycle nobody manages (0103)? —
+ * a residue from before the deploy, which never closes itself: the «kurs
+ * farqi» refusal must say THAT (the accountant closes it on «Kurs
+ * qoldiqlari») rather than «it closes itself». Read on the POOL, before any
+ * transaction (#714).
+ */
+async function hasOpenLegacyResidue(partnerId: string): Promise<boolean> {
+  const { since, autoOn } = await fxSettingsTx(db);
+  const cycles = await fxCyclesFor(db, 'partner', ownersSql('partner', [partnerId]), since);
+  return cycles.some(
+    (cycle) => cycle.closed && cycle.residueCents !== 0 && !cycle.managed && ['check', 'closable'].includes(legacyState(cycle, autoOn)),
+  );
+}
+
+/**
  * One row on a partner's account. FX is frozen at entry (#108): a rate
  * corrected next month must not silently rewrite a settled debt.
+ *
+ * `door.mayClassify` is REQUIRED (the #790 idiom — an optional door fails
+ * open): only the accountant and the admin (`mayClassifyFx`) say what an
+ * `adjust` is, because «kurs farqi» moves the P&L; the VED keeps typing the
+ * correction (Q19 B) and it waits unclassified beside the P&L.
  */
-export async function addPartnerTx(input: PartnerTxInput, ctx: AuditContext) {
+export async function addPartnerTx(input: PartnerTxInput, ctx: AuditContext, door: { mayClassify: boolean }) {
   if (!ctx.actorId) throw new PartnerError('unauthenticated');
   if (!MANUAL_TX_TYPES.includes(input.type)) {
     throw new PartnerError(input.type === 'charge' ? 'charge_via_cost' : 'offset_via_settlement');
+  }
+  // Q12's split (0103). A kind on anything but a correction is a forged post.
+  if (input.adjustKind && input.type !== 'adjust') throw new PartnerError('validation');
+  if (input.type === 'adjust') {
+    if (!door.mayClassify && input.adjustKind) throw new PartnerError('forbidden');
+    if (door.mayClassify && !input.adjustKind) throw new PartnerError('adjust_kind_required');
+  }
+  if (input.adjustKind === 'fx') {
+    // A hand «kurs farqi» is a DOLLAR figure — a yuan one would move the yuan
+    // walk itself and fight the system's own close (money-3).
+    if (input.currency !== 'USD') throw new PartnerError('fx_adjust_usd_only');
+    // …and only on an account that really changes currency (the cash
+    // buyers): a one-currency account's residue closes itself with its
+    // payment (Q14). Neither an adjust nor a kurs farqi row makes an account
+    // «two-currency» — a legacy USD correction on a yuan firm does not.
+    const [spread] = await db
+      .select({ n: sql<number>`count(DISTINCT ${partnerTransactions.currency})::int` })
+      .from(partnerTransactions)
+      .where(
+        and(
+          eq(partnerTransactions.partnerId, input.partnerId),
+          isNull(partnerTransactions.voidedAt),
+          sql`${partnerTransactions.type} NOT IN ('adjust', 'fx_diff')`,
+        ),
+      );
+    if (Number(spread?.n ?? 0) < 2) {
+      throw new PartnerError((await hasOpenLegacyResidue(input.partnerId)) ? 'fx_adjust_legacy' : 'fx_adjust_single_currency');
+    }
   }
   // #995's rule (U21): a payment dated next month moved a till today.
   if (input.txDate > latestTxDate()) throw new PartnerError('future_date');
@@ -312,35 +348,91 @@ export async function addPartnerTx(input: PartnerTxInput, ctx: AuditContext) {
   const amountUsd = Math.round(input.amount * rate * 100) / 100;
   if (exceedsRowUsd(amountUsd)) throw new PartnerError('amount_too_large');
 
+  // The account's lock, the write and the kurs farqi reconciler (Q14) in ONE
+  // commit: a payment that brings the firm's currency back to zero closes its
+  // dollar residue with it.
+  return db.transaction(async (tx) => {
+    await lockOwnersTx(tx, { partnerIds: [input.partnerId] });
+    const [row] = await tx
+      .insert(partnerTransactions)
+      .values({
+        partnerId: input.partnerId,
+        type: input.type,
+        amount: String(input.amount),
+        currency: input.currency,
+        rateToUsd: String(rate),
+        amountUsd: String(amountUsd),
+        txDate: input.txDate,
+        accountId: input.accountId || null,
+        batchId: input.batchId || null,
+        adjustKind: input.type === 'adjust' ? (input.adjustKind ?? null) : null,
+        note: input.note || null,
+        createdBy: ctx.actorId!,
+      })
+      .returning();
+    await reconcileFxResidueTx(tx, { partnerIds: [input.partnerId] }, ctx);
+    await writeAudit(tx, ctx, {
+      entityType: 'partner_transaction',
+      entityId: row!.id,
+      action: 'create',
+      after: {
+        partnerId: input.partnerId,
+        type: input.type,
+        amount: input.amount,
+        currency: input.currency,
+        amountUsd,
+        ...(input.type === 'adjust' ? { adjustKind: input.adjustKind ?? null } : {}),
+      },
+    });
+    return row!;
+  });
+}
+
+/**
+ * Say what an old correction IS (0103, Q12's split, for history): once, by
+ * a person who may classify — the UPDATE is the claim (`adjust_kind IS
+ * NULL`), so a second press, or a press on a voided row, changes nothing.
+ * Staff rows additionally need `finance.expenses`, judged on the ROW's own
+ * account. No money moves; the P&L's «Kurs farqi» line reads the kind.
+ */
+export async function setAdjustKind(
+  txId: string,
+  kind: AdjustKind,
+  ctx: AuditContext,
+  door: { mayClassify: boolean; maySeeStaff: boolean },
+): Promise<void> {
+  if (!ctx.actorId) throw new PartnerError('unauthenticated');
+  if (!door.mayClassify) throw new PartnerError('forbidden');
+  if (!ADJUST_KINDS.includes(kind)) throw new PartnerError('validation');
+  if (!door.maySeeStaff) {
+    const [owner] = await db
+      .select({ partnerId: partnerTransactions.partnerId })
+      .from(partnerTransactions)
+      .where(eq(partnerTransactions.id, txId))
+      .limit(1);
+    const { isStaffPartner } = await import('./staff');
+    if (owner && (await isStaffPartner(owner.partnerId))) throw new PartnerError('forbidden');
+  }
   const [row] = await db
-    .insert(partnerTransactions)
-    .values({
-      partnerId: input.partnerId,
-      type: input.type,
-      amount: String(input.amount),
-      currency: input.currency,
-      rateToUsd: String(rate),
-      amountUsd: String(amountUsd),
-      txDate: input.txDate,
-      accountId: input.accountId || null,
-      batchId: input.batchId || null,
-      note: input.note || null,
-      createdBy: ctx.actorId,
-    })
-    .returning();
+    .update(partnerTransactions)
+    .set({ adjustKind: kind })
+    .where(
+      and(
+        eq(partnerTransactions.id, txId),
+        eq(partnerTransactions.type, 'adjust'),
+        isNull(partnerTransactions.adjustKind),
+        isNull(partnerTransactions.voidedAt),
+      ),
+    )
+    .returning({ id: partnerTransactions.id });
+  if (!row) throw new PartnerError('already_classified');
   await writeAudit(db, ctx, {
     entityType: 'partner_transaction',
-    entityId: row!.id,
-    action: 'create',
-    after: {
-      partnerId: input.partnerId,
-      type: input.type,
-      amount: input.amount,
-      currency: input.currency,
-      amountUsd,
-    },
+    entityId: txId,
+    action: 'update',
+    before: { adjustKind: null },
+    after: { adjustKind: kind },
   });
-  return row!;
 }
 
 /**
@@ -447,7 +539,22 @@ export async function voidPartnerTx(id: string, reason: string, ctx: AuditContex
       .where(eq(expenses.id, row.expenseId));
     if (source?.recurringId) throw new PartnerError('recurring_payment');
   }
+  // The system's kurs farqi row changes only when its cycle changes (Q14).
+  if (row.type === 'fx_diff') throw new PartnerError('fx_system_row');
+  // The client on the other half, read first so the money locks go in
+  // order — clients before partners (0103).
+  const pairedClient = row.clientTxId
+    ? (
+        await db
+          .select({ clientId: clientTransactions.clientId })
+          .from(clientTransactions)
+          .where(eq(clientTransactions.id, row.clientTxId))
+          .limit(1)
+      )[0]?.clientId
+    : undefined;
+  const clientIds = pairedClient ? [pairedClient] : [];
   await db.transaction(async (tx) => {
+    await lockOwnersTx(tx, { clientIds, partnerIds: [row.partnerId] });
     await tx
       .update(partnerTransactions)
       .set({ voidedAt: new Date(), voidedBy: ctx.actorId, voidReason: reason })
@@ -477,6 +584,8 @@ export async function voidPartnerTx(id: string, reason: string, ctx: AuditContex
     if (row.expenseId) {
       await tx.update(expenses).set({ partnerId: null }).where(eq(expenses.id, row.expenseId));
     }
+    // A voided payment can reopen a closed currency; its kurs farqi follows.
+    await reconcileFxResidueTx(tx, { clientIds, partnerIds: [row.partnerId] }, ctx);
   });
   await writeAudit(db, ctx, {
     entityType: 'partner_transaction',

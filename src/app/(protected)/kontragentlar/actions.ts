@@ -13,9 +13,12 @@ import {
   partnerSchema,
   partnerTxSchema,
   savePartner,
+  setAdjustKind,
   setPartnerActive,
   voidPartnerTx,
+  ADJUST_KINDS,
 } from '@/modules/wms/partners/service';
+import { mayClassifyFx } from '@/modules/wms/finance/fx-door';
 import { recordSettlement, settlementSchema } from '@/modules/wms/partners/settlement';
 import { isStaffPartner, isStaffType, maySeeStaffMoney } from '@/modules/wms/partners/staff';
 import { parseTypedMoney } from '@/modules/wms/calc/money-input';
@@ -90,7 +93,7 @@ async function partnerFormDoor(
 
 async function run(
   door: (actor: Actor) => Promise<string | null>,
-  work: (ctx: { actorId: string }) => Promise<unknown>,
+  work: (ctx: { actorId: string }, actor: Actor) => Promise<unknown>,
   paths: string[],
 ): Promise<PartnerFormState> {
   let actor;
@@ -104,7 +107,7 @@ async function run(
   if (refused) return { error: refused };
   const meta = await requestMeta();
   try {
-    await work({ actorId: actor.id, ...meta });
+    await work({ actorId: actor.id, ...meta }, actor);
   } catch (err) {
     if (err instanceof PartnerError) return { error: err.code };
     throw err;
@@ -171,6 +174,9 @@ export async function addPartnerTxAction(
     accountId: formData.get('accountId') ?? '',
     batchId: formData.get('batchId') ?? '',
     note: formData.get('note') ?? '',
+    // What a correction IS (0103). Drawn only for whoever may classify; the
+    // service refuses a posted kind from anybody else (`forbidden`).
+    adjustKind: formData.get('adjustKind') || undefined,
   });
   // The two refines name the field ('amount' / 'account') and the form maps
   // them; a size refusal is its own sentence (U44). Any other issue is zod's
@@ -187,8 +193,30 @@ export async function addPartnerTxAction(
   return run(
     async (actor) =>
       tillDoor(actor, CASH_TYPES.includes(parsed.data.type)) ?? staffDoor(actor, parsed.data.partnerId),
-    (ctx) => addPartnerTx(parsed.data, ctx),
-    [`/kontragentlar/${partnerId}`, '/kontragentlar'],
+    (ctx, actor) => addPartnerTx(parsed.data, ctx, { mayClassify: mayClassifyFx(actor.permissions) }),
+    [`/kontragentlar/${partnerId}`, '/kontragentlar', '/accounting/kurs-farqi', '/accounting/pnl'],
+  );
+}
+
+/**
+ * «Ha, bu kurs farqi edi» / «Yo'q, boshqa tuzatish» on an old correction
+ * (0103, Q12's split). `finance.manage` by `run`, then `finance.reports` —
+ * the VED holds the first and must not write into the P&L (Q19) — and a
+ * staff row's own door, judged on the ROW (`partnerTxDoorFacts`).
+ */
+export async function setAdjustKindAction(formData: FormData): Promise<PartnerFormState> {
+  const id = z.string().uuid().safeParse(formData.get('id'));
+  const kind = z.enum(ADJUST_KINDS).safeParse(formData.get('kind'));
+  if (!id.success || !kind.success) return { error: 'validation' };
+  const row = await partnerTxDoorFacts(id.data);
+  return run(
+    async (actor) => (mayClassifyFx(actor.permissions) ? staffDoor(actor, row?.partnerId ?? null) : 'forbidden'),
+    (ctx, actor) =>
+      setAdjustKind(id.data, kind.data, ctx, {
+        mayClassify: mayClassifyFx(actor.permissions),
+        maySeeStaff: maySeeStaffMoney(actor.permissions),
+      }),
+    ['/accounting/kurs-farqi', '/accounting/pnl', row ? `/kontragentlar/${row.partnerId}` : '/kontragentlar'],
   );
 }
 
