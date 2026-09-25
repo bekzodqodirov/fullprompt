@@ -21,6 +21,7 @@ import {
   profitByClient,
   profitByRoute,
   unbatchedMoney,
+  type FxPnlKey,
   type PnlGaps,
   type ReconLineKey,
 } from './reports';
@@ -75,6 +76,23 @@ function gapRows(sheet: ExcelJS.Worksheet, L: ReturnType<typeof reportLabels>, g
       `⚠ ${L.gapNoBox}: ${gaps.onNoBox.count} · $${usdText(gaps.onNoBox.usd)}`,
     ]).font = { bold: true };
   }
+  // The kurs farqi the report could not count (0103) — named, never added.
+  if (gaps.unclassifiedAdjusts.count > 0) {
+    sheet.addRow([
+      `⚠ ${L.gapAdjustUnclassified}: ${gaps.unclassifiedAdjusts.count} · $${usdText(gaps.unclassifiedAdjusts.usd)}`,
+    ]).font = { bold: true };
+  }
+  if (gaps.kassaUsdMissing.count > 0) {
+    sheet.addRow([`⚠ ${L.gapKassaUsdMissing}: ${gaps.kassaUsdMissing.count}`]).font = { bold: true };
+  }
+  if (gaps.transferUsdMissing.count > 0) {
+    sheet.addRow([`⚠ ${L.gapTransferUsdMissing}: ${gaps.transferUsdMissing.count}`]).font = { bold: true };
+  }
+}
+
+/** The P&L's kurs farqi sub-rows by key (0103) — a literal map, so a new source is a type error. */
+function fxLabel(L: ReturnType<typeof reportLabels>): Record<FxPnlKey, string> {
+  return { 'fx:kassa': L.fxKassa, 'fx:settlement': L.fxSettlement, 'fx:adjust': L.fxAdjust, 'fx:closing': L.fxClosing };
 }
 
 export async function buildPnlXlsx(from: string, to: string, locale?: string): Promise<Buffer> {
@@ -120,6 +138,11 @@ export async function buildPnlXlsx(from: string, to: string, locale?: string): P
   ]);
   for (const row of pnl.opex) line(`— ${row.label}`, row.byPeriod, row.total);
   line(L.opex, pnl.opexTotal.byPeriod, pnl.opexTotal.total, true);
+  // «Kurs farqi» (0103): the screen's block, between the overheads and the
+  // net it is part of.
+  line(L.fxTotal, pnl.fxTotal.byPeriod, pnl.fxTotal.total, true);
+  const fxLabels = fxLabel(L);
+  for (const row of pnl.fx) line(`— ${fxLabels[row.key as FxPnlKey]}`, row.byPeriod, row.total);
   line(L.netProfit, pnl.netProfit.byPeriod, pnl.netProfit.total, true);
 
   // The screen's own notes, AFTER the net row (U22): the file used to carry
@@ -160,18 +183,20 @@ export async function buildCashFlowXlsx(from: string, to: string, locale?: strin
 
   // The SAME list the cash-flow screen translates — a label the screen knows
   // and the file prints raw is the screen and its download disagreeing.
-  const name = (label: string) =>
-    label === 'clientPayments'
-      ? L.clientPayments
-      : label === 'cargoCosts'
-        ? L.cargoCosts
-        : label === 'partnerIn'
-          ? L.partnerIn
-          : label === 'partnerOut'
-            ? L.partnerOut
-            : label === 'clientRefunds'
-              ? L.clientRefunds
-              : label;
+  const KNOWN: Record<string, string> = {
+    clientPayments: L.clientPayments,
+    cargoCosts: L.cargoCosts,
+    partnerIn: L.partnerIn,
+    partnerOut: L.partnerOut,
+    clientRefunds: L.clientRefunds,
+    // 0103: the kurs farqi that moved a kassa, and kassa money paid for a
+    // cost with no rate of its own.
+    fxGain: L.fxGain,
+    fxLoss: L.fxLoss,
+    cargoUnrated: L.cargoUnrated,
+  };
+  // An overhead row's label is its category's own name.
+  const name = (label: string) => KNOWN[label] ?? label;
   for (const row of flow.rows) {
     sheet.addRow([name(row.label), row.kind === 'in' ? row.amountUsd : -row.amountUsd]);
     if (row.label !== 'cargoCosts') continue;

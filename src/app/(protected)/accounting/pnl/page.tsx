@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { pnlGaps, profitAndLoss, type PnlRow } from '@/modules/wms/accounting/reports';
+import { pnlGaps, profitAndLoss, type FxPnlKey, type PnlRow } from '@/modules/wms/accounting/reports';
 import { resolvePeriod, toUzs, uzsRate } from '@/modules/wms/accounting/period';
 import { perUsd } from '@/modules/wms/costing/fx-display';
 import { PeriodForm } from '../period-form';
@@ -42,8 +42,17 @@ export default async function PnlPage({
     return converted === null ? '' : converted.toLocaleString('en-US');
   };
 
-  const line = (row: PnlRow, label: string, className = '') => (
-    <tr key={row.key} className={`border-b border-line ${className}`}>
+  // The kurs farqi sources (0103) — a literal map, so a new source is a type
+  // error and not a key built at render (#163).
+  const FX_LABEL: Record<FxPnlKey, string> = {
+    'fx:kassa': t('fxKassa'),
+    'fx:settlement': t('fxSettlement'),
+    'fx:adjust': t('fxAdjust'),
+    'fx:closing': t('fxClosing'),
+  };
+
+  const line = (row: PnlRow, label: string, className = '', testId?: string) => (
+    <tr key={row.key} className={`border-b border-line ${className}`} data-testid={testId}>
       <td className="sticky left-0 z-10 bg-inherit p-2">{label}</td>
       {pnl.months.map((month) => (
         <td key={month} className="p-2 text-right font-mono">
@@ -97,6 +106,10 @@ export default async function PnlPage({
               </tr>
               {pnl.opex.map((row) => line(row, `— ${row.label}`, 'text-ink-700'))}
               {line(pnl.opexTotal, t('opex'), 'font-semibold')}
+              {/* «Kurs farqi» (the owner's Q12 A): after the overheads and
+                  before the net, which includes it. */}
+              {line(pnl.fxTotal, t('fxTotal'), 'font-semibold', 'pnl-fx')}
+              {pnl.fx.map((row) => line(row, `— ${FX_LABEL[row.key as FxPnlKey]}`, 'text-ink-700'))}
               <tr
                 className={`border-t-2 border-line-strong font-bold ${
                   pnl.netProfit.total >= 0 ? 'bg-good/15' : 'bg-bad/15'
@@ -121,6 +134,9 @@ export default async function PnlPage({
       <PnlLossesNote losses={losses} />
 
       <p className="text-xs text-ink-500">ℹ️ {t('pnlNote')}</p>
+      <p className="text-xs text-ink-500" data-testid="pnl-fx-note">
+        ℹ️ {t('fxNote')}
+      </p>
       {rate && (
         <p className="text-xs text-ink-400">
           {/* The stored rate is dollars per ONE so'm; the reader quotes so'm per dollar. */}

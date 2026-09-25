@@ -9,7 +9,7 @@ import {
 } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { isUniqueViolation } from '../../platform/db/errors';
-import { partnerBalanceUsd, partnerLedger, raisesBalance, type PartnerTxType } from './service';
+import { partnerBalanceUsd, partnerLedger, partnerSignedSql, raisesBalance, type PartnerTxType } from './service';
 
 /**
  * A staff member's own account with the company (owner A1c/A2a/M1a).
@@ -183,11 +183,9 @@ export async function staffAccountView(userId: string): Promise<StaffAccountView
       db
         .select({
           currency: partnerTransactions.currency,
-          // The balance's own CASE (partners/service.ts `balanceExpr`), on the
-          // native amount: an `adjust` carries its sign in the amount.
-          amount: sql<string>`sum(CASE
-            WHEN ${partnerTransactions.type} IN ('charge', 'receipt', 'adjust') THEN ${partnerTransactions.amount}
-            ELSE -${partnerTransactions.amount} END)`,
+          // The balance's own sign rule (`partnerSignedSql`), on the native
+          // amount: an `adjust` carries its sign in the amount.
+          amount: sql<string>`sum(${partnerSignedSql('amount')})`,
         })
         .from(partnerTransactions)
         .where(

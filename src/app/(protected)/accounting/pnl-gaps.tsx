@@ -8,7 +8,14 @@ import type { PnlGaps } from '@/modules/wms/accounting/reports';
  * there is one nobody reads.
  */
 export async function PnlGapsNote({ gaps }: { gaps: PnlGaps }) {
-  if (gaps.manualCharges.count === 0 && gaps.unconverted.count === 0 && gaps.onNoBox.count === 0) {
+  if (
+    gaps.manualCharges.count === 0 &&
+    gaps.unconverted.count === 0 &&
+    gaps.onNoBox.count === 0 &&
+    gaps.unclassifiedAdjusts.count === 0 &&
+    gaps.kassaUsdMissing.count === 0 &&
+    gaps.transferUsdMissing.count === 0
+  ) {
     return null;
   }
   const t = await getTranslations('accounting');
@@ -54,6 +61,27 @@ export async function PnlGapsNote({ gaps }: { gaps: PnlGaps }) {
           </p>
           <p className="text-xs text-ink-700">{t('gapNoBoxHint')}</p>
         </div>
+      )}
+      {/* The kurs farqi the report could not count (0103) — named, never
+          guessed into the line. */}
+      {gaps.unclassifiedAdjusts.count > 0 && (
+        <p className="font-semibold text-warn" data-testid="pnl-gap-adjusts">
+          ⚠{' '}
+          {t('gapAdjustUnclassified', {
+            count: gaps.unclassifiedAdjusts.count,
+            usd: `$${usd(gaps.unclassifiedAdjusts.usd)}`,
+          })}
+        </p>
+      )}
+      {gaps.kassaUsdMissing.count > 0 && (
+        <p className="font-semibold text-warn" data-testid="pnl-gap-kassa-usd">
+          ⚠ {t('gapKassaUsdMissing', { count: gaps.kassaUsdMissing.count })}
+        </p>
+      )}
+      {gaps.transferUsdMissing.count > 0 && (
+        <p className="font-semibold text-warn" data-testid="pnl-gap-transfer-usd">
+          ⚠ {t('gapTransferUsdMissing', { count: gaps.transferUsdMissing.count })}
+        </p>
       )}
     </div>
   );

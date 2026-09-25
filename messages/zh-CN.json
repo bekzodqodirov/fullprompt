@@ -288,7 +288,12 @@
     "monthPaidParts": "入账户 {till} · 经由公司 {partner} · 已退还 −{refunded}",
     "monthPayments": "本月付款",
     "unbilledAll": "全部 →",
-    "noCargoPart": "其中 {usd}——货物未随车客户的价格"
+    "noCargoPart": "其中 {usd}——货物未随车客户的价格",
+    "sFx": "汇兑差额",
+    "sFxGain": "汇兑收益",
+    "sFxLoss": "汇兑损失",
+    "sCargoUnrated": "货物费用（无汇率）",
+    "pnlFxNote": "费用柱包含汇兑差额（收益减少、损失增加）。"
   },
   "inventory": {
     "title": "盘点",
@@ -548,7 +553,8 @@
       "ai_calc_daily_limit": "每日用于计算的 AI 调用次数（超出后仅用记忆、字典与海关文件）",
       "ai_calc_reply_lenta": "将 AI 的估算同时写入卡片动态",
       "cost_kassa_since": "自此日起录入且未指定账户的费用进入会计待办（YYYY-MM-DD；留空 = 全部）",
-      "unpriced_gate_since": "此时间之后由车辆运抵乌兹别克斯坦且未定价的货物须经许可方可交付（日期或时间；留空 = 关闭禁令）"
+      "unpriced_gate_since": "此时间之后由车辆运抵乌兹别克斯坦且未定价的货物须经许可方可交付（日期或时间；留空 = 关闭禁令）",
+      "fx_residue_auto": "账户按原币归零时，系统是否自动以汇兑差额结清美元余差。“否”——不再新建记录，已有记录继续维护。"
     },
     "driverApp": "司机应用",
     "callsApp": "通话应用",
@@ -1608,7 +1614,7 @@
     "reconCounted": "{date} 盘点：{amount}",
     "reconUnexplained": "未解释差额",
     "reconUnrated": "无汇率的账户未计入美元合计：{sums}",
-    "reconHint": "期初现金 + 现金流 + 以上各行 = 期末现金。各账户以本币列示；美元合计按期初和期末汇率计算，差额列在「汇兑差额」行。",
+    "reconHint": "期初现金 + 现金流量 + 上述各行 = 期末现金。现金柜按原币；美元合计按期初和期末汇率。兑换差额计入现金流量，持有外币重估单列一行。",
     "retiredTill": "已停用",
     "reconCountedInPeriod": "期内盘点的账户",
     "reconNoKassaPayments": "未进入账户的收款",
@@ -1620,7 +1626,7 @@
     "reconOneSidedTransfers": "一端不在已计账户内的转账",
     "reconUnratedTills": "无汇率账户的变动",
     "reconTillUnconverted": "从账户支付的无汇率币种费用（按账户汇率）",
-    "reconFx": "汇兑差额（重估、兑换）",
+    "reconFx": "现金柜外币重估",
     "balUnplacedCostsLine": "未指定账户的货物费用",
     "balSellerCommissions": "应付销售提成",
     "balUnrated": "{sums}——无汇率，未计入资产负债",
@@ -1696,7 +1702,19 @@
     "balRecurringArrears": "已到期未付的固定费用",
     "balRecurringUnrated": "固定费用：{sums}——无汇率，未计入该行",
     "noCargoCol": "其中无货",
-    "noCargoNote": "{count} 辆车的收入中有 {usd} 属于货物未随该车的客户。已计入收入；由会计将其转到正确车次。"
+    "noCargoNote": "{count} 辆车的收入中有 {usd} 属于货物未随该车的客户。已计入收入；由会计将其转到正确车次。",
+    "fxTotal": "汇兑差额",
+    "fxKassa": "汇兑差额（现金柜）",
+    "fxSettlement": "经公司代收结算（三方）",
+    "fxAdjust": "手工录入的汇兑差额",
+    "fxClosing": "账户按原币结清",
+    "fxNote": "汇兑差额——货币兑换、或债务按原币以另一日汇率结清时产生的收益（+）或损失（−），计入净利润。",
+    "fxGain": "汇兑收益",
+    "fxLoss": "汇兑损失",
+    "cargoUnrated": "货物费用——尚无汇率（已从现金柜支出）",
+    "gapAdjustUnclassified": "{count} 笔调整未注明类型（汇兑差额或更正）：{usd}——未计入损益表",
+    "gapKassaUsdMissing": "{count} 笔现金柜支付的费用缺少现金柜币种汇率——未计算汇兑差额",
+    "gapTransferUsdMissing": "{count} 笔现金柜间转账缺少收款币种汇率——未计算汇兑差额"
   },
   "crm": {
     "title": "CRM",

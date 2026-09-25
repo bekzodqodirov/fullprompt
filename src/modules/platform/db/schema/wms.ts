@@ -468,6 +468,15 @@ export const costEntries = pgTable(
     accountId: uuid('account_id').references((): AnyPgColumn => moneyAccounts.id),
     /** What left the kassa, in the KASSA's currency (set iff accountId). */
     accountAmount: numeric('account_amount', { precision: 14, scale: 2 }),
+    /**
+     * What left the kassa, in DOLLARS, and the rate it was taken at (0103,
+     * owner's Q13/Q18): the PAYMENT's own figure, frozen when the kassa is
+     * named and never re-priced. `amountUsd` stays the tannarx at the day's
+     * table rate; the difference is «Kurs farqi (kassa)». NULL while the
+     * kassa's currency has no rate (the nightly sweep fills it once).
+     */
+    accountAmountUsd: numeric('account_amount_usd', { precision: 14, scale: 2 }),
+    accountRateUsed: numeric('account_rate_used', { precision: 24, scale: 12 }),
     /** The duplicate expense this cost replaced in a merge (A3/M4a). */
     mergedExpenseId: uuid('merged_expense_id').references((): AnyPgColumn => expenses.id),
     note: text('note'),
@@ -504,6 +513,10 @@ export const costEntries = pgTable(
     index('cost_entries_account_idx')
       .on(t.accountId)
       .where(sql`${t.accountId} IS NOT NULL`),
+    check(
+      'cost_entries_account_usd_check',
+      sql`(${t.accountAmountUsd} IS NULL) = (${t.accountRateUsed} IS NULL) AND (${t.accountAmountUsd} IS NULL OR ${t.accountId} IS NOT NULL) AND (${t.accountAmountUsd} IS NULL OR (${t.accountAmountUsd} >= 0 AND ${t.accountAmountUsd} <> 'NaN'::numeric)) AND (${t.accountRateUsed} IS NULL OR (${t.accountRateUsed} > 0 AND ${t.accountRateUsed} <> 'NaN'::numeric))`,
+    ),
     index('cost_entries_unplaced_idx')
       .on(t.createdAt)
       .where(sql`${t.voidedAt} IS NULL AND ${t.partnerId} IS NULL AND ${t.accountId} IS NULL`),
@@ -886,7 +899,11 @@ export const clientTransactions = pgTable(
     currency: varchar('currency', { length: 3 })
       .notNull()
       .references(() => currencies.code),
-    /** Frozen at entry time — a later FX edit must not move settled money. */
+    /**
+     * Frozen at entry for a PAYMENT or a REFUND. A CHARGE follows its day's
+     * rate when that rate is typed late or corrected, through the previewed
+     * /admin/fx confirm (0103, owner's Q18: debts may move, payments never).
+     */
     rateToUsd: numeric('rate_to_usd', { precision: 24, scale: 12 }).notNull(),
     amountUsd: numeric('amount_usd', { precision: 14, scale: 2 }).notNull(),
     /** Payments only: cash / card / transfer (owner accepts all three). */
@@ -911,6 +928,12 @@ export const clientTransactions = pgTable(
      * `accountId` is NULL on these by construction: no till opened.
      */
     partnerId: uuid('partner_id').references(() => partners.id),
+    /**
+     * A «kurs farqi» row (0103, Q14): the row where the account's own
+     * currency returned to zero. The system's rows are in that currency; a
+     * cross-currency residue the accountant closes by hand (Q24 b) is in USD.
+     */
+    fxAnchorId: uuid('fx_anchor_id').references((): AnyPgColumn => clientTransactions.id),
     note: text('note'),
     createdBy: uuid('created_by')
       .notNull()
@@ -923,12 +946,27 @@ export const clientTransactions = pgTable(
   (t) => [
     // 'refund' (0101, owner R6a): money handed BACK to a client from a kassa.
     // It raises the balance like a charge and lowers a till like an expense.
-    check('client_transactions_type_check', sql`${t.type} IN ('charge', 'payment', 'refund')`),
+    // 'fx_diff' (0103, Q14): the dollar residue of an account that reached
+    // zero in its own currency — native 0, a signed amount_usd.
+    check('client_transactions_type_check', sql`${t.type} IN ('charge', 'payment', 'refund', 'fx_diff')`),
     check(
       'client_transactions_refund_check',
       sql`${t.type} <> 'refund' OR (${t.accountId} IS NOT NULL AND ${t.partnerId} IS NULL AND ${t.batchId} IS NULL)`,
     ),
-    check('client_transactions_amount_check', sql`${t.amount} > 0`),
+    check(
+      'client_transactions_amount_check',
+      sql`CASE WHEN ${t.type} = 'fx_diff' THEN ${t.amount} = 0 ELSE ${t.amount} > 0 END`,
+    ),
+    check(
+      'client_transactions_fx_check',
+      sql`(${t.type} = 'fx_diff') = (${t.fxAnchorId} IS NOT NULL) AND (${t.type} <> 'fx_diff' OR (${t.accountId} IS NULL AND ${t.partnerId} IS NULL AND ${t.batchId} IS NULL AND ${t.dealId} IS NULL AND ${t.method} IS NULL AND ${t.amountUsd} <> 0 AND ${t.amountUsd} <> 'NaN'::numeric))`,
+    ),
+    uniqueIndex('client_transactions_fx_anchor_uniq')
+      .on(t.fxAnchorId, t.currency)
+      .where(sql`${t.type} = 'fx_diff' AND ${t.voidedAt} IS NULL`),
+    index('client_transactions_fx_anchor_idx')
+      .on(t.fxAnchorId)
+      .where(sql`${t.fxAnchorId} IS NOT NULL`),
     check(
       'client_transactions_method_check',
       sql`${t.method} IS NULL OR ${t.method} IN ('cash', 'card', 'transfer')`,
@@ -1248,6 +1286,12 @@ export const accountTransfers = pgTable(
     amountFrom: numeric('amount_from', { precision: 14, scale: 2 }).notNull(),
     amountTo: numeric('amount_to', { precision: 14, scale: 2 }).notNull(),
     amountUsd: numeric('amount_usd', { precision: 14, scale: 2 }).notNull(),
+    /**
+     * The TO side in dollars, frozen at entry (0103, U11): its difference from
+     * `amountUsd` is the exchange spread. NULL while the to-currency has no
+     * rate — never a refusal; the nightly sweep fills it once.
+     */
+    amountToUsd: numeric('amount_to_usd', { precision: 14, scale: 2 }),
     transferDate: date('transfer_date').notNull(),
     note: text('note'),
     createdBy: uuid('created_by')
@@ -1261,6 +1305,10 @@ export const accountTransfers = pgTable(
   (t) => [
     check('account_transfers_amount_check', sql`${t.amountFrom} > 0 AND ${t.amountTo} > 0`),
     check('account_transfers_distinct_check', sql`${t.fromAccountId} <> ${t.toAccountId}`),
+    check(
+      'account_transfers_amount_to_usd_check',
+      sql`${t.amountToUsd} IS NULL OR (${t.amountToUsd} >= 0 AND ${t.amountToUsd} <> 'NaN'::numeric)`,
+    ),
     index('account_transfers_date_idx').on(t.transferDate),
   ],
 );
@@ -2867,6 +2915,14 @@ export const partnerTransactions = pgTable(
     expenseId: uuid('expense_id').references(() => expenses.id),
     /** The client payment this offset pairs with. */
     clientTxId: uuid('client_tx_id').references(() => clientTransactions.id),
+    /** A «kurs farqi» row (0103, Q14): the row that closed the cycle. */
+    fxAnchorId: uuid('fx_anchor_id').references((): AnyPgColumn => partnerTransactions.id),
+    /**
+     * What a hand-typed `adjust` IS (0103, Q12's split): 'fx' reaches the
+     * P&L's «Kurs farqi», 'correction' (a typo or an opening balance) does
+     * not, NULL = nobody with the right to say has said yet.
+     */
+    adjustKind: text('adjust_kind'),
     note: text('note'),
     createdBy: uuid('created_by')
       .notNull()
@@ -2879,12 +2935,26 @@ export const partnerTransactions = pgTable(
   (t) => [
     check(
       'partner_tx_type_check',
-      sql`${t.type} IN ('charge', 'receipt', 'payment', 'offset', 'adjust')`,
+      sql`${t.type} IN ('charge', 'receipt', 'payment', 'offset', 'adjust', 'fx_diff')`,
     ),
     check(
       'partner_tx_amount_check',
-      sql`CASE WHEN ${t.type} = 'adjust' THEN ${t.amount} <> 0 ELSE ${t.amount} > 0 END`,
+      sql`CASE WHEN ${t.type} = 'adjust' THEN ${t.amount} <> 0 WHEN ${t.type} = 'fx_diff' THEN ${t.amount} = 0 ELSE ${t.amount} > 0 END`,
     ),
+    check(
+      'partner_tx_fx_check',
+      sql`(${t.type} = 'fx_diff') = (${t.fxAnchorId} IS NOT NULL) AND (${t.type} <> 'fx_diff' OR (${t.costEntryId} IS NULL AND ${t.expenseId} IS NULL AND ${t.clientTxId} IS NULL AND ${t.batchId} IS NULL AND ${t.amountUsd} <> 0 AND ${t.amountUsd} <> 'NaN'::numeric))`,
+    ),
+    check(
+      'partner_tx_adjust_kind_check',
+      sql`${t.adjustKind} IS NULL OR (${t.type} = 'adjust' AND ${t.adjustKind} IN ('fx', 'correction'))`,
+    ),
+    uniqueIndex('partner_tx_fx_anchor_uniq')
+      .on(t.fxAnchorId, t.currency)
+      .where(sql`${t.type} = 'fx_diff' AND ${t.voidedAt} IS NULL`),
+    index('partner_tx_fx_anchor_idx')
+      .on(t.fxAnchorId)
+      .where(sql`${t.fxAnchorId} IS NOT NULL`),
     // Money that moved must name its cash box; money that did not must not.
     check(
       'partner_tx_account_check',

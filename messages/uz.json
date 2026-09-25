@@ -288,7 +288,12 @@
     "monthPaidParts": "kassaga {till} · firma orqali {partner} · qaytarildi −{refunded}",
     "monthPayments": "Shu oyda to‘lovlar",
     "unbilledAll": "Hammasi →",
-    "noCargoPart": "shundan {usd} — yuki ketmagan mijozlar narxi"
+    "noCargoPart": "shundan {usd} — yuki ketmagan mijozlar narxi",
+    "sFx": "Kurs farqi",
+    "sFxGain": "Kurs yutug‘i",
+    "sFxLoss": "Kurs yo‘qotishi",
+    "sCargoUnrated": "Yuk xarajati (kursi yo‘q)",
+    "pnlFxNote": "Xarajat ustuniga kurs farqi ham kiradi (yutuq kamaytiradi, yo‘qotish oshiradi)."
   },
   "inventory": {
     "title": "Inventarizatsiya",
@@ -548,7 +553,8 @@
       "ai_calc_daily_limit": "Hisoblash uchun kuniga nechta AI so'rovi (limitdan keyin faqat xotira, lug'at va bojxona fayli ishlaydi)",
       "ai_calc_reply_lenta": "AI ning tahminiy hisobi karta lentasiga ham yozilsinmi",
       "cost_kassa_since": "Shu kundan boshlab kiritilgan, kassasi ko‘rsatilmagan xarajatlar buxgalter navbatiga tushadi (YYYY-MM-DD; bo‘sh = hammasi)",
-      "unpriced_gate_since": "Shu vaqtdan keyin mashinada O‘zbekistonga yetib kelgan, narxi yozilmagan yuk mijozga faqat ruxsat bilan beriladi (sana yoki vaqt; bo‘sh = taqiq o‘chiq)"
+      "unpriced_gate_since": "Shu vaqtdan keyin mashinada O‘zbekistonga yetib kelgan, narxi yozilmagan yuk mijozga faqat ruxsat bilan beriladi (sana yoki vaqt; bo‘sh = taqiq o‘chiq)",
+      "fx_residue_auto": "Hisob o‘z valyutasida 0 ga tushganda dollar qoldig‘ini tizim o‘zi «kurs farqi» bilan yopsinmi. «Yo‘q» — yangi yozuv qo‘shilmaydi, borlari yuritilaveradi."
     },
     "driverApp": "Haydovchi ilovasi",
     "callsApp": "Qo'ng'iroq ilovasi",
@@ -1608,7 +1614,7 @@
     "reconCounted": "{date} kuni sanaldi: {amount}",
     "reconUnexplained": "Tushuntirilmagan farq",
     "reconUnrated": "Kursi yo‘q kassalar dollar jamiga kirmadi: {sums}",
-    "reconHint": "Davr boshidagi pul + pul oqimi + yuqoridagi qatorlar = davr oxiridagi pul. Kassalar o‘z valyutasida; dollar jami davr boshi va oxiri kursi bo‘yicha, farqi «Kurs farqi» qatorida.",
+    "reconHint": "Davr boshidagi pul + pul oqimi + yuqoridagi qatorlar = davr oxiridagi pul. Kassalar o‘z valyutasida; dollar jami davr boshi va oxiri kursi bo‘yicha. Almashuv farqi pul oqimida, kassadagi valyutaning qayta baholanishi alohida qatorda.",
     "retiredTill": "faol emas",
     "reconCountedInPeriod": "Kassa davr ichida sanaldi",
     "reconNoKassaPayments": "Kassaga tushmagan to‘lovlar",
@@ -1620,7 +1626,7 @@
     "reconOneSidedTransfers": "Bir uchi sanoqdan tashqaridagi ko‘chirishlar",
     "reconUnratedTills": "Kursi yo‘q kassalar harakati",
     "reconTillUnconverted": "Kassadan kursi yo‘q valyutadagi xarajatlarga (kassa kursida)",
-    "reconFx": "Kurs farqi (qayta baholash, ayirboshlash)",
+    "reconFx": "Kassadagi valyutaning qayta baholanishi",
     "balUnplacedCostsLine": "Kassasi ko‘rsatilmagan yuk xarajatlari",
     "balSellerCommissions": "Sotuvchilarga to‘lanadigan ulush",
     "balUnrated": "{sums} — kursi yo‘q, Balansga kirmadi",
@@ -1696,7 +1702,19 @@
     "balRecurringArrears": "Kuni o‘tgan, to‘lanmagan doimiy xarajatlar",
     "balRecurringUnrated": "Doimiy xarajatlar: {sums} — kursi yo‘q, qatorga kirmadi",
     "noCargoCol": "shundan yuki ketmagan",
-    "noCargoNote": "{count} ta mashina tushumida {usd} narx yuki o‘sha mashinada ketmagan mijozlarga yozilgan. Tushumga kirgan; buxgalter uni yuk ketgan mashinaga ko‘chiradi."
+    "noCargoNote": "{count} ta mashina tushumida {usd} narx yuki o‘sha mashinada ketmagan mijozlarga yozilgan. Tushumga kirgan; buxgalter uni yuk ketgan mashinaga ko‘chiradi.",
+    "fxTotal": "Kurs farqi",
+    "fxKassa": "Kurs farqi (kassa)",
+    "fxSettlement": "Firma orqali to‘lov (uch tomonlama)",
+    "fxAdjust": "Qo‘lda yozilgan kurs farqi",
+    "fxClosing": "Hisob o‘z valyutasida yopilganda",
+    "fxNote": "Kurs farqi — valyuta almashganda yoki qarz o‘z valyutasida boshqa kunning kursida yopilganda yutilgan (+) yoki yo‘qotilgan (−) pul. Sof foydaga qo‘shiladi.",
+    "fxGain": "Valyuta almashuvidan yutuq",
+    "fxLoss": "Valyuta almashuvidagi yo‘qotish",
+    "cargoUnrated": "Yuk xarajatlari — kursi hali yo‘q (kassadan chiqqan)",
+    "gapAdjustUnclassified": "{count} ta tuzatishning turi aytilmagan (kurs farqimi yoki xato tuzatishmi): {usd} — P&L ga qo‘shilmadi",
+    "gapKassaUsdMissing": "{count} ta kassadan to‘langan xarajatning kassa valyutasida kursi yo‘q — kurs farqi hisoblanmadi",
+    "gapTransferUsdMissing": "{count} ta kassalararo o‘tkazmaning qabul qilgan kassa valyutasida kursi yo‘q — kurs farqi hisoblanmadi"
   },
   "crm": {
     "title": "CRM",

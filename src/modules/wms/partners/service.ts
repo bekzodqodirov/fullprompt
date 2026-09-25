@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../../platform/db/client';
 import {
@@ -42,11 +42,43 @@ export class PartnerError extends Error {
   }
 }
 
-/** Rows that RAISE what we owe. The rest lower it (`adjust` does either). */
+/** Rows that RAISE what we owe. The rest lower it (`adjust` and `fx_diff` do either). */
 const RAISING = ['charge', 'receipt'] as const;
 
-export const PARTNER_TX_TYPES = ['charge', 'receipt', 'payment', 'offset', 'adjust'] as const;
+/**
+ * Every kind a partner row may STORE. `fx_diff` (0103, the owner's Q14 A) is
+ * the system's own «kurs farqi»: native 0, a signed dollar figure that closes
+ * the residue of an account back at zero in its own currency. Nobody types it.
+ */
+export const PARTNER_TX_TYPES = ['charge', 'receipt', 'payment', 'offset', 'adjust', 'fx_diff'] as const;
 export type PartnerTxType = (typeof PARTNER_TX_TYPES)[number];
+/** The kinds a row may be POSTED as through any form (never `fx_diff`). */
+const POSTED_TX_TYPES = ['charge', 'receipt', 'payment', 'offset', 'adjust'] as const satisfies readonly PartnerTxType[];
+
+/**
+ * The partner ledger's one sign rule, in SQL (0103 — it was restated inline in
+ * four readers): + raises what WE owe, − lowers it; `adjust` and `fx_diff`
+ * carry their sign in the amount. `column` names the native amount or the
+ * dollars; `alias` the table alias of a raw correlated subquery (#128),
+ * omitted for the drizzle table itself.
+ */
+export function partnerSignedSql(column: 'amount_usd' | 'amount', alias?: string): SQL {
+  const col = (name: string) =>
+    alias ? sql.raw(`${alias}.${name}`) : sql`${partnerTransactions}.${sql.raw(name)}`;
+  return sql`(CASE WHEN ${col('type')} IN ('charge', 'receipt', 'adjust', 'fx_diff') THEN ${col(column)} ELSE -${col(column)} END)`;
+}
+
+/**
+ * Which way each kind moves the account's OWN currency — the walk that finds
+ * where a currency returns to zero (Q14). `fx_diff` never walks (native 0).
+ */
+export const PARTNER_NATIVE_SIGN: Record<Exclude<PartnerTxType, 'fx_diff'>, 1 | -1 | 'signed'> = {
+  charge: 1,
+  receipt: 1,
+  payment: -1,
+  offset: -1,
+  adjust: 'signed',
+};
 
 /**
  * The kinds a person may write by hand on a partner's card (audit A31,
@@ -75,7 +107,7 @@ export const CASH_TYPES: PartnerTxType[] = ['receipt', 'payment'];
  * above them. Exported so the screen and the sum cannot drift again.
  */
 export function raisesBalance(type: string, amountUsd: number): boolean {
-  if (type === 'adjust') return amountUsd > 0;
+  if (type === 'adjust' || type === 'fx_diff') return amountUsd > 0;
   return (RAISING as readonly string[]).includes(type);
 }
 
@@ -233,7 +265,7 @@ export async function setPartnerActive(id: string, active: boolean, ctx: AuditCo
 export const partnerTxSchema = z
   .object({
     partnerId: z.string().uuid(),
-    type: z.enum(PARTNER_TX_TYPES),
+    type: z.enum(POSTED_TX_TYPES),
     // Signed (an `adjust` may be negative) and bounded BOTH ways by the
     // column (U44): −5e13 used to reach postgres as 22003, an error page.
     amount: signedNativeAmount(),
@@ -472,12 +504,29 @@ export async function partnerBalanceUsd(partnerId: string): Promise<number> {
 }
 
 function balanceExpr() {
-  return sql<string>`coalesce(sum(
-    CASE
-      WHEN ${partnerTransactions.type} IN ('charge', 'receipt') THEN ${partnerTransactions.amountUsd}
-      WHEN ${partnerTransactions.type} = 'adjust' THEN ${partnerTransactions.amountUsd}
-      ELSE -${partnerTransactions.amountUsd}
-    END), 0)`;
+  return sql<string>`coalesce(sum(${partnerSignedSql('amount_usd')}), 0)`;
+}
+
+/**
+ * One account's balance per currency, native AND in dollars — the card's
+ * «O'z valyutasida» line (0103): a firm paid ¥20,000 for ¥20,000 of trucks
+ * reads «0 CNY» there even while a dollar residue waits to be closed.
+ */
+export async function partnerNativeBalances(
+  partnerId: string,
+): Promise<{ currency: string; native: number; usd: number }[]> {
+  const rows = await db
+    .select({
+      currency: partnerTransactions.currency,
+      native: sql<string>`coalesce(sum(${partnerSignedSql('amount')}), 0)`,
+      usd: sql<string>`coalesce(sum(${partnerSignedSql('amount_usd')}), 0)`,
+    })
+    .from(partnerTransactions)
+    .where(and(eq(partnerTransactions.partnerId, partnerId), isNull(partnerTransactions.voidedAt)))
+    .groupBy(partnerTransactions.currency)
+    .orderBy(partnerTransactions.currency);
+  const cents = (value: unknown) => Math.round(Number(value ?? 0) * 100) / 100;
+  return rows.map((row) => ({ currency: row.currency, native: cents(row.native), usd: cents(row.usd) }));
 }
 
 export interface PartnerRow {
@@ -533,9 +582,7 @@ export async function listPartners(opts: {
       staff: sql<boolean>`${staffPartnerSql()}`,
       active: partners.active,
       balance: sql<string>`coalesce((
-        SELECT sum(CASE
-          WHEN pt.type IN ('charge', 'receipt', 'adjust') THEN pt.amount_usd
-          ELSE -pt.amount_usd END)
+        SELECT sum(${partnerSignedSql('amount_usd', 'pt')})
         FROM partner_transactions pt
         WHERE pt.partner_id = ${partners}.id AND pt.voided_at IS NULL), 0)`,
     })

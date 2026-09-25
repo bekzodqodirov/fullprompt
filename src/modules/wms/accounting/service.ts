@@ -24,7 +24,10 @@ import {
   cashCostSql,
   cashExpenseSql,
   costCashDay,
+  costKassaNoUsd,
+  costKassaUsd,
   mergedFrom,
+  transferInUsd,
 } from './cash-rules';
 import { latestTxDate } from '../finance/dates';
 import { exceedsRowUsd, nativeAmount, signedNativeAmount } from '../finance/money-bounds';
@@ -868,6 +871,14 @@ export async function addTransfer(input: z.infer<typeof transferSchema>, ctx: Au
   if (rate === null) throw new AccountingError('fx_missing');
   const amountUsd = Math.round(input.amountFrom * rate * 100) / 100;
   if (exceedsRowUsd(amountUsd)) throw new AccountingError('amount_too_large');
+  // The TO side in dollars (0103, U11): its difference from `amountUsd` is the
+  // exchange spread the P&L and the cash flow now count. Same currency = the
+  // same figure (no exchange happened). A to-currency with no rate is NEVER a
+  // refusal — an unrated till must still receive money (U14); the NULL is
+  // named beside the P&L and the nightly sweep fills it once.
+  const toRate = to.currency === from.currency ? rate : await rateFor(to.currency, input.transferDate);
+  const amountToUsd =
+    to.currency === from.currency ? amountUsd : toRate === null ? null : Math.round(input.amountTo * toRate * 100) / 100;
 
   const [row] = await db
     .insert(accountTransfers)
@@ -877,6 +888,7 @@ export async function addTransfer(input: z.infer<typeof transferSchema>, ctx: Au
       amountFrom: String(input.amountFrom),
       amountTo: String(input.amountTo),
       amountUsd: String(amountUsd),
+      amountToUsd: amountToUsd === null ? null : String(amountToUsd),
       transferDate: input.transferDate,
       note: input.note || null,
       createdBy: ctx.actorId,
@@ -991,10 +1003,12 @@ function kassaLedger(pick: LedgerPick): Promise<Ledger<LedgerRow>> {
     db
       .select({
         id: accountTransfers.toAccountId,
+        // The TO kassa's dollars are the to-side's own (0103), so a
+        // cross-currency transfer's spread shows where it happened.
         ...pick(
           accountTransfers.amountTo,
           accountTransfers.transferDate,
-          usd(accountTransfers.amountUsd),
+          transferInUsd,
           sql`false`,
           noUsd(accountTransfers.amountUsd),
         ),
@@ -1049,7 +1063,10 @@ function kassaLedger(pick: LedgerPick): Promise<Ledger<LedgerRow>> {
     db
       .select({
         id: costEntries.accountId,
-        ...pick(costEntries.accountAmount, costCashDay, usd(costEntries.amountUsd), cashCostSql(), noUsd(costEntries.amountUsd)),
+        // The kassa's dollars are what LEFT it (0103, `account_amount_usd`),
+        // else the tannarx — the cash flow counts the same through its
+        // cargo, exchange and unrated rows (cash-rules.ts).
+        ...pick(costEntries.accountAmount, costCashDay, costKassaUsd, cashCostSql(), costKassaNoUsd),
       })
       .from(costEntries)
       .innerJoin(moneyAccounts, eq(moneyAccounts.id, costEntries.accountId))

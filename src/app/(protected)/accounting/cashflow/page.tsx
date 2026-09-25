@@ -33,9 +33,20 @@ export default async function CashFlowPage({
   const signed = (value: number) => `${value < 0 ? '−' : '+'}${usd(Math.abs(value))}`;
   const native = (value: number) => value.toLocaleString('en-US', { maximumFractionDigits: 2 });
   // Known keys are translated; an expense CATEGORY name comes through as its
-  // own text, because the owner named it and it needs no second name.
-  const KNOWN = ['clientPayments', 'cargoCosts', 'partnerIn', 'partnerOut', 'clientRefunds'];
-  const label = (key: string) => (KNOWN.includes(key) ? t(key as 'clientPayments') : key);
+  // own text, because the owner named it and it needs no second name. A
+  // LITERAL map (0103): a key built at runtime is one the bundle tripwire
+  // cannot see (#163), and the kurs farqi rows joined the list.
+  const KNOWN: Record<string, string> = {
+    clientPayments: t('clientPayments'),
+    cargoCosts: t('cargoCosts'),
+    partnerIn: t('partnerIn'),
+    partnerOut: t('partnerOut'),
+    clientRefunds: t('clientRefunds'),
+    fxGain: t('fxGain'),
+    fxLoss: t('fxLoss'),
+    cargoUnrated: t('cargoUnrated'),
+  };
+  const label = (key: string) => KNOWN[key] ?? key;
   // A literal map, never a key built at runtime: a missing key throws at
   // render, and only literal keys are fenced by the bundle tripwire (#163).
   const LINE_LABEL: Record<ReconLineKey, string> = {

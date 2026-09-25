@@ -22,6 +22,12 @@ export interface RecomputeCostsPayload {
    * pressing anything again.
    */
   lotId?: string;
+  /**
+   * Costs a confirmed /admin/fx re-price moved (0103, Q18): their dollars
+   * changed, so their per-box shares follow — the re-price itself never
+   * splits (it runs under other people's locks).
+   */
+  costEntryIds?: string[];
 }
 
 /**
@@ -49,10 +55,15 @@ export async function registerCostRecomputeWorker(boss: PgBoss): Promise<void> {
     orphaned: true,
   });
   await boss.work<RecomputeCostsPayload>(JOB_RECOMPUTE_COSTS, async (jobs) => {
-    const { recomputeAll, recomputeEntry, recomputeForLot } = await import('../../wms/costing/service');
+    const { fillKassaUsd, recomputeAll, recomputeEach, recomputeEntry, recomputeForLot } = await import(
+      '../../wms/costing/service'
+    );
     for (const job of jobs) {
       const p = job.data ?? {};
-      if (p.costEntryId) {
+      if (p.costEntryIds?.length) {
+        await recomputeEach(p.costEntryIds);
+        logger.info({ n: p.costEntryIds.length }, 'cost allocations re-split after an FX re-price');
+      } else if (p.costEntryId) {
         await recomputeEntry(p.costEntryId);
       } else if (p.lotId) {
         const n = await recomputeForLot(p.lotId);
@@ -60,6 +71,12 @@ export async function registerCostRecomputeWorker(boss: PgBoss): Promise<void> {
       } else {
         const n = await recomputeAll(p);
         logger.info({ ...p, n }, 'cost allocations recomputed');
+        // The payment dollars a rateless kassa could not write at the time
+        // (0103): converted once, the night (or the FX save) its rate arrives.
+        if (p.unconverted) {
+          const filled = await fillKassaUsd();
+          if (filled.costs || filled.transfers) logger.info(filled, 'kassa dollars filled');
+        }
       }
     }
   });

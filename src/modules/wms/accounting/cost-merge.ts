@@ -92,6 +92,27 @@ export function apportion(costs: MergeCost[], expense: MergeExpense): number[] {
   return out;
 }
 
+/**
+ * The same shares in DOLLARS (0103, the owner's Q13/Q18): the expense's own
+ * frozen dollars ARE the payment, so the costs' kassa dollars add up to them
+ * to the cent — the last share takes the remainder, clamped at zero for the
+ * absurd case where rounding the others overshot a one-cent expense.
+ */
+export function apportionUsd(shares: number[], expense: { amount: number; amountUsd: number }): number[] {
+  const out: number[] = [];
+  let left = cents(expense.amountUsd);
+  shares.forEach((share, index) => {
+    if (index === shares.length - 1) {
+      out.push(Math.max(0, cents(left)));
+      return;
+    }
+    const usd = expense.amount > 0 ? Math.max(0, cents((expense.amountUsd * share) / expense.amount)) : 0;
+    out.push(usd);
+    left -= usd;
+  });
+  return out;
+}
+
 /** The expense fences, as SQL over `expenses` (shared by the list and the claim). */
 function mergeableExpenseSql() {
   return and(
@@ -193,8 +214,12 @@ export async function mergeDuplicate(input: { costIds: string[]; expenseId: stri
     });
 
     const shares = expense.accountId ? apportion(costs, money) : costs.map(() => null);
+    // The payment's dollars (0103): the expense's own, split like the native
+    // shares. Read from the LOCKED expense row only — nothing on the pool (#714).
+    const usdShares = expense.accountId ? apportionUsd(shares as number[], money) : costs.map(() => null);
     for (const [index, cost] of costs.entries()) {
       const share = shares[index] ?? null;
+      const usdShare = usdShares[index] ?? null;
       await tx
         .update(costEntries)
         .set({
@@ -204,6 +229,8 @@ export async function mergeDuplicate(input: { costIds: string[]; expenseId: stri
           // be named; an older one is history (`unplacedCostSql`, U02).
           accountId: expense.accountId,
           accountAmount: expense.accountId && share !== null ? String(share) : null,
+          accountAmountUsd: expense.accountId && usdShare !== null ? String(usdShare) : null,
+          accountRateUsed: expense.accountId && usdShare !== null ? expense.rateToUsd : null,
           mergedExpenseId: expense.id,
           updatedAt: new Date(),
         })

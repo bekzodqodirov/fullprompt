@@ -183,6 +183,17 @@ export const SETTING_DEFAULTS = {
    * (`finance/unpriced.ts` `parseGateSince`).
    */
   unpriced_gate_since: '',
+  /**
+   * Whether the system closes a dollar residue BY ITSELF when a client's,
+   * firm's or staff account reaches zero in its own currency (0103, the
+   * owner's Q14 A). The kill-switch: «no» writes no NEW «kurs farqi» row, but
+   * the rows already written go on being maintained — a stale one would
+   * corrupt a balance the handover gate reads. Its partner twin
+   * `fx_residue_since` is written by the migration and is deliberately NOT
+   * here: no screen may move it (moving it back would post every hand-closed
+   * residue a second time).
+   */
+  fx_residue_auto: true,
   label_size: '100x100',
   translation_provider: 'libretranslate',
   default_locale: 'ru' as 'ru' | 'uz' | 'zh-CN' | 'en',

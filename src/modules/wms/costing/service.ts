@@ -1,7 +1,9 @@
 import { and, asc, desc, eq, inArray, isNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
 import { db, type Db, type Tx } from '../../platform/db/client';
 import {
+  accountTransfers,
   batches,
   boxes,
   boxMovements,
@@ -175,6 +177,25 @@ export function tillAmountFor(
   return typed;
 }
 
+/**
+ * The kassa side of a cost, in DOLLARS, for a kassa of ANOTHER currency than
+ * the cost (0103, the owner's Q13/Q18). A USD kassa: the native amount at rate
+ * 1. Otherwise the kassa currency's rate of the cost's day — read on the pool
+ * by the caller, never inside a transaction (#714) — or null while that
+ * currency has no rate at all (the nightly sweep fills it once). The SAME
+ * currency is written in SQL from the row itself (`setCostAccount`), because
+ * then the payment and the tannarx are one figure.
+ */
+export function tillUsd(
+  tillCurrency: string,
+  accountAmount: number,
+  tillRate: number | null,
+): { usd: number; rate: number } | null {
+  if (tillCurrency === 'USD') return { usd: toUsd(accountAmount, 1), rate: 1 };
+  if (tillRate === null || !(tillRate > 0)) return null;
+  return { usd: toUsd(accountAmount, tillRate), rate: tillRate };
+}
+
 export async function addCostEntry(input: z.infer<typeof costEntrySchema>, ctx: AuditContext) {
   if (!ctx.actorId) throw new CostError('unauthenticated');
   if (input.scope === 'receipt' && !input.receiptId) throw new CostError('validation');
@@ -206,10 +227,24 @@ export async function addCostEntry(input: z.infer<typeof costEntrySchema>, ctx: 
   // nobody has said yet, which is the accountant's queue (the DB's
   // cost_entries_payer_check says the same).
   if (input.partnerId && input.accountId) throw new CostError('payer_conflict');
+  // Converted AT INSERT (0103): the rate is already in hand, and a kassa-paid
+  // cost's payment dollars are written in the same statement as its tannarx,
+  // so the two can never be read apart. `recomputeEntry` then finds the row
+  // frozen and only splits it.
+  const amountUsd = entryRate === null ? null : toUsd(input.amount, entryRate);
   let accountAmount: number | null = null;
+  let kassaUsd: { usd: number; rate: number } | null = null;
   if (input.accountId) {
     const till = await assertTill(input.accountId);
     accountAmount = tillAmountFor(input, till.currency, input.accountAmount);
+    // The payment's dollars (Q18: what left the kassa keeps its day's figure).
+    // Same currency = the tannarx itself; another = the kassa currency's rate.
+    kassaUsd =
+      till.currency === input.currency
+        ? amountUsd === null
+          ? null
+          : { usd: amountUsd, rate: entryRate! }
+        : tillUsd(till.currency, accountAmount, await rateFor(till.currency, input.costDate));
   }
 
   const [entry] = await db
@@ -229,6 +264,10 @@ export async function addCostEntry(input: z.infer<typeof costEntrySchema>, ctx: 
       partnerId: input.partnerId || null,
       accountId: input.accountId || null,
       accountAmount: accountAmount === null ? null : String(accountAmount),
+      accountAmountUsd: kassaUsd === null ? null : String(kassaUsd.usd),
+      accountRateUsed: kassaUsd === null ? null : String(kassaUsd.rate),
+      amountUsd: amountUsd === null ? null : String(amountUsd),
+      fxRateUsed: amountUsd === null ? null : String(entryRate),
       note: input.note || null,
       enteredBy: ctx.actorId,
     })
@@ -364,6 +403,8 @@ export async function setCostAccount(
   if (entry.voidedAt) throw new CostError('already_voided');
   if (entry.partnerId) throw new CostError('payer_conflict');
   let accountAmount: number | null = null;
+  let sameCurrency = false;
+  let kassaUsd: { usd: number; rate: number } | null = null;
   if (accountId) {
     const till = await assertTill(accountId);
     accountAmount = tillAmountFor(
@@ -371,12 +412,35 @@ export async function setCostAccount(
       till.currency,
       typedAmount,
     );
+    sameCurrency = till.currency === entry.currency;
+    // Another currency: the kassa currency's rate of the cost's day, read
+    // here on the pool (#714) — it does not depend on the row.
+    if (!sameCurrency) kassaUsd = tillUsd(till.currency, accountAmount, await rateFor(till.currency, entry.costDate));
   }
   const [row] = await db
     .update(costEntries)
     .set({
       accountId,
       accountAmount: accountAmount === null ? null : String(accountAmount),
+      // The payment's dollars (0103, Q18). Same currency: taken from the ROW
+      // at UPDATE time, never from the pre-read — a corrected rate that
+      // commits between the read and this statement must not leave the kassa
+      // side a stale figure (a phantom «kurs farqi» for money that moved at
+      // one rate). Both halves NULL together (the pair CHECK).
+      accountAmountUsd: !accountId
+        ? null
+        : sameCurrency
+          ? sql`CASE WHEN ${costEntries.fxRateUsed} IS NULL THEN NULL ELSE ${costEntries.amountUsd} END`
+          : kassaUsd === null
+            ? null
+            : String(kassaUsd.usd),
+      accountRateUsed: !accountId
+        ? null
+        : sameCurrency
+          ? sql`CASE WHEN ${costEntries.amountUsd} IS NULL THEN NULL ELSE ${costEntries.fxRateUsed} END`
+          : kassaUsd === null
+            ? null
+            : String(kassaUsd.rate),
       updatedAt: new Date(),
     })
     .where(and(eq(costEntries.id, costId), isNull(costEntries.voidedAt), isNull(costEntries.partnerId)))
@@ -929,6 +993,101 @@ export async function recomputeAll(filter?: {
     );
   await recomputeEach(rows.map((r) => r.id));
   return rows.length;
+}
+
+/**
+ * The payment dollars nobody could write at the time (0103): a kassa-paid cost
+ * or a transfer whose KASSA's currency had no rate yet. Converted ONCE, the
+ * day the rate arrives, and never re-priced — the WHERE demands the column is
+ * still empty, so a second rate row changes nothing (Q18: a payment keeps the
+ * dollars of the day it was converted). The filter is the kassa's currency,
+ * so a USD cost paid out of a rateless so'm kassa is repaired the day the
+ * so'm rate arrives. Rates are read on the POOL row by row — never inside a
+ * transaction (#714) — and every write is its own claim.
+ */
+export async function fillKassaUsd(): Promise<{ costs: number; transfers: number }> {
+  // The same currency as the cost: the tannarx IS the payment's figure.
+  const same = await db.execute(sql`
+    UPDATE cost_entries ce
+       SET account_amount_usd = ce.amount_usd, account_rate_used = ce.fx_rate_used
+      FROM money_accounts ma
+     WHERE ma.id = ce.account_id AND ma.currency = ce.currency
+       AND ce.merged_expense_id IS NULL AND ce.voided_at IS NULL
+       AND ce.account_amount_usd IS NULL
+       AND ce.amount_usd IS NOT NULL AND ce.fx_rate_used IS NOT NULL
+    RETURNING ce.id`);
+  let costs = [...same].length;
+  const cross = await db
+    .select({
+      id: costEntries.id,
+      accountId: costEntries.accountId,
+      accountAmount: costEntries.accountAmount,
+      costDate: costEntries.costDate,
+      tillCurrency: moneyAccounts.currency,
+    })
+    .from(costEntries)
+    .innerJoin(moneyAccounts, eq(moneyAccounts.id, costEntries.accountId))
+    .where(
+      and(
+        isNull(costEntries.accountAmountUsd),
+        isNull(costEntries.voidedAt),
+        isNull(costEntries.mergedExpenseId),
+        sql`${moneyAccounts.currency} <> ${costEntries.currency}`,
+      ),
+    )
+    .limit(2000);
+  for (const row of cross) {
+    if (!row.accountId || row.accountAmount === null) continue;
+    const kassa = tillUsd(row.tillCurrency, Number(row.accountAmount), await rateFor(row.tillCurrency, row.costDate));
+    if (!kassa) continue;
+    const done = await db
+      .update(costEntries)
+      .set({ accountAmountUsd: String(kassa.usd), accountRateUsed: String(kassa.rate) })
+      .where(
+        and(
+          eq(costEntries.id, row.id),
+          isNull(costEntries.accountAmountUsd),
+          // Still the kassa the rate was read for: a re-placed cost is the
+          // next night's work, never a figure in the wrong currency.
+          eq(costEntries.accountId, row.accountId),
+        ),
+      )
+      .returning({ id: costEntries.id });
+    costs += done.length;
+  }
+  const toAccount = alias(moneyAccounts, 'fill_to');
+  const fromAccount = alias(moneyAccounts, 'fill_from');
+  const pending = await db
+    .select({
+      id: accountTransfers.id,
+      amountTo: accountTransfers.amountTo,
+      amountUsd: accountTransfers.amountUsd,
+      transferDate: accountTransfers.transferDate,
+      toCurrency: toAccount.currency,
+      fromCurrency: fromAccount.currency,
+    })
+    .from(accountTransfers)
+    .innerJoin(toAccount, eq(toAccount.id, accountTransfers.toAccountId))
+    .innerJoin(fromAccount, eq(fromAccount.id, accountTransfers.fromAccountId))
+    .where(and(isNull(accountTransfers.amountToUsd), isNull(accountTransfers.voidedAt)))
+    .limit(2000);
+  let transfers = 0;
+  for (const row of pending) {
+    let usd: number | null;
+    if (row.toCurrency === row.fromCurrency) usd = Number(row.amountUsd);
+    else {
+      const rate = await rateFor(row.toCurrency, row.transferDate);
+      usd = rate === null ? null : toUsd(Number(row.amountTo), rate);
+    }
+    if (usd === null) continue;
+    const done = await db
+      .update(accountTransfers)
+      .set({ amountToUsd: String(usd) })
+      .where(and(eq(accountTransfers.id, row.id), isNull(accountTransfers.amountToUsd)))
+      .returning({ id: accountTransfers.id });
+    transfers += done.length;
+  }
+  return { costs, transfers };
 }
 
 /**

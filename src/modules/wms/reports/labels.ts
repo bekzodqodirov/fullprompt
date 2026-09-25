@@ -347,11 +347,71 @@ const DICT = {
     'zh-CN': '从账户支付的无汇率币种费用（按账户汇率）',
     en: 'Paid from a cash box for costs in a currency with no rate (at the box’s rate)',
   },
+  // 0103: the reconciliation's remainder holds REVALUATION only now — the
+  // realised exchange difference moved into the cash flow and the P&L.
   reconFx: {
-    ru: 'Курсовая разница (переоценка, обмен)',
-    uz: 'Kurs farqi (qayta baholash, ayirboshlash)',
-    'zh-CN': '汇兑差额（重估、兑换）',
-    en: 'Exchange difference (revaluation, conversions)',
+    ru: 'Переоценка валюты в кассах',
+    uz: 'Kassadagi valyutaning qayta baholanishi',
+    'zh-CN': '现金柜外币重估',
+    en: 'Revaluation of currency held in tills',
+  },
+  // «Kurs farqi» (0103, the owner's Q12 A / Q13 A) — the P&L block and the
+  // cash flow's exchange rows.
+  fxTotal: { ru: 'Курсовая разница', uz: 'Kurs farqi', 'zh-CN': '汇兑差额', en: 'Exchange difference' },
+  fxKassa: {
+    ru: 'Курсовая разница (касса)',
+    uz: 'Kurs farqi (kassa)',
+    'zh-CN': '汇兑差额（现金柜）',
+    en: 'Exchange difference (tills)',
+  },
+  fxSettlement: {
+    ru: 'Оплата через фирму (трёхсторонний зачёт)',
+    uz: 'Firma orqali to‘lov (uch tomonlama)',
+    'zh-CN': '经公司代收结算（三方）',
+    en: 'Paid through a firm (three-way settlement)',
+  },
+  fxAdjust: {
+    ru: 'Курсовая разница, внесённая вручную',
+    uz: 'Qo‘lda yozilgan kurs farqi',
+    'zh-CN': '手工录入的汇兑差额',
+    en: 'Exchange difference entered by hand',
+  },
+  fxClosing: {
+    ru: 'При закрытии счёта в его валюте',
+    uz: 'Hisob o‘z valyutasida yopilganda',
+    'zh-CN': '账户按原币结清',
+    en: 'Account settled in its own currency',
+  },
+  fxGain: { ru: 'Выигрыш на обмене валют', uz: 'Valyuta almashuvidan yutuq', 'zh-CN': '汇兑收益', en: 'Exchange gain' },
+  fxLoss: {
+    ru: 'Потеря на обмене валют',
+    uz: 'Valyuta almashuvidagi yo‘qotish',
+    'zh-CN': '汇兑损失',
+    en: 'Exchange loss',
+  },
+  cargoUnrated: {
+    ru: 'Расходы на груз — курса ещё нет (ушло из кассы)',
+    uz: 'Yuk xarajatlari — kursi hali yo‘q (kassadan chiqqan)',
+    'zh-CN': '货物费用——尚无汇率（已从现金柜支出）',
+    en: 'Cargo costs — no rate yet (paid from a till)',
+  },
+  gapAdjustUnclassified: {
+    ru: 'Корректировки фирм без указанного вида (в P&L не включены)',
+    uz: 'Turi aytilmagan firma tuzatishlari (P&L ga qo‘shilmadi)',
+    'zh-CN': '未注明类型的公司调整（未计入损益表）',
+    en: 'Firm adjustments with no kind (not in the P&L)',
+  },
+  gapKassaUsdMissing: {
+    ru: 'Расходы из кассы без курса её валюты (курсовая разница не посчитана)',
+    uz: 'Kassa valyutasida kursi yo‘q xarajatlar (kurs farqi hisoblanmadi)',
+    'zh-CN': '现金柜币种无汇率的费用（未计算汇兑差额）',
+    en: 'Till-paid costs with no rate for the till’s currency (exchange difference not counted)',
+  },
+  gapTransferUsdMissing: {
+    ru: 'Переводы без курса валюты кассы-получателя (курсовая разница не посчитана)',
+    uz: 'Qabul qilgan kassa valyutasida kursi yo‘q o‘tkazmalar (kurs farqi hisoblanmadi)',
+    'zh-CN': '收款现金柜币种无汇率的转账（未计算汇兑差额）',
+    en: 'Transfers with no rate for the receiving till’s currency (exchange difference not counted)',
   },
 
   // Sheet titles

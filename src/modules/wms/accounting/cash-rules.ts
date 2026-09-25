@@ -1,6 +1,6 @@
 import { and, isNull, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
-import { clientTransactions, costEntries, expenses } from '../../platform/db/schema';
+import { accountTransfers, clientTransactions, costEntries, expenses } from '../../platform/db/schema';
 
 /**
  * What the cash flow counts, said ONCE for the three readers that must agree
@@ -60,3 +60,49 @@ export function cashExpenseSql(): SQL {
     sql`EXISTS (SELECT 1 FROM expense_categories cat WHERE cat.id = ${expenses}.category_id AND cat.cash)`,
   )!;
 }
+
+// ---------------------------------------------------------------------------
+// Kurs farqi (0103, the owner's Q12 A / Q13 A). A kassa-paid cost carries two
+// dollar figures: `amount_usd`, the tannarx at the day's table rate, and
+// `account_amount_usd`, what LEFT the kassa (the payment, frozen). The P&L
+// keeps the tannarx in its cost rows and puts the difference on «Kurs farqi
+// (kassa)»; the cash flow keeps the tannarx on its cargo row and adds the
+// same difference as an exchange gain or loss — so a kassa's real dollars are
+//   cargo `amount_usd` − `costKassaFxUsd` + `costKassaUnratedUsd` = `costKassaUsd`
+// for every kassa-paid row, in every null-state (the fx-kassa integration
+// tests walk all four). Built from the table, `${costEntries}.col`, so a
+// correlated subquery binds to the outer row (#128).
+// ---------------------------------------------------------------------------
+
+/**
+ * The kassa's dollars of a cost: what LEFT the kassa when it is known, else
+ * the cost's own dollars, else 0. The kassa ledger's cost statement.
+ */
+export const costKassaUsd: SQL = sql`coalesce(${costEntries.accountAmountUsd}, ${costEntries.amountUsd}, 0)`;
+
+/** A kassa-paid cost whose kassa side has no dollars at all (both figures missing). */
+export const costKassaNoUsd: SQL = sql`(${costEntries.accountAmountUsd} IS NULL AND ${costEntries.amountUsd} IS NULL)`;
+
+/**
+ * Q13: the realised exchange difference of a kassa-paid cost, + = gain — the
+ * cost at the table rate minus what the kassa paid. 0 when either side has
+ * no dollars (named beside the report, never guessed).
+ */
+export const costKassaFxUsd: SQL = sql`(CASE WHEN ${costEntries.accountId} IS NOT NULL
+  AND ${costEntries.accountAmountUsd} IS NOT NULL AND ${costEntries.amountUsd} IS NOT NULL
+  THEN ${costEntries.amountUsd} - ${costEntries.accountAmountUsd} ELSE 0 END)`;
+
+/**
+ * Money that LEFT a kassa for a cost whose own currency has no rate yet: the
+ * kassa's dollars are known, the tannarx is not. The cash flow counts it on
+ * its own row; the P&L names the cost as unconverted, never guesses it.
+ */
+export const costKassaUnratedUsd: SQL = sql`(CASE WHEN ${costEntries.accountId} IS NOT NULL
+  AND ${costEntries.amountUsd} IS NULL THEN coalesce(${costEntries.accountAmountUsd}, 0) ELSE 0 END)`;
+
+/** U11 (3): a transfer's realised exchange difference, + = gain (0 while the to-side has no dollars). */
+export const transferFxUsd: SQL = sql`(CASE WHEN ${accountTransfers.amountToUsd} IS NOT NULL
+  THEN ${accountTransfers.amountToUsd} - ${accountTransfers.amountUsd} ELSE 0 END)`;
+
+/** The dollars a transfer brought INTO its to-kassa: the to-side when known, else the from-side. */
+export const transferInUsd: SQL = sql`coalesce(${accountTransfers.amountToUsd}, ${accountTransfers.amountUsd}, 0)`;

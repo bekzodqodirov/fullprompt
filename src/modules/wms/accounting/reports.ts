@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNull, lte, sql, type SQL } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import {
   accountTransfers,
@@ -24,7 +24,18 @@ import {
 } from '../costing/service';
 import { clientBalances, clientTotals, unplacedPaymentSql } from '../finance/service';
 import { internalLegSql } from '../batches/internal';
-import { cashClientTxSql, cashCostSql, cashExpenseSql, costCashDay, mergedFrom } from './cash-rules';
+import { partnerSignedSql } from '../partners/service';
+import {
+  cashClientTxSql,
+  cashCostSql,
+  cashExpenseSql,
+  costCashDay,
+  costKassaFxUsd,
+  costKassaUnratedUsd,
+  mergedFrom,
+  transferFxUsd,
+} from './cash-rules';
+import { FX_PNL_SIGN } from '../finance/fx-sign';
 import { rideMovementSql, riderLoad } from '../batches/riders';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 
@@ -78,8 +89,20 @@ export interface Pnl {
   grossMarginPct: Record<string, number>;
   opex: PnlRow[];
   opexTotal: PnlRow;
+  /**
+   * «Kurs farqi» (0103, the owner's Q12 A): what the company won (+) or lost
+   * (−) when money changed currency or a debt closed in its own currency at
+   * another day's rate. Sub-rows by source — only those with money in some
+   * month — and the total, which the net includes.
+   */
+  fx: PnlRow[];
+  fxTotal: PnlRow;
   netProfit: PnlRow;
 }
+
+/** The P&L's FX sources, in the order the page prints them. */
+export const FX_PNL_KEYS = ['fx:kassa', 'fx:settlement', 'fx:adjust', 'fx:closing'] as const;
+export type FxPnlKey = (typeof FX_PNL_KEYS)[number];
 
 /**
  * What a period's P&L cannot see, said beside it instead of silently
@@ -105,10 +128,20 @@ export interface PnlGaps {
   manualCharges: { count: number; usd: number };
   unconverted: { count: number; byCurrency: { currency: string; count: number; amount: number }[] };
   onNoBox: { count: number; usd: number };
+  /**
+   * Counterparty corrections nobody with the right to say has classified as
+   * «kurs farqi» or «xato tuzatish» (0103, Q12's split): named, never guessed
+   * into the FX line — some of them are opening balances.
+   */
+  unclassifiedAdjusts: { count: number; usd: number };
+  /** Kassa-paid costs whose KASSA currency has no rate: their FX is not counted. */
+  kassaUsdMissing: { count: number };
+  /** Transfers into a kassa whose currency has no rate: their FX is not counted. */
+  transferUsdMissing: { count: number };
 }
 
 export async function pnlGaps(from: string, to: string): Promise<PnlGaps> {
-  const [manual, unconverted, onNoBox] = await Promise.all([
+  const [manual, unconverted, onNoBox, adjusts, kassaMissing, transferMissing] = await Promise.all([
     db
       .select({
         count: sql<number>`count(*)::int`,
@@ -158,6 +191,44 @@ export async function pnlGaps(from: string, to: string): Promise<PnlGaps> {
             SELECT 1 FROM cost_allocations ca WHERE ca.cost_entry_id = ${costEntries}.id)`,
         ),
       ),
+    db
+      .select({
+        count: sql<number>`count(*)::int`,
+        usd: sql<string>`coalesce(sum(${partnerTransactions.amountUsd}), 0)`,
+      })
+      .from(partnerTransactions)
+      .where(
+        and(
+          eq(partnerTransactions.type, 'adjust'),
+          isNull(partnerTransactions.adjustKind),
+          isNull(partnerTransactions.voidedAt),
+          gte(partnerTransactions.txDate, from),
+          lte(partnerTransactions.txDate, to),
+        ),
+      ),
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(costEntries)
+      .where(
+        and(
+          sql`${costEntries.accountId} IS NOT NULL`,
+          isNull(costEntries.accountAmountUsd),
+          isNull(costEntries.voidedAt),
+          gte(costEntries.costDate, from),
+          lte(costEntries.costDate, to),
+        ),
+      ),
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(accountTransfers)
+      .where(
+        and(
+          isNull(accountTransfers.amountToUsd),
+          isNull(accountTransfers.voidedAt),
+          gte(accountTransfers.transferDate, from),
+          lte(accountTransfers.transferDate, to),
+        ),
+      ),
   ]);
   const byCurrency = unconverted.map((row) => ({
     currency: row.currency,
@@ -168,7 +239,72 @@ export async function pnlGaps(from: string, to: string): Promise<PnlGaps> {
     manualCharges: { count: Number(manual[0]?.count ?? 0), usd: money(manual[0]?.usd) },
     unconverted: { count: byCurrency.reduce((sum, row) => sum + row.count, 0), byCurrency },
     onNoBox: { count: Number(onNoBox[0]?.count ?? 0), usd: money(onNoBox[0]?.usd) },
+    unclassifiedAdjusts: { count: Number(adjusts[0]?.count ?? 0), usd: money(adjusts[0]?.usd) },
+    kassaUsdMissing: { count: Number(kassaMissing[0]?.count ?? 0) },
+    transferUsdMissing: { count: Number(transferMissing[0]?.count ?? 0) },
   };
+}
+
+/**
+ * The P&L's «Kurs farqi», per source and month, + = gain (0103). Every figure
+ * is DERIVED from rows that already carry their own frozen dollars — never
+ * from a rate the row did not use:
+ *
+ * - fx:kassa — a kassa-paid cost's tannarx minus what the kassa paid (Q13),
+ *   dated the day the DRAWER paid like the cash flow; and a transfer's to-side
+ *   minus its from-side. The same figures the cash flow adds as exchange gain
+ *   and loss, so the two reports cannot disagree about one kassa (#513).
+ * - fx:settlement — the three-cornered settlement's gap: what the firm took
+ *   off our debt minus what the client's money was worth (both halves live —
+ *   they void together, #425).
+ * - fx:adjust — a counterparty correction the accountant marked «kurs farqi»
+ *   (a positive one raises what we owe = a loss), and a client's
+ *   cross-currency residue the accountant closed by hand (Q24 b, a USD row).
+ * - fx:closing — the system's own rows, written when an account reached zero
+ *   in its own currency (Q14): on the client ledger + the row's dollars, on
+ *   the partner ledger − (the two ledgers' signs run opposite).
+ */
+async function fxPnlRows(from: string, to: string): Promise<{ key: FxPnlKey; month: string; usd: string }[]> {
+  const rows = (await db.execute(sql`
+    SELECT 'fx:kassa' AS key, to_char(${costCashDay}, 'YYYY-MM') AS month, coalesce(sum(${costKassaFxUsd}), 0) AS usd
+      FROM cost_entries
+      LEFT JOIN expenses merged_from ON merged_from.id = cost_entries.merged_expense_id
+     WHERE ${cashCostSql()} AND cost_entries.account_id IS NOT NULL
+       AND ${costCashDay} >= ${from}::date AND ${costCashDay} <= ${to}::date
+     GROUP BY 2
+    UNION ALL
+    SELECT 'fx:kassa', to_char(account_transfers.transfer_date, 'YYYY-MM'), coalesce(sum(${transferFxUsd}), 0)
+      FROM account_transfers
+     WHERE account_transfers.voided_at IS NULL
+       AND account_transfers.transfer_date >= ${from}::date AND account_transfers.transfer_date <= ${to}::date
+     GROUP BY 2
+    UNION ALL
+    SELECT 'fx:settlement', to_char(pt.tx_date, 'YYYY-MM'), coalesce(sum(pt.amount_usd - ct.amount_usd), 0)
+      FROM partner_transactions pt JOIN client_transactions ct ON ct.id = pt.client_tx_id
+     WHERE pt.type = 'offset' AND pt.voided_at IS NULL AND ct.voided_at IS NULL
+       AND pt.tx_date >= ${from}::date AND pt.tx_date <= ${to}::date
+     GROUP BY 2
+    UNION ALL
+    SELECT 'fx:adjust', to_char(pt.tx_date, 'YYYY-MM'), coalesce(-sum(pt.amount_usd), 0)
+      FROM partner_transactions pt
+     WHERE pt.type = 'adjust' AND pt.adjust_kind = 'fx' AND pt.voided_at IS NULL
+       AND pt.tx_date >= ${from}::date AND pt.tx_date <= ${to}::date
+     GROUP BY 2
+    UNION ALL
+    SELECT CASE WHEN ct.currency = 'USD' THEN 'fx:adjust' ELSE 'fx:closing' END, to_char(ct.tx_date, 'YYYY-MM'),
+           coalesce(${sql.raw(String(FX_PNL_SIGN.client))} * sum(ct.amount_usd), 0)
+      FROM client_transactions ct
+     WHERE ct.type = 'fx_diff' AND ct.voided_at IS NULL
+       AND ct.tx_date >= ${from}::date AND ct.tx_date <= ${to}::date
+     GROUP BY 1, 2
+    UNION ALL
+    SELECT 'fx:closing', to_char(pt.tx_date, 'YYYY-MM'), coalesce(${sql.raw(String(FX_PNL_SIGN.partner))} * sum(pt.amount_usd), 0)
+      FROM partner_transactions pt
+     WHERE pt.type = 'fx_diff' AND pt.voided_at IS NULL
+       AND pt.tx_date >= ${from}::date AND pt.tx_date <= ${to}::date
+     GROUP BY 2
+  `)) as unknown as { key: FxPnlKey; month: string; usd: string }[];
+  return [...rows];
 }
 
 /** P&L for a period, one column per month (owner: "PNL va shunga o'xshagan"). */
@@ -295,6 +431,24 @@ export async function profitAndLoss(from: string, to: string): Promise<Pnl> {
   const directTotal = sumRows('directTotal', 'directTotal', directCosts);
   const opexTotal = sumRows('opexTotal', 'opexTotal', opex);
 
+  // «Kurs farqi» (0103): a sub-row only when some month has money on it; the
+  // total always, because the net below includes it.
+  const fxMap = new Map<FxPnlKey, PnlRow>();
+  for (const row of await fxPnlRows(from, to)) {
+    const bucket = fxMap.get(row.key) ?? { key: row.key, label: row.key, byPeriod: empty(), total: 0 };
+    if (row.month in bucket.byPeriod) {
+      bucket.byPeriod[row.month] = money((bucket.byPeriod[row.month] ?? 0) + money(row.usd));
+    }
+    fxMap.set(row.key, bucket);
+  }
+  const fx = FX_PNL_KEYS.flatMap((key) => {
+    const row = fxMap.get(key);
+    if (!row) return [];
+    const total = money(Object.values(row.byPeriod).reduce((a, b) => a + b, 0));
+    return Object.values(row.byPeriod).some((value) => Math.abs(value) > 0.004) ? [{ ...row, total }] : [];
+  });
+  const fxTotal = sumRows('fxTotal', 'fxTotal', fx);
+
   const combine = (key: string, a: PnlRow, b: PnlRow): PnlRow => {
     const byPeriod = empty();
     for (const month of months) byPeriod[month] = money(a.byPeriod[month]! - b.byPeriod[month]!);
@@ -302,7 +456,17 @@ export async function profitAndLoss(from: string, to: string): Promise<Pnl> {
   };
 
   const grossProfit = combine('grossProfit', revenue, directTotal);
-  const netProfit = combine('netProfit', grossProfit, opexTotal);
+  // Net = gross − overheads + kurs farqi (the owner's Q12 A): the monthly plan
+  // (/accounting/reja) and the dashboard read this same row, so they move with it.
+  const beforeFx = combine('netProfit', grossProfit, opexTotal);
+  const netProfit: PnlRow = {
+    key: 'netProfit',
+    label: 'netProfit',
+    byPeriod: Object.fromEntries(
+      months.map((month) => [month, money(beforeFx.byPeriod[month]! + fxTotal.byPeriod[month]!)]),
+    ),
+    total: money(beforeFx.total + fxTotal.total),
+  };
   const grossMarginPct = Object.fromEntries(
     months.map((month) => [
       month,
@@ -324,6 +488,8 @@ export async function profitAndLoss(from: string, to: string): Promise<Pnl> {
     grossMarginPct,
     opex,
     opexTotal,
+    fx,
+    fxTotal,
     netProfit,
   };
 }
@@ -398,12 +564,26 @@ export async function cashFlow(from: string, to: string) {
      */
     cashOpexNoKassaUsd: parts.cashOpexNoKassa,
     cashOpexNoKassaCount: parts.cashOpexNoKassaCount,
+    /**
+     * Kurs farqi that MOVED a kassa (0103, Q13 A): a transfer's spread, a
+     * kassa-paid cost's tannarx minus what the kassa paid — the P&L's own
+     * «Kurs farqi (kassa)» figures, and the cash flow's own rows below.
+     */
+    fxTransferUsd: parts.fxTransfer,
+    fxKassaCostUsd: money(parts.fxGain - parts.fxLoss - parts.fxTransfer),
+    /** Money that left a kassa for a cost whose own currency has no rate yet. */
+    cargoUnratedUsd: parts.cargoUnrated,
     rows: [
       { label: 'clientPayments', kind: 'in' as const, amountUsd: parts.clientPayments },
       ...(partnerInflow
         ? [{ label: 'partnerIn', kind: 'in' as const, amountUsd: partnerInflow }]
         : []),
+      ...(parts.fxGain ? [{ label: 'fxGain', kind: 'in' as const, amountUsd: parts.fxGain }] : []),
       { label: 'cargoCosts', kind: 'out' as const, amountUsd: parts.cargoCosts },
+      ...(parts.cargoUnrated
+        ? [{ label: 'cargoUnrated', kind: 'out' as const, amountUsd: parts.cargoUnrated }]
+        : []),
+      ...(parts.fxLoss ? [{ label: 'fxLoss', kind: 'out' as const, amountUsd: parts.fxLoss }] : []),
       ...(partnerOutflow
         ? [{ label: 'partnerOut', kind: 'out' as const, amountUsd: partnerOutflow }]
         : []),
@@ -442,6 +622,16 @@ export interface CashParts {
   cashOpexNoKassaCount: number;
   /** Cargo costs read as $0 because their currency has no rate (U24). */
   unconvertedCount: number;
+  /**
+   * Kurs farqi that moved a kassa (0103): gains and losses split at the ROW,
+   * so a month's two bars add up to the range's even when it holds both.
+   */
+  fxGain: number;
+  fxLoss: number;
+  /** …of which transfers' spread, net (the reconciliation takes it back out). */
+  fxTransfer: number;
+  /** Kassa money paid for a cost whose own currency has no rate (0103). */
+  cargoUnrated: number;
   inflow: number;
   outflow: number;
   net: number;
@@ -461,6 +651,10 @@ function emptyCashParts(): CashParts {
     cashOpexNoKassa: 0,
     cashOpexNoKassaCount: 0,
     unconvertedCount: 0,
+    fxGain: 0,
+    fxLoss: 0,
+    fxTransfer: 0,
+    cargoUnrated: 0,
     inflow: 0,
     outflow: 0,
     net: 0,
@@ -626,7 +820,34 @@ async function cashFlowCore(from: string, to: string, byMonth: boolean) {
     .leftJoin(mergedFrom, eq(mergedFrom.id, costEntries.mergedExpenseId))
     .where(and(cargoCashWhere(from, to), isNull(costEntries.amountUsd)));
 
-  const [received, refunded, partnerIn, partnerOut, opex, cargo, unconverted] = await Promise.all(
+  // Kurs farqi that moved a kassa (0103), ONE statement for both sources so
+  // the report stays within the pool (#432): a kassa-paid cost's tannarx
+  // minus what the kassa paid, dated the day the drawer paid, and a
+  // transfer's to-side minus its from-side. `u` is the kassa money paid for a
+  // cost with no dollars of its own — the cargo row reads it as $0.
+  const period = (day: SQL) => (byMonth ? sql`to_char(${day}, 'YYYY-MM')` : sql`'total'`);
+  const fxQ = db.execute(sql`
+    SELECT f.period, f.src,
+           coalesce(sum(greatest(f.x, 0)), 0) AS gain,
+           coalesce(sum(greatest(-f.x, 0)), 0) AS loss,
+           coalesce(sum(f.x), 0) AS net,
+           coalesce(sum(f.u), 0) AS unrated
+      FROM (
+        SELECT ${period(costCashDay)} AS period, 'cost' AS src, ${costKassaFxUsd} AS x, ${costKassaUnratedUsd} AS u
+          FROM cost_entries
+          LEFT JOIN expenses merged_from ON merged_from.id = cost_entries.merged_expense_id
+         WHERE ${cargoCashWhere(from, to)} AND cost_entries.account_id IS NOT NULL
+        UNION ALL
+        SELECT ${period(sql`account_transfers.transfer_date`)}, 'transfer', ${transferFxUsd}, 0
+          FROM account_transfers
+         WHERE account_transfers.voided_at IS NULL
+           AND account_transfers.transfer_date >= ${from}::date AND account_transfers.transfer_date <= ${to}::date
+      ) f
+     GROUP BY f.period, f.src`) as unknown as Promise<
+    { period: string; src: 'cost' | 'transfer'; gain: string; loss: string; net: string; unrated: string }[]
+  >;
+
+  const [received, refunded, partnerIn, partnerOut, opex, cargo, unconverted, fxRows] = await Promise.all(
     byMonth
       ? [
           receivedQ.groupBy(key(clientTransactions.txDate)),
@@ -638,6 +859,7 @@ async function cashFlowCore(from: string, to: string, byMonth: boolean) {
             .orderBy(expenseCategories.sortOrder),
           cargoQ.groupBy(key(costCashDay)),
           unconvertedQ.groupBy(key(costCashDay), costEntries.currency).orderBy(costEntries.currency),
+          fxQ,
         ]
       : [
           receivedQ,
@@ -647,6 +869,7 @@ async function cashFlowCore(from: string, to: string, byMonth: boolean) {
           opexQ.groupBy(expenseCategories.name, expenseCategories.sortOrder).orderBy(expenseCategories.sortOrder),
           cargoQ,
           unconvertedQ.groupBy(costEntries.currency).orderBy(costEntries.currency),
+          fxQ,
         ],
   );
 
@@ -671,6 +894,13 @@ async function cashFlowCore(from: string, to: string, byMonth: boolean) {
     at(row.period).cargoFromTill += money(row.fromTill);
     at(row.period).cargoQueued += money(row.queued);
   }
+  for (const row of [...(fxRows as { period: string; src: string; gain: string; loss: string; net: string; unrated: string }[])]) {
+    const entry = at(row.period);
+    entry.fxGain += money(row.gain);
+    entry.fxLoss += money(row.loss);
+    if (row.src === 'transfer') entry.fxTransfer += money(row.net);
+    else entry.cargoUnrated += money(row.unrated);
+  }
   const byCurrency = new Map<string, { currency: string; count: number; amount: number; tillPaid: number }>();
   for (const row of unconverted as { period: string; currency: string; count: number; amount: string; tillPaid: number }[]) {
     at(row.period).unconvertedCount += Number(row.count);
@@ -692,8 +922,16 @@ async function cashFlowCore(from: string, to: string, byMonth: boolean) {
     entry.cashOpexNoKassa = money(entry.cashOpexNoKassa);
     entry.clientPaymentsNoKassa = money(entry.clientPaymentsNoKassa);
     entry.cargoQueued = money(entry.cargoQueued);
-    entry.inflow = money(entry.clientPayments + entry.partnerIn);
-    entry.outflow = money(entry.cargoCosts + entry.partnerOut + entry.clientRefunds + entry.cashOpex);
+    entry.fxGain = money(entry.fxGain);
+    entry.fxLoss = money(entry.fxLoss);
+    entry.fxTransfer = money(entry.fxTransfer);
+    entry.cargoUnrated = money(entry.cargoUnrated);
+    // A kassa's real dollars = cargo at the tannarx + its exchange row + the
+    // unrated row (cash-rules.ts), so the kurs farqi rows ride the flow.
+    entry.inflow = money(entry.clientPayments + entry.partnerIn + entry.fxGain);
+    entry.outflow = money(
+      entry.cargoCosts + entry.cargoUnrated + entry.fxLoss + entry.partnerOut + entry.clientRefunds + entry.cashOpex,
+    );
     entry.net = money(entry.inflow - entry.outflow);
   }
   const unconvertedList = [...byCurrency.values()];
@@ -845,6 +1083,12 @@ export async function cashReconciliation(from: string, to: string) {
       kassa.beforeOpeningInPeriod > 0,
   );
 
+  // A two-sided transfer's kassa dollars now net to its SPREAD (the to-side
+  // is frozen in its own currency, 0103), and the cash flow counts that
+  // spread as an exchange gain or loss — taken back out here, or it would be
+  // counted twice. A transfer into an unrated till has no to-side dollars and
+  // no spread, so nothing changes there.
+  raw.oneSidedTransfers -= flow.fxTransferUsd;
   const explained = Object.values(raw).reduce((sum, value) => sum + value, 0);
   const unexplained = money(closingUsd - openingUsd - flow.net - explained);
   return {
@@ -1501,7 +1745,9 @@ export async function companyBalance() {
     .select({
       partnerId: partnerTransactions.partnerId,
       name: partners.name,
-      balance: sql<string>`sum(CASE WHEN ${partnerTransactions.type} IN ('charge', 'receipt', 'adjust') THEN ${partnerTransactions.amountUsd} ELSE -${partnerTransactions.amountUsd} END)`,
+      // The partner ledger's one sign rule (0103: an automatic «kurs farqi»
+      // carries its sign like an adjust).
+      balance: sql<string>`sum(${partnerSignedSql('amount_usd')})`,
     })
     .from(partnerTransactions)
     .innerJoin(partners, eq(partnerTransactions.partnerId, partners.id))

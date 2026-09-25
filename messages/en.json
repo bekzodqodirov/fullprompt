@@ -288,7 +288,12 @@
     "monthPaidParts": "into cash boxes {till} · through a firm {partner} · refunded −{refunded}",
     "monthPayments": "Payments this month",
     "unbilledAll": "All →",
-    "noCargoPart": "of which {usd} — prices of clients whose cargo did not ride"
+    "noCargoPart": "of which {usd} — prices of clients whose cargo did not ride",
+    "sFx": "Exchange difference",
+    "sFxGain": "Exchange gain",
+    "sFxLoss": "Exchange loss",
+    "sCargoUnrated": "Cargo costs (no rate)",
+    "pnlFxNote": "The cost bar includes the exchange difference (a gain lowers it, a loss raises it)."
   },
   "inventory": {
     "title": "Stocktake",
@@ -548,7 +553,8 @@
       "ai_calc_daily_limit": "AI calls per day for calculations (past the limit: memory, dictionaries and the customs file only)",
       "ai_calc_reply_lenta": "Also write the AI's estimate onto the card's lenta",
       "cost_kassa_since": "Costs with no cash box entered from this day on go to the accountant's queue (YYYY-MM-DD; empty = all)",
-      "unpriced_gate_since": "Unpriced cargo that a truck brings into Uzbekistan after this moment is handed over only with permission (a date or an instant; empty = the ban is off)"
+      "unpriced_gate_since": "Unpriced cargo that a truck brings into Uzbekistan after this moment is handed over only with permission (a date or an instant; empty = the ban is off)",
+      "fx_residue_auto": "Whether the system closes the dollar residue as an exchange difference when an account reaches zero in its own currency. «No» — no new entries; existing ones are still maintained."
     },
     "driverApp": "Driver app",
     "callsApp": "Calls app",
@@ -1608,7 +1614,7 @@
     "reconCounted": "counted on {date}: {amount}",
     "reconUnexplained": "Unexplained difference",
     "reconUnrated": "Cash boxes with no rate are left out of the dollar totals: {sums}",
-    "reconHint": "Cash at the start + the cash flow + the lines above = cash at the end. Each cash box in its own currency; the dollar totals at the rates of the period’s two ends, the difference on the «Exchange difference» line.",
+    "reconHint": "Opening cash + cash flow + the lines above = closing cash. Tills in their own money; the dollar total at the period's opening and closing rates. Exchange differences are in the cash flow; revaluation of currency held is its own line.",
     "retiredTill": "retired",
     "reconCountedInPeriod": "A cash box counted inside the period",
     "reconNoKassaPayments": "Payments that reached no cash box",
@@ -1620,7 +1626,7 @@
     "reconOneSidedTransfers": "Transfers with one end outside the counted cash boxes",
     "reconUnratedTills": "Movement through cash boxes with no rate",
     "reconTillUnconverted": "Paid from a cash box for costs in a currency with no rate (at the box’s rate)",
-    "reconFx": "Exchange difference (revaluation, conversions)",
+    "reconFx": "Revaluation of currency held in tills",
     "balUnplacedCostsLine": "Cargo costs with no cash box",
     "balSellerCommissions": "Seller commissions owed",
     "balUnrated": "{sums} — no rate, left out of the balance",
@@ -1696,7 +1702,19 @@
     "balRecurringArrears": "Fixed costs due and unpaid",
     "balRecurringUnrated": "Fixed costs: {sums} — no rate, not in the line",
     "noCargoCol": "of which no cargo",
-    "noCargoNote": "On {count} trucks, {usd} of revenue is priced to clients whose cargo did not ride them. It is in the revenue; the accountant moves it to the right truck."
+    "noCargoNote": "On {count} trucks, {usd} of revenue is priced to clients whose cargo did not ride them. It is in the revenue; the accountant moves it to the right truck.",
+    "fxTotal": "Exchange difference",
+    "fxKassa": "Exchange difference (tills)",
+    "fxSettlement": "Paid through a firm (three-way settlement)",
+    "fxAdjust": "Exchange difference entered by hand",
+    "fxClosing": "Account settled in its own currency",
+    "fxNote": "Exchange difference — money gained (+) or lost (−) when currencies are exchanged, or when a debt is settled in its own currency at another day's rate. Included in net profit.",
+    "fxGain": "Exchange gain",
+    "fxLoss": "Exchange loss",
+    "cargoUnrated": "Cargo costs — no rate yet (paid from a till)",
+    "gapAdjustUnclassified": "{count} adjustments have no kind (exchange difference or correction): {usd} — not in the P&L",
+    "gapKassaUsdMissing": "{count} till-paid costs have no rate for the till's currency — their exchange difference is not counted",
+    "gapTransferUsdMissing": "{count} transfers between tills have no rate for the receiving till's currency — their exchange difference is not counted"
   },
   "crm": {
     "title": "CRM",

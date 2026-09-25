@@ -71,3 +71,37 @@ export async function writeAudit(
     userAgent: ctx.userAgent ?? null,
   });
 }
+
+/**
+ * Many audit rows in ONE insert — for a set-based writer that changes
+ * hundreds of rows under locks (the FX re-price, the kurs farqi reconciler):
+ * a per-row `writeAudit` there is a round trip per row inside a transaction
+ * holding other people's accounts. Each row keeps its own entity and its own
+ * before/after, so every card's History tab still shows it (#502).
+ */
+export async function writeAuditMany(
+  dbOrTx: Db | Tx,
+  ctx: AuditContext,
+  entries: {
+    entityType: string;
+    entityId: string;
+    action: AuditAction;
+    before?: Record<string, unknown> | null;
+    after?: Record<string, unknown> | null;
+  }[],
+): Promise<void> {
+  if (entries.length === 0) return;
+  await dbOrTx.insert(auditLog).values(
+    entries.map((entry) => ({
+      actorId: ctx.actorId,
+      entityType: entry.entityType,
+      entityId: entry.entityId,
+      action: entry.action,
+      before: entry.before ?? null,
+      after: entry.after ?? null,
+      warehouseId: ctx.warehouseId ?? null,
+      ip: ctx.ip ?? null,
+      userAgent: ctx.userAgent ?? null,
+    })),
+  );
+}

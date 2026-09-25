@@ -242,7 +242,12 @@ describe('the cash flow page reconciles the kassas (U13)', () => {
     const recon = await cashReconciliation(FROM, TO);
     expect(recon.unexplained).toBe(0);
     const line = (key: string) => recon.lines.find((entry) => entry.key === key)?.usd ?? 0;
-    expect(recon.netFlowUsd).toBe(-25);
+    // −25 → 175 (0103, the owner's Q12 A): the $1,000 → 12,000,000 QWR
+    // transfer's +$200 is a realised exchange gain now, IN the cash flow as
+    // «Valyuta almashuvidan yutuq» — it used to sit in the reconciliation's
+    // remainder below.
+    expect(recon.netFlowUsd).toBe(175);
+    expect(recon.flow.rows.find((row) => row.label === 'fxGain')?.amountUsd).toBe(200);
     expect(line('countedInPeriod')).toBe(10_100);
     expect(line('noKassaPayments')).toBe(-50);
     expect(line('queuedCosts')).toBe(600);
@@ -251,7 +256,9 @@ describe('the cash flow page reconciles the kassas (U13)', () => {
     expect(line('beforeOpening')).toBe(-100);
     expect(line('tillOnly')).toBe(-100);
     expect(line('oneSidedTransfers')).toBe(-10);
-    expect(line('fx')).toBe(200);
+    // 200 → 0: the remainder holds revaluation only (0103), and every rate
+    // here is one rate per currency, so there is none.
+    expect(line('fx')).toBe(0);
     expect(cents(recon.closingUsd - recon.openingUsd)).toBe(11_165);
     // The retired box still holding money is listed, marked (#428).
     expect(recon.kassas.find((kassa) => kassa.id === k3)).toMatchObject({ active: false, closing: 4000 });
@@ -307,16 +314,48 @@ describe('a cost with no rate is named in the cash flow, never a silent $0 (U24)
     // …and the month bucket carries the same count as the report.
     expect((await cashFlowByMonth('1641-05-01', '1641-05-31')).get('1641-05')!.unconvertedCount).toBe(2);
 
-    // The $50 that left the dollar till against the unrated cost is its OWN
-    // line on the reconciliation — every kassa that day is in dollars, so an
-    // exchange difference there would send the accountant hunting a currency
-    // loss that does not exist.
+    // The $50 that left the dollar till against the unrated cost: since 0103
+    // the kassa's dollars are KNOWN (a USD kassa, rate 1 — `account_amount_usd`
+    // 50), so the cash flow counts it on its own «kursi hali yo'q» row and the
+    // reconciliation has nothing left to explain. Before 0103 it was the
+    // reconciliation's `tillUnconverted` line (rewritten with the owner's Q13
+    // A; the pre-0103 shape is proven below).
+    expect(flow.cargoUnratedUsd).toBe(50);
+    expect(flow.rows.find((row) => row.label === 'cargoUnrated')!.amountUsd).toBe(50);
     const recon = await cashReconciliation(DAY, DAY);
     const line = (key: string) => recon.lines.find((entry) => entry.key === key)?.usd ?? 0;
-    expect(line('tillUnconverted')).toBe(-50);
+    expect(line('tillUnconverted')).toBe(0);
     expect(line('fx')).toBe(0);
     expect(recon.unexplained).toBe(0);
-    expect(recon.kassas.find((kassa) => kassa.id === usdTill)).toMatchObject({ noUsdInPeriod: -50, closing: -50 });
+    expect(recon.kassas.find((kassa) => kassa.id === usdTill)).toMatchObject({ noUsdInPeriod: 0, closing: -50 });
+  });
+
+  it('a kassa-paid cost written before 0103 (no kassa dollars at all) is still the `tillUnconverted` line', async () => {
+    const LEGACY_DAY = '1641-06-10';
+    const usdTill = await till('Hisobot U24 eski', 'USD');
+    // The pre-0103 shape, written directly: a kassa and its native amount,
+    // no dollars on either side.
+    const [row] = await db
+      .insert(costEntries)
+      .values({
+        scope: 'batch',
+        batchId,
+        costTypeId,
+        amount: '4000',
+        currency: UNRATED,
+        costDate: LEGACY_DAY,
+        allocationBasis: 'weight',
+        accountId: usdTill,
+        accountAmount: '30',
+        enteredBy: actorId,
+      })
+      .returning({ id: costEntries.id });
+    madeCosts.push(row!.id);
+    const recon = await cashReconciliation(LEGACY_DAY, LEGACY_DAY);
+    const line = (key: string) => recon.lines.find((entry) => entry.key === key)?.usd ?? 0;
+    expect(line('tillUnconverted')).toBe(-30);
+    expect(line('fx')).toBe(0);
+    expect(recon.unexplained).toBe(0);
   });
 });
 

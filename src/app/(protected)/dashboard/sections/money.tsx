@@ -10,7 +10,14 @@ import {
   loadUnbilled,
   loadWindows,
 } from '@/modules/wms/reports/dashboard';
-import { daysSince, niceTicks, tripKind, tripTotals } from '@/modules/wms/reports/dashboard-math';
+import {
+  cashMonthParts,
+  daysSince,
+  niceTicks,
+  pnlMonthParts,
+  tripKind,
+  tripTotals,
+} from '@/modules/wms/reports/dashboard-math';
 import { ColumnPairs } from '@/components/charts/column-pairs';
 import { DivergingRows } from '@/components/charts/diverging-rows';
 import { DivergingBars } from '@/components/charts/diverging-bars';
@@ -64,11 +71,16 @@ export async function MoneySection({
     sub: i === last ? t('partialMonth', { day: w.dom }) : undefined,
   }));
   const labelled = new Set(months.map((_, i) => i).filter((i) => (last - i) % 3 === 0));
-  const revenue = months.map((m) => pnl.revenue.byPeriod[m] ?? 0);
-  const direct = months.map((m) => pnl.directTotal.byPeriod[m] ?? 0);
-  const opex = months.map((m) => pnl.opexTotal.byPeriod[m] ?? 0);
-  const cost = months.map((_, i) => (direct[i] ?? 0) + (opex[i] ?? 0));
-  const net = months.map((m) => pnl.netProfit.byPeriod[m] ?? 0);
+  // The parts ADD UP (0103): the kurs farqi folds into the cost bar, so
+  // revenue − cost = the net the P&L prints (`pnlMonthParts`).
+  const parts = months.map((m) => pnlMonthParts(pnl, m));
+  const revenue = parts.map((p) => p.revenue);
+  const direct = parts.map((p) => p.direct);
+  const opex = parts.map((p) => p.opex);
+  const fx = parts.map((p) => p.fx);
+  const cost = parts.map((p) => p.cost);
+  const net = parts.map((p) => p.net);
+  const anyFx = fx.some((value) => Math.abs(value) > 0.004);
   const cashRows = months.map((m) => cash.get(m));
   const inflow = cashRows.map((row) => row?.inflow ?? 0);
   const outflow = cashRows.map((row) => row?.outflow ?? 0);
@@ -82,19 +94,31 @@ export async function MoneySection({
       [usd(revenue[i] ?? 0), t('sRevenue')],
       [usd(direct[i] ?? 0), t('sDirect')],
       [usd(opex[i] ?? 0), t('sOpex')],
+      ...(Math.abs(fx[i] ?? 0) > 0.004 ? [[signedUsd(fx[i] ?? 0), t('sFx')] as [string, string]] : []),
       [`${signedUsd(net[i] ?? 0)}${margin(i) === null ? '' : ` · ${pct(margin(i)!)}`}`, t('sNet')],
     ]),
   );
+  // One label per cash line (0103: the kurs farqi and unrated rows joined) —
+  // a literal map (#163); a zero line the month never had is left out.
+  const CASH_TIP: Record<string, string> = {
+    clientPayments: t('sClientPayments'),
+    partnerIn: t('sPartnerIn'),
+    fxGain: t('sFxGain'),
+    cargoCosts: t('sCargoCosts'),
+    cargoUnrated: t('sCargoUnrated'),
+    fxLoss: t('sFxLoss'),
+    partnerOut: t('sPartnerOut'),
+    clientRefunds: t('sRefunds'),
+    cashOpex: t('sCashOpex'),
+  };
+  const ALWAYS = new Set(['clientPayments', 'partnerIn', 'cargoCosts', 'partnerOut', 'clientRefunds', 'cashOpex']);
   const cashTips = months.map((_, i) => {
-    const row = cashRows[i];
+    const cashParts = cashMonthParts(cashRows[i]);
     return tipText(heading(i), [
-      [usd(row?.clientPayments ?? 0), t('sClientPayments')],
-      [usd(row?.partnerIn ?? 0), t('sPartnerIn')],
-      [usd(row?.cargoCosts ?? 0), t('sCargoCosts')],
-      [usd(row?.partnerOut ?? 0), t('sPartnerOut')],
-      [usd(row?.clientRefunds ?? 0), t('sRefunds')],
-      [usd(row?.cashOpex ?? 0), t('sCashOpex')],
-      [signedUsd(row?.net ?? 0), t('sCashNet')],
+      ...cashParts.lines
+        .filter((line) => ALWAYS.has(line.key) || Math.abs(line.value) > 0.004)
+        .map((line) => [usd(Math.abs(line.value)), CASH_TIP[line.key] ?? line.key] as [string, string]),
+      [signedUsd(cashParts.net), t('sCashNet')],
     ]);
   });
   const range = `from=${w.m12Start}&to=${w.today}`;
@@ -205,15 +229,21 @@ export async function MoneySection({
             testid="dash-pnl-chart"
           />
           <p className="text-2xs text-ink-500">{t('pnlNote')}</p>
+          {anyFx && (
+            <p className="text-2xs text-ink-500" data-testid="dash-pnl-fx-note">
+              {t('pnlFxNote')}
+            </p>
+          )}
           <TableTwin
             summary={t('table')}
             testid="dash-pnl-table"
-            head={['', t('sRevenue'), t('sDirect'), t('sOpex'), t('sNet'), t('sMargin')]}
+            head={['', t('sRevenue'), t('sDirect'), t('sOpex'), t('sFx'), t('sNet'), t('sMargin')]}
             rows={months.map((month, i) => [
               heading(i),
               usd(revenue[i] ?? 0),
               usd(direct[i] ?? 0),
               usd(opex[i] ?? 0),
+              Math.abs(fx[i] ?? 0) > 0.004 ? signedUsd(fx[i] ?? 0) : '—',
               <span key="n" className={(net[i] ?? 0) < 0 ? 'text-bad' : ''}>
                 {signedUsd(net[i] ?? 0)}
               </span>,

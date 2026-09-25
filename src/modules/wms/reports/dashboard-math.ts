@@ -321,3 +321,61 @@ export function approvalCounts(
   }
   return { debt: { n, usd: Math.round(usd * 100) / 100 }, price: { n: price } };
 }
+
+/** One P&L row's figures, the only part `pnlMonthParts` reads. */
+interface PnlRowLike {
+  byPeriod: Record<string, number>;
+}
+
+/**
+ * A P&L month in the chart's parts (0103): the kurs farqi FOLDS into the cost
+ * bar — a gain lowers it, a loss raises it — so revenue − cost = the net the
+ * P&L prints, and the chart never draws two columns whose difference is not
+ * the net under them (the owner judge's finding).
+ */
+export function pnlMonthParts(
+  pnl: { revenue: PnlRowLike; directTotal: PnlRowLike; opexTotal: PnlRowLike; fxTotal: PnlRowLike; netProfit: PnlRowLike },
+  month: string,
+): { revenue: number; direct: number; opex: number; fx: number; cost: number; net: number } {
+  const cents = (value: number) => Math.round(value * 100) / 100;
+  const revenue = pnl.revenue.byPeriod[month] ?? 0;
+  const direct = pnl.directTotal.byPeriod[month] ?? 0;
+  const opex = pnl.opexTotal.byPeriod[month] ?? 0;
+  const fx = pnl.fxTotal.byPeriod[month] ?? 0;
+  return { revenue, direct, opex, fx, cost: cents(direct + opex - fx), net: pnl.netProfit.byPeriod[month] ?? 0 };
+}
+
+/** A cash-flow month's parts, the only fields `cashMonthParts` reads. */
+interface CashPartsLike {
+  clientPayments: number;
+  partnerIn: number;
+  fxGain: number;
+  cargoCosts: number;
+  cargoUnrated: number;
+  fxLoss: number;
+  partnerOut: number;
+  clientRefunds: number;
+  cashOpex: number;
+  net: number;
+}
+
+/**
+ * A cash-flow month's lines, signed as they move the net (0103): the tooltip
+ * prints each, and they add up to the net beside them — the kurs farqi rows
+ * and the unrated cargo included, or a month holding one reads a net its
+ * lines do not make.
+ */
+export function cashMonthParts(row: CashPartsLike | undefined): { lines: { key: string; value: number }[]; net: number } {
+  const lines = [
+    { key: 'clientPayments', value: row?.clientPayments ?? 0 },
+    { key: 'partnerIn', value: row?.partnerIn ?? 0 },
+    { key: 'fxGain', value: row?.fxGain ?? 0 },
+    { key: 'cargoCosts', value: -(row?.cargoCosts ?? 0) },
+    { key: 'cargoUnrated', value: -(row?.cargoUnrated ?? 0) },
+    { key: 'fxLoss', value: -(row?.fxLoss ?? 0) },
+    { key: 'partnerOut', value: -(row?.partnerOut ?? 0) },
+    { key: 'clientRefunds', value: -(row?.clientRefunds ?? 0) },
+    { key: 'cashOpex', value: -(row?.cashOpex ?? 0) },
+  ];
+  return { lines, net: row?.net ?? 0 };
+}
