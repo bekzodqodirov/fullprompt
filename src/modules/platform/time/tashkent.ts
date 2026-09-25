@@ -89,6 +89,27 @@ export function tashkentMinute(at: Date): string {
 }
 
 /**
+ * `value` when it is a REAL calendar day as `YYYY-MM-DD`, else null.
+ *
+ * The one reader for a date that arrives in a URL (DECISIONS #685's rule:
+ * never parse it, never roll it over, never throw — drop it and let the
+ * default apply). The regex alone let `2026-02-30`, month 13 and day 32
+ * reach postgres, which answers 22008 and white-pages every accounting report
+ * and export (audit U43); and `Date` alone ROLLS `2026-02-30` to March 2nd,
+ * a silently shifted period, which is worse. So the value must survive a
+ * round trip unchanged. Year 0000 round-trips in V8 and postgres refuses it,
+ * hence the year floor of 1 — and no higher floor, because the accounting
+ * suite parks its fixtures in the 1700s.
+ */
+export function calendarDay(value: string | null | undefined): string | null {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  if (Number(value.slice(0, 4)) < 1) return null;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString().slice(0, 10) === value ? value : null;
+}
+
+/**
  * `day` moved by `n` calendar days (negative goes back). Pure calendar
  * arithmetic at UTC noon, so no zone and no clock can shift the answer.
  */

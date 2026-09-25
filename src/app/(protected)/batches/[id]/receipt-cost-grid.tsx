@@ -7,6 +7,7 @@ import { saveReceiptCostGridAction } from '../../costs/actions';
 import { LightboxImg } from '@/components/lightbox-img';
 import { codeIdentity } from '@/modules/wms/labels/code-identity';
 import { parseTypedMoney } from '@/modules/wms/calc/money-input';
+import { latestTxDate } from '@/modules/wms/finance/dates';
 
 export interface GridLotLine {
   letter: string | null;
@@ -226,7 +227,11 @@ export function ReceiptCostGrid({
           ? t('errTillForbidden')
           : code === 'staff_payer_forbidden'
             ? t('errStaffPayer')
-            : tc('error');
+            : code === 'future_date'
+              ? tc('futureDate')
+              : code === 'amount_too_large'
+                ? tc('amountTooLarge')
+                : tc('error');
 
   return (
     <div className="space-y-2" data-testid="receipt-cost-grid">
@@ -513,6 +518,8 @@ export function ReceiptCostGrid({
             type="date"
             value={costDate}
             onChange={(event) => setCostDate(event.target.value)}
+            // #995's rule, the door's own limit (U21): not after tomorrow.
+            max={latestTxDate()}
             aria-label={t('date')}
             className="input !w-40"
           />

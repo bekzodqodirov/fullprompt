@@ -9,7 +9,7 @@ import { listAccounts } from '@/modules/wms/accounting/service';
 import { placePaymentAction } from '../actions';
 import { moneyOwnerFilter } from '@/modules/wms/finance/scope';
 import { FinanceClientSearch } from '../client-search';
-import { tashkentDay, tashkentMonthStart } from '@/modules/platform/time/tashkent';
+import { calendarDay, tashkentDay, tashkentMonthStart } from '@/modules/platform/time/tashkent';
 
 /**
  * The payments register (round 29) — the accountant's «kimdan qancha pul
@@ -33,9 +33,10 @@ export default async function PaymentsRegisterPage({
 
   const today = tashkentDay();
   const monthStart = tashkentMonthStart();
-  const valid = (value?: string) => (value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null);
-  const from = valid(params.from) ?? monthStart;
-  const to = valid(params.to) ?? today;
+  // A real calendar day or the default (U43): the bare regex let 2026-02-30
+  // reach postgres and white-page the register.
+  const from = calendarDay(params.from) ?? monthStart;
+  const to = calendarDay(params.to) ?? today;
 
   const canPlace = actor.permissions.has('finance.manage');
   // Every payment still in no till, whatever its date (audit A2) — the home

@@ -16,6 +16,8 @@ import {
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { rateFor } from '../costing/service';
 import { staffPartnerSql } from './staff';
+import { latestTxDate } from '../finance/dates';
+import { exceedsRowUsd, signedNativeAmount } from '../finance/money-bounds';
 
 /**
  * Kontragentlar — the other side of the money (round 39, the owner's three
@@ -231,7 +233,9 @@ export const partnerTxSchema = z
   .object({
     partnerId: z.string().uuid(),
     type: z.enum(PARTNER_TX_TYPES),
-    amount: z.number().max(1_000_000_000),
+    // Signed (an `adjust` may be negative) and bounded BOTH ways by the
+    // column (U44): −5e13 used to reach postgres as 22003, an error page.
+    amount: signedNativeAmount(),
     currency: z.string().length(3).toUpperCase(),
     txDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     accountId: z.string().uuid().optional().or(z.literal('')),
@@ -258,6 +262,8 @@ export async function addPartnerTx(input: PartnerTxInput, ctx: AuditContext) {
   if (!MANUAL_TX_TYPES.includes(input.type)) {
     throw new PartnerError(input.type === 'charge' ? 'charge_via_cost' : 'offset_via_settlement');
   }
+  // #995's rule (U21): a payment dated next month moved a till today.
+  if (input.txDate > latestTxDate()) throw new PartnerError('future_date');
   // A named cash box must speak the row's currency (the ledger rule).
   if (input.accountId) {
     const [account] = await db
@@ -271,6 +277,7 @@ export async function addPartnerTx(input: PartnerTxInput, ctx: AuditContext) {
   const rate = await rateFor(input.currency, input.txDate);
   if (rate === null) throw new PartnerError('fx_missing');
   const amountUsd = Math.round(input.amount * rate * 100) / 100;
+  if (exceedsRowUsd(amountUsd)) throw new PartnerError('amount_too_large');
 
   const [row] = await db
     .insert(partnerTransactions)

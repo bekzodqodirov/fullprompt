@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { compressPhoto, PhotoUnreadable } from '@/components/compress-photo';
+import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 import { requestExpenseAction } from './actions';
 import { requestOwnExpenseAction } from '../profile/actions';
 
@@ -80,6 +81,7 @@ export function ExpenseRequestFold({
     forbidden: t('errors.forbidden'),
     unauthenticated: t('errors.forbidden'),
     validation: t('errors.validation'),
+    amount_too_large: tc('amountTooLarge'),
     warehouse_not_found: t('errors.validation'),
     failed: t('errors.failed'),
   };
@@ -119,7 +121,10 @@ export function ExpenseRequestFold({
       id: requestId,
       warehouseId: warehouseId || undefined,
       paidBySelf,
-      amount: Number(amount.replace(/\s/g, '').replace(',', '.')),
+      // «1,200» is a thousand two hundred (U28, #979's reader) — the comma
+      // used to become a decimal point, and the accountant's «Kiritish»
+      // pre-filled the 1.2 the request had stored.
+      amount: parseTypedMoney(amount) ?? Number.NaN,
       currency,
       note,
     };

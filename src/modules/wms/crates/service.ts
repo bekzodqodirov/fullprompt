@@ -17,6 +17,7 @@ import { emitEvent } from '../../platform/events/service';
 import { recomputeEntry } from '../costing/service';
 import { nextCrateCode } from '../codes';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
+import { MAX_NATIVE_AMOUNT } from '../finance/money-bounds';
 
 export class CrateError extends Error {
   constructor(public readonly code: string) {
@@ -39,7 +40,8 @@ export const createCrateSchema = z.object({
   weightKg: z.number().min(0.001).max(100_000).optional(),
   /** Crating cost (spec 6.2): stored scope=crate under the `crating` type. */
   cratingCost: z
-    .object({ amount: z.number().min(0.01).max(100_000_000), currency: z.string().length(3) })
+    // The column's bound (U44), as every other cost door.
+    .object({ amount: z.number().min(0.01).max(MAX_NATIVE_AMOUNT), currency: z.string().length(3) })
     .optional(),
 });
 export type CreateCrateInput = z.infer<typeof createCrateSchema>;

@@ -687,7 +687,7 @@ describe('what the audit found', () => {
       .from(partnerTransactions)
       .where(eq(partnerTransactions.id, txId));
     const clientTxId = offset!.clientTxId!;
-    await voidTransaction(clientTxId, 'noto‘g‘ri mijoz', ctx());
+    await voidTransaction(clientTxId, 'noto‘g‘ri mijoz', ctx(), { mayMoveTill: true });
 
     expect(await clientBalanceUsd(clientId)).toBe(1000);
     // Was 0 for ever: our debt to the firm stayed forgiven with nothing
@@ -712,7 +712,7 @@ describe('what the audit found', () => {
       ctx(),
     );
     expect(await clientBalanceUsd(clientId)).toBe(0);
-    await voidTransaction(payment.id, 'xato summa', ctx());
+    await voidTransaction(payment.id, 'xato summa', ctx(), { mayMoveTill: true });
     expect(await clientBalanceUsd(clientId)).toBe(500);
   });
 

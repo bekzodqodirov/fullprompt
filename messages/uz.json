@@ -49,7 +49,9 @@
     "scanTruckForbidden": "Bu mashina sizning skladingiz uchun emas — yoki sessiya tugagan. Qayta kiring.",
     "scanSnapshotOffline": "Karobkalar ro‘yxati yuklanmadi: aloqa yo‘q. Internetni tekshirib, qayta urinib ko‘ring.",
     "photoOnly": "Bu rasm emas — surat tanlang (hujjat uchun 📎 bor)",
-    "scanSnapshotServer": "Server xato bilan javob berdi (kod {n}). Internet ishlayapti — bu kodni boshliqqa ko'rsating."
+    "scanSnapshotServer": "Server xato bilan javob berdi (kod {n}). Internet ishlayapti — bu kodni boshliqqa ko'rsating.",
+    "futureDate": "Sana ertadan keyin bo‘lishi mumkin emas.",
+    "amountTooLarge": "Summa juda katta — bitta qatorga sig‘maydi."
   },
   "login": {
     "title": "Tizimga kirish",
@@ -1003,7 +1005,10 @@
     "errTillAmountMismatch": "Kassa shu valyutada — summa xarajat summasiga teng bo‘lishi kerak.",
     "errTillNotFound": "Bu kassa topilmadi yoki yopilgan.",
     "errTillCurrency": "Jadvalda bitta valyuta: kassa ham shu valyutada bo‘lishi kerak.",
-    "errPayerConflict": "Bu xarajatning to‘lovchisi allaqachon ko‘rsatilgan."
+    "errPayerConflict": "Bu xarajatning to‘lovchisi allaqachon ko‘rsatilgan.",
+    "errStaffVoid": "Hodim o‘z pulidan to‘lagan xarajatni faqat buxgalter yoki admin bekor qiladi.",
+    "errFutureDate": "Sana ertadan keyin bo‘lishi mumkin emas.",
+    "errAmountTooLarge": "Summa juda katta — bitta qatorga sig‘maydi."
   },
   "batches": {
     "title": "Partiyalar",
@@ -1575,7 +1580,10 @@
       "pickup": "prixodi ulanmagan zavod reysi",
       "receipt": "prixod qutilariga tushmagan",
       "crate": "yashik qutilariga tushmagan"
-    }
+    },
+    "nonCashCategory": "Bu xarajat turi pul emas (masalan, amortizatsiya): unda kassa ham, to‘lovchi ham bo‘lmaydi.",
+    "nonCashHint": "Pulsiz xarajat turi: kassa va to‘lovchi yozilmaydi.",
+    "currencyLocked": "Bu kassada pul harakati bor — valyutani o‘zgartirib bo‘lmaydi. Yangi kassa oching."
   },
   "crm": {
     "title": "CRM",
@@ -2558,7 +2566,10 @@
       "quote_expired": "Narxning muddati o‘tgan — qayta hisoblatish kerak",
       "fx_missing": "Shu kunga valyuta kursi yo‘q — avval kursni kiriting",
       "category_not_found": "Xarajat turkumi tanlanmagan yoki o‘chirilgan — /upsale da tanlang",
-      "account_currency_mismatch": "Kassa valyutasi to‘lov valyutasiga mos emas"
+      "account_currency_mismatch": "Kassa valyutasi to‘lov valyutasiga mos emas",
+      "future_date": "Sana ertadan keyin bo‘lishi mumkin emas.",
+      "non_cash_category": "Tanlangan xarajat turi pulsiz — to‘lovni unga yozib bo‘lmaydi.",
+      "amount_too_large": "Summa juda katta — bitta qatorga sig‘maydi."
     },
     "openCard": "Karta",
     "freight": "Yo‘lkira",
@@ -2906,7 +2917,10 @@
     "staffKindHints": {
       "payment": "Hodimga kassadan avans berdik. Kassa kamayadi, hodim bizga qarzdor bo‘ladi.",
       "receipt": "Hodim ishlatmagan qoldiqni kassaga qaytardi. Kassa ko‘payadi, uning qarzi kamayadi."
-    }
+    },
+    "forDeal": "Qaysi bitim uchun",
+    "forDealDeferredHint": "⏳ — kechiktirilgan bitim: pul shu bitim uchun bo‘lsa, uni tanlang, aks holda kechiktirish boshqa qarzni yopib turaveradi.",
+    "dealMismatch": "Bu bitim boshqa mijozniki."
   },
   "lists": {
     "allRecords": "Hammasi",

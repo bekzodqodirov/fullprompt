@@ -3,6 +3,7 @@
 import { useActionState, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { latestTxDate } from '@/modules/wms/finance/dates';
 import {
   payUpsaleAction,
   releaseOfferAction,
@@ -129,6 +130,8 @@ export function PayForm({
             className="input input-sm !w-36"
             data-testid="upsale-date"
             value={date}
+            // #995's rule, the door's own limit (U21): not after tomorrow.
+            max={latestTxDate()}
             onChange={(e) => setDate(e.target.value)}
           />
         </label>
@@ -248,6 +251,7 @@ export function CategoryForm({
 }) {
   const t = useTranslations('upsale');
   const tc = useTranslations('common');
+  const tErr = useTranslations('calc');
   const [state, formAction, pending] = useActionState<UpsaleFormState, FormData>(
     setUpsaleCategoryAction,
     {},
@@ -294,7 +298,14 @@ export function CategoryForm({
               {tc('save')}
             </button>
             {state.ok && <span className="self-center text-sm text-good">✅</span>}
-            {state.error && <span className="self-center text-sm text-bad">{state.error}</span>}
+            {/* In words (U06's refusal among them) — it printed the bare code. */}
+            {state.error && (
+              <span className="self-center text-sm text-bad" data-testid="upsale-category-error">
+                {tErr.has(`errors.${state.error}`)
+                  ? tErr(`errors.${state.error}` as 'errors.not_found')
+                  : tc('error')}
+              </span>
+            )}
           </form>
         ) : (
           // The accountant is refused by the payout and cannot fix it: say who

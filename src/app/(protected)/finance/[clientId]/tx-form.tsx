@@ -154,7 +154,9 @@ export function TxForm({
                   ? t('refundOnBatch')
                   : state.error === 'future_date'
                     ? t('futureDate')
-                    : tc('error')}
+                    : state.error === 'amount_too_large'
+                      ? tc('amountTooLarge')
+                      : tc('error')}
         </p>
       )}
       <button type="submit" disabled={pending} className="btn-primary w-full disabled:opacity-60">

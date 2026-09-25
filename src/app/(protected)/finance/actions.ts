@@ -12,6 +12,8 @@ import {
   voidTransaction,
 } from '@/modules/wms/finance/service';
 import { parseTypedMoney } from '@/modules/wms/calc/money-input';
+import { mayPickTill } from '@/modules/wms/accounting/till-door';
+import { amountRefusal } from '@/modules/wms/finance/money-bounds';
 
 export interface TxFormState {
   ok?: boolean;
@@ -42,7 +44,7 @@ export async function addTransactionAction(
     accountId: formData.get('accountId') || undefined,
     note: String(formData.get('note') ?? ''),
   });
-  if (!parsed.success) return { error: 'validation' };
+  if (!parsed.success) return { error: amountRefusal(parsed.error) ?? 'validation' };
   // A payment names the cash box it landed in (audit A2). One saved with none
   // took its amount off the Balans receivable and put it in no kassa, so the
   // net fell by the payment while the cash flow said it came in — and no
@@ -64,7 +66,8 @@ export async function addTransactionAction(
   // Handing cash back opens a till, and tills are the accountant's and the
   // admin's (`finance.expenses`, the kassa screens' own door) — the VED holds
   // finance.manage and prices jobs, but does not pay money out of a drawer.
-  if (parsed.data.type === 'refund' && !actor.permissions.has('finance.expenses')) {
+  // The one predicate the void below asks too (U33, #513).
+  if (parsed.data.type === 'refund' && !mayPickTill(actor.permissions)) {
     return { error: 'forbidden' };
   }
   const meta = await requestMeta();
@@ -100,7 +103,14 @@ export async function voidTransactionAction(formData: FormData): Promise<void> {
   const actor = await authorize('finance.manage');
   const meta = await requestMeta();
   try {
-    await voidTransaction(parsed.data.id, parsed.data.reason, { actorId: actor.id, ...meta });
+    // A refund's void is a kassa movement (U33): the service judges the ROW's
+    // type against the same grant the refund door asks.
+    await voidTransaction(
+      parsed.data.id,
+      parsed.data.reason,
+      { actorId: actor.id, ...meta },
+      { mayMoveTill: mayPickTill(actor.permissions) },
+    );
   } catch (err) {
     if (err instanceof FinanceError) return;
     throw err;

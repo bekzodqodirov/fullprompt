@@ -8,6 +8,7 @@ import {
   updateRecurringAction,
   type AccountingFormState,
 } from '../actions';
+import type { CategoryOption } from './expense-form';
 
 interface Option {
   id: string;
@@ -30,7 +31,7 @@ export function RecurringForm({
   currencies,
   partners,
 }: {
-  categories: Option[];
+  categories: CategoryOption[];
   accounts: Option[];
   warehouses: Option[];
   employees: Option[];
@@ -46,11 +47,21 @@ export function RecurringForm({
   // A rent paid through the transport company (audit A36): naming the firm
   // takes the till away, the expense form's own rule.
   const [partnerId, setPartnerId] = useState('');
+  // A non-cash kind names no kassa and no payer (U06) — the expense form's rule.
+  const [categoryId, setCategoryId] = useState(categories[0]?.id ?? '');
+  const bookEntry = categories.find((option) => option.id === categoryId)?.cash === false;
 
   return (
     <form action={formAction} className="space-y-2">
       <div className="flex flex-wrap gap-2">
-        <select name="categoryId" aria-label={t('category')} className="input min-w-40 flex-1" required>
+        <select
+          name="categoryId"
+          aria-label={t('category')}
+          className="input min-w-40 flex-1"
+          value={categoryId}
+          onChange={(event) => setCategoryId(event.target.value)}
+          required
+        >
           {categories.map((option) => (
             <option key={option.id} value={option.id}>
               {option.label}
@@ -85,7 +96,7 @@ export function RecurringForm({
         </label>
       </div>
       <div className="flex flex-wrap gap-2">
-        {!partnerId && (
+        {!partnerId && !bookEntry && (
           <select name="accountId" aria-label={t('account')} className="input min-w-36 flex-1">
             <option value="">— {t('account')} —</option>
             {accounts.map((option) => (
@@ -95,7 +106,7 @@ export function RecurringForm({
             ))}
           </select>
         )}
-        {partners.length > 0 && (
+        {partners.length > 0 && !bookEntry && (
           <select
             name="partnerId"
             aria-label={t('paidBy')}
@@ -129,6 +140,7 @@ export function RecurringForm({
           ))}
         </select>
       </div>
+      {bookEntry && <p className="text-xs text-ink-500">{t('nonCashHint')}</p>}
       <input name="note" placeholder={t('note')} aria-label={t('note')} className="input" />
       <button
         type="submit"
@@ -141,7 +153,15 @@ export function RecurringForm({
       {state.ok && <p className="text-sm font-semibold text-good">✅ {tc('saved')}</p>}
       {state.error && (
         <p className="text-sm font-semibold text-bad">
-          {state.error === 'fx_missing' ? t('fxMissing') : tc('error')}
+          {state.error === 'fx_missing'
+            ? t('fxMissing')
+            : state.error === 'account_currency_mismatch'
+              ? t('accountCurrencyMismatch')
+              : state.error === 'non_cash_category'
+                ? t('nonCashCategory')
+                : state.error === 'amount_too_large'
+                  ? tc('amountTooLarge')
+                  : tc('error')}
         </p>
       )}
     </form>
@@ -252,7 +272,11 @@ export function RecurringRowEdit({
           {pending ? tc('loading') : tc('save')}
         </button>
         {state.ok && <span className="text-sm font-semibold text-good">✅</span>}
-        {state.error && <span className="text-sm font-semibold text-bad">{tc('error')}</span>}
+        {state.error && (
+          <span className="text-sm font-semibold text-bad">
+            {state.error === 'amount_too_large' ? tc('amountTooLarge') : tc('error')}
+          </span>
+        )}
       </form>
     </details>
   );

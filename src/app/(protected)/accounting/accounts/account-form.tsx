@@ -13,6 +13,11 @@ export interface AccountRow {
   openingDate: string | null;
   sortOrder: number;
   active: boolean;
+  /**
+   * Something already points at this till (U29), so its currency is fixed:
+   * every amount on it was written in that currency.
+   */
+  inUse?: boolean;
 }
 
 /**
@@ -52,16 +57,29 @@ export function AccountForm({
           data-testid="account-name"
           required
         />
-        <select
-          name="currency"
-          defaultValue={account?.currency}
-          aria-label={t('currency')}
-          className="input !w-24"
-        >
-          {currencies.map((code) => (
-            <option key={code}>{code}</option>
-          ))}
-        </select>
+        {account?.inUse ? (
+          // Text plus a hidden input, never a disabled select: a disabled
+          // control posts nothing and the save would be refused (#171).
+          <span
+            className="input !w-24 flex items-center font-bold text-ink-700"
+            title={t('currencyLocked')}
+            data-testid="account-currency-locked"
+          >
+            <input type="hidden" name="currency" value={account.currency} />
+            🔒 {account.currency}
+          </span>
+        ) : (
+          <select
+            name="currency"
+            defaultValue={account?.currency}
+            aria-label={t('currency')}
+            className="input !w-24"
+          >
+            {currencies.map((code) => (
+              <option key={code}>{code}</option>
+            ))}
+          </select>
+        )}
         <select
           name="kind"
           defaultValue={account?.kind ?? 'cash'}
@@ -128,7 +146,15 @@ export function AccountForm({
         {pending ? tc('loading') : tc('save')}
       </button>
       {state.ok && <p className="text-sm font-semibold text-good">✅ {tc('saved')}</p>}
-      {state.error && <p className="text-sm font-semibold text-bad">{tc('error')}</p>}
+      {state.error && (
+        <p className="text-sm font-semibold text-bad">
+          {state.error === 'currency_locked'
+            ? t('currencyLocked')
+            : state.error === 'amount_too_large'
+              ? tc('amountTooLarge')
+              : tc('error')}
+        </p>
+      )}
     </form>
   );
 }

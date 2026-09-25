@@ -190,9 +190,9 @@ describe('client ledger', () => {
       ctx(),
     );
     expect(await clientBalanceUsd(clientId)).toBe(before + 25);
-    await voidTransaction(tx.id, 'entered by mistake', ctx());
+    await voidTransaction(tx.id, 'entered by mistake', ctx(), { mayMoveTill: true });
     expect(await clientBalanceUsd(clientId)).toBe(before);
-    await expect(voidTransaction(tx.id, 'again', ctx())).rejects.toMatchObject({
+    await expect(voidTransaction(tx.id, 'again', ctx(), { mayMoveTill: true })).rejects.toMatchObject({
       code: 'already_voided',
     });
   });
@@ -222,7 +222,7 @@ describe('client ledger', () => {
     expect(list[0]!.clientCode).toMatch(/^F2/);
     expect(Number(list[0]!.tx.amountUsd)).toBe(50);
     // Keep the ledger consistent for the debt-gate tests below.
-    await voidTransaction(list[0]!.tx.id, 'test cleanup', ctx());
+    await voidTransaction(list[0]!.tx.id, 'test cleanup', ctx(), { mayMoveTill: true });
   });
 });
 

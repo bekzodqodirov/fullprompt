@@ -26,6 +26,9 @@ import {
   costCashDay,
   mergedFrom,
 } from './cash-rules';
+import { latestTxDate } from '../finance/dates';
+import { exceedsRowUsd, nativeAmount, signedNativeAmount } from '../finance/money-bounds';
+import { tashkentDay } from '../../platform/time/tashkent';
 
 /**
  * Management accounting (Phase 2.4, owner's answers).
@@ -104,8 +107,14 @@ export const accountSchema = z.object({
   name: z.string().trim().min(2).max(120),
   currency: z.string().length(3).toUpperCase(),
   kind: z.enum(['cash', 'bank', 'card']),
-  /** What was in the box before the system started (owner: "ha kiritamiz"). */
-  openingBalance: z.number().min(-1_000_000_000).max(1_000_000_000).default(0),
+  /**
+   * What was in the box before the system started (owner: "ha kiritamiz").
+   * Bounded by the amount columns' numeric(14,2), both signs — the old ±1e9
+   * cap made a so'm firm account holding more than ~$80k impossible to open
+   * at its true figure (U44). No dollar guard: a till's count is not a row
+   * with a rate, and its column (16,2) holds more than this bound.
+   */
+  openingBalance: signedNativeAmount().default(0),
   openingDate: DATE.optional().or(z.literal('')),
   sortOrder: z.number().int().min(0).max(10_000).default(100),
   active: z.boolean().default(true),
@@ -117,6 +126,32 @@ export async function listAccounts(includeInactive = false) {
     .from(moneyAccounts)
     .where(includeInactive ? undefined : eq(moneyAccounts.active, true))
     .orderBy(asc(moneyAccounts.sortOrder), asc(moneyAccounts.name));
+}
+
+/**
+ * Tills something already points at — any row, LIVE OR VOIDED, in any of the
+ * six tables that name a kassa, templates included (U29). ONE statement for
+ * the whole list (the owner keeps ~86 tills, #432), or for one till when
+ * `accountId` is given; on whichever connection the caller holds, so the
+ * save below can ask it inside its own lock.
+ *
+ * Voided rows count because they are still PRINTED in the till's currency on
+ * the ledger and transfer lists, and a template counts because re-reading it
+ * in another currency fails every monthly post (measured).
+ */
+export async function tillsInUse(conn: Db | Tx = db, accountId?: string): Promise<Set<string>> {
+  const rows = await conn.execute<{ id: string }>(sql`
+    SELECT ma.id FROM money_accounts ma
+     WHERE ${accountId ? sql`ma.id = ${accountId}::uuid` : sql`TRUE`}
+       AND (EXISTS (SELECT 1 FROM client_transactions x WHERE x.account_id = ma.id)
+         OR EXISTS (SELECT 1 FROM expenses x WHERE x.account_id = ma.id)
+         OR EXISTS (SELECT 1 FROM cost_entries x WHERE x.account_id = ma.id)
+         OR EXISTS (SELECT 1 FROM partner_transactions x WHERE x.account_id = ma.id)
+         OR EXISTS (SELECT 1 FROM account_transfers x
+                     WHERE x.from_account_id = ma.id OR x.to_account_id = ma.id)
+         OR EXISTS (SELECT 1 FROM recurring_expenses x WHERE x.account_id = ma.id))
+  `);
+  return new Set(rows.map((row) => row.id));
 }
 
 export async function saveAccount(
@@ -133,14 +168,53 @@ export async function saveAccount(
     sortOrder: input.sortOrder,
     active: input.active,
   };
-  const [row] = input.id
-    ? await db.update(moneyAccounts).set(values).where(eq(moneyAccounts.id, input.id)).returning()
-    : await db.insert(moneyAccounts).values(values).returning();
-  if (!row) throw new AccountingError('not_found');
+  if (!input.id) {
+    const [row] = await db.insert(moneyAccounts).values(values).returning();
+    await writeAudit(db, ctx, {
+      entityType: 'money_account',
+      entityId: row!.id,
+      action: 'create',
+      after: values,
+    });
+    return row!;
+  }
+  const id = input.id;
+  // A kassa's currency is FIXED once anything points at it (U29). Every row
+  // naming a till was written in the till's currency — every door refuses
+  // account_currency_mismatch (#533) — so re-labelling the till re-reads each
+  // of those amounts in another currency: the opening, the payments, the
+  // expenses, the costs, the transfers, the Balans. There is no legitimate
+  // case; a till in a new currency is a NEW till. The check and the write
+  // share one lock on the till row; the payment doors read the currency
+  // without one, so a first payment racing this very save is a residual
+  // window — negligible, stated rather than locked at every door.
+  const { row, before } = await db.transaction(async (tx) => {
+    const [stored] = await tx
+      .select()
+      .from(moneyAccounts)
+      .where(eq(moneyAccounts.id, id))
+      .for('update');
+    if (!stored) throw new AccountingError('not_found');
+    if (stored.currency !== input.currency && (await tillsInUse(tx, id)).size > 0) {
+      throw new AccountingError('currency_locked');
+    }
+    const [updated] = await tx.update(moneyAccounts).set(values).where(eq(moneyAccounts.id, id)).returning();
+    return { row: updated!, before: stored };
+  });
   await writeAudit(db, ctx, {
     entityType: 'money_account',
     entityId: row.id,
-    action: input.id ? 'update' : 'create',
+    action: 'update',
+    // The before half used to be null, so a changed currency or opening could
+    // not be traced from the history afterwards.
+    before: {
+      name: before.name,
+      currency: before.currency,
+      kind: before.kind,
+      openingBalance: before.openingBalance,
+      openingDate: before.openingDate,
+      active: before.active,
+    },
     after: values,
   });
   return row;
@@ -150,7 +224,8 @@ export async function saveAccount(
 
 export const expenseSchema = z.object({
   categoryId: z.string().uuid(),
-  amount: z.number().positive().max(1_000_000_000),
+  // The column's bound in every currency; the dollar ceiling is the service's (U44).
+  amount: nativeAmount(),
   currency: z.string().length(3).toUpperCase(),
   expenseDate: DATE,
   warehouseId: z.string().uuid().optional().or(z.literal('')),
@@ -166,6 +241,33 @@ export const expenseSchema = z.object({
   note: z.string().trim().max(2000).optional().or(z.literal('')),
 });
 export type ExpenseInput = z.infer<typeof expenseSchema>;
+
+/**
+ * Does this expense name a kassa or a payer on a NON-cash kind? (U06)
+ *
+ * A category marked «not cash» (depreciation) never moves money: the cash flow
+ * leaves it out by that flag. Naming a kassa on one took it out of the drawer
+ * and out of the Balans cash while the cash flow said nothing left — the
+ * drawer and the report disagreeing by money that, by the category's own
+ * definition, never moved; naming a payer booked a debt for a book entry.
+ * Refused, never silently dropped: the expense form's own history records
+ * that a silent drop «meant something different from what was typed».
+ *
+ * Read on the POOL: every caller asks it BEFORE its transaction (#714). A
+ * category that does not exist answers false — the insert's FK refuses it.
+ */
+export async function namesMoneyOnNonCash(
+  categoryId: string,
+  payer: { accountId?: string | null; partnerId?: string | null },
+): Promise<boolean> {
+  if (!payer.accountId && !payer.partnerId) return false;
+  const [category] = await db
+    .select({ cash: expenseCategories.cash })
+    .from(expenseCategories)
+    .where(eq(expenseCategories.id, categoryId))
+    .limit(1);
+  return category?.cash === false;
+}
 
 /**
  * The WRITE half of an expense, on whichever connection the caller holds.
@@ -190,7 +292,21 @@ export async function addExpenseTx(
   opts: { recurringId?: string } = {},
 ) {
   if (!ctx.actorId) throw new AccountingError('unauthenticated');
+  // No money row dated after tomorrow (#995's rule, U21): a future expense
+  // leaves today's kassa and the Balans at once while the P&L, the cash flow
+  // and the expense book — «1 January to today» — never show it. Asked in the
+  // WRITE half, so the hand-typed expense, the upsale payout and the rasxod
+  // xabari's «Kiritish» are one door. The monthly run is the exception on
+  // purpose: it posts each template on its own day of the month, which is
+  // how «▶️ Oyni yozish» has always worked, and whether that should change
+  // is the owner's open question (A/B/C) — so a recurring posting, and only
+  // one (`recurringId` is never read from a form), keeps today's behaviour.
+  if (!opts.recurringId && input.expenseDate > latestTxDate()) {
+    throw new AccountingError('future_date');
+  }
   const amountUsd = Math.round(input.amount * rate * 100) / 100;
+  // The typo ceiling, in DOLLARS (U44): the native bound is the column's.
+  if (exceedsRowUsd(amountUsd)) throw new AccountingError('amount_too_large');
 
   const [row] = await dbOrTx
     .insert(expenses)
@@ -238,6 +354,12 @@ export async function addExpense(
     if (account && account.currency !== input.currency) {
       throw new AccountingError('account_currency_mismatch');
     }
+  }
+  // A non-cash kind (depreciation) is a BOOK entry: it names no kassa and no
+  // payer (U06). The monthly run comes through here too, so an old template
+  // that names one lands in its `failed` count — the visible outcome.
+  if (await namesMoneyOnNonCash(input.categoryId, input)) {
+    throw new AccountingError('non_cash_category');
   }
   const rate = await rateFor(input.currency, input.expenseDate);
   if (rate === null) throw new AccountingError('fx_missing');
@@ -364,6 +486,16 @@ export async function listRecurring() {
     .orderBy(asc(expenseCategories.sortOrder));
 }
 
+/**
+ * The dollar ceiling (U44) for a TEMPLATE, at today's rate — the monthly run
+ * asks it again per posting, at the posting's own. No rate yet = nothing to
+ * compare with, and the run will say so in its `failed` count.
+ */
+async function assertRecurringUsd(amount: number, currency: string): Promise<void> {
+  const rate = await rateFor(currency, tashkentDay());
+  if (rate !== null && exceedsRowUsd(amount * rate)) throw new AccountingError('amount_too_large');
+}
+
 export async function saveRecurring(
   input: z.infer<typeof recurringSchema> & { id?: string },
   ctx: AuditContext,
@@ -383,6 +515,12 @@ export async function saveRecurring(
       throw new AccountingError('account_currency_mismatch');
     }
   }
+  // The non-cash rule (U06), asked where the person is still on the form —
+  // the same reason as the pair rule above.
+  if (await namesMoneyOnNonCash(input.categoryId, input)) {
+    throw new AccountingError('non_cash_category');
+  }
+  await assertRecurringUsd(input.amount, input.currency);
   const values = {
     categoryId: input.categoryId,
     amount: String(input.amount),
@@ -426,7 +564,7 @@ export async function saveRecurring(
  * cost than the one that was posted.
  */
 export const recurringPatchSchema = z.object({
-  amount: z.number().positive().max(1_000_000_000),
+  amount: nativeAmount(),
   dayOfMonth: z.number().int().min(1).max(28),
   active: z.boolean(),
 });
@@ -439,6 +577,7 @@ export async function updateRecurring(
   if (!ctx.actorId) throw new AccountingError('unauthenticated');
   const before = await db.query.recurringExpenses.findFirst({ where: eq(recurringExpenses.id, id) });
   if (!before) throw new AccountingError('not_found');
+  await assertRecurringUsd(patch.amount, before.currency);
   const [row] = await db
     .update(recurringExpenses)
     .set({
@@ -544,8 +683,8 @@ export async function generateRecurring(month: string, ctx: AuditContext) {
 export const transferSchema = z.object({
   fromAccountId: z.string().uuid(),
   toAccountId: z.string().uuid(),
-  amountFrom: z.number().positive().max(1_000_000_000),
-  amountTo: z.number().positive().max(1_000_000_000),
+  amountFrom: nativeAmount(),
+  amountTo: nativeAmount(),
   transferDate: DATE,
   note: z.string().trim().max(2000).optional().or(z.literal('')),
 });
@@ -558,6 +697,8 @@ export const transferSchema = z.object({
 export async function addTransfer(input: z.infer<typeof transferSchema>, ctx: AuditContext) {
   if (!ctx.actorId) throw new AccountingError('unauthenticated');
   if (input.fromAccountId === input.toAccountId) throw new AccountingError('same_account');
+  // #995's rule (U21): a transfer dated next month moved both tills today.
+  if (input.transferDate > latestTxDate()) throw new AccountingError('future_date');
   const [from, to] = await Promise.all([
     db.query.moneyAccounts.findFirst({ where: eq(moneyAccounts.id, input.fromAccountId) }),
     db.query.moneyAccounts.findFirst({ where: eq(moneyAccounts.id, input.toAccountId) }),
@@ -573,6 +714,8 @@ export async function addTransfer(input: z.infer<typeof transferSchema>, ctx: Au
   }
   const rate = await rateFor(from.currency, input.transferDate);
   if (rate === null) throw new AccountingError('fx_missing');
+  const amountUsd = Math.round(input.amountFrom * rate * 100) / 100;
+  if (exceedsRowUsd(amountUsd)) throw new AccountingError('amount_too_large');
 
   const [row] = await db
     .insert(accountTransfers)
@@ -581,7 +724,7 @@ export async function addTransfer(input: z.infer<typeof transferSchema>, ctx: Au
       toAccountId: input.toAccountId,
       amountFrom: String(input.amountFrom),
       amountTo: String(input.amountTo),
-      amountUsd: String(Math.round(input.amountFrom * rate * 100) / 100),
+      amountUsd: String(amountUsd),
       transferDate: input.transferDate,
       note: input.note || null,
       createdBy: ctx.actorId,

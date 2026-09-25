@@ -1,5 +1,6 @@
 import { and, desc, eq, gte, inArray, isNull, lte, sql, type AnyColumn, type SQL } from 'drizzle-orm';
 import { latestTxDate } from './dates';
+import { exceedsRowUsd, nativeAmount } from './money-bounds';
 import { z } from 'zod';
 import { db } from '../../platform/db/client';
 import {
@@ -65,7 +66,8 @@ export const transactionSchema = z
   .object({
     clientId: z.string().uuid(),
     type: z.enum(LEDGER_TYPES),
-    amount: z.number().positive().max(1_000_000_000),
+    // The column's bound in every currency; the dollar ceiling is below (U44).
+    amount: nativeAmount(),
     currency: z.string().length(3).toUpperCase(),
     method: z.enum(['cash', 'card', 'transfer']).optional(),
     txDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -137,6 +139,7 @@ export async function addTransaction(input: TransactionInput, ctx: AuditContext)
   const rate = await rateFor(input.currency, input.txDate);
   if (rate === null) throw new FinanceError('fx_missing');
   const amountUsd = Math.round(input.amount * rate * 100) / 100;
+  if (exceedsRowUsd(amountUsd)) throw new FinanceError('amount_too_large');
 
   const [row] = await db
     .insert(clientTransactions)
@@ -218,13 +221,27 @@ export async function placePayment(id: string, accountId: string, ctx: AuditCont
   });
 }
 
-export async function voidTransaction(id: string, reason: string, ctx: AuditContext) {
+export async function voidTransaction(
+  id: string,
+  reason: string,
+  ctx: AuditContext,
+  /**
+   * May this person move a kassa (`mayPickTill` — finance.expenses)? REQUIRED,
+   * never optional: an optional door fails open (U33). Voiding a REFUND puts
+   * the money back into the drawer on paper — the till reads more cash than
+   * it holds and the client's ledger forgets the money was handed back — so
+   * it asks the grant that created it (#1014), the pair #1018 closed for a
+   * kassa-paid cost. Judged by the ROW's type, never the form's.
+   */
+  door: { mayMoveTill: boolean },
+) {
   if (!ctx.actorId) throw new FinanceError('unauthenticated');
   const row = await db.query.clientTransactions.findFirst({
     where: eq(clientTransactions.id, id),
   });
   if (!row) throw new FinanceError('not_found');
   if (row.voidedAt) throw new FinanceError('already_voided');
+  if (row.type === 'refund' && !door.mayMoveTill) throw new FinanceError('forbidden');
   // A three-cornered settlement is ONE agreement with two halves (#415), and
   // `voidPartnerTx` has always taken the client half with it. This is the
   // mirror, which was missing: voiding the client half alone left our debt to

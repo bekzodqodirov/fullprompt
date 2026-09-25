@@ -843,12 +843,14 @@ describe('profitability', () => {
         costTypeId: profitCostTypeId,
         amount: 77,
         currency: 'USD',
-        costDate: '2031-01-15',
+        // The file's private year (#995): a cost dated after tomorrow is
+        // refused at the door now (U21).
+        costDate: `${YEAR}-01-15`,
         allocationBasis: 'weight',
       },
       ctx(),
     );
-    const rows = await profitByClient('2031-01-01', '2031-01-31');
+    const rows = await profitByClient(`${YEAR}-01-01`, `${YEAR}-01-31`);
     const mine = rows.find((row) => row.clientId === clientId);
     expect(mine).toBeTruthy();
     expect(mine!.revenueUsd).toBe(0);

@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { latestTxDate } from '@/modules/wms/finance/dates';
 import { addPartnerTxAction, type PartnerFormState } from '../actions';
 
 /**
@@ -168,6 +169,7 @@ export function PartnerTxForm({
         aria-label={t('date')}
         data-testid="partner-tx-date"
         defaultValue={today}
+        max={latestTxDate()}
         required
       />
       <textarea
@@ -199,7 +201,11 @@ export function PartnerTxForm({
               ? t('chargeMoved')
               : state.error === 'forbidden'
                 ? t('staffForbidden')
-                : tc('error')}
+                : state.error === 'future_date'
+                  ? tc('futureDate')
+                  : state.error === 'amount_too_large'
+                    ? tc('amountTooLarge')
+                    : tc('error')}
         </p>
       )}
       {state.ok && <p className="text-sm font-semibold text-good">✅ {tc('save')}</p>}

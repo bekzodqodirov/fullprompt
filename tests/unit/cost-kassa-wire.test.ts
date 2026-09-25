@@ -44,6 +44,19 @@ describe('the cost doors ask the kassa rules after their own grant', () => {
     expect(gate).toBeLessThan(body.indexOf('await voidCostEntry('));
   });
 
+  it('voiding a cost a colleague paid is staff money: the accountant and the admin only (U34)', () => {
+    const body = slice(actions, 'export async function voidCostEntryAction', 'async function voidReceiptCostDoor');
+    const gate = body.indexOf(
+      "if (entry.partnerId && !maySeeStaffMoney(actor.permissions) && (await isStaffPartner(entry.partnerId))) {",
+    );
+    expect(gate).toBeGreaterThan(body.indexOf('authorize('));
+    expect(gate).toBeLessThan(body.indexOf('await voidCostEntry('));
+    expect(body).toContain("return { ok: false, error: 'staff_cost_needs_finance' };");
+    // The panel says it in words (a literal in its map, #163).
+    const panel = read('src/components/cost-panel.tsx');
+    expect(panel).toContain("staff_cost_needs_finance: 'errStaffVoid',");
+  });
+
   it('placing, the staff answer and the merge are behind the same predicate', () => {
     const place = slice(actions, 'export async function setCostAccountAction');
     expect(place).toContain("authorize('finance.expenses')");

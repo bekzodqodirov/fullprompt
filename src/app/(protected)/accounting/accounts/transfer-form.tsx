@@ -2,6 +2,7 @@
 
 import { useActionState } from 'react';
 import { useTranslations } from 'next-intl';
+import { latestTxDate } from '@/modules/wms/finance/dates';
 import { addTransferAction, voidTransferAction, type AccountingFormState } from '../actions';
 
 interface Option {
@@ -69,6 +70,7 @@ export function TransferForm({ accounts, today }: { accounts: Option[]; today: s
           name="transferDate"
           aria-label={t('date')}
           defaultValue={today}
+          max={latestTxDate()}
           className="input !w-40"
           required
         />
@@ -96,7 +98,11 @@ export function TransferForm({ accounts, today }: { accounts: Option[]; today: s
               ? t('sameAccount')
               : state.error === 'amount_mismatch'
                 ? t('transferAmountMismatch')
-                : tc('error')}
+                : state.error === 'future_date'
+                  ? tc('futureDate')
+                  : state.error === 'amount_too_large'
+                    ? tc('amountTooLarge')
+                    : tc('error')}
         </p>
       )}
     </form>

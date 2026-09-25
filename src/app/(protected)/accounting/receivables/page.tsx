@@ -7,7 +7,7 @@ import { arAging } from '@/modules/wms/accounting/reports';
 import { agingTotals } from '@/modules/wms/accounting/balance-lines';
 import { toUzs, uzsRate } from '@/modules/wms/accounting/period';
 import { PageHeader } from '@/components/ui/page';
-import { tashkentDay } from '@/modules/platform/time/tashkent';
+import { calendarDay, tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * Who owes, and for how long.
@@ -26,10 +26,8 @@ export default async function ReceivablesPage({
   if (!actor.permissions.has('finance.reports')) redirect('/accounting');
   const t = await getTranslations('accounting');
   const params = await searchParams;
-  const asOf =
-    params.asOf && /^\d{4}-\d{2}-\d{2}$/.test(params.asOf)
-      ? params.asOf
-      : tashkentDay();
+  // A real calendar day or today (U43) — 2026-02-30 used to reach postgres.
+  const asOf = calendarDay(params.asOf) ?? tashkentDay();
   const [rows, rate, future] = await Promise.all([arAging(asOf), uzsRate(), futureDatedEntries()]);
 
   const usd = (value: number) =>

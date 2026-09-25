@@ -8,7 +8,7 @@ import {
 } from './won-money';
 import { db } from '../../platform/db/client';
 import { deals, dealStages, leads, leadSources, leadStages, users } from '../../platform/db/schema';
-import { addDays, tashkentDay, tashkentDayStart, tashkentMonthStart } from '@/modules/platform/time/tashkent';
+import { addDays, calendarDay, tashkentDay, tashkentDayStart, tashkentMonthStart } from '@/modules/platform/time/tashkent';
 
 /**
  * The sales analytics page's one fetch (round 98, owner: «dunyo standartlarida
@@ -562,13 +562,9 @@ export function readPeriod(
   params: { dan?: string; gacha?: string },
   now: Date = new Date(),
 ): Period & { dan: string; gacha: string } {
-  const dayOf = (value: string | undefined) => {
-    if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
-    const parsed = new Date(`${value}T00:00:00Z`);
-    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value
-      ? value
-      : undefined;
-  };
+  // The shared calendar reader (U43) — it also drops year 0000, which V8
+  // round-trips and postgres refuses.
+  const dayOf = (value: string | undefined) => calendarDay(value) ?? undefined;
 
   const dan = dayOf(params.dan) ?? tashkentMonthStart(now);
   let gacha = dayOf(params.gacha) ?? tashkentDay(now);

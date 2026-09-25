@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { addCostEntryAction, voidCostEntryAction } from '@/app/(protected)/costs/actions';
 import { parseTypedMoney } from '@/modules/wms/calc/money-input';
+import { latestTxDate } from '@/modules/wms/finance/dates';
 
 export interface CostEntryView {
   id: string;
@@ -50,6 +51,9 @@ const PAYER_ERRORS = {
   account_not_found: 'errTillNotFound',
   account_currency_mismatch: 'errTillCurrency',
   payer_conflict: 'errPayerConflict',
+  staff_cost_needs_finance: 'errStaffVoid',
+  future_date: 'errFutureDate',
+  amount_too_large: 'errAmountTooLarge',
 } as const;
 
 function payerErrorText(code: string | undefined, t: (key: string) => string): string {
@@ -273,6 +277,8 @@ export function CostPanel({
             type="date"
             className="input"
             value={costDate}
+            // #995's rule, the door's own limit (U21): not after tomorrow.
+            max={latestTxDate()}
             onChange={(e) => setCostDate(e.target.value)}
           />
           {/* Its own line. Sharing one with the date box left it reading «по»

@@ -16,6 +16,8 @@ import {
 } from '@/modules/wms/partners/service';
 import { recordSettlement, settlementSchema } from '@/modules/wms/partners/settlement';
 import { isStaffPartner, isStaffType, maySeeStaffMoney } from '@/modules/wms/partners/staff';
+import { parseTypedMoney } from '@/modules/wms/calc/money-input';
+import { amountRefusal } from '@/modules/wms/finance/money-bounds';
 
 /**
  * Every door into the partner ledger.
@@ -96,11 +98,14 @@ async function run(
   return { ok: true };
 }
 
-const num = (value: FormDataEntryValue | null): number => {
-  const text = String(value ?? '').trim().replace(',', '.');
-  const parsed = Number(text);
-  return Number.isFinite(parsed) ? parsed : NaN;
-};
+/**
+ * A typed amount, read the office's way (U28, #979's shared reader): «1,200»
+ * is a thousand two hundred, not 1.2, and «1 200» is readable instead of a
+ * refusal carrying zod's raw «Expected number, received nan». A leading «-»
+ * still reads, for an `adjust`; anything unreadable stays NaN and is refused.
+ */
+const money = (value: FormDataEntryValue | null): number =>
+  parseTypedMoney(String(value ?? '')) ?? Number.NaN;
 
 export async function savePartnerAction(
   _prev: PartnerFormState,
@@ -145,14 +150,25 @@ export async function addPartnerTxAction(
   const parsed = partnerTxSchema.safeParse({
     partnerId,
     type: formData.get('type'),
-    amount: num(formData.get('amount')),
+    amount: money(formData.get('amount')),
     currency: formData.get('currency'),
     txDate: formData.get('txDate'),
     accountId: formData.get('accountId') ?? '',
     batchId: formData.get('batchId') ?? '',
     note: formData.get('note') ?? '',
   });
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'validation' };
+  // The two refines name the field ('amount' / 'account') and the form maps
+  // them; a size refusal is its own sentence (U44). Any other issue is zod's
+  // own English and never reaches the screen — it was, for an unreadable
+  // amount, «Expected number, received nan».
+  if (!parsed.success) {
+    const size = amountRefusal(parsed.error);
+    if (size) return { error: size };
+    const named = parsed.error.issues.find(
+      (issue) => issue.code === 'custom' && (issue.message === 'amount' || issue.message === 'account'),
+    );
+    return { error: named?.message ?? 'validation' };
+  }
   return run(
     (actor) => staffDoor(actor, parsed.data.partnerId),
     (ctx) => addPartnerTx(parsed.data, ctx),
@@ -185,14 +201,17 @@ export async function recordSettlementAction(
     txId: formData.get('txId'),
     clientId: formData.get('clientId'),
     partnerId: formData.get('partnerId'),
-    clientAmount: num(formData.get('clientAmount')),
+    clientAmount: money(formData.get('clientAmount')),
     clientCurrency: formData.get('clientCurrency'),
-    partnerAmount: num(formData.get('partnerAmount')),
+    partnerAmount: money(formData.get('partnerAmount')),
     partnerCurrency: formData.get('partnerCurrency'),
     txDate: formData.get('txDate'),
     note: formData.get('note') ?? '',
+    // Which job the client's money answers (U30) — the payment form's #531
+    // wire, on the settlement door. The service checks it is this client's.
+    dealId: formData.get('dealId') ?? '',
   });
-  if (!parsed.success) return { error: 'validation' };
+  if (!parsed.success) return { error: amountRefusal(parsed.error) ?? 'validation' };
 
   let actor;
   try {

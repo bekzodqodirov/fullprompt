@@ -74,7 +74,9 @@ export default async function ExpensesPage({
   // off for five hours.
   const today = tashkentDay();
   const options = {
-    categories: categories.map((row) => ({ id: row.id, label: row.name })),
+    // The cash flag rides along so both forms can drop the kassa and the payer
+    // for a book entry (U06) — the service refuses them anyway.
+    categories: categories.map((row) => ({ id: row.id, label: row.name, cash: row.cash })),
     accounts: accounts.map((row) => ({ id: row.id, label: `${row.name} (${row.currency})` })),
     warehouses: warehouseRows.map((row) => ({ id: row.id, label: row.code })),
     employees: employeeRows.map((row) => ({ id: row.id, label: row.fullName })),

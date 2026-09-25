@@ -5,7 +5,7 @@ import { db } from '@/modules/platform/db/client';
 import { currencies } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { Panel } from '@/components/panel';
-import { accountBalances, listAccounts, listTransfers } from '@/modules/wms/accounting/service';
+import { accountBalances, listAccounts, listTransfers, tillsInUse } from '@/modules/wms/accounting/service';
 import { rateFor } from '@/modules/wms/costing/service';
 import { AccountForm } from './account-form';
 import { TransferForm, VoidTransferButton } from './transfer-form';
@@ -26,11 +26,14 @@ export default async function AccountsPage() {
   const t = await getTranslations('accounting');
   const tc = await getTranslations('common');
 
-  const [accounts, balances, currencyRows, transfers] = await Promise.all([
+  const [accounts, balances, currencyRows, transfers, inUse] = await Promise.all([
     listAccounts(true),
     accountBalances(),
     db.select({ code: currencies.code }).from(currencies).where(eq(currencies.active, true)),
     listTransfers(),
+    // ONE statement for every till (#432): which ones have their currency
+    // fixed because something already points at them (U29).
+    tillsInUse(),
   ]);
   const codes = currencyRows.map((row) => row.code);
   const today = tashkentDay();
@@ -137,6 +140,7 @@ export default async function AccountsPage() {
               openingDate: account.openingDate,
               sortOrder: account.sortOrder,
               active: account.active,
+              inUse: inUse.has(account.id),
             }}
           />
         ))}

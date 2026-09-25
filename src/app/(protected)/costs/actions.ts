@@ -18,6 +18,7 @@ import {
 } from '@/modules/wms/costing/service';
 import { mayPickTill } from '@/modules/wms/accounting/till-door';
 import { isStaffPartner, maySeeStaffMoney } from '@/modules/wms/partners/staff';
+import { amountRefusal, nativeAmount } from '@/modules/wms/finance/money-bounds';
 
 export interface CostActionResult {
   ok: boolean;
@@ -47,7 +48,7 @@ async function payerRefusal(
 
 export async function addCostEntryAction(input: unknown): Promise<CostActionResult> {
   const parsed = costEntrySchema.safeParse(input);
-  if (!parsed.success) return { ok: false, error: 'validation' };
+  if (!parsed.success) return { ok: false, error: amountRefusal(parsed.error) ?? 'validation' };
 
   let path: string;
   let actor;
@@ -112,7 +113,7 @@ export async function addCostEntryAction(input: unknown): Promise<CostActionResu
  */
 export async function saveReceiptCostGridAction(input: unknown): Promise<CostActionResult> {
   const parsed = receiptCostGridSchema.safeParse(input);
-  if (!parsed.success) return { ok: false, error: 'validation' };
+  if (!parsed.success) return { ok: false, error: amountRefusal(parsed.error) ?? 'validation' };
 
   const batch = await db.query.batches.findFirst({ where: eq(batches.id, parsed.data.batchId) });
   if (!batch) return { ok: false, error: 'not_found' };
@@ -189,6 +190,16 @@ export async function voidCostEntryAction(input: unknown): Promise<CostActionRes
   if (entry.accountId && !mayPickTill(actor.permissions)) {
     return { ok: false, error: 'kassa_cost_needs_finance' };
   }
+  // A cost a COLLEAGUE paid out of their own pocket: voiding it takes the
+  // company's debt to that person off their staff account — staff money,
+  // which the owner gave to the accountant and the admin alone (M3a, #1020),
+  // the same pair `staffDoor` and `payerRefusal` ask. Without this a
+  // warehouse user's void bypassed that door and the colleague's /profile
+  // said he owed the company (U34). Who may void a FIRM-paid cost is the
+  // owner's open question and stays exactly as it was.
+  if (entry.partnerId && !maySeeStaffMoney(actor.permissions) && (await isStaffPartner(entry.partnerId))) {
+    return { ok: false, error: 'staff_cost_needs_finance' };
+  }
   const meta = await requestMeta();
   try {
     await voidCostEntry(parsed.data.id, parsed.data.reason, { actorId: actor.id, ...meta });
@@ -227,7 +238,8 @@ async function voidReceiptCostDoor(receiptWarehouseId: string, stampedBatchId: s
 const placeSchema = z.object({
   id: z.string().uuid(),
   accountId: z.string().uuid().nullable(),
-  accountAmount: z.number().positive().max(1_000_000_000_000).optional(),
+  // The shared bound (U44) — the literal 1e12 was one unit past the column.
+  accountAmount: nativeAmount().optional(),
 });
 
 /**
@@ -237,7 +249,7 @@ const placeSchema = z.object({
  */
 export async function setCostAccountAction(input: unknown): Promise<CostActionResult> {
   const parsed = placeSchema.safeParse(input);
-  if (!parsed.success) return { ok: false, error: 'validation' };
+  if (!parsed.success) return { ok: false, error: amountRefusal(parsed.error) ?? 'validation' };
   let actor;
   try {
     actor = await authorize('finance.expenses');

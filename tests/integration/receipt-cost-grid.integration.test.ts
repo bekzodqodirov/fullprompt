@@ -426,7 +426,7 @@ describe('the payments register reads what the ledger wrote', () => {
       ctx(),
     );
     madeTx.push(voided.id);
-    await voidTransaction(voided.id, 'xato yozildi', ctx());
+    await voidTransaction(voided.id, 'xato yozildi', ctx(), { mayMoveTill: true });
 
     const { rows, totalUsd } = await paymentsRegister(today, today);
     const mine = rows.filter((row) => row.clientId === clientId);

@@ -5,11 +5,14 @@ import {
   attachments,
   clients,
   clientTransactions,
+  deals,
   partners,
   partnerTransactions,
 } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { rateFor } from '../costing/service';
+import { latestTxDate } from '../finance/dates';
+import { exceedsRowUsd, nativeAmount } from '../finance/money-bounds';
 import { PartnerError } from './service';
 
 /**
@@ -40,13 +43,23 @@ export const settlementSchema = z
     clientId: z.string().uuid(),
     partnerId: z.string().uuid(),
     /** What the client actually sent. */
-    clientAmount: z.number().positive().max(1_000_000_000),
+    clientAmount: nativeAmount(),
     clientCurrency: z.string().length(3).toUpperCase(),
     /** What the firm says it took off our debt. */
-    partnerAmount: z.number().positive().max(1_000_000_000),
+    partnerAmount: nativeAmount(),
     partnerCurrency: z.string().length(3).toUpperCase(),
     txDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     note: z.string().trim().max(2000).optional().or(z.literal('')),
+    /**
+     * Which JOB the client's money answers, when the accountant says (U30).
+     * Optional like the kassa form's: plenty of money arrives for no deal.
+     * But for a DEFERRED deal it is the whole mechanism — the handover gate
+     * nets a deferral's charges against the payments that NAME it (#251), so
+     * a settlement that could name nothing paid the deferral off on paper
+     * while the gate went on excusing unrelated debt: #531's hole on the one
+     * money door it had not reached.
+     */
+    dealId: z.string().uuid().optional().or(z.literal('')),
   });
 export type SettlementInput = z.infer<typeof settlementSchema>;
 
@@ -64,6 +77,9 @@ export async function recordSettlement(
   ctx: AuditContext,
 ): Promise<SettlementResult> {
   if (!ctx.actorId) throw new PartnerError('unauthenticated');
+  // #995's rule (U21), before anything is written. This door writes a CLIENT
+  // payment too, so without it the ledger's own guard had a way round.
+  if (input.txDate > latestTxDate()) throw new PartnerError('future_date');
 
   const [client] = await db
     .select({ id: clients.id })
@@ -77,6 +93,19 @@ export async function recordSettlement(
     .where(eq(partners.id, input.partnerId))
     .limit(1);
   if (!partner) throw new PartnerError('partner_not_found');
+  // A named deal must be THIS client's — the ledger door's rule
+  // (finance/service.ts addTransaction): a select's value is a forged post
+  // until the server has checked it (#507), and a payment parked on another
+  // client's deal would quietly re-open THEIR handover gate.
+  const dealId = input.dealId || null;
+  if (dealId) {
+    const [deal] = await db
+      .select({ clientId: deals.clientId })
+      .from(deals)
+      .where(eq(deals.id, dealId))
+      .limit(1);
+    if (!deal || deal.clientId !== input.clientId) throw new PartnerError('deal_mismatch');
+  }
 
   // Evidence or explanation — one of the two, checked before anything is
   // written. The file was uploaded against the id this form minted, so it is
@@ -100,6 +129,10 @@ export async function recordSettlement(
   if (clientRate === null || partnerRate === null) throw new PartnerError('fx_missing');
   const clientUsd = Math.round(input.clientAmount * clientRate * 100) / 100;
   const partnerUsd = Math.round(input.partnerAmount * partnerRate * 100) / 100;
+  // The typo ceiling in dollars, both halves (U44).
+  if (exceedsRowUsd(clientUsd) || exceedsRowUsd(partnerUsd)) {
+    throw new PartnerError('amount_too_large');
+  }
 
   const result = await db.transaction(async (tx) => {
     const [clientRow] = await tx
@@ -117,6 +150,9 @@ export async function recordSettlement(
         // cash-flow report must not show money it never held.
         accountId: null,
         partnerId: input.partnerId,
+        // The client half only: the job is the client's; the firm's offset
+        // names no deal.
+        dealId,
         note: input.note || null,
         createdBy: ctx.actorId!,
       })
@@ -157,6 +193,7 @@ export async function recordSettlement(
       partnerCurrency: input.partnerCurrency,
       clientUsd,
       partnerUsd,
+      ...(dealId ? { dealId } : {}),
     },
   });
 

@@ -33,6 +33,8 @@ import {
 } from '@/modules/wms/accounting/expense-requests';
 import { enqueue, JOB_PROCESS_EVENTS } from '@/modules/platform/jobs/boss';
 import { openStaffPartner, StaffAccountError } from '@/modules/wms/partners/staff-account';
+import { parseTypedMoney } from '@/modules/wms/calc/money-input';
+import { amountRefusal } from '@/modules/wms/finance/money-bounds';
 
 export interface AccountingFormState {
   ok?: boolean;
@@ -40,8 +42,25 @@ export interface AccountingFormState {
   message?: string;
 }
 
-const num = (value: FormDataEntryValue | null) =>
+/**
+ * A typed AMOUNT, read the office's way (U28): «1,200» is a thousand two
+ * hundred — the old reader turned the comma into a decimal point and saved
+ * $1.20 — and «12,500,000» is not NaN. The shared reader the calc screen and
+ * the client ledger already use (#979); unreadable stays NaN, which z.number()
+ * refuses, so the door answers «validation» instead of storing a guess.
+ */
+const money = (value: FormDataEntryValue | null) => parseTypedMoney(String(value ?? '')) ?? Number.NaN;
+
+/**
+ * A sort order or a day of the month — the old reader, kept for the fields
+ * that are not money so the fix does not widen what they accept (zod's
+ * `.int()` still refuses «5.5»).
+ */
+const int = (value: FormDataEntryValue | null) =>
   Number(String(value ?? '').replace(/\s/g, '').replace(',', '.'));
+
+/** The refusal of a zod parse in words: «too large» when it was the amount's size (U44). */
+const refusal = (error: z.ZodError) => ({ error: amountRefusal(error) ?? 'validation' });
 
 
 /** Everything here is owner/accountant territory (owner's answer 7). */
@@ -78,7 +97,7 @@ export async function addExpenseAction(
 ): Promise<AccountingFormState> {
   const parsed = expenseSchema.safeParse({
     categoryId: formData.get('categoryId'),
-    amount: num(formData.get('amount')),
+    amount: money(formData.get('amount')),
     currency: formData.get('currency'),
     expenseDate: formData.get('expenseDate'),
     warehouseId: String(formData.get('warehouseId') ?? ''),
@@ -87,7 +106,7 @@ export async function addExpenseAction(
     partnerId: String(formData.get('partnerId') ?? ''),
     note: String(formData.get('note') ?? ''),
   });
-  if (!parsed.success) return { error: 'validation' };
+  if (!parsed.success) return refusal(parsed.error);
   // The rasxod xabari this expense answers, if any (round 107). The CLAIM
   // comes first — «one Kiritish wins» — and a refused expense releases it,
   // typed inputs and all. A crash between the claim and the save leaves a
@@ -159,7 +178,7 @@ export async function saveCategoryAction(
   const parsed = categorySchema.safeParse({
     name: formData.get('name'),
     cash: checkbox(formData, 'cash'),
-    sortOrder: num(formData.get('sortOrder')) || 100,
+    sortOrder: int(formData.get('sortOrder')) || 100,
     active: checkbox(formData, 'active'),
   });
   if (!parsed.success) return { error: 'validation' };
@@ -171,16 +190,20 @@ export async function saveAccountAction(
   _prev: AccountingFormState,
   formData: FormData,
 ): Promise<AccountingFormState> {
+  // An EMPTY box is a real answer — nothing was in the till — but a typed
+  // figure nobody can read is refused (U28). `|| 0` stored 0 over it, and on
+  // an EDIT wiped an opening balance already on file (measured: 5000 → 0).
+  const opening = String(formData.get('openingBalance') ?? '').trim();
   const parsed = accountSchema.safeParse({
     name: formData.get('name'),
     currency: formData.get('currency'),
     kind: formData.get('kind'),
-    openingBalance: num(formData.get('openingBalance')) || 0,
+    openingBalance: opening === '' ? 0 : (parseTypedMoney(opening) ?? Number.NaN),
     openingDate: String(formData.get('openingDate') ?? ''),
-    sortOrder: num(formData.get('sortOrder')) || 100,
+    sortOrder: int(formData.get('sortOrder')) || 100,
     active: checkbox(formData, 'active'),
   });
-  if (!parsed.success) return { error: 'validation' };
+  if (!parsed.success) return refusal(parsed.error);
   const id = String(formData.get('id') ?? '') || undefined;
   return run('finance.expenses', (ctx) => saveAccount({ ...parsed.data, id }, ctx));
 }
@@ -191,9 +214,9 @@ export async function saveRecurringAction(
 ): Promise<AccountingFormState> {
   const parsed = recurringSchema.safeParse({
     categoryId: formData.get('categoryId'),
-    amount: num(formData.get('amount')),
+    amount: money(formData.get('amount')),
     currency: formData.get('currency'),
-    dayOfMonth: num(formData.get('dayOfMonth')) || 1,
+    dayOfMonth: int(formData.get('dayOfMonth')) || 1,
     warehouseId: String(formData.get('warehouseId') ?? ''),
     employeeId: String(formData.get('employeeId') ?? ''),
     accountId: String(formData.get('accountId') ?? ''),
@@ -203,7 +226,7 @@ export async function saveRecurringAction(
     note: String(formData.get('note') ?? ''),
     active: checkbox(formData, 'active'),
   });
-  if (!parsed.success) return { error: 'validation' };
+  if (!parsed.success) return refusal(parsed.error);
   const id = String(formData.get('id') ?? '') || undefined;
   return run('finance.expenses', (ctx) => saveRecurring({ ...parsed.data, id }, ctx));
 }
@@ -215,12 +238,13 @@ export async function updateRecurringAction(
 ): Promise<AccountingFormState> {
   const id = z.string().uuid().safeParse(formData.get('id'));
   const parsed = recurringPatchSchema.safeParse({
-    amount: num(formData.get('amount')),
-    dayOfMonth: num(formData.get('dayOfMonth')),
+    amount: money(formData.get('amount')),
+    dayOfMonth: int(formData.get('dayOfMonth')),
     // Paired with a hidden 'off' (#171): an unticked box posts nothing.
     active: checkbox(formData, 'active', false),
   });
-  if (!id.success || !parsed.success) return { error: 'validation' };
+  if (!id.success) return { error: 'validation' };
+  if (!parsed.success) return refusal(parsed.error);
   return run('finance.expenses', (ctx) => updateRecurring(id.data, parsed.data, ctx));
 }
 
@@ -252,12 +276,12 @@ export async function addTransferAction(
   const parsed = transferSchema.safeParse({
     fromAccountId: formData.get('fromAccountId'),
     toAccountId: formData.get('toAccountId'),
-    amountFrom: num(formData.get('amountFrom')),
-    amountTo: num(formData.get('amountTo')),
+    amountFrom: money(formData.get('amountFrom')),
+    amountTo: money(formData.get('amountTo')),
     transferDate: formData.get('transferDate'),
     note: String(formData.get('note') ?? ''),
   });
-  if (!parsed.success) return { error: 'validation' };
+  if (!parsed.success) return refusal(parsed.error);
   return run('finance.expenses', (ctx) => addTransfer(parsed.data, ctx));
 }
 

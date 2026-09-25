@@ -6,6 +6,7 @@ import { getSetting } from '@/modules/platform/settings/service';
 import { logger } from '@/modules/platform/logger';
 import { balancesForClients } from '../finance/service';
 import { rateFor } from '../costing/service';
+import { latestTxDate } from '../finance/dates';
 import { CalcError } from './service';
 import { MONEY_EPSILON, payableOffersSql } from './upsale';
 import type { UpsaleScope } from './upsale-scope';
@@ -301,6 +302,9 @@ export async function payUpsale(
   if (!ctx.actorId) throw new CalcError('unauthenticated');
   const ids = [...new Set(offerIds)].filter(Boolean);
   if (ids.length === 0) throw new CalcError('no_offers');
+  // #995's rule (U21), asked before any read or claim so the refusal is in
+  // the upsale's own words; `addExpenseTx` asks it again as the last door.
+  if (input.expenseDate > latestTxDate()) throw new CalcError('future_date');
 
   // The payout is an ordinary expense in a category the owner names once, so
   // the P&L, the cash flow and /accounting/expenses all see it for free. It is
@@ -310,6 +314,14 @@ export async function payUpsale(
   // would be counted as already posted and silently skipped.
   const categoryId = String((await getSetting('upsale_expense_category_id')) ?? '').trim();
   if (!categoryId) throw new CalcError('upsale_category_unset');
+
+  const { addExpenseTx, namesMoneyOnNonCash } = await import('../accounting/service');
+  // Every payout carries a till, so its category must move money (U06) — a
+  // setting chosen before that rule existed is refused here, on the pool and
+  // before the transaction (#714), in words.
+  if (await namesMoneyOnNonCash(categoryId, { accountId: input.accountId })) {
+    throw new CalcError('non_cash_category');
+  }
 
   const rate = await rateFor(input.currency, input.expenseDate);
   if (rate === null) throw new CalcError('fx_missing');
@@ -347,8 +359,6 @@ export async function payUpsale(
   const paidUsd = money(quoted.reduce((sum, q) => sum + Number(q.payable_usd), 0));
   if (!(paidUsd > 0)) throw new CalcError('nothing_to_pay');
   const amount = Math.round((paidUsd / rate) * 100) / 100;
-
-  const { addExpenseTx } = await import('../accounting/service');
 
   return db.transaction(async (tx) => {
     const expense = await addExpenseTx(
@@ -449,10 +459,14 @@ export async function setUpsaleCategory(categoryId: string, ctx: AuditContext): 
   const id = categoryId.trim();
   if (id) {
     const [row] = await db
-      .select({ id: expenseCategories.id })
+      .select({ id: expenseCategories.id, cash: expenseCategories.cash })
       .from(expenseCategories)
       .where(and(eq(expenseCategories.id, id), eq(expenseCategories.active, true)));
     if (!row) throw new CalcError('category_not_found');
+    // A commission is money HANDED OVER, out of a till every time (U06): a
+    // non-cash kind (depreciation) would take it out of the drawer while the
+    // cash flow said nothing left.
+    if (!row.cash) throw new CalcError('non_cash_category');
   }
   const { getSetting, setSetting, SETTINGS_AUDIT_ID } = await import(
     '@/modules/platform/settings/service'

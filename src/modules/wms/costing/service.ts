@@ -22,6 +22,8 @@ import {
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { getSetting } from '../../platform/settings/service';
 import { tashkentDayStart } from '../../platform/time/tashkent';
+import { latestTxDate } from '../finance/dates';
+import { exceedsRowUsd, nativeAmount } from '../finance/money-bounds';
 import { allocateEntry, toUsd, type AllocBox, type AllocationBasis } from './engine';
 import { leftBehindSql, riderCtesSql, riderFilter, riderLoad } from '../batches/riders';
 import { internalLegSql } from '../batches/internal';
@@ -107,7 +109,9 @@ export const costEntrySchema = z.object({
   crateId: z.string().uuid().optional(),
   pickupId: z.string().uuid().optional(),
   costTypeId: z.string().uuid(),
-  amount: z.number().positive().max(1_000_000_000),
+  // The column's bound in every currency (U44); the dollar ceiling is the
+  // service's, where the rate is known.
+  amount: nativeAmount(),
   currency: z.string().length(3).toUpperCase(),
   costDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   allocationBasis: z.enum(['weight', 'volume', 'chargeable', 'boxes', 'direct_to_client']),
@@ -126,7 +130,8 @@ export const costEntrySchema = z.object({
    * paid out of the firm's som account), the amount itself otherwise.
    */
   accountId: z.string().uuid().optional().or(z.literal('')),
-  accountAmount: z.number().positive().max(1_000_000_000_000).optional(),
+  // numeric(14,2) like every amount — 1e12 was one unit past the column (U44).
+  accountAmount: nativeAmount().optional(),
   note: z.string().trim().max(2000).optional().or(z.literal('')),
 });
 
@@ -177,12 +182,22 @@ export async function addCostEntry(input: z.infer<typeof costEntrySchema>, ctx: 
   if (input.allocationBasis === 'direct_to_client' && !input.clientId) {
     throw new CostError('client_required');
   }
+  // #995's rule (U21): a cost dated next month entered the tannarx, the P&L
+  // month and — kassa-paid — the drawer today. Tomorrow stays open for a
+  // Chinese warehouse already past midnight.
+  if (input.costDate > latestTxDate()) throw new CostError('future_date');
+  // The dollar ceiling where a rate is known (U44). Unconverted, the
+  // conversion itself refuses it later (`recomputeEntry`).
+  const entryRate = await rateFor(input.currency, input.costDate);
+  if (entryRate !== null && exceedsRowUsd(input.amount * entryRate)) {
+    throw new CostError('amount_too_large');
+  }
   // Naming a payer means recording a DEBT, and a debt with no dollar figure
   // cannot be recorded: `chargeForCost` returns silently when the conversion
   // is missing, so the cost row would go on showing the firm's name while
   // that firm's account never heard of it. `addPartnerTx` and `addExpense`
   // already refuse the same way — this path did not.
-  if (input.partnerId && (await rateFor(input.currency, input.costDate)) === null) {
+  if (input.partnerId && entryRate === null) {
     throw new CostError('fx_missing');
   }
   // Who paid is ONE of: a counterparty (a debt) or a kassa (cash out) — or
@@ -682,11 +697,21 @@ export async function recomputeEntry(costEntryId: string): Promise<void> {
       return entry;
     } else {
       amountUsd = rate !== null ? toUsd(Number(entry.amount), rate) : null;
+      // Past the per-row dollar ceiling (U44) the figure is not written: an
+      // allocation row is numeric(14,4) and would overflow inside this very
+      // recompute. It stays «no dollars yet», which every report names, and
+      // is corrected by void and re-entry like any other typo.
+      if (amountUsd !== null && exceedsRowUsd(amountUsd)) {
+        console.error('[costing] conversion past the per-row ceiling left unconverted', costEntryId);
+        amountUsd = null;
+      }
       await tx
         .update(costEntries)
         .set({
           amountUsd: amountUsd !== null ? String(amountUsd) : null,
-          fxRateUsed: rate !== null ? String(rate) : null,
+          // Both or neither: a rate stamped beside no dollars would read as a
+          // conversion that happened.
+          fxRateUsed: amountUsd !== null && rate !== null ? String(rate) : null,
         })
         .where(eq(costEntries.id, costEntryId));
     }
@@ -1357,7 +1382,7 @@ export const receiptCostGridSchema = z.object({
       z.object({
         receiptId: z.string().uuid(),
         costTypeId: z.string().uuid(),
-        amount: z.number().positive().max(1_000_000_000),
+        amount: nativeAmount(),
       }),
     )
     .min(1)
@@ -1382,6 +1407,9 @@ export async function addReceiptCostsBulk(
   input: ReceiptCostGridInput,
   ctx: AuditContext,
 ): Promise<GridSaveResult> {
+  // The sheet shares ONE date, so #995's rule (U21) is asked once, first —
+  // per cell it would stop the save on cell 1 with a bare code.
+  if (input.costDate > latestTxDate()) throw new CostError('future_date');
   const allowed = new Set((await batchReceiptRows(input.batchId)).map((row) => row.receiptId));
   for (const cell of input.cells) {
     if (!allowed.has(cell.receiptId)) throw new CostError('receipt_not_on_batch');
@@ -1391,6 +1419,12 @@ export async function addReceiptCostsBulk(
   if (input.partnerId && input.accountId) throw new CostError('payer_conflict');
   if (input.accountId && (await assertTill(input.accountId)).currency !== input.currency) {
     throw new CostError('account_currency_mismatch');
+  }
+  // ONE currency too, so the dollar ceiling (U44) is asked of every cell
+  // before the first is written — per cell it would stop the save part-way.
+  const sheetRate = await rateFor(input.currency, input.costDate);
+  if (sheetRate !== null && input.cells.some((cell) => exceedsRowUsd(cell.amount * sheetRate))) {
+    throw new CostError('amount_too_large');
   }
   // Each cell is its own `addCostEntry` — the engine cannot tell grid from
   // form (#398) and that is worth keeping — so a failure part-way leaves the

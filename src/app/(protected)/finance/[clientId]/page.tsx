@@ -15,6 +15,7 @@ import { CargoSummary } from '@/components/cargo-summary';
 import { TxForm } from './tx-form';
 import { VoidButton } from './void-button';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
+import { mayPickTill } from '@/modules/wms/accounting/till-door';
 
 /** One client's money ledger: balance, add charge/payment, full history. */
 export default async function ClientLedgerPage({
@@ -26,6 +27,10 @@ export default async function ClientLedgerPage({
   const actor = await getActor();
   if (!actor) redirect('/login');
   const canManage = actor.permissions.has('finance.manage');
+  // The kassa holders' grant (finance.expenses): hands a refund out AND takes
+  // one back (U33) — one predicate for the button, the create door and the
+  // void door.
+  const canRefund = mayPickTill(actor.permissions);
   if (!actor.permissions.has('finance.view') && !canManage) redirect('/');
   const t = await getTranslations('finance');
   const tcargo = await getTranslations('cargo');
@@ -103,7 +108,7 @@ export default async function ClientLedgerPage({
 
       {canManage && (
         <TxForm
-          canRefund={actor.permissions.has('finance.expenses')}
+          canRefund={canRefund}
           clientId={clientId}
           currencies={currencyRows.map((c) => c.code)}
           accounts={accounts.map((a) => ({ id: a.id, name: a.name, currency: a.currency }))}
@@ -163,7 +168,8 @@ export default async function ClientLedgerPage({
               {tx.voidedAt ? (
                 <span className="text-bad">✖ {t('voided')}: {tx.voidReason}</span>
               ) : (
-                canManage && (
+                canManage &&
+                (tx.type !== 'refund' || canRefund) && (
                   <span className="ml-auto">
                     <VoidButton id={tx.id} clientId={clientId} />
                   </span>

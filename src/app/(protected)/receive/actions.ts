@@ -3,6 +3,7 @@
 import { AuthError, authorize, type Actor } from '@/modules/platform/rbac/authorize';
 import { requestMeta } from '@/modules/platform/auth/session';
 import { enqueue, JOB_PROCESS_EVENTS } from '@/modules/platform/jobs/boss';
+import { amountRefusal } from '@/modules/wms/finance/money-bounds';
 import {
   confirmReceipt,
   confirmReceiptSchema,
@@ -25,6 +26,8 @@ export interface SubmitReceiptResult {
 
 export async function submitReceiptAction(input: unknown): Promise<SubmitReceiptResult> {
   const parsed = confirmReceiptSchema.safeParse(input);
+  // An extra cost too large for one row is said in words (U44).
+  if (!parsed.success && amountRefusal(parsed.error)) return { ok: false, error: 'amount_too_large' };
   if (!parsed.success) {
     // Tell the operator WHICH field failed, not just "validation".
     const issue = parsed.error.issues[0];
@@ -74,7 +77,7 @@ export async function requestExpenseAction(
   input: unknown,
 ): Promise<{ ok?: boolean; error?: string }> {
   const parsed = expenseRequestSchema.safeParse(input);
-  if (!parsed.success) return { error: 'validation' };
+  if (!parsed.success) return { error: amountRefusal(parsed.error) ?? 'validation' };
   // This door authorises AT a warehouse, so it still demands one: the schema
   // made it optional for the /profile door (0101), and `authorize` with no
   // warehouse would be the bare check #514 exists to refuse.

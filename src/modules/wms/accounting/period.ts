@@ -1,5 +1,5 @@
 import { rateFor } from '../costing/service';
-import { tashkentDay } from '@/modules/platform/time/tashkent';
+import { calendarDay, tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * Period handling shared by every accounting screen and export.
@@ -11,7 +11,9 @@ import { tashkentDay } from '@/modules/platform/time/tashkent';
  */
 export function resolvePeriod(params: { from?: string; to?: string }, now: Date = new Date()) {
   const today = tashkentDay(now);
-  const valid = (value?: string) => (value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null);
+  // A REAL calendar day or nothing (U43): the bare regex let 2026-02-30 reach
+  // postgres, which answered 22008 on every report and export of the period.
+  const valid = calendarDay;
   const to = valid(params.to) ?? today;
   const from = valid(params.from) ?? `${to.slice(0, 4)}-01-01`;
   // A backwards range would silently return nothing; swap instead.

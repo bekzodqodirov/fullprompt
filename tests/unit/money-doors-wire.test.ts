@@ -1,0 +1,311 @@
+import { globSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import { describe, expect, it } from 'vitest';
+import {
+  accountSchema,
+  expenseSchema,
+  recurringPatchSchema,
+  recurringSchema,
+  transferSchema,
+} from '@/modules/wms/accounting/service';
+import { expenseRequestSchema } from '@/modules/wms/accounting/expense-requests';
+import { costEntrySchema, receiptCostGridSchema } from '@/modules/wms/costing/service';
+import { createCrateSchema } from '@/modules/wms/crates/service';
+import { transactionSchema } from '@/modules/wms/finance/service';
+import { amountRefusal, exceedsRowUsd, MAX_NATIVE_AMOUNT, MAX_ROW_USD } from '@/modules/wms/finance/money-bounds';
+import { partnerTxSchema } from '@/modules/wms/partners/service';
+import { settlementSchema } from '@/modules/wms/partners/settlement';
+import { extraCostSchema } from '@/modules/wms/receipts/service';
+
+/**
+ * The finance audit's DOORS (U21/U28/U29/U30/U33/U34/U44/U06) — the halves an
+ * integration test cannot press because the action calls `authorize` (#531).
+ * The service halves are proven in money-doors.integration.test.ts. Comments
+ * are stripped first, or a fence matches the sentence explaining itself
+ * (#725).
+ */
+const ROOT = path.resolve(__dirname, '../..');
+const strip = (text: string) =>
+  text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+const read = (rel: string) => strip(readFileSync(path.join(ROOT, rel), 'utf8'));
+const slice = (text: string, from: string, to?: string) => {
+  const start = text.indexOf(from);
+  expect(start, `${from} not found`).toBeGreaterThanOrEqual(0);
+  const end = to ? text.indexOf(to, start + from.length) : text.length;
+  return text.slice(start, end < 0 ? text.length : end);
+};
+
+const UUID = '01a0d800-6812-758a-a09e-40582dfc7ecb';
+const DAY = '2026-09-25';
+
+describe('U28 — every typed amount on a money form is read the office\'s way', () => {
+  /**
+   * DERIVED: every `inputMode="decimal"` input with a name, on every form
+   * under the money screens, posts to an action that reads that name through
+   * `parseTypedMoney` — directly, or through a local reader whose body calls
+   * it. A new form or a new field cannot slip back to `Number(...replace(',', '.'))`,
+   * which read «1,200» as 1.2 and «12,500,000» as NaN.
+   */
+  const FORM_DIRS = ['accounting', 'kontragentlar', 'finance'];
+  const forms = FORM_DIRS.flatMap((dir) => globSync(`src/app/(protected)/${dir}/**/*.tsx`, { cwd: ROOT }));
+
+  it('finds the money forms', () => {
+    expect(forms.length).toBeGreaterThan(8);
+  });
+
+  it('each posted decimal field is read through the shared reader', () => {
+    const unread: string[] = [];
+    let checked = 0;
+    for (const form of forms) {
+      const source = read(form);
+      const names = [...source.matchAll(/<input\b[^>]*?\/>/gs)]
+        .map((m) => m[0])
+        .filter((tag) => tag.includes('inputMode="decimal"'))
+        .map((tag) => /\bname="([^"]+)"/.exec(tag)?.[1])
+        .filter((name): name is string => Boolean(name));
+      if (names.length === 0) continue;
+      const imported = /from '(\.{1,2}(?:\/\.\.)*\/actions)'/.exec(source)?.[1];
+      expect(imported, `${form} posts decimal fields but imports no actions module`).toBeTruthy();
+      const actionPath = path.join(path.dirname(form), `${imported}.ts`);
+      const action = read(actionPath);
+      // A reader: `parseTypedMoney` itself, or a local function/arrow whose
+      // own definition calls it.
+      const readers = new Set(['parseTypedMoney']);
+      for (const def of action.matchAll(/(?:function\s+(\w+)|const\s+(\w+)\s*=\s*\()[\s\S]*?(?=\n(?:export |function |const |async function |\/\*\*)|$)/g)) {
+        const name = def[1] ?? def[2];
+        if (name && def[0].includes('parseTypedMoney(')) readers.add(name);
+      }
+      for (const name of names) {
+        const gets = [...action.matchAll(new RegExp(`\\.get\\('${name}'\\)`, 'g'))];
+        expect(gets.length, `${form}: ${name} is never read by ${actionPath}`).toBeGreaterThan(0);
+        for (const hit of gets) {
+          const lineStart = action.lastIndexOf('\n', hit.index!) + 1;
+          const lineEnd = action.indexOf('\n', hit.index!);
+          const line = action.slice(lineStart, lineEnd < 0 ? undefined : lineEnd);
+          const before = action.slice(lineStart, hit.index!);
+          const viaReader = [...readers].some((reader) => new RegExp(`\\b${reader}\\(`).test(before));
+          const assigned = /const\s+(\w+)\s*=/.exec(line)?.[1];
+          const viaVariable = assigned !== undefined && new RegExp(`parseTypedMoney\\(\\s*${assigned}\\s*\\)`).test(action);
+          checked += 1;
+          if (!viaReader && !viaVariable) unread.push(`${form} → ${actionPath}: ${name}`);
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(8);
+    expect(unread, 'a money field read around parseTypedMoney').toEqual([]);
+  });
+
+  it('both audited action files import the shared reader', () => {
+    for (const file of ['src/app/(protected)/accounting/actions.ts', 'src/app/(protected)/kontragentlar/actions.ts']) {
+      expect(read(file), file).toContain("import { parseTypedMoney } from '@/modules/wms/calc/money-input';");
+    }
+  });
+
+  it('an EMPTY opening is 0 and an unreadable one is refused, not stored as 0 over a real figure', () => {
+    const action = slice(read('src/app/(protected)/accounting/actions.ts'), 'export async function saveAccountAction');
+    expect(action).toContain("openingBalance: opening === '' ? 0 : (parseTypedMoney(opening) ?? Number.NaN),");
+    expect(action).not.toMatch(/openingBalance:[^\n]*\|\| 0/);
+  });
+
+  it('the browser-side money readers outside the cluster use it too', () => {
+    const doors: [string, RegExp][] = [
+      ['src/app/(protected)/receive/expense-request-fold.tsx', /amount: parseTypedMoney\(amount\) \?\? Number\.NaN/],
+      ['src/components/calc-offer.tsx', /const typed = parseTypedMoney\(price\) \?\? Number\.NaN;/],
+      ['src/app/(protected)/hisoblash/[id]/calc-workspace.tsx', /amountUsd: parseTypedMoney\(amount\) \?\? Number\.NaN/],
+      ['src/app/(protected)/hisoblash/[id]/calc-workspace.tsx', /discountUsd: discount\.trim\(\) === '' \? 0 : \(parseTypedMoney\(discount\) \?\? Number\.NaN\)/],
+      ['src/app/(protected)/receive/receive-wizard.tsx', /amount: parseTypedMoney\(c\.amount\) \?\? Number\.NaN/],
+      ['src/app/(protected)/bitimlar/actions.ts', /quotedAmount: optionalMoney\(form\.get\('quotedAmount'\)\)/],
+      ['src/app/(protected)/crm/actions.ts', /quotedAmount: optionalMoney\(formData\.get\('quotedAmount'\)\)/],
+    ];
+    for (const [file, shape] of doors) expect(read(file), file).toMatch(shape);
+  });
+});
+
+describe('U44 — one bound for a native amount, the ceiling in dollars', () => {
+  const BIG_SOM = 1_500_000_000; // ≈ $120k — refused by every door before
+  const PAST_COLUMN = 1e12;
+
+  const doors: [string, (amount: number) => { success: boolean }][] = [
+    ['expense', (amount) => expenseSchema.safeParse({ categoryId: UUID, amount, currency: 'UZS', expenseDate: DAY })],
+    ['recurring', (amount) => recurringSchema.safeParse({ categoryId: UUID, amount, currency: 'UZS' })],
+    ['recurring patch', (amount) => recurringPatchSchema.safeParse({ amount, dayOfMonth: 5, active: true })],
+    ['transfer', (amount) => transferSchema.safeParse({ fromAccountId: UUID, toAccountId: UUID, amountFrom: amount, amountTo: amount, transferDate: DAY })],
+    ['client ledger', (amount) => transactionSchema.safeParse({ clientId: UUID, type: 'payment', amount, currency: 'UZS', txDate: DAY })],
+    ['cost', (amount) => costEntrySchema.safeParse({ scope: 'receipt', receiptId: UUID, costTypeId: UUID, amount, currency: 'UZS', costDate: DAY, allocationBasis: 'weight' })],
+    ['cost kassa side', (amount) => costEntrySchema.safeParse({ scope: 'receipt', receiptId: UUID, costTypeId: UUID, amount: 1, currency: 'USD', costDate: DAY, allocationBasis: 'weight', accountId: UUID, accountAmount: amount })],
+    ['grid cell', (amount) => receiptCostGridSchema.safeParse({ batchId: UUID, currency: 'UZS', costDate: DAY, cells: [{ receiptId: UUID, costTypeId: UUID, amount }] })],
+    ['partner', (amount) => partnerTxSchema.safeParse({ partnerId: UUID, type: 'payment', amount, currency: 'UZS', txDate: DAY, accountId: UUID })],
+    ['settlement client side', (amount) => settlementSchema.safeParse({ txId: UUID, clientId: UUID, partnerId: UUID, clientAmount: amount, clientCurrency: 'UZS', partnerAmount: 1, partnerCurrency: 'USD', txDate: DAY })],
+    ['settlement firm side', (amount) => settlementSchema.safeParse({ txId: UUID, clientId: UUID, partnerId: UUID, clientAmount: 1, clientCurrency: 'USD', partnerAmount: amount, partnerCurrency: 'UZS', txDate: DAY })],
+    ['rasxod xabari', (amount) => expenseRequestSchema.safeParse({ id: UUID, amount, currency: 'UZS', note: 'taksi' })],
+    ['receive extra cost', (amount) => extraCostSchema.safeParse({ costTypeId: UUID, amount, currency: 'UZS' })],
+    ['crating cost', (amount) => createCrateSchema.shape.cratingCost.safeParse({ amount, currency: 'UZS' })],
+    ['till opening', (amount) => accountSchema.safeParse({ name: 'Kassa', currency: 'UZS', kind: 'cash', openingBalance: amount })],
+  ];
+
+  it('every money door takes 1.5 billion so\'m and refuses a figure past its column', () => {
+    for (const [name, parse] of doors) {
+      expect(parse(BIG_SOM).success, `${name} refused 1.5e9`).toBe(true);
+      expect(parse(PAST_COLUMN).success, `${name} took 1e12`).toBe(false);
+    }
+    expect(MAX_NATIVE_AMOUNT).toBe(999_999_999_999.99);
+  });
+
+  it('the signed doors are bounded BOTH ways (an adjust of −1e12 was 22003)', () => {
+    const adjust = (amount: number) =>
+      partnerTxSchema.safeParse({ partnerId: UUID, type: 'adjust', amount, currency: 'UZS', txDate: DAY });
+    expect(adjust(-BIG_SOM).success).toBe(true);
+    expect(adjust(-PAST_COLUMN).success).toBe(false);
+    const opening = (openingBalance: number) =>
+      accountSchema.safeParse({ name: 'Kassa', currency: 'UZS', kind: 'cash', openingBalance });
+    expect(opening(-BIG_SOM).success).toBe(true);
+    expect(opening(-PAST_COLUMN).success).toBe(false);
+  });
+
+  it('the typo ceiling is today\'s $1e9, asked in dollars', () => {
+    expect(MAX_ROW_USD).toBe(1_000_000_000);
+    expect(exceedsRowUsd(1_000_000_000)).toBe(false);
+    expect(exceedsRowUsd(1_000_000_000.01)).toBe(true);
+    expect(exceedsRowUsd(-1_000_000_000.01)).toBe(true);
+    expect(exceedsRowUsd(Number.NaN)).toBe(true);
+  });
+
+  it('a size refusal is its own word, and only on an amount', () => {
+    const big = expenseSchema.safeParse({ categoryId: UUID, amount: PAST_COLUMN, currency: 'UZS', expenseDate: DAY });
+    expect(big.success).toBe(false);
+    if (!big.success) expect(amountRefusal(big.error)).toBe('amount_too_large');
+    const note = expenseSchema.safeParse({ categoryId: UUID, amount: 5, currency: 'UZS', expenseDate: DAY, note: 'x'.repeat(3000) });
+    expect(note.success).toBe(false);
+    if (!note.success) expect(amountRefusal(note.error)).toBeNull();
+  });
+
+  it('DERIVED: no amount field anywhere carries a literal per-currency cap again', () => {
+    const files = [
+      ...globSync('src/modules/wms/**/*.ts', { cwd: ROOT }),
+      ...globSync('src/app/**/*.{ts,tsx}', { cwd: ROOT }),
+    ];
+    expect(files.length).toBeGreaterThan(200);
+    const capped: string[] = [];
+    for (const file of files) {
+      const source = read(file);
+      for (const line of source.split('\n')) {
+        if (/(amount|balance)\w*\s*:/i.test(line) && /\.max\(\s*(1_000_000_000(_000)?|100_000_000|1e9|1e8|1e12)\s*\)/.test(line)) {
+          capped.push(`${file}: ${line.trim()}`);
+        }
+      }
+    }
+    expect(capped).toEqual([]);
+  });
+
+  it('the doors say it in words: the actions map the size refusal', () => {
+    for (const file of [
+      'src/app/(protected)/accounting/actions.ts',
+      'src/app/(protected)/kontragentlar/actions.ts',
+      'src/app/(protected)/finance/actions.ts',
+      'src/app/(protected)/costs/actions.ts',
+      'src/app/(protected)/receive/actions.ts',
+      'src/app/(protected)/profile/actions.ts',
+    ]) {
+      expect(read(file), file).toMatch(/amountRefusal\((parsed\.)?error\)/);
+    }
+    // The partner door used to hand zod's raw English to the screen.
+    const partner = slice(read('src/app/(protected)/kontragentlar/actions.ts'), 'export async function addPartnerTxAction', 'export async function voidPartnerTxAction');
+    expect(partner).not.toContain('parsed.error.issues[0]?.message ??');
+  });
+});
+
+describe('U21 — every money form carries the door\'s own date limit', () => {
+  it('the date inputs say «not after tomorrow», as the ledger form does', () => {
+    for (const file of [
+      'src/app/(protected)/accounting/expenses/expense-form.tsx',
+      'src/app/(protected)/accounting/accounts/transfer-form.tsx',
+      'src/components/cost-panel.tsx',
+      'src/app/(protected)/batches/[id]/receipt-cost-grid.tsx',
+      'src/app/(protected)/kontragentlar/[id]/tx-form.tsx',
+      'src/app/(protected)/kontragentlar/hisob/settlement-form.tsx',
+      'src/app/(protected)/upsale/pay-form.tsx',
+    ]) {
+      const source = read(file);
+      expect(source, file).toContain('max={latestTxDate()}');
+      // …and the refusal reaches the person as a sentence: a literal branch,
+      // or the upsale's `calc.errors.<code>` lookup, which needs the key.
+      if (file.endsWith('pay-form.tsx')) {
+        expect(source).toContain('tErr.has(`errors.${result.error}`)');
+        const ru = JSON.parse(readFileSync(path.join(ROOT, 'messages/ru.json'), 'utf8'));
+        expect(typeof ru.calc.errors.future_date).toBe('string');
+      } else {
+        expect(source, file).toMatch(/future_date/);
+      }
+    }
+  });
+
+  it('the monthly run keeps posting each template on its own day (the owner\'s A/B/C is open)', () => {
+    const service = read('src/modules/wms/accounting/service.ts');
+    const write = slice(service, 'export async function addExpenseTx', 'export async function addExpense(');
+    expect(write).toContain("if (!opts.recurringId && input.expenseDate > latestTxDate()) {");
+    const run = slice(service, 'export async function generateRecurring', '// --- Transfers');
+    expect(run).toContain('{ recurringId: template.id }');
+  });
+});
+
+describe('U29 — a kassa in use keeps its currency', () => {
+  it('the edit form shows the currency as text and re-posts it hidden (#171), never a disabled select', () => {
+    const form = read('src/app/(protected)/accounting/accounts/account-form.tsx');
+    expect(form).toContain('<input type="hidden" name="currency" value={account.currency} />');
+    expect(form).not.toMatch(/name="currency"[^>]*disabled/);
+    expect(form).toContain("state.error === 'currency_locked'");
+    const page = read('src/app/(protected)/accounting/accounts/page.tsx');
+    expect(page).toContain('tillsInUse(),');
+    expect(page).toContain('inUse: inUse.has(account.id),');
+  });
+});
+
+describe('U06 — a non-cash kind names no kassa and no payer', () => {
+  it('both expense forms drop the two pickers for a book entry, and the page tells them which is which', () => {
+    for (const file of [
+      'src/app/(protected)/accounting/expenses/expense-form.tsx',
+      'src/app/(protected)/accounting/expenses/recurring-form.tsx',
+    ]) {
+      const form = read(file);
+      expect(form, file).toMatch(/\{!partnerId && !bookEntry && \(\s*<select name="accountId"/);
+      expect(form, file).toMatch(/\{partners\.length > 0 && !bookEntry && \(/);
+      expect(form, file).toContain("state.error === 'non_cash_category'");
+    }
+    const page = read('src/app/(protected)/accounting/expenses/page.tsx');
+    expect(page).toContain('categories: categories.map((row) => ({ id: row.id, label: row.name, cash: row.cash })),');
+  });
+
+  it('the upsale category picker says its refusal in words, not the bare code', () => {
+    const form = read('src/app/(protected)/upsale/pay-form.tsx');
+    expect(form).not.toContain('{state.error}</span>');
+    expect(form).toContain('data-testid="upsale-category-error"');
+  });
+});
+
+describe('U33 — voiding a refund asks the grant that created it', () => {
+  const action = read('src/app/(protected)/finance/actions.ts');
+
+  it('the void door passes the kassa predicate to the service, judged there by the ROW', () => {
+    const body = slice(action, 'export async function voidTransactionAction', 'export async function placePaymentAction');
+    const gate = body.indexOf('{ mayMoveTill: mayPickTill(actor.permissions) }');
+    expect(gate).toBeGreaterThan(body.indexOf("authorize('finance.manage')"));
+    expect(gate).toBeGreaterThan(body.indexOf('await voidTransaction('));
+    const service = read('src/modules/wms/finance/service.ts');
+    const voidBody = slice(service, 'export async function voidTransaction', 'export async function futureDatedEntries');
+    expect(voidBody).toContain("if (row.type === 'refund' && !door.mayMoveTill) throw new FinanceError('forbidden');");
+    // REQUIRED, never optional — an optional door fails open.
+    expect(voidBody).toContain('door: { mayMoveTill: boolean },');
+  });
+
+  it('the create door asks the same predicate (#513)', () => {
+    const body = slice(action, 'export async function addTransactionAction', 'const voidSchema');
+    expect(body).toContain("if (parsed.data.type === 'refund' && !mayPickTill(actor.permissions)) {");
+    expect(body).not.toContain("actor.permissions.has('finance.expenses')");
+  });
+
+  it('the ledger draws the ✖ on a refund only for the kassa holders', () => {
+    const page = read('src/app/(protected)/finance/[clientId]/page.tsx');
+    expect(page).toContain('const canRefund = mayPickTill(actor.permissions);');
+    expect(page).toMatch(/canManage &&\s*\(tx\.type !== 'refund' \|\| canRefund\) && \(\s*<span className="ml-auto">\s*<VoidButton/);
+  });
+});

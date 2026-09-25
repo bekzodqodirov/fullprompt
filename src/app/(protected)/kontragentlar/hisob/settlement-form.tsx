@@ -1,9 +1,20 @@
 'use client';
 
-import { useActionState, useMemo, useState } from 'react';
+import { useActionState, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { AttachmentsPanel } from '@/components/attachments-panel';
+import { dealOptionLabel } from '@/modules/wms/deals/cargo-label';
+import { latestTxDate } from '@/modules/wms/finance/dates';
 import { recordSettlementAction, type PartnerFormState } from '../actions';
+
+interface DealChoice {
+  id: string;
+  code: string;
+  title: string | null;
+  cargo: string;
+  /** A LIVE deferral — the one deal this choice decides the gate for. */
+  deferred: boolean;
+}
 
 /**
  * Uch tomonlama hisob — the client paid our supplier instead of paying us.
@@ -41,6 +52,31 @@ export function SettlementForm({
   // eat both typed amounts — the two numbers this screen exists to capture.
   const [clientAmount, setClientAmount] = useState('');
   const [partnerAmount, setPartnerAmount] = useState('');
+  // Which JOB the client's money answers (U30), the kassa form's select on
+  // this door. The list follows the picked client — ~1,700 of them, so it is
+  // fetched per pick, with a counter so a slow answer for the previous client
+  // cannot land after the next one's (the search palette's guard). A changed
+  // client clears the choice: a deal is never carried to somebody else.
+  // Controlled, like the amounts, so a refused save keeps it (#377/#463).
+  const [clientId, setClientId] = useState('');
+  const [deals, setDeals] = useState<DealChoice[]>([]);
+  const [dealId, setDealId] = useState('');
+  const asked = useRef(0);
+  async function pickClient(id: string) {
+    setClientId(id);
+    setDealId('');
+    setDeals([]);
+    const ticket = ++asked.current;
+    if (!id) return;
+    try {
+      const res = await fetch(`/api/deals/ledger?client=${id}`);
+      if (!res.ok) return;
+      const body = (await res.json()) as { results?: DealChoice[] };
+      if (ticket === asked.current) setDeals(body.results ?? []);
+    } catch {
+      // No list is an honest «nothing to name»; the save itself still works.
+    }
+  }
   const [state, formAction, pending] = useActionState<PartnerFormState, FormData>(
     recordSettlementAction,
     {},
@@ -86,6 +122,8 @@ export function SettlementForm({
           name="clientId"
           className="input"
           data-testid="settle-client"
+          value={clientId}
+          onChange={(event) => void pickClient(event.target.value)}
           required
         >
           <option value="">—</option>
@@ -96,6 +134,37 @@ export function SettlementForm({
           ))}
         </select>
       </div>
+
+      {/* Optional, as on the kassa form — but for a DEFERRED deal this is the
+          whole mechanism: the handover gate nets a deferral's charges against
+          the payments that NAME it, and money that names nothing pays the
+          deferral off on paper while the gate goes on excusing other debt. */}
+      {deals.length > 0 && (
+        <div>
+          <label className="label" htmlFor="s-deal">
+            {t('forDeal')}
+          </label>
+          <select
+            id="s-deal"
+            name="dealId"
+            className="input"
+            data-testid="settle-deal"
+            value={dealId}
+            onChange={(event) => setDealId(event.target.value)}
+          >
+            <option value="">— {t('forDeal')}</option>
+            {deals.map((deal) => (
+              <option key={deal.id} value={deal.id}>
+                {deal.deferred ? '⏳ ' : ''}
+                {dealOptionLabel(deal)}
+              </option>
+            ))}
+          </select>
+          {deals.some((deal) => deal.deferred) && (
+            <p className="mt-1 text-xs text-ink-500">{t('forDealDeferredHint')}</p>
+          )}
+        </div>
+      )}
 
       <div>
         <label className="label" htmlFor="s-partner">
@@ -171,6 +240,7 @@ export function SettlementForm({
         aria-label={t('date')}
         data-testid="settle-date"
         defaultValue={today}
+        max={latestTxDate()}
         required
       />
 
@@ -215,7 +285,15 @@ export function SettlementForm({
             ? t('proofRequired')
             : state.error === 'fx_missing'
               ? t('fxMissing')
-              : tc('error')}
+              : state.error === 'deal_mismatch'
+                ? t('dealMismatch')
+                : state.error === 'future_date'
+                  ? tc('futureDate')
+                  : state.error === 'amount_too_large'
+                    ? tc('amountTooLarge')
+                    : state.error === 'forbidden'
+                      ? t('staffForbidden')
+                      : tc('error')}
         </p>
       )}
     </form>

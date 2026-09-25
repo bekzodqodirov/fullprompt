@@ -5,6 +5,7 @@ import { writeAudit } from '@/modules/platform/audit/service';
 import { requestMeta } from '@/modules/platform/auth/session';
 import { db } from '@/modules/platform/db/client';
 import { resolvePeriod } from '@/modules/wms/accounting/period';
+import { calendarDay } from '@/modules/platform/time/tashkent';
 import {
   buildCashFlowXlsx,
   buildExpensesXlsx,
@@ -49,7 +50,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ kind
       to: url.searchParams.get('to') ?? undefined,
     });
     const asOfRaw = url.searchParams.get('asOf') ?? '';
-    const asOf = /^\d{4}-\d{2}-\d{2}$/.test(asOfRaw) ? asOfRaw : to;
+    // The same «real day or the default» rule as the period (U43).
+    const asOf = calendarDay(asOfRaw) ?? to;
     const viewRaw = url.searchParams.get('view');
     const view = viewRaw === 'client' || viewRaw === 'route' ? viewRaw : 'batch';
     const categoryRaw = url.searchParams.get('categoryId') ?? '';

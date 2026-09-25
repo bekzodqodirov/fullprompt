@@ -28,4 +28,22 @@ describe('a payment can name its deal, end to end', () => {
     const action = readFileSync('src/app/(protected)/finance/actions.ts', 'utf8');
     expect(action).toContain("dealId: formData.get('dealId')");
   });
+
+  // U30: the three-cornered settlement writes a CLIENT payment too, and until
+  // it could name a job it paid a deferral off on paper while the gate went
+  // on excusing unrelated debt — #531's hole on the one door it had not
+  // reached. The same two halves, plus the list the select is filled from.
+  it('the settlement form posts dealId from the ledger\u2019s own deal list', () => {
+    const form = readFileSync('src/app/(protected)/kontragentlar/hisob/settlement-form.tsx', 'utf8');
+    expect(form).toContain('name="dealId"');
+    expect(form).toContain('/api/deals/ledger?client=');
+    const route = readFileSync('src/app/api/deals/ledger/route.ts', 'utf8');
+    expect(route).toContain("actor?.permissions.has('finance.manage')");
+    expect(route).toContain('ledgerDealsForClient(client.data)');
+  });
+
+  it('the settlement action parses dealId', () => {
+    const action = readFileSync('src/app/(protected)/kontragentlar/actions.ts', 'utf8');
+    expect(action).toContain("dealId: formData.get('dealId')");
+  });
 });

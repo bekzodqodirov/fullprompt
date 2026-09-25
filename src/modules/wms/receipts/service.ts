@@ -34,6 +34,7 @@ import { computeLotTotals } from './math';
 import { recomputeAll } from '../costing/service';
 import { costOrphanedByVoid } from '../costing/void-guard';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
+import { MAX_NATIVE_AMOUNT } from '../finance/money-bounds';
 
 export const lotInputSchema = z
   .object({
@@ -63,7 +64,9 @@ export const lotInputSchema = z
 
 export const extraCostSchema = z.object({
   costTypeId: z.string().uuid(),
-  amount: z.number().min(0.01).max(100_000_000),
+  // The column's bound (U44); past the dollar ceiling the conversion leaves
+  // the cost unconverted rather than overflowing (`recomputeEntry`).
+  amount: z.number().min(0.01).max(MAX_NATIVE_AMOUNT),
   currency: z.string().length(3),
   note: z.string().trim().max(500).optional().or(z.literal('')),
 });

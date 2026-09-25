@@ -49,7 +49,9 @@
     "scanTruckForbidden": "This truck is not for your warehouse — or the session expired. Sign in again.",
     "scanSnapshotOffline": "The box list did not load: no connection. Check the network and try again.",
     "photoOnly": "That is not a photograph — choose an image (📎 takes documents)",
-    "scanSnapshotServer": "The server answered with an error (code {n}). The internet works — show this code to a manager."
+    "scanSnapshotServer": "The server answered with an error (code {n}). The internet works — show this code to a manager.",
+    "futureDate": "The date cannot be later than tomorrow.",
+    "amountTooLarge": "The amount is too large for one row."
   },
   "login": {
     "title": "Sign in",
@@ -1003,7 +1005,10 @@
     "errTillAmountMismatch": "Same currency — the amount must equal the cost.",
     "errTillNotFound": "That cash box does not exist or is closed.",
     "errTillCurrency": "The grid has one currency: the cash box must be in it.",
-    "errPayerConflict": "This cost already names who paid it."
+    "errPayerConflict": "This cost already names who paid it.",
+    "errStaffVoid": "A cost a colleague paid out of their own pocket is voided only by the accountant or an admin.",
+    "errFutureDate": "The date cannot be later than tomorrow.",
+    "errAmountTooLarge": "The amount is too large for one row."
   },
   "batches": {
     "title": "Batches",
@@ -1575,7 +1580,10 @@
       "pickup": "a factory pickup with no receipt linked",
       "receipt": "not on the receipt's boxes",
       "crate": "not on the crate's boxes"
-    }
+    },
+    "nonCashCategory": "This expense kind moves no money (depreciation, say): it takes no cash box and no payer.",
+    "nonCashHint": "A non-cash expense kind: no cash box and no payer.",
+    "currencyLocked": "Money has already moved through this cash box — its currency cannot change. Open a new cash box."
   },
   "crm": {
     "title": "CRM",
@@ -2558,7 +2566,10 @@
       "quote_expired": "The quote has expired — a recalculation is needed",
       "fx_missing": "No FX rate for that day — enter the rate first",
       "category_not_found": "The expense category is unset or inactive — pick it on /upsale",
-      "account_currency_mismatch": "The till’s currency does not match the payout currency"
+      "account_currency_mismatch": "The till’s currency does not match the payout currency",
+      "future_date": "The date cannot be later than tomorrow.",
+      "non_cash_category": "The chosen expense kind moves no money — a payout cannot be written into it.",
+      "amount_too_large": "The amount is too large for one row."
     },
     "openCard": "Card",
     "freight": "Freight",
@@ -2906,7 +2917,10 @@
     "staffKindHints": {
       "payment": "We gave the staff member a cash advance. Cash down, they owe us.",
       "receipt": "The staff member returned the unspent rest to the cash box. Cash up, their debt down."
-    }
+    },
+    "forDeal": "For which deal",
+    "forDealDeferredHint": "⏳ — a deferred deal: if the money is for it, choose it, or the deferral keeps covering other debt.",
+    "dealMismatch": "That deal belongs to another client."
   },
   "lists": {
     "allRecords": "All",

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { resolvePeriod } from '@/modules/wms/accounting/period';
 import { latestTxDate } from '@/modules/wms/finance/dates';
+import { calendarDay } from '@/modules/platform/time/tashkent';
 
 /**
  * R5 (owner's answer a): the money screens' «today» is Tashkent's. The server
@@ -27,6 +28,34 @@ describe("money defaults in Tashkent's first five hours", () => {
       from: '2026-02-01',
       to: '2026-02-28',
     });
+  });
+
+  it('an impossible calendar day in the URL is DROPPED, never sent to postgres (U43)', () => {
+    // 2026 is not a leap year: 22008 on every report and export before.
+    expect(resolvePeriod({ from: '2026-02-01', to: '2026-02-30' }, SMALL_HOURS)).toEqual({
+      from: '2026-02-01',
+      to: '2026-10-01',
+    });
+    expect(resolvePeriod({ from: '2026-02-01', to: '2026-02-29' }, SMALL_HOURS).to).toBe('2026-10-01');
+    expect(resolvePeriod({ from: '2028-02-01', to: '2028-02-29' }, SMALL_HOURS).to).toBe('2028-02-29');
+    // Year 0000 round-trips through V8 and postgres refuses it.
+    expect(resolvePeriod({ from: '0000-01-01', to: '2026-02-28' }, SMALL_HOURS).from).toBe('2026-01-01');
+    // The backwards range still swaps.
+    expect(resolvePeriod({ from: '2026-03-01', to: '2026-02-01' }, SMALL_HOURS)).toEqual({
+      from: '2026-02-01',
+      to: '2026-03-01',
+    });
+  });
+
+  it('calendarDay keeps real days and drops the rest', () => {
+    for (const day of ['2026-02-28', '2028-02-29', '1700-01-01', '9999-12-31']) {
+      expect(calendarDay(day), day).toBe(day);
+    }
+    for (const bad of ['2026-02-29', '2026-02-30', '2026-13-01', '2026-00-10', '2026-01-32', '0000-01-01', 'abc', '']) {
+      expect(calendarDay(bad), bad).toBeNull();
+    }
+    expect(calendarDay(undefined)).toBeNull();
+    expect(calendarDay(null)).toBeNull();
   });
 
   it("the ledger's latest date is Tashkent's today plus the one day of grace", () => {
