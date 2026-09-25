@@ -1,19 +1,21 @@
+import { pricingSight } from './pricing-view';
+
 /**
- * May this person open a truck's «Partiya moliyasi» (`/batches/[id]/pricing`)?
+ * May this person open the «Partiya moliyasi» of a truck that brought cargo
+ * INTO Uzbekistan (`/batches/[id]/pricing`)?
  *
- * ONE predicate for every link that points there — the unpriced list's truck
- * cells, /approvals' «narx qo'yish →», the batch card's door — because a row
- * whose link bounces is worse than a row with no link (#1023's rule).
+ * ONE predicate for every link the unpriced-cargo ban draws — the unpriced
+ * list's truck cells, /approvals' «narx qo'yish →» — because a row whose link
+ * bounces is worse than a row with no link (#1023's rule). It is the page's
+ * own answer, `pricingSight`, and nothing restated: the VED keeps the
+ * price-only view (Q19 — he prices trucks, he only stops seeing the
+ * tannarx), everybody without `finance.manage` has no door.
  *
- * Today that is the page's own gate, `finance.manage`. The VED round
- * (`design-ved-0925.md` §5.3) gives the page a price-only view and one
- * answer for it, `pricingSight(perms, internal)` in `pricing-view.ts`; when
- * it lands this becomes `pricingSight(perms, false) !== 'none'`, which is the
- * same set of people — the VED keeps pricing trucks, he only stops seeing the
- * tannarx — so no caller changes.
- *
- * Zero imports on purpose: client components ask it too.
+ * `internal` is false by construction, not by assumption: every truck these
+ * links name is an ARRIVAL truck, i.e. its movement landed the carton in a UZ
+ * warehouse, and a CN → CN leg (the one kind `pricingSight` closes for the
+ * VED) never lands anything in Uzbekistan.
  */
 export function mayOpenPricing(permissions: ReadonlySet<string>): boolean {
-  return permissions.has('finance.manage');
+  return pricingSight(permissions, false) !== 'none';
 }

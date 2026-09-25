@@ -74,7 +74,20 @@ export interface PricingView {
   unclaimed: { lots: BatchLot[]; costUsd: number };
   /** Charges on this truck for clients with nothing on it any more. */
   orphans: { clientId: string; code: string; name: string; chargedUsd: number }[];
-  totals: { costUsd: number; prevUsd: number; chargedUsd: number; marginUsd: number; priced: number };
+  /**
+   * `noCargoUsd` (0104, Q21 under his (a)) is a PART of `chargedUsd`, never
+   * subtracted from it: the orphans' prices stay in the truck's «Narx» and
+   * margin, and the header says «shundan … — yuki ketmagan mijozlar» beside
+   * them. «Partiya foydasi» prints the same part (`noCargoChargeUsd`).
+   */
+  totals: {
+    costUsd: number;
+    prevUsd: number;
+    chargedUsd: number;
+    noCargoUsd: number;
+    marginUsd: number;
+    priced: number;
+  };
 }
 
 const cents = (value: number) => Math.round(value * 100) / 100;
@@ -195,6 +208,7 @@ export function pricingView(
       costUsd,
       prevUsd: sumPrev(lots),
       chargedUsd,
+      noCargoUsd: cents(orphans.reduce((a, row) => a + row.chargedUsd, 0)),
       marginUsd: cents(chargedUsd - costUsd),
       priced: clients.filter((group) => group.chargedUsd > 0).length,
     },

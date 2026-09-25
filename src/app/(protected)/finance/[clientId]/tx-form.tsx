@@ -22,6 +22,7 @@ export function TxForm({
   canRefund,
   canPickTill,
   advanceUsd,
+  trips,
 }: {
   clientId: string;
   currencies: string[];
@@ -43,10 +44,23 @@ export function TxForm({
    * refusal is never the first time the accountant hears the figure.
    */
   advanceUsd: number;
+  /**
+   * The trucks a CHARGE may name (0104): the client's own ride trucks (never
+   * an internal leg) plus a truck its cargo is loading on now — already
+   * ordered by the page: cross-border first, unpriced first within each,
+   * then newest. A price that names a truck covers that truck's prixods; one
+   * that names neither a truck nor a deal covers nothing (said below).
+   */
+  trips: { batchId: string; code: string; unpriced: boolean; crossesBorder: boolean }[];
 }) {
   const t = useTranslations('finance');
   const tc = useTranslations('common');
   const [type, setType] = useState<'payment' | 'charge' | 'refund'>('payment');
+  const [batchId, setBatchId] = useState('');
+  const [dealId, setDealId] = useState('');
+  const picked = trips.find((trip) => trip.batchId === batchId);
+  // China cargo priced on a local leg covers nothing of the road (Q1).
+  const localLeg = Boolean(picked && !picked.crossesBorder && trips.some((trip) => trip.crossesBorder));
   const [state, formAction, pending] = useActionState<TxFormState, FormData>(
     addTransactionAction,
     {},
@@ -149,12 +163,41 @@ export function TxForm({
           mechanism: the handover gate nets a deferral's charges against the
           payments that name it, and a payment that names nothing pays the
           deferral off on paper while the gate goes on excusing other debt. */}
+      {type === 'charge' && trips.length > 0 && (
+        <select
+          name="batchId"
+          aria-label={t('txTruck')}
+          className="input"
+          value={batchId}
+          onChange={(event) => setBatchId(event.target.value)}
+          data-testid="tx-truck"
+        >
+          <option value="">— {t('txTruck')}</option>
+          {trips.map((trip) => (
+            <option key={trip.batchId} value={trip.batchId}>
+              {trip.code}
+              {trip.unpriced ? ` · ${t('txTruckUnpriced')}` : ''}
+            </option>
+          ))}
+        </select>
+      )}
+      {type === 'charge' && !batchId && !dealId && (
+        <p className="text-xs text-warn" data-testid="tx-card-only">
+          {t('txCardOnlyHint')}
+        </p>
+      )}
+      {type === 'charge' && localLeg && (
+        <p className="text-xs text-warn" data-testid="tx-local-leg">
+          {t('txLocalLegHint')}
+        </p>
+      )}
       {deals.length > 0 && (
         <select
           name="dealId"
           aria-label={t('forDeal')}
           className="input"
-          defaultValue=""
+          value={dealId}
+          onChange={(event) => setDealId(event.target.value)}
           data-testid="tx-deal"
         >
           <option value="">— {t('forDeal')}</option>

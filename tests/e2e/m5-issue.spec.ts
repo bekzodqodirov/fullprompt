@@ -76,6 +76,14 @@ test('export → ready_for_pickup → issue with handover act', async ({ page })
   await expect(firstLot).toBeVisible({ timeout: 10_000 });
   await firstLot.locator('button').first().click();
 
+  // 0104: this seeded prixod landed by road with no price on its first pass
+  // (m9-client-money prices it later in the run, so a second local pass
+  // finds it covered, #154). The logist holds the override and ticks it —
+  // fixture adaptation, not this spec's assertion; the ban's own proof is
+  // the integration suite and m9zz-narxsiz.
+  const priceOk = page.getByTestId('issue-price-ok');
+  if (await priceOk.isVisible()) await priceOk.check();
+
   await page.getByTestId('receiver-name').fill('Karim Olib Ketuvchi');
   await page.getByTestId('receiver-phone').fill('+998907778899');
   await page.getByTestId('confirm-issue').click();

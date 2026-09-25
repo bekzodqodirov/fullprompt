@@ -7,6 +7,7 @@ import {
   attachments,
   boxMovements,
   boxes,
+  clientNotices,
   clientTransactions,
   clients,
   dealStages,
@@ -46,6 +47,7 @@ import {
 import { unbilledArrived } from '@/modules/wms/reports/business';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { approvalCounts } from '@/modules/wms/reports/dashboard-math';
+import { withoutJit } from '@/modules/platform/db/no-jit';
 
 /**
  * «Narx qo'yilmagan yuk» — the ONE rule behind the handover ban, the
@@ -273,6 +275,11 @@ afterAll(async () => {
   // never deleted (audit_log FK). The cargo stays, as in m4-unload.
   if (madeClients.length) {
     await db.delete(clientTransactions).where(inArray(clientTransactions.clientId, madeClients));
+    // Every unload here claims a «yukingiz keldi» row for a fixture client:
+    // left pending they are the notice drain's input for every later file,
+    // and its queue is capped (arrival-staff and client-notices read the
+    // first 200). Data this file made, gone with it.
+    await db.delete(clientNotices).where(inArray(clientNotices.clientId, madeClients));
     await db
       .update(issueApprovals)
       .set({ status: 'refused', expiresAt: null, decidedBy: actorId, decidedAt: new Date() })
@@ -826,5 +833,18 @@ describe('one predicate (#513)', () => {
         expect([box.boxId, answer === 'price_block' || answer === 'price_elsewhere']).toEqual([box.boxId, gated]);
       }
     }
+  });
+
+  it('the company-wide reads ask their question with JIT off — and the answer is the same one', async () => {
+    const company = { kind: 'company', warehouseIds: undefined, ownerId: undefined, landedFrom: undefined } as const;
+    const [before] = (await db.execute(sql`SHOW jit`)) as unknown as { jit: string }[];
+    const [seen] = (await withoutJit((exec) => exec.execute(sql`SHOW jit`))) as unknown as { jit: string }[];
+    expect(seen!.jit).toBe('off');
+    const plain = (await unpricedReceiptsOn(db, company, gate)).map((r) => r.receiptId).sort();
+    const noJit = (await withoutJit((exec) => unpricedReceiptsOn(exec, company, gate))).map((r) => r.receiptId).sort();
+    expect(noJit).toEqual(plain);
+    // …and the session it borrowed is not left changed (SET LOCAL).
+    const [after] = (await db.execute(sql`SHOW jit`)) as unknown as { jit: string }[];
+    expect(after!.jit).toBe(before!.jit);
   });
 });

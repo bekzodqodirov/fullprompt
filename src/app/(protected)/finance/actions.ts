@@ -7,6 +7,8 @@ import { requestMeta } from '@/modules/platform/auth/session';
 import {
   FinanceError,
   addTransaction,
+  moveCharge,
+  moveChargeSchema,
   placePayment,
   transactionSchema,
   voidTransaction,
@@ -138,6 +140,48 @@ export async function voidTransactionAction(formData: FormData): Promise<TxFormS
   }
   revalidatePath('/finance');
   revalidatePath(`/finance/${parsed.data.clientId}`);
+  return { ok: true };
+}
+
+/**
+ * «🚚 Ko'chirish» (0104) — see `moveCharge`. It admits exactly who
+ * `addTransactionAction` admits for a CHARGE, the same `authorize` call and
+ * nothing else: the two doors write the same kind of row and must never
+ * disagree about who may (a charge needs no kassa, so no till clause either).
+ * The amounts arrive as typed text and go through the price door's reader.
+ */
+export async function moveChargeAction(input: {
+  txId: string;
+  clientId: string;
+  parts: { batchId: string; amount: string }[];
+}): Promise<TxFormState> {
+  const parsed = moveChargeSchema.safeParse({
+    txId: input.txId,
+    parts: input.parts.map((part) => ({
+      batchId: part.batchId,
+      amount: parseTypedMoney(part.amount) ?? Number.NaN,
+    })),
+  });
+  if (!parsed.success) return { error: amountRefusal(parsed.error) ?? 'validation' };
+  let actor;
+  try {
+    actor = await authorize('finance.manage');
+  } catch (err) {
+    if (err instanceof AuthError) return { error: 'forbidden' };
+    throw err;
+  }
+  const meta = await requestMeta();
+  try {
+    await moveCharge(parsed.data, { actorId: actor.id, ...meta });
+  } catch (err) {
+    if (err instanceof FinanceError) return { error: err.code };
+    throw err;
+  }
+  revalidatePath('/finance');
+  revalidatePath('/finance/narxsiz');
+  revalidatePath(`/finance/${input.clientId}`);
+  for (const part of parsed.data.parts) revalidatePath(`/batches/${part.batchId}/pricing`);
+  revalidatePath('/batches/[id]/pricing', 'page');
   return { ok: true };
 }
 

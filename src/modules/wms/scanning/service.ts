@@ -14,6 +14,7 @@ import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { emitEvent } from '../../platform/events/service';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { usersWithPermission } from '../../platform/notifications/service';
+import { notifyPricedCargoLeft } from '../finance/off-truck';
 
 export class ScanError extends Error {
   constructor(public readonly code: string) {
@@ -471,13 +472,16 @@ export async function finishLoading(batchId: string, ctx: AuditContext) {
         )[0]!.n,
       ),
     };
-    return { ...summary, batchCode: batch.code };
+    return { ...summary, batchCode: batch.code, shortLoadedIds: shortLoaded.map((b) => b.id) };
   }).then(async (result) => {
     // The loading summary (staff bot, owner's item 6): the people who plan
     // the trucks learn how it went without opening anything. AFTER the
     // transaction — a Telegram row must never be able to roll a load back —
     // and never to the person who just pressed the button.
     await notifyLoadSummary(batchId, result, ctx.actorId).catch(() => {});
+    // A price whose cargo this press left behind (0104, Q21a) — only THIS
+    // call's short-loaded cartons, so a second press announces nothing.
+    await notifyPricedCargoLeft(batchId, result.shortLoadedIds, ctx.actorId).catch(() => {});
     return {
       loaded: result.loaded,
       shortLoaded: result.shortLoaded,

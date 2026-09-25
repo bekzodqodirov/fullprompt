@@ -302,13 +302,13 @@ export async function buildProfitXlsx(
     const rows = await profitByBatch(from, to);
     const head = sheet.addRow([
       L.batch, L.route, L.departed, L.boxes, L.kg, L.m3,
-      `${L.revenue} $`, `${L.cost} $`, L.prevLegs, L.unallocated, L.internalCost,
+      `${L.revenue} $`, L.noCargoCol, `${L.cost} $`, L.prevLegs, L.unallocated, L.internalCost,
       `${L.profit} $`, L.margin, L.usdPerKg,
     ]);
     head.font = { bold: true };
     sheet.columns = [
       { width: 14 }, { width: 14 }, { width: 12 }, { width: 10 }, { width: 10 }, { width: 10 },
-      { width: 14 }, { width: 14 }, { width: 16 }, { width: 16 }, { width: 16 },
+      { width: 14 }, { width: 16 }, { width: 14 }, { width: 16 }, { width: 16 }, { width: 16 },
       { width: 14 }, { width: 10 }, { width: 10 },
     ];
     // An internal leg is a cost row (R2a): «—» where a profit would stand,
@@ -320,6 +320,8 @@ export async function buildProfitXlsx(
         row.departedAt ? dayIn(row.departedAt, OFFICE_TZ) : '',
         row.boxCount, row.kg, row.m3,
         row.revenueUsd,
+        // A PART of the revenue (0104) — blank, never 0, when there is none.
+        row.noCargoChargeUsd > 0.009 ? row.noCargoChargeUsd : '',
         row.internal ? '—' : row.costUsd,
         row.internal ? '' : row.prevUsd,
         row.unallocatedUsd > 0.009 ? row.unallocatedUsd : '',
@@ -329,9 +331,19 @@ export async function buildProfitXlsx(
     }
     if (rows.length > 0) {
       const totals = tripTotals(rows);
-      bold(sheet.addRow([L.total, '', '', '', '', '', totals.revenue, totals.cost, '', '', '', totals.profit, margin(totals), '']));
+      bold(
+        sheet.addRow([
+          L.total, '', '', '', '', '', totals.revenue, totals.noCargo > 0.009 ? totals.noCargo : '',
+          totals.cost, '', '', '', totals.profit, margin(totals), '',
+        ]),
+      );
     }
     if (rows.some((row) => row.internal)) notes.push(L.internalRowsNote);
+    const noCargo = rows.filter((row) => !row.internal && row.noCargoChargeUsd > 0.009);
+    if (noCargo.length > 0) {
+      const sum = noCargo.reduce((acc, row) => acc + row.noCargoChargeUsd, 0);
+      notes.push(`⚠ ${L.noCargoNote}: $${usdText(sum)} · ${noCargo.length}`);
+    }
     const unallocated = rows.filter((row) => row.unallocatedUsd > 0.009);
     if (unallocated.length > 0) {
       const sum = unallocated.reduce((acc, row) => acc + row.unallocatedUsd, 0);
@@ -388,17 +400,18 @@ export async function buildProfitXlsx(
     const rows = await profitByRoute(from, to);
     const head = sheet.addRow([
       L.route, L.batches, L.boxes, L.kg,
-      `${L.revenue} $`, `${L.cost} $`, L.internalCost, `${L.profit} $`, L.margin, L.usdPerKg,
+      `${L.revenue} $`, L.noCargoCol, `${L.cost} $`, L.internalCost, `${L.profit} $`, L.margin, L.usdPerKg,
     ]);
     head.font = { bold: true };
     sheet.columns = [
       { width: 16 }, { width: 10 }, { width: 10 }, { width: 12 },
-      { width: 14 }, { width: 14 }, { width: 16 }, { width: 14 }, { width: 10 }, { width: 10 },
+      { width: 14 }, { width: 16 }, { width: 14 }, { width: 16 }, { width: 14 }, { width: 10 }, { width: 10 },
     ];
     for (const row of rows) {
       sheet.addRow([
         row.route, row.batches, row.boxCount, row.kg,
         row.revenueUsd,
+        row.noCargoChargeUsd > 0.009 ? row.noCargoChargeUsd : '',
         row.internal ? '—' : row.costUsd,
         row.internal ? row.costUsd : '',
         row.profitUsd ?? '—', row.marginPct ?? '—', row.profitPerKg ?? '—',
@@ -406,7 +419,12 @@ export async function buildProfitXlsx(
     }
     if (rows.length > 0) {
       const totals = tripTotals(rows);
-      bold(sheet.addRow([L.total, '', '', '', totals.revenue, totals.cost, '', totals.profit, margin(totals), '']));
+      bold(
+        sheet.addRow([
+          L.total, '', '', '', totals.revenue, totals.noCargo > 0.009 ? totals.noCargo : '',
+          totals.cost, '', totals.profit, margin(totals), '',
+        ]),
+      );
     }
     if (rows.some((row) => row.internal)) notes.push(L.internalRowsNote);
   }

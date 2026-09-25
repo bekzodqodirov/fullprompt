@@ -459,6 +459,13 @@ export async function MoneySection({
           {t('tripsNote')}
           {totals.internal > 0 && <> {t('tripsInternal', { n: totals.internal })}</>}
         </p>
+        {/* 0104 under his (a): inside the trucks' revenue and profit — the
+            profit page's JAMI says the same sentence. */}
+        {totals.noCargo > 0.009 && (
+          <p className="text-2xs font-semibold text-warn" data-testid="dash-trips-no-cargo">
+            ⚠ {t('noCargoPart', { usd: usd(totals.noCargo) })}
+          </p>
+        )}
         {tripRows.length > 0 ? (
           <DivergingBars rows={tripRows} testid="dash-trips-bars" />
         ) : (

@@ -12,6 +12,8 @@ import { bothFiguresForDeals } from '@/modules/wms/calc/upsale-service';
 import { upsaleScopeFor } from '@/modules/wms/calc/upsale-scope';
 import { BackLink } from '@/components/back-link';
 import { CargoSummary } from '@/components/cargo-summary';
+import { clientCargo } from '@/modules/wms/finance/client-cargo';
+import { MoveChargeForm } from '../move-charge-form';
 import { TxForm } from './tx-form';
 import { VoidButton } from './void-button';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
@@ -58,7 +60,7 @@ export default async function ClientLedgerPage({
         .from(deals)
         .where(eq(deals.clientId, clientId))
     : [];
-  const [balance, ledger, currencyRows, accounts, openDeals, figures] = await Promise.all([
+  const [balance, ledger, currencyRows, accounts, openDeals, figures, cargo] = await Promise.all([
     clientBalanceUsd(clientId),
     clientLedger(clientId),
     db.select({ code: currencies.code }).from(currencies).where(eq(currencies.active, true)),
@@ -67,7 +69,34 @@ export default async function ClientLedgerPage({
     canRefund ? listAccounts() : Promise.resolve([]),
     canManage ? ledgerDealsForClient(clientId) : Promise.resolve([]),
     bothFiguresForDeals(clientDeals.map((d) => d.id)),
+    // Read once for the cargo block AND the card form's trucks (0104).
+    clientCargo(clientId),
   ]);
+  // The trucks a charge may name, and «🚚 Ko'chirish»'s targets: the
+  // client's own ride trucks (never an internal leg — never priced, C1a) and
+  // a truck its cargo is loading on now. Cross-border first, unpriced first
+  // within each, then newest (a loading truck is the newest of all).
+  const chargeTrucks = [
+    ...cargo.offTrip
+      .filter((off) => off.reason === 'loading')
+      .map((off) => ({ batchId: off.batchId, code: off.batchCode, unpriced: false, crossesBorder: off.crossesBorder, at: Infinity })),
+    ...cargo.trips
+      .filter((trip) => !trip.internal)
+      .map((trip) => ({
+        batchId: trip.batchId,
+        code: trip.batchCode,
+        unpriced: trip.unpriced,
+        crossesBorder: trip.crossesBorder,
+        at: trip.departedAt ? new Date(trip.departedAt).getTime() : 0,
+      })),
+  ]
+    .sort(
+      (a, b) =>
+        Number(b.crossesBorder) - Number(a.crossesBorder) || Number(b.unpriced) - Number(a.unpriced) || b.at - a.at,
+    )
+    .map(({ at: _at, ...truck }) => truck);
+  // A price moved off the card or off a truck its cargo never rode (0104).
+  const noCargoTrucks = new Set(cargo.offTrip.filter((off) => off.reason === 'no_cargo').map((off) => off.batchId));
   const quoted = clientDeals
     .map((d) => ({ ...d, fig: figures.get(d.id) }))
     .filter((d): d is typeof d & { fig: { floorUsd: number; clientPriceUsd: number } } => Boolean(d.fig));
@@ -119,6 +148,7 @@ export default async function ClientLedgerPage({
           accounts={accounts.map((a) => ({ id: a.id, name: a.name, currency: a.currency }))}
           deals={openDeals.map((d) => ({ id: d.id, code: d.code, title: d.title, cargo: d.cargo }))}
           today={tashkentDay()}
+          trips={chargeTrucks}
         />
       )}
 
@@ -129,7 +159,7 @@ export default async function ClientLedgerPage({
           rule the receivables ageing report uses. */}
       <div className="card space-y-2">
         <h2 className="text-sm font-bold uppercase text-ink-500">📦 {tcargo('title')}</h2>
-        <CargoSummary clientId={clientId} />
+        <CargoSummary clientId={clientId} data={cargo} />
       </div>
 
       <div className="card space-y-1 !p-3">
@@ -188,6 +218,22 @@ export default async function ClientLedgerPage({
                 )
               )}
             </div>
+            {/* A price on the card, or on a truck the cargo never rode (0104):
+                one press onto the truck it did. */}
+            {!tx.voidedAt &&
+              canManage &&
+              tx.type === 'charge' &&
+              !tx.partnerId &&
+              (!tx.batchId || noCargoTrucks.has(tx.batchId)) && (
+                <MoveChargeForm
+                  txId={tx.id}
+                  clientId={clientId}
+                  amount={Number(tx.amount)}
+                  currency={tx.currency}
+                  fromBatchId={null}
+                  targets={chargeTrucks.filter((truck) => truck.batchId !== tx.batchId)}
+                />
+              )}
           </div>
         ))}
       </div>

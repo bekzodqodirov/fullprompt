@@ -45,7 +45,7 @@ export default async function FinancePage() {
             </Link>
             {/* The register is closed to a reader the kassa is hidden from
                 (Q19) — a door that bounces is worse than none (#420). */}
-            {moneyHidden('kassa', actor.permissions) ? null : (
+            {moneyHidden('kassa', actor.permissions) ? undefined : (
               <Link href="/finance/reestr" className="btn-secondary px-3 text-sm">
                 📒 {t('paymentsRegister')}
               </Link>

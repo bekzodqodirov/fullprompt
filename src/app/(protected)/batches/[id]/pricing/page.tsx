@@ -20,9 +20,11 @@ import { batchLots, type BatchLot } from '@/modules/wms/batches/lots';
 import { batchRoute } from '@/modules/wms/batches/internal';
 import { canWriteDeal } from '@/modules/wms/deals/service';
 import { pricingSight, pricingView } from '@/modules/wms/finance/pricing-view';
+import { offTruckPrices, pricedElsewhereFor, type OffTruckPrice } from '@/modules/wms/finance/off-truck';
 import { codeIdentity } from '@/modules/wms/labels/code-identity';
 import { BackLink } from '@/components/back-link';
 import { LightboxImg } from '@/components/lightbox-img';
+import { MoveChargeForm } from '@/app/(protected)/finance/move-charge-form';
 import { PricingForm } from './pricing-form';
 import { PageHeader } from '@/components/ui/page';
 
@@ -106,10 +108,33 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
       amountUsd: Number(tx.amountUsd),
     })),
   );
-  const balances = await balancesForClients([
-    ...view.clients.map((group) => group.clientId),
-    ...view.orphans.map((row) => row.clientId),
+  // Prices whose cargo left a truck (0104, Q21a / Q2): THIS truck's own
+  // (partial → inside the client's card, no cargo → the orphan section), and
+  // another truck's whose dropped cartons ride THIS one now. Prices only, no
+  // cost, so both sights read them; an internal truck is never priced.
+  const clientIds = view.clients.map((group) => group.clientId);
+  const [balances, offHere, offElsewhere] = await Promise.all([
+    balancesForClients([...clientIds, ...view.orphans.map((row) => row.clientId)]),
+    internal ? Promise.resolve([] as OffTruckPrice[]) : offTruckPrices(db, { batchIds: [id] }),
+    internal || clientIds.length === 0
+      ? Promise.resolve([] as OffTruckPrice[])
+      : offTruckPrices(db, { clientIds }).then((rows) => pricedElsewhereFor(rows, id)),
   ]);
+  const droppedHere = new Map(offHere.filter((row) => row.kind === 'partial').map((row) => [row.clientId, row]));
+  const noCargoHere = new Map(offHere.filter((row) => row.kind === 'no_cargo').map((row) => [row.clientId, row]));
+  const codesOf = (row: OffTruckPrice) => row.droppedTo.map((d) => d.code).join(', ') || '—';
+  const moveDoors = (row: OffTruckPrice, fromBatchId: string | null, targets: { batchId: string; code: string }[]) =>
+    row.charges.map((charge) => (
+      <MoveChargeForm
+        key={charge.id}
+        txId={charge.id}
+        clientId={row.clientId}
+        amount={charge.amount}
+        currency={charge.currency}
+        fromBatchId={fromBatchId}
+        targets={targets}
+      />
+    ));
   const costOf = (lot: BatchLot) => lotCost.get(lot.lotId);
   const money = (value: number) => `$${value.toFixed(2)}`;
   const { totals } = view;
@@ -242,6 +267,12 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                 <p className="num text-lg font-extrabold" data-testid="pricing-total-price">
                   {money(totals.chargedUsd)}
                 </p>
+                {/* Under his (a): a PART of «Narx», never taken out of it. */}
+                {totals.noCargoUsd > 0.009 && (
+                  <p className="num text-xs font-semibold text-warn" data-testid="pricing-no-cargo">
+                    {t('noCargoPart', { usd: money(totals.noCargoUsd) })}
+                  </p>
+                )}
               </div>
               {full && (
                 <div>
@@ -401,6 +432,49 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
             </div>
             {full && costUsd === 0 && <p className="text-xs text-warn">⚠️ {t('noCostsYet')}</p>}
 
+            {/* 0104: cartons left THIS truck after its price — short-loaded,
+                or scanned aboard and found back at the origin (Q2). */}
+            {(() => {
+              const off = droppedHere.get(group.clientId);
+              if (!off) return null;
+              const n = off.droppedBoxIds.length;
+              return (
+                <div className="space-y-1 rounded-lg border border-warn/40 p-2" data-testid="pricing-dropped">
+                  <p className="text-xs font-semibold text-warn">
+                    {off.dropCause === 'found_back'
+                      ? t('droppedFoundBack', { n, origin: off.originCode ?? '—', codes: codesOf(off) })
+                      : t('droppedShort', { n, codes: codesOf(off) })}
+                  </p>
+                  {moveDoors(off, id, off.droppedTo)}
+                </div>
+              );
+            })()}
+
+            {/* …and the other side: a price on ANOTHER truck whose dropped
+                cartons ride this one now — they are priced here. */}
+            {offElsewhere
+              .filter((off) => off.clientId === group.clientId)
+              .map((off) => {
+                const n = off.droppedTo.find((d) => d.batchId === id)?.boxes ?? off.droppedBoxIds.length;
+                return (
+                  <div
+                    key={off.batchId}
+                    className="space-y-1 rounded-lg border border-warn/40 p-2"
+                    data-testid="pricing-priced-elsewhere"
+                  >
+                    <p className="text-xs font-semibold text-warn">
+                      {off.dropCause === 'found_back'
+                        ? t('pricedElsewhereFoundBack', { n, code: off.batchCode })
+                        : t('pricedElsewhereShort', { code: off.batchCode, usd: money(off.chargedUsd), n })}{' '}
+                      <Link href={`/batches/${off.batchId}/pricing`} className="text-brand-700 underline">
+                        {off.batchCode} →
+                      </Link>
+                    </p>
+                    {moveDoors(off, off.kind === 'partial' ? off.batchId : null, [{ batchId: id, code: batch.code }])}
+                  </div>
+                );
+              })}
+
             {balance && !internal && (
               <p className="text-sm">
                 {t('clientBalance')}:{' '}
@@ -477,16 +551,33 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
         <div className="card space-y-2" data-testid="pricing-orphans">
           <p className="font-bold">{t('orphanCharges')}</p>
           <p className="text-xs text-ink-500">{t('orphanChargesHint')}</p>
-          <ul className="space-y-1 text-sm">
-            {view.orphans.map((row) => (
-              <li key={row.clientId} className="flex items-baseline gap-2">
-                <Link href={`/finance/${row.clientId}`} className="font-mono font-bold text-brand-700">
-                  {row.code}
-                </Link>
-                <span className="min-w-0 truncate text-ink-700">{row.name}</span>
-                <span className="num ml-auto font-semibold">{money(row.chargedUsd)}</span>
-              </li>
-            ))}
+          <ul className="space-y-2 text-sm">
+            {view.orphans.map((row) => {
+              // Where the cargo went (0104): it rides another truck now, it
+              // stayed on the shelf, or it never was on this one.
+              const off = noCargoHere.get(row.clientId);
+              return (
+                <li key={row.clientId} className="space-y-1" data-testid="pricing-orphan">
+                  <div className="flex items-baseline gap-2">
+                    <Link href={`/finance/${row.clientId}`} className="font-mono font-bold text-brand-700">
+                      {row.code}
+                    </Link>
+                    <span className="min-w-0 truncate text-ink-700">{row.name}</span>
+                    <span className="num ml-auto font-semibold">{money(row.chargedUsd)}</span>
+                  </div>
+                  {off && (
+                    <p className="text-xs text-warn" data-testid="pricing-orphan-fate">
+                      {off.droppedTo.length > 0
+                        ? t('orphanWent', { codes: codesOf(off) })
+                        : off.droppedBoxIds.length > 0
+                          ? t('orphanStayed')
+                          : t('orphanNever')}
+                    </p>
+                  )}
+                  {off && moveDoors(off, null, off.droppedTo)}
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}

@@ -4,6 +4,7 @@ import { tashkentDayStart, addDays } from '@/modules/platform/time/tashkent';
 import { leftBehindSql } from '../batches/riders';
 import { roadLossBatchSql } from '../boxes/road-loss';
 import { customsCostTypeIds } from '../costing/service';
+import { withoutJit } from '../../platform/db/no-jit';
 import { GATE_OFF, unpricedReceiptsOn } from '../finance/unpriced';
 
 /**
@@ -383,10 +384,9 @@ export interface UnbilledClient {
  * gated cartons), so the ban's setting is not read.
  */
 export async function unbilledArrived(warehouseIds?: string[]): Promise<UnbilledClient[]> {
-  const receipts = await unpricedReceiptsOn(
-    db,
-    { kind: 'company', warehouseIds, ownerId: undefined, landedFrom: undefined },
-    GATE_OFF,
+  // Every carton the company holds: past JIT's cost line by shape (no-jit.ts).
+  const receipts = await withoutJit((exec) =>
+    unpricedReceiptsOn(exec, { kind: 'company', warehouseIds, ownerId: undefined, landedFrom: undefined }, GATE_OFF),
   );
   const byClient = new Map<string, UnbilledClient>();
   for (const row of receipts) {

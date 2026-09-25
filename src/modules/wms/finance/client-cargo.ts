@@ -14,6 +14,8 @@ import {
 } from '../../platform/db/schema';
 import { isInternalLeg } from '../batches/internal';
 import { rideMovementSql } from '../batches/riders';
+import { offTruckPrices } from './off-truck';
+import { uncoveredTripsOn } from './unpriced';
 
 /**
  * Where a client's cargo is, what it weighs, and which money belongs to it.
@@ -58,11 +60,47 @@ export interface CargoTrip {
   internal: boolean;
   /** Internal and departed with no live cost entry on it: the warning it gets. */
   costMissing: boolean;
+  /**
+   * Some carton of this client that rode this trip has no price, by the ONE
+   * rule (`uncoveredTripsOn`, 0104). Replaces the chip's old «nothing charged
+   * on this truck» test (U36 S3): a prixod split over two trucks and priced
+   * once is priced on both, and a found-back carton riding B leaves B
+   * unpriced even when A carries a price.
+   */
+  unpriced: boolean;
+  /** Cartons that left this truck after its price (Q21 / Q2), or null. */
+  dropped: { boxes: number; to: string[]; cause: 'short_loaded' | 'found_back' | 'mixed' | null } | null;
+  /**
+   * The truck crosses a border (or one end's country is unknown — an unknown
+   * border is treated as crossed, `batches/internal.ts`). The card form lists
+   * these first and warns when a local leg is picked for China cargo (Q1).
+   */
+  crossesBorder: boolean;
+}
+
+/**
+ * A charge on a truck the client's cargo did not ride (0104): still loading
+ * there (`loading` — the live pointer, the price may be right), or nothing of
+ * the client on it at all (`no_cargo`, Q21). Each charge lands in exactly one
+ * of trips / offTrip / unassigned, so Σ trips.owed + Σ offTrip.owed +
+ * unassignedOwed is the owed part of the balance.
+ */
+export interface CargoOffTrip {
+  batchId: string;
+  batchCode: string;
+  status: string;
+  chargedUsd: number;
+  owedUsd: number;
+  reason: 'loading' | 'no_cargo';
+  /** Codes of the trucks the client's dropped cartons ride now. */
+  droppedTo: string[];
+  crossesBorder: boolean;
 }
 
 export interface ClientCargo {
   locations: CargoLocation[];
   trips: CargoTrip[];
+  offTrip: CargoOffTrip[];
   totals: { boxCount: number; kg: number; m3: number };
   chargedUsd: number;
   paidUsd: number;
@@ -72,6 +110,13 @@ export interface ClientCargo {
 }
 
 const round1 = (value: number) => Math.round(value * 10) / 10;
+
+/** `sameCountryLegSql`'s rule for two countries in hand: an empty one is a crossing. */
+const crosses = (origin: string | null | undefined, dest: string | null | undefined) => {
+  const a = (origin ?? '').trim().toUpperCase();
+  const b = (dest ?? '').trim().toUpperCase();
+  return a === '' || a !== b;
+};
 const round3 = (value: number) => Math.round(value * 1000) / 1000;
 const cents = (value: number) => Math.round(value * 100) / 100;
 
@@ -207,15 +252,21 @@ export async function clientCargo(clientId: string): Promise<ClientCargo> {
     unapplied -= applied;
   }
 
+  // A charge's truck is a trip (the cargo rode it), an off-trip truck (0104:
+  // still loading, or the cargo never rode it), or none at all — exactly one,
+  // so the three owed parts add up to the balance's owed part.
+  const tripIds = new Set(tripRows.map((row) => row.batchId));
   const chargedByBatch = new Map<string, number>();
   const owedByBatch = new Map<string, number>();
+  const owedOffTrip = new Map<string, number>();
   let unassignedOwedUsd = 0;
   for (const charge of charges) {
     if (!charge.batchId) {
       unassignedOwedUsd += charge.owed;
       continue;
     }
-    owedByBatch.set(charge.batchId, (owedByBatch.get(charge.batchId) ?? 0) + charge.owed);
+    const into = tripIds.has(charge.batchId) ? owedByBatch : owedOffTrip;
+    into.set(charge.batchId, (into.get(charge.batchId) ?? 0) + charge.owed);
   }
   for (const row of ledger) {
     if (row.type !== 'charge' || !row.batchId) continue;
@@ -238,16 +289,63 @@ export async function clientCargo(clientId: string): Promise<ClientCargo> {
   const internalIds = tripRows
     .filter((row) => isInternalLeg(row.originCountry, row.destCountry))
     .map((row) => row.batchId);
-  const costed = new Set(
+  const offIds = [...owedOffTrip.keys()];
+  const [costedRows, unpricedTrips, offTruck, offRows] = await Promise.all([
     internalIds.length
-      ? (
-          await db
-            .selectDistinct({ batchId: costEntries.batchId })
-            .from(costEntries)
-            .where(and(inArray(costEntries.batchId, internalIds), isNull(costEntries.voidedAt)))
-        ).map((row) => row.batchId)
-      : [],
-  );
+      ? db
+          .selectDistinct({ batchId: costEntries.batchId })
+          .from(costEntries)
+          .where(and(inArray(costEntries.batchId, internalIds), isNull(costEntries.voidedAt)))
+      : Promise.resolve([] as { batchId: string | null }[]),
+    // The trip chip and the off-truck warnings: the ONE rule each (0104),
+    // one read each for the whole card (#432).
+    uncoveredTripsOn(db, { kind: 'client', clientId }),
+    offTruckPrices(db, { clientIds: [clientId] }),
+    offIds.length
+      ? db
+          .select({
+            batchId: batches.id,
+            batchCode: batches.code,
+            status: batches.status,
+            originCountry: sql<string | null>`(SELECT w.country FROM warehouses w WHERE w.id = ${batches}.origin_warehouse_id)`,
+            destCountry: sql<string | null>`(SELECT w.country FROM warehouses w WHERE w.id = ${batches}.dest_warehouse_id)`,
+            // The live pointer: this client's cargo is planned or loading
+            // there, so the price may be right and the truck has not left.
+            loading: sql<boolean>`EXISTS (
+              SELECT 1 FROM boxes pb
+                JOIN receipt_lots pl ON pl.id = pb.lot_id
+                JOIN receipts pr ON pr.id = pl.receipt_id
+               WHERE pb.current_batch_id = ${batches}.id AND pb.status IN ('planned', 'loading')
+                 AND pr.client_id = ${clientId}::uuid)`,
+          })
+          .from(batches)
+          .where(inArray(batches.id, offIds))
+      : Promise.resolve(
+          [] as {
+            batchId: string;
+            batchCode: string;
+            status: string;
+            originCountry: string | null;
+            destCountry: string | null;
+            loading: boolean;
+          }[],
+        ),
+  ]);
+  const costed = new Set(costedRows.map((row) => row.batchId));
+  const offTruckByBatch = new Map(offTruck.map((row) => [row.batchId, row]));
+
+  const offTrip: CargoOffTrip[] = offRows
+    .map((row) => ({
+      batchId: row.batchId,
+      batchCode: row.batchCode,
+      status: row.status,
+      chargedUsd: cents(chargedByBatch.get(row.batchId) ?? 0),
+      owedUsd: cents(owedOffTrip.get(row.batchId) ?? 0),
+      reason: row.loading ? ('loading' as const) : ('no_cargo' as const),
+      droppedTo: (offTruckByBatch.get(row.batchId)?.droppedTo ?? []).map((d) => d.code),
+      crossesBorder: crosses(row.originCountry, row.destCountry),
+    }))
+    .sort((a, b) => a.batchCode.localeCompare(b.batchCode));
 
   const trips = tripRows.map((row) => ({
     batchId: row.batchId,
@@ -266,11 +364,19 @@ export async function clientCargo(clientId: string): Promise<ClientCargo> {
       isInternalLeg(row.originCountry, row.destCountry) &&
       row.departedAt !== null &&
       !costed.has(row.batchId),
+    unpriced: unpricedTrips.has(row.batchId),
+    crossesBorder: crosses(row.originCountry, row.destCountry),
+    dropped: (() => {
+      const off = offTruckByBatch.get(row.batchId);
+      if (!off || off.kind !== 'partial') return null;
+      return { boxes: off.droppedBoxIds.length, to: off.droppedTo.map((d) => d.code), cause: off.dropCause };
+    })(),
   }));
 
   return {
     locations,
     trips,
+    offTrip,
     totals: {
       boxCount: locations.reduce((a, r) => a + r.boxCount, 0),
       kg: round1(locations.reduce((a, r) => a + r.kg, 0)),

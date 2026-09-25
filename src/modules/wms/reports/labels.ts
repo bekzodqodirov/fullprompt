@@ -191,6 +191,20 @@ const DICT = {
     'zh-CN': '记在车辆上、未分摊到任何箱子的费用（不在任何成本中）',
     en: 'Truck costs that reached no box (in no cost figure)',
   },
+  // 0104 (Q21 under his (a)): a PART of revenue, in its own column, and the
+  // screen's note as a text row — accounting.noCargoCol / noCargoNote.
+  noCargoCol: {
+    ru: 'из них без груза $',
+    uz: 'shundan yuki ketmagan $',
+    'zh-CN': '其中无货 $',
+    en: 'of which no cargo $',
+  },
+  noCargoNote: {
+    ru: 'Цены клиентов, чей груз уехал не с этой машиной: входят в выручку; бухгалтер переносит их на нужную машину',
+    uz: 'Yuki o‘sha mashinada ketmagan mijozlarga yozilgan narx: tushumga kirgan; buxgalter uni yuk ketgan mashinaga ko‘chiradi',
+    'zh-CN': '货物未随该车的客户的价格：已计入收入；由会计将其转到正确车次',
+    en: 'Prices of clients whose cargo did not ride the truck: in the revenue; the accountant moves them to the right truck',
+  },
   unbatchedNote: {
     ru: 'Выручка без привязки к машине — в эту таблицу не вошла',
     uz: 'Mashinaga bog‘lanmagan tushum — bu jadvalga kirmagan',

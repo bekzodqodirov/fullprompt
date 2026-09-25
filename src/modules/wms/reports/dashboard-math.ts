@@ -210,6 +210,13 @@ export interface TripTotals {
   losses: number;
   unpriced: number;
   internal: number;
+  /**
+   * The PART of `revenue` charged to clients whose cargo did not ride (0104,
+   * his (a)): Σ `noCargoChargeUsd` over the non-internal rows. Printed beside
+   * the revenue on the profit page's JAMI and the dashboard strip, so the two
+   * screens say the same sentence.
+   */
+  noCargo: number;
 }
 
 /**
@@ -221,9 +228,17 @@ export interface TripTotals {
  * is what explains a low total.
  */
 export function tripTotals(
-  rows: { internal?: boolean; revenueUsd: number; costUsd: number; profitUsd: number | null; kg?: number }[],
+  rows: {
+    internal?: boolean;
+    revenueUsd: number;
+    costUsd: number;
+    profitUsd: number | null;
+    kg?: number;
+    noCargoChargeUsd?: number;
+  }[],
 ): TripTotals {
   let trips = 0;
+  let noCargo = 0;
   let revenue = 0;
   let cost = 0;
   let profit = 0;
@@ -240,6 +255,7 @@ export function tripTotals(
     }
     trips += 1;
     revenue += row.revenueUsd;
+    noCargo += row.noCargoChargeUsd ?? 0;
     cost += row.costUsd;
     profit += row.profitUsd ?? 0;
     if (kind === 'unpriced') unpriced += 1;
@@ -260,6 +276,7 @@ export function tripTotals(
     losses,
     unpriced,
     internal,
+    noCargo: cents(noCargo),
   };
 }
 

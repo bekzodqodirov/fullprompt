@@ -68,6 +68,40 @@ describe('the ban at the counter', () => {
     expect(action).not.toContain("authorize('finance.view')");
   });
 
+  it('finishLoading tells about a priced carton it left behind — AFTER its transaction, with THIS press’s ids', () => {
+    const fn = between(read('src/modules/wms/scanning/service.ts'), 'export async function finishLoading', 'async function notifyLoadSummary');
+    const then = fn.indexOf('}).then(async (result) => {');
+    expect(then).toBeGreaterThan(-1);
+    expect(fn.indexOf('notifyPricedCargoLeft(batchId, result.shortLoadedIds, ctx.actorId)')).toBeGreaterThan(then);
+    expect(fn).toMatch(/shortLoadedIds: shortLoaded\.map\(\(b\) => b\.id\)/);
+  });
+
+  it('a truck price names cargo aboard: addTransaction asks cargoAboard AFTER the internal-leg refusal', () => {
+    const fn = between(read('src/modules/wms/finance/service.ts'), 'export async function addTransaction', 'export const moveChargeSchema');
+    const internal = fn.indexOf("throw new FinanceError('internal_batch')");
+    const aboard = fn.indexOf("if (!aboard.aboard) throw new FinanceError('client_not_aboard')");
+    expect(internal).toBeGreaterThan(-1);
+    expect(aboard).toBeGreaterThan(internal);
+  });
+
+  it('«Ko‘chirish» admits exactly who the charge door admits — the same authorize and nothing else', () => {
+    const actions = read('src/app/(protected)/finance/actions.ts');
+    const add = between(actions, 'export async function addTransactionAction', 'const voidSchema');
+    const move = between(actions, 'export async function moveChargeAction', 'export async function placePaymentAction');
+    const grant = /authorize\('([a-z.]+)'\)/;
+    expect(move.match(grant)?.[1]).toBe(add.match(grant)?.[1]);
+    expect(move.match(/authorize\(/g)).toHaveLength(1);
+  });
+
+  it('the company-wide reads run without JIT — measured: ~3 s of compile per call on a 60k-carton book', () => {
+    expect(read('src/modules/wms/reports/business.ts')).toMatch(/withoutJit\(\(exec\) =>\s*unpricedReceiptsOn\(exec, \{ kind: 'company'/);
+    expect(read('src/modules/wms/home/role-flows.ts')).toContain('withoutJit((exec) => unpricedCount(exec, undefined))');
+    const page = read('src/app/(protected)/finance/narxsiz/page.tsx');
+    expect(page).toMatch(/withoutJit\(\(exec\) =>\s*unpricedReceiptsOn\(\s*exec,/);
+    expect(page).toMatch(/withoutJit\(\(exec\) =>\s*unattachedChargesByClient\(exec,/);
+    expect(read('src/modules/platform/db/no-jit.ts')).toContain('SET LOCAL jit = off');
+  });
+
   it('the settings door asks the value’s validator BEFORE anything is stored, and refuses in words', () => {
     const action = between(read('src/app/(protected)/admin/settings/actions.ts'), 'export async function updateSettingAction', '\n}');
     const asked = action.indexOf('if (validator && !validator(raw.trim())) redirect(');

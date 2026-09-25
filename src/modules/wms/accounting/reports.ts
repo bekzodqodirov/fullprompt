@@ -1015,7 +1015,29 @@ export async function profitByBatch(from: string, to: string) {
     .orderBy(sql`${batches.departedAt} DESC`);
 
   const ids = rows.map((row) => row.batchId);
-  const [landed, loads] = await Promise.all([batchLandedCostTotals(ids), riderLoad(ids)]);
+  const [landed, loads, perClient] = await Promise.all([
+    batchLandedCostTotals(ids),
+    riderLoad(ids),
+    // Revenue per (truck, client) — ONE grouped read (#432) — so the part of
+    // it owed by clients whose cargo did not ride (0104, Q21) can be named.
+    ids.length
+      ? (db.execute(sql`
+          SELECT ct.batch_id, ct.client_id, sum(ct.amount_usd) AS usd
+            FROM client_transactions ct
+           WHERE ct.batch_id IN (${sql.join(
+             ids.map((id) => sql`${id}::uuid`),
+             sql`, `,
+           )})
+             AND ct.type = 'charge' AND ct.voided_at IS NULL
+           GROUP BY ct.batch_id, ct.client_id
+        `) as unknown as Promise<{ batch_id: string; client_id: string; usd: string }[]>)
+      : Promise.resolve([] as { batch_id: string; client_id: string; usd: string }[]),
+  ]);
+  const noCargo = new Map<string, number>();
+  for (const charge of perClient) {
+    if (loads.get(charge.batch_id)?.clientIds.includes(charge.client_id)) continue;
+    noCargo.set(charge.batch_id, (noCargo.get(charge.batch_id) ?? 0) + Number(charge.usd));
+  }
 
   return rows.map((row) => {
     const revenue = money(row.revenueUsd);
@@ -1040,6 +1062,13 @@ export async function profitByBatch(from: string, to: string) {
       kg,
       m3,
       revenueUsd: revenue,
+      /**
+       * The PART of `revenueUsd` charged to clients whose cargo did not ride
+       * this truck (0104, Q21 under his (a)): inside the revenue, the profit
+       * and the margin, printed beside them. `pricingView`'s `noCargoUsd`
+       * over the same riders, so the two screens name the same money.
+       */
+      noCargoChargeUsd: money(noCargo.get(row.batchId) ?? 0),
       costUsd: cost,
       /** The part of `costUsd` the cargo brought with it — «shu reysgacha». */
       prevUsd: prev,
@@ -1325,6 +1354,8 @@ export async function profitByRoute(from: string, to: string) {
       boxCount: number;
       kg: number;
       revenueUsd: number;
+      /** A part of `revenueUsd` (0104) — see `profitByBatch`. */
+      noCargoChargeUsd: number;
       costUsd: number;
     }
   >();
@@ -1337,12 +1368,14 @@ export async function profitByRoute(from: string, to: string) {
         boxCount: 0,
         kg: 0,
         revenueUsd: 0,
+        noCargoChargeUsd: 0,
         costUsd: 0,
       };
     entry.batches += 1;
     entry.boxCount += row.boxCount;
     entry.kg = Math.round((entry.kg + row.kg) * 10) / 10;
     entry.revenueUsd = money(entry.revenueUsd + row.revenueUsd);
+    entry.noCargoChargeUsd = money(entry.noCargoChargeUsd + row.noCargoChargeUsd);
     entry.costUsd = money(entry.costUsd + row.costUsd);
     byRoute.set(row.route, entry);
   }

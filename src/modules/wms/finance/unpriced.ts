@@ -2,7 +2,7 @@ import { sql, type SQL } from 'drizzle-orm';
 import type { db } from '../../platform/db/client';
 import { getSetting } from '../../platform/settings/service';
 import { parseDayOrInstant, tashkentDayStart } from '../../platform/time/tashkent';
-import { FOUND_BACK_CAUSES, RIDE_CAUSES, leftBehindSql, rideMovementSql } from '../batches/riders';
+import { FOUND_BACK_SQL, RIDE_CAUSES, leftBehindSql, rideMovementSql, riderRowsSql } from '../batches/riders';
 import { sameCountryLegSql } from '../batches/internal';
 import { ISSUABLE_STATUSES } from '../issue/parties';
 
@@ -137,8 +137,6 @@ const idList = (ids: string[]) =>
     sql`, `,
   );
 
-const FOUND_BACK = sql.raw(`(${FOUND_BACK_CAUSES.map((cause) => `'${cause}'`).join(', ')})`);
-
 /** The statuses a carton can be in and still be cargo to bill. */
 const CARGO_STATUSES = sql`('in_stock', 'planned', 'loading', 'in_transit', 'ready_for_pickup', 'issued')`;
 
@@ -173,12 +171,14 @@ export function unpricedScopeSql(scope: UnpricedScope): SQL {
 }
 
 /**
- * The five CTEs every reader continues from: `u_box` (the cartons asked
- * about, with their landing), `u_rcpt`, `u_charge` (every live charge of
- * those clients — the only money that can cover), `u_touch` (per prixod and
- * CHARGED truck: did a carton touch it, did one ride it) and `u_cov` (per
- * carton: `covered`, and `elsewhere_tx` — the ids of the client's live truck
- * charges that sit on a truck the prixod touched and do not cover this
+ * The CTEs every reader continues from: `u_box` (the cartons asked about,
+ * with their landing and whether they were ever found back), `u_rcpt`,
+ * `u_charge` (every live charge of those clients — the only money that can
+ * cover), `u_touch` (per prixod and CHARGED truck: did a carton touch it,
+ * did one ride it), `u_rc` (per prixod and charge: clauses 1-2), `u_pair`
+ * (per carton and charge: clauses 3-4, and the «elsewhere» tag) and `u_cov`
+ * (per carton: `covered`, and `elsewhere_tx` — the ids of the client's live
+ * truck charges that sit on a truck the prixod touched and do not cover this
  * carton). Written as `WITH ${uncoveredCtes(…)}`; «uncovered» is
  * `u_cov WHERE NOT covered`.
  *
@@ -190,8 +190,14 @@ export function unpricedScopeSql(scope: UnpricedScope): SQL {
  * Cost is bounded by the CHARGED trucks: `u_touch` is driven from the
  * client's own charges through `box_movements_ref_idx`, so a nearly empty
  * ledger costs nothing and no reader enumerates the riders of every truck;
- * the found-back probe runs only on ride rows (the CASE), and the leftover
- * probe only for a charge that already covers by clause 1 or 2.
+ * the ride probe runs once per (prixod, truck) pair, and the leftover probe
+ * only for a carton that was found back somewhere and a charge that already
+ * names its prixod. Every join is set-based (a hash join per stage, never a
+ * correlated scan of a CTE per row). MEASURED on the 60k-carton clone
+ * (gsr_w2_wa_vol + 300 clients + ~2,000 truck prices): a client, a handover's
+ * boxes, a trip chip 8-18 ms; the company-wide list ~0.8 s — and ~5 s more
+ * if Postgres JIT-compiles it, which is why the company readers go through
+ * `withoutJit` (platform/db/no-jit.ts).
  */
 export function uncoveredCtes(boxScope: SQL, opts: { landedOnly: boolean }): SQL {
   return sql`
@@ -202,7 +208,12 @@ export function uncoveredCtes(boxScope: SQL, opts: { landedOnly: boolean }): SQL
              min(lm.created_at) AS landed_at,
              min(lm.created_at) FILTER (WHERE lm.cause <> 'receipt') AS road_landed_at,
              (array_agg(lm.ref_id ORDER BY lm.created_at, lm.id)
-                FILTER (WHERE lm.ref_type = 'batch' AND lm.cause <> 'receipt'))[1] AS arrival_batch_id
+                FILTER (WHERE lm.ref_type = 'batch' AND lm.cause <> 'receipt'))[1] AS arrival_batch_id,
+             -- Clause 4 and the «elsewhere» exception both ask about a find
+             -- at a truck's origin; a carton never found back anywhere needs
+             -- neither probe (one indexed look per carton, not per charge).
+             EXISTS (SELECT 1 FROM box_movements fx WHERE fx.box_id = b.id AND fx.cause IN ${FOUND_BACK_SQL})
+               AS found_back
         FROM boxes b
         JOIN receipt_lots rl ON rl.id = b.lot_id
         JOIN receipts r ON r.id = rl.receipt_id AND r.status = 'confirmed' AND r.client_id IS NOT NULL
@@ -215,10 +226,12 @@ export function uncoveredCtes(boxScope: SQL, opts: { landedOnly: boolean }): SQL
          AND lm.cause <> 'found_at_origin'
        WHERE b.status IN ${CARGO_STATUSES}
          AND (${boxScope})
-       GROUP BY b.id, b.status, b.current_warehouse_id, rl.receipt_id, r.client_id, r.deal_id,
-                rw.country, rl.total_volume_m3, rl.total_weight_kg, rl.box_count
+       -- The primary keys: every other column is theirs (a functional
+       -- dependency), and a four-key sort is what keeps a company-wide pass
+       -- off the disk.
+       GROUP BY b.id, rl.id, r.id, rw.id
     ),
-    u_rcpt AS (SELECT DISTINCT receipt_id, client_id FROM u_box),
+    u_rcpt AS (SELECT DISTINCT receipt_id, client_id, deal_id, received_in_uz FROM u_box),
     u_charge AS (
       SELECT ct.id, ct.client_id, ct.batch_id, ct.deal_id, ct.amount_usd, ct.created_at,
              -- An empty country is an unknown border, and an unknown border
@@ -233,46 +246,65 @@ export function uncoveredCtes(boxScope: SQL, opts: { landedOnly: boolean }): SQL
          AND ct.client_id IN (SELECT client_id FROM u_rcpt)
     ),
     u_ctruck AS (SELECT DISTINCT client_id, batch_id FROM u_charge WHERE batch_id IS NOT NULL),
-    u_touch AS (
-      SELECT t.receipt_id, t.batch_id, bool_or(t.rode) AS rode
-        FROM (
-          SELECT ur.receipt_id, tm.ref_id AS batch_id,
-                 -- The rider rule's own causes and its own probe (#513): a
-                 -- departure, or an unscanned landing (U25), not found back.
-                 -- The CASE runs the probe only on a ride row.
-                 CASE WHEN tm.cause IN ${RIDE_CAUSES}
-                      THEN ${rideMovementSql('tm')} ELSE false END AS rode
-            FROM u_ctruck ut
-            JOIN box_movements tm ON tm.ref_type = 'batch' AND tm.ref_id = ut.batch_id
-            JOIN boxes tb ON tb.id = tm.box_id AND tb.status <> 'void'
-            JOIN receipt_lots tl ON tl.id = tb.lot_id
-            JOIN u_rcpt ur ON ur.receipt_id = tl.receipt_id AND ur.client_id = ut.client_id
-          UNION ALL
-          -- Planned or loading on a charged truck: a TOUCH, never a ride.
-          SELECT ur.receipt_id, tb.current_batch_id, false
-            FROM u_ctruck ut
-            JOIN boxes tb ON tb.current_batch_id = ut.batch_id AND tb.status <> 'void'
-            JOIN receipt_lots tl ON tl.id = tb.lot_id
-            JOIN u_rcpt ur ON ur.receipt_id = tl.receipt_id AND ur.client_id = ut.client_id
-        ) t
-       GROUP BY t.receipt_id, t.batch_id
+    -- Which (prixod, CHARGED truck) pairs touched at all: a movement of the
+    -- truck, or the live pointer (planned or loading — a touch, never a ride).
+    u_tpair AS (
+      SELECT ur.receipt_id, tm.ref_id AS batch_id
+        FROM u_ctruck ut
+        JOIN box_movements tm ON tm.ref_type = 'batch' AND tm.ref_id = ut.batch_id
+        JOIN boxes tb ON tb.id = tm.box_id AND tb.status <> 'void'
+        JOIN receipt_lots tl ON tl.id = tb.lot_id
+        JOIN u_rcpt ur ON ur.receipt_id = tl.receipt_id AND ur.client_id = ut.client_id
+      UNION
+      SELECT ur.receipt_id, tb.current_batch_id
+        FROM u_ctruck ut
+        JOIN boxes tb ON tb.current_batch_id = ut.batch_id AND tb.status <> 'void'
+        JOIN receipt_lots tl ON tl.id = tb.lot_id
+        JOIN u_rcpt ur ON ur.receipt_id = tl.receipt_id AND ur.client_id = ut.client_id
     ),
-    u_cov AS (
-      SELECT ub.*,
+    -- …and whether a carton of the prixod RODE the truck: the rider rule's own
+    -- causes and its own probe (#513) — a departure, or an unscanned landing
+    -- (U25), not found back. One EXISTS per PAIR, which stops at the first
+    -- carton that rode, rather than the found-back probe on every movement
+    -- row of every charged truck.
+    u_touch AS (
+      SELECT tp.receipt_id, tp.batch_id,
              EXISTS (
-               SELECT 1 FROM u_charge uc
-                WHERE uc.client_id = ub.client_id
-                  AND CASE
-                        WHEN NOT (
-                          (ub.deal_id IS NOT NULL AND uc.deal_id = ub.deal_id)
-                          OR EXISTS (SELECT 1 FROM u_touch ct
-                                      WHERE ct.receipt_id = ub.receipt_id AND ct.batch_id = uc.batch_id AND ct.rode)
-                        ) THEN false
-                        WHEN uc.batch_id IS NULL THEN true
-                        WHEN NOT (uc.crosses OR ub.received_in_uz) THEN false
-                        ELSE NOT ${leftBehindSql(sql`uc.batch_id`, 'kb')}
-                      END
-             ) AS covered,
+               SELECT 1 FROM box_movements tm
+                 JOIN boxes tb ON tb.id = tm.box_id AND tb.status <> 'void'
+                 JOIN receipt_lots tl ON tl.id = tb.lot_id AND tl.receipt_id = tp.receipt_id
+                WHERE tm.ref_type = 'batch' AND tm.ref_id = tp.batch_id
+                  AND tm.cause IN ${RIDE_CAUSES}
+                  AND ${rideMovementSql('tm')}
+             ) AS rode
+        FROM u_tpair tp
+    ),
+    -- Per PRIXOD and charge: does the charge name the prixod (clause 1 — its
+    -- deal; clause 2 — a truck some carton of it RODE), and did a carton of
+    -- it touch the charge's truck at all. The prixod grain first, because
+    -- clauses 1 and 2 are the prixod's (answer 7), and one hash join here is
+    -- what keeps the company-wide list off a per-carton scan of every charge
+    -- (measured: 20 s → the budget on the 60k-carton clone).
+    u_rc AS (
+      SELECT ur.receipt_id, uc.id AS charge_id, uc.batch_id, uc.crosses, uc.created_at,
+             ((ur.deal_id IS NOT NULL AND uc.deal_id = ur.deal_id) OR coalesce(t.rode, false)) AS names,
+             (t.receipt_id IS NOT NULL) AS touched,
+             coalesce(t.rode, false) AS rode
+        FROM u_rcpt ur
+        JOIN u_charge uc ON uc.client_id = ur.client_id
+        LEFT JOIN u_touch t ON t.receipt_id = ur.receipt_id AND t.batch_id = uc.batch_id
+       WHERE (ur.deal_id IS NOT NULL AND uc.deal_id = ur.deal_id) OR t.receipt_id IS NOT NULL
+    ),
+    -- …then per CARTON and charge: clauses 3 and 4, which are the carton's.
+    u_pair AS (
+      SELECT ub.box_id, rc.charge_id,
+             CASE
+               WHEN NOT rc.names THEN false
+               WHEN rc.batch_id IS NULL THEN true
+               WHEN NOT (rc.crosses OR ub.received_in_uz) THEN false
+               WHEN NOT ub.found_back THEN true
+               ELSE NOT ${leftBehindSql(sql`rc.batch_id`, 'kb')}
+             END AS covers,
              -- The charges that sit on a truck this prixod touched and yet do
              -- not cover this carton — «narx YW-001 da» — with ONE exception:
              -- a carton found back at a truck's origin BEFORE that truck was
@@ -281,21 +313,29 @@ export function uncoveredCtes(boxScope: SQL, opts: { landedOnly: boolean }): SQL
              -- is priced on the truck it really rides (Q2); naming the price
              -- as «on another truck» would send the accountant to move money
              -- that belongs where it is. A void and re-entry after the find
-             -- clears the tag for the same reason.
-             ARRAY(
-               SELECT uc.id FROM u_charge uc
-                 JOIN u_touch et ON et.batch_id = uc.batch_id AND et.receipt_id = ub.receipt_id
-                WHERE uc.client_id = ub.client_id
-                  AND NOT (et.rode AND EXISTS (
-                        SELECT 1 FROM box_movements fb
-                          JOIN batches fbt ON fbt.id = uc.batch_id
-                         WHERE fb.box_id = ub.box_id
-                           AND fb.cause IN ${FOUND_BACK}
-                           AND fb.to_warehouse_id = fbt.origin_warehouse_id
-                           AND fb.created_at < uc.created_at))
-             ) AS elsewhere_tx
+             -- clears the tag for the same reason. Read only for a carton
+             -- nothing covers.
+             rc.touched AND NOT (rc.rode AND ub.found_back AND EXISTS (
+               SELECT 1 FROM box_movements fb
+                 JOIN batches fbt ON fbt.id = rc.batch_id
+                WHERE fb.box_id = ub.box_id
+                  AND fb.cause IN ${FOUND_BACK_SQL}
+                  AND fb.to_warehouse_id = fbt.origin_warehouse_id
+                  AND fb.created_at < rc.created_at)) AS elsewhere
         FROM u_box ub
+        JOIN u_rc rc ON rc.receipt_id = ub.receipt_id
         JOIN boxes kb ON kb.id = ub.box_id
+    ),
+    u_agg AS (
+      SELECT box_id, bool_or(covers) AS covered,
+             array_agg(charge_id) FILTER (WHERE elsewhere) AS elsewhere_tx
+        FROM u_pair
+       GROUP BY box_id
+    ),
+    u_cov AS (
+      SELECT ub.*, coalesce(ua.covered, false) AS covered, coalesce(ua.elsewhere_tx, '{}'::uuid[]) AS elsewhere_tx
+        FROM u_box ub
+        LEFT JOIN u_agg ua ON ua.box_id = ub.box_id
     )`;
 }
 
@@ -337,6 +377,23 @@ export async function uncoveredBoxesOn(
 }
 
 /**
+ * The trucks an UNCOVERED carton rode (or stands on now) — the client card's
+ * trip chip «narx qo'yilmagan» (A3, U36 S3). The same fragment with no
+ * landing filter, so a truck still on the road says it, and a found-back
+ * carton riding B makes B unpriced even when A was priced (Q2). A trip is
+ * priced when no carton of the client that rode it is uncovered: a prixod
+ * split over two trucks and priced once reads priced on both (answer 7).
+ */
+export async function uncoveredTripsOn(exec: Exec, scope: UnpricedScope): Promise<Set<string>> {
+  const rows = (await exec.execute(sql`
+    WITH ${uncoveredCtes(unpricedScopeSql(scope), { landedOnly: false })},
+    u_unc AS (SELECT box_id FROM u_cov WHERE NOT covered)
+    SELECT DISTINCT rr.batch_id FROM (${riderRowsSql({ boxes: sql`SELECT box_id FROM u_unc` })}) rr
+  `)) as unknown as { batch_id: string }[];
+  return new Set(rows.map((row) => row.batch_id));
+}
+
+/**
  * The list: every prixod with at least one uncovered, LANDED, non-void,
  * non-lost carton, all history (Q4 c). `gatedBoxes` counts the issuable
  * cartons behind the ban, decided by `gatedAt` against the gate passed in.
@@ -353,34 +410,53 @@ export async function unpricedReceiptsOn(
   const issuable = sql.raw(`(${ISSUABLE_STATUSES.map((s) => `'${s}'`).join(', ')})`);
   const rows = (await exec.execute(sql`
     WITH ${uncoveredCtes(unpricedScopeSql(scope), { landedOnly: true })},
-    u_list AS (SELECT * FROM u_cov WHERE NOT covered AND landed_at IS NOT NULL ${from})
-    SELECT l.receipt_id, r.number, l.client_id, c.client_code, c.name AS client_name,
+    u_list AS (SELECT * FROM u_cov WHERE NOT covered AND landed_at IS NOT NULL ${from}),
+    u_head AS (
+      SELECT l.receipt_id, l.client_id,
+             count(*)::int AS boxes,
+             count(*) FILTER (WHERE l.status = 'issued')::int AS issued_boxes,
+             coalesce(sum(l.kg), 0) AS kg, coalesce(sum(l.m3), 0) AS m3,
+             min(l.landed_at) AS first_landed_at,
+             bool_and(l.road_landed_at IS NULL) AS walk_in,
+             -- Per issuable carton, its road landing — counted against the
+             -- gate by \`gatedAt\` in JS, the gate's own predicate.
+             coalesce(array_agg(l.road_landed_at::text) FILTER (WHERE l.status IN ${issuable}), '{}') AS issuable_road
+        FROM u_list l
+       GROUP BY l.receipt_id, l.client_id
+    ),
+    -- The arrival trucks and the «price sits on another truck» tags, grouped
+    -- once over the list — never a scan of the list per prixod.
+    u_arrive AS (
+      SELECT a.receipt_id, json_agg(json_build_object('batchId', ab.id, 'code', ab.code) ORDER BY ab.code) AS trucks
+        FROM (SELECT DISTINCT receipt_id, arrival_batch_id FROM u_list WHERE arrival_batch_id IS NOT NULL) a
+        JOIN batches ab ON ab.id = a.arrival_batch_id
+       GROUP BY a.receipt_id
+    ),
+    u_else AS (
+      SELECT x.receipt_id,
+             json_agg(json_build_object('batchId', x.batch_id, 'code', x.code, 'usd', x.usd) ORDER BY x.code) AS tags
+        FROM (
+          SELECT e.receipt_id, uc.batch_id, eb.code, sum(uc.amount_usd) AS usd
+            FROM (SELECT DISTINCT receipt_id, unnest(elsewhere_tx) AS charge_id FROM u_list) e
+            JOIN u_charge uc ON uc.id = e.charge_id
+            JOIN batches eb ON eb.id = uc.batch_id
+           GROUP BY e.receipt_id, uc.batch_id, eb.code
+        ) x
+       GROUP BY x.receipt_id
+    )
+    SELECT h.receipt_id, r.number, h.client_id, c.client_code, c.name AS client_name,
            r.deal_id, d.code AS deal_code,
            (SELECT string_agg(coalesce(nullif(gl.product_name_ru, ''), gl.product_name_zh), ', ' ORDER BY gl.seq)
-              FROM receipt_lots gl WHERE gl.receipt_id = l.receipt_id) AS goods,
-           count(*)::int AS boxes,
-           count(*) FILTER (WHERE l.status = 'issued')::int AS issued_boxes,
-           coalesce(sum(l.kg), 0) AS kg, coalesce(sum(l.m3), 0) AS m3,
-           min(l.landed_at) AS first_landed_at,
-           bool_and(l.road_landed_at IS NULL) AS walk_in,
-           -- Per issuable carton, its road landing — counted against the
-           -- gate by \`gatedAt\` in JS, the gate's own predicate.
-           coalesce(array_agg(l.road_landed_at::text) FILTER (WHERE l.status IN ${issuable}), '{}') AS issuable_road,
-           coalesce((SELECT json_agg(json_build_object('batchId', ab.id, 'code', ab.code) ORDER BY ab.code)
-                       FROM batches ab
-                      WHERE ab.id IN (SELECT la.arrival_batch_id FROM u_list la WHERE la.receipt_id = l.receipt_id)), '[]') AS arrival_trucks,
-           coalesce((SELECT json_agg(json_build_object('batchId', x.batch_id, 'code', x.code, 'usd', x.usd) ORDER BY x.code)
-                       FROM (SELECT uc.batch_id, eb.code, sum(uc.amount_usd) AS usd
-                               FROM u_charge uc
-                               JOIN batches eb ON eb.id = uc.batch_id
-                              WHERE uc.id IN (SELECT unnest(le.elsewhere_tx) FROM u_list le
-                                               WHERE le.receipt_id = l.receipt_id)
-                              GROUP BY uc.batch_id, eb.code) x), '[]') AS elsewhere
-      FROM u_list l
-      JOIN receipts r ON r.id = l.receipt_id
-      JOIN clients c ON c.id = l.client_id
+              FROM receipt_lots gl WHERE gl.receipt_id = h.receipt_id) AS goods,
+           h.boxes, h.issued_boxes, h.kg, h.m3, h.first_landed_at, h.walk_in, h.issuable_road,
+           coalesce(ua.trucks, '[]'::json) AS arrival_trucks,
+           coalesce(ue.tags, '[]'::json) AS elsewhere
+      FROM u_head h
+      JOIN receipts r ON r.id = h.receipt_id
+      JOIN clients c ON c.id = h.client_id
       LEFT JOIN deals d ON d.id = r.deal_id
-     GROUP BY l.receipt_id, r.number, l.client_id, c.client_code, c.name, r.deal_id, d.code
+      LEFT JOIN u_arrive ua ON ua.receipt_id = h.receipt_id
+      LEFT JOIN u_else ue ON ue.receipt_id = h.receipt_id
   `)) as unknown as {
     receipt_id: string;
     number: string | null;
@@ -452,15 +528,25 @@ export async function unattachedChargesByClient(
       SELECT uo.client_id, min((ur.confirmed_at AT TIME ZONE 'Asia/Tashkent')::date) AS since
         FROM u_open uo JOIN receipts ur ON ur.id = uo.receipt_id
        GROUP BY uo.client_id
+    ),
+    u_card AS (
+      SELECT s.client_id, sum(uc.amount_usd) AS usd
+        FROM u_since s
+        JOIN u_charge uc ON uc.client_id = s.client_id AND uc.batch_id IS NULL AND uc.deal_id IS NULL
+        JOIN client_transactions cx ON cx.id = uc.id AND cx.tx_date >= s.since
+       GROUP BY s.client_id
+    ),
+    -- Each charge id once per client, however many prixods name it.
+    u_else AS (
+      SELECT e.client_id, sum(uc.amount_usd) AS usd
+        FROM (SELECT DISTINCT client_id, unnest(elsewhere_tx) AS charge_id FROM u_cov WHERE NOT covered) e
+        JOIN u_charge uc ON uc.id = e.charge_id
+       GROUP BY e.client_id
     )
-    SELECT s.client_id,
-           coalesce((SELECT sum(uc.amount_usd) FROM u_charge uc JOIN client_transactions cx ON cx.id = uc.id
-                      WHERE uc.client_id = s.client_id AND uc.batch_id IS NULL AND uc.deal_id IS NULL
-                        AND cx.tx_date >= s.since), 0) AS card_only,
-           coalesce((SELECT sum(uc.amount_usd) FROM u_charge uc
-                      WHERE uc.id IN (SELECT unnest(uv.elsewhere_tx) FROM u_cov uv
-                                       WHERE uv.client_id = s.client_id AND NOT uv.covered)), 0) AS elsewhere
+    SELECT s.client_id, coalesce(k.usd, 0) AS card_only, coalesce(e.usd, 0) AS elsewhere
       FROM u_since s
+      LEFT JOIN u_card k ON k.client_id = s.client_id
+      LEFT JOIN u_else e ON e.client_id = s.client_id
   `)) as unknown as { client_id: string; card_only: string; elsewhere: string }[];
   for (const row of rows) {
     out.set(row.client_id, {

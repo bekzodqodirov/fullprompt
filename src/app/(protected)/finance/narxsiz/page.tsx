@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
-import { db } from '@/modules/platform/db/client';
+import { withoutJit } from '@/modules/platform/db/no-jit';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { calendarDay, tashkentDay, tashkentMinute } from '@/modules/platform/time/tashkent';
 import { BackLink } from '@/components/back-link';
@@ -48,10 +48,13 @@ export default async function UnpricedCargoPage({
   const page = Math.max(1, Math.floor(Number(params.page) || 1));
 
   const gate = await unpricedGate();
-  const rows = await unpricedReceiptsOn(
-    db,
-    { kind: 'company', warehouseIds: undefined, ownerId: moneyOwnerFilter(actor), landedFrom: from },
-    gate,
+  // The whole book: past JIT's cost line by shape (platform/db/no-jit.ts).
+  const rows = await withoutJit((exec) =>
+    unpricedReceiptsOn(
+      exec,
+      { kind: 'company', warehouseIds: undefined, ownerId: moneyOwnerFilter(actor), landedFrom: from },
+      gate,
+    ),
   );
   // The money most at risk first — cargo already handed over — then the
   // longest waiting.
@@ -62,7 +65,9 @@ export default async function UnpricedCargoPage({
   );
   const pages = Math.max(1, Math.ceil(rows.length / PAGE));
   const slice = rows.slice((page - 1) * PAGE, page * PAGE);
-  const card = await unattachedChargesByClient(db, [...new Set(slice.map((row) => row.clientId))]);
+  const card = await withoutJit((exec) =>
+    unattachedChargesByClient(exec, [...new Set(slice.map((row) => row.clientId))]),
+  );
 
   const byClient = new Map<string, UnpricedReceipt[]>();
   for (const row of slice) byClient.set(row.clientId, [...(byClient.get(row.clientId) ?? []), row]);

@@ -94,6 +94,18 @@ export default async function ProfitPage({
     (sum, row) => sum + ('unallocatedUsd' in row ? row.unallocatedUsd : 0),
     0,
   );
+  // Revenue owed by clients whose cargo did not ride (0104). The note counts
+  // TRUCKS, so it speaks on the batch tab only (a corridor is not a truck);
+  // every row and the JAMI carry the part on both tabs. Internal rows stay
+  // out, as they do of the totals.
+  const noCargoRows = rows.filter(
+    (row) =>
+      view === 'batch' && 'noCargoChargeUsd' in row && row.noCargoChargeUsd > 0.009 && !isInternal(row),
+  );
+  const noCargoUsd = noCargoRows.reduce(
+    (sum, row) => sum + ('noCargoChargeUsd' in row ? row.noCargoChargeUsd : 0),
+    0,
+  );
 
   return (
     <div className="mx-auto max-w-lg space-y-3 md:max-w-5xl">
@@ -168,7 +180,15 @@ export default async function ProfitPage({
                   {view !== 'client' && 'boxCount' in row && (
                     <td className="p-2 text-right">{row.boxCount}</td>
                   )}
-                  <td className="p-2 text-right font-mono">{usd(row.revenueUsd)}</td>
+                  <td className="p-2 text-right font-mono">
+                    {usd(row.revenueUsd)}
+                    {/* 0104 under his (a): a PART of the revenue, never taken out. */}
+                    {'noCargoChargeUsd' in row && row.noCargoChargeUsd > 0.009 && (
+                      <span className="block text-xs font-semibold text-warn" data-testid="profit-no-cargo">
+                        ⚠ {tf('noCargoPart', { usd: `$${usd(row.noCargoChargeUsd)}` })}
+                      </span>
+                    )}
+                  </td>
                   <td className="p-2 text-right font-mono" data-testid="profit-cost">
                     {usd(row.costUsd)}
                     {'prevUsd' in row && row.prevUsd > 0.009 && (
@@ -218,7 +238,14 @@ export default async function ProfitPage({
                   <td className="p-2" colSpan={view === 'batch' ? 3 : view === 'route' ? 2 : 1}>
                     {t('total')}
                   </td>
-                  <td className="p-2 text-right font-mono">{usd(totals.revenue)}</td>
+                  <td className="p-2 text-right font-mono">
+                    {usd(totals.revenue)}
+                    {totals.noCargo > 0.009 && (
+                      <span className="block text-xs font-semibold text-warn">
+                        {tf('noCargoPart', { usd: `$${usd(totals.noCargo)}` })}
+                      </span>
+                    )}
+                  </td>
                   <td className="p-2 text-right font-mono">{usd(totals.cost)}</td>
                   <td className={`p-2 text-right font-mono ${profitClass(totals.profit)}`}>
                     {usd(totals.profit)}
@@ -236,6 +263,11 @@ export default async function ProfitPage({
       {anyInternal && (
         <p className="text-xs text-ink-500" data-testid="profit-internal-note">
           {t('internalRowsNote')}
+        </p>
+      )}
+      {noCargoRows.length > 0 && (
+        <p className="card !p-3 text-sm font-semibold text-warn" data-testid="profit-no-cargo-note">
+          ⚠ {t('noCargoNote', { count: noCargoRows.length, usd: `$${usd(noCargoUsd)}` })}
         </p>
       )}
       {unallocated.length > 0 && (

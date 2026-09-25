@@ -217,6 +217,149 @@ export async function addTransaction(input: TransactionInput, ctx: AuditContext)
 }
 
 /**
+ * «🚚 Ko'chirish» — a price moved onto the truck(s) the cargo really rode
+ * (0104): a card-only price onto its truck, a Q21 no-cargo price onto the
+ * truck the cargo left on, a Q2 found-back share split off onto the next
+ * truck. Amounts are in the row's OWN currency and must add up to it to the
+ * cent; at most five parts, each on a different truck.
+ */
+export const moveChargeSchema = z.object({
+  txId: z.string().uuid(),
+  parts: z
+    .array(z.object({ batchId: z.string().uuid(), amount: nativeAmount() }))
+    .min(1)
+    .max(5)
+    .refine((parts) => new Set(parts.map((p) => p.batchId)).size === parts.length, { message: 'duplicate_truck' }),
+});
+export type MoveChargeInput = z.infer<typeof moveChargeSchema>;
+
+/**
+ * Void + re-entry in ONE transaction, the house rule for a money correction
+ * (#528), in one press so the two halves cannot drift. The copies keep EVERY
+ * clock of the original:
+ *
+ * - `tx_date` — the P&L month, the monthly plan and the ageing bucket stay
+ *   where they were: moving an August price in September must not take $600
+ *   out of a reported August or restart an 18-day debt at 0.
+ * - `rate_to_usd` / `amount_usd` — copied, never re-read (Q18: a rate may
+ *   since have been corrected, and a correction here must not look like FX).
+ *   The last part takes `amount_usd − Σ others`, so the dollars add up to
+ *   the original to the cent.
+ * - `created_at` — the off-truck warning's «priced at» (`offTruckPrices`)
+ *   stays honest, and the FX cycle order (`(currency, tx_date, created_at,
+ *   id)`) does not move.
+ *
+ * The audit rows carry the press time and `created_by` names the mover.
+ * Every part passes the price door's own checks (`internal_batch`,
+ * `client_not_aboard`, the derived deal — R3a), so a move can never create
+ * the no-cargo price the warnings exist to name. The claim re-judges the row
+ * as it stands at the write: live, a charge, no partner, and not half of a
+ * three-cornered settlement.
+ *
+ * STATED: the FX package's `reconcileFxResidueTx` is not wired here — it had
+ * not landed when this was written; its F2 fence names `moveCharge`.
+ */
+export async function moveCharge(input: MoveChargeInput, ctx: AuditContext): Promise<{ ids: string[] }> {
+  if (!ctx.actorId) throw new FinanceError('unauthenticated');
+  const actorId = ctx.actorId;
+  const row = await db.query.clientTransactions.findFirst({ where: eq(clientTransactions.id, input.txId) });
+  if (!row || row.voidedAt || row.type !== 'charge' || row.partnerId) throw new FinanceError('not_movable');
+
+  const cents = (value: number) => Math.round(value * 100);
+  if (input.parts.reduce((sum, part) => sum + cents(part.amount), 0) !== cents(Number(row.amount))) {
+    throw new FinanceError('move_sum_mismatch');
+  }
+  if (input.parts.length === 1 && input.parts[0]!.batchId === row.batchId) throw new FinanceError('move_noop');
+
+  // The price door's own checks, per part, on the pool BEFORE the transaction
+  // (#714) — the same order `addTransaction` asks them in.
+  const deals = new Map<string, string | null>();
+  for (const part of input.parts) {
+    const route = await batchRoute(part.batchId);
+    if (!route) throw new FinanceError('batch_not_found');
+    if (route.internal) throw new FinanceError('internal_batch');
+    const aboard = await cargoAboard(part.batchId, row.clientId);
+    if (!aboard.aboard) throw new FinanceError('client_not_aboard');
+    deals.set(part.batchId, aboard.dealId ?? row.dealId ?? null);
+  }
+  const codeRows = await db
+    .select({ id: batches.id, code: batches.code })
+    .from(batches)
+    .where(inArray(batches.id, [...new Set([...input.parts.map((p) => p.batchId), ...(row.batchId ? [row.batchId] : [])])]));
+  const codeOf = new Map(codeRows.map((r) => [r.id, r.code]));
+  const reason = `ko‘chirildi: ${row.batchId ? (codeOf.get(row.batchId) ?? '—') : 'karta'} → ${input.parts
+    .map((part) => codeOf.get(part.batchId) ?? '—')
+    .join(', ')}`;
+
+  const rate = Number(row.rateToUsd);
+  const totalUsd = cents(Number(row.amountUsd));
+  const usdParts = input.parts.map((part) => cents(part.amount * rate));
+  usdParts[usdParts.length - 1] = totalUsd - usdParts.slice(0, -1).reduce((a, b) => a + b, 0);
+
+  const ids = await db.transaction(async (tx) => {
+    const claimed = await tx
+      .update(clientTransactions)
+      .set({ voidedAt: new Date(), voidedBy: actorId, voidReason: reason })
+      .where(
+        and(
+          eq(clientTransactions.id, row.id),
+          isNull(clientTransactions.voidedAt),
+          eq(clientTransactions.type, 'charge'),
+          isNull(clientTransactions.partnerId),
+          sql`NOT EXISTS (SELECT 1 FROM partner_transactions pt WHERE pt.client_tx_id = ${row.id}::uuid)`,
+        ),
+      )
+      .returning({ id: clientTransactions.id });
+    if (claimed.length === 0) throw new FinanceError('not_movable');
+    const inserted = await tx
+      .insert(clientTransactions)
+      .values(
+        input.parts.map((part, index) => ({
+          clientId: row.clientId,
+          type: 'charge',
+          amount: part.amount.toFixed(2),
+          currency: row.currency,
+          rateToUsd: row.rateToUsd,
+          amountUsd: (usdParts[index]! / 100).toFixed(2),
+          method: null,
+          txDate: row.txDate,
+          batchId: part.batchId,
+          dealId: deals.get(part.batchId) ?? null,
+          accountId: null,
+          note: row.note,
+          createdBy: actorId,
+          createdAt: row.createdAt,
+        })),
+      )
+      .returning({ id: clientTransactions.id });
+    await writeAudit(tx, ctx, {
+      entityType: 'client_transaction',
+      entityId: row.id,
+      action: 'void',
+      after: { reason, movedTo: inserted.map((r) => r.id) },
+    });
+    for (const [index, part] of inserted.entries()) {
+      await writeAudit(tx, ctx, {
+        entityType: 'client_transaction',
+        entityId: part.id,
+        action: 'create',
+        after: {
+          clientId: row.clientId,
+          type: 'charge',
+          amount: input.parts[index]!.amount,
+          currency: row.currency,
+          amountUsd: usdParts[index]! / 100,
+          batchId: input.parts[index]!.batchId,
+          movedFrom: row.id,
+        },
+      });
+    }
+    return inserted.map((r) => r.id);
+  });
+  return { ids };
+}
+
+/**
  * Put an unplaced payment into the cash box it actually landed in (audit A2).
  *
  * A payment saved before the kassa became required took its amount off the

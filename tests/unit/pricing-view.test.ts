@@ -81,6 +81,9 @@ describe('pricingView', () => {
   it('counts every charge on the truck and names the ones with no cargo under them', () => {
     expect(view.orphans).toEqual([{ clientId: 'C9', code: 'GS9', name: 'Toqqiz', chargedUsd: 40 }]);
     expect(view.totals).toMatchObject({ chargedUsd: 240, marginUsd: 53, prevUsd: 20, priced: 1 });
+    // 0104 under his (a): the orphan's $40 is named as a PART of «Narx» —
+    // still inside the 240 and the margin, printed beside them.
+    expect(view.totals.noCargoUsd).toBe(40);
   });
 });
 

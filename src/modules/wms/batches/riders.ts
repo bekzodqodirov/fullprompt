@@ -56,6 +56,9 @@ export const FOUND_BACK_CAUSES = ['found_at_origin', 'inventory_found'] as const
 
 const FOUND_BACK = sql.raw(`(${FOUND_BACK_CAUSES.map((cause) => `'${cause}'`).join(', ')})`);
 
+/** The same list as an SQL tuple, for readers that probe the find themselves (0104). */
+export const FOUND_BACK_SQL = FOUND_BACK;
+
 /**
  * The movements that can put a box on a truck for money (the index's causes)
  * — exported so a reader that must tell a RIDE from a mere touch of a truck
@@ -278,12 +281,18 @@ export interface RiderLoad {
   boxCount: number;
   kg: number;
   m3: number;
+  /**
+   * The clients whose cargo rode (0104) — from the SAME pass, so «Partiya
+   * foydasi»'s no-cargo part asks no second rider probe (the regression
+   * lens's performance objection). Unclaimed cargo names no client.
+   */
+  clientIds: string[];
 }
 
 /**
  * What rode each truck: boxes, and kg / m³ as each box's share of its lot —
  * the base a per-kg figure divides by, so it must be the base the freight was
- * split over. One grouped query for a whole report (#432).
+ * split over — and whose it was. One grouped query for a whole report (#432).
  */
 export async function riderLoad(batchIds: string[]): Promise<Map<string, RiderLoad>> {
   const ids = [...new Set(batchIds)];
@@ -297,14 +306,21 @@ export async function riderLoad(batchIds: string[]): Promise<Map<string, RiderLo
     WITH riders AS (${riderRowsSql({ batches: list })})
     SELECT r.batch_id, count(*)::int AS boxes,
            coalesce(sum(rl.total_weight_kg / rl.box_count), 0) AS kg,
-           coalesce(sum(rl.total_volume_m3 / rl.box_count), 0) AS m3
+           coalesce(sum(rl.total_volume_m3 / rl.box_count), 0) AS m3,
+           coalesce(array_agg(DISTINCT rr.client_id::text) FILTER (WHERE rr.client_id IS NOT NULL), '{}') AS client_ids
       FROM riders r
       JOIN boxes bx ON bx.id = r.box_id
       JOIN receipt_lots rl ON rl.id = bx.lot_id
+      JOIN receipts rr ON rr.id = rl.receipt_id
      GROUP BY r.batch_id
-  `)) as unknown as { batch_id: string; boxes: number; kg: string; m3: string }[];
+  `)) as unknown as { batch_id: string; boxes: number; kg: string; m3: string; client_ids: string[] }[];
   for (const row of rows) {
-    out.set(row.batch_id, { boxCount: Number(row.boxes), kg: Number(row.kg), m3: Number(row.m3) });
+    out.set(row.batch_id, {
+      boxCount: Number(row.boxes),
+      kg: Number(row.kg),
+      m3: Number(row.m3),
+      clientIds: row.client_ids ?? [],
+    });
   }
   return out;
 }

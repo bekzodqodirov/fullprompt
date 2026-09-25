@@ -1,4 +1,5 @@
 import { aliasedTable, and, eq, inArray, isNull, not, sql } from 'drizzle-orm';
+import { withoutJit } from '../../platform/db/no-jit';
 import { unpricedCount } from '../finance/unpriced';
 import { db } from '../../platform/db/client';
 import { calcQueueCounts } from '../calc/service';
@@ -172,7 +173,7 @@ export async function moneyFlowCounts(today: string): Promise<MoneyFlowCounts> {
     recurringDueCount(today),
     costMissingCount(3),
     unplacedCostTotals(),
-    unpricedCount(db, undefined),
+    withoutJit((exec) => unpricedCount(exec, undefined)),
   ]);
   return {
     snapshot,

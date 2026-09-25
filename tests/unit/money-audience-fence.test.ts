@@ -11,7 +11,13 @@ import { describe, expect, it } from 'vitest';
  * writer. An entry here needs a reason.
  */
 const VED_GRANTS = ['finance.manage', 'finance.view', 'costs.enter_batch', 'reports.all_warehouses'];
-const ALLOWED: Record<string, string> = {};
+const ALLOWED: Record<string, string> = {
+  // 0104: `finance.view` is SUBTRACTED there, never picked — a seller of
+  // ANOTHER client drops out of the approval request's audience (the request
+  // names a client and a debt). The audience itself is `finance.debt_override`
+  // and the message carries no kassa, profit or tannarx.
+  'src/modules/wms/issue/approvals.ts': 'narrows the debt_override list',
+};
 
 const stripComments = (source: string) =>
   source
