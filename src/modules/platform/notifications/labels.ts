@@ -108,6 +108,44 @@ const DICT = {
     en: 'Request: issue cargo to a debtor',
   },
   debtLine: { ru: 'Долг', uz: 'Qarz', 'zh-CN': '欠款', en: 'Debt' },
+  // 0104: the same approval chain asking about cargo with no price.
+  unpricedApprovalRequested: {
+    ru: 'Запрос: выдать груз без цены',
+    uz: 'So‘rov: narxsiz yukni berish',
+    'zh-CN': '请求：交付未定价货物',
+    en: 'Request: hand over unpriced cargo',
+  },
+  issueApprovalRequested: {
+    ru: 'Запрос: разрешение на выдачу (долг + груз без цены)',
+    uz: 'So‘rov: yuk berishga ruxsat (qarz + narxsiz yuk)',
+    'zh-CN': '请求：交付许可（欠款 + 未定价货物）',
+    en: 'Request: permission to hand over (debt + unpriced cargo)',
+  },
+  unpricedLine: { ru: 'Без цены', uz: 'Narx qo‘yilmagan', 'zh-CN': '未定价', en: 'No price' },
+  priceApprovalYes: {
+    ru: 'Выдача груза без цены РАЗРЕШЕНА',
+    uz: 'Narxsiz yukni berishga RUXSAT berildi',
+    'zh-CN': '已批准交付未定价货物',
+    en: 'Handing over unpriced cargo was APPROVED',
+  },
+  priceApprovalNo: {
+    ru: 'Выдача груза без цены ОТКЛОНЕНА',
+    uz: 'Narxsiz yukni berish RAD etildi',
+    'zh-CN': '已拒绝交付未定价货物',
+    en: 'Handing over unpriced cargo was REFUSED',
+  },
+  issueApprovalYes: {
+    ru: 'Выдача РАЗРЕШЕНА',
+    uz: 'Yuk berishga RUXSAT berildi',
+    'zh-CN': '已批准交付',
+    en: 'The handover was APPROVED',
+  },
+  issueApprovalNo: {
+    ru: 'Выдача ОТКЛОНЕНА',
+    uz: 'Yuk berish RAD etildi',
+    'zh-CN': '已拒绝交付',
+    en: 'The handover was REFUSED',
+  },
   requestedByWord: { ru: 'Просит', uz: 'So‘ramoqda', 'zh-CN': '请求人', en: 'Requested by' },
   debtApprovalYes: {
     ru: 'Выдача должнику РАЗРЕШЕНА',

@@ -56,8 +56,12 @@ export const FOUND_BACK_CAUSES = ['found_at_origin', 'inventory_found'] as const
 
 const FOUND_BACK = sql.raw(`(${FOUND_BACK_CAUSES.map((cause) => `'${cause}'`).join(', ')})`);
 
-/** The movements that can put a box on a truck for money (the index's causes). */
-const RIDE_CAUSES = sql`('batch_departed', 'undocumented_transfer')`;
+/**
+ * The movements that can put a box on a truck for money (the index's causes)
+ * — exported so a reader that must tell a RIDE from a mere touch of a truck
+ * (the unpriced-cargo rule, 0104) asks this list and never a copy of it.
+ */
+export const RIDE_CAUSES = sql`('batch_departed', 'undocumented_transfer')`;
 
 /**
  * A movement (by alias) of a box that is not void — as an anti-join probe by
@@ -149,6 +153,23 @@ export function riderCtesSql(list: SQL): SQL {
     ),
     box_rides AS (${riderRowsSql({ boxes: sql`SELECT box_id FROM rider_cand` })}),
     members AS (SELECT batch_id, box_id FROM box_rides WHERE batch_id IN (${list}))`;
+}
+
+/**
+ * EXISTS: a non-void box of that client is a rider of that truck, for money —
+ * the live pointer before departure, the rides after it (0104). The ONE home
+ * for «is this client aboard», asked by the price door (`cargoAboard`), the
+ * off-truck warnings and «Partiya foydasi»'s no-cargo part, so a price the
+ * door refuses is the same price the screens call «yuki ketmagan».
+ */
+export function clientAboardSql(batchExpr: SQL, clientExpr: SQL): SQL {
+  return sql`EXISTS (
+    SELECT 1 FROM (${riderRowsSql({ batches: batchExpr })}) car
+      JOIN boxes cab ON cab.id = car.box_id
+      JOIN receipt_lots cal ON cal.id = cab.lot_id
+      JOIN receipts crr ON crr.id = cal.receipt_id
+     WHERE crr.client_id = ${clientExpr}
+  )`;
 }
 
 /** A WHERE over `boxes`: this box rode that truck (for money). */

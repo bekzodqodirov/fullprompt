@@ -222,14 +222,17 @@ describe('the recorded permission opens the gate', () => {
     await decideIssueApproval({ approvalId: id, verdict: 'refused' }, ctx(deciderId));
   });
 
-  it('a zero-debt client has nothing to approve', async () => {
+  // The refusal's word changed with 0104: a request now asks two questions
+  // (a debt, and cartons with no price), so «nothing to approve» is when
+  // NEITHER has an answer to give — a client with no debt and no cargo here.
+  it('a zero-debt client with no unpriced cargo has nothing to approve', async () => {
     const [clean] = await db
       .insert(clients)
       .values({ clientCode: `IB${STAMP}`.slice(0, 12), name: `No debt ${STAMP}` })
       .returning();
     await expect(
       requestIssueApproval({ clientId: clean!.id, warehouseId: whId }, ctx(operatorId)),
-    ).rejects.toThrow('no_debt');
+    ).rejects.toThrow('nothing_to_approve');
     await db.delete(clients).where(eq(clients.id, clean!.id));
   });
 });

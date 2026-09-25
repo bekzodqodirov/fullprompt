@@ -487,6 +487,17 @@ async function AccountantFlow({ flow }: { flow: MoneyFlowCounts }) {
             ) : null
           }
         />
+        {/* 0104: landed cargo with no price — the list whose rows the
+            counter's ban refuses, all history (the owner's Q4 c). */}
+        <FlowRow
+          href="/finance/narxsiz"
+          icon="wallet"
+          testid="acc-flow-unbilled"
+          label={tfin('unbilledLink')}
+          count={flow.unbilled}
+          warn={flow.unbilled > 0}
+          sub={flow.unbilled > 0 ? t('flowUnbilled', { n: flow.unbilled }) : null}
+        />
         <FlowRow
           href="/finance/reestr?joylanmagan=1"
           icon="exchange"

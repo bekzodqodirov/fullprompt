@@ -39,8 +39,16 @@ export interface MoneyActor {
  * treating it as company-wide is the bug this file exists to end.
  */
 export function seesAllMoney(actor: MoneyActor): boolean {
-  return actor.permissions.has('finance.manage') || actor.permissions.has('clients.manage');
+  return SEES_ALL_MONEY_GRANTS.some((code) => actor.permissions.has(code));
 }
+
+/**
+ * The grants that make a person's money view the whole company — the list
+ * `seesAllMoney` asks, exported so a reader that cannot hold a whole actor
+ * (the approval ping's recipient filter, which resolves holders from the
+ * editable grants) asks the SAME list and not a copy of it.
+ */
+export const SEES_ALL_MONEY_GRANTS = ['finance.manage', 'clients.manage'] as const;
 
 /**
  * The `sales_manager_id` a money query must filter on, or undefined for no

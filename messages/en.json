@@ -102,7 +102,8 @@
     "flowTnvedMissing": "Goods without TNVED code",
     "flowCalcOpen": "Calculations waiting",
     "flowCalcLate": "late",
-    "flowUnplacedCosts": "Costs with no cash box"
+    "flowUnplacedCosts": "Costs with no cash box",
+    "flowUnbilled": "Arrived cargo with no price: {n} receipts"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -246,7 +247,7 @@
     "unbilledIssued": "{n} boxes already handed over",
     "unbilledLine": "{receipts} receipts · {boxes} 📦 · {m3} m³ · {kg} kg",
     "unbilledNone": "✅ Every arrived cargo has a price",
-    "unbilledNote": "Cargo that reached Uzbekistan or was handed over with no price covering it. A price on any truck that carried the receipt, or on its deal, covers the whole receipt.",
+    "unbilledNote": "Cargo that reached Uzbekistan or was handed over with no price. A price on the cross-border truck or the deal covers the whole receipt; a price on a truck inside Uzbekistan, or the first truck’s price for a box left in the warehouse, does not.",
     "unbilledSummary": "{n} clients · {boxes} 📦 · {m3} m³",
     "unbilledTitle": "Arrived, not billed",
     "unratedTills": "{n} tills have no rate and are left out",
@@ -280,11 +281,14 @@
       "recurringDue": "Fixed costs due and not yet paid: {n}, {usd}",
       "approvals": "Requests to hand over with debt: {n} · {usd}",
       "approvalsNoMoney": "Requests to hand over with debt: {n}",
-      "calcLate": "Late calculations: {n}"
+      "calcLate": "Late calculations: {n}",
+      "priceApprovals": "Requests to hand over unpriced cargo: {n}"
     },
     "monthPaidNet": "Paid by clients (net)",
     "monthPaidParts": "into cash boxes {till} · through a firm {partner} · refunded −{refunded}",
-    "monthPayments": "Payments this month"
+    "monthPayments": "Payments this month",
+    "unbilledAll": "All →",
+    "noCargoPart": "of which {usd} — prices of clients whose cargo did not ride"
   },
   "inventory": {
     "title": "Stocktake",
@@ -527,7 +531,7 @@
       "deal_deviation_threshold_pct": "How far the cargo may differ from the quote before the manager is alerted. Never blocks loading.",
       "tg_sending_enabled": "Allow the CRM to send messages to clients through a manager’s personal Telegram (off by default)",
       "quote_valid_days": "How many days a sealed calculation price stays valid (after that — recalculate)",
-      "debt_approval_ttl_hours": "How many hours an approved permission to issue cargo to a debtor stays valid",
+      "debt_approval_ttl_hours": "How many hours a handover permission (debt or unpriced cargo) stays valid",
       "unanswered_reminder_minutes": "A client waiting this many minutes for an answer gets their manager reminded (0 = off)",
       "crm_calc_stage": "A request for a price from the bot moves the lead to this stage (forward only; «—» means do not move)",
       "deal_calc_stage": "The same for the deal board — a coded client's request lands on a deal",
@@ -543,10 +547,12 @@
       "calc_memory_min_sim": "How close a product name must be to a SEALED calculation before the AI takes its baza (0..1)",
       "ai_calc_daily_limit": "AI calls per day for calculations (past the limit: memory, dictionaries and the customs file only)",
       "ai_calc_reply_lenta": "Also write the AI's estimate onto the card's lenta",
-      "cost_kassa_since": "Costs with no cash box entered from this day on go to the accountant's queue (YYYY-MM-DD; empty = all)"
+      "cost_kassa_since": "Costs with no cash box entered from this day on go to the accountant's queue (YYYY-MM-DD; empty = all)",
+      "unpriced_gate_since": "Unpriced cargo that a truck brings into Uzbekistan after this moment is handed over only with permission (a date or an instant; empty = the ban is off)"
     },
     "driverApp": "Driver app",
-    "callsApp": "Calls app"
+    "callsApp": "Calls app",
+    "badValue": "Invalid value — enter a date (YYYY-MM-DD) or an instant (YYYY-MM-DDTHH:MM+05:00); empty = off. Nothing was saved."
   },
   "audit": {
     "title": "Audit log",
@@ -1212,7 +1218,27 @@
     "partiesEmpty": "Nothing ready to hand over at this warehouse",
     "partiesOffline": "List not loaded — no connection. Search by code still works.",
     "partiesFailed": "List not loaded (server answered {code}). Search by code still works.",
-    "openReceipt": "Open the receipt"
+    "openReceipt": "Open the receipt",
+    "unpricedBanner": "💰 Cargo with no price: {boxes} boxes ({receipts} receipts)",
+    "unpricedRow": "Receipt {number} · {truck} · {boxes} boxes",
+    "unpricedElsewhere": "its price sits on truck {codes} ({usd}) — the accountant moves it",
+    "unpricedWalkIn": "Receipt {number} was received straight into the warehouse and is priced on its deal — the handover is not blocked",
+    "unpricedRule": "Until a price is set, this cargo is handed over only with permission",
+    "unpricedOld": "Cargo that arrived before {date} has no price — the handover is not blocked",
+    "gateInvalid": "The unpriced-cargo ban setting is invalid — all unpriced cargo needs permission. An admin must fix the setting.",
+    "lotUnpriced": "no price",
+    "priceOk": "I allow handing over without a price (staff with permission rights)",
+    "priceBlocked": "This cargo has no price — the handover is blocked. Ask for permission or have the accountant set the price.",
+    "priceElsewhereBlocked": "This cargo’s price sits on another truck — have the accountant move it to the truck the cargo came on, or ask for permission.",
+    "debtPriceBlocked": "The client owes money and the cargo has no price — both need permission",
+    "priceNeedsManager": "Only staff with permission rights can hand over unpriced cargo",
+    "approvalStale": "The earlier permission does not cover this cargo or debt — ask again",
+    "nothingToApprove": "Nothing to ask for — no debt and no unpriced cargo",
+    "alreadyApproved": "Permission is already granted — select the cargo and confirm",
+    "approvalDebt": "Debt: ${amount}",
+    "approvalUnpriced": "No price: {receipts} receipts · {boxes} boxes",
+    "approvalPriceLink": "Set the price →",
+    "approvalPriced": "✅ priced"
   },
   "pipeline": {
     "title": "My clients",
@@ -1315,7 +1341,7 @@
     "unclaimedGroup": "Cargo with no owner yet",
     "unclaimedPriceLater": "The price is set once the owner is found, on that client’s row. Its cost is already in the total above.",
     "orphanCharges": "Prices charged to clients with no cargo left on this truck",
-    "orphanChargesHint": "The cargo may have moved to another client, or the price was typed by mistake. It is in the «Price» total above — check the client’s ledger.",
+    "orphanChargesHint": "The client’s cargo did not ride this truck after it was priced. This price is inside «Price» above — the accountant moves it to the truck the cargo rode (🚚).",
     "unconvertedCosts": "{count} costs have no FX rate and are missing from the cost. Enter the rate for that date under «Rates».",
     "amountUnreadable": "The amount could not be read — write «1200», «1 200» or «1200.50»",
     "internalBatch": "Internal leg — clients are not priced on it. This truck’s costs go into the cargo’s cost and show on the cross-border truck as «before this trip».",
@@ -1342,7 +1368,27 @@
     "advanceNow": "advance ${amount}",
     "refundExceedsAdvance": "There is no advance for this amount. For lost cargo, lower the price (the deal's discount, then correct the charge) and refund after. For an old advance from before the system, enter that payment first.",
     "paymentNoTill": "The accountant records which cash box the money went into.",
-    "voidNeedsAccountant": "Only the accountant or an admin can void this."
+    "voidNeedsAccountant": "Only the accountant or an admin can void this.",
+    "clientNotAboard": "This client has no cargo on this truck — price the truck the cargo rode",
+    "txTruck": "For which truck",
+    "txTruckUnpriced": "no price",
+    "txCardOnlyHint": "With neither a truck nor a deal chosen, this price covers no cargo — the handover will need permission",
+    "txLocalLegHint": "A price on a truck inside Uzbekistan does not cover the road from China — choose the cross-border truck",
+    "moveCharge": "🚚 Move",
+    "moveChargeHint": "The date, rate and dollar amount stay — only the truck changes",
+    "moveChargeStay": "Stays on this truck",
+    "moveRefused": "This row cannot be moved (voided, not a price, or part of a settlement)",
+    "moveSumMismatch": "The parts must add up to the price: {amount}",
+    "moveNoop": "The price is already on this truck",
+    "unbilledLink": "Unpriced cargo",
+    "noCargoPart": "of which {usd} — clients whose cargo did not ride",
+    "orphanWent": "its cargo rode {codes}",
+    "orphanStayed": "its cargo is still in the warehouse",
+    "orphanNever": "it had no cargo on this truck, or the cargo was annulled",
+    "droppedShort": "⚠ {n} boxes were not loaded after this was priced — move their price to {codes}",
+    "droppedFoundBack": "⚠ {n} boxes were scanned as loaded but found in {origin} — take them out of this price: both the freight and this truck’s customs share are billed on {codes}",
+    "pricedElsewhereShort": "⚠ This client was priced on {code} ({usd}), but {n} boxes did not ride it — move the price to this truck",
+    "pricedElsewhereFoundBack": "⚠ {n} boxes were scanned onto {code} but stayed in the warehouse — they are priced on this truck: the freight and {code}’s customs share (in the cost as «up to this trip»)"
   },
   "map": {
     "title": "Map",
@@ -1648,7 +1694,9 @@
     "recurringErrNotCandidate": "This expense cannot be linked (another kind, voided or already linked).",
     "recurringErrDuplicate": "The same part payment was just recorded — it was not written twice.",
     "balRecurringArrears": "Fixed costs due and unpaid",
-    "balRecurringUnrated": "Fixed costs: {sums} — no rate, not in the line"
+    "balRecurringUnrated": "Fixed costs: {sums} — no rate, not in the line",
+    "noCargoCol": "of which no cargo",
+    "noCargoNote": "On {count} trucks, {usd} of revenue is priced to clients whose cargo did not ride them. It is in the revenue; the accountant moves it to the right truck."
   },
   "crm": {
     "title": "CRM",
@@ -2041,7 +2089,11 @@
     "lastReceipt": "last intake",
     "callToday": "call today",
     "internalTrip": "internal leg — priced on the next truck",
-    "internalNoCost": "internal leg, no costs entered"
+    "internalNoCost": "internal leg, no costs entered",
+    "offTripNoCargo": "⚠ cargo did not ride",
+    "offTripLoading": "loading",
+    "tripDropped": "⚠ {n} boxes left the truck after it was priced",
+    "pricedElsewhere": "priced on another truck or the deal"
   },
   "arrivals": {
     "title": "Incoming cargo",
@@ -3434,5 +3486,21 @@
       "bad_point": "Could not read the coordinates. Example: 29.31, 120.07",
       "no_point": "There is no map point yet."
     }
+  },
+  "unpriced": {
+    "title": "Arrived cargo with no price",
+    "pageNote": "A price on the receipt’s cross-border truck or on its deal covers the whole receipt. A price on a truck inside Uzbekistan does not cover cargo from China, and the first truck’s price does not cover a box that stayed in the warehouse. A price typed on the card with neither a truck nor a deal covers no cargo.",
+    "gateLine": "Unpriced cargo that arrived after {when} is not handed over without permission",
+    "gateOff": "The handover ban is off (settings)",
+    "gateInvalid": "The ban setting is invalid — all unpriced cargo needs permission",
+    "waitingDays": "{n} d",
+    "issued": "{n} boxes already handed over",
+    "blocked": "🔒 blocked",
+    "cardCharged": "a card price exists: {usd}",
+    "elsewhere": "priced on {code}: {usd}",
+    "walkIn": "no truck — priced on its deal (the seller or logist links it)",
+    "from": "From (arrival day)",
+    "empty": "✅ Every arrived cargo has a price",
+    "more": "{n} more"
   }
 }

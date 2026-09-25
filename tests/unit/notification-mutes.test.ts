@@ -93,3 +93,12 @@ describe('notification mutes (spec §11 per-user mute)', () => {
     for (const type of [...routed, ...digests]) expect(covered.has(type), type).toBe(true);
   });
 });
+
+describe('0104 — the unpriced-cargo pushes can be muted', () => {
+  it('«narxsiz yuk berildi» and «narx qo‘yilgan, yuki qoldi» are alerts', () => {
+    // Both are sent through notifyStaffTelegram, not buildRecipients, so the
+    // routing scan above cannot see them — named here instead.
+    expect(MUTE_GROUPS.alerts).toContain('UnpricedIssued');
+    expect(MUTE_GROUPS.alerts).toContain('PricedCargoLeft');
+  });
+});

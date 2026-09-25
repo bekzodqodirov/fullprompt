@@ -273,3 +273,34 @@ export function daysSince(at: Date | string | null | undefined, today: string): 
   const from = tashkentDay(new Date(at));
   return Math.max(0, daysBetween(from, today).length - 1);
 }
+
+export interface ApprovalCounts {
+  /** Requests that ask about a DEBT, and the debt they ask about. */
+  debt: { n: number; usd: number };
+  /** Requests that ask about cargo with no price. */
+  price: { n: number };
+}
+
+/**
+ * The attention list's two approval rows (0104). A request may ask about a
+ * debt, about cargo with no price, or both; a price-only request stores a
+ * debt of 0, so summing every row's figure still adds nothing false, but
+ * COUNTING it as «qarz bilan berishga ruxsat» would — so each sentence counts
+ * only the rows that ask its question, and a row asking both is in both.
+ */
+export function approvalCounts(
+  rows: { blockingDebtUsd: number | string; unpricedBoxIds: readonly string[] | null }[],
+): ApprovalCounts {
+  let n = 0;
+  let usd = 0;
+  let price = 0;
+  for (const row of rows) {
+    const debt = Number(row.blockingDebtUsd);
+    if (debt > 0.009) {
+      n += 1;
+      usd += debt;
+    }
+    if ((row.unpricedBoxIds ?? []).length > 0) price += 1;
+  }
+  return { debt: { n, usd: Math.round(usd * 100) / 100 }, price: { n: price } };
+}

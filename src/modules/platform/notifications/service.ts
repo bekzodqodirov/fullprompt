@@ -193,9 +193,16 @@ async function buildRecipients(event: {
       return userIds.map((userId) => ({ userId, type: event.type, payload: event.payload }));
     }
     // Phase 6: the request reaches everyone who may decide it; the decision
-    // reaches exactly the person who asked.
+    // reaches exactly the person who asked. Since 0104 the request names its
+    // own recipients — every holder minus the sellers of OTHER clients, round
+    // 91's money rule reaching the ping — computed where the money rule lives
+    // (wms), because platform must not import it. An event written before
+    // that carries no list and reaches every holder, as it always did.
     case 'DebtApprovalRequested': {
-      const userIds = await usersWithPermission('finance.debt_override');
+      const named = event.payload.recipientIds;
+      const userIds = Array.isArray(named)
+        ? named.filter((id): id is string => typeof id === 'string')
+        : await usersWithPermission('finance.debt_override');
       return userIds.map((userId) => ({ userId, type: event.type, payload: event.payload }));
     }
     case 'DebtApprovalDecided': {
@@ -402,23 +409,55 @@ export function renderTelegramText(
         `${L.receivedBy}: ${payload.personName}${payload.personPhone ? ` (${payload.personPhone})` : ''}` +
         (payload.remaining ? `\n${L.leftInStock}: ${payload.remaining} ${L.boxesShort}` : '')
       );
-    case 'DebtApprovalRequested':
+    case 'DebtApprovalRequested': {
+      // 0104: the title names the question(s) asked, and the debt line prints
+      // only for a debt — a price-only request never reads «Qarz: $0.00». An
+      // event without `reasons` (every row before 0104) renders exactly as it
+      // always did.
+      const reasons = payload.reasons as string | undefined;
+      const title =
+        reasons === 'price'
+          ? L.unpricedApprovalRequested
+          : reasons === 'both'
+            ? L.issueApprovalRequested
+            : L.debtApprovalRequested;
+      const showDebt = reasons === undefined || (reasons !== 'price' && Number(payload.blockingDebtUsd) > 0.009);
+      const unpriced =
+        (payload.unpriced as { number: string; trucks: string; boxes: number }[] | undefined) ?? [];
+      const more = Number(payload.unpricedMore ?? 0);
       return (
-        `🔐 ${L.debtApprovalRequested}\n` +
+        `🔐 ${title}\n` +
         `${L.client}: ${payload.clientCode} (${payload.clientName}) · ${L.warehouse} ${payload.warehouseCode}\n` +
-        `${L.debtLine}: $${payload.blockingDebtUsd}\n` +
+        (showDebt ? `${L.debtLine}: $${payload.blockingDebtUsd}\n` : '') +
+        (unpriced.length
+          ? `💰 ${L.unpricedLine}:\n` +
+            unpriced
+              .map((r) => `  ${r.number}${r.trucks ? ` (${r.trucks})` : ''} · ${r.boxes} ${L.boxesShort}`)
+              .join('\n') +
+            (more > 0 ? `\n  … +${more}` : '') +
+            '\n'
+          : '') +
         `${L.requestedByWord}: ${payload.requestedByName}` +
         (payload.note ? `\n${L.comment}: ${payload.note}` : '') +
         `\n\n${appUrl}/approvals`
       );
-    case 'DebtApprovalDecided':
+    }
+    case 'DebtApprovalDecided': {
+      const reasons = payload.reasons as string | undefined;
+      const [yes, no] =
+        reasons === 'price'
+          ? [L.priceApprovalYes, L.priceApprovalNo]
+          : reasons === 'both'
+            ? [L.issueApprovalYes, L.issueApprovalNo]
+            : [L.debtApprovalYes, L.debtApprovalNo];
       return (
-        `${payload.verdict === 'approved' ? `✅ ${L.debtApprovalYes}` : `⛔ ${L.debtApprovalNo}`}\n` +
+        `${payload.verdict === 'approved' ? `✅ ${yes}` : `⛔ ${no}`}\n` +
         `${L.client}: ${payload.clientCode} (${payload.clientName})\n` +
         `${L.decidedByWord}: ${payload.decidedByName}` +
         (payload.note ? `\n${L.comment}: ${payload.note}` : '') +
         `\n\n${appUrl}/issue`
       );
+    }
     // Round 107: the rasxod xabari and its answer.
     // 0101: a report from /profile names no warehouse — its heading says
     // «from a colleague» instead of printing «— null» — and an own-pocket

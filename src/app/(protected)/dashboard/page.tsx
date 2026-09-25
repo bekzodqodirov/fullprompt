@@ -106,7 +106,11 @@ export default async function DashboardPage() {
 
       {money && (
         <Suspense fallback={<Skeleton rows={3} />}>
-          <MoneySection scopeKey={scopeKey} canExpenses={perms.has('finance.expenses')} />
+          <MoneySection
+            scopeKey={scopeKey}
+            canExpenses={perms.has('finance.expenses')}
+            canUnpricedList={perms.has('finance.view') || perms.has('finance.manage')}
+          />
         </Suspense>
       )}
 

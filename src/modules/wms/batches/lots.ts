@@ -180,14 +180,23 @@ export async function batchLots(batchId: string): Promise<BatchLot[]> {
 }
 
 /**
- * The deal a price set on this truck for this client is ALSO written to
- * (owner's R3a) — `soleDealOf` over the deals of the client's cargo aboard,
- * read by the same rider rule as `batchLots` (the screen that announces
- * it), so the page and the ledger cannot answer differently. A deal whose
- * client is not this one is never written: the receipt's link is somebody
- * else's data and no price may reach another client's job through it.
+ * Is this client's cargo aboard this truck, and the deal a price set here is
+ * ALSO written to (owner's R3a) — `soleDealOf` over the deals of the client's
+ * cargo aboard, read by the same rider rule as `batchLots` (the screen that
+ * announces it), so the page and the ledger cannot answer differently. A deal
+ * whose client is not this one is never written: the receipt's link is
+ * somebody else's data and no price may reach another client's job through it.
+ *
+ * `aboard` is the price door's refusal (0104, U31 claim 1): a truck price for a
+ * client with nothing on the truck names no cargo. The pricing screen draws a
+ * form only for riders, so it refuses a stale or hand-built post — and the
+ * card form's truck select and «🚚 Ko'chirish», which cannot mint a no-cargo
+ * price at birth.
  */
-export async function soleDealAboard(batchId: string, clientId: string): Promise<string | null> {
+export async function cargoAboard(
+  batchId: string,
+  clientId: string,
+): Promise<{ aboard: boolean; dealId: string | null }> {
   const rows = await db
     .selectDistinct({ dealId: receipts.dealId, dealClientId: deals.clientId })
     .from(boxes)
@@ -195,7 +204,8 @@ export async function soleDealAboard(batchId: string, clientId: string): Promise
     .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
     .leftJoin(deals, eq(receipts.dealId, deals.id))
     .where(and(riderFilter(batchId), ne(boxes.status, 'void'), eq(receipts.clientId, clientId)));
+  const aboard = rows.length > 0;
   const dealId = soleDealOf(rows);
-  if (!dealId) return null;
-  return rows.find((row) => row.dealId === dealId)?.dealClientId === clientId ? dealId : null;
+  if (!dealId) return { aboard, dealId: null };
+  return { aboard, dealId: rows.find((row) => row.dealId === dealId)?.dealClientId === clientId ? dealId : null };
 }

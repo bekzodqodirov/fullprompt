@@ -5,15 +5,20 @@ import { db } from '../../platform/db/client';
 import {
   boxes,
   boxMovements,
+  clients,
   handovers,
   receiptLots,
   receipts,
   scanEvents,
+  users,
   warehouses,
 } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { emitEvent } from '../../platform/events/service';
+import { notifyStaffTelegram } from '../../platform/notifications/staff';
+import { usersWithPermission } from '../../platform/notifications/service';
 import { clientBalanceUsd, deferredBalanceUsd } from '../finance/service';
+import { gatedAt, uncoveredBoxesOn, unpricedGate, unpricedReceiptsOn, type UncoveredBox } from '../finance/unpriced';
 import { lockLiveApproval, markApprovalConsumed } from './approvals';
 
 export class IssueError extends Error {
@@ -32,17 +37,40 @@ export const issueSchema = z.object({
   personPhone: z.string().trim().min(5).max(50),
   /** Debt gate override (Phase 2.1): a permitted manager allows issuing to a debtor. */
   debtOk: z.boolean().default(false),
+  /**
+   * The price half of the same tick (0104, the owner's Q3b): a
+   * `finance.debt_override` holder at the counter allows cargo with no price
+   * to go out. Checked against the permission in the action layer, like
+   * `debtOk`.
+   */
+  priceOk: z.boolean().default(false),
   note: z.string().trim().max(500).optional().or(z.literal('')),
 });
 export type IssueInput = z.infer<typeof issueSchema>;
+/**
+ * What a caller hands `issueBoxes`: the tick may be left out, and absent means
+ * «no tick» — the doors and fixtures that never raised the price question keep
+ * their shape, and none of them can pass the ban by omission.
+ */
+export type IssueRequest = Omit<IssueInput, 'priceOk'> & { priceOk?: boolean };
 
 /**
  * W7 issue-to-client (spec 6.7): selected boxes → `issued` with a handover
  * record; partial pickup simply leaves the rest ready_for_pickup. Idempotent
  * by handoverId.
+ *
+ * TWO gates, one permission record (0104). The debt gate (Phase 2.1) and the
+ * price gate — the owner's Q3b, «ruxsat berilmasa olib ketolmasin, taqiq
+ * tursin»: a selected carton that has no price (`finance/unpriced.ts`, the
+ * one rule the accountant's list and the dashboard also read), landed by one
+ * of our trucks after the ban's instant, goes out only with a holder's tick
+ * (`priceOk`) or a live approval whose snapshot names it. This is the ONLY
+ * door that writes `issued_to_client` (a wire test pins it), so the ban lives
+ * in the service and not on the screen (#531).
  */
-export async function issueBoxes(input: IssueInput, ctx: AuditContext) {
+export async function issueBoxes(request: IssueRequest, ctx: AuditContext) {
   if (!ctx.actorId) throw new IssueError('unauthenticated');
+  const input: IssueInput = { ...request, priceOk: request.priceOk ?? false };
   const actorId = ctx.actorId;
   // Debt gate (Phase 2.1, owner's rule): a debtor gets cargo only with a
   // manager's permission — debtOk is that permission, checked in the action
@@ -51,30 +79,26 @@ export async function issueBoxes(input: IssueInput, ctx: AuditContext) {
   // its last box, is not overdue (docs/DEALS.md answer 4). The client's
   // displayed balance stays honest — only the figure the GATE reads is
   // reduced, and only by charges raised on a deal that is deferred right now.
-  const balance = await clientBalanceUsd(input.clientId);
-  const deferred = await deferredBalanceUsd(input.clientId);
+  // Both read on the POOL before the transaction opens (#714): the balance,
+  // and the ban's instant (a setting).
+  const [balance, deferred, gate] = await Promise.all([
+    clientBalanceUsd(input.clientId),
+    deferredBalanceUsd(input.clientId),
+    unpricedGate(),
+  ]);
   const blockingDebt = Math.round((balance - deferred) * 100) / 100;
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     const existing = await tx.query.handovers.findFirst({
       where: eq(handovers.id, input.handoverId),
     });
-    if (existing) return existing;
+    // A replay is NEVER refused: the handover it names already happened, and
+    // the phone asking again must get the act back, whatever changed since.
+    if (existing) return { handover: existing, gated: [] as UncoveredBox[], replay: true };
 
-    // Phase 6: an operator without the override may still issue when a
-    // RECORDED approval covers this client at this warehouse — live,
-    // unexpired, and at least as large as today's debt. Locked here (FOR
-    // UPDATE, so two phones cannot spend one permission) and marked consumed
-    // once the handover row exists; one transaction makes the pair atomic.
-    let approvalId: string | null = null;
-    if (blockingDebt > 0.009 && !input.debtOk) {
-      approvalId = await lockLiveApproval(tx, {
-        clientId: input.clientId,
-        warehouseId: input.warehouseId,
-        blockingDebtUsd: blockingDebt,
-      });
-      if (!approvalId) throw new IssueError('debt_block');
-    }
-
+    // The box lock and its validation come FIRST (they used to follow the
+    // approval lock): the price question is asked about these validated
+    // boxes. Its refusals and their words are unchanged — a request with a
+    // bad box AND a debt now says box_not_found first.
     const rows = await tx
       .select({ box: boxes, clientId: receipts.clientId })
       .from(boxes)
@@ -91,6 +115,40 @@ export async function issueBoxes(input: IssueInput, ctx: AuditContext) {
       if (box.currentWarehouseId !== input.warehouseId) throw new IssueError('box_wrong_warehouse');
     }
 
+    // The price question, on THIS transaction's connection. A walk-in
+    // (received straight into this warehouse) and cargo that never landed in
+    // Uzbekistan are not gated — that follows from `gatedAt`, not from an
+    // exception here.
+    const gated = (await uncoveredBoxesOn(tx, { kind: 'boxes', boxIds: input.boxIds }, { landedOnly: true })).filter(
+      (box) => gatedAt(box.roadLandedAt, gate),
+    );
+
+    // Phase 6 + 0104: an operator without the tick may still issue when a
+    // RECORDED approval covers the question — live, unexpired, at least as
+    // large as today's debt, and naming every gated carton. Locked here (FOR
+    // UPDATE, so two phones cannot spend one permission) and marked consumed
+    // once the handover row exists; one transaction makes the pair atomic.
+    // A deferral (#207) excuses a DEBT and never a missing price.
+    const needDebt = blockingDebt > 0.009 && !input.debtOk;
+    const needPrice = gated.length > 0 && !input.priceOk;
+    let approvalId: string | null = null;
+    if (needDebt || needPrice) {
+      approvalId = await lockLiveApproval(tx, {
+        clientId: input.clientId,
+        warehouseId: input.warehouseId,
+        question: {
+          debtUsd: needDebt ? blockingDebt : null,
+          boxIds: needPrice ? gated.map((box) => box.boxId) : [],
+        },
+      });
+      if (!approvalId) {
+        // «Its price sits on another truck» is a different sentence from «it
+        // has no price»: the first is the accountant's one press away.
+        const priceCode = gated.every((box) => box.elsewhere) ? 'price_elsewhere' : 'price_block';
+        throw new IssueError(needDebt && needPrice ? 'debt_price_block' : needDebt ? 'debt_block' : priceCode);
+      }
+    }
+
     const [handover] = await tx
       .insert(handovers)
       .values({
@@ -101,6 +159,7 @@ export async function issueBoxes(input: IssueInput, ctx: AuditContext) {
         personName: input.personName,
         personPhone: input.personPhone,
         debtOk: input.debtOk,
+        priceOk: input.priceOk,
         note: input.note || null,
         createdBy: actorId,
       })
@@ -206,6 +265,12 @@ export async function issueBoxes(input: IssueInput, ctx: AuditContext) {
         boxCount: rows.length,
         personName: input.personName,
         debtOk: input.debtOk,
+        priceOk: input.priceOk,
+        // Cargo with no price that went out anyway, by prixod — the money
+        // most at risk, on the record beside the permission that let it.
+        ...(gated.length
+          ? { unpriced: { receiptIds: [...new Set(gated.map((box) => box.receiptId))], boxes: gated.length } }
+          : {}),
         // Both halves of a debtor issue are in the log: the decision on the
         // approval row, and here WHICH approval this handover spent.
         ...(approvalId ? { approvalId } : {}),
@@ -230,6 +295,55 @@ export async function issueBoxes(input: IssueInput, ctx: AuditContext) {
       entityId: handover!.id,
       actorId,
     });
-    return handover!;
+    return { handover: handover!, gated, replay: false };
+  });
+  // AFTER the commit — a Telegram row must never be able to roll a handover
+  // back — and only when cargo with no price actually went out, by a tick or
+  // an approval: that is the moment the money is most at risk.
+  if (!result.replay && result.gated.length > 0) {
+    await notifyUnpricedIssued(result.handover.id, input, result.gated, ctx.actorId).catch(() => {});
+  }
+  return result.handover;
+}
+
+/**
+ * «💰 Narxsiz yuk berildi» to the people who price it — `finance.reports`
+ * (the accountant and the admins; the VED holds none, which matches the
+ * owner's Q19). Plain Uzbek, the sibling `notifyLoadSummary`'s convention.
+ */
+async function notifyUnpricedIssued(
+  handoverId: string,
+  input: IssueInput,
+  gated: UncoveredBox[],
+  actorId: string | null | undefined,
+): Promise<void> {
+  const userIds = await usersWithPermission('finance.reports');
+  if (userIds.length === 0) return;
+  const receiptIds = [...new Set(gated.map((box) => box.receiptId))];
+  const [labels, client, wh, actor] = await Promise.all([
+    unpricedReceiptsOn(db, { kind: 'receipts', receiptIds }, { state: 'off' }),
+    db.query.clients.findFirst({ where: eq(clients.id, input.clientId) }),
+    db.query.warehouses.findFirst({ where: eq(warehouses.id, input.warehouseId) }),
+    actorId ? db.query.users.findFirst({ where: eq(users.id, actorId) }) : null,
+  ]);
+  const perReceipt = new Map<string, number>();
+  for (const box of gated) perReceipt.set(box.receiptId, (perReceipt.get(box.receiptId) ?? 0) + 1);
+  const numberOf = new Map(labels.map((r) => [r.receiptId, r]));
+  const lines = receiptIds.slice(0, 8).map((id) => {
+    const r = numberOf.get(id);
+    const trucks = r?.arrivalTrucks.map((t) => t.code).join(', ');
+    return `${perReceipt.get(id)} karobka · prixod ${r?.number ?? '—'}${trucks ? ` (${trucks})` : ''}`;
+  });
+  const appUrl = process.env.APP_URL ?? '';
+  await notifyStaffTelegram({
+    userIds,
+    type: 'UnpricedIssued',
+    exceptUserId: actorId ?? null,
+    text:
+      `💰 Narxsiz yuk berildi — ${client?.clientCode ?? ''} · ${wh?.code ?? ''}\n` +
+      lines.join('\n') +
+      (receiptIds.length > lines.length ? `\n… +${receiptIds.length - lines.length}` : '') +
+      `\nRuxsat: ${actor?.fullName ?? '—'} (${input.priceOk ? 'belgi' : "so‘rov"})` +
+      `\n${appUrl}/finance/narxsiz`,
   });
 }

@@ -102,7 +102,8 @@
     "flowTnvedMissing": "TNVED kodsiz tovarlar",
     "flowCalcOpen": "Navbatdagi hisoblashlar",
     "flowCalcLate": "kechikkan",
-    "flowUnplacedCosts": "Kassasi ko‘rsatilmagan xarajatlar"
+    "flowUnplacedCosts": "Kassasi ko‘rsatilmagan xarajatlar",
+    "flowUnbilled": "Narxsiz yetib kelgan yuk: {n} prixod"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -246,7 +247,7 @@
     "unbilledIssued": "{n} karobkasi topshirilgan",
     "unbilledLine": "{receipts} prixod · {boxes} 📦 · {m3} m³ · {kg} kg",
     "unbilledNone": "✅ Yetib kelgan hamma yukka narx yozilgan",
-    "unbilledNote": "O‘zbekistonga yetib kelgan yoki topshirilgan, lekin hech qanday narx yozilmagan yuk. Prixod qaysidir reysiga yoki bitimiga yozilgan narx butun prixodni yopadi.",
+    "unbilledNote": "O‘zbekistonga yetib kelgan yoki topshirilgan, lekin narxi yozilmagan yuk. Chegaradan o‘tgan reysga yoki bitimga yozilgan narx butun prixodni yopadi; O‘zbekiston ichidagi reys narxi va omborda qolib ketgan karobkaga birinchi mashinada yozilgan narx yopmaydi.",
     "unbilledSummary": "{n} mijoz · {boxes} 📦 · {m3} m³",
     "unbilledTitle": "Yetib kelgan, narx yozilmagan yuk",
     "unratedTills": "{n} ta kassaning kursi yo‘q — jamiga kirmagan",
@@ -280,11 +281,14 @@
       "recurringDue": "To‘lash kuni kelgan, to‘lanmagan doimiy xarajat: {n} ta, {usd}",
       "approvals": "Qarz bilan berishga ruxsat so‘rovi: {n} · {usd}",
       "approvalsNoMoney": "Qarz bilan berishga ruxsat so‘rovi: {n}",
-      "calcLate": "Kechikkan hisoblash: {n}"
+      "calcLate": "Kechikkan hisoblash: {n}",
+      "priceApprovals": "Narxsiz yuk berishga ruxsat so‘rovi: {n}"
     },
     "monthPaidNet": "Mijozlar to‘lagan (sof)",
     "monthPaidParts": "kassaga {till} · firma orqali {partner} · qaytarildi −{refunded}",
-    "monthPayments": "Shu oyda to‘lovlar"
+    "monthPayments": "Shu oyda to‘lovlar",
+    "unbilledAll": "Hammasi →",
+    "noCargoPart": "shundan {usd} — yuki ketmagan mijozlar narxi"
   },
   "inventory": {
     "title": "Inventarizatsiya",
@@ -527,7 +531,7 @@
       "deal_deviation_threshold_pct": "Yuk hisob-kitobdan necha foizga farq qilsa, menejerga xabar ketadi. Yuklashni to‘xtatmaydi.",
       "tg_sending_enabled": "CRM menejerning shaxsiy Telegramidan mijozga xabar yuborishi mumkinmi (odatda o‘chirilgan)",
       "quote_valid_days": "Muhrlangan hisob narxi necha kun amal qiladi (muddat tugagach — qayta hisoblash)",
-      "debt_approval_ttl_hours": "Qarzdorga yuk berish ruxsati tasdiqlangach necha soat amal qiladi",
+      "debt_approval_ttl_hours": "Yuk berishga ruxsat (qarz yoki narxsiz yuk) necha soat amal qiladi",
       "unanswered_reminder_minutes": "Mijoz javob kutgan shuncha daqiqadan keyin menejeriga eslatma boradi (0 — o‘chirilgan)",
       "crm_calc_stage": "Botdan «Hisoblatish» kelganda lead shu bosqichga o‘tadi (faqat oldinga; «—» — ko‘chirilmaydi)",
       "deal_calc_stage": "Xuddi shu, bitimlar taxtasi uchun — kodli mijozning so‘rovi bitimga tushadi",
@@ -543,10 +547,12 @@
       "calc_memory_min_sim": "AI avvalgi MUHRLANGAN hisobdan bazani olishi uchun nom o'xshashligi darajasi (0..1)",
       "ai_calc_daily_limit": "Hisoblash uchun kuniga nechta AI so'rovi (limitdan keyin faqat xotira, lug'at va bojxona fayli ishlaydi)",
       "ai_calc_reply_lenta": "AI ning tahminiy hisobi karta lentasiga ham yozilsinmi",
-      "cost_kassa_since": "Shu kundan boshlab kiritilgan, kassasi ko‘rsatilmagan xarajatlar buxgalter navbatiga tushadi (YYYY-MM-DD; bo‘sh = hammasi)"
+      "cost_kassa_since": "Shu kundan boshlab kiritilgan, kassasi ko‘rsatilmagan xarajatlar buxgalter navbatiga tushadi (YYYY-MM-DD; bo‘sh = hammasi)",
+      "unpriced_gate_since": "Shu vaqtdan keyin mashinada O‘zbekistonga yetib kelgan, narxi yozilmagan yuk mijozga faqat ruxsat bilan beriladi (sana yoki vaqt; bo‘sh = taqiq o‘chiq)"
     },
     "driverApp": "Haydovchi ilovasi",
-    "callsApp": "Qo'ng'iroq ilovasi"
+    "callsApp": "Qo'ng'iroq ilovasi",
+    "badValue": "Qiymat noto‘g‘ri — sana (YYYY-MM-DD) yoki vaqt (YYYY-MM-DDTHH:MM+05:00) yozing; bo‘sh = o‘chiq. Hech narsa saqlanmadi."
   },
   "audit": {
     "title": "Audit jurnali",
@@ -1212,7 +1218,27 @@
     "partiesEmpty": "Bu skladda topshirishga tayyor yuk yo‘q",
     "partiesOffline": "Ro‘yxat olinmadi — internet yo‘q. Kod bilan qidirish ishlaydi.",
     "partiesFailed": "Ro‘yxat olinmadi (server javobi {code}). Kod bilan qidirish ishlaydi.",
-    "openReceipt": "Prixodni ochish"
+    "openReceipt": "Prixodni ochish",
+    "unpricedBanner": "💰 Narx qo‘yilmagan yuk: {boxes} karobka ({receipts} prixod)",
+    "unpricedRow": "Prixod {number} · {truck} · {boxes} karobka",
+    "unpricedElsewhere": "narxi {codes} mashinasida qolgan ({usd}) — buxgalter ko‘chiradi",
+    "unpricedWalkIn": "Prixod {number} omborga to‘g‘ridan-to‘g‘ri qabul qilingan, narxi bitimda yoziladi — berish to‘xtatilmaydi",
+    "unpricedRule": "Narx yozilmaguncha bu yuk faqat ruxsat bilan beriladi",
+    "unpricedOld": "{date} dan oldin kelgan yukka narx yo‘q — berish to‘xtatilmaydi",
+    "gateInvalid": "Narxsiz yuk taqiqi sozlamasi noto‘g‘ri — hamma narxsiz yuk ruxsat bilan beriladi. Admin sozlamani tuzatsin.",
+    "lotUnpriced": "narx yo‘q",
+    "priceOk": "Narxsiz berishga ruxsat beraman (ruxsat huquqi bor xodim)",
+    "priceBlocked": "Bu yukka narx qo‘yilmagan — berish taqiqlangan. Ruxsat so‘rang yoki buxgalter narx qo‘ysin.",
+    "priceElsewhereBlocked": "Bu yukning narxi boshqa mashinada qolgan — buxgalter narxni yuk kelgan mashinaga ko‘chirsin yoki ruxsat so‘rang.",
+    "debtPriceBlocked": "Mijoz qarzdor va yukiga narx qo‘yilmagan — ikkalasiga ham ruxsat kerak",
+    "priceNeedsManager": "Narxsiz yukni faqat ruxsat huquqi bor xodim bera oladi",
+    "approvalStale": "Oldingi ruxsat bu yuk yoki qarz uchun emas — yangidan so‘rang",
+    "nothingToApprove": "So‘rashga hojat yo‘q — qarz ham, narxsiz yuk ham yo‘q",
+    "alreadyApproved": "Ruxsat allaqachon berilgan — yukni tanlab tasdiqlang",
+    "approvalDebt": "Qarz: ${amount}",
+    "approvalUnpriced": "Narx qo‘yilmagan: {receipts} prixod · {boxes} karobka",
+    "approvalPriceLink": "Narx qo‘yish →",
+    "approvalPriced": "✅ narx qo‘yildi"
   },
   "pipeline": {
     "title": "Mening klientlarim",
@@ -1315,7 +1341,7 @@
     "unclaimedGroup": "Egasi aniqlanmagan yuk",
     "unclaimedPriceLater": "Narx egasi topilgach, o‘sha mijozning kartasida qo‘yiladi. Tannarxi yuqoridagi jamiga kirgan.",
     "orphanCharges": "Shu mashinada yuki qolmagan mijozlarga yozilgan narxlar",
-    "orphanChargesHint": "Yuk boshqa mijozga o‘tkazilgan yoki narx xato yozilgan bo‘lishi mumkin. Yuqoridagi «Narx» jamiga kirgan — mijoz kassasida tekshiring.",
+    "orphanChargesHint": "Narx qo‘yilgandan keyin mijozning yuki bu mashinada ketmagan. Bu narx yuqoridagi «Narx»ga kirgan — buxgalter uni yuk ketgan mashinaga ko‘chiradi (🚚).",
     "unconvertedCosts": "{count} ta xarajatning kursi yo‘q — tannarxga kirmagan. «Kurslar» bo‘limida shu sanaga kurs kiriting.",
     "amountUnreadable": "Summani o‘qib bo‘lmadi — «1200», «1 200» yoki «1200,50» deb yozing",
     "internalBatch": "Ichki reys — mijozlarga narx qo‘yilmaydi. Bu mashinaning xarajati yukning tannarxiga qo‘shiladi va chegaradan o‘tadigan partiyada «shu reysgacha» bo‘lib ko‘rinadi.",
@@ -1342,7 +1368,27 @@
     "advanceNow": "avans ${amount}",
     "refundExceedsAdvance": "Bu summaga avans yo‘q. Yo‘qolgan yuk uchun bo‘lsa — narxni tushiring (bitim chegirmasi, keyin hisobni to‘g‘rilang), so‘ng qaytaring. Eski (tizimdan oldingi) avans bo‘lsa — avval o‘sha to‘lovni kiriting.",
     "paymentNoTill": "Pul qaysi kassaga tushganini buxgalter belgilaydi.",
-    "voidNeedsAccountant": "Buni buxgalter yoki admin bekor qiladi."
+    "voidNeedsAccountant": "Buni buxgalter yoki admin bekor qiladi.",
+    "clientNotAboard": "Bu mijozning yuki bu mashinada yo‘q — narx yuk ketgan mashinaga qo‘yiladi",
+    "txTruck": "Qaysi reys uchun",
+    "txTruckUnpriced": "narx yo‘q",
+    "txCardOnlyHint": "Reys ham, bitim ham tanlanmasa, bu narx hech qaysi yukni yopmaydi — yuk topshirishda ruxsat so‘raladi",
+    "txLocalLegHint": "O‘zbekiston ichidagi reys narxi Xitoydan kelgan yo‘lni yopmaydi — chegaradan o‘tgan reysni tanlang",
+    "moveCharge": "🚚 Ko‘chirish",
+    "moveChargeHint": "Narx sanasi, kursi va dollar summasi o‘zgarmaydi — faqat mashinasi",
+    "moveChargeStay": "Shu mashinada qoladi",
+    "moveRefused": "Bu yozuvni ko‘chirib bo‘lmaydi (bekor qilingan, narx emas yoki hisob-kitob qismi)",
+    "moveSumMismatch": "Qismlar yig‘indisi narxga teng bo‘lishi kerak: {amount}",
+    "moveNoop": "Narx allaqachon shu mashinada",
+    "unbilledLink": "Narxsiz yuk",
+    "noCargoPart": "shundan {usd} — yuki ketmagan mijozlar",
+    "orphanWent": "yuki {codes} da ketdi",
+    "orphanStayed": "yuki omborda turibdi",
+    "orphanNever": "bu mashinada yuki bo‘lmagan yoki bekor qilingan",
+    "droppedShort": "⚠ Narx qo‘yilgandan keyin {n} karobka bu mashinaga yuklanmadi — ularning narxini {codes} ga ko‘chiring",
+    "droppedFoundBack": "⚠ {n} karobka yuklandi deb skanerlangan, lekin {origin} omborida topildi — ularni bu narxdan chiqaring: yo‘lkirasi ham, bu mashina rastamojkasi ulushi ham {codes} da yoziladi",
+    "pricedElsewhereShort": "⚠ Bu mijozga {code} da narx qo‘yilgan ({usd}), lekin {n} karobka o‘sha mashinada ketmagan — narxni shu mashinaga ko‘chiring",
+    "pricedElsewhereFoundBack": "⚠ {n} karobka {code} ga yuklandi deb skanerlangan, lekin omborda qolgan — ular shu mashinada narxlanadi: yo‘lkira ham, {code} rastamojka ulushi ham (tannarxda «shu reysgacha»)"
   },
   "map": {
     "title": "Xarita",
@@ -1648,7 +1694,9 @@
     "recurringErrNotCandidate": "Bu xarajatni shu doimiy xarajatga bog‘lab bo‘lmaydi (boshqa turdagi, bekor qilingan yoki allaqachon bog‘langan).",
     "recurringErrDuplicate": "Xuddi shu qisman to‘lov hozirgina yozildi — ikkinchi marta yozilmadi.",
     "balRecurringArrears": "Kuni o‘tgan, to‘lanmagan doimiy xarajatlar",
-    "balRecurringUnrated": "Doimiy xarajatlar: {sums} — kursi yo‘q, qatorga kirmadi"
+    "balRecurringUnrated": "Doimiy xarajatlar: {sums} — kursi yo‘q, qatorga kirmadi",
+    "noCargoCol": "shundan yuki ketmagan",
+    "noCargoNote": "{count} ta mashina tushumida {usd} narx yuki o‘sha mashinada ketmagan mijozlarga yozilgan. Tushumga kirgan; buxgalter uni yuk ketgan mashinaga ko‘chiradi."
   },
   "crm": {
     "title": "CRM",
@@ -2041,7 +2089,11 @@
     "lastReceipt": "oxirgi qabul",
     "callToday": "bugun qo‘ng‘iroq",
     "internalTrip": "ichki reys — narx keyingi partiyada",
-    "internalNoCost": "ichki reys, xarajat yozilmagan"
+    "internalNoCost": "ichki reys, xarajat yozilmagan",
+    "offTripNoCargo": "⚠ yuki ketmagan",
+    "offTripLoading": "yuklanmoqda",
+    "tripDropped": "⚠ narx qo‘yilgandan keyin {n} karobka tushib qoldi",
+    "pricedElsewhere": "narx boshqa reysda yoki bitimda"
   },
   "arrivals": {
     "title": "Kelayotgan yuklar",
@@ -3434,5 +3486,21 @@
       "bad_point": "Koordinata o‘qilmadi. Masalan: 29.31, 120.07",
       "no_point": "Avval xaritada nuqta bo‘lishi kerak."
     }
+  },
+  "unpriced": {
+    "title": "Yetib kelgan, narx yozilmagan yuk",
+    "pageNote": "Prixodning chegaradan o‘tgan reysiga yoki bitimiga yozilgan narx butun prixodni yopadi. O‘zbekiston ichidagi reys narxi Xitoydan kelgan yukni yopmaydi, omborda qolib ketgan karobkani esa birinchi mashina narxi yopmaydi. Kartada reyssiz va bitimsiz yozilgan narx hech qaysi yukni yopmaydi.",
+    "gateLine": "{when} dan keyin yetib kelgan narxsiz yuk mijozga ruxsatsiz berilmaydi",
+    "gateOff": "Topshirishdagi taqiq o‘chirilgan (sozlamalar)",
+    "gateInvalid": "Taqiq sozlamasi noto‘g‘ri — hamma narxsiz yuk ruxsat bilan beriladi",
+    "waitingDays": "{n} kun",
+    "issued": "{n} karobkasi topshirilgan",
+    "blocked": "🔒 taqiq",
+    "cardCharged": "kartada narx bor: {usd}",
+    "elsewhere": "narx {code} da: {usd}",
+    "walkIn": "reyssiz — narxi bitimda (sotuvchi yoki logist bitimga bog‘laydi)",
+    "from": "Qachondan (yetib kelgan)",
+    "empty": "✅ Yetib kelgan hamma yukka narx yozilgan",
+    "more": "Yana {n} ta"
   }
 }

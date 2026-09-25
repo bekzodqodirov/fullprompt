@@ -32,7 +32,16 @@ import { compactUsd, m3, num, pct, signedUsd, usd } from '@/components/charts/fo
  * a sentence each (his 3c): a truck's profit has no calendar month, so the
  * two answer different questions and neither is «the» profit.
  */
-export async function MoneySection({ scopeKey, canExpenses }: { scopeKey: string; canExpenses: boolean }) {
+export async function MoneySection({
+  scopeKey,
+  canExpenses,
+  canUnpricedList,
+}: {
+  scopeKey: string;
+  canExpenses: boolean;
+  /** The accountant's full list opens for this viewer (/finance's door). */
+  canUnpricedList: boolean;
+}) {
   const t = await getTranslations('dashboard');
   const ta = await getTranslations('accounting');
   const names = await monthNames();
@@ -510,6 +519,13 @@ export async function MoneySection({ scopeKey, canExpenses }: { scopeKey: string
         )}
         {unbilled.length > 15 && (
           <p className="text-2xs text-ink-500">{t('moreRows', { n: unbilled.length - 15 })}</p>
+        )}
+        {/* The whole list, by prixod, with the doors off it (0104) — only for
+            a viewer /finance admits, or the link would bounce. */}
+        {canUnpricedList && unbilled.length > 0 && (
+          <Link href="/finance/narxsiz" className="text-xs text-brand-700 underline" data-testid="dash-unbilled-all">
+            {t('unbilledAll')}
+          </Link>
         )}
       </div>
     </section>

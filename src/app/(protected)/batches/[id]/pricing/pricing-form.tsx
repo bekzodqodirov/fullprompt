@@ -94,7 +94,9 @@ export function PricingForm({
               ? t('amountUnreadable')
               : state.error === 'internal_batch'
                 ? t('internalBatchRefused')
-                : tc('error')}
+                : state.error === 'client_not_aboard'
+                  ? t('clientNotAboard')
+                  : tc('error')}
         </p>
       )}
     </form>

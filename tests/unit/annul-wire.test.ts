@@ -124,6 +124,9 @@ describe('«a void box is not cargo» — the closed set', () => {
       // The dashboard's cargo-at-risk and losses read the truck through
       // movements too, and every branch there says `status <> 'void'`.
       'src/modules/wms/reports/business.ts',
+      // Which cargo has no price (0104): the gate, the accountant's list and
+      // the dashboard's unbilled rows — a void carton is not cargo to bill.
+      'src/modules/wms/finance/unpriced.ts',
     ];
     // History-keepers and writers, deliberately WITHOUT the exclusion: the
     // manifest and the customs documents record what rode (round 92 — a

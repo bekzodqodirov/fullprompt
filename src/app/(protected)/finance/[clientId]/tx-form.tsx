@@ -184,7 +184,11 @@ export function TxForm({
                         ? t('refundExceedsAdvance')
                         : state.error === 'forbidden'
                           ? tc('forbidden')
-                          : tc('error')}
+                          : state.error === 'client_not_aboard'
+                            ? t('clientNotAboard')
+                            : state.error === 'internal_batch'
+                              ? t('internalBatchRefused')
+                              : tc('error')}
         </p>
       )}
       <button type="submit" disabled={pending} className="btn-primary w-full disabled:opacity-60">

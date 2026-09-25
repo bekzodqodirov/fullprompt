@@ -35,13 +35,22 @@ export default async function FinancePage() {
         icon="wallet"
         title={t('title')}
         actions={
-          // The register is closed to a reader the kassa is hidden from
-          // (Q19) — a door that bounces is worse than none (#420).
-          moneyHidden('kassa', actor.permissions) ? undefined : (
-            <Link href="/finance/reestr" className="btn-secondary px-3 text-sm">
-              📒 {t('paymentsRegister')}
+          <>
+            {/* 0104: landed cargo with no price — the list the counter's ban
+                reads, same door and same money scope as this page. It names
+                debts and cargo and never a till or a cost, so the VED keeps
+                it (his «19 a»). */}
+            <Link href="/finance/narxsiz" className="btn-secondary px-3 text-sm" data-testid="finance-unbilled-link">
+              💰 {t('unbilledLink')}
             </Link>
-          )
+            {/* The register is closed to a reader the kassa is hidden from
+                (Q19) — a door that bounces is worse than none (#420). */}
+            {moneyHidden('kassa', actor.permissions) ? null : (
+              <Link href="/finance/reestr" className="btn-secondary px-3 text-sm">
+                📒 {t('paymentsRegister')}
+              </Link>
+            )}
+          </>
         }
       />
       {actor.permissions.has('finance.manage') && <FinanceClientSearch />}

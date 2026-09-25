@@ -1,4 +1,5 @@
 import { aliasedTable, and, eq, inArray, isNull, not, sql } from 'drizzle-orm';
+import { unpricedCount } from '../finance/unpriced';
 import { db } from '../../platform/db/client';
 import { calcQueueCounts } from '../calc/service';
 import {
@@ -138,10 +139,15 @@ export interface MoneyFlowCounts {
   costMissing: number;
   /** Cargo costs waiting for their kassa (0101) — the accountant's queue. */
   unplacedCosts: number;
+  /**
+   * Prixods with landed cargo that has no price (0104) — the accountant's
+   * list, counted by the SAME fragment the list and the counter's ban read.
+   */
+  unbilled: number;
 }
 
 export async function moneyFlowCounts(today: string): Promise<MoneyFlowCounts> {
-  const [snapshot, unassigned, recurring, costMissing, unplacedCosts] = await Promise.all([
+  const [snapshot, unassigned, recurring, costMissing, unplacedCosts, unbilled] = await Promise.all([
     moneySnapshot(),
     db
       .select({ n: sql<number>`count(*)` })
@@ -166,6 +172,7 @@ export async function moneyFlowCounts(today: string): Promise<MoneyFlowCounts> {
     recurringDueCount(today),
     costMissingCount(3),
     unplacedCostTotals(),
+    unpricedCount(db, undefined),
   ]);
   return {
     snapshot,
@@ -173,6 +180,7 @@ export async function moneyFlowCounts(today: string): Promise<MoneyFlowCounts> {
     recurringDue: recurring,
     costMissing,
     unplacedCosts: unplacedCosts.count,
+    unbilled,
   };
 }
 

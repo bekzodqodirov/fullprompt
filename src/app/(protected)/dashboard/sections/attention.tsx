@@ -15,7 +15,13 @@ import {
   loadUnclaimed,
   loadWindows,
 } from '@/modules/wms/reports/dashboard';
-import { daysSince, rankAttention, tripKind, type AttentionItem } from '@/modules/wms/reports/dashboard-math';
+import {
+  approvalCounts,
+  daysSince,
+  rankAttention,
+  tripKind,
+  type AttentionItem,
+} from '@/modules/wms/reports/dashboard-math';
 import { AttentionList, type AttentionRow } from '@/components/charts/attention-list';
 import { m3, num, usd } from '@/components/charts/format';
 
@@ -40,6 +46,7 @@ type Kind =
   | 'overdueTasks'
   | 'recurringDue'
   | 'approvals'
+  | 'priceApprovals'
   | 'calcLate';
 
 /**
@@ -284,17 +291,31 @@ export async function AttentionSection({
     });
   }
   if (approvals) {
-    const blocking = approvals.reduce((sum, row) => sum + Number(row.blockingDebtUsd), 0);
-    push({
-      kind: 'approvals',
-      level: 'warn',
-      count: approvals.length,
-      usd: money ? blocking : null,
-      text: money
-        ? t('att.approvals', { n: approvals.length, usd: usd(blocking) })
-        : t('att.approvalsNoMoney', { n: approvals.length }),
-      href: '/approvals',
-    });
+    // 0104: a request may ask about a debt, about cargo with no price, or
+    // both — each sentence counts only the rows that ask its question, so a
+    // price-only request never reads as «qarz bilan berishga ruxsat».
+    const counts = approvalCounts(approvals);
+    if (counts.debt.n > 0) {
+      push({
+        kind: 'approvals',
+        level: 'warn',
+        count: counts.debt.n,
+        usd: money ? counts.debt.usd : null,
+        text: money
+          ? t('att.approvals', { n: counts.debt.n, usd: usd(counts.debt.usd) })
+          : t('att.approvalsNoMoney', { n: counts.debt.n }),
+        href: '/approvals',
+      });
+    }
+    if (counts.price.n > 0) {
+      push({
+        kind: 'priceApprovals',
+        level: 'warn',
+        count: counts.price.n,
+        text: t('att.priceApprovals', { n: counts.price.n }),
+        href: '/approvals',
+      });
+    }
   }
   if (calc) {
     push({ kind: 'calcLate', level: 'warn', count: calc.late, text: t('att.calcLate', { n: calc.late }), href: '/hisoblash' });

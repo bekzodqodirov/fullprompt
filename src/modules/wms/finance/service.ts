@@ -17,7 +17,7 @@ import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { rateFor } from '../costing/service';
 import { batchRoute } from '../batches/internal';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
-import { soleDealAboard } from '../batches/lots';
+import { cargoAboard } from '../batches/lots';
 
 /**
  * Client money ledger (Phase 2.1, owner's rules): there are NO tariffs — the
@@ -120,12 +120,18 @@ export async function addTransaction(input: TransactionInput, ctx: AuditContext)
     const route = await batchRoute(input.batchId);
     if (!route) throw new FinanceError('batch_not_found');
     if (route.internal) throw new FinanceError('internal_batch');
+    // A price on a truck names the client's cargo ON it (0104, U31 claim 1):
+    // with none aboard it names nothing, and the no-cargo price is exactly
+    // the one the screens then call «yuki ketmagan». Asked AFTER the internal
+    // check, so an internal truck still says why it is refused.
+    const aboard = await cargoAboard(input.batchId, input.clientId);
+    if (!aboard.aboard) throw new FinanceError('client_not_aboard');
     // A price set on the truck is also the JOB's money when the client's
     // cargo aboard is one deal's and nothing else (owner's R3a, 2026-09-24:
     // «mashinada qo'yilgan narx bitimga ham yozilsin»). Derived here from the
     // cargo, never taken from the form: the pricing screen only ANNOUNCES it,
     // and a posted deal id would be a forged post until checked (#507).
-    if (!dealId) dealId = await soleDealAboard(input.batchId, input.clientId);
+    if (!dealId) dealId = aboard.dealId;
   }
   // A refund is money that LEFT a kassa for the client (R6a): it names the
   // box, never a truck (it is not a price) and never a partner (a partner-

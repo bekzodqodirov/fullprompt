@@ -295,6 +295,12 @@ export const handovers = pgTable(
     personPhone: text('person_phone').notNull(),
     /** Phase 3 debt-control hook — checkbox only, no logic (spec). */
     debtOk: boolean('debt_ok').notNull().default(false),
+    /**
+     * 0104: a `finance.debt_override` holder at the counter allowed cargo
+     * with no price to go out (the owner's Q3b) — the price half of the
+     * direct tick, recorded beside the debt half.
+     */
+    priceOk: boolean('price_ok').notNull().default(false),
     note: text('note'),
     createdBy: uuid('created_by')
       .notNull()
@@ -341,6 +347,12 @@ export const issueApprovals = pgTable(
     expiresAt: timestamp('expires_at', { withTimezone: true }),
     consumedHandoverId: uuid('consumed_handover_id').references(() => handovers.id),
     consumedAt: timestamp('consumed_at', { withTimezone: true }),
+    /**
+     * 0104: the cartons with no price the decider was shown — a SNAPSHOT,
+     * like the debt's ceiling. A carton that lands later is a new question.
+     * `[]` = this request asked nothing about price (every older row).
+     */
+    unpricedBoxIds: jsonb('unpriced_box_ids').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
   },
   (t) => [
     check(
@@ -352,6 +364,7 @@ export const issueApprovals = pgTable(
       'issue_approvals_consumed_check',
       sql`(${t.status} = 'consumed') = (${t.consumedHandoverId} IS NOT NULL)`,
     ),
+    check('issue_approvals_unpriced_check', sql`jsonb_typeof(${t.unpricedBoxIds}) = 'array'`),
     index('issue_approvals_gate_idx').on(t.clientId, t.warehouseId, t.status),
   ],
 );
@@ -885,7 +898,7 @@ export const clientTransactions = pgTable(
      * The job this charge is for, when it was raised from one. A charge posted
      * from batch pricing carries it only when the client's cargo on that truck
      * is one deal's and nothing else (R3a, derived server-side by
-     * `soleDealAboard`); null otherwise — which is a correct answer, not a
+     * `cargoAboard`); null otherwise — which is a correct answer, not a
      * gap: a deferral cannot cover money nobody tied to a job.
      */
     dealId: uuid('deal_id').references(() => deals.id),

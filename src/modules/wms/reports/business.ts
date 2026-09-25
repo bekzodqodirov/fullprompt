@@ -4,6 +4,7 @@ import { tashkentDayStart, addDays } from '@/modules/platform/time/tashkent';
 import { leftBehindSql } from '../batches/riders';
 import { roadLossBatchSql } from '../boxes/road-loss';
 import { customsCostTypeIds } from '../costing/service';
+import { GATE_OFF, unpricedReceiptsOn } from '../finance/unpriced';
 
 /**
  * The owner's dashboard reads (2026-09-25): where the cargo is, what is at
@@ -366,93 +367,54 @@ export interface UnbilledClient {
 
 /**
  * «Yetib kelgan, lekin narx yozilmagan yuk» (owner 8a): cargo that reached an
- * Uzbek warehouse — or was already handed over — whose client has NO price
- * covering it.
+ * Uzbek warehouse — or was already handed over — with no price covering it,
+ * per client.
  *
- * «Covered» follows his answer 7: a prixod split over two trucks may be billed
- * ONCE or per truck, so a charge on ANY truck that carried part of this
- * prixod covers all of it, and so does a charge on the prixod's deal. A price
- * typed on the client's card with neither a truck nor a deal names no cargo
- * and cannot cover anything — the screen says so beside the list rather than
- * guessing which cargo it meant.
+ * The rule is `finance/unpriced.ts`'s and nowhere else (#513): the handover
+ * gate refuses exactly these cartons and the accountant's list names exactly
+ * these prixods, so the dashboard and the counter one tap apart cannot
+ * disagree about which cargo is unpriced. It used to be restated here, and
+ * the restatement was already three sentences out of date — a carton found
+ * back at Yiwu still «rode» the first truck (U17), a price on the Andijan →
+ * Tashkent leg covered cargo that came from China (Q1), and a landed carton
+ * vanished from the list for the day it rode that local leg.
  *
- * «Landed in Uzbekistan» is the movement that put the box INTO a UZ warehouse
- * from somewhere else (`landedHereSql`'s three clauses). Unclaimed cargo has
- * no client to bill and is the /unclaimed screen's; a lost or void carton is
- * not cargo to bill.
+ * The gate's instant does not matter to these figures (nothing here counts
+ * gated cartons), so the ban's setting is not read.
  */
 export async function unbilledArrived(warehouseIds?: string[]): Promise<UnbilledClient[]> {
-  const scope = warehouseIds?.length
-    ? sql`AND (b.current_warehouse_id IN (${idList(warehouseIds)}) OR (b.status = 'issued' AND lm.to_warehouse_id IN (${idList(warehouseIds)})))`
-    : sql``;
-  const rows = await db.execute<{
-    client_id: string;
-    client_code: string;
-    name: string;
-    receipts: number;
-    boxes: number;
-    m3: string;
-    kg: string;
-    first_arrived_at: string;
-    issued_boxes: number;
-  }>(sql`
-    WITH landed AS (
-      SELECT b.id AS box_id, b.status, rl.receipt_id, r.client_id, r.deal_id,
-             rl.total_volume_m3 / rl.box_count AS m3, rl.total_weight_kg / rl.box_count AS kg,
-             min(lm.created_at) AS arrived_at
-      FROM boxes b
-      JOIN receipt_lots rl ON rl.id = b.lot_id
-      JOIN receipts r ON r.id = rl.receipt_id AND r.status = 'confirmed' AND r.client_id IS NOT NULL
-      JOIN box_movements lm ON lm.box_id = b.id
-      JOIN warehouses w ON w.id = lm.to_warehouse_id AND upper(w.country) = 'UZ'
-      WHERE b.status IN ('in_stock', 'planned', 'loading', 'ready_for_pickup', 'issued')
-        AND lm.from_warehouse_id IS DISTINCT FROM lm.to_warehouse_id
-        AND lm.to_status <> 'in_transit'
-        AND lm.cause <> 'found_at_origin'
-        ${scope}
-      GROUP BY b.id, b.status, rl.receipt_id, r.client_id, r.deal_id, rl.total_volume_m3, rl.total_weight_kg, rl.box_count
-    ),
-    rides AS (
-      SELECT DISTINCT rl.receipt_id, bm.ref_id AS batch_id
-      FROM box_movements bm
-      JOIN boxes b ON b.id = bm.box_id
-      JOIN receipt_lots rl ON rl.id = b.lot_id
-      WHERE bm.ref_type = 'batch' AND bm.cause = 'batch_departed'
-        AND rl.receipt_id IN (SELECT DISTINCT receipt_id FROM landed)
-    ),
-    receipts_landed AS (
-      SELECT DISTINCT receipt_id, client_id, deal_id FROM landed
-    ),
-    unbilled AS (
-      SELECT rl.receipt_id FROM receipts_landed rl
-      WHERE NOT EXISTS (
-        SELECT 1 FROM client_transactions ct
-        WHERE ct.client_id = rl.client_id AND ct.type = 'charge' AND ct.voided_at IS NULL
-          AND (ct.batch_id IN (SELECT rd.batch_id FROM rides rd WHERE rd.receipt_id = rl.receipt_id)
-               OR (rl.deal_id IS NOT NULL AND ct.deal_id = rl.deal_id)))
-    )
-    SELECT l.client_id, c.client_code, c.name,
-           count(DISTINCT l.receipt_id)::int AS receipts, count(*)::int AS boxes,
-           coalesce(sum(l.m3), 0) AS m3, coalesce(sum(l.kg), 0) AS kg,
-           min(l.arrived_at) AS first_arrived_at,
-           count(*) FILTER (WHERE l.status = 'issued')::int AS issued_boxes
-    FROM landed l
-    JOIN clients c ON c.id = l.client_id
-    WHERE l.receipt_id IN (SELECT receipt_id FROM unbilled)
-    GROUP BY l.client_id, c.client_code, c.name
-    ORDER BY min(l.arrived_at)
-  `);
-  return rows.map((row) => ({
-    clientId: row.client_id,
-    clientCode: row.client_code,
-    name: row.name,
-    receipts: Number(row.receipts),
-    boxes: Number(row.boxes),
-    m3: round(row.m3, 3),
-    kg: round(row.kg, 1),
-    firstArrivedAt: new Date(row.first_arrived_at),
-    issuedBoxes: Number(row.issued_boxes),
-  }));
+  const receipts = await unpricedReceiptsOn(
+    db,
+    { kind: 'company', warehouseIds, ownerId: undefined, landedFrom: undefined },
+    GATE_OFF,
+  );
+  const byClient = new Map<string, UnbilledClient>();
+  for (const row of receipts) {
+    const prev = byClient.get(row.clientId);
+    if (!prev) {
+      byClient.set(row.clientId, {
+        clientId: row.clientId,
+        clientCode: row.clientCode,
+        name: row.clientName,
+        receipts: 1,
+        boxes: row.boxes,
+        m3: row.m3,
+        kg: row.kg,
+        firstArrivedAt: row.firstLandedAt,
+        issuedBoxes: row.issuedBoxes,
+      });
+      continue;
+    }
+    prev.receipts += 1;
+    prev.boxes += row.boxes;
+    prev.m3 += row.m3;
+    prev.kg += row.kg;
+    prev.issuedBoxes += row.issuedBoxes;
+    if (row.firstLandedAt < prev.firstArrivedAt) prev.firstArrivedAt = row.firstLandedAt;
+  }
+  return [...byClient.values()]
+    .map((row) => ({ ...row, m3: round(row.m3, 3), kg: round(row.kg, 1) }))
+    .sort((a, b) => a.firstArrivedAt.getTime() - b.firstArrivedAt.getTime());
 }
 
 export interface LossSummary {

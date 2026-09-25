@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { db } from '../db/client';
 import { settings } from '../db/schema';
+import { parseDayOrInstant } from '../time/tashkent';
 
 /**
  * Typed settings registry (spec §17). Values live as JSONB rows in
@@ -170,6 +171,18 @@ export const SETTING_DEFAULTS = {
    * Empty = no bound.
    */
   cost_kassa_since: '',
+  /**
+   * From which moment cargo with no price is handed over only with a
+   * permission (0104, the owner's Q3b: «ruxsat berilmasa olib ketolmasin,
+   * taqiq tursin»). Written by the migration as the deploy instant, Tashkent
+   * wall clock with its offset, so an admin reads it; cargo standing in the
+   * warehouses before it was never priced through the system and is listed,
+   * not stopped. A day (`YYYY-MM-DD`) or an instant WITH an offset; EMPTY
+   * switches the ban off. Anything else is refused at the save
+   * (`SETTING_VALIDATORS`) and, if it reaches the table by hand, FAILS CLOSED
+   * (`finance/unpriced.ts` `parseGateSince`).
+   */
+  unpriced_gate_since: '',
   label_size: '100x100',
   translation_provider: 'libretranslate',
   default_locale: 'ru' as 'ru' | 'uz' | 'zh-CN' | 'en',
@@ -210,6 +223,17 @@ export const SETTING_DEFAULTS = {
 
 export type SettingKey = keyof typeof SETTING_DEFAULTS;
 export type SettingValue<K extends SettingKey> = (typeof SETTING_DEFAULTS)[K];
+
+/**
+ * What a typed value must look like before the settings screen stores it.
+ * `updateSettingAction` asks this before `setSetting`, and a refusal writes
+ * NOTHING and says so in words (#472). The map exists so the next key that
+ * needs a shape needs no second mechanism; today one key does — the
+ * unpriced-cargo ban, where a typo would otherwise be read as «off».
+ */
+export const SETTING_VALIDATORS: Partial<Record<SettingKey, (raw: string) => boolean>> = {
+  unpriced_gate_since: (raw) => parseDayOrInstant(raw) !== null,
+};
 
 export async function getSetting<K extends SettingKey>(key: K): Promise<SettingValue<K>> {
   const row = await db.query.settings.findFirst({ where: eq(settings.key, key) });

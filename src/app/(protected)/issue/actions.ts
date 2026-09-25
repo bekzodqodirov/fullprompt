@@ -23,6 +23,11 @@ export async function issueBoxesAction(
   if (parsed.data.debtOk && !actor.permissions.has('finance.debt_override')) {
     return { ok: false, error: 'debt_override_forbidden' };
   }
+  // The price half of the same tick (0104): «narxsiz berishga ruxsat» is the
+  // same override the debt one is, and the same people hold it.
+  if (parsed.data.priceOk && !actor.permissions.has('finance.debt_override')) {
+    return { ok: false, error: 'price_override_forbidden' };
+  }
   const meta = await requestMeta();
   try {
     const handover = await issueBoxes(parsed.data, { actorId: actor.id, ...meta });
@@ -76,8 +81,10 @@ export async function decideIssueApprovalAction(formData: FormData): Promise<voi
   });
   if (!parsed.success) return;
   // The same permission the direct checkbox needs: deciding IS the override.
-  const actor = await authorize('finance.view');
-  if (!actor.permissions.has('finance.debt_override')) return;
+  // It used to authorize `finance.view` first, which the warehouse manager
+  // does not hold — so his ✅ on /approvals, the page his grant opens, was an
+  // AuthError while the same press in the bot worked (0104 design §2).
+  const actor = await authorize('finance.debt_override');
   const meta = await requestMeta();
   try {
     await decideIssueApproval(

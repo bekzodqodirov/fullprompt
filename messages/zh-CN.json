@@ -102,7 +102,8 @@
     "flowTnvedMissing": "无 HS 编码的商品",
     "flowCalcOpen": "待核算",
     "flowCalcLate": "逾期",
-    "flowUnplacedCosts": "未指定账户的费用"
+    "flowUnplacedCosts": "未指定账户的费用",
+    "flowUnbilled": "已到达未定价货物：{n} 张入库单"
   },
   "dashboard": {
     "title": "仪表盘",
@@ -246,7 +247,7 @@
     "unbilledIssued": "已交付{n}箱",
     "unbilledLine": "{receipts}张入库单 · {boxes} 📦 · {m3} m³ · {kg} kg",
     "unbilledNone": "✅ 所有已到货物都已定价",
-    "unbilledNote": "已到达乌兹别克斯坦或已交付但没有任何价格的货物。入库单所乘任一车次或其交易上的价格即覆盖整张入库单。",
+    "unbilledNote": "已到达乌兹别克斯坦或已交付但未定价的货物。跨境车次或交易上的价格覆盖整张入库单；境内车次的价格，以及第一辆车对留在仓库箱子的价格，均不覆盖。",
     "unbilledSummary": "{n}位客户 · {boxes} 📦 · {m3} m³",
     "unbilledTitle": "已到货未定价",
     "unratedTills": "{n}个账户无汇率，未计入",
@@ -280,11 +281,14 @@
       "recurringDue": "已到期未付的固定费用：{n} 笔，{usd}",
       "approvals": "欠款放货审批请求：{n} · {usd}",
       "approvalsNoMoney": "欠款放货审批请求：{n}",
-      "calcLate": "逾期核算：{n}"
+      "calcLate": "逾期核算：{n}",
+      "priceApprovals": "未定价货物交付许可请求：{n}"
     },
     "monthPaidNet": "客户已付（净额）",
     "monthPaidParts": "入账户 {till} · 经由公司 {partner} · 已退还 −{refunded}",
-    "monthPayments": "本月付款"
+    "monthPayments": "本月付款",
+    "unbilledAll": "全部 →",
+    "noCargoPart": "其中 {usd}——货物未随车客户的价格"
   },
   "inventory": {
     "title": "盘点",
@@ -527,7 +531,7 @@
       "deal_deviation_threshold_pct": "货物与报价相差多少百分比时向负责人发送提醒。不会阻止装车。",
       "tg_sending_enabled": "允许 CRM 通过经理的个人 Telegram 向客户发送消息（默认关闭）",
       "quote_valid_days": "封存的报价有效天数（到期后需重新计算）",
-      "debt_approval_ttl_hours": "欠款客户放货批准在通过后有效多少小时",
+      "debt_approval_ttl_hours": "交付许可（欠款或未定价货物）有效小时数",
       "unanswered_reminder_minutes": "客户等待多少分钟后提醒其经理（0 = 关闭）",
       "crm_calc_stage": "机器人发来「报价」时，线索移到该阶段（只向前；「—」表示不移动）",
       "deal_calc_stage": "交易看板同理——已有客户编号的请求会落在交易上",
@@ -543,10 +547,12 @@
       "calc_memory_min_sim": "商品名称与已封存计算的相似度达到多少时，AI 才采用其基价（0..1）",
       "ai_calc_daily_limit": "每日用于计算的 AI 调用次数（超出后仅用记忆、字典与海关文件）",
       "ai_calc_reply_lenta": "将 AI 的估算同时写入卡片动态",
-      "cost_kassa_since": "自此日起录入且未指定账户的费用进入会计待办（YYYY-MM-DD；留空 = 全部）"
+      "cost_kassa_since": "自此日起录入且未指定账户的费用进入会计待办（YYYY-MM-DD；留空 = 全部）",
+      "unpriced_gate_since": "此时间之后由车辆运抵乌兹别克斯坦且未定价的货物须经许可方可交付（日期或时间；留空 = 关闭禁令）"
     },
     "driverApp": "司机应用",
-    "callsApp": "通话应用"
+    "callsApp": "通话应用",
+    "badValue": "值无效——请输入日期（YYYY-MM-DD）或时间（YYYY-MM-DDTHH:MM+05:00）；留空 = 关闭。未保存任何内容。"
   },
   "audit": {
     "title": "审计日志",
@@ -1212,7 +1218,27 @@
     "partiesEmpty": "此仓库没有可提取的货物",
     "partiesOffline": "未能加载名单 — 无网络连接。仍可按客户代码搜索。",
     "partiesFailed": "未能加载名单（服务器返回 {code}）。仍可按客户代码搜索。",
-    "openReceipt": "打开入库单"
+    "openReceipt": "打开入库单",
+    "unpricedBanner": "💰 未定价货物：{boxes} 箱（{receipts} 张入库单）",
+    "unpricedRow": "入库单 {number} · {truck} · {boxes} 箱",
+    "unpricedElsewhere": "价格仍在车次 {codes}（{usd}）——由会计转移",
+    "unpricedWalkIn": "入库单 {number} 直接入库，在交易中定价——不阻止交付",
+    "unpricedRule": "定价之前，此货物只能经许可后交付",
+    "unpricedOld": "{date} 之前到达的货物未定价——不阻止交付",
+    "gateInvalid": "未定价货物禁令的设置无效——所有未定价货物均需许可。请管理员修正设置。",
+    "lotUnpriced": "未定价",
+    "priceOk": "我允许无定价交付（有许可权限的员工）",
+    "priceBlocked": "此货物未定价——禁止交付。请申请许可或让会计定价。",
+    "priceElsewhereBlocked": "此货物的价格在另一车次上——请会计将其转到货物实际所乘车次，或申请许可。",
+    "debtPriceBlocked": "客户欠款且货物未定价——两者都需要许可",
+    "priceNeedsManager": "只有有许可权限的员工才能交付未定价货物",
+    "approvalStale": "之前的许可不涵盖此货物或欠款——请重新申请",
+    "nothingToApprove": "无需申请——既无欠款也无未定价货物",
+    "alreadyApproved": "已获许可——请选择货物并确认",
+    "approvalDebt": "欠款：${amount}",
+    "approvalUnpriced": "未定价：{receipts} 张入库单 · {boxes} 箱",
+    "approvalPriceLink": "去定价 →",
+    "approvalPriced": "✅ 已定价"
   },
   "pipeline": {
     "title": "我的客户",
@@ -1315,7 +1341,7 @@
     "unclaimedGroup": "未认领的货物",
     "unclaimedPriceLater": "找到货主后在该客户行定价。其成本已计入上方合计。",
     "orphanCharges": "本车已无其货物的客户的收费",
-    "orphanChargesHint": "货物可能已转给其他客户，或价格录错。已计入上方「价格」合计——请在客户账上核对。",
+    "orphanChargesHint": "定价后客户的货物未随此车发出。此价格已计入上方「价格」——由会计将其转到货物实际所乘车次（🚚）。",
     "unconvertedCosts": "{count} 笔费用没有汇率，未计入成本。请在「汇率」中录入该日期的汇率。",
     "amountUnreadable": "无法识别金额——请写成「1200」「1 200」或「1200.50」",
     "internalBatch": "内部车次——不向客户定价。本车费用计入货物成本，在跨境车次上显示为「本车次之前」。",
@@ -1342,7 +1368,27 @@
     "advanceNow": "预付款 ${amount}",
     "refundExceedsAdvance": "没有这么多预付款。如果是丢失货物的赔偿——请先降低价格（交易折扣，再更正费用），然后退款。如果是系统之前的旧预付款——请先录入那笔付款。",
     "paymentNoTill": "款项进入哪个现金账户由会计登记。",
-    "voidNeedsAccountant": "只有会计或管理员可以作废此项。"
+    "voidNeedsAccountant": "只有会计或管理员可以作废此项。",
+    "clientNotAboard": "该客户在此车上没有货物——请在货物实际所乘车次上定价",
+    "txTruck": "哪个车次",
+    "txTruckUnpriced": "未定价",
+    "txCardOnlyHint": "若未选择车次或交易，此价格不覆盖任何货物——交付时需要许可",
+    "txLocalLegHint": "乌兹别克斯坦境内车次的价格不覆盖来自中国的运输——请选择跨境车次",
+    "moveCharge": "🚚 转移",
+    "moveChargeHint": "日期、汇率和美元金额不变——只改变车次",
+    "moveChargeStay": "留在此车次",
+    "moveRefused": "此记录无法转移（已作废、不是价格或属于结算）",
+    "moveSumMismatch": "各部分之和必须等于价格：{amount}",
+    "moveNoop": "价格已在此车次上",
+    "unbilledLink": "未定价货物",
+    "noCargoPart": "其中 {usd}——货物未随车的客户",
+    "orphanWent": "货物已随 {codes} 发出",
+    "orphanStayed": "货物仍在仓库",
+    "orphanNever": "此车上没有其货物或货物已作废",
+    "droppedShort": "⚠ 定价后有 {n} 箱未装上此车——请将其价格转到 {codes}",
+    "droppedFoundBack": "⚠ {n} 箱被扫描为已装车，但在 {origin} 仓库找到——请从此价格中扣除：运费和本车清关费用份额都在 {codes} 计费",
+    "pricedElsewhereShort": "⚠ 该客户在 {code} 已定价（{usd}），但有 {n} 箱未随其发出——请将价格转到此车次",
+    "pricedElsewhereFoundBack": "⚠ {n} 箱被扫描装上 {code}，但留在仓库——在此车次定价：运费及 {code} 的清关份额（成本中的「至本车次」）"
   },
   "map": {
     "title": "地图",
@@ -1648,7 +1694,9 @@
     "recurringErrNotCandidate": "该费用无法关联（类别不同、已作废或已关联）。",
     "recurringErrDuplicate": "相同的部分付款刚刚已记录——未重复写入。",
     "balRecurringArrears": "已到期未付的固定费用",
-    "balRecurringUnrated": "固定费用：{sums}——无汇率，未计入该行"
+    "balRecurringUnrated": "固定费用：{sums}——无汇率，未计入该行",
+    "noCargoCol": "其中无货",
+    "noCargoNote": "{count} 辆车的收入中有 {usd} 属于货物未随该车的客户。已计入收入；由会计将其转到正确车次。"
   },
   "crm": {
     "title": "CRM",
@@ -2041,7 +2089,11 @@
     "lastReceipt": "最近收货",
     "callToday": "今天致电",
     "internalTrip": "内部车次——在下一车次定价",
-    "internalNoCost": "内部车次，未录入费用"
+    "internalNoCost": "内部车次，未录入费用",
+    "offTripNoCargo": "⚠ 货物未随车",
+    "offTripLoading": "装车中",
+    "tripDropped": "⚠ 定价后 {n} 箱被留下",
+    "pricedElsewhere": "已在其他车次或交易中定价"
   },
   "arrivals": {
     "title": "待收货物",
@@ -3434,5 +3486,21 @@
       "bad_point": "无法识别坐标。例如：29.31, 120.07",
       "no_point": "尚无地图位置。"
     }
+  },
+  "unpriced": {
+    "title": "已到达未定价货物",
+    "pageNote": "入库单跨境车次或其交易上的价格覆盖整张入库单。乌兹别克斯坦境内车次的价格不覆盖来自中国的货物，第一辆车的价格也不覆盖留在仓库的箱子。卡片上未选车次和交易的价格不覆盖任何货物。",
+    "gateLine": "{when} 之后到达的未定价货物未经许可不得交付",
+    "gateOff": "交付禁令已关闭（设置）",
+    "gateInvalid": "禁令设置无效——所有未定价货物均需许可",
+    "waitingDays": "{n} 天",
+    "issued": "已交付 {n} 箱",
+    "blocked": "🔒 禁止",
+    "cardCharged": "卡片上有价格：{usd}",
+    "elsewhere": "在 {code} 定价：{usd}",
+    "walkIn": "无车次——在交易中定价（由销售或物流关联交易）",
+    "from": "起始（到达日）",
+    "empty": "✅ 所有到达货物均已定价",
+    "more": "还有 {n} 条"
   }
 }

@@ -6,12 +6,15 @@ import { db, pgClient } from '@/modules/platform/db/client';
 import {
   auditLog,
   batches,
+  boxes,
   clients,
   clientTransactions,
   costTypes,
   expenses,
   partnerTransactions,
   partnerTypes,
+  receiptLots,
+  receipts,
   recurringExpenses,
   users,
   warehouses,
@@ -592,13 +595,31 @@ describe('U30 — a settlement can name the deferred job it pays', () => {
     // The job is paid; the $500 is genuinely owed and the gate must see it.
     expect(await deferredBalanceUsd(deferClientId)).toBeCloseTo(0, 2);
     expect(await blockingDebtUsd(deferClientId)).toBeCloseTo(500, 2);
+    // A REAL issuable box. The handover validates its boxes before it asks
+    // the approval question since 0104 (the price question is about those
+    // boxes), so a random id now answers box_not_found first. A walk-in —
+    // received straight onto this shelf, no landing by any truck of ours — is
+    // never gated for price, so debt_block stays the only refusal it can meet
+    // and this remains a test of the deferral netting.
+    const [walkIn] = await db
+      .insert(receipts)
+      .values({ warehouseId, clientId: deferClientId, status: 'confirmed', createdBy: actorId })
+      .returning({ id: receipts.id });
+    const [walkInLot] = await db
+      .insert(receiptLots)
+      .values({ receiptId: walkIn!.id, seq: 1, productNameZh: '步入', boxCount: 1, totalWeightKg: '5', totalVolumeM3: '0.05' })
+      .returning({ id: receiptLots.id });
+    const [walkInBox] = await db
+      .insert(boxes)
+      .values({ lotId: walkInLot!.id, shortCode: `UW${SUFFIX}`.slice(0, 20), seqInLot: 1, status: 'in_stock', currentWarehouseId: warehouseId })
+      .returning({ id: boxes.id });
     await expect(
       issueBoxes(
         {
           handoverId: uuidv4(),
           clientId: deferClientId,
           warehouseId,
-          boxIds: [uuidv4()],
+          boxIds: [walkInBox!.id],
           personName: 'Test Person',
           personPhone: '+998901112233',
           debtOk: false,
