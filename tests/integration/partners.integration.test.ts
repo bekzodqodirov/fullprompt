@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
@@ -108,6 +108,20 @@ afterAll(async () => {
   await pgClient.end();
 });
 
+/**
+ * A live DOLLAR till, oldest first. Every payment below is in USD, and an
+ * unordered `limit(1)` once handed back a so'm till another file had left
+ * deactivated — `account_currency_mismatch`, red on an order nobody chose.
+ */
+async function usdTills(n = 1) {
+  return db
+    .select()
+    .from(moneyAccounts)
+    .where(and(eq(moneyAccounts.currency, 'USD'), eq(moneyAccounts.active, true)))
+    .orderBy(asc(moneyAccounts.createdAt), asc(moneyAccounts.id))
+    .limit(n);
+}
+
 async function newPartner(name: string, clientId?: string): Promise<string> {
   const id = await savePartner(
     null,
@@ -196,7 +210,7 @@ describe('what we owe a counterparty', () => {
     expect(charge!.batchId).toBe(batch!.id);
 
     // Paying it moves money, and is NOT a second cost.
-    const [account] = await db.select().from(moneyAccounts).limit(1);
+    const [account] = await usdTills();
     await addPartnerTx(
       {
         partnerId,
@@ -233,7 +247,7 @@ describe('what we owe a counterparty', () => {
         employeeId: '',
         // Deliberately ALSO naming a cash box: a partner settled it, so the
         // account must be dropped or the cash-flow report doubles the money.
-        accountId: (await db.select().from(moneyAccounts).limit(1))[0]!.id,
+        accountId: (await usdTills())[0]!.id,
         partnerId,
         note: 'Ombor arendasi',
       },
@@ -362,7 +376,7 @@ describe('uch tomonlama hisob — the client paid our supplier', () => {
 describe('the cash buyers — som in, dollars out', () => {
   it('owes them from the moment the money lands, and the rate gain is what is left', async () => {
     const partnerId = await newPartner('Naqdchi');
-    const accounts = await db.select().from(moneyAccounts).limit(2);
+    const accounts = await usdTills(2);
     const today = new Date().toISOString().slice(0, 10);
 
     // He wired money into our account: our cash is up and we owe him.
@@ -424,7 +438,7 @@ describe('the cash buyers — som in, dollars out', () => {
         ctx(),
       ),
     ).rejects.toThrow();
-    const [account] = await db.select().from(moneyAccounts).limit(1);
+    const [account] = await usdTills();
     await expect(
       addPartnerTx(
         { partnerId, type: 'adjust', amount: 10, currency: 'USD', txDate: today, accountId: account!.id, batchId: '', note: '' },
@@ -494,7 +508,7 @@ describe('the money reports know about counterparties', () => {
   it('a cash box moved by a partner reads right, and money that never moved is not claimed', async () => {
     const partnerId = await newPartner('Kassa');
     const clientId = await newClient(`PB${STAMP}`);
-    const [account] = await db.select().from(moneyAccounts).limit(1);
+    const [account] = await usdTills();
     const today = new Date().toISOString().slice(0, 10);
 
     const before = (await accountBalances()).find((a) => a.id === account!.id)!.balance;
