@@ -1,7 +1,7 @@
 import { asc, eq, ne, sql, and } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { boxes, clients, deals, receiptLots, receipts } from '../../platform/db/schema';
-import { leftBehindSql, riderFilter } from './riders';
+import { leftBehindSql, riderFilter, rodeLaterSql } from './riders';
 import { soleDealOf } from '../finance/pricing-view';
 
 /**
@@ -58,7 +58,11 @@ export interface BatchLot {
   lotBoxCount: number;
   kg: number;
   m3: number;
-  /** Of `onBatch`: written off as lost. */
+  /**
+   * Of `onBatch`: written off as lost, on this leg or at its destination
+   * before the carton rode anywhere else — a loss on a LATER truck is that
+   * truck's (U35).
+   */
   lostCount: number;
   /** Of `onBatch`: not scanned off this truck — flagged missing, unresolved. */
   missingCount: number;
@@ -96,7 +100,13 @@ export async function batchLots(batchId: string): Promise<BatchLot[]> {
       dealCode: deals.code,
       dealTitle: deals.title,
       onBatch: sql<number>`count(*)`,
-      lostCount: sql<number>`count(*) FILTER (WHERE ${boxes.status} = 'lost')`,
+      // Lost on THIS leg — or after it landed, before it rode on: a carton
+      // this truck delivered and the NEXT truck lost is not «not arrived»
+      // here, and counting it flipped this truck's price to «/kg of what
+      // arrived» for a loss that belongs to another leg (`rodeLaterSql`).
+      lostCount: sql<number>`count(*) FILTER (
+        WHERE ${boxes.status} = 'lost' AND NOT ${rodeLaterSql(sql`${batchId}::uuid`, 'boxes')}
+      )`,
       // Flagged by `finishUnload` and still pointing at THIS truck: a box
       // merely in transit before the unload is on the road, not missing.
       missingCount: sql<number>`count(*) FILTER (

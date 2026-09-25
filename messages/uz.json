@@ -1304,7 +1304,7 @@
     "noPayments": "Bu davrda to'lov yo'q",
     "clientBalance": "Mijoz balansi (umumiy)",
     "openLedger": "mijoz kassasi",
-    "prevLegs": "shu reysgacha (Xitoy ichida)",
+    "prevLegs": "shu reysgacha",
     "costDetail": "tarkibi",
     "forDeal": "Qaysi bitim uchun",
     "accountCurrencyMismatch": "Kassa valyutasi to'lov valyutasiga mos emas",

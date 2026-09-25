@@ -31,7 +31,18 @@ import { boxes } from '../../platform/db/schema';
  *   truck's cargo unless it came off ANOTHER truck's manifest
  *   (`from_status = 'in_transit'`): that box already carries its own
  *   departure, and the scan may simply have been made on the wrong truck's
- *   screen at a shared yard — so it stays where it departed (stated).
+ *   screen at a shared yard — so it stays where it departed (stated). Nor
+ *   when it was ALREADY standing where the truck unloads: the unload screen
+ *   «reality-wins» any known carton it is shown, so a local prixod on the
+ *   Tashkent floor, or a box at the hub waiting for its onward truck,
+ *   scanned by mistake, lands with a movement from the destination to the
+ *   destination — it never moved, and it took a share of a China truck's
+ *   road. The arrival rule's own clause (`landedHereSql`, #816): a journey is
+ *   `from IS DISTINCT FROM to`. Deliberately not the stricter «from the
+ *   truck's origin»: a carton whose record said it stood elsewhere (a
+ *   warehouse it never reached, or written off, so no warehouse at all) and
+ *   that the unloader physically took off this truck did ride it — the
+ *   record was wrong, not the scan.
  *
  * Before departure the live pointer is membership, as it always was. A void
  * box is never cargo (the annul round).
@@ -67,7 +78,11 @@ export function rideMovementSql(alias: string): SQL {
     ${m}.ref_type = 'batch'
     AND (
       ${m}.cause = 'batch_departed'
-      OR (${m}.cause = 'undocumented_transfer' AND ${m}.from_status IS DISTINCT FROM 'in_transit')
+      OR (
+        ${m}.cause = 'undocumented_transfer'
+        AND ${m}.from_status IS DISTINCT FROM 'in_transit'
+        AND ${m}.from_warehouse_id IS DISTINCT FROM ${m}.to_warehouse_id
+      )
     )
     AND NOT EXISTS (
       SELECT 1 FROM box_movements back
@@ -140,6 +155,76 @@ export function riderCtesSql(list: SQL): SQL {
 export function riderFilter(batchId: string): SQL {
   return sql`${boxes.id} IN (
     SELECT rr.box_id FROM (${riderRowsSql({ batches: sql`${batchId}::uuid` })}) rr
+  )`;
+}
+
+/**
+ * A WHERE over `boxes`: this box is in the truck's DECLARATION — what a
+ * customs bill is split over (the owner's rule, `truckBaseSql`): every rider,
+ * and every carton scanned aboard and found back at the origin, which was
+ * declared and paid for. «Rider or left behind» is exactly «rider, or
+ * departed on it at all» — a departed box that is not a rider IS the
+ * left-behind one — so it is written as the riders' own UNION plus the
+ * truck's departures, one more `box_movements_ref_idx` lookup. As
+ * `riderFilter OR leftBehindSql` it was an OR over the whole boxes table with
+ * correlated subplans: a sequential scan whose cost estimate grew with every
+ * box ever received and crossed the JIT thresholds, measured 1.1-1.3 s per
+ * customs bill on a 60k-box year (#152's rule, which this file states).
+ */
+export function declaredFilter(batchId: string): SQL {
+  return sql`${boxes.id} IN (
+    SELECT rr.box_id FROM (${riderRowsSql({ batches: sql`${batchId}::uuid` })}) rr
+    UNION
+    SELECT dm.box_id FROM box_movements dm
+     WHERE dm.ref_type = 'batch' AND dm.ref_id = ${batchId}::uuid
+       AND dm.cause = 'batch_departed' AND ${NOT_VOID_SQL('dm')}
+  )`;
+}
+
+/**
+ * A cost entry (a reference to its row, `${costEntries}`) stamped with a
+ * truck, converted, that holds NO share on a carton which rode that truck
+ * without a load scan — a truck bill, or a grid cell of that carton's own
+ * prixod. That is a re-split that never happened (U25): the carton joined
+ * the riders when it was scanned off, and the truck's money was still split
+ * over the scanned cargo alone. No other stale split is this invisible — a
+ * found-back carton's leftover share has the dashboard's «phantom». A
+ * carton that legitimately takes nothing (a direct_to_client fee for another
+ * client) keeps matching, and costs the nightly sweep one idempotent re-split.
+ */
+export function riderWithoutShareSql(entry: SQL): SQL {
+  return sql`(${entry}.amount_usd IS NOT NULL AND ${entry}.batch_id IS NOT NULL AND EXISTS (
+    SELECT 1 FROM box_movements um
+     WHERE um.ref_type = 'batch' AND um.ref_id = ${entry}.batch_id AND um.cause = 'undocumented_transfer'
+       AND ${NOT_VOID_SQL('um')} AND ${rideMovementSql('um')}
+       AND (${entry}.scope = 'batch' OR EXISTS (
+         SELECT 1 FROM boxes ub JOIN receipt_lots ul ON ul.id = ub.lot_id
+          WHERE ub.id = um.box_id AND ul.receipt_id = ${entry}.receipt_id
+       ))
+       AND NOT EXISTS (
+         SELECT 1 FROM cost_allocations ua WHERE ua.cost_entry_id = ${entry}.id AND ua.box_id = um.box_id
+       )
+  ))`;
+}
+
+/**
+ * The box (by its alias) rode ANOTHER truck after it rode this one — so a
+ * loss written against it later is that later leg's, not this truck's (U35):
+ * a carton this truck delivered to the hub and the next truck lost is not
+ * «not arrived» here. A departure found back at its own origin is no ride
+ * (`rideMovementSql`), so a write-off at the hub after a scan onto the next
+ * truck that never left still belongs to the truck that brought it.
+ */
+export function rodeLaterSql(batchExpr: SQL, boxAlias: string): SQL {
+  const b = sql.raw(boxAlias);
+  return sql`EXISTS (
+    SELECT 1 FROM box_movements mine
+      JOIN box_movements later ON later.box_id = mine.box_id
+                              AND (later.created_at, later.id) > (mine.created_at, mine.id)
+     WHERE mine.box_id = ${b}.id AND mine.ref_type = 'batch' AND mine.ref_id = ${batchExpr}
+       AND mine.cause IN ${RIDE_CAUSES}
+       AND later.ref_type = 'batch' AND later.ref_id <> ${batchExpr}
+       AND later.cause IN ${RIDE_CAUSES} AND ${rideMovementSql('later')}
   )`;
 }
 

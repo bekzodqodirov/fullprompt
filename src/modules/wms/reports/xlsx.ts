@@ -25,7 +25,11 @@ function sheetSetup(workbook: ExcelJS.Workbook, name: string, title: string) {
   return sheet;
 }
 
-export async function buildLandedCostXlsx(clientId?: string, locale?: string): Promise<Buffer> {
+/**
+ * `clientId` undefined = every client (and the unclaimed row); a client's id,
+ * or `null` for the unclaimed cargo = that one drill-down (audit U19).
+ */
+export async function buildLandedCostXlsx(clientId: string | null | undefined, locale?: string): Promise<Buffer> {
   const L = reportLabels(locale);
   const workbook = new ExcelJS.Workbook();
   const stamp = tashkentDay();
@@ -35,9 +39,13 @@ export async function buildLandedCostXlsx(clientId?: string, locale?: string): P
     ? `⚠ ${L.unconvertedCosts}: ${unconverted.map((row) => `${row.amount} ${row.currency}`).join(', ')}`
     : null;
 
-  if (clientId) {
+  if (clientId !== undefined) {
     const lots = await landedCostByLot(clientId);
-    const sheet = sheetSetup(workbook, 'Landed cost', `${L.tLandedCostByLot} · ${stamp}`);
+    const sheet = sheetSetup(
+      workbook,
+      'Landed cost',
+      `${L.tLandedCostByLot}${clientId === null ? ` · ${L.unclaimedCargo}` : ''} · ${stamp}`,
+    );
     const head = sheet.addRow([L.lot, L.product, L.boxes, L.kg, L.landedCostUsd, L.usdPerBox]);
     head.font = { bold: true };
     sheet.columns = [
@@ -45,7 +53,8 @@ export async function buildLandedCostXlsx(clientId?: string, locale?: string): P
     ];
     for (const lot of lots) {
       sheet.addRow([
-        lot.letter ?? '',
+        // Unclaimed cargo is told apart by what is written on the carton.
+        clientId === null ? `${lot.marking ?? '?'}-${lot.letter ?? ''}` : (lot.letter ?? ''),
         `${lot.productNameZh}${lot.productNameRu ? ` (${lot.productNameRu})` : ''}`,
         lot.boxCount,
         lot.kg,
@@ -69,7 +78,8 @@ export async function buildLandedCostXlsx(clientId?: string, locale?: string): P
     head.font = { bold: true };
     sheet.columns = [{ width: 12 }, { width: 36 }, { width: 10 }, { width: 16 }];
     for (const row of rows) {
-      sheet.addRow([row.clientCode, row.clientName, row.boxCount, row.totalUsd]);
+      // The unclaimed row is inside the JAMI — it is money the P&L counts.
+      sheet.addRow([row.clientCode ?? L.unclaimedCargo, row.clientName ?? '', row.boxCount, row.totalUsd]);
     }
     const total = sheet.addRow([
       L.total, '',

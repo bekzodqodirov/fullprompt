@@ -149,6 +149,7 @@ export async function annulReceipt(
     // stamp and the recompute must not be permanent, and 'already_voided'
     // was the design review's door that closed it for ever.
     const aftermath = await annulAftermath(receiptId, ctx);
+    await dealsAfterAnnul(receiptId, ctx);
     return {
       repaired: true,
       boxesVoided: 0,
@@ -338,6 +339,7 @@ export async function annulReceipt(
   });
 
   const aftermath = await annulAftermath(receiptId, ctx);
+  await dealsAfterAnnul(receiptId, ctx);
   return {
     repaired: outcome === null,
     boxesVoided: outcome?.boxesVoided ?? 0,
@@ -346,6 +348,22 @@ export async function annulReceipt(
     cratesDissolved: outcome?.cratesDissolved ?? 0,
     aftermath,
   };
+}
+
+/**
+ * A test prixod annulled off a REAL deal whose own cargo is all handed over
+ * leaves that deal fully handed — `dealFullyIssued` drops a voided receipt —
+ * and nothing else would ever re-ask (U38's shape). Forward only, open deals
+ * only, through `moveDeal`. Re-run on the re-press like the aftermath, never
+ * able to fail the annul: the cargo side has committed.
+ */
+async function dealsAfterAnnul(receiptId: string, ctx: AuditContext): Promise<void> {
+  try {
+    const { advanceDealsAfterWriteOff } = await import('../deals/auto-stage');
+    await advanceDealsAfterWriteOff(await receiptBoxIds(db, receiptId), ctx);
+  } catch (error) {
+    console.error('[annul] deal stage after the annul failed', receiptId, error);
+  }
 }
 
 export interface AftermathResult {
@@ -415,6 +433,14 @@ export async function annulAftermath(receiptId: string, ctx: AuditContext): Prom
     // A kassa-paid truck cost is left alone even with nothing aboard (0101):
     // its void would credit the till — a person's decision, never a sweep's.
     if (entry.accountId) continue;
+    // A prixod's grid cell stamped with one of these trucks is ANOTHER
+    // prixod's money: this receipt's own receipt-scope entries were all
+    // voided inside the annul's transaction. Its base can be empty for a
+    // reason that has nothing to do with this annul — every carton of that
+    // prixod scanned aboard and found back, where a road cell deliberately
+    // lands on no box (`scopeBoxIds`, U17 × U18) — and voiding it here would
+    // destroy a colleague's bill because a test prixod rode the same truck.
+    if (entry.scope === 'receipt') continue;
     const scope = await scopeBoxIds(entry);
     if (scope.length > 0) continue;
     // The void is a claim now: an entry somebody voided since the read above

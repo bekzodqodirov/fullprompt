@@ -536,6 +536,7 @@ export async function voidReceipt(
   // Pool read before the transaction (#714) — the orphan guard splits the
   // base the way the engine would.
   const factor = Number(await getSetting('chargeable_weight_factor'));
+  const voidedBoxIds: string[] = [];
   const voidedLots = await db.transaction(async (tx): Promise<string[]> => {
     const receipt = await tx.query.receipts.findFirst({ where: eq(receipts.id, receiptId) });
     if (!receipt || receipt.voidedAt) return [];
@@ -597,6 +598,7 @@ export async function voidReceipt(
         refId: receiptId,
         actorId: ctx.actorId ?? null,
       });
+      voidedBoxIds.push(...act.map((b) => b.id));
     }
 
     await writeAudit(tx, { ...ctx, warehouseId: receipt.warehouseId }, {
@@ -630,6 +632,18 @@ export async function voidReceipt(
   if (stopId) {
     const { pickupIdOfStop, recomputePickupCosts } = await import('../pickups/service');
     await recomputePickupCosts(await pickupIdOfStop(stopId));
+  }
+  // A duplicate prixod on a deal whose real cargo is all handed over was the
+  // one thing keeping the deal «qisman»: `dealFullyIssued` leaves a voided
+  // receipt out, and nothing else would ever re-ask (U38's shape). After the
+  // commit, never able to fail the void.
+  if (voidedBoxIds.length) {
+    try {
+      const { advanceDealsAfterWriteOff } = await import('../deals/auto-stage');
+      await advanceDealsAfterWriteOff(voidedBoxIds, ctx);
+    } catch (error) {
+      console.error('[receipt-void] deal stage after the void failed', receiptId, error);
+    }
   }
 }
 
@@ -738,6 +752,17 @@ export async function markBoxLost(
     });
     return { shortCode: box.shortCode, about, warehouseId: box.currentWarehouseId };
   });
+
+  // The write-off can be the deal's last outstanding carton (U38's shape,
+  // one door over): the rest was handed out and this one was binned, so the
+  // deal is fully handed now and the funnel must hear it. After the commit,
+  // never able to fail the door that recorded the loss.
+  try {
+    const { advanceDealsAfterWriteOff } = await import('../deals/auto-stage');
+    await advanceDealsAfterWriteOff([input.boxId], ctx);
+  } catch (error) {
+    console.error('[box-lost] deal stage after a write-off failed', input.boxId, error);
+  }
 
   const about = result.about;
   // ONE message each to a union, never two calls: `notifyStaffTelegram`

@@ -72,12 +72,41 @@ export async function ingestUnloadScans(
   inputs: UnloadScanInput[],
   ctx: AuditContext,
 ): Promise<UnloadAck[]> {
-  if (!ctx.actorId) throw new ScanError('unauthenticated');
-  const actorId = ctx.actorId;
-  const acks: UnloadAck[] = [];
   // Trucks a carton came off WITHOUT a load scan: that carton is their cargo
   // for money now (U25), so their costs re-split once the scans are in.
   const rogueTrucks = new Set<string>();
+  // `finally`, because each input commits on its own: when a later input
+  // throws (a deadlock between two phones, a bad row) the route answers 500
+  // and the phone re-sends the batch — but the rogue landing before it has
+  // already committed, and the retry answers that one as a replay.
+  try {
+    return await landUnloadScans(inputs, ctx, rogueTrucks);
+  } finally {
+    // After every commit, never inside one (#714), and never failing the
+    // scan. QUEUED, not run: the re-split covers every bill and grid cell on
+    // the truck, which is seconds of the scanning phone's ack on a truck
+    // with a real grid, and a job survives the restart a request does not
+    // (`queueRiderChange`).
+    if (rogueTrucks.size > 0) {
+      try {
+        const { queueRiderChange } = await import('../costing/service');
+        await queueRiderChange([...rogueTrucks], 'undocumented_transfer');
+      } catch (err) {
+        console.error('[unload] rider re-split could not be arranged', [...rogueTrucks], err);
+      }
+    }
+  }
+}
+
+/** `ingestUnloadScans`' walk — one transaction per input, rogue trucks noted. */
+async function landUnloadScans(
+  inputs: UnloadScanInput[],
+  ctx: AuditContext,
+  rogueTrucks: Set<string>,
+): Promise<UnloadAck[]> {
+  if (!ctx.actorId) throw new ScanError('unauthenticated');
+  const actorId = ctx.actorId;
+  const acks: UnloadAck[] = [];
 
   for (const input of inputs) {
     const ack = await db.transaction(async (tx): Promise<UnloadAck> => {
@@ -102,7 +131,15 @@ export async function ingestUnloadScans(
       const existing = await tx.query.scanEvents.findFirst({
         where: eq(scanEvents.clientEventUuid, input.clientEventUuid),
       });
-      if (existing) return { clientEventUuid: input.clientEventUuid, result: 'ok', detail: 'replay' };
+      if (existing) {
+        // A replayed rogue landing re-arms its truck's re-split: the first
+        // attempt committed the landing and may have died before it queued
+        // anything (a restart, a later input's throw) — the phone's retry is
+        // then the only thing that still knows. A second queued re-split is
+        // idempotent; a missing one leaves the carton $0 of its truck for good.
+        if (existing.addedOnSpot) rogueTrucks.add(input.batchId);
+        return { clientEventUuid: input.clientEventUuid, result: 'ok', detail: 'replay' };
+      }
 
       // First scan marks arrival.
       if (batch.status === 'in_transit') {
@@ -336,7 +373,10 @@ export async function ingestUnloadScans(
         });
       }
       const letters = await lettersFor(tx, members);
-      if (rogue.length > 0) rogueTrucks.add(input.batchId);
+      // Only a rogue carton this scan MOVED changes the truck's riders: a
+      // crate re-scan whose members already landed singly names them rogue
+      // too, and re-split the truck for nothing.
+      if (toMove.some((box) => rogue.includes(box))) rogueTrucks.add(input.batchId);
       return {
         clientEventUuid: input.clientEventUuid,
         result: onManifest ? 'ok' : 'auto_transfer',
@@ -345,11 +385,6 @@ export async function ingestUnloadScans(
       };
     });
     acks.push(ack);
-  }
-  // After every commit, never inside one (#714), and never failing the scan.
-  if (rogueTrucks.size > 0) {
-    const { recomputeRiderChange } = await import('../costing/service');
-    await recomputeRiderChange([...rogueTrucks], 'undocumented_transfer');
   }
   return acks;
 }

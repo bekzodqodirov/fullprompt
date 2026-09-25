@@ -86,20 +86,48 @@ export async function riderRepairPlan(): Promise<RiderRepairPlan> {
   };
 }
 
+export interface RiderRepairFailure {
+  /** The truck whose re-split failed, or the stamped cell's truck. */
+  batchId: string;
+  /** Set when a single stamped cell failed (not a whole truck). */
+  entryId: string | null;
+  message: string;
+}
+
 /**
  * Re-split what the plan names: every live entry of each listed truck (its
  * own bills and its stamped grid cells), then the stamped cells of every
  * other truck. Idempotent — a second run moves nothing.
+ *
+ * One truck's failure costs that truck, and one cell's that cell: a failing
+ * entry used to throw out of the loop (`recomputeEach` throws once at the
+ * end of a truck), so every truck after it in the plan's fixed order — and
+ * every stamped cell — stayed unrepaired, and a rerun stopped at the same
+ * truck again. The failures come back named, for the script to print.
  */
-export async function applyRiderRepair(plan: RiderRepairPlan): Promise<{ trucks: number; entries: number }> {
+export async function applyRiderRepair(
+  plan: RiderRepairPlan,
+): Promise<{ trucks: number; entries: number; failed: RiderRepairFailure[] }> {
   const trucks = [...new Set([...plan.leftBehind, ...plan.rogue].map((row) => row.batchId))];
+  const failed: RiderRepairFailure[] = [];
+  const reason = (error: unknown) => (error instanceof Error ? error.message : String(error));
   let entries = 0;
-  for (const batchId of trucks) entries += await recomputeAll({ batchId });
+  for (const batchId of trucks) {
+    try {
+      entries += await recomputeAll({ batchId });
+    } catch (error) {
+      failed.push({ batchId, entryId: null, message: reason(error) });
+    }
+  }
   // A cell of a truck already re-split above was re-split with it.
   const done = new Set(trucks);
   for (const cell of plan.stampedCells.filter((row) => !done.has(row.batchId))) {
-    await recomputeEntry(cell.id);
-    entries += 1;
+    try {
+      await recomputeEntry(cell.id);
+      entries += 1;
+    } catch (error) {
+      failed.push({ batchId: cell.batchId, entryId: cell.id, message: reason(error) });
+    }
   }
-  return { trucks: trucks.length, entries };
+  return { trucks: trucks.length, entries, failed };
 }

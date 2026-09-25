@@ -106,7 +106,9 @@ export interface RiskSummary {
  *   (`leftBehindSql` — the money readers' own rule: the manager's
  *   `found_at_origin` AND the loader's accept-found / the stocktake) — it
  *   never rode that truck, yet may still carry that truck's ROAD cost share
- *   (freight and every non-customs bill). Its CUSTOMS share is right to stay
+ *   (freight and every non-customs bill — the truck's own and the grid cells
+ *   stamped with it, which a re-split moves off it too: `scopeBoxIds`, U17 ×
+ *   U18, and `riderRepairPlan` counts both). Its CUSTOMS share is right to stay
  *   — the carton was declared, and the owner's rule (2026-09-25) is that it
  *   is billed on the next truck — so a customs allocation is not counted.
  *   Counted only while a road share remains: money a re-split has not moved.
@@ -170,7 +172,7 @@ function riskCtes(warehouseIds: string[] | undefined, sinceIso: string, customsT
         AND EXISTS (
           SELECT 1 FROM cost_allocations ca
           JOIN cost_entries ce ON ce.id = ca.cost_entry_id AND ce.voided_at IS NULL
-          WHERE ca.box_id = dm.box_id AND ce.batch_id = dm.ref_id AND ce.scope = 'batch'
+          WHERE ca.box_id = dm.box_id AND ce.batch_id = dm.ref_id
             ${roadCostSql('ce', customsTypeIds)})
     ),
     undocumented AS (
@@ -185,7 +187,7 @@ function riskUsd(kind: RiskKind, customsTypeIds: string[]): SQL {
   return kind === 'phantom'
     ? sql`(SELECT coalesce(sum(ca.amount_usd), 0) FROM cost_allocations ca
            JOIN cost_entries ce ON ce.id = ca.cost_entry_id AND ce.voided_at IS NULL
-           WHERE ca.box_id = r.box_id AND ce.batch_id = r.batch_id AND ce.scope = 'batch'
+           WHERE ca.box_id = r.box_id AND ce.batch_id = r.batch_id
              ${roadCostSql('ce', customsTypeIds)})`
     : sql`(SELECT coalesce(sum(ca.amount_usd), 0) FROM cost_allocations ca
            JOIN cost_entries ce ON ce.id = ca.cost_entry_id AND ce.voided_at IS NULL

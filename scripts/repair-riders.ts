@@ -31,6 +31,17 @@ async function main() {
   }
   const done = await applyRiderRepair(plan);
   console.log(`re-split: ${done.trucks} trucks, ${done.entries} cost entries`);
+  // Every failure is named and the rest still ran; the exit code says it,
+  // so a rerun is known to be owed.
+  if (done.failed.length) {
+    const codes = new Map([...plan.leftBehind, ...plan.rogue].map((row) => [row.batchId, row.code]));
+    console.error(`FAILED: ${done.failed.length} (the rest were re-split)`);
+    for (const row of done.failed) {
+      const truck = codes.get(row.batchId) ?? row.batchId;
+      console.error(`  truck ${truck}${row.entryId ? ` cell ${row.entryId}` : ''}: ${row.message}`);
+    }
+    process.exitCode = 1;
+  }
 }
 
 main()

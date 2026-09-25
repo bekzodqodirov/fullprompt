@@ -10,7 +10,10 @@ export interface RecomputeCostsPayload {
   unconverted?: boolean;
   pickups?: boolean;
   pickupId?: string;
-  /** Converted costs with no share, and shares left on void boxes (U20/U41). */
+  /**
+   * Converted costs with no share, shares left on void boxes (U20/U41), and a
+   * truck cost with no share on a carton that rode it unscanned (U25).
+   */
   orphaned?: boolean;
   /**
    * Every cost shared over one lot — the durable retry of a door's own

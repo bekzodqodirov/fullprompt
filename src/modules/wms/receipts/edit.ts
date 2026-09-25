@@ -258,6 +258,11 @@ export async function editLot(
         });
       }
       result.labelsToDestroy = toVoid.map((b) => b.shortCode);
+      // Unlike the other write-off doors this one never asks the funnel
+      // (`advanceDealsAfterWriteOff`): a count change is refused once any
+      // box has left the shelf, and a lot keeps at least one box — so the
+      // lot still has a carton on the shelf after the shrink, and a deal
+      // carrying it cannot have become fully handed by it.
     }
 
     const diff = diffFields(before, after);

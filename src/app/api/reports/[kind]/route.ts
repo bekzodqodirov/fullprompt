@@ -15,7 +15,7 @@ import {
   buildUnclaimedXlsx,
 } from '@/modules/wms/reports/xlsx';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
-import { readJournalWindow } from '@/modules/wms/reports/queries';
+import { readJournalWindow, UNCLAIMED_KEY } from '@/modules/wms/reports/queries';
 
 const kindSchema = z.enum([
   'landed-cost',
@@ -68,6 +68,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ kind
   const scope = actor.permissions.has('reports.all_warehouses') ? undefined : actor.warehouseIds;
   const url = new URL(request.url);
   const clientId = z.string().uuid().safeParse(url.searchParams.get('clientId'));
+  // The landed-cost report's «Egasiz yuk» row drills in by this key (U19).
+  const unclaimed = url.searchParams.get('clientId') === UNCLAIMED_KEY;
   const days = Math.min(365, Math.max(1, Number(url.searchParams.get('days')) || 30));
 
   // The file is downloaded to be read, so its headers follow the reader.
@@ -76,7 +78,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ kind
   let xlsx: Buffer;
   switch (kind.data) {
     case 'landed-cost':
-      xlsx = await buildLandedCostXlsx(clientId.success ? clientId.data : undefined, locale);
+      xlsx = await buildLandedCostXlsx(unclaimed ? null : clientId.success ? clientId.data : undefined, locale);
       break;
     case 'stock-aging':
       xlsx = await buildStockAgingXlsx(scope, locale);

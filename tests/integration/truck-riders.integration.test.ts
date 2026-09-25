@@ -512,7 +512,9 @@ describe('U25 — a carton that rode without a load scan is that truck\'s cargo'
     expect(acks.map((ack) => ack.result)).toEqual(['ok', 'ok', 'ok', 'auto_transfer']);
     await finishUnload(e.id, ctx());
 
-    // The unload's own re-split: 3000 over 350 kg.
+    // The unload QUEUES the truck's re-split (truck-riders-leg pins the
+    // queue); this is what the job runs: 3000 over 350 kg.
+    await recomputeAll({ batchId: e.id });
     expect(await allocated(freight.id, lu.boxIds[0]!)).toBeCloseTo(428.57, 2);
     expect(await allocated(freight.id, lv.boxIds[0]!)).toBeCloseTo(857.14, 2);
     const lotU = (await batchLots(e.id)).find((lot) => lot.lotId === lu.lotId);

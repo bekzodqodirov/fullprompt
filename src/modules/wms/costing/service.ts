@@ -26,7 +26,7 @@ import { costCashDay, mergedFrom } from '../accounting/cash-rules';
 import { latestTxDate } from '../finance/dates';
 import { exceedsRowUsd, nativeAmount } from '../finance/money-bounds';
 import { allocateEntry, toUsd, type AllocBox, type AllocationBasis } from './engine';
-import { leftBehindSql, riderCtesSql, riderFilter, riderLoad } from '../batches/riders';
+import { declaredFilter, riderCtesSql, riderFilter, riderLoad, riderWithoutShareSql } from '../batches/riders';
 import { internalLegSql } from '../batches/internal';
 import { CUSTOMS_CODES_SETTING, parseCustomsCodes } from '../calc/customs-codes';
 import type { CostSight } from './cost-sight';
@@ -595,9 +595,7 @@ export async function customsCostTypeIds(handle: Db | Tx = db): Promise<string[]
  * rastamojka narxi ham partiyada yozilishi kerak»).
  */
 function truckBaseSql(batchId: string, customs: boolean): SQL {
-  return customs
-    ? or(riderFilter(batchId), leftBehindSql(sql`${batchId}::uuid`, 'boxes'))!
-    : riderFilter(batchId);
+  return customs ? declaredFilter(batchId) : riderFilter(batchId);
 }
 
 /**
@@ -619,25 +617,31 @@ export async function scopeBoxIds(
     // entries and wrong once it read allocations (R2a): a prixod split over
     // two trucks put half of each truck's customs on the other truck's
     // boxes, and the half on cargo that rode EARLIER was on no truck at all
-    // (audit U18). Only its cargo that rode that truck carries it — and when
-    // none did (a cell typed before anything was loaded, or on cargo that
-    // never went), it stays on the prixod as before: an empty scope would
-    // let the annul's empty-scope sweep void another prixod's customs. A
+    // (audit U18). Only its cargo that rode that truck carries it. A
     // customs cell covers the prixod's DECLARED cartons, the truck bill's
     // own rule (`truckBaseSql`).
     const customs = (await customsCostTypeIds(handle)).includes(entry.costTypeId);
-    const aboard = await handle
-      .select({ id: boxes.id })
-      .from(boxes)
-      .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
-      .where(
-        and(
-          eq(receiptLots.receiptId, entry.receiptId),
-          ne(boxes.status, 'void'),
-          truckBaseSql(entry.batchId, customs),
-        ),
-      );
+    const onTruck = (base: SQL) =>
+      handle
+        .select({ id: boxes.id })
+        .from(boxes)
+        .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+        .where(and(eq(receiptLots.receiptId, entry.receiptId!), ne(boxes.status, 'void'), base));
+    const aboard = await onTruck(truckBaseSql(entry.batchId, customs));
     if (aboard.length) return aboard.map((r) => r.id);
+    // None rode it — and that is two different facts. Cartons that DEPARTED
+    // on it and were all found back at the origin never rode it: a ROAD
+    // cell must not land on them (the owner's Q2, «yolkira narxi
+    // yozilmasin»), or it rides with them to the next truck as «shu
+    // reysgacha» and the carton pays two trucks' road (audit U17 × U18). It
+    // stays on no box: `profitByBatch`'s ⚠ unallocated and the client tab's
+    // gaps name it on THIS truck, whose cost sheet still lists it for a void.
+    // A customs cell cannot get here that way — its base keeps the
+    // found-back cartons. Nothing of the prixod ever departed on it (a cell
+    // typed before loading, cargo short-loaded before it left): it stays on
+    // the prixod as before. The annul's empty-scope sweep leaves receipt
+    // cells alone (annul.ts), so an empty base here voids nobody's money.
+    if (!customs && (await onTruck(declaredFilter(entry.batchId)).limit(1)).length) return [];
   }
   if (entry.scope === 'receipt' && entry.receiptId) {
     // NOT the void ones. A lot-edit shrink voids the miscounted surplus, and
@@ -890,6 +894,11 @@ export async function recomputeAll(filter?: {
    * reserved) is re-swept every night for nothing — cheap and idempotent,
    * and it is NEVER voided here: the empty-scope void is the annul's alone
    * (#848), and the pickup scope is kept out of even that (#1004).
+   *
+   * And a truck's cost with no share on a carton that rode it unscanned
+   * (U25, `riderWithoutShareSql`): the unload queues that re-split, and this
+   * is the net under a queue that could not take it or a job that ran out of
+   * retries — the one stale split no other clause and no screen could see.
    */
   orphaned?: boolean;
 }) {
@@ -901,7 +910,8 @@ export async function recomputeAll(filter?: {
             SELECT 1 FROM cost_allocations ca WHERE ca.cost_entry_id = ${costEntries}.id))
           OR EXISTS (
             SELECT 1 FROM cost_allocations ca JOIN boxes b ON b.id = ca.box_id
-             WHERE ca.cost_entry_id = ${costEntries}.id AND b.status = 'void'))`
+             WHERE ca.cost_entry_id = ${costEntries}.id AND b.status = 'void')
+          OR ${riderWithoutShareSql(sql`${costEntries}`)})`
       : undefined,
   ].filter((c): c is NonNullable<typeof c> => c !== undefined);
   const rows = await db
@@ -956,15 +966,49 @@ export async function recomputeEach(ids: string[]): Promise<void> {
  * The dollars are frozen (R1), so only the per-box shares move.
  *
  * Called AFTER the commit that moved the carton — it reads settings and rates
- * on the pool (#714) — and never allowed to fail the door that called it: a
- * miss is a late re-split, logged, and `pnpm repair-riders` finds it.
+ * on the pool (#714) — and never allowed to fail the door that called it.
+ * A failure is handed to the job queue as a durable retry of the same
+ * re-split (the lot correction's idiom, receipts/edit.ts, U41): the carton
+ * has moved, so the money must follow it without anybody pressing anything
+ * again. resolveMissing, acceptFoundBox, the stocktake and the lost-carton
+ * restore all come through here.
  */
 export async function recomputeRiderChange(batchIds: (string | null | undefined)[], why: string): Promise<void> {
   for (const batchId of new Set(batchIds.filter((id): id is string => !!id))) {
     try {
       await recomputeAll({ batchId });
     } catch (err) {
-      console.error('[costing] rider re-split failed', why, batchId, err);
+      console.error('[costing] rider re-split failed, queued for retry', why, batchId, err);
+      try {
+        const { enqueue, JOB_RECOMPUTE_COSTS } = await import('../../platform/jobs/boss');
+        await enqueue(JOB_RECOMPUTE_COSTS, { batchId });
+      } catch (queueError) {
+        // The nightly repair (`orphaned`, which also finds a rider with no
+        // share of its truck) and `pnpm repair-riders` are the last nets.
+        console.error('[costing] rider re-split retry could not be queued', why, batchId, queueError);
+      }
+    }
+  }
+}
+
+/**
+ * The same re-split, QUEUED rather than run — for the unload phone's scan
+ * sync (U25). A carton scanned off without a load scan joins its truck's
+ * riders, and the re-split of every bill and grid cell on that truck ran
+ * inside the sync request: seconds of a scanner's ack on a truck with a real
+ * grid, and nothing durable behind it if the process died first. The job
+ * runs `recomputeAll({ batchId })` exactly as the departure's does. If the
+ * queue itself cannot take it, it runs here after all — late is better than
+ * never, and the scan is committed either way.
+ */
+export async function queueRiderChange(batchIds: (string | null | undefined)[], why: string): Promise<void> {
+  for (const batchId of new Set(batchIds.filter((id): id is string => !!id))) {
+    try {
+      const { enqueue, JOB_RECOMPUTE_COSTS } = await import('../../platform/jobs/boss');
+      await enqueue(JOB_RECOMPUTE_COSTS, { batchId });
+    } catch (err) {
+      console.error('[costing] rider re-split could not be queued, running it now', why, batchId, err);
+      await recomputeRiderChange([batchId], why);
     }
   }
 }
@@ -1665,11 +1709,14 @@ async function addGridCell(
       // the same field and derives the same partner charge per entry.
       partnerId: input.partnerId,
       accountId: input.accountId,
-      // ATTRIBUTION, not scope: allocation still spreads over the RECEIPT's
-      // boxes, but the entry names the truck whose grid it was typed on —
-      // this is the truck's own customs bill, and without the stamp it
-      // landed in NO batch's profit row: /accounting/profit showed the
-      // truck's margin without the very customs typed on its own page.
+      // The stamp is the SCOPE and the attribution both (audit U18): the
+      // cell is this truck's part of the prixod, split over the prixod's
+      // cartons that rode this truck — its declared ones for a customs cell,
+      // `scopeBoxIds`' stamped-receipt branch — and counted on this truck's
+      // rows. #532 stamped it for the attribution alone and let it spread
+      // over the whole prixod, which put half of each truck's customs on the
+      // other truck's boxes once the report read allocations (R2a). Without
+      // the stamp it landed in NO batch's profit row at all.
       batchId: input.batchId,
     },
     ctx,

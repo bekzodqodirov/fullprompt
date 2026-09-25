@@ -217,5 +217,17 @@ export async function setBoxStatus(input: SetBoxStatusInput, ctx: AuditContext) 
     const { recomputeRiderChange } = await import('../costing/service');
     await recomputeRiderChange([result.foundBackOn], 'restore_found_at_origin');
   }
+  // A write-off (lost or void) can be the deal's last outstanding carton —
+  // the funnel's own ear hears only a handover, so the deal would park at
+  // «qisman topshirildi» for good (U38's shape). A restore moves a deal
+  // nowhere: stages only go forward.
+  if (input.to !== 'in_stock') {
+    try {
+      const { advanceDealsAfterWriteOff } = await import('../deals/auto-stage');
+      await advanceDealsAfterWriteOff([input.boxId], ctx);
+    } catch (error) {
+      console.error('[box-status] deal stage after a write-off failed', input.boxId, error);
+    }
+  }
   return { from: result.from, to: result.to };
 }

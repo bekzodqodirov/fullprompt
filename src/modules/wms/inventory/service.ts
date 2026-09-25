@@ -179,6 +179,7 @@ export async function reconcileInventory(
   const landedStatus = landedStatusFor(warehouse.type);
 
   const movedIds: string[] = [];
+  const lostIds: string[] = [];
   const result = await db.transaction(async (tx) => {
     const movedCodes: string[] = [];
     const skippedCodes: string[] = [];
@@ -250,6 +251,7 @@ export async function reconcileInventory(
           actorId,
         });
         lostCodes.push(box.shortCode);
+        lostIds.push(box.id);
       }
     }
 
@@ -279,6 +281,16 @@ export async function reconcileInventory(
   // left: it stops riding that truck, whose costs re-split over the cargo
   // that did (U17) — after the commit, never failing the stocktake.
   await recomputeFoundBack(movedIds, input.warehouseId, 'inventory');
+  // The cartons ticked lost can be a deal's last outstanding ones (U38's
+  // shape): the deal is fully handed from now and the funnel must hear it.
+  if (lostIds.length) {
+    try {
+      const { advanceDealsAfterWriteOff } = await import('../deals/auto-stage');
+      await advanceDealsAfterWriteOff(lostIds, ctx);
+    } catch (error) {
+      console.error('[inventory] deal stage after the stocktake failed', error);
+    }
+  }
   return result;
 }
 
