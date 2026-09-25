@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 /**
@@ -64,6 +65,42 @@ describe('audit 2026-09-24 — the doors', () => {
     const link = read('src/modules/wms/partners/link.ts');
     expect(link).toContain('if (existing) return;');
     expect(link).not.toContain('cost_entry_reprice');
+  });
+
+  // F4 (0103, Q18 — design §5.6): R1 narrowed to PAYMENTS. A corrected rate
+  // re-prices a DEBT through ONE writer, reached from /admin/fx alone, after
+  // the person saw what moves; the sweeps above still never re-price, and
+  // what left a kassa is never in any SET.
+  it('F4: one re-price writer, the kassa side never in its SET, the person’s door through it', () => {
+    const walk = (dir: string): string[] =>
+      readdirSync(dir).flatMap((name) => {
+        const path = join(dir, name);
+        if (statSync(path).isDirectory()) return name === 'migrations' ? [] : walk(path);
+        return /\.(ts|tsx)$/.test(name) ? [path] : [];
+      });
+    const fromValues = walk('src').filter((path) =>
+      /SET amount_usd = v\.new_usd[\s\S]{0,200}FROM \(VALUES/.test(read(path)),
+    );
+    expect(fromValues).toEqual(['src/modules/wms/costing/fx-reprice.ts']);
+    const reprice = read('src/modules/wms/costing/fx-reprice.ts');
+    for (const set of reprice.matchAll(/\bSET\b[^`]*/g)) {
+      expect(set[0]).not.toMatch(/account_amount_usd|account_rate_used/);
+    }
+    const action = read('src/app/(protected)/admin/fx/actions.ts');
+    expect(action).toContain('await saveFxRate(parsed.data,');
+    expect(action).toContain('await repriceStale(currency, month,');
+    expect(action).not.toMatch(/\bupsertFxRate\b/);
+    const engine = read('src/modules/wms/costing/service.ts');
+    const body = (name: string) => {
+      const start = engine.indexOf(`export async function ${name}(`);
+      expect(start, name).toBeGreaterThan(-1);
+      const end = engine.indexOf('\nexport ', start + 10);
+      return engine.slice(start, end < 0 ? undefined : end);
+    };
+    for (const name of ['recomputeAll', 'recomputeEntry']) {
+      expect(body(name)).not.toMatch(/fx-reprice|saveFxRate|repriceStale/);
+    }
+    expect(engine).not.toContain('fx-reprice');
   });
 
   it('A1: the rate door asks before a jump, and the form makes the currency a choice', () => {

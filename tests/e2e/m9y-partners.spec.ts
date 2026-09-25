@@ -105,6 +105,10 @@ test('a transport firm gets an account, a debt and a payment against it', async 
   // «−$50.00» in green under a balance it had just pushed up.
   await page.getByTestId('partner-tx-new').click();
   await page.getByTestId('partner-tx-type').selectOption('adjust');
+  // 0103 (Q12's split): the owner says what a correction IS. Enabled, never a
+  // disabled control that posts nothing (#171); a correction, so no P&L.
+  await expect(page.getByTestId('partner-tx-adjust-kind-correction')).toBeEnabled();
+  await page.getByTestId('partner-tx-adjust-kind-correction').check();
   await page.getByTestId('partner-tx-amount').fill('50');
   await page.getByTestId('partner-tx-currency').selectOption('USD');
   await page.getByTestId('partner-tx-save').click();

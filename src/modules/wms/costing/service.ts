@@ -975,6 +975,10 @@ export async function recomputeAll(filter?: {
    * (U25, `riderWithoutShareSql`): the unload queues that re-split, and this
    * is the net under a queue that could not take it or a job that ran out of
    * retries — the one stale split no other clause and no screen could see.
+   *
+   * And (0103, Q18) a cost whose shares no longer add up to its dollars —
+   * a /admin/fx re-price whose post-commit re-split died. Exact under the
+   * largest-remainder split (U42: Σ shares = amount_usd).
    */
   orphaned?: boolean;
 }) {
@@ -987,7 +991,10 @@ export async function recomputeAll(filter?: {
           OR EXISTS (
             SELECT 1 FROM cost_allocations ca JOIN boxes b ON b.id = ca.box_id
              WHERE ca.cost_entry_id = ${costEntries}.id AND b.status = 'void')
-          OR ${riderWithoutShareSql(sql`${costEntries}`)})`
+          OR ${riderWithoutShareSql(sql`${costEntries}`)}
+          OR (EXISTS (SELECT 1 FROM cost_allocations ca WHERE ca.cost_entry_id = ${costEntries}.id)
+              AND (SELECT sum(ca.amount_usd) FROM cost_allocations ca WHERE ca.cost_entry_id = ${costEntries}.id)
+                  <> ${costEntries}.amount_usd))`
       : undefined,
   ].filter((c): c is NonNullable<typeof c> => c !== undefined);
   const rows = await db
