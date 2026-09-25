@@ -5,7 +5,7 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { PageHeader } from '@/components/ui/page';
 import { mayClassifyFx } from '@/modules/wms/finance/fx-door';
 import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
-import { legacyFxCount, legacyFxResidues, unclassifiedAdjusts, type LegacyFxRow } from '@/modules/wms/finance/fx-legacy';
+import { legacyFxCountOf, legacyFxResidues, unclassifiedAdjusts, type LegacyFxRow } from '@/modules/wms/finance/fx-legacy';
 import type { LegacyState } from '@/modules/wms/finance/fx-residue';
 import { fxPnlEffect } from '@/modules/wms/finance/fx-sign';
 import { ClassifyAdjust } from '../../kontragentlar/[id]/classify-adjust';
@@ -26,11 +26,9 @@ export default async function KursFarqiPage() {
   const includeStaff = maySeeStaffMoney(actor.permissions);
   const t = await getTranslations('accounting');
   const tp = await getTranslations('partners');
-  const [rows, count, adjusts] = await Promise.all([
-    legacyFxResidues({ includeStaff }),
-    legacyFxCount({ includeStaff }),
-    unclassifiedAdjusts({ includeStaff }),
-  ]);
+  const [rows, adjusts] = await Promise.all([legacyFxResidues({ includeStaff }), unclassifiedAdjusts({ includeStaff })]);
+  // Counted off the rows already walked — the company-wide walk once, not twice.
+  const count = legacyFxCountOf(rows);
   const money = (value: number) => `$${Math.abs(value).toFixed(2)}`;
   // Literal map (#163): a state the list learns is a type error here.
   const CHIP: Record<LegacyState, { label: string; tone: string }> = {

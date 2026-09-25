@@ -729,6 +729,20 @@ describe('D10, D14, D15, D18 — history nobody’s rule closes by itself', () =
     expect(await fxRows('partner', firm, false)).toHaveLength(0);
   });
 
+  it('D14b: an unclassified dollar adjust of ANOTHER size still asks a person — it is not a same-size offset', async () => {
+    // D14's adjust is also the residue's exact size, so the offset rule alone
+    // answered «check» there; this one is $40 against $100, and only «a
+    // person's dollar adjust nobody classified» can say it.
+    const firm = await partner('D14b');
+    const cnyTill = await till(CNY);
+    await historyPartnerRow(firm, { type: 'receipt', amount: 10_000, currency: CNY, rate: 0.14, txDate: JAN, accountId: cnyTill });
+    await historyPartnerRow(firm, { type: 'payment', amount: 10_000, currency: CNY, rate: 0.13, txDate: FEB, accountId: cnyTill });
+    const adjust = await historyPartnerRow(firm, { type: 'adjust', amount: -40, currency: 'USD', rate: 1, txDate: '1612-02-20' });
+    const listed = (await legacyFxResidues({ includeStaff: true })).find((row) => row.ownerId === firm);
+    expect(listed?.state).toBe('check');
+    expect(listed?.usdAdjusts.map((row) => row.id)).toEqual([adjust]);
+  });
+
   it('D15: a client’s history is the system’s — unless a same-size dollar row already cancelled it', async () => {
     const plain = await client('D15');
     await historyClientRow(plain, { type: 'charge', amount: 12_500_000, currency: SOM, rate: 0.00008, txDate: JAN });

@@ -68,8 +68,12 @@ describe('F2 — every ledger writer locks the account and reconciles its kurs f
       'voidPartnerTx',
       'chargeForCost',
       'voidChargeForCost',
-      'chargeForExpense',
+      // The write half since 0106: «To'landi» charges the firm inside its own
+      // transaction, and the standalone door wraps this one.
+      'chargeForExpenseTx',
       'voidChargeForExpense',
+      // «🚚 Ko'chirish» (0104): void + parts, which can close a cycle between parts.
+      'moveCharge',
       'voidCostEntryInTx',
       'closeLegacyFxResidue',
       'closeCrossCurrencyResidue',

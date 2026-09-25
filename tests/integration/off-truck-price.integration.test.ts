@@ -580,4 +580,51 @@ describe('the door (U31) and «🚚 Ko‘chirish»', () => {
     expect(onA).toMatchObject({ kind: 'partial', dropCause: 'found_back', chargedUsd: 480 });
     expect(onA.droppedTo).toEqual([{ batchId: b.id, code: b.code, boxes: 1 }]);
   });
+
+  it('13: a split can CLOSE a so‘m cycle between its parts — the kurs farqi is written in the same press (0103, F2)', async () => {
+    // Two rates of this test's own, after case 11's August row and deleted
+    // below: the advance at 0.00008, the price at 0.0001.
+    const rates = await db
+      .insert(fxRates)
+      .values([
+        { currency: 'UZS', rateToUsd: '0.000080000000', effectiveDate: '1614-10-01', enteredBy: actorId },
+        { currency: 'UZS', rateToUsd: '0.000100000000', effectiveDate: '1614-11-01', enteredBy: actorId },
+      ])
+      .returning({ id: fxRates.id });
+    try {
+      const p = await mkClient('P');
+      const l1 = await mkLot(p.id, 1, W.yw);
+      const l2 = await mkLot(p.id, 1, W.yw);
+      const a = await loadTruck([{ lotId: l1.lotId, take: 1 }], [], W.yw, W.tas);
+      const b = await loadTruck([{ lotId: l2.lotId, take: 1 }], [], W.yw, W.tas);
+      // An advance of 2,500,000 ($200), then a 5,000,000 price on the card ($500).
+      await addTransaction({ clientId: p.id, type: 'payment', amount: 2_500_000, currency: 'UZS', txDate: '1614-10-05' }, ctx());
+      const card = await charge(p.id, 5_000_000, { currency: 'UZS', txDate: '1614-11-05' });
+      const fxRowsOf = () =>
+        db
+          .select()
+          .from(clientTransactions)
+          .where(and(eq(clientTransactions.clientId, p.id), eq(clientTransactions.type, 'fx_diff')));
+      expect(await fxRowsOf()).toEqual([]);
+
+      // Halves: after the first one the account reads 0 so'm — a closed
+      // cycle holding −$200 + $250 — whichever half sorts first.
+      const { ids } = await moveCharge(
+        {
+          txId: card.id,
+          parts: [
+            { batchId: a.id, amount: 2_500_000 },
+            { batchId: b.id, amount: 2_500_000 },
+          ],
+        },
+        ctx(),
+      );
+      const fx = await fxRowsOf();
+      expect(fx).toHaveLength(1);
+      expect(fx[0]).toMatchObject({ currency: 'UZS', amount: '0.00', amountUsd: '-50.00', voidedAt: null });
+      expect(ids).toContain(fx[0]!.fxAnchorId);
+    } finally {
+      await db.delete(fxRates).where(inArray(fxRates.id, rates.map((r) => r.id)));
+    }
+  });
 });

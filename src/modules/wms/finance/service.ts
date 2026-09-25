@@ -319,8 +319,11 @@ export type MoveChargeInput = z.infer<typeof moveChargeSchema>;
  * as it stands at the write: live, a charge, no partner, and not half of a
  * three-cornered settlement.
  *
- * STATED: the FX package's `reconcileFxResidueTx` is not wired here — it had
- * not landed when this was written; its F2 fence names `moveCharge`.
+ * The client's money lock goes before the claim and the kurs farqi reconciler
+ * after the parts (0103, fence F2). The totals do not move, but the CYCLES can:
+ * a split puts a new running sum between its parts, and an advance of exactly
+ * one part's size closes natively there — a residue nobody typed, which must
+ * be closed in this commit like every other writer's.
  */
 export async function moveCharge(input: MoveChargeInput, ctx: AuditContext): Promise<{ ids: string[] }> {
   if (!ctx.actorId) throw new FinanceError('unauthenticated');
@@ -360,6 +363,7 @@ export async function moveCharge(input: MoveChargeInput, ctx: AuditContext): Pro
   usdParts[usdParts.length - 1] = totalUsd - usdParts.slice(0, -1).reduce((a, b) => a + b, 0);
 
   const ids = await db.transaction(async (tx) => {
+    await lockOwnersTx(tx, { clientIds: [row.clientId] });
     const claimed = await tx
       .update(clientTransactions)
       .set({ voidedAt: new Date(), voidedBy: actorId, voidReason: reason })
@@ -395,6 +399,7 @@ export async function moveCharge(input: MoveChargeInput, ctx: AuditContext): Pro
         })),
       )
       .returning({ id: clientTransactions.id });
+    await reconcileFxResidueTx(tx, { clientIds: [row.clientId] }, ctx);
     await writeAudit(tx, ctx, {
       entityType: 'client_transaction',
       entityId: row.id,

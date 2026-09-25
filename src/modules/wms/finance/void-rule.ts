@@ -18,6 +18,13 @@
  * payment, and any kind a later round adds (e.g. «Kompensatsiya») — is the
  * holders'. An ALLOW-list on purpose: a new kind is refused until somebody
  * decides otherwise.
+ *
+ * A «kurs farqi» row (0103) is NOBODY's ✖, the kassa holders' included:
+ * the system writes it when a currency closes and voids it when the cycle
+ * reopens (Q14), so a hand void would be undone by the next write — and the
+ * accountant's own dollar close (Q24 b) has its own undo, `voidFxClose`.
+ * `voidTransaction` refuses it for everyone (`fx_system_row`) before its
+ * claim; this says the same thing to the button.
  */
 export interface LedgerRowFacts {
   type: string;
@@ -30,6 +37,7 @@ export function mayVoidLedgerRow(
   row: LedgerRowFacts,
   door: { mayMoveTill: boolean; actorId: string },
 ): boolean {
+  if (row.type === 'fx_diff') return false;
   if (door.mayMoveTill) return true;
   if (row.type === 'charge') return true;
   if (row.type === 'payment' && row.partnerId !== null) return true;

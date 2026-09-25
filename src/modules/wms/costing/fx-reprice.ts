@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { desc, eq, sql, type SQL } from 'drizzle-orm';
 import type { z } from 'zod';
 import { db, type Db, type Tx } from '../../platform/db/client';
+import { withoutJit } from '../../platform/db/no-jit';
 import { fxRates } from '../../platform/db/schema';
 import { writeAudit, writeAuditMany, type AuditContext } from '../../platform/audit/service';
 import { toUsd } from './engine';
@@ -90,7 +91,8 @@ export class RepriceError extends Error {
   }
 }
 
-type Handle = Db | Tx;
+/** Anything that can run a read: the pool, a transaction, or `withoutJit`'s handle. */
+type Handle = Pick<Db, 'execute'>;
 const num = (value: unknown) => Number(value ?? 0);
 /** Both rates are numeric(24,12): copied through Number, which U40 verified compares exactly. */
 const rateText = (value: unknown) => String(Number(value));
@@ -773,7 +775,10 @@ export async function repriceStale(
  * behind (the stated race). Settled history is left out, the plan's rule.
  */
 export async function staleDebtSummary(since: string): Promise<{ currency: string; month: string; count: number; usd: number }[]> {
-  const got = await candidates(db, { currency: null, win: null, since, lock: false });
+  // Company-wide, so JIT is off for it (0104's measurement, and ours: on
+  // 60k client rows 2.7 s with the compile, 1.5 s without — before the walk's
+  // per-cycle scans became one join).
+  const got = await withoutJit((exec) => candidates(exec, { currency: null, win: null, since, lock: false }));
   const groups = new Map<string, { currency: string; month: string; count: number; usd: number }>();
   for (const change of [
     ...got.costs,
@@ -808,20 +813,23 @@ export interface StalePayment {
 /** Read-only, on the pool: payments off their day's rate — listed, never re-priced (regression-6). */
 export async function stalePayments(currency: string | null, limit = 200): Promise<StalePayment[]> {
   const since = String(((await rows<{ v: string | null }>(db, sql`SELECT value #>> '{}' AS v FROM settings WHERE key = 'cost_kassa_since'`))[0]?.v) ?? '');
-  const found = await rows<{
-    id: string;
-    currency: string;
-    day: string;
-    kind: string;
-    owner_id: string | null;
-    label: string | null;
-    amount: string;
-    stored_rate: string;
-    day_rate: string | null;
-  }>(
-    db,
-    sql`SELECT * FROM (${frozenPaymentsSql({ currency, win: null, since: /^\d{4}-\d{2}-\d{2}$/.test(since) ? since : '', lock: false })}) p
-         ORDER BY p.day DESC LIMIT ${limit}`,
+  // Company-wide: JIT off, like the summary beside it on the same page.
+  const found = await withoutJit((exec) =>
+    rows<{
+      id: string;
+      currency: string;
+      day: string;
+      kind: string;
+      owner_id: string | null;
+      label: string | null;
+      amount: string;
+      stored_rate: string;
+      day_rate: string | null;
+    }>(
+      exec,
+      sql`SELECT * FROM (${frozenPaymentsSql({ currency, win: null, since: /^\d{4}-\d{2}-\d{2}$/.test(since) ? since : '', lock: false })}) p
+           ORDER BY p.day DESC LIMIT ${limit}`,
+    ),
   );
   return found.map((row) => ({
     id: row.id,

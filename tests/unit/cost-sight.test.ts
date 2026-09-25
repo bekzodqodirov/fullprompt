@@ -99,4 +99,14 @@ describe('mayVoidLedgerRow — who may ✖ which ledger row', () => {
       expect(mayVoidLedgerRow(row, { mayMoveTill: false, actorId: 'me' }), `${c.name} non-holder`).toBe(c.nonHolder);
     }
   });
+
+  it('a kurs farqi row is nobody’s ✖ — the kassa holder’s neither (0103: its cycle writes and voids it)', () => {
+    for (const createdBy of ['me', 'other']) {
+      for (const till of [{ accountId: null }, { accountId: 'till-1' }]) {
+        const row = { type: 'fx_diff', partnerId: null, createdBy, ...till };
+        expect(mayVoidLedgerRow(row, { mayMoveTill: true, actorId: 'me' }), `${createdBy} holder`).toBe(false);
+        expect(mayVoidLedgerRow(row, { mayMoveTill: false, actorId: 'me' }), `${createdBy} non-holder`).toBe(false);
+      }
+    }
+  });
 });

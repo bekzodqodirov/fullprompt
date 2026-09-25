@@ -91,7 +91,7 @@ describe('F7 — both sides of each door', () => {
 });
 
 describe('F8 — the legacy walk is paid only where it is shown (regression-8)', () => {
-  it('legacyFxCount has two callers, and pnlGaps is not one', () => {
+  it('legacyFxCount has ONE caller (the kurs-farqi page counts the rows it walked), and pnlGaps is not one', () => {
     const walk = (dir: string): string[] =>
       readdirSync(dir).flatMap((name) => {
         const path = join(dir, name);
@@ -102,10 +102,11 @@ describe('F8 — the legacy walk is paid only where it is shown (regression-8)',
       .filter((path) => !path.endsWith('finance/fx-legacy.ts'))
       .filter((path) => /legacyFxCount\(/.test(read(path)))
       .sort();
-    expect(callers).toEqual([
-      'src/app/(protected)/accounting/kurs-farqi/page.tsx',
-      'src/app/(protected)/accounting/pnl/page.tsx',
-    ]);
+    expect(callers).toEqual(['src/app/(protected)/accounting/pnl/page.tsx']);
+    // The list page walks once: the rows and the count come off one walk.
+    const list = read('src/app/(protected)/accounting/kurs-farqi/page.tsx');
+    expect(list.match(/legacyFxResidues\(/g) ?? []).toHaveLength(1);
+    expect(list).toContain('legacyFxCountOf(rows)');
     const reports = read('src/modules/wms/accounting/reports.ts');
     expect(slice(reports, 'export async function pnlGaps', '\nexport ')).not.toContain('legacyFx');
   });

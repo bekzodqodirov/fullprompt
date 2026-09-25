@@ -122,7 +122,8 @@ export interface FxCycle {
   usdAdjusts: { id: string; txDate: string; usd: number; kind: string | null }[];
 }
 
-type Handle = Db | Tx;
+/** Anything that can run a read: the pool, a transaction, or `withoutJit`'s handle. */
+type Handle = Pick<Db, 'execute'>;
 
 /** The owners predicate, as a join of cast literals — never a bound JS array. */
 export function ownersSql(ledger: FxLedger, ids: string[]): SQL {
@@ -138,6 +139,13 @@ export function ownersSql(ledger: FxLedger, ids: string[]): SQL {
  * The cycles of some owners, one statement per ledger — the reconciler, the
  * legacy list, the deploy script and the re-price plan all read this.
  * Dates come back as TEXT from a raw execute (#923): used only as strings.
+ *
+ * «Is there a USD row after the anchor that cancels it / an adjust nobody
+ * classified» is ONE join of the owners' live USD rows onto the closed
+ * cycles (`after`), not an EXISTS per cycle: that was a scan of the owner's
+ * rows for every cycle — measured on 60k client rows (17,560 cycles) at
+ * ~600 ms of the company-wide walk, the whole of what the «Kurs qoldiqlari»
+ * list and the P&L's count paid beyond the walk itself.
  */
 export async function fxCyclesFor(
   handle: Handle,
@@ -160,36 +168,40 @@ export async function fxCyclesFor(
              array_agg(w.id) AS row_ids
         FROM w
        GROUP BY w.owner_id, w.currency, w.cycle_no
+    ),
+    usd AS (
+      SELECT t.${L.owner} AS owner_id, t.id, t.type, t.tx_date, t.created_at, t.amount_usd,
+             ${partner ? sql`t.adjust_kind` : sql`NULL::text`} AS adjust_kind,
+             ${signedUsdSql(ledger)} * 100 AS cents
+        FROM ${L.table} t
+       WHERE t.voided_at IS NULL AND t.currency = 'USD' AND t.type <> 'fx_diff' AND ${owners}
+    ),
+    after AS (
+      SELECT c.owner_id, c.currency, c.cycle_no,
+             bool_or(abs(u.cents + c.residue_cents) <= 1) AS usd_offset,
+             bool_or(u.type = 'adjust' AND u.adjust_kind IS NULL) AS usd_adjust_open,
+             bool_or(u.type = 'adjust' AND u.adjust_kind = 'fx') AS usd_adjust_fx,
+             json_agg(json_build_object('id', u.id, 'txDate', u.tx_date::text, 'usd', u.amount_usd, 'kind', u.adjust_kind)
+                      ORDER BY u.tx_date, u.created_at)
+               FILTER (WHERE u.type = 'adjust' AND (u.adjust_kind IS NULL OR u.adjust_kind = 'fx')) AS usd_adjusts
+        FROM c
+        JOIN usd u ON u.owner_id = c.owner_id AND u.tx_date >= c.anchor_date::date
+       WHERE c.anchor_date IS NOT NULL
+       GROUP BY c.owner_id, c.currency, c.cycle_no
     )
     SELECT c.*,
            EXISTS (SELECT 1 FROM ${L.table} f
                     WHERE f.type = 'fx_diff' AND f.currency = c.currency AND f.fx_anchor_id = ANY(c.row_ids)) AS managed,
-           (c.anchor_date IS NOT NULL AND EXISTS (
-             SELECT 1 FROM ${L.table} u
-              WHERE u.${L.owner} = c.owner_id AND u.voided_at IS NULL AND u.currency = 'USD'
-                AND u.type <> 'fx_diff' AND u.tx_date >= c.anchor_date::date
-                AND abs(${signedUsdSql(ledger, 'u')} * 100 + c.residue_cents) <= 1
-           )) AS usd_offset,
+           coalesce(a.usd_offset, false) AS usd_offset,
            ${
              partner
-               ? sql`(c.anchor_date IS NOT NULL AND EXISTS (
-             SELECT 1 FROM partner_transactions a
-              WHERE a.partner_id = c.owner_id AND a.voided_at IS NULL AND a.currency = 'USD'
-                AND a.type = 'adjust' AND a.adjust_kind IS NULL AND a.tx_date >= c.anchor_date::date)) AS usd_adjust_open,
-           (c.anchor_date IS NOT NULL AND EXISTS (
-             SELECT 1 FROM partner_transactions a
-              WHERE a.partner_id = c.owner_id AND a.voided_at IS NULL AND a.currency = 'USD'
-                AND a.type = 'adjust' AND a.adjust_kind = 'fx' AND a.tx_date >= c.anchor_date::date)) AS usd_adjust_fx,
-           coalesce((SELECT json_agg(json_build_object('id', a.id, 'txDate', a.tx_date::text, 'usd', a.amount_usd, 'kind', a.adjust_kind)
-                                     ORDER BY a.tx_date, a.created_at)
-                       FROM partner_transactions a
-                      WHERE c.anchor_date IS NOT NULL AND a.partner_id = c.owner_id AND a.voided_at IS NULL
-                        AND a.currency = 'USD' AND a.type = 'adjust'
-                        AND (a.adjust_kind IS NULL OR a.adjust_kind = 'fx')
-                        AND a.tx_date >= c.anchor_date::date), '[]'::json) AS usd_adjusts`
+               ? sql`coalesce(a.usd_adjust_open, false) AS usd_adjust_open,
+           coalesce(a.usd_adjust_fx, false) AS usd_adjust_fx,
+           coalesce(a.usd_adjusts, '[]'::json) AS usd_adjusts`
                : sql`false AS usd_adjust_open, false AS usd_adjust_fx, '[]'::json AS usd_adjusts`
            }
       FROM c
+      LEFT JOIN after a ON a.owner_id = c.owner_id AND a.currency = c.currency AND a.cycle_no = c.cycle_no
      ORDER BY c.owner_id, c.currency, c.cycle_no
   `)) as unknown as {
     owner_id: string;

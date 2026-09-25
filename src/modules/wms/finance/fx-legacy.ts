@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
-import { db } from '../../platform/db/client';
+import { db, type Db } from '../../platform/db/client';
+import { withoutJit } from '../../platform/db/no-jit';
 import {
   clients,
   clientTransactions,
@@ -68,9 +69,13 @@ export function isLegacyCycle(c: Pick<FxCycle, 'closed' | 'residueCents' | 'mana
 
 const STATE_ORDER: Record<LegacyState, number> = { auto: 0, check: 1, closable: 2, hand: 3 };
 
-async function legacyCycles(ledger: FxLedger, owners: SQL): Promise<{ cycle: FxCycle; state: LegacyState }[]> {
-  const { since, autoOn } = await fxSettingsTx(db);
-  const cycles = await fxCyclesFor(db, ledger, owners, since);
+async function legacyCycles(
+  ledger: FxLedger,
+  owners: SQL,
+  exec: Pick<Db, 'execute'> = db,
+): Promise<{ cycle: FxCycle; state: LegacyState }[]> {
+  const { since, autoOn } = await fxSettingsTx(exec);
+  const cycles = await fxCyclesFor(exec, ledger, owners, since);
   return cycles.filter(isLegacyCycle).map((cycle) => ({ cycle, state: legacyState(cycle, autoOn) }));
 }
 
@@ -79,9 +84,11 @@ async function legacyCycles(ledger: FxLedger, owners: SQL): Promise<{ cycle: FxC
  * may see staff money (`includeStaff` = `maySeeStaffMoney`, M3a).
  */
 export async function legacyFxResidues(opts: { includeStaff: boolean }): Promise<LegacyFxRow[]> {
+  // The whole company's walk: JIT off (measured on 60k client rows, 1.2 s of
+  // which the compile was ~0.55 s; `platform/db/no-jit.ts`).
   const [clientCycles, partnerCycles] = await Promise.all([
-    legacyCycles('client', sql`true`),
-    legacyCycles('partner', sql`true`),
+    withoutJit((exec) => legacyCycles('client', sql`true`, exec)),
+    withoutJit((exec) => legacyCycles('partner', sql`true`, exec)),
   ]);
   const clientIds = [...new Set(clientCycles.map(({ cycle }) => cycle.ownerId))];
   const partnerIds = [...new Set(partnerCycles.map(({ cycle }) => cycle.ownerId))];
@@ -135,12 +142,17 @@ export async function legacyFxResidues(opts: { includeStaff: boolean }): Promise
 /**
  * What the P&L's gap note says: the legacy residues still waiting — `auto`,
  * `check` and `closable`, never `hand` (that one is already in the P&L as a
- * hand adjust). Called by the P&L page and the kurs-farqi page ONLY (fence
- * F8) — never from `pnlGaps`, whose other readers (the dashboard, the XLSX)
- * must not pay for a walk of the company's whole history.
+ * hand adjust). The walk is called by the P&L page ONLY (fence F8) — never
+ * from `pnlGaps`, whose other readers (the dashboard, the XLSX) must not pay
+ * for a walk of the company's whole history; the kurs-farqi page counts the
+ * rows it has already walked (`legacyFxCountOf`), not a second walk.
  */
 export async function legacyFxCount(opts: { includeStaff: boolean }): Promise<{ accounts: number; cycles: number; usd: number }> {
-  const rows = (await legacyFxResidues(opts)).filter((row) => row.state !== 'hand');
+  return legacyFxCountOf(await legacyFxResidues(opts));
+}
+
+export function legacyFxCountOf(listed: LegacyFxRow[]): { accounts: number; cycles: number; usd: number } {
+  const rows = listed.filter((row) => row.state !== 'hand');
   const accounts = new Set(rows.map((row) => `${row.ledger}|${row.ownerId}`)).size;
   const usd = Math.round(rows.reduce((sum, row) => sum + Math.abs(row.residueUsd), 0) * 100) / 100;
   return { accounts, cycles: rows.length, usd };
