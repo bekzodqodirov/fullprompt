@@ -130,7 +130,16 @@ describe('W5 — the pay fold', () => {
   });
 
   it('every submit greys itself while the press is in flight (M10)', () => {
-    expect(fold.match(/type="submit"/g)).toHaveLength(1);
+    // One PendingButton, plus the DISABLED default that stops Enter from
+    // pressing «yopish» on a short month (review of the recurring unit).
+    expect(fold.match(/type="submit"/g)).toHaveLength(2);
+    expect(fold).toContain(
+      '<button type="submit" disabled hidden aria-hidden="true" tabIndex={-1} data-testid="recurring-pay-no-enter" />',
+    );
+    const form = fold.indexOf('<form action={formAction} className="mt-2 space-y-2">');
+    const guard = fold.indexOf('data-testid="recurring-pay-no-enter"');
+    expect(guard).toBeGreaterThan(form);
+    expect(guard).toBeLessThan(fold.indexOf('name="partial" value="off"'));
     const button = body(fold, 'PendingButton');
     expect(button).toContain('useFormStatus()');
     expect(button).toContain('disabled={pending}');
@@ -251,7 +260,10 @@ describe('W12 — a recurring payment’s charge is not voided on the partner ca
     const page = read('src/app/(protected)/kontragentlar/[id]/page.tsx');
     // Widened after the review: EVERY expense's debt is cancelled on the
     // expense, the recurring month's included, so the guard is the expense.
-    const guard = page.indexOf('{tx.expenseId && !tx.voidedAt ? (');
+    // …unless the expense is already voided: then the charge is the half a
+    // split void left behind, and its ✕ is the only door (review).
+    const guard = page.indexOf('{tx.expenseId && !tx.voidedAt && !expenseVoided ? (');
+    expect(fn).toContain('if (source && !source.voidedAt) {');
     const at = page.indexOf('<VoidTx');
     expect(guard, 'the recurring-charge guard').toBeGreaterThan(0);
     expect(at).toBeGreaterThan(guard);

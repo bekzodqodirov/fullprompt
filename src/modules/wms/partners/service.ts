@@ -532,12 +532,21 @@ export async function voidPartnerTx(id: string, reason: string, ctx: AuditContex
   // behind. Refused, never voided in-line — that would bypass the expense
   // door's pair rules and its `finance.expenses` gate. On top of, not
   // instead of, `firmDebtVoidRefusal` at the action (who may cancel it).
-  if (row.expenseId) {
-    const [source] = await db
-      .select({ recurringId: expenses.recurringId })
-      .from(expenses)
-      .where(eq(expenses.id, row.expenseId));
-    if (source?.recurringId) throw new PartnerError('recurring_payment');
+  //
+  // Except when the expense is ALREADY voided (review of the lead's fixes):
+  // `voidExpense` claims the expense and voids its charge in a second
+  // commit, so a failure between the two left a live firm debt behind a
+  // voided payment — the expense door answers `already_voided`, and a
+  // refusal here would have made that debt unvoidable from any door. The
+  // charge is then the half that died, and it is voided like any other.
+  const [source] = row.expenseId
+    ? await db
+        .select({ recurringId: expenses.recurringId, voidedAt: expenses.voidedAt })
+        .from(expenses)
+        .where(eq(expenses.id, row.expenseId))
+    : [];
+  if (source && !source.voidedAt) {
+    if (source.recurringId) throw new PartnerError('recurring_payment');
     // …and the same for ANY expense a firm paid (review of the lead's fixes):
     // unlinking the payer left a cash-kind expense with no kassa and no payer
     // — the one-sided row the expense door refuses (U13, 5a) — and the
@@ -737,6 +746,9 @@ export async function partnerLedger(partnerId: string, limit = 200) {
       authorName: users.fullName,
       /** A recurring month's payment (0106): voided on the expense, never here. */
       expenseRecurringId: expenses.recurringId,
+      // A charge whose expense is already voided is the half a split void
+      // left behind: the card offers its ✕ (voidPartnerTx takes it).
+      expenseVoided: sql<boolean>`${expenses.voidedAt} IS NOT NULL`,
     })
     .from(partnerTransactions)
     .leftJoin(moneyAccounts, eq(partnerTransactions.accountId, moneyAccounts.id))

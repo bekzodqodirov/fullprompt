@@ -784,11 +784,24 @@ export async function updateRecurring(
     // O2). The counter's own clause, under the lock, so what blocks here is
     // exactly what the home counts. Only months whose day has not come may
     // drop — the ended-contract case.
-    if (locked.active && !patch.active) {
+    //
+    // Open months store no amount or day of their own — they are read live
+    // off the template — so a DAY, AMOUNT or CURRENCY edit re-dates and
+    // re-prices months already owed: moving the day past today took the
+    // month off the counter and the Balans, after which the stop passed and
+    // the debt was gone; a raise made an owed month read the new salary
+    // (review of the recurring unit). Same clause, same lock: while a month
+    // whose day has come is open, those three wait until it is closed.
+    const reshapes =
+      Number(locked.amount) !== Number(patch.amount) ||
+      locked.dayOfMonth !== patch.dayOfMonth ||
+      locked.currency !== currency;
+    if ((locked.active && !patch.active) || (locked.active && reshapes)) {
       const [owed] = await tx.execute<{ owed: boolean }>(
         sql`SELECT EXISTS (${dueNowSql(today, id)}) AS owed`,
       );
-      if (owed?.owed) throw new AccountingError('recurring_has_arrears');
+      if (owed?.owed && !patch.active) throw new AccountingError('recurring_has_arrears');
+      if (owed?.owed) throw new AccountingError('recurring_has_arrears_edit');
     }
     // A reactivation starts the window at today's month: the months it was
     // stopped are not owed. Months that carried a posting stay reachable

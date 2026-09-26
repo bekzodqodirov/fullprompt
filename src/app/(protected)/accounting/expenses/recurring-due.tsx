@@ -143,6 +143,15 @@ export function RecurringPayFold({
         {cash ? t('recurringPay') : t('recurringRecord')}
       </summary>
       <form action={formAction} className="mt-2 space-y-2">
+        {needsChoice && (
+          // Enter (or a phone keyboard's «Go») presses a form's FIRST submit
+          // button, and the first one here is «Shu summa bilan yopish» — so a
+          // short month closed silently as paid, which O3 exists to stop
+          // (review of the recurring unit). A disabled default button makes
+          // implicit submission do nothing: a short payment takes one of the
+          // two named presses.
+          <button type="submit" disabled hidden aria-hidden="true" tabIndex={-1} data-testid="recurring-pay-no-enter" />
+        )}
         <input type="hidden" name="recurringId" value={recurringId} />
         <input type="hidden" name="month" value={month} />
         {cash ? (

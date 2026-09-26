@@ -437,6 +437,24 @@ describe('one predicate for the counter, the list, the money and the stop guard 
     await skipRecurring({ recurringId: p.id, month: MONTH, reason: 'shartnoma tugadi' }, ctx());
     await updateRecurring(p.id, { amount: 40, dayOfMonth: 1, active: false }, ctx());
 
+    // Nor does a reshaping EDIT take the owed month off (review): the day
+    // moved past today, the amount or the currency changed — each refused
+    // while a month whose day has come is open, and the month still owed.
+    const r = await template({ categoryId: await kind('r14r'), dayOfMonth: 1, amount: 40 });
+    for (const patch of [
+      { amount: 40, dayOfMonth: 28, active: true },
+      { amount: 55, dayOfMonth: 1, active: true },
+    ]) {
+      await expect(updateRecurring(r.id, patch, ctx())).rejects.toMatchObject({ code: 'recurring_has_arrears_edit' });
+    }
+    expect((await listed(r.id)).some((row) => row.month === MONTH_START && row.dueNow)).toBe(true);
+    await expect(updateRecurring(r.id, { amount: 40, dayOfMonth: 1, active: false }, ctx())).rejects.toMatchObject({
+      code: 'recurring_has_arrears',
+    });
+    // Closed, the same edits go through.
+    await skipRecurring({ recurringId: r.id, month: MONTH, reason: 'shartnoma o‘zgardi' }, ctx());
+    await updateRecurring(r.id, { amount: 55, dayOfMonth: 28, active: true }, ctx());
+
     const q = await template({ categoryId: await kind('r14q'), dayOfMonth: 1, amount: 40, firstMonth: 'next' });
     await updateRecurring(q.id, { amount: 40, dayOfMonth: 1, active: false }, ctx());
     expect(await listed(q.id)).toHaveLength(0);

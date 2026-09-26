@@ -1778,6 +1778,7 @@
     "recurringErrNotDue": "No payment is open for this month (the cost is stopped, has not started, or the month is too far ahead).",
     "recurringErrReason": "Say why.",
     "recurringErrArrears": "Before stopping, close what is due and unpaid: pay it, link it or mark «Not this month».",
+    "recurringErrArrearsEdit": "Before changing the amount, day or currency, close the month that is due and unpaid: pay it, link it or mark «Not this month» — otherwise that month would read the new amount/day.",
     "recurringErrTill": "The cash box does not exist or is closed.",
     "recurringErrPartner": "The counterparty does not exist or is closed.",
     "recurringErrCandidate": "A hand-typed payment that may be this month's is listed under the row. If it is — press «Link»; if not — tick «record a new one anyway».",

@@ -1778,6 +1778,7 @@
     "recurringErrNotDue": "Bu oy uchun to‘lov ochilmagan (to‘xtatilgan, hali boshlanmagan yoki juda uzoq oy).",
     "recurringErrReason": "Sababini yozing.",
     "recurringErrArrears": "To‘xtatishdan oldin kuni kelgan to‘lanmaganlarni yoping: to‘lang, bog‘lang yoki «Bu oy yo‘q» deb belgilang.",
+    "recurringErrArrearsEdit": "Summa, kun yoki valyutani o‘zgartirishdan oldin kuni kelgan to‘lanmagan oyni yoping: to‘lang, bog‘lang yoki «Bu oy yo‘q» deb belgilang — aks holda o‘sha oy yangi summa/kun bilan o‘qiladi.",
     "recurringErrTill": "Kassa topilmadi yoki yopilgan.",
     "recurringErrPartner": "Kontragent topilmadi yoki yopilgan.",
     "recurringErrCandidate": "Qo‘lda kiritilgan, shu oyga tegishli bo‘lishi mumkin bo‘lgan to‘lov bor (qator ostida). O‘sha bo‘lsa — «Bog‘lash»ni bosing; boshqa to‘lov bo‘lsa — «baribir yangisini yozish»ni belgilang.",

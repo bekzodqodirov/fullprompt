@@ -424,12 +424,15 @@ describe('U06 (owner a) — a kind\u2019s «Naqd» mark is fixed once it has exp
 });
 
 describe('U21 — no recurring month is paid before it has begun', () => {
-  it('refuses next year\u2019s January before writing a row', async () => {
+  it('refuses a month half a year out before writing a row', async () => {
     // Rewritten, not deleted: this pinned the monthly run's refusal of a
     // month not yet begun. The run is gone (owner Q6); its successor is the
     // pay door, whose months run through NEXT month only — an advance for
     // the month after is refused in words, before a row is written.
-    const month = `${Number(latestTxDate().slice(0, 4)) + 1}-01`;
+    // Next year's JUNE, never its January: from December 1st that January IS
+    // next month — inside the window — and the test went red every December
+    // (review; R5's shape, a test computing its own calendar).
+    const month = `${Number(latestTxDate().slice(0, 4)) + 1}-06`;
     const template = await saveRecurring(
       { categoryId: cashCategoryId, amount: 5, currency: 'USD', dayOfMonth: 5, accountId: usdTillId, active: true, firstMonth: 'next' },
       ctx(),
@@ -561,6 +564,20 @@ describe('U34 (owner B) — a firm-paid cost is its typist\u2019s until the firm
     });
     const [still] = await db.select({ partnerId: expenses.partnerId }).from(expenses).where(eq(expenses.id, expense.id));
     expect(still!.partnerId).toBe(partnerId);
+
+    // The split void (review): the expense's claim committed, its charge's
+    // did not. The expense door now answers already_voided, so the charge is
+    // the half that died — and the card's own void takes it.
+    await db
+      .update(expenses)
+      .set({ voidedAt: new Date(), voidedBy: ctx().actorId, voidReason: 'yarim' })
+      .where(eq(expenses.id, expense.id));
+    await voidPartnerTx(expenseCharge!.id, 'qolgan yarmi', ctx());
+    const [gone] = await db
+      .select({ voidedAt: partnerTransactions.voidedAt })
+      .from(partnerTransactions)
+      .where(eq(partnerTransactions.id, expenseCharge!.id));
+    expect(gone!.voidedAt).not.toBeNull();
   });
 });
 

@@ -292,7 +292,7 @@ export default async function PartnerCardPage({
             </tr>
           </thead>
           <tbody data-testid="partner-ledger">
-            {ledger.map(({ tx, accountName, batchCode, authorName, expenseRecurringId }) => {
+            {ledger.map(({ tx, accountName, batchCode, authorName, expenseRecurringId, expenseVoided }) => {
               const usd = Number(tx.amountUsd);
               // The same predicate the BALANCE uses, not a second opinion.
               const raises = raisesBalance(tx.type, usd);
@@ -358,7 +358,7 @@ export default async function PartnerCardPage({
                         debt with it and re-opens the month; the service
                         refuses it here, and a refusal this form cannot
                         print must not be offered at all. */}
-                    {tx.expenseId && !tx.voidedAt ? (
+                    {tx.expenseId && !tx.voidedAt && !expenseVoided ? (
                       // Any expense's debt is cancelled on the EXPENSE (the
                       // service refuses it here): the recurring month's note
                       // says where, and so does every other expense's.

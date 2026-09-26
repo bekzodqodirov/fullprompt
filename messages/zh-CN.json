@@ -1778,6 +1778,7 @@
     "recurringErrNotDue": "本月没有待付款（已停用、尚未开始或月份太远）。",
     "recurringErrReason": "请填写原因。",
     "recurringErrArrears": "停用前请先处理已到期未付的项目：付款、关联或标记“本月不付”。",
+    "recurringErrArrearsEdit": "修改金额、日期或币种前，请先处理已到期未付的月份：付款、关联或标记“本月不付”——否则该月会按新的金额/日期计算。",
     "recurringErrTill": "账户不存在或已停用。",
     "recurringErrPartner": "合作方不存在或已停用。",
     "recurringErrCandidate": "行下列出了可能属于本月的手工录入付款。若是同一笔——点击“关联”；若不是——勾选“仍然新建”。",

@@ -18,6 +18,7 @@ export const RECURRING_ERRORS: Record<string, string> = {
   recurring_already_paid: 'accounting.recurringErrAlreadyPaid',
   recurring_skipped: 'accounting.recurringErrSkipped',
   recurring_has_arrears: 'accounting.recurringErrArrears',
+  recurring_has_arrears_edit: 'accounting.recurringErrArrearsEdit',
   recurring_candidate_exists: 'accounting.recurringErrCandidate',
   recurring_partial_unclear: 'accounting.recurringErrPartialUnclear',
   recurring_not_candidate: 'accounting.recurringErrNotCandidate',

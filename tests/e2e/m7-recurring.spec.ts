@@ -89,6 +89,10 @@ test('a template waits on the list; a short payment asks, the rest closes the mo
   await expect(dueRow(page).getByTestId('recurring-pay-payer')).toHaveValue(/^till:/);
   await dueRow(page).getByTestId('recurring-pay-amount').fill('650');
   await expect(dueRow(page).getByTestId('recurring-pay-close')).toBeVisible();
+  // Enter in a short amount closes nothing (review: it pressed «yopish»).
+  await dueRow(page).getByTestId('recurring-pay-amount').press('Enter');
+  await page.waitForTimeout(800);
+  await expect(dueRow(page).getByTestId('recurring-pay-partial')).toBeVisible();
   await dueRow(page).getByTestId('recurring-pay-partial').click();
   await expect(dueRow(page).getByTestId('recurring-paid-so-far')).toContainText('650');
 
