@@ -1538,7 +1538,11 @@
     "pickupPhase_arrived": "omborga yetgan bo‘lishi kerak",
     "filterClient": "Faqat mijoz yuki",
     "filterMissing": "«{code}» kodli mijoz topilmadi — butun xarita ko‘rsatilyapti",
-    "filterClear": "Hammasini ko‘rsatish"
+    "filterClear": "Hammasini ko‘rsatish",
+    "cargoLoading": "Yuk ro‘yxati yuklanmoqda…",
+    "cargoFailed": "Yuk ro‘yxatini olib bo‘lmadi",
+    "cargoReceived": "qabul {date}",
+    "cargoMore": "yana {n} ta tovar — to‘liq ro‘yxat ostatkada"
   },
   "accounting": {
     "title": "Boshqaruv hisobi",

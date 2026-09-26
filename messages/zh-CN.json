@@ -1538,7 +1538,11 @@
     "pickupPhase_arrived": "应已到仓库",
     "filterClient": "仅显示该客户的货物",
     "filterMissing": "未找到代码为“{code}”的客户——显示全部地图",
-    "filterClear": "显示全部"
+    "filterClear": "显示全部",
+    "cargoLoading": "正在加载货物清单…",
+    "cargoFailed": "无法加载货物清单",
+    "cargoReceived": "收货 {date}",
+    "cargoMore": "还有 {n} 项 — 完整列表见库存"
   },
   "accounting": {
     "title": "管理会计",

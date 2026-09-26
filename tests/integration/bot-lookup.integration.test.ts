@@ -15,6 +15,7 @@ import { confirmReceipt } from '@/modules/wms/receipts/service';
 import { recordVerdict, submitPlan } from '@/modules/wms/planning/service';
 import { departBatch, ingestLoadScans } from '@/modules/wms/scanning/service';
 import { botLookup, botLookupAnswer, type BotActor } from '@/modules/wms/bot/lookup';
+import { placeCargo } from '@/modules/wms/tracking/place-cargo';
 import { unansweredChats, unansweredText } from '@/modules/wms/crm/unanswered';
 
 /**
@@ -239,6 +240,40 @@ describe('the bot answers "where is it?"', () => {
     expect(seller?.mapClientCode).toBeUndefined();
     // A box or a truck answer carries no client map.
     expect((await botLookupAnswer(boss(), batch!.code))?.mapClientCode).toBeUndefined();
+  });
+
+  it('a warehouse row wears 🏭, and the phone goes only to whoever may read it (2026-09-26)', async () => {
+    await makeLot(1);
+    await db.update(clients).set({ phones: ['+998901112233'] }).where(eq(clients.id, clientId));
+    // A warehouse hand looking up a carton does not get the customer's number.
+    const hand = await botLookupAnswer(boss(), clientCode);
+    expect(hand?.text).toContain('· 🏭 ');
+    expect(hand?.text).not.toContain('+998901112233');
+    expect(hand?.phones).toBeUndefined();
+    // The client book's reader does, beside the name and as a chat button.
+    const book = await botLookupAnswer(
+      { ...boss(), permissions: new Set(['clients.manage', 'plans.manage']) },
+      clientCode,
+    );
+    expect(book?.text).toContain(`👤 ${clientCode} · Bot lookup mijoz · 📞 +998901112233`);
+    expect(book?.phones).toEqual(['+998901112233']);
+    // …and so does the client's own seller, for their own client only.
+    const own = await botLookupAnswer({ ...boss(), permissions: new Set(['clients.view_own']) }, clientCode);
+    expect(own?.phones).toEqual(['+998901112233']);
+  });
+
+  it('the staff map’s popup lists the place’s cargo lot by lot, narrowed to one client', async () => {
+    const lot = await makeLot(2);
+    const all = await placeCargo({ warehouseId: originId });
+    expect(all.total).toBeGreaterThanOrEqual(1);
+    const mine = await placeCargo({ warehouseId: originId }, clientCode.toLowerCase());
+    const row = mine.lots.find((l) => l.lotId === lot.lotId)!;
+    expect(row).toMatchObject({ clientCode, goods: 'Chexol', boxes: 2, kg: 10, m3: 0.048 });
+    // The photograph the prixod was confirmed with is the thumbnail.
+    expect(row.photoId).not.toBeNull();
+    expect(Number.isNaN(new Date(row.receivedAt).getTime())).toBe(false);
+    // Another client's filter sees none of it.
+    expect((await placeCargo({ warehouseId: originId }, 'NOBODY1')).lots).toEqual([]);
   });
 
   it('nonsense and too-short input answer nothing at all', async () => {

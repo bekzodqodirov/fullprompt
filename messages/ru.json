@@ -1538,7 +1538,11 @@
     "pickupPhase_arrived": "должна быть на складе",
     "filterClient": "Только груз клиента",
     "filterMissing": "Клиент с кодом «{code}» не найден — показана вся карта",
-    "filterClear": "Показать всё"
+    "filterClear": "Показать всё",
+    "cargoLoading": "Загружаю список груза…",
+    "cargoFailed": "Не удалось получить список груза",
+    "cargoReceived": "принят {date}",
+    "cargoMore": "ещё {n} товаров — полный список в остатке"
   },
   "accounting": {
     "title": "Управленческий учёт",

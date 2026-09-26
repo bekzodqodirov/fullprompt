@@ -429,7 +429,7 @@ export async function botActorFor(chatId: bigint): Promise<
 export async function lookupFromBot(
   chatId: bigint,
   query: string,
-): Promise<{ text: string; mapClientCode?: string } | null> {
+): Promise<{ text: string; mapClientCode?: string; phones?: string[] } | null> {
   const actor = await botActorFor(chatId);
   if (!actor) return null;
   const { botLookupAnswer } = await import('../../wms/bot/lookup');

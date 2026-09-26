@@ -1538,7 +1538,11 @@
     "pickupPhase_arrived": "should be at the warehouse",
     "filterClient": "Only this client’s cargo",
     "filterMissing": "No client with code “{code}” — showing the whole map",
-    "filterClear": "Show everything"
+    "filterClear": "Show everything",
+    "cargoLoading": "Loading the cargo list…",
+    "cargoFailed": "Could not load the cargo list",
+    "cargoReceived": "received {date}",
+    "cargoMore": "{n} more items — the full list is in stock"
   },
   "accounting": {
     "title": "Management accounting",
