@@ -72,8 +72,18 @@ export async function offTruckPrices(exec: Exec, scope: OffTruckScope): Promise<
 
   const rows = (await exec.execute(sql`
     WITH
+    -- \`priced_at\` is when the price on this pair was last DECIDED, not the
+    -- row's clock: moveCharge and the lost-cargo door keep \`created_at\` for
+    -- the kurs farqi order (Q18), so after the accountant split A's price
+    -- correctly A's remaining part still pre-dated the drop and the banner,
+    -- the card's chip and the «🚚 Ko'chirish» door never cleared (review of
+    -- the gate, U24). The re-post's own audit row carries the decision.
     ot_priced AS (
-      SELECT ct.batch_id, ct.client_id, sum(ct.amount_usd) AS charged_usd, min(ct.created_at) AS priced_at
+      SELECT ct.batch_id, ct.client_id, sum(ct.amount_usd) AS charged_usd,
+             min(greatest(ct.created_at, coalesce((
+               SELECT max(pa.created_at) FROM audit_log pa
+                WHERE pa.entity_type = 'client_transaction' AND pa.entity_id = ct.id AND pa.action = 'create'
+                  AND (pa.after ? 'movedFrom' OR pa.after ? 'repricedFrom')), ct.created_at))) AS priced_at
         FROM client_transactions ct
         JOIN batches bt ON bt.id = ct.batch_id
         JOIN warehouses o ON o.id = bt.origin_warehouse_id

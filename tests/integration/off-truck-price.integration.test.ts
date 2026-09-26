@@ -534,7 +534,7 @@ describe('the door (U31) and «🚚 Ko‘chirish»', () => {
     );
   });
 
-  it('12: a split — Q2 before the find: 480 stays on A, 120 goes to B, the dollars add up to the cent and A still warns', async () => {
+  it('12: a split — Q2 before the find: 480 stays on A, 120 goes to B, the dollars add up to the cent and the warning CLEARS', async () => {
     const o = await mkClient('O');
     const lo = await mkLot(o.id, 5, W.yw);
     const a = await truck([{ lotId: lo.lotId, take: 5 }], lo.codes, W.yw, W.tas);
@@ -560,6 +560,12 @@ describe('the door (U31) and «🚚 Ko‘chirish»', () => {
       ),
     ).toBe('move_sum_mismatch');
 
+    // Before the split A warns: its price was typed before the find.
+    const warned = (await offTruckPrices(db, { batchIds: [a.id] })).find((row) => row.clientId === o.id)!;
+    expect(warned).toMatchObject({ kind: 'partial', dropCause: 'found_back', chargedUsd: 600 });
+    expect(warned.droppedTo).toEqual([{ batchId: b.id, code: b.code, boxes: 1 }]);
+    await sleep(5);
+
     const { ids } = await moveCharge(
       {
         txId: price.id,
@@ -574,11 +580,13 @@ describe('the door (U31) and «🚚 Ko‘chirish»', () => {
     expect(parts.map((row) => Number(row.amountUsd)).reduce((x, y) => x + y, 0)).toBe(600);
     expect(parts.every((row) => row.txDate === DAY)).toBe(true);
     expect(parts.every((row) => row.createdAt.getTime() === price.createdAt.getTime())).toBe(true);
-    // A's own price still predates the find — the warning stays until the
-    // found carton's share has left it for good.
-    const onA = (await offTruckPrices(db, { batchIds: [a.id] })).find((row) => row.clientId === o.id)!;
-    expect(onA).toMatchObject({ kind: 'partial', dropCause: 'found_back', chargedUsd: 480 });
-    expect(onA.droppedTo).toEqual([{ batchId: b.id, code: b.code, boxes: 1 }]);
+    // The split IS the accountant's answer (review, U24): A's remaining part
+    // keeps its row clock for the kurs farqi order, but it was DECIDED after
+    // the find — the banner, the chip and the door all stop asking. Before,
+    // it warned for ever, and the door's default moved the whole 480 too.
+    const onA = (await offTruckPrices(db, { batchIds: [a.id] })).find((row) => row.clientId === o.id);
+    expect(onA?.kind ?? 'none').not.toBe('partial');
+    expect(onA?.droppedTo ?? []).toEqual([]);
   });
 
   it('13: a split can CLOSE a so‘m cycle between its parts — the kurs farqi is written in the same press (0103, F2)', async () => {
