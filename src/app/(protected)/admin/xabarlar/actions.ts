@@ -41,7 +41,7 @@ export async function sendBroadcastAction(input: {
       { actorId: actor.id, ...meta },
     );
     await enqueue(JOB_BROADCAST, { broadcastId: made.id });
-    revalidatePath('/xabarlar');
+    revalidatePath('/admin/xabarlar');
     return { ok: true, total: made.total };
   } catch (err) {
     if (err instanceof BroadcastError) return { error: err.code };

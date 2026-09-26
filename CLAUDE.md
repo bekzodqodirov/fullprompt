@@ -1811,7 +1811,7 @@ only marked trucks, the attention list reads all); the seller's upsale is paid
 shows the deal price scaled to the truck with a >5 % confirmation
 (`finance/deal-price-hint.ts`, law 4 gated); partner terms + limit with FIFO
 due dates and once-guarded reminders (0108); the P&L's five cards with ▲▼ vs
-`priorPeriod`; client birthday/sector/cargo kinds, `/xabarlar` broadcast
+`priorPeriod`; client birthday/sector/cargo kinds, `/admin/xabarlar` broadcast
 (super_admin ROLE, one message per CHAT, pg-boss batches of 20) and birthday
 alerts (0109); the Mini App map (`cabinetMap` — never a batch code, never
 another client); the staff bot's client answer with road + days and a

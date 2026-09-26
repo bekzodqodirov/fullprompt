@@ -71,7 +71,7 @@ export const HUB_DOORS: HubDoor[] = [
   // The Telegram message to clients (0109) — the super admin's alone, his 6a.
   // `platform.roles.manage` is the one grant only a super admin holds, so the
   // tile never teases an admin the page (`mayBroadcast`, a ROLE) bounces.
-  { href: '/xabarlar', label: 'broadcast.title', icon: 'chat', allow: ['platform.roles.manage'] },
+  { href: '/admin/xabarlar', label: 'broadcast.title', icon: 'chat', allow: ['platform.roles.manage'] },
 ];
 
 /** The doors this person may actually open. */

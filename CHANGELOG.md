@@ -22,7 +22,7 @@ qoy / 10 togri / 11 … / 12 sen aytgandek / 13 togri»).
    kelmagan», to'lov yo'q.
 5. **«Berishga ruxsat»** — chatda tushuntirildi.
 6. **Mijozlarga tizimdan xabar yuborish** — yangi «Xabarlar» sahifasi
-   (Boshqaruv ichida, faqat super admin uchun):
+   (Boshqaruv → «Xabarlar», faqat super admin uchun):
    - hammaga yoki tanlanganlarga yuboriladi: soha, yuk turi, til, sotuvchi
      yoki kodlar bo'yicha;
    - yuborishdan oldin nechta chatga ketishi ko'rsatiladi;

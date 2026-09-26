@@ -137,7 +137,7 @@ export default async function HomePage() {
             {birthdays.map((b) => (
               <Link
                 key={b.id}
-                href={broadcaster ? `/xabarlar?kod=${encodeURIComponent(b.clientCode)}` : `/admin/clients/${b.id}`}
+                href={broadcaster ? `/admin/xabarlar?kod=${encodeURIComponent(b.clientCode)}` : `/admin/clients/${b.id}`}
                 className="font-semibold text-ink-900 underline decoration-good/40"
               >
                 {b.clientCode} · {b.name}

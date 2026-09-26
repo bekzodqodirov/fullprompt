@@ -86,7 +86,7 @@ export default async function BroadcastPage({
                   <span className="text-xs text-ink-500">{t('age', { n: ageOn(b.birthday, today)! })}</span>
                 )}
                 <Link
-                  href={`/xabarlar?kod=${encodeURIComponent(b.clientCode)}`}
+                  href={`/admin/xabarlar?kod=${encodeURIComponent(b.clientCode)}`}
                   className="ml-auto text-xs font-semibold text-brand-700"
                   data-testid="broadcast-congratulate"
                 >
@@ -166,7 +166,7 @@ export default async function BroadcastPage({
             {t('apply')}
           </button>
           {filtered && (
-            <Link href="/xabarlar" className="text-sm text-brand-700">
+            <Link href="/admin/xabarlar" className="text-sm text-brand-700">
               {t('clear')}
             </Link>
           )}

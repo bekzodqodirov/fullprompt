@@ -90,7 +90,7 @@ export async function alertBirthdays(day = tashkentDay()): Promise<number> {
       type: 'ClientBirthday',
       text:
         `🎂 Bugun ${client.clientCode} — ${client.name} tug'ilgan kuni${age ? ` (${age} yosh)` : ''}. Tabriklab qo'ying!\n` +
-        `${appUrl}/xabarlar?kod=${encodeURIComponent(client.clientCode)}`,
+        `${appUrl}/admin/xabarlar?kod=${encodeURIComponent(client.clientCode)}`,
     });
     await db.update(clients).set({ birthdayAlertedOn: day }).where(eq(clients.id, client.id));
     sent += 1;
