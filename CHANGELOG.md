@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## Skladchilar ham mijoz telefonini ko'radi — 2026-09-26 (kechqurun)
+
+Migratsiya yo'q, ledger **111** bo'lib qoladi. Deploy tugaganini build vaqtidan
+biling: `curl -s https://gsrwms.uz/api/version`.
+
+1. **Botda mijoz kodi yozilganda skladchiga ham telefon chiqadi.** Qoida
+   shunday: shu mijozning yuki skladchining omborida turgan bo'lsa yoki uning
+   omboriga keladigan/ketadigan mashinada bo'lsa, ism yonida telefon va pastda
+   «💬 +998…» tugmasi chiqadi. Mijozning yuki skladchining yonida bo'lmasa,
+   telefon chiqmaydi — bot mijozlar bazasini varaqlaydigan joyga aylanib
+   qolmasligi uchun. Admin, sotuv rahbari va mijozning o'z sotuvchisi
+   telefonni oldingidek har doim ko'radi.
+
 ## Deploydan keyingi 5 ta bandingiz — 2026-09-26 (kechqurun)
 
 Bu raundning o'z migratsiyasi yo'q. Lekin undan oldin «Saytdan kelgan so'rov»

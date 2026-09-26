@@ -76,7 +76,7 @@ export interface BotAnswer {
    * The client's phones, for a «💬» button that opens a Telegram chat with
    * the number (the owner, 2026-09-26: «klient ismi yonida telefon nomi
    * chiqsin … linkga ohshab chiqsin chatga otib ketgani»). Only for somebody
-   * the client card would show a phone to.
+   * `maySeePhones` admits.
    */
   phones?: string[];
 }
@@ -115,13 +115,21 @@ export async function botLookupAnswer(actor: BotActor, raw: string): Promise<Bot
 }
 
 /**
- * May this person read a client's phone? The client book's own answer: the
+ * May this person read a client's phone? The client book's own answer — the
  * whole book for `clients.manage` or `crm.leads.view_all`, one's own clients
- * for a seller. A warehouse hand looking up where a carton is does not get a
- * customer's number (round 91's scoping, and the handover screen's rule that
- * a phone belongs to whoever is collecting).
+ * for a seller — plus the warehouse's (the owner, 2026-09-26: «skladchilarga
+ * ham kerak»): whoever can see this client's cargo right now, on their floor
+ * or on a truck to or from it, may ring the person the cargo belongs to.
+ * `cargoInReach` is the answer's own visible Σ, so the phone follows exactly
+ * the cargo the reply already shows — a client with nothing near the hand
+ * stays a code without a number.
  */
-function maySeePhones(actor: BotActor, salesManagerId: string | null): boolean {
+function maySeePhones(
+  actor: BotActor,
+  salesManagerId: string | null,
+  cargoInReach: boolean,
+): boolean {
+  if (cargoInReach) return true;
   if (actor.permissions.has('clients.manage') || actor.permissions.has('crm.leads.view_all')) {
     return true;
   }
@@ -504,7 +512,7 @@ async function lookupClient(
       ? `Jami: ${totalN} karobka · ${totalKg.toFixed(1)} kg · ${totalM3.toFixed(3)} m³\n`
       : '';
 
-  const phones = maySeePhones(actor, client.salesManagerId)
+  const phones = maySeePhones(actor, client.salesManagerId, totalN > 0)
     ? (Array.isArray(client.phones) ? client.phones : [])
         .filter((p): p is string => typeof p === 'string' && p.trim().length > 0)
         .map((p) => p.trim())

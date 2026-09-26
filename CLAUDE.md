@@ -1859,7 +1859,8 @@ coordinates, Telegram swipes held while open) and `linkPhoneSiblings` joining
 one person's codes when the cabinet opens (never a revoked one); the staff
 /map popup lists the place's lots from `/api/map/cargo` (`placeCargo`); the
 bot's client answer prints phones + «💬» `t.me/+` buttons under the client
-book's rule (never to a warehouse hand) and 🏭 on warehouse rows;
+book's rule and 🏭 on warehouse rows (his «skladchilarga ham kerak» then added the
+warehouse: whoever sees the client's cargo in the answer sees the phone, #1070);
 /accounting/expenses got its own nav row (`OWN_ROW_PAGES`); the broadcast
 searches the GOODS of a client's non-voided prixods and lets the office
 un-tick; the pricing page shows EVERY deal of a client's cargo with totals and
