@@ -52,6 +52,10 @@ export function RoleCard(props: RoleCardProps) {
   // the tannarx in silence. Said on the card, as the same function decides
   // it — computed from what is SAVED, not from unsaved ticks.
   const blind = moneyHidden('results', new Set(props.grants));
+  // The lattice nests: a VED who also holds «Xarajatlar» (finance.expenses)
+  // is a kassa holder and keeps the kassa — the card must not tell the owner
+  // otherwise (review of the VED unit).
+  const kassaToo = moneyHidden('kassa', new Set(props.grants));
 
   return (
     <div className="card space-y-2" data-testid={`role-${props.code}`}>
@@ -79,7 +83,7 @@ export function RoleCard(props: RoleCardProps) {
         )}
         {blind && (
           <span className="chip-warn" data-testid={`money-hidden-${props.code}`}>
-            {t('moneyHidden')}
+            {t(kassaToo ? 'moneyHidden' : 'moneyHiddenResults')}
           </span>
         )}
         <button
@@ -92,7 +96,9 @@ export function RoleCard(props: RoleCardProps) {
         </button>
       </div>
 
-      {blind && <p className="text-xs text-ink-500">{t('moneyHiddenHint')}</p>}
+      {blind && (
+        <p className="text-xs text-ink-500">{t(kassaToo ? 'moneyHiddenHint' : 'moneyHiddenHintKassa')}</p>
+      )}
 
       {locked && open && (
         <p className="rounded-lg bg-warn/10 p-2 text-sm font-semibold text-warn">

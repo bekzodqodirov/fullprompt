@@ -5,9 +5,13 @@ import type { LossSummary } from '@/modules/wms/reports/business';
 /**
  * «Yo'qotishlar» under the P&L (owner 6a: «yoqotishlar ham korinsin umumiy
  * hisobotda»). INFORMATION beside the table, never a row of it: the money
- * spent carrying a lost carton is already inside the cargo costs above, so a
- * line here that the net profit subtracted would count it twice. Hence no
- * figure in the table's columns, and the sentence says so.
+ * spent carrying a lost carton is already inside the cargo costs, so a line
+ * here that the net profit subtracted would count it twice. Hence no figure
+ * in the table's columns. But «inside the table ABOVE» was only true when
+ * the period held the costs' dates (review): a carton lost in March rode on
+ * freight typed in November, and «missing» is today's state with no date at
+ * all — so the words name the month the cost was typed, and «missing» says
+ * it is not the period's.
  *
  * Renders nothing when nothing was lost and nothing is missing — like the
  * gaps note above the table.

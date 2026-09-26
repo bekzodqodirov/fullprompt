@@ -1734,8 +1734,8 @@
     "cashFlagLocked": "Bu turda xarajatlar yoki doimiy xarajat shabloni bor — «Naqd» belgisini o‘zgartirib bo‘lmaydi. Yangi xarajat turi oching.",
     "lossesTitle": "Yo‘qotishlar",
     "lossesLost": "Davrda {boxes} ta karobka ({m3} m³) yo‘qolgan — ularni tashishga {usd} sarflangan.",
-    "lossesMissing": "Yo‘lda qolgan, hali topilmagan: {boxes} ta karobka ({m3} m³), {usd} sarflangan.",
-    "lossesHint": "Bu ma’lumot uchun: bu pul yuqoridagi jadvalda yuk xarajatlari ichida bor va foydadan qayta ayrilmaydi.",
+    "lossesMissing": "Bugun yo‘lda qolgan, hali topilmagan (davrdan qat’i nazar): {boxes} ta karobka ({m3} m³), {usd} sarflangan.",
+    "lossesHint": "Bu ma’lumot uchun: bu pul yuk xarajatlari ichida — xarajat yozilgan oyning hisobotida — allaqachon bor, shuning uchun foydadan qayta ayrilmaydi. U shu davrning jadvalida bo‘lmasligi mumkin.",
     "lossesOpen": "Xavfdagi yuklar ro‘yxati →",
     "recurringHowItWorks": "Doimiy xarajat o‘zi yozilmaydi va kassadan o‘zi ayrilmaydi. Pul haqiqatan chiqqan kuni «To‘landi»ni bosing; boshqa yo‘l bilan yozilgan bo‘lsa — «Bog‘lash».",
     "recurringDueBanner": "⏰ To‘lash kuni kelgan doimiy xarajatlar: {n}",
@@ -2322,7 +2322,9 @@
     "rota": "Kelgan arizalar navbati",
     "rotaHint": "Reklama va saytdan kelgan arizalar shu roldagilarga navbat bilan biriktiriladi.",
     "moneyHidden": "🙈 Kassa, foyda, tannarx ko‘rinmaydi",
-    "moneyHiddenHint": "«ved.docs» bor rolga kassa, foyda-zarar va tannarx ko‘rinmaydi (egasining 2026-09-25 qarori). Bu rol VED bo‘lmasa, undan «ved.docs» ni olib tashlang."
+    "moneyHiddenHint": "«ved.docs» bor rolga kassa, foyda-zarar va tannarx ko‘rinmaydi (egasining 2026-09-25 qarori). Bu rol VED bo‘lmasa, undan «ved.docs» ni olib tashlang.",
+    "moneyHiddenResults": "🙈 Foyda, tannarx ko‘rinmaydi (kassa ko‘rinadi)",
+    "moneyHiddenHintKassa": "«ved.docs» bor rolga foyda-zarar va tannarx ko‘rinmaydi (egasining 2026-09-25 qarori). «Xarajatlar» ham belgilangani uchun kassani ko‘radi — u kassa mas’uli. Bu rol VED bo‘lmasa, undan «ved.docs» ni olib tashlang."
   },
   "fields": {
     "title": "Maydonlar va obyektlar",

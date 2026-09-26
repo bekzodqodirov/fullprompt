@@ -459,6 +459,8 @@ export async function lossesInPeriod(from: string, to: string): Promise<LossSumm
         SELECT 1 FROM box_movements lm WHERE lm.box_id = b.id AND lm.to_status = 'lost'
           AND lm.created_at >= ${start}::timestamptz AND lm.created_at < ${end}::timestamptz)
       UNION ALL
+      -- «missing» is TODAY's state, on every period's report and said so in
+      -- its words: a flag carries no date to bound it by.
       SELECT 'missing', rl.total_volume_m3 / rl.box_count, ${cost}
       FROM boxes b JOIN receipt_lots rl ON rl.id = b.lot_id
       WHERE b.flags @> '["missing_in_transit"]'::jsonb AND b.status <> 'void'

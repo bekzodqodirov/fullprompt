@@ -1734,8 +1734,8 @@
     "cashFlagLocked": "This kind already has expenses or a monthly template — its «Cash» mark cannot change. Make a new kind instead.",
     "lossesTitle": "Losses",
     "lossesLost": "{boxes} cartons ({m3} m³) were lost in the period — {usd} was already spent carrying them.",
-    "lossesMissing": "Missing in transit, not found yet: {boxes} cartons ({m3} m³), {usd} spent.",
-    "lossesHint": "For information: this money is already inside the cargo costs in the table above and is not subtracted from profit again.",
+    "lossesMissing": "Missing in transit right now, not found yet (whatever the period): {boxes} cartons ({m3} m³), {usd} spent.",
+    "lossesHint": "For information: this money is already inside the cargo costs — in the report of the month the cost was typed in — so it is not subtracted from profit again. It may not be in this period’s table.",
     "lossesOpen": "Cargo at risk →",
     "recurringHowItWorks": "A fixed cost never posts itself and never leaves a cash box by itself. Press «Paid» on the day the money actually left; if the payment was entered another way — «Link».",
     "recurringDueBanner": "⏰ Fixed costs due for payment: {n}",
@@ -2322,7 +2322,9 @@
     "rota": "Inbound lead rota",
     "rotaHint": "Leads from adverts and the public form are handed to holders of this role in turn.",
     "moneyHidden": "🙈 Sees no kassa, profit or landed cost",
-    "moneyHiddenHint": "A role holding «ved.docs» sees no kassa, profit/loss or landed cost (the owner’s decision of 2026-09-25). If this is not a VED role, remove «ved.docs» from it."
+    "moneyHiddenHint": "A role holding «ved.docs» sees no kassa, profit/loss or landed cost (the owner’s decision of 2026-09-25). If this is not a VED role, remove «ved.docs» from it.",
+    "moneyHiddenResults": "🙈 Sees no profit or landed cost (sees the kassa)",
+    "moneyHiddenHintKassa": "A role holding «ved.docs» sees no profit/loss or landed cost (the owner’s decision of 2026-09-25). It does see the kassa, because «Expenses» is ticked too — it is a kassa holder. If this is not a VED role, remove «ved.docs» from it."
   },
   "fields": {
     "title": "Fields and objects",
