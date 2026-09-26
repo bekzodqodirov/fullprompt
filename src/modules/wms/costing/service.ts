@@ -1857,7 +1857,11 @@ export async function receiptCostMatrix(
       // second session from double-entering blind (#86: unconverted money is
       // flagged, never silently zero).
       unconverted: sql<number>`count(*) FILTER (WHERE ${costEntries.amountUsd} IS NULL AND ${mine})`,
-      others: sql<number>`count(*) FILTER (WHERE ${theirs})`,
+      // A colleague's entry on THIS truck — the cell's own grain, like
+      // `hereUsd` and the empty-column filter. Counted over every truck, a
+      // prixod's customs typed on truck A lit «✍ boshqa hodim yozgan» in
+      // truck B's cell and hid B's column as «filled» (review of the VED unit).
+      others: sql<number>`count(*) FILTER (WHERE ${theirs} AND ${costEntries.batchId} = ${batchId})`,
     })
     .from(costEntries)
     .where(

@@ -216,6 +216,11 @@ describe('the VED reads his own cost entries and the TYPES of the rest (Q19 D1)'
     expect(matrix.get(`${receiptId}:${typeTheirs.id}`)).toEqual({ usd: 0, unconverted: false, hereUsd: 0, others: true });
     const whole = await receiptCostMatrix([receiptId], batchId, ALL_COSTS);
     expect(whole.get(`${receiptId}:${typeTheirs.id}`)).toEqual({ usd: 25, unconverted: false, hereUsd: 25, others: false });
+    // The same prixod read on ANOTHER truck's grid: the colleague's cell is
+    // that truck's, not this one's — no «✍», no column hidden as filled
+    // (review of the VED unit: it was counted over every truck).
+    const elsewhere = await receiptCostMatrix([receiptId], uuidv4(), { ownOnly: ved });
+    expect(elsewhere.get(`${receiptId}:${typeTheirs.id}`)).toEqual({ usd: 0, unconverted: false, hereUsd: 0, others: false });
   });
 
   it('the grid header: the truck-wide bills per type, his summed, the colleague’s flagged', async () => {
