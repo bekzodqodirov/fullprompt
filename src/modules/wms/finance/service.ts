@@ -465,10 +465,24 @@ export async function placePayment(id: string, accountId: string, ctx: AuditCont
  * their OWN payment while nobody has placed it into a kassa. An allow-list,
  * so a kind a later round adds is the kassa holders' until decided.
  */
+/**
+ * Is the ledger row's counterparty somebody's staff account — the rule of
+ * `staffPartnerSql` (partners/staff.ts: a login link OR the seeded 'staff'
+ * type), asked of `${clientTransactions}` (#128). Shared by the void claim and
+ * the ledger read that draws the ✖, so the two cannot disagree (#513).
+ */
+export function partnerIsStaffSql(): SQL {
+  return sql`EXISTS (SELECT 1 FROM partners sp JOIN partner_types spt ON spt.id = sp.type_id
+                      WHERE sp.id = ${clientTransactions}.partner_id
+                        AND (sp.user_id IS NOT NULL OR spt.code = 'staff'))`;
+}
+
 export function nonHolderVoidableSql(actorId: string): SQL {
   return sql`(${clientTransactions.type} = 'charge'
-    OR (${clientTransactions.type} = 'payment' AND ${clientTransactions.partnerId} IS NOT NULL)
+    OR (${clientTransactions.type} = 'payment' AND ${clientTransactions.partnerId} IS NOT NULL
+        AND NOT ${partnerIsStaffSql()})
     OR (${clientTransactions.type} = 'payment' AND ${clientTransactions.accountId} IS NULL
+        AND ${clientTransactions.partnerId} IS NULL
         AND ${clientTransactions.createdBy} = ${actorId}::uuid))`;
 }
 
@@ -790,6 +804,8 @@ export async function clientLedger(clientId: string) {
        * join: most money names no job, and that is not a defect.
        */
       dealCode: deals.code,
+      /** A settlement through a colleague's account is staff money (M3a). */
+      partnerStaff: sql<boolean>`${partnerIsStaffSql()}`,
     })
     .from(clientTransactions)
     .innerJoin(users, eq(clientTransactions.createdBy, users.id))

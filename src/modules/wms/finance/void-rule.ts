@@ -9,8 +9,10 @@
  * A kassa holder (`mayPickTill` — finance.expenses) voids any row. Anybody
  * else voids only what moves no till of ours:
  * - a PRICE (charge) — pricing stays the VED's (DECISIONS #108);
- * - a settlement half (a payment routed through a firm, `partner_id` set) —
- *   no till opened (#415), and the three-cornered settlement stays his (D2);
+ * - a settlement half (a payment routed through a FIRM, `partner_id` set) —
+ *   no till opened (#415), and the three-cornered settlement stays his (D2).
+ *   Not through a STAFF account: a colleague's account is staff money, the
+ *   accountant's and the admin's alone (M3a, #1020 — review of the VED unit);
  * - their OWN payment while nobody has placed it into a kassa yet — the typo
  *   the VED can still take back under the «records without a kassa, the
  *   accountant places it» default. Once placed, it is cash in a drawer.
@@ -35,6 +37,8 @@ export interface LedgerRowFacts {
   type: string;
   accountId: string | null;
   partnerId: string | null;
+  /** The counterparty is somebody's staff account (partners/staff.ts). */
+  partnerStaff: boolean;
   createdBy: string;
 }
 
@@ -45,6 +49,6 @@ export function mayVoidLedgerRow(
   if (row.type === 'fx_diff') return false;
   if (door.mayMoveTill) return true;
   if (row.type === 'charge') return true;
-  if (row.type === 'payment' && row.partnerId !== null) return true;
-  return row.type === 'payment' && row.accountId === null && row.createdBy === door.actorId;
+  if (row.type === 'payment' && row.partnerId !== null) return !row.partnerStaff;
+  return row.type === 'payment' && row.accountId === null && row.partnerId === null && row.createdBy === door.actorId;
 }

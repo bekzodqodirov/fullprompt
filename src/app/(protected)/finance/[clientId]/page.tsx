@@ -245,7 +245,7 @@ export default async function ClientLedgerPage({
       <div className="card space-y-1 !p-3">
         <h2 className="text-sm font-bold uppercase text-ink-500">{t('history')}</h2>
         {ledger.length === 0 && <p className="text-sm text-ink-500">{t('empty')}</p>}
-        {ledger.map(({ tx, createdByName, batchCode, dealCode, receiptNumber, lostNow, boxesTotal, foundSince }) => (
+        {ledger.map(({ tx, createdByName, batchCode, dealCode, receiptNumber, lostNow, boxesTotal, foundSince, partnerStaff }) => (
           <div
             key={tx.id}
             className={`border-b border-line py-2 text-sm last:border-0 ${tx.voidedAt ? 'opacity-50' : ''}`}
@@ -324,7 +324,7 @@ export default async function ClientLedgerPage({
                 // halves and his own not-yet-placed payment).
                 canManage &&
                 mayVoidLedgerRow(
-                  { type: tx.type, accountId: tx.accountId, partnerId: tx.partnerId, createdBy: tx.createdBy },
+                  { type: tx.type, accountId: tx.accountId, partnerId: tx.partnerId, partnerStaff: partnerStaff === true, createdBy: tx.createdBy },
                   { mayMoveTill: canRefund, actorId: actor.id },
                 ) && (
                   <span className="ml-auto">

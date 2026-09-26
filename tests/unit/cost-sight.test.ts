@@ -89,31 +89,38 @@ describe('pricingSight — the «Partiya moliyasi» door', () => {
  * through `voidTransaction` and asserts it agrees with this function).
  */
 const LEDGER_CASES: { name: string; row: (me: string, other: string) => LedgerRowFacts; nonHolder: boolean }[] = [
-  { name: 'charge (a price)', row: (me) => ({ type: 'charge', accountId: null, partnerId: null, createdBy: me }), nonHolder: true },
+  { name: 'charge (a price)', row: (me) => ({ type: 'charge', accountId: null, partnerId: null, partnerStaff: false, createdBy: me }), nonHolder: true },
   {
     name: "a colleague's charge",
-    row: (_me, other) => ({ type: 'charge', accountId: null, partnerId: null, createdBy: other }),
+    row: (_me, other) => ({ type: 'charge', accountId: null, partnerId: null, partnerStaff: false, createdBy: other }),
     nonHolder: true,
   },
-  { name: 'placed payment', row: (me) => ({ type: 'payment', accountId: 'till-1', partnerId: null, createdBy: me }), nonHolder: false },
-  { name: 'own unplaced payment', row: (me) => ({ type: 'payment', accountId: null, partnerId: null, createdBy: me }), nonHolder: true },
+  { name: 'placed payment', row: (me) => ({ type: 'payment', accountId: 'till-1', partnerId: null, partnerStaff: false, createdBy: me }), nonHolder: false },
+  { name: 'own unplaced payment', row: (me) => ({ type: 'payment', accountId: null, partnerId: null, partnerStaff: false, createdBy: me }), nonHolder: true },
   {
     name: "a colleague's unplaced payment",
-    row: (_me, other) => ({ type: 'payment', accountId: null, partnerId: null, createdBy: other }),
+    row: (_me, other) => ({ type: 'payment', accountId: null, partnerId: null, partnerStaff: false, createdBy: other }),
     nonHolder: false,
   },
   {
     name: 'settlement half',
-    row: (_me, other) => ({ type: 'payment', accountId: null, partnerId: 'firm-1', createdBy: other }),
+    row: (_me, other) => ({ type: 'payment', accountId: null, partnerId: 'firm-1', partnerStaff: false, createdBy: other }),
     nonHolder: true,
   },
-  { name: 'refund', row: (me) => ({ type: 'refund', accountId: 'till-1', partnerId: null, createdBy: me }), nonHolder: false },
+  // Through a colleague's account it is staff money — the accountant's and
+  // the admin's alone (M3a), whoever typed it (review of the VED unit).
+  {
+    name: 'settlement half through a staff account',
+    row: (me) => ({ type: 'payment', accountId: null, partnerId: 'staff-1', partnerStaff: true, createdBy: me }),
+    nonHolder: false,
+  },
+  { name: 'refund', row: (me) => ({ type: 'refund', accountId: 'till-1', partnerId: null, partnerStaff: false, createdBy: me }), nonHolder: false },
   // 0105 DECIDED the compensation (Q15): the other half of the refund it
   // funds, so its ✖ is the kassa holders' — the row this table's «unknown
   // kind» used to stand in for, pinned now under its own name.
-  { name: 'compensation', row: (me) => ({ type: 'compensation', accountId: null, partnerId: null, createdBy: me }), nonHolder: false },
+  { name: 'compensation', row: (me) => ({ type: 'compensation', accountId: null, partnerId: null, partnerStaff: false, createdBy: me }), nonHolder: false },
   // A kind a later round adds is the kassa holders' until somebody decides.
-  { name: 'an unknown kind', row: (me) => ({ type: 'x_later_kind', accountId: null, partnerId: null, createdBy: me }), nonHolder: false },
+  { name: 'an unknown kind', row: (me) => ({ type: 'x_later_kind', accountId: null, partnerId: null, partnerStaff: false, createdBy: me }), nonHolder: false },
 ];
 
 describe('mayVoidLedgerRow — who may ✖ which ledger row', () => {
@@ -128,7 +135,7 @@ describe('mayVoidLedgerRow — who may ✖ which ledger row', () => {
   it('a kurs farqi row is nobody’s ✖ — the kassa holder’s neither (0103: its cycle writes and voids it)', () => {
     for (const createdBy of ['me', 'other']) {
       for (const till of [{ accountId: null }, { accountId: 'till-1' }]) {
-        const row = { type: 'fx_diff', partnerId: null, createdBy, ...till };
+        const row = { type: 'fx_diff', partnerId: null, partnerStaff: false, createdBy, ...till };
         expect(mayVoidLedgerRow(row, { mayMoveTill: true, actorId: 'me' }), `${createdBy} holder`).toBe(false);
         expect(mayVoidLedgerRow(row, { mayMoveTill: false, actorId: 'me' }), `${createdBy} non-holder`).toBe(false);
       }

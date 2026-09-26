@@ -16,7 +16,7 @@ import {
 } from '@/modules/platform/db/schema';
 import { saveAccount } from '@/modules/wms/accounting/service';
 import { addCostEntry, voidCostEntry } from '@/modules/wms/costing/service';
-import { addTransaction, voidTransaction } from '@/modules/wms/finance/service';
+import { addTransaction, partnerIsStaffSql, voidTransaction } from '@/modules/wms/finance/service';
 import { mayVoidLedgerRow } from '@/modules/wms/finance/void-rule';
 import { savePartner, setPartnerActive } from '@/modules/wms/partners/service';
 import { recordSettlement } from '@/modules/wms/partners/settlement';
@@ -45,6 +45,7 @@ let other: string;
 let tillId: string;
 let tillName: string;
 let partnerId: string;
+let staffPartnerId: string;
 let batchId: string;
 let costTypeId: string;
 const liveTx: string[] = [];
@@ -79,6 +80,7 @@ async function factsOf(id: string) {
       type: clientTransactions.type,
       accountId: clientTransactions.accountId,
       partnerId: clientTransactions.partnerId,
+      partnerStaff: sql<boolean>`${partnerIsStaffSql()}`,
       createdBy: clientTransactions.createdBy,
     })
     .from(clientTransactions)
@@ -141,6 +143,8 @@ beforeAll(async () => {
   ).id;
   const [type] = await db.select().from(partnerTypes).where(eq(partnerTypes.code, 'transport')).limit(1);
   partnerId = await savePartner(null, { name: `LV firma ${SUFFIX}`, typeId: type!.id }, ctx(me));
+  const [staffType] = await db.select().from(partnerTypes).where(eq(partnerTypes.code, 'staff')).limit(1);
+  staffPartnerId = await savePartner(null, { name: `LV hodim ${SUFFIX}`, typeId: staffType!.id }, ctx(me));
   const [origin, dest] = await db.select({ id: warehouses.id }).from(warehouses).orderBy(asc(warehouses.code)).limit(2);
   const [batch] = await db
     .insert(batches)
@@ -170,6 +174,7 @@ afterAll(async () => {
       ctx(me),
     ).catch(() => undefined);
     await setPartnerActive(partnerId, false, ctx(me)).catch(() => undefined);
+    await setPartnerActive(staffPartnerId, false, ctx(me)).catch(() => undefined);
   } finally {
     await pgClient.end();
   }
@@ -226,6 +231,27 @@ describe('(a) the ✖ and the void agree, row kind by row kind', () => {
               note: 'mijoz firmaga to‘ladi',
             },
             ctx(other),
+          )
+        ).clientTxId,
+    },
+    {
+      // Staff money is the kassa holders' (M3a), however it was routed.
+      name: 'a settlement half through a staff account',
+      mint: async (clientId) =>
+        (
+          await recordSettlement(
+            {
+              txId: uuidv4(),
+              clientId,
+              partnerId: staffPartnerId,
+              clientAmount: 37,
+              clientCurrency: 'USD',
+              partnerAmount: 37,
+              partnerCurrency: 'USD',
+              txDate: DAY,
+              note: 'mijoz hodimga berdi',
+            },
+            ctx(me),
           )
         ).clientTxId,
     },
