@@ -61,11 +61,31 @@ export const users = pgTable(
      * the admin. `roles.inbound_rota` stays in the schema but nothing reads it.
      */
     inboundRota: boolean('inbound_rota').notNull().default(false),
+    /**
+     * Which WEBSITE streams this person answers (0110): cargo / buying /
+     * general. Ticked on /admin/taqsimot; the website's «who is least busy»
+     * question picks among the people ticked for the stream it asks about.
+     */
+    leadTeams: text('lead_teams').array().notNull().default(sql`'{}'::text[]`),
+    /**
+     * The @handle typed on /admin/taqsimot for somebody whose Telegram is NOT
+     * connected (0110). They still take website visitors; the system just
+     * cannot see the conversation. A connected account's own verified handle
+     * (`tg_accounts.tg_username`) always wins over this one.
+     */
+    telegramUsername: text('telegram_username'),
     active: boolean('active').notNull().default(true),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [check('users_locale_check', sql`${t.locale} IN ('ru', 'uz', 'zh-CN', 'en')`)],
+  (t) => [
+    check('users_locale_check', sql`${t.locale} IN ('ru', 'uz', 'zh-CN', 'en')`),
+    check('users_lead_teams_check', sql`${t.leadTeams} <@ ARRAY['cargo', 'buying', 'general']::text[]`),
+    check(
+      'users_telegram_username_check',
+      sql`${t.telegramUsername} IS NULL OR ${t.telegramUsername} ~ '^[A-Za-z][A-Za-z0-9_]{3,31}$'`,
+    ),
+  ],
 );
 
 export const sessions = pgTable(

@@ -8,9 +8,15 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { MAPPABLE_FIELD_TYPES, listFieldMap, seenKeys } from '@/modules/wms/crm/field-map';
 import { INBOUND_SOURCE_KEYS } from '@/modules/wms/crm/inbound';
 import { listRoutes, rotaMembers } from '@/modules/wms/crm/routing';
+import { getSetting } from '@/modules/platform/settings/service';
+import { parseOrigins } from '@/modules/platform/http/origins';
+import { recentOffers, sitePanel } from '@/modules/wms/crm/site-assign';
+import { gateCounters } from '@/modules/wms/crm/site-assign-gate';
+import { LEAD_TEAMS } from '@/modules/wms/crm/site-assign-rules';
 import { FieldMapPanel } from './field-map-panel';
 import { RotaForm } from './rota-form';
 import { RouteList } from './route-list';
+import { SitePanel, type SitePersonView, type SiteStatus } from './site-panel';
 
 /**
  * Taqsimot (round 96): who takes inbound leads, and which stream goes to whom.
@@ -46,10 +52,96 @@ export default async function TaqsimotPage() {
     : [];
   const names = new Map(named.map((row) => [row.id, row.active ? row.fullName : `${row.fullName} ⚠`]));
 
+  // The website panel (round 113) — the SAME roster and pick the route runs,
+  // so «keyingi» here is the answer the next visitor gets.
+  const [site, offers, originsRaw] = await Promise.all([
+    sitePanel(),
+    recentOffers(20),
+    getSetting('lead_assign_origins'),
+  ]);
+  const people: SitePersonView[] = site.people.map((person) => {
+    const reach = person.reach;
+    const status: SiteStatus = reach.ok
+      ? reach.source === 'typed'
+        ? 'typed'
+        : reach.capturable
+          ? 'verified'
+          : 'blind'
+      : reach.reason === 'username_stale'
+        ? 'stale'
+        : 'none';
+    return {
+      id: person.userId,
+      name: person.name,
+      teams: person.teams,
+      typedUsername: person.typedUsername ?? '',
+      units: person.units,
+      status,
+      handle: reach.ok ? reach.username : null,
+      outdated: person.listenerOutdated,
+      featured: person.teams.length > 0 || person.bridge !== null,
+    };
+  });
+  // The website's own list is its degraded path: it should hold the same
+  // reachable people, or a slow minute sends visitors where nothing listens.
+  const fallback = [
+    ...new Set(LEAD_TEAMS.flatMap((team) => site.next[team].ranked.map((c) => c.username))),
+  ];
+  const gate = gateCounters();
+  const refused =
+    gate.counts.origin + gate.counts.rate + gate.counts.busy + gate.counts.invalid +
+    gate.counts.deadline + gate.counts.error;
+  const clock = new Intl.DateTimeFormat('ru-RU', {
+    timeZone: 'Asia/Tashkent',
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
   return (
     <div className="mx-auto max-w-lg space-y-4">
       <h1 className="text-xl font-bold">📣 {t('title')}</h1>
       <p className="text-sm text-ink-500">{t('intro')}</p>
+      <SitePanel
+        people={people}
+        next={LEAD_TEAMS.map((team) => {
+          const pick = site.next[team];
+          return {
+            team,
+            username: pick.chosen?.username ?? null,
+            name: pick.chosen?.name ?? null,
+            units: pick.chosen?.units ?? null,
+            widened: pick.widened,
+          };
+        })}
+        offers={offers.map((offer) => ({
+          id: offer.id,
+          at: clock.format(offer.createdAt),
+          team: offer.team,
+          topic: offer.topic,
+          username: offer.username,
+          offeredName: offer.offeredName,
+          tookName: offer.tookName,
+          state: offer.leadId
+            ? 'lead'
+            : offer.clientId
+              ? 'client'
+              : offer.capturable
+                ? 'waiting'
+                : 'blind',
+          leadId: offer.leadId,
+          leadName: offer.leadName,
+          clientId: offer.clientId,
+          clientCode: offer.clientCode,
+        }))}
+        contract={{
+          url: `${(process.env.APP_URL ?? '').replace(/\/$/, '')}/api/lead/assign`,
+          origins: parseOrigins(originsRaw),
+          fallback,
+        }}
+        counters={{ answered: gate.counts.answered, nobody: gate.counts.nobody, refused }}
+      />
       <RotaForm members={members.map((m) => ({ id: m.id, name: m.fullName, inRota: m.inRota }))} />
       <RouteList
         routes={routes.map((route) => ({

@@ -5,6 +5,7 @@ import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
 import { requestMeta } from '@/modules/platform/auth/session';
 import { CrmError } from '@/modules/wms/crm/service';
 import { deleteMapping, saveMapping } from '@/modules/wms/crm/field-map';
+import { SiteAssignError, saveSiteTeams } from '@/modules/wms/crm/site-assign';
 import {
   RoutingError,
   createRoute,
@@ -142,6 +143,35 @@ export async function deleteMappingAction(key: string): Promise<RoutingFormState
   } catch (err) {
     if (err instanceof AuthError) return { error: 'forbidden' };
     if (err instanceof CrmError) return { error: err.code };
+    throw err;
+  }
+  revalidatePath('/admin/taqsimot');
+  return { ok: true };
+}
+
+/**
+ * The website panel (round 113). Each rendered row posts its own id, and only
+ * those ids are written — a person folded away, or added after the page
+ * loaded, keeps what they had (#171's «absent reads as remove», avoided by
+ * never reading absence).
+ */
+export async function saveSiteTeamsAction(
+  _prev: RoutingFormState,
+  form: FormData,
+): Promise<RoutingFormState> {
+  const ids = form.getAll('person').map(String).filter(Boolean);
+  try {
+    await saveSiteTeams(
+      ids.map((id) => ({
+        userId: id,
+        teams: form.getAll(`team:${id}`).map(String),
+        username: String(form.get(`username:${id}`) ?? ''),
+      })),
+      await ctx(),
+    );
+  } catch (err) {
+    if (err instanceof AuthError) return { error: 'forbidden' };
+    if (err instanceof SiteAssignError) return { error: err.code };
     throw err;
   }
   revalidatePath('/admin/taqsimot');

@@ -53,13 +53,27 @@ import {
   shouldRefreshOnMiss,
   HEARTBEAT_MS,
   type BookState,
+  type LiveVerdict,
 } from '../src/modules/wms/crm/telegram-live';
 import {
   peerFromChat,
   peerIdFromUpdate,
   tgMediaPlan,
+  toMessageRow,
   type DialogPeer,
+  type RawMessage,
 } from '../src/modules/wms/crm/telegram-import';
+import {
+  confirmSiteTagOnCard,
+  landSiteTag,
+  openOffersFor,
+  recordAccountUsername,
+} from '../src/modules/wms/crm/site-assign';
+import {
+  primaryUsername,
+  siteTagAction,
+  suspectsStaleBook,
+} from '../src/modules/wms/crm/site-assign-rules';
 import { isWorkAccount, leadForChat } from '../src/modules/wms/crm/chat-lead';
 import { indexPeers, lastIndexedAt, type PeerSeen } from '../src/modules/wms/crm/peer-index';
 import { saveAttachment } from '../src/modules/platform/files/service';
@@ -102,6 +116,15 @@ const CATCHUP_PER_CHAT = 200;
  * that could have raised the alarm was the database.
  */
 const DB_ALERT_AFTER_MS = 60_000;
+
+/**
+ * How often the account's own @handle is re-read (round 113). Twenty minutes
+ * keeps it inside the website's one-hour trust window with two misses to
+ * spare, and the same call is the session probe the heartbeat is not: a
+ * revoked session keeps a live socket (round 49), so only asking Telegram
+ * something that needs the authorisation says it is gone.
+ */
+const USERNAME_REFRESH_MS = 20 * 60_000;
 
 /**
  * How often the lookback index is rebuilt from the account's own dialog list.
@@ -197,6 +220,27 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
     throw new Error(`${tgPhone}: Telegram has ended this session. Run pnpm tg-login again.`);
   }
 
+  // The account's own @handle, read BEFORE the bridge reports itself live:
+  // the website sends visitors to this name, and the panel reads «live, never
+  // stamped» as «this listener predates round 113» — so the stamp must never
+  // trail the first heartbeat.
+  let selfId: string | null = null;
+  const readOwnUsername = async () => {
+    const me = (await client.getMe()) as {
+      id?: { toString(): string };
+      username?: string | null;
+      usernames?: { username: string; active?: boolean }[] | null;
+    };
+    selfId = me.id?.toString() ?? selfId;
+    await recordAccountUsername(account.id, primaryUsername(me));
+  };
+  await readOwnUsername().catch((err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err);
+    // Not fatal: the next refresh tries again, and until then the website
+    // simply does not offer this account.
+    console.error('username o‘qilmadi:', message);
+  });
+
   // Back to 'active'. A graceful stop writes 'stopped', and nothing else ever
   // wrote 'active' again except a fresh login — so one clean restart left the
   // bridge reading "stopped" for ever, which also made every reply
@@ -216,9 +260,94 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
     `tinglayapman: ${account.managerName} · ${tgPhone} · ${book.clients.length} mijoz · ${rules.size} qoida`,
   );
 
+  /**
+   * A website visitor's tag, turned into the chat's rule BEFORE the message
+   * is decided (round 113) — so the tagged message and every later one take
+   * the lead-rule road that already works, instead of a second one.
+   *
+   * The rule goes into the in-memory map in the SAME step it is written: the
+   * map is otherwise reloaded every ten minutes, and a visitor's «Salom, 20
+   * kub yuk bor» two seconds after the tag would be decided against the old
+   * map and dropped as a hidden number, for good.
+   */
+  const applySiteTag = async (
+    peer: DialogPeer,
+    msg: RawMessage & { id: number },
+    verdict: LiveVerdict,
+  ): Promise<boolean> => {
+    const action = siteTagAction(verdict, toMessageRow(peer.id, msg));
+    if (!action) return false;
+    if (action.kind === 'confirm') {
+      await confirmSiteTagOnCard({
+        managerUserId: account.managerUserId,
+        tag: action.tag,
+        peerId: peer.id,
+        clientId: action.clientId,
+        leadId: action.leadId,
+      }).catch((err: unknown) => {
+        console.error('sayt belgisi:', err instanceof Error ? err.message : err);
+      });
+      return false;
+    }
+    const name = [peer.firstName, peer.lastName].filter(Boolean).join(' ').trim();
+    const landing = await landSiteTag({
+      managerUserId: account.managerUserId,
+      tag: action.tag,
+      peer: { id: peer.id, phone: peer.phone ?? null, title: name || null, username: peer.username ?? null },
+      text: (msg.message ?? '').trim(),
+      // The first-contact fence: one message older than this one means this
+      // person already talks to the manager, and a tag they paste is not a
+      // website arrival. Asked only for a tagged message; an error answers
+      // «yes», so a Telegram hiccup sends the chat to the tray, never past it.
+      wroteBefore: async () => {
+        try {
+          const older = await client.getMessages(helpers.returnBigInt(peer.id.toString()), {
+            limit: 1,
+            maxId: msg.id,
+          });
+          return older.length > 0;
+        } catch {
+          return true;
+        }
+      },
+    });
+    if (!landing.landed) {
+      console.log(`  🌐 ${action.tag}: ${landing.reason}`);
+      return false;
+    }
+    rules.set(peer.id, {
+      peerId: peer.id,
+      decision: 'include',
+      clientId: landing.clientId,
+      clientCode: landing.clientCode,
+      leadId: landing.leadId,
+    });
+    console.log(`  🌐 sayt ${action.tag} → ${landing.outcome}`);
+    return true;
+  };
+
+  /**
+   * One conversation's messages are handled one at a time. gramjs runs event
+   * handlers concurrently, and a tagged first message and the photo sent a
+   * second after it must not race each other past the rule the first one is
+   * writing. Different conversations still run side by side.
+   */
+  const inFlightByPeer = new Map<string, Promise<void>>();
+  const serialised = (key: string, work: () => Promise<void>) => {
+    const prior = inFlightByPeer.get(key) ?? Promise.resolve();
+    // Never rejects: `work` catches its own errors, and a rejected link here
+    // would be an unhandled rejection that takes the whole bridge down.
+    const next = prior.then(work, work).catch(() => undefined);
+    inFlightByPeer.set(key, next);
+    void next.finally(() => {
+      if (inFlightByPeer.get(key) === next) inFlightByPeer.delete(key);
+    });
+    return next;
+  };
+
   client.addEventHandler(async (event: { message?: unknown }) => {
     try {
-      const msg = event.message as {
+      const msg = event.message as RawMessage & {
         id: number;
         out?: boolean;
         message?: string | null;
@@ -233,7 +362,19 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       // it is what the import iterates, so both paths reduce a conversation
       // identically.
       const peer: DialogPeer = peerFromChat((await msg.getChat?.()) as never);
+      await serialised(peer.id.toString(), () => handleMessage(peer, msg));
+    } catch (err) {
+      // One bad event must not take the bridge down: it would stop receiving
+      // for every client because of one malformed message.
+      console.error('xabar ishlanmadi:', err instanceof Error ? err.message : err);
+    }
+  }, new NewMessage({}));
 
+  const handleMessage = async (
+    peer: DialogPeer,
+    msg: RawMessage & { id: number; out?: boolean; message?: string | null },
+  ) => {
+    try {
       const now = Date.now();
       if (bookIsStale(book, now)) {
         book = newBook(await clientBook(), now);
@@ -247,10 +388,15 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       let verdict = decideIncoming(peer, msg, book.clients, rules, workAccount);
       // A number we do not know MIGHT be a client added since the book was
       // read. Ask once, rate-limited, before concluding they are a stranger.
-      if (!verdict.store && !('ask' in verdict) && verdict.reason === 'not_a_client'
-          && shouldRefreshOnMiss(book, now)) {
+      // Keyed on the verdicts a stranger actually gets since round 79 — the
+      // old `not_a_client` key had not been reachable since then.
+      if (suspectsStaleBook(verdict) && shouldRefreshOnMiss(book, now)) {
         book = { ...newBook(await clientBook(), now), missRefreshedAt: now };
         rules = await rulesFor(account.managerUserId);
+        verdict = decideIncoming(peer, msg, book.clients, rules, workAccount);
+      }
+      // A website visitor's tag may turn this stranger into a lead's chat.
+      if (await applySiteTag(peer, msg, verdict)) {
         verdict = decideIncoming(peer, msg, book.clients, rules, workAccount);
       }
 
@@ -315,11 +461,9 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
         }
       }
     } catch (err) {
-      // One bad event must not take the bridge down: it would stop receiving
-      // for every client because of one malformed message.
       console.error('xabar ishlanmadi:', err instanceof Error ? err.message : err);
     }
-  }, new NewMessage({}));
+  };
 
   // Edits. A client who fixes a price in an earlier message has CHANGED the
   // record the manager acts on — the stored copy must follow. UPDATE-only in
@@ -374,6 +518,23 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       console.error("o'qildi belgisi yozilmadi:", err instanceof Error ? err.message : err);
     }
   }, new Raw({ types: [Api.UpdateReadHistoryInbox] }));
+
+  // The manager renamed their own @handle (round 113). Written at once rather
+  // than at the next refresh: a released handle can be registered by a
+  // stranger, and the website must not go on sending visitors to it.
+  client.addEventHandler(async (update: unknown) => {
+    try {
+      const change = update as {
+        userId?: { toString(): string };
+        usernames?: { username: string; active?: boolean }[];
+      };
+      if (!selfId || change.userId?.toString() !== selfId) return;
+      await recordAccountUsername(account.id, primaryUsername({ usernames: change.usernames ?? [] }));
+      console.log('username yangilandi');
+    } catch (err) {
+      console.error('username yozilmadi:', err instanceof Error ? err.message : err);
+    }
+  }, new Raw({ types: [Api.UpdateUserName] }));
 
   /* ---------------------------------------------------------------- *
    * The sender — phase 4. Replies queued on the screen go out here,
@@ -792,6 +953,36 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
     console.error('catch-up umuman ishlamadi:', err instanceof Error ? err.message : err);
   });
 
+  /**
+   * Website visitors who wrote while this listener was down (round 113).
+   *
+   * Catch-up above walks only chats that already have stored rows, and a
+   * website visitor is by definition a chat with none — so a tag that arrived
+   * during a deploy would otherwise never be seen, and the visitor would sit
+   * on the tray as a stranger. Bounded by our own record, not by the dialog
+   * list: only the tags this account was offered and that never reached a
+   * card are looked for, one global search each, and every hit goes through
+   * the SAME step a live message takes.
+   */
+  const siteTagSweep = async () => {
+    const offers = await openOffersFor(account.managerUserId);
+    for (const offer of offers) {
+      try {
+        for await (const msg of client.iterMessages(undefined, { search: offer.tag, limit: 5 })) {
+          if (msg.out) continue;
+          const peer = peerFromChat((await msg.getChat?.()) as never);
+          if (!peer.isPrivate) continue;
+          await serialised(peer.id.toString(), () => handleMessage(peer, msg as never));
+        }
+      } catch (err) {
+        console.error('sayt qidiruvi:', err instanceof Error ? err.message : err);
+      }
+    }
+  };
+  await siteTagSweep().catch((err) => {
+    console.error('sayt belgilari tekshirilmadi:', err instanceof Error ? err.message : err);
+  });
+
   /* ---------------------------------------------------------------- *
    * The connect-time week. Owed once per connect, stamped when done.
    * ---------------------------------------------------------------- */
@@ -918,6 +1109,22 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
   }, HEARTBEAT_MS);
   await heartbeat(account.id);
 
+  // The handle again, on a clock — and the one probe that can tell a live
+  // socket from a live SESSION (round 49): Telegram answers getMe only for an
+  // authorised account.
+  const usernameRefresh = setInterval(() => {
+    void readOwnUsername().catch(async (err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err);
+      if (isSessionDead(message)) {
+        console.error(`SESSION o‘lgan: ${message} — qayta ulanish kerak`);
+        await announceSessionDead(message);
+        void stop(message, 'signed_out');
+        return;
+      }
+      console.error('username o‘qilmadi:', message);
+    });
+  }, USERNAME_REFRESH_MS);
+
   const stop = async (
     why: string,
     status: 'stopped' | 'signed_out' = 'stopped',
@@ -936,6 +1143,7 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
     clearInterval(beat);
     clearInterval(sender);
     clearInterval(indexer);
+    clearInterval(usernameRefresh);
     if (unlistenOutbox) await unlistenOutbox().catch(() => undefined);
     if (logOutOfTelegram) {
       await client.invoke(new Api.auth.LogOut()).catch((err: unknown) => {

@@ -562,7 +562,8 @@
       "ai_calc_reply_lenta": "Also write the AI's estimate onto the card's lenta",
       "cost_kassa_since": "Costs with no cash box entered from this day on go to the accountant's queue (YYYY-MM-DD; empty = all)",
       "unpriced_gate_since": "Unpriced cargo that a truck brings into Uzbekistan after this moment is handed over only with permission (a date or an instant; empty = the ban is off)",
-      "fx_residue_auto": "Whether the system closes the dollar residue as an exchange difference when an account reaches zero in its own currency. «No» — no new entries; existing ones are still maintained."
+      "fx_residue_auto": "Whether the system closes the dollar residue as an exchange difference when an account reaches zero in its own currency. «No» — no new entries; existing ones are still maintained.",
+      "lead_assign_origins": "Web pages allowed to ask «who should the visitor write to?» (space-separated, each https://…)"
     },
     "driverApp": "Driver app",
     "callsApp": "Calls app",
@@ -2228,7 +2229,8 @@
     "dayBack": "Only mine",
     "wonOtherCurrency": "+{count} in another currency",
     "feedRefund": "Refund to client",
-    "feedCompensation": "Compensation to client"
+    "feedCompensation": "Compensation to client",
+    "doorAssign": "Website questionnaire: who to write to"
   },
   "navShort": {
     "home": "Home",
@@ -3366,7 +3368,47 @@
     "mapStale": "not seen lately",
     "mapUnmapped": "New questions from adverts",
     "mapManual": "Add a question by hand",
-    "mapKeyPlaceholder": "the question key from the form"
+    "mapKeyPlaceholder": "the question key from the form",
+    "site": {
+      "title": "Website requests",
+      "hint": "At the end of its questionnaire the website asks «who should they write to?». We answer with the Telegram username of whoever in the ticked team has had the fewest requests today. The visitor writes to them with the website's code; if that person's Telegram is connected, the lead opens by itself.",
+      "teams": {
+        "cargo": "Consolidated cargo",
+        "buying": "Purchasing",
+        "general": "General"
+      },
+      "teamsHint": "When nobody in a team is free, people ticked «General» take it, then anyone ticked for the website.",
+      "usernameLabel": "Telegram username",
+      "usernameHint": "For someone whose Telegram is not connected to the system. A connected account's username is read automatically.",
+      "statusVerified": "@{handle} · Telegram connected",
+      "statusBlind": "@{handle} · not connected right now — no lead opens by itself",
+      "statusTyped": "@{handle} · typed by hand — no lead opens by itself",
+      "statusNone": "no username — not given to the website",
+      "statusStale": "Telegram username not checked for a while — not given to the website",
+      "listenerOutdated": "The Telegram listener is outdated. On the server: docker compose --profile telegram up -d --build tg-listen",
+      "load": "today: {n}",
+      "next": "Next visitor",
+      "nextNobody": "nobody — the website uses its own list",
+      "nextWidened": "nobody free in this team",
+      "others": "Other staff ({n})",
+      "saved": "Saved",
+      "recent": "Recent requests",
+      "recentEmpty": "No requests yet.",
+      "offerWaiting": "did not write",
+      "offerBlind": "not visible — Telegram not connected",
+      "offerClient": "client {code}",
+      "offerTook": "taken by {name}",
+      "contract": "For the website",
+      "contractUrl": "Address",
+      "contractOrigins": "Allowed pages",
+      "contractFallback": "Fallback list (keep it on the website)",
+      "counters": "Since the server started: {answered} answered · {nobody} nobody free · {refused} refused",
+      "errors": {
+        "forbidden": "Not allowed",
+        "bad_username": "Invalid username: start with a letter, 5–32 characters (letters, digits, _).",
+        "username_taken": "This username is already set for another person."
+      }
+    }
   },
   "assistant": {
     "title": "AI assistant",

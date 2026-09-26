@@ -1539,7 +1539,10 @@ export const leadIntakes = pgTable(
     createdAt: createdAt(),
   },
   (t) => [
-    check('lead_intakes_channel_check', sql`${t.channel} IN ('form', 'meta', 'telegram')`),
+    check(
+      'lead_intakes_channel_check',
+      sql`${t.channel} IN ('form', 'meta', 'telegram', 'webhook', 'site')`,
+    ),
     check(
       'lead_intakes_outcome_check',
       sql`${t.outcome} IN ('created', 'joined', 'client', 'dropped')`,
@@ -1975,11 +1978,71 @@ export const tgAccounts = pgTable(
      * reconnection pulls the week the bridge missed.
      */
     historyBackfilledAt: timestamp('history_backfilled_at', { withTimezone: true }),
+    /**
+     * The connected account's own @handle (0110), from getMe() in the
+     * listener — verified, where `users.telegram_username` is only what
+     * somebody typed, so it wins. `checkedAt` lets the website question stop
+     * trusting it when nobody has confirmed it lately: a renamed handle can be
+     * taken by a stranger, and a visitor must never be sent to one.
+     */
+    tgUsername: text('tg_username'),
+    tgUsernameCheckedAt: timestamp('tg_username_checked_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     check('tg_accounts_status_check', sql`${t.status} IN ('active', 'stopped', 'signed_out')`),
+  ],
+);
+
+/**
+ * One question the website asked (0110): «who in this team is least busy?»,
+ * and whom we offered. The OFFER — the arrival is a `lead_intakes` row
+ * (channel 'site', external_id = the tag) written when the visitor
+ * actually writes, which is what makes a tag single-use in the database.
+ */
+export const leadAssignments = pgTable(
+  'lead_assignments',
+  {
+    id: id(),
+    tag: text('tag').notNull().unique(),
+    team: text('team').notNull(),
+    topic: text('topic'),
+    page: text('page'),
+    lang: text('lang'),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id),
+    username: text('username').notNull(),
+    /**
+     * Could the system see the conversation this offer starts (a connected,
+     * live account)? An offer nobody can confirm counts as work all day; one
+     * that could have been confirmed and was not stops counting after 15 min.
+     */
+    capturable: boolean('capturable').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    /** The claim: who received the visitor, and the Telegram person the tag is bound to. */
+    confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+    confirmedUserId: uuid('confirmed_user_id').references(() => users.id),
+    peerId: bigint('peer_id', { mode: 'bigint' }),
+    leadId: uuid('lead_id').references(() => leads.id),
+    clientId: uuid('client_id').references(() => clients.id),
+    /** The ranking at the moment of the pick — «nega Aliga?» from the record. */
+    ranking: jsonb('ranking'),
+  },
+  (t) => [
+    check('lead_assignments_tag_check', sql`${t.tag} ~ '^GSR-[A-Z0-9]{5,16}$'`),
+    check('lead_assignments_team_check', sql`${t.team} IN ('cargo', 'buying', 'general')`),
+    check(
+      'lead_assignments_confirm_check',
+      sql`${t.confirmedAt} IS NOT NULL OR (${t.confirmedUserId} IS NULL AND ${t.peerId} IS NULL AND ${t.leadId} IS NULL AND ${t.clientId} IS NULL)`,
+    ),
+    index('lead_assignments_user_idx').on(t.userId, t.createdAt.desc()),
+    index('lead_assignments_confirmed_idx')
+      .on(t.confirmedUserId, t.confirmedAt.desc())
+      .where(sql`confirmed_at IS NOT NULL`),
+    index('lead_assignments_created_idx').on(t.createdAt.desc()),
+    index('lead_assignments_lead_idx').on(t.leadId).where(sql`lead_id IS NOT NULL`),
   ],
 );
 

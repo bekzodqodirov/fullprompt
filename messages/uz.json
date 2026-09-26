@@ -562,7 +562,8 @@
       "ai_calc_reply_lenta": "AI ning tahminiy hisobi karta lentasiga ham yozilsinmi",
       "cost_kassa_since": "Shu kundan boshlab kiritilgan, kassasi ko‘rsatilmagan xarajatlar buxgalter navbatiga tushadi (YYYY-MM-DD; bo‘sh = hammasi)",
       "unpriced_gate_since": "Shu vaqtdan keyin mashinada O‘zbekistonga yetib kelgan, narxi yozilmagan yuk mijozga faqat ruxsat bilan beriladi (sana yoki vaqt; bo‘sh = taqiq o‘chiq)",
-      "fx_residue_auto": "Hisob o‘z valyutasida 0 ga tushganda dollar qoldig‘ini tizim o‘zi «kurs farqi» bilan yopsinmi. «Yo‘q» — yangi yozuv qo‘shilmaydi, borlari yuritilaveradi."
+      "fx_residue_auto": "Hisob o‘z valyutasida 0 ga tushganda dollar qoldig‘ini tizim o‘zi «kurs farqi» bilan yopsinmi. «Yo‘q» — yangi yozuv qo‘shilmaydi, borlari yuritilaveradi.",
+      "lead_assign_origins": "Saytdan «kimga yozsin?» deb so'rashga ruxsat berilgan sahifalar (bo'sh joy bilan, har biri https://…)"
     },
     "driverApp": "Haydovchi ilovasi",
     "callsApp": "Qo'ng'iroq ilovasi",
@@ -2228,7 +2229,8 @@
     "dayBack": "Faqat meniki",
     "wonOtherCurrency": "+{count} boshqa valyutada",
     "feedRefund": "Pul qaytarildi",
-    "feedCompensation": "Kompensatsiya"
+    "feedCompensation": "Kompensatsiya",
+    "doorAssign": "Sayt so'rovnomasi: kimga yozsin"
   },
   "navShort": {
     "home": "Bosh",
@@ -3366,7 +3368,47 @@
     "mapStale": "ancha keldi kelmayapti",
     "mapUnmapped": "Reklamadan kelgan yangi savollar",
     "mapManual": "Savolni qo'lda qo'shish",
-    "mapKeyPlaceholder": "formadagi savol nomi"
+    "mapKeyPlaceholder": "formadagi savol nomi",
+    "site": {
+      "title": "Saytdan so'rovlar",
+      "hint": "Sayt so'rovnoma oxirida «kimga yozsin?» deb so'raydi. Belgilangan jamoadan bugun eng kam so'rov olgan hodimning Telegram username'i beriladi. Mijoz shu hodimga saytdagi kod bilan yozadi; Telegrami ulangan bo'lsa, lid o'zi ochiladi.",
+      "teams": {
+        "cargo": "Yig'ma yuk",
+        "buying": "Sotib olib berish",
+        "general": "Umumiy"
+      },
+      "teamsHint": "Hech kim bo'sh bo'lmasa, avval «Umumiy» belgilanganlar, keyin saytga belgilangan istalgan hodim oladi.",
+      "usernameLabel": "Telegram username",
+      "usernameHint": "Telegrami tizimga ulanmagan hodim uchun. Ulangan akkauntning username'i o'zi o'qiladi.",
+      "statusVerified": "@{handle} · Telegram ulangan",
+      "statusBlind": "@{handle} · hozir ulanish yo'q — lid o'zi ochilmaydi",
+      "statusTyped": "@{handle} · qo'lda yozilgan — lid o'zi ochilmaydi",
+      "statusNone": "username yo'q — saytga berilmaydi",
+      "statusStale": "Telegram username'i uzoq tekshirilmagan — saytga berilmaydi",
+      "listenerOutdated": "Telegram tinglovchisi yangilanmagan. Serverda: docker compose --profile telegram up -d --build tg-listen",
+      "load": "bugun: {n}",
+      "next": "Keyingi mijoz",
+      "nextNobody": "hech kim — sayt o'z ro'yxatidan beradi",
+      "nextWidened": "jamoada bo'sh odam yo'q",
+      "others": "Boshqa hodimlar ({n})",
+      "saved": "Saqlandi",
+      "recent": "So'nggi so'rovlar",
+      "recentEmpty": "Hali so'rov kelmagan.",
+      "offerWaiting": "yozmadi",
+      "offerBlind": "ko'rinmaydi — Telegram ulanmagan",
+      "offerClient": "mijoz {code}",
+      "offerTook": "{name} oldi",
+      "contract": "Sayt uchun",
+      "contractUrl": "Manzil",
+      "contractOrigins": "Ruxsat berilgan sahifalar",
+      "contractFallback": "Zaxira ro'yxat (sayt o'zida saqlasin)",
+      "counters": "Server ishga tushgandan beri: {answered} javob · {nobody} bo'sh · {refused} rad etildi",
+      "errors": {
+        "forbidden": "Ruxsat yetarli emas",
+        "bad_username": "Username noto'g'ri: harf bilan boshlansin, 5-32 belgi (harf, raqam, _).",
+        "username_taken": "Bu username boshqa hodimda turibdi."
+      }
+    }
   },
   "assistant": {
     "title": "AI yordamchi",

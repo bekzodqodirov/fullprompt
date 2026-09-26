@@ -55,6 +55,7 @@ export default async function ArrivalsPage() {
     botUrl: botName ? `https://t.me/${botName}?start=ad_${door.key}` : null,
     webhookUrl: `${appUrl}/api/leads/in/${door.key}`,
     secret: door.secret,
+    assignUrl: door.key === 'sayt' ? `${appUrl}/api/lead/assign` : null,
   }));
 
   /**
