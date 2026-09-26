@@ -1503,7 +1503,17 @@
     "dealFloorUpsale": "Hisoblangan narx {floor} · upsale {upsale} (butun bitim uchun)",
     "priceAboveDeal": "Bitimdagi narxdan {pct}% qimmat (bitim bo‘yicha ≈ {usd}). Baribir shu narxni qo‘yasizmi?",
     "priceBelowDeal": "Bitimdagi narxdan {pct}% arzon (bitim bo‘yicha ≈ {usd}). Baribir shu narxni qo‘yasizmi?",
-    "priceConfirmAnyway": "Ha, shu narxni qo‘yish"
+    "priceConfirmAnyway": "Ha, shu narxni qo‘yish",
+    "dealTotals": "Bu mashinada {receipts} ta prixod, {deals} ta bitim — jami",
+    "dealTotalSold": "Bitimlar narxi",
+    "dealTotalHere": "Shu mashinadagi yuk uchun",
+    "dealTotalFloor": "Hisoblangan narx",
+    "dealTotalUpsale": "Upsale",
+    "dealUnlinked": "{n} ta prixod bitimga ulanmagan — ular jamida yo‘q",
+    "dealShareHere": "bu mashinada {receipts} ta prixod · {m3} m³ · {kg} kg",
+    "dealNoQuote": "bitimda narx yozilmagan",
+    "dealNoFigures": "hisoblangan narx va upsale yozilmagan (taklif berilmagan)",
+    "dealSoldPrice": "sotilgan narx {price}{measure}"
   },
   "map": {
     "title": "Xarita",
@@ -1539,7 +1549,11 @@
     "pickupPhase_arrived": "omborga yetgan bo‘lishi kerak",
     "filterClient": "Faqat mijoz yuki",
     "filterMissing": "«{code}» kodli mijoz topilmadi — butun xarita ko‘rsatilyapti",
-    "filterClear": "Hammasini ko‘rsatish"
+    "filterClear": "Hammasini ko‘rsatish",
+    "cargoLoading": "Yuk ro‘yxati yuklanmoqda…",
+    "cargoFailed": "Yuk ro‘yxatini olib bo‘lmadi",
+    "cargoReceived": "qabul {date}",
+    "cargoMore": "yana {n} ta tovar — to‘liq ro‘yxat ostatkada"
   },
   "accounting": {
     "title": "Boshqaruv hisobi",
@@ -3809,7 +3823,14 @@
       "no_recipients": "Tanlanganlar orasida botga ulangan mijoz yo‘q.",
       "too_long": "Matn 4096 belgidan uzun.",
       "too_many_files": "10 tadan ko‘p fayl.",
-      "exists": "Bu xabar allaqachon yuborilgan."
-    }
+      "exists": "Bu xabar allaqachon yuborilgan.",
+      "too_many_picked": "Belgilangan mijozlar 500 tadan ko‘p — qidiruvni toraytiring yoki hammasini belgilang."
+    },
+    "search": "Qidirish",
+    "searchPlaceholder": "Yuk nomi (masalan, stul), soha, kod yoki ism",
+    "picked": "{total} tadan {n} tasiga yuboriladi",
+    "pickAll": "Hammasini belgilash",
+    "pickNone": "Belgilarni olib tashlash",
+    "listCapped": "Ro‘yxatda yana {n} ta mijoz bor — ular ham belgilangan"
   }
 }

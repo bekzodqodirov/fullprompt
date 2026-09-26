@@ -1852,6 +1852,19 @@ later messages never reached the client card (`storeIncoming` derives
 «20 minutes ago» at 00:05 Tashkent is yesterday — the file stands on a clock
 ≥ 30 min into the Tashkent day.
 
+**Round — his five items after the 110 deploy (2026-09-26 evening; DECISIONS
+#1065-#1069 — renumbered from #1056-#1060 on the merge, round 113 took them first; NO migration of its own, ledger 111 after 113's 0110).** The Mini App map rebuilt on Leaflet
+(pinch/pan, self-hosted basemap when present, every place LISTED even with no
+coordinates, Telegram swipes held while open) and `linkPhoneSiblings` joining
+one person's codes when the cabinet opens (never a revoked one); the staff
+/map popup lists the place's lots from `/api/map/cargo` (`placeCargo`); the
+bot's client answer prints phones + «💬» `t.me/+` buttons under the client
+book's rule (never to a warehouse hand) and 🏭 on warehouse rows;
+/accounting/expenses got its own nav row (`OWN_ROW_PAGES`); the broadcast
+searches the GOODS of a client's non-voided prixods and lets the office
+un-tick; the pricing page shows EVERY deal of a client's cargo with totals and
+confirms against `expectedForDeals`.
+
 **Latest migration: 0110** (`lead_assign` — the website teams, the typed and
 the read Telegram handle, the offer ledger, the `site` arrival channel; ledger
 must reach **111**; `when` …089, AFTER the other session's three, #1040).

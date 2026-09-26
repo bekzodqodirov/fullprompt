@@ -233,6 +233,7 @@ export default async function MapPage({
         trucks={trucks}
         pickups={mapPickups}
         focusPickupId={focusPickupId}
+        clientCode={focusClient?.code ?? null}
         basemap={basemapAvailable()}
       />
     </div>

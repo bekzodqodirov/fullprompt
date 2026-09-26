@@ -38,6 +38,14 @@ function inBorrowedSection(pathname: string): string | null {
 }
 
 /**
+ * Pages that are a menu row of their OWN although their URL sits under
+ * another row's: /accounting/expenses has had its own door beside
+ * «Boshqaruv hisobi» since 2026-09-26, and lighting both rows for one page
+ * reads as two places to go.
+ */
+const OWN_ROW_PAGES = ['/accounting/expenses'];
+
+/**
  * Should the menu row for `href` be highlighted on `pathname`?
  *
  * `/stock` matches `/stock/abc` but `/` only matches itself — and a section
@@ -51,6 +59,8 @@ export function isActive(pathname: string, href: string): boolean {
   if (borrowed && href.length < borrowed.length && borrowed.startsWith(`${href}/`)) {
     return false;
   }
+  const own = OWN_ROW_PAGES.find((route) => pathname === route || pathname.startsWith(`${route}/`));
+  if (own && href !== own && own.startsWith(`${href}/`)) return false;
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 

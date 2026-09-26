@@ -516,18 +516,87 @@
   min-height: 0;
   flex-direction: column;
 }
-.cab-map-svg {
-  display: block;
-  width: 100%;
-  height: auto;
-  max-height: 52vh;
+/* The map owns every touch inside it: a pinch zooms, a drag pans, and the
+   page (or Telegram's own swipe-to-close) never takes the gesture. */
+.cab-map-canvas {
+  height: 52vh;
+  min-height: 240px;
   flex: none;
+  touch-action: none;
   background: var(--card);
+}
+.cab-map-canvas .leaflet-container,
+.cab-map-canvas.leaflet-container {
+  background: var(--card);
+  font: inherit;
+}
+.cab-map-city {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1;
+}
+.cab-map-city i {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
 }
 .cab-map-sheet {
   flex: 1;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 12px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+}
+.cab-map-places {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+.cab-map-places > li + li {
+  border-top: 1px solid var(--line);
+}
+.cab-map-place {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border: 0;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.cab-map-place.on b {
+  color: var(--accent);
+}
+.cab-map-place-icon {
+  font-size: 1.3rem;
+  flex: none;
+}
+.cab-map-place-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.cab-map-place-sum {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+.cab-map-chevron {
+  color: var(--muted);
+  flex: none;
+}
+.cab-map-detail {
+  padding: 0 0 10px 34px;
 }
 .cab-map-where {
   font-weight: 700;

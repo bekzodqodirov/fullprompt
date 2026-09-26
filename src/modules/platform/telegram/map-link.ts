@@ -21,3 +21,36 @@ export function clientMapKeyboard(
     ],
   };
 }
+
+/**
+ * A phone as the number `t.me/+…` opens a chat with: international digits
+ * only. A bare nine-digit Uzbek number gains its country code; anything
+ * shorter cannot be a reachable number and gets no button.
+ */
+export function telegramPhoneUrl(phone: string): string | null {
+  let digits = phone.replace(/\D/g, '');
+  if (digits.length === 9) digits = `998${digits}`;
+  if (digits.length < 10 || digits.length > 15) return null;
+  return `https://t.me/+${digits}`;
+}
+
+/**
+ * The buttons under a client-code answer: «🗺 Xaritada» (item 12) and one
+ * «💬» per phone — Telegram's own `t.me/+<number>` link, which opens a chat
+ * with whoever holds that number when their privacy allows it (the owner,
+ * 2026-09-26: «linkga ohshab chiqsin chatga otib ketgani»). Null when there
+ * is nothing to offer, so the answer goes out with no keyboard at all.
+ */
+export function clientAnswerKeyboard(
+  appUrl: string | undefined,
+  answer: { mapClientCode?: string; phones?: string[] },
+): { inline_keyboard: { text: string; url: string }[][] } | null {
+  const rows: { text: string; url: string }[][] = [];
+  const map = answer.mapClientCode ? clientMapKeyboard(appUrl, answer.mapClientCode) : null;
+  if (map) rows.push(...map.inline_keyboard);
+  for (const phone of answer.phones ?? []) {
+    const url = telegramPhoneUrl(phone);
+    if (url) rows.push([{ text: `💬 ${phone}`, url }]);
+  }
+  return rows.length ? { inline_keyboard: rows } : null;
+}

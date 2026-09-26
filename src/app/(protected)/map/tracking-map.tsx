@@ -6,6 +6,7 @@ import dynamic from 'next/dynamic';
 import { useTranslations } from 'next-intl';
 import { graticule, LANDMARKS, toSvg, VIEWBOX } from '@/modules/wms/tracking/map-data';
 import { Icon } from '@/components/ui/icon';
+import { PlaceCargo } from './place-cargo';
 import {
   pickupPosition,
   type PickupPosition,
@@ -104,6 +105,7 @@ export function TrackingMap({
   trucks,
   pickups = [],
   focusPickupId = null,
+  clientCode = null,
   basemap,
 }: {
   warehouses: MapWarehouse[];
@@ -111,6 +113,8 @@ export function TrackingMap({
   pickups?: MapPickup[];
   /** `/map?zr=<id>` from a pickup card: fit the view to that trip. */
   focusPickupId?: string | null;
+  /** `/map?mijoz=<code>`: the popups list only that client's lots. */
+  clientCode?: string | null;
   basemap: boolean;
 }) {
   const t = useTranslations('map');
@@ -191,7 +195,7 @@ export function TrackingMap({
       {selWh && (
         <div
           data-testid="map-popup"
-          className="absolute left-2 top-2 z-[600] max-h-[75%] w-72 max-w-[85%] space-y-1.5 overflow-y-auto rounded-xl border border-line bg-surface-raised p-3 shadow-pop"
+          className="absolute left-2 top-2 z-[600] max-h-[80%] w-80 max-w-[90%] space-y-1.5 overflow-y-auto rounded-xl border border-line bg-surface-raised p-3 shadow-pop"
         >
           <div className="flex items-baseline gap-2">
             <h2 className="min-w-0 flex-1 truncate text-base font-bold">
@@ -219,6 +223,7 @@ export function TrackingMap({
               </span>
             ))}
           </div>
+          <PlaceCargo key={selWh.id} place={{ wh: selWh.id }} clientCode={clientCode} />
           {/* `wh` + the row id: /stock reads no other spelling — the old
               `?warehouse=<code>` was silently ignored and opened the whole
               book (round 100, the owner's item 9c). */}
@@ -234,7 +239,7 @@ export function TrackingMap({
       {selTruck && (
         <div
           data-testid="map-popup"
-          className="absolute left-2 top-2 z-[600] max-h-[75%] w-72 max-w-[85%] space-y-1.5 overflow-y-auto rounded-xl border border-line bg-surface-raised p-3 shadow-pop"
+          className="absolute left-2 top-2 z-[600] max-h-[80%] w-80 max-w-[90%] space-y-1.5 overflow-y-auto rounded-xl border border-line bg-surface-raised p-3 shadow-pop"
         >
           <div className="flex items-baseline gap-2">
             <h2 className="text-base font-bold">
@@ -283,6 +288,7 @@ export function TrackingMap({
               </span>
             ))}
           </div>
+          <PlaceCargo key={selTruck.batchId} place={{ batch: selTruck.batchId }} clientCode={clientCode} />
           <Link
             href={`/batches/${selTruck.batchId}`}
             className="text-sm font-semibold text-brand-700 underline"
@@ -295,7 +301,7 @@ export function TrackingMap({
       {selPickup && (
         <div
           data-testid="map-popup"
-          className="absolute left-2 top-2 z-[600] max-h-[75%] w-72 max-w-[85%] space-y-1.5 overflow-y-auto rounded-xl border border-line bg-surface-raised p-3 shadow-pop"
+          className="absolute left-2 top-2 z-[600] max-h-[80%] w-80 max-w-[90%] space-y-1.5 overflow-y-auto rounded-xl border border-line bg-surface-raised p-3 shadow-pop"
         >
           <div className="flex items-baseline gap-2">
             <h2 className="text-base font-bold">

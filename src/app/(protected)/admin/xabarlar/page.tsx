@@ -51,6 +51,7 @@ export default async function BroadcastPage({
     locales: list(params.til).filter((v) => ['uz', 'ru', 'en'].includes(v)),
     managerId: typeof params.hodim === 'string' && params.hodim ? params.hodim : undefined,
     codes: splitTags(typeof params.kod === 'string' ? params.kod : ''),
+    query: typeof params.q === 'string' && params.q.trim() ? params.q.trim().slice(0, 100) : undefined,
   });
   const audience: Audience = parsed.success
     ? parsed.data
@@ -67,7 +68,8 @@ export default async function BroadcastPage({
   const running = recent.some((b) => !b.finishedAt);
   const filtered =
     audience.sectors.length + audience.cargoKinds.length + audience.locales.length + audience.codes.length > 0 ||
-    Boolean(audience.managerId);
+    Boolean(audience.managerId) ||
+    Boolean(audience.query);
 
   return (
     <div className="mx-auto max-w-3xl space-y-3">
@@ -101,6 +103,17 @@ export default async function BroadcastPage({
       {/* The audience: one GET form, so the choice is in the address bar. */}
       <form className="card space-y-3 !p-3" data-testid="broadcast-audience">
         <p className="font-semibold">👥 {t('audience')}</p>
+        <label className="block text-sm">
+          <span className="label">🔎 {t('search')}</span>
+          <input
+            name="q"
+            type="search"
+            className="input"
+            defaultValue={audience.query ?? ''}
+            placeholder={t('searchPlaceholder')}
+            data-testid="broadcast-search"
+          />
+        </label>
         <label className="block text-sm">
           <span className="label">{t('codes')}</span>
           <input
@@ -174,21 +187,14 @@ export default async function BroadcastPage({
         <p className="text-sm font-semibold" data-testid="broadcast-count">
           {filtered ? t('countFiltered', { n: chats.length }) : t('countAll', { n: chats.length })}
         </p>
-        {chats.length > 0 && (
-          <details className="text-xs text-ink-600">
-            <summary className="cursor-pointer text-brand-700">{t('whoGetsIt')}</summary>
-            <p className="mt-1 font-mono leading-relaxed">
-              {chats
-                .slice(0, 300)
-                .map((c) => c.clientCode)
-                .join(', ')}
-              {chats.length > 300 ? ` … +${chats.length - 300}` : ''}
-            </p>
-          </details>
-        )}
       </form>
 
-      <BroadcastComposer audience={audience} count={chats.length} />
+      {/* Who is found is who gets it — each one a tick the office can take
+          off before writing (his item 4: «topib habar yozish imkoni»). */}
+      <BroadcastComposer
+        audience={audience}
+        recipients={chats.map((c) => ({ code: c.clientCode, name: c.clientName }))}
+      />
 
       {recent.length > 0 && (
         <section className="card !p-3" data-testid="broadcast-history">

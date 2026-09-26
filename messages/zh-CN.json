@@ -1503,7 +1503,17 @@
     "dealFloorUpsale": "核算价 {floor} · 加价 {upsale}（整笔交易）",
     "priceAboveDeal": "比交易价高 {pct}%（按交易约 {usd}）。仍要设置此价格吗？",
     "priceBelowDeal": "比交易价低 {pct}%（按交易约 {usd}）。仍要设置此价格吗？",
-    "priceConfirmAnyway": "是，设置此价格"
+    "priceConfirmAnyway": "是，设置此价格",
+    "dealTotals": "本车 {receipts} 张收货单，{deals} 个交易 — 合计",
+    "dealTotalSold": "交易价格",
+    "dealTotalHere": "本车货物对应",
+    "dealTotalFloor": "核算价格",
+    "dealTotalUpsale": "加价",
+    "dealUnlinked": "{n} 张收货单未关联交易 — 不计入合计",
+    "dealShareHere": "本车 {receipts} 张收货单 · {m3} m³ · {kg} kg",
+    "dealNoQuote": "交易未填价格",
+    "dealNoFigures": "尚无核算价格和加价（未报价）",
+    "dealSoldPrice": "售价 {price}{measure}"
   },
   "map": {
     "title": "地图",
@@ -1539,7 +1549,11 @@
     "pickupPhase_arrived": "应已到仓库",
     "filterClient": "仅显示该客户的货物",
     "filterMissing": "未找到代码为“{code}”的客户——显示全部地图",
-    "filterClear": "显示全部"
+    "filterClear": "显示全部",
+    "cargoLoading": "正在加载货物清单…",
+    "cargoFailed": "无法加载货物清单",
+    "cargoReceived": "收货 {date}",
+    "cargoMore": "还有 {n} 项 — 完整列表见库存"
   },
   "accounting": {
     "title": "管理会计",
@@ -3809,7 +3823,14 @@
       "no_recipients": "所选客户中没有连接机器人的。",
       "too_long": "文字超过 4096 个字符。",
       "too_many_files": "文件超过 10 个。",
-      "exists": "此消息已发送。"
-    }
+      "exists": "此消息已发送。",
+      "too_many_picked": "已勾选超过 500 位客户——请缩小搜索范围或全选。"
+    },
+    "search": "搜索",
+    "searchPlaceholder": "货物（例如椅子）、行业、代码或姓名",
+    "picked": "将发送给 {total} 中的 {n} 位",
+    "pickAll": "全选",
+    "pickNone": "取消选择",
+    "listCapped": "还有 {n} 位客户未显示——也已选中"
   }
 }

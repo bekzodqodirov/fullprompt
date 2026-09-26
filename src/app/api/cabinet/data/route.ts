@@ -1,4 +1,5 @@
 import { authenticateCabinet, cabinetPayload, initDataFrom } from '@/modules/wms/client-cabinet/miniapp';
+import { linkPhoneSiblings } from '@/modules/wms/client-cabinet/service';
 
 /**
  * Everything the client's cabinet shows, in one authenticated call.
@@ -11,9 +12,16 @@ import { authenticateCabinet, cabinetPayload, initDataFrom } from '@/modules/wms
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
-  const auth = await authenticateCabinet(initDataFrom(request));
+  const initData = initDataFrom(request);
+  let auth = await authenticateCabinet(initData);
   if (!auth.ok) {
     return Response.json({ error: auth.reason }, { status: auth.status });
+  }
+  // The person's other codes join their own cabinet (a shared phone is the
+  // same person) — then the door is asked again, so the page shows them now.
+  if ((await linkPhoneSiblings(auth.chatId).catch(() => 0)) > 0) {
+    auth = await authenticateCabinet(initData);
+    if (!auth.ok) return Response.json({ error: auth.reason }, { status: auth.status });
   }
   return Response.json(await cabinetPayload(auth), {
     headers: { 'cache-control': 'no-store, private' },

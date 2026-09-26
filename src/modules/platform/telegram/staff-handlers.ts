@@ -1,7 +1,7 @@
 import type { Bot } from 'grammy';
 import { composeMyDayText } from '../tasks/digest';
 import { logger } from '../logger';
-import { clientMapKeyboard } from './map-link';
+import { clientAnswerKeyboard } from './map-link';
 import {
   AI_RASTAMOJKA,
   BUGUN,
@@ -553,10 +553,8 @@ export function registerStaffBot(bot: Bot): void {
       }
     }
     if (answer) {
-      const map = answer.mapClientCode
-        ? clientMapKeyboard(process.env.APP_URL, answer.mapClientCode)
-        : null;
-      await ctx.reply(answer.text, map ? { reply_markup: map } : undefined);
+      const buttons = clientAnswerKeyboard(process.env.APP_URL, answer);
+      await ctx.reply(answer.text, buttons ? { reply_markup: buttons } : undefined);
       return;
     }
     // «ushani soraganda berishi kerak» — his own word. Somebody typing the

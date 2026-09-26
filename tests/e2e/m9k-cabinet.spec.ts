@@ -140,14 +140,15 @@ test('a tampered blob is refused, whatever the webview claims', async ({ page })
 const PAYLOAD = {
   locale: 'ru',
   totals: { boxes: 10, weightKg: 68.5, volumeM3: 1.02, balanceUsd: 250 },
+  // No street map in the fixture: the map still zooms and pans, over a plain field.
+  basemap: false,
   // Item 11: where the cargo is — one truck on the road, one warehouse.
   map: [
     {
       key: 'truck:b1',
       kind: 'truck',
       name: 'Kashgar → Andijan',
-      x: 74.6,
-      y: 39.6,
+      point: { x: 74.6, y: 39.6 },
       live: false,
       route: [
         { x: 75.98, y: 39.47 },
@@ -164,8 +165,7 @@ const PAYLOAD = {
       key: 'warehouse:w1',
       kind: 'warehouse',
       name: 'Yiwu',
-      x: 120.07,
-      y: 29.3,
+      point: { x: 120.07, y: 29.3 },
       live: false,
       route: [],
       remainingDays: null,
@@ -357,20 +357,32 @@ test('the other two tabs carry the money and the history', async ({ page }) => {
   );
 });
 
-test('the map shows the truck and the warehouse, and a tap lists what of theirs is there (item 11)', async ({ page }) => {
+test('the map is a real map: markers to tap, and every place listed under it (item 11)', async ({ page }) => {
   await cabinetWithData(page);
   await page.getByTestId('cab-map-open').click();
   await expect(page.getByTestId('cab-map-screen')).toBeVisible();
-  // The first place is picked on open: the truck, by its road and days.
+  // Leaflet owns the canvas: a pinch zooms it, the page underneath stays put.
+  const canvas = page.getByTestId('cab-map-canvas');
+  await expect(canvas.locator('.leaflet-map-pane')).toHaveCount(1);
+  expect(await canvas.evaluate((el) => getComputedStyle(el).touchAction)).toBe('none');
+  expect(await page.evaluate(() => document.body.style.overflow)).toBe('hidden');
+  // The first place is open on arrival: the truck, by its road and its days.
   const sheet = page.getByTestId('cab-map-sheet');
   await expect(sheet).toContainText('Kashgar → Andijan');
   await expect(sheet).toContainText('~2–4');
   await expect(sheet).toContainText('Чехлы');
-  await page.getByTestId('cab-map-warehouse').click();
-  await expect(sheet).toContainText('Yiwu');
+  // A tap on the warehouse MARKER opens that place's row.
+  await page.getByTestId('cab-map-marker-warehouse').click();
+  await expect(page.getByTestId('cab-map-warehouse')).toHaveAttribute('aria-expanded', 'true');
   await expect(sheet).toContainText('27.4');
+  // …and a tap on a row opens it too, from the list.
+  await page.getByTestId('cab-map-truck').click();
+  await expect(page.getByTestId('cab-map-truck')).toHaveAttribute('aria-expanded', 'true');
   // Nothing wider than the phone.
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
     await page.evaluate(() => window.innerWidth),
   );
+  // Closing gives the page its scroll back.
+  await page.locator('.cab-map-close').click();
+  expect(await page.evaluate(() => document.body.style.overflow)).toBe('');
 });

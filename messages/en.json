@@ -1503,7 +1503,17 @@
     "dealFloorUpsale": "Calculated price {floor} · upsale {upsale} (whole deal)",
     "priceAboveDeal": "{pct}% above the deal price (by the deal ≈ {usd}). Set this price anyway?",
     "priceBelowDeal": "{pct}% below the deal price (by the deal ≈ {usd}). Set this price anyway?",
-    "priceConfirmAnyway": "Yes, set this price"
+    "priceConfirmAnyway": "Yes, set this price",
+    "dealTotals": "{receipts} receipts, {deals} deals on this truck — totals",
+    "dealTotalSold": "Deals’ price",
+    "dealTotalHere": "For the cargo on this truck",
+    "dealTotalFloor": "Calculated price",
+    "dealTotalUpsale": "Upsale",
+    "dealUnlinked": "{n} receipts are on no deal — not in the totals",
+    "dealShareHere": "on this truck {receipts} receipts · {m3} m³ · {kg} kg",
+    "dealNoQuote": "no price on the deal",
+    "dealNoFigures": "no calculated price or upsale yet (no offer)",
+    "dealSoldPrice": "sold at {price}{measure}"
   },
   "map": {
     "title": "Map",
@@ -1539,7 +1549,11 @@
     "pickupPhase_arrived": "should be at the warehouse",
     "filterClient": "Only this client’s cargo",
     "filterMissing": "No client with code “{code}” — showing the whole map",
-    "filterClear": "Show everything"
+    "filterClear": "Show everything",
+    "cargoLoading": "Loading the cargo list…",
+    "cargoFailed": "Could not load the cargo list",
+    "cargoReceived": "received {date}",
+    "cargoMore": "{n} more items — the full list is in stock"
   },
   "accounting": {
     "title": "Management accounting",
@@ -3809,7 +3823,14 @@
       "no_recipients": "None of the selected clients is linked to the bot.",
       "too_long": "The text is longer than 4096 characters.",
       "too_many_files": "More than 10 files.",
-      "exists": "This message was already sent."
-    }
+      "exists": "This message was already sent.",
+      "too_many_picked": "More than 500 clients are ticked — narrow the search or select everyone."
+    },
+    "search": "Search",
+    "searchPlaceholder": "Goods (e.g. chairs), trade, code or name",
+    "picked": "Will send to {n} of {total}",
+    "pickAll": "Select all",
+    "pickNone": "Clear selection",
+    "listCapped": "{n} more clients not shown — they are selected too"
   }
 }

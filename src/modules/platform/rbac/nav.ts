@@ -404,6 +404,17 @@ export const NAV: NavGroupSpec[] = [
         primary: 3,
       },
       {
+        // Its own door beside the accounts (owner, 2026-09-26: «boshqaruv
+        // hisobi ichidagi harajatlarni glavniy ekranga chiqaz u kop
+        // ishlatiladi boshqaruv hisobi yoniga») — typing an expense is the
+        // accountant's most frequent job and it sat one screen deep.
+        href: '/accounting/expenses',
+        labelKey: 'expenses',
+        namespace: 'accounting',
+        icon: 'wallet',
+        permissions: ['finance.expenses'],
+      },
+      {
         href: '/pipeline',
         labelKey: 'title',
         namespace: 'pipeline',
@@ -562,7 +573,7 @@ export const MENU_BY_ROLE: Record<string, string[]> = {
     '/zametkalar',
   ],
   accountant: [
-    '/', '/bugun', '/kalendar', '/accounting', '/finance', '/kontragentlar', '/reports',
+    '/', '/bugun', '/kalendar', '/accounting', '/accounting/expenses', '/finance', '/kontragentlar', '/reports',
     '/dashboard', '/admin', '/receipts', '/stock', '/approvals', '/ai',
     // They pay the factory truck, on its card (0100).
     '/zavod',

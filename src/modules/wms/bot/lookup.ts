@@ -72,6 +72,13 @@ const money = (n: number) => `$${n.toFixed(2)}`;
 export interface BotAnswer {
   text: string;
   mapClientCode?: string;
+  /**
+   * The client's phones, for a «💬» button that opens a Telegram chat with
+   * the number (the owner, 2026-09-26: «klient ismi yonida telefon nomi
+   * chiqsin … linkga ohshab chiqsin chatga otib ketgani»). Only for somebody
+   * the client card would show a phone to.
+   */
+  phones?: string[];
 }
 
 /**
@@ -100,9 +107,28 @@ export async function botLookupAnswer(actor: BotActor, raw: string): Promise<Bot
 
   const client = await lookupClient(actor, upper);
   if (!client) return null;
-  return mayReadBatches(actor.permissions)
-    ? { text: client.text, mapClientCode: client.code }
-    : { text: client.text };
+  return {
+    text: client.text,
+    ...(mayReadBatches(actor.permissions) ? { mapClientCode: client.code } : {}),
+    ...(client.phones.length ? { phones: client.phones } : {}),
+  };
+}
+
+/**
+ * May this person read a client's phone? The client book's own answer: the
+ * whole book for `clients.manage` or `crm.leads.view_all`, one's own clients
+ * for a seller. A warehouse hand looking up where a carton is does not get a
+ * customer's number (round 91's scoping, and the handover screen's rule that
+ * a phone belongs to whoever is collecting).
+ */
+function maySeePhones(actor: BotActor, salesManagerId: string | null): boolean {
+  if (actor.permissions.has('clients.manage') || actor.permissions.has('crm.leads.view_all')) {
+    return true;
+  }
+  return (
+    (actor.permissions.has('clients.view_own') || actor.permissions.has('crm.leads')) &&
+    salesManagerId === actor.id
+  );
 }
 
 async function lookupBox(actor: BotActor, code: string): Promise<string | null> {
@@ -236,7 +262,7 @@ async function lookupBatch(actor: BotActor, code: string): Promise<string | null
 async function lookupClient(
   actor: BotActor,
   code: string,
-): Promise<{ text: string; code: string } | null> {
+): Promise<{ text: string; code: string; phones: string[] } | null> {
   const [client] = await db
     .select()
     .from(clients)
@@ -395,7 +421,7 @@ async function lookupClient(
         .join(' · ');
       const codes = arrivalCodes.get(`${s.lotId}|${s.warehouseId}`) ?? [];
       return (
-        `· ${s.whCode}: ${s.product} — ${s.n} karobka (${statuses})` +
+        `· 🏭 ${s.whCode}: ${s.product} — ${s.n} karobka (${statuses})` +
         (kg !== null ? ` · ${kg} kg` : '') +
         (m3 !== null ? ` · ${m3} m³` : '') +
         (codes.length ? ` · 🚚 ${codes.join(', ')}` : '')
@@ -478,8 +504,16 @@ async function lookupClient(
       ? `Jami: ${totalN} karobka · ${totalKg.toFixed(1)} kg · ${totalM3.toFixed(3)} m³\n`
       : '';
 
+  const phones = maySeePhones(actor, client.salesManagerId)
+    ? (Array.isArray(client.phones) ? client.phones : [])
+        .filter((p): p is string => typeof p === 'string' && p.trim().length > 0)
+        .map((p) => p.trim())
+        .slice(0, 3)
+    : [];
   const text =
-    `👤 ${client.clientCode} · ${client.name}\n` +
+    `👤 ${client.clientCode} · ${client.name}` +
+    (phones.length ? ` · 📞 ${phones.join(', ')}` : '') +
+    '\n' +
     jami +
     (lines.length ? `${lines.join('\n')}` : 'Hozircha yuk yo‘q') +
     (balance !== null
@@ -490,7 +524,7 @@ async function lookupClient(
           lastReceipt.at ? ` (${dayIn(lastReceipt.at, OFFICE_TZ)})` : ''
         }`
       : '');
-  return { text, code: client.clientCode };
+  return { text, code: client.clientCode, phones };
 }
 
 function outOfScope(): string {

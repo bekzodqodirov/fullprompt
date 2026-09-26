@@ -46,6 +46,9 @@ interface TelegramWebApp {
     impactOccurred?: (style: string) => void;
     selectionChanged?: () => void;
   };
+  /** Bot API 7.7: stop a vertical swipe from minimising the app. */
+  disableVerticalSwipes?: () => void;
+  enableVerticalSwipes?: () => void;
   BackButton?: {
     show?: () => void;
     hide?: () => void;
@@ -133,6 +136,24 @@ export function CabinetApp() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void load(app?.initData ?? '', app?.initDataUnsafe?.user?.language_code);
   }, [load]);
+
+  /**
+   * While the map is open, a drag belongs to the map. Telegram treats a
+   * downward swipe as «minimise the app» and the page underneath scrolls —
+   * his first look was exactly that: a pinch scrolled everything down. Both
+   * are held for as long as the map screen is up, and given back on close.
+   */
+  useEffect(() => {
+    if (!mapOpen) return;
+    const app = webApp();
+    app?.disableVerticalSwipes?.();
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      app?.enableVerticalSwipes?.();
+      document.body.style.overflow = prev;
+    };
+  }, [mapOpen]);
 
   /**
    * An open photograph is closed by Telegram's OWN back button.
@@ -290,6 +311,7 @@ export function CabinetApp() {
           </div>
           <CabinetMap
             places={data.map}
+            basemap={data.basemap}
             t={t}
             goodsName={(lot) => lot.productNameRu?.trim() || lot.productNameZh}
           />

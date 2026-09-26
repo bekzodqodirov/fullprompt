@@ -1,5 +1,48 @@
 # CHANGELOG
 
+## Deploydan keyingi 5 ta bandingiz — 2026-09-26 (kechqurun)
+
+Bu raundning o'z migratsiyasi yo'q. Lekin undan oldin «Saytdan kelgan so'rov»
+raundi (pastda) merge qilingan, u **0110** migratsiyasini olib keladi. Shuning
+uchun bitta deploydan keyin ledger **111** bo'lishi kerak. Build vaqtini ham
+`curl -s https://gsrwms.uz/api/version` bilan tekshiring.
+
+1. **Telegramdagi xarita endi haqiqiy xarita.** Barmoq bilan kattalashtiriladi va
+   suriladi, sahifa pastga ketib qolmaydi. Xarita ostida mijozning HAMMA
+   yuklari ro'yxati turadi: mashina yoki sklad ustiga bossa, o'sha qator ochilib
+   tovarlar, karobka, kg va kub chiqadi. Koordinatasi yozilmagan skladdagi yuk
+   ham ro'yxatda turadi (oldin umuman chiqmay qolardi).
+   **Bitta raqamdagi 4-5 kod:** endi mijoz ilovani ochganda o'sha telefon
+   raqamiga yozilgan hamma kodlar avtomatik ulanadi. Kimdir qo'lda uzib qo'ygan
+   kod qayta ulanmaydi. Shart bitta: kodlarning kartasida o'sha telefon raqami
+   yozilgan bo'lishi kerak.
+   Xaritaning orqasida shaharlar va yo'llar chiqishi uchun serverda xarita
+   fayli bo'lishi kerak (pastdagi buyruq). U bo'lmasa, xarita baribir ishlaydi,
+   faqat fon oddiy bo'ladi va shahar nomlari chiqadi.
+2. **Xodimlar xaritasi.** Mashina yoki sklad bosilganda endi har bir tovar
+   chiqadi: rasm, mijoz kodi, nomi, karobka soni, kg, kub, qabul sanasi va
+   prixod raqami (bosilsa prixod ochiladi). Botdagi «🗺 Xaritada» tugmasi
+   bilan kirilsa, faqat o'sha mijozning yuki ko'rinadi.
+   **Botda mijoz kodi yozilganda:** ism yonida telefon raqami chiqadi. Pastda
+   «💬 +998…» tugmasi bor, bosilsa Telegramda o'sha raqam bilan chat ochiladi.
+   Sklad qatorlari oldida 🏭 turadi, mashinalar oldida 🚚.
+   Telefonni mijozlar bazasiga ruxsati bor xodimlar ko'radi: admin, sotuv
+   rahbari va mijozning o'z sotuvchisi. Skladchiga telefon ko'rinmaydi. Buni
+   ataylab shunday qildim — skladchi karobka qidirganda mijozning raqami unga
+   kerak emas. Kerak bo'lsa aytasiz.
+3. **«Xarajatlar» bosh ekranda**, «Boshqaruv hisobi» yonida alohida tugma
+   bo'lib turadi.
+4. **Xabar yuborishda qidiruv.** Yuk nomi (masalan «stul»), soha, kod yoki ism
+   yozasiz. Tizim o'sha tovarni olib kelgan mijozlarni ularning prixodlaridan
+   topadi. Topilganlar ro'yxat bo'lib chiqadi, keraksizini belgidan olib
+   tashlab, qolganiga yozasiz.
+5. **Partiyaga narx qo'yishda bitimlar.** Oldin mijozning hamma prixodi bitta
+   bitimda bo'lsagina bitim ko'rinardi, 3-4 prixodli mijozda umuman
+   chiqmasdi. Endi har bir bitim alohida qatorda: sotilgan narx, shu
+   mashinadagi ulushi, hisoblangan narx va upsale. Tepada esa jami: bitimlar
+   narxi, shu mashinadagi yuk uchun narx, hisoblangan narx va upsale. 5 % dan
+   katta farq bo'lsa, tasdiqlash shu jamiga nisbatan so'raladi.
+
 ## Saytdan kelgan so'rov → eng bo'sh menejerga — 2026-09-26
 
 Sizning so'rovingiz: «saytdan kelgan zaproslar hodimlar sotuv managerlari
