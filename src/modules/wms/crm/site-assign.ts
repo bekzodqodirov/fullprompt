@@ -270,11 +270,25 @@ export async function assignForTag(
     await tx.execute(sql`SET LOCAL statement_timeout = '400ms'`);
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('lead_assign'))`);
     const [existing] = await tx
-      .select({ username: leadAssignments.username })
+      .select({
+        username: leadAssignments.username,
+        createdAt: leadAssignments.createdAt,
+        active: users.active,
+      })
       .from(leadAssignments)
+      .innerJoin(users, eq(users.id, leadAssignments.userId))
       .where(eq(leadAssignments.tag, input.tag))
       .limit(1);
-    if (existing) return { username: existing.username, reused: true };
+    // A tag is ONE visitor's for as long as it can still land (TAG_VALID_MS).
+    // Past that, or once the person has left, the old name would send the
+    // visitor where nothing is captured or nobody reads — so the site gets
+    // «nobody» and uses its own list. The tag stays spent either way: a
+    // second pick under it would break the one-row-per-tag load count.
+    if (existing) {
+      const live =
+        existing.active && Date.now() - existing.createdAt.getTime() < TAG_VALID_MS;
+      return { username: live ? existing.username : null, reused: true };
+    }
 
     const pick = await pickAssignee(input.team, tx);
     if (!pick.chosen || !stillWanted()) return { username: null, reused: false };

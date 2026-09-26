@@ -7,6 +7,16 @@ orasida taqsimlansin va hodimlarda belgilaylik qanday zaprosga kim javob
 beradi» va «telegrami ulangan bolmasa ham ularni usernamini kirgazadgan joy
 bolsin». **Migratsiya 0107 — deploydan keyin ledger 108 bo'lishi kerak.**
 
+### Sayt uchun yo'riqnoma (sayt AI'siga beriladi)
+
+`docs/SAYT-TAQSIMOT.md` ning 1-bo'limi — saytni quradigan AI uchun to'liq
+yo'riqnoma: qaysi manzilga, qanday so'rash, javobni qanday ishlatish,
+Telegram'ni qanday ochish, tizim javob bermasa nima qilish. Har bir gapi
+kod bilan solishtirib tekshirildi. Tekshiruvda bitta kamchilik topildi va
+tuzatildi: sayt eski kodni qayta so'rasa, tizim 24 soatdan keyin ham yoki
+ishdan ketgan hodimni ham qaytarib berardi — endi bunday holatda «bo'sh
+javob» beradi va sayt o'z zaxira ro'yxatiga o'tadi.
+
 ### Qanday ishlaydi
 
 - Saytdagi so'rovnoma oxirgi tugmada tizimdan «kimga yozsin?» deb so'raydi.

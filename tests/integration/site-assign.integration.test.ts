@@ -214,6 +214,32 @@ describe('the website question', () => {
     expect(rows[0]).toMatchObject({ userId: ids.b, capturable: false, topic: 'yuk', page: '/narxlar/' });
   });
 
+  it('a tag past its landing window, or whose person has left, answers nobody and stays spent', async () => {
+    await tick({ a: ['cargo'], b: ['cargo'] });
+    const ask = (t: string) => assignForTag({ team: 'cargo', tag: t, topic: null, page: null, lang: null });
+    // A site that kept yesterday's tag: the name it would get back can no
+    // longer land a lead, so the answer is «use your own list».
+    const stale = tag();
+    await db.insert(leadAssignments).values({
+      tag: stale,
+      team: 'cargo',
+      userId: ids.b!,
+      username: `sa${STAMP}b`,
+      createdAt: new Date(Date.now() - 25 * 3600_000),
+    });
+    expect(await ask(stale)).toEqual({ username: null, reused: true });
+    // …and a fresh tag whose person was deactivated since.
+    await mint('x', `sa${STAMP}x`);
+    const left = tag();
+    await db.insert(leadAssignments).values({ tag: left, team: 'cargo', userId: ids.x!, username: `sa${STAMP}x` });
+    expect(await ask(left)).toEqual({ username: `sa${STAMP}x`, reused: true });
+    await db.update(users).set({ active: false }).where(eq(users.id, ids.x!));
+    expect(await ask(left)).toEqual({ username: null, reused: true });
+    // Neither became a second pick under the same tag.
+    const rows = await db.select().from(leadAssignments).where(inArray(leadAssignments.tag, [stale, left]));
+    expect(rows).toHaveLength(2);
+  });
+
   it('a visitor we could have seen and did not stops counting after fifteen minutes', async () => {
     await tick({ a: ['cargo'], c: ['cargo'] });
     await offerTo('a', { minutesAgo: 20 }); // blind: counts all day

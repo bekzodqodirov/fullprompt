@@ -1804,7 +1804,7 @@ a db migrated to 0106 before 0103-0105 skips them silently; every local db was
 rebuilt). Subagents hit their weekly limit mid-review; the fixes were done solo.
 
 **Round 113 — saytdan so'rov → eng bo'sh menejer (2026-09-26; DECISIONS
-#1045-#1052; migration 0107 `lead_assign`, ledger 108; spec for the site in
+#1045-#1053; migration 0107 `lead_assign`, ledger 108; spec for the site in
 `docs/SAYT-TAQSIMOT.md`).** The website asks `GET /api/lead/assign` at its last
 button; the answer is ALWAYS `200 {"username": …|null}` (anything but a name =
 the site's own list). Least busy = units handed TODAY (Tashkent): confirmed
