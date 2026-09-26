@@ -1502,7 +1502,17 @@
     "dealFloorUpsale": "Hisoblangan narx {floor} · upsale {upsale} (butun bitim uchun)",
     "priceAboveDeal": "Bitimdagi narxdan {pct}% qimmat (bitim bo‘yicha ≈ {usd}). Baribir shu narxni qo‘yasizmi?",
     "priceBelowDeal": "Bitimdagi narxdan {pct}% arzon (bitim bo‘yicha ≈ {usd}). Baribir shu narxni qo‘yasizmi?",
-    "priceConfirmAnyway": "Ha, shu narxni qo‘yish"
+    "priceConfirmAnyway": "Ha, shu narxni qo‘yish",
+    "dealTotals": "Bu mashinada {receipts} ta prixod, {deals} ta bitim — jami",
+    "dealTotalSold": "Bitimlar narxi",
+    "dealTotalHere": "Shu mashinadagi yuk uchun",
+    "dealTotalFloor": "Hisoblangan narx",
+    "dealTotalUpsale": "Upsale",
+    "dealUnlinked": "{n} ta prixod bitimga ulanmagan — ular jamida yo‘q",
+    "dealShareHere": "bu mashinada {receipts} ta prixod · {m3} m³ · {kg} kg",
+    "dealNoQuote": "bitimda narx yozilmagan",
+    "dealNoFigures": "hisoblangan narx va upsale yozilmagan (taklif berilmagan)",
+    "dealSoldPrice": "sotilgan narx {price}{measure}"
   },
   "map": {
     "title": "Xarita",

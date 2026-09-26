@@ -1502,7 +1502,17 @@
     "dealFloorUpsale": "Расчётная цена {floor} · апсейл {upsale} (на всю сделку)",
     "priceAboveDeal": "На {pct}% дороже цены сделки (по сделке ≈ {usd}). Всё равно поставить эту цену?",
     "priceBelowDeal": "На {pct}% дешевле цены сделки (по сделке ≈ {usd}). Всё равно поставить эту цену?",
-    "priceConfirmAnyway": "Да, поставить эту цену"
+    "priceConfirmAnyway": "Да, поставить эту цену",
+    "dealTotals": "На этой машине {receipts} прих., {deals} сделок — итого",
+    "dealTotalSold": "Цена сделок",
+    "dealTotalHere": "За груз на этой машине",
+    "dealTotalFloor": "Расчётная цена",
+    "dealTotalUpsale": "Апсейл",
+    "dealUnlinked": "{n} прих. не привязаны к сделке — их нет в итоге",
+    "dealShareHere": "на этой машине {receipts} прих. · {m3} м³ · {kg} кг",
+    "dealNoQuote": "в сделке нет цены",
+    "dealNoFigures": "расчётная цена и апсейл не записаны (нет предложения)",
+    "dealSoldPrice": "продано за {price}{measure}"
   },
   "map": {
     "title": "Карта",

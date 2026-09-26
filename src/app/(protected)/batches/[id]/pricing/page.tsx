@@ -28,7 +28,7 @@ import { MoveChargeForm } from '@/app/(protected)/finance/move-charge-form';
 import { PricingForm } from './pricing-form';
 import { upsaleScopeFor } from '@/modules/wms/calc/upsale-scope';
 import { bothFiguresForDeals } from '@/modules/wms/calc/upsale-service';
-import { expectedPriceFor } from '@/modules/wms/finance/deal-price-hint';
+import { dealSharesOf, expectedForDeals, expectedPriceFor } from '@/modules/wms/finance/deal-price-hint';
 import { PageHeader } from '@/components/ui/page';
 
 /**
@@ -128,7 +128,11 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
   // never reads a client price) — the floor and the upsale. Fetched only for
   // the readers who will see it.
   const dealPriceSight = !internal && upsaleScopeFor(actor) === 'all';
-  const groupDealIds = [...new Set(view.clients.map((group) => group.dealId).filter((x): x is string => Boolean(x)))];
+  // EVERY deal the client's cargo aboard belongs to, not only a sole one —
+  // a busy client's three prixods on two deals used to show no deal at all.
+  const groupDealIds = [
+    ...new Set(view.clients.flatMap((group) => group.lots.map((lot) => lot.dealId)).filter((x): x is string => Boolean(x))),
+  ];
   const [dealQuotes, dealFigures] =
     dealPriceSight && groupDealIds.length > 0
       ? await Promise.all([
@@ -531,39 +535,95 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
               </p>
             )}
             {(() => {
-              const quote = group.dealId ? quoteOf.get(group.dealId) : undefined;
-              if (!quote || quote.amount === null) return null;
-              const expected = expectedPriceFor(quote, { m3: group.m3, kg: group.kg });
-              const figures = group.dealId ? dealFigures.get(group.dealId) : undefined;
+              if (!dealPriceSight) return null;
+              const split = dealSharesOf(group.lots);
+              if (split.shares.length === 0) return null;
+              const usdOf = (amount: number, currency: string | null) =>
+                currency === 'USD' ? money(amount) : `${amount.toFixed(2)} ${currency ?? ''}`;
+              const rows = split.shares.map((share) => {
+                const quote = quoteOf.get(share.dealId);
+                const figures = dealFigures.get(share.dealId);
+                return {
+                  share,
+                  quote,
+                  figures,
+                  expected: quote ? expectedPriceFor(quote, { m3: share.m3, kg: share.kg }) : null,
+                };
+              });
+              const sum = (pick: (row: (typeof rows)[number]) => number | null) =>
+                rows.every((row) => pick(row) !== null)
+                  ? rows.reduce((acc, row) => acc + (pick(row) ?? 0), 0)
+                  : null;
+              const soldUsd = sum((row) =>
+                row.quote && row.quote.amount !== null && row.quote.currency === 'USD' ? row.quote.amount : null,
+              );
+              const floorUsd = sum((row) => row.figures?.floorUsd ?? null);
+              const upsaleUsd = sum((row) =>
+                row.figures ? Math.max(0, row.figures.clientPriceUsd - row.figures.floorUsd) : null,
+              );
+              const expectedHere = expectedForDeals(quoteOf, split.shares, split.unlinkedReceipts);
+              // Several prixods or several deals: the deals' own totals come
+              // FIRST, above the rows (his item 5).
+              const many = split.receipts > 1 || split.shares.length > 1;
               return (
-                <div className="rounded-lg border border-line bg-surface p-2 text-xs" data-testid="pricing-deal-price">
-                  <p>
-                    📋{' '}
-                    {t('dealSoldAt', {
-                      code: group.dealCode ?? '',
-                      price: `${quote.currency === 'USD' ? '$' : ''}${quote.amount.toFixed(2)}${quote.currency === 'USD' ? '' : ` ${quote.currency ?? ''}`}`,
-                      // The measure the quote was for, only when it has one.
-                      measure:
-                        quote.m3 !== null || quote.kg !== null
-                          ? ` (${[quote.m3 !== null ? `${quote.m3} m³` : null, quote.kg !== null ? `${quote.kg} kg` : null]
-                              .filter(Boolean)
-                              .join(', ')})`
-                          : '',
-                    })}
-                  </p>
-                  {expected !== null && (
-                    <p className="font-semibold" data-testid="pricing-deal-expected">
-                      {t('dealExpectedHere', { usd: money(expected) })}
-                    </p>
+                <div className="space-y-1.5 rounded-lg border border-line bg-surface p-2 text-xs" data-testid="pricing-deal-price">
+                  {many && (
+                    <div className="space-y-0.5 border-b border-line pb-1.5" data-testid="pricing-deal-totals">
+                      <p className="font-semibold">
+                        📋 {t('dealTotals', { receipts: split.receipts, deals: split.shares.length })}
+                      </p>
+                      <p>
+                        {t('dealTotalSold')}: <b className="num">{soldUsd !== null ? money(soldUsd) : '—'}</b>
+                        {' · '}
+                        {t('dealTotalHere')}: <b className="num">{expectedHere !== null ? money(expectedHere) : '—'}</b>
+                      </p>
+                      <p className="text-ink-600">
+                        {t('dealTotalFloor')}: <b className="num">{floorUsd !== null ? money(floorUsd) : '—'}</b>
+                        {' · '}
+                        {t('dealTotalUpsale')}: <b className="num">{upsaleUsd !== null ? money(upsaleUsd) : '—'}</b>
+                      </p>
+                      {split.unlinkedReceipts > 0 && (
+                        <p className="text-warn">⚠ {t('dealUnlinked', { n: split.unlinkedReceipts })}</p>
+                      )}
+                    </div>
                   )}
-                  {figures && (
-                    <p className="text-ink-500" data-testid="pricing-deal-upsale">
-                      {t('dealFloorUpsale', {
-                        floor: money(figures.floorUsd),
-                        upsale: money(Math.max(0, figures.clientPriceUsd - figures.floorUsd)),
-                      })}
-                    </p>
-                  )}
+                  {rows.map(({ share, quote, figures, expected }) => (
+                    <div key={share.dealId} className="space-y-0.5" data-testid="pricing-deal-row">
+                      <p>
+                        <Link href={`/bitimlar/${share.dealId}`} className="font-mono font-semibold text-brand-700 underline">
+                          {share.dealCode ?? '—'}
+                        </Link>{' '}
+                        {quote && quote.amount !== null
+                          ? t('dealSoldPrice', {
+                              price: usdOf(quote.amount, quote.currency),
+                              measure:
+                                quote.m3 !== null || quote.kg !== null
+                                  ? ` (${[quote.m3 !== null ? `${quote.m3} m³` : null, quote.kg !== null ? `${quote.kg} kg` : null]
+                                      .filter(Boolean)
+                                      .join(', ')})`
+                                  : '',
+                            })
+                          : t('dealNoQuote')}
+                      </p>
+                      <p className="text-ink-600">
+                        {t('dealShareHere', { receipts: share.receipts, m3: share.m3, kg: share.kg })}
+                        {expected !== null && (
+                          <>
+                            {' · '}
+                            <b data-testid="pricing-deal-expected">{t('dealExpectedHere', { usd: money(expected) })}</b>
+                          </>
+                        )}
+                      </p>
+                      <p className="text-ink-500" data-testid="pricing-deal-upsale">
+                        {figures
+                          ? t('dealFloorUpsale', {
+                              floor: money(figures.floorUsd),
+                              upsale: money(Math.max(0, figures.clientPriceUsd - figures.floorUsd)),
+                            })
+                          : t('dealNoFigures')}
+                      </p>
+                    </div>
+                  ))}
                 </div>
               );
             })()}
@@ -573,11 +633,10 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                 batchId={id}
                 currencies={currencyCodes}
                 today={today}
-                expectedUsd={
-                  group.dealId && quoteOf.get(group.dealId)
-                    ? expectedPriceFor(quoteOf.get(group.dealId)!, { m3: group.m3, kg: group.kg })
-                    : null
-                }
+                expectedUsd={(() => {
+                  const split = dealSharesOf(group.lots);
+                  return expectedForDeals(quoteOf, split.shares, split.unlinkedReceipts);
+                })()}
               />
             )}
           </div>

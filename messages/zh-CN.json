@@ -1502,7 +1502,17 @@
     "dealFloorUpsale": "核算价 {floor} · 加价 {upsale}（整笔交易）",
     "priceAboveDeal": "比交易价高 {pct}%（按交易约 {usd}）。仍要设置此价格吗？",
     "priceBelowDeal": "比交易价低 {pct}%（按交易约 {usd}）。仍要设置此价格吗？",
-    "priceConfirmAnyway": "是，设置此价格"
+    "priceConfirmAnyway": "是，设置此价格",
+    "dealTotals": "本车 {receipts} 张收货单，{deals} 个交易 — 合计",
+    "dealTotalSold": "交易价格",
+    "dealTotalHere": "本车货物对应",
+    "dealTotalFloor": "核算价格",
+    "dealTotalUpsale": "加价",
+    "dealUnlinked": "{n} 张收货单未关联交易 — 不计入合计",
+    "dealShareHere": "本车 {receipts} 张收货单 · {m3} m³ · {kg} kg",
+    "dealNoQuote": "交易未填价格",
+    "dealNoFigures": "尚无核算价格和加价（未报价）",
+    "dealSoldPrice": "售价 {price}{measure}"
   },
   "map": {
     "title": "地图",

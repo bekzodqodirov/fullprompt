@@ -1502,7 +1502,17 @@
     "dealFloorUpsale": "Calculated price {floor} · upsale {upsale} (whole deal)",
     "priceAboveDeal": "{pct}% above the deal price (by the deal ≈ {usd}). Set this price anyway?",
     "priceBelowDeal": "{pct}% below the deal price (by the deal ≈ {usd}). Set this price anyway?",
-    "priceConfirmAnyway": "Yes, set this price"
+    "priceConfirmAnyway": "Yes, set this price",
+    "dealTotals": "{receipts} receipts, {deals} deals on this truck — totals",
+    "dealTotalSold": "Deals’ price",
+    "dealTotalHere": "For the cargo on this truck",
+    "dealTotalFloor": "Calculated price",
+    "dealTotalUpsale": "Upsale",
+    "dealUnlinked": "{n} receipts are on no deal — not in the totals",
+    "dealShareHere": "on this truck {receipts} receipts · {m3} m³ · {kg} kg",
+    "dealNoQuote": "no price on the deal",
+    "dealNoFigures": "no calculated price or upsale yet (no offer)",
+    "dealSoldPrice": "sold at {price}{measure}"
   },
   "map": {
     "title": "Map",
