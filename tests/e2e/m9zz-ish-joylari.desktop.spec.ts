@@ -101,11 +101,19 @@ test('the reports live in one place, grouped, and the owner’s settings sit in 
   );
   // The groups are a switch in place, not six more navigations.
   expect(await page.getByTestId('ws-group').locator('option').count()).toBeGreaterThanOrEqual(5);
-  // The FX rates are Pul's ⚙, and their page no longer calls itself admin.
+  // The FX rates are a Pul TAB (typed daily), and the page no longer calls
+  // itself administration…
   await page.goto('/admin/fx');
   await expect(page.getByTestId('ws-pul')).toHaveAttribute('aria-current', 'true');
   await expect(page.getByTestId('admin-back')).toHaveCount(0);
-  await expect(page.locator('[data-testid="ws-setting"][href="/admin/fx"]')).toHaveAttribute(
+  await expect(page.locator('[data-testid="ws-tab"][href="/admin/fx"]').first()).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
+  // …and the cost types are Pul's ⚙.
+  await page.goto('/admin/cost-types');
+  await expect(page.getByTestId('ws-pul')).toHaveAttribute('aria-current', 'true');
+  await expect(page.locator('[data-testid="ws-setting"][href="/admin/cost-types"]')).toHaveAttribute(
     'aria-current',
     'page',
   );
