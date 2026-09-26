@@ -1820,6 +1820,19 @@ asks rastamojka/podklyuch — **decision 8 («no freight») is OVERTURNED**:
 podklyuch takes the zone as a button on the request INSERT and replies
 rastamojka · yo'lkira (LIST) · JAMI.
 
+**Round — his five items after the 110 deploy (2026-09-26 evening; DECISIONS
+#1056-#1060; NO migration, ledger 110).** The Mini App map rebuilt on Leaflet
+(pinch/pan, self-hosted basemap when present, every place LISTED even with no
+coordinates, Telegram swipes held while open) and `linkPhoneSiblings` joining
+one person's codes when the cabinet opens (never a revoked one); the staff
+/map popup lists the place's lots from `/api/map/cargo` (`placeCargo`); the
+bot's client answer prints phones + «💬» `t.me/+` buttons under the client
+book's rule (never to a warehouse hand) and 🏭 on warehouse rows;
+/accounting/expenses got its own nav row (`OWN_ROW_PAGES`); the broadcast
+searches the GOODS of a client's non-voided prixods and lets the office
+un-tick; the pricing page shows EVERY deal of a client's cargo with totals and
+confirms against `expectedForDeals`.
+
 **Latest migration: 0109** (`client_broadcast`; ledger must reach **110**).
 Before it: 0108 (`partner_terms`), 0107 (`batch_profit_tracked`), **0106**
 (`recurring_paid` — the month a posting closes and
