@@ -1802,8 +1802,28 @@ shaped copy). PROCESS: #1040 (migration `when` order across parallel packages �
 a db migrated to 0106 before 0103-0105 skips them silently; every local db was
 rebuilt). Subagents hit their weekly limit mid-review; the fixes were done solo.
 
-**Latest migration: 0106** (`recurring_paid` — the month a posting closes and
-the template's due-from; ledger must reach **107**). Before it: 0105
+**Round — his thirteen items of 2026-09-26 (DECISIONS #1045-#1055; migrations
+0107-0109 — ledger must reach 110; PR #89).** Receive wizard takes a note and no
+money; `batches.profit_tracked` (0107, default false — «Partiya foydasi» reads
+only marked trucks, the attention list reads all); the seller's upsale is paid
+× `cargo_factor` = confirmed receipts' m³ (kg on a per-kg band) ÷ quoted, state
+`no_cargo`, and `sellerCargo` is the KPI by China receipt day; the pricing page
+shows the deal price scaled to the truck with a >5 % confirmation
+(`finance/deal-price-hint.ts`, law 4 gated); partner terms + limit with FIFO
+due dates and once-guarded reminders (0108); the P&L's five cards with ▲▼ vs
+`priorPeriod`; client birthday/sector/cargo kinds, `/xabarlar` broadcast
+(super_admin ROLE, one message per CHAT, pg-boss batches of 20) and birthday
+alerts (0109); the Mini App map (`cabinetMap` — never a batch code, never
+another client); the staff bot's client answer with road + days and a
+«🗺 Xaritada» URL button to `/map?mijoz=` (batch readers only); and the AI door
+asks rastamojka/podklyuch — **decision 8 («no freight») is OVERTURNED**:
+podklyuch takes the zone as a button on the request INSERT and replies
+rastamojka · yo'lkira (LIST) · JAMI.
+
+**Latest migration: 0109** (`client_broadcast`; ledger must reach **110**).
+Before it: 0108 (`partner_terms`), 0107 (`batch_profit_tracked`), **0106**
+(`recurring_paid` — the month a posting closes and
+the template's due-from; ledger 107). Before it: 0105
 (`compensation`), 0104 (`unpriced_gate`), 0103 (`fx_differences`), 0102
 (`business_targets` — the monthly plan). Before them: **0101** (`kassa_refund` — the refund kind, the cost's kassa
 and its merge provenance, the staff login link, the own-pocket request; ledger
@@ -1915,7 +1935,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **107** since 0106, and his server last CONFIRMED 95 (2026-09-04),
+length — **110** since 0109 (his server confirmed 107 on 2026-09-26), and before that he last CONFIRMED 95 (2026-09-04),
 which means 0095-0106 are all pending and one deploy applies TWELVE of them.
 Never carry this number over from a previous session: read it
 (`ls src/modules/platform/db/migrations/*.sql | wc -l`) before writing the
