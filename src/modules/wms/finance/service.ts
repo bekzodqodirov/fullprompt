@@ -106,7 +106,14 @@ export function refundFits(
   const owesElsewhere = balances.some((row) => row.currency !== refund.currency && row.native > 0.004);
   if (own < -0.004 && !owesElsewhere) return refund.amount <= -own + 0.004;
   const usd = balances.reduce((sum, row) => sum + row.usd, 0);
-  return refundFitsAdvance(refund.amountUsd, -Math.round(usd * 100) / 100);
+  // The rate can only have moved money held IN the refund's currency: a
+  // dollar advance handed back in so'm converts at today's rate and drifts by
+  // nothing, so 2 % of the WHOLE advance let a $10,000 USD advance hand back
+  // $10,200 of so'm (review of the lead's fixes after the fx package took the
+  // same-currency case). The drift base is the advance in the refund's own
+  // money; with none, only the $5 floor.
+  const ownAdvanceUsd = Math.max(0, -(balances.find((row) => row.currency === refund.currency)?.usd ?? 0));
+  return refundFitsAdvance(refund.amountUsd, -Math.round(usd * 100) / 100, ownAdvanceUsd);
 }
 
 /**
@@ -116,11 +123,13 @@ export function refundFits(
  * more dollars than it came in as (measured: $300 → $301.88) — the owner's
  * «bir necha dollarlik farq baribir o'tkaziladi». The allowance is the
  * merge's own (2 % or $5, the looser — `fxResidueAllowance`), because a flat
- * $5 refused a 125-million-so'm advance handed back after a 1.2 % move. The
- * FX package replaces this with a native-currency rule.
+ * $5 refused a 125-million-so'm advance handed back after a 1.2 % move.
+ * `refundFits` answers the same-currency case natively first and reaches this
+ * only across currencies, where `driftBaseUsd` — the part of the advance held
+ * in the refund's own currency — is all the rate can have moved.
  */
-export function refundFitsAdvance(refundUsd: number, advanceUsd: number): boolean {
-  return advanceUsd > 0.009 && refundUsd <= advanceUsd + fxResidueAllowance(advanceUsd) + 0.004;
+export function refundFitsAdvance(refundUsd: number, advanceUsd: number, driftBaseUsd = advanceUsd): boolean {
+  return advanceUsd > 0.009 && refundUsd <= advanceUsd + fxResidueAllowance(driftBaseUsd) + 0.004;
 }
 
 export const transactionSchema = z

@@ -22,6 +22,13 @@ describe('refundFits', () => {
     expect(refundFits({ amount: 120_000_000, currency: 'UZS', amountUsd: 9_836.07 }, owes)).toBe(true);
   });
 
+  it('a DOLLAR advance handed back in so’m drifts by nothing: only the $5 floor over it (review)', () => {
+    // 2 % of the whole advance let $10,000 hand back $10,200 of so'm.
+    const dollars = [{ currency: 'USD', native: -10_000, usd: -10_000 }];
+    expect(refundFits({ amount: 124_687_500, currency: 'UZS', amountUsd: 10_150 }, dollars)).toBe(false);
+    expect(refundFits({ amount: 122_550_000, currency: 'UZS', amountUsd: 10_004 }, dollars)).toBe(true);
+  });
+
   it('no advance in the refund’s currency: the dollar rule', () => {
     const dollars = [{ currency: 'USD', native: -300, usd: -300 }];
     expect(refundFits({ amount: 306, currency: 'USD', amountUsd: 306 }, dollars)).toBe(false);
