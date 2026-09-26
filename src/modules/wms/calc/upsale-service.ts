@@ -28,7 +28,7 @@ import type { UpsaleScope } from './upsale-scope';
  * number of rows rather than two per row (#432).
  */
 
-export type UpsaleState = 'paid' | 'payable' | 'awaiting_payment' | 'no_invoice' | 'no_deal';
+export type UpsaleState = 'paid' | 'payable' | 'awaiting_payment' | 'no_invoice' | 'no_cargo' | 'no_deal';
 
 export interface UpsaleRow {
   offerId: string;
@@ -44,7 +44,14 @@ export interface UpsaleRow {
   section: string;
   clientPriceUsd: number;
   floorUsd: number;
+  /** The share on the cargo that ARRIVED (4b): `promisedUsd` × the cargo factor. */
   upsaleUsd: number;
+  /** The promise's own difference, before the cargo — what the seller quoted. */
+  promisedUsd: number;
+  /** Confirmed prixods on the deal and their measure — what the share is scaled by. */
+  cargoReceipts: number;
+  cargoM3: number;
+  cargoKg: number;
   /** What a payout would MOVE today: the promise's difference less whatever
    * this job has already paid (audit A1). Equal to `upsaleUsd` on the
    * ordinary once-offered job; smaller after a re-offer on a paid one. */
@@ -67,6 +74,11 @@ interface RawRow extends Record<string, unknown> {
   client_price_usd: string;
   total_usd: string;
   upsale_usd: string;
+  promised_usd: string;
+  due_price_usd: string;
+  cargo_receipts: string | number;
+  cargo_m3: string;
+  cargo_kg: string;
   payable_usd: string;
   payout_at: Date | null;
   payout_usd: string | null;
@@ -93,7 +105,13 @@ export function upsaleStateOf(
   row: {
     payout_at: Date | null;
     entity_type: string;
-    client_price_usd: string;
+    /**
+     * The client's price for the cargo that ARRIVED (4b) and how many
+     * confirmed prixods that is. REQUIRED, like `compensated_usd`: a reader
+     * that forgets them compares charges with the whole promise.
+     */
+    due_price_usd: string;
+    cargo_receipts: string | number;
     charged_usd: string | null;
     /**
      * Taken back for the job's lost cargo (0105). REQUIRED: both readers
@@ -105,10 +123,12 @@ export function upsaleStateOf(
 ): UpsaleState {
   if (row.payout_at) return 'paid';
   if (row.entity_type !== 'deal') return 'no_deal';
+  // The owner's 4b: a share is a fact only once cargo has ARRIVED on the deal.
+  if (Number(row.cargo_receipts) === 0) return 'no_cargo';
   // The job's NET price (his own rule, a lowered price holds the upsale):
   // whether the price was lowered or kept and compensated above it, a job
   // whose money was taken back is «Hisob-faktura yo'q» until it is whole.
-  if (money(money(row.charged_usd) - money(row.compensated_usd)) < money(row.client_price_usd) - MONEY_EPSILON) {
+  if (money(money(row.charged_usd) - money(row.compensated_usd)) < money(row.due_price_usd) - MONEY_EPSILON) {
     return 'no_invoice';
   }
   if ((bal?.balanceUsd ?? 0) - (bal?.deferredUsd ?? 0) > MONEY_EPSILON) return 'awaiting_payment';
@@ -204,6 +224,10 @@ export async function upsaleRows(
       clientPriceUsd,
       floorUsd: money(r.total_usd),
       upsaleUsd: money(r.upsale_usd),
+      promisedUsd: money(r.promised_usd),
+      cargoReceipts: Number(r.cargo_receipts),
+      cargoM3: Number(r.cargo_m3),
+      cargoKg: Number(r.cargo_kg),
       payableUsd: money(r.payable_usd),
       paidAt: r.payout_at ? new Date(r.payout_at) : null,
       paidUsd: r.payout_usd === null ? null : money(r.payout_usd),
@@ -213,6 +237,55 @@ export async function upsaleRows(
   });
 
   return { rows, truncated };
+}
+
+/**
+ * The KPI the owner pays once a month (2026-09-26, his 3a/x): the cargo each
+ * seller BROUGHT — the confirmed prixods linked to the seller's own deals
+ * (the deal's owner), counted on the day the warehouse confirmed them. m³ and
+ * kg are the lots' own totals, the figures the prixod card prints. One
+ * grouped read for any number of sellers (#432); a deal with no owner is its
+ * own «—» row rather than nobody's cargo silently dropped.
+ */
+export async function sellerCargo(
+  scope: UpsaleScope,
+  actorId: string,
+  opts: { from?: string; to?: string; sellerId?: string } = {},
+): Promise<{ sellerId: string | null; sellerName: string | null; receipts: number; m3: number; kg: number }[]> {
+  if (scope === 'none') return [];
+  const where = [sql`rc.status = 'confirmed'`, sql`rc.deal_id IS NOT NULL`];
+  if (scope === 'own') where.push(sql`d.owner_id = ${actorId}::uuid`);
+  else if (opts.sellerId) where.push(sql`d.owner_id = ${opts.sellerId}::uuid`);
+  // Tashkent's days (R5), inclusive to the end of the named day.
+  if (opts.from) where.push(sql`rc.confirmed_at >= ((${opts.from}::date)::timestamp AT TIME ZONE 'Asia/Tashkent')`);
+  if (opts.to) where.push(sql`rc.confirmed_at < ((${opts.to}::date + 1)::timestamp AT TIME ZONE 'Asia/Tashkent')`);
+  const rows = await db.execute<{
+    seller_id: string | null;
+    seller_name: string | null;
+    receipts: string;
+    m3: string;
+    kg: string;
+  }>(sql`
+    SELECT d.owner_id AS seller_id,
+           u.full_name AS seller_name,
+           count(DISTINCT rc.id) AS receipts,
+           coalesce(sum(rl.total_volume_m3), 0) AS m3,
+           coalesce(sum(rl.total_weight_kg), 0) AS kg
+      FROM receipts rc
+      JOIN deals d ON d.id = rc.deal_id
+      JOIN receipt_lots rl ON rl.receipt_id = rc.id
+      LEFT JOIN users u ON u.id = d.owner_id
+     WHERE ${sql.join(where, sql` AND `)}
+     GROUP BY d.owner_id, u.full_name
+     ORDER BY sum(rl.total_volume_m3) DESC NULLS LAST
+  `);
+  return rows.map((r) => ({
+    sellerId: r.seller_id,
+    sellerName: r.seller_name,
+    receipts: Number(r.receipts),
+    m3: Math.round(Number(r.m3) * 1000) / 1000,
+    kg: Math.round(Number(r.kg) * 10) / 10,
+  }));
 }
 
 /**
@@ -265,14 +338,15 @@ export function bySeller(rows: UpsaleRow[]) {
 export async function upsaleLiability(): Promise<{ payableUsd: number; payableCount: number; accruedUsd: number }> {
   const raw = await db.execute<{
     entity_type: string;
-    client_price_usd: string;
+    due_price_usd: string;
+    cargo_receipts: string | number;
     payable_usd: string;
     payout_at: Date | null;
     client_id: string | null;
     charged_usd: string | null;
     compensated_usd: string | null;
   }>(sql`
-    SELECT p.entity_type, p.client_price_usd, p.payable_usd, p.payout_at,
+    SELECT p.entity_type, p.due_price_usd, p.cargo_receipts, p.payable_usd, p.payout_at,
            d.client_id,
            inv.charged AS charged_usd,
            inv.compensated AS compensated_usd
@@ -384,12 +458,13 @@ export async function payUpsale(
     offered_by: string;
     payout_at: Date | null;
     entity_type: string;
-    client_price_usd: string;
+    due_price_usd: string;
+    cargo_receipts: string | number;
     client_id: string | null;
     charged_usd: string | null;
     compensated_usd: string | null;
   }>(sql`
-    SELECT p.id, p.payable_usd, p.offered_by, p.payout_at, p.entity_type, p.client_price_usd,
+    SELECT p.id, p.payable_usd, p.offered_by, p.payout_at, p.entity_type, p.due_price_usd, p.cargo_receipts,
            d.client_id, inv.charged AS charged_usd, inv.compensated AS compensated_usd
       FROM (${payableOffersSql()}) p
       LEFT JOIN deals d ON d.id = p.entity_id AND p.entity_type = 'deal'
@@ -417,6 +492,8 @@ export async function payUpsale(
 
   // The REMAINING amount, not the promise's whole difference: a job that has
   // already paid a commission pays only what a higher re-offer added (A1).
+  // A ticked job whose arrived cargo is already paid for moves nothing (4b).
+  if (quoted.some((q) => !(Number(q.payable_usd) > 0))) throw new CalcError('nothing_to_pay');
   const paidUsd = money(quoted.reduce((sum, q) => sum + Number(q.payable_usd), 0));
   if (!(paidUsd > 0)) throw new CalcError('nothing_to_pay');
   const amount = Math.round((paidUsd / rate) * 100) / 100;

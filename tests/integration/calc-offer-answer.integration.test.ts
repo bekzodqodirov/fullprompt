@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { eq, inArray, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { arriveOnDeal, removeArrived } from '../fixtures/deal-cargo';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
   calcGroups,
@@ -43,6 +44,7 @@ let actorId = '';
 let clientId = '';
 let stageId = '';
 const madeDeals: string[] = [];
+const madeReceipts: string[] = [];
 const madeRequests: string[] = [];
 const ctx = () => ({ actorId });
 
@@ -140,6 +142,7 @@ afterAll(async () => {
       await db.delete(tasks).where(inArray(tasks.id, taskIds));
     }
   }
+  await removeArrived(madeReceipts);
   if (madeDeals.length > 0) await db.delete(deals).where(inArray(deals.id, madeDeals));
   await db.update(clients).set({ active: false }).where(eq(clients.id, clientId));
   await db.update(users).set({ active: false }).where(eq(users.id, actorId));
@@ -165,6 +168,9 @@ describe('the Готово answer as an offer floor', () => {
     expect(offer!.versionId).toBeNull();
     expect(offer!.requestId).toBe(requestId);
 
+    // The request's cargo arrived as quoted (the owner's 4b: the share is a
+    // fact only then, on what came) — 10 m³, 500 kg.
+    madeReceipts.push(await arriveOnDeal({ dealId, clientId, actorId, m3: 10, kg: 500 }));
     const payable = await payableFor(dealId);
     expect(payable).toHaveLength(1);
     expect(Number(payable[0]!.total_usd)).toBe(1000);

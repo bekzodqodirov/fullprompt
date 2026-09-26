@@ -12,6 +12,7 @@ import {
   bySeller,
   earnedOf,
   pendingBelowFloor,
+  sellerCargo,
   upsaleRows,
   UPSALE_CAP,
   type UpsaleRow,
@@ -43,14 +44,19 @@ const STATE_CLASS: Record<UpsaleState, string> = {
   payable: 'chip chip-neutral',
   awaiting_payment: 'chip chip-warn',
   no_invoice: 'chip chip-neutral',
+  no_cargo: 'chip chip-neutral',
   no_deal: 'chip chip-neutral',
 };
 
-const STATE_KEY: Record<UpsaleState, 'stPaid' | 'stPayable' | 'stAwaiting' | 'stNoInvoice' | 'stNoDeal'> = {
+const STATE_KEY: Record<
+  UpsaleState,
+  'stPaid' | 'stPayable' | 'stAwaiting' | 'stNoInvoice' | 'stNoCargo' | 'stNoDeal'
+> = {
   paid: 'stPaid',
   payable: 'stPayable',
   awaiting_payment: 'stAwaiting',
   no_invoice: 'stNoInvoice',
+  no_cargo: 'stNoCargo',
   no_deal: 'stNoDeal',
 };
 
@@ -73,6 +79,7 @@ export default async function UpsalePage({
   let rows: UpsaleRow[] = [];
   let truncated = false;
   let pending: Awaited<ReturnType<typeof pendingBelowFloor>> = [];
+  let cargo: Awaited<ReturnType<typeof sellerCargo>> = [];
   let accounts: Awaited<ReturnType<typeof listAccounts>> = [];
   let categories: Awaited<ReturnType<typeof listCategories>> = [];
   let categoryId = '';
@@ -85,6 +92,7 @@ export default async function UpsalePage({
     });
     rows = res.rows;
     truncated = res.truncated;
+    cargo = await sellerCargo(scope, actor.id, { from: period.dan, to: period.gacha, sellerId: params.hodim });
     if (mayApproveBelowFloor(actor)) pending = await pendingBelowFloor();
     if (actor.permissions.has('finance.expenses') && scope === 'all') {
       // The payer's two questions: out of which till, and under which cost
@@ -111,7 +119,14 @@ export default async function UpsalePage({
     waiting:
       Math.round(rows.filter((r) => r.state !== 'paid').reduce((s, r) => s + r.payableUsd, 0) * 100) / 100,
   };
-  const payable = rows.filter((r) => r.state === 'payable');
+  // A job whose arrived cargo is already paid for moves nothing (4b).
+  const payable = rows.filter((r) => r.state === 'payable' && r.payableUsd > 0.009);
+  // «Kelishilgan … · kelgan yuk …» (4b): the share is the promise scaled by
+  // the cargo that arrived, so both are said beside it.
+  const cargoLine = (r: UpsaleRow) =>
+    r.cargoReceipts > 0
+      ? t('onCargo', { promised: money(r.promisedUsd), m3: r.cargoM3.toFixed(2), kg: Math.round(r.cargoKg) })
+      : t('promisedOnly', { promised: money(r.promisedUsd) });
   const current = { dan: period.dan, gacha: period.gacha, hodim: params.hodim ?? '' };
 
   return (
@@ -159,6 +174,36 @@ export default async function UpsalePage({
           </div>
         ))}
       </div>
+
+      {/* The monthly KPI (his 3a/x): the cargo each seller brought, by the
+          day the warehouse confirmed it — a different clock from the offers
+          above, said in the heading. */}
+      {cargo.length > 0 ? (
+        <section className="card !p-3" data-testid="upsale-cargo-kpi">
+          <p className="text-2xs uppercase text-ink-500">{t('cargoKpi')}</p>
+          <p className="text-2xs text-ink-500">{t('cargoKpiHint')}</p>
+          <table className="mt-2 w-full text-sm">
+            <thead>
+              <tr className="border-b border-line text-left text-2xs uppercase text-ink-500">
+                <th className="py-1 pr-2">{t('seller')}</th>
+                <th className="py-1 pr-2 text-right">{t('cargoReceipts')}</th>
+                <th className="py-1 pr-2 text-right">m³</th>
+                <th className="py-1 text-right">kg</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cargo.map((c) => (
+                <tr key={c.sellerId ?? 'none'} className="border-b border-line/60">
+                  <td className="py-1 pr-2">{c.sellerName ?? '—'}</td>
+                  <td className="py-1 pr-2 text-right font-mono tabular-nums">{c.receipts}</td>
+                  <td className="py-1 pr-2 text-right font-mono font-semibold tabular-nums">{c.m3.toFixed(2)}</td>
+                  <td className="py-1 text-right font-mono tabular-nums">{Math.round(c.kg)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      ) : null}
 
       {pending.length > 0 ? (
         <section className="card !p-3" data-testid="upsale-pending">
@@ -264,6 +309,9 @@ export default async function UpsalePage({
                     {format.dateTime(r.offeredAt, { dateStyle: 'short' })}
                   </span>
                 </div>
+                <p className="text-2xs text-ink-600" data-testid="upsale-cargo">
+                  {cargoLine(r)}
+                </p>
                 {/* Why the commission waits (0105): neutral words, both scopes —
                     the amount is on the seller's own client's ledger already. */}
                 {r.compensatedUsd > 0.009 && (
@@ -321,6 +369,9 @@ export default async function UpsalePage({
                       ) : null}
                       <td className="p-2 text-right font-mono font-semibold tabular-nums">
                         {money(r.upsaleUsd)}
+                        <span className="block font-sans text-2xs font-normal text-ink-500">
+                          {cargoLine(r)}
+                        </span>
                       </td>
                       <td className="p-2">
                         <span className={STATE_CLASS[r.state]}>{t(STATE_KEY[r.state])}</span>

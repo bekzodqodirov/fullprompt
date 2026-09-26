@@ -3445,7 +3445,13 @@
     "categoryAsk": "Only an administrator can choose it.",
     "periodByOffer": "Offer date",
     "periodHint": "The period is by the day of the offer. Expenses and the P&L show a payout on the day the money was handed over.",
-    "compensated": "⚠ compensation on this deal: −{amount} (lost cargo)"
+    "compensated": "⚠ compensation on this deal: −{amount} (lost cargo)",
+    "stNoCargo": "No cargo yet",
+    "onCargo": "Promised {promised} · arrived: {m3} m³, {kg} kg",
+    "promisedOnly": "Promised {promised} · no cargo yet",
+    "cargoKpi": "Cargo brought (KPI)",
+    "cargoKpiHint": "Receipts linked to the seller’s deals — by the day the warehouse received them.",
+    "cargoReceipts": "Receipts"
   },
   "sellerReport": {
     "title": "Sellers: results",

@@ -3445,7 +3445,13 @@
     "categoryAsk": "只有管理员可以选择。",
     "periodByOffer": "报价日期",
     "periodHint": "期间按报价日期计算。费用和损益表按实际发放日期显示佣金。",
-    "compensated": "⚠ 该交易有赔偿：−{amount}（丢失货物）"
+    "compensated": "⚠ 该交易有赔偿：−{amount}（丢失货物）",
+    "stNoCargo": "货物未到",
+    "onCargo": "承诺 {promised} · 已到：{m3} m³，{kg} kg",
+    "promisedOnly": "承诺 {promised} · 货物尚未到达",
+    "cargoKpi": "带来的货物（KPI）",
+    "cargoKpiHint": "关联到销售员交易的入库单——按仓库收货日期。",
+    "cargoReceipts": "入库单"
   },
   "sellerReport": {
     "title": "销售业绩",
