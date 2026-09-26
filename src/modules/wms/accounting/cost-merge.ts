@@ -161,14 +161,25 @@ function mergeableExpenseSql() {
 }
 
 /**
- * «An un-merge restored this expense» — read off the audit row the un-merge
- * writes, so no column says it twice. `${expenses}` the table (#128), on the
- * audit's (entity_type, entity_id) index.
+ * How long an un-merge's round trip keeps the day check off. The trip
+ * (void the cost, re-enter it on the right truck, merge again) takes weeks,
+ * not seasons; unbounded, a restored expense the person meant to KEEP (the
+ * un-merge's own other ending: void the duplicate cost) stayed a one-press
+ * «takror» for every same-sum cost for ever (review of the merge).
+ */
+export const RESTORED_DAYS = 60;
+
+/**
+ * «An un-merge restored this expense» (within `RESTORED_DAYS`) — read off
+ * the audit row the un-merge writes, so no column says it twice.
+ * `${expenses}` the table (#128), on the audit's (entity_type, entity_id)
+ * index.
  */
 function restoredSql() {
   return sql`EXISTS (SELECT 1 FROM audit_log a
                       WHERE a.entity_type = 'expense' AND a.entity_id = ${expenses}.id
-                        AND a.after->>'unmerged' = 'true')`;
+                        AND a.after->>'unmerged' = 'true'
+                        AND a.created_at > now() - make_interval(days => ${RESTORED_DAYS}::int))`;
 }
 
 /**
@@ -206,6 +217,7 @@ async function restoredTx(tx: Tx, expenseId: string): Promise<boolean> {
   const rows = (await tx.execute(sql`
     SELECT 1 FROM audit_log a
      WHERE a.entity_type = 'expense' AND a.entity_id = ${expenseId}::uuid AND a.after->>'unmerged' = 'true'
+       AND a.created_at > now() - make_interval(days => ${RESTORED_DAYS}::int)
      LIMIT 1`)) as unknown as unknown[];
   return [...rows].length > 0;
 }

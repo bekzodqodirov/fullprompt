@@ -17,14 +17,21 @@ import { db } from './client';
  * Never call it from inside another transaction (#714: it takes a pool
  * connection of its own).
  *
- * STATED, not done: the same compile tax lands on every heavy report in this
- * codebase; `-c jit=off` in docker-compose's postgres block would lift it
- * everywhere, and is the owner's deploy-morning change to make, not a line
- * in a feature round.
+ * docker-compose's postgres block now also runs `-c jit=off`, which lifts
+ * the same tax off every heavy report once the container is recreated; this
+ * stays because a server whose postgres was not recreated still has JIT on.
+ *
+ * `timeoutMs` is a BUDGET (design §5.1): the read is abandoned by postgres
+ * itself at that point — nothing keeps holding the connection — and the
+ * caller's catch renders the row without its number.
  */
-export function withoutJit<T>(readWith: (exec: Pick<typeof db, 'execute'>) => Promise<T>): Promise<T> {
+export function withoutJit<T>(
+  readWith: (exec: Pick<typeof db, 'execute'>) => Promise<T>,
+  opts: { timeoutMs?: number } = {},
+): Promise<T> {
   return db.transaction(async (tx) => {
     await tx.execute(sql`SET LOCAL jit = off`);
+    if (opts.timeoutMs) await tx.execute(sql.raw(`SET LOCAL statement_timeout = ${Math.trunc(opts.timeoutMs)}`));
     return readWith(tx);
   });
 }

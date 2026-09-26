@@ -95,7 +95,9 @@ describe('the ban at the counter', () => {
 
   it('the company-wide reads run without JIT — measured: ~3 s of compile per call on a 60k-carton book', () => {
     expect(read('src/modules/wms/reports/business.ts')).toMatch(/withoutJit\(\(exec\) =>\s*unpricedReceiptsOn\(exec, \{ kind: 'company'/);
-    expect(read('src/modules/wms/home/role-flows.ts')).toContain('withoutJit((exec) => unpricedCount(exec, undefined))');
+    expect(read('src/modules/wms/home/role-flows.ts')).toContain(
+      'withoutJit((exec) => unpricedCount(exec, undefined), { timeoutMs: UNBILLED_BUDGET_MS }).catch(',
+    );
     const page = read('src/app/(protected)/finance/narxsiz/page.tsx');
     expect(page).toMatch(/withoutJit\(\(exec\) =>\s*unpricedReceiptsOn\(\s*exec,/);
     expect(page).toMatch(/withoutJit\(\(exec\) =>\s*unattachedChargesByClient\(exec,/);

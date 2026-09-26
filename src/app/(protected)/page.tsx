@@ -494,9 +494,9 @@ async function AccountantFlow({ flow }: { flow: MoneyFlowCounts }) {
           icon="wallet"
           testid="acc-flow-unbilled"
           label={tfin('unbilledLink')}
-          count={flow.unbilled}
-          warn={flow.unbilled > 0}
-          sub={flow.unbilled > 0 ? t('flowUnbilled', { n: flow.unbilled }) : null}
+          count={flow.unbilled ?? 0}
+          warn={(flow.unbilled ?? 0) > 0}
+          sub={flow.unbilled ? t('flowUnbilled', { n: flow.unbilled }) : null}
         />
         <FlowRow
           href="/finance/reestr?joylanmagan=1"

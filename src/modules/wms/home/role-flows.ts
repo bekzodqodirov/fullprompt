@@ -37,6 +37,9 @@ import { recurringDueCount } from '../accounting/recurring';
  * warehouse operator lives the warehouse day.
  */
 
+/** The accountant home's budget for the all-history unpriced count (design §5.1). */
+export const UNBILLED_BUDGET_MS = 500;
+
 export interface SalesFlowCounts {
   /** Follow-ups due today or overdue — the morning screen's list. */
   callsDue: number;
@@ -144,7 +147,8 @@ export interface MoneyFlowCounts {
    * Prixods with landed cargo that has no price (0104) — the accountant's
    * list, counted by the SAME fragment the list and the counter's ban read.
    */
-  unbilled: number;
+  /** Null when the count missed its budget — the row is then a plain link. */
+  unbilled: number | null;
 }
 
 export async function moneyFlowCounts(today: string): Promise<MoneyFlowCounts> {
@@ -173,7 +177,14 @@ export async function moneyFlowCounts(today: string): Promise<MoneyFlowCounts> {
     recurringDueCount(today),
     costMissingCount(3),
     unplacedCostTotals(),
-    withoutJit((exec) => unpricedCount(exec, undefined)),
+    // Company-wide and all-history (Q4 c), so it gets the design's BUDGET
+    // (§5.1): measured ~0.8 s on a year-volume clone, and the home is the
+    // most-opened screen (round 108's queueing). Past 500 ms postgres drops
+    // the read and the row renders as a plain link with no number.
+    withoutJit((exec) => unpricedCount(exec, undefined), { timeoutMs: UNBILLED_BUDGET_MS }).catch((err) => {
+      console.warn('[home] unpriced count missed its budget', err instanceof Error ? err.message : err);
+      return null;
+    }),
   ]);
   return {
     snapshot,

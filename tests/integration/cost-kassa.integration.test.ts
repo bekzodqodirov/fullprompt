@@ -31,7 +31,7 @@ import {
 } from '@/modules/wms/costing/service';
 import { accountBalances, addExpense, voidExpense } from '@/modules/wms/accounting/service';
 import { cashFlow, cashFlowByMonth, companyBalance } from '@/modules/wms/accounting/reports';
-import { mergeCandidates, mergeDuplicate, sameMoney, unmergeDuplicate } from '@/modules/wms/accounting/cost-merge';
+import { mergeCandidates, mergeDuplicate, RESTORED_DAYS, sameMoney, unmergeDuplicate } from '@/modules/wms/accounting/cost-merge';
 import { partnerBalanceUsd } from '@/modules/wms/partners/service';
 
 /**
@@ -655,5 +655,24 @@ describe('the un-merge (Q8)', () => {
     // The control is not the round trip's: the window still refuses it.
     const other = await cost(260, 'USD', { costDate: later });
     await expect(mergeDuplicate({ costIds: [other], expenseId: control }, ctx())).rejects.toMatchObject({ code: 'too_far_apart' });
+  });
+
+  it('M9 the round trip is weeks, not seasons: an un-merge older than RESTORED_DAYS keeps no exemption (review)', async () => {
+    // The un-merge's OTHER ending — void the duplicate cost, keep the
+    // expense — must not leave a same-sum «takror» for every cost for ever.
+    const kept = await expense(270, 'USD', usdTill);
+    await db.insert(auditLog).values({
+      entityType: 'expense',
+      entityId: kept,
+      action: 'update',
+      after: { unmerged: true, costIds: [] },
+      createdAt: new Date(Date.now() - (RESTORED_DAYS + 1) * 86_400_000),
+    });
+    const later = '1650-09-30';
+    const fresh = await cost(270, 'USD', { costDate: later });
+    expect((await mergeCandidates(later, later)).some((row) => row.id === kept)).toBe(false);
+    await expect(mergeDuplicate({ costIds: [fresh], expenseId: kept }, ctx())).rejects.toMatchObject({
+      code: 'too_far_apart',
+    });
   });
 });

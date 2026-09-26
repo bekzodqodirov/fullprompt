@@ -235,6 +235,8 @@ const COMPENSATION_ERRORS = {
   charge_taken: 'compensationChargeTaken',
   nothing_to_do: 'compensationNothing',
   validation: 'compensationReasonRequired',
+  bad_amount: 'compensationBadAmount',
+  bad_price: 'compensationBadPrice',
   forbidden: 'payoutForbidden',
   fx_missing: 'fxMissing',
   future_date: 'futureDate',

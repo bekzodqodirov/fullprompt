@@ -150,14 +150,16 @@ export async function addCompensationAction(input: {
   if (!mayPickTill(actor.permissions)) return { ok: false, error: 'forbidden' };
   const typed = String(input?.amount ?? '').trim();
   const amount = typed ? parseTypedMoney(typed) : undefined;
-  if (typed && (amount === null || amount === undefined)) return { ok: false, error: 'validation' };
+  // An unreadable figure is named as a FIGURE (review): «validation» read
+  // «write the reason» while the reason box was full and the amount wrong.
+  if (typed && (amount === null || amount === undefined || amount < 0)) return { ok: false, error: 'bad_amount' };
   const reprices: { chargeId: string; newAmount: number }[] = [];
   for (const change of Array.isArray(input?.reprices) ? input.reprices : []) {
     const text = String(change?.newAmount ?? '').trim();
     // An empty box is «leave this price», never «make it 0».
     if (!text) continue;
     const value = text === '0' ? 0 : parseTypedMoney(text);
-    if (value === null || value === undefined) return { ok: false, error: 'validation' };
+    if (value === null || value === undefined || value < 0) return { ok: false, error: 'bad_price' };
     reprices.push({ chargeId: String(change.chargeId), newAmount: value });
   }
   const meta = await requestMeta();

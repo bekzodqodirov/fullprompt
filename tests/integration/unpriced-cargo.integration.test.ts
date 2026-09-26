@@ -905,4 +905,12 @@ describe('one predicate (#513)', () => {
     const [after] = (await db.execute(sql`SHOW jit`)) as unknown as { jit: string }[];
     expect(after!.jit).toBe(before!.jit);
   });
+
+  it('a budgeted read is abandoned by postgres at its budget — the home row then shows no number (review, U26)', async () => {
+    const started = Date.now();
+    await expect(withoutJit((exec) => exec.execute(sql`SELECT pg_sleep(2)`), { timeoutMs: 200 })).rejects.toThrow();
+    expect(Date.now() - started).toBeLessThan(1500);
+    const [timeout] = (await db.execute(sql`SHOW statement_timeout`)) as unknown as { statement_timeout: string }[];
+    expect(timeout!.statement_timeout).toBe('0');
+  });
 });

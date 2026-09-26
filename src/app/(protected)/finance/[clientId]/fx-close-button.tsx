@@ -50,25 +50,39 @@ export function FxCloseButton({ clientId, amountUsd }: { clientId: string; amoun
   );
 }
 
-/** Undo a hand close — a reason is mandatory, like every void here. */
+/**
+ * Undo a hand close — a reason is mandatory, like every void here. Its
+ * refusal is SAID (review): a second tab's ✖ on an already-undone close, or a
+ * grant taken away after the page rendered, used to press and do nothing.
+ */
 export function FxCloseUndo({ id, clientId }: { id: string; clientId: string }) {
   const t = useTranslations('finance');
   const [pending, start] = useTransition();
+  const [error, setError] = useState<string | null>(null);
   return (
-    <button
-      type="button"
-      className="text-xs font-semibold text-bad underline"
-      disabled={pending}
-      data-testid="fx-close-undo"
-      onClick={() => {
-        const reason = window.prompt(t('voidReason'));
-        if (!reason || reason.trim().length < 2) return;
-        start(async () => {
-          await voidFxCloseAction({ id, clientId, reason: reason.trim() });
-        });
-      }}
-    >
-      ✖ {t('fxCloseUndo')}
-    </button>
+    <span className="inline-flex flex-col">
+      <button
+        type="button"
+        className="text-xs font-semibold text-bad underline"
+        disabled={pending}
+        data-testid="fx-close-undo"
+        onClick={() => {
+          const reason = window.prompt(t('voidReason'));
+          if (!reason || reason.trim().length < 2) return;
+          setError(null);
+          start(async () => {
+            const res = await voidFxCloseAction({ id, clientId, reason: reason.trim() });
+            if (res.error) setError(res.error);
+          });
+        }}
+      >
+        ✖ {t('fxCloseUndo')}
+      </button>
+      {error && (
+        <span className="text-xs font-semibold text-bad" data-testid="fx-close-undo-error">
+          {error === 'already_voided' ? t('fxCloseUndoGone') : t('fxCloseUndoRefused')}
+        </span>
+      )}
+    </span>
   );
 }

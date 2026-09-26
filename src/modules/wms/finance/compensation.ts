@@ -260,7 +260,14 @@ export async function addCompensation(
   const actorId = ctx.actorId;
   if (!door.mayPayClient) throw new CompensationError('forbidden');
   const parsed = compensationSchema.safeParse(raw);
-  if (!parsed.success) throw new CompensationError('validation');
+  if (!parsed.success) {
+    // Name the field (review): the reason is the one a person can fix from
+    // the words; a figure the action already read is named by its own code.
+    const field = parsed.error.issues[0]?.path[0];
+    throw new CompensationError(
+      field === 'note' ? 'validation' : field === 'amount' ? 'bad_amount' : field === 'reprices' ? 'bad_price' : 'bad_input',
+    );
+  }
   const input = parsed.data;
   if (input.txDate > latestTxDate()) throw new CompensationError('future_date');
   if (!input.amount && input.reprices.length === 0) throw new CompensationError('nothing_to_do');
