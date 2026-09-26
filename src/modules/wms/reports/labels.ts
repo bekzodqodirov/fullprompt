@@ -205,6 +205,13 @@ const DICT = {
     'zh-CN': '货物未随该车的客户的价格：已计入收入；由会计将其转到正确车次',
     en: 'Prices of clients whose cargo did not ride the truck: in the revenue; the accountant moves them to the right truck',
   },
+  // 0107: the trucks nobody marked «Partiya» — named, not silently absent.
+  untrackedNote: {
+    ru: 'Машины, не отмеченные как партия, — в эту таблицу не вошли (выручка / себестоимость)',
+    uz: 'Partiya deb belgilanmagan mashinalar — bu jadvalga kirmagan (tushum / tannarx)',
+    'zh-CN': '未标记为批次的车辆——未计入本表（收入 / 成本）',
+    en: 'Trucks not marked as a consignment — not in this table (revenue / cost)',
+  },
   unbatchedNote: {
     ru: 'Выручка без привязки к машине — в эту таблицу не вошла',
     uz: 'Mashinaga bog‘lanmagan tushum — bu jadvalga kirmagan',

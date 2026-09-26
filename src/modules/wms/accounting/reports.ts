@@ -1252,6 +1252,7 @@ export async function profitByBatch(from: string, to: string) {
       code: batches.code,
       status: batches.status,
       departedAt: batches.departedAt,
+      tracked: batches.profitTracked,
       // NOTE: every correlated reference is written as `${batches}.column`,
       // never `${batches.column}`. In a single-table select drizzle renders a
       // column unqualified, so a bare `"id"` inside these subqueries binds to
@@ -1339,6 +1340,14 @@ export async function profitByBatch(from: string, to: string) {
       status: row.status,
       departedAt: row.departedAt,
       internal,
+      /**
+       * Marked «Partiya» by a person (0107). «Partiya foydasi» — its table,
+       * the route rollup, the export and the dashboard's trips — reads only
+       * these; every row still comes back so a data-quality check (a truck
+       * with no price, money on no box) keeps seeing every truck, and the
+       * screen can say what it left out.
+       */
+      tracked: row.tracked,
       boxCount: load?.boxCount ?? 0,
       kg,
       m3,
@@ -1640,12 +1649,35 @@ export async function profitByClient(from: string, to: string) {
 }
 
 /**
+ * What «Partiya foydasi» left out because nobody marked the truck (0107) —
+ * said beside the table, never silently absent: the tables and the P&L must
+ * still reconcile for a reader who adds them up.
+ */
+export function untrackedTrips(rows: Awaited<ReturnType<typeof profitByBatch>>) {
+  const left = rows.filter((row) => !row.tracked);
+  return {
+    count: left.length,
+    // Internal legs stay out of the sums as they do of the totals (their cost
+    // is inside the cross-border truck's «shu reysgacha»).
+    revenueUsd: money(left.reduce((sum, row) => sum + (row.internal ? 0 : row.revenueUsd), 0)),
+    costUsd: money(left.reduce((sum, row) => sum + (row.internal ? 0 : row.costUsd), 0)),
+    rows: left.map((row) => ({ batchId: row.batchId, code: row.code, route: row.route })),
+  };
+}
+
+/**
  * The same numbers rolled up per corridor (YW → TAS and so on). A corridor
  * inside China is an internal leg on every truck it carries — the route is
  * its two warehouses — so it is a cost row too, never a margin.
  */
-export async function profitByRoute(from: string, to: string) {
-  const batchRows = await profitByBatch(from, to);
+export async function profitByRoute(
+  from: string,
+  to: string,
+  /** The caller's own `profitByBatch` read, so a screen pays for it once. */
+  given?: Awaited<ReturnType<typeof profitByBatch>>,
+) {
+  // Only the trucks marked «Partiya» (0107) — the same set as the batch tab.
+  const batchRows = (given ?? (await profitByBatch(from, to))).filter((row) => row.tracked);
   const byRoute = new Map<
     string,
     {

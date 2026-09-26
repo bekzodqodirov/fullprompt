@@ -729,7 +729,7 @@
       "photo": "add at least 1 photo"
     },
     "acceptUnclaimedAs": "{code} — accept as unidentified cargo",
-    "noteAndCost": "Note and cost (if needed)",
+    "noteAndCost": "Note (if needed)",
     "pickupReceiving": "receiving from a factory pickup",
     "pickupDetach": "Detach from the pickup",
     "pickupInvalid": "This factory pickup goes to another warehouse or was cancelled."
@@ -1157,7 +1157,10 @@
     "customsPerReceipt": "Customs per receipt",
     "customsFromBatch": "As the truck says",
     "internalCosts": "Batch costs (internal leg)",
-    "noCostsWarn": "No costs are entered on this batch yet"
+    "noCostsWarn": "No costs are entered on this batch yet",
+    "profitTrackedOn": "Consignment — counted in «Profit by batch»",
+    "profitTrackedSet": "Mark as a consignment (for «Profit by batch»)",
+    "profitTrackedHint": "The «Profit by batch» report lists only the batches marked here."
   },
   "loading": {
     "title": "Loading",
@@ -1486,7 +1489,13 @@
     "payoutForbidden": "Only the accountant or an admin records a refund or a compensation.",
     "compensationPaidOut": "Cash was handed to the client against this compensation — voiding it would make him owe that money. Wrong amount: record the correct one first, then void this. Cargo found and the client returned the cash: record his payment into the kassa first. He must return it but has not yet: do not void this — record the amount as a «Charge».",
     "compensationVoidWarn": "The compensation will be voided. If cash was already handed over, the system stops and says what to do.",
-    "compensatedCol": "🤝 −{amount}"
+    "compensatedCol": "🤝 −{amount}",
+    "dealSoldAt": "Deal {code}: sold at {price}{measure}",
+    "dealExpectedHere": "For the cargo on this truck ≈ {usd}",
+    "dealFloorUpsale": "Calculated price {floor} · upsale {upsale} (whole deal)",
+    "priceAboveDeal": "{pct}% above the deal price (by the deal ≈ {usd}). Set this price anyway?",
+    "priceBelowDeal": "{pct}% below the deal price (by the deal ≈ {usd}). Set this price anyway?",
+    "priceConfirmAnyway": "Yes, set this price"
   },
   "map": {
     "title": "Map",
@@ -1858,7 +1867,8 @@
     "balUnpricedGateOff": "The handover ban is off: cargo handed over unpriced is not in this line.",
     "balUnpricedDash": "ℹ️ The unpriced-cargo line — notes ({n}) on the balance page →",
     "balUnpricedQueueIn": "Cargo costs whose cash box is not named yet are in this line too: the balance already takes them off on «Cargo costs with no cash box», so when the accountant names the cash box the net position does not move.",
-    "unmergeErrStaffPaid": "This cost is marked as paid by a colleague out of pocket — cancel their debt on their staff card first, then undo the merge."
+    "unmergeErrStaffPaid": "This cost is marked as paid by a colleague out of pocket — cancel their debt on their staff card first, then undo the merge.",
+    "untrackedNote": "{count} truck(s) not marked as a consignment are left out of this table (revenue {revenue}, cost {cost}). The mark is set on the batch card."
   },
   "crm": {
     "title": "CRM",
@@ -3227,7 +3237,15 @@
     "classifyFx": "Exchange difference",
     "classifyCorrection": "Correction",
     "alreadyClassified": "This adjustment already has a kind.",
-    "expenseChargeNote": "A debt an expense wrote — if the firm did not pay, void the expense itself on the Expenses page"
+    "expenseChargeNote": "A debt an expense wrote — if the firm did not pay, void the expense itself on the Expenses page",
+    "termsTitle": "Payment terms",
+    "payWithinDays": "Days each debt may wait",
+    "debtLimitUsd": "Debt limit ($)",
+    "termsHint": "An empty box clears the term. Three days before the due day, once it passes, and at 80 % of the limit, you and the accountant get a Telegram reminder.",
+    "termsInvalid": "Days — a whole number (1–3650); limit — a positive amount.",
+    "termsDue": "{usd} by {date} ({days} d)",
+    "termsOverdue": "Overdue since {date} — {usd}",
+    "termsLimit": "{pct}% of the limit ({limit})"
   },
   "lists": {
     "allRecords": "All",
@@ -3441,7 +3459,13 @@
     "categoryAsk": "Only an administrator can choose it.",
     "periodByOffer": "Offer date",
     "periodHint": "The period is by the day of the offer. Expenses and the P&L show a payout on the day the money was handed over.",
-    "compensated": "⚠ compensation on this deal: −{amount} (lost cargo)"
+    "compensated": "⚠ compensation on this deal: −{amount} (lost cargo)",
+    "stNoCargo": "No cargo yet",
+    "onCargo": "Promised {promised} · arrived: {m3} m³, {kg} kg",
+    "promisedOnly": "Promised {promised} · no cargo yet",
+    "cargoKpi": "Cargo brought (KPI)",
+    "cargoKpiHint": "Receipts linked to the seller’s deals — by the day the warehouse received them.",
+    "cargoReceipts": "Receipts"
   },
   "sellerReport": {
     "title": "Sellers: results",

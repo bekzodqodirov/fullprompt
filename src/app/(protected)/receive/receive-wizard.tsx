@@ -7,7 +7,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { v4 as uuidv4 } from 'uuid';
 import { computeLotTotals } from '@/modules/wms/receipts/math';
-import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 import { DensityBadge } from '@/components/density-badge';
 import { LightboxImg } from '@/components/lightbox-img';
 import { PrintLabels } from '@/components/print-labels';
@@ -27,11 +26,6 @@ interface WarehouseOption {
   code: string;
   name: string;
   country: string;
-}
-interface CostTypeOption {
-  id: string;
-  code: string;
-  name: string;
 }
 interface ClientHit {
   id: string;
@@ -190,15 +184,11 @@ function lotTotals(lot: LotDraft) {
 
 export function ReceiveWizard({
   warehouses,
-  costTypes,
-  currencies,
   densityThresholds,
   prefill = null,
   canPickDeal = false,
 }: {
   warehouses: WarehouseOption[];
-  costTypes: CostTypeOption[];
-  currencies: string[];
   /** From admin settings — the owner's numbers, not a constant of ours. */
   densityThresholds: { light: number; medium: number; heavy: number };
   /** Set when opened from a promise's «Qabul qilish» button. */
@@ -425,8 +415,6 @@ export function ReceiveWizard({
 
   if (!draft) return null;
 
-  const warehouse = warehouses.find((w) => w.id === draft.warehouseId);
-  const defaultCurrency = warehouse?.country === 'CN' ? 'CNY' : 'USD';
 
   /**
    * Server rejection → human message (file type / size), not just "failed".
@@ -674,16 +662,12 @@ export function ReceiveWizard({
                 totalVolumeM3: Number(lot.totalVolumeM3),
               }),
         })),
-        // The office's reader (U28, #979): `Number('1,200')` is NaN, so the
-        // extra cost was silently DROPPED by the filter below — and «1.200»
-        // saved 1.2.
-        extraCosts: draft!.costs
-          .filter((c) => c.costTypeId && (parseTypedMoney(c.amount) ?? 0) > 0)
-          .map((c) => ({
-            costTypeId: c.costTypeId,
-            amount: parseTypedMoney(c.amount) ?? Number.NaN,
-            currency: c.currency,
-          })),
+        // No money from this screen (the owner, 2026-09-26: «faqat izohni
+        // o'zini qo'shsa bo'ldi»). A cost typed here had no kassa and read to
+        // the accountant as one line with the note; money the warehouse spent
+        // goes through the «Rasxod xabari» fold above, which ends at a kassa.
+        // A draft saved before this still carries `costs` — never sent.
+        extraCosts: [],
       };
       const res = await submitReceiptAction(payload);
       if (res.ok) {
@@ -1066,19 +1050,11 @@ export function ReceiveWizard({
     </div>
   );
 
-  // Single total-cost entry (owner's request: no per-type cost rows) — stored
-  // as one cost line under the "other" cost type.
-  const cost = draft.costs[0] ?? { costTypeId: '', amount: '', currency: defaultCurrency };
-  const otherCostTypeId =
-    costTypes.find((type) => type.code === 'other')?.id ?? costTypes[0]?.id ?? '';
-  const setCost = (patch: Partial<CostDraft>) =>
-    update({ costs: [{ ...cost, costTypeId: otherCostTypeId, ...patch }] });
-
-  // Owner: a note and an extra cost belong to a minority of receipts, while
-  // photos and files are used on every one — so these two fold away and the
-  // attachment row below stays open. A draft that already carries either one
-  // comes back open, so nothing hides from the person who typed it.
-  const extrasFilled = Boolean(draft.sourceNote || cost.amount);
+  // Owner: a note belongs to a minority of receipts, while photos and files
+  // are used on every one — so it folds away and the attachment row below
+  // stays open. A draft that already carries a note comes back open, so
+  // nothing hides from the person who typed it.
+  const extrasFilled = Boolean(draft.sourceNote);
   const bottomBlock = (
     <div className="space-y-2">
       <details
@@ -1093,35 +1069,14 @@ export function ReceiveWizard({
           📝 {t('noteAndCost')}
           {extrasFilled && <span className="ml-2 text-xs text-good">●</span>}
         </summary>
-        <div className="flex flex-col gap-2 p-2 pt-0 md:flex-row">
+        <div className="p-2 pt-0">
           <input
             aria-label={t('sourceNote')}
-            className="input md:flex-1"
+            className="input"
             placeholder={`📝 ${t('sourceNote')}`}
             value={draft.sourceNote}
             onChange={(e) => update({ sourceNote: e.target.value })}
           />
-          <div className="flex gap-2">
-            <input
-              data-testid="receipt-cost-amount"
-              aria-label={t('stepCosts')}
-              className="input !w-40 md:!w-36"
-              inputMode="decimal"
-              placeholder={`💰 ${t('stepCosts')}`}
-              value={cost.amount}
-              onChange={(e) => setCost({ amount: e.target.value })}
-            />
-            <select
-              aria-label="currency"
-              className="input !w-24 shrink-0"
-              value={cost.currency}
-              onChange={(e) => setCost({ currency: e.target.value })}
-            >
-              {currencies.map((c) => (
-                <option key={c}>{c}</option>
-              ))}
-            </select>
-          </div>
         </div>
       </details>
       {/* The same busy rule as a lot's 📷: these two live on the receipt rather

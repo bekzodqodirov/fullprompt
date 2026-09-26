@@ -729,7 +729,7 @@
       "photo": "kamida 1 ta rasm qo‘shing"
     },
     "acceptUnclaimedAs": "{code} — notanish yuk sifatida qabul qilish",
-    "noteAndCost": "Izoh va rasxod (kerak bo‘lsa)",
+    "noteAndCost": "Izoh (kerak bo‘lsa)",
     "pickupReceiving": "zavod reysidan qabul",
     "pickupDetach": "Reysdan ajratish",
     "pickupInvalid": "Bu zavod reysi boshqa skladga ketyapti yoki bekor qilingan."
@@ -1157,7 +1157,10 @@
     "customsPerReceipt": "Prixodlar bo‘yicha rastamojka",
     "customsFromBatch": "Partiya bo‘yicha",
     "internalCosts": "Partiya xarajati (ichki reys)",
-    "noCostsWarn": "Bu partiyaga hali xarajat yozilmagan"
+    "noCostsWarn": "Bu partiyaga hali xarajat yozilmagan",
+    "profitTrackedOn": "Partiya — «Partiya foydasi»da hisoblanadi",
+    "profitTrackedSet": "Partiya deb belgilash («Partiya foydasi» uchun)",
+    "profitTrackedHint": "«Partiya foydasi» hisobotida faqat shu belgisi bor partiyalar chiqadi."
   },
   "loading": {
     "title": "Pogruzka",
@@ -1486,7 +1489,13 @@
     "payoutForbidden": "Mijozga pul qaytarish va kompensatsiyani faqat buxgalter yoki admin yozadi.",
     "compensationPaidOut": "Bu kompensatsiya hisobidan mijozga naqd pul berilgan — bekor qilinsa, mijoz o‘sha pulga qarzdor bo‘lib qoladi. Summa xato bo‘lsa: avval to‘g‘risini yozing, keyin buni bekor qiling. Yuk topilib, mijoz pulni qaytargan bo‘lsa: avval uning to‘lovini kassaga kiriting. Mijoz pulni qaytarishi kerak, lekin hali qaytarmagan bo‘lsa: buni bekor qilmang — «Hisoblandi» bilan shu summani yozing.",
     "compensationVoidWarn": "Kompensatsiya bekor qilinadi. Naqd pul berilgan bo‘lsa, tizim to‘xtatadi va yo‘lini aytadi.",
-    "compensatedCol": "🤝 −{amount}"
+    "compensatedCol": "🤝 −{amount}",
+    "dealSoldAt": "Bitim {code}: sotilgan narx {price}{measure}",
+    "dealExpectedHere": "Shu mashinadagi yuk uchun ≈ {usd}",
+    "dealFloorUpsale": "Hisoblangan narx {floor} · upsale {upsale} (butun bitim uchun)",
+    "priceAboveDeal": "Bitimdagi narxdan {pct}% qimmat (bitim bo‘yicha ≈ {usd}). Baribir shu narxni qo‘yasizmi?",
+    "priceBelowDeal": "Bitimdagi narxdan {pct}% arzon (bitim bo‘yicha ≈ {usd}). Baribir shu narxni qo‘yasizmi?",
+    "priceConfirmAnyway": "Ha, shu narxni qo‘yish"
   },
   "map": {
     "title": "Xarita",
@@ -1858,7 +1867,8 @@
     "balUnpricedGateOff": "Topshirishdagi taqiq o‘chiq: narxsiz topshirilgan yuk bu qatorga kirmaydi.",
     "balUnpricedDash": "ℹ️ Narxsiz yuk qatori: {n} ta izoh — Balansda →",
     "balUnpricedQueueIn": "Kassasi hali ko‘rsatilmagan yuk xarajatlari ham shu qatorga kiradi: Balans ularni «Kassasi ko‘rsatilmagan yuk xarajatlari» qatorida allaqachon ayiradi, shuning uchun buxgalter kassani ko‘rsatganda Sof holat qimirlamaydi.",
-    "unmergeErrStaffPaid": "Bu xarajatni hodim o‘z pulidan to‘lagan deb belgilangan — avval hodim kartasida uning qarzini bekor qiling, keyin birlashtirishni bekor qiling."
+    "unmergeErrStaffPaid": "Bu xarajatni hodim o‘z pulidan to‘lagan deb belgilangan — avval hodim kartasida uning qarzini bekor qiling, keyin birlashtirishni bekor qiling.",
+    "untrackedNote": "Partiya deb belgilanmagan {count} ta mashina bu jadvalga kirmagan (tushum {revenue}, tannarx {cost}). Belgi partiya kartasida qo‘yiladi."
   },
   "crm": {
     "title": "CRM",
@@ -3227,7 +3237,15 @@
     "classifyFx": "Kurs farqi",
     "classifyCorrection": "Tuzatish",
     "alreadyClassified": "Bu tuzatishning turi allaqachon aytilgan.",
-    "expenseChargeNote": "Xarajat bo‘yicha qarz — firma to‘lamagan bo‘lsa, «Xarajatlar» sahifasida xarajatning o‘zini bekor qiling"
+    "expenseChargeNote": "Xarajat bo‘yicha qarz — firma to‘lamagan bo‘lsa, «Xarajatlar» sahifasida xarajatning o‘zini bekor qiling",
+    "termsTitle": "To‘lov shartlari",
+    "payWithinDays": "Har bir qarz necha kunda to‘lanadi",
+    "debtLimitUsd": "Qarz chegarasi ($)",
+    "termsHint": "Bo‘sh qoldirsangiz, shart o‘chadi. Muddatga 3 kun qolganda, muddat o‘tganda va qarz chegaraning 80% iga yetganda sizga va buxgalterga Telegramda eslatma keladi.",
+    "termsInvalid": "Kun — butun son (1–3650), chegara — musbat summa.",
+    "termsDue": "{date} gacha {usd} ({days} kun)",
+    "termsOverdue": "Muddati o‘tdi ({date}) — {usd}",
+    "termsLimit": "Chegaraning {pct}% ({limit})"
   },
   "lists": {
     "allRecords": "Hammasi",
@@ -3441,7 +3459,13 @@
     "categoryAsk": "Faqat administrator tanlay oladi.",
     "periodByOffer": "Taklif sanasi",
     "periodHint": "Davr taklif berilgan kun bo‘yicha. Xarajatlar va P&L esa to‘lovni pul berilgan kun bo‘yicha ko‘rsatadi.",
-    "compensated": "⚠ bitimda kompensatsiya: −{amount} (yo‘qolgan yuk)"
+    "compensated": "⚠ bitimda kompensatsiya: −{amount} (yo‘qolgan yuk)",
+    "stNoCargo": "Yuk kelmagan",
+    "onCargo": "Kelishilgan {promised} · kelgan yuk: {m3} m³, {kg} kg",
+    "promisedOnly": "Kelishilgan {promised} · yuk hali kelmagan",
+    "cargoKpi": "Olib kelgan yuk (KPI)",
+    "cargoKpiHint": "Sotuvchining bitimlariga biriktirilgan prixodlar — omborda qabul qilingan kuni bo‘yicha.",
+    "cargoReceipts": "Prixod"
   },
   "sellerReport": {
     "title": "Sotuvchilar: natija",

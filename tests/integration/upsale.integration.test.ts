@@ -1,6 +1,8 @@
 import 'dotenv/config';
 import { eq, inArray, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { addDays, tashkentDay } from '@/modules/platform/time/tashkent';
+import { arriveOnDeal, removeArrived } from '../fixtures/deal-cargo';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
   calcExtras,
@@ -34,6 +36,7 @@ import {
   payUpsale,
   UPSALE_CAP,
   upsaleLiability,
+  sellerCargo,
   upsaleRows,
 } from '@/modules/wms/calc/upsale-service';
 import { voidExpense } from '@/modules/wms/accounting/service';
@@ -68,6 +71,7 @@ let categoryId = '';
 const madeRequests: string[] = [];
 const madeExpenses: string[] = [];
 const madeDeals: string[] = [];
+const madeReceipts: string[] = [];
 let categoryBefore: unknown;
 let categoryExisted = false;
 let fxId = '';
@@ -98,6 +102,10 @@ beforeAll(async () => {
     .values({ code: `UP-${SUFFIX}`, clientId, stageId: stage!.id, title: 'Upsale fixture', createdBy: actorId })
     .returning();
   dealId = d!.id;
+  // The cargo the default job was quoted on (30 m³, 1500 kg) ARRIVED — the
+  // owner's 4b makes a share a fact only then, so every «payable» below
+  // stands on it; `no_cargo` has its own test on a deal with none.
+  madeReceipts.push(await arriveOnDeal({ dealId, clientId, actorId, m3: 30, kg: 1500 }));
 
   const leadStage = await db.execute<{ id: string }>(
     `SELECT id FROM lead_stages WHERE kind = 'open' ORDER BY sort_order LIMIT 1`,
@@ -157,6 +165,7 @@ afterAll(async () => {
   }
   if (fxId) await db.execute(sql`DELETE FROM fx_rates WHERE id = ${fxId}::uuid`);
   await db.delete(clientTransactions).where(eq(clientTransactions.clientId, clientId));
+  await removeArrived(madeReceipts);
   if (madeRequests.length > 0) {
     const vs = await db
       .select({ id: calcVersions.id })
@@ -463,6 +472,8 @@ describe('one sale, one commission', () => {
       .values({ code: `UPA-${SUFFIX}`, clientId, stageId: stage!.id, title: 'Upsale answer fixture', createdBy: actorId })
       .returning();
     madeDeals.push(d!.id);
+    // Its cargo arrived as quoted (4b): 10 m³, 500 kg.
+    madeReceipts.push(await arriveOnDeal({ dealId: d!.id, clientId, actorId, m3: 10, kg: 500 }));
 
     const opened = await openCalcRequest(
       {
@@ -902,6 +913,8 @@ describe('the Balans owes the sellers what the clients have paid for (U10)', () 
       .values({ code: `UQ-${SUFFIX}-${n}`, clientId: c!.id, stageId: stage!.id, title: 'Upsale balans', createdBy: actorId })
       .returning();
     madeDeals.push(d!.id);
+    // The default job's cargo arrived (4b) — a share is a fact only then.
+    madeReceipts.push(await arriveOnDeal({ dealId: d!.id, clientId: c!.id, actorId, m3: 30, kg: 1500 }));
     return { client: c!.id, deal: d!.id };
   }
   /** Sealed, quoted above the floor by `extra`, charged — and collected into the till. */
@@ -981,5 +994,80 @@ describe('the Balans owes the sellers what the clients have paid for (U10)', () 
     } finally {
       await db.execute(sql`DELETE FROM calc_offers WHERE version_id = ${done.versionId}::uuid AND id <> ${done.offerId}::uuid`);
     }
+  });
+});
+
+/**
+ * The owner's 4b (2026-09-26): «sotuvchi ulushi bitimda yozilyabti lekin bu
+ * fakt bolishi uchun haqiqiy yuk kelishi kerak» — and his answer b: the share
+ * is recomputed on the cargo that ARRIVED, 30 m³ promised and 20 arrived is
+ * two thirds of it. Each test on its own deal: the shared one carries the
+ * default job's full cargo.
+ */
+describe('the share follows the cargo that arrived (4b)', () => {
+  let k = 0;
+  async function ownDeal() {
+    k += 1;
+    const stage = await db.query.dealStages.findFirst({ where: eq(dealStages.kind, 'open') });
+    const [d] = await db
+      .insert(deals)
+      .values({ code: `UC-${SUFFIX}-${k}`, clientId, stageId: stage!.id, title: 'Upsale cargo', createdBy: actorId })
+      .returning();
+    madeDeals.push(d!.id);
+    return d!.id;
+  }
+
+  it('no prixod on the deal: listed as «no cargo», nothing to pay', async () => {
+    const onDeal = await ownDeal();
+    const job = await sealedJob({ dealId: onDeal });
+    const offer = await recordOffer(
+      { versionId: job.versionId },
+      { clientPriceUsd: job.floor + 300, locale: 'uz' },
+      sellerCtx(),
+    );
+    await invoiceAndCollect(onDeal, job.floor + 300);
+    const row = (await upsaleRows('all', actorId, {})).rows.find((r) => r.offerId === offer.id)!;
+    expect(row).toMatchObject({ state: 'no_cargo', promisedUsd: 300, upsaleUsd: 0, payableUsd: 0, cargoReceipts: 0 });
+    await expect(
+      payUpsale([offer.id], { accountId, currency: 'USD', expenseDate: today() }, ctx()),
+    ).rejects.toThrow('offer_not_payable');
+  });
+
+  it('20 of 30 m³ arrived: two thirds of the share, checked against two thirds of the price', async () => {
+    const onDeal = await ownDeal();
+    const job = await sealedJob({ dealId: onDeal });
+    const price = job.floor + 300;
+    const offer = await recordOffer({ versionId: job.versionId }, { clientPriceUsd: price, locale: 'uz' }, sellerCtx());
+    madeReceipts.push(await arriveOnDeal({ dealId: onDeal, clientId, actorId, m3: 20, kg: 1000 }));
+    const due = Math.round(((price * 20) / 30) * 100) / 100;
+    // The client pays for what came — and that invoice is whole.
+    await invoiceAndCollect(onDeal, due);
+    const row = (await upsaleRows('all', actorId, {})).rows.find((r) => r.offerId === offer.id)!;
+    expect(row).toMatchObject({ state: 'payable', promisedUsd: 300, upsaleUsd: 200, payableUsd: 200, cargoM3: 20 });
+    const paid = await payUpsale([offer.id], { accountId, currency: 'USD', expenseDate: today() }, ctx());
+    madeExpenses.push(paid.expenseId);
+    expect(paid.paidUsd).toBe(200);
+  });
+
+  it('the KPI counts the cargo on the seller\'s OWN deals, by the day it was received (3a/x)', async () => {
+    const stage = await db.query.dealStages.findFirst({ where: eq(dealStages.kind, 'open') });
+    const [d] = await db
+      .insert(deals)
+      .values({ code: `UK-${SUFFIX}`, clientId, stageId: stage!.id, title: 'KPI', createdBy: actorId, ownerId: sellerId })
+      .returning();
+    madeDeals.push(d!.id);
+    madeReceipts.push(await arriveOnDeal({ dealId: d!.id, clientId, actorId, m3: 12.5, kg: 640 }));
+    // The app's clock (R5): the KPI counts Tashkent days, so the test asks
+    // for one — a UTC «today» is tomorrow in Tashkent after 19:00 UTC.
+    const day = tashkentDay();
+    const mine = await sellerCargo('own', sellerId, { from: day, to: day });
+    expect(mine).toEqual([{ sellerId, sellerName: `Upsale seller ${SUFFIX}`, receipts: 1, m3: 12.5, kg: 640 }]);
+    // The same seller as the owner sees them, and nobody else's cargo leaks
+    // into a seller's own row.
+    const all = await sellerCargo('all', actorId, { from: day, to: day, sellerId });
+    expect(all).toEqual(mine);
+    // Received yesterday's window holds none of it.
+    const yesterday = addDays(day, -1);
+    expect(await sellerCargo('own', sellerId, { from: yesterday, to: yesterday })).toEqual([]);
   });
 });

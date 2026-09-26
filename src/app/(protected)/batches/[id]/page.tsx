@@ -44,6 +44,7 @@ import { inScope } from '@/modules/platform/rbac/scope';
 import { listPartners } from '@/modules/wms/partners/service';
 import { AttachmentsPanel } from '@/components/attachments-panel';
 import { CustomsCleared } from './customs-cleared';
+import { ProfitTracked } from './profit-tracked';
 import { CustomsFirm } from './customs-firm';
 import { CustomsPerReceipt } from './customs-per-receipt';
 import { batchCustomsRows } from '@/modules/wms/partners/customs';
@@ -881,6 +882,12 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
         >
           💰 {internal ? t('internalCosts') : t('pricing')}
         </Link>
+      )}
+
+      {/* «Partiya foydasi» reads only the trucks marked here (0107) — the
+          owner's rule, set by the admin or the accountant. */}
+      {actor.permissions.has('finance.reports') && (
+        <ProfitTracked batchId={batch.id} tracked={batch.profitTracked} />
       )}
 
       <TasksPanel

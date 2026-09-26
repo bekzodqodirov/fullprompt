@@ -729,7 +729,7 @@
       "photo": "请至少添加1张照片"
     },
     "acceptUnclaimedAs": "{code} — 按无主货物接收",
-    "noteAndCost": "备注与费用（如需要）",
+    "noteAndCost": "备注（如需要）",
     "pickupReceiving": "从工厂提货收货",
     "pickupDetach": "解除与提货的关联",
     "pickupInvalid": "该工厂提货前往其他仓库或已取消。"
@@ -1157,7 +1157,10 @@
     "customsPerReceipt": "按入库单清关",
     "customsFromBatch": "随整车",
     "internalCosts": "车次费用（内部）",
-    "noCostsWarn": "该车次尚未录入费用"
+    "noCostsWarn": "该车次尚未录入费用",
+    "profitTrackedOn": "批次 — 计入「批次利润」",
+    "profitTrackedSet": "标记为批次（用于「批次利润」）",
+    "profitTrackedHint": "「批次利润」报表只显示已标记的批次。"
   },
   "loading": {
     "title": "装车",
@@ -1486,7 +1489,13 @@
     "payoutForbidden": "只有会计或管理员可以记录退款或赔偿。",
     "compensationPaidOut": "已按此赔偿向客户支付现金——作废后客户将欠这笔钱。金额错误：请先录入正确金额，再作废此条。货物已找到且客户已退款：请先将其付款录入账户。客户应退还但尚未退还：不要作废——请以「应收」记录该金额。",
     "compensationVoidWarn": "将作废此赔偿。如已支付现金，系统会阻止并说明做法。",
-    "compensatedCol": "🤝 −{amount}"
+    "compensatedCol": "🤝 −{amount}",
+    "dealSoldAt": "交易 {code}：售价 {price}{measure}",
+    "dealExpectedHere": "本车货物约 {usd}",
+    "dealFloorUpsale": "核算价 {floor} · 加价 {upsale}（整笔交易）",
+    "priceAboveDeal": "比交易价高 {pct}%（按交易约 {usd}）。仍要设置此价格吗？",
+    "priceBelowDeal": "比交易价低 {pct}%（按交易约 {usd}）。仍要设置此价格吗？",
+    "priceConfirmAnyway": "是，设置此价格"
   },
   "map": {
     "title": "地图",
@@ -1858,7 +1867,8 @@
     "balUnpricedGateOff": "交付禁令已关闭：未定价交付的货物不在此行。",
     "balUnpricedDash": "ℹ️ 未定价货物行：{n} 条说明——见资产负债 →",
     "balUnpricedQueueIn": "尚未指定账户的货物费用也计入此行：资产负债已在「未指定账户的货物费用」一行中扣除它们，因此会计指定账户时净头寸不会变动。",
-    "unmergeErrStaffPaid": "该费用已标记为员工自掏腰包支付——请先在员工卡上作废其欠款，再撤销合并。"
+    "unmergeErrStaffPaid": "该费用已标记为员工自掏腰包支付——请先在员工卡上作废其欠款，再撤销合并。",
+    "untrackedNote": "{count} 辆未标记为批次的车辆未计入此表（收入 {revenue}，成本 {cost}）。标记在批次卡片上设置。"
   },
   "crm": {
     "title": "CRM",
@@ -3227,7 +3237,15 @@
     "classifyFx": "汇兑差额",
     "classifyCorrection": "更正",
     "alreadyClassified": "此调整已注明类型。",
-    "expenseChargeNote": "费用产生的欠款——若该单位并未付款，请在「费用」页作废该费用本身"
+    "expenseChargeNote": "费用产生的欠款——若该单位并未付款，请在「费用」页作废该费用本身",
+    "termsTitle": "付款条件",
+    "payWithinDays": "每笔欠款几天内付清",
+    "debtLimitUsd": "欠款上限（$）",
+    "termsHint": "留空即取消条件。到期前 3 天、逾期后以及达到上限的 80% 时，您和会计会收到 Telegram 提醒。",
+    "termsInvalid": "天数为整数（1–3650），上限为正数金额。",
+    "termsDue": "{date} 前 {usd}（{days} 天）",
+    "termsOverdue": "已逾期（{date}）— {usd}",
+    "termsLimit": "上限的 {pct}%（{limit}）"
   },
   "lists": {
     "allRecords": "全部",
@@ -3441,7 +3459,13 @@
     "categoryAsk": "只有管理员可以选择。",
     "periodByOffer": "报价日期",
     "periodHint": "期间按报价日期计算。费用和损益表按实际发放日期显示佣金。",
-    "compensated": "⚠ 该交易有赔偿：−{amount}（丢失货物）"
+    "compensated": "⚠ 该交易有赔偿：−{amount}（丢失货物）",
+    "stNoCargo": "货物未到",
+    "onCargo": "承诺 {promised} · 已到：{m3} m³，{kg} kg",
+    "promisedOnly": "承诺 {promised} · 货物尚未到达",
+    "cargoKpi": "带来的货物（KPI）",
+    "cargoKpiHint": "关联到销售员交易的入库单——按仓库收货日期。",
+    "cargoReceipts": "入库单"
   },
   "sellerReport": {
     "title": "销售业绩",

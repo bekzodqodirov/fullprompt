@@ -1,9 +1,11 @@
 'use client';
 
-import { useActionState, useState } from 'react';
+import { useActionState, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { addTransactionAction, type TxFormState } from '@/app/(protected)/finance/actions';
 import { latestTxDate } from '@/modules/wms/finance/dates';
+import { parseTypedMoney } from '@/modules/wms/calc/money-input';
+import { deviationOf, needsConfirmation } from '@/modules/wms/finance/deal-price-hint';
 
 /**
  * One client's negotiated price for this batch → a ledger charge.
@@ -19,17 +21,24 @@ import { latestTxDate } from '@/modules/wms/finance/dates';
  * overnight posted yesterday's date with nobody able to see it. `today` is
  * Tashkent's day, computed on the server; the person can see it and change it
  * before saving.
+ *
+ * `expectedUsd` is the deal's price for this cargo (his item 7): a dollar
+ * price more than 5 % away from it stops the press once and asks, and the
+ * second press saves (his «confirmation sorasin va tasdiqlatib narx
+ * qoyaversin»). A warning, never a refusal — the price is still his to set.
  */
 export function PricingForm({
   clientId,
   batchId,
   currencies,
   today,
+  expectedUsd = null,
 }: {
   clientId: string;
   batchId: string;
   currencies: string[];
   today: string;
+  expectedUsd?: number | null;
 }) {
   const t = useTranslations('finance');
   const tc = useTranslations('common');
@@ -38,17 +47,39 @@ export function PricingForm({
   // in the dictionary was CNY, which turned «150» into ¥150 = $20.
   const [currency, setCurrency] = useState(currencies.includes('USD') ? 'USD' : (currencies[0] ?? ''));
   const [txDate, setTxDate] = useState(today);
+  // The price the person was asked about; changing it asks again.
+  const [asked, setAsked] = useState<{ amount: string; pct: number } | null>(null);
+  const confirmed = useRef(false);
+  const formRef = useRef<HTMLFormElement>(null);
   const [state, formAction, pending] = useActionState<TxFormState, FormData>(
     async (prev, formData) => {
       const result = await addTransactionAction(prev, formData);
-      if (result.ok) setAmount('');
+      if (result.ok) {
+        setAmount('');
+        setAsked(null);
+      }
+      confirmed.current = false;
       return result;
     },
     {},
   );
 
   return (
-    <form action={formAction} className="flex flex-wrap items-center gap-2" data-testid="pricing-form">
+    <form
+      ref={formRef}
+      action={formAction}
+      // onSubmit runs before the action; preventing it keeps the action from
+      // running at all, which is the whole confirmation.
+      onSubmit={(event) => {
+        if (confirmed.current || currency !== 'USD') return;
+        const typed = parseTypedMoney(amount);
+        if (typed === null || !needsConfirmation(typed, expectedUsd)) return;
+        event.preventDefault();
+        setAsked({ amount, pct: Math.round((deviationOf(typed, expectedUsd!) ?? 0) * 100) });
+      }}
+      className="flex flex-wrap items-center gap-2"
+      data-testid="pricing-form"
+    >
       <input type="hidden" name="clientId" value={clientId} />
       <input type="hidden" name="batchId" value={batchId} />
       <input type="hidden" name="type" value="charge" />
@@ -69,7 +100,10 @@ export function PricingForm({
         inputMode="decimal"
         placeholder={t('amount')}
         value={amount}
-        onChange={(event) => setAmount(event.target.value)}
+        onChange={(event) => {
+          setAmount(event.target.value);
+          setAsked(null);
+        }}
         required
       />
       <select
@@ -86,6 +120,33 @@ export function PricingForm({
       <button type="submit" disabled={pending} className="btn-primary shrink-0 px-4 disabled:opacity-60">
         {pending ? '…' : state.ok && amount === '' ? '✅' : `🧾 ${t('setPrice')}`}
       </button>
+      {asked && asked.amount === amount && (
+        <div role="alert" className="w-full space-y-2 rounded-lg border border-warn bg-warn/10 p-2 text-sm" data-testid="pricing-deviation">
+          <p className="font-semibold text-warn">
+            ⚠{' '}
+            {t(asked.pct > 0 ? 'priceAboveDeal' : 'priceBelowDeal', {
+              pct: Math.abs(asked.pct),
+              usd: `$${expectedUsd!.toFixed(2)}`,
+            })}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="btn-primary px-3"
+              data-testid="pricing-deviation-confirm"
+              onClick={() => {
+                confirmed.current = true;
+                formRef.current?.requestSubmit();
+              }}
+            >
+              {t('priceConfirmAnyway')}
+            </button>
+            <button type="button" className="btn-secondary px-3" onClick={() => setAsked(null)}>
+              {tc('cancel')}
+            </button>
+          </div>
+        </div>
+      )}
       {state.error && (
         <p role="alert" className="w-full text-sm font-semibold text-bad">
           {state.error === 'fx_missing'

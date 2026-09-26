@@ -14,7 +14,8 @@ describe('C12 — upsaleStateOf reads the job net of its compensation', () => {
   const row = (charged: number, compensated: number) => ({
     payout_at: null,
     entity_type: 'deal',
-    client_price_usd: '1200.00',
+    due_price_usd: '1200.00',
+    cargo_receipts: 1,
     charged_usd: charged.toFixed(2),
     compensated_usd: compensated.toFixed(2),
   });
@@ -34,6 +35,16 @@ describe('C12 — upsaleStateOf reads the job net of its compensation', () => {
 
   it('a compensation of a few cents does not hold a whole commission', () => {
     expect(upsaleStateOf(row(1200.01, 0.01), settled)).toBe('payable');
+  });
+
+  // The owner's 4b (2026-09-26): a share is a fact only once cargo ARRIVED.
+  it('no confirmed prixod on the deal: no cargo, whatever was charged', () => {
+    expect(upsaleStateOf({ ...row(1200, 0), cargo_receipts: 0 }, settled)).toBe('no_cargo');
+  });
+
+  it('the invoice is checked against the price of the cargo that came, not the whole promise', () => {
+    // 20 of 30 m³ arrived: the client owes 800 of 1200, and 800 charged is whole.
+    expect(upsaleStateOf({ ...row(800, 0), due_price_usd: '800.00' }, settled)).toBe('payable');
   });
 });
 
