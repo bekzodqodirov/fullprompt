@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { moveReceipt } from '@/modules/wms/receipts/move';
 import { and, eq, gte, inArray, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -511,6 +512,15 @@ describe('who is gated', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ walkIn: true, gatedBoxes: 0 });
     expect(await issue(n, W.tas, walk.boxIds)).toBe('ok');
+
+    // A prixod typed at Yiwu by mistake and moved to Tashkent at the desk is
+    // a walk-in there too — a correction is no truck (review, U30).
+    const typo = await mkLot(n, 1, W.yw);
+    await moveReceipt(typo.receiptId, W.tas, ctx());
+    expect((await listed([n])).find((r) => r.receiptId === typo.receiptId)).toMatchObject({
+      walkIn: true,
+      gatedBoxes: 0,
+    });
 
     const atAnd = await mkLot(n, 1, W.and);
     const t = await truck([{ lotId: atAnd.lotId, take: 1 }], atAnd.codes, W.and, W.tas);

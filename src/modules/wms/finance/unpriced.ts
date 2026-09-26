@@ -219,7 +219,13 @@ export function uncoveredCtes(boxScope: SQL, opts: { landedOnly: boolean }): SQL
              (upper(trim(rw.country)) = 'UZ') AS received_in_uz,
              rl.total_volume_m3 / rl.box_count AS m3, rl.total_weight_kg / rl.box_count AS kg,
              min(lm.created_at) AS landed_at,
-             min(lm.created_at) FILTER (WHERE lm.cause <> 'receipt') AS road_landed_at,
+             -- A ROAD landing: never the receipt itself, and never a desk's
+             -- correction of it (\`receipt_moved\` — the wrong-warehouse fix —
+             -- and \`lot_edit_add\`, both written against the receipt): a
+             -- prixod typed at Yiwu and corrected to Tashkent was a walk-in
+             -- there, and read as «came on one of our trucks» it was gated at
+             -- the counter (review of the gate, U30).
+             min(lm.created_at) FILTER (WHERE lm.ref_type IS DISTINCT FROM 'receipt') AS road_landed_at,
              (array_agg(lm.ref_id ORDER BY lm.created_at, lm.id)
                 FILTER (WHERE lm.ref_type = 'batch' AND lm.cause <> 'receipt'))[1] AS arrival_batch_id,
              -- Clause 4 and the «elsewhere» exception both ask about a find
