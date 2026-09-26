@@ -1,5 +1,6 @@
-import { and, desc, eq, gte, inArray, isNull, lte, sql, type AnyColumn, type SQL } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull, lte, sql, type SQL } from 'drizzle-orm';
 import { latestTxDate } from './dates';
+import { fxResidueAllowance, exceedsRowUsd, nativeAmount } from './money-bounds';
 import { z } from 'zod';
 import { db } from '../../platform/db/client';
 import {
@@ -8,15 +9,20 @@ import {
   clientTransactions,
   deals,
   moneyAccounts,
+  receipts,
   partnerTransactions,
   partners,
   users,
 } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
+import type { Db, Tx } from '../../platform/db/client';
+import { LEDGER_TYPES, isClientPayout } from './ledger-kinds';
+import { ledgerAlias, netPaidUsdSql, signedUsdSql } from './ledger-sql';
+import { fxWalkSql, lockOwnersTx, nativeSql, ownersSql, reconcileFxResidueTx } from './fx-residue';
 import { rateFor } from '../costing/service';
 import { batchRoute } from '../batches/internal';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
-import { soleDealAboard } from '../batches/lots';
+import { cargoAboard } from '../batches/lots';
 
 /**
  * Client money ledger (Phase 2.1, owner's rules): there are NO tariffs — the
@@ -34,38 +40,104 @@ export class FinanceError extends Error {
 
 /**
  * The one sign rule of the client ledger (0101): a charge and a refund RAISE
- * what the client owes us, a payment lowers it. Every balance restates this
- * through `signedUsdSql` — `CASE WHEN type = 'charge' … ELSE -…` read a refund
- * as a payment, i.e. money we handed back as money we received, and
- * `tests/unit/client-ledger-sign.test.ts` keeps that shape out of `src/`.
+ * what the client owes us, a payment and a compensation (0105) lower it, a
+ * kurs farqi row carries its own sign. Every balance restates this through
+ * `signedUsdSql` — `CASE WHEN type = 'charge' … ELSE -…` read a refund as a
+ * payment, and `CASE WHEN type = 'payment' THEN -… ELSE …` read a
+ * compensation as a charge; `tests/unit/client-ledger-sign.test.ts` keeps
+ * both shapes out of `src/`. Every SQL builder below is BUILT from
+ * `LEDGER_RULES` (the lists are compile-time constants, never input), so a
+ * kind added there needs no second answer here.
  */
-export const LEDGER_TYPES = ['charge', 'payment', 'refund'] as const;
-export type LedgerType = (typeof LEDGER_TYPES)[number];
+export { LEDGER_TYPES, type LedgerType, signedUsd, settlesUsd } from './ledger-kinds';
+export {
+  creditUsdSql,
+  debitUsdSql,
+  ledgerAlias,
+  netPaidUsdSql,
+  revenueUsdSql,
+  settlesUsdSql,
+  signedUsdSql,
+  type LedgerCols,
+} from './ledger-sql';
 
-/** +amount_usd for a charge or a refund, −amount_usd for a payment. */
-export function signedUsdSql(table: { type: AnyColumn; amountUsd: AnyColumn } = clientTransactions): SQL {
-  return sql`(CASE WHEN ${table.type} = 'payment' THEN -${table.amountUsd} ELSE ${table.amountUsd} END)`;
+/**
+ * A client's money per currency — its OWN money (the kinds' native signs, a
+ * kurs farqi moving nothing) and the dollars the balance adds — on the
+ * caller's handle. The card's «O'z valyutasida» line (pool) and the refund
+ * cap (inside its transaction, #714) read the same statement.
+ */
+export async function clientMoneyByCurrency(
+  handle: Db | Tx,
+  clientId: string,
+): Promise<{ currency: string; native: number; usd: number }[]> {
+  const rows = (await handle.execute(sql`
+    SELECT t.currency, coalesce(sum(${nativeSql('client')}), 0) AS native,
+           coalesce(sum(${signedUsdSql(ledgerAlias('t'))}), 0) AS usd
+      FROM client_transactions t
+     WHERE t.client_id = ${clientId}::uuid AND t.voided_at IS NULL
+     GROUP BY t.currency
+     ORDER BY t.currency
+  `)) as unknown as { currency: string; native: string; usd: string }[];
+  const cents = (value: unknown) => Math.round(Number(value ?? 0) * 100) / 100;
+  return [...rows].map((row) => ({ currency: row.currency, native: cents(row.native), usd: cents(row.usd) }));
+}
+
+/** The card's per-currency line (pool). */
+export function clientNativeBalances(clientId: string) {
+  return clientMoneyByCurrency(db, clientId);
 }
 
 /**
- * Money RECEIVED net of money handed back: +payment, −refund, 0 for a charge.
- * «To'landi» on a screen that also shows a balance must be this, or the two
- * columns stop adding up to it.
+ * May this refund be handed out (U04 + Q14, money-5)? When the client holds
+ * an ADVANCE in the refund's own currency and owes nothing in any other, the
+ * cap is that advance in its own money: 125,000,000 so'm paid in and handed
+ * back in full after the rate moved is the whole advance, whatever its
+ * dollars now read — and the kurs farqi reconciler, in the same
+ * transaction, closes the so'm cycle. Otherwise the dollar rule stands
+ * (`refundFitsAdvance`): a client who paid dollar charges in so'm must not
+ * be handed back so'm that paid for dollars.
  */
-export function netPaidUsdSql(table: { type: AnyColumn; amountUsd: AnyColumn } = clientTransactions): SQL {
-  return sql`(CASE WHEN ${table.type} = 'payment' THEN ${table.amountUsd} WHEN ${table.type} = 'refund' THEN -${table.amountUsd} ELSE 0 END)`;
+export function refundFits(
+  refund: { amount: number; currency: string; amountUsd: number },
+  balances: { currency: string; native: number; usd: number }[],
+): boolean {
+  const own = balances.find((row) => row.currency === refund.currency)?.native ?? 0;
+  const owesElsewhere = balances.some((row) => row.currency !== refund.currency && row.native > 0.004);
+  if (own < -0.004 && !owesElsewhere) return refund.amount <= -own + 0.004;
+  const usd = balances.reduce((sum, row) => sum + row.usd, 0);
+  // The rate can only have moved money held IN the refund's currency: a
+  // dollar advance handed back in so'm converts at today's rate and drifts by
+  // nothing, so 2 % of the WHOLE advance let a $10,000 USD advance hand back
+  // $10,200 of so'm (review of the lead's fixes after the fx package took the
+  // same-currency case). The drift base is the advance in the refund's own
+  // money; with none, only the $5 floor.
+  const ownAdvanceUsd = Math.max(0, -(balances.find((row) => row.currency === refund.currency)?.usd ?? 0));
+  return refundFitsAdvance(refund.amountUsd, -Math.round(usd * 100) / 100, ownAdvanceUsd);
 }
 
-/** The same rule for a row already in hand (screens, the cabinet, the bot). */
-export function signedUsd(row: { type: string; amountUsd: number }): number {
-  return row.type === 'payment' ? -row.amountUsd : row.amountUsd;
+/**
+ * May a refund of `refundUsd` be handed out of an advance of `advanceUsd`?
+ * (U04, the owner's A.) The FX residue it may carry over the advance: the
+ * same so'm an advance was paid in, handed back after the rate moved, reads
+ * more dollars than it came in as (measured: $300 → $301.88) — the owner's
+ * «bir necha dollarlik farq baribir o'tkaziladi». The allowance is the
+ * merge's own (2 % or $5, the looser — `fxResidueAllowance`), because a flat
+ * $5 refused a 125-million-so'm advance handed back after a 1.2 % move.
+ * `refundFits` answers the same-currency case natively first and reaches this
+ * only across currencies, where `driftBaseUsd` — the part of the advance held
+ * in the refund's own currency — is all the rate can have moved.
+ */
+export function refundFitsAdvance(refundUsd: number, advanceUsd: number, driftBaseUsd = advanceUsd): boolean {
+  return advanceUsd > 0.009 && refundUsd <= advanceUsd + fxResidueAllowance(driftBaseUsd) + 0.004;
 }
 
 export const transactionSchema = z
   .object({
     clientId: z.string().uuid(),
     type: z.enum(LEDGER_TYPES),
-    amount: z.number().positive().max(1_000_000_000),
+    // The column's bound in every currency; the dollar ceiling is below (U44).
+    amount: nativeAmount(),
     currency: z.string().length(3).toUpperCase(),
     method: z.enum(['cash', 'card', 'transfer']).optional(),
     txDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -104,12 +176,18 @@ export async function addTransaction(input: TransactionInput, ctx: AuditContext)
     const route = await batchRoute(input.batchId);
     if (!route) throw new FinanceError('batch_not_found');
     if (route.internal) throw new FinanceError('internal_batch');
+    // A price on a truck names the client's cargo ON it (0104, U31 claim 1):
+    // with none aboard it names nothing, and the no-cargo price is exactly
+    // the one the screens then call «yuki ketmagan». Asked AFTER the internal
+    // check, so an internal truck still says why it is refused.
+    const aboard = await cargoAboard(input.batchId, input.clientId);
+    if (!aboard.aboard) throw new FinanceError('client_not_aboard');
     // A price set on the truck is also the JOB's money when the client's
     // cargo aboard is one deal's and nothing else (owner's R3a, 2026-09-24:
     // «mashinada qo'yilgan narx bitimga ham yozilsin»). Derived here from the
     // cargo, never taken from the form: the pricing screen only ANNOUNCES it,
     // and a posted deal id would be a forged post until checked (#507).
-    if (!dealId) dealId = await soleDealAboard(input.batchId, input.clientId);
+    if (!dealId) dealId = aboard.dealId;
   }
   // A refund is money that LEFT a kassa for the client (R6a): it names the
   // box, never a truck (it is not a price) and never a partner (a partner-
@@ -137,41 +215,222 @@ export async function addTransaction(input: TransactionInput, ctx: AuditContext)
   const rate = await rateFor(input.currency, input.txDate);
   if (rate === null) throw new FinanceError('fx_missing');
   const amountUsd = Math.round(input.amount * rate * 100) / 100;
+  if (exceedsRowUsd(amountUsd)) throw new FinanceError('amount_too_large');
 
-  const [row] = await db
-    .insert(clientTransactions)
-    .values({
-      clientId: input.clientId,
-      type: input.type,
-      amount: String(input.amount),
-      currency: input.currency,
-      rateToUsd: String(rate),
-      amountUsd: String(amountUsd),
-      method: input.type === 'charge' ? null : (input.method ?? 'cash'),
-      txDate: input.txDate,
-      batchId: input.batchId ?? null,
-      dealId,
-      accountId: input.accountId || null,
-      note: input.note || null,
-      createdBy: ctx.actorId,
-    })
-    .returning();
-  await writeAudit(db, ctx, {
-    entityType: 'client_transaction',
-    entityId: row!.id,
-    action: 'create',
-    after: {
-      clientId: input.clientId,
-      type: input.type,
-      amount: input.amount,
-      currency: input.currency,
-      amountUsd,
-      // Named when set: a truck price can land on a deal nobody typed (R3a),
-      // and the history is where somebody will ask why.
-      ...(dealId ? { dealId } : {}),
-    },
+  const values = {
+    clientId: input.clientId,
+    type: input.type,
+    amount: String(input.amount),
+    currency: input.currency,
+    rateToUsd: String(rate),
+    amountUsd: String(amountUsd),
+    method: input.type === 'charge' ? null : (input.method ?? 'cash'),
+    txDate: input.txDate,
+    batchId: input.batchId ?? null,
+    dealId,
+    accountId: input.accountId || null,
+    note: input.note || null,
+    createdBy: ctx.actorId,
+  };
+  // ONE transaction for every kind (0103): the client's money lock first,
+  // the write, then the kurs farqi reconciler (Q14) — a payment that brings
+  // a currency back to zero writes its «kurs farqi» in the same commit, or
+  // a crash in between would leave the client blocked at the warehouse.
+  //
+  // A refund hands back an ADVANCE (U04, owner's answer A, 2026-09-25). One
+  // larger than the client's credit used to become a new debt in silence —
+  // a settled client handed $300 for lost cartons then «owed» $300 on five
+  // screens and the handover gate stopped his next cargo. So it is refused,
+  // and the sentence names the right path. The check and the insert share
+  // the transaction under the client's lock, or two presses at once would
+  // each see the whole advance; the balance is read on the transaction's own
+  // connection (#714), with the kinds' own signs (#1014).
+  const row = await db.transaction(async (tx) => {
+    await lockOwnersTx(tx, { clientIds: [input.clientId] });
+    if (input.type === 'refund') {
+      const held = await clientMoneyByCurrency(tx, input.clientId);
+      if (!refundFits({ amount: input.amount, currency: input.currency, amountUsd }, held)) {
+        throw new FinanceError('refund_exceeds_advance');
+      }
+    }
+    const [inserted] = await tx.insert(clientTransactions).values(values).returning();
+    await reconcileFxResidueTx(tx, { clientIds: [input.clientId] }, ctx);
+    await writeAudit(tx, ctx, {
+      entityType: 'client_transaction',
+      entityId: inserted!.id,
+      action: 'create',
+      after: {
+        clientId: input.clientId,
+        type: input.type,
+        amount: input.amount,
+        currency: input.currency,
+        amountUsd,
+        // Named when set: a truck price can land on a deal nobody typed (R3a),
+        // and the history is where somebody will ask why.
+        ...(dealId ? { dealId } : {}),
+      },
+    });
+    return inserted!;
   });
-  return row!;
+  return row;
+}
+
+/**
+ * «🚚 Ko'chirish» — a price moved onto the truck(s) the cargo really rode
+ * (0104): a card-only price onto its truck, a Q21 no-cargo price onto the
+ * truck the cargo left on, a Q2 found-back share split off onto the next
+ * truck. Amounts are in the row's OWN currency and must add up to it to the
+ * cent; at most five parts, each on a different truck.
+ */
+export const moveChargeSchema = z.object({
+  txId: z.string().uuid(),
+  parts: z
+    .array(z.object({ batchId: z.string().uuid(), amount: nativeAmount() }))
+    .min(1)
+    .max(5)
+    .refine((parts) => new Set(parts.map((p) => p.batchId)).size === parts.length, { message: 'duplicate_truck' }),
+});
+export type MoveChargeInput = z.infer<typeof moveChargeSchema>;
+
+/**
+ * Void + re-entry in ONE transaction, the house rule for a money correction
+ * (#528), in one press so the two halves cannot drift. The copies keep EVERY
+ * clock of the original:
+ *
+ * - `tx_date` — the P&L month, the monthly plan and the ageing bucket stay
+ *   where they were: moving an August price in September must not take $600
+ *   out of a reported August or restart an 18-day debt at 0.
+ * - `rate_to_usd` / `amount_usd` — copied, never re-read (Q18: a rate may
+ *   since have been corrected, and a correction here must not look like FX).
+ *   The last part takes `amount_usd − Σ others`, so the dollars add up to
+ *   the original to the cent.
+ * - `created_at` — the off-truck warning's «priced at» (`offTruckPrices`)
+ *   stays honest, and the FX cycle order (`(currency, tx_date, created_at,
+ *   id)`) does not move.
+ *
+ * The audit rows carry the press time and `created_by` names the mover.
+ * Every part passes the price door's own checks (`internal_batch`,
+ * `client_not_aboard`, the derived deal — R3a), so a move can never create
+ * the no-cargo price the warnings exist to name. The claim re-judges the row
+ * as it stands at the write: live, a charge, no partner, and not half of a
+ * three-cornered settlement.
+ *
+ * The client's money lock goes before the claim and the kurs farqi reconciler
+ * after the parts (0103, fence F2). The totals do not move, but the CYCLES can:
+ * a split puts a new running sum between its parts, and an advance of exactly
+ * one part's size closes natively there — a residue nobody typed, which must
+ * be closed in this commit like every other writer's.
+ */
+export async function moveCharge(input: MoveChargeInput, ctx: AuditContext): Promise<{ ids: string[] }> {
+  if (!ctx.actorId) throw new FinanceError('unauthenticated');
+  const actorId = ctx.actorId;
+  const row = await db.query.clientTransactions.findFirst({ where: eq(clientTransactions.id, input.txId) });
+  if (!row || row.voidedAt || row.type !== 'charge' || row.partnerId) throw new FinanceError('not_movable');
+
+  const cents = (value: number) => Math.round(value * 100);
+  if (input.parts.reduce((sum, part) => sum + cents(part.amount), 0) !== cents(Number(row.amount))) {
+    throw new FinanceError('move_sum_mismatch');
+  }
+  if (input.parts.length === 1 && input.parts[0]!.batchId === row.batchId) throw new FinanceError('move_noop');
+
+  // The price door's own checks, per part, on the pool BEFORE the transaction
+  // (#714) — the same order `addTransaction` asks them in.
+  const deals = new Map<string, string | null>();
+  for (const part of input.parts) {
+    const route = await batchRoute(part.batchId);
+    if (!route) throw new FinanceError('batch_not_found');
+    if (route.internal) throw new FinanceError('internal_batch');
+    const aboard = await cargoAboard(part.batchId, row.clientId);
+    if (!aboard.aboard) throw new FinanceError('client_not_aboard');
+    // The price's own job wins, the truck's derived one only fills a blank —
+    // addTransaction's order (R3a), which this door says it passes (review:
+    // the derived deal used to win and re-filed a priced job onto another).
+    deals.set(part.batchId, row.dealId ?? aboard.dealId ?? null);
+  }
+  const codeRows = await db
+    .select({ id: batches.id, code: batches.code })
+    .from(batches)
+    .where(inArray(batches.id, [...new Set([...input.parts.map((p) => p.batchId), ...(row.batchId ? [row.batchId] : [])])]));
+  const codeOf = new Map(codeRows.map((r) => [r.id, r.code]));
+  const reason = `ko‘chirildi: ${row.batchId ? (codeOf.get(row.batchId) ?? '—') : 'karta'} → ${input.parts
+    .map((part) => codeOf.get(part.batchId) ?? '—')
+    .join(', ')}`;
+
+  const rate = Number(row.rateToUsd);
+  const totalUsd = cents(Number(row.amountUsd));
+  const usdParts = input.parts.map((part) => cents(part.amount * rate));
+  usdParts[usdParts.length - 1] = totalUsd - usdParts.slice(0, -1).reduce((a, b) => a + b, 0);
+
+  const ids = await db.transaction(async (tx) => {
+    await lockOwnersTx(tx, { clientIds: [row.clientId] });
+    const claimed = await tx
+      .update(clientTransactions)
+      .set({ voidedAt: new Date(), voidedBy: actorId, voidReason: reason })
+      .where(
+        and(
+          eq(clientTransactions.id, row.id),
+          isNull(clientTransactions.voidedAt),
+          eq(clientTransactions.type, 'charge'),
+          isNull(clientTransactions.partnerId),
+          sql`NOT EXISTS (SELECT 1 FROM partner_transactions pt WHERE pt.client_tx_id = ${row.id}::uuid)`,
+          // …and the money the parts were computed from is still the row's:
+          // a /admin/fx save re-prices a charge IN PLACE (Q18), and a move
+          // racing it would have copied the old rate and dollars into the
+          // parts for ever (review). Stale → refused, pressed again.
+          eq(clientTransactions.amount, row.amount),
+          eq(clientTransactions.rateToUsd, row.rateToUsd),
+          sql`${clientTransactions.amountUsd} IS NOT DISTINCT FROM ${row.amountUsd}::numeric`,
+        ),
+      )
+      .returning({ id: clientTransactions.id });
+    if (claimed.length === 0) throw new FinanceError('not_movable');
+    const inserted = await tx
+      .insert(clientTransactions)
+      .values(
+        input.parts.map((part, index) => ({
+          clientId: row.clientId,
+          type: 'charge',
+          amount: part.amount.toFixed(2),
+          currency: row.currency,
+          rateToUsd: row.rateToUsd,
+          amountUsd: (usdParts[index]! / 100).toFixed(2),
+          method: null,
+          txDate: row.txDate,
+          batchId: part.batchId,
+          dealId: deals.get(part.batchId) ?? null,
+          accountId: null,
+          note: row.note,
+          createdBy: actorId,
+          createdAt: row.createdAt,
+        })),
+      )
+      .returning({ id: clientTransactions.id });
+    await reconcileFxResidueTx(tx, { clientIds: [row.clientId] }, ctx);
+    await writeAudit(tx, ctx, {
+      entityType: 'client_transaction',
+      entityId: row.id,
+      action: 'void',
+      after: { reason, movedTo: inserted.map((r) => r.id) },
+    });
+    for (const [index, part] of inserted.entries()) {
+      await writeAudit(tx, ctx, {
+        entityType: 'client_transaction',
+        entityId: part.id,
+        action: 'create',
+        after: {
+          clientId: row.clientId,
+          type: 'charge',
+          amount: input.parts[index]!.amount,
+          currency: row.currency,
+          amountUsd: usdParts[index]! / 100,
+          batchId: input.parts[index]!.batchId,
+          movedFrom: row.id,
+        },
+      });
+    }
+    return inserted.map((r) => r.id);
+  });
+  return { ids };
 }
 
 /**
@@ -218,13 +477,61 @@ export async function placePayment(id: string, accountId: string, ctx: AuditCont
   });
 }
 
-export async function voidTransaction(id: string, reason: string, ctx: AuditContext) {
+/**
+ * The client-ledger rows a person who may NOT move a till may still void —
+ * `mayVoidLedgerRow` (finance/void-rule.ts) written as the void's WHERE: a
+ * price, a settlement half (routed through a firm, no till of ours), and
+ * their OWN payment while nobody has placed it into a kassa. An allow-list,
+ * so a kind a later round adds is the kassa holders' until decided.
+ */
+/**
+ * Is the ledger row's counterparty somebody's staff account — the rule of
+ * `staffPartnerSql` (partners/staff.ts: a login link OR the seeded 'staff'
+ * type), asked of `${clientTransactions}` (#128). Shared by the void claim and
+ * the ledger read that draws the ✖, so the two cannot disagree (#513).
+ */
+export function partnerIsStaffSql(): SQL {
+  return sql`EXISTS (SELECT 1 FROM partners sp JOIN partner_types spt ON spt.id = sp.type_id
+                      WHERE sp.id = ${clientTransactions}.partner_id
+                        AND (sp.user_id IS NOT NULL OR spt.code = 'staff'))`;
+}
+
+export function nonHolderVoidableSql(actorId: string): SQL {
+  return sql`(${clientTransactions.type} = 'charge'
+    OR (${clientTransactions.type} = 'payment' AND ${clientTransactions.partnerId} IS NOT NULL
+        AND NOT ${partnerIsStaffSql()})
+    OR (${clientTransactions.type} = 'payment' AND ${clientTransactions.accountId} IS NULL
+        AND ${clientTransactions.partnerId} IS NULL
+        AND ${clientTransactions.createdBy} = ${actorId}::uuid))`;
+}
+
+export async function voidTransaction(
+  id: string,
+  reason: string,
+  ctx: AuditContext,
+  /**
+   * May this person move a kassa (`mayPickTill` — finance.expenses)? REQUIRED,
+   * never optional: an optional door fails open (U33). Voiding a REFUND puts
+   * the money back into the drawer on paper — the till reads more cash than
+   * it holds and the client's ledger forgets the money was handed back — so
+   * it asks the grant that created it (#1014), the pair #1018 closed for a
+   * kassa-paid cost. Judged by the ROW's type, never the form's. A
+   * COMPENSATION (0105) is the other half of that one decision — money given
+   * to the client, written by the kassa holders — and is voided by them too.
+   */
+  door: { mayMoveTill: boolean },
+) {
   if (!ctx.actorId) throw new FinanceError('unauthenticated');
+  const actorId = ctx.actorId;
   const row = await db.query.clientTransactions.findFirst({
     where: eq(clientTransactions.id, id),
   });
   if (!row) throw new FinanceError('not_found');
   if (row.voidedAt) throw new FinanceError('already_voided');
+  // A kurs farqi row is the system's (Q14) or the accountant's own close
+  // (Q24 b, its own undo door): it changes only when its cycle changes.
+  if (row.type === 'fx_diff') throw new FinanceError('fx_system_row');
+  if (isClientPayout(row.type) && !door.mayMoveTill) throw new FinanceError('forbidden');
   // A three-cornered settlement is ONE agreement with two halves (#415), and
   // `voidPartnerTx` has always taken the client half with it. This is the
   // mirror, which was missing: voiding the client half alone left our debt to
@@ -232,33 +539,83 @@ export async function voidTransaction(id: string, reason: string, ctx: AuditCont
   // ledger — read row by row — could ever show it. Matched on the FK that
   // DEFINES the pair, not on the client row's own partner_id, because only
   // `recordSettlement` ever sets `client_tx_id`.
-  const paired = await db.transaction(async (tx) => {
-    await tx
+  //
+  // The client row's UPDATE is a CLAIM (Q19 review, money finding 2): it
+  // re-judges the row as it stands at the write. A non-holder may void only
+  // what `nonHolderVoidableSql` lists — the same list `mayVoidLedgerRow`
+  // draws the ✖ from — and «Kassaga joylash» can place an unplaced payment
+  // between the read above and this write: under READ COMMITTED the UPDATE
+  // waits for that transaction and re-evaluates the WHERE on the placed row,
+  // so the claim finds nothing. `voided_at IS NULL` closes a double void,
+  // which used to rewrite the first one's reason.
+  //
+  // The firm on the other half, read before the transaction so the money
+  // locks are taken first and in order (clients before partners, 0103).
+  const halves = await db
+    .select({ partnerId: partnerTransactions.partnerId })
+    .from(partnerTransactions)
+    .where(and(eq(partnerTransactions.clientTxId, id), isNull(partnerTransactions.voidedAt)));
+  const partnerIds = halves.map((half) => half.partnerId);
+  await db.transaction(async (tx) => {
+    await lockOwnersTx(tx, { clientIds: [row.clientId], partnerIds });
+    // Voiding a COMPENSATION must not turn cash we already handed the client
+    // into a debt (owner's Q15 (1)): under the client's money lock — the
+    // refund cap's own — the refunds since compensations began must stay
+    // covered by what remains. Refused in words, with the three honest paths.
+    if (row.type === 'compensation') {
+      const { compensationCoverTx, compensationVoidFits } = await import('./compensation');
+      if (!compensationVoidFits(await compensationCoverTx(tx, row.clientId, row.id))) {
+        throw new FinanceError('compensation_paid_out');
+      }
+    }
+    const claimed = await tx
       .update(clientTransactions)
-      .set({ voidedAt: new Date(), voidedBy: ctx.actorId, voidReason: reason })
-      .where(eq(clientTransactions.id, id));
-    return tx
+      .set({ voidedAt: new Date(), voidedBy: actorId, voidReason: reason })
+      .where(
+        and(
+          eq(clientTransactions.id, id),
+          isNull(clientTransactions.voidedAt),
+          door.mayMoveTill ? undefined : nonHolderVoidableSql(actorId),
+        ),
+      )
+      .returning({ id: clientTransactions.id });
+    if (claimed.length === 0) {
+      // Re-read on the transaction's own connection (#714), to say why.
+      const [now] = await tx
+        .select({ voidedAt: clientTransactions.voidedAt })
+        .from(clientTransactions)
+        .where(eq(clientTransactions.id, id));
+      throw new FinanceError(!now ? 'not_found' : now.voidedAt ? 'already_voided' : 'forbidden');
+    }
+    const paired = await tx
       .update(partnerTransactions)
       .set({ voidedAt: new Date(), voidedBy: ctx.actorId, voidReason: reason })
       .where(
         and(eq(partnerTransactions.clientTxId, id), isNull(partnerTransactions.voidedAt)),
       )
-      .returning({ id: partnerTransactions.id });
-  });
-  await writeAudit(db, ctx, {
-    entityType: 'client_transaction',
-    entityId: id,
-    action: 'void',
-    after: { reason, partnerTxIds: paired.map((p) => p.id) },
-  });
-  for (const half of paired) {
-    await writeAudit(db, ctx, {
-      entityType: 'partner_transaction',
-      entityId: half.id,
+      .returning({ id: partnerTransactions.id, partnerId: partnerTransactions.partnerId });
+    // A void can reopen a closed currency (the payment that zeroed it) — its
+    // kurs farqi goes with it, in the same commit (Q14).
+    await reconcileFxResidueTx(
+      tx,
+      { clientIds: [row.clientId], partnerIds: [...partnerIds, ...paired.map((half) => half.partnerId)] },
+      ctx,
+    );
+    await writeAudit(tx, ctx, {
+      entityType: 'client_transaction',
+      entityId: id,
       action: 'void',
-      after: { reason, from: 'client_transaction', clientTxId: id },
+      after: { reason, partnerTxIds: paired.map((p) => p.id) },
     });
-  }
+    for (const half of paired) {
+      await writeAudit(tx, ctx, {
+        entityType: 'partner_transaction',
+        entityId: half.id,
+        action: 'void',
+        after: { reason, from: 'client_transaction', clientTxId: id },
+      });
+    }
+  });
 }
 
 /** USD balance of one client: Σ charges − Σ payments (active rows only). */
@@ -344,28 +701,37 @@ export function liveDeferralWhere(today: string = tashkentDay()) {
   );
 }
 
-export async function deferredBalanceUsd(clientId: string): Promise<number> {
-  const owedPerDeal = db
-    .select({
-      owed: sql<string>`greatest(
-        coalesce(sum(${signedUsdSql()}), 0), 0)`.as('owed'),
-    })
-    .from(clientTransactions)
-    .innerJoin(deals, eq(clientTransactions.dealId, deals.id))
-    .where(
-      and(
-        eq(clientTransactions.clientId, clientId),
-        isNull(clientTransactions.voidedAt),
-        liveDeferralWhere(),
-      ),
-    )
-    .groupBy(clientTransactions.dealId)
-    .as('owed_per_deal');
+/**
+ * A row inside a CLOSED currency cycle owes nothing on any job (0103, money-1):
+ * once a currency is back at zero natively, its kurs farqi row closes the
+ * dollars — and a deferral that still counted the job's own rows of that
+ * cycle would hold their residue a second time, so the gate computed a
+ * NEGATIVE blocking debt and handed the cargo over with nothing owed on
+ * record (#251's hole again). The walk is the one SQL home (`fxWalkSql`); a
+ * USD row is in no cycle and counts as before, and the filter can only LOWER
+ * a deferral, never widen the gate. Raw and unaliased so `signedUsdSql()`
+ * and `liveDeferralWhere()` render against their own tables.
+ */
+function deferredPerDealSql(clientIds: string[]): SQL {
+  return sql`
+    WITH w AS (${fxWalkSql('client', ownersSql('client', clientIds), null)})
+    SELECT client_transactions.client_id, client_transactions.deal_id,
+           greatest(coalesce(sum(${signedUsdSql()}), 0), 0) AS owed
+      FROM client_transactions JOIN deals ON deals.id = client_transactions.deal_id
+     WHERE client_transactions.client_id IN (${sql.join(
+       clientIds.map((id) => sql`${id}::uuid`),
+       sql`, `,
+     )})
+       AND client_transactions.voided_at IS NULL
+       AND ${liveDeferralWhere()}
+       AND NOT EXISTS (SELECT 1 FROM w WHERE w.id = client_transactions.id AND w.pos <= w.last_zero_pos)
+     GROUP BY client_transactions.client_id, client_transactions.deal_id`;
+}
 
-  const [row] = await db
-    .select({ total: sql<string>`coalesce(sum(${owedPerDeal.owed}), 0)` })
-    .from(owedPerDeal);
-  return Math.round(Number(row?.total ?? 0) * 100) / 100;
+export async function deferredBalanceUsd(clientId: string): Promise<number> {
+  const rows = (await db.execute(deferredPerDealSql([clientId]))) as unknown as { owed: string }[];
+  const total = [...rows].reduce((sum, row) => sum + Number(row.owed ?? 0), 0);
+  return Math.round(total * 100) / 100;
 }
 
 /** Per-client totals for the balances screen — only clients with any activity. */
@@ -376,8 +742,18 @@ export async function clientBalances(ownerId?: string) {
       clientCode: clients.clientCode,
       clientName: clients.name,
       chargesUsd: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) FILTER (WHERE ${clientTransactions.type} = 'charge'), 0)`,
-      paymentsUsd: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) FILTER (WHERE ${clientTransactions.type} = 'payment'), 0)`,
+      // NET of what was handed back (R6a) — the one «received» rule.
+      paymentsUsd: sql<string>`coalesce(sum(${netPaidUsdSql()}), 0)`,
       refundsUsd: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) FILTER (WHERE ${clientTransactions.type} = 'refund'), 0)`,
+      // Compensations for lost cargo (0105): not money, not a price — a
+      // column of their own, so charges − payments − compensated (+ fx) is
+      // still the balance beside them.
+      compensatedUsd: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) FILTER (WHERE ${clientTransactions.type} = 'compensation'), 0)`,
+      // The kurs farqi rows (0103, Q14), signed: a column of their own so the
+      // screen's columns still add up to the balance beside them.
+      fxUsd: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) FILTER (WHERE ${clientTransactions.type} = 'fx_diff'), 0)`,
+      // The balance is the ONE sign rule, never JS arithmetic over columns.
+      balanceUsd: sql<string>`coalesce(sum(${signedUsdSql()}), 0)`,
       lastAt: sql<string>`max(${clientTransactions.createdAt})`,
     })
     .from(clientTransactions)
@@ -398,12 +774,13 @@ export async function clientBalances(ownerId?: string) {
       clientCode: r.clientCode,
       clientName: r.clientName,
       chargesUsd: Math.round(Number(r.chargesUsd) * 100) / 100,
-      // NET of what was handed back (R6a), so the screen's two columns still
-      // add up to the balance beside them.
-      paymentsUsd: Math.round((Number(r.paymentsUsd) - Number(r.refundsUsd)) * 100) / 100,
+      // NET of what was handed back (R6a), so the screen's columns still add
+      // up to the balance beside them.
+      paymentsUsd: Math.round(Number(r.paymentsUsd) * 100) / 100,
       refundsUsd: Math.round(Number(r.refundsUsd) * 100) / 100,
-      balanceUsd:
-        Math.round((Number(r.chargesUsd) - Number(r.paymentsUsd) + Number(r.refundsUsd)) * 100) / 100,
+      compensatedUsd: Math.round(Number(r.compensatedUsd) * 100) / 100,
+      fxUsd: Math.round(Number(r.fxUsd) * 100) / 100,
+      balanceUsd: Math.round(Number(r.balanceUsd) * 100) / 100,
       lastAt: r.lastAt,
     }))
     .sort((a, b) => b.balanceUsd - a.balanceUsd);
@@ -416,6 +793,28 @@ export async function clientLedger(clientId: string) {
       tx: clientTransactions,
       createdByName: users.fullName,
       batchCode: batches.code,
+      /** A compensation's prixod (0105): the lost cargo it pays for. */
+      receiptNumber: receipts.number,
+      /** …how many of its cartons are lost NOW, and of how many. */
+      lostNow: sql<number | null>`CASE WHEN ${clientTransactions}.type = 'compensation' THEN (
+        SELECT count(*)::int FROM boxes b JOIN receipt_lots rl ON rl.id = b.lot_id
+         WHERE rl.receipt_id = ${clientTransactions}.receipt_id AND b.status = 'lost') END`,
+      boxesTotal: sql<number | null>`CASE WHEN ${clientTransactions}.type = 'compensation' THEN (
+        SELECT count(*)::int FROM boxes b JOIN receipt_lots rl ON rl.id = b.lot_id
+         WHERE rl.receipt_id = ${clientTransactions}.receipt_id AND b.status <> 'void') END`,
+      /**
+       * Cartons of that prixod that came back from «yo'qolgan» since the
+       * compensation was written — the ⚠ «tekshiring» (Q6), whichever door
+       * restored them. Exact for a partial find, where «lost now = 0» was
+       * not. `${clientTransactions}` the table (#128).
+       */
+      foundSince: sql<number | null>`CASE WHEN ${clientTransactions}.type = 'compensation' THEN (
+        SELECT count(*)::int FROM box_movements bm
+          JOIN boxes b ON b.id = bm.box_id
+          JOIN receipt_lots rl ON rl.id = b.lot_id
+         WHERE rl.receipt_id = ${clientTransactions}.receipt_id
+           AND bm.from_status = 'lost' AND bm.to_status NOT IN ('lost', 'void')
+           AND bm.created_at > ${clientTransactions}.created_at) END`,
       /**
        * WHICH JOB this money answers. `deal_id` has been written by the
        * payment form since #531 and read by nobody but the deferral netting —
@@ -424,11 +823,14 @@ export async function clientLedger(clientId: string) {
        * join: most money names no job, and that is not a defect.
        */
       dealCode: deals.code,
+      /** A settlement through a colleague's account is staff money (M3a). */
+      partnerStaff: sql<boolean>`${partnerIsStaffSql()}`,
     })
     .from(clientTransactions)
     .innerJoin(users, eq(clientTransactions.createdBy, users.id))
     .leftJoin(batches, eq(clientTransactions.batchId, batches.id))
     .leftJoin(deals, eq(clientTransactions.dealId, deals.id))
+    .leftJoin(receipts, eq(clientTransactions.receiptId, receipts.id))
     .where(eq(clientTransactions.clientId, clientId))
     .orderBy(desc(clientTransactions.createdAt))
     .limit(500);
@@ -483,13 +885,98 @@ export interface PaymentRegisterRow {
  * home counter, the Balans line and the register's unplaced view read this one
  * predicate. Since cash boxes exist only — a payment older than the first box
  * is inside some box's counted opening balance and has nowhere to be placed.
+ *
+ * And not when it is CERTAINLY inside a count (audit U09): R4 (#1012) keeps a
+ * row dated before a till's opening date out of that till, because the count
+ * already holds it — so a payment dated before EVERY count of its currency is
+ * money the drawers already show, and listing it as well put it on the Balans
+ * twice until somebody «placed» it and the net fell by the whole amount. Only
+ * tills of the payment's own currency can take it (`placePayment` refuses the
+ * rest), so only they are asked; a till with no opening date counts every row
+ * placed into it, so while one exists the payment stays on the line — and so
+ * does a payment in a currency with no active till at all, or it would drop
+ * out of the net silently. `${clientTransactions}.col`, the table, never the
+ * column: inside the subquery a bare column would bind to money_accounts (#128).
  */
 export function unplacedPaymentSql() {
   return and(
     isNull(clientTransactions.accountId),
     isNull(clientTransactions.partnerId),
     sql`${clientTransactions.txDate} >= (SELECT min(created_at)::date FROM money_accounts)`,
+    sql`(NOT EXISTS (SELECT 1 FROM money_accounts ma
+                      WHERE ma.active AND ma.currency = ${clientTransactions}.currency)
+         OR EXISTS (SELECT 1 FROM money_accounts ma
+                     WHERE ma.active AND ma.currency = ${clientTransactions}.currency
+                       AND coalesce(ma.opening_date, '-infinity'::date) <= ${clientTransactions}.tx_date))`,
   );
+}
+
+/**
+ * Client money over a period, said ONCE (audit U26, #513). Three screens
+ * printed «this month's payments» three ways — the homes net of refunds and
+ * with settlements, the cash flow only what reached a kassa, the register
+ * every payment and no refund — and each disagreed with the one it links to.
+ * One grouped query, split into the parts each of those screens prints, so
+ * every figure on a home can be found again where it leads:
+ *
+ * - `toTill` — payments into a kassa of ours: the cash flow's «Mijoz to'lovlari»
+ * - `viaPartner` — the client half of a three-cornered settlement: money that
+ *   closed the client's debt in a firm's account, never a till (round 39)
+ * - `refunded` — money handed back out of a kassa (R6a): the cash flow's own row
+ * - `netCollected` — what the clients closed, net: toTill + viaPartner −
+ *   refunded, i.e. `netPaidUsdSql`'s sum (the owner's answer A, 2026-09-25)
+ *
+ * The register's total is toTill + viaPartner (every payment, no refund).
+ */
+export async function clientMoneyInPeriod(from: string, to: string) {
+  const [row] = await db
+    .select({
+      charged: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) FILTER (WHERE ${clientTransactions.type} = 'charge'), 0)`,
+      // A price taken back for lost cargo (0105) — the homes' «this month's
+      // revenue» is charged − compensated, the P&L month's own figure (#513).
+      compensated: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) FILTER (WHERE ${clientTransactions.type} = 'compensation'), 0)`,
+      toTill: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) FILTER (WHERE ${clientTransactions.type} = 'payment' AND ${clientTransactions.partnerId} IS NULL), 0)`,
+      viaPartner: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) FILTER (WHERE ${clientTransactions.type} = 'payment' AND ${clientTransactions.partnerId} IS NOT NULL), 0)`,
+      refunded: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) FILTER (WHERE ${clientTransactions.type} = 'refund'), 0)`,
+    })
+    .from(clientTransactions)
+    .where(
+      and(
+        isNull(clientTransactions.voidedAt),
+        gte(clientTransactions.txDate, from),
+        lte(clientTransactions.txDate, to),
+      ),
+    );
+  const cents = (value: unknown) => Math.round(Number(value ?? 0) * 100) / 100;
+  const toTill = cents(row?.toTill);
+  const viaPartner = cents(row?.viaPartner);
+  const refunded = cents(row?.refunded);
+  return {
+    charged: cents(row?.charged),
+    compensated: cents(row?.compensated),
+    toTill,
+    viaPartner,
+    refunded,
+    netCollected: cents(toTill + viaPartner - refunded),
+  };
+}
+
+/**
+ * The /finance total and the Balans's two client lines, said once (audit U15,
+ * the client twin of `partnerTotals`, #996): debtors are the positive
+ * balances, advances the negative ones — money we owe back in service. Each
+ * row rounded to the cent first, the way both screens print it, so the
+ * figure a Balans line links to can be checked there to the cent.
+ */
+export function clientTotals(rows: { balanceUsd: number }[]): { receivable: number; advances: number } {
+  let receivable = 0;
+  let advances = 0;
+  for (const row of rows) {
+    const value = Math.round(row.balanceUsd * 100) / 100;
+    if (value > 0) receivable += value;
+    else advances += -value;
+  }
+  return { receivable: Math.round(receivable * 100) / 100, advances: Math.round(advances * 100) / 100 };
 }
 
 export async function paymentsRegister(
@@ -596,32 +1083,13 @@ export async function balancesForClients(
     .where(and(inArray(clientTransactions.clientId, ids), isNull(clientTransactions.voidedAt)))
     .groupBy(clientTransactions.clientId);
 
-  const perDeal = db
-    .select({
-      clientId: clientTransactions.clientId,
-      dealId: clientTransactions.dealId,
-      owed: sql<string>`greatest(
-        coalesce(sum(${signedUsdSql()}), 0), 0)`.as('owed'),
-    })
-    .from(clientTransactions)
-    .innerJoin(deals, eq(clientTransactions.dealId, deals.id))
-    .where(
-      and(
-        inArray(clientTransactions.clientId, ids),
-        isNull(clientTransactions.voidedAt),
-        liveDeferralWhere(),
-      ),
-    )
-    .groupBy(clientTransactions.clientId, clientTransactions.dealId)
-    .as('owed_per_deal');
-
-  const deferrals = await db
-    .select({
-      clientId: perDeal.clientId,
-      total: sql<string>`coalesce(sum(${perDeal.owed}), 0)`,
-    })
-    .from(perDeal)
-    .groupBy(perDeal.clientId);
+  // The deferral's own rule, closed cycles out (`deferredPerDealSql`, 0103).
+  const perDeal = (await db.execute(deferredPerDealSql(ids))) as unknown as { client_id: string; owed: string }[];
+  const deferralTotals = new Map<string, number>();
+  for (const row of perDeal) {
+    deferralTotals.set(row.client_id, (deferralTotals.get(row.client_id) ?? 0) + Number(row.owed ?? 0));
+  }
+  const deferrals = [...deferralTotals.entries()].map(([clientId, total]) => ({ clientId, total }));
 
   const money = (n: unknown) => Math.round(Number(n ?? 0) * 100) / 100;
   for (const id of ids) out.set(id, { balanceUsd: 0, deferredUsd: 0 });

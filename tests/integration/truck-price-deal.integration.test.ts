@@ -198,10 +198,20 @@ describe('a truck price lands on the deal when the cargo aboard is one deal’s'
     expect((await dealProfit(dealId)).unlinkedBatchUsd).toBe(250);
   });
 
-  it('writes nothing when the client has no cargo aboard — another client’s deal is not theirs', async () => {
+  // The subject changed with 0104: a truck price for a client with NOTHING
+  // aboard is refused outright (`client_not_aboard`, U31 claim 1) — it names
+  // no cargo, and it is exactly the price the screens would then call «yuki
+  // ketmagan». The old half still holds: another client's deal on the truck
+  // is never written anywhere.
+  it('refuses a price when the client has no cargo aboard — and writes no foreign deal', async () => {
     const truck = await mintTruck();
     await cargo(truck, otherClientId, await mintDeal(otherClientId));
-    expect((await price(truck)).dealId).toBeNull();
+    await expect(price(truck)).rejects.toMatchObject({ code: 'client_not_aboard' });
+    const written = await db
+      .select({ id: clientTransactions.id })
+      .from(clientTransactions)
+      .where(eq(clientTransactions.batchId, truck));
+    expect(written).toHaveLength(0);
   });
 
   it('never writes a deal that belongs to another client, even through the client’s own receipt', async () => {

@@ -1,4 +1,4 @@
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
@@ -17,7 +17,9 @@ import { BoxStatusActions } from './status-actions';
 import { BackLink } from '@/components/back-link';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 import { PrintLabels } from '@/components/print-labels';
-import { inScope } from '@/modules/platform/rbac/scope';
+import { warehouseScope } from '@/modules/platform/rbac/scope';
+import { moneyHidden } from '@/modules/platform/rbac/money-sight';
+import { mayOpenBoxCard } from '@/modules/wms/boxes/road-loss';
 
 /** Box card: identity + full movement timeline (spec 5.5 / §10). */
 export default async function BoxPage({ params }: { params: Promise<{ id: string }> }) {
@@ -33,10 +35,9 @@ export default async function BoxPage({ params }: { params: Promise<{ id: string
 
   const lot = (await db.query.receiptLots.findFirst({ where: eq(receiptLots.id, box.lotId) }))!;
   const receipt = (await db.query.receipts.findFirst({ where: eq(receipts.id, lot.receiptId) }))!;
-  // Where it IS, or where it came from. A box in transit has left its origin,
-  // and the warehouse that received it must not lose sight of it the moment
-  // the truck pulls away.
-  if (!inScope(actor, box.currentWarehouseId) && !inScope(actor, receipt.warehouseId)) {
+  // Where it IS, or where it came from — or, lost on the road, the truck it
+  // was lost from (U38): the rule lives beside the one that names the truck.
+  if (!(await mayOpenBoxCard(actor, box, receipt.warehouseId))) {
     notFound();
   }
   const client = receipt.clientId
@@ -46,10 +47,26 @@ export default async function BoxPage({ params }: { params: Promise<{ id: string
     ? await db.query.warehouses.findFirst({ where: eq(warehouses.id, box.currentWarehouseId) })
     : null;
 
+  // A carton lost ON THE ROAD stands in no warehouse, so bringing it back has
+  // to say where it turned up — offered from the warehouses this manager may
+  // act at (the action authorises there again).
+  const landingOptions =
+    box.status === 'lost' && !box.currentWarehouseId && actor.permissions.has('receipts.void')
+      ? (
+          await db
+            .select({ id: warehouses.id, code: warehouses.code, name: warehouses.name })
+            .from(warehouses)
+            .where(and(eq(warehouses.active, true), warehouseScope(actor, warehouses.id)))
+            .orderBy(asc(warehouses.code))
+        ).map((w) => ({ id: w.id, label: `${w.code} — ${w.name}` }))
+      : null;
+
+  // A box's landed cost IS the tannarx — never read for the VED (Q19).
   const canSeeCosts =
-    actor.permissions.has('costs.enter_batch') ||
-    actor.permissions.has('costs.enter_receipt') ||
-    actor.permissions.has('reports.all_warehouses');
+    (actor.permissions.has('costs.enter_batch') ||
+      actor.permissions.has('costs.enter_receipt') ||
+      actor.permissions.has('reports.all_warehouses')) &&
+    !moneyHidden('results', actor.permissions);
   const landed = canSeeCosts ? await boxLandedCost(box.id) : null;
   const tCost = await getTranslations('costing');
 
@@ -102,7 +119,12 @@ export default async function BoxPage({ params }: { params: Promise<{ id: string
       )}
 
       {actor.permissions.has('receipts.void') && (
-        <BoxStatusActions boxId={box.id} status={box.status} inCrate={box.crateId !== null} />
+        <BoxStatusActions
+          boxId={box.id}
+          status={box.status}
+          inCrate={box.crateId !== null}
+          landingOptions={landingOptions}
+        />
       )}
 
       {landed && landed.shares.length > 0 && (

@@ -153,7 +153,11 @@ describe('UZ side', () => {
       .where(and(eq(events.type, 'ReadyForPickup'), eq(events.entityId, batch!.id)));
     expect(readyEvents).toHaveLength(1);
 
-    // Partial issue: 1 of 2
+    // Partial issue: 1 of 2. The cargo landed at the customs warehouse by
+    // one of our trucks after the unpriced-cargo ban's instant (0104) and
+    // carries no price, so the holder ticks the price half too — the direct
+    // tick at the counter, beside the debt one. This suite is about the
+    // handover, not the ban (tests/integration/unpriced-cargo is).
     const handoverId = uuidv4();
     const handover = await issueBoxes(
       {
@@ -164,6 +168,7 @@ describe('UZ side', () => {
         personName: 'Oluvchi Aka',
         personPhone: '+998901112233',
         debtOk: true,
+        priceOk: true,
       },
       ctx(),
     );
@@ -179,6 +184,7 @@ describe('UZ side', () => {
         personName: 'Oluvchi Aka',
         personPhone: '+998901112233',
         debtOk: true,
+        priceOk: true,
       },
       ctx(),
     );

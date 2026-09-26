@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { makeOfferAction, type OfferFormState } from '@/app/(protected)/hisoblash/actions';
+import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 
 /**
  * «Mijozga taklif» — the seller's one tap from a sealed price to a message
@@ -54,7 +55,9 @@ export function CalcOfferForm({
   const [reason, setReason] = useState('');
   const [copied, setCopied] = useState(false);
 
-  const typed = Number(price.replace(',', '.'));
+  // The office's reader (U28, #979): «1,200» is a thousand two hundred, and
+  // the old reader offered the customer $1.20.
+  const typed = parseTypedMoney(price) ?? Number.NaN;
   const below = Number.isFinite(typed) && typed < floorUsd;
   // A concession is the customer's: once the VED has lowered the floor the
   // seller may not sell above it and keep the difference. The box stays

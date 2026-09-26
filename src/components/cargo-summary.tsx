@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { getFormatter, getTranslations } from 'next-intl/server';
-import { clientCargo } from '@/modules/wms/finance/client-cargo';
+import { clientCargo, type ClientCargo } from '@/modules/wms/finance/client-cargo';
 import { Icon } from '@/components/ui/icon';
 
 /**
@@ -13,12 +13,21 @@ import { Icon } from '@/components/ui/icon';
  * `money` false hides the debt figures for a viewer without finance rights —
  * the cargo half is not a secret, the balances are.
  */
-export async function CargoSummary({ clientId, money = true }: { clientId: string; money?: boolean }) {
-  const cargo = await clientCargo(clientId);
+export async function CargoSummary({
+  clientId,
+  money = true,
+  data,
+}: {
+  clientId: string;
+  money?: boolean;
+  /** Already read by the page (the ledger's card form lists its trucks) — not read twice. */
+  data?: ClientCargo;
+}) {
+  const cargo = data ?? (await clientCargo(clientId));
   const t = await getTranslations('cargo');
   const format = await getFormatter();
 
-  if (cargo.locations.length === 0 && cargo.trips.length === 0) {
+  if (cargo.locations.length === 0 && cargo.trips.length === 0 && (!money || cargo.offTrip.length === 0)) {
     return <p className="text-sm text-ink-500">{t('noCargo')}</p>;
   }
 
@@ -95,10 +104,22 @@ export async function CargoSummary({ clientId, money = true }: { clientId: strin
                 {/* An internal truck is never priced (owner's C1a) — «narx
                     qo'yilmagan» is false of it. What CAN be missing there is
                     its own cost, and that is the warning it carries. A charge
-                    already posted on one (before the rule) still prints above. */}
-                {money && trip.chargedUsd === 0 && !trip.internal && (
-                  <span className="ml-auto whitespace-nowrap text-xs text-warn">
+                    already posted on one (before the rule) still prints above.
+                    «Priced» is the unpriced-cargo rule's own answer (0104),
+                    not «something was charged on this truck»: a prixod split
+                    over two trucks and priced once is priced on both. */}
+                {money && trip.unpriced && !trip.internal && (
+                  <span className="ml-auto whitespace-nowrap text-xs text-warn" data-testid="trip-unpriced">
                     {t('notPriced')}
+                  </span>
+                )}
+                {money && !trip.unpriced && trip.chargedUsd === 0 && !trip.internal && (
+                  <span className="ml-auto whitespace-nowrap text-xs text-ink-500">{t('pricedElsewhere')}</span>
+                )}
+                {money && trip.dropped && (
+                  <span className="w-full text-xs text-warn" data-testid="trip-dropped">
+                    {t('tripDropped', { n: trip.dropped.boxes })}
+                    {trip.dropped.to.length > 0 && ` → ${trip.dropped.to.join(', ')}`}
                   </span>
                 )}
                 {money && trip.chargedUsd === 0 && trip.internal && (
@@ -115,6 +136,32 @@ export async function CargoSummary({ clientId, money = true }: { clientId: strin
         </div>
       )}
 
+      {/* Prices on trucks the cargo did not ride (0104): still loading there,
+          or nothing of the client on it at all (Q21). Money viewers only — a
+          row IS a price. */}
+      {money && cargo.offTrip.length > 0 && (
+        <div className="space-y-1">
+          {cargo.offTrip.map((off) => (
+            <Link
+              key={off.batchId}
+              href={`/batches/${off.batchId}`}
+              className="card-tap flex flex-wrap items-baseline gap-2 !p-2.5 text-sm"
+              data-testid="trip-off"
+            >
+              <span className="font-mono font-extrabold text-brand-700">{off.batchCode}</span>
+              <span className={`text-xs font-semibold ${off.reason === 'no_cargo' ? 'text-warn' : 'text-ink-500'}`}>
+                {off.reason === 'no_cargo' ? t('offTripNoCargo') : t('offTripLoading')}
+                {off.droppedTo.length > 0 && ` → ${off.droppedTo.join(', ')}`}
+              </span>
+              <span className="num ml-auto whitespace-nowrap">
+                {t('charged')}: <b>${off.chargedUsd.toFixed(2)}</b>
+                {off.owedUsd > 0.009 && <b className="text-bad"> · {t('owed')} ${off.owedUsd.toFixed(2)}</b>}
+              </span>
+            </Link>
+          ))}
+        </div>
+      )}
+
       {money && (cargo.chargedUsd > 0 || cargo.paidUsd > 0) && (
         <div className="flex flex-wrap items-baseline gap-2 rounded-lg bg-surface-sunken px-3 py-2 text-sm">
           <Icon name="wallet" className="h-4 w-4 text-ink-400" />
@@ -124,6 +171,11 @@ export async function CargoSummary({ clientId, money = true }: { clientId: strin
           <span className="num">
             {t('paidTotal')} <b>${cargo.paidUsd.toFixed(2)}</b>
           </span>
+          {cargo.compensatedUsd > 0.009 && (
+            <span className="num text-ink-500" data-testid="cargo-compensated">
+              {t('compensatedTotal')} <b>${cargo.compensatedUsd.toFixed(2)}</b>
+            </span>
+          )}
           <span className={`num ml-auto font-extrabold ${cargo.balanceUsd > 0.009 ? 'text-bad' : 'text-good'}`}>
             {t('balance')} ${cargo.balanceUsd.toFixed(2)}
           </span>

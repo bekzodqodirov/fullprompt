@@ -7,6 +7,7 @@ import {
   formatEtaRange,
   journeyLabel,
   stageLabel,
+  txView,
   type ClientLabels,
 } from '@/modules/platform/telegram/client-labels';
 import type { CabinetPayload } from '@/modules/wms/client-cabinet/miniapp';
@@ -601,17 +602,23 @@ function Balance({
       {client.recent.length > 0 && (
         <div className="cab-lot">
           <div className="cab-code">{t.recentMoves}</div>
-          {client.recent.map((r, i) => (
-            <div className="cab-row" key={i} data-kind={r.type}>
-              <span>
-                {r.txDate} · {r.type === 'charge' ? t.charged : r.type === 'refund' ? t.refunded : t.paid}
-              </span>
-              <span>
-                {r.type === 'payment' ? '+' : ''}
-                {r.amount} {r.currency}
-              </span>
-            </div>
-          ))}
+          {client.recent.map((r, i) => {
+            // One table for the app and the bot (TX_VIEW): a kind the
+            // customer is not shown is not drawn at all.
+            const view = txView(r.type, t);
+            if (!view) return null;
+            return (
+              <div className="cab-row" key={i} data-kind={r.type}>
+                <span>
+                  {r.txDate} · {view.text}
+                </span>
+                <span>
+                  {view.sign}
+                  {r.amount} {r.currency}
+                </span>
+              </div>
+            );
+          })}
         </div>
       )}
     </>

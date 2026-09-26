@@ -8,7 +8,7 @@ import {
 } from './won-money';
 import { db } from '../../platform/db/client';
 import { deals, dealStages, leads, leadSources, leadStages, users } from '../../platform/db/schema';
-import { addDays, tashkentDay, tashkentDayStart, tashkentMonthStart } from '@/modules/platform/time/tashkent';
+import { addDays, calendarDay, tashkentDay, tashkentDayStart, tashkentMonthStart } from '@/modules/platform/time/tashkent';
 
 /**
  * The sales analytics page's one fetch (round 98, owner: «dunyo standartlarida
@@ -194,6 +194,56 @@ export async function decidedLeadCounts(from: Date, to: Date) {
     wonUsd: money(row?.wonUsd),
     wonOtherCurrency: Number(row?.wonOther ?? 0),
   };
+}
+
+export interface DecidedMonth {
+  month: string;
+  won: number;
+  lost: number;
+  wonUsd: number;
+  wonOtherCurrency: number;
+  /** Days 1..mtdDay of that month only — the like-for-like comparison. */
+  wonMtd: number;
+  lostMtd: number;
+  wonUsdMtd: number;
+}
+
+/**
+ * `decidedLeadCounts`, one row per Tashkent month over a window, in ONE
+ * statement — the dashboard's 12-month won trend and its «vs the same days
+ * last month» (the `*Mtd` columns) without twelve round trips. Same clock
+ * (`closed_at`), same predicate, same dollars-only rule: each row equals
+ * `decidedLeadCounts` over that month, and a test says so.
+ */
+export async function decidedLeadsByMonth(from: Date, to: Date, mtdDay = 31): Promise<DecidedMonth[]> {
+  const monthExpr = sql`to_char(${leads.closedAt} AT TIME ZONE 'Asia/Tashkent', 'YYYY-MM')`;
+  const dom = sql`extract(day FROM ${leads.closedAt} AT TIME ZONE 'Asia/Tashkent') <= ${mtdDay}`;
+  const rows = await db
+    .select({
+      month: sql<string>`${monthExpr}`,
+      won: sql<number>`count(*) FILTER (WHERE ${leadStages.kind} = 'won')`,
+      lost: sql<number>`count(*) FILTER (WHERE ${leadStages.kind} = 'lost')`,
+      wonUsd: leadWonUsdSql(),
+      wonOther: leadWonOtherCurrencySql(),
+      wonMtd: sql<number>`count(*) FILTER (WHERE ${leadStages.kind} = 'won' AND ${dom})`,
+      lostMtd: sql<number>`count(*) FILTER (WHERE ${leadStages.kind} = 'lost' AND ${dom})`,
+      wonUsdMtd: leadWonUsdSql(dom),
+    })
+    .from(leads)
+    .innerJoin(leadStages, eq(leads.stageId, leadStages.id))
+    .where(and(isNotNull(leads.closedAt), gte(leads.closedAt, from), lt(leads.closedAt, to)))
+    .groupBy(monthExpr)
+    .orderBy(monthExpr);
+  return rows.map((row) => ({
+    month: row.month,
+    won: Number(row.won),
+    lost: Number(row.lost),
+    wonUsd: money(row.wonUsd),
+    wonOtherCurrency: Number(row.wonOther),
+    wonMtd: Number(row.wonMtd),
+    lostMtd: Number(row.lostMtd),
+    wonUsdMtd: money(row.wonUsdMtd),
+  }));
 }
 
 export async function salesAnalytics({ from, to }: Period, f: AnalyticsFilters = {}) {
@@ -512,13 +562,9 @@ export function readPeriod(
   params: { dan?: string; gacha?: string },
   now: Date = new Date(),
 ): Period & { dan: string; gacha: string } {
-  const dayOf = (value: string | undefined) => {
-    if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
-    const parsed = new Date(`${value}T00:00:00Z`);
-    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value
-      ? value
-      : undefined;
-  };
+  // The shared calendar reader (U43) — it also drops year 0000, which V8
+  // round-trips and postgres refuses.
+  const dayOf = (value: string | undefined) => calendarDay(value) ?? undefined;
 
   const dan = dayOf(params.dan) ?? tashkentMonthStart(now);
   let gacha = dayOf(params.gacha) ?? tashkentDay(now);

@@ -80,12 +80,56 @@ export function tashkentDayStart(day: string): Date {
 }
 
 /**
+ * A setting that names a MOMENT (the unpriced-cargo ban's start, 0104):
+ * '' → 'empty' (switched off); a real `YYYY-MM-DD` → that Tashkent day's
+ * start; an ISO instant WITH its offset (`…T18:03:11+05:00`, `…Z`) → that
+ * instant; anything else → null.
+ *
+ * An instant without an offset is refused on purpose: `new Date('…T18:03')`
+ * reads it in the SERVER's zone, which is UTC here and five hours from what
+ * the person who typed it meant. A day that does not exist (`2026-02-30`) is
+ * refused by `calendarDay`'s round trip rather than rolled into March.
+ */
+export function parseDayOrInstant(raw: string): Date | 'empty' | null {
+  const value = raw.trim();
+  if (value === '') return 'empty';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return calendarDay(value) ? tashkentDayStart(value) : null;
+  }
+  const instant = /^(\d{4}-\d{2}-\d{2})T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/.exec(value);
+  if (!instant || !calendarDay(instant[1]!)) return null;
+  const at = new Date(value);
+  return Number.isNaN(at.getTime()) ? null : at;
+}
+
+/**
  * `YYYY-MM-DD HH:mm` on Tashkent's wall clock — a moment printed into a
  * spreadsheet cell, where a UTC time read as the office's is five hours off.
  * The fixed offset is exact for the reason above.
  */
 export function tashkentMinute(at: Date): string {
   return new Date(at.getTime() + 5 * 3_600_000).toISOString().slice(0, 16).replace('T', ' ');
+}
+
+/**
+ * `value` when it is a REAL calendar day as `YYYY-MM-DD`, else null.
+ *
+ * The one reader for a date that arrives in a URL (DECISIONS #685's rule:
+ * never parse it, never roll it over, never throw — drop it and let the
+ * default apply). The regex alone let `2026-02-30`, month 13 and day 32
+ * reach postgres, which answers 22008 and white-pages every accounting report
+ * and export (audit U43); and `Date` alone ROLLS `2026-02-30` to March 2nd,
+ * a silently shifted period, which is worse. So the value must survive a
+ * round trip unchanged. Year 0000 round-trips in V8 and postgres refuses it,
+ * hence the year floor of 1 — and no higher floor, because the accounting
+ * suite parks its fixtures in the 1700s.
+ */
+export function calendarDay(value: string | null | undefined): string | null {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  if (Number(value.slice(0, 4)) < 1) return null;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString().slice(0, 10) === value ? value : null;
 }
 
 /**

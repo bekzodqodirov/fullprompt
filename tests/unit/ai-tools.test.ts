@@ -41,6 +41,17 @@ describe('the assistant toolset per actor', () => {
     }
   });
 
+  it('closes the money tier to an admin role the owner\u2019s Q19 blinds (ved.docs without finance.reports)', () => {
+    // «ved hodimi kassa foyda zararni umuman ko'rmasin» — «umuman» includes
+    // the assistant: run_sql, cash_flow and company_balance answer the kassa
+    // and the profit outright.
+    const customised = actorWith(['admin']);
+    customised.permissions = new Set(['ved.docs', 'finance.manage']);
+    expect(buildTools(customised).map((t) => t.name)).toEqual(['lookup_code', 'search', 'my_day']);
+    customised.permissions.add('finance.reports');
+    expect(buildTools(customised).map((t) => t.name)).toContain('cash_flow');
+  });
+
   it('isAnalyst answers the same question the map does', () => {
     expect(isAnalyst(actorWith(['admin']))).toBe(true);
     expect(isAnalyst(actorWith(['super_admin', 'viewer']))).toBe(true);

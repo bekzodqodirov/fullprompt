@@ -429,11 +429,11 @@ describe('a till adds up and keeps its money (A34, A35)', () => {
     const id = await till('A34');
     await addPartnerTx(
       { partnerId, type: 'receipt', amount: 700, currency: 'USD', txDate: today, accountId: id, batchId: '', note: '' },
-      ctx(),
+      ctx(), { mayClassify: true },
     );
     await addPartnerTx(
       { partnerId, type: 'payment', amount: 200, currency: 'USD', txDate: today, accountId: id, batchId: '', note: '' },
-      ctx(),
+      ctx(), { mayClassify: true },
     );
     const row = (await accountBalances()).find((r) => r.id === id)!;
     const shownIn = row.paidIn + row.transferredIn + row.partnerIn;
@@ -461,6 +461,33 @@ describe('the truck tables name what they cannot see (A8/A27)', () => {
       })
       .returning();
     madeBatches.push(batch!.id);
+    // The client's cargo rode it: since 0104 a truck price names cargo ON the
+    // truck (`client_not_aboard` otherwise), so the priced truck carries one
+    // departed carton of this client — the shape every priced truck has.
+    const [rcpt] = await db
+      .insert(receipts)
+      .values({ warehouseId: cn!.id, clientId, status: 'confirmed', createdBy: actorId })
+      .returning({ id: receipts.id });
+    madeReceipts.push(rcpt!.id);
+    const [lot] = await db
+      .insert(receiptLots)
+      .values({ receiptId: rcpt!.id, seq: 1, productNameZh: '货', boxCount: 1, totalWeightKg: '1', totalVolumeM3: '0.01' })
+      .returning({ id: receiptLots.id });
+    const [box] = await db
+      .insert(boxes)
+      .values({ lotId: lot!.id, shortCode: `MA${STAMP}X`, seqInLot: 1, status: 'in_transit', currentWarehouseId: null })
+      .returning({ id: boxes.id });
+    await db.insert(boxMovements).values({
+      boxId: box!.id,
+      fromWarehouseId: cn!.id,
+      toWarehouseId: uz!.id,
+      fromStatus: 'loading',
+      toStatus: 'in_transit',
+      cause: 'batch_departed',
+      refType: 'batch',
+      refId: batch!.id,
+      actorId,
+    });
     const before = await unbatchedMoney(FROM, TO);
 
     // A price on the client's ledger (no truck) and one on the truck.

@@ -4,7 +4,12 @@ import { updateSettingAction } from './actions';
 import { redirect } from 'next/navigation';
 import { getActor } from '@/modules/platform/rbac/authorize';
 
-export default async function SettingsPage() {
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ bad?: string }>;
+}) {
+  const { bad } = await searchParams;
   // Own gate, not just the layout's: the section is now reachable by roles
   // that only hold FX or audit rights.
   const actor = await getActor();
@@ -48,6 +53,11 @@ export default async function SettingsPage() {
                       className="input font-mono"
                       defaultValue={isObject ? JSON.stringify(value) : String(value)}
                     />
+                  )}
+                  {bad === key && (
+                    <p role="alert" className="mt-1 text-sm font-semibold text-bad" data-testid="setting-bad">
+                      {t('badValue')}
+                    </p>
                   )}
                 </div>
                 <button type="submit" className="btn-primary">

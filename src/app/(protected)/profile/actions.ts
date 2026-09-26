@@ -9,6 +9,7 @@ import { writeAudit } from '@/modules/platform/audit/service';
 import { listFromGroups, MUTE_GROUPS, type MuteGroup } from '@/modules/platform/notifications/mutes';
 import { CallsError, createCallDevice, revokeCallDevice } from '@/modules/wms/calls/service';
 import { enqueue, JOB_PROCESS_EVENTS } from '@/modules/platform/jobs/boss';
+import { amountRefusal } from '@/modules/wms/finance/money-bounds';
 import {
   ExpenseRequestError,
   expenseRequestSchema,
@@ -100,7 +101,7 @@ export async function requestOwnExpenseAction(
   const user = await getSessionUser();
   if (!user) return { error: 'unauthenticated' };
   const parsed = expenseRequestSchema.safeParse(input);
-  if (!parsed.success) return { error: 'validation' };
+  if (!parsed.success) return { error: amountRefusal(parsed.error) ?? 'validation' };
   try {
     const warehouseId = parsed.data.warehouseId;
     if (warehouseId) {

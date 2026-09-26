@@ -24,6 +24,16 @@ describe('a typed amount', () => {
     expect(parseTypedMoney('1,5')).toBe(1.5);
     expect(parseTypedMoney('0,45')).toBe(0.45);
     expect(parseTypedMoney('4800.75')).toBe(4800.75);
+    // Nobody groups the thousands of zero: a per-kilo baza, a part of a cube.
+    expect(parseTypedMoney('0,125')).toBe(0.125);
+    expect(parseTypedMoney('-0,125')).toBe(-0.125);
+  });
+
+  it('reads the office\u2019s figures at every money door (U28)', () => {
+    expect(parseTypedMoney('1,200')).toBe(1200);
+    expect(parseTypedMoney('12,500,000')).toBe(12_500_000);
+    expect(parseTypedMoney('5,000.00')).toBe(5000);
+    expect(parseTypedMoney('-1,200')).toBe(-1200);
   });
 
   it('refuses rather than inventing — and never answers NaN', () => {

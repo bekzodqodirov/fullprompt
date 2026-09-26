@@ -5,6 +5,12 @@ import { expect, test } from '@playwright/test';
  * screen shows what it cost us per client next to what we charge and the
  * margin between, and the client's own card says where their cargo is and
  * which trip the debt came from.
+ *
+ * Since his Q19 (2026-09-25, «ved hodimi kassa foyda zararni umuman
+ * ko'rmasin, tannarxni ham»): the VED still PRICES the truck, on a page that
+ * carries no cost, no margin and no tannarx; the cost assertions moved to
+ * the accountant. The VED still records the client's payment, with no kassa
+ * picker — the accountant places it into the drawer.
  */
 
 const LOGIST = '+998900000003';
@@ -92,18 +98,27 @@ test('cost → price → margin, and the client card knows which trip', async ({
   await firstCell.fill('');
   await expect(page.getByTestId('grid-bad')).toHaveCount(0);
 
-  // --- The VED manager prices it and sees cost, price and margin ---
+  // --- The VED: the truck's costs are the logist's, so he reads their TYPE
+  // and never their amount (Q19 D1) ---
   await login(page, VED);
+  await page.goto(batchUrl);
+  await expect(page.getByText('≈ $90')).toHaveCount(0);
+  await expect(page.getByTestId('cost-others')).toBeVisible();
+  await expect(page.getByTestId('cost-others')).toContainText('🔒');
+  await expect(page.getByTestId('batch-pricing-link')).toBeVisible();
+
+  // --- …and prices it on a page with no cost, no margin, no tannarx ---
   await page.goto(`${batchUrl}/pricing`);
   const card = page.getByTestId('pricing-client').filter({ hasText: clientCode });
-  // The truck's customs reached this client as their own share.
-  await expect(card.getByTestId('client-cost')).not.toHaveText('$0.00');
-  // …and the client opens into the goods that rode, each with its own
-  // tannarx and a door into its prixod (the owner's answer 1c: the price
-  // stays one per client).
+  await expect(card).toBeVisible();
+  await expect(page.getByTestId('pricing-total-cost')).toHaveCount(0);
+  await expect(card.getByTestId('client-cost')).toHaveCount(0);
+  await expect(card.getByTestId('lot-cost')).toHaveCount(0);
+  await expect(card.getByTestId('cost-breakdown')).toHaveCount(0);
+  // The client still opens into the goods that rode, with a door into its
+  // prixod (the owner's answer 1c: the price stays one per client).
   const goods = card.getByTestId('pricing-lot').first();
   await expect(goods).toBeVisible();
-  await expect(goods.getByTestId('lot-cost')).not.toHaveText('$0.00');
   await expect(goods.locator('a[href^="/receipts/"]')).toBeVisible();
   await card.locator('input[name="amount"]').fill('150');
   await card.locator('select[name="currency"]').selectOption('USD');
@@ -114,8 +129,16 @@ test('cost → price → margin, and the client card knows which trip', async ({
   const priced = page.getByTestId('pricing-client').filter({ hasText: clientCode });
   await expect(priced.getByText('$150.00').first()).toBeVisible();
 
-  // --- The accountant mints the cash box the payment will land in ---
+  // --- The accountant reads the tannarx the VED no longer does ---
   await login(page, ACCOUNTANT);
+  await page.goto(`${batchUrl}/pricing`);
+  const costed = page.getByTestId('pricing-client').filter({ hasText: clientCode });
+  // The truck's customs reached this client as their own share…
+  await expect(costed.getByTestId('client-cost')).not.toHaveText('$0.00');
+  // …and each lot carries its own exact tannarx.
+  await expect(costed.getByTestId('pricing-lot').first().getByTestId('lot-cost')).not.toHaveText('$0.00');
+
+  // --- …and mints the cash box the payment will land in ---
   await page.goto('/accounting/accounts');
   const accountForm = page.locator('form').filter({ has: page.getByTestId('save-account') });
   await page.getByTestId('account-name').first().fill(`M9 kassa ${runId}`);
@@ -129,6 +152,8 @@ test('cost → price → margin, and the client card knows which trip', async ({
   // --- The ledger says which trip the debt is from ---
   await login(page, VED);
   await page.goto('/finance');
+  // The register is every payment WITH its cash box — no door to it (Q19).
+  await expect(page.locator('a[href="/finance/reestr"]')).toHaveCount(0);
   await page.getByRole('link', { name: new RegExp(clientCode) }).first().click();
   await expect(page).toHaveURL(/\/finance\/[0-9a-f-]+$/);
   // The new block: one row per trip, carrying its cargo and what is still
@@ -141,24 +166,43 @@ test('cost → price → margin, and the client card knows which trip', async ({
   // handover debt gate against every later run of the suite — which is
   // exactly how m5-issue started failing on a second pass.
   const ledgerForm = page.locator('form').filter({ has: page.locator('input[name="txDate"]') });
+  // The VED is not shown the drawers (Q19): the form says who names them.
+  await expect(ledgerForm.locator('select[name="accountId"]')).toHaveCount(0);
+  await expect(ledgerForm.getByTestId('tx-no-till')).toBeVisible();
   await ledgerForm.locator('input[name="amount"]').fill('150');
   await ledgerForm.locator('select[name="currency"]').selectOption('USD');
-  // The audit defect: a payment could not say WHICH cash box it landed in —
-  // the ledger form simply had no way to pick one.
-  await ledgerForm
-    .locator('select[name="accountId"]')
-    .selectOption({ label: `M9 kassa ${runId} (USD)` });
   await ledgerForm.locator('button[type="submit"]').click();
   await expect(ledgerForm.getByText('✅')).toBeVisible({ timeout: 15_000 });
   await page.reload();
   // The trip still shows what it was priced at — what changed is that none
   // of it is outstanding, so the balance is zero.
   await expect(page.getByText('$0.00').first()).toBeVisible();
+  // His own payment, not yet placed, is still his to take back.
+  const paymentRow = page.locator('div.border-b').filter({ hasText: '➕' }).filter({ hasText: '150 USD' }).first();
+  await expect(paymentRow.getByRole('button', { name: /✖/ })).toBeVisible();
+  // The register and the tannarx file are not his.
+  await page.goto('/finance/reestr');
+  await expect(page).toHaveURL('/');
+  expect((await page.request.get('/api/reports/landed-cost')).status()).toBe(403);
 
-  // …and the money now sits in the named cash box, visible to the accountant.
+  // --- The accountant places it into the drawer it landed in ---
   await login(page, ACCOUNTANT);
+  await page.goto('/finance/reestr?joylanmagan=1');
+  const unplacedRow = page
+    .locator('tr')
+    .filter({ hasText: clientCode })
+    .filter({ has: page.getByTestId('place-payment') })
+    .first();
+  await unplacedRow.locator('select[name="accountId"]').selectOption({ label: `M9 kassa ${runId}` });
+  await unplacedRow.getByTestId('place-payment').locator('button[type="submit"]').click();
+  await expect(page.locator('tr').filter({ hasText: clientCode }).getByTestId('place-payment')).toHaveCount(0, {
+    timeout: 15_000,
+  });
+
+  // …and the money now sits in the named cash box.
   await page.goto('/accounting/cashflow');
-  const boxRow = page.locator('div.items-baseline').filter({ hasText: `M9 kassa ${runId}` });
+  // The period's kassa table (U13): the box closes the period holding it.
+  const boxRow = page.getByTestId('recon-kassa').filter({ hasText: `M9 kassa ${runId}` });
   await expect(boxRow).toContainText('150 USD');
 });
 

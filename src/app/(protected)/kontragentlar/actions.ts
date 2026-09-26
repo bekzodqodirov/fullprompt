@@ -5,17 +5,25 @@ import { z } from 'zod';
 import { AuthError, authorize, type Actor } from '@/modules/platform/rbac/authorize';
 import { requestMeta } from '@/modules/platform/auth/session';
 import {
+  CASH_TYPES,
   PartnerError,
   addPartnerTx,
-  partnerIdOfTx,
+  firmDebtVoidRefusal,
+  partnerTxDoorFacts,
   partnerSchema,
   partnerTxSchema,
   savePartner,
+  setAdjustKind,
   setPartnerActive,
   voidPartnerTx,
+  ADJUST_KINDS,
 } from '@/modules/wms/partners/service';
+import { mayClassifyFx } from '@/modules/wms/finance/fx-door';
 import { recordSettlement, settlementSchema } from '@/modules/wms/partners/settlement';
 import { isStaffPartner, isStaffType, maySeeStaffMoney } from '@/modules/wms/partners/staff';
+import { parseTypedMoney } from '@/modules/wms/calc/money-input';
+import { amountRefusal } from '@/modules/wms/finance/money-bounds';
+import { mayPickTill } from '@/modules/wms/accounting/till-door';
 
 /**
  * Every door into the partner ledger.
@@ -52,6 +60,18 @@ async function staffDoor(actor: Actor, partnerId: string | null): Promise<string
 }
 
 /**
+ * The kassa half of a counterparty door (owner's answer b, 2026-09-25): money
+ * that leaves a till for a firm, or enters one from it, and the void that puts
+ * it back, are the accountant's and the admin's — `mayPickTill`, the kassa
+ * screens' own grant, the same one every cost door asks. The VED keeps the
+ * card and may still write a firm's DEBT (through a cost) and the «kurs farqi»
+ * adjust; it never moves a till. Refused here, not only hidden (#531).
+ */
+function tillDoor(actor: Actor, movesTill: boolean): string | null {
+  return movesTill && !mayPickTill(actor.permissions) ? 'till_forbidden' : null;
+}
+
+/**
  * The partner form's door. Besides the account it edits, two things in the
  * POST can make an account staff or re-point it: the login and the «Hodim»
  * type. Setting or changing the login is the accountant's alone (the select
@@ -73,7 +93,7 @@ async function partnerFormDoor(
 
 async function run(
   door: (actor: Actor) => Promise<string | null>,
-  work: (ctx: { actorId: string }) => Promise<unknown>,
+  work: (ctx: { actorId: string }, actor: Actor) => Promise<unknown>,
   paths: string[],
 ): Promise<PartnerFormState> {
   let actor;
@@ -87,7 +107,7 @@ async function run(
   if (refused) return { error: refused };
   const meta = await requestMeta();
   try {
-    await work({ actorId: actor.id, ...meta });
+    await work({ actorId: actor.id, ...meta }, actor);
   } catch (err) {
     if (err instanceof PartnerError) return { error: err.code };
     throw err;
@@ -96,11 +116,14 @@ async function run(
   return { ok: true };
 }
 
-const num = (value: FormDataEntryValue | null): number => {
-  const text = String(value ?? '').trim().replace(',', '.');
-  const parsed = Number(text);
-  return Number.isFinite(parsed) ? parsed : NaN;
-};
+/**
+ * A typed amount, read the office's way (U28, #979's shared reader): «1,200»
+ * is a thousand two hundred, not 1.2, and «1 200» is readable instead of a
+ * refusal carrying zod's raw «Expected number, received nan». A leading «-»
+ * still reads, for an `adjust`; anything unreadable stays NaN and is refused.
+ */
+const money = (value: FormDataEntryValue | null): number =>
+  parseTypedMoney(String(value ?? '')) ?? Number.NaN;
 
 export async function savePartnerAction(
   _prev: PartnerFormState,
@@ -145,18 +168,55 @@ export async function addPartnerTxAction(
   const parsed = partnerTxSchema.safeParse({
     partnerId,
     type: formData.get('type'),
-    amount: num(formData.get('amount')),
+    amount: money(formData.get('amount')),
     currency: formData.get('currency'),
     txDate: formData.get('txDate'),
     accountId: formData.get('accountId') ?? '',
     batchId: formData.get('batchId') ?? '',
     note: formData.get('note') ?? '',
+    // What a correction IS (0103). Drawn only for whoever may classify; the
+    // service refuses a posted kind from anybody else (`forbidden`).
+    adjustKind: formData.get('adjustKind') || undefined,
   });
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'validation' };
+  // The two refines name the field ('amount' / 'account') and the form maps
+  // them; a size refusal is its own sentence (U44). Any other issue is zod's
+  // own English and never reaches the screen — it was, for an unreadable
+  // amount, «Expected number, received nan».
+  if (!parsed.success) {
+    const size = amountRefusal(parsed.error);
+    if (size) return { error: size };
+    const named = parsed.error.issues.find(
+      (issue) => issue.code === 'custom' && (issue.message === 'amount' || issue.message === 'account'),
+    );
+    return { error: named?.message ?? 'validation' };
+  }
   return run(
-    (actor) => staffDoor(actor, parsed.data.partnerId),
-    (ctx) => addPartnerTx(parsed.data, ctx),
-    [`/kontragentlar/${partnerId}`, '/kontragentlar'],
+    async (actor) =>
+      tillDoor(actor, CASH_TYPES.includes(parsed.data.type)) ?? staffDoor(actor, parsed.data.partnerId),
+    (ctx, actor) => addPartnerTx(parsed.data, ctx, { mayClassify: mayClassifyFx(actor.permissions) }),
+    [`/kontragentlar/${partnerId}`, '/kontragentlar', '/accounting/kurs-farqi', '/accounting/pnl'],
+  );
+}
+
+/**
+ * «Ha, bu kurs farqi edi» / «Yo'q, boshqa tuzatish» on an old correction
+ * (0103, Q12's split). `finance.manage` by `run`, then `finance.reports` —
+ * the VED holds the first and must not write into the P&L (Q19) — and a
+ * staff row's own door, judged on the ROW (`partnerTxDoorFacts`).
+ */
+export async function setAdjustKindAction(formData: FormData): Promise<PartnerFormState> {
+  const id = z.string().uuid().safeParse(formData.get('id'));
+  const kind = z.enum(ADJUST_KINDS).safeParse(formData.get('kind'));
+  if (!id.success || !kind.success) return { error: 'validation' };
+  const row = await partnerTxDoorFacts(id.data);
+  return run(
+    async (actor) => (mayClassifyFx(actor.permissions) ? staffDoor(actor, row?.partnerId ?? null) : 'forbidden'),
+    (ctx, actor) =>
+      setAdjustKind(id.data, kind.data, ctx, {
+        mayClassify: mayClassifyFx(actor.permissions),
+        maySeeStaff: maySeeStaffMoney(actor.permissions),
+      }),
+    ['/accounting/kurs-farqi', '/accounting/pnl', row ? `/kontragentlar/${row.partnerId}` : '/kontragentlar'],
   );
 }
 
@@ -166,7 +226,16 @@ export async function voidPartnerTxAction(formData: FormData): Promise<void> {
   const reason = String(formData.get('reason') ?? '').trim();
   if (!id.success || reason.length < 3) return;
   await run(
-    async (actor) => staffDoor(actor, await partnerIdOfTx(id.data)),
+    // Judged by the ROW: the kassa it moved, the account it sits on, and —
+    // for a debt a cost or an expense wrote — the cost door's own rule.
+    async (actor) => {
+      const row = await partnerTxDoorFacts(id.data);
+      return (
+        tillDoor(actor, Boolean(row?.accountId)) ??
+        (row ? await firmDebtVoidRefusal(actor, row) : null) ??
+        staffDoor(actor, row?.partnerId ?? null)
+      );
+    },
     (ctx) => voidPartnerTx(id.data, reason, ctx),
     [`/kontragentlar/${partnerId}`, '/kontragentlar', '/finance'],
   );
@@ -185,14 +254,17 @@ export async function recordSettlementAction(
     txId: formData.get('txId'),
     clientId: formData.get('clientId'),
     partnerId: formData.get('partnerId'),
-    clientAmount: num(formData.get('clientAmount')),
+    clientAmount: money(formData.get('clientAmount')),
     clientCurrency: formData.get('clientCurrency'),
-    partnerAmount: num(formData.get('partnerAmount')),
+    partnerAmount: money(formData.get('partnerAmount')),
     partnerCurrency: formData.get('partnerCurrency'),
     txDate: formData.get('txDate'),
     note: formData.get('note') ?? '',
+    // Which job the client's money answers (U30) — the payment form's #531
+    // wire, on the settlement door. The service checks it is this client's.
+    dealId: formData.get('dealId') ?? '',
   });
-  if (!parsed.success) return { error: 'validation' };
+  if (!parsed.success) return { error: amountRefusal(parsed.error) ?? 'validation' };
 
   let actor;
   try {

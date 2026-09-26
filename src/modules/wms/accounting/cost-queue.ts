@@ -15,8 +15,9 @@ export const QUEUE_PAGE = 100;
 
 /**
  * The accountant's queue (0101): cargo costs whose kassa nobody has said —
- * typed by the warehouse, the logist, the VED, who hold no kassa grant.
- * Newest first, a page at a time; the count is the whole queue.
+ * typed by the warehouse, the logist, the VED, who hold no kassa grant — and
+ * costs whose duplicate expense was merged away naming none (U02). Newest
+ * first, a page at a time; the count is the whole queue.
  */
 export async function unplacedCostQueue(page = 0) {
   const since = await unplacedCostSince();
@@ -43,6 +44,8 @@ export async function unplacedCostQueue(page = 0) {
         pickupCode: pickups.code,
         enteredByName: enteredBy.fullName,
         createdAt: costEntries.createdAt,
+        /** Merged into a kassa-less expense typed since kassas were asked for (U02). */
+        mergedExpenseId: costEntries.mergedExpenseId,
       })
       .from(costEntries)
       .innerJoin(costTypes, eq(costEntries.costTypeId, costTypes.id))

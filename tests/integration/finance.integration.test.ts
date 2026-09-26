@@ -7,9 +7,12 @@ import {
   clientTransactions,
   attachments,
   batches,
+  boxMovements,
   boxes,
   clients,
   currencies,
+  receiptLots,
+  receipts,
   users,
   warehouses,
 } from '@/modules/platform/db/schema';
@@ -190,9 +193,9 @@ describe('client ledger', () => {
       ctx(),
     );
     expect(await clientBalanceUsd(clientId)).toBe(before + 25);
-    await voidTransaction(tx.id, 'entered by mistake', ctx());
+    await voidTransaction(tx.id, 'entered by mistake', ctx(), { mayMoveTill: true });
     expect(await clientBalanceUsd(clientId)).toBe(before);
-    await expect(voidTransaction(tx.id, 'again', ctx())).rejects.toMatchObject({
+    await expect(voidTransaction(tx.id, 'again', ctx(), { mayMoveTill: true })).rejects.toMatchObject({
       code: 'already_voided',
     });
   });
@@ -213,6 +216,32 @@ describe('client ledger', () => {
         createdBy: actorId,
       })
       .returning();
+    // …and the client's cargo rode it: since 0104 a truck price names cargo
+    // ON the truck (`client_not_aboard` otherwise), so the closed truck
+    // carries one departed carton of this client, as a real one does.
+    const [rcpt] = await db
+      .insert(receipts)
+      .values({ warehouseId: china!.id, clientId, status: 'confirmed', createdBy: actorId })
+      .returning({ id: receipts.id });
+    const [lot] = await db
+      .insert(receiptLots)
+      .values({ receiptId: rcpt!.id, seq: 1, productNameZh: '货', boxCount: 1, totalWeightKg: '1', totalVolumeM3: '0.01' })
+      .returning({ id: receiptLots.id });
+    const [box] = await db
+      .insert(boxes)
+      .values({ lotId: lot!.id, shortCode: `F21${String(Date.now()).slice(-7)}`, seqInLot: 1, status: 'in_transit' })
+      .returning({ id: boxes.id });
+    await db.insert(boxMovements).values({
+      boxId: box!.id,
+      fromWarehouseId: china!.id,
+      toWarehouseId: destWarehouseId,
+      fromStatus: 'loading',
+      toStatus: 'in_transit',
+      cause: 'batch_departed',
+      refType: 'batch',
+      refId: batch!.id,
+      actorId,
+    });
     await addTransaction(
       { clientId, type: 'charge', amount: 50, currency: 'USD', txDate: '2026-07-12', batchId: batch!.id },
       ctx(),
@@ -222,7 +251,7 @@ describe('client ledger', () => {
     expect(list[0]!.clientCode).toMatch(/^F2/);
     expect(Number(list[0]!.tx.amountUsd)).toBe(50);
     // Keep the ledger consistent for the debt-gate tests below.
-    await voidTransaction(list[0]!.tx.id, 'test cleanup', ctx());
+    await voidTransaction(list[0]!.tx.id, 'test cleanup', ctx(), { mayMoveTill: true });
   });
 });
 

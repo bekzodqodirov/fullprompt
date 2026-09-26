@@ -1,4 +1,5 @@
 import { and, asc, desc, eq, sql, type SQL } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { db } from '../../platform/db/client';
 import {
   batches,
@@ -18,6 +19,7 @@ import { canWriteDeal } from '../deals/service';
 import { likeNeedle, parseQuery } from './query';
 import { mayReadBatches } from '../batches/read-door';
 import { maySeeStaffMoney, staffPartnerSql } from '../partners/staff';
+import { roadLossBatchSql, roadLossInScope } from '../boxes/road-loss';
 
 /**
  * One search box for the whole system.
@@ -297,11 +299,14 @@ async function searchPartners(
 
 /**
  * A box in transit belongs to no warehouse, so it is judged by its batch's
- * TWO ends — the same rule the bot's box branch uses. Fetching wider and
- * filtering here keeps that rule in one readable place; the codes are near
- * enough unique that the over-fetch is a handful of rows.
+ * TWO ends — the same rule the bot's box branch uses — and a carton lost ON
+ * the road, which has neither pointer any more, by the two ends of the truck
+ * it was lost from (U38, `boxes/road-loss.ts`). Fetching wider and filtering
+ * here keeps that rule in one readable place; the codes are near enough
+ * unique that the over-fetch is a handful of rows.
  */
 async function searchBoxes(actor: SearchActor, like: string): Promise<SearchHit[]> {
+  const lostTruck = alias(batches, 'lost_truck');
   const rows = await db
     .select({
       id: boxes.id,
@@ -310,9 +315,12 @@ async function searchBoxes(actor: SearchActor, like: string): Promise<SearchHit[
       warehouseId: boxes.currentWarehouseId,
       origin: batches.originWarehouseId,
       dest: batches.destWarehouseId,
+      lostOrigin: lostTruck.originWarehouseId,
+      lostDest: lostTruck.destWarehouseId,
     })
     .from(boxes)
     .leftJoin(batches, eq(boxes.currentBatchId, batches.id))
+    .leftJoin(lostTruck, sql`${lostTruck.id} = ${roadLossBatchSql('boxes')}`)
     .where(sql`${boxes.shortCode} ILIKE ${like}`)
     .orderBy(asc(boxes.shortCode))
     .limit(PER_GROUP * 5);
@@ -322,7 +330,13 @@ async function searchBoxes(actor: SearchActor, like: string): Promise<SearchHit[
       (row) =>
         inScope(actor, row.warehouseId) ||
         inScope(actor, row.origin) ||
-        inScope(actor, row.dest),
+        inScope(actor, row.dest) ||
+        roadLossInScope(
+          actor,
+          row.lostOrigin && row.lostDest
+            ? { originWarehouseId: row.lostOrigin, destWarehouseId: row.lostDest }
+            : null,
+        ),
     )
     .slice(0, PER_GROUP)
     .map((row) => ({

@@ -5,6 +5,7 @@ import { clients, crmPeople, leads } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { phoneDigits, phonesOverlap } from '../client-cabinet/service';
 import { CrmError } from './service';
+import { ledgerAlias, signedUsdSql } from '../finance/ledger-sql';
 
 /**
  * One human being, several client codes (owner: "ha birlashtiraylik").
@@ -104,7 +105,7 @@ export async function personCodes(personId: string) {
       name: clients.name,
       active: clients.active,
       balanceUsd: sql<string>`coalesce((
-        SELECT sum(CASE WHEN ct.type = 'payment' THEN -ct.amount_usd ELSE ct.amount_usd END)
+        SELECT sum(${signedUsdSql(ledgerAlias('ct'))})
         FROM client_transactions ct
         WHERE ct.client_id = ${clients}.id AND ct.voided_at IS NULL
       ), 0)`,

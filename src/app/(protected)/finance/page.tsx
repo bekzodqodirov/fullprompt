@@ -2,10 +2,11 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { clientBalances } from '@/modules/wms/finance/service';
+import { clientBalances, clientTotals } from '@/modules/wms/finance/service';
 import { moneyOwnerFilter } from '@/modules/wms/finance/scope';
 import { FinanceClientSearch } from './client-search';
 import { PageHeader } from '@/components/ui/page';
+import { moneyHidden } from '@/modules/platform/rbac/money-sight';
 
 /**
  * Finance home (Phase 2.1): every client with ledger activity and their USD
@@ -23,7 +24,10 @@ export default async function FinancePage() {
   // over every client's money (see finance/scope.ts). The total below sums
   // these rows, so it narrows with them and cannot contradict the table.
   const rows = await clientBalances(moneyOwnerFilter(actor));
-  const totalDebt = rows.filter((r) => r.balanceUsd > 0).reduce((a, r) => a + r.balanceUsd, 0);
+  // The Balans's own arithmetic over these rows (U15): «Jami qarzdorlik» is
+  // its «Mijozlar qarzi» line and the advances its «Mijozlar avansi» — that
+  // line links here, and a figure that can be checked nowhere is not checked.
+  const { receivable: totalDebt, advances: totalAdvances } = clientTotals(rows);
 
   return (
     <div className="mx-auto max-w-lg space-y-4 md:max-w-3xl">
@@ -31,17 +35,40 @@ export default async function FinancePage() {
         icon="wallet"
         title={t('title')}
         actions={
-          <Link href="/finance/reestr" className="btn-secondary px-3 text-sm">
-            📒 {t('paymentsRegister')}
-          </Link>
+          <>
+            {/* 0104: landed cargo with no price — the list the counter's ban
+                reads, same door and same money scope as this page. It names
+                debts and cargo and never a till or a cost, so the VED keeps
+                it (his «19 a»). */}
+            <Link href="/finance/narxsiz" className="btn-secondary px-3 text-sm" data-testid="finance-unbilled-link">
+              💰 {t('unbilledLink')}
+            </Link>
+            {/* The register is closed to a reader the kassa is hidden from
+                (Q19) — a door that bounces is worse than none (#420). */}
+            {moneyHidden('kassa', actor.permissions) ? undefined : (
+              <Link href="/finance/reestr" className="btn-secondary px-3 text-sm">
+                📒 {t('paymentsRegister')}
+              </Link>
+            )}
+          </>
         }
       />
       {actor.permissions.has('finance.manage') && <FinanceClientSearch />}
-      <div className="card flex items-baseline gap-2">
-        <span className="text-sm text-ink-700">{t('totalDebt')}:</span>
-        <span className="font-mono text-lg font-extrabold text-bad">
-          ${totalDebt.toFixed(2)}
+      <div className="card flex flex-wrap items-baseline gap-x-4 gap-y-1">
+        <span className="flex items-baseline gap-2">
+          <span className="text-sm text-ink-700">{t('totalDebt')}:</span>
+          <span className="font-mono text-lg font-extrabold text-bad">
+            ${totalDebt.toFixed(2)}
+          </span>
         </span>
+        {totalAdvances > 0 && (
+          <span className="flex items-baseline gap-2" data-testid="finance-total-advances">
+            <span className="text-sm text-ink-700">{t('totalAdvances')}:</span>
+            <span className="font-mono text-lg font-extrabold text-bad">
+              ${totalAdvances.toFixed(2)}
+            </span>
+          </span>
+        )}
       </div>
       <div className="card overflow-x-auto !p-0">
         <table className="w-full text-sm">
@@ -62,7 +89,17 @@ export default async function FinancePage() {
                     <span className="text-ink-700">{r.clientName}</span>
                   </Link>
                 </td>
-                <td className="p-3 text-right font-mono">${r.chargesUsd.toFixed(2)}</td>
+                <td className="p-3 text-right font-mono">
+                  ${r.chargesUsd.toFixed(2)}
+                  {/* Compensation for lost cargo (0105): the charges stay the
+                      price asked, and the part taken back is said under them —
+                      the columns still add up to the balance, as on the card. */}
+                  {r.compensatedUsd > 0.009 && (
+                    <span className="block text-2xs font-normal text-ink-500" data-testid="finance-compensated-col">
+                      {t('compensatedCol', { amount: `$${r.compensatedUsd.toFixed(2)}` })}
+                    </span>
+                  )}
+                </td>
                 <td className="p-3 text-right font-mono">${r.paymentsUsd.toFixed(2)}</td>
                 <td
                   className={`p-3 text-right font-mono font-bold ${
@@ -70,6 +107,12 @@ export default async function FinancePage() {
                   }`}
                 >
                   ${r.balanceUsd.toFixed(2)}
+                  {/* Kurs farqi (0103): the columns still add up to the balance. */}
+                  {r.fxUsd !== 0 && (
+                    <span className="block text-2xs font-normal text-ink-500" data-testid="finance-fx-col">
+                      {t('fxCol')} {r.fxUsd > 0 ? '+' : '−'}${Math.abs(r.fxUsd).toFixed(2)}
+                    </span>
+                  )}
                 </td>
               </tr>
             ))}

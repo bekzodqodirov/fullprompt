@@ -1,5 +1,27 @@
 import type { BatchLot } from '../batches/lots';
 import type { LotLandedCost } from '../costing/service';
+import { moneyHidden } from '../../platform/rbac/money-sight';
+
+/**
+ * What «Partiya moliyasi» shows this reader (owner, 2026-09-25, Q19) — ONE
+ * answer for the page, its door on the batch card and every link that points
+ * at it (#513: a link that bounces is worse than no link, #1023).
+ *
+ * - `full`  — cost, price and margin: the accountant, the admins, the owner.
+ * - `price` — the goods, kg/m³, their fate, the price and its form, and no
+ *   cost at all: the VED. He forbade SEEING the tannarx, not pricing (the
+ *   VED prices trucks since Phase 2.1, #108), so the page stays his and
+ *   never READS the tannarx for him.
+ * - `none`  — no door: no `finance.manage`, or an internal leg for the VED,
+ *   whose page is a cost page and nothing else (C1a).
+ */
+export type PricingSight = 'full' | 'price' | 'none';
+
+export function pricingSight(permissions: ReadonlySet<string>, internal: boolean): PricingSight {
+  if (!permissions.has('finance.manage')) return 'none';
+  if (!moneyHidden('results', permissions)) return 'full';
+  return internal ? 'none' : 'price';
+}
 
 /**
  * «Partiya moliyasi», assembled (owner, 2026-09-24: the truck's money by
@@ -25,6 +47,13 @@ export interface PricingClientGroup {
   boxes: number;
   kg: number;
   m3: number;
+  /**
+   * The cartons' fate (U35), counted over the same lots: lost and still
+   * missing are INSIDE `boxes`/`kg` (their cost stays, #833), left-behind
+   * ones are not on this truck at all. `arrivedKg` is what a per-kilo price
+   * is honestly measured against.
+   */
+  fate: { lost: number; missing: number; leftBehind: number; arrivedBoxes: number; arrivedKg: number };
   costUsd: number;
   /** The part of `costUsd` the cargo brought with it — «shu reysgacha». */
   prevUsd: number;
@@ -45,7 +74,20 @@ export interface PricingView {
   unclaimed: { lots: BatchLot[]; costUsd: number };
   /** Charges on this truck for clients with nothing on it any more. */
   orphans: { clientId: string; code: string; name: string; chargedUsd: number }[];
-  totals: { costUsd: number; prevUsd: number; chargedUsd: number; marginUsd: number; priced: number };
+  /**
+   * `noCargoUsd` (0104, Q21 under his (a)) is a PART of `chargedUsd`, never
+   * subtracted from it: the orphans' prices stay in the truck's «Narx» and
+   * margin, and the header says «shundan … — yuki ketmagan mijozlar» beside
+   * them. «Partiya foydasi» prints the same part (`noCargoChargeUsd`).
+   */
+  totals: {
+    costUsd: number;
+    prevUsd: number;
+    chargedUsd: number;
+    noCargoUsd: number;
+    marginUsd: number;
+    priced: number;
+  };
 }
 
 const cents = (value: number) => Math.round(value * 100) / 100;
@@ -67,6 +109,19 @@ export function soleDealOf(lots: { dealId: string | null }[]): string | null {
   const ids = new Set(lots.map((lot) => lot.dealId));
   if (ids.size !== 1) return null;
   return [...ids][0] ?? null;
+}
+
+/** The fate counts of a set of lots (U35), summed as the rows print them. */
+export function fateOf(lots: BatchLot[]): PricingClientGroup['fate'] {
+  const lost = lots.reduce((a, l) => a + l.lostCount, 0);
+  const missing = lots.reduce((a, l) => a + l.missingCount, 0);
+  return {
+    lost,
+    missing,
+    leftBehind: lots.reduce((a, l) => a + l.leftBehindCount, 0),
+    arrivedBoxes: lots.reduce((a, l) => a + l.onBatch, 0) - lost - missing,
+    arrivedKg: Math.round(lots.reduce((a, l) => a + l.arrivedKg, 0) * 10) / 10,
+  };
 }
 
 export function pricingView(
@@ -125,6 +180,7 @@ export function pricingView(
       boxes: group.lots.reduce((a, l) => a + l.onBatch, 0),
       kg: Math.round(group.lots.reduce((a, l) => a + l.kg, 0) * 10) / 10,
       m3: Math.round(group.lots.reduce((a, l) => a + l.m3, 0) * 1000) / 1000,
+      fate: fateOf(group.lots),
       costUsd,
       prevUsd: sumPrev(group.lots),
       chargedUsd,
@@ -152,6 +208,7 @@ export function pricingView(
       costUsd,
       prevUsd: sumPrev(lots),
       chargedUsd,
+      noCargoUsd: cents(orphans.reduce((a, row) => a + row.chargedUsd, 0)),
       marginUsd: cents(chargedUsd - costUsd),
       priced: clients.filter((group) => group.chargedUsd > 0).length,
     },

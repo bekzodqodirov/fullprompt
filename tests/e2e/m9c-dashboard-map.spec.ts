@@ -22,26 +22,61 @@ async function login(page: import('@playwright/test').Page, phone: string) {
   await expect(page).toHaveURL('/');
 }
 
-test('the dashboard covers logistics, money and the funnel', async ({ page }) => {
+const ACCOUNTANT = '+998900000010';
+
+test('the dashboard covers the money, the cargo and the funnel', async ({ page }) => {
   await login(page, OWNER);
   await page.goto('/dashboard');
 
-  // Every section the owner asked for, in one screen.
-  for (const key of ['todayTitle', 'moneyTitle', 'salesTitle', 'logisticsTitle']) {
-    await expect(page.getByTestId(`section-${key}`)).toBeVisible();
+  // Six morning figures, then what needs a person, then the three parts.
+  for (const id of ['tile-cash', 'tile-revenue', 'tile-profit', 'tile-receivable', 'tile-intake', 'tile-won']) {
+    await expect(page.getByTestId(id)).toBeVisible();
   }
-  // The money block reports real figures off the ledger, not placeholders.
-  await expect(page.getByTestId('section-moneyTitle')).toContainText('$');
-  // The headline row is four tiles regardless of what the numbers say.
-  await expect(page.getByTestId('kpi-row').locator('> *')).toHaveCount(4);
+  await expect(page.getByTestId('kpi-row').locator('> *')).toHaveCount(6);
+  for (const key of ['section-attention', 'section-moneyTitle', 'section-logisticsTitle', 'section-salesTitle']) {
+    await expect(page.getByTestId(key)).toBeVisible();
+  }
+  for (const id of ['dash-pnl-chart', 'dash-cash-chart', 'dash-balance-rows', 'dash-aging-bar', 'dash-trips', 'dash-unbilled', 'dash-pipeline-bar']) {
+    await expect(page.getByTestId(id)).toBeVisible();
+  }
+
+  // Nothing on the page is wider than the phone (a row wider than 360 px
+  // rescales the whole screen, #400).
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(360);
+
+  // The bridge's net is the Balans page's own figure (#513): one number, two
+  // screens, compared to the dollar. Re-read until they agree: the net now
+  // carries the cost of unpriced cargo (U03), and a queued re-split landing
+  // between the two loads moves a share between priced and unpriced cargo —
+  // information, not a disagreement between the screens.
+  const dollars = (text: string | null) => Math.round(Number((text ?? '').replace(/[^0-9.−-]/g, '').replace('−', '-')));
+  await expect(async () => {
+    await page.goto('/dashboard');
+    const dashNet = dollars(await page.getByTestId('dash-balance-net').locator('[data-value]').textContent());
+    await page.goto('/accounting/balance');
+    const pageNet = dollars(await page.getByTestId('balance-net').textContent());
+    expect(dashNet).toBe(pageNet);
+  }).toPass({ timeout: 30_000 });
+});
+
+test('the money is the owner\'s and the admin\'s: the accountant sees none of it', async ({ page }) => {
+  // His answer 4a (2026-09-25): the accountant has the accounting screens.
+  await login(page, ACCOUNTANT);
+  await page.goto('/dashboard');
+  await expect(page.getByTestId('section-logisticsTitle')).toBeVisible();
+  await expect(page.getByTestId('section-moneyTitle')).toHaveCount(0);
+  await expect(page.getByTestId('tile-cash')).toHaveCount(0);
+  await expect(page.getByTestId('tile-intake')).toBeVisible();
 });
 
 test('a warehouse manager gets the warehouse half and no money', async ({ page }) => {
   await login(page, YW_MANAGER);
   await page.goto('/dashboard');
   await expect(page.getByTestId('section-logisticsTitle')).toBeVisible();
+  await expect(page.getByTestId('section-attention')).toBeVisible();
   // No finance permission → the block is absent, not empty.
   await expect(page.getByTestId('section-moneyTitle')).toHaveCount(0);
+  await expect(page.getByTestId('tile-cash')).toHaveCount(0);
 });
 
 test('the map fills the screen and says which mark is which', async ({ page }) => {

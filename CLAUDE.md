@@ -61,7 +61,9 @@ pnpm build && pnpm e2e  # 44 e2e
 ## Verification ritual (follow it, it catches real bugs)
 
 1. Postgres dies between turns:
-   `su postgres -c "/usr/lib/postgresql/16/bin/pg_ctl -D /var/local/pg/data -l /var/local/pg/log -o '-k /tmp' start"`
+   `su postgres -c "/usr/lib/postgresql/16/bin/pg_ctl -D /var/local/pg/data -l /var/local/pg/log/server.log -o '-k /tmp' start"`
+   (`-l` takes a FILE: `/var/local/pg/log` is a directory and pg_ctl refuses it.)
+   Tests that all report «skipped» mean postgres is down, not that they pass.
 2. `gsr_dev` = the owner's real imported data. `gsr_ci` / `gsr_test` = throwaway.
 3. Before e2e: **`fuser -k 3000/tcp`** — `pkill -f start-standalone` does not
    free the port and you will test stale code for an hour.
@@ -1774,9 +1776,38 @@ PROCESS: `git add -A` swept the agents' worktrees in as gitlinks (now in
 `.git/info/exclude`); an agent rewrote a shared scratchpad helper for its own
 worktree — helpers carry the owner's tag in their name now.
 
-**Latest migration: 0101** (`kassa_refund` — the refund kind, the cost's kassa
+**Round — the finance audit, the dashboard and his 29 answers (2026-09-25/26;
+DECISIONS #1023-#1043; migrations 0102-0106 — ledger must reach 107).** His
+«balance, pnl va cashflow … togri chiqyabtimi … audit qil … dashboardni
+profesional … yuklar bolinib ketishi, yoqolishi … moliya jihatidan». Answers:
+the record is the session; the owner's Q1-Q22 are built as answered, Q23-29,
+A, B as the ⭐ defaults (listed in the CHANGELOG entry as still owed). Built in
+five parallel packages (VED sight Q19, recurring «To'landi» Q6, the unpriced
+gate Q3/Q2/Q21, the kurs farqi package Q12-Q25, compensation + un-merge
+Q15/Q8) plus the Balans line (U03, #1041). THE RULES THAT NOW HAVE ONE HOME:
+`finance/unpriced.ts` (what cargo has no price — the gate, /finance/narxsiz,
+the dashboard and the Balans line), `batches/riders.ts` (what rode a truck —
+every cost base and every truck reader), `finance/ledger-sql.ts` (the client
+sign rule), `finance/fx-residue.ts` (kurs farqi, reconciled in the tx of EVERY
+writer), `platform/rbac/money-sight.ts` (what the VED does not see),
+`accounting/recurring-sql.ts` (what a month owes). Then a second adversarial
+review of the FIXES: 31 confirmed + 64 unverified — every confirmed defect and
+every unverified one with a money consequence fixed and red-proven (#1042),
+the rest STATED with reasons (#1043). Postgres runs `jit=off` (#1039 — takes
+effect when the container is recreated). DEPLOY: `repair-riders --apply` the
+same day (the nightly net deliberately moves only STALE splits now), then
+`fx-close-history`, `money-suspects`, `balans-hisobot` (both read-only);
+«Sof holat» MOVES — down by overdue rent/salary, up by the U03 line (~$173k on a
+shaped copy). PROCESS: #1040 (migration `when` order across parallel packages —
+a db migrated to 0106 before 0103-0105 skips them silently; every local db was
+rebuilt). Subagents hit their weekly limit mid-review; the fixes were done solo.
+
+**Latest migration: 0106** (`recurring_paid` — the month a posting closes and
+the template's due-from; ledger must reach **107**). Before it: 0105
+(`compensation`), 0104 (`unpriced_gate`), 0103 (`fx_differences`), 0102
+(`business_targets` — the monthly plan). Before them: **0101** (`kassa_refund` — the refund kind, the cost's kassa
 and its merge provenance, the staff login link, the own-pocket request; ledger
-must reach **102**). Before it: **0100** (`factory_pickup` — factories, trips,
+102). Before it: **0100** (`factory_pickup` — factories, trips,
 stops, lines, the prixod's stop and the truck-cost scope; ledger 101). Before
 it: **0099** (`recurring_link` — a posting names its template,
 a template names its payer; ledger 100). Before it: **0098**
@@ -1884,8 +1915,8 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **102** since 0101, and his server last CONFIRMED 95 (2026-09-04),
-which means 0095-0101 are all pending and one deploy applies SEVEN of them.
+length — **107** since 0106, and his server last CONFIRMED 95 (2026-09-04),
+which means 0095-0106 are all pending and one deploy applies TWELVE of them.
 Never carry this number over from a previous session: read it
 (`ls src/modules/platform/db/migrations/*.sql | wc -l`) before writing the
 owner a step list, because the count is the only check that separates «the

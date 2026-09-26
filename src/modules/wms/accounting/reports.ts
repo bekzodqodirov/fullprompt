@@ -1,5 +1,7 @@
-import { and, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
+import { cache } from 'react';
+import { and, eq, gte, inArray, isNull, lte, sql, type SQL } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
+import { withoutJit } from '../../platform/db/no-jit';
 import {
   accountTransfers,
   batches,
@@ -9,15 +11,48 @@ import {
   costEntries,
   expenseCategories,
   expenses,
+  moneyAccounts,
   partnerTransactions,
   partners,
 } from '../../platform/db/schema';
 import { uzsRate } from './period';
 // Every cash box converts through the generic rate lookup, not a per-currency
 // branch — the branch is how a CNY till came to be worth nothing.
-import { batchLandedCostTotals, rateFor, unplacedCostTotals } from '../costing/service';
-import { clientBalances, unplacedPaymentSql } from '../finance/service';
+import {
+  batchLandedCostTotals,
+  oldInsideEveryCountSql,
+  rateFor,
+  unplacedCostSince,
+  unplacedCostSql,
+  unplacedCostTotals,
+} from '../costing/service';
+import {
+  CARGO_STATUSES,
+  handedOverSinceSql,
+  uncoveredCtes,
+  uncoveredMoneyCtes,
+  unpricedGate,
+  unpricedScopeSql,
+  type GateSince,
+} from '../finance/unpriced';
+import { clientBalances, clientTotals, unplacedPaymentSql } from '../finance/service';
 import { internalLegSql } from '../batches/internal';
+import { partnerSignedSql } from '../partners/ledger-sign';
+import {
+  cashClientTxSql,
+  cashCostSql,
+  cashExpenseSql,
+  costCashDay,
+  costKassaFxUsd,
+  costKassaUnratedUsd,
+  mergedFrom,
+  transferFxUsd,
+} from './cash-rules';
+import { FX_PNL_SIGN } from '../finance/fx-sign';
+import { isDebit, REVENUE_TYPES, signedUsd } from '../finance/ledger-kinds';
+import { kindList, ledgerAlias, revenueUsdSql } from '../finance/ledger-sql';
+import { marginPct } from './margin';
+import { rideMovementSql, riderLoad } from '../batches/riders';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
@@ -63,15 +98,36 @@ export function monthsBetween(from: string, to: string): string[] {
 
 export interface Pnl {
   months: string[];
+  /**
+   * NET of compensation (0105, Q15): the prices charged minus what was taken
+   * back for lost cargo. Every reader of the P&L — the gross and net profit,
+   * the dashboard, the monthly plan — follows this row.
+   */
   revenue: PnlRow;
+  /** The prices charged (gross) and the compensations (positive), the two parts of `revenue`. */
+  grossCharges: PnlRow;
+  compensation: PnlRow;
   directCosts: PnlRow[];
   directTotal: PnlRow;
   grossProfit: PnlRow;
-  grossMarginPct: Record<string, number>;
+  /** Null over a month whose net revenue is not positive (`marginPct`). */
+  grossMarginPct: Record<string, number | null>;
   opex: PnlRow[];
   opexTotal: PnlRow;
+  /**
+   * «Kurs farqi» (0103, the owner's Q12 A): what the company won (+) or lost
+   * (−) when money changed currency or a debt closed in its own currency at
+   * another day's rate. Sub-rows by source — only those with money in some
+   * month — and the total, which the net includes.
+   */
+  fx: PnlRow[];
+  fxTotal: PnlRow;
   netProfit: PnlRow;
 }
+
+/** The P&L's FX sources, in the order the page prints them. */
+export const FX_PNL_KEYS = ['fx:kassa', 'fx:settlement', 'fx:adjust', 'fx:closing'] as const;
+export type FxPnlKey = (typeof FX_PNL_KEYS)[number];
 
 /**
  * What a period's P&L cannot see, said beside it instead of silently
@@ -85,14 +141,32 @@ export interface Pnl {
  * - A cost with no dollar figure because its currency had no rate: the P&L
  *   reads it as $0 (`coalesce(amount_usd, 0)`). Named per currency in its own
  *   money, since there is no dollar figure to name.
+ * - A cost WITH dollars that is split onto no box at all (audits U20/U39): in
+ *   the P&L, in no client's tannarx and in no truck's pricing screen. Only a
+ *   truck-stamped one was ever named (`profitByBatch`'s «unallocated»); a
+ *   prixod's or a crate's said nothing. Stated, not alarmed: a factory truck
+ *   with no prixod linked yet, or a truck cost typed before anything was
+ *   loaded, has no cargo for a while by design — and splits by itself when it
+ *   does. Nothing here voids it: the empty-scope void is the annul's alone.
  */
 export interface PnlGaps {
   manualCharges: { count: number; usd: number };
   unconverted: { count: number; byCurrency: { currency: string; count: number; amount: number }[] };
+  onNoBox: { count: number; usd: number };
+  /**
+   * Counterparty corrections nobody with the right to say has classified as
+   * «kurs farqi» or «xato tuzatish» (0103, Q12's split): named, never guessed
+   * into the FX line — some of them are opening balances.
+   */
+  unclassifiedAdjusts: { count: number; usd: number };
+  /** Kassa-paid costs whose KASSA currency has no rate: their FX is not counted. */
+  kassaUsdMissing: { count: number };
+  /** Transfers into a kassa whose currency has no rate: their FX is not counted. */
+  transferUsdMissing: { count: number };
 }
 
 export async function pnlGaps(from: string, to: string): Promise<PnlGaps> {
-  const [manual, unconverted] = await Promise.all([
+  const [manual, unconverted, onNoBox, adjusts, kassaMissing, transferMissing] = await Promise.all([
     db
       .select({
         count: sql<number>`count(*)::int`,
@@ -126,6 +200,60 @@ export async function pnlGaps(from: string, to: string): Promise<PnlGaps> {
       )
       .groupBy(costEntries.currency)
       .orderBy(costEntries.currency),
+    db
+      .select({
+        count: sql<number>`count(*)::int`,
+        usd: sql<string>`coalesce(sum(${costEntries.amountUsd}), 0)`,
+      })
+      .from(costEntries)
+      .where(
+        and(
+          isNull(costEntries.voidedAt),
+          sql`${costEntries.amountUsd} IS NOT NULL`,
+          gte(costEntries.costDate, from),
+          lte(costEntries.costDate, to),
+          sql`NOT EXISTS (
+            SELECT 1 FROM cost_allocations ca WHERE ca.cost_entry_id = ${costEntries}.id)`,
+        ),
+      ),
+    db
+      .select({
+        count: sql<number>`count(*)::int`,
+        usd: sql<string>`coalesce(sum(${partnerTransactions.amountUsd}), 0)`,
+      })
+      .from(partnerTransactions)
+      .where(
+        and(
+          eq(partnerTransactions.type, 'adjust'),
+          isNull(partnerTransactions.adjustKind),
+          isNull(partnerTransactions.voidedAt),
+          gte(partnerTransactions.txDate, from),
+          lte(partnerTransactions.txDate, to),
+        ),
+      ),
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(costEntries)
+      .where(
+        and(
+          sql`${costEntries.accountId} IS NOT NULL`,
+          isNull(costEntries.accountAmountUsd),
+          isNull(costEntries.voidedAt),
+          gte(costEntries.costDate, from),
+          lte(costEntries.costDate, to),
+        ),
+      ),
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(accountTransfers)
+      .where(
+        and(
+          isNull(accountTransfers.amountToUsd),
+          isNull(accountTransfers.voidedAt),
+          gte(accountTransfers.transferDate, from),
+          lte(accountTransfers.transferDate, to),
+        ),
+      ),
   ]);
   const byCurrency = unconverted.map((row) => ({
     currency: row.currency,
@@ -135,7 +263,73 @@ export async function pnlGaps(from: string, to: string): Promise<PnlGaps> {
   return {
     manualCharges: { count: Number(manual[0]?.count ?? 0), usd: money(manual[0]?.usd) },
     unconverted: { count: byCurrency.reduce((sum, row) => sum + row.count, 0), byCurrency },
+    onNoBox: { count: Number(onNoBox[0]?.count ?? 0), usd: money(onNoBox[0]?.usd) },
+    unclassifiedAdjusts: { count: Number(adjusts[0]?.count ?? 0), usd: money(adjusts[0]?.usd) },
+    kassaUsdMissing: { count: Number(kassaMissing[0]?.count ?? 0) },
+    transferUsdMissing: { count: Number(transferMissing[0]?.count ?? 0) },
   };
+}
+
+/**
+ * The P&L's «Kurs farqi», per source and month, + = gain (0103). Every figure
+ * is DERIVED from rows that already carry their own frozen dollars — never
+ * from a rate the row did not use:
+ *
+ * - fx:kassa — a kassa-paid cost's tannarx minus what the kassa paid (Q13),
+ *   dated the day the DRAWER paid like the cash flow; and a transfer's to-side
+ *   minus its from-side. The same figures the cash flow adds as exchange gain
+ *   and loss, so the two reports cannot disagree about one kassa (#513).
+ * - fx:settlement — the three-cornered settlement's gap: what the firm took
+ *   off our debt minus what the client's money was worth (both halves live —
+ *   they void together, #425).
+ * - fx:adjust — a counterparty correction the accountant marked «kurs farqi»
+ *   (a positive one raises what we owe = a loss), and a client's
+ *   cross-currency residue the accountant closed by hand (Q24 b, a USD row).
+ * - fx:closing — the system's own rows, written when an account reached zero
+ *   in its own currency (Q14): on the client ledger + the row's dollars, on
+ *   the partner ledger − (the two ledgers' signs run opposite).
+ */
+async function fxPnlRows(from: string, to: string): Promise<{ key: FxPnlKey; month: string; usd: string }[]> {
+  const rows = (await db.execute(sql`
+    SELECT 'fx:kassa' AS key, to_char(${costCashDay}, 'YYYY-MM') AS month, coalesce(sum(${costKassaFxUsd}), 0) AS usd
+      FROM cost_entries
+      LEFT JOIN expenses merged_from ON merged_from.id = cost_entries.merged_expense_id
+     WHERE ${cashCostSql()} AND cost_entries.account_id IS NOT NULL
+       AND ${costCashDay} >= ${from}::date AND ${costCashDay} <= ${to}::date
+     GROUP BY 2
+    UNION ALL
+    SELECT 'fx:kassa', to_char(account_transfers.transfer_date, 'YYYY-MM'), coalesce(sum(${transferFxUsd}), 0)
+      FROM account_transfers
+     WHERE account_transfers.voided_at IS NULL
+       AND account_transfers.transfer_date >= ${from}::date AND account_transfers.transfer_date <= ${to}::date
+     GROUP BY 2
+    UNION ALL
+    SELECT 'fx:settlement', to_char(pt.tx_date, 'YYYY-MM'), coalesce(sum(pt.amount_usd - ct.amount_usd), 0)
+      FROM partner_transactions pt JOIN client_transactions ct ON ct.id = pt.client_tx_id
+     WHERE pt.type = 'offset' AND pt.voided_at IS NULL AND ct.voided_at IS NULL
+       AND pt.tx_date >= ${from}::date AND pt.tx_date <= ${to}::date
+     GROUP BY 2
+    UNION ALL
+    SELECT 'fx:adjust', to_char(pt.tx_date, 'YYYY-MM'), coalesce(-sum(pt.amount_usd), 0)
+      FROM partner_transactions pt
+     WHERE pt.type = 'adjust' AND pt.adjust_kind = 'fx' AND pt.voided_at IS NULL
+       AND pt.tx_date >= ${from}::date AND pt.tx_date <= ${to}::date
+     GROUP BY 2
+    UNION ALL
+    SELECT CASE WHEN ct.currency = 'USD' THEN 'fx:adjust' ELSE 'fx:closing' END, to_char(ct.tx_date, 'YYYY-MM'),
+           coalesce(${sql.raw(String(FX_PNL_SIGN.client))} * sum(ct.amount_usd), 0)
+      FROM client_transactions ct
+     WHERE ct.type = 'fx_diff' AND ct.voided_at IS NULL
+       AND ct.tx_date >= ${from}::date AND ct.tx_date <= ${to}::date
+     GROUP BY 1, 2
+    UNION ALL
+    SELECT 'fx:closing', to_char(pt.tx_date, 'YYYY-MM'), coalesce(${sql.raw(String(FX_PNL_SIGN.partner))} * sum(pt.amount_usd), 0)
+      FROM partner_transactions pt
+     WHERE pt.type = 'fx_diff' AND pt.voided_at IS NULL
+       AND pt.tx_date >= ${from}::date AND pt.tx_date <= ${to}::date
+     GROUP BY 2
+  `)) as unknown as { key: FxPnlKey; month: string; usd: string }[];
+  return [...rows];
 }
 
 /** P&L for a period, one column per month (owner: "PNL va shunga o'xshagan"). */
@@ -143,15 +337,19 @@ export async function profitAndLoss(from: string, to: string): Promise<Pnl> {
   const months = monthsBetween(from, to);
   const empty = () => Object.fromEntries(months.map((m) => [m, 0]));
 
+  // ONE statement for both parts of revenue (0105): the prices and the
+  // compensations for lost cargo (a price taken back — contra-revenue, never
+  // opex, DEALS.md answer 3). Revenue = gross − compensation, in its month.
   const revenueRows = await db
     .select({
       month: sql<string>`to_char(${clientTransactions.txDate}, 'YYYY-MM')`,
-      sum: sql<string>`sum(${clientTransactions.amountUsd})`,
+      gross: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) FILTER (WHERE ${clientTransactions.type} = 'charge'), 0)`,
+      comp: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) FILTER (WHERE ${clientTransactions.type} = 'compensation'), 0)`,
     })
     .from(clientTransactions)
     .where(
       and(
-        eq(clientTransactions.type, 'charge'),
+        inArray(clientTransactions.type, [...REVENUE_TYPES]),
         isNull(clientTransactions.voidedAt),
         gte(clientTransactions.txDate, from),
         lte(clientTransactions.txDate, to),
@@ -159,11 +357,18 @@ export async function profitAndLoss(from: string, to: string): Promise<Pnl> {
     )
     .groupBy(sql`to_char(${clientTransactions.txDate}, 'YYYY-MM')`);
 
+  const grossCharges: PnlRow = { key: 'grossCharges', label: 'grossCharges', byPeriod: empty(), total: 0 };
+  const compensation: PnlRow = { key: 'compensation', label: 'compensation', byPeriod: empty(), total: 0 };
   const revenue: PnlRow = { key: 'revenue', label: 'revenue', byPeriod: empty(), total: 0 };
   for (const row of revenueRows) {
-    if (row.month in revenue.byPeriod) revenue.byPeriod[row.month] = money(row.sum);
+    if (!(row.month in revenue.byPeriod)) continue;
+    grossCharges.byPeriod[row.month] = money(row.gross);
+    compensation.byPeriod[row.month] = money(row.comp);
+    revenue.byPeriod[row.month] = money(money(row.gross) - money(row.comp));
   }
-  revenue.total = money(Object.values(revenue.byPeriod).reduce((a, b) => a + b, 0));
+  for (const part of [grossCharges, compensation, revenue]) {
+    part.total = money(Object.values(part.byPeriod).reduce((a, b) => a + b, 0));
+  }
 
   // Direct cargo costs, split by cost type so the P&L shows WHERE the money
   // went, not just a lump "cost of sales".
@@ -262,6 +467,24 @@ export async function profitAndLoss(from: string, to: string): Promise<Pnl> {
   const directTotal = sumRows('directTotal', 'directTotal', directCosts);
   const opexTotal = sumRows('opexTotal', 'opexTotal', opex);
 
+  // «Kurs farqi» (0103): a sub-row only when some month has money on it; the
+  // total always, because the net below includes it.
+  const fxMap = new Map<FxPnlKey, PnlRow>();
+  for (const row of await fxPnlRows(from, to)) {
+    const bucket = fxMap.get(row.key) ?? { key: row.key, label: row.key, byPeriod: empty(), total: 0 };
+    if (row.month in bucket.byPeriod) {
+      bucket.byPeriod[row.month] = money((bucket.byPeriod[row.month] ?? 0) + money(row.usd));
+    }
+    fxMap.set(row.key, bucket);
+  }
+  const fx = FX_PNL_KEYS.flatMap((key) => {
+    const row = fxMap.get(key);
+    if (!row) return [];
+    const total = money(Object.values(row.byPeriod).reduce((a, b) => a + b, 0));
+    return Object.values(row.byPeriod).some((value) => Math.abs(value) > 0.004) ? [{ ...row, total }] : [];
+  });
+  const fxTotal = sumRows('fxTotal', 'fxTotal', fx);
+
   const combine = (key: string, a: PnlRow, b: PnlRow): PnlRow => {
     const byPeriod = empty();
     for (const month of months) byPeriod[month] = money(a.byPeriod[month]! - b.byPeriod[month]!);
@@ -269,28 +492,35 @@ export async function profitAndLoss(from: string, to: string): Promise<Pnl> {
   };
 
   const grossProfit = combine('grossProfit', revenue, directTotal);
-  const netProfit = combine('netProfit', grossProfit, opexTotal);
-  const grossMarginPct = Object.fromEntries(
-    months.map((month) => [
-      month,
-      revenue.byPeriod[month]
-        ? Math.round((grossProfit.byPeriod[month]! / revenue.byPeriod[month]!) * 1000) / 10
-        : 0,
-    ]),
+  // Net = gross − overheads + kurs farqi (the owner's Q12 A): the monthly plan
+  // (/accounting/reja) and the dashboard read this same row, so they move with it.
+  const beforeFx = combine('netProfit', grossProfit, opexTotal);
+  const netProfit: PnlRow = {
+    key: 'netProfit',
+    label: 'netProfit',
+    byPeriod: Object.fromEntries(
+      months.map((month) => [month, money(beforeFx.byPeriod[month]! + fxTotal.byPeriod[month]!)]),
+    ),
+    total: money(beforeFx.total + fxTotal.total),
+  };
+  const grossMarginPct: Record<string, number | null> = Object.fromEntries(
+    months.map((month) => [month, marginPct(grossProfit.byPeriod[month]!, revenue.byPeriod[month]!)]),
   );
-  grossMarginPct.total = revenue.total
-    ? Math.round((grossProfit.total / revenue.total) * 1000) / 10
-    : 0;
+  grossMarginPct.total = marginPct(grossProfit.total, revenue.total);
 
   return {
     months,
     revenue,
+    grossCharges,
+    compensation,
     directCosts,
     directTotal,
     grossProfit,
     grossMarginPct,
     opex,
     opexTotal,
+    fx,
+    fxTotal,
     netProfit,
   };
 }
@@ -310,102 +540,9 @@ export interface CashFlowRow {
  * `expense_categories.cash` exists.
  */
 export async function cashFlow(from: string, to: string) {
-  const [received] = await db
-    .select({ sum: sql<string>`coalesce(sum(${clientTransactions.amountUsd}), 0)` })
-    .from(clientTransactions)
-    .where(
-      and(
-        eq(clientTransactions.type, 'payment'),
-        isNull(clientTransactions.voidedAt),
-        // A payment made into a PARTNER's account never reached a cash box of
-        // ours (round 39). Counting it as money received would report cash we
-        // cannot spend — the one lie a cash-flow report must not tell.
-        isNull(clientTransactions.partnerId),
-        gte(clientTransactions.txDate, from),
-        lte(clientTransactions.txDate, to),
-      ),
-    );
-
-  // Money handed BACK to clients (R6a). Always out of a kassa of ours — the
-  // refund CHECK demands one — so it is cash that left, never a price.
-  const [refunded] = await db
-    .select({ sum: sql<string>`coalesce(sum(${clientTransactions.amountUsd}), 0)` })
-    .from(clientTransactions)
-    .where(
-      and(
-        eq(clientTransactions.type, 'refund'),
-        isNull(clientTransactions.voidedAt),
-        gte(clientTransactions.txDate, from),
-        lte(clientTransactions.txDate, to),
-      ),
-    );
-
-  // Money a counterparty put INTO one of our accounts — the cash buyers' first
-  // leg. It is real cash in, and we owe it, but the debt is not this report's
-  // business; this report answers only "what moved".
-  const [partnerIn] = await db
-    .select({ sum: sql<string>`coalesce(sum(${partnerTransactions.amountUsd}), 0)` })
-    .from(partnerTransactions)
-    .where(
-      and(
-        eq(partnerTransactions.type, 'receipt'),
-        isNull(partnerTransactions.voidedAt),
-        gte(partnerTransactions.txDate, from),
-        lte(partnerTransactions.txDate, to),
-      ),
-    );
-  const [partnerOut] = await db
-    .select({ sum: sql<string>`coalesce(sum(${partnerTransactions.amountUsd}), 0)` })
-    .from(partnerTransactions)
-    .where(
-      and(
-        eq(partnerTransactions.type, 'payment'),
-        isNull(partnerTransactions.voidedAt),
-        gte(partnerTransactions.txDate, from),
-        lte(partnerTransactions.txDate, to),
-      ),
-    );
-
-  const outRows = await db
-    .select({
-      label: expenseCategories.name,
-      sum: sql<string>`sum(${expenses.amountUsd})`,
-    })
-    .from(expenses)
-    .innerJoin(expenseCategories, eq(expenses.categoryId, expenseCategories.id))
-    .where(
-      and(
-        isNull(expenses.voidedAt),
-        eq(expenseCategories.cash, true),
-        // Settled by a partner out of their own account: ours never opened.
-        isNull(expenses.partnerId),
-        gte(expenses.expenseDate, from),
-        lte(expenses.expenseDate, to),
-      ),
-    )
-    .groupBy(expenseCategories.name, expenseCategories.sortOrder)
-    .orderBy(expenseCategories.sortOrder);
-
-  // ONE row, split in two for the reader (0101): the part a kassa has
-  // answered for and the part nobody has said the kassa of yet — the second
-  // is the accountant's queue, and a cash-flow line that hid it would read
-  // as if every dollar had a drawer. The total is unchanged.
-  const [cargoCosts] = await db
-    .select({
-      sum: sql<string>`coalesce(sum(coalesce(${costEntries.amountUsd}, 0)), 0)`,
-      fromTill: sql<string>`coalesce(sum(coalesce(${costEntries.amountUsd}, 0)) FILTER (WHERE ${costEntries.accountId} IS NOT NULL), 0)`,
-    })
-    .from(costEntries)
-    .where(
-      and(
-        isNull(costEntries.voidedAt),
-        // Same rule as the expenses above: a truck the transport company is
-        // still owed for has cost us nothing in CASH yet.
-        isNull(costEntries.partnerId),
-        gte(costEntries.costDate, from),
-        lte(costEntries.costDate, to),
-      ),
-    );
+  const core = await cashFlowCore(from, to, false);
+  const parts = core.parts.get('total') ?? emptyCashParts();
+  const outRows = core.opexRows;
 
   const [transfers] = await db
     .select({ n: sql<number>`count(*)` })
@@ -418,30 +555,66 @@ export async function cashFlow(from: string, to: string) {
       ),
     );
 
-  const partnerInflow = money(partnerIn?.sum);
-  const partnerOutflow = money(partnerOut?.sum);
-  const refundOutflow = money(refunded?.sum);
-  const inflow = money(received?.sum) + partnerInflow;
-  const outflow =
-    money(cargoCosts?.sum) +
-    partnerOutflow +
-    refundOutflow +
-    outRows.reduce((acc, row) => acc + money(row.sum), 0);
+  const partnerInflow = parts.partnerIn;
+  const partnerOutflow = parts.partnerOut;
+  const refundOutflow = parts.clientRefunds;
   return {
-    inflow: money(inflow),
-    outflow: money(outflow),
-    net: money(inflow - outflow),
+    inflow: parts.inflow,
+    outflow: parts.outflow,
+    net: parts.net,
     /** Informational: transfers are excluded from both sides on purpose. */
     transferCount: Number(transfers?.n ?? 0),
-    /** Of `cargoCosts`: the dollars a kassa answered for, and the rest (0101). */
-    cargoFromTillUsd: money(cargoCosts?.fromTill),
-    cargoUnplacedUsd: money(money(cargoCosts?.sum) - money(cargoCosts?.fromTill)),
+    /**
+     * Of `cargoCosts`, three parts that add up to it: the dollars a kassa
+     * answered for; the accountant's QUEUE — the same predicate the queue
+     * screen, the home counter and the Balans read (`unplacedCostSql`, audit
+     * U23), so the linked figure is the queue's and can be cleared from it;
+     * and the kassa-less rest nobody will be asked about — history typed
+     * before kassas were asked for (inside the tills' counted openings, #1018),
+     * a cost or its merged duplicate expense alike. A duplicate merged since
+     * then naming no kassa is the QUEUE's, not this (U02).
+     */
+    cargoFromTillUsd: parts.cargoFromTill,
+    cargoQueuedUsd: parts.cargoQueued,
+    cargoKassaUnknownUsd: money(parts.cargoCosts - parts.cargoFromTill - parts.cargoQueued),
+    /** The day the queue starts — the history line names it. */
+    cargoQueueSince: core.since,
+    /**
+     * Costs the rows above read as $0 because their currency had no rate
+     * (audit U24) — named per currency in its own money, never converted by
+     * a guess (#86). `tillPaid` of them left a kassa, which the Balans already
+     * shows in the kassa's own money.
+     */
+    unconverted: core.unconverted,
+    /** Inflows and outflows no kassa answered for (the reconciliation's lines). */
+    clientPaymentsNoKassaUsd: parts.clientPaymentsNoKassa,
+    /**
+     * Cash overheads saved with no kassa and no payer (U13): inside the
+     * outflow — they were spent — and in no drawer. The door refuses new
+     * ones now; the report names the ones already there.
+     */
+    cashOpexNoKassaUsd: parts.cashOpexNoKassa,
+    cashOpexNoKassaCount: parts.cashOpexNoKassaCount,
+    /**
+     * Kurs farqi that MOVED a kassa (0103, Q13 A): a transfer's spread, a
+     * kassa-paid cost's tannarx minus what the kassa paid — the P&L's own
+     * «Kurs farqi (kassa)» figures, and the cash flow's own rows below.
+     */
+    fxTransferUsd: parts.fxTransfer,
+    fxKassaCostUsd: money(parts.fxGain - parts.fxLoss - parts.fxTransfer),
+    /** Money that left a kassa for a cost whose own currency has no rate yet. */
+    cargoUnratedUsd: parts.cargoUnrated,
     rows: [
-      { label: 'clientPayments', kind: 'in' as const, amountUsd: money(received?.sum) },
+      { label: 'clientPayments', kind: 'in' as const, amountUsd: parts.clientPayments },
       ...(partnerInflow
         ? [{ label: 'partnerIn', kind: 'in' as const, amountUsd: partnerInflow }]
         : []),
-      { label: 'cargoCosts', kind: 'out' as const, amountUsd: money(cargoCosts?.sum) },
+      ...(parts.fxGain ? [{ label: 'fxGain', kind: 'in' as const, amountUsd: parts.fxGain }] : []),
+      { label: 'cargoCosts', kind: 'out' as const, amountUsd: parts.cargoCosts },
+      ...(parts.cargoUnrated
+        ? [{ label: 'cargoUnrated', kind: 'out' as const, amountUsd: parts.cargoUnrated }]
+        : []),
+      ...(parts.fxLoss ? [{ label: 'fxLoss', kind: 'out' as const, amountUsd: parts.fxLoss }] : []),
       ...(partnerOutflow
         ? [{ label: 'partnerOut', kind: 'out' as const, amountUsd: partnerOutflow }]
         : []),
@@ -451,9 +624,523 @@ export async function cashFlow(from: string, to: string) {
       ...outRows.map((row) => ({
         label: row.label,
         kind: 'out' as const,
-        amountUsd: money(row.sum),
+        amountUsd: row.amountUsd,
       })),
     ],
+  };
+}
+
+/** The cash flow's parts for one period (a month, or the whole range). */
+export interface CashParts {
+  clientPayments: number;
+  /** …of which reached no kassa: a payment saved before kassas were required. */
+  clientPaymentsNoKassa: number;
+  clientRefunds: number;
+  partnerIn: number;
+  partnerOut: number;
+  cargoCosts: number;
+  cargoFromTill: number;
+  /** …of which wait in the accountant's queue (`unplacedCostSql`, U23). */
+  cargoQueued: number;
+  /** Cash overheads: the `cash` expense categories. */
+  cashOpex: number;
+  /**
+   * …of which named no kassa and no payer: money the cash flow counts and no
+   * drawer shows (U13). The door now demands one (the owner's answer A,
+   * 2026-09-25); these are the ones already saved, named on the report.
+   */
+  cashOpexNoKassa: number;
+  cashOpexNoKassaCount: number;
+  /** Cargo costs read as $0 because their currency has no rate (U24). */
+  unconvertedCount: number;
+  /**
+   * Kurs farqi that moved a kassa (0103): gains and losses split at the ROW,
+   * so a month's two bars add up to the range's even when it holds both.
+   */
+  fxGain: number;
+  fxLoss: number;
+  /** …of which transfers' spread, net (the reconciliation takes it back out). */
+  fxTransfer: number;
+  /** Kassa money paid for a cost whose own currency has no rate (0103). */
+  cargoUnrated: number;
+  inflow: number;
+  outflow: number;
+  net: number;
+}
+
+function emptyCashParts(): CashParts {
+  return {
+    clientPayments: 0,
+    clientPaymentsNoKassa: 0,
+    clientRefunds: 0,
+    partnerIn: 0,
+    partnerOut: 0,
+    cargoCosts: 0,
+    cargoFromTill: 0,
+    cargoQueued: 0,
+    cashOpex: 0,
+    cashOpexNoKassa: 0,
+    cashOpexNoKassaCount: 0,
+    unconvertedCount: 0,
+    fxGain: 0,
+    fxLoss: 0,
+    fxTransfer: 0,
+    cargoUnrated: 0,
+    inflow: 0,
+    outflow: 0,
+    net: 0,
+  };
+}
+
+/**
+ * The cash flow month by month (the dashboard's second chart), from the SAME
+ * statements `cashFlow` runs — one core, bucketed by month instead of summed
+ * over the range — so a month's bar and the report over that month cannot
+ * disagree, and a correction to the report's rules moves both (#513). Eight
+ * grouped statements whatever the number of months.
+ */
+export async function cashFlowByMonth(from: string, to: string): Promise<Map<string, CashParts>> {
+  const core = await cashFlowCore(from, to, true);
+  return new Map(monthsBetween(from, to).map((month) => [month, core.parts.get(month) ?? emptyCashParts()]));
+}
+
+/**
+ * The cargo costs the cash flow counts over a period: live, not settled by a
+ * counterparty, dated by the day the DRAWER paid (`costCashDay`, U07). ONE
+ * fragment for the cost row and for its unconverted gap (U24), so the gap
+ * names exactly the rows the $0 hides — `pnlGaps` is the P&L's and has no
+ * partner clause, which would name partner-settled rows this report leaves
+ * out on purpose. Needs `mergedFrom` LEFT JOINed.
+ */
+function cargoCashWhere(from: string, to: string) {
+  return and(
+    cashCostSql(),
+    sql`${costCashDay} >= ${from}::date`,
+    sql`${costCashDay} <= ${to}::date`,
+  );
+}
+
+/**
+ * Money that actually moved, not what was billed, per period key — 'total'
+ * for the whole range, or 'YYYY-MM' when `byMonth`. Every rule of the report
+ * lives here and only here; `cashFlow` and `cashFlowByMonth` only arrange it.
+ */
+async function cashFlowCore(from: string, to: string, byMonth: boolean) {
+  const key = (column: unknown) =>
+    byMonth ? sql<string>`to_char(${column}, 'YYYY-MM')` : sql<string>`'total'`;
+  // A pooled setting read, outside any transaction (#714).
+  const since = await unplacedCostSince();
+
+  const receivedQ = db
+    .select({
+      period: key(clientTransactions.txDate),
+      sum: sql<string>`coalesce(sum(${clientTransactions.amountUsd}), 0)`,
+      noKassa: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) FILTER (WHERE ${clientTransactions.accountId} IS NULL), 0)`,
+    })
+    .from(clientTransactions)
+    .where(
+      and(
+        // A payment made into a PARTNER's account never reached a cash box of
+        // ours (round 39). Counting it as money received would report cash we
+        // cannot spend — the one lie a cash-flow report must not tell.
+        cashClientTxSql(),
+        eq(clientTransactions.type, 'payment'),
+        gte(clientTransactions.txDate, from),
+        lte(clientTransactions.txDate, to),
+      ),
+    );
+
+  // Money handed BACK to clients (R6a). Always out of a kassa of ours — the
+  // refund CHECK demands one — so it is cash that left, never a price.
+  const refundedQ = db
+    .select({
+      period: key(clientTransactions.txDate),
+      sum: sql<string>`coalesce(sum(${clientTransactions.amountUsd}), 0)`,
+    })
+    .from(clientTransactions)
+    .where(
+      and(
+        cashClientTxSql(),
+        eq(clientTransactions.type, 'refund'),
+        gte(clientTransactions.txDate, from),
+        lte(clientTransactions.txDate, to),
+      ),
+    );
+
+  // Money a counterparty put INTO one of our accounts — the cash buyers' first
+  // leg. It is real cash in, and we owe it, but the debt is not this report's
+  // business; this report answers only "what moved".
+  const partnerInQ = db
+    .select({
+      period: key(partnerTransactions.txDate),
+      sum: sql<string>`coalesce(sum(${partnerTransactions.amountUsd}), 0)`,
+    })
+    .from(partnerTransactions)
+    .where(
+      and(
+        eq(partnerTransactions.type, 'receipt'),
+        isNull(partnerTransactions.voidedAt),
+        gte(partnerTransactions.txDate, from),
+        lte(partnerTransactions.txDate, to),
+      ),
+    );
+  const partnerOutQ = db
+    .select({
+      period: key(partnerTransactions.txDate),
+      sum: sql<string>`coalesce(sum(${partnerTransactions.amountUsd}), 0)`,
+    })
+    .from(partnerTransactions)
+    .where(
+      and(
+        eq(partnerTransactions.type, 'payment'),
+        isNull(partnerTransactions.voidedAt),
+        gte(partnerTransactions.txDate, from),
+        lte(partnerTransactions.txDate, to),
+      ),
+    );
+
+  const opexQ = db
+    .select({
+      period: key(expenses.expenseDate),
+      label: expenseCategories.name,
+      sortOrder: expenseCategories.sortOrder,
+      sum: sql<string>`sum(${expenses.amountUsd})`,
+      noKassa: sql<string>`coalesce(sum(${expenses.amountUsd}) FILTER (WHERE ${expenses.accountId} IS NULL), 0)`,
+      noKassaCount: sql<number>`(count(*) FILTER (WHERE ${expenses.accountId} IS NULL))::int`,
+    })
+    .from(expenses)
+    .innerJoin(expenseCategories, eq(expenses.categoryId, expenseCategories.id))
+    .where(
+      and(
+        // Cash categories only, and not settled by a partner out of their own
+        // account: ours never opened (`cash-rules.ts`).
+        cashExpenseSql(),
+        gte(expenses.expenseDate, from),
+        lte(expenses.expenseDate, to),
+      ),
+    );
+
+  // ONE row, split for the reader (0101): the part a kassa has answered for,
+  // the part waiting in the accountant's queue, and the rest — a cash-flow
+  // line that hid the split would read as if every dollar had a drawer. The
+  // total is unchanged.
+  const cargoQ = db
+    .select({
+      period: key(costCashDay),
+      sum: sql<string>`coalesce(sum(coalesce(${costEntries.amountUsd}, 0)), 0)`,
+      fromTill: sql<string>`coalesce(sum(coalesce(${costEntries.amountUsd}, 0)) FILTER (WHERE ${costEntries.accountId} IS NOT NULL), 0)`,
+      queued: sql<string>`coalesce(sum(coalesce(${costEntries.amountUsd}, 0)) FILTER (WHERE ${unplacedCostSql(since)}), 0)`,
+    })
+    .from(costEntries)
+    .leftJoin(mergedFrom, eq(mergedFrom.id, costEntries.mergedExpenseId))
+    // Same rule as the expenses above: a truck the transport company is
+    // still owed for has cost us nothing in CASH yet.
+    .where(cargoCashWhere(from, to));
+
+  // The same rows with no dollar figure (U24): they add $0 above, and a $0
+  // nobody names reads as «nothing was spent».
+  const unconvertedQ = db
+    .select({
+      period: key(costCashDay),
+      currency: costEntries.currency,
+      count: sql<number>`count(*)::int`,
+      amount: sql<string>`coalesce(sum(${costEntries.amount}), 0)`,
+      tillPaid: sql<number>`(count(*) FILTER (WHERE ${costEntries.accountId} IS NOT NULL))::int`,
+    })
+    .from(costEntries)
+    .leftJoin(mergedFrom, eq(mergedFrom.id, costEntries.mergedExpenseId))
+    .where(and(cargoCashWhere(from, to), isNull(costEntries.amountUsd)));
+
+  // Kurs farqi that moved a kassa (0103), ONE statement for both sources so
+  // the report stays within the pool (#432): a kassa-paid cost's tannarx
+  // minus what the kassa paid, dated the day the drawer paid, and a
+  // transfer's to-side minus its from-side. `u` is the kassa money paid for a
+  // cost with no dollars of its own — the cargo row reads it as $0.
+  const period = (day: SQL) => (byMonth ? sql`to_char(${day}, 'YYYY-MM')` : sql`'total'`);
+  const fxQ = db.execute(sql`
+    SELECT f.period, f.src,
+           coalesce(sum(greatest(f.x, 0)), 0) AS gain,
+           coalesce(sum(greatest(-f.x, 0)), 0) AS loss,
+           coalesce(sum(f.x), 0) AS net,
+           coalesce(sum(f.u), 0) AS unrated
+      FROM (
+        SELECT ${period(costCashDay)} AS period, 'cost' AS src, ${costKassaFxUsd} AS x, ${costKassaUnratedUsd} AS u
+          FROM cost_entries
+          LEFT JOIN expenses merged_from ON merged_from.id = cost_entries.merged_expense_id
+         WHERE ${cargoCashWhere(from, to)} AND cost_entries.account_id IS NOT NULL
+        UNION ALL
+        SELECT ${period(sql`account_transfers.transfer_date`)}, 'transfer', ${transferFxUsd}, 0
+          FROM account_transfers
+         WHERE account_transfers.voided_at IS NULL
+           AND account_transfers.transfer_date >= ${from}::date AND account_transfers.transfer_date <= ${to}::date
+      ) f
+     GROUP BY f.period, f.src`) as unknown as Promise<
+    { period: string; src: 'cost' | 'transfer'; gain: string; loss: string; net: string; unrated: string }[]
+  >;
+
+  const [received, refunded, partnerIn, partnerOut, opex, cargo, unconverted, fxRows] = await Promise.all(
+    byMonth
+      ? [
+          receivedQ.groupBy(key(clientTransactions.txDate)),
+          refundedQ.groupBy(key(clientTransactions.txDate)),
+          partnerInQ.groupBy(key(partnerTransactions.txDate)),
+          partnerOutQ.groupBy(key(partnerTransactions.txDate)),
+          opexQ
+            .groupBy(key(expenses.expenseDate), expenseCategories.name, expenseCategories.sortOrder)
+            .orderBy(expenseCategories.sortOrder),
+          cargoQ.groupBy(key(costCashDay)),
+          unconvertedQ.groupBy(key(costCashDay), costEntries.currency).orderBy(costEntries.currency),
+          fxQ,
+        ]
+      : [
+          receivedQ,
+          refundedQ,
+          partnerInQ,
+          partnerOutQ,
+          opexQ.groupBy(expenseCategories.name, expenseCategories.sortOrder).orderBy(expenseCategories.sortOrder),
+          cargoQ,
+          unconvertedQ.groupBy(costEntries.currency).orderBy(costEntries.currency),
+          fxQ,
+        ],
+  );
+
+  const parts = new Map<string, CashParts>();
+  const at = (period: string) => {
+    let entry = parts.get(period);
+    if (!entry) {
+      entry = emptyCashParts();
+      parts.set(period, entry);
+    }
+    return entry;
+  };
+  for (const row of received as { period: string; sum: string; noKassa: string }[]) {
+    at(row.period).clientPayments += money(row.sum);
+    at(row.period).clientPaymentsNoKassa += money(row.noKassa);
+  }
+  for (const row of refunded) at(row.period).clientRefunds += money(row.sum);
+  for (const row of partnerIn) at(row.period).partnerIn += money(row.sum);
+  for (const row of partnerOut) at(row.period).partnerOut += money(row.sum);
+  for (const row of cargo as { period: string; sum: string; fromTill: string; queued: string }[]) {
+    at(row.period).cargoCosts += money(row.sum);
+    at(row.period).cargoFromTill += money(row.fromTill);
+    at(row.period).cargoQueued += money(row.queued);
+  }
+  for (const row of [...(fxRows as { period: string; src: string; gain: string; loss: string; net: string; unrated: string }[])]) {
+    const entry = at(row.period);
+    entry.fxGain += money(row.gain);
+    entry.fxLoss += money(row.loss);
+    if (row.src === 'transfer') entry.fxTransfer += money(row.net);
+    else entry.cargoUnrated += money(row.unrated);
+  }
+  const byCurrency = new Map<string, { currency: string; count: number; amount: number; tillPaid: number }>();
+  for (const row of unconverted as { period: string; currency: string; count: number; amount: string; tillPaid: number }[]) {
+    at(row.period).unconvertedCount += Number(row.count);
+    const entry = byCurrency.get(row.currency) ?? { currency: row.currency, count: 0, amount: 0, tillPaid: 0 };
+    entry.count += Number(row.count);
+    entry.amount = money(entry.amount + money(row.amount));
+    entry.tillPaid += Number(row.tillPaid);
+    byCurrency.set(row.currency, entry);
+  }
+  const opexRows = new Map<string, number>();
+  for (const row of opex as { period: string; label: string; sum: string; noKassa: string; noKassaCount: number }[]) {
+    at(row.period).cashOpex += money(row.sum);
+    at(row.period).cashOpexNoKassa += money(row.noKassa);
+    at(row.period).cashOpexNoKassaCount += Number(row.noKassaCount);
+    opexRows.set(row.label, (opexRows.get(row.label) ?? 0) + money(row.sum));
+  }
+  for (const entry of parts.values()) {
+    entry.cashOpex = money(entry.cashOpex);
+    entry.cashOpexNoKassa = money(entry.cashOpexNoKassa);
+    entry.clientPaymentsNoKassa = money(entry.clientPaymentsNoKassa);
+    entry.cargoQueued = money(entry.cargoQueued);
+    entry.fxGain = money(entry.fxGain);
+    entry.fxLoss = money(entry.fxLoss);
+    entry.fxTransfer = money(entry.fxTransfer);
+    entry.cargoUnrated = money(entry.cargoUnrated);
+    // A kassa's real dollars = cargo at the tannarx + its exchange row + the
+    // unrated row (cash-rules.ts), so the kurs farqi rows ride the flow.
+    entry.inflow = money(entry.clientPayments + entry.partnerIn + entry.fxGain);
+    entry.outflow = money(
+      entry.cargoCosts + entry.cargoUnrated + entry.fxLoss + entry.partnerOut + entry.clientRefunds + entry.cashOpex,
+    );
+    entry.net = money(entry.inflow - entry.outflow);
+  }
+  const unconvertedList = [...byCurrency.values()];
+  return {
+    parts,
+    since,
+    /** Per category over the whole range, in the categories' own order. */
+    opexRows: [...opexRows.entries()].map(([label, amountUsd]) => ({ label, amountUsd: money(amountUsd) })),
+    unconverted: {
+      count: unconvertedList.reduce((sum, row) => sum + row.count, 0),
+      tillPaid: unconvertedList.reduce((sum, row) => sum + row.tillPaid, 0),
+      byCurrency: unconvertedList,
+    },
+  };
+}
+
+/** One named line of the cash reconciliation, signed as it moves the tills. */
+export type ReconLineKey =
+  | 'countedInPeriod'
+  | 'noKassaPayments'
+  | 'queuedCosts'
+  | 'historyCosts'
+  | 'noKassaExpenses'
+  | 'beforeOpening'
+  | 'tillOnly'
+  | 'oneSidedTransfers'
+  | 'unratedTills'
+  | 'tillUnconverted'
+  | 'fx';
+
+/**
+ * Why the tills moved by a different amount than the cash flow says (audit
+ * U13): opening cash + the cash flow + these lines = closing cash, in dollars,
+ * to the cent. Every line but `fx` is computed from its own rows. `fx` is each
+ * kassa's REMAINDER — its native money valued at the period's rates, less the
+ * dollars its rows were frozen at, less every other line — which is exactly
+ * revaluation, exchange gains and costs paid out of a kassa in another
+ * currency once every row HAS a dollar figure; a row with none is taken out
+ * first onto its own line (`tillUnconverted`), or a spent cost would be read
+ * as a currency loss. The residual is returned separately (`unexplained`) and
+ * is zero, which is the test's whole assertion — but it checks the DOLLAR
+ * side (the cash flow against the kassa predicates): a slip in a row's native
+ * amount cancels out of it and lands in `fx`.
+ *
+ * Its own read and not a part of `cashFlow`: the admin home, the dashboard's
+ * hero and the AI's cash_flow tool (sliced at 6,000 characters) call
+ * `cashFlow`, and none of them should pay for or be truncated by the kassa
+ * rows. The cash-flow page and its XLSX call THIS, so the screen and its
+ * download print the same kassa block from one read (#532d) — a change here
+ * changes the file too.
+ *
+ * - The cash flow counts rows no kassa counts: payments and cargo costs and
+ *   overheads with no kassa, rows dated before their kassa's opening count
+ *   (#1012 keeps them in the cash flow), and rows of a kassa whose currency
+ *   has no rate (the kassa itself cannot be put in dollars).
+ * - A kassa counts rows the cash flow does not: a non-cash category paid
+ *   from it, its own opening count dated inside the period, and a transfer
+ *   whose other end is outside the counted kassas.
+ * - FX: a kassa's native money valued at the period's two rates against the
+ *   dollars each row was frozen at — revaluation, exchange gains and costs
+ *   paid out of a kassa in another currency.
+ */
+export async function cashReconciliation(from: string, to: string) {
+  const { accountBalancesBetween, countedAccount } = await import('./service');
+  // One after the other: each already runs its statements side by side, and
+  // together they would ask for more connections than the pool of ten holds.
+  const flow = await cashFlow(from, to);
+  const kassas = await accountBalancesBetween(from, to);
+  const dayBefore = new Date(Date.parse(`${from}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
+
+  // A rate per (currency, day) the arithmetic needs: the two ends, and each
+  // opening count dated inside the period. A handful, on the pool — this is
+  // never inside a transaction (#714).
+  const wanted = new Set<string>();
+  for (const kassa of kassas) {
+    wanted.add(`${kassa.currency}|${dayBefore}`);
+    wanted.add(`${kassa.currency}|${to}`);
+    if (kassa.countedInPeriod !== 0 && kassa.openingDate) wanted.add(`${kassa.currency}|${kassa.openingDate}`);
+  }
+  const rates = new Map(
+    await Promise.all(
+      [...wanted].map(async (pair) => {
+        const [currency, day] = pair.split('|') as [string, string];
+        return [pair, await rateFor(currency, day)] as const;
+      }),
+    ),
+  );
+  const rate = (currency: string, day: string) => rates.get(`${currency}|${day}`) ?? null;
+
+  let openingUsd = 0;
+  let closingUsd = 0;
+  const raw: Record<ReconLineKey, number> = {
+    countedInPeriod: 0,
+    noKassaPayments: -flow.clientPaymentsNoKassaUsd,
+    queuedCosts: flow.cargoQueuedUsd,
+    historyCosts: flow.cargoKassaUnknownUsd,
+    noKassaExpenses: flow.cashOpexNoKassaUsd,
+    beforeOpening: 0,
+    tillOnly: 0,
+    oneSidedTransfers: 0,
+    unratedTills: 0,
+    tillUnconverted: 0,
+    fx: 0,
+  };
+  const unrated = new Map<string, number>();
+  // EVERY kassa is added up — a box with nothing to show can still hold rows
+  // dated before its count, which the cash flow counts — and only the ones
+  // with something to show are listed.
+  const all = kassas.map((kassa) => {
+    const rOpen = rate(kassa.currency, dayBefore);
+    const rTo = rate(kassa.currency, to);
+    const rCount = kassa.openingDate ? rate(kassa.currency, kassa.openingDate) : null;
+    if (rOpen === null || rTo === null) {
+      // No rate for this currency anywhere (rateFor falls back to the
+      // earliest one): the kassa stays out of the dollar totals — as the
+      // Balans leaves it out — and the cash flow's rows through it are named.
+      raw.unratedTills -= kassa.usd.cashCounted + kassa.usd.cashEarly;
+      // Named only while it holds something: an empty one hides nothing (U14).
+      if (Math.abs(kassa.closing) > 0.009) {
+        unrated.set(kassa.currency, (unrated.get(kassa.currency) ?? 0) + kassa.closing);
+      }
+      return { ...kassa, openingUsd: null, closingUsd: null };
+    }
+    const open = kassa.opening * rOpen;
+    const close = kassa.closing * rTo;
+    const count = kassa.countedInPeriod * (rCount ?? rTo);
+    const within = kassa.usd.cashCounted + kassa.usd.tillOnly + kassa.usd.transfers;
+    // Rows that moved this kassa with NO dollar figure (a cost in a currency
+    // never rated, U24): `within` holds them at $0, so their whole native
+    // amount would otherwise sit in the remainder below. Valued at the
+    // kassa's own rate on `to`, the rate `close` is valued at — the kassa's
+    // money, never the cost's currency guessed (#86).
+    const unconverted = kassa.noUsdInPeriod * rTo;
+    openingUsd += open;
+    closingUsd += close;
+    raw.countedInPeriod += count;
+    raw.beforeOpening -= kassa.usd.cashEarly;
+    raw.tillOnly += kassa.usd.tillOnly;
+    raw.oneSidedTransfers += kassa.usd.transfers;
+    raw.tillUnconverted += unconverted;
+    raw.fx += close - open - count - within - unconverted;
+    return { ...kassa, openingUsd: money(open), closingUsd: money(close) };
+  });
+  const rows = all.filter(
+    (kassa) =>
+      countedAccount({ active: kassa.active, balance: kassa.closing }) ||
+      Math.abs(kassa.opening) > 0.009 ||
+      Math.abs(kassa.inflow) + Math.abs(kassa.outflow) + Math.abs(kassa.countedInPeriod) > 0.009 ||
+      kassa.beforeOpeningInPeriod > 0,
+  );
+
+  // A two-sided transfer's kassa dollars now net to its SPREAD (the to-side
+  // is frozen in its own currency, 0103), and the cash flow counts that
+  // spread as an exchange gain or loss — taken back out here, or it would be
+  // counted twice. A transfer into an unrated till has no to-side dollars and
+  // no spread, so nothing changes there.
+  raw.oneSidedTransfers -= flow.fxTransferUsd;
+  const explained = Object.values(raw).reduce((sum, value) => sum + value, 0);
+  const unexplained = money(closingUsd - openingUsd - flow.net - explained);
+  return {
+    from,
+    to,
+    /** The cash flow the lines reconcile — the page and the file print it too. */
+    flow,
+    openingUsd: money(openingUsd),
+    closingUsd: money(closingUsd),
+    netFlowUsd: flow.net,
+    /** Named lines, signed as they move the tills; zeros left out. */
+    lines: (Object.keys(raw) as ReconLineKey[])
+      .map((key) => ({ key, usd: money(raw[key]) }))
+      .filter((line) => Math.abs(line.usd) > 0.004),
+    /** closing − opening − net − Σ lines. Zero unless a rule above is missing. */
+    unexplained,
+    /** Kassas left out of the dollar totals for want of a rate, in their own money. */
+    unratedTills: [...unrated.entries()].map(([currency, closing]) => ({ currency, closing: money(closing) })),
+    /** The queue's start day, which the history line names. */
+    queueSince: flow.cargoQueueSince,
+    kassas: rows,
   };
 }
 
@@ -475,7 +1162,7 @@ export async function arAging(asOf: string) {
   const asOfMs = new Date(`${asOf}T00:00:00Z`).getTime();
   const byClient = new Map<
     string,
-    { clientCode: string; clientName: string; balance: number; buckets: number[] }
+    { clientId: string; clientCode: string; clientName: string; balance: number; buckets: number[] }
   >();
 
   // Payments settle the OLDEST charge first (standard AR practice), so a
@@ -484,21 +1171,24 @@ export async function arAging(asOf: string) {
   for (const row of rows) {
     const entry =
       byClient.get(row.clientId) ?? {
+        clientId: row.clientId,
         clientCode: row.clientCode,
         clientName: row.clientName,
         balance: 0,
         buckets: [0, 0, 0, 0],
       };
     // A refund (R6a) RAISES what the client owes, like a charge: money handed
-    // back is owed again from that day — it ages from its own date.
-    if (row.type !== 'payment') {
-      entry.balance += money(row.amountUsd);
+    // back is owed again from that day — it ages from its own date. A kurs
+    // farqi row (0103) is judged by its SIGN: a positive one ages like a
+    // charge, a negative one only lowers the balance, like a payment — a
+    // negative «charge» would break the oldest-first walk below.
+    const signed = { type: row.type, amountUsd: money(row.amountUsd) };
+    entry.balance += signedUsd(signed);
+    if (isDebit(signed)) {
       charges.set(row.clientId, [
         ...(charges.get(row.clientId) ?? []),
-        { date: row.txDate, amount: money(row.amountUsd) },
+        { date: row.txDate, amount: signedUsd(signed) },
       ]);
-    } else {
-      entry.balance -= money(row.amountUsd);
     }
     byClient.set(row.clientId, entry);
   }
@@ -546,7 +1236,14 @@ export async function arAging(asOf: string) {
  * it is a cost row and never a margin: its profit, margin and per-kg are
  * null. Its cost is already inside the export truck's figure as «shu
  * reysgacha» (`prevUsd`), which is why the screens leave internal rows out of
- * their totals — summing both counts that money twice.
+ * their totals — summing both counts that money twice. Every OTHER row is
+ * disjoint from its neighbours (U16: an allocation counts on exactly one
+ * priced truck, `batchLandedCostTotals`), so their sum is the money once.
+ *
+ * Boxes, kg and m³ are the truck's RIDERS (`riderLoad`) — the base the freight
+ * was split over, so a per-kg profit divides the right money by the right
+ * kilos (a carton found back at the origin never rode; one scanned off
+ * without a load scan did).
  */
 export async function profitByBatch(from: string, to: string) {
   const rows = await db
@@ -566,9 +1263,13 @@ export async function profitByBatch(from: string, to: string) {
         SELECT ${internalLegSql('o', 'd')} FROM warehouses o, warehouses d
         WHERE o.id = ${batches}.origin_warehouse_id AND d.id = ${batches}.dest_warehouse_id
       ), false)`,
+      // Through the one revenue rule (0105) — identical today, because a
+      // compensation names no truck (its CHECK): the lost cargo's part within
+      // our price reaches the truck by LOWERING its charge.
       revenueUsd: sql<string>`coalesce((
-        SELECT sum(ct.amount_usd) FROM client_transactions ct
-        WHERE ct.batch_id = ${batches}.id AND ct.type = 'charge' AND ct.voided_at IS NULL
+        SELECT sum(${revenueUsdSql(ledgerAlias('ct'))}) FROM client_transactions ct
+        WHERE ct.batch_id = ${batches}.id AND ct.type IN (${kindList(REVENUE_TYPES)})
+          AND ct.voided_at IS NULL
       ), 0)`,
       // Money typed against this truck that reached NO box — the engine had
       // nothing to split it over — so no landed cost carries it. Named beside
@@ -578,23 +1279,6 @@ export async function profitByBatch(from: string, to: string) {
         SELECT sum(ce.amount_usd) FROM cost_entries ce
         WHERE ce.batch_id = ${batches}.id AND ce.voided_at IS NULL AND ce.amount_usd IS NOT NULL
           AND NOT EXISTS (SELECT 1 FROM cost_allocations ca WHERE ca.cost_entry_id = ce.id)
-      ), 0)`,
-      boxCount: sql<number>`coalesce((
-        SELECT count(*) FROM box_movements bm
-        JOIN boxes b ON b.id = bm.box_id AND b.status <> 'void'
-        WHERE bm.ref_type = 'batch' AND bm.ref_id = ${batches}.id AND bm.cause = 'batch_departed'
-      ), 0)`,
-      kg: sql<string>`coalesce((
-        SELECT sum(rl.total_weight_kg / rl.box_count) FROM box_movements bm
-        JOIN boxes b ON b.id = bm.box_id AND b.status <> 'void'
-        JOIN receipt_lots rl ON rl.id = b.lot_id
-        WHERE bm.ref_type = 'batch' AND bm.ref_id = ${batches}.id AND bm.cause = 'batch_departed'
-      ), 0)`,
-      m3: sql<string>`coalesce((
-        SELECT sum(rl.total_volume_m3 / rl.box_count) FROM box_movements bm
-        JOIN boxes b ON b.id = bm.box_id AND b.status <> 'void'
-        JOIN receipt_lots rl ON rl.id = b.lot_id
-        WHERE bm.ref_type = 'batch' AND bm.ref_id = ${batches}.id AND bm.cause = 'batch_departed'
       ), 0)`,
     })
     .from(batches)
@@ -611,7 +1295,30 @@ export async function profitByBatch(from: string, to: string) {
     )
     .orderBy(sql`${batches.departedAt} DESC`);
 
-  const landed = await batchLandedCostTotals(rows.map((row) => row.batchId));
+  const ids = rows.map((row) => row.batchId);
+  const [landed, loads, perClient] = await Promise.all([
+    batchLandedCostTotals(ids),
+    riderLoad(ids),
+    // Revenue per (truck, client) — ONE grouped read (#432) — so the part of
+    // it owed by clients whose cargo did not ride (0104, Q21) can be named.
+    ids.length
+      ? (db.execute(sql`
+          SELECT ct.batch_id, ct.client_id, sum(ct.amount_usd) AS usd
+            FROM client_transactions ct
+           WHERE ct.batch_id IN (${sql.join(
+             ids.map((id) => sql`${id}::uuid`),
+             sql`, `,
+           )})
+             AND ct.type = 'charge' AND ct.voided_at IS NULL
+           GROUP BY ct.batch_id, ct.client_id
+        `) as unknown as Promise<{ batch_id: string; client_id: string; usd: string }[]>)
+      : Promise.resolve([] as { batch_id: string; client_id: string; usd: string }[]),
+  ]);
+  const noCargo = new Map<string, number>();
+  for (const charge of perClient) {
+    if (loads.get(charge.batch_id)?.clientIds.includes(charge.client_id)) continue;
+    noCargo.set(charge.batch_id, (noCargo.get(charge.batch_id) ?? 0) + Number(charge.usd));
+  }
 
   return rows.map((row) => {
     const revenue = money(row.revenueUsd);
@@ -622,8 +1329,9 @@ export async function profitByBatch(from: string, to: string) {
     const prev = money(lots.reduce((sum, lot) => sum + (lot.totalUsd - lot.batchUsd), 0));
     const internal = Boolean(row.internal);
     const profit = internal ? null : money(revenue - cost);
-    const kg = Math.round(Number(row.kg) * 10) / 10;
-    const m3 = Math.round(Number(row.m3) * 1000) / 1000;
+    const load = loads.get(row.batchId);
+    const kg = Math.round((load?.kg ?? 0) * 10) / 10;
+    const m3 = Math.round((load?.m3 ?? 0) * 1000) / 1000;
     return {
       batchId: row.batchId,
       code: row.code,
@@ -631,16 +1339,23 @@ export async function profitByBatch(from: string, to: string) {
       status: row.status,
       departedAt: row.departedAt,
       internal,
-      boxCount: Number(row.boxCount),
+      boxCount: load?.boxCount ?? 0,
       kg,
       m3,
       revenueUsd: revenue,
+      /**
+       * The PART of `revenueUsd` charged to clients whose cargo did not ride
+       * this truck (0104, Q21 under his (a)): inside the revenue, the profit
+       * and the margin, printed beside them. `pricingView`'s `noCargoUsd`
+       * over the same riders, so the two screens name the same money.
+       */
+      noCargoChargeUsd: money(noCargo.get(row.batchId) ?? 0),
       costUsd: cost,
       /** The part of `costUsd` the cargo brought with it — «shu reysgacha». */
       prevUsd: prev,
       unallocatedUsd: money(row.unallocatedUsd),
       profitUsd: profit,
-      marginPct: profit === null ? null : revenue ? Math.round((profit / revenue) * 1000) / 10 : 0,
+      marginPct: profit === null ? null : marginPct(profit, revenue),
       profitPerKg: profit === null ? null : kg ? Math.round((profit / kg) * 100) / 100 : 0,
       profitPerM3: profit === null ? null : m3 ? Math.round((profit / m3) * 100) / 100 : 0,
     };
@@ -648,23 +1363,48 @@ export async function profitByBatch(from: string, to: string) {
 }
 
 /**
- * Profit per client — charges against the costs allocated to that client's
- * boxes by the M6 engine, so shared truck costs are split fairly by weight or
- * volume rather than guessed.
- */
-/**
  * The money the batch and route tables cannot see, by the period's dates
  * (audit A8/A27). A price typed on a client's ledger names no truck, so it
  * belongs to no truck row in ANY period — named under the tables instead of
  * left to be discovered.
  *
- * Revenue only since R2a (2026-09-24): the COST half used to name every
- * receipt, receive-wizard, crate and pickup cost here, because the table
- * summed only entries stamped with a truck. It reads landed cost now, and
- * that money reaches the truck its cargo rode through the allocations — so
- * naming it here as well would describe the same dollars twice.
+ * The COST half came back as allocations (audit U37). R2a (#1010) had
+ * removed the old entry-based half — naming every receipt, receive-wizard,
+ * crate and pickup cost here — because the table reads landed cost now and
+ * that money reaches the truck its cargo rode through the allocations, so the
+ * entries would be the same dollars twice (and it must not come back in that
+ * shape). The premise holds only for cargo that RIDES: a carton written off
+ * at the origin, a prixod handed over where it was received, unclaimed cargo
+ * returned to the sender, and the remainder still on the shelf carry their
+ * share on no truck's row at all, and nothing said so. It is summed from the
+ * allocations of live entries on the P&L's clock (`cost_date`), on boxes that
+ * are not void (a void box is not cargo — the truck readers' rule, so the
+ * figures reconcile) and that rode NO priced truck by the money rule
+ * (`rideMovementSql`: a carton found back at the origin never rode; an
+ * internal leg's rows are left out of every total, so riding only inside
+ * China is riding no priced truck either). Split by the carton's state:
+ * written off, handed over or returned without a truck, and still waiting —
+ * the last is TEMPORARY, it reaches the truck it rides next.
  */
-export async function unbatchedMoney(from: string, to: string): Promise<{ revenueUsd: number }> {
+export interface UnbatchedMoney {
+  /** Charges that name no truck. The dashboard reads this name — keep it. */
+  revenueUsd: number;
+  /**
+   * Compensations for lost cargo in the period (0105): on no truck by their
+   * CHECK and taken off the P&L's revenue — so Σ truck revenue + `revenueUsd`
+   * − this = the P&L's (net) revenue, and the reconciliation still closes.
+   */
+  compensationUsd: number;
+  noTruckCost: { lostUsd: number; issuedUsd: number; waitingUsd: number };
+}
+
+/**
+ * The revenue half of `unbatchedMoney` alone: charges in the period that
+ * name no truck. The dashboard asks only this (it names the revenue beside
+ * the unpriced trucks); the cost half's ride probe is ~1 s over a year of a
+ * busy book, which a morning screen must not pay for a number it never shows.
+ */
+export async function unbatchedRevenue(from: string, to: string): Promise<number> {
   const [revenue] = await db
     .select({ sum: sql<string>`coalesce(sum(${clientTransactions.amountUsd}), 0)` })
     .from(clientTransactions)
@@ -677,22 +1417,152 @@ export async function unbatchedMoney(from: string, to: string): Promise<{ revenu
         lte(clientTransactions.txDate, to),
       ),
     );
-  return { revenueUsd: money(revenue?.sum) };
+  return money(revenue?.sum);
 }
 
+export async function unbatchedMoney(from: string, to: string): Promise<UnbatchedMoney> {
+  const [revenueUsd, compensated, cost] = await Promise.all([
+    unbatchedRevenue(from, to),
+    db
+      .select({ sum: sql<string>`coalesce(sum(${clientTransactions.amountUsd}), 0)` })
+      .from(clientTransactions)
+      .where(
+        and(
+          eq(clientTransactions.type, 'compensation'),
+          isNull(clientTransactions.voidedAt),
+          gte(clientTransactions.txDate, from),
+          lte(clientTransactions.txDate, to),
+        ),
+      ),
+    // Summed per BOX first, then the ride probe once per box and not once
+    // per allocation (a year is ~3 allocations a box).
+    db.execute(sql`
+      WITH spent AS (
+        SELECT ca.box_id, sum(ca.amount_usd) AS usd
+          FROM cost_allocations ca
+          JOIN cost_entries ce ON ce.id = ca.cost_entry_id AND ce.voided_at IS NULL
+         WHERE ce.cost_date >= ${from}::date AND ce.cost_date <= ${to}::date
+         GROUP BY ca.box_id
+      )
+      SELECT coalesce(sum(spent.usd) FILTER (WHERE b.status = 'lost'), 0) AS lost,
+             coalesce(sum(spent.usd) FILTER (WHERE b.status = 'issued'), 0) AS issued,
+             coalesce(sum(spent.usd) FILTER (WHERE b.status NOT IN ('lost', 'issued')), 0) AS waiting
+        FROM spent
+        JOIN boxes b ON b.id = spent.box_id AND b.status <> 'void'
+       WHERE NOT EXISTS (
+           SELECT 1 FROM box_movements rm
+             JOIN batches rb ON rb.id = rm.ref_id
+             JOIN warehouses ro ON ro.id = rb.origin_warehouse_id
+             JOIN warehouses rd ON rd.id = rb.dest_warehouse_id
+            WHERE rm.box_id = b.id AND rm.cause IN ('batch_departed', 'undocumented_transfer')
+              AND ${rideMovementSql('rm')}
+              AND NOT ${internalLegSql('ro', 'rd')}
+         )
+    `) as unknown as Promise<{ lost: string; issued: string; waiting: string }[]>,
+  ]);
+  return {
+    revenueUsd,
+    compensationUsd: money(compensated[0]?.sum),
+    noTruckCost: {
+      lostUsd: money(cost[0]?.lost),
+      issuedUsd: money(cost[0]?.issued),
+      waitingUsd: money(cost[0]?.waiting),
+    },
+  };
+}
+
+/**
+ * What «Mijoz foydasi» cannot put on any client, by the same period and
+ * clocks as its rows (audit U19) — so the tab reconciles to the P&L:
+ * Σ rows.cost + unclaimed + unallocated = the P&L's direct cost, and
+ * Σ rows.revenue = its revenue.
+ *
+ * - unclaimed: allocations on cargo nobody has claimed (client_id NULL). It
+ *   cost us money (#980/#1010) and it moves onto the client when somebody
+ *   claims it (`assignReceiptClient` rewrites the allocations). Kept OUT of
+ *   `profitByClient`'s array on purpose: `sellerPerformanceAll` files a null
+ *   client under the «—» cohort of unassigned clients, and unclaimed cargo is
+ *   not a client of anybody's.
+ * - unallocated: a live, converted entry that reached no box, or reached them
+ *   short — a truck cost typed while the truck is empty, a factory truck with
+ *   no prixod linked, a direct-to-client share with no box of that client in
+ *   scope, a base with no measure. Named by scope, never guessed onto
+ *   somebody; it stays here until the base appears.
+ */
+export interface ClientProfitGaps {
+  unclaimed: { usd: number; receipts: number };
+  unallocated: { usd: number; count: number; byScope: { scope: string; usd: number; count: number }[] };
+}
+
+export async function clientProfitGaps(from: string, to: string): Promise<ClientProfitGaps> {
+  const [unclaimed, unallocated] = await Promise.all([
+    db.execute(sql`
+      SELECT coalesce(sum(ca.amount_usd), 0) AS usd, count(DISTINCT rl.receipt_id)::int AS receipts
+        FROM cost_allocations ca
+        JOIN cost_entries ce ON ce.id = ca.cost_entry_id
+        JOIN boxes b ON b.id = ca.box_id
+        JOIN receipt_lots rl ON rl.id = b.lot_id
+       WHERE ca.client_id IS NULL AND ce.voided_at IS NULL
+         AND ce.cost_date >= ${from}::date AND ce.cost_date <= ${to}::date
+    `) as unknown as Promise<{ usd: string; receipts: number }[]>,
+    // One grouped pass over the period's entries against one grouped pass
+    // over their allocations — never a per-entry subquery in a join (#152).
+    db.execute(sql`
+      WITH spent AS (
+        SELECT ce.id, ce.scope, ce.amount_usd
+          FROM cost_entries ce
+         WHERE ce.voided_at IS NULL AND ce.amount_usd IS NOT NULL
+           AND ce.cost_date >= ${from}::date AND ce.cost_date <= ${to}::date
+      ),
+      allocated AS (
+        SELECT ca.cost_entry_id, sum(ca.amount_usd) AS usd
+          FROM cost_allocations ca
+          JOIN spent ON spent.id = ca.cost_entry_id
+         GROUP BY ca.cost_entry_id
+      )
+      SELECT spent.scope, count(*)::int AS n,
+             sum(spent.amount_usd - coalesce(allocated.usd, 0)) AS usd
+        FROM spent
+        LEFT JOIN allocated ON allocated.cost_entry_id = spent.id
+       WHERE spent.amount_usd - coalesce(allocated.usd, 0) > 0.005
+       GROUP BY spent.scope
+       ORDER BY spent.scope
+    `) as unknown as Promise<{ scope: string; n: number; usd: string }[]>,
+  ]);
+  const byScope = unallocated.map((row) => ({ scope: row.scope, usd: money(row.usd), count: Number(row.n) }));
+  return {
+    unclaimed: { usd: money(unclaimed[0]?.usd), receipts: Number(unclaimed[0]?.receipts ?? 0) },
+    unallocated: {
+      usd: money(byScope.reduce((sum, row) => sum + row.usd, 0)),
+      count: byScope.reduce((sum, row) => sum + row.count, 0),
+      byScope,
+    },
+  };
+}
+
+/**
+ * Profit per client — charges against the costs allocated to that client's
+ * boxes by the M6 engine, so shared truck costs are split fairly by weight or
+ * volume rather than guessed.
+ *
+ * What it cannot put on any client — unclaimed cargo, money that reached no
+ * box — is `clientProfitGaps`, named beside the tab rather than folded in.
+ */
 export async function profitByClient(from: string, to: string) {
   const revenueRows = await db
     .select({
       clientId: clientTransactions.clientId,
       clientCode: clients.clientCode,
       clientName: clients.name,
-      revenueUsd: sql<string>`sum(${clientTransactions.amountUsd})`,
+      // NET of compensation (0105): a client whose only row in the period is
+      // a compensation for lost cargo is a red row, which is the truth.
+      revenueUsd: sql<string>`sum(${revenueUsdSql()})`,
     })
     .from(clientTransactions)
     .innerJoin(clients, eq(clientTransactions.clientId, clients.id))
     .where(
       and(
-        eq(clientTransactions.type, 'charge'),
+        inArray(clientTransactions.type, [...REVENUE_TYPES]),
         isNull(clientTransactions.voidedAt),
         gte(clientTransactions.txDate, from),
         lte(clientTransactions.txDate, to),
@@ -763,7 +1633,7 @@ export async function profitByClient(from: string, to: string) {
         revenueUsd: revenue,
         costUsd: cost,
         profitUsd: profit,
-        marginPct: revenue ? Math.round((profit / revenue) * 1000) / 10 : 0,
+        marginPct: marginPct(profit, revenue),
       };
     })
     .sort((a, b) => b.profitUsd - a.profitUsd);
@@ -785,6 +1655,8 @@ export async function profitByRoute(from: string, to: string) {
       boxCount: number;
       kg: number;
       revenueUsd: number;
+      /** A part of `revenueUsd` (0104) — see `profitByBatch`. */
+      noCargoChargeUsd: number;
       costUsd: number;
     }
   >();
@@ -797,12 +1669,14 @@ export async function profitByRoute(from: string, to: string) {
         boxCount: 0,
         kg: 0,
         revenueUsd: 0,
+        noCargoChargeUsd: 0,
         costUsd: 0,
       };
     entry.batches += 1;
     entry.boxCount += row.boxCount;
     entry.kg = Math.round((entry.kg + row.kg) * 10) / 10;
     entry.revenueUsd = money(entry.revenueUsd + row.revenueUsd);
+    entry.noCargoChargeUsd = money(entry.noCargoChargeUsd + row.noCargoChargeUsd);
     entry.costUsd = money(entry.costUsd + row.costUsd);
     byRoute.set(row.route, entry);
   }
@@ -812,8 +1686,7 @@ export async function profitByRoute(from: string, to: string) {
       return {
         ...entry,
         profitUsd: profit,
-        marginPct:
-          profit === null ? null : entry.revenueUsd ? Math.round((profit / entry.revenueUsd) * 1000) / 10 : 0,
+        marginPct: profit === null ? null : marginPct(profit, entry.revenueUsd),
         profitPerKg: profit === null ? null : entry.kg ? Math.round((profit / entry.kg) * 100) / 100 : 0,
       };
     })
@@ -832,19 +1705,404 @@ export async function profitByRoute(from: string, to: string) {
  * existed, "we owe" had no number at all, so a page like this could only ever
  * have shown half the picture and would have flattered every month.
  *
- * Deliberately management accounting, not a balance sheet: cargo in the
- * warehouse is NOT valued here. It is not ours — it is the client's goods —
- * and the money side of it is already in what they owe us. Adding a stock
- * valuation would double-count the same shipment and read as profit that
- * belongs to somebody else.
+ * Deliberately management accounting, not a balance sheet: the cargo in the
+ * warehouses is NOT valued here — it is the client's goods, and a stock
+ * valuation would read as profit that belongs to somebody else. What IS
+ * counted (U03, the owner's Q16 A) is the money WE already spent carrying
+ * cargo whose price is not written yet — the freight, the customs, the China
+ * costs — because until the price is posted that money is in no receivable:
+ * the price is agreed after customs (#126, answer 6), so «its money side is
+ * already in what they owe us» was true only of priced cargo (the premise
+ * #416 rested on, corrected). It comes back as the price, and on the day the
+ * cargo is priced Sof holat moves by the price minus that cost — the margin
+ * the pricing screen shows — and paying a truck's cost moves it by nothing.
  *
  * Cash boxes are converted at TODAY's rate for the total only; each box also
  * comes back in its own currency, because that is the figure someone counts
  * against the notes in the drawer.
  */
-export async function companyBalance() {
-  const { accountBalances } = await import('./service');
-  const [accounts, rate] = await Promise.all([accountBalances(), uzsRate()]);
+
+/**
+ * Today's rate for EVERY kassa's currency — active or retired, since a
+ * retired, emptied drawer may have paid a cost the Balans line values (U03).
+ * ONE map per request (`cache`, the `accountBalances` memo): the cash sum
+ * reads it for the counted tills, the line for which kassa-paid costs it can
+ * value. null = no rate entered for that currency.
+ */
+export const kassaRatesToday = cache(async function kassaRatesToday(): Promise<Map<string, number | null>> {
+  const rows = await db.selectDistinct({ currency: moneyAccounts.currency }).from(moneyAccounts);
+  const today = tashkentDay();
+  return new Map(
+    await Promise.all(rows.map(async ({ currency }) => [currency, await rateFor(currency, today)] as const)),
+  );
+});
+
+/** The kassa currencies the Balans can value today — a rate entered and above zero. */
+function ratedCurrenciesOf(rates: Map<string, number | null>): string[] {
+  return [...rates].filter(([, rate]) => rate !== null && rate > 0).map(([code]) => code);
+}
+
+/**
+ * Q16 (i). 'exclude' is the owner's answer and what ships: a price that
+ * names no cargo takes the whole of its client's cargo confirmed on or
+ * before its date off the line — «ehtiyotkor, hech qachon ikki marta
+ * sanalmaydi». 'net' is the switch he is asked about (design-u03 §10.1): the
+ * same prices retire cost dated on or before them, dollar for dollar. The
+ * deploy report prints both from his data (`pnpm balans-hisobot`).
+ */
+export type CardRule = 'exclude' | 'net';
+export const CARD_PRICE_RULE: CardRule = 'exclude';
+
+/** A figure named beside the line, never in it. */
+export interface LeftOut {
+  count: number;
+  usd: number;
+}
+
+export interface UnpricedCargoMoney {
+  /** The line: in Sof holat, cents. = grossUsd − cardUsd − elsewhereUsd. */
+  lineUsd: number;
+  /**
+   * What the line starts from, split EXCLUSIVELY by where the cargo is —
+   * handed over first, then not yet landed in Uzbekistan, then landed:
+   * `awayUsd + stockUsd + issuedUsd = grossUsd`.
+   */
+  grossUsd: number;
+  awayUsd: number;
+  stockUsd: number;
+  issuedUsd: number;
+  /** Taken off by prices that name no cargo (his (i)), and how many clients. */
+  cardUsd: number;
+  cardClients: number;
+  /** Those clients' no-cargo prices dated on or after their oldest cargo here — the report's (i) fact. */
+  cardPriceUsd: number;
+  /** Retired by prices on another truck the cargo touched (Q21/Q2), each charge once. */
+  elsewhereUsd: number;
+  /** Prixods with money on the line before the two subtractions. */
+  prixods: number;
+  /** Named beside the line, never in it — only money that WOULD join (§3.1 rows 1/3/4/6/7/11). */
+  unclaimed: { usd: number; prixods: number };
+  /** Old kassa-less costs some kassa's count does not certainly hold (§3.1 row 12). */
+  oldNoKassa: LeftOut;
+  /** Paid from a kassa whose currency has no rate — that kassa is out of the net too (row 2). */
+  tillUnrated: LeftOut;
+  /** A counterparty named and no debt written — the nightly repair writes it (row 5). */
+  noDebt: LeftOut;
+  /** Factory-trip costs no prixod is linked to yet — they lower the net until linked (row 21). */
+  pickupNoBox: LeftOut;
+  /** Costs that sit on no carton at all (a found-back truck cell, row 22). */
+  noBox: LeftOut;
+  /** Live costs with no dollar figure yet — no rate for their currency (row 13). */
+  unconverted: number;
+  /** Only with history 'all' (the deploy report): handed over before the ban, out of the line. */
+  issuedBeforeGate: { usd: number; prixods: number } | null;
+}
+
+/**
+ * «Narxi hali yozilmagan yukka sarflangan» (U03): the cost of the cartons the
+ * handover gate calls unpriced (`finance/unpriced.ts`, #513), counted only
+ * where the cost's money is ALREADY out of Sof holat — the pair rule (#528):
+ *
+ *   - paid from a kassa whose currency the Balans can value today;
+ *   - owed to a counterparty whose derived charge exists;
+ *   - no payer, and on the kassa queue (the Balans subtracts it, or every
+ *     count holds it), or OLD with every kassa counted after its day.
+ *
+ * Each allocation row once, at the carton grain (`(cost, box)` is unique and
+ * `u_unc` has one row per box — nothing joins through `box_movements`, so an
+ * internal leg and the export truck on one carton count once each). Then his
+ * (i), `CARD_PRICE_RULE`, and the Q21/Q2 retirement: a price on a truck the
+ * prixod touched retires the prixods it tags, per charge at most its amount,
+ * per client at most the tagged cargo — never below zero.
+ *
+ * Scope: the company's confirmed prixods with a client, cargo statuses,
+ * landed or not, and a HANDED-OVER carton only if it went out on or after
+ * the ban's instant (`handedOverSinceSql`) — the page's `history:
+ * 'since_gate'`. The deploy report's 'all' reads the older history too and
+ * splits it out as `issuedBeforeGate`, with the same `lineUsd`.
+ *
+ * Every option is REQUIRED — an optional one fails open. `since`,
+ * `ratedCurrencies` and `gate` are read on the POOL by the caller before this
+ * opens its transaction (#714). One statement through `withoutJit`: it is a
+ * company-wide read past JIT's cost line by shape.
+ */
+export async function unpricedCargoMoney(opts: {
+  since: string;
+  ratedCurrencies: string[];
+  gate: GateSince;
+  cardRule: CardRule;
+  history: 'since_gate' | 'all';
+}): Promise<UnpricedCargoMoney> {
+  const cut = opts.history === 'since_gate';
+  const company = unpricedScopeSql({ kind: 'company', warehouseIds: undefined, ownerId: undefined, landedFrom: undefined });
+  const ban = handedOverSinceSql(opts.gate);
+  const scope = cut ? sql`${company} AND ${ban}` : company;
+  // An empty list is `false`, never `IN (NULL)`: NULL there made the whole
+  // CASE NULL and a FILTER dropped the row silently (the draft lost $100,211).
+  const rated = opts.ratedCurrencies.length
+    ? sql`ta.currency IN (${sql.join(
+        opts.ratedCurrencies.map((code) => sql`${code}`),
+        sql`, `,
+      )})`
+    : sql`false`;
+  // Is a handed-over carton inside the line? With the scope cut every one
+  // left is (it went out after the ban); reading all history, the same
+  // question is asked of its issue movement instead.
+  const issuedIn = cut
+    ? sql`true`
+    : opts.gate.state === 'on'
+      ? sql`(wi.issued_at >= ${opts.gate.since.toISOString()}::timestamptz)`
+      : sql`false`;
+  const net = opts.cardRule === 'net';
+
+  const [row] = (await withoutJit((exec) =>
+    exec.execute(sql`
+    WITH ${uncoveredCtes(scope, { landedOnly: false })},
+    ${uncoveredMoneyCtes()},
+    w_debt AS (
+      SELECT DISTINCT cost_entry_id FROM partner_transactions
+       WHERE type = 'charge' AND voided_at IS NULL AND cost_entry_id IS NOT NULL
+    ),
+    -- ONE classification for the line, the notes and the unclaimed figure.
+    -- \`cost_entries\` UNALIASED and the merged expense as \`merged_from\`:
+    -- the queue's predicates render those names (the #128 family). The ORDER
+    -- is part of the rule: the old-cost test reads kassa count days only, so
+    -- it is reached only by what the queue does not hold (typed before
+    -- \`cost_kassa_since\`, or merged into an expense typed before it).
+    w_cost AS (
+      SELECT cost_entries.id, cost_entries.scope, cost_entries.amount_usd AS usd,
+             CASE
+               WHEN cost_entries.account_id IS NOT NULL
+                 THEN CASE WHEN ${rated} THEN 'in' ELSE 'till_unrated' END
+               WHEN cost_entries.partner_id IS NOT NULL
+                 THEN CASE WHEN wd.cost_entry_id IS NOT NULL THEN 'in' ELSE 'no_debt' END
+               WHEN ${unplacedCostSql(opts.since)} THEN 'in'
+               WHEN ${oldInsideEveryCountSql()} THEN 'in'
+               ELSE 'old_no_kassa'
+             END AS why
+        FROM cost_entries
+        LEFT JOIN expenses merged_from ON merged_from.id = cost_entries.merged_expense_id
+        LEFT JOIN money_accounts ta ON ta.id = cost_entries.account_id
+        LEFT JOIN w_debt wd ON wd.cost_entry_id = cost_entries.id
+       WHERE cost_entries.voided_at IS NULL AND cost_entries.amount_usd IS NOT NULL
+    ),
+    ${
+      cut
+        ? sql``
+        : sql`w_issue AS (
+      SELECT m.box_id, max(m.created_at) AS issued_at
+        FROM box_movements m JOIN u_unc u ON u.box_id = m.box_id AND u.status = 'issued'
+       WHERE m.to_status = 'issued'
+       GROUP BY m.box_id
+    ),`
+    }
+    w_alloc AS (
+      SELECT u.receipt_id, u.client_id, u.status, (u.landed_at IS NOT NULL) AS landed,
+             ca.amount_usd, ca.cost_entry_id, wc.why,
+             (u.status <> 'issued' OR ${issuedIn}) AS in_scope
+        FROM u_unc u
+        JOIN cost_allocations ca ON ca.box_id = u.box_id
+        JOIN w_cost wc ON wc.id = ca.cost_entry_id
+        ${cut ? sql`` : sql`LEFT JOIN w_issue wi ON wi.box_id = u.box_id`}
+    ),
+    -- Per prixod; the three parts are exclusive, handed over first.
+    w_p AS (
+      SELECT a.receipt_id, a.client_id,
+             (coalesce(r.confirmed_at, r.created_at) AT TIME ZONE 'Asia/Tashkent')::date AS day,
+             coalesce(sum(a.amount_usd) FILTER (WHERE a.why = 'in' AND a.in_scope), 0) AS w,
+             coalesce(sum(a.amount_usd) FILTER (WHERE a.why = 'in' AND a.in_scope AND a.status = 'issued'), 0) AS w_issued,
+             coalesce(sum(a.amount_usd) FILTER (WHERE a.why = 'in' AND a.in_scope AND a.status <> 'issued' AND NOT a.landed), 0) AS w_away,
+             coalesce(sum(a.amount_usd) FILTER (WHERE a.why = 'in' AND a.in_scope AND a.status <> 'issued' AND a.landed), 0) AS w_stock,
+             coalesce(sum(a.amount_usd) FILTER (WHERE a.why = 'in' AND NOT a.in_scope), 0) AS w_before_gate
+        FROM w_alloc a JOIN receipts r ON r.id = a.receipt_id
+       GROUP BY a.receipt_id, a.client_id, r.confirmed_at, r.created_at
+    ),
+    -- His (i): a price naming no cargo, dated on or after the prixod's day,
+    -- means we cannot tell which cargo it was for.
+    w_px AS (
+      SELECT p.*, EXISTS (SELECT 1 FROM u_nocargo c WHERE c.client_id = p.client_id AND c.day >= p.day) AS card_after
+        FROM w_p p
+    ),
+    -- «Narx boshqa mashinada»: each tagging charge's money once, capped by the
+    -- cargo it tags; per client capped by the DISTINCT tagged prixods (a sum
+    -- over w_tagp itself counts a prixod once per charge that tags it).
+    w_tagp AS (
+      SELECT DISTINCT t.receipt_id, t.charge_id, px.client_id, px.w
+        FROM u_tag t JOIN w_px px ON px.receipt_id = t.receipt_id
+       WHERE px.w > 0 AND ${net ? sql`true` : sql`NOT px.card_after`}
+    ),
+    w_else_c AS (
+      SELECT tp.client_id, tp.charge_id, least(max(uc.amount_usd), sum(tp.w)) AS usable
+        FROM w_tagp tp JOIN u_charge uc ON uc.id = tp.charge_id
+       GROUP BY tp.client_id, tp.charge_id
+    ),
+    w_else AS (
+      SELECT e.client_id, least(e.usable, t.w) AS retired
+        FROM (SELECT client_id, sum(usable) AS usable FROM w_else_c GROUP BY client_id) e
+        JOIN (SELECT client_id, sum(w) AS w
+                FROM (SELECT DISTINCT client_id, receipt_id, w FROM w_tagp) d
+               GROUP BY client_id) t ON t.client_id = e.client_id
+    ),
+    ${
+      net
+        ? sql`-- The switch: + the cost of each prixod on its day, − each no-cargo price
+    -- on its day; what no later-or-equal price can retire is the max suffix.
+    w_day AS (
+      SELECT client_id, day, sum(amt) AS amt FROM (
+        SELECT client_id, day, w AS amt FROM w_px
+        UNION ALL
+        SELECT c.client_id, c.day, -c.usd FROM u_nocargo c WHERE c.client_id IN (SELECT client_id FROM w_px)
+      ) x GROUP BY client_id, day
+    ),
+    w_dated AS (
+      SELECT client_id, greatest(0, max(suffix)) AS left_after_card FROM (
+        SELECT client_id, sum(amt) OVER (PARTITION BY client_id ORDER BY day DESC ROWS UNBOUNDED PRECEDING) AS suffix
+          FROM w_day) s
+       GROUP BY client_id
+    ),`
+        : sql``
+    }
+    w_client AS (
+      SELECT g.client_id, g.w AS gross, coalesce(e.retired, 0) AS retired,
+             ${
+               net
+                 ? sql`greatest(0, coalesce(d.left_after_card, 0) - coalesce(e.retired, 0))`
+                 : sql`greatest(0, g.w_kept - coalesce(e.retired, 0))`
+             } AS line
+        FROM (SELECT client_id, sum(w) AS w, coalesce(sum(w) FILTER (WHERE NOT card_after), 0) AS w_kept
+                FROM w_px GROUP BY client_id) g
+        LEFT JOIN w_else e ON e.client_id = g.client_id
+        ${net ? sql`LEFT JOIN w_dated d ON d.client_id = g.client_id` : sql``}
+    ),
+    w_cardp AS (
+      SELECT coalesce(sum(c.usd), 0) AS usd
+        FROM u_nocargo c
+        JOIN (SELECT client_id, min(day) AS first_day FROM w_px WHERE w > 0 GROUP BY client_id) f
+          ON f.client_id = c.client_id
+       WHERE c.day >= f.first_day
+    ),
+    w_off AS (
+      SELECT why, count(DISTINCT cost_entry_id)::int AS n, coalesce(sum(amount_usd), 0)::float8 AS usd
+        FROM w_alloc WHERE why <> 'in' AND in_scope GROUP BY why
+    ),
+    -- Cargo with no client yet: the fragment cannot ask about it, so the
+    -- note reads the same cargo statuses and the same classification — only
+    -- money that joins the line when the client is named (S13). Driven from
+    -- the unclaimed prixods (a handful) and FENCED: the planner guesses
+    -- \`w_cost WHERE why = 'in'\` at ~17 rows, started from it and walked
+    -- every allocation of the company's costs — 149,503 rows for ~8,000
+    -- kept, 390 ms at 60k cartons (measured; ~27 ms fenced).
+    w_unc_alloc AS MATERIALIZED (
+      SELECT r.id AS receipt_id, ca.cost_entry_id, ca.amount_usd
+        FROM receipts r
+        JOIN receipt_lots rl ON rl.receipt_id = r.id
+        JOIN boxes b ON b.lot_id = rl.id AND b.status IN ${CARGO_STATUSES}
+        JOIN cost_allocations ca ON ca.box_id = b.id
+       WHERE r.status = 'confirmed' AND r.client_id IS NULL ${cut ? sql`AND ${ban}` : sql``}
+    ),
+    w_unclaimed AS (
+      SELECT coalesce(sum(ua.amount_usd), 0)::float8 AS usd, count(DISTINCT ua.receipt_id)::int AS prixods
+        FROM w_unc_alloc ua
+        JOIN w_cost wc ON wc.id = ua.cost_entry_id AND wc.why = 'in'
+    ),
+    -- Money out of the net that sits on no carton at all.
+    w_nobox AS (
+      SELECT count(*) FILTER (WHERE wc.scope = 'pickup')::int AS pickup_n,
+             coalesce(sum(wc.usd) FILTER (WHERE wc.scope = 'pickup'), 0)::float8 AS pickup_usd,
+             count(*) FILTER (WHERE wc.scope <> 'pickup')::int AS other_n,
+             coalesce(sum(wc.usd) FILTER (WHERE wc.scope <> 'pickup'), 0)::float8 AS other_usd
+        FROM w_cost wc
+       WHERE wc.why = 'in' AND NOT EXISTS (SELECT 1 FROM cost_allocations ca WHERE ca.cost_entry_id = wc.id)
+    )
+    SELECT (SELECT coalesce(sum(line), 0) FROM w_client)::float8 AS line,
+           (SELECT coalesce(sum(retired), 0) FROM w_client)::float8 AS elsewhere,
+           (SELECT coalesce(sum(w_away), 0) FROM w_p)::float8 AS away,
+           (SELECT coalesce(sum(w_stock), 0) FROM w_p)::float8 AS stock,
+           (SELECT coalesce(sum(w_issued), 0) FROM w_p)::float8 AS issued,
+           (SELECT count(*) FROM w_p WHERE w > 0)::int AS prixods,
+           (SELECT count(DISTINCT client_id) FROM w_px WHERE card_after AND w > 0)::int AS card_clients,
+           (SELECT usd FROM w_cardp)::float8 AS card_price,
+           (SELECT coalesce(sum(w_before_gate), 0) FROM w_p)::float8 AS before_gate_usd,
+           (SELECT count(*) FROM w_p WHERE w_before_gate > 0)::int AS before_gate_prixods,
+           (SELECT coalesce(json_agg(json_build_object('why', why, 'n', n, 'usd', usd)), '[]'::json) FROM w_off) AS off,
+           (SELECT usd FROM w_unclaimed) AS unclaimed_usd,
+           (SELECT prixods FROM w_unclaimed) AS unclaimed_prixods,
+           (SELECT pickup_n FROM w_nobox) AS pickup_n,
+           (SELECT pickup_usd FROM w_nobox) AS pickup_usd,
+           (SELECT other_n FROM w_nobox) AS nobox_n,
+           (SELECT other_usd FROM w_nobox) AS nobox_usd,
+           (SELECT count(*) FROM cost_entries WHERE voided_at IS NULL AND amount_usd IS NULL)::int AS unconverted
+  `),
+  )) as unknown as {
+    line: number;
+    elsewhere: number;
+    away: number;
+    stock: number;
+    issued: number;
+    prixods: number;
+    card_clients: number;
+    card_price: number;
+    before_gate_usd: number;
+    before_gate_prixods: number;
+    off: { why: string; n: number; usd: number }[];
+    unclaimed_usd: number;
+    unclaimed_prixods: number;
+    pickup_n: number;
+    pickup_usd: number;
+    nobox_n: number;
+    nobox_usd: number;
+    unconverted: number;
+  }[];
+
+  // Rounded HERE, each part once, so the arithmetic the page prints adds up
+  // to the cent — and the net adds the rounded line, or a sub-cent of
+  // numeric(14,4) shares would sit in the net and not in the bridge.
+  const lineUsd = money(row!.line);
+  const awayUsd = money(row!.away);
+  const stockUsd = money(row!.stock);
+  const issuedUsd = money(row!.issued);
+  const grossUsd = money(awayUsd + stockUsd + issuedUsd);
+  const elsewhereUsd = money(row!.elsewhere);
+  const off = (why: string): LeftOut => {
+    const hit = row!.off.find((entry) => entry.why === why);
+    return { count: Number(hit?.n ?? 0), usd: money(hit?.usd) };
+  };
+  return {
+    lineUsd,
+    grossUsd,
+    awayUsd,
+    stockUsd,
+    issuedUsd,
+    cardUsd: money(grossUsd - elsewhereUsd - lineUsd),
+    cardClients: Number(row!.card_clients),
+    cardPriceUsd: money(row!.card_price),
+    elsewhereUsd,
+    prixods: Number(row!.prixods),
+    unclaimed: { usd: money(row!.unclaimed_usd), prixods: Number(row!.unclaimed_prixods) },
+    oldNoKassa: off('old_no_kassa'),
+    tillUnrated: off('till_unrated'),
+    noDebt: off('no_debt'),
+    pickupNoBox: { count: Number(row!.pickup_n), usd: money(row!.pickup_usd) },
+    noBox: { count: Number(row!.nobox_n), usd: money(row!.nobox_usd) },
+    unconverted: Number(row!.unconverted),
+    issuedBeforeGate: cut
+      ? null
+      : { usd: money(row!.before_gate_usd), prixods: Number(row!.before_gate_prixods) },
+  };
+}
+
+/**
+ * Everything the Balans holds EXCEPT the net — the kassa figures, the
+ * receivables and the liabilities. The admin home, the dashboard's attention
+ * list and its hero cash tile print these and no net, so they must not wait
+ * for the Balans line's company-wide read (regress judge 1, design-u03 §5.4).
+ * `cache` (the `accountBalances` memo): one request pays for it once, however
+ * many sections ask.
+ */
+export const companyBalanceParts = cache(async function companyBalanceParts() {
+  const { accountBalances, countedAccount } = await import('./service');
+  const { upsaleLiability } = await import('../calc/upsale-service');
+  const [accounts, rate, rates] = await Promise.all([accountBalances(), uzsRate(), kassaRatesToday()]);
 
   // Per box in its own money, and a USD total. EVERY currency converts at
   // today's rate for that currency, not just USD and UZS: the comment here
@@ -859,17 +2117,8 @@ export async function companyBalance() {
   // holds. An emptied retired box adds zero and is not shown; one holding
   // money stays on the sheet, flagged, until somebody actually moves the
   // cash out.
-  const counted = accounts.filter(
-    (account) => account.active || Math.abs(account.balance) > 0.009,
-  );
+  const counted = accounts.filter(countedAccount);
   const today = tashkentDay();
-  const rates = new Map(
-    await Promise.all(
-      [...new Set(counted.map((account) => account.currency))].map(
-        async (code) => [code, await rateFor(code, today)] as const,
-      ),
-    ),
-  );
 
   let cashUsd = 0;
   const cashRows = counted
@@ -881,6 +2130,7 @@ export async function companyBalance() {
         id: account.id,
         name: account.name,
         currency: account.currency,
+        kind: account.kind,
         balance: account.balance,
         retired: !account.active,
         /** null when no rate has been entered for that currency yet. */
@@ -888,20 +2138,38 @@ export async function companyBalance() {
       };
     });
 
+  // Money in a box whose currency has no rate is left out of the dollar
+  // total — never guessed (#86, #426) — and SAID (audit U14): a transfer of
+  // $1,000 into an unrated CNY till lowered the net by $1,000 with nothing on
+  // the Balans to say where it went. Per currency in its own money; an empty
+  // unrated box raises nothing, because it hides nothing.
+  const unratedByCurrency = new Map<string, { currency: string; balance: number; count: number }>();
+  for (const row of cashRows) {
+    if (row.balanceUsd !== null || Math.abs(row.balance) <= 0.009) continue;
+    const entry = unratedByCurrency.get(row.currency) ?? { currency: row.currency, balance: 0, count: 0 };
+    entry.balance = money(entry.balance + row.balance);
+    entry.count += 1;
+    unratedByCurrency.set(row.currency, entry);
+  }
+
+  // A till below zero is ALLOWED (the owner's answer a, 2026-09-25 —
+  // entries are typed out of order and a card or bank may overdraw) and
+  // summed as it stands, but never silently: a cash drawer holding less than
+  // nothing is a row somebody has not typed yet, so it is named (U14).
+  const negativeTills = cashRows
+    .filter((row) => row.balance < -0.009)
+    .map((row) => ({ id: row.id, name: row.name, currency: row.currency, balance: row.balance, kind: row.kind }));
+
   // What clients owe us — split the way the partner side below always was
   // (R7a). One netted sum let a prepaid client's advance shrink «qarz», so
   // the Balans line read LESS than the /finance total it links to (audit
   // A3/A16/A28), while the advance — money we owe back in service — appeared
   // nowhere as a liability. `clientBalances` is the /finance screen's own
-  // function, so the two cannot drift: debtors are its positive balances,
-  // advances its negative ones. The net is unchanged; its parts become true.
-  const clientRows = await clientBalances();
-  let receivable = 0;
-  let clientAdvances = 0;
-  for (const row of clientRows) {
-    if (row.balanceUsd > 0) receivable += row.balanceUsd;
-    else clientAdvances += -row.balanceUsd;
-  }
+  // function and `clientTotals` its own arithmetic (U15), so the two lines
+  // can be checked on the page they link to, to the cent.
+  const clientSplit = clientTotals(await clientBalances());
+  const receivable = clientSplit.receivable;
+  const clientAdvances = clientSplit.advances;
 
   // What we owe counterparties. Negative balances (a firm that owes US) are
   // reported separately rather than netted off: one is a bill to pay and the
@@ -910,7 +2178,9 @@ export async function companyBalance() {
     .select({
       partnerId: partnerTransactions.partnerId,
       name: partners.name,
-      balance: sql<string>`sum(CASE WHEN ${partnerTransactions.type} IN ('charge', 'receipt', 'adjust') THEN ${partnerTransactions.amountUsd} ELSE -${partnerTransactions.amountUsd} END)`,
+      // The partner ledger's one sign rule (0103: an automatic «kurs farqi»
+      // carries its sign like an adjust).
+      balance: sql<string>`sum(${partnerSignedSql('amount_usd')})`,
     })
     .from(partnerTransactions)
     .innerJoin(partners, eq(partnerTransactions.partnerId, partners.id))
@@ -928,8 +2198,8 @@ export async function companyBalance() {
   // Payments that came in and sit in no till (audit A2): each took its amount
   // off the receivable above and added it to no kassa, so the net fell by the
   // payment although the cash flow counts it received. Placed ones leave this
-  // line for their kassa (`placePayment`). Only since cash boxes exist — a
-  // payment from before then is inside some box's counted opening balance.
+  // line for their kassa (`placePayment`). Only while it is not already inside
+  // a till's counted opening (`unplacedPaymentSql`, A2 and U09).
   const [unplaced] = await db
     .select({
       sum: sql<string>`coalesce(sum(${clientTransactions.amountUsd}), 0)`,
@@ -945,33 +2215,147 @@ export async function companyBalance() {
     );
   const unplacedUsd = money(unplaced?.sum);
 
-  // Cargo costs nobody has said the kassa of (0101). NOT in the net: where
-  // the money came from is exactly what is unknown — but every such dollar
-  // is one the tills above may be holding on paper and not in the drawer.
+  // Cargo costs nobody has said the kassa of (0101) — SUBTRACTED (audit U02):
+  // a cost we booked is money gone even when the kassa it left is unknown,
+  // the mirror of the unplaced PAYMENTS added above. Left out, the net stood
+  // too high by the whole queue and fell on the day the accountant PLACED
+  // each cost instead of the day it was spent. Since `cost_kassa_since` only,
+  // like the queue: older costs are inside the tills' counted openings
+  // (#1018). One exception, said beside the line and not guessed at: a cost
+  // also re-typed as an expense FROM a kassa is counted twice until it is
+  // merged on the queue — the same double the P&L and the cash flow show.
+  // And the pair rule U09 gave the payments above (#528): a queued cost dated
+  // before EVERY active kassa's count is inside the counts already (R4 keeps
+  // it out of whichever it is placed into), so it stays on the queue and is
+  // NOT taken off again — named beside the line instead. Saying a colleague
+  // paid it is then new information (a debt no count holds) and moves the
+  // net, as placing does for U09's ambiguous payments.
   const unplacedCosts = await unplacedCostTotals();
 
-  const net = cashUsd + unplacedUsd + receivable + owedToUsByPartners - owedByUs - clientAdvances;
+  // What the sellers have earned on jobs the client has already paid for
+  // (audit U10, #793 — derived, never stored): owed from money already in
+  // the tills above, so until the payout it is a liability, not profit.
+  const commissions = await upsaleLiability();
 
-  // The totals FIRST: the AI's company_balance tool cuts the JSON at 6,000
-  // characters, and with ~86 tills the rows used to push every total past it.
+  // Rent and salaries whose day has come and nobody has paid (owner's Q6,
+  // 0106) — the same noun as the commissions above: a debt whose day has
+  // come, owed out of money already in the tills. Nothing leaves a kassa by
+  // itself any more, so until «To'landi» the money is still counted in the
+  // drawer; without this line Sof holat would stand too high by every unpaid
+  // salary. Book entries (depreciation) are counted in the list, never here.
+  const { recurringArrears } = await import('./recurring');
+  const arrears = await recurringArrears(today);
+
   return {
     cashUsd: money(cashUsd),
     /** Payments received and placed in no till yet (A2). */
     unplacedUsd,
     unplacedCount: Number(unplaced?.n ?? 0),
     /** Clients' outstanding balance — Σ positive balances, the /finance total. */
-    receivableUsd: money(receivable),
+    receivableUsd: receivable,
     /** Clients who paid ahead — money we owe them back in service (R7a). */
-    clientAdvancesUsd: money(clientAdvances),
-    /** Cargo costs waiting for the accountant to name their kassa (0101). */
+    clientAdvancesUsd: clientAdvances,
+    /** Cargo costs waiting for the accountant to name their kassa (0101) — the whole queue. */
     unplacedCostCount: unplacedCosts.count,
     unplacedCostUsd: unplacedCosts.usd,
+    /**
+     * …of which every kassa's count already holds (dated before each count,
+     * R4): on the queue, NOT in the net. The rest is taken off (U02).
+     */
+    unplacedCostInCountCount: unplacedCosts.insideCounts.count,
+    unplacedCostInCountUsd: unplacedCosts.insideCounts.usd,
     /** Counterparties we still have to pay. */
     payableUsd: money(owedByUs),
     /** Counterparties who are in front on their account. */
     partnerReceivableUsd: money(owedToUsByPartners),
+    /** Seller commissions owed on jobs the client has paid for (U10) — in the net. */
+    sellerCommissionsUsd: commissions.payableUsd,
+    sellerCommissionsCount: commissions.payableCount,
+    /** Due, unpaid recurring months with money behind them (0106) — in the net. */
+    recurringArrearsUsd: arrears.usd,
+    recurringArrearsCount: arrears.cashCount,
+    /** Every due, unpaid recurring month — the accountant's counter's N, book entries included. */
+    recurringArrearsTotal: arrears.count,
+    /** Due months in a currency with no rate — OUT of the net, named. */
+    recurringArrearsUnrated: arrears.unrated,
+    uzsRate: rate,
+    /** Money in boxes with no rate for their currency — OUT of the net, named (U14). */
+    unratedTills: [...unratedByCurrency.values()],
+    /** Boxes below zero — IN the net as they stand, flagged (U14, answer a). */
+    negativeTills,
+    cashRows,
+  };
+});
+
+/**
+ * The Balans with its net — the parts above plus the Balans line
+ * «narxi hali yozilmagan yukka sarflangan» (U03), which is the one figure
+ * that waits for the company-wide unpriced-cargo read. Only the net's
+ * readers call this: the Balans page, the dashboard's bridge and the hero
+ * tile's net sub-line, the AI tool, and the deploy report.
+ */
+export async function companyBalance() {
+  // POOL reads, before any transaction opens (#714). `kassaRatesToday` is the
+  // ONE rate map (cached): the parts use it for the cash sum, this for which
+  // kassa-paid costs the line may value.
+  const [since, gate, rates] = await Promise.all([unplacedCostSince(), unpricedGate(), kassaRatesToday()]);
+  const ratedCurrencies = ratedCurrenciesOf(rates);
+  // Side by side, so the page costs max(parts, line), not their sum — and
+  // both awaited in ONE Promise.all: a promise started early and awaited
+  // later is an unhandled rejection while another await is pending.
+  const [parts, cargo] = await Promise.all([
+    companyBalanceParts(),
+    unpricedCargoMoney({ since, ratedCurrencies, gate, cardRule: CARD_PRICE_RULE, history: 'since_gate' }),
+  ]);
+  const unplacedCostsOut = money(parts.unplacedCostUsd - parts.unplacedCostInCountUsd);
+
+  const net =
+    parts.cashUsd +
+    parts.unplacedUsd +
+    parts.receivableUsd +
+    parts.partnerReceivableUsd -
+    parts.payableUsd -
+    parts.clientAdvancesUsd -
+    unplacedCostsOut -
+    parts.sellerCommissionsUsd -
+    parts.recurringArrearsUsd +
+    // U03: exactly the allocations whose money already left this net (the
+    // pair rule, #528) — the cost of cargo whose price is not written yet.
+    cargo.lineUsd;
+
+  const { uzsRate: rate, unratedTills, negativeTills, cashRows, ...totals } = parts;
+  // The totals FIRST: the AI's company_balance tool cuts the JSON at 6,000
+  // characters, and with ~86 tills the rows used to push every total past it.
+  // The line and what it left out come before the net, in ~450 characters.
+  return {
+    ...totals,
+    /** Spent on cargo whose price is not written yet (U03) — IN the net. */
+    unpricedCargoUsd: cargo.lineUsd,
+    /** The line's arithmetic and what it names beside it. */
+    unpricedCargo: {
+      grossUsd: cargo.grossUsd,
+      awayUsd: cargo.awayUsd,
+      stockUsd: cargo.stockUsd,
+      issuedUsd: cargo.issuedUsd,
+      cardUsd: cargo.cardUsd,
+      cardClients: cargo.cardClients,
+      elsewhereUsd: cargo.elsewhereUsd,
+      prixods: cargo.prixods,
+      unclaimed: cargo.unclaimed,
+      oldNoKassa: cargo.oldNoKassa,
+      tillUnrated: cargo.tillUnrated,
+      noDebt: cargo.noDebt,
+      pickupNoBox: cargo.pickupNoBox,
+      noBox: cargo.noBox,
+      unconverted: cargo.unconverted,
+      gate: gate.state,
+      gateSince: gate.state === 'on' ? gate.since.toISOString() : null,
+      rule: CARD_PRICE_RULE,
+    },
     netUsd: money(net),
     uzsRate: rate,
+    unratedTills,
+    negativeTills,
     cashRows,
   };
 }

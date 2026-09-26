@@ -34,8 +34,11 @@ test('accountant keeps the books and the reports add up', async ({ page }) => {
   // A cash box with money already in it before the system started.
   await page.goto('/accounting/accounts');
   await page.getByTestId('account-name').first().fill(`Test kassa ${runId}`);
-  await page.locator('form').filter({ has: page.getByTestId('save-account') })
-    .locator('input[name="openingBalance"]').fill('500');
+  const accountForm = page.locator('form').filter({ has: page.getByTestId('save-account') });
+  await accountForm.locator('input[name="openingBalance"]').fill('500');
+  // A dollar till: the expense below names it (answer 5a), and a till only
+  // takes rows in its own currency.
+  await accountForm.locator('select[name="currency"]').selectOption('USD');
   await page.getByTestId('save-account').click();
   await expect(page.getByText(`Test kassa ${runId}`).first()).toBeVisible();
   await expect(page.getByText('500').first()).toBeVisible();
@@ -45,6 +48,9 @@ test('accountant keeps the books and the reports add up', async ({ page }) => {
   await page.locator('select[name="categoryId"]').first().selectOption({ label: `Test xarajat ${runId}` });
   await page.getByTestId('expense-amount').fill('123.45');
   await page.locator('select[name="currency"]').first().selectOption('USD');
+  // His answer 5a (2026-09-25): an expense names the kassa it left (or who
+  // paid it) — the form refuses one that names neither.
+  await page.locator('select[name="accountId"]').first().selectOption({ label: `Test kassa ${runId} (USD)` });
   await page.getByTestId('save-expense').click();
   await expect(page.getByText('✅').first()).toBeVisible();
 

@@ -11,6 +11,7 @@ import {
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { emitEvent } from '../../platform/events/service';
 import { isUniqueViolation } from '../../platform/db/errors';
+import { MAX_NATIVE_AMOUNT } from '../finance/money-bounds';
 
 /**
  * Rasxod xabari (round 107, owner's item 5): «skladchi rasxodni o'zi
@@ -48,7 +49,10 @@ export const expenseRequestSchema = z.object({
    * may say it — the cost and expense forms offer no such payer.
    */
   paidBySelf: z.boolean().optional(),
-  amount: z.number().min(0.01).max(100_000_000),
+  // The column's bound (U44): 100,000,000 so'm is ~$8k, a cap a real
+  // warehouse spend in so'm could reach. The accountant's «Kiritish» asks
+  // the dollar ceiling when it becomes an expense.
+  amount: z.number().min(0.01).max(MAX_NATIVE_AMOUNT),
   currency: z.string().length(3),
   note: z.string().trim().min(2).max(500),
 });

@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { latestTxDate } from '@/modules/wms/finance/dates';
 import { addPartnerTxAction, type PartnerFormState } from '../actions';
 
 /**
@@ -29,11 +30,25 @@ const CASH = new Set<string>(['receipt', 'payment']);
 export function PartnerTxForm({
   partnerId,
   staff,
+  movesTills,
+  mayClassify,
   accounts,
   currencies,
   today,
 }: {
   partnerId: string;
+  /**
+   * May this person say what a correction IS (0103, `mayClassifyFx`)? The
+   * accountant and the admin get the radio; the VED gets today's form, and
+   * the correction waits unclassified beside the P&L (Q19 B).
+   */
+  mayClassify: boolean;
+  /**
+   * May this person move a kassa (owner's answer b)? Without it the card
+   * offers the correction alone — a payment or a receipt must name the kassa
+   * it moved, and the kassas are the accountant's and the admin's.
+   */
+  movesTills: boolean;
   /**
    * A colleague's account (0101): `payment` is a cash advance handed to them
    * and `receipt` is the rest of it handed back — the ledger's own kinds and
@@ -56,7 +71,18 @@ export function PartnerTxForm({
     staff && (code === 'payment' || code === 'receipt')
       ? t(`staffKindHints.${code}` as 'staffKindHints.payment')
       : t(`kindHints.${code}` as 'kindHints.payment');
-  const [type, setType] = useState<string>('payment');
+  const kinds = movesTills ? TYPES : TYPES.filter((code) => !CASH.has(code));
+  const [type, setType] = useState<string>(kinds[0] ?? 'adjust');
+  // Controlled, every one: React resets an uncontrolled form after its
+  // action, so a refusal (e.g. «choose what this correction is») would eat
+  // the typed amount — «a form that can be refused must hold its inputs»
+  // (#463). Never a disabled control (#171).
+  const [adjustKind, setAdjustKind] = useState<'' | 'fx' | 'correction'>('');
+  const [amount, setAmount] = useState('');
+  const [currency, setCurrency] = useState(currencies[0] ?? 'USD');
+  const [accountId, setAccountId] = useState('');
+  const [txDate, setTxDate] = useState(today);
+  const [note, setNote] = useState('');
   const [state, formAction, pending] = useActionState<PartnerFormState, FormData>(
     addPartnerTxAction,
     {},
@@ -69,7 +95,12 @@ export function PartnerTxForm({
   const [seen, setSeen] = useState(state);
   if (state !== seen) {
     setSeen(state);
-    if (state.ok) setOpen(false);
+    if (state.ok) {
+      setOpen(false);
+      setAmount('');
+      setNote('');
+      setAdjustKind('');
+    }
   }
 
   if (!open) {
@@ -101,13 +132,34 @@ export function PartnerTxForm({
         value={type}
         onChange={(event) => setType(event.target.value)}
       >
-        {TYPES.map((code) => (
+        {kinds.map((code) => (
           <option key={code} value={code}>
             {label(code)}
           </option>
         ))}
       </select>
       <p className="text-xs text-ink-500">{hint(type)}</p>
+
+      {type === 'adjust' && mayClassify && (
+        <fieldset className="space-y-1 rounded-lg border border-line p-2" data-testid="partner-tx-adjust-kind">
+          <legend className="px-1 text-xs font-semibold">{t('adjustKindLabel')}</legend>
+          {(['fx', 'correction'] as const).map((kind) => (
+            <label key={kind} className="flex items-start gap-2 text-sm">
+              <input
+                type="radio"
+                name="adjustKind"
+                value={kind}
+                checked={adjustKind === kind}
+                onChange={() => setAdjustKind(kind)}
+                data-testid={`partner-tx-adjust-kind-${kind}`}
+                required
+              />
+              <span>{kind === 'fx' ? t('adjustKinds.fx') : t('adjustKinds.correction')}</span>
+            </label>
+          ))}
+          <p className="text-xs text-ink-500">{t('adjustFxHint')}</p>
+        </fieldset>
+      )}
 
       {/* The sum is the point of the form, so it gets the room: its own line,
           typed big enough to read back at a glance. Sharing a row with the
@@ -124,6 +176,8 @@ export function PartnerTxForm({
           placeholder="0"
           aria-label={t('amount')}
           data-testid="partner-tx-amount"
+          value={amount}
+          onChange={(event) => setAmount(event.target.value)}
           required
         />
         <select
@@ -135,6 +189,8 @@ export function PartnerTxForm({
           className="input !w-24 shrink-0 font-bold"
           aria-label={t('currency')}
           data-testid="partner-tx-currency"
+          value={currency}
+          onChange={(event) => setCurrency(event.target.value)}
         >
           {currencies.map((code) => (
             <option key={code} value={code}>
@@ -150,6 +206,8 @@ export function PartnerTxForm({
           className="input"
           aria-label={t('account')}
           data-testid="partner-tx-account"
+          value={accountId}
+          onChange={(event) => setAccountId(event.target.value)}
           required
         >
           <option value="">— {t('account')}</option>
@@ -167,7 +225,9 @@ export function PartnerTxForm({
         className="input"
         aria-label={t('date')}
         data-testid="partner-tx-date"
-        defaultValue={today}
+        value={txDate}
+        onChange={(event) => setTxDate(event.target.value)}
+        max={latestTxDate()}
         required
       />
       <textarea
@@ -176,6 +236,8 @@ export function PartnerTxForm({
         rows={2}
         placeholder={t('note')}
         aria-label={t('note')}
+        value={note}
+        onChange={(event) => setNote(event.target.value)}
       />
 
       <div className="flex gap-2">
@@ -199,7 +261,21 @@ export function PartnerTxForm({
               ? t('chargeMoved')
               : state.error === 'forbidden'
                 ? t('staffForbidden')
-                : tc('error')}
+                : state.error === 'till_forbidden'
+                  ? t('tillForbidden')
+                  : state.error === 'future_date'
+                    ? tc('futureDate')
+                    : state.error === 'amount_too_large'
+                      ? tc('amountTooLarge')
+                      : state.error === 'adjust_kind_required'
+                        ? t('adjustKindRequired')
+                        : state.error === 'fx_adjust_single_currency'
+                          ? t('fxAdjustSingleCurrency')
+                          : state.error === 'fx_adjust_legacy'
+                            ? t('fxAdjustLegacy')
+                            : state.error === 'fx_adjust_usd_only'
+                              ? t('fxAdjustUsdOnly')
+                              : tc('error')}
         </p>
       )}
       {state.ok && <p className="text-sm font-semibold text-good">✅ {tc('save')}</p>}

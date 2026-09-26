@@ -269,6 +269,46 @@ describe('crates', () => {
     expect(boxCount).toBe(2);
   });
 
+  it('a lot-edit shrink never strands a crate’s fee on no box — the third void door under the U20 guard (review)', async () => {
+    const c = await makeReceipt({ clientId: clientAId, boxCount: 3 });
+    const crateC = uuidv4();
+    await createCrate(
+      { crateId: crateC, warehouseId: whAId, boxIds: c.boxIds.slice(1), kind: 'yashik', logistApproved: true },
+      ctx(),
+    );
+    const fee = await addCostEntry(
+      {
+        scope: 'crate',
+        crateId: crateC,
+        costTypeId: (await db.select().from(costTypes).where(eq(costTypes.active, true)).limit(1))[0]!.id,
+        amount: 30,
+        currency: 'USD',
+        costDate: '2026-01-10',
+        allocationBasis: 'weight',
+      },
+      ctx(),
+    );
+    const manager = { id: actorId, permissions: new Set(['receipts.void']) } as unknown as Actor;
+    await expect(
+      editLot(
+        {
+          lotId: c.lotId,
+          productNameZh: '测试货',
+          boxCount: 1,
+          boxLengthCm: 40,
+          boxWidthCm: 30,
+          boxHeightCm: 20,
+          boxWeightKg: 5,
+        },
+        manager,
+        ctx(),
+      ),
+    ).rejects.toMatchObject({ code: 'shared_cost_orphaned' });
+    const cBoxes = await db.select().from(boxes).where(inArray(boxes.id, c.boxIds));
+    expect(cBoxes.every((x) => x.status === 'in_stock')).toBe(true);
+    await voidCostEntry(fee.id, 'test tozalash', ctx(), { mayMoveTill: true });
+  });
+
   it('rejects cross-client and unclaimed boxes', async () => {
     const a = await makeReceipt({ clientId: clientAId });
     const b = await makeReceipt({ clientId: clientBId });
@@ -388,7 +428,7 @@ describe('money first — a prixod with live costs refuses to void', () => {
     const [still] = await db.select().from(receipts).where(eq(receipts.id, receiptId));
     expect(still!.voidedAt).toBeNull();
 
-    await voidCostEntry(entry.id, 'prixod bekor bolyapti', ctx());
+    await voidCostEntry(entry.id, 'prixod bekor bolyapti', ctx(), { mayMoveTill: true });
     await voidReceipt(receiptId, 'dublikat', ctx());
     const [gone] = await db.select().from(receipts).where(eq(receipts.id, receiptId));
     expect(gone!.voidedAt).not.toBeNull();

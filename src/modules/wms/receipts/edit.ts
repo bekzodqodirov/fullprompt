@@ -1,10 +1,11 @@
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../../platform/db/client';
 import {
   boxes,
   boxMovements,
   clients,
+  costEntries,
   crates,
   receiptLots,
   receipts,
@@ -15,6 +16,8 @@ import { emitEvent } from '../../platform/events/service';
 import { getSetting } from '../../platform/settings/service';
 import type { Actor } from '../../platform/rbac/authorize';
 import { nextBoxCodes } from '../codes';
+import { costOrphanedByVoid, lockCostsTouchingLots } from '../costing/void-guard';
+import { receiptHasCompensation } from '../finance/compensation-follow';
 import { computeLotTotals } from './math';
 
 export const editLotSchema = z.object({
@@ -41,7 +44,10 @@ export class EditError extends Error {
       | 'structural_locked'
       | 'boxes_not_editable'
       | 'boxes_crated'
-      | 'receipt_not_confirmed',
+      | 'receipt_not_confirmed'
+      | 'receipt_has_compensation'
+      | 'lot_changed'
+      | 'shared_cost_orphaned',
   ) {
     super(code);
   }
@@ -236,9 +242,33 @@ export async function editLot(
       );
       result.labelsToPrint = delta;
     } else if (delta < 0) {
-      const toVoid = activeBoxes.slice(delta); // highest seq_in_lot last
+      // The third door that writes `void`, now under the other two's rules
+      // (review of wb2, U0/U8): every cost shared over the lot locked BEFORE
+      // the boxes (U20's race — a box-card void running at the same moment
+      // must wait instead of reading this shrink's carton as live), the
+      // boxes re-read under the lock (the pre-read above is a plan, not a
+      // fact), and the money asked before a carton goes: a crate fee that
+      // these surplus cartons ARE the whole base of would sit on no box. A
+      // crated surplus carton still leaves its crate (round 31, #406) — only
+      // when that would strand the crate's money is the shrink refused.
+      const costs = await lockCostsTouchingLots([lot.id], tx);
+      const current = await tx
+        .select()
+        .from(boxes)
+        .where(and(eq(boxes.lotId, lot.id), ne(boxes.status, 'void')))
+        .orderBy(asc(boxes.seqInLot))
+        .for('update');
+      if (current.length !== activeBoxes.length) throw new EditError('lot_changed');
+      const toVoid = current.slice(delta); // highest seq_in_lot last
+      if (toVoid.some((box) => box.status !== 'in_stock')) throw new EditError('boxes_not_editable');
+      const orphan = await costOrphanedByVoid(
+        costs,
+        toVoid.map((box) => box.id),
+        Number(chargeableFactor),
+        tx,
+      );
+      if (orphan) throw new EditError('shared_cost_orphaned');
       for (const box of toVoid) {
-        if (box.status !== 'in_stock') throw new EditError('boxes_not_editable');
         // A voided box leaves its crate too: a void member made the crate
         // permanently undissolvable and unscannable (both walk the members
         // and refuse anything not in_stock).
@@ -257,6 +287,11 @@ export async function editLot(
         });
       }
       result.labelsToDestroy = toVoid.map((b) => b.shortCode);
+      // Unlike the other write-off doors this one never asks the funnel
+      // (`advanceDealsAfterWriteOff`): a count change is refused once any
+      // box has left the shelf, and a lot keeps at least one box — so the
+      // lot still has a carton on the shelf after the shrink, and a deal
+      // carrying it cannot have become fully handed by it.
     }
 
     const diff = diffFields(before, after);
@@ -286,8 +321,25 @@ export async function editLot(
     if (result.labelsToPrint > 0 || result.labelsToDestroy.length > 0 || totalsChanged) {
       // Every cost shared over this lot — the truck's freight and a crate's
       // fee too, not only the receipt's own (audit A22).
-      const { recomputeForLot } = await import('../costing/service');
-      await recomputeForLot(lot.id);
+      //
+      // A failure here is NOT the manager's: the correction has committed,
+      // so rethrowing it painted a saved fix as an error page and skipped the
+      // author's notice below (U41, measured on overlapping corrections). It
+      // is logged and handed to the job queue as a durable retry of the same
+      // re-split, which pg-boss repeats until it lands.
+      try {
+        const { recomputeForLot } = await import('../costing/service');
+        await recomputeForLot(lot.id);
+      } catch (error) {
+        console.error('[lot-edit] recompute failed, queued for retry', lot.id, error);
+        try {
+          const { enqueue, JOB_RECOMPUTE_COSTS } = await import('../../platform/jobs/boss');
+          await enqueue(JOB_RECOMPUTE_COSTS, { lotId: lot.id });
+        } catch (queueError) {
+          // The nightly orphan sweep is the last net under this one.
+          console.error('[lot-edit] recompute retry could not be queued', lot.id, queueError);
+        }
+      }
     }
     // A correction made over the author's head is told to the author — the
     // arrival-diff rule: the person whose record changed hears it first,
@@ -346,7 +398,37 @@ export async function assignReceiptClient(
       .where(and(eq(receiptLots.receiptId, receiptId), eq(crates.status, 'active')))
       .limit(1);
     if (crated) throw new EditError('boxes_crated');
+    // A compensation (0105) names this prixod and is money we owe THIS
+    // client: changing the client is money, corrected by void + re-entry on
+    // the right client by the accountant — never carried along by a click.
+    // Asked before the direct-cost decision so the refusal comes first.
+    if (await receiptHasCompensation(db, receiptId)) throw new EditError('receipt_has_compensation');
   }
+
+  // A cost typed «only for this client» (direct_to_client) after a client
+  // correction (U39). The share UPDATE below re-stamps the SNAPSHOT, but the
+  // entry still names the OLD client and the engine splits it over that
+  // client's boxes only — so the next recompute (the depart job, a lot fix,
+  // the nightly pickup sweep) either deleted every share and wrote none (the
+  // dollars stayed in the P&L and left every tannarx) or moved the whole fee
+  // back onto the old client's other cargo: two writers of one fact, and
+  // whichever ran last decided. Decided here, ONCE, on the POOL before the
+  // transaction (scopeBoxIds and the recompute read on it, #714):
+  //  - the prixod's OWN direct cost moves (the receipt card only ever offers
+  //    the receipt's own client, so on anyone else it could never split);
+  //  - a truck / crate / factory-trip direct cost moves when the old client
+  //    has NO other cargo left in its scope — otherwise the money lands on
+  //    nobody;
+  //  - when the old client still has cargo there, the cost STAYS theirs —
+  //    whoever typed it wrote «for GS100» (owner's answer A, 2026-09-25) —
+  //    and is re-split onto that remaining cargo straight after the commit,
+  //    so the corrected prixod never carries a share of a cost addressed to
+  //    somebody else.
+  const direct =
+    receipt.clientId && receipt.clientId !== clientId
+      ? await directCostsAfterClientChange(receiptId, receipt.clientId)
+      : { move: [], keep: [] };
+  const directToMove = direct.move;
 
   await db.transaction(async (tx) => {
     // The marking is KEPT, not nulled (round 98, owner: «gs500maniken-al
@@ -358,6 +440,12 @@ export async function assignReceiptClient(
     // `clientId IS NULL` everywhere, never by the marking's presence — so a
     // claimed receipt that keeps its marking is still counted as claimed.
     await tx.update(receipts).set({ clientId }).where(eq(receipts.id, receiptId));
+    // Re-asked under the row lock the UPDATE just took: a compensation
+    // written between the pre-check and here waited on the prixod's lock
+    // (`addCompensation` takes it FOR UPDATE first) or is seen now.
+    if (receipt.clientId && receipt.clientId !== clientId && (await receiptHasCompensation(tx, receiptId))) {
+      throw new EditError('receipt_has_compensation');
+    }
 
     /**
      * The money follows the cargo.
@@ -382,6 +470,33 @@ export async function assignReceiptClient(
         WHERE rl.receipt_id = ${receiptId}
       )
     `);
+
+    // …and the direct costs decided above, re-checked in the WHERE so a cost
+    // voided or re-pointed meanwhile is left alone. Audited on the cost row:
+    // whose tannarx a fee belongs to is a money fact, not a cargo one.
+    if (directToMove.length && receipt.clientId) {
+      const moved = await tx
+        .update(costEntries)
+        .set({ clientId, updatedAt: new Date() })
+        .where(
+          and(
+            inArray(costEntries.id, directToMove),
+            eq(costEntries.clientId, receipt.clientId),
+            eq(costEntries.allocationBasis, 'direct_to_client'),
+            isNull(costEntries.voidedAt),
+          ),
+        )
+        .returning({ id: costEntries.id });
+      for (const row of moved) {
+        await writeAudit(tx, { ...ctx, warehouseId: warehouse.id }, {
+          entityType: 'cost_entry',
+          entityId: row.id,
+          action: 'update',
+          before: { clientId: receipt.clientId },
+          after: { clientId, from: 'receipt_client_change', receiptId },
+        });
+      }
+    }
 
     await writeAudit(tx, { ...ctx, warehouseId: warehouse.id }, {
       entityType: 'receipt',
@@ -420,6 +535,117 @@ export async function assignReceiptClient(
       actorId: ctx.actorId,
     });
   });
+
+  // EVERY cost shared over this prixod re-splits by the ENGINE after the
+  // commit, not only the direct ones: the share UPDATE above is a first draft,
+  // and it is not the only writer. A recompute of the truck's freight that
+  // overlapped this correction (the depart job, a lot fix aboard the same
+  // truck, a void's re-split, the nightly sweep) read the OLD client under its
+  // entry lock, waited on the draft's row locks, and inserted its shares
+  // stamped with the old client after we committed — rows the draft's
+  // statement never saw, on no void box and never empty, so no sweep would
+  // ever look at them again: profit-by-client and the client's landed cost
+  // kept the corrected prixod's freight on the wrong customer (U39's review).
+  // Re-split here, each entry under its lock, this is the LAST writer and it
+  // reads the committed client. A moved direct cost lands on the new client's
+  // cargo, a kept one on the old client's remaining cargo. Never able to roll
+  // the correction back (#714); a failure is logged and handed to the job
+  // queue as the same re-split, which pg-boss repeats until it lands — the
+  // nightly sweep cannot see a wrong stamp.
+  const lotIds = (
+    await db
+      .select({ id: receiptLots.id })
+      .from(receiptLots)
+      .where(eq(receiptLots.receiptId, receiptId))
+  ).map((lot) => lot.id);
+  if (lotIds.length) {
+    try {
+      const { recomputeForLots } = await import('../costing/service');
+      await recomputeForLots(lotIds);
+    } catch (error) {
+      console.error('[receipt-client] recompute failed, queued for retry', receiptId, error);
+      try {
+        const { enqueue, JOB_RECOMPUTE_COSTS } = await import('../../platform/jobs/boss');
+        for (const lotId of lotIds) await enqueue(JOB_RECOMPUTE_COSTS, { lotId });
+      } catch (queueError) {
+        console.error(
+          '[receipt-client] recompute retry could not be queued',
+          receiptId,
+          queueError,
+        );
+      }
+    }
+  }
+}
+
+/**
+ * The live direct_to_client costs of `oldClientId` this prixod is part of,
+ * split into those that follow it to its new client (`move`) and those that
+ * stay on the old client's remaining cargo (`keep`) — U39, see
+ * `assignReceiptClient`. Membership is the lot-level one
+ * (`costEntriesTouchingLots`, so an UNCONVERTED cost with no share yet is
+ * found too), and the base each cost would split over is the engine's own
+ * (`scopeBoxIds`).
+ */
+async function directCostsAfterClientChange(
+  receiptId: string,
+  oldClientId: string,
+): Promise<{ move: string[]; keep: string[] }> {
+  const lotIds = (
+    await db.select({ id: receiptLots.id }).from(receiptLots).where(eq(receiptLots.receiptId, receiptId))
+  ).map((l) => l.id);
+  const { costEntriesTouchingLots } = await import('../costing/void-guard');
+  const touching = await costEntriesTouchingLots(lotIds);
+  if (touching.length === 0) return { move: [], keep: [] };
+  const direct = await db
+    .select()
+    .from(costEntries)
+    .where(
+      and(
+        inArray(costEntries.id, touching),
+        eq(costEntries.allocationBasis, 'direct_to_client'),
+        eq(costEntries.clientId, oldClientId),
+        isNull(costEntries.voidedAt),
+      ),
+    );
+  if (direct.length === 0) return { move: [], keep: [] };
+  const own = new Set(
+    (
+      await db
+        .select({ id: boxes.id })
+        .from(boxes)
+        .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+        .where(and(eq(receiptLots.receiptId, receiptId), ne(boxes.status, 'void')))
+    ).map((b) => b.id),
+  );
+  const { scopeBoxIds } = await import('../costing/service');
+  const move: string[] = [];
+  const keep: string[] = [];
+  for (const entry of direct) {
+    if (entry.scope === 'receipt') {
+      if (entry.receiptId === receiptId) move.push(entry.id);
+      continue;
+    }
+    const base = await scopeBoxIds(entry);
+    // Only a cost this prixod is actually part of.
+    if (!base.some((id) => own.has(id))) continue;
+    const [elsewhere] = await db
+      .select({ id: boxes.id })
+      .from(boxes)
+      .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+      .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+      .where(
+        and(
+          inArray(boxes.id, base),
+          eq(receipts.clientId, oldClientId),
+          ne(receiptLots.receiptId, receiptId),
+        ),
+      )
+      .limit(1);
+    if (elsewhere) keep.push(entry.id);
+    else move.push(entry.id);
+  }
+  return { move, keep };
 }
 
 /** Most recent lots first for the stock table (helper reused by pages). */

@@ -1,5 +1,133 @@
 # CHANGELOG
 
+## Dashboard, moliya auditi va sizning 29 ta javobingiz — 2026-09-25 / 26
+
+Sizning so'rovingiz: «balance, pnl va cashflow otchetlarni korishim kerak shular
+togri chiqyabtimi tekshirib chiq va moliya bolimi togri ishlayabtimi audit qil.
+dashboardni profesional … qilib ber … yuklar bolinib ketishi, yoqolishi va
+yuklangan deb hisoblanib yuklanmay qolgan payitdagi moliya jihatidan korib chiq.
+hamma pullar oqimi hsoblar togri tuzilganmi korib chiq.»
+
+**Migratsiyalar 0102–0106 — deploydan keyin ledger 107 bo'lishi kerak.**
+Serveringiz oxirgi marta 95 ni ko'rsatgan edi, demak bitta deployda 0095–0106
+hammasi (12 ta) qo'llanadi.
+
+### Deploy kuni — tartib bilan
+
+1. **Avval backup** (hajmi noldan katta ekanini tekshiring).
+2. Ish vaqtidan tashqari: bu deployda **baza bir necha soniya qayta ishga
+   tushadi** (Postgres sozlamasi o'zgardi — pastda «Tezlik»).
+3. PR'ni **merge qiling**, keyin serverda `git pull`, `docker compose build
+   migrate app`, `docker compose up -d`.
+4. Ledgerni sanang — **107** chiqishi kerak.
+5. Bir martalik buyruqlar (hammasi `docker compose run --rm migrate …` orqali):
+   - `pnpm money-suspects` — faqat O'QIYDI: «1,200» 1.2 bo'lib qolgan yozuvlar,
+     0 ga tushgan boshlang'ich qoldiqlar va h.k. Ro'yxatni menga yuboring.
+   - `pnpm repair-riders` (sinov), keyin **`pnpm repair-riders --apply`** —
+     eski reyslarda mashinada ketmagan karobkaga tushgan pulni to'g'ri joyga
+     o'tkazadi. Buni o'sha kuni bajaring: tungi tekshiruv tarixni o'zi
+     o'zgartirmaydi.
+   - `pnpm fx-close-history` (sinov), keyin `--apply` — mijozlar hisobidagi
+     eski kurs qoldiqlarini yopadi.
+   - `pnpm balans-hisobot` — faqat O'QIYDI: Balansning yangi qatori sizning
+     ma'lumotingizda qancha chiqishini ko'rsatadi.
+
+### Deploydan keyin ekranda nima o'zgaradi (bu xato emas)
+
+- **«Sof holat» o'zgaradi**, ikki tomonga:
+  - pastga — to'lov kuni o'tgan, lekin hali to'lanmagan ijara va oyliklar
+    endi qarz sifatida ayiriladi;
+  - yuqoriga — narxi hali yozilmagan yukka sarflangan pul endi Balansda
+    alohida qatorda turadi. Sizning ma'lumotingizga o'xshash nusxada bu qator
+    taxminan **$173 000** chiqdi — ya'ni bu qarz doim bor edi, endi sahifada
+    ko'rinadi.
+- O'tgan oylarda kassadan boshqa valyutada to'langan xarajatlar uchun P&L da
+  **«Kurs farqi (kassa)»** qatori paydo bo'ladi.
+- Tushumi nol yoki minus bo'lgan joylarda marja «0 %» emas, **«—»** bo'ladi.
+- VED hodimi endi kassa, foyda-zarar va tannarxni ko'rmaydi (Q19).
+- Narxsiz yuk ruxsatsiz berilmaydi — deploy kunidan keyin kelgan yukka.
+  Oldin kelganlari ro'yxatda turadi, lekin to'xtatilmaydi.
+
+### Dashboard (/dashboard)
+
+- **Tepada olti raqam:** kassalarda qancha pul, bu oy tushum va sof foyda
+  (o'tgan oyning xuddi shu kunlari va oylik rejangiz bilan), mijozlar qarzi
+  (qancha eskirgani bilan), bu oy qabul (m³) va yutilgan bitimlar. Har bir
+  raqam bosilsa, o'sha raqam olingan hisobot ochiladi.
+- **«E'tibor kerak»:** bugun kimdir shug'ullanishi kerak bo'lgan hamma narsa
+  bitta ro'yxatda: yo'lda yo'qolgan yuk, yuklanmay qolgan karobka, minusdagi
+  kassa, 90 kundan eski qarz, narx yozilmagan yuk, narxsiz reyslar, kursi yo'q
+  xarajatlar, to'lanmagan doimiy xarajatlar va h.k.
+- **Pul:** 12 oylik P&L va pul oqimi, Balans, qarz yoshi va eng katta
+  qarzdorlar, reys foydasi, «Yetib kelgan, narx yozilmagan yuk».
+- **Yuk:** yuk qayerda, yo'ldagi furalar, skladlar to'lishi, xarajati
+  kiritilmagan reyslar. **Savdo:** voronka, yutish ulushi, ochiq bitimlar.
+- **Pul qismi faqat sizga va adminga ko'rinadi.** Yo'qotishlar ko'rinadi,
+  lekin foydadan ikkinchi marta ayirilmaydi; karobkama-karobka ro'yxat
+  **Hisobotlar → «Yuk xavfi»**da.
+- **Buxgalteriya → «Reja»**: har oy uchun tushum va sof foyda rejasi.
+
+### Moliya auditi — nima topildi va tuzatildi
+
+Har bir xato alohida tekshiruvchi tomonidan haqiqiy tugmalar orqali qayta
+chiqarib ko'rilgandan keyingina hisobga olindi; keyin tuzatishlarning o'zi
+yana ikki marta tekshirildi. Asosiylari:
+
+- **Yuk bo'linsa, yo'qolsa yoki yuklanmay qolsa:** pul mashinada HAQIQATAN
+  ketgan karobkaga tushadi. Yiwuda qolib ketgan karobkaga birinchi
+  mashinaning yo'lkirasi yozilmaydi (Q2), rastamojka ulushi qoladi va
+  keyingi mashinada «shu reysgacha» bo'lib chiqadi.
+- **Xarajat karobkalarga tiyinigacha to'g'ri bo'linadi.** «1,200» endi
+  hamma pul formalarida bir ming ikki yuz.
+- **Balans va pul oqimi:** kassasi aytilmagan xarajat, sotuvchilar ulushi,
+  to'lanmagan doimiy xarajat o'z qatorlarida; har kassa uchun boshi / kirim /
+  chiqim / oxiri.
+- **P&L:** «Yo'qotishlar» izohi (ma'lumot uchun) va «Kurs farqi» qatori.
+- **Narxni boshqa mashinaga ko'chirish** («🚚 Ko'chirish»): narx o'z bitimini
+  saqlaydi; to'g'ri bo'lib ko'chirilgandan keyin «narx boshqa mashinada»
+  ogohlantirishi o'chadi.
+- **Kompensatsiya narxni 0 ga tushirsa**, yetib kelgan yuk «narxsiz» bo'lib
+  qolmaydi. Prixodni skladga to'g'rilash «mashinada kelgan» deb sanalmaydi.
+- **Doimiy xarajat:** kam summa yozib Enter bosilsa oy yopilib qolmaydi;
+  to'lanmagan oy bor bo'lsa summa/kun/valyutani o'zgartirib bo'lmaydi (avval
+  oyni yoping); oddiy formada yozilgan, hali «Bog'lash» qilinmagan to'lov
+  Balansda ikki marta ayirilmaydi.
+- **Qaytarish va kompensatsiya chegaralari** kurs farqini faqat haqiqatan
+  kurs o'zgarishi mumkin bo'lgan pulga beradi.
+- **Takror birlashtirish:** amortizatsiya kabi kassasiz yozuv «takror»
+  deb taklif qilinmaydi; bekor qilingan birlashtirishning imtiyozi 60 kun.
+- **Eshiklar:** VED/omborchi xarajatni bekor qilayotganda to'lovchi
+  o'zgargan bo'lsa to'xtatiladi; prixod sonini kamaytirish yashik xarajatini
+  karobkasiz qoldirmaydi; upsale to'lovi ekrandagi holat qoidasini so'raydi;
+  VED kassasi yo'q valyutada to'lov yoza olmaydi.
+- **Xabarlar va matnlar:** «Narxsiz yuk berildi» ruxsat bergan odamni aytadi;
+  foyda Excel'ida kompensatsiya izohi bor; to'rtta jim qolgan tugma endi
+  sababini aytadi.
+
+### Tezlik
+
+- Postgres'ning JIT sozlamasi o'chirildi — og'ir hisobotlarni har safar
+  bir soniyagacha sekinlashtirardi (narxsiz yuk ro'yxati 5,4 s → 0,8 s).
+- Buxgalter bosh sahifasidagi «narxsiz yuk» soni yarim soniyadan oshsa,
+  raqamsiz havola bo'lib chiqadi — sahifa kutib qolmaydi.
+- Mashinaning rastamojka xarajatini taqsimlash 1,1 s → 4–14 ms.
+
+### Javob kutilayotgan savollar (tavsiya qilingan variant qurilgan)
+
+- **Q23** VED yozgan to'lov kassasiz tushadi, buxgalter joylaydi.
+- **Q24** «Kurs farqi bilan yopish» — buxgalter bosadi.
+- **Q25** Kurs tuzatishida yosh chegarasi yo'q, avval ko'rib chiqiladi.
+- **Q26** Doimiy xarajatni «To'landi» — buxgalter/admin bosadi.
+- **Q27** Kechikkan oylik — pul chiqqan oyning P&L'ida.
+- **Q28** Yuki mashinada ketmagan narx tushumda qoladi, izoh bilan.
+- **Q29** Kompensatsiya faqat yo'qolgan yuk uchun.
+- **A** Qolib ketgan karobkaning rastamojka ulushi qoladi va keyingi
+  mashinada hisoblanadi.
+- **B** Kontragentning «Tuzatish / kurs farqi» yozuvi ikkiga bo'linadi.
+- ~~Zatamojka va CCT ham karobka bilan keyingi mashinaga o'tsinmi?~~ Javobingiz
+  (2026-09-26): **«b hozirgidek qolsin»** — ular yo'lkira kabi hisoblanadi,
+  karobka bilan faqat Rastamojka o'tadi.
+
 ## Javoblaringiz bo'yicha: kassa va hodimlar, hisobotlar, kabinet tarixi — 2026-09-25
 
 Sizning M1–M4, R1–R7, U1, Z1 va F javoblaringiz. **Migratsiya 0101 — deploydan

@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 /**
@@ -16,6 +17,14 @@ describe('audit 2026-09-24 — the doors', () => {
   it('A2: the ledger door refuses a payment with no cash box, and the form asks for one', () => {
     const action = read('src/app/(protected)/finance/actions.ts');
     expect(action).toMatch(/type === 'payment' && !parsed\.data\.accountId\) return \{ error: 'account_required' \}/);
+    // Q19 refined A2, it did not drop it: a KASSA HOLDER still names the box;
+    // a non-holder (the VED) records the payment unplaced and the accountant
+    // places it. So the refusal must sit inside the holder's branch — and a
+    // kassa posted by a non-holder is refused as a forged post.
+    const holder = action.indexOf('if (mayPickTill(actor.permissions)) {');
+    expect(holder).toBeGreaterThan(0);
+    expect(action.indexOf("type === 'payment' && !parsed.data.accountId) return { error: 'account_required' }")).toBeGreaterThan(holder);
+    expect(action).toContain("if (!mayPickTill(actor.permissions) && parsed.data.accountId) return { error: 'forbidden' };");
     const form = read('src/app/(protected)/finance/[clientId]/tx-form.tsx');
     expect(form).toMatch(/name="accountId"[^>]*required/);
     expect(form).toContain('max={latestTxDate()}');
@@ -23,8 +32,16 @@ describe('audit 2026-09-24 — the doors', () => {
 
   it("A5: the dashboard's money block asks round 91's question, not finance.view", () => {
     const page = read('src/app/(protected)/dashboard/page.tsx');
-    expect(page).toContain('const seesMoney = seesAllMoney(actor);');
+    // Q19 (2026-09-25) moved «round 91's whole-ledger reader AND
+    // finance.reports» into ONE predicate the admin home and the risk report
+    // share (`seesCompanyMoney`); the pin names it, and the predicate's own
+    // halves are pinned below so the A5 rule cannot leave with the move.
     expect(page).not.toMatch(/seesMoney = actor\.permissions\.has\('finance\.view'\)/);
+    // His answer 4a (2026-09-25): the money part is the owner's and the
+    // admin's — the ROLE as well as the grants.
+    expect(page).toContain('const money = seesCompanyMoney(actor) && analyst;');
+    const scope = read('src/modules/wms/finance/scope.ts');
+    expect(scope).toContain("return seesAllMoney(actor) && actor.permissions.has('finance.reports');");
   });
 
   it('A15: the expense file carries the screen\'s category', () => {
@@ -48,6 +65,42 @@ describe('audit 2026-09-24 — the doors', () => {
     const link = read('src/modules/wms/partners/link.ts');
     expect(link).toContain('if (existing) return;');
     expect(link).not.toContain('cost_entry_reprice');
+  });
+
+  // F4 (0103, Q18 — design §5.6): R1 narrowed to PAYMENTS. A corrected rate
+  // re-prices a DEBT through ONE writer, reached from /admin/fx alone, after
+  // the person saw what moves; the sweeps above still never re-price, and
+  // what left a kassa is never in any SET.
+  it('F4: one re-price writer, the kassa side never in its SET, the person’s door through it', () => {
+    const walk = (dir: string): string[] =>
+      readdirSync(dir).flatMap((name) => {
+        const path = join(dir, name);
+        if (statSync(path).isDirectory()) return name === 'migrations' ? [] : walk(path);
+        return /\.(ts|tsx)$/.test(name) ? [path] : [];
+      });
+    const fromValues = walk('src').filter((path) =>
+      /SET amount_usd = v\.new_usd[\s\S]{0,200}FROM \(VALUES/.test(read(path)),
+    );
+    expect(fromValues).toEqual(['src/modules/wms/costing/fx-reprice.ts']);
+    const reprice = read('src/modules/wms/costing/fx-reprice.ts');
+    for (const set of reprice.matchAll(/\bSET\b[^`]*/g)) {
+      expect(set[0]).not.toMatch(/account_amount_usd|account_rate_used/);
+    }
+    const action = read('src/app/(protected)/admin/fx/actions.ts');
+    expect(action).toContain('await saveFxRate(parsed.data,');
+    expect(action).toContain('await repriceStale(currency, month,');
+    expect(action).not.toMatch(/\bupsertFxRate\b/);
+    const engine = read('src/modules/wms/costing/service.ts');
+    const body = (name: string) => {
+      const start = engine.indexOf(`export async function ${name}(`);
+      expect(start, name).toBeGreaterThan(-1);
+      const end = engine.indexOf('\nexport ', start + 10);
+      return engine.slice(start, end < 0 ? undefined : end);
+    };
+    for (const name of ['recomputeAll', 'recomputeEntry']) {
+      expect(body(name)).not.toMatch(/fx-reprice|saveFxRate|repriceStale/);
+    }
+    expect(engine).not.toContain('fx-reprice');
   });
 
   it('A1: the rate door asks before a jump, and the form makes the currency a choice', () => {

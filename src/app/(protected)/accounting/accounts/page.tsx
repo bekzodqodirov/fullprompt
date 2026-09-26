@@ -5,7 +5,8 @@ import { db } from '@/modules/platform/db/client';
 import { currencies } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { Panel } from '@/components/panel';
-import { accountBalances, listAccounts, listTransfers } from '@/modules/wms/accounting/service';
+import { accountBalances, listAccounts, listTransfers, tillsInUse } from '@/modules/wms/accounting/service';
+import { rateFor } from '@/modules/wms/costing/service';
 import { AccountForm } from './account-form';
 import { TransferForm, VoidTransferButton } from './transfer-form';
 import { PageHeader } from '@/components/ui/page';
@@ -25,14 +26,30 @@ export default async function AccountsPage() {
   const t = await getTranslations('accounting');
   const tc = await getTranslations('common');
 
-  const [accounts, balances, currencyRows, transfers] = await Promise.all([
+  const [accounts, balances, currencyRows, transfers, inUse] = await Promise.all([
     listAccounts(true),
     accountBalances(),
     db.select({ code: currencies.code }).from(currencies).where(eq(currencies.active, true)),
     listTransfers(),
+    // ONE statement for every till (#432): which ones have their currency
+    // fixed because something already points at them (U29).
+    tillsInUse(),
   ]);
   const codes = currencyRows.map((row) => row.code);
   const today = tashkentDay();
+  // Which of these boxes the Balans can put in dollars (U14): one with no
+  // rate for its currency is silently OUT of the net, so the box says so.
+  const unrated = new Set(
+    (
+      await Promise.all(
+        [...new Set(balances.map((row) => row.currency))].map(
+          async (code) => [code, await rateFor(code, today)] as const,
+        ),
+      )
+    )
+      .filter(([, rate]) => rate === null || rate <= 0)
+      .map(([code]) => code),
+  );
   const money = (value: number) => value.toLocaleString('en-US');
 
   return (
@@ -74,8 +91,19 @@ export default async function AccountsPage() {
                   <td className="p-2 text-right font-mono text-bad">
                     −{money(Math.round((row.spent + row.costsOut + row.transferredOut + row.partnerOut + row.refundedOut) * 100) / 100)}
                   </td>
-                  <td className="p-2 text-right font-mono font-bold">
+                  <td className={`p-2 text-right font-mono font-bold ${row.balance < -0.009 ? 'text-bad' : ''}`}>
                     {money(row.balance)} {row.currency}
+                    {/* Allowed and summed as it stands, never silent (U14, answer a). */}
+                    {row.balance < -0.009 && (
+                      <span className="block text-[11px] font-sans font-normal" data-testid="account-negative">
+                        ⚠ {t('tillNegative')}
+                      </span>
+                    )}
+                    {unrated.has(row.currency) && Math.abs(row.balance) > 0.009 && (
+                      <span className="block text-[11px] font-sans font-normal text-warn" data-testid="account-no-rate">
+                        ⚠ {t('noRateOutOfNet')}
+                      </span>
+                    )}
                     {row.beforeOpening > 0 && (
                       <span className="block text-[11px] font-sans font-normal text-warn" data-testid="before-opening">
                         ⚠ {t('beforeOpening', { count: row.beforeOpening })}
@@ -112,6 +140,7 @@ export default async function AccountsPage() {
               openingDate: account.openingDate,
               sortOrder: account.sortOrder,
               active: account.active,
+              inUse: inUse.has(account.id),
             }}
           />
         ))}

@@ -32,7 +32,10 @@ import { priceControlOnReceipt } from '../deals/service';
 import { stampCalcLink } from '../calc/link';
 import { computeLotTotals } from './math';
 import { recomputeAll } from '../costing/service';
+import { costOrphanedByVoid, lockCostsTouchingLots } from '../costing/void-guard';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
+import { MAX_NATIVE_AMOUNT } from '../finance/money-bounds';
+import { receiptHasCompensation } from '../finance/compensation-follow';
 
 export const lotInputSchema = z
   .object({
@@ -62,7 +65,9 @@ export const lotInputSchema = z
 
 export const extraCostSchema = z.object({
   costTypeId: z.string().uuid(),
-  amount: z.number().min(0.01).max(100_000_000),
+  // The column's bound (U44); past the dollar ceiling the conversion leaves
+  // the cost unconverted rather than overflowing (`recomputeEntry`).
+  amount: z.number().min(0.01).max(MAX_NATIVE_AMOUNT),
   currency: z.string().length(3),
   note: z.string().trim().max(500).optional().or(z.literal('')),
 });
@@ -448,8 +453,11 @@ export async function confirmReceipt(
   // dollar figure and no allocation — and nothing afterwards ever converted
   // them: «kurs yo'q» on the receipt and $0 in every tannarx for ever. The
   // recompute runs HERE, after the commit (it reads settings and rates on
-  // the pool, #714), and a failure is a late conversion — the nightly sweep
-  // finds it — never a failed receipt.
+  // the pool, #714), and a failure is a late conversion — never a failed
+  // receipt. The nightly sweep finds it either way: a row that never
+  // converted is `unconverted`, and one that converted but lost its split is
+  // `orphaned` (each recompute is one transaction now, so that second shape
+  // is only old data).
   if (input.extraCosts.length > 0) {
     await recomputeAll({ receiptId: result.receiptId }).catch((err) =>
       console.error('[receipt] extra-cost recompute failed', result.receiptId, err),
@@ -504,11 +512,17 @@ export class VoidError extends Error {
     public readonly code:
       | 'box_not_in_stock'
       | 'receipt_has_costs'
+      // A compensation to the client names this prixod (0105) — money first.
+      | 'receipt_has_compensation'
+      // A crate's or a truck's cost would be left with no cargo (U20).
+      | 'shared_cost_orphaned'
       // markBoxLost's refusals ride the same class: one write-off vocabulary.
       | 'unauthenticated'
       | 'reason_required'
       | 'box_not_found'
       | 'box_not_here',
+    /** What the sentence names — the crate or the truck code. */
+    public readonly detail?: string,
   ) {
     super(code);
   }
@@ -522,9 +536,15 @@ export async function voidReceipt(
   const stopId = (
     await db.query.receipts.findFirst({ where: eq(receipts.id, receiptId), columns: { pickupStopId: true } })
   )?.pickupStopId;
-  await db.transaction(async (tx) => {
-    const receipt = await tx.query.receipts.findFirst({ where: eq(receipts.id, receiptId) });
-    if (!receipt || receipt.voidedAt) return;
+  // Pool read before the transaction (#714) — the orphan guard splits the
+  // base the way the engine would.
+  const factor = Number(await getSetting('chargeable_weight_factor'));
+  const voidedBoxIds: string[] = [];
+  const voidedLots = await db.transaction(async (tx): Promise<string[]> => {
+    // LOCKED (0105): a compensation written against this prixod takes the
+    // same lock first, so the two cannot pass each other.
+    const [receipt] = await tx.select().from(receipts).where(eq(receipts.id, receiptId)).for('update');
+    if (!receipt || receipt.voidedAt) return [];
 
     // Money first — the batch-cancel rule (#288), which this door never had.
     // A voided receipt's costs used to stay alive: still in the P&L's direct
@@ -539,6 +559,10 @@ export async function voidReceipt(
       .where(and(eq(costEntries.receiptId, receiptId), isNull(costEntries.voidedAt)))
       .limit(1);
     if (liveCost) throw new VoidError('receipt_has_costs');
+    // A compensation paid for this prixod's lost cargo is client money, and
+    // client money is never voided by a warehouse button (#852): the
+    // accountant voids it first, on purpose.
+    if (await receiptHasCompensation(tx, receiptId)) throw new VoidError('receipt_has_compensation');
 
     await tx
       .update(receipts)
@@ -551,6 +575,10 @@ export async function voidReceipt(
       .where(eq(receiptLots.receiptId, receiptId));
     const lotIds = lotRows.map((l) => l.id);
     if (lotIds.length) {
+      // Every cost shared over these lots, locked BEFORE the boxes — U20's
+      // race: two voids that together take a cost's last cargo each read the
+      // other's boxes as live. The order is lockCostsTouchingLots' own reason.
+      const costs = await lockCostsTouchingLots(lotIds, tx);
       const boxRows = await tx
         .select({ id: boxes.id, status: boxes.status, statusReason: boxes.statusReason })
         .from(boxes)
@@ -563,6 +591,14 @@ export async function voidReceipt(
       // block that nor take part in it: see box-state.ts.
       const { act, blocked } = splitForCorrection(boxRows);
       if (blocked.length) throw new VoidError('box_not_in_stock');
+      // …and money first ONE scope wider (U20). The prixod's own costs are
+      // refused above; a crate fee or a truck's freight shared over these
+      // boxes re-splits onto the rest of its cargo after the commit — unless
+      // these boxes ARE the rest of its cargo, where the money would be left
+      // on no box: the crate of one prixod, the truck that carried only this
+      // duplicate. Finance voids that cost first, the batch-cancel rule.
+      const orphan = await costOrphanedByVoid(costs, act.map((b) => b.id), factor, tx);
+      if (orphan) throw new VoidError('shared_cost_orphaned', orphan.code ?? undefined);
       // The terminal write lives in ONE place (void-box.ts) — the annul door
       // writes the same shape over a wider set, and two writers of a terminal
       // state is how they drift apart.
@@ -571,6 +607,7 @@ export async function voidReceipt(
         refId: receiptId,
         actorId: ctx.actorId ?? null,
       });
+      voidedBoxIds.push(...act.map((b) => b.id));
     }
 
     await writeAudit(tx, { ...ctx, warehouseId: receipt.warehouseId }, {
@@ -579,12 +616,43 @@ export async function voidReceipt(
       action: 'void',
       after: { reason },
     });
+    return lotIds;
   });
+  // Every cost that was shared over the voided boxes — a crate's fee, the
+  // truck's freight, an earlier leg's — re-splits onto the cargo that is
+  // real (U20; editLot's precedent). Before this the void boxes KEPT their
+  // shares: #849 counted on «the next recompute», and since R1 a converted
+  // cost has no next recompute, so the truck-side screens (which drop void
+  // boxes) and the client-side ones (which do not) disagreed for ever. After
+  // the commit (#714), and a failure is logged, never thrown: the receipt IS
+  // void, and the nightly orphan sweep is the repair. All the lots at once, so
+  // the truck's freight shared by three of them re-splits once and not three
+  // times; one entry's failure still costs one entry (`recomputeEach`).
+  if (voidedLots.length) {
+    try {
+      const { recomputeForLots } = await import('../costing/service');
+      await recomputeForLots(voidedLots);
+    } catch (error) {
+      console.error('[receipt-void] recompute failed', receiptId, error);
+    }
+  }
   // A voided prixod leaves its factory truck's base; its share of the truck
   // moves onto the cargo that really came (the link stays, as history).
   if (stopId) {
     const { pickupIdOfStop, recomputePickupCosts } = await import('../pickups/service');
     await recomputePickupCosts(await pickupIdOfStop(stopId));
+  }
+  // A duplicate prixod on a deal whose real cargo is all handed over was the
+  // one thing keeping the deal «qisman»: `dealFullyIssued` leaves a voided
+  // receipt out, and nothing else would ever re-ask (U38's shape). After the
+  // commit, never able to fail the void.
+  if (voidedBoxIds.length) {
+    try {
+      const { advanceDealsAfterWriteOff } = await import('../deals/auto-stage');
+      await advanceDealsAfterWriteOff(voidedBoxIds, ctx);
+    } catch (error) {
+      console.error('[receipt-void] deal stage after the void failed', receiptId, error);
+    }
   }
 }
 
@@ -693,6 +761,17 @@ export async function markBoxLost(
     });
     return { shortCode: box.shortCode, about, warehouseId: box.currentWarehouseId };
   });
+
+  // The write-off can be the deal's last outstanding carton (U38's shape,
+  // one door over): the rest was handed out and this one was binned, so the
+  // deal is fully handed now and the funnel must hear it. After the commit,
+  // never able to fail the door that recorded the loss.
+  try {
+    const { advanceDealsAfterWriteOff } = await import('../deals/auto-stage');
+    await advanceDealsAfterWriteOff([input.boxId], ctx);
+  } catch (error) {
+    console.error('[box-lost] deal stage after a write-off failed', input.boxId, error);
+  }
 
   const about = result.about;
   // ONE message each to a union, never two calls: `notifyStaffTelegram`

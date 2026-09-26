@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { sectionParts } from '@/modules/wms/calc/pricing';
+import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 import type { Workspace } from '@/modules/wms/calc/workspace';
 import type { ChainVersion } from '@/modules/wms/calc/chain';
 import { ChainStateChip } from '@/components/calc-chain-chip';
@@ -268,7 +269,8 @@ function ExtrasPanel({
               const result = await saveExtraAction(id, {
                 costTypeId,
                 label,
-                amountUsd: Number(amount.replace(',', '.')),
+                // «1,200» = 1200, not 1.2 (U28, #979's reader).
+                amountUsd: parseTypedMoney(amount) ?? Number.NaN,
                 note: '',
               });
               if (!result.error) {
@@ -476,7 +478,9 @@ function SealPanel({
         onClick={() =>
           act(() =>
             sealAction(id, {
-              discountUsd: discount.trim() === '' ? 0 : Number(discount.replace(',', '.')),
+              // A discount is dollars too (U28); the band override below is a
+              // density, not money, and keeps its own reader.
+              discountUsd: discount.trim() === '' ? 0 : (parseTypedMoney(discount) ?? Number.NaN),
               discountReason,
               bandOverrideMin: override.trim() === '' ? null : Number(override.replace(',', '.')),
               bandOverrideReason: overrideReason,
@@ -676,7 +680,7 @@ function FeeOverride({
   const [value, setValue] = useState(
     workspace.feeOverrideUsd === null ? '' : String(workspace.feeOverrideUsd),
   );
-  const typed = value.trim() === '' ? null : Number(value.replace(',', '.'));
+  const typed = value.trim() === '' ? null : (parseTypedMoney(value) ?? Number.NaN);
   const changed = typed !== workspace.feeOverrideUsd;
 
   return (

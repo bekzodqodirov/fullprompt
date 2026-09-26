@@ -174,8 +174,11 @@ describe('round two — the bin, the shortcuts, the one message', () => {
     // The home shows what he asked about — a warehouse with no cargo AND no
     // capacity is a row that says nothing; /dashboard keeps the full list.
     expect(home).toContain('row.occupiedM3 > 0 || row.capacityM3 !== null');
-    const dash = read('src/app/(protected)/dashboard/page.tsx');
+    // The dashboard's cargo part moved into its own section file (2026-09-25);
+    // the full list is still drawn by the same component.
+    const dash = read('src/app/(protected)/dashboard/sections/cargo.tsx');
     expect(dash).toContain('<WarehouseFillRows');
+    expect(dash).toContain('loadFill(scopeKey, staleDays)');
     // Tailwind compiles what it can SEE — the colours are a literal map.
     const comp = read('src/components/warehouse-fill.tsx');
     expect(comp).toMatch(/const BAR: Record<[^>]+> = \{/);

@@ -50,9 +50,17 @@ export async function StaffAccountPanel({ view }: { view: StaffAccountView }) {
         >
           {headline}
         </p>
-        {view.perCurrency.length > 1 && (
-          <p className="text-xs text-ink-500">
-            {view.perCurrency.map((row) => `${native(row.amount)} ${row.currency}`).join(' · ')}
+        {/* From ONE currency on (0103, U32): a yuan account's headline is in
+            dollars, and the person counts the yuan. */}
+        {view.perCurrency.length >= 1 && (
+          <p className="text-xs text-ink-500" data-testid="staff-account-currencies">
+            {view.perCurrency
+              .map((row) =>
+                row.amount === 0 && row.currency !== 'USD'
+                  ? `0 ${row.currency} (${usd(row.usd)})`
+                  : `${native(row.amount)} ${row.currency}`,
+              )
+              .join(' · ')}
           </p>
         )}
         {view.rows.length > 0 && (

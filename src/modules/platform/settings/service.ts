@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { db } from '../db/client';
 import { settings } from '../db/schema';
+import { parseDayOrInstant } from '../time/tashkent';
 
 /**
  * Typed settings registry (spec §17). Values live as JSONB rows in
@@ -131,12 +132,12 @@ export const SETTING_DEFAULTS = {
   /**
    * The expense category an upsale payout is written into (VED phase D).
    *
-   * MANDATORY and deliberately not overridable at the moment of paying:
-   * `generateRecurring`'s idempotence slot is (category, date, employee,
-   * warehouse) with no discriminator, so a commission paid to a seller out of
-   * «Oyliklar» would occupy that month's salary slot and the salary would be
-   * silently counted as already posted. Empty = nobody has chosen one, and
-   * the payout refuses with a sentence rather than guessing.
+   * MANDATORY and deliberately not overridable at the moment of paying: a
+   * commission paid to a seller out of «Oyliklar» would read as salary on the
+   * P&L's line, and on the recurring due list it would sit beside that
+   * seller's monthly salary (a template since 0099, paid by «To'landi» since
+   * 0106) as a look-alike payment. Empty = nobody has chosen one, and the
+   * payout refuses with a sentence rather than guessing.
    */
   upsale_expense_category_id: '',
   /**
@@ -170,6 +171,29 @@ export const SETTING_DEFAULTS = {
    * Empty = no bound.
    */
   cost_kassa_since: '',
+  /**
+   * From which moment cargo with no price is handed over only with a
+   * permission (0104, the owner's Q3b: «ruxsat berilmasa olib ketolmasin,
+   * taqiq tursin»). Written by the migration as the deploy instant, Tashkent
+   * wall clock with its offset, so an admin reads it; cargo standing in the
+   * warehouses before it was never priced through the system and is listed,
+   * not stopped. A day (`YYYY-MM-DD`) or an instant WITH an offset; EMPTY
+   * switches the ban off. Anything else is refused at the save
+   * (`SETTING_VALIDATORS`) and, if it reaches the table by hand, FAILS CLOSED
+   * (`finance/unpriced.ts` `parseGateSince`).
+   */
+  unpriced_gate_since: '',
+  /**
+   * Whether the system closes a dollar residue BY ITSELF when a client's,
+   * firm's or staff account reaches zero in its own currency (0103, the
+   * owner's Q14 A). The kill-switch: «no» writes no NEW «kurs farqi» row, but
+   * the rows already written go on being maintained — a stale one would
+   * corrupt a balance the handover gate reads. Its partner twin
+   * `fx_residue_since` is written by the migration and is deliberately NOT
+   * here: no screen may move it (moving it back would post every hand-closed
+   * residue a second time).
+   */
+  fx_residue_auto: true,
   label_size: '100x100',
   translation_provider: 'libretranslate',
   default_locale: 'ru' as 'ru' | 'uz' | 'zh-CN' | 'en',
@@ -210,6 +234,17 @@ export const SETTING_DEFAULTS = {
 
 export type SettingKey = keyof typeof SETTING_DEFAULTS;
 export type SettingValue<K extends SettingKey> = (typeof SETTING_DEFAULTS)[K];
+
+/**
+ * What a typed value must look like before the settings screen stores it.
+ * `updateSettingAction` asks this before `setSetting`, and a refusal writes
+ * NOTHING and says so in words (#472). The map exists so the next key that
+ * needs a shape needs no second mechanism; today one key does — the
+ * unpriced-cargo ban, where a typo would otherwise be read as «off».
+ */
+export const SETTING_VALIDATORS: Partial<Record<SettingKey, (raw: string) => boolean>> = {
+  unpriced_gate_since: (raw) => parseDayOrInstant(raw) !== null,
+};
 
 export async function getSetting<K extends SettingKey>(key: K): Promise<SettingValue<K>> {
   const row = await db.query.settings.findFirst({ where: eq(settings.key, key) });

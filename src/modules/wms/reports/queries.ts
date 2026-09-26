@@ -1,6 +1,9 @@
 import { and, asc, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { aliasedTable } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
+import { addDays, tashkentDayStart } from '../../platform/time/tashkent';
+import { resolvePeriod } from '../accounting/period';
+import { riderLoad } from '../batches/riders';
 import {
   batches,
   boxes,
@@ -183,6 +186,10 @@ export async function inTransitBatches(warehouseIds?: string[]) {
       originCode: warehouses.code,
       destCode: dest.code,
       departedAt: batches.departedAt,
+      // Additive (dashboard): a truck standing at the gate unloaded for days
+      // is the «stuck» attention row.
+      status: batches.status,
+      arrivedAt: batches.arrivedAt,
       /**
        * What DEPARTED on this truck — never the live pointer. Landing NULLs
        * `current_batch_id` box by box, so the old count drained 180 → 0 while
@@ -277,10 +284,25 @@ export async function discrepancySummary(warehouseIds?: string[]) {
 // Report 1 (owner priority): landed cost by client
 // ---------------------------------------------------------------------------
 
+/**
+ * The address-bar key of `landedCostByClient`'s unclaimed row — `clientId`
+ * is a uuid everywhere else, so no client can ever be called this.
+ */
+export const UNCLAIMED_KEY = 'unclaimed';
+
+/**
+ * Every client's landed cost, all time — and ONE row with `clientId` null
+ * for unclaimed (marking-only) cargo, whose allocations carry no client.
+ * The report inner-joined `clients` and dropped that money silently, while
+ * «Mijoz foydasi» beside it names the same cargo as «Egasiz yuk» (audit U19):
+ * the two screens disagreed by exactly it, and the file's Jami was short
+ * without a word. When somebody claims the cargo its shares follow the
+ * client (`assignReceiptClient`) and the row shrinks by itself.
+ */
 export async function landedCostByClient() {
   const rows = await db
     .select({
-      clientId: clients.id,
+      clientId: costAllocations.clientId,
       clientCode: clients.clientCode,
       clientName: clients.name,
       boxCount: sql<number>`count(DISTINCT ${costAllocations.boxId})`,
@@ -292,8 +314,8 @@ export async function landedCostByClient() {
     // a recompute racing a void — are never revisited, and profitByClient
     // has always dropped them: the two screens disagreed by exactly those.
     .innerJoin(costEntries, and(eq(costAllocations.costEntryId, costEntries.id), isNull(costEntries.voidedAt)))
-    .innerJoin(clients, eq(costAllocations.clientId, clients.id))
-    .groupBy(clients.id, clients.clientCode, clients.name)
+    .leftJoin(clients, eq(costAllocations.clientId, clients.id))
+    .groupBy(costAllocations.clientId, clients.clientCode, clients.name)
     .orderBy(desc(sql`sum(${costAllocations.amountUsd})`));
   return rows.map((r) => ({
     ...r,
@@ -326,14 +348,21 @@ export async function unconvertedCosts(): Promise<{ currency: string; count: num
   }));
 }
 
-/** Per-lot landed cost breakdown for one client (letter, product, boxes, kg, USD). */
-export async function landedCostByLot(clientId: string) {
+/**
+ * Per-lot landed cost breakdown for one client (letter, product, boxes, kg,
+ * USD) — or, with `null`, for the unclaimed cargo: `landedCostByClient`'s
+ * «Egasiz yuk» row drills into the same allocations.
+ */
+export async function landedCostByLot(clientId: string | null) {
   const rows = await db
     .select({
       lotId: receiptLots.id,
       letter: receiptLots.letter,
       productNameZh: receiptLots.productNameZh,
       productNameRu: receiptLots.productNameRu,
+      // What is written on the carton — how unclaimed cargo is told apart,
+      // where the letter alone repeats from prixod to prixod.
+      marking: sql<string | null>`max(${receipts.unclaimedMarking})`,
       boxCount: sql<number>`count(DISTINCT ${costAllocations.boxId})`,
       kg: sql<string>`max(${receiptLots.totalWeightKg})`,
       lotBoxes: sql<number>`max(${receiptLots.boxCount})`,
@@ -343,7 +372,8 @@ export async function landedCostByLot(clientId: string) {
     .innerJoin(costEntries, and(eq(costAllocations.costEntryId, costEntries.id), isNull(costEntries.voidedAt)))
     .innerJoin(boxes, eq(costAllocations.boxId, boxes.id))
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
-    .where(eq(costAllocations.clientId, clientId))
+    .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+    .where(clientId === null ? isNull(costAllocations.clientId) : eq(costAllocations.clientId, clientId))
     .groupBy(receiptLots.id)
     .orderBy(asc(receiptLots.letter));
   return rows.map((r) => {
@@ -355,6 +385,7 @@ export async function landedCostByLot(clientId: string) {
       letter: r.letter,
       productNameZh: r.productNameZh,
       productNameRu: r.productNameRu,
+      marking: r.marking,
       boxCount: coveredBoxes,
       kg: Math.round(perLotKg * 10) / 10,
       totalUsd,
@@ -420,6 +451,18 @@ export async function stockAging(warehouseIds?: string[]) {
 // Report 3: batch register with deviations + unit costs
 // ---------------------------------------------------------------------------
 
+/**
+ * The truck register. Boxes, kg and m³ are the truck's RIDERS
+ * (`riderLoad`, U17/U25) — the base its freight was split over and the one
+ * the batch card's cost sheet and «Partiya foydasi» divide by — so the
+ * register's $/kg is the batch card's $/kg: a carton scanned aboard and found
+ * back at the origin never rode, one scanned off without a load scan did.
+ * It read `batch_departed` alone, and the two screens printed two different
+ * per-kilo costs for one truck. ⤵️ and ➕ stay what they are, the MANIFEST's
+ * deviations (short-loaded movements, cartons added on the spot while
+ * loading). A void box is not cargo (the annul round) — the rider rule says
+ * so itself.
+ */
 export async function batchRegister(warehouseIds?: string[]) {
   const dest = aliasedTable(warehouses, 'dest');
   const rows = await db
@@ -431,14 +474,6 @@ export async function batchRegister(warehouseIds?: string[]) {
       destCode: dest.code,
       createdAt: batches.createdAt,
       departedAt: batches.departedAt,
-      // «A void box is not cargo» (the annul round): every departed-movement
-      // aggregate excludes annulled boxes, or a cleaned test truck keeps its
-      // tonnage for ever. The movement rows themselves are never deleted.
-      loaded: sql<number>`(
-        SELECT count(DISTINCT bm.box_id) FROM box_movements bm
-        JOIN ${boxes} b ON b.id = bm.box_id AND b.status <> 'void'
-        WHERE bm.ref_type = 'batch' AND bm.ref_id = ${batches.id} AND bm.cause = 'batch_departed'
-      )`,
       short: sql<number>`(
         SELECT count(DISTINCT bm.box_id) FROM box_movements bm
         WHERE bm.ref_type = 'batch' AND bm.ref_id = ${batches.id} AND bm.cause = 'short_loaded'
@@ -447,16 +482,6 @@ export async function batchRegister(warehouseIds?: string[]) {
         SELECT count(*) FROM scan_events se
         WHERE se.batch_id = ${batches.id} AND se.added_on_spot = true AND se.type = 'load'
       )`,
-      kg: sql<string>`coalesce((
-        SELECT sum(rl.total_weight_kg / rl.box_count)
-        FROM box_movements bm JOIN ${boxes} b ON b.id = bm.box_id AND b.status <> 'void' JOIN ${receiptLots} rl ON rl.id = b.lot_id
-        WHERE bm.ref_type = 'batch' AND bm.ref_id = ${batches.id} AND bm.cause = 'batch_departed'
-      ), 0)`,
-      m3: sql<string>`coalesce((
-        SELECT sum(rl.total_volume_m3 / rl.box_count)
-        FROM box_movements bm JOIN ${boxes} b ON b.id = bm.box_id AND b.status <> 'void' JOIN ${receiptLots} rl ON rl.id = b.lot_id
-        WHERE bm.ref_type = 'batch' AND bm.ref_id = ${batches.id} AND bm.cause = 'batch_departed'
-      ), 0)`,
       costUsd: sql<string>`coalesce((
         SELECT sum(ce.amount_usd) FROM ${costEntries} ce
         WHERE ce.batch_id = ${batches.id} AND ce.voided_at IS NULL
@@ -479,9 +504,12 @@ export async function batchRegister(warehouseIds?: string[]) {
     )
     .orderBy(desc(batches.createdAt))
     .limit(300);
+  // ONE grouped read for the whole register (#432), never one per row.
+  const loads = await riderLoad(rows.map((r) => r.id));
   return rows.map((r) => {
-    const kg = Number(r.kg);
-    const m3 = Number(r.m3);
+    const load = loads.get(r.id);
+    const kg = load?.kg ?? 0;
+    const m3 = load?.m3 ?? 0;
     const costUsd = Math.round(Number(r.costUsd) * 100) / 100;
     return {
       id: r.id,
@@ -490,7 +518,8 @@ export async function batchRegister(warehouseIds?: string[]) {
       route: `${r.originCode} → ${r.destCode}`,
       createdAt: r.createdAt,
       departedAt: r.departedAt,
-      loaded: Number(r.loaded),
+      /** Boxes that rode it — the ones `kg`/`m3` sum over. */
+      loaded: load?.boxCount ?? 0,
       short: Number(r.short),
       added: Number(r.added),
       kg: Math.round(kg * 10) / 10,
@@ -507,7 +536,64 @@ export async function batchRegister(warehouseIds?: string[]) {
 // label reprint log (§13) — same scoping convention as above.
 // ---------------------------------------------------------------------------
 
-export async function receiptsJournal(days: number, warehouseIds?: string[]) {
+/**
+ * The journal's window: the last N days (the preset buttons), or a Tashkent
+ * calendar range — the one the dashboard's «Qabul · bu oy» tile links with,
+ * so the tile's number and the journal's header are the same query's (#513).
+ */
+export type JournalWindow = number | { from: string; to: string };
+
+/**
+ * One reader for the page and its XLSX: a `from`/`to` pair (validated like
+ * every accounting period — `resolvePeriod`) wins; otherwise `days`, 1..365,
+ * default 30, exactly as before.
+ */
+export function readJournalWindow(params: { from?: string | null; to?: string | null; days?: string | null }): JournalWindow {
+  if (params.from || params.to) return resolvePeriod({ from: params.from ?? undefined, to: params.to ?? undefined });
+  return Math.min(365, Math.max(1, Number(params.days) || 30));
+}
+
+function journalWindowWhere(window: JournalWindow) {
+  if (typeof window === 'number') return sql`${receipts.receivedAt} > now() - make_interval(days => ${window})`;
+  // Tashkent's midnight (R5), bound as ISO instants (#156) — intakeByMonth's own bounds.
+  const start = tashkentDayStart(window.from).toISOString();
+  const end = tashkentDayStart(addDays(window.to, 1)).toISOString();
+  return sql`${receipts.receivedAt} >= ${start}::timestamptz AND ${receipts.receivedAt} < ${end}::timestamptz`;
+}
+
+/**
+ * What was CONFIRMED in the window, from ONE aggregate — never a sum of the
+ * 500 rows the list is capped at, which on a busy quarter would print a total
+ * that quietly stops at the cap.
+ */
+export async function receiptsJournalTotals(window: JournalWindow, warehouseIds?: string[]) {
+  const [row] = await db
+    .select({
+      receipts: sql<number>`count(DISTINCT ${receipts.id})`,
+      boxes: sql<string>`coalesce(sum(${receiptLots.boxCount}), 0)`,
+      kg: sql<string>`coalesce(sum(${receiptLots.totalWeightKg}), 0)`,
+      m3: sql<string>`coalesce(sum(${receiptLots.totalVolumeM3}), 0)`,
+    })
+    .from(receipts)
+    .leftJoin(receiptLots, eq(receiptLots.receiptId, receipts.id))
+    .where(
+      and(
+        eq(receipts.status, 'confirmed'),
+        journalWindowWhere(window),
+        warehouseIds?.length ? inArray(receipts.warehouseId, warehouseIds) : undefined,
+      ),
+    );
+  return {
+    receipts: Number(row?.receipts ?? 0),
+    boxes: Number(row?.boxes ?? 0),
+    kg: Math.round(Number(row?.kg ?? 0) * 10) / 10,
+    m3: Math.round(Number(row?.m3 ?? 0) * 1000) / 1000,
+  };
+}
+
+export const JOURNAL_CAP = 500;
+
+export async function receiptsJournal(window: JournalWindow, warehouseIds?: string[]) {
   const rows = await db
     .select({
       id: receipts.id,
@@ -528,12 +614,12 @@ export async function receiptsJournal(days: number, warehouseIds?: string[]) {
     .leftJoin(clients, eq(receipts.clientId, clients.id))
     .where(
       and(
-        sql`${receipts.receivedAt} > now() - make_interval(days => ${days})`,
+        journalWindowWhere(window),
         warehouseIds?.length ? inArray(receipts.warehouseId, warehouseIds) : undefined,
       ),
     )
     .orderBy(desc(receipts.receivedAt))
-    .limit(500);
+    .limit(JOURNAL_CAP);
   return rows.map((r) => ({
     ...r,
     lots: Number(r.lots),

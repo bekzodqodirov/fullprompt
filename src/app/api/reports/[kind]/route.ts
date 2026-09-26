@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { AuthError, authorize, getActor } from '@/modules/platform/rbac/authorize';
+import { moneyHidden } from '@/modules/platform/rbac/money-sight';
 import { writeAudit } from '@/modules/platform/audit/service';
 import { requestMeta } from '@/modules/platform/auth/session';
 import {
@@ -14,6 +15,7 @@ import {
   buildUnclaimedXlsx,
 } from '@/modules/wms/reports/xlsx';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
+import { readJournalWindow, UNCLAIMED_KEY } from '@/modules/wms/reports/queries';
 
 const kindSchema = z.enum([
   'landed-cost',
@@ -57,10 +59,17 @@ export async function GET(request: Request, { params }: { params: Promise<{ kind
     if (err instanceof AuthError) return new Response('Forbidden', { status: 403 });
     throw err;
   }
+  // The landed-cost file IS the tannarx (Q19): the VED holds the report
+  // grant and still gets no file — the screen refuses him the same way.
+  if (kind.data === 'landed-cost' && moneyHidden('results', actor.permissions)) {
+    return new Response('Forbidden', { status: 403 });
+  }
 
   const scope = actor.permissions.has('reports.all_warehouses') ? undefined : actor.warehouseIds;
   const url = new URL(request.url);
   const clientId = z.string().uuid().safeParse(url.searchParams.get('clientId'));
+  // The landed-cost report's «Egasiz yuk» row drills in by this key (U19).
+  const unclaimed = url.searchParams.get('clientId') === UNCLAIMED_KEY;
   const days = Math.min(365, Math.max(1, Number(url.searchParams.get('days')) || 30));
 
   // The file is downloaded to be read, so its headers follow the reader.
@@ -69,16 +78,27 @@ export async function GET(request: Request, { params }: { params: Promise<{ kind
   let xlsx: Buffer;
   switch (kind.data) {
     case 'landed-cost':
-      xlsx = await buildLandedCostXlsx(clientId.success ? clientId.data : undefined, locale);
+      xlsx = await buildLandedCostXlsx(unclaimed ? null : clientId.success ? clientId.data : undefined, locale);
       break;
     case 'stock-aging':
       xlsx = await buildStockAgingXlsx(scope, locale);
       break;
     case 'batches':
-      xlsx = await buildBatchRegisterXlsx(scope, locale);
+      // Keyed on the VED rule alone, not on the screen's `showCosts`: that one
+      // also hides the column from the warehouse manager, and changing his
+      // download is a separate decision (stated to the lead).
+      xlsx = await buildBatchRegisterXlsx(scope, locale, { costs: !moneyHidden('results', actor.permissions) });
       break;
     case 'receipts-journal':
-      xlsx = await buildReceiptsJournalXlsx(days, scope, locale);
+      xlsx = await buildReceiptsJournalXlsx(
+        readJournalWindow({
+          from: url.searchParams.get('from'),
+          to: url.searchParams.get('to'),
+          days: url.searchParams.get('days'),
+        }),
+        scope,
+        locale,
+      );
       break;
     case 'unclaimed':
       xlsx = await buildUnclaimedXlsx(scope, locale);

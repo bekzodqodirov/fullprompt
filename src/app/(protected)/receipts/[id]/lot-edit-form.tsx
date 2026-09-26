@@ -105,9 +105,13 @@ export function LotEditForm({ lot }: { lot: LotEditValues }) {
         <p role="alert" className="text-sm font-semibold text-bad">
           {state.error === 'edit_window_closed'
             ? t('editWindowClosed')
-            : state.error === 'structural_locked'
+            : state.error === 'structural_locked' || state.error === 'boxes_not_editable'
               ? t('structuralLocked')
-              : tc('error')}
+              : state.error === 'shared_cost_orphaned'
+                ? t('lotShrinkOrphan')
+                : state.error === 'lot_changed'
+                  ? t('lotChanged')
+                  : tc('error')}
         </p>
       )}
       <div className="flex gap-2">

@@ -5,6 +5,7 @@ import { dealOptionLabel } from '@/modules/wms/deals/cargo-label';
 import { latestTxDate } from '@/modules/wms/finance/dates';
 import { useTranslations } from 'next-intl';
 import { addTransactionAction, type TxFormState } from '../actions';
+import { CompensationForm, type LostChargeOption, type LostReceiptOption } from './compensation-form';
 
 /**
  * Add a charge or a payment to a client's ledger (Phase 2.1). No tariffs —
@@ -20,6 +21,10 @@ export function TxForm({
   deals,
   today,
   canRefund,
+  canPickTill,
+  advanceUsd,
+  trips,
+  lost,
 }: {
   clientId: string;
   currencies: string[];
@@ -29,19 +34,58 @@ export function TxForm({
   today: string;
   /** Handing cash back is the kassa-holders' door (finance.expenses). */
   canRefund: boolean;
+  /**
+   * May this person name the kassa the money landed in (Q19: its holders)?
+   * Nobody else is shown the drawers: their payment is recorded unplaced and
+   * the accountant names the box through «Kassaga joylash».
+   */
+  canPickTill: boolean;
+  /**
+   * What the client has paid us in ADVANCE, in dollars (0 when he owes). A
+   * refund hands back at most this (U04) — shown beside the button so the
+   * refusal is never the first time the accountant hears the figure.
+   */
+  advanceUsd: number;
+  /**
+   * The trucks a CHARGE may name (0104): the client's own ride trucks (never
+   * an internal leg) plus a truck its cargo is loading on now — already
+   * ordered by the page: cross-border first, unpriced first within each,
+   * then newest. A price that names a truck covers that truck's prixods; one
+   * that names neither a truck nor a deal covers nothing (said below).
+   */
+  trips: { batchId: string; code: string; unpriced: boolean; crossesBorder: boolean }[];
+  /**
+   * The lost-cargo door's data (0105) — loaded by the page only for the kassa
+   * holders (`canRefund`), who alone may write a compensation.
+   */
+  lost?: { receipts: LostReceiptOption[]; charges: LostChargeOption[]; truncated: boolean };
 }) {
   const t = useTranslations('finance');
   const tc = useTranslations('common');
-  const [type, setType] = useState<'payment' | 'charge' | 'refund'>('payment');
+  const [type, setType] = useState<'payment' | 'charge' | 'refund' | 'compensation'>('payment');
+  const [batchId, setBatchId] = useState('');
+  const [dealId, setDealId] = useState('');
+  const picked = trips.find((trip) => trip.batchId === batchId);
+  // China cargo priced on a local leg covers nothing of the road (Q1).
+  const localLeg = Boolean(picked && !picked.crossesBorder && trips.some((trip) => trip.crossesBorder));
   const [state, formAction, pending] = useActionState<TxFormState, FormData>(
     addTransactionAction,
     {},
   );
+  // The truck and the job are CONTROLLED (they drive the local-leg and
+  // deal hints), so React's reset after a saved form does not reach them:
+  // the next payment silently carried the last one's deal (review). Cleared
+  // on each new success, during render — the answer object is the event.
+  const [answered, setAnswered] = useState(state);
+  if (state !== answered) {
+    setAnswered(state);
+    if (state.ok) {
+      setBatchId('');
+      setDealId('');
+    }
+  }
 
-  return (
-    <form action={formAction} className="card space-y-2">
-      <input type="hidden" name="clientId" value={clientId} />
-      <input type="hidden" name="type" value={type} />
+  const toggles = (
       <div className="grid grid-cols-2 gap-2">
         <button
           type="button"
@@ -65,9 +109,47 @@ export function TxForm({
             onClick={() => setType('refund')}
           >
             ↩️ {t('refund')}
+            <span className="ml-1 font-mono text-xs font-normal" data-testid="tx-refund-advance">
+              · {t('advanceNow', { amount: advanceUsd.toFixed(2) })}
+            </span>
+          </button>
+        )}
+        {/* Money for LOST cargo (0105) — the refund's other half, the same
+            holders. Its own door: it names a prixod and lowers prices. */}
+        {canRefund && lost && (
+          <button
+            type="button"
+            data-testid="tx-type-compensation"
+            className={`col-span-2 min-h-11 rounded-lg border-2 text-sm font-bold ${type === 'compensation' ? 'border-green-600 bg-good/10 text-good' : 'border-line text-ink-500'}`}
+            onClick={() => setType('compensation')}
+          >
+            🤝 {t('lostCargoDoor')}
           </button>
         )}
       </div>
+  );
+
+  if (type === 'compensation' && canRefund && lost) {
+    return (
+      <div className="card space-y-2">
+        {toggles}
+        <CompensationForm
+          clientId={clientId}
+          currencies={currencies}
+          today={today}
+          receipts={lost.receipts}
+          charges={lost.charges}
+          truncated={lost.truncated}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <form action={formAction} className="card space-y-2">
+      <input type="hidden" name="clientId" value={clientId} />
+      <input type="hidden" name="type" value={type} />
+      {toggles}
       <div className="flex gap-2">
         <input
           name="amount"
@@ -101,10 +183,12 @@ export function TxForm({
           required
         />
       </div>
-      {/* Required for a NEW payment (audit A2): one saved with no kassa left
-          the Balans short by its amount for good. Rows from before cash boxes
-          existed keep their empty column — the action refuses, history stays. */}
-      {type !== 'charge' && (
+      {/* Required for a NEW payment by a kassa holder (audit A2): one saved
+          with no kassa left the Balans short by its amount for good. Rows
+          from before cash boxes existed keep their empty column — the action
+          refuses, history stays. Anybody else (the VED, Q19) is not shown the
+          drawers at all, and says where the money went instead. */}
+      {canPickTill && type !== 'charge' && (
         <select
           name="accountId"
           aria-label={t('account')}
@@ -120,17 +204,51 @@ export function TxForm({
           ))}
         </select>
       )}
+      {!canPickTill && type === 'payment' && (
+        <p className="text-xs text-ink-500" data-testid="tx-no-till">
+          {t('paymentNoTill')}
+        </p>
+      )}
       {/* Which JOB the money answers. Optional — plenty of money arrives with
           no deal behind it — but for a DEFERRED deal this select is the whole
           mechanism: the handover gate nets a deferral's charges against the
           payments that name it, and a payment that names nothing pays the
           deferral off on paper while the gate goes on excusing other debt. */}
+      {type === 'charge' && trips.length > 0 && (
+        <select
+          name="batchId"
+          aria-label={t('txTruck')}
+          className="input"
+          value={batchId}
+          onChange={(event) => setBatchId(event.target.value)}
+          data-testid="tx-truck"
+        >
+          <option value="">— {t('txTruck')}</option>
+          {trips.map((trip) => (
+            <option key={trip.batchId} value={trip.batchId}>
+              {trip.code}
+              {trip.unpriced ? ` · ${t('txTruckUnpriced')}` : ''}
+            </option>
+          ))}
+        </select>
+      )}
+      {type === 'charge' && !batchId && !dealId && (
+        <p className="text-xs text-warn" data-testid="tx-card-only">
+          {t('txCardOnlyHint')}
+        </p>
+      )}
+      {type === 'charge' && localLeg && (
+        <p className="text-xs text-warn" data-testid="tx-local-leg">
+          {t('txLocalLegHint')}
+        </p>
+      )}
       {deals.length > 0 && (
         <select
           name="dealId"
           aria-label={t('forDeal')}
           className="input"
-          defaultValue=""
+          value={dealId}
+          onChange={(event) => setDealId(event.target.value)}
           data-testid="tx-deal"
         >
           <option value="">— {t('forDeal')}</option>
@@ -144,7 +262,9 @@ export function TxForm({
       <input name="note" className="input" placeholder={t('note')} maxLength={2000} />
       {state.error && (
         <p role="alert" className="text-sm font-semibold text-bad">
-          {state.error === 'fx_missing'
+          {state.error === 'no_till_currency'
+            ? t('noTillCurrency')
+            : state.error === 'fx_missing'
             ? t('fxMissing')
             : state.error === 'account_currency_mismatch'
               ? t('accountCurrencyMismatch')
@@ -154,7 +274,17 @@ export function TxForm({
                   ? t('refundOnBatch')
                   : state.error === 'future_date'
                     ? t('futureDate')
-                    : tc('error')}
+                    : state.error === 'amount_too_large'
+                      ? tc('amountTooLarge')
+                      : state.error === 'refund_exceeds_advance'
+                        ? t('refundExceedsAdvance')
+                        : state.error === 'forbidden'
+                          ? tc('forbidden')
+                          : state.error === 'client_not_aboard'
+                            ? t('clientNotAboard')
+                            : state.error === 'internal_batch'
+                              ? t('internalBatchRefused')
+                              : tc('error')}
         </p>
       )}
       <button type="submit" disabled={pending} className="btn-primary w-full disabled:opacity-60">

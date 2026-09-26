@@ -1,7 +1,9 @@
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { pendingApprovals } from '@/modules/wms/issue/approvals';
+import { approvalUnpricedDetail, pendingApprovals } from '@/modules/wms/issue/approvals';
+import { mayOpenPricing } from '@/modules/wms/finance/pricing-door';
 import { decideIssueApprovalAction } from '../issue/actions';
 import { PageHeader } from '@/components/ui/page';
 
@@ -10,6 +12,15 @@ import { PageHeader } from '@/components/ui/page';
  * debtor" question, answerable in two taps. Reached from the Telegram ping;
  * gated on the same permission the direct checkbox needs — deciding IS the
  * override.
+ *
+ * Since 0104 a request may also ask about cargo with NO PRICE (the owner's
+ * Q3b), so each row says which question it asks: the debt only when there is
+ * one, and the prixods whose cartons have no price — re-read now, so a prixod
+ * the accountant priced meanwhile reads «✅ narx qo'yildi», because pricing is
+ * often the better answer than approving. STATED, not widened here: this
+ * screen shows every client's pending debt to every holder, sellers included
+ * (round 91's hole on one more screen) — narrowing what a decider SEES is its
+ * own change.
  */
 export default async function ApprovalsPage() {
   const actor = await getActor();
@@ -20,6 +31,8 @@ export default async function ApprovalsPage() {
   const format = await getFormatter();
 
   const rows = await pendingApprovals();
+  const unpriced = await approvalUnpricedDetail(rows);
+  const pricingLinks = mayOpenPricing(actor.permissions);
 
   return (
     <div className="mx-auto max-w-lg space-y-3 md:max-w-2xl">
@@ -30,10 +43,49 @@ export default async function ApprovalsPage() {
           <div className="flex flex-wrap items-baseline gap-2">
             <span className="font-mono font-extrabold text-brand-700">{row.clientCode}</span>
             <span className="min-w-0 flex-1 truncate">{row.clientName}</span>
-            <span className="font-mono text-lg font-extrabold text-bad">
-              ${Number(row.blockingDebtUsd).toFixed(2)}
-            </span>
+            {Number(row.blockingDebtUsd) > 0.009 && (
+              <span className="font-mono text-lg font-extrabold text-bad" data-testid="approval-debt">
+                {t('approvalDebt', { amount: Number(row.blockingDebtUsd).toFixed(2) })}
+              </span>
+            )}
           </div>
+          {(unpriced.get(row.id) ?? []).length > 0 && (
+            <div className="rounded-lg bg-bad/5 p-2 text-sm" data-testid="approval-unpriced">
+              <p className="font-semibold text-bad">
+                💰{' '}
+                {t('approvalUnpriced', {
+                  receipts: unpriced.get(row.id)!.length,
+                  boxes: unpriced.get(row.id)!.reduce((sum, line) => sum + line.snapshotBoxes, 0),
+                })}
+              </p>
+              <ul className="mt-1 space-y-0.5 text-xs">
+                {unpriced.get(row.id)!.map((line) => (
+                  <li key={line.receiptId} className="flex flex-wrap items-baseline gap-x-2">
+                    <span className="font-mono">{line.number ?? '—'}</span>
+                    {line.stillBoxes === 0 ? (
+                      <span className="text-good">{t('approvalPriced')}</span>
+                    ) : (
+                      <>
+                        <span className="text-ink-600">
+                          {line.arrivalTrucks.map((truck) => truck.code).join(', ')} · {line.stillBoxes} 📦
+                        </span>
+                        {pricingLinks &&
+                          line.arrivalTrucks.map((truck) => (
+                            <Link
+                              key={truck.batchId}
+                              href={`/batches/${truck.batchId}/pricing`}
+                              className="text-brand-700 underline"
+                            >
+                              {t('approvalPriceLink')}
+                            </Link>
+                          ))}
+                      </>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <p className="text-xs text-ink-500">
             {row.warehouseCode} · {row.requestedByName} ·{' '}
             {format.dateTime(row.requestedAt, { dateStyle: 'short', timeStyle: 'short' })}

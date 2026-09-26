@@ -210,7 +210,9 @@ describe('the profile panel', () => {
     expect(owed.amountUsd).toBe(80);
     expect(owed.pending.map((row) => row.id)).not.toContain(id);
     expect(owed.rows[0]).toMatchObject({ kind: 'charge', amount: 80, currency: 'USD', raises: true });
-    expect(owed.perCurrency).toEqual([{ currency: 'USD', amount: 80 }]);
+    // 0103: each currency carries its dollars too (a pre-deploy residue can be
+    // 0 in its own money and not in dollars, and the panel then says so).
+    expect(owed.perCurrency).toEqual([{ currency: 'USD', amount: 80, usd: 80 }]);
 
     // A cash advance bigger than the debt: the person now holds company money.
     await addPartnerTx(
@@ -223,12 +225,12 @@ describe('the profile panel', () => {
         accountId: tillId,
         note: `avans ${SUFFIX}`,
       },
-      ctx(),
+      ctx(), { mayClassify: true },
     );
     const advance = (await staffAccountView(reporterId))!;
     expect(advance.headline).toBe('advance_left');
     expect(advance.amountUsd).toBe(120);
-    expect(advance.perCurrency).toEqual([{ currency: 'USD', amount: -120 }]);
+    expect(advance.perCurrency).toEqual([{ currency: 'USD', amount: -120, usd: -120 }]);
     expect(advance.rows.map((row) => row.kind).sort()).toEqual(['charge', 'payment']);
   });
 });

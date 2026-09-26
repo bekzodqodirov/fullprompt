@@ -6,6 +6,7 @@ import { getSetting } from '@/modules/platform/settings/service';
 import { logger } from '@/modules/platform/logger';
 import { balancesForClients } from '../finance/service';
 import { rateFor } from '../costing/service';
+import { latestTxDate } from '../finance/dates';
 import { CalcError } from './service';
 import { MONEY_EPSILON, payableOffersSql } from './upsale';
 import type { UpsaleScope } from './upsale-scope';
@@ -50,6 +51,8 @@ export interface UpsaleRow {
   payableUsd: number;
   paidAt: Date | null;
   paidUsd: number | null;
+  /** Taken back for the job's lost cargo (0105) — why a commission waits. */
+  compensatedUsd: number;
   state: UpsaleState;
 }
 
@@ -72,12 +75,45 @@ interface RawRow extends Record<string, unknown> {
   client_code: string | null;
   client_name: string | null;
   charged_usd: string | null;
+  compensated_usd: string | null;
 }
 
 const money = (n: unknown) => Math.round(Number(n ?? 0) * 100) / 100;
 
 /** How many rows a screen may hold before it is a slice and says so (#559). */
 export const UPSALE_CAP = 300;
+
+/**
+ * Why one offer is or is not payable yet — the rule, ONCE, for the /upsale
+ * screen and the Balans's liability line (audit U10), so the screen and the
+ * balance sheet cannot drift about which commission is owed (#513). See
+ * `upsaleRows` for the three states and why each is asked of the DEAL.
+ */
+export function upsaleStateOf(
+  row: {
+    payout_at: Date | null;
+    entity_type: string;
+    client_price_usd: string;
+    charged_usd: string | null;
+    /**
+     * Taken back for the job's lost cargo (0105). REQUIRED: both readers
+     * must pass it, or a job whose price was taken back pays a commission.
+     */
+    compensated_usd: string | null;
+  },
+  bal: { balanceUsd: number; deferredUsd: number } | undefined,
+): UpsaleState {
+  if (row.payout_at) return 'paid';
+  if (row.entity_type !== 'deal') return 'no_deal';
+  // The job's NET price (his own rule, a lowered price holds the upsale):
+  // whether the price was lowered or kept and compensated above it, a job
+  // whose money was taken back is «Hisob-faktura yo'q» until it is whole.
+  if (money(money(row.charged_usd) - money(row.compensated_usd)) < money(row.client_price_usd) - MONEY_EPSILON) {
+    return 'no_invoice';
+  }
+  if ((bal?.balanceUsd ?? 0) - (bal?.deferredUsd ?? 0) > MONEY_EPSILON) return 'awaiting_payment';
+  return 'payable';
+}
 
 /**
  * Every upsale in the window, with why each one is or is not payable yet.
@@ -120,17 +156,22 @@ export async function upsaleRows(
            c.id        AS client_id,
            c.client_code,
            c.name      AS client_name,
-           inv.charged AS charged_usd
+           inv.charged AS charged_usd,
+           inv.compensated AS compensated_usd
       FROM (${payableOffersSql()}) p
       JOIN users u ON u.id = p.offered_by
       LEFT JOIN deals d   ON d.id = p.entity_id AND p.entity_type = 'deal'
       LEFT JOIN clients c ON c.id = d.client_id
       LEFT JOIN LATERAL (
-        SELECT coalesce(sum(ct.amount_usd), 0) AS charged
+        -- The job's prices AND what was taken back for its lost cargo (0105),
+        -- in both readers — the screen and the Balans liability decide in
+        -- ONE place (upsaleStateOf) on the job's NET price.
+        SELECT coalesce(sum(ct.amount_usd) FILTER (WHERE ct.type = 'charge'), 0) AS charged,
+               coalesce(sum(ct.amount_usd) FILTER (WHERE ct.type = 'compensation'), 0) AS compensated
           FROM client_transactions ct
          WHERE ct.deal_id = p.entity_id
            AND ct.voided_at IS NULL
-           AND ct.type = 'charge'
+           AND ct.type IN ('charge', 'compensation')
       ) inv ON p.entity_type = 'deal'
      WHERE ${sql.join(where, sql` AND `)}
      ORDER BY p.offered_at DESC
@@ -146,14 +187,7 @@ export async function upsaleRows(
 
   const rows = slice.map((r): UpsaleRow => {
     const clientPriceUsd = money(r.client_price_usd);
-    const bal = r.client_id ? balances.get(r.client_id) : undefined;
-    let state: UpsaleState;
-    if (r.payout_at) state = 'paid';
-    else if (r.entity_type !== 'deal') state = 'no_deal';
-    else if (money(r.charged_usd) < clientPriceUsd - MONEY_EPSILON) state = 'no_invoice';
-    else if ((bal?.balanceUsd ?? 0) - (bal?.deferredUsd ?? 0) > MONEY_EPSILON) {
-      state = 'awaiting_payment';
-    } else state = 'payable';
+    const state = upsaleStateOf(r, r.client_id ? balances.get(r.client_id) : undefined);
 
     return {
       offerId: r.id,
@@ -173,6 +207,7 @@ export async function upsaleRows(
       payableUsd: money(r.payable_usd),
       paidAt: r.payout_at ? new Date(r.payout_at) : null,
       paidUsd: r.payout_usd === null ? null : money(r.payout_usd),
+      compensatedUsd: money(r.compensated_usd),
       state,
     };
   });
@@ -215,22 +250,65 @@ export function bySeller(rows: UpsaleRow[]) {
  *
  * `payableUsd` only — an upsale is payable exactly when the client's cash is
  * already in, so it is a real liability against real money. What is merely
- * ACCRUED (earned on a job nobody has invoiced or collected) is reported on
- * the upsale screen and deliberately kept off the balance sheet: it is not
- * owed until the sale is.
+ * ACCRUED (earned on a job nobody has invoiced or collected) is returned for
+ * a hint and deliberately kept off the balance sheet: it is not owed until
+ * the sale is.
+ *
+ * An UNCAPPED aggregate (audit U10): it used to read `upsaleRows`, whose list
+ * is the screen's — capped at UPSALE_CAP newest rows, paid ones kept for ever
+ * — so once a year of paid commissions had piled up, an older unpaid one fell
+ * off the slice and the liability read $0. Same fragment, same deal/charged
+ * LATERAL and the same state rule (`upsaleStateOf`) as the screen, with no
+ * ORDER BY and no LIMIT, over the unpaid DEAL offers only; two grouped
+ * queries for any number of rows (#432).
  */
-export async function upsaleLiability(): Promise<{ payableUsd: number; accruedUsd: number }> {
-  const { rows } = await upsaleRows('all', '', {});
+export async function upsaleLiability(): Promise<{ payableUsd: number; payableCount: number; accruedUsd: number }> {
+  const raw = await db.execute<{
+    entity_type: string;
+    client_price_usd: string;
+    payable_usd: string;
+    payout_at: Date | null;
+    client_id: string | null;
+    charged_usd: string | null;
+    compensated_usd: string | null;
+  }>(sql`
+    SELECT p.entity_type, p.client_price_usd, p.payable_usd, p.payout_at,
+           d.client_id,
+           inv.charged AS charged_usd,
+           inv.compensated AS compensated_usd
+      FROM (${payableOffersSql()}) p
+      LEFT JOIN deals d ON d.id = p.entity_id AND p.entity_type = 'deal'
+      LEFT JOIN LATERAL (
+        -- The job's prices AND what was taken back for its lost cargo (0105),
+        -- in both readers — the screen and the Balans liability decide in
+        -- ONE place (upsaleStateOf) on the job's NET price.
+        SELECT coalesce(sum(ct.amount_usd) FILTER (WHERE ct.type = 'charge'), 0) AS charged,
+               coalesce(sum(ct.amount_usd) FILTER (WHERE ct.type = 'compensation'), 0) AS compensated
+          FROM client_transactions ct
+         WHERE ct.deal_id = p.entity_id
+           AND ct.voided_at IS NULL
+           AND ct.type IN ('charge', 'compensation')
+      ) inv ON p.entity_type = 'deal'
+     WHERE p.payout_expense_id IS NULL
+       AND p.entity_type = 'deal'
+  `);
+  const balances = await balancesForClients(
+    raw.map((r) => r.client_id).filter((x): x is string => Boolean(x)),
+  );
   let payableUsd = 0;
+  let payableCount = 0;
   let accruedUsd = 0;
-  for (const r of rows) {
+  for (const r of raw) {
     // The LIABILITY is what is still owed, so it reads the remaining figure —
     // a job that already paid a commission owes only what a later, higher
     // re-offer added (audit A1).
-    if (r.state === 'payable') payableUsd = money(payableUsd + r.payableUsd);
-    else if (r.state !== 'paid') accruedUsd = money(accruedUsd + r.payableUsd);
+    const state = upsaleStateOf(r, r.client_id ? balances.get(r.client_id) : undefined);
+    if (state === 'payable') {
+      payableUsd = money(payableUsd + money(r.payable_usd));
+      payableCount += 1;
+    } else if (state !== 'paid') accruedUsd = money(accruedUsd + money(r.payable_usd));
   }
-  return { payableUsd, accruedUsd };
+  return { payableUsd, payableCount, accruedUsd };
 }
 
 /**
@@ -254,15 +332,28 @@ export async function payUpsale(
   if (!ctx.actorId) throw new CalcError('unauthenticated');
   const ids = [...new Set(offerIds)].filter(Boolean);
   if (ids.length === 0) throw new CalcError('no_offers');
+  // #995's rule (U21), asked before any read or claim so the refusal is in
+  // the upsale's own words; `addExpenseTx` asks it again as the last door.
+  if (input.expenseDate > latestTxDate()) throw new CalcError('future_date');
 
   // The payout is an ordinary expense in a category the owner names once, so
   // the P&L, the cash flow and /accounting/expenses all see it for free. It is
-  // MANDATORY and not overridable: paid into «Oyliklar» it would land on
-  // `generateRecurring`'s idempotence slot — (category, date, employee,
-  // warehouse), with no discriminator — and that seller's salary for the month
-  // would be counted as already posted and silently skipped.
+  // MANDATORY and not overridable: paid into «Oyliklar» the P&L's salary line
+  // would carry commissions, and the seller's monthly salary — a recurring
+  // template since 0099, paid by «To'landi» since 0106 — would see the payout
+  // offered as its own payment on the due list were it not for the candidate
+  // rule's payout fence (accounting/recurring-sql.ts). A kind of its own keeps
+  // both honest without leaning on that fence.
   const categoryId = String((await getSetting('upsale_expense_category_id')) ?? '').trim();
   if (!categoryId) throw new CalcError('upsale_category_unset');
+
+  const { addExpenseTx, namesMoneyOnNonCash } = await import('../accounting/service');
+  // Every payout carries a till, so its category must move money (U06) — a
+  // setting chosen before that rule existed is refused here, on the pool and
+  // before the transaction (#714), in words.
+  if (await namesMoneyOnNonCash(categoryId, { accountId: input.accountId })) {
+    throw new CalcError('non_cash_category');
+  }
 
   const rate = await rateFor(input.currency, input.expenseDate);
   if (rate === null) throw new CalcError('fx_missing');
@@ -282,12 +373,41 @@ export async function payUpsale(
     ids.map((offerId) => sql`${offerId}::uuid`),
     sql`, `,
   );
-  const quoted = await db.execute<{ id: string; payable_usd: string; offered_by: string }>(sql`
-    SELECT p.id, p.payable_usd, p.offered_by
+  // …and by the STATE rule the screen draws the tick from (review of the
+  // comp unit): «a job whose price was taken back pays no commission» and
+  // «the client has not paid yet» lived in upsaleStateOf alone, so a posted
+  // id — a stale tab, a forged post — paid a commission the screen would
+  // not have offered. The same two sums, the same balances, the same word.
+  const quoted = await db.execute<{
+    id: string;
+    payable_usd: string;
+    offered_by: string;
+    payout_at: Date | null;
+    entity_type: string;
+    client_price_usd: string;
+    client_id: string | null;
+    charged_usd: string | null;
+    compensated_usd: string | null;
+  }>(sql`
+    SELECT p.id, p.payable_usd, p.offered_by, p.payout_at, p.entity_type, p.client_price_usd,
+           d.client_id, inv.charged AS charged_usd, inv.compensated AS compensated_usd
       FROM (${payableOffersSql()}) p
+      LEFT JOIN deals d ON d.id = p.entity_id AND p.entity_type = 'deal'
+      LEFT JOIN LATERAL (
+        SELECT coalesce(sum(ct.amount_usd) FILTER (WHERE ct.type = 'charge'), 0) AS charged,
+               coalesce(sum(ct.amount_usd) FILTER (WHERE ct.type = 'compensation'), 0) AS compensated
+          FROM client_transactions ct
+         WHERE ct.deal_id = p.entity_id AND ct.voided_at IS NULL AND ct.type IN ('charge', 'compensation')
+      ) inv ON p.entity_type = 'deal'
      WHERE p.id IN (${idList}) AND p.payout_expense_id IS NULL
   `);
   if (quoted.length !== ids.length) throw new CalcError('offer_not_payable');
+  const stateBalances = await balancesForClients(
+    quoted.map((q) => q.client_id).filter((x): x is string => Boolean(x)),
+  );
+  if (quoted.some((q) => upsaleStateOf(q, q.client_id ? stateBalances.get(q.client_id) : undefined) !== 'payable')) {
+    throw new CalcError('offer_not_payable');
+  }
 
   const sellers = new Set(quoted.map((q) => q.offered_by));
   // One expense names one employee. Paying two sellers on one row puts both
@@ -300,8 +420,6 @@ export async function payUpsale(
   const paidUsd = money(quoted.reduce((sum, q) => sum + Number(q.payable_usd), 0));
   if (!(paidUsd > 0)) throw new CalcError('nothing_to_pay');
   const amount = Math.round((paidUsd / rate) * 100) / 100;
-
-  const { addExpenseTx } = await import('../accounting/service');
 
   return db.transaction(async (tx) => {
     const expense = await addExpenseTx(
@@ -402,10 +520,14 @@ export async function setUpsaleCategory(categoryId: string, ctx: AuditContext): 
   const id = categoryId.trim();
   if (id) {
     const [row] = await db
-      .select({ id: expenseCategories.id })
+      .select({ id: expenseCategories.id, cash: expenseCategories.cash })
       .from(expenseCategories)
       .where(and(eq(expenseCategories.id, id), eq(expenseCategories.active, true)));
     if (!row) throw new CalcError('category_not_found');
+    // A commission is money HANDED OVER, out of a till every time (U06): a
+    // non-cash kind (depreciation) would take it out of the drawer while the
+    // cash flow said nothing left.
+    if (!row.cash) throw new CalcError('non_cash_category');
   }
   const { getSetting, setSetting, SETTINGS_AUDIT_ID } = await import(
     '@/modules/platform/settings/service'

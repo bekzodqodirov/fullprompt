@@ -24,6 +24,10 @@ import { bumpCounter } from '../codes';
 import { likeNeedle } from '../search/query';
 import { dealCargoLabel, type DealCargo } from './cargo-label';
 import { stampCalcLink } from '../calc/link';
+import { followCompensationDealTx } from '../finance/compensation-follow';
+import { revenueUsdSql } from '../finance/ledger-sql';
+import { REVENUE_TYPES } from '../finance/ledger-kinds';
+import { marginPct } from '../accounting/margin';
 import { STAGE_COLORS, activeLostReasonLabels } from '../crm/service';
 import { closedAtFor, reasonAllowed, stageWrite } from '../crm/stage-law';
 import { orderForMove, topOfColumn, type BoardTable, bottomOfColumn } from '../crm/board-place';
@@ -469,6 +473,11 @@ export async function linkReceipt(
       )
       .where(eq(receipts.id, receiptId));
     if (dealId) await stampCalcLink(tx, receiptId, dealId);
+    // A «Kompensatsiya» for this prixod's lost cargo (0105) is the job's
+    // price taken back: it FOLLOWS the prixod to the right job (or off it),
+    // in this transaction, under the row lock the UPDATE above took — or the
+    // handover gate and the deal's profit would read it on the wrong deal.
+    await followCompensationDealTx(tx, receiptId, dealId, ctx);
     await writeAudit(tx, ctx, {
       entityType: 'receipt',
       entityId: receiptId,
@@ -1888,8 +1897,13 @@ export async function setDealDiscount(
 }
 
 export interface DealProfit {
-  /** Non-void charges carrying this deal, in USD — what was actually billed. */
+  /**
+   * The job's REVENUE, net: its charges minus the compensations for its lost
+   * cargo (0105) — a price taken back, so «bitim foydasi to'g'ri qolsin».
+   */
   revenueUsd: number;
+  /** The compensations inside that net (positive) — the card's middle line. */
+  compensationUsd: number;
   /** Landed cost of the deal's boxes: the per-box allocation shares summed. */
   costUsd: number;
   profitUsd: number;
@@ -1919,7 +1933,23 @@ export async function dealProfit(dealId: string): Promise<DealProfit> {
   const deal = await db.query.deals.findFirst({ where: eq(deals.id, dealId) });
   if (!deal) throw new DealError('not_found');
 
-  const revenueUsd = await dealCharged(dealId);
+  // `dealCharged` stays GROSS — it is the «already charged on this job»
+  // figure that stops a second bill; the profit reads the net (0105).
+  const [revenueRow] = await db
+    .select({
+      net: sql<string>`coalesce(sum(${revenueUsdSql()}), 0)`,
+      comp: sql<string>`coalesce(sum(${clientTransactions.amountUsd}) FILTER (WHERE ${clientTransactions.type} = 'compensation'), 0)`,
+    })
+    .from(clientTransactions)
+    .where(
+      and(
+        eq(clientTransactions.dealId, dealId),
+        inArray(clientTransactions.type, [...REVENUE_TYPES]),
+        isNull(clientTransactions.voidedAt),
+      ),
+    );
+  const revenueUsd = Math.round(Number(revenueRow?.net ?? 0) * 100) / 100;
+  const compensationUsd = Math.round(Number(revenueRow?.comp ?? 0) * 100) / 100;
 
   const [costRow] = await db
     .select({ total: sql<string>`coalesce(sum(${costAllocations.amountUsd}), 0)` })
@@ -1990,9 +2020,10 @@ export async function dealProfit(dealId: string): Promise<DealProfit> {
   const profitUsd = Math.round((revenueUsd - costUsd) * 100) / 100;
   return {
     revenueUsd,
+    compensationUsd,
     costUsd,
     profitUsd,
-    marginPct: revenueUsd > 0 ? Math.round((profitUsd / revenueUsd) * 1000) / 10 : null,
+    marginPct: marginPct(profitUsd, revenueUsd),
     unlinkedBatchUsd,
   };
 }

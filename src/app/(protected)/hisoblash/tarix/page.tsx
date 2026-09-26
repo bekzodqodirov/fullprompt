@@ -17,6 +17,7 @@ import { CALC_SECTIONS, type CalcSection } from '@/modules/wms/calc/intake';
 import { SECTION_LABELS } from '@/modules/wms/calc/labels';
 import { PageHeader } from '@/components/ui/page';
 import { ChainStateChip } from '@/components/calc-chain-chip';
+import { calendarDay } from '@/modules/platform/time/tashkent';
 
 /**
  * «Muhrlangan hisob-kitoblar» — the owner's «hisoblangan narsalarning tarixi».
@@ -42,15 +43,9 @@ import { ChainStateChip } from '@/components/calc-chain-chip';
  */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** A date the URL claims, or nothing — `readPeriod`'s own round-trip: V8
+/** A date the URL claims, or nothing — the shared calendar reader (U43): V8
  * ROLLS «2026-02-30» to March 2nd, which is a silently shifted period. */
-function isoDay(value: string | undefined): string | null {
-  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
-  const parsed = new Date(`${value}T00:00:00Z`);
-  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value
-    ? value
-    : null;
-}
+const isoDay = calendarDay;
 
 export default async function CalcRegistryPage({
   searchParams,

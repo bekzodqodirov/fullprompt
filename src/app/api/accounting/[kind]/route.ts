@@ -5,6 +5,8 @@ import { writeAudit } from '@/modules/platform/audit/service';
 import { requestMeta } from '@/modules/platform/auth/session';
 import { db } from '@/modules/platform/db/client';
 import { resolvePeriod } from '@/modules/wms/accounting/period';
+import { calendarDay } from '@/modules/platform/time/tashkent';
+import { moneyHidden } from '@/modules/platform/rbac/money-sight';
 import {
   buildCashFlowXlsx,
   buildExpensesXlsx,
@@ -35,7 +37,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ kind
     // The payments register shows who paid, not the company's margin — the
     // same facts the /finance screens already show to finance.view.
     if (kind.data === 'payments') {
-      if (!actor.permissions.has('finance.view') && !actor.permissions.has('finance.manage')) {
+      // The file carries each payment's kassa column — the register's own
+      // door (Q19: the VED does not see the kassa).
+      if (
+        (!actor.permissions.has('finance.view') && !actor.permissions.has('finance.manage')) ||
+        moneyHidden('kassa', actor.permissions)
+      ) {
         throw new AuthError('Missing permission', 'forbidden');
       }
     } else {
@@ -49,7 +56,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ kind
       to: url.searchParams.get('to') ?? undefined,
     });
     const asOfRaw = url.searchParams.get('asOf') ?? '';
-    const asOf = /^\d{4}-\d{2}-\d{2}$/.test(asOfRaw) ? asOfRaw : to;
+    // The same «real day or the default» rule as the period (U43).
+    const asOf = calendarDay(asOfRaw) ?? to;
     const viewRaw = url.searchParams.get('view');
     const view = viewRaw === 'client' || viewRaw === 'route' ? viewRaw : 'batch';
     const categoryRaw = url.searchParams.get('categoryId') ?? '';

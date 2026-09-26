@@ -6,6 +6,8 @@ import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
 import { clientBalanceUsd, deferredBalanceUsd } from '@/modules/wms/finance/service';
 import { approvalStateFor } from '@/modules/wms/issue/approvals';
 import { ISSUABLE_STATUSES } from '@/modules/wms/issue/parties';
+import { gatedAt, uncoveredBoxesOn, unpricedGate, unpricedReceiptsOn } from '@/modules/wms/finance/unpriced';
+import { compensatedReceiptsAmong } from '@/modules/wms/finance/compensation';
 
 const querySchema = z.object({
   warehouseId: z.string().uuid(),
@@ -36,6 +38,7 @@ export async function GET(request: Request) {
       seqInLot: boxes.seqInLot,
       status: boxes.status,
       lotId: receiptLots.id,
+      receiptId: receiptLots.receiptId,
       letter: receiptLots.letter,
       productNameZh: receiptLots.productNameZh,
       productNameRu: receiptLots.productNameRu,
@@ -65,5 +68,50 @@ export async function GET(request: Request) {
   // "asked, waiting" or "approved until HH:MM" instead of a dead end.
   const approval = await approvalStateFor(query.data.clientId, query.data.warehouseId);
 
-  return Response.json({ boxes: rows, debtUsd, deferredUsd, canOverrideDebt, approval });
+  // 0104: which of these boxes have no price, and which of those the ban
+  // stops — the same fragment and the same `gatedAt` the service will ask on
+  // confirm, so a box the screen shows as free is a box the server lets go.
+  // Everything on the pool, outside any transaction.
+  const gate = await unpricedGate();
+  const here = new Set(rows.map((row) => row.boxId));
+  const uncovered = (
+    await uncoveredBoxesOn(db, { kind: 'client', clientId: query.data.clientId }, { landedOnly: true })
+  ).filter((box) => here.has(box.boxId));
+  const gatedIds = new Set(uncovered.filter((box) => gatedAt(box.roadLandedAt, gate)).map((box) => box.boxId));
+  const uncoveredIds = new Set(uncovered.map((box) => box.boxId));
+  const receiptIds = [...new Set(uncovered.map((box) => box.receiptId))];
+  const labels = receiptIds.length
+    ? await unpricedReceiptsOn(db, { kind: 'receipts', receiptIds }, gate)
+    : [];
+  const unpriced = labels.map((receipt) => {
+    const mine = uncovered.filter((box) => box.receiptId === receipt.receiptId);
+    return {
+      receiptId: receipt.receiptId,
+      number: receipt.number,
+      arrivalTrucks: receipt.arrivalTrucks,
+      elsewhere: receipt.elsewhere,
+      walkIn: receipt.walkIn,
+      boxesHere: mine.length,
+      gatedHere: mine.filter((box) => gatedIds.has(box.boxId)).length,
+    };
+  });
+
+  // 0105: a carton found after its prixod's loss was compensated — the
+  // screen says so (no amount); the accountant was told by Telegram.
+  const compensated = await compensatedReceiptsAmong(rows.map((row) => row.boxId));
+
+  return Response.json({
+    boxes: rows.map((row) => ({
+      ...row,
+      uncovered: uncoveredIds.has(row.boxId),
+      gated: gatedIds.has(row.boxId),
+    })),
+    debtUsd,
+    deferredUsd,
+    canOverrideDebt,
+    approval,
+    unpriced,
+    compensated,
+    gate: gate.state === 'on' ? { state: 'on', since: gate.since.toISOString() } : { state: gate.state, since: null },
+  });
 }

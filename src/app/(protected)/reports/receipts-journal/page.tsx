@@ -3,7 +3,12 @@ import { redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { SortTh, sortRows } from '@/components/sort-th';
-import { receiptsJournal } from '@/modules/wms/reports/queries';
+import {
+  JOURNAL_CAP,
+  readJournalWindow,
+  receiptsJournal,
+  receiptsJournalTotals,
+} from '@/modules/wms/reports/queries';
 import { BackLink } from '@/components/back-link';
 import { PageHeader } from '@/components/ui/page';
 
@@ -13,7 +18,7 @@ const SORTABLE = ['number', 'receivedAt', 'whCode', 'boxCount', 'kg'] as const;
 export default async function ReceiptsJournalPage({
   searchParams,
 }: {
-  searchParams: Promise<{ sort?: string; dir?: string; days?: string }>;
+  searchParams: Promise<{ sort?: string; dir?: string; days?: string; from?: string; to?: string }>;
 }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
@@ -21,16 +26,17 @@ export default async function ReceiptsJournalPage({
   if (!allWh && !actor.permissions.has('reports.own_warehouse')) redirect('/');
   const t = await getTranslations('reports');
   const format = await getFormatter();
-  const { sort, dir, days: rawDays } = await searchParams;
-  const days = Math.min(365, Math.max(1, Number(rawDays) || 30));
+  const { sort, dir, days: rawDays, from, to } = await searchParams;
+  // A range (the dashboard's «Qabul · bu oy» links one) or the last N days.
+  const period = readJournalWindow({ from, to, days: rawDays });
+  const days = typeof period === 'number' ? period : null;
+  const scope = allWh ? undefined : actor.warehouseIds;
 
-  const rows = sortRows(
-    await receiptsJournal(days, allWh ? undefined : actor.warehouseIds),
-    sort,
-    dir,
-    SORTABLE,
-  );
-  const params = { days: String(days) };
+  const [list, totals] = await Promise.all([receiptsJournal(period, scope), receiptsJournalTotals(period, scope)]);
+  const rows = sortRows(list, sort, dir, SORTABLE);
+  const params: Record<string, string> =
+    typeof period === 'number' ? { days: String(period) } : { from: period.from, to: period.to };
+  const query = new URLSearchParams(params).toString();
 
   return (
     <div className="mx-auto max-w-lg space-y-4 md:max-w-4xl">
@@ -48,10 +54,29 @@ export default async function ReceiptsJournalPage({
             </Link>
           ))}
         </span>
-        <a href={`/api/reports/receipts-journal?days=${days}`} className="btn-secondary !min-h-9 ml-auto px-3 text-sm">
+        <a href={`/api/reports/receipts-journal?${query}`} className="btn-secondary !min-h-9 ml-auto px-3 text-sm">
           ⬇️ XLSX
         </a>
       </div>
+      {/* The header is an aggregate over the whole period, never a sum of the
+          capped list — and it says when the list below is only its newest part. */}
+      <p className="flex flex-wrap gap-x-1 text-sm text-ink-700" data-testid="journal-totals">
+        {typeof period !== 'number' && (
+          <span className="font-mono text-ink-500">
+            {period.from} — {period.to} ·
+          </span>
+        )}
+        <span>{t('journalTotals', { receipts: totals.receipts, boxes: totals.boxes })}</span>
+        <span className="font-mono tabular-nums">
+          · {totals.m3.toLocaleString('en-US', { maximumFractionDigits: 2 })} m³ ·{' '}
+          {totals.kg.toLocaleString('en-US', { maximumFractionDigits: 1 })} kg
+        </span>
+      </p>
+      {list.length >= JOURNAL_CAP && (
+        <p className="text-xs text-warn" data-testid="journal-capped">
+          ⚠ {t('journalCapped', { n: JOURNAL_CAP })}
+        </p>
+      )}
       <div className="card !p-0">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[680px] text-sm">

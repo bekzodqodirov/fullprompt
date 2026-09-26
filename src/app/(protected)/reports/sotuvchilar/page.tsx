@@ -144,7 +144,7 @@ export default async function SellerReportPage({
                     >
                       {money(row.profitUsd)}
                     </td>
-                    <td className="p-2 text-right font-mono tabular-nums">{row.marginPct}</td>
+                    <td className="p-2 text-right font-mono tabular-nums">{row.marginPct ?? '—'}</td>
                   </tr>
                 ))}
                 <tr data-testid="seller-totals" className="font-semibold">
@@ -158,7 +158,7 @@ export default async function SellerReportPage({
                   <td className="p-2 text-right font-mono tabular-nums">
                     {money(all.totals.profitUsd)}
                   </td>
-                  <td className="p-2 text-right font-mono tabular-nums">{all.totals.marginPct}</td>
+                  <td className="p-2 text-right font-mono tabular-nums">{all.totals.marginPct ?? '—'}</td>
                 </tr>
               </tbody>
             </table>

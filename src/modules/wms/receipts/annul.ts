@@ -16,8 +16,9 @@ import {
 } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { cancelTasksFor } from '../../platform/tasks/service';
-import { recomputeAll, recomputeEntry, scopeBoxIds, voidCostEntryInTx } from '../costing/service';
+import { CostError, recomputeAll, recomputeEntry, scopeBoxIds, voidCostEntryInTx } from '../costing/service';
 import { voidBoxRows } from './void-box';
+import { receiptHasCompensation } from '../finance/compensation-follow';
 
 /**
  * Anulirovka — the super-admin cascade void of a receipt (owner, 2026-08-26:
@@ -44,7 +45,9 @@ export class AnnulError extends Error {
       | 'reason_required'
       | 'not_found'
       | 'box_on_active_plan'
-      | 'cost_paid_from_till',
+      | 'cost_paid_from_till'
+      | 'cost_merged'
+      | 'receipt_has_compensation',
   ) {
     super(code);
   }
@@ -65,7 +68,11 @@ interface AnnulActor {
   roles: string[];
 }
 
-/** Batches this receipt's boxes ever rode (durable movements + live pointer). */
+/**
+ * Batches this receipt's boxes ever rode (durable movements + live pointer) —
+ * including a truck a box came off without a load scan: its costs were split
+ * over that box too (U25), so annulling it must re-split them.
+ */
 async function riddenBatchIds(exec: Tx | typeof db, boxIds: string[]): Promise<string[]> {
   if (boxIds.length === 0) return [];
   const departed = await exec
@@ -75,7 +82,7 @@ async function riddenBatchIds(exec: Tx | typeof db, boxIds: string[]): Promise<s
       and(
         inArray(boxMovements.boxId, boxIds),
         eq(boxMovements.refType, 'batch'),
-        eq(boxMovements.cause, 'batch_departed'),
+        inArray(boxMovements.cause, ['batch_departed', 'undocumented_transfer']),
       ),
     );
   const live = await exec
@@ -145,6 +152,7 @@ export async function annulReceipt(
     // stamp and the recompute must not be permanent, and 'already_voided'
     // was the design review's door that closed it for ever.
     const aftermath = await annulAftermath(receiptId, ctx);
+    await dealsAfterAnnul(receiptId, ctx);
     return {
       repaired: true,
       boxesVoided: 0,
@@ -156,9 +164,13 @@ export async function annulReceipt(
   }
 
   const outcome = await db.transaction(async (tx) => {
-    const receipt = await tx.query.receipts.findFirst({ where: eq(receipts.id, receiptId) });
+    // LOCKED (0105): the lost-cargo door locks the prixod first too.
+    const [receipt] = await tx.select().from(receipts).where(eq(receipts.id, receiptId)).for('update');
     if (!receipt) throw new AnnulError('not_found');
     if (receipt.voidedAt) return null; // raced with another annul — aftermath below
+    // Client money is never auto-voided (#852): a compensation paid for this
+    // prixod's lost cargo is voided by the accountant first, on purpose.
+    if (await receiptHasCompensation(tx, receiptId)) throw new AnnulError('receipt_has_compensation');
 
     const lotRows = await tx
       .select({ id: receiptLots.id })
@@ -211,9 +223,16 @@ export async function annulReceipt(
     // with its allocations and its partner charge (voidCostEntryInTx keeps
     // the #529 pairing). A refusal above or a crash rolls it all back.
     const liveEntries = await tx
-      .select({ id: costEntries.id, accountId: costEntries.accountId })
+      .select({ id: costEntries.id, accountId: costEntries.accountId, mergedExpenseId: costEntries.mergedExpenseId })
       .from(costEntries)
       .where(and(eq(costEntries.receiptId, receiptId), isNull(costEntries.voidedAt)));
+    // A cost MERGED with the accountant's expense (Q8) is the only record of
+    // that money — voiding it here would drop the expense out of the P&L with
+    // nothing left behind. The accountant undoes the merge first, on purpose;
+    // asked before the kassa, so a kassa-less merge is refused in its own words.
+    if (liveEntries.some((entry) => entry.mergedExpenseId !== null)) {
+      throw new AnnulError('cost_merged');
+    }
     // A cost paid out of a KASSA is refused, not voided (0101): voiding it
     // puts the money back into the till, i.e. the test-data cleanup would
     // quietly credit a real drawer — #852 refused exactly this for client
@@ -221,8 +240,10 @@ export async function annulReceipt(
     if (liveEntries.some((entry) => entry.accountId !== null)) {
       throw new AnnulError('cost_paid_from_till');
     }
+    // The super_admin's cascade, and the kassa-paid ones were refused just
+    // above — so it voids as a kassa holder would (the door is REQUIRED).
     for (const entry of liveEntries) {
-      await voidCostEntryInTx(tx, entry.id, `annul: ${why}`, ctx);
+      await voidCostEntryInTx(tx, entry.id, `annul: ${why}`, ctx, { mayMoveTill: true });
     }
 
     // Collected BEFORE the flip clears the live pointers.
@@ -270,7 +291,8 @@ export async function annulReceipt(
     // A departed truck whose EVERY member is now void is a phantom: nobody
     // will ever unload it, cancelBatch refuses anything past loading, and
     // /transit, the map and the silent-truck alarm would serve it for ever.
-    // Retiring it here is the annul finishing its own sentence.
+    // Retiring it here is the annul finishing its own sentence. A box that
+    // came off it without a load scan is live cargo of it too (U25).
     const batchesRetired: string[] = [];
     for (const batchId of batchIds) {
       const batch = await tx.query.batches.findFirst({ where: eq(batches.id, batchId) });
@@ -288,7 +310,7 @@ export async function annulReceipt(
               select 1 from ${boxMovements} bm
               where bm.box_id = ${boxes}.id
                 and bm.ref_type = 'batch' and bm.ref_id = ${batchId}
-                and bm.cause = 'batch_departed'))`,
+                and bm.cause in ('batch_departed', 'undocumented_transfer')))`,
           ),
         );
       if (Number(live!.n) > 0) continue;
@@ -331,6 +353,7 @@ export async function annulReceipt(
   });
 
   const aftermath = await annulAftermath(receiptId, ctx);
+  await dealsAfterAnnul(receiptId, ctx);
   return {
     repaired: outcome === null,
     boxesVoided: outcome?.boxesVoided ?? 0,
@@ -339,6 +362,22 @@ export async function annulReceipt(
     cratesDissolved: outcome?.cratesDissolved ?? 0,
     aftermath,
   };
+}
+
+/**
+ * A test prixod annulled off a REAL deal whose own cargo is all handed over
+ * leaves that deal fully handed — `dealFullyIssued` drops a voided receipt —
+ * and nothing else would ever re-ask (U38's shape). Forward only, open deals
+ * only, through `moveDeal`. Re-run on the re-press like the aftermath, never
+ * able to fail the annul: the cargo side has committed.
+ */
+async function dealsAfterAnnul(receiptId: string, ctx: AuditContext): Promise<void> {
+  try {
+    const { advanceDealsAfterWriteOff } = await import('../deals/auto-stage');
+    await advanceDealsAfterWriteOff(await receiptBoxIds(db, receiptId), ctx);
+  } catch (error) {
+    console.error('[annul] deal stage after the annul failed', receiptId, error);
+  }
 }
 
 export interface AftermathResult {
@@ -407,12 +446,27 @@ export async function annulAftermath(receiptId: string, ctx: AuditContext): Prom
   for (const entry of candidates) {
     // A kassa-paid truck cost is left alone even with nothing aboard (0101):
     // its void would credit the till — a person's decision, never a sweep's.
-    if (entry.accountId) continue;
+    if (entry.accountId || entry.mergedExpenseId) continue;
+    // A prixod's grid cell stamped with one of these trucks is ANOTHER
+    // prixod's money: this receipt's own receipt-scope entries were all
+    // voided inside the annul's transaction. Its base can be empty for a
+    // reason that has nothing to do with this annul — every carton of that
+    // prixod scanned aboard and found back, where a road cell deliberately
+    // lands on no box (`scopeBoxIds`, U17 × U18) — and voiding it here would
+    // destroy a colleague's bill because a test prixod rode the same truck.
+    if (entry.scope === 'receipt') continue;
     const scope = await scopeBoxIds(entry);
     if (scope.length > 0) continue;
-    await db.transaction(async (tx) =>
-      voidCostEntryInTx(tx, entry.id, 'annul: yuk qolmadi (scope empty)', ctx),
-    );
+    // The void is a claim now: an entry somebody voided since the read above
+    // is already what this sweep wanted, and must not stop the aftermath.
+    try {
+      await db.transaction(async (tx) =>
+        voidCostEntryInTx(tx, entry.id, 'annul: yuk qolmadi (scope empty)', ctx, { mayMoveTill: true }),
+      );
+    } catch (err) {
+      if (err instanceof CostError && err.code === 'already_voided') continue;
+      throw err;
+    }
     emptyScopeVoided += 1;
   }
 
@@ -485,7 +539,7 @@ export async function annulPreview(receiptId: string): Promise<AnnulPreview | nu
               select 1 from ${boxMovements} bm
               where bm.box_id = ${boxes}.id
                 and bm.ref_type = 'batch' and bm.ref_id = ${batchId}
-                and bm.cause = 'batch_departed'))`,
+                and bm.cause in ('batch_departed', 'undocumented_transfer')))`,
           ),
         );
       willRetire = Number(live!.n) === 0;

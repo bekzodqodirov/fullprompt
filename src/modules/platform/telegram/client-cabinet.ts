@@ -26,6 +26,7 @@ import {
   formatDay,
   formatEtaRange,
   stageLabel,
+  txView,
   type ClientLabels,
 } from './client-labels';
 import { cabinetInlineKeyboard, setCabinetMenuButton } from './menu-button';
@@ -549,11 +550,14 @@ export function registerClientCabinet(bot: Bot): void {
       const debt = await debtSummary(client.id);
       const lines = debt.recent
         .filter((r) => !r.voided)
-        .map(
-          (r) =>
-            `${r.txDate} — ${r.type === 'charge' ? t.charged : r.type === 'refund' ? t.refunded : t.paid}: ${r.amount} ${r.currency}` +
-            (r.currency !== 'USD' ? ` (≈ $${r.amountUsd.toFixed(2)})` : ''),
-        )
+        .flatMap((r) => {
+          const view = txView(r.type, t);
+          if (!view) return [];
+          return [
+            `${r.txDate} — ${view.text}: ${view.sign}${r.amount} ${r.currency}` +
+              (r.currency !== 'USD' ? ` (≈ $${r.amountUsd.toFixed(2)})` : ''),
+          ];
+        })
         .join('\n');
       const head =
         debt.balanceUsd > 0.009

@@ -42,6 +42,7 @@ import { freightFor, sectionParts, type CalcSectionName, type FreightBand } from
 import { bandsAsOf, tariffHistory } from './dictionaries';
 import { LINK_IMPLAUSIBLE_FACTOR, measurableLinkSql } from './link';
 import { measurableRequestSql } from './version-set';
+import { CUSTOMS_CODES_SETTING, parseCustomsCodes } from './customs-codes';
 
 /**
  * Why a bucket cannot be scored. **A bucket that cannot be compared is never
@@ -145,19 +146,13 @@ export interface CalcActualRow {
   aiRateTakenGroups: number;
 }
 
-/** Which cost types are «rastamojka». DATA, because the owner mints his own. */
+/**
+ * Which cost types are «rastamojka». DATA, because the owner mints his own;
+ * the parse lives in `customs-codes.ts`, shared with the cost engine, which
+ * keeps a found-back carton in a truck's CUSTOMS base (U17).
+ */
 export async function customsCostCodes(): Promise<string[]> {
-  const raw = (await getSetting('calc_customs_cost_type_codes')) ?? '["customs"]';
-  try {
-    const parsed = JSON.parse(String(raw)) as unknown;
-    if (!Array.isArray(parsed)) return ['customs'];
-    const codes = parsed.map((c) => String(c).trim()).filter(Boolean);
-    return codes.length > 0 ? codes : ['customs'];
-  } catch {
-    // A hand-edited setting must not take the screen down. The default IS the
-    // seeded code, so a broken value degrades to the shipped behaviour.
-    return ['customs'];
-  }
+  return parseCustomsCodes(await getSetting(CUSTOMS_CODES_SETTING));
 }
 
 /**

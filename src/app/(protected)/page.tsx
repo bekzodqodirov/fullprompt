@@ -451,7 +451,21 @@ async function AccountantFlow({ flow }: { flow: MoneyFlowCounts }) {
           testid="acc-flow-hero"
           label={tacc('title')}
           count={0}
-          sub={`${td('monthCharged')} ${usd(flow.snapshot.revenueMonth)} · ${td('monthPaid')} ${usd(flow.snapshot.paidMonth)}`}
+          sub={
+            <>
+              {td('monthCharged')} {usd(flow.snapshot.revenueMonth)} · {td('monthPaidNet')}{' '}
+              {usd(flow.snapshot.paidMonth)}
+              {/* The net figure's three parts, each the number the cash flow
+                  and the register print for the same month (U26). */}
+              <span className="block" data-testid="acc-flow-paid-parts">
+                {td('monthPaidParts', {
+                  till: usd(flow.snapshot.paidParts.toTill),
+                  partner: usd(flow.snapshot.paidParts.viaPartner),
+                  refunded: usd(flow.snapshot.paidParts.refunded),
+                })}
+              </span>
+            </>
+          }
         />
         <FlowRow
           href="/accounting/receivables"
@@ -472,6 +486,17 @@ async function AccountantFlow({ flow }: { flow: MoneyFlowCounts }) {
               </>
             ) : null
           }
+        />
+        {/* 0104: landed cargo with no price — the list whose rows the
+            counter's ban refuses, all history (the owner's Q4 c). */}
+        <FlowRow
+          href="/finance/narxsiz"
+          icon="wallet"
+          testid="acc-flow-unbilled"
+          label={tfin('unbilledLink')}
+          count={flow.unbilled ?? 0}
+          warn={(flow.unbilled ?? 0) > 0}
+          sub={flow.unbilled ? t('flowUnbilled', { n: flow.unbilled }) : null}
         />
         <FlowRow
           href="/finance/reestr?joylanmagan=1"
@@ -502,14 +527,20 @@ async function AccountantFlow({ flow }: { flow: MoneyFlowCounts }) {
           testid="acc-flow-payments"
           label={tfin('paymentsRegister')}
           count={0}
-          sub={`${td('monthPaid')} ${usd(flow.snapshot.paidMonth)}`}
+          // The register's OWN figure — every payment of the month, no
+          // refund — because that is the page this row opens (U26).
+          sub={`${td('monthPayments')} ${usd(flow.snapshot.paidParts.toTill + flow.snapshot.paidParts.viaPartner)}`}
         />
+        {/* Rent and salaries whose day has come and nobody has paid (owner's
+            Q6): nothing posts by itself, so this is the list a kassa holder
+            works from — «To'landi» on the day the money actually leaves. */}
         <FlowRow
-          href="/accounting/expenses"
+          href="/accounting/expenses#recurring"
           icon="calendar"
           testid="acc-flow-recurring"
           label={t('flowRecurringDue')}
           count={flow.recurringDue}
+          warn={flow.recurringDue > 0}
           sub={flow.recurringDue > 0 ? tacc('recurring') : null}
         />
         <FlowRow

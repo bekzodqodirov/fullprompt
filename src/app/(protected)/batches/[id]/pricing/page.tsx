@@ -13,14 +13,18 @@ import {
   batchCostEntryCount,
   batchLandedCostByLot,
   unconvertedCostCount,
+  type ClientCostPart,
+  type LotLandedCost,
 } from '@/modules/wms/costing/service';
 import { batchLots, type BatchLot } from '@/modules/wms/batches/lots';
 import { batchRoute } from '@/modules/wms/batches/internal';
 import { canWriteDeal } from '@/modules/wms/deals/service';
-import { pricingView } from '@/modules/wms/finance/pricing-view';
+import { pricingSight, pricingView } from '@/modules/wms/finance/pricing-view';
+import { offTruckPrices, pricedElsewhereFor, type OffTruckPrice } from '@/modules/wms/finance/off-truck';
 import { codeIdentity } from '@/modules/wms/labels/code-identity';
 import { BackLink } from '@/components/back-link';
 import { LightboxImg } from '@/components/lightbox-img';
+import { MoveChargeForm } from '@/app/(protected)/finance/move-charge-form';
 import { PricingForm } from './pricing-form';
 import { PageHeader } from '@/components/ui/page';
 
@@ -39,9 +43,22 @@ import { PageHeader } from '@/components/ui/page';
  * allocation nobody made (deals/service.ts refuses the same invention).
  *
  * Membership is ONE rule for every figure here — rows, tannarx and the
- * header: the truck's lots through `batchMemberFilter`, an annulled box
- * excluded. The old page had a second rule of its own (departed movements,
- * else the live pointer) and a third for the header.
+ * header: the truck's RIDERS (`batches/riders.ts`, the rule its bills are
+ * split over), an annulled box excluded. The old page had a second rule of
+ * its own (departed movements, else the live pointer) and a third for the
+ * header.
+ *
+ * A carton's fate is SAID, never subtracted (U35): a lost or still-missing
+ * box keeps its cost share (#833) and stays in the row's kilos, so this page,
+ * the grid and «Partiya foydasi» go on agreeing to the cent — but the person
+ * typing a price per kilo sees how many kilos arrived, and the price/kg is
+ * measured against those.
+ *
+ * Two readers since the owner's Q19 (2026-09-25, «ved hodimi … tannarxni
+ * ham ko'rmasin»): `pricingSight` answers `full` (cost, price, margin) or
+ * `price` (the goods, their kilos and fate, the price and the form — the VED
+ * keeps pricing trucks, #108). For `price` the tannarx is never READ, not
+ * merely left undrawn: the four cost reads below are skipped.
  */
 export default async function BatchPricingPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -58,22 +75,27 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
     notFound();
   }
 
-  const lots = await batchLots(id);
-  const receiptIds = [...new Set(lots.map((lot) => lot.receiptId))];
-  const [charges, currencyRows, lotCost, breakdown, unconverted, route, ownCosts] = await Promise.all([
-    batchCharges(id),
-    db.select({ code: currencies.code }).from(currencies).where(eq(currencies.active, true)),
-    batchLandedCostByLot(id),
-    batchClientCostBreakdown(id),
-    unconvertedCostCount(id, receiptIds),
-    batchRoute(id),
-    batchCostEntryCount(id),
-  ]);
   // An internal truck is never priced (owner's C1a, 2026-09-24): the page
   // stays — its cost per goods is still the question — but the price, the
   // margin and the form go, and the warning becomes the one he asked for:
-  // «rasxodini yozmading».
+  // «rasxodini yozmading». Decided BEFORE the reads, because it decides
+  // which of them this reader may have at all.
+  const route = await batchRoute(id);
   const internal = route?.internal ?? false;
+  const sight = pricingSight(actor.permissions, internal);
+  if (sight === 'none') redirect(`/batches/${id}`);
+  const full = sight === 'full';
+
+  const lots = await batchLots(id);
+  const receiptIds = [...new Set(lots.map((lot) => lot.receiptId))];
+  const [charges, currencyRows, lotCost, breakdown, unconverted, ownCosts] = await Promise.all([
+    batchCharges(id),
+    db.select({ code: currencies.code }).from(currencies).where(eq(currencies.active, true)),
+    full ? batchLandedCostByLot(id) : Promise.resolve(new Map<string, LotLandedCost>()),
+    full ? batchClientCostBreakdown(id) : Promise.resolve(new Map<string, ClientCostPart[]>()),
+    full ? unconvertedCostCount(id, receiptIds) : Promise.resolve(0),
+    full ? batchCostEntryCount(id) : Promise.resolve(0),
+  ]);
 
   const view = pricingView(
     lots,
@@ -86,16 +108,46 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
       amountUsd: Number(tx.amountUsd),
     })),
   );
-  const balances = await balancesForClients([
-    ...view.clients.map((group) => group.clientId),
-    ...view.orphans.map((row) => row.clientId),
+  // Prices whose cargo left a truck (0104, Q21a / Q2): THIS truck's own
+  // (partial → inside the client's card, no cargo → the orphan section), and
+  // another truck's whose dropped cartons ride THIS one now. Prices only, no
+  // cost, so both sights read them; an internal truck is never priced.
+  const clientIds = view.clients.map((group) => group.clientId);
+  const [balances, offHere, offElsewhere] = await Promise.all([
+    balancesForClients([...clientIds, ...view.orphans.map((row) => row.clientId)]),
+    internal ? Promise.resolve([] as OffTruckPrice[]) : offTruckPrices(db, { batchIds: [id] }),
+    internal || clientIds.length === 0
+      ? Promise.resolve([] as OffTruckPrice[])
+      : offTruckPrices(db, { clientIds }).then((rows) => pricedElsewhereFor(rows, id)),
   ]);
+  const droppedHere = new Map(offHere.filter((row) => row.kind === 'partial').map((row) => [row.clientId, row]));
+  const noCargoHere = new Map(offHere.filter((row) => row.kind === 'no_cargo').map((row) => [row.clientId, row]));
+  const codesOf = (row: OffTruckPrice) => row.droppedTo.map((d) => d.code).join(', ') || '—';
+  const moveDoors = (row: OffTruckPrice, fromBatchId: string | null, targets: { batchId: string; code: string }[]) =>
+    row.charges.map((charge) => (
+      <MoveChargeForm
+        key={charge.id}
+        txId={charge.id}
+        clientId={row.clientId}
+        amount={charge.amount}
+        currency={charge.currency}
+        fromBatchId={fromBatchId}
+        targets={targets}
+      />
+    ));
   const costOf = (lot: BatchLot) => lotCost.get(lot.lotId);
   const money = (value: number) => `$${value.toFixed(2)}`;
   const { totals } = view;
   const dealLinks = canWriteDeal(actor.permissions);
   const today = tashkentDay();
   const currencyCodes = currencyRows.map((c) => c.code);
+
+  const fateWords = (fate: { lost: number; missing: number; leftBehind: number }) =>
+    [
+      fate.lost > 0 ? t('fateLost', { count: fate.lost }) : null,
+      fate.missing > 0 ? t('fateMissing', { count: fate.missing }) : null,
+      fate.leftBehind > 0 ? t('fateLeftBehind', { count: fate.leftBehind }) : null,
+    ].filter(Boolean);
 
   const lotRows = (list: BatchLot[]) => (
     <ul className="divide-y divide-line rounded-lg border border-line" data-testid="pricing-lots">
@@ -151,25 +203,37 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                 📦 {lot.onBatch}
                 {lot.onBatch < lot.lotBoxCount && `/${lot.lotBoxCount}`} · {lot.kg} kg · {lot.m3} m³
               </p>
-            </div>
-            <div className="shrink-0 text-right">
-              <p className="num text-sm font-bold" data-testid="lot-cost">
-                {money(cost?.totalUsd ?? 0)}
-              </p>
-              {/* Two short lines, not one long one: on a phone the goods
-                  name beside it is what needs the width. */}
-              {cost && cost.totalUsd > 0 && lot.kg > 0 && (
-                <p className="num text-xs text-ink-500">{(cost.totalUsd / lot.kg).toFixed(2)}/kg</p>
-              )}
-              {cost && cost.totalUsd > 0 && lot.m3 > 0 && (
-                <p className="num text-xs text-ink-500">{(cost.totalUsd / lot.m3).toFixed(0)}/m³</p>
-              )}
-              {prev > 0.009 && (
-                <p className="num text-xs text-ink-500" title={t('prevLegs')}>
-                  ↩ {money(prev)}
+              {(lot.lostCount > 0 || lot.missingCount > 0 || lot.leftBehindCount > 0) && (
+                <p className="text-xs font-semibold text-warn" data-testid="lot-fate">
+                  ⚠{' '}
+                  {fateWords({
+                    lost: lot.lostCount,
+                    missing: lot.missingCount,
+                    leftBehind: lot.leftBehindCount,
+                  }).join(' · ')}
                 </p>
               )}
             </div>
+            {full && (
+              <div className="shrink-0 text-right">
+                <p className="num text-sm font-bold" data-testid="lot-cost">
+                  {money(cost?.totalUsd ?? 0)}
+                </p>
+                {/* Two short lines, not one long one: on a phone the goods
+                    name beside it is what needs the width. */}
+                {cost && cost.totalUsd > 0 && lot.kg > 0 && (
+                  <p className="num text-xs text-ink-500">{(cost.totalUsd / lot.kg).toFixed(2)}/kg</p>
+                )}
+                {cost && cost.totalUsd > 0 && lot.m3 > 0 && (
+                  <p className="num text-xs text-ink-500">{(cost.totalUsd / lot.m3).toFixed(0)}/m³</p>
+                )}
+                {prev > 0.009 && (
+                  <p className="num text-xs text-ink-500" title={t('prevLegs')}>
+                    ↩ {money(prev)}
+                  </p>
+                )}
+              </div>
+            )}
           </li>
         );
       })}
@@ -183,13 +247,15 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
       <p className="text-sm text-ink-500">{t('pricingHint')}</p>
 
       {(lots.length > 0 || view.orphans.length > 0) && (
-        <div className="card grid grid-cols-3 gap-2 text-center">
-          <div>
-            <p className="text-xs uppercase tracking-wide text-ink-500">{t('costLabel')}</p>
-            <p className="num text-lg font-extrabold" data-testid="pricing-total-cost">
-              {money(totals.costUsd)}
-            </p>
-          </div>
+        <div className={`card grid ${full ? 'grid-cols-3' : 'grid-cols-1'} gap-2 text-center`}>
+          {full && (
+            <div>
+              <p className="text-xs uppercase tracking-wide text-ink-500">{t('costLabel')}</p>
+              <p className="num text-lg font-extrabold" data-testid="pricing-total-cost">
+                {money(totals.costUsd)}
+              </p>
+            </div>
+          )}
           {internal ? (
             <p className="col-span-2 self-center text-left text-xs text-ink-500" data-testid="pricing-internal">
               {t('internalBatch')}
@@ -201,22 +267,30 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                 <p className="num text-lg font-extrabold" data-testid="pricing-total-price">
                   {money(totals.chargedUsd)}
                 </p>
+                {/* Under his (a): a PART of «Narx», never taken out of it. */}
+                {totals.noCargoUsd > 0.009 && (
+                  <p className="num text-xs font-semibold text-warn" data-testid="pricing-no-cargo">
+                    {t('noCargoPart', { usd: money(totals.noCargoUsd) })}
+                  </p>
+                )}
               </div>
-              <div>
-                <p className="text-xs uppercase tracking-wide text-ink-500">{t('marginLabel')}</p>
-                <p
-                  className={`num text-lg font-extrabold ${
-                    totals.marginUsd >= 0 ? 'text-good' : 'text-bad'
-                  }`}
-                >
-                  {money(totals.marginUsd)}
-                </p>
-              </div>
+              {full && (
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-ink-500">{t('marginLabel')}</p>
+                  <p
+                    className={`num text-lg font-extrabold ${
+                      totals.marginUsd >= 0 ? 'text-good' : 'text-bad'
+                    }`}
+                  >
+                    {money(totals.marginUsd)}
+                  </p>
+                </div>
+              )}
             </>
           )}
-          <p className="col-span-3 text-xs text-ink-500">
+          <p className={`${full ? 'col-span-3' : ''} text-xs text-ink-500`}>
             {!internal && t('pricedOf', { priced: totals.priced, total: view.clients.length })}
-            {totals.prevUsd > 0.009 && (
+            {full && totals.prevUsd > 0.009 && (
               <span className="num">
                 {internal ? '' : ' · '}
                 {t('prevLegs')}: {money(totals.prevUsd)}
@@ -244,6 +318,11 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
         const { chargedUsd: charged, costUsd, prevUsd, kg, m3, boxes, marginUsd: margin } = group;
         const balance = balances.get(group.clientId);
         const parts = breakdown.get(group.clientId) ?? [];
+        // Some kilos did not arrive: the per-kilo PRICE is measured against
+        // what did, the per-kilo COST stays over what was carried — and each
+        // says which it is.
+        const shortfall = group.fate.lost + group.fate.missing > 0;
+        const priceKg = shortfall ? group.fate.arrivedKg : kg;
         return (
           <div key={group.clientId} className="card space-y-2" data-testid="pricing-client">
             <div className="flex flex-wrap items-baseline gap-x-2">
@@ -261,12 +340,29 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
 
             {lotRows(group.lots)}
 
+            {shortfall && (
+              <p className="text-xs font-semibold text-warn" data-testid="pricing-arrived">
+                ⚠ {t('arrivedLine', { boxes: group.fate.arrivedBoxes, kg: group.fate.arrivedKg })}
+                {' — '}
+                {fateWords(group.fate).join(' · ')}
+                {group.dealId && group.dealCode && dealLinks && (
+                  <>
+                    {' · '}
+                    <Link href={`/bitimlar/${group.dealId}`} className="num text-brand-700 underline">
+                      {group.dealCode}
+                    </Link>
+                  </>
+                )}
+              </p>
+            )}
+
             {/* Cost → price → margin, the three numbers the price is decided
                 from (owner). The customs entered once for the whole truck
                 reaches each lot as its own share. */}
             <div
-              className={`grid ${internal ? 'grid-cols-1' : 'grid-cols-3'} gap-2 rounded-lg bg-surface-sunken p-2 text-center text-sm`}
+              className={`grid ${internal || !full ? 'grid-cols-1' : 'grid-cols-3'} gap-2 rounded-lg bg-surface-sunken p-2 text-center text-sm`}
             >
+              {full && (
               <div>
                 <p className="text-xs text-ink-500">{t('costLabel')}</p>
                 <p className="num font-bold" data-testid="client-cost">
@@ -274,7 +370,8 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                 </p>
                 {kg > 0 && costUsd > 0 && (
                   <p className="num text-xs text-ink-500">
-                    {(costUsd / kg).toFixed(2)}/kg
+                    {(costUsd / kg).toFixed(2)}
+                    {shortfall ? t('perKgLoaded') : '/kg'}
                     {m3 > 0 && ` · ${(costUsd / m3).toFixed(0)}/m³`}
                   </p>
                 )}
@@ -304,15 +401,20 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                   </details>
                 )}
               </div>
+              )}
               {!internal && (
                 <>
               <div>
                 <p className="text-xs text-ink-500">{t('priceLabel')}</p>
                 <p className="num font-bold">{charged > 0 ? money(charged) : '—'}</p>
-                {charged > 0 && kg > 0 && (
-                  <p className="num text-xs text-ink-500">{(charged / kg).toFixed(2)}/kg</p>
+                {charged > 0 && priceKg > 0 && (
+                  <p className="num text-xs text-ink-500">
+                    {(charged / priceKg).toFixed(2)}
+                    {shortfall ? t('perKgArrived') : '/kg'}
+                  </p>
                 )}
               </div>
+              {full && (
               <div>
                 <p className="text-xs text-ink-500">{t('marginLabel')}</p>
                 <p
@@ -324,10 +426,54 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                   <p className="num text-xs text-ink-500">{Math.round((margin / charged) * 100)}%</p>
                 )}
               </div>
+              )}
                 </>
               )}
             </div>
-            {costUsd === 0 && <p className="text-xs text-warn">⚠️ {t('noCostsYet')}</p>}
+            {full && costUsd === 0 && <p className="text-xs text-warn">⚠️ {t('noCostsYet')}</p>}
+
+            {/* 0104: cartons left THIS truck after its price — short-loaded,
+                or scanned aboard and found back at the origin (Q2). */}
+            {(() => {
+              const off = droppedHere.get(group.clientId);
+              if (!off) return null;
+              const n = off.droppedBoxIds.length;
+              return (
+                <div className="space-y-1 rounded-lg border border-warn/40 p-2" data-testid="pricing-dropped">
+                  <p className="text-xs font-semibold text-warn">
+                    {off.dropCause === 'found_back'
+                      ? t('droppedFoundBack', { n, origin: off.originCode ?? '—', codes: codesOf(off) })
+                      : t('droppedShort', { n, codes: codesOf(off) })}
+                  </p>
+                  {moveDoors(off, id, off.droppedTo)}
+                </div>
+              );
+            })()}
+
+            {/* …and the other side: a price on ANOTHER truck whose dropped
+                cartons ride this one now — they are priced here. */}
+            {offElsewhere
+              .filter((off) => off.clientId === group.clientId)
+              .map((off) => {
+                const n = off.droppedTo.find((d) => d.batchId === id)?.boxes ?? off.droppedBoxIds.length;
+                return (
+                  <div
+                    key={off.batchId}
+                    className="space-y-1 rounded-lg border border-warn/40 p-2"
+                    data-testid="pricing-priced-elsewhere"
+                  >
+                    <p className="text-xs font-semibold text-warn">
+                      {off.dropCause === 'found_back'
+                        ? t('pricedElsewhereFoundBack', { n, code: off.batchCode })
+                        : t('pricedElsewhereShort', { code: off.batchCode, usd: money(off.chargedUsd), n })}{' '}
+                      <Link href={`/batches/${off.batchId}/pricing`} className="text-brand-700 underline">
+                        {off.batchCode} →
+                      </Link>
+                    </p>
+                    {moveDoors(off, off.kind === 'partial' ? off.batchId : null, [{ batchId: id, code: batch.code }])}
+                  </div>
+                );
+              })}
 
             {balance && !internal && (
               <p className="text-sm">
@@ -364,9 +510,11 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
         <div className="card space-y-2" data-testid="pricing-unclaimed">
           <div className="flex flex-wrap items-baseline gap-x-2">
             <p className="font-bold">❓ {t('unclaimedGroup')}</p>
-            <span className="num ml-auto text-sm font-semibold">
-              {t('costLabel')}: {money(view.unclaimed.costUsd)}
-            </span>
+            {full && (
+              <span className="num ml-auto text-sm font-semibold">
+                {t('costLabel')}: {money(view.unclaimed.costUsd)}
+              </span>
+            )}
           </div>
           {lotRows(view.unclaimed.lots)}
           <p className="text-xs text-ink-500">{t('unclaimedPriceLater')}</p>
@@ -403,16 +551,33 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
         <div className="card space-y-2" data-testid="pricing-orphans">
           <p className="font-bold">{t('orphanCharges')}</p>
           <p className="text-xs text-ink-500">{t('orphanChargesHint')}</p>
-          <ul className="space-y-1 text-sm">
-            {view.orphans.map((row) => (
-              <li key={row.clientId} className="flex items-baseline gap-2">
-                <Link href={`/finance/${row.clientId}`} className="font-mono font-bold text-brand-700">
-                  {row.code}
-                </Link>
-                <span className="min-w-0 truncate text-ink-700">{row.name}</span>
-                <span className="num ml-auto font-semibold">{money(row.chargedUsd)}</span>
-              </li>
-            ))}
+          <ul className="space-y-2 text-sm">
+            {view.orphans.map((row) => {
+              // Where the cargo went (0104): it rides another truck now, it
+              // stayed on the shelf, or it never was on this one.
+              const off = noCargoHere.get(row.clientId);
+              return (
+                <li key={row.clientId} className="space-y-1" data-testid="pricing-orphan">
+                  <div className="flex items-baseline gap-2">
+                    <Link href={`/finance/${row.clientId}`} className="font-mono font-bold text-brand-700">
+                      {row.code}
+                    </Link>
+                    <span className="min-w-0 truncate text-ink-700">{row.name}</span>
+                    <span className="num ml-auto font-semibold">{money(row.chargedUsd)}</span>
+                  </div>
+                  {off && (
+                    <p className="text-xs text-warn" data-testid="pricing-orphan-fate">
+                      {off.droppedTo.length > 0
+                        ? t('orphanWent', { codes: codesOf(off) })
+                        : off.droppedBoxIds.length > 0
+                          ? t('orphanStayed')
+                          : t('orphanNever')}
+                    </p>
+                  )}
+                  {off && moveDoors(off, null, off.droppedTo)}
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}

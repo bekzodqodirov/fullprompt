@@ -20,6 +20,13 @@ export interface QueueRow {
   where: { href: string; label: string } | null;
   /** A 1:1 duplicate the M4a rule found — one press merges it. */
   suggestion: { expenseId: string; label: string } | null;
+  /**
+   * Its duplicate expense was already merged away, naming no kassa (U02):
+   * nothing is left to merge, only the kassa — or the colleague — to say.
+   */
+  merged: boolean;
+  /** The suggested expense is one an un-merge restored (Q8): no day window. */
+  restored?: boolean;
 }
 
 export interface QueueOption {
@@ -166,14 +173,17 @@ function Row({
   return (
     <article className="card space-y-2" data-testid="queue-row">
       <div className="flex flex-wrap items-baseline gap-x-2">
-        <input
-          type="checkbox"
-          aria-label={t('mergePick')}
-          data-testid="queue-pick"
-          checked={checked}
-          onChange={onToggle}
-          className="h-5 w-5 shrink-0"
-        />
+        {/* A merged row cannot be merged again — no box to tick for it. */}
+        {!row.merged && (
+          <input
+            type="checkbox"
+            aria-label={t('mergePick')}
+            data-testid="queue-pick"
+            checked={checked}
+            onChange={onToggle}
+            className="h-5 w-5 shrink-0"
+          />
+        )}
         <span className="font-semibold">{row.typeName}</span>
         <span className="font-mono font-bold">
           {row.amount} {row.currency}
@@ -194,10 +204,18 @@ function Row({
         </span>
       </div>
       {row.note && <p className="text-xs text-ink-700 [overflow-wrap:anywhere]">{row.note}</p>}
+      {row.merged && (
+        <p className="text-xs text-ink-700" data-testid="queue-merged">
+          🔗 {t('queueMergedNoKassa')}
+        </p>
+      )}
 
       {row.suggestion && (
         <div className="flex flex-wrap items-center gap-2 rounded bg-warn/10 p-2 text-sm" data-testid="queue-suggestion">
-          <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">⚠ {t('mergeSuggest', { expense: row.suggestion.label })}</span>
+          <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">
+            ⚠ {t('mergeSuggest', { expense: row.suggestion.label })}
+            {row.restored && <span className="block text-xs text-ink-500">{t('mergeRestored')}</span>}
+          </span>
           <button
             type="button"
             className="btn-secondary !min-h-9"
@@ -303,6 +321,9 @@ const QUEUE_ERRORS = {
   not_staff: 'queueErrNotStaff',
   forbidden: 'queueErrForbidden',
   till_forbidden: 'queueErrForbidden',
+  already_placed: 'queueErrTaken',
+  merged_cost: 'queueErrTaken',
+  before_kassa_since: 'queueErrTaken',
 } as const;
 
 function queueError(code: string | undefined, t: (key: string) => string): string {

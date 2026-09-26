@@ -47,6 +47,19 @@
 
   --line: 226 232 240;
   --line-strong: 203 213 225;
+
+  /* Data-viz series (dashboard, 2026-09-25). Two meanings only: money IN or
+     held (blue) and money OUT, owed or lost (orange) — validated against the
+     card surface for colour-blind separation (ΔE 24.7) and 3:1 contrast. Red
+     is never a series: it is urgency, and orange↔red measured ΔE 7.1, a fail.
+     The ordinal ramp is one hue, light→dark = more (debt age, the cargo
+     journey); it is REVERSED in the dark so «more» stays the louder step. */
+  --viz-in: 42 120 214;
+  --viz-out: 235 104 52;
+  --viz-ord-1: 134 182 239;
+  --viz-ord-2: 57 135 229;
+  --viz-ord-3: 28 92 171;
+  --viz-ord-4: 13 54 107;
 }
 
 /**
@@ -84,6 +97,13 @@
 
   --line: 41 47 57;
   --line-strong: 58 66 78;
+
+  --viz-in: 57 135 229;
+  --viz-out: 217 89 38;
+  --viz-ord-1: 24 79 149;
+  --viz-ord-2: 42 120 214;
+  --viz-ord-3: 85 152 231;
+  --viz-ord-4: 158 197 244;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
@@ -110,6 +130,13 @@
 
     --line: 41 47 57;
     --line-strong: 58 66 78;
+
+    --viz-in: 57 135 229;
+    --viz-out: 217 89 38;
+    --viz-ord-1: 24 79 149;
+    --viz-ord-2: 42 120 214;
+    --viz-ord-3: 85 152 231;
+    --viz-ord-4: 158 197 244;
   }
 }
 

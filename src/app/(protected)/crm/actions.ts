@@ -36,6 +36,7 @@ import { customValues } from '@/modules/platform/fields/actions';
 import { FieldError } from '@/modules/platform/fields/types';
 import { attachClient, groupClients, personFromClient } from '@/modules/wms/crm/people';
 import { announceMentions } from '@/modules/wms/crm/internal-chat';
+import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 
 export interface CrmFormState {
   ok?: boolean;
@@ -103,6 +104,20 @@ function optionalNumber(value: FormDataEntryValue | null): number | null | undef
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+/**
+ * A typed PRICE (U28): «1,200» is a thousand two hundred — #979's shared
+ * reader; the old one turned the comma into a decimal point and quoted $1.20
+ * — and a figure nobody can read is REFUSED (NaN, which the schema refuses),
+ * never taken as «not answered», which silently cleared the quote. Measures
+ * (m³, kg, a count) keep `optionalNumber`: «12,345» m³ is a decimal there.
+ */
+function optionalMoney(value: FormDataEntryValue | null): number | null | undefined {
+  if (value === null) return undefined;
+  const text = String(value).trim();
+  if (!text) return null;
+  return parseTypedMoney(text) ?? Number.NaN;
+}
+
 function leadFields(formData: FormData) {
   return leadSchema.safeParse({
     name: str(formData, 'name'),
@@ -112,7 +127,7 @@ function leadFields(formData: FormData) {
     stageId: str(formData, 'stageId'),
     ownerId: str(formData, 'ownerId'),
     note: str(formData, 'note'),
-    quotedAmount: optionalNumber(formData.get('quotedAmount')),
+    quotedAmount: optionalMoney(formData.get('quotedAmount')),
     quotedCurrency: formData.get('quotedCurrency') ? str(formData, 'quotedCurrency') : null,
     quotedVolumeM3: optionalNumber(formData.get('quotedVolumeM3')),
     quotedWeightKg: optionalNumber(formData.get('quotedWeightKg')),

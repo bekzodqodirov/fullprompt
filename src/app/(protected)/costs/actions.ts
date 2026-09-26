@@ -13,11 +13,14 @@ import {
   CostError,
   costEntrySchema,
   receiptCostGridSchema,
-  setCostAccount,
+  placeCostAccount,
   voidCostEntry,
 } from '@/modules/wms/costing/service';
 import { mayPickTill } from '@/modules/wms/accounting/till-door';
+import { costSightFor } from '@/modules/wms/costing/cost-sight';
 import { isStaffPartner, maySeeStaffMoney } from '@/modules/wms/partners/staff';
+import { firmDebtVoidRefusal } from '@/modules/wms/partners/service';
+import { amountRefusal, nativeAmount } from '@/modules/wms/finance/money-bounds';
 
 export interface CostActionResult {
   ok: boolean;
@@ -47,7 +50,7 @@ async function payerRefusal(
 
 export async function addCostEntryAction(input: unknown): Promise<CostActionResult> {
   const parsed = costEntrySchema.safeParse(input);
-  if (!parsed.success) return { ok: false, error: 'validation' };
+  if (!parsed.success) return { ok: false, error: amountRefusal(parsed.error) ?? 'validation' };
 
   let path: string;
   let actor;
@@ -112,7 +115,7 @@ export async function addCostEntryAction(input: unknown): Promise<CostActionResu
  */
 export async function saveReceiptCostGridAction(input: unknown): Promise<CostActionResult> {
   const parsed = receiptCostGridSchema.safeParse(input);
-  if (!parsed.success) return { ok: false, error: 'validation' };
+  if (!parsed.success) return { ok: false, error: amountRefusal(parsed.error) ?? 'validation' };
 
   const batch = await db.query.batches.findFirst({ where: eq(batches.id, parsed.data.batchId) });
   if (!batch) return { ok: false, error: 'not_found' };
@@ -183,15 +186,61 @@ export async function voidCostEntryAction(input: unknown): Promise<CostActionRes
     throw err;
   }
 
+  // A reader who sees only their OWN cost entries (the VED, owner's Q19 D1)
+  // cannot void one they cannot see: the card never draws a colleague's row
+  // for them, so a post naming one is hand-built. Their own typo stays theirs
+  // to take back.
+  if (costSightFor(actor).ownOnly && entry.enteredBy !== actor.id) {
+    return { ok: false, error: 'cost_not_yours' };
+  }
+
+  // A MERGED cost (Q8) is nobody's to void until the merge is undone — the
+  // service refuses it for everyone. Asked FIRST, so each reader is told what
+  // to do in words that fit who they are: the kassa holder undoes the merge
+  // (the ↩ beside the row), anybody else asks the accountant.
+  if (entry.mergedExpenseId) {
+    return { ok: false, error: mayPickTill(actor.permissions) ? 'merged_cost' : 'merged_cost_ask' };
+  }
   // A cost paid out of a kassa: voiding it puts the money BACK into the till
   // — a cash movement, and the kassa holders' alone (0101). The warehouse and
   // the logist may still void the costs they typed with no kassa.
   if (entry.accountId && !mayPickTill(actor.permissions)) {
     return { ok: false, error: 'kassa_cost_needs_finance' };
   }
+  // A cost a COLLEAGUE paid out of their own pocket: voiding it takes the
+  // company's debt to that person off their staff account — staff money,
+  // which the owner gave to the accountant and the admin alone (M3a, #1020),
+  // the same pair `staffDoor` and `payerRefusal` ask. Without this a
+  // warehouse user's void bypassed that door and the colleague's /profile
+  // said he owed the company (U34).
+  if (entry.partnerId && !maySeeStaffMoney(actor.permissions) && (await isStaffPartner(entry.partnerId))) {
+    return { ok: false, error: 'staff_cost_needs_finance' };
+  }
+  // A cost a FIRM paid (owner's answer B, 2026-09-25): the person who typed
+  // it may take back their own typo until the firm's account has moved after
+  // it; from then on the void reopens money already settled against — a paid
+  // firm would read as owing US — so it is the accountant's and the admin's
+  // (the kassa holders' grant, the same people who pay the firm).
+  if (entry.partnerId) {
+    const refusal = await firmDebtVoidRefusal(actor, {
+      partnerId: entry.partnerId,
+      costEntryId: entry.id,
+      expenseId: null,
+      costEnteredBy: entry.enteredBy,
+    });
+    if (refusal) return { ok: false, error: refusal };
+  }
   const meta = await requestMeta();
   try {
-    await voidCostEntry(parsed.data.id, parsed.data.reason, { actorId: actor.id, ...meta });
+    // The kassa gate above read the row BEFORE this; the service re-judges it
+    // in its own UPDATE, so a cost placed into a till in between is refused
+    // there and not voided back into the drawer (Q19 review).
+    await voidCostEntry(
+      parsed.data.id,
+      parsed.data.reason,
+      { actorId: actor.id, ...meta },
+      { mayMoveTill: mayPickTill(actor.permissions), payerSeen: entry.partnerId },
+    );
   } catch (err) {
     if (err instanceof CostError) return { ok: false, error: err.code };
     throw err;
@@ -226,18 +275,23 @@ async function voidReceiptCostDoor(receiptWarehouseId: string, stampedBatchId: s
 
 const placeSchema = z.object({
   id: z.string().uuid(),
-  accountId: z.string().uuid().nullable(),
-  accountAmount: z.number().positive().max(1_000_000_000_000).optional(),
+  // The queue PLACES, it never clears: moving or clearing a cost's kassa is
+  // the service's correction path (`setCostAccount`), not a queue press.
+  accountId: z.string().uuid(),
+  // The shared bound (U44) — the literal 1e12 was one unit past the column.
+  accountAmount: nativeAmount().optional(),
 });
 
 /**
  * The accountant's place-later door (0101): which kassa a cost's money left
  * from, said after the warehouse or the logist typed the cost. The kassa
- * holders' grant only — the same `mayPickTill` the entry doors ask.
+ * holders' grant only — the same `mayPickTill` the entry doors ask. A CLAIM
+ * under the queue's own predicate (`placeCostAccount`, Q8): a second press or
+ * a stale screen is told `already_placed`, never moves money twice.
  */
 export async function setCostAccountAction(input: unknown): Promise<CostActionResult> {
   const parsed = placeSchema.safeParse(input);
-  if (!parsed.success) return { ok: false, error: 'validation' };
+  if (!parsed.success) return { ok: false, error: amountRefusal(parsed.error) ?? 'validation' };
   let actor;
   try {
     actor = await authorize('finance.expenses');
@@ -248,7 +302,7 @@ export async function setCostAccountAction(input: unknown): Promise<CostActionRe
   if (!mayPickTill(actor.permissions)) return { ok: false, error: 'till_forbidden' };
   const meta = await requestMeta();
   try {
-    await setCostAccount(parsed.data.id, parsed.data.accountId, parsed.data.accountAmount, {
+    await placeCostAccount(parsed.data.id, parsed.data.accountId, parsed.data.accountAmount, {
       actorId: actor.id,
       ...meta,
     });

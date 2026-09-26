@@ -25,7 +25,11 @@ function sheetSetup(workbook: ExcelJS.Workbook, name: string, title: string) {
   return sheet;
 }
 
-export async function buildLandedCostXlsx(clientId?: string, locale?: string): Promise<Buffer> {
+/**
+ * `clientId` undefined = every client (and the unclaimed row); a client's id,
+ * or `null` for the unclaimed cargo = that one drill-down (audit U19).
+ */
+export async function buildLandedCostXlsx(clientId: string | null | undefined, locale?: string): Promise<Buffer> {
   const L = reportLabels(locale);
   const workbook = new ExcelJS.Workbook();
   const stamp = tashkentDay();
@@ -35,9 +39,13 @@ export async function buildLandedCostXlsx(clientId?: string, locale?: string): P
     ? `⚠ ${L.unconvertedCosts}: ${unconverted.map((row) => `${row.amount} ${row.currency}`).join(', ')}`
     : null;
 
-  if (clientId) {
+  if (clientId !== undefined) {
     const lots = await landedCostByLot(clientId);
-    const sheet = sheetSetup(workbook, 'Landed cost', `${L.tLandedCostByLot} · ${stamp}`);
+    const sheet = sheetSetup(
+      workbook,
+      'Landed cost',
+      `${L.tLandedCostByLot}${clientId === null ? ` · ${L.unclaimedCargo}` : ''} · ${stamp}`,
+    );
     const head = sheet.addRow([L.lot, L.product, L.boxes, L.kg, L.landedCostUsd, L.usdPerBox]);
     head.font = { bold: true };
     sheet.columns = [
@@ -45,7 +53,8 @@ export async function buildLandedCostXlsx(clientId?: string, locale?: string): P
     ];
     for (const lot of lots) {
       sheet.addRow([
-        lot.letter ?? '',
+        // Unclaimed cargo is told apart by what is written on the carton.
+        clientId === null ? `${lot.marking ?? '?'}-${lot.letter ?? ''}` : (lot.letter ?? ''),
         `${lot.productNameZh}${lot.productNameRu ? ` (${lot.productNameRu})` : ''}`,
         lot.boxCount,
         lot.kg,
@@ -69,7 +78,8 @@ export async function buildLandedCostXlsx(clientId?: string, locale?: string): P
     head.font = { bold: true };
     sheet.columns = [{ width: 12 }, { width: 36 }, { width: 10 }, { width: 16 }];
     for (const row of rows) {
-      sheet.addRow([row.clientCode, row.clientName, row.boxCount, row.totalUsd]);
+      // The unclaimed row is inside the JAMI — it is money the P&L counts.
+      sheet.addRow([row.clientCode ?? L.unclaimedCargo, row.clientName ?? '', row.boxCount, row.totalUsd]);
     }
     const total = sheet.addRow([
       L.total, '',
@@ -111,7 +121,17 @@ export async function buildStockAgingXlsx(warehouseIds?: string[], locale?: stri
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }
 
-export async function buildBatchRegisterXlsx(warehouseIds?: string[], locale?: string): Promise<Buffer> {
+/**
+ * The batch register file. `costs` is REQUIRED (Q19): the three cost columns
+ * are a truck's whole cost total and its tannarx per kilo and per cube, and
+ * the caller says whether this reader may see them — an optional flag fails
+ * open (#790).
+ */
+export async function buildBatchRegisterXlsx(
+  warehouseIds: string[] | undefined,
+  locale: string | undefined,
+  opts: { costs: boolean },
+): Promise<Buffer> {
   const L = reportLabels(locale);
   const rows = await batchRegister(warehouseIds);
   const workbook = new ExcelJS.Workbook();
@@ -122,13 +142,14 @@ export async function buildBatchRegisterXlsx(warehouseIds?: string[], locale?: s
   );
   const head = sheet.addRow([
     L.batch, L.route, L.status, L.created, L.departed,
-    L.loaded, L.shortLoaded, L.added, L.kg, L.m3, L.costsUsd, L.usdPerKg, L.usdPerM3,
+    L.loaded, L.shortLoaded, L.added, L.kg, L.m3,
+    ...(opts.costs ? [L.costsUsd, L.usdPerKg, L.usdPerM3] : []),
   ]);
   head.font = { bold: true };
   sheet.columns = [
     { width: 12 }, { width: 12 }, { width: 12 }, { width: 12 }, { width: 12 },
     { width: 10 }, { width: 10 }, { width: 10 }, { width: 10 }, { width: 8 },
-    { width: 12 }, { width: 8 }, { width: 8 },
+    ...(opts.costs ? [{ width: 12 }, { width: 8 }, { width: 8 }] : []),
   ];
   for (const row of rows) {
     sheet.addRow([
@@ -142,20 +163,25 @@ export async function buildBatchRegisterXlsx(warehouseIds?: string[], locale?: s
       row.added,
       row.kg,
       row.m3,
-      row.costUsd,
-      row.usdPerKg ?? '',
-      row.usdPerM3 ?? '',
+      ...(opts.costs ? [row.costUsd, row.usdPerKg ?? '', row.usdPerM3 ?? ''] : []),
     ]);
   }
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }
 
-export async function buildReceiptsJournalXlsx(days: number, warehouseIds?: string[], locale?: string): Promise<Buffer> {
+export async function buildReceiptsJournalXlsx(
+  window: import('./queries').JournalWindow,
+  warehouseIds?: string[],
+  locale?: string,
+): Promise<Buffer> {
   const L = reportLabels(locale);
   const { receiptsJournal } = await import('./queries');
-  const rows = await receiptsJournal(days, warehouseIds);
+  const rows = await receiptsJournal(window, warehouseIds);
   const workbook = new ExcelJS.Workbook();
-  const sheet = sheetSetup(workbook, 'Receipts', `${L.tReceiptsJournal} (${days} ${L.daysSuffix}) · ${tashkentDay()}`);
+  // The file names its window the way the screen does — a range when one was
+  // asked for, else the last N days.
+  const span = typeof window === 'number' ? `${window} ${L.daysSuffix}` : `${window.from} — ${window.to}`;
+  const sheet = sheetSetup(workbook, 'Receipts', `${L.tReceiptsJournal} (${span}) · ${tashkentDay()}`);
   const head = sheet.addRow([L.number, L.date, L.warehouse, L.client, L.operator, L.lots, L.boxes, L.kg, L.m3, L.status]);
   head.font = { bold: true };
   sheet.columns = [

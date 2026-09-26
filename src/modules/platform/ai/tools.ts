@@ -1,6 +1,7 @@
 import { composeMyDayText } from '../tasks/digest';
 import { ANALYST_ROW_CAP, runAnalystSql } from './sql-runner';
 import type { ModelToolSpec } from './model';
+import { moneyHidden } from '../rbac/money-sight';
 
 /**
  * The assistant's hands, built PER ACTOR so a tool the person may not hold is
@@ -28,6 +29,20 @@ export interface AssistantActor {
 
 export function isAnalyst(actor: Pick<AssistantActor, 'roles'>): boolean {
   return actor.roles.includes('super_admin') || actor.roles.includes('admin');
+}
+
+/**
+ * The money tier — `run_sql`, `cash_flow`, `company_balance` — which answers
+ * the kassa and the profit outright: the analyst ROLE, and never a person
+ * the owner's Q19 blinds («ved hodimi kassa foyda zararni umuman
+ * ko'rmasin»). The seeded admin holds every grant and is unchanged; this is
+ * the belt for an admin role customised with `ved.docs` and without
+ * `finance.reports`. ONE predicate for the tool map and the system prompt
+ * that tells the model what it holds, so the prompt never promises a tool
+ * the map left out.
+ */
+export function hasMoneyTier(actor: Pick<AssistantActor, 'roles' | 'permissions'>): boolean {
+  return isAnalyst(actor) && !moneyHidden('results', actor.permissions);
 }
 
 export interface AssistantTool extends ModelToolSpec {
@@ -85,7 +100,7 @@ export function buildTools(actor: AssistantActor): AssistantTool[] {
     },
   ];
 
-  if (!isAnalyst(actor)) return tools;
+  if (!hasMoneyTier(actor)) return tools;
 
   tools.push(
     {
@@ -126,7 +141,7 @@ export function buildTools(actor: AssistantActor): AssistantTool[] {
     {
       name: 'company_balance',
       description:
-        'Остатки всех касс сейчас (в своей валюте и в USD по сегодняшнему курсу) и итог. Единственный надёжный источник «сколько денег в компании».',
+        'Остатки всех касс сейчас (в своей валюте и в USD по сегодняшнему курсу) и итог. Деньги в кассах — это `cashUsd`; на вопрос «сколько денег в компании» отвечай им. `netUsd` («Sof holat») — не деньги в кассах: в нём долги клиентов и наши долги, и `unpricedCargoUsd` — деньги, уже потраченные на перевозку груза, которому цена ещё не записана (вернутся ценой; это не прибыль). `unpricedCargo` говорит, что в него не вошло.',
       input_schema: { type: 'object', properties: {} },
       run: async () => {
         const { companyBalance } = await import('../../wms/accounting/reports');

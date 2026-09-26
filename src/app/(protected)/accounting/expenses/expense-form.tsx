@@ -2,11 +2,17 @@
 
 import { useActionState, useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { latestTxDate } from '@/modules/wms/finance/dates';
 import { addExpenseAction, type AccountingFormState } from '../actions';
 
 interface Option {
   id: string;
   label: string;
+}
+
+/** A category, with whether it moves money (U06). */
+export interface CategoryOption extends Option {
+  cash: boolean;
 }
 
 /**
@@ -24,7 +30,7 @@ export function ExpenseForm({
   partners = [],
   prefill,
 }: {
-  categories: Option[];
+  categories: CategoryOption[];
   accounts: Option[];
   warehouses: Option[];
   employees: Option[];
@@ -71,6 +77,11 @@ export function ExpenseForm({
   // disappears with the choice, the way the counterparty form already hides
   // its cash box for the kinds that move no money.
   const [partnerId, setPartnerId] = useState(prefill?.partnerId ?? '');
+  // A NON-cash kind (depreciation) is a book entry: no kassa and no payer
+  // (U06). Controlled so the two pickers can leave with the choice — a hidden
+  // select posts nothing, and the service refuses a hand-built post anyway.
+  const [categoryId, setCategoryId] = useState(categories[0]?.id ?? '');
+  const bookEntry = categories.find((option) => option.id === categoryId)?.cash === false;
   const [state, formAction, pending] = useActionState<AccountingFormState, FormData>(
     addExpenseAction,
     {},
@@ -88,7 +99,14 @@ export function ExpenseForm({
         </>
       )}
       <div className="flex flex-wrap gap-2">
-        <select name="categoryId" aria-label={t('category')} className="input min-w-44 flex-1" required>
+        <select
+          name="categoryId"
+          aria-label={t('category')}
+          className="input min-w-44 flex-1"
+          value={categoryId}
+          onChange={(event) => setCategoryId(event.target.value)}
+          required
+        >
           {categories.map((option) => (
             <option key={option.id} value={option.id}>
               {option.label}
@@ -120,6 +138,8 @@ export function ExpenseForm({
           name="expenseDate"
           aria-label={t('date')}
           defaultValue={prefill?.expenseDate ?? today}
+          // #995's rule, the door's own limit (U21): not after tomorrow.
+          max={latestTxDate()}
           className="input !w-40"
           required
         />
@@ -127,7 +147,7 @@ export function ExpenseForm({
       <div className="flex flex-wrap gap-2">
         {/* Only while the money is ours. A hidden select posts nothing, so
             the service's own drop becomes unreachable rather than silent. */}
-        {!partnerId && (
+        {!partnerId && !bookEntry && (
           <select name="accountId" aria-label={t('account')} className="input min-w-40 flex-1">
             <option value="">— {t('account')} —</option>
             {accounts.map((option) => (
@@ -150,7 +170,7 @@ export function ExpenseForm({
             </option>
           ))}
         </select>
-        {partners.length > 0 && (
+        {partners.length > 0 && !bookEntry && (
           <select
             name="partnerId"
             aria-label={t('paidBy')}
@@ -178,7 +198,12 @@ export function ExpenseForm({
       </div>
       {/* Already translated in all four bundles and never rendered until now:
           the rule was implied by a disappearing field instead of stated. */}
-      {partnerId && <p className="text-xs text-ink-500">{t('paidByHint')}</p>}
+      {partnerId && !bookEntry && <p className="text-xs text-ink-500">{t('paidByHint')}</p>}
+      {bookEntry && (
+        <p className="text-xs text-ink-500" data-testid="expense-non-cash-hint">
+          {t('nonCashHint')}
+        </p>
+      )}
       <input
         name="note"
         placeholder={t('note')}
@@ -203,7 +228,15 @@ export function ExpenseForm({
               ? t('accountCurrencyMismatch')
               : state.error === 'already_decided'
                 ? t('requestTaken')
-                : tc('error')}
+                : state.error === 'future_date'
+                  ? tc('futureDate')
+                  : state.error === 'amount_too_large'
+                    ? tc('amountTooLarge')
+                    : state.error === 'non_cash_category'
+                      ? t('nonCashCategory')
+                      : state.error === 'account_or_payer_required'
+                        ? t('accountOrPayerRequired')
+                        : tc('error')}
         </p>
       )}
     </form>

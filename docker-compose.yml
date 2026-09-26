@@ -228,6 +228,18 @@ services:
       # day of normal use logs a handful of lines.
       - '-c'
       - 'log_min_duration_statement=200'
+      # JIT off (the finance-audit round, measured three times on a clone at
+      # production volume): postgres JIT-compiles any statement whose ESTIMATE
+      # passes jit_above_cost, and this app's reports are many small statements
+      # whose estimates run large — the truck customs base compiled ~151
+      # functions for 1.1 s of a 1.1 s call, the recurring window 0.7-1.2 s on
+      # an EMPTY table, the unpriced-cargo list 5.4 s against 0.8 s without.
+      # Nothing here runs long enough to earn a compile back. Takes effect when
+      # the container is RECREATED (`docker compose up -d` does it when this
+      # block changes) — a few seconds of database restart, so off-hours and
+      # after the backup, like every change to this block.
+      - '-c'
+      - 'jit=off'
     environment:
       POSTGRES_USER: gsr
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}

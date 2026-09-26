@@ -96,6 +96,16 @@ What the owner wants (his list, verbatim intent):
 11. **Everything the seller submitted is shown to the VED AS-IS** — files,
     photos, forwarded messages, unabridged, beside the AI draft (owner's
     explicit ask).
+12. **The VED sees no kassa, no profit/loss, no tannarx** (owner, 2026-09-25,
+    Q19: «ved hodimi kassa foyda zararni umuman ko'rmasin, tannarxni ham»;
+    follow-up «19 a»). One predicate, `platform/rbac/money-sight.ts`
+    `moneyHidden`, keyed on the `ved.docs` GRANT and exempting law 4's
+    `finance.reports`. He keeps PRICING trucks on a price-only «Partiya
+    moliyasi» (`pricingSight`), keeps typing costs and reads only his OWN
+    cost entries (colleagues' as types, never sums), keeps client debts,
+    charges and settlements, and records a client's payment WITHOUT a kassa —
+    the accountant places it. The seal, the price book, «hisob vs haqiqat»
+    and his own staff account stay his.
 
 ## The freight tariff (owner's own table, USD)
 

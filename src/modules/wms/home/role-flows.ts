@@ -1,4 +1,6 @@
 import { aliasedTable, and, eq, inArray, isNull, not, sql } from 'drizzle-orm';
+import { withoutJit } from '../../platform/db/no-jit';
+import { unpricedCount } from '../finance/unpriced';
 import { db } from '../../platform/db/client';
 import { calcQueueCounts } from '../calc/service';
 import {
@@ -19,6 +21,7 @@ import { costMissingCount } from '../reports/queries';
 import { sameCountryLegSql } from '../batches/internal';
 import { warehouseFlowCounts, type WarehouseFlowCounts } from './flow';
 import { unplacedCostTotals } from '../costing/service';
+import { recurringDueCount } from '../accounting/recurring';
 
 /**
  * The other three workflow homes (owner: "har bir hodim qiladigan ishiga
@@ -33,6 +36,9 @@ import { unplacedCostTotals } from '../costing/service';
  * a fact about the DATA, not just the menu: a sales manager who is also a
  * warehouse operator lives the warehouse day.
  */
+
+/** The accountant home's budget for the all-history unpriced count (design §5.1). */
+export const UNBILLED_BUDGET_MS = 500;
 
 export interface SalesFlowCounts {
   /** Follow-ups due today or overdue — the morning screen's list. */
@@ -124,20 +130,29 @@ export async function logistFlowCounts(
 
 export interface MoneyFlowCounts {
   snapshot: MoneySnapshot;
-  /** Payments with no cash box AND no counterparty behind them since cash
-   *  boxes exist (`unplacedPaymentSql`) — history from before any box is in
-   *  some box's opening balance, and a settlement is placed with its firm. */
+  /** Payments with no cash box AND no counterparty behind them that no box's
+   *  count already holds (`unplacedPaymentSql`, A2 + U09) — history dated
+   *  before every count of its currency is inside those counts, and a
+   *  settlement is placed with its firm. */
   unassignedPayments: number;
-  /** Active recurring templates not yet posted this month. */
+  /**
+   * Recurring months whose day has come that nobody has paid, linked or
+   * skipped (accounting/recurring.ts, owner's Q6) — arrears included.
+   */
   recurringDue: number;
   costMissing: number;
   /** Cargo costs waiting for their kassa (0101) — the accountant's queue. */
   unplacedCosts: number;
+  /**
+   * Prixods with landed cargo that has no price (0104) — the accountant's
+   * list, counted by the SAME fragment the list and the counter's ban read.
+   */
+  /** Null when the count missed its budget — the row is then a plain link. */
+  unbilled: number | null;
 }
 
 export async function moneyFlowCounts(today: string): Promise<MoneyFlowCounts> {
-  const month = today.slice(0, 7);
-  const [snapshot, unassigned, recurring, costMissing, unplacedCosts] = await Promise.all([
+  const [snapshot, unassigned, recurring, costMissing, unplacedCosts, unbilled] = await Promise.all([
     moneySnapshot(),
     db
       .select({ n: sql<number>`count(*)` })
@@ -157,27 +172,27 @@ export async function moneyFlowCounts(today: string): Promise<MoneyFlowCounts> {
           unplacedPaymentSql(),
         ),
       ),
-    // Mirrors generateRecurring's own idempotence check (0099): a template
-    // is due until a posting of IT exists on this month's day — voided or
-    // not, because a voided posting means «not this month» (audit A32/A33).
-    db.execute<{ n: number }>(sql`
-      SELECT count(*)::int AS n FROM recurring_expenses r
-      WHERE r.active = true
-        AND NOT EXISTS (
-          SELECT 1 FROM expenses e
-          WHERE e.recurring_id = r.id
-            AND e.expense_date = (${month} || '-' || lpad(r.day_of_month::text, 2, '0'))::date
-        )
-    `),
+    // The DAY, not the month: «due» is «its day has come and nobody closed
+    // it» — the same fragment the Balans line and the stop guard read (#513).
+    recurringDueCount(today),
     costMissingCount(3),
     unplacedCostTotals(),
+    // Company-wide and all-history (Q4 c), so it gets the design's BUDGET
+    // (§5.1): measured ~0.8 s on a year-volume clone, and the home is the
+    // most-opened screen (round 108's queueing). Past 500 ms postgres drops
+    // the read and the row renders as a plain link with no number.
+    withoutJit((exec) => unpricedCount(exec, undefined), { timeoutMs: UNBILLED_BUDGET_MS }).catch((err) => {
+      console.warn('[home] unpriced count missed its budget', err instanceof Error ? err.message : err);
+      return null;
+    }),
   ]);
   return {
     snapshot,
     unassignedPayments: Number(unassigned[0]?.n ?? 0),
-    recurringDue: Number(recurring[0]?.n ?? 0),
+    recurringDue: recurring,
     costMissing,
     unplacedCosts: unplacedCosts.count,
+    unbilled,
   };
 }
 

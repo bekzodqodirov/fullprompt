@@ -31,6 +31,10 @@ describe('postgres tuning in docker-compose.yml', () => {
       // Round 45: the slow-query log is how the next N+1 gets found. Without
       // it the only evidence a page is slow is somebody saying so.
       'log_min_duration_statement=',
+      // The finance-audit round: JIT compiled a second of machine code for
+      // statements that run in milliseconds (three measurements in the
+      // compose comment). `withoutJit` covers the hottest reads either way.
+      'jit=off',
     ]) {
       expect(block, param).toContain(param);
     }

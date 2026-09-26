@@ -58,6 +58,12 @@ export const MUTE_GROUPS = {
     // only worth anything while they are still standing there.
     'DebtApprovalRequested',
     'DebtApprovalDecided',
+    // 0104: cargo with no price went out of the warehouse (by a tick or an
+    // approval), and a truck finished loading with a price on cargo that
+    // stayed behind — both are the accountant's to act on while the client
+    // can still be billed.
+    'UnpricedIssued',
+    'PricedCargoLeft',
     // Round 107: money already left the warehouse's pocket — entering it is
     // work waiting, and the reporter deserves the answer. Same pair shape.
     'ExpenseRequested',
@@ -93,6 +99,10 @@ export const MUTE_GROUPS = {
     // the author, the arrival-diff rule).
     'BoxFoundHere',
     'BoxLost',
+    // 0105: a carton turned up on a prixod whose client was compensated for
+    // it — the accountant and the seller must act before the cargo AND the
+    // money leave. BoxLost's alarm, run backwards.
+    'CompensatedCargoFound',
     'ReceiptMeasureCorrected',
   ],
   operations: [

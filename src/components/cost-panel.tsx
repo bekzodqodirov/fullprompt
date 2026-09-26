@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { addCostEntryAction, voidCostEntryAction } from '@/app/(protected)/costs/actions';
 import { parseTypedMoney } from '@/modules/wms/calc/money-input';
+import { latestTxDate } from '@/modules/wms/finance/dates';
+import { UnmergeButton } from '@/app/(protected)/accounting/xarajat-kassa/unmerge-button';
 
 export interface CostEntryView {
   id: string;
@@ -22,6 +24,18 @@ export interface CostEntryView {
   accountName?: string | null;
   /** A kassa answered for it, whether or not this reader may see which. */
   paidFromTill?: boolean;
+  /**
+   * False when this reader may not void the row and must be told who may
+   * (`tillView`: a kassa-paid cost, for a reader the kassa is hidden from —
+   * Q19). Undefined keeps the 🗑 exactly as every other caller has it.
+   */
+  voidable?: boolean;
+  /**
+   * The accountant's expense this cost was merged with (Q8). While set, the
+   * cost is the only record of that money: nobody voids it until the merge
+   * is undone, and the row says so in words that fit the reader.
+   */
+  mergedExpenseId?: string | null;
 }
 
 export interface CostTypeOption {
@@ -50,6 +64,15 @@ const PAYER_ERRORS = {
   account_not_found: 'errTillNotFound',
   account_currency_mismatch: 'errTillCurrency',
   payer_conflict: 'errPayerConflict',
+  staff_cost_needs_finance: 'errStaffVoid',
+  partner_cost_not_yours: 'errPartnerVoidNotYours',
+  partner_cost_settled: 'errPartnerVoidSettled',
+  cost_not_yours: 'errCostNotYours',
+  future_date: 'errFutureDate',
+  amount_too_large: 'errAmountTooLarge',
+  merged_cost: 'errMergedCost',
+  merged_cost_ask: 'errMergedCostAsk',
+  cost_payer_changed: 'errPayerChanged',
 } as const;
 
 function payerErrorText(code: string | undefined, t: (key: string) => string): string {
@@ -75,6 +98,7 @@ export function CostPanel({
   partnerOptions = [],
   tillOptions = [],
   today,
+  canUnmerge = false,
 }: {
   scope: 'batch' | 'receipt' | 'crate' | 'pickup';
   targetId: string;
@@ -102,6 +126,11 @@ export function CostPanel({
    * browser's own clock is neither the office's nor reliably set.
    */
   today: string;
+  /**
+   * May this reader undo a merge (`mayPickTill` — the kassa holders, Q8)? The
+   * server passes it; the door refuses anybody else anyway.
+   */
+  canUnmerge?: boolean;
 }) {
   const t = useTranslations('costing');
   const tc = useTranslations('common');
@@ -213,8 +242,14 @@ export function CostPanel({
               🏦 {entry.accountName ?? t('paidFromTill')}
             </span>
           )}
+          {entry.mergedExpenseId && (
+            <span className="rounded bg-surface-sunken px-1.5 text-xs font-semibold text-ink-700" data-testid="cost-merged">
+              🔗 {t('mergedChip')}
+            </span>
+          )}
+          {entry.mergedExpenseId && canUnmerge && <UnmergeButton expenseId={entry.mergedExpenseId} />}
           {entry.note && <span className="w-full text-xs text-ink-500">{entry.note}</span>}
-          {canEdit && (
+          {canEdit && entry.voidable !== false && (
             <button
               type="button"
               aria-label={t('void')}
@@ -223,6 +258,13 @@ export function CostPanel({
             >
               🗑 {t('void')}
             </button>
+          )}
+          {/* No silent dead end (#420): the row says who takes it back — the
+              person, never the drawer the reader may not see. */}
+          {canEdit && entry.voidable === false && (
+            <span className="ml-auto text-xs text-ink-500" data-testid="cost-void-locked">
+              🔒 {t('voidByAccountant')}
+            </span>
           )}
         </div>
       ))}
@@ -273,6 +315,8 @@ export function CostPanel({
             type="date"
             className="input"
             value={costDate}
+            // #995's rule, the door's own limit (U21): not after tomorrow.
+            max={latestTxDate()}
             onChange={(e) => setCostDate(e.target.value)}
           />
           {/* Its own line. Sharing one with the date box left it reading «по»

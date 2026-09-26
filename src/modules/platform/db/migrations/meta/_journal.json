@@ -715,6 +715,41 @@
       "when": 1785190000080,
       "tag": "0101_kassa_refund",
       "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1785190000081,
+      "tag": "0102_business_targets",
+      "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1785190000082,
+      "tag": "0103_fx_differences",
+      "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1785190000083,
+      "tag": "0104_unpriced_gate",
+      "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1785190000084,
+      "tag": "0105_compensation",
+      "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1785190000085,
+      "tag": "0106_recurring_paid",
+      "breakpoints": true
     }
   ]
 }

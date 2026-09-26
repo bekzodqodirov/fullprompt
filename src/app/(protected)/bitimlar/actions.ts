@@ -22,6 +22,7 @@ import {
   updateDeal,
 } from '@/modules/wms/deals/service';
 import { JOB_PROCESS_EVENTS, enqueue } from '@/modules/platform/jobs/boss';
+import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 
 export interface DealFormState {
   ok?: boolean;
@@ -68,6 +69,20 @@ function optionalNumber(value: FormDataEntryValue | null): number | null | undef
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+/**
+ * A typed PRICE (U28): «1,200» is a thousand two hundred — #979's shared
+ * reader; the old one turned the comma into a decimal point and quoted $1.20
+ * — and a figure nobody can read is REFUSED (NaN, which the schema refuses),
+ * never taken as «not answered», which silently cleared the quote. Measures
+ * (m³, kg, a count) keep `optionalNumber`: «12,345» m³ is a decimal there.
+ */
+function optionalMoney(value: FormDataEntryValue | null): number | null | undefined {
+  if (value === null) return undefined;
+  const text = String(value).trim();
+  if (!text) return null;
+  return parseTypedMoney(text) ?? Number.NaN;
+}
+
 function readDeal(form: FormData) {
   return dealSchema.safeParse({
     clientId: String(form.get('clientId') ?? ''),
@@ -76,7 +91,7 @@ function readDeal(form: FormData) {
     title: String(form.get('title') ?? ''),
     quotedVolumeM3: optionalNumber(form.get('quotedVolumeM3')),
     quotedWeightKg: optionalNumber(form.get('quotedWeightKg')),
-    quotedAmount: optionalNumber(form.get('quotedAmount')),
+    quotedAmount: optionalMoney(form.get('quotedAmount')),
     quotedCurrency: form.get('quotedCurrency') ? String(form.get('quotedCurrency')) : null,
     note: String(form.get('note') ?? ''),
   });
@@ -231,7 +246,7 @@ export async function saveLinesAction(
       unit: String(form.getAll('lineUnit')[i] ?? '').trim() || null,
       quotedVolumeM3: optionalNumber(form.getAll('lineVolume')[i] ?? null) ?? null,
       quotedWeightKg: optionalNumber(form.getAll('lineWeight')[i] ?? null) ?? null,
-      quotedAmount: optionalNumber(form.getAll('lineAmount')[i] ?? null) ?? null,
+      quotedAmount: optionalMoney(form.getAll('lineAmount')[i] ?? null) ?? null,
       note: null,
     }))
     .filter((line) => line.description.length > 0);
@@ -252,8 +267,11 @@ export async function setDiscountAction(
   _prev: DealFormState,
   form: FormData,
 ): Promise<DealFormState> {
-  const amount = optionalNumber(form.get('amount'));
-  if (amount === undefined || amount === null || amount < 0) return { error: 'validation' };
+  const amount = optionalMoney(form.get('amount'));
+  // NaN answers false to `< 0`, so an unreadable figure is refused by name.
+  if (amount === undefined || amount === null || !Number.isFinite(amount) || amount < 0) {
+    return { error: 'validation' };
+  }
   return run((ctx) =>
     setDealDiscount(dealId, { amount, reason: String(form.get('reason') ?? '') }, ctx),
   );

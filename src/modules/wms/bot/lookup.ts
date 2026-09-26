@@ -13,6 +13,7 @@ import { inScope, type ScopedActor } from '../../platform/rbac/scope';
 import { seesAllMoney } from '../finance/scope';
 import { clientBalanceUsd } from '../finance/service';
 import { arrivalCodesForPairs } from '../documents/arrivals';
+import { roadLossInScope, roadLossTruck } from '../boxes/road-loss';
 import { dayIn, OFFICE_TZ } from '@/modules/platform/time/tashkent';
 
 /**
@@ -103,13 +104,20 @@ async function lookupBox(actor: BotActor, code: string): Promise<string | null> 
   if (!row) return null;
 
   // A box in transit belongs to nobody's warehouse; its batch's two ends are
-  // what a scoped person may legitimately be asking about.
+  // what a scoped person may legitimately be asking about — and for a carton
+  // lost on the road, which has neither pointer, the truck it was lost from
+  // (U38; the search and the box card read the same rule).
   const batch = row.box.currentBatchId
     ? await db.query.batches.findFirst({ where: eq(batches.id, row.box.currentBatchId) })
     : null;
   const reachable =
     inScope(actor, row.box.currentWarehouseId) ||
-    (batch ? inScope(actor, batch.originWarehouseId) || inScope(actor, batch.destWarehouseId) : false);
+    (batch
+      ? inScope(actor, batch.originWarehouseId) || inScope(actor, batch.destWarehouseId)
+      : false) ||
+    (row.box.status === 'lost' &&
+      !row.box.currentWarehouseId &&
+      roadLossInScope(actor, await roadLossTruck(row.box.id)));
   if (!reachable) return `📦 ${row.box.shortCode}\n${outOfScope()}`;
 
   const wh = row.box.currentWarehouseId

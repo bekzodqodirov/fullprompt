@@ -16,7 +16,9 @@
  *     narrow NBSP. So does the apostrophe, which is how some invoices group.
  *  2. `1,000` — a comma with exactly three digits behind it, repeatedly — is
  *     a THOUSANDS separator. `Number('1.000')` would have read it as one
- *     dollar, which is the second half of the same defect.
+ *     dollar, which is the second half of the same defect. Never after a lone
+ *     `0`: nobody groups the thousands of zero, so `0,125` is a decimal (a
+ *     baza per kilo, a fraction of a cube) and not 125.
  *  3. Any other comma is the DECIMAL separator, because that is how a
  *     Russian- or Uzbek-speaking person writes «1,5».
  *  4. Anything left that is not a plain number is `null` — never a guess, and
@@ -28,7 +30,7 @@ export function parseTypedMoney(raw: string): number | null {
     .trim();
   if (cleaned === '') return null;
 
-  const grouped = /^-?\d{1,3}(,\d{3})+(\.\d+)?$/.test(cleaned);
+  const grouped = /^-?[1-9]\d{0,2}(,\d{3})+(\.\d+)?$/.test(cleaned);
   const normalised = grouped ? cleaned.replace(/,/g, '') : cleaned.replace(',', '.');
   if (!/^-?\d+(\.\d+)?$/.test(normalised)) return null;
 

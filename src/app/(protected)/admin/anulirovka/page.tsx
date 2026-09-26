@@ -172,6 +172,8 @@ export default async function AnnulRegistryPage({
                         annul_forbidden: t('forbidden'),
                         box_on_active_plan: t('onActivePlan'),
                         cost_paid_from_till: t('paidFromTill'),
+                        cost_merged: t('mergedCost'),
+                        receipt_has_compensation: t('hasCompensation'),
                         reason_required: t('reasonRequired'),
                         not_found: t('notFound'),
                         validation: t('reasonRequired'),

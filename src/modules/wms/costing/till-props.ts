@@ -12,13 +12,6 @@ export async function tillOptionsFor(permissions: ReadonlySet<string>) {
   return (await listAccounts()).map((a) => ({ id: a.id, name: a.name, currency: a.currency }));
 }
 
-/**
- * Whether a cost row may print the NAME of the kassa it was paid from: money
- * readers only. A warehouse operator reading a receipt's costs learns that a
- * kassa answered, never which drawer holds the company's cash.
- */
-export function maySeeTillNames(permissions: ReadonlySet<string>): boolean {
-  return (
-    permissions.has('finance.view') || permissions.has('finance.manage') || permissions.has('finance.expenses')
-  );
-}
+// Moved to `cost-sight.ts` (no database, so the unit tests load it) when the
+// VED stopped seeing the kassa (Q19); re-exported so the old imports hold.
+export { maySeeTillNames } from './cost-sight';

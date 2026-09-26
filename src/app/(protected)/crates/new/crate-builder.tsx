@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { v4 as uuidv4 } from 'uuid';
 import { createCrateAction } from '../actions';
+import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 
 interface WarehouseOption {
   id: string;
@@ -144,9 +145,11 @@ export function CrateBuilder({
         widthCm: dims.widthCm ? Number(dims.widthCm) : undefined,
         heightCm: dims.heightCm ? Number(dims.heightCm) : undefined,
         weightKg: dims.weightKg ? Number(dims.weightKg) : undefined,
+        // The office's reader (U28): `Number('1,200')` was NaN and the fee
+        // was silently left off the crate.
         cratingCost:
-          Number(costAmount) > 0
-            ? { amount: Number(costAmount), currency: costCurrency || defaultCurrency }
+          (parseTypedMoney(costAmount) ?? 0) > 0
+            ? { amount: parseTypedMoney(costAmount)!, currency: costCurrency || defaultCurrency }
             : undefined,
       });
       if (res.ok) router.push(`/crates/${res.crateId}`);

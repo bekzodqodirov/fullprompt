@@ -13,10 +13,13 @@ import {
   expenses,
   fxRates,
   moneyAccounts,
+  partnerTransactions,
   partnerTypes,
+  partners,
   users,
   warehouses,
 } from '@/modules/platform/db/schema';
+import { reportLabels } from '@/modules/wms/reports/labels';
 import { partnerBalanceUsd, savePartner, setPartnerActive } from '@/modules/wms/partners/service';
 import { confirmReceipt } from '@/modules/wms/receipts/service';
 import { recordVerdict, submitPlan } from '@/modules/wms/planning/service';
@@ -26,7 +29,6 @@ import {
   accountBalances,
   addExpense,
   addTransfer,
-  generateRecurring,
   listExpenses,
   listTransfers,
   saveAccount,
@@ -53,6 +55,12 @@ import {
   profitByRoute,
 } from '@/modules/wms/accounting/reports';
 import { addTransaction } from '@/modules/wms/finance/service';
+import {
+  linkRecurringPayment,
+  payRecurring,
+  recurringDue,
+  skipRecurring,
+} from '@/modules/wms/accounting/recurring';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
@@ -369,140 +377,163 @@ describe('accounts', () => {
 });
 
 describe('recurring fixed costs', () => {
-  it('posts a month once, and pressing again changes nothing', async () => {
+  // Rewritten with the owner's Q6 (2026-09-25: «money leaves a kassa only
+  // when the kassa holder actually pays it»). These tests pinned the monthly
+  // run «▶️ Oyni yozish», which is deleted: every month now waits on the due
+  // list until «To'landi», «Bog'lash» or «Bu oy yo'q». Each keeps its old
+  // point in the new world, on the REAL Tashkent month — the suite's 1700s
+  // year is for P&L period sums, and a template's window can never reach it
+  // (a window from a distant past is centuries of open months, all counted).
+  // Every test removes what it made in FK order: a live template is
+  // configuration every counter reads (#183), and stopping it would meet the
+  // stop guard, which is a person's door, not a test's cleanup.
+  const TODAY = tashkentDay();
+  const MONTH = TODAY.slice(0, 7);
+
+  async function removeTemplates(ids: string[]) {
+    for (const id of ids) {
+      await db.execute(sql`DELETE FROM partner_transactions WHERE expense_id IN
+        (SELECT id FROM expenses WHERE recurring_id = ${id}::uuid)`);
+      await db.execute(sql`DELETE FROM recurring_skips WHERE recurring_id = ${id}::uuid`);
+      await db.execute(sql`DELETE FROM expenses WHERE recurring_id = ${id}::uuid`);
+      await db.execute(sql`DELETE FROM recurring_expenses WHERE id = ${id}::uuid`);
+    }
+  }
+
+  it("one «To'landi» per template-month; a second press is refused in words", async () => {
     const category = await saveCategory(
       { name: `Oylik test ${SUFFIX}`, cash: true, sortOrder: 30, active: true },
       ctx(),
     );
-    await saveRecurring(
-      {
-        categoryId: category.id,
-        amount: 700,
-        currency: 'USD',
-        dayOfMonth: 5,
-        active: true,
-      },
+    const template = await saveRecurring(
+      { categoryId: category.id, amount: 700, currency: 'USD', dayOfMonth: 5, accountId, active: true },
       ctx(),
     );
-    for (const date of [`${M2}-05`]) {
-      await db
-        .insert(fxRates)
-        .values({ currency: 'USD', rateToUsd: '1', effectiveDate: date, enteredBy: actorId })
-        .onConflictDoNothing();
+    try {
+      const pay = () =>
+        payRecurring(
+          { recurringId: template.id, month: MONTH, payer: `till:${accountId}`, amount: 700, expenseDate: TODAY },
+          ctx(),
+        );
+      await pay();
+      await expect(pay()).rejects.toMatchObject({ code: 'recurring_already_paid' });
+
+      const posted = await db
+        .select()
+        .from(expenses)
+        .where(sql`${expenses.categoryId} = ${category.id} AND ${expenses.voidedAt} IS NULL`);
+      expect(posted).toHaveLength(1);
+      expect(Number(posted[0]!.amountUsd)).toBe(700);
+      expect(posted[0]!.recurringMonth).toBe(`${MONTH}-01`);
+    } finally {
+      await removeTemplates([template.id]);
     }
-
-    const first = await generateRecurring(M2, ctx());
-    expect(first.created).toBeGreaterThanOrEqual(1);
-    const second = await generateRecurring(M2, ctx());
-    expect(second.created).toBe(0);
-
-    const posted = await db
-      .select()
-      .from(expenses)
-      .where(sql`${expenses.categoryId} = ${category.id} AND ${expenses.voidedAt} IS NULL`);
-    expect(posted).toHaveLength(1);
-    expect(Number(posted[0]!.amountUsd)).toBe(700);
   });
 
-  it('two rents in one category, told apart by their warehouse — both post', async () => {
-    // Two warehouse rents, same category, same day, no employee: the slot
-    // check used to collide them — the first posted, the second reported
-    // «already posted» every month for ever, and the home counter (which
-    // mirrors the same predicate) said nothing was due.
+  it('two templates in one category are two due rows; paying one leaves the other listed', async () => {
+    // Two warehouse rents, same category, same day, no employee: the old slot
+    // check collided them (A33); the month key is the TEMPLATE.
     const category = await saveCategory(
       { name: `Ikki ijara ${SUFFIX}`, cash: true, sortOrder: 31, active: true },
       ctx(),
     );
     const whs = await db.select({ id: warehouses.id }).from(warehouses).limit(2);
-    for (const [i, wh] of whs.entries()) {
-      await saveRecurring(
-        {
-          categoryId: category.id,
-          amount: 700 + i * 200,
-          currency: 'USD',
-          dayOfMonth: 6,
-          warehouseId: wh.id,
-          active: true,
-        },
+    const made: string[] = [];
+    try {
+      for (const [i, wh] of whs.entries()) {
+        const row = await saveRecurring(
+          { categoryId: category.id, amount: 700 + i * 200, currency: 'USD', dayOfMonth: 6, warehouseId: wh.id, accountId, active: true },
+          ctx(),
+        );
+        made.push(row.id);
+      }
+      const listed = async () =>
+        (await recurringDue(TODAY)).filter((row) => made.includes(row.recurringId) && row.month === `${MONTH}-01`);
+      expect(await listed()).toHaveLength(2);
+      await payRecurring(
+        { recurringId: made[0]!, month: MONTH, payer: `till:${accountId}`, amount: 700, expenseDate: TODAY },
         ctx(),
       );
+      const left = await listed();
+      expect(left.map((row) => row.recurringId)).toEqual([made[1]]);
+    } finally {
+      await removeTemplates(made);
     }
-
-    const run = await generateRecurring(M2, ctx());
-    expect(run.created).toBe(2);
-    // …and the guard still guards: a second press posts nothing.
-    const again = await generateRecurring(M2, ctx());
-    expect(again.created).toBe(0);
-
-    const posted = await db
-      .select()
-      .from(expenses)
-      .where(sql`${expenses.categoryId} = ${category.id} AND ${expenses.voidedAt} IS NULL`);
-    expect(posted).toHaveLength(2);
   });
 
-  it('a one-off on the payday slot does not stand in for the salary (audit A33)', async () => {
+  it('a one-off on the payday does not stand in for the salary — it is a candidate a person may link (audit A33, M1)', async () => {
     const category = await saveCategory(
       { name: `Oylik ${SUFFIX}`, cash: true, sortOrder: 32, active: true },
       ctx(),
     );
     const salary = await saveRecurring(
-      { categoryId: category.id, amount: 900, currency: 'USD', dayOfMonth: 7, active: true },
+      { categoryId: category.id, amount: 900, currency: 'USD', dayOfMonth: 7, accountId, active: true },
       ctx(),
     );
-    // A bonus typed by hand on the same day, same category, same person.
-    await addExpense(
-      { categoryId: category.id, amount: 50, currency: 'USD', expenseDate: `${M2}-07` },
-      ctx(),
-    );
-    const run = await generateRecurring(M2, ctx());
-    expect(run.created).toBeGreaterThanOrEqual(1);
-    const posted = await db
-      .select()
-      .from(expenses)
-      .where(sql`${expenses.categoryId} = ${category.id} AND ${expenses.voidedAt} IS NULL`);
-    // Before 0099: only the $50 — the $900 salary read as «already posted».
-    expect(posted.map((row) => Number(row.amount)).sort((a, b) => a - b)).toEqual([50, 900]);
-    // A live template is configuration every later press posts (#183).
-    await updateRecurring(salary.id, { amount: 900, dayOfMonth: 7, active: false }, ctx());
+    try {
+      // A bonus typed by hand this month, same category.
+      const bonus = await addExpense(
+        { categoryId: category.id, amount: 50, currency: 'USD', expenseDate: TODAY, accountId },
+        ctx(),
+      );
+      const row = (await recurringDue(TODAY)).find(
+        (r) => r.recurringId === salary.id && r.month === `${MONTH}-01`,
+      );
+      // Still open — the typed row closes nothing by itself…
+      expect(row).toBeDefined();
+      // …and is named under the row, never silently counted as the salary.
+      expect(row!.candidates.map((c) => c.id)).toContain(bonus.id);
+      // A person says it WAS this month's (a deliberately reduced payment).
+      await linkRecurringPayment(
+        { recurringId: salary.id, month: MONTH, expenseId: bonus.id, partial: false },
+        ctx(),
+      );
+      const after = (await recurringDue(TODAY)).find(
+        (r) => r.recurringId === salary.id && r.month === `${MONTH}-01`,
+      );
+      expect(after).toBeUndefined();
+    } finally {
+      await removeTemplates([salary.id]);
+    }
   });
 
-  it('a voided posting is «not this month», and a stopped template posts nothing (A32)', async () => {
+  it("a voided «To'landi» re-opens its month; «Bu oy yo'q» is how a month is skipped; a stopped template has no window (Q6 reverses #999)", async () => {
     const category = await saveCategory(
       { name: `Eski ijara ${SUFFIX}`, cash: true, sortOrder: 33, active: true },
       ctx(),
     );
+    // Day 28 and next month's window: nothing of it is DUE, so the stop at
+    // the end is an ordinary stop and not the arrears guard.
     const template = await saveRecurring(
-      { categoryId: category.id, amount: 400, currency: 'USD', dayOfMonth: 8, active: true },
+      { categoryId: category.id, amount: 400, currency: 'USD', dayOfMonth: 28, accountId, active: true },
       ctx(),
     );
-    await generateRecurring(M1, ctx());
-    const [first] = await db
-      .select()
-      .from(expenses)
-      .where(sql`${expenses.recurringId} = ${template.id} AND ${expenses.expenseDate} = ${`${M1}-08`}`);
-    expect(first).toBeDefined();
-    await voidExpense(first!.id, 'eski narx', ctx());
-    // The next press used to post the same stale $400 again.
-    const again = await generateRecurring(M1, ctx());
-    const live = await db
-      .select()
-      .from(expenses)
-      .where(sql`${expenses.recurringId} = ${template.id} AND ${expenses.voidedAt} IS NULL`);
-    expect(live).toHaveLength(0);
-    expect(again.skipped).toBeGreaterThanOrEqual(1);
-
-    // Stopped on the row's own control: the next month posts nothing of it.
-    await updateRecurring(template.id, { amount: 450, dayOfMonth: 8, active: false }, ctx());
-    await generateRecurring(M2, ctx());
-    const stopped = await db
-      .select()
-      .from(expenses)
-      .where(sql`${expenses.recurringId} = ${template.id} AND ${expenses.expenseDate} = ${`${M2}-08`}`);
-    expect(stopped).toHaveLength(0);
+    const open = async () =>
+      (await recurringDue(TODAY)).some((r) => r.recurringId === template.id && r.month === `${MONTH}-01`);
+    try {
+      const paid = await payRecurring(
+        { recurringId: template.id, month: MONTH, payer: `till:${accountId}`, amount: 400, expenseDate: TODAY },
+        ctx(),
+      );
+      expect(await open()).toBe(false);
+      // The void says «that payment was a mistake» — the month is owed again
+      // (#999 read it as «not this month», which the owner's answer undoes).
+      await voidExpense(paid.id, 'eski narx', ctx());
+      expect(await open()).toBe(true);
+      // «Not this month» is its own record now, with a reason.
+      await skipRecurring({ recurringId: template.id, month: MONTH, reason: 'ijara to‘xtadi' }, ctx());
+      expect(await open()).toBe(false);
+      // Stopped (nothing of it is due — this month is skipped, next month's
+      // day has not come): its window is gone, nothing of it is listed.
+      await updateRecurring(template.id, { amount: 450, dayOfMonth: 28, active: false }, ctx());
+      const listed = (await recurringDue(TODAY)).filter((r) => r.recurringId === template.id);
+      expect(listed).toHaveLength(0);
+    } finally {
+      await removeTemplates([template.id]);
+    }
   });
 
-  it('a template paid through a firm raises the firm\'s debt and touches no till (A36)', async () => {
+  it("a template paid through a firm raises the firm's debt only when «To'landi» is pressed, and touches no till (A36)", async () => {
     const category = await saveCategory(
       { name: `Xitoy ijara ${SUFFIX}`, cash: true, sortOrder: 34, active: true },
       ctx(),
@@ -514,38 +545,42 @@ describe('recurring fixed costs', () => {
       ctx(),
     );
     const template = await saveRecurring(
-      {
-        categoryId: category.id,
-        amount: 1200,
-        currency: 'USD',
-        dayOfMonth: 9,
-        accountId,
-        partnerId: firm,
-        active: true,
-      },
+      { categoryId: category.id, amount: 1200, currency: 'USD', dayOfMonth: 9, accountId, partnerId: firm, active: true },
       ctx(),
     );
-    expect(template.accountId).toBeNull();
-    await generateRecurring(M2, ctx());
-    const [posting] = await db
-      .select()
-      .from(expenses)
-      .where(sql`${expenses.recurringId} = ${template.id}`);
-    expect(posting!.partnerId).toBe(firm);
-    expect(posting!.accountId).toBeNull();
-    expect(await partnerBalanceUsd(firm)).toBe(1200);
-
-    // Leave nothing live behind (#183): an active firm adds a payer picker to
-    // every cost and expense form, an active template posts on every press.
-    await voidExpense(posting!.id, 'sinov', ctx());
-    await updateRecurring(template.id, { amount: 1200, dayOfMonth: 9, active: false }, ctx());
-    await setPartnerActive(firm, false, ctx());
+    try {
+      expect(template.accountId).toBeNull();
+      // A promise is not a debt: nothing is owed to the firm until the press.
+      expect(await partnerBalanceUsd(firm)).toBe(0);
+      await payRecurring(
+        { recurringId: template.id, month: MONTH, payer: `partner:${firm}`, amount: 1200, expenseDate: TODAY },
+        ctx(),
+      );
+      const [posting] = await db
+        .select()
+        .from(expenses)
+        .where(sql`${expenses.recurringId} = ${template.id}`);
+      expect(posting!.partnerId).toBe(firm);
+      expect(posting!.accountId).toBeNull();
+      expect(await partnerBalanceUsd(firm)).toBe(1200);
+      // Cleaned up through the expense void, never the partner card's ✕
+      // (refused for a recurring payment, 0106).
+      await voidExpense(posting!.id, 'sinov', ctx());
+      expect(await partnerBalanceUsd(firm)).toBe(0);
+    } finally {
+      await removeTemplates([template.id]);
+      // An active firm adds a payer picker to every cost and expense form.
+      await setPartnerActive(firm, false, ctx());
+    }
   });
 
   it("0099's backfill links the rows the old slot rule recognised, and only those", async () => {
     // The first press after the deploy must not post this month's rent a
     // second time: a posting from before the column existed is linked by the
-    // migration — and a one-off with another amount is left alone.
+    // migration — and a one-off with another amount is left alone. Still
+    // replayable after 0106 because 0106's CHECK is one-directional: a
+    // template with no month is legal, and every reader takes such a row's
+    // month from its date (`postingMonthSql`).
     const category = await saveCategory(
       { name: `Backfill ${SUFFIX}`, cash: true, sortOrder: 35, active: true },
       ctx(),
@@ -580,10 +615,17 @@ describe('recurring fixed costs', () => {
       });
     expect(seen.find((row) => row.id === old.id)!.recurringId).toBe(template.id);
     expect(seen.find((row) => row.id === oneOff.id)!.recurringId).toBeNull();
+    await removeTemplates([template.id]);
   });
 
   it('rejects a malformed month rather than guessing', async () => {
-    await expect(generateRecurring('2031-3', ctx())).rejects.toThrow('bad_month');
+    // postgres would read '2031-3-01' as March; the door asks the shape itself.
+    await expect(
+      payRecurring(
+        { recurringId: uuidv4(), month: '2031-3', payer: `till:${accountId}`, amount: 1, expenseDate: TODAY },
+        ctx(),
+      ),
+    ).rejects.toMatchObject({ code: 'bad_month' });
   });
 });
 
@@ -783,7 +825,7 @@ describe('profitability', () => {
     expect(live.cargo).toBe(round(before.cargo + 111));
     expect(live.batchCost).toBe(round(before.batchCost + 111));
 
-    await voidCostEntry(entry.id, 'ikki marta kiritilgan', ctx());
+    await voidCostEntry(entry.id, 'ikki marta kiritilgan', ctx(), { mayMoveTill: true });
     const after = await snapshot();
     expect(after.direct).toBe(before.direct);
     expect(after.cargo).toBe(before.cargo);
@@ -840,18 +882,20 @@ describe('profitability', () => {
         costTypeId: profitCostTypeId,
         amount: 77,
         currency: 'USD',
-        costDate: '2031-01-15',
+        // The file's private year (#995): a cost dated after tomorrow is
+        // refused at the door now (U21).
+        costDate: `${YEAR}-01-15`,
         allocationBasis: 'weight',
       },
       ctx(),
     );
-    const rows = await profitByClient('2031-01-01', '2031-01-31');
+    const rows = await profitByClient(`${YEAR}-01-01`, `${YEAR}-01-31`);
     const mine = rows.find((row) => row.clientId === clientId);
     expect(mine).toBeTruthy();
     expect(mine!.revenueUsd).toBe(0);
     expect(mine!.costUsd).toBe(77);
     expect(mine!.profitUsd).toBe(-77);
-    await voidCostEntry(entry.id, 'davr testi tugadi', ctx());
+    await voidCostEntry(entry.id, 'davr testi tugadi', ctx(), { mayMoveTill: true });
   });
 
 
@@ -947,6 +991,40 @@ describe('XLSX exports', () => {
     expect(net, 'net profit row').toBeDefined();
     // Month column header, so a reader can tell which period they are holding.
     expect(rows.some((row) => row.includes(M2))).toBe(true);
+  });
+
+  it('the P&L file names what the screen names: a hand-typed partner debt no cost row carries (U22)', async () => {
+    const L = reportLabels('uz');
+    const [type] = await db.select().from(partnerTypes).limit(1);
+    const [partner] = await db
+      .insert(partners)
+      .values({ name: `Qo'lda qarz ${SUFFIX}`, typeId: type!.id, createdBy: actorId })
+      .returning();
+    // The legacy shape: a charge typed on the partner's card with no cost or
+    // expense behind it — written directly, the card door is closed (#999).
+    await db.insert(partnerTransactions).values({
+      partnerId: partner!.id,
+      type: 'charge',
+      amount: '75',
+      currency: 'USD',
+      rateToUsd: '1',
+      amountUsd: '75',
+      txDate: `${M2}-05`,
+      createdBy: actorId,
+    });
+    try {
+      const rows = cells((await open(await buildPnlXlsx(`${M2}-01`, `${M2}-28`, 'uz'))).worksheets[0]!);
+      const note = rows.find((row) => String(row[0]).startsWith(`⚠ ${L.gapManualCharges}`));
+      expect(note, 'the manual-charge warning').toBeDefined();
+      // One text cell: a figure beside it would be summed with the report.
+      expect(note!.filter((cell) => cell !== undefined && cell !== null && cell !== '').length).toBe(1);
+      // The net row is still found the way the file's reader finds it.
+      const pnl = await profitAndLoss(`${M2}-01`, `${M2}-28`);
+      expect(rows.some((row) => String(row[0]).toUpperCase().includes('FOYDA') && row.includes(pnl.netProfit.total))).toBe(true);
+    } finally {
+      await db.delete(partnerTransactions).where(eq(partnerTransactions.partnerId, partner!.id));
+      await db.delete(partners).where(eq(partners.id, partner!.id));
+    }
   });
 
   it('the expense register totals what it lists', async () => {

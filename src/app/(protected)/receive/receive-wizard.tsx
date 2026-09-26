@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { v4 as uuidv4 } from 'uuid';
 import { computeLotTotals } from '@/modules/wms/receipts/math';
+import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 import { DensityBadge } from '@/components/density-badge';
 import { LightboxImg } from '@/components/lightbox-img';
 import { PrintLabels } from '@/components/print-labels';
@@ -673,11 +674,14 @@ export function ReceiveWizard({
                 totalVolumeM3: Number(lot.totalVolumeM3),
               }),
         })),
+        // The office's reader (U28, #979): `Number('1,200')` is NaN, so the
+        // extra cost was silently DROPPED by the filter below — and «1.200»
+        // saved 1.2.
         extraCosts: draft!.costs
-          .filter((c) => c.costTypeId && Number(c.amount) > 0)
+          .filter((c) => c.costTypeId && (parseTypedMoney(c.amount) ?? 0) > 0)
           .map((c) => ({
             costTypeId: c.costTypeId,
-            amount: Number(c.amount),
+            amount: parseTypedMoney(c.amount) ?? Number.NaN,
             currency: c.currency,
           })),
       };
@@ -687,6 +691,8 @@ export function ReceiveWizard({
         setResult(res);
       } else if (res.error === 'warehouse_forbidden') {
         setError(t('warehouseForbidden'));
+      } else if (res.error === 'amount_too_large') {
+        setError(tc('amountTooLarge'));
       } else {
         setError(res.detail ? `${res.error}: ${res.detail}` : (res.error ?? 'error'));
       }

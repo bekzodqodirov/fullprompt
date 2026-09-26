@@ -52,7 +52,10 @@ import { CrateRows } from '@/components/crate-rows';
 import { batchCrates } from '@/modules/wms/inventory/service';
 import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
-import { maySeeTillNames, tillOptionsFor } from '@/modules/wms/costing/till-props';
+import { tillOptionsFor } from '@/modules/wms/costing/till-props';
+import { costSightFor, tillView } from '@/modules/wms/costing/cost-sight';
+import { mayPickTill } from '@/modules/wms/accounting/till-door';
+import { pricingSight } from '@/modules/wms/finance/pricing-view';
 
 /**
  * The status chip wears the stage's colour so the card answers "where is
@@ -75,6 +78,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
   if (!actor) redirect('/login');
   const t = await getTranslations('batches');
   const tc = await getTranslations('common');
+  const tcost = await getTranslations('costing');
   // The contents table is the stock table applied to a truck, so it borrows
   // the stock screen's own column names rather than inventing second ones.
   const tstock = await getTranslations('stock');
@@ -197,7 +201,10 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
   // while the driver waits with the phone in their hand. It disappears the
   // moment a phone claims it — a burnt code on a header teaches nothing.
   const pairCode = devices.find((device) => device.pairCode)?.pairCode ?? null;
-  const costSheet = canSeeCosts ? await batchCostSheet(id) : null;
+  // Q19 (owner, 2026-09-25): the VED lists only the entries he typed, and
+  // the truck's total and per-unit cost come back null for him — everybody's
+  // entries beside this truck's kg/m³ are the tannarx one division away.
+  const costSheet = canSeeCosts ? await batchCostSheet(id, costSightFor(actor)) : null;
   // «Rasxodini yozmading» (owner, 2026-09-24): a truck that has LEFT with
   // nothing attributed to it — no bill of its own, no stamped grid cell.
   const ownCostCount = canSeeCosts && batch.departedAt ? await batchCostEntryCount(id) : null;
@@ -573,8 +580,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
               note: entry.note,
               clientCode,
               partnerName,
-              accountName: maySeeTillNames(actor.permissions) ? accountName : null,
-              paidFromTill: entry.accountId !== null,
+              ...tillView(actor.permissions, { accountId: entry.accountId, accountName, mergedExpenseId: entry.mergedExpenseId }),
             }))}
             costTypes={costMeta.types}
             currencies={costMeta.currencies}
@@ -582,10 +588,19 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
             defaultCurrency={costMeta.currencies.includes('CNY') ? 'CNY' : 'USD'}
             canEdit={canEnterCosts}
             today={tashkentDay()}
+            canUnmerge={mayPickTill(actor.permissions)}
             tillOptions={await tillOptionsFor(actor.permissions)}
             partnerOptions={partnerOptions}
           />
-          {costSheet.entries.length > 0 && (
+          {/* What colleagues wrote here, for a reader who sees only their
+              own entries: the TYPES and never a sum, so «Rastamojka» is not
+              typed a second time by somebody who cannot see it (Q19 D1). */}
+          {costSheet.others.count > 0 && (
+            <p className="text-xs text-ink-500" data-testid="cost-others">
+              🔒 {tcost('othersEntered', { count: costSheet.others.count, types: costSheet.others.types.join(' · ') })}
+            </p>
+          )}
+          {costSheet.totalUsd !== null && costSheet.entries.length > 0 && (
             <p className="border-t border-line pt-2 text-sm">
               <b>Σ ${costSheet.totalUsd}</b>
               {costSheet.usdPerKg !== null && (
@@ -858,7 +873,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
 
       {/* Phase 2.1: VED manager + accountant set each client's negotiated
           price after customs — charges land in the client ledger. */}
-      {actor.permissions.has('finance.manage') && (
+      {pricingSight(actor.permissions, internal) !== 'none' && (
         <Link
           href={`/batches/${batch.id}/pricing`}
           className={`card block text-center font-bold ${internal ? 'text-ink-700 hover:bg-surface-sunken' : 'text-warn hover:bg-warn/10'}`}

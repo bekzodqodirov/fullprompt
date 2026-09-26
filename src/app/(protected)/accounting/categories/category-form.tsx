@@ -87,7 +87,11 @@ export function CategoryForm({ category }: { category?: CategoryRow }) {
         {pending ? tc('loading') : tc('save')}
       </button>
       {state.ok && <p className="text-sm font-semibold text-good">✅ {tc('saved')}</p>}
-      {state.error && <p className="text-sm font-semibold text-bad">{tc('error')}</p>}
+      {state.error && (
+        <p className="text-sm font-semibold text-bad">
+          {state.error === 'cash_flag_locked' ? t('cashFlagLocked') : tc('error')}
+        </p>
+      )}
     </form>
   );
 }

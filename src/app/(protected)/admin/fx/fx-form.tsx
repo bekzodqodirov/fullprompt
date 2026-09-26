@@ -3,6 +3,7 @@
 import { useActionState, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { saveFxRateAction, type FxFormState } from './actions';
+import { PreviewCard } from './preview-card';
 
 /**
  * Manual dated FX rate entry (spec: admin/accountant enters; USD is base).
@@ -31,6 +32,15 @@ export function FxForm({
   const [date, setDate] = useState(today);
   const [confirmed, setConfirmed] = useState(false);
   const last = currency ? standing[currency] : undefined;
+  // The preview belongs to the inputs it was computed for: any edit drops it,
+  // so a confirm can only ever apply the plan the person read (Q18).
+  const [edited, setEdited] = useState(false);
+  const [seen, setSeen] = useState(state);
+  if (state !== seen) {
+    setSeen(state);
+    setEdited(false);
+  }
+  const preview = state.error === 'confirm_reprice' && state.plan && !edited ? state : null;
 
   return (
     <form action={formAction} className="card space-y-2">
@@ -48,6 +58,7 @@ export function FxForm({
           onChange={(event) => {
             setUnits(event.target.value);
             setConfirmed(false);
+            setEdited(true);
           }}
           required
         />
@@ -59,6 +70,7 @@ export function FxForm({
           onChange={(event) => {
             setCurrency(event.target.value);
             setConfirmed(false);
+            setEdited(true);
           }}
           required
           data-testid="fx-currency"
@@ -83,7 +95,10 @@ export function FxForm({
           type="date"
           className="input flex-1"
           value={date}
-          onChange={(event) => setDate(event.target.value)}
+          onChange={(event) => {
+            setDate(event.target.value);
+            setEdited(true);
+          }}
           required
         />
       </div>
@@ -101,13 +116,36 @@ export function FxForm({
           <span>{t('rateJump', { previous: (state.previous ?? 0).toLocaleString('en-US'), currency })}</span>
         </label>
       )}
-      {state.error && state.error !== 'rate_jump' && (
+      {preview?.plan && (
+        <>
+          <PreviewCard plan={preview.plan} changed={preview.changed} />
+          <input type="hidden" name="planHash" value={preview.planHash ?? ''} />
+          {/* The jump was already answered; the confirm carries the answer on. */}
+          {confirmed && <input type="hidden" name="confirmJump" value="1" />}
+        </>
+      )}
+      {state.error === 'busy' && (
+        <p role="alert" className="text-sm font-semibold text-bad">
+          {t('fxPreviewBusy')}
+        </p>
+      )}
+      {state.error && !['rate_jump', 'confirm_reprice', 'busy'].includes(state.error) && (
         <p role="alert" className="text-sm font-semibold text-bad">
           {tc('error')}
         </p>
       )}
-      <button type="submit" disabled={pending} className="btn-primary w-full disabled:opacity-60">
-        {pending ? '…' : state.ok ? `✅ ${tc('saved')}` : tc('save')}
+      {state.ok && (state.repriced ?? 0) > 0 && (
+        <p className="text-sm font-semibold text-good" data-testid="fx-repriced">
+          ✅ {t('fxRepriced', { count: state.repriced ?? 0 })}
+        </p>
+      )}
+      <button
+        type="submit"
+        disabled={pending}
+        className="btn-primary w-full disabled:opacity-60"
+        data-testid={preview ? 'fx-preview-confirm' : undefined}
+      >
+        {pending ? '…' : preview ? t('fxPreviewConfirm') : state.ok ? `✅ ${tc('saved')}` : tc('save')}
       </button>
     </form>
   );

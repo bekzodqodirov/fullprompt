@@ -4,9 +4,10 @@ import { getTranslations } from 'next-intl/server';
 import { futureDatedEntries } from '@/modules/wms/finance/service';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { arAging } from '@/modules/wms/accounting/reports';
+import { agingTotals } from '@/modules/wms/accounting/balance-lines';
 import { toUzs, uzsRate } from '@/modules/wms/accounting/period';
 import { PageHeader } from '@/components/ui/page';
-import { tashkentDay } from '@/modules/platform/time/tashkent';
+import { calendarDay, tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * Who owes, and for how long.
@@ -25,24 +26,13 @@ export default async function ReceivablesPage({
   if (!actor.permissions.has('finance.reports')) redirect('/accounting');
   const t = await getTranslations('accounting');
   const params = await searchParams;
-  const asOf =
-    params.asOf && /^\d{4}-\d{2}-\d{2}$/.test(params.asOf)
-      ? params.asOf
-      : tashkentDay();
+  // A real calendar day or today (U43) — 2026-02-30 used to reach postgres.
+  const asOf = calendarDay(params.asOf) ?? tashkentDay();
   const [rows, rate, future] = await Promise.all([arAging(asOf), uzsRate(), futureDatedEntries()]);
 
   const usd = (value: number) =>
     value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const totals = rows.reduce(
-    (acc, row) => {
-      acc.balance += row.balance;
-      row.buckets.forEach((value, index) => {
-        acc.buckets[index] = (acc.buckets[index] ?? 0) + value;
-      });
-      return acc;
-    },
-    { balance: 0, buckets: [0, 0, 0, 0] as number[] },
-  );
+  const totals = agingTotals(rows);
 
   return (
     <div className="mx-auto max-w-lg space-y-3 md:max-w-4xl">

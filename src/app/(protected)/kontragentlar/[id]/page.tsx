@@ -11,8 +11,14 @@ import {
   partnerBalanceUsd,
   partnerById,
   partnerLedger,
+  partnerNativeBalances,
   raisesBalance,
 } from '@/modules/wms/partners/service';
+import type { PartnerTxType } from '@/modules/wms/partners/ledger-sign';
+import { mayClassifyFx } from '@/modules/wms/finance/fx-door';
+import { fxPnlEffect } from '@/modules/wms/finance/fx-sign';
+import { hasLegacyFx } from '@/modules/wms/finance/fx-legacy';
+import { ClassifyAdjust } from './classify-adjust';
 import { BackLink } from '@/components/back-link';
 import { HistoryTab } from '@/components/history-tab';
 import { PartnerForm } from '../partner-form';
@@ -21,6 +27,8 @@ import { VoidTx } from './void-tx';
 import { setPartnerActiveAction } from '../actions';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
+import { mayPickTill } from '@/modules/wms/accounting/till-door';
+import { moneyHidden } from '@/modules/platform/rbac/money-sight';
 
 /**
  * One counterparty's account.
@@ -51,13 +59,28 @@ export default async function PartnerCardPage({
   if (row.staff && !seesStaff) notFound();
 
   const t = await getTranslations('partners');
+  const ta = await getTranslations('accounting');
   const tc = await getTranslations('common');
   const format = await getFormatter();
   const canManage = actor.permissions.has('finance.manage');
+  // A till moved on this card — a payment, a receipt, and the void of one —
+  // is the accountant's and the admin's (owner's answer b, 2026-09-25). The
+  // VED keeps the card and the «kurs farqi» adjust; the kassas are not
+  // offered, and the action refuses them anyway.
+  const movesTills = canManage && mayPickTill(actor.permissions);
+  // Kurs farqi (0103): who says what a correction IS (Q12's split) and who
+  // reads what a kurs farqi row did to the P&L.
+  const mayClassify = canManage && mayClassifyFx(actor.permissions);
+  const readsPnl = actor.permissions.has('finance.reports');
 
-  const balance = await partnerBalanceUsd(id);
-  const ledger = await partnerLedger(id);
-  const accounts = canManage
+  const [balance, ledger, natives, legacy] = await Promise.all([
+    partnerBalanceUsd(id),
+    partnerLedger(id),
+    partnerNativeBalances(id),
+    mayClassify ? hasLegacyFx('partner', id) : Promise.resolve(false),
+  ]);
+  const nativeParts = natives.filter((row) => row.native !== 0 || (row.currency !== 'USD' && row.usd !== 0));
+  const accounts = movesTills
     ? await db
         .select({ id: moneyAccounts.id, name: moneyAccounts.name })
         .from(moneyAccounts)
@@ -113,10 +136,20 @@ export default async function PartnerCardPage({
     : null;
   // On a staff card the two cash kinds are said in payroll words — the same
   // rows and the same signs, only what a person calls them (owner A1c).
-  const kindLabel = (type: string) =>
-    row.staff && (type === 'payment' || type === 'receipt')
-      ? t(`staffKinds.${type}` as 'staffKinds.payment')
-      : t(`kinds.${type}` as 'kinds.charge');
+  // Literal maps (#163): a kind the ledger learns is a type error here.
+  const KIND: Record<PartnerTxType, string> = {
+    charge: t('kinds.charge'),
+    receipt: row.staff ? t('staffKinds.receipt') : t('kinds.receipt'),
+    payment: row.staff ? t('staffKinds.payment') : t('kinds.payment'),
+    offset: t('kinds.offset'),
+    adjust: t('kinds.adjust'),
+    fx_diff: t('kinds.fx_diff'),
+  };
+  const kindLabel = (type: string) => KIND[type as PartnerTxType] ?? type;
+  const ADJUST_KIND: Record<'fx' | 'correction', string> = {
+    fx: t('adjustKinds.fx'),
+    correction: t('adjustKinds.correction'),
+  };
   const editClients = canManage
     ? await db
         .select({ id: clients.id, clientCode: clients.clientCode, name: clients.name })
@@ -192,6 +225,27 @@ export default async function PartnerCardPage({
             ${balance.toFixed(2)}
           </span>
         </p>
+        {nativeParts.some((part) => part.currency !== 'USD') && (
+          <p className="text-xs text-ink-700" data-testid="partner-native-balances">
+            <span className="text-ink-500">{t('nativeBalances')}</span>{' '}
+            <span className="font-mono">
+              {nativeParts
+                .map((part) =>
+                  part.native === 0 && part.currency !== 'USD'
+                    ? `0 ${part.currency} (${part.usd > 0 ? '+' : '−'}$${Math.abs(part.usd).toFixed(2)})`
+                    : `${part.native.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ${part.currency}`,
+                )
+                .join(' · ')}
+            </span>
+          </p>
+        )}
+        {mayClassify && legacy && (
+          <p className="text-xs">
+            <Link href="/accounting/kurs-farqi" className="text-brand-700 underline" data-testid="partner-fx-legacy-link">
+              ⚖️ {t('fxLegacyLink')}
+            </Link>
+          </p>
+        )}
       </div>
 
       {canManage && (
@@ -215,6 +269,8 @@ export default async function PartnerCardPage({
         <PartnerTxForm
           partnerId={id}
           staff={row.staff}
+          movesTills={movesTills}
+          mayClassify={mayClassify}
           accounts={accounts}
           currencies={currencyCodes}
           today={tashkentDay()}
@@ -236,7 +292,7 @@ export default async function PartnerCardPage({
             </tr>
           </thead>
           <tbody data-testid="partner-ledger">
-            {ledger.map(({ tx, accountName, batchCode, authorName }) => {
+            {ledger.map(({ tx, accountName, batchCode, authorName, expenseRecurringId, expenseVoided }) => {
               const usd = Number(tx.amountUsd);
               // The same predicate the BALANCE uses, not a second opinion.
               const raises = raisesBalance(tx.type, usd);
@@ -257,7 +313,9 @@ export default async function PartnerCardPage({
                         {batchCode}
                       </Link>
                     )}
-                    {accountName && (
+                    {/* The firm's debt history stays his (U33 B); which of
+                        our drawers paid it does not (Q19). */}
+                    {accountName && !moneyHidden('kassa', actor.permissions) && (
                       <span className="ml-1 text-xs text-ink-500">· {accountName}</span>
                     )}
                     {tx.type === 'charge' && !tx.costEntryId && !tx.expenseId && !tx.voidedAt && (
@@ -267,6 +325,23 @@ export default async function PartnerCardPage({
                         ⚠ {t('manualCharge')}
                       </p>
                     )}
+                    {tx.type === 'adjust' && !tx.voidedAt && (
+                      // What the correction IS (0103): the P&L reads the kind.
+                      <p className="text-xs text-ink-500" data-testid="partner-adjust-kind">
+                        {tx.adjustKind === 'fx' || tx.adjustKind === 'correction'
+                          ? ADJUST_KIND[tx.adjustKind]
+                          : t('adjustKinds.unset')}
+                        {!tx.adjustKind && mayClassify && <ClassifyAdjust id={tx.id} />}
+                      </p>
+                    )}
+                    {tx.type === 'fx_diff' && !tx.voidedAt && readsPnl && (
+                      <p className="text-xs font-semibold text-ink-700" data-testid="partner-fx-effect">
+                        {ta('fxEffect', {
+                          kind: fxPnlEffect('partner', usd) >= 0 ? 'gain' : 'loss',
+                          usd: `$${Math.abs(fxPnlEffect('partner', usd)).toFixed(2)}`,
+                        })}
+                      </p>
+                    )}
                     {tx.note && <p className="text-xs text-ink-500">{tx.note}</p>}
                     {tx.voidedAt && (
                       <p className="text-xs font-semibold text-bad">
@@ -274,7 +349,35 @@ export default async function PartnerCardPage({
                       </p>
                     )}
                     <p className="text-xs text-ink-500">{authorName}</p>
-                    {canManage && !tx.voidedAt && <VoidTx id={tx.id} partnerId={id} />}
+                    {/* A debt a cost or an expense wrote is the accountant's
+                        and the admin's to cancel here (the action refuses the
+                        rest); the person who typed the cost takes it back
+                        from the cost itself, where its own rule is asked. */}
+                    {/* A recurring month paid through this firm (0106) is
+                        cancelled by voiding the EXPENSE, which takes this
+                        debt with it and re-opens the month; the service
+                        refuses it here, and a refusal this form cannot
+                        print must not be offered at all. */}
+                    {tx.expenseId && !tx.voidedAt && !expenseVoided ? (
+                      // Any expense's debt is cancelled on the EXPENSE (the
+                      // service refuses it here): the recurring month's note
+                      // says where, and so does every other expense's.
+                      <p
+                        className="text-xs text-ink-500"
+                        data-testid={expenseRecurringId ? 'partner-recurring-charge' : 'partner-expense-charge'}
+                      >
+                        {t(expenseRecurringId ? 'recurringChargeNote' : 'expenseChargeNote')}
+                      </p>
+                    ) : (
+                      canManage &&
+                      !tx.voidedAt &&
+                      // The system's kurs farqi row changes only with its cycle (Q14).
+                      tx.type !== 'fx_diff' &&
+                      (!tx.accountId || movesTills) &&
+                      (!(tx.costEntryId || tx.expenseId) || movesTills) && (
+                        <VoidTx id={tx.id} partnerId={id} />
+                      )
+                    )}
                   </td>
                   <td className="p-2 text-right font-mono whitespace-nowrap">
                     {tx.amount} {tx.currency}

@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
@@ -7,15 +7,12 @@ import {
   attachments,
   boxes,
   clients,
-  costEntries,
   costTypes,
-  partners,
   currencies,
   deals,
   receiptLots,
   receipts,
   warehouses,
-  moneyAccounts,
 } from '@/modules/platform/db/schema';
 import { CostPanel } from '@/components/cost-panel';
 import { getActor } from '@/modules/platform/rbac/authorize';
@@ -29,6 +26,7 @@ import { AssignClient } from './assign-client';
 import { LotEditForm } from './lot-edit-form';
 import { MarkLostForm, type LostBoxOption } from './mark-lost-form';
 import { DealLink } from './deal-link';
+import { receiptHasCompensation } from '@/modules/wms/finance/compensation-follow';
 import { receiptPickupInfo, stopOptionsForWarehouse } from '@/modules/wms/pickups/service';
 import { ReceiptPickupControl } from '@/app/(protected)/zavod/pickup-forms';
 import { CalcLink } from './calc-link';
@@ -45,7 +43,10 @@ import { mayReadReceipt } from '@/modules/wms/receipts/read-door';
 import { listPartners } from '@/modules/wms/partners/service';
 import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
-import { maySeeTillNames, tillOptionsFor } from '@/modules/wms/costing/till-props';
+import { tillOptionsFor } from '@/modules/wms/costing/till-props';
+import { costSightFor, tillView } from '@/modules/wms/costing/cost-sight';
+import { mayPickTill } from '@/modules/wms/accounting/till-door';
+import { costEntriesFor } from '@/modules/wms/costing/service';
 
 export default async function ReceiptDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const actor = await getActor();
@@ -104,18 +105,16 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
     photosByLot.set(photo.entityId, [...(photosByLot.get(photo.entityId) ?? []), photo]);
   }
 
-  const costs = await db
-    .select({
-      entry: costEntries,
-      typeName: costTypes.name,
-      partnerName: partners.name,
-      accountName: moneyAccounts.name,
-    })
-    .from(costEntries)
-    .innerJoin(costTypes, eq(costEntries.costTypeId, costTypes.id))
-    .leftJoin(partners, eq(costEntries.partnerId, partners.id))
-    .leftJoin(moneyAccounts, eq(costEntries.accountId, moneyAccounts.id))
-    .where(and(eq(costEntries.receiptId, id), isNull(costEntries.voidedAt)));
+  // The one reader every cost card lists from (Q19 D1): the VED reads the
+  // entries he typed and the TYPES of the rest, never their amounts.
+  const { entries: costs, others: costOthers } = await costEntriesFor({ receiptId: id }, costSightFor(actor));
+  const tcost = await getTranslations('costing');
+  const othersLine =
+    costOthers.count > 0 ? (
+      <p className="text-xs text-ink-500" data-testid="cost-others">
+        🔒 {tcost('othersEntered', { count: costOthers.count, types: costOthers.types.join(' · ') })}
+      </p>
+    ) : null;
   const canEnterCosts = actor.permissions.has('costs.enter_receipt');
   const costMeta = canEnterCosts
     ? {
@@ -205,6 +204,10 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
     ? ((await db.query.deals.findFirst({ where: eq(deals.id, receipt.dealId) })) ?? null)
     : null;
   const dealOptions = canLinkDeal ? await openDealsForClient(receipt.clientId!) : [];
+  // 0105: a compensation for this prixod's lost cargo follows it to another
+  // deal — said under the picker BEFORE the press. Caught: the column is
+  // minted this release (#472).
+  const hasCompensation = canLinkDeal ? await receiptHasCompensation(db, id).catch(() => false) : false;
   // A deal that has since been won or lost is not in the open list, and
   // hiding it would hide the very mistake being corrected.
   // Phase E1: which CALCULATION priced this cargo. A separate door from the
@@ -323,6 +326,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
           receiptId={id}
           current={linkedDeal ? { id: linkedDeal.id, code: linkedDeal.code } : null}
           options={dealChoices}
+          hasCompensation={hasCompensation}
         />
       )}
 
@@ -434,8 +438,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
                 allocationBasis: entry.allocationBasis,
                 note: entry.note,
                 partnerName,
-                accountName: maySeeTillNames(actor.permissions) ? accountName : null,
-                paidFromTill: entry.accountId !== null,
+                ...tillView(actor.permissions, { accountId: entry.accountId, accountName, mergedExpenseId: entry.mergedExpenseId }),
               }))}
               costTypes={costMeta.types}
               currencies={costMeta.currencies}
@@ -443,11 +446,13 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
               defaultCurrency={warehouse.country === 'CN' ? 'CNY' : 'USD'}
               canEdit={receipt.status === 'confirmed'}
               today={tashkentDay()}
+              canUnmerge={mayPickTill(actor.permissions)}
               tillOptions={await tillOptionsFor(actor.permissions)}
               partnerOptions={partnerOptions}
             />
+            {othersLine}
           </div>
-        ) : costs.length > 0 && (
+        ) : (costs.length > 0 || othersLine) && (
           <div className="border-t border-line pt-3">
             <h2 className="mb-2 text-lg font-bold">{t('costs')}</h2>
             <ul className="divide-y divide-line text-sm">
@@ -461,6 +466,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
                 </li>
               ))}
             </ul>
+            {othersLine}
           </div>
         )}
       </section>
@@ -477,7 +483,11 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
             errors: {
               box_not_in_stock: t('voidBoxGone'),
               receipt_has_costs: t('voidHasCosts'),
+              receipt_has_compensation: t('voidHasCompensation'),
             },
+            // The slot is filled in the browser with the code the refusal
+            // names; passed as a VALUE so next-intl leaves the braces alone.
+            sharedCostOrphaned: t('voidSharedCost', { code: '{code}' }),
           }}
         />
       )}
@@ -514,6 +524,8 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
               annul_forbidden: ta('forbidden'),
               box_on_active_plan: ta('onActivePlan'),
               cost_paid_from_till: ta('paidFromTill'),
+              cost_merged: ta('mergedCost'),
+              receipt_has_compensation: ta('hasCompensation'),
               reason_required: ta('reasonRequired'),
               not_found: ta('notFound'),
               validation: ta('reasonRequired'),

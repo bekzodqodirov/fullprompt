@@ -295,6 +295,12 @@ export const handovers = pgTable(
     personPhone: text('person_phone').notNull(),
     /** Phase 3 debt-control hook — checkbox only, no logic (spec). */
     debtOk: boolean('debt_ok').notNull().default(false),
+    /**
+     * 0104: a `finance.debt_override` holder at the counter allowed cargo
+     * with no price to go out (the owner's Q3b) — the price half of the
+     * direct tick, recorded beside the debt half.
+     */
+    priceOk: boolean('price_ok').notNull().default(false),
     note: text('note'),
     createdBy: uuid('created_by')
       .notNull()
@@ -341,6 +347,12 @@ export const issueApprovals = pgTable(
     expiresAt: timestamp('expires_at', { withTimezone: true }),
     consumedHandoverId: uuid('consumed_handover_id').references(() => handovers.id),
     consumedAt: timestamp('consumed_at', { withTimezone: true }),
+    /**
+     * 0104: the cartons with no price the decider was shown — a SNAPSHOT,
+     * like the debt's ceiling. A carton that lands later is a new question.
+     * `[]` = this request asked nothing about price (every older row).
+     */
+    unpricedBoxIds: jsonb('unpriced_box_ids').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
   },
   (t) => [
     check(
@@ -352,6 +364,7 @@ export const issueApprovals = pgTable(
       'issue_approvals_consumed_check',
       sql`(${t.status} = 'consumed') = (${t.consumedHandoverId} IS NOT NULL)`,
     ),
+    check('issue_approvals_unpriced_check', sql`jsonb_typeof(${t.unpricedBoxIds}) = 'array'`),
     index('issue_approvals_gate_idx').on(t.clientId, t.warehouseId, t.status),
   ],
 );
@@ -455,6 +468,15 @@ export const costEntries = pgTable(
     accountId: uuid('account_id').references((): AnyPgColumn => moneyAccounts.id),
     /** What left the kassa, in the KASSA's currency (set iff accountId). */
     accountAmount: numeric('account_amount', { precision: 14, scale: 2 }),
+    /**
+     * What left the kassa, in DOLLARS, and the rate it was taken at (0103,
+     * owner's Q13/Q18): the PAYMENT's own figure, frozen when the kassa is
+     * named and never re-priced. `amountUsd` stays the tannarx at the day's
+     * table rate; the difference is «Kurs farqi (kassa)». NULL while the
+     * kassa's currency has no rate (the nightly sweep fills it once).
+     */
+    accountAmountUsd: numeric('account_amount_usd', { precision: 14, scale: 2 }),
+    accountRateUsed: numeric('account_rate_used', { precision: 24, scale: 12 }),
     /** The duplicate expense this cost replaced in a merge (A3/M4a). */
     mergedExpenseId: uuid('merged_expense_id').references((): AnyPgColumn => expenses.id),
     note: text('note'),
@@ -491,6 +513,10 @@ export const costEntries = pgTable(
     index('cost_entries_account_idx')
       .on(t.accountId)
       .where(sql`${t.accountId} IS NOT NULL`),
+    check(
+      'cost_entries_account_usd_check',
+      sql`(${t.accountAmountUsd} IS NULL) = (${t.accountRateUsed} IS NULL) AND (${t.accountAmountUsd} IS NULL OR ${t.accountId} IS NOT NULL) AND (${t.accountAmountUsd} IS NULL OR (${t.accountAmountUsd} >= 0 AND ${t.accountAmountUsd} <> 'NaN'::numeric)) AND (${t.accountRateUsed} IS NULL OR (${t.accountRateUsed} > 0 AND ${t.accountRateUsed} <> 'NaN'::numeric))`,
+    ),
     index('cost_entries_unplaced_idx')
       .on(t.createdAt)
       .where(sql`${t.voidedAt} IS NULL AND ${t.partnerId} IS NULL AND ${t.accountId} IS NULL`),
@@ -873,7 +899,11 @@ export const clientTransactions = pgTable(
     currency: varchar('currency', { length: 3 })
       .notNull()
       .references(() => currencies.code),
-    /** Frozen at entry time — a later FX edit must not move settled money. */
+    /**
+     * Frozen at entry for a PAYMENT or a REFUND. A CHARGE follows its day's
+     * rate when that rate is typed late or corrected, through the previewed
+     * /admin/fx confirm (0103, owner's Q18: debts may move, payments never).
+     */
     rateToUsd: numeric('rate_to_usd', { precision: 24, scale: 12 }).notNull(),
     amountUsd: numeric('amount_usd', { precision: 14, scale: 2 }).notNull(),
     /** Payments only: cash / card / transfer (owner accepts all three). */
@@ -885,7 +915,7 @@ export const clientTransactions = pgTable(
      * The job this charge is for, when it was raised from one. A charge posted
      * from batch pricing carries it only when the client's cargo on that truck
      * is one deal's and nothing else (R3a, derived server-side by
-     * `soleDealAboard`); null otherwise — which is a correct answer, not a
+     * `cargoAboard`); null otherwise — which is a correct answer, not a
      * gap: a deferral cannot cover money nobody tied to a job.
      */
     dealId: uuid('deal_id').references(() => deals.id),
@@ -898,6 +928,18 @@ export const clientTransactions = pgTable(
      * `accountId` is NULL on these by construction: no till opened.
      */
     partnerId: uuid('partner_id').references(() => partners.id),
+    /**
+     * A «kurs farqi» row (0103, Q14): the row where the account's own
+     * currency returned to zero. The system's rows are in that currency; a
+     * cross-currency residue the accountant closes by hand (Q24 b) is in USD.
+     */
+    fxAnchorId: uuid('fx_anchor_id').references((): AnyPgColumn => clientTransactions.id),
+    /**
+     * A «Kompensatsiya» row (0105, Q15): the prixod whose cargo was lost. Only
+     * a compensation names a prixod (the CHECK), and its deal follows the
+     * prixod's (`followCompensationDealTx`), while its client never moves.
+     */
+    receiptId: uuid('receipt_id').references(() => receipts.id),
     note: text('note'),
     createdBy: uuid('created_by')
       .notNull()
@@ -910,12 +952,39 @@ export const clientTransactions = pgTable(
   (t) => [
     // 'refund' (0101, owner R6a): money handed BACK to a client from a kassa.
     // It raises the balance like a charge and lowers a till like an expense.
-    check('client_transactions_type_check', sql`${t.type} IN ('charge', 'payment', 'refund')`),
+    // 'fx_diff' (0103, Q14): the dollar residue of an account that reached
+    // zero in its own currency — native 0, a signed amount_usd.
+    // 'compensation' (0105, Q15): what we pay a client back for LOST cargo
+    // above our own price — lowers the balance and the revenue, moves no kassa.
+    check(
+      'client_transactions_type_check',
+      sql`${t.type} IN ('charge', 'payment', 'refund', 'fx_diff', 'compensation')`,
+    ),
+    check(
+      'client_transactions_compensation_check',
+      sql`(${t.type} = 'compensation') = (${t.receiptId} IS NOT NULL) AND (${t.type} <> 'compensation' OR (${t.accountId} IS NULL AND ${t.partnerId} IS NULL AND ${t.batchId} IS NULL AND ${t.method} IS NULL AND length(btrim(coalesce(${t.note}, ''))) >= 3))`,
+    ),
+    index('client_transactions_receipt_idx')
+      .on(t.receiptId)
+      .where(sql`${t.receiptId} IS NOT NULL`),
     check(
       'client_transactions_refund_check',
       sql`${t.type} <> 'refund' OR (${t.accountId} IS NOT NULL AND ${t.partnerId} IS NULL AND ${t.batchId} IS NULL)`,
     ),
-    check('client_transactions_amount_check', sql`${t.amount} > 0`),
+    check(
+      'client_transactions_amount_check',
+      sql`CASE WHEN ${t.type} = 'fx_diff' THEN ${t.amount} = 0 ELSE ${t.amount} > 0 END`,
+    ),
+    check(
+      'client_transactions_fx_check',
+      sql`(${t.type} = 'fx_diff') = (${t.fxAnchorId} IS NOT NULL) AND (${t.type} <> 'fx_diff' OR (${t.accountId} IS NULL AND ${t.partnerId} IS NULL AND ${t.batchId} IS NULL AND ${t.dealId} IS NULL AND ${t.method} IS NULL AND ${t.amountUsd} <> 0 AND ${t.amountUsd} <> 'NaN'::numeric))`,
+    ),
+    uniqueIndex('client_transactions_fx_anchor_uniq')
+      .on(t.fxAnchorId, t.currency)
+      .where(sql`${t.type} = 'fx_diff' AND ${t.voidedAt} IS NULL`),
+    index('client_transactions_fx_anchor_idx')
+      .on(t.fxAnchorId)
+      .where(sql`${t.fxAnchorId} IS NOT NULL`),
     check(
       'client_transactions_method_check',
       sql`${t.method} IS NULL OR ${t.method} IN ('cash', 'card', 'transfer')`,
@@ -936,6 +1005,35 @@ export const clientTransactions = pgTable(
 // ---------------------------------------------------------------------------
 
 /** Operating-expense categories — maintained by hand, not hardcoded (owner). */
+/**
+ * The owner's monthly plan (0102, his answer 5a): what the month should bring
+ * in and earn, beside what it did on the dashboard. Keyed on the month's first
+ * day; a null figure is «no plan», never a $0 plan.
+ */
+export const businessTargets = pgTable(
+  'business_targets',
+  {
+    month: date('month').primaryKey(),
+    revenueUsd: numeric('revenue_usd', { precision: 14, scale: 2 }),
+    netProfitUsd: numeric('net_profit_usd', { precision: 14, scale: 2 }),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check('business_targets_month_check', sql`${t.month} = date_trunc('month', ${t.month})::date`),
+    check(
+      'business_targets_revenue_check',
+      sql`${t.revenueUsd} IS NULL OR (${t.revenueUsd} >= 0 AND ${t.revenueUsd} <> 'NaN'::numeric)`,
+    ),
+    check(
+      'business_targets_profit_check',
+      sql`${t.netProfitUsd} IS NULL OR ${t.netProfitUsd} <> 'NaN'::numeric`,
+    ),
+  ],
+);
+
 export const expenseCategories = pgTable('expense_categories', {
   id: id(),
   name: text('name').notNull().unique(),
@@ -1004,11 +1102,26 @@ export const expenses = pgTable(
     partnerId: uuid('partner_id').references(() => partners.id),
     note: text('note'),
     /**
-     * The template that posted it (0099, audit A32/A33). «Posted this month»
-     * is a row of THIS template on that date, voided or not — never a slot any
-     * one-off on the same day could fill.
+     * The template this payment answers (0099, audit A32/A33). A LIVE
+     * non-partial row closes its month (`recurringMonth`); a voided one
+     * re-opens it (0106, owner's Q6) — never a slot any one-off on the same
+     * day could fill. Written only by accounting/recurring.ts.
      */
     recurringId: uuid('recurring_id').references((): AnyPgColumn => recurringExpenses.id),
+    /**
+     * WHICH month it answers (0106), the first of that month. Since Q6 the
+     * date is the day the money actually left, so a September salary paid on
+     * 3 October carries October's date and September's month. A row with a
+     * template and no month (the old app during the migrate window) is read
+     * as its date's month by every reader (`postingMonth`).
+     */
+    recurringMonth: date('recurring_month'),
+    /**
+     * A part payment the person SAID was partial: it leaves the month open
+     * for the rest. A person's statement, never inferred from the sum — a
+     * deliberately reduced last salary must be able to close its month.
+     */
+    recurringPartial: boolean('recurring_partial').notNull().default(false),
     createdBy: uuid('created_by')
       .notNull()
       .references(() => users.id),
@@ -1022,9 +1135,17 @@ export const expenses = pgTable(
     index('expenses_date_idx').on(t.expenseDate),
     index('expenses_category_idx').on(t.categoryId, t.expenseDate),
     index('expenses_account_idx').on(t.accountId, t.expenseDate),
-    index('expenses_recurring_idx')
-      .on(t.recurringId, t.expenseDate)
+    index('expenses_recurring_month_idx')
+      .on(t.recurringId, t.recurringMonth)
       .where(sql`${t.recurringId} IS NOT NULL`),
+    // One-directional (0106): a month needs a template, not the reverse — the
+    // old app may write a template with no month while `migrate` runs.
+    check(
+      'expenses_recurring_month_check',
+      sql`(${t.recurringMonth} IS NULL OR ${t.recurringId} IS NOT NULL)
+        AND (${t.recurringMonth} IS NULL OR extract(day FROM ${t.recurringMonth}) = 1)
+        AND (NOT ${t.recurringPartial} OR ${t.recurringId} IS NOT NULL)`,
+    ),
   ],
 );
 
@@ -1087,10 +1208,11 @@ export const expenseRequests = pgTable(
 );
 
 /**
- * Rent, salaries and the like. A template, not an automatic posting: the
- * accountant presses "create this month's fixed costs" and reviews what
- * landed — a silent monthly insert would quietly falsify a P&L the month
- * something changed.
+ * Rent, salaries and the like. A PROMISE WITH A DAY, never a posting (owner's
+ * Q6, 0106): every month from `dueFrom` appears on the due list, and only a
+ * kassa holder's «To'landi» (or «Bog'lash» onto a payment already typed)
+ * writes money — on the day it actually left. Nothing is ever deducted by
+ * itself.
  */
 export const recurringExpenses = pgTable(
   'recurring_expenses',
@@ -1111,6 +1233,15 @@ export const recurringExpenses = pgTable(
     partnerId: uuid('partner_id').references(() => partners.id),
     note: text('note'),
     active: boolean('active').notNull().default(true),
+    /**
+     * The first month this template can be due (0106) — its month, the day
+     * is not compared. The create form's «Birinchi to'lov» picks this month
+     * or next; a reactivation restarts it at today, so the stopped months
+     * never come back as arrears.
+     */
+    dueFrom: date('due_from')
+      .notNull()
+      .default(sql`((now() AT TIME ZONE 'Asia/Tashkent')::date)`),
     createdBy: uuid('created_by')
       .notNull()
       .references(() => users.id),
@@ -1120,6 +1251,38 @@ export const recurringExpenses = pgTable(
   (t) => [
     check('recurring_expenses_amount_check', sql`${t.amount} > 0`),
     check('recurring_expenses_day_check', sql`${t.dayOfMonth} BETWEEN 1 AND 28`),
+  ],
+);
+
+/**
+ * «Bu oy yo'q» (0106): a template-month closed with no money, with the
+ * reason in words — a person who left mid-month, a lease paused. Its own
+ * record, so a VOIDED payment can mean «that payment was a mistake» (the
+ * month re-opens) instead of #999's «not this month». Undone by voiding the
+ * skip, never by deleting it.
+ */
+export const recurringSkips = pgTable(
+  'recurring_skips',
+  {
+    id: id(),
+    recurringId: uuid('recurring_id')
+      .notNull()
+      .references(() => recurringExpenses.id),
+    month: date('month').notNull(),
+    reason: text('reason').notNull(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+    voidedAt: timestamp('voided_at', { withTimezone: true }),
+    voidedBy: uuid('voided_by').references(() => users.id),
+  },
+  (t) => [
+    check('recurring_skips_month_check', sql`extract(day FROM ${t.month}) = 1`),
+    check('recurring_skips_reason_check', sql`length(btrim(${t.reason})) > 0`),
+    uniqueIndex('recurring_skips_live_idx')
+      .on(t.recurringId, t.month)
+      .where(sql`voided_at IS NULL`),
   ],
 );
 
@@ -1141,6 +1304,12 @@ export const accountTransfers = pgTable(
     amountFrom: numeric('amount_from', { precision: 14, scale: 2 }).notNull(),
     amountTo: numeric('amount_to', { precision: 14, scale: 2 }).notNull(),
     amountUsd: numeric('amount_usd', { precision: 14, scale: 2 }).notNull(),
+    /**
+     * The TO side in dollars, frozen at entry (0103, U11): its difference from
+     * `amountUsd` is the exchange spread. NULL while the to-currency has no
+     * rate — never a refusal; the nightly sweep fills it once.
+     */
+    amountToUsd: numeric('amount_to_usd', { precision: 14, scale: 2 }),
     transferDate: date('transfer_date').notNull(),
     note: text('note'),
     createdBy: uuid('created_by')
@@ -1154,6 +1323,10 @@ export const accountTransfers = pgTable(
   (t) => [
     check('account_transfers_amount_check', sql`${t.amountFrom} > 0 AND ${t.amountTo} > 0`),
     check('account_transfers_distinct_check', sql`${t.fromAccountId} <> ${t.toAccountId}`),
+    check(
+      'account_transfers_amount_to_usd_check',
+      sql`${t.amountToUsd} IS NULL OR (${t.amountToUsd} >= 0 AND ${t.amountToUsd} <> 'NaN'::numeric)`,
+    ),
     index('account_transfers_date_idx').on(t.transferDate),
   ],
 );
@@ -2760,6 +2933,14 @@ export const partnerTransactions = pgTable(
     expenseId: uuid('expense_id').references(() => expenses.id),
     /** The client payment this offset pairs with. */
     clientTxId: uuid('client_tx_id').references(() => clientTransactions.id),
+    /** A «kurs farqi» row (0103, Q14): the row that closed the cycle. */
+    fxAnchorId: uuid('fx_anchor_id').references((): AnyPgColumn => partnerTransactions.id),
+    /**
+     * What a hand-typed `adjust` IS (0103, Q12's split): 'fx' reaches the
+     * P&L's «Kurs farqi», 'correction' (a typo or an opening balance) does
+     * not, NULL = nobody with the right to say has said yet.
+     */
+    adjustKind: text('adjust_kind'),
     note: text('note'),
     createdBy: uuid('created_by')
       .notNull()
@@ -2772,12 +2953,26 @@ export const partnerTransactions = pgTable(
   (t) => [
     check(
       'partner_tx_type_check',
-      sql`${t.type} IN ('charge', 'receipt', 'payment', 'offset', 'adjust')`,
+      sql`${t.type} IN ('charge', 'receipt', 'payment', 'offset', 'adjust', 'fx_diff')`,
     ),
     check(
       'partner_tx_amount_check',
-      sql`CASE WHEN ${t.type} = 'adjust' THEN ${t.amount} <> 0 ELSE ${t.amount} > 0 END`,
+      sql`CASE WHEN ${t.type} = 'adjust' THEN ${t.amount} <> 0 WHEN ${t.type} = 'fx_diff' THEN ${t.amount} = 0 ELSE ${t.amount} > 0 END`,
     ),
+    check(
+      'partner_tx_fx_check',
+      sql`(${t.type} = 'fx_diff') = (${t.fxAnchorId} IS NOT NULL) AND (${t.type} <> 'fx_diff' OR (${t.costEntryId} IS NULL AND ${t.expenseId} IS NULL AND ${t.clientTxId} IS NULL AND ${t.batchId} IS NULL AND ${t.amountUsd} <> 0 AND ${t.amountUsd} <> 'NaN'::numeric))`,
+    ),
+    check(
+      'partner_tx_adjust_kind_check',
+      sql`${t.adjustKind} IS NULL OR (${t.type} = 'adjust' AND ${t.adjustKind} IN ('fx', 'correction'))`,
+    ),
+    uniqueIndex('partner_tx_fx_anchor_uniq')
+      .on(t.fxAnchorId, t.currency)
+      .where(sql`${t.type} = 'fx_diff' AND ${t.voidedAt} IS NULL`),
+    index('partner_tx_fx_anchor_idx')
+      .on(t.fxAnchorId)
+      .where(sql`${t.fxAnchorId} IS NOT NULL`),
     // Money that moved must name its cash box; money that did not must not.
     check(
       'partner_tx_account_check',

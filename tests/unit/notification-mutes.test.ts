@@ -93,3 +93,22 @@ describe('notification mutes (spec §11 per-user mute)', () => {
     for (const type of [...routed, ...digests]) expect(covered.has(type), type).toBe(true);
   });
 });
+
+describe('0104 — the unpriced-cargo pushes can be muted', () => {
+  it('«narxsiz yuk berildi» and «narx qo‘yilgan, yuki qoldi» are alerts', () => {
+    // Both are sent through notifyStaffTelegram, not buildRecipients, so the
+    // routing scan above cannot see them — named here instead.
+    expect(MUTE_GROUPS.alerts).toContain('UnpricedIssued');
+    expect(MUTE_GROUPS.alerts).toContain('PricedCargoLeft');
+  });
+});
+
+describe('0105 — «kompensatsiya yozilgan karobka topildi» can be muted', () => {
+  it('is an alert, beside BoxLost', () => {
+    // Sent through notifyStaffTelegram (compensatedCargoFound), so the
+    // routing scan cannot see it either — named here.
+    expect(MUTE_GROUPS.alerts).toContain('CompensatedCargoFound');
+    const sender = readFileSync(resolve(__dirname, '../../src/modules/wms/finance/compensation.ts'), 'utf8');
+    expect(sender).toContain("type: 'CompensatedCargoFound',");
+  });
+});
