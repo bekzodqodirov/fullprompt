@@ -120,6 +120,59 @@ export async function clientsForChat(chatId: bigint) {
     .then((rows) => rows.map((r) => r.client));
 }
 
+/**
+ * Every code of the SAME person joins a chat that already holds one of them
+ * (the owner, 2026-09-26: «meni nomerimda 4 5 ta kod bolsa hammasini emas
+ * faqat 1 tasini korsatyabti»).
+ *
+ * `linkAllClientsForPhone` does this at the contact step and
+ * `autoLinkClientToVerifiedChats` when a code is saved — but a chat linked by
+ * a staff CODE (`/start <code>`) links exactly one client, and a code whose
+ * phone was typed after the chat was verified was never saved again. Both
+ * left the person's other codes outside their own cabinet for ever. This is
+ * the same sibling rule (a shared phone = the same person, round 32), asked
+ * when the cabinet is opened, so it heals whatever door linked the chat.
+ *
+ * A code that has ANY row for this chat — revoked included — is left alone:
+ * a person took it away on purpose and a sweep must not hand it back.
+ */
+export async function linkPhoneSiblings(chatId: bigint): Promise<number> {
+  const linked = await clientsForChat(chatId);
+  if (linked.length === 0) return 0;
+  const touched = new Set(
+    (
+      await db
+        .select({ clientId: clientTelegramLinks.clientId })
+        .from(clientTelegramLinks)
+        .where(eq(clientTelegramLinks.telegramChatId, chatId))
+    ).map((r) => r.clientId),
+  );
+  const phones = new Set<string>();
+  for (const c of linked) {
+    if (Array.isArray(c.phones)) {
+      for (const p of c.phones) if (typeof p === 'string' && p.trim()) phones.add(p.trim());
+    }
+  }
+  let added = 0;
+  // Bounded: a broker chat holds many people's codes, and each phone is one
+  // query. Ten covers every person the owner has described.
+  for (const phone of [...phones].slice(0, 10)) {
+    for (const sibling of await activeClientsByPhone(phone)) {
+      if (touched.has(sibling.id)) continue;
+      touched.add(sibling.id);
+      await db.insert(clientTelegramLinks).values({
+        clientId: sibling.id,
+        telegramChatId: chatId,
+        status: 'linked',
+        linkedAt: new Date(),
+        createdBy: null,
+      });
+      added += 1;
+    }
+  }
+  return added;
+}
+
 export interface CargoTransit {
   /** The road's two ends by NAME — «Yiwu → Kashgar», never a truck's code. */
   fromPlace: string;

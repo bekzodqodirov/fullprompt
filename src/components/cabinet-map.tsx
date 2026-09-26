@@ -1,229 +1,266 @@
 'use client';
 
-import { useState } from 'react';
-import { graticule, toSvg } from '@/modules/wms/tracking/map-data';
+import { useEffect, useRef, useState } from 'react';
+import type * as Leaflet from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import type { ClientLabels } from '@/modules/platform/telegram/client-labels';
 import type { CabinetMapPlace } from '@/modules/wms/client-cabinet/map';
 
 /**
- * «Yukim qayerda» — the client's own cargo on the corridor (item 11).
+ * «Yukim qayerda» — the client's own cargo on a REAL map (item 11, rebuilt
+ * after his first look: «scrol qilganda map katta kichik bolish orniga pastga
+ * scrol bolib ketyabti va mapni ozi ham korinmadi yukni ustiga bosganda
+ * malumotlar korinmadi»).
  *
- * Drawn as SVG on the corridor's own projection (`tracking/map-data.ts`), the
- * same one the staff map's schematic uses — no tiles, no third-party host,
- * so it opens in Yiwu and Kashgar the same as in Tashkent (#664's lesson: a
- * dependency that fetches itself from a CDN is unreachable exactly where the
- * cargo is). Framed on THIS client's places, not the whole corridor: at
- * 360 px the whole of China leaves a truck the size of a full stop.
+ * The first version was an SVG on the corridor's projection: a picture, not a
+ * map. A pinch scrolled the page, there was no land under the dots, and a tap
+ * on a 30-px circle in a 300-px drawing missed as often as it hit. This is
+ * Leaflet — the staff map's engine — so a pinch zooms and a drag pans, over
+ * the SAME self-hosted OSM extract (`/api/basemap`, our own origin, so it
+ * loads in Kashgar as fast as the page does, #664). Without that file on the
+ * server the map still zooms and pans, over a plain field with the corridor's
+ * cities named.
  *
- * A tap on a truck or a warehouse lists what of theirs is there. Nothing on
- * this screen names another customer or the truck's code (`cabinetMap`).
+ * Under the map is the LIST of every place, and it is the answer: a tap on a
+ * marker opens that place's row, and a place with no coordinates is still a
+ * row — the first version dropped it, and cargo in an unplotted warehouse
+ * vanished from the screen that exists to show where it is. Nothing here
+ * names another customer or a truck's code (`cabinetMap`).
  */
-/**
- * The corridor's cities, for bearings only — a map of dots on a grid is not
- * a map anybody can read. Approximate, labels and nothing else, in the order
- * they win a crowded corner: the western end packs four towns into a thumb's
- * width, so a label that would sit on another label or on a marker is left
- * out rather than printed through it. No Urumqi — the road does not go there
- * (round 109), and a name on the map reads as a place the cargo passes.
- */
+
+/** Bearings for the no-basemap field. No Urumqi: the road does not go there. */
 const CITIES: { name: string; x: number; y: number }[] = [
   { name: 'Toshkent', x: 69.24, y: 41.31 },
-  { name: 'Qashg‘ar', x: 75.98, y: 39.47 },
-  { name: 'Yiwu', x: 120.07, y: 29.31 },
-  { name: 'Guangzhou', x: 113.26, y: 23.13 },
   { name: 'Andijon', x: 72.34, y: 40.78 },
   { name: 'Osh', x: 72.8, y: 40.53 },
-  { name: 'Irkeshtam', x: 73.95, y: 39.68 },
+  { name: 'Qashg‘ar', x: 75.98, y: 39.47 },
   { name: 'Lanzhou', x: 103.83, y: 36.06 },
   { name: 'Xi’an', x: 108.94, y: 34.34 },
+  { name: 'Yiwu', x: 120.07, y: 29.31 },
+  { name: 'Guangzhou', x: 113.26, y: 23.13 },
 ];
+
+const WAREHOUSE = '#1d4ed8';
+const TRUCK = '#f59e0b';
+
+/** The staff map's two shapes (#137): a warehouse is a square, a truck a lorry. */
+function markerHtml(p: CabinetMapPlace, on: boolean): string {
+  const ring = on ? 'box-shadow:0 0 0 3px #fff,0 0 0 6px #111827;border-radius:8px;' : '';
+  const shape =
+    p.kind === 'warehouse'
+      ? `<svg width="30" height="30" viewBox="0 0 26 26" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="1" width="24" height="24" rx="6" fill="${WAREHOUSE}" stroke="#fff" stroke-width="2"/><path d="M7 18 L7 11 L13 7 L19 11 L19 18 Z" fill="#fff" opacity="0.92"/></svg>`
+      : `<svg width="40" height="30" viewBox="0 0 38 28" xmlns="http://www.w3.org/2000/svg"><path d="M35 5 H17 V11 H12 L6 17 V22 H35 Z" fill="${TRUCK}" stroke="#fff" stroke-width="3" paint-order="stroke" stroke-linejoin="round"/><circle cx="13" cy="22" r="3.6" fill="#1f2937" stroke="#fff" stroke-width="1.6"/><circle cx="29" cy="22" r="3.6" fill="#1f2937" stroke="#fff" stroke-width="1.6"/></svg>`;
+  const badge = `<span style="position:absolute;top:-8px;right:-10px;background:#111827;color:#fff;border:1.5px solid #fff;border-radius:10px;padding:0 5px;font:700 11px/16px system-ui,sans-serif">${p.boxes}</span>`;
+  return `<div data-testid="cab-map-marker-${p.kind}" style="position:relative;display:inline-block;line-height:0;${ring}">${shape}${badge}</div>`;
+}
 
 export function CabinetMap({
   places,
   t,
   goodsName,
+  basemap = false,
 }: {
   places: CabinetMapPlace[];
   t: ClientLabels;
   goodsName: (lot: CabinetMapPlace['lots'][number]) => string;
+  basemap?: boolean;
 }) {
   const [picked, setPicked] = useState<string | null>(places[0]?.key ?? null);
+  const canvas = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<Leaflet.Map | null>(null);
+  const markers = useRef(new Map<string, Leaflet.Marker>());
+  const rows = useRef(new Map<string, HTMLLIElement>());
+  const libRef = useRef<typeof Leaflet | null>(null);
+
+  // The map mounts once per data set. Leaflet touches `window` at import, so
+  // it is loaded here and never on the server.
+  useEffect(() => {
+    let cancelled = false;
+    let map: Leaflet.Map | null = null;
+    void (async () => {
+      const L = (await import('leaflet')).default;
+      if (cancelled || !canvas.current) return;
+      libRef.current = L;
+      // One finger pans, two fingers zoom — Leaflet owns every touch on the
+      // canvas (`touch-action: none`), so the page underneath never moves.
+      map = L.map(canvas.current, {
+        zoomControl: true,
+        attributionControl: basemap,
+        minZoom: 3,
+        maxZoom: 12,
+      });
+      mapRef.current = map;
+
+      if (basemap) {
+        const { leafletLayer } = await import('protomaps-leaflet');
+        if (cancelled) return;
+        leafletLayer({
+          url: '/api/basemap/corridor.pmtiles',
+          flavor: 'light',
+          lang: 'ru',
+          maxDataZoom: 8,
+          attribution: '© OpenStreetMap',
+        }).addTo(map);
+      } else {
+        // The city names live in their own pane UNDER the markers and take no
+        // taps: the first draft used Leaflet tooltips, whose pane is above the
+        // markers, and three names in the western corner buried the truck.
+        const pane = map.createPane('cities');
+        pane.style.zIndex = '350';
+        pane.style.pointerEvents = 'none';
+        for (const c of CITIES) {
+          L.marker([c.y, c.x], {
+            pane: 'cities',
+            interactive: false,
+            keyboard: false,
+            icon: L.divIcon({
+              className: '',
+              html: `<span class="cab-map-city"><i></i>${c.name}</span>`,
+              iconSize: [0, 0],
+              iconAnchor: [3, 3],
+            }),
+          }).addTo(map);
+        }
+      }
+
+      const bounds: [number, number][] = [];
+      for (const p of places) {
+        if (p.kind === 'truck' && p.route.length > 1) {
+          L.polyline(
+            p.route.map((r) => [r.y, r.x] as [number, number]),
+            { color: '#3b82f6', weight: 3, dashArray: '7 6', opacity: 0.7 },
+          ).addTo(map);
+          for (const r of p.route) bounds.push([r.y, r.x]);
+        }
+        if (!p.point) continue;
+        bounds.push([p.point.y, p.point.x]);
+        const marker = L.marker([p.point.y, p.point.x], {
+          icon: L.divIcon({
+            className: '',
+            html: markerHtml(p, p.key === places[0]?.key),
+            iconSize: p.kind === 'truck' ? [40, 30] : [30, 30],
+            iconAnchor: p.kind === 'truck' ? [20, 15] : [15, 15],
+          }),
+          zIndexOffset: p.kind === 'truck' ? 1000 : 0,
+          keyboard: true,
+        })
+          .addTo(map)
+          .on('click', () => {
+            setPicked(p.key);
+            rows.current.get(p.key)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+          });
+        markers.current.set(p.key, marker);
+      }
+      if (bounds.length) {
+        map.fitBounds(L.latLngBounds(bounds), { padding: [36, 36], maxZoom: 9 });
+      } else {
+        map.fitBounds([[20, 60], [47, 125]]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      markers.current = new Map();
+      map?.remove();
+      mapRef.current = null;
+    };
+  }, [places, basemap]);
+
+  // The picked place wears a ring; every other marker is redrawn plain.
+  useEffect(() => {
+    const L = libRef.current;
+    if (!L) return;
+    for (const p of places) {
+      const m = markers.current.get(p.key);
+      if (!m) continue;
+      m.setIcon(
+        L.divIcon({
+          className: '',
+          html: markerHtml(p, p.key === picked),
+          iconSize: p.kind === 'truck' ? [40, 30] : [30, 30],
+          iconAnchor: p.kind === 'truck' ? [20, 15] : [15, 15],
+        }),
+      );
+    }
+  }, [picked, places]);
+
   if (places.length === 0) return <p className="cab-empty">{t.mapEmpty}</p>;
 
-  // The frame: every place and every truck's road, with air around them and
-  // never tighter than a few hundred kilometres, so one warehouse alone is
-  // still a place on a map and not a dot on a blank page.
-  const pts = places.flatMap((p) => [toSvg({ x: p.x, y: p.y }), ...p.route.map((r) => toSvg(r))]);
-  const xs = pts.map((p) => p.x);
-  const ys = pts.map((p) => p.y);
-  const MIN = 120;
-  let [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
-  if (x1 - x0 < MIN) [x0, x1] = [(x0 + x1) / 2 - MIN / 2, (x0 + x1) / 2 + MIN / 2];
-  if (y1 - y0 < MIN * 0.75) [y0, y1] = [(y0 + y1) / 2 - MIN * 0.375, (y0 + y1) / 2 + MIN * 0.375];
-  const pad = Math.max(x1 - x0, y1 - y0) * 0.15;
-  const view = { x: x0 - pad, y: y0 - pad, w: x1 - x0 + pad * 2, h: y1 - y0 + pad * 2 };
-  const unit = view.w / 360; // one CSS pixel at a 360-wide phone
-  const grid = graticule();
-  const selected = places.find((p) => p.key === picked) ?? null;
-
-  // Greedy placement: markers claim their room first, then each city in
-  // CITIES' order takes its label box only if the box is free.
-  const taken = places.map((p) => {
-    const s = toSvg({ x: p.x, y: p.y });
-    return { x0: s.x - unit * 20, x1: s.x + unit * 36, y0: s.y - unit * 26, y1: s.y + unit * 18 };
-  });
-  const cities = CITIES.flatMap((c) => {
-    const s = toSvg(c);
-    const box = {
-      x0: s.x - unit * 3,
-      x1: s.x + unit * (6 + c.name.length * 6),
-      y0: s.y - unit * 14,
-      y1: s.y + unit * 3,
-    };
-    const clash = taken.some((b) => box.x0 < b.x1 && b.x0 < box.x1 && box.y0 < b.y1 && b.y0 < box.y1);
-    if (clash) return [];
-    taken.push(box);
-    return [{ ...c, s }];
-  });
-  const line = (route: { x: number; y: number }[]) =>
-    route
-      .map((r) => {
-        const s = toSvg(r);
-        return `${s.x},${s.y}`;
-      })
-      .join(' ');
+  const pick = (p: CabinetMapPlace) => {
+    setPicked(p.key === picked ? null : p.key);
+    if (p.point && mapRef.current) {
+      mapRef.current.setView([p.point.y, p.point.x], Math.max(mapRef.current.getZoom(), 6), { animate: true });
+    }
+  };
 
   return (
     <div className="cab-map" data-testid="cab-map">
-      <svg
-        viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
-        className="cab-map-svg"
-        // The drawing's own proportions, capped by the stylesheet — no grey
-        // bands above and below a wide corridor on a tall phone.
-        style={{ aspectRatio: `${view.w} / ${view.h}` }}
-        preserveAspectRatio="xMidYMid meet"
-        role="img"
-        aria-label={t.mapTitle}
-      >
-        <rect x={view.x} y={view.y} width={view.w} height={view.h} fill="var(--card)" />
-        {[...grid.meridians, ...grid.parallels].map((g, i) => (
-          <line key={i} x1={g.x1} y1={g.y1} x2={g.x2} y2={g.y2} stroke="var(--line)" strokeWidth={unit} />
-        ))}
-        {places
-          .filter((p) => p.kind === 'truck' && p.route.length > 1)
-          .map((p) => (
-            <polyline
-              key={`r-${p.key}`}
-              points={line(p.route)}
-              fill="none"
-              stroke="var(--st-in_transit)"
-              strokeWidth={unit * 2.5}
-              strokeDasharray={`${unit * 6} ${unit * 4}`}
-              strokeLinecap="round"
-              opacity={0.7}
-            />
-          ))}
-        {cities.map(({ name, s }) => {
-          return (
-            <g key={name}>
-              <circle cx={s.x} cy={s.y} r={unit * 2} fill="var(--muted)" opacity={0.7} />
-              <text x={s.x + unit * 4} y={s.y - unit * 4} fontSize={unit * 10} fill="var(--muted)">
-                {name}
-              </text>
-            </g>
-          );
-        })}
-        {places.map((p) => {
-          const s = toSvg({ x: p.x, y: p.y });
-          const r = unit * 15;
-          const on = p.key === picked;
-          const fill = p.kind === 'truck' ? 'var(--st-in_transit)' : 'var(--accent)';
-          return (
-            <g
-              key={p.key}
-              role="button"
-              tabIndex={0}
-              onClick={() => setPicked(p.key)}
-              // The picked marker's own ring is the focus mark; the browser's
-              // rectangle around an SVG group reads as a rendering fault.
-              style={{ cursor: 'pointer', outline: 'none' }}
-              data-testid={`cab-map-${p.kind}`}
-            >
-              {/* A generous invisible target: the marker is the thumb, not the icon. */}
-              <circle cx={s.x} cy={s.y} r={r * 1.8} fill="transparent" />
-              <circle
-                cx={s.x}
-                cy={s.y}
-                r={r}
-                fill={fill}
-                stroke={on ? 'var(--fg)' : 'var(--bg)'}
-                strokeWidth={unit * (on ? 3 : 2)}
-              />
-              <text x={s.x} y={s.y + unit * 5} fontSize={unit * 14} textAnchor="middle">
-                {p.kind === 'truck' ? '🚚' : '🏭'}
-              </text>
-              <g>
-                <rect
-                  x={s.x + r * 0.5}
-                  y={s.y - r * 1.45}
-                  rx={unit * 7}
-                  width={unit * (10 + String(p.boxes).length * 7)}
-                  height={unit * 15}
-                  fill="var(--bg)"
-                  stroke={fill}
-                  strokeWidth={unit * 1.5}
-                />
-                <text
-                  x={s.x + r * 0.5 + unit * (5 + String(p.boxes).length * 3.5)}
-                  y={s.y - r * 1.45 + unit * 11}
-                  fontSize={unit * 11}
-                  fontWeight={700}
-                  textAnchor="middle"
-                  fill="var(--fg)"
-                >
-                  {p.boxes}
-                </text>
-              </g>
-            </g>
-          );
-        })}
-      </svg>
-
+      <div ref={canvas} className="cab-map-canvas" data-testid="cab-map-canvas" />
       <div className="cab-map-sheet" data-testid="cab-map-sheet">
-        {selected ? (
-          <>
-            <p className="cab-map-where">
-              {selected.kind === 'truck' ? `🚚 ${t.mapTruck}` : `🏭 ${t.mapWarehouse}`} · {selected.name}
-            </p>
-            {selected.kind === 'truck' && (
-              <p className="cab-map-note">
-                {selected.live ? t.mapLive : t.mapEstimated}
-                {selected.remainingDays &&
-                  ` · ${t.mapDays
-                    .replace('{a}', String(selected.remainingDays[0]))
-                    .replace('{b}', String(selected.remainingDays[1]))}`}
-              </p>
-            )}
-            <p className="cab-map-sum">
-              <b>{selected.boxes}</b> {t.totalBoxes} · <b>{selected.kg}</b> {t.kg} · <b>{selected.m3}</b> {t.m3}
-            </p>
-            <ul className="cab-map-lots">
-              {selected.lots.map((lot) => (
-                <li key={lot.lotId}>
-                  <span>
-                    {lot.letter ? `${lot.letter} · ` : ''}
-                    {goodsName(lot)}
+        <p className="cab-map-note">{t.mapTapHint}</p>
+        <ul className="cab-map-places">
+          {places.map((p) => {
+            const on = p.key === picked;
+            return (
+              <li
+                key={p.key}
+                ref={(el) => {
+                  if (el) rows.current.set(p.key, el);
+                  else rows.current.delete(p.key);
+                }}
+              >
+                <button
+                  type="button"
+                  className={`cab-map-place${on ? ' on' : ''}`}
+                  data-testid={`cab-map-${p.kind}`}
+                  aria-expanded={on}
+                  onClick={() => pick(p)}
+                >
+                  <span className="cab-map-place-icon" aria-hidden>
+                    {p.kind === 'truck' ? '🚚' : '🏭'}
                   </span>
-                  <span className="cab-map-lot-num">
-                    {lot.boxes} · {lot.kg} {t.kg} · {lot.m3} {t.m3}
+                  <span className="cab-map-place-body">
+                    <b>
+                      {p.kind === 'truck' ? t.mapTruck : t.mapWarehouse} · {p.name}
+                    </b>
+                    <span className="cab-map-place-sum">
+                      {p.boxes} {t.totalBoxes} · {p.kg} {t.kg} · {p.m3} {t.m3}
+                    </span>
                   </span>
-                </li>
-              ))}
-            </ul>
-          </>
-        ) : (
-          <p className="cab-map-note">{t.mapTapHint}</p>
-        )}
+                  <span className="cab-map-chevron" aria-hidden>
+                    {on ? '▾' : '▸'}
+                  </span>
+                </button>
+                {on && (
+                  <div className="cab-map-detail">
+                    {p.kind === 'truck' && (
+                      <p className="cab-map-note">
+                        {p.live ? t.mapLive : t.mapEstimated}
+                        {p.remainingDays &&
+                          ` · ${t.mapDays
+                            .replace('{a}', String(p.remainingDays[0]))
+                            .replace('{b}', String(p.remainingDays[1]))}`}
+                      </p>
+                    )}
+                    {!p.point && <p className="cab-map-note">⚠ {t.mapNoPoint}</p>}
+                    <ul className="cab-map-lots">
+                      {p.lots.map((lot) => (
+                        <li key={lot.lotId}>
+                          <span>
+                            {lot.letter ? `${lot.letter} · ` : ''}
+                            {goodsName(lot)}
+                          </span>
+                          <span className="cab-map-lot-num">
+                            {lot.boxes} · {lot.kg} {t.kg} · {lot.m3} {t.m3}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
       </div>
     </div>
   );

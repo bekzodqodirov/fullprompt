@@ -6,6 +6,7 @@ import { getStorage } from '../files/storage';
 import { logger } from '../logger';
 import {
   activeClientsByPhone,
+  linkPhoneSiblings,
   cargoOverview,
   clientsForChat,
   debtSummary,
@@ -368,6 +369,9 @@ export function registerClientCabinet(bot: Bot): void {
     const chatId = ctx.chat?.id;
     if (chatId && ctx.chat?.type === 'private' && !menuButtonDone.has(chatId)) {
       menuButtonDone.add(chatId);
+      // The same person's other codes join first (a shared phone), so the
+      // text cabinet below answers about all of them.
+      await linkPhoneSiblings(BigInt(chatId)).catch(() => 0);
       const linked = await clientsForChat(BigInt(chatId));
       if (linked.length) await setCabinetMenuButton(chatId, chatLocale(linked));
     }

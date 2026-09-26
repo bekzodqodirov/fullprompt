@@ -1,4 +1,5 @@
 import { cabinetMap, type CabinetMapPlace } from './map';
+import { basemapAvailable } from '../tracking/basemap';
 import { verifyInitData, type InitDataResult } from '@/modules/platform/telegram/init-data';
 import {
   clientsForChat,
@@ -74,6 +75,11 @@ export interface CabinetPayload {
   totals: { boxes: number; weightKg: number; volumeM3: number; balanceUsd: number };
   /** Where the cargo is, for the map (item 11) — only this chat's own. */
   map: CabinetMapPlace[];
+  /**
+   * Is the self-hosted street map installed on this server? Without it the
+   * map still zooms and pans, over a plain background with city names.
+   */
+  basemap: boolean;
 }
 
 /**
@@ -129,5 +135,5 @@ export async function cabinetPayload(auth: CabinetAuth & { ok: true }): Promise<
   // Every code this chat holds, on one map — its own cargo and nobody else's.
   const map = await cabinetMap(auth.clients.map((c) => c.id));
 
-  return { clients, locale: auth.locale, totals, map };
+  return { clients, locale: auth.locale, totals, map, basemap: basemapAvailable() };
 }

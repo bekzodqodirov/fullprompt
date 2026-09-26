@@ -115,6 +115,35 @@ describe('the cabinet timeline', () => {
     expect(places).toHaveLength(1);
     expect(places[0]).toMatchObject({ kind: 'warehouse', boxes: 2, route: [], remainingDays: null });
     expect(places[0]!.lots.map((l) => l.lotId)).toEqual([lotId]);
+    // KA is in the corridor's own dictionary, so it has a place on the map.
+    expect(places[0]!.point).not.toBeNull();
+  });
+
+  it('cargo in a warehouse the map cannot place is still LISTED — never dropped', async () => {
+    // The first cabinet map skipped a place with no coordinates, and the
+    // client's cargo there vanished from the screen that exists to show it.
+    const [wh] = await db
+      .insert(warehouses)
+      .values({
+        code: `Q${String(Date.now()).slice(-5)}`,
+        name: 'Unplotted',
+        country: 'UZ',
+        type: 'distribution',
+        timezone: 'Asia/Tashkent',
+        batchPrefix: 'QQ',
+      })
+      .returning();
+    const [one] = await db.select().from(boxes).where(eq(boxes.lotId, lotId)).limit(1);
+    try {
+      await db.update(boxes).set({ currentWarehouseId: wh!.id }).where(eq(boxes.id, one!.id));
+      const places = await cabinetMap([clientId]);
+      const unplotted = places.find((p) => p.name === 'Unplotted');
+      expect(unplotted).toMatchObject({ kind: 'warehouse', boxes: 1, point: null });
+      expect(places.reduce((a, p) => a + p.boxes, 0)).toBe(2);
+    } finally {
+      await db.update(boxes).set({ currentWarehouseId: hubId }).where(eq(boxes.id, one!.id));
+      await db.delete(warehouses).where(eq(warehouses.id, wh!.id));
+    }
   });
 
   it('once it is on the export truck it carries the schedule’s own estimate', async () => {

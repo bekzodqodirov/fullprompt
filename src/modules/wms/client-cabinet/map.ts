@@ -35,9 +35,14 @@ export interface CabinetMapPlace {
   kind: 'warehouse' | 'truck';
   /** Warehouse: its name. Truck: «from → to», the two warehouses' names. */
   name: string;
-  /** lon, lat — the corridor's own shape. */
-  x: number;
-  y: number;
+  /**
+   * lon, lat — or NULL when nobody has typed the warehouse's coordinates and
+   * the built-in dictionary does not know its code. Such a place is still
+   * LISTED under the map (the owner: «hamma yuklarni korish kerak») — it was
+   * dropped entirely, so cargo in an unplotted warehouse vanished from the
+   * screen that exists to show where it is.
+   */
+  point: { x: number; y: number } | null;
   /** A truck's position is from the driver's phone (true) or estimated. */
   live: boolean;
   /** A truck's road, so the map can draw the line it is on. */
@@ -92,7 +97,7 @@ export async function cabinetMap(clientIds: string[]): Promise<CabinetMapPlace[]
       receiptLots.boxCount,
     );
 
-  const places = new Map<string, Omit<CabinetMapPlace, 'name' | 'x' | 'y' | 'live' | 'route' | 'remainingDays'> & { ref: string }>();
+  const places = new Map<string, Omit<CabinetMapPlace, 'name' | 'point' | 'live' | 'route' | 'remainingDays'> & { ref: string }>();
   for (const r of rows) {
     const transit = r.status === 'in_transit';
     const ref = transit ? r.batchId : r.warehouseId;
@@ -152,24 +157,34 @@ export async function cabinetMap(clientIds: string[]): Promise<CabinetMapPlace[]
   });
   for (const w of whRows) {
     const place = places.get(`warehouse:${w.id}`);
-    const point = warehousePoint(w);
-    if (!place || !point) continue;
-    out.push({ key: place.key, kind: 'warehouse', name: w.name, x: point.x, y: point.y, live: false, route: [], remainingDays: null, ...finish(place) });
+    if (!place) continue;
+    out.push({
+      key: place.key,
+      kind: 'warehouse',
+      name: w.name,
+      point: warehousePoint(w),
+      live: false,
+      route: [],
+      remainingDays: null,
+      ...finish(place),
+    });
   }
   for (const b of batchRows) {
     const place = places.get(`truck:${b.batch.id}`);
     if (!place) continue;
-    const marker = await truckFor(b.batch, b.originCode, b.destCode, fixes.get(b.batch.id));
-    if (!marker) continue;
+    // A truck with neither a phone nor a known road has no position — it is
+    // still the client's cargo, so it is listed rather than dropped.
+    const marker = await truckFor(b.batch, b.originCode, b.destCode, fixes.get(b.batch.id)).catch(
+      () => null,
+    );
     out.push({
       key: place.key,
       kind: 'truck',
       name: `${b.originName} → ${b.destName}`,
-      x: marker.x,
-      y: marker.y,
-      live: marker.live,
-      route: marker.routePoints,
-      remainingDays: marker.remainingDays,
+      point: marker ? { x: marker.x, y: marker.y } : null,
+      live: marker?.live ?? false,
+      route: marker?.routePoints ?? [],
+      remainingDays: marker && !marker.overdue && marker.remainingDays[1] > 0 ? marker.remainingDays : null,
       ...finish(place),
     });
   }

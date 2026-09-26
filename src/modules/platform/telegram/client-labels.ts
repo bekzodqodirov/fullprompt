@@ -217,6 +217,11 @@ const DICT = {
     ru: 'Нажмите на машину или склад — появится ваш груз там.',
     en: 'Tap a truck or a warehouse to see your cargo there.',
   },
+  mapNoPoint: {
+    uz: 'xaritada joyi belgilanmagan',
+    ru: 'на карте место не отмечено',
+    en: 'not marked on the map',
+  },
   mapEmpty: {
     uz: 'Xaritada ko‘rsatadigan yuk yo‘q.',
     ru: 'На карте показывать нечего.',
