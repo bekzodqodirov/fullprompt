@@ -27,7 +27,12 @@ import { ISSUABLE_STATUSES } from '../issue/parties';
  * is COVERED when a live charge of C satisfies clause 1 or clause 2, and —
  * whenever that charge names a truck — passes clauses 3 and 4:
  *
- *   1. Deal: the charge is on R's deal.
+ *   1. Deal: the charge is on R's deal AND names no truck. A truck price
+ *      names its cargo through clause 2 alone: R3a stamps the deal onto a
+ *      truck price whose aboard cargo is one deal, and «same deal» with no
+ *      truck made pricing a deal's FIRST truck cover its second shipment on
+ *      a truck nobody priced — out of the counter unpriced (review of the
+ *      gate, 2026-09-26).
  *   2. Truck: the charge is on a truck some carton of R RODE, by the money
  *      rule (`rideMovementSql`: a departure or an unscanned landing that was
  *      not later found back at the truck's origin). The live pointer never
@@ -303,13 +308,14 @@ export function uncoveredCtes(boxScope: SQL, opts: { landedOnly: boolean }): SQL
     -- three-valued: NULL there is simply «not this pair».
     u_rc AS (
       SELECT ur.receipt_id, uc.id AS charge_id, uc.batch_id, uc.crosses, uc.created_at,
-             (coalesce(ur.deal_id IS NOT NULL AND uc.deal_id = ur.deal_id, false) OR coalesce(t.rode, false)) AS names,
+             (coalesce(ur.deal_id IS NOT NULL AND uc.batch_id IS NULL AND uc.deal_id = ur.deal_id, false)
+               OR coalesce(t.rode, false)) AS names,
              (t.receipt_id IS NOT NULL) AS touched,
              coalesce(t.rode, false) AS rode
         FROM u_rcpt ur
         JOIN u_charge uc ON uc.client_id = ur.client_id
         LEFT JOIN u_touch t ON t.receipt_id = ur.receipt_id AND t.batch_id = uc.batch_id
-       WHERE (ur.deal_id IS NOT NULL AND uc.deal_id = ur.deal_id) OR t.receipt_id IS NOT NULL
+       WHERE (ur.deal_id IS NOT NULL AND uc.batch_id IS NULL AND uc.deal_id = ur.deal_id) OR t.receipt_id IS NOT NULL
     ),
     -- …then per CARTON and charge: clauses 3 and 4, which are the carton's.
     u_pair AS (

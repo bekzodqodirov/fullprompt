@@ -595,6 +595,29 @@ describe('who is gated', () => {
     expect((await unattachedChargesByClient(db, [c])).get(c)).toEqual({ cardOnlyUsd: 0, elsewhereUsd: 600 });
   });
 
+  it('a truck price stamped with the deal covers the cargo that RODE that truck, never the deal’s next prixod (review of gate, U29)', async () => {
+    // R3a writes the deal onto a truck price whose aboard cargo belongs to one
+    // deal. The deal clause asked «same deal» with no truck, so pricing truck
+    // T1 made every later prixod of that deal «priced» — the deal's second
+    // shipment on an unpriced T2 went out of the counter with no price.
+    const c = await mkClient('DT');
+    const dealId = await mkDeal(c);
+    const p1 = await mkLot(c, 1, W.yw, dealId);
+    const t1 = await truck([{ lotId: p1.lotId, take: 1 }], p1.codes, W.yw, W.tas);
+    await unload(t1.id, p1.codes);
+    const priced = await charge(c, 400, { batchId: t1.id });
+    expect(priced.dealId).toBe(dealId);
+
+    const p2 = await mkLot(c, 2, W.yw, dealId);
+    const t2 = await truck([{ lotId: p2.lotId, take: 2 }], p2.codes, W.yw, W.tas);
+    await unload(t2.id, p2.codes);
+
+    expect(await issue(c, W.tas, p2.boxIds)).toBe('price_block');
+    expect((await listed([c])).map((r) => r.receiptId)).toEqual([p2.receiptId]);
+    // The prixod that rode T1 stays covered by T1's price.
+    expect(await issue(c, W.tas, p1.boxIds)).toBe('ok');
+  });
+
   it('Q21 with a deal on the prixod and none on the price: the short-loaded prixod is NOT covered (U03 money judge 1)', async () => {
     // The prixod carries a deal; the client's other prixod on the same truck
     // carries none, so R3a stamps no deal onto the price (two deals aboard,
