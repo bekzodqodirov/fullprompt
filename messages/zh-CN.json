@@ -1535,7 +1535,10 @@
     "pickupPhase_waiting": "在工厂等待",
     "pickupPhase_driving": "在途",
     "pickupPhase_loading": "在工厂装货",
-    "pickupPhase_arrived": "应已到仓库"
+    "pickupPhase_arrived": "应已到仓库",
+    "filterClient": "仅显示该客户的货物",
+    "filterMissing": "未找到代码为“{code}”的客户——显示全部地图",
+    "filterClear": "显示全部"
   },
   "accounting": {
     "title": "管理会计",

@@ -15,6 +15,10 @@ import { clientBalanceUsd } from '../finance/service';
 import { arrivalCodesForPairs } from '../documents/arrivals';
 import { roadLossInScope, roadLossTruck } from '../boxes/road-loss';
 import { dayIn, OFFICE_TZ } from '@/modules/platform/time/tashkent';
+import { alias } from 'drizzle-orm/pg-core';
+import { mayReadBatches } from '../batches/read-door';
+import { latestPositions } from '../tracking/devices';
+import { truckFor } from '../tracking/truck';
 
 /**
  * "Where is it?" — answered in the bot (owner's item 2).
@@ -61,10 +65,24 @@ const BATCH_STATUS_UZ: Record<string, string> = {
 const money = (n: number) => `$${n.toFixed(2)}`;
 
 /**
+ * The answer and what may ride under it: a client-code answer offers the
+ * site map narrowed to that client (item 12) — only to somebody the map's
+ * own door admits, or the button would open a page that bounces them.
+ */
+export interface BotAnswer {
+  text: string;
+  mapClientCode?: string;
+}
+
+/**
  * The answer to one typed line. Null when nothing matched — the caller says
  * so once, rather than every branch inventing its own "not found".
  */
 export async function botLookup(actor: BotActor, raw: string): Promise<string | null> {
+  return (await botLookupAnswer(actor, raw))?.text ?? null;
+}
+
+export async function botLookupAnswer(actor: BotActor, raw: string): Promise<BotAnswer | null> {
   const query = raw.trim();
   if (query.length < 3 || query.length > 40) return null;
   const upper = query.toUpperCase();
@@ -72,15 +90,19 @@ export async function botLookup(actor: BotActor, raw: string): Promise<string | 
   // A box short code is the most specific thing anyone types, and it is the
   // one a warehouse hand reads off a label — try it first.
   const box = await lookupBox(actor, upper);
-  if (box) return box;
+  if (box) return { text: box };
 
   const crate = await lookupCrate(actor, upper);
-  if (crate) return crate;
+  if (crate) return { text: crate };
 
   const batch = await lookupBatch(actor, upper);
-  if (batch) return batch;
+  if (batch) return { text: batch };
 
-  return lookupClient(actor, upper);
+  const client = await lookupClient(actor, upper);
+  if (!client) return null;
+  return mayReadBatches(actor.permissions)
+    ? { text: client.text, mapClientCode: client.code }
+    : { text: client.text };
 }
 
 async function lookupBox(actor: BotActor, code: string): Promise<string | null> {
@@ -211,7 +233,10 @@ async function lookupBatch(actor: BotActor, code: string): Promise<string | null
   );
 }
 
-async function lookupClient(actor: BotActor, code: string): Promise<string | null> {
+async function lookupClient(
+  actor: BotActor,
+  code: string,
+): Promise<{ text: string; code: string } | null> {
   const [client] = await db
     .select()
     .from(clients)
@@ -265,10 +290,18 @@ async function lookupClient(actor: BotActor, code: string): Promise<string | nul
   // In-transit visibility: unscoped actors as always, PLUS the batch's two
   // ends for scoped ones — wms/search's own rule, a recorded widening.
   const transitBatchIds = [...new Set(rows.filter((r) => r.batchId).map((r) => r.batchId!))];
+  const originWh = alias(warehouses, 'origin_wh');
+  const destWh = alias(warehouses, 'dest_wh');
   const transitBatches = transitBatchIds.length
-    ? await db.select().from(batches).where(inArray(batches.id, transitBatchIds))
+    ? await db
+        .select({ batch: batches, originCode: originWh.code, destCode: destWh.code })
+        .from(batches)
+        .innerJoin(originWh, eq(batches.originWarehouseId, originWh.id))
+        .innerJoin(destWh, eq(batches.destWarehouseId, destWh.id))
+        .where(inArray(batches.id, transitBatchIds))
     : [];
-  const batchById = new Map(transitBatches.map((b) => [b.id, b]));
+  const batchById = new Map(transitBatches.map((b) => [b.batch.id, b.batch]));
+  const endsById = new Map(transitBatches.map((b) => [b.batch.id, b]));
 
   const share = (total: string | null, lotBoxes: number, n: number, digits: number) => {
     const t = total === null ? null : Number(total);
@@ -293,7 +326,10 @@ async function lookupClient(actor: BotActor, code: string): Promise<string | nul
       byStatus: Map<string, number>;
     }
   >();
-  const transit = new Map<string, { code: string; route: string; n: number; kg: number; m3: number }>();
+  const transit = new Map<
+    string,
+    { batchId: string | null; code: string; route: string; n: number; kg: number; m3: number }
+  >();
   for (const r of rows) {
     const n = Number(r.n);
     if (r.status === 'in_transit') {
@@ -306,9 +342,11 @@ async function lookupClient(actor: BotActor, code: string): Promise<string | nul
         continue;
       }
       const key = b?.id ?? 'yolda';
+      const ends = b ? endsById.get(b.id) : undefined;
       const entry = transit.get(key) ?? {
+        batchId: b?.id ?? null,
         code: b?.code ?? 'yo‘lda',
-        route: '',
+        route: ends ? `${ends.originCode} → ${ends.destCode}` : '',
         n: 0,
         kg: 0,
         m3: 0,
@@ -363,13 +401,37 @@ async function lookupClient(actor: BotActor, code: string): Promise<string | nul
         (codes.length ? ` · 🚚 ${codes.join(', ')}` : '')
       );
     });
-  const transitLines = [...transit.values()].map((tr) => {
-    return (
-      `· 🚚 ${tr.code} yo‘lda: ${tr.n} karobka` +
-      (tr.kg > 0 ? ` · ${tr.kg.toFixed(1)} kg` : '') +
-      (tr.m3 > 0 ? ` · ${tr.m3.toFixed(3)} m³` : '')
+  // Where each truck is and how long it still has — the map's own clock
+  // (`truckFor`: the live phone fix when fresh, else the route's hours
+  // anchored on the checkpoint pin), so the bot and the map never disagree.
+  const fixes = transit.size
+    ? await latestPositions([...transit.values()].flatMap((tr) => (tr.batchId ? [tr.batchId] : [])))
+    : new Map();
+  const transitLines: string[] = [];
+  for (const tr of transit.values()) {
+    const ends = tr.batchId ? endsById.get(tr.batchId) : undefined;
+    const marker = ends
+      ? await truckFor(ends.batch, ends.originCode, ends.destCode, fixes.get(ends.batch.id)).catch(
+          () => null,
+        )
+      : null;
+    // A live fix on a road the schedule does not know has no clock at all
+    // (`remainingDays` [0, 0]) — say nothing rather than «late».
+    const days = !marker
+      ? ''
+      : marker.overdue
+        ? ' · ⏱ muddatdan oshdi'
+        : marker.remainingDays[1] > 0
+          ? ` · ⏱ ~${marker.remainingDays[0]}–${marker.remainingDays[1]} kun`
+          : '';
+    transitLines.push(
+      `· 🚚 ${tr.code}${tr.route ? ` (${tr.route})` : ''} yo‘lda: ${tr.n} karobka` +
+        (tr.kg > 0 ? ` · ${tr.kg.toFixed(1)} kg` : '') +
+        (tr.m3 > 0 ? ` · ${tr.m3.toFixed(3)} m³` : '') +
+        days +
+        (marker ? (marker.live ? ' · 📡 jonli' : ' · taxminiy') : ''),
     );
-  });
+  }
   const allLines = [...standingLines, ...transitLines];
   const lines = allLines.slice(0, LINE_CAP);
   if (allLines.length > LINE_CAP) lines.push(`… +${allLines.length - LINE_CAP} qator`);
@@ -416,7 +478,7 @@ async function lookupClient(actor: BotActor, code: string): Promise<string | nul
       ? `Jami: ${totalN} karobka · ${totalKg.toFixed(1)} kg · ${totalM3.toFixed(3)} m³\n`
       : '';
 
-  return (
+  const text =
     `👤 ${client.clientCode} · ${client.name}\n` +
     jami +
     (lines.length ? `${lines.join('\n')}` : 'Hozircha yuk yo‘q') +
@@ -427,8 +489,8 @@ async function lookupClient(actor: BotActor, code: string): Promise<string | nul
       ? `\nOxirgi prixod: ${lastReceipt.number}${
           lastReceipt.at ? ` (${dayIn(lastReceipt.at, OFFICE_TZ)})` : ''
         }`
-      : '')
-  );
+      : '');
+  return { text, code: client.clientCode };
 }
 
 function outOfScope(): string {

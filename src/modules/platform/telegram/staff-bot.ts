@@ -420,11 +420,14 @@ export async function botActorFor(chatId: bigint): Promise<
  * "Where is it?" from the bot. The wms lookup is reached by dynamic import —
  * platform never imports wms statically (the startBoss crossing).
  */
-export async function lookupFromBot(chatId: bigint, query: string): Promise<string | null> {
+export async function lookupFromBot(
+  chatId: bigint,
+  query: string,
+): Promise<{ text: string; mapClientCode?: string } | null> {
   const actor = await botActorFor(chatId);
   if (!actor) return null;
-  const { botLookup } = await import('../../wms/bot/lookup');
-  return botLookup(actor, query);
+  const { botLookupAnswer } = await import('../../wms/bot/lookup');
+  return botLookupAnswer(actor, query);
 }
 
 /**

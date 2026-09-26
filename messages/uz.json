@@ -1535,7 +1535,10 @@
     "pickupPhase_waiting": "zavodda kutmoqda",
     "pickupPhase_driving": "yo‘lda",
     "pickupPhase_loading": "zavodda yuklanmoqda",
-    "pickupPhase_arrived": "omborga yetgan bo‘lishi kerak"
+    "pickupPhase_arrived": "omborga yetgan bo‘lishi kerak",
+    "filterClient": "Faqat mijoz yuki",
+    "filterMissing": "«{code}» kodli mijoz topilmadi — butun xarita ko‘rsatilyapti",
+    "filterClear": "Hammasini ko‘rsatish"
   },
   "accounting": {
     "title": "Boshqaruv hisobi",

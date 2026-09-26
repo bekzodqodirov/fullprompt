@@ -1535,7 +1535,10 @@
     "pickupPhase_waiting": "ждёт на заводе",
     "pickupPhase_driving": "в пути",
     "pickupPhase_loading": "грузится на заводе",
-    "pickupPhase_arrived": "должна быть на складе"
+    "pickupPhase_arrived": "должна быть на складе",
+    "filterClient": "Только груз клиента",
+    "filterMissing": "Клиент с кодом «{code}» не найден — показана вся карта",
+    "filterClear": "Показать всё"
   },
   "accounting": {
     "title": "Управленческий учёт",

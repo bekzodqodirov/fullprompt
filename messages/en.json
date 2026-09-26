@@ -1535,7 +1535,10 @@
     "pickupPhase_waiting": "waiting at the factory",
     "pickupPhase_driving": "on the road",
     "pickupPhase_loading": "loading at a factory",
-    "pickupPhase_arrived": "should be at the warehouse"
+    "pickupPhase_arrived": "should be at the warehouse",
+    "filterClient": "Only this client’s cargo",
+    "filterMissing": "No client with code “{code}” — showing the whole map",
+    "filterClear": "Show everything"
   },
   "accounting": {
     "title": "Management accounting",

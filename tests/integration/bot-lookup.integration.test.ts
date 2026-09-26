@@ -14,7 +14,7 @@ import {
 import { confirmReceipt } from '@/modules/wms/receipts/service';
 import { recordVerdict, submitPlan } from '@/modules/wms/planning/service';
 import { departBatch, ingestLoadScans } from '@/modules/wms/scanning/service';
-import { botLookup, type BotActor } from '@/modules/wms/bot/lookup';
+import { botLookup, botLookupAnswer, type BotActor } from '@/modules/wms/bot/lookup';
 import { unansweredChats, unansweredText } from '@/modules/wms/crm/unanswered';
 
 /**
@@ -225,6 +225,20 @@ describe('the bot answers "where is it?"', () => {
     const boxAnswer = await botLookup(boss(), lot.shortCodes[0]!);
     expect(boxAnswer).toContain(batch!.code);
     expect(boxAnswer).toContain('yo‘lda');
+
+    // Item 12: the CLIENT answer names the truck's road, and offers the map
+    // to somebody the map's door admits — never to somebody it bounces.
+    const rich = await botLookupAnswer(boss(), clientCode);
+    expect(rich?.text).toContain(`🚚 ${batch!.code} (${WH_O} → ${WH_D}) yo‘lda: 2 karobka`);
+    expect(rich?.mapClientCode).toBe(clientCode);
+    const seller = await botLookupAnswer(
+      { ...boss(), permissions: new Set(['finance.view', 'crm.leads']) },
+      clientCode,
+    );
+    expect(seller?.text).toContain(clientCode);
+    expect(seller?.mapClientCode).toBeUndefined();
+    // A box or a truck answer carries no client map.
+    expect((await botLookupAnswer(boss(), batch!.code))?.mapClientCode).toBeUndefined();
   });
 
   it('nonsense and too-short input answer nothing at all', async () => {
