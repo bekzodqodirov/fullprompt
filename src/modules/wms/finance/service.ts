@@ -342,7 +342,10 @@ export async function moveCharge(input: MoveChargeInput, ctx: AuditContext): Pro
     if (route.internal) throw new FinanceError('internal_batch');
     const aboard = await cargoAboard(part.batchId, row.clientId);
     if (!aboard.aboard) throw new FinanceError('client_not_aboard');
-    deals.set(part.batchId, aboard.dealId ?? row.dealId ?? null);
+    // The price's own job wins, the truck's derived one only fills a blank —
+    // addTransaction's order (R3a), which this door says it passes (review:
+    // the derived deal used to win and re-filed a priced job onto another).
+    deals.set(part.batchId, row.dealId ?? aboard.dealId ?? null);
   }
   const codeRows = await db
     .select({ id: batches.id, code: batches.code })
@@ -370,6 +373,13 @@ export async function moveCharge(input: MoveChargeInput, ctx: AuditContext): Pro
           eq(clientTransactions.type, 'charge'),
           isNull(clientTransactions.partnerId),
           sql`NOT EXISTS (SELECT 1 FROM partner_transactions pt WHERE pt.client_tx_id = ${row.id}::uuid)`,
+          // …and the money the parts were computed from is still the row's:
+          // a /admin/fx save re-prices a charge IN PLACE (Q18), and a move
+          // racing it would have copied the old rate and dollars into the
+          // parts for ever (review). Stale → refused, pressed again.
+          eq(clientTransactions.amount, row.amount),
+          eq(clientTransactions.rateToUsd, row.rateToUsd),
+          sql`${clientTransactions.amountUsd} IS NOT DISTINCT FROM ${row.amountUsd}::numeric`,
         ),
       )
       .returning({ id: clientTransactions.id });

@@ -11,10 +11,13 @@ import {
   clients,
   fxRates,
   notifications,
+  receipts,
   users,
   warehouses,
+  deals,
 } from '@/modules/platform/db/schema';
 import { confirmReceipt } from '@/modules/wms/receipts/service';
+import { createDeal } from '@/modules/wms/deals/service';
 import { recordVerdict, submitPlan } from '@/modules/wms/planning/service';
 import { departBatch, finishLoading, ingestLoadScans, removeLoadedCode } from '@/modules/wms/scanning/service';
 import { finishUnload, ingestUnloadScans } from '@/modules/wms/scanning/unload';
@@ -587,6 +590,27 @@ describe('the door (U31) and «🚚 Ko‘chirish»', () => {
     const onA = (await offTruckPrices(db, { batchIds: [a.id] })).find((row) => row.clientId === o.id);
     expect(onA?.kind ?? 'none').not.toBe('partial');
     expect(onA?.droppedTo ?? []).toEqual([]);
+  });
+
+  it('12b: a moved price keeps its OWN job — the target truck’s derived deal only fills a blank (review, R3a’s order)', async () => {
+    const d = await mkClient('D');
+    const dealX = await createDeal({ clientId: d.id, title: `X ${S}` } as Parameters<typeof createDeal>[0], ctx());
+    const dealY = await createDeal({ clientId: d.id, title: `Y ${S}` } as Parameters<typeof createDeal>[0], ctx());
+    const la = await mkLot(d.id, 1, W.yw);
+    const lb = await mkLot(d.id, 1, W.yw);
+    await db.update(receipts).set({ dealId: dealX }).where(eq(receipts.id, la.receiptId));
+    await db.update(receipts).set({ dealId: dealY }).where(eq(receipts.id, lb.receiptId));
+    const a = await truck([{ lotId: la.lotId, take: 1 }], la.codes, W.yw, W.tas);
+    const b = await truck([{ lotId: lb.lotId, take: 1 }], lb.codes, W.yw, W.tas);
+    const price = await charge(d.id, 300, { batchId: a.id });
+    expect(price.dealId).toBe(dealX);
+    const { ids } = await moveCharge({ txId: price.id, parts: [{ batchId: b.id, amount: 300 }] }, ctx());
+    const [moved] = await db.select().from(clientTransactions).where(eq(clientTransactions.id, ids[0]!));
+    expect(moved!.dealId).toBe(dealX);
+    // A deal is the client's and would outlive the client's own cleanup.
+    await db.update(receipts).set({ dealId: null }).where(inArray(receipts.id, [la.receiptId, lb.receiptId]));
+    await db.update(clientTransactions).set({ dealId: null }).where(eq(clientTransactions.clientId, d.id));
+    await db.delete(deals).where(inArray(deals.id, [dealX, dealY]));
   });
 
   it('13: a split can CLOSE a so‘m cycle between its parts — the kurs farqi is written in the same press (0103, F2)', async () => {
