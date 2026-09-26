@@ -279,6 +279,7 @@
       "unclaimed": "Egasiz yuk: {receipts} prixod · {boxes} 📦",
       "overdueTasks": "Muddati o‘tgan vazifa: {n}",
       "recurringDue": "To‘lash kuni kelgan, to‘lanmagan doimiy xarajat: {n} ta, {usd}",
+      "recurringDueNoUsd": "To‘lash kuni kelgan doimiy xarajat: {n} ta — dollarda summasi yo‘q (amortizatsiya yoki kursi kiritilmagan valyuta)",
       "approvals": "Qarz bilan berishga ruxsat so‘rovi: {n} · {usd}",
       "approvalsNoMoney": "Qarz bilan berishga ruxsat so‘rovi: {n}",
       "calcLate": "Kechikkan hisoblash: {n}",

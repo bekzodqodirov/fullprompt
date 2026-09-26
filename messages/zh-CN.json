@@ -279,6 +279,7 @@
       "unclaimed": "无主货物：{receipts}张入库单 · {boxes} 📦",
       "overdueTasks": "逾期任务：{n}",
       "recurringDue": "已到期未付的固定费用：{n} 笔，{usd}",
+      "recurringDueNoUsd": "已到期的固定费用：{n} 笔——无美元金额（折旧或无汇率的币种）",
       "approvals": "欠款放货审批请求：{n} · {usd}",
       "approvalsNoMoney": "欠款放货审批请求：{n}",
       "calcLate": "逾期核算：{n}",

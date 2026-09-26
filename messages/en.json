@@ -279,6 +279,7 @@
       "unclaimed": "Unclaimed cargo: {receipts} receipts · {boxes} 📦",
       "overdueTasks": "Overdue tasks: {n}",
       "recurringDue": "Fixed costs due and not yet paid: {n}, {usd}",
+      "recurringDueNoUsd": "Fixed costs due: {n} — no dollar figure (depreciation, or a currency with no rate)",
       "approvals": "Requests to hand over with debt: {n} · {usd}",
       "approvalsNoMoney": "Requests to hand over with debt: {n}",
       "calcLate": "Late calculations: {n}",

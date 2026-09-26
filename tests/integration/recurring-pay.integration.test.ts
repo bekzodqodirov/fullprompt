@@ -523,8 +523,12 @@ describe('the doors refuse in words', () => {
   it("R20: with a hand-typed candidate on the row, «To'landi» refuses to pay twice unless the person says it is another payment (M1)", async () => {
     const category = await kind('r20');
     const t = await template({ categoryId: category, dayOfMonth: 1, amount: 90 });
+    const owedBefore = (await recurringArrears(TODAY)).usd;
     const typed = await addExpense({ categoryId: category, amount: 90, currency: 'USD', expenseDate: TODAY, accountId: usdTill }, ctx());
     handTyped.push(typed.id);
+    // The typed payment already left the kassa: the Balans must not ALSO
+    // subtract the month while it waits for «Bog'lash» (review).
+    expect((await recurringArrears(TODAY)).usd).toBeCloseTo(owedBefore - 90, 2);
     await expect(pay(t.id, { amount: 90 })).rejects.toMatchObject({ code: 'recurring_candidate_exists' });
     expect(await postings(t.id, false)).toHaveLength(0);
     await pay(t.id, { amount: 90, confirmNew: true });
@@ -563,6 +567,11 @@ describe("«Bog'lash» and the union — what a void puts back", () => {
     );
     const foreign = await addExpense({ categoryId: other, amount: 5, currency: 'USD', expenseDate: TODAY, accountId: usdTill }, ctx());
     handTyped.push(typed.id, foreign.id);
+    // A cash-kind expense that names neither a kassa nor a payer (a firm's
+    // debt unlinked from a one-off expense) moved no money: never offered.
+    const oneSided = await addExpense({ categoryId: category, amount: 700, currency: 'USD', expenseDate: TODAY, accountId: usdTill }, ctx());
+    handTyped.push(oneSided.id);
+    await db.update(expenses).set({ accountId: null }).where(eq(expenses.id, oneSided.id));
     const row = (await listed(t.id)).find((r) => r.month === MONTH_START)!;
     expect(row.candidates.map((c) => c.id)).toEqual([typed.id]);
     const uzsBefore = await balanceOf(uzsTill);

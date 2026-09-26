@@ -305,11 +305,26 @@ function toDueOccurrence(row: DueRow, detail: DueDetailRow | undefined): DueOccu
 export async function recurringArrears(today: string): Promise<Arrears> {
   const empty: Arrears = { count: 0, cashCount: 0, usd: 0, unrated: [] };
   try {
+    // A payment typed some other way and not yet linked (a rasxod xabari's
+    // «Kiritish», the plain form — the flow Q6-1 A prescribes) has already
+    // left a kassa, so subtracting the whole month as well took the rent off
+    // the Balans twice until somebody pressed «Bog'lash» (review). Each such
+    // candidate counts ONCE, against the EARLIEST due month it could be —
+    // its window spans two months, and one payment must not pay both.
     const rows = await db.execute<{ amount: string; currency: string; cash: boolean; paid_usd: string }>(sql`
+      WITH due AS (SELECT d.recurring_id, d.month FROM (${dueNowSql(today)}) d),
+      cand AS (
+        SELECT DISTINCT ON (cd.id) due.recurring_id, due.month, cd.amount_usd
+          FROM due
+          CROSS JOIN LATERAL (${candidatesSql(sql`due.recurring_id`, sql`due.month`)}) cd
+         ORDER BY cd.id, due.month
+      )
       SELECT r.amount, r.currency, c.cash,
-             coalesce((SELECT sum(pp.amount_usd) FROM (${partialPartsSql(sql`d.recurring_id`, sql`d.month`)}) pp), 0) AS paid_usd
-        FROM (${dueNowSql(today)}) d
-        JOIN recurring_expenses r ON r.id = d.recurring_id
+             coalesce((SELECT sum(pp.amount_usd) FROM (${partialPartsSql(sql`due.recurring_id`, sql`due.month`)}) pp), 0)
+             + coalesce((SELECT sum(ca.amount_usd) FROM cand ca
+                           WHERE ca.recurring_id = due.recurring_id AND ca.month = due.month), 0) AS paid_usd
+        FROM due
+        JOIN recurring_expenses r ON r.id = due.recurring_id
         JOIN expense_categories c ON c.id = r.category_id
     `);
     const currencies = [...new Set(rows.filter((row) => row.cash).map((row) => row.currency))];

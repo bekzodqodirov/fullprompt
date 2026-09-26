@@ -288,7 +288,12 @@ export async function AttentionSection({
       level: 'warn',
       count: balance.recurringArrearsTotal,
       usd: balance.recurringArrearsUsd,
-      text: t('att.recurringDue', { n: balance.recurringArrearsTotal, usd: usd(balance.recurringArrearsUsd) }),
+      // «N, $0» read as «owed nothing» (review): with no dollars the items
+      // are book entries or a currency with no rate, and the words say so.
+      text:
+        balance.recurringArrearsUsd > 0.004
+          ? t('att.recurringDue', { n: balance.recurringArrearsTotal, usd: usd(balance.recurringArrearsUsd) })
+          : t('att.recurringDueNoUsd', { n: balance.recurringArrearsTotal }),
       href: '/accounting/expenses#recurring',
     });
   }

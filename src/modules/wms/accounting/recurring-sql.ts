@@ -108,12 +108,19 @@ export const partialPartsSql = (rid: SQL, month: SQL) => sql`
  * the ordinary case. Never an upsale payout (cost-merge's own fence). One
  * home for the row's warning, the «To'landi» refusal and the «Bog'lash»
  * claim, so what the screen offers is exactly what the door accepts.
+ *
+ * And never a cash-kind expense that names neither a kassa nor a payer
+ * (review of the recurring unit): that is the one-sided row M4 forbids —
+ * money that left nowhere — and «Bog'lash» on it closed a month nobody paid.
+ * A book entry (a non-cash kind) names neither by design and stays offered.
  */
 export const candidatesSql = (rid: SQL, month: SQL) => sql`
-  SELECT e.id, e.amount, e.currency, e.expense_date, e.account_id, e.partner_id
+  SELECT e.id, e.amount, e.currency, e.amount_usd, e.expense_date, e.account_id, e.partner_id
     FROM expenses e JOIN recurring_expenses r ON r.id = ${rid}
+    JOIN expense_categories ec ON ec.id = e.category_id
    WHERE e.recurring_id IS NULL AND e.voided_at IS NULL
      AND e.category_id = r.category_id
+     AND (NOT ec.cash OR e.account_id IS NOT NULL OR e.partner_id IS NOT NULL)
      AND (r.employee_id IS NULL OR e.employee_id = r.employee_id)
      AND (r.warehouse_id IS NULL OR e.warehouse_id = r.warehouse_id)
      AND e.expense_date BETWEEN ${month} - 7 AND (${month} + interval '2 months')::date - 1
