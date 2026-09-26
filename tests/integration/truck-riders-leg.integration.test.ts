@@ -440,9 +440,22 @@ describe('U25 — only a carton that came from somewhere else rode the truck', (
     // Nothing was re-split inside the scanner's request.
     expect(await allocated(freight.id, lu.boxIds[0])).toBe(0);
 
+    // HISTORY is not a stale split (review of the riders unit): a split
+    // written AFTER the carton was scanned off, under the old rule, moves
+    // only with `pnpm repair-riders --apply` — never by itself overnight.
+    const later = new Date(Date.now() + 60_000);
+    await db.update(costAllocations).set({ computedAt: later }).where(eq(costAllocations.costEntryId, freight.id));
+    await recomputeAll({ orphaned: true, batchId: e.id });
+    expect(await allocated(freight.id, lu.boxIds[0])).toBe(0);
+    await db
+      .update(costAllocations)
+      .set({ computedAt: new Date('2000-01-01T00:00:00Z') })
+      .where(eq(costAllocations.costEntryId, freight.id));
+
     // The nightly repair is the net under a queue that never ran: a rider
-    // holding no share of its truck is a split that must be redone.
-    await recomputeAll({ orphaned: true });
+    // holding no share of its truck is a split that must be redone. Scoped to
+    // this truck, so the test says nothing about anybody else's costs (#713).
+    await recomputeAll({ orphaned: true, batchId: e.id });
     expect(await allocated(freight.id, lu.boxIds[0])).toBeCloseTo(428.57, 2);
     expect(await allocated(freight.id, lv.boxIds[0])).toBeCloseTo(857.14, 2);
 

@@ -214,7 +214,9 @@ export function declaredFilter(batchId: string): SQL {
  * over the scanned cargo alone. No other stale split is this invisible — a
  * found-back carton's leftover share has the dashboard's «phantom». A
  * carton that legitimately takes nothing (a direct_to_client fee for another
- * client) keeps matching, and costs the nightly sweep one idempotent re-split.
+ * client) keeps matching while its split predates the landing, and costs
+ * the nightly sweep one idempotent re-split — which stamps a fresh split and
+ * so ends the match.
  */
 export function riderWithoutShareSql(entry: SQL): SQL {
   return sql`(${entry}.amount_usd IS NOT NULL AND ${entry}.batch_id IS NOT NULL AND EXISTS (
@@ -227,6 +229,15 @@ export function riderWithoutShareSql(entry: SQL): SQL {
        ))
        AND NOT EXISTS (
          SELECT 1 FROM cost_allocations ua WHERE ua.cost_entry_id = ${entry}.id AND ua.box_id = um.box_id
+       )
+       -- STALE, not merely different: the split was written before the carton
+       -- was scanned off. A split computed after the landing under the old
+       -- rule is HISTORY, and history moves only with \`pnpm repair-riders
+       -- --apply\` (#1030) — without this the nightly net re-split it the
+       -- first night after the deploy while the found-back half stayed put
+       -- (review of the riders unit).
+       AND NOT EXISTS (
+         SELECT 1 FROM cost_allocations fa WHERE fa.cost_entry_id = ${entry}.id AND fa.computed_at > um.created_at
        )
   ))`;
 }
