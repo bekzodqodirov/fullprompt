@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '../db/client';
 import { settings } from '../db/schema';
 import { parseDayOrInstant } from '../time/tashkent';
+import { originsSettingValid } from '../http/origins';
 
 /**
  * Typed settings registry (spec §17). Values live as JSONB rows in
@@ -230,6 +231,16 @@ export const SETTING_DEFAULTS = {
    * when no UZS rate exists, never inventing one.
    */
   bhm_uzs: 412000,
+  /**
+   * Which web pages may ask «who should this visitor write to?» (round 113),
+   * space-separated exact origins. The website's questionnaire runs in the
+   * visitor's browser, and the browser names the page it came from — so this
+   * list is what stops somebody else's page from handing out our managers'
+   * usernames and filling their load. A CSRF fence, not authentication: a
+   * script outside a browser can type any origin it likes, and the rate limit
+   * is what covers that.
+   */
+  lead_assign_origins: 'https://gsrlogistics.uz https://www.gsrlogistics.uz',
 };
 
 export type SettingKey = keyof typeof SETTING_DEFAULTS;
@@ -244,6 +255,7 @@ export type SettingValue<K extends SettingKey> = (typeof SETTING_DEFAULTS)[K];
  */
 export const SETTING_VALIDATORS: Partial<Record<SettingKey, (raw: string) => boolean>> = {
   unpriced_gate_since: (raw) => parseDayOrInstant(raw) !== null,
+  lead_assign_origins: originsSettingValid,
 };
 
 export async function getSetting<K extends SettingKey>(key: K): Promise<SettingValue<K>> {

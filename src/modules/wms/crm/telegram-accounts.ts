@@ -1,6 +1,6 @@
 import { asc, eq, sql } from 'drizzle-orm';
 import { db, pgClient } from '../../platform/db/client';
-import { clients, tgAccounts, tgMessages, tgOutbox, users } from '../../platform/db/schema';
+import { clients, leads, tgAccounts, tgMessages, tgOutbox, users } from '../../platform/db/schema';
 import { openSession, sealSession, sessionKey, sessionOpens } from './telegram-session';
 import { bridgeState, type BridgeState } from './telegram-live';
 import type { ClientPhones, MessageRow } from './telegram-import';
@@ -43,6 +43,11 @@ export async function saveAccount(input: {
         // tarixi bilan tushsin yangi ulanganda») — including a REconnect,
         // which is how the week an account spent signed out gets recovered.
         historyBackfilledAt: null,
+        // The handle belongs to the account that WAS connected. A new login
+        // may be a different Telegram altogether, and until the listener
+        // reads the new one the website must not be sent to the old (0107).
+        tgUsername: null,
+        tgUsernameCheckedAt: null,
         updatedAt: new Date(),
       },
     });
@@ -129,6 +134,10 @@ export async function disconnectAccount(managerUserId: string): Promise<boolean>
       status: 'signed_out',
       sessionEnc: null,
       lastError: 'disconnected by the manager',
+      // No connection, no handle to vouch for (0107) — the website stops
+      // sending visitors here on the next question, not an hour later.
+      tgUsername: null,
+      tgUsernameCheckedAt: null,
       updatedAt: new Date(),
     })
     .where(eq(tgAccounts.managerUserId, managerUserId))
@@ -396,7 +405,17 @@ export async function storeIncoming(input: {
   const written = await db
     .insert(tgMessages)
     .values({
-      clientId: input.clientId,
+      // A lead-owned chat whose lead has since been WON carries the client
+      // too. The chat's rule still names the lead (nothing rewrites rules on a
+      // win), and `rekeyLeadChats` moved only the rows that existed at that
+      // moment — so without this every message after the win was stored with
+      // no client and the client card, which is where the conversation lives
+      // from then on, never showed it.
+      clientId:
+        input.clientId ??
+        (input.leadId
+          ? sql`(SELECT ${leads.clientId} FROM ${leads} WHERE ${leads.id} = ${input.leadId})`
+          : null),
       leadId: input.leadId ?? null,
       managerUserId: input.managerUserId,
       peerId: input.row.peerId,

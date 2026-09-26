@@ -57,6 +57,18 @@ export const USERS_GRANTED_COLUMNS = [
   'id', 'phone', 'username', 'full_name', 'locale', 'active', 'created_at',
   'updated_at', 'muted_notification_types', 'inbound_rota',
 ] as const;
+/**
+ * `users` columns the model is deliberately NOT given — the credentials, and
+ * round 113's two website columns: a staff member's Telegram handle is a
+ * personal contact the analyst has no business holding, and «who answers the
+ * website» is a switch on /admin/taqsimot, not a fact about the company. 0080's
+ * column grant is default-deny, so withholding needs no statement in SQL; this
+ * list is what lets the fence in `ai-schema-card.test.ts` tell a decision from
+ * an omission.
+ */
+export const USERS_WITHHELD_COLUMNS = [
+  'password_hash', 'quick_pin_hash', 'lead_teams', 'telegram_username',
+] as const;
 export const LEAD_SOURCES_GRANTED_COLUMNS = [
   'id', 'name', 'sort_order', 'active', 'created_at', 'key',
 ] as const;
