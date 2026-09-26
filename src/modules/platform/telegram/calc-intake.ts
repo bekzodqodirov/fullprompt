@@ -75,6 +75,17 @@ export interface IntakeState {
    * high.
    */
   hasCertificate: boolean;
+  /**
+   * Where the road runs, when the AI podklyuch door asked (item 13): the
+   * tariff zone the seller pressed, and the cities it stands for. The zone is
+   * what prices the road; the cities fill the checklist's «qayerdan/qayerga»
+   * only where neither the seller's words nor the model named them.
+   */
+  route: { zone: string; fromCity: string; toCity: string } | null;
+  /** Has the «umumiy kub va kg?» question been asked (podklyuch, once)? */
+  totalsAsked: boolean;
+  /** Is the pending question about the TOTALS rather than a goods line? */
+  askingTotals: boolean;
   /** The line the bot is waiting for an answer about, by its index in
    * `facts.goods`. Null outside the question stage. */
   askingIndex: number | null;
@@ -139,6 +150,9 @@ export function startIntake(
     promptMessageId: null,
     ai: opts.ai ?? false,
     hasCertificate: true,
+    route: null,
+    totalsAsked: false,
+    askingTotals: false,
     askingIndex: null,
     round: 0,
     reasked: false,
@@ -208,8 +222,8 @@ export async function analyzeCollected(state: IntakeState): Promise<IntakeState>
 
   // Typed facts win over read ones: the person is looking at the material.
   const facts = {
-    fromCity: manual.fromCity ?? ai?.facts.fromCity ?? null,
-    toCity: manual.toCity ?? ai?.facts.toCity ?? null,
+    fromCity: manual.fromCity ?? ai?.facts.fromCity ?? state.route?.fromCity ?? null,
+    toCity: manual.toCity ?? ai?.facts.toCity ?? state.route?.toCity ?? null,
     weightKg: manual.weightKg ?? ai?.facts.weightKg ?? null,
     volumeM3: manual.volumeM3 ?? ai?.facts.volumeM3 ?? null,
     /**

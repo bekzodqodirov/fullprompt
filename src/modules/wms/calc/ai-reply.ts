@@ -17,9 +17,13 @@ import type { BazaSource } from './pricing';
  *  - **Law 6**: never a `$0`, never a silence. A line the engine refused
  *    prints WHY, in the office's words, and the total says how many lines it
  *    covers and how many it could not.
- *  - **The owner's decision 8**: no freight, ever. A podklyuch job gets one
- *    sentence saying the VED will price the road — not a number, not a
- *    dash, and never the tariff's list price dressed as an estimate.
+ *  - **The road is the TARIFF's list price, labelled as such.** Decision 8
+ *    («no freight, ever») stood until the owner overturned it on
+ *    2026-09-26 (item 13: «podklyuch bolsa yolkira bilan birga hsoblab
+ *    bersin»). A podklyuch job now carries its own yo'lkira line — the band
+ *    and the price per unit printed beside it, never a discount nobody has
+ *    given (phase D's line) — and a JAMI only when BOTH halves priced. A
+ *    road the engine refused is a sentence, exactly like a customs line.
  *  - **The number is TAHMINIY.** The official price is the seal (or the typed
  *    «Готово»), and the caveat travels on its own line right under the total,
  *    because the seller reads this on a phone and repeats it to a customer.
@@ -67,8 +71,11 @@ export interface AiVedReplyInput {
   /** The customs total, or null when the engine refused to make one. */
   totalUsd: number | null;
   hasCertificate: boolean;
-  /** Does this job also carry a road? Then say who prices it — never price it. */
-  hasFreight: boolean;
+  /**
+   * The road, on a job that has one (podklyuch) — null on a customs-only one.
+   * Priced at the tariff's LIST price, or refused with the reason in words.
+   */
+  freight: AiVedFreight | null;
   link: string | null;
   /** No key on this server: the honest word, not a silent half-answer. */
   aiConfigured: boolean;
@@ -82,6 +89,17 @@ export interface AiVedReplyInput {
    */
   budgetSpent?: boolean;
 }
+
+export type AiVedFreight =
+  | {
+      ok: true;
+      listUsd: number;
+      /** «Xitoy → O‘zbekiston» — which of his zones answered. */
+      routeLabel: string;
+      /** «180 kg/m³ · $160/m³ × 12 m³» — the band, so the figure is checkable. */
+      bandText: string;
+    }
+  | { ok: false; refusal: string };
 
 const money = (n: number) => `$${n.toFixed(2)}`;
 
@@ -142,7 +160,9 @@ function lineText(line: AiVedLine, index: number): string {
 }
 
 export function aiVedReplyText(input: AiVedReplyInput): string {
-  const head = ['🤖 AI-VED · tahminiy rastamojka']
+  const head = [
+    input.freight ? '🤖 AI-VED · tahminiy podklyuch (rastamojka + yo‘lkira)' : '🤖 AI-VED · tahminiy rastamojka',
+  ]
     .concat(input.clientLabel ? [input.clientLabel] : [])
     .concat(input.cardLabel ? [input.cardLabel] : [])
     .join(' · ');
@@ -178,12 +198,24 @@ export function aiVedReplyText(input: AiVedReplyInput): string {
       blocked > 0 ? ` (${priced} ta qatordan, ${blocked} tasi hisoblanmadi)` : '';
     out.push(`Rastamojka jami${cover}: ≈ ${money(input.totalUsd)}`);
   }
+  if (input.freight) {
+    const f = input.freight;
+    out.push(
+      f.ok
+        ? `Yo‘lkira (${f.routeLabel}, ${f.bandText}): ≈ ${money(f.listUsd)}`
+        : `Yo‘lkira: ⚠️ ${f.refusal} — VED xodimi hisoblaydi`,
+    );
+    // The sum only when BOTH halves are figures: half a price labelled
+    // «jami» is the partial total law 6 forbids, one line lower.
+    if (f.ok && input.totalUsd !== null) {
+      out.push(`JAMI (rastamojka + yo‘lkira): ≈ ${money(input.totalUsd + f.listUsd)}`);
+    } else {
+      out.push('JAMI: hozircha hisoblab bo‘lmadi — yuqoridagi ⚠️ ni to‘ldiring.');
+    }
+  }
   out.push('⚠️ Rasmiy emas — VED xodimi tasdiqlaydi.');
 
   out.push(`📄 Sertifikat: ${input.hasCertificate ? 'bor' : 'yo‘q'} (deb hisoblandi)`);
-  // Decision 8, said out loud rather than by omission: a podklyuch quote with
-  // no road line reads as a complete price to somebody in a hurry.
-  if (input.hasFreight) out.push('Yo‘lkirani VED xodimi hisoblaydi.');
   if (!input.aiConfigured) out.push('AI sozlanmagan — faqat yozilganidan o‘qildi.');
   else if (input.budgetSpent) {
     out.push('AI kunlik limiti tugadi — muhrlangan xotira va bojxona faylidan hisoblandi.');

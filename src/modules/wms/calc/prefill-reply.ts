@@ -72,6 +72,11 @@ const TOTALS_REASON: Record<TotalsRefusal, string> = {
   not_a_number: 'raqam noto‘g‘ri',
 };
 
+/** A road the engine refused, in the office's words (the AI reply's line). */
+export function freightRefusalText(reason: FreightRefusal): string {
+  return FREIGHT_REASON[reason] ?? reason;
+}
+
 /** One blocker, as a sentence a person can act on. */
 export function blockerText(b: SealBlocker): string {
   switch (b.kind) {

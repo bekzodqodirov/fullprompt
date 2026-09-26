@@ -141,9 +141,11 @@ async function open(items: { name: string; tnvedCode?: string | null; quantity?:
 async function openSection(
   section: 'yolkira' | 'rastamojka' | 'podklyuch',
   items: { name: string; tnvedCode?: string | null; quantity?: number | null; weightKg?: number | null }[],
+  extra: { freightZone?: string | null } = {},
 ) {
   const r = await openCalcRequest(
     {
+      ...extra,
       entityType: 'deal',
       entityId: dealId,
       section,
@@ -226,6 +228,53 @@ describe('the machine carries a job as far as it honestly can', () => {
     expect(out.text).toContain('📥');
     expect(out.text).toContain('Rastamojka jami');
     expect(out.text).toContain('Rasmiy emas');
+  });
+
+  it('a podklyuch job prices the road at the tariff LIST price and sums a JAMI (item 13)', async () => {
+    const row = await importRow();
+    const id = await openSection('podklyuch', [{ name: row.name, weightKg: 100 }], {
+      freightZone: 'cn',
+    });
+    // The zone the seller pressed is on the row from the INSERT — the pass
+    // is queued by the landing and must not race a later UPDATE.
+    const [req] = await db.select().from(calcRequests).where(eq(calcRequests.id, id));
+    expect(req!.freightZone).toBe('cn');
+
+    const out = await aiPrefill(id, ctx(), {
+      propose: proposeAs(row.tnvedCode),
+      pick: async () => [],
+      configured: true,
+    });
+    const ws = await loadWorkspace(id);
+    expect(ws!.freight?.ok).toBe(true);
+    const list = ws!.freight!.ok ? ws!.freight!.listUsd : NaN;
+    expect(out.text).toContain('tahminiy podklyuch (rastamojka + yo‘lkira)');
+    expect(out.text).toContain(`Yo‘lkira (Xitoy → O‘zbekiston, 50 kg/m³ · `);
+    expect(out.text).toContain(`× 10 m³): ≈ $${list.toFixed(2)}`);
+    // The list price, never a discount — and the sum of the two halves.
+    expect(out.freightUsd).toBe(list);
+    expect(out.customsUsd).not.toBeNull();
+    expect(out.text).toContain(
+      `JAMI (rastamojka + yo‘lkira): ≈ $${(out.customsUsd! + list).toFixed(2)}`,
+    );
+  });
+
+  it('a podklyuch job with no zone refuses the road in words, and sums nothing', async () => {
+    const row = await importRow();
+    const id = await openSection('podklyuch', [{ name: row.name, weightKg: 100 }], {
+      // A zone the tariff does not have is dropped, never stored.
+      freightZone: 'mars',
+    });
+    const [req] = await db.select().from(calcRequests).where(eq(calcRequests.id, id));
+    expect(req!.freightZone).toBeNull();
+    const out = await aiPrefill(id, ctx(), {
+      propose: proposeAs(row.tnvedCode),
+      pick: async () => [],
+      configured: true,
+    });
+    expect(out.text).toContain('Yo‘lkira: ⚠️ yo‘nalish (zona) tanlanmagan — VED xodimi hisoblaydi');
+    expect(out.text).toContain('JAMI: hozircha hisoblab bo‘lmadi');
+    expect(out.text).not.toContain('$0.00');
   });
 
   it('the request STAYS in the queue — nothing is confirmed or sealed', async () => {
