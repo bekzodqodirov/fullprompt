@@ -505,6 +505,21 @@ describe('D9 and the accountant’s two-currency close (open question 1, answer 
       code: 'fx_close_single_currency',
     });
   });
+
+  it('a long history does not widen the allowance: 2 % of what was paid since the account was last square (review of fx, U36)', async () => {
+    // The bound was 2 % of every payment EVER: a customer with $50,000 of
+    // settled history could have a $300 real debt written off as «kurs
+    // farqi» with one press. The residue comes from the money that moved
+    // since the account last stood at zero, so that is the base.
+    const old = await client('Q24 old');
+    await pay(old, 'charge', 50_000, 'USD', JAN);
+    await pay(old, 'payment', 50_000, 'USD', JAN);
+    await pay(old, 'charge', 1000, 'USD', FEB);
+    await pay(old, 'payment', 8_960_000, SOM, FEB); // $700
+    expect(await clientBalanceUsd(old)).toBe(300);
+    expect((await crossCloseOffer(old)).refusal).toBe('fx_close_too_large');
+    await expect(closeCrossCurrencyResidue(old, ctx(), classify)).rejects.toMatchObject({ code: 'fx_close_too_large' });
+  });
 });
 
 describe('D12 — what a correction IS (Q12’s split)', () => {

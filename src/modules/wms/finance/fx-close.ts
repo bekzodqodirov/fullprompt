@@ -20,7 +20,8 @@ import { ledgerAlias, signedUsdSql } from './ledger-sql';
  *
  * Bounded, because a button that writes off any balance is a way to forgive
  * a debt: only a residue within the merge's own allowance (2 % of the dollars
- * the client paid, or $5 — `fxResidueAllowance`), only on an account that
+ * the client paid since the account last stood at zero, or $5 —
+ * `fxResidueAllowance`), only on an account that
  * really moves in two currencies, and never over a legacy residue Q14 has not
  * closed yet (that one is «Kurs qoldiqlari»'s). One live close per anchor
  * (the unique index): a second press supersedes the first rather than
@@ -36,13 +37,29 @@ export class FxCloseError extends Error {
 
 type Money = { balanceUsd: number; paidUsd: number; currencies: number };
 
+/**
+ * The base the allowance is measured on is the money that moved since the
+ * account last stood at ZERO (the running dollar balance, in ledger order),
+ * never every payment ever: a residue two rates leave behind comes from the
+ * payments that settled the open bills, and a lifetime base let a customer
+ * with $50,000 of settled history have a $300 real debt written off as
+ * «kurs farqi» with one press (review of the fx package). «Two currencies»
+ * is judged over the same stretch.
+ */
 async function accountMoney(handle: Db | Tx, clientId: string): Promise<Money> {
   const [row] = (await handle.execute(sql`
-    SELECT coalesce(sum(${signedUsdSql(ledgerAlias('t'))}), 0) AS balance,
-           coalesce(sum(t.amount_usd) FILTER (WHERE t.type = 'payment'), 0) AS paid,
-           count(DISTINCT t.currency) FILTER (WHERE t.type <> 'fx_diff') AS currencies
-      FROM client_transactions t
-     WHERE t.client_id = ${clientId}::uuid AND t.voided_at IS NULL
+    WITH led AS (
+      SELECT t.type, t.currency, t.amount_usd,
+             row_number() OVER (ORDER BY t.tx_date, t.created_at, t.id) AS ord,
+             sum(${signedUsdSql(ledgerAlias('t'))}) OVER (ORDER BY t.tx_date, t.created_at, t.id) AS run
+        FROM client_transactions t
+       WHERE t.client_id = ${clientId}::uuid AND t.voided_at IS NULL
+    ),
+    square AS (SELECT coalesce(max(ord), 0) AS ord FROM led WHERE abs(run) < 0.005)
+    SELECT coalesce((SELECT run FROM led ORDER BY ord DESC LIMIT 1), 0) AS balance,
+           coalesce(sum(led.amount_usd) FILTER (WHERE led.type = 'payment' AND led.ord > square.ord), 0) AS paid,
+           count(DISTINCT led.currency) FILTER (WHERE led.type <> 'fx_diff' AND led.ord > square.ord) AS currencies
+      FROM led, square
   `)) as unknown as { balance: string; paid: string; currencies: string | number }[];
   return {
     balanceUsd: Math.round(Number(row?.balance ?? 0) * 100) / 100,
