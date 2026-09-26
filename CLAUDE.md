@@ -135,6 +135,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | Deployment | `docs/DEPLOY.md` |
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
 | The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batches 1-4 COMPLETE; 5 in progress |
+| Website visitor → least-busy manager (the site's contract) | `docs/SAYT-TAQSIMOT.md` — round 113, give the contract to the site's session verbatim |
 
 ## State — 2026-08-23
 
@@ -1802,8 +1803,39 @@ shaped copy). PROCESS: #1040 (migration `when` order across parallel packages �
 a db migrated to 0106 before 0103-0105 skips them silently; every local db was
 rebuilt). Subagents hit their weekly limit mid-review; the fixes were done solo.
 
-**Latest migration: 0106** (`recurring_paid` — the month a posting closes and
-the template's due-from; ledger must reach **107**). Before it: 0105
+**Round 113 — saytdan so'rov → eng bo'sh menejer (2026-09-26; DECISIONS
+#1045-#1052; migration 0107 `lead_assign`, ledger 108; spec for the site in
+`docs/SAYT-TAQSIMOT.md`).** The website asks `GET /api/lead/assign` at its last
+button; the answer is ALWAYS `200 {"username": …|null}` (anything but a name =
+the site's own list). Least busy = units handed TODAY (Tashkent): confirmed
+offers + blind ones all day + seeable-but-unwritten for 15 min + advert leads
+the taqsimot routed — ONE `roster` query read by the route AND the panel;
+team → general → any ticked → null. Candidates: `users.lead_teams` + a handle
+(the listener's `tg_accounts.tg_username`, trusted 1 h after it was read, else
+the typed `users.telegram_username` — reachable, never captured). The door:
+origin first (setting `lead_assign_origins`, cached 60 s — a CSRF fence), then
+in-memory buckets (`site-assign-gate.ts`, IPv6 by /64), 4 in flight, 800 ms,
+one tx under `pg_advisory_xact_lock` + 400 ms statement timeout, no IP stored.
+The listener (`scripts/tg-listen.ts`): pure `siteTagAction` after
+`decideIncoming` (exclude/self/bot win; only «unknown person» verdicts land),
+`landSiteTag` = offer we issued ≤24 h, FIRST contact (`getMessages maxId`),
+claim bound to one Telegram person (`peer_id`, re-entrant for the same pair),
+`landInboundLead` with channel `site`, `ownerId` = the RECEIVER, `knownLeadId`
+= the same Telegram user on any open lead; the rule goes into the in-memory
+map in the same step; one conversation at a time (`serialised`); start-up
+sweep by global search; handle read before the first heartbeat + every 20 min
+(also the session probe) + `UpdateUserName`. Fixed on the way: a won lead's
+later messages never reached the client card (`storeIncoming` derives
+`client_id`), and the miss refresh had been dead since round 79 (keyed on
+`not_a_client`). **Deploy MUST rebuild tg-listen** or the panel says
+«tinglovchi yangilanmagan» and nothing lands. TRAP (#1052): a fixture's
+«20 minutes ago» at 00:05 Tashkent is yesterday — the file stands on a clock
+≥ 30 min into the Tashkent day.
+
+**Latest migration: 0107** (`lead_assign` — the website teams, the typed and
+the read Telegram handle, the offer ledger, the `site` arrival channel; ledger
+must reach **108**). Before it: **0106** (`recurring_paid` — the month a posting closes and
+the template's due-from; ledger 107). Before it: 0105
 (`compensation`), 0104 (`unpriced_gate`), 0103 (`fx_differences`), 0102
 (`business_targets` — the monthly plan). Before them: **0101** (`kassa_refund` — the refund kind, the cost's kassa
 and its merge provenance, the staff login link, the own-pocket request; ledger
@@ -1915,8 +1947,8 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **107** since 0106, and his server last CONFIRMED 95 (2026-09-04),
-which means 0095-0106 are all pending and one deploy applies TWELVE of them.
+length — **108** since 0107, and his server last CONFIRMED **107** («deploy
+qildim 107 chiqdi», 2026-09-26), so the next deploy applies one (0107).
 Never carry this number over from a previous session: read it
 (`ls src/modules/platform/db/migrations/*.sql | wc -l`) before writing the
 owner a step list, because the count is the only check that separates «the

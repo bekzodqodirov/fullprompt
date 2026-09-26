@@ -157,7 +157,7 @@ export interface Pick {
   ranked: Candidate[];
   /** Ticked for the team, but unreachable — and why, in the panel's words. */
   excluded: { userId: string; name: string; reason: Ineligible }[];
-  /** Nobody in the asked team could take it, so `general` did. */
+  /** Nobody in the asked team could take it, so a wider tier did. */
   widened: boolean;
 }
 

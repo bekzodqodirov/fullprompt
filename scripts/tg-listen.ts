@@ -335,7 +335,9 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
   const inFlightByPeer = new Map<string, Promise<void>>();
   const serialised = (key: string, work: () => Promise<void>) => {
     const prior = inFlightByPeer.get(key) ?? Promise.resolve();
-    const next = prior.then(work, work);
+    // Never rejects: `work` catches its own errors, and a rejected link here
+    // would be an unhandled rejection that takes the whole bridge down.
+    const next = prior.then(work, work).catch(() => undefined);
     inFlightByPeer.set(key, next);
     void next.finally(() => {
       if (inFlightByPeer.get(key) === next) inFlightByPeer.delete(key);
