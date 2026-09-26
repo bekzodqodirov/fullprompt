@@ -488,7 +488,7 @@ describe('the un-merge (Q8)', () => {
     expect(await tillBalance(usdTill)).toBe(drawer);
   });
 
-  it('M4b the kassa-less merge (U02) still takes its kassa on the queue — and stays unvoidable', async () => {
+  it('M4b the kassa-less merge (U02) takes its kassa on the queue, stays unvoidable — and the un-merge still undoes it', async () => {
     const costId = await cost(19, 'USD');
     const twin = await expense(19, 'USD', '');
     await mergeDuplicate({ costIds: [costId], expenseId: twin }, ctx());
@@ -496,9 +496,23 @@ describe('the un-merge (Q8)', () => {
     const drawer = await tillBalance(usdTill);
     await placeCostAccount(costId, usdTill, undefined, ctx());
     expect(await tillBalance(usdTill)).toBe(drawer - 19);
-    // Placed after the merge by another door: the un-merge would move a
-    // drawer it never touched, so it refuses and names it.
-    await expect(unmergeDuplicate(twin, ctx())).rejects.toMatchObject({ code: 'merge_changed' });
+    // Placed after the merge by the queue. The first version refused the
+    // un-merge here, and the void, the move and the queue all refuse a merged
+    // cost — a wrong kassa had no door at all (review). The un-merge now
+    // clears the queue's kassa with the link: the drawer gets its money back
+    // and the cost returns to the queue to be answered again.
+    const result = await unmergeDuplicate(twin, ctx());
+    expect(result.costIds).toEqual([costId]);
+    expect(await tillBalance(usdTill)).toBe(drawer);
+    expect(await costRow(costId)).toMatchObject({ accountId: null, mergedExpenseId: null });
+    expect((await expenseRow(twin)).voidedAt).toBeNull();
+
+    // A colleague named as the payer is a live debt on their staff account:
+    // cancelled there first, and the refusal says so.
+    await mergeDuplicate({ costIds: [costId], expenseId: twin }, ctx());
+    await setCostStaffPayer(costId, staffPartnerId, ctx());
+    await expect(unmergeDuplicate(twin, ctx())).rejects.toMatchObject({ code: 'merge_staff_paid' });
+    expect((await costRow(costId)).mergedExpenseId).toBe(twin);
   });
 
   it("M5 the queue's «Saqlash» is a claim: once, and never for a cost typed before kassas were asked for", async () => {

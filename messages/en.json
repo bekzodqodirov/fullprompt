@@ -1847,7 +1847,8 @@
     "balUnpricedBeforeGate": "Cargo handed over unpriced before the handover ban was switched on ({date}) is not in this line — pricing it raises the net position by the whole price.",
     "balUnpricedGateOff": "The handover ban is off: cargo handed over unpriced is not in this line.",
     "balUnpricedDash": "ℹ️ The unpriced-cargo line — notes ({n}) on the balance page →",
-    "balUnpricedQueueIn": "Cargo costs whose cash box is not named yet are in this line too: the balance already takes them off on «Cargo costs with no cash box», so when the accountant names the cash box the net position does not move."
+    "balUnpricedQueueIn": "Cargo costs whose cash box is not named yet are in this line too: the balance already takes them off on «Cargo costs with no cash box», so when the accountant names the cash box the net position does not move.",
+    "unmergeErrStaffPaid": "This cost is marked as paid by a colleague out of pocket — cancel their debt on their staff card first, then undo the merge."
   },
   "crm": {
     "title": "CRM",

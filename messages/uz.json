@@ -1847,7 +1847,8 @@
     "balUnpricedBeforeGate": "Topshirishdagi taqiq yoqilgan kundan ({date}) oldin narxsiz topshirilgan yuk bu qatorga kirmaydi — u narxlansa, Sof holat butun narxga o‘sadi.",
     "balUnpricedGateOff": "Topshirishdagi taqiq o‘chiq: narxsiz topshirilgan yuk bu qatorga kirmaydi.",
     "balUnpricedDash": "ℹ️ Narxsiz yuk qatori: {n} ta izoh — Balansda →",
-    "balUnpricedQueueIn": "Kassasi hali ko‘rsatilmagan yuk xarajatlari ham shu qatorga kiradi: Balans ularni «Kassasi ko‘rsatilmagan yuk xarajatlari» qatorida allaqachon ayiradi, shuning uchun buxgalter kassani ko‘rsatganda Sof holat qimirlamaydi."
+    "balUnpricedQueueIn": "Kassasi hali ko‘rsatilmagan yuk xarajatlari ham shu qatorga kiradi: Balans ularni «Kassasi ko‘rsatilmagan yuk xarajatlari» qatorida allaqachon ayiradi, shuning uchun buxgalter kassani ko‘rsatganda Sof holat qimirlamaydi.",
+    "unmergeErrStaffPaid": "Bu xarajatni hodim o‘z pulidan to‘lagan deb belgilangan — avval hodim kartasida uning qarzini bekor qiling, keyin birlashtirishni bekor qiling."
   },
   "crm": {
     "title": "CRM",

@@ -71,6 +71,7 @@ const UNMERGE_ERRORS = {
   not_merged: 'unmergeErrGone',
   not_found: 'unmergeErrGone',
   merge_changed: 'unmergeErrChanged',
+  merge_staff_paid: 'unmergeErrStaffPaid',
   forbidden: 'queueErrForbidden',
 } as const;
 

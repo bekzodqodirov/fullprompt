@@ -313,10 +313,11 @@ export async function mergeDuplicate(input: { costIds: string[]; expenseId: stri
  * (`costCashDay`, U07): the expense debits the kassa the costs did.
  *
  * Refused (`merge_changed`) when anything moved after the merge: a cost
- * voided, re-pointed, given a payer, or placed into a kassa the merge did not
- * put there; the shares no longer adding up to the expense; or the expense's
- * void not being the merge's own stamp. After this package no door produces
- * any of those — the refusal protects history and a hand-built write.
+ * voided or re-pointed, the shares no longer adding up to a kassa expense, or
+ * the expense's void not being the merge's own stamp. A merge into a
+ * kassa-LESS expense is the exception the queue makes: the kassa the queue
+ * placed since is cleared with the link (below), and a colleague named as the
+ * payer is refused as `merge_staff_paid` — cancel their debt first.
  *
  * The rasxod xabari and the upsale are untouched: the merge never re-opened
  * them, and `mergeableExpenseSql` never let a recurring or payout expense in.
@@ -340,12 +341,22 @@ export async function unmergeDuplicate(
       .for('update');
     if (rows.length === 0 || expense.voidedAt === null) throw new MergeError('not_merged');
     if (!expense.voidReason?.startsWith(MERGE_VOID_PREFIX)) throw new MergeError('merge_changed');
+    // Merged into a KASSA-LESS expense, the cost stayed on the queue (U02) and
+    // the queue may since have answered it: a kassa placed there is not the
+    // merge's, and the un-merge clears it with the link — the cost goes back
+    // to the queue to be answered again, which is what «undo» promises.
+    // Refusing it (as the first version did) left a wrong kassa or a mistaken
+    // merge with no door at all: the void, the move and the queue all refuse
+    // a merged cost (review of the lead's and comp's units). A colleague named
+    // as the payer is a live DEBT on their staff account; that is cancelled
+    // there first, and said so in words.
+    const kassaLess = expense.accountId === null;
+    if (kassaLess && rows.some((row) => row.partnerId !== null)) throw new MergeError('merge_staff_paid');
     const kassaSide = cents(rows.reduce((sum, row) => sum + Number(row.accountAmount ?? 0), 0));
     const changed =
-      rows.some((row) => row.voidedAt !== null || row.partnerId !== null || row.accountId !== expense.accountId) ||
-      (expense.accountId === null
-        ? rows.some((row) => row.accountAmount !== null)
-        : kassaSide !== cents(Number(expense.amount)));
+      rows.some((row) => row.voidedAt !== null || row.partnerId !== null) ||
+      (!kassaLess &&
+        (rows.some((row) => row.accountId !== expense.accountId) || kassaSide !== cents(Number(expense.amount))));
     if (changed) throw new MergeError('merge_changed');
 
     await tx
