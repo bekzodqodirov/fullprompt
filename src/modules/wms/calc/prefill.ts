@@ -17,7 +17,7 @@ import {
   newestReadyBatchId,
 } from '../customs/import-service';
 import { suggestImportBaza, unitsForRow, BASIS_FOR_UNIT } from '../customs/import-baza';
-import { sectionParts, type CalcSectionName } from './pricing';
+import { sectionParts, type CalcSectionName, type FreightResult } from './pricing';
 import {
   loadWorkspace,
   proposeGroups,
@@ -27,9 +27,9 @@ import {
   type Workspace,
 } from './workspace';
 import { itemNameNorm, sealedMemoryFor } from './memory';
-import { aiVedReplyText, type AiVedLine } from './ai-reply';
+import { aiVedReplyText, type AiVedFreight, type AiVedLine } from './ai-reply';
 import { dutyText } from './duty-text';
-import { blockerText, prefillReplyText } from './prefill-reply';
+import { blockerText, freightRefusalText, prefillReplyText } from './prefill-reply';
 import { pickImportRows, type PickAnswer, type PickRequest, type PickUsage } from './prefill-ai';
 
 /**
@@ -313,7 +313,7 @@ export async function aiPrefill(
           fee: ws.fee && ws.fee.ok ? { bhm: ws.fee.bhmCoefficient, usd: ws.fee.feeUsd } : null,
           totalUsd: customsUsd,
           hasCertificate: ws.hasCertificate,
-          hasFreight: ws.parts.freight,
+          freight: ws.parts.freight ? aiFreight(freight, ws) : null,
           link: about?.link ?? null,
           aiConfigured: hasKey,
           budgetSpent: hasKey && budgetLeft <= 0,
@@ -393,6 +393,35 @@ async function requestAbout(
  * VED typed wears no mark at all, because a 🧠 over a mixed row would claim
  * a provenance for a number that is half somebody's typing.
  */
+/** The owner's two zones, as a seller reads them — a new zone prints its code. */
+export const ZONE_ROUTE: Record<string, string> = {
+  cn: 'Xitoy → O‘zbekiston',
+  kashgar: 'Qashg‘ar → O‘zbekiston',
+};
+
+/**
+ * The road as the AI reply prints it (item 13): the LIST price with the band
+ * that made it, so «$1,920» arrives with «180 kg/m³ · $160/m³ × 12 m³» and a
+ * seller can check it against the tariff sheet on the wall.
+ */
+export function aiFreight(
+  freight: FreightResult | null,
+  measure: { weightKg: number | null; volumeM3: number | null },
+): AiVedFreight {
+  if (!freight) return { ok: false, refusal: freightRefusalText('zone_required') };
+  if (!freight.ok) return { ok: false, refusal: freightRefusalText(freight.reason) };
+  const b = freight.band;
+  const qty = b.perKg ? measure.weightKg : measure.volumeM3;
+  const per = `$${b.priceUsd}/${b.perKg ? 'kg' : 'm³'}`;
+  const times = qty === null ? per : `${per} × ${Number(qty.toFixed(3))} ${b.perKg ? 'kg' : 'm³'}`;
+  return {
+    ok: true,
+    listUsd: freight.listUsd,
+    routeLabel: ZONE_ROUTE[b.zone] ?? b.zone,
+    bandText: `${freight.bandDensity} kg/m³ · ${times}`,
+  };
+}
+
 function replyLines(ws: Workspace): AiVedLine[] {
   return ws.groups.map((g) => {
     const sources = [...new Set(g.items.map((i) => i.bazaSource))];

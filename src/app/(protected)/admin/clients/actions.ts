@@ -16,7 +16,9 @@ import {
   canMintClient,
   createClient,
   isValidClientCode,
+  splitTags,
 } from '@/modules/platform/clients/service';
+import { calendarDay } from '@/modules/platform/time/tashkent';
 
 export interface ClientFormState {
   error?: 'validation' | 'code_exists' | 'code_format';
@@ -33,6 +35,13 @@ const clientSchema = z.object({
   salesManagerId: z.string().uuid().optional().or(z.literal('')),
   messengerNote: z.string().trim().max(500).optional().or(z.literal('')),
   notes: z.string().trim().max(2000).optional().or(z.literal('')),
+  // A REAL calendar day (U43's lesson: a bare regex let 02-30 reach postgres).
+  birthday: z
+    .string()
+    .refine((v) => v === '' || calendarDay(v) !== null)
+    .optional(),
+  sector: z.string().trim().max(120).optional().or(z.literal('')),
+  cargoKinds: z.string().trim().max(1000).optional().or(z.literal('')),
 });
 
 function parseForm(formData: FormData) {
@@ -43,6 +52,9 @@ function parseForm(formData: FormData) {
     salesManagerId: formData.get('salesManagerId') ?? '',
     messengerNote: formData.get('messengerNote') ?? '',
     notes: formData.get('notes') ?? '',
+    birthday: formData.get('birthday') ?? '',
+    sector: formData.get('sector') ?? '',
+    cargoKinds: formData.get('cargoKinds') ?? '',
   });
 }
 
@@ -59,6 +71,9 @@ function toValues(data: z.infer<typeof clientSchema>) {
     salesManagerId: data.salesManagerId || null,
     messengerNote: data.messengerNote || null,
     notes: data.notes || null,
+    birthday: data.birthday || null,
+    sector: data.sector || null,
+    cargoKinds: splitTags(data.cargoKinds ?? ''),
   };
 }
 
@@ -248,6 +263,9 @@ export async function createClientAction(
         salesManagerId: values.salesManagerId ?? actor.id,
         messengerNote: values.messengerNote ?? undefined,
         notes: values.notes ?? undefined,
+        birthday: values.birthday ?? undefined,
+        sector: values.sector ?? undefined,
+        cargoKinds: values.cargoKinds,
       },
       { actorId: actor.id, ...meta },
     );

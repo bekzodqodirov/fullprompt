@@ -1,3 +1,5 @@
+import { birthdaysOn } from '@/modules/platform/broadcast/birthdays';
+import { mayBroadcast } from '@/modules/platform/broadcast/service';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
@@ -85,6 +87,17 @@ export default async function HomePage() {
    */
   const due = day.counts.overdue + day.counts.today;
 
+  // Today's birthdays (0109, his 6c): the admins see every client's, a
+  // seller their own clients'. The super admin's links open the message to
+  // that one client; everybody else's open the card (the broadcast is his).
+  const broadcaster = mayBroadcast(actor);
+  const birthdays =
+    broadcaster || actor.roles.includes('admin')
+      ? await birthdaysOn(tashkentDay())
+      : actor.permissions.has('crm.leads')
+        ? await birthdaysOn(tashkentDay(), actor.id)
+        : [];
+
   return (
     <div className="space-y-6">
       <div>
@@ -112,6 +125,26 @@ export default async function HomePage() {
           </span>
           <Icon name="chevronRight" className="h-5 w-5 opacity-70" />
         </Link>
+      )}
+
+      {birthdays.length > 0 && (
+        <div
+          data-testid="home-birthdays"
+          className="rounded-2xl border border-good/30 bg-good/10 p-3 text-sm shadow-card"
+        >
+          <p className="font-bold text-good">🎂 {t('birthdays')}</p>
+          <p className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+            {birthdays.map((b) => (
+              <Link
+                key={b.id}
+                href={broadcaster ? `/admin/xabarlar?kod=${encodeURIComponent(b.clientCode)}` : `/admin/clients/${b.id}`}
+                className="font-semibold text-ink-900 underline decoration-good/40"
+              >
+                {b.clientCode} · {b.name}
+              </Link>
+            ))}
+          </p>
+        </div>
       )}
 
       {flow ? (

@@ -2,7 +2,14 @@ import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { pnlGaps, profitAndLoss, type FxPnlKey, type PnlRow } from '@/modules/wms/accounting/reports';
-import { resolvePeriod, toUzs, uzsRate } from '@/modules/wms/accounting/period';
+import { priorPeriod, resolvePeriod, toUzs, uzsRate } from '@/modules/wms/accounting/period';
+import { niceTicks, pnlMonthParts } from '@/modules/wms/reports/dashboard-math';
+import { marginPct } from '@/modules/wms/accounting/margin';
+import { ColumnPairs } from '@/components/charts/column-pairs';
+import { Legend } from '@/components/charts/legend';
+import { tipText } from '@/components/charts/tip-text';
+import { monthLabel, monthNames } from '@/components/charts/month-names';
+import { compactUsd, pct, signedUsd } from '@/components/charts/format';
 import { perUsd } from '@/modules/wms/costing/fx-display';
 import { PeriodForm } from '../period-form';
 import { PnlGapsNote } from '../pnl-gaps';
@@ -14,6 +21,13 @@ import { legacyFxCount } from '@/modules/wms/finance/fx-legacy';
 import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
 
 /**
+ * P&L: the answer first, then the months, then every line (the owner's item
+ * 10, 2026-09-26): five headline figures with their change against the
+ * period before (`priorPeriod` — last year's same days for a year to date,
+ * last month's for a month to date), the month-by-month picture in the
+ * dashboard's own chart grammar, and the full table folded underneath. Every
+ * figure is the table's own total — nothing here is computed twice.
+ *
  * P&L, one column per month.
  *
  * The note under the table is not decoration: revenue and cargo costs each
@@ -34,12 +48,16 @@ export default async function PnlPage({
   // The legacy kurs farqi residues (0103) are the classifier's to close, so
   // the walk is paid only on that person's P&L (fence F8).
   const mayOpenFx = mayClassifyFx(actor.permissions);
-  const [pnl, rate, gaps, losses, legacyFx] = await Promise.all([
+  const prior = priorPeriod(from, to);
+  const td = await getTranslations('dashboard');
+  const [pnl, rate, gaps, losses, legacyFx, before, names] = await Promise.all([
     profitAndLoss(from, to),
     uzsRate(),
     pnlGaps(from, to),
     lossesInPeriod(from, to),
     mayOpenFx ? legacyFxCount({ includeStaff: maySeeStaffMoney(actor.permissions) }) : Promise.resolve(null),
+    profitAndLoss(prior.from, prior.to),
+    monthNames(),
   ]);
 
   const usd = (value: number) =>
@@ -48,6 +66,39 @@ export default async function PnlPage({
     const converted = toUzs(value, rate);
     return converted === null ? '' : converted.toLocaleString('en-US');
   };
+
+  // ── The five headline figures and their change ──────────────────────────
+  const kpis = [
+    { key: 'revenue', label: t('revenue'), now: pnl.revenue.total, was: before.revenue.total, up: 'good' },
+    { key: 'direct', label: t('directCosts'), now: pnl.directTotal.total, was: before.directTotal.total, up: 'bad' },
+    { key: 'gross', label: t('grossProfit'), now: pnl.grossProfit.total, was: before.grossProfit.total, up: 'good' },
+    { key: 'opex', label: t('opex'), now: pnl.opexTotal.total, was: before.opexTotal.total, up: 'bad' },
+    { key: 'net', label: t('netProfit'), now: pnl.netProfit.total, was: before.netProfit.total, up: 'good' },
+  ] as const;
+  const change = (now: number, was: number) =>
+    Math.abs(was) < 0.005 ? null : Math.round(((now - was) / Math.abs(was)) * 100);
+  const grossMargin = marginPct(pnl.grossProfit.total, pnl.revenue.total);
+  const netMargin = marginPct(pnl.netProfit.total, pnl.revenue.total);
+
+  // ── The months, in the dashboard's grammar (one scale, net underneath) ──
+  const parts = pnl.months.map((month) => pnlMonthParts(pnl, month));
+  const revenueByMonth = parts.map((p) => p.revenue);
+  const costByMonth = parts.map((p) => p.cost);
+  const netByMonth = parts.map((p) => p.net);
+  const { ticks, top } = niceTicks(Math.max(1, ...revenueByMonth, ...costByMonth));
+  const netMax = Math.max(1, ...netByMonth.map(Math.abs));
+  const lastMonth = pnl.months.length - 1;
+  const bands = pnl.months.map((month) => ({ key: month, label: monthLabel(names, month) }));
+  const labelled = new Set(pnl.months.map((_, i) => i).filter((i) => (lastMonth - i) % 3 === 0));
+  const tips = pnl.months.map((month, i) =>
+    tipText(monthLabel(names, month, true), [
+      [`$${usd(parts[i]!.revenue)}`, td('sRevenue')],
+      [`$${usd(parts[i]!.direct)}`, td('sDirect')],
+      [`$${usd(parts[i]!.opex)}`, td('sOpex')],
+      ...(Math.abs(parts[i]!.fx) > 0.004 ? [[signedUsd(parts[i]!.fx), td('sFx')] as [string, string]] : []),
+      [signedUsd(parts[i]!.net), td('sNet')],
+    ]),
+  );
 
   // The kurs farqi sources (0103) — a literal map, so a new source is a type
   // error and not a key built at render (#163).
@@ -77,8 +128,81 @@ export default async function PnlPage({
       <PeriodForm from={from} to={to} exportHref="/api/accounting/pnl" />
       <PnlGapsNote gaps={gaps} legacyFx={legacyFx} mayOpenFx={mayOpenFx} />
 
-      <div className="card !p-0">
-        <div className="overflow-x-auto">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5" data-testid="pnl-kpis">
+        {kpis.map((kpi) => {
+          const delta = change(kpi.now, kpi.was);
+          const good = delta !== null && (kpi.up === 'good' ? delta > 0 : delta < 0);
+          const tone =
+            kpi.key === 'net'
+              ? kpi.now >= 0
+                ? 'text-good'
+                : 'text-bad'
+              : 'text-ink-900';
+          return (
+            <div
+              key={kpi.key}
+              className={`card min-w-0 !p-3 ${kpi.key === 'net' ? 'col-span-2 sm:col-span-1' : ''}`}
+              data-testid={`pnl-kpi-${kpi.key}`}
+            >
+              <p className="text-2xs font-semibold uppercase leading-tight tracking-wide text-ink-500">
+                {kpi.label}
+              </p>
+              <p className={`mt-0.5 whitespace-nowrap font-mono text-xl font-bold tabular-nums ${tone}`}>
+                {compactUsd(kpi.now)}
+              </p>
+              {(kpi.key === 'gross' || kpi.key === 'net') && (
+                <p className="text-2xs text-ink-500">
+                  {t('pnlMarginShort')}{' '}
+                  {(kpi.key === 'gross' ? grossMargin : netMargin) === null
+                    ? '—'
+                    : pct((kpi.key === 'gross' ? grossMargin : netMargin)!)}
+                </p>
+              )}
+              <p
+                className={`text-2xs font-semibold ${delta === null ? 'text-ink-500' : good ? 'text-good' : 'text-bad'}`}
+              >
+                {delta === null
+                  ? `— ${t('pnlVsPriorNone')}`
+                  : `${delta > 0 ? '▲' : delta < 0 ? '▼' : '='} ${Math.abs(delta)}% · ${compactUsd(kpi.was)}`}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+      <p className="text-2xs text-ink-500" data-testid="pnl-prior">
+        {t('pnlVsPrior', { from: prior.from, to: prior.to })}
+      </p>
+
+      {pnl.months.length > 1 && (
+        <div className="card min-w-0 space-y-2" data-testid="pnl-chart-card">
+          <p className="font-semibold">{t('pnlByMonth')}</p>
+          <Legend
+            items={[
+              { key: 'in', label: td('sRevenue') },
+              { key: 'out', label: td('sCost') },
+            ]}
+          />
+          <ColumnPairs
+            months={bands}
+            a={{ values: revenueByMonth }}
+            b={{ values: costByMonth }}
+            net={netByMonth}
+            top={top}
+            ticks={ticks}
+            netMax={netMax}
+            tips={tips}
+            labelled={labelled}
+            netLabel={td('sNet')}
+            testid="pnl-chart"
+          />
+        </div>
+      )}
+
+      <details className="card !p-0" data-testid="pnl-detail">
+        <summary className="cursor-pointer p-3 text-sm font-semibold text-ink-700" data-testid="pnl-detail-toggle">
+          📋 {t('pnlDetail')}
+        </summary>
+        <div className="overflow-x-auto border-t border-line">
           <table className="w-full min-w-[640px] text-sm">
             <thead>
               <tr className="border-b border-line-strong bg-surface-sunken text-left text-xs uppercase text-ink-500">
@@ -151,7 +275,7 @@ export default async function PnlPage({
             </tbody>
           </table>
         </div>
-      </div>
+      </details>
 
       <PnlLossesNote losses={losses} />
 

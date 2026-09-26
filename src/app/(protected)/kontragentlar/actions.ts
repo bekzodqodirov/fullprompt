@@ -24,6 +24,7 @@ import { isStaffPartner, isStaffType, maySeeStaffMoney } from '@/modules/wms/par
 import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 import { amountRefusal } from '@/modules/wms/finance/money-bounds';
 import { mayPickTill } from '@/modules/wms/accounting/till-door';
+import { partnerTermsSchema, setPartnerTerms } from '@/modules/wms/partners/terms-service';
 
 /**
  * Every door into the partner ledger.
@@ -147,6 +148,31 @@ export async function savePartnerAction(
     (actor) => partnerFormDoor(actor, id, parsed.data.typeId, userPosted),
     (ctx) => savePartner(id, parsed.data, ctx),
     ['/kontragentlar', id ? `/kontragentlar/${id}` : '/kontragentlar'],
+  );
+}
+
+/**
+ * The card's payment terms (0108): the days a debt may wait and the limit —
+ * either may be left empty, which clears it. Same door as every other write
+ * on the card, a staff account's included.
+ */
+export async function setPartnerTermsAction(
+  _prev: PartnerFormState,
+  formData: FormData,
+): Promise<PartnerFormState> {
+  const id = z.string().uuid().safeParse(formData.get('id'));
+  if (!id.success) return { error: 'validation' };
+  const limitRaw = String(formData.get('debtLimitUsd') ?? '').trim();
+  const parsed = partnerTermsSchema.safeParse({
+    payWithinDays: String(formData.get('payWithinDays') ?? '').trim(),
+    // The office's money reader (U28): «10 000» and «10,000» are ten thousand.
+    debtLimitUsd: limitRaw === '' ? '' : (parseTypedMoney(limitRaw) ?? Number.NaN),
+  });
+  if (!parsed.success) return { error: 'validation' };
+  return run(
+    (actor) => staffDoor(actor, id.data),
+    (ctx) => setPartnerTerms(id.data, parsed.data, ctx),
+    ['/kontragentlar', `/kontragentlar/${id.data}`],
   );
 }
 

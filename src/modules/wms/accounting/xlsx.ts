@@ -21,6 +21,7 @@ import {
   profitByBatch,
   profitByClient,
   profitByRoute,
+  untrackedTrips,
   unbatchedMoney,
   type FxPnlKey,
   type PnlGaps,
@@ -337,7 +338,16 @@ export async function buildProfitXlsx(
   const notes: string[] = [];
 
   if (view === 'batch') {
-    const rows = await profitByBatch(from, to);
+    // The screen's set (0107): only trucks marked «Partiya»; the rest named.
+    const all = await profitByBatch(from, to);
+    const rows = all.filter((row) => row.tracked);
+    const untracked = untrackedTrips(all);
+    if (untracked.count > 0) {
+      notes.push(
+        `${L.untrackedNote}: ${untracked.count} · $${usdText(untracked.revenueUsd)} / $${usdText(untracked.costUsd)} · ` +
+          untracked.rows.map((row) => row.code).join(', '),
+      );
+    }
     const head = sheet.addRow([
       L.batch, L.route, L.departed, L.boxes, L.kg, L.m3,
       `${L.revenue} $`, L.noCargoCol, `${L.cost} $`, L.prevLegs, L.unallocated, L.internalCost,

@@ -6,6 +6,7 @@ import { db, pgClient } from '@/modules/platform/db/client';
 import { attachments, batches, boxes, clients, users, warehouses } from '@/modules/platform/db/schema';
 import { confirmReceipt, voidReceipt } from '@/modules/wms/receipts/service';
 import { cargoOverview } from '@/modules/wms/client-cabinet/service';
+import { cabinetMap } from '@/modules/wms/client-cabinet/map';
 import { nextBatchCode } from '@/modules/wms/codes';
 
 /**
@@ -109,6 +110,13 @@ describe('the cabinet timeline', () => {
     expect(lot.groups[0]!.transit).toBeNull();
   });
 
+  it('the map (item 11) draws the warehouse the cargo stands in, with what of THEIRS is there', async () => {
+    const places = await cabinetMap([clientId]);
+    expect(places).toHaveLength(1);
+    expect(places[0]).toMatchObject({ kind: 'warehouse', boxes: 2, route: [], remainingDays: null });
+    expect(places[0]!.lots.map((l) => l.lotId)).toEqual([lotId]);
+  });
+
   it('once it is on the export truck it carries the schedule’s own estimate', async () => {
     await db
       .update(boxes)
@@ -141,6 +149,18 @@ describe('the cabinet timeline', () => {
     expect(new Date(road.etaToIso!).getTime()).toBeGreaterThanOrEqual(
       new Date(road.etaFromIso!).getTime(),
     );
+  });
+
+  it('…and on the map it is the truck, by its road and never by its code', async () => {
+    const places = await cabinetMap([clientId]);
+    expect(places).toHaveLength(1);
+    const truck = places[0]!;
+    expect(truck).toMatchObject({ kind: 'truck', name: 'Kashgar → Andijan', boxes: 2 });
+    expect(truck.route.length).toBeGreaterThan(1);
+    expect(truck.remainingDays).not.toBeNull();
+    // The batch code is the company's throughput and names no client's cargo.
+    const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
+    expect(JSON.stringify(places)).not.toContain(batch!.code);
   });
 
   it('the operator’s «in Uzbekistan» pin moves the rung and drops the date', async () => {

@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
   attachments,
+  batches,
   boxes,
   clients,
   costTypes,
@@ -764,11 +765,22 @@ describe('profitability', () => {
     expect(row.profitPerKg).toBe(12);
     expect(row.route).toBe('ACWA → ACWB');
 
+    // 0107: nobody has marked this truck «Partiya», so the report's own
+    // set leaves it out — the row still comes back, flagged, for the checks
+    // that read every truck and for the screen's «left out» line.
+    expect(row.tracked).toBe(false);
+    const unmarked = (await profitByRoute(today, today)).find((entry) => entry.route === 'ACWA → ACWB');
+    const before = unmarked?.batches ?? 0;
+    await db.update(batches).set({ profitTracked: true }).where(eq(batches.id, batch!.id));
+
     // The corridor roll-up must carry the same money through. Compared
     // against the batches on that corridor rather than a fixed number: an
     // earlier run may have left its own batch on the same route today.
-    const onRoute = departedToday.filter((entry) => entry.route === 'ACWA → ACWB');
+    const onRoute = (await profitByBatch(today, today)).filter(
+      (entry) => entry.route === 'ACWA → ACWB' && entry.tracked,
+    );
     const route = (await profitByRoute(today, today)).find((entry) => entry.route === 'ACWA → ACWB')!;
+    expect(route.batches, 'marking the truck puts it in the corridor').toBe(before + 1);
     const sum = (pick: (entry: (typeof onRoute)[number]) => number) =>
       Math.round(onRoute.reduce((acc, entry) => acc + pick(entry), 0) * 100) / 100;
     expect(route.batches).toBe(onRoute.length);

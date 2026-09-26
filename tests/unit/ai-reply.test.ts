@@ -31,7 +31,7 @@ const base = {
   fee: { bhm: 5, usd: 164.8 },
   totalUsd: 661.76,
   hasCertificate: true,
-  hasFreight: false,
+  freight: null,
   link: 'https://gsrwms.uz/bitimlar/x',
   aiConfigured: true,
 };
@@ -51,11 +51,53 @@ describe('the AI-VED reply', () => {
     expect(aiVedReplyText(base)).toContain('⚠️ Rasmiy emas — VED xodimi tasdiqlaydi.');
   });
 
-  it('NEVER prices freight — it names who does', () => {
-    const text = aiVedReplyText({ ...base, hasFreight: true });
-    expect(text).toContain('Yo‘lkirani VED xodimi hisoblaydi.');
-    // The owner's decision 8: not a figure, not a dash, not a list price.
-    expect(text).not.toMatch(/yo‘lkira ~?\$/i);
+  // Decision 8 («no freight, ever») was OVERTURNED by the owner on
+  // 2026-09-26 (item 13): a podklyuch job carries the road at the tariff's
+  // list price, with the band beside it, and a JAMI of both halves.
+  it('a podklyuch job prints rastamojka, yo‘lkira and jami — three lines', () => {
+    const text = aiVedReplyText({
+      ...base,
+      freight: {
+        ok: true,
+        listUsd: 1920,
+        routeLabel: 'Xitoy → O‘zbekiston',
+        bandText: '180 kg/m³ · $160/m³ × 12 m³',
+      },
+    });
+    expect(text).toContain('tahminiy podklyuch (rastamojka + yo‘lkira)');
+    expect(text).toContain('Rastamojka jami: ≈ $661.76');
+    expect(text).toContain('Yo‘lkira (Xitoy → O‘zbekiston, 180 kg/m³ · $160/m³ × 12 m³): ≈ $1920.00');
+    expect(text).toContain('JAMI (rastamojka + yo‘lkira): ≈ $2581.76');
+    // The caveat still closes the money, under the jami.
+    expect(text.indexOf('JAMI')).toBeLessThan(text.indexOf('Rasmiy emas'));
+  });
+
+  it('a refused road is a sentence, and no JAMI is summed over half a price', () => {
+    const text = aiVedReplyText({
+      ...base,
+      freight: { ok: false, refusal: 'og‘irlik yoki hajm yo‘q' },
+    });
+    expect(text).toContain('Yo‘lkira: ⚠️ og‘irlik yoki hajm yo‘q — VED xodimi hisoblaydi');
+    expect(text).toContain('JAMI: hozircha hisoblab bo‘lmadi');
+    expect(text).not.toMatch(/JAMI \(rastamojka/);
+    expect(text).not.toContain('$0.00');
+  });
+
+  it('a customs-only job never mentions the road at all', () => {
+    const text = aiVedReplyText(base);
+    expect(text).toContain('tahminiy rastamojka');
+    expect(text).not.toContain('Yo‘lkira');
+    expect(text).not.toContain('JAMI');
+  });
+
+  it('no customs total with a priced road still refuses the JAMI', () => {
+    const text = aiVedReplyText({
+      ...base,
+      totalUsd: null,
+      freight: { ok: true, listUsd: 500, routeLabel: 'Qashg‘ar → O‘zbekiston', bandText: '90 kg/m³ · $70/m³ × 7 m³' },
+    });
+    expect(text).toContain('Yo‘lkira (Qashg‘ar → O‘zbekiston');
+    expect(text).toContain('JAMI: hozircha hisoblab bo‘lmadi');
   });
 
   it('a blocked line prints WHY and is counted out of the total', () => {

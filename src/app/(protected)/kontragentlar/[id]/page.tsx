@@ -29,6 +29,9 @@ import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
 import { mayPickTill } from '@/modules/wms/accounting/till-door';
 import { moneyHidden } from '@/modules/platform/rbac/money-sight';
+import { termStates } from '@/modules/wms/partners/terms-service';
+import { TermsStatus } from '../terms-status';
+import { PartnerTermsForm } from './terms-form';
 
 /**
  * One counterparty's account.
@@ -73,11 +76,12 @@ export default async function PartnerCardPage({
   const mayClassify = canManage && mayClassifyFx(actor.permissions);
   const readsPnl = actor.permissions.has('finance.reports');
 
-  const [balance, ledger, natives, legacy] = await Promise.all([
+  const [balance, ledger, natives, legacy, terms] = await Promise.all([
     partnerBalanceUsd(id),
     partnerLedger(id),
     partnerNativeBalances(id),
     mayClassify ? hasLegacyFx('partner', id) : Promise.resolve(false),
+    termStates([id]),
   ]);
   const nativeParts = natives.filter((row) => row.native !== 0 || (row.currency !== 'USD' && row.usd !== 0));
   const accounts = movesTills
@@ -239,6 +243,7 @@ export default async function PartnerCardPage({
             </span>
           </p>
         )}
+        <TermsStatus state={terms.get(id)} />
         {mayClassify && legacy && (
           <p className="text-xs">
             <Link href="/accounting/kurs-farqi" className="text-brand-700 underline" data-testid="partner-fx-legacy-link">
@@ -247,6 +252,14 @@ export default async function PartnerCardPage({
           </p>
         )}
       </div>
+
+      {canManage && (
+        <PartnerTermsForm
+          id={id}
+          payWithinDays={terms.get(id)?.payWithinDays ?? null}
+          debtLimitUsd={terms.get(id)?.debtLimitUsd ?? null}
+        />
+      )}
 
       {canManage && (
         <PartnerForm

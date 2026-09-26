@@ -1,6 +1,7 @@
 import type { Bot } from 'grammy';
 import { composeMyDayText } from '../tasks/digest';
 import { logger } from '../logger';
+import { clientMapKeyboard } from './map-link';
 import {
   AI_RASTAMOJKA,
   BUGUN,
@@ -119,6 +120,44 @@ function sectionKeyboard() {
     ],
   };
 }
+
+/**
+ * The AI door's first question (item 13, the owner: «managerdan sorasin nima
+ * podklyuch yokida rastamojka deb»). Rastamojka is the customs alone;
+ * podklyuch adds the road at the tariff's list price.
+ */
+function aiSectionKeyboard() {
+  return {
+    inline_keyboard: [
+      [{ text: '🛃 Faqat rastamojka', callback_data: 'c:ai' }],
+      [{ text: '🔑 Podklyuch (rastamojka + yo‘lkira)', callback_data: 'c:aipk' }],
+    ],
+  };
+}
+
+/**
+ * «Yuk qayerdan chiqadi?» — his tariff's two zones, as buttons. A button and
+ * not a typed city: the zone is a 36-58 % difference in the road's price, and
+ * `guessZone` over free text is a SUGGESTION the workspace makes a person
+ * confirm (workspace.ts). Here the person IS confirming, by pressing.
+ */
+function zoneKeyboard() {
+  return {
+    inline_keyboard: [
+      [{ text: '🇨🇳 Xitoydan (Yiwu, Guangzhou…) → O‘zbekiston', callback_data: 'c:zone_cn' }],
+      [{ text: '🏔 Qashg‘ardan → O‘zbekiston', callback_data: 'c:zone_kashgar' }],
+      [{ text: '✖️ Bekor qilish', callback_data: 'c:cancel' }],
+    ],
+  };
+}
+
+export const AI_ZONE_ROUTES: Record<'zone_cn' | 'zone_kashgar', { zone: string; fromCity: string; toCity: string }> = {
+  zone_cn: { zone: 'cn', fromCity: 'Xitoy (Yiwu/Guangzhou)', toCity: 'O‘zbekiston' },
+  zone_kashgar: { zone: 'kashgar', fromCity: 'Qashg‘ar', toCity: 'O‘zbekiston' },
+};
+
+const CLIENT_QUESTION =
+  'Mijozni yozing: **kodi** (GS777) yoki **telefon raqami**. Kod bo‘lmasa — ismini yozing.';
 
 const doneKeyboard = {
   inline_keyboard: [
@@ -386,6 +425,13 @@ export function registerStaffBot(bot: Bot): void {
     // eaten by this branch.
     const intake = activeIntake(chatId);
     if (intake && !escapesIntake(ctx.message.text)) {
+      if (intake.stage === 'section') {
+        // The podklyuch door is waiting for «qayerdan?» — a typed word here
+        // is not the customer's name yet, and filing it as one would skip
+        // the only question that prices the road.
+        await ctx.reply('Avval yuk qayerdan chiqishini tanlang:', { reply_markup: zoneKeyboard() });
+        return;
+      }
       if (intake.stage === 'question') {
         await applyLineAnswer(ctx, chatId, intake, ctx.message.text);
         return;
@@ -418,7 +464,7 @@ export function registerStaffBot(bot: Bot): void {
     if (ctx.message.text === AI_RASTAMOJKA || ctx.message.text === '/ai') {
       if (!(await mayCollect(chatId))) return next();
       if (await refuseWhileCapturing(ctx, chatId)) return;
-      await handleCalcCallback(ctx as unknown as CalcReplyCtx, chatId, 'ai');
+      await ctx.reply('🤖 Nimani hisoblaymiz?', { reply_markup: aiSectionKeyboard() });
       return;
     }
 
@@ -507,7 +553,10 @@ export function registerStaffBot(bot: Bot): void {
       }
     }
     if (answer) {
-      await ctx.reply(answer);
+      const map = answer.mapClientCode
+        ? clientMapKeyboard(process.env.APP_URL, answer.mapClientCode)
+        : null;
+      await ctx.reply(answer.text, map ? { reply_markup: map } : undefined);
       return;
     }
     // «ushani soraganda berishi kerak» — his own word. Somebody typing the
@@ -577,7 +626,37 @@ async function askNextOrConfirm(
     return;
   }
 
-  const settled = updateIntake(chatId, { stage: 'review', askingIndex: null }) ?? state;
+  // The road is priced on the shipment's TOTALS (the tariff's density band),
+  // so a podklyuch job missing either is asked ONCE, after the lines — one
+  // message, «12 kub 3500 kg», read by the same parser as the material.
+  if (
+    state.ai &&
+    state.section === 'podklyuch' &&
+    !state.totalsAsked &&
+    (state.facts.weightKg == null || state.facts.volumeM3 == null)
+  ) {
+    updateIntake(chatId, {
+      stage: 'question',
+      askingIndex: null,
+      askingTotals: true,
+      totalsAsked: true,
+      reasked: false,
+    });
+    await ctx.reply(
+      'Yo‘lkira uchun umumiy hajm va og‘irlik kerak. Masalan: «12 kub 3500 kg»' +
+        (state.facts.volumeM3 != null ? `\n(hajm bor: ${state.facts.volumeM3} m³)` : '') +
+        (state.facts.weightKg != null ? `\n(og‘irlik bor: ${state.facts.weightKg} kg)` : ''),
+      {
+        reply_markup: {
+          inline_keyboard: [[{ text: '⏭ Bilmayman, o‘tkazib yubor', callback_data: 'c:skip' }]],
+        },
+      },
+    );
+    return;
+  }
+
+  const settled =
+    updateIntake(chatId, { stage: 'review', askingIndex: null, askingTotals: false }) ?? state;
   await ctx.reply(
     intakeSummaryText({
       section: settled.section,
@@ -613,8 +692,27 @@ async function applyLineAnswer(
   state: IntakeState,
   text: string,
 ): Promise<void> {
-  const { parseLineAnswer } = await import('../../wms/calc/intake-manual');
+  const { parseLineAnswer, parseManualFacts } = await import('../../wms/calc/intake-manual');
   const { nextLineToAsk } = await import('../../wms/calc/intake');
+
+  if (state.askingTotals) {
+    // Whatever of the two the answer states; the other keeps what it had.
+    const read = parseManualFacts(text);
+    const weightKg = read.weightKg ?? state.facts.weightKg ?? null;
+    const volumeM3 = read.volumeM3 ?? state.facts.volumeM3 ?? null;
+    const kept =
+      updateIntake(chatId, {
+        facts: { ...state.facts, weightKg, volumeM3 },
+        material: [...state.material, text],
+      }) ?? state;
+    if (read.weightKg == null && read.volumeM3 == null && !kept.reasked) {
+      updateIntake(chatId, { reasked: true });
+      await ctx.reply('Tushunmadim. «12 kub 3500 kg» ko‘rinishida yozing.');
+      return;
+    }
+    await askNextOrConfirm(ctx, chatId, { ...kept, askingTotals: false, reasked: false });
+    return;
+  }
   const index = state.askingIndex ?? 0;
   const goods = state.facts.goods ?? [];
   const row = goods[index];
@@ -929,7 +1027,8 @@ async function handleCalcCallback(
     opening === 'yolkira' ||
     opening === 'rastamojka' ||
     opening === 'podklyuch' ||
-    opening === 'ai'
+    opening === 'ai' ||
+    opening === 'aipk'
   ) {
     if (!(await mayCollect(chatId))) {
       await ctx.reply('Ulanmagan.');
@@ -945,12 +1044,20 @@ async function handleCalcCallback(
       );
       return;
     }
+    if (opening === 'aipk') {
+      // The road needs its zone before anything else: it is the one answer
+      // on this door that no material can be trusted to carry.
+      startIntake(chatId, 'podklyuch', { ai: true });
+      updateIntake(chatId, { stage: 'section' });
+      await ctx.reply(
+        '🤖 AI podklyuch: rastamojka + yo‘lkira (tarif narxida).\n\nYuk qayerdan chiqadi?',
+        { reply_markup: zoneKeyboard() },
+      );
+      return;
+    }
     startIntake(chatId, opening === 'ai' ? 'rastamojka' : opening, { ai: opening === 'ai' });
     await ctx.reply(
-      (opening === 'ai'
-        ? '🤖 AI rastamojka. Men faqat rastamojkani hisoblayman — yo‘lkirani VED xodimi beradi.\n\n'
-        : '') +
-        'Mijozni yozing: **kodi** (GS777) yoki **telefon raqami**. Kod bo‘lmasa — ismini yozing.',
+      (opening === 'ai' ? '🤖 AI rastamojka — faqat bojxona to‘lovlari.\n\n' : '') + CLIENT_QUESTION,
       { parse_mode: 'Markdown' },
     );
     return;
@@ -959,6 +1066,21 @@ async function handleCalcCallback(
   const state = activeIntake(chatId);
   if (!state) {
     await ctx.reply('Bu so‘rov eskirgan. «🧮 Hisoblatish» tugmasidan qaytadan boshlang.');
+    return;
+  }
+
+  if (step === 'zone_cn' || step === 'zone_kashgar') {
+    // Only the question it answers: a stale zone button from yesterday's
+    // message must not rewrite a live collection's road.
+    if (state.stage !== 'section' || state.section !== 'podklyuch') {
+      await ctx.reply('Bu tugma eskirgan.');
+      return;
+    }
+    const route = AI_ZONE_ROUTES[step];
+    updateIntake(chatId, { route, stage: 'client' });
+    await ctx.reply(`✅ ${route.fromCity} → ${route.toCity}\n\n${CLIENT_QUESTION}`, {
+      parse_mode: 'Markdown',
+    });
     return;
   }
 

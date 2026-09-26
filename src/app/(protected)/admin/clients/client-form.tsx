@@ -11,6 +11,10 @@ export interface ClientFormValues {
   salesManagerId: string;
   messengerNote: string;
   notes: string;
+  birthday: string;
+  sector: string;
+  /** Comma-separated on the form, an array in the database. */
+  cargoKinds: string;
 }
 
 export function ClientForm({
@@ -18,11 +22,14 @@ export function ClientForm({
   initial,
   managers,
   codePrefix,
+  tagOptions = { sectors: [], cargoKinds: [] },
 }: {
   action: (prev: ClientFormState, formData: FormData) => Promise<ClientFormState>;
   initial?: ClientFormValues;
   managers: { id: string; fullName: string }[];
   codePrefix: string;
+  /** The words already in use, offered back so they converge (0109). */
+  tagOptions?: { sectors: string[]; cargoKinds: string[] };
 }) {
   const t = useTranslations('clients');
   const tc = useTranslations('common');
@@ -91,6 +98,61 @@ export function ClientForm({
           className="input"
           defaultValue={initial?.messengerNote}
         />
+      </div>
+      {/* His item 6 (0109): who to congratulate and who to send which offer.
+          The birthday is the contact person's; the two lists are free words,
+          suggested from what is already typed so they converge. */}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <label className="label" htmlFor="birthday">
+            🎂 {t('birthday')}
+          </label>
+          <input
+            id="birthday"
+            name="birthday"
+            type="date"
+            className="input"
+            defaultValue={initial?.birthday}
+            data-testid="client-birthday"
+          />
+        </div>
+        <div>
+          <label className="label" htmlFor="sector">
+            {t('sector')}
+          </label>
+          <input
+            id="sector"
+            name="sector"
+            className="input"
+            list="client-sectors"
+            defaultValue={initial?.sector}
+            placeholder={t('sectorPlaceholder')}
+            data-testid="client-sector"
+          />
+          <datalist id="client-sectors">
+            {tagOptions.sectors.map((v) => (
+              <option key={v} value={v} />
+            ))}
+          </datalist>
+        </div>
+      </div>
+      <div>
+        <label className="label" htmlFor="cargoKinds">
+          {t('cargoKinds')}
+        </label>
+        <input
+          id="cargoKinds"
+          name="cargoKinds"
+          className="input"
+          defaultValue={initial?.cargoKinds}
+          placeholder={t('cargoKindsPlaceholder')}
+          data-testid="client-cargo-kinds"
+        />
+        {tagOptions.cargoKinds.length > 0 && (
+          <p className="mt-1 text-xs text-ink-500">
+            {t('cargoKindsKnown')}: {tagOptions.cargoKinds.slice(0, 20).join(', ')}
+          </p>
+        )}
       </div>
       <div>
         <label className="label" htmlFor="notes">

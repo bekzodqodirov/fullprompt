@@ -1,5 +1,84 @@
 # CHANGELOG
 
+## Sizning 13 ta bandingiz — 2026-09-26
+
+Sizning ro'yxatingiz va javoblaringiz («3 a,x / 4 b / 6 … / 7 … / 8 a / 9 belgisz
+qoy / 10 togri / 11 … / 12 sen aytgandek / 13 togri»).
+**Uchta migratsiya (0107–0109) — deploydan keyin ledger 110 bo'lishi kerak.**
+
+1. **Bosh ekran** — oldingi deployda tuzatilgan edi, serverni qayta build
+   qilish kifoya edi.
+2. **Prixodda rasxod yo'q, faqat izoh.** Qabul ekranidagi «qo'shimcha xarajat»
+   olib tashlandi — u kassasiz rasxod yozardi. Xarajat endi prixod kartasidagi
+   xarajatlar panelidan kiritiladi, u yerda kim to'lagani so'raladi.
+3. **Sotuvchi KPI** — «Sotuvchi ulushi» sahifasida har bir sotuvchi uchun
+   uning bitimlariga biriktirilgan prixodlar soni, kub va kg. Oy Xitoy
+   skladidagi qabul sanasi bo'yicha hisoblanadi (sizning «x» javobingiz).
+4. **Sotuvchi ulushi faqat haqiqatda kelgan yukdan.** Bitimdagi va'da
+   ko'rinib turadi. To'lanadigan ulush esa bitimga biriktirilgan
+   tasdiqlangan prixodlarning kubi (kg narxli tarifda — kg) bo'yicha
+   qayta hisoblanadi. Masalan, 20 kub va'da qilingan, 15 kub kelgan bo'lsa,
+   ulushning 75 % i to'lanadi. Hali birorta prixod bo'lmasa: «yuk hali
+   kelmagan», to'lov yo'q.
+5. **«Berishga ruxsat»** — chatda tushuntirildi.
+6. **Mijozlarga tizimdan xabar yuborish** — yangi «Xabarlar» sahifasi
+   (Boshqaruv → «Xabarlar», faqat super admin uchun):
+   - hammaga yoki tanlanganlarga yuboriladi: soha, yuk turi, til, sotuvchi
+     yoki kodlar bo'yicha;
+   - yuborishdan oldin nechta chatga ketishi ko'rsatiladi;
+   - matn bilan birga bitta rasm yoki fayl qo'shsa bo'ladi;
+   - bir odamga bir marta boradi, hatto unda 5 ta kod bo'lsa ham;
+   - xabarlar Telegram cheklovi bo'yicha 20 tadan, sekin-asta yuboriladi.
+
+   **Stiker yuborib bo'lmaydi** — bot faqat o'ziga tegishli stikerlarni yubora
+   oladi.
+   Mijoz kartasiga **tug'ilgan kun, soha, yuk turlari** qo'shildi. Tug'ilgan
+   kuni ertalab soat 9 da admin va mijozning sotuvchisiga «bugun tug'ilgan
+   kuni» xabari keladi. Bosh ekranda ham ko'rinadi. 29-fevralda
+   tug'ilganlar kabisa bo'lmagan yilda 28-fevralda eslatiladi.
+7. **Partiyaga narx qo'yayotganda bitim narxi ko'rinadi.** Bitimdagi narx
+   shu mashinadagi yuk ulushiga moslab ko'rsatiladi. Upsale va hisoblangan
+   narx alohida chiqadi. Siz yozgan narx 5 % dan ko'p farq qilsa, ikkala
+   raqam ko'rsatilib tasdiqlash so'raladi. Tasdiqlasangiz, narx qo'yiladi.
+   VED bu blokni ko'rmaydi (4-qonun).
+8. **Kontragent qarzi muddati va limiti.** Kontragent kartasida «necha kunda
+   to'lanadi» va «qarz limiti» maydonlari bor. Qaysi qarz muddati o'tgani
+   eng eski qarzdan boshlab hisoblanadi (to'lovlar eng eski qarzni birinchi
+   yopadi). Muddatiga 3 kun qolganda, muddati o'tganda va limitdan
+   oshganda sizga va buxgalterga Telegramda bir martadan eslatma keladi.
+9. **«Partiya» belgisi.** Partiya kartasida «☐ Partiya deb belgilash»
+   tugmasi paydo bo'ldi. **Hamma mashinalar belgisiz boshlanadi**
+   (siz aytgandek). «Partiya foydasi» faqat belgilangan mashinalarni
+   ko'rsatadi. Deploydan keyin bu hisobot bo'sh turadi — tashqi reyslarni
+   o'zingiz belgilab chiqasiz.
+10. **Foyda-zarar (P&L) yangi ko'rinishda.** Tepada 5 ta asosiy raqam
+    (tushum, yuk tannarxi, yalpi foyda, xarajatlar, sof foyda), har
+    birining yonida o'tgan davrga nisbatan ▲▼. Ostida oylar bo'yicha
+    grafik, to'liq jadval esa ochiladigan bo'limda. Hisob o'zgarmadi.
+11. **Mijoz Telegram ilovasida xarita.** Foizli yo'l chizig'i o'z joyida
+    qoldi, yonida 🗺 tugmasi bor. Bosilganda xaritada mijozning o'z yuki
+    chiqadi: qaysi skladda va qaysi mashinada qancha. Mashinani yoki
+    skladni bossa, u yerdagi o'z tovarlari ko'rinadi: tovar, karobka, kg,
+    m³. Mashina uchun yo'nalish, «jonli»/«taxminiy» va necha kun qolgani
+    yoziladi. **Partiya kodi va boshqa mijozlarning yuki hech qachon
+    ko'rsatilmaydi.**
+12. **Xodimlar botida mijoz kodi.** Yo'ldagi har bir mashina qatorida endi
+    yo'nalish va necha kun qolgani ham yoziladi. Javob ostida
+    **«🗺 Xaritada»** tugmasi bor: saytdagi xaritani faqat shu mijozning yuki
+    bilan ochadi. Tugma faqat xaritani ocha oladigan xodimlarga chiqadi.
+    Sotuvchida xarita ruxsati yo'q, shuning uchun unga faqat matn keladi.
+13. **AI rastamojka endi «rastamojka yoki podklyuch?» deb so'raydi.**
+    Podklyuch tanlansa, bot yuk qayerdan chiqishini so'raydi: Xitoydan
+    (Yiwu/Guangzhou) yoki Qashg'ardan. Kub/kg yozilmagan bo'lsa, ularni ham
+    so'raydi. Javobda uch qator bo'ladi: **rastamojka $X, yo'lkira $Y
+    (tarif narxida, qaysi zichlik bandi ekani bilan), jami $Z**. Biror
+    qismi hisoblanmasa, sababi yoziladi va jami yig'ilmaydi. Hammasi
+    tahminiy, rasmiy narxni VED muhrlaydi.
+
+Qilinmagan (aytib qo'yaman): tezkor «+» oynasida tug'ilgan kun yo'q (to'liq
+formada bor); xabarga stiker yoki albom qo'shib bo'lmaydi; mijozning yuki
+bitimga biriktirilmagan bo'lsa, u hech bir sotuvchining KPI siga kirmaydi.
+
 ## Bosh ekran to'g'irlandi — 2026-09-26
 
 Sizning xabaringiz: «glavni ekranda ui azgina oynab ketibti togirlab qoyish

@@ -2,7 +2,8 @@ import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { requireActor, AuthError } from '@/modules/platform/rbac/authorize';
 import { db } from '@/modules/platform/db/client';
-import { pickupStops, staffNotes } from '@/modules/platform/db/schema';
+import { broadcasts, pickupStops, staffNotes } from '@/modules/platform/db/schema';
+import { BROADCAST_ENTITY_TYPE, mayBroadcast } from '@/modules/platform/broadcast/service';
 import { PICKUP_WRITE } from '@/modules/wms/pickups/service';
 import { FileValidationError, saveAttachment } from '@/modules/platform/files/service';
 import { NOTE_ENTITY_TYPE, canShareNotes } from '@/modules/platform/notes/service';
@@ -57,6 +58,11 @@ const ATTACHABLE = [
   // photographed. Per-record below: the stop must exist and the uploader
   // must be the one who writes trips.
   'pickup_stop',
+  // 'broadcast': a photo or a file the office sends to its clients (0109).
+  // Per-record below: only the one who may broadcast, and only before the
+  // message went — a file added to a sent broadcast would sit in its record
+  // as sent when it never was.
+  'broadcast',
 ] as const;
 
 const metaSchema = z.object({
@@ -112,6 +118,11 @@ export async function POST(request: Request) {
     if (!stop || !actor.permissions.has(PICKUP_WRITE)) {
       return Response.json({ error: 'forbidden' }, { status: 403 });
     }
+  }
+
+  if (meta.data.entityType === BROADCAST_ENTITY_TYPE) {
+    const sent = await db.query.broadcasts.findFirst({ where: eq(broadcasts.id, meta.data.entityId) });
+    if (!mayBroadcast(actor) || sent) return Response.json({ error: 'forbidden' }, { status: 403 });
   }
 
   try {

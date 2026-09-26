@@ -34,7 +34,11 @@ const STOCK_STATUSES = ['in_stock', 'planned', 'loading', 'ready_for_pickup'];
  * server-side per load — approximate by design, corrected by the manual
  * checkpoint pins on the batch card.
  */
-export default async function MapPage({ searchParams }: { searchParams: Promise<{ zr?: string }> }) {
+export default async function MapPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ zr?: string; mijoz?: string }>;
+}) {
   const actor = await getActor();
   if (!actor) redirect('/login');
   // The trucks door, because this page IS the trucks plus every warehouse's
@@ -43,6 +47,21 @@ export default async function MapPage({ searchParams }: { searchParams: Promise<
   // scoped to his own clients.
   if (!mayReadBatches(actor.permissions)) redirect('/');
   const t = await getTranslations('map');
+  const { zr, mijoz } = await searchParams;
+
+  // «🗺 Xaritada» from the staff bot (item 12): the same map narrowed to ONE
+  // client's cargo — their stock in each warehouse and the trucks carrying
+  // their boxes. A NARROWING only: nothing here is shown that the unfiltered
+  // page would not show the same person. An unknown code is said, never
+  // silently dropped into the whole company's map.
+  const wanted = (mijoz ?? '').trim().toUpperCase();
+  const [focusClient] = wanted
+    ? await db
+        .select({ id: clients.id, code: clients.clientCode, name: clients.name })
+        .from(clients)
+        .where(sql`upper(${clients.clientCode}) = ${wanted}`)
+        .limit(1)
+    : [];
 
   // Warehouses that exist on the corridor drawing, with per-client stock.
   // A warehouse is drawable when the OWNER typed its coordinates (round 100,
@@ -71,6 +90,7 @@ export default async function MapPage({ searchParams }: { searchParams: Promise<
           and(
             inArray(boxes.status, STOCK_STATUSES),
             inArray(boxes.currentWarehouseId, mapped.map((w) => w.id)),
+            focusClient ? eq(receipts.clientId, focusClient.id) : undefined,
           ),
         )
         .groupBy(boxes.currentWarehouseId, sql`coalesce(${clients.clientCode}, ${receipts.unclaimedMarking})`)
@@ -114,6 +134,16 @@ export default async function MapPage({ searchParams }: { searchParams: Promise<
         // A truck between two countries is judged by its TWO ends — the rule
         // every batch reader states (wms/search, /transit, the documents).
         warehouseScopeEither(actor, batches.originWarehouseId, batches.destWarehouseId),
+        // The client's boxes aboard NOW — the live pointer, which is what
+        // «in transit» means on this page (round 100 5A's reading).
+        focusClient
+          ? sql`EXISTS (SELECT 1 FROM ${boxes} b
+               JOIN ${receiptLots} l ON l.id = b.lot_id
+               JOIN ${receipts} r ON r.id = l.receipt_id
+              WHERE b.current_batch_id = ${batches.id}
+                AND b.status = 'in_transit'
+                AND r.client_id = ${focusClient.id})`
+          : undefined,
       ),
     );
 
@@ -130,7 +160,8 @@ export default async function MapPage({ searchParams }: { searchParams: Promise<
   // Factory trucks (0100) for whoever may open a pickup card — an estimate
   // like every other truck here, built from the same timeline the card uses.
   // Caught: the tables are minted this release (#472).
-  const mapPickups: MapPickup[] = mayReadPickups(actor.permissions)
+  // A factory trip carries no client's boxes yet, so a client's map has none.
+  const mapPickups: MapPickup[] = !focusClient && mayReadPickups(actor.permissions)
     ? await pickupsForMap()
         .then((rows) =>
           rows.map(({ pickup, destCode, stops }) => {
@@ -162,13 +193,29 @@ export default async function MapPage({ searchParams }: { searchParams: Promise<
         .then((list) => list.filter((p) => p.factories.length > 0))
         .catch(() => [])
     : [];
-  const { zr } = await searchParams;
   const focusPickupId = zr && mapPickups.some((p) => p.id === zr) ? zr : null;
 
   return (
     <div className="mx-auto max-w-5xl space-y-3">
       <PageHeader icon="map" title={t('title')} />
       <p className="text-xs text-ink-500">{t('disclaimer')}</p>
+      {wanted ? (
+        <div
+          className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-surface-sunken px-3 py-2 text-sm"
+          data-testid="map-client-filter"
+        >
+          {focusClient ? (
+            <span>
+              {t('filterClient')}: <b className="font-mono">{focusClient.code}</b> · {focusClient.name}
+            </span>
+          ) : (
+            <span className="text-warn">{t('filterMissing', { code: wanted })}</span>
+          )}
+          <a href="/map" className="ml-auto text-brand-700 underline">
+            {t('filterClear')}
+          </a>
+        </div>
+      ) : null}
       {/* The lorry moves without a reload (round 100, 9a): the page is
           force-dynamic, so a refresh recomputes every position server-side,
           and the Leaflet layer redraws its markers from the new props while
@@ -177,8 +224,11 @@ export default async function MapPage({ searchParams }: { searchParams: Promise<
       <TrackingMap
         // A retired warehouse is drawn only while cargo still stands in it
         // (the stock picker's rule, #987).
-        warehouses={mapWarehouses.filter(
-          (w) => allWh.find((row) => row.id === w.id)?.active !== false || w.totalBoxes > 0,
+        warehouses={mapWarehouses.filter((w) =>
+          // A client's map draws only where their cargo stands.
+          focusClient
+            ? w.totalBoxes > 0
+            : allWh.find((row) => row.id === w.id)?.active !== false || w.totalBoxes > 0,
         )}
         trucks={trucks}
         pickups={mapPickups}

@@ -4,7 +4,6 @@ import { getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import {
   clients,
-  costTypes,
   currencies,
   expectedArrivals,
   warehouses,
@@ -56,10 +55,6 @@ export default async function ReceivePage({
     )
     .orderBy(asc(warehouses.code));
 
-  const types = await db
-    .select({ id: costTypes.id, code: costTypes.code, name: costTypes.name })
-    .from(costTypes)
-    .where(eq(costTypes.active, true));
   const currencyRows = await db
     .select({ code: currencies.code })
     .from(currencies)
@@ -158,8 +153,6 @@ export default async function ReceivePage({
       {incoming.length > 0 && <IncomingPickups trucks={incoming} />}
       <ReceiveWizard
         warehouses={whs}
-        costTypes={types}
-        currencies={currencyRows.map((c) => c.code)}
         densityThresholds={await getSetting('density_thresholds')}
         prefill={prefill}
         canPickDeal={canWriteDeal(actor.permissions)}

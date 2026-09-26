@@ -338,6 +338,14 @@ async function decide(
         ? { allow: true, rule: 'pickup-door' }
         : { allow: false, rule: 'pickup-no-door' };
     }
+    // A file the office sent (or is about to send) to its clients through the
+    // bot (0109). Its reader is the one who may broadcast — the super admin;
+    // the clients receive the bytes from Telegram, never from this URL.
+    case 'broadcast': {
+      return (actor.roles ?? []).includes('super_admin')
+        ? { allow: true, rule: 'broadcast-super-admin' }
+        : { allow: false, rule: 'broadcast-not-super-admin' };
+    }
     // entityType was free-form before the upload allowlist, so production may
     // hold strings no code writes today — in log-only mode this branch IS the
     // inventory of them.
