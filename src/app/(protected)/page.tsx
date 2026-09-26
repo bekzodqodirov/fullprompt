@@ -601,20 +601,32 @@ function FlowRow({
 }
 
 /**
- * Icon left, label right.
+ * Icon left, label right — from `sm` up. On a phone the icon sits ABOVE the
+ * label, still left-aligned.
  *
  * A stacked tile centred the text, and Russian/Uzbek screen names are long —
  * "Инвентаризация" broke across three ragged lines. Reading left to right
  * also matches the sidebar and the sheet, so the same screen looks the same
- * wherever it is offered.
+ * wherever it is offered. But at 360 px a two-column tile leaves the label
+ * ~90 px beside its icon, narrower than one long word, and `anywhere` then
+ * cut the word itself — «Календар/ь», «Инвентари/зация», «Админист/
+ * рирование» (measured, the owner's «oynab ketibti»). Above the icon the
+ * label gets the tile's whole width and breaks between words, at 13 px so
+ * «Инвентаризация» and «Управленческий» fit whole (134 and 135 px at 14 px in
+ * a 133 px box). «Администрирование» fits nowhere at two columns: `hyphens`
+ * breaks it with a hyphen where the phone has the language's dictionary, and
+ * `anywhere` stays as the net that keeps it from widening the page (#400).
  */
 function Tile({ href, label, icon }: { href: string; label: string; icon: IconName }) {
   return (
-    <Link href={href} className="card-tap flex min-h-16 items-center gap-2.5 !p-3">
-      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand-50 text-brand-700">
+    <Link
+      href={href}
+      className="card-tap flex min-h-16 flex-col items-start gap-1.5 !p-3 sm:flex-row sm:items-center sm:gap-2.5"
+    >
+      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-brand-50 text-brand-700 sm:h-9 sm:w-9">
         <Icon name={icon} className="h-5 w-5" />
       </span>
-      <span className="text-sm font-bold leading-tight [overflow-wrap:anywhere]">{label}</span>
+      <span className="text-[13px] font-bold leading-tight hyphens-auto [overflow-wrap:anywhere] sm:text-sm">{label}</span>
     </Link>
   );
 }
