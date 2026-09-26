@@ -1489,7 +1489,13 @@
     "payoutForbidden": "只有会计或管理员可以记录退款或赔偿。",
     "compensationPaidOut": "已按此赔偿向客户支付现金——作废后客户将欠这笔钱。金额错误：请先录入正确金额，再作废此条。货物已找到且客户已退款：请先将其付款录入账户。客户应退还但尚未退还：不要作废——请以「应收」记录该金额。",
     "compensationVoidWarn": "将作废此赔偿。如已支付现金，系统会阻止并说明做法。",
-    "compensatedCol": "🤝 −{amount}"
+    "compensatedCol": "🤝 −{amount}",
+    "dealSoldAt": "交易 {code}：售价 {price}{measure}",
+    "dealExpectedHere": "本车货物约 {usd}",
+    "dealFloorUpsale": "核算价 {floor} · 加价 {upsale}（整笔交易）",
+    "priceAboveDeal": "比交易价高 {pct}%（按交易约 {usd}）。仍要设置此价格吗？",
+    "priceBelowDeal": "比交易价低 {pct}%（按交易约 {usd}）。仍要设置此价格吗？",
+    "priceConfirmAnyway": "是，设置此价格"
   },
   "map": {
     "title": "地图",

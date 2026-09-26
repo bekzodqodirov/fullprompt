@@ -1489,7 +1489,13 @@
     "payoutForbidden": "Mijozga pul qaytarish va kompensatsiyani faqat buxgalter yoki admin yozadi.",
     "compensationPaidOut": "Bu kompensatsiya hisobidan mijozga naqd pul berilgan — bekor qilinsa, mijoz o‘sha pulga qarzdor bo‘lib qoladi. Summa xato bo‘lsa: avval to‘g‘risini yozing, keyin buni bekor qiling. Yuk topilib, mijoz pulni qaytargan bo‘lsa: avval uning to‘lovini kassaga kiriting. Mijoz pulni qaytarishi kerak, lekin hali qaytarmagan bo‘lsa: buni bekor qilmang — «Hisoblandi» bilan shu summani yozing.",
     "compensationVoidWarn": "Kompensatsiya bekor qilinadi. Naqd pul berilgan bo‘lsa, tizim to‘xtatadi va yo‘lini aytadi.",
-    "compensatedCol": "🤝 −{amount}"
+    "compensatedCol": "🤝 −{amount}",
+    "dealSoldAt": "Bitim {code}: sotilgan narx {price}{measure}",
+    "dealExpectedHere": "Shu mashinadagi yuk uchun ≈ {usd}",
+    "dealFloorUpsale": "Hisoblangan narx {floor} · upsale {upsale} (butun bitim uchun)",
+    "priceAboveDeal": "Bitimdagi narxdan {pct}% qimmat (bitim bo‘yicha ≈ {usd}). Baribir shu narxni qo‘yasizmi?",
+    "priceBelowDeal": "Bitimdagi narxdan {pct}% arzon (bitim bo‘yicha ≈ {usd}). Baribir shu narxni qo‘yasizmi?",
+    "priceConfirmAnyway": "Ha, shu narxni qo‘yish"
   },
   "map": {
     "title": "Xarita",

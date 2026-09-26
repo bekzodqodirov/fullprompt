@@ -1489,7 +1489,13 @@
     "payoutForbidden": "Only the accountant or an admin records a refund or a compensation.",
     "compensationPaidOut": "Cash was handed to the client against this compensation — voiding it would make him owe that money. Wrong amount: record the correct one first, then void this. Cargo found and the client returned the cash: record his payment into the kassa first. He must return it but has not yet: do not void this — record the amount as a «Charge».",
     "compensationVoidWarn": "The compensation will be voided. If cash was already handed over, the system stops and says what to do.",
-    "compensatedCol": "🤝 −{amount}"
+    "compensatedCol": "🤝 −{amount}",
+    "dealSoldAt": "Deal {code}: sold at {price}{measure}",
+    "dealExpectedHere": "For the cargo on this truck ≈ {usd}",
+    "dealFloorUpsale": "Calculated price {floor} · upsale {upsale} (whole deal)",
+    "priceAboveDeal": "{pct}% above the deal price (by the deal ≈ {usd}). Set this price anyway?",
+    "priceBelowDeal": "{pct}% below the deal price (by the deal ≈ {usd}). Set this price anyway?",
+    "priceConfirmAnyway": "Yes, set this price"
   },
   "map": {
     "title": "Map",
