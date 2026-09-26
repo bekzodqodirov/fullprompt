@@ -910,7 +910,11 @@ function DragBoard<T extends KanbanItem>({
         // spend it without the page growing a scrollbar under a board built not
         // to have one (#354). Together: **588 → 652 px** on /crm and 540 → 604
         // on /bitimlar, which is a whole extra funnel card in every column.
-        className="-mx-4 h-[calc(100dvh-6rem-var(--board-extra,0px))] min-h-[20rem] overflow-x-auto px-4 md:-mb-8"
+        //
+        // + `--ws-strip` (2026-09-26): the workspace strip sits above the
+        // board on a desktop. On a phone it steps aside on the boards, so the
+        // phone constant above is untouched.
+        className="-mx-4 h-[calc(100dvh-6rem-var(--ws-strip)-var(--board-extra,0px))] min-h-[20rem] overflow-x-auto px-4 md:-mb-8"
         // While a card is in the air the board must not pan under it: the
         // pointer is already down, so the browser would otherwise treat the
         // same gesture as a scroll.

@@ -4,6 +4,7 @@ import {
   boolean,
   check,
   date,
+  doublePrecision,
   foreignKey,
   index,
   inet,
@@ -868,6 +869,32 @@ export const listViews = pgTable(
   (t) => [
     check('list_views_default_check', sql`${t.isDefault} = false OR ${t.userId} IS NOT NULL`),
     index('list_views_screen_idx').on(t.screen, t.userId),
+  ],
+);
+
+/**
+ * «Tez-tez» (0111): how often a person opens each menu tab, and which ones
+ * they starred. `href` is a TAB's own link — the visit route refuses anything
+ * the viewer is not offered — and `score` decays in SQL with a 14-day
+ * half-life (`platform/nav/usage.ts`).
+ */
+export const navUsage = pgTable(
+  'nav_usage',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    href: text('href').notNull(),
+    starred: boolean('starred').notNull().default(false),
+    starredAt: timestamp('starred_at', { withTimezone: true }),
+    score: doublePrecision('score').notNull().default(0),
+    lastAt: timestamp('last_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.href] }),
+    check('nav_usage_href_check', sql`${t.href} LIKE '/%' AND length(${t.href}) <= 64`),
+    check('nav_usage_score_check', sql`${t.score} >= 0 AND ${t.score} <> 'NaN'::double precision`),
+    check('nav_usage_starred_check', sql`${t.starred} = (${t.starredAt} IS NOT NULL)`),
   ],
 );
 

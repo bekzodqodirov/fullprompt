@@ -1,3 +1,5 @@
+import { BORROWED_ADMIN_PAGES } from '@/modules/platform/rbac/workspaces';
+
 /**
  * Which menu row is lit, and which pages are not the section their URL says
  * they are in.
@@ -16,17 +18,19 @@
  * Pages that live under /admin for historical reasons and are NOT part of
  * the administration section.
  *
- * The client book is a SALES screen: it is opened from the Sotuv tiles, a
- * client card is linked from every lead, deal, task and Telegram message,
- * and `admin/layout.tsx` has carried a special case since a sales manager
- * was first bounced off their own call list. This list says the same thing
- * to the navigation.
+ * The client book was the first (round 75): a SALES screen that happens to
+ * live under /admin/clients. The workspaces round (2026-09-26, the owner's
+ * answer 8b: «sozlamalar o'z bo'limida») moved every job's own settings — the
+ * FX rates into Pul, the freight tariff and the customs base into Hisoblash,
+ * the truck presets into Yo'l, lead routing and the broadcast into Savdo —
+ * and their URLs stayed under /admin because Telegram messages carry them.
+ * So the list is DERIVED from the workspaces: moving a page into a job is one
+ * edit there, and «← Boshqaruv» and the lit menu row follow it.
  *
  * It is deliberately about CHROME only. The route is unchanged and so is
- * every permission — a URL is not access, and moving this one would break
- * client links already sitting in staff Telegram history.
+ * every permission — a URL is not access.
  */
-export const NOT_ADMIN_SECTION = ['/admin/clients'];
+export const NOT_ADMIN_SECTION: string[] = BORROWED_ADMIN_PAGES;
 
 /** Is `pathname` inside one of the sections that only pretends to be admin? */
 function inBorrowedSection(pathname: string): string | null {

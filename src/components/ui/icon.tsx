@@ -50,7 +50,8 @@ export type IconName =
   | 'maximize'
   | 'chat'
   | 'doc'
-  | 'sparkle';
+  | 'sparkle'
+  | 'star';
 
 const PATHS: Record<IconName, React.ReactNode> = {
   home: <path d="M3 10.5 12 3l9 7.5M5.5 9.5V20h13V9.5M9.5 20v-6h5v6" />,
@@ -217,6 +218,7 @@ const PATHS: Record<IconName, React.ReactNode> = {
       <path d="M18.5 16.5v4M16.5 18.5h4" />
     </>
   ),
+  star: <path d="m12 3.5 2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8-4.3-4.1 5.9-.9z" />,
 };
 
 export function Icon({

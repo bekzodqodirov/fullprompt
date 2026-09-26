@@ -62,15 +62,18 @@ test('a half-typed name is not thrown away by a stray tap', async ({ page }) => 
   await page.getByTestId('quick-kind-lead').click();
   await page.getByTestId('quick-name').fill('yarim yozilgan');
 
-  // Refuse the confirm: the panel and the words stay.
+  // Refuse the confirm: the panel and the words stay. The tap is aimed at
+  // the backdrop's bottom corner, deterministically off the panel: «+ Yangi»
+  // grew its doors below the form (2026-09-26) and the backdrop's CENTRE is
+  // under the panel now.
   page.once('dialog', (dialog) => void dialog.dismiss());
-  await page.locator('[role="dialog"] > button').first().click();
+  await page.locator('[role="dialog"] > button').first().click({ position: { x: 8, y: 780 } });
   await expect(page.getByTestId('quick-panel')).toBeVisible();
   await expect(page.getByTestId('quick-name')).toHaveValue('yarim yozilgan');
 
   // Accept it, and it closes.
   page.once('dialog', (dialog) => void dialog.accept());
-  await page.locator('[role="dialog"] > button').first().click();
+  await page.locator('[role="dialog"] > button').first().click({ position: { x: 8, y: 780 } });
   await expect(page.getByTestId('quick-panel')).toHaveCount(0);
 });
 

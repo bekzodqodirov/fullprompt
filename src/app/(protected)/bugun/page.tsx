@@ -35,11 +35,12 @@ import { tashkentDay } from '@/modules/platform/time/tashkent';
 export default async function TodayPage({
   searchParams,
 }: {
-  searchParams: Promise<{ hammasi?: string }>;
+  searchParams: Promise<{ hammasi?: string; yangi?: string }>;
 }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
-  const showOthers = (await searchParams).hammasi === '1';
+  const params = await searchParams;
+  const showOthers = params.hammasi === '1';
   const t = await getTranslations('tasks');
 
   const [day, people, types] = await Promise.all([
@@ -126,7 +127,13 @@ export default async function TodayPage({
         </section>
       )}
 
-      <Panel title={`➕ ${t('newTask')}`} testId="new-task-panel">
+      {/* «+ Yangi → Vazifa» lands here open (`?yangi=vazifa#yangi-vazifa`). */}
+      <Panel
+        title={`➕ ${t('newTask')}`}
+        testId="new-task-panel"
+        id="yangi-vazifa"
+        open={params.yangi === 'vazifa'}
+      >
         <NewTaskForm
           people={people}
           types={types}

@@ -27,6 +27,13 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const canFx = actor.permissions.has('costs.fx.manage');
   const canRoles = actor.permissions.has('platform.roles.manage');
   const canFields = actor.permissions.has('admin.dictionaries.manage');
+  // The job settings that kept their /admin URL when they moved into a
+  // workspace's ⚙ (2026-09-26): the truck presets are `plans.manage`, lead
+  // routing and the hub's system pages are `admin.settings.manage`. A role the
+  // owner invents with only one of those is offered the page by its workspace,
+  // so this cosmetic gate must not bounce them before the page's own check.
+  const canJobSettings =
+    actor.permissions.has('plans.manage') || actor.permissions.has('admin.settings.manage');
   // A client CARD is not an admin screen — it just happens to live under
   // /admin/clients. Without this a sales manager was bounced home from their
   // own call list, the dormant list and "my clients", every one of which
@@ -36,7 +43,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     actor.permissions.has('clients.manage') ||
     actor.permissions.has('clients.view_own') ||
     actor.permissions.has('crm.leads');
-  if (!canManage && !canAudit && !canFx && !canClients && !canRoles && !canFields) redirect('/');
+  if (!canManage && !canAudit && !canFx && !canClients && !canRoles && !canFields && !canJobSettings) {
+    redirect('/');
+  }
 
   // The way back to the hub — only for somebody the hub would actually SHOW.
   // Two conditions, and the second is newer: a salesperson passing through to

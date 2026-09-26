@@ -42,36 +42,24 @@ export const HUB_DOORS: HubDoor[] = [
   // feature and said «kerak emas, olib tashla». /admin/entities and /o still
   // answer, and `custom_entities` / `custom_records` are untouched, so
   // whatever anyone put in there is still there if he changes his mind.
-  { href: '/admin/cost-types', label: 'costing.typesTitle', icon: 'wallet', allow: ['admin.dictionaries.manage'] },
-  { href: '/admin/partner-types', label: 'partners.typesTitle', icon: 'briefcase', allow: ['admin.dictionaries.manage'] },
-  { href: '/admin/fx', label: 'costing.fxTitle', icon: 'exchange', allow: ['costs.fx.manage'] },
-  // The freight tariff the VED's discount is measured against. The same
-  // dictionary door as the cost types, deliberately NOT `ved.docs`.
-  { href: '/admin/tarif', label: 'calc.dictTariff', icon: 'truck', allow: ['admin.dictionaries.manage'] },
-  // The quarterly customs dump the VED's baza is suggested from. The ADMIN
-  // uploads it (his own answer: «admin yuklab bersin fileni sistemamiz tez
-  // ishlashi kerak»), the VED only reads what it suggests.
-  {
-    href: '/admin/bojxona-import',
-    label: 'customsImport.title',
-    icon: 'clipboard',
-    allow: ['admin.dictionaries.manage'],
-  },
-  { href: '/admin/trucks', label: 'plans.trucksTitle', icon: 'truck', allow: ['plans.manage'] },
+  // The cost types, the partner types, the FX rates, the freight tariff, the
+  // customs base and the truck presets LEFT the hub in the workspaces round
+  // (owner, 2026-09-26, answer 8b: «sozlamalar o'z bo'limida»). Each is now
+  // the ⚙ of the job that uses it — Pul, Hisoblash, Yo'l — and a second door
+  // here would be the app calling a job's own settings administration again
+  // (round 75's complaint about the client book, in five more costumes). The
+  // routes, their gates and their /admin URLs are untouched.
   { href: '/admin/driver-app', label: 'settings.driverApp', icon: 'truck', allow: ['admin.settings.manage'] },
   { href: '/admin/calls-app', label: 'settings.callsApp', icon: 'phone', allow: ['admin.settings.manage'] },
   { href: '/admin/rules', label: 'automation.title', icon: 'target', allow: ['admin.settings.manage'] },
-  { href: '/admin/taqsimot', label: 'routing.title', icon: 'user', allow: ['admin.settings.manage'] },
   { href: '/admin/audit', label: 'nav.audit', icon: 'clipboard', allow: ['admin.audit.browse'] },
   // The voided-cargo registry + the owner's cleanup tool. An audit surface,
   // so the audit door: only admin/super_admin hold it, and the tile never
   // teases a role the page bounces (#792's cousin).
   { href: '/admin/anulirovka', label: 'annul.registryTitle', icon: 'alert', allow: ['admin.audit.browse'] },
   { href: '/admin/notifications', label: 'nav.notifications', icon: 'alert', allow: ['admin.audit.browse'] },
-  // The Telegram message to clients (0109) — the super admin's alone, his 6a.
-  // `platform.roles.manage` is the one grant only a super admin holds, so the
-  // tile never teases an admin the page (`mayBroadcast`, a ROLE) bounces.
-  { href: '/admin/xabarlar', label: 'broadcast.title', icon: 'chat', allow: ['platform.roles.manage'] },
+  // Lead routing (Savdo's ⚙) and the broadcast to clients (a Savdo tab) moved
+  // with the rest — `workspaces.ts` is where they are offered now.
 ];
 
 /** The doors this person may actually open. */

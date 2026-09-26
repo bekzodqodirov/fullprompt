@@ -1,10 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { Icon } from '@/components/ui/icon';
+import { Icon, type IconName } from '@/components/ui/icon';
 import { Overlay } from '@/components/ui/overlay';
 import { quickCreateLeadAction, type QuickCreateResult } from '@/app/(protected)/crm/actions';
 import {
@@ -31,6 +31,50 @@ import {
 
 export type QuickKind = 'lead' | 'client';
 
+/**
+ * The other six things «+ Yangi» starts (owner, 2026-09-26, answer 5: the
+ * eight-item list as drawn). They are DOORS, not forms: each lands on the
+ * screen that already does the job, so there is still exactly one place that
+ * writes a receipt, a deal, a payment or an expense. Two need to know WHO
+ * first — a payment is written on a client's ledger, a calculation on a lead
+ * or deal card — and ask with the global search, whose answer is already
+ * scoped to what this person may find.
+ */
+export type QuickActionKey = 'receive' | 'deal' | 'payment' | 'expense' | 'calc' | 'task';
+
+export interface QuickAction {
+  key: QuickActionKey;
+}
+
+/** Literal keys (the i18n tripwire reads them) and the icon for each door. */
+const ACTION_META: Record<QuickActionKey, { label: `act.${QuickActionKey}`; icon: IconName }> = {
+  receive: { label: 'act.receive', icon: 'inbox' },
+  deal: { label: 'act.deal', icon: 'handshake' },
+  payment: { label: 'act.payment', icon: 'wallet' },
+  expense: { label: 'act.expense', icon: 'doc' },
+  calc: { label: 'act.calc', icon: 'report' },
+  task: { label: 'act.task', icon: 'check' },
+};
+
+/** The picker's question, per door (literal keys for the i18n tripwire). */
+const PICK_LABEL = { payment: 'pick.payment', calc: 'pick.calc' } as const;
+
+/** Where a door without a picker goes. */
+const ACTION_HREF: Partial<Record<QuickActionKey, string>> = {
+  receive: '/receive',
+  deal: '/bitimlar/new',
+  expense: '/accounting/expenses#yangi-xarajat',
+  task: '/bugun?yangi=vazifa#yangi-vazifa',
+};
+
+interface PickHit {
+  kind: string;
+  id: string;
+  code: string;
+  label?: string;
+  href: string;
+}
+
 /** Literal keys, so the i18n tripwire can see them (the STAGE_CLASS pattern). */
 const KIND_LABEL: Record<QuickKind, 'newLead' | 'newClient'> = {
   lead: 'newLead',
@@ -53,9 +97,11 @@ const FULL_FORM: Record<QuickKind, string> = {
 export function QuickCreate({
   kinds,
   fullForms,
+  actions = [],
 }: {
   kinds: QuickKind[];
   fullForms: QuickKind[];
+  actions?: QuickAction[];
 }) {
   const t = useTranslations('quick');
   const router = useRouter();
@@ -95,8 +141,42 @@ export function QuickCreate({
     dealId: string | null;
   } | null>(null);
   const [copied, setCopied] = useState(false);
+  // A door that needs to know WHO first (a payment, a calculation) turns the
+  // panel into a search box until somebody is picked.
+  const [pick, setPick] = useState<'payment' | 'calc' | null>(null);
+  const [needle, setNeedle] = useState('');
+  const [hits, setHits] = useState<PickHit[] | null>(null);
+  const asked = useRef(0);
 
-  if (kinds.length === 0) return null;
+  useEffect(() => {
+    if (!pick) return;
+    const q = needle.trim();
+    if (q.length < 2) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setHits(null);
+      return;
+    }
+    // The palette's own debounce and stale-answer guard (round 58): a slow
+    // answer to «GS7» must not overwrite the answer to «GS777».
+    const mine = ++asked.current;
+    const timer = setTimeout(async () => {
+      try {
+        const response = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+        const data = (await response.json()) as { hits: PickHit[] };
+        if (mine !== asked.current) return;
+        setHits(
+          data.hits.filter((hit) =>
+            pick === 'payment' ? hit.kind === 'client' : hit.kind === 'lead' || hit.kind === 'deal',
+          ),
+        );
+      } catch {
+        if (mine === asked.current) setHits([]);
+      }
+    }, 220);
+    return () => clearTimeout(timer);
+  }, [pick, needle]);
+
+  if (kinds.length === 0 && actions.length === 0) return null;
 
   const dirty = name.trim().length > 0 || phone.trim().length > 0;
 
@@ -120,9 +200,17 @@ export function QuickCreate({
     if (reason !== 'route' && dirty && !window.confirm(t('discard'))) return false;
     setOpen(false);
     setMadeClient(null);
+    setPick(null);
+    setNeedle('');
+    setHits(null);
     reset();
     setKind(kinds[0] ?? 'lead');
     return true;
+  }
+
+  /** Where a picked person or card goes, per door. */
+  function target(hit: PickHit): string {
+    return pick === 'payment' ? `/finance/${hit.id}` : `${hit.href}?yangi=hisob#hisoblatish`;
   }
 
   async function save() {
@@ -194,7 +282,7 @@ export function QuickCreate({
         onClose={close}
         closeLabel={t('close')}
         testId="quick-panel"
-        className="absolute inset-x-3 top-3 space-y-3 rounded-2xl bg-surface-raised p-3 shadow-pop md:inset-x-auto md:left-1/2 md:w-[26rem] md:-translate-x-1/2"
+        className="absolute inset-x-3 top-3 max-h-[calc(100dvh-1.5rem)] space-y-3 overflow-y-auto rounded-2xl bg-surface-raised p-3 shadow-pop md:inset-x-auto md:left-1/2 md:w-[26rem] md:-translate-x-1/2"
       >
         {madeClient ? (
           <div className="space-y-3" data-testid="quick-client-made">
@@ -252,136 +340,222 @@ export function QuickCreate({
               {t('done')}
             </button>
           </div>
-        ) : (
-          <div className="space-y-2">
-            {/* The kinds are CHIPS above the boxes, not a menu in front of
-                them. Round 60 opened straight into the text box because there
-                was one kind; adding the client door for sellers would
-                otherwise have charged the whole sales team an extra tap on the
-                thing they do most, to reach a door they use weekly. With one
-                kind the strip does not render at all, so nothing changes for
-                anybody who has only one. Plain buttons, not peer-checked
-                radios: this panel deliberately has no <form> (#377/#419/#466). */}
-            {kinds.length > 1 ? (
-              <div className="flex gap-1.5" data-testid="quick-kinds">
-                {kinds.map((one) => (
-                  <button
-                    key={one}
-                    type="button"
-                    data-testid={`quick-kind-${one}`}
-                    aria-pressed={kind === one}
-                    onClick={() => {
-                      setKind(one);
-                      setError(null);
-                      setDupes([]);
-                      setCodeDupes([]);
-                    }}
-                    className={
-                      kind === one
-                        ? 'chip flex-1 justify-center !bg-brand-500 !text-white'
-                        : 'chip flex-1 justify-center'
-                    }
-                  >
-                    {t(KIND_LABEL[one])}
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm font-semibold text-ink-700">{t(KIND_LABEL[kind])}</p>
-            )}
+        ) : pick ? (
+          <div className="space-y-2" data-testid="quick-pick">
+            <button
+              type="button"
+              onClick={() => {
+                setPick(null);
+                setNeedle('');
+                setHits(null);
+              }}
+              className="btn-ghost !min-h-8 px-2 text-xs"
+            >
+              {t('back')}
+            </button>
+            <p className="text-sm font-semibold text-ink-700">{t(ACTION_META[pick].label)}</p>
             <input
               className="input"
               autoFocus
-              value={name}
-              data-testid="quick-name"
-              aria-label={t('name')}
-              placeholder={t('name')}
-              onChange={(event) => {
-                setName(event.target.value);
-                setDupes([]);
-                setCodeDupes([]);
-              }}
+              value={needle}
+              data-testid="quick-pick-input"
+              aria-label={t(PICK_LABEL[pick])}
+              placeholder={t(PICK_LABEL[pick])}
+              onChange={(event) => setNeedle(event.target.value)}
             />
-            <input
-              className="input"
-              value={phone}
-              data-testid="quick-phone"
-              aria-label={t('phone')}
-              placeholder={t('phone')}
-              onChange={(event) => {
-                setPhone(event.target.value);
-                setDupes([]);
-                setCodeDupes([]);
-              }}
-            />
-            <p className="text-xs text-ink-500">{t(`hint.${kind}` as 'hint.lead')}</p>
-
-            {error && (
-              <p
-                className={`text-sm ${dupes.length > 0 ? 'text-warn' : 'text-bad'}`}
-                data-testid="quick-error"
-              >
-                {t(`error.${error}` as 'error.failed')}
-              </p>
-            )}
-
-            {/* Named, and linked. «There is already one» is a shrug; «Aziz
-                Karimov, +998…, Dilnoza's» is what stops the second call. The
-                same press again creates it anyway — the warning is there to be
-                read, not to be argued with. */}
-            {dupes.length > 0 && (
-              <ul className="space-y-1 rounded-xl border border-warn/30 bg-warn/10 p-2" data-testid="quick-dupes">
-                {dupes.map((dupe) => (
-                  <li key={dupe.id} className="text-xs">
-                    <a href={`/crm/leads/${dupe.id}`} className="font-semibold text-brand-700 underline">
-                      {dupe.name}
-                    </a>
-                    <span className="text-ink-500">
-                      {[dupe.phone, dupe.ownerName].filter(Boolean).map((part) => ` · ${part}`)}
-                    </span>
+            {hits && hits.length === 0 && <p className="text-sm text-ink-500">{t('pick.empty')}</p>}
+            {hits && hits.length > 0 && (
+              <ul className="max-h-72 space-y-1 overflow-y-auto">
+                {hits.map((hit) => (
+                  <li key={`${hit.kind}:${hit.id}`}>
+                    <Link
+                      href={target(hit)}
+                      data-testid="quick-pick-hit"
+                      className="flex items-baseline gap-2 rounded-xl border border-line px-3 py-2 text-sm hover:bg-surface-sunken"
+                    >
+                      <span className="shrink-0 font-mono font-semibold text-brand-700">{hit.code}</span>
+                      {hit.label && <span className="min-w-0 truncate text-ink-500">{hit.label}</span>}
+                    </Link>
                   </li>
                 ))}
               </ul>
             )}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {kinds.length > 0 && (
+              <div className="space-y-2">
+                {/* The kinds are CHIPS above the boxes, not a menu in front of
+                    them. Round 60 opened straight into the text box because there
+                    was one kind; adding the client door for sellers would
+                    otherwise have charged the whole sales team an extra tap on the
+                    thing they do most, to reach a door they use weekly. With one
+                    kind the strip does not render at all, so nothing changes for
+                    anybody who has only one. Plain buttons, not peer-checked
+                    radios: this panel deliberately has no <form> (#377/#419/#466). */}
+                {kinds.length > 1 ? (
+                  <div className="flex gap-1.5" data-testid="quick-kinds">
+                    {kinds.map((one) => (
+                      <button
+                        key={one}
+                        type="button"
+                        data-testid={`quick-kind-${one}`}
+                        aria-pressed={kind === one}
+                        onClick={() => {
+                          setKind(one);
+                          setError(null);
+                          setDupes([]);
+                          setCodeDupes([]);
+                        }}
+                        className={
+                          kind === one
+                            ? 'chip flex-1 justify-center !bg-brand-500 !text-white'
+                            : 'chip flex-1 justify-center'
+                        }
+                      >
+                        {t(KIND_LABEL[one])}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm font-semibold text-ink-700">{t(KIND_LABEL[kind])}</p>
+                )}
+                <input
+                  className="input"
+                  autoFocus
+                  value={name}
+                  data-testid="quick-name"
+                  aria-label={t('name')}
+                  placeholder={t('name')}
+                  onChange={(event) => {
+                    setName(event.target.value);
+                    setDupes([]);
+                    setCodeDupes([]);
+                  }}
+                />
+                <input
+                  className="input"
+                  value={phone}
+                  data-testid="quick-phone"
+                  aria-label={t('phone')}
+                  placeholder={t('phone')}
+                  onChange={(event) => {
+                    setPhone(event.target.value);
+                    setDupes([]);
+                    setCodeDupes([]);
+                  }}
+                />
+                <p className="text-xs text-ink-500">{t(`hint.${kind}` as 'hint.lead')}</p>
 
-            {/* The codes this number already holds. NOT a refusal: one person
-                carrying 444, 555 and 777 is this company's normal shape, and
-                the seller who cannot open the client book has no other way to
-                find out. The same press again mints the new code. */}
-            {codeDupes.length > 0 && (
-              <ul
-                className="space-y-1 rounded-xl border border-warn/30 bg-warn/10 p-2"
-                data-testid="quick-code-dupes"
-              >
-                {codeDupes.map((one) => (
-                  <li key={one.id} className="text-xs">
-                    <span className="font-mono font-semibold text-brand-700">{one.code}</span>
-                    <span className="text-ink-500"> · {one.name}</span>
-                  </li>
-                ))}
-              </ul>
+                {error && (
+                  <p
+                    className={`text-sm ${dupes.length > 0 ? 'text-warn' : 'text-bad'}`}
+                    data-testid="quick-error"
+                  >
+                    {t(`error.${error}` as 'error.failed')}
+                  </p>
+                )}
+
+                {/* Named, and linked. «There is already one» is a shrug; «Aziz
+                    Karimov, +998…, Dilnoza's» is what stops the second call. The
+                    same press again creates it anyway — the warning is there to be
+                    read, not to be argued with. */}
+                {dupes.length > 0 && (
+                  <ul className="space-y-1 rounded-xl border border-warn/30 bg-warn/10 p-2" data-testid="quick-dupes">
+                    {dupes.map((dupe) => (
+                      <li key={dupe.id} className="text-xs">
+                        <a href={`/crm/leads/${dupe.id}`} className="font-semibold text-brand-700 underline">
+                          {dupe.name}
+                        </a>
+                        <span className="text-ink-500">
+                          {[dupe.phone, dupe.ownerName].filter(Boolean).map((part) => ` · ${part}`)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                {/* The codes this number already holds. NOT a refusal: one person
+                    carrying 444, 555 and 777 is this company's normal shape, and
+                    the seller who cannot open the client book has no other way to
+                    find out. The same press again mints the new code. */}
+                {codeDupes.length > 0 && (
+                  <ul
+                    className="space-y-1 rounded-xl border border-warn/30 bg-warn/10 p-2"
+                    data-testid="quick-code-dupes"
+                  >
+                    {codeDupes.map((one) => (
+                      <li key={one.id} className="text-xs">
+                        <span className="font-mono font-semibold text-brand-700">{one.code}</span>
+                        <span className="text-ink-500"> · {one.name}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={busy || name.trim().length < 2}
+                    data-testid="quick-save"
+                    onClick={() => void save()}
+                    className="btn-primary !min-h-10 flex-1"
+                  >
+                    {t('save')}
+                  </button>
+                  {fullForms.includes(kind) && (
+                    <Link
+                      href={FULL_FORM[kind]}
+                      data-testid="quick-full"
+                      className="btn-ghost !min-h-10 text-xs"
+                    >
+                      {t('full')}
+                    </Link>
+                  )}
+                </div>
+              </div>
             )}
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                disabled={busy || name.trim().length < 2}
-                data-testid="quick-save"
-                onClick={() => void save()}
-                className="btn-primary !min-h-10 flex-1"
+            {/* The DOORS (answer 5). BELOW the two inline kinds, not in front
+                of them: the panel still opens on the lead's text box — round
+                60's rule — and a grid above it pushed «Saqlash» under a
+                phone's keyboard (measured at 360×800, this round's review). */}
+            {actions.length > 0 && (
+              <div
+                className={`space-y-1.5 ${kinds.length > 0 ? 'border-t border-line pt-3' : ''}`}
+                data-testid="quick-actions"
               >
-                {t('save')}
-              </button>
-              {fullForms.includes(kind) && (
-                <Link
-                  href={FULL_FORM[kind]}
-                  data-testid="quick-full"
-                  className="btn-ghost !min-h-10 text-xs"
-                >
-                  {t('full')}
-                </Link>
-              )}
-            </div>
+                <p className="text-2xs font-bold uppercase tracking-wide text-ink-500">{t('actions')}</p>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {actions.map((action) => {
+                    const meta = ACTION_META[action.key];
+                    const href = ACTION_HREF[action.key];
+                    const tile =
+                      'flex min-h-16 flex-col items-center justify-center gap-1 rounded-xl border border-line p-1.5 text-center text-xs font-semibold leading-tight text-ink-700 hover:bg-surface-sunken';
+                    const inside = (
+                      <>
+                        <Icon name={meta.icon} className="h-5 w-5 text-brand-700" />
+                        <span className="[overflow-wrap:anywhere]">{t(meta.label)}</span>
+                      </>
+                    );
+                    return href ? (
+                      <Link key={action.key} href={href} data-testid={`quick-act-${action.key}`} className={tile}>
+                        {inside}
+                      </Link>
+                    ) : (
+                      <button
+                        key={action.key}
+                        type="button"
+                        data-testid={`quick-act-${action.key}`}
+                        onClick={() => setPick(action.key as 'payment' | 'calc')}
+                        className={tile}
+                      >
+                        {inside}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </Overlay>

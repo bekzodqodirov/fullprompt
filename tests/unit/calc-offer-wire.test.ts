@@ -114,7 +114,9 @@ describe('the panel that hosts it', () => {
 
   it('shows the price without a fold — it is what the card is opened for', () => {
     // Phase 4: the Готово answer's door counts as a price too.
-    expect(PANEL).toContain('open={open.length > 0 || Boolean(seal) || Boolean(anchor)}');
+    // `forceOpen` (2026-09-26) only ever ADDS an opening — «+ Yangi →
+    // Hisoblatish» landing on the form — so the price's rule still reads here.
+    expect(PANEL).toContain('open={forceOpen || open.length > 0 || Boolean(seal) || Boolean(anchor)}');
   });
 
   it('gives an EXPIRED price words instead of a price box', () => {

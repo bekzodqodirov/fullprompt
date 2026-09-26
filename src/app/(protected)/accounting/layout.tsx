@@ -1,9 +1,5 @@
 import { redirect } from 'next/navigation';
-import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { SubNav, type SubNavItem } from '@/components/ui/sub-nav';
-import { isAnalyst } from '@/modules/platform/ai/tools';
-import { mayClassifyFx } from '@/modules/wms/finance/fx-door';
 
 /**
  * Management accounting section.
@@ -11,6 +7,11 @@ import { mayClassifyFx } from '@/modules/wms/finance/fx-door';
  * Gated hard: profit and overheads are the owner's and the accountant's
  * business (owner's answer 7). A sales manager holds `finance.view` and sees
  * client balances — they must never reach the company's margin from here.
+ *
+ * The section's own tab strip is gone (2026-09-26): its pages are now tabs of
+ * two workspaces — the books in «Pul», the reports in «Hisobotlar» — drawn by
+ * the shell from `rbac/workspaces.ts`, where each tab asks the page's own
+ * gate. What stays here is the section's DOOR, which the strip never was.
  */
 export default async function AccountingLayout({ children }: { children: React.ReactNode }) {
   const actor = await getActor();
@@ -18,41 +19,5 @@ export default async function AccountingLayout({ children }: { children: React.R
   const canReport = actor.permissions.has('finance.reports');
   const canEnter = actor.permissions.has('finance.expenses');
   if (!canReport && !canEnter) redirect('/');
-  const t = await getTranslations('accounting');
-
-  const items: SubNavItem[] = [
-    { href: '/accounting', label: t('title'), icon: 'briefcase', exact: true },
-    ...(canReport
-      ? ([
-          { href: '/accounting/pnl', label: t('pnl'), icon: 'chart' },
-          { href: '/accounting/cashflow', label: t('cashflow'), icon: 'exchange' },
-          { href: '/accounting/receivables', label: t('receivables'), icon: 'clock' },
-          { href: '/accounting/profit', label: t('profitBatch'), icon: 'truck' },
-        ] as SubNavItem[])
-      : []),
-    // «Kurs qoldiqlari» (0103) — the classifier's: a close writes the P&L.
-    ...(mayClassifyFx(actor.permissions)
-      ? ([{ href: '/accounting/kurs-farqi', label: t('fxLegacyTitle'), icon: 'exchange' }] as SubNavItem[])
-      : []),
-    // The owner's monthly plan (0102, 5a) — his and the admin's alone (4a).
-    ...(canReport && isAnalyst(actor)
-      ? ([{ href: '/accounting/reja', label: t('reja'), icon: 'calendar' }] as SubNavItem[])
-      : []),
-    ...(canEnter
-      ? ([
-          { href: '/accounting/expenses', label: t('expenses'), icon: 'doc' },
-          { href: '/accounting/accounts', label: t('accounts'), icon: 'wallet' },
-          // 0101: the cargo costs whose kassa only the accountant can name.
-          { href: '/accounting/xarajat-kassa', label: t('costKassa'), icon: 'exchange' },
-          { href: '/accounting/categories', label: t('categories'), icon: 'clipboard' },
-        ] as SubNavItem[])
-      : []),
-  ];
-
-  return (
-    <>
-      <SubNav items={items} />
-      {children}
-    </>
-  );
+  return <>{children}</>;
 }

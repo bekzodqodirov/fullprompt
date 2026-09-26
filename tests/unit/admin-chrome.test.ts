@@ -36,7 +36,9 @@ describe('a page that only lives under /admin is not an admin page', () => {
   });
 
   it('still lights «Boshqaruv» for every real administration screen', () => {
-    for (const path of ['/admin', '/admin/warehouses', '/admin/trucks', '/admin/roles']) {
+    // /admin/trucks left this list on 2026-09-26: the truck presets are the
+    // ⚙ of «Yo'l» now (the next test), and /admin/settings took its place.
+    for (const path of ['/admin', '/admin/warehouses', '/admin/settings', '/admin/roles']) {
       expect(isActive(path, '/admin')).toBe(true);
       expect(isAdminSectionPage(path)).toBe(true);
     }
@@ -44,6 +46,25 @@ describe('a page that only lives under /admin is not an admin page', () => {
     expect(isAdminSectionPage('/admin/clients/2f1a-…')).toBe(false);
     // Not an /admin path at all.
     expect(isAdminSectionPage('/stock')).toBe(false);
+  });
+
+  it('treats every job setting that moved into a workspace like the client book (2026-09-26)', () => {
+    // The owner's answer 8b: «sozlamalar o'z bo'limida». Their URLs stayed
+    // under /admin (Telegram carries them); the chrome must stop calling them
+    // administration — no «← Boshqaruv», and «Boshqaruv» not lit.
+    for (const path of [
+      '/admin/fx',
+      '/admin/cost-types',
+      '/admin/partner-types',
+      '/admin/tarif',
+      '/admin/bojxona-import',
+      '/admin/trucks',
+      '/admin/taqsimot',
+      '/admin/xabarlar',
+    ]) {
+      expect(isAdminSectionPage(path), path).toBe(false);
+      expect(isActive(path, '/admin'), path).toBe(false);
+    }
   });
 
   it('keeps the two rules the highlight already had', () => {
@@ -82,8 +103,11 @@ describe('the client book is offered once, from Sotuv', () => {
     // matched the surviving `import { openDoors }` line and stayed green with
     // the layout back to answering the question itself.
     expect(layout).toMatch(/const hasHub =\s*openDoors\(/);
-    const oneDoor = openDoors((code) => code === 'plans.manage');
+    // The one-door case moved: `plans.manage` had the truck presets until
+    // they became «Yo'l»'s ⚙ (2026-09-26); a roles-only grant is one door now.
+    const oneDoor = openDoors((code) => code === 'platform.roles.manage');
     expect(oneDoor).toHaveLength(1);
+    expect(openDoors((code) => code === 'plans.manage')).toHaveLength(0);
     const many = openDoors(() => true);
     expect(many.length).toBeGreaterThan(1);
   });
@@ -101,6 +125,10 @@ describe('the client book is offered once, from Sotuv', () => {
     // the client links already sitting in staff Telegram history point here.
     const layout = read('src/app/(protected)/admin/layout.tsx');
     expect(layout).toContain('canClients');
-    expect(NOT_ADMIN_SECTION).toEqual(['/admin/clients']);
+    // The list is DERIVED from the workspaces now (2026-09-26); the client
+    // book is still on it, and no hub door is — a tile must not open a page
+    // that says it is not administration.
+    expect(NOT_ADMIN_SECTION).toContain('/admin/clients');
+    for (const door of HUB_DOORS) expect(NOT_ADMIN_SECTION, door.href).not.toContain(door.href);
   });
 });

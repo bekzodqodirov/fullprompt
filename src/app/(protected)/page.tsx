@@ -4,8 +4,8 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { menuItems, NAV } from '@/modules/platform/rbac/nav';
-import { aiConfigured } from '@/modules/platform/ai/model';
+import { homeTileGroups } from '@/modules/platform/rbac/workspaces';
+import { hiddenHrefs } from '@/modules/platform/nav/usage';
 import { isAnalyst } from '@/modules/platform/ai/tools';
 import { AdminDashboard } from './admin-dashboard';
 import { Icon, type IconName } from '@/components/ui/icon';
@@ -50,24 +50,22 @@ export default async function HomePage() {
   const flow = await buildHomeFlow(actor, tashkentDay());
 
   const viewer = { permissions: actor.permissions, roles: actor.roles };
+  // The tiles are grouped by WORKSPACE (2026-09-26) — the same job names the
+  // sidebar and the ••• sheet use — and the workflow rows above are not
+  // repeated as tiles. `hiddenHrefs()` is the menu's own switch-off list
+  // (the AI tile exists only once its server key does).
+  const tWs = await getTranslations('ws');
   const groups: { title: string; items: { href: string; label: string; icon: IconName }[] }[] = [];
-  for (const group of NAV) {
+  for (const group of homeTileGroups(viewer, flow?.hrefs ?? [], hiddenHrefs())) {
     const items = [];
-    for (const item of group.items) {
-      // The home tile for "home" itself would be a link to this page; the
-      // workflow steps are drawn once, above, not repeated as tiles.
-      if (item.href === '/' || !menuItems(item, viewer)) continue;
-      if (flow && flow.hrefs.includes(item.href)) continue;
-      // Same rule as the sidebar: the AI tile exists only once the server
-      // key does — a tile to a «not configured» sentence is clutter.
-      if (item.href === '/ai' && !aiConfigured()) continue;
+    for (const tile of group.tiles) {
       items.push({
-        href: item.href,
-        label: await label(item.namespace, item.labelKey),
-        icon: item.icon,
+        href: tile.href,
+        label: await label(tile.item.namespace, tile.item.labelKey),
+        icon: tile.item.icon,
       });
     }
-    if (items.length > 0) groups.push({ title: t(group.titleKey as 'sectionInfo'), items });
+    groups.push({ title: tWs(`name.${group.workspace}` as 'name.home'), items });
   }
 
   // Work somebody gave THIS person, on the screen everyone opens.
