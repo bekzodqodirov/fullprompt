@@ -422,9 +422,13 @@ export async function addCompensation(
  */
 export interface CompensationCover {
   refundsSinceUsd: number;
+  /** Refunds OLDER than every compensation — an advance already handed back. */
+  refundsBeforeUsd: number;
   paymentsUsd: number;
   chargesUsd: number;
   otherCompensationsUsd: number;
+  /** Does any live row of the client move in a currency other than USD? */
+  multiCurrency: boolean;
 }
 
 export async function compensationCoverTx(tx: Tx, clientId: string, compensationId: string): Promise<CompensationCover> {
@@ -438,20 +442,27 @@ export async function compensationCoverTx(tx: Tx, clientId: string, compensation
         WHERE t.type = 'refund'
           AND t.created_at >= (SELECT min(c.created_at) FROM client_transactions c
                                 WHERE c.client_id = ${clientId}::uuid AND c.type = 'compensation'
-                                  AND c.voided_at IS NULL)), 0) AS refunds_since
+                                  AND c.voided_at IS NULL)), 0) AS refunds_since,
+      coalesce(sum(t.amount_usd) FILTER (WHERE t.type = 'refund'), 0) AS refunds_all,
+      bool_or(t.currency <> 'USD') AS multi
       FROM client_transactions t
      WHERE t.client_id = ${clientId}::uuid AND t.voided_at IS NULL`)) as unknown as {
     payments: string;
     charges: string;
     others: string;
     refunds_since: string;
+    refunds_all: string;
+    multi: boolean | null;
   }[];
   const [row] = [...rows];
+  const refundsSinceUsd = cents(Number(row?.refunds_since ?? 0));
   return {
-    refundsSinceUsd: cents(Number(row?.refunds_since ?? 0)),
+    refundsSinceUsd,
+    refundsBeforeUsd: cents(Number(row?.refunds_all ?? 0) - refundsSinceUsd),
     paymentsUsd: cents(Number(row?.payments ?? 0)),
     chargesUsd: cents(Number(row?.charges ?? 0)),
     otherCompensationsUsd: cents(Number(row?.others ?? 0)),
+    multiCurrency: row?.multi === true,
   };
 }
 
@@ -459,16 +470,22 @@ export async function compensationCoverTx(tx: Tx, clientId: string, compensation
  * May this compensation be voided? The cash handed back since compensations
  * began must stay covered by the compensations that remain plus what the
  * client paid beyond his charges — the refund cap's own idea (U04), asked of
- * the void, with its own FX allowance (2 % or $5, `fxResidueAllowance`).
+ * the void, with its own FX allowance (2 % or $5, `fxResidueAllowance`) when
+ * the ledger moves in more than dollars.
  * A compensation that only offset a debt voids freely (nothing was handed
  * out), so a typo is always correctable: write the right one first, then
  * void this.
  */
 export function compensationVoidFits(s: CompensationCover): boolean {
-  return (
-    s.refundsSinceUsd - Math.max(0, s.paymentsUsd - s.chargesUsd) <=
-    s.otherCompensationsUsd + fxResidueAllowance(s.refundsSinceUsd) + 0.004
-  );
+  // The advance is what was paid beyond the charges LESS what an older
+  // refund already handed back — counted once, not twice (review of the comp
+  // unit: C700 P1000, the $300 advance refunded, then a $200 compensation
+  // paid out in cash read as still covered by that same $300). And the FX
+  // allowance only where a rate can have moved: an all-dollar ledger has no
+  // residue to forgive.
+  const advance = Math.max(0, s.paymentsUsd - s.chargesUsd - s.refundsBeforeUsd);
+  const allowance = s.multiCurrency ? fxResidueAllowance(s.refundsSinceUsd) : 0;
+  return s.refundsSinceUsd - advance <= s.otherCompensationsUsd + allowance + 0.004;
 }
 
 /**

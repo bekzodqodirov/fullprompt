@@ -52,9 +52,11 @@ describe('C12 — upsaleStateOf reads the job net of its compensation', () => {
  */
 const cover = (s: Partial<CompensationCover>): CompensationCover => ({
   refundsSinceUsd: 0,
+  refundsBeforeUsd: 0,
   paymentsUsd: 0,
   chargesUsd: 0,
   otherCompensationsUsd: 0,
+  multiCurrency: true,
   ...s,
 });
 
@@ -92,6 +94,23 @@ describe('compensationVoidFits — the seven vectors', () => {
 
   it('V7 the cargo was found and the client returned the cash (R1500, P+1500) — allowed', () => {
     expect(compensationVoidFits(cover({ chargesUsd: 1000, paymentsUsd: 2500, refundsSinceUsd: 1500 }))).toBe(true);
+  });
+
+  it('an advance an OLDER refund already returned is not counted again (review: C700 P1000 R300, then K200 paid out as R200)', () => {
+    expect(
+      compensationVoidFits(cover({ chargesUsd: 700, paymentsUsd: 1000, refundsBeforeUsd: 300, refundsSinceUsd: 200 })),
+    ).toBe(false);
+    // …the same ledger without the old refund: the advance does cover it.
+    expect(compensationVoidFits(cover({ chargesUsd: 700, paymentsUsd: 1000, refundsSinceUsd: 200 }))).toBe(true);
+  });
+
+  it('an all-dollar ledger has no FX residue to forgive — not one cent over (review)', () => {
+    expect(
+      compensationVoidFits(cover({ refundsSinceUsd: 200, chargesUsd: 1000, paymentsUsd: 1195, multiCurrency: false })),
+    ).toBe(false);
+    expect(
+      compensationVoidFits(cover({ refundsSinceUsd: 200, chargesUsd: 1000, paymentsUsd: 1200, multiCurrency: false })),
+    ).toBe(true);
   });
 
   it('the allowance edge: $5 uncovered passes, $5.01 is refused', () => {
