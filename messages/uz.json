@@ -761,6 +761,8 @@
     "labelsToDestroy": "stikerlarni yo'q qiling: {codes}",
     "editWindowClosed": "Tahrirlash faqat qabul kunida (keyin — mudir/logist)",
     "structuralLocked": "Karobkalar harakatda — o'lcham/sonini o'zgartirib bo'lmaydi",
+    "lotShrinkOrphan": "Bu karobkalar yashik yoki mashina xarajatining yagona yuki — avval moliya o‘sha xarajatni bekor qilsin.",
+    "lotChanged": "Karobkalar hozirgina o‘zgardi — sahifani yangilab qaytadan kiriting.",
     "attach": "Biriktirish",
     "attachFailed": "Fayl yuklanmadi",
     "note": "Izoh",

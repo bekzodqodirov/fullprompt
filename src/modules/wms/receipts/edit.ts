@@ -16,6 +16,7 @@ import { emitEvent } from '../../platform/events/service';
 import { getSetting } from '../../platform/settings/service';
 import type { Actor } from '../../platform/rbac/authorize';
 import { nextBoxCodes } from '../codes';
+import { costOrphanedByVoid, lockCostsTouchingLots } from '../costing/void-guard';
 import { receiptHasCompensation } from '../finance/compensation-follow';
 import { computeLotTotals } from './math';
 
@@ -44,7 +45,9 @@ export class EditError extends Error {
       | 'boxes_not_editable'
       | 'boxes_crated'
       | 'receipt_not_confirmed'
-      | 'receipt_has_compensation',
+      | 'receipt_has_compensation'
+      | 'lot_changed'
+      | 'shared_cost_orphaned',
   ) {
     super(code);
   }
@@ -239,9 +242,33 @@ export async function editLot(
       );
       result.labelsToPrint = delta;
     } else if (delta < 0) {
-      const toVoid = activeBoxes.slice(delta); // highest seq_in_lot last
+      // The third door that writes `void`, now under the other two's rules
+      // (review of wb2, U0/U8): every cost shared over the lot locked BEFORE
+      // the boxes (U20's race — a box-card void running at the same moment
+      // must wait instead of reading this shrink's carton as live), the
+      // boxes re-read under the lock (the pre-read above is a plan, not a
+      // fact), and the money asked before a carton goes: a crate fee that
+      // these surplus cartons ARE the whole base of would sit on no box. A
+      // crated surplus carton still leaves its crate (round 31, #406) — only
+      // when that would strand the crate's money is the shrink refused.
+      const costs = await lockCostsTouchingLots([lot.id], tx);
+      const current = await tx
+        .select()
+        .from(boxes)
+        .where(and(eq(boxes.lotId, lot.id), ne(boxes.status, 'void')))
+        .orderBy(asc(boxes.seqInLot))
+        .for('update');
+      if (current.length !== activeBoxes.length) throw new EditError('lot_changed');
+      const toVoid = current.slice(delta); // highest seq_in_lot last
+      if (toVoid.some((box) => box.status !== 'in_stock')) throw new EditError('boxes_not_editable');
+      const orphan = await costOrphanedByVoid(
+        costs,
+        toVoid.map((box) => box.id),
+        Number(chargeableFactor),
+        tx,
+      );
+      if (orphan) throw new EditError('shared_cost_orphaned');
       for (const box of toVoid) {
-        if (box.status !== 'in_stock') throw new EditError('boxes_not_editable');
         // A voided box leaves its crate too: a void member made the crate
         // permanently undissolvable and unscannable (both walk the members
         // and refuse anything not in_stock).

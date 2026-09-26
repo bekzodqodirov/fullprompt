@@ -761,6 +761,8 @@
     "labelsToDestroy": "需销毁标签：{codes}",
     "editWindowClosed": "仅收货当天可编辑（之后由主管/物流经理）",
     "structuralLocked": "箱子已在流转中——尺寸/数量不可更改",
+    "lotShrinkOrphan": "这些箱子是某个木箱或车辆费用的全部货物——请财务先作废该费用。",
+    "lotChanged": "箱子刚刚发生变化——请刷新页面后重新输入。",
     "attach": "添加文件",
     "attachFailed": "文件上传失败",
     "note": "备注",

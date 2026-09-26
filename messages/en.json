@@ -761,6 +761,8 @@
     "labelsToDestroy": "destroy these labels: {codes}",
     "editWindowClosed": "Editing is only open on the day of receiving (after that — manager/logistics)",
     "structuralLocked": "The boxes are already on the move — dimensions and counts can no longer change",
+    "lotShrinkOrphan": "These cartons are the whole cargo of a crate or truck cost — finance voids that cost first.",
+    "lotChanged": "The cartons have just changed — reload the page and enter it again.",
     "attach": "Attach",
     "attachFailed": "The file could not be uploaded",
     "note": "Note",
