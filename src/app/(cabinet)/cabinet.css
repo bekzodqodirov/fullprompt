@@ -466,3 +466,101 @@
   margin-top: 12px;
   cursor: pointer;
 }
+
+
+/* ------------------------------------------------------------------- map */
+/* «Yukim qayerda» (item 11): a full screen of its own, closed by Telegram's
+   back button like a photo is. The map takes the top, the list of what is
+   where takes the rest, so a thumb never covers the answer. */
+.cab-map-open {
+  margin-left: auto;
+  border: 0;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  background: var(--accent);
+  color: var(--on-accent);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cab-map-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+.cab-map-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.cab-map-close {
+  border: 0;
+  background: var(--card);
+  color: var(--fg);
+  border-radius: 999px;
+  width: 32px;
+  height: 32px;
+  font: inherit;
+  cursor: pointer;
+}
+.cab-map {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+.cab-map-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 52vh;
+  flex: none;
+  background: var(--card);
+}
+.cab-map-sheet {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+}
+.cab-map-where {
+  font-weight: 700;
+  margin: 0;
+}
+.cab-map-note {
+  color: var(--muted);
+  font-size: 0.82rem;
+  margin: 4px 0 0;
+}
+.cab-map-sum {
+  margin: 8px 0;
+  font-size: 0.9rem;
+}
+.cab-map-lots {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.cab-map-lots li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+  font-size: 0.88rem;
+}
+.cab-map-lots li span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.cab-map-lot-num {
+  flex: none;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}

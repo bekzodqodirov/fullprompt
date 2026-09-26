@@ -204,6 +204,25 @@ const DICT = {
     en: 'We could not find this number. Please contact your manager — they will add it to your card and connect you.',
   },
 
+  // --- the map (item 11, 2026-09-26) ---
+  mapOpen: { uz: '🗺 Xaritada', ru: '🗺 На карте', en: '🗺 On the map' },
+  mapTitle: { uz: 'Yukim qayerda', ru: 'Где мой груз', en: 'Where my cargo is' },
+  mapTruck: { uz: 'Mashinada', ru: 'В машине', en: 'On a truck' },
+  mapWarehouse: { uz: 'Skladda', ru: 'На складе', en: 'At a warehouse' },
+  mapLive: { uz: 'joyi haydovchi telefonidan', ru: 'место с телефона водителя', en: 'position from the driver’s phone' },
+  mapEstimated: { uz: 'taxminiy joy', ru: 'примерное место', en: 'estimated position' },
+  mapDays: { uz: 'yetib kelishiga ~{a}–{b} kun', ru: 'до прибытия ~{a}–{b} дн.', en: 'arrives in ~{a}–{b} days' },
+  mapTapHint: {
+    uz: 'Mashina yoki sklad ustiga bosing — u yerdagi yukingiz chiqadi.',
+    ru: 'Нажмите на машину или склад — появится ваш груз там.',
+    en: 'Tap a truck or a warehouse to see your cargo there.',
+  },
+  mapEmpty: {
+    uz: 'Xaritada ko‘rsatadigan yuk yo‘q.',
+    ru: 'На карте показывать нечего.',
+    en: 'Nothing to show on the map.',
+  },
+
   // --- the three screens ---
   noCargo: {
     uz: 'hozir yo‘lda yoki skladda yukingiz yo‘q.',
