@@ -54,6 +54,14 @@ describe('a page that only lives under /admin is not an admin page', () => {
     // A shared prefix that is not a path segment must not match.
     expect(isActive('/stockroom', '/stock')).toBe(false);
   });
+
+  it('a page with its own row lights that row alone (2026-09-26)', () => {
+    // «Xarajatlar» sits beside «Boshqaruv hisobi» — one page, one lit row.
+    expect(isActive('/accounting/expenses', '/accounting/expenses')).toBe(true);
+    expect(isActive('/accounting/expenses', '/accounting')).toBe(false);
+    // The rest of the accounts still light their own row.
+    expect(isActive('/accounting/pnl', '/accounting')).toBe(true);
+  });
 });
 
 describe('the client book is offered once, from Sotuv', () => {
