@@ -245,20 +245,35 @@ describe('the bot answers "where is it?"', () => {
   it('a warehouse row wears 🏭, and the phone goes only to whoever may read it (2026-09-26)', async () => {
     await makeLot(1);
     await db.update(clients).set({ phones: ['+998901112233'] }).where(eq(clients.id, clientId));
-    // A warehouse hand looking up a carton does not get the customer's number.
-    const hand = await botLookupAnswer(boss(), clientCode);
-    expect(hand?.text).toContain('· 🏭 ');
-    expect(hand?.text).not.toContain('+998901112233');
-    expect(hand?.phones).toBeUndefined();
-    // The client book's reader does, beside the name and as a chat button.
-    const book = await botLookupAnswer(
-      { ...boss(), permissions: new Set(['clients.manage', 'plans.manage']) },
+    // A hand whose floor and trucks hold none of this client's cargo gets
+    // the code and no number — the answer's own Σ decides, nothing wider.
+    const elsewhere = await botLookupAnswer(
+      { id: actorId, permissions: new Set(['scan.unload']), warehouseScoped: true, warehouseIds: [uuidv4()] },
       clientCode,
     );
-    expect(book?.text).toContain(`👤 ${clientCode} · Bot lookup mijoz · 📞 +998901112233`);
+    expect(elsewhere?.text).toContain(clientCode);
+    expect(elsewhere?.text).not.toContain('+998901112233');
+    expect(elsewhere?.phones).toBeUndefined();
+    // The hand standing next to the carton does (the owner: «skladchilarga
+    // ham kerak»), beside the name and as a chat button.
+    const hand = await botLookupAnswer(
+      { id: actorId, permissions: new Set(['scan.unload']), warehouseScoped: true, warehouseIds: [originId] },
+      clientCode,
+    );
+    expect(hand?.text).toContain('· 🏭 ');
+    expect(hand?.text).toContain(`👤 ${clientCode} · Bot lookup mijoz · 📞 +998901112233`);
+    expect(hand?.phones).toEqual(['+998901112233']);
+    // The client book's reader does whatever the cargo…
+    const book = await botLookupAnswer(
+      { ...boss(), permissions: new Set(['clients.manage', 'plans.manage']), warehouseScoped: true, warehouseIds: [uuidv4()] },
+      clientCode,
+    );
     expect(book?.phones).toEqual(['+998901112233']);
     // …and so does the client's own seller, for their own client only.
-    const own = await botLookupAnswer({ ...boss(), permissions: new Set(['clients.view_own']) }, clientCode);
+    const own = await botLookupAnswer(
+      { ...boss(), permissions: new Set(['clients.view_own']), warehouseScoped: true, warehouseIds: [uuidv4()] },
+      clientCode,
+    );
     expect(own?.phones).toEqual(['+998901112233']);
   });
 
