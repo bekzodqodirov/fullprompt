@@ -45,6 +45,23 @@ async function login(page: import('@playwright/test').Page, phone: string) {
 const listRow = (page: import('@playwright/test').Page) =>
   page.getByTestId('unpriced-client').filter({ hasText: code });
 
+/**
+ * The list is paged (150 prixods) with the LONGEST-waiting first, so this
+ * spec's brand-new carton sits on the last page whenever the shared database
+ * already holds more landed, unpriced cargo from today — which CI's vitest
+ * run leaves behind (#154: state a spec leaves is the next one's input).
+ * Walks the pages and stays on the one carrying the row; 0 = on none.
+ */
+async function openOurPage(page: import('@playwright/test').Page): Promise<number> {
+  for (let n = 1; n <= 20; n += 1) {
+    await page.goto(`/finance/narxsiz?dan=${TODAY}&page=${n}`);
+    await expect(page.getByTestId('unpriced-gate')).toBeVisible();
+    if ((await listRow(page).count()) > 0) return n;
+    if ((await page.getByTestId('unpriced-client').count()) === 0) return 0;
+  }
+  return 0;
+}
+
 test('the logist mints a client and the operator receives one carton for it at YW', async ({ page }) => {
   await login(page, LOGIST);
   await page.getByTestId('quick-create').click();
@@ -116,28 +133,34 @@ test('the logist sends it YW → AND by truck and unloads it', async ({ page }) 
   await page.locator('button:has(span.font-mono)').filter({ hasText: /YW26-/ }).first().click();
   await expect(page.getByTestId('unload-counter')).toHaveText(/1\/1/);
   await expect(page.getByTestId('sync-banner')).not.toContainText('🔄', { timeout: 15_000 });
+  // The counter is the phone's own optimistic mark and the banner can read
+  // ✅ before the queue has even counted the scan, so a test that ends here
+  // closes the page with the landing still in the outbox — the carton stays
+  // in_transit and is on no list (seen in CI and here). The batch card is
+  // the server's answer: poll it, as m4 does.
+  await expect(async () => {
+    await page.goto(batchUrl);
+    await expect(page.getByTestId('unload-remaining')).toContainText('✅');
+  }).toPass({ timeout: 20_000 });
 });
 
 test('the accountant sees it on the list, blocked, with the truck as a door; another seller does not', async ({ page }) => {
   await login(page, ACCOUNTANT);
-  await page.goto(`/finance/narxsiz?dan=${TODAY}`);
-  await expect(page.getByTestId('unpriced-gate')).toBeVisible();
-  await expect(listRow(page)).toHaveCount(1, { timeout: 15_000 });
+  expect(await openOurPage(page)).toBeGreaterThan(0);
+  await expect(listRow(page)).toHaveCount(1);
   await expect(listRow(page).getByTestId('unpriced-blocked')).toBeVisible();
   await expect(listRow(page).locator('a[data-testid="unpriced-truck"]')).toHaveCount(1);
 
   // The client's manager is the logist who minted it (round 111), so Dilnoza's
   // money scope does not include it.
   await login(page, SELLER);
-  await page.goto(`/finance/narxsiz?dan=${TODAY}`);
-  await expect(page.getByTestId('unpriced-gate')).toBeVisible();
-  await expect(listRow(page)).toHaveCount(0);
+  expect(await openOurPage(page)).toBe(0);
 
   // The VED keeps the price-only view of «Partiya moliyasi» (Q19), so the
   // truck is a door for him too — never one that bounces.
   await login(page, VED);
-  await page.goto(`/finance/narxsiz?dan=${TODAY}`);
-  await expect(listRow(page)).toHaveCount(1, { timeout: 15_000 });
+  expect(await openOurPage(page)).toBeGreaterThan(0);
+  await expect(listRow(page)).toHaveCount(1);
   const truck = listRow(page).locator('a[data-testid="unpriced-truck"]');
   await expect(truck).toHaveCount(1);
   await truck.click();
@@ -167,6 +190,6 @@ test('the counter refuses it until the holder ticks the override, and the list t
   await expect(page.getByTestId('act-link')).toBeVisible({ timeout: 15_000 });
 
   await login(page, ACCOUNTANT);
-  await page.goto(`/finance/narxsiz?dan=${TODAY}`);
-  await expect(listRow(page).getByTestId('unpriced-issued')).toBeVisible({ timeout: 15_000 });
+  expect(await openOurPage(page)).toBeGreaterThan(0);
+  await expect(listRow(page).getByTestId('unpriced-issued')).toBeVisible();
 });
