@@ -828,6 +828,42 @@ describe('one approval, two questions', () => {
     expect((await told()).length).toBe(first);
   });
 
+  it('on an APPROVAL, «Ruxsat» names the person who decided it — not the operator who pressed (review)', async () => {
+    const { c, p } = await landed('Z', 1);
+    const [decider] = await db
+      .select({ id: users.id, name: users.fullName })
+      .from(users)
+      .where(and(eq(users.active, true), sql`${users.id} <> ${actorId}::uuid`))
+      .limit(1);
+    const [approval] = await db
+      .insert(issueApprovals)
+      .values({
+        clientId: c,
+        warehouseId: W.tas,
+        blockingDebtUsd: '0',
+        unpricedBoxIds: p.boxIds,
+        requestedBy: actorId,
+        status: 'approved',
+        decidedBy: decider!.id,
+        decidedAt: new Date(),
+        expiresAt: new Date(Date.now() + 3_600_000),
+      })
+      .returning();
+    expect(await issue(c, W.tas, p.boxIds)).toBe('ok');
+    const code = (await db.query.clients.findFirst({ where: eq(clients.id, c) }))!.clientCode;
+    const texts = (
+      await db
+        .select({ payload: notifications.payload })
+        .from(notifications)
+        .where(and(eq(notifications.type, 'UnpricedIssued'), gte(notifications.createdAt, startedAt)))
+    )
+      .map((n) => String((n.payload as { text?: string }).text ?? ''))
+      .filter((text) => text.includes(code));
+    expect(texts.length).toBeGreaterThan(0);
+    expect(texts[0]).toContain(`Ruxsat: ${decider!.name} (so‘rov)`);
+    expect(approval).toBeTruthy();
+  });
+
   it('the ask reaches the client’s own seller and the accountant, and not a seller of another client', async () => {
     const seller = (
       await db

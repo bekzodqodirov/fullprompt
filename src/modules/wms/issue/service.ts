@@ -93,7 +93,7 @@ export async function issueBoxes(request: IssueRequest, ctx: AuditContext) {
     });
     // A replay is NEVER refused: the handover it names already happened, and
     // the phone asking again must get the act back, whatever changed since.
-    if (existing) return { handover: existing, gated: [] as UncoveredBox[], replay: true };
+    if (existing) return { handover: existing, gated: [] as UncoveredBox[], replay: true, approvalId: null as string | null };
 
     // The box lock and its validation come FIRST (they used to follow the
     // approval lock): the price question is asked about these validated
@@ -295,13 +295,13 @@ export async function issueBoxes(request: IssueRequest, ctx: AuditContext) {
       entityId: handover!.id,
       actorId,
     });
-    return { handover: handover!, gated, replay: false };
+    return { handover: handover!, gated, replay: false, approvalId };
   });
   // AFTER the commit — a Telegram row must never be able to roll a handover
   // back — and only when cargo with no price actually went out, by a tick or
   // an approval: that is the moment the money is most at risk.
   if (!result.replay && result.gated.length > 0) {
-    await notifyUnpricedIssued(result.handover.id, input, result.gated, ctx.actorId).catch(() => {});
+    await notifyUnpricedIssued(result.handover.id, input, result.gated, ctx.actorId, result.approvalId).catch(() => {});
   }
   return result.handover;
 }
@@ -316,6 +316,7 @@ async function notifyUnpricedIssued(
   input: IssueInput,
   gated: UncoveredBox[],
   actorId: string | null | undefined,
+  approvalId: string | null,
 ): Promise<void> {
   const userIds = await usersWithPermission('finance.reports');
   if (userIds.length === 0) return;
@@ -326,6 +327,15 @@ async function notifyUnpricedIssued(
     db.query.warehouses.findFirst({ where: eq(warehouses.id, input.warehouseId) }),
     actorId ? db.query.users.findFirst({ where: eq(users.id, actorId) }) : null,
   ]);
+  // «Ruxsat» names who ALLOWED it (review): on a tick that is the presser,
+  // on an approval it is the person who decided the request — the operator
+  // at the counter only carried it out.
+  const decider = approvalId
+    ? (
+        await db.execute<{ full_name: string | null }>(sql`
+          SELECT u.full_name FROM issue_approvals a JOIN users u ON u.id = a.decided_by WHERE a.id = ${approvalId}::uuid`)
+      )[0]?.full_name ?? null
+    : null;
   const perReceipt = new Map<string, number>();
   for (const box of gated) perReceipt.set(box.receiptId, (perReceipt.get(box.receiptId) ?? 0) + 1);
   const numberOf = new Map(labels.map((r) => [r.receiptId, r]));
@@ -343,7 +353,9 @@ async function notifyUnpricedIssued(
       `💰 Narxsiz yuk berildi — ${client?.clientCode ?? ''} · ${wh?.code ?? ''}\n` +
       lines.join('\n') +
       (receiptIds.length > lines.length ? `\n… +${receiptIds.length - lines.length}` : '') +
-      `\nRuxsat: ${actor?.fullName ?? '—'} (${input.priceOk ? 'belgi' : "so‘rov"})` +
+      (decider
+        ? `\nRuxsat: ${decider} (so‘rov) · berdi: ${actor?.fullName ?? '—'}`
+        : `\nRuxsat: ${actor?.fullName ?? '—'} (${input.priceOk ? 'belgi' : "so‘rov"})`) +
       `\n${appUrl}/finance/narxsiz`,
   });
 }
