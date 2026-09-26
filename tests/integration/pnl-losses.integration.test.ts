@@ -149,10 +149,10 @@ describe('owner 6a — losses beside the P&L, never inside it', () => {
     const cells: string[] = [];
     workbook.worksheets[0]!.eachRow((row) => cells.push(String(row.getCell(1).value ?? '')));
     const lostLine = cells.find((cell) => cell.startsWith('❌ Davrda yo‘qolgan'));
-    const missingLine = cells.find((cell) => cell.startsWith('⚠ Yo‘lda qolgan'));
+    const missingLine = cells.find((cell) => cell.startsWith('⚠ Bugun yo‘lda qolgan'));
     expect(lostLine).toContain(`: ${after.lost.boxes} · `);
     expect(missingLine).toContain(`: ${after.missing.boxes} · `);
-    expect(cells).toContain('Bu pul yuqoridagi yuk xarajatlari ichida bor — foydadan qayta ayrilmaydi.');
+    expect(cells).toContain('Bu pul yuk xarajatlari ichida — xarajat yozilgan oyning hisobotida — bor, foydadan qayta ayrilmaydi.');
     // The rate line reads the way a person quotes it (the stored rate is
     // dollars per ONE so'm, and the file used to print it raw). The demo
     // seed carries UZS 0.00008 from 2026-07-01, so the line is always there.
