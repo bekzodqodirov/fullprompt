@@ -159,62 +159,154 @@ export async function AdminDashboard({ actor }: { actor: Actor }) {
   const blocks = [money, cargo, sales].filter(Boolean).length;
   if (blocks === 0 && !tasks && unsent === null && !backupState) return null;
 
+  const moneyOn = Boolean(money && balance && flowToday && moneySnap);
+  const cargoOn = Boolean(cargo && cargoToday);
+  const salesOn = Boolean(sales && deals && decided);
+  const signalOn = Boolean(tasks || unsent !== null || backupState);
+  const leftOn = moneyOn || salesOn || signalOn;
+
+  // Two COLUMNS, not a grid of rows: the cargo block carries one line per
+  // warehouse and is the tallest thing here, so in a row grid it stretched
+  // «Pul» beside it to its own height (an empty card) and pushed «Savdo» and
+  // the signals under it into a half-empty row (the owner's «oynab ketibti»
+  // after the deploy that added the warehouse list). Money, sales and
+  // signals stack on the left, cargo stands on the right. On a phone both
+  // wrappers are `display: contents`, so the blocks are the grid's own items
+  // again and `order` keeps the one-column order the phone always had.
   return (
-    <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2" data-testid="admin-dash">
-      {money && balance && flowToday && moneySnap && (
-        <section className="card min-w-0 !p-3" data-testid="adm-pul">
-          <Head href="/accounting/balance" icon="💰" title={t('money')}>
-            {usd(balance.cashUsd)}
-            {unratedTill && <span className="text-warn"> ⚠</span>}
-          </Head>
-          <div className="mt-1 space-y-0.5 text-xs">
-            <Row href="/accounting" label={t('todayFlow')}>
-              +{usd(flowToday.inflow)} · −{usd(flowToday.outflow)}
-              {/* A cost with no rate counts $0 in the day's outflow (U24). */}
-              {flowToday.unconverted.count > 0 && <span className="text-warn"> ⚠</span>}
-            </Row>
-            <Row href="/finance" label={t('debtors')}>
-              {usd(moneySnap.receivable)} · {moneySnap.debtors} {t('clientsShort')}
-            </Row>
-            <Row href="/kontragentlar" label={t('partnerDebt')}>
-              −{usd(balance.payableUsd)} · +{usd(balance.partnerReceivableUsd)}
-            </Row>
-            <Row href="/accounting" label={t('monthMoney')}>
-              {usd(moneySnap.revenueMonth)} / {usd(moneySnap.paidMonth)}
-            </Row>
-            {/* «Paid» is NET of what went back and counts what closed a debt
+    <div
+      className={`grid grid-cols-1 gap-2.5 ${cargoOn && leftOn ? 'sm:grid-cols-2 sm:items-start' : ''}`}
+      data-testid="admin-dash"
+    >
+      {leftOn && (
+        <div className="contents sm:order-1 sm:flex sm:min-w-0 sm:flex-col sm:gap-2.5">
+          {money && balance && flowToday && moneySnap && (
+            <section className="card order-1 min-w-0 !p-3 sm:order-none" data-testid="adm-pul">
+              <Head href="/accounting/balance" icon="💰" title={t('money')}>
+                {usd(balance.cashUsd)}
+                {unratedTill && <span className="text-warn"> ⚠</span>}
+              </Head>
+              <div className="mt-1 space-y-0.5 text-xs">
+                <Row href="/accounting" label={t('todayFlow')}>
+                  +{usd(flowToday.inflow)} · −{usd(flowToday.outflow)}
+                  {/* A cost with no rate counts $0 in the day's outflow (U24). */}
+                  {flowToday.unconverted.count > 0 && <span className="text-warn"> ⚠</span>}
+                </Row>
+                <Row href="/finance" label={t('debtors')}>
+                  {usd(moneySnap.receivable)} · {moneySnap.debtors} {t('clientsShort')}
+                </Row>
+                <Row href="/kontragentlar" label={t('partnerDebt')}>
+                  −{usd(balance.payableUsd)} · +{usd(balance.partnerReceivableUsd)}
+                </Row>
+                <Row href="/accounting" label={t('monthMoney')}>
+                  {usd(moneySnap.revenueMonth)} / {usd(moneySnap.paidMonth)}
+                </Row>
+                {/* «Paid» is NET of what went back and counts what closed a debt
                 in a firm's account — said beside it (U26), each part the
                 figure the cash flow and the register print. */}
-            <p className="pl-1 text-right text-2xs text-ink-500" data-testid="adm-paid-parts">
-              {td('monthPaidParts', {
-                till: usd(moneySnap.paidParts.toTill),
-                partner: usd(moneySnap.paidParts.viaPartner),
-                refunded: usd(moneySnap.paidParts.refunded),
-              })}
-            </p>
-            {plan && (
-              <Link
-                href="/accounting/reja"
-                className="-mx-1 block rounded-lg px-1 py-0.5 hover:bg-surface-sunken"
-                data-testid="adm-plan"
-              >
-                <span className="flex items-baseline justify-between gap-2">
-                  <span className="min-w-0 truncate text-ink-500">{t('plan')}</span>
-                  <span
-                    className={`whitespace-nowrap font-mono font-semibold tabular-nums ${plan.behind ? 'text-warn' : ''}`}
+                <p className="pl-1 text-right text-2xs text-ink-500" data-testid="adm-paid-parts">
+                  {td('monthPaidParts', {
+                    till: usd(moneySnap.paidParts.toTill),
+                    partner: usd(moneySnap.paidParts.viaPartner),
+                    refunded: usd(moneySnap.paidParts.refunded),
+                  })}
+                </p>
+                {plan && (
+                  <Link
+                    href="/accounting/reja"
+                    className="-mx-1 block rounded-lg px-1 py-0.5 hover:bg-surface-sunken"
+                    data-testid="adm-plan"
                   >
-                    {Math.round(plan.pct)}%
-                  </span>
-                </span>
-                <PlanMeter progress={plan} className="mt-1" />
-              </Link>
-            )}
-          </div>
-        </section>
+                    <span className="flex items-baseline justify-between gap-2">
+                      <span className="min-w-0 truncate text-ink-500">{t('plan')}</span>
+                      <span
+                        className={`whitespace-nowrap font-mono font-semibold tabular-nums ${plan.behind ? 'text-warn' : ''}`}
+                      >
+                        {Math.round(plan.pct)}%
+                      </span>
+                    </span>
+                    <PlanMeter progress={plan} className="mt-1" />
+                  </Link>
+                )}
+              </div>
+            </section>
+          )}
+
+          {sales && deals && decided && (
+            <section className="card order-3 min-w-0 !p-3 sm:order-none" data-testid="adm-savdo">
+              <Head href="/bitimlar" icon="🤝" title={t('sales')}>
+                {deals.count} · {usd(deals.usdSum)}
+              </Head>
+              <div className="mt-1 space-y-0.5 text-xs">
+                {deals.otherCurrency > 0 && (
+                  <p className="text-right text-2xs text-ink-500">
+                    +{deals.otherCurrency} {t('otherCurrency')}
+                  </p>
+                )}
+                <Row href="/crm/tahlil" label={t('monthDecided')}>
+                  <span className="text-good">{decided.won} ✓</span> ·{' '}
+                  <span className="text-bad">{decided.lost} ✗</span> · {usd(decided.wonUsd)}
+                  {decided.wonOtherCurrency > 0 && (
+                    <span className="text-ink-500">
+                      {' '}
+                      +{decided.wonOtherCurrency} {t('otherCurrency')}
+                    </span>
+                  )}
+                </Row>
+              </div>
+            </section>
+          )}
+
+          {signalOn && (
+            <section className="card order-5 min-w-0 !p-3 sm:order-none" data-testid="adm-signal">
+              <Head href="/admin" icon="🔔" title={t('signals')} />
+              <div className="mt-1 space-y-0.5 text-xs">
+                {backupState && (
+                  <Row
+                    href="/admin"
+                    label={t('backup')}
+                    dot={backupState === 'ok' ? 'good' : backupState === 'off' ? 'warn' : 'bad'}
+                  >
+                    {backupState === 'ok' ? (
+                      <span className="text-good">✓ {t('backupOk')}</span>
+                    ) : backupState === 'off' ? (
+                      <span className="text-warn">{t('backupOff')}</span>
+                    ) : (
+                      <span className="font-bold text-bad">⚠ {t('backupStale')}</span>
+                    )}
+                  </Row>
+                )}
+                {unsent !== null && (
+                  <Row
+                    href="/admin/notifications"
+                    label={t('unsent')}
+                    dot={unsent > 0 ? 'warn' : 'good'}
+                  >
+                    <span className={unsent > 0 ? 'font-bold text-warn' : 'text-good'}>
+                      {unsent}
+                    </span>
+                  </Row>
+                )}
+                {tasks && (
+                  <Row
+                    href="/reports/vazifalar"
+                    label={t('overdueTasks')}
+                    dot={tasks.overdue > 0 ? 'warn' : 'good'}
+                  >
+                    <span className={tasks.overdue > 0 ? 'font-bold text-warn' : 'text-good'}>
+                      {tasks.overdue}
+                    </span>{' '}
+                    · {tasks.dueToday} {t('dueTodayShort')}
+                  </Row>
+                )}
+              </div>
+            </section>
+          )}
+        </div>
       )}
 
       {cargo && cargoToday && (
-        <section className="card min-w-0 !p-3" data-testid="adm-yuk">
+        <section className="card order-2 min-w-0 !p-3 sm:order-2" data-testid="adm-yuk">
           <Head href="/stock" icon="📦" title={t('cargo')}>
             {round2(stockTotals.m3)} m³
           </Head>
@@ -240,7 +332,8 @@ export async function AdminDashboard({ actor }: { actor: Actor }) {
                 the home must agree with /dashboard and /transit meanwhile
                 (#440). */}
             <Row href="/transit" label={t('onRoad')}>
-              {(transit ?? []).length} {t('trucksShort')} · {num(pipeline?.road.boxes ?? transitBoxes)} 📦
+              {(transit ?? []).length} {t('trucksShort')} ·{' '}
+              {num(pipeline?.road.boxes ?? transitBoxes)} 📦
             </Row>
             <Row href="/receipts" label={t('todayReceipts')}>
               {cargoToday.receipts}
@@ -262,80 +355,15 @@ export async function AdminDashboard({ actor }: { actor: Actor }) {
         </section>
       )}
 
-      {sales && deals && decided && (
-        <section className="card min-w-0 !p-3" data-testid="adm-savdo">
-          <Head href="/bitimlar" icon="🤝" title={t('sales')}>
-            {deals.count} · {usd(deals.usdSum)}
-          </Head>
-          <div className="mt-1 space-y-0.5 text-xs">
-            {deals.otherCurrency > 0 && (
-              <p className="text-right text-2xs text-ink-500">
-                +{deals.otherCurrency} {t('otherCurrency')}
-              </p>
-            )}
-            <Row href="/crm/tahlil" label={t('monthDecided')}>
-              <span className="text-good">{decided.won} ✓</span> ·{' '}
-              <span className="text-bad">{decided.lost} ✗</span> · {usd(decided.wonUsd)}
-              {decided.wonOtherCurrency > 0 && (
-                <span className="text-ink-500">
-                  {' '}
-                  +{decided.wonOtherCurrency} {t('otherCurrency')}
-                </span>
-              )}
-            </Row>
-          </div>
-        </section>
-      )}
-
       {(perms.has('reports.all_warehouses') || perms.has('reports.own_warehouse')) && (
         <Link
           href="/dashboard"
-          className="card flex min-h-11 items-center justify-between gap-2 !p-3 text-sm font-semibold text-brand-700 hover:bg-surface-sunken sm:col-span-2"
+          className="card order-4 flex min-h-11 items-center justify-between gap-2 !p-3 text-sm font-semibold text-brand-700 hover:bg-surface-sunken sm:order-3 sm:col-span-2"
           data-testid="adm-dashboard-door"
         >
           <span>📊 {t('fullDashboard')}</span>
           <span aria-hidden>→</span>
         </Link>
-      )}
-
-      {(tasks || unsent !== null || backupState) && (
-        <section className="card min-w-0 !p-3" data-testid="adm-signal">
-          <Head href="/admin" icon="🔔" title={t('signals')} />
-          <div className="mt-1 space-y-0.5 text-xs">
-            {backupState && (
-              <Row
-                href="/admin"
-                label={t('backup')}
-                dot={backupState === 'ok' ? 'good' : backupState === 'off' ? 'warn' : 'bad'}
-              >
-                {backupState === 'ok' ? (
-                  <span className="text-good">✓ {t('backupOk')}</span>
-                ) : backupState === 'off' ? (
-                  <span className="text-warn">{t('backupOff')}</span>
-                ) : (
-                  <span className="font-bold text-bad">⚠ {t('backupStale')}</span>
-                )}
-              </Row>
-            )}
-            {unsent !== null && (
-              <Row href="/admin/notifications" label={t('unsent')} dot={unsent > 0 ? 'warn' : 'good'}>
-                <span className={unsent > 0 ? 'font-bold text-warn' : 'text-good'}>{unsent}</span>
-              </Row>
-            )}
-            {tasks && (
-              <Row
-                href="/reports/vazifalar"
-                label={t('overdueTasks')}
-                dot={tasks.overdue > 0 ? 'warn' : 'good'}
-              >
-                <span className={tasks.overdue > 0 ? 'font-bold text-warn' : 'text-good'}>
-                  {tasks.overdue}
-                </span>{' '}
-                · {tasks.dueToday} {t('dueTodayShort')}
-              </Row>
-            )}
-          </div>
-        </section>
       )}
     </div>
   );

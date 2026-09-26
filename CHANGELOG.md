@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## Bosh ekran to'g'irlandi — 2026-09-26
+
+Sizning xabaringiz: «glavni ekranda ui azgina oynab ketibti togirlab qoyish
+kerak». Migratsiya yo'q — ledger 107 da qoladi.
+
+- **Kompyuterda:** «Pul» kartasi yonidagi «Yuk» kartasi (har bir sklad bir
+  qator) bo'yiga cho'zilib, ichi bo'sh katta kartaga aylanardi, «Savdo» va
+  «Signallar» esa pastda yolg'iz qolardi. Endi ikki ustun: chapda pul,
+  savdo va signallar ketma-ket, o'ngda yuk, pastda «To'liq dashbord».
+- **Telefonda:** kartalar tartibi o'zgarmadi. Pastdagi tugmalarda nom so'z
+  o'rtasidan bo'linib ketardi («Календар‑ь», «Инвентари‑зация»). Endi belgi
+  tepada, nom ostida to'liq kenglikda — so'zlar butun o'qiladi. Faqat
+  «Администрирование» sig'maydi va chiziqcha bilan ikki qatorga bo'linadi.
+
 ## Dashboard, moliya auditi va sizning 29 ta javobingiz — 2026-09-25 / 26
 
 Sizning so'rovingiz: «balance, pnl va cashflow otchetlarni korishim kerak shular
