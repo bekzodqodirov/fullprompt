@@ -2886,6 +2886,15 @@ export const partners = pgTable(
     phone: text('phone'),
     note: text('note'),
     active: boolean('active').notNull().default(true),
+    /** Every debt is due this many days after it was written (0108). */
+    payWithinDays: integer('pay_within_days'),
+    /** What we let ourselves owe this firm, in dollars (0108). */
+    debtLimitUsd: numeric('debt_limit_usd', { precision: 14, scale: 2 }),
+    /** The due date the «N kun qoldi» / «muddati o'tdi» reminders went for. */
+    dueSoonAlertedFor: date('due_soon_alerted_for'),
+    overdueAlertedFor: date('overdue_alerted_for'),
+    /** When the «80 % of the limit» reminder went; cleared below it. */
+    limitAlertedAt: timestamp('limit_alerted_at', { withTimezone: true }),
     createdBy: uuid('created_by')
       .notNull()
       .references(() => users.id),

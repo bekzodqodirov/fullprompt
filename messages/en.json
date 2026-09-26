@@ -3237,7 +3237,15 @@
     "classifyFx": "Exchange difference",
     "classifyCorrection": "Correction",
     "alreadyClassified": "This adjustment already has a kind.",
-    "expenseChargeNote": "A debt an expense wrote — if the firm did not pay, void the expense itself on the Expenses page"
+    "expenseChargeNote": "A debt an expense wrote — if the firm did not pay, void the expense itself on the Expenses page",
+    "termsTitle": "Payment terms",
+    "payWithinDays": "Days each debt may wait",
+    "debtLimitUsd": "Debt limit ($)",
+    "termsHint": "An empty box clears the term. Three days before the due day, once it passes, and at 80 % of the limit, you and the accountant get a Telegram reminder.",
+    "termsInvalid": "Days — a whole number (1–3650); limit — a positive amount.",
+    "termsDue": "{usd} by {date} ({days} d)",
+    "termsOverdue": "Overdue since {date} — {usd}",
+    "termsLimit": "{pct}% of the limit ({limit})"
   },
   "lists": {
     "allRecords": "All",

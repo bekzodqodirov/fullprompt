@@ -3237,7 +3237,15 @@
     "classifyFx": "Kurs farqi",
     "classifyCorrection": "Tuzatish",
     "alreadyClassified": "Bu tuzatishning turi allaqachon aytilgan.",
-    "expenseChargeNote": "Xarajat bo‘yicha qarz — firma to‘lamagan bo‘lsa, «Xarajatlar» sahifasida xarajatning o‘zini bekor qiling"
+    "expenseChargeNote": "Xarajat bo‘yicha qarz — firma to‘lamagan bo‘lsa, «Xarajatlar» sahifasida xarajatning o‘zini bekor qiling",
+    "termsTitle": "To‘lov shartlari",
+    "payWithinDays": "Har bir qarz necha kunda to‘lanadi",
+    "debtLimitUsd": "Qarz chegarasi ($)",
+    "termsHint": "Bo‘sh qoldirsangiz, shart o‘chadi. Muddatga 3 kun qolganda, muddat o‘tganda va qarz chegaraning 80% iga yetganda sizga va buxgalterga Telegramda eslatma keladi.",
+    "termsInvalid": "Kun — butun son (1–3650), chegara — musbat summa.",
+    "termsDue": "{date} gacha {usd} ({days} kun)",
+    "termsOverdue": "Muddati o‘tdi ({date}) — {usd}",
+    "termsLimit": "Chegaraning {pct}% ({limit})"
   },
   "lists": {
     "allRecords": "Hammasi",

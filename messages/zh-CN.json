@@ -3237,7 +3237,15 @@
     "classifyFx": "汇兑差额",
     "classifyCorrection": "更正",
     "alreadyClassified": "此调整已注明类型。",
-    "expenseChargeNote": "费用产生的欠款——若该单位并未付款，请在「费用」页作废该费用本身"
+    "expenseChargeNote": "费用产生的欠款——若该单位并未付款，请在「费用」页作废该费用本身",
+    "termsTitle": "付款条件",
+    "payWithinDays": "每笔欠款几天内付清",
+    "debtLimitUsd": "欠款上限（$）",
+    "termsHint": "留空即取消条件。到期前 3 天、逾期后以及达到上限的 80% 时，您和会计会收到 Telegram 提醒。",
+    "termsInvalid": "天数为整数（1–3650），上限为正数金额。",
+    "termsDue": "{date} 前 {usd}（{days} 天）",
+    "termsOverdue": "已逾期（{date}）— {usd}",
+    "termsLimit": "上限的 {pct}%（{limit}）"
   },
   "lists": {
     "allRecords": "全部",
