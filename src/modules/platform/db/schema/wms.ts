@@ -637,6 +637,8 @@ export const batches = pgTable(
      * before this column existed honestly is — never «not cleared».
      */
     customsClearedAt: timestamp('customs_cleared_at', { withTimezone: true }),
+    /** «Partiya foydasi» lists only trucks a person marked (0107). */
+    profitTracked: boolean('profit_tracked').notNull().default(false),
     createdBy: uuid('created_by')
       .notNull()
       .references(() => users.id),

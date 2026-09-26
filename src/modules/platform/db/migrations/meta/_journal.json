@@ -750,6 +750,13 @@
       "when": 1785190000085,
       "tag": "0106_recurring_paid",
       "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1785190000086,
+      "tag": "0107_batch_profit_tracked",
+      "breakpoints": true
     }
   ]
 }

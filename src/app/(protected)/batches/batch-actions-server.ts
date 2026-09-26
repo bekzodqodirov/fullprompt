@@ -307,6 +307,34 @@ export async function setCustomsClearedAction(formData: FormData): Promise<void>
 }
 
 /**
+ * «Partiya» — whether this truck is one «Partiya foydasi» reads (0107). The
+ * owner's own words: the admin or the accountant marks it, so the gate is
+ * `finance.reports`, the grant the profit screen itself asks. Pressing again
+ * clears it; an explicit value from the form, not a toggle of what the row
+ * held, so a double press or a stale tab cannot flip it back.
+ */
+export async function setProfitTrackedAction(formData: FormData): Promise<void> {
+  const batchId = String(formData.get('batchId') ?? '');
+  const next = formData.get('tracked') === '1';
+  const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
+  if (!batch) return;
+  const actor = await authorize('finance.reports', {});
+  if (batch.profitTracked === next) return;
+  const meta = await requestMeta();
+  await db.update(batches).set({ profitTracked: next }).where(eq(batches.id, batchId));
+  const { writeAudit } = await import('@/modules/platform/audit/service');
+  await writeAudit(db, { actorId: actor.id, ...meta, warehouseId: batch.destWarehouseId }, {
+    entityType: 'batch',
+    entityId: batchId,
+    action: 'update',
+    before: { profitTracked: batch.profitTracked },
+    after: { profitTracked: next },
+  });
+  revalidatePath(`/batches/${batchId}`);
+  revalidatePath('/accounting/profit');
+}
+
+/**
  * Manual position pin for the tracking map ("still at the border") — the
  * simulation re-anchors from this moment. Tapping the active pin clears it.
  */

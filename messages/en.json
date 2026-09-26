@@ -1157,7 +1157,10 @@
     "customsPerReceipt": "Customs per receipt",
     "customsFromBatch": "As the truck says",
     "internalCosts": "Batch costs (internal leg)",
-    "noCostsWarn": "No costs are entered on this batch yet"
+    "noCostsWarn": "No costs are entered on this batch yet",
+    "profitTrackedOn": "Consignment — counted in «Profit by batch»",
+    "profitTrackedSet": "Mark as a consignment (for «Profit by batch»)",
+    "profitTrackedHint": "The «Profit by batch» report lists only the batches marked here."
   },
   "loading": {
     "title": "Loading",
@@ -1858,7 +1861,8 @@
     "balUnpricedGateOff": "The handover ban is off: cargo handed over unpriced is not in this line.",
     "balUnpricedDash": "ℹ️ The unpriced-cargo line — notes ({n}) on the balance page →",
     "balUnpricedQueueIn": "Cargo costs whose cash box is not named yet are in this line too: the balance already takes them off on «Cargo costs with no cash box», so when the accountant names the cash box the net position does not move.",
-    "unmergeErrStaffPaid": "This cost is marked as paid by a colleague out of pocket — cancel their debt on their staff card first, then undo the merge."
+    "unmergeErrStaffPaid": "This cost is marked as paid by a colleague out of pocket — cancel their debt on their staff card first, then undo the merge.",
+    "untrackedNote": "{count} truck(s) not marked as a consignment are left out of this table (revenue {revenue}, cost {cost}). The mark is set on the batch card."
   },
   "crm": {
     "title": "CRM",
