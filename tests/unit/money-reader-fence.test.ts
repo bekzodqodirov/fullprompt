@@ -46,6 +46,25 @@ const MONEY_READERS = [
   'listAccounts',
   'unbatchedMoney',
   'buildLandedCostXlsx',
+  // Review of the VED unit (C14/C21): the cached wrappers pages actually
+  // import, the readers the parallel units added after this list, the three
+  // report files, and the cost grid's own readers — the widest tannarx
+  // surface the VED can open.
+  'loadBalance',
+  'loadAging',
+  'loadTrips',
+  'loadGaps',
+  'cashReconciliation',
+  'pnlMonthParts',
+  'cashMonthParts',
+  'lossesInPeriod',
+  'buildPnlXlsx',
+  'buildCashFlowXlsx',
+  'buildProfitXlsx',
+  'receiptCostMatrix',
+  'batchScopeCostByType',
+  'batchCostSheet',
+  'costEntriesFor',
 ];
 
 /** A predicate that keeps the VED out of a money read. */
@@ -60,6 +79,10 @@ const GATES = [
   /upsaleScopeFor\(/,
   /sellerReportScopeFor\(/,
   /calcControlScopeFor\(/,
+  // Not a door but a sight: the cost readers take it as a REQUIRED argument
+  // and show the VED only what he typed (Q19 D1). Pinned precisely below for
+  // the grid, because a file passes this list on any mention.
+  /costSightFor\(/,
 ];
 
 /**
@@ -119,6 +142,14 @@ describe('every money reader under src/app keeps the VED out', () => {
       if (!GATES.some((gate) => gate.test(source))) offenders.push(`${path}: ${readers.join(', ')}`);
     }
     expect(offenders, 'money read with no gate that keeps the VED out').toEqual([]);
+  });
+
+  it('the cost grid hands BOTH its readers the actor’s own sight — never ALL_COSTS (review of the VED unit, C21)', () => {
+    const page = stripComments(readFileSync('src/app/(protected)/batches/[id]/xarajatlar/page.tsx', 'utf8'));
+    expect(page).toMatch(/const sight = costSightFor\(actor\);/);
+    expect(page).toMatch(/receiptCostMatrix\([\s\S]{0,160}?,\s*sight,?\s*\)/);
+    expect(page).toMatch(/batchScopeCostByType\(id, sight\)/);
+    expect(page).not.toMatch(/ALL_COSTS/);
   });
 
   it('each allow-listed file is still rendered only behind its gate', () => {
