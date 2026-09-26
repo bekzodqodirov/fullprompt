@@ -25,6 +25,7 @@ import { clientFeed } from '@/modules/wms/crm/feed';
 import { dealProfit, linkReceipt } from '@/modules/wms/deals/service';
 import { clientCargo, managedClients } from '@/modules/wms/finance/client-cargo';
 import { addCompensation, compensatedReceiptsAmong, lostCargoChargesOn } from '@/modules/wms/finance/compensation';
+import { uncoveredBoxesOn } from '@/modules/wms/finance/unpriced';
 import { signedUsd } from '@/modules/wms/finance/ledger-kinds';
 import {
   addTransaction,
@@ -466,12 +467,20 @@ describe('C6 — lowering the price in the same press keeps the truck, the deal 
     await expect(compensate(w, undefined, day('06', '12'), [{ chargeId: own.id, newAmount: 400 }])).rejects.toMatchObject({
       code: 'price_not_lower',
     });
+    const uncovered = async () =>
+      (await uncoveredBoxesOn(db, { kind: 'receipts', receiptIds: [w.receiptId] }, { landedOnly: false })).map(
+        (row) => row.boxId,
+      );
+    expect(await uncovered()).toEqual([]);
     await compensate(w, undefined, day('06', '12'), [{ chargeId: own.id, newAmount: 0 }]);
     const live = await db
       .select()
       .from(clientTransactions)
       .where(and(eq(clientTransactions.batchId, w.truckId), sql`voided_at IS NULL`));
     expect(live).toHaveLength(0);
+    // A price lowered to ZERO is still a price someone set (review of the
+    // comp unit): the carton that arrived is not «unpriced» for ever.
+    expect(await uncovered()).toEqual([]);
   });
 });
 

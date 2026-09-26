@@ -185,7 +185,7 @@ export function unpricedScopeSql(scope: UnpricedScope): SQL {
  * The CTEs every reader continues from: `u_box` (the cartons asked about,
  * with their landing and whether they were ever found back), `u_rcpt`,
  * `u_charge` (every live charge of those clients — the only money that can
- * cover), `u_touch` (per prixod and CHARGED truck: did a carton touch it,
+ * cover — plus a charge the lost-cargo door lowered to zero, `zeroed`), `u_touch` (per prixod and CHARGED truck: did a carton touch it,
  * did one ride it), `u_rc` (per prixod and charge: clauses 1-2), `u_pair`
  * (per carton and charge: clauses 3-4, and the «elsewhere» tag) and `u_cov`
  * (per carton: `covered`, and `elsewhere_tx` — the ids of the client's live
@@ -245,8 +245,17 @@ export function uncoveredCtes(boxScope: SQL, opts: { landedOnly: boolean }): SQL
        GROUP BY b.id, rl.id, r.id, rw.id
     ),
     u_rcpt AS (SELECT DISTINCT receipt_id, client_id, deal_id, received_in_uz FROM u_box),
+    -- A price the lost-cargo door lowered to ZERO is still a price someone
+    -- set (0105, Q15): the ledger cannot hold a $0 charge, so the door voids
+    -- it and writes nothing back — and the cargo that DID arrive became
+    -- «unpriced» for ever, gated at the counter with no door off the list
+    -- (review of the comp unit). Such a void is read off its own audit row
+    -- (\`repricedTo\` null, one indexed look per voided charge of these
+    -- clients) and covers like the price it was — never «elsewhere», which
+    -- would offer to move a row that no longer exists.
     u_charge AS (
       SELECT ct.id, ct.client_id, ct.batch_id, ct.deal_id, ct.amount_usd, ct.created_at,
+             (ct.voided_at IS NOT NULL) AS zeroed,
              -- An empty country is an unknown border, and an unknown border
              -- is treated as crossed (batches/internal.ts's own rule).
              CASE WHEN ct.batch_id IS NULL THEN NULL
@@ -255,8 +264,12 @@ export function uncoveredCtes(boxScope: SQL, opts: { landedOnly: boolean }): SQL
         LEFT JOIN batches cb ON cb.id = ct.batch_id
         LEFT JOIN warehouses co ON co.id = cb.origin_warehouse_id
         LEFT JOIN warehouses cd ON cd.id = cb.dest_warehouse_id
-       WHERE ct.type = 'charge' AND ct.voided_at IS NULL
+       WHERE ct.type = 'charge'
          AND ct.client_id IN (SELECT client_id FROM u_rcpt)
+         AND (ct.voided_at IS NULL OR EXISTS (
+               SELECT 1 FROM audit_log za
+                WHERE za.entity_type = 'client_transaction' AND za.entity_id = ct.id AND za.action = 'void'
+                  AND za.after->>'from' = 'compensation' AND za.after->'repricedTo' = 'null'::jsonb))
     ),
     u_ctruck AS (SELECT DISTINCT client_id, batch_id FROM u_charge WHERE batch_id IS NOT NULL),
     -- Which (prixod, CHARGED truck) pairs touched at all: a movement of the
@@ -307,7 +320,7 @@ export function uncoveredCtes(boxScope: SQL, opts: { landedOnly: boolean }): SQL
     -- counter unpriced (U03's money judge). The WHERE below may stay
     -- three-valued: NULL there is simply «not this pair».
     u_rc AS (
-      SELECT ur.receipt_id, uc.id AS charge_id, uc.batch_id, uc.crosses, uc.created_at,
+      SELECT ur.receipt_id, uc.id AS charge_id, uc.batch_id, uc.crosses, uc.created_at, uc.zeroed,
              (coalesce(ur.deal_id IS NOT NULL AND uc.batch_id IS NULL AND uc.deal_id = ur.deal_id, false)
                OR coalesce(t.rode, false)) AS names,
              (t.receipt_id IS NOT NULL) AS touched,
@@ -337,7 +350,7 @@ export function uncoveredCtes(boxScope: SQL, opts: { landedOnly: boolean }): SQL
              -- that belongs where it is. A void and re-entry after the find
              -- clears the tag for the same reason. Read only for a carton
              -- nothing covers.
-             rc.touched AND NOT (rc.rode AND ub.found_back AND EXISTS (
+             rc.touched AND NOT rc.zeroed AND NOT (rc.rode AND ub.found_back AND EXISTS (
                SELECT 1 FROM box_movements fb
                  JOIN batches fbt ON fbt.id = rc.batch_id
                 WHERE fb.box_id = ub.box_id
