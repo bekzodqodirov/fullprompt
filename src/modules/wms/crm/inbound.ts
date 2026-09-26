@@ -79,8 +79,11 @@ export interface InboundArrival {
    * a person on our own page, the other was posted by a platform — and only
    * the second can be misconfigured, which is the first thing anybody debugging
    * an advert wants to see in the arrivals ledger.
+   *
+   * `site` (round 113) is a website visitor who wrote to a manager's Telegram
+   * carrying the tag the website was handed — its external id is that tag.
    */
-  channel: 'form' | 'meta' | 'telegram' | 'webhook';
+  channel: 'form' | 'meta' | 'telegram' | 'webhook' | 'site';
   /** Validated against the allowlist; anything else becomes 'other'. */
   sourceKey?: string | null;
   /** Meta's leadgen id — the idempotency key. Absent for a form post. */
@@ -92,6 +95,20 @@ export interface InboundArrival {
   note?: string | null;
   /** The form's own questions as pairs — the tarjimon's raw material (0074). */
   fields?: { key: string; value: string }[] | null;
+  /**
+   * Whose this arrival already IS (round 113): the manager the website visitor
+   * is talking to on Telegram. The taqsimot does not run — re-routing a
+   * conversation somebody is in the middle of would hand the lead to a person
+   * who cannot see the chat.
+   */
+  ownerId?: string | null;
+  /**
+   * A lead this person is already known by without a phone number — the same
+   * Telegram user, attached to an open lead on somebody's account. Joined like
+   * the phone match below, and checked first: a website visitor's number is
+   * usually hidden, and without this every visit would be a fresh lead.
+   */
+  knownLeadId?: string | null;
 }
 
 export type InboundOutcome = 'created' | 'joined' | 'client' | 'dropped';
@@ -172,6 +189,17 @@ export async function inboundMatch(
     )
     .limit(2);
   return rows.length === 1 ? rows[0]! : null;
+}
+
+/** A lead by id, if it still stands on an OPEN stage — `inboundMatch`'s shape. */
+async function openLeadById(id: string): Promise<{ id: string; ownerId: string | null } | null> {
+  const [row] = await db
+    .select({ id: leads.id, ownerId: leads.ownerId })
+    .from(leads)
+    .innerJoin(leadStages, eq(leadStages.id, leads.stageId))
+    .where(and(eq(leads.id, id), eq(leadStages.kind, 'open')))
+    .limit(1);
+  return row ?? null;
 }
 
 /**
@@ -284,8 +312,11 @@ export async function landInboundLead(arrival: InboundArrival): Promise<InboundR
 
   // (1) The same person, still open. Joined rather than duplicated — and the
   // OWNER is left alone: whoever is already working this enquiry keeps it.
-  if (phone) {
-    const open = await inboundMatch(phone);
+  // A person known by their Telegram rather than their number first, then
+  // by the number.
+  const knownOpen = arrival.knownLeadId ? await openLeadById(arrival.knownLeadId) : null;
+  if (knownOpen || phone) {
+    const open = knownOpen ?? (await inboundMatch(phone!));
     if (open) {
       await addActivity(
         {
@@ -325,7 +356,9 @@ export async function landInboundLead(arrival: InboundArrival): Promise<InboundR
   // (round 96) and only for this branch on purpose: a client's question and a
   // joined enquiry already have their people, and re-routing them would take
   // work off whoever is mid-conversation.
-  const { ownerId } = await routeInboundOwner({ sourceKey, text: [name, note], volumeM3 });
+  const { ownerId } = arrival.ownerId
+    ? { ownerId: arrival.ownerId }
+    : await routeInboundOwner({ sourceKey, text: [name, note], volumeM3 });
   const lead = await createLead(
     {
       // `leadSchema` wants two characters and an advert may send none.

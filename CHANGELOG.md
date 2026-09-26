@@ -2,8 +2,10 @@
 
 ## Deploydan keyingi 5 ta bandingiz — 2026-09-26 (kechqurun)
 
-Migratsiya yo'q — ledger **110** da qoladi. Shuning uchun deploydan keyin sonni
-emas, `curl -s https://gsrwms.uz/api/version` dagi build vaqtini tekshiring.
+Bu raundning o'z migratsiyasi yo'q. Lekin undan oldin «Saytdan kelgan so'rov»
+raundi (pastda) merge qilingan, u **0110** migratsiyasini olib keladi. Shuning
+uchun bitta deploydan keyin ledger **111** bo'lishi kerak. Build vaqtini ham
+`curl -s https://gsrwms.uz/api/version` bilan tekshiring.
 
 1. **Telegramdagi xarita endi haqiqiy xarita.** Barmoq bilan kattalashtiriladi va
    suriladi, sahifa pastga ketib qolmaydi. Xarita ostida mijozning HAMMA
@@ -40,6 +42,110 @@ emas, `curl -s https://gsrwms.uz/api/version` dagi build vaqtini tekshiring.
    mashinadagi ulushi, hisoblangan narx va upsale. Tepada esa jami: bitimlar
    narxi, shu mashinadagi yuk uchun narx, hisoblangan narx va upsale. 5 % dan
    katta farq bo'lsa, tasdiqlash shu jamiga nisbatan so'raladi.
+
+## Saytdan kelgan so'rov → eng bo'sh menejerga — 2026-09-26
+
+Sizning so'rovingiz: «saytdan kelgan zaproslar hodimlar sotuv managerlari
+orasida taqsimlansin va hodimlarda belgilaylik qanday zaprosga kim javob
+beradi» va «telegrami ulangan bolmasa ham ularni usernamini kirgazadgan joy
+bolsin». **Migratsiya 0110.** U sizning 13 ta bandingiz (0107–0109) bilan
+bitta deployda chiqadi — **deploydan keyin ledger 111 bo'lishi kerak.**
+
+### Sayt uchun yo'riqnoma (sayt AI'siga beriladi)
+
+`docs/SAYT-TAQSIMOT.md` ning 1-bo'limi — saytni quradigan AI uchun to'liq
+yo'riqnoma: qaysi manzilga, qanday so'rash, javobni qanday ishlatish,
+Telegram'ni qanday ochish, tizim javob bermasa nima qilish. Har bir gapi
+kod bilan solishtirib tekshirildi. Tekshiruvda bitta kamchilik topildi va
+tuzatildi: sayt eski kodni qayta so'rasa, tizim 24 soatdan keyin ham yoki
+ishdan ketgan hodimni ham qaytarib berardi — endi bunday holatda «bo'sh
+javob» beradi va sayt o'z zaxira ro'yxatiga o'tadi.
+
+### Qanday ishlaydi
+
+- Saytdagi so'rovnoma oxirgi tugmada tizimdan «kimga yozsin?» deb so'raydi.
+  Tizim o'sha jamoadan **bugun eng kam so'rov olgan** hodimning Telegram
+  username'ini beradi. Mijoz shu hodimga saytdagi kod bilan yozadi
+  (masalan `GSR-7F3K2A9Q`).
+- Hodimning Telegrami tizimga **ulangan** bo'lsa, mijozning birinchi xabari
+  bilan **lid o'zi ochiladi**. Lid shu hodimniki bo'ladi, manbasi «sayt»
+  bo'ladi. Qolgan yozishmalar ham lid kartasida turadi.
+- Telegrami **ulanmagan** hodim uchun username'ni qo'lda yozasiz. Mijoz baribir
+  unga to'g'ri yozadi, lekin tizim bu chatni ko'rmaydi, shuning uchun lid o'zi
+  ochilmaydi.
+- «Bugun eng kam» deganda quyidagilar sanaladi:
+  - bugun berilgan va mijoz yozgan so'rovlar;
+  - hodim hali ko'ra olmaydigan so'rovlar;
+  - ko'rish mumkin bo'lgan, lekin 15 daqiqada mijoz yozmagan so'rovlar —
+    faqat o'sha 15 daqiqa davomida;
+  - shu kuni reklamadan unga tushgan lidlar.
+
+  Teng bo'lsa, oldingi so'rovni eng uzoq vaqt oldin olgan hodim oladi.
+- Jamoada bo'sh hodim bo'lmasa, avval «Umumiy» belgilanganlar, keyin saytga
+  belgilangan istalgan hodim oladi. Belgilanmagan hodimga hech qachon
+  berilmaydi. Hech kim bo'lmasa, sayt o'z ro'yxatidan beradi — mijoz
+  yo'qolmaydi.
+
+### Sozlash — Boshqaruv → «Arizalar taqsimoti» → «Saytdan so'rovlar»
+
+- Har bir hodimga uchta belgi bor: **Yig'ma yuk**, **Sotib olib berish**,
+  **Umumiy**. Telegrami ulanmaganlar uchun username yozadigan joy ham bor.
+- Hodim kartasida uning holati yoziladi:
+  - «Telegram ulangan» — lid o'zi ochiladi;
+  - «qo'lda yozilgan» — lid o'zi ochilmaydi;
+  - «username yo'q» — saytga berilmaydi.
+- **«Keyingi mijoz»** qatori har jamoa uchun keyingi mijoz aynan kimga
+  borishini ko'rsatadi.
+- **«So'nggi so'rovlar»:** oxirgi 20 ta so'rov va ularning natijasi — lid
+  ochildi / mijoz yozmadi / ko'rinmaydi.
+- **«Sayt uchun»** qismida saytga beriladigan manzil, ruxsat berilgan
+  sahifalar va zaxira ro'yxat bor. Zaxira ro'yxatni sayt o'zida saqlashi
+  kerak.
+
+### Xavfsizlik — nima qilinmaydi
+
+- Siz yoki hodim bir marta «qo'shmaslik» deb belgilagan chat, saytning kodi
+  bilan kelsa ham, qo'shilmaydi.
+- Hodim oldindan yozishib yurgan odam (oila, eski mijoz) kodni yuborsa ham,
+  lid ochilmaydi. Faqat **birinchi marta** yozgan odam hisobga olinadi.
+- Bitta kod faqat bitta odam uchun ishlaydi. Boshqa odam o'sha kodni yuborsa,
+  hech narsa bo'lmaydi.
+- So'rovni faqat sizning saytingiz bera oladi. Boshqa sahifadan kelgan so'rov
+  bo'sh javob oladi. Bir manzildan juda ko'p so'rov kelsa ham shunday. Bu
+  vaqtda skladdagi ekranlar sekinlashmaydi.
+- Tashrif buyuruvchining IP manzili saqlanmaydi.
+
+### Yo'l-yo'lakay tuzatildi
+
+- **Yutilgan lidning keyingi xabarlari mijoz kartasida chiqmas edi.** Lid
+  mijozga aylangandan keyin yozilgan xabarlar faqat lidda qolardi. Endi ular
+  mijoz kartasida ham ko'rinadi.
+- **Bugun kod olgan mijoz 10 daqiqagacha «notanish» bo'lib turardi.** Bunday
+  mijoz yozsa, uning chati «bu kim?» degan savollar ro'yxatiga tushib qolardi.
+  Endi tizim mijozlar ro'yxatini darhol qayta o'qiydi.
+
+### Deploy — MUHIM
+
+1. Avval backup.
+2. PR'ni merge qiling, keyin serverda `git pull`, `docker compose build
+   migrate app`, `docker compose up -d`.
+3. **Telegram tinglovchisini ham yangilang (bu safar majburiy):**
+   `docker compose --profile telegram up -d --build tg-listen`.
+   Buni qilmasangiz, panelda «Telegram tinglovchisi yangilanmagan» chiqadi va
+   hech bir lid o'zi ochilmaydi.
+4. Ledgerni sanang — **111** (0107–0109 va 0110 birga).
+5. Panelda hodimlarni belgilang va sayt sessiyasiga `docs/SAYT-TAQSIMOT.md`
+   dagi shartnomani bering (manzil: `https://gsrwms.uz/api/lead/assign`).
+
+### Hali qilinmagan (ataylab)
+
+- «Ta'tilda» degan tugma yo'q. Hodim ta'tilga chiqsa, uning belgilarini olib
+  qo'ying.
+- Saytdan kelgan lidlarning chatlari «Suhbatlar» ro'yxatida va «javob
+  kutmoqda» eslatmasida yo'q. Ular lid kartasida turadi — boshqa lid
+  chatlari kabi.
+- Mijozning telefoni yashirin bo'lsa, lidda faqat uning Telegram username'i
+  bo'ladi.
 
 ## Sizning 13 ta bandingiz — 2026-09-26
 

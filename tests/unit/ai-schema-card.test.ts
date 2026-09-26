@@ -6,6 +6,7 @@ import {
   EXCLUDED_TABLES,
   LEAD_SOURCES_GRANTED_COLUMNS,
   USERS_GRANTED_COLUMNS,
+  USERS_WITHHELD_COLUMNS,
   schemaCard,
 } from '@/modules/platform/ai/schema-card';
 import * as schema from '@/modules/platform/db/schema';
@@ -68,10 +69,16 @@ describe('the analyst schema card', () => {
     // And the granted sets really are the schema minus the secrets — a users
     // column added later must fail THIS line, not silently vanish for the
     // model.
+    // Anything withheld is withheld by NAME, with its reason beside the list.
     const allUserCols = Object.values(getTableColumns(schema.users)).map((c) => c.name);
-    expect(allUserCols.filter((c) => c !== 'password_hash' && c !== 'quick_pin_hash').sort()).toEqual(
+    const withheld: readonly string[] = USERS_WITHHELD_COLUMNS;
+    expect(allUserCols.filter((c) => !withheld.includes(c)).sort()).toEqual(
       [...USERS_GRANTED_COLUMNS].sort(),
     );
+    for (const column of withheld) {
+      expect(usersGrant).not.toContain(column);
+      expect(schemaCard(200)).not.toContain(column);
+    }
     const allSourceCols = Object.values(getTableColumns(schema.leadSources)).map((c) => c.name);
     expect(allSourceCols.filter((c) => c !== 'webhook_secret').sort()).toEqual(
       [...LEAD_SOURCES_GRANTED_COLUMNS].sort(),

@@ -562,7 +562,8 @@
       "ai_calc_reply_lenta": "将 AI 的估算同时写入卡片动态",
       "cost_kassa_since": "自此日起录入且未指定账户的费用进入会计待办（YYYY-MM-DD；留空 = 全部）",
       "unpriced_gate_since": "此时间之后由车辆运抵乌兹别克斯坦且未定价的货物须经许可方可交付（日期或时间；留空 = 关闭禁令）",
-      "fx_residue_auto": "账户按原币归零时，系统是否自动以汇兑差额结清美元余差。“否”——不再新建记录，已有记录继续维护。"
+      "fx_residue_auto": "账户按原币归零时，系统是否自动以汇兑差额结清美元余差。“否”——不再新建记录，已有记录继续维护。",
+      "lead_assign_origins": "允许询问「访客联系谁」的网页（以空格分隔，每个为 https://…）"
     },
     "driverApp": "司机应用",
     "callsApp": "通话应用",
@@ -2242,7 +2243,8 @@
     "dayBack": "仅我的",
     "wonOtherCurrency": "另有 {count} 笔为其他货币",
     "feedRefund": "退款给客户",
-    "feedCompensation": "给客户的赔偿"
+    "feedCompensation": "给客户的赔偿",
+    "doorAssign": "网站问卷：联系谁"
   },
   "navShort": {
     "home": "首页",
@@ -3380,7 +3382,47 @@
     "mapStale": "近期未出现",
     "mapUnmapped": "广告中出现的新问题",
     "mapManual": "手动添加问题",
-    "mapKeyPlaceholder": "表单里的问题名"
+    "mapKeyPlaceholder": "表单里的问题名",
+    "site": {
+      "title": "网站咨询",
+      "hint": "网站问卷结束时会询问「联系谁？」。我们返回所选团队中今天接到咨询最少的员工的 Telegram 用户名。访客带着网站给的代码联系该员工；若该员工的 Telegram 已接入系统，线索会自动创建。",
+      "teams": {
+        "cargo": "拼箱货物",
+        "buying": "代购",
+        "general": "通用"
+      },
+      "teamsHint": "团队中无人空闲时，先由勾选「通用」的人接，再由任何勾选了网站的人接。",
+      "usernameLabel": "Telegram 用户名",
+      "usernameHint": "用于 Telegram 未接入系统的员工。已接入账号的用户名会自动读取。",
+      "statusVerified": "@{handle} · Telegram 已接入",
+      "statusBlind": "@{handle} · 当前未连接——不会自动创建线索",
+      "statusTyped": "@{handle} · 手动填写——不会自动创建线索",
+      "statusNone": "无用户名——不提供给网站",
+      "statusStale": "Telegram 用户名长时间未核实——不提供给网站",
+      "listenerOutdated": "Telegram 监听程序未更新。在服务器上执行：docker compose --profile telegram up -d --build tg-listen",
+      "load": "今天：{n}",
+      "next": "下一位访客",
+      "nextNobody": "无人——网站使用自己的名单",
+      "nextWidened": "该团队无人空闲",
+      "others": "其他员工（{n}）",
+      "saved": "已保存",
+      "recent": "最近的咨询",
+      "recentEmpty": "暂无咨询。",
+      "offerWaiting": "未联系",
+      "offerBlind": "不可见——Telegram 未接入",
+      "offerClient": "客户 {code}",
+      "offerTook": "{name} 接手",
+      "contract": "供网站使用",
+      "contractUrl": "地址",
+      "contractOrigins": "允许的页面",
+      "contractFallback": "备用名单（请网站保存）",
+      "counters": "服务器启动以来：{answered} 次回答 · {nobody} 次无人 · {refused} 次拒绝",
+      "errors": {
+        "forbidden": "权限不足",
+        "bad_username": "用户名无效：以字母开头，5–32 个字符（字母、数字、_）。",
+        "username_taken": "该用户名已被其他员工使用。"
+      }
+    }
   },
   "assistant": {
     "title": "AI 助手",

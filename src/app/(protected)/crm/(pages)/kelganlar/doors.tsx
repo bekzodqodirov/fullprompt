@@ -31,6 +31,12 @@ export interface DoorView {
   botUrl: string | null;
   webhookUrl: string;
   secret: string | null;
+  /**
+   * The website's «who should they write to?» door (round 113) — only on the
+   * `sayt` row. Printed here too because this is the list of every address an
+   * advert or a page can be pointed at; the switches live on /admin/taqsimot.
+   */
+  assignUrl?: string | null;
 }
 
 export function InboundDoors({
@@ -61,6 +67,7 @@ export function InboundDoors({
           <p className="font-semibold">{door.name}</p>
           <Copyable label={t('doorForm')} value={door.formUrl} />
           {door.botUrl && <Copyable label={t('doorBot')} value={door.botUrl} />}
+          {door.assignUrl && <Copyable label={t('doorAssign')} value={door.assignUrl} />}
 
           {canManage && (
             <details className="rounded-xl border border-line p-2">
@@ -101,7 +108,15 @@ export function InboundDoors({
  * a fight and a long-press on an input is not. `select()` on focus so one tap
  * takes the whole thing.
  */
-function Copyable({ label, value, secret }: { label: string; value: string; secret?: boolean }) {
+export function Copyable({
+  label,
+  value,
+  secret,
+}: {
+  label: string;
+  value: string;
+  secret?: boolean;
+}) {
   const t = useTranslations('common');
   const [copied, setCopied] = useState(false);
   return (

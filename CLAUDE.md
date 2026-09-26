@@ -135,6 +135,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | Deployment | `docs/DEPLOY.md` |
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
 | The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batches 1-4 COMPLETE; 5 in progress |
+| Website visitor → least-busy manager (the site's contract) | `docs/SAYT-TAQSIMOT.md` — round 113, give the contract to the site's session verbatim |
 
 ## State — 2026-08-23
 
@@ -1820,8 +1821,39 @@ asks rastamojka/podklyuch — **decision 8 («no freight») is OVERTURNED**:
 podklyuch takes the zone as a button on the request INSERT and replies
 rastamojka · yo'lkira (LIST) · JAMI.
 
+**Round 113 — saytdan so'rov → eng bo'sh menejer (2026-09-26; DECISIONS
+#1056-#1064; migration 0110 `lead_assign`, ledger 111 — renumbered on the merge
+from 0107 / #1045-#1053, the FIFTEENTH collision, the other session's thirteen
+items took 0107-0109 and #1045-#1055 first; spec for the site in
+`docs/SAYT-TAQSIMOT.md`).** The website asks `GET /api/lead/assign` at its last
+button; the answer is ALWAYS `200 {"username": …|null}` (anything but a name =
+the site's own list). Least busy = units handed TODAY (Tashkent): confirmed
+offers + blind ones all day + seeable-but-unwritten for 15 min + advert leads
+the taqsimot routed — ONE `roster` query read by the route AND the panel;
+team → general → any ticked → null. Candidates: `users.lead_teams` + a handle
+(the listener's `tg_accounts.tg_username`, trusted 1 h after it was read, else
+the typed `users.telegram_username` — reachable, never captured). The door:
+origin first (setting `lead_assign_origins`, cached 60 s — a CSRF fence), then
+in-memory buckets (`site-assign-gate.ts`, IPv6 by /64), 4 in flight, 800 ms,
+one tx under `pg_advisory_xact_lock` + 400 ms statement timeout, no IP stored.
+The listener (`scripts/tg-listen.ts`): pure `siteTagAction` after
+`decideIncoming` (exclude/self/bot win; only «unknown person» verdicts land),
+`landSiteTag` = offer we issued ≤24 h, FIRST contact (`getMessages maxId`),
+claim bound to one Telegram person (`peer_id`, re-entrant for the same pair),
+`landInboundLead` with channel `site`, `ownerId` = the RECEIVER, `knownLeadId`
+= the same Telegram user on any open lead; the rule goes into the in-memory
+map in the same step; one conversation at a time (`serialised`); start-up
+sweep by global search; handle read before the first heartbeat + every 20 min
+(also the session probe) + `UpdateUserName`. Fixed on the way: a won lead's
+later messages never reached the client card (`storeIncoming` derives
+`client_id`), and the miss refresh had been dead since round 79 (keyed on
+`not_a_client`). **Deploy MUST rebuild tg-listen** or the panel says
+«tinglovchi yangilanmagan» and nothing lands. TRAP (#1063): a fixture's
+«20 minutes ago» at 00:05 Tashkent is yesterday — the file stands on a clock
+≥ 30 min into the Tashkent day.
+
 **Round — his five items after the 110 deploy (2026-09-26 evening; DECISIONS
-#1056-#1060; NO migration, ledger 110).** The Mini App map rebuilt on Leaflet
+#1065-#1069 — renumbered from #1056-#1060 on the merge, round 113 took them first; NO migration of its own, ledger 111 after 113's 0110).** The Mini App map rebuilt on Leaflet
 (pinch/pan, self-hosted basemap when present, every place LISTED even with no
 coordinates, Telegram swipes held while open) and `linkPhoneSiblings` joining
 one person's codes when the cabinet opens (never a revoked one); the staff
@@ -1833,8 +1865,11 @@ searches the GOODS of a client's non-voided prixods and lets the office
 un-tick; the pricing page shows EVERY deal of a client's cargo with totals and
 confirms against `expectedForDeals`.
 
-**Latest migration: 0109** (`client_broadcast`; ledger must reach **110**).
-Before it: 0108 (`partner_terms`), 0107 (`batch_profit_tracked`), **0106**
+**Latest migration: 0110** (`lead_assign` — the website teams, the typed and
+the read Telegram handle, the offer ledger, the `site` arrival channel; ledger
+must reach **111**; `when` …089, AFTER the other session's three, #1040).
+Before it: 0109 (`client_broadcast`), 0108 (`partner_terms`), 0107
+(`batch_profit_tracked`), **0106**
 (`recurring_paid` — the month a posting closes and
 the template's due-from; ledger 107). Before it: 0105
 (`compensation`), 0104 (`unpriced_gate`), 0103 (`fx_differences`), 0102
@@ -1948,8 +1983,9 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **110** since 0109 (his server confirmed 107 on 2026-09-26), and before that he last CONFIRMED 95 (2026-09-04),
-which means 0095-0106 are all pending and one deploy applies TWELVE of them.
+length — **111** since 0110, and his server last CONFIRMED **107** («deploy
+qildim 107 chiqdi», 2026-09-26), so the next deploy applies FOUR: the other
+session's 0107-0109 and this session's 0110.
 Never carry this number over from a previous session: read it
 (`ls src/modules/platform/db/migrations/*.sql | wc -l`) before writing the
 owner a step list, because the count is the only check that separates «the
