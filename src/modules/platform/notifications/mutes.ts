@@ -110,6 +110,8 @@ export const MUTE_GROUPS = {
     'ReceiptMeasureCorrected',
   ],
   operations: [
+    // A client's birthday (0109): a reminder to congratulate, not an alarm.
+    'ClientBirthday',
     'ReceiptConfirmed',
     'UnknownCargoReceived',
     'ReadyForPickup',

@@ -103,7 +103,8 @@
     "flowCalcOpen": "Calculations waiting",
     "flowCalcLate": "late",
     "flowUnplacedCosts": "Costs with no cash box",
-    "flowUnbilled": "Arrived cargo with no price: {n} receipts"
+    "flowUnbilled": "Arrived cargo with no price: {n} receipts",
+    "birthdays": "Birthdays today — congratulate them"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -479,7 +480,13 @@
     "refineSearch": "not all shown — narrow the search",
     "pageOf": "{from}–{to} / {total}",
     "pagePrev": "← Previous",
-    "pageNext": "Next →"
+    "pageNext": "Next →",
+    "birthday": "Birthday (contact person)",
+    "sector": "Trade",
+    "sectorPlaceholder": "e.g. clothing, construction",
+    "cargoKinds": "Cargo they bring (comma-separated)",
+    "cargoKindsPlaceholder": "e.g. clothes, shoes, appliances",
+    "cargoKindsKnown": "Already in use"
   },
   "users": {
     "title": "Employees",
@@ -3720,5 +3727,44 @@
     "from": "From (arrival day)",
     "empty": "✅ Every arrived cargo has a price",
     "more": "{n} more"
+  },
+  "broadcast": {
+    "title": "Telegram message to clients",
+    "birthdaysToday": "Birthdays today",
+    "age": "{n} years",
+    "congratulate": "Congratulate",
+    "audience": "To whom",
+    "codes": "Client codes (comma-separated) — empty: by the filters",
+    "sectors": "Trade",
+    "cargoKinds": "Cargo kind",
+    "language": "Language",
+    "seller": "Seller",
+    "anySeller": "Everyone",
+    "apply": "Show",
+    "clear": "Clear",
+    "countAll": "Every client linked to the bot: {n} chats",
+    "countFiltered": "Selected: {n} chats",
+    "whoGetsIt": "Who receives it",
+    "compose": "Message",
+    "bodyPlaceholder": "e.g. Juma muborak! …",
+    "attach": "Photo / file",
+    "uploading": "uploading…",
+    "uploadFailed": "Not uploaded: {name}",
+    "stickerNote": "A sticker cannot be sent from the system — Telegram does that only inside itself. Text, photos, video and files go.",
+    "send": "Send — {n} chats",
+    "confirm": "Send the message to {n} chats? A sent message cannot be taken back.",
+    "queued": "Queued: {n} chats. Progress below.",
+    "history": "Recent messages",
+    "progress": "{sent}/{total} delivered · {failed} failed",
+    "sending": "sending",
+    "error": {
+      "forbidden": "This page is the super admin’s only.",
+      "validation": "Invalid data.",
+      "empty": "Text or a file is needed.",
+      "no_recipients": "None of the selected clients is linked to the bot.",
+      "too_long": "The text is longer than 4096 characters.",
+      "too_many_files": "More than 10 files.",
+      "exists": "This message was already sent."
+    }
   }
 }

@@ -764,6 +764,13 @@
       "when": 1785190000087,
       "tag": "0108_partner_terms",
       "breakpoints": true
+    },
+    {
+      "idx": 109,
+      "version": "7",
+      "when": 1785190000088,
+      "tag": "0109_client_broadcast",
+      "breakpoints": true
     }
   ]
 }

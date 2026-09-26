@@ -1,3 +1,4 @@
+import { clientTagOptions } from '@/modules/platform/clients/service';
 import { desc, eq } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
@@ -70,6 +71,7 @@ export default async function ClientDetailPage({
   // card should not cost a settings read and a call to Telegram.
   const managers = canEdit ? await salesManagerOptions(client.salesManagerId) : [];
   const codePrefix = canEdit ? await getSetting('client_code_prefix') : '';
+  const tagOptions = canEdit ? await clientTagOptions() : { sectors: [], cargoKinds: [] };
   const cabinetLinks = canEdit
     ? await db
         .select()
@@ -162,7 +164,11 @@ export default async function ClientDetailPage({
               salesManagerId: client.salesManagerId ?? '',
               messengerNote: client.messengerNote ?? '',
               notes: client.notes ?? '',
+              birthday: client.birthday ?? '',
+              sector: client.sector ?? '',
+              cargoKinds: client.cargoKinds.join(', '),
             }}
+            tagOptions={tagOptions}
           />
         </>
       ) : (

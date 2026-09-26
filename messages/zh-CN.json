@@ -103,7 +103,8 @@
     "flowCalcOpen": "待核算",
     "flowCalcLate": "逾期",
     "flowUnplacedCosts": "未指定账户的费用",
-    "flowUnbilled": "已到达未定价货物：{n} 张入库单"
+    "flowUnbilled": "已到达未定价货物：{n} 张入库单",
+    "birthdays": "今天生日——记得祝贺"
   },
   "dashboard": {
     "title": "仪表盘",
@@ -479,7 +480,13 @@
     "refineSearch": "未显示全部 — 请细化搜索",
     "pageOf": "{from}–{to} / {total}",
     "pagePrev": "← 上一页",
-    "pageNext": "下一页 →"
+    "pageNext": "下一页 →",
+    "birthday": "生日（联系人）",
+    "sector": "行业",
+    "sectorPlaceholder": "例如：服装、建筑",
+    "cargoKinds": "常运货物（逗号分隔）",
+    "cargoKindsPlaceholder": "例如：服装、鞋类、家电",
+    "cargoKindsKnown": "已有"
   },
   "users": {
     "title": "员工",
@@ -3720,5 +3727,44 @@
     "from": "起始（到达日）",
     "empty": "✅ 所有到达货物均已定价",
     "more": "还有 {n} 条"
+  },
+  "broadcast": {
+    "title": "Telegram 群发给客户",
+    "birthdaysToday": "今天生日",
+    "age": "{n} 岁",
+    "congratulate": "祝贺",
+    "audience": "发送给",
+    "codes": "客户代码（逗号分隔）——留空则按筛选",
+    "sectors": "行业",
+    "cargoKinds": "货物类型",
+    "language": "语言",
+    "seller": "销售",
+    "anySeller": "全部",
+    "apply": "显示",
+    "clear": "清除",
+    "countAll": "所有已连接机器人的客户：{n} 个聊天",
+    "countFiltered": "已选：{n} 个聊天",
+    "whoGetsIt": "接收人",
+    "compose": "消息",
+    "bodyPlaceholder": "例如：周五快乐！…",
+    "attach": "照片 / 文件",
+    "uploading": "上传中…",
+    "uploadFailed": "上传失败：{name}",
+    "stickerNote": "贴纸无法从系统发送——Telegram 只允许在其内部发送。可发送文字、照片、视频和文件。",
+    "send": "发送 — {n} 个聊天",
+    "confirm": "向 {n} 个聊天发送消息？已发送的消息无法撤回。",
+    "queued": "已排队：{n} 个聊天。进度见下方。",
+    "history": "最近的消息",
+    "progress": "已送达 {sent}/{total} · 失败 {failed}",
+    "sending": "发送中",
+    "error": {
+      "forbidden": "此页面仅限超级管理员。",
+      "validation": "数据无效。",
+      "empty": "需要文字或文件。",
+      "no_recipients": "所选客户中没有连接机器人的。",
+      "too_long": "文字超过 4096 个字符。",
+      "too_many_files": "文件超过 10 个。",
+      "exists": "此消息已发送。"
+    }
   }
 }
