@@ -826,20 +826,21 @@ export async function scopeBoxIds(
         .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
         .where(and(eq(receiptLots.receiptId, entry.receiptId!), ne(boxes.status, 'void'), base));
     const aboard = await onTruck(truckBaseSql(entry.batchId, customs));
-    if (aboard.length) return aboard.map((r) => r.id);
-    // None rode it — and that is two different facts. Cartons that DEPARTED
-    // on it and were all found back at the origin never rode it: a ROAD
-    // cell must not land on them (the owner's Q2, «yolkira narxi
-    // yozilmasin»), or it rides with them to the next truck as «shu
-    // reysgacha» and the carton pays two trucks' road (audit U17 × U18). It
-    // stays on no box: `profitByBatch`'s ⚠ unallocated and the client tab's
-    // gaps name it on THIS truck, whose cost sheet still lists it for a void.
-    // A customs cell cannot get here that way — its base keeps the
-    // found-back cartons. Nothing of the prixod ever departed on it (a cell
-    // typed before loading, cargo short-loaded before it left): it stays on
-    // the prixod as before. The annul's empty-scope sweep leaves receipt
-    // cells alone (annul.ts), so an empty base here voids nobody's money.
-    if (!customs && (await onTruck(declaredFilter(entry.batchId)).limit(1)).length) return [];
+    // None of the prixod rode it (or, for customs, was declared on it): the
+    // cell lands on NO box. The grid takes a cell only while the prixod is on
+    // the truck, and until departure the live pointer keeps it aboard — so an
+    // empty base means the cargo LEFT the truck: found back at the origin,
+    // short-loaded, taken off the plan. Falling back to the whole prixod (the
+    // first versions did, for «a cell typed before loading» — a case that
+    // never reaches here) carried A's road and customs onto the cartons that
+    // stayed behind, to be billed again on truck B as «shu reysgacha» — the
+    // owner's Q2, «yolkira narxi yozilmasin» (audit U17 × U18, then the review
+    // of the second round for the short-load). It stays on no box:
+    // `profitByBatch`'s ⚠ unallocated, the client tab's gaps and the P&L's
+    // «no box» note name it on THIS truck, whose cost sheet lists it for a
+    // void or a correction. The annul's empty-scope sweep leaves receipt cells
+    // alone (annul.ts), so an empty base here voids nobody's money.
+    return aboard.map((r) => r.id);
   }
   if (entry.scope === 'receipt' && entry.receiptId) {
     // NOT the void ones. A lot-edit shrink voids the miscounted surplus, and

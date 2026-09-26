@@ -350,7 +350,7 @@ describe('U17 × U18 — a road cell of a prixod that never left does not ride o
     expect((await cargoRiskList('phantom', [W.yw])).map((row) => row.boxId)).not.toContain(p.boxIds[0]);
   });
 
-  it('a road cell typed before anything departed still stays on the prixod', async () => {
+  it('a road cell of a prixod short-loaded before the truck left lands on no box, and is named on that truck (review of wa2)', async () => {
     const c = await mkClient('B4');
     const lot = await mkLot(c, 2, 10, W.yw);
     const other = await mkLot(c, 1, 10, W.yw);
@@ -380,7 +380,11 @@ describe('U17 × U18 — a road cell of a prixod that never left does not ride o
       .select({ id: costEntries.id })
       .from(costEntries)
       .where(and(eq(costEntries.batchId, z.id), eq(costEntries.receiptId, lot.receiptId)));
-    expect(await allocated(cell!.id)).toBeCloseTo(40, 2);
+    // It pinned the whole-prixod fallback as intended: the cell stayed on the
+    // two cartons that never left Yiwu and rode the NEXT truck as «shu
+    // reysgacha» — Z's road billed twice (the owner's Q2 forbids it).
+    expect(await allocated(cell!.id)).toBe(0);
+    expect((await truckRow(z.id)).unallocatedUsd).toBe(40);
   });
 });
 
