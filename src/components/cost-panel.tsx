@@ -72,6 +72,7 @@ const PAYER_ERRORS = {
   amount_too_large: 'errAmountTooLarge',
   merged_cost: 'errMergedCost',
   merged_cost_ask: 'errMergedCostAsk',
+  cost_payer_changed: 'errPayerChanged',
 } as const;
 
 function payerErrorText(code: string | undefined, t: (key: string) => string): string {

@@ -113,6 +113,17 @@ describe('3 — kassa: /finance, the register, the ledger and its doors', () => 
     expect(who).toBeLessThan(body.indexOf("if (!mayPickTill(actor.permissions) && parsed.data.accountId) return { error: 'forbidden' };"));
   });
 
+  it('a non-holder’s payment must be in a currency some active kassa holds, or «Joylash» could never place it (review, C15)', () => {
+    const body = slice(read('src/app/(protected)/finance/actions.ts'), 'export async function addTransactionAction', 'const voidSchema');
+    const guard = body.indexOf("if (!mayPickTill(actor.permissions) && parsed.data.type === 'payment') {");
+    expect(guard).toBeGreaterThan(0);
+    const branch = body.slice(guard, body.indexOf("return { error: 'no_till_currency' };", guard));
+    expect(branch).toMatch(/eq\(moneyAccounts\.currency, parsed\.data\.currency\)/);
+    expect(branch).toMatch(/eq\(moneyAccounts\.active, true\)/);
+    expect(guard).toBeLessThan(body.indexOf('addTransaction(parsed.data'));
+    expect(read('src/app/(protected)/finance/[clientId]/tx-form.tsx')).toContain("state.error === 'no_till_currency'");
+  });
+
   it('placing a payment is the kassa holders’ act, asked after the grant and before the write', () => {
     const body = slice(read('src/app/(protected)/finance/actions.ts'), 'export async function placePaymentAction');
     const gate = body.indexOf('if (!mayPickTill(actor.permissions)) return;');
@@ -165,8 +176,9 @@ describe('4 — the partner card, the cost void, the assistant', () => {
     expect(refusal).toBeGreaterThan(body.indexOf('authorize('));
     expect(refusal).toBeLessThan(body.indexOf('await voidCostEntry('));
     expect(body).toContain("return { ok: false, error: 'cost_not_yours' };");
-    // The service re-judges the kassa in its claim, with the holder's door.
-    expect(body).toContain('{ mayMoveTill: mayPickTill(actor.permissions) },');
+    // The service re-judges the kassa AND the payer the door judged in its
+    // claim, with the holder's door (C19).
+    expect(body).toContain('{ mayMoveTill: mayPickTill(actor.permissions), payerSeen: entry.partnerId },');
     expect(read('src/components/cost-panel.tsx')).toContain("cost_not_yours: 'errCostNotYours',");
   });
 

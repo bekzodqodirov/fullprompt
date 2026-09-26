@@ -1,6 +1,9 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { and, eq } from 'drizzle-orm';
+import { db } from '@/modules/platform/db/client';
+import { moneyAccounts } from '@/modules/platform/db/schema';
 import { z } from 'zod';
 import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
 import { requestMeta } from '@/modules/platform/auth/session';
@@ -76,6 +79,20 @@ export async function addTransactionAction(
   // the Balans line, the register's view). A kassa posted by a non-holder is
   // a forged post: the form never draws the picker for him.
   if (!mayPickTill(actor.permissions) && parsed.data.accountId) return { error: 'forbidden' };
+  // …and only in money a kassa can hold: the register's «Joylash» lists the
+  // tills of the row's currency, so a VED payment in a currency with no
+  // active till was unplaceable for ever and sat on the Balans line and the
+  // accountant's counter with no door out (review of the VED unit). A holder
+  // cannot reach that state at all — her payment must name a till of its own
+  // currency.
+  if (!mayPickTill(actor.permissions) && parsed.data.type === 'payment') {
+    const [till] = await db
+      .select({ id: moneyAccounts.id })
+      .from(moneyAccounts)
+      .where(and(eq(moneyAccounts.currency, parsed.data.currency), eq(moneyAccounts.active, true)))
+      .limit(1);
+    if (!till) return { error: 'no_till_currency' };
+  }
   if (mayPickTill(actor.permissions)) {
     // A HOLDER's payment names the cash box it landed in (audit A2). One
     // saved with none took its amount off the Balans receivable and put it

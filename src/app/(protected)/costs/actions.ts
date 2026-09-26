@@ -239,7 +239,7 @@ export async function voidCostEntryAction(input: unknown): Promise<CostActionRes
       parsed.data.id,
       parsed.data.reason,
       { actorId: actor.id, ...meta },
-      { mayMoveTill: mayPickTill(actor.permissions) },
+      { mayMoveTill: mayPickTill(actor.permissions), payerSeen: entry.partnerId },
     );
   } catch (err) {
     if (err instanceof CostError) return { ok: false, error: err.code };

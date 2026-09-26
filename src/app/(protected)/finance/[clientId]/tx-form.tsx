@@ -250,7 +250,9 @@ export function TxForm({
       <input name="note" className="input" placeholder={t('note')} maxLength={2000} />
       {state.error && (
         <p role="alert" className="text-sm font-semibold text-bad">
-          {state.error === 'fx_missing'
+          {state.error === 'no_till_currency'
+            ? t('noTillCurrency')
+            : state.error === 'fx_missing'
             ? t('fxMissing')
             : state.error === 'account_currency_mismatch'
               ? t('accountCurrencyMismatch')

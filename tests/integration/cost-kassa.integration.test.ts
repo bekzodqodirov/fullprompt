@@ -205,6 +205,21 @@ describe("the accountant's queue", () => {
     expect(await tillBalance(usdTill)).toBe(tillBefore);
   });
 
+  it('a non-holder’s void re-judges the PAYER it saw: a colleague’s «o’z pulimdan» written after the look refuses it (review, C19)', async () => {
+    const id = await cost(35, 'USD');
+    // The door looked: no kassa, no payer. The accountant then answers the
+    // queue with a colleague's own pocket before the void's claim runs.
+    await setCostStaffPayer(id, staffPartnerId, ctx());
+    await expect(voidCostEntry(id, 'xato', ctx(), { mayMoveTill: false, payerSeen: null })).rejects.toMatchObject({
+      code: 'cost_payer_changed',
+    });
+    const [row] = await db.select({ voidedAt: costEntries.voidedAt }).from(costEntries).where(eq(costEntries.id, id));
+    expect(row!.voidedAt).toBeNull();
+    // What the door judged is what stands: the same void goes through.
+    const plain = await cost(36, 'USD');
+    await voidCostEntry(plain, 'xato', ctx(), { mayMoveTill: false, payerSeen: null });
+  });
+
   it('a counterparty-settled cost is never put into a kassa as well', async () => {
     const id = await cost(40, 'USD', { partnerId: firmId });
     await expect(setCostAccount(id, usdTill, undefined, ctx())).rejects.toMatchObject({

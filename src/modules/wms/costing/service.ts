@@ -617,6 +617,15 @@ export async function setCostStaffPayer(costId: string, partnerId: string, ctx: 
  */
 export interface CostVoidDoor {
   mayMoveTill: boolean;
+  /**
+   * The payer the door JUDGED (a non-holder's staff and firm gates live in
+   * the action's pre-read). The claim re-judges it: a payer written after
+   * that read — the accountant's «o'z pulimdan» answer, an unlocked UPDATE —
+   * refuses the void instead of voiding a colleague's staff debt with it
+   * (review of the VED unit). A non-holder caller that names none may void
+   * only a cost with no payer at all.
+   */
+  payerSeen?: string | null;
 }
 
 export async function voidCostEntry(id: string, reason: string, ctx: AuditContext, door: CostVoidDoor) {
@@ -679,6 +688,9 @@ export async function voidCostEntryInTx(
         isNull(costEntries.voidedAt),
         isNull(costEntries.mergedExpenseId),
         door.mayMoveTill ? undefined : isNull(costEntries.accountId),
+        door.mayMoveTill
+          ? undefined
+          : sql`${costEntries.partnerId} IS NOT DISTINCT FROM ${door.payerSeen ?? null}::uuid`,
       ),
     )
     .returning({ id: costEntries.id });
@@ -688,6 +700,7 @@ export async function voidCostEntryInTx(
       .select({
         voidedAt: costEntries.voidedAt,
         accountId: costEntries.accountId,
+        partnerId: costEntries.partnerId,
         merged: costEntries.mergedExpenseId,
       })
       .from(costEntries)
@@ -695,7 +708,8 @@ export async function voidCostEntryInTx(
     if (!now) throw new CostError('not_found');
     if (now.voidedAt) throw new CostError('already_voided');
     if (now.merged) throw new CostError('merged_cost');
-    throw new CostError('kassa_cost_needs_finance');
+    if (now.accountId) throw new CostError('kassa_cost_needs_finance');
+    throw new CostError('cost_payer_changed');
   }
   await tx.delete(costAllocations).where(eq(costAllocations.costEntryId, id));
   // A cancelled cost cannot leave a live debt behind it: the truck we are
@@ -1297,8 +1311,13 @@ export async function recomputeRiderChange(batchIds: (string | null | undefined)
         const { enqueue, JOB_RECOMPUTE_COSTS } = await import('../../platform/jobs/boss');
         await enqueue(JOB_RECOMPUTE_COSTS, { batchId });
       } catch (queueError) {
-        // The nightly repair (`orphaned`, which also finds a rider with no
-        // share of its truck) and `pnpm repair-riders` are the last nets.
+        // The last nets are NOT symmetric (review of the riders unit): the
+        // nightly `orphaned` sweep finds a rider with NO share of its truck
+        // (U25), but a found-back carton still holding the truck's road share
+        // is a split whose shares add up — no clause sees it, and it stays
+        // until somebody runs `pnpm repair-riders --apply` (whose dry run
+        // lists it) or the truck's money is re-saved. A re-split that fails
+        // deterministically fails its five retries the same way.
         console.error('[costing] rider re-split retry could not be queued', why, batchId, queueError);
       }
     }
