@@ -1868,7 +1868,12 @@
     "balUnpricedDash": "ℹ️ The unpriced-cargo line — notes ({n}) on the balance page →",
     "balUnpricedQueueIn": "Cargo costs whose cash box is not named yet are in this line too: the balance already takes them off on «Cargo costs with no cash box», so when the accountant names the cash box the net position does not move.",
     "unmergeErrStaffPaid": "This cost is marked as paid by a colleague out of pocket — cancel their debt on their staff card first, then undo the merge.",
-    "untrackedNote": "{count} truck(s) not marked as a consignment are left out of this table (revenue {revenue}, cost {cost}). The mark is set on the batch card."
+    "untrackedNote": "{count} truck(s) not marked as a consignment are left out of this table (revenue {revenue}, cost {cost}). The mark is set on the batch card.",
+    "pnlMarginShort": "Margin",
+    "pnlVsPriorNone": "none in the prior period",
+    "pnlVsPrior": "▲▼ — against {from} — {to} (the same days).",
+    "pnlByMonth": "By month: revenue and costs",
+    "pnlDetail": "Full table — every line, every month"
   },
   "crm": {
     "title": "CRM",

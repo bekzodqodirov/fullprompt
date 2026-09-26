@@ -60,6 +60,9 @@ test('accountant keeps the books and the reports add up', async ({ page }) => {
 
   // …and in the P&L, under the category it was booked to.
   await page.goto(`/accounting/pnl?from=${year}-01-01&to=${today}`);
+  // The headline figures first (his item 10); every line is one tap down.
+  await expect(page.getByTestId('pnl-kpi-net')).toBeVisible();
+  await page.getByTestId('pnl-detail-toggle').click();
   await expect(page.getByText(`Test xarajat ${runId}`)).toBeVisible();
 
   // Every report downloads as a real workbook.
