@@ -517,6 +517,10 @@ describe('the three states before payable', () => {
     const price = job.floor + 600;
     const offer = await recordOffer({ versionId: job.versionId }, { clientPriceUsd: price, locale: 'uz' }, sellerCtx());
     expect((await mine(offer.id))!.state).toBe('no_invoice');
+    // The door asks the screen's own state rule (review): a posted id is
+    // not paid while the job has no invoice…
+    const pay = () => payUpsale([offer.id], { accountId, currency: 'USD', expenseDate: today() }, ctx());
+    await expect(pay()).rejects.toMatchObject({ code: 'offer_not_payable' });
 
     await db.insert(clientTransactions).values({
       clientId,
@@ -531,6 +535,8 @@ describe('the three states before payable', () => {
       createdBy: actorId,
     });
     expect((await mine(offer.id))!.state).toBe('awaiting_payment');
+    // …nor while the client has not paid it.
+    await expect(pay()).rejects.toMatchObject({ code: 'offer_not_payable' });
 
     await db.insert(clientTransactions).values({
       clientId,

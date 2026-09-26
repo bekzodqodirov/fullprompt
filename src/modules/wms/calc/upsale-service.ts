@@ -373,12 +373,41 @@ export async function payUpsale(
     ids.map((offerId) => sql`${offerId}::uuid`),
     sql`, `,
   );
-  const quoted = await db.execute<{ id: string; payable_usd: string; offered_by: string }>(sql`
-    SELECT p.id, p.payable_usd, p.offered_by
+  // …and by the STATE rule the screen draws the tick from (review of the
+  // comp unit): «a job whose price was taken back pays no commission» and
+  // «the client has not paid yet» lived in upsaleStateOf alone, so a posted
+  // id — a stale tab, a forged post — paid a commission the screen would
+  // not have offered. The same two sums, the same balances, the same word.
+  const quoted = await db.execute<{
+    id: string;
+    payable_usd: string;
+    offered_by: string;
+    payout_at: Date | null;
+    entity_type: string;
+    client_price_usd: string;
+    client_id: string | null;
+    charged_usd: string | null;
+    compensated_usd: string | null;
+  }>(sql`
+    SELECT p.id, p.payable_usd, p.offered_by, p.payout_at, p.entity_type, p.client_price_usd,
+           d.client_id, inv.charged AS charged_usd, inv.compensated AS compensated_usd
       FROM (${payableOffersSql()}) p
+      LEFT JOIN deals d ON d.id = p.entity_id AND p.entity_type = 'deal'
+      LEFT JOIN LATERAL (
+        SELECT coalesce(sum(ct.amount_usd) FILTER (WHERE ct.type = 'charge'), 0) AS charged,
+               coalesce(sum(ct.amount_usd) FILTER (WHERE ct.type = 'compensation'), 0) AS compensated
+          FROM client_transactions ct
+         WHERE ct.deal_id = p.entity_id AND ct.voided_at IS NULL AND ct.type IN ('charge', 'compensation')
+      ) inv ON p.entity_type = 'deal'
      WHERE p.id IN (${idList}) AND p.payout_expense_id IS NULL
   `);
   if (quoted.length !== ids.length) throw new CalcError('offer_not_payable');
+  const stateBalances = await balancesForClients(
+    quoted.map((q) => q.client_id).filter((x): x is string => Boolean(x)),
+  );
+  if (quoted.some((q) => upsaleStateOf(q, q.client_id ? stateBalances.get(q.client_id) : undefined) !== 'payable')) {
+    throw new CalcError('offer_not_payable');
+  }
 
   const sellers = new Set(quoted.map((q) => q.offered_by));
   // One expense names one employee. Paying two sellers on one row puts both
