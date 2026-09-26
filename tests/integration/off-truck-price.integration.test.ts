@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
   attachments,
+  batches,
   boxes,
   clientNotices,
   clientTransactions,
@@ -311,6 +312,8 @@ describe('Q21 — a price whose cargo was left at loading', () => {
     expect(view.totals.noCargoUsd).toBe(650);
     expect(batchRow.noCargoChargeUsd).toBe(view.totals.noCargoUsd);
     expect(tripTotals([batchRow]).noCargo).toBe(650);
+    // The corridor reads only trucks marked «Partiya» (0107).
+    await db.update(batches).set({ profitTracked: true }).where(eq(batches.id, t.id));
     const route = (await profitByRoute(today(), today())).find((row) => row.route === batchRow.route)!;
     expect(route.noCargoChargeUsd).toBeGreaterThanOrEqual(650);
 

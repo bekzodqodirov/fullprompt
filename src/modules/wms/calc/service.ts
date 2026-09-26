@@ -173,6 +173,15 @@ export interface CalcRequestInput {
    * ordinary case; assuming the worse case would quote every job high.
    */
   hasCertificate?: boolean;
+  /**
+   * The tariff zone, when the person who collected the job CHOSE it (the AI
+   * podklyuch door's «qayerdan?» buttons, item 13). Written on the INSERT and
+   * not after it: the prefill pass is queued by the landing, and a zone set
+   * one statement later loses the race and prices the road as «zona
+   * tanlanmagan». A zone the tariff no longer has is dropped to NULL — the
+   * seal's own `zone_required` then asks for one, in words.
+   */
+  freightZone?: string | null;
 }
 
 const num = (value: number | null | undefined): string | null =>
@@ -214,6 +223,15 @@ export async function openCalcRequest(
     .select({ n: sql<number>`count(*)::int` })
     .from(calcRequests)
     .where(and(eq(calcRequests.requestedBy, ctx.actorId), openRequests));
+  // Pooled, so BEFORE the transaction (#714). Dynamic: dictionaries imports
+  // this module for CalcError.
+  let freightZone: string | null = null;
+  if (input.freightZone) {
+    const { onDate, tariffZones } = await import('./dictionaries');
+    freightZone = (await tariffZones(onDate())).includes(input.freightZone)
+      ? input.freightZone
+      : null;
+  }
   if (Number(mine[0]?.n ?? 0) >= MAX_OPEN_PER_REQUESTER) throw new CalcError('too_many_open');
 
   // The materials. On the card path the note is written HERE, with the id the
@@ -310,6 +328,7 @@ export async function openCalcRequest(
         volumeM3: num(input.volumeM3),
         source: input.source,
         hasCertificate: input.hasCertificate ?? true,
+        freightZone,
         noteId,
         takenAt: assigneeId ? new Date() : null,
         dueAt,

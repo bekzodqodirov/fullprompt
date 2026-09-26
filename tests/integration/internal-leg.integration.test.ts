@@ -85,6 +85,9 @@ async function mintBatch(code: string, origin: string, dest: string, over: Parti
     status: 'in_transit',
     departedAt: new Date(Date.now() - 10 * 24 * 3600 * 1000),
     createdBy: actorId,
+    // Marked «Partiya» (0107): this file is about how the profit tables
+    // read a truck, and they read only marked ones.
+    profitTracked: true,
     ...over,
   });
   madeBatches.push(id);
@@ -443,7 +446,12 @@ describe('one truck, one profit (R2a)', () => {
       return out;
     };
     for (const view of ['batch', 'route'] as const) {
-      const rows = view === 'batch' ? await profitByBatch(iso(-20), iso(0)) : await profitByRoute(iso(-20), iso(0));
+      // The file's set (0107): trucks marked «Partiya» — another file's
+      // unmarked truck in the same window is named in a note, not a row.
+      const rows =
+        view === 'batch'
+          ? (await profitByBatch(iso(-20), iso(0))).filter((row) => row.tracked)
+          : await profitByRoute(iso(-20), iso(0));
       const totals = tripTotals(rows);
       const table = await read(view);
       const head = table.findIndex((row) => row.includes(`${L.cost} $`));
@@ -471,7 +479,9 @@ describe('one truck, one profit (R2a)', () => {
     const across = rows.find((entry) => entry.batchId === exportBatch)!;
     const inside = rows.find((entry) => entry.batchId === internalBatch)!;
     const sum = (route: string, pick: (entry: (typeof rows)[number]) => number) =>
-      Math.round(rows.filter((entry) => entry.route === route).reduce((a, entry) => a + pick(entry), 0) * 100) / 100;
+      Math.round(
+        rows.filter((entry) => entry.route === route && entry.tracked).reduce((a, entry) => a + pick(entry), 0) * 100,
+      ) / 100;
 
     const acrossRoute = routes.find((entry) => entry.route === across.route)!;
     expect(acrossRoute.internal).toBe(false);

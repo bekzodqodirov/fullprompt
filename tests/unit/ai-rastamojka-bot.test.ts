@@ -1,6 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { escapesIntake, parseCallback } from '@/modules/platform/telegram/staff-bot';
+import { AI_ZONE_ROUTES } from '@/modules/platform/telegram/staff-handlers';
+import { OWNER_TARIFF_ZONES } from '@/modules/wms/calc/tariff-seed';
+import { ZONE_ROUTE } from '@/modules/wms/calc/prefill';
 
 /**
  * The «🤖 AI rastamojka» door (the owner's own words, 2026-09-05).
@@ -21,7 +24,18 @@ const read = (p: string) =>
 
 describe('the callback vocabulary', () => {
   it('carries the AI door, the restart twins, the certificate and the skip', () => {
-    for (const step of ['ai', 'go_ai', 'go_rastamojka', 'cert', 'skip']) {
+    for (const step of [
+      'ai',
+      'go_ai',
+      'go_rastamojka',
+      'cert',
+      'skip',
+      // Item 13: the podklyuch door, its restart twin and the two zones.
+      'aipk',
+      'go_aipk',
+      'zone_cn',
+      'zone_kashgar',
+    ]) {
       expect(parseCallback(`c:${step}`), step).toEqual({ kind: 'calc', step });
     }
   });
@@ -36,11 +50,29 @@ describe('the callback vocabulary', () => {
 describe('the rules a shell cannot exercise', () => {
   const handlers = read('src/modules/platform/telegram/staff-handlers.ts');
 
-  it('the AI door fixes the section to rastamojka — the machine never quotes freight', () => {
-    // The owner's decision 8. A `startIntake(chatId, 'ai')` would be a
-    // section the whole engine does not have, and a podklyuch one would put
-    // a freight figure in a reply that promises not to carry one.
+  it('the AI door opens rastamojka OR podklyuch — never a section the engine lacks', () => {
+    // Decision 8 («no freight») was overturned by the owner on 2026-09-26
+    // (item 13): «ai» is still rastamojka, and «aipk» is podklyuch, which
+    // carries the road. A `startIntake(chatId, 'ai')` would be a section the
+    // whole engine does not have.
     expect(handlers).toContain("startIntake(chatId, opening === 'ai' ? 'rastamojka' : opening");
+    expect(handlers).toContain("startIntake(chatId, 'podklyuch', { ai: true })");
+  });
+
+  it('every zone button is a zone of his tariff, and the reply names each one', () => {
+    // A button for a zone the tariff lacks would store NULL (openCalcRequest
+    // drops it) and quote «zona tanlanmagan» after the seller chose one.
+    const zones = Object.values(AI_ZONE_ROUTES).map((r) => r.zone);
+    expect([...zones].sort()).toEqual([...OWNER_TARIFF_ZONES].sort());
+    for (const z of zones) expect(ZONE_ROUTE[z], z).toBeTruthy();
+  });
+
+  it('the zone travels from the collection to the request row', () => {
+    const bot = read('src/modules/platform/telegram/staff-bot.ts');
+    expect(bot).toContain('freightZone: state.route?.zone ?? null');
+    expect(read('src/modules/wms/calc/intake-land.ts')).toContain(
+      'freightZone: input.freightZone ?? null',
+    );
   });
 
   it('a live collection is never replaced without asking', () => {

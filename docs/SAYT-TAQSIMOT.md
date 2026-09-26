@@ -3,7 +3,7 @@
 The owner's ask: «saytdan kelgan zaproslar hodimlar sotuv managerlari orasida
 taqsimlansin va hodimlarda belgilaylik qanday zaprosga kim javob beradi», plus
 «telegrami ulangan bolmasa ham ularni usernamini kirgazadgan joy bolsin».
-Decisions #1045-#1053. Migration 0107 (`lead_assign`, ledger 108).
+Decisions #1056-#1064. Migration 0110 (`lead_assign`, ledger 111).
 
 Section 1 is the spec for the AI that builds the website (gsrlogistics.uz).
 **Give it to that AI verbatim.** Every sentence in it was checked against the
@@ -285,7 +285,7 @@ addEventListener('pageshow', (e) => {
 - **Nobody in the team:** `general`, then anybody ticked for the website at
   all, then `null`. Never somebody unticked.
 - **A repeated code** answers the same person while the offer can still land
-  (24 h) and that person is active; otherwise `null` (#1053).
+  (24 h) and that person is active; otherwise `null` (#1064).
 
 ## 3. What happens when the visitor writes
 

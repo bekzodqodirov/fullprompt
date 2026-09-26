@@ -165,6 +165,8 @@ export async function landIntake(input: {
   leadPhone: string | null;
   /** The seller's certificate answer (the AI-rastamojka door's one toggle). */
   hasCertificate?: boolean;
+  /** The zone the seller chose on the AI podklyuch door («qayerdan?»). */
+  freightZone?: string | null;
   /** What the intake's model call cost — recorded once the request exists. */
   usage?: { model: string; inputTokens: number; outputTokens: number } | null;
 }): Promise<IntakeTarget> {
@@ -238,6 +240,7 @@ export async function landIntake(input: {
         source: 'bot',
         hasMaterials: input.fileCount > 0,
         hasCertificate: input.hasCertificate ?? true,
+        freightZone: input.freightZone ?? null,
       },
       { actorId: input.collectedBy },
     );

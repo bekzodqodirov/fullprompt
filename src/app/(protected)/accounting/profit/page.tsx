@@ -9,6 +9,7 @@ import {
   profitByBatch,
   profitByClient,
   profitByRoute,
+  untrackedTrips,
   unbatchedMoney,
 } from '@/modules/wms/accounting/reports';
 import { resolvePeriod } from '@/modules/wms/accounting/period';
@@ -50,12 +51,16 @@ export default async function ProfitPage({
     { key: 'route', label: t('profitRoute') },
   ];
 
+  // One truck read for both truck tabs; the table shows only the trucks a
+  // person marked «Partiya» (0107), and what it left out is said below it.
+  const trips = view === 'client' ? null : await profitByBatch(from, to);
+  const untracked = trips ? untrackedTrips(trips) : null;
   const rows =
     view === 'batch'
-      ? await profitByBatch(from, to)
+      ? trips!.filter((row) => row.tracked)
       : view === 'client'
         ? await profitByClient(from, to)
-        : await profitByRoute(from, to);
+        : await profitByRoute(from, to, trips!);
 
   const [gaps, unbatched, clientGaps] = await Promise.all([
     pnlGaps(from, to),
@@ -261,6 +266,25 @@ export default async function ProfitPage({
           </table>
         </div>
       </div>
+      {untracked && untracked.count > 0 && (
+        <details className="card !p-3 text-sm text-ink-700" data-testid="profit-untracked">
+          <summary className="cursor-pointer">
+            ℹ️{' '}
+            {t('untrackedNote', {
+              count: untracked.count,
+              revenue: `$${usd(untracked.revenueUsd)}`,
+              cost: `$${usd(untracked.costUsd)}`,
+            })}
+          </summary>
+          <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 font-mono text-xs">
+            {untracked.rows.map((row) => (
+              <Link key={row.batchId} href={`/batches/${row.batchId}`} className="text-brand-700">
+                {row.code}
+              </Link>
+            ))}
+          </p>
+        </details>
+      )}
       {anyInternal && (
         <p className="text-xs text-ink-500" data-testid="profit-internal-note">
           {t('internalRowsNote')}

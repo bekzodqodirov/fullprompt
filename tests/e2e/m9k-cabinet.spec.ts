@@ -140,6 +140,41 @@ test('a tampered blob is refused, whatever the webview claims', async ({ page })
 const PAYLOAD = {
   locale: 'ru',
   totals: { boxes: 10, weightKg: 68.5, volumeM3: 1.02, balanceUsd: 250 },
+  // Item 11: where the cargo is — one truck on the road, one warehouse.
+  map: [
+    {
+      key: 'truck:b1',
+      kind: 'truck',
+      name: 'Kashgar → Andijan',
+      x: 74.6,
+      y: 39.6,
+      live: false,
+      route: [
+        { x: 75.98, y: 39.47 },
+        { x: 73.91, y: 39.68 },
+        { x: 72.34, y: 40.78 },
+      ],
+      remainingDays: [2, 4],
+      boxes: 6,
+      kg: 41.1,
+      m3: 0.612,
+      lots: [{ lotId: 'lot-1', letter: 'A', productNameZh: '手机壳', productNameRu: 'Чехлы', boxes: 6, kg: 41.1, m3: 0.612 }],
+    },
+    {
+      key: 'warehouse:w1',
+      kind: 'warehouse',
+      name: 'Yiwu',
+      x: 120.07,
+      y: 29.3,
+      live: false,
+      route: [],
+      remainingDays: null,
+      boxes: 4,
+      kg: 27.4,
+      m3: 0.408,
+      lots: [{ lotId: 'lot-1', letter: 'A', productNameZh: '手机壳', productNameRu: 'Чехлы', boxes: 4, kg: 27.4, m3: 0.408 }],
+    },
+  ],
   clients: [
     {
       id: 'c1',
@@ -317,6 +352,24 @@ test('the other two tabs carry the money and the history', async ({ page }) => {
   // Money: what was paid, never a charge.
   await expect(page.getByTestId('cab-payments')).toContainText('+300 USD');
   await expect(page.getByTestId('cab-payments')).not.toContainText('250');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+    await page.evaluate(() => window.innerWidth),
+  );
+});
+
+test('the map shows the truck and the warehouse, and a tap lists what of theirs is there (item 11)', async ({ page }) => {
+  await cabinetWithData(page);
+  await page.getByTestId('cab-map-open').click();
+  await expect(page.getByTestId('cab-map-screen')).toBeVisible();
+  // The first place is picked on open: the truck, by its road and days.
+  const sheet = page.getByTestId('cab-map-sheet');
+  await expect(sheet).toContainText('Kashgar → Andijan');
+  await expect(sheet).toContainText('~2–4');
+  await expect(sheet).toContainText('Чехлы');
+  await page.getByTestId('cab-map-warehouse').click();
+  await expect(sheet).toContainText('Yiwu');
+  await expect(sheet).toContainText('27.4');
+  // Nothing wider than the phone.
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
     await page.evaluate(() => window.innerWidth),
   );

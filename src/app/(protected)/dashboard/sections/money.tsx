@@ -171,8 +171,12 @@ export async function MoneySection({
   const agingDiffers = Math.abs(agingSum.balance - balance.receivableUsd) > 0.01;
 
   // ── C5: trucks ───────────────────────────────────────────────────────────
-  const totals = tripTotals(trips);
-  const recent = [...trips]
+  // «Partiya foydasi»'s set (0107): the trucks a person marked. The
+  // attention list still reads every truck — a price missing is a problem on
+  // any truck, marked or not.
+  const partiya = trips.filter((row) => row.tracked);
+  const totals = tripTotals(partiya);
+  const recent = [...partiya]
     .filter((row) => !row.internal)
     .sort((a, b) => new Date(b.departedAt ?? 0).getTime() - new Date(a.departedAt ?? 0).getTime())
     .slice(0, 12);

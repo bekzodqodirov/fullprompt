@@ -1,3 +1,4 @@
+import { cabinetMap, type CabinetMapPlace } from './map';
 import { verifyInitData, type InitDataResult } from '@/modules/platform/telegram/init-data';
 import {
   clientsForChat,
@@ -71,6 +72,8 @@ export interface CabinetPayload {
   }[];
   locale: string | null;
   totals: { boxes: number; weightKg: number; volumeM3: number; balanceUsd: number };
+  /** Where the cargo is, for the map (item 11) — only this chat's own. */
+  map: CabinetMapPlace[];
 }
 
 /**
@@ -80,10 +83,12 @@ export interface CabinetPayload {
  * a client on a warehouse-town mobile connection should pay for one round trip
  * and then swipe between tabs instantly.
  *
- * What is deliberately NOT here: landed cost, margin, the truck's position and
- * anything belonging to another client. The first two sit one join away in
- * `cost_allocations` and would turn the cabinet into a leak of what the
- * company earns; the third is the owner's explicit instruction for now.
+ * What is deliberately NOT here: landed cost, margin and anything belonging
+ * to another client. The first two sit one join away in `cost_allocations`
+ * and would turn the cabinet into a leak of what the company earns. The
+ * truck's position IS here since item 11 (2026-09-26), as `cabinetMap` draws
+ * it — the owner's round-98 condition («until every client can see their own
+ * cargo on a real map») is what that map is.
  */
 export async function cabinetPayload(auth: CabinetAuth & { ok: true }): Promise<CabinetPayload> {
   const clients = await Promise.all(
@@ -121,5 +126,8 @@ export async function cabinetPayload(auth: CabinetAuth & { ok: true }): Promise<
   totals.volumeM3 = Math.round(totals.volumeM3 * 1000) / 1000;
   totals.balanceUsd = Math.round(totals.balanceUsd * 100) / 100;
 
-  return { clients, locale: auth.locale, totals };
+  // Every code this chat holds, on one map — its own cargo and nobody else's.
+  const map = await cabinetMap(auth.clients.map((c) => c.id));
+
+  return { clients, locale: auth.locale, totals, map };
 }

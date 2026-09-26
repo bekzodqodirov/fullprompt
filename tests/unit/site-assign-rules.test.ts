@@ -30,7 +30,7 @@ describe('the tag has ONE shape', () => {
     // Three definitions (route, listener, CHECK) is how a tag passes the route
     // and dies on the INSERT. The route reads LEAD_TAG_RE, the listener reads
     // it through findLeadTag, and this holds the database to the same text.
-    const sql = readFileSync('src/modules/platform/db/migrations/0107_lead_assign.sql', 'utf8');
+    const sql = readFileSync('src/modules/platform/db/migrations/0110_lead_assign.sql', 'utf8');
     const check = /tag text NOT NULL UNIQUE CHECK \(tag ~ '([^']+)'\)/.exec(sql)?.[1];
     expect(check).toBeDefined();
     expect(check).toBe(LEAD_TAG_RE.source);

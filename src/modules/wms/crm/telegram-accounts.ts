@@ -45,7 +45,7 @@ export async function saveAccount(input: {
         historyBackfilledAt: null,
         // The handle belongs to the account that WAS connected. A new login
         // may be a different Telegram altogether, and until the listener
-        // reads the new one the website must not be sent to the old (0107).
+        // reads the new one the website must not be sent to the old (0110).
         tgUsername: null,
         tgUsernameCheckedAt: null,
         updatedAt: new Date(),
@@ -134,7 +134,7 @@ export async function disconnectAccount(managerUserId: string): Promise<boolean>
       status: 'signed_out',
       sessionEnc: null,
       lastError: 'disconnected by the manager',
-      // No connection, no handle to vouch for (0107) — the website stops
+      // No connection, no handle to vouch for (0110) — the website stops
       // sending visitors here on the next question, not an hour later.
       tgUsername: null,
       tgUsernameCheckedAt: null,

@@ -1,9 +1,9 @@
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
-import { batches, currencies } from '@/modules/platform/db/schema';
+import { batches, currencies, deals } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { inScope } from '@/modules/platform/rbac/scope';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
@@ -26,6 +26,9 @@ import { BackLink } from '@/components/back-link';
 import { LightboxImg } from '@/components/lightbox-img';
 import { MoveChargeForm } from '@/app/(protected)/finance/move-charge-form';
 import { PricingForm } from './pricing-form';
+import { upsaleScopeFor } from '@/modules/wms/calc/upsale-scope';
+import { bothFiguresForDeals } from '@/modules/wms/calc/upsale-service';
+import { expectedPriceFor } from '@/modules/wms/finance/deal-price-hint';
 import { PageHeader } from '@/components/ui/page';
 
 /**
@@ -120,6 +123,39 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
       ? Promise.resolve([] as OffTruckPrice[])
       : offTruckPrices(db, { clientIds }).then((rows) => pricedElsewhereFor(rows, id)),
   ]);
+  // The price the seller SOLD at (his item 7): the deal's quote, and — for
+  // the owner and the accountant only (law 4: the VED who computed the floor
+  // never reads a client price) — the floor and the upsale. Fetched only for
+  // the readers who will see it.
+  const dealPriceSight = !internal && upsaleScopeFor(actor) === 'all';
+  const groupDealIds = [...new Set(view.clients.map((group) => group.dealId).filter((x): x is string => Boolean(x)))];
+  const [dealQuotes, dealFigures] =
+    dealPriceSight && groupDealIds.length > 0
+      ? await Promise.all([
+          db
+            .select({
+              id: deals.id,
+              amount: deals.quotedAmount,
+              currency: deals.quotedCurrency,
+              m3: deals.quotedVolumeM3,
+              kg: deals.quotedWeightKg,
+            })
+            .from(deals)
+            .where(inArray(deals.id, groupDealIds)),
+          bothFiguresForDeals(groupDealIds),
+        ])
+      : [[], new Map<string, { floorUsd: number; clientPriceUsd: number }>()];
+  const quoteOf = new Map(
+    dealQuotes.map((row) => [
+      row.id,
+      {
+        amount: row.amount === null ? null : Number(row.amount),
+        currency: row.currency,
+        m3: row.m3 === null ? null : Number(row.m3),
+        kg: row.kg === null ? null : Number(row.kg),
+      },
+    ]),
+  );
   const droppedHere = new Map(offHere.filter((row) => row.kind === 'partial').map((row) => [row.clientId, row]));
   const noCargoHere = new Map(offHere.filter((row) => row.kind === 'no_cargo').map((row) => [row.clientId, row]));
   const codesOf = (row: OffTruckPrice) => row.droppedTo.map((d) => d.code).join(', ') || '—';
@@ -494,12 +530,54 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                 → {t('priceAlsoToDeal', { code: group.dealCode })}
               </p>
             )}
+            {(() => {
+              const quote = group.dealId ? quoteOf.get(group.dealId) : undefined;
+              if (!quote || quote.amount === null) return null;
+              const expected = expectedPriceFor(quote, { m3: group.m3, kg: group.kg });
+              const figures = group.dealId ? dealFigures.get(group.dealId) : undefined;
+              return (
+                <div className="rounded-lg border border-line bg-surface p-2 text-xs" data-testid="pricing-deal-price">
+                  <p>
+                    📋{' '}
+                    {t('dealSoldAt', {
+                      code: group.dealCode ?? '',
+                      price: `${quote.currency === 'USD' ? '$' : ''}${quote.amount.toFixed(2)}${quote.currency === 'USD' ? '' : ` ${quote.currency ?? ''}`}`,
+                      // The measure the quote was for, only when it has one.
+                      measure:
+                        quote.m3 !== null || quote.kg !== null
+                          ? ` (${[quote.m3 !== null ? `${quote.m3} m³` : null, quote.kg !== null ? `${quote.kg} kg` : null]
+                              .filter(Boolean)
+                              .join(', ')})`
+                          : '',
+                    })}
+                  </p>
+                  {expected !== null && (
+                    <p className="font-semibold" data-testid="pricing-deal-expected">
+                      {t('dealExpectedHere', { usd: money(expected) })}
+                    </p>
+                  )}
+                  {figures && (
+                    <p className="text-ink-500" data-testid="pricing-deal-upsale">
+                      {t('dealFloorUpsale', {
+                        floor: money(figures.floorUsd),
+                        upsale: money(Math.max(0, figures.clientPriceUsd - figures.floorUsd)),
+                      })}
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
             {!internal && (
               <PricingForm
                 clientId={group.clientId}
                 batchId={id}
                 currencies={currencyCodes}
                 today={today}
+                expectedUsd={
+                  group.dealId && quoteOf.get(group.dealId)
+                    ? expectedPriceFor(quoteOf.get(group.dealId)!, { m3: group.m3, kg: group.kg })
+                    : null
+                }
               />
             )}
           </div>

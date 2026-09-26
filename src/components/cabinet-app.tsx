@@ -11,6 +11,7 @@ import {
   type ClientLabels,
 } from '@/modules/platform/telegram/client-labels';
 import type { CabinetPayload } from '@/modules/wms/client-cabinet/miniapp';
+import { CabinetMap } from './cabinet-map';
 
 /**
  * What the customer sees (owner: "kubi kilosi soni rasimi hammasini to'liq
@@ -26,8 +27,8 @@ import type { CabinetPayload } from '@/modules/wms/client-cabinet/miniapp';
  * it: the app's own colours, its haptics, its back button, and a first paint
  * that already has the shape of the answer.
  *
- * Deliberately absent: where the truck is. The owner asked for that to wait
- * until every client can see their own cargo on a real map.
+ * Where the truck is arrived with the map (item 11, 2026-09-26) — the owner's
+ * own condition for it: every client sees THEIR cargo on it, and only theirs.
  */
 
 type Tab = 'cargo' | 'balance' | 'history';
@@ -84,6 +85,7 @@ export function CabinetApp() {
   const [state, setState] = useState<State>({ kind: 'loading' });
   const [tab, setTab] = useState<Tab>('cargo');
   const [zoom, setZoom] = useState<string | null>(null);
+  const [mapOpen, setMapOpen] = useState(false);
 
   const load = useCallback(async (blob: string, hint?: string) => {
     // No blob at all means the page was opened in an ordinary browser rather
@@ -142,18 +144,19 @@ export function CabinetApp() {
   useEffect(() => {
     const back = webApp()?.BackButton;
     if (!back) return;
-    if (!zoom) {
+    if (!zoom && !mapOpen) {
       back.hide?.();
       return;
     }
-    const close = () => setZoom(null);
+    // One back press closes the innermost thing: a photo over the map first.
+    const close = () => (zoom ? setZoom(null) : setMapOpen(false));
     back.onClick?.(close);
     back.show?.();
     return () => {
       back.offClick?.(close);
       back.hide?.();
     };
-  }, [zoom]);
+  }, [zoom, mapOpen]);
 
   // Until the client's own choice arrives with the data, Telegram's own
   // interface language is the best guess at what they read.
@@ -184,6 +187,19 @@ export function CabinetApp() {
         <div className="cab-title">
           <span>{t.appTitle}</span>
           <small>{data.clients.map((c) => c.clientCode).join(' · ')}</small>
+          {data.map.length > 0 && (
+            <button
+              type="button"
+              className="cab-map-open"
+              data-testid="cab-map-open"
+              onClick={() => {
+                tap('open');
+                setMapOpen(true);
+              }}
+            >
+              {t.mapOpen}
+            </button>
+          )}
         </div>
         <div className="cab-totals">
           <div className="cab-total">
@@ -263,6 +279,22 @@ export function CabinetApp() {
           </section>
         ))}
       </div>
+
+      {mapOpen && (
+        <div className="cab-map-screen" data-testid="cab-map-screen">
+          <div className="cab-map-bar">
+            <b>{t.mapTitle}</b>
+            <button type="button" className="cab-map-close" aria-label={t.close} onClick={() => setMapOpen(false)}>
+              ✕
+            </button>
+          </div>
+          <CabinetMap
+            places={data.map}
+            t={t}
+            goodsName={(lot) => lot.productNameRu?.trim() || lot.productNameZh}
+          />
+        </div>
+      )}
 
       {zoom && (
         <button

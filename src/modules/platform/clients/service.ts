@@ -1,3 +1,4 @@
+import { calendarDay } from '../time/tashkent';
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../db/client';
@@ -31,6 +32,13 @@ export const newClientSchema = z.object({
   salesManagerId: z.string().uuid().optional(),
   messengerNote: z.string().trim().max(500).optional(),
   notes: z.string().trim().max(2000).optional(),
+  /** The contact person's birthday, a real calendar day (0109). */
+  birthday: z
+    .string()
+    .refine((v) => v === '' || calendarDay(v) !== null)
+    .optional(),
+  sector: z.string().trim().max(120).optional(),
+  cargoKinds: z.array(z.string().trim().min(1).max(80)).max(20).default([]),
   active: z.boolean().default(true),
 });
 export type NewClientInput = z.input<typeof newClientSchema>;
@@ -143,6 +151,9 @@ export async function createClient(rawInput: NewClientInput, ctx: AuditContext) 
     salesManagerId: input.salesManagerId || null,
     messengerNote: input.messengerNote || null,
     notes: input.notes || null,
+    birthday: input.birthday || null,
+    sector: input.sector || null,
+    cargoKinds: input.cargoKinds,
     active: input.active,
   };
 
@@ -161,4 +172,33 @@ export async function createClient(rawInput: NewClientInput, ctx: AuditContext) 
   await autoLinkClientToVerifiedChats(row.id, ctx.actorId).catch(() => {});
 
   return row;
+}
+
+/**
+ * The words already in use for a client's trade and cargo (0109) — offered
+ * back on the form so «kiyim», «Kiyim» and «kiyim-kechak» converge on one,
+ * which is what makes the broadcast's filter worth anything.
+ */
+export async function clientTagOptions(): Promise<{ sectors: string[]; cargoKinds: string[] }> {
+  const [sectors, kinds] = await Promise.all([
+    db.execute<{ v: string }>(sql`
+      SELECT DISTINCT sector AS v FROM clients WHERE sector IS NOT NULL AND active ORDER BY 1 LIMIT 300`),
+    db.execute<{ v: string }>(sql`
+      SELECT DISTINCT unnest(cargo_kinds) AS v FROM clients WHERE active ORDER BY 1 LIMIT 300`),
+  ]);
+  return { sectors: sectors.map((r) => r.v), cargoKinds: kinds.map((r) => r.v) };
+}
+
+/** «kiyim, poyabzal , kiyim» → ['kiyim', 'poyabzal']: trimmed, blanks and repeats dropped. */
+export function splitTags(raw: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const part of raw.split(',')) {
+    const tag = part.trim().replace(/\s+/g, ' ');
+    const key = tag.toLocaleLowerCase('ru');
+    if (!tag || seen.has(key)) continue;
+    seen.add(key);
+    out.push(tag);
+  }
+  return out;
 }

@@ -1803,8 +1803,28 @@ shaped copy). PROCESS: #1040 (migration `when` order across parallel packages �
 a db migrated to 0106 before 0103-0105 skips them silently; every local db was
 rebuilt). Subagents hit their weekly limit mid-review; the fixes were done solo.
 
+**Round — his thirteen items of 2026-09-26 (DECISIONS #1045-#1055; migrations
+0107-0109 — ledger must reach 110; PR #89).** Receive wizard takes a note and no
+money; `batches.profit_tracked` (0107, default false — «Partiya foydasi» reads
+only marked trucks, the attention list reads all); the seller's upsale is paid
+× `cargo_factor` = confirmed receipts' m³ (kg on a per-kg band) ÷ quoted, state
+`no_cargo`, and `sellerCargo` is the KPI by China receipt day; the pricing page
+shows the deal price scaled to the truck with a >5 % confirmation
+(`finance/deal-price-hint.ts`, law 4 gated); partner terms + limit with FIFO
+due dates and once-guarded reminders (0108); the P&L's five cards with ▲▼ vs
+`priorPeriod`; client birthday/sector/cargo kinds, `/admin/xabarlar` broadcast
+(super_admin ROLE, one message per CHAT, pg-boss batches of 20) and birthday
+alerts (0109); the Mini App map (`cabinetMap` — never a batch code, never
+another client); the staff bot's client answer with road + days and a
+«🗺 Xaritada» URL button to `/map?mijoz=` (batch readers only); and the AI door
+asks rastamojka/podklyuch — **decision 8 («no freight») is OVERTURNED**:
+podklyuch takes the zone as a button on the request INSERT and replies
+rastamojka · yo'lkira (LIST) · JAMI.
+
 **Round 113 — saytdan so'rov → eng bo'sh menejer (2026-09-26; DECISIONS
-#1045-#1053; migration 0107 `lead_assign`, ledger 108; spec for the site in
+#1056-#1064; migration 0110 `lead_assign`, ledger 111 — renumbered on the merge
+from 0107 / #1045-#1053, the FIFTEENTH collision, the other session's thirteen
+items took 0107-0109 and #1045-#1055 first; spec for the site in
 `docs/SAYT-TAQSIMOT.md`).** The website asks `GET /api/lead/assign` at its last
 button; the answer is ALWAYS `200 {"username": …|null}` (anything but a name =
 the site's own list). Least busy = units handed TODAY (Tashkent): confirmed
@@ -1828,13 +1848,16 @@ sweep by global search; handle read before the first heartbeat + every 20 min
 later messages never reached the client card (`storeIncoming` derives
 `client_id`), and the miss refresh had been dead since round 79 (keyed on
 `not_a_client`). **Deploy MUST rebuild tg-listen** or the panel says
-«tinglovchi yangilanmagan» and nothing lands. TRAP (#1052): a fixture's
+«tinglovchi yangilanmagan» and nothing lands. TRAP (#1063): a fixture's
 «20 minutes ago» at 00:05 Tashkent is yesterday — the file stands on a clock
 ≥ 30 min into the Tashkent day.
 
-**Latest migration: 0107** (`lead_assign` — the website teams, the typed and
+**Latest migration: 0110** (`lead_assign` — the website teams, the typed and
 the read Telegram handle, the offer ledger, the `site` arrival channel; ledger
-must reach **108**). Before it: **0106** (`recurring_paid` — the month a posting closes and
+must reach **111**; `when` …089, AFTER the other session's three, #1040).
+Before it: 0109 (`client_broadcast`), 0108 (`partner_terms`), 0107
+(`batch_profit_tracked`), **0106**
+(`recurring_paid` — the month a posting closes and
 the template's due-from; ledger 107). Before it: 0105
 (`compensation`), 0104 (`unpriced_gate`), 0103 (`fx_differences`), 0102
 (`business_targets` — the monthly plan). Before them: **0101** (`kassa_refund` — the refund kind, the cost's kassa
@@ -1947,8 +1970,9 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **108** since 0107, and his server last CONFIRMED **107** («deploy
-qildim 107 chiqdi», 2026-09-26), so the next deploy applies one (0107).
+length — **111** since 0110, and his server last CONFIRMED **107** («deploy
+qildim 107 chiqdi», 2026-09-26), so the next deploy applies FOUR: the other
+session's 0107-0109 and this session's 0110.
 Never carry this number over from a previous session: read it
 (`ls src/modules/platform/db/migrations/*.sql | wc -l`) before writing the
 owner a step list, because the count is the only check that separates «the

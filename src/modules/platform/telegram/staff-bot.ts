@@ -278,6 +278,12 @@ const CALC_STEPS = [
   'go_rastamojka',
   'go_podklyuch',
   'go_ai',
+  // Item 13: the AI door asks rastamojka or podklyuch, and a podklyuch job
+  // asks where the road starts — the tariff's two zones, as buttons.
+  'aipk',
+  'go_aipk',
+  'zone_cn',
+  'zone_kashgar',
   'cert',
   'skip',
   'done',
@@ -420,11 +426,14 @@ export async function botActorFor(chatId: bigint): Promise<
  * "Where is it?" from the bot. The wms lookup is reached by dynamic import —
  * platform never imports wms statically (the startBoss crossing).
  */
-export async function lookupFromBot(chatId: bigint, query: string): Promise<string | null> {
+export async function lookupFromBot(
+  chatId: bigint,
+  query: string,
+): Promise<{ text: string; mapClientCode?: string } | null> {
   const actor = await botActorFor(chatId);
   if (!actor) return null;
-  const { botLookup } = await import('../../wms/bot/lookup');
-  return botLookup(actor, query);
+  const { botLookupAnswer } = await import('../../wms/bot/lookup');
+  return botLookupAnswer(actor, query);
 }
 
 /**
@@ -488,6 +497,8 @@ export async function landCollectedIntake(
     // Only the AI door offers the toggle; every other collection lands the
     // column's own default, which is what it landed before this round.
     hasCertificate: state.hasCertificate,
+    // The AI podklyuch door's «qayerdan?» answer; every other door has none.
+    freightZone: state.route?.zone ?? null,
     // What the reading cost, so the day's AI budget counts the most
     // expensive call on this path rather than the two cheap ones.
     usage: state.usage,

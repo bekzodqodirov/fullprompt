@@ -1,0 +1,177 @@
+import { and, eq, inArray, ne, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
+import { db } from '../../platform/db/client';
+import { batches, boxes, receiptLots, receipts, warehouses } from '../../platform/db/schema';
+import { latestPositions } from '../tracking/devices';
+import { truckFor } from '../tracking/truck';
+import { warehousePoint } from '../tracking/warehouse-point';
+
+/**
+ * Where the client's own cargo is, drawn (the owner, 2026-09-26, item 11:
+ * «yonida karta iconi bolsin bosganda hamma yukini kartada korsin mashinani
+ * ustiga bosganda ozini yukini korsin qanchasi qayerda. skladlarda ham
+ * shunday»). Round 98 kept the truck off the cabinet «until every client can
+ * see their own cargo on a real map» — this is that map.
+ *
+ * Every place carries ONLY this client's cargo: a warehouse is drawn because
+ * their boxes stand in it, a truck because their boxes ride it, and the
+ * marker says what of THEIRS is there. What is deliberately NOT passed on
+ * from the staff marker (`truckFor`): the batch code (the company's
+ * throughput), the plate, and the truck's other contents — twenty other
+ * customers' codes.
+ */
+export interface CabinetMapLot {
+  lotId: string;
+  letter: string | null;
+  productNameZh: string;
+  productNameRu: string | null;
+  boxes: number;
+  kg: number;
+  m3: number;
+}
+
+export interface CabinetMapPlace {
+  key: string;
+  kind: 'warehouse' | 'truck';
+  /** Warehouse: its name. Truck: «from → to», the two warehouses' names. */
+  name: string;
+  /** lon, lat — the corridor's own shape. */
+  x: number;
+  y: number;
+  /** A truck's position is from the driver's phone (true) or estimated. */
+  live: boolean;
+  /** A truck's road, so the map can draw the line it is on. */
+  route: { x: number; y: number }[];
+  remainingDays: [number, number] | null;
+  boxes: number;
+  kg: number;
+  m3: number;
+  lots: CabinetMapLot[];
+}
+
+const STOCK = ['in_stock', 'planned', 'loading', 'ready_for_pickup'];
+const round = (n: number, d: number) => Math.round(n * 10 ** d) / 10 ** d;
+
+export async function cabinetMap(clientIds: string[]): Promise<CabinetMapPlace[]> {
+  if (clientIds.length === 0) return [];
+  const rows = await db
+    .select({
+      status: boxes.status,
+      warehouseId: boxes.currentWarehouseId,
+      // The live pointer is the right question for a box STILL in transit
+      // (the cabinet's own rule, cargoOverview).
+      batchId: boxes.currentBatchId,
+      lotId: receiptLots.id,
+      letter: receiptLots.letter,
+      productNameZh: receiptLots.productNameZh,
+      productNameRu: receiptLots.productNameRu,
+      n: sql<number>`count(*)`,
+      perBoxKg: sql<string>`${receiptLots.totalWeightKg} / nullif(${receiptLots.boxCount}, 0)`,
+      perBoxM3: sql<string>`${receiptLots.totalVolumeM3} / nullif(${receiptLots.boxCount}, 0)`,
+    })
+    .from(boxes)
+    .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+    .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+    .where(
+      and(
+        inArray(receipts.clientId, clientIds),
+        ne(receipts.status, 'voided'),
+        inArray(boxes.status, [...STOCK, 'in_transit']),
+      ),
+    )
+    .groupBy(
+      boxes.status,
+      boxes.currentWarehouseId,
+      boxes.currentBatchId,
+      receiptLots.id,
+      receiptLots.letter,
+      receiptLots.productNameZh,
+      receiptLots.productNameRu,
+      receiptLots.totalWeightKg,
+      receiptLots.totalVolumeM3,
+      receiptLots.boxCount,
+    );
+
+  const places = new Map<string, Omit<CabinetMapPlace, 'name' | 'x' | 'y' | 'live' | 'route' | 'remainingDays'> & { ref: string }>();
+  for (const r of rows) {
+    const transit = r.status === 'in_transit';
+    const ref = transit ? r.batchId : r.warehouseId;
+    if (!ref) continue;
+    const key = `${transit ? 'truck' : 'warehouse'}:${ref}`;
+    const place =
+      places.get(key) ?? { key, kind: transit ? ('truck' as const) : ('warehouse' as const), ref, boxes: 0, kg: 0, m3: 0, lots: [] };
+    const n = Number(r.n);
+    const kg = n * Number(r.perBoxKg ?? 0);
+    const m3 = n * Number(r.perBoxM3 ?? 0);
+    place.boxes += n;
+    place.kg += kg;
+    place.m3 += m3;
+    const lot = place.lots.find((l) => l.lotId === r.lotId);
+    if (lot) {
+      lot.boxes += n;
+      lot.kg += kg;
+      lot.m3 += m3;
+    } else {
+      place.lots.push({
+        lotId: r.lotId,
+        letter: r.letter,
+        productNameZh: r.productNameZh,
+        productNameRu: r.productNameRu,
+        boxes: n,
+        kg,
+        m3,
+      });
+    }
+    places.set(key, place);
+  }
+  if (places.size === 0) return [];
+
+  const whIds = [...places.values()].filter((p) => p.kind === 'warehouse').map((p) => p.ref);
+  const batchIds = [...places.values()].filter((p) => p.kind === 'truck').map((p) => p.ref);
+  const origin = alias(warehouses, 'o');
+  const dest = alias(warehouses, 'd');
+  const [whRows, batchRows, fixes] = await Promise.all([
+    whIds.length ? db.select().from(warehouses).where(inArray(warehouses.id, whIds)) : Promise.resolve([]),
+    batchIds.length
+      ? db
+          .select({ batch: batches, originCode: origin.code, originName: origin.name, destCode: dest.code, destName: dest.name })
+          .from(batches)
+          .innerJoin(origin, eq(batches.originWarehouseId, origin.id))
+          .innerJoin(dest, eq(batches.destWarehouseId, dest.id))
+          .where(inArray(batches.id, batchIds))
+      : Promise.resolve([]),
+    batchIds.length ? latestPositions(batchIds) : Promise.resolve(new Map()),
+  ]);
+
+  const out: CabinetMapPlace[] = [];
+  const finish = (p: (typeof places extends Map<string, infer V> ? V : never)) => ({
+    boxes: p.boxes,
+    kg: round(p.kg, 1),
+    m3: round(p.m3, 3),
+    lots: p.lots.map((l) => ({ ...l, kg: round(l.kg, 1), m3: round(l.m3, 3) })),
+  });
+  for (const w of whRows) {
+    const place = places.get(`warehouse:${w.id}`);
+    const point = warehousePoint(w);
+    if (!place || !point) continue;
+    out.push({ key: place.key, kind: 'warehouse', name: w.name, x: point.x, y: point.y, live: false, route: [], remainingDays: null, ...finish(place) });
+  }
+  for (const b of batchRows) {
+    const place = places.get(`truck:${b.batch.id}`);
+    if (!place) continue;
+    const marker = await truckFor(b.batch, b.originCode, b.destCode, fixes.get(b.batch.id));
+    if (!marker) continue;
+    out.push({
+      key: place.key,
+      kind: 'truck',
+      name: `${b.originName} → ${b.destName}`,
+      x: marker.x,
+      y: marker.y,
+      live: marker.live,
+      route: marker.routePoints,
+      remainingDays: marker.remainingDays,
+      ...finish(place),
+    });
+  }
+  return out;
+}

@@ -1,3 +1,5 @@
+import { termStates } from '@/modules/wms/partners/terms-service';
+import { TermsStatus } from './terms-status';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
@@ -53,6 +55,8 @@ export default async function PartnersPage() {
   const seesStaff = maySeeStaffMoney(actor.permissions);
   const allRows = await listPartners({ includeInactive: true, includeStaff: seesStaff });
   const rows = allRows.filter((r) => r.active || Math.abs(r.balanceUsd) > 0.009);
+  // Their payment terms (0108), ONE read for the whole page.
+  const terms = await termStates(rows.map((r) => r.id));
   // Group over EVERY type, offer only the live ones on the form: hiding a type
   // on /admin/partner-types must not delete the accounts under it from the
   // screen while their debt stays in the total.
@@ -153,6 +157,7 @@ export default async function PartnersPage() {
                             {t('inactive')}
                           </span>
                         )}
+                        <TermsStatus state={terms.get(row.id)} compact />
                       </Link>
                     </td>
                     <td

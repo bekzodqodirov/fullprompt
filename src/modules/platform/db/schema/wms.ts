@@ -637,6 +637,8 @@ export const batches = pgTable(
      * before this column existed honestly is — never «not cleared».
      */
     customsClearedAt: timestamp('customs_cleared_at', { withTimezone: true }),
+    /** «Partiya foydasi» lists only trucks a person marked (0107). */
+    profitTracked: boolean('profit_tracked').notNull().default(false),
     createdBy: uuid('created_by')
       .notNull()
       .references(() => users.id),
@@ -1977,7 +1979,7 @@ export const tgAccounts = pgTable(
      */
     historyBackfilledAt: timestamp('history_backfilled_at', { withTimezone: true }),
     /**
-     * The connected account's own @handle (0107), from getMe() in the
+     * The connected account's own @handle (0110), from getMe() in the
      * listener — verified, where `users.telegram_username` is only what
      * somebody typed, so it wins. `checkedAt` lets the website question stop
      * trusting it when nobody has confirmed it lately: a renamed handle can be
@@ -1994,9 +1996,9 @@ export const tgAccounts = pgTable(
 );
 
 /**
- * One question the website asked (0107): «who in this team is least busy?»,
+ * One question the website asked (0110): «who in this team is least busy?»,
  * and whom we offered. The OFFER — the arrival is a `lead_intakes` row
- * (channel 'telegram', external_id = the tag) written when the visitor
+ * (channel 'site', external_id = the tag) written when the visitor
  * actually writes, which is what makes a tag single-use in the database.
  */
 export const leadAssignments = pgTable(
@@ -2947,6 +2949,15 @@ export const partners = pgTable(
     phone: text('phone'),
     note: text('note'),
     active: boolean('active').notNull().default(true),
+    /** Every debt is due this many days after it was written (0108). */
+    payWithinDays: integer('pay_within_days'),
+    /** What we let ourselves owe this firm, in dollars (0108). */
+    debtLimitUsd: numeric('debt_limit_usd', { precision: 14, scale: 2 }),
+    /** The due date the «N kun qoldi» / «muddati o'tdi» reminders went for. */
+    dueSoonAlertedFor: date('due_soon_alerted_for'),
+    overdueAlertedFor: date('overdue_alerted_for'),
+    /** When the «80 % of the limit» reminder went; cleared below it. */
+    limitAlertedAt: timestamp('limit_alerted_at', { withTimezone: true }),
     createdBy: uuid('created_by')
       .notNull()
       .references(() => users.id),

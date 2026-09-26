@@ -165,6 +165,12 @@ export function payableOffersSql(): SQL {
              v.discount_usd,
              v.band_override_min,
              v.density,
+             -- What the promise was priced ON (the owner, 2026-09-26, his 4b:
+             -- the share follows the cargo that ARRIVED): the quote's own
+             -- measure, per kg when its freight was priced per kg.
+             COALESCE(v.freight_per_kg, false) AS per_kg,
+             COALESCE(v.volume_m3, r.volume_m3) AS quoted_m3,
+             COALESCE(v.weight_kg, r.weight_kg) AS quoted_kg,
              COALESCE(v.section, r.section) AS section,
              r.entity_type,
              r.entity_id,
@@ -215,15 +221,56 @@ export function payableOffersSql(): SQL {
              ) AS rn
         FROM base
     )
+    , measured AS (
+      SELECT ranked.*,
+             cargo.receipts AS cargo_receipts,
+             cargo.m3       AS cargo_m3,
+             cargo.kg       AS cargo_kg,
+             /**
+              * «Fakt» (the owner, 2026-09-26, 4b): the share is the promise
+              * scaled by the cargo that actually ARRIVED on the deal —
+              * confirmed prixods linked to it — over what the quote was
+              * priced on: 30 m³ promised, 20 m³ arrived, two thirds of the
+              * share. No arrived cargo is 0 (nothing is a fact yet); a quote
+              * with no measure at all (a lump rastamojka) keeps its whole
+              * promise once anything has arrived. Per kg when the freight
+              * was priced per kg, else per m³, else whichever it has.
+              */
+             CASE
+               WHEN cargo.receipts = 0 THEN 0
+               WHEN ranked.per_kg AND ranked.quoted_kg > 0 THEN cargo.kg / ranked.quoted_kg
+               WHEN ranked.quoted_m3 > 0 THEN cargo.m3 / ranked.quoted_m3
+               WHEN ranked.quoted_kg > 0 THEN cargo.kg / ranked.quoted_kg
+               ELSE 1
+             END AS cargo_factor
+        FROM ranked
+        LEFT JOIN LATERAL (
+          SELECT count(DISTINCT rc.id)                    AS receipts,
+                 coalesce(sum(rl.total_volume_m3), 0)      AS m3,
+                 coalesce(sum(rl.total_weight_kg), 0)      AS kg
+            FROM receipts rc
+            JOIN receipt_lots rl ON rl.receipt_id = rc.id
+           WHERE ranked.entity_type = 'deal'
+             AND rc.deal_id = ranked.entity_id
+             AND rc.status = 'confirmed'
+        ) cargo ON true
+    )
     SELECT ranked.*,
-           round(ranked.client_price_usd - ranked.total_usd, 2) AS upsale_usd,
-           -- What a payout would actually move: the promise's own difference
-           -- less whatever this sale has already paid (A1, A18). A paid row
-           -- moves nothing more.
+           round(ranked.client_price_usd - ranked.total_usd, 2) AS promised_usd,
+           round((ranked.client_price_usd - ranked.total_usd) * ranked.cargo_factor, 2) AS upsale_usd,
+           -- The price the client owes for what arrived — what the invoice
+           -- check compares the deal's charges with, so a deal priced on the
+           -- cargo that came is not «no invoice» for ever.
+           round(ranked.client_price_usd * ranked.cargo_factor, 2) AS due_price_usd,
+           -- What a payout would actually move: the share for the cargo that
+           -- arrived less whatever this sale has already paid (A1, A18),
+           -- never below zero. A paid row moves nothing more.
            CASE WHEN ranked.payout_expense_id IS NOT NULL THEN 0
-                ELSE round(ranked.client_price_usd - ranked.total_usd - ranked.paid_on_request, 2)
+                ELSE GREATEST(0, round(
+                  (ranked.client_price_usd - ranked.total_usd) * ranked.cargo_factor
+                    - ranked.paid_on_request, 2))
            END AS payable_usd
-      FROM ranked
+      FROM measured AS ranked
      -- A row that has been PAID stays listed whatever became of its promise,
      -- because the owner's screen is also the record of what was paid (a
      -- corrected job used to drop its paid row and the «To'langan» total

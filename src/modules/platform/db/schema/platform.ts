@@ -62,14 +62,14 @@ export const users = pgTable(
      */
     inboundRota: boolean('inbound_rota').notNull().default(false),
     /**
-     * Which WEBSITE streams this person answers (0107): cargo / buying /
+     * Which WEBSITE streams this person answers (0110): cargo / buying /
      * general. Ticked on /admin/taqsimot; the website's «who is least busy»
      * question picks among the people ticked for the stream it asks about.
      */
     leadTeams: text('lead_teams').array().notNull().default(sql`'{}'::text[]`),
     /**
      * The @handle typed on /admin/taqsimot for somebody whose Telegram is NOT
-     * connected (0107). They still take website visitors; the system just
+     * connected (0110). They still take website visitors; the system just
      * cannot see the conversation. A connected account's own verified handle
      * (`tg_accounts.tg_username`) always wins over this one.
      */
@@ -299,6 +299,13 @@ export const clients = pgTable(
      * the staff four: no customer here reads Chinese.
      */
     locale: text('locale'),
+    /** The contact person's birthday (0109, his 6d) — reminded on the day. */
+    birthday: date('birthday'),
+    /** The trade the client is in, and the cargo they bring (0109) — offers target them. */
+    sector: text('sector'),
+    cargoKinds: text('cargo_kinds').array().notNull().default(sql`'{}'::text[]`),
+    /** The day the birthday reminder last went — once a day, whatever restarts. */
+    birthdayAlertedOn: date('birthday_alerted_on'),
     active: boolean('active').notNull().default(true),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -457,6 +464,48 @@ export const telegramLinks = pgTable(
  * the same bot via a one-time code minted by staff. A chat may represent
  * several clients (broker) and a client may have several chats.
  */
+/** One message the office sent to its clients through the bot (0109). */
+export const broadcasts = pgTable(
+  'broadcasts',
+  {
+    id: uuid('id').primaryKey(),
+    body: text('body').notNull().default(''),
+    audience: jsonb('audience').notNull(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
+    total: integer('total').notNull().default(0),
+    sent: integer('sent').notNull().default(0),
+    failed: integer('failed').notNull().default(0),
+  },
+  (t) => [check('broadcasts_body_check', sql`length(${t.body}) <= 4096`)],
+);
+
+/** One chat a broadcast goes to — per CHAT, so three codes on one phone get it once. */
+export const broadcastRecipients = pgTable(
+  'broadcast_recipients',
+  {
+    broadcastId: uuid('broadcast_id')
+      .notNull()
+      .references(() => broadcasts.id, { onDelete: 'cascade' }),
+    chatId: bigint('chat_id', { mode: 'bigint' }).notNull(),
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => clients.id),
+    status: text('status').notNull().default('pending'),
+    error: text('error'),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }),
+    sentAt: timestamp('sent_at', { withTimezone: true }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.broadcastId, t.chatId] }),
+    check('broadcast_recipients_status_check', sql`${t.status} IN ('pending', 'sending', 'sent', 'failed')`),
+    index('broadcast_recipients_pending_idx').on(t.broadcastId).where(sql`${t.status} = 'pending'`),
+  ],
+);
+
 export const clientTelegramLinks = pgTable(
   'client_telegram_links',
   {
