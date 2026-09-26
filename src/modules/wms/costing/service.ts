@@ -966,18 +966,22 @@ export async function recomputeEntry(costEntryId: string): Promise<void> {
   if (!peek) return;
   const factor = Number(await getSetting('chargeable_weight_factor'));
   // The dollar figure is FROZEN at the first conversion (owner, R1: «to'langan
-  // paytdagi kurs bo'yicha hisoblansin»). A cost is money that left at the
-  // rate of its day; a rate typed or corrected on /admin/fx later must not
-  // move a past month's P&L, and must not move the firm's derived charge
-  // while the payment that settled it stays where it was (audit A0 — a fully
-  // paid firm read −$111 after one FX save). Only a row with no dollars yet
-  // is converted; every later recompute re-SPLITS the frozen figure over its
-  // boxes (a base change still moves the shares, never their sum).
+  // paytdagi kurs bo'yicha hisoblansin»): a RECOMPUTE never re-converts. Only
+  // a row with no dollars yet is converted here; every later recompute
+  // re-SPLITS the frozen figure over its boxes (a base change still moves the
+  // shares, never their sum), so an ordinary save or sweep cannot move a past
+  // month's P&L or a firm's derived charge (audit A0 — a fully paid firm read
+  // −$111 after one FX save).
+  //
+  // Since 0103 (Q18) the frozen figure has exactly ONE deliberate mover: the
+  // /admin/fx save's re-price (`fx-reprice.ts`), with its preview, its audit
+  // and its «Kurs farqi» rows — a late or corrected rate the owner chose to
+  // apply, never a side effect of this function (review: this comment still
+  // said nothing could move it).
   //
   // Stated, not solved: an entry dated before the currency's FIRST rate was
   // converted at the earliest rate on file (`rateFor`'s fallback) and is
-  // frozen at that guess too; correcting it is void and re-enter, like every
-  // other ledger row.
+  // frozen at that guess too.
   const frozenWhenPeeked = peek.amountUsd !== null && peek.fxRateUsed !== null;
   const rate =
     !peek.voidedAt && !frozenWhenPeeked ? await rateFor(peek.currency, peek.costDate) : undefined;

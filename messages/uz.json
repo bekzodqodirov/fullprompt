@@ -1626,7 +1626,7 @@
     "gapUnconverted": "Kursi kiritilmagan {count} ta xarajat $0 deb hisoblangan: {sums}.",
     "gapUnconvertedHint": "Shu valyutaning kursini kiriting — xarajatlar o‘zi qayta hisoblanadi.",
     "gapNoBox": "Hech qaysi karobkaga taqsimlanmagan {count} ta xarajat ({usd}) bu hisobotda bor, lekin hech bir mijozning tannarxiga tushmagan.",
-    "gapNoBoxHint": "Ko‘pincha bu yuki hali bog‘lanmagan xarajat: prixodi bog‘lanmagan zavod reysi yoki yuk ortilmasdan oldin kiritilgan mashina xarajati — yuk paydo bo‘lganda o‘zi taqsimlanadi. Yuki umuman bo‘lmasa, xarajatni tekshiring.",
+    "gapNoBoxHint": "Ko‘pincha bu yuki hali bog‘lanmagan xarajat: prixodi bog‘lanmagan zavod reysi yoki yuk ortilmasdan oldin kiritilgan mashina xarajati — yuk paydo bo‘lganda o‘zi taqsimlanadi. Mashinadagi hamma karobka qaytib topilgan (yoki yo‘qolib qaytgan) bo‘lsa o‘zi taqsimlanmaydi — xarajatni tekshiring, kerak bo‘lsa bekor qiling.",
     "expensesTruncated": "Eng yangi {shown} tasi ko‘rsatildi (jami {total}); «Jami» summa butun davr bo‘yicha.",
     "balUnplaced": "Kassaga joylanmagan to‘lovlar",
     "futureDated": "{count} ta yozuv bugundan keyingi sana bilan ({usd}). Boshqa ekranlar ularni bugungi qarzga qo‘shadi, bu hisobot esa yo‘q — sanasini tuzating.",
