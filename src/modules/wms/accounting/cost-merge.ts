@@ -143,13 +143,20 @@ export function apportionUsd(shares: number[], expense: { amount: number; amount
   return out;
 }
 
-/** The expense fences, as SQL over `expenses` (shared by the list and the claim). */
+/**
+ * The expense fences, as SQL over `expenses` (shared by the list and the
+ * claim). A BOOK entry (a non-cash kind — depreciation) is never «the same
+ * money typed twice» (M4a): it names no kassa, so it looked exactly like a
+ * kassa-less expense, and absorbing it voided it out of the P&L (review of
+ * the lead's merge).
+ */
 function mergeableExpenseSql() {
   return and(
     isNull(expenses.voidedAt),
     isNull(expenses.partnerId),
     isNull(expenses.recurringId),
     sql`NOT EXISTS (SELECT 1 FROM calc_offers o WHERE o.payout_expense_id = ${expenses}.id)`,
+    sql`EXISTS (SELECT 1 FROM expense_categories mc WHERE mc.id = ${expenses}.category_id AND mc.cash)`,
   )!;
 }
 

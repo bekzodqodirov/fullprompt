@@ -122,10 +122,11 @@ export async function saveCategory(
       if (used) throw new AccountingError('cash_flag_locked');
       // A monthly TEMPLATE locks it too, active or paused (review of wc): the
       // owner is starting from empty (Q7), so the rent's template exists
-      // before its first posting. Unticked, every «Oyni yozish» fails the
-      // kassa template as `non_cash_category`; ticked, a kassa-less template
-      // posts a cash expense with no kassa and no payer every month — the
-      // one-sided row U13 forbids, which `addExpense` does not ask about.
+      // before its first posting, and it carries the payer its «To'landi»
+      // offers. Unticked, that kassa template is refused at every press as
+      // `non_cash_category`; ticked, a kassa-less template's press stops on
+      // `account_or_payer_required` — the template's own answer turned into a
+      // refusal every month by a checkbox on another screen.
       const [template] = await tx
         .select({ id: recurringExpenses.id })
         .from(recurringExpenses)

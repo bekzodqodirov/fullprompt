@@ -267,6 +267,26 @@ describe('the duplicate merge (A3, M4a)', () => {
     });
   });
 
+  it('a BOOK entry (a non-cash kind — depreciation) is never offered or absorbed as a duplicate (review of the merge)', async () => {
+    const [book] = await db
+      .insert(expenseCategories)
+      .values({ name: `Amortizatsiya ${STAMP}`, cash: false })
+      .returning();
+    try {
+      const target = await cost(95, 'USD');
+      const depreciation = await expense(95, 'USD', '', { categoryId: book!.id });
+      expect((await mergeCandidates(DAY, DAY)).map((row) => row.id)).not.toContain(depreciation);
+      await expect(mergeDuplicate({ costIds: [target], expenseId: depreciation }, ctx())).rejects.toMatchObject({
+        code: 'not_candidate',
+      });
+      const [still] = await db.select({ voidedAt: expenses.voidedAt }).from(expenses).where(eq(expenses.id, depreciation));
+      expect(still!.voidedAt).toBeNull();
+    } finally {
+      await db.delete(expenses).where(eq(expenses.categoryId, book!.id));
+      await db.delete(expenseCategories).where(eq(expenseCategories.id, book!.id));
+    }
+  });
+
   it('merged with a kassa-less expense typed BEFORE kassas were asked for: history, off the queue — and never merged twice', async () => {
     const before = await unplacedCostTotals();
     const id = await cost(15, 'USD');
