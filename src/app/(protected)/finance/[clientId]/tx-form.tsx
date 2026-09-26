@@ -72,6 +72,18 @@ export function TxForm({
     addTransactionAction,
     {},
   );
+  // The truck and the job are CONTROLLED (they drive the local-leg and
+  // deal hints), so React's reset after a saved form does not reach them:
+  // the next payment silently carried the last one's deal (review). Cleared
+  // on each new success, during render — the answer object is the event.
+  const [answered, setAnswered] = useState(state);
+  if (state !== answered) {
+    setAnswered(state);
+    if (state.ok) {
+      setBatchId('');
+      setDealId('');
+    }
+  }
 
   const toggles = (
       <div className="grid grid-cols-2 gap-2">

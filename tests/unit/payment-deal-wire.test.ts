@@ -24,6 +24,14 @@ describe('a payment can name its deal, end to end', () => {
     expect(form).toContain('name="dealId"');
   });
 
+  it('a saved payment clears the controlled deal and truck, or the next one carries them (review)', () => {
+    const form = readFileSync('src/app/(protected)/finance/[clientId]/tx-form.tsx', 'utf8');
+    const reset = form.slice(form.indexOf('if (state !== answered) {'), form.indexOf('const toggles'));
+    expect(reset).toContain('if (state.ok) {');
+    expect(reset).toContain("setBatchId('');");
+    expect(reset).toContain("setDealId('');");
+  });
+
   it('the action parses dealId', () => {
     const action = readFileSync('src/app/(protected)/finance/actions.ts', 'utf8');
     expect(action).toContain("dealId: formData.get('dealId')");

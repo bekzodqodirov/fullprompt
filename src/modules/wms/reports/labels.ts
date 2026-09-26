@@ -211,6 +211,15 @@ const DICT = {
     'zh-CN': '未关联车辆的收入——未计入本表',
     en: 'Revenue tied to no truck — not in this table',
   },
+  // The screen's «profit-unbatched-compensation» line in the file (review):
+  // without it the truck tables no longer summed to the P&L once a
+  // compensation existed, and the file said nothing.
+  unbatchedCompensationNote: {
+    ru: 'Компенсации клиентам — ни к одному рейсу, вычтены из выручки P&L',
+    uz: 'Mijozlarga kompensatsiya — hech bir reysga yozilmaydi, P&L tushumidan ayirilgan',
+    'zh-CN': '给客户的赔偿——不属于任何车次，已从损益表收入中扣除',
+    en: 'Compensation to clients — on no truck, taken off the P&L’s revenue',
+  },
   // The cost half of «unbatched» and the client tab's reconciliation (audit
   // U37, U19) — in step with messages/*.json accounting.unbatchedCostNote,
   // clientUnallocatedNote and gapScope.*.

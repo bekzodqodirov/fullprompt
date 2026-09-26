@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import ExcelJS from 'exceljs';
 import { and, eq, inArray, like, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -19,6 +20,7 @@ import {
 } from '@/modules/platform/db/schema';
 import { saveAccount } from '@/modules/wms/accounting/service';
 import { arAging, cashFlow, profitAndLoss, profitByBatch, profitByClient, unbatchedMoney } from '@/modules/wms/accounting/reports';
+import { buildProfitXlsx } from '@/modules/wms/accounting/xlsx';
 import { setBoxStatus } from '@/modules/wms/boxes/status';
 import { debtSummary } from '@/modules/wms/client-cabinet/service';
 import { clientFeed } from '@/modules/wms/crm/feed';
@@ -311,6 +313,13 @@ describe('C2 — not money, not an expense: revenue falls, cash does not', () =>
     expect(pnl1.grossMarginPct[`${YEAR}-02`]).toBeNull();
     expect(await cashFlow(from, to)).toEqual(cash0);
     expect((await unbatchedMoney(from, to)).compensationUsd - unbatched0.compensationUsd).toBeCloseTo(1500, 2);
+    // …and the FILE says it as the screen does, or its truck table no longer
+    // sums to the P&L and nothing on it says why (review).
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load((await buildProfitXlsx('batch', from, to, 'uz')) as unknown as ArrayBuffer);
+    const text: string[] = [];
+    workbook.worksheets[0]!.eachRow((row) => text.push(String(row.getCell(1).value ?? '')));
+    expect(text.some((line) => line.startsWith('Mijozlarga kompensatsiya'))).toBe(true);
 
     const client = (await profitByClient(from, to)).find((r) => r.clientId === w.clientId)!;
     expect(client.revenueUsd).toBe(-500);

@@ -468,6 +468,9 @@ export async function buildProfitXlsx(
   }
 
   if (unbatched && unbatched.revenueUsd > 0) notes.push(`${L.unbatchedNote}: $${usdText(unbatched.revenueUsd)}`);
+  if (unbatched && unbatched.compensationUsd > 0.009) {
+    notes.push(`${L.unbatchedCompensationNote}: $${usdText(unbatched.compensationUsd)}`);
+  }
   // …and its cost half (U37): money on cargo that rode no priced truck, in the
   // screen's three parts — no truck row carries it, so the file names it.
   const noTruck = unbatched?.noTruckCost;
