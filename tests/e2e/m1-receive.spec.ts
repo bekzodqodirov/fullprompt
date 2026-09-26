@@ -62,9 +62,11 @@ test('operator completes a receipt and gets labels', async ({ page }) => {
   await expect(
     page.locator('[data-testid="receipt-files-row"] img[src*="/api/attachments/"]').first(),
   ).toBeVisible({ timeout: 10_000 });
-  // Note + cost fold away now (owner: used on a minority of receipts).
+  // The note folds away (owner: used on a minority of receipts). No money
+  // here since 2026-09-26 — the rasxod xabari fold carries it to a kassa.
   await page.getByTestId('receipt-extras-toggle').click();
-  await page.getByTestId('receipt-cost-amount').fill('120');
+  await expect(page.getByTestId('receipt-cost-amount')).toHaveCount(0);
+  await page.getByTestId('receipt-extras').locator('input').fill('e2e izoh');
 
   // Sticky footer totals + confirm
   await expect(page.getByText('Σ 4 📦')).toBeVisible();
@@ -89,9 +91,10 @@ test('operator completes a receipt and gets labels', async ({ page }) => {
   expect(res.headers()['content-type']).toContain('application/pdf');
   expect((await res.body()).subarray(0, 4).toString()).toBe('%PDF');
 
-  // Receipt detail shows the single "other"-type cost and the general photo
+  // Receipt detail shows the note (no cost of its own since 2026-09-26) and
+  // the general photo
   await page.goto(`/receipts/${receiptId}`);
-  await expect(page.getByText(/120(\.\d+)?\s+CNY/)).toBeVisible();
+  await expect(page.getByText('e2e izoh')).toBeVisible();
   await expect(page.locator('img[src*="/api/attachments/"]').first()).toBeVisible({
     timeout: 10_000,
   });

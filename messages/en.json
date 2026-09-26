@@ -729,7 +729,7 @@
       "photo": "add at least 1 photo"
     },
     "acceptUnclaimedAs": "{code} — accept as unidentified cargo",
-    "noteAndCost": "Note and cost (if needed)",
+    "noteAndCost": "Note (if needed)",
     "pickupReceiving": "receiving from a factory pickup",
     "pickupDetach": "Detach from the pickup",
     "pickupInvalid": "This factory pickup goes to another warehouse or was cancelled."

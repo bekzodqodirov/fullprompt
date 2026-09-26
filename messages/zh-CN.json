@@ -729,7 +729,7 @@
       "photo": "请至少添加1张照片"
     },
     "acceptUnclaimedAs": "{code} — 按无主货物接收",
-    "noteAndCost": "备注与费用（如需要）",
+    "noteAndCost": "备注（如需要）",
     "pickupReceiving": "从工厂提货收货",
     "pickupDetach": "解除与提货的关联",
     "pickupInvalid": "该工厂提货前往其他仓库或已取消。"

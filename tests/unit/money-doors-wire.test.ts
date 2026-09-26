@@ -114,11 +114,20 @@ describe('U28 — every typed amount on a money form is read the office\'s way',
       ['src/components/calc-offer.tsx', /const typed = parseTypedMoney\(price\) \?\? Number\.NaN;/],
       ['src/app/(protected)/hisoblash/[id]/calc-workspace.tsx', /amountUsd: parseTypedMoney\(amount\) \?\? Number\.NaN/],
       ['src/app/(protected)/hisoblash/[id]/calc-workspace.tsx', /discountUsd: discount\.trim\(\) === '' \? 0 : \(parseTypedMoney\(discount\) \?\? Number\.NaN\)/],
-      ['src/app/(protected)/receive/receive-wizard.tsx', /amount: parseTypedMoney\(c\.amount\) \?\? Number\.NaN/],
       ['src/app/(protected)/bitimlar/actions.ts', /quotedAmount: optionalMoney\(form\.get\('quotedAmount'\)\)/],
       ['src/app/(protected)/crm/actions.ts', /quotedAmount: optionalMoney\(formData\.get\('quotedAmount'\)\)/],
     ];
     for (const [file, shape] of doors) expect(read(file), file).toMatch(shape);
+  });
+
+  it('the receive wizard carries no money of its own — only the rasxod fold does', () => {
+    // The owner, 2026-09-26: the wizard's «Izoh va rasxod» wrote a cost with no
+    // kassa that read as one line with the note. The note stays; money goes
+    // through the rasxod xabari, which ends at a kassa. A draft saved before
+    // the change still carries `costs`, so the SEND is what must be empty.
+    const wizard = read('src/app/(protected)/receive/receive-wizard.tsx');
+    expect(wizard).toContain('extraCosts: [],');
+    expect(wizard).not.toContain('receipt-cost-amount');
   });
 
   it('the rasxod fold greys its button with the SAME reader it sends with', () => {
