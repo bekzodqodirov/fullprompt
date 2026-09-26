@@ -358,9 +358,15 @@ export default async function PartnerCardPage({
                         debt with it and re-opens the month; the service
                         refuses it here, and a refusal this form cannot
                         print must not be offered at all. */}
-                    {tx.expenseId && expenseRecurringId && !tx.voidedAt ? (
-                      <p className="text-xs text-ink-500" data-testid="partner-recurring-charge">
-                        {t('recurringChargeNote')}
+                    {tx.expenseId && !tx.voidedAt ? (
+                      // Any expense's debt is cancelled on the EXPENSE (the
+                      // service refuses it here): the recurring month's note
+                      // says where, and so does every other expense's.
+                      <p
+                        className="text-xs text-ink-500"
+                        data-testid={expenseRecurringId ? 'partner-recurring-charge' : 'partner-expense-charge'}
+                      >
+                        {t(expenseRecurringId ? 'recurringChargeNote' : 'expenseChargeNote')}
                       </p>
                     ) : (
                       canManage &&

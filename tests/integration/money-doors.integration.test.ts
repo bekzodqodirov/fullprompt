@@ -553,6 +553,14 @@ describe('U34 (owner B) — a firm-paid cost is its typist\u2019s until the firm
     const expenseFacts = (await partnerTxDoorFacts(expenseCharge!.id))!;
     expect(await firmDebtVoidRefusal(typist, expenseFacts)).toBe('forbidden');
     expect(await firmDebtVoidRefusal(accountant, expenseFacts)).toBeNull();
+    // …and even the accountant cancels an expense's debt on the EXPENSE: the
+    // card's void unlinked the payer and left a cash expense with no kassa and
+    // no payer, the Balans up by the debt with no money moved (review).
+    await expect(voidPartnerTx(expenseCharge!.id, 'firma to‘lamadi', ctx())).rejects.toMatchObject({
+      code: 'expense_charge',
+    });
+    const [still] = await db.select({ partnerId: expenses.partnerId }).from(expenses).where(eq(expenses.id, expense.id));
+    expect(still!.partnerId).toBe(partnerId);
   });
 });
 

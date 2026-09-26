@@ -538,6 +538,13 @@ export async function voidPartnerTx(id: string, reason: string, ctx: AuditContex
       .from(expenses)
       .where(eq(expenses.id, row.expenseId));
     if (source?.recurringId) throw new PartnerError('recurring_payment');
+    // …and the same for ANY expense a firm paid (review of the lead's fixes):
+    // unlinking the payer left a cash-kind expense with no kassa and no payer
+    // — the one-sided row the expense door refuses (U13, 5a) — and the
+    // Balans rose by the debt while no money moved. A COST keeps its payer
+    // unlink: a payer-less cost lands on the kassa queue, which the Balans
+    // counts; an expense has no such queue.
+    throw new PartnerError('expense_charge');
   }
   // The system's kurs farqi row changes only when its cycle changes (Q14).
   if (row.type === 'fx_diff') throw new PartnerError('fx_system_row');

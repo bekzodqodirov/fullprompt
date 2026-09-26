@@ -243,11 +243,15 @@ describe('W12 — a recurring payment’s charge is not voided on the partner ca
     const fn = body(service, 'voidPartnerTx');
     expect(fn.indexOf("new PartnerError('recurring_payment')")).toBeGreaterThan(0);
     expect(fn.indexOf("new PartnerError('recurring_payment')")).toBeLessThan(fn.indexOf('db.transaction('));
+    expect(fn.indexOf("new PartnerError('expense_charge')")).toBeGreaterThan(fn.indexOf("new PartnerError('recurring_payment')"));
+    expect(fn.indexOf("new PartnerError('expense_charge')")).toBeLessThan(fn.indexOf('db.transaction('));
     // The ✕ lives in the ELSE of the recurring-charge ternary — the guard
     // itself, not merely the name somewhere above it (the first version of
     // this fence matched the row's destructuring and stayed green).
     const page = read('src/app/(protected)/kontragentlar/[id]/page.tsx');
-    const guard = page.indexOf('{tx.expenseId && expenseRecurringId && !tx.voidedAt ? (');
+    // Widened after the review: EVERY expense's debt is cancelled on the
+    // expense, the recurring month's included, so the guard is the expense.
+    const guard = page.indexOf('{tx.expenseId && !tx.voidedAt ? (');
     const at = page.indexOf('<VoidTx');
     expect(guard, 'the recurring-charge guard').toBeGreaterThan(0);
     expect(at).toBeGreaterThan(guard);

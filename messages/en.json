@@ -3213,7 +3213,8 @@
     "fxLegacyLink": "Exchange residues",
     "classifyFx": "Exchange difference",
     "classifyCorrection": "Correction",
-    "alreadyClassified": "This adjustment already has a kind."
+    "alreadyClassified": "This adjustment already has a kind.",
+    "expenseChargeNote": "A debt an expense wrote — if the firm did not pay, void the expense itself on the Expenses page"
   },
   "lists": {
     "allRecords": "All",

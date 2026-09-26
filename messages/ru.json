@@ -3213,7 +3213,8 @@
     "fxLegacyLink": "Курсовые остатки",
     "classifyFx": "Курсовая разница",
     "classifyCorrection": "Исправление",
-    "alreadyClassified": "Вид этой корректировки уже указан."
+    "alreadyClassified": "Вид этой корректировки уже указан.",
+    "expenseChargeNote": "Долг по расходу — если фирма не платила, отмените сам расход на странице «Расходы»"
   },
   "lists": {
     "allRecords": "Все",

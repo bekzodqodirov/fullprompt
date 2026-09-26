@@ -3213,7 +3213,8 @@
     "fxLegacyLink": "汇兑余差",
     "classifyFx": "汇兑差额",
     "classifyCorrection": "更正",
-    "alreadyClassified": "此调整已注明类型。"
+    "alreadyClassified": "此调整已注明类型。",
+    "expenseChargeNote": "费用产生的欠款——若该单位并未付款，请在「费用」页作废该费用本身"
   },
   "lists": {
     "allRecords": "全部",

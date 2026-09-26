@@ -3213,7 +3213,8 @@
     "fxLegacyLink": "Kurs qoldiqlari",
     "classifyFx": "Kurs farqi",
     "classifyCorrection": "Tuzatish",
-    "alreadyClassified": "Bu tuzatishning turi allaqachon aytilgan."
+    "alreadyClassified": "Bu tuzatishning turi allaqachon aytilgan.",
+    "expenseChargeNote": "Xarajat bo‘yicha qarz — firma to‘lamagan bo‘lsa, «Xarajatlar» sahifasida xarajatning o‘zini bekor qiling"
   },
   "lists": {
     "allRecords": "Hammasi",
