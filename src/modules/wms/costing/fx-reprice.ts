@@ -274,7 +274,12 @@ async function candidates(handle: Handle, f: Filter): Promise<Candidates> {
       cashDay: row.cash_day ?? row.cost_date,
     };
     if (row.partner_id) debtCosts.push(change);
-    else if (row.account_id || row.merged_expense_id) {
+    // A kassa is what the COST names. A merge copies the expense's kassa onto
+    // the cost, so a merged cost with no kassa was merged into a kassa-less
+    // expense — it is still on the queue (U02) and is re-priced like any
+    // queue cost; reading «merged» as «kassa-paid» put it in the rateless-
+    // kassa bucket and skipped it (review of the fx and U02 interplay).
+    else if (row.account_id) {
       // A kassa with no dollars yet (a rateless kassa): moving amount_usd would
       // move the kassa's dollars through `costKassaUsd`'s fallback — skipped.
       if (row.account_amount_usd === null) kassaMissing += 1;

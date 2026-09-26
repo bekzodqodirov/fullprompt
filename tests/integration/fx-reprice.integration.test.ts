@@ -11,6 +11,8 @@ import {
   costEntries,
   costTypes,
   currencies,
+  expenseCategories,
+  expenses,
   fxRates,
   moneyAccounts,
   partnerTransactions,
@@ -54,7 +56,7 @@ import { cashFlow, profitAndLoss } from '@/modules/wms/accounting/reports';
  */
 
 const STAMP = String(Date.now()).slice(-6);
-const OWN = ['ZSA', 'ZSB', 'ZSC', 'ZSD', 'ZSE', 'ZSF', 'ZSG', 'ZSH'];
+const OWN = ['ZSA', 'ZSB', 'ZSC', 'ZSD', 'ZSE', 'ZSF', 'ZSG', 'ZSH', 'ZSM'];
 let actorId = '';
 let costTypeId = '';
 let batchId = '';
@@ -284,6 +286,42 @@ describe('E4, E5 — a queue cost, a slip corrected, and a plan that changed und
     expect(plan.costs.map((c) => [c.id, c.ownerId, c.newUsd])).toEqual([[queued, null, 1000]]);
     await saveFxRate(input, ctx(), { planHash: plan.hash, since });
     expect((await costRow(queued)).amountUsd).toBe('1000.00');
+  });
+
+  it('E4b: a cost merged into a KASSA-LESS expense is a queue cost, and is re-priced like one (review)', async () => {
+    // The planner read «merged» as «paid from a kassa». Merged into an expense
+    // that named no kassa, the cost stays on the queue (U02) and has no kassa
+    // dollars: it went to the «kassa with no dollars» bucket and was SKIPPED,
+    // its tannarx left at the slipped rate.
+    const C = 'ZSM';
+    await rate(C, '1613-09-10', 1 / 11_500);
+    const queued = await cost(12_500_000, C, '1613-09-12');
+    const [category] = await db.select({ id: expenseCategories.id }).from(expenseCategories).limit(1);
+    const [twin] = await db
+      .insert(expenses)
+      .values({
+        categoryId: category!.id,
+        amount: '1086.96',
+        currency: 'USD',
+        rateToUsd: '1',
+        amountUsd: '1086.96',
+        expenseDate: '1613-09-12',
+        voidedAt: new Date(),
+        voidedBy: actorId,
+        voidReason: 'merged into cost',
+        createdBy: actorId,
+      } as typeof expenses.$inferInsert)
+      .returning({ id: expenses.id });
+    await db.update(costEntries).set({ mergedExpenseId: twin!.id }).where(eq(costEntries.id, queued));
+    try {
+      const input = { currency: C, rateToUsd: 0.00008, effectiveDate: '1613-09-10' };
+      const plan = await preview((planHash) => saveFxRate(input, ctx(), { planHash, since }));
+      expect(plan.costs.map((c) => [c.id, c.newUsd])).toEqual([[queued, 1000]]);
+      expect(plan.kassaCosts).toEqual([]);
+    } finally {
+      await db.update(costEntries).set({ mergedExpenseId: null }).where(eq(costEntries.id, queued));
+      await db.delete(expenses).where(eq(expenses.id, twin!.id));
+    }
   });
 
   it('E5: a debt typed between the preview and the press is shown again, nothing applied', async () => {
