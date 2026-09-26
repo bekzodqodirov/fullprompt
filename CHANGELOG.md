@@ -124,8 +124,9 @@ yana ikki marta tekshirildi. Asosiylari:
 - **A** Qolib ketgan karobkaning rastamojka ulushi qoladi va keyingi
   mashinada hisoblanadi.
 - **B** Kontragentning «Tuzatish / kurs farqi» yozuvi ikkiga bo'linadi.
-- **Yangi savol:** Zatamojka va CCT ham rastamojka kabi karobka bilan keyingi
-  mashinaga o'tsinmi (hozir ular yo'lkira kabi hisoblanadi)?
+- ~~Zatamojka va CCT ham karobka bilan keyingi mashinaga o'tsinmi?~~ Javobingiz
+  (2026-09-26): **«b hozirgidek qolsin»** — ular yo'lkira kabi hisoblanadi,
+  karobka bilan faqat Rastamojka o'tadi.
 
 ## Javoblaringiz bo'yicha: kassa va hodimlar, hisobotlar, kabinet tarixi — 2026-09-25
 
