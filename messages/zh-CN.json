@@ -3771,7 +3771,14 @@
       "no_recipients": "所选客户中没有连接机器人的。",
       "too_long": "文字超过 4096 个字符。",
       "too_many_files": "文件超过 10 个。",
-      "exists": "此消息已发送。"
-    }
+      "exists": "此消息已发送。",
+      "too_many_picked": "已勾选超过 500 位客户——请缩小搜索范围或全选。"
+    },
+    "search": "搜索",
+    "searchPlaceholder": "货物（例如椅子）、行业、代码或姓名",
+    "picked": "将发送给 {total} 中的 {n} 位",
+    "pickAll": "全选",
+    "pickNone": "取消选择",
+    "listCapped": "还有 {n} 位客户未显示——也已选中"
   }
 }

@@ -10,6 +10,8 @@ import {
   clientTelegramLinks,
   clients,
   notifications,
+  receiptLots,
+  receipts,
   users,
 } from '@/modules/platform/db/schema';
 import { audienceChats, createBroadcast, BroadcastError } from '@/modules/platform/broadcast/service';
@@ -78,6 +80,36 @@ describe('who a broadcast reaches', () => {
     expect((await audienceChats({ ...base, cargoKinds: [`KROSSOVKA${S}`] })).map((c) => c.chatId)).toEqual([chat(2)]);
     const ru = await audienceChats({ ...base, codes: [`BA${S}`, `BB${S}`], locales: ['ru'] });
     expect(ru.map((c) => c.chatId)).toEqual([chat(1)]);
+  });
+
+  it('a search finds by the GOODS a client brought, and by name or trade (2026-09-26, item 4)', async () => {
+    // «who brings chairs» lives in the prixods, not in a tag somebody typed.
+    const wh = await db.query.warehouses.findFirst();
+    const [bb] = await db.select().from(clients).where(eq(clients.clientCode, `BB${S}`));
+    const [receipt] = await db
+      .insert(receipts)
+      .values({ warehouseId: wh!.id, clientId: bb!.id, status: 'confirmed', createdBy: actorId })
+      .returning();
+    const [voided] = await db
+      .insert(receipts)
+      .values({ warehouseId: wh!.id, clientId: made[0]!, status: 'voided', createdBy: actorId })
+      .returning();
+    try {
+      await db.insert(receiptLots).values([
+        { receiptId: receipt!.id, seq: 1, productNameZh: '椅子', productNameRu: `Стул офисный ${S}`, boxCount: 1, totalWeightKg: '1', totalVolumeM3: '0.1' },
+        // A voided prixod is not what the client brings.
+        { receiptId: voided!.id, seq: 1, productNameZh: '椅子', productNameRu: `Стул офисный ${S}`, boxCount: 1, totalWeightKg: '1', totalVolumeM3: '0.1' },
+      ]);
+      const byGoods = await audienceChats({ ...base, query: `стул офисный ${S}` });
+      expect(byGoods.map((c) => c.chatId)).toEqual([chat(2)]);
+      expect((await audienceChats({ ...base, query: `poyabzal${S}` })).map((c) => c.chatId)).toEqual([chat(2)]);
+      expect((await audienceChats({ ...base, query: `${TAG} BA${S}` })).map((c) => c.chatId)).toEqual([chat(1)]);
+      // A LIKE wildcard typed by a person is a character, not «anything».
+      expect(await audienceChats({ ...base, query: '%' })).toEqual([]);
+    } finally {
+      await db.delete(receiptLots).where(inArray(receiptLots.receiptId, [receipt!.id, voided!.id]));
+      await db.delete(receipts).where(inArray(receipts.id, [receipt!.id, voided!.id]));
+    }
   });
 });
 

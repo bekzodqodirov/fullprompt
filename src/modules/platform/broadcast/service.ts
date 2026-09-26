@@ -32,6 +32,14 @@ export const audienceSchema = z.object({
   locales: z.array(z.enum(['uz', 'ru', 'en'])).max(3).default([]),
   managerId: z.string().uuid().optional(),
   codes: z.array(z.string().trim().min(1).max(20)).max(500).default([]),
+  /**
+   * A free search (the owner, 2026-09-26: «search qilish imkoni olib keladgan
+   * yuki yokida sohasini kirgizib shunday klientlarni topib habar yozish»):
+   * the code, the name, the trade, a cargo kind — or the GOODS of any prixod
+   * the client ever brought, which is where «who brings chairs» actually
+   * lives. The cards' own tags are typed by hand and mostly empty today.
+   */
+  query: z.string().trim().max(100).optional(),
 });
 export type Audience = z.infer<typeof audienceSchema>;
 
@@ -70,6 +78,16 @@ export async function audienceChats(audience: Audience): Promise<AudienceChat[]>
     where.push(sql`coalesce(c.locale, 'uz') IN (${sql.join(audience.locales.map((v) => sql`${v}`), sql`, `)})`);
   }
   if (audience.managerId) where.push(sql`c.sales_manager_id = ${audience.managerId}::uuid`);
+  if (audience.query) {
+    const like = `%${audience.query.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
+    where.push(sql`(
+      c.client_code ILIKE ${like} OR c.name ILIKE ${like} OR coalesce(c.sector, '') ILIKE ${like}
+      OR EXISTS (SELECT 1 FROM unnest(c.cargo_kinds) k WHERE k ILIKE ${like})
+      OR EXISTS (SELECT 1 FROM receipts r JOIN receipt_lots l ON l.receipt_id = r.id
+                  WHERE r.client_id = c.id AND r.status <> 'voided'
+                    AND (l.product_name_ru ILIKE ${like} OR l.product_name_zh ILIKE ${like}))
+    )`);
+  }
   const rows = await db.execute<{ chat_id: string; client_id: string; client_code: string; name: string }>(sql`
     SELECT DISTINCT ON (ctl.telegram_chat_id)
            ctl.telegram_chat_id::text AS chat_id, c.id AS client_id, c.client_code, c.name

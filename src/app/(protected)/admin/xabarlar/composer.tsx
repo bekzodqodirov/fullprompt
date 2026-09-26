@@ -6,15 +6,36 @@ import { compressPhoto } from '@/components/compress-photo';
 import type { Audience } from '@/modules/platform/broadcast/service';
 import { sendBroadcastAction } from './actions';
 
+/** Past this many rows the list stops drawing — the count still covers all. */
+const LIST_CAP = 300;
+
 /**
  * The message itself: words and up to ten files, sent to the audience the
- * page drew above. Files are uploaded as they are picked, pre-bound to the
+ * page drew above — minus whoever the office un-ticks in the list (his item
+ * 4: find the clients, then write to the ones that fit). Files are uploaded as they are picked, pre-bound to the
  * broadcast's own id minted here (#180's pattern), so «Yuborish» only
  * freezes the rows. The press asks once, naming the count — a message to
  * three hundred customers cannot be taken back.
  */
-export function BroadcastComposer({ audience, count }: { audience: Audience; count: number }) {
+export function BroadcastComposer({
+  audience,
+  recipients,
+}: {
+  audience: Audience;
+  recipients: { code: string; name: string }[];
+}) {
   const t = useTranslations('broadcast');
+  // Un-ticked codes. Empty = the whole audience, sent as the audience itself
+  // so a list longer than the codes cap still goes to everybody.
+  const [off, setOff] = useState<Set<string>>(() => new Set());
+  const count = recipients.length - recipients.filter((r) => off.has(r.code)).length;
+  const toggle = (code: string) =>
+    setOff((prev) => {
+      const next = new Set(prev);
+      if (next.has(code)) next.delete(code);
+      else next.add(code);
+      return next;
+    });
   const [id, setId] = useState(() => crypto.randomUUID());
   const [body, setBody] = useState('');
   const [files, setFiles] = useState<{ id: string; name: string }[]>([]);
@@ -56,15 +77,25 @@ export function BroadcastComposer({ audience, count }: { audience: Audience; cou
   }
 
   async function send() {
+    const picked = recipients.filter((r) => !off.has(r.code)).map((r) => r.code);
+    // Some un-ticked: the message goes to exactly the ticked codes — which
+    // the schema caps, so a huge list with a few removed is said, not cut.
+    if (off.size > 0 && picked.length > 500) {
+      setResult(t('error.too_many_picked'));
+      return;
+    }
     if (!window.confirm(t('confirm', { n: count }))) return;
     setPending(true);
     try {
-      const res = await sendBroadcastAction({ id, body, audience });
+      const target: Audience =
+        off.size === 0 ? audience : { sectors: [], cargoKinds: [], locales: [], codes: picked };
+      const res = await sendBroadcastAction({ id, body, audience: target });
       if (res.ok) {
         setResult(t('queued', { n: res.total ?? count }));
         setBody('');
         setFiles([]);
         setId(crypto.randomUUID());
+        setOff(new Set());
       } else {
         setResult(errorText[res.error ?? 'validation']);
       }
@@ -75,6 +106,42 @@ export function BroadcastComposer({ audience, count }: { audience: Audience; cou
 
   return (
     <section className="card space-y-2 !p-3" data-testid="broadcast-composer">
+      {recipients.length > 0 && (
+        <div className="space-y-1" data-testid="broadcast-picker">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="font-semibold">{t('picked', { n: count, total: recipients.length })}</span>
+            <button type="button" className="text-xs text-brand-700 underline" onClick={() => setOff(new Set())}>
+              {t('pickAll')}
+            </button>
+            <button
+              type="button"
+              className="text-xs text-brand-700 underline"
+              onClick={() => setOff(new Set(recipients.slice(0, LIST_CAP).map((r) => r.code)))}
+            >
+              {t('pickNone')}
+            </button>
+          </div>
+          <ul className="max-h-64 overflow-y-auto rounded-lg border border-line text-sm">
+            {recipients.slice(0, LIST_CAP).map((r) => (
+              <li key={r.code} className="border-b border-line last:border-0">
+                <label className="flex cursor-pointer items-center gap-2 px-2 py-1.5">
+                  <input
+                    type="checkbox"
+                    checked={!off.has(r.code)}
+                    onChange={() => toggle(r.code)}
+                    data-testid="broadcast-pick"
+                  />
+                  <span className="font-mono font-bold">{r.code}</span>
+                  <span className="min-w-0 truncate text-ink-600">{r.name}</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+          {recipients.length > LIST_CAP && (
+            <p className="text-2xs text-ink-500">{t('listCapped', { n: recipients.length - LIST_CAP })}</p>
+          )}
+        </div>
+      )}
       <p className="font-semibold">✍️ {t('compose')}</p>
       <textarea
         className="input h-36 py-2"
