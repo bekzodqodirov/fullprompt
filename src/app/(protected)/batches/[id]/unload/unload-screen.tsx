@@ -15,6 +15,8 @@ import {
 } from '@/offline/scan-outbox';
 import { codeIdentity } from '@/modules/wms/labels/code-identity';
 import { codesToUnmark } from '@/offline/ack-verdict';
+import { countOnlyLotOf, type CountOnlyLot } from '@/offline/count-only';
+import { isScanRefusal, type ScanRefusal } from '@/offline/scan-refusal';
 
 interface MemberBox {
   shortCode: string;
@@ -24,11 +26,14 @@ interface MemberBox {
   productNameZh: string;
   clientCode: string | null;
   marking: string | null;
+  crateCode?: string | null;
 }
 interface Snapshot {
   batch: { id: string; code: string; status: string };
   boxes: MemberBox[];
   crates: { code: string; boxShortCodes: string[] }[];
+  /** Lots the office counts on this truck (0112). Absent from a cached old snapshot. */
+  countOnly?: CountOnlyLot[];
 }
 
 /**
@@ -37,9 +42,30 @@ interface Snapshot {
  * (orange toast, logist alerted — edge case 4, reality wins); unknown QR →
  * red toast with a link to the unclaimed intake. Fully offline-capable.
  */
-export function UnloadScreen({ batchId }: { batchId: string }) {
+export function UnloadScreen({ batchId, countHref }: { batchId: string; countHref?: string }) {
   const t = useTranslations('unloading');
   const tc = useTranslations('common');
+  const tr = useTranslations('scanRefusal');
+  const tca = useTranslations('countAccept');
+  /**
+   * The phone's refusal of a count-only lot, in words (0112): a literal
+   * switch, so every key is one the bundles can see (#163).
+   */
+  const refusalText = useCallback(
+    (detail: ScanRefusal, lot: string) => {
+      switch (detail) {
+        case 'lot_counted':
+          return tr('lot_counted', { lot });
+        case 'qr_less_count_only':
+          return tr('qr_less_count_only', { lot });
+        case 'reserved_reason':
+          return tr('reserved_reason');
+      }
+    },
+    [tr],
+  );
+  /** The latest snapshot for the ack handler, which outlives a render. */
+  const snapRef = useRef<Snapshot | null>(null);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   /** Why there is no snapshot yet — `null` while it is simply still loading. */
   const [snapError, setSnapError] = useState<
@@ -63,6 +89,7 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
   const snapEtag = useRef<string | null>(null);
 
   const applySnapshot = useCallback((data: Snapshot) => {
+    snapRef.current = data;
     setSnapshot(data);
     // "Accepted here" is "no longer in transit" — NOT "in_stock". A customs or
     // distribution destination lands cargo straight in ready_for_pickup, and
@@ -139,7 +166,19 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
         } else if (ack.result === 'unknown_code') {
           setToast({ text: `❓ ${t('unknownCode')}`, intake: true });
         } else if (ack.result === 'rejected') {
-          setToast({ text: `❌ ${ack.detail ?? 'rejected'}` });
+          if (isScanRefusal(ack.detail)) {
+            // A lot the office counts: said by NAME, the server's words and
+            // the phone's own being the same sentence (0112).
+            const snap = snapRef.current;
+            const code = ack.scannedCode ?? '';
+            const lot =
+              countOnlyLotOf(code, snap?.boxes ?? [], snap?.countOnly)?.label ??
+              lotLabelOf(snap?.boxes.find((b) => b.shortCode.toUpperCase() === code.toUpperCase())) ??
+              code;
+            setToast({ text: `❌ ${refusalText(ack.detail, lot)}` });
+          } else {
+            setToast({ text: `❌ ${ack.detail ?? 'rejected'}` });
+          }
         }
       }
       const refused = codesToUnmark(acks);
@@ -149,11 +188,18 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
           for (const code of refused) next.delete(code);
           return next;
         });
-        // Counted, because one toast cannot report a hundred and fifty.
-        setToast({ text: `❌ ${t('serverRefused', { n: refused.length })}` });
+        // Counted, because one toast cannot report a hundred and fifty — but
+        // a count-only lot's refusal is already a sentence naming the lot,
+        // and a bare «N refused» over it would hide what to do.
+        const plain = acks.filter(
+          (a) => (a.result === 'rejected' || a.result === 'unknown_code') && !isScanRefusal(a.detail),
+        ).length;
+        if (plain > 0 || refused.length > 1) {
+          setToast({ text: `❌ ${t('serverRefused', { n: refused.length })}` });
+        }
       }
     },
-    [t],
+    [t, refusalText],
   );
 
   /**
@@ -194,6 +240,7 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
               const data = (await res.json()) as Snapshot;
               snapEtag.current = res.headers.get('etag');
               localStorage.setItem(cacheKey, JSON.stringify(data));
+              snapRef.current = data;
               setSnapshot(data);
               setDone((prev) => {
                 const next = new Set(prev);
@@ -321,6 +368,17 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
       setToast({ text: `❓ ${t('foreignCode')}` });
       return;
     }
+    // A lot the office counts on this truck (0112, Q4/Q8): refused here, at
+    // once and offline, before the server would say the same. Nothing is
+    // queued — the office's number is the lot's whole answer.
+    const counted = countOnlyLotOf(code, snapshot.boxes, snapshot.countOnly);
+    if (counted) {
+      feedback('bad');
+      setToast({
+        text: `❌ ${refusalText(counted.mode === 'counted' ? 'lot_counted' : 'qr_less_count_only', counted.label)}`,
+      });
+      return;
+    }
     const crate = snapshot.crates.find((c) => c.code === code);
     const memberCodes = crate ? crate.boxShortCodes : [code];
     const known = new Set(snapshot.boxes.map((b) => b.shortCode));
@@ -360,10 +418,22 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
 
   const total = snapshot.boxes.length;
   const doneCount = snapshot.boxes.filter((b) => done.has(b.shortCode)).length;
-  const unscanned = snapshot.boxes.filter((b) => !done.has(b.shortCode));
+  const countOnlyMode = new Map((snapshot.countOnly ?? []).map((l) => [l.lotId, l.mode]));
+  // The sticker sheet lists what a PHONE may take: a count-only lot's
+  // loose cartons are the office's (0112), a crated one is taken as its crate.
+  const unscanned = snapshot.boxes.filter(
+    (b) => !done.has(b.shortCode) && !(countOnlyMode.has(b.lotId) && !b.crateCode),
+  );
   const byLot = new Map<
     string,
-    { label: string; sub: string | null; product: string; total: number; done: number }
+    {
+      label: string;
+      sub: string | null;
+      product: string;
+      total: number;
+      done: number;
+      mode: 'counted' | 'qrless' | null;
+    }
   >();
   for (const box of snapshot.boxes) {
     const identity = codeIdentity(box.marking, box.clientCode);
@@ -373,6 +443,7 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
       product: box.productNameZh,
       total: 0,
       done: 0,
+      mode: countOnlyMode.get(box.lotId) ?? null,
     };
     entry.total += 1;
     if (done.has(box.shortCode)) entry.done += 1;
@@ -420,6 +491,16 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
               )}
             </span>
             <span className="min-w-0 flex-1 truncate text-ink-700">{lot.product}</span>
+            {lot.mode === 'counted' && (
+              <span className="chip-brand shrink-0" data-testid="unload-lot-counted">
+                {tca('chipCounted')}
+              </span>
+            )}
+            {lot.mode === 'qrless' && (
+              <span className="chip-warn shrink-0" data-testid="unload-lot-qrless">
+                {tca('chipQrless')}
+              </span>
+            )}
             <span className={`font-semibold ${lot.done === lot.total ? 'text-good' : ''}`}>
               {lot.done}/{lot.total}
             </span>
@@ -430,9 +511,17 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
       <button type="button" className="btn-secondary w-full" onClick={() => setManualOpen(true)}>
         🏷 {t('stickerLost')}
       </button>
+      {countHref && (
+        <Link href={countHref} className="btn-secondary w-full" data-testid="open-count-accept">
+          {tca('openCountAccept')}
+        </Link>
+      )}
 
       {toast && (
-        <div className="space-y-1 rounded-lg bg-gray-800 p-2 text-sm font-semibold text-white">
+        <div
+          className="space-y-1 rounded-lg bg-gray-800 p-2 text-sm font-semibold text-white"
+          data-testid="unload-toast"
+        >
           <button type="button" className="w-full text-left" onClick={() => setToast(null)}>
             {toast.text}
           </button>
@@ -502,4 +591,10 @@ export function UnloadScreen({ batchId }: { batchId: string }) {
       )}
     </div>
   );
+}
+
+/** «GS777-A» for a snapshot carton, the way the lot rows print it. */
+function lotLabelOf(box: MemberBox | undefined): string | null {
+  if (!box) return null;
+  return `${codeIdentity(box.marking, box.clientCode).main}-${box.letter}`;
 }

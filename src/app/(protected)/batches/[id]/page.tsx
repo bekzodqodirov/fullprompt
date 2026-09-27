@@ -36,6 +36,11 @@ import { Panel } from '@/components/panel';
 import { BatchCodeForm } from './batch-code-form';
 import { BatchActions } from './batch-actions';
 import { UnloadActions } from './unload-actions';
+// Region B — «sanab qabul» (0112).
+import { CountAcceptPanel } from './count-accept-panel';
+import { countAcceptPanel, countedLotAwaiting } from '@/modules/wms/scanning/count-accept';
+import { mayCountMove } from '@/modules/wms/scanning/count-door';
+import { landedStatusFor } from '@/modules/wms/warehouses/landed';
 import { BackLink } from '@/components/back-link';
 import { CardCols } from '@/components/card-cols';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
@@ -281,7 +286,13 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
     : null;
 
   const missingRows = await db
-    .select({ box: boxes, letter: receiptLots.letter, clientCode: clients.clientCode, marking: receipts.unclaimedMarking })
+    .select({
+      box: boxes,
+      letter: receiptLots.letter,
+      clientCode: clients.clientCode,
+      marking: receipts.unclaimedMarking,
+      product: receiptLots.productNameZh,
+    })
     .from(boxes)
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
     .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
@@ -294,6 +305,24 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
   const remainingToAccept = ['in_transit', 'arrived'].includes(batch.status)
     ? (await remainingToUnload(id)).length
     : 0;
+
+  // Region B — «sanab qabul» (0112): the office's count at the destination.
+  // The door is the count door there (plans.manage in scope, Q3a); the
+  // panel's cartons beyond the truck also need the ORIGIN's door.
+  const unloadingNow = ['in_transit', 'arrived'].includes(batch.status);
+  const mayCountAccept = unloadingNow && mayCountMove(actor, batch.destWarehouseId);
+  const [countPanel, countedAwaiting, overArrivedRows, destTypeRow] = await Promise.all([
+    mayCountAccept ? countAcceptPanel(id) : null,
+    unloadingNow ? countedLotAwaiting(id) : 0,
+    db
+      .select({ n: sql<number>`count(DISTINCT ${scanEvents.boxId})` })
+      .from(scanEvents)
+      .where(sql`${scanEvents.batchId} = ${id} AND ${scanEvents.type} = 'unload' AND ${scanEvents.addedOnSpot} = true`),
+    db.select({ type: warehouses.type }).from(warehouses).where(eq(warehouses.id, batch.destWarehouseId)),
+  ]);
+  const overArrived = Number(overArrivedRows[0]?.n ?? 0);
+  const countAwaiting = countPanel?.lots.reduce((acc, lot) => acc + lot.awaiting, 0) ?? 0;
+  const tca = await getTranslations('countAccept');
 
   // What was actually loaded, box by box — from load scan events, so the
   // list survives unload/close (owner: after the truck leaves, the sending
@@ -356,6 +385,14 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
               +{onSpotCount} {t('onSpot')}
             </span>
           )}
+          {overArrived > 0 && (
+            <span
+              className="ml-2 rounded bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-800"
+              data-testid="batch-over-arrived"
+            >
+              +{overArrived} {tca('overArrived')}
+            </span>
+          )}
         </p>
         {batch.departedAt && (
           <p className="text-sm text-ink-700">
@@ -410,12 +447,19 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
           <UnloadActions
             batchId={batch.id}
             status={batch.status}
-            missing={missingRows.map(({ box, letter, clientCode, marking }) => ({
+            missing={missingRows.map(({ box, letter, clientCode, marking, product }) => ({
               boxId: box.id,
               shortCode: box.shortCode,
               label: `${codeIdentity(marking, clientCode).main}-${letter}`,
+              lotId: box.lotId,
+              product,
+              crated: box.crateId !== null,
             }))}
             remaining={remainingToAccept}
+            // «Hammasini qabul qilish» leaves a lot counted HERE to the count
+            // (decision 21), so its button says what it will really land.
+            acceptable={remainingToAccept - countedAwaiting}
+            canCountResolve={mayCountMove(actor, batch.destWarehouseId)}
             // The two shortcuts and the missing-box resolution are the same
             // manager act at the same warehouse — and the WAREHOUSE half was
             // missing on `canResolve`, so the screen drew a button whose
@@ -427,6 +471,26 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
           />
         )}
       </div>
+
+      {/* Region B — «sanab qabul» (0112), in the slot under the header card. */}
+      {countPanel && (countPanel.lots.length > 0 || countPanel.crates.length > 0) && (
+        <Panel
+          id="count-accept"
+          title={`🔢 ${tca('title')}`}
+          badge={tca('badge', { lots: countPanel.lots.length, n: countAwaiting })}
+          open={countPanel.lots.some((lot) => lot.awaiting > 0 && lot.mode !== null)}
+          testId="count-accept-open"
+        >
+          <CountAcceptPanel
+            batchId={batch.id}
+            status={batch.status}
+            notifiesClients={landedStatusFor(destTypeRow[0]?.type ?? '') === 'ready_for_pickup'}
+            mayOver={mayCountMove(actor, batch.originWarehouseId)}
+            lots={countPanel.lots}
+            crates={countPanel.crates}
+          />
+        </Panel>
+      )}
 
       <CardCols
         main={

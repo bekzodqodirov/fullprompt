@@ -13,9 +13,22 @@ import {
   closeBatch,
   finishUnload,
   resolveMissing,
+  resolveMissingLot,
+  resolveMissingLotSchema,
   resolveMissingSchema,
   unloadRemaining,
 } from '@/modules/wms/scanning/unload';
+import {
+  countAcceptCrate,
+  countAcceptCrateSchema,
+  countAcceptLot,
+  countAcceptSchema,
+  CountError,
+  type CountAcceptRefusal,
+  type CountAcceptResult,
+} from '@/modules/wms/scanning/count-accept';
+import { countDoorFor } from '@/modules/wms/scanning/count-door';
+import { isBusyError } from '@/modules/platform/db/errors';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
@@ -32,7 +45,7 @@ import { tashkentDay } from '@/modules/platform/time/tashkent';
  */
 export async function unloadRemainingAction(
   batchId: string,
-): Promise<{ ok: boolean; accepted?: number; error?: string }> {
+): Promise<{ ok: boolean; accepted?: number; skippedCounted?: number; error?: string }> {
   const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
   if (!batch) return { ok: false, error: 'batch_not_found' };
   let actor;
@@ -47,7 +60,116 @@ export async function unloadRemainingAction(
     const result = await unloadRemaining(batchId, { actorId: actor.id, ...meta });
     await enqueue(JOB_PROCESS_EVENTS, {});
     revalidatePath(`/batches/${batchId}`);
-    return { ok: true, accepted: result.accepted };
+    return { ok: true, accepted: result.accepted, skippedCounted: result.skippedCounted };
+  } catch (err) {
+    if (err instanceof ScanError) return { ok: false, error: err.code };
+    throw err;
+  }
+}
+
+export type CountAcceptActionResult =
+  | { ok: true; result: CountAcceptResult }
+  | { ok: false; error: CountAcceptRefusal | 'validation'; detail?: Record<string, number | string> };
+
+/**
+ * «Sanab qabul» (0112): the office's count of one lot off a truck. The count
+ * door at the DESTINATION opens it; the origin's door rides along for
+ * cartons beyond the truck, which come off the origin's books — the service
+ * asks both again (#531). Wrapped like every action here: an AuthError out of
+ * an async onClick has no boundary and reaches the person as nothing.
+ */
+export async function countAcceptLotAction(input: unknown): Promise<CountAcceptActionResult> {
+  const parsed = countAcceptSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: 'validation' };
+  const batch = await db.query.batches.findFirst({ where: eq(batches.id, parsed.data.batchId) });
+  if (!batch) return { ok: false, error: 'batch_not_found' };
+  let actor;
+  try {
+    actor = await authorize('plans.manage', { warehouseId: batch.destWarehouseId });
+  } catch (err) {
+    if (err instanceof AuthError) return { ok: false, error: 'forbidden' };
+    throw err;
+  }
+  const dest = countDoorFor(actor, batch.destWarehouseId);
+  if (!dest) return { ok: false, error: 'forbidden' };
+  const origin = countDoorFor(actor, batch.originWarehouseId);
+  const meta = await requestMeta();
+  try {
+    const result = await countAcceptLot(parsed.data, { actorId: actor.id, ...meta }, { dest, origin });
+    if (!result.replay) await enqueue(JOB_PROCESS_EVENTS, {});
+    revalidatePath(`/batches/${batch.id}`);
+    return { ok: true, result };
+  } catch (err) {
+    if (err instanceof CountError) return { ok: false, error: err.code, detail: err.detail };
+    if (isBusyError(err)) return { ok: false, error: 'busy_retry' };
+    if (err instanceof ScanError && err.code === 'batch_not_unloading') {
+      return { ok: false, error: 'batch_not_unloading' };
+    }
+    throw err;
+  }
+}
+
+/** A crate (a pallet) accepted whole — one place, through the crate branch (Q10 d). */
+export async function countAcceptCrateAction(
+  input: unknown,
+): Promise<
+  | { ok: true; landed: number; notArrived: string[]; replay: boolean }
+  | { ok: false; error: CountAcceptRefusal | 'validation' }
+> {
+  const parsed = countAcceptCrateSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: 'validation' };
+  const batch = await db.query.batches.findFirst({ where: eq(batches.id, parsed.data.batchId) });
+  if (!batch) return { ok: false, error: 'batch_not_found' };
+  let actor;
+  try {
+    actor = await authorize('plans.manage', { warehouseId: batch.destWarehouseId });
+  } catch (err) {
+    if (err instanceof AuthError) return { ok: false, error: 'forbidden' };
+    throw err;
+  }
+  const dest = countDoorFor(actor, batch.destWarehouseId);
+  if (!dest) return { ok: false, error: 'forbidden' };
+  const meta = await requestMeta();
+  try {
+    const res = await countAcceptCrate(parsed.data, { actorId: actor.id, ...meta }, { dest });
+    if (!res.replay) await enqueue(JOB_PROCESS_EVENTS, {});
+    revalidatePath(`/batches/${batch.id}`);
+    return { ok: true, landed: res.landed, notArrived: res.notArrived, replay: res.replay };
+  } catch (err) {
+    if (err instanceof CountError) return { ok: false, error: err.code };
+    if (isBusyError(err)) return { ok: false, error: 'busy_retry' };
+    throw err;
+  }
+}
+
+/**
+ * N of one lot's missing cartons at once (0112, decision 22). A typed number
+ * moves cargo with no per-carton witness, so it is behind the COUNT door at
+ * the destination — the per-box buttons beside it keep `receipts.void`.
+ */
+export async function resolveMissingLotAction(
+  input: unknown,
+): Promise<{ ok: boolean; resolved?: number; error?: string }> {
+  const parsed = resolveMissingLotSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: 'validation' };
+  const batch = await db.query.batches.findFirst({ where: eq(batches.id, parsed.data.batchId) });
+  if (!batch) return { ok: false, error: 'batch_not_found' };
+  let actor;
+  try {
+    actor = await authorize('plans.manage', { warehouseId: batch.destWarehouseId });
+  } catch (err) {
+    if (err instanceof AuthError) return { ok: false, error: 'forbidden' };
+    throw err;
+  }
+  const meta = await requestMeta();
+  try {
+    const res = await resolveMissingLot(
+      parsed.data,
+      { actorId: actor.id, ...meta },
+      countDoorFor(actor, batch.destWarehouseId),
+    );
+    revalidatePath(`/batches/${batch.id}`);
+    return { ok: true, resolved: res.resolved };
   } catch (err) {
     if (err instanceof ScanError) return { ok: false, error: err.code };
     throw err;
