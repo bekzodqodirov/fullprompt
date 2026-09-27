@@ -130,6 +130,9 @@ Migratsiya yo'q. Ledger o'zgarmaydi (**112**).
 37. Sotuvchi profilida «Operatsiya xabarlari»ni o'chirib qo'ygan bo'lsa,
     taklif matni Telegramga kelmaydi — ekranda endi «yuborildi» deyilmaydi,
     «profilingizda o'chirilgan — matnni nusxalab oling» deyiladi.
+38. To'liq lot (masalan 9 tadan 9 tasi) endi aynan yozilgan jami bilan
+    ko'rinadi — oldingi tuzatish kasr xonasida bir raqamga adashib, xabar
+    0.113, Mini App 0.112 m³ deb qo'yardi.
 
 **Bilib qo'ying:**
 - Mijoz klaviaturasidagi yangi «💬 Menejer» tugmasi mijozda bot unga

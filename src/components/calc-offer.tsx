@@ -184,7 +184,7 @@ export function CalcOfferForm({
           <p className="text-2xs text-ink-600">
             {result.delivered
               ? `✅ ${t('offerSent')}`
-              : `⚠ ${t(result.muted ? 'offerMuted' : 'offerNoTelegram')}`}
+              : `⚠ ${result.muted ? t('offerMuted') : t('offerNoTelegram')}`}
           </p>
           <textarea
             className="input h-56 font-mono text-2xs"

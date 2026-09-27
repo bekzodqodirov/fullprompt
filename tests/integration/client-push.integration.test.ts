@@ -695,17 +695,17 @@ describe('the arrival push after a late find and a partial lot (round C review, 
     expect(text).not.toContain(formatDay(firstDay));
   });
 
-  it('7 of a 10.1 kg, 20-box lot read ONE figure in the push and on the lot card', async () => {
+  it('3 of a 1.5 kg, 20-box lot read ONE figure in the push and on the lot card', async () => {
     const chat = newChat();
     const client = await makeClient('SH', { chat });
     const r = await receive(client.id, cnId, { boxCount: 20 });
-    await db.update(receiptLots).set({ totalWeightKg: '10.1' }).where(eq(receiptLots.id, r.lotId));
-    // Thirteen were handed over earlier — the way production's rows look.
+    await db.update(receiptLots).set({ totalWeightKg: '1.5' }).where(eq(receiptLots.id, r.lotId));
+    // Seventeen were handed over earlier — the way production's rows look.
     await db
       .update(boxes)
       .set({ status: 'issued' })
-      .where(inArray(boxes.id, r.boxes.slice(0, 13).map((b) => b.id)));
-    const { batchId, planned } = await truck(r.lotId, 7);
+      .where(inArray(boxes.id, r.boxes.slice(0, 17).map((b) => b.id)));
+    const { batchId, planned } = await truck(r.lotId, 3);
     for (const box of planned) await ingestUnloadScans([scan(batchId, box.code)], ctx());
     await finishUnload(batchId, ctx());
     const [notice] = await noticesOf(client.id, NOTICE_ARRIVED);
@@ -713,14 +713,36 @@ describe('the arrival push after a late find and a partial lot (round C review, 
     await sendDueArrivalNotices(DAY);
 
     const [lot] = (await cargoOverview(client.id)).filter((l) => l.lotId === r.lotId);
-    expect(lot!.total).toBe(7);
+    expect(lot!.total).toBe(3);
     const onCard = groupDigits(lot!.weightKg);
-    // total × n ÷ boxes: 10.1 × 7 ÷ 20 = 3.535 → 3.54 on every surface.
-    expect(onCard).toBe('3.54');
+    // total × n ÷ boxes: 1.5 × 3 ÷ 20 = 0.225 → 0.23 on every surface. Both
+    // other ways to write the share — n × (total ÷ boxes), the card's old
+    // one, and total × (n ÷ boxes), the push's — give 0.22, so this lot
+    // catches either surface drifting (the third pass's verifier).
+    expect(onCard).toBe('0.23');
     const t = clientLabels(null);
     const text = htmlToPlain(bodyOf(callsTo(chat).find((c) => bodyOf(c).includes(t.readyTitle))!));
     expect(text).toContain(`${onCard} ${t.kg}`);
-    expect(text).not.toContain('3.53');
+    expect(text).not.toContain('0.22');
+  });
+
+  it('a WHOLE lot reads its typed total — the «qabul qilindi» push and the card agree', async () => {
+    const chat = newChat();
+    const client = await makeClient('WL', { chat });
+    const r = await receive(client.id, cnId, { boxCount: 9 });
+    // Nine cartons of 25×20×25 cm: 0.1125 m³, whose share-of-nine is
+    // 0.11249999999999999 in floating point — 0.112 against the push's 0.113.
+    await db.update(receiptLots).set({ totalVolumeM3: '0.1125' }).where(eq(receiptLots.id, r.lotId));
+    const [notice] = await noticesOf(client.id, NOTICE_RECEIVED);
+    await makeDue(notice!.id);
+    await sendDueArrivalNotices(DAY);
+
+    const [lot] = (await cargoOverview(client.id)).filter((l) => l.lotId === r.lotId);
+    const onCard = groupDigits(lot!.volumeM3);
+    expect(onCard).toBe('0.113');
+    const t = clientLabels(null);
+    const text = htmlToPlain(bodyOf(callsTo(chat)[0]!));
+    expect(text).toContain(`${onCard} ${t.m3}`);
   });
 });
 

@@ -1985,7 +1985,9 @@ share is `shareOf`, a total is `sumRounded` (the lines as printed), both in
 telegram/format.ts and fenced over all six readers; the arrival's landing is
 any movement that landed a counted carton HERE (`landedHereSql`, which catches
 the stocktake's «found»); an offer held by the seller's own mutes says so
-(`offerMuted`). 10 more red proofs. LESSON: a test for a fix must be anchored
+(`offerMuted`). 10 more red proofs. A fourth look (#1116): `shareOf` returns
+the typed total for a WHOLE lot (`n === of`) — `(0.1125 × 9) ÷ 9` is not 0.1125
+in floating point. LESSON: a test for a fix must be anchored
 on something the fix did not write — a literal, a second surface computed a
 DIFFERENT way, a stored list from a real day.
 

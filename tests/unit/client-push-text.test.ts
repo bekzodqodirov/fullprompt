@@ -229,10 +229,20 @@ describe('the push prints kilos the way the app it opens does (round C review)',
       expect(src, file).not.toMatch(/\*\s*10\s*\*\*/);
       // A share computed any other way than `shareOf` lands on the other side
       // of a half-hundredth (10.1 kg, 7 of 20: 3.53 against 3.54).
-      expect(src, file).not.toMatch(/\)\s*\*\s*share\b/);
-      expect(src, file).not.toMatch(/\*\s*Number\([^)]*perBox(Kg|M3)/);
+      expect(src, file).not.toMatch(/\*\s*share\b|\bshare\s*\*/);
+      expect(src, file).not.toMatch(/perBox(Kg|M3)\b[^\n;]*\*|\*[^\n;]*perBox(Kg|M3)/);
+      // …nor `lotKg * (n / boxes)`, the push's old shape written inline.
+      expect(src, file).not.toMatch(/(Kg|M3|kg|m3)[^\n;]*\*\s*\([^()\n]*\/[^()\n]*\)/);
       expect(src, file).toMatch(/\b(roundKg|shareOf)\b/);
     }
+  });
+
+  it('a whole lot is its typed total, exactly; a part is total × n ÷ boxes', async () => {
+    const { shareOf } = await import('@/modules/platform/telegram/format');
+    expect(shareOf(0.1125, 9, 9)).toBe(0.1125);
+    expect(shareOf(0.0945, 12, 12)).toBe(0.0945);
+    expect(shareOf(1.5, 3, 20)).toBe((1.5 * 3) / 20);
+    expect(shareOf(10, 3, 0)).toBe(0);
   });
 
   it('a total is the sum of the lines as printed — 0.095 + 0.095 is 0.19, not 0.189', async () => {

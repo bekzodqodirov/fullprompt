@@ -136,7 +136,13 @@ export function roundM3(value: number): number {
  * through the same `roundKg` (round C review, second pass).
  */
 export function shareOf(total: number, n: number, of: number): number {
-  return of > 0 ? (total * n) / of : 0;
+  if (of <= 0) return 0;
+  // The whole lot is its typed total, exactly: `(0.1125 × 9) ÷ 9` is
+  // 0.11249999999999999 in floating point, which rounds to 0.112 under a
+  // «qabul qilindi» push that printed the stored 0.113 (round C review,
+  // third pass).
+  if (n === of) return total;
+  return (total * n) / of;
 }
 
 /**
