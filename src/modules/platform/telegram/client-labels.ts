@@ -535,6 +535,15 @@ const DICT = {
   },
   languageLabel: { uz: 'Til', ru: 'Язык', en: 'Language' },
   // --- P-C extra (only P-C adds keys here) ---
+  // The office card inside the Mini App. `managerNone` says «write HERE»,
+  // which in the bot is true and in the app is not: the chat is under the
+  // app, one tap away, and that tap is the button beside this sentence.
+  officeWriteHint: {
+    uz: 'Savolingizni bot chatiga yozing — xabaringiz ofisimizga yetkaziladi.',
+    ru: 'Напишите вопрос в чат с ботом — сообщение передадут в наш офис.',
+    en: 'Write your question in the bot chat — it will be passed to our office.',
+  },
+  writeInChat: { uz: '💬 Chatga yozish', ru: '💬 Написать в чат', en: '💬 Write in the chat' },
 
   // --- language switch ---
   chooseLanguage: { uz: 'Tilni tanlang:', ru: 'Выберите язык:', en: 'Choose a language:' },

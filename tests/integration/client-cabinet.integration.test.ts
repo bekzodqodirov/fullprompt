@@ -337,9 +337,17 @@ describe('the Mini App door', () => {
     const auth = await authenticateCabinet(signFor(CHAT_ID));
     expect(auth.ok).toBe(true);
     if (!auth.ok) return;
-    const json = JSON.stringify(await cabinetPayload(auth));
+    const payload = await cabinetPayload(auth);
+    const json = JSON.stringify(payload);
     for (const leak of ['landedCost', 'costUsd', 'margin', 'profit', 'sellPrice']) {
       expect(json).not.toContain(leak);
+    }
+    // Round C: the people a customer may contact carry exactly what the offer
+    // PDF prints — never a staff id or a login riding along (judge PRIV-13).
+    expect(Object.keys(payload.office!).sort()).toEqual(['name', 'phone']);
+    for (const c of payload.clients) {
+      if (c.manager) expect(Object.keys(c.manager).sort()).toEqual(['name', 'phone', 'telegramUrl']);
+      else expect(c.manager).toBeNull();
     }
   });
 });
