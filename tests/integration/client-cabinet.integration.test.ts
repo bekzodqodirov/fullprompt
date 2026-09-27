@@ -26,7 +26,7 @@ import {
   failClientLink,
   linkAllClientsForPhone,
 } from '@/modules/platform/telegram/client-cabinet';
-import { renderClientCabinetText } from '@/modules/platform/notifications/service';
+import { issuedText } from '@/modules/wms/notices/client-text';
 import { authenticateCabinet, cabinetPayload } from '@/modules/wms/client-cabinet/miniapp';
 
 /** Phase 2.2: Telegram client cabinet — linking, cargo view, photos, debt. */
@@ -339,31 +339,34 @@ describe('the Mini App door', () => {
 
 describe('client-facing notifications', () => {
   /*
-   * REWRITTEN in round 98, and the change of subject is the point.
+   * REWRITTEN in round 98, and RE-POINTED in round C.
    *
-   * This used to assert that `ReadyForPickup` renders a customer's message.
-   * That event fires once per unload SCAN, which is exactly the defect the
-   * owner reported — one «yukingiz keldi» per carton. The customer's copy is
-   * now a claimed notice (`wms/notices/arrival.ts`), so the assertion here is
-   * that this event says NOTHING to the client, and the event stays for staff.
+   * Round 98: this used to assert that `ReadyForPickup` renders a customer's
+   * message. That event fires once per unload SCAN, which is exactly the
+   * defect the owner reported — one «yukingiz keldi» per carton — so the
+   * customer's copy became a claimed notice (`wms/notices/arrival.ts`).
+   *
+   * Round C finished the move: the event drain renders NOTHING for a customer
+   * any more (`renderClientCabinetText` is gone; the fence is in
+   * `client-cabinet-text.test.ts`), and «berildi» is a claimed notice too,
+   * rendered from the handover by `issuedText`. The facts this test pinned —
+   * the receiver's name and what is left — are asserted on it.
    */
-  it('says nothing to the client for ReadyForPickup; renders BoxIssued; nothing for staff events', () => {
-    expect(
-      renderClientCabinetText('ReadyForPickup', {
+  it('renders the handover with the receiver and what is left', () => {
+    const issued = issuedText(
+      {
         clientCode: 'GS777',
-        boxCount: 13,
-        warehouseCode: 'TAS1',
-      }),
-    ).toBeNull();
-    const issued = renderClientCabinetText('BoxIssued', {
-      clientCode: 'GS777',
-      boxCount: 2,
-      warehouseCode: 'TAS1',
-      personName: 'Ali',
-      remaining: 5,
-    });
+        warehouseName: 'Toshkent 1',
+        issuedAt: null,
+        lines: [],
+        boxCount: 2,
+        personName: 'Ali',
+        leftHere: 5,
+        elsewhere: null,
+      },
+      null,
+    );
     expect(issued).toContain('Ali');
     expect(issued).toContain('5');
-    expect(renderClientCabinetText('PlanApproved', {})).toBeNull();
   });
 });

@@ -36,6 +36,7 @@ import { costOrphanedByVoid, lockCostsTouchingLots } from '../costing/void-guard
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { MAX_NATIVE_AMOUNT } from '../finance/money-bounds';
 import { receiptHasCompensation } from '../finance/compensation-follow';
+import { claimReceivedNotice } from '../notices/client-claims';
 
 export const lotInputSchema = z
   .object({
@@ -419,6 +420,10 @@ export async function confirmReceipt(
       entityId: receipt!.id,
       actorId: ctx.actorId,
     });
+    // The customer's «qabul qilindi» (round C): claimed HERE, with the fact,
+    // and sent by the notices sweep after the correction window — never by
+    // the event drain from a payload a correction cannot reach.
+    if (input.clientId) await claimReceivedNotice(tx, input.clientId, receipt!.id);
 
     // Price control (docs/DEALS.md). Runs last, after the cargo is recorded,
     // and cannot fail the confirm: the boxes are physically in the building.

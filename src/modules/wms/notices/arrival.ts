@@ -8,6 +8,7 @@ import {
   receipts,
 } from '@/modules/platform/db/schema';
 import { isPermanentFailure } from '@/modules/platform/telegram/send';
+import { pushLotName, type PushLot } from './client-text';
 
 /**
  * «Yukingiz yetib keldi» — once per customer per truck, and true when it goes.
@@ -116,22 +117,24 @@ export async function releaseArrivalNotices(tx: Exec, batchId: string): Promise<
     );
 }
 
-export interface ArrivedLine {
-  /** The lot's letter on the label — the customer's own reference. */
-  letter: string | null;
-  /** Russian where we have it, Chinese otherwise: the office reads Uzbek. */
-  name: string;
-  boxCount: number;
-  weightKg: number;
-  volumeM3: number;
-}
+/**
+ * One lot of the landed delivery — the push's own lot shape since round C, so
+ * the Uzbek arrival and the Chinese one draw a lot the same way. `lotId` is
+ * what finds the lot's photograph and opens the Mini App on it.
+ */
+export type ArrivedLine = PushLot;
 
 export interface ArrivedSummary {
   lines: ArrivedLine[];
   boxCount: number;
   weightKg: number;
   volumeM3: number;
+  /** Filled by the sender from the batch's destination, not by the query. */
   warehouseCode: string;
+  /** The place by NAME — «Toshkent 1», never the staff code «TAS1». */
+  warehouseName?: string;
+  /** Printed under the name when the office has typed one. */
+  warehouseAddress?: string | null;
 }
 
 /**
@@ -155,6 +158,7 @@ export async function arrivedSummary(
 ): Promise<ArrivedSummary | null> {
   const rows = await exec
     .select({
+      lotId: receiptLots.id,
       letter: receiptLots.letter,
       nameRu: receiptLots.productNameRu,
       nameZh: receiptLots.productNameZh,
@@ -218,8 +222,9 @@ export async function arrivedSummary(
     const ofLot = Number(row.lotBoxes) || 0;
     const share = ofLot > 0 ? landed / ofLot : 0;
     return {
+      lotId: row.lotId,
       letter: row.letter,
-      name: row.nameRu?.trim() || row.nameZh,
+      name: pushLotName(row.nameRu, row.nameZh),
       boxCount: landed,
       weightKg: Number(row.lotKg ?? 0) * share,
       volumeM3: Number(row.lotM3 ?? 0) * share,
@@ -246,23 +251,66 @@ export async function arrivedSummary(
  * UPDATE, so two overlapping sweeps split the work instead of repeating it.
  *
  * `sending` is a real status and reclaimable: a drain that dies mid-send
- * leaves rows in it, and `RECLAIM_MINUTES` later they are pending again with
- * their attempt spent.
+ * leaves rows in it, and `RECLAIM_MINUTES` later they are taken again with
+ * their attempt SPENT — the dead run counts (judge REL-14). It used to say so
+ * here and not do it: a row whose send kills the process every time (a
+ * photograph that exhausts memory, say) was reclaimed and retried for ever,
+ * which is a queue that never empties and a customer who may be messaged on
+ * every lap. At the cap a reclaimed row is settled `failed` instead.
+ *
+ * `kinds` is every notice the sweep knows how to say (round C made it four:
+ * «qabul qilindi», «yetib keldi», «berildi», «zavoddan olindi»); a kind with
+ * no renderer is never claimed, so it cannot be settled by a sweep that does
+ * not understand it.
  */
 export const RECLAIM_MINUTES = 10;
 
-export async function claimNoticesForSending(limit = 50, now = new Date()) {
-  const rows = await db
+export async function claimNoticesForSending(
+  limit = 50,
+  now = new Date(),
+  kinds: readonly string[] = [NOTICE_ARRIVED],
+) {
+  if (kinds.length === 0) return [];
+  const at = now.toISOString();
+  const kindList = sql.join(
+    kinds.map((kind) => sql`${kind}`),
+    sql`, `,
+  );
+  // A dead run at the budget's last attempt is the end of the budget.
+  await db
     .update(clientNotices)
-    .set({ status: 'sending', claimedAt: now })
+    .set({
+      status: 'failed',
+      attempts: sql`${clientNotices.attempts} + 1`,
+      lastError: 'abandoned mid-send (reclaimed at the attempt cap)',
+    })
     .where(
       sql`${clientNotices.id} IN (
         SELECT id FROM client_notices
-        WHERE kind = ${NOTICE_ARRIVED}
-          AND send_after <= ${now.toISOString()}::timestamptz
+        WHERE kind IN (${kindList})
+          AND status = 'sending'
+          AND claimed_at < ${at}::timestamptz - make_interval(mins => ${RECLAIM_MINUTES})
+          AND attempts + 1 >= ${MAX_NOTICE_ATTEMPTS}
+        FOR UPDATE SKIP LOCKED
+      )`,
+    );
+  const rows = await db
+    .update(clientNotices)
+    .set({
+      status: 'sending',
+      claimedAt: now,
+      // The SET reads the row as it was: a row taken back from `sending` is a
+      // run that died holding it, and that run was an attempt.
+      attempts: sql`${clientNotices.attempts} + CASE WHEN ${clientNotices.status} = 'sending' THEN 1 ELSE 0 END`,
+    })
+    .where(
+      sql`${clientNotices.id} IN (
+        SELECT id FROM client_notices
+        WHERE kind IN (${kindList})
+          AND send_after <= ${at}::timestamptz
           AND (
             status = 'pending'
-            OR (status = 'sending' AND claimed_at < ${now.toISOString()}::timestamptz - make_interval(mins => ${RECLAIM_MINUTES}))
+            OR (status = 'sending' AND claimed_at < ${at}::timestamptz - make_interval(mins => ${RECLAIM_MINUTES}))
           )
         ORDER BY send_after
         LIMIT ${limit}
@@ -271,6 +319,43 @@ export async function claimNoticesForSending(limit = 50, now = new Date()) {
     )
     .returning();
   return rows;
+}
+
+/**
+ * Give claimed rows back UNTOUCHED — no attempt spent, the window unchanged.
+ *
+ * For the one failure that is nobody's message: the bot itself cannot send
+ * (a revoked or mistyped token answers 401/404 to everything). Counting that
+ * against each customer would spend every waiting notice's budget in the
+ * hours a burned token is being rotated (judge REL-1), so the sweep stops and
+ * hands everything back for the run after the fix.
+ */
+export async function releaseNotices(ids: readonly string[]): Promise<void> {
+  if (ids.length === 0) return;
+  await db
+    .update(clientNotices)
+    .set({ status: 'pending', claimedAt: null })
+    .where(and(inArray(clientNotices.id, [...ids]), eq(clientNotices.status, 'sending')));
+}
+
+/**
+ * Telegram said «not now, in N seconds» (429). That is a moment, not a
+ * failure of this message: the row goes back to pending with its window moved
+ * past the wait and NO attempt spent (judge REL-3) — the burst after a truck
+ * lands is exactly when the rate limit bites, and five of those used to be a
+ * customer never told.
+ */
+export async function deferNotice(id: string, retryAfterSeconds: number | null, detail: string): Promise<void> {
+  const wait = Math.max(1, Math.min(3600, Math.ceil(retryAfterSeconds ?? 30)));
+  await db
+    .update(clientNotices)
+    .set({
+      status: 'pending',
+      claimedAt: null,
+      sendAfter: sql`now() + make_interval(secs => ${wait})`,
+      lastError: detail.slice(0, 500),
+    })
+    .where(eq(clientNotices.id, id));
 }
 
 /** Notices whose window has passed. Ordered oldest first; bounded. */

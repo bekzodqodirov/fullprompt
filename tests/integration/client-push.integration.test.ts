@@ -1,0 +1,642 @@
+import 'dotenv/config';
+import { and, eq, inArray } from 'drizzle-orm';
+import { v4 as uuidv4 } from 'uuid';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { db, pgClient } from '@/modules/platform/db/client';
+import {
+  attachments,
+  boxes,
+  clientNotices,
+  clients,
+  clientTelegramLinks,
+  receipts,
+  users,
+  warehouses,
+} from '@/modules/platform/db/schema';
+import { getStorage } from '@/modules/platform/files/storage';
+import { clientLabels } from '@/modules/platform/telegram/client-labels';
+import { htmlToPlain } from '@/modules/platform/telegram/format';
+import { __setTelegramTransport } from '@/modules/platform/telegram/send';
+import { issueBoxes } from '@/modules/wms/issue/service';
+import { MAX_NOTICE_ATTEMPTS, NOTICE_ARRIVED } from '@/modules/wms/notices/arrival';
+import { sendDueArrivalNotices } from '@/modules/wms/notices/arrival-jobs';
+import { NOTICE_ISSUED, NOTICE_RECEIVED } from '@/modules/wms/notices/client-claims';
+import { recordVerdict, submitPlan } from '@/modules/wms/planning/service';
+import { assignReceiptClient } from '@/modules/wms/receipts/edit';
+import { confirmReceipt } from '@/modules/wms/receipts/service';
+import { departBatch, ingestLoadScans } from '@/modules/wms/scanning/service';
+import { finishUnload, ingestUnloadScans } from '@/modules/wms/scanning/unload';
+
+/**
+ * Round C's customer pushes, end to end through the ONE sweep — with the Bot
+ * API swapped for a recorder, because this container has no network and CI
+ * has no token, so nothing else can show what a push POSTed (the scouts found
+ * not one test that did).
+ *
+ * Every notice this file drives is made due by moving its `send_after` to
+ * 2001: the sweep claims oldest first, so these rows are taken before any
+ * stranger another file left behind, and assertions only ever read OUR chats.
+ */
+
+const S = String(Date.now()).slice(-6);
+const APP = 'https://gsrwms.test';
+/*
+ * The sweep's clock, two days in the PAST: every row this file makes due sits
+ * at 2001, and every row the services write lands at the real «now» (or ten
+ * minutes after it) — never due on this clock, whatever hour CI runs at. A
+ * fixed calendar date would make those due on a runner whose clock is earlier
+ * than it, and the sweep would send them into the middle of an assertion.
+ */
+const BASE = new Date(Date.now() - 2 * 86_400_000);
+const DAY = new Date(Date.UTC(BASE.getUTCFullYear(), BASE.getUTCMonth(), BASE.getUTCDate(), 6)); // 11:00 in Tashkent
+const NIGHT = new Date(Date.UTC(BASE.getUTCFullYear(), BASE.getUTCMonth(), BASE.getUTCDate(), 20)); // 01:00 in Tashkent
+let chatSeq = 0;
+/** Chat ids of our own, per run: a leftover link from another run can never collide. */
+const newChat = () => 7_700_000_000 + Number(S) * 10 + chatSeq++;
+
+let actorId: string;
+let cnId: string;
+let uzId: string;
+let uzCustomsId: string;
+const madeClients: string[] = [];
+const storedKeys: string[] = [];
+const ctx = () => ({ actorId });
+
+interface Call {
+  method: string;
+  chatId: number;
+  fields: Record<string, unknown>;
+  hasPhotoFile: boolean;
+}
+let calls: Call[] = [];
+type Answer = { status: number; json: unknown };
+let respond: (method: string, chatId: number) => Answer | null = () => null;
+
+const savedEnv = { token: process.env.TELEGRAM_BOT_TOKEN, app: process.env.APP_URL };
+
+function okAnswer(method: string): Answer {
+  const messageId = 1000 + calls.length;
+  return {
+    status: 200,
+    json: {
+      ok: true,
+      result: method === 'sendPhoto' ? { message_id: messageId, photo: [{ file_id: `F-${messageId}` }] } : { message_id: messageId },
+    },
+  };
+}
+
+async function ensureWarehouse(code: string, name: string, country: string, type: string): Promise<string> {
+  const existing = await db.query.warehouses.findFirst({ where: eq(warehouses.code, code) });
+  if (existing) return existing.id;
+  const [wh] = await db
+    .insert(warehouses)
+    .values({ code, name, country, type, timezone: country === 'CN' ? 'Asia/Shanghai' : 'Asia/Tashkent', batchPrefix: code })
+    .returning();
+  return wh!.id;
+}
+
+async function makeClient(tag: string, opts: { chat?: number; locale?: string | null; linkedAt?: Date } = {}) {
+  const [c] = await db
+    .insert(clients)
+    .values({ clientCode: `P${tag}${S}`.slice(0, 10), name: `PA ${tag}`, locale: opts.locale ?? null })
+    .returning();
+  madeClients.push(c!.id);
+  if (opts.chat !== undefined) {
+    await db.insert(clientTelegramLinks).values({
+      clientId: c!.id,
+      telegramChatId: BigInt(opts.chat),
+      status: 'linked',
+      linkedAt: opts.linkedAt ?? new Date(),
+    });
+  }
+  return c!;
+}
+
+/** A receipt of `boxCount` uniform boxes, its lot photographed — the bytes really stored when asked. */
+async function receive(clientId: string, warehouseId: string, opts: { boxCount?: number; storeBytes?: boolean; name?: string } = {}) {
+  const receiptId = uuidv4();
+  const lotId = uuidv4();
+  const key = `pa-test/${lotId}.jpg`;
+  const bytes = Buffer.from('not-really-a-jpeg-but-bytes');
+  if (opts.storeBytes !== false) {
+    await getStorage().put(key, bytes, 'image/jpeg');
+    storedKeys.push(key);
+  }
+  await db.insert(attachments).values({
+    entityType: 'receipt_lot',
+    entityId: lotId,
+    kind: 'photo',
+    storageKey: key,
+    fileName: 'x.jpg',
+    contentType: 'image/jpeg',
+    sizeBytes: bytes.length,
+    uploadedBy: actorId,
+  });
+  const out = await confirmReceipt(
+    {
+      receiptId,
+      warehouseId,
+      clientId,
+      unclaimedMarking: '',
+      lots: [
+        {
+          id: lotId,
+          productNameZh: '手机壳',
+          productNameRu: opts.name ?? 'Чехлы',
+          boxCount: opts.boxCount ?? 2,
+          dimsMode: 'uniform',
+          boxLengthCm: 30,
+          boxWidthCm: 30,
+          boxHeightCm: 30,
+          boxWeightKg: 5,
+        },
+      ],
+      extraCosts: [],
+    },
+    ctx(),
+  );
+  const boxRows = await db.select().from(boxes).where(eq(boxes.lotId, lotId));
+  return { receiptId, lotId, number: out.number, boxes: boxRows };
+}
+
+async function noticesOf(clientId: string, kind?: string) {
+  return db
+    .select()
+    .from(clientNotices)
+    .where(kind ? and(eq(clientNotices.clientId, clientId), eq(clientNotices.kind, kind)) : eq(clientNotices.clientId, clientId));
+}
+
+/** Due before anything else in the queue — the sweep claims oldest first. */
+async function makeDue(noticeId: string, order = 0) {
+  await db
+    .update(clientNotices)
+    .set({ sendAfter: new Date(Date.UTC(2001, 0, 1, 0, 0, order)) })
+    .where(eq(clientNotices.id, noticeId));
+}
+
+const callsTo = (chat: number) => calls.filter((c) => c.chatId === chat);
+interface Markup {
+  inline_keyboard: { text: string; web_app?: { url: string }; callback_data?: string }[][];
+}
+/** A multipart body carries the keyboard as a JSON string, a JSON body as an object. */
+const markupOf = (c: Call): Markup =>
+  (typeof c.fields.reply_markup === 'string' ? JSON.parse(c.fields.reply_markup) : c.fields.reply_markup) as Markup;
+const bodyOf = (c: Call) => String(c.fields.caption ?? c.fields.text ?? '');
+
+beforeAll(async () => {
+  actorId = (await db.select().from(users).limit(1))[0]!.id;
+  cnId = await ensureWarehouse('PACN1', 'PA Yiwu', 'CN', 'origin');
+  uzId = await ensureWarehouse('PAUZ1', 'PA Toshkent 1', 'UZ', 'distribution');
+  uzCustomsId = await ensureWarehouse('PAUZC', 'PA Bojxona', 'UZ', 'customs');
+  process.env.TELEGRAM_BOT_TOKEN = 'TEST:TOKEN';
+  process.env.APP_URL = APP;
+  __setTelegramTransport(async (url, init) => {
+    const method = url.split('/').pop() ?? '';
+    const form = init.body instanceof FormData ? init.body : null;
+    const fields: Record<string, unknown> = form
+      ? Object.fromEntries([...form.entries()].map(([k, v]) => [k, typeof v === 'string' ? v : '<file>']))
+      : (JSON.parse(String(init.body)) as Record<string, unknown>);
+    const chatId = Number(fields.chat_id);
+    calls.push({ method, chatId, fields, hasPhotoFile: form ? form.get('photo') instanceof Blob : false });
+    const answer = respond(method, chatId) ?? okAnswer(method);
+    return new Response(JSON.stringify(answer.json), { status: answer.status });
+  });
+});
+
+beforeEach(() => {
+  calls = [];
+  respond = () => null;
+});
+
+afterAll(async () => {
+  __setTelegramTransport(null);
+  if (savedEnv.token === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
+  else process.env.TELEGRAM_BOT_TOKEN = savedEnv.token;
+  if (savedEnv.app === undefined) delete process.env.APP_URL;
+  else process.env.APP_URL = savedEnv.app;
+  if (madeClients.length) {
+    await db.delete(clientNotices).where(inArray(clientNotices.clientId, madeClients));
+    // Our chats must never be a later sweep's recipient.
+    await db.update(clientTelegramLinks).set({ status: 'revoked' }).where(inArray(clientTelegramLinks.clientId, madeClients));
+  }
+  for (const key of storedKeys) await getStorage().delete(key).catch(() => {});
+  await pgClient.end();
+});
+
+describe('the claim is written with the fact, and only when somebody can hear it', () => {
+  it('a linked client gets «qabul qilindi» reserved behind the correction window; an unlinked one gets nothing', async () => {
+    const linked = await makeClient('L', { chat: newChat() });
+    const unlinked = await makeClient('U');
+    const before = Date.now();
+    const a = await receive(linked.id, cnId);
+    await receive(unlinked.id, cnId);
+
+    const rows = await noticesOf(linked.id, NOTICE_RECEIVED);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ refType: 'receipt', refId: a.receiptId, status: 'pending' });
+    // The correction window: ten minutes, not now.
+    const wait = rows[0]!.sendAfter.getTime() - before;
+    expect(wait).toBeGreaterThan(9 * 60_000);
+    expect(wait).toBeLessThan(11 * 60_000);
+    // Outside the staff sweep's partial index.
+    expect(rows[0]!.staffNotifiedAt).not.toBeNull();
+
+    // Nobody to tell = no row, which is also no foreign key into `clients`.
+    expect(await noticesOf(unlinked.id)).toHaveLength(0);
+  });
+});
+
+describe('C1 «qabul qilindi» through the sweep', () => {
+  it('one photograph, the text as its caption, the lot button and the manager door', async () => {
+    const chat = newChat();
+    const client = await makeClient('P', { chat });
+    const r = await receive(client.id, cnId);
+    const [notice] = await noticesOf(client.id, NOTICE_RECEIVED);
+    await makeDue(notice!.id);
+
+    await sendDueArrivalNotices(DAY);
+
+    const mine = callsTo(chat);
+    expect(mine).toHaveLength(1);
+    expect(mine[0]!.method).toBe('sendPhoto');
+    expect(mine[0]!.hasPhotoFile).toBe(true);
+    const caption = bodyOf(mine[0]!);
+    expect(mine[0]!.fields.parse_mode).toBe('HTML');
+    expect(caption).toContain(`<b>${clientLabels(null).arrivedTitle}</b>`);
+    expect(caption).toContain(`<code>${r.number}</code>`);
+    expect(htmlToPlain(caption)).toContain(client.clientCode);
+    expect(htmlToPlain(caption)).toContain('PA Yiwu');
+    // Daytime: it rings.
+    expect(mine[0]!.fields.disable_notification).toBeUndefined();
+    const keyboard = markupOf(mine[0]!);
+    expect(keyboard.inline_keyboard[0]![0]!.web_app!.url).toBe(`${APP}/cabinet?lot=${r.lotId}`);
+    // The manager door is answered at PRESS time — never a person's URL frozen in.
+    expect(keyboard.inline_keyboard[1]![0]!.callback_data).toBe('mg');
+
+    const [after] = await noticesOf(client.id, NOTICE_RECEIVED);
+    expect(after).toMatchObject({ status: 'sent', attempts: 1 });
+  });
+
+  it('at night it arrives without a sound', async () => {
+    const chat = newChat();
+    const client = await makeClient('N', { chat });
+    await receive(client.id, cnId);
+    const [notice] = await noticesOf(client.id, NOTICE_RECEIVED);
+    await makeDue(notice!.id);
+
+    await sendDueArrivalNotices(NIGHT);
+
+    const [call] = callsTo(chat);
+    expect(String(call!.fields.disable_notification)).toBe('true');
+  });
+
+  it('a receipt moved to another code inside the window says nothing to the first — and comes back armed', async () => {
+    const chat = newChat();
+    const wrong = await makeClient('W', { chat });
+    const right = await makeClient('R');
+    const r = await receive(wrong.id, cnId);
+    await assignReceiptClient(r.receiptId, right.id, ctx());
+    const [notice] = await noticesOf(wrong.id, NOTICE_RECEIVED);
+    await makeDue(notice!.id);
+
+    await sendDueArrivalNotices(DAY);
+
+    // One customer's goods photograph never reaches another (judge PRIV-4).
+    expect(callsTo(chat)).toHaveLength(0);
+    const [skipped] = await noticesOf(wrong.id, NOTICE_RECEIVED);
+    expect(skipped).toMatchObject({ status: 'skipped', lastError: 'client_changed' });
+    // The unlinked owner has nobody to tell.
+    expect(await noticesOf(right.id)).toHaveLength(0);
+
+    // …and when the receipt comes BACK, the fact is true again.
+    await assignReceiptClient(r.receiptId, wrong.id, ctx());
+    const [rearmed] = await noticesOf(wrong.id, NOTICE_RECEIVED);
+    expect(rearmed).toMatchObject({ status: 'pending', attempts: 0 });
+  });
+
+  it('a receipt voided inside the window is settled as skipped, not sent', async () => {
+    const chat = newChat();
+    const client = await makeClient('V', { chat });
+    const r = await receive(client.id, cnId);
+    await db
+      .update(receipts)
+      .set({ status: 'voided', voidedAt: new Date(), voidReason: 'test' })
+      .where(eq(receipts.id, r.receiptId));
+    const [notice] = await noticesOf(client.id, NOTICE_RECEIVED);
+    await makeDue(notice!.id);
+
+    await sendDueArrivalNotices(DAY);
+
+    expect(callsTo(chat)).toHaveLength(0);
+    const [after] = await noticesOf(client.id, NOTICE_RECEIVED);
+    expect(after).toMatchObject({ status: 'skipped', lastError: 'voided' });
+  });
+
+  it('speaks the language the PERSON chose on the chat, not the new code’s empty one', async () => {
+    const chat = newChat();
+    await makeClient('E', { chat, locale: 'en', linkedAt: new Date(Date.now() - 86_400_000) });
+    const newer = await makeClient('F', { chat, locale: null });
+    await receive(newer.id, cnId);
+    const [notice] = await noticesOf(newer.id, NOTICE_RECEIVED);
+    await makeDue(notice!.id);
+
+    await sendDueArrivalNotices(DAY);
+
+    const [call] = callsTo(chat);
+    expect(bodyOf(call!)).toContain(clientLabels('en').arrivedTitle);
+    const keyboard = markupOf(call!);
+    expect(keyboard.inline_keyboard[1]![0]!.text).toBe(clientLabels('en').contactManager);
+  });
+});
+
+describe('the photograph is an addition, never the delivery', () => {
+  it('Telegram refusing the photo sends the same sentence as a message', async () => {
+    const chat = newChat();
+    const client = await makeClient('X', { chat });
+    await receive(client.id, cnId);
+    const [notice] = await noticesOf(client.id, NOTICE_RECEIVED);
+    await makeDue(notice!.id);
+    respond = (method, chatId) =>
+      method === 'sendPhoto' && chatId === chat
+        ? { status: 400, json: { ok: false, description: 'Bad Request: IMAGE_PROCESS_FAILED' } }
+        : null;
+
+    await sendDueArrivalNotices(DAY);
+
+    const mine = callsTo(chat);
+    expect(mine.map((c) => c.method)).toEqual(['sendPhoto', 'sendMessage']);
+    expect(mine[1]!.fields.text).toBe(mine[0]!.fields.caption);
+    expect(mine[1]!.fields.parse_mode).toBe('HTML');
+    const [after] = await noticesOf(client.id, NOTICE_RECEIVED);
+    expect(after!.status).toBe('sent');
+  });
+
+  it('a photo whose upload died is NOT followed by the text (it may have arrived) — the row waits', async () => {
+    const chat = newChat();
+    const client = await makeClient('Y', { chat });
+    await receive(client.id, cnId);
+    const [notice] = await noticesOf(client.id, NOTICE_RECEIVED);
+    await makeDue(notice!.id);
+    respond = (method, chatId) =>
+      method === 'sendPhoto' && chatId === chat ? { status: 502, json: { ok: false, description: 'Bad Gateway' } } : null;
+
+    await sendDueArrivalNotices(DAY);
+
+    expect(callsTo(chat).map((c) => c.method)).toEqual(['sendPhoto']);
+    const [after] = await noticesOf(client.id, NOTICE_RECEIVED);
+    expect(after).toMatchObject({ status: 'pending', attempts: 1 });
+  });
+
+  it('bytes that cannot be read send the text alone', async () => {
+    const chat = newChat();
+    const client = await makeClient('Z', { chat });
+    await receive(client.id, cnId, { storeBytes: false });
+    const [notice] = await noticesOf(client.id, NOTICE_RECEIVED);
+    await makeDue(notice!.id);
+
+    await sendDueArrivalNotices(DAY);
+
+    expect(callsTo(chat).map((c) => c.method)).toEqual(['sendMessage']);
+    const [after] = await noticesOf(client.id, NOTICE_RECEIVED);
+    expect(after!.status).toBe('sent');
+  });
+});
+
+describe('the queue keeps its customers through the bot’s bad hours', () => {
+  it('a refused TOKEN stops the sweep and gives every claimed row back untouched', async () => {
+    const chat = newChat();
+    const client = await makeClient('T', { chat });
+    await receive(client.id, cnId);
+    await receive(client.id, cnId);
+    const rows = await noticesOf(client.id, NOTICE_RECEIVED);
+    expect(rows).toHaveLength(2);
+    await makeDue(rows[0]!.id, 0);
+    await makeDue(rows[1]!.id, 1);
+    respond = () => ({ status: 401, json: { ok: false, description: 'Unauthorized' } });
+
+    await sendDueArrivalNotices(DAY);
+
+    // One knock, then nothing: the token refuses every chat after it too.
+    expect(callsTo(chat)).toHaveLength(1);
+    for (const row of await noticesOf(client.id, NOTICE_RECEIVED)) {
+      expect(row).toMatchObject({ status: 'pending', attempts: 0, claimedAt: null });
+    }
+  });
+
+  it('a 429 is a wait: pending past it, no attempt spent', async () => {
+    const chat = newChat();
+    const client = await makeClient('Q', { chat });
+    await receive(client.id, cnId);
+    const [notice] = await noticesOf(client.id, NOTICE_RECEIVED);
+    await makeDue(notice!.id);
+    respond = (_m, chatId) =>
+      chatId === chat
+        ? { status: 429, json: { ok: false, description: 'Too Many Requests: retry after 30', parameters: { retry_after: 30 } } }
+        : null;
+
+    const before = Date.now();
+    await sendDueArrivalNotices(DAY);
+
+    const [after] = await noticesOf(client.id, NOTICE_RECEIVED);
+    expect(after).toMatchObject({ status: 'pending', attempts: 0, claimedAt: null });
+    expect(after!.sendAfter.getTime()).toBeGreaterThan(before + 25_000);
+  });
+
+  it('a row a dead run left in «sending» is taken back with that run COUNTED, and given up at the cap', async () => {
+    const chat = newChat();
+    const client = await makeClient('K', { chat });
+    const first = await receive(client.id, cnId, { name: `Birinchi ${S}` });
+    const second = await receive(client.id, cnId, { name: `Ikkinchi ${S}` });
+    const rows = await noticesOf(client.id, NOTICE_RECEIVED);
+    const byRef = new Map(rows.map((row) => [row.refId, row]));
+    // An hour before the sweep's own clock: past the reclaim window.
+    const stale = new Date(DAY.getTime() - 60 * 60_000);
+    await db
+      .update(clientNotices)
+      .set({ status: 'sending', claimedAt: stale, attempts: 0, sendAfter: new Date(Date.UTC(2001, 0, 1)) })
+      .where(eq(clientNotices.id, byRef.get(first.receiptId)!.id));
+    await db
+      .update(clientNotices)
+      .set({ status: 'sending', claimedAt: stale, attempts: MAX_NOTICE_ATTEMPTS - 1, sendAfter: new Date(Date.UTC(2001, 0, 1, 0, 0, 1)) })
+      .where(eq(clientNotices.id, byRef.get(second.receiptId)!.id));
+
+    await sendDueArrivalNotices(DAY);
+
+    const after = new Map((await noticesOf(client.id, NOTICE_RECEIVED)).map((row) => [row.refId, row]));
+    // The dead run is one attempt, this run another.
+    expect(after.get(first.receiptId)).toMatchObject({ status: 'sent', attempts: 2 });
+    // At the cap the dead run was the last attempt: failed, and never sent.
+    expect(after.get(second.receiptId)).toMatchObject({ status: 'failed', attempts: MAX_NOTICE_ATTEMPTS });
+    expect(callsTo(chat).filter((c) => bodyOf(c).includes(`Ikkinchi ${S}`))).toHaveLength(0);
+    expect(callsTo(chat).filter((c) => bodyOf(c).includes(`Birinchi ${S}`))).toHaveLength(1);
+  });
+});
+
+describe('C3 «berildi»', () => {
+  it('names the receiver and what is left here, then says «everything» only when nothing is left anywhere', async () => {
+    const chat = newChat();
+    const client = await makeClient('G', { chat });
+    const unlinked = await makeClient('H');
+    const r = await receive(client.id, uzId, { boxCount: 3 });
+    const t = clientLabels(null);
+
+    await issueBoxes(
+      {
+        handoverId: uuidv4(),
+        clientId: client.id,
+        warehouseId: uzId,
+        boxIds: r.boxes.slice(0, 2).map((b) => b.id),
+        personName: 'Aziz <aka>',
+        personPhone: '+998901112233',
+        debtOk: true,
+        priceOk: true,
+      },
+      ctx(),
+    );
+    const [firstIssued] = await noticesOf(client.id, NOTICE_ISSUED);
+    expect(firstIssued).toMatchObject({ refType: 'handover', status: 'pending' });
+    expect(firstIssued!.staffNotifiedAt).not.toBeNull();
+    await makeDue(firstIssued!.id);
+    await sendDueArrivalNotices(DAY);
+
+    let mine = callsTo(chat);
+    expect(mine.map((c) => c.method)).toEqual(['sendMessage']);
+    let text = htmlToPlain(bodyOf(mine[0]!));
+    expect(text).toContain('Aziz <aka>');
+    expect(bodyOf(mine[0]!)).toContain('Aziz &lt;aka&gt;');
+    expect(text).toContain(`${t.issuedLeft}: 1`);
+    expect(text).not.toContain(t.pushAllIssued);
+    const keyboard = markupOf(mine[0]!);
+    // A handover opens the cabinet at its top, not on one lot.
+    expect(keyboard.inline_keyboard[0]![0]!.web_app!.url).toBe(`${APP}/cabinet`);
+    expect(keyboard.inline_keyboard[1]![0]!.callback_data).toBe('mg');
+
+    calls = [];
+    await issueBoxes(
+      {
+        handoverId: uuidv4(),
+        clientId: client.id,
+        warehouseId: uzId,
+        boxIds: [r.boxes[2]!.id],
+        personName: 'Aziz',
+        personPhone: '+998901112233',
+        debtOk: true,
+        priceOk: true,
+      },
+      ctx(),
+    );
+    const second = (await noticesOf(client.id, NOTICE_ISSUED)).find((row) => row.status === 'pending')!;
+    await makeDue(second.id);
+    await sendDueArrivalNotices(DAY);
+    mine = callsTo(chat);
+    text = htmlToPlain(bodyOf(mine[0]!));
+    expect(text).toContain(`🟩🟩🟩🟩🟩 ${t.pushAllIssued}`);
+
+    // An unlinked customer's handover reserves nothing.
+    const u = await receive(unlinked.id, uzId, { boxCount: 1 });
+    await issueBoxes(
+      {
+        handoverId: uuidv4(),
+        clientId: unlinked.id,
+        warehouseId: uzId,
+        boxIds: [u.boxes[0]!.id],
+        personName: 'Ali',
+        personPhone: '+998901112233',
+        debtOk: true,
+        priceOk: true,
+      },
+      ctx(),
+    );
+    expect(await noticesOf(unlinked.id)).toHaveLength(0);
+  });
+
+  it('nothing left HERE but cargo still in China: this warehouse is done, not «everything»', async () => {
+    const chat = newChat();
+    const client = await makeClient('J', { chat });
+    await receive(client.id, cnId, { boxCount: 2 });
+    const here = await receive(client.id, uzId, { boxCount: 1 });
+    await issueBoxes(
+      {
+        handoverId: uuidv4(),
+        clientId: client.id,
+        warehouseId: uzId,
+        boxIds: [here.boxes[0]!.id],
+        personName: 'Aziz',
+        personPhone: '+998901112233',
+        debtOk: true,
+        priceOk: true,
+      },
+      ctx(),
+    );
+    const [notice] = await noticesOf(client.id, NOTICE_ISSUED);
+    await makeDue(notice!.id);
+    await sendDueArrivalNotices(DAY);
+
+    const t = clientLabels(null);
+    const text = htmlToPlain(bodyOf(callsTo(chat)[0]!));
+    expect(text).toContain(t.pushHereIssued);
+    expect(text).toContain(`${t.sumChina}: 2`);
+    expect(text).not.toContain(t.pushAllIssued);
+  });
+});
+
+describe('C2 «yetib keldi» — the whole road', () => {
+  function scan(batchId: string, code: string) {
+    return { clientEventUuid: uuidv4(), batchId, code, method: 'qr' as const, scannedAt: new Date().toISOString() };
+  }
+
+  it('the warehouse by name, the «ready» step, and a photo that says when it was taken', async () => {
+    const chat = newChat();
+    const client = await makeClient('A', { chat });
+    const r = await receive(client.id, cnId, { boxCount: 2 });
+    const sub = await submitPlan(
+      { originWarehouseId: cnId, destWarehouseId: uzCustomsId, lines: [{ lotId: r.lotId, boxCount: 2 }] },
+      ctx(),
+    );
+    const { batch } = await recordVerdict({ versionId: sub.version.id, verdict: 'approved' }, ctx());
+    for (const box of r.boxes) {
+      await ingestLoadScans([{ ...scan(batch!.id, box.shortCode), addedOnSpot: false }], ctx());
+    }
+    await departBatch(batch!.id, ctx());
+    for (const box of r.boxes) await ingestUnloadScans([scan(batch!.id, box.shortCode)], ctx());
+    await finishUnload(batch!.id, ctx());
+
+    const [notice] = await noticesOf(client.id, NOTICE_ARRIVED);
+    expect(notice).toBeDefined();
+    await makeDue(notice!.id);
+    await sendDueArrivalNotices(DAY);
+
+    const t = clientLabels(null);
+    const arrival = callsTo(chat).find((c) => bodyOf(c).includes(t.readyTitle))!;
+    expect(arrival.method).toBe('sendPhoto');
+    const text = htmlToPlain(bodyOf(arrival));
+    expect(text).toContain('PA Bojxona');
+    expect(text).not.toContain('PAUZC');
+    expect(text).toContain(`🟩🟩🟩🟩⬜ ${t.msReady}`);
+    // Came from China and nobody pressed «rastamojka tugadi»: the honest caveat.
+    expect(text).toContain(t.readyNote);
+    expect(text).toContain(t.photoTakenOnReceipt);
+    const keyboard = markupOf(arrival);
+    expect(keyboard.inline_keyboard[0]![0]!.web_app!.url).toBe(`${APP}/cabinet?lot=${r.lotId}`);
+    const [after] = await noticesOf(client.id, NOTICE_ARRIVED);
+    expect(after!.status).toBe('sent');
+  });
+});
+
+describe('no bot token: nothing is taken', () => {
+  it('leaves due rows pending with no attempt spent', async () => {
+    const chat = newChat();
+    const client = await makeClient('O', { chat });
+    await receive(client.id, cnId);
+    const [notice] = await noticesOf(client.id, NOTICE_RECEIVED);
+    await makeDue(notice!.id);
+    delete process.env.TELEGRAM_BOT_TOKEN;
+    try {
+      await sendDueArrivalNotices(DAY);
+    } finally {
+      process.env.TELEGRAM_BOT_TOKEN = 'TEST:TOKEN';
+    }
+    const [after] = await noticesOf(client.id, NOTICE_RECEIVED);
+    expect(after).toMatchObject({ status: 'pending', attempts: 0, claimedAt: null });
+  });
+});

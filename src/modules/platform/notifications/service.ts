@@ -2,7 +2,6 @@ import { and, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '../db/client';
 import {
   clients,
-  clientTelegramLinks,
   events,
   notifications,
   permissions,
@@ -14,8 +13,6 @@ import {
 } from '../db/schema';
 import { logger } from '../logger';
 import { runAutomationRules } from '../automation/service';
-import { clientLabels } from '../telegram/client-labels';
-import { cabinetInlineKeyboard } from '../telegram/menu-button';
 import { buttonsFor } from '../telegram/staff-bot';
 import { notificationLabels } from './labels';
 import { isTelegramMuted } from './mutes';
@@ -491,177 +488,9 @@ export function renderTelegramText(
   }
 }
 
-/** The per-lot summary `confirmReceipt` puts on a ReceiptConfirmed event. */
-interface ArrivedLot {
-  letter: string | null;
-  productNameZh: string;
-  productNameRu: string | null;
-  boxCount: number;
-  totalWeightKg: string | number | null;
-  totalVolumeM3: string | number | null;
-}
-
 /** Two decimals, without a trailing `.00` on a whole number. */
 function round(value: number): string {
   return String(Math.round(value * 100) / 100);
-}
-
-/**
- * Direct message to the client's own linked Telegram chats (Phase 2.2
- * cabinet). Best-effort: a send failure is logged and never blocks the event
- * — the client can always open the cabinet and see the same state.
- */
-export function renderClientCabinetText(
-  type: string,
-  payload: Record<string, unknown>,
-  locale?: string | null,
-): string | null {
-  const t = clientLabels(locale);
-  switch (type) {
-    /**
-     * Cargo reached the CHINESE warehouse — the owner's first ask, and the
-     * message a client wants most: "did my goods arrive?" is the question the
-     * office answers by telephone all day. Until now the only client-facing
-     * events were arrival in Uzbekistan and handover, so the whole first half
-     * of the journey was silent.
-     */
-    case 'ReceiptConfirmed': {
-      const lots = Array.isArray(payload.lots) ? (payload.lots as ArrivedLot[]) : [];
-      if (lots.length === 0) return null;
-      const boxes = lots.reduce((sum, lot) => sum + Number(lot.boxCount ?? 0), 0);
-      const kg = lots.reduce((sum, lot) => sum + Number(lot.totalWeightKg ?? 0), 0);
-      const m3 = lots.reduce((sum, lot) => sum + Number(lot.totalVolumeM3 ?? 0), 0);
-      const lines = lots.map((lot) => {
-        // The product name is Chinese with a NULLABLE Russian translation, so
-        // a client reading Uzbek would be shown 手机壳 unless the fallback is
-        // deliberate: prefer the translated name, keep the Chinese beside it
-        // only when there is nothing else.
-        const name = lot.productNameRu?.trim() || lot.productNameZh;
-        return `· ${lot.letter ?? ''} ${name} — ${lot.boxCount} ${t.pieces}`;
-      });
-      return (
-        `${t.arrivedTitle}\n` +
-        `${payload.clientCode} · ${payload.number}\n` +
-        `${t.arrivedWarehouse}: ${payload.warehouseCode}\n\n` +
-        `${lines.join('\n')}\n\n` +
-        `${t.arrivedTotal}: ${boxes} ${t.pieces} · ${round(kg)} ${t.kg} · ${round(m3)} ${t.m3}\n` +
-        t.seeDetails
-      );
-    }
-    /*
-     * NOT sent from here any more (round 98).
-     *
-     * This event fires once per unload SCAN, so the customer got one «yukingiz
-     * keldi» per carton — the owner's report — and the «accept the rest»
-     * button could send two hundred. The client's copy is now a claimed notice
-     * (`wms/notices/arrival.ts`): one per customer per truck, sent minutes
-     * later with the goods, the kilos and the cubic metres, in their own
-     * language. The EVENT stays exactly as it was for the staff side, which is
-     * what it was written for.
-     */
-    case 'ReadyForPickup':
-      return null;
-    /*
-     * Handover — the last thing a customer hears about a delivery, and until
-     * round 98 the ONE message on this path written straight into the file in
-     * Uzbek: a Russian-reading customer was told «karobka yukingiz berildi»
-     * and a box count with no kilos and no goods. It now uses the client
-     * dictionary like every sentence around it and carries the shape the two
-     * arrivals carry.
-     */
-    case 'BoxIssued': {
-      // Round 100 (owner's item 6): the handover message carries WHAT was
-      // handed — goods, kilos, cubes — in the arrival message's own shape.
-      // Events emitted before this round have no `lots`, so the guard keeps
-      // their replays rendering exactly as they always did.
-      const lots = Array.isArray(payload.lots) ? (payload.lots as ArrivedLot[]) : [];
-      const kg = lots.reduce((sum, lot) => sum + Number(lot.totalWeightKg ?? 0), 0);
-      const m3 = lots.reduce((sum, lot) => sum + Number(lot.totalVolumeM3 ?? 0), 0);
-      const lines = lots.map((lot) => {
-        const name = lot.productNameRu?.trim() || lot.productNameZh;
-        return `· ${lot.letter ?? ''} ${name} — ${lot.boxCount} ${t.pieces}`;
-      });
-      return (
-        `${t.issuedTitle}\n` +
-        `${payload.clientCode}\n` +
-        `${t.arrivedWarehouse}: ${payload.warehouseCode}\n\n` +
-        (lines.length > 0 ? `${lines.join('\n')}\n\n` : '') +
-        `${t.arrivedTotal}: ${payload.boxCount} ${t.pieces}` +
-        (lots.length > 0 ? ` · ${round(kg)} ${t.kg} · ${round(m3)} ${t.m3}` : '') +
-        `\n${t.issuedTo}: ${payload.personName}` +
-        (Number(payload.remaining) > 0
-          ? `\n${t.issuedLeft}: ${payload.remaining} ${t.pieces}`
-          : '')
-      );
-    }
-    default:
-      return null;
-  }
-}
-
-async function notifyLinkedClients(event: {
-  type: string;
-  payload: Record<string, unknown>;
-}): Promise<void> {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  if (!token) return;
-  const clientId = event.payload.clientId as string | null;
-  if (!clientId) return;
-  const client = await db.query.clients.findFirst({ where: eq(clients.id, clientId) });
-  // In the CLIENT's language, not the office's (migration 0033). NULL means
-  // nobody has asked them yet, and `clientLabels` falls back.
-  const text = renderClientCabinetText(
-    event.type,
-    { ...event.payload, clientCode: client?.clientCode ?? '' },
-    client?.locale,
-  );
-  if (!text) return;
-  const links = await db
-    .select()
-    .from(clientTelegramLinks)
-    .where(
-      and(eq(clientTelegramLinks.clientId, clientId), eq(clientTelegramLinks.status, 'linked')),
-    );
-  /**
-   * One message per CHAT, not per link row.
-   *
-   * `client_telegram_links` has no unique constraint on (client_id, chat_id),
-   * and two paths can insert a second 'linked' row for the same pair — the
-   * phone verification and `autoLinkClientToVerifiedChats`. Every duplicate
-   * row would have sent the client another copy of the same sentence, and a
-   * cabinet that says the same thing twice is one people stop reading.
-   */
-  const chats = new Set<bigint>();
-  for (const link of links) if (link.telegramChatId) chats.add(link.telegramChatId);
-
-  const app = cabinetInlineKeyboard(process.env.APP_URL, client?.locale);
-
-  for (const chatId of chats) {
-    try {
-      const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        // The wide "open my cargo" button rides on the notification itself.
-        // This is the moment a client cares most — their goods just moved —
-        // so it is the one place the app should be a single tap away rather
-        // than an icon they have to go looking for.
-        body: JSON.stringify({
-          chat_id: Number(chatId),
-          text,
-          ...(app ? { reply_markup: app } : {}),
-        }),
-      });
-      // The answer was never read before, so a client who had BLOCKED the bot
-      // looked exactly like a client who received the message — and the whole
-      // point of these is knowing they went out.
-      if (!res.ok) {
-        const detail = await res.text().catch(() => '');
-        logger.warn({ clientId, status: res.status, detail: detail.slice(0, 200) }, 'client notify rejected');
-      }
-    } catch (err) {
-      logger.warn({ err, clientId }, 'client cabinet notify failed');
-    }
-  }
 }
 
 /**
@@ -779,10 +608,9 @@ async function processEventBatch(): Promise<{ created: number; full: boolean }> 
       });
       created += 1;
     }
-    await notifyLinkedClients({
-      type: event.type,
-      payload: event.payload as Record<string, unknown>,
-    });
+    // The CUSTOMER hears nothing from here since round C: «qabul qilindi» and
+    // «berildi» are claimed `client_notices` rows written with the fact and
+    // sent by the notices sweep (wms/notices/client-claims.ts).
     // Phase 7: the owner's rules hear the same event, fenced so a broken
     // rule can neither kill the fan-out nor leave the event unprocessed.
     try {

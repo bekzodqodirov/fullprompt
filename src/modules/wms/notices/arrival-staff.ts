@@ -96,7 +96,7 @@ export async function emitArrivalStaffEvent(noticeId: string): Promise<StaffNoti
         batchCode: batch.code,
         boxCount: summary.boxCount,
         // The client's own copy is the notice this row IS — never this event
-        // (`renderClientCabinetText` returns null for it).
+        // (since round C the event drain says nothing to any customer).
         staffOnly: true,
       },
       entityType: 'batch',
