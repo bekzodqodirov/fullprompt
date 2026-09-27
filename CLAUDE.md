@@ -1866,9 +1866,35 @@ searches the GOODS of a client's non-voided prixods and lets the office
 un-tick; the pricing page shows EVERY deal of a client's cargo with totals and
 confirms against `expectedForDeals`.
 
-**Latest migration: 0110** (`lead_assign` — the website teams, the typed and
+**Round — the menu by job (2026-09-27; DECISIONS #1071-#1079; migration 0111
+`nav_usage` — ledger must reach 112; spec `docs/NAV-WORKSPACES.md`).** His
+answers 1a/2c/5/6/7a/8b/9a to the UX review (canvas «GSR tizimi — qulaylik
+xaritasi»). `rbac/workspaces.ts` = eight workspaces over the SAME routes (no URL
+moved): a NAV-entry tab follows `menuItems`, any other tab hangs off NAV
+entries (`via`) and passes its page's own gate (`need`/`roles`/`sight`), so
+curation still only removes. `tests/unit/workspaces.test.ts` walks every
+shipped role + seven invented ones through a `GATES` map of real page
+predicates (found NAV `/kontragentlar` bouncing `finance.view`, `/transit`
+widening the packer); `m9zz-ish-joylari.desktop` logs in as all nine demo people
+and requests every link the menu DRAWS with redirects off. ONE strip
+(`ws-tabs`) from the layout — the accounting and CRM `SubNav`s are gone, their
+gates stayed; phone = list pages only, desktop = every page with a «Yana ▾»
+fold, Hisobotlar's groups a `<select>`; the strip costs `--ws-strip` (41 px),
+paid by the desktop board and the chat thread. Job settings left the admin hub
+(`NOT_ADMIN_SECTION` = `BORROWED_ADMIN_PAGES`, derived; NAV `/admin` = the
+remaining doors' union; the layout admits `plans.manage`/`admin.settings.manage`).
+«Tez-tez»: ☆ (max 8, in order given) + ≤3 noticed pages at ≥2.5 decayed
+visits, in MENU order; `NAV_AUTO=off` in the Playwright server. «+ Yangi»:
+doors below the two inline kinds (receive/deal/payment/expense/calc/task),
+pickers through the scoped global search. Phone bars pinned per answer 6
+(issuing warehouses get «Topshirish»). NEXT (owner-agreed): round B the
+dashboard (canvas board 9, `Dashboard.dc.html`), round C the Telegram bot
+«wow», later the batch card (3a) and the client card's Pul tab (4a).
+
+**Latest migration: 0111** (`nav_usage` — «Tez-tez»; ledger must reach
+**112**; `when` …090). Before it: **0110** (`lead_assign` — the website teams, the typed and
 the read Telegram handle, the offer ledger, the `site` arrival channel; ledger
-must reach **111**; `when` …089, AFTER the other session's three, #1040).
+111; `when` …089, AFTER the other session's three, #1040).
 Before it: 0109 (`client_broadcast`), 0108 (`partner_terms`), 0107
 (`batch_profit_tracked`), **0106**
 (`recurring_paid` — the month a posting closes and
@@ -1984,9 +2010,10 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **111** since 0110, and his server last CONFIRMED **107** («deploy
-qildim 107 chiqdi», 2026-09-26), so the next deploy applies FOUR: the other
-session's 0107-0109 and this session's 0110.
+length — **112** since 0111, and his server last CONFIRMED **107** («deploy
+qildim 107 chiqdi», 2026-09-26); the 0107-0110 commands went to him with PR #92
+and were not confirmed back, so the next deploy applies 0111 and whatever of
+0107-0110 is still missing — count, do not assume.
 Never carry this number over from a previous session: read it
 (`ls src/modules/platform/db/migrations/*.sql | wc -l`) before writing the
 owner a step list, because the count is the only check that separates «the

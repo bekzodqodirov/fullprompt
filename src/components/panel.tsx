@@ -15,6 +15,7 @@ export function Panel({
   open = false,
   className = '',
   testId,
+  id,
   children,
 }: {
   title: ReactNode;
@@ -24,10 +25,12 @@ export function Panel({
   className?: string;
   /** Put on the summary, so a test can open the panel without reading its label. */
   testId?: string;
+  /** An anchor, so a link from elsewhere («+ Yangi») can land on this panel. */
+  id?: string;
   children: ReactNode;
 }) {
   return (
-    <details className={`card !p-0 ${className}`} open={open}>
+    <details id={id} className={`card !p-0 scroll-mt-20 ${className}`} open={open}>
       <summary
         data-testid={testId}
         className="cursor-pointer p-3 text-sm font-bold text-ink-700 marker:text-ink-400"

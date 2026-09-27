@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { WORKSPACES, tabVisible } from '@/modules/platform/rbac/workspaces';
 import { ROLE_MATRIX, type RoleCode } from '@/modules/platform/rbac/catalog';
 import { mayClassifyFx } from '@/modules/wms/finance/fx-door';
 import { moneyHidden } from '@/modules/platform/rbac/money-sight';
@@ -96,9 +97,23 @@ describe('F7 — both sides of each door', () => {
       }
     }
     expect(read('src/app/(protected)/accounting/kurs-farqi/page.tsx')).toContain('if (!mayClassifyFx(actor.permissions)) redirect');
-    expect(read('src/app/(protected)/accounting/layout.tsx')).toMatch(
-      /mayClassifyFx\(actor\.permissions\)\s*\?\s*\(\[\{ href: '\/accounting\/kurs-farqi'/,
-    );
+    // The accounting strip is gone (2026-09-26); the menu's door is the
+    // «Hisobotlar» tab. It must AGREE with the page's predicate for every
+    // combination of the two grants — asked of a role the owner invents, so
+    // no curated menu can hide a disagreement.
+    const tab = WORKSPACES.flatMap((ws) => ws.tabs).find((one) => one.href === '/accounting/kurs-farqi')!;
+    for (const manage of [false, true]) {
+      for (const reports of [false, true]) {
+        const permissions = new Set([
+          'finance.expenses',
+          ...(manage ? ['finance.manage'] : []),
+          ...(reports ? ['finance.reports'] : []),
+        ]);
+        expect(tabVisible(tab, { roles: ['brigadir'], permissions }), `${manage}/${reports}`).toBe(
+          mayClassifyFx(permissions),
+        );
+      }
+    }
   });
 });
 

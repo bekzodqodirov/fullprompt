@@ -61,6 +61,10 @@ export default defineConfig({
       TELEGRAM_POLLING: '0',
       // No geocoder or router calls from a test server — same reason (#278).
       GEO_NETWORK: 'off',
+      // «Tez-tez» does not learn from a test run: one worker drives the same
+      // demo accounts through every spec, and a menu that rearranges itself
+      // from what the previous spec opened is state left for the next (#183).
+      NAV_AUTO: 'off',
     },
     url: 'http://localhost:3000/api/health',
     reuseExistingServer: !process.env.CI,

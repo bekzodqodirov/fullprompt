@@ -14,6 +14,13 @@
  * the GFW (spec §3).
  */
 :root {
+  /* What the workspace strip (components/ui/ws-tabs.tsx) costs the page above
+     a viewport-height screen: 44 px tall + its 1 px border + 12 px under it −
+     the 16 px of `main`'s top padding it pulls itself into. ONE number, read
+     by the desktop board and the chat thread; ws-tabs-geometry.test.ts pins
+     the strip's classes to it. */
+  --ws-strip: 41px;
+
   --font-sans:
     system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', 'Noto Sans',
     'PingFang SC', 'Microsoft YaHei', sans-serif;

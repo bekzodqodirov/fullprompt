@@ -97,7 +97,10 @@ export default async function ConversationPage({
   return (
     // Capped and centred: on a wide screen an 85 % bubble against each edge
     // reads as two columns of unrelated text rather than as one conversation.
-    <div className="mx-auto flex h-[calc(100dvh-11.5rem)] w-full max-w-3xl flex-col gap-3 md:h-[calc(100dvh-6.5rem)]">
+    // From `md` the height pays the workspace strip above it (`--ws-strip`),
+    // or the composer drops below the fold and the page grows the scrollbar
+    // this layout exists to avoid. A phone draws no strip on a thread.
+    <div className="mx-auto flex h-[calc(100dvh-11.5rem)] w-full max-w-3xl flex-col gap-3 md:h-[calc(100dvh-6.5rem-var(--ws-strip))]">
       {/* `relative` for the ⋯ menu: its popover anchors to this ROW so it
           cannot open off the left edge when the header wraps. */}
       <div className="relative flex flex-wrap items-baseline gap-2">

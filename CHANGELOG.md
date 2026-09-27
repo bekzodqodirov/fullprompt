@@ -1,5 +1,41 @@
 # CHANGELOG
 
+## Menyu ish bo'yicha: 8 ta bo'lim, «Tez-tez», «+ Yangi» — 2026-09-27
+
+Migratsiya bor: **0111** (`nav_usage` — «Tez-tez» uchun). Deploydan keyin
+ledger **112** bo'lishi kerak.
+
+1. **Menyu endi ish turiga qarab.** Chap tomonda (telefonda ••• ichida) 8 ta
+   bo'lim: Bosh sahifa, Mening kunim, Sklad, Yo'l va partiyalar, Mijozlar va
+   savdo, Hisoblash (VED), Pul, Hisobotlar — pastda Boshqaruv. Har bir
+   bo'limga kirganda tepada uning sahifalari bir qatorda turadi (masalan
+   Pul: Umumiy · Xarajatlar · Mijoz qarzlari · Kontragentlar · Kassalar ·
+   Valyuta kurslari …). Hech bir sahifaning manzili o'zgarmadi — Telegramdagi
+   eski havolalar ishlayveradi.
+2. **Hamma hisobotlar bitta joyda — «Hisobotlar».** Tepada guruh tanlanadi
+   (Biznes, Moliya, Savdo, Yuk, Xodimlar, VED), yonida o'sha guruhning
+   hisobotlari. Foyda-zarar, balans, pul harakati ham shu yerda.
+3. **Sozlamalar o'z bo'limida (⚙).** Qatorning oxiridagi ⚙ belgisida: Pulda —
+   xarajat turlari, kontragent turlari; Hisoblashda — lug'atlar, yo'lkira
+   tarifi, bojxona bazasi; Yo'lda — zavodlar, fura turlari; Savdoda — CRM
+   sozlamalari, bitim etaplari, shablonlar, arizalar taqsimoti. Boshqaruvda
+   faqat tizimniki qoldi (skladlar, xodimlar, rollar, sozlamalar …).
+4. **«Tez-tez».** Sahifa ustidagi ☆ bosilsa, u sahifa menyuning eng tepasiga
+   chiqadi (8 tagacha). Bundan tashqari tizim o'zi ko'p ochadigan 3 ta
+   sahifani ham qo'yadi — lekin tartibi har kuni o'zgarib turmaydi.
+5. **«+ Yangi».** Tepadagi + bosilganda: yangi lid va mijoz kodi (oldingidek),
+   pastida esa — Prixod qabul qilish, Bitim, To'lov qabul qilish (mijozni
+   kod/ism bilan topasiz), Xarajat yozish, Hisoblatish (lid yoki bitimni
+   topasiz — karta hisoblatish bo'limi ochilgan holda ochiladi), Vazifa.
+   Har kimga faqat o'zi qila oladigan narsalar chiqadi.
+6. **Telefonning pastki paneli (sizning javobingiz bo'yicha).**
+   Skladchi: Bosh · Qabul · Sklad · Partiyalar — Toshkent/Andijon kabi
+   mijozga yuk beradigan skladda 4-chisi «Topshirish». Logist: Bosh · Sklad ·
+   Mashinalar · Planlar. VED: Bosh · Hisoblash · Partiyalar · Bitimlar.
+7. Hech kimga ochilmaydigan sahifaga tugma chiqmaydi: har bir rolning har
+   bir tugmasi tekshirildi (9 ta demo xodim nomidan kirib, menyudagi har bir
+   havola ochib ko'rildi).
+
 ## Skladchilar ham mijoz telefonini ko'radi — 2026-09-26 (kechqurun)
 
 Migratsiya yo'q, ledger **111** bo'lib qoladi. Deploy tugaganini build vaqtidan

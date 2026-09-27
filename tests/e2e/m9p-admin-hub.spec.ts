@@ -31,7 +31,11 @@ test('administration opens as a hub of buttons, not the warehouse list', async (
   // scrolls off the phone. The owner holds every permission, so all doors.
   const tiles = page.getByTestId('admin-tile');
   expect(await tiles.count()).toBeGreaterThanOrEqual(10);
-  await expect(page.locator('a[href="/admin/cost-types"]').first()).toBeVisible();
+  // The expense types USED to be the example here; they became Pul's ⚙ on
+  // 2026-09-26 (answer 8b) along with the other job settings. The field
+  // editor is still administration.
+  await expect(page.locator('a[data-testid="admin-tile"][href="/admin/fields"]')).toBeVisible();
+  await expect(page.locator('a[data-testid="admin-tile"][href="/admin/cost-types"]')).toHaveCount(0);
 
   // …and the operator still has no way in.
   await login(page, YW_OPERATOR);

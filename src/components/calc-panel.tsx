@@ -35,6 +35,7 @@ export async function CalcPanel({
   revalidate,
   clientName,
   clientLocale,
+  forceOpen = false,
 }: {
   entityType: 'deal' | 'lead';
   entityId: string;
@@ -43,6 +44,8 @@ export async function CalcPanel({
       would be a query on every card that has no sealed price at all. */
   clientName?: string | null;
   clientLocale?: string | null;
+  /** «+ Yangi → Hisoblatish» lands here with the form in view (`?yangi=hisob`). */
+  forceOpen?: boolean;
 }) {
   const actor = await getActor();
   if (!actor || !canWriteDeal(actor.permissions)) return null;
@@ -101,9 +104,10 @@ export async function CalcPanel({
       title={`🧮 ${t('panelTitle')}`}
       badge={open.length || undefined}
       testId="calc-panel"
+      id="hisoblatish"
       // A price on the card is what the seller opens it to read, so it is
       // never behind a fold — the Готово answer's door included (phase 4).
-      open={open.length > 0 || Boolean(seal) || Boolean(anchor)}
+      open={forceOpen || open.length > 0 || Boolean(seal) || Boolean(anchor)}
     >
       {open.length > 0 ? (
         <ul className="space-y-1" data-testid="calc-open">

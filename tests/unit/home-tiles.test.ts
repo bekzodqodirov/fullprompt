@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { NAV, menuItems } from '@/modules/platform/rbac/nav';
+import { NAV } from '@/modules/platform/rbac/nav';
+import { homeTileGroups } from '@/modules/platform/rbac/workspaces';
 import { ROLE_MATRIX } from '@/modules/platform/rbac/catalog';
 
 /**
@@ -18,14 +19,14 @@ import { ROLE_MATRIX } from '@/modules/platform/rbac/catalog';
  * sides from `ALL_ITEMS` in the same order, so it is reorder-proof).
  */
 
-/** Exactly the filter `src/app/(protected)/page.tsx` applies to a group. */
+/**
+ * The Savdo group as the home screen draws it — the SAME function
+ * `src/app/(protected)/page.tsx` calls (2026-09-26: the tiles are grouped by
+ * workspace now), not a restatement of its filter.
+ */
 function salesTiles(viewer: { permissions: Set<string>; roles: string[] }, flowHrefs: string[] = []) {
-  const group = NAV.find((candidate) => candidate.titleKey === 'sectionSales')!;
-  return group.items
-    .filter((item) => item.href !== '/')
-    .filter((item) => menuItems(item, viewer))
-    .filter((item) => !flowHrefs.includes(item.href))
-    .map((item) => item.href);
+  const group = homeTileGroups(viewer, flowHrefs).find((candidate) => candidate.workspace === 'savdo');
+  return group ? group.tiles.map((tile) => tile.href) : [];
 }
 
 function viewerFor(...roles: string[]) {

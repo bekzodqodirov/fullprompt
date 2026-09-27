@@ -35,10 +35,10 @@ export default async function LeadPage({
 }: {
   params: Promise<{ id: string }>;
   /** `hodim` = whose Telegram conversation to read in the panel (2026-08-07). */
-  searchParams: Promise<{ hodim?: string; chodim?: string }>;
+  searchParams: Promise<{ hodim?: string; chodim?: string; yangi?: string }>;
 }) {
   const { id } = await params;
-  const { hodim, chodim } = await searchParams;
+  const { hodim, chodim, yangi } = await searchParams;
   const actor = await getActor();
   if (!actor) redirect('/login');
   if (!actor.permissions.has('crm.leads')) redirect('/');
@@ -252,6 +252,7 @@ export default async function LeadPage({
       </Panel>
 
       <CalcPanel
+        forceOpen={yangi === 'hisob'}
         entityType="lead"
         entityId={id}
         revalidate={`/crm/leads/${id}`}

@@ -110,6 +110,8 @@ export const NAV: NavGroupSpec[] = [
         // grant's own screen, and a wider list would pull the route into the
         // warehouse menus whose lengths the nav tripwire pins.
         href: '/hisoblash',
+        // The VED's phone bar carries it (answer 6).
+        shortKey: 'calc',
         labelKey: 'title',
         namespace: 'calc',
         icon: 'report',
@@ -389,7 +391,11 @@ export const NAV: NavGroupSpec[] = [
         labelKey: 'title',
         namespace: 'partners',
         icon: 'briefcase',
-        permissions: ['finance.view', 'finance.manage'],
+        // The page's own door, `seesAllMoney` (round 91) — NOT `finance.view`,
+        // which is the seller's grant: a role the owner invents with it was
+        // offered this entry and bounced home (found by the workspaces fence,
+        // 2026-09-26). No shipped role's menu changes.
+        permissions: ['finance.manage', 'clients.manage'],
       },
       {
         // Beside the client money rather than among the admin screens
@@ -430,11 +436,11 @@ export const NAV: NavGroupSpec[] = [
         // ONE door to administration (owner, 2026-07-28: "administrativniyda
         // turgan buttonlar glavniy ekranda bo'lishi shart emas"). The hub at
         // /admin is a page of big buttons, one per section the viewer may
-        // open — FX, roles, fields, truck presets, the driver app and the
-        // rest all live behind it and nowhere else. The permission list is
-        // the union of the hub's tiles, so everyone with SOME admin job gets
-        // the door — and the hub walks a one-tile visitor (the accountant,
-        // whose only section is FX) straight through it.
+        // open. The permission list is the union of the hub's tiles, so
+        // everyone with SOME admin job gets the door — and nobody whose only
+        // admin page LEFT the hub for a workspace's ⚙ (2026-09-26: the FX
+        // rates, the truck presets) is offered a door that redirects home.
+        // `admin-hub.test.ts` derives the union and compares.
         href: '/admin',
         labelKey: 'adminPanel',
         namespace: 'home',
@@ -443,10 +449,8 @@ export const NAV: NavGroupSpec[] = [
           'admin.warehouses.manage',
           'platform.roles.manage',
           'admin.dictionaries.manage',
-          'costs.fx.manage',
           'admin.settings.manage',
           'admin.audit.browse',
-          'plans.manage',
         ],
       },
     ],
@@ -469,17 +473,26 @@ export interface Viewer {
  * and the next entry moves up, so a short list still fills the bar.
  */
 const PRIMARY_BY_ROLE: Record<string, string[]> = {
-  // The warehouse bars are unchanged: receiving IS the job there, and tasks
-  // are occasional — /bugun stays one tap away on the home tiles.
-  warehouse_operator: ['/', '/receive', '/batches', '/issue', '/stock'],
-  warehouse_manager: ['/', '/receive', '/batches', '/stock', '/receipts'],
-  logist: ['/', '/bugun', '/plans', '/batches', '/trucks'],
+  // The owner's answer 6 (2026-09-26), per job: «bosh menu, qabul qilish,
+  // sklad va o'zing 1 ini tavsiya qil». The fourth is the truck list —
+  // loading in China and unloading in Uzbekistan both start there — and
+  // hand-over is the spare, because only a customs or distribution warehouse
+  // issues to clients at all.
+  warehouse_operator: ['/', '/receive', '/stock', '/batches', '/issue'],
+  warehouse_manager: ['/', '/receive', '/stock', '/batches', '/receipts'],
+  // «Bosh ekran, sklad, mashinalar ro'yxati» + the plan queue, which is his
+  // home's first row and the one with a live count. /bugun is the header's
+  // dock, one tap from anywhere.
+  logist: ['/', '/stock', '/trucks', '/plans', '/batches'],
   // /crm/today is gone from the bar, not from the app: /bugun shows those same
   // follow-ups alongside the tasks, so keeping both would be two doors to one
   // list.
   sales_manager: ['/', '/bugun', '/crm', '/my-clients', '/finance'],
   accountant: ['/', '/bugun', '/accounting', '/finance', '/reports'],
-  ved_manager: ['/', '/bugun', '/batches', '/finance', '/stock'],
+  // «Bosh ekran, hisobga tashlanganlar ro'yxati» + the two rows of the VED's
+  // own home: the customs papers hang off the truck, the TNVED-less lines off
+  // the deal. The chats are the header's 💬 on every page.
+  ved_manager: ['/', '/hisoblash', '/batches', '/bitimlar', '/suhbatlar'],
   // A read-only viewer had a TWO-icon bar: only `/` and `/stock` carry a
   // `primary` number among the ten screens they may open, and the generic
   // fallback can only pick from those. Naming their four makes half the phone
@@ -489,6 +502,17 @@ const PRIMARY_BY_ROLE: Record<string, string[]> = {
   // one tap away behind •••.
   super_admin: ['/', '/bugun', '/accounting', '/crm', '/stock'],
   admin: ['/', '/bugun', '/accounting', '/crm', '/stock'],
+};
+
+/**
+ * The warehouse bar at a warehouse that ISSUES to clients (Tashkent, Andijan
+ * — `warehouses.issues_to_clients`). There the day is unloading and handing
+ * over, and «Topshirish» takes the fourth place; in China it would be a door
+ * to a screen that refuses every carton, so it stays the spare there.
+ */
+const PRIMARY_ISSUING: Record<string, string[]> = {
+  warehouse_operator: ['/', '/receive', '/stock', '/issue', '/batches'],
+  warehouse_manager: ['/', '/receive', '/stock', '/issue', '/batches'],
 };
 
 /**
@@ -533,13 +557,16 @@ export const MENU_BY_ROLE: Record<string, string[]> = {
     '/', '/receive', '/batches', '/issue', '/crates', '/stock', '/receipts', '/inventory',
     '/unclaimed', '/dashboard', '/reports',
   ],
+  // Neither this list nor the accountant's carries '/admin' any more: their
+  // only hub doors (the truck presets, the FX rates) became the ⚙ of «Yo'l»
+  // and «Pul» (2026-09-26), and the hub itself would redirect them home.
   // Plans and trucks. A logist does not receive cargo, but does chase it —
   // and does hold `clients.manage`: he creates client cards and mints their
   // cabinet links, so the client book belongs in his menu. Leaving it out was
   // a curation mistake, caught by the e2e that opens the page as him.
   logist: [
     '/', '/bugun', '/kalendar', '/bitimlar', '/plans', '/batches', '/arrivals', '/trucks',
-    '/zavod', '/map', '/stock', '/receipts', '/admin/clients', '/admin', '/dashboard', '/reports',
+    '/zavod', '/map', '/stock', '/receipts', '/admin/clients', '/dashboard', '/reports',
     '/suhbatlar', '/approvals', '/ai', '/zametkalar',
   ],
   // Customs papers hang off the batch; the rest is reference. The deal board
@@ -574,7 +601,7 @@ export const MENU_BY_ROLE: Record<string, string[]> = {
   ],
   accountant: [
     '/', '/bugun', '/kalendar', '/accounting', '/accounting/expenses', '/finance', '/kontragentlar', '/reports',
-    '/dashboard', '/admin', '/receipts', '/stock', '/approvals', '/ai',
+    '/dashboard', '/receipts', '/stock', '/approvals', '/ai',
     // They pay the factory truck, on its card (0100).
     '/zavod',
     // They are the one who pays it (law 4).
@@ -616,8 +643,15 @@ export function menuItems(item: NavItemSpec, viewer: Viewer): boolean {
   return canSee(item, viewer) && isRelevant(item.href, viewer.roles);
 }
 
-/** The tab-bar destinations this viewer gets, in the order they want them. */
-export function primaryItems(viewer: Viewer, limit = 4): NavItemSpec[] {
+/**
+ * The tab-bar destinations this viewer gets, in the order they want them.
+ * `issuesToClients` = one of the viewer's warehouses hands cargo to clients.
+ */
+export function primaryItems(
+  viewer: Viewer,
+  limit = 4,
+  opts: { issuesToClients?: boolean } = {},
+): NavItemSpec[] {
   const all = NAV.flatMap((group) => group.items);
   const visible = (href: string) => {
     const item = all.find((candidate) => candidate.href === href);
@@ -630,7 +664,8 @@ export function primaryItems(viewer: Viewer, limit = 4): NavItemSpec[] {
   // from the narrowest job to the broadest.
   for (const role of Object.keys(PRIMARY_BY_ROLE)) {
     if (!viewer.roles.includes(role)) continue;
-    const picked = PRIMARY_BY_ROLE[role]!.map(visible).filter(Boolean) as NavItemSpec[];
+    const list = (opts.issuesToClients && PRIMARY_ISSUING[role]) || PRIMARY_BY_ROLE[role]!;
+    const picked = list.map(visible).filter(Boolean) as NavItemSpec[];
     if (picked.length > 0) return picked.slice(0, limit);
   }
 

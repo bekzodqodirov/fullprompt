@@ -317,31 +317,34 @@ export default async function ExpensesPage({
         </p>
       )}
 
-      {categories.length === 0 ? (
-        <p className="card text-sm text-ink-700">{t('noCategories')}</p>
-      ) : (
-        <ExpenseForm
-          // The payer joins the key: minting the reporter's account re-renders
-          // the SAME request, and `useState` would keep the old «we paid».
-          key={prefillRow ? `${prefillRow.id}:${prefillPartnerId ?? ''}` : 'plain'}
-          {...options}
-          today={today}
-          prefill={
-            prefillRow
-              ? {
-                  requestId: prefillRow.id,
-                  amount: prefillRow.amount,
-                  currency: prefillRow.currency,
-                  note: prefillRow.note,
-                  warehouseId: prefillRow.warehouseId,
-                  paidBySelf: prefillRow.paidBySelf,
-                  partnerId: prefillPartnerId,
-                  expenseDate: spendDateOf(new Date(prefillRow.createdAt), prefillRow.warehouseTimezone),
-                }
-              : undefined
-          }
-        />
-      )}
+      {/* «+ Yangi → Xarajat» lands here (`#yangi-xarajat`). */}
+      <div id="yangi-xarajat" className="scroll-mt-20">
+        {categories.length === 0 ? (
+          <p className="card text-sm text-ink-700">{t('noCategories')}</p>
+        ) : (
+          <ExpenseForm
+            // The payer joins the key: minting the reporter's account re-renders
+            // the SAME request, and `useState` would keep the old «we paid».
+            key={prefillRow ? `${prefillRow.id}:${prefillPartnerId ?? ''}` : 'plain'}
+            {...options}
+            today={today}
+            prefill={
+              prefillRow
+                ? {
+                    requestId: prefillRow.id,
+                    amount: prefillRow.amount,
+                    currency: prefillRow.currency,
+                    note: prefillRow.note,
+                    warehouseId: prefillRow.warehouseId,
+                    paidBySelf: prefillRow.paidBySelf,
+                    partnerId: prefillPartnerId,
+                    expenseDate: spendDateOf(new Date(prefillRow.createdAt), prefillRow.warehouseTimezone),
+                  }
+                : undefined
+            }
+          />
+        )}
+      </div>
 
       {/* AFTER the expense form in DOM order on purpose: m7-accounting picks
           the page's `select[name="categoryId"]` with `.first()`, and a closed

@@ -32,11 +32,16 @@ test('admin creates warehouse + client, sees them in audit', async ({ page }) =>
 
   // Admin navigation is the HUB at /admin plus a way back to it — the tab
   // strip that used to duplicate the hub's buttons is gone (owner,
-  // 2026-07-28: "tepadagi menyu turibdi, u kerak emas").
-  await expect(page.getByTestId('sub-nav')).toHaveCount(0);
+  // 2026-07-28: "tepadagi menyu turibdi, u kerak emas"). The workspace strip
+  // (2026-09-26) is absent on the home and on Boshqaruv for the same reason…
+  await expect(page.getByTestId('ws-tabs')).toHaveCount(0);
   await page.goto('/admin/warehouses');
-  await expect(page.getByTestId('sub-nav')).toHaveCount(0);
+  await expect(page.getByTestId('ws-tabs')).toHaveCount(0);
   await expect(page.getByTestId('admin-back')).toBeVisible();
+  // …and present on a job's list page — the control, or a strip that never
+  // renders anywhere would pass the two lines above.
+  await page.goto('/admin/clients');
+  await expect(page.getByTestId('ws-tabs')).toBeVisible();
 
   // Create a warehouse
   await page.goto('/admin/warehouses/new');
@@ -84,7 +89,7 @@ test('warehouse-scoped operator sees no admin nav', async ({ page }) => {
   await page.locator('input[name="password"]').fill(PASSWORD);
   await page.locator('main form button[type="submit"]').first().click();
   await expect(page).toHaveURL('/');
-  await expect(page.getByTestId('sub-nav')).toHaveCount(0);
+  await expect(page.getByTestId('ws-tabs')).toHaveCount(0);
   // Direct admin URL bounces back home (server-side gate)
   await page.goto('/admin/warehouses');
   await expect(page).toHaveURL('/');
