@@ -21,7 +21,7 @@ import {
   type ClientLocale,
 } from '@/modules/platform/telegram/client-labels';
 import { setChatLocale } from '@/modules/platform/telegram/cabinet-locale';
-import { roundKg, roundM3 } from '@/modules/platform/telegram/format';
+import { roundKg, roundM3, sumRounded } from '@/modules/platform/telegram/format';
 import { sendText } from '@/modules/platform/telegram/send';
 
 /**
@@ -197,8 +197,10 @@ export async function cabinetPayload(auth: CabinetAuth & { ok: true }): Promise<
     },
     { boxes: 0, weightKg: 0, volumeM3: 0, balanceUsd: 0 },
   );
-  totals.weightKg = roundKg(totals.weightKg);
-  totals.volumeM3 = roundM3(totals.volumeM3);
+  // The header adds the lot cards as printed — the push's «Jami» rule.
+  const cards = clients.flatMap((c) => c.cargo);
+  totals.weightKg = sumRounded(cards.map((lot) => lot.weightKg), roundKg);
+  totals.volumeM3 = sumRounded(cards.map((lot) => lot.volumeM3), roundM3);
   totals.balanceUsd = Math.round(totals.balanceUsd * 100) / 100;
 
   // Every code this chat holds, on one map — its own cargo and nobody else's.

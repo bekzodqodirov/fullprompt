@@ -595,6 +595,8 @@ export interface OfferFormState extends CalcFormState {
   pending?: boolean;
   belowFloor?: boolean;
   delivered?: boolean;
+  /** Linked, but the seller's own mutes hold the text (see `OfferResult.muted`). */
+  muted?: boolean;
 }
 
 /**
@@ -661,6 +663,7 @@ export async function makeOfferAction(
       text: res.text,
       belowFloor: res.belowFloor,
       delivered: res.delivered,
+      muted: res.muted,
       pending: res.pending,
     };
   } catch (err) {

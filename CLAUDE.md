@@ -1978,9 +1978,16 @@ a mute group is ticked when the list holds its `FOUNDERS` — the members held
 continuously since the group was born, read off the git history (unshallow the
 clone first: the shallow one starts on 08-10), never added to; and a truck that
 ends in China lends no «in Uzbekistan» step (`trucksFor` + the landed
-fallback). 7 more red proofs. LESSON: a test for a fix must be anchored on
-something the fix did not write — a literal, a second surface, a stored list
-from a real day.
+fallback). 7 more red proofs. **And those fixes were verified too (#1115)**:
+kilos had THREE rules — the map's own one-place rounder, a push «Jami» over
+raw shares, and two share formulas that split at a half-hundredth — so a
+share is `shareOf`, a total is `sumRounded` (the lines as printed), both in
+telegram/format.ts and fenced over all six readers; the arrival's landing is
+any movement that landed a counted carton HERE (`landedHereSql`, which catches
+the stocktake's «found»); an offer held by the seller's own mutes says so
+(`offerMuted`). 10 more red proofs. LESSON: a test for a fix must be anchored
+on something the fix did not write — a literal, a second surface computed a
+DIFFERENT way, a stored list from a real day.
 
 **Latest migration: 0111** (`nav_usage` — «Tez-tez»; ledger must reach
 **112**; `when` …090). Before it: **0110** (`lead_assign` — the website teams, the typed and

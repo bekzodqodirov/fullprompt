@@ -21,6 +21,7 @@ import { clientLabels, formatDay } from '@/modules/platform/telegram/client-labe
 import { groupDigits, htmlToPlain } from '@/modules/platform/telegram/format';
 import { __setTelegramTransport } from '@/modules/platform/telegram/send';
 import { cargoOverview, issuedHandovers } from '@/modules/wms/client-cabinet/service';
+import { acceptFoundBox } from '@/modules/wms/inventory/service';
 import { issueBoxes } from '@/modules/wms/issue/service';
 import { MAX_NOTICE_ATTEMPTS, NOTICE_ARRIVED } from '@/modules/wms/notices/arrival';
 import { sendDueArrivalNotices } from '@/modules/wms/notices/arrival-jobs';
@@ -638,6 +639,91 @@ describe('the push and the Mini App read ONE kilo figure (round C review, second
   });
 });
 
+describe('the arrival push after a late find and a partial lot (round C review, second pass)', () => {
+  function scan(batchId: string, code: string) {
+    return { clientEventUuid: uuidv4(), batchId, code, method: 'qr' as const, scannedAt: new Date().toISOString() };
+  }
+  async function truck(clientLotId: string, boxCount: number) {
+    const sub = await submitPlan(
+      { originWarehouseId: cnId, destWarehouseId: uzId, lines: [{ lotId: clientLotId, boxCount }] },
+      ctx(),
+    );
+    const { batch } = await recordVerdict({ versionId: sub.version.id, verdict: 'approved' }, ctx());
+    const planned = await db
+      .select({ id: boxes.id, code: boxes.shortCode })
+      .from(boxes)
+      .where(and(eq(boxes.lotId, clientLotId), eq(boxes.status, 'planned')));
+    for (const box of planned) {
+      await ingestLoadScans([{ ...scan(batch!.id, box.code), addedOnSpot: false }], ctx());
+    }
+    await departBatch(batch!.id, ctx());
+    return { batchId: batch!.id, planned };
+  }
+
+  it('a carton the stocktake FINDS days later re-arms the push under the day it was found', async () => {
+    const chat = newChat();
+    const client = await makeClient('IF', { chat });
+    const r = await receive(client.id, cnId, { boxCount: 2 });
+    const { batchId, planned } = await truck(r.lotId, 2);
+    // One carton off; the other is not found, and the manager finishes over it.
+    await ingestUnloadScans([scan(batchId, planned[0]!.code)], ctx());
+    await finishUnload(batchId, ctx(), { mayCloseWithMissing: true });
+    const firstDay = new Date(DAY.getTime() - 3 * 86_400_000);
+    await db
+      .update(boxMovements)
+      .set({ createdAt: firstDay })
+      .where(and(eq(boxMovements.boxId, planned[0]!.id), eq(boxMovements.cause, 'unload_scan')));
+    const [notice] = await noticesOf(client.id, NOTICE_ARRIVED);
+    await makeDue(notice!.id);
+    await sendDueArrivalNotices(DAY);
+    expect(htmlToPlain(bodyOf(callsTo(chat)[0]!))).toContain(formatDay(firstDay));
+
+    // Days later the warehouse finds it on the shelf: the stocktake's door.
+    calls = [];
+    await acceptFoundBox({ warehouseId: uzId, code: planned[1]!.code }, ctx());
+    const [found] = await db
+      .select({ at: boxMovements.createdAt })
+      .from(boxMovements)
+      .where(and(eq(boxMovements.boxId, planned[1]!.id), eq(boxMovements.cause, 'inventory_found')));
+    const [again] = await noticesOf(client.id, NOTICE_ARRIVED);
+    expect(again!.status).toBe('pending');
+    await makeDue(again!.id);
+    await sendDueArrivalNotices(DAY);
+    const text = htmlToPlain(bodyOf(callsTo(chat)[0]!));
+    expect(formatDay(found!.at)).not.toBe(formatDay(firstDay));
+    expect(text).toContain(formatDay(found!.at));
+    expect(text).not.toContain(formatDay(firstDay));
+  });
+
+  it('7 of a 10.1 kg, 20-box lot read ONE figure in the push and on the lot card', async () => {
+    const chat = newChat();
+    const client = await makeClient('SH', { chat });
+    const r = await receive(client.id, cnId, { boxCount: 20 });
+    await db.update(receiptLots).set({ totalWeightKg: '10.1' }).where(eq(receiptLots.id, r.lotId));
+    // Thirteen were handed over earlier — the way production's rows look.
+    await db
+      .update(boxes)
+      .set({ status: 'issued' })
+      .where(inArray(boxes.id, r.boxes.slice(0, 13).map((b) => b.id)));
+    const { batchId, planned } = await truck(r.lotId, 7);
+    for (const box of planned) await ingestUnloadScans([scan(batchId, box.code)], ctx());
+    await finishUnload(batchId, ctx());
+    const [notice] = await noticesOf(client.id, NOTICE_ARRIVED);
+    await makeDue(notice!.id);
+    await sendDueArrivalNotices(DAY);
+
+    const [lot] = (await cargoOverview(client.id)).filter((l) => l.lotId === r.lotId);
+    expect(lot!.total).toBe(7);
+    const onCard = groupDigits(lot!.weightKg);
+    // total × n ÷ boxes: 10.1 × 7 ÷ 20 = 3.535 → 3.54 on every surface.
+    expect(onCard).toBe('3.54');
+    const t = clientLabels(null);
+    const text = htmlToPlain(bodyOf(callsTo(chat).find((c) => bodyOf(c).includes(t.readyTitle))!));
+    expect(text).toContain(`${onCard} ${t.kg}`);
+    expect(text).not.toContain('3.53');
+  });
+});
+
 describe('C2 «yetib keldi» — the whole road', () => {
   function scan(batchId: string, code: string) {
     return { clientEventUuid: uuidv4(), batchId, code, method: 'qr' as const, scannedAt: new Date().toISOString() };
@@ -661,17 +747,19 @@ describe('C2 «yetib keldi» — the whole road', () => {
 
     const [notice] = await noticesOf(client.id, NOTICE_ARRIVED);
     expect(notice).toBeDefined();
-    // The cartons came off at 23:55 Tashkent the evening BEFORE the sweep
-    // (18:55 UTC), and the claim is older still — a notice re-armed by a
-    // second day of unloading keeps its first row's `created_at` (PA-4).
+    // Two days of unloading: the first carton a day earlier, the second at
+    // 23:55 Tashkent the evening BEFORE the sweep (18:55 UTC). The claim is
+    // older still — a notice re-armed by the second day keeps its first
+    // row's `created_at` (PA-4).
     const landed = new Date(DAY.getTime() - 11 * 3_600_000 - 5 * 60_000);
-    await db
-      .update(boxMovements)
-      .set({ createdAt: landed })
-      .where(and(inArray(boxMovements.boxId, r.boxes.map((b) => b.id)), eq(boxMovements.cause, 'unload_scan')));
+    const dayBefore = new Date(landed.getTime() - 86_400_000);
+    const unloadOf = (boxId: string) =>
+      and(eq(boxMovements.boxId, boxId), eq(boxMovements.cause, 'unload_scan'));
+    await db.update(boxMovements).set({ createdAt: dayBefore }).where(unloadOf(r.boxes[0]!.id));
+    await db.update(boxMovements).set({ createdAt: landed }).where(unloadOf(r.boxes[1]!.id));
     await db
       .update(clientNotices)
-      .set({ createdAt: new Date(landed.getTime() - 86_400_000) })
+      .set({ createdAt: new Date(landed.getTime() - 2 * 86_400_000) })
       .where(eq(clientNotices.id, notice!.id));
     await makeDue(notice!.id);
     await sendDueArrivalNotices(DAY);
@@ -686,13 +774,14 @@ describe('C2 «yetib keldi» — the whole road', () => {
     // Came from China and nobody pressed «rastamojka tugadi»: the honest caveat.
     expect(text).toContain(t.readyNote);
     expect(text).toContain(t.photoTakenOnReceipt);
-    // Dated the day the cartons LANDED: not the claim's first `created_at`
-    // (PA-4), and not the sweep's clock — told after midnight, the first fix
-    // printed a landing day that never happened.
+    // Dated the day the NEWEST carton landed: not the first day's (PA-4),
+    // not the claim's `created_at`, and not the sweep's clock — told after
+    // midnight, the first fix printed a landing day that never happened.
     expect(formatDay(landed)).not.toBe(formatDay(DAY));
     expect(text).toContain(formatDay(landed));
+    expect(text).not.toContain(formatDay(dayBefore));
+    expect(text).not.toContain(formatDay(new Date(landed.getTime() - 2 * 86_400_000)));
     expect(text).not.toContain(formatDay(DAY));
-    expect(text).not.toContain(formatDay(new Date(landed.getTime() - 86_400_000)));
     // The Mini App says what the push said (MA-1): nothing cleared here.
     const [lot] = (await cargoOverview(client.id)).filter((l) => l.lotId === r.lotId);
     expect(lot!.readyCleared).toBe(0);

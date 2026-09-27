@@ -1,6 +1,7 @@
 import { and, asc, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { db } from '@/modules/platform/db/client';
+import { shareOf } from '@/modules/platform/telegram/format';
 import {
   batches,
   boxes,
@@ -254,14 +255,13 @@ export async function issuedFacts(clientId: string, handoverId: string): Promise
     .orderBy(asc(receiptLots.letter));
   const lines: PushLot[] = rows.map((row) => {
     const issued = Number(row.issued);
-    const share = Number(row.lotBoxes) > 0 ? issued / Number(row.lotBoxes) : 0;
     return {
       lotId: row.lotId,
       letter: row.letter,
       name: pushLotName(row.nameRu, row.nameZh),
       boxCount: issued,
-      weightKg: Number(row.lotKg ?? 0) * share,
-      volumeM3: Number(row.lotM3 ?? 0) * share,
+      weightKg: shareOf(Number(row.lotKg ?? 0), issued, Number(row.lotBoxes)),
+      volumeM3: shareOf(Number(row.lotM3 ?? 0), issued, Number(row.lotBoxes)),
     };
   });
   if (lines.length === 0) return { skip: 'nothing_issued' };

@@ -210,19 +210,35 @@ describe('the push prints kilos the way the app it opens does (round C review)',
     expect(kgText((10 * 3) / 7)).toBe('4.29');
   });
 
-  it('every cabinet reader rounds through the one helper, never inline', async () => {
+  it('every customer surface shares and rounds through the one helper, never inline', async () => {
     const { readFileSync } = await import('node:fs');
     for (const file of [
       'src/modules/wms/client-cabinet/service.ts',
       'src/modules/wms/client-cabinet/miniapp.ts',
+      'src/modules/wms/client-cabinet/map.ts',
       'src/modules/wms/notices/client-text.ts',
+      'src/modules/wms/notices/client-summary.ts',
+      'src/modules/wms/notices/arrival.ts',
     ]) {
       const src = readFileSync(file, 'utf8').replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
-      // An inline `* 100) / 100` on a weight or `* 1000) / 1000` on a volume
-      // is a second rule that can drift from `roundKg`/`roundM3`.
+      // An inline `* 100) / 100` on a weight or `* 1000) / 1000` on a volume,
+      // or a generic `10 ** d` rounder, is a second rule that drifts from
+      // `roundKg`/`roundM3` — the map printed 5.7 beside the header's 5.71.
       expect(src, file).not.toMatch(/(weight|kg|volume|m3)[^\n;]*\*\s*100\)\s*\/\s*100/i);
       expect(src, file).not.toMatch(/(weight|kg|volume|m3)[^\n;]*\*\s*1000\)\s*\/\s*1000/i);
-      expect(src, file).toMatch(/roundKg\(/);
+      expect(src, file).not.toMatch(/\*\s*10\s*\*\*/);
+      // A share computed any other way than `shareOf` lands on the other side
+      // of a half-hundredth (10.1 kg, 7 of 20: 3.53 against 3.54).
+      expect(src, file).not.toMatch(/\)\s*\*\s*share\b/);
+      expect(src, file).not.toMatch(/\*\s*Number\([^)]*perBox(Kg|M3)/);
+      expect(src, file).toMatch(/\b(roundKg|shareOf)\b/);
     }
   });
+
+  it('a total is the sum of the lines as printed — 0.095 + 0.095 is 0.19, not 0.189', async () => {
+    const { measuresOf } = await import('@/modules/wms/notices/client-text');
+    const line = { lotId: 'x', letter: 'A', name: 'x', boxCount: 2, weightKg: 0, volumeM3: 0.0945 };
+    expect(measuresOf([line, { ...line, lotId: 'y' }]).volumeM3).toBe(0.19);
+  });
+
 });

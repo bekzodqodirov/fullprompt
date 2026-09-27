@@ -128,6 +128,27 @@ export function roundM3(value: number): number {
 }
 
 /**
+ * A box's weight (or volume) is its lot's SHARE — the lot is weighed once,
+ * never box by box — and the share is computed ONE way: total × n ÷ boxes.
+ * `n × (total ÷ boxes)` and `total × (n ÷ boxes)` are the same number on paper
+ * and land on opposite sides of a half-hundredth in floating point (10.1 kg,
+ * 7 of 20 boxes: 3.54 against 3.53), which is two figures one tap apart even
+ * through the same `roundKg` (round C review, second pass).
+ */
+export function shareOf(total: number, n: number, of: number): number {
+  return of > 0 ? (total * n) / of : 0;
+}
+
+/**
+ * A total the customer can add up: the sum of the lines AS PRINTED. Summing
+ * the raw shares and rounding once made a push's «Jami» 0.189 m³ under two
+ * lines of 0.095, and the Mini App (which sums its rounded lot cards) 0.19.
+ */
+export function sumRounded(values: readonly number[], round: (v: number) => number): number {
+  return round(values.reduce((acc, v) => acc + round(v), 0));
+}
+
+/**
  * «12 845.5» — thousands grouped with a no-break space, so a number never
  * wraps across a line on a phone and a customer reads «12 845» and not
  * «12845». `decimals` fixes the places (money); without it up to three are

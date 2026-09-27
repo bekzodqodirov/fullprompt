@@ -3079,6 +3079,7 @@
     "belowFloorChip": "偏低",
     "offerSent": "已发送到 Telegram",
     "offerNoTelegram": "未连接 Telegram — 请复制文本",
+    "offerMuted": "您的个人资料中已关闭「业务消息」— 请复制文本",
     "offerText": "报价文本",
     "sealExpired": "已过期",
     "sealExpiredHint": "此价格已过期，需要重新核算。",

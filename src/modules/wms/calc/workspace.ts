@@ -3608,6 +3608,13 @@ export interface OfferResult {
   belowFloor: boolean;
   /** FALSE when the seller has no linked staff chat — see the comment below. */
   delivered: boolean;
+  /**
+   * TRUE when the chat is linked but the seller's own profile silences
+   * «Operatsiya xabarlari», where this text lives: the row is written `muted`
+   * and nothing arrives, so the screen must not say «yuborildi» (round C
+   * review, second pass — the founders rule made every past tick count).
+   */
+  muted?: boolean;
   /** TRUE when a below-floor price is waiting on somebody who may allow it. */
   pending: boolean;
 }
@@ -3865,15 +3872,20 @@ export async function recordOffer(
   // carrying no staff URL: the internal notification does that, and this is
   // the string they forward to a customer.
   const linked = await hasLinkedChat(ctx.actorId);
-  if (linked) {
-    await notifyStaffTelegram({
-      userIds: [ctx.actorId],
-      type: 'CalcOffer',
-      text,
-    }).catch((err) => logger.error({ err, versionId, requestId }, '[calc] offer push failed'));
-  }
+  // `notifyStaffTelegram` answers how many rows it queued — zero when the
+  // seller's mutes wrote the row `muted`.
+  const queued = linked
+    ? await notifyStaffTelegram({
+        userIds: [ctx.actorId],
+        type: 'CalcOffer',
+        text,
+      }).catch((err) => {
+        logger.error({ err, versionId, requestId }, '[calc] offer push failed');
+        return 1;
+      })
+    : 0;
 
-  return { id: saved!.id, text, belowFloor, delivered: linked, pending: false };
+  return { id: saved!.id, text, belowFloor, delivered: queued > 0, muted: linked && queued === 0, pending: false };
 }
 
 /**
@@ -4022,19 +4034,23 @@ export async function releaseOffer(offerId: string, ctx: AuditContext): Promise<
 
   // The seller gets the text now — it is the first moment there is one.
   const linked = await hasLinkedChat(claimed.offeredBy);
-  if (linked) {
-    await notifyStaffTelegram({
-      userIds: [claimed.offeredBy],
-      type: 'CalcOffer',
-      text: claimed.text,
-    }).catch((err) => logger.error({ err, offerId }, '[calc] released offer push failed'));
-  }
+  const queued = linked
+    ? await notifyStaffTelegram({
+        userIds: [claimed.offeredBy],
+        type: 'CalcOffer',
+        text: claimed.text,
+      }).catch((err) => {
+        logger.error({ err, offerId }, '[calc] released offer push failed');
+        return 1;
+      })
+    : 0;
 
   return {
     id: claimed.id,
     text: claimed.text,
     belowFloor: true,
-    delivered: linked,
+    delivered: queued > 0,
+    muted: linked && queued === 0,
     pending: false,
   };
 }

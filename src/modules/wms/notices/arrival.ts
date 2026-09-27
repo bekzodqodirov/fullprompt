@@ -8,8 +8,9 @@ import {
   receiptLots,
   receipts,
 } from '@/modules/platform/db/schema';
+import { roundKg, roundM3, shareOf, sumRounded } from '@/modules/platform/telegram/format';
 import { isPermanentFailure } from '@/modules/platform/telegram/send';
-import { ARRIVED_ON_A_TRUCK } from '../documents/arrivals';
+import { landedHereSql } from '../documents/arrivals';
 import { pushLotName, type PushLot } from './client-text';
 
 /**
@@ -167,6 +168,39 @@ export async function arrivedSummary(
   warehouseId: string,
   exec: Exec = db,
 ): Promise<ArrivedSummary | null> {
+  // The cartons this notice is about — counted below, and dated by the same set.
+  const counted = and(
+    eq(receipts.clientId, clientId),
+    eq(boxes.currentWarehouseId, warehouseId),
+    /*
+     * The truck it came off — asked through `box_movements`, NEVER
+     * through the live pointer.
+     *
+     * Landing NULLs `boxes.current_batch_id` (unload.ts sets it while it
+     * writes the new status), so by the time this notice is sent every
+     * box that arrived has forgotten its truck. #440 recorded this exact
+     * trap on the batch card, where it made an arrived truck show «Σ 0»
+     * precisely when the owner looked. The departure movement is the
+     * durable record of who rode which lorry.
+     */
+    /*
+     * Departed on it, OR landed off it. `batch_departed` is the durable
+     * record for cargo that was loaded in China — but a box AUTO-
+     * TRANSFERRED at the destination (`undocumented_transfer`, the
+     * reality-wins path: it rode the truck and the plan never knew) has
+     * no departure row for this batch at all, so a truck that arrives
+     * with a rogue carton told the seller and never told the customer.
+     * Both halves of the membership, one predicate.
+     */
+    sql`EXISTS (
+      SELECT 1 FROM box_movements bm
+      WHERE bm.box_id = ${boxes.id}
+        AND bm.ref_type = 'batch' AND bm.ref_id = ${batchId}
+        AND bm.cause IN ('batch_departed', 'unload_scan', 'undocumented_transfer', 'found_here')
+    )`,
+    inArray(boxes.status, ['ready_for_pickup', 'in_stock']),
+    isNull(receipts.voidedAt),
+  );
   const rows = await exec
     .select({
       lotId: receiptLots.id,
@@ -181,40 +215,7 @@ export async function arrivedSummary(
     .from(boxes)
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
     .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
-    .where(
-      and(
-        eq(receipts.clientId, clientId),
-        eq(boxes.currentWarehouseId, warehouseId),
-        /*
-         * The truck it came off — asked through `box_movements`, NEVER
-         * through the live pointer.
-         *
-         * Landing NULLs `boxes.current_batch_id` (unload.ts sets it while it
-         * writes the new status), so by the time this notice is sent every
-         * box that arrived has forgotten its truck. #440 recorded this exact
-         * trap on the batch card, where it made an arrived truck show «Σ 0»
-         * precisely when the owner looked. The departure movement is the
-         * durable record of who rode which lorry.
-         */
-        /*
-         * Departed on it, OR landed off it. `batch_departed` is the durable
-         * record for cargo that was loaded in China — but a box AUTO-
-         * TRANSFERRED at the destination (`undocumented_transfer`, the
-         * reality-wins path: it rode the truck and the plan never knew) has
-         * no departure row for this batch at all, so a truck that arrives
-         * with a rogue carton told the seller and never told the customer.
-         * Both halves of the membership, one predicate.
-         */
-        sql`EXISTS (
-          SELECT 1 FROM box_movements bm
-          WHERE bm.box_id = ${boxes.id}
-            AND bm.ref_type = 'batch' AND bm.ref_id = ${batchId}
-            AND bm.cause IN ('batch_departed', 'unload_scan', 'undocumented_transfer', 'found_here')
-        )`,
-        inArray(boxes.status, ['ready_for_pickup', 'in_stock']),
-        isNull(receipts.voidedAt),
-      ),
-    )
+    .where(counted)
     .groupBy(
       receiptLots.id,
       receiptLots.letter,
@@ -231,43 +232,34 @@ export async function arrivedSummary(
   const lines: ArrivedLine[] = rows.map((row) => {
     const landed = Number(row.landed);
     const ofLot = Number(row.lotBoxes) || 0;
-    const share = ofLot > 0 ? landed / ofLot : 0;
     return {
       lotId: row.lotId,
       letter: row.letter,
       name: pushLotName(row.nameRu, row.nameZh),
       boxCount: landed,
-      weightKg: Number(row.lotKg ?? 0) * share,
-      volumeM3: Number(row.lotM3 ?? 0) * share,
+      weightKg: shareOf(Number(row.lotKg ?? 0), landed, ofLot),
+      volumeM3: shareOf(Number(row.lotM3 ?? 0), landed, ofLot),
     };
   });
 
-  // The newest landing off THIS truck among the cartons counted above — the
-  // same client, place, statuses and receipts, so the date and the count are
-  // about one set of boxes.
+  // The newest movement that LANDED one of the counted cartons here — through
+  // whichever door: an unload scan, a found-on-arrival resolution, or the
+  // stocktake's «found» (`inventory_found`, ref 'manual'), which re-arms this
+  // very notice days later and would otherwise be told under the first day's
+  // date. `landedHereSql` is the arrival rule the agent's sheet uses (#513).
   const [landing] = await exec
     .select({ at: sql<string | null>`max(${boxMovements.createdAt})` })
     .from(boxMovements)
     .innerJoin(boxes, eq(boxMovements.boxId, boxes.id))
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
     .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
-    .where(
-      and(
-        eq(boxMovements.refType, 'batch'),
-        eq(boxMovements.refId, batchId),
-        inArray(boxMovements.cause, ARRIVED_ON_A_TRUCK),
-        eq(receipts.clientId, clientId),
-        eq(boxes.currentWarehouseId, warehouseId),
-        inArray(boxes.status, ['ready_for_pickup', 'in_stock']),
-        isNull(receipts.voidedAt),
-      ),
-    );
+    .where(and(counted, landedHereSql(sql`${warehouseId}::uuid`)));
 
   return {
     lines,
     boxCount: lines.reduce((sum, line) => sum + line.boxCount, 0),
-    weightKg: lines.reduce((sum, line) => sum + line.weightKg, 0),
-    volumeM3: lines.reduce((sum, line) => sum + line.volumeM3, 0),
+    weightKg: sumRounded(lines.map((line) => line.weightKg), roundKg),
+    volumeM3: sumRounded(lines.map((line) => line.volumeM3), roundM3),
     landedAt: landing?.at ? new Date(landing.at) : null,
     warehouseCode: '',
   };

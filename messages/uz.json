@@ -3079,6 +3079,7 @@
     "belowFloorChip": "past",
     "offerSent": "Telegramga yuborildi",
     "offerNoTelegram": "Telegram ulanmagan — matnni nusxalab oling",
+    "offerMuted": "Profilingizda «Operatsiya xabarlari» o'chirilgan — matnni nusxalab oling",
     "offerText": "Taklif matni",
     "sealExpired": "Muddati o‘tgan",
     "sealExpiredHint": "Bu narxning muddati tugagan. Qayta hisoblatish kerak.",

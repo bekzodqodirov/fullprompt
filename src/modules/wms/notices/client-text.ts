@@ -1,4 +1,4 @@
-import { b, clipText, code, groupDigits, h, roundKg, roundM3, stepBar } from '@/modules/platform/telegram/format';
+import { b, clipText, code, groupDigits, h, roundKg, roundM3, stepBar, sumRounded } from '@/modules/platform/telegram/format';
 import {
   boxWord,
   clientLabels,
@@ -179,9 +179,16 @@ function sum<T>(rows: readonly T[], pick: (row: T) => number): number {
   return rows.reduce((total, row) => total + pick(row), 0);
 }
 
-/** The kilos and cubic metres of a set of lines — every one, shown or not. */
+/**
+ * The kilos and cubic metres of a set of lines — every one, shown or not —
+ * as the sum of the lines as printed (`sumRounded`), the way the Mini App adds
+ * its lot cards.
+ */
 export function measuresOf(lots: readonly PushLot[]) {
-  return { weightKg: sum(lots, (l) => l.weightKg), volumeM3: sum(lots, (l) => l.volumeM3) };
+  return {
+    weightKg: sumRounded(lots.map((l) => l.weightKg), roundKg),
+    volumeM3: sumRounded(lots.map((l) => l.volumeM3), roundM3),
+  };
 }
 
 /** Blocks joined with one blank line between them; empty blocks drop out. */

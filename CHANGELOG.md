@@ -118,6 +118,19 @@ Migratsiya yo'q. Ledger o'zgarmaydi (**112**).
     «O'zbekistonga kirdi» deb ko'rinib qolardi (Qashqarga kelgan kun bilan).
     Endi Xitoyda tugaydigan mashina O'zbekiston qadamini bermaydi.
 
+**Va tuzatishlarni ham tekshirdik — yana uchta joy chiqdi:**
+35. Kilo hamma joyda bitta: Mini App xaritasi kiloni bir xona bilan yozardi
+    (sarlavhada 5.71, xaritada 5.7); xabardagi «Jami» qatorlarni qo'shganda
+    0.189 chiqarardi, Mini App esa 0.19; va 20 qutili lotdan 7 tasi kelganda
+    xabar 3.53, kartochka 3.54 derdi. Endi ulush ham, jami ham bitta qoida
+    bilan hisoblanadi — xabar, bot, Mini App va xarita bir xil raqam yozadi.
+36. Yo'qolgan deb yopilgan qutini ombor keyinroq inventarizatsiyada topsa,
+    mijozga qayta «yetib keldi» boradi — endi u topilgan kun sanasi bilan
+    boradi, birinchi kun sanasi bilan emas.
+37. Sotuvchi profilida «Operatsiya xabarlari»ni o'chirib qo'ygan bo'lsa,
+    taklif matni Telegramga kelmaydi — ekranda endi «yuborildi» deyilmaydi,
+    «profilingizda o'chirilgan — matnni nusxalab oling» deyiladi.
+
 **Bilib qo'ying:**
 - Mijoz klaviaturasidagi yangi «💬 Menejer» tugmasi mijozda bot unga
   klaviaturali xabar yuborgandan keyin paydo bo'ladi: /start, «💰 Balans»,

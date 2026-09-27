@@ -18,7 +18,7 @@ import {
 } from '../../platform/db/schema';
 import { getSetting } from '../../platform/settings/service';
 import { reachableAt } from '../crm/site-assign-rules';
-import { roundKg, roundM3 } from '../../platform/telegram/format';
+import { roundKg, roundM3, shareOf } from '../../platform/telegram/format';
 import { telegramPhoneUrl } from '../../platform/telegram/map-link';
 import { chatLocaleFor } from '../../platform/telegram/cabinet-locale';
 import { ARRIVED_ON_A_TRUCK } from '../documents/arrivals';
@@ -498,6 +498,11 @@ export async function cargoOverview(clientId: string): Promise<CabinetLot[]> {
       // finance/client-cargo.ts). Guarded against a zero count.
       perBoxKg: sql<string>`${receiptLots.totalWeightKg} / nullif(${receiptLots.boxCount}, 0)`,
       perBoxM3: sql<string>`${receiptLots.totalVolumeM3} / nullif(${receiptLots.boxCount}, 0)`,
+      // The lot's own figures: its share on the card is `shareOf` over these,
+      // the one formula the pushes use (round C review, second pass).
+      lotKg: receiptLots.totalWeightKg,
+      lotM3: receiptLots.totalVolumeM3,
+      lotBoxes: receiptLots.boxCount,
     })
     .from(boxes)
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
@@ -529,6 +534,7 @@ export async function cargoOverview(clientId: string): Promise<CabinetLot[]> {
   ]);
 
   const byLot = new Map<string, CabinetLot>();
+  const lotOf = new Map<string, { kg: number; m3: number; boxes: number }>();
   const stageCounts = new Map<string, Map<CargoStage, { n: number; transit: CargoTransit | null }>>();
   for (const r of rows) {
     let lot = byLot.get(r.lotId);
@@ -572,11 +578,18 @@ export async function cargoOverview(clientId: string): Promise<CabinetLot[]> {
         : prev.transit;
     counts.set(stage, { n: (prev?.n ?? 0) + Number(r.n), transit: keep });
     lot.total += Number(r.n);
-    lot.weightKg += Number(r.n) * Number(r.perBoxKg ?? 0);
-    lot.volumeM3 += Number(r.n) * Number(r.perBoxM3 ?? 0);
+    // The share of the WHOLE active count, once, below — not a sum of
+    // per-status shares, which can round the other way from the push.
+    lotOf.set(r.lotId, { kg: Number(r.lotKg ?? 0), m3: Number(r.lotM3 ?? 0), boxes: Number(r.lotBoxes) });
     if (r.warehousePlace && !lot.warehousePlaces.includes(r.warehousePlace)) {
       lot.warehousePlaces.push(r.warehousePlace);
     }
+  }
+  for (const lot of byLot.values()) {
+    const m = lotOf.get(lot.lotId);
+    if (!m) continue;
+    lot.weightKg = shareOf(m.kg, lot.total, m.boxes);
+    lot.volumeM3 = shareOf(m.m3, lot.total, m.boxes);
   }
   const lots = [...byLot.values()];
   // Which truck answers for a lot's truck-level history (the pin, the customs
@@ -884,8 +897,7 @@ export async function issuedHandovers(
       .map((r) => {
         const n = Number(r.n);
         // A box's weight is its lot's share, as on every other screen: the
-        // lot is weighed once, never box by box.
-        const share = r.boxCount > 0 ? n / r.boxCount : 0;
+        // lot is weighed once, never box by box (`shareOf`, the one formula).
         return {
           lotId: r.lotId,
           letter: r.letter,
@@ -893,8 +905,8 @@ export async function issuedHandovers(
           productNameRu: r.productNameRu,
           receivedAt: new Date(r.receivedAt).toISOString(),
           n,
-          weightKg: roundKg(Number(r.lotKg ?? 0) * share),
-          volumeM3: roundM3(Number(r.lotM3 ?? 0) * share),
+          weightKg: roundKg(shareOf(Number(r.lotKg ?? 0), n, r.boxCount)),
+          volumeM3: roundM3(shareOf(Number(r.lotM3 ?? 0), n, r.boxCount)),
           photoCount: photos.get(r.lotId) ?? 0,
         };
       })
