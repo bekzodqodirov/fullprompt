@@ -509,7 +509,10 @@
     "riskEmpty": "Нет",
     "riskCost": "Потрачено на перевозку этой коробки (себестоимость)",
     "journalTotals": "Подтверждено: приходов {receipts} · {boxes} 📦",
-    "journalCapped": "В списке показаны последние {n} — итог выше за весь период."
+    "journalCapped": "В списке показаны последние {n} — итог выше за весь период.",
+    "journalWarehouse": "Склад",
+    "journalAllWarehouses": "Все склады",
+    "journalShow": "Показать"
   },
   "warehouses": {
     "title": "Склады",

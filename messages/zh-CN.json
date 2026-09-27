@@ -509,7 +509,10 @@
     "riskEmpty": "无",
     "riskCost": "运输此箱已花费（成本）",
     "journalTotals": "已确认：{receipts}张入库单 · {boxes} 📦",
-    "journalCapped": "列表仅显示最新{n}条——上方合计为整个期间。"
+    "journalCapped": "列表仅显示最新{n}条——上方合计为整个期间。",
+    "journalWarehouse": "仓库",
+    "journalAllWarehouses": "全部仓库",
+    "journalShow": "显示"
   },
   "warehouses": {
     "title": "仓库",

@@ -509,7 +509,10 @@
     "riskEmpty": "None",
     "riskCost": "Spent carrying this box (landed cost)",
     "journalTotals": "Confirmed: {receipts} receipts · {boxes} 📦",
-    "journalCapped": "The list shows the newest {n} — the total above covers the whole period."
+    "journalCapped": "The list shows the newest {n} — the total above covers the whole period.",
+    "journalWarehouse": "Warehouse",
+    "journalAllWarehouses": "All warehouses",
+    "journalShow": "Show"
   },
   "warehouses": {
     "title": "Warehouses",

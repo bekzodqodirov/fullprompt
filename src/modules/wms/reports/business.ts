@@ -6,6 +6,7 @@ import { roadLossBatchSql } from '../boxes/road-loss';
 import { customsCostTypeIds } from '../costing/service';
 import { withoutJit } from '../../platform/db/no-jit';
 import { GATE_OFF, unpricedReceiptsOn } from '../finance/unpriced';
+import { daysBetween } from './dashboard-math';
 
 /**
  * The owner's dashboard reads (2026-09-25): where the cargo is, what is at
@@ -299,6 +300,63 @@ export interface IntakeMonth {
 }
 
 /**
+ * A Tashkent calendar range as the two instants that bound it, half-open:
+ * the first day's midnight up to the midnight AFTER the last day — Tashkent's
+ * midnights (R5), as ISO strings a caller binds with `::timestamptz` (#156;
+ * a `Date` reaches postgres.js untyped). The intake months, the intake days
+ * and the receipts journal's calendar range all cut the day here, so a
+ * receipt at 00:30 belongs to the same day on all three screens.
+ */
+export function tashkentRangeBounds(from: string, to: string): { start: string; end: string } {
+  return {
+    start: tashkentDayStart(from).toISOString(),
+    end: tashkentDayStart(addDays(to, 1)).toISOString(),
+  };
+}
+
+/**
+ * A receipts alias's warehouse scope. `undefined` is the whole company; an
+ * EMPTY list is a scoped viewer with no warehouse, and reads NOTHING — the
+ * other readers in this file take an empty list as «no filter» (the
+ * dashboard feeds them a nil uuid for that case, `scopeKeyOf`), and the
+ * receipts journal took it the same way, so a warehouse role with no
+ * warehouse assigned yet read the whole company's intake.
+ */
+export function receiptScopeSql(alias: string, warehouseIds: string[] | undefined): SQL {
+  if (warehouseIds === undefined) return sql`true`;
+  if (warehouseIds.length === 0) return sql`false`;
+  return sql`${sql.raw(alias)}.warehouse_id IN (${idList(warehouseIds)})`;
+}
+
+/** Received inside a Tashkent calendar range (`tashkentRangeBounds`), over a receipts alias. */
+export function receivedInRangeSql(alias: string, from: string, to: string): SQL {
+  const { start, end } = tashkentRangeBounds(from, to);
+  const at = sql.raw(`${alias}.received_at`);
+  return sql`${at} >= ${start}::timestamptz AND ${at} < ${end}::timestamptz`;
+}
+
+/**
+ * What the warehouses TOOK IN, with the window left to the caller: a
+ * CONFIRMED receipt (a draft is still being typed, a voided one never
+ * happened) in the scope. The journal's rolling «last N days» header is the
+ * one caller whose window is not a calendar range; everything else goes
+ * through `intakeWhereSql`.
+ */
+export function intakeRuleSql(alias: string, window: SQL, warehouseIds?: string[]): SQL {
+  return sql`${sql.raw(alias)}.status = 'confirmed' AND ${window} AND ${receiptScopeSql(alias, warehouseIds)}`;
+}
+
+/**
+ * The ONE intake predicate over `receipts r` for a Tashkent calendar range
+ * (#513): the month chart, the day chart and the receipts journal's header
+ * over the same range are the same rows, so the dashboard's figure and the
+ * journal it links to cannot disagree.
+ */
+export function intakeWhereSql(from: string, to: string, warehouseIds?: string[]): SQL {
+  return intakeRuleSql('r', receivedInRangeSql('r', from, to), warehouseIds);
+}
+
+/**
  * What the warehouses took in, per Tashkent month: confirmed receipts, their
  * boxes, m³ and kg. The `*Mtd` columns count days 1..mtdDay only, so this
  * month-to-date can be compared with the same days of last month in the same
@@ -310,9 +368,6 @@ export async function intakeByMonth(
   warehouseIds?: string[],
   mtdDay = 31,
 ): Promise<IntakeMonth[]> {
-  const start = tashkentDayStart(from).toISOString();
-  const end = tashkentDayStart(addDays(to, 1)).toISOString();
-  const scope = warehouseIds?.length ? sql`AND r.warehouse_id IN (${idList(warehouseIds)})` : sql``;
   const dom = sql`extract(day FROM r.received_at AT TIME ZONE 'Asia/Tashkent') <= ${mtdDay}`;
   const rows = await db.execute<{
     month: string;
@@ -334,9 +389,7 @@ export async function intakeByMonth(
       coalesce(sum(rl.total_volume_m3) FILTER (WHERE ${dom}), 0) AS m3_mtd
     FROM receipts r
     LEFT JOIN receipt_lots rl ON rl.receipt_id = r.id
-    WHERE r.status = 'confirmed'
-      AND r.received_at >= ${start}::timestamptz AND r.received_at < ${end}::timestamptz
-      ${scope}
+    WHERE ${intakeWhereSql(from, to, warehouseIds)}
     GROUP BY 1
     ORDER BY 1
   `);
@@ -350,6 +403,89 @@ export async function intakeByMonth(
     boxesMtd: Number(row.boxes_mtd),
     m3Mtd: round(row.m3_mtd, 3),
   }));
+}
+
+export interface IntakeDay {
+  day: string;
+  receipts: number;
+  boxes: number;
+  m3: number;
+  kg: number;
+}
+
+export interface IntakeTotals {
+  receipts: number;
+  boxes: number;
+  m3: number;
+  kg: number;
+}
+
+/**
+ * What the warehouses took in, per Tashkent DAY — the dashboard's 30 columns,
+ * the «which warehouse took most» line under them, and the total the journal's
+ * header prints over the same range. ONE statement: the three answers are
+ * GROUPING SETS of the same rows under `intakeWhereSql`, so the columns, the
+ * split and the total are one read of one predicate and cannot drift apart.
+ *
+ * `days` holds EVERY day of from..to, a quiet day as zeros, oldest first — a
+ * missing column would read as «the chart stops here». Summing
+ * `count(DISTINCT r.id)` across days is exact: a receipt has one day. The
+ * total is its own grouping set, rounded once from the raw sums, never the
+ * sum of rounded days.
+ *
+ * The day key is `AT TIME ZONE 'Asia/Tashkent'`, the office's clock (R5): a
+ * receipt at 00:30 here is 19:30 UTC the day before, and without the zone it
+ * would land on yesterday's column. (In a year before 1924 the zone database
+ * answers Tashkent's LMT, +04:37 — a test parking data in the 1600s must keep
+ * its fixtures out of 19:00-19:23 UTC, where the window's fixed +05:00 and the
+ * key disagree. Production years are +05:00 on both sides.)
+ */
+export async function intakeByDay(
+  from: string,
+  to: string,
+  warehouseIds?: string[],
+): Promise<{ days: IntakeDay[]; byWarehouse: { code: string; m3: number }[]; total: IntakeTotals }> {
+  const rows = await db.execute<{
+    g: number;
+    day: string | null;
+    code: string | null;
+    receipts: number;
+    boxes: number;
+    m3: string;
+    kg: string;
+  }>(sql`
+    SELECT grouping(day, wid)::int AS g, day, code,
+      count(DISTINCT rid)::int AS receipts,
+      coalesce(sum(boxes), 0)::int AS boxes,
+      coalesce(sum(m3), 0) AS m3,
+      coalesce(sum(kg), 0) AS kg
+    FROM (
+      SELECT to_char(r.received_at AT TIME ZONE 'Asia/Tashkent', 'YYYY-MM-DD') AS day,
+        r.warehouse_id AS wid, w.code, r.id AS rid,
+        rl.box_count AS boxes, rl.total_volume_m3 AS m3, rl.total_weight_kg AS kg
+      FROM receipts r
+      JOIN warehouses w ON w.id = r.warehouse_id
+      LEFT JOIN receipt_lots rl ON rl.receipt_id = r.id
+      WHERE ${intakeWhereSql(from, to, warehouseIds)}
+    ) x
+    GROUP BY GROUPING SETS ((day), (wid, code), ())
+  `);
+  const figures = (row: (typeof rows)[number] | undefined): IntakeTotals => ({
+    receipts: Number(row?.receipts ?? 0),
+    boxes: Number(row?.boxes ?? 0),
+    m3: round(row?.m3, 3),
+    kg: round(row?.kg, 1),
+  });
+  // grouping(day, wid): 1 = the (day) set, 2 = the (warehouse) set, 3 = ().
+  const byDay = new Map(rows.filter((row) => Number(row.g) === 1).map((row) => [row.day!, row]));
+  return {
+    days: daysBetween(from, to).map((day) => ({ day, ...figures(byDay.get(day)) })),
+    byWarehouse: rows
+      .filter((row) => Number(row.g) === 2)
+      .map((row) => ({ code: row.code!, m3: round(row.m3, 3) }))
+      .sort((a, b) => b.m3 - a.m3 || a.code.localeCompare(b.code)),
+    total: figures(rows.find((row) => Number(row.g) === 3)),
+  };
 }
 
 export interface UnbilledClient {

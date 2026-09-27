@@ -509,7 +509,10 @@
     "riskEmpty": "Yo‘q",
     "riskCost": "Bu karobkani tashishga sarflangan (tannarx)",
     "journalTotals": "Tasdiqlangan: {receipts} prixod · {boxes} 📦",
-    "journalCapped": "Ro‘yxatda eng yangi {n} tasi ko‘rsatilgan — yuqoridagi jami butun davr uchun."
+    "journalCapped": "Ro‘yxatda eng yangi {n} tasi ko‘rsatilgan — yuqoridagi jami butun davr uchun.",
+    "journalWarehouse": "Sklad",
+    "journalAllWarehouses": "Barcha skladlar",
+    "journalShow": "Ko‘rsatish"
   },
   "warehouses": {
     "title": "Skladlar",

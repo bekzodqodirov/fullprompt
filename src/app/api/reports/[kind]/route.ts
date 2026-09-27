@@ -16,6 +16,7 @@ import {
 } from '@/modules/wms/reports/xlsx';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { readJournalWindow, UNCLAIMED_KEY } from '@/modules/wms/reports/queries';
+import { reportBaseIds, reportScope, warehouseOptions } from '@/modules/wms/reports/report-scope';
 
 const kindSchema = z.enum([
   'landed-cost',
@@ -89,17 +90,24 @@ export async function GET(request: Request, { params }: { params: Promise<{ kind
       // download is a separate decision (stated to the lead).
       xlsx = await buildBatchRegisterXlsx(scope, locale, { costs: !moneyHidden('results', actor.permissions) });
       break;
-    case 'receipts-journal':
+    case 'receipts-journal': {
+      // The screen's own scope (report-scope.ts): both rules intersected, and
+      // `?ombor=` only when it is one of this viewer's warehouses — a file is
+      // the screen it was downloaded from, never a wider read (#490). The
+      // options are read only when a warehouse was asked for.
+      const rawOmbor = url.searchParams.get('ombor');
+      const options = rawOmbor ? await warehouseOptions(reportBaseIds(actor)) : [];
       xlsx = await buildReceiptsJournalXlsx(
         readJournalWindow({
           from: url.searchParams.get('from'),
           to: url.searchParams.get('to'),
           days: url.searchParams.get('days'),
         }),
-        scope,
+        reportScope(actor, rawOmbor, options).ids,
         locale,
       );
       break;
+    }
     case 'unclaimed':
       xlsx = await buildUnclaimedXlsx(scope, locale);
       break;
