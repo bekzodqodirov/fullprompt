@@ -83,6 +83,14 @@ export const AUDIT_FIELD_LABELS: Record<string, string> = {
   dealId: 'deal',
   partnerId: 'partner',
 
+  // QR-siz qabul (0112): the lot's marker, its factory barcode, and who
+  // physically received an office-entered prixod, on which day.
+  qrSkipped: 'qrSkipped',
+  factoryBarcode: 'factoryBarcode',
+  receivedByUserId: 'receivedBy',
+  receivedByName: 'receivedBy',
+  receivedAt: 'receivedAt',
+
   // Housekeeping
   note: 'note',
   notes: 'note',
@@ -134,6 +142,7 @@ export const AUDIT_FIELD_REFS: Record<string, AuditRefKind> = {
   deal: 'deal',
   dealId: 'deal',
   partnerId: 'partner',
+  receivedByUserId: 'user',
 };
 
 /** Only a uuid is looked up; codes and names in the same columns pass through. */

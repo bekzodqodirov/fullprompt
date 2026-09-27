@@ -3,6 +3,7 @@ import { desc, eq, sql, type SQL } from 'drizzle-orm';
 import type { z } from 'zod';
 import { db, type Db, type Tx } from '../../platform/db/client';
 import { withoutJit } from '../../platform/db/no-jit';
+import { isBusyError } from '../../platform/db/errors';
 import { fxRates } from '../../platform/db/schema';
 import { writeAudit, writeAuditMany, type AuditContext } from '../../platform/audit/service';
 import { toUsd } from './engine';
@@ -676,12 +677,9 @@ export async function upsertFxRateTx(tx: Tx, input: z.infer<typeof fxRateSchema>
   return row!;
 }
 
-const BUSY = new Set(['40P01', '40001', '55P03']);
-/** A deadlock, a serialisation failure or a lock timeout: «boshqa o'zgarish ketayotgan edi — qaytadan bosing». */
-export function isBusyError(err: unknown): boolean {
-  const code = (err as { code?: string } | null)?.code;
-  return typeof code === 'string' && BUSY.has(code);
-}
+// A deadlock, a serialisation failure or a lock timeout; the one home is
+// `platform/db/errors.ts` now, re-exported for the callers that import it here.
+export { isBusyError };
 
 function summary(plan: RepricePlan) {
   const usd = (list: Change[]) => cents(list.reduce((sum, c) => sum + c.newUsd - c.oldUsd, 0));

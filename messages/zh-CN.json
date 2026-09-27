@@ -706,6 +706,7 @@
       "discount": "折扣",
       "discountReason": "折扣原因",
       "dueAt": "期限",
+      "factoryBarcode": "工厂条码",
       "grants": "权限",
       "heightCm": "高 cm",
       "lengthCm": "长 cm",
@@ -724,8 +725,11 @@
       "phone": "电话",
       "productNameRu": "货名 (RU)",
       "productNameZh": "货名 (ZH)",
+      "qrSkipped": "未贴码批次",
       "rateToUsd": "美元汇率",
       "reason": "原因",
+      "receivedAt": "收货日期",
+      "receivedBy": "收货人",
       "roles": "角色",
       "source": "来源",
       "stage": "阶段",
@@ -4047,5 +4051,15 @@
       "admin": "管理"
     },
     "more": "更多"
-  }
+  },
+  "scanRefusal": {
+    "lot_counted": "🔢 {lot} 已由办公室计数——无需扫描。如有多出，请告知办公室。",
+    "qr_less_count_only": "🏷 {lot} 无码——由办公室计数，无需扫描。",
+    "reserved_reason": "此标记仅限办公室——扫描未记录。"
+  },
+  "countLoad": {},
+  "countAccept": {},
+  "qrsiz": {},
+  "ofis": {},
+  "scanner": {}
 }

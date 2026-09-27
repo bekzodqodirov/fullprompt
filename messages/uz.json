@@ -706,6 +706,7 @@
       "discount": "Chegirma",
       "discountReason": "Chegirma sababi",
       "dueAt": "Muddat",
+      "factoryBarcode": "Zavod shtrix-kodi",
       "grants": "Huquqlar",
       "heightCm": "Balandlik, sm",
       "lengthCm": "Uzunlik, sm",
@@ -724,8 +725,11 @@
       "phone": "Telefon",
       "productNameRu": "Tovar (RU)",
       "productNameZh": "Tovar (ZH)",
+      "qrSkipped": "QR-siz lot",
       "rateToUsd": "USD kursi",
       "reason": "Sabab",
+      "receivedAt": "Qabul sanasi",
+      "receivedBy": "Qabul qilgan",
       "roles": "Rollar",
       "source": "Manba",
       "stage": "Etap",
@@ -4047,5 +4051,15 @@
       "admin": "Boshqaruv"
     },
     "more": "Yana"
-  }
+  },
+  "scanRefusal": {
+    "lot_counted": "🔢 {lot} allaqachon sanalgan — skanerlanmaydi. Ko‘proq bo‘lsa, ofisga ayting.",
+    "qr_less_count_only": "🏷 {lot} QR-siz — uni ofis sanaydi, skanerlanmaydi.",
+    "reserved_reason": "Bu belgi faqat ofis uchun — skan yozilmadi."
+  },
+  "countLoad": {},
+  "countAccept": {},
+  "qrsiz": {},
+  "ofis": {},
+  "scanner": {}
 }

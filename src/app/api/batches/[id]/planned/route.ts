@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, or, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, isNull, notInArray, or, sql } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
 import {
   batches,
@@ -12,6 +12,11 @@ import {
 import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
 import { json } from '@/modules/platform/http/json';
 import { batchMemberFilter } from '@/modules/wms/scanning/unload';
+import { countOnlyLotsOnTruck } from '@/modules/wms/scanning/count-rules';
+import { codeIdentity } from '@/modules/wms/labels/code-identity';
+
+/** Siblings shipped for count-only lots, over the whole snapshot (said when it bites). */
+const COUNT_ONLY_SIBLING_CAP = 2000;
 
 /**
  * Loading-mode snapshot: planned/loaded boxes of the batch + active crate
@@ -143,6 +148,80 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     }
   }
 
+  // Count-only lots (0112, Q4/Q8): lots the office counts on this truck — so
+  // the phone refuses a scan of one in words, at once and offline, before
+  // the server says the same. The side follows the truck: loading until it
+  // leaves, unloading after. `siblings` are the lots' cartons the snapshot
+  // does NOT already carry (an origin sibling of a lot counted aboard), so
+  // the phone can recognise them too; bounded, and the bound is said.
+  const side = ['forming', 'loading'].includes(batch.status) ? 'load' : 'unload';
+  const modes = await countOnlyLotsOnTruck(db, {
+    batchId: id,
+    side,
+    countedSide: side === 'load' ? 'load' : 'any',
+    quickOriginId: side === 'load' && !hasPlan ? batch.originWarehouseId : null,
+  });
+  const inSnapshot = new Set([...memberBoxes, ...available].map((b) => b.shortCode));
+  const lotIds = [...modes.keys()];
+  const lotRows = lotIds.length
+    ? await db
+        .select({
+          id: receiptLots.id,
+          letter: receiptLots.letter,
+          marking: receipts.unclaimedMarking,
+          clientCode: clients.clientCode,
+        })
+        .from(receiptLots)
+        .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+        .leftJoin(clients, eq(receipts.clientId, clients.id))
+        .where(inArray(receiptLots.id, lotIds))
+    : [];
+  const siblingRows = lotIds.length
+    ? await db
+        .select({ lotId: boxes.lotId, shortCode: boxes.shortCode })
+        .from(boxes)
+        .where(
+          and(
+            inArray(boxes.lotId, lotIds),
+            isNull(boxes.crateId),
+            notInArray(boxes.status, ['void', 'issued', 'lost']),
+          ),
+        )
+        .orderBy(asc(boxes.lotId), asc(boxes.seqInLot))
+        .limit(COUNT_ONLY_SIBLING_CAP + inSnapshot.size + 1)
+    : [];
+  let siblingCount = 0;
+  let countOnlyCapped = false;
+  const siblingsByLot = new Map<string, string[]>();
+  for (const r of siblingRows) {
+    if (inSnapshot.has(r.shortCode)) continue;
+    if (siblingCount >= COUNT_ONLY_SIBLING_CAP) {
+      countOnlyCapped = true;
+      break;
+    }
+    siblingCount += 1;
+    siblingsByLot.set(r.lotId, [...(siblingsByLot.get(r.lotId) ?? []), r.shortCode]);
+  }
+  const countOnly = lotRows.map((l) => ({
+    lotId: l.id,
+    mode: modes.get(l.id)!,
+    label: `${codeIdentity(l.marking, l.clientCode).main}-${l.letter ?? '?'}`,
+    siblings: siblingsByLot.get(l.id) ?? [],
+  }));
+
+  // The factory's barcode per lot (0112, Q10 c): a code the camera reads that
+  // names a PRODUCT, so the phone can say which lot it is instead of
+  // «unknown code». Only lots the snapshot already carries.
+  const snapshotLotIds = [...new Set([...memberBoxes, ...available].map((b) => b.lotId))];
+  const lotBarcodes = snapshotLotIds.length
+    ? (
+        await db
+          .select({ lotId: receiptLots.id, key: receiptLots.factoryBarcode })
+          .from(receiptLots)
+          .where(and(inArray(receiptLots.id, snapshotLotIds), isNotNull(receiptLots.factoryBarcode)))
+      ).map((r) => ({ lotId: r.lotId, key: r.key! }))
+    : [];
+
   // Compressed, and with an ETag: the phone re-reads this every 15 seconds
   // and Next does not compress a Route Handler's own response (round 110 —
   // measured 28,506 bytes on the wire against 975 gzipped).
@@ -152,5 +231,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     boxes: memberBoxes,
     available,
     crates: originCrates.map((c) => ({ code: c.code, boxShortCodes: byCrate.get(c.id) ?? [] })),
+    countOnly,
+    countOnlyCapped,
+    lotBarcodes,
   });
 }

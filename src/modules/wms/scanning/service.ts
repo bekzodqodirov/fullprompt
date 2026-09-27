@@ -1,7 +1,7 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { v5 as uuidv5 } from 'uuid';
 import { z } from 'zod';
-import { db } from '../../platform/db/client';
+import { db, type Tx } from '../../platform/db/client';
 import {
   batches,
   boxes,
@@ -15,6 +15,12 @@ import { emitEvent } from '../../platform/events/service';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { usersWithPermission } from '../../platform/notifications/service';
 import { notifyPricedCargoLeft } from '../finance/off-truck';
+import {
+  isServerScanReason,
+  lockTruckLoading,
+  lotModeOnTruck,
+  type DoorOpts,
+} from './count-rules';
 
 export class ScanError extends Error {
   constructor(public readonly code: string) {
@@ -67,236 +73,295 @@ export async function ingestLoadScans(
   const acks: ScanAck[] = [];
 
   for (const input of inputs) {
-    const ack = await db.transaction(async (tx): Promise<ScanAck> => {
-      const batch = await tx.query.batches.findFirst({ where: eq(batches.id, input.batchId) });
-      if (!batch) return { clientEventUuid: input.clientEventUuid, result: 'rejected', detail: 'batch_not_found' };
-      if (!['forming', 'loading'].includes(batch.status)) {
-        return { clientEventUuid: input.clientEventUuid, result: 'rejected', detail: 'batch_not_loading' };
-      }
+    const ack = await db.transaction((tx) => loadScanInTx(tx, input, actorId, {}));
+    acks.push(ack);
+  }
+  return acks;
+}
 
-      // Replay? (exact idempotency on the original event uuid)
-      const existing = await tx.query.scanEvents.findFirst({
-        where: eq(scanEvents.clientEventUuid, input.clientEventUuid),
-      });
-      if (existing) return { clientEventUuid: input.clientEventUuid, result: 'ok', detail: 'replay' };
+/**
+ * One load input, inside the caller's transaction — the body the phone's
+ * sync and the office's count door (0112) share, so a counted carton gets
+ * exactly the movement, scan event, costing trail and alarms a scanned one
+ * does. `opts` is the door's; the phone passes `{}`.
+ */
+export async function loadScanInTx(
+  tx: Tx,
+  input: LoadScanInput,
+  actorId: string,
+  opts: DoorOpts,
+): Promise<ScanAck> {
+  // A server door's reason on a scan that did not come through a server
+  // door is a forgery (0112): a `count_load` from a phone's outbox would
+  // make a lot «counted» and lock the operators out of it. Refused before
+  // anything is read — `rejected` is not a 400, so the outbox's bisect is
+  // untouched and the phone simply takes its green mark back (#531).
+  if (!opts.door && input.method === 'manual' && isServerScanReason(input.manualReason)) {
+    return {
+      clientEventUuid: input.clientEventUuid,
+      result: 'rejected',
+      detail: 'reserved_reason',
+      scannedCode: input.code,
+    };
+  }
+  if (opts.door && input.manualReason !== opts.door) throw new ScanError('door_reason_mismatch');
 
-      // Resolve code → member boxes.
-      const isCrate = /^CR-/i.test(input.code);
-      let members: (typeof boxes.$inferSelect)[] = [];
-      let crateId: string | null = null;
-      if (isCrate) {
-        const crate = await tx.query.crates.findFirst({
-          where: sql`upper(code) = ${input.code.toUpperCase()}`,
-        });
-        if (!crate || crate.status !== 'active') {
-          return { clientEventUuid: input.clientEventUuid, result: 'unknown_code' };
-        }
-        crateId = crate.id;
-        members = await tx.select().from(boxes).where(eq(boxes.crateId, crate.id)).for('update');
-        if (members.length === 0) {
-          return { clientEventUuid: input.clientEventUuid, result: 'unknown_code', detail: 'empty_crate' };
-        }
-      } else {
-        const rows = await tx
+  const batch = await tx.query.batches.findFirst({ where: eq(batches.id, input.batchId) });
+  if (!batch) return { clientEventUuid: input.clientEventUuid, result: 'rejected', detail: 'batch_not_found' };
+  if (!['forming', 'loading'].includes(batch.status)) {
+    return { clientEventUuid: input.clientEventUuid, result: 'rejected', detail: 'batch_not_loading' };
+  }
+
+  // Replay? (exact idempotency on the original event uuid)
+  const existing = await tx.query.scanEvents.findFirst({
+    where: eq(scanEvents.clientEventUuid, input.clientEventUuid),
+  });
+  if (existing) return { clientEventUuid: input.clientEventUuid, result: 'ok', detail: 'replay' };
+
+  // Resolve code → member boxes.
+  const isCrate = /^CR-/i.test(input.code);
+  let members: (typeof boxes.$inferSelect)[] = [];
+  let crateId: string | null = null;
+  if (isCrate) {
+    const crate = await tx.query.crates.findFirst({
+      where: sql`upper(code) = ${input.code.toUpperCase()}`,
+    });
+    if (!crate || crate.status !== 'active') {
+      return { clientEventUuid: input.clientEventUuid, result: 'unknown_code' };
+    }
+    crateId = crate.id;
+    members = await tx.select().from(boxes).where(eq(boxes.crateId, crate.id)).for('update');
+    if (members.length === 0) {
+      return { clientEventUuid: input.clientEventUuid, result: 'unknown_code', detail: 'empty_crate' };
+    }
+  } else {
+    // A count door names the carton it chose by primary key; the code it
+    // posts must still be that carton's, or the press and the record would
+    // describe two different boxes.
+    const rows = opts.boxId
+      ? await tx.select().from(boxes).where(eq(boxes.id, opts.boxId)).for('update')
+      : await tx
           .select()
           .from(boxes)
           .where(sql`upper(${boxes.shortCode}) = ${input.code.toUpperCase()}`)
           .for('update');
-        if (rows.length === 0) return { clientEventUuid: input.clientEventUuid, result: 'unknown_code' };
-        members = rows;
-      }
+    if (rows.length === 0) return { clientEventUuid: input.clientEventUuid, result: 'unknown_code' };
+    if (opts.boxId && rows[0]!.shortCode.toUpperCase() !== input.code.toUpperCase()) {
+      throw new ScanError('door_box_mismatch');
+    }
+    members = rows;
+  }
 
-      // Business duplicate: every member already loading in this batch.
-      const allLoaded = members.every(
-        (b) => b.status === 'loading' && b.currentBatchId === input.batchId,
-      );
-      if (allLoaded) return { clientEventUuid: input.clientEventUuid, result: 'duplicate' };
+  // Business duplicate: every member already loading in this batch.
+  const allLoaded = members.every(
+    (b) => b.status === 'loading' && b.currentBatchId === input.batchId,
+  );
+  if (allLoaded) return { clientEventUuid: input.clientEventUuid, result: 'duplicate' };
 
-      // Quick batches (no plan, spec 6.6 internal transfers) load any loose
-      // box at the origin without the not-on-plan ceremony.
-      const hasPlan = !!(await tx.query.loadPlans.findFirst({
-        where: eq(loadPlans.batchId, input.batchId),
-      }));
-      const looseAtOrigin = (b: (typeof members)[number]) =>
-        ['in_stock', 'ready_for_pickup'].includes(b.status) &&
-        b.currentWarehouseId === batch.originWarehouseId;
+  // Quick batches (no plan, spec 6.6 internal transfers) load any loose
+  // box at the origin without the not-on-plan ceremony.
+  const hasPlan = !!(await tx.query.loadPlans.findFirst({
+    where: eq(loadPlans.batchId, input.batchId),
+  }));
 
-      /**
-       * "On this truck" — which is NOT the same as "still `planned`".
-       *
-       * It used to be `status === 'planned'`, and that stopped a warehouse
-       * mid-load. A box already `loading` on THIS batch is the same box on
-       * the same truck: it gets that status from a first scan, from an outbox
-       * retry over warehouse wifi, or from the second phone working the same
-       * door. Demanding `planned` meant the crate holding it stopped being on
-       * the plan, came back refused, and — once the screen learned to SHOW
-       * refusals — put the red confirm over the scanner and stopped the job.
-       */
-      const onThisBatch = (b: (typeof members)[number]) =>
-        b.currentBatchId === input.batchId && (b.status === 'planned' || b.status === 'loading');
-
-      /**
-       * A crate is judged on the boxes of it that belong to this truck.
-       *
-       * `members` for a crate scan is every box PHYSICALLY inside it, and a
-       * crate collects strays: one more box fitted in after the plan was
-       * approved, a lot the planner did not list. Requiring all of them made a
-       * legitimately planned crate unscannable — the operator is holding a
-       * crate the plan asked for and the phone says "not on plan".
-       *
-       * So the planned boxes load, and the strays are NAMED in the ack rather
-       * than silently recorded, because a box on a truck that the manifest and
-       * the customs invoice know nothing about is the bug this whole area
-       * exists to prevent (#221).
-       */
-      const planned = members.filter(onThisBatch);
-      const unplanned = members.filter((b) => !onThisBatch(b));
-      const onPlan = hasPlan
-        ? crateId
-          ? planned.length > 0
-          : members.every(onThisBatch)
-        : members.every(looseAtOrigin);
-      if (hasPlan && !onPlan && !input.addedOnSpot) {
-        // Client shows the red screen and may retry with addedOnSpot=true.
-        const letters = await lettersFor(tx, members);
-        return {
-          clientEventUuid: input.clientEventUuid,
-          result: 'not_on_plan',
-          boxes: letters,
-          // Echoed so the phone can re-open its confirm dialog for the thing
-          // that was actually scanned — a crate code must go back as a crate.
-          scannedCode: input.code,
-        };
-      }
-
-      // A crate carrying strays loads only its own boxes unless the operator
-      // has already said "load it anyway"; a loose box has nothing to split.
-      const recording =
-        hasPlan && crateId && !input.addedOnSpot && unplanned.length > 0 ? planned : members;
-
-      for (const box of recording) {
-        const loadable =
-          onThisBatch(box) || ((input.addedOnSpot || !hasPlan) && looseAtOrigin(box));
-        if (!loadable) {
-          return {
-            clientEventUuid: input.clientEventUuid,
-            result: 'rejected',
-            detail: `box_${box.status}`,
-          };
-        }
-      }
-
-      const toLoad = recording.filter((b) => b.status !== 'loading');
-      // Nothing left to move: a re-scan of a crate whose planned boxes are
-      // already aboard (its strays, if any, still named). Without this early
-      // answer the empty inserts below THREW, the sync route answered 500,
-      // and the phone's outbox retried the same event for ever.
-      if (toLoad.length === 0) {
-        return {
-          clientEventUuid: input.clientEventUuid,
-          result: 'duplicate',
-          ...(unplanned.length > 0
-            ? { unplanned: unplanned.map((b) => b.shortCode), scannedCode: input.code }
-            : {}),
-        };
-      }
-      // "Added on spot" is a fact about a BOX, not about the scan: confirming
-      // a crate that carries strays must not smear the flag over its planned
-      // members — the deviation numbers the logist and the batch register
-      // read come from these rows.
-      const isSpot = (b: (typeof members)[number]) => input.addedOnSpot && !onThisBatch(b);
-      const spotLoaded = toLoad.filter(isSpot);
-      const plainLoaded = toLoad.filter((b) => !isSpot(b));
-      if (plainLoaded.length) {
-        await tx
-          .update(boxes)
-          .set({ status: 'loading', currentBatchId: input.batchId })
-          .where(inArray(boxes.id, plainLoaded.map((b) => b.id)));
-      }
-      if (spotLoaded.length) {
-        await tx
-          .update(boxes)
-          .set({
-            status: 'loading',
-            currentBatchId: input.batchId,
-            // The manifest marks on-spot boxes from this flag.
-            flags: ['added_on_spot'],
-          })
-          .where(inArray(boxes.id, spotLoaded.map((b) => b.id)));
-      }
-      await tx.insert(boxMovements).values(
-        toLoad.map((box) => ({
-          boxId: box.id,
-          fromWarehouseId: box.currentWarehouseId,
-          toWarehouseId: box.currentWarehouseId,
-          fromStatus: box.status,
-          toStatus: 'loading',
-          cause: isSpot(box) ? 'loaded_on_spot' : 'load_scan',
-          refType: 'batch',
-          refId: input.batchId,
-          actorId,
-        })),
-      );
-      await tx
-        .insert(scanEvents)
-        .values(
-          // Only the boxes this scan actually put on the truck — recording a
-          // row per crate member on every re-scan made the register's counts
-          // grow without any box moving.
-          toLoad.map((box) => ({
-            // Crate fan-out rows get derived ids; single box keeps the original.
-            clientEventUuid:
-              toLoad.length === 1 ? input.clientEventUuid : uuidv5(box.id, input.clientEventUuid),
-            boxId: box.id,
-            crateId,
-            batchId: input.batchId,
-            type: 'load',
-            method: crateId ? 'crate' : input.method,
-            manualReason: input.method === 'manual' ? input.manualReason || 'manual' : null,
-            addedOnSpot: isSpot(box),
-            scannedBy: actorId,
-            scannedAt: new Date(input.scannedAt),
-          })),
-        )
-        .onConflictDoNothing({ target: scanEvents.clientEventUuid });
-
-      if (batch.status === 'forming') {
-        await tx.update(batches).set({ status: 'loading' }).where(eq(batches.id, input.batchId));
-        await tx
-          .update(loadPlans)
-          .set({ status: 'loading' })
-          .where(and(eq(loadPlans.batchId, input.batchId), eq(loadPlans.status, 'approved')));
-      }
-      if (spotLoaded.length > 0) {
-        await emitEvent(tx, {
-          type: 'BoxScannedOnLoad',
-          payload: {
-            batchId: input.batchId,
-            batchCode: batch.code,
-            addedOnSpot: true,
-            reason: input.addedReason || null,
-            // Only the boxes that really joined off-plan — the logist's alert
-            // must not list the crate's planned members as deviations.
-            shortCodes: spotLoaded.map((b) => b.shortCode),
-          },
-          entityType: 'batch',
-          entityId: input.batchId,
-          actorId,
-        });
-      }
-      const letters = await lettersFor(tx, recording);
+  // A lot the office counts is the office's on this truck (0112, Q4/Q8):
+  // counted here already, or holding a stickerless carton among this
+  // truck's rows. The phone refuses it in words; the count door itself
+  // passes. A crate is always the phone's — it is scanned as the crate.
+  if (!crateId && !opts.door && members[0]!.crateId === null) {
+    const mode = await lotModeOnTruck(tx, {
+      batchId: input.batchId,
+      lotId: members[0]!.lotId,
+      side: 'load',
+      countedSide: 'load',
+      quickOriginId: hasPlan ? null : batch.originWarehouseId,
+    });
+    if (mode) {
       return {
         clientEventUuid: input.clientEventUuid,
-        result: 'ok',
-        boxes: letters,
-        ...(recording.length < members.length
-          ? { unplanned: unplanned.map((b) => b.shortCode), scannedCode: input.code }
-          : {}),
+        result: 'rejected',
+        detail: mode === 'counted' ? 'lot_counted' : 'qr_less_count_only',
+        scannedCode: input.code,
       };
-    });
-    acks.push(ack);
+    }
   }
-  return acks;
+  const looseAtOrigin = (b: (typeof members)[number]) =>
+    ['in_stock', 'ready_for_pickup'].includes(b.status) &&
+    b.currentWarehouseId === batch.originWarehouseId;
+
+  /**
+   * "On this truck" — which is NOT the same as "still `planned`".
+   *
+   * It used to be `status === 'planned'`, and that stopped a warehouse
+   * mid-load. A box already `loading` on THIS batch is the same box on
+   * the same truck: it gets that status from a first scan, from an outbox
+   * retry over warehouse wifi, or from the second phone working the same
+   * door. Demanding `planned` meant the crate holding it stopped being on
+   * the plan, came back refused, and — once the screen learned to SHOW
+   * refusals — put the red confirm over the scanner and stopped the job.
+   */
+  const onThisBatch = (b: (typeof members)[number]) =>
+    b.currentBatchId === input.batchId && (b.status === 'planned' || b.status === 'loading');
+
+  /**
+   * A crate is judged on the boxes of it that belong to this truck.
+   *
+   * `members` for a crate scan is every box PHYSICALLY inside it, and a
+   * crate collects strays: one more box fitted in after the plan was
+   * approved, a lot the planner did not list. Requiring all of them made a
+   * legitimately planned crate unscannable — the operator is holding a
+   * crate the plan asked for and the phone says "not on plan".
+   *
+   * So the planned boxes load, and the strays are NAMED in the ack rather
+   * than silently recorded, because a box on a truck that the manifest and
+   * the customs invoice know nothing about is the bug this whole area
+   * exists to prevent (#221).
+   */
+  const planned = members.filter(onThisBatch);
+  const unplanned = members.filter((b) => !onThisBatch(b));
+  const onPlan = hasPlan
+    ? crateId
+      ? planned.length > 0
+      : members.every(onThisBatch)
+    : members.every(looseAtOrigin);
+  if (hasPlan && !onPlan && !input.addedOnSpot) {
+    // Client shows the red screen and may retry with addedOnSpot=true.
+    const letters = await lettersFor(tx, members);
+    return {
+      clientEventUuid: input.clientEventUuid,
+      result: 'not_on_plan',
+      boxes: letters,
+      // Echoed so the phone can re-open its confirm dialog for the thing
+      // that was actually scanned — a crate code must go back as a crate.
+      scannedCode: input.code,
+    };
+  }
+
+  // A crate carrying strays loads only its own boxes unless the operator
+  // has already said "load it anyway"; a loose box has nothing to split.
+  const recording =
+    hasPlan && crateId && !input.addedOnSpot && unplanned.length > 0 ? planned : members;
+
+  for (const box of recording) {
+    const loadable =
+      onThisBatch(box) || ((input.addedOnSpot || !hasPlan) && looseAtOrigin(box));
+    if (!loadable) {
+      return {
+        clientEventUuid: input.clientEventUuid,
+        result: 'rejected',
+        detail: `box_${box.status}`,
+      };
+    }
+  }
+
+  const toLoad = recording.filter((b) => b.status !== 'loading');
+  // Nothing left to move: a re-scan of a crate whose planned boxes are
+  // already aboard (its strays, if any, still named). Without this early
+  // answer the empty inserts below THREW, the sync route answered 500,
+  // and the phone's outbox retried the same event for ever.
+  if (toLoad.length === 0) {
+    return {
+      clientEventUuid: input.clientEventUuid,
+      result: 'duplicate',
+      ...(unplanned.length > 0
+        ? { unplanned: unplanned.map((b) => b.shortCode), scannedCode: input.code }
+        : {}),
+    };
+  }
+  // "Added on spot" is a fact about a BOX, not about the scan: confirming
+  // a crate that carries strays must not smear the flag over its planned
+  // members — the deviation numbers the logist and the batch register
+  // read come from these rows.
+  const isSpot = (b: (typeof members)[number]) => input.addedOnSpot && !onThisBatch(b);
+  const spotLoaded = toLoad.filter(isSpot);
+  const plainLoaded = toLoad.filter((b) => !isSpot(b));
+  if (plainLoaded.length) {
+    await tx
+      .update(boxes)
+      .set({ status: 'loading', currentBatchId: input.batchId })
+      .where(inArray(boxes.id, plainLoaded.map((b) => b.id)));
+  }
+  if (spotLoaded.length) {
+    await tx
+      .update(boxes)
+      .set({
+        status: 'loading',
+        currentBatchId: input.batchId,
+        // The manifest marks on-spot boxes from this flag.
+        flags: ['added_on_spot'],
+      })
+      .where(inArray(boxes.id, spotLoaded.map((b) => b.id)));
+  }
+  await tx.insert(boxMovements).values(
+    toLoad.map((box) => ({
+      boxId: box.id,
+      fromWarehouseId: box.currentWarehouseId,
+      toWarehouseId: box.currentWarehouseId,
+      fromStatus: box.status,
+      toStatus: 'loading',
+      cause: isSpot(box) ? 'loaded_on_spot' : 'load_scan',
+      refType: 'batch',
+      refId: input.batchId,
+      actorId,
+    })),
+  );
+  await tx
+    .insert(scanEvents)
+    .values(
+      // Only the boxes this scan actually put on the truck — recording a
+      // row per crate member on every re-scan made the register's counts
+      // grow without any box moving.
+      toLoad.map((box) => ({
+        // Crate fan-out rows get derived ids; single box keeps the original.
+        clientEventUuid:
+          toLoad.length === 1 ? input.clientEventUuid : uuidv5(box.id, input.clientEventUuid),
+        boxId: box.id,
+        crateId,
+        batchId: input.batchId,
+        type: 'load',
+        method: crateId ? 'crate' : input.method,
+        manualReason: input.method === 'manual' ? input.manualReason || 'manual' : null,
+        addedOnSpot: isSpot(box),
+        scannedBy: actorId,
+        scannedAt: new Date(input.scannedAt),
+      })),
+    )
+    .onConflictDoNothing({ target: scanEvents.clientEventUuid });
+
+  if (batch.status === 'forming') {
+    await tx.update(batches).set({ status: 'loading' }).where(eq(batches.id, input.batchId));
+    await tx
+      .update(loadPlans)
+      .set({ status: 'loading' })
+      .where(and(eq(loadPlans.batchId, input.batchId), eq(loadPlans.status, 'approved')));
+  }
+  // A count door sends ONE alarm for its whole press, not one per carton.
+  if (spotLoaded.length > 0 && !opts.quietSpot) {
+    await emitEvent(tx, {
+      type: 'BoxScannedOnLoad',
+      payload: {
+        batchId: input.batchId,
+        batchCode: batch.code,
+        addedOnSpot: true,
+        reason: input.addedReason || null,
+        // Only the boxes that really joined off-plan — the logist's alert
+        // must not list the crate's planned members as deviations.
+        shortCodes: spotLoaded.map((b) => b.shortCode),
+      },
+      entityType: 'batch',
+      entityId: input.batchId,
+      actorId,
+    });
+  }
+  const letters = await lettersFor(tx, recording);
+  return {
+    clientEventUuid: input.clientEventUuid,
+    result: 'ok',
+    boxes: letters,
+    ...(recording.length < members.length
+      ? { unplanned: unplanned.map((b) => b.shortCode), scannedCode: input.code }
+      : {}),
+  };
 }
 
 async function lettersFor(
@@ -333,6 +398,9 @@ export async function removeLoadedCode(batchId: string, code: string, ctx: Audit
   if (!ctx.actorId) throw new ScanError('unauthenticated');
   const actorId = ctx.actorId;
   return db.transaction(async (tx) => {
+    // One loading change at a time per truck (0112): a count press must
+    // never read a truck this call is half-way through changing.
+    await lockTruckLoading(tx, batchId);
     const batch = await tx.query.batches.findFirst({ where: eq(batches.id, batchId) });
     if (!batch) throw new ScanError('batch_not_found');
     // Once the truck has departed this is `resolveMissing`'s job at the other
@@ -406,6 +474,9 @@ export async function finishLoading(batchId: string, ctx: AuditContext) {
   if (!ctx.actorId) throw new ScanError('unauthenticated');
   const actorId = ctx.actorId;
   return db.transaction(async (tx) => {
+    // One loading change at a time per truck (0112): a count press must
+    // never read a truck this call is half-way through changing.
+    await lockTruckLoading(tx, batchId);
     const batch = await tx.query.batches.findFirst({ where: eq(batches.id, batchId) });
     if (!batch) throw new ScanError('batch_not_found');
     if (!['forming', 'loading'].includes(batch.status)) throw new ScanError('batch_not_loading');
@@ -523,6 +594,9 @@ export async function departBatch(batchId: string, ctx: AuditContext) {
   if (!ctx.actorId) throw new ScanError('unauthenticated');
   const actorId = ctx.actorId;
   return db.transaction(async (tx) => {
+    // One loading change at a time per truck (0112): a count press must
+    // never read a truck this call is half-way through changing.
+    await lockTruckLoading(tx, batchId);
     const batch = await tx.query.batches.findFirst({ where: eq(batches.id, batchId) });
     if (!batch) throw new ScanError('batch_not_found');
     if (!['forming', 'loading'].includes(batch.status)) throw new ScanError('batch_not_loading');

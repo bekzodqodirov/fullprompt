@@ -29,3 +29,15 @@ export function isServerBehind(err: unknown): boolean {
   if (typeof err !== 'object' || err === null || !('code' in err)) return false;
   return err.code === '42P01' || err.code === '42703';
 }
+
+const BUSY = new Set(['40P01', '40001', '55P03']);
+/**
+ * A deadlock, a serialisation failure or a lock timeout: «boshqa o'zgarish
+ * ketayotgan edi — qaytadan bosing». Moved here from `costing/fx-reprice.ts`
+ * when the office count doors (0112) became its second family of callers —
+ * a question about Postgres belongs beside the others.
+ */
+export function isBusyError(err: unknown): boolean {
+  const code = (err as { code?: string } | null)?.code;
+  return typeof code === 'string' && BUSY.has(code);
+}

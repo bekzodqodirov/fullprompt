@@ -706,6 +706,7 @@
       "discount": "Скидка",
       "discountReason": "Причина скидки",
       "dueAt": "Срок",
+      "factoryBarcode": "Штрихкод завода",
       "grants": "Права",
       "heightCm": "Высота, см",
       "lengthCm": "Длина, см",
@@ -724,8 +725,11 @@
       "phone": "Телефон",
       "productNameRu": "Товар (RU)",
       "productNameZh": "Товар (ZH)",
+      "qrSkipped": "Лот без QR",
       "rateToUsd": "Курс к USD",
       "reason": "Причина",
+      "receivedAt": "Дата приёмки",
+      "receivedBy": "Принял",
       "roles": "Роли",
       "source": "Источник",
       "stage": "Этап",
@@ -4047,5 +4051,15 @@
       "admin": "Управление"
     },
     "more": "Ещё"
-  }
+  },
+  "scanRefusal": {
+    "lot_counted": "🔢 {lot} уже посчитан офисом — сканировать не нужно. Если коробок больше, скажите офису.",
+    "qr_less_count_only": "🏷 {lot} без QR — его считает офис, сканировать не нужно.",
+    "reserved_reason": "Эта отметка только для офиса — скан не записан."
+  },
+  "countLoad": {},
+  "countAccept": {},
+  "qrsiz": {},
+  "ofis": {},
+  "scanner": {}
 }

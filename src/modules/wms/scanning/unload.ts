@@ -1,7 +1,7 @@
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { v5 as uuidv5 } from 'uuid';
 import { z } from 'zod';
-import { db } from '../../platform/db/client';
+import { db, type Tx } from '../../platform/db/client';
 import {
   batches,
   boxes,
@@ -25,6 +25,15 @@ import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { usersWithPermission } from '../../platform/notifications/service';
 import { ScanError } from './service';
 import { landedStatusFor } from '../warehouses/landed';
+import {
+  BULK_ACCEPT_REASON,
+  COUNT_OVER_REASON,
+  isServerScanReason,
+  lockLotOnTruck,
+  lockTruckLoading,
+  lotModeOnTruck,
+  type DoorOpts,
+} from './count-rules';
 
 export const unloadScanSchema = z.object({
   clientEventUuid: z.string().uuid(),
@@ -71,6 +80,7 @@ export interface UnloadAck {
 export async function ingestUnloadScans(
   inputs: UnloadScanInput[],
   ctx: AuditContext,
+  opts: DoorOpts = {},
 ): Promise<UnloadAck[]> {
   // Trucks a carton came off WITHOUT a load scan: that carton is their cargo
   // for money now (U25), so their costs re-split once the scans are in.
@@ -80,7 +90,7 @@ export async function ingestUnloadScans(
   // and the phone re-sends the batch — but the rogue landing before it has
   // already committed, and the retry answers that one as a replay.
   try {
-    return await landUnloadScans(inputs, ctx, rogueTrucks);
+    return await landUnloadScans(inputs, ctx, rogueTrucks, opts);
   } finally {
     // After every commit, never inside one (#714), and never failing the
     // scan. QUEUED, not run: the re-split covers every bill and grid cell on
@@ -103,290 +113,367 @@ async function landUnloadScans(
   inputs: UnloadScanInput[],
   ctx: AuditContext,
   rogueTrucks: Set<string>,
+  opts: DoorOpts,
 ): Promise<UnloadAck[]> {
   if (!ctx.actorId) throw new ScanError('unauthenticated');
   const actorId = ctx.actorId;
   const acks: UnloadAck[] = [];
 
   for (const input of inputs) {
-    const ack = await db.transaction(async (tx): Promise<UnloadAck> => {
-      const batch = await tx.query.batches.findFirst({ where: eq(batches.id, input.batchId) });
-      if (!batch) {
-        return {
-          clientEventUuid: input.clientEventUuid,
-          result: 'rejected',
-          detail: 'batch_not_found',
-          scannedCode: input.code,
-        };
-      }
-      if (!['in_transit', 'arrived'].includes(batch.status)) {
-        return {
-          clientEventUuid: input.clientEventUuid,
-          result: 'rejected',
-          detail: 'batch_not_unloading',
-          scannedCode: input.code,
-        };
-      }
+    const ack = await db.transaction((tx) => landUnloadInput(tx, input, actorId, rogueTrucks, opts));
+    acks.push(ack);
+  }
+  return acks;
+}
 
-      const existing = await tx.query.scanEvents.findFirst({
-        where: eq(scanEvents.clientEventUuid, input.clientEventUuid),
-      });
-      if (existing) {
-        // A replayed rogue landing re-arms its truck's re-split: the first
-        // attempt committed the landing and may have died before it queued
-        // anything (a restart, a later input's throw) — the phone's retry is
-        // then the only thing that still knows. A second queued re-split is
-        // idempotent; a missing one leaves the carton $0 of its truck for good.
-        if (existing.addedOnSpot) rogueTrucks.add(input.batchId);
-        return { clientEventUuid: input.clientEventUuid, result: 'ok', detail: 'replay' };
-      }
+/**
+ * One unload input, inside the caller's transaction — the body the phone's
+ * sync, «Hammasini qabul qilish» and the office's count door (0112) share, so
+ * a counted carton lands exactly as a scanned one: movement, scan event,
+ * crate, the client's arrival claim, rider money. `opts` is the door's; the
+ * phone passes `{}`. A carton that landed as a rogue is noted in
+ * `rogueTrucks` for the caller's re-split.
+ */
+export async function landUnloadInput(
+  tx: Tx,
+  input: UnloadScanInput,
+  actorId: string,
+  rogueTrucks: Set<string>,
+  opts: DoorOpts,
+): Promise<UnloadAck> {
+  // A server door's reason on a scan that did not come through a server
+  // door is a forgery (0112) — refused before the replay check and before
+  // the arrival flip below, so a forged row can neither mark a lot counted
+  // nor declare a truck arrived (#531).
+  if (!opts.door && input.method === 'manual' && isServerScanReason(input.manualReason)) {
+    return {
+      clientEventUuid: input.clientEventUuid,
+      result: 'rejected',
+      detail: 'reserved_reason',
+      scannedCode: input.code,
+    };
+  }
+  if (opts.door && input.manualReason !== opts.door) throw new ScanError('door_reason_mismatch');
 
-      // First scan marks arrival.
-      if (batch.status === 'in_transit') {
-        await tx
-          .update(batches)
-          .set({ status: 'arrived', arrivedAt: new Date() })
-          .where(eq(batches.id, input.batchId));
-      }
+  const batch = await tx.query.batches.findFirst({ where: eq(batches.id, input.batchId) });
+  if (!batch) {
+    return {
+      clientEventUuid: input.clientEventUuid,
+      result: 'rejected',
+      detail: 'batch_not_found',
+      scannedCode: input.code,
+    };
+  }
+  if (!['in_transit', 'arrived'].includes(batch.status)) {
+    return {
+      clientEventUuid: input.clientEventUuid,
+      result: 'rejected',
+      detail: 'batch_not_unloading',
+      scannedCode: input.code,
+    };
+  }
 
-      const isCrate = /^CR-/i.test(input.code);
-      let members: (typeof boxes.$inferSelect)[] = [];
-      let crateId: string | null = null;
-      if (isCrate) {
-        const crate = await tx.query.crates.findFirst({
-          where: sql`upper(code) = ${input.code.toUpperCase()}`,
-        });
-        if (!crate) {
-          return {
-            clientEventUuid: input.clientEventUuid,
-            result: 'unknown_code',
-            scannedCode: input.code,
-          };
-        }
-        crateId = crate.id;
-        members = await tx.select().from(boxes).where(eq(boxes.crateId, crate.id)).for('update');
-        if (members.length === 0) {
-          return {
-            clientEventUuid: input.clientEventUuid,
-            result: 'unknown_code',
-            detail: 'empty_crate',
-            scannedCode: input.code,
-          };
-        }
-      } else {
-        const rows = await tx
+  const existing = await tx.query.scanEvents.findFirst({
+    where: eq(scanEvents.clientEventUuid, input.clientEventUuid),
+  });
+  if (existing) {
+    // A replayed rogue landing re-arms its truck's re-split: the first
+    // attempt committed the landing and may have died before it queued
+    // anything (a restart, a later input's throw) — the phone's retry is
+    // then the only thing that still knows. A second queued re-split is
+    // idempotent; a missing one leaves the carton $0 of its truck for good.
+    if (existing.addedOnSpot) rogueTrucks.add(input.batchId);
+    return { clientEventUuid: input.clientEventUuid, result: 'ok', detail: 'replay' };
+  }
+
+  // First scan marks arrival.
+  if (batch.status === 'in_transit') {
+    await tx
+      .update(batches)
+      .set({ status: 'arrived', arrivedAt: new Date() })
+      .where(eq(batches.id, input.batchId));
+  }
+
+  const isCrate = /^CR-/i.test(input.code);
+  let members: (typeof boxes.$inferSelect)[] = [];
+  let crateId: string | null = null;
+  if (isCrate) {
+    const crate = await tx.query.crates.findFirst({
+      where: sql`upper(code) = ${input.code.toUpperCase()}`,
+    });
+    if (!crate) {
+      return {
+        clientEventUuid: input.clientEventUuid,
+        result: 'unknown_code',
+        scannedCode: input.code,
+      };
+    }
+    crateId = crate.id;
+    members = await tx.select().from(boxes).where(eq(boxes.crateId, crate.id)).for('update');
+    if (members.length === 0) {
+      return {
+        clientEventUuid: input.clientEventUuid,
+        result: 'unknown_code',
+        detail: 'empty_crate',
+        scannedCode: input.code,
+      };
+    }
+  } else {
+    // A count door names the carton it chose by primary key; the code it
+    // posts must still be that carton's.
+    const rows = opts.boxId
+      ? await tx.select().from(boxes).where(eq(boxes.id, opts.boxId)).for('update')
+      : await tx
           .select()
           .from(boxes)
           .where(sql`upper(${boxes.shortCode}) = ${input.code.toUpperCase()}`)
           .for('update');
-        if (rows.length === 0) {
-          return {
-            clientEventUuid: input.clientEventUuid,
-            result: 'unknown_code',
-            scannedCode: input.code,
-          };
-        }
-        members = rows;
-      }
-
-      // UZ side (spec 6.6): unloading at a customs/distribution warehouse puts
-      // cargo straight into ready_for_pickup.
-      const destWh = (await tx.query.warehouses.findFirst({
-        where: eq(warehouses.id, batch.destWarehouseId),
-      }))!;
-      const landedStatus = landedStatusFor(destWh.type);
-
-      // A crate scan vouches for the CRATE, not for every box its record
-      // lists: a member short-loaded at the origin keeps its crateId, and the
-      // fan-out used to "reality-wins" it here — the client was told cargo
-      // arrived that is physically on a shelf in China, and Yiwu stock lost
-      // the box. Reality-wins stays for a box somebody physically scanned by
-      // its own label; left-behind members are NAMED, never moved.
-      let notArrived: string[] = [];
-      if (crateId) {
-        const cameHere = (b: (typeof boxes.$inferSelect)) =>
-          (b.currentBatchId === input.batchId && b.status === 'in_transit') ||
-          (b.status === landedStatus && b.currentWarehouseId === batch.destWarehouseId);
-        notArrived = members.filter((b) => !cameHere(b)).map((b) => b.shortCode);
-        members = members.filter(cameHere);
-        if (members.length === 0) {
-          return {
-            clientEventUuid: input.clientEventUuid,
-            result: 'rejected',
-            detail: 'crate_not_on_batch',
-            scannedCode: input.code,
-          };
-        }
-      }
-
-      // Business duplicate: everything already landed at this destination.
-      const allDone = members.every(
-        (b) => b.status === landedStatus && b.currentWarehouseId === batch.destWarehouseId,
-      );
-      if (allDone) {
-        return {
-          clientEventUuid: input.clientEventUuid,
-          result: 'duplicate',
-          ...(notArrived.length ? { notArrived } : {}),
-        };
-      }
-
-      for (const box of members) {
-        if (['issued', 'void'].includes(box.status)) {
-          return {
-            clientEventUuid: input.clientEventUuid,
-            result: 'rejected',
-            detail: `box_${box.status}`,
-            scannedCode: input.code,
-          };
-        }
-      }
-
-      const onManifest = members.every(
-        (b) => b.currentBatchId === input.batchId && b.status === 'in_transit',
-      );
-      const rogue = members.filter(
-        (b) => !(b.currentBatchId === input.batchId && b.status === 'in_transit'),
-      );
-
-      const toMove = members.filter(
-        (b) => !(b.status === landedStatus && b.currentWarehouseId === batch.destWarehouseId),
-      );
-      // Reality wins: everything scanned here IS here now. Rogue boxes keep
-      // no stale crate link (their crate stayed wherever it really is).
-      // Landing also retires the JOURNEY flags — added_on_spot and
-      // missing_in_transit describe one trip, and a box that kept them was
-      // printing last truck's deviations on the next truck's manifest.
-      for (const box of toMove) {
-        const isRogue = rogue.includes(box);
-        await tx
-          .update(boxes)
-          .set({
-            status: landedStatus,
-            currentWarehouseId: batch.destWarehouseId,
-            currentBatchId: null,
-            statusReason: null,
-            ...(isRogue
-              ? { crateId: crateId ?? null, flags: ['undocumented_transfer'] }
-              : { flags: [] }),
-          })
-          .where(eq(boxes.id, box.id));
-      }
-      await tx.insert(boxMovements).values(
-        toMove.map((box) => ({
-          boxId: box.id,
-          fromWarehouseId: box.currentWarehouseId,
-          toWarehouseId: batch.destWarehouseId,
-          fromStatus: box.status,
-          toStatus: landedStatus,
-          cause: rogue.includes(box) ? 'undocumented_transfer' : 'unload_scan',
-          refType: 'batch',
-          refId: input.batchId,
-          actorId,
-        })),
-      );
-
-      // The crate row's warehouse follows its landed boxes. Frozen at the
-      // origin, an arrived yashik could neither be planned onward from here
-      // nor counted at inventory where it really stands.
-      const landedCrateIds = [
-        ...new Set([...toMove.map((b) => b.crateId), crateId].filter((id): id is string => !!id)),
-      ];
-      if (landedCrateIds.length) {
-        await tx
-          .update(crates)
-          .set({ warehouseId: batch.destWarehouseId })
-          .where(and(inArray(crates.id, landedCrateIds), eq(crates.status, 'active')));
-      }
-
-      /*
-       * Client arrival summary (spec 6.6) — and the owner's report, round 98:
-       * «mashinadan yuk tushganda yukingiz keldi deb har bir karobka uchun
-       * habar jonatyabti».
-       *
-       * This block runs inside the per-SCAN transaction, so it used to emit
-       * `ReadyForPickup` once for every carton the phone sent — and
-       * `unloadRemaining` feeds one input per short code through this same
-       * door, so one press of «accept the rest» could send a customer two
-       * hundred messages.
-       *
-       * Round 98 moved the CLIENT's copy onto a claim and left the event
-       * here, «for the staff side, which is what it was written for». The
-       * owner's next report was the other half of the same sentence: «10 ta
-       * karobka kelsa 10 ta sms» — his SELLER was getting one Telegram per
-       * carton. So the event went with it (`notices/arrival-staff.ts`): one
-       * per customer per truck, with the totals as they really are, carrying
-       * the deal's cargo trigger and the automation rules with it.
-       *
-       * What stays HERE is the claim, and only the claim. Inside this
-       * transaction on purpose: a claim that survived a rolled-back unload
-       * would silence the real one that follows, and a claim made in the
-       * worker could not know which scan was first.
-       */
-      if (landedStatus === 'ready_for_pickup' && toMove.length > 0) {
-        const lotRows = await tx
-          .select({ lotId: receiptLots.id, clientId: receipts.clientId })
-          .from(receiptLots)
-          .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
-          .where(inArray(receiptLots.id, [...new Set(toMove.map((b) => b.lotId))]));
-        const clientByLot = new Map(lotRows.map((r) => [r.lotId, r.clientId]));
-        const landedClients = new Set<string>();
-        for (const box of toMove) {
-          const cid = clientByLot.get(box.lotId);
-          if (cid) landedClients.add(cid);
-        }
-        for (const cid of landedClients) {
-          await claimArrivalNotice(tx, cid, input.batchId, { actorId });
-        }
-      }
-      await tx
-        .insert(scanEvents)
-        .values(
-          members.map((box) => ({
-            clientEventUuid:
-              members.length === 1 ? input.clientEventUuid : uuidv5(box.id, input.clientEventUuid),
-            boxId: box.id,
-            crateId,
-            batchId: input.batchId,
-            type: 'unload',
-            method: crateId ? 'crate' : input.method,
-            manualReason: input.method === 'manual' ? input.manualReason || 'manual' : null,
-            addedOnSpot: rogue.includes(box),
-            scannedBy: actorId,
-            scannedAt: new Date(input.scannedAt),
-          })),
-        )
-        .onConflictDoNothing({ target: scanEvents.clientEventUuid });
-
-      if (rogue.length > 0) {
-        await emitEvent(tx, {
-          type: 'UndocumentedTransfer',
-          payload: {
-            batchId: input.batchId,
-            batchCode: batch.code,
-            warehouseId: batch.destWarehouseId,
-            shortCodes: rogue.map((b) => b.shortCode),
-          },
-          entityType: 'batch',
-          entityId: input.batchId,
-          actorId,
-        });
-      }
-      const letters = await lettersFor(tx, members);
-      // Only a rogue carton this scan MOVED changes the truck's riders: a
-      // crate re-scan whose members already landed singly names them rogue
-      // too, and re-split the truck for nothing.
-      if (toMove.some((box) => rogue.includes(box))) rogueTrucks.add(input.batchId);
+    if (rows.length === 0) {
       return {
         clientEventUuid: input.clientEventUuid,
-        result: onManifest ? 'ok' : 'auto_transfer',
-        boxes: letters,
-        ...(notArrived.length ? { notArrived } : {}),
+        result: 'unknown_code',
+        scannedCode: input.code,
       };
-    });
-    acks.push(ack);
+    }
+    if (opts.boxId && rows[0]!.shortCode.toUpperCase() !== input.code.toUpperCase()) {
+      throw new ScanError('door_box_mismatch');
+    }
+    // Row, THEN the lot on this truck (0112): the office's count takes the
+    // same lock after its rows, so a phone's first scan and a count press
+    // cannot both decide «nobody has counted this lot yet».
+    await lockLotOnTruck(tx, input.batchId, rows[0]!.lotId);
+    members = rows;
   }
-  return acks;
+
+  // UZ side (spec 6.6): unloading at a customs/distribution warehouse puts
+  // cargo straight into ready_for_pickup.
+  const destWh = (await tx.query.warehouses.findFirst({
+    where: eq(warehouses.id, batch.destWarehouseId),
+  }))!;
+  const landedStatus = landedStatusFor(destWh.type);
+
+  // A crate scan vouches for the CRATE, not for every box its record
+  // lists: a member short-loaded at the origin keeps its crateId, and the
+  // fan-out used to "reality-wins" it here — the client was told cargo
+  // arrived that is physically on a shelf in China, and Yiwu stock lost
+  // the box. Reality-wins stays for a box somebody physically scanned by
+  // its own label; left-behind members are NAMED, never moved.
+  let notArrived: string[] = [];
+  if (crateId) {
+    const cameHere = (b: (typeof boxes.$inferSelect)) =>
+      (b.currentBatchId === input.batchId && b.status === 'in_transit') ||
+      (b.status === landedStatus && b.currentWarehouseId === batch.destWarehouseId);
+    notArrived = members.filter((b) => !cameHere(b)).map((b) => b.shortCode);
+    members = members.filter(cameHere);
+    if (members.length === 0) {
+      return {
+        clientEventUuid: input.clientEventUuid,
+        result: 'rejected',
+        detail: 'crate_not_on_batch',
+        scannedCode: input.code,
+      };
+    }
+  }
+
+  // Business duplicate: everything already landed at this destination.
+  const allDone = members.every(
+    (b) => b.status === landedStatus && b.currentWarehouseId === batch.destWarehouseId,
+  );
+  if (allDone) {
+    return {
+      clientEventUuid: input.clientEventUuid,
+      result: 'duplicate',
+      ...(notArrived.length ? { notArrived } : {}),
+    };
+  }
+
+  for (const box of members) {
+    if (['issued', 'void'].includes(box.status)) {
+      return {
+        clientEventUuid: input.clientEventUuid,
+        result: 'rejected',
+        detail: `box_${box.status}`,
+        scannedCode: input.code,
+      };
+    }
+  }
+
+  // A lot the office counts is the office's on this truck (0112, Q4/Q8): a
+  // lot counted at EITHER end of it — a sticker that fell off on the road
+  // must not turn a load-counted lot into a scanned one here — or holding a
+  // stickerless carton aboard. «Hammasini qabul qilish» is a door too: it
+  // lands QR-siz and load-counted lots, and leaves a lot the office counted
+  // HERE to the count. A crate is always scanned as the crate.
+  if (!crateId && members[0]!.crateId === null && (!opts.door || opts.door === BULK_ACCEPT_REASON)) {
+    const mode = await lotModeOnTruck(tx, {
+      batchId: input.batchId,
+      lotId: members[0]!.lotId,
+      side: 'unload',
+      countedSide: opts.door ? 'unload' : 'any',
+      quickOriginId: null,
+    });
+    if (mode === 'counted' || (mode === 'qrless' && !opts.door)) {
+      return {
+        clientEventUuid: input.clientEventUuid,
+        result: 'rejected',
+        detail: mode === 'counted' ? 'lot_counted' : 'qr_less_count_only',
+        scannedCode: input.code,
+      };
+    }
+  }
+
+  const onManifest = members.every(
+    (b) => b.currentBatchId === input.batchId && b.status === 'in_transit',
+  );
+  const rogue = members.filter(
+    (b) => !(b.currentBatchId === input.batchId && b.status === 'in_transit'),
+  );
+
+  const toMove = members.filter(
+    (b) => !(b.status === landedStatus && b.currentWarehouseId === batch.destWarehouseId),
+  );
+  // Reality wins: everything scanned here IS here now. Rogue boxes keep
+  // no stale crate link (their crate stayed wherever it really is).
+  // Landing also retires the JOURNEY flags — added_on_spot and
+  // missing_in_transit describe one trip, and a box that kept them was
+  // printing last truck's deviations on the next truck's manifest.
+  for (const box of toMove) {
+    const isRogue = rogue.includes(box);
+    await tx
+      .update(boxes)
+      .set({
+        status: landedStatus,
+        currentWarehouseId: batch.destWarehouseId,
+        currentBatchId: null,
+        statusReason: null,
+        // An office count of cartons BEYOND the manifest (`count_over`)
+        // is a stated fact with a written reason, not a mystery — it rides
+        // as the truck's cargo for money like any rogue carton, but carries
+        // no flag the risk list would chase for ever (0112).
+        ...(isRogue
+          ? {
+              crateId: crateId ?? null,
+              flags: opts.door === COUNT_OVER_REASON ? [] : ['undocumented_transfer'],
+            }
+          : { flags: [] }),
+      })
+      .where(eq(boxes.id, box.id));
+  }
+  await tx.insert(boxMovements).values(
+    toMove.map((box) => ({
+      boxId: box.id,
+      fromWarehouseId: box.currentWarehouseId,
+      toWarehouseId: batch.destWarehouseId,
+      fromStatus: box.status,
+      toStatus: landedStatus,
+      cause: rogue.includes(box) ? 'undocumented_transfer' : 'unload_scan',
+      refType: 'batch',
+      refId: input.batchId,
+      actorId,
+    })),
+  );
+
+  // The crate row's warehouse follows its landed boxes. Frozen at the
+  // origin, an arrived yashik could neither be planned onward from here
+  // nor counted at inventory where it really stands.
+  const landedCrateIds = [
+    ...new Set([...toMove.map((b) => b.crateId), crateId].filter((id): id is string => !!id)),
+  ];
+  if (landedCrateIds.length) {
+    await tx
+      .update(crates)
+      .set({ warehouseId: batch.destWarehouseId })
+      .where(and(inArray(crates.id, landedCrateIds), eq(crates.status, 'active')));
+  }
+
+  /*
+   * Client arrival summary (spec 6.6) — and the owner's report, round 98:
+   * «mashinadan yuk tushganda yukingiz keldi deb har bir karobka uchun
+   * habar jonatyabti».
+   *
+   * This block runs inside the per-SCAN transaction, so it used to emit
+   * `ReadyForPickup` once for every carton the phone sent — and
+   * `unloadRemaining` feeds one input per short code through this same
+   * door, so one press of «accept the rest» could send a customer two
+   * hundred messages.
+   *
+   * Round 98 moved the CLIENT's copy onto a claim and left the event
+   * here, «for the staff side, which is what it was written for». The
+   * owner's next report was the other half of the same sentence: «10 ta
+   * karobka kelsa 10 ta sms» — his SELLER was getting one Telegram per
+   * carton. So the event went with it (`notices/arrival-staff.ts`): one
+   * per customer per truck, with the totals as they really are, carrying
+   * the deal's cargo trigger and the automation rules with it.
+   *
+   * What stays HERE is the claim, and only the claim. Inside this
+   * transaction on purpose: a claim that survived a rolled-back unload
+   * would silence the real one that follows, and a claim made in the
+   * worker could not know which scan was first.
+   */
+  if (landedStatus === 'ready_for_pickup' && toMove.length > 0) {
+    const lotRows = await tx
+      .select({ lotId: receiptLots.id, clientId: receipts.clientId })
+      .from(receiptLots)
+      .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+      .where(inArray(receiptLots.id, [...new Set(toMove.map((b) => b.lotId))]));
+    const clientByLot = new Map(lotRows.map((r) => [r.lotId, r.clientId]));
+    const landedClients = new Set<string>();
+    for (const box of toMove) {
+      const cid = clientByLot.get(box.lotId);
+      if (cid) landedClients.add(cid);
+    }
+    for (const cid of landedClients) {
+      await claimArrivalNotice(tx, cid, input.batchId, {
+        actorId,
+        windowMinutes: opts.noticeWindowMinutes,
+      });
+    }
+  }
+  await tx
+    .insert(scanEvents)
+    .values(
+      members.map((box) => ({
+        clientEventUuid:
+          members.length === 1 ? input.clientEventUuid : uuidv5(box.id, input.clientEventUuid),
+        boxId: box.id,
+        crateId,
+        batchId: input.batchId,
+        type: 'unload',
+        method: crateId ? 'crate' : input.method,
+        manualReason: input.method === 'manual' ? input.manualReason || 'manual' : null,
+        addedOnSpot: rogue.includes(box),
+        scannedBy: actorId,
+        scannedAt: new Date(input.scannedAt),
+      })),
+    )
+    .onConflictDoNothing({ target: scanEvents.clientEventUuid });
+
+  // A count door sends ONE alarm for its whole press, not one per carton.
+  if (rogue.length > 0 && !opts.quietSpot) {
+    await emitEvent(tx, {
+      type: 'UndocumentedTransfer',
+      payload: {
+        batchId: input.batchId,
+        batchCode: batch.code,
+        warehouseId: batch.destWarehouseId,
+        shortCodes: rogue.map((b) => b.shortCode),
+      },
+      entityType: 'batch',
+      entityId: input.batchId,
+      actorId,
+    });
+  }
+  const letters = await lettersFor(tx, members);
+  // Only a rogue carton this scan MOVED changes the truck's riders: a
+  // crate re-scan whose members already landed singly names them rogue
+  // too, and re-split the truck for nothing.
+  if (toMove.some((box) => rogue.includes(box))) rogueTrucks.add(input.batchId);
+  return {
+    clientEventUuid: input.clientEventUuid,
+    result: onManifest ? 'ok' : 'auto_transfer',
+    boxes: letters,
+    ...(notArrived.length ? { notArrived } : {}),
+  };
 }
 
 async function lettersFor(
@@ -417,6 +504,17 @@ export function batchMemberFilter(batchId: string) {
     WHERE bm.box_id = ${boxes.id}
       AND bm.ref_type = 'batch' AND bm.ref_id = ${batchId} AND bm.cause = 'batch_departed'
   ))`;
+}
+
+/**
+ * The cargo that is really ON (or came off) this truck: a member that is not
+ * merely reserved. Before 0112 a load scan event was as good as this, because
+ * nothing took a scanned carton back off quietly; an office count can dial a
+ * lot down, so the customs papers and the register read the cartons, and the
+ * scan events only annotate them.
+ */
+export function aboardFilter(batchId: string) {
+  return and(batchMemberFilter(batchId), ne(boxes.status, 'planned'))!;
 }
 
 /**
@@ -486,10 +584,12 @@ export async function unloadRemaining(batchId: string, ctx: AuditContext) {
       batchId,
       code: shortCode,
       method: 'manual' as const,
-      manualReason: 'bulk_accept',
+      manualReason: BULK_ACCEPT_REASON,
       scannedAt,
     })),
     ctx,
+    // A server door (0112): only through one may a scan carry a server reason.
+    { door: BULK_ACCEPT_REASON },
   );
   const accepted = acks.filter((a) => ['ok', 'auto_transfer'].includes(a.result)).length;
   await writeAudit(db, { ...ctx, warehouseId: batch.destWarehouseId }, {
@@ -901,6 +1001,9 @@ export async function cancelBatch(batchId: string, reason: string, ctx: AuditCon
   if (why.length < 3) throw new ScanError('reason_required');
 
   return db.transaction(async (tx) => {
+    // One loading change at a time per truck (0112): a count press must not
+    // re-reserve cartons onto a truck this cancel is giving back to stock.
+    await lockTruckLoading(tx, batchId);
     const batch = await tx.query.batches.findFirst({ where: eq(batches.id, batchId) });
     if (!batch) throw new ScanError('batch_not_found');
     // Once the truck has left, the batch is a real journey: its code is on the

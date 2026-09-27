@@ -14,6 +14,7 @@ import {
   receipts,
   warehouses,
 } from '../../platform/db/schema';
+import { COUNT_REASONS } from '../scanning/count-rules';
 
 /**
  * Read models for the M6 dashboard + §13 reports. Every query takes an
@@ -749,6 +750,14 @@ export async function staffActivity(days: number) {
              count(*) AS scans
       FROM scan_events s
       WHERE s.created_at > now() - make_interval(days => ${days})
+        -- An office count (0112) writes one event per carton it moved; the
+        -- logist who pressed once did not scan 400 boxes. «Hammasini qabul
+        -- qilish» stays counted as it always was — a report's past is not
+        -- rewritten by a round that did not touch it.
+        AND (s.manual_reason IS NULL OR s.manual_reason NOT IN (${sql.join(
+          COUNT_REASONS.map((r) => sql`${r}`),
+          sql`, `,
+        )}))
       GROUP BY s.scanned_by, day
     )
     SELECT coalesce(a.actor_id, s.actor_id) AS actor_id,

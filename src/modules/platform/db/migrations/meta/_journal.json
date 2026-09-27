@@ -785,6 +785,13 @@
       "when": 1785190000090,
       "tag": "0111_nav_usage",
       "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1785190000091,
+      "tag": "0112_qr_less",
+      "breakpoints": true
     }
   ]
 }

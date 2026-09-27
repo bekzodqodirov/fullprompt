@@ -108,6 +108,17 @@ export async function notificationProblemCount(sinceDays = 7): Promise<number> {
   return Number(row?.n ?? 0);
 }
 
+/**
+ * An office count press (0112) names who pressed; that person made the
+ * deviation on purpose and needs no alarm about it. An event without the
+ * field — every phone scan, every event written before — reaches everyone,
+ * as it always did (#688's rule).
+ */
+function withoutPresser(userIds: string[], payload: Record<string, unknown>): string[] {
+  const presser = typeof payload.presserId === 'string' ? payload.presserId : null;
+  return presser ? userIds.filter((id) => id !== presser) : userIds;
+}
+
 async function buildRecipients(event: {
   type: string;
   payload: Record<string, unknown>;
@@ -187,7 +198,6 @@ async function buildRecipients(event: {
     // Plan verdict, not-on-plan and unload discrepancies go to logists (spec §11).
     case 'PlanApproved':
     case 'PlanChangesRequested':
-    case 'UndocumentedTransfer':
     case 'MissingInTransit':
     // Inventory result goes to the owner/admins (owner's answer: the
     // warehouse manager decides, the boss gets the Telegram).
@@ -195,10 +205,34 @@ async function buildRecipients(event: {
       const userIds = await usersWithRoles(['logist', 'admin', 'super_admin']);
       return userIds.map((userId) => ({ userId, type: event.type, payload: event.payload }));
     }
+    case 'UndocumentedTransfer': {
+      const userIds = await usersWithRoles(['logist', 'admin', 'super_admin']);
+      return withoutPresser(userIds, event.payload).map((userId) => ({
+        userId,
+        type: event.type,
+        payload: event.payload,
+      }));
+    }
     case 'BoxScannedOnLoad': {
       if (!event.payload.addedOnSpot) return [];
       const userIds = await usersWithRoles(['logist', 'admin', 'super_admin']);
-      return userIds.map((userId) => ({ userId, type: event.type, payload: event.payload }));
+      return withoutPresser(userIds, event.payload).map((userId) => ({
+        userId,
+        type: event.type,
+        payload: event.payload,
+      }));
+    }
+    // An office count found fewer cartons than the truck carried (0112, the
+    // owner's Q6c: «menga va logistga darrov»). Him and the logists — by ROLE,
+    // his words — never the person who pressed, who already knows. The text
+    // is composed where the cargo lives (wms) and arrives finished.
+    case 'CountShortfall': {
+      const userIds = await usersWithRoles(['super_admin', 'logist']);
+      return withoutPresser(userIds, event.payload).map((userId) => ({
+        userId,
+        type: event.type,
+        payload: event.payload,
+      }));
     }
     // Phase 6: the request reaches everyone who may decide it; the decision
     // reaches exactly the person who asked. Since 0104 the request names its
@@ -370,22 +404,36 @@ export function renderTelegramText(
     case 'BoxScannedOnLoad':
       return (
         `🚨 ${L.offPlanLoaded} ${payload.batchCode}\n` +
-        `${L.boxesLine}: ${codes}\n` +
+        `${countLotLine(payload.lot) ?? `${L.boxesLine}: ${codes}`}\n` +
         (payload.reason ? `${L.reason}: ${payload.reason}\n` : '') +
         `${appUrl}/batches/${payload.batchId}`
       );
     case 'UndocumentedTransfer':
       return (
         `📦❗ ${L.undocumented} ${payload.batchCode}\n` +
-        `${L.boxesLine}: ${codes}\n` +
+        `${countLotLine(payload.lot) ?? `${L.boxesLine}: ${codes}`}\n` +
+        (payload.reason ? `${L.reason}: ${payload.reason}\n` : '') +
         `${appUrl}/batches/${payload.batchId}`
       );
-    case 'MissingInTransit':
+    case 'MissingInTransit': {
+      // Per lot when the event names its lots (0112): an office count closes
+      // a truck whose missing cartons carry no sticker to list by code.
+      const missingLots = Array.isArray(payload.lots)
+        ? (payload.lots as unknown[])
+            .map((lot) => countLotLine(lot, false))
+            .filter((l): l is string => !!l)
+        : [];
+      const body =
+        missingLots.length > 0
+          ? missingLots.slice(0, 12).join('\n') +
+            (missingLots.length > 12 ? `\n${fillCount(L.andMore, missingLots.length - 12)}` : '')
+          : `${L.boxesLine}: ${codes}`;
       return (
         `🔍 ${L.missingInTransit} ${payload.batchCode}\n` +
-        `${L.boxesLine}: ${codes}\n` +
+        `${body}\n` +
         `${appUrl}/batches/${payload.batchId}`
       );
+    }
     case 'InventoryCompleted': {
       const moved = (payload.moved as string[] | undefined) ?? [];
       const lost = (payload.lost as string[] | undefined) ?? [];
@@ -507,6 +555,20 @@ export function renderTelegramText(
  * unplanned cartons produced an alarm nobody ever received (round C).
  */
 const CODES_SHOWN = 30;
+/**
+ * One lot of an office count (0112): `{label, product, n}` → «GS777-A ·
+ * kurtka: +3» for cartons beyond the plan, «… : 3» for cartons missing.
+ * Anything else — every event that predates the field — is null,
+ * and the caller prints its codes line as it always did (#688).
+ */
+function countLotLine(lot: unknown, extra = true): string | null {
+  if (!lot || typeof lot !== 'object') return null;
+  const { label, product, n } = lot as { label?: unknown; product?: unknown; n?: unknown };
+  if (typeof label !== 'string' || typeof n !== 'number') return null;
+  const goods = typeof product === 'string' && product.trim() ? ` · ${product.trim()}` : '';
+  return `${label}${goods}: ${extra && n > 0 ? '+' : ''}${n}`;
+}
+
 function capCodes(codes: string[], andMore: string): string {
   if (codes.length <= CODES_SHOWN) return codes.join(', ');
   return `${codes.slice(0, CODES_SHOWN).join(', ')} ${fillCount(andMore, codes.length - CODES_SHOWN)}`;

@@ -107,6 +107,10 @@ export const MUTE_GROUPS = {
     // the author, the arrival-diff rule).
     'BoxFoundHere',
     'BoxLost',
+    // An office count found fewer cartons on a truck than it carried (0112,
+    // the owner's Q6c). An alarm and not news: cargo is missing while the
+    // truck is still at the gate. A newcomer, so never in FOUNDERS.
+    'CountShortfall',
     // 0105: a carton turned up on a prixod whose client was compensated for
     // it — the accountant and the seller must act before the cargo AND the
     // money leave. BoxLost's alarm, run backwards.

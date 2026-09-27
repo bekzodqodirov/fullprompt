@@ -706,6 +706,7 @@
       "discount": "Discount",
       "discountReason": "Discount reason",
       "dueAt": "Due",
+      "factoryBarcode": "Factory barcode",
       "grants": "Permissions",
       "heightCm": "Height, cm",
       "lengthCm": "Length, cm",
@@ -724,8 +725,11 @@
       "phone": "Phone",
       "productNameRu": "Goods (RU)",
       "productNameZh": "Goods (ZH)",
+      "qrSkipped": "Lot without QR",
       "rateToUsd": "USD rate",
       "reason": "Reason",
+      "receivedAt": "Received on",
+      "receivedBy": "Received by",
       "roles": "Roles",
       "source": "Source",
       "stage": "Stage",
@@ -4047,5 +4051,15 @@
       "admin": "Administration"
     },
     "more": "More"
-  }
+  },
+  "scanRefusal": {
+    "lot_counted": "🔢 {lot} is already counted — no scan. If there are more, tell the office.",
+    "qr_less_count_only": "🏷 {lot} has no QR — the office counts it, no scan.",
+    "reserved_reason": "This mark is for the office only — the scan was not recorded."
+  },
+  "countLoad": {},
+  "countAccept": {},
+  "qrsiz": {},
+  "ofis": {},
+  "scanner": {}
 }

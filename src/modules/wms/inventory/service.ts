@@ -20,6 +20,7 @@ import { batchMemberFilter } from '../scanning/unload';
 import { landedStatusFor } from '../warehouses/landed';
 import { claimArrivalNotice } from '../notices/arrival';
 import { isUuidShaped } from '../../platform/audit/fields';
+import { PRESENT_STATUSES } from './present';
 
 export class InventoryError extends Error {
   constructor(public readonly code: string) {
@@ -27,8 +28,6 @@ export class InventoryError extends Error {
   }
 }
 
-/** Boxes the system EXPECTS to be physically present at the warehouse. */
-const PRESENT_STATUSES = ['in_stock', 'planned', 'ready_for_pickup'] as const;
 
 /**
  * What the stock screen and its export call «on the shelf»: everything
