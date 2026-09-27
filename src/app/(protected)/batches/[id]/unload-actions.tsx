@@ -431,6 +431,8 @@ function MissingLotCard({
         return t('missing.errors.resolve_exceeds_missing', { max: total });
       case 'reason_required':
         return tu('errors.reason_required');
+      case 'busy_retry':
+        return t('errors.busy_retry');
       case 'forbidden':
         return tc('forbidden');
       default:
@@ -469,6 +471,8 @@ function MissingLotCard({
       setLostOpen(false);
       setReason('');
       onDone();
+    } catch {
+      setError(t('offline'));
     } finally {
       setBusy(false);
     }

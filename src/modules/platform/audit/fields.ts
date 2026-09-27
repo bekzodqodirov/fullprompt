@@ -90,6 +90,18 @@ export const AUDIT_FIELD_LABELS: Record<string, string> = {
   receivedByUserId: 'receivedBy',
   receivedByName: 'receivedBy',
   receivedAt: 'receivedAt',
+  // …and what the office's counts and the QR-siz stickers did to a prixod
+  // (review ui-4): the lot grown or taken back by a count, the stickers a
+  // re-mark took back, and a QR-siz sticker run printed at a warehouse.
+  lotGrown: 'lotGrown',
+  lotShrunk: 'lotShrunk',
+  liveBoxes: 'liveBoxes',
+  qrReverted: 'qrReverted',
+  qrRevertedCodes: 'qrRevertedCodes',
+  qrless: 'qrSkipped',
+  count: 'boxCount',
+  boxes: 'boxes',
+  at: 'warehouse',
 
   // Housekeeping
   note: 'note',

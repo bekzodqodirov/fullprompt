@@ -23,6 +23,7 @@ import { EditError, setReceiptReceived } from '@/modules/wms/receipts/edit';
 import { receivedFacts } from '@/modules/wms/notices/client-summary';
 import { cargoOverview } from '@/modules/wms/client-cabinet/service';
 import { placeCargo } from '@/modules/wms/tracking/place-cargo';
+import { arrivalsForLots } from '@/modules/wms/documents/arrivals';
 
 /**
  * The office receipt (0112, the owner's Q9 b), through the real service: the
@@ -259,6 +260,11 @@ describe('the office receipt', () => {
     const onMap = (await placeCargo({ warehouseId: whId })).lots.find((l) => l.receiptId === result.receiptId);
     expect(onMap, 'the lot is on the map').toBeTruthy();
     expect(new Date(onMap!.receivedAt).toISOString()).toBe(row!.receivedAt.toISOString());
+
+    // The agent's sheet (review cargo-7): a walk-in is dated by the day the
+    // goods came in, not the minute the office typed them.
+    const arrival = (await arrivalsForLots([posted.lots[0]!.id], whId)).get(posted.lots[0]!.id);
+    expect(arrival && dayIn(arrival.arrivedAt, TZ)).toBe(day);
   });
 });
 

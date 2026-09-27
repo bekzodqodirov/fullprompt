@@ -154,3 +154,27 @@ describe('the count-accept door', () => {
     expect(missing).toContain('failed.push(');
   });
 });
+
+describe('an office press is never silent (review ui-5, phone-3)', () => {
+  it('the lot press, the pallet press and the missing-lot press each say something when the action never answers', () => {
+    const panel = read('src/app/(protected)/batches/[id]/count-accept-panel.tsx');
+    // One catch per press, each landing on the offline sentence.
+    expect(panel.match(/\} catch \{\s*(setError\(t\('offline'\)\)|setNote\(\{ ok: false, text: t\('offline'\) \}\));/g) ?? []).toHaveLength(2);
+    const missing = read('src/app/(protected)/batches/[id]/unload-actions.tsx');
+    expect(missing).toMatch(/onDone\(\);\s*\} catch \{\s*setError\(t\('offline'\)\);/);
+    expect(missing).toContain("case 'busy_retry':");
+  });
+
+  it('the missing-lot action answers a lock wait with «try again», never a white page', () => {
+    const actions = read('src/app/(protected)/batches/batch-actions-server.ts');
+    const fn = actions.slice(actions.indexOf('export async function resolveMissingLotAction'));
+    const body = fn.slice(0, fn.indexOf('\nexport '));
+    expect(body).toContain("if (isBusyError(err)) return { ok: false, error: 'busy_retry' };");
+  });
+
+  it('the loading screen says when the office’s cartons outgrew the snapshot', () => {
+    const screen = read('src/app/(protected)/batches/[id]/load/loading-screen.tsx');
+    expect(screen).toContain('{snapshot.countOnlyCapped && (');
+    expect(screen).toContain("tcount('countOnlyCapped')");
+  });
+});

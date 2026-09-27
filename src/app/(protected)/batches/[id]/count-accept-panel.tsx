@@ -235,6 +235,10 @@ function LotRow({
       setReason('');
       setPressId(uuidv4());
       router.refresh();
+    } catch {
+      // The action never reached the server (review ui-5): a silent button is
+      // read as «done». The typed number stays for the retry.
+      setError(t('offline'));
     } finally {
       setPending(false);
     }
@@ -369,6 +373,8 @@ function CrateRow({
           (res.notArrived.length ? ` · ${t('crateNotArrived', { codes: res.notArrived.join(', ') })}` : ''),
       });
       router.refresh();
+    } catch {
+      setNote({ ok: false, text: t('offline') });
     } finally {
       setPending(false);
     }

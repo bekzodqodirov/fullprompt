@@ -762,6 +762,15 @@ export function LoadingScreen({
         {online ? (pending > 0 ? `🔄 ${t('syncing', { n: pending })}` : `✅ ${t('online')}`) : `📴 ${t('offline', { n: pending })}`}
       </div>
 
+      {/* The snapshot carries only so many of the office's cartons (review
+          phone-3): past the cap an offline read of one of them is queued and
+          refused by the server when it comes back. Said once, quietly. */}
+      {snapshot.countOnlyCapped && (
+        <p className="text-center text-xs text-ink-500" data-testid="count-only-capped">
+          {tcount('countOnlyCapped')}
+        </p>
+      )}
+
       {/* The office's count panel, one tap away for the admin or the logist
           standing at the truck — never a control on this screen itself. */}
       {countHref && (

@@ -172,6 +172,9 @@ export async function resolveMissingLotAction(
     return { ok: true, resolved: res.resolved };
   } catch (err) {
     if (err instanceof ScanError) return { ok: false, error: err.code };
+    // A count press holding the same cartons: «try again», never a white
+    // page (review ui-5, the count doors' own mapping).
+    if (isBusyError(err)) return { ok: false, error: 'busy_retry' };
     throw err;
   }
 }

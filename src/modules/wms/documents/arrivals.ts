@@ -225,7 +225,16 @@ export async function arrivalsForLots(
           cause: boxMovements.cause,
           refType: boxMovements.refType,
           refId: boxMovements.refId,
-          createdAt: boxMovements.createdAt,
+          // A walk-in is dated by the day the goods came in, not the minute
+          // the office typed them (0112, Q9b: an office prixod may be entered
+          // up to a week late — review cargo-7). Every other landing is its
+          // own movement's clock.
+          createdAt: sql<Date>`CASE WHEN ${boxMovements.cause} = 'receipt'
+            THEN coalesce((
+              SELECT ar.received_at FROM receipt_lots arl JOIN receipts ar ON ar.id = arl.receipt_id
+               WHERE arl.id = ${boxes.lotId}
+            ), ${boxMovements.createdAt})
+            ELSE ${boxMovements.createdAt} END`.as('landed_at'),
         })
         .from(boxMovements)
         .innerJoin(boxes, eq(boxes.id, boxMovements.boxId))
