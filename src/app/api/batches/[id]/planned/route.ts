@@ -185,6 +185,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             inArray(boxes.lotId, lotIds),
             isNull(boxes.crateId),
             notInArray(boxes.status, ['void', 'issued', 'lost']),
+            // Only where this truck's phones can meet them — aboard, or at
+            // either end — never a lot's cartons in a third warehouse
+            // (review access-2: codes the reader has no business with).
+            or(
+              eq(boxes.currentBatchId, id),
+              inArray(boxes.currentWarehouseId, [batch.originWarehouseId, batch.destWarehouseId]),
+            ),
           ),
         )
         .orderBy(asc(boxes.lotId), asc(boxes.seqInLot))

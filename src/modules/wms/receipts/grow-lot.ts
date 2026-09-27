@@ -68,7 +68,14 @@ export async function growLotInTx(
     })
     .from(boxes)
     .where(eq(boxes.lotId, lot.id));
-  const before = Number(counts!.active);
+  // The divisor every reader uses is the lot's own `box_count` — the costing
+  // engine's per-box figure is total ÷ box_count, and a carton voided on the
+  // box card leaves box_count alone. Growing by the ACTIVE count re-weighed
+  // every carton of the lot, cartons on earlier, already-costed trucks
+  // included (review money-2: 10 → 11.1 kg a carton after one void). So the
+  // lot grows by exactly `add` of its own per-box figure and nothing else of
+  // it moves.
+  const before = lot.boxCount;
   const after = before + a.add;
   const totals =
     lot.dimsMode === 'uniform' &&
@@ -137,6 +144,7 @@ export async function growLotInTx(
     action: 'update',
     before: {
       boxCount: before,
+      liveBoxes: Number(counts!.active),
       totalWeightKg: Number(lot.totalWeightKg),
       totalVolumeM3: Number(lot.totalVolumeM3),
     },
