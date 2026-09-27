@@ -50,7 +50,7 @@ import { costSightFor, tillView } from '@/modules/wms/costing/cost-sight';
 import { mayPickTill } from '@/modules/wms/accounting/till-door';
 import { costEntriesFor } from '@/modules/wms/costing/service';
 import { lotQrState } from '@/modules/wms/labels/qrless';
-import { canEditReceipt, mayCorrectReceived } from '@/modules/wms/receipts/edit';
+import { canEditReceipt, mayCorrectReceived, mayFlipQrSkip, qrSwitchPlaces } from '@/modules/wms/receipts/edit';
 import { QrSkipToggle } from './qr-skip-toggle';
 import { dayIn } from '@/modules/platform/time/tashkent';
 import { isBackdated, receivedDayBounds } from '@/modules/wms/receipts/received-day';
@@ -194,6 +194,19 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
   const qrState = await lotQrState(lotIds, actor);
   const anyPrintable = lots.some((lot) => (qrState.get(lot.id)?.printable ?? 0) > 0);
   const mayToggleQr = canEdit && canEditReceipt(actor, receipt, warehouse.timezone);
+  // The switch is drawn only where the service would let it move — the same
+  // predicate over the same places (review access-1).
+  const qrFlippable = new Set(
+    mayToggleQr
+      ? (
+          await Promise.all(
+            lots.map(async (lot) =>
+              mayFlipQrSkip(actor, await qrSwitchPlaces(db, lot.id, receipt.warehouseId)) ? lot.id : null,
+            ),
+          )
+        ).filter((id): id is string => id !== null)
+      : [],
+  );
   const canAssign = actor.permissions.has('receipts.unclaimed.resolve') && receipt.status === 'confirmed';
 
   // Which job this cargo belongs to — shown, and correctable, from the cargo
@@ -471,8 +484,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
                 ))}
               </div>
             )}
-            {mayToggleQr &&
-              (actor.permissions.has('receipts.void') || (qrState.get(lot.id)?.notInStock ?? 0) === 0) && (
+            {qrFlippable.has(lot.id) && (
                 <QrSkipToggle
                   lotId={lot.id}
                   letter={lot.letter ?? ''}

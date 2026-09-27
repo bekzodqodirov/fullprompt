@@ -325,8 +325,6 @@ export interface LotQrState {
   labelledLater: number;
   /** What the receipt's ordinary sheet would carry — `labelsForReceipt`'s rule. */
   printable: number;
-  /** Live cartons that have left `in_stock` — the toggle's shelf gate. */
-  notInStock: number;
   /** Where the QR-siz cartons stand, counted as THIS person may print them. */
   printableAt: { warehouseId: string; code: string; n: number }[];
 }
@@ -350,7 +348,6 @@ export async function lotQrState(
       labelledLater: sql<number>`count(*) FILTER (WHERE ${receiptLots}.qr_skipped_at IS NOT NULL
         AND ${boxes}.label_printed_at >= ${receiptLots}.qr_skipped_at AND ${boxes.status} <> 'void')`,
       printable: sql<number>`count(*) FILTER (WHERE NOT ${qrlessJoinedSql()})`,
-      notInStock: sql<number>`count(*) FILTER (WHERE ${boxes.status} NOT IN ('void', 'in_stock'))`,
     })
     .from(boxes)
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
@@ -362,13 +359,11 @@ export async function lotQrState(
       qrlessLive: 0,
       labelledLater: 0,
       printable: 0,
-      notInStock: 0,
       printableAt: [],
     };
     state.qrlessLive += Number(row.qrlessLive);
     state.labelledLater += Number(row.labelledLater);
     state.printable += Number(row.printable);
-    state.notInStock += Number(row.notInStock);
     if (row.warehouseId && row.code && mayReadHere(actor, row.warehouseId)) {
       const n =
         Number(row.shelfHere) + (mayCountMove(actor, row.warehouseId) ? Number(row.plannedHere) : 0);

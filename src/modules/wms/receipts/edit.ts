@@ -1,7 +1,8 @@
 import { and, asc, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { db } from '../../platform/db/client';
+import { db, type Db, type Tx } from '../../platform/db/client';
 import {
+  batches,
   boxes,
   boxMovements,
   clients,
@@ -504,13 +505,82 @@ export async function editLot(
 const REVERTED_CODES_CAP = 500;
 
 /**
+ * Where the QR-siz switch of a lot is decided — ONE answer for the service and
+ * the receipt card's toggle (#513).
+ *
+ * While every loose carton that is still ours to move stands on the shelf of
+ * the prixod's own warehouse, the switch is the lot form's: the same-day
+ * creator, and past the shelf a manager (`receipts.void`). Once one of them is
+ * planned onto a truck, riding one, or standing in another warehouse, marking
+ * or unmarking the lot changes how THAT truck is loaded and how THAT warehouse
+ * scans it — a logistics decision (plan decision 28: only the count door may
+ * drop an uncounted QR-siz lot at «yuklash tugadi»), so it needs the count
+ * door at every place the cartons are: each warehouse they stand in and both
+ * ends of every truck they are on. `receipts.void` at the prixod's warehouse
+ * let a manager unmark a planned lot and short-load it past that gate, or
+ * re-mark a lot in transit so the destination's phones refused cartons whose
+ * stickers were on (review access-1). Crated cartons are not the switch's
+ * (their crate's label stands in for them), issued and lost ones have left.
+ */
+export interface QrSwitchPlaces {
+  /** Every loose, still-ours carton is `in_stock` at the prixod's warehouse. */
+  onReceiptShelf: boolean;
+  /** Any live carton (crated included) is past the shelf — the old manager rule. */
+  anyNotInStock: boolean;
+  /** Warehouses the count door is needed at when not `onReceiptShelf`. */
+  places: string[];
+}
+
+export async function qrSwitchPlaces(
+  exec: Db | Tx,
+  lotId: string,
+  receiptWarehouseId: string,
+): Promise<QrSwitchPlaces> {
+  const live = await exec
+    .select({
+      status: boxes.status,
+      crateId: boxes.crateId,
+      warehouseId: boxes.currentWarehouseId,
+      batchId: boxes.currentBatchId,
+    })
+    .from(boxes)
+    .where(and(eq(boxes.lotId, lotId), ne(boxes.status, 'void')));
+  const loose = live.filter((box) => box.crateId === null && box.status !== 'issued' && box.status !== 'lost');
+  const onReceiptShelf = loose.every(
+    (box) => box.status === 'in_stock' && box.warehouseId === receiptWarehouseId && box.batchId === null,
+  );
+  const places = new Set<string>();
+  for (const box of loose) if (box.warehouseId) places.add(box.warehouseId);
+  const batchIds = [...new Set(loose.map((box) => box.batchId).filter((id): id is string => id !== null))];
+  if (batchIds.length > 0) {
+    const ends = await exec
+      .select({ origin: batches.originWarehouseId, dest: batches.destWarehouseId })
+      .from(batches)
+      .where(inArray(batches.id, batchIds));
+    for (const end of ends) {
+      places.add(end.origin);
+      places.add(end.dest);
+    }
+  }
+  return {
+    onReceiptShelf,
+    anyNotInStock: live.some((box) => box.status !== 'in_stock'),
+    places: [...places],
+  };
+}
+
+/** The switch's gate over `qrSwitchPlaces` (the edit window is asked before). */
+export function mayFlipQrSkip(actor: Actor, at: QrSwitchPlaces): boolean {
+  if (at.onReceiptShelf) return !at.anyNotInStock || actor.permissions.has('receipts.void');
+  return at.places.length > 0 && at.places.every((warehouseId) => mayCountMove(actor, warehouseId));
+}
+
+/**
  * «QR yopishtirilmadi» changed after the receipt (0112, decision 32) — a
  * two-way switch on the receipt card, never a field in the lot form.
  *
- * The gate is the lot form's: the same-day creator fixes a slip of the
- * wizard, and once cartons have left the shelf the decision is a manager's
- * (`receipts.void`) — marking a lot that is already on a truck's list changes
- * how that truck is loaded.
+ * The gate is `mayFlipQrSkip`: the lot form's while the cartons are on the
+ * prixod's own shelf, the count door wherever they have gone.
  *
  * MARK sets the marker to now(): on a lot whose stickers were printed and fell
  * off (sacks, rolls), every live uncrated carton labelled before it becomes
@@ -539,13 +609,14 @@ export async function setLotQrSkipped(
       .from(receiptLots)
       .where(eq(receiptLots.id, lot.id))
       .for('update');
-    const live = await tx
-      .select({ id: boxes.id, status: boxes.status })
+    await tx
+      .select({ id: boxes.id })
       .from(boxes)
       .where(and(eq(boxes.lotId, lot.id), ne(boxes.status, 'void')))
       .orderBy(asc(boxes.id))
       .for('update');
-    if (!actor.permissions.has('receipts.void') && live.some((box) => box.status !== 'in_stock')) {
+    // Judged on the locked rows, inside the transaction that writes.
+    if (!mayFlipQrSkip(actor, await qrSwitchPlaces(tx, lot.id, receipt.warehouseId))) {
       throw new EditError('structural_locked');
     }
     const markedBefore = current?.qrSkippedAt ?? null;

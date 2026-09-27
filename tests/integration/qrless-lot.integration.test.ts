@@ -248,7 +248,7 @@ describe('the switch on the receipt card (I2, I3)', () => {
     expect(await receiptAudits(made.receiptId, 'update')).toHaveLength(2);
   });
 
-  it('the creator changes it while the cartons are on the shelf; once planned, only a manager', async () => {
+  it('the creator changes it while the cartons are on the shelf; once planned, only the count door', async () => {
     const made = await mkReceipt([{ count: 3 }]);
     const lot = made.lots[0]!;
     // Somebody else's receipt is not the operator's to change.
@@ -261,8 +261,35 @@ describe('the switch on the receipt card (I2, I3)', () => {
     await expect(setLotQrSkipped({ lotId: lot.lotId, skipped: false }, operator(), ctx())).rejects.toThrow(
       new EditError('structural_locked'),
     );
+    // A manager's `receipts.void` no longer opens it: unmarking a PLANNED lot
+    // is «yuklash tugadi»'s dropQrless by another door (review access-1).
+    await expect(setLotQrSkipped({ lotId: lot.lotId, skipped: false }, manager(), ctx())).rejects.toThrow(
+      new EditError('structural_locked'),
+    );
     expect((await db.select().from(receiptLots).where(eq(receiptLots.id, lot.lotId)))[0]!.qrSkippedAt).not.toBeNull();
-    expect((await setLotQrSkipped({ lotId: lot.lotId, skipped: false }, manager(), ctx())).changed).toBe(true);
+    expect((await setLotQrSkipped({ lotId: lot.lotId, skipped: false }, logist(), ctx())).changed).toBe(true);
+  });
+
+  it('a lot on the road is flipped only by the count door at BOTH ends of its truck', async () => {
+    const made = await mkReceipt([{ count: 3 }]);
+    const lot = made.lots[0]!;
+    const truck = await planTruck(lot.lotId, 3);
+    for (const box of lot.boxes) {
+      await db.transaction((tx) => loadScanInTx(tx, { ...manual(truck.id, box.code, 'sticker_lost') }, actorId, {}));
+    }
+    await finishLoading(truck.id, ctx());
+    await departBatch(truck.id, ctx());
+    // The origin's manager — or the origin's logist alone — must not re-mark
+    // cargo the destination is about to scan with its stickers on.
+    const originManager = actorWith(['receipts.create', 'receipts.edit', 'receipts.void'], { warehouseIds: [W.a] });
+    const originLogist = actorWith(['receipts.create', 'receipts.edit', 'plans.manage'], { warehouseIds: [W.a] });
+    for (const who of [originManager, originLogist]) {
+      await expect(setLotQrSkipped({ lotId: lot.lotId, skipped: true }, who, ctx())).rejects.toThrow(
+        new EditError('structural_locked'),
+      );
+    }
+    expect((await db.select().from(receiptLots).where(eq(receiptLots.id, lot.lotId)))[0]!.qrSkippedAt).toBeNull();
+    expect((await setLotQrSkipped({ lotId: lot.lotId, skipped: true }, logist(), ctx())).changed).toBe(true);
   });
 });
 
