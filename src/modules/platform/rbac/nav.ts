@@ -560,12 +560,17 @@ export const MENU_BY_ROLE: Record<string, string[]> = {
   // Neither this list nor the accountant's carries '/admin' any more: their
   // only hub doors (the truck presets, the FX rates) became the ⚙ of «Yo'l»
   // and «Pul» (2026-09-26), and the hub itself would redirect them home.
-  // Plans and trucks. A logist does not receive cargo, but does chase it —
-  // and does hold `clients.manage`: he creates client cards and mints their
-  // cabinet links, so the client book belongs in his menu. Leaving it out was
-  // a curation mistake, caught by the e2e that opens the page as him.
+  // Plans and trucks — and, since the owner's Q9 b (2026-09-27), the prixod
+  // the warehouse could not type: a logist enters it FROM THE OFFICE off the
+  // floor's photos, naming who physically received it and the real day, so
+  // «Qabul» is in his menu (and therefore in «+ Yangi»). Only that screen: the
+  // crate list stays out (a pallet is made from the prixod card or the stock
+  // row, both doors he already has), and the phone bar is unchanged. He also
+  // holds `clients.manage`: he creates client cards and mints their cabinet
+  // links, so the client book belongs in his menu. Leaving it out was a
+  // curation mistake, caught by the e2e that opens the page as him.
   logist: [
-    '/', '/bugun', '/kalendar', '/bitimlar', '/plans', '/batches', '/arrivals', '/trucks',
+    '/', '/bugun', '/kalendar', '/bitimlar', '/plans', '/batches', '/arrivals', '/trucks', '/receive',
     '/zavod', '/map', '/stock', '/receipts', '/admin/clients', '/dashboard', '/reports',
     '/suhbatlar', '/approvals', '/ai', '/zametkalar',
   ],

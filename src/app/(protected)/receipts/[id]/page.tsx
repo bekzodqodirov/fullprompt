@@ -12,6 +12,8 @@ import {
   deals,
   receiptLots,
   receipts,
+  userWarehouses,
+  users,
   warehouses,
 } from '@/modules/platform/db/schema';
 import { CostPanel } from '@/components/cost-panel';
@@ -48,8 +50,12 @@ import { costSightFor, tillView } from '@/modules/wms/costing/cost-sight';
 import { mayPickTill } from '@/modules/wms/accounting/till-door';
 import { costEntriesFor } from '@/modules/wms/costing/service';
 import { lotQrState } from '@/modules/wms/labels/qrless';
-import { canEditReceipt } from '@/modules/wms/receipts/edit';
+import { canEditReceipt, mayCorrectReceived } from '@/modules/wms/receipts/edit';
 import { QrSkipToggle } from './qr-skip-toggle';
+import { dayIn } from '@/modules/platform/time/tashkent';
+import { isBackdated, receivedDayBounds } from '@/modules/wms/receipts/received-day';
+import { palletDoorsFor } from '@/modules/wms/crates/service';
+import { ReceivedEditForm } from './received-edit-form';
 
 export default async function ReceiptDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const actor = await getActor();
@@ -236,6 +242,33 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
         ]
       : dealOptions;
 
+  // The office receipt (0112, Q9 b): who physically received it, who typed
+  // it, and the real day — printed when any of them differs from «the person
+  // who pressed, on the day they pressed», which is what every older row means.
+  const to = await getTranslations('ofis');
+  const backdated = isBackdated(receipt);
+  const office = Boolean(receipt.receivedByUserId || receipt.receivedByName || backdated);
+  const people = office
+    ? await db
+        .select({ id: users.id, name: users.fullName })
+        .from(users)
+        .where(inArray(users.id, [receipt.createdBy, ...(receipt.receivedByUserId ? [receipt.receivedByUserId] : [])]))
+    : [];
+  const nameOf = (userId: string | null) => people.find((person) => person.id === userId)?.name ?? '—';
+  const receivedDay = dayIn(receipt.receivedAt, warehouse.timezone);
+  // The correction door: the office, on the day the prixod was typed.
+  const canCorrectReceived = mayCorrectReceived(actor, receipt, warehouse.timezone);
+  const warehouseReceivers = canCorrectReceived
+    ? await db
+        .select({ id: users.id, name: users.fullName })
+        .from(userWarehouses)
+        .innerJoin(users, eq(users.id, userWarehouses.userId))
+        .where(and(eq(userWarehouses.warehouseId, receipt.warehouseId), eq(users.active, true)))
+        .orderBy(asc(users.fullName))
+    : [];
+  // «🧱 Palet qilish» per lot and warehouse (0112, Q10 d) — ONE grouped query.
+  const palletDoors = receipt.status === 'confirmed' ? await palletDoorsFor(actor, lotIds) : [];
+
   return (
     <div className="space-y-6">
       <BackLink href="/receipts" label={t('title')} />
@@ -279,11 +312,45 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
             </span>
           )}
         </p>
-        <p>
+        <p data-testid="receipt-received-date" data-day={receivedDay}>
           <span className="font-semibold">{t('date')}: </span>
-          {format.dateTime(receipt.receivedAt, { dateStyle: 'medium', timeStyle: 'short' })} ·{' '}
-          {warehouse.code}
+          {/* A back-dated prixod carries a DAY: its noon is a filing
+              convention, printed in the warehouse's own zone. */}
+          {backdated
+            ? format.dateTime(receipt.receivedAt, { dateStyle: 'medium', timeZone: warehouse.timezone })
+            : format.dateTime(receipt.receivedAt, { dateStyle: 'medium', timeStyle: 'short' })}{' '}
+          · {warehouse.code}
         </p>
+        {office && (
+          <>
+            <p data-testid="receipt-received-by">
+              👤 <span className="font-semibold">{to('receivedBy')}: </span>
+              {receipt.receivedByName ?? nameOf(receipt.receivedByUserId ?? receipt.createdBy)}
+            </p>
+            <p data-testid="receipt-entered-by" className="text-xs text-ink-500">
+              ✍️ {to('enteredBy')}: {nameOf(receipt.createdBy)} ·{' '}
+              {format.dateTime(receipt.createdAt, { dateStyle: 'medium', timeStyle: 'short' })}
+            </p>
+          </>
+        )}
+        {canCorrectReceived && (
+          <div className="mt-2">
+            <ReceivedEditForm
+              receiptId={id}
+              day={receivedDay}
+              bounds={receivedDayBounds(receipt.createdAt, warehouse.timezone)}
+              receiver={
+                receipt.receivedByName
+                  ? { kind: 'name', name: receipt.receivedByName }
+                  : receipt.receivedByUserId
+                    ? { kind: 'user', userId: receipt.receivedByUserId }
+                    : null
+              }
+              me={{ id: actor.id, name: actor.fullName }}
+              receivers={warehouseReceivers}
+            />
+          </div>
+        )}
         {receipt.sourceNote && <p className="text-ink-700">{receipt.sourceNote}</p>}
         {receipt.voidReason && (
           <p className="font-semibold text-bad">
@@ -413,6 +480,27 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
                   canRemark={(qrState.get(lot.id)?.labelledLater ?? 0) > 0}
                 />
               )}
+            {(lot.factoryBarcode || palletDoors.some((door) => door.lotId === lot.id)) && (
+              <div className="mt-1 flex flex-wrap items-center gap-2 text-sm">
+                {lot.factoryBarcode && (
+                  <span data-testid="lot-barcode-fact" className="chip-neutral font-mono">
+                    🏷 {lot.factoryBarcode}
+                  </span>
+                )}
+                {palletDoors
+                  .filter((door) => door.lotId === lot.id)
+                  .map((door) => (
+                    <Link
+                      key={door.warehouseId}
+                      data-testid="lot-make-pallet"
+                      href={door.href}
+                      className="btn-secondary !min-h-9 px-2 text-sm"
+                    >
+                      🧱 {to('makePallet')} · {door.warehouseCode} · {door.free} 📦
+                    </Link>
+                  ))}
+              </div>
+            )}
             <div className="mt-2">
               <PhotoGallery photos={photosByLot.get(lot.id) ?? []} deletable={canEdit} />
             </div>
@@ -432,6 +520,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
                     totalWeightKg: lot.totalWeightKg,
                     totalVolumeM3: lot.totalVolumeM3,
                     note: lot.note,
+                    factoryBarcode: lot.factoryBarcode,
                   }}
                 />
               </div>

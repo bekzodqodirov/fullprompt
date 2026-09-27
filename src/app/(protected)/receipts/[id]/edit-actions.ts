@@ -14,8 +14,11 @@ import {
   editLot,
   editLotSchema,
   setLotQrSkipped,
+  receivedEditSchema,
+  setReceiptReceived,
   type LotEditResult,
 } from '@/modules/wms/receipts/edit';
+import { isServerBehind } from '@/modules/platform/db/errors';
 
 export interface EditLotState {
   ok?: boolean;
@@ -40,6 +43,8 @@ export async function editLotAction(_prev: EditLotState, formData: FormData): Pr
     totalWeightKg: num('totalWeightKg'),
     totalVolumeM3: num('totalVolumeM3'),
     note: formData.get('note') ?? '',
+    // Absent from the form = leave the barcode alone (0112, Q10 c).
+    factoryBarcode: formData.get('factoryBarcode') ?? undefined,
   });
   if (!parsed.success) return { error: 'validation' };
 
@@ -66,6 +71,42 @@ export async function editLotAction(_prev: EditLotState, formData: FormData): Pr
     if (err instanceof EditError) return { error: err.code };
     throw err;
   }
+}
+
+/**
+ * The office receipt's correction (0112, Q9 b): who received it, which day.
+ * Authorised at the receipt's warehouse like `editLotAction`; the SERVICE asks
+ * the count door and the entry day again (`mayCorrectReceived`), so a posted
+ * id for a prixod the screen would not have offered is still refused.
+ */
+export async function setReceivedAction(input: unknown): Promise<{ ok?: boolean; error?: string }> {
+  const parsed = receivedEditSchema.safeParse(input);
+  if (!parsed.success) return { error: 'validation' };
+  const receipt = await db.query.receipts.findFirst({
+    where: eq(receipts.id, parsed.data.receiptId),
+  });
+  if (!receipt) return { error: 'not_found' };
+  let actor: Actor;
+  try {
+    actor = await authorize('plans.manage', { warehouseId: receipt.warehouseId });
+  } catch (err) {
+    if (err instanceof AuthError) return { error: 'forbidden' };
+    throw err;
+  }
+  const meta = await requestMeta();
+  try {
+    await setReceiptReceived(parsed.data, actor, { actorId: actor.id, ...meta });
+  } catch (err) {
+    if (err instanceof EditError) return { error: err.code };
+    // Deploy morning (#472): 0112's columns may not exist yet.
+    if (isServerBehind(err)) {
+      console.error('[receipt-received] server behind', err);
+      return { error: 'server_behind' };
+    }
+    throw err;
+  }
+  revalidatePath(`/receipts/${receipt.id}`);
+  return { ok: true };
 }
 
 const assignSchema = z.object({

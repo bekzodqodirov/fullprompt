@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { v4 as uuidv4 } from 'uuid';
@@ -28,29 +28,50 @@ interface CratableBox {
   receiptNumber: string | null;
 }
 
+/** What a «🧱 Palet qilish» door opens the builder with (0112, Q10 d). */
+export interface CrateBuilderInitial {
+  warehouseId?: string;
+  client?: ClientHit;
+  lotId?: string;
+  kind?: 'karkas' | 'palet';
+}
+
+/** The kinds, in chip order — the labels live in two namespaces (crates / ofis). */
+const KIND_CHIPS = ['yashik', 'karkas', 'palet'] as const;
+type Kind = (typeof KIND_CHIPS)[number];
+
 /**
  * W2 crate builder (spec 6.2): pick warehouse + client, tick in-stock boxes
- * (whole lots or individual boxes), confirm "logist approved", optional
- * measured dims/weight + note, create → label.
+ * (whole lots or individual boxes) — or, for a pallet of stickerless cartons,
+ * say HOW MANY of a lot (0112, Q10 d: «N ta», the service picks which) —
+ * confirm "logist approved", optional measured dims/weight + note, create →
+ * label.
  */
 export function CrateBuilder({
   warehouses,
   currencies,
+  initial = {},
 }: {
   warehouses: WarehouseOption[];
   currencies: string[];
+  initial?: CrateBuilderInitial;
 }) {
   const t = useTranslations('crates');
+  const to = useTranslations('ofis');
   const tc = useTranslations('common');
   const router = useRouter();
   const [crateId] = useState(() => uuidv4());
-  const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? '');
+  const [warehouseId, setWarehouseId] = useState(initial.warehouseId ?? warehouses[0]?.id ?? '');
   const [clientQuery, setClientQuery] = useState('');
   const [clientHits, setClientHits] = useState<ClientHit[]>([]);
-  const [client, setClient] = useState<ClientHit | null>(null);
+  const [client, setClient] = useState<ClientHit | null>(initial.client ?? null);
   const [boxes, setBoxes] = useState<CratableBox[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [kind, setKind] = useState<'yashik' | 'karkas'>('yashik');
+  const [kind, setKind] = useState<Kind>(initial.kind ?? 'yashik');
+  /** «N ta» per lot: a lot with a count sends no ticks, the service picks. */
+  const [counts, setCounts] = useState<Record<string, string>>({});
+  const [errorDetail, setErrorDetail] = useState<string | undefined>(undefined);
+  const initialLotRef = useRef<HTMLInputElement | null>(null);
   const [approved, setApproved] = useState(false);
   const [note, setNote] = useState('');
   const [dims, setDims] = useState({ lengthCm: '', widthCm: '', heightCm: '', weightKg: '' });
@@ -94,6 +115,7 @@ export function CrateBuilder({
           const data = (await res.json()) as { boxes: CratableBox[] };
           setBoxes(data.boxes);
           setSelected(new Set());
+          setCounts({});
         }
       } catch {
         /* aborted */
@@ -107,6 +129,63 @@ export function CrateBuilder({
     const list = lots.get(box.lotId) ?? [];
     list.push(box);
     lots.set(box.lotId, list);
+  }
+
+  // Opened from a lot's door: bring that lot into view with its count box
+  // focused — the whole point of the door is «N of THIS lot on a pallet».
+  const hasInitialLot = Boolean(initial.lotId && lots.has(initial.lotId));
+  useEffect(() => {
+    if (!hasInitialLot) return;
+    initialLotRef.current?.scrollIntoView({ block: 'center' });
+    initialLotRef.current?.focus();
+  }, [hasInitialLot]);
+
+  /** A lot's typed count, when it is a positive whole number. */
+  const countOf = (lotId: string) => {
+    const n = Number(counts[lotId]);
+    return Number.isInteger(n) && n > 0 ? n : 0;
+  };
+  const countedLots = new Set([...lots.keys()].filter((lotId) => countOf(lotId) > 0));
+  const tickedIds = boxes
+    .filter((box) => selected.has(box.boxId) && !countedLots.has(box.lotId))
+    .map((box) => box.boxId);
+  const totalBoxes = tickedIds.length + [...countedLots].reduce((sum, lotId) => sum + countOf(lotId), 0);
+
+  /** Every refusal in words — a code without a key fails at RENDER (footgun 1). */
+  function crateErrorText(code: string, detail?: string): string {
+    switch (code) {
+      case 'multiple_clients':
+        return t('errors.multiple_clients');
+      case 'unclaimed_not_allowed':
+        return t('errors.unclaimed_not_allowed');
+      case 'box_not_in_stock':
+        return t('errors.box_not_in_stock');
+      case 'box_already_crated':
+        return t('errors.box_already_crated');
+      case 'box_wrong_warehouse':
+        return t('errors.box_wrong_warehouse');
+      case 'validation':
+        return t('errors.validation');
+      case 'not_enough_boxes': {
+        const [lot, n] = (detail ?? '').split(':');
+        return to('crateErrors.not_enough_boxes', { lot: lot || '?', n: n || '0' });
+      }
+      case 'lot_twice':
+        return to('crateErrors.lot_twice');
+      case 'too_many_boxes':
+        return to('crateErrors.too_many_boxes');
+      case 'box_not_found':
+        return to('crateErrors.box_not_found');
+      case 'warehouse_not_found':
+        return to('crateErrors.warehouse_not_found');
+      case 'crating_cost_type_missing':
+        return to('crateErrors.crating_cost_type_missing');
+      case 'forbidden':
+      case 'unauthenticated':
+        return to('crateErrors.forbidden');
+      default:
+        return tc('error');
+    }
   }
 
   function toggle(boxId: string) {
@@ -137,7 +216,8 @@ export function CrateBuilder({
       const res = await createCrateAction({
         crateId,
         warehouseId,
-        boxIds: [...selected],
+        boxIds: tickedIds,
+        lotCounts: [...countedLots].map((lotId) => ({ lotId, count: countOf(lotId) })),
         kind,
         logistApproved: approved as true,
         note,
@@ -153,7 +233,10 @@ export function CrateBuilder({
             : undefined,
       });
       if (res.ok) router.push(`/crates/${res.crateId}`);
-      else setError(res.error ?? 'error');
+      else {
+        setError(res.error ?? 'error');
+        setErrorDetail(res.detail);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -224,14 +307,16 @@ export function CrateBuilder({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex overflow-hidden rounded-lg border border-line-strong text-sm font-semibold">
-            {(['yashik', 'karkas'] as const).map((k) => (
+            {KIND_CHIPS.map((k) => (
               <button
                 key={k}
                 type="button"
+                data-testid={`crate-kind-${k}`}
+                aria-pressed={kind === k}
                 className={`px-3 py-2 ${kind === k ? 'bg-brand-600 text-white' : 'bg-surface-raised'}`}
                 onClick={() => setKind(k)}
               >
-                {k === 'yashik' ? t('yashik') : t('karkas')}
+                {k === 'yashik' ? t('yashik') : k === 'karkas' ? t('karkas') : to('palet')}
               </button>
             ))}
           </div>
@@ -290,13 +375,15 @@ export function CrateBuilder({
         <div className="card space-y-2 !p-3" id="cratable-boxes">
           {lots.size === 0 && <p className="text-sm text-ink-500">{t('noBoxes')}</p>}
           {[...lots.entries()].map(([lotId, lotBoxes]) => {
-            const allIn = lotBoxes.every((b) => selected.has(b.boxId));
+            const counted = countedLots.has(lotId);
+            const allIn = !counted && lotBoxes.every((b) => selected.has(b.boxId));
             const first = lotBoxes[0]!;
             return (
               <div key={lotId} className="rounded-lg border border-line p-2">
                 <button
                   type="button"
-                  className="flex w-full items-center gap-2 text-left"
+                  className="flex w-full items-center gap-2 text-left disabled:opacity-60"
+                  disabled={counted}
                   onClick={() => toggleLot(lotBoxes)}
                 >
                   <span
@@ -316,16 +403,38 @@ export function CrateBuilder({
                     )}
                   </span>
                   <span className="ml-auto whitespace-nowrap text-sm font-semibold">
-                    {lotBoxes.filter((b) => selected.has(b.boxId)).length}/{lotBoxes.length} 📦
+                    {counted ? countOf(lotId) : lotBoxes.filter((b) => selected.has(b.boxId)).length}/
+                    {lotBoxes.length} 📦
                   </span>
                 </button>
+                {/* «N ta» (0112, Q10 d): AFTER the toggle, so the lot's first
+                    button stays the toggle, and a spinbutton rather than
+                    another checkbox. A count takes the lot out of the ticks —
+                    the service picks WHICH cartons, lowest seq first. */}
+                <label className="mt-1.5 flex items-center gap-2 text-xs text-ink-500">
+                  {to('lotCount')}
+                  <input
+                    ref={lotId === initial.lotId ? initialLotRef : undefined}
+                    type="number"
+                    inputMode="numeric"
+                    data-testid="crate-lot-count"
+                    min={0}
+                    max={lotBoxes.length}
+                    className="input !min-h-9 !w-20 shrink-0 text-center"
+                    placeholder="0"
+                    value={counts[lotId] ?? ''}
+                    onChange={(e) => setCounts((prev) => ({ ...prev, [lotId]: e.target.value }))}
+                  />
+                  <span className="min-w-0">{to('lotCountHint')}</span>
+                </label>
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
                   {lotBoxes.map((box) => (
                     <button
                       key={box.boxId}
                       type="button"
-                      className={`min-h-10 rounded-md border px-3 py-1.5 font-mono text-sm font-semibold ${
-                        selected.has(box.boxId)
+                      disabled={counted}
+                      className={`min-h-10 rounded-md border px-3 py-1.5 font-mono text-sm font-semibold disabled:opacity-40 ${
+                        selected.has(box.boxId) && !counted
                           ? 'border-blue-700 bg-brand-50 text-brand-700'
                           : 'border-line text-ink-700'
                       }`}
@@ -343,7 +452,7 @@ export function CrateBuilder({
 
       {error && (
         <p role="alert" className="rounded-lg bg-bad/10 p-3 text-sm font-semibold text-bad">
-          {t(`errors.${error}` as never) || tc('error')}
+          {crateErrorText(error, errorDetail)}
         </p>
       )}
 
@@ -362,10 +471,10 @@ export function CrateBuilder({
             type="button"
             data-testid="create-crate"
             className="btn-primary w-full disabled:opacity-50"
-            disabled={submitting || !approved || selected.size === 0}
+            disabled={submitting || !approved || totalBoxes === 0}
             onClick={submit}
           >
-            {submitting ? tc('loading') : `🧰 ${t('create')} (${selected.size} 📦)`}
+            {submitting ? tc('loading') : `🧰 ${t('create')} (${totalBoxes} 📦)`}
           </button>
         </div>
       </div>

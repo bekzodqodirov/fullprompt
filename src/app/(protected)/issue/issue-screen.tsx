@@ -6,6 +6,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { Scanner } from '@/components/scan/scanner';
 import { armScanAudio, scanFeedback } from '@/components/scan/feedback';
 import { approvalCovers } from '@/modules/wms/issue/approval-covers';
+import { factoryBarcodeKey } from '@/modules/wms/receipts/factory-barcode';
+import { isOwnCodeShape } from '@/offline/code-shape';
 import { issueBoxesAction, requestIssueApprovalAction } from './actions';
 
 interface WarehouseOption {
@@ -47,6 +49,8 @@ interface IssuableBox {
   uncovered?: boolean;
   /** …and the ban stops it: it landed by road after the ban's instant. */
   gated?: boolean;
+  /** The lot's factory barcode key (0112), when it carries one. */
+  factoryBarcode?: string | null;
 }
 /** A prixod at this counter with cartons that have no price (0104). */
 interface UnpricedHere {
@@ -73,6 +77,7 @@ interface ApprovalState {
  */
 export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
   const t = useTranslations('issue');
+  const to = useTranslations('ofis');
   const tc = useTranslations('common');
   const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? '');
   const [clientQuery, setClientQuery] = useState('');
@@ -113,6 +118,7 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
   const [approval, setApproval] = useState<ApprovalState | null>(null);
   const [asking, setAsking] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
+  const [scanMode, setScanMode] = useState<'qr' | 'retail'>('qr');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [doneHandover, setDoneHandover] = useState<string | null>(null);
@@ -277,6 +283,20 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
   useEffect(() => armScanAudio(), []);
 
   function onScan(code: string) {
+    // The factory's barcode (0112, Q10 c) names the whole pile: it ticks every
+    // box of the lots that carry it — a barcode names a product, so it may be
+    // several lots of this client. Our own codes never match (refused at the
+    // door that stores a barcode), so a carton's QR still picks one carton.
+    const key = isOwnCodeShape(code) ? null : factoryBarcodeKey(code);
+    const pile = key ? list.filter((b) => b.factoryBarcode === key) : [];
+    if (pile.length > 0) {
+      const fresh = pile.filter((b) => !selected.has(b.boxId));
+      if (fresh.length > 0) {
+        setSelected((prev) => new Set([...prev, ...fresh.map((b) => b.boxId)]));
+        scanFeedback('ok');
+      } else scanFeedback('dup');
+      return;
+    }
     const hit = list.find((b) => b.shortCode === code);
     if (hit && !selected.has(hit.boxId)) {
       toggle(hit.boxId);
@@ -678,7 +698,22 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
 
       {client && (
         <>
-          <Scanner active onCode={onScan} />
+          <Scanner active mode={scanMode} onCode={(code) => {
+            // «🏷 Zavod kodi» reads ONE retail barcode, then back to QR.
+            if (scanMode === 'retail') setScanMode('qr');
+            onScan(code);
+          }} />
+          <div className="flex justify-center">
+            <button
+              type="button"
+              data-testid="scan-mode-barcode"
+              aria-pressed={scanMode === 'retail'}
+              className={`btn-secondary !min-h-9 px-3 ${scanMode === 'retail' ? '!bg-brand-600 !text-white' : ''}`}
+              onClick={() => setScanMode((mode) => (mode === 'retail' ? 'qr' : 'retail'))}
+            >
+              🏷 {to('barcodeMode')}
+            </button>
+          </div>
           <div className="card space-y-2 !p-3" id="issuable-boxes">
             {lots.size === 0 && <p className="text-sm text-ink-500">{t('noBoxes')}</p>}
             {[...lots.entries()].map(([lotId, lotBoxes]) => {

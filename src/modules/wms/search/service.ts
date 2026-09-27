@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, exists, inArray, ne, or, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { db } from '../../platform/db/client';
 import {
@@ -102,8 +102,9 @@ export async function globalSearch(actor: SearchActor, raw: string): Promise<Sea
     }));
   }
 
-  const [clientHits, leadHits, dealHits, batchHits, partnerHits, boxHits, receiptHits, lotHits] =
+  const [barcodeHits, clientHits, leadHits, dealHits, batchHits, partnerHits, boxHits, receiptHits, lotHits] =
     await Promise.all([
+      parsed.barcode ? searchLotsByBarcode(actor, parsed.barcode) : Promise.resolve([]),
       searchClients(actor, like, parsed.phone),
       searchLeads(actor, like, parsed.phone),
       searchDeals(actor, like),
@@ -116,7 +117,10 @@ export async function globalSearch(actor: SearchActor, raw: string): Promise<Sea
 
   // Order is a judgement about what people look for: a person or a job first,
   // the physical cargo after it.
+  // A scanned factory barcode is the most specific thing a person can type:
+  // it names a product sitting in a known pile, so its lots come first.
   return [
+    ...barcodeHits,
     ...clientHits,
     ...leadHits,
     ...dealHits,
@@ -396,6 +400,71 @@ async function searchLots(actor: SearchActor, like: string): Promise<SearchHit[]
     id: row.id,
     code: `${row.clientCode ?? row.marking ?? '❓'}-${row.letter ?? ''}`,
     label: [row.zh, row.ru].filter(Boolean).join(' · '),
+    href: `/stock?lot=${row.id}`,
+  }));
+}
+
+/**
+ * The lots whose factory barcode is exactly this key (0112, Q10 c) — through
+ * the partial index, never a LIKE.
+ *
+ * Scoped by the CARGO-NEAR rule and not by where the prixod was typed: the
+ * Tashkent operator scanning a carton received in Yiwu must find it, and the
+ * rule is round 90's (`inventory/near.ts`) — a live box of the lot standing
+ * in one of the person's warehouses, or riding a truck with an end in one —
+ * written into the WHERE as an EXISTS, so a `limit` can never answer «not
+ * yours» about the one lot that is (#513). The receipt's own warehouse still
+ * counts: the desk that received it may always find what it typed.
+ */
+async function searchLotsByBarcode(actor: SearchActor, key: string): Promise<SearchHit[]> {
+  const ids = actor.warehouseIds;
+  const near =
+    actor.warehouseScoped && ids.length > 0
+      ? or(
+          inArray(receipts.warehouseId, ids),
+          exists(
+            db
+              .select({ x: sql`1` })
+              .from(boxes)
+              .leftJoin(batches, eq(boxes.currentBatchId, batches.id))
+              .where(
+                and(
+                  // `${receiptLots}.id`, not `${receiptLots.id}`: inside the
+                  // correlated subquery drizzle would render the bare column
+                  // against the subquery's own table (#128).
+                  sql`${boxes.lotId} = ${receiptLots}.id`,
+                  ne(boxes.status, 'void'),
+                  or(
+                    inArray(boxes.currentWarehouseId, ids),
+                    inArray(batches.originWarehouseId, ids),
+                    inArray(batches.destWarehouseId, ids),
+                  ),
+                ),
+              ),
+          ),
+        )
+      : undefined;
+  if (actor.warehouseScoped && ids.length === 0) return [];
+  const rows = await db
+    .select({
+      id: receiptLots.id,
+      letter: receiptLots.letter,
+      zh: receiptLots.productNameZh,
+      ru: receiptLots.productNameRu,
+      clientCode: clients.clientCode,
+      marking: receipts.unclaimedMarking,
+    })
+    .from(receiptLots)
+    .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+    .leftJoin(clients, eq(receipts.clientId, clients.id))
+    .where(and(eq(receiptLots.factoryBarcode, key), ...(near ? [near] : [])))
+    .orderBy(desc(receipts.receivedAt))
+    .limit(PER_GROUP);
+  return rows.map((row) => ({
+    kind: 'lot' as const,
+    id: row.id,
+    code: `${row.clientCode ?? row.marking ?? '❓'}-${row.letter ?? ''}`,
+    label: `🏷 ${key} · ${[row.zh, row.ru].filter(Boolean).join(' · ')}`,
     href: `/stock?lot=${row.id}`,
   }));
 }

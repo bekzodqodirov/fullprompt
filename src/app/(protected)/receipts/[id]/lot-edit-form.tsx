@@ -17,11 +17,14 @@ export interface LotEditValues {
   totalWeightKg: string;
   totalVolumeM3: string;
   note: string | null;
+  /** The factory barcode's key (0112, Q10 c). */
+  factoryBarcode: string | null;
 }
 
 /** Inline lot editor on the receipt detail (spec 4.4 — audited edits). */
 export function LotEditForm({ lot }: { lot: LotEditValues }) {
   const t = useTranslations('receipts');
+  const to = useTranslations('ofis');
   const tc = useTranslations('common');
   const [open, setOpen] = useState(false);
   const [state, formAction, pending] = useActionState<EditLotState, FormData>(editLotAction, {});
@@ -88,6 +91,23 @@ export function LotEditForm({ lot }: { lot: LotEditValues }) {
         aria-label="note"
         placeholder={t('note')}
       />
+      {/* The factory's barcode: posted every time, so a cleared box clears it.
+          Not structural — correctable after the cartons have left. */}
+      <input
+        name="factoryBarcode"
+        data-testid="lot-edit-barcode"
+        className="input font-mono uppercase"
+        defaultValue={lot.factoryBarcode ?? ''}
+        aria-label={to('barcode')}
+        placeholder={`🏷 ${to('barcode')}`}
+        autoCapitalize="characters"
+        maxLength={64}
+        onKeyDown={(e) => {
+          // An HID scanner types the code and then Enter — which would submit
+          // the form mid-edit.
+          if (e.key === 'Enter') e.preventDefault();
+        }}
+      />
       {lot.dimsMode === 'uniform' ? (
         <div className="flex items-center gap-1.5">
           <input name="boxLengthCm" className="input !min-h-10 w-0 flex-1 !px-2 text-center" inputMode="decimal" defaultValue={lot.boxLengthCm ?? ''} placeholder="L" aria-label="L" required />
@@ -109,6 +129,10 @@ export function LotEditForm({ lot }: { lot: LotEditValues }) {
               ? t('structuralLocked')
               : state.error === 'shared_cost_orphaned'
                 ? t('lotShrinkOrphan')
+                : state.error === 'barcode_invalid'
+                  ? to('errors.barcode_invalid_plain')
+                  : state.error === 'barcode_is_ours'
+                    ? to('errors.barcode_is_ours_plain')
                 : state.error === 'lot_changed'
                   ? t('lotChanged')
                   : tc('error')}

@@ -4,6 +4,8 @@ import { AuthError, authorize, type Actor } from '@/modules/platform/rbac/author
 import { requestMeta } from '@/modules/platform/auth/session';
 import { enqueue, JOB_PROCESS_EVENTS } from '@/modules/platform/jobs/boss';
 import { amountRefusal } from '@/modules/wms/finance/money-bounds';
+import { isServerBehind } from '@/modules/platform/db/errors';
+import { mayCountMove } from '@/modules/wms/scanning/count-door';
 import {
   confirmReceipt,
   confirmReceiptSchema,
@@ -47,8 +49,13 @@ export async function submitReceiptAction(input: unknown): Promise<SubmitReceipt
   }
   const meta = await requestMeta();
 
+  // The office receipt (0112, Q9 b): naming who received it and the real day
+  // is the count door's power, asked HERE of the actor at THIS warehouse —
+  // the service refuses the two fields whenever this is not said (#531).
+  const onBehalf = mayCountMove(actor, parsed.data.warehouseId);
+
   try {
-    const result = await confirmReceipt(parsed.data, { actorId: actor.id, ...meta });
+    const result = await confirmReceipt(parsed.data, { actorId: actor.id, ...meta }, { onBehalf });
     // Fire the notification fan-out immediately (workers also sweep per minute).
     await enqueue(JOB_PROCESS_EVENTS, {});
     return {
@@ -65,7 +72,18 @@ export async function submitReceiptAction(input: unknown): Promise<SubmitReceipt
       })),
     };
   } catch (err) {
-    if (err instanceof ReceiptError) return { ok: false, error: err.code };
+    // The lot a barcode refusal is about travels as the message (the
+    // photo rule's shape), so the sentence can name it.
+    if (err instanceof ReceiptError) {
+      return { ok: false, error: err.code, detail: err.message !== err.code ? err.message : undefined };
+    }
+    // Deploy morning (#472): the INSERT names 0112's columns, and the one
+    // machine where they may be missing is production mid-deploy — a
+    // sentence, never a white page on the warehouse's busiest button.
+    if (isServerBehind(err)) {
+      console.error('[receive] server behind', err);
+      return { ok: false, error: 'server_behind' };
+    }
     throw err;
   }
 }

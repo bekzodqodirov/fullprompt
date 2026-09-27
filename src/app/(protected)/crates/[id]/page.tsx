@@ -36,6 +36,7 @@ export default async function CrateDetailPage({ params }: { params: Promise<{ id
   if (!actor) redirect('/login');
   if (!actor.permissions.has('crates.manage')) redirect('/');
   const t = await getTranslations('crates');
+  const tp = await getTranslations('ofis');
   const tc = await getTranslations('common');
   const format = await getFormatter();
 
@@ -111,8 +112,8 @@ export default async function CrateDetailPage({ params }: { params: Promise<{ id
       <div className="card space-y-2">
         <div className="flex flex-wrap items-baseline gap-2">
           <h1 className="font-mono text-xl font-extrabold text-brand-700">{crate.code}</h1>
-          <span className="rounded bg-surface-sunken px-2 py-0.5 text-xs font-semibold">
-            {crate.kind === 'karkas' ? t('karkas') : t('yashik')}
+          <span data-testid="crate-kind" className="rounded bg-surface-sunken px-2 py-0.5 text-xs font-semibold">
+            {crate.kind === 'palet' ? tp('palet') : crate.kind === 'karkas' ? t('karkas') : t('yashik')}
           </span>
           {!active && (
             <span className="rounded bg-bad/15 px-2 py-0.5 text-xs font-semibold text-bad">

@@ -21,6 +21,12 @@ import { receiptHasCompensation } from '../finance/compensation-follow';
 import { claimReceivedNotice } from '../notices/client-claims';
 import { qrlessBoxSql } from '../labels/qrless-sql';
 import { computeLotTotals } from './math';
+import { factoryBarcodeKey } from './factory-barcode';
+import { isOwnCodeShape } from '@/offline/code-shape';
+import { receivedAtFor, receivedDayRefusal, type ReceivedDayRefusal } from './received-day';
+import { checkReceiver, ReceiptError, receivedBySchema } from './service';
+import { mayCountMove } from '../scanning/count-door';
+import { dayIn } from '../../platform/time/tashkent';
 
 export const editLotSchema = z.object({
   lotId: z.string().uuid(),
@@ -34,6 +40,8 @@ export const editLotSchema = z.object({
   totalWeightKg: z.number().min(0.001).max(1_000_000).optional(),
   totalVolumeM3: z.number().min(0.0001).max(10_000).optional(),
   note: z.string().trim().max(500).nullable().optional(),
+  /** The factory barcode (0112, Q10 c): undefined = leave it, '' or null = clear it. */
+  factoryBarcode: z.string().trim().max(64).nullable().optional(),
 });
 
 export type EditLotInput = z.infer<typeof editLotSchema>;
@@ -49,7 +57,13 @@ export class EditError extends Error {
       | 'receipt_not_confirmed'
       | 'receipt_has_compensation'
       | 'lot_changed'
-      | 'shared_cost_orphaned',
+      | 'shared_cost_orphaned'
+      // The factory barcode and the office receipt's correction door (0112).
+      | 'barcode_invalid'
+      | 'barcode_is_ours'
+      | 'received_locked'
+      | 'receiver_invalid'
+      | ReceivedDayRefusal,
   ) {
     super(code);
   }
@@ -72,6 +86,110 @@ export function canEditReceipt(
   const localDate = (d: Date) =>
     new Intl.DateTimeFormat('en-CA', { timeZone: warehouseTimezone, dateStyle: 'short' }).format(d);
   return localDate(receipt.createdAt) === localDate(new Date());
+}
+
+/**
+ * The lot form's barcode field, as the service stores it: undefined when the
+ * form said nothing (leave it), null to clear, else the canonical key —
+ * refused in words, as the receive door refuses it (`service.ts`).
+ */
+function barcodeEdit(raw: string | null | undefined): string | null | undefined {
+  if (raw === undefined) return undefined;
+  const typed = raw?.trim() ?? '';
+  if (!typed) return null;
+  const key = factoryBarcodeKey(typed);
+  if (!key) throw new EditError('barcode_invalid');
+  if (isOwnCodeShape(key)) throw new EditError('barcode_is_ours');
+  return key;
+}
+
+// --- The office receipt's correction door (0112, the owner's Q9 b) ---
+
+export const receivedEditSchema = z.object({
+  receiptId: z.string().uuid(),
+  receivedDay: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  receivedBy: receivedBySchema,
+});
+export type ReceivedEditInput = z.infer<typeof receivedEditSchema>;
+
+/**
+ * May this person correct WHO received a prixod and ON WHICH DAY?
+ *
+ * The office count door (`mayCountMove` — plans.manage in scope) AND the day
+ * the prixod was TYPED, in its warehouse's zone: a date typo is fixed the same
+ * day, while the photos are in front of the typist; after that the day stands
+ * like every other fact a report has already read, and a real mistake goes
+ * through the void. The named receiver gets no edit right from being named
+ * (decision 39): naming somebody is a statement ABOUT them, not a grant TO them.
+ */
+export function mayCorrectReceived(
+  actor: Pick<Actor, 'permissions' | 'warehouseScoped' | 'warehouseIds'>,
+  receipt: { status: string; warehouseId: string; createdAt: Date },
+  warehouseTimezone: string,
+  now: Date = new Date(),
+): boolean {
+  return (
+    receipt.status === 'confirmed' &&
+    mayCountMove(actor, receipt.warehouseId) &&
+    dayIn(receipt.createdAt, warehouseTimezone) === dayIn(now, warehouseTimezone)
+  );
+}
+
+/**
+ * Correct the receiver and the real day of a prixod. The day is bounded the
+ * way the receive door bounds it, measured from the ENTRY (`created_at`), so a
+ * correction can never widen what was allowed; the entry day itself writes
+ * `received_at = created_at` back — «not back-dated» stays derivable. One
+ * audit row, and none at all when nothing changed.
+ */
+export async function setReceiptReceived(
+  input: ReceivedEditInput,
+  actor: Actor,
+  ctx: AuditContext,
+): Promise<{ changed: boolean }> {
+  const receipt = await db.query.receipts.findFirst({ where: eq(receipts.id, input.receiptId) });
+  if (!receipt) throw new EditError('not_found');
+  if (receipt.status !== 'confirmed') throw new EditError('receipt_not_confirmed');
+  const warehouse = (await db.query.warehouses.findFirst({
+    where: eq(warehouses.id, receipt.warehouseId),
+  }))!;
+  if (!mayCorrectReceived(actor, receipt, warehouse.timezone)) throw new EditError('received_locked');
+  const refusal = receivedDayRefusal(input.receivedDay, receipt.createdAt, warehouse.timezone);
+  if (refusal) throw new EditError(refusal);
+  // Pool read, before the transaction (#714).
+  let receiver: { receivedByUserId: string | null; receivedByName: string | null };
+  try {
+    receiver = await checkReceiver(input.receivedBy, receipt.warehouseId, actor.id);
+  } catch (err) {
+    if (err instanceof ReceiptError) throw new EditError('receiver_invalid');
+    throw err;
+  }
+  const at =
+    receivedAtFor(input.receivedDay, receipt.createdAt, warehouse.timezone) ?? receipt.createdAt;
+
+  return db.transaction(async (tx) => {
+    const [row] = await tx.select().from(receipts).where(eq(receipts.id, receipt.id)).for('update');
+    if (!row || row.status !== 'confirmed') throw new EditError('receipt_not_confirmed');
+    const before = {
+      receivedAt: row.receivedAt.toISOString(),
+      receivedByUserId: row.receivedByUserId,
+      receivedByName: row.receivedByName,
+    };
+    const after = { receivedAt: at.toISOString(), ...receiver };
+    const diff = diffFields(before, after);
+    if (!diff) return { changed: false };
+    await tx
+      .update(receipts)
+      .set({ receivedAt: at, ...receiver, updatedAt: new Date() })
+      .where(eq(receipts.id, row.id));
+    await writeAudit(tx, { ...ctx, warehouseId: row.warehouseId }, {
+      entityType: 'receipt',
+      entityId: row.id,
+      action: 'update',
+      ...diff,
+    });
+    return { changed: true };
+  });
 }
 
 export interface LotEditResult {
@@ -150,6 +268,10 @@ export async function editLot(
     throw new EditError('structural_locked');
   }
 
+  // The factory barcode (0112, Q10 c): NOT structural — it identifies the pile
+  // and moves nothing, so it is correctable after the cartons have left.
+  const barcode = barcodeEdit(input.factoryBarcode);
+
   const chargeableFactor = await getSetting('chargeable_weight_factor');
   const totals = computeLotTotals(
     lot.dimsMode === 'uniform'
@@ -182,6 +304,7 @@ export async function editLot(
       totalWeightKg: Number(lot.totalWeightKg),
       totalVolumeM3: Number(lot.totalVolumeM3),
       note: lot.note,
+      ...(barcode !== undefined ? { factoryBarcode: lot.factoryBarcode } : {}),
     };
     const after = {
       productNameZh: input.productNameZh,
@@ -194,6 +317,7 @@ export async function editLot(
       totalWeightKg: totals.totalWeightKg,
       totalVolumeM3: totals.totalVolumeM3,
       note: input.note ?? null,
+      ...(barcode !== undefined ? { factoryBarcode: barcode } : {}),
     };
 
     await tx
@@ -209,6 +333,7 @@ export async function editLot(
         totalWeightKg: totals.totalWeightKg.toString(),
         totalVolumeM3: totals.totalVolumeM3.toString(),
         note: input.note ?? null,
+        ...(barcode !== undefined ? { factoryBarcode: barcode } : {}),
       })
       .where(eq(receiptLots.id, lot.id));
 

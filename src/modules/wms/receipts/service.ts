@@ -12,6 +12,7 @@ import {
   productDictionary,
   receiptLots,
   receipts,
+  users,
   warehouses,
 } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
@@ -37,6 +38,9 @@ import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { MAX_NATIVE_AMOUNT } from '../finance/money-bounds';
 import { receiptHasCompensation } from '../finance/compensation-follow';
 import { claimReceivedNotice } from '../notices/client-claims';
+import { receivedAtFor, receivedDayRefusal, type ReceivedDayRefusal } from './received-day';
+import { factoryBarcodeKey } from './factory-barcode';
+import { isOwnCodeShape } from '@/offline/code-shape';
 
 export const lotInputSchema = z
   .object({
@@ -61,6 +65,8 @@ export const lotInputSchema = z
      * z.infer makes it required on every receipt a test or a seed builds (#591).
      */
     qrSkipped: z.boolean().optional(),
+    /** The factory's barcode as typed or read (0112, Q10 c); normalised in the service. */
+    factoryBarcode: z.string().trim().max(64).optional().or(z.literal('')),
   })
   .refine(
     (lot) =>
@@ -78,6 +84,13 @@ export const extraCostSchema = z.object({
   currency: z.string().length(3),
   note: z.string().trim().max(500).optional().or(z.literal('')),
 });
+
+/** A colleague picked from the warehouse's people, or a typed name for somebody with no login. */
+export const receivedBySchema = z.union([
+  z.object({ userId: z.string().uuid() }).strict(),
+  z.object({ name: z.string().trim().min(2).max(120) }).strict(),
+]);
+export type ReceivedBy = z.infer<typeof receivedBySchema>;
 
 export const confirmReceiptSchema = z.object({
   receiptId: z.string().uuid(), // client-generated (idempotency + attachment pre-binding)
@@ -107,6 +120,13 @@ export const confirmReceiptSchema = z.object({
    * written on the receipt's INSERT, so the truck's cost reaches these boxes.
    */
   pickupStopId: z.string().uuid().nullable().optional(),
+  /**
+   * The office receipt (0112, the owner's Q9 b): the REAL day the cargo came,
+   * and who physically took it in. Refused unless the caller says the actor
+   * may enter on the floor's behalf (`opts.onBehalf`) — see `officeFacts`.
+   */
+  receivedDay: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  receivedBy: receivedBySchema.optional(),
 });
 
 export type ConfirmReceiptInput = z.infer<typeof confirmReceiptSchema>;
@@ -118,7 +138,14 @@ export class ReceiptError extends Error {
       | 'client_not_found'
       | 'photo_required'
       | 'already_confirmed'
-      | 'pickup_invalid',
+      | 'pickup_invalid'
+      // The office receipt (0112, Q9 b) and the factory barcode (Q10 c).
+      | 'on_behalf_forbidden'
+      | 'receiver_required'
+      | 'receiver_invalid'
+      | ReceivedDayRefusal
+      | 'barcode_invalid'
+      | 'barcode_is_ours',
     message?: string,
   ) {
     super(message ?? code);
@@ -146,6 +173,13 @@ export interface ConfirmedLotSummary {
 export async function confirmReceipt(
   input: ConfirmReceiptInput,
   ctx: AuditContext,
+  /**
+   * `onBehalf`: the actor may enter this prixod for the floor — the office
+   * count door (`mayCountMove`, plans.manage in scope), asked by the ACTION.
+   * Absent = refused (#531): a service that trusted the form would let any
+   * operator back-date cargo by posting two extra fields.
+   */
+  opts: { onBehalf?: boolean } = {},
 ): Promise<{ receiptId: string; number: string; lots: ConfirmedLotSummary[]; alreadyConfirmed: boolean }> {
   const existing = await db.query.receipts.findFirst({
     where: eq(receipts.id, input.receiptId),
@@ -164,6 +198,8 @@ export async function confirmReceipt(
     const client = await db.query.clients.findFirst({ where: eq(clients.id, input.clientId) });
     if (!client) throw new ReceiptError('client_not_found');
   }
+  // Pool reads, before the transaction (#714).
+  const office = await officeFacts(input, opts, warehouse, ctx.actorId ?? null);
 
   // Min-1-photo per lot (spec 6.1): attachments were uploaded against the
   // client-generated lot ids before confirm.
@@ -221,6 +257,12 @@ export async function confirmReceipt(
         // filed against the wrong client would make two clients' money wrong.
         dealId: input.clientId ? input.dealId ?? null : null,
         pickupStopId: input.pickupStopId ?? null,
+        receivedByUserId: office.receivedByUserId,
+        receivedByName: office.receivedByName,
+        // Only a PAST day is written; the entry day keeps the column's now(),
+        // so received_at = created_at as on every floor-typed prixod. The
+        // number above and the box codes below keep the entry clock.
+        ...(office.receivedAt ? { receivedAt: office.receivedAt } : {}),
       })
       .returning();
     if (pickupId) {
@@ -274,6 +316,7 @@ export async function confirmReceipt(
           // The same clock as the boxes minted below (the transaction's), so
           // every carton of the lot starts QR-siz: none has a label stamp yet.
           qrSkippedAt: lotInput.qrSkipped ? sql`now()` : null,
+          factoryBarcode: office.barcodes.get(lotInput.id) ?? null,
         })
         .returning();
 
@@ -357,7 +400,12 @@ export async function confirmReceipt(
           zh: s.productNameZh,
           boxes: s.boxCount,
           ...(s.qrSkipped ? { qrSkipped: true } : {}),
+          ...(office.barcodes.has(s.lotId) ? { barcode: office.barcodes.get(s.lotId) } : {}),
         })),
+        // The office receipt, on the record that created it.
+        ...(office.receivedAt ? { receivedAt: office.receivedAt.toISOString() } : {}),
+        ...(office.receivedByUserId ? { receivedByUserId: office.receivedByUserId } : {}),
+        ...(office.receivedByName ? { receivedByName: office.receivedByName } : {}),
       },
     });
 
@@ -509,6 +557,84 @@ export async function confirmReceipt(
   }
 
   return { ...result, alreadyConfirmed: false };
+}
+
+interface OfficeFacts {
+  receivedAt: Date | null;
+  receivedByUserId: string | null;
+  receivedByName: string | null;
+  /** lot id → canonical barcode key, for the lots that carry one. */
+  barcodes: Map<string, string>;
+}
+
+/**
+ * What the office receipt and the factory barcodes add to a prixod, decided
+ * BEFORE the transaction on the pool (#714), refused in words.
+ *
+ *  - The receiver and the real day only through `opts.onBehalf` (Q9 b, the
+ *    count door); on an office entry the receiver is REQUIRED — «who counted
+ *    these cartons» is the whole point of typing it from the office.
+ *  - The day through the one rule (`received-day.ts`), measured from NOW in
+ *    the warehouse's zone.
+ *  - A barcode normalised to its key; one shaped like OUR code is refused,
+ *    because the scan screens route our shapes to the scan path and a lot
+ *    keyed by one could never be identified.
+ */
+async function officeFacts(
+  input: ConfirmReceiptInput,
+  opts: { onBehalf?: boolean },
+  warehouse: { id: string; timezone: string },
+  actorId: string | null,
+): Promise<OfficeFacts> {
+  if (!opts.onBehalf && (input.receivedDay || input.receivedBy)) {
+    throw new ReceiptError('on_behalf_forbidden');
+  }
+  if (opts.onBehalf && !input.receivedBy) throw new ReceiptError('receiver_required');
+  const receiver = input.receivedBy
+    ? await checkReceiver(input.receivedBy, warehouse.id, actorId)
+    : { receivedByUserId: null, receivedByName: null };
+  let receivedAt: Date | null = null;
+  if (input.receivedDay) {
+    const now = new Date();
+    const refusal = receivedDayRefusal(input.receivedDay, now, warehouse.timezone);
+    if (refusal) throw new ReceiptError(refusal);
+    receivedAt = receivedAtFor(input.receivedDay, now, warehouse.timezone);
+  }
+  const barcodes = new Map<string, string>();
+  for (const lot of input.lots) {
+    if (!lot.factoryBarcode) continue;
+    const key = factoryBarcodeKey(lot.factoryBarcode);
+    if (!key) throw new ReceiptError('barcode_invalid', lot.productNameZh);
+    if (isOwnCodeShape(key)) throw new ReceiptError('barcode_is_ours', lot.productNameZh);
+    barcodes.set(lot.id, key);
+  }
+  return { receivedAt, ...receiver, barcodes };
+}
+
+/**
+ * The named receiver, checked against the database (a picker's value is a
+ * form post, and the FK would refuse a stranger unreadably): an ACTIVE user
+ * who is either the person pressing («Men o'zim») or somebody assigned to
+ * THIS warehouse — the picker offers exactly those, and a posted id outside
+ * them is a forged one. A typed name is stored as typed, trimmed.
+ *
+ * Shared with the correction door (`edit.ts` `setReceiptReceived`).
+ */
+export async function checkReceiver(
+  receiver: ReceivedBy,
+  warehouseId: string,
+  actorId: string | null,
+): Promise<{ receivedByUserId: string | null; receivedByName: string | null }> {
+  if ('name' in receiver) return { receivedByUserId: null, receivedByName: receiver.name.trim() };
+  const [row] = await db
+    .select({
+      id: users.id,
+      assigned: sql<boolean>`EXISTS (SELECT 1 FROM user_warehouses uw WHERE uw.user_id = ${users}.id AND uw.warehouse_id = ${warehouseId}::uuid)`,
+    })
+    .from(users)
+    .where(and(eq(users.id, receiver.userId), eq(users.active, true)));
+  if (!row || (row.id !== actorId && !row.assigned)) throw new ReceiptError('receiver_invalid');
+  return { receivedByUserId: row.id, receivedByName: null };
 }
 
 async function confirmedLotSummaries(receiptId: string): Promise<ConfirmedLotSummary[]> {

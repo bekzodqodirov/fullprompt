@@ -85,6 +85,12 @@ test('unclaimed receipt can be returned to the sender', async ({ page }) => {
   await page.goto('/receive');
   await page.evaluate(() => localStorage.removeItem('gsr-receipt-draft'));
   await page.reload();
+  // The logist enters from the OFFICE (0112, Q9 b): no default warehouse —
+  // it used to be whatever sorted first, which under CI's shared database is
+  // whatever vitest left behind — and «who received it» is required. Index 1
+  // of the receiver picker is always «Men o'zim».
+  await page.getByTestId('receive-warehouse').selectOption({ label: 'YW' });
+  await page.getByTestId('receive-receiver').selectOption({ index: 1 });
   const searchSettled = page.waitForResponse((r) => r.url().includes('/api/clients/search'));
   await page.locator('#clientQuery').fill('RT1');
   await searchSettled;

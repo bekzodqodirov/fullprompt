@@ -2,6 +2,7 @@ import fontkit from '@pdf-lib/fontkit';
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
 import QRCode from 'qrcode';
 import { cjkSubsetFor } from './cjk-font';
+import { CRATE_KIND_MARKER, crateMarker } from './crate-kind';
 import {
   BOX_LABEL,
   CRATE_LABEL,
@@ -243,7 +244,7 @@ export interface CrateLabelData {
   dateLocal: string;
   code: string;
   clientCode: string;
-  /** 'yashik' | 'karkas' — printed as ЯЩИК / КАРКАС. */
+  /** 'yashik' | 'karkas' | 'palet' — printed from `CRATE_KIND_MARKER`. */
   kind: string;
   boxCount: number;
   /** e.g. "A×10, B×8". */
@@ -257,7 +258,9 @@ export async function renderCrateLabel(label: CrateLabelData): Promise<Uint8Arra
   doc.registerFontkit(fontkit);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
   const regular = await doc.embedFont(StandardFonts.Helvetica);
-  const cjkBytes = await cjkSubsetFor(['ЯЩИК КАРКАС', label.contents, label.clientCode]);
+  // Every kind's marker, from the ONE map (#788): a glyph missing from this
+  // list is a blank box on the pallet's label, with no error anywhere.
+  const cjkBytes = await cjkSubsetFor([Object.values(CRATE_KIND_MARKER).join(' '), label.contents, label.clientCode]);
   // See cjk-font.ts (#103, #881): a HarfBuzz subset, embedded as it is.
   const cjk = await doc.embedFont(cjkBytes, { subset: false });
 
@@ -274,7 +277,7 @@ export async function renderCrateLabel(label: CrateLabelData): Promise<Uint8Arra
     font: bold,
     color: black,
   });
-  const marker = label.kind === 'karkas' ? 'КАРКАС' : 'ЯЩИК';
+  const marker = crateMarker(label.kind);
   page.drawText(marker, {
     x: rightOf(cjk, marker, g.kind.size),
     y: y(g.kind.baseline),

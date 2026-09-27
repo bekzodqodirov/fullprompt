@@ -183,7 +183,10 @@ export async function receivedFacts(clientId: string, receiptId: string): Promis
       clientCode: '',
       receiptNumber: receipt.number,
       warehouseName: receipt.warehouseName || receipt.warehouseCode,
-      receivedAt: receipt.confirmedAt ?? receipt.receivedAt,
+      // The day the cargo CAME (0112, Q9 b): an office-entered prixod is typed
+      // days later and back-dated, and the customer's header must say the
+      // real day. On every floor-typed prixod the two columns are equal.
+      receivedAt: receipt.receivedAt,
       lines,
       stage,
       fresh: Number(moved?.n ?? 0) === 0,
