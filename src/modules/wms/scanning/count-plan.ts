@@ -34,6 +34,12 @@ export interface CountRow {
   qrless: boolean;
   /** Where it stood before it was loaded onto this truck, for the way back. */
   loadedFrom: string | null;
+  /**
+   * Minted into the lot by a count press on THIS truck and never labelled:
+   * taking it off does not send it to a shelf — it never existed — it is
+   * voided and the lot shrinks (review money-3).
+   */
+  grown: boolean;
 }
 
 export type CountRefusal =
@@ -62,6 +68,8 @@ export interface CountMove {
   backToPlan: CountRow[];
   /** Taken off, back to the shelf they came from. */
   backToShelf: CountRow[];
+  /** Taken off and taken back out of the prixod — the inverse of `grow`. */
+  shrink: CountRow[];
 }
 
 export type CountPlan = CountRefusal | CountMove;
@@ -90,6 +98,9 @@ function shelfOrder(a: CountRow, b: CountRow): number {
  */
 function offOrder(hasPlan: boolean) {
   return (a: CountRow, b: CountRow): number => {
+    // The prixod's own growth went on LAST, so it comes off first: a dial up
+    // past the stock and back lands on the lot it started from.
+    if (a.grown !== b.grown) return a.grown ? -1 : 1;
     if (a.byCount !== b.byCount) return a.byCount ? -1 : 1;
     const homeA = !hasPlan || a.over;
     const homeB = !hasPlan || b.over;
@@ -121,6 +132,7 @@ export function planCountMove(rows: readonly CountRow[], target: number, o: Coun
     grow: 0,
     backToPlan: [],
     backToShelf: [],
+    shrink: [],
   };
 
   if (target > aboard.length) {
@@ -166,8 +178,10 @@ export function planCountMove(rows: readonly CountRow[], target: number, o: Coun
     const off = [...aboard].sort(offOrder(o.hasPlan)).slice(0, aboard.length - target);
     for (const row of off) {
       // A planned carton keeps its place on the plan; one beyond the plan —
-      // and anything on a quick truck, which reserves nothing — goes home.
-      if (o.hasPlan && !row.over) move.backToPlan.push(row);
+      // and anything on a quick truck, which reserves nothing — goes home;
+      // one the count itself minted goes back out of the prixod.
+      if (row.grown) move.shrink.push(row);
+      else if (o.hasPlan && !row.over) move.backToPlan.push(row);
       else move.backToShelf.push(row);
     }
   }

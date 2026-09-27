@@ -1,8 +1,8 @@
-import { and, asc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, sql, type SQL } from 'drizzle-orm';
 import { v5 as uuidv5 } from 'uuid';
 import { z } from 'zod';
 import { db, type Db, type Tx } from '../../platform/db/client';
-import { batches, boxes, crates, receiptLots, users, warehouses } from '../../platform/db/schema';
+import { batches, boxes, boxMovements, crates, receiptLots, users, warehouses } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { emitEvent } from '../../platform/events/service';
 import { isBusyError } from '../../platform/db/errors';
@@ -10,7 +10,14 @@ import { ARRIVED_ON_A_TRUCK } from '../documents/arrivals';
 import { codeIdentity } from '../labels/code-identity';
 import { qrlessJoinedSql } from '../labels/qrless-sql';
 import { landedStatusFor } from '../warehouses/landed';
-import { afterLotGrown, GROW_LOT_MAX, GrowLotError, growLotInTx } from '../receipts/grow-lot';
+import {
+  afterLotGrown,
+  GROW_LOT_MAX,
+  GrowLotError,
+  grownCodesOnTruck,
+  growLotInTx,
+  shrinkGrownInTx,
+} from '../receipts/grow-lot';
 import { ScanError } from './service';
 import { batchMemberFilter, landUnloadInput } from './unload';
 import {
@@ -181,6 +188,13 @@ async function readLedger(
         FROM box_movements am JOIN boxes ab ON ab.id = am.box_id
        WHERE am.ref_type = 'batch' AND am.ref_id = ${T}::uuid AND am.cause IN (${causes})
          AND ab.crate_id IS NULL AND ab.status <> 'void' ${only(sql`ab.lot_id`)}
+         -- An over-landing a press below «arrived» sent back to the origin's
+         -- shelf did not arrive after all (review money-1).
+         AND NOT EXISTS (
+           SELECT 1 FROM box_movements back
+            WHERE back.box_id = ab.id AND back.ref_type = 'batch' AND back.ref_id = ${T}::uuid
+              AND back.cause = 'found_at_origin' AND (back.created_at, back.id) > (am.created_at, am.id)
+         )
        GROUP BY ab.lot_id
     ),
     phone AS (
@@ -296,12 +310,16 @@ export interface CountAcceptResult {
   over: number;
   /** …of which minted onto the prixod (Q3 b). */
   grown: number;
+  /** A press below «arrived»: this truck's over-landings taken back (review money-1). */
+  undone?: number;
   shortfall: number;
   /** Nothing to do: the lot already stood at this number. No write, no audit. */
   replay: boolean;
 }
 
 interface PressState {
+  /** A press below «arrived» sent over-landings back to the origin's shelf. */
+  returnedToOrigin?: boolean;
   landed: number;
   landedCodes: string[];
   overCodes: string[];
@@ -372,8 +390,171 @@ export async function countAcceptLot(
         console.error('[count-accept] rider re-split could not be arranged', [...rogueTrucks], err);
       }
     }
+    if (state.returnedToOrigin) {
+      // They no longer ride this truck: its money re-splits without them.
+      try {
+        const { queueRiderChange } = await import('../costing/service');
+        await queueRiderChange([input.batchId], 'found_at_origin');
+      } catch (err) {
+        console.error('[count-accept] rider re-split after an undo could not be arranged', input.batchId, err);
+      }
+    }
     if (grew) await afterLotGrown(input.lotId);
   }
+}
+
+/**
+ * «Landed here as over by this truck's count» (alias-free, one lot): the
+ * cartons an office press landed beyond the truck (`count_over` on T) that
+ * still stand at the destination, loose and unissued — the only cartons a
+ * press below «arrived» may take back. A phone's landing and a plain count
+ * landing are never un-landed (decision 10).
+ */
+function landedOverOf(batchId: string, destId: string, lotId: string) {
+  return and(
+    eq(boxes.lotId, lotId),
+    eq(boxes.currentWarehouseId, destId),
+    inArray(boxes.status, ['in_stock', 'ready_for_pickup']),
+    isNull(boxes.currentBatchId),
+    isNull(boxes.crateId),
+    sql`EXISTS (SELECT 1 FROM scan_events ose
+      WHERE ose.box_id = ${boxes}.id AND ose.batch_id = ${batchId}::uuid AND ose.type = 'unload'
+        AND ose.crate_id IS NULL AND ose.manual_reason = ${COUNT_OVER_REASON})`,
+  )!;
+}
+
+/**
+ * A press BELOW what arrived — the office typed «50» for 5 and confirmed
+ * (review money-1). It takes back exactly this truck's over-landings, the
+ * prixod's own growth first (voided, the lot shrinks — `shrinkGrownInTx`),
+ * then the cartons taken off the origin's stock (back on the origin's
+ * shelf, `found_at_origin` on this truck, so they stop riding it for
+ * money). Nothing a phone scanned and nothing the truck carried is ever
+ * un-landed: below that the press is still `count_below_arrived`, naming
+ * the lowest number it could reach. The same reason and the ORIGIN's door
+ * the over-count needed — it moves the origin's books back.
+ */
+async function undoOver(
+  tx: Tx,
+  a: Parameters<typeof countChunk>[1],
+  batch: typeof batches.$inferSelect,
+  led: LotLedger,
+  wasInTransit: boolean,
+): Promise<{ result: CountAcceptResult; grew: boolean }> {
+  const { input, actorId, state } = a;
+  const T = input.batchId;
+  const L = input.lotId;
+  const rows = await tx
+    .select({ id: boxes.id, shortCode: boxes.shortCode, seq: boxes.seqInLot, status: boxes.status })
+    .from(boxes)
+    .where(landedOverOf(T, batch.destWarehouseId, L))
+    .orderBy(desc(boxes.seqInLot));
+  const n = led.arrived - input.target;
+  if (rows.length < n) {
+    throw new CountError('count_below_arrived', { arrived: led.arrived, min: led.arrived - rows.length });
+  }
+  if (a.overReason.length < 3) throw new CountError('over_needs_reason', { max: led.arrived });
+  if (!doorOpens(a.doors.origin, batch.originWarehouseId, actorId)) {
+    throw new CountError('over_needs_origin_scope', { max: led.arrived });
+  }
+  const [lotRow] = await tx
+    .select({ receiptId: receiptLots.receiptId })
+    .from(receiptLots)
+    .where(eq(receiptLots.id, L));
+  const grownHere = await grownCodesOnTruck(tx, { receiptId: lotRow!.receiptId, lotId: L, batchId: T });
+  const labelled = new Set(
+    (
+      await tx
+        .select({ id: boxes.id })
+        .from(boxes)
+        .where(and(inArray(boxes.id, rows.map((r) => r.id)), isNotNull(boxes.labelPrintedAt)))
+    ).map((r) => r.id),
+  );
+  const isGrown = (r: (typeof rows)[number]) => grownHere.has(r.shortCode) && !labelled.has(r.id);
+  // The growth went on last, so it comes off first; then the highest numbers.
+  const picked = [...rows.filter(isGrown), ...rows.filter((r) => !isGrown(r))].slice(0, n);
+  const toShrink = picked.filter(isGrown);
+  const toOrigin = picked.filter((r) => !isGrown(r));
+  const shrunk = toShrink.length
+    ? (
+        await shrinkGrownInTx(tx, {
+          lotId: L,
+          boxIds: toShrink.map((r) => r.id),
+          actorId,
+          reason: a.overReason,
+          batchId: T,
+          side: 'unload',
+        })
+      ).codes
+    : [];
+  if (toOrigin.length > 0) {
+    await tx
+      .update(boxes)
+      .set({ status: 'in_stock', currentWarehouseId: batch.originWarehouseId, flags: [] })
+      .where(inArray(boxes.id, toOrigin.map((r) => r.id)));
+    await tx.insert(boxMovements).values(
+      toOrigin.map((r) => ({
+        boxId: r.id,
+        fromWarehouseId: batch.destWarehouseId,
+        toWarehouseId: batch.originWarehouseId,
+        fromStatus: r.status,
+        toStatus: 'in_stock',
+        cause: 'found_at_origin',
+        refType: 'batch',
+        refId: T,
+        actorId,
+      })),
+    );
+    state.returnedToOrigin = true;
+  }
+  const [after] = await readLedger(tx, { batchId: T, originId: batch.originWarehouseId, lotId: L });
+  if (!after || after.arrived !== input.target) throw new CountError('count_conflict');
+  const destWh = (await tx.query.warehouses.findFirst({ where: eq(warehouses.id, batch.destWarehouseId) }))!;
+  const { shortfall, alertedShortfall } = await sayShortfall(tx, { batch, after, actorId, destCode: destWh.code });
+  await writeAudit(tx, { ...a.ctx, warehouseId: batch.destWarehouseId }, {
+    entityType: 'batch',
+    entityId: T,
+    action: 'update',
+    before: { countAccept: { lotId: L, arrived: led.arrived } },
+    after: {
+      countAccept: {
+        pressId: input.pressId,
+        lotId: L,
+        lot: after.label,
+        target: input.target,
+        departed: after.departed,
+        arrivedBefore: led.arrived,
+        arrived: after.arrived,
+        undone: {
+          shrunk,
+          toOrigin: toOrigin.map((r) => r.shortCode).slice(0, CODES_KEPT),
+          reason: a.overReason,
+        },
+        arrivalMarked: wasInTransit,
+        shortfall,
+        alertedShortfall,
+        chunk: 0,
+        last: true,
+      },
+    },
+  });
+  return {
+    grew: shrunk.length > 0,
+    result: {
+      lotId: L,
+      label: after.label,
+      departed: after.departed,
+      arrivedBefore: led.arrived,
+      arrived: after.arrived,
+      awaiting: after.awaiting,
+      landed: 0,
+      over: 0,
+      grown: 0,
+      undone: n,
+      shortfall,
+      replay: false,
+    },
+  };
 }
 
 async function countChunk(
@@ -431,6 +612,18 @@ async function countChunk(
       .orderBy(asc(boxes.id))
       .for('update');
   }
+  // A press BELOW what arrived takes back this truck's own over-landings
+  // (review money-1): they stand at the destination, so they are locked here,
+  // with every other carton row, before the lot lock.
+  const undoing = a.chunk === 0 && input.target < input.seenArrived;
+  if (undoing) {
+    await tx
+      .select({ id: boxes.id })
+      .from(boxes)
+      .where(landedOverOf(T, batch.destWarehouseId, L))
+      .orderBy(asc(boxes.id))
+      .for('update');
+  }
   await lockLotOnTruck(tx, T, L);
   const [led] = await readLedger(tx, { batchId: T, originId: batch.originWarehouseId, lotId: L });
   if (!led || led.departed + led.arrived + led.awaiting === 0) throw new CountError('lot_not_on_truck');
@@ -459,7 +652,7 @@ async function countChunk(
       };
     }
     if (led.arrived !== input.seenArrived) throw new CountError('count_stale', { arrived: led.arrived });
-    if (input.target < led.arrived) throw new CountError('count_below_arrived', { arrived: led.arrived });
+    if (input.target < led.arrived) return undoOver(tx, a, batch, led, wasInTransit);
     const overTotal = a.need - led.awaiting;
     if (overTotal > 0) {
       if (a.overReason.length < 3) {
@@ -505,8 +698,8 @@ async function countChunk(
 
   const awaitPicks = await pickRows(tx, awaitingOf(T, L), takeAwait);
   const originPicks = await pickRows(tx, spareOf(batch.originWarehouseId, L), takeOrigin);
-  // The lot row is locked here, AFTER every carton row — the order the
-  // brief fixes for growth, so a phone holding a carton never waits on it.
+  // The lot row was locked before the cartons (review lock-3); growLotInTx
+  // takes it again, re-entrantly.
   const grown =
     takeGrow > 0
       ? await growLotInTx(tx, {
@@ -573,31 +766,10 @@ async function countChunk(
 
   const destWh = (await tx.query.warehouses.findFirst({ where: eq(warehouses.id, batch.destWarehouseId) }))!;
   const notifies = landedStatusFor(destWh.type) === 'ready_for_pickup';
-  const shortfall = Math.max(0, after.departed - after.arrived);
-
-  // The shortfall alarm, de-duplicated per (truck, lot) against what the
-  // last press already said: the first shortfall, a growth, and the
-  // closure — never one alarm per press while the lot is still coming off.
-  const prevAlerted = await lastAlertedShortfall(tx, T, L);
-  let alertedShortfall = prevAlerted;
+  let shortfall = Math.max(0, after.departed - after.arrived);
+  let alertedShortfall = await lastAlertedShortfall(tx, T, L);
   if (last) {
-    let text: string | null = null;
-    if (shortfall > 0 && shortfall > prevAlerted) {
-      text = await shortfallText(tx, batch, after, shortfall, actorId, destWh.code);
-      alertedShortfall = shortfall;
-    } else if (shortfall === 0 && prevAlerted > 0) {
-      text = await closedText(tx, batch, after, actorId);
-      alertedShortfall = 0;
-    }
-    if (text) {
-      await emitEvent(tx, {
-        type: 'CountShortfall',
-        payload: { batchId: T, batchCode: batch.code, lotId: L, presserId: actorId, text },
-        entityType: 'batch',
-        entityId: T,
-        actorId,
-      });
-    }
+    ({ shortfall, alertedShortfall } = await sayShortfall(tx, { batch, after, actorId, destCode: destWh.code }));
     // ONE alarm for the cartons beyond the truck, not one per carton — and
     // it says how many the prixod itself grew by (Q3 b).
     if (state.overCodes.length > 0) {
@@ -674,11 +846,6 @@ async function countChunk(
 }
 
 /**
- * What the last press of this lot on this truck already alarmed about — 0 if
- * nothing. By insertion order, not by `created_at`: that is the moment a
- * transaction BEGAN, and a press that began first can commit second.
- */
-/**
  * The goods' name an alarm prints — the Russian one when the prixod has it,
  * as every other count alarm does (count-load's BoxScannedOnLoad), so one lot
  * is not Chinese in one message and Russian in the next (review ui-6). The
@@ -688,6 +855,46 @@ function alarmProduct(lot: Pick<LotLedger, 'product' | 'productRu'>): string {
   return lot.productRu || lot.product;
 }
 
+/**
+ * The shortfall alarm, de-duplicated per (truck, lot) against what the last
+ * press already said: the first shortfall, a growth, and the closure — never
+ * one alarm per press while the lot is still coming off. One home for the
+ * landing press and the undo (review money-1), which can open a shortfall too.
+ */
+async function sayShortfall(
+  tx: Tx,
+  a: { batch: typeof batches.$inferSelect; after: LotLedger; actorId: string; destCode: string },
+): Promise<{ shortfall: number; alertedShortfall: number }> {
+  const T = a.batch.id;
+  const L = a.after.lotId;
+  const shortfall = Math.max(0, a.after.departed - a.after.arrived);
+  const prevAlerted = await lastAlertedShortfall(tx, T, L);
+  let alertedShortfall = prevAlerted;
+  let text: string | null = null;
+  if (shortfall > 0 && shortfall > prevAlerted) {
+    text = await shortfallText(tx, a.batch, a.after, shortfall, a.actorId, a.destCode);
+    alertedShortfall = shortfall;
+  } else if (shortfall === 0 && prevAlerted > 0) {
+    text = await closedText(tx, a.batch, a.after, a.actorId);
+    alertedShortfall = 0;
+  }
+  if (text) {
+    await emitEvent(tx, {
+      type: 'CountShortfall',
+      payload: { batchId: T, batchCode: a.batch.code, lotId: L, presserId: a.actorId, text },
+      entityType: 'batch',
+      entityId: T,
+      actorId: a.actorId,
+    });
+  }
+  return { shortfall, alertedShortfall };
+}
+
+/**
+ * What the last press of this lot on this truck already alarmed about — 0 if
+ * nothing. By insertion order, not by `created_at`: that is the moment a
+ * transaction BEGAN, and a press that began first can commit second.
+ */
 async function lastAlertedShortfall(tx: Tx, batchId: string, lotId: string): Promise<number> {
   const rows = (await tx.execute(sql`
     SELECT a.after->'countAccept'->>'alertedShortfall' AS alerted

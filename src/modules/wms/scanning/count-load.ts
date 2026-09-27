@@ -18,7 +18,14 @@ import { aboardFilter } from './unload';
 import { planCountMove, shelfStatus, type CountRow } from './count-plan';
 import { qrlessRowSql } from '../labels/qrless-sql';
 import { codeIdentity } from '../labels/code-identity';
-import { GROW_LOT_MAX, GrowLotError, afterLotGrown, growLotInTx } from '../receipts/grow-lot';
+import {
+  GROW_LOT_MAX,
+  GrowLotError,
+  afterLotGrown,
+  grownCodesOnTruck,
+  growLotInTx,
+  shrinkGrownInTx,
+} from '../receipts/grow-lot';
 import { likeNeedle } from '../search/query';
 
 /*
@@ -107,6 +114,8 @@ export interface CountLoadResult {
   over: number;
   /** Cartons added to the PRIXOD (Q3 = b) and loaded. */
   grown: number;
+  /** An earlier growth on this truck taken back out of the prixod (voided). */
+  shrunk: number;
   removed: number;
   phoneScanned: number;
   unchanged: boolean;
@@ -165,14 +174,15 @@ async function planNumber(exec: Db | Tx, batchId: string, lotId: string): Promis
 /** The lot's label as every screen prints it («GS777-A»), with its goods. */
 async function lotLabel(exec: Db | Tx, lotId: string) {
   const rows = (await exec.execute(sql`
-    SELECT l.id, l.letter, l.product_name_zh, l.product_name_ru, r.unclaimed_marking AS marking,
-           c.client_code
+    SELECT l.id, l.receipt_id, l.letter, l.product_name_zh, l.product_name_ru,
+           r.unclaimed_marking AS marking, c.client_code
       FROM receipt_lots l
       JOIN receipts r ON r.id = l.receipt_id
       LEFT JOIN clients c ON c.id = r.client_id
      WHERE l.id = ${lotId}::uuid
   `)) as unknown as {
     id: string;
+    receipt_id: string;
     letter: string | null;
     product_name_zh: string;
     product_name_ru: string | null;
@@ -183,6 +193,7 @@ async function lotLabel(exec: Db | Tx, lotId: string) {
   if (!row) return null;
   const identity = codeIdentity(row.marking, row.client_code);
   return {
+    receiptId: row.receipt_id,
     label: `${identity.main}-${row.letter ?? '?'}`,
     sub: identity.sub,
     product: row.product_name_ru || row.product_name_zh,
@@ -191,9 +202,15 @@ async function lotLabel(exec: Db | Tx, lotId: string) {
 }
 
 /** The lot's cartons as the planner reads them, fresh, AFTER the locks are held. */
-async function countRows(tx: Tx, batchId: string, lotId: string, originId: string): Promise<CountRow[]> {
+async function countRows(
+  tx: Tx,
+  batchId: string,
+  lotId: string,
+  originId: string,
+  grownHere: ReadonlySet<string>,
+): Promise<CountRow[]> {
   const rows = (await tx.execute(sql`
-    SELECT b.id, b.short_code, b.seq_in_lot, b.status,
+    SELECT b.id, b.short_code, b.seq_in_lot, b.status, (b.label_printed_at IS NULL) AS unlabelled,
            (b.current_batch_id IS NOT DISTINCT FROM ${batchId}::uuid) AS on_truck,
            (b.flags @> '["added_on_spot"]'::jsonb) AS over,
            ${byCountSql('b', batchId)} AS by_count,
@@ -216,6 +233,7 @@ async function countRows(tx: Tx, batchId: string, lotId: string, originId: strin
     by_count: boolean;
     qrless: boolean;
     loaded_from: string | null;
+    unlabelled: boolean;
   }[];
   return rows.map((r) => ({
     id: r.id,
@@ -227,6 +245,9 @@ async function countRows(tx: Tx, batchId: string, lotId: string, originId: strin
     byCount: r.by_count,
     qrless: r.qrless,
     loadedFrom: r.loaded_from,
+    // Minted by a count press on THIS truck and never printed: its inverse
+    // is a void and a smaller lot, never a shelf (review money-3).
+    grown: grownHere.has(r.short_code) && r.unlabelled,
   }));
 }
 
@@ -289,7 +310,8 @@ export async function countLoadLot(
        ORDER BY b.id
        FOR UPDATE
     `);
-    const rows = await countRows(tx, batchId, lotId, originId);
+    const grownHere = await grownCodesOnTruck(tx, { receiptId: lot.receiptId, lotId, batchId });
+    const rows = await countRows(tx, batchId, lotId, originId, grownHere);
     const before = rows.filter((r) => r.onTruck && r.status === 'loading').length;
     const phoneBefore = rows.filter((r) => r.onTruck && r.status === 'loading' && !r.byCount).length;
     const unchanged = (): CountLoadResult => ({
@@ -301,6 +323,7 @@ export async function countLoadLot(
       added: 0,
       over: 0,
       grown: 0,
+      shrunk: 0,
       removed: 0,
       phoneScanned: phoneBefore,
       unchanged: true,
@@ -440,6 +463,28 @@ export async function countLoadLot(
       );
     }
 
+    // The prixod's own growth, taken back: voided, and the lot shrinks by
+    // exactly those cartons (review money-3) — a dial past the stock and
+    // back lands on the lot it started from, in kg, m³ and money.
+    let shrunk: string[] = [];
+    if (move.shrink.length > 0) {
+      try {
+        shrunk = (
+          await shrinkGrownInTx(tx, {
+            lotId,
+            boxIds: move.shrink.map((r) => r.id),
+            actorId,
+            reason: reason || 'ofis sonni kamaytirdi',
+            batchId,
+            side: 'load',
+          })
+        ).codes;
+      } catch (error) {
+        if (error instanceof GrowLotError) throw new CountError('grow_refused', { reason: error.code });
+        throw error;
+      }
+    }
+
     // A press that only goes DOWN is a count too (his Q1 = b: after the
     // office's number the phone does not touch the lot). The up path writes
     // its count events through the phone's own body; the down path wrote
@@ -490,7 +535,7 @@ export async function countLoadLot(
       });
     }
     const plainCodes = [...move.load, ...move.reReserve, ...move.loadSpare].map((r) => r.shortCode);
-    const removedCodes = [...move.backToPlan, ...move.backToShelf].map((r) => r.shortCode);
+    const removedCodes = [...move.backToPlan, ...move.backToShelf, ...move.shrink].map((r) => r.shortCode);
     await writeAudit(tx, { ...ctx, warehouseId: originId }, {
       entityType: 'batch',
       entityId: batchId,
@@ -508,6 +553,7 @@ export async function countLoadLot(
           added: capCodes(plainCodes),
           addedOver: capCodes(move.loadOver.map((r) => r.shortCode)),
           grown: capCodes(grown.map((b) => b.shortCode)),
+          shrunk: capCodes(shrunk),
           reReserved: capCodes(move.reReserve.map((r) => r.shortCode)),
           removed: capCodes(removedCodes),
           overReason: reason || null,
@@ -524,6 +570,7 @@ export async function countLoadLot(
       added: plainCodes.length,
       over: move.loadOver.length,
       grown: grown.length,
+      shrunk: shrunk.length,
       removed: removedCodes.length,
       phoneScanned: move.phoneScanned,
       unchanged: false,
@@ -531,7 +578,7 @@ export async function countLoadLot(
   });
   // The lot's cartons changed, so every cost shared over them re-splits —
   // after the commit, on the pool (#714).
-  if (result.grown > 0) await afterLotGrown(lotId);
+  if (result.grown > 0 || result.shrunk > 0) await afterLotGrown(lotId);
   return result;
 }
 

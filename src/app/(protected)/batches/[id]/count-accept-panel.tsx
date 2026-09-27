@@ -127,7 +127,10 @@ function useRefusalText() {
       case 'count_stale':
         return t('errors.count_stale', { arrived: Number(detail.arrived ?? 0) });
       case 'count_below_arrived':
-        return t('errors.count_below_arrived', { arrived: Number(detail.arrived ?? 0) });
+        return t('errors.count_below_arrived', {
+          arrived: Number(detail.arrived ?? 0),
+          min: Number(detail.min ?? detail.arrived ?? 0),
+        });
       case 'over_needs_reason':
         return t('errors.over_needs_reason', { max: Number(detail.max ?? 0) });
       case 'over_needs_origin_scope':
@@ -180,6 +183,9 @@ function LotRow({
   const over = valid ? Math.max(0, typed - onTruck) : 0;
   const grow = valid ? Math.max(0, typed - onTruck - lot.spare) : 0;
   const extraArrived = Math.max(0, lot.arrived + lot.awaiting - lot.departed);
+  // Below what arrived: this truck's own over-landings taken back (review
+  // money-1) — the service decides how far that can go and says so.
+  const undo = valid ? Math.max(0, lot.arrived - typed) : 0;
 
   async function accept() {
     setError(null);
@@ -190,7 +196,9 @@ function LotRow({
     }
     const lines: string[] = [];
     if (inTransit) lines.push(notifiesClients ? t('confirmArrivalClients') : t('confirmArrivalHub'));
-    if (over > 0) {
+    if (undo > 0) {
+      lines.push(t('confirmUndo', { lot: lot.label, arrived: lot.arrived, target: typed, n: undo }));
+    } else if (over > 0) {
       lines.push(t('confirmOver', { lot: lot.label, departed: lot.departed, target: typed, over }));
       if (grow > 0) lines.push(t('confirmGrow', { n: grow }));
     } else if (typed < lot.departed) {
@@ -217,7 +225,9 @@ function LotRow({
       setResult(
         res.result.replay
           ? t('noop', { lot: lot.label, n: res.result.arrived })
-          : res.result.grown > 0
+          : (res.result.undone ?? 0) > 0
+            ? t('doneUndo', { lot: lot.label, n: res.result.arrived, undone: res.result.undone ?? 0 })
+            : res.result.grown > 0
             ? t('doneGrown', { lot: lot.label, n: res.result.arrived, grown: res.result.grown })
             : t('done', { lot: lot.label, n: res.result.arrived }),
       );
@@ -286,16 +296,17 @@ function LotRow({
           {t('accept')}
         </button>
       </div>
-      {over > 0 && (
+      {(over > 0 || undo > 0) && (
         <div className="space-y-1">
           <input
             className="input"
-            placeholder={t('overReason')}
+            placeholder={undo > 0 ? t('undoReason') : t('overReason')}
             data-testid={`count-reason-${lot.lotId}`}
             value={reason}
             onChange={(e) => setReason(e.target.value)}
           />
           {grow > 0 && <p className="text-xs font-semibold text-warn">{t('growHint', { n: grow })}</p>}
+          {undo > 0 && <p className="text-xs font-semibold text-warn">{t('undoHint', { n: undo })}</p>}
           {!mayOver && <p className="text-xs text-bad">{t('overNoScope')}</p>}
         </div>
       )}

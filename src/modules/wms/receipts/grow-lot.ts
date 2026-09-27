@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import type { Tx } from '../../platform/db/client';
 import { boxes, boxMovements, receiptLots, receipts, warehouses } from '../../platform/db/schema';
 import { writeAudit } from '../../platform/audit/service';
@@ -188,4 +188,164 @@ export async function afterLotGrown(lotId: string): Promise<void> {
       console.error('[lot-grow] recompute retry could not be queued', lotId, queueError);
     }
   }
+}
+
+/**
+ * The cartons a count press on THIS truck minted into this lot — named by the
+ * growth's own audit row (`lotGrown.codes`), which is the only record of
+ * «these cartons exist because the office typed a number». Read inside the
+ * caller's transaction; the receipt's audit rows are few, found through the
+ * (entity_type, entity_id) index.
+ */
+export async function grownCodesOnTruck(
+  tx: Tx,
+  a: { receiptId: string; lotId: string; batchId: string },
+): Promise<Set<string>> {
+  const rows = (await tx.execute(sql`
+    SELECT jsonb_array_elements_text(al.after -> 'lotGrown' -> 'codes') AS code
+      FROM audit_log al
+     WHERE al.entity_type = 'receipt' AND al.entity_id = ${a.receiptId}::uuid
+       AND al.after -> 'lotGrown' ->> 'lotId' = ${a.lotId}
+       AND al.after -> 'lotGrown' ->> 'batchId' = ${a.batchId}
+  `)) as unknown as { code: string }[];
+  return new Set(rows.map((row) => row.code));
+}
+
+/**
+ * The inverse of a growth (review money-1 / money-3): cartons a count press
+ * minted and the office now takes back — a mistyped «50» for 5, or a dial
+ * down after «52». They never existed, so they do not go back to a shelf:
+ * they are voided (the lot form's own cause, `lot_edit_remove`) and the lot
+ * shrinks by exactly their number of its own per-box figure — the mirror of
+ * `growLotInTx`, so a dial up and back lands where it started, in kg and m³
+ * and in every cost shared over the lot.
+ *
+ * The caller decides WHICH cartons (only ones its own truck minted, never
+ * labelled, loose) and holds their rows locked; this re-checks the lot and
+ * the prixod under their locks and does the arithmetic. The money re-split is
+ * the caller's, after its commit (`afterLotGrown`).
+ */
+export async function shrinkGrownInTx(
+  tx: Tx,
+  a: {
+    lotId: string;
+    boxIds: string[];
+    actorId: string;
+    reason: string;
+    batchId: string;
+    side: 'load' | 'unload';
+  },
+): Promise<{ receiptId: string; codes: string[] }> {
+  if (a.boxIds.length === 0) throw new GrowLotError('bad_count');
+  const [lot] = await tx.select().from(receiptLots).where(eq(receiptLots.id, a.lotId)).for('update');
+  if (!lot) throw new GrowLotError('lot_not_found');
+  const [receipt] = await tx.select().from(receipts).where(eq(receipts.id, lot.receiptId)).for('share');
+  if (!receipt || receipt.status !== 'confirmed') throw new GrowLotError('receipt_not_confirmed');
+  const grown = await grownCodesOnTruck(tx, { receiptId: receipt.id, lotId: lot.id, batchId: a.batchId });
+  const rows = await tx
+    .select({
+      id: boxes.id,
+      shortCode: boxes.shortCode,
+      status: boxes.status,
+      lotId: boxes.lotId,
+      crateId: boxes.crateId,
+      labelPrintedAt: boxes.labelPrintedAt,
+    })
+    .from(boxes)
+    .where(inArray(boxes.id, a.boxIds));
+  const takeable = rows.filter(
+    (row) =>
+      row.lotId === lot.id &&
+      grown.has(row.shortCode) &&
+      row.crateId === null &&
+      row.labelPrintedAt === null &&
+      ['loading', 'in_stock', 'ready_for_pickup'].includes(row.status),
+  );
+  if (takeable.length !== a.boxIds.length) throw new GrowLotError('not_grown_here');
+  const n = takeable.length;
+  const before = lot.boxCount;
+  const after = before - n;
+  if (after < 1) throw new GrowLotError('bad_count');
+  const totals =
+    lot.dimsMode === 'uniform' &&
+    lot.boxLengthCm !== null &&
+    lot.boxWidthCm !== null &&
+    lot.boxHeightCm !== null &&
+    lot.boxWeightKg !== null
+      ? computeLotTotals(
+          {
+            dimsMode: 'uniform',
+            boxCount: after,
+            boxLengthCm: lot.boxLengthCm,
+            boxWidthCm: lot.boxWidthCm,
+            boxHeightCm: lot.boxHeightCm,
+            boxWeightKg: Number(lot.boxWeightKg),
+          },
+          0,
+        )
+      : computeLotTotals(
+          {
+            dimsMode: 'mixed',
+            boxCount: after,
+            totalWeightKg: (Number(lot.totalWeightKg) * after) / before,
+            totalVolumeM3: (Number(lot.totalVolumeM3) * after) / before,
+          },
+          0,
+        );
+  for (const row of takeable) {
+    await tx
+      .update(boxes)
+      .set({
+        status: 'void',
+        statusReason: 'count: prixoddan ortiqcha qaytarildi',
+        currentBatchId: null,
+        flags: [],
+      })
+      .where(eq(boxes.id, row.id));
+  }
+  await tx.insert(boxMovements).values(
+    takeable.map((row) => ({
+      boxId: row.id,
+      fromStatus: row.status,
+      toStatus: 'void',
+      cause: 'lot_edit_remove',
+      refType: 'receipt',
+      refId: receipt.id,
+      actorId: a.actorId,
+    })),
+  );
+  await tx
+    .update(receiptLots)
+    .set({
+      boxCount: after,
+      totalWeightKg: totals.totalWeightKg.toString(),
+      totalVolumeM3: totals.totalVolumeM3.toString(),
+    })
+    .where(eq(receiptLots.id, lot.id));
+  const codes = takeable.map((row) => row.shortCode);
+  await writeAudit(tx, { actorId: a.actorId, warehouseId: receipt.warehouseId }, {
+    entityType: 'receipt',
+    entityId: receipt.id,
+    action: 'update',
+    before: {
+      boxCount: before,
+      totalWeightKg: Number(lot.totalWeightKg),
+      totalVolumeM3: Number(lot.totalVolumeM3),
+    },
+    after: {
+      boxCount: after,
+      totalWeightKg: totals.totalWeightKg,
+      totalVolumeM3: totals.totalVolumeM3,
+      lotShrunk: {
+        lotId: lot.id,
+        letter: lot.letter,
+        remove: n,
+        reason: a.reason.trim(),
+        batchId: a.batchId,
+        side: a.side,
+        codes,
+      },
+    },
+  });
+  return { receiptId: receipt.id, codes };
 }

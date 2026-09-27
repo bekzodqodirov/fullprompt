@@ -225,7 +225,9 @@ function CountRow({ batchId, quick, row }: { batchId: string; quick: boolean; ro
             ? t('unchanged', { n: res.aboard })
             : res.grown > 0
               ? t('doneGrown', { n: res.aboard, g: res.grown })
-              : t('done', { n: res.aboard }),
+              : (res.shrunk ?? 0) > 0
+                ? t('doneShrunk', { n: res.aboard, s: res.shrunk ?? 0 })
+                : t('done', { n: res.aboard }),
         );
         setValue('');
         setReason('');

@@ -23,6 +23,7 @@ function row(seq: number, over: Partial<CountRow> = {}): CountRow {
     byCount: false,
     qrless: false,
     loadedFrom: null,
+    grown: false,
     ...over,
   };
 }
@@ -213,5 +214,22 @@ describe('path independence', () => {
       }
     }
     expect(cases).toBeGreaterThan(500);
+  });
+});
+
+describe('taking the prixod’s own growth back (review money-3)', () => {
+  it('a carton the count minted comes off FIRST and goes out of the prixod, never to a shelf', () => {
+    // 3 planned aboard, 2 minted by the press that typed «5».
+    const rows = [
+      aboard(1),
+      aboard(2),
+      aboard(3),
+      aboard(4, { over: true, grown: true, loadedFrom: 'in_stock' }),
+      aboard(5, { over: true, grown: true, loadedFrom: 'in_stock' }),
+    ];
+    const three = move(rows, 3, opts({ planN: 3 }));
+    expect([ids(three.shrink), ids(three.backToShelf), ids(three.backToPlan)]).toEqual([[5, 4], [], []]);
+    const two = move(rows, 2, opts({ planN: 3 }));
+    expect([ids(two.shrink), ids(two.backToPlan)]).toEqual([[5, 4], [3]]);
   });
 });
