@@ -212,6 +212,33 @@ describe('a settled approval closes every decider\'s copy', () => {
     expect(edits()).toHaveLength(0);
   });
 
+  it('a copy still WAITING to be sent is never sent after the decision (STAFF-APPROVAL-UNSENT-COPY)', async () => {
+    // The drain was paused (a 429, a 5xx backoff, a token being rotated) when
+    // somebody decided on the web: this copy would have gone out afterwards
+    // with live «Ruxsat / Yo‘q» buttons nothing would ever retire.
+    const decider = await mintStaff({ decider: true });
+    const approvalId = await mintApproval(decider.id);
+    const [row] = await db
+      .insert(notifications)
+      .values({
+        userId: decider.id,
+        channel: 'telegram',
+        type: 'DebtApprovalRequested',
+        status: 'pending',
+        payload: { approvalId, clientCode: 'GS1', clientName: 'X', warehouseCode: 'T', blockingDebtUsd: 1 },
+      })
+      .returning({ id: notifications.id });
+    rowsMade.push(row!.id);
+    await decideIssueApproval({ approvalId, verdict: 'refused' }, { actorId: decider.id, ip: null, userAgent: null });
+    await vi.waitFor(
+      async () => {
+        const [after] = await db.select().from(notifications).where(eq(notifications.id, row!.id));
+        expect(after).toMatchObject({ status: 'muted', error: 'decided before it was sent' });
+      },
+      { timeout: 5_000 },
+    );
+  });
+
   it('two deciders at once: ONE answer stands, the other hears «already decided»', async () => {
     const a = await mintStaff({ decider: true });
     const b = await mintStaff({ decider: true });

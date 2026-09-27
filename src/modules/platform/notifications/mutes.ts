@@ -172,16 +172,33 @@ export type MuteGroup = keyof typeof MUTE_GROUPS;
  * CalcDiscounted and two new types in) is not in their list, and the person
  * who silenced «tasks» a month ago would suddenly start hearing a member of
  * it. Growing a group must never un-mute it: a type counts as muted when the
- * list holds every OTHER member of its group, which is exactly the footprint
- * the checkbox left before the type arrived. A group of one has no other
+ * list holds every other FOUNDING member of its group (`JOINED_LATER` are
+ * not), which is exactly the footprint the checkbox left before the
+ * newcomers arrived. A group of one has no other
  * members to judge by, so it is only ever muted by name.
  */
+/**
+ * Types that joined a group AFTER people could tick it — never part of any
+ * stored footprint, so never asked for when judging one. Judged against every
+ * other member instead, three newcomers at once meant each needed the other
+ * two in a list nobody's checkbox ever wrote: the rule never matched, the
+ * alerts box read back UNTICKED, and the next save un-muted all 27 alarms
+ * (round C review, STAFF-MUTE-MULTI). A type added to an existing group is
+ * added here in the same change.
+ */
+export const JOINED_LATER: ReadonlySet<string> = new Set([
+  'CalcSealed',
+  'CalcDiscounted',
+  'ClientBotMessage',
+  'CabinetLinkAlert',
+]);
+
 export function isTelegramMuted(muted: unknown, type: string): boolean {
   if (!Array.isArray(muted)) return false;
   if (muted.includes('all') || muted.includes(type)) return true;
   for (const members of Object.values(MUTE_GROUPS) as readonly (readonly string[])[]) {
     if (!members.includes(type)) continue;
-    const others = members.filter((t) => t !== type);
+    const others = members.filter((t) => t !== type && !JOINED_LATER.has(t));
     if (others.length > 0 && others.every((t) => muted.includes(t))) return true;
   }
   return false;

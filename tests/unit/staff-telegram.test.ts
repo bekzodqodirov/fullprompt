@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { groupsFromList, isTelegramMuted, MUTE_GROUPS } from '@/modules/platform/notifications/mutes';
+import { groupsFromList, isTelegramMuted, JOINED_LATER, listFromGroups, MUTE_GROUPS } from '@/modules/platform/notifications/mutes';
 import { renderTelegramText } from '@/modules/platform/notifications/service';
 import { notificationLabels, approvalVerdictLine } from '@/modules/platform/notifications/labels';
 import {
@@ -45,6 +45,20 @@ describe('a mute group that GROWS does not un-mute anybody (STAFF-11)', () => {
     expect(MUTE_GROUPS.calls).toHaveLength(1);
     expect(isTelegramMuted([], 'CrmFollowUps')).toBe(false);
     expect(isTelegramMuted(['DailyDigest'], 'CrmFollowUps')).toBe(false);
+  });
+
+  it('SEVERAL newcomers at once — the alerts group grew by three (STAFF-MUTE-MULTI)', () => {
+    // The footprint a pre-round-C «alerts» tick left: every founding member.
+    const alertsBefore = MUTE_GROUPS.alerts.filter((t) => !JOINED_LATER.has(t));
+    const newcomers = MUTE_GROUPS.alerts.filter((t) => JOINED_LATER.has(t));
+    expect(newcomers.length, 're-anchor: the alerts newcomers moved').toBeGreaterThan(1);
+    for (const type of newcomers) expect(isTelegramMuted(alertsBefore, type), type).toBe(true);
+    // The box reads back ticked, so the next save of ANY other box keeps the
+    // alarms quiet instead of writing them all out of the list.
+    const read = groupsFromList(alertsBefore);
+    expect(read.groups.alerts).toBe(true);
+    const saved = listFromGroups(read.all, read.groups);
+    for (const type of MUTE_GROUPS.alerts) expect(isTelegramMuted(saved, type), type).toBe(true);
   });
 
   it('never mutes a type in no group, and nothing for somebody who muted nothing', () => {
@@ -248,5 +262,30 @@ describe('the staff command menu', () => {
     const end = handlers.indexOf("bot.on(['message:photo', 'message:document']", at);
     expect(at).toBeGreaterThan(-1);
     expect(handlers.slice(at, end)).toContain('offerStaffCommands(ctx, ctx.chat.id);');
+  });
+});
+
+describe('a «today» task due on ANOTHER Tashkent day says which (STAFF-TODAY-TIME-NO-DATE)', () => {
+  it('23:40 in Tashkent, due 01:30 tomorrow: the date is printed, not a bare past-looking hour', async () => {
+    const { taskLine } = await import('@/modules/platform/tasks/digest');
+    const now = new Date('2026-09-27T18:40:00Z'); // 23:40 Tashkent
+    const tomorrow = taskLine({ typeIcon: null, title: 'Hisob', dueAt: new Date('2026-09-27T20:30:00Z'), allDay: false }, false, now);
+    expect(tomorrow).toContain('· 28.09 01:30');
+    // The same day keeps its short form: «today» is already the heading.
+    const later = taskLine({ typeIcon: null, title: 'Hisob', dueAt: new Date('2026-09-27T18:55:00Z'), allDay: false }, false, now);
+    expect(later).toMatch(/· 23:55$/);
+  });
+});
+
+describe('one payload no renderer can read fails ITS row, never the run (round C review)', () => {
+  it('the per-row render sits inside the send’s try', () => {
+    const drain = read('src/modules/platform/notifications/service.ts');
+    const at = drain.indexOf('const buttons = buttonsFor(notification.type, payload);');
+    expect(at, 're-anchor: the drain’s render moved').toBeGreaterThan(-1);
+    const tryAt = drain.lastIndexOf('try {', at);
+    const catchAt = drain.indexOf('} catch (err) {', tryAt);
+    expect(tryAt).toBeGreaterThan(drain.lastIndexOf('const payload = notification.payload', at));
+    expect(catchAt).toBeGreaterThan(at);
+    expect(drain.indexOf('composeStaffMessage(notification.type', tryAt)).toBeLessThan(catchAt);
   });
 });

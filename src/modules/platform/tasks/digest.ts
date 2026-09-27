@@ -38,21 +38,29 @@ async function deliver(
   });
 }
 
-function line(
+export function taskLine(
   task: { typeIcon: string | null; title: string; dueAt: Date | null; allDay: boolean },
   late: boolean,
   now: Date,
 ) {
   // Late: WHEN it was due. Today: only a timed task's hour — «today» is
-  // already the heading.
+  // already the heading — unless that hour falls on ANOTHER Tashkent day.
+  // The bucket is the UTC day (kept on purpose), so a task due at 01:30
+  // tomorrow in Tashkent sits under «Bugunga», and «· 01:30» alone read as a
+  // time already past (round C review, STAFF-TODAY-TIME-NO-DATE).
   const when = task.dueAt
     ? late
       ? ` ⚠️ ${telegramDue(task.dueAt, task.allDay, now)}`
       : task.allDay
         ? ''
-        : ` · ${telegramDue(task.dueAt, false, now).split(' ')[1]}`
+        : ` · ${sameTashkentDay(task.dueAt, now) ? telegramDue(task.dueAt, false, now).split(' ')[1] : telegramDue(task.dueAt, false, now)}`
     : '';
   return `${late ? '🔴' : '•'} ${task.typeIcon ?? ''} ${task.title}${when}`.replace(/\s+/g, ' ');
+}
+
+function sameTashkentDay(a: Date, b: Date): boolean {
+  const TASHKENT_MS = 5 * 3_600_000;
+  return new Date(a.getTime() + TASHKENT_MS).toISOString().slice(0, 10) === new Date(b.getTime() + TASHKENT_MS).toISOString().slice(0, 10);
 }
 
 /**
@@ -103,13 +111,13 @@ export async function composeMyDay(userId: string, now = new Date()): Promise<My
     // 187 late tasks that they have 40.
     parts.push(
       `🔴 Kechikkan (${day.counts.overdue})\n` +
-        late.slice(0, 15).map((task) => line(task, true, now) + about(task)).join('\n'),
+        late.slice(0, 15).map((task) => taskLine(task, true, now) + about(task)).join('\n'),
     );
   }
   if (today.length) {
     parts.push(
       `🟡 Bugunga (${day.counts.today})\n` +
-        today.slice(0, 15).map((task) => line(task, false, now) + about(task)).join('\n'),
+        today.slice(0, 15).map((task) => taskLine(task, false, now) + about(task)).join('\n'),
     );
   }
   return {

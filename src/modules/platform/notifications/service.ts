@@ -934,18 +934,22 @@ export async function sendPendingTelegram(): Promise<void> {
       continue;
     }
     const payload = notification.payload as Record<string, unknown>;
-    // Inline buttons ride on the send, by type (staff bot, round 35): a
-    // task lands with «Bajarildi», a debtor request with «Ruxsat / Yo‘q».
-    const buttons = buttonsFor(notification.type, payload);
-    const message = composeStaffMessage(notification.type, payload, recipient.locale);
 
     let res: SendResult;
     try {
+      // Inline buttons ride on the send, by type (staff bot, round 35): a
+      // task lands with «Bajarildi», a debtor request with «Ruxsat / Yo‘q».
+      // INSIDE the try (round C review): a payload a renderer chokes on fails
+      // its own row, where outside it threw the whole run and parked every
+      // claimed row behind it in «sending» until the reclaim charged them.
+      const buttons = buttonsFor(notification.type, payload);
+      const message = composeStaffMessage(notification.type, payload, recipient.locale);
       res =
         (await forwardOriginal(notification.id, link.telegramChatId, payload)) ??
         (await deliverStaffMessage(link.telegramChatId, message, buttons));
     } catch (err) {
-      // The sender answers rather than throws; this is the database under it.
+      // The sender answers rather than throws; this is the database under
+      // it, or a payload no renderer can read.
       res = {
         ok: false,
         status: 0,
@@ -1044,6 +1048,23 @@ export async function retireApprovalCopies(input: {
   reasons?: string | null;
   decidedByName?: string | null;
 }): Promise<number> {
+  // Copies nobody has SENT yet — a drain paused on a 429, a 5xx backoff, a
+  // bot token being rotated — would otherwise go out AFTER the decision with
+  // live «Ruxsat / Yo‘q» buttons, and nothing would ever retire them (round
+  // C review, STAFF-APPROVAL-UNSENT-COPY). `muted` is terminal and is not a
+  // delivery problem; a row the drain has already claimed is its to finish.
+  await db
+    .update(notifications)
+    .set({ status: 'muted', error: 'decided before it was sent' })
+    .where(
+      and(
+        gte(notifications.createdAt, input.since),
+        eq(notifications.channel, 'telegram'),
+        eq(notifications.type, 'DebtApprovalRequested'),
+        eq(notifications.status, 'pending'),
+        sql`${notifications.payload}->>'approvalId' = ${input.approvalId}`,
+      ),
+    );
   // No bot, no copies to close — the drain made none (its own first line).
   if (!process.env.TELEGRAM_BOT_TOKEN || input.userIds.length === 0) return 0;
   const rows = await db
