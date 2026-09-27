@@ -82,6 +82,12 @@ describe('sendText', () => {
     expect(calls).toHaveLength(1);
   });
 
+  it('a refused TOKEN is the bot being down, not the customer', async () => {
+    answers.push({ status: 401, json: { ok: false, description: 'Unauthorized' } });
+    const r = await sendText({ chatId: 1, text: 'hi' });
+    expect(r).toMatchObject({ ok: false, permanent: false, botDown: true });
+  });
+
   it('a customer who blocked the bot is permanent', async () => {
     answers.push({ status: 403, json: { ok: false, description: 'Forbidden: bot was blocked by the user' } });
     const r = await sendText({ chatId: 1, text: 'hi' });
@@ -133,9 +139,9 @@ describe('edits', () => {
 });
 
 describe('the rules the sweeps read', () => {
-  it('permanent = 400/401/403/404, and the notice path asks the same function', () => {
-    for (const s of [400, 401, 403, 404]) expect(isPermanentFailure(s)).toBe(true);
-    for (const s of [0, 408, 429, 500, 502]) expect(isPermanentFailure(s)).toBe(false);
+  it('permanent = 400/403, and the notice path asks the same function', () => {
+    for (const s of [400, 403]) expect(isPermanentFailure(s)).toBe(true);
+    for (const s of [0, 401, 404, 408, 429, 500, 502]) expect(isPermanentFailure(s)).toBe(false);
     for (const s of [0, 400, 403, 429, 500]) expect(isPermanentNoticeFailure(s)).toBe(isPermanentFailure(s));
   });
 

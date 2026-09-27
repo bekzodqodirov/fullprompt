@@ -23,6 +23,7 @@ import {
 } from './staff-handlers';
 import { replyKeyboardFor } from './keyboards';
 import { ensureBotProfile, offerStaffCommands } from './commands';
+import { botCall } from './send';
 
 /**
  * Staff-linking bot (spec 4.5): handles `/start <one-time-code>` from the
@@ -37,16 +38,15 @@ export async function getBotUsername(): Promise<string | null> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) return null;
   if (globalForBot.botUsername) return globalForBot.botUsername;
-  try {
-    const res = await fetch(`https://api.telegram.org/bot${token}/getMe`);
-    const body = (await res.json()) as { ok: boolean; result?: { username: string } };
-    if (body.ok && body.result) {
-      globalForBot.botUsername = body.result.username;
-      return body.result.username;
-    }
-  } catch (err) {
-    logger.warn({ err }, 'telegram getMe failed');
+  // Through the one sender (round C): this read had no deadline, and the
+  // arrivals screen awaits it while it renders.
+  const answer = await botCall('getMe', {}, 10_000);
+  const me = answer.result as { username?: string } | null;
+  if (answer.ok && me?.username) {
+    globalForBot.botUsername = me.username;
+    return me.username;
   }
+  if (!answer.ok) logger.warn({ description: answer.description }, 'telegram getMe failed');
   return null;
 }
 

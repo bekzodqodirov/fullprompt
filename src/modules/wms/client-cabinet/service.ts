@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, isNull, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { db } from '../../platform/db/client';
 import {
@@ -17,6 +17,7 @@ import {
   warehouses,
 } from '../../platform/db/schema';
 import { getSetting } from '../../platform/settings/service';
+import { reachableAt } from '../crm/site-assign-rules';
 import { telegramPhoneUrl } from '../../platform/telegram/map-link';
 import { ARRIVED_ON_A_TRUCK } from '../documents/arrivals';
 import { clientBalanceUsd, clientLedger } from '../finance/service';
@@ -859,59 +860,69 @@ export async function paidHistory(clientId: string, days = HISTORY_DAYS) {
 
 /**
  * The person a customer should write to (round C) — their code's sales
- * manager — as the bot's «💬 Menejer», the Mini App card and the push
- * buttons all show it. ONE read for all three, so the three never name
- * different people.
+ * manager — for the bot's «💬 Menejer», the Mini App card and the push's
+ * manager door. ONE read for all three, so the three never name different
+ * people.
  *
  * What is shown is what the offer PDF has always printed to the same
- * customer (the seller's name and phone), plus the one thing a Telegram
- * customer actually taps: a chat link. The handle the LISTENER read from the
- * manager's own connected account wins over the one somebody typed on the
- * users screen (it is the account the customer's messages already reach);
- * with neither, Telegram's own `t.me/+<number>` link opens a chat by phone
- * when the manager's privacy allows it. The phone is the connected
- * Telegram number when there is one — the number customers already know —
- * and the login phone otherwise.
+ * customer — the seller's name and phone (`users.phone`, the PDF's own
+ * number; the owner chose «standart»: the PDF's rule) — plus the one thing a
+ * Telegram customer actually taps, a chat link.
+ *
+ * The link follows round 113's trust rule, imported and not restated
+ * (`reachableAt`, #513): the handle the listener READ from the manager's own
+ * account only while it is fresh, because a released handle can be
+ * registered by a stranger and a customer who owes money must never be sent
+ * to one (judge PRIV-1); else the handle somebody typed; else Telegram's own
+ * `t.me/+<number>` link, which opens a chat by phone when the manager's
+ * privacy allows it.
  *
  * A deactivated manager is no manager: a customer must not be sent to a
  * person who has left. One grouped query, never one per code (#432).
  */
 export interface ManagerContact {
-  userId: string;
   name: string;
   phone: string | null;
   telegramUrl: string | null;
 }
 
-export async function managersFor(clientIds: string[]): Promise<Map<string, ManagerContact>> {
+export async function managersFor(
+  clientIds: string[],
+  now: Date = new Date(),
+): Promise<Map<string, ManagerContact>> {
   const out = new Map<string, ManagerContact>();
   if (clientIds.length === 0) return out;
   const rows = await db
     .select({
       clientId: clients.id,
-      userId: users.id,
       name: users.fullName,
-      loginPhone: users.phone,
+      phone: users.phone,
       typed: users.telegramUsername,
+      accountStatus: tgAccounts.status,
+      lastSeenAt: tgAccounts.lastSeenAt,
       verified: tgAccounts.tgUsername,
-      tgPhone: tgAccounts.tgPhone,
+      checkedAt: tgAccounts.tgUsernameCheckedAt,
     })
     .from(clients)
     .innerJoin(users, and(eq(users.id, clients.salesManagerId), eq(users.active, true)))
     // `manager_user_id` is UNIQUE, so this joins at most one account.
-    .leftJoin(
-      tgAccounts,
-      and(eq(tgAccounts.managerUserId, users.id), ne(tgAccounts.status, 'signed_out')),
-    )
+    .leftJoin(tgAccounts, eq(tgAccounts.managerUserId, users.id))
     .where(inArray(clients.id, clientIds));
   for (const r of rows) {
-    const phone = r.tgPhone?.trim() || r.loginPhone?.trim() || null;
-    const handle = r.verified?.trim() || r.typed?.trim() || null;
+    const phone = r.phone?.trim() || null;
+    const reach = reachableAt(
+      {
+        typedUsername: r.typed?.trim() || null,
+        account: r.accountStatus
+          ? { status: r.accountStatus, lastSeenAt: r.lastSeenAt, username: r.verified, checkedAt: r.checkedAt }
+          : null,
+      },
+      now,
+    );
     out.set(r.clientId, {
-      userId: r.userId,
       name: r.name,
       phone,
-      telegramUrl: handle ? `https://t.me/${handle}` : phone ? telegramPhoneUrl(phone) : null,
+      telegramUrl: reach.ok ? `https://t.me/${reach.username}` : phone ? telegramPhoneUrl(phone) : null,
     });
   }
   return out;

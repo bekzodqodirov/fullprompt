@@ -104,6 +104,7 @@ export function bothKeyboard(locale?: string | null) {
       [{ text: AI_RASTAMOJKA }, { text: ZAMETKALAR }],
       [{ text: t.btnCargo }, { text: t.btnBalance }],
       [{ text: t.btnHistory }, { text: t.btnLanguage }],
+      [{ text: t.btnManager }],
     ],
     resize_keyboard: true,
     is_persistent: true,

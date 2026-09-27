@@ -144,23 +144,25 @@ export function isMovingStage(stage: CargoStage): boolean {
 }
 
 /**
- * The customer's FIVE steps (round C) — China, the road, Uzbekistan, ready,
+ * The customer's FIVE steps (round C) — China, transit, Uzbekistan, ready,
  * handed over.
  *
  * The ten rungs above stay the truth and are still the sentence under every
  * lot; these five are only the bar drawn above it, because ten dots on a
  * phone are a row nobody reads and five are a journey anybody does. They are
- * coarse on purpose so that no route can make the bar lie: a direct truck
+ * coarse on purpose so that no route can make the bar skip: a direct truck
  * from Yiwu to Tashkent never stands at the border warehouse, and with the
- * hub as its own step the bar would skip a square. Everything between
+ * hub as its own step the bar would jump a square. Everything between
  * leaving a Chinese warehouse and entering Uzbekistan — the domestic leg, the
- * hub, loading for export, the export road — is one step, «yo'lda».
+ * border warehouse, loading for export, the export road — is one step, the
+ * owner's own word for it: «tranzit».
  *
- * Monotonic by construction: the mapping follows `CARGO_STAGES`' order, so a
- * box moving forward on the ladder can never move backward on the bar
- * (pinned by a test over the whole ladder).
+ * The mapping follows `CARGO_STAGES`' order, so walking the ladder forward
+ * never moves the bar back (pinned over the whole ladder). CARGO can still go
+ * back: a box shuttled between two Uzbek warehouses leaves «ready» for the
+ * road and returns — and the bar says so, because that is where it is.
  */
-export const MILESTONES = ['china', 'road', 'uz', 'ready', 'issued'] as const;
+export const MILESTONES = ['china', 'transit', 'uz', 'ready', 'issued'] as const;
 export type Milestone = (typeof MILESTONES)[number];
 
 const MILESTONE_OF: Record<CargoStage, number> = {
@@ -179,4 +181,16 @@ const MILESTONE_OF: Record<CargoStage, number> = {
 /** Which of the five steps a rung belongs to, 0-based. */
 export function milestoneOf(stage: CargoStage): number {
   return MILESTONE_OF[stage];
+}
+
+/**
+ * How many boxes stand at each step — the summary line over a customer's
+ * cargo («✅ Tayyor: 120 · 🚚 Tranzitda: 180 · 🏭 Xitoyda: 40»), built ONCE so
+ * the bot and the Mini App cannot bucket the same cargo two ways (judge
+ * STRIP-1: a draft with three buckets made a truck at customs vanish).
+ */
+export function milestoneCounts(groups: readonly { stage: CargoStage; n: number }[]): Record<Milestone, number> {
+  const out: Record<Milestone, number> = { china: 0, transit: 0, uz: 0, ready: 0, issued: 0 };
+  for (const g of groups) out[MILESTONES[milestoneOf(g.stage)]!] += g.n;
+  return out;
 }

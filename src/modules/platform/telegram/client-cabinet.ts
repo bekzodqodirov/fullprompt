@@ -48,12 +48,17 @@ import { adVisitFor, clearAdVisit } from './ad-intake';
  */
 export function cabinetKeyboard(locale?: string | null): Keyboard {
   const t = clientLabels(locale);
+  // «💬 Menejer» joined in round C as a third row: ADDED, never replacing a
+  // label, because a persistent keyboard already on a phone is matched by its
+  // exact old text.
   return new Keyboard()
     .text(t.btnCargo)
     .text(t.btnBalance)
     .row()
     .text(t.btnHistory)
     .text(t.btnLanguage)
+    .row()
+    .text(t.btnManager)
     .resized()
     .persistent();
 }

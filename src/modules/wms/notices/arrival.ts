@@ -308,7 +308,9 @@ export const MAX_NOTICE_ATTEMPTS = 5;
  * change, and knocking again is noise.
  */
 export function isPermanentNoticeFailure(status: number): boolean {
-  // One rule for every Bot-API sender since round C (`platform/telegram/send`).
+  // One rule for every Bot-API sender since round C (`platform/telegram/send`),
+  // which also took 401/404 OUT of it: those are the bot's token, not the
+  // customer, and must never settle a notice for ever.
   return isPermanentFailure(status);
 }
 

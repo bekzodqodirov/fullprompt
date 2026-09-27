@@ -1,5 +1,6 @@
 import { logger } from '../logger';
 import { clientLabels } from './client-labels';
+import { botCall } from './send';
 
 /**
  * The blue button in the corner of the chat — how a client actually REACHES
@@ -79,20 +80,60 @@ export async function setCabinetMenuButton(
   chatId: number | null,
   locale?: string | null,
 ): Promise<boolean> {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
   const button = cabinetMenuButton(process.env.APP_URL, locale);
-  if (!token || !button) return false;
-  try {
-    const res = await fetch(`https://api.telegram.org/bot${token}/setChatMenuButton`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(chatId === null ? { menu_button: button } : { chat_id: chatId, menu_button: button }),
-    });
-    const body = (await res.json()) as { ok: boolean; description?: string };
-    if (!body.ok) logger.warn({ chatId, description: body.description }, 'setChatMenuButton refused');
-    return body.ok;
-  } catch (err) {
-    logger.warn({ err, chatId }, 'setChatMenuButton failed');
-    return false;
-  }
+  if (!process.env.TELEGRAM_BOT_TOKEN || !button) return false;
+  // Through the one sender since round C: this call had NO deadline, and it is
+  // awaited on the sequential poller at a chat's first update and at every
+  // language switch — a hung socket there froze every customer's cabinet.
+  const answer = await botCall(
+    'setChatMenuButton',
+    chatId === null ? { menu_button: button } : { chat_id: chatId, menu_button: button },
+    10_000,
+  );
+  if (!answer.ok) logger.warn({ chatId, description: answer.description }, 'setChatMenuButton refused');
+  return answer.ok;
+}
+
+/**
+ * The cabinet opened on ONE lot (round C) — the push about a lot opens the
+ * Mini App scrolled to that lot rather than to the top of everything the
+ * customer owns. A parameter the app READS; the identity is still the signed
+ * chat, so a hand-edited id opens nothing that is not theirs (#273).
+ */
+export function cabinetLotUrl(appUrl: string | undefined, lotId: string | null | undefined): string | null {
+  const url = cabinetUrl(appUrl);
+  if (!url) return null;
+  return lotId ? `${url}?lot=${encodeURIComponent(lotId)}` : url;
+}
+
+/** What a push carries: the wide «open» button and, below it, the manager door. */
+export interface PushKeyboard {
+  inline_keyboard: ({ text: string; web_app: { url: string } } | { text: string; callback_data: string })[][];
+}
+
+/**
+ * The keyboard under a push (round C).
+ *
+ * Row 1 is the wide web_app button, opened on the lot the message is about.
+ * Row 2 is a door to the customer's manager — a CALLBACK (`mg`), deliberately
+ * not a link: a push stays in the chat for ever, and a person's URL written
+ * into it would go on sending customers to a manager who has left, or to a
+ * handle a stranger has since registered (the judge's PRIV-2). The callback is
+ * answered when it is PRESSED, from the chat's own codes, by whoever the
+ * manager is that day.
+ *
+ * `cabinetInlineKeyboard` stays one row, one button — its test pins that shape
+ * and the /start and cargo-list messages still use it.
+ */
+export function clientPushKeyboard(
+  appUrl: string | undefined,
+  locale: string | null | undefined,
+  opts: { lotId?: string | null; contact?: boolean } = {},
+): PushKeyboard | null {
+  const t = clientLabels(locale);
+  const rows: PushKeyboard['inline_keyboard'] = [];
+  const url = cabinetLotUrl(appUrl, opts.lotId);
+  if (url) rows.push([{ text: t.openApp, web_app: { url } }]);
+  if (opts.contact !== false) rows.push([{ text: t.contactManager, callback_data: 'mg' }]);
+  return rows.length ? { inline_keyboard: rows } : null;
 }

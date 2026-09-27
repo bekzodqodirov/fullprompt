@@ -206,7 +206,10 @@ export function escapesIntake(text: string): boolean {
     t === BUGUN ||
     t === '/bugun' ||
     t === ZAMETKALAR ||
-    t === '/zametka'
+    t === '/zametka' ||
+    // A chat that is both staff and client pressing «📦 Yuklarim» in the middle
+    // of a collection had it filed as intake material (round C's scouts).
+    isCabinetText(t)
   );
 }
 
@@ -225,7 +228,7 @@ export function escapesIntake(text: string): boolean {
  */
 export function isCabinetText(text: string): boolean {
   const wanted = text.trim();
-  return (['btnCargo', 'btnBalance', 'btnHistory', 'btnLanguage'] as const).some((key) =>
+  return (['btnCargo', 'btnBalance', 'btnHistory', 'btnLanguage', 'btnManager'] as const).some((key) =>
     allLabelVariants(key).includes(wanted),
   );
 }

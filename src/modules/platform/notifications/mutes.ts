@@ -37,6 +37,10 @@ export const MUTE_GROUPS = {
     'CalcDone',
     'CalcReturned',
     'CalcPrefilled',
+    // «Hisob tayyor» — the seal's own news (phase B). It shipped in NO group,
+    // so the only way to silence it was to silence everything (round C's
+    // scouts); it is the same family as «hisoblash tayyor».
+    'CalcSealed',
   ],
   // "Something is wrong, act now." The three price-control messages belong
   // here rather than in `operations`: cargo that arrived is routine, cargo
@@ -108,6 +112,17 @@ export const MUTE_GROUPS = {
     // money leave. BoxLost's alarm, run backwards.
     'CompensatedCargoFound',
     'ReceiptMeasureCorrected',
+    // A discount was written into a sealed price (phase D) — shipped in no
+    // group, like CalcSealed; it moves money a seller is measured against.
+    'CalcDiscounted',
+    // A customer wrote to the BOT (round C). Until now those words went
+    // nowhere at all; they are an alarm like ClientWaiting — only worth
+    // anything while the customer is still waiting for an answer.
+    'ClientBotMessage',
+    // A client-cabinet link was refused or unverifiable (round C moves these
+    // two Russian raw-fetch pings onto the drain, where they can be muted and
+    // retried like every other staff message).
+    'CabinetLinkAlert',
   ],
   operations: [
     // A client's birthday (0109): a reminder to congratulate, not an alarm.

@@ -57,6 +57,8 @@ export interface SendResult {
   retryAfter: number | null;
   /** True when retrying the SAME message can never succeed. */
   permanent: boolean;
+  /** The TOKEN was refused (401/404): nothing will send until it is fixed. */
+  botDown: boolean;
   /** The plain-text or no-keyboard second attempt was what went out. */
   usedFallback: boolean;
 }
@@ -82,12 +84,24 @@ interface CallAnswer {
  *
  * Moved here from `wms/notices/arrival.ts` (which re-exports it) so the
  * platform senders can ask it too. The rule is the one rounds 48-49 settled:
- * 429 and 5xx are the world being busy; 403 (the customer blocked the bot),
- * 400 (no such chat, a malformed body) and 404/401 will not change by being
- * asked again.
+ * 429 and 5xx are the world being busy; 403 (the customer blocked the bot)
+ * and 400 (no such chat, a malformed body) will not change by being asked
+ * again.
+ *
+ * 401 and 404 are NOT here any more (round C's judge, REL-1): Telegram answers
+ * them for a revoked or mistyped TOKEN, which is a fact about US and not the
+ * recipient — round 49's `isSessionDead` split, one layer over. Counted as
+ * permanent, the morning a burned token is rotated would have settled every
+ * waiting customer notice as `failed` for ever. `isBotFailure` names them so
+ * a sweep can stop and wait instead.
  */
 export function isPermanentFailure(status: number): boolean {
-  return status === 400 || status === 401 || status === 403 || status === 404;
+  return status === 400 || status === 403;
+}
+
+/** The bot itself cannot send (bad or revoked token) — stop, keep the queue. */
+export function isBotFailure(status: number): boolean {
+  return status === 401 || status === 404;
 }
 
 /**
@@ -163,7 +177,8 @@ function verdict(answer: CallAnswer, usedFallback: boolean): SendResult {
     description: answer.description,
     messageId: answer.ok && typeof result?.message_id === 'number' ? result.message_id : null,
     retryAfter: answer.retryAfter,
-    permanent: !answer.ok && answer.status !== 429 && isPermanentFailure(answer.status),
+    permanent: !answer.ok && isPermanentFailure(answer.status),
+    botDown: !answer.ok && isBotFailure(answer.status),
     usedFallback,
   };
 }

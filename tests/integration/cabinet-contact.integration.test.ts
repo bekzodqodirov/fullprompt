@@ -48,13 +48,15 @@ afterAll(async () => {
 });
 
 describe('managersFor — who the customer writes to', () => {
-  it('the verified handle wins, then the typed one, then a phone link; a departed manager is nobody', async () => {
+  it('a FRESH verified handle wins, then the typed one, then a phone link; a departed manager is nobody', async () => {
     const verified = await user('Verified Mgr', { telegramUsername: 'typed_one' });
     await db.insert(tgAccounts).values({
       managerUserId: verified.id,
       tgPhone: `+99899${stamp}1`,
       status: 'active',
+      lastSeenAt: new Date(),
       tgUsername: 'real_handle',
+      tgUsernameCheckedAt: new Date(),
     });
     const typed = await user('Typed Mgr', { telegramUsername: 'only_typed' });
     const phoneOnly = await user('Phone Mgr');
@@ -67,11 +69,12 @@ describe('managersFor — who the customer writes to', () => {
     const e = await client('ME');
 
     const map = await managersFor([a.id, b.id, c.id, d.id, e.id]);
-    expect(map.get(a.id)).toMatchObject({
+    // The offer PDF's number (the owner's «standart»), never the connected
+    // account's personal Telegram number.
+    expect(map.get(a.id)).toEqual({
       name: 'Verified Mgr',
+      phone: verified.phone,
       telegramUrl: 'https://t.me/real_handle',
-      // The Telegram number the customers already chat with, not the login.
-      phone: `+99899${stamp}1`,
     });
     expect(map.get(b.id)?.telegramUrl).toBe('https://t.me/only_typed');
     expect(map.get(c.id)?.telegramUrl).toBe(`https://t.me/+${phoneOnly.phone.replace(/\D/g, '')}`);
@@ -79,18 +82,28 @@ describe('managersFor — who the customer writes to', () => {
     expect(map.has(e.id)).toBe(false);
   });
 
-  it('a signed-out account is not a handle anybody reads', async () => {
-    const m = await user('Signed Out Mgr', { telegramUsername: 'fallback_typed' });
+  it('a verified handle nobody has re-read for two hours is not trusted (round 113’s rule)', async () => {
+    // A released handle can be registered by a stranger; a customer who owes
+    // money must never be sent to one (judge PRIV-1).
+    const m = await user('Stale Mgr', { telegramUsername: 'fallback_typed' });
     await db.insert(tgAccounts).values({
       managerUserId: m.id,
       tgPhone: `+99899${stamp}2`,
-      status: 'signed_out',
+      status: 'active',
+      lastSeenAt: new Date(),
       tgUsername: 'stale_handle',
+      tgUsernameCheckedAt: new Date(Date.now() - 2 * 3600_000),
     });
     const k = await client('MF', { salesManagerId: m.id });
     const got = (await managersFor([k.id])).get(k.id)!;
     expect(got.telegramUrl).toBe('https://t.me/fallback_typed');
     expect(got.phone).toBe(m.phone);
+  });
+
+  it('what reaches a customer carries exactly three keys — no staff id (judge PRIV-13)', async () => {
+    const m = await user('Shape Mgr');
+    const k = await client('MG', { salesManagerId: m.id });
+    expect(Object.keys((await managersFor([k.id])).get(k.id)!).sort()).toEqual(['name', 'phone', 'telegramUrl']);
   });
 
   it('asks nothing for nobody', async () => {
