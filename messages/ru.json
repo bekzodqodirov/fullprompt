@@ -4061,5 +4061,7 @@
   "countAccept": {},
   "qrsiz": {},
   "ofis": {},
-  "scanner": {}
+  "scanner": {
+    "diagnostics": "Диагностика сканера"
+  }
 }

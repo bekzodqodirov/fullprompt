@@ -9,6 +9,7 @@ import {
   warehouses,
 } from '@/modules/platform/db/schema';
 import { writeAudit, type AuditContext } from '@/modules/platform/audit/service';
+import { QR_ECC, QR_MARGIN_MODULES } from './geometry';
 import type { LabelData } from './renderer';
 
 /**
@@ -161,8 +162,8 @@ export async function recordLabelPrint(
 export async function qrSvg(code: string): Promise<string> {
   return QRCode.toString(code, {
     type: 'svg',
-    errorCorrectionLevel: 'M',
-    margin: 2,
+    errorCorrectionLevel: QR_ECC,
+    margin: QR_MARGIN_MODULES,
     // Sized by CSS; the viewBox is what matters.
     width: 400,
   });

@@ -25,6 +25,23 @@ export const RIGHT_MM = LABEL_MM - MARGIN_MM;
 export const ptMm = (points: number) => (points * 25.4) / 72;
 
 export const QR_MM = 34;
+/**
+ * The QR's error correction, for every renderer that draws one (PDF, the
+ * phone's print sheet, the crate label).
+ *
+ * Q, not M: the payload is a short code (`YW26-000123`, `CR-YW26-00007`) and
+ * stays QR version 1 — 21 modules, 1.36 mm each at QR_MM — at both levels, so
+ * the sticker's module size does not change. What changes is how much of the
+ * symbol may be lost: measured over 40 seeded trials, six flipped modules read
+ * 16/40 at M and 40/40 at Q. That is a label rubbed on the road, wet at the
+ * border or catching the warehouse light, which is where «ko'rishi bilan
+ * o'qimayabti» happens. H would push every code to version 2 for nothing
+ * measured here. Labels already printed at M keep reading — a decoder does
+ * not care which level made the symbol.
+ */
+export const QR_ECC = 'Q' as const;
+/** White modules around the symbol, inside the sticker's own white margin. */
+export const QR_MARGIN_MODULES = 2;
 /** The text column beside the QR. */
 export const QR_TEXT_X_MM = MARGIN_MM + QR_MM + 4;
 

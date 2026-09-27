@@ -9,6 +9,8 @@ import {
   FIT_STEP_MM,
   LABEL_MM,
   MARGIN_MM,
+  QR_ECC,
+  QR_MARGIN_MODULES,
   fitSize as fitToWidth,
 } from './geometry';
 
@@ -190,8 +192,8 @@ async function drawLabel(
 
   // --- QR (≥32×32 mm with quiet zone) + fallback text ---
   const qrPng = await QRCode.toBuffer(label.shortCode, {
-    errorCorrectionLevel: 'M',
-    margin: 2,
+    errorCorrectionLevel: QR_ECC,
+    margin: QR_MARGIN_MODULES,
     width: 400,
   });
   const qrImage = await doc.embedPng(qrPng);
@@ -320,8 +322,8 @@ export async function renderCrateLabel(label: CrateLabelData): Promise<Uint8Arra
   }
 
   const qrPng = await QRCode.toBuffer(label.code, {
-    errorCorrectionLevel: 'M',
-    margin: 2,
+    errorCorrectionLevel: QR_ECC,
+    margin: QR_MARGIN_MODULES,
     width: 400,
   });
   const qrImage = await doc.embedPng(qrPng);
