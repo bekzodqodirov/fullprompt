@@ -422,21 +422,24 @@ describe('crates are one place each (Q10 d)', () => {
   it('T6: the count never touches crated members; the crate is accepted whole; accept-all lands the crate and says so', async () => {
     const lot = await mkLot(4);
     const crateId = uuidv4();
+    // The crate holds the LOWEST numbers — the first a count would pick if it
+    // ever mistook a crated carton for a loose one.
+    const crated = lot.boxes.slice(0, 2);
     const crate = await createCrate(
-      { crateId, warehouseId: W.cn, boxIds: lot.boxes.slice(2).map((b) => b.id), kind: 'yashik', logistApproved: true },
+      { crateId, warehouseId: W.cn, boxIds: crated.map((b) => b.id), kind: 'yashik', logistApproved: true },
       ctx(),
     );
     const truck = await onTheRoad([{ lot, take: 2 }], W.uz, [{ id: crateId, code: crate.code }]);
     const row = (await countAcceptPanel(truck.id)).lots.find((l) => l.lotId === lot.lotId)!;
     expect([row.departed, row.awaiting]).toEqual([2, 2]);
     await press(truck.id, lot, 1, 0);
-    for (const b of lot.boxes.slice(2)) expect((await boxRow(b.id)).status).toBe('in_transit');
+    for (const b of crated) expect((await boxRow(b.id)).status).toBe('in_transit');
     // The button's number = still aboard − the counted lot's loose cartons.
     const buttonNumber = (await remainingToUnload(truck.id)).length - (await countedLotAwaiting(truck.id));
     expect(buttonNumber).toBe(2);
     const res = await unloadRemaining(truck.id, ctx());
     expect(res.accepted).toBe(buttonNumber);
-    for (const b of lot.boxes.slice(2)) expect((await boxRow(b.id)).status).toBe('ready_for_pickup');
+    for (const b of crated) expect((await boxRow(b.id)).status).toBe('ready_for_pickup');
   });
 
   it('T6b: «Qabul (1 joy)» lands a crate through the crate branch, and a second press is a replay', async () => {
@@ -691,6 +694,10 @@ describe('a press bigger than one chunk (decision 3)', () => {
     expect(res.landed).toBe(COUNT_CHUNK + 50);
     const audits = await countAudits(truck.id);
     expect(audits).toHaveLength(2);
+    // Each chunk's audit carries its transaction's start: the gap is the
+    // first chunk — exactly COUNT_CHUNK cartons — measured (#1135).
+    const starts = audits.map((a) => a.createdAt.getTime()).sort((x, y) => x - y);
+    console.log(`[count-accept] one ${COUNT_CHUNK}-carton chunk: ${starts[1]! - starts[0]!} ms`);
     expect(new Set(audits.map((a) => (a.after as { countAccept: { pressId: string } }).countAccept.pressId))).toEqual(
       new Set([pressId]),
     );
