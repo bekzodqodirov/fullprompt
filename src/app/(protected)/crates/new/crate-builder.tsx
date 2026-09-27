@@ -474,7 +474,11 @@ export function CrateBuilder({
             disabled={submitting || !approved || totalBoxes === 0}
             onClick={submit}
           >
-            {submitting ? tc('loading') : `🧰 ${t('create')} (${totalBoxes} 📦)`}
+            {submitting
+              ? tc('loading')
+              : kind === 'palet'
+                ? `🧱 ${to('createPallet')} (${totalBoxes} 📦)`
+                : `🧰 ${t('create')} (${totalBoxes} 📦)`}
           </button>
         </div>
       </div>

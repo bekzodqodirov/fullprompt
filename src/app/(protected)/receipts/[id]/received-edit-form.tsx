@@ -73,7 +73,9 @@ export function OfficeReceivedFields({
             onChange={(e) => onDay(e.target.value)}
           />
         </label>
-        <label className="flex min-w-0 flex-1 flex-col">
+        {/* 12rem: below it the picker wraps under the date instead of
+            cutting a colleague's name to «Wang L» (measured at 360 px). */}
+        <label className="flex min-w-[12rem] flex-1 flex-col">
           <span className="text-[11px] font-semibold text-ink-500">{t('receivedBy')}</span>
           <select
             data-testid="receive-receiver"

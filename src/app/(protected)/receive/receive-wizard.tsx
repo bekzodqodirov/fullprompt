@@ -677,6 +677,12 @@ export function ReceiveWizard({
     const key = factoryBarcodeKey(lot.barcode);
     return !key || isOwnCodeShape(key);
   };
+  /** The sentence for a bad barcode box — one of OUR codes is a different
+   *  mistake (the QR sticker scanned into the wrong box) from a typo. */
+  const barcodeWord = (lot: LotDraft) => {
+    const key = factoryBarcodeKey(lot.barcode);
+    return key && isOwnCodeShape(key) ? to('errors.barcode_is_ours_plain') : to('errors.barcode_invalid_plain');
+  };
 
   /** First missing thing per lot — shown next to the disabled confirm so the operator knows WHAT is wrong. */
   function firstProblem(): string | null {
@@ -690,7 +696,7 @@ export function ReceiveWizard({
       if (!(Number(lot.boxCount) >= 1)) return `${line}: ${t('problems.count')}`;
       if (!lotTotals(lot)) return `${line}: ${t('problems.dims')}`;
       if (lot.photoIds.length === 0) return `${line}: ${t('problems.photo')}`;
-      if (barcodeBad(lot)) return `${line}: ${to('problemBarcode')}`;
+      if (barcodeBad(lot)) return `${line}: ${barcodeWord(lot)}`;
     }
     return null;
   }
@@ -1525,7 +1531,7 @@ export function ReceiveWizard({
             </div>
             {barcodeBad(lot) && (
               <p data-testid="lot-barcode-invalid" className="text-xs font-semibold text-bad">
-                {to('problemBarcode')}
+                {barcodeWord(lot)}
               </p>
             )}
             <div className="flex items-center gap-2">
