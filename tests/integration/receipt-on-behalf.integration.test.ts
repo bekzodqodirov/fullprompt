@@ -22,6 +22,7 @@ import { confirmReceipt, ReceiptError } from '@/modules/wms/receipts/service';
 import { EditError, setReceiptReceived } from '@/modules/wms/receipts/edit';
 import { receivedFacts } from '@/modules/wms/notices/client-summary';
 import { cargoOverview } from '@/modules/wms/client-cabinet/service';
+import { placeCargo } from '@/modules/wms/tracking/place-cargo';
 
 /**
  * The office receipt (0112, the owner's Q9 b), through the real service: the
@@ -253,6 +254,11 @@ describe('the office receipt', () => {
     expect(lot, 'the lot is in the cabinet').toBeTruthy();
     const received = lot!.journey.find((step) => step.key === 'received');
     expect(received && dayIn(new Date(received.atIso), TZ)).toBe(day);
+
+    // The staff map's tap on the warehouse — «qabul sanasi» is the same day.
+    const onMap = (await placeCargo({ warehouseId: whId })).lots.find((l) => l.receiptId === result.receiptId);
+    expect(onMap, 'the lot is on the map').toBeTruthy();
+    expect(new Date(onMap!.receivedAt).toISOString()).toBe(row!.receivedAt.toISOString());
   });
 });
 
