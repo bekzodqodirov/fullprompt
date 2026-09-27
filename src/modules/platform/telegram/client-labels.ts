@@ -83,8 +83,6 @@ const DICT = {
   },
   stgIssued: { uz: 'Olib ketildi 🤝', ru: 'Выдан 🤝', en: 'Handed over 🤝' },
 
-  /** Always beside a date, never without it — the schedule is an estimate. */
-  etaAbout: { uz: 'taxminan', ru: 'примерно', en: 'about' },
   journey: { uz: 'Yukingiz yo‘li', ru: 'Путь вашего груза', en: 'Your cargo’s journey' },
 
   /*
@@ -129,7 +127,6 @@ const DICT = {
     en: 'Ready for pickup',
   },
 
-  pieces: { uz: 'dona', ru: 'шт', en: 'pcs' },
   kg: { uz: 'kg', ru: 'кг', en: 'kg' },
   m3: { uz: 'm³', ru: 'м³', en: 'm³' },
 
@@ -173,7 +170,6 @@ const DICT = {
   // link frozen into an old message (judge PRIV-2).
   contactManager: { uz: '💬 Menejer bilan bog‘lanish', ru: '💬 Связаться с менеджером', en: '💬 Contact your manager' },
   managerWrite: { uz: '✍️ Telegramda yozish', ru: '✍️ Написать в Telegram', en: '✍️ Message on Telegram' },
-  managerCall: { uz: '📞 Qo‘ng‘iroq qilish', ru: '📞 Позвонить', en: '📞 Call' },
   officeTitle: { uz: 'Ofisimiz', ru: 'Наш офис', en: 'Our office' },
   // Never «no manager has been assigned»: that is most customers, and it
   // tells them nobody is theirs (judge CX-1). What is TRUE is that whatever
@@ -366,13 +362,7 @@ const DICT = {
     ru: '📥 Ваш груз принят на наш склад',
     en: '📥 Your cargo has arrived at our warehouse',
   },
-  arrivedWarehouse: { uz: 'Ombor', ru: 'Склад', en: 'Warehouse' },
   arrivedTotal: { uz: 'Jami', ru: 'Итого', en: 'Total' },
-  seeDetails: {
-    uz: 'Batafsil: 📦 Yuklarim',
-    ru: 'Подробнее: 📦 Мои грузы',
-    en: 'Details: 📦 My cargo',
-  },
 
   // --- cargo landed in Uzbekistan (round 98) ---
   //

@@ -200,3 +200,13 @@ describe('what the sweep does with a notice after every chat', () => {
     expect(pushVerdict([busy]).kind).toBe('retry');
   });
 });
+
+describe('the push prints kilos the way the app it opens does (round C review, INT-5)', () => {
+  it('a partial lot reads the same number in the push, the bot and the Mini App', async () => {
+    const { kgText } = await import('@/modules/wms/notices/client-text');
+    const { groupDigits } = await import('@/modules/platform/telegram/format');
+    // 3 of 7 boxes of a 10 kg lot.
+    const share = (10 * 3) / 7;
+    expect(kgText(share)).toBe(groupDigits(share));
+  });
+});

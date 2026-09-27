@@ -89,9 +89,14 @@ const MS_LABEL: Record<Milestone, keyof ClientLabels> = {
   issued: 'msIssued',
 };
 
-/** Kilos as every cabinet surface rounds them — two places, grouped. */
+/**
+ * Kilos exactly as the bot's «📦 Yuklarim» and the Mini App print them
+ * (`groupDigits`, three places): the push is the door into the app, and a
+ * partial lot read «4.29 kg» here and «4.286 kg» one tap later (round C
+ * review, INT-5). The comment that stood here claimed two places everywhere.
+ */
 export function kgText(value: number): string {
-  return groupDigits(Math.round(value * 100) / 100);
+  return groupDigits(value);
 }
 
 /**
