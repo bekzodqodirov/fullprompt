@@ -5,6 +5,7 @@ import { getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import { batches } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { mayCountMove } from '@/modules/wms/scanning/count-door';
 import { LoadingScreen } from './loading-screen';
 
 export default async function LoadPage({ params }: { params: Promise<{ id: string }> }) {
@@ -15,6 +16,12 @@ export default async function LoadPage({ params }: { params: Promise<{ id: strin
   const batch = await db.query.batches.findFirst({ where: eq(batches.id, id) });
   if (!batch) notFound();
   const t = await getTranslations('loading');
+  // «Sanab yuklash» lives on the batch card (0112, Q3): the admin and the
+  // logist standing at this truck get a door to it, operators nothing new.
+  const countHref =
+    ['forming', 'loading'].includes(batch.status) && mayCountMove(actor, batch.originWarehouseId)
+      ? `/batches/${id}#count-load`
+      : undefined;
 
   return (
     <div className="mx-auto max-w-lg">
@@ -24,7 +31,7 @@ export default async function LoadPage({ params }: { params: Promise<{ id: strin
           {batch.code}
         </Link>
       </div>
-      <LoadingScreen batchId={id} />
+      <LoadingScreen batchId={id} countHref={countHref} />
     </div>
   );
 }

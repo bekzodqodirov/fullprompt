@@ -83,6 +83,26 @@ export const AUDIT_FIELD_LABELS: Record<string, string> = {
   dealId: 'deal',
   partnerId: 'partner',
 
+  // QR-siz qabul (0112): the lot's marker, its factory barcode, and who
+  // physically received an office-entered prixod, on which day.
+  qrSkipped: 'qrSkipped',
+  factoryBarcode: 'factoryBarcode',
+  receivedByUserId: 'receivedBy',
+  receivedByName: 'receivedBy',
+  receivedAt: 'receivedAt',
+  // …and what the office's counts and the QR-siz stickers did to a prixod
+  // (review ui-4): the lot grown or taken back by a count, the stickers a
+  // re-mark took back, and a QR-siz sticker run printed at a warehouse.
+  lotGrown: 'lotGrown',
+  lotShrunk: 'lotShrunk',
+  liveBoxes: 'liveBoxes',
+  qrReverted: 'qrReverted',
+  qrRevertedCodes: 'qrRevertedCodes',
+  qrless: 'qrSkipped',
+  count: 'boxCount',
+  boxes: 'boxes',
+  at: 'warehouse',
+
   // Housekeeping
   note: 'note',
   notes: 'note',
@@ -134,6 +154,7 @@ export const AUDIT_FIELD_REFS: Record<string, AuditRefKind> = {
   deal: 'deal',
   dealId: 'deal',
   partnerId: 'partner',
+  receivedByUserId: 'user',
 };
 
 /** Only a uuid is looked up; codes and names in the same columns pass through. */
@@ -160,4 +181,28 @@ export function collectAuditRefs(
     }
   }
   return wanted;
+}
+
+const isScalar = (v: unknown): v is string | number | boolean =>
+  typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean';
+
+/**
+ * One recorded value as the History tab prints it. A list of plain values is
+ * a list; a structured record (a count's growth, a sticker run) reads as its
+ * own facts — «add: 3 · codes: …-06, …-07 · reason: …» — with the ids it
+ * carries left out: they are for the machine, and a uuid in the middle of a
+ * sentence is what the owner called «qandaydur codelar» (review ui-4). Any
+ * other shape keeps its JSON, which is honest if not pretty.
+ */
+export function formatAuditValue(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '∅';
+  if (Array.isArray(value) && value.every(isScalar)) return value.length ? value.join(', ') : '∅';
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    const parts = Object.entries(value as Record<string, unknown>)
+      .filter(([, v]) => v !== null && v !== undefined && v !== '' && !isUuidShaped(v))
+      .map(([k, v]) => `${k}: ${Array.isArray(v) && v.every(isScalar) ? v.join(', ') : isScalar(v) ? String(v) : JSON.stringify(v)}`);
+    return parts.length ? parts.join(' · ') : '∅';
+  }
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
 }

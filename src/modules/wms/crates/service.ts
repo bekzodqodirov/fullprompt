@@ -1,6 +1,6 @@
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { db } from '../../platform/db/client';
+import { db, type Tx } from '../../platform/db/client';
 import {
   boxes,
   boxMovements,
@@ -18,19 +18,38 @@ import { recomputeEntry } from '../costing/service';
 import { nextCrateCode } from '../codes';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { MAX_NATIVE_AMOUNT } from '../finance/money-bounds';
+import { CRATE_KINDS } from '../labels/crate-kind';
+import { inScope } from '../../platform/rbac/scope';
 
 export class CrateError extends Error {
-  constructor(public readonly code: string) {
+  constructor(
+    public readonly code: string,
+    /** What the sentence names — `A:2`, the lot letter and how many were free. */
+    public readonly detail?: string,
+  ) {
     super(code);
   }
 }
+
+/** The most cartons one crate — or one pallet — takes, however they were chosen. */
+export const CRATE_MAX_BOXES = 500;
 
 export const createCrateSchema = z.object({
   /** Client-generated so photos can upload against it before create. */
   crateId: z.string().uuid(),
   warehouseId: z.string().uuid(),
-  boxIds: z.array(z.string().uuid()).min(1).max(500),
-  kind: z.enum(['yashik', 'karkas']),
+  /** Cartons ticked one by one (seq chips) — possibly none on a pallet. */
+  boxIds: z.array(z.string().uuid()).max(CRATE_MAX_BOXES).default([]),
+  /**
+   * «N ta» per lot (0112, Q10 d — a pallet of stickerless cartons): the office
+   * never sees WHICH carton is which, so it says how many and the SERVICE
+   * picks them, inside its own transaction, from what is free at that moment.
+   */
+  lotCounts: z
+    .array(z.object({ lotId: z.string().uuid(), count: z.number().int().min(1).max(CRATE_MAX_BOXES) }))
+    .max(50)
+    .default([]),
+  kind: z.enum(CRATE_KINDS),
   /** Mandatory real-world "logist approved" confirmation (spec 6.2). */
   logistApproved: z.literal(true),
   note: z.string().trim().max(500).optional().or(z.literal('')),
@@ -44,7 +63,12 @@ export const createCrateSchema = z.object({
     .object({ amount: z.number().min(0.01).max(MAX_NATIVE_AMOUNT), currency: z.string().length(3) })
     .optional(),
 });
-export type CreateCrateInput = z.infer<typeof createCrateSchema>;
+/**
+ * The INPUT shape: `boxIds` and `lotCounts` may be left out by a caller that
+ * builds the object itself (the tests and the older doors), exactly as the
+ * schema's defaults allow.
+ */
+export type CreateCrateInput = z.input<typeof createCrateSchema>;
 
 /**
  * Build a crate from in-stock boxes (spec 6.2). One client per crate; multiple
@@ -65,15 +89,20 @@ export async function createCrate(input: CreateCrateInput, ctx: AuditContext) {
     });
     if (!warehouse) throw new CrateError('warehouse_not_found');
 
+    const lotCounts = input.lotCounts ?? [];
+    const boxIds = [...(input.boxIds ?? []), ...(await pickLotCounts(tx, input.warehouseId, input.boxIds ?? [], lotCounts))];
+
     const rows = await tx
       .select({ box: boxes, clientId: receipts.clientId })
       .from(boxes)
       .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
       .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
-      .where(inArray(boxes.id, input.boxIds))
-      .for('update', { of: boxes });
+      .where(inArray(boxes.id, boxIds))
+      // Only crate_id changes: a no-key lock, so a foreign-key insert
+      // elsewhere (a cost re-split's allocations) does not block it.
+      .for('no key update', { of: boxes });
 
-    if (rows.length !== input.boxIds.length) throw new CrateError('box_not_found');
+    if (rows.length !== boxIds.length) throw new CrateError('box_not_found');
     for (const { box } of rows) {
       if (box.status !== 'in_stock') throw new CrateError('box_not_in_stock');
       if (box.currentWarehouseId !== input.warehouseId) throw new CrateError('box_wrong_warehouse');
@@ -125,7 +154,7 @@ export async function createCrate(input: CreateCrateInput, ctx: AuditContext) {
       cratingEntryId = entry!.id;
     }
 
-    await tx.update(boxes).set({ crateId: crate!.id }).where(inArray(boxes.id, input.boxIds));
+    await tx.update(boxes).set({ crateId: crate!.id }).where(inArray(boxes.id, boxIds));
     await tx.insert(boxMovements).values(
       rows.map(({ box }) => ({
         boxId: box.id,
@@ -143,7 +172,17 @@ export async function createCrate(input: CreateCrateInput, ctx: AuditContext) {
       entityType: 'crate',
       entityId: crate!.id,
       action: 'create',
-      after: { code, clientId, kind: input.kind, boxCount: rows.length, note: input.note || null },
+      after: {
+        code,
+        clientId,
+        kind: input.kind,
+        boxCount: rows.length,
+        note: input.note || null,
+        // A count picked the cartons, so WHICH ones went in is on the record.
+        ...(lotCounts.length
+          ? { lotCounts, shortCodes: rows.map(({ box }) => box.shortCode).sort() }
+          : {}),
+      },
     });
     await emitEvent(tx, {
       type: 'CrateFormed',
@@ -159,6 +198,137 @@ export async function createCrate(input: CreateCrateInput, ctx: AuditContext) {
   // amount_usd NULL — in no tannarx, no client share, no P&L.
   if (cratingEntryId) await recomputeEntry(cratingEntryId);
   return crate;
+}
+
+/**
+ * The cartons a «N ta» per lot names, picked INSIDE the crate's transaction
+ * (0112, Q10 d) — lowest seq first, in stock, uncrated, standing at the
+ * crate's warehouse.
+ *
+ * `FOR UPDATE SKIP LOCKED`, because two people palletising one lot at once
+ * is the ordinary case this door exists for, and the two plain answers are
+ * both wrong: without the lock both pick the same lowest cartons; with a
+ * plain lock the second waits, and postgres's re-check after the wait hands
+ * the LIMIT fewer rows than stand free — «not enough cartons» about a lot
+ * that has them. Skipping a locked carton and taking the next is what a
+ * person at the pile would do.
+ *
+ * On the transaction's handle only (#714): the lot's letter for the refusal is
+ * read through `tx` too — the pool is off-limits in here.
+ */
+async function pickLotCounts(
+  tx: Tx,
+  warehouseId: string,
+  boxIds: readonly string[],
+  lotCounts: readonly { lotId: string; count: number }[],
+): Promise<string[]> {
+  if (boxIds.length === 0 && lotCounts.length === 0) throw new CrateError('validation');
+  const total = boxIds.length + lotCounts.reduce((sum, lot) => sum + lot.count, 0);
+  if (total > CRATE_MAX_BOXES) throw new CrateError('too_many_boxes');
+  if (lotCounts.length === 0) return [];
+  const lotIds = lotCounts.map((lot) => lot.lotId);
+  // A lot is counted OR ticked, never both: the ticked chips would be picked
+  // twice, and «3 ta» beside two ticks has no single meaning.
+  if (new Set(lotIds).size !== lotIds.length) throw new CrateError('lot_twice');
+  if (boxIds.length > 0) {
+    const [clash] = await tx
+      .select({ id: boxes.id })
+      .from(boxes)
+      .where(and(inArray(boxes.id, [...boxIds]), inArray(boxes.lotId, lotIds)))
+      .limit(1);
+    if (clash) throw new CrateError('lot_twice');
+  }
+  const picked: string[] = [];
+  for (const { lotId, count } of lotCounts) {
+    const rows = await tx
+      .select({ id: boxes.id })
+      .from(boxes)
+      .where(
+        and(
+          eq(boxes.lotId, lotId),
+          eq(boxes.status, 'in_stock'),
+          isNull(boxes.crateId),
+          eq(boxes.currentWarehouseId, warehouseId),
+        ),
+      )
+      .orderBy(asc(boxes.seqInLot))
+      .limit(count)
+      // NO KEY: a key-share lock (any foreign-key insert naming the carton,
+      // e.g. a cost re-split) must not make a free carton look taken — SKIP
+      // LOCKED under FOR UPDATE refused «0 of A» about four free cartons
+      // (review lock-5).
+      .for('no key update', { skipLocked: true });
+    if (rows.length < count) {
+      const [lot] = await tx
+        .select({ letter: receiptLots.letter })
+        .from(receiptLots)
+        .where(eq(receiptLots.id, lotId));
+      throw new CrateError('not_enough_boxes', `${lot?.letter ?? '?'}:${rows.length}`);
+    }
+    picked.push(...rows.map((row) => row.id));
+  }
+  return picked;
+}
+
+/** A «🧱 Palet qilish» door: this lot's loose cartons at this warehouse. */
+export interface PalletDoor {
+  lotId: string;
+  warehouseId: string;
+  warehouseCode: string;
+  /** Loose, in-stock cartons of the lot standing there right now. */
+  free: number;
+  href: string;
+}
+
+/**
+ * Where a pallet can be made from these lots (0112, Q10 d) — the doors on the
+ * prixod card and on /stock?lot=. One row per (lot, warehouse) holding loose
+ * in-stock cartons, for a person who builds crates THERE (`crates.manage` in
+ * scope, the builder's own gate), and only for a claimed prixod: a crate is
+ * one client's, and unclaimed cargo must be assigned first. ONE grouped
+ * query for all the lots on a card (#432).
+ */
+export async function palletDoorsFor(
+  actor: { permissions: ReadonlySet<string>; warehouseScoped: boolean; warehouseIds: string[] },
+  lotIds: string[],
+): Promise<PalletDoor[]> {
+  if (!actor.permissions.has('crates.manage') || lotIds.length === 0) return [];
+  const rows = await db
+    .select({
+      lotId: boxes.lotId,
+      warehouseId: boxes.currentWarehouseId,
+      warehouseCode: warehouses.code,
+      clientId: receipts.clientId,
+      free: sql<number>`count(*)::int`,
+    })
+    .from(boxes)
+    .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+    .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+    .innerJoin(warehouses, eq(boxes.currentWarehouseId, warehouses.id))
+    .where(
+      and(
+        inArray(boxes.lotId, lotIds),
+        eq(boxes.status, 'in_stock'),
+        isNull(boxes.crateId),
+        isNotNull(receipts.clientId),
+      ),
+    )
+    .groupBy(boxes.lotId, boxes.currentWarehouseId, warehouses.code, receipts.clientId)
+    .orderBy(asc(warehouses.code));
+  return rows
+    .filter((row) => row.warehouseId && row.clientId && inScope(actor, row.warehouseId))
+    .map((row) => ({
+      lotId: row.lotId,
+      warehouseId: row.warehouseId!,
+      warehouseCode: row.warehouseCode,
+      free: Number(row.free),
+      href: `/crates/new?${new URLSearchParams({
+        wh: row.warehouseId!,
+        client: row.clientId!,
+        lot: row.lotId,
+        kind: 'palet',
+      }).toString()}`,
+    }));
 }
 
 /** Update measured dims/weight/note after packing (spec: "measured after packing"). */

@@ -162,6 +162,10 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
   );
   const droppedHere = new Map(offHere.filter((row) => row.kind === 'partial').map((row) => [row.clientId, row]));
   const noCargoHere = new Map(offHere.filter((row) => row.kind === 'no_cargo').map((row) => [row.clientId, row]));
+  // Review money-4: cartons joined this truck after its price (an office
+  // count beyond the truck, a grown prixod) — on any kind, so a pair that both
+  // dropped and grew says both.
+  const grewHere = new Map(offHere.filter((row) => row.grewBoxIds.length > 0).map((row) => [row.clientId, row]));
   const codesOf = (row: OffTruckPrice) => row.droppedTo.map((d) => d.code).join(', ') || '—';
   const moveDoors = (row: OffTruckPrice, fromBatchId: string | null, targets: { batchId: string; code: string }[]) =>
     row.charges.map((charge) => (
@@ -473,7 +477,8 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
             {full && costUsd === 0 && <p className="text-xs text-warn">⚠️ {t('noCostsYet')}</p>}
 
             {/* 0104: cartons left THIS truck after its price — short-loaded,
-                or scanned aboard and found back at the origin (Q2). */}
+                or scanned aboard and found back at the origin (Q2), or taken
+                back by a corrected office count (0112). */}
             {(() => {
               const off = droppedHere.get(group.clientId);
               if (!off) return null;
@@ -483,10 +488,22 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                   <p className="text-xs font-semibold text-warn">
                     {off.dropCause === 'found_back'
                       ? t('droppedFoundBack', { n, origin: off.originCode ?? '—', codes: codesOf(off) })
-                      : t('droppedShort', { n, codes: codesOf(off) })}
+                      : off.dropCause === 'taken_back'
+                        ? t('droppedTakenBack', { n })
+                        : t('droppedShort', { n, codes: codesOf(off) })}
                   </p>
                   {moveDoors(off, id, off.droppedTo)}
                 </div>
+              );
+            })()}
+
+            {(() => {
+              const off = grewHere.get(group.clientId);
+              if (!off) return null;
+              return (
+                <p className="rounded-lg border border-warn/40 p-2 text-xs font-semibold text-warn" data-testid="pricing-grew">
+                  {t('grewAfterPrice', { n: off.grewBoxIds.length })}
+                </p>
               );
             })()}
 

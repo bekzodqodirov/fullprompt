@@ -42,6 +42,9 @@ export async function GET(request: Request) {
       letter: receiptLots.letter,
       productNameZh: receiptLots.productNameZh,
       productNameRu: receiptLots.productNameRu,
+      // The factory's barcode (0112, Q10 c): scanning it at the counter picks
+      // the whole pile, the same key the scan screens identify it by.
+      factoryBarcode: receiptLots.factoryBarcode,
     })
     .from(boxes)
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))

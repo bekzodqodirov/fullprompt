@@ -379,12 +379,18 @@ async function lotJourneys(
       lotId: boxes.lotId,
       cause: boxMovements.cause,
       at: boxMovements.createdAt,
+      // The prixod's REAL day (0112, Q9 b): the receipt movement is stamped
+      // when the office TYPED it, which for a back-dated prixod is days late.
+      // A typed column, not a raw CASE — raw timestamps come back as text (#923).
+      receivedAt: receipts.receivedAt,
       toStatus: boxMovements.toStatus,
       toCountry: to.country,
       toType: to.type,
     })
     .from(boxMovements)
     .innerJoin(boxes, eq(boxMovements.boxId, boxes.id))
+    .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+    .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
     .leftJoin(to, eq(boxMovements.toWarehouseId, to.id))
     .where(
       and(
@@ -412,7 +418,7 @@ async function lotJourneys(
       journeyFromEvents(
         (byLot.get(lotId) ?? []).map((r) => ({
           cause: r.cause,
-          at: r.at,
+          at: r.cause === 'receipt' ? r.receivedAt : r.at,
           toStatus: r.toStatus,
           toCountry: r.toCountry,
           toType: r.toType,

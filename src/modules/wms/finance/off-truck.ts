@@ -3,7 +3,7 @@ import { db } from '../../platform/db/client';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { usersWithPermission } from '../../platform/notifications/service';
 import { internalLegSql } from '../batches/internal';
-import { FOUND_BACK_SQL, clientAboardSql, riderRowsSql, rideMovementSql } from '../batches/riders';
+import { FOUND_BACK_CAUSES, FOUND_BACK_SQL, clientAboardSql, riderRowsSql, rideMovementSql } from '../batches/riders';
 import type { Exec } from './unpriced';
 
 /**
@@ -22,6 +22,16 @@ import type { Exec } from './unpriced';
  *   drop saw the truck without those cartons (the pricing page counts
  *   riders), so it is not warned about — which is also what makes the
  *   warning resolve itself once the accountant re-enters the price.
+ *
+ * - `grew` — the client rides, nothing left the truck, and the truck holds
+ *   cartons of the client the price never saw (review money-4, 0112): an
+ *   office count that went beyond the truck — the origin's spare stock, or
+ *   cartons minted onto the prixod (Q3 b) — a plan widened after the price,
+ *   a carton landed without a scan. A carton was SEEN when, at the moment of
+ *   the price, its newest movement on this truck put it aboard (planned,
+ *   loaded, departed, landed) rather than took it off (short-loaded,
+ *   removed, found back at the origin). `grewBoxIds` is carried on every
+ *   kind, so a pair that both dropped and grew says both.
  *
  * The moment of a price is the earliest `created_at` of its live charges.
  * «🚚 Ko'chirish» (`moveCharge`) copies `created_at`, so a moved price keeps
@@ -46,8 +56,10 @@ export interface OffTruckPrice {
   chargedUsd: number;
   /** min(created_at) of those charges. */
   pricedAt: Date;
-  kind: 'no_cargo' | 'partial';
-  dropCause: 'short_loaded' | 'found_back' | 'mixed' | null;
+  kind: 'no_cargo' | 'partial' | 'grew';
+  /** The client's cartons aboard that no price decision had seen (money-4). */
+  grewBoxIds: string[];
+  dropCause: 'short_loaded' | 'found_back' | 'taken_back' | 'mixed' | null;
   /** The pair's own dropped cartons (never the truck's whole manifest). */
   droppedBoxIds: string[];
   /** Where the dropped cartons ride now (pointer or ride), code-sorted. */
@@ -58,15 +70,33 @@ export interface OffTruckPrice {
 
 export type OffTruckScope = { batchIds: string[] } | { clientIds: string[] };
 
+/**
+ * `changes` — whether to compute what an office count moved after the price
+ * (`grew`, and the cartons it took back, `taken_back`). On by default for a
+ * truck's own read (its pricing page, the notices); off by default for the
+ * client-scoped reads, whose callers only follow dropped cartons to another
+ * truck and would pay the walk over every truck the client ever rode
+ * (review of the fixes, money-3).
+ */
+export interface OffTruckOptions {
+  changes?: boolean;
+}
+
 const idList = (ids: string[]) =>
   sql.join(
     ids.map((id) => sql`${id}::uuid`),
     sql`, `,
   );
 
-export async function offTruckPrices(exec: Exec, scope: OffTruckScope): Promise<OffTruckPrice[]> {
+export async function offTruckPrices(
+  exec: Exec,
+  scope: OffTruckScope,
+  opts: OffTruckOptions = {},
+): Promise<OffTruckPrice[]> {
   const ids = 'batchIds' in scope ? scope.batchIds : scope.clientIds;
   if (ids.length === 0) return [];
+  const changes = opts.changes ?? 'batchIds' in scope;
+  const changesOn = changes ? sql`true` : sql`false`;
   const where: SQL =
     'batchIds' in scope ? sql`ct.batch_id IN (${idList([...new Set(ids)])})` : sql`ct.client_id IN (${idList([...new Set(ids)])})`;
 
@@ -83,7 +113,17 @@ export async function offTruckPrices(exec: Exec, scope: OffTruckScope): Promise<
              min(greatest(ct.created_at, coalesce((
                SELECT max(pa.created_at) FROM audit_log pa
                 WHERE pa.entity_type = 'client_transaction' AND pa.entity_id = ct.id AND pa.action = 'create'
-                  AND (pa.after ? 'movedFrom' OR pa.after ? 'repricedFrom')), ct.created_at))) AS priced_at
+                  AND (pa.after ? 'movedFrom' OR pa.after ? 'repricedFrom')), ct.created_at))) AS priced_at,
+             -- The LAST decision, for growth: a charge the accountant added
+             -- for the extra cartons is an answer to them, while a dropped
+             -- carton is judged against the first price, which billed it.
+             -- A re-post that LOWERS a price (a compensation, \`repricedFrom\`)
+             -- answers nothing about extra cartons and does not count
+             -- (review of the fixes, money-4); a moved price does.
+             max(greatest(ct.created_at, coalesce((
+               SELECT max(pa.created_at) FROM audit_log pa
+                WHERE pa.entity_type = 'client_transaction' AND pa.entity_id = ct.id AND pa.action = 'create'
+                  AND pa.after ? 'movedFrom'), ct.created_at))) AS priced_last
         FROM client_transactions ct
         JOIN batches bt ON bt.id = ct.batch_id
         JOIN warehouses o ON o.id = bt.origin_warehouse_id
@@ -97,7 +137,7 @@ export async function offTruckPrices(exec: Exec, scope: OffTruckScope): Promise<
       SELECT p.batch_id, p.client_id, ${clientAboardSql(sql`p.batch_id`, sql`p.client_id`)} AS aboard
         FROM ot_priced p
     ),
-    ot_drops AS (
+    ot_drops0 AS (
       SELECT DISTINCT p.batch_id, p.client_id, dm.box_id,
              CASE WHEN dm.cause = 'batch_departed' THEN 'found_back' ELSE 'short_loaded' END AS how
         FROM ot_priced p
@@ -123,6 +163,79 @@ export async function offTruckPrices(exec: Exec, scope: OffTruckScope): Promise<
                 AND fb.created_at > p.priced_at))
          )
     ),
+    -- Money-4: every carton of the pair touched by the truck after the last
+    -- decision is a candidate (\`box_movements_ref_idx\`, bounded by the
+    -- client's own cargo) — a carton that joined can only have joined through
+    -- a movement on this truck.
+    ot_cand AS (
+      SELECT DISTINCT p.batch_id, p.client_id, p.priced_last, cm.box_id
+        FROM ot_priced p
+        JOIN box_movements cm ON cm.ref_type = 'batch' AND cm.ref_id = p.batch_id AND cm.created_at > p.priced_last
+                             AND ${changesOn}
+        JOIN boxes cbx ON cbx.id = cm.box_id AND cbx.status <> 'void'
+        JOIN receipt_lots cl ON cl.id = cbx.lot_id
+        JOIN receipts cr ON cr.id = cl.receipt_id AND cr.client_id = p.client_id
+    ),
+    ot_grew AS (
+      SELECT c.batch_id, c.client_id, c.box_id
+        FROM ot_cand c
+        JOIN (${riderRowsSql({ boxes: sql`SELECT box_id FROM ot_cand` })}) gr
+          ON gr.box_id = c.box_id AND gr.batch_id = c.batch_id
+       WHERE NOT EXISTS (
+         -- Seen: at the price, the carton's newest movement on this truck put
+         -- it aboard. Two writes of one transaction share a clock; the id
+         -- breaks the tie (riders.ts).
+         SELECT 1 FROM box_movements sm
+          WHERE sm.box_id = c.box_id AND sm.ref_type = 'batch' AND sm.ref_id = c.batch_id
+            AND sm.created_at <= c.priced_last
+            AND sm.cause NOT IN ('short_loaded', 'load_removed', 'lot_edit_remove', ${sql.raw(FOUND_BACK_CAUSES.map((cause) => `'${cause}'`).join(', '))})
+            AND NOT EXISTS (
+              SELECT 1 FROM box_movements sx
+               WHERE sx.box_id = sm.box_id AND sx.ref_type = 'batch' AND sx.ref_id = c.batch_id
+                 AND sx.created_at <= c.priced_last
+                 AND (sx.created_at, sx.id) > (sm.created_at, sm.id)
+            )
+       )
+    ),
+    -- Money-2 (review of the fixes): the other direction — cartons the price
+    -- SAW aboard that ride the truck no longer: an office count taken back
+    -- (a minted carton voided, a spare carton sent home to the origin), a
+    -- plan narrowed after the price. The three older causes above keep their
+    -- own words; anything else that left is «taken back». Stricter than
+    -- growth's «seen», because this one raises an alarm on prices already in
+    -- the books: the carton's newest movement of ANY kind at the first
+    -- decision was this truck putting it aboard (a carton marked lost or
+    -- voided before the price was never billed), and it has moved since.
+    ot_gone AS (
+      SELECT DISTINCT p.batch_id, p.client_id, sm.box_id, 'taken_back' AS how
+        FROM ot_priced p
+        JOIN box_movements sm ON sm.ref_type = 'batch' AND sm.ref_id = p.batch_id
+                             AND sm.created_at <= p.priced_at AND ${changesOn}
+        JOIN boxes gbx ON gbx.id = sm.box_id
+        JOIN receipt_lots gl ON gl.id = gbx.lot_id
+        JOIN receipts gr ON gr.id = gl.receipt_id AND gr.client_id = p.client_id
+       WHERE sm.cause NOT IN ('short_loaded', 'load_removed', 'lot_edit_remove', 'batch_cancelled', ${sql.raw(FOUND_BACK_CAUSES.map((cause) => `'${cause}'`).join(', '))})
+         AND NOT EXISTS (
+           SELECT 1 FROM box_movements sx
+            WHERE sx.box_id = sm.box_id
+              AND sx.created_at <= p.priced_at
+              AND (sx.created_at, sx.id) > (sm.created_at, sm.id)
+         )
+         AND EXISTS (
+           SELECT 1 FROM box_movements lx WHERE lx.box_id = sm.box_id AND lx.created_at > p.priced_at
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM (${riderRowsSql({ batches: sql`p.batch_id` })}) gr2 WHERE gr2.box_id = sm.box_id
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM ot_drops0 d0 WHERE d0.batch_id = p.batch_id AND d0.client_id = p.client_id AND d0.box_id = sm.box_id
+         )
+    ),
+    ot_drops AS (
+      SELECT batch_id, client_id, box_id, how FROM ot_drops0
+      UNION ALL
+      SELECT batch_id, client_id, box_id, how FROM ot_gone
+    ),
     ot_dest AS (
       SELECT d.batch_id AS from_batch, d.client_id, rr.batch_id AS to_batch, count(DISTINCT d.box_id)::int AS boxes
         FROM ot_drops d
@@ -135,6 +248,8 @@ export async function offTruckPrices(exec: Exec, scope: OffTruckScope): Promise<
            c.client_code, c.name AS client_name,
            coalesce((SELECT array_agg(DISTINCT d.box_id::text) FROM ot_drops d
                       WHERE d.batch_id = p.batch_id AND d.client_id = p.client_id), '{}') AS dropped_ids,
+           coalesce((SELECT array_agg(DISTINCT g.box_id::text) FROM ot_grew g
+                      WHERE g.batch_id = p.batch_id AND g.client_id = p.client_id), '{}') AS grew_ids,
            (SELECT CASE WHEN count(DISTINCT d.how) > 1 THEN 'mixed' ELSE min(d.how) END
               FROM ot_drops d WHERE d.batch_id = p.batch_id AND d.client_id = p.client_id) AS drop_cause,
            coalesce((SELECT json_agg(json_build_object('batchId', nb.id, 'code', nb.code, 'boxes', x.boxes) ORDER BY nb.code)
@@ -152,6 +267,7 @@ export async function offTruckPrices(exec: Exec, scope: OffTruckScope): Promise<
       JOIN clients c ON c.id = p.client_id
      WHERE NOT a.aboard
         OR EXISTS (SELECT 1 FROM ot_drops d WHERE d.batch_id = p.batch_id AND d.client_id = p.client_id)
+        OR EXISTS (SELECT 1 FROM ot_grew g WHERE g.batch_id = p.batch_id AND g.client_id = p.client_id)
      ORDER BY bt.code, c.client_code
   `)) as unknown as {
     batch_id: string;
@@ -165,7 +281,8 @@ export async function offTruckPrices(exec: Exec, scope: OffTruckScope): Promise<
     client_code: string;
     client_name: string;
     dropped_ids: string[];
-    drop_cause: 'short_loaded' | 'found_back' | 'mixed' | null;
+    grew_ids: string[];
+    drop_cause: 'short_loaded' | 'found_back' | 'taken_back' | 'mixed' | null;
     dropped_to: { batchId: string; code: string; boxes: number }[] | string;
     charges: { id: string; amount: string | number; currency: string }[] | null;
   }[];
@@ -180,7 +297,12 @@ export async function offTruckPrices(exec: Exec, scope: OffTruckScope): Promise<
     clientName: row.client_name,
     chargedUsd: Math.round(Number(row.charged_usd) * 100) / 100,
     pricedAt: new Date(row.priced_at),
-    kind: row.aboard ? ('partial' as const) : ('no_cargo' as const),
+    kind: !row.aboard
+      ? ('no_cargo' as const)
+      : (row.dropped_ids ?? []).length > 0
+        ? ('partial' as const)
+        : ('grew' as const),
+    grewBoxIds: row.grew_ids ?? [],
     dropCause: row.drop_cause,
     droppedBoxIds: row.dropped_ids ?? [],
     droppedTo: (typeof row.dropped_to === 'string' ? JSON.parse(row.dropped_to) : row.dropped_to).map(
@@ -257,6 +379,96 @@ export async function notifyPricedCargoLeft(
       lines.join('\n') +
       (rows.length > lines.length ? `\n… +${rows.length - lines.length}` : '') +
       `\nNarxni yuk ketgan mashinaga buxgalter ko‘chiradi (🚚 Ko‘chirish).` +
+      `\n${appUrl}/batches/${batchId}/pricing`,
+  });
+}
+
+/**
+ * «Narx qo'yilgan, keyin yuk ko'paydi» after an office count went beyond the
+ * truck (review money-4, 0112) — on the pool, AFTER the press's commits, and
+ * never failing it (the caller catches). Only the pairs whose unseen cartons
+ * include this lot's are announced, so a count of another lot says nothing
+ * about a price it did not change. Told: `finance.reports` and whoever typed
+ * the price — never the presser (Q6c).
+ */
+export async function notifyPricedCargoGrew(
+  batchId: string,
+  lotId: string,
+  actorId: string | null | undefined,
+): Promise<void> {
+  const rows = await offTruckPrices(db, { batchIds: [batchId] });
+  const grew = rows.filter((row) => row.grewBoxIds.length > 0);
+  if (grew.length === 0) return;
+  const lotBoxes = (await db.execute(sql`
+    SELECT b.id FROM boxes b
+     WHERE b.lot_id = ${lotId}::uuid AND b.id IN (${idList(grew.flatMap((row) => row.grewBoxIds))})
+  `)) as unknown as { id: string }[];
+  const mine = new Set(lotBoxes.map((row) => row.id));
+  const told = grew.filter((row) => row.grewBoxIds.some((id) => mine.has(id)));
+  if (told.length === 0) return;
+  const [readers, authors] = await Promise.all([
+    usersWithPermission('finance.reports'),
+    db.execute(sql`
+      SELECT DISTINCT ct.created_by FROM client_transactions ct
+       WHERE ct.batch_id = ${batchId}::uuid AND ct.type = 'charge' AND ct.voided_at IS NULL
+         AND ct.client_id IN (${idList(told.map((row) => row.clientId))}) AND ct.created_by IS NOT NULL
+    `) as unknown as Promise<{ created_by: string }[]>,
+  ]);
+  const appUrl = process.env.APP_URL ?? '';
+  await notifyStaffTelegram({
+    userIds: [...readers, ...authors.map((row) => row.created_by)],
+    type: 'PricedCargoGrew',
+    exceptUserId: actorId ?? null,
+    text:
+      `💰 ${told[0]!.batchCode} — narx qo‘yilgandan keyin yuk ko‘paydi\n` +
+      told.map((row) => `${row.clientCode} $${row.chargedUsd.toFixed(2)} — +${row.grewBoxIds.length} karobka narxsiz`).join('\n') +
+      `\nQo‘shilgan karobkalarga narx qo‘ying yoki narxni qayta kiriting.` +
+      `\n${appUrl}/batches/${batchId}/pricing`,
+  });
+}
+
+/**
+ * «Narx qo'yilgan, keyin yuk kamaydi» — the mirror of the notice above
+ * (review of the fixes, money-2): an office count taken back below what a
+ * price had already billed (a minted carton voided, a spare carton sent home,
+ * a count lowered at loading). Same audience, same rules — after the commits,
+ * never failing the press, only the pairs whose taken-back cartons include
+ * this lot's.
+ */
+export async function notifyPricedCargoTakenBack(
+  batchId: string,
+  lotId: string,
+  actorId: string | null | undefined,
+): Promise<void> {
+  const rows = await offTruckPrices(db, { batchIds: [batchId] });
+  const left = rows.filter((row) => row.droppedBoxIds.length > 0);
+  if (left.length === 0) return;
+  const lotBoxes = (await db.execute(sql`
+    SELECT b.id FROM boxes b
+     WHERE b.lot_id = ${lotId}::uuid AND b.id IN (${idList(left.flatMap((row) => row.droppedBoxIds))})
+  `)) as unknown as { id: string }[];
+  const mine = new Set(lotBoxes.map((row) => row.id));
+  const told = left.filter((row) => row.droppedBoxIds.some((id) => mine.has(id)));
+  if (told.length === 0) return;
+  const [readers, authors] = await Promise.all([
+    usersWithPermission('finance.reports'),
+    db.execute(sql`
+      SELECT DISTINCT ct.created_by FROM client_transactions ct
+       WHERE ct.batch_id = ${batchId}::uuid AND ct.type = 'charge' AND ct.voided_at IS NULL
+         AND ct.client_id IN (${idList(told.map((row) => row.clientId))}) AND ct.created_by IS NOT NULL
+    `) as unknown as Promise<{ created_by: string }[]>,
+  ]);
+  const appUrl = process.env.APP_URL ?? '';
+  await notifyStaffTelegram({
+    userIds: [...readers, ...authors.map((row) => row.created_by)],
+    type: 'PricedCargoLeft',
+    exceptUserId: actorId ?? null,
+    text:
+      `💰 ${told[0]!.batchCode} — narx qo‘yilgandan keyin yuk kamaydi\n` +
+      told
+        .map((row) => `${row.clientCode} $${row.chargedUsd.toFixed(2)} — ${row.droppedBoxIds.length} karobka mashinadan chiqdi`)
+        .join('\n') +
+      `\nNarxni kamaytiring yoki qayta kiriting.` +
       `\n${appUrl}/batches/${batchId}/pricing`,
   });
 }

@@ -9,7 +9,9 @@ import { mayWriteOffBox } from '@/modules/wms/receipts/box-write-off';
 import { InventoryScreen } from './inventory-screen';
 import { AcceptFound } from './accept-found';
 import { BinBox } from './bin-box';
+import { QrlessPrintList } from './qrless-print-list';
 import { PageHeader } from '@/components/ui/page';
+import { qrlessCountsAt } from '@/modules/wms/labels/qrless';
 
 /** Inventory mode entry: pick a warehouse (scoped staff see their own). */
 export default async function InventoryPage({
@@ -19,9 +21,14 @@ export default async function InventoryPage({
 }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
-  if (!actor.permissions.has('scan.load')) redirect('/');
   const t = await getTranslations('inventory');
+  const tq = await getTranslations('qrsiz');
   const { warehouseId, mode } = await searchParams;
+  // Printing stickers later is the RECEIPT's power (0112): whoever may print
+  // a prixod's stickers may print them for the cartons standing in front of
+  // them, even without the stocktake's own `scan.load`.
+  const mayPrintLater = actor.permissions.has('receipts.create');
+  if (!actor.permissions.has('scan.load') && !(mode === 'stiker' && mayPrintLater)) redirect('/');
 
   const whs = await db
     .select({ id: warehouses.id, code: warehouses.code, name: warehouses.name })
@@ -39,6 +46,12 @@ export default async function InventoryPage({
   // The bin's own gate, asked from the ONE home (#513) — widening it there
   // widens the stocktake's tick-list in the same breath.
   const canWriteOff = mayWriteOffBox(actor);
+  // The chooser's «stiker keyin» tile, only while there is something here to
+  // print — a tile that opens an empty list is a door to nothing.
+  const qrlessHere =
+    selected && !mode && mayPrintLater
+      ? ((await qrlessCountsAt([selected.id], actor))[0]?.n ?? 0)
+      : 0;
 
   return (
     <div className="mx-auto max-w-lg space-y-4">
@@ -60,6 +73,13 @@ export default async function InventoryPage({
             <span className="font-mono font-extrabold">{selected.code}</span> · {t('acceptHint')}
           </p>
           <AcceptFound warehouseId={selected.id} />
+        </>
+      ) : selected && mode === 'stiker' && mayPrintLater ? (
+        <>
+          <p className="text-sm text-ink-700">
+            <span className="font-mono font-extrabold">{selected.code}</span> · {tq('modeTile')}
+          </p>
+          <QrlessPrintList warehouseId={selected.id} actor={actor} />
         </>
       ) : selected && mode === 'musor' && canWriteOff ? (
         <>
@@ -89,6 +109,16 @@ export default async function InventoryPage({
             <span className="font-bold">📋 {t('modeFull')}</span>
             <span className="text-sm text-ink-500">{t('modeFullHint')}</span>
           </Link>
+          {qrlessHere > 0 && (
+            <Link
+              href={`/inventory?warehouseId=${selected.id}&mode=stiker`}
+              data-testid="inventory-mode-stiker"
+              className="card flex min-h-20 flex-col justify-center hover:bg-surface-sunken"
+            >
+              <span className="font-bold">{tq('modeTile')}</span>
+              <span className="text-sm text-ink-500">{tq('modeTileHint', { n: qrlessHere })}</span>
+            </Link>
+          )}
           {/* A door that draws what it will not let you press is not a door
               (#818): the bin is offered only to whoever `mayWriteOffBox`
               answers for, and the sentence below says who that is rather than

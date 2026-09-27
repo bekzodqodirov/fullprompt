@@ -133,6 +133,32 @@ export function calendarDay(value: string | null | undefined): string | null {
 }
 
 /**
+ * NOON of the calendar day `day` on `timeZone`'s wall clock, as an instant —
+ * the moment a back-dated prixod is filed at (0112, Q9 b).
+ *
+ * A DAY is what the office knows («it came on Tuesday»); a time would be
+ * invented. Noon is the one hour that lands on the same calendar day in every
+ * zone this business runs in (+05 Tashkent, +06 Kashgar, +08 Yiwu/Guangzhou),
+ * so a Tashkent-day report and the warehouse's own day agree about it. The
+ * zone's offset is read FOR that day (none of them keeps summer time, but a
+ * zone that did would still be right); an unknown zone name falls back to UTC
+ * rather than throwing, like `dayIn`.
+ */
+export function noonIn(day: string, timeZone: string): Date {
+  let offset = 'Z';
+  try {
+    const name = new Intl.DateTimeFormat('en-US', { timeZone, timeZoneName: 'longOffset' })
+      .formatToParts(new Date(`${day}T12:00:00Z`))
+      .find((part) => part.type === 'timeZoneName')?.value;
+    const match = name ? /GMT([+-]\d{2}:\d{2})/.exec(name) : null;
+    if (match) offset = match[1]!;
+  } catch {
+    /* unknown zone — UTC, as dayIn does */
+  }
+  return new Date(`${day}T12:00:00${offset}`);
+}
+
+/**
  * `day` moved by `n` calendar days (negative goes back). Pure calendar
  * arithmetic at UTC noon, so no zone and no clock can shift the answer.
  */

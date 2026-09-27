@@ -28,9 +28,16 @@ const DOORS: Record<string, { fn: string; resplit: string }> = {
   'src/modules/wms/boxes/status.ts': { fn: 'setBoxStatus', resplit: 'recomputeForLot(' },
   // The annul has its own aftermath (#847-852), re-runnable by design.
   'src/modules/wms/receipts/annul.ts': { fn: 'annulReceipt', resplit: 'annulAftermath(' },
+  // A count that takes the prixod's own growth back (review money-1/3):
+  // `shrinkGrownInTx` voids inside their transaction, the lot re-splits after.
+  'src/modules/wms/scanning/count-load.ts': { fn: 'countLoadLot', resplit: 'afterLotGrown(' },
+  'src/modules/wms/scanning/count-accept.ts': { fn: 'countAcceptLot', resplit: 'afterLotGrown(' },
 };
-/** The one terminal writer itself — its callers are the doors. */
-const HELPER = 'src/modules/wms/receipts/void-box.ts';
+/** The terminal writers themselves — they run inside a caller's transaction; the callers are the doors. */
+const HELPERS: Record<string, RegExp> = {
+  'src/modules/wms/receipts/void-box.ts': /\bvoidBoxRows\(tx\b/,
+  'src/modules/wms/receipts/grow-lot.ts': /\bshrinkGrownInTx\(tx\b/,
+};
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
@@ -67,9 +74,9 @@ function transactionSpan(body: string): [number, number] {
 describe('every door that voids a box re-splits the money after it', () => {
   it('finds the void writers in the code, and each one is a listed door', () => {
     const writers = walk('src/modules/wms').filter((path) => {
-      if (path === HELPER) return false;
+      if (path in HELPERS) return false;
       const src = read(path);
-      return /toStatus:\s*'void'/.test(src) || /\bvoidBoxRows\(tx\b/.test(src);
+      return /toStatus:\s*'void'/.test(src) || Object.values(HELPERS).some((call) => call.test(src));
     });
     // Anchors: the scan must find what it exists for (#166).
     expect(writers).toContain('src/modules/wms/receipts/service.ts');

@@ -1,7 +1,8 @@
 import { and, asc, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { db } from '../../platform/db/client';
+import { db, type Db, type Tx } from '../../platform/db/client';
 import {
+  batches,
   boxes,
   boxMovements,
   clients,
@@ -15,11 +16,19 @@ import { diffFields, writeAudit, type AuditContext } from '../../platform/audit/
 import { emitEvent } from '../../platform/events/service';
 import { getSetting } from '../../platform/settings/service';
 import type { Actor } from '../../platform/rbac/authorize';
+import { inScope } from '../../platform/rbac/scope';
 import { nextBoxCodes } from '../codes';
 import { costOrphanedByVoid, lockCostsTouchingLots } from '../costing/void-guard';
 import { receiptHasCompensation } from '../finance/compensation-follow';
 import { claimReceivedNotice } from '../notices/client-claims';
+import { qrlessBoxSql } from '../labels/qrless-sql';
 import { computeLotTotals } from './math';
+import { factoryBarcodeKey } from './factory-barcode';
+import { isOwnCodeShape } from '@/offline/code-shape';
+import { receivedAtFor, receivedDayRefusal, type ReceivedDayRefusal } from './received-day';
+import { checkReceiver, ReceiptError, receivedBySchema } from './service';
+import { mayCountMove } from '../scanning/count-door';
+import { dayIn } from '../../platform/time/tashkent';
 
 export const editLotSchema = z.object({
   lotId: z.string().uuid(),
@@ -33,6 +42,8 @@ export const editLotSchema = z.object({
   totalWeightKg: z.number().min(0.001).max(1_000_000).optional(),
   totalVolumeM3: z.number().min(0.0001).max(10_000).optional(),
   note: z.string().trim().max(500).nullable().optional(),
+  /** The factory barcode (0112, Q10 c): undefined = leave it, '' or null = clear it. */
+  factoryBarcode: z.string().trim().max(64).nullable().optional(),
 });
 
 export type EditLotInput = z.infer<typeof editLotSchema>;
@@ -48,7 +59,13 @@ export class EditError extends Error {
       | 'receipt_not_confirmed'
       | 'receipt_has_compensation'
       | 'lot_changed'
-      | 'shared_cost_orphaned',
+      | 'shared_cost_orphaned'
+      // The factory barcode and the office receipt's correction door (0112).
+      | 'barcode_invalid'
+      | 'barcode_is_ours'
+      | 'received_locked'
+      | 'receiver_invalid'
+      | ReceivedDayRefusal,
   ) {
     super(code);
   }
@@ -71,6 +88,110 @@ export function canEditReceipt(
   const localDate = (d: Date) =>
     new Intl.DateTimeFormat('en-CA', { timeZone: warehouseTimezone, dateStyle: 'short' }).format(d);
   return localDate(receipt.createdAt) === localDate(new Date());
+}
+
+/**
+ * The lot form's barcode field, as the service stores it: undefined when the
+ * form said nothing (leave it), null to clear, else the canonical key —
+ * refused in words, as the receive door refuses it (`service.ts`).
+ */
+function barcodeEdit(raw: string | null | undefined): string | null | undefined {
+  if (raw === undefined) return undefined;
+  const typed = raw?.trim() ?? '';
+  if (!typed) return null;
+  const key = factoryBarcodeKey(typed);
+  if (!key) throw new EditError('barcode_invalid');
+  if (isOwnCodeShape(key)) throw new EditError('barcode_is_ours');
+  return key;
+}
+
+// --- The office receipt's correction door (0112, the owner's Q9 b) ---
+
+export const receivedEditSchema = z.object({
+  receiptId: z.string().uuid(),
+  receivedDay: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  receivedBy: receivedBySchema,
+});
+export type ReceivedEditInput = z.infer<typeof receivedEditSchema>;
+
+/**
+ * May this person correct WHO received a prixod and ON WHICH DAY?
+ *
+ * The office count door (`mayCountMove` — plans.manage in scope) AND the day
+ * the prixod was TYPED, in its warehouse's zone: a date typo is fixed the same
+ * day, while the photos are in front of the typist; after that the day stands
+ * like every other fact a report has already read, and a real mistake goes
+ * through the void. The named receiver gets no edit right from being named
+ * (decision 39): naming somebody is a statement ABOUT them, not a grant TO them.
+ */
+export function mayCorrectReceived(
+  actor: Pick<Actor, 'permissions' | 'warehouseScoped' | 'warehouseIds'>,
+  receipt: { status: string; warehouseId: string; createdAt: Date },
+  warehouseTimezone: string,
+  now: Date = new Date(),
+): boolean {
+  return (
+    receipt.status === 'confirmed' &&
+    mayCountMove(actor, receipt.warehouseId) &&
+    dayIn(receipt.createdAt, warehouseTimezone) === dayIn(now, warehouseTimezone)
+  );
+}
+
+/**
+ * Correct the receiver and the real day of a prixod. The day is bounded the
+ * way the receive door bounds it, measured from the ENTRY (`created_at`), so a
+ * correction can never widen what was allowed; the entry day itself writes
+ * `received_at = created_at` back — «not back-dated» stays derivable. One
+ * audit row, and none at all when nothing changed.
+ */
+export async function setReceiptReceived(
+  input: ReceivedEditInput,
+  actor: Actor,
+  ctx: AuditContext,
+): Promise<{ changed: boolean }> {
+  const receipt = await db.query.receipts.findFirst({ where: eq(receipts.id, input.receiptId) });
+  if (!receipt) throw new EditError('not_found');
+  if (receipt.status !== 'confirmed') throw new EditError('receipt_not_confirmed');
+  const warehouse = (await db.query.warehouses.findFirst({
+    where: eq(warehouses.id, receipt.warehouseId),
+  }))!;
+  if (!mayCorrectReceived(actor, receipt, warehouse.timezone)) throw new EditError('received_locked');
+  const refusal = receivedDayRefusal(input.receivedDay, receipt.createdAt, warehouse.timezone);
+  if (refusal) throw new EditError(refusal);
+  // Pool read, before the transaction (#714).
+  let receiver: { receivedByUserId: string | null; receivedByName: string | null };
+  try {
+    receiver = await checkReceiver(input.receivedBy, receipt.warehouseId, actor.id);
+  } catch (err) {
+    if (err instanceof ReceiptError) throw new EditError('receiver_invalid');
+    throw err;
+  }
+  const at =
+    receivedAtFor(input.receivedDay, receipt.createdAt, warehouse.timezone) ?? receipt.createdAt;
+
+  return db.transaction(async (tx) => {
+    const [row] = await tx.select().from(receipts).where(eq(receipts.id, receipt.id)).for('update');
+    if (!row || row.status !== 'confirmed') throw new EditError('receipt_not_confirmed');
+    const before = {
+      receivedAt: row.receivedAt.toISOString(),
+      receivedByUserId: row.receivedByUserId,
+      receivedByName: row.receivedByName,
+    };
+    const after = { receivedAt: at.toISOString(), ...receiver };
+    const diff = diffFields(before, after);
+    if (!diff) return { changed: false };
+    await tx
+      .update(receipts)
+      .set({ receivedAt: at, ...receiver, updatedAt: new Date() })
+      .where(eq(receipts.id, row.id));
+    await writeAudit(tx, { ...ctx, warehouseId: row.warehouseId }, {
+      entityType: 'receipt',
+      entityId: row.id,
+      action: 'update',
+      ...diff,
+    });
+    return { changed: true };
+  });
 }
 
 export interface LotEditResult {
@@ -149,6 +270,10 @@ export async function editLot(
     throw new EditError('structural_locked');
   }
 
+  // The factory barcode (0112, Q10 c): NOT structural — it identifies the pile
+  // and moves nothing, so it is correctable after the cartons have left.
+  const barcode = barcodeEdit(input.factoryBarcode);
+
   const chargeableFactor = await getSetting('chargeable_weight_factor');
   const totals = computeLotTotals(
     lot.dimsMode === 'uniform'
@@ -170,6 +295,26 @@ export async function editLot(
   );
 
   return db.transaction(async (tx) => {
+    // Every decision above was read on the pool. The lot row is taken first
+    // (the count doors' order: lot, then cartons) and the lot re-read under
+    // it: an office count that grew or shrank the prixod while this form was
+    // being decided would otherwise be written over with the form's stale
+    // count and totals — five live cartons under a prixod saying three
+    // (review of the fixes, lock-rv2-1).
+    const [locked] = await tx.select().from(receiptLots).where(eq(receiptLots.id, lot.id)).for('update');
+    const [live] = await tx
+      .select({ n: sql<number>`count(*)::int` })
+      .from(boxes)
+      .where(and(eq(boxes.lotId, lot.id), ne(boxes.status, 'void')));
+    if (
+      !locked ||
+      locked.boxCount !== lot.boxCount ||
+      Number(locked.totalWeightKg) !== Number(lot.totalWeightKg) ||
+      Number(locked.totalVolumeM3) !== Number(lot.totalVolumeM3) ||
+      Number(live!.n) !== activeBoxes.length
+    ) {
+      throw new EditError('lot_changed');
+    }
     const before = {
       productNameZh: lot.productNameZh,
       productNameRu: lot.productNameRu,
@@ -181,6 +326,7 @@ export async function editLot(
       totalWeightKg: Number(lot.totalWeightKg),
       totalVolumeM3: Number(lot.totalVolumeM3),
       note: lot.note,
+      ...(barcode !== undefined ? { factoryBarcode: lot.factoryBarcode } : {}),
     };
     const after = {
       productNameZh: input.productNameZh,
@@ -193,6 +339,7 @@ export async function editLot(
       totalWeightKg: totals.totalWeightKg,
       totalVolumeM3: totals.totalVolumeM3,
       note: input.note ?? null,
+      ...(barcode !== undefined ? { factoryBarcode: barcode } : {}),
     };
 
     await tx
@@ -208,6 +355,7 @@ export async function editLot(
         totalWeightKg: totals.totalWeightKg.toString(),
         totalVolumeM3: totals.totalVolumeM3.toString(),
         note: input.note ?? null,
+        ...(barcode !== undefined ? { factoryBarcode: barcode } : {}),
       })
       .where(eq(receiptLots.id, lot.id));
 
@@ -216,6 +364,8 @@ export async function editLot(
     // Label reconciliation on count change (spec 4.4, edge case 1).
     const delta = input.boxCount - activeBoxes.length;
     if (delta > 0) {
+      // Warehouse before counter — confirmReceipt's order (lock-rv2-5).
+      await tx.execute(sql`SELECT 1 FROM warehouses WHERE id = ${warehouse.id}::uuid FOR KEY SHARE`);
       const codes = await nextBoxCodes(tx, warehouse, delta);
       const maxSeq = Math.max(0, ...lotBoxes.map((b) => b.seqInLot));
       const inserted = await tx
@@ -241,7 +391,9 @@ export async function editLot(
           actorId: ctx.actorId,
         })),
       );
-      result.labelsToPrint = delta;
+      // A QR-siz lot's new cartons are QR-siz too (no label stamp, 0112): the
+      // office counts them, nobody prints them here.
+      result.labelsToPrint = lot.qrSkippedAt ? 0 : delta;
     } else if (delta < 0) {
       // The third door that writes `void`, now under the other two's rules
       // (review of wb2, U0/U8): every cost shared over the lot locked BEFORE
@@ -269,6 +421,16 @@ export async function editLot(
         tx,
       );
       if (orphan) throw new EditError('shared_cost_orphaned');
+      // Asked BEFORE the void clears crate_id: only a sticker that exists can
+      // be torn off, and a QR-siz carton has none of ours (0112).
+      const stickerless = new Set(
+        (
+          await tx
+            .select({ id: boxes.id })
+            .from(boxes)
+            .where(and(inArray(boxes.id, toVoid.map((box) => box.id)), qrlessBoxSql()))
+        ).map((row) => row.id),
+      );
       for (const box of toVoid) {
         // A voided box leaves its crate too: a void member made the crate
         // permanently undissolvable and unscannable (both walk the members
@@ -287,7 +449,7 @@ export async function editLot(
           actorId: ctx.actorId,
         });
       }
-      result.labelsToDestroy = toVoid.map((b) => b.shortCode);
+      result.labelsToDestroy = toVoid.filter((b) => !stickerless.has(b.id)).map((b) => b.shortCode);
       // Unlike the other write-off doors this one never asks the funnel
       // (`advanceDealsAfterWriteOff`): a count change is refused once any
       // box has left the shelf, and a lot keeps at least one box — so the
@@ -359,6 +521,201 @@ export async function editLot(
       }).catch(() => {});
     }
     return result;
+  });
+}
+
+/** Reverted codes an audit row names at most (the count is always whole). */
+const REVERTED_CODES_CAP = 500;
+
+/**
+ * Where the QR-siz switch of a lot is decided — ONE answer for the service and
+ * the receipt card's toggle (#513).
+ *
+ * While every loose carton that is still ours to move stands on the shelf of
+ * the prixod's own warehouse, the switch is the lot form's: the same-day
+ * creator, and past the shelf a manager (`receipts.void`). Once one of them is
+ * planned onto a truck, riding one, or standing in another warehouse, marking
+ * or unmarking the lot changes how THAT truck is loaded and how THAT warehouse
+ * scans it — a logistics decision (plan decision 28: only the count door may
+ * drop an uncounted QR-siz lot at «yuklash tugadi»), so it needs the count
+ * door at every place the cartons are: each warehouse they stand in and both
+ * ends of every truck they are on. `receipts.void` at the prixod's warehouse
+ * let a manager unmark a planned lot and short-load it past that gate, or
+ * re-mark a lot in transit so the destination's phones refused cartons whose
+ * stickers were on (review access-1). Crated cartons are not the switch's
+ * (their crate's label stands in for them), issued and lost ones have left.
+ */
+export interface QrSwitchPlaces {
+  /** Every loose, still-ours carton is `in_stock` at the prixod's warehouse. */
+  onReceiptShelf: boolean;
+  /** Any live carton (crated included) is past the shelf — the old manager rule. */
+  anyNotInStock: boolean;
+  /** Warehouses the count door is needed at when not `onReceiptShelf`. */
+  places: string[];
+}
+
+export async function qrSwitchPlaces(
+  exec: Db | Tx,
+  lotId: string,
+  receiptWarehouseId: string,
+): Promise<QrSwitchPlaces> {
+  const live = await exec
+    .select({
+      status: boxes.status,
+      crateId: boxes.crateId,
+      warehouseId: boxes.currentWarehouseId,
+      batchId: boxes.currentBatchId,
+    })
+    .from(boxes)
+    .where(and(eq(boxes.lotId, lotId), ne(boxes.status, 'void')));
+  // Crated cartons included: the marker is the LOT's, and a pallet's members
+  // take it the moment the pallet is broken down. Judging loose cartons alone,
+  // a lot riding entirely inside a pallet looked «on the shelf» (an empty
+  // list agrees with anything) and the origin's manager could re-mark a lot
+  // on the road (review of the fixes, cargo-r2 — access-1 through a pallet).
+  const held = live.filter((box) => box.status !== 'issued' && box.status !== 'lost');
+  const onReceiptShelf = held.every(
+    (box) => box.status === 'in_stock' && box.warehouseId === receiptWarehouseId && box.batchId === null,
+  );
+  const places = new Set<string>();
+  for (const box of held) if (box.warehouseId) places.add(box.warehouseId);
+  const batchIds = [...new Set(held.map((box) => box.batchId).filter((id): id is string => id !== null))];
+  if (batchIds.length > 0) {
+    const ends = await exec
+      .select({ origin: batches.originWarehouseId, dest: batches.destWarehouseId })
+      .from(batches)
+      .where(inArray(batches.id, batchIds));
+    for (const end of ends) {
+      places.add(end.origin);
+      places.add(end.dest);
+    }
+  }
+  return {
+    onReceiptShelf,
+    anyNotInStock: live.some((box) => box.status !== 'in_stock'),
+    places: [...places],
+  };
+}
+
+/** The switch's gate over `qrSwitchPlaces` (the edit window is asked before). */
+export function mayFlipQrSkip(actor: Actor, at: QrSwitchPlaces): boolean {
+  if (at.onReceiptShelf) return !at.anyNotInStock || actor.permissions.has('receipts.void');
+  return at.places.length > 0 && at.places.every((warehouseId) => mayCountMove(actor, warehouseId));
+}
+
+/**
+ * The QR-siz switch's door as the ACTION asks it — `receipts.edit` at the
+ * prixod's own warehouse — so the receipt card draws the switch exactly where
+ * pressing it is allowed (review of the fixes, cargo-r5). A write door, not
+ * the read door (`mayReadReceipt`): a destination may read a prixod it cannot
+ * edit.
+ */
+export function mayEditReceiptAt(
+  actor: Pick<Actor, 'permissions' | 'warehouseScoped' | 'warehouseIds'>,
+  warehouseId: string,
+): boolean {
+  return actor.permissions.has('receipts.edit') && inScope(actor, warehouseId);
+}
+
+/**
+ * «QR yopishtirilmadi» changed after the receipt (0112, decision 32) — a
+ * two-way switch on the receipt card, never a field in the lot form.
+ *
+ * The gate is `mayFlipQrSkip`: the lot form's while the cartons are on the
+ * prixod's own shelf, the count door wherever they have gone.
+ *
+ * MARK sets the marker to now(): on a lot whose stickers were printed and fell
+ * off (sacks, rolls), every live uncrated carton labelled before it becomes
+ * QR-siz again, and the audit names them. It is a no-op — no write, no audit
+ * row — when every live uncrated carton is already QR-siz. UNMARK clears it:
+ * the lot's cartons are expected to be scanned from now on.
+ */
+export async function setLotQrSkipped(
+  input: { lotId: string; skipped: boolean },
+  actor: Actor,
+  ctx: AuditContext,
+): Promise<{ changed: boolean; reverted: number }> {
+  const lot = await db.query.receiptLots.findFirst({ where: eq(receiptLots.id, input.lotId) });
+  if (!lot) throw new EditError('not_found');
+  const receipt = (await db.query.receipts.findFirst({ where: eq(receipts.id, lot.receiptId) }))!;
+  if (receipt.status !== 'confirmed') throw new EditError('receipt_not_confirmed');
+  const warehouse = (await db.query.warehouses.findFirst({
+    where: eq(warehouses.id, receipt.warehouseId),
+  }))!;
+  if (!canEditReceipt(actor, receipt, warehouse.timezone)) throw new EditError('edit_window_closed');
+
+  return db.transaction(async (tx) => {
+    // The lot row first: two presses of the switch take turns.
+    const [current] = await tx
+      .select({ qrSkippedAt: receiptLots.qrSkippedAt })
+      .from(receiptLots)
+      .where(eq(receiptLots.id, lot.id))
+      .for('update');
+    await tx
+      .select({ id: boxes.id })
+      .from(boxes)
+      .where(and(eq(boxes.lotId, lot.id), ne(boxes.status, 'void')))
+      .orderBy(asc(boxes.id))
+      .for('update');
+    // Judged on the locked rows, inside the transaction that writes.
+    if (!mayFlipQrSkip(actor, await qrSwitchPlaces(tx, lot.id, receipt.warehouseId))) {
+      throw new EditError('structural_locked');
+    }
+    const markedBefore = current?.qrSkippedAt ?? null;
+
+    if (!input.skipped) {
+      if (!markedBefore) return { changed: false, reverted: 0 };
+      await tx.update(receiptLots).set({ qrSkippedAt: null }).where(eq(receiptLots.id, lot.id));
+      await writeAudit(tx, { ...ctx, warehouseId: warehouse.id }, {
+        entityType: 'receipt',
+        entityId: receipt.id,
+        action: 'update',
+        before: { qrSkipped: lot.letter },
+        after: { qrSkipped: null },
+      });
+      return { changed: true, reverted: 0 };
+    }
+
+    // The cartons that are NOT QR-siz now and will be once the lot is marked:
+    // live, uncrated (a crate's own label stands in for its members).
+    const reverting = await tx
+      .select({ shortCode: boxes.shortCode, labelPrintedAt: boxes.labelPrintedAt })
+      .from(boxes)
+      .where(
+        and(
+          eq(boxes.lotId, lot.id),
+          ne(boxes.status, 'void'),
+          isNull(boxes.crateId),
+          sql`NOT ${qrlessBoxSql()}`,
+        ),
+      )
+      .orderBy(asc(boxes.seqInLot));
+    if (markedBefore && reverting.length === 0) return { changed: false, reverted: 0 };
+    // …and of those, the ones that carried a printed sticker: what the switch
+    // takes back is only ever a label that existed.
+    const reverted = reverting.filter((row) => row.labelPrintedAt !== null);
+    await tx
+      .update(receiptLots)
+      .set({ qrSkippedAt: sql`now()` })
+      .where(eq(receiptLots.id, lot.id));
+    await writeAudit(tx, { ...ctx, warehouseId: warehouse.id }, {
+      entityType: 'receipt',
+      entityId: receipt.id,
+      action: 'update',
+      before: { qrSkipped: markedBefore ? lot.letter : null },
+      after: {
+        qrSkipped: lot.letter,
+        // A mark takes back stickers that were printed (a re-mark always
+        // does): which ones is the only way to tell afterwards what it undid.
+        ...(reverted.length
+          ? {
+              qrReverted: reverted.length,
+              qrRevertedCodes: reverted.slice(0, REVERTED_CODES_CAP).map((row) => row.shortCode),
+            }
+          : {}),
+      },
+    });
+    return { changed: true, reverted: reverted.length };
   });
 }
 

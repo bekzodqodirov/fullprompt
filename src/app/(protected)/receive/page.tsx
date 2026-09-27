@@ -1,4 +1,4 @@
-import { asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
@@ -6,6 +6,8 @@ import {
   clients,
   currencies,
   expectedArrivals,
+  userWarehouses,
+  users,
   warehouses,
 } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
@@ -16,6 +18,7 @@ import { ExpenseRequestFold } from './expense-request-fold';
 import { myExpenseRequests } from '@/modules/wms/accounting/expense-requests';
 import { incomingForWarehouses, receivePrefillFor } from '@/modules/wms/pickups/service';
 import { IncomingPickups } from './incoming-pickups';
+import { mayCountMove } from '@/modules/wms/scanning/count-door';
 
 export default async function ReceivePage({
   searchParams,
@@ -46,6 +49,7 @@ export default async function ReceivePage({
       code: warehouses.code,
       name: warehouses.name,
       country: warehouses.country,
+      timezone: warehouses.timezone,
     })
     .from(warehouses)
     .where(
@@ -59,6 +63,25 @@ export default async function ReceivePage({
     .select({ code: currencies.code })
     .from(currencies)
     .where(eq(currencies.active, true));
+
+  // The office receipt (0112, the owner's Q9 b): whoever may count cargo at a
+  // warehouse (the count door, `mayCountMove`) types the prixod FROM THE
+  // OFFICE and says who physically received it and on which day. The picker
+  // is the people assigned to each warehouse — ONE grouped query — and the
+  // action asks the same door again, so this only decides what is DRAWN.
+  const officeWarehouses = whs.filter((wh) => mayCountMove(actor, wh.id)).map((wh) => wh.id);
+  const receiverRows = officeWarehouses.length
+    ? await db
+        .select({ id: users.id, name: users.fullName, warehouseId: userWarehouses.warehouseId })
+        .from(userWarehouses)
+        .innerJoin(users, eq(users.id, userWarehouses.userId))
+        .where(and(inArray(userWarehouses.warehouseId, officeWarehouses), eq(users.active, true)))
+        .orderBy(asc(users.fullName))
+    : [];
+  const receivers: Record<string, { id: string; name: string }[]> = {};
+  for (const row of receiverRows) {
+    (receivers[row.warehouseId] ??= []).push({ id: row.id, name: row.name });
+  }
 
   // Tapped «Qabul qilish» on a promise: open pre-filled with everything the
   // promise already knows, and carry its id so the confirm closes it. A
@@ -156,6 +179,11 @@ export default async function ReceivePage({
         densityThresholds={await getSetting('density_thresholds')}
         prefill={prefill}
         canPickDeal={canWriteDeal(actor.permissions)}
+        office={
+          officeWarehouses.length
+            ? { warehouseIds: officeWarehouses, receivers, me: { id: actor.id, name: actor.fullName } }
+            : null
+        }
       />
     </div>
   );

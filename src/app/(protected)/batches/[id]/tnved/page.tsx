@@ -2,7 +2,8 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
-import { attachments, batches, boxes, receiptLots, scanEvents } from '@/modules/platform/db/schema';
+import { attachments, batches, boxes, receiptLots } from '@/modules/platform/db/schema';
+import { aboardFilter } from '@/modules/wms/scanning/unload';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { tnvedFor, productKey } from '@/modules/wms/tnved/service';
 import { BackLink } from '@/components/back-link';
@@ -19,8 +20,10 @@ export default async function BatchTnvedPage({ params }: { params: Promise<{ id:
   const batch = await db.query.batches.findFirst({ where: eq(batches.id, id) });
   if (!batch) notFound();
 
-  // Lots on the batch: current members while forming/loading, load-scan
-  // history afterwards (so the page works after unload/close too).
+  // Lots on the batch: current members while forming/loading, the truck's
+  // real cargo afterwards (so the page works after unload/close too). Never
+  // the scan history: an office count dialled to 0 keeps its scan events,
+  // and a lot that did not go must not be declared (0112, decision 25).
   const current = await db
     .selectDistinct({ lot: receiptLots })
     .from(boxes)
@@ -30,10 +33,9 @@ export default async function BatchTnvedPage({ params }: { params: Promise<{ id:
     ? []
     : await db
         .selectDistinct({ lot: receiptLots })
-        .from(scanEvents)
-        .innerJoin(boxes, eq(scanEvents.boxId, boxes.id))
+        .from(boxes)
         .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
-        .where(and(eq(scanEvents.batchId, id), eq(scanEvents.type, 'load')));
+        .where(aboardFilter(id));
   const lots = (current.length ? current : scanned)
     .map((r) => r.lot)
     .sort((a, b) => (a.letter ?? '').localeCompare(b.letter ?? ''));

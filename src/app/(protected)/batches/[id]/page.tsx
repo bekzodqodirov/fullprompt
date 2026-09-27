@@ -30,12 +30,21 @@ import {
   setTrackingCheckpointAction,
 } from '../batch-actions-server';
 import { devicesForBatch } from '@/modules/wms/tracking/devices';
-import { batchMemberFilter, remainingToUnload } from '@/modules/wms/scanning/unload';
+import { aboardFilter, batchMemberFilter, remainingToUnload } from '@/modules/wms/scanning/unload';
+import { countDoorFor } from '@/modules/wms/scanning/count-door';
+import { countedOnTruck, countLoadPanel } from '@/modules/wms/scanning/count-load';
+import { qrlessUncountedByTruck } from '@/modules/wms/scanning/service';
+import { CountLoadPanel } from './count-load-panel';
 import { LightboxImg } from '@/components/lightbox-img';
 import { Panel } from '@/components/panel';
 import { BatchCodeForm } from './batch-code-form';
 import { BatchActions } from './batch-actions';
 import { UnloadActions } from './unload-actions';
+// Region B — «sanab qabul» (0112).
+import { CountAcceptPanel } from './count-accept-panel';
+import { countAcceptPanel, countedLotAwaiting } from '@/modules/wms/scanning/count-accept';
+import { mayCountMove } from '@/modules/wms/scanning/count-door';
+import { landedStatusFor } from '@/modules/wms/warehouses/landed';
 import { BackLink } from '@/components/back-link';
 import { CardCols } from '@/components/card-cols';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
@@ -49,6 +58,8 @@ import { CustomsFirm } from './customs-firm';
 import { CustomsPerReceipt } from './customs-per-receipt';
 import { batchCustomsRows } from '@/modules/wms/partners/customs';
 import { codeIdentity } from '@/modules/wms/labels/code-identity';
+import { qrlessJoinedSql } from '@/modules/wms/labels/qrless-sql';
+import { QrlessChip } from '@/components/qrless-chip';
 import { CrateRows } from '@/components/crate-rows';
 import { batchCrates } from '@/modules/wms/inventory/service';
 import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
@@ -83,6 +94,8 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
   // The contents table is the stock table applied to a truck, so it borrows
   // the stock screen's own column names rather than inventing second ones.
   const tstock = await getTranslations('stock');
+  const tqrsiz = await getTranslations('qrsiz');
+  const tcount = await getTranslations('countLoad');
   const format = await getFormatter();
 
   const dest = aliasedTable(warehouses, 'dest');
@@ -133,6 +146,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
       onBatch: sql<number>`count(*)`,
       planned: sql<number>`count(*) FILTER (WHERE ${boxes.status} = 'planned')`,
       loaded: sql<number>`count(*) FILTER (WHERE ${boxes.status} IN ('loading', 'in_transit'))`,
+      qrless: sql<number>`count(*) FILTER (WHERE ${qrlessJoinedSql()})`,
       photoId: sql<string | null>`(
         SELECT a.id FROM attachments a
         WHERE a.entity_type = 'receipt_lot' AND a.entity_id = ${receiptLots.id} AND a.kind = 'photo'
@@ -174,12 +188,32 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
   // the crate card, which redirects whoever may not open it.
   const crateRows = actor.permissions.has('crates.manage') ? await batchCrates(id) : [];
 
+  // «Sanab yuklash» (0112) — region A. The ⚠ chip counts the cartons beyond
+  // the plan that RIDE the truck, once each (decision 25): an office count
+  // dialled down keeps its scan events. The count panel is the office's
+  // door at the origin (the kernel's CountDoor), shown while the truck loads.
   const onSpotCount = (
     await db
-      .select({ n: sql<number>`count(*)` })
+      .select({ n: sql<number>`count(DISTINCT ${scanEvents.boxId})` })
       .from(scanEvents)
-      .where(sql`${scanEvents.batchId} = ${id} AND ${scanEvents.addedOnSpot} = true`)
+      .innerJoin(boxes, eq(boxes.id, scanEvents.boxId))
+      .where(
+        and(
+          eq(scanEvents.batchId, id),
+          eq(scanEvents.addedOnSpot, true),
+          eq(scanEvents.type, 'load'),
+          aboardFilter(id),
+        ),
+      )
   )[0]!.n;
+  const loadingNow = ['forming', 'loading'].includes(batch.status);
+  const countDoor = countDoorFor(actor, batch.originWarehouseId);
+  const loadPanel = countDoor && loadingNow ? await countLoadPanel(batch) : null;
+  const counted = await countedOnTruck(id);
+  const loadAwaiting =
+    loadingNow && actor.permissions.has('plans.manage')
+      ? ((await qrlessUncountedByTruck(db, [id])).get(id) ?? [])
+      : [];
 
   const totalPlanned = lots.reduce((a, l) => a + Number(l.planned), 0);
   const totalLoaded = lots.reduce((a, l) => a + Number(l.loaded), 0);
@@ -281,7 +315,13 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
     : null;
 
   const missingRows = await db
-    .select({ box: boxes, letter: receiptLots.letter, clientCode: clients.clientCode, marking: receipts.unclaimedMarking })
+    .select({
+      box: boxes,
+      letter: receiptLots.letter,
+      clientCode: clients.clientCode,
+      marking: receipts.unclaimedMarking,
+      product: receiptLots.productNameZh,
+    })
     .from(boxes)
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
     .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
@@ -295,24 +335,44 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
     ? (await remainingToUnload(id)).length
     : 0;
 
-  // What was actually loaded, box by box — from load scan events, so the
+  // Region B — «sanab qabul» (0112): the office's count at the destination.
+  // The door is the count door there (plans.manage in scope, Q3a); the
+  // panel's cartons beyond the truck also need the ORIGIN's door.
+  const unloadingNow = ['in_transit', 'arrived'].includes(batch.status);
+  const mayCountAccept = unloadingNow && mayCountMove(actor, batch.destWarehouseId);
+  const [countPanel, countedAwaiting, overArrivedRows, destTypeRow] = await Promise.all([
+    mayCountAccept ? countAcceptPanel(id) : null,
+    unloadingNow ? countedLotAwaiting(id) : 0,
+    db
+      .select({ n: sql<number>`count(DISTINCT ${scanEvents.boxId})` })
+      .from(scanEvents)
+      .where(sql`${scanEvents.batchId} = ${id} AND ${scanEvents.type} = 'unload' AND ${scanEvents.addedOnSpot} = true`),
+    db.select({ type: warehouses.type }).from(warehouses).where(eq(warehouses.id, batch.destWarehouseId)),
+  ]);
+  const overArrived = Number(overArrivedRows[0]?.n ?? 0);
+  const countAwaiting = countPanel?.lots.reduce((acc, lot) => acc + lot.awaiting, 0) ?? 0;
+  const tca = await getTranslations('countAccept');
+
+  // What was actually loaded, box by box — the truck's real cargo, so the
   // list survives unload/close (owner: after the truck leaves, the sending
-  // warehouse only needs to SEE what it loaded — read-only).
+  // warehouse only needs to SEE what it loaded — read-only) and follows an
+  // office count dialled down (0112: the scan history keeps every carton that
+  // was ever put on).
   const loadedBoxes = ['forming'].includes(batch.status)
     ? []
     : await db
         .selectDistinct({
           shortCode: boxes.shortCode,
+          lotId: boxes.lotId,
           letter: receiptLots.letter,
           clientCode: clients.clientCode,
           marking: receipts.unclaimedMarking,
         })
-        .from(scanEvents)
-        .innerJoin(boxes, eq(scanEvents.boxId, boxes.id))
+        .from(boxes)
         .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
         .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
         .leftJoin(clients, eq(receipts.clientId, clients.id))
-        .where(sql`${scanEvents.batchId} = ${id} AND ${scanEvents.type} = 'load'`)
+        .where(aboardFilter(id))
         .orderBy(asc(receiptLots.letter), asc(boxes.shortCode));
 
   return (
@@ -354,6 +414,31 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
           {Number(onSpotCount) > 0 && (
             <span className="ml-2 rounded bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-800">
               +{onSpotCount} {t('onSpot')}
+            </span>
+          )}
+          {overArrived > 0 && (
+            <span
+              className="ml-2 rounded bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-800"
+              data-testid="batch-over-arrived"
+            >
+              +{overArrived} {tca('overArrived')}
+            </span>
+          )}
+          {counted.cartons > 0 && (
+            <span
+              data-testid="batch-counted-chip"
+              className="ml-2 rounded bg-brand-50 px-2 py-0.5 text-xs font-semibold text-brand-700"
+            >
+              {tcount('countedChip', { n: counted.cartons })}
+            </span>
+          )}
+          {loadAwaiting.length > 0 && (
+            <span
+              data-testid="batch-count-awaiting"
+              title={loadAwaiting.map((lot) => lot.label).join(', ')}
+              className="ml-2 rounded bg-warn/10 px-2 py-0.5 text-xs font-semibold text-warn"
+            >
+              {tcount('awaitingChip')}
             </span>
           )}
         </p>
@@ -410,12 +495,19 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
           <UnloadActions
             batchId={batch.id}
             status={batch.status}
-            missing={missingRows.map(({ box, letter, clientCode, marking }) => ({
+            missing={missingRows.map(({ box, letter, clientCode, marking, product }) => ({
               boxId: box.id,
               shortCode: box.shortCode,
               label: `${codeIdentity(marking, clientCode).main}-${letter}`,
+              lotId: box.lotId,
+              product,
+              crated: box.crateId !== null,
             }))}
             remaining={remainingToAccept}
+            // «Hammasini qabul qilish» leaves a lot counted HERE to the count
+            // (decision 21), so its button says what it will really land.
+            acceptable={remainingToAccept - countedAwaiting}
+            canCountResolve={mayCountMove(actor, batch.destWarehouseId)}
             // The two shortcuts and the missing-box resolution are the same
             // manager act at the same warehouse — and the WAREHOUSE half was
             // missing on `canResolve`, so the screen drew a button whose
@@ -427,6 +519,35 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
           />
         )}
       </div>
+
+      {/* Region B — «sanab qabul» (0112), in the slot under the header card. */}
+      {countPanel && (countPanel.lots.length > 0 || countPanel.crates.length > 0) && (
+        <Panel
+          id="count-accept"
+          title={`🔢 ${tca('title')}`}
+          badge={tca('badge', { lots: countPanel.lots.length, n: countAwaiting })}
+          open={countPanel.lots.some((lot) => lot.awaiting > 0 && lot.mode !== null)}
+          testId="count-accept-open"
+        >
+          <CountAcceptPanel
+            batchId={batch.id}
+            status={batch.status}
+            notifiesClients={landedStatusFor(destTypeRow[0]?.type ?? '') === 'ready_for_pickup'}
+            mayOver={mayCountMove(actor, batch.originWarehouseId)}
+            lots={countPanel.lots}
+            crates={countPanel.crates}
+          />
+        </Panel>
+      )}
+      {loadPanel && (
+        <CountLoadPanel
+          batchId={batch.id}
+          quick={loadPanel.quick}
+          rows={loadPanel.rows}
+          crates={loadPanel.crates}
+          defaultOpen={loadPanel.rows.some((row) => row.mode === 'counted' || row.mode === 'qrless')}
+        />
+      )}
 
       <CardCols
         main={
@@ -502,6 +623,11 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
                         </span>
                       )}
                     </Link>
+                    {Number(lot.qrless) > 0 && (
+                      <span className="block">
+                        <QrlessChip n={Number(lot.qrless)} total={lot.onBatch} label={tqrsiz('chip')} />
+                      </span>
+                    )}
                   </td>
                   <td className="max-w-56 p-2">
                     <Link href={`/receipts/${lot.receiptId}`} className="block truncate">
@@ -546,13 +672,18 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
             {[...loadedBoxes
               .reduce((acc, b) => {
                 const label = `${codeIdentity(b.marking, b.clientCode).main}-${b.letter}`;
-                acc.set(label, [...(acc.get(label) ?? []), b.shortCode]);
+                const entry = acc.get(label) ?? { counted: counted.lotIds.includes(b.lotId), codes: [] };
+                entry.codes.push(b.shortCode);
+                acc.set(label, entry);
                 return acc;
-              }, new Map<string, string[]>())
-              .entries()].map(([label, codes]) => (
+              }, new Map<string, { counted: boolean; codes: string[] }>())
+              .entries()].map(([label, lot]) => (
               <p key={label} className="border-b border-line py-1 last:border-0">
                 <span className="font-mono font-extrabold text-brand-700">{label}</span>{' '}
-                <span className="font-mono text-xs text-ink-700">{codes.join(', ')}</span>
+                {/* A counted lot's cartons carry no sticker to find by code. */}
+                <span className="font-mono text-xs text-ink-700">
+                  {lot.counted ? tcount('loadedCounted', { n: lot.codes.length }) : lot.codes.join(', ')}
+                </span>
               </p>
             ))}
           </div>

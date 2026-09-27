@@ -6,6 +6,7 @@ import { db } from '@/modules/platform/db/client';
 import { boxes, clients, receiptLots, receipts, warehouses } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { warehouseScope } from '@/modules/platform/rbac/scope';
+import { isBackdated } from '@/modules/wms/receipts/received-day';
 
 export default async function ReceiptsPage() {
   const actor = await getActor();
@@ -54,7 +55,11 @@ export default async function ReceiptsPage() {
                 {clientCode ?? `❓ ${t('unclaimed')}`}
               </span>
               <span className="ml-auto text-xs text-ink-500">
-                {format.dateTime(receipt.receivedAt, { dateStyle: 'short', timeStyle: 'short' })}
+                {/* A back-dated office prixod (0112) carries a DAY; its noon
+                    is a filing convention, never a time anybody saw. */}
+                {isBackdated(receipt)
+                  ? format.dateTime(receipt.receivedAt, { dateStyle: 'short' })
+                  : format.dateTime(receipt.receivedAt, { dateStyle: 'short', timeStyle: 'short' })}
               </span>
             </div>
             <div className="mt-1 text-sm text-ink-700">

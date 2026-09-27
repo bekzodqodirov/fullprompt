@@ -1,4 +1,4 @@
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
@@ -17,7 +17,10 @@ import { BoxStatusActions } from './status-actions';
 import { BackLink } from '@/components/back-link';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 import { PrintLabels } from '@/components/print-labels';
-import { warehouseScope } from '@/modules/platform/rbac/scope';
+import { inScope, warehouseScope } from '@/modules/platform/rbac/scope';
+import { qrlessBoxSql } from '@/modules/wms/labels/qrless-sql';
+import { printableStatuses } from '@/modules/wms/labels/qrless';
+import { QrlessChip } from '@/components/qrless-chip';
 import { moneyHidden } from '@/modules/platform/rbac/money-sight';
 import { mayOpenBoxCard } from '@/modules/wms/boxes/road-loss';
 
@@ -70,6 +73,22 @@ export default async function BoxPage({ params }: { params: Promise<{ id: string
   const landed = canSeeCosts ? await boxLandedCost(box.id) : null;
   const tCost = await getTranslations('costing');
 
+  // A QR-siz carton (0112) has no sticker of ours to REprint: its sticker is
+  // the print-later sheet's, for the warehouse it stands in and a status this
+  // person may stamp — the receipt's sheet leaves it out, so its link would
+  // answer «not found».
+  const [qr] = await db
+    .select({ qrless: sql<boolean>`${qrlessBoxSql()}` })
+    .from(boxes)
+    .where(eq(boxes.id, box.id));
+  const qrless = Boolean(qr?.qrless);
+  const tq = await getTranslations('qrsiz');
+  const printLaterHere =
+    qrless &&
+    box.currentWarehouseId !== null &&
+    inScope(actor, box.currentWarehouseId) &&
+    printableStatuses(actor, box.currentWarehouseId).includes(box.status);
+
   const movements = await db
     .select({ movement: boxMovements, actorName: users.fullName, toWh: warehouses.code })
     .from(boxMovements)
@@ -87,7 +106,8 @@ export default async function BoxPage({ params }: { params: Promise<{ id: string
           <span className="font-mono font-extrabold text-brand-700">
             {client?.clientCode ?? '❓'}-{lot.letter}
           </span>{' '}
-          · {box.seqInLot}/{lot.boxCount} {t('inLot')}
+          · {box.seqInLot}/{lot.boxCount} {t('inLot')}{' '}
+          <QrlessChip n={qrless ? 1 : 0} total={1} label={tq('chip')} />
         </p>
         <p>
           {lot.productNameZh} {lot.productNameRu && `(${lot.productNameRu})`}
@@ -110,13 +130,22 @@ export default async function BoxPage({ params }: { params: Promise<{ id: string
           always accepted a single box and nothing ever sent it, so the only
           way to replace one label was to reprint the whole lot (SPEC §7:
           "reprint anytime from receipt/lot/box screens"). */}
-      {actor.permissions.has('receipts.create') && (
-        <PrintLabels
-          variant="secondary"
-          href={`/print/receipts/${receipt.id}?boxId=${box.id}`}
-          label={tReceipts('reprint')}
-        />
-      )}
+      {actor.permissions.has('receipts.create') &&
+        (qrless ? (
+          printLaterHere && (
+            <PrintLabels
+              variant="secondary"
+              href={`/print/qrsiz?warehouseId=${box.currentWarehouseId}&boxId=${box.id}`}
+              label={tq('printBox')}
+            />
+          )
+        ) : (
+          <PrintLabels
+            variant="secondary"
+            href={`/print/receipts/${receipt.id}?boxId=${box.id}`}
+            label={tReceipts('reprint')}
+          />
+        ))}
 
       {actor.permissions.has('receipts.void') && (
         <BoxStatusActions

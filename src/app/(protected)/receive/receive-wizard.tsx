@@ -11,6 +11,18 @@ import { DensityBadge } from '@/components/density-badge';
 import { LightboxImg } from '@/components/lightbox-img';
 import { PrintLabels } from '@/components/print-labels';
 import { submitReceiptAction, type SubmitReceiptResult } from './actions';
+import {
+  OfficeReceivedFields,
+  receivedErrorText,
+  receiverPayload,
+  type ReceiverChoice,
+  type ReceiverOption,
+} from '../receipts/[id]/received-edit-form';
+import { receivedDayBounds } from '@/modules/wms/receipts/received-day';
+import { factoryBarcodeKey } from '@/modules/wms/receipts/factory-barcode';
+import { isOwnCodeShape } from '@/offline/code-shape';
+import { Overlay } from '@/components/ui/overlay';
+import { Scanner } from '@/components/scan/scanner';
 
 /**
  * Single-window receiving (owner's request): client on top, product LINES in
@@ -26,6 +38,8 @@ interface WarehouseOption {
   code: string;
   name: string;
   country: string;
+  /** The day an office prixod may claim is the WAREHOUSE's day (0112). */
+  timezone: string;
 }
 interface ClientHit {
   id: string;
@@ -47,12 +61,16 @@ interface LotDraft {
   totalWeightKg: string;
   totalVolumeM3: string;
   photoIds: string[];
+  /** The factory's barcode as typed or read (0112, Q10 c) — '' = none. */
+  barcode: string;
   /**
    * What the factory truck said about this line — «zavod: 50 · haydovchi: 48»
    * — printed beside the count box, which stays EMPTY: B2 is a recount at
    * our door, not an acceptance of the factory's number.
    */
   hint?: string;
+  /** «QR yopishtirilmadi» (0112): no sticker goes on these cartons. Absent in an old draft = no. */
+  qrSkipped?: boolean;
 }
 
 interface CostDraft {
@@ -88,6 +106,10 @@ interface Draft {
   pickupLabel?: string;
   /** Which prefill made this draft — a refresh must restore it, not re-mint it. */
   prefillKey?: string;
+  /** Office receipt (0112, Q9 b): the real day — '' = the warehouse's today. */
+  receivedDay?: string;
+  /** …and who physically received it. */
+  receiver?: ReceiverChoice;
 }
 
 /** Everything a tapped promise already knows — the operator types the rest. */
@@ -112,6 +134,19 @@ export interface ArrivalPrefill {
 
 const DRAFT_KEY = 'gsr-receipt-draft';
 
+/** The refusals `receivedErrorText` puts into words (0112) — the rest keep the old line. */
+const OFFICE_ERRORS: Record<string, true> = {
+  on_behalf_forbidden: true,
+  receiver_required: true,
+  receiver_invalid: true,
+  received_day_invalid: true,
+  received_in_future: true,
+  received_too_old: true,
+  barcode_invalid: true,
+  barcode_is_ours: true,
+  server_behind: true,
+};
+
 /**
  * The busy slot the two RECEIPT-level uploaders share (round 97).
  *
@@ -135,6 +170,8 @@ function newLot(): LotDraft {
     totalWeightKg: '',
     totalVolumeM3: '',
     photoIds: [],
+    qrSkipped: false,
+    barcode: '',
   };
 }
 
@@ -187,6 +224,7 @@ export function ReceiveWizard({
   densityThresholds,
   prefill = null,
   canPickDeal = false,
+  office = null,
 }: {
   warehouses: WarehouseOption[];
   /** From admin settings — the owner's numbers, not a constant of ours. */
@@ -195,10 +233,28 @@ export function ReceiveWizard({
   prefill?: ArrivalPrefill | null;
   /** Whoever may write a deal. The warehouse may not, and must not be asked. */
   canPickDeal?: boolean;
+  /**
+   * The office receipt (0112, the owner's Q9 b): set for whoever may enter a
+   * prixod on the floor's behalf (the count door). They get the real-day and
+   * «who received it» row, and NO default warehouse — an unscoped logist is
+   * offered every warehouse, and a silent first-in-the-list default would
+   * mint the number, letters and box codes on the wrong warehouse's counters.
+   */
+  office?: {
+    warehouseIds: string[];
+    receivers: Record<string, ReceiverOption[]>;
+    me: ReceiverOption;
+  } | null;
 }) {
+  const canOnBehalf = office !== null;
+  const firstWarehouse = canOnBehalf ? '' : (warehouses[0]?.id ?? '');
   const t = useTranslations('receive');
   const tc = useTranslations('common');
   const td = useTranslations('deals');
+  const tq = useTranslations('qrsiz');
+  const to = useTranslations('ofis');
+  /** The lot whose barcode the camera is reading (0112), or null. */
+  const [barcodeLot, setBarcodeLot] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [clientQuery, setClientQuery] = useState('');
   const [clientHits, setClientHits] = useState<ClientHit[]>([]);
@@ -311,7 +367,7 @@ export function ReceiveWizard({
           // confirm can't hit "Warehouse out of scope".
           const allowedWh = warehouses.some((wh) => wh.id === parsed.warehouseId)
             ? parsed.warehouseId!
-            : (warehouses[0]?.id ?? '');
+            : firstWarehouse;
           const backfilled: Draft = {
             ...parsed,
             warehouseId: allowedWh,
@@ -330,7 +386,7 @@ export function ReceiveWizard({
       }
     }
      
-    setDraft(newDraft(warehouses[0]?.id ?? ''));
+    setDraft(newDraft(firstWarehouse));
     // The keys ARE the dependency: a re-render with equal values must not
     // re-run this (see above).
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -610,9 +666,28 @@ export function ReceiveWizard({
   }
 
   const clientChosen = draft.clientId !== null || (draft.unclaimed && draft.unclaimedMarking.trim());
+  // The office row (0112): its warehouse's day bounds and the receiver it posts.
+  const officeWh = warehouses.find((wh) => wh.id === draft.warehouseId) ?? null;
+  const officeBounds = officeWh ? receivedDayBounds(new Date(), officeWh.timezone) : null;
+  const receivedBy = receiverPayload(draft.receiver ?? null);
+  const officeReady = !canOnBehalf || receivedBy !== null;
+  /** A barcode box that holds something the key refuses (or one of OUR codes). */
+  const barcodeBad = (lot: LotDraft) => {
+    if (!lot.barcode.trim()) return false;
+    const key = factoryBarcodeKey(lot.barcode);
+    return !key || isOwnCodeShape(key);
+  };
+  /** The sentence for a bad barcode box — one of OUR codes is a different
+   *  mistake (the QR sticker scanned into the wrong box) from a typo. */
+  const barcodeWord = (lot: LotDraft) => {
+    const key = factoryBarcodeKey(lot.barcode);
+    return key && isOwnCodeShape(key) ? to('errors.barcode_is_ours_plain') : to('errors.barcode_invalid_plain');
+  };
 
   /** First missing thing per lot — shown next to the disabled confirm so the operator knows WHAT is wrong. */
   function firstProblem(): string | null {
+    if (!draft!.warehouseId) return to('problemWarehouse');
+    if (!officeReady) return to('problemReceiver');
     if (!clientChosen) return t('problems.client');
     for (let i = 0; i < draft!.lots.length; i += 1) {
       const lot = draft!.lots[i]!;
@@ -621,13 +696,19 @@ export function ReceiveWizard({
       if (!(Number(lot.boxCount) >= 1)) return `${line}: ${t('problems.count')}`;
       if (!lotTotals(lot)) return `${line}: ${t('problems.dims')}`;
       if (lot.photoIds.length === 0) return `${line}: ${t('problems.photo')}`;
+      if (barcodeBad(lot)) return `${line}: ${barcodeWord(lot)}`;
     }
     return null;
   }
 
   function lotsValid(): boolean {
-    return draft!.lots.every(
-      (lot) => lot.zh.trim() && Number(lot.boxCount) && lot.photoIds.length > 0 && lotTotals(lot),
+    return (
+      Boolean(draft!.warehouseId) &&
+      officeReady &&
+      draft!.lots.every(
+        (lot) =>
+          lot.zh.trim() && Number(lot.boxCount) && lot.photoIds.length > 0 && lotTotals(lot) && !barcodeBad(lot),
+      )
     );
   }
 
@@ -644,12 +725,25 @@ export function ReceiveWizard({
         unclaimedMarking: draft!.unclaimedMarking,
         expectedArrivalId: draft!.expectedArrivalId ?? null,
         pickupStopId: draft!.pickupStopId ?? null,
+        // Only for the office: never sent otherwise, so a stale shared-device
+        // draft cannot trip `on_behalf_forbidden` on an operator's phone. The
+        // warehouse's own today is the column's default and is not posted.
+        ...(canOnBehalf && receivedBy
+          ? {
+              receivedBy,
+              ...(draft!.receivedDay && draft!.receivedDay !== officeBounds?.max
+                ? { receivedDay: draft!.receivedDay }
+                : {}),
+            }
+          : {}),
         lots: draft!.lots.map((lot) => ({
           id: lot.id,
           productNameZh: lot.zh.trim(),
           productNameRu: lot.ru.trim(),
+          factoryBarcode: lot.barcode.trim(),
           boxCount: Number(lot.boxCount),
           dimsMode: lot.dimsMode,
+          qrSkipped: Boolean(lot.qrSkipped),
           ...(lot.dimsMode === 'uniform'
             ? {
                 boxLengthCm: Number(lot.lengthCm),
@@ -677,6 +771,9 @@ export function ReceiveWizard({
         setError(t('warehouseForbidden'));
       } else if (res.error === 'amount_too_large') {
         setError(tc('amountTooLarge'));
+      } else if (res.error && res.error in OFFICE_ERRORS) {
+        // The office receipt's and the barcode's refusals, in words (0112).
+        setError(receivedErrorText(res.error, to, tc, res.detail));
       } else {
         setError(res.detail ? `${res.error}: ${res.detail}` : (res.error ?? 'error'));
       }
@@ -695,21 +792,37 @@ export function ReceiveWizard({
             <li key={lot.letter} className="flex items-baseline gap-2">
               <span className="font-mono text-xl font-extrabold text-brand-700">{lot.letter}</span>
               <span>{lot.productNameZh}</span>
+              {lot.qrSkipped && (
+                <span data-testid="receipt-lot-qrless" className="chip-warn whitespace-nowrap">
+                  🏷 {tq('chip')}
+                </span>
+              )}
               <span className="ml-auto text-sm text-ink-700">{lot.boxCount} 📦</span>
             </li>
           ))}
         </ul>
-        <PrintLabels href={`/print/receipts/${result.receiptId}`} label={t('printLabels')} />
-        {(result.lots?.length ?? 0) > 1 && (
+        {/* A QR-siz lot gets no sticker here (0112): its sheet would be empty
+            (the receipt's sheet leaves those cartons out), and a printed-and-
+            recorded one would make the phones expect a scan. */}
+        {(result.lots ?? []).some((lot) => !lot.qrSkipped) ? (
+          <PrintLabels href={`/print/receipts/${result.receiptId}`} label={t('printLabels')} />
+        ) : (
+          <p data-testid="receipt-qrless-note" className="text-sm text-ink-700">
+            {tq('noPrintNote')}
+          </p>
+        )}
+        {(result.lots ?? []).filter((lot) => !lot.qrSkipped).length > 1 && (
           <div className="grid grid-cols-3 gap-2">
-            {result.lots?.map((lot) => (
-              <PrintLabels
-                key={lot.lotId}
-                variant="secondary"
-                href={`/print/receipts/${result.receiptId}?lotId=${lot.lotId}`}
-                label={lot.letter}
-              />
-            ))}
+            {result.lots
+              ?.filter((lot) => !lot.qrSkipped)
+              .map((lot) => (
+                <PrintLabels
+                  key={lot.lotId}
+                  variant="secondary"
+                  href={`/print/receipts/${result.receiptId}?lotId=${lot.lotId}`}
+                  label={lot.letter}
+                />
+              ))}
           </div>
         )}
         <a href={`/receipts/${result.receiptId}`} className="btn-secondary w-full">
@@ -886,10 +999,31 @@ export function ReceiveWizard({
       <div className="flex gap-2">
         <select
           aria-label={t('warehouse')}
+          data-testid="receive-warehouse"
           className="input !w-24 shrink-0 font-mono font-bold"
           value={draft.warehouseId}
-          onChange={(e) => update({ warehouseId: e.target.value })}
+          onChange={(e) => {
+            // The office row belongs to the warehouse: a colleague who is not
+            // on the new warehouse's list and a day past its bounds are
+            // cleared rather than posted into a refusal (0112).
+            const next = e.target.value;
+            const wh = warehouses.find((row) => row.id === next);
+            const bounds = wh ? receivedDayBounds(new Date(), wh.timezone) : null;
+            const choice = draft.receiver ?? null;
+            const keepsReceiver =
+              !choice ||
+              choice.kind === 'name' ||
+              choice.userId === office?.me.id ||
+              (office?.receivers[next] ?? []).some((person) => person.id === choice.userId);
+            const day = draft.receivedDay ?? '';
+            update({
+              warehouseId: next,
+              receiver: keepsReceiver ? choice : null,
+              receivedDay: day && bounds && day >= bounds.min && day <= bounds.max ? day : '',
+            });
+          }}
         >
+          {!draft.warehouseId && <option value="">{to('warehousePick')}</option>}
           {warehouses.map((wh) => (
             <option key={wh.id} value={wh.id}>
               {wh.code}
@@ -974,6 +1108,18 @@ export function ReceiveWizard({
           )}
         </div>
       </div>
+      {canOnBehalf && office && (
+        <OfficeReceivedFields
+          day={draft.receivedDay || officeBounds?.max || ''}
+          bounds={officeBounds}
+          onDay={(day) => update({ receivedDay: day })}
+          choice={draft.receiver ?? null}
+          onChoice={(receiver) => update({ receiver })}
+          me={office.me}
+          receivers={office.receivers[draft.warehouseId] ?? []}
+          disabled={!draft.warehouseId}
+        />
+      )}
       {/* The moment that decides whether the price-control alert can do its
           job: cargo linked to the job it was quoted under compares against
           that quote, cargo linked to nothing shouts "unpriced".
@@ -1247,6 +1393,17 @@ export function ReceiveWizard({
                       {lot.ru && (
                         <p className="mt-0.5 truncate px-1 text-xs text-ink-500">({lot.ru})</p>
                       )}
+                      <input
+                        aria-label={to('barcode')}
+                        className={`input-cell mt-1 font-mono text-xs uppercase ${barcodeBad(lot) ? '!border-bad' : ''}`}
+                        value={lot.barcode}
+                        maxLength={64}
+                        placeholder={`🏷 ${to('barcode')}`}
+                        onChange={(e) => updateLot(lot.id, { barcode: e.target.value })}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') e.preventDefault();
+                        }}
+                      />
                     </td>
                     <td className="p-1.5">
                       <input
@@ -1344,6 +1501,39 @@ export function ReceiveWizard({
               )}
             </div>
             {lot.ru && <p className="px-10 text-sm text-ink-500">({lot.ru})</p>}
+            {/* The factory's barcode (0112, Q10 c): typed, read by an HID
+                scanner (which types Enter after it — swallowed here), or read
+                by the camera in retail mode. Optional; it only identifies. */}
+            <div className="flex items-center gap-2">
+              <input
+                data-testid="lot-barcode"
+                aria-label={to('barcode')}
+                className={`input min-w-0 flex-1 font-mono uppercase ${barcodeBad(lot) ? '!border-bad' : ''}`}
+                inputMode="text"
+                autoCapitalize="characters"
+                maxLength={64}
+                placeholder={`🏷 ${to('barcode')}`}
+                value={lot.barcode}
+                onChange={(e) => updateLot(lot.id, { barcode: e.target.value })}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') e.preventDefault();
+                }}
+              />
+              <button
+                type="button"
+                data-testid="lot-barcode-scan"
+                aria-label={to('barcodeScan')}
+                className="btn-secondary !min-h-12 shrink-0 px-3"
+                onClick={() => setBarcodeLot(lot.id)}
+              >
+                📷
+              </button>
+            </div>
+            {barcodeBad(lot) && (
+              <p data-testid="lot-barcode-invalid" className="text-xs font-semibold text-bad">
+                {barcodeWord(lot)}
+              </p>
+            )}
             <div className="flex items-center gap-2">
               <div className="flex-1">
                 <p className="mb-0.5 text-[11px] font-semibold text-ink-500">
@@ -1399,6 +1589,22 @@ export function ReceiveWizard({
                 </div>
               </div>
             )}
+            {/* The box that says no sticker will go on these cartons (0112) —
+                sacks, rolls, a pile going straight onto a truck. Mobile card
+                only: the desktop table is `hidden md:block`, and a second
+                element with this testid would make every phone test's
+                `.check()` a strict-mode refusal. */}
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                data-testid="lot-qr-skipped"
+                className="h-4 w-4"
+                checked={Boolean(lot.qrSkipped)}
+                onChange={(e) => updateLot(lot.id, { qrSkipped: e.target.checked })}
+              />
+              🏷 {tq('skipped')}
+            </label>
+            {lot.qrSkipped && <p className="text-2xs text-ink-500">{tq('skippedHint')}</p>}
             <div className="flex items-center gap-2">
               {photosField(lot)}
               <span className="ml-auto">{totalsBadge(lot)}</span>
@@ -1414,9 +1620,36 @@ export function ReceiveWizard({
         </button>
       </div>
 
+      {/* Kept MOUNTED, toggled by `open` (#684). The scanner inside exists
+          only while it is open, so the camera is released on close. */}
+      <Overlay
+        open={barcodeLot !== null}
+        onClose={() => setBarcodeLot(null)}
+        closeLabel={to('close')}
+        testId="barcode-scan-overlay"
+        className="absolute inset-x-0 bottom-0 space-y-3 rounded-t-2xl bg-surface-raised p-4 pb-safe shadow-xl sm:inset-x-auto sm:left-1/2 sm:top-1/2 sm:bottom-auto sm:w-96 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl"
+      >
+        <p className="text-sm font-bold">🏷 {to('barcodeScan')}</p>
+        <Scanner
+          active={barcodeLot !== null}
+          mode="retail"
+          onCode={(code) => {
+            if (barcodeLot) updateLot(barcodeLot, { barcode: code });
+            setBarcodeLot(null);
+          }}
+        />
+        <button type="button" className="btn-secondary w-full" onClick={() => setBarcodeLot(null)}>
+          {to('close')}
+        </button>
+      </Overlay>
+
       {error && (
-        <p role="alert" className="rounded-lg bg-bad/10 p-3 text-sm font-semibold text-bad">
-          {error === 'photo_required' ? t('photoRequired') : error === 'pickup_invalid' ? t('pickupInvalid') : tc('error')} ({error})
+        <p role="alert" data-testid="receive-error" className="rounded-lg bg-bad/10 p-3 text-sm font-semibold text-bad">
+          {/* A code keeps the old «error (code)» line; a sentence already put
+              into words (the office refusals, 0112) is shown as it is. */}
+          {!/^[a-z_]+(?::|$)/.test(error)
+            ? error
+            : `${error === 'photo_required' ? t('photoRequired') : error === 'pickup_invalid' ? t('pickupInvalid') : tc('error')} (${error})`}
         </p>
       )}
 

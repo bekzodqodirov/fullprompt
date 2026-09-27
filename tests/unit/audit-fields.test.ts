@@ -7,6 +7,7 @@ import {
   AUDIT_FIELD_LABELS,
   AUDIT_FIELD_REFS,
   collectAuditRefs,
+  formatAuditValue,
   isUuidShaped,
 } from '@/modules/platform/audit/fields';
 
@@ -103,5 +104,28 @@ describe('the reference columns (round 100, item 4)', () => {
     expect([...(wanted.get('stage') ?? [])].sort()).toEqual([stageA, stageB]);
     expect([...(wanted.get('user') ?? [])]).toEqual([owner]);
     expect(wanted.has('warehouse')).toBe(false);
+  });
+});
+
+describe('a recorded value as the History tab prints it (review ui-4)', () => {
+  it('reads a count’s growth as its facts, never its ids', () => {
+    const grown = {
+      add: 3,
+      side: 'unload',
+      codes: ['GS1-000006', 'GS1-000007'],
+      lotId: '79d1416a-b010-4a08-afd7-8ba7bee8f3c0',
+      letter: 'A',
+      reason: 'uchta ortiqcha',
+      batchId: '01a0e3e1-5f86-745a-b10c-92898c50b9e3',
+    };
+    expect(formatAuditValue(grown)).toBe('add: 3 · side: unload · codes: GS1-000006, GS1-000007 · letter: A · reason: uchta ortiqcha');
+  });
+
+  it('keeps the plain shapes plain, and an empty one says so', () => {
+    expect(formatAuditValue(['YW', 'TAS'])).toBe('YW, TAS');
+    expect(formatAuditValue(12)).toBe('12');
+    expect(formatAuditValue(null)).toBe('∅');
+    expect(formatAuditValue([])).toBe('∅');
+    expect(formatAuditValue([{ zh: '夹克', boxes: 5 }])).toBe('[{"zh":"夹克","boxes":5}]');
   });
 });

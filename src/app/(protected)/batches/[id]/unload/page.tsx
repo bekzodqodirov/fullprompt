@@ -7,6 +7,7 @@ import { batches } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { UnloadScreen } from './unload-screen';
 import { PageHeader } from '@/components/ui/page';
+import { mayCountMove } from '@/modules/wms/scanning/count-door';
 
 export default async function UnloadPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -25,7 +26,12 @@ export default async function UnloadPage({ params }: { params: Promise<{ id: str
           {batch.code}
         </Link>
       </div>
-      <UnloadScreen batchId={id} />
+      {/* The office's count door lives on the batch card (0112, decision 2):
+          the phone only gets a way there, and only for whoever holds it. */}
+      <UnloadScreen
+        batchId={id}
+        countHref={mayCountMove(actor, batch.destWarehouseId) ? `/batches/${id}#count-accept` : undefined}
+      />
     </div>
   );
 }

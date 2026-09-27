@@ -44,7 +44,11 @@ export type DomainEventType =
   // Phase 7: funnel movement becomes an event, so automation rules can hear
   // it. Emitted from EVERY stage write path, not just the board's move.
   | 'LeadStageChanged'
-  | 'DealStageChanged';
+  | 'DealStageChanged'
+  // 0112: an office count found fewer cartons on a truck than it carried —
+  // the owner and the logists are told at once (Q6c). One per (truck, lot)
+  // change, never one per press.
+  | 'CountShortfall';
 
 /**
  * Persist a domain event in the same transaction as the mutation that caused

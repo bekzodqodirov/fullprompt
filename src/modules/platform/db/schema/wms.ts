@@ -121,6 +121,13 @@ export const receipts = pgTable(
      * the pickup's own receive door and by attach/detach — never guessed.
      */
     pickupStopId: uuid('pickup_stop_id').references((): AnyPgColumn => pickupStops.id),
+    /**
+     * Who PHYSICALLY received a prixod the office entered on their behalf
+     * (0112, Q9 b): a colleague, or a typed name for somebody with no login.
+     * Both NULL = the person who pressed — what every older row means.
+     */
+    receivedByUserId: uuid('received_by_user_id').references(() => users.id),
+    receivedByName: text('received_by_name'),
     voidedAt: timestamp('voided_at', { withTimezone: true }),
     voidedBy: uuid('voided_by').references(() => users.id),
     voidReason: text('void_reason'),
@@ -150,6 +157,14 @@ export const receipts = pgTable(
     index('receipts_calc_request_idx')
       .on(t.calcRequestId)
       .where(sql`${t.calcRequestId} IS NOT NULL`),
+    check(
+      'receipts_received_by_one',
+      sql`${t.receivedByUserId} IS NULL OR ${t.receivedByName} IS NULL`,
+    ),
+    check(
+      'receipts_received_by_name_len',
+      sql`${t.receivedByName} IS NULL OR char_length(btrim(${t.receivedByName})) BETWEEN 2 AND 120`,
+    ),
   ],
 );
 
@@ -176,6 +191,14 @@ export const receiptLots = pgTable(
     totalVolumeM3: numeric('total_volume_m3', { precision: 12, scale: 4 }).notNull(),
     /** Free-text remark per line (owner's Kashgar file: notes like "loader miscounted"). */
     note: text('note'),
+    /**
+     * «QR yopishtirilmadi» (0112, Q8): WHEN the lot was declared stickerless.
+     * A carton is QR-siz while uncrated and unlabelled since this stamp —
+     * the sentence lives in `labels/qrless-sql.ts` and nowhere else.
+     */
+    qrSkippedAt: timestamp('qr_skipped_at', { withTimezone: true }),
+    /** The factory's own barcode as a canonical key (0112, Q10 c) — identifies, never unique. */
+    factoryBarcode: text('factory_barcode'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -184,6 +207,14 @@ export const receiptLots = pgTable(
     check('receipt_lots_box_count_check', sql`${t.boxCount} > 0`),
     uniqueIndex('receipt_lots_receipt_seq_unique').on(t.receiptId, t.seq),
     index('receipt_lots_letter_idx').on(t.letter),
+    check(
+      'receipt_lots_factory_barcode_check',
+      sql`${t.factoryBarcode} IS NULL OR ${t.factoryBarcode} ~ '^[A-Z0-9./+-]{4,48}$'`,
+    ),
+    index('receipt_lots_qr_skipped_idx').on(t.id).where(sql`${t.qrSkippedAt} IS NOT NULL`),
+    index('receipt_lots_factory_barcode_idx')
+      .on(t.factoryBarcode)
+      .where(sql`${t.factoryBarcode} IS NOT NULL`),
   ],
 );
 
@@ -223,6 +254,8 @@ export const boxes = pgTable(
     // The other half of "is this box on batch X" (migration 0032). Partial:
     // most boxes sit in a warehouse belonging to no truck at all.
     index('boxes_current_batch_idx').on(t.currentBatchId).where(sql`current_batch_id IS NOT NULL`),
+    // Every scan resolves its code by `upper(short_code)` (0112).
+    index('boxes_short_code_upper_idx').on(sql`upper(${t.shortCode})`),
   ],
 );
 
@@ -245,7 +278,7 @@ export const crates = pgTable(
       .notNull()
       .references(() => clients.id),
     status: text('status').notNull().default('active'),
-    /** Physical form printed on the label: ЯЩИК (yashik) or КАРКАС (karkas). */
+    /** Physical form printed on the label: ЯЩИК (yashik), КАРКАС (karkas) or ПАЛЛЕТ (palet, 0112). */
     kind: text('kind').notNull().default('yashik'),
     /** Mirrors the real-world "ask the logist" step — no in-app approval flow. */
     logistApproved: boolean('logist_approved').notNull().default(false),
@@ -265,7 +298,8 @@ export const crates = pgTable(
   },
   (t) => [
     check('crates_status_check', sql`${t.status} IN ('active', 'dissolved')`),
-    check('crates_kind_check', sql`${t.kind} IN ('yashik', 'karkas')`),
+    // A pallet is a crate: one CR- label, one place (0112, Q10 d).
+    check('crates_kind_check', sql`${t.kind} IN ('yashik', 'karkas', 'palet')`),
     check(
       'crates_dissolved_consistency',
       sql`(${t.dissolvedAt} IS NULL) = (${t.dissolvedBy} IS NULL)`,
@@ -793,6 +827,11 @@ export const scanEvents = pgTable(
     index('scan_events_batch_type_idx').on(t.batchId, t.type),
     index('scan_events_box_idx').on(t.boxId),
     index('scan_events_scanner_idx').on(t.scannedBy, t.scannedAt),
+    // «This lot was counted on this truck» (0112, Q4) — the IN list is pinned
+    // against COUNT_REASONS by a unit test.
+    index('scan_events_count_idx')
+      .on(t.batchId, t.boxId)
+      .where(sql`${t.manualReason} IN ('count_load', 'count_accept', 'count_over')`),
   ],
 );
 

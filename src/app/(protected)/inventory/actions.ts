@@ -21,6 +21,9 @@ export interface ReconcileResult {
   moved?: string[];
   lost?: string[];
   skipped?: string[];
+  /** Posted as lost, kept: QR-siz / office-counted cartons are never written off (0112). */
+  qrlessKept?: string[];
+  countKept?: string[];
 }
 
 export async function reconcileInventoryAction(input: unknown): Promise<ReconcileResult> {
@@ -44,7 +47,14 @@ export async function reconcileInventoryAction(input: unknown): Promise<Reconcil
       { actorId: actor.id, ...meta },
     );
     await enqueue(JOB_PROCESS_EVENTS, {});
-    return { ok: true, moved: summary.moved, lost: summary.lost, skipped: summary.skipped };
+    return {
+      ok: true,
+      moved: summary.moved,
+      lost: summary.lost,
+      skipped: summary.skipped,
+      qrlessKept: summary.qrlessKept,
+      countKept: summary.countKept,
+    };
   } catch (err) {
     if (err instanceof InventoryError) return { ok: false, error: err.code };
     throw err;

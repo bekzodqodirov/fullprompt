@@ -4,6 +4,7 @@ import { db } from '@/modules/platform/db/client';
 import { auditLog, users } from '@/modules/platform/db/schema';
 import {
   AUDIT_FIELD_LABELS,
+  formatAuditValue,
   collectAuditRefs,
   isUuidShaped,
   AUDIT_FIELD_REFS,
@@ -88,7 +89,7 @@ export async function HistoryTab({
           </div>
 
           {group.changes.length > 0 && (
-            <ChangeList changes={group.changes} label={fieldLabel} names={refNames} />
+            <ChangeList changes={group.changes} label={fieldLabel} names={refNames} when={when} />
           )}
 
           {/* Merged rows keep their own times and their own fields, because a
@@ -106,6 +107,7 @@ export async function HistoryTab({
                       changes={visibleChanges(row.before, row.after)}
                       label={fieldLabel}
                       names={refNames}
+                      when={when}
                       bare
                     />
                   </li>
@@ -130,12 +132,15 @@ function ChangeList({
   changes,
   label,
   names,
+  when,
   bare = false,
 }: {
   changes: HistoryChange[];
   label: (key: string) => string;
   /** uuid → the thing's name, resolved once for the whole page. */
   names: Map<string, string>;
+  /** The entry's own clock — a recorded instant prints like the row's time. */
+  when: (at: Date) => string;
   bare?: boolean;
 }) {
   if (changes.length === 0) return null;
@@ -147,7 +152,15 @@ function ChangeList({
       const name = names.get(value);
       if (name) return { text: name, title: value };
     }
-    return { text: formatValue(value), title: undefined };
+    // A recorded INSTANT (an office prixod's «qabul qilingan kun», a
+    // follow-up) reached the reader as a UTC ISO string — hours off the
+    // warehouse's own day (review ui-4). It prints on the entry's clock, the
+    // stored value kept in the tooltip.
+    if (typeof value === 'string' && ISO_INSTANT.test(value)) {
+      const at = new Date(value);
+      if (!Number.isNaN(at.getTime())) return { text: when(at), title: value };
+    }
+    return { text: formatAuditValue(value), title: undefined };
   };
   return (
     <ul className={bare ? 'space-y-1' : 'mt-2 space-y-1 border-t border-line pt-2'}>
@@ -177,8 +190,6 @@ function ChangeList({
   );
 }
 
-function formatValue(value: unknown): string {
-  if (value === null || value === undefined || value === '') return '∅';
-  if (typeof value === 'object') return JSON.stringify(value);
-  return String(value);
-}
+/** A full ISO instant as `toISOString()` writes it — a bare date stays text. */
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})$/;
+

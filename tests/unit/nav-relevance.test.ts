@@ -118,6 +118,19 @@ describe('menu relevance', () => {
     }
   });
 
+  it('gives the logist the office receive door, and nothing else of the warehouse', () => {
+    // The owner's Q9 b (0112): a logist enters the prixod the floor could not
+    // type, from the office. «Qabul» joins his menu (and so «+ Yangi»), and
+    // ONLY that — the crate list is not his screen (a pallet is made from the
+    // prixod card and the stock row), and the phone bar does not move
+    // (workspaces.test pins it).
+    const menu = menuFor('logist');
+    expect(menu).toContain('/receive');
+    expect(menu).not.toContain('/crates');
+    expect(menu).not.toContain('/issue');
+    expect(menu).not.toContain('/inventory');
+  });
+
   it('leaves each job a route to its own work', () => {
     expect(menuFor('ved_manager')).toContain('/batches');
     expect(menuFor('logist')).toContain('/plans');

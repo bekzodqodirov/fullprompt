@@ -1,5 +1,208 @@
 # CHANGELOG
 
+## QR-siz qabul va yuklash — ofis sanaydi, skaner tezlashdi — 2026-09-27
+
+Migratsiya **0112** (`qr_less`). Ledger **113** bo'lishi kerak.
+
+Sizning savolingiz: «hamma karobkani ham QR qilish imkoni bo'lmay qolyapti —
+admin va logist qabul qilib, yuklay oladigan qilib ber». Javoblaringiz: 1c
+(skaner sekin o'qiydi), 1b, 2b, 3b va boshqalar — hammasi shu roundda.
+
+**Skaner (hamma sklad telefonlari):**
+1. **Skaner QR ni ko'rishi bilan o'qiydi.** Qizil «rejada yo'q» oynasidan
+   yoki «bitta karobka» tasdig'idan keyin kamera o'chib-yonmaydi — keyingi
+   karobka darhol o'qiladi (oldin kamera qayta yoqilib, 4–5 soniya
+   kutilardi).
+2. **Google xizmatlari yo'q (Xitoydan olingan) telefonlarda** skaner
+   birinchi kadrdanoq o'qiydi: sinovda 4,8 soniya → 0,1 soniya. Telefon
+   qaysi usulda yaxshi o'qishini 3 kun eslab qoladi.
+3. Sekin telefonda o'qishlar navbatga yig'ilib orqada qolib ketmaydi.
+4. Kuryer nakladnoyidagi shtrix-kod endi karobka deb o'qilmaydi. Yonidagi
+   yetkazib beruvchining QR kodi bizning stikerni to'smaydi.
+5. Ekran qulflanib qaytganda kamera o'zi qayta yoqiladi (oldin qotib
+   qolardi).
+6. **Kamera oynasida yangi ⓘ tugmasi**: skaner qaysi usulda, qanday sifatda
+   va tezlikda ishlayotganini ko'rsatadi. Qaysi telefonda sekin bo'lsa, shu
+   qatorni skrinshot qilib yuboring.
+7. Bluetooth/USB qo'l skaneri telefon rus yoki xitoy klaviaturasida bo'lsa
+   ham kodni to'g'ri yozadi.
+8. Yangi chop etilgan stikerlarning QR kodi shikastga chidamliroq (ho'l,
+   ishqalangan stiker ham o'qiladi). Stiker o'lchami o'zgarmadi, eski
+   stikerlar ham o'qilaveradi.
+9. Kod bo'yicha qidiruv bazada indeks bilan ishlaydi — har skanerda butun
+   karobkalar jadvali aylanib chiqilmaydi.
+
+**Sanab yuklash (ofisdan, jo'natish skladida):**
+10. Partiya kartasida **«🔢 Sanab yuklash»** bo'limi: admin yoki logist har
+    prixod uchun mashinada nechta karobka borligini yozadi — aynan shuncha
+    karobka yuklanadi. Bu son — prixodning shu mashinadagi **JAMI** soni,
+    telefonda skanerlanganlari ham ichida (1b javobingiz); bo'limda
+    «telefonda skanerlangan: n» ko'rinadi.
+11. **Kamaytirish ham shu tugma.** Avval ofis sanaganlari, keyin telefonda
+    skanerlanganlari tushiriladi; rejadagi karobka rejaga, ortiqchasi
+    skladga qaytadi. Ikki kishi bir vaqtda bossa, eski ekrandagi raqam
+    boshqasining ishini buzmaydi — «ekran eskirgan» deydi.
+12. **Rejadan ortiq — sabab bilan.** Karobkalar ⚠ belgisi bilan yuklanadi
+    va logistlarga BITTA xabar boradi (bosgan odamning o'ziga emas).
+13. **Yashik (palet) alohida sanalmaydi**: «Yuklash (1 joy)» tugmasi.
+14. **QR-siz prixod sanalmasa «Yuklash tugadi» to'xtaydi** va qaysi
+    prixodlar ekanini aytadi. Sanash huquqi bor odam ularni tashlab
+    ketishni tanlashi mumkin. Partiyalar ro'yxatida bunday mashinada
+    «🔢 sanash kutilmoqda» belgisi turadi.
+15. O'lchandi: 500 karobkalik bosish 3,4 soniya.
+
+**Sanab qabul (ofisdan, qabul skladida):**
+16. Partiya kartasida **«🔢 Sanab qabul»**: har lot uchun JAMI nechta
+    karobka tushganini yozasiz (telefonda skanerlanganlari ham ichida).
+    Karobkalarni tizim o'zi tanlaydi.
+17. **Bitta tasdiq, raqamlar bilan**: nechta jo'natilgan, nechta qabul
+    qilinadi, nechtasi yetmaydi yoki ortiqcha. Mashina hali «yo'lda» bo'lsa,
+    «yetib keldi» va mijozlarga «yukingiz keldi» ham shu oynada yoziladi
+    (Qashqar hubida mijozga xabar bormaydi).
+18. **Kam chiqsa — sizga va logistga darrov Telegram**, bitta lot uchun bir
+    marta; keyin kamomad yopilsa «yopildi». Sanagan odamning o'ziga
+    bormaydi.
+19. **Mijozga «yukingiz keldi» bitta boradi**: ofis lotlarni yarim soat
+    oraliq bilan sanasa ham (ofis uchun kutish 90 daqiqa, «Tushirish
+    tugadi» bosilsa darrov ketadi).
+20. **«Hammasini qabul qilish»** ofis sanagan lotga tegmaydi — tugmadagi son
+    shuni hisobga oladi. Bu tugma hodimlar faolligi hisobotida avvalgidek
+    hisoblanadi; ofis sanashlari esa hisoblanmaydi.
+21. **Yo'qolganlar endi lot bo'yicha** («GS777-A · kurtka: 2 ta»):
+    «shu yerda», «jo'natgan skladda» yoki «yo'lda yo'qoldi» — son bilan bir
+    bosishda; «yo'qoldi» uchun Telegram bitta boradi. Karobka bo'yicha
+    tugmalar ham joyida. «Hammasi shu yerda» nechtasi o'tmaganini aytadi.
+22. Partiya kartasida «+N ortiqcha keldi» belgisi.
+
+**Prixoddan ortiq karobka — prixod o'sadi (3b javobingiz):**
+23. Mashinada prixoddagidan ko'p chiqsa (50 o'rniga 52), avval shu lotning
+    jo'natgan skladdagi qoldig'idan olinadi, u ham yetmasa **prixodning
+    o'ziga** yangi karobkalar qo'shiladi (yangi kod, kg va kub shu lotning
+    bir karobkasicha) — yangi prixod ochilmaydi. Sababi majburiy va
+    tarixda yoziladi; xabarda «prixodga +N karobka qo'shildi» deyiladi.
+    Pul (yo'l haqi, rastamojka, prixod xarajati) yangi karobkalarga ham
+    bo'linadi. Bir bosishda ko'pi bilan 1000 ta.
+24. **Xato yozilgan son qaytariladi.** «5» o'rniga «50» yozilsa, keyingi
+    bosishda to'g'ri sonni yozasiz: avval prixodga qo'shilgan karobkalar
+    o'chadi (prixod yana kichrayadi), keyin jo'natgan sklad qoldig'idan
+    olinganlari o'sha skladga qaytadi va mashina xarajatidan chiqadi. Faqat
+    shu mashinada «ortiqcha» deb qabul qilinganlar qaytadi — mashinada
+    haqiqatan kelganidan kam yozib bo'lmaydi. Yuklashda ham xuddi shunday.
+25. **Narx qo'yilgandan keyin yuk ko'paysa** (sanash ortiqcha chiqsa)
+    buxgalter va narxni qo'ygan odamga Telegram boradi, narx sahifasida
+    mijoz ostida «⚠ yuk N karobkaga ko'paydi» turadi. Qo'shilganiga narx
+    qo'yilsa yoki narx qayta kiritilsa, ogohlantirish o'zi yo'qoladi.
+
+**Telefonda (skladchi):**
+26. Ofis sanagan yoki QR-siz prixodni telefon skanerlamaydi — internet
+    bo'lmasa ham shu zahoti prixod nomi bilan «ofis sanaydi» deydi,
+    navbatga hech narsa qo'ymaydi. Bunday qatorlar «🔢 ofis sanaydi» /
+    «🏷 QR-siz — ofis sanaydi» belgisi bilan chiqadi. Skladchiga yangi
+    tugma qo'shilmadi (3-javobingiz); logist va adminga kartadagi bo'limga
+    bitta havola chiqadi.
+
+**«QR yopishtirilmadi» belgisi:**
+27. Qabulda (telefonda) har lotga katakcha: qop, rulon, truba kabi stiker
+    yopishmaydigan yuk uchun. Bunday lotga stiker chop etilmaydi.
+28. «🏷 QR-siz» belgisi ostatkada, mashina kartasida, reja tuzishda va
+    karobka kartasida.
+29. **Stikerni keyin chop etish**: Inventarizatsiya → «🏷 Stiker: QR-siz
+    karobkalar». Karobka qaysi skladda turgan bo'lsa, o'sha skladda chop
+    etiladi. Yopishtirib bo'lgach «✅ Stikerlar yopishtirildi» bosiladi —
+    shundan keyin telefonlar ularni skanerlaydi. Faqat chop etish yoki PDF
+    ochish hech narsani o'zgartirmaydi. Mashinaga rejalangan karobkaning
+    stikerini faqat ofis chop etadi.
+30. Prixod kartasida belgini keyin qo'yish yoki olib tashlash mumkin; stiker
+    tushib ketsa «Qayta belgilash».
+31. **Inventarizatsiya** QR-siz va ofis sanab ko'chirgan karobkalarni hech
+    qachon «yo'qolgan» deb yozmaydi — ular alohida ro'yxatda turadi.
+
+**Ofisdan prixod (9b javobingiz):**
+32. Logist endi **Qabul** ekranini ko'radi va ofisdan prixod kiritadi: kim
+    qabul qilganini (sklad hodimi yoki boshqa kishi) va yuk qaysi kuni
+    kelganini (**7 kungacha orqaga**) yozadi. Mijozga xabar, kabinet va
+    xaritada haqiqiy kun chiqadi. Sana va kishini faqat ofis, prixod
+    kiritilgan kuni tuzatadi.
+
+**Zavod shtrix-kodi (10c):**
+33. Lotga zavod shtrix-kodi yoziladi. Qidiruvda, ostatkada va Excelda shu
+    kod bilan topiladi.
+34. Yuklash, tushirish va berish ekranlarida «🏭 Zavod kodi» tugmasi: zavod
+    kodi o'qilsa qaysi lot ekanini ko'rsatadi, lekin karobkani sanamaydi.
+
+**Palet (10d, 2b):**
+35. Prixod kartasidan «Palet qilish» → «nechta» → tizim karobkalarni o'zi
+    tanlaydi. Palet bitta CR- QR va «ПАЛЛЕТ» yozuvi bilan chiqadi.
+36. **Bojxona invoysida palet bitta joy** (eng ko'p karobkasi bor lotga
+    yoziladi). Yashik va karkas avvalgidek.
+
+**Chiqarishdan oldin tekshiruv** (6 ta tekshiruvchi, 26 ta topilma — jiddiylari
+hammasi tuzatildi):
+- «QR yopishtirilmadi» belgisini karobkalar skladdan chiqqandan keyin faqat
+  admin yoki logist o'zgartiradi (oldin sklad mudiri rejaga tushgan lotning
+  belgisini olib tashlab, mashinani yarim yuklatib yuborishi mumkin edi).
+- Prixod o'sganda boshqa mashinaga ketib bo'lgan karobkalarning og'irligi va
+  puli endi o'zgarmaydi.
+- Ofis sanashi va telefon skaneri bir vaqtda bir lotni bossa, biri xato
+  bilan to'xtab qolmaydi.
+- Hubda keyingi mashinaga rejalangan karobka birinchi mashinaning
+  hujjatlaridan (upakovka, TNVED, ro'yxat) yo'qolib qolmaydi.
+- «Hammasini qabul qilish» bilan tushirilgan sanalgan yuk inventarizatsiyada
+  «yo'qolgan» deb yozilmaydi.
+- Faqat kamaytirilgan birinchi sanash ham lotni «ofis sanagan» qiladi —
+  telefon uni qayta skanerlab ofis sonini buzolmaydi.
+- Bojxona invoysidagi palet soni keyin palet tarqatilsa ham o'zgarmaydi —
+  mashinada qanday ketgan bo'lsa, shunday yoziladi.
+- Prixod tarixida sanash va stiker yozuvlari tushunarli nom bilan chiqadi;
+  ofis kiritgan qabul sanasi O'zbekiston vaqtida.
+- Internet uzilsa sanab qabul tugmalari jim qolmaydi — «internet kerak»
+  deydi, yozilgan son saqlanadi.
+- Agent Excelida ofisdan kiritilgan prixod haqiqiy qabul kuni bilan chiqadi.
+
+**Tuzatishlarning o'zi ham tekshirildi** (46 ta tekshiruvchi, 20 ta topilma —
+hammasi tuzatildi):
+- Sanashda xato ko'p yozilib, keyin kamaytirilsa, prixodga qo'shilgan
+  karobkalar stikeri chop etilgan bo'lsa ham o'chiriladi. Oldin ular Xitoy
+  skladiga «qaytib» tushib, yo'q karobka bo'lib qolardi.
+- **Narx qo'yilgandan keyin sanash kamaytirilsa**, narx sahifasida «N karobka
+  bu mashinadan chiqdi — narxni kamaytiring» chiqadi, buxgalterga Telegram
+  xabar boradi. Oldin mijoz jimgina ortiqcha hisoblanib qolardi.
+- Kompensatsiya (narx tushirilishi) sanash bilan qo'shilgan karobkalar
+  haqidagi ogohlantirishni o'chirib yubormaydi.
+- Tezkor mashinada ortiqcha yuklangan karobkalar haqida ham buxgalter xabar
+  oladi.
+- Prixod formasi saqlanayotganda shu payt ofis sanashi prixodni o'zgartirgan
+  bo'lsa, forma eski son bilan ustidan yozmaydi — «o'zgardi, qaytadan
+  oching» deydi.
+- Tugatilgan mashina kechikkan telefon skaneridan «yetib keldi» holatiga
+  qaytib ketmaydi.
+- Bekor qilish, anulirovka va prixod formasi band bo'lsa xato sahifasi
+  chiqmaydi — «band, qaytadan bosing» deydi.
+- Hubda sanalib, keyin paletda Toshkentga ketgan va yo'qolgan yuk
+  inventarizatsiyada endi «yo'qolgan» deb yozila oladi.
+- Butun loti paletda yo'lda ketayotgan prixodning QR-siz belgisini jo'natish
+  skladi mudiri yolg'iz o'zgartira olmaydi.
+- Mashina manifestidagi palet ustuni hub keyin paletni qayta yig'sa ham
+  o'zgarmaydi.
+- QR-siz tugmasi faqat bosish mumkin bo'lgan odamga ko'rinadi.
+- Sanab qabulda son kamaytirilsa, o'z sababi so'raladi va panel qanchasini
+  qaytarish mumkinligini oldindan aytadi. Sanab yuklashda son kamaytirilsa,
+  tasdiq oynasida prixod ham kamayishi yoziladi.
+- Topshirish ekranida to'g'ri lot tanlangandan keyin eski qizil xato
+  o'chadi. Tushirish ekranida ham «ofis sanaydigan karobkalar ko'p» eslatmasi
+  chiqadi.
+
+**Qilinmagani (ataylab):**
+- Kompyuterdagi qabul jadvalida «QR yopishtirilmadi» katakchasi yo'q —
+  belgi prixod kartasidan qo'yiladi.
+- Ostatka Excelida QR-siz ustuni yo'q; «chop etildi, lekin tasdiqlanmadi»
+  ogohlantirishi yo'q.
+- Mashina bekor qilinsa, unga sanab qo'shilgan (prixodni o'stirgan)
+  karobkalar skladga qaytadi va prixodda qoladi — keraksiz bo'lsa karobka
+  kartasidan «yaroqsiz» qilinadi.
+- Haqiqiy telefonda sinalmagan: skaner tezligi taqlid qiluvchi sinovda
+  o'lchandi; haqiqiy dalil — sizning ⓘ skrinshotlaringiz.
+
 ## Telegram «wow» — mijoz xabarlari, bot, Mini App, xodimlar boti — 2026-09-27
 
 Migratsiya yo'q. Ledger o'zgarmaydi (**112**).

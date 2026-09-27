@@ -18,7 +18,7 @@ export interface PlaceCargoLot {
   lotId: string;
   receiptId: string;
   receiptNumber: string | null;
-  /** ISO — when the prixod was confirmed (received, if never confirmed). */
+  /** ISO — the day the cargo came (a back-dated office prixod's REAL day, 0112). */
   receivedAt: string;
   /** The client's code, or the box's marking while nobody has claimed it. */
   clientCode: string;
@@ -45,7 +45,7 @@ export async function placeCargo(
   const client = clientCode ? sql`AND upper(c.client_code) = ${clientCode.toUpperCase()}` : sql``;
   const rows = (await db.execute(sql`
     SELECT l.id AS lot_id, r.id AS receipt_id, r.number AS receipt_number,
-           coalesce(r.confirmed_at, r.received_at)::text AS received_at,
+           r.received_at::text AS received_at,
            coalesce(c.client_code, r.unclaimed_marking, '?') AS client_code,
            coalesce(nullif(trim(l.product_name_ru), ''), l.product_name_zh) AS goods,
            count(*)::int AS boxes,

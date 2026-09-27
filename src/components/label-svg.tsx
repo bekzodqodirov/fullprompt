@@ -6,6 +6,7 @@ import {
   MARGIN_MM,
 } from '@/modules/wms/labels/geometry';
 import type { LabelData } from '@/modules/wms/labels/renderer';
+import { crateMarker } from '@/modules/wms/labels/crate-kind';
 
 /**
  * The sticker as SVG, so the phone's own print dialog can put it on paper.
@@ -161,7 +162,7 @@ export function CrateLabelSvg({ label, qr }: { label: CrateLabelView; qr: string
         {label.warehouseCode}
       </text>
       <text x={g.kind.x} y={g.kind.baseline} fontSize={g.kind.size} textAnchor="end">
-        {label.kind === 'karkas' ? 'КАРКАС' : 'ЯЩИК'}
+        {crateMarker(label.kind)}
       </text>
       <text x={g.date.x} y={g.date.baseline} fontSize={g.date.size} textAnchor="end">
         {label.dateLocal}

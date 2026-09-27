@@ -1,5 +1,5 @@
 import { DOC } from './labels';
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import ExcelJS from 'exceljs';
 import { db } from '../../platform/db/client';
 import {
@@ -9,6 +9,7 @@ import {
   crates,
   receiptLots,
   receipts,
+  scanEvents,
   warehouses,
 } from '../../platform/db/schema';
 import { getSetting } from '../../platform/settings/service';
@@ -17,24 +18,104 @@ import { batchMemberFilter } from '../scanning/unload';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 async function batchLines(batchId: string) {
-  return db
+  const rows = await db
     .select({
+      boxId: boxes.id,
       lot: receiptLots,
       clientCode: clients.clientCode,
       marking: receipts.unclaimedMarking,
-      crateCode: crates.code,
+      liveCrateId: boxes.crateId,
     })
     .from(boxes)
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
     .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
     .leftJoin(clients, eq(receipts.clientId, clients.id))
-    .leftJoin(crates, eq(boxes.crateId, crates.id))
     // Membership by what DEPARTED, not by the live pointer: unloading clears
     // `current_batch_id` box by box, so a customs document regenerated after
     // the truck reached the border came out EMPTY — and these are the papers
     // the export agent works from. Same predicate as costing (#121, #152).
     .where(batchMemberFilter(batchId))
     .orderBy(asc(receiptLots.letter), asc(boxes.seqInLot));
+  // The crate a carton rode THIS truck in comes from this truck's own load
+  // events, not from the live pointer — the manifest's rule: handing a
+  // pallet over or dissolving it at the hub clears `crate_id`, and building
+  // a new one there sets it, so an invoice re-downloaded later said 10 places
+  // for what crossed as one, or 1 for what crossed as ten (review cargo-4).
+  // A carton not loaded yet (the invoice drafted off the plan) has no event
+  // and keeps its live crate.
+  const events = rows.length
+    ? await db
+        .select({ boxId: scanEvents.boxId, crateId: scanEvents.crateId })
+        .from(scanEvents)
+        .where(and(eq(scanEvents.batchId, batchId), eq(scanEvents.type, 'load')))
+        .orderBy(asc(scanEvents.createdAt), asc(scanEvents.id))
+    : [];
+  const rodeIn = new Map<string, string | null>();
+  for (const event of events) rodeIn.set(event.boxId, event.crateId);
+  const crateOf = (row: (typeof rows)[number]) =>
+    rodeIn.has(row.boxId) ? rodeIn.get(row.boxId)! : row.liveCrateId;
+  const crateIds = [...new Set(rows.map(crateOf).filter((id): id is string => id !== null))];
+  const crateRows = crateIds.length
+    ? await db
+        .select({ id: crates.id, code: crates.code, kind: crates.kind })
+        .from(crates)
+        .where(inArray(crates.id, crateIds))
+    : [];
+  const crateById = new Map(crateRows.map((c) => [c.id, c]));
+  return rows.map((row) => {
+    const crate = crateOf(row);
+    return {
+      lot: row.lot,
+      clientCode: row.clientCode,
+      marking: row.marking,
+      crateCode: crate ? (crateById.get(crate)?.code ?? null) : null,
+      crateId: crate,
+      crateKind: crate ? (crateById.get(crate)?.kind ?? null) : null,
+    };
+  });
+}
+
+/**
+ * «Кол-во мест» per lot on the customs invoice (0112, the owner's Q2 = b):
+ * ONLY a pallet is one place — a pallet goes through customs as one wrapped
+ * unit, while a yashik or a karkas stays counted by the cartons inside it, as
+ * it always has (changing those would renumber the papers of trucks already
+ * on the road).
+ *
+ * A pallet can carry two lots of one client, and a place belongs to ONE line
+ * of the invoice, so it goes to the lot holding most of its cartons, a tie
+ * to the earlier letter. So the column sums to «loose cartons + one per
+ * pallet» — the count the customs officer makes at the truck.
+ */
+export function invoicePlaces(
+  rows: readonly {
+    lotId: string;
+    letter: string | null;
+    crateId: string | null;
+    crateKind: string | null;
+  }[],
+): Map<string, number> {
+  const places = new Map<string, number>();
+  const pallets = new Map<string, Map<string, { letter: string; n: number }>>();
+  for (const row of rows) {
+    if (row.crateId && row.crateKind === 'palet') {
+      const byLot = pallets.get(row.crateId) ?? new Map<string, { letter: string; n: number }>();
+      const entry = byLot.get(row.lotId) ?? { letter: row.letter ?? '', n: 0 };
+      entry.n += 1;
+      byLot.set(row.lotId, entry);
+      pallets.set(row.crateId, byLot);
+      places.set(row.lotId, places.get(row.lotId) ?? 0);
+    } else {
+      places.set(row.lotId, (places.get(row.lotId) ?? 0) + 1);
+    }
+  }
+  for (const byLot of pallets.values()) {
+    const [owner] = [...byLot.entries()].sort(
+      ([, a], [, b]) => b.n - a.n || a.letter.localeCompare(b.letter),
+    );
+    if (owner) places.set(owner[0], (places.get(owner[0]) ?? 0) + 1);
+  }
+  return places;
 }
 
 async function header(sheet: ExcelJS.Worksheet, batchId: string, title: string) {
@@ -132,6 +213,9 @@ export async function buildInvoiceXlsx(batchId: string): Promise<Buffer | null> 
   head.alignment = { wrapText: true, vertical: 'middle' };
 
   const rows = await batchLines(batchId);
+  const places = invoicePlaces(
+    rows.map(({ lot, crateId, crateKind }) => ({ lotId: lot.id, letter: lot.letter, crateId, crateKind })),
+  );
   const byLot = new Map<string, { product: string; nameZh: string; boxCount: number; kg: number }>();
   for (const { lot } of rows) {
     const agg = byLot.get(lot.id) ?? {
@@ -149,7 +233,7 @@ export async function buildInvoiceXlsx(batchId: string): Promise<Buffer | null> 
 
   let n = 0;
   let rowNo = head.number;
-  for (const agg of byLot.values()) {
+  for (const [lotId, agg] of byLot) {
     n += 1;
     rowNo += 1;
     const kg = Math.round(agg.kg * 10) / 10;
@@ -158,7 +242,7 @@ export async function buildInvoiceXlsx(batchId: string): Promise<Buffer | null> 
     // the VED manager; measured weight goes into both netto and brutto —
     // netto is corrected by hand when the tare matters. Amount is live.
     const code = tnved.get(productKey(agg.nameZh))?.tnvedCode ?? '';
-    row.values = [n, agg.product, code, 'кг', kg, agg.boxCount, kg, kg, '', ''];
+    row.values = [n, agg.product, code, 'кг', kg, places.get(lotId) ?? agg.boxCount, kg, kg, '', ''];
     row.getCell(10).value = { formula: `I${rowNo}*E${rowNo}` };
   }
   const total = sheet.getRow(rowNo + 1);

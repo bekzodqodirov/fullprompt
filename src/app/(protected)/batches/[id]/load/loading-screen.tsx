@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { v4 as uuidv4 } from 'uuid';
 import { Scanner } from '@/components/scan/scanner';
@@ -16,7 +17,13 @@ import {
   type SyncAck,
 } from '@/offline/scan-outbox';
 import { codeIdentity } from '@/modules/wms/labels/code-identity';
+import { countOnlyLotOf, type CountOnlyLot } from '@/offline/count-only';
+import { isScanRefusal, type ScanRefusal } from '@/offline/scan-refusal';
+import { mergeLoaded } from '@/offline/loaded-merge';
 import { removeLoadedAction } from '../../batch-actions-server';
+import { BarcodeIdentify, type IdentifiedLot } from '@/components/barcode-identify';
+import { lotsForBarcode } from '@/modules/wms/receipts/factory-barcode';
+import { isOwnCodeShape, looksLikeRetailBarcode } from '@/offline/code-shape';
 
 interface PlannedBox {
   shortCode: string;
@@ -39,6 +46,14 @@ interface Snapshot {
   /** Quick batch only: the origin warehouse's loadable stock (tap-to-pick). */
   available?: PlannedBox[];
   crates: { code: string; boxShortCodes: string[] }[];
+  /**
+   * Lots the OFFICE counts on this truck (0112): counted already, or QR-siz.
+   * Absent from a snapshot cached before the round — `?? []` everywhere.
+   */
+  countOnly?: CountOnlyLot[];
+  countOnlyCapped?: boolean;
+  /** Lots with a factory barcode (0112) — absent from an old cached snapshot. */
+  lotBarcodes?: { lotId: string; key: string }[];
 }
 
 /**
@@ -56,9 +71,22 @@ function isQuick(snapshot: Snapshot): boolean {
  * not-on-plan red flow (edge case 6) and sticker-lost manual entry
  * (edge case 3).
  */
-export function LoadingScreen({ batchId }: { batchId: string }) {
+export function LoadingScreen({
+  batchId,
+  countHref,
+}: {
+  batchId: string;
+  /**
+   * The count panel on the batch card, for a count-door holder (0112) —
+   * absent for everybody else: operators get nothing new (Q3).
+   */
+  countHref?: string;
+}) {
   const t = useTranslations('loading');
+  const to = useTranslations('ofis');
   const tc = useTranslations('common');
+  const tr = useTranslations('scanRefusal');
+  const tcount = useTranslations('countLoad');
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   /** Why there is no snapshot yet — `null` while it is simply still loading. */
   const [snapError, setSnapError] = useState<
@@ -74,6 +102,10 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
   const [manualOpen, setManualOpen] = useState(false);
   const [manualCode, setManualCode] = useState('');
   const [manualQuery, setManualQuery] = useState('');
+  /** A factory barcode just read (0112, Q10 c) — the identify sheet is open. */
+  const [identify, setIdentify] = useState<{ code: string; lotIds: string[] } | null>(null);
+  /** «🏭 Zavod kodi»: the camera reads ONE retail barcode, then goes back to QR. */
+  const [scanMode, setScanMode] = useState<'qr' | 'retail'>('qr');
   const [removeOpen, setRemoveOpen] = useState(false);
   const [removeQuery, setRemoveQuery] = useState('');
   const [removeCode, setRemoveCode] = useState('');
@@ -104,16 +136,35 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
   const marked = useRef<Map<string, string[]>>(new Map());
 
   const cacheKey = `gsr-load-${batchId}`;
+  /** The snapshot as the ack handler last saw it — to name a refused lot. */
+  const snapRef = useRef<Snapshot | null>(null);
+  useEffect(() => {
+    snapRef.current = snapshot;
+  }, [snapshot]);
+
+  /**
+   * A count-only refusal in words (0112), the lot named — a literal switch so
+   * every key is one the bundles can see (#163).
+   */
+  const refusalText = useCallback(
+    (detail: ScanRefusal, lot: string): string => {
+      switch (detail) {
+        case 'lot_counted':
+          return tr('lot_counted', { lot });
+        case 'qr_less_count_only':
+          return tr('qr_less_count_only', { lot });
+        case 'reserved_reason':
+          return tr('reserved_reason');
+      }
+    },
+    [tr],
+  );
 
   const applySnapshot = useCallback((data: Snapshot) => {
     setSnapshot(data);
-    setLoaded(
-      new Set(
-        data.boxes
-          .filter((b) => b.status === 'loading' || b.status === 'in_transit')
-          .map((b) => b.shortCode),
-      ),
-    );
+    // A quick truck's dialled-down cartons leave `boxes` for `available` —
+    // the merge must see them there to take them off (review phone-2).
+    setLoaded(mergeLoaded(new Set(), [...data.boxes, ...(data.available ?? [])], data.countOnly));
   }, []);
 
   // Snapshot: network-first, localStorage fallback for offline reopen.
@@ -195,7 +246,18 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
         continue;
       }
       rollback.push(...codes);
-      if (scanNeedsConfirm(ack.result)) {
+      if (ack.result === 'rejected' && isScanRefusal(ack.detail)) {
+        // The server's word on a lot the office counts: the carton was not
+        // recorded, and the sentence names the lot (the ack does not).
+        const code = ack.scannedCode ?? codes[0] ?? '';
+        const snap = snapRef.current;
+        const pool = snap ? [...snap.boxes, ...(snap.available ?? [])] : [];
+        const office = countOnlyLotOf(code, pool, snap?.countOnly);
+        const box = pool.find((b) => b.shortCode.toUpperCase() === code.toUpperCase());
+        const lot =
+          office?.label ?? (box ? `${codeIdentity(box.marking, box.clientCode).main}-${box.letter}` : code);
+        setToast(`❌ ${refusalText(ack.detail, lot)}`);
+      } else if (scanNeedsConfirm(ack.result)) {
         // The scanned code, not the member boxes: the confirm dialog re-sends
         // the same scan with addedOnSpot, and a crate must go back as a crate.
         reopen = ack.scannedCode ?? codes[0] ?? null;
@@ -224,7 +286,7 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
       setConfirmCode(first.code);
       setConfirmReason('');
     }
-  }, [t]);
+  }, [t, refusalText]);
 
   /**
    * The snapshot is the whole truck, and it was being re-downloaded after
@@ -267,13 +329,11 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
               snapEtag.current = res.headers.get('etag');
               localStorage.setItem(cacheKey, JSON.stringify(data));
               setSnapshot(data);
-              setLoaded((prev) => {
-                const next = new Set(prev);
-                for (const b of data.boxes) {
-                  if (b.status === 'loading' || b.status === 'in_transit') next.add(b.shortCode);
-                }
-                return next;
-              });
+              // A scanned lot's marks only grow between ticks; a lot the
+              // office counts follows the server both ways (loaded-merge.ts).
+              setLoaded((prev) =>
+                mergeLoaded(prev, [...data.boxes, ...(data.available ?? [])], data.countOnly),
+              );
             }
           } catch {
             /* snapshot refresh is best-effort */
@@ -395,6 +455,18 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
 
   function onCode(code: string, method: 'qr' | 'manual' = 'qr', manualReason?: string) {
     if (!snapshot) return;
+    // FIRST: a factory's barcode (0112, Q10 c) identifies a pile and is never
+    // queued — pure digits can never be one of ours, so skipping the outbox
+    // loses nothing, and before `isSendableCode` so a long factory code still
+    // identifies instead of reading «foreign».
+    if (!isOwnCodeShape(code)) {
+      const lotIds = lotsForBarcode(code, snapshot.lotBarcodes ?? []);
+      if (lotIds.length > 0 || looksLikeRetailBarcode(code)) {
+        feedback('dup');
+        setIdentify({ code, lotIds });
+        return;
+      }
+    }
     // The supplier's own QR on a Chinese carton is a URL, and the server can
     // only parse a code of 3-40 characters — it refuses the whole request
     // body, which used to stop every good scan behind it from ever leaving
@@ -402,6 +474,18 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
     if (!isSendableCode(code)) {
       feedback('bad');
       setToast(`❓ ${t('foreignCode')}`);
+      return;
+    }
+    // A lot the office counts (0112, Q4/Q8): refused here, at once and
+    // offline, with the lot's name — nothing is queued, the counter stays.
+    const office = countOnlyLotOf(
+      code,
+      [...snapshot.boxes, ...(snapshot.available ?? [])],
+      snapshot.countOnly,
+    );
+    if (office) {
+      feedback('bad');
+      setToast(`❌ ${refusalText(office.mode === 'counted' ? 'lot_counted' : 'qr_less_count_only', office.label)}`);
       return;
     }
     const onTruck = new Set(snapshot.boxes.map((b) => b.shortCode));
@@ -467,7 +551,13 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
       } else {
         const known = ['batch_not_loading', 'unknown_code', 'not_loaded_here', 'forbidden'];
         setToast(
-          `❌ ${known.includes(res.error ?? '') ? t(`removeErrors.${res.error}` as 'removeErrors.unknown_code') : (res.error ?? '')}`,
+          `❌ ${
+            res.error === 'lot_counted'
+              ? tcount('removeLotCounted')
+              : known.includes(res.error ?? '')
+                ? t(`removeErrors.${res.error}` as 'removeErrors.unknown_code')
+                : (res.error ?? '')
+          }`,
         );
       }
     } catch {
@@ -498,7 +588,16 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
     );
   }
 
-  const total = snapshot.boxes.length;
+  // Cartons of a lot the office counts are not the scanner's (0112): they
+  // stay on the list with the office's chip, and out of the scan counter,
+  // the «sticker lost» picker and the remove list.
+  const officeLots = new Map((snapshot.countOnly ?? []).map((lot) => [lot.lotId, lot.mode]));
+  const isOffice = (b: PlannedBox) => !b.crateCode && officeLots.has(b.lotId);
+  const scanBoxes = snapshot.boxes.filter((b) => !isOffice(b));
+  const officeCodes = new Set(
+    [...snapshot.boxes, ...(snapshot.available ?? [])].filter(isOffice).map((b) => b.shortCode),
+  );
+  const total = scanBoxes.length;
   // Crated boxes group under their CRATE (owner's request: the operator must
   // see WHAT sits inside and scan the crate, not hunt loose boxes).
   const byLot = new Map<
@@ -516,6 +615,8 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
       m3: number;
       /** Boxes carrying a weight — the divisor of the per-box figure. */
       weighed: number;
+      /** The office counts this lot here (0112) — the row wears its chip. */
+      office: 'counted' | 'qrless' | null;
     }
   >();
   for (const box of snapshot.boxes) {
@@ -535,6 +636,7 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
             kg: 0,
             m3: 0,
             weighed: 0,
+            office: null,
           }
         : {
             label: codeLabel,
@@ -546,6 +648,7 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
             kg: 0,
             m3: 0,
             weighed: 0,
+            office: officeLots.get(box.lotId) ?? null,
           });
     const boxKg = Number(box.perBoxKg ?? 0);
     entry.kg += boxKg;
@@ -562,7 +665,8 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
     if (loaded.has(box.shortCode)) entry.done += 1;
     byLot.set(key, entry);
   }
-  const doneCount = snapshot.boxes.filter((b) => loaded.has(b.shortCode)).length;
+  const doneCount = scanBoxes.filter((b) => loaded.has(b.shortCode)).length;
+  const scanLoaded = [...loaded].filter((code) => !officeCodes.has(code)).length;
 
   // What is actually on the truck so far (owner: "yuklash paytida umumiy
   // kubi, kilosi va kg/m³ ko'rinsa yaxshi bo'lardi"). A quick batch has no
@@ -598,7 +702,7 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
   const rq = removeQuery.trim().toUpperCase();
   const removeList = [...loaded]
     .map((code) => weighed.get(code))
-    .filter((b): b is PlannedBox => !!b)
+    .filter((b): b is PlannedBox => !!b && !isOffice(b))
     .filter(
       (b) =>
         !rq ||
@@ -610,7 +714,7 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
     );
   const q = manualQuery.trim().toUpperCase();
   const basePick = (quickBatch ? (snapshot.available ?? []) : unscanned).filter(
-    (b) => !loaded.has(b.shortCode),
+    (b) => !loaded.has(b.shortCode) && !isOffice(b),
   );
   const pickList = basePick.filter(
       (b) =>
@@ -624,6 +728,24 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
         `${b.clientCode ?? ''}-${b.letter ?? ''}`.toUpperCase().includes(q) ||
         b.productNameZh.toUpperCase().includes(q),
     );
+
+  /** The identify sheet's rows: every box of the lot this screen knows, plan or stock. */
+  function identifiedLots(lotIds: string[]): IdentifiedLot[] {
+    return lotIds.flatMap((lotId) => {
+      const lotBoxes = [...weighed.values()].filter((box) => box.lotId === lotId);
+      const first = lotBoxes[0];
+      if (!first) return [];
+      return [
+        {
+          lotId,
+          label: `${codeIdentity(first.marking, first.clientCode).main}-${first.letter ?? ''}`,
+          product: first.productNameZh,
+          done: lotBoxes.filter((box) => loaded.has(box.shortCode)).length,
+          total: lotBoxes.length,
+        },
+      ];
+    });
+  }
 
   return (
     <div
@@ -640,10 +762,61 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
         {online ? (pending > 0 ? `🔄 ${t('syncing', { n: pending })}` : `✅ ${t('online')}`) : `📴 ${t('offline', { n: pending })}`}
       </div>
 
-      <Scanner active={confirmCode === null} onCode={(code) => onCode(code)} />
+      {/* The snapshot carries only so many of the office's cartons (review
+          phone-3): past the cap an offline read of one of them is queued and
+          refused by the server when it comes back. Said once, quietly. */}
+      {snapshot.countOnlyCapped && (
+        <p className="text-center text-xs text-ink-500" data-testid="count-only-capped">
+          {tcount('countOnlyCapped')}
+        </p>
+      )}
+
+      {/* The office's count panel, one tap away for the admin or the logist
+          standing at the truck — never a control on this screen itself. */}
+      {countHref && (
+        <Link href={countHref} data-testid="open-count-load" className="btn-secondary w-full text-sm">
+          {tcount('openCountLoad')}
+        </Link>
+      )}
+
+      <Scanner
+        active={confirmCode === null && identify === null}
+        mode={scanMode}
+        onCode={(code) => {
+          // Retail mode is for ONE read: a non-own code goes to the sheet
+          // whatever its symbology, and our own code falls through as a scan.
+          if (scanMode === 'retail') {
+            setScanMode('qr');
+            if (!isOwnCodeShape(code)) {
+              feedback('dup');
+              setIdentify({ code, lotIds: lotsForBarcode(code, snapshot.lotBarcodes ?? []) });
+              return;
+            }
+          }
+          onCode(code);
+        }}
+      />
+      <div className="flex justify-center">
+        <button
+          type="button"
+          data-testid="scan-mode-barcode"
+          aria-pressed={scanMode === 'retail'}
+          className={`btn-secondary !min-h-9 px-3 ${scanMode === 'retail' ? '!bg-brand-600 !text-white' : ''}`}
+          onClick={() => setScanMode((mode) => (mode === 'retail' ? 'qr' : 'retail'))}
+        >
+          🏭 {to('barcodeMode')}
+        </button>
+      </div>
+      <BarcodeIdentify
+        open={identify !== null}
+        code={identify?.code ?? ''}
+        lots={identifiedLots(identify?.lotIds ?? [])}
+        countHref={countHref}
+        onClose={() => setIdentify(null)}
+      />
 
       <p className="text-center font-mono text-4xl font-extrabold" data-testid="load-counter">
-        {total === 0 ? loaded.size : doneCount}
+        {total === 0 ? scanLoaded : doneCount}
         {total > 0 && <span className="text-ink-400">/{total}</span>} 📦
       </p>
 
@@ -702,10 +875,23 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
                 )}
               </span>
               <span className="min-w-0 flex-1 truncate text-ink-700">{lot.product}</span>
-              <span className={`font-semibold ${lot.done === lot.total ? 'text-good' : ''}`}>
+              <span
+                className={`font-semibold ${lot.office ? 'text-ink-500' : lot.done === lot.total ? 'text-good' : ''}`}
+              >
                 {lot.done}/{lot.total}
               </span>
             </div>
+            {lot.office && (
+              <p
+                data-testid="lot-count-only"
+                data-mode={lot.office}
+                className={`inline-block rounded px-1.5 text-xs font-semibold ${
+                  lot.office === 'counted' ? 'bg-brand-50 text-brand-700' : 'bg-warn/10 text-warn'
+                }`}
+              >
+                {lot.office === 'counted' ? tcount('modeCounted') : tcount('modeQrless')}
+              </p>
+            )}
             {/* A SECOND line, not a wider first one. Measured at 360: the row is
                 302 px — code 84, product 177 (already truncating), count 25 —
                 so three more numbers would leave the product name 43 px and
@@ -728,7 +914,12 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
         ))}
       </div>
 
-      <button type="button" className="btn-secondary w-full" onClick={() => setManualOpen(true)}>
+      <button
+        type="button"
+        data-testid="manual-open"
+        className="btn-secondary w-full"
+        onClick={() => setManualOpen(true)}
+      >
         {quickBatch ? `📦 ${t('pickFromStock')}` : `🏷 ${t('stickerLost')}`}
       </button>
 
@@ -748,7 +939,12 @@ export function LoadingScreen({ batchId }: { batchId: string }) {
       )}
 
       {toast && (
-        <button type="button" className="w-full rounded-lg bg-gray-800 p-2 text-sm font-semibold text-white" onClick={() => setToast(null)}>
+        <button
+          type="button"
+          data-testid="load-toast"
+          className="w-full rounded-lg bg-gray-800 p-2 text-sm font-semibold text-white"
+          onClick={() => setToast(null)}
+        >
           {toast}
         </button>
       )}

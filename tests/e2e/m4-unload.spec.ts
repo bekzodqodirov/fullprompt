@@ -70,7 +70,9 @@ test('unload lifecycle: scan in at destination, finish, close', async ({ page })
   // standing in for "we no longer know" — the lightest seeded lot is 8 kg a box.
   await expect(page.getByTestId('batch-contents-total')).toContainText(/Σ 1 📦 · [1-9]\d* kg/);
 
-  // Transit report renders
+  // Transit report renders. The page's own title, not «a heading»: the
+  // «lost on the road» section draws an h2 whenever ANY truck in the shared
+  // database lost a carton, which the vitest half of a CI run leaves behind.
   await page.goto('/transit');
-  await expect(page.getByRole('heading')).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 });

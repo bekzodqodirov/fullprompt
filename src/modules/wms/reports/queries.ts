@@ -14,6 +14,7 @@ import {
   receipts,
   warehouses,
 } from '../../platform/db/schema';
+import { COUNT_REASONS } from '../scanning/count-rules';
 
 /**
  * Read models for the M6 dashboard + §13 reports. Every query takes an
@@ -501,9 +502,23 @@ export async function batchRegister(warehouseIds?: string[]) {
         SELECT count(DISTINCT bm.box_id) FROM box_movements bm
         WHERE bm.ref_type = 'batch' AND bm.ref_id = ${batches.id} AND bm.cause = 'short_loaded'
       )`,
+      // Cartons that went on beyond the plan AND ride it — distinct, over the
+      // truck's real cargo (0112, decision 25): an office count dialled down
+      // keeps its scan events, so the history alone counts cartons that came
+      // back off, and a re-count counts one carton twice. This is
+      // `aboardFilter` (member, not merely reserved) read against the
+      // register's own row: that fragment binds one id, and a register of 300
+      // trucks cannot ask 300 times.
       added: sql<number>`(
-        SELECT count(*) FROM scan_events se
+        SELECT count(DISTINCT se.box_id) FROM scan_events se
+          JOIN boxes ab ON ab.id = se.box_id
         WHERE se.batch_id = ${batches.id} AND se.added_on_spot = true AND se.type = 'load'
+          AND ab.status <> 'void'
+          AND ((ab.current_batch_id = ${batches.id} AND ab.status <> 'planned') OR EXISTS (
+            SELECT 1 FROM box_movements abm
+             WHERE abm.box_id = ab.id AND abm.ref_type = 'batch'
+               AND abm.ref_id = ${batches.id} AND abm.cause = 'batch_departed'
+          ))
       )`,
       costUsd: sql<string>`coalesce((
         SELECT sum(ce.amount_usd) FROM ${costEntries} ce
@@ -749,6 +764,14 @@ export async function staffActivity(days: number) {
              count(*) AS scans
       FROM scan_events s
       WHERE s.created_at > now() - make_interval(days => ${days})
+        -- An office count (0112) writes one event per carton it moved; the
+        -- logist who pressed once did not scan 400 boxes. «Hammasini qabul
+        -- qilish» stays counted as it always was — a report's past is not
+        -- rewritten by a round that did not touch it.
+        AND (s.manual_reason IS NULL OR s.manual_reason NOT IN (${sql.join(
+          COUNT_REASONS.map((r) => sql`${r}`),
+          sql`, `,
+        )}))
       GROUP BY s.scanned_by, day
     )
     SELECT coalesce(a.actor_id, s.actor_id) AS actor_id,

@@ -8,6 +8,7 @@ import { warehouseScope } from '@/modules/platform/rbac/scope';
 import { arrivalCodesForPairs } from '@/modules/wms/documents/arrivals';
 import { buildStockXlsx } from '@/modules/wms/reports/stock-xlsx';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
+import { stockTextWhere } from '@/modules/wms/inventory/stock-filter';
 
 /**
  * Stock report XLSX (spec §9/§13 report 1) with the current stock-browser
@@ -53,11 +54,8 @@ export async function GET(request: Request) {
   const scope = warehouseScope(actor, boxes.currentWarehouseId);
   if (scope) filters.push(scope);
   if (wh) filters.push(eq(boxes.currentWarehouseId, wh));
-  if (q) {
-    filters.push(
-      sql`(${clients.clientCode} ILIKE ${'%' + q + '%'} OR ${receiptLots.productNameZh} ILIKE ${'%' + q + '%'} OR ${receiptLots.productNameRu} ILIKE ${'%' + q + '%'} OR ${receipts.unclaimedMarking} ILIKE ${'%' + q + '%'})`,
-    );
-  }
+  // The screen's own predicate (#513), barcode half included.
+  if (q) filters.push(stockTextWhere(q));
 
   const lines = await db
     .select({

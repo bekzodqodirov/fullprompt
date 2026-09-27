@@ -14,6 +14,7 @@ export default async function CratesPage() {
   if (!actor) redirect('/login');
   if (!actor.permissions.has('crates.manage')) redirect('/');
   const t = await getTranslations('crates');
+  const tp = await getTranslations('ofis');
   const tc = await getTranslations('common');
   const format = await getFormatter();
 
@@ -57,7 +58,7 @@ export default async function CratesPage() {
               <span className="font-mono font-extrabold text-brand-700">{crate.code}</span>
               <span className="font-mono font-bold">{clientCode}</span>
               <span className="rounded bg-surface-sunken px-2 py-0.5 text-xs font-semibold">
-                {crate.kind === 'karkas' ? t('karkas') : t('yashik')}
+                {crate.kind === 'palet' ? tp('palet') : crate.kind === 'karkas' ? t('karkas') : t('yashik')}
               </span>
               <span className="ml-auto text-sm font-semibold">{boxCount} 📦</span>
             </div>

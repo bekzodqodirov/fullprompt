@@ -8,6 +8,8 @@
  * keystroke of a live-updating box.
  */
 
+import { factoryBarcodeKey } from '../receipts/factory-barcode';
+
 /** Shorter than this is noise: two letters match half the client book. */
 export const MIN_QUERY = 2;
 
@@ -23,6 +25,13 @@ export interface ParsedQuery {
   clientCode?: boolean;
   /** Looks like a batch code (`YW-001`, `TAS-2026-014`). */
   batchCode?: boolean;
+  /**
+   * The factory barcode's canonical key (0112, Q10 c), when what was typed is
+   * ONE token the key accepts and at least six long — shorter strings are
+   * codes and quantities, and a lookup per keystroke for them buys nothing.
+   * An EAN is also nine-plus digits, so it keeps its phone reading too.
+   */
+  barcode?: string;
 }
 
 export function parseQuery(raw: string): ParsedQuery {
@@ -41,10 +50,14 @@ export function parseQuery(raw: string): ParsedQuery {
   // digits is a code or a quantity, not somebody's phone.
   const phone = digits.length >= 9 ? digits.slice(-9) : undefined;
 
+  const barcodeKey = /\s/.test(text) ? null : factoryBarcodeKey(text);
+  const barcode = barcodeKey && barcodeKey.length >= 6 ? barcodeKey : undefined;
+
   return {
     text,
     ok: true,
     ...(phone ? { phone } : {}),
+    ...(barcode ? { barcode } : {}),
     clientCode: /^[A-Za-z]{1,4}\d+$/.test(text),
     batchCode: /^[A-Za-z]{2,4}-[\d-]+$/.test(text),
   };
