@@ -87,7 +87,7 @@ export function UnloadScreen({ batchId, countHref }: { batchId: string; countHre
   const [manualCode, setManualCode] = useState('');
   /** A factory barcode just read (0112, Q10 c) — the identify sheet is open. */
   const [identify, setIdentify] = useState<{ code: string; lotIds: string[] } | null>(null);
-  /** «🏷 Zavod kodi»: the camera reads ONE retail barcode, then goes back to QR. */
+  /** «🏭 Zavod kodi»: the camera reads ONE retail barcode, then goes back to QR. */
   const [scanMode, setScanMode] = useState<'qr' | 'retail'>('qr');
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cacheKey = `gsr-unload-${batchId}`;
@@ -526,7 +526,7 @@ export function UnloadScreen({ batchId, countHref }: { batchId: string; countHre
           className={`btn-secondary !min-h-9 px-3 ${scanMode === 'retail' ? '!bg-brand-600 !text-white' : ''}`}
           onClick={() => setScanMode((mode) => (mode === 'retail' ? 'qr' : 'retail'))}
         >
-          🏷 {to('barcodeMode')}
+          🏭 {to('barcodeMode')}
         </button>
       </div>
       <BarcodeIdentify

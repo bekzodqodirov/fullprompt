@@ -4257,7 +4257,7 @@
     "barcode": "Factory barcode",
     "barcodeScan": "Read the factory barcode",
     "barcodeMode": "Factory code",
-    "barcodeTitle": "🏷 Factory code: {code}",
+    "barcodeTitle": "🏭 Factory code: {code}",
     "barcodeHere": "On this truck:",
     "barcodeNotHere": "No lot with this code is on this truck.",
     "barcodeElsewhere": "Elsewhere:",

@@ -1991,8 +1991,39 @@ in floating point. LESSON: a test for a fix must be anchored
 on something the fix did not write — a literal, a second surface computed a
 DIFFERENT way, a stored list from a real day.
 
-**Latest migration: 0111** (`nav_usage` — «Tez-tez»; ledger must reach
-**112**; `when` …090). Before it: **0110** (`lead_assign` — the website teams, the typed and
+**Round — QR-siz qabul va yuklash (2026-09-27; DECISIONS #1117-#1170;
+migration 0112 `qr_less` — ledger must reach 113).** His «hamma karobkani ham
+qr code qilish imkoni bolmay qolyabti … admin va logist tomonidan qabul qilib
+qolish va yuklash», answers Q1-Q10 then **1b / 2b / 3b**. One kernel, five
+packages in parallel worktrees (E scanner, A count-load, B count-accept,
+C the QR-siz marker, D office prixod + factory barcode + pallet), merged by
+cherry-pick. THE RULE: **a count is a scan** — the office's number goes
+through `loadScanInTx` / `landUnloadInput`, the phone's own bodies, and only
+`manual_reason ∈ {count_load, count_accept, count_over}` (+ `bulk_accept`)
+tells them apart; a phone may never write one (refused first thing in both
+ingests). The number is the lot's TOTAL on the truck, phone scans included,
+compare-and-set against what the presser SAW (`seenAboard`/`seenArrived`);
+after a count the phone refuses that lot offline (`countOnlyLotOf` over the
+snapshot). Beyond the truck the lot GROWS (`growLotInTx`, by `add` of its own
+per-box figure from `box_count` — never re-weigh the lot) and a press below
+«arrived» takes the growth back (`shrinkGrownInTx`, the mirror). Lock order:
+truck `FOR NO KEY UPDATE` → lot row → cartons (a phone's scan-event insert
+key-shares the truck row). `aboardFilter` = the live pointer minus planned,
+OR the departure. The customs invoice's pallet = one place, read from the
+truck's own load events. QR-siz lots print later where the cartons STAND and
+the stocktake never writes a count-moved pile off. Logist has `/receive`
+(office prixod, ≤7 days back, `received_at` at local noon). A price the count
+outgrew is named (`offTruckPrices` kind `grew`, `PricedCargoGrew`). The merged
+round was reviewed by six lenses BEFORE shipping — 26 findings, every blocker
+and defect fixed and red-proven (#1159-#1168); the pattern was the DOWN
+direction nobody had written. Stated: lock-6, ui-7, a grown carton on a
+cancelled truck stays in the prixod, and the scanner speed is proven only by
+simulation — his ⓘ screenshots from the slow phones are the oracle.
+
+**Latest migration: 0112** (`qr_less` — the count reasons, the QR-siz lot
+marker, the office receipt's receiver, the factory barcode, the pallet kind;
+ledger must reach **113**). Before it: **0111** (`nav_usage` — «Tez-tez»;
+ledger 112; `when` …090). Before it: **0110** (`lead_assign` — the website teams, the typed and
 the read Telegram handle, the offer ledger, the `site` arrival channel; ledger
 111; `when` …089, AFTER the other session's three, #1040).
 Before it: 0109 (`client_broadcast`), 0108 (`partner_terms`), 0107
@@ -2110,10 +2141,10 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **112** since 0111, and his server last CONFIRMED **107** («deploy
-qildim 107 chiqdi», 2026-09-26); the 0107-0110 commands went to him with PR #92
-and were not confirmed back, so the next deploy applies 0111 and whatever of
-0107-0110 is still missing — count, do not assume.
+length — **113** since 0112, and his server last CONFIRMED **107** («deploy
+qildim 107 chiqdi», 2026-09-26); nothing after 107 was confirmed back to this
+session, so the next deploy applies 0112 and whatever of 0107-0111 is still
+missing — count, do not assume.
 Never carry this number over from a previous session: read it
 (`ls src/modules/platform/db/migrations/*.sql | wc -l`) before writing the
 owner a step list, because the count is the only check that separates «the

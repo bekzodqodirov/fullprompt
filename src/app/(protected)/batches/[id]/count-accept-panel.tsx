@@ -268,8 +268,11 @@ function LotRow({
         )}
       </p>
       <div className="flex gap-2">
-        {/* The width sits on the wrapper, never on `.input` (#419). */}
-        <div className="w-24 shrink-0">
+        {/* The width sits on the wrapper, never on `.input` (#419). The box
+            gives way, never the press: inside the «done» fold at 360 px a
+            fixed box squeezed «Qabul qilish» to 60 px and cut its word — and
+            a done lot is where a press below «arrived» is made. */}
+        <div className="min-w-0 max-w-28 flex-1">
           <input
             className="input"
             type="number"
@@ -292,7 +295,7 @@ function LotRow({
         </button>
         <button
           type="button"
-          className="btn-primary min-w-0 flex-1 px-2 disabled:opacity-50"
+          className="btn-primary shrink-0 px-3 disabled:opacity-50"
           data-testid={`count-accept-${lot.lotId}`}
           disabled={pending}
           onClick={accept}

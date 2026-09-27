@@ -4257,7 +4257,7 @@
     "barcode": "工厂条码",
     "barcodeScan": "扫描工厂条码",
     "barcodeMode": "工厂条码",
-    "barcodeTitle": "🏷 工厂条码：{code}",
+    "barcodeTitle": "🏭 工厂条码：{code}",
     "barcodeHere": "本车上：",
     "barcodeNotHere": "本车上没有此条码的批次。",
     "barcodeElsewhere": "其他地方：",

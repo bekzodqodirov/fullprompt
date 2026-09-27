@@ -131,11 +131,17 @@ person write: Prixod → `/receive`; Bitim → `/bitimlar/new`; To'lov
 `/bugun?yangi=vazifa#yangi-vazifa`. The pickers use the global search, whose
 answer is already scoped to the person.
 
+**2026-09-27, QR-siz round (his Q9 b):** the logist's menu gained `/receive` —
+he enters a prixod FROM THE OFFICE off the floor's photos, naming who
+physically received it and the real day (up to seven days back). So «Prixod»
+is in his «+ Yangi» too. Only that screen: the crate list stays out (a pallet
+is made from the prixod card or the stock row) and his phone bar is unchanged.
+
 ## Phone bars (6)
 
 | Role | Bar |
 |---|---|
 | warehouse_operator / manager | `/`, `/receive`, `/stock`, `/batches` — at a warehouse that `issues_to_clients` (Tashkent, Andijan): `/`, `/receive`, `/stock`, `/issue` |
-| logist | `/`, `/stock`, `/trucks`, `/plans` |
+| logist | `/`, `/stock`, `/trucks`, `/plans` (unchanged when `/receive` joined his menu — see below) |
 | ved_manager | `/`, `/hisoblash`, `/batches`, `/bitimlar` (his home's two rows; the chats are the header's 💬) |
 | others | unchanged |

@@ -4257,7 +4257,7 @@
     "barcode": "Штрихкод завода",
     "barcodeScan": "Считать штрихкод завода",
     "barcodeMode": "Код завода",
-    "barcodeTitle": "🏷 Код завода: {code}",
+    "barcodeTitle": "🏭 Код завода: {code}",
     "barcodeHere": "На этой машине:",
     "barcodeNotHere": "Лота с этим кодом на этой машине нет.",
     "barcodeElsewhere": "В других местах:",

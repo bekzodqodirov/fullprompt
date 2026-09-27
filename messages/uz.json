@@ -4257,7 +4257,7 @@
     "barcode": "Zavod shtrix-kodi",
     "barcodeScan": "Zavod shtrix-kodini o‘qish",
     "barcodeMode": "Zavod kodi",
-    "barcodeTitle": "🏷 Zavod kodi: {code}",
+    "barcodeTitle": "🏭 Zavod kodi: {code}",
     "barcodeHere": "Shu mashinada:",
     "barcodeNotHere": "Bu kodli lot shu mashinada yo‘q.",
     "barcodeElsewhere": "Boshqa joyda:",

@@ -182,3 +182,27 @@ export function collectAuditRefs(
   }
   return wanted;
 }
+
+const isScalar = (v: unknown): v is string | number | boolean =>
+  typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean';
+
+/**
+ * One recorded value as the History tab prints it. A list of plain values is
+ * a list; a structured record (a count's growth, a sticker run) reads as its
+ * own facts — «add: 3 · codes: …-06, …-07 · reason: …» — with the ids it
+ * carries left out: they are for the machine, and a uuid in the middle of a
+ * sentence is what the owner called «qandaydur codelar» (review ui-4). Any
+ * other shape keeps its JSON, which is honest if not pretty.
+ */
+export function formatAuditValue(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '∅';
+  if (Array.isArray(value) && value.every(isScalar)) return value.length ? value.join(', ') : '∅';
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    const parts = Object.entries(value as Record<string, unknown>)
+      .filter(([, v]) => v !== null && v !== undefined && v !== '' && !isUuidShaped(v))
+      .map(([k, v]) => `${k}: ${Array.isArray(v) && v.every(isScalar) ? v.join(', ') : isScalar(v) ? String(v) : JSON.stringify(v)}`);
+    return parts.length ? parts.join(' · ') : '∅';
+  }
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}

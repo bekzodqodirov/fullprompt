@@ -4,6 +4,7 @@ import { db } from '@/modules/platform/db/client';
 import { auditLog, users } from '@/modules/platform/db/schema';
 import {
   AUDIT_FIELD_LABELS,
+  formatAuditValue,
   collectAuditRefs,
   isUuidShaped,
   AUDIT_FIELD_REFS,
@@ -159,7 +160,7 @@ function ChangeList({
       const at = new Date(value);
       if (!Number.isNaN(at.getTime())) return { text: when(at), title: value };
     }
-    return { text: formatValue(value), title: undefined };
+    return { text: formatAuditValue(value), title: undefined };
   };
   return (
     <ul className={bare ? 'space-y-1' : 'mt-2 space-y-1 border-t border-line pt-2'}>
@@ -192,8 +193,3 @@ function ChangeList({
 /** A full ISO instant as `toISOString()` writes it — a bare date stays text. */
 const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})$/;
 
-function formatValue(value: unknown): string {
-  if (value === null || value === undefined || value === '') return '∅';
-  if (typeof value === 'object') return JSON.stringify(value);
-  return String(value);
-}

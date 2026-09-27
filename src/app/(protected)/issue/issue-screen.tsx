@@ -709,7 +709,7 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
       {client && (
         <>
           <Scanner active mode={scanMode} onCode={(code) => {
-            // «🏷 Zavod kodi» reads ONE retail barcode, then back to QR.
+            // «🏭 Zavod kodi» reads ONE retail barcode, then back to QR.
             if (scanMode === 'retail') setScanMode('qr');
             onScan(code);
           }} />
@@ -721,7 +721,7 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
               className={`btn-secondary !min-h-9 px-3 ${scanMode === 'retail' ? '!bg-brand-600 !text-white' : ''}`}
               onClick={() => setScanMode((mode) => (mode === 'retail' ? 'qr' : 'retail'))}
             >
-              🏷 {to('barcodeMode')}
+              🏭 {to('barcodeMode')}
             </button>
           </div>
           <div className="card space-y-2 !p-3" id="issuable-boxes">
