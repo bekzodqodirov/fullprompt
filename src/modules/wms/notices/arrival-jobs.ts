@@ -1,34 +1,199 @@
 import type PgBoss from 'pg-boss';
 import { eq } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
-import { clients, clientTelegramLinks, warehouses } from '@/modules/platform/db/schema';
+import { clients, warehouses } from '@/modules/platform/db/schema';
 import { logger } from '@/modules/platform/logger';
-import { cabinetInlineKeyboard } from '@/modules/platform/telegram/menu-button';
+import { chatLocaleFor } from '@/modules/platform/telegram/cabinet-locale';
+import { clientLabels } from '@/modules/platform/telegram/client-labels';
+import { h } from '@/modules/platform/telegram/format';
+import { clientPushKeyboard } from '@/modules/platform/telegram/menu-button';
+import { quietHour, type SendResult } from '@/modules/platform/telegram/send';
 import {
   arrivedSummary,
   claimNoticesForSending,
-  isPermanentNoticeFailure,
+  deferNotice,
   MAX_NOTICE_ATTEMPTS,
+  NOTICE_ARRIVED,
+  releaseNotices,
   settleArrivalNotice,
 } from './arrival';
 import { emitArrivalStaffEvent, staffPendingNotices } from './arrival-staff';
-import { arrivalText } from './arrival-text';
+import { arrivalCleared, arrivalText } from './arrival-text';
+import { NOTICE_ISSUED, NOTICE_RECEIVED } from './client-claims';
+import {
+  firstLotPhoto,
+  linkedChats,
+  loadPhoto,
+  type PhotoBreaker,
+  PHOTO_ATTEMPTS,
+  pushToChat,
+  pushVerdict,
+  type ClientRow,
+  type NoticeRow,
+  type PreparedPush,
+  type Preparer,
+  type PushVerdict,
+  type Skip,
+} from './client-push';
+import { issuedFacts, receivedFacts } from './client-summary';
+import { issuedText, receivedText } from './client-text';
+import { preparePickupNotice } from '../pickups/notice';
+import { NOTICE_PICKED_UP } from '../pickups/service';
 import { enqueue, JOB_PROCESS_EVENTS } from '@/modules/platform/jobs/boss';
 
 export const JOB_CLIENT_NOTICES = 'notices.client';
 
-/**
- * Send the arrival notices whose window has closed.
+/*
+ * --- what each kind says (round C: one sweep, four renderers) ---
  *
- * Every two minutes, because the window itself is measured in minutes and a
- * customer standing in the yard should not learn later than the person who
- * telephoned. The sweep is a partial index over pending rows and does nothing
- * at all when nothing has landed.
+ * Every renderer reads its facts NOW, from the database, and answers a
+ * `PreparedPush` or a reason to say nothing. The table is also the list of
+ * kinds the sweep CLAIMS: a kind with no renderer is never taken, so it can
+ * never be settled by a sweep that does not know what it means.
+ */
+
+/** «🇺🇿 Yukingiz yetib keldi» — one per customer per truck (arrival.ts). */
+async function prepareArrival(notice: NoticeRow, client: ClientRow): Promise<PreparedPush | Skip> {
+  // The destination is a fact about the batch, read now rather than carried
+  // on the claim: a truck re-routed between the claim and the send would
+  // otherwise name the wrong warehouse.
+  const batch = await db.query.batches.findFirst({ where: (b, { eq: is }) => is(b.id, notice.refId) });
+  if (!batch) return { skip: 'batch_gone' };
+  const summary = await arrivedSummary(notice.clientId, notice.refId, batch.destWarehouseId);
+  // Everything this client had on the truck was voided, returned or moved on
+  // before the window closed. There is nothing true to say.
+  if (!summary) return { skip: 'nothing_landed' };
+  const [dest, origin] = await Promise.all([
+    db.query.warehouses.findFirst({ where: eq(warehouses.id, batch.destWarehouseId) }),
+    db.query.warehouses.findFirst({ where: eq(warehouses.id, batch.originWarehouseId) }),
+  ]);
+  const full = {
+    ...summary,
+    warehouseCode: dest?.code ?? '',
+    warehouseName: dest?.name ?? '',
+    warehouseAddress: dest?.address ?? null,
+  };
+  const cleared = arrivalCleared(batch.customsClearedAt, origin?.country);
+  const lotIds = summary.lines.map((line) => line.lotId);
+  // The day the newest counted carton came off the truck (`landedAt`, from the
+  // landing movements). Not the claim's `created_at` — a notice re-armed by a
+  // second day of unloading kept the first day's (round C review, PA-4) — and
+  // not the sweep's clock either, which the first fix used: a truck scanned at
+  // 23:50 is told after midnight, and a queue held by a dead bot token drains
+  // days later, and both printed a landing day that never happened.
+  const landedOn = summary.landedAt ?? notice.createdAt;
+  return {
+    render: (locale) => {
+      const text = arrivalText(full, client.clientCode, locale, { cleared, date: landedOn });
+      // The photograph was taken when the cargo was RECEIVED, in China; under
+      // the arrival it must not read as a picture of its condition today
+      // (judge CX-15), so the caption says so.
+      return { text, caption: `${text}\n\n${h(clientLabels(locale).photoTakenOnReceipt)}` };
+    },
+    keyboard: { lotId: lotIds[0] ?? null },
+    photo: await firstLotPhoto(lotIds),
+  };
+}
+
+/** «📥 Yukingiz omborimizga qabul qilindi» — the receipt, as it is at send time. */
+async function prepareReceived(notice: NoticeRow, client: ClientRow): Promise<PreparedPush | Skip> {
+  const facts = await receivedFacts(notice.clientId, notice.refId);
+  if ('skip' in facts) return facts;
+  const summary = { ...facts.summary, clientCode: client.clientCode };
+  return {
+    render: (locale) => {
+      const text = receivedText(summary, locale);
+      return { text, caption: text };
+    },
+    keyboard: { lotId: facts.lotIds[0] ?? null },
+    photo: await firstLotPhoto(facts.lotIds),
+  };
+}
+
+/** «🤝 Yukingiz berildi» — the handover's own boxes, and what is left. No photo. */
+async function prepareIssued(notice: NoticeRow, client: ClientRow): Promise<PreparedPush | Skip> {
+  const facts = await issuedFacts(notice.clientId, notice.refId);
+  if ('skip' in facts) return facts;
+  const summary = { ...facts, clientCode: client.clientCode };
+  return {
+    render: (locale) => ({ text: issuedText(summary, locale), caption: null }),
+    // No lot to open on: a handover spans the customer's cargo, and what
+    // matters next is the rest of it, from the top.
+    keyboard: { lotId: null },
+    photo: null,
+  };
+}
+
+const PREPARERS: Record<string, Preparer> = {
+  [NOTICE_ARRIVED]: prepareArrival,
+  [NOTICE_PICKED_UP]: preparePickupNotice,
+  [NOTICE_RECEIVED]: prepareReceived,
+  [NOTICE_ISSUED]: prepareIssued,
+};
+
+/** The kinds this sweep claims — exactly the ones it can render. */
+export const SWEPT_NOTICE_KINDS = Object.keys(PREPARERS);
+
+type Delivery = { kind: 'skipped'; reason: string } | PushVerdict;
+
+/**
+ * One notice, every chat of its client, in each chat's own language.
+ *
+ * The language is the CHAT's (the person's choice, set from the bot's 🌐 or
+ * the Mini App) before the code's: a code that joined an existing cabinet has
+ * no language of its own, and «in the new code's language» was the Russian
+ * fallback to a person who had picked Uzbek (judge LOC-1/CX-7).
+ */
+async function deliverNotice(notice: NoticeRow, now: Date, photos: PhotoBreaker): Promise<Delivery> {
+  const prepare = PREPARERS[notice.kind];
+  if (!prepare) return { kind: 'skipped', reason: 'unknown_kind' };
+  const client = await db.query.clients.findFirst({ where: eq(clients.id, notice.clientId) });
+  if (!client) return { kind: 'skipped', reason: 'client_gone' };
+  const chats = await linkedChats(notice.clientId);
+  if (chats.length === 0) return { kind: 'skipped', reason: 'no_linked_chat' };
+  const prepared = await prepare(notice, client);
+  if ('skip' in prepared) return { kind: 'skipped', reason: prepared.skip };
+
+  // Read once for every chat; after the first upload the file id stands in.
+  let photo =
+    prepared.photo && notice.attempts < PHOTO_ATTEMPTS ? await loadPhoto(prepared.photo, undefined, photos) : null;
+  const silent = quietHour(now);
+  const results: SendResult[] = [];
+  for (const chatId of chats) {
+    const locale = (await chatLocaleFor(chatId)) ?? client.locale;
+    const keyboard = prepared.keyboard
+      ? clientPushKeyboard(process.env.APP_URL, locale, { lotId: prepared.keyboard.lotId, contact: true })
+      : null;
+    const result = await pushToChat({ chatId, message: prepared.render(locale), keyboard, photo, silent });
+    results.push(result);
+    if (result.ok && result.fileId) photo = { fileId: result.fileId };
+    if (!result.ok) {
+      // A client who BLOCKED the bot looks exactly like a client who was
+      // reached unless the answer is read (#268).
+      logger.warn(
+        { clientId: notice.clientId, kind: notice.kind, status: result.status, detail: result.description.slice(0, 200) },
+        'client notice rejected',
+      );
+    }
+    // A refused TOKEN refuses every chat after this one too.
+    if (result.botDown) break;
+  }
+  return pushVerdict(results);
+}
+
+/**
+ * Send the customer notices whose window has closed — every kind.
+ *
+ * Every two minutes, because the arrival window itself is measured in
+ * minutes and a customer standing in the yard should not learn later than
+ * the person who telephoned. The sweep is a partial index over pending rows
+ * and does nothing at all when nothing is due.
  *
  * The totals are read HERE and not when the notice was claimed — that is the
  * whole design (`arrival.ts`): the first carton reserves the message, the rest
  * of the truck is scanned while it waits, and what goes out is the delivery
- * as it really is.
+ * as it really is. Round C folded the other three customer pushes into the
+ * same shape (`client-claims.ts`).
  */
 export async function sendDueArrivalNotices(now = new Date()): Promise<number> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -65,138 +230,77 @@ export async function sendDueArrivalNotices(now = new Date()): Promise<number> {
     await enqueue(JOB_PROCESS_EVENTS, {}).catch(() => {});
   }
 
-  // «Yukingiz zavoddan olindi» rides the same sweep and the same rules (0100),
-  // in its own module and its own try: one kind's failure must not silence
-  // the other.
-  try {
-    const { sendDuePickupNotices } = await import('../pickups/notice');
-    const pickedUp = await sendDuePickupNotices(now);
-    if (pickedUp > 0) logger.info({ sent: pickedUp }, 'client pickup notices sent');
-  } catch (err) {
-    logger.warn({ err }, 'client pickup notice sweep failed');
-  }
-
-  // Claimed, not merely selected: two overlapping sweeps must split the work.
-  const due = await claimNoticesForSending(50, now);
-  if (due.length === 0) return 0;
   /*
-   * No bot configured is not this message's fault and must not settle it.
+   * No bot configured is not any message's fault and must not settle one.
    *
-   * It used to write `skipped`, and `dueArrivalNotices` reads `pending` and
-   * nothing else — so every customer whose cargo landed while the token was
-   * being rotated was silently never told, for ever. `sendPendingTelegram`
-   * has always had the honest shape one module over: with no token it simply
-   * returns and leaves the rows where they are.
+   * It used to write `skipped`, and the queue reads `pending` and nothing
+   * else — so every customer whose cargo landed while the token was being
+   * rotated was silently never told, for ever. Asked BEFORE claiming since
+   * round C: a claimed row left in `sending` is reclaimed with an attempt
+   * spent, and five sweeps without a token would have used up the budget.
    */
   if (!token) return 0;
 
+  // Claimed, not merely selected: two overlapping sweeps must split the work.
+  const due = await claimNoticesForSending(50, now, SWEPT_NOTICE_KINDS);
+  // One stalled photo read and the rest of this sweep goes as text.
+  const photos: PhotoBreaker = { stalled: false };
   let sent = 0;
-  for (const notice of due) {
+  for (let i = 0; i < due.length; i += 1) {
+    const notice = due[i]!;
+    let delivery: Delivery;
     try {
-      const client = await db.query.clients.findFirst({
-        where: eq(clients.id, notice.clientId),
-      });
-      if (!client) {
-        await settleArrivalNotice(notice.id, 'skipped', 'client_gone');
-        continue;
-      }
-      // The destination is a fact about the batch, read now rather than
-      // carried on the claim: a truck re-routed between the claim and the
-      // send would otherwise name the wrong warehouse.
-      const batch = await db.query.batches.findFirst({
-        where: (b, { eq: is }) => is(b.id, notice.refId),
-      });
-      if (!batch) {
-        await settleArrivalNotice(notice.id, 'skipped', 'batch_gone');
-        continue;
-      }
-      const summary = await arrivedSummary(notice.clientId, notice.refId, batch.destWarehouseId);
-      if (!summary) {
-        // Everything this client had on the truck was voided, returned or
-        // moved on before the window closed. There is nothing true to say.
-        await settleArrivalNotice(notice.id, 'skipped', 'nothing_landed');
-        continue;
-      }
-      const wh = await db.query.warehouses.findFirst({
-        where: eq(warehouses.id, batch.destWarehouseId),
-      });
-      const text = arrivalText(
-        { ...summary, warehouseCode: wh?.code ?? '' },
-        client.clientCode,
-        client.locale,
-      );
-
-      const links = await db
-        .select()
-        .from(clientTelegramLinks)
-        .where(eq(clientTelegramLinks.clientId, notice.clientId));
-      // One message per CHAT, not per link row — `client_telegram_links` has
-      // no unique constraint on (client, chat) and two paths can insert a
-      // second 'linked' row for the same pair (#267).
-      const chats = new Set<bigint>();
-      for (const link of links) {
-        if (link.status === 'linked' && link.telegramChatId) chats.add(link.telegramChatId);
-      }
-      if (chats.size === 0) {
-        await settleArrivalNotice(notice.id, 'skipped', 'no_linked_chat');
-        continue;
-      }
-
-      const app = cabinetInlineKeyboard(process.env.APP_URL, client.locale);
-      let delivered = 0;
-      // Every refusal so far permanent? Only then is giving up honest.
-      let allPermanent = true;
-      let lastDetail = '';
-      for (const chatId of chats) {
-        const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: Number(chatId),
-            text,
-            ...(app ? { reply_markup: app } : {}),
-          }),
-          // A call with no deadline is round 101's defect: a hung socket holds
-          // the whole sweep, and every customer behind this one waits with it.
-          signal: AbortSignal.timeout(20_000),
-        });
-        if (res.ok) delivered += 1;
-        else {
-          const detail = await res.text().catch(() => '');
-          if (!isPermanentNoticeFailure(res.status)) allPermanent = false;
-          lastDetail = `${res.status} ${detail.slice(0, 200)}`;
-          // A client who BLOCKED the bot looks exactly like a client who was
-          // reached unless the answer is read (#268).
-          logger.warn(
-            { clientId: notice.clientId, status: res.status, detail: detail.slice(0, 200) },
-            'client arrival notice rejected',
-          );
-        }
-      }
-      // Reaching one of a person's chats is reaching the person. Zero is a
-      // RETRY when anything about it was transient — a 429 during the burst
-      // that follows a truck landing is the likeliest failure there is, and
-      // `dueArrivalNotices` only ever re-reads 'pending', so writing 'failed'
-      // here is the customer never being told. Permanent refusals (blocked,
-      // no such chat) and a spent attempt budget settle for good.
-      const outcome =
-        delivered > 0
-          ? 'sent'
-          : allPermanent || notice.attempts + 1 >= MAX_NOTICE_ATTEMPTS
-            ? 'failed'
-            : 'pending';
-      await settleArrivalNotice(notice.id, outcome, delivered > 0 ? undefined : lastDetail);
-      if (delivered > 0) sent += 1;
+      delivery = await deliverNotice(notice, now, photos);
     } catch (err) {
       // The throw is almost always the network or the database, i.e. this
       // moment rather than this message — keep it queued until the budget
       // runs out.
-      logger.warn({ err, noticeId: notice.id }, 'client arrival notice failed');
+      logger.warn({ err, noticeId: notice.id, kind: notice.kind }, 'client notice failed');
       await settleArrivalNotice(
         notice.id,
         notice.attempts + 1 >= MAX_NOTICE_ATTEMPTS ? 'failed' : 'pending',
         String(err),
       ).catch(() => {});
+      continue;
+    }
+    switch (delivery.kind) {
+      case 'skipped':
+        await settleArrivalNotice(notice.id, 'skipped', delivery.reason);
+        break;
+      case 'sent':
+        await settleArrivalNotice(notice.id, 'sent');
+        sent += 1;
+        break;
+      case 'failed':
+        await settleArrivalNotice(notice.id, 'failed', delivery.detail);
+        break;
+      case 'retry':
+        // Zero chats reached and something about it was transient: a RETRY —
+        // writing 'failed' here is the customer never being told.
+        await settleArrivalNotice(
+          notice.id,
+          notice.attempts + 1 >= MAX_NOTICE_ATTEMPTS ? 'failed' : 'pending',
+          delivery.detail,
+        );
+        break;
+      case 'defer':
+        await deferNotice(notice.id, delivery.retryAfter, delivery.detail);
+        break;
+      case 'botDown': {
+        /*
+         * The token itself is refused (401/404): nothing else in this run can
+         * go either, and none of it is the customers' fault. Everything still
+         * held goes back untouched — no attempt spent — and the sweep stops
+         * until the token is fixed (judge REL-1).
+         */
+        if (delivery.delivered) {
+          await settleArrivalNotice(notice.id, 'sent');
+          sent += 1;
+        }
+        await releaseNotices(due.slice(delivery.delivered ? i + 1 : i).map((row) => row.id));
+        logger.error({ detail: delivery.detail }, 'client notices: the bot token is refused — sweep stopped, queue kept');
+        return sent;
+      }
     }
   }
   return sent;
@@ -208,9 +312,9 @@ export async function registerClientNoticeWorker(boss: PgBoss): Promise<void> {
   await boss.work(JOB_CLIENT_NOTICES, async () => {
     try {
       const sent = await sendDueArrivalNotices();
-      if (sent > 0) logger.info({ sent }, 'client arrival notices sent');
+      if (sent > 0) logger.info({ sent }, 'client notices sent');
     } catch (err) {
-      logger.error({ err }, 'client arrival notice sweep failed');
+      logger.error({ err }, 'client notice sweep failed');
       throw err;
     }
   });

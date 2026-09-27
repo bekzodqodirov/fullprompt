@@ -19,6 +19,7 @@ import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { usersWithPermission } from '../../platform/notifications/service';
 import { clientBalanceUsd, deferredBalanceUsd } from '../finance/service';
 import { gatedAt, uncoveredBoxesOn, unpricedGate, unpricedReceiptsOn, type UncoveredBox } from '../finance/unpriced';
+import { claimIssuedNotice } from '../notices/client-claims';
 import { lockLiveApproval, markApprovalConsumed } from './approvals';
 
 export class IssueError extends Error {
@@ -295,6 +296,11 @@ export async function issueBoxes(request: IssueRequest, ctx: AuditContext) {
       entityId: handover!.id,
       actorId,
     });
+    // The customer's «yukingiz berildi» (round C): a claimed notice in this
+    // transaction, sent by the notices sweep — no longer rendered by the event
+    // drain from the payload above, which stays for the staff side, the deal
+    // funnel and the automation rules.
+    await claimIssuedNotice(tx, input.clientId, handover!.id);
     return { handover: handover!, gated, replay: false, approvalId };
   });
   // AFTER the commit — a Telegram row must never be able to roll a handover

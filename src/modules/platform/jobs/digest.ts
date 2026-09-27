@@ -69,25 +69,7 @@ export async function sendDailyDigest(now = new Date()): Promise<boolean> {
     .orderBy(warehouses.code);
 
   if (unclaimedLive.length === 0 && stale.length === 0) return false;
-
-  const lines: string[] = ['📊 GSR — ежедневная сводка'];
-  if (unclaimedLive.length > 0) {
-    lines.push('', `❓ Неопознанный груз (старше ${agingDays} дн.):`);
-    for (const r of unclaimedLive) {
-      const days = Math.floor((now.getTime() - r.receivedAt.getTime()) / 86_400_000);
-      lines.push(
-        `• ${r.whCode} ${r.number}${r.marking ? ` [${r.marking}]` : ''} — ${r.boxCount} кор., ${days} дн.`,
-      );
-    }
-  }
-  if (stale.length > 0) {
-    lines.push('', `🕸 Залежавшийся груз (старше ${staleDays} дн.):`);
-    for (const s of stale) {
-      const days = Math.floor((now.getTime() - new Date(s.oldestAt).getTime()) / 86_400_000);
-      lines.push(`• ${s.whCode}: ${s.boxCount} кор., самый старый — ${days} дн.`);
-    }
-  }
-  const text = lines.join('\n');
+  const text = dailyDigestText({ now, agingDays, staleDays, unclaimed: unclaimedLive, stale });
 
   const recipientRows = await db
     .select({ userId: userRoles.userId })
@@ -123,6 +105,47 @@ export async function sendDailyDigest(now = new Date()): Promise<boolean> {
     });
   }
   return true;
+}
+
+/** How many unclaimed receipts the digest names before it only counts. */
+export const DIGEST_UNCLAIMED_SHOWN = 20;
+
+/**
+ * The svodka's words (round C). It was the one staff message still written in
+ * Russian — every other thing the office reads from the bot is Uzbek — and
+ * its unclaimed list had no end: a quiet month of egasiz cargo made a text
+ * Telegram refuses whole, retried into `failed`, so the digest went missing
+ * exactly when it had the most to say. Twenty lines and then the count.
+ */
+export function dailyDigestText(input: {
+  now: Date;
+  agingDays: number;
+  staleDays: number;
+  unclaimed: { whCode: string; number: string | null; marking: string | null; receivedAt: Date; boxCount: number | string }[];
+  stale: { whCode: string; boxCount: number | string; oldestAt: string | Date }[];
+}): string {
+  const { now } = input;
+  const lines: string[] = ['📊 GSR — kunlik hisobot'];
+  if (input.unclaimed.length > 0) {
+    lines.push('', `❓ Egasiz yuk (${input.agingDays} kundan eski):`);
+    for (const r of input.unclaimed.slice(0, DIGEST_UNCLAIMED_SHOWN)) {
+      const days = Math.floor((now.getTime() - r.receivedAt.getTime()) / 86_400_000);
+      lines.push(
+        `• ${r.whCode} ${r.number ?? ''}${r.marking ? ` [${r.marking}]` : ''} — ${r.boxCount} kor., ${days} kun`,
+      );
+    }
+    if (input.unclaimed.length > DIGEST_UNCLAIMED_SHOWN) {
+      lines.push(`… yana ${input.unclaimed.length - DIGEST_UNCLAIMED_SHOWN} ta`);
+    }
+  }
+  if (input.stale.length > 0) {
+    lines.push('', `🕸 Uzoq turgan yuk (${input.staleDays} kundan eski):`);
+    for (const s of input.stale) {
+      const days = Math.floor((now.getTime() - new Date(s.oldestAt).getTime()) / 86_400_000);
+      lines.push(`• ${s.whCode}: ${s.boxCount} kor., eng eskisi — ${days} kun`);
+    }
+  }
+  return lines.join('\n');
 }
 
 export async function registerDigestWorker(boss: PgBoss): Promise<void> {

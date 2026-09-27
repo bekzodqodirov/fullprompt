@@ -7,11 +7,15 @@ import { clientsForChat } from '../../wms/client-cabinet/service';
 import {
   beginClientLink,
   cabinetKeyboard,
+  dispatch,
   phoneKeyboard,
   registerClientCabinet,
+  sendInOrder,
+  type Outgoing,
 } from './client-cabinet';
-import { clientLabels } from './client-labels';
+import { clientLabels, localeFromTelegram } from './client-labels';
 import { adSourceFromPayload, rememberAdVisit } from './ad-intake';
+import { h } from './format';
 import { cabinetInlineKeyboard } from './menu-button';
 import { linkStaffChat, staffForChat, startMenuFor } from './staff-bot';
 import {
@@ -22,6 +26,8 @@ import {
   staffKeyboard,
 } from './staff-handlers';
 import { replyKeyboardFor } from './keyboards';
+import { ensureBotProfile, offerStaffCommands } from './commands';
+import { botCall } from './send';
 
 /**
  * Staff-linking bot (spec 4.5): handles `/start <one-time-code>` from the
@@ -36,16 +42,15 @@ export async function getBotUsername(): Promise<string | null> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) return null;
   if (globalForBot.botUsername) return globalForBot.botUsername;
-  try {
-    const res = await fetch(`https://api.telegram.org/bot${token}/getMe`);
-    const body = (await res.json()) as { ok: boolean; result?: { username: string } };
-    if (body.ok && body.result) {
-      globalForBot.botUsername = body.result.username;
-      return body.result.username;
-    }
-  } catch (err) {
-    logger.warn({ err }, 'telegram getMe failed');
+  // Through the one sender (round C): this read had no deadline, and the
+  // arrivals screen awaits it while it renders.
+  const answer = await botCall('getMe', {}, 10_000);
+  const me = answer.result as { username?: string } | null;
+  if (answer.ok && me?.username) {
+    globalForBot.botUsername = me.username;
+    return me.username;
   }
+  if (!answer.ok) logger.warn({ description: answer.description }, 'telegram getMe failed');
   return null;
 }
 
@@ -71,36 +76,6 @@ async function tellOldChat(
     .catch(() => {});
 }
 
-/**
- * Put «/hodim» in THIS chat's command menu, and only this chat's.
- *
- * A global command list would show a staff command to every customer, and in a
- * cabinet chat the corner button is the Mini App anyway. Fire and forget: the
- * poller is sequential and a command menu is not worth holding it.
- */
-function offerStaffCommands(
-  ctx: {
-    api: {
-      setMyCommands: (
-        commands: { command: string; description: string }[],
-        other?: Record<string, unknown>,
-      ) => Promise<unknown>;
-    };
-  },
-  chatId: number,
-): void {
-  void ctx.api
-    .setMyCommands(
-      [
-        { command: 'hodim', description: 'Hodim rejimi' },
-        { command: 'bugun', description: 'Bugungi vazifalar' },
-        { command: 'zametka', description: 'Zametkalar' },
-      ],
-      { scope: { type: 'chat', chat_id: chatId } },
-    )
-    .catch(() => {});
-}
-
 export function startTelegramBot(): void {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   // TELEGRAM_POLLING=0 disables receiving (linking) on this instance —
@@ -114,6 +89,9 @@ export function startTelegramBot(): void {
 
   bot.command('start', async (ctx) => {
     const code = ctx.match?.trim();
+    // The phone's own language, NORMALISED: a raw «en-GB» or «uz-Latn» is not
+    // a language the dictionary knows, and fell back to Russian.
+    const tg = localeFromTelegram(ctx.from?.language_code);
 
     // An ADVERT brought them here (`?start=ad_instagram`). Not a link code and
     // not a menu: somebody who tapped an advert wants a price, so the only
@@ -123,28 +101,50 @@ export function startTelegramBot(): void {
     // remembered, not acted on.
     const adSource = adSourceFromPayload(code);
     if (adSource) {
-      const tg = ctx.from?.language_code;
       rememberAdVisit(ctx.chat.id, adSource);
       await ctx.reply(clientLabels(tg).askPhone, { reply_markup: phoneKeyboard(tg) });
       return;
     }
 
-    if (!code) {
+    /*
+     * A bare /start. A function because a SPENT link code from a chat that is
+     * already somebody's lands here too (round C review, CONV-5): a customer
+     * tapping last month's link again was told «link expired» and handed the
+     * one-time phone keyboard, which took their cabinet buttons away — while
+     * the chat was connected all along.
+     */
+    const bareStart = async (): Promise<void> => {
       // One decision, made in the testable layer (round 100, 13A): the
       // owner's own people also ship cargo, and the staff menu used to
       // REPLACE their cabinet buttons — reply keyboards are exclusive.
-      const staff = await staffForChat(BigInt(ctx.chat.id));
-      const linkedClients = await clientsForChat(BigInt(ctx.chat.id));
+      const chatId = ctx.chat.id;
+      const staff = await staffForChat(BigInt(chatId));
+      const linkedClients = await clientsForChat(BigInt(chatId));
       const menu = startMenuFor(staff, linkedClients.length);
-      if (menu === 'both') {
+      if (menu === 'both' || menu === 'cabinet') {
+        // Round C: a greeting by the name Telegram knows the person by (the
+        // client card's name is often a company or a marking), the codes, and
+        // then — a SECOND message, since a reply keyboard and an inline one
+        // cannot share one — the wide button. A client who types /start is
+        // looking for their cargo, not for the corner icon. A chat that is
+        // also staff is greeted by its staff name, as it always was.
         const locale = linkedClients.find((c) => c.locale)?.locale ?? null;
         const t = clientLabels(locale);
-        await ctx.reply(
-          `👋 ${staff!.fullName}\n${t.yourCodes}: ${linkedClients.map((c) => c.clientCode).join(', ')}`,
-          { reply_markup: bothKeyboard(locale) },
-        );
+        const { startGreetingHtml } = await import('../../wms/client-cabinet/bot-text');
         const app = cabinetInlineKeyboard(process.env.APP_URL, locale);
-        if (app) await ctx.reply(t.openAppPrompt, { reply_markup: app });
+        const messages: Outgoing[] = [
+          {
+            html: startGreetingHtml({
+              codes: linkedClients.map((c) => c.clientCode),
+              firstName: ctx.from?.first_name ?? null,
+              staffName: menu === 'both' ? staff!.fullName : null,
+              locale,
+            }),
+            replyMarkup: menu === 'both' ? bothKeyboard(locale) : cabinetKeyboard(locale),
+          },
+        ];
+        if (app) messages.push({ html: h(t.openAppPrompt), replyMarkup: app });
+        dispatch('start', chatId, () => sendInOrder(chatId, messages, 'start'));
         return;
       }
       // A linked member of STAFF gets the staff menu (round 35).
@@ -152,28 +152,19 @@ export function startTelegramBot(): void {
         await ctx.reply(`👋 ${staff!.fullName}`, { reply_markup: staffKeyboard() });
         return;
       }
-      // A linked client without a code gets the cabinet menu back.
-      if (menu === 'cabinet') {
-        const locale = linkedClients.find((c) => c.locale)?.locale ?? null;
-        const t = clientLabels(locale);
-        await ctx.reply(
-          `${t.yourCodes}: ${linkedClients.map((c) => c.clientCode).join(', ')}`,
-          { reply_markup: cabinetKeyboard(locale) },
-        );
-        // A client who types /start is looking for their cargo. Offer the app
-        // as a wide button rather than making them find the corner icon.
-        const app = cabinetInlineKeyboard(process.env.APP_URL, locale);
-        if (app) await ctx.reply(t.openAppPrompt, { reply_markup: app });
-        return;
-      }
       // An unknown chat is offered the two doors (owner: «hodim yoki mijoz
-      // alohida kirish bo'lsin buttonlar bilan»). The client door is the
-      // cabinet's phone flow; the staff door matches the shared number
-      // against the employee list.
-      const t = clientLabels(ctx.from?.language_code);
-      await ctx.reply(`${t.notLinked}\n\nKim sifatida kirasiz? / Кто вы?`, {
-        reply_markup: entryKeyboard(),
+      // alohida kirish bo'lsin buttonlar bilan»), asked in the person's own
+      // language — the question used to be hardcoded in two languages under a
+      // sentence in a third. The client door is the cabinet's phone flow; the
+      // staff door matches the shared number against the employee list.
+      const t = clientLabels(tg);
+      await ctx.reply(`${t.notLinked}\n\n${t.entryQuestion}`, {
+        reply_markup: entryKeyboard(tg),
       });
+    };
+
+    if (!code) {
+      await bareStart();
       return;
     }
     const link = await db.query.telegramLinks.findFirst({
@@ -184,16 +175,33 @@ export function startTelegramBot(): void {
       // is verified by phone BEFORE anything is linked or shown (owner's
       // incident: a link sent to the wrong person exposed another client).
       const step = await beginClientLink(code, ctx.chat.id);
-      const tg = ctx.from?.language_code;
       if (step === 'ask_phone') {
         await ctx.reply(clientLabels(tg).askPhone, { reply_markup: phoneKeyboard(tg) });
         return;
       }
       if (step === 'no_phone') {
-        await ctx.reply(clientLabels(tg).linkUnverifiable);
+        // The card has no phone to verify against — nothing this person can
+        // press will change that, so the office is the way forward (CX-16).
+        const chatId = ctx.chat.id;
+        const { officeContact } = await import('../../wms/client-cabinet/service');
+        const { officeLinesHtml } = await import('../../wms/client-cabinet/bot-text');
+        const office = await officeContact();
+        const html = `${h(clientLabels(tg).linkUnverifiable)}\n\n${officeLinesHtml(office, tg)}`;
+        dispatch('link-unverifiable', chatId, () => sendInOrder(chatId, [{ html }], 'link-unverifiable'));
         return;
       }
-      await ctx.reply(clientLabels(tg).linkExpired);
+      // A spent code from a chat that is already connected: nothing to link,
+      // so it is the ordinary greeting — cabinet buttons and all.
+      const chatId = BigInt(ctx.chat.id);
+      if ((await clientsForChat(chatId)).length || (await staffForChat(chatId))) {
+        await bareStart();
+        return;
+      }
+      // A spent or unknown code is not the end: the self-service door needs no
+      // code at all — if the number is ours, the cabinet connects itself.
+      await ctx.reply(`${clientLabels(tg).linkExpired}\n\n${clientLabels(tg).linkByPhone}`, {
+        reply_markup: phoneKeyboard(tg),
+      });
       return;
     }
     // Through the same door the contact path uses (round 100, 13A): this
@@ -209,7 +217,9 @@ export function startTelegramBot(): void {
     }
     await tellOldChat(ctx, result.previousChatId);
     const user = await db.query.users.findFirst({ where: eq(users.id, link.userId) });
-    await ctx.reply(`✅ Telegram подключён: ${user?.fullName ?? ''}. Уведомления будут приходить сюда.`, {
+    // Uzbek, like the phone-contact door's own success line and every other
+    // staff sentence — this was the last Russian straggler on the path.
+    await ctx.reply(`✅ Ulandi: ${user?.fullName ?? ''}. Xabarnomalar shu yerga keladi.`, {
       reply_markup: await replyKeyboardFor(BigInt(ctx.chat.id)),
     });
     void offerStaffCommands(ctx, ctx.chat.id);
@@ -264,6 +274,10 @@ export function startTelegramBot(): void {
   registerClientCabinet(bot);
 
   bot.catch((err) => logger.error({ err: err.error }, 'telegram bot error'));
+
+  // What a person reads before pressing Start, in their language (round C).
+  // Off the poller and never fatal: a profile that fails to set is a log line.
+  void ensureBotProfile().catch((err: unknown) => logger.warn({ err }, 'bot profile failed'));
 
   const startPolling = (retryMs: number) => {
     void bot.start({ drop_pending_updates: true }).catch((err: unknown) => {

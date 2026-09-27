@@ -3079,6 +3079,7 @@
     "belowFloorChip": "below",
     "offerSent": "Sent to Telegram",
     "offerNoTelegram": "Telegram not linked — copy the text",
+    "offerMuted": "These Telegram messages are muted in your profile — copy the text",
     "offerText": "Offer text",
     "sealExpired": "Expired",
     "sealExpiredHint": "This price has expired. A new calculation is needed.",

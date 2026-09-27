@@ -1,9 +1,12 @@
-import { Bot, InlineKeyboard, InputFile, Keyboard } from 'grammy';
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { Bot, InlineKeyboard, Keyboard } from 'grammy';
+import { and, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
 import { db } from '../db/client';
-import { clients, clientTelegramLinks, telegramLinks } from '../db/schema';
+import { clients, clientTelegramLinks, telegramLinks, users } from '../db/schema';
 import { getStorage } from '../files/storage';
 import { logger } from '../logger';
+import { cardLink } from '../notifications/links';
+import { isTelegramMuted } from '../notifications/mutes';
+import { notifyStaffTelegram } from '../notifications/staff';
 import {
   activeClientsByPhone,
   linkPhoneSiblings,
@@ -12,11 +15,9 @@ import {
   debtSummary,
   issuedHandovers,
   paidHistory,
-  type IssuedHandover,
   lotPhotoKeys,
   phoneBelongsToClient,
   phonesOverlap,
-  type CabinetLot,
 } from '../../wms/client-cabinet/service';
 import {
   CLIENT_LOCALES,
@@ -24,21 +25,43 @@ import {
   clientLabels,
   isClientLocale,
   localeFromTelegram,
-  formatDay,
-  formatEtaRange,
-  stageLabel,
-  txView,
-  type ClientLabels,
+  type ClientLocale,
 } from './client-labels';
+import { chatLocaleFor, setChatLocale } from './cabinet-locale';
+import { h } from './format';
 import { cabinetInlineKeyboard, setCabinetMenuButton } from './menu-button';
 import { adVisitFor, clearAdVisit } from './ad-intake';
+import { editText, quietHour, sendAlbum, sendPhoto, sendText, type ChatId } from './send';
+import { isCabinetText, staffForChat } from './staff-bot';
 
 /**
- * Client cabinet inside the staff bot (Phase 2.2, owner's spec 3.1/3.2):
- * clients are Uzbek-speaking, so all cabinet texts are uz. The chat's linked
- * client set is resolved on EVERY request — a revoked link cuts access
- * immediately.
+ * The client cabinet inside the bot (Phase 2.2, owner's spec 3.1/3.2) — the
+ * conversation a CUSTOMER has with us.
+ *
+ * The chat's linked client set is resolved on EVERY request, so a revoked link
+ * cuts access at once, and the identity is always the CHAT, never an id a
+ * button carried (#273). The language is the chat's: whatever the person chose
+ * with «🌐 Til» (or the Mini App's switch), else the one their phone reported
+ * when they linked, else Russian — `clientLabels`' fallback, and the owner's
+ * answer when round C asked (Q2).
+ *
+ * Round C moved every WORD out of this file into
+ * `wms/client-cabinet/bot-text.ts`, which is pure and tested; what is left
+ * here is the conversation's shape — who may ask, in what order the handlers
+ * run, and what is sent where. Two rules hold throughout:
+ *   - every answer that carries markup leaves through `sendText` (the plain
+ *     fallback, a deadline, a verdict) — never `ctx.reply` with a parse mode;
+ *   - anything that may take seconds (several messages, a photo upload) is
+ *     dispatched OFF grammy's sequential poller (#706), or one customer's slow
+ *     answer holds every other customer's tap.
  */
+
+type LinkedClient = Awaited<ReturnType<typeof clientsForChat>>[number];
+
+/** The words, reached lazily: platform does not grow new static imports of wms. */
+const botText = () => import('../../wms/client-cabinet/bot-text');
+/** The two wms reads round C added (the manager, the office), the same way. */
+const cabinetReads = () => import('../../wms/client-cabinet/service');
 
 /**
  * The cabinet keyboard, in one client's language.
@@ -48,15 +71,27 @@ import { adVisitFor, clearAdVisit } from './ad-intake';
  */
 export function cabinetKeyboard(locale?: string | null): Keyboard {
   const t = clientLabels(locale);
+  // «💬 Menejer» joined in round C as a third row: ADDED, never replacing a
+  // label, because a persistent keyboard already on a phone is matched by its
+  // exact old text.
   return new Keyboard()
     .text(t.btnCargo)
     .text(t.btnBalance)
     .row()
     .text(t.btnHistory)
     .text(t.btnLanguage)
+    .row()
+    .text(t.btnManager)
     .resized()
     .persistent();
 }
+
+/** Each language written in itself — nobody looks for "Uzbek" in Russian. */
+const LANGUAGE_NAMES: Record<(typeof CLIENT_LOCALES)[number], string> = {
+  uz: '🇺🇿 O‘zbekcha',
+  ru: '🇷🇺 Русский',
+  en: '🇬🇧 English',
+};
 
 /**
  * The language of the chat, taken from its linked clients.
@@ -65,46 +100,16 @@ export function cabinetKeyboard(locale?: string | null): Keyboard {
  * 444…), so the FIRST answer wins rather than rendering one reply in two
  * languages. NULL — nobody asked yet — falls back inside `clientLabels`.
  */
-/** Each language written in itself — nobody looks for "Uzbek" in Russian. */
-const LANGUAGE_NAMES: Record<(typeof CLIENT_LOCALES)[number], string> = {
-  uz: "🇺🇿 O'zbekcha",
-  ru: '🇷🇺 Русский',
-  en: '🇬🇧 English',
-};
-
 function chatLocale(linked: { locale: string | null }[]): string | null {
   return linked.find((c) => c.locale)?.locale ?? null;
 }
 
-/** One handover as text — the Mini App card's facts, in the same order. */
-function historyBlock(h: IssuedHandover, t: ClientLabels): string {
-  const lots = h.lots
-    .map(
-      (l) =>
-        `${l.letter ?? '·'} — ${l.productNameRu?.trim() || l.productNameZh}: ${l.n} ${t.pieces} · ${l.weightKg} ${t.kg} · ${l.volumeM3} ${t.m3}` +
-        ` (${t.receivedOn.toLowerCase()} ${formatDay(l.receivedAt)})`,
-    )
-    .join('\n');
-  const legs = h.legs
-    .map((g) => {
-      const dates = [
-        g.departedAt && `${t.legDeparted} ${formatDay(g.departedAt)}`,
-        g.arrivedAt && `${t.legArrived} ${formatDay(g.arrivedAt)}`,
-      ]
-        .filter(Boolean)
-        .join(', ');
-      return `🚚 ${t.batchWord} ${g.batchCode} (${g.domestic ? t.legDomestic : t.legAbroad}) ${g.fromPlace} → ${g.toPlace}${dates ? `: ${dates}` : ''}`;
-    })
-    .join('\n');
-  return (
-    `🤝 ${formatDay(h.issuedAt)} · ${h.place}\n` +
-    `${t.issuedTo}: ${h.receiver} · ${t.issuedBy}: ${h.issuedBy}\n` +
-    lots +
-    (legs ? `\n${legs}` : '')
-  );
-}
-
-/** Blocks joined into messages under Telegram's limit, never split inside one. */
+/**
+ * Blocks joined into messages under a limit, never split inside one — the
+ * plain-text packer, kept for its pinned test. The cabinet's own answers are
+ * HTML now and pack through `packHtmlBlocks`, which is the same rule with one
+ * more: a cut must never land inside a tag.
+ */
 export function chunkBlocks(blocks: string[], limit: number): string[] {
   const out: string[] = [];
   let cur = '';
@@ -121,29 +126,53 @@ export function chunkBlocks(blocks: string[], limit: number): string[] {
   return out;
 }
 
-function lotLine(lot: CabinetLot, t: ClientLabels, locale: string | null): string {
-  // The translated name first: the client asked for their goods in a language
-  // they read, and the Chinese original is only useful when there is nothing
-  // else. (The staff screens keep zh-first — a Yiwu operator needs it.)
-  const name = lot.productNameRu?.trim() || lot.productNameZh;
-  // One line per rung, because a customer whose lot is split reads two
-  // different facts and «6 dona skladda, 4 dona yo'lda» on one line hides the
-  // date that belongs to only one of them.
-  const groups = lot.groups
-    .map((g) => {
-      // The road as words, since a bot message has no bar: how much is behind,
-      // and when the schedule says it lands.
-      const road = g.transit
-        ? ` · ${Math.round(g.transit.progress * 100)}%` +
-          (g.transit.etaFromIso && g.transit.etaToIso
-            ? ` · ${g.transit.toPlace}: ${t.etaAbout} ${formatEtaRange(g.transit.etaFromIso, g.transit.etaToIso, locale)}`
-            : '')
-        : '';
-      return `   ${g.n} ${t.pieces} — ${stageLabel(g.stage, t)}${road}`;
-    })
-    .join('\n');
-  const wh = lot.warehousePlaces.length ? `\n   📍 ${lot.warehousePlaces.join(', ')}` : '';
-  return `${lot.letter ?? '·'} — ${name}\n${groups}${wh}`;
+/** One message of an answer: safe HTML and, optionally, its keyboard. */
+export interface Outgoing {
+  html: string;
+  replyMarkup?: unknown;
+}
+
+/**
+ * An answer of one or more messages, in order, through the one sender.
+ *
+ * It stops at the first refusal: the second half of a cargo list arriving
+ * without its first reads as the whole answer, and the next press asks again.
+ * Logged, never thrown — by the time this runs the handler has returned.
+ */
+export async function sendInOrder(chatId: ChatId, messages: Outgoing[], what: string): Promise<boolean> {
+  for (const m of messages) {
+    const sent = await sendText({ chatId, html: m.html, replyMarkup: m.replyMarkup });
+    if (!sent.ok) {
+      logger.warn(
+        { chatId: String(chatId), what, status: sent.status, description: sent.description },
+        'cabinet answer not delivered',
+      );
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Off the sequential poller (#706): grammy handles ONE update at a time, so an
+ * answer that waits on Telegram for seconds would hold every other customer's
+ * tap — the zametka send and the AI answer already learned this.
+ */
+export function dispatch(what: string, chatId: ChatId, work: () => Promise<unknown>): void {
+  void work().catch((err: unknown) =>
+    logger.error({ err, chatId: String(chatId), what }, 'cabinet answer failed'),
+  );
+}
+
+/** The keyboard this chat is owed — re-derived, never named (round 100, 13A). */
+async function replyKeyboard(chatId: number, locale: string | null) {
+  const { replyKeyboardFor } = await import('./keyboards');
+  return replyKeyboardFor(BigInt(chatId), locale);
+}
+
+/** The answer's LAST message carries the keyboard; the rest carry nothing. */
+function withLast(messages: string[], replyMarkup: unknown): Outgoing[] {
+  return messages.map((html, i) => ({ html, replyMarkup: i === messages.length - 1 ? replyMarkup : undefined }));
 }
 
 /**
@@ -165,6 +194,26 @@ export function phoneKeyboard(locale?: string | null): Keyboard {
 }
 
 /**
+ * A warning to the member of staff who minted a cabinet link — in Uzbek like
+ * every staff message, and through the notification queue since round C: it
+ * was a raw fetch with no deadline, awaited on the poller, in RUSSIAN, with no
+ * mute group and no retry, so a Telegram blip lost it and nobody could turn
+ * it off. The card link is the last line, where the drain makes it a button.
+ *
+ * NULL author = a self-service link (item 13): there is nobody to warn.
+ * Best-effort: a warning that fails must never fail the link itself.
+ */
+async function alertLinkMinter(userId: string | null, clientId: string, text: string): Promise<void> {
+  if (!userId) return;
+  const link = cardLink('client', clientId);
+  await notifyStaffTelegram({
+    userIds: [userId],
+    type: 'CabinetLinkAlert',
+    text: link && /^https?:\/\//.test(link) ? `${text}\n${link}` : text,
+  }).catch((err: unknown) => logger.warn({ err, userId }, 'cabinet link alert not queued'));
+}
+
+/**
  * Step 1: /start <code>. Returns what the bot should do next:
  * ask_phone (verification starts), no_phone (client card lacks a phone —
  * staff must add one first; the code is NOT burned), or null (unknown code).
@@ -181,9 +230,11 @@ export async function beginClientLink(
   if (!client) return null;
   const phones = (client.phones as unknown[]) ?? [];
   if (!Array.isArray(phones) || phones.length === 0) {
-    await notifyStaff(
+    await alertLinkMinter(
       link.createdBy,
-      `⚠️ Кабинет: у клиента ${client.clientCode} не указан телефон — ссылку нельзя подтвердить. Добавьте номер в карточку клиента, затем клиент может открыть ту же ссылку ещё раз.`,
+      client.id,
+      `⚠️ Kabinet: ${client.clientCode} mijozining kartasida telefon raqami yo‘q — havolani tasdiqlab bo‘lmaydi. ` +
+        'Kartaga raqamni qo‘shing, so‘ng mijoz shu havolani qayta ochadi.',
     );
     return 'no_phone';
   }
@@ -254,8 +305,15 @@ export async function linkAllClientsForPhone(
 
 /**
  * A NEW code opened for an already-verified person appears in their cabinet
- * automatically (called after client create/update). Best-effort ping tells
- * them about it. Returns how many chats were attached.
+ * automatically (called after client create/update). A message tells them
+ * about it. Returns how many chats were attached.
+ *
+ * Round C: the message is in the language the PERSON chose — read from the
+ * chat, not from the new code, which has no language of its own yet — and the
+ * new code takes that language too, or its first push would come in the
+ * Russian fallback (judge CX-7). It carries the wide button, and it goes
+ * through the one sender with a short deadline, because this runs inside the
+ * web request that saved the client.
  */
 export async function autoLinkClientToVerifiedChats(
   clientId: string,
@@ -278,7 +336,6 @@ export async function autoLinkClientToVerifiedChats(
   }
   if (targetChats.size === 0) return 0;
 
-  const token = process.env.TELEGRAM_BOT_TOKEN;
   let added = 0;
   for (const chatId of targetChats) {
     const already = (await clientsForChat(chatId)).some((c) => c.id === clientId);
@@ -291,19 +348,25 @@ export async function autoLinkClientToVerifiedChats(
       createdBy: actorId,
     });
     added += 1;
-    if (token) {
-      try {
-        await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: Number(chatId),
-            text: `${clientLabels(client.locale).codeAdded}: ${client.clientCode}`,
-          }),
-        });
-      } catch (err) {
-        logger.warn({ err, clientId }, 'auto-link notify failed');
-      }
+    const locale = (await chatLocaleFor(chatId)) ?? client.locale;
+    if (locale && !client.locale) {
+      await db
+        .update(clients)
+        .set({ locale })
+        .where(and(eq(clients.id, clientId), isNull(clients.locale)));
+    }
+    if (process.env.TELEGRAM_BOT_TOKEN) {
+      const { codeAddedHtml } = await botText();
+      const sent = await sendText({
+        chatId,
+        html: codeAddedHtml(client.clientCode, locale),
+        replyMarkup: cabinetInlineKeyboard(process.env.APP_URL, locale) ?? undefined,
+        timeoutMs: 10_000,
+        // A code minted at 23:00 by the office is not worth waking anybody
+        // for: the same quiet night as every other push (CONV-6).
+        silent: quietHour(new Date()),
+      });
+      if (!sent.ok) logger.warn({ clientId, description: sent.description }, 'auto-link notice not delivered');
     }
   }
   return added;
@@ -320,36 +383,374 @@ export async function failClientLink(linkId: string): Promise<void> {
     .set({ status: 'revoked', linkCode: null })
     .where(eq(clientTelegramLinks.id, link.id));
   const client = await db.query.clients.findFirst({ where: eq(clients.id, link.clientId) });
-  await notifyStaff(
+  await alertLinkMinter(
     link.createdBy,
-    `🚨 Кабинет: ссылку клиента ${client?.clientCode ?? '?'} открыл человек с ДРУГИМ номером телефона. Ссылка аннулирована — проверьте, кому вы её отправили, и при необходимости создайте новую.`,
+    link.clientId,
+    `🚨 Kabinet: ${client?.clientCode ?? '?'} havolasini BOSHQA telefon raqamli odam ochdi. ` +
+      'Havola bekor qilindi — kimga yuborganingizni tekshiring va kerak bo‘lsa yangisini yarating.',
   );
 }
 
-/** Best-effort Telegram ping to the staff user who minted the link. */
-async function notifyStaff(userId: string | null, text: string): Promise<void> {
-  // NULL author = a self-service link (item 13) — there is no minting staff
-  // member to warn, and both callers are on the staff-minted code path.
-  if (!userId) return;
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  if (!token) return;
-  const staff = await db.query.telegramLinks.findFirst({
-    where: and(eq(telegramLinks.userId, userId), eq(telegramLinks.status, 'linked')),
+/**
+ * Where a customer's own words land (judge CX-1/PRIV-10).
+ *
+ * Before round C a linked customer who TYPED to the bot — «yukim qachon
+ * keladi?», a photo of a damaged box — got silence: no handler listened, and
+ * the words went nowhere at all. They now go to a PERSON: the manager of the
+ * chat's first code that has one (the person `managersFor` would show them),
+ * else everybody who manages the client book. The customer is told who.
+ */
+export type ForwardOutcome =
+  | { to: 'manager'; managerName: string; locale: string | null }
+  | { to: 'office'; locale: string | null }
+  | { to: 'throttled'; managerName: string | null; locale: string | null };
+
+const FORWARD_WINDOW_MS = 10 * 60_000;
+/**
+ * At most this many forwards per chat per window. A customer pasting a long
+ * story line by line is ten messages; a script, or a child with the phone, is
+ * a hundred — and each one is a Telegram message in a manager's pocket.
+ */
+export const FORWARD_MAX_PER_WINDOW = 10;
+const forwardLog = new Map<string, number[]>();
+/**
+ * An album is one update per photo, but it is ONE thing the customer said: it
+ * takes one slot, and every photo in it shares the first one's verdict — or a
+ * customer's ten photographs of a broken carton would spend the whole window
+ * and the sentence they typed next would reach nobody.
+ */
+const albumVerdict = new Map<string, { album: string; admitted: boolean }>();
+
+/**
+ * Which of these people a staff Telegram message would actually REACH: active,
+ * a linked staff chat, and not muting this type — the three questions the
+ * drain asks before it settles a row `muted` for ever (notifications/
+ * service.ts). Asked here first, because «delivered to your manager
+ * Dilnoza» about a row the drain will silently mute is the lie phase C's
+ * `hasLinkedChat` exists to prevent: a seller who never linked their
+ * Telegram is most sellers on day one.
+ */
+async function reachableStaff(userIds: string[]): Promise<Set<string>> {
+  if (userIds.length === 0) return new Set();
+  const rows = await db
+    .select({ id: users.id, muted: users.mutedNotificationTypes })
+    .from(users)
+    .innerJoin(
+      telegramLinks,
+      and(eq(telegramLinks.userId, users.id), eq(telegramLinks.status, 'linked'), isNotNull(telegramLinks.telegramChatId)),
+    )
+    .where(and(inArray(users.id, [...new Set(userIds)]), eq(users.active, true)));
+  return new Set(rows.filter((r) => !isTelegramMuted(r.muted, 'ClientBotMessage')).map((r) => r.id));
+}
+
+function takeForwardSlot(chatKey: string, now: number): boolean {
+  const recent = (forwardLog.get(chatKey) ?? []).filter((t) => now - t < FORWARD_WINDOW_MS);
+  if (recent.length >= FORWARD_MAX_PER_WINDOW) {
+    forwardLog.set(chatKey, recent);
+    return false;
+  }
+  recent.push(now);
+  forwardLog.set(chatKey, recent);
+  return true;
+}
+
+/**
+ * Hand one customer message to a person. Null = not a customer's chat (or a
+ * chat that is ALSO staff, whose words are the staff bot's business).
+ *
+ * A text is quoted into the staff copy; a file is announced and carries
+ * `forwardFrom`, so the drain forwards the very message — the staff copy's
+ * text still stands on its own if that forward fails.
+ */
+export async function forwardClientMessage(input: {
+  chatId: bigint;
+  messageId: number;
+  /** The text, or a file's caption. */
+  text: string | null;
+  media: boolean;
+  /** What the media is, for the staff copy's words — a file unless said. */
+  kind?: 'file' | 'contact' | 'location' | 'sticker';
+  /** Telegram's `media_group_id` when the file is one photo of an album. */
+  albumId?: string | null;
+  now?: Date;
+}): Promise<ForwardOutcome | null> {
+  const linked = await clientsForChat(input.chatId);
+  if (!linked.length) return null;
+  if (await staffForChat(input.chatId)) return null;
+  const locale = chatLocale(linked);
+  const { managersFor } = await cabinetReads();
+  const managers = await managersFor(linked.map((c) => c.id));
+  // The first code whose manager the message would actually REACH:
+  // `managersFor` has dropped a deactivated one, and `reachableStaff` one with
+  // no linked Telegram (or who muted these) — so a customer is never told «your
+  // manager has it» about a message nobody will read.
+  const reach = await reachableStaff(linked.flatMap((c) => (c.salesManagerId ? [c.salesManagerId] : [])));
+  const owner =
+    linked.find((c) => c.salesManagerId && managers.has(c.id) && reach.has(c.salesManagerId)) ?? null;
+  const managerName = owner ? managers.get(owner.id)!.name : null;
+  const chatKey = String(input.chatId);
+  const known = input.albumId ? albumVerdict.get(chatKey) : undefined;
+  const admitted =
+    known && known.album === input.albumId
+      ? known.admitted
+      : takeForwardSlot(chatKey, (input.now ?? new Date()).getTime());
+  if (input.albumId) albumVerdict.set(chatKey, { album: input.albumId, admitted });
+  if (!admitted) {
+    logger.info({ chatId: String(input.chatId) }, 'client bot message not forwarded — over the per-chat limit');
+    return { to: 'throttled', managerName, locale };
+  }
+  // The office: whoever manages the client book and can be reached. When
+  // nobody can, the rows are still written to all of them — the notifications
+  // screen shows them, which is more than silence.
+  const office = owner
+    ? []
+    : await (await import('../notifications/service')).usersWithPermission('clients.manage');
+  const officeReach = owner ? new Set<string>() : await reachableStaff(office);
+  const recipients = owner?.salesManagerId
+    ? [owner.salesManagerId]
+    : officeReach.size
+      ? office.filter((id) => officeReach.has(id))
+      : office;
+  const first = owner ?? linked[0]!;
+  const card = cardLink('client', first.id);
+  const { forwardStaffText, FORWARD_QUOTE_CHARS } = await botText();
+  // A file is forwarded, and so is a text too long to quote whole (CONV-7): the
+  // staff copy would otherwise end at «…» with the rest of the question
+  // nowhere a person can read it.
+  const forwardWhole = input.media || Array.from(input.text?.trim() ?? '').length > FORWARD_QUOTE_CHARS;
+  await notifyStaffTelegram({
+    userIds: recipients,
+    type: 'ClientBotMessage',
+    text: forwardStaffText({
+      codes: [first.clientCode, ...linked.filter((c) => c.id !== first.id).map((c) => c.clientCode)],
+      name: first.name,
+      text: input.text,
+      media: input.media,
+      kind: input.kind,
+      cardUrl: card && /^https?:\/\//.test(card) ? card : null,
+    }),
+    extra: forwardWhole
+      ? { forwardFrom: { chatId: Number(input.chatId), messageId: input.messageId } }
+      : undefined,
   });
-  if (!staff?.telegramChatId) return;
-  try {
-    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ chat_id: Number(staff.telegramChatId), text }),
+  return owner ? { to: 'manager', managerName: managerName!, locale } : { to: 'office', locale };
+}
+
+/** How long one «✅ yetkazildi» speaks for the lines after it. */
+export const ACK_QUIET_MS = 2 * 60_000;
+const lastAck = new Map<string, { to: ForwardOutcome['to']; at: number; album: string | null }>();
+
+/**
+ * Whether this message gets its own answer (round C review, CONV-8). A
+ * customer types a question the way people talk — «salom», «GS777», «yuk
+ * qachon keladi?» — and three «✅ yetkazildi» between the lines is a bot
+ * talking over them. One answer speaks for everything of the same kind for two
+ * minutes; a DIFFERENT answer (the manager became unreachable, the chat hit
+ * the limit) is always said, because it is news. An album is one thing said,
+ * however long its photos take to arrive.
+ */
+export function ackDue(chatId: number | bigint, outcome: ForwardOutcome, album: string | null, now: number): boolean {
+  const key = String(chatId);
+  const last = lastAck.get(key);
+  if (last && album && last.album === album) return false;
+  if (last && last.to === outcome.to && now - last.at < ACK_QUIET_MS) {
+    if (album) last.album = album;
+    return false;
+  }
+  lastAck.set(key, { to: outcome.to, at: now, album });
+  return true;
+}
+
+/**
+ * «✅ Xabaringiz menejeringizga yetkazildi: Dilnoza.» — with the keyboard back.
+ * Over the per-chat limit it says the opposite, because it IS the opposite:
+ * that message reached nobody (CONV-1) and a «delivered» there is a customer
+ * waiting on an answer to a question no person has.
+ */
+async function acknowledge(chatId: number, outcome: ForwardOutcome): Promise<void> {
+  const { deliveredHtml, throttledHtml } = await botText();
+  const html =
+    outcome.to === 'throttled'
+      ? throttledHtml(outcome.locale)
+      : deliveredHtml(outcome.to === 'office' ? null : outcome.managerName, outcome.locale);
+  await sendInOrder(chatId, [{ html, replyMarkup: await replyKeyboard(chatId, outcome.locale) }], 'forward-ack');
+}
+
+/**
+ * Right after a chat becomes a customer's: what the cabinet is, which codes it
+ * holds, then the wide button — two messages, because a reply keyboard and an
+ * inline one cannot ride the same message.
+ *
+ * The language is the one the person ALREADY chose when any of their codes
+ * carries one (a re-link, a second phone), and only otherwise the phone's
+ * (judge CX-7) — the old path used the phone's even over a stored choice, so
+ * the corner button came back in the wrong language until «🌐 Til». Seeded
+ * onto NULL codes only; a choice somebody made is never overridden.
+ */
+async function welcomeLinked(chatId: number, codes: string[], tgLocale: ClientLocale | null): Promise<void> {
+  const ids = (await clientsForChat(BigInt(chatId))).map((c) => c.id);
+  const locale = (await chatLocaleFor(BigInt(chatId))) ?? tgLocale;
+  if (locale && ids.length) {
+    await db
+      .update(clients)
+      .set({ locale })
+      .where(and(inArray(clients.id, ids), isNull(clients.locale)));
+  }
+  await setCabinetMenuButton(chatId, locale);
+  const { linkedWelcomeHtml } = await botText();
+  const t = clientLabels(locale);
+  const app = cabinetInlineKeyboard(process.env.APP_URL, locale);
+  const messages: Outgoing[] = [
+    { html: linkedWelcomeHtml(codes, locale), replyMarkup: await replyKeyboard(chatId, locale) },
+  ];
+  // The corner button is set above; the BIG one is offered straight away. The
+  // first thing a client does after linking is look for their cargo, and an
+  // icon among the chat's furniture is not where they look.
+  if (app) messages.push({ html: h(t.openAppPrompt), replyMarkup: app });
+  dispatch('welcome', chatId, () => sendInOrder(chatId, messages, 'welcome'));
+}
+
+/**
+ * A refusal that is not a dead end (judge CX-16): the sentence, then the
+ * office's name and phone. The contact keyboard goes — pressing it again can
+ * only send the same number and hear the same answer — and the office is the
+ * way forward instead.
+ */
+async function refuseWithOffice(chatId: number, sentence: string, locale: string | null): Promise<void> {
+  const { officeContact } = await cabinetReads();
+  const { officeLinesHtml } = await botText();
+  const office = await officeContact();
+  dispatch('refusal', chatId, () =>
+    sendInOrder(
+      chatId,
+      [{ html: `${h(sentence)}\n\n${officeLinesHtml(office, locale)}`, replyMarkup: { remove_keyboard: true } }],
+      'refusal',
+    ),
+  );
+}
+
+/** «📦 Yuklarim»: one answer per code, each as many messages as it takes. */
+async function sendCargo(chatId: number, linked: LinkedClient[], locale: string | null): Promise<void> {
+  const { cargoMessages, photoButtonRows } = await botText();
+  // The wide button goes on the last row — under the cargo, where the thumb
+  // already is, and without costing a message of its own.
+  const app = cabinetInlineKeyboard(process.env.APP_URL, locale);
+  const out: Outgoing[] = [];
+  for (const client of linked) {
+    const lots = await cargoOverview(client.id);
+    const messages = cargoMessages(client, lots, locale);
+    const rows = [...photoButtonRows(lots), ...(lots.length && app ? app.inline_keyboard : [])];
+    messages.forEach((html, i) => {
+      const last = i === messages.length - 1;
+      out.push({ html, replyMarkup: last && rows.length ? { inline_keyboard: rows } : undefined });
     });
-  } catch (err) {
-    logger.warn({ err, userId }, 'cabinet staff notify failed');
+  }
+  await sendInOrder(chatId, out, 'cargo');
+}
+
+/** «💰 Balans»: one answer for the whole chat, with the keyboard (CX-17's rollout). */
+async function sendBalance(chatId: number, linked: LinkedClient[], locale: string | null): Promise<void> {
+  const { balanceMessages } = await botText();
+  const entries = [];
+  // One code at a time: a person holds a handful, and a burst of parallel
+  // ledger reads for one tap is a pool of ten spent on one customer.
+  for (const client of linked) entries.push({ clientCode: client.clientCode, debt: await debtSummary(client.id) });
+  // The balance answer carries the reply keyboard, so a phone still holding
+  // the pre-round-C keyboard receives «💬 Menejer» the next time it asks.
+  await sendInOrder(chatId, withLast(balanceMessages(entries, locale), await replyKeyboard(chatId, locale)), 'balance');
+}
+
+/** «🗄 Tarix»: three months of handovers and payments, per code. */
+async function sendHistory(chatId: number, linked: LinkedClient[], locale: string | null): Promise<void> {
+  const { historyMessages } = await botText();
+  const all: string[] = [];
+  for (const client of linked) {
+    const [handed, paid] = await Promise.all([issuedHandovers(client.id), paidHistory(client.id)]);
+    all.push(...historyMessages(client.clientCode, handed, paid, locale));
+  }
+  await sendInOrder(chatId, withLast(all, await replyKeyboard(chatId, locale)), 'history');
+}
+
+/** «💬 Menejer» and the push's `mg`: who to write to, per distinct person. */
+async function sendManagers(chatId: number, linked: LinkedClient[], locale: string | null): Promise<void> {
+  const { managersFor, officeContact } = await cabinetReads();
+  const { managerCards } = await botText();
+  const [managers, office] = await Promise.all([managersFor(linked.map((c) => c.id)), officeContact()]);
+  const t = clientLabels(locale);
+  const cards = managerCards(
+    linked.map((c) => ({ clientCode: c.clientCode, manager: managers.get(c.id) ?? null })),
+    office,
+    locale,
+  );
+  await sendInOrder(
+    chatId,
+    cards.map((card) => ({
+      html: card.html,
+      replyMarkup: card.url ? { inline_keyboard: [[{ text: t.managerWrite, url: card.url }]] } : undefined,
+    })),
+    'manager',
+  );
+}
+
+/**
+ * 📷: one lot's photographs, as one album with a caption saying what they are.
+ *
+ * Ownership is re-proved by `lotPhotoKeys` (a button's data is a stranger's
+ * string). Each file is read in its own try — one missing object costs one
+ * photo, not the answer. The caption reads the SAME cargo list the button came
+ * from, so it says what the list said.
+ */
+async function sendLotPhotos(chatId: number, lotId: string, linked: LinkedClient[], locale: string | null): Promise<void> {
+  const t = clientLabels(locale);
+  const { photoSource, photoCaption, productName } = await botText();
+  const photos = await lotPhotoKeys(lotId, linked.map((c) => c.id));
+  if (!photos.length) {
+    await sendText({ chatId, text: t.noPhotos });
+    return;
+  }
+  const storage = getStorage();
+  const files: { bytes: Buffer; filename: string; contentType: string }[] = [];
+  for (const p of photos) {
+    const source = photoSource(p);
+    if (!source) continue;
+    try {
+      files.push({
+        bytes: await storage.get(source.key),
+        filename: source.key.split('/').pop() || 'photo.jpg',
+        contentType: source.contentType,
+      });
+    } catch (err) {
+      logger.warn({ err, lotId }, 'cabinet photo unreadable — skipped');
+    }
+  }
+  if (!files.length) {
+    await sendText({ chatId, text: t.photoError });
+    return;
+  }
+  let caption: string | undefined;
+  for (const client of linked) {
+    const lot = (await cargoOverview(client.id)).find((l) => l.lotId === lotId);
+    if (lot) {
+      caption = photoCaption(
+        { clientCode: client.clientCode, letter: lot.letter, name: productName(lot), boxes: lot.total },
+        locale,
+      );
+      break;
+    }
+  }
+  const sent = files.length === 1
+    ? await sendPhoto({ chatId, photo: files[0]!, captionHtml: caption })
+    : await sendAlbum({ chatId, photos: files, captionHtml: caption });
+  if (!sent.ok) {
+    logger.warn({ lotId, status: sent.status, description: sent.description }, 'cabinet photos not delivered');
+    if (!sent.botDown) await sendText({ chatId, text: t.photoError });
   }
 }
 
 /** Chats whose menu button this process has already dealt with. */
 const menuButtonDone = new Set<number>();
+/** Chats with a 📷 answer on its way — a second tap waits for the first. */
+const photoInFlight = new Set<number>();
 
 export function registerClientCabinet(bot: Bot): void {
   /**
@@ -380,23 +781,42 @@ export function registerClientCabinet(bot: Bot): void {
 
   // Step 2 of linking: the person shares their phone via the contact button.
   bot.on('message:contact', async (ctx) => {
-    const pending = pendingByChat.get(ctx.chat.id);
+    const chatId = ctx.chat.id;
+    // Nothing is linked yet, so there is no stored language to read — the only
+    // clue is the phone's own, normalised: «en-GB» and «uz-Latn» are English
+    // and Uzbek, not the Russian fallback.
+    const tgLocale = localeFromTelegram(ctx.from?.language_code);
+    const contact = ctx.message.contact;
+    const pending = pendingByChat.get(chatId);
     if (!pending) {
       // No staff-minted code in flight: the SELF-SERVICE door (owner, item
       // 13 — "nomerni o'zini kiritib ko'rsa bo'ladigan qilsak"). Telegram
       // itself has verified the number belongs to the sender — that is the
       // whole security model, and it is stronger than any typed code: a
-      // stranger can only ever test their own number. The same forwarded-
-      // contact guard as the code flow; the fallback names NO client.
-      const tgLocale = ctx.from?.language_code ?? null;
-      const contact = ctx.message.contact;
+      // stranger can only ever test their own number.
       if (contact.user_id !== ctx.from?.id) {
-        await ctx.reply(clientLabels(tgLocale).phoneMismatch, {
-          reply_markup: { remove_keyboard: true },
+        // A CUSTOMER sending somebody else's card is telling us something —
+        // «this person collects the cargo» — and it reaches their manager
+        // like any other message, forwarded whole (round C review, CONV-3).
+        // The one-time phone keyboard is for a chat that is linking.
+        const outcome = await forwardClientMessage({
+          chatId: BigInt(chatId),
+          messageId: ctx.message.message_id,
+          text: [contact.first_name, contact.last_name, contact.phone_number].filter(Boolean).join(' '),
+          media: true,
+          kind: 'contact',
         });
+        if (outcome) {
+          if (ackDue(chatId, outcome, null, Date.now())) dispatch('forward-ack', chatId, () => acknowledge(chatId, outcome));
+          return;
+        }
+        // Somebody else's contact card from a chat that is nobody's yet.
+        // There is no link here to cancel, so the answer is the one thing
+        // that works: send your OWN (CX-16).
+        await ctx.reply(clientLabels(tgLocale).selfPhoneMismatch, { reply_markup: phoneKeyboard(tgLocale) });
         return;
       }
-      const all = await linkAllClientsForPhone(contact.phone_number, ctx.chat.id, null).catch(
+      const all = await linkAllClientsForPhone(contact.phone_number, chatId, null).catch(
         () => [] as { clientCode: string; name: string }[],
       );
       if (all.length === 0) {
@@ -405,9 +825,9 @@ export function registerClientCabinet(bot: Bot): void {
         // and the Meta webhook, so the caps, the client-book check and the
         // rotation are the ones already proven. The answer is the advert
         // door's constant thank-you: what became of it is our business.
-        const adSource = adVisitFor(ctx.chat.id);
+        const adSource = adVisitFor(chatId);
         if (adSource) {
-          clearAdVisit(ctx.chat.id);
+          clearAdVisit(chatId);
           const { landInboundLead } = await import('../../wms/crm/inbound');
           await landInboundLead({
             channel: 'telegram',
@@ -427,37 +847,16 @@ export function registerClientCabinet(bot: Bot): void {
           });
           return;
         }
-        await ctx.reply(clientLabels(tgLocale).phoneNotFound, {
-          reply_markup: { remove_keyboard: true },
-        });
+        await refuseWithOffice(chatId, clientLabels(tgLocale).phoneNotFound, tgLocale);
         return;
       }
       // Already a customer, and an advert brought them back: the cabinet
       // below is the right answer, so the visit is simply forgotten.
-      clearAdVisit(ctx.chat.id);
-      const allIds = (await clientsForChat(BigInt(ctx.chat.id))).map((c) => c.id);
-      const seeded = localeFromTelegram(tgLocale);
-      if (seeded) {
-        await db
-          .update(clients)
-          .set({ locale: seeded })
-          .where(and(inArray(clients.id, allIds), isNull(clients.locale)));
-      }
-      const t = clientLabels(seeded);
-      await setCabinetMenuButton(ctx.chat.id, seeded);
-      await ctx.reply(
-        `✅ ${t.welcome}\n${t.yourCodes}: ${all.map((c) => c.clientCode).join(', ')}.`,
-        { reply_markup: cabinetKeyboard(seeded) },
-      );
-      const app = cabinetInlineKeyboard(process.env.APP_URL, seeded);
-      if (app) await ctx.reply(t.openAppPrompt, { reply_markup: app });
+      clearAdVisit(chatId);
+      await welcomeLinked(chatId, all.map((c) => c.clientCode), tgLocale);
       return;
     }
-    pendingByChat.delete(ctx.chat.id);
-    // Nothing is linked yet, so there is no stored language to read — the
-    // only clue at this moment is the phone's own.
-    const tgLocale = ctx.from?.language_code ?? null;
-    const contact = ctx.message.contact;
+    pendingByChat.delete(chatId);
     // The button always sends the sender's OWN number; a manually forwarded
     // contact card (someone else's number) has a different user_id — treat
     // it as an impersonation attempt.
@@ -467,138 +866,53 @@ export function registerClientCabinet(bot: Bot): void {
       : null;
     if (!client || !phoneBelongsToClient(contact.phone_number, client.phones)) {
       await failClientLink(pending.linkId);
-      await ctx.reply(clientLabels(tgLocale).phoneMismatch, {
-        reply_markup: { remove_keyboard: true },
-      });
+      await refuseWithOffice(chatId, clientLabels(tgLocale).phoneMismatch, tgLocale);
       return;
     }
     const linkRow = await db.query.clientTelegramLinks.findFirst({
       where: eq(clientTelegramLinks.id, pending.linkId),
     });
-    const linked = await completeClientLink(pending.linkId, ctx.chat.id);
+    const linked = await completeClientLink(pending.linkId, chatId);
     if (!linked) {
-      await ctx.reply(clientLabels(tgLocale).linkExpired, {
-        reply_markup: { remove_keyboard: true },
-      });
+      await refuseWithOffice(chatId, clientLabels(tgLocale).linkExpired, tgLocale);
       return;
     }
     // One phone, many codes (owner): connect every code registered under
     // the verified number in one go.
     const all = linkRow
-      ? await linkAllClientsForPhone(contact.phone_number, ctx.chat.id, linkRow.createdBy).catch(
+      ? await linkAllClientsForPhone(contact.phone_number, chatId, linkRow.createdBy).catch(
           () => [{ clientCode: linked.clientCode, name: linked.name }],
         )
       : [{ clientCode: linked.clientCode, name: linked.name }];
-    const codes = all.map((c) => c.clientCode).join(', ');
-    const allIds = (await clientsForChat(BigInt(ctx.chat.id))).map((c) => c.id);
-    // Seed the language from Telegram's own — once, and only for clients who
-    // have never been asked. A client who later picks for themselves is never
-    // overridden by the phone they happen to be holding.
-    const seeded = localeFromTelegram(tgLocale);
-    if (seeded) {
-      await db
-        .update(clients)
-        .set({ locale: seeded })
-        .where(and(inArray(clients.id, allIds), isNull(clients.locale)));
-    }
-    const t = clientLabels(seeded);
-    // The Mini App button goes up the moment the chat becomes a client's, in
-    // the language just seeded from their phone.
-    await setCabinetMenuButton(ctx.chat.id, seeded);
-    await ctx.reply(
-      `✅ ${t.welcome}\n${t.yourCodes}: ${codes}.`,
-      { reply_markup: cabinetKeyboard(seeded) },
-    );
-    // The corner button is set above; the BIG one is offered straight away.
-    // The first thing a client does after linking is look for their cargo, and
-    // an icon among the chat's furniture is not where they look.
-    const app = cabinetInlineKeyboard(process.env.APP_URL, seeded);
-    if (app) await ctx.reply(t.openAppPrompt, { reply_markup: app });
+    await welcomeLinked(chatId, all.map((c) => c.clientCode), tgLocale);
   });
 
   bot.hears(allLabelVariants('btnCargo'), async (ctx) => {
-    const linked = await clientsForChat(BigInt(ctx.chat.id));
+    const chatId = ctx.chat.id;
+    const linked = await clientsForChat(BigInt(chatId));
     if (!linked.length) return;
-    const locale = chatLocale(linked);
-    const t = clientLabels(locale);
-    for (const client of linked) {
-      const lots = await cargoOverview(client.id);
-      if (!lots.length) {
-        await ctx.reply(`${client.clientCode} — ${t.noCargo}`);
-        continue;
-      }
-      const header = `📦 ${client.clientCode} — ${client.name}\n\n`;
-      const text = header + lots.map((lot) => lotLine(lot, t, locale)).join('\n\n');
-      const kb = new InlineKeyboard();
-      let buttons = 0;
-      for (const lot of lots) {
-        if (lot.hasPhotos && buttons < 12) {
-          kb.text(`📷 ${lot.letter ?? '·'}`, `ph:${lot.lotId}`);
-          buttons += 1;
-          if (buttons % 4 === 0) kb.row();
-        }
-      }
-      // The wide button goes on its own last row — under the cargo, where the
-      // thumb already is, and without costing a second message.
-      const app = cabinetInlineKeyboard(process.env.APP_URL, chatLocale(linked));
-      if (app) kb.row().webApp(t.openApp, app.inline_keyboard[0]![0]!.web_app.url);
-      await ctx.reply(text.slice(0, 4000), buttons || app ? { reply_markup: kb } : undefined);
-    }
+    dispatch('cargo', chatId, () => sendCargo(chatId, linked, chatLocale(linked)));
   });
 
   bot.hears(allLabelVariants('btnBalance'), async (ctx) => {
-    const linked = await clientsForChat(BigInt(ctx.chat.id));
+    const chatId = ctx.chat.id;
+    const linked = await clientsForChat(BigInt(chatId));
     if (!linked.length) return;
-    const t = clientLabels(chatLocale(linked));
-    for (const client of linked) {
-      const debt = await debtSummary(client.id);
-      const lines = debt.recent
-        .filter((r) => !r.voided)
-        .flatMap((r) => {
-          const view = txView(r.type, t);
-          if (!view) return [];
-          return [
-            `${r.txDate} — ${view.text}: ${view.sign}${r.amount} ${r.currency}` +
-              (r.currency !== 'USD' ? ` (≈ $${r.amountUsd.toFixed(2)})` : ''),
-          ];
-        })
-        .join('\n');
-      const head =
-        debt.balanceUsd > 0.009
-          ? `💰 ${client.clientCode} — ${t.debtYes}: $${debt.balanceUsd.toFixed(2)}`
-          : `✅ ${client.clientCode} — ${t.debtNo}` +
-            (debt.balanceUsd < -0.009
-              ? ` (${t.credit} $${(-debt.balanceUsd).toFixed(2)})`
-              : '');
-      await ctx.reply(head + (lines ? `\n\n${t.recentMoves}:\n${lines}` : ''));
-    }
+    dispatch('balance', chatId, () => sendBalance(chatId, linked, chatLocale(linked)));
   });
 
   bot.hears(allLabelVariants('btnHistory'), async (ctx) => {
-    const linked = await clientsForChat(BigInt(ctx.chat.id));
+    const chatId = ctx.chat.id;
+    const linked = await clientsForChat(BigInt(chatId));
     if (!linked.length) return;
-    const t = clientLabels(chatLocale(linked));
-    for (const client of linked) {
-      const [handed, paid] = await Promise.all([issuedHandovers(client.id), paidHistory(client.id)]);
-      if (!handed.length && !paid.length) {
-        await ctx.reply(`${client.clientCode} — ${t.noHistory}`);
-        continue;
-      }
-      // One block per handover and the payments last, sent as several
-      // messages when the three months do not fit in one: cutting at 4000
-      // characters used to drop the OLDEST handovers without a word.
-      const blocks = [
-        `🗄 ${client.clientCode} — ${t.historyWindow}`,
-        ...handed.map((h) => historyBlock(h, t)),
-        ...(paid.length
-          ? [
-              `💵 ${t.paymentsTitle}:\n` +
-                paid.map((p) => `${formatDay(p.txDate)} · +${p.amount} ${p.currency}`).join('\n'),
-            ]
-          : []),
-      ];
-      for (const chunk of chunkBlocks(blocks, 3800)) await ctx.reply(chunk);
-    }
+    dispatch('history', chatId, () => sendHistory(chatId, linked, chatLocale(linked)));
+  });
+
+  bot.hears(allLabelVariants('btnManager'), async (ctx) => {
+    const chatId = ctx.chat.id;
+    const linked = await clientsForChat(BigInt(chatId));
+    if (!linked.length) return;
+    dispatch('manager', chatId, () => sendManagers(chatId, linked, chatLocale(linked)));
   });
 
   /**
@@ -606,7 +920,8 @@ export function registerClientCabinet(bot: Bot): void {
    *
    * The client picks for themselves, and that choice sticks: the Telegram
    * seed only ever fills a NULL. A person holding several codes in one chat
-   * has all of them set together, or the next reply would come back in two
+   * has all of them set together (`setChatLocale`, the one writer the Mini
+   * App's switch uses too), or the next reply would come back in two
    * languages.
    */
   bot.hears(allLabelVariants('btnLanguage'), async (ctx) => {
@@ -619,56 +934,109 @@ export function registerClientCabinet(bot: Bot): void {
 
   bot.callbackQuery(/^lang:(.+)$/, async (ctx) => {
     const picked = ctx.match[1]!;
-    if (!isClientLocale(picked)) {
+    const chatId = ctx.chat?.id ?? ctx.callbackQuery.from.id;
+    if (!isClientLocale(picked) || !(await clientsForChat(BigInt(chatId))).length) {
       await ctx.answerCallbackQuery();
       return;
     }
-    const linked = await clientsForChat(BigInt(ctx.chat!.id));
-    if (!linked.length) {
-      await ctx.answerCallbackQuery();
-      return;
-    }
-    await db
-      .update(clients)
-      .set({ locale: picked })
-      .where(inArray(clients.id, linked.map((c) => c.id)));
     const t = clientLabels(picked);
-    // The corner button carries a word too, and leaving it in the old language
-    // is the one bit of the cabinet a language switch would visibly miss.
-    await setCabinetMenuButton(ctx.chat!.id, picked);
     await ctx.answerCallbackQuery(t.languageSet);
+    await setChatLocale(BigInt(chatId), picked);
+    // The chooser is EDITED into the answer: its three buttons stayed under
+    // the message for ever and offered a choice already made.
+    const pressed = ctx.callbackQuery.message?.message_id;
+    if (pressed) await editText({ chatId, messageId: pressed, html: h(t.languageSet) });
     // Re-derived (round 100, 13A): a staff+client chat switching language
-    // used to get the bare cabinet keyboard and lose its staff row.
+    // used to get the bare cabinet keyboard and lose its staff row. A reply
+    // keyboard changes only by SENDING a message, so this one says what the
+    // cabinet is — in the language just chosen.
     const { replyKeyboardFor } = await import('./keyboards');
-    await ctx.reply(t.languageSet, { reply_markup: await replyKeyboardFor(BigInt(ctx.chat!.id), picked) });
+    await ctx.reply(t.welcome, { reply_markup: await replyKeyboardFor(BigInt(ctx.chat!.id), picked) });
   });
 
   bot.callbackQuery(/^ph:(.+)$/, async (ctx) => {
     const lotId = ctx.match[1]!;
-    const linked = await clientsForChat(BigInt(ctx.chat!.id));
-    const photos = await lotPhotoKeys(lotId, linked.map((c) => c.id));
-    await ctx.answerCallbackQuery();
-    if (!photos.length) {
-      await ctx.reply(clientLabels(chatLocale(linked)).noPhotos);
-      return;
-    }
-    const storage = getStorage();
-    try {
-      const files = await Promise.all(
-        photos.map(async (p) => {
-          // Thumbnails are ~0.1 MB vs multi-MB originals — plenty for a phone.
-          const key = p.thumb800Key ?? p.storageKey;
-          return new InputFile(await storage.get(key), key.split('/').pop());
-        }),
-      );
-      if (files.length === 1) {
-        await ctx.replyWithPhoto(files[0]!);
-      } else {
-        await ctx.replyWithMediaGroup(files.map((f) => ({ type: 'photo' as const, media: f })));
-      }
-    } catch (err) {
-      logger.error({ err, lotId }, 'cabinet photo send failed');
-      await ctx.reply(clientLabels(chatLocale(linked)).photoError);
-    }
+    const chatId = ctx.chat?.id ?? ctx.callbackQuery.from.id;
+    const linked = await clientsForChat(BigInt(chatId));
+    const locale = chatLocale(linked);
+    // Answered at once: the upload takes seconds and a button that spins that
+    // long reads as broken. A second tap while the first is on its way hears
+    // the same toast and starts nothing (judge REL-12/PRIV-9).
+    await ctx.answerCallbackQuery({ text: clientLabels(locale).photoSending });
+    if (!linked.length || photoInFlight.has(chatId)) return;
+    photoInFlight.add(chatId);
+    dispatch('photos', chatId, () =>
+      sendLotPhotos(chatId, lotId, linked, locale).finally(() => photoInFlight.delete(chatId)),
+    );
   });
+
+  /**
+   * `mg` — the manager door under every push (contract 1). A CALLBACK, so it
+   * is answered from the chat's codes on the day it is pressed, never from a
+   * person's link frozen into an old message (PRIV-2). ALWAYS answered, first:
+   * a callback nobody answers spins for fifteen seconds with no error.
+   */
+  bot.callbackQuery('mg', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const chatId = ctx.chat?.id ?? ctx.callbackQuery.from.id;
+    const linked = await clientsForChat(BigInt(chatId));
+    if (!linked.length) return;
+    dispatch('manager', chatId, () => sendManagers(chatId, linked, chatLocale(linked)));
+  });
+
+  /*
+   * LAST: a customer's own words (judge CX-1). Every handler above has had its
+   * chance — the labels, the language, the photos — and whatever a linked
+   * customer typed or sent that nothing answered reaches a person instead of
+   * vanishing. A command is not words (it is answered or ignored above), and a
+   * label with stray spaces is still a label.
+   */
+  bot.on('message:text', async (ctx, next) => {
+    if (ctx.chat.type !== 'private') return next();
+    const text = ctx.message.text;
+    if (text.trim().startsWith('/') || isCabinetText(text)) return next();
+    const chatId = ctx.chat.id;
+    const outcome = await forwardClientMessage({
+      chatId: BigInt(chatId),
+      messageId: ctx.message.message_id,
+      text,
+      media: false,
+    });
+    if (!outcome) return next();
+    if (ackDue(chatId, outcome, null, Date.now())) dispatch('forward-ack', chatId, () => acknowledge(chatId, outcome));
+  });
+
+  bot.on(
+    [
+      'message:photo',
+      'message:document',
+      'message:voice',
+      'message:audio',
+      'message:video',
+      'message:video_note',
+      // A pin to where the cargo should go, a 👍 — silence would be worse
+      // than a forwarded sticker (CONV-3). A venue IS a location.
+      'message:location',
+      'message:sticker',
+    ],
+    async (ctx, next) => {
+      if (ctx.chat.type !== 'private') return next();
+      const chatId = ctx.chat.id;
+      const album = ctx.message.media_group_id ?? null;
+      const msg = ctx.message;
+      const venue = msg.venue ? [msg.venue.title, msg.venue.address].filter(Boolean).join(', ') : null;
+      const outcome = await forwardClientMessage({
+        chatId: BigInt(chatId),
+        messageId: msg.message_id,
+        text: msg.caption ?? venue ?? (msg.sticker?.emoji ?? null),
+        media: true,
+        kind: msg.location ? 'location' : msg.sticker ? 'sticker' : 'file',
+        albumId: album,
+      });
+      if (!outcome) return next();
+      // An album is one update per photo: each is forwarded, the customer is
+      // told once.
+      if (ackDue(chatId, outcome, album, Date.now())) dispatch('forward-ack', chatId, () => acknowledge(chatId, outcome));
+    },
+  );
 }

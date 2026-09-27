@@ -136,6 +136,10 @@ test('one warehouse narrows the cargo; the money says it is the whole company; a
   await page.goto('/dashboard');
   const select = page.locator('#dash-ombor-select');
   await expect(select).toBeVisible();
+  // The fill card streams under its own Suspense: `count()` does not wait, so
+  // it read 0 whenever the card had not landed yet (a full local run in round
+  // C). Wait for the first row, then count.
+  await expect(page.getByTestId('wh-fill-row').first()).toBeVisible();
   const allRows = await page.getByTestId('wh-fill-row').count();
   expect(allRows).toBeGreaterThan(1);
   await expect(page.getByTestId('dash-hero-scope')).toHaveAttribute('data-scope', 'period');

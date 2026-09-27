@@ -182,7 +182,9 @@ export function CalcOfferForm({
               not the person has a linked chat, and an unlinked one is settled
               `muted` minutes later where nobody looks (#719's shape). */}
           <p className="text-2xs text-ink-600">
-            {result.delivered ? `✅ ${t('offerSent')}` : `⚠ ${t('offerNoTelegram')}`}
+            {result.delivered
+              ? `✅ ${t('offerSent')}`
+              : `⚠ ${result.muted ? t('offerMuted') : t('offerNoTelegram')}`}
           </p>
           <textarea
             className="input h-56 font-mono text-2xs"

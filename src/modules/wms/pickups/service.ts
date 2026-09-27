@@ -556,7 +556,7 @@ export async function collectStop(
       if (received.has(clientId)) continue;
       await tx
         .insert(clientNotices)
-        .values({ clientId, kind: NOTICE_PICKED_UP, refType: 'pickup_stop', refId: stopId, sendAfter: now, claimedBy: ctx.actorId })
+        .values({ clientId, kind: NOTICE_PICKED_UP, refType: 'pickup_stop', refId: stopId, sendAfter: now, claimedBy: ctx.actorId, staffNotifiedAt: now })
         .onConflictDoNothing();
     }
 

@@ -3,6 +3,7 @@ import { db } from '../../platform/db/client';
 import { clients, leads, tgMessages, users } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
+import { cardLink } from '../../platform/notifications/links';
 import { seesAllTg, type TgViewer } from './conversations';
 
 /**
@@ -128,7 +129,10 @@ export async function shareMessage(
       .where(eq(leads.id, message.leadId))
       .limit(1);
     who = lead?.name ?? '';
-    link = `${appUrl}/crm/${message.leadId}`;
+    // Through the one map of card paths (round C): this line built
+    // «/crm/<id>», a route that does not exist — every share of a lead's
+    // message linked to a 404.
+    link = cardLink('lead', message.leadId) ?? appUrl;
   }
 
   const [from] = await db

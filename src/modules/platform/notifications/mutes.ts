@@ -37,6 +37,10 @@ export const MUTE_GROUPS = {
     'CalcDone',
     'CalcReturned',
     'CalcPrefilled',
+    // «Hisob tayyor» — the seal's own news (phase B). It shipped in NO group,
+    // so the only way to silence it was to silence everything (round C's
+    // scouts); it is the same family as «hisoblash tayyor».
+    'CalcSealed',
   ],
   // "Something is wrong, act now." The three price-control messages belong
   // here rather than in `operations`: cargo that arrived is routine, cargo
@@ -108,6 +112,17 @@ export const MUTE_GROUPS = {
     // money leave. BoxLost's alarm, run backwards.
     'CompensatedCargoFound',
     'ReceiptMeasureCorrected',
+    // A discount was written into a sealed price (phase D) — shipped in no
+    // group, like CalcSealed; it moves money a seller is measured against.
+    'CalcDiscounted',
+    // A customer wrote to the BOT (round C). Until now those words went
+    // nowhere at all; they are an alarm like ClientWaiting — only worth
+    // anything while the customer is still waiting for an answer.
+    'ClientBotMessage',
+    // A client-cabinet link was refused or unverifiable (round C moves these
+    // two Russian raw-fetch pings onto the drain, where they can be muted and
+    // retried like every other staff message).
+    'CabinetLinkAlert',
   ],
   operations: [
     // A client's birthday (0109): a reminder to congratulate, not an alarm.
@@ -149,19 +164,73 @@ export const MUTE_GROUPS = {
 
 export type MuteGroup = keyof typeof MUTE_GROUPS;
 
+/**
+ * The members each group has held CONTINUOUSLY since the day it was born —
+ * read off this file's git history, not remembered. The profile is the only
+ * writer of a stored list and it writes whole groups (`listFromGroups`), so
+ * whoever ticked a group at ANY point in its life holds every one of these.
+ *
+ * That is the whole test for «this group was ticked», and it has to be this
+ * set and no larger. Round C first judged a type against every other member of
+ * its group — three newcomers at once meant each needed the other two, a list
+ * nobody's checkbox ever wrote — and then against the members that had not
+ * «joined later», which named round C's four newcomers and missed
+ * `PartnerDebtDue`, added a day earlier: every production list predates it, so
+ * every muted «alerts» box read back unticked and the next save un-muted all
+ * of them (round C review, second pass). Groups have grown ~40 times since
+ * 2026-07-24; a stored list can be from any of those days. `CalcOverdue` left
+ * `alerts` on 2026-08-09 and came back on 08-22, so it is not here either.
+ *
+ * Never ADD a type to this map: a newcomer is exactly what old lists lack.
+ * Remove one only together with removing it from its group (the unit fence
+ * holds these to the groups).
+ */
+export const FOUNDERS: Readonly<Record<MuteGroup, readonly string[]>> = {
+  digest: ['DailyDigest'],
+  // Moved here from `digest` on 2026-09-19; every list that muted it did so
+  // as part of `digest` before that, and still holds it.
+  calls: ['CrmFollowUps'],
+  tasks: ['TasksDue'],
+  alerts: ['BoxScannedOnLoad', 'UndocumentedTransfer', 'MissingInTransit'],
+  operations: [
+    'ReceiptConfirmed',
+    'UnknownCargoReceived',
+    'ReadyForPickup',
+    'BoxIssued',
+    'PlanApproved',
+    'PlanChangesRequested',
+    'InventoryCompleted',
+  ],
+};
+
+/**
+ * Is this person silencing this type? By name, or because the list holds its
+ * group's founders — so a type that JOINS a group after somebody ticked it
+ * stays silenced for them, and growing a group never un-mutes it.
+ */
 export function isTelegramMuted(muted: unknown, type: string): boolean {
   if (!Array.isArray(muted)) return false;
-  return muted.includes('all') || muted.includes(type);
+  if (muted.includes('all') || muted.includes(type)) return true;
+  for (const group of Object.keys(MUTE_GROUPS) as MuteGroup[]) {
+    if (!(MUTE_GROUPS[group] as readonly string[]).includes(type)) continue;
+    const founders = FOUNDERS[group];
+    if (founders.length > 0 && founders.every((t) => muted.includes(t))) return true;
+  }
+  return false;
 }
 
-/** Which groups are fully covered by the stored list (for checkbox state). */
+/**
+ * Which groups are fully covered by the stored list (for checkbox state).
+ * Asked through `isTelegramMuted`, so a group that grew reads back as ticked
+ * — and the next save writes the newcomer into the list for good.
+ */
 export function groupsFromList(muted: unknown): { all: boolean; groups: Record<MuteGroup, boolean> } {
   const list = Array.isArray(muted) ? (muted as string[]) : [];
   const all = list.includes('all');
   const groups = Object.fromEntries(
     (Object.keys(MUTE_GROUPS) as MuteGroup[]).map((g) => [
       g,
-      all || MUTE_GROUPS[g].every((t) => list.includes(t)),
+      all || MUTE_GROUPS[g].every((t) => isTelegramMuted(list, t)),
     ]),
   ) as Record<MuteGroup, boolean>;
   return { all, groups };

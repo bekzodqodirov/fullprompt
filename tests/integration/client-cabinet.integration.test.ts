@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { createHmac } from 'node:crypto';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
@@ -26,7 +26,7 @@ import {
   failClientLink,
   linkAllClientsForPhone,
 } from '@/modules/platform/telegram/client-cabinet';
-import { renderClientCabinetText } from '@/modules/platform/notifications/service';
+import { issuedText } from '@/modules/wms/notices/client-text';
 import { authenticateCabinet, cabinetPayload } from '@/modules/wms/client-cabinet/miniapp';
 
 /** Phase 2.2: Telegram client cabinet — linking, cargo view, photos, debt. */
@@ -102,6 +102,13 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // Round C: a refused link warns its minter through the notification queue
+  // (CabinetLinkAlert) instead of a raw fetch that did nothing without a
+  // token — so the two warnings this file provokes are ROWS, and are cleaned.
+  await db.execute(
+    sql`DELETE FROM notifications WHERE type = 'CabinetLinkAlert'
+        AND (payload->>'text' LIKE ${`%C2${suffix}%`} OR payload->>'text' LIKE ${`%C9${suffix}%`})`,
+  );
   await pgClient.end();
 });
 
@@ -330,40 +337,51 @@ describe('the Mini App door', () => {
     const auth = await authenticateCabinet(signFor(CHAT_ID));
     expect(auth.ok).toBe(true);
     if (!auth.ok) return;
-    const json = JSON.stringify(await cabinetPayload(auth));
+    const payload = await cabinetPayload(auth);
+    const json = JSON.stringify(payload);
     for (const leak of ['landedCost', 'costUsd', 'margin', 'profit', 'sellPrice']) {
       expect(json).not.toContain(leak);
+    }
+    // Round C: the people a customer may contact carry exactly what the offer
+    // PDF prints — never a staff id or a login riding along (judge PRIV-13).
+    expect(Object.keys(payload.office!).sort()).toEqual(['name', 'phone']);
+    for (const c of payload.clients) {
+      if (c.manager) expect(Object.keys(c.manager).sort()).toEqual(['name', 'phone', 'telegramUrl']);
+      else expect(c.manager).toBeNull();
     }
   });
 });
 
 describe('client-facing notifications', () => {
   /*
-   * REWRITTEN in round 98, and the change of subject is the point.
+   * REWRITTEN in round 98, and RE-POINTED in round C.
    *
-   * This used to assert that `ReadyForPickup` renders a customer's message.
-   * That event fires once per unload SCAN, which is exactly the defect the
-   * owner reported — one «yukingiz keldi» per carton. The customer's copy is
-   * now a claimed notice (`wms/notices/arrival.ts`), so the assertion here is
-   * that this event says NOTHING to the client, and the event stays for staff.
+   * Round 98: this used to assert that `ReadyForPickup` renders a customer's
+   * message. That event fires once per unload SCAN, which is exactly the
+   * defect the owner reported — one «yukingiz keldi» per carton — so the
+   * customer's copy became a claimed notice (`wms/notices/arrival.ts`).
+   *
+   * Round C finished the move: the event drain renders NOTHING for a customer
+   * any more (`renderClientCabinetText` is gone; the fence is in
+   * `client-cabinet-text.test.ts`), and «berildi» is a claimed notice too,
+   * rendered from the handover by `issuedText`. The facts this test pinned —
+   * the receiver's name and what is left — are asserted on it.
    */
-  it('says nothing to the client for ReadyForPickup; renders BoxIssued; nothing for staff events', () => {
-    expect(
-      renderClientCabinetText('ReadyForPickup', {
+  it('renders the handover with the receiver and what is left', () => {
+    const issued = issuedText(
+      {
         clientCode: 'GS777',
-        boxCount: 13,
-        warehouseCode: 'TAS1',
-      }),
-    ).toBeNull();
-    const issued = renderClientCabinetText('BoxIssued', {
-      clientCode: 'GS777',
-      boxCount: 2,
-      warehouseCode: 'TAS1',
-      personName: 'Ali',
-      remaining: 5,
-    });
+        warehouseName: 'Toshkent 1',
+        issuedAt: null,
+        lines: [],
+        boxCount: 2,
+        personName: 'Ali',
+        leftHere: 5,
+        elsewhere: null,
+      },
+      null,
+    );
     expect(issued).toContain('Ali');
     expect(issued).toContain('5');
-    expect(renderClientCabinetText('PlanApproved', {})).toBeNull();
   });
 });

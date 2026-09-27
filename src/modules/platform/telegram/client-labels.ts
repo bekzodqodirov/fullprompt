@@ -83,8 +83,6 @@ const DICT = {
   },
   stgIssued: { uz: 'Olib ketildi 🤝', ru: 'Выдан 🤝', en: 'Handed over 🤝' },
 
-  /** Always beside a date, never without it — the schedule is an estimate. */
-  etaAbout: { uz: 'taxminan', ru: 'примерно', en: 'about' },
   journey: { uz: 'Yukingiz yo‘li', ru: 'Путь вашего груза', en: 'Your cargo’s journey' },
 
   /*
@@ -129,9 +127,83 @@ const DICT = {
     en: 'Ready for pickup',
   },
 
-  pieces: { uz: 'dona', ru: 'шт', en: 'pcs' },
   kg: { uz: 'kg', ru: 'кг', en: 'kg' },
   m3: { uz: 'm³', ru: 'м³', en: 'm³' },
+
+  /*
+   * --- round C: the words every surface shares ---
+   *
+   * The customer's five steps (`MILESTONES` in wms/client-cabinet/stages.ts),
+   * drawn as a bar on the pushes, the bot's cargo list and the Mini App. The
+   * ten rungs above stay the sentence; these are only the bar's labels.
+   */
+  msChina: { uz: 'Xitoyda', ru: 'В Китае', en: 'In China' },
+  // «Tranzit», the owner's own word for this stretch of his ladder
+  // («transitda»), and true of cargo standing at the border warehouse as well
+  // as cargo on a lorry — «yo'lda» would put a truck on a pallet (judge CX-8).
+  msTransit: { uz: 'Tranzitda', ru: 'В транзите', en: 'In transit' },
+  msUz: { uz: 'O‘zbekistonda', ru: 'В Узбекистане', en: 'In Uzbekistan' },
+  msReady: { uz: 'Olib ketishga tayyor', ru: 'Готов к выдаче', en: 'Ready for pickup' },
+  msIssued: { uz: 'Topshirildi', ru: 'Выдан', en: 'Handed over' },
+  // Under the five dots of the Mini App's stepper, where 360 px leaves ~60 px
+  // a label: the long forms above do not fit (judge CX-13).
+  msShortChina: { uz: 'Xitoy', ru: 'Китай', en: 'China' },
+  msShortTransit: { uz: 'Tranzit', ru: 'Транзит', en: 'Transit' },
+  msShortUz: { uz: 'O‘zbekiston', ru: 'Узбекистан', en: 'Uzbekistan' },
+  msShortReady: { uz: 'Tayyor', ru: 'Готов', en: 'Ready' },
+  msShortIssued: { uz: 'Berildi', ru: 'Выдан', en: 'Handed' },
+  // A carton, counted. `pieces` («dona») was the word on the pushes and it
+  // counts ITEMS; the number beside it is boxes, which the Mini App already
+  // called «quti». Russian and English need the plural `boxWord` picks.
+  boxOne: { uz: 'quti', ru: 'коробка', en: 'box' },
+  boxFew: { uz: 'quti', ru: 'коробки', en: 'boxes' },
+  boxMany: { uz: 'quti', ru: 'коробок', en: 'boxes' },
+  // The status summary over a customer's whole cargo.
+  sumReady: { uz: '✅ Tayyor', ru: '✅ Готово', en: '✅ Ready' },
+  sumTransit: { uz: '🚚 Tranzitda', ru: '🚚 В транзите', en: '🚚 In transit' },
+  sumChina: { uz: '🏭 Xitoyda', ru: '🏭 В Китае', en: '🏭 In China' },
+  sumUz: { uz: '🇺🇿 O‘zbekistonda', ru: '🇺🇿 В Узбекистане', en: '🇺🇿 In Uzbekistan' },
+  // The person to write to (`managersFor`) — the seller the offer PDF has
+  // always named to the same customer.
+  managerTitle: { uz: 'Sizning menejeringiz', ru: 'Ваш менеджер', en: 'Your manager' },
+  // The push's second button — a door answered when PRESSED, never a person's
+  // link frozen into an old message (judge PRIV-2).
+  contactManager: { uz: '💬 Menejer bilan bog‘lanish', ru: '💬 Связаться с менеджером', en: '💬 Contact your manager' },
+  managerWrite: { uz: '✍️ Telegramda yozish', ru: '✍️ Написать в Telegram', en: '✍️ Message on Telegram' },
+  officeTitle: { uz: 'Ofisimiz', ru: 'Наш офис', en: 'Our office' },
+  // Never «no manager has been assigned»: that is most customers, and it
+  // tells them nobody is theirs (judge CX-1). What is TRUE is that whatever
+  // they write here reaches a person — the forward makes it so.
+  managerNone: {
+    uz: 'Savolingizni shu yerga yozing — xabaringiz ofisimizga yetkaziladi.',
+    ru: 'Напишите вопрос сюда — сообщение передадут в наш офис.',
+    en: 'Write your question here — it will be passed to our office.',
+  },
+  // What a customer reads after writing anything to the bot (judge CX-1):
+  // their words WENT somewhere, to someone named.
+  msgDeliveredManager: {
+    uz: '✅ Xabaringiz menejeringizga yetkazildi: {name}.',
+    ru: '✅ Сообщение передано вашему менеджеру: {name}.',
+    en: '✅ Your message was passed to your manager, {name}.',
+  },
+  msgDeliveredOffice: {
+    uz: '✅ Xabaringiz ofisimizga yetkazildi.',
+    ru: '✅ Сообщение передано в наш офис.',
+    en: '✅ Your message was passed to our office.',
+  },
+  // Over the per-chat limit (10 in 10 minutes): THIS message reached nobody.
+  msgThrottled: {
+    uz: '⏳ Xabarlar juda ko‘p — bu xabar menejerga yetkazilmadi. Bir necha daqiqadan keyin qayta yozing.',
+    ru: '⏳ Слишком много сообщений подряд — это не передано менеджеру. Напишите ещё раз через несколько минут.',
+    en: '⏳ Too many messages in a row — this one was not passed on. Please write again in a few minutes.',
+  },
+  // «Arrival (Kashgar): about 30.09 – 01.10» — the place named INSIDE the
+  // estimate, so a China-leg date is never read as the delivery date (CX-9).
+  etaTo: {
+    uz: 'Yetib borishi ({place}): taxminan {range}',
+    ru: 'Прибытие ({place}): примерно {range}',
+    en: 'Arrival ({place}): about {range}',
+  },
 
   // --- linking ---
   askPhone: {
@@ -204,6 +276,35 @@ const DICT = {
     en: 'We could not find this number. Please contact your manager — they will add it to your card and connect you.',
   },
 
+  // --- round C, the conversation (P-B) ---
+  btnManager: { uz: '💬 Menejer', ru: '💬 Менеджер', en: '💬 Manager' },
+  greeting: { uz: 'Assalomu alaykum, {name}!', ru: 'Здравствуйте, {name}!', en: 'Hello, {name}!' },
+  entryQuestion: { uz: 'Kim sifatida kirasiz?', ru: 'Кто вы?', en: 'Who are you?' },
+  entryStaff: { uz: '👨‍💼 Hodim', ru: '👨‍💼 Сотрудник', en: '👨‍💼 Staff' },
+  entryClient: { uz: '📦 Mijoz', ru: '📦 Клиент', en: '📦 Client' },
+  photoSending: { uz: '📷 Rasmlar yuborilmoqda…', ru: '📷 Отправляю фото…', en: '📷 Sending photos…' },
+  balanceTotal: { uz: 'Jami qarzingiz', ru: 'Всего вы должны', en: 'In total you owe' },
+  selfPhoneMismatch: {
+    uz: '❌ Bu sizning raqamingiz emas. O‘z raqamingizni pastdagi tugma bilan yuboring.',
+    ru: '❌ Это не ваш номер. Отправьте свой номер кнопкой ниже.',
+    en: '❌ That is not your number. Please share your own number with the button below.',
+  },
+  cmdStart: { uz: 'Bosh menyu', ru: 'Главное меню', en: 'Main menu' },
+  // The bot's own profile (setMyShortDescription ≤ 120, setMyDescription ≤
+  // 512): what a person reads BEFORE pressing Start, which until round C was
+  // whatever sat in BotFather.
+  botShortDescription: {
+    uz: 'GSR LOGISTICS — Xitoydan O‘zbekistonga yuk. Yukingiz qayerda, rasmlari va balansingiz — shu yerda.',
+    ru: 'GSR LOGISTICS — грузы из Китая в Узбекистан. Где ваш груз, его фото и ваш баланс — здесь.',
+    en: 'GSR LOGISTICS — cargo from China to Uzbekistan. Where your cargo is, its photos and your balance — here.',
+  },
+  botDescription: {
+    uz: '📦 GSR LOGISTICS — Xitoydan O‘zbekistonga yuk tashish.\n\nBu botda:\n• yukingiz qaysi bosqichda ekani — Xitoy omboridan topshirishgacha;\n• omborga kelgan yukingiz rasmlari;\n• qarzingiz va to‘lovlaringiz;\n• menejeringiz bilan bir tugmada bog‘lanish.\n\nBoshlash uchun «Start» ni bosing, «📦 Mijoz» ni tanlang va telefon raqamingizni yuboring.',
+    ru: '📦 GSR LOGISTICS — доставка грузов из Китая в Узбекистан.\n\nВ этом боте:\n• на каком этапе ваш груз — от склада в Китае до выдачи;\n• фото вашего груза на складе;\n• ваш долг и оплаты;\n• связь с вашим менеджером одной кнопкой.\n\nНажмите «Start», выберите «📦 Клиент» и отправьте свой номер телефона.',
+    en: '📦 GSR LOGISTICS — cargo from China to Uzbekistan.\n\nIn this bot:\n• which stage your cargo is at — from our warehouse in China to handover;\n• photos of your cargo at the warehouse;\n• what you owe and what you have paid;\n• your manager, one tap away.\n\nPress «Start», choose «📦 Client» and share your phone number.',
+  },
+  // --- P-B extra (only P-B adds keys here) ---
+
   // --- the map (item 11, 2026-09-26) ---
   mapOpen: { uz: '🗺 Xaritada', ru: '🗺 На карте', en: '🗺 On the map' },
   mapTitle: { uz: 'Yukim qayerda', ru: 'Где мой груз', en: 'Where my cargo is' },
@@ -261,13 +362,7 @@ const DICT = {
     ru: '📥 Ваш груз принят на наш склад',
     en: '📥 Your cargo has arrived at our warehouse',
   },
-  arrivedWarehouse: { uz: 'Ombor', ru: 'Склад', en: 'Warehouse' },
   arrivedTotal: { uz: 'Jami', ru: 'Итого', en: 'Total' },
-  seeDetails: {
-    uz: 'Batafsil: 📦 Yuklarim',
-    ru: 'Подробнее: 📦 Мои грузы',
-    en: 'Details: 📦 My cargo',
-  },
 
   // --- cargo landed in Uzbekistan (round 98) ---
   //
@@ -312,6 +407,43 @@ const DICT = {
   },
   issuedTo: { uz: 'Oluvchi', ru: 'Получатель', en: 'Received by' },
   issuedLeft: { uz: 'Omborda qoldi', ru: 'Осталось на складе', en: 'Left in stock' },
+
+  // --- round C, the pushes (P-A) ---
+  pushReceiptNo: { uz: 'Qabul raqami', ru: 'Номер приёмки', en: 'Receipt no.' },
+  pushNextReceived: {
+    uz: 'Keyingi qadam: yuk mashinaga yuklanib yo‘lga chiqadi.',
+    ru: 'Дальше: груз загрузят в машину и отправят в путь.',
+    en: 'Next: your cargo will be loaded onto a truck and sent on its way.',
+  },
+  pushReadyCleared: {
+    uz: 'Rastamojka tugagan — olib ketish vaqtini menejeringiz bilan kelishing.',
+    ru: 'Растаможка завершена — время выдачи согласуйте с менеджером.',
+    en: 'Customs are cleared — agree a pickup time with your manager.',
+  },
+  pushAllIssued: { uz: 'Hammasi topshirildi', ru: 'Выдано полностью', en: 'Everything handed over' },
+  // C3 when the customer still has cargo elsewhere (judge CX-5): only THIS
+  // warehouse is finished, and saying «everything» would be false.
+  pushHereIssued: {
+    uz: 'Bu ombordagi yukingiz to‘liq topshirildi',
+    ru: 'Груз на этом складе выдан полностью',
+    en: 'Everything at this warehouse has been handed over',
+  },
+  // C1 when the receipt reaches the customer's code AFTER it left China — an
+  // unclaimed cargo claimed later (judge REL-9/STATE-2).
+  pushAddedTitle: {
+    uz: '📥 Kabinetingizga yangi yuk qo‘shildi',
+    ru: '📥 В ваш кабинет добавлен груз',
+    en: '📥 New cargo has been added to your cabinet',
+  },
+  // The photo on a push was taken at reception; on the Uzbek arrival it must
+  // not read as a picture of the cargo's condition today (CX-15).
+  photoTakenOnReceipt: {
+    uz: '📷 Rasm qabul qilinganda olingan',
+    ru: '📷 Фото сделано при приёмке',
+    en: '📷 Photo taken on receipt',
+  },
+  pushMoreLots: { uz: '… yana {n} ta tovar', ru: '… ещё {n} поз.', en: '… {n} more items' },
+  // --- P-A extra (only P-A adds keys here) ---
 
   // --- the history of handed-over cargo (owner, 2026-09-24: «alohida
   // topshirilgan yuklar ko'rinib tursin … qaysi partiyada kelgan, ichki
@@ -376,6 +508,38 @@ const DICT = {
   },
   retry: { uz: 'Qayta urinish', ru: 'Повторить', en: 'Try again' },
   nothingHere: { uz: 'Bo‘sh', ru: 'Пусто', en: 'Nothing here' },
+
+  // --- round C, the Mini App (P-C) ---
+  tabCargo: { uz: 'Yuklar', ru: 'Грузы', en: 'Cargo' },
+  tabBalance: { uz: 'Balans', ru: 'Баланс', en: 'Balance' },
+  tabHistory: { uz: 'Tarix', ru: 'История', en: 'History' },
+  chipOwe: { uz: 'Qarz', ru: 'Долг', en: 'Owed' },
+  chipCredit: { uz: 'Ortiqcha', ru: 'Переплата', en: 'Credit' },
+  readyHero: { uz: '{n} olib ketishga tayyor', ru: 'Готово к выдаче: {n}', en: 'Ready for pickup: {n}' },
+  // The same boxes when nobody has stamped the truck's customs — the push's
+  // own caveat, so the two surfaces agree (judge CX-2).
+  readyHeroPending: {
+    uz: '{n} yetib keldi — rasmiylashtiruvdan so‘ng olib ketasiz',
+    ru: 'Прибыло: {n} — выдача после оформления',
+    en: 'Arrived: {n} — pickup after the customs paperwork',
+  },
+  refresh: { uz: 'Yangilash', ru: 'Обновить', en: 'Refresh' },
+  expiredApp: {
+    uz: 'Oyna eskirdi — yopib, qaytadan oching.',
+    ru: 'Окно устарело — закройте и откройте снова.',
+    en: 'This window has expired — close it and open it again.',
+  },
+  languageLabel: { uz: 'Til', ru: 'Язык', en: 'Language' },
+  // --- P-C extra (only P-C adds keys here) ---
+  // The office card inside the Mini App. `managerNone` says «write HERE»,
+  // which in the bot is true and in the app is not: the chat is under the
+  // app, one tap away, and that tap is the button beside this sentence.
+  officeWriteHint: {
+    uz: 'Savolingizni bot chatiga yozing — xabaringiz ofisimizga yetkaziladi.',
+    ru: 'Напишите вопрос в чат с ботом — сообщение передадут в наш офис.',
+    en: 'Write your question in the bot chat — it will be passed to our office.',
+  },
+  writeInChat: { uz: '💬 Chatga yozish', ru: '💬 Написать в чат', en: '💬 Write in the chat' },
 
   // --- language switch ---
   chooseLanguage: { uz: 'Tilni tanlang:', ru: 'Выберите язык:', en: 'Choose a language:' },
@@ -504,7 +668,9 @@ function fallback(locale?: string | null): ClientLocale {
  * Deriving the matcher from the same dictionary means adding a language
  * cannot forget to add its buttons.
  */
-export function allLabelVariants(key: 'btnCargo' | 'btnBalance' | 'btnHistory' | 'btnLanguage'): string[] {
+export function allLabelVariants(
+  key: 'btnCargo' | 'btnBalance' | 'btnHistory' | 'btnLanguage' | 'btnManager',
+): string[] {
   return CLIENT_LOCALES.map((locale) => DICT[key][locale]);
 }
 
@@ -569,4 +735,63 @@ export function formatEtaRange(fromIso: string, toIso: string, _locale?: string 
   const from = day(fromIso);
   const to = day(toIso);
   return from === to ? from : `${from} – ${to}`;
+}
+
+/**
+ * «{name}» and «{n}» filled in a label. A key the caller did not pass stays
+ * as it is written — visible in review, never an «undefined» on a phone.
+ */
+export function fillLabel(template: string, vars: Record<string, string | number>): string {
+  return template.replace(/\{(\w+)\}/g, (whole, key: string) =>
+    key in vars ? String(vars[key]) : whole,
+  );
+}
+
+/**
+ * The same, for a message BODY sent as HTML: the template and every value are
+ * escaped, so a customer named «A&B <shop>» cannot become markup. Buttons and
+ * toasts are not HTML and take `fillLabel` — one helper for both would be
+ * wrong one way or the other (judge PRIV-14).
+ */
+export function fillHtml(template: string, vars: Record<string, string | number>): string {
+  const esc = (v: string) => v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return esc(template).replace(/\{(\w+)\}/g, (whole, key: string) =>
+    key in vars ? esc(String(vars[key])) : whole,
+  );
+}
+
+/**
+ * «1 коробка / 3 коробки / 12 коробок», «1 box / 2 boxes», «5 quti».
+ *
+ * `Intl.PluralRules` knows the three languages' rules (Russian has three
+ * forms and counts 21 as «one»), so nothing here restates them. Rules are
+ * asked of the resolved client language, never the raw tag.
+ *
+ * GUARDED (round C review, MA-3): this now runs inside the Mini App, and a
+ * WebView older than Safari 13 has no `Intl.PluralRules` — the constructor
+ * would throw mid-render and a customer's cabinet would be a blank page. The
+ * fallback states the Russian rule by hand only for that phone.
+ */
+function pluralCategory(n: number, key: ClientLocale): string {
+  try {
+    if (typeof Intl !== 'undefined' && typeof Intl.PluralRules === 'function') {
+      return new Intl.PluralRules(key).select(n);
+    }
+  } catch {
+    // An engine that has the constructor and not the language: the hand rule.
+  }
+  const whole = Math.abs(Math.trunc(n));
+  if (key !== 'ru') return whole === 1 ? 'one' : 'other';
+  const ten = whole % 10;
+  const hundred = whole % 100;
+  if (ten === 1 && hundred !== 11) return 'one';
+  if (ten >= 2 && ten <= 4 && (hundred < 12 || hundred > 14)) return 'few';
+  return 'many';
+}
+
+export function boxWord(n: number, locale?: string | null): string {
+  const key = isClientLocale(locale) ? locale : fallback(locale);
+  const category = pluralCategory(n, key);
+  const form = category === 'one' ? 'boxOne' : category === 'few' ? 'boxFew' : 'boxMany';
+  return DICT[form][key];
 }

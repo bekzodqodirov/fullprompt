@@ -48,6 +48,10 @@ describe('the callback vocabulary', () => {
     expect(parseCallback('n:drop_table')).toBeNull();
     expect(parseCallback('n:p')).toBeNull();
     expect(parseCallback(`x:${uuid}`)).toBeNull();
+    // Round C, contract 1: `mg` («💬 Menejer bilan bog‘lanish» on a client
+    // push) belongs to the CABINET — the staff parser must let it fall
+    // through, or the customer's press is swallowed here and never answered.
+    expect(parseCallback('mg')).toBeNull();
   });
 
   it('DERIVED: every n: button the handlers build is one this parser accepts', () => {
@@ -104,6 +108,24 @@ describe('the rules a shell cannot exercise', () => {
     expect(cabinet).toBeLessThan(notes);
     expect(notes).toBeLessThan(capture);
     expect(capture).toBeLessThan(task);
+  });
+
+  it('«📋 Bugun» sits ABOVE both captures, and the task capture skips every keyboard label', () => {
+    // Round C: pressed while a «Bajarildi» result was awaited, Bugun reached
+    // `takeTaskPending` first — which DELETES ON READ — and closed the task
+    // with the text «📋 Bugun» as its result; pressed while a note was being
+    // written it was filed into the note.
+    const bugun = handlers.indexOf('if (ctx.message.text === BUGUN || ctx.message.text === \'/bugun\')');
+    const notes = handlers.indexOf('ctx.message.text === ZAMETKALAR');
+    const capture = handlers.indexOf('const capture = activeCapture(chatId);\n    if (capture) {');
+    const guard = handlers.indexOf('if (!escapesIntake(ctx.message.text)) {\n      const pendingTask = takeTaskPending(chatId);');
+    expect(bugun, 're-anchor: the Bugun branch moved').toBeGreaterThan(-1);
+    expect(guard, 're-anchor: the guarded task capture moved').toBeGreaterThan(-1);
+    expect(notes).toBeLessThan(bugun);
+    expect(bugun).toBeLessThan(capture);
+    expect(capture).toBeLessThan(guard);
+    // …and there is exactly ONE place that takes the pending result.
+    expect(handlers.split('takeTaskPending(chatId)').length - 1).toBe(1);
   });
 
   it('the note is sent to the chat it was asked from, under the chat OWN identity', () => {

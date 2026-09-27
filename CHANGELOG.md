@@ -1,5 +1,150 @@
 # CHANGELOG
 
+## Telegram «wow» — mijoz xabarlari, bot, Mini App, xodimlar boti — 2026-09-27
+
+Migratsiya yo'q. Ledger o'zgarmaydi (**112**).
+
+**Mijozga keladigan xabarlar:**
+1. **Chiroyli va tushunarli.** Sarlavha qalin, har bir tovar alohida qatorda:
+   quti · kg · m³. Mijoz yukining qayerdaligini 5 bosqichli belgida ko'radi:
+   🟩🟩⬜⬜⬜ Xitoy → Tranzit → O'zbekiston → Tayyor → Topshirildi.
+   Sklad kodi o'rniga nomi yoziladi: «TAS1» emas, «Toshkent 1».
+2. **«Omborga qabul qilindi» va «Yetib keldi» xabarlarida tovar rasmi bor.**
+   «Qabul qilindi» xabari 10 daqiqadan keyin ketadi. Prixod xato kodga
+   yozilgan bo'lsa, shu vaqt ichida tuzatiladi va rasm begona mijozga
+   bormaydi.
+3. **Har xabar ostida ikki tugma:** «📱 Yuklarimni ochish» (aynan shu tovar
+   ochiladi) va «💬 Menejer bilan bog'lanish».
+4. **Xabar yo'qolmaydi.** Oldin «Omborga qabul qilindi» va «Berildi»
+   xabarlari Telegram bir soniya band bo'lsa umuman ketmay qolardi. Endi
+   navbatda turadi va qayta yuboriladi. Bot tokeni almashtirilayotgan paytda
+   ham kutadi, yo'qolmaydi.
+5. **Kechasi (22:00–08:00) xabar ovozsiz keladi**: telefon jiringlamaydi.
+6. Yuk Xitoydan chiqib ketgandan keyin mijozga yozilsa (egasiz yuk topilsa),
+   endi «Xitoyga keldi» deb emas, «Kabinetingizga yangi yuk qo'shildi» deb,
+   yukning haqiqiy joyi bilan yoziladi.
+7. «Berildi» xabari «Hammasi topshirildi» deb faqat mijozning boshqa joyda
+   yuki qolmaganda yozadi. Aks holda: «Bu ombordagi yukingiz to'liq
+   topshirildi · 🚚 Tranzitda: 180».
+
+**Botda (mijoz):**
+8. **«📦 Yuklarim»** — tepada umumiy holat («✅ Tayyor: 120 · 🚚 Tranzitda:
+   180 · 🏭 Xitoyda: 40»), keyin har bir tovar: bosqich, taxminiy yetib
+   borish sanasi (qaysi joyga ekani bilan), quti · kg · m³. Ko'p yuki bor
+   mijozning ro'yxati endi kesilmaydi. Rasm tugmalari «📷 A · Kurtka»
+   ko'rinishida, eng yangisi birinchi.
+9. **Yangi tugma «💬 Menejer»** — menejerning ismi, telefoni va «Telegramda
+   yozish» tugmasi. Menejeri yo'q mijozga ofis telefoni chiqadi.
+10. **Mijoz botga nima yozsa, odamga yetib boradi.** Oldin botga yozilgan
+    matn, rasm yoki ovozli xabar hech kimga bormas edi. Endi u mijozning
+    menejeriga, menejer bo'lmasa adminlarga keladi. Mijozga «✅ Xabaringiz
+    menejeringizga yetkazildi: Dilnoza» deb javob beriladi.
+11. «💰 Balans» — bir nechta kodi bor mijozga umumiy qarz birinchi qatorda.
+    Bir koddagi ortiqcha to'lov boshqa kodning qarzini yopmaydi. Sanalar
+    20.09.2026 ko'rinishida, summalar «3 150 000 UZS» ko'rinishida.
+12. Bot haqida ma'lumot (Start bosishdan oldin ko'rinadigan matn) uch tilda.
+    Kirish savoli («Kim sifatida kirasiz?») odamning o'z tilida.
+
+**Mini App (📱 Yuklarimni ochish):**
+13. Tepa qismi qisqardi: holatlar bir qatorda, **qarz belgisi** («Qarz
+    $1 250») tepada.
+14. Har bir tovarda **5 bosqichli yo'l**. **«Olib ketishga tayyor»** yuki bor
+    mijozga yashil karta: qaysi skladda, qarzi bo'lsa qancha, menejerga
+    yozish va qo'ng'iroq tugmalari.
+15. **Menejer kartasi**: «✍️ Telegramda yozish» va «📞 +998…» qo'ng'iroq.
+16. **Tilni ilovaning ichidan almashtirish** mumkin (O'zbekcha · Русский ·
+    English). Botdagi tugmalar ham shu tilga o'tadi.
+17. **↻ Yangilash tugmasi.** Oyna eskirgan bo'lsa, «qayta oching» deb
+    yoziladi.
+
+**Xodimlar boti:**
+18. Xabarlarning sarlavhasi qalin. Kartaga havola matnda emas, xabar ostida
+    «↗️ Ochish» tugmasi bo'lib keladi.
+19. **«📋 Bugun» va ertalabki vazifalar ro'yxatida har vazifaga «✅» tugma**
+    bor, vazifani shu yerdan yopish mumkin. Yopilgan vazifaning xabarida
+    «✅ Yopildi — natija» chiqadi, tugma yo'qoladi.
+20. **Qarzdorga berish so'rovi** hal bo'lgach (botdan yoki saytdan), boshqa
+    xodimlarning telefonidagi so'rovdan ham tugmalar olib tashlanadi va qaror
+    yoziladi. Ikki kishi bir vaqtda bossa, faqat birinchisi o'tadi.
+21. AI javobi yangi xabar bo'lib keladi (ovozli signal bilan), kutayotganda
+    «yozmoqda…» ko'rinadi.
+22. Kunlik svodka o'zbek tilida va qisqartirilgan. Uzun karobka ro'yxatlari
+    30 tadan keyin «… yana N ta» bo'ladi (oldin juda uzun xabar umuman
+    yetib bormas edi).
+23. Tuzatilganlar: lidni ulashgandagi havola 404 berardi; ikki xabar turi
+    (hisob tayyor, chegirma) umuman o'chirilmas edi; guruhni o'chirgan xodimga
+    shu guruhning yangi turlari kelib qolmaydi.
+
+**Tayyor bo'lgandan keyin o'zimiz qayta tekshirdik va tuzatdik:**
+24. Mini App'da yuk tushirilgandan keyin «Rastamojka tugadi» yozuvi yo'qolib
+    qolardi va har bir tayyor yukda «rasmiylashtiruvdan so'ng» deb chiqardi,
+    xabarda esa «Rastamojka tugadi» deyilgan edi. Endi ikkalasi bir xil
+    gapiradi.
+25. Mijoz 10 daqiqada 10 tadan ko'p xabar yozsa, ortiqchasi menejerga
+    bormaydi — lekin mijozga «yetkazildi» deyilardi. Endi «bu xabar
+    yetkazilmadi, birozdan keyin yozing» deyiladi. Har bir qatorga qayta-qayta
+    «yetkazildi» ham yozilmaydi — 2 daqiqada bir marta.
+26. Mijoz botga rasm yuborganda Telegram bir soniya xato bersa, rasm
+    menejerga bormay qolardi. Endi rasm yetib borguncha qayta urinadi.
+27. Mijoz boshqa odamning kontaktini («yukni shu odam oladi»), lokatsiya
+    yoki stiker yuborsa — endi bular ham menejerga boradi.
+28. Juda uzun xabar endi menejerga to'liq uzatiladi; emoji chegarada
+    bo'lsa xabar yo'qolib qolmaydi.
+29. Mijoz Toshkent skladiga o'zi olib kelgan yuk uchun «Kabinetingizga yuk
+    qo'shildi» emas, «Yukingiz qabul qilindi» deb yoziladi.
+30. Xodimlar: kimdir oldin «Ogohlantirishlar» guruhini o'chirib qo'ygan
+    bo'lsa, bu raundda qo'shilgan yangi turlar uni qayta yoqib yubormaydi.
+    Saytdan hal qilingan qarzdorga berish so'rovi hali yuborilmagan bo'lsa,
+    endi umuman yuborilmaydi. Ertangi tungi soatga belgilangan vazifa
+    «Bugunga» ostida sanasi bilan chiqadi.
+
+**Birlashtirishdan oldin yana bir bor tekshirdik — to'rtta xato o'zimizniki edi:**
+31. Kilo: xabarda «4.286 kg», Mini App'da «4.29 kg» chiqib qolgan edi (biz
+    tenglashtiraman deb teskarisini qilgan edik). Endi xabar, bot va Mini App
+    kiloni bitta qoida bilan yozadi — ikki xona.
+32. «Yetib keldi» xabaridagi sana endi yuk HAQIQATDA tushirilgan kun. Oldingi
+    tuzatish xabar YUBORILGAN kunni yozardi: yuk 23:50 da tushirilsa, xabar
+    yarim tundan keyin ertangi sana bilan borardi; bot bir-ikki kun to'xtab
+    qolsa, hamma xabar noto'g'ri sana bilan ketardi.
+33. «Ogohlantirishlar»ni o'chirib qo'ygan xodim: deploydan keyin yangi
+    turlar (mijozning botdagi xabari, chegirma, kabinet ogohlantirishi) baribir
+    kela boshlar edi va profildagi katak o'chiq ko'rinardi — keyingi saqlashda
+    hamma 27 ogohlantirish qayta yoqilardi. Sababi: kontragent qarz eslatmasi
+    ham shu guruhga yaqinda qo'shilgan edi va uni hisobga olmaganmiz. Endi
+    qoida guruhning birinchi kundan beri o'zgarmagan a'zolariga qaraydi:
+    katakni qachon belgilagan bo'lsangiz ham, o'chirilgani o'chirilganicha
+    qoladi.
+34. Qashqarda keyingi mashinani kutayotgan yuk Mini App tarixida
+    «O'zbekistonga kirdi» deb ko'rinib qolardi (Qashqarga kelgan kun bilan).
+    Endi Xitoyda tugaydigan mashina O'zbekiston qadamini bermaydi.
+
+**Va tuzatishlarni ham tekshirdik — yana uchta joy chiqdi:**
+35. Kilo hamma joyda bitta: Mini App xaritasi kiloni bir xona bilan yozardi
+    (sarlavhada 5.71, xaritada 5.7); xabardagi «Jami» qatorlarni qo'shganda
+    0.189 chiqarardi, Mini App esa 0.19; va 20 qutili lotdan 7 tasi kelganda
+    xabar 3.53, kartochka 3.54 derdi. Endi ulush ham, jami ham bitta qoida
+    bilan hisoblanadi — xabar, bot, Mini App va xarita bir xil raqam yozadi.
+36. Yo'qolgan deb yopilgan qutini ombor keyinroq inventarizatsiyada topsa,
+    mijozga qayta «yetib keldi» boradi — endi u topilgan kun sanasi bilan
+    boradi, birinchi kun sanasi bilan emas.
+37. Sotuvchi profilida «Operatsiya xabarlari»ni o'chirib qo'ygan bo'lsa,
+    taklif matni Telegramga kelmaydi — ekranda endi «yuborildi» deyilmaydi,
+    «profilingizda o'chirilgan — matnni nusxalab oling» deyiladi.
+38. To'liq lot (masalan 9 tadan 9 tasi) endi aynan yozilgan jami bilan
+    ko'rinadi — oldingi tuzatish kasr xonasida bir raqamga adashib, xabar
+    0.113, Mini App 0.112 m³ deb qo'yardi.
+
+**Bilib qo'ying:**
+- Mijoz klaviaturasidagi yangi «💬 Menejer» tugmasi mijozda bot unga
+  klaviaturali xabar yuborgandan keyin paydo bo'ladi: /start, «💰 Balans»,
+  «🗄 Tarix» yoki til almashtirilganda.
+- Menejer sifatida mijoz kodidagi «menejer» ustunidagi odam ko'rsatiladi.
+  Kodni kim ochgan bo'lsa, u menejer bo'ladi.
+- Ofis telefoni Boshqaruv → Sozlamalar'dagi «company_phone». Hozir «—»
+  turibdi. Menejeri yo'q mijozlarga shu raqam chiqishi uchun uni kiriting.
+- Telegramning o'zida ko'rish (tugmalar, rasm, forward) bu yerdan
+  tekshirib bo'lmaydi. Deploydan keyin o'zingiz bitta sinov mijoz bilan ko'ring.
+
 ## «Biznes holati» — yangi dashboard, bir qarashda — 2026-09-27
 
 Migratsiya yo'q. Ledger o'zgarmaydi (**112**).

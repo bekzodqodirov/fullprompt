@@ -250,7 +250,11 @@ describe('a task reaches its assignee in Telegram, with the link', () => {
     // The link is the point: a message that names a task but cannot take you
     // to it is a reminder to go searching.
     expect(text).toContain(`https://test.gsrwms.uz/bitimlar/${dealId}`);
-    expect(text).toContain('2027-01-01');
+    // Re-anchored ON PURPOSE in round C (it read the ISO '2027-01-01'): a
+    // Telegram deadline prints the way the office writes a date, «dd.mm», the
+    // year only when it is not this one — and an all-day date is its own UTC
+    // day, never shifted into the next one by the Tashkent offset.
+    expect(text).toMatch(/📅 01\.01(\.2027)?(\n|$)/);
     expect(task.id).toBeTruthy();
   });
 

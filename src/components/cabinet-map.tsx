@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type * as Leaflet from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import type { ClientLabels } from '@/modules/platform/telegram/client-labels';
+import { boxWord, type ClientLabels } from '@/modules/platform/telegram/client-labels';
+import { groupDigits } from '@/modules/platform/telegram/format';
 import type { CabinetMapPlace } from '@/modules/wms/client-cabinet/map';
 
 /**
@@ -57,13 +58,19 @@ function markerHtml(p: CabinetMapPlace, on: boolean): string {
 export function CabinetMap({
   places,
   t,
+  locale = null,
   goodsName,
   basemap = false,
+  dark = false,
 }: {
   places: CabinetMapPlace[];
   t: ClientLabels;
+  /** For counting boxes in the customer's own grammar (`boxWord`). */
+  locale?: string | null;
   goodsName: (lot: CabinetMapPlace['lots'][number]) => string;
   basemap?: boolean;
+  /** Telegram's night theme: a white street map in a dark app is a torch in the face. */
+  dark?: boolean;
 }) {
   const [picked, setPicked] = useState<string | null>(places[0]?.key ?? null);
   const canvas = useRef<HTMLDivElement | null>(null);
@@ -96,7 +103,9 @@ export function CabinetMap({
         if (cancelled) return;
         leafletLayer({
           url: '/api/basemap/corridor.pmtiles',
-          flavor: 'light',
+          // The installed basemaps package ships a `dark` flavour; the rest of
+          // the screen already follows Telegram's theme through its variables.
+          flavor: dark ? 'dark' : 'light',
           lang: 'ru',
           maxDataZoom: 8,
           attribution: '© OpenStreetMap',
@@ -163,7 +172,7 @@ export function CabinetMap({
       map?.remove();
       mapRef.current = null;
     };
-  }, [places, basemap]);
+  }, [places, basemap, dark]);
 
   // The picked place wears a ring; every other marker is redrawn plain.
   useEffect(() => {
@@ -223,7 +232,8 @@ export function CabinetMap({
                       {p.kind === 'truck' ? t.mapTruck : t.mapWarehouse} · {p.name}
                     </b>
                     <span className="cab-map-place-sum">
-                      {p.boxes} {t.totalBoxes} · {p.kg} {t.kg} · {p.m3} {t.m3}
+                      {groupDigits(p.boxes)} {boxWord(p.boxes, locale)} · {groupDigits(p.kg)} {t.kg} ·{' '}
+                      {groupDigits(p.m3)} {t.m3}
                     </span>
                   </span>
                   <span className="cab-map-chevron" aria-hidden>
@@ -250,7 +260,7 @@ export function CabinetMap({
                             {goodsName(lot)}
                           </span>
                           <span className="cab-map-lot-num">
-                            {lot.boxes} · {lot.kg} {t.kg} · {lot.m3} {t.m3}
+                            {groupDigits(lot.boxes)} {boxWord(lot.boxes, locale)} · {groupDigits(lot.kg)} {t.kg} · {groupDigits(lot.m3)} {t.m3}
                           </span>
                         </li>
                       ))}

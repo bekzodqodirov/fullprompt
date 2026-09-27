@@ -1918,6 +1918,79 @@ a Suspense card is inserted HIDDEN before React swaps it in, so a
 `boundingBox()` read before `toBeVisible()` is null. NEXT: round C (the
 Telegram bot «wow»), then the batch card (3a) and the client card's Pul tab (4a).
 
+**Round C — the Telegram «wow» (2026-09-27; DECISIONS #1091-#1105; NO
+migration, ledger 112).** His «telegram botda userlar waaauw degan darajada»,
+answered «standart variant asosida yasayver» (manager shown with the PDF's
+phone, NULL language stays ru, silent nights, photo on the pushes, no new push
+kinds). Five scouts, a five-lens judge BEFORE code (82 objections, 69 upheld),
+then four packages in parallel worktrees against an ownership table. RULES
+THAT NOW HAVE ONE HOME: `platform/telegram/send.ts` is the only Bot-API sender
+outside grammy handlers (deadline, previews off, HTML → plain fallback, a
+refused keyboard dropped, 429 = `retryAfter`, 401/404 = `botDown` — never
+«permanent»); `format.ts` builds HTML from escaped parts only (`h()`), stored
+`payload.text` stays PLAIN; `stages.ts` `MILESTONES`/`milestoneOf`/
+`milestoneCounts` = the customer's five steps (Xitoy · Tranzit · O'zbekiston ·
+Tayyor · Topshirildi) over the ten rungs, read by the pushes, the bot and the
+Mini App; `managersFor` (reachableAt freshness, `users.phone`, three keys)
+names who a customer writes to; `setChatLocale`/`chatLocaleFor` are the chat's
+language. CUSTOMER PUSHES are all `client_notices` rows claimed INSIDE the
+emitting tx (confirmReceipt, assignReceiptClient, the handover) and only for a
+client with a linked chat; one sweep (`wms/notices/arrival-jobs.ts`) renders
+per kind at SEND time in the chat's language, C1 after a 10-minute correction
+window, C1/C2 with the first lot's photo, `mg` callback = the manager door
+(never a person's URL frozen in a push), `?lot=` opens that lot. The event
+drain no longer sends anything to customers. BOT: texts in
+`wms/client-cabinet/bot-text.ts`, «💬 Menejer» ADDED as a third keyboard row
+(labels are routers — never renamed), a customer's text/media from a linked
+private chat reaches the manager/office as `ClientBotMessage` (+`forwardFrom`,
+forwarded by the drain). MINI APP: header 199 → 148 px, balance chip = sum of
+codes that OWE, ready card, stepper, contact card (`tel:` as a plain link —
+`openLink` throws on it), `POST /api/cabinet/locale` (initData only, no-op,
+10 s brake), `/api/cabinet/` out of the SW cache. STAFF: the drain bolds a
+title at send time (never CalcOffer), caps instead of splitting, a 429/botDown
+pauses (`notBefore`) and releases every claimed row, an own-origin last-line
+link becomes «↗️ Ochish», `payload.tg = {chatId, messageId}`; `tb:<uuid>` task
+buttons on «📋 Bugun» and the 08:00 digest; a closed task/decided approval
+edits its messages (other deciders' copies too, from the web door as well);
+mute groups GROW without un-muting (a type is muted when the list holds every
+other member of its group). The task «today» window stays UTC on purpose.
+TRAPS: a worktree agent starts at the last MERGE, not the branch head — name
+the base commit; a red proof run while reviewers read the tree was reported
+as a live defect.
+**Then reviewed as merged** (#1106-#1113, five lenses): the headline is that
+the Mini App's ready card could never say «cleared» for landed cargo — its
+truck came from the live pointer that unloading NULLs (#440 in the round that
+restated #440 for the pushes), so it now reads the landing movement
+(`landedTrucks`, a LATERAL — a correlated subquery in the grouped select is
+refused) and `readyCleared` uses the push's `arrivalCleared`. Also: the limit's
+answer said «delivered» about messages that reached nobody, and every line got
+its own «✅» (`ackDue`); a transient forward failure sent the sentence without
+the customer's only copy of the file; `slice` halved emoji into jsonb-refused
+surrogates (`clipText`, code points); a mute group that grew by THREE types
+un-muted everybody; a decided approval's copy is muted at SEND time
+(`approvalDecided` in the drain); a stalled photo read trips a per-sweep
+breaker. 16 red proofs. **Then the FIXES were reviewed before the merge
+(#1114) and four were wrong, each with a test that restated it**: kilos have
+one home (`roundKg`/`roundM3` in telegram/format.ts — every cabinet surface
+rounds to two places, the «fix» had printed three); the arrival is dated by its
+newest LANDING movement (`arrivedSummary.landedAt`), never the sweep's clock;
+a mute group is ticked when the list holds its `FOUNDERS` — the members held
+continuously since the group was born, read off the git history (unshallow the
+clone first: the shallow one starts on 08-10), never added to; and a truck that
+ends in China lends no «in Uzbekistan» step (`trucksFor` + the landed
+fallback). 7 more red proofs. **And those fixes were verified too (#1115)**:
+kilos had THREE rules — the map's own one-place rounder, a push «Jami» over
+raw shares, and two share formulas that split at a half-hundredth — so a
+share is `shareOf`, a total is `sumRounded` (the lines as printed), both in
+telegram/format.ts and fenced over all six readers; the arrival's landing is
+any movement that landed a counted carton HERE (`landedHereSql`, which catches
+the stocktake's «found»); an offer held by the seller's own mutes says so
+(`offerMuted`). 10 more red proofs. A fourth look (#1116): `shareOf` returns
+the typed total for a WHOLE lot (`n === of`) — `(0.1125 × 9) ÷ 9` is not 0.1125
+in floating point. LESSON: a test for a fix must be anchored
+on something the fix did not write — a literal, a second surface computed a
+DIFFERENT way, a stored list from a real day.
+
 **Latest migration: 0111** (`nav_usage` — «Tez-tez»; ledger must reach
 **112**; `when` …090). Before it: **0110** (`lead_assign` — the website teams, the typed and
 the read Telegram handle, the offer ledger, the `site` arrival channel; ledger

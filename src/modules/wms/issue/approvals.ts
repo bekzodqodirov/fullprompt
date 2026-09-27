@@ -5,6 +5,7 @@ import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { emitEvent } from '../../platform/events/service';
 import { usersWithPermission } from '../../platform/notifications/service';
 import { getSetting } from '../../platform/settings/service';
+import { logger } from '../../platform/logger';
 import { clientBalanceUsd, deferredBalanceUsd } from '../finance/service';
 import { SEES_ALL_MONEY_GRANTS } from '../finance/scope';
 import { gatedAt, uncoveredBoxesOn, unpricedGate, unpricedReceiptsOn } from '../finance/unpriced';
@@ -220,7 +221,12 @@ export async function decideIssueApproval(
   const ttlHours = Number(await getSetting('debt_approval_ttl_hours')) || 24;
   const expiresAt =
     input.verdict === 'approved' ? new Date(Date.now() + ttlHours * 3_600_000) : null;
-  await db
+  // The status read above is a CHECK, not a lock: two deciders pressing at
+  // once (the web page and a Telegram copy, round C made the copies live
+  // longer) both passed it and the second silently overwrote the first
+  // answer. The UPDATE is the claim — only a row still pending moves, and
+  // the loser hears «allaqachon hal qilingan».
+  const claimed = await db
     .update(issueApprovals)
     .set({
       status: input.verdict,
@@ -229,7 +235,9 @@ export async function decideIssueApproval(
       decisionNote: input.note?.trim() || null,
       expiresAt,
     })
-    .where(eq(issueApprovals.id, input.approvalId));
+    .where(and(eq(issueApprovals.id, input.approvalId), eq(issueApprovals.status, 'pending')))
+    .returning({ id: issueApprovals.id });
+  if (claimed.length === 0) throw new ApprovalError('already_decided');
 
   await writeAudit(db, { ...ctx, warehouseId: row.warehouseId }, {
     entityType: 'issue_approval',
@@ -254,12 +262,7 @@ export async function decideIssueApproval(
       requestedBy: row.requestedBy,
       // The answer names the question it answers (0104): a price-only
       // permission must not read «qarzdorga berish».
-      reasons:
-        Number(row.blockingDebtUsd) > 0.009 && (row.unpricedBoxIds ?? []).length > 0
-          ? 'both'
-          : (row.unpricedBoxIds ?? []).length > 0
-            ? 'price'
-            : 'debt',
+      reasons: approvalReasons(row),
       decidedByName: decider?.fullName ?? '',
       note: input.note?.trim() || null,
     },
@@ -267,6 +270,75 @@ export async function decideIssueApproval(
     entityId: input.approvalId,
     actorId: ctx.actorId,
   });
+
+  // Every decider's Telegram copy is closed with the verdict (round C) — from
+  // HERE, the one place both doors reach, so a web decision retires the
+  // phones' buttons exactly as a bot press does. After the write, off the
+  // caller's path (a web action or the bot's sequential poller), each edit on
+  // the sender's short deadline; a failure is a log line, never the decision.
+  void retireCopiesOf(row, input.verdict, decider?.fullName ?? '');
+}
+
+/** Which question(s) a request asked — the words its answer is written in. */
+export function approvalReasons(row: {
+  blockingDebtUsd: string | number | null;
+  unpricedBoxIds: string[] | null;
+}): 'both' | 'price' | 'debt' {
+  const unpriced = (row.unpricedBoxIds ?? []).length > 0;
+  if (Number(row.blockingDebtUsd) > 0.009 && unpriced) return 'both';
+  return unpriced ? 'price' : 'debt';
+}
+
+async function retireCopiesOf(
+  row: typeof issueApprovals.$inferSelect,
+  verdict: 'approved' | 'refused',
+  decidedByName: string,
+): Promise<void> {
+  try {
+    const { retireApprovalCopies } = await import('../../platform/notifications/service');
+    // Everyone who could have been sent one: the request goes to the holders
+    // of the grant (or a narrower list of them), so this is the superset.
+    const userIds = await usersWithPermission('finance.debt_override');
+    await retireApprovalCopies({
+      approvalId: row.id,
+      since: row.requestedAt,
+      userIds,
+      verdict,
+      reasons: approvalReasons(row),
+      decidedByName,
+    });
+  } catch (err) {
+    logger.warn({ err, approvalId: row.id }, 'approval copies not closed');
+  }
+}
+
+/**
+ * How a request stands, for a button pressed on one of its copies (round C):
+ * null while nobody has decided. A CONSUMED approval was approved and then
+ * spent on a handover — to the person holding the copy it is still «ruxsat».
+ */
+export async function approvalVerdict(approvalId: string): Promise<{
+  verdict: 'approved' | 'refused';
+  reasons: 'both' | 'price' | 'debt';
+  decidedByName: string | null;
+} | null> {
+  const [found] = await db
+    .select({
+      status: issueApprovals.status,
+      blockingDebtUsd: issueApprovals.blockingDebtUsd,
+      unpricedBoxIds: issueApprovals.unpricedBoxIds,
+      decidedByName: users.fullName,
+    })
+    .from(issueApprovals)
+    .leftJoin(users, eq(users.id, issueApprovals.decidedBy))
+    .where(eq(issueApprovals.id, approvalId))
+    .limit(1);
+  if (!found || found.status === 'pending') return null;
+  return {
+    verdict: found.status === 'refused' ? 'refused' : 'approved',
+    reasons: approvalReasons(found),
+    decidedByName: found.decidedByName ?? null,
+  };
 }
 
 /**

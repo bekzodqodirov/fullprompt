@@ -22,7 +22,7 @@ const serwist = new Serwist({
   runtimeCaching: [
     {
       /**
-       * The two requests that must never be cached.
+       * The requests that must never be cached.
        *
        * `/api/version` reports the SERVER's build so an installed app can tell
        * it is showing yesterday's screen. Serwist's defaults put every
@@ -34,9 +34,19 @@ const serwist = new Serwist({
        * `/api/chat/pulse` (round 108) is the chat surfaces' change token —
        * a cached token is the pulse being asked «did anything change?» and
        * answering with yesterday, which silences the refresh it exists for.
+       *
+       * `/api/cabinet/*` (round C) is a CUSTOMER's cargo and debt. The cache
+       * key is the URL and the identity is a header, so NetworkFirst would
+       * key every chat's payload on one address — and on a slow network, ten
+       * seconds in, answer the ↻ button with whatever the phone saw last
+       * (and a shared phone with somebody else's cabinet), whatever the
+       * route's own `no-store` says.
        */
       matcher: ({ url: { pathname }, sameOrigin }) =>
-        sameOrigin && (pathname === '/api/version' || pathname === '/api/chat/pulse'),
+        sameOrigin &&
+        (pathname === '/api/version' ||
+          pathname === '/api/chat/pulse' ||
+          pathname.startsWith('/api/cabinet/')),
       handler: new NetworkOnly(),
     },
     ...defaultCache,

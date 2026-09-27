@@ -357,6 +357,194 @@ test('the other two tabs carry the money and the history', async ({ page }) => {
   );
 });
 
+/*
+ * Round C — the answer first. The fixture above stays EXACTLY what it was
+ * (none of the round's optional fields: an older server mid-deploy must still
+ * draw), and the round's own screen gets a second fixture that carries them:
+ * a manager, the office, a stored language, and a READY lot with a number big
+ * enough to need grouping.
+ */
+const PAYLOAD_C = {
+  ...PAYLOAD,
+  storedLocale: 'ru',
+  office: { name: 'GSR LOGISTICS', phone: '+998711234567' },
+  clients: [
+    {
+      ...PAYLOAD.clients[0]!,
+      manager: { name: 'Dilnoza', phone: '+998901234567', telegramUrl: 'https://t.me/dilnoza_gsr' },
+      readyPlaces: [{ name: 'Toshkent 1', address: null }],
+      cargo: [
+        ...PAYLOAD.clients[0]!.cargo,
+        {
+          lotId: 'lot-9',
+          letter: 'B',
+          productNameZh: '夹克',
+          productNameRu: 'Куртки',
+          groups: [{ stage: 'ready', n: 12, transit: null }],
+          journey: [
+            { key: 'received', atIso: '2030-07-01T05:00:00Z' },
+            // No «customs» step on purpose: landed cargo's journey often lacks
+            // it, and the ✅ below must come from `readyCleared` alone.
+            { key: 'inUz', atIso: '2030-07-20T05:00:00Z' },
+            { key: 'ready', atIso: '2030-07-22T05:00:00Z' },
+          ],
+          total: 12,
+          // The server's own split (MA-1): all twelve came off a cleared truck.
+          readyCleared: 12,
+          warehousePlaces: ['Toshkent 1'],
+          hasPhotos: false,
+          weightKg: 12845.5,
+          volumeM3: 58.214,
+          perBoxKg: 1070.46,
+          perBoxM3: 4.851,
+          photoCount: 0,
+        },
+      ],
+    },
+  ],
+};
+
+async function cabinetWith(page: import('@playwright/test').Page, payload: unknown, path = '/cabinet') {
+  await telegramScript(page, signedInitData(910_000_777));
+  await page.route('**/api/cabinet/data', (route) =>
+    route.fulfill({ contentType: 'application/json', body: JSON.stringify(payload) }),
+  );
+  await page.route('**/api/cabinet/photo/**', (route) =>
+    route.fulfill({ contentType: 'image/png', body: PIXEL }),
+  );
+  await page.goto(path);
+  await assertInsideTelegram(page);
+}
+
+test('the header says where everything is and what is owed; every lot has its five steps (round C)', async ({ page }) => {
+  await cabinetWithData(page);
+  const ru = clientLabels('ru');
+
+  // The bot's own buckets (`milestoneCounts`): six on the road, four in China.
+  const status = page.getByTestId('cab-status');
+  await expect(status.locator('[data-step="transit"]')).toContainText(ru.sumTransit);
+  await expect(status.locator('[data-step="transit"]')).toContainText('6');
+  await expect(status.locator('[data-step="china"]')).toContainText('4');
+  await expect(status.locator('[data-step="ready"]')).toHaveCount(0);
+
+  // What is owed, in one chip, red — and a tap on it is the balance.
+  const chip = page.getByTestId('cab-balance-chip');
+  await expect(chip).toHaveText(`${ru.chipOwe} $250.00`);
+  await expect(chip).toHaveAttribute('data-owing', 'true');
+
+  // Five dots; the bulk stands at «transit», the four left in Yiwu ring «China».
+  const steps = page.getByTestId('cab-steps');
+  await expect(steps.locator('li')).toHaveCount(5);
+  await expect(steps.locator('li[data-state="now"]')).toHaveText(ru.msShortTransit);
+  await expect(steps.locator('li[data-also="true"]')).toHaveText(ru.msShortChina);
+
+  // Measured, not hoped: the pinned header cost 199 px of an 800 px phone in
+  // Russian before this round; it must never climb back.
+  const head = await page.locator('.cab-head').boundingBox();
+  expect(head!.height).toBeLessThan(199);
+  // Nothing wider than the phone, with the stepper in it.
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+    await page.evaluate(() => window.innerWidth),
+  );
+
+  // A server that sent no people draws no empty contact card.
+  await expect(page.getByTestId('cab-manager')).toHaveCount(0);
+  await expect(page.getByTestId('cab-office')).toHaveCount(0);
+
+  await chip.click();
+  await expect(page.getByTestId('cab-balance')).toBeVisible();
+});
+
+test('a push opens the app on its lot: the ready card, the manager, grouped numbers (round C)', async ({ page }) => {
+  await cabinetWith(page, PAYLOAD_C, '/cabinet?lot=lot-9');
+  const ru = clientLabels('ru');
+
+  // The lot the push was about, ringed and on the glass.
+  const focused = page.locator('[data-lot-id="lot-9"]');
+  await expect(focused).toHaveAttribute('data-focus', 'true');
+  await expect(focused).toBeInViewport();
+  // Nearest to the customer first: ready (step 4) above the road (step 2).
+  await expect(page.getByTestId('cab-lot').first()).toHaveAttribute('data-lot-id', 'lot-9');
+  await expect(page.locator('[data-lot-id="lot-1"]')).not.toHaveAttribute('data-focus', 'true');
+
+  // Thousands grouped — «12 845.5», never «12845.5».
+  await expect(focused.locator('.cab-dims')).toContainText(/12\s845\.5/);
+  await expect(focused.locator('li[data-state="now"]')).toHaveText(ru.msShortReady);
+
+  // The ready card: how many, where, what is owed first, and whom to call.
+  const ready = page.getByTestId('cab-ready');
+  await expect(ready).toContainText('Готово к выдаче: 12 коробок');
+  await expect(ready).toContainText('Toshkent 1');
+  await expect(ready).toContainText('$250.00');
+
+  // The manager, once: a chat link and the number itself, dialable and legible.
+  const card = page.getByTestId('cab-manager');
+  await expect(card).toHaveCount(1);
+  await expect(card).toContainText('Dilnoza');
+  await expect(card).toContainText(ru.managerTitle);
+  await expect(card.getByTestId('cab-contact-write')).toHaveAttribute('href', 'https://t.me/dilnoza_gsr');
+  const call = card.getByTestId('cab-contact-call');
+  await expect(call).toHaveAttribute('href', 'tel:+998901234567');
+  await expect(call).toContainText('+998 90 123 45 67');
+  // Every code has a manager, so no office card.
+  await expect(page.getByTestId('cab-office')).toHaveCount(0);
+});
+
+test('the language is switched from inside the app, and a refusal switches it back (round C)', async ({ page }) => {
+  const posted: { body: unknown; initData: string | null }[] = [];
+  let answer = 200;
+  await page.route('**/api/cabinet/locale', async (route) => {
+    posted.push({ body: route.request().postDataJSON(), initData: route.request().headers()['x-telegram-init-data'] ?? null });
+    await route.fulfill({
+      status: answer,
+      contentType: 'application/json',
+      body: JSON.stringify(answer === 200 ? { ok: true, locale: 'uz', changed: true } : { error: 'too_fast' }),
+    });
+  });
+  await cabinetWith(page, PAYLOAD_C);
+
+  // The STORED choice is the one lit.
+  await expect(page.getByTestId('cab-lang-ru')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('cab-lang-uz')).toHaveAttribute('aria-pressed', 'false');
+
+  await page.getByTestId('cab-lang-uz').click();
+  await expect(page.getByTestId('cab-tab-cargo')).toContainText(clientLabels('uz').tabCargo);
+  await expect(page.getByTestId('cab-lang-uz')).toHaveAttribute('aria-pressed', 'true');
+  // The choice travels with the signed blob in the HEADER, never in the body.
+  expect(posted).toHaveLength(1);
+  expect(posted[0]!.body).toEqual({ locale: 'uz' });
+  expect(posted[0]!.initData).toBeTruthy();
+
+  // Refused (the server's ten-second brake): the screen goes back to what the
+  // chat actually holds.
+  answer = 429;
+  await page.getByTestId('cab-lang-en').click();
+  await expect.poll(() => posted.length).toBe(2);
+  await expect(page.getByTestId('cab-tab-cargo')).toContainText(clientLabels('uz').tabCargo);
+  await expect(page.getByTestId('cab-lang-uz')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('cab-lang-en')).toHaveAttribute('aria-pressed', 'false');
+});
+
+test('↻ asks again, and a day-old window says to reopen it instead of offering a retry (round C)', async ({ page }) => {
+  let calls = 0;
+  await telegramScript(page, signedInitData(910_000_777));
+  await page.route('**/api/cabinet/data', (route) => {
+    calls += 1;
+    return calls === 1
+      ? route.fulfill({ contentType: 'application/json', body: JSON.stringify(PAYLOAD) })
+      : route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: 'expired' }) });
+  });
+  await page.route('**/api/cabinet/photo/**', (route) => route.fulfill({ contentType: 'image/png', body: PIXEL }));
+  await page.goto('/cabinet');
+  await assertInsideTelegram(page);
+  await expect(page.getByTestId('cab-lot')).toBeVisible();
+
+  await page.getByTestId('cab-refresh').click();
+  await expect(page.getByTestId('cab-notice')).toHaveText(clientLabels('ru').expiredApp);
+  await expect(page.getByRole('button', { name: clientLabels('ru').retry })).toHaveCount(0);
+  expect(calls).toBe(2);
+});
+
 test('the map is a real map: markers to tap, and every place listed under it (item 11)', async ({ page }) => {
   await cabinetWithData(page);
   await page.getByTestId('cab-map-open').click();

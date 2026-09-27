@@ -18,6 +18,7 @@ import type { Actor } from '../../platform/rbac/authorize';
 import { nextBoxCodes } from '../codes';
 import { costOrphanedByVoid, lockCostsTouchingLots } from '../costing/void-guard';
 import { receiptHasCompensation } from '../finance/compensation-follow';
+import { claimReceivedNotice } from '../notices/client-claims';
 import { computeLotTotals } from './math';
 
 export const editLotSchema = z.object({
@@ -534,6 +535,10 @@ export async function assignReceiptClient(
       entityId: receiptId,
       actorId: ctx.actorId,
     });
+    // The new owner's «qabul qilindi», once (round C) — read at send time, so
+    // cargo that left China weeks ago is announced as added to the cabinet
+    // where it really is, never as just received.
+    await claimReceivedNotice(tx, clientId, receiptId);
   });
 
   // EVERY cost shared over this prixod re-splits by the ENGINE after the

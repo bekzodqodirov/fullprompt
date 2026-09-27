@@ -3,10 +3,15 @@ import { db } from '@/modules/platform/db/client';
 import type { Db, Tx } from '@/modules/platform/db/client';
 import {
   boxes,
+  boxMovements,
   clientNotices,
   receiptLots,
   receipts,
 } from '@/modules/platform/db/schema';
+import { roundKg, roundM3, shareOf, sumRounded } from '@/modules/platform/telegram/format';
+import { isPermanentFailure } from '@/modules/platform/telegram/send';
+import { landedHereSql } from '../documents/arrivals';
+import { pushLotName, type PushLot } from './client-text';
 
 /**
  * «Yukingiz yetib keldi» — once per customer per truck, and true when it goes.
@@ -115,22 +120,33 @@ export async function releaseArrivalNotices(tx: Exec, batchId: string): Promise<
     );
 }
 
-export interface ArrivedLine {
-  /** The lot's letter on the label — the customer's own reference. */
-  letter: string | null;
-  /** Russian where we have it, Chinese otherwise: the office reads Uzbek. */
-  name: string;
-  boxCount: number;
-  weightKg: number;
-  volumeM3: number;
-}
+/**
+ * One lot of the landed delivery — the push's own lot shape since round C, so
+ * the Uzbek arrival and the Chinese one draw a lot the same way. `lotId` is
+ * what finds the lot's photograph and opens the Mini App on it.
+ */
+export type ArrivedLine = PushLot;
 
 export interface ArrivedSummary {
   lines: ArrivedLine[];
   boxCount: number;
   weightKg: number;
   volumeM3: number;
+  /**
+   * When the newest of these cartons came off the truck — the day the push
+   * names. Read from the landing movements, never from the claim (a notice
+   * re-armed by a second day of unloading kept the first day's) nor from the
+   * sweep's clock (a truck scanned at 23:50 is told after midnight, and a queue
+   * held by a dead bot token drains days later). Null only for cargo whose
+   * landing wrote none of those causes.
+   */
+  landedAt?: Date | null;
+  /** Filled by the sender from the batch's destination, not by the query. */
   warehouseCode: string;
+  /** The place by NAME — «Toshkent 1», never the staff code «TAS1». */
+  warehouseName?: string;
+  /** Printed under the name when the office has typed one. */
+  warehouseAddress?: string | null;
 }
 
 /**
@@ -152,8 +168,42 @@ export async function arrivedSummary(
   warehouseId: string,
   exec: Exec = db,
 ): Promise<ArrivedSummary | null> {
+  // The cartons this notice is about — counted below, and dated by the same set.
+  const counted = and(
+    eq(receipts.clientId, clientId),
+    eq(boxes.currentWarehouseId, warehouseId),
+    /*
+     * The truck it came off — asked through `box_movements`, NEVER
+     * through the live pointer.
+     *
+     * Landing NULLs `boxes.current_batch_id` (unload.ts sets it while it
+     * writes the new status), so by the time this notice is sent every
+     * box that arrived has forgotten its truck. #440 recorded this exact
+     * trap on the batch card, where it made an arrived truck show «Σ 0»
+     * precisely when the owner looked. The departure movement is the
+     * durable record of who rode which lorry.
+     */
+    /*
+     * Departed on it, OR landed off it. `batch_departed` is the durable
+     * record for cargo that was loaded in China — but a box AUTO-
+     * TRANSFERRED at the destination (`undocumented_transfer`, the
+     * reality-wins path: it rode the truck and the plan never knew) has
+     * no departure row for this batch at all, so a truck that arrives
+     * with a rogue carton told the seller and never told the customer.
+     * Both halves of the membership, one predicate.
+     */
+    sql`EXISTS (
+      SELECT 1 FROM box_movements bm
+      WHERE bm.box_id = ${boxes.id}
+        AND bm.ref_type = 'batch' AND bm.ref_id = ${batchId}
+        AND bm.cause IN ('batch_departed', 'unload_scan', 'undocumented_transfer', 'found_here')
+    )`,
+    inArray(boxes.status, ['ready_for_pickup', 'in_stock']),
+    isNull(receipts.voidedAt),
+  );
   const rows = await exec
     .select({
+      lotId: receiptLots.id,
       letter: receiptLots.letter,
       nameRu: receiptLots.productNameRu,
       nameZh: receiptLots.productNameZh,
@@ -165,40 +215,7 @@ export async function arrivedSummary(
     .from(boxes)
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
     .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
-    .where(
-      and(
-        eq(receipts.clientId, clientId),
-        eq(boxes.currentWarehouseId, warehouseId),
-        /*
-         * The truck it came off — asked through `box_movements`, NEVER
-         * through the live pointer.
-         *
-         * Landing NULLs `boxes.current_batch_id` (unload.ts sets it while it
-         * writes the new status), so by the time this notice is sent every
-         * box that arrived has forgotten its truck. #440 recorded this exact
-         * trap on the batch card, where it made an arrived truck show «Σ 0»
-         * precisely when the owner looked. The departure movement is the
-         * durable record of who rode which lorry.
-         */
-        /*
-         * Departed on it, OR landed off it. `batch_departed` is the durable
-         * record for cargo that was loaded in China — but a box AUTO-
-         * TRANSFERRED at the destination (`undocumented_transfer`, the
-         * reality-wins path: it rode the truck and the plan never knew) has
-         * no departure row for this batch at all, so a truck that arrives
-         * with a rogue carton told the seller and never told the customer.
-         * Both halves of the membership, one predicate.
-         */
-        sql`EXISTS (
-          SELECT 1 FROM box_movements bm
-          WHERE bm.box_id = ${boxes.id}
-            AND bm.ref_type = 'batch' AND bm.ref_id = ${batchId}
-            AND bm.cause IN ('batch_departed', 'unload_scan', 'undocumented_transfer', 'found_here')
-        )`,
-        inArray(boxes.status, ['ready_for_pickup', 'in_stock']),
-        isNull(receipts.voidedAt),
-      ),
-    )
+    .where(counted)
     .groupBy(
       receiptLots.id,
       receiptLots.letter,
@@ -215,21 +232,35 @@ export async function arrivedSummary(
   const lines: ArrivedLine[] = rows.map((row) => {
     const landed = Number(row.landed);
     const ofLot = Number(row.lotBoxes) || 0;
-    const share = ofLot > 0 ? landed / ofLot : 0;
     return {
+      lotId: row.lotId,
       letter: row.letter,
-      name: row.nameRu?.trim() || row.nameZh,
+      name: pushLotName(row.nameRu, row.nameZh),
       boxCount: landed,
-      weightKg: Number(row.lotKg ?? 0) * share,
-      volumeM3: Number(row.lotM3 ?? 0) * share,
+      weightKg: shareOf(Number(row.lotKg ?? 0), landed, ofLot),
+      volumeM3: shareOf(Number(row.lotM3 ?? 0), landed, ofLot),
     };
   });
+
+  // The newest movement that LANDED one of the counted cartons here — through
+  // whichever door: an unload scan, a found-on-arrival resolution, or the
+  // stocktake's «found» (`inventory_found`, ref 'manual'), which re-arms this
+  // very notice days later and would otherwise be told under the first day's
+  // date. `landedHereSql` is the arrival rule the agent's sheet uses (#513).
+  const [landing] = await exec
+    .select({ at: sql<string | null>`max(${boxMovements.createdAt})` })
+    .from(boxMovements)
+    .innerJoin(boxes, eq(boxMovements.boxId, boxes.id))
+    .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+    .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+    .where(and(counted, landedHereSql(sql`${warehouseId}::uuid`)));
 
   return {
     lines,
     boxCount: lines.reduce((sum, line) => sum + line.boxCount, 0),
-    weightKg: lines.reduce((sum, line) => sum + line.weightKg, 0),
-    volumeM3: lines.reduce((sum, line) => sum + line.volumeM3, 0),
+    weightKg: sumRounded(lines.map((line) => line.weightKg), roundKg),
+    volumeM3: sumRounded(lines.map((line) => line.volumeM3), roundM3),
+    landedAt: landing?.at ? new Date(landing.at) : null,
     warehouseCode: '',
   };
 }
@@ -245,23 +276,66 @@ export async function arrivedSummary(
  * UPDATE, so two overlapping sweeps split the work instead of repeating it.
  *
  * `sending` is a real status and reclaimable: a drain that dies mid-send
- * leaves rows in it, and `RECLAIM_MINUTES` later they are pending again with
- * their attempt spent.
+ * leaves rows in it, and `RECLAIM_MINUTES` later they are taken again with
+ * their attempt SPENT — the dead run counts (judge REL-14). It used to say so
+ * here and not do it: a row whose send kills the process every time (a
+ * photograph that exhausts memory, say) was reclaimed and retried for ever,
+ * which is a queue that never empties and a customer who may be messaged on
+ * every lap. At the cap a reclaimed row is settled `failed` instead.
+ *
+ * `kinds` is every notice the sweep knows how to say (round C made it four:
+ * «qabul qilindi», «yetib keldi», «berildi», «zavoddan olindi»); a kind with
+ * no renderer is never claimed, so it cannot be settled by a sweep that does
+ * not understand it.
  */
 export const RECLAIM_MINUTES = 10;
 
-export async function claimNoticesForSending(limit = 50, now = new Date()) {
-  const rows = await db
+export async function claimNoticesForSending(
+  limit = 50,
+  now = new Date(),
+  kinds: readonly string[] = [NOTICE_ARRIVED],
+) {
+  if (kinds.length === 0) return [];
+  const at = now.toISOString();
+  const kindList = sql.join(
+    kinds.map((kind) => sql`${kind}`),
+    sql`, `,
+  );
+  // A dead run at the budget's last attempt is the end of the budget.
+  await db
     .update(clientNotices)
-    .set({ status: 'sending', claimedAt: now })
+    .set({
+      status: 'failed',
+      attempts: sql`${clientNotices.attempts} + 1`,
+      lastError: 'abandoned mid-send (reclaimed at the attempt cap)',
+    })
     .where(
       sql`${clientNotices.id} IN (
         SELECT id FROM client_notices
-        WHERE kind = ${NOTICE_ARRIVED}
-          AND send_after <= ${now.toISOString()}::timestamptz
+        WHERE kind IN (${kindList})
+          AND status = 'sending'
+          AND claimed_at < ${at}::timestamptz - make_interval(mins => ${RECLAIM_MINUTES})
+          AND attempts + 1 >= ${MAX_NOTICE_ATTEMPTS}
+        FOR UPDATE SKIP LOCKED
+      )`,
+    );
+  const rows = await db
+    .update(clientNotices)
+    .set({
+      status: 'sending',
+      claimedAt: now,
+      // The SET reads the row as it was: a row taken back from `sending` is a
+      // run that died holding it, and that run was an attempt.
+      attempts: sql`${clientNotices.attempts} + CASE WHEN ${clientNotices.status} = 'sending' THEN 1 ELSE 0 END`,
+    })
+    .where(
+      sql`${clientNotices.id} IN (
+        SELECT id FROM client_notices
+        WHERE kind IN (${kindList})
+          AND send_after <= ${at}::timestamptz
           AND (
             status = 'pending'
-            OR (status = 'sending' AND claimed_at < ${now.toISOString()}::timestamptz - make_interval(mins => ${RECLAIM_MINUTES}))
+            OR (status = 'sending' AND claimed_at < ${at}::timestamptz - make_interval(mins => ${RECLAIM_MINUTES}))
           )
         ORDER BY send_after
         LIMIT ${limit}
@@ -270,6 +344,43 @@ export async function claimNoticesForSending(limit = 50, now = new Date()) {
     )
     .returning();
   return rows;
+}
+
+/**
+ * Give claimed rows back UNTOUCHED — no attempt spent, the window unchanged.
+ *
+ * For the one failure that is nobody's message: the bot itself cannot send
+ * (a revoked or mistyped token answers 401/404 to everything). Counting that
+ * against each customer would spend every waiting notice's budget in the
+ * hours a burned token is being rotated (judge REL-1), so the sweep stops and
+ * hands everything back for the run after the fix.
+ */
+export async function releaseNotices(ids: readonly string[]): Promise<void> {
+  if (ids.length === 0) return;
+  await db
+    .update(clientNotices)
+    .set({ status: 'pending', claimedAt: null })
+    .where(and(inArray(clientNotices.id, [...ids]), eq(clientNotices.status, 'sending')));
+}
+
+/**
+ * Telegram said «not now, in N seconds» (429). That is a moment, not a
+ * failure of this message: the row goes back to pending with its window moved
+ * past the wait and NO attempt spent (judge REL-3) — the burst after a truck
+ * lands is exactly when the rate limit bites, and five of those used to be a
+ * customer never told.
+ */
+export async function deferNotice(id: string, retryAfterSeconds: number | null, detail: string): Promise<void> {
+  const wait = Math.max(1, Math.min(3600, Math.ceil(retryAfterSeconds ?? 30)));
+  await db
+    .update(clientNotices)
+    .set({
+      status: 'pending',
+      claimedAt: null,
+      sendAfter: sql`now() + make_interval(secs => ${wait})`,
+      lastError: detail.slice(0, 500),
+    })
+    .where(eq(clientNotices.id, id));
 }
 
 /** Notices whose window has passed. Ordered oldest first; bounded. */
@@ -307,7 +418,10 @@ export const MAX_NOTICE_ATTEMPTS = 5;
  * change, and knocking again is noise.
  */
 export function isPermanentNoticeFailure(status: number): boolean {
-  return status === 400 || status === 401 || status === 403 || status === 404;
+  // One rule for every Bot-API sender since round C (`platform/telegram/send`),
+  // which also took 401/404 OUT of it: those are the bot's token, not the
+  // customer, and must never settle a notice for ever.
+  return isPermanentFailure(status);
 }
 
 /**

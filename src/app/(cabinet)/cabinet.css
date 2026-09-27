@@ -47,52 +47,119 @@
 
 /* ---------------------------------------------------------------- header */
 
+/* Pinned, so every pixel of it is paid on every screen of every tab. Round C
+   measured it at 199 px of an 800 px phone in Russian — a quarter of the
+   glass holding three tiles and a tab bar that wrapped to two lines — and
+   rebuilt it as lines: who, how much and what is owed; where everything is;
+   the tabs. */
 .cab-head {
   position: sticky;
   top: 0;
   z-index: 10;
   background: var(--bg);
-  padding: 10px 16px 8px;
+  padding: 8px 16px 8px;
   border-bottom: 1px solid var(--line);
 }
 .cab-title {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  font-size: 0.95rem;
-  font-weight: 700;
+  gap: 8px;
 }
-.cab-title small {
-  font-size: 0.72rem;
+.cab-title-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.cab-title-text span {
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.cab-title-text small {
+  font-size: 0.68rem;
   font-weight: 600;
+  line-height: 1.3;
   color: var(--muted);
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
+  overflow-wrap: anywhere;
+}
+.cab-icon-btn {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--card);
+  color: var(--fg);
+  font: inherit;
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.cab-icon-btn[data-busy='true'] span {
+  display: inline-block;
+  animation: cab-spin 0.8s linear infinite;
+}
+@keyframes cab-spin {
+  to { transform: rotate(360deg); }
 }
 
-/* The three numbers a client actually wants: how many, how heavy, how big. */
+/* The size of the consignment, one line. */
 .cab-totals {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  margin-top: 10px;
-}
-.cab-total {
-  background: var(--card);
-  border-radius: 14px;
-  padding: 10px 6px;
-  text-align: center;
-}
-.cab-total b {
-  display: block;
-  font-size: 1.3rem;
-  line-height: 1.15;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
-}
-.cab-total span {
-  font-size: 0.68rem;
+  margin-top: 4px;
+  font-size: 0.8rem;
   color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.cab-totals b { color: var(--fg); font-weight: 700; }
+/* Money is the one colour in the header that is not the theme's: owed is
+   red and credit green, the balance tab's own convention. */
+.cab-money {
+  flex: none;
+  border: 0;
+  border-radius: 999px;
+  padding: 4px 9px;
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.cab-money[data-owing='true'] {
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+  color: var(--warn);
+}
+.cab-money[data-owing='false'] {
+  background: color-mix(in srgb, var(--ok) 14%, transparent);
+  color: var(--ok);
+}
+
+/* Where everything is — the bot's summary line, as chips; it wraps rather
+   than ever pushing the page wider (#400). */
+.cab-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin-top: 6px;
+}
+.cab-status span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--card);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+.cab-status b { font-variant-numeric: tabular-nums; }
+.cab-status [data-step='ready'] {
+  background: color-mix(in srgb, var(--ok) 18%, var(--card));
 }
 
 /* A segmented control, not three separate buttons: one moving pill reads as
@@ -100,19 +167,22 @@
 .cab-tabs {
   display: flex;
   gap: 2px;
-  margin-top: 10px;
+  margin-top: 8px;
   background: var(--card);
   border-radius: 12px;
   padding: 3px;
 }
 .cab-tab {
   flex: 1;
+  min-width: 0;
   border: 0;
   border-radius: 9px;
-  padding: 8px 4px;
+  padding: 6px 4px;
   font: inherit;
   font-size: 0.82rem;
   font-weight: 600;
+  line-height: 1.25;
+  white-space: nowrap;
   background: transparent;
   color: var(--muted);
   cursor: pointer;
@@ -136,6 +206,7 @@
 @media (prefers-reduced-motion: reduce) {
   .cab-body { animation: none; }
   .cab-tab { transition: none; }
+  .cab-icon-btn[data-busy='true'] span { animation: none; opacity: 0.5; }
 }
 
 .cab-code {
@@ -167,31 +238,98 @@
   background: color-mix(in srgb, var(--accent) 16%, transparent);
   color: var(--accent);
 }
-.cab-name { font-weight: 600; flex: 1; min-width: 0; line-height: 1.25; }
+.cab-name { font-weight: 600; flex: 1; min-width: 0; line-height: 1.25; overflow-wrap: anywhere; }
 
-/* Three labelled figures instead of a run-on line: a client checking against
-   a supplier's packing list is comparing numbers, not reading a sentence. */
-.cab-dims {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
-  margin-top: 11px;
+/* The lot a push opened the app on (`?lot=`): ringed, and the ring breathes
+   twice so the eye finds it, then stays still. */
+.cab-lot[data-focus='true'] {
+  box-shadow: 0 0 0 2px var(--accent);
+  animation: cab-focus 1.1s ease 2;
 }
-.cab-dim {
-  background: var(--raise);
-  border-radius: 10px;
-  padding: 7px 4px;
+@keyframes cab-focus {
+  50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 35%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cab-lot[data-focus='true'] { animation: none; }
+}
+
+/* The five steps. Each label gets a fifth of the card — ~60 px at 360 —
+   which is why they are the SHORT forms; a dot is the step, a line between
+   two dots is the road already behind. */
+.cab-steps {
+  display: flex;
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+.cab-steps li {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.62rem;
+  line-height: 1.2;
+  color: var(--muted);
   text-align: center;
 }
-.cab-dim b {
-  display: block;
-  font-size: 0.95rem;
+.cab-steps li::before {
+  content: '';
+  position: absolute;
+  top: 5px;
+  right: 50%;
+  width: 100%;
+  height: 2px;
+  background: var(--line);
+}
+.cab-steps li:first-child::before { display: none; }
+.cab-steps li[data-state='done']::before,
+.cab-steps li[data-state='now']::before { background: var(--ok); }
+.cab-steps i {
+  position: relative;
+  z-index: 1;
+  box-sizing: border-box;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--muted) 45%, transparent);
+  background: var(--card);
+}
+.cab-steps li[data-state='done'] i { background: var(--ok); border-color: var(--ok); }
+.cab-steps li[data-state='now'] i {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+/* Part of the lot stands at this step too — a split lot is never one dot.
+   Hollow even BEHIND the bulk: four boxes still in Yiwu must not read as a
+   China step that is done. */
+.cab-steps li[data-also='true'] i {
+  background: var(--card);
+  border-color: var(--accent);
+}
+.cab-steps li[data-state='now'] { color: var(--fg); font-weight: 700; }
+/* Never cut: «O'zbekiston» is a few pixels wider than its fifth of the card,
+   and its neighbours («Tranzit», «Tayyor») are short, so it borrows their
+   empty edges instead of losing its last letters (measured in all three
+   languages at 360 px). */
+.cab-steps span {
+  white-space: nowrap;
+}
+
+/* One line, the way a packing list reads. */
+.cab-dims {
+  margin-top: 10px;
+  font-size: 0.82rem;
+  color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
-.cab-dim span { font-size: 0.65rem; color: var(--muted); }
+.cab-dims b { color: var(--fg); font-weight: 700; }
 
 .cab-where {
-  margin-top: 9px;
+  margin-top: 4px;
   font-size: 0.8rem;
   color: var(--muted);
 }
@@ -253,6 +391,7 @@
   font-size: 0.78rem;
   color: var(--muted);
 }
+.cab-nowrap { white-space: nowrap; }
 
 /* «Qachon nima bo'lgan» — the dated history, oldest first, drawn as the
    package-tracking list every customer already knows how to read: a dot, a
@@ -405,6 +544,13 @@
 .cab-row > :first-child { color: var(--muted); min-width: 0; }
 .cab-row > :last-child { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .cab-row[data-kind='payment'] > :last-child { color: var(--ok); }
+/* A row in som carries what it came to in dollars, quieter, under it. */
+.cab-amount { text-align: right; }
+.cab-amount small {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
 
 /* The history: one card per handover, its date and place on one line that may
    wrap, and the lot's «received on» as a quieter second row under it. */
@@ -453,6 +599,149 @@
   .cab-skel { animation: none; }
 }
 
+/* ------------------------------------------------------ ready, contacts */
+
+/* The cargo that can be collected today, above everything else it owns. */
+.cab-hero {
+  border-radius: 16px;
+  padding: 13px;
+  margin-bottom: 10px;
+  background: color-mix(in srgb, var(--ok) 14%, var(--card));
+  border: 1px solid color-mix(in srgb, var(--ok) 35%, transparent);
+}
+.cab-hero-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.cab-hero-title + .cab-hero-title { margin-top: 4px; }
+.cab-hero-place {
+  margin: 6px 0 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.cab-hero-debt {
+  display: block;
+  margin-top: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--warn);
+  text-align: left;
+  cursor: pointer;
+}
+
+.cab-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+/* 40 px tall: a thumb, not a cursor. */
+.cab-act {
+  display: inline-flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+.cab-act--main {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+/* The number itself is the text of the call button, so it can be read aloud,
+   copied, or dialled by hand on a phone that will not follow `tel:`. */
+.cab-num {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.cab-contacts { margin-top: 18px; }
+.cab-contact {
+  background: var(--card);
+  border-radius: 16px;
+  padding: 13px;
+  margin-bottom: 10px;
+}
+.cab-contact-who {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.cab-contact-who > div { min-width: 0; }
+.cab-contact-who b { display: block; line-height: 1.25; overflow-wrap: anywhere; }
+.cab-contact-who small { font-size: 0.78rem; color: var(--muted); overflow-wrap: anywhere; }
+.cab-avatar {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 50%;
+  font-weight: 800;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+}
+.cab-contact p {
+  margin: 8px 0 0;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+/* The language, at the foot — set once, and never in the way of the answer. */
+.cab-langs {
+  margin-top: 18px;
+  text-align: center;
+}
+.cab-langs-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.cab-langs-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+.cab-lang {
+  min-height: 36px;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.cab-lang[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 700;
+}
+
 .cab-btn {
   display: block;
   width: 100%;
@@ -472,13 +761,15 @@
 /* «Yukim qayerda» (item 11): a full screen of its own, closed by Telegram's
    back button like a photo is. The map takes the top, the list of what is
    where takes the rest, so a thumb never covers the answer. */
+/* At the end of the status line since round C: the map answers the same
+   question the chips do, and the title row now carries what is owed. */
 .cab-map-open {
   margin-left: auto;
   border: 0;
   border-radius: 999px;
-  padding: 6px 12px;
+  padding: 4px 10px;
   font: inherit;
-  font-size: 0.8rem;
+  font-size: 0.72rem;
   font-weight: 700;
   background: var(--accent);
   color: var(--on-accent);
@@ -530,6 +821,30 @@
   background: var(--card);
   font: inherit;
 }
+/* Leaflet draws its zoom buttons white, which in a dark Telegram is two
+   glaring squares in the corner. The theme's own card colour instead —
+   `.cabinet` in front so this outranks leaflet.css whatever order the two
+   stylesheets land in. */
+.cabinet .cab-map-canvas .leaflet-bar {
+  border: 1px solid var(--line);
+  box-shadow: none;
+}
+.cabinet .cab-map-canvas .leaflet-bar a,
+.cabinet .cab-map-canvas .leaflet-bar a:hover,
+.cabinet .cab-map-canvas .leaflet-bar a:focus {
+  background: var(--card);
+  color: var(--fg);
+  border-bottom-color: var(--line);
+}
+.cabinet .cab-map-canvas .leaflet-bar a.leaflet-disabled {
+  background: var(--card);
+  color: var(--muted);
+}
+.cabinet .cab-map-canvas .leaflet-control-attribution {
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+  color: var(--muted);
+}
+.cabinet .cab-map-canvas .leaflet-control-attribution a { color: var(--muted); }
 .cab-map-city {
   display: inline-flex;
   align-items: center;

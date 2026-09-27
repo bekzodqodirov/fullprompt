@@ -2,6 +2,7 @@ import { and, eq, inArray, ne, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { db } from '../../platform/db/client';
 import { batches, boxes, receiptLots, receipts, warehouses } from '../../platform/db/schema';
+import { roundKg, roundM3, shareOf, sumRounded } from '../../platform/telegram/format';
 import { latestPositions } from '../tracking/devices';
 import { truckFor } from '../tracking/truck';
 import { warehousePoint } from '../tracking/warehouse-point';
@@ -55,7 +56,6 @@ export interface CabinetMapPlace {
 }
 
 const STOCK = ['in_stock', 'planned', 'loading', 'ready_for_pickup'];
-const round = (n: number, d: number) => Math.round(n * 10 ** d) / 10 ** d;
 
 export async function cabinetMap(clientIds: string[]): Promise<CabinetMapPlace[]> {
   if (clientIds.length === 0) return [];
@@ -71,8 +71,9 @@ export async function cabinetMap(clientIds: string[]): Promise<CabinetMapPlace[]
       productNameZh: receiptLots.productNameZh,
       productNameRu: receiptLots.productNameRu,
       n: sql<number>`count(*)`,
-      perBoxKg: sql<string>`${receiptLots.totalWeightKg} / nullif(${receiptLots.boxCount}, 0)`,
-      perBoxM3: sql<string>`${receiptLots.totalVolumeM3} / nullif(${receiptLots.boxCount}, 0)`,
+      lotKg: receiptLots.totalWeightKg,
+      lotM3: receiptLots.totalVolumeM3,
+      lotBoxes: receiptLots.boxCount,
     })
     .from(boxes)
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
@@ -97,6 +98,11 @@ export async function cabinetMap(clientIds: string[]): Promise<CabinetMapPlace[]
       receiptLots.boxCount,
     );
 
+  // Each lot's own figures; a place's lot line is `shareOf` over them and the
+  // place adds its lines as printed — the lot card's and the push's rules, so
+  // the map under the header says what the header says (round C review,
+  // second pass: it rounded kilos to ONE place, 5.7 beside 5.71).
+  const lotOf = new Map<string, { kg: number; m3: number; boxes: number }>();
   const places = new Map<string, Omit<CabinetMapPlace, 'name' | 'point' | 'live' | 'route' | 'remainingDays'> & { ref: string }>();
   for (const r of rows) {
     const transit = r.status === 'in_transit';
@@ -106,16 +112,11 @@ export async function cabinetMap(clientIds: string[]): Promise<CabinetMapPlace[]
     const place =
       places.get(key) ?? { key, kind: transit ? ('truck' as const) : ('warehouse' as const), ref, boxes: 0, kg: 0, m3: 0, lots: [] };
     const n = Number(r.n);
-    const kg = n * Number(r.perBoxKg ?? 0);
-    const m3 = n * Number(r.perBoxM3 ?? 0);
+    lotOf.set(r.lotId, { kg: Number(r.lotKg ?? 0), m3: Number(r.lotM3 ?? 0), boxes: Number(r.lotBoxes) });
     place.boxes += n;
-    place.kg += kg;
-    place.m3 += m3;
     const lot = place.lots.find((l) => l.lotId === r.lotId);
     if (lot) {
       lot.boxes += n;
-      lot.kg += kg;
-      lot.m3 += m3;
     } else {
       place.lots.push({
         lotId: r.lotId,
@@ -123,8 +124,8 @@ export async function cabinetMap(clientIds: string[]): Promise<CabinetMapPlace[]
         productNameZh: r.productNameZh,
         productNameRu: r.productNameRu,
         boxes: n,
-        kg,
-        m3,
+        kg: 0,
+        m3: 0,
       });
     }
     places.set(key, place);
@@ -149,12 +150,22 @@ export async function cabinetMap(clientIds: string[]): Promise<CabinetMapPlace[]
   ]);
 
   const out: CabinetMapPlace[] = [];
-  const finish = (p: (typeof places extends Map<string, infer V> ? V : never)) => ({
-    boxes: p.boxes,
-    kg: round(p.kg, 1),
-    m3: round(p.m3, 3),
-    lots: p.lots.map((l) => ({ ...l, kg: round(l.kg, 1), m3: round(l.m3, 3) })),
-  });
+  const finish = (p: (typeof places extends Map<string, infer V> ? V : never)) => {
+    const lots = p.lots.map((l) => {
+      const m = lotOf.get(l.lotId);
+      return {
+        ...l,
+        kg: roundKg(m ? shareOf(m.kg, l.boxes, m.boxes) : 0),
+        m3: roundM3(m ? shareOf(m.m3, l.boxes, m.boxes) : 0),
+      };
+    });
+    return {
+      boxes: p.boxes,
+      kg: sumRounded(lots.map((l) => l.kg), roundKg),
+      m3: sumRounded(lots.map((l) => l.m3), roundM3),
+      lots,
+    };
+  };
   for (const w of whRows) {
     const place = places.get(`warehouse:${w.id}`);
     if (!place) continue;

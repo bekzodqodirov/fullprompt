@@ -12,10 +12,17 @@ import {
   handovers,
   receiptLots,
   receipts,
+  tgAccounts,
   users,
   warehouses,
 } from '../../platform/db/schema';
+import { getSetting } from '../../platform/settings/service';
+import { reachableAt } from '../crm/site-assign-rules';
+import { roundKg, roundM3, shareOf } from '../../platform/telegram/format';
+import { telegramPhoneUrl } from '../../platform/telegram/map-link';
+import { chatLocaleFor } from '../../platform/telegram/cabinet-locale';
 import { ARRIVED_ON_A_TRUCK } from '../documents/arrivals';
+import { arrivalCleared } from '../notices/arrival-text';
 import { clientBalanceUsd, clientLedger } from '../finance/service';
 import { etaWindow, scheduleEstimate } from '../tracking/eta';
 import { journeyFromEvents, type JourneyStep } from './journey';
@@ -154,6 +161,10 @@ export async function linkPhoneSiblings(chatId: bigint): Promise<number> {
     }
   }
   let added = 0;
+  // The language the PERSON chose, read once and only when a code actually
+  // joins: a sibling with no language of its own would otherwise answer in the
+  // Russian fallback to somebody who picked Uzbek (round C, judge CX-7).
+  let chatLocale: string | null | undefined;
   // Bounded: a broker chat holds many people's codes, and each phone is one
   // query. Ten covers every person the owner has described.
   for (const phone of [...phones].slice(0, 10)) {
@@ -168,6 +179,16 @@ export async function linkPhoneSiblings(chatId: bigint): Promise<number> {
         createdBy: null,
       });
       added += 1;
+      if (sibling.locale === null) {
+        if (chatLocale === undefined) chatLocale = await chatLocaleFor(chatId);
+        // Only onto a NULL: a code whose own language somebody set keeps it.
+        if (chatLocale) {
+          await db
+            .update(clients)
+            .set({ locale: chatLocale })
+            .where(and(eq(clients.id, sibling.id), isNull(clients.locale)));
+        }
+      }
     }
   }
   return added;
@@ -223,6 +244,11 @@ export interface CabinetLot {
    */
   journey: JourneyStep[];
   total: number;
+  /**
+   * Of this lot's READY boxes, how many are cleared by the push's own rule —
+   * the ready card's ✅ / ⏳ split. The rest wait on a declaration.
+   */
+  readyCleared: number;
   /**
    * Where the boxes physically are, by NAME — «Kashgar», not «KA».
    *
@@ -316,8 +342,16 @@ async function trucksFor(batchIds: string[]): Promise<Map<string, CabinetTruck>>
             etaToIso: window?.toIso ?? null,
           }
         : null,
+      // A truck that ends in China (Yiwu → Kashgar) never enters Uzbekistan,
+      // whatever its `arrived_at` says — the rule `truckStage` states. Without
+      // it a lot waiting at the hub after an internal leg read «O'zbekistonga
+      // kirdi», dated the day it reached Kashgar (round C review, second pass).
       inUzAt:
-        cp?.key === 'in_uz' && cp.at ? new Date(cp.at) : (r.arrivedAt ?? null),
+        r.destCountry === 'CN'
+          ? null
+          : cp?.key === 'in_uz' && cp.at
+            ? new Date(cp.at)
+            : (r.arrivedAt ?? null),
       customsClearedAt: r.customsClearedAt,
     });
   }
@@ -390,6 +424,42 @@ async function lotJourneys(
   return out;
 }
 
+/**
+ * The truck each LANDED box of a client came off, counted per lot (round C
+ * review, MA-1). The live pointer is NULL once a box lands, so the customs
+ * stamp and the «in Uzbekistan» date vanished from the history the moment the
+ * cargo arrived — and the ready card read that absence as «still in
+ * paperwork» on every ready carton there is. The newest arrival movement is
+ * the durable record (`documents/arrivals.ts`, whose cause list this reads),
+ * asked per box through the movements' (box, time) index. `batchId` null =
+ * no truck brought it (received where it stands).
+ */
+async function landedTrucks(
+  clientId: string,
+): Promise<{ lotId: string; batchId: string | null; ready: boolean; n: number; landedAt: string | null }[]> {
+  const rows = (await db.execute(sql`
+    SELECT b.lot_id AS "lotId", lm.ref_id AS "batchId",
+           (b.status = 'ready_for_pickup') AS ready, count(*)::int AS n,
+           max(lm.created_at)::text AS "landedAt"
+    FROM boxes b
+    JOIN receipt_lots rl ON rl.id = b.lot_id
+    JOIN receipts r ON r.id = rl.receipt_id
+    LEFT JOIN LATERAL (
+      SELECT m.ref_id, m.created_at FROM box_movements m
+      WHERE m.box_id = b.id
+        AND m.cause IN (${sql.join(ARRIVED_ON_A_TRUCK.map((c) => sql`${c}`), sql`, `)})
+        AND m.ref_type = 'batch'
+      ORDER BY m.created_at DESC
+      LIMIT 1
+    ) lm ON true
+    WHERE r.client_id = ${clientId}
+      AND b.current_batch_id IS NULL
+      AND b.status IN (${sql.join(ACTIVE_STATUSES.map((s) => sql`${s}`), sql`, `)})
+    GROUP BY b.lot_id, lm.ref_id, (b.status = 'ready_for_pickup')
+  `)) as unknown as { lotId: string; batchId: string | null; ready: boolean; n: number; landedAt: string | null }[];
+  return rows.map((r) => ({ ...r, n: Number(r.n) }));
+}
+
 /** The client's active (not yet issued) cargo, one entry per lot. */
 export async function cargoOverview(clientId: string): Promise<CabinetLot[]> {
   const rows = await db
@@ -414,12 +484,25 @@ export async function cargoOverview(clientId: string): Promise<CabinetLot[]> {
        * it is the truck they are on right now.
        */
       batchId: boxes.currentBatchId,
+      /*
+       * The truck a LANDED box came off (round C review, MA-1): the live
+       * pointer is NULL once it lands, so the customs stamp and the «in
+       * Uzbekistan» date vanished from the history the moment the cargo
+       * arrived — and the ready card read that absence as «still in
+       * paperwork» on every ready carton there is. The arrival movement is
+       * the durable record, the rule `documents/arrivals.ts` states.
+       */
       n: sql<number>`count(*)`,
       // A box has no weight of its own — the lot's total divided by its box
       // count is what every other screen means by "per box" (#152 area,
       // finance/client-cargo.ts). Guarded against a zero count.
       perBoxKg: sql<string>`${receiptLots.totalWeightKg} / nullif(${receiptLots.boxCount}, 0)`,
       perBoxM3: sql<string>`${receiptLots.totalVolumeM3} / nullif(${receiptLots.boxCount}, 0)`,
+      // The lot's own figures: its share on the card is `shareOf` over these,
+      // the one formula the pushes use (round C review, second pass).
+      lotKg: receiptLots.totalWeightKg,
+      lotM3: receiptLots.totalVolumeM3,
+      lotBoxes: receiptLots.boxCount,
     })
     .from(boxes)
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
@@ -445,11 +528,13 @@ export async function cargoOverview(clientId: string): Promise<CabinetLot[]> {
   // ONE query for every truck this client's cargo is riding, not one per row
   // (#432): a client with cargo on three lorries pays for three joins, not for
   // three hundred.
+  const landed = await landedTrucks(clientId);
   const trucks = await trucksFor([
-    ...new Set(rows.map((r) => r.batchId).filter((id): id is string => !!id)),
+    ...new Set([...rows.map((r) => r.batchId), ...landed.map((l) => l.batchId)].filter((id): id is string => !!id)),
   ]);
 
   const byLot = new Map<string, CabinetLot>();
+  const lotOf = new Map<string, { kg: number; m3: number; boxes: number }>();
   const stageCounts = new Map<string, Map<CargoStage, { n: number; transit: CargoTransit | null }>>();
   for (const r of rows) {
     let lot = byLot.get(r.lotId);
@@ -469,6 +554,7 @@ export async function cargoOverview(clientId: string): Promise<CabinetLot[]> {
         perBoxKg: Number(r.perBoxKg ?? 0),
         perBoxM3: Number(r.perBoxM3 ?? 0),
         photoCount: 0,
+        readyCleared: 0,
       };
       byLot.set(r.lotId, lot);
       stageCounts.set(r.lotId, new Map());
@@ -492,11 +578,18 @@ export async function cargoOverview(clientId: string): Promise<CabinetLot[]> {
         : prev.transit;
     counts.set(stage, { n: (prev?.n ?? 0) + Number(r.n), transit: keep });
     lot.total += Number(r.n);
-    lot.weightKg += Number(r.n) * Number(r.perBoxKg ?? 0);
-    lot.volumeM3 += Number(r.n) * Number(r.perBoxM3 ?? 0);
+    // The share of the WHOLE active count, once, below — not a sum of
+    // per-status shares, which can round the other way from the push.
+    lotOf.set(r.lotId, { kg: Number(r.lotKg ?? 0), m3: Number(r.lotM3 ?? 0), boxes: Number(r.lotBoxes) });
     if (r.warehousePlace && !lot.warehousePlaces.includes(r.warehousePlace)) {
       lot.warehousePlaces.push(r.warehousePlace);
     }
+  }
+  for (const lot of byLot.values()) {
+    const m = lotOf.get(lot.lotId);
+    if (!m) continue;
+    lot.weightKg = shareOf(m.kg, lot.total, m.boxes);
+    lot.volumeM3 = shareOf(m.m3, lot.total, m.boxes);
   }
   const lots = [...byLot.values()];
   // Which truck answers for a lot's truck-level history (the pin, the customs
@@ -504,6 +597,24 @@ export async function cargoOverview(clientId: string): Promise<CabinetLot[]> {
   const lotTruck = new Map<string, CabinetTruck | null>();
   for (const r of rows) {
     if (r.batchId && !lotTruck.get(r.lotId)) lotTruck.set(r.lotId, trucks.get(r.batchId) ?? null);
+  }
+  // Newest landing first, so a lot split across two landings is answered by
+  // the same truck on every open — the rows come back in no order of their own.
+  const landedNewestFirst = [...landed].sort((a, b) => (b.landedAt ?? '').localeCompare(a.landedAt ?? ''));
+  for (const l of landedNewestFirst) {
+    const lot = byLot.get(l.lotId);
+    if (!lot) continue;
+    const truck = l.batchId ? (trucks.get(l.batchId) ?? null) : null;
+    // Only a truck that brought the cargo INTO Uzbekistan answers for its
+    // history: one that ended at a Chinese hub has no customs stamp and no
+    // «in Uzbekistan» day to lend a lot waiting there for its export truck.
+    if (truck && truck.stage.destCountry !== 'CN' && !lotTruck.get(l.lotId)) lotTruck.set(l.lotId, truck);
+    // The push's own rule (`arrivalCleared`), so the card under the push says
+    // what the push said. Cargo no truck brought (received at an Uzbek
+    // warehouse) has no declaration of ours to wait for.
+    if (l.ready && (!truck || arrivalCleared(truck.customsClearedAt, truck.stage.originCountry))) {
+      lot.readyCleared += l.n;
+    }
   }
   const journeys = await lotJourneys(
     lots.map((l) => l.lotId),
@@ -536,8 +647,8 @@ export async function cargoOverview(clientId: string): Promise<CabinetLot[]> {
     }
     // Rounded once, here, so every reader shows the same number.
     for (const lot of lots) {
-      lot.weightKg = Math.round(lot.weightKg * 100) / 100;
-      lot.volumeM3 = Math.round(lot.volumeM3 * 1000) / 1000;
+      lot.weightKg = roundKg(lot.weightKg);
+      lot.volumeM3 = roundM3(lot.volumeM3);
     }
   }
   return lots;
@@ -560,6 +671,8 @@ export async function lotPhotoKeys(lotId: string, clientIds: string[], limit = 1
       storageKey: attachments.storageKey,
       thumb800Key: attachments.thumb800Key,
       contentType: attachments.contentType,
+      // The bot's 📷 sends an original only when Telegram will take it (≤ 10 MB).
+      sizeBytes: attachments.sizeBytes,
     })
     .from(attachments)
     .where(
@@ -784,8 +897,7 @@ export async function issuedHandovers(
       .map((r) => {
         const n = Number(r.n);
         // A box's weight is its lot's share, as on every other screen: the
-        // lot is weighed once, never box by box.
-        const share = r.boxCount > 0 ? n / r.boxCount : 0;
+        // lot is weighed once, never box by box (`shareOf`, the one formula).
         return {
           lotId: r.lotId,
           letter: r.letter,
@@ -793,8 +905,8 @@ export async function issuedHandovers(
           productNameRu: r.productNameRu,
           receivedAt: new Date(r.receivedAt).toISOString(),
           n,
-          weightKg: Math.round(Number(r.lotKg ?? 0) * share * 100) / 100,
-          volumeM3: Math.round(Number(r.lotM3 ?? 0) * share * 1000) / 1000,
+          weightKg: roundKg(shareOf(Number(r.lotKg ?? 0), n, r.boxCount)),
+          volumeM3: roundM3(shareOf(Number(r.lotM3 ?? 0), n, r.boxCount)),
           photoCount: photos.get(r.lotId) ?? 0,
         };
       })
@@ -852,4 +964,90 @@ export async function paidHistory(clientId: string, days = HISTORY_DAYS) {
     .orderBy(desc(clientTransactions.txDate), desc(clientTransactions.createdAt))
     .limit(HISTORY_CAP);
   return rows.map((r) => ({ txDate: r.txDate, amount: Number(r.amount), currency: r.currency }));
+}
+
+/**
+ * The person a customer should write to (round C) — their code's sales
+ * manager — for the bot's «💬 Menejer», the Mini App card and the push's
+ * manager door. ONE read for all three, so the three never name different
+ * people.
+ *
+ * What is shown is what the offer PDF has always printed to the same
+ * customer — the seller's name and phone (`users.phone`, the PDF's own
+ * number; the owner chose «standart»: the PDF's rule) — plus the one thing a
+ * Telegram customer actually taps, a chat link.
+ *
+ * The link follows round 113's trust rule, imported and not restated
+ * (`reachableAt`, #513): the handle the listener READ from the manager's own
+ * account only while it is fresh, because a released handle can be
+ * registered by a stranger and a customer who owes money must never be sent
+ * to one (judge PRIV-1); else the handle somebody typed; else Telegram's own
+ * `t.me/+<number>` link, which opens a chat by phone when the manager's
+ * privacy allows it.
+ *
+ * A deactivated manager is no manager: a customer must not be sent to a
+ * person who has left. One grouped query, never one per code (#432).
+ */
+export interface ManagerContact {
+  name: string;
+  phone: string | null;
+  telegramUrl: string | null;
+}
+
+export async function managersFor(
+  clientIds: string[],
+  now: Date = new Date(),
+): Promise<Map<string, ManagerContact>> {
+  const out = new Map<string, ManagerContact>();
+  if (clientIds.length === 0) return out;
+  const rows = await db
+    .select({
+      clientId: clients.id,
+      name: users.fullName,
+      phone: users.phone,
+      typed: users.telegramUsername,
+      accountStatus: tgAccounts.status,
+      lastSeenAt: tgAccounts.lastSeenAt,
+      verified: tgAccounts.tgUsername,
+      checkedAt: tgAccounts.tgUsernameCheckedAt,
+    })
+    .from(clients)
+    .innerJoin(users, and(eq(users.id, clients.salesManagerId), eq(users.active, true)))
+    // `manager_user_id` is UNIQUE, so this joins at most one account.
+    .leftJoin(tgAccounts, eq(tgAccounts.managerUserId, users.id))
+    .where(inArray(clients.id, clientIds));
+  for (const r of rows) {
+    const phone = r.phone?.trim() || null;
+    const reach = reachableAt(
+      {
+        typedUsername: r.typed?.trim() || null,
+        account: r.accountStatus
+          ? { status: r.accountStatus, lastSeenAt: r.lastSeenAt, username: r.verified, checkedAt: r.checkedAt }
+          : null,
+      },
+      now,
+    );
+    out.set(r.clientId, {
+      name: r.name,
+      phone,
+      telegramUrl: reach.ok ? `https://t.me/${reach.username}` : phone ? telegramPhoneUrl(phone) : null,
+    });
+  }
+  return out;
+}
+
+/**
+ * The office, for a customer whose code has no manager — the settings the
+ * offer PDF prints. The seeded placeholder «—» means nobody filled it in, and
+ * is never shown as a phone number.
+ *
+ * On the POOL: never call this inside a transaction (#714).
+ */
+export async function officeContact(): Promise<{ name: string; phone: string | null }> {
+  const [name, phone] = await Promise.all([getSetting('company_name'), getSetting('company_phone')]);
+  const clean = (v: unknown) => {
+    const text = typeof v === 'string' ? v.trim() : '';
+    return text === '' || text === '—' || text === '-' ? null : text;
+  };
+  return { name: clean(name) ?? 'GSR LOGISTICS', phone: clean(phone) };
 }

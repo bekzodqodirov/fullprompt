@@ -1,7 +1,8 @@
 import 'dotenv/config';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
+import { FOUNDERS } from '@/modules/platform/notifications/mutes';
 import {
   calcExtras,
   calcGroups,
@@ -16,8 +17,10 @@ import {
   deals,
   events,
   leads,
+  notifications,
   settings,
   tasks,
+  telegramLinks,
   users,
 } from '@/modules/platform/db/schema';
 import { openCalcRequest } from '@/modules/wms/calc/service';
@@ -231,6 +234,43 @@ describe('the offer is the SELLER’s price, and the seal is only its floor', ()
     // two-digit slice was satisfied by the per-kub line by coincidence and
     // went red the day the fee moved the floor by $32.96.
     expect(result.text).toContain(offerMoney(floor + 500));
+  });
+
+  it('says «not sent» when the seller\'s own profile silences the text (round C review, second pass)', async () => {
+    // A linked chat, and the «Operatsiya xabarlari» tick as an old profile
+    // wrote it — before CalcOffer joined the group. The row is written
+    // `muted` and nothing arrives, so the screen must not say «yuborildi».
+    await db.insert(telegramLinks).values({
+      userId: actorId,
+      telegramChatId: BigInt(7_600_000_000 + Number(SUFFIX)),
+      status: 'linked',
+      linkedAt: new Date(),
+    });
+    try {
+      await db.update(users).set({ mutedNotificationTypes: [...FOUNDERS.operations] }).where(eq(users.id, actorId));
+      const { versionId, version } = await sealed();
+      const muted = await recordOffer(
+        { versionId },
+        { clientPriceUsd: Number(version.totalUsd) + 100, locale: 'uz' },
+        ctx(),
+      );
+      expect(muted).toMatchObject({ delivered: false, muted: true });
+
+      await db.update(users).set({ mutedNotificationTypes: [] }).where(eq(users.id, actorId));
+      const sent = await recordOffer(
+        { versionId },
+        { clientPriceUsd: Number(version.totalUsd) + 200, locale: 'uz' },
+        ctx(),
+      );
+      expect(sent).toMatchObject({ delivered: true, muted: false });
+    } finally {
+      // Nothing of ours may be sent by a later drain, or count as a problem.
+      await db
+        .delete(notifications)
+        .where(and(eq(notifications.userId, actorId), eq(notifications.type, 'CalcOffer')));
+      await db.delete(telegramLinks).where(eq(telegramLinks.userId, actorId));
+      await db.update(users).set({ mutedNotificationTypes: [] }).where(eq(users.id, actorId));
+    }
   });
 
   it('FLAGS a price below the floor instead of refusing it', async () => {

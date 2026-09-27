@@ -114,6 +114,32 @@ export function formatDue(dueAt: Date, allDay: boolean): string {
 }
 
 /**
+ * A deadline as a TELEGRAM line (round C) — «25.09» for a day, «25.09 14:00»
+ * for a moment — the dock keeps `formatDue` above, unchanged.
+ *
+ * Two clocks on purpose, the same two the task itself has:
+ *  - an all-day task is stored as that day's 23:59:59.999 UTC (`parseDue`),
+ *    so its date is the UTC date part, read and never shifted — shifted to
+ *    Tashkent it would print TOMORROW for every all-day task;
+ *  - a timed task is a moment somebody typed on a Tashkent wall clock, so it
+ *    prints on that clock — its UTC date is the PREVIOUS day for anything due
+ *    before 05:00, which is the defect this replaced («25.09 02:00» shown as
+ *    the 24th).
+ * The year is added only when it is not this one: «01.01» about a deadline
+ * fifteen months out is a different date.
+ */
+export function telegramDue(dueAt: Date, allDay: boolean, now: Date = new Date()): string {
+  const TASHKENT_MS = 5 * 3_600_000; // UTC+5, no daylight saving
+  const at = allDay ? dueAt : new Date(dueAt.getTime() + TASHKENT_MS);
+  const today = new Date(now.getTime() + TASHKENT_MS);
+  const two = (n: number) => String(n).padStart(2, '0');
+  const day = `${two(at.getUTCDate())}.${two(at.getUTCMonth() + 1)}`;
+  const year = at.getUTCFullYear() !== today.getUTCFullYear() ? `.${at.getUTCFullYear()}` : '';
+  const time = allDay ? '' : ` ${two(at.getUTCHours())}:${two(at.getUTCMinutes())}`;
+  return `${day}${year}${time}`;
+}
+
+/**
  * When the next occurrence of a repeating task falls.
  *
  * Counted from the DUE date, never from "now": a Monday task finished on
@@ -291,7 +317,7 @@ export async function createTask(input: TaskInput, ctx: AuditContext): Promise<T
       type: 'TaskAssigned',
       text:
         `🆕 Yangi vazifa: ${input.title}` +
-        (dueAt ? `\n📅 ${formatDue(dueAt, allDay)}` : '') +
+        (dueAt ? `\n📅 ${telegramDue(dueAt, allDay)}` : '') +
         (label ? `\n📌 ${label}` : '') +
         `\n👤 ${await userName(ctx.actorId)}` +
         `\n🔗 ${taskLink(created.entityType, created.entityId)}`,
@@ -472,8 +498,13 @@ export async function reassignTask(
       type: 'TaskAssigned',
       text:
         `🆕 Sizga vazifa o'tkazildi: ${before.title}` +
+        (before.dueAt ? `\n📅 ${telegramDue(before.dueAt, before.allDay)}` : '') +
         `\n👤 ${await userName(ctx.actorId)}` +
         `\n🔗 ${taskLink(before.entityType, before.entityId)}`,
+      // The same «✅ Bajarildi» a fresh assignment carries (round C) — a
+      // handed-on task arrived with no button at all, so the new owner could
+      // close every task from the chat except the ones given to them second.
+      extra: { taskId: id },
     }).catch(() => {});
   }
 }
