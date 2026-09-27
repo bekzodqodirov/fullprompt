@@ -9,14 +9,16 @@ import {
   clientNotices,
   clients,
   clientTelegramLinks,
+  batches,
   receipts,
   users,
   warehouses,
 } from '@/modules/platform/db/schema';
 import { getStorage } from '@/modules/platform/files/storage';
-import { clientLabels } from '@/modules/platform/telegram/client-labels';
+import { clientLabels, formatDay } from '@/modules/platform/telegram/client-labels';
 import { htmlToPlain } from '@/modules/platform/telegram/format';
 import { __setTelegramTransport } from '@/modules/platform/telegram/send';
+import { cargoOverview } from '@/modules/wms/client-cabinet/service';
 import { issueBoxes } from '@/modules/wms/issue/service';
 import { MAX_NOTICE_ATTEMPTS, NOTICE_ARRIVED } from '@/modules/wms/notices/arrival';
 import { sendDueArrivalNotices } from '@/modules/wms/notices/arrival-jobs';
@@ -288,6 +290,24 @@ describe('C1 «qabul qilindi» through the sweep', () => {
 
     const [call] = callsTo(chat);
     expect(String(call!.fields.disable_notification)).toBe('true');
+  });
+
+  it('cargo a customer brings to an UZBEK warehouse is «received», with no «next: loaded onto a truck» (PA-1)', async () => {
+    const chat = newChat();
+    const client = await makeClient('WK', { chat });
+    await receive(client.id, uzId);
+    const [notice] = await noticesOf(client.id, NOTICE_RECEIVED);
+    await makeDue(notice!.id);
+
+    await sendDueArrivalNotices(DAY);
+
+    const t = clientLabels(null);
+    const text = htmlToPlain(bodyOf(callsTo(chat)[0]!));
+    expect(text).toContain(t.arrivedTitle);
+    // «Added to your cabinet» is for cargo received long ago and given its
+    // owner later — not for a delivery an hour old.
+    expect(text).not.toContain(t.pushAddedTitle);
+    expect(text).not.toContain(t.pushNextReceived);
   });
 
   it('a receipt moved to another code inside the window says nothing to the first — and comes back armed', async () => {
@@ -616,10 +636,66 @@ describe('C2 «yetib keldi» — the whole road', () => {
     // Came from China and nobody pressed «rastamojka tugadi»: the honest caveat.
     expect(text).toContain(t.readyNote);
     expect(text).toContain(t.photoTakenOnReceipt);
+    // Dated the day the customer is TOLD — the sweep's clock — and not the
+    // claim's first `created_at` (PA-4: a re-armed notice kept yesterday's).
+    expect(text).toContain(formatDay(DAY));
+    // The Mini App says what the push said (MA-1): nothing cleared here.
+    const [lot] = (await cargoOverview(client.id)).filter((l) => l.lotId === r.lotId);
+    expect(lot!.readyCleared).toBe(0);
     const keyboard = markupOf(arrival);
     expect(keyboard.inline_keyboard[0]![0]!.web_app!.url).toBe(`${APP}/cabinet?lot=${r.lotId}`);
     const [after] = await noticesOf(client.id, NOTICE_ARRIVED);
     expect(after!.status).toBe('sent');
+  });
+});
+
+describe('the app says what the push said, after the truck is unloaded (MA-1)', () => {
+  function scan(batchId: string, code: string) {
+    return { clientEventUuid: uuidv4(), batchId, code, method: 'qr' as const, scannedAt: new Date().toISOString() };
+  }
+
+  it('a CLEARED truck: the ready card counts the cartons as cleared and the history keeps «rastamojka»', async () => {
+    const chat = newChat();
+    const client = await makeClient('MC', { chat });
+    const r = await receive(client.id, cnId, { boxCount: 2 });
+    const sub = await submitPlan(
+      { originWarehouseId: cnId, destWarehouseId: uzId, lines: [{ lotId: r.lotId, boxCount: 2 }] },
+      ctx(),
+    );
+    const { batch } = await recordVerdict({ versionId: sub.version.id, verdict: 'approved' }, ctx());
+    for (const box of r.boxes) {
+      await ingestLoadScans([{ ...scan(batch!.id, box.shortCode), addedOnSpot: false }], ctx());
+    }
+    await departBatch(batch!.id, ctx());
+    // «Rastamojka tugadi», pressed while the truck is on the road.
+    await db.update(batches).set({ customsClearedAt: new Date() }).where(eq(batches.id, batch!.id));
+    for (const box of r.boxes) await ingestUnloadScans([scan(batch!.id, box.shortCode)], ctx());
+    await finishUnload(batch!.id, ctx());
+
+    // Landed: the live pointer is gone, and the answer must not go with it.
+    const landed = await db.select({ batch: boxes.currentBatchId }).from(boxes).where(eq(boxes.lotId, r.lotId));
+    expect(landed.every((b) => b.batch === null)).toBe(true);
+    const [lot] = (await cargoOverview(client.id)).filter((l) => l.lotId === r.lotId);
+    expect(lot!.groups.map((g) => g.stage)).toEqual(['ready']);
+    expect(lot!.readyCleared).toBe(2);
+    expect(lot!.journey.map((s) => s.key)).toContain('customs');
+
+    const [notice] = await noticesOf(client.id, NOTICE_ARRIVED);
+    await makeDue(notice!.id);
+    await sendDueArrivalNotices(DAY);
+    const t = clientLabels(null);
+    const arrival = callsTo(chat).find((c) => bodyOf(c).includes(t.readyTitle))!;
+    expect(htmlToPlain(bodyOf(arrival))).toContain(t.pushReadyCleared);
+  });
+
+  it('cargo no truck brought (received in Uzbekistan) has no declaration to wait for', async () => {
+    const client = await makeClient('NT');
+    const r = await receive(client.id, uzId, { boxCount: 3 });
+    // Marked ready at the counter, the way production's rows look after it.
+    await db.update(boxes).set({ status: 'ready_for_pickup' }).where(eq(boxes.lotId, r.lotId));
+    const [lot] = (await cargoOverview(client.id)).filter((l) => l.lotId === r.lotId);
+    expect(lot!.groups).toEqual([{ stage: 'ready', n: 3, transit: null }]);
+    expect(lot!.readyCleared).toBe(3);
   });
 });
 

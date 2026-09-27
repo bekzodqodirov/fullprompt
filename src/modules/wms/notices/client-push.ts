@@ -49,7 +49,8 @@ export interface PreparedPush {
 }
 
 export type Skip = { skip: string };
-export type Preparer = (notice: NoticeRow, client: ClientRow) => Promise<PreparedPush | Skip>;
+/** `now` is the sweep's clock — the moment the customer is told. */
+export type Preparer = (notice: NoticeRow, client: ClientRow, now: Date) => Promise<PreparedPush | Skip>;
 
 /**
  * A photo that has failed to go twice goes no more: from the third attempt
@@ -118,12 +119,30 @@ export async function firstLotPhoto(lotIds: readonly string[]): Promise<PhotoRef
  * its own try (judge PHOTO-1): a missing object in storage is not a reason
  * to lose the message.
  */
-export async function loadPhoto(ref: PhotoRef): Promise<PhotoMessage['photo'] | null> {
+/**
+ * How long one storage read may take before the push goes without its photo.
+ * The S3 client has no deadline of its own, and this sweep is ONE worker for
+ * every customer's message: a MinIO that stops answering would otherwise hold
+ * all of them behind a photograph (round C review, PA-2).
+ */
+export const PHOTO_READ_MS = 15_000;
+
+function readWithin(read: Promise<Buffer>, ms: number): Promise<Buffer> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`storage read took longer than ${ms} ms`)), ms);
+  });
+  // The read itself cannot be cancelled; its late answer is simply dropped.
+  read.catch(() => undefined);
+  return Promise.race([read, deadline]).finally(() => clearTimeout(timer));
+}
+
+export async function loadPhoto(ref: PhotoRef, readMs = PHOTO_READ_MS): Promise<PhotoMessage['photo'] | null> {
   const storage = getStorage();
   const usable = (bytes: Buffer) => bytes.length > 0 && bytes.length <= MAX_TELEGRAM_PHOTO_BYTES;
   if (ref.thumb800Key) {
     try {
-      const bytes = await storage.get(ref.thumb800Key);
+      const bytes = await readWithin(storage.get(ref.thumb800Key), readMs);
       if (usable(bytes)) return { bytes, filename: 'photo.webp', contentType: 'image/webp' };
     } catch (err) {
       logger.warn({ err, key: ref.thumb800Key }, 'push photo: thumbnail unreadable');
@@ -131,7 +150,7 @@ export async function loadPhoto(ref: PhotoRef): Promise<PhotoMessage['photo'] | 
   }
   if (ref.contentType.startsWith('image/') && ref.sizeBytes <= MAX_TELEGRAM_PHOTO_BYTES) {
     try {
-      const bytes = await storage.get(ref.storageKey);
+      const bytes = await readWithin(storage.get(ref.storageKey), readMs);
       if (usable(bytes)) {
         const ext = ref.contentType.split('/')[1]?.replace(/[^a-z0-9]/gi, '') || 'jpg';
         return { bytes, filename: `photo.${ext}`, contentType: ref.contentType };

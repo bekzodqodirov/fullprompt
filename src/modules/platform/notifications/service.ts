@@ -823,24 +823,48 @@ async function forwardOriginal(
   notificationId: string,
   staffChatId: bigint,
   payload: Record<string, unknown>,
-): Promise<void> {
+): Promise<SendResult | null> {
   const from = payload.forwardFrom as { chatId?: unknown; messageId?: unknown } | undefined;
-  if (!from || payload.forwarded === true) return;
+  if (!from || payload.forwarded === true) return null;
   const fromChat = Number(from.chatId);
   const messageId = Number(from.messageId);
-  if (!Number.isFinite(fromChat) || !Number.isInteger(messageId)) return;
+  if (!Number.isFinite(fromChat) || !Number.isInteger(messageId)) return null;
   const answer = await botCall('forwardMessage', {
     chat_id: Number(staffChatId),
     from_chat_id: fromChat,
     message_id: messageId,
   });
+  if (!answer.ok && !isPermanentFailure(answer.status)) {
+    /*
+     * A MOMENT, not the message (round C review, CONV-4): a 5xx, a deadline, a
+     * 429 or a refused token. The customer's file exists nowhere but in their
+     * private chat with the bot, which no person can open — so the row is
+     * NOT sent without it. Handed back as this row's failure: the drain's own
+     * rules (pause, release, or an attempt counted) bring it round again, and
+     * the next run forwards first.
+     */
+    logger.warn({ notificationId, status: answer.status, description: answer.description }, 'customer message not forwarded yet — retrying');
+    return {
+      ok: false,
+      status: answer.status,
+      description: answer.description,
+      messageId: null,
+      retryAfter: answer.retryAfter,
+      permanent: false,
+      botDown: isBotFailure(answer.status),
+      usedFallback: false,
+    };
+  }
   if (!answer.ok) {
-    logger.warn({ notificationId, description: answer.description }, 'customer message not forwarded — the text still goes');
-    return;
+    // Refused for good (the customer deleted it, the chat is gone): the text
+    // still goes on its own.
+    logger.warn({ notificationId, description: answer.description }, 'customer message cannot be forwarded — the text still goes');
+    return null;
   }
   await db.execute(sql`
     UPDATE notifications SET payload = payload || '{"forwarded": true}'::jsonb
     WHERE id = ${notificationId}`);
+  return null;
 }
 
 /**
@@ -917,8 +941,9 @@ export async function sendPendingTelegram(): Promise<void> {
 
     let res: SendResult;
     try {
-      await forwardOriginal(notification.id, link.telegramChatId, payload);
-      res = await deliverStaffMessage(link.telegramChatId, message, buttons);
+      res =
+        (await forwardOriginal(notification.id, link.telegramChatId, payload)) ??
+        (await deliverStaffMessage(link.telegramChatId, message, buttons));
     } catch (err) {
       // The sender answers rather than throws; this is the database under it.
       res = {

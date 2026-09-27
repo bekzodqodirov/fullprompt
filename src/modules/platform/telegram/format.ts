@@ -81,6 +81,18 @@ export function visibleLength(html: string): number {
 }
 
 /**
+ * At most `max` characters with «…» at the cut, counted in CODE POINTS. A
+ * `slice` counts UTF-16 units and can halve an emoji: the lone surrogate it
+ * leaves is refused by postgres's jsonb (a staff copy IS a `payload.text`, so
+ * the customer's message was lost with an error) and drawn as a box by
+ * Telegram (round C review, CONV-2/PA-3). Whitespace is left as it came.
+ */
+export function clipText(text: string, max: number): string {
+  const chars = Array.from(text);
+  return chars.length > max ? `${chars.slice(0, Math.max(0, max - 1)).join('')}…` : text;
+}
+
+/**
  * A stored plain text, sent as HTML: escaped whole, its first line bolded.
  *
  * This is how the staff drain turns thirty-odd pre-rendered messages into

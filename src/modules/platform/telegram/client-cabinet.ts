@@ -31,7 +31,7 @@ import { chatLocaleFor, setChatLocale } from './cabinet-locale';
 import { h } from './format';
 import { cabinetInlineKeyboard, setCabinetMenuButton } from './menu-button';
 import { adVisitFor, clearAdVisit } from './ad-intake';
-import { editText, sendAlbum, sendPhoto, sendText, type ChatId } from './send';
+import { editText, quietHour, sendAlbum, sendPhoto, sendText, type ChatId } from './send';
 import { isCabinetText, staffForChat } from './staff-bot';
 
 /**
@@ -362,6 +362,9 @@ export async function autoLinkClientToVerifiedChats(
         html: codeAddedHtml(client.clientCode, locale),
         replyMarkup: cabinetInlineKeyboard(process.env.APP_URL, locale) ?? undefined,
         timeoutMs: 10_000,
+        // A code minted at 23:00 by the office is not worth waking anybody
+        // for: the same quiet night as every other push (CONV-6).
+        silent: quietHour(new Date()),
       });
       if (!sent.ok) logger.warn({ clientId, description: sent.description }, 'auto-link notice not delivered');
     }
@@ -465,6 +468,8 @@ export async function forwardClientMessage(input: {
   /** The text, or a file's caption. */
   text: string | null;
   media: boolean;
+  /** What the media is, for the staff copy's words — a file unless said. */
+  kind?: 'file' | 'contact' | 'location' | 'sticker';
   /** Telegram's `media_group_id` when the file is one photo of an album. */
   albumId?: string | null;
   now?: Date;
@@ -508,7 +513,11 @@ export async function forwardClientMessage(input: {
       : office;
   const first = owner ?? linked[0]!;
   const card = cardLink('client', first.id);
-  const { forwardStaffText } = await botText();
+  const { forwardStaffText, FORWARD_QUOTE_CHARS } = await botText();
+  // A file is forwarded, and so is a text too long to quote whole (CONV-7): the
+  // staff copy would otherwise end at «…» with the rest of the question
+  // nowhere a person can read it.
+  const forwardWhole = input.media || Array.from(input.text?.trim() ?? '').length > FORWARD_QUOTE_CHARS;
   await notifyStaffTelegram({
     userIds: recipients,
     type: 'ClientBotMessage',
@@ -517,24 +526,54 @@ export async function forwardClientMessage(input: {
       name: first.name,
       text: input.text,
       media: input.media,
+      kind: input.kind,
       cardUrl: card && /^https?:\/\//.test(card) ? card : null,
     }),
-    extra: input.media
+    extra: forwardWhole
       ? { forwardFrom: { chatId: Number(input.chatId), messageId: input.messageId } }
       : undefined,
   });
   return owner ? { to: 'manager', managerName: managerName!, locale } : { to: 'office', locale };
 }
 
-/** «✅ Xabaringiz menejeringizga yetkazildi: Dilnoza.» — with the keyboard back. */
+/** How long one «✅ yetkazildi» speaks for the lines after it. */
+export const ACK_QUIET_MS = 2 * 60_000;
+const lastAck = new Map<string, { to: ForwardOutcome['to']; at: number; album: string | null }>();
+
+/**
+ * Whether this message gets its own answer (round C review, CONV-8). A
+ * customer types a question the way people talk — «salom», «GS777», «yuk
+ * qachon keladi?» — and three «✅ yetkazildi» between the lines is a bot
+ * talking over them. One answer speaks for everything of the same kind for two
+ * minutes; a DIFFERENT answer (the manager became unreachable, the chat hit
+ * the limit) is always said, because it is news. An album is one thing said,
+ * however long its photos take to arrive.
+ */
+export function ackDue(chatId: number | bigint, outcome: ForwardOutcome, album: string | null, now: number): boolean {
+  const key = String(chatId);
+  const last = lastAck.get(key);
+  if (last && album && last.album === album) return false;
+  if (last && last.to === outcome.to && now - last.at < ACK_QUIET_MS) {
+    if (album) last.album = album;
+    return false;
+  }
+  lastAck.set(key, { to: outcome.to, at: now, album });
+  return true;
+}
+
+/**
+ * «✅ Xabaringiz menejeringizga yetkazildi: Dilnoza.» — with the keyboard back.
+ * Over the per-chat limit it says the opposite, because it IS the opposite:
+ * that message reached nobody (CONV-1) and a «delivered» there is a customer
+ * waiting on an answer to a question no person has.
+ */
 async function acknowledge(chatId: number, outcome: ForwardOutcome): Promise<void> {
-  const { deliveredHtml } = await botText();
-  const name = outcome.to === 'office' ? null : outcome.managerName;
-  await sendInOrder(
-    chatId,
-    [{ html: deliveredHtml(name, outcome.locale), replyMarkup: await replyKeyboard(chatId, outcome.locale) }],
-    'forward-ack',
-  );
+  const { deliveredHtml, throttledHtml } = await botText();
+  const html =
+    outcome.to === 'throttled'
+      ? throttledHtml(outcome.locale)
+      : deliveredHtml(outcome.to === 'office' ? null : outcome.managerName, outcome.locale);
+  await sendInOrder(chatId, [{ html, replyMarkup: await replyKeyboard(chatId, outcome.locale) }], 'forward-ack');
 }
 
 /**
@@ -712,8 +751,6 @@ async function sendLotPhotos(chatId: number, lotId: string, linked: LinkedClient
 const menuButtonDone = new Set<number>();
 /** Chats with a 📷 answer on its way — a second tap waits for the first. */
 const photoInFlight = new Set<number>();
-/** The last album a chat sent us — its many updates are acknowledged once. */
-const ackedAlbum = new Map<number, string>();
 
 export function registerClientCabinet(bot: Bot): void {
   /**
@@ -758,8 +795,24 @@ export function registerClientCabinet(bot: Bot): void {
       // whole security model, and it is stronger than any typed code: a
       // stranger can only ever test their own number.
       if (contact.user_id !== ctx.from?.id) {
-        // Somebody else's contact card. There is no link here to cancel, so
-        // the answer is the one thing that works: send your OWN (CX-16).
+        // A CUSTOMER sending somebody else's card is telling us something —
+        // «this person collects the cargo» — and it reaches their manager
+        // like any other message, forwarded whole (round C review, CONV-3).
+        // The one-time phone keyboard is for a chat that is linking.
+        const outcome = await forwardClientMessage({
+          chatId: BigInt(chatId),
+          messageId: ctx.message.message_id,
+          text: [contact.first_name, contact.last_name, contact.phone_number].filter(Boolean).join(' '),
+          media: true,
+          kind: 'contact',
+        });
+        if (outcome) {
+          if (ackDue(chatId, outcome, null, Date.now())) dispatch('forward-ack', chatId, () => acknowledge(chatId, outcome));
+          return;
+        }
+        // Somebody else's contact card from a chat that is nobody's yet.
+        // There is no link here to cancel, so the answer is the one thing
+        // that works: send your OWN (CX-16).
         await ctx.reply(clientLabels(tgLocale).selfPhoneMismatch, { reply_markup: phoneKeyboard(tgLocale) });
         return;
       }
@@ -950,28 +1003,40 @@ export function registerClientCabinet(bot: Bot): void {
       media: false,
     });
     if (!outcome) return next();
-    dispatch('forward-ack', chatId, () => acknowledge(chatId, outcome));
+    if (ackDue(chatId, outcome, null, Date.now())) dispatch('forward-ack', chatId, () => acknowledge(chatId, outcome));
   });
 
   bot.on(
-    ['message:photo', 'message:document', 'message:voice', 'message:audio', 'message:video', 'message:video_note'],
+    [
+      'message:photo',
+      'message:document',
+      'message:voice',
+      'message:audio',
+      'message:video',
+      'message:video_note',
+      // A pin to where the cargo should go, a 👍 — silence would be worse
+      // than a forwarded sticker (CONV-3). A venue IS a location.
+      'message:location',
+      'message:sticker',
+    ],
     async (ctx, next) => {
       if (ctx.chat.type !== 'private') return next();
       const chatId = ctx.chat.id;
       const album = ctx.message.media_group_id ?? null;
+      const msg = ctx.message;
+      const venue = msg.venue ? [msg.venue.title, msg.venue.address].filter(Boolean).join(', ') : null;
       const outcome = await forwardClientMessage({
         chatId: BigInt(chatId),
-        messageId: ctx.message.message_id,
-        text: ctx.message.caption ?? null,
+        messageId: msg.message_id,
+        text: msg.caption ?? venue ?? (msg.sticker?.emoji ?? null),
         media: true,
+        kind: msg.location ? 'location' : msg.sticker ? 'sticker' : 'file',
         albumId: album,
       });
       if (!outcome) return next();
       // An album is one update per photo: each is forwarded, the customer is
       // told once.
-      if (album && ackedAlbum.get(chatId) === album) return;
-      if (album) ackedAlbum.set(chatId, album);
-      dispatch('forward-ack', chatId, () => acknowledge(chatId, outcome));
+      if (ackDue(chatId, outcome, album, Date.now())) dispatch('forward-ack', chatId, () => acknowledge(chatId, outcome));
     },
   );
 }

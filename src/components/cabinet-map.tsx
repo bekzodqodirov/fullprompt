@@ -260,7 +260,7 @@ export function CabinetMap({
                             {goodsName(lot)}
                           </span>
                           <span className="cab-map-lot-num">
-                            {groupDigits(lot.boxes)} · {groupDigits(lot.kg)} {t.kg} · {groupDigits(lot.m3)} {t.m3}
+                            {groupDigits(lot.boxes)} {boxWord(lot.boxes, locale)} · {groupDigits(lot.kg)} {t.kg} · {groupDigits(lot.m3)} {t.m3}
                           </span>
                         </li>
                       ))}

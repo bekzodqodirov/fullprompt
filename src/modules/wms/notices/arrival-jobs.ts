@@ -52,7 +52,7 @@ export const JOB_CLIENT_NOTICES = 'notices.client';
  */
 
 /** «🇺🇿 Yukingiz yetib keldi» — one per customer per truck (arrival.ts). */
-async function prepareArrival(notice: NoticeRow, client: ClientRow): Promise<PreparedPush | Skip> {
+async function prepareArrival(notice: NoticeRow, client: ClientRow, now: Date): Promise<PreparedPush | Skip> {
   // The destination is a fact about the batch, read now rather than carried
   // on the claim: a truck re-routed between the claim and the send would
   // otherwise name the wrong warehouse.
@@ -74,9 +74,15 @@ async function prepareArrival(notice: NoticeRow, client: ClientRow): Promise<Pre
   };
   const cleared = arrivalCleared(batch.customsClearedAt, origin?.country);
   const lotIds = summary.lines.map((line) => line.lotId);
+  // The day the customer is TOLD (the sweep's clock), which is the day the
+  // cartons it counts came off the truck: a notice re-armed by a second day of
+  // unloading keeps its first row's `created_at`, and printed yesterday over
+  // today's news (round C review, PA-4). Sent inside the window, the two are
+  // the same day.
+  const toldOn = now;
   return {
     render: (locale) => {
-      const text = arrivalText(full, client.clientCode, locale, { cleared, date: notice.createdAt });
+      const text = arrivalText(full, client.clientCode, locale, { cleared, date: toldOn });
       // The photograph was taken when the cargo was RECEIVED, in China; under
       // the arrival it must not read as a picture of its condition today
       // (judge CX-15), so the caption says so.
@@ -143,7 +149,7 @@ async function deliverNotice(notice: NoticeRow, now: Date): Promise<Delivery> {
   if (!client) return { kind: 'skipped', reason: 'client_gone' };
   const chats = await linkedChats(notice.clientId);
   if (chats.length === 0) return { kind: 'skipped', reason: 'no_linked_chat' };
-  const prepared = await prepare(notice, client);
+  const prepared = await prepare(notice, client, now);
   if ('skip' in prepared) return { kind: 'skipped', reason: prepared.skip };
 
   // Read once for every chat; after the first upload the file id stands in.

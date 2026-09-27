@@ -25,7 +25,7 @@ vi.mock('@/modules/platform/jobs/boss', async (original) => ({
 const { db, pgClient } = await import('@/modules/platform/db/client');
 const { clients, clientTelegramLinks, notifications, permissions, rolePermissions, telegramLinks, userRoles, users } =
   await import('@/modules/platform/db/schema');
-const { FORWARD_MAX_PER_WINDOW, autoLinkClientToVerifiedChats, forwardClientMessage } = await import(
+const { ACK_QUIET_MS, FORWARD_MAX_PER_WINDOW, ackDue, autoLinkClientToVerifiedChats, forwardClientMessage } = await import(
   '@/modules/platform/telegram/client-cabinet'
 );
 const { usersWithPermission } = await import('@/modules/platform/notifications/service');
@@ -136,6 +136,37 @@ describe('a customer’s own words reach a person', () => {
     expect(payload.text).toContain('«quti singan»');
   });
 
+  it('a long question with an emoji at the cut is quoted whole-charactered AND forwarded in full (CONV-2/7)', async () => {
+    const manager = await reachable('Uzun menejer');
+    const c = await client({ salesManagerId: manager.id });
+    const chatId = chat();
+    await link(c.id, chatId);
+    // 698 letters, then an emoji whose two UTF-16 halves straddle the 699th
+    // unit — where a `slice` used to cut, leaving a lone surrogate that
+    // postgres's jsonb refuses (the whole message was lost with an error).
+    const long = `${'a'.repeat(698)}😀${'b'.repeat(60)}`;
+
+    const outcome = await forwardClientMessage({ chatId, messageId: 77, text: long, media: false });
+    expect(outcome?.to).toBe('manager');
+    const [row] = (await forwarded()).filter((r) => r.userId === manager.id);
+    const payload = row!.payload as Record<string, unknown>;
+    expect(String(payload.text)).toContain(`${'a'.repeat(698)}😀…»`);
+    // The quote ends at «…»; the whole question travels as the message itself.
+    expect(payload.forwardFrom).toEqual({ chatId: Number(chatId), messageId: 77 });
+  });
+
+  it('a contact card and a location say what they are in the staff copy', async () => {
+    const manager = await reachable('Kontakt menejer');
+    const c = await client({ salesManagerId: manager.id });
+    const chatId = chat();
+    await link(c.id, chatId);
+    await forwardClientMessage({ chatId, messageId: 81, text: 'Aziz +998901112233', media: true, kind: 'contact' });
+    await forwardClientMessage({ chatId, messageId: 82, text: null, media: true, kind: 'location' });
+    const texts = (await forwarded()).filter((r) => r.userId === manager.id).map((r) => String((r.payload as { text: string }).text));
+    expect(texts.some((t) => t.startsWith(`📇 ${c.clientCode}`) && t.includes('kontakt yubordi') && t.includes('Aziz +998901112233'))).toBe(true);
+    expect(texts.some((t) => t.startsWith(`📍 ${c.clientCode}`) && t.includes('joylashuv yubordi'))).toBe(true);
+  });
+
   it('with no manager — or one who has LEFT — it goes to the office, never to nobody', async () => {
     // An office member this file can reach: the client-book role and a linked
     // chat. The demo seed's office people have no Telegram linked, so they are
@@ -223,6 +254,33 @@ describe('a customer’s own words reach a person', () => {
       now: new Date(now.getTime() + 11 * 60_000),
     });
     expect(later?.to).toBe('manager');
+  });
+});
+
+describe('one «yetkazildi» speaks for a conversation (CONV-8)', () => {
+  const said = (to: 'manager' | 'office' | 'throttled') =>
+    to === 'office' ? { to, locale: null } : { to, managerName: 'D', locale: null };
+
+  it('the lines after an answer are not each answered; news always is', () => {
+    const chatId = chat();
+    const t0 = Date.UTC(2030, 5, 1, 9);
+    expect(ackDue(chatId, said('manager'), null, t0)).toBe(true);
+    expect(ackDue(chatId, said('manager'), null, t0 + 30_000)).toBe(false);
+    expect(ackDue(chatId, said('manager'), null, t0 + 90_000)).toBe(false);
+    // The limit is news: that message reached NOBODY.
+    expect(ackDue(chatId, said('throttled'), null, t0 + 100_000)).toBe(true);
+    expect(ackDue(chatId, said('throttled'), null, t0 + 110_000)).toBe(false);
+    // A quiet pause, then a new question: answered again.
+    expect(ackDue(chatId, said('throttled'), null, t0 + 110_000 + ACK_QUIET_MS)).toBe(true);
+  });
+
+  it('an album is answered once, however slowly its photos arrive', () => {
+    const chatId = chat();
+    const t0 = Date.UTC(2030, 5, 2, 9);
+    expect(ackDue(chatId, said('manager'), 'alb-x', t0)).toBe(true);
+    expect(ackDue(chatId, said('manager'), 'alb-x', t0 + 1_000)).toBe(false);
+    expect(ackDue(chatId, said('manager'), 'alb-x', t0 + ACK_QUIET_MS * 3)).toBe(false);
+    expect(ackDue(chatId, said('manager'), 'alb-y', t0 + ACK_QUIET_MS * 3)).toBe(true);
   });
 });
 

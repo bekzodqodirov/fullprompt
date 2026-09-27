@@ -121,3 +121,45 @@ describe('the stragglers', () => {
     }
   });
 });
+
+describe('the post-merge review’s conversation fixes (round C review)', () => {
+  it('a linked customer’s card for somebody else is forwarded before it is refused (CONV-3)', () => {
+    const at = cabinet.indexOf('if (contact.user_id !== ctx.from?.id) {');
+    expect(at, 're-anchor: the self-service contact branch moved').toBeGreaterThan(-1);
+    const body = cabinet.slice(at, at + 1400);
+    const forward = body.indexOf('forwardClientMessage(');
+    const refuse = body.indexOf('selfPhoneMismatch');
+    expect(forward, 'the card no longer reaches the manager').toBeGreaterThan(-1);
+    expect(refuse).toBeGreaterThan(-1);
+    expect(forward).toBeLessThan(refuse);
+    expect(body.slice(forward, refuse)).toContain("kind: 'contact'");
+  });
+
+  it('a location and a sticker reach a person instead of silence (CONV-3)', () => {
+    const at = cabinet.indexOf("'message:photo'");
+    const list = cabinet.slice(at, cabinet.indexOf('async (ctx, next)', at));
+    expect(list).toContain("'message:location'");
+    expect(list).toContain("'message:sticker'");
+  });
+
+  it('every forward answer goes through the one debounce (CONV-8)', () => {
+    const acks = cabinet.split("dispatch('forward-ack'").length - 1;
+    const due = cabinet.split('if (ackDue(chatId, outcome,').length - 1;
+    expect(acks).toBeGreaterThanOrEqual(3);
+    expect(due).toBe(acks);
+  });
+
+  it('the code-added notice keeps the customer’s quiet night (CONV-6)', () => {
+    const at = cabinet.indexOf('codeAddedHtml(client.clientCode, locale)');
+    expect(at).toBeGreaterThan(-1);
+    expect(cabinet.slice(at, at + 400)).toContain('silent: quietHour(');
+  });
+
+  it('a spent link code on a chat that is already somebody’s is a plain /start (CONV-5)', () => {
+    const at = bot.indexOf('clientLabels(tg).linkExpired');
+    expect(at, 're-anchor: the spent-code reply moved').toBeGreaterThan(-1);
+    const before = bot.slice(bot.lastIndexOf("step === 'no_phone'", at), at);
+    expect(before).toContain('clientsForChat(chatId)');
+    expect(before).toContain('await bareStart();');
+  });
+});

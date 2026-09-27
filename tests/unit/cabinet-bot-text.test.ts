@@ -16,6 +16,7 @@ import {
   photoSource,
   prettyPhone,
   startGreetingHtml,
+  throttledHtml,
 } from '@/modules/wms/client-cabinet/bot-text';
 import type { CabinetLot, CargoGroup, DebtSummary } from '@/modules/wms/client-cabinet/service';
 
@@ -46,6 +47,7 @@ function lot(over: Partial<CabinetLot> & { groups?: CargoGroup[] } = {}): Cabine
     perBoxKg: 10,
     perBoxM3: 0.0875,
     photoCount: 0,
+    readyCleared: 0,
     ...over,
     groups,
   };
@@ -410,5 +412,15 @@ describe('the staff copy of a customer’s words', () => {
     expect(forwardStaffText({ codes: ['GS1'], name: 'A', text: 'singan', media: true, cardUrl: null })).toBe(
       '📎 GS1 (A) botga fayl yubordi:\n«singan»',
     );
+  });
+});
+
+describe('the customer is told the TRUTH about a message over the limit (round C review, CONV-1)', () => {
+  it('«not passed on», in their language — never «delivered»', () => {
+    for (const loc of ['uz', 'ru', 'en'] as const) {
+      const html = throttledHtml(loc);
+      expect(html).toContain(clientLabels(loc).msgThrottled.slice(0, 20));
+      expect(html).not.toContain('✅');
+    }
   });
 });

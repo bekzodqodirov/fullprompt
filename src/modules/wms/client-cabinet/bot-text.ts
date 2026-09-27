@@ -1,4 +1,4 @@
-import { b, groupDigits, h, packHtmlBlocks, stepBar, usd } from '../../platform/telegram/format';
+import { b, clipText, groupDigits, h, packHtmlBlocks, stepBar, usd } from '../../platform/telegram/format';
 import {
   boxWord,
   clientLabels,
@@ -243,7 +243,7 @@ export function photoCaption(
   facts: { clientCode: string; letter: string | null; name: string; boxes: number },
   locale: string | null,
 ): string {
-  const name = facts.name.length > 200 ? `${facts.name.slice(0, 199)}…` : facts.name;
+  const name = clipText(facts.name, 200);
   const title = facts.letter ? `${facts.clientCode} · ${facts.letter}` : facts.clientCode;
   return `${b(h(title))} · ${h(name)} · ${boxes(facts.boxes, locale)}`;
 }
@@ -471,6 +471,11 @@ export function deliveredHtml(managerName: string | null, locale: string | null)
   return managerName ? fillHtml(t.msgDeliveredManager, { name: managerName }) : h(t.msgDeliveredOffice);
 }
 
+/** Over the per-chat limit: this one reached nobody, and the customer is told so. */
+export function throttledHtml(locale: string | null): string {
+  return h(clientLabels(locale).msgThrottled);
+}
+
 /** How much of a customer's message the staff copy quotes — the share rule's 700. */
 export const FORWARD_QUOTE_CHARS = 700;
 
@@ -483,20 +488,30 @@ export const FORWARD_QUOTE_CHARS = 700;
  * into a button. A file is announced here and FORWARDED by the drain
  * (`forwardFrom`) — the text still stands on its own when the forward fails.
  */
+/** What a non-text message IS, in the staff copy's own words. */
+const SENT_WHAT: Record<ForwardedKind, string> = {
+  file: '📎 {who} botga fayl yubordi',
+  contact: '📇 {who} botga kontakt yubordi',
+  location: '📍 {who} botga joylashuv yubordi',
+  sticker: '💬 {who} botga stiker yubordi',
+};
+export type ForwardedKind = 'file' | 'contact' | 'location' | 'sticker';
+
 export function forwardStaffText(input: {
   codes: string[];
   name: string | null;
   text: string | null;
   media: boolean;
+  /** What the media IS — a file unless said otherwise. */
+  kind?: ForwardedKind;
   cardUrl: string | null;
 }): string {
   const who = `${input.codes.join(', ')}${input.name?.trim() ? ` (${input.name.trim()})` : ''}`;
   const said = input.text?.trim() ?? '';
-  const quoted =
-    said.length > FORWARD_QUOTE_CHARS ? `${said.slice(0, FORWARD_QUOTE_CHARS - 1)}…` : said;
+  const quoted = clipText(said, FORWARD_QUOTE_CHARS);
   const lines = [
     input.media
-      ? `📎 ${who} botga fayl yubordi${quoted ? ':' : ''}`
+      ? `${SENT_WHAT[input.kind ?? 'file'].replace('{who}', who)}${quoted ? ':' : ''}`
       : `💬 ${who} botga yozdi:`,
   ];
   if (quoted) lines.push(`«${quoted}»`);

@@ -21,6 +21,7 @@ import { reachableAt } from '../crm/site-assign-rules';
 import { telegramPhoneUrl } from '../../platform/telegram/map-link';
 import { chatLocaleFor } from '../../platform/telegram/cabinet-locale';
 import { ARRIVED_ON_A_TRUCK } from '../documents/arrivals';
+import { arrivalCleared } from '../notices/arrival-text';
 import { clientBalanceUsd, clientLedger } from '../finance/service';
 import { etaWindow, scheduleEstimate } from '../tracking/eta';
 import { journeyFromEvents, type JourneyStep } from './journey';
@@ -243,6 +244,11 @@ export interface CabinetLot {
   journey: JourneyStep[];
   total: number;
   /**
+   * Of this lot's READY boxes, how many are cleared by the push's own rule —
+   * the ready card's ✅ / ⏳ split. The rest wait on a declaration.
+   */
+  readyCleared: number;
+  /**
    * Where the boxes physically are, by NAME — «Kashgar», not «KA».
    *
    * It used to print the warehouse CODE, which is staff jargon on the one
@@ -409,6 +415,41 @@ async function lotJourneys(
   return out;
 }
 
+/**
+ * The truck each LANDED box of a client came off, counted per lot (round C
+ * review, MA-1). The live pointer is NULL once a box lands, so the customs
+ * stamp and the «in Uzbekistan» date vanished from the history the moment the
+ * cargo arrived — and the ready card read that absence as «still in
+ * paperwork» on every ready carton there is. The newest arrival movement is
+ * the durable record (`documents/arrivals.ts`, whose cause list this reads),
+ * asked per box through the movements' (box, time) index. `batchId` null =
+ * no truck brought it (received where it stands).
+ */
+async function landedTrucks(
+  clientId: string,
+): Promise<{ lotId: string; batchId: string | null; ready: boolean; n: number }[]> {
+  const rows = (await db.execute(sql`
+    SELECT b.lot_id AS "lotId", lm.ref_id AS "batchId",
+           (b.status = 'ready_for_pickup') AS ready, count(*)::int AS n
+    FROM boxes b
+    JOIN receipt_lots rl ON rl.id = b.lot_id
+    JOIN receipts r ON r.id = rl.receipt_id
+    LEFT JOIN LATERAL (
+      SELECT m.ref_id FROM box_movements m
+      WHERE m.box_id = b.id
+        AND m.cause IN (${sql.join(ARRIVED_ON_A_TRUCK.map((c) => sql`${c}`), sql`, `)})
+        AND m.ref_type = 'batch'
+      ORDER BY m.created_at DESC
+      LIMIT 1
+    ) lm ON true
+    WHERE r.client_id = ${clientId}
+      AND b.current_batch_id IS NULL
+      AND b.status IN (${sql.join(ACTIVE_STATUSES.map((s) => sql`${s}`), sql`, `)})
+    GROUP BY b.lot_id, lm.ref_id, (b.status = 'ready_for_pickup')
+  `)) as unknown as { lotId: string; batchId: string | null; ready: boolean; n: number }[];
+  return rows.map((r) => ({ ...r, n: Number(r.n) }));
+}
+
 /** The client's active (not yet issued) cargo, one entry per lot. */
 export async function cargoOverview(clientId: string): Promise<CabinetLot[]> {
   const rows = await db
@@ -433,6 +474,14 @@ export async function cargoOverview(clientId: string): Promise<CabinetLot[]> {
        * it is the truck they are on right now.
        */
       batchId: boxes.currentBatchId,
+      /*
+       * The truck a LANDED box came off (round C review, MA-1): the live
+       * pointer is NULL once it lands, so the customs stamp and the «in
+       * Uzbekistan» date vanished from the history the moment the cargo
+       * arrived — and the ready card read that absence as «still in
+       * paperwork» on every ready carton there is. The arrival movement is
+       * the durable record, the rule `documents/arrivals.ts` states.
+       */
       n: sql<number>`count(*)`,
       // A box has no weight of its own — the lot's total divided by its box
       // count is what every other screen means by "per box" (#152 area,
@@ -464,8 +513,9 @@ export async function cargoOverview(clientId: string): Promise<CabinetLot[]> {
   // ONE query for every truck this client's cargo is riding, not one per row
   // (#432): a client with cargo on three lorries pays for three joins, not for
   // three hundred.
+  const landed = await landedTrucks(clientId);
   const trucks = await trucksFor([
-    ...new Set(rows.map((r) => r.batchId).filter((id): id is string => !!id)),
+    ...new Set([...rows.map((r) => r.batchId), ...landed.map((l) => l.batchId)].filter((id): id is string => !!id)),
   ]);
 
   const byLot = new Map<string, CabinetLot>();
@@ -488,6 +538,7 @@ export async function cargoOverview(clientId: string): Promise<CabinetLot[]> {
         perBoxKg: Number(r.perBoxKg ?? 0),
         perBoxM3: Number(r.perBoxM3 ?? 0),
         photoCount: 0,
+        readyCleared: 0,
       };
       byLot.set(r.lotId, lot);
       stageCounts.set(r.lotId, new Map());
@@ -523,6 +574,18 @@ export async function cargoOverview(clientId: string): Promise<CabinetLot[]> {
   const lotTruck = new Map<string, CabinetTruck | null>();
   for (const r of rows) {
     if (r.batchId && !lotTruck.get(r.lotId)) lotTruck.set(r.lotId, trucks.get(r.batchId) ?? null);
+  }
+  for (const l of landed) {
+    const lot = byLot.get(l.lotId);
+    if (!lot) continue;
+    const truck = l.batchId ? (trucks.get(l.batchId) ?? null) : null;
+    if (truck && !lotTruck.get(l.lotId)) lotTruck.set(l.lotId, truck);
+    // The push's own rule (`arrivalCleared`), so the card under the push says
+    // what the push said. Cargo no truck brought (received at an Uzbek
+    // warehouse) has no declaration of ours to wait for.
+    if (l.ready && (!truck || arrivalCleared(truck.customsClearedAt, truck.stage.originCountry))) {
+      lot.readyCleared += l.n;
+    }
   }
   const journeys = await lotJourneys(
     lots.map((l) => l.lotId),

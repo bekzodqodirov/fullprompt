@@ -57,6 +57,28 @@ describe('«qabul qilindi» knows where the cargo is when it is SENT', () => {
     expect(text).not.toContain(t.pushNextReceived);
   });
 
+  it('FRESH is a fact about the cargo, not the rung (PA-1)', () => {
+    const t = clientLabels('uz');
+    // A customer who brings goods to Tashkent: received, at step three, with
+    // no «next: loaded onto a truck» about cargo that has already arrived.
+    const walkIn = plain(receivedText({ ...RECEIVED, stage: 'in_uz', fresh: true }, 'uz'));
+    expect(walkIn.startsWith(t.arrivedTitle)).toBe(true);
+    expect(walkIn).toContain(`🟩🟩🟩⬜⬜ ${t.msUz}`);
+    expect(walkIn).not.toContain(t.pushNextReceived);
+    expect(walkIn).not.toContain(t.pushAddedTitle);
+    // Received in China long ago and given its owner only now: «added», even
+    // while it still stands in China.
+    const late = plain(receivedText({ ...RECEIVED, stage: 'cn_warehouse', fresh: false }, 'uz'));
+    expect(late.startsWith(t.pushAddedTitle)).toBe(true);
+    expect(late).not.toContain(t.pushNextReceived);
+  });
+
+  it('a long name is cut on a whole character, never inside an emoji (PA-3)', () => {
+    const name = `${'x'.repeat(78)}😀tail`;
+    const html = receivedText({ ...RECEIVED, lines: [{ ...RECEIVED.lines[0]!, name }] }, 'uz');
+    expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(html), 'a lone high surrogate').toBe(false);
+  });
+
   it('a rung whose sentence IS the step is not said twice', () => {
     // Found by reading the rendered push: «🟩🟩🟩🟩⬜ Olib ketishga tayyor» and
     // then «Olib ketishga tayyor ✅» on the next line.

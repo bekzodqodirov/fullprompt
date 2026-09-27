@@ -315,4 +315,26 @@ describe('a customer\'s own message rides ahead of the sentence (contract 2)', (
     expect(row.status).toBe('sent');
     expect((row.payload as { forwarded?: boolean }).forwarded).toBeUndefined();
   });
+
+  it('a forward that fails for a MOMENT keeps the row — the file exists nowhere else (CONV-4)', async () => {
+    answers.push({ status: 502, json: { ok: false, description: 'Bad Gateway' } });
+    const id = await queue(staffId, 'ClientBotMessage', {
+      text: '📎 GS777 (Aziz) botga fayl yubordi',
+      forwardFrom: { chatId: 555_000, messageId: 11 },
+    });
+    await drain();
+    // No sentence without the file: the customer's photo lives only in their
+    // private chat with the bot, which no person can open.
+    expect(calls.map((c) => c.method)).toEqual(['forwardMessage']);
+    const held = await rowOf(id);
+    expect(held.status).toBe('pending');
+    expect(held.attempts).toBe(1);
+
+    calls.length = 0;
+    await drain();
+    expect(calls.map((c) => c.method)).toEqual(['forwardMessage', 'sendMessage']);
+    const done = await rowOf(id);
+    expect(done.status).toBe('sent');
+    expect((done.payload as { forwarded?: boolean }).forwarded).toBe(true);
+  });
 });

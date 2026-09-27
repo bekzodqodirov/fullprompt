@@ -88,3 +88,23 @@ describe('filling a label', () => {
     expect(fillLabel('{n} olib ketishga tayyor · {x}', { n: 5 })).toBe('5 olib ketishga tayyor · {x}');
   });
 });
+
+describe('boxWord on a phone with no Intl.PluralRules (round C review, MA-3)', () => {
+  it('still counts in the customer’s grammar instead of throwing mid-render', () => {
+    const real = Intl.PluralRules;
+    try {
+      // An iOS 12 WebView: the constructor does not exist.
+      (Intl as { PluralRules?: unknown }).PluralRules = undefined;
+      const forms = [1, 2, 5, 11, 12, 21, 22, 25, 111, 112].map((n) => boxWord(n, 'ru'));
+      (Intl as { PluralRules?: unknown }).PluralRules = real;
+      const truth = [1, 2, 5, 11, 12, 21, 22, 25, 111, 112].map((n) => boxWord(n, 'ru'));
+      expect(forms).toEqual(truth);
+      (Intl as { PluralRules?: unknown }).PluralRules = undefined;
+      expect(boxWord(1, 'en')).toBe('box');
+      expect(boxWord(3, 'en')).toBe('boxes');
+      expect(boxWord(4, 'uz')).toBe('quti');
+    } finally {
+      (Intl as { PluralRules?: unknown }).PluralRules = real;
+    }
+  });
+});

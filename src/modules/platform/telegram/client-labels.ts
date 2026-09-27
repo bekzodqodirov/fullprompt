@@ -195,6 +195,12 @@ const DICT = {
     ru: '✅ Сообщение передано в наш офис.',
     en: '✅ Your message was passed to our office.',
   },
+  // Over the per-chat limit (10 in 10 minutes): THIS message reached nobody.
+  msgThrottled: {
+    uz: '⏳ Xabarlar juda ko‘p — bu xabar menejerga yetkazilmadi. Bir necha daqiqadan keyin qayta yozing.',
+    ru: '⏳ Слишком много сообщений подряд — это не передано менеджеру. Напишите ещё раз через несколько минут.',
+    en: '⏳ Too many messages in a row — this one was not passed on. Please write again in a few minutes.',
+  },
   // «Arrival (Kashgar): about 30.09 – 01.10» — the place named INSIDE the
   // estimate, so a China-leg date is never read as the delivery date (CX-9).
   etaTo: {
@@ -770,10 +776,32 @@ export function fillHtml(template: string, vars: Record<string, string | number>
  * `Intl.PluralRules` knows the three languages' rules (Russian has three
  * forms and counts 21 as «one»), so nothing here restates them. Rules are
  * asked of the resolved client language, never the raw tag.
+ *
+ * GUARDED (round C review, MA-3): this now runs inside the Mini App, and a
+ * WebView older than Safari 13 has no `Intl.PluralRules` — the constructor
+ * would throw mid-render and a customer's cabinet would be a blank page. The
+ * fallback states the Russian rule by hand only for that phone.
  */
+function pluralCategory(n: number, key: ClientLocale): string {
+  try {
+    if (typeof Intl !== 'undefined' && typeof Intl.PluralRules === 'function') {
+      return new Intl.PluralRules(key).select(n);
+    }
+  } catch {
+    // An engine that has the constructor and not the language: the hand rule.
+  }
+  const whole = Math.abs(Math.trunc(n));
+  if (key !== 'ru') return whole === 1 ? 'one' : 'other';
+  const ten = whole % 10;
+  const hundred = whole % 100;
+  if (ten === 1 && hundred !== 11) return 'one';
+  if (ten >= 2 && ten <= 4 && (hundred < 12 || hundred > 14)) return 'few';
+  return 'many';
+}
+
 export function boxWord(n: number, locale?: string | null): string {
   const key = isClientLocale(locale) ? locale : fallback(locale);
-  const category = new Intl.PluralRules(key).select(n);
+  const category = pluralCategory(n, key);
   const form = category === 'one' ? 'boxOne' : category === 'few' ? 'boxFew' : 'boxMany';
   return DICT[form][key];
 }

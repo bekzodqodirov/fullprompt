@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   a,
   b,
+  clipText,
   escapeHtml,
   groupDigits,
   h,
@@ -98,5 +99,20 @@ describe('packing blocks into messages', () => {
     expect(messages.length).toBeGreaterThan(1);
     for (const m of messages) expect(m).not.toContain('<b>');
     expect(messages.map(htmlToPlain).join('\n').replace(/\s+/g, ' ')).toContain('line & more');
+  });
+});
+
+describe('clipText — a cut is on a whole character (round C review, CONV-2/PA-3)', () => {
+  it('counts code points, so an emoji at the edge survives whole or not at all', () => {
+    const text = `${'a'.repeat(9)}😀bbb`;
+    expect(clipText(text, 11)).toBe(`${'a'.repeat(9)}😀…`);
+    expect(clipText(text, 10)).toBe(`${'a'.repeat(9)}…`);
+    // A slice would have left a lone surrogate here — jsonb refuses one.
+    expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(clipText(text, 11))).toBe(false);
+  });
+
+  it('leaves a short text exactly as it came', () => {
+    expect(clipText('salom', 5)).toBe('salom');
+    expect(clipText('😀😀', 2)).toBe('😀😀');
   });
 });

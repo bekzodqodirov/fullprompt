@@ -807,8 +807,16 @@ function ReadyHero({
   for (const lot of client.cargo) {
     const n = lot.groups.filter((g) => g.stage === 'ready').reduce((s, g) => s + g.n, 0);
     if (n === 0) continue;
-    if (lot.journey.some((s) => s.key === 'customs')) cleared += n;
-    else pending += n;
+    // The server's per-box answer (`readyCleared`, the push's own rule). The
+    // journey is asked only of a payload from a server that predates it.
+    const ok =
+      typeof lot.readyCleared === 'number'
+        ? Math.min(n, lot.readyCleared)
+        : lot.journey.some((s) => s.key === 'customs')
+          ? n
+          : 0;
+    cleared += ok;
+    pending += n - ok;
   }
   if (cleared === 0 && pending === 0) return null;
   const count = (n: number) => `${groupDigits(n)} ${boxWord(n, locale)}`;

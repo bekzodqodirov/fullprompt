@@ -1,4 +1,4 @@
-import { b, code, groupDigits, h, stepBar } from '@/modules/platform/telegram/format';
+import { b, clipText, code, groupDigits, h, stepBar } from '@/modules/platform/telegram/format';
 import {
   boxWord,
   clientLabels,
@@ -109,8 +109,7 @@ export function boxesText(n: number, locale?: string | null): string {
 }
 
 function clip(text: string, max = PUSH_NAME_CHARS): string {
-  const clean = text.replace(/\s+/g, ' ').trim();
-  return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
+  return clipText(text.replace(/\s+/g, ' ').trim(), max);
 }
 
 /** `<b>GS777</b> · Yiwu · 27.09.2026` — whose, where, when. */
@@ -213,29 +212,36 @@ export interface ReceivedSummary {
    * be announced as «just received» (judge REL-9/STATE-2).
    */
   stage: CargoStage;
+  /**
+   * Nothing live has left the warehouse that received it — the customer is
+   * hearing about a delivery that just happened. Absent reads as «judge by
+   * the rung», which is what every summary said before the field existed.
+   */
+  fresh?: boolean;
 }
 
 /**
  * «📥 Yukingiz omborimizga qabul qilindi» — the owner's first ask, and the
  * question the office used to answer by telephone all day.
  *
- * Still in China → the received title, the bar at its first square and what
- * happens next. Already past China (unclaimed cargo given its owner later) →
- * «added to your cabinet», the bar where the cargo really is, and that rung's
- * own sentence — never «next step: loaded onto a truck» about cargo that is
- * already in Tashkent.
+ * Just received in China → the received title, the bar at its first square
+ * and what happens next. Just received ELSEWHERE (a customer who brings goods
+ * to an Uzbek warehouse themselves) → the received title and the bar, with no
+ * «loaded onto a truck» sentence about cargo that has arrived. Received long
+ * ago and only now given its owner (unclaimed cargo) → «added to your
+ * cabinet», the bar where the cargo really is, and that rung's own sentence.
  */
 export function receivedText(summary: ReceivedSummary, locale?: string | null): string {
   const t = clientLabels(locale);
   const step = milestoneOf(summary.stage);
-  const fresh = step === 0;
+  const fresh = summary.fresh ?? step === 0;
   return joinBlocks(
     [b(h(fresh ? t.arrivedTitle : t.pushAddedTitle)), headerLine(summary.clientCode, summary.warehouseName, summary.receivedAt)],
     lotLines(summary.lines, locale),
     totalLine(sum(summary.lines, (l) => l.boxCount), measuresOf(summary.lines), locale),
     [
       stepLine(step, locale),
-      fresh ? h(t.pushNextReceived) : restOfRung(summary.stage, step, t),
+      !fresh ? restOfRung(summary.stage, step, t) : step === 0 ? h(t.pushNextReceived) : '',
       summary.receiptNumber ? `${h(t.pushReceiptNo)}: ${code(h(summary.receiptNumber))}` : '',
     ],
   );

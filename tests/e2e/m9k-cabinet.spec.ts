@@ -388,6 +388,8 @@ const PAYLOAD_C = {
             { key: 'ready', atIso: '2030-07-22T05:00:00Z' },
           ],
           total: 12,
+          // The server's own split (MA-1): all twelve came off a cleared truck.
+          readyCleared: 12,
           warehousePlaces: ['Toshkent 1'],
           hasPhotos: false,
           weightKg: 12845.5,

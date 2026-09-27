@@ -1,7 +1,7 @@
 import { and, eq, isNull } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { pickupLines, pickups, pickupStops, receipts, warehouses } from '../../platform/db/schema';
-import { b, h } from '../../platform/telegram/format';
+import { b, clipText, h } from '../../platform/telegram/format';
 import { clientLabels, fillLabel } from '../../platform/telegram/client-labels';
 import type { NoticeRow, ClientRow, PreparedPush, Skip } from '../notices/client-push';
 import { boxesText, headerLine, joinBlocks, PUSH_LOT_LINES, totalLine } from '../notices/client-text';
@@ -43,8 +43,7 @@ export function pickedUpText(
   const t = clientLabels(locale);
   const total = lines.reduce((sum, line) => sum + line.boxes, 0);
   const shown = lines.slice(0, PUSH_LOT_LINES).map((line) => {
-    const goods = line.goods.replace(/\s+/g, ' ').trim();
-    const clipped = goods.length > 80 ? `${goods.slice(0, 79)}…` : goods;
+    const clipped = clipText(line.goods.replace(/\s+/g, ' ').trim(), 80);
     return `📦 ${h(clipped)} — ${boxesText(line.boxes, locale)}`;
   });
   if (lines.length > PUSH_LOT_LINES) {

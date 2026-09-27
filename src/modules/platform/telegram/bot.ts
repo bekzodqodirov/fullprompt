@@ -106,7 +106,14 @@ export function startTelegramBot(): void {
       return;
     }
 
-    if (!code) {
+    /*
+     * A bare /start. A function because a SPENT link code from a chat that is
+     * already somebody's lands here too (round C review, CONV-5): a customer
+     * tapping last month's link again was told «link expired» and handed the
+     * one-time phone keyboard, which took their cabinet buttons away — while
+     * the chat was connected all along.
+     */
+    const bareStart = async (): Promise<void> => {
       // One decision, made in the testable layer (round 100, 13A): the
       // owner's own people also ship cargo, and the staff menu used to
       // REPLACE their cabinet buttons — reply keyboards are exclusive.
@@ -154,6 +161,10 @@ export function startTelegramBot(): void {
       await ctx.reply(`${t.notLinked}\n\n${t.entryQuestion}`, {
         reply_markup: entryKeyboard(tg),
       });
+    };
+
+    if (!code) {
+      await bareStart();
       return;
     }
     const link = await db.query.telegramLinks.findFirst({
@@ -177,6 +188,13 @@ export function startTelegramBot(): void {
         const office = await officeContact();
         const html = `${h(clientLabels(tg).linkUnverifiable)}\n\n${officeLinesHtml(office, tg)}`;
         dispatch('link-unverifiable', chatId, () => sendInOrder(chatId, [{ html }], 'link-unverifiable'));
+        return;
+      }
+      // A spent code from a chat that is already connected: nothing to link,
+      // so it is the ordinary greeting — cabinet buttons and all.
+      const chatId = BigInt(ctx.chat.id);
+      if ((await clientsForChat(chatId)).length || (await staffForChat(chatId))) {
+        await bareStart();
         return;
       }
       // A spent or unknown code is not the end: the self-service door needs no

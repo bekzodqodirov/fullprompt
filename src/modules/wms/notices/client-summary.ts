@@ -124,6 +124,7 @@ export async function receivedFacts(clientId: string, receiptId: string): Promis
       voidedAt: receipts.voidedAt,
       receivedAt: receipts.receivedAt,
       confirmedAt: receipts.confirmedAt,
+      warehouseId: receipts.warehouseId,
       warehouseName: warehouses.name,
       warehouseCode: warehouses.code,
     })
@@ -152,6 +153,21 @@ export async function receivedFacts(clientId: string, receiptId: string): Promis
   const stage = await receiptStage(receiptId);
   // Every carton voided or lost before the window closed: nothing to announce.
   if (!stage) return { skip: 'nothing_live' };
+  // FRESH = nothing live has left the warehouse that received it. Asked of the
+  // cargo and not of the rung (round C review, PA-1): a customer who brings
+  // goods to Tashkent themselves is received at step 3, and «added to your
+  // cabinet» about cargo they handed over an hour ago is the wrong sentence.
+  const [moved] = await db
+    .select({ n: sql<number>`count(*)` })
+    .from(boxes)
+    .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+    .where(
+      and(
+        eq(receiptLots.receiptId, receiptId),
+        notInArray(boxes.status, ['void', 'lost']),
+        sql`(${boxes.currentWarehouseId} IS DISTINCT FROM ${receipt.warehouseId} OR ${boxes.status} IN ('in_transit', 'issued'))`,
+      ),
+    );
 
   const lines: PushLot[] = lots.map((lot) => ({
     lotId: lot.id,
@@ -169,6 +185,7 @@ export async function receivedFacts(clientId: string, receiptId: string): Promis
       receivedAt: receipt.confirmedAt ?? receipt.receivedAt,
       lines,
       stage,
+      fresh: Number(moved?.n ?? 0) === 0,
     },
     lotIds: lines.map((line) => line.lotId),
   };
