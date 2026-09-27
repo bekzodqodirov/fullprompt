@@ -141,3 +141,15 @@ export function addDays(day: string, n: number): string {
   d.setUTCDate(d.getUTCDate() + n);
   return d.toISOString().slice(0, 10);
 }
+
+/**
+ * The Monday of the ISO week `day` falls in, `YYYY-MM-DD` — a Sunday belongs
+ * to the week that began six days before it, never to the next one. The key
+ * of the dashboard's weekly cash columns: postgres's `date_trunc('week', …)`
+ * is Monday-based too, so the column the database fills and the key this
+ * names are the same day. Calendar arithmetic at UTC noon like `addDays`.
+ */
+export function mondayOf(day: string): string {
+  const weekday = new Date(`${day}T12:00:00Z`).getUTCDay(); // 0 = Sunday
+  return addDays(day, -((weekday + 6) % 7));
+}

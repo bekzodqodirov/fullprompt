@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   addDays,
   dayIn,
+  mondayOf,
   tashkentDay,
   tashkentDayStart,
   tashkentMonth,
@@ -50,5 +51,14 @@ describe('tashkent day', () => {
   it('dayIn answers another zone, and an unknown zone falls back to UTC', () => {
     expect(dayIn(new Date('2026-08-28T16:30:00Z'), 'Asia/Shanghai')).toBe('2026-08-29');
     expect(dayIn(new Date('2026-08-31T18:10:00Z'), 'Mars/Olympus')).toBe('2026-08-31');
+  });
+
+  it('mondayOf: a Sunday belongs to the week that began six days before it (ISO, like postgres)', () => {
+    expect(mondayOf('2026-09-27')).toBe('2026-09-21'); // Sunday
+    expect(mondayOf('2026-09-21')).toBe('2026-09-21'); // a Monday is its own week
+    expect(mondayOf('2026-09-22')).toBe('2026-09-21');
+    expect(mondayOf('2027-01-01')).toBe('2026-12-28'); // across the year
+    expect(mondayOf('1657-07-08')).toBe('1657-07-02'); // the weekly cash fence's Sunday
+    expect(mondayOf('1657-07-01')).toBe('1657-06-25'); // …and its first day, a Sunday too
   });
 });

@@ -38,26 +38,9 @@ export function toUzs(amountUsd: number, rate: number | null): number | null {
 }
 
 /**
- * The period a report compares itself with (the P&L's ▲▼, the owner's item
- * 10): the year before for a year-to-date range, the month before for a
- * month-to-date one — both on the SAME days, so a September 1–26 is read
- * against August 1–26 and not against a whole August — and otherwise the
- * equal span immediately before. A day past the prior month's end clamps to
- * it (31 March → 28/29 February).
+ * The period a report compares itself with (the P&L's ▲▼ and the
+ * dashboard's). The rule lives in `prior-period.ts` — its own file because
+ * the dashboard's PURE arithmetic calls it and this file reads a rate from
+ * the database — and is re-exported here, where every screen asks for it.
  */
-export function priorPeriod(from: string, to: string): { from: string; to: string } {
-  const [fy, fm, fd] = from.split('-').map(Number) as [number, number, number];
-  const [ty, tm, td] = to.split('-').map(Number) as [number, number, number];
-  const iso = (d: Date) => d.toISOString().slice(0, 10);
-  const shift = (y: number, m: number, d: number, months: number) => {
-    const first = new Date(Date.UTC(y, m - 1 - months, 1));
-    const last = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate();
-    return iso(new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), Math.min(d, last))));
-  };
-  if (fd === 1 && fm === 1 && fy === ty) return { from: shift(fy, fm, fd, 12), to: shift(ty, tm, td, 12) };
-  if (fd === 1 && fy === ty && fm === tm) return { from: shift(fy, fm, fd, 1), to: shift(ty, tm, td, 1) };
-  const day = 86_400_000;
-  const start = Date.parse(`${from}T00:00:00Z`);
-  const span = Math.round((Date.parse(`${to}T00:00:00Z`) - start) / day) + 1;
-  return { from: iso(new Date(start - span * day)), to: iso(new Date(start - day)) };
-}
+export { priorPeriod, priorPeriodOf, type PriorKind } from './prior-period';

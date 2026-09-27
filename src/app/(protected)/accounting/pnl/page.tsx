@@ -3,7 +3,7 @@ import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { pnlGaps, profitAndLoss, type FxPnlKey, type PnlRow } from '@/modules/wms/accounting/reports';
 import { priorPeriod, resolvePeriod, toUzs, uzsRate } from '@/modules/wms/accounting/period';
-import { niceTicks, pnlMonthParts } from '@/modules/wms/reports/dashboard-math';
+import { niceTicks, pctDelta, pnlMonthParts } from '@/modules/wms/reports/dashboard-math';
 import { marginPct } from '@/modules/wms/accounting/margin';
 import { ColumnPairs } from '@/components/charts/column-pairs';
 import { Legend } from '@/components/charts/legend';
@@ -75,8 +75,6 @@ export default async function PnlPage({
     { key: 'opex', label: t('opex'), now: pnl.opexTotal.total, was: before.opexTotal.total, up: 'bad' },
     { key: 'net', label: t('netProfit'), now: pnl.netProfit.total, was: before.netProfit.total, up: 'good' },
   ] as const;
-  const change = (now: number, was: number) =>
-    Math.abs(was) < 0.005 ? null : Math.round(((now - was) / Math.abs(was)) * 100);
   const grossMargin = marginPct(pnl.grossProfit.total, pnl.revenue.total);
   const netMargin = marginPct(pnl.netProfit.total, pnl.revenue.total);
 
@@ -130,8 +128,15 @@ export default async function PnlPage({
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5" data-testid="pnl-kpis">
         {kpis.map((kpi) => {
-          const delta = change(kpi.now, kpi.was);
-          const good = delta !== null && (kpi.up === 'good' ? delta > 0 : delta < 0);
+          // The dashboard's ONE delta rule (O4): a percentage only over a
+          // positive base, to 0.1 — the tile that links here prints the same.
+          // Against a loss the sign of a percentage lies, so the difference is
+          // printed in dollars; against nothing at all, the words say so.
+          const delta = pctDelta(kpi.now, kpi.was);
+          const diff = kpi.now - kpi.was;
+          const nothingBefore = Math.abs(kpi.was) < 0.005;
+          const moved = delta ?? (nothingBefore ? null : diff);
+          const good = moved !== null && (kpi.up === 'good' ? moved > 0 : moved < 0);
           const tone =
             kpi.key === 'net'
               ? kpi.now >= 0
@@ -159,11 +164,13 @@ export default async function PnlPage({
                 </p>
               )}
               <p
-                className={`text-2xs font-semibold ${delta === null ? 'text-ink-500' : good ? 'text-good' : 'text-bad'}`}
+                className={`text-2xs font-semibold ${moved === null ? 'text-ink-500' : good ? 'text-good' : 'text-bad'}`}
               >
-                {delta === null
+                {moved === null
                   ? `— ${t('pnlVsPriorNone')}`
-                  : `${delta > 0 ? '▲' : delta < 0 ? '▼' : '='} ${Math.abs(delta)}% · ${compactUsd(kpi.was)}`}
+                  : `${moved > 0 ? '▲' : moved < 0 ? '▼' : '='} ${
+                      delta === null ? `${diff > 0 ? '+' : ''}${compactUsd(diff)}` : pct(Math.abs(delta))
+                    } · ${compactUsd(kpi.was)}`}
               </p>
             </div>
           );

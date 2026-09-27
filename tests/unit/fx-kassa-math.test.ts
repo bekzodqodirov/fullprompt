@@ -34,7 +34,8 @@ describe('apportionUsd — a merge\'s kassa dollars add up to the expense\'s to 
 });
 
 describe('the dashboard\'s parts add up to its net (0103)', () => {
-  const row = (month: string, value: number) => ({ byPeriod: { [month]: value } });
+  // A P&L row carries its range total too (`pnlParts(…, 'total')` reads it).
+  const row = (month: string, value: number) => ({ byPeriod: { [month]: value }, total: value });
   it('P&L: the kurs farqi folds into the cost bar — revenue − cost = net', () => {
     const m = '1611-02';
     const parts = pnlMonthParts(

@@ -32,6 +32,7 @@ const MONEY_READERS = [
   'profitAndLoss',
   'cashFlow',
   'cashFlowByMonth',
+  'cashFlowByWeek',
   'cashFlowCore',
   'companyBalance',
   // U03: the cash half (the admin home, the attention list, the hero tile)
@@ -56,6 +57,7 @@ const MONEY_READERS = [
   'loadGaps',
   'cashReconciliation',
   'pnlMonthParts',
+  'pnlParts',
   'cashMonthParts',
   'lossesInPeriod',
   'buildPnlXlsx',
