@@ -321,9 +321,13 @@ function CountRow({ batchId, quick, row }: { batchId: string; quick: boolean; ro
       </div>
       {(dev.over > 0 || dev.grow > 0) && (
         <div className="space-y-1.5">
-          {dev.over - dev.grow > 0 && (
-            <p className="text-xs font-semibold text-warn">
-              {(row.plan ?? 0) > 0 ? t('overWarn', { n: dev.over - dev.grow }) : t('offPlanWarn')}
+          {/* The truck's number over the plan AFTER the press — what is already
+              marked plus what this press marks (grown cartons carry the mark
+              too). Only the new cartons' share was printed before, so «9 of a
+              plan of 4» read «1 over». */}
+          {dev.over > 0 && (
+            <p className="text-xs font-semibold text-warn" data-testid="count-load-over">
+              {(row.plan ?? 0) > 0 ? t('overWarn', { n: row.over + dev.over }) : t('offPlanWarn')}
             </p>
           )}
           {dev.grow > 0 && (
