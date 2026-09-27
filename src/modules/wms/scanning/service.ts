@@ -1,13 +1,15 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { v5 as uuidv5 } from 'uuid';
 import { z } from 'zod';
-import { db, type Tx } from '../../platform/db/client';
+import { db, type Db, type Tx } from '../../platform/db/client';
 import {
   batches,
   boxes,
   boxMovements,
+  clients,
   loadPlans,
   receiptLots,
+  receipts,
   scanEvents,
 } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
@@ -16,14 +18,27 @@ import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { usersWithPermission } from '../../platform/notifications/service';
 import { notifyPricedCargoLeft } from '../finance/off-truck';
 import {
+  COUNT_LOAD_REASON,
+  countedOnTruckSql,
   isServerScanReason,
   lockTruckLoading,
   lotModeOnTruck,
   type DoorOpts,
 } from './count-rules';
+import { qrlessRowSql } from '../labels/qrless-sql';
+import { codeIdentity } from '../labels/code-identity';
+import { aboardFilter } from './unload';
 
 export class ScanError extends Error {
-  constructor(public readonly code: string) {
+  /**
+   * `detail` carries what a refusal must NAME (0112: «yuklash tugadi» refused
+   * over uncounted QR-siz lots says which ones). Every older refusal is a
+   * bare code, as it always was.
+   */
+  constructor(
+    public readonly code: string,
+    public readonly detail?: { lots?: string[] },
+  ) {
     super(code);
   }
 }
@@ -429,6 +444,16 @@ export async function removeLoadedCode(batchId: string, code: string, ctx: Audit
     // this screen's to move.
     const aboard = members.filter((b) => b.status === 'loading' && b.currentBatchId === batchId);
     if (aboard.length === 0) throw new ScanError('not_loaded_here');
+    // A lot the office counted onto this truck is the office's number (0112,
+    // Q3): only the count box on the batch card changes it. A carton taken
+    // off here would leave «48» on the office's screen over 47 on the truck.
+    // A crate is scanned as the crate, and its events never count a lot.
+    if (!isCrate && aboard[0]!.crateId === null) {
+      const [mark] = (await tx.execute(
+        sql`SELECT ${countedOnTruckSql(batchId, sql`${aboard[0]!.lotId}::uuid`, 'load')} AS counted`,
+      )) as unknown as { counted: boolean }[];
+      if (mark?.counted) throw new ScanError('lot_counted');
+    }
 
     for (const box of aboard) {
       await tx
@@ -469,8 +494,20 @@ export async function removeLoadedCode(batchId: string, code: string, ctx: Audit
 /**
  * Finish loading (W4): planned-but-unscanned boxes revert to stock
  * (short_loaded, edge case 5) and the deviation summary is returned.
+ *
+ * One refusal since 0112 (decision 28): a QR-siz lot still reserved on the
+ * truck that NOBODY counted. The phone cannot scan it and the office has not
+ * said how many went on, so «yuklash tugadi» would quietly send the whole
+ * lot back to the shelf — the one moment the office is standing at the truck
+ * with the number. The refusal names the lots; a count-door holder at the
+ * origin may finish anyway (`dropQrless`), and a counted lot short-loads its
+ * remainder like any other.
  */
-export async function finishLoading(batchId: string, ctx: AuditContext) {
+export async function finishLoading(
+  batchId: string,
+  ctx: AuditContext,
+  opts: { dropQrless?: boolean } = {},
+) {
   if (!ctx.actorId) throw new ScanError('unauthenticated');
   const actorId = ctx.actorId;
   return db.transaction(async (tx) => {
@@ -480,6 +517,12 @@ export async function finishLoading(batchId: string, ctx: AuditContext) {
     const batch = await tx.query.batches.findFirst({ where: eq(batches.id, batchId) });
     if (!batch) throw new ScanError('batch_not_found');
     if (!['forming', 'loading'].includes(batch.status)) throw new ScanError('batch_not_loading');
+    if (!opts.dropQrless) {
+      const uncounted = (await qrlessUncountedByTruck(tx, [batchId])).get(batchId) ?? [];
+      if (uncounted.length > 0) {
+        throw new ScanError('qrless_uncounted', { lots: uncounted.map((lot) => lot.label) });
+      }
+    }
 
     const memberBoxes = await tx
       .select()
@@ -508,6 +551,26 @@ export async function finishLoading(batchId: string, ctx: AuditContext) {
         })),
       );
     }
+    // Cartons that went on beyond the plan AND are still on — distinct, and
+    // off the truck's real cargo rather than its scan history (decision 25):
+    // an office count dialled down, or a phone's removal, took some back,
+    // and a scan event stays for ever.
+    const addedOnSpot = Number(
+      (
+        await tx
+          .select({ n: sql<number>`count(DISTINCT ${scanEvents.boxId})` })
+          .from(scanEvents)
+          .innerJoin(boxes, eq(boxes.id, scanEvents.boxId))
+          .where(
+            and(
+              eq(scanEvents.batchId, batchId),
+              eq(scanEvents.addedOnSpot, true),
+              eq(scanEvents.type, 'load'),
+              aboardFilter(batchId),
+            ),
+          )
+      )[0]!.n,
+    );
     await writeAudit(tx, { ...ctx, warehouseId: batch.originWarehouseId }, {
       entityType: 'batch',
       entityId: batchId,
@@ -516,32 +579,15 @@ export async function finishLoading(batchId: string, ctx: AuditContext) {
         finishLoading: true,
         loaded: loaded.length,
         shortLoaded: shortLoaded.length,
-        addedOnSpot: (
-          await tx
-            .select({ n: sql<number>`count(*)` })
-            .from(scanEvents)
-            .where(and(eq(scanEvents.batchId, batchId), eq(scanEvents.addedOnSpot, true)))
-        )[0]!.n,
+        addedOnSpot,
+        ...(opts.dropQrless ? { droppedQrless: true } : {}),
       },
     });
     const summary = {
       loaded: loaded.length,
       shortLoaded: shortLoaded.length,
       shortLoadedCodes: shortLoaded.map((b) => b.shortCode),
-      addedOnSpot: Number(
-        (
-          await tx
-            .select({ n: sql<number>`count(*)` })
-            .from(scanEvents)
-            .where(
-              and(
-                eq(scanEvents.batchId, batchId),
-                eq(scanEvents.addedOnSpot, true),
-                eq(scanEvents.type, 'load'),
-              ),
-            )
-        )[0]!.n,
-      ),
+      addedOnSpot,
     };
     return { ...summary, batchCode: batch.code, shortLoadedIds: shortLoaded.map((b) => b.id) };
   }).then(async (result) => {
@@ -562,18 +608,88 @@ export async function finishLoading(batchId: string, ctx: AuditContext) {
 }
 
 /**
+ * The QR-siz lots a truck still holds RESERVED that nobody has counted onto
+ * it — per truck, in one statement for however many trucks (decision 28).
+ * «yuklash tugadi» refuses over these, and the truck board shows the same
+ * set as «sanash kutilmoqda», so the refusal is never a surprise (#513).
+ *
+ * A lot is QR-siz on a truck when any of ITS loose cartons on that truck is
+ * stickerless (the kernel's rule, `qrlessRowSql`). «Counted» is the kernel's
+ * load-side marker (`countedOnTruckSql`) read against each truck in the list
+ * rather than one bound id — that fragment takes a single truck, and a board
+ * of forty cannot ask forty times. The handle is REQUIRED: «yuklash tugadi»
+ * asks from inside its own transaction (#714).
+ */
+export async function qrlessUncountedByTruck(
+  exec: Db | Tx,
+  batchIds: string[],
+): Promise<Map<string, { lotId: string; label: string }[]>> {
+  const out = new Map<string, { lotId: string; label: string }[]>();
+  if (batchIds.length === 0) return out;
+  const rows = (await exec.execute(sql`
+    SELECT DISTINCT pb.current_batch_id AS batch_id, l.id AS lot_id, l.letter,
+           r.unclaimed_marking AS marking, c.client_code
+      FROM boxes pb
+      JOIN receipt_lots l ON l.id = pb.lot_id
+      JOIN receipts r ON r.id = l.receipt_id
+      LEFT JOIN clients c ON c.id = r.client_id
+     WHERE pb.current_batch_id IN (${sql.join(
+       batchIds.map((id) => sql`${id}::uuid`),
+       sql`, `,
+     )})
+       AND pb.status = 'planned' AND pb.crate_id IS NULL
+       AND EXISTS (
+         SELECT 1 FROM boxes qb
+          WHERE qb.lot_id = l.id AND qb.current_batch_id = pb.current_batch_id
+            AND ${qrlessRowSql(sql`qb`, sql`l`)}
+       )
+       AND NOT EXISTS (
+         SELECT 1 FROM scan_events cse JOIN boxes cb ON cb.id = cse.box_id
+          WHERE cse.batch_id = pb.current_batch_id AND cse.crate_id IS NULL
+            AND cse.manual_reason = ${COUNT_LOAD_REASON} AND cb.lot_id = l.id
+       )
+     ORDER BY l.letter
+  `)) as unknown as {
+    batch_id: string;
+    lot_id: string;
+    letter: string | null;
+    marking: string | null;
+    client_code: string | null;
+  }[];
+  for (const row of rows) {
+    const label = `${codeIdentity(row.marking, row.client_code).main}-${row.letter ?? '?'}`;
+    out.set(row.batch_id, [...(out.get(row.batch_id) ?? []), { lotId: row.lot_id, label }]);
+  }
+  return out;
+}
+
+/**
  * Who is told how a truck went: whoever plans them. Resolved from the
  * EDITABLE grants (#170), so a role the owner invents is included the day it
  * gets `plans.manage` — never a compiled list of role names.
+ *
+ * Cartons left behind are named by CODE — except a lot the office counts
+ * (0112): nobody can find «GS777-00031» on a pile with no stickers, so such a
+ * lot is one line, «GS777-A ×2».
  */
 async function notifyLoadSummary(
   batchId: string,
-  result: { batchCode: string; loaded: number; shortLoaded: number; shortLoadedCodes: string[]; addedOnSpot: number },
+  result: {
+    batchCode: string;
+    loaded: number;
+    shortLoaded: number;
+    shortLoadedCodes: string[];
+    shortLoadedIds: string[];
+    addedOnSpot: number;
+  },
   actorId: string | null | undefined,
 ): Promise<void> {
   const userIds = await usersWithPermission('plans.manage');
   if (userIds.length === 0) return;
   const appUrl = process.env.APP_URL ?? '';
+  const left = result.shortLoaded
+    ? await shortLoadedLine(batchId, result.shortLoadedIds, result.shortLoadedCodes)
+    : '';
   await notifyStaffTelegram({
     userIds,
     type: 'LoadFinished',
@@ -581,12 +697,51 @@ async function notifyLoadSummary(
     text:
       `🚚 ${result.batchCode} — yuklash tugadi\n` +
       `Yuklandi: ${result.loaded} karobka` +
-      (result.shortLoaded
-        ? `\n↩️ Qolib ketdi: ${result.shortLoaded} — ${result.shortLoadedCodes.slice(0, 12).join(', ')}`
-        : '') +
+      (result.shortLoaded ? `\n↩️ Qolib ketdi: ${result.shortLoaded} — ${left}` : '') +
       (result.addedOnSpot ? `\n⚠️ Qo‘shib yuklandi: ${result.addedOnSpot}` : '') +
       `\n${appUrl}/batches/${batchId}`,
   });
+}
+
+/**
+ * «Qolib ketdi» as one line: a lot the office counts (counted on this truck,
+ * or QR-siz) as `label ×n`, every other carton by its code, twelve codes at
+ * most. After the commit, on the pool.
+ */
+export async function shortLoadedLine(batchId: string, ids: string[], codes: string[]): Promise<string> {
+  if (ids.length === 0) return '';
+  const rows = await db
+    .select({
+      shortCode: boxes.shortCode,
+      lotId: boxes.lotId,
+      letter: receiptLots.letter,
+      marking: receipts.unclaimedMarking,
+      clientCode: clients.clientCode,
+      office: sql<boolean>`(
+        ${countedOnTruckSql(batchId, sql`${receiptLots}.id`, 'load')}
+        OR ${qrlessRowSql(sql`${boxes}`, sql`${receiptLots}`)}
+      )`,
+    })
+    .from(boxes)
+    .innerJoin(receiptLots, eq(receiptLots.id, boxes.lotId))
+    .innerJoin(receipts, eq(receipts.id, receiptLots.receiptId))
+    .leftJoin(clients, eq(clients.id, receipts.clientId))
+    .where(inArray(boxes.id, ids));
+  if (rows.length === 0) return codes.slice(0, 12).join(', ');
+  const byLot = new Map<string, { label: string; n: number }>();
+  const plain: string[] = [];
+  for (const row of rows) {
+    if (!row.office) {
+      plain.push(row.shortCode);
+      continue;
+    }
+    const label = `${codeIdentity(row.marking, row.clientCode).main}-${row.letter ?? '?'}`;
+    const entry = byLot.get(row.lotId) ?? { label, n: 0 };
+    entry.n += 1;
+    byLot.set(row.lotId, entry);
+  }
+  const lines = [...byLot.values()].map((lot) => `${lot.label} ×${lot.n}`);
+  return [...lines, ...plain.sort().slice(0, 12)].join(', ');
 }
 
 /** Depart (logist/manager): loaded boxes and the batch go in_transit. */

@@ -10,6 +10,7 @@ import { Panel } from '@/components/panel';
 import { createQuickBatchAction } from './batch-actions-server';
 import { PageHeader } from '@/components/ui/page';
 import { warehouseScopeEither } from '@/modules/platform/rbac/scope';
+import { qrlessUncountedByTruck } from '@/modules/wms/scanning/service';
 
 const COLUMNS = ['forming', 'loading', 'in_transit', 'arrived'] as const;
 /** Finished work: off the board, but the owner still needs to find it. */
@@ -101,6 +102,16 @@ export default async function BatchesPage({
 
   const rows = await listBatches(COLUMNS, 200);
   const archived = archiveOpen ? await listBatches(ARCHIVED, 100, params.q?.trim() || undefined) : [];
+  // «🔢 sanash kutilmoqda» (0112, decision 28): a loading truck holding a
+  // QR-siz lot nobody has counted — the set «yuklash tugadi» refuses over,
+  // one statement for the whole board, shown to the people who can count.
+  const tcount = await getTranslations('countLoad');
+  const awaitingCount = actor.permissions.has('plans.manage')
+    ? await qrlessUncountedByTruck(
+        db,
+        rows.filter(({ batch }) => batch.status === 'forming' || batch.status === 'loading').map(({ batch }) => batch.id),
+      )
+    : new Map<string, { lotId: string; label: string }[]>();
 
   return (
     <div className="space-y-4">
@@ -178,6 +189,11 @@ export default async function BatchesPage({
                   </p>
                   {batch.vehiclePlate && (
                     <p className="text-xs text-ink-500">🚛 {batch.vehiclePlate}</p>
+                  )}
+                  {awaitingCount.has(batch.id) && (
+                    <p data-testid="batch-count-awaiting" className="text-xs font-semibold text-warn">
+                      {tcount('awaitingChip')}
+                    </p>
                   )}
                 </Link>
               ))}

@@ -502,9 +502,23 @@ export async function batchRegister(warehouseIds?: string[]) {
         SELECT count(DISTINCT bm.box_id) FROM box_movements bm
         WHERE bm.ref_type = 'batch' AND bm.ref_id = ${batches.id} AND bm.cause = 'short_loaded'
       )`,
+      // Cartons that went on beyond the plan AND ride it — distinct, over the
+      // truck's real cargo (0112, decision 25): an office count dialled down
+      // keeps its scan events, so the history alone counts cartons that came
+      // back off, and a re-count counts one carton twice. This is
+      // `aboardFilter` (member, not merely reserved) read against the
+      // register's own row: that fragment binds one id, and a register of 300
+      // trucks cannot ask 300 times.
       added: sql<number>`(
-        SELECT count(*) FROM scan_events se
+        SELECT count(DISTINCT se.box_id) FROM scan_events se
+          JOIN boxes ab ON ab.id = se.box_id
         WHERE se.batch_id = ${batches.id} AND se.added_on_spot = true AND se.type = 'load'
+          AND ab.status NOT IN ('planned', 'void')
+          AND (ab.current_batch_id = ${batches.id} OR EXISTS (
+            SELECT 1 FROM box_movements abm
+             WHERE abm.box_id = ab.id AND abm.ref_type = 'batch'
+               AND abm.ref_id = ${batches.id} AND abm.cause = 'batch_departed'
+          ))
       )`,
       costUsd: sql<string>`coalesce((
         SELECT sum(ce.amount_usd) FROM ${costEntries} ce

@@ -9,16 +9,19 @@ import {
   clients,
   receiptLots,
   receipts,
-  scanEvents,
   warehouses,
 } from '../../platform/db/schema';
 import { getStorage } from '../../platform/files/storage';
+import { aboardFilter } from '../scanning/unload';
 
 /**
  * Packing list WITH photos (owner's request, feedback round 8): after loading,
  * one row per lot actually ON the batch — code, product zh/ru, boxes, kg, m³ —
  * with every lot photo embedded to the right (same layout as the agent file).
- * Built from load scan events so it stays correct after unload/close.
+ * Built from the truck's real cargo (`aboardFilter`: its manifest, minus
+ * what is merely reserved) so it stays correct after unload/close — and, since
+ * an office count can dial a lot DOWN (0112, decision 25), never from the scan
+ * history, which keeps every carton that was ever put on and taken off.
  */
 export async function buildPackingPhotosXlsx(batchId: string): Promise<Buffer | null> {
   const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
@@ -36,12 +39,11 @@ export async function buildPackingPhotosXlsx(batchId: string): Promise<Buffer | 
       receivedAt: receipts.receivedAt,
       loaded: sql<number>`count(DISTINCT ${boxes.id})`,
     })
-    .from(scanEvents)
-    .innerJoin(boxes, eq(scanEvents.boxId, boxes.id))
+    .from(boxes)
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
     .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
     .leftJoin(clients, eq(receipts.clientId, clients.id))
-    .where(and(eq(scanEvents.batchId, batchId), eq(scanEvents.type, 'load')))
+    .where(aboardFilter(batchId))
     .groupBy(receiptLots.id, clients.clientCode, receipts.unclaimedMarking, receipts.receivedAt)
     .orderBy(asc(receiptLots.letter));
   if (rows.length === 0) return null;

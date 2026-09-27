@@ -34,15 +34,23 @@ export function BatchActions({
   const [error, setError] = useState<string | null>(null);
   const [reason, setReason] = useState('');
   const [asking, setAsking] = useState(false);
+  // «Yuklash tugadi» refused over QR-siz lots nobody counted (0112) — named,
+  // and the count door's own way past it for the admin and the logist.
+  const tcount = useTranslations('countLoad');
+  const [qrless, setQrless] = useState<{ lots: string[]; canDrop: boolean } | null>(null);
 
-  async function finish() {
+  async function finish(dropQrless = false) {
+    if (dropQrless && !window.confirm(tcount('finishDropConfirm'))) return;
     setPending(true);
     setError(null);
+    setQrless(null);
     try {
-      const res = await finishLoadingAction(batchId);
+      const res = await finishLoadingAction(batchId, { dropQrless });
       if (res.ok) {
         setSummary(t('finishSummary', { loaded: res.loaded ?? 0, short: res.shortLoaded ?? 0 }));
         router.refresh();
+      } else if (res.error === 'qrless_uncounted') {
+        setQrless({ lots: res.lots ?? [], canDrop: res.canDrop === true });
       } else {
         setError(res.error ?? 'error');
       }
@@ -91,7 +99,7 @@ export function BatchActions({
           data-testid="finish-loading"
           className="btn-secondary flex-1 whitespace-nowrap px-3 disabled:opacity-50"
           disabled={pending}
-          onClick={finish}
+          onClick={() => void finish()}
         >
           🏁 {t('finishLoading')}
         </button>
@@ -146,6 +154,24 @@ export function BatchActions({
             ✖ {t('cancelBatch')}
           </button>
         ))}
+      {qrless && (
+        <div className="space-y-2 rounded-lg bg-warn/10 p-2" data-testid="finish-qrless">
+          <p className="text-sm font-semibold text-warn">
+            {tcount('finishQrless', { lots: qrless.lots.join(', ') })}
+          </p>
+          {qrless.canDrop && (
+            <button
+              type="button"
+              data-testid="finish-drop-qrless"
+              className="btn-secondary w-full disabled:opacity-50"
+              disabled={pending}
+              onClick={() => void finish(true)}
+            >
+              {tcount('finishDrop')}
+            </button>
+          )}
+        </div>
+      )}
       {pending && <p className="text-sm">{tc('loading')}</p>}
       {summary && <p className="rounded-lg bg-brand-50 p-2 text-sm font-semibold">{summary}</p>}
       {error && (

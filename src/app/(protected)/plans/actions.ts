@@ -18,6 +18,7 @@ import {
 } from '@/modules/wms/planning/service';
 import { departBatch, finishLoading, ScanError } from '@/modules/wms/scanning/service';
 import { cancelBatch } from '@/modules/wms/scanning/unload';
+import { mayCountMove } from '@/modules/wms/scanning/count-door';
 import { z } from 'zod';
 
 export async function submitPlanAction(
@@ -102,19 +103,48 @@ export async function saveVehicleAction(
   return { ok: true };
 }
 
+/**
+ * «Yuklash tugadi». Since 0112 it can refuse over a QR-siz lot nobody counted
+ * (`qrless_uncounted`, naming the lots) — and then says whether THIS person
+ * may finish anyway: dropping those lots back to the shelf is the count
+ * door's call at the origin (the admin and the logist), never the loader's.
+ * A refusal is an answer, never an AuthError thrown into an onClick.
+ */
 export async function finishLoadingAction(
   batchId: string,
-): Promise<{ ok: boolean; loaded?: number; shortLoaded?: number; error?: string }> {
+  opts: { dropQrless?: boolean } = {},
+): Promise<{
+  ok: boolean;
+  loaded?: number;
+  shortLoaded?: number;
+  error?: string;
+  lots?: string[];
+  canDrop?: boolean;
+}> {
   const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
   if (!batch) return { ok: false, error: 'batch_not_found' };
-  const actor = await authorize('scan.load', { warehouseId: batch.originWarehouseId });
+  let actor;
+  try {
+    actor = await authorize('scan.load', { warehouseId: batch.originWarehouseId });
+  } catch (err) {
+    if (err instanceof AuthError) return { ok: false, error: 'forbidden' };
+    throw err;
+  }
+  const canDrop = mayCountMove(actor, batch.originWarehouseId);
+  if (opts.dropQrless && !canDrop) return { ok: false, error: 'forbidden' };
   const meta = await requestMeta();
   try {
-    const summary = await finishLoading(batchId, { actorId: actor.id, ...meta });
+    const summary = await finishLoading(
+      batchId,
+      { actorId: actor.id, ...meta },
+      { dropQrless: opts.dropQrless === true },
+    );
     revalidatePath(`/batches/${batchId}`);
     return { ok: true, loaded: summary.loaded, shortLoaded: summary.shortLoaded };
   } catch (err) {
-    if (err instanceof ScanError) return { ok: false, error: err.code };
+    if (err instanceof ScanError) {
+      return { ok: false, error: err.code, lots: err.detail?.lots, canDrop };
+    }
     throw err;
   }
 }
