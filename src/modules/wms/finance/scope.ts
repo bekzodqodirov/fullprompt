@@ -79,3 +79,29 @@ export function moneyOwnerFilter(actor: MoneyActor): string | undefined {
 export function seesCompanyMoney(actor: MoneyActor): boolean {
   return seesAllMoney(actor) && actor.permissions.has('finance.reports');
 }
+
+declare const COMPANY_MONEY: unique symbol;
+
+/**
+ * The proof that this render asked `seesCompanyMoney` — every money card on
+ * the dashboard takes one as a REQUIRED prop (round B, judge O6).
+ *
+ * The money-reader fence reads imports, so a card exported from an
+ * allow-listed section file and mounted outside the page's `money` gate
+ * passed it: the file was allowed, the new card was not. A branded value
+ * cannot be written by hand — the only way to hold one is to ask the
+ * predicate — so a money card mounted without the gate is a compile error
+ * that names itself, not a leak somebody finds on the VED's screen.
+ */
+export type CompanyMoneySight = { readonly [COMPANY_MONEY]: true };
+
+const SIGHT = Object.freeze({}) as CompanyMoneySight;
+
+/**
+ * The ONE mint. Null for everybody the predicate refuses; a single frozen
+ * value otherwise, so it can be handed to `cache()`d loaders without
+ * changing their identity.
+ */
+export function companyMoneySight(actor: MoneyActor): CompanyMoneySight | null {
+  return seesCompanyMoney(actor) ? SIGHT : null;
+}

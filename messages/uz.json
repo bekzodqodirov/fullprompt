@@ -107,7 +107,7 @@
     "birthdays": "Bugun tug‘ilgan kun — tabriklab qo‘ying"
   },
   "dashboard": {
-    "title": "Dashboard",
+    "title": "Biznes holati",
     "toReports": "Hisobotlar",
     "fill": "Skladlar to‘lganligi (60% sariq / 80% qizil)",
     "fillShipHint": "Sklad to‘lyapti — yuklatish kerak!",
@@ -295,7 +295,91 @@
     "sFxGain": "Kurs yutug‘i",
     "sFxLoss": "Kurs yo‘qotishi",
     "sCargoUnrated": "Yuk xarajati (kursi yo‘q)",
-    "pnlFxNote": "Xarajat ustuniga kurs farqi ham kiradi (yutuq kamaytiradi, yo‘qotish oshiradi)."
+    "pnlFxNote": "Xarajat ustuniga kurs farqi ham kiradi (yutuq kamaytiradi, yo‘qotish oshiradi).",
+    "clickHint": "Har bir raqam o‘z hisobotini ochadi",
+    "period": {
+      "label": "Davr",
+      "bugun": "Bugun",
+      "d7": "7 kun",
+      "d30": "30 kun",
+      "oy": "Bu oy",
+      "otgan": "O‘tgan oy"
+    },
+    "ombor": {
+      "label": "Ombor",
+      "all": "Hamma omborlar",
+      "apply": "Ko‘rsatish"
+    },
+    "scope": {
+      "now": "Hozir",
+      "company": "Butun kompaniya",
+      "m12": "12 oy",
+      "w12": "12 hafta",
+      "d30": "30 kun"
+    },
+    "hero": {
+      "bugun": "Bugungi foyda",
+      "d7": "7 kunlik foyda",
+      "d30": "30 kunlik foyda",
+      "oy": "Bu oy foydasi",
+      "otgan": "O‘tgan oy foydasi"
+    },
+    "heroNoteDay": "Bir kunlik foyda sakraydi: yuk narxi va xarajati turli kunlarda yoziladi.",
+    "vsRange": "{from} – {to} bilan solishtirilganda",
+    "heroLine": "So‘nggi 12 oy sof foydasi",
+    "heroLineAria": "12 oylik sof foyda, oxirgisi {last}",
+    "planNeed": "Oy tugashiga {days} kun · kuniga {usd} kerak",
+    "planDone": "Oylik reja bajarildi",
+    "tileCost": "Xarajat",
+    "tileCostParts": "to‘g‘ridan {direct} · umumiy {opex}",
+    "tileCostFx": "kurs farqi {fx}",
+    "tileTills": "{n} ta kassa",
+    "tilePeriodFlow": "Davrda: +{in} / −{out}",
+    "tileOld90": "90 kundan eskisi {usd}",
+    "tileTransit": "Yo‘ldagi mashinalar",
+    "weeksTitle": "Pul oqimi — haftalar bo‘yicha",
+    "weeksLast": "O‘tgan hafta ({week}): kirim {in}, chiqim {out} — sof {net}",
+    "weeksNote": "Chiziq bilan chizilgan ustun — hali tugamagan shu hafta.",
+    "weekOf": "{day} haftasi",
+    "daysTitle": "Qabul qilingan yuk — kunlar bo‘yicha, m³",
+    "daysSummary": "Tugagan {days} kunda {m3} m³ · kuniga o‘rtacha {avg} m³",
+    "daysToday": "Bugun (hozircha): {m3} m³",
+    "daysShare": "Eng ko‘p: {list}",
+    "sReceipts": "prixod",
+    "sBoxes": "karobka",
+    "trucksTitle": "Yo‘ldagi mashinalar",
+    "toMap": "Xaritada",
+    "truckKind": {
+      "stuck": "Tushirilmay turibdi",
+      "unloading": "Tushirilmoqda"
+    },
+    "truckStage": {
+      "cn_transit": "Xitoy ichida yo‘lda",
+      "export_transit": "Eksport yo‘lida",
+      "in_uz": "O‘zbekistonda",
+      "customs_done": "Rastamojka tugadi"
+    },
+    "truckEta": "Taxminan {from} – {to}",
+    "truckEstimate": "jadval bo‘yicha taxmin",
+    "truckNoRoute": "Marshrut jadvali yo‘q",
+    "truckGate": "tushirilmagan: {n} karobka",
+    "truckDeparted": "jo‘nagan: {n} karobka",
+    "truckPin": "belgi {n, plural, =0 {bugun} other {# kun oldin}}",
+    "truckLoading": "Yuklanmoqda: {n} ta mashina",
+    "truckMore": "Yana {n} ta — hammasi",
+    "funnelTitle": "Savdo voronkasi",
+    "funnelNow": "Hozir ishda — bosqichlar bo‘yicha",
+    "funnelOpen": "{n} ochiq lid · bugun {calls} qo‘ng‘iroq",
+    "funnelFlow": "{fresh} yangi · {won} yutildi · {lost} boy berildi",
+    "funnelRate": "yutish ulushi {rate}",
+    "level": {
+      "bad": "Muhim",
+      "warn": "Diqqat",
+      "info": "Ma’lumot"
+    },
+    "detailsTitle": "Batafsil",
+    "agingFuture": "Yana {count} ta yozuv bugundan keyingi sana bilan ({usd}) — qarz jamida bor, yoshlar bo‘yicha yo‘q.",
+    "vsDay": "{day} bilan solishtirilganda"
   },
   "inventory": {
     "title": "Inventarizatsiya",

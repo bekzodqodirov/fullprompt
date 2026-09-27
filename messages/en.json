@@ -107,7 +107,7 @@
     "birthdays": "Birthdays today — congratulate them"
   },
   "dashboard": {
-    "title": "Dashboard",
+    "title": "Business at a glance",
     "toReports": "Reports",
     "fill": "Warehouse fill level (60% yellow / 80% red)",
     "fillShipHint": "The warehouse is filling up — time to ship!",
@@ -295,7 +295,91 @@
     "sFxGain": "Exchange gain",
     "sFxLoss": "Exchange loss",
     "sCargoUnrated": "Cargo costs (no rate)",
-    "pnlFxNote": "The cost bar includes the exchange difference (a gain lowers it, a loss raises it)."
+    "pnlFxNote": "The cost bar includes the exchange difference (a gain lowers it, a loss raises it).",
+    "clickHint": "Every figure opens its report",
+    "period": {
+      "label": "Period",
+      "bugun": "Today",
+      "d7": "7 days",
+      "d30": "30 days",
+      "oy": "This month",
+      "otgan": "Last month"
+    },
+    "ombor": {
+      "label": "Warehouse",
+      "all": "All warehouses",
+      "apply": "Show"
+    },
+    "scope": {
+      "now": "Now",
+      "company": "Whole company",
+      "m12": "12 months",
+      "w12": "12 weeks",
+      "d30": "30 days"
+    },
+    "hero": {
+      "bugun": "Profit today",
+      "d7": "Profit, 7 days",
+      "d30": "Profit, 30 days",
+      "oy": "Profit this month",
+      "otgan": "Profit last month"
+    },
+    "heroNoteDay": "A single day’s profit jumps: a cargo’s price and its costs are entered on different days.",
+    "vsRange": "vs {from} – {to}",
+    "heroLine": "Net profit, last 12 months",
+    "heroLineAria": "Net profit over 12 months, latest {last}",
+    "planNeed": "{days} days left · {usd} a day needed",
+    "planDone": "Monthly plan reached",
+    "tileCost": "Costs",
+    "tileCostParts": "direct {direct} · overhead {opex}",
+    "tileCostFx": "FX difference {fx}",
+    "tileTills": "{n, plural, one {# till} other {# tills}}",
+    "tilePeriodFlow": "In the period: +{in} / −{out}",
+    "tileOld90": "over 90 days: {usd}",
+    "tileTransit": "Trucks on the road",
+    "weeksTitle": "Cash flow by week",
+    "weeksLast": "Last week ({week}): in {in}, out {out}, net {net}",
+    "weeksNote": "The outlined column is this week, not finished yet.",
+    "weekOf": "week of {day}",
+    "daysTitle": "Cargo received by day, m³",
+    "daysSummary": "{m3} m³ over {days} closed days · {avg} m³ a day on average",
+    "daysToday": "Today (so far): {m3} m³",
+    "daysShare": "Most: {list}",
+    "sReceipts": "receipts",
+    "sBoxes": "boxes",
+    "trucksTitle": "Trucks on the road",
+    "toMap": "On the map",
+    "truckKind": {
+      "stuck": "Standing, not unloaded",
+      "unloading": "Unloading"
+    },
+    "truckStage": {
+      "cn_transit": "On the road in China",
+      "export_transit": "On the export road",
+      "in_uz": "In Uzbekistan",
+      "customs_done": "Customs cleared"
+    },
+    "truckEta": "Est. {from} – {to}",
+    "truckEstimate": "schedule estimate",
+    "truckNoRoute": "No route schedule",
+    "truckGate": "not unloaded: {n} boxes",
+    "truckDeparted": "departed: {n} boxes",
+    "truckPin": "pinned {n, plural, =0 {today} one {# day ago} other {# days ago}}",
+    "truckLoading": "Loading: {n} trucks",
+    "truckMore": "{n} more — all",
+    "funnelTitle": "Sales funnel",
+    "funnelNow": "In progress now, by stage",
+    "funnelOpen": "{n} open leads · {calls} calls today",
+    "funnelFlow": "{fresh} new · {won} won · {lost} lost",
+    "funnelRate": "win rate {rate}",
+    "level": {
+      "bad": "Critical",
+      "warn": "Attention",
+      "info": "For information"
+    },
+    "detailsTitle": "Details",
+    "agingFuture": "{count} more entries are dated in the future ({usd}) — in the debt total, not in the ages.",
+    "vsDay": "vs {day}"
   },
   "inventory": {
     "title": "Stocktake",

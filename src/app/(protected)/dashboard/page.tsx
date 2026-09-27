@@ -5,36 +5,50 @@ import { getFormatter, getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { isAnalyst } from '@/modules/platform/ai/tools';
 import { getSetting } from '@/modules/platform/settings/service';
-import { seesCompanyMoney } from '@/modules/wms/finance/scope';
+import { companyMoneySight, seesCompanyMoney } from '@/modules/wms/finance/scope';
 import { mayReadBatches } from '@/modules/wms/batches/read-door';
-import { scopeKeyOf } from '@/modules/wms/reports/dashboard';
+import { loadWarehouseOptions, loadWindows, scopeKeyOf } from '@/modules/wms/reports/dashboard';
+import { dashPeriod } from '@/modules/wms/reports/dashboard-math';
+import { reportScope } from '@/modules/wms/reports/report-scope';
 import { PageHeader } from '@/components/ui/page';
 import { ChartTip } from '@/components/charts/chart-tip';
-import { HeroTiles } from './sections/hero';
+import { DashControls } from './sections/controls';
+import { HeroTiles, ProfitHero } from './sections/hero';
 import { AttentionSection } from './sections/attention';
-import { MoneySection } from './sections/money';
-import { CargoSection } from './sections/cargo';
-import { SalesSection } from './sections/sales';
+import { AgingCard, CashWeeksCard, MoneySection } from './sections/money';
+import { CargoSection, FillCard, IntakeDaysCard, TrucksCard } from './sections/cargo';
+import { FunnelCard } from './sections/sales';
 import { mayReadUnpricedList } from '@/modules/wms/finance/unpriced-door';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * «Biznes pulti» — the whole company on one screen (owner, 2026-09-25:
- * «dashboardni profesional butun bisnessni moliyasidan tortib ahvoli visual
- * korinib turadgan qilib»), read top to bottom in the order the questions are
- * asked: six morning figures, what needs a person today, then money, cargo
- * and sales. Every figure is the exported function of the report its link
- * opens (#513), and every block is simply ABSENT for somebody who may not see
- * it — never an empty money card.
+ * «Biznes holati» — the whole company on one screen, read top to bottom in
+ * the order the questions are asked (owner, 2026-09-26: «bir korganda visual
+ * tushunarli bolsin»): the period's profit, the four figures behind it, what
+ * needs a person today, then the money and the cargo as pictures, and every
+ * older block under «Batafsil». Every figure is the exported function of the
+ * report its link opens, over the window the link carries (#513), and every
+ * block is simply ABSENT for somebody who may not see it — never an empty
+ * money card.
  *
  * Money is the owner's and the admin's alone (his answer 4a): the accountant
  * has the accounting screens, the logist and the warehouse keep the cargo
  * part. `seesCompanyMoney` carries round 91's `seesAllMoney` (audit A5): a seller's `finance.view`
  * must not open the company's receivable, and the role matrix is edited with
- * checkboxes.
+ * checkboxes. Every money card takes the `CompanyMoneySight` token as a
+ * REQUIRED prop, so a card mounted outside this gate does not compile.
+ *
+ * `?davr=` picks the period (anything unknown reads as «Bu oy», #514) and
+ * `?ombor=` one of the viewer's own warehouses: the cargo follows it, and the
+ * money and the funnel — which have no per-warehouse figure — say «Butun
+ * kompaniya» rather than pretend to.
  */
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ davr?: string; ombor?: string }>;
+}) {
   const actor = await getActor();
   if (!actor) redirect('/login');
   const perms = actor.permissions;
@@ -43,29 +57,40 @@ export default async function DashboardPage() {
   if (!allWh && !ownWh) {
     redirect(perms.has('reports.own_clients') ? '/pipeline' : '/');
   }
+  const params = await searchParams;
   const analyst = isAnalyst(actor);
   // The company's money: `finance.reports` + the whole-ledger reader, one
   // predicate with the admin home and the risk report — so the VED (Q19)
   // reads no kassa and no profit here either.
   const money = seesCompanyMoney(actor) && analyst;
+  const sight = money ? companyMoneySight(actor) : null;
   const seesBatches = mayReadBatches(perms);
   const seesFunnel = perms.has('crm.leads');
   const seesOutcome = analyst && perms.has('crm.manage');
-  // The two scope rules the page's destinations use, intersected: an
+
+  const w = loadWindows();
+  const period = dashPeriod(params.davr, w.today);
+  // The scope rule the receipts journal asks too (one question, O10): an
   // all-warehouse grant on a warehouse-scoped role still reads its own
-  // warehouses only, and a scoped viewer with none reads nothing.
-  const scoped = !allWh || actor.warehouseScoped;
-  const scopeKey = scopeKeyOf(scoped ? actor.warehouseIds : undefined);
+  // warehouses only, a scoped viewer with none reads nothing, and `ombor`
+  // survives only when it is one of the viewer's own options.
+  const base = reportScope(actor, null, []);
+  const options = await loadWarehouseOptions(scopeKeyOf(base.baseIds));
+  const scope = reportScope(actor, params.ombor, options);
+  const scopeKey = scopeKeyOf(scope.ids);
+  const company = scope.ombor !== null;
   const staleDays = Number(await getSetting('stale_stock_days')) || 30;
   // The trucks-with-no-cost list: company-wide count (costMissingCount takes
-  // no scope), so only an unscoped all-warehouse viewer gets it.
-  const seesCostMissing = allWh && !scoped && seesBatches;
+  // no scope), so only an unscoped all-warehouse viewer gets it, and not while
+  // one warehouse is chosen.
+  const seesCostMissing = allWh && !scope.scoped && seesBatches && !company;
+  const canPlan = analyst && perms.has('admin.settings.manage');
 
   const t = await getTranslations('dashboard');
   const format = await getFormatter();
 
   return (
-    <div className="mx-auto max-w-lg space-y-5 md:max-w-6xl">
+    <div className="mx-auto max-w-lg space-y-4 md:max-w-6xl">
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <PageHeader icon="chart" title={t('title')} />
         <Link href="/reports" className="ml-auto text-sm font-semibold text-brand-700">
@@ -81,21 +106,33 @@ export default async function DashboardPage() {
               hour: '2-digit',
               minute: '2-digit',
             }),
-          })}
+          })}{' '}
+          · {t('clickHint')}
         </p>
       </div>
 
-      <Suspense fallback={<Skeleton rows={2} />}>
+      <DashControls period={period.key} ombor={scope.ombor} options={options} />
+
+      {sight && (
+        <Suspense fallback={<Skeleton className="h-72" />}>
+          <ProfitHero sight={sight} period={period} company={company} canPlan={canPlan} today={w.today} />
+        </Suspense>
+      )}
+
+      <Suspense fallback={<Skeleton className="h-36" />}>
         <HeroTiles
-          money={money}
-          sales={seesOutcome}
+          sight={sight}
           cargo={seesBatches}
           scopeKey={scopeKey}
-          canPlan={analyst && perms.has('admin.settings.manage')}
+          period={period}
+          ombor={scope.ombor}
+          company={company}
+          canPlan={canPlan}
+          today={w.today}
         />
       </Suspense>
 
-      <Suspense fallback={<Skeleton rows={1} />}>
+      <Suspense fallback={<Skeleton className="h-28" />}>
         <AttentionSection
           money={money}
           cargo={seesBatches}
@@ -105,9 +142,58 @@ export default async function DashboardPage() {
         />
       </Suspense>
 
-      {money && (
-        <Suspense fallback={<Skeleton rows={3} />}>
+      <div className={`grid gap-4 ${sight ? 'lg:grid-cols-2' : ''}`}>
+        {sight && (
+          <Suspense fallback={<Skeleton className="h-80" />}>
+            <CashWeeksCard sight={sight} company={company} />
+          </Suspense>
+        )}
+        <Suspense fallback={<Skeleton className="h-80" />}>
+          <IntakeDaysCard scopeKey={scopeKey} ombor={scope.ombor} />
+        </Suspense>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+        <Suspense fallback={<Skeleton className="h-64" />}>
+          <FillCard scopeKey={scopeKey} staleDays={staleDays} canEditCapacity={perms.has('admin.warehouses.manage')} />
+        </Suspense>
+        {seesBatches && (
+          <Suspense fallback={<Skeleton className="h-64" />}>
+            <TrucksCard scopeKey={scopeKey} />
+          </Suspense>
+        )}
+        {(seesFunnel || sight) && (
+          <div className="grid content-start gap-4 lg:col-span-2 lg:grid-cols-2 xl:col-span-1 xl:grid-cols-1">
+            {seesFunnel && (
+              <Suspense fallback={<Skeleton className="h-64" />}>
+                <FunnelCard
+                  ownerId={perms.has('crm.leads.view_all') ? '' : actor.id}
+                  seesOutcome={seesOutcome}
+                  period={period}
+                  company={company}
+                />
+              </Suspense>
+            )}
+            {sight && (
+              <Suspense fallback={<Skeleton className="h-48" />}>
+                <AgingCard sight={sight} company={company} />
+              </Suspense>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* «Batafsil»: every block the page had before the redesign, unchanged —
+          the twelve-month charts, the Balans bridge, the trucks' profit, the
+          unbilled cargo, the day's counts and the journey bar. */}
+      <p className="section-title pt-2" data-testid="dash-details">
+        {t('detailsTitle')}
+      </p>
+
+      {money && sight && (
+        <Suspense fallback={<Skeleton className="h-96" />}>
           <MoneySection
+            sight={sight}
             scopeKey={scopeKey}
             canExpenses={perms.has('finance.expenses')}
             canUnpricedList={mayReadUnpricedList(perms)}
@@ -115,24 +201,9 @@ export default async function DashboardPage() {
         </Suspense>
       )}
 
-      <Suspense fallback={<Skeleton rows={2} />}>
-        <CargoSection
-          scopeKey={scopeKey}
-          staleDays={staleDays}
-          seesBatches={seesBatches}
-          seesCostMissing={seesCostMissing}
-          canEditCapacity={perms.has('admin.warehouses.manage')}
-        />
+      <Suspense fallback={<Skeleton className="h-56" />}>
+        <CargoSection scopeKey={scopeKey} seesBatches={seesBatches} seesCostMissing={seesCostMissing} />
       </Suspense>
-
-      {seesFunnel && (
-        <Suspense fallback={<Skeleton rows={1} />}>
-          <SalesSection
-            ownerId={perms.has('crm.leads.view_all') ? '' : actor.id}
-            seesOutcome={seesOutcome}
-          />
-        </Suspense>
-      )}
 
       {/* ONE tooltip for every chart on the page (delegated, textContent only). */}
       <ChartTip />
@@ -140,12 +211,7 @@ export default async function DashboardPage() {
   );
 }
 
-function Skeleton({ rows }: { rows: number }) {
-  return (
-    <div className="space-y-2" aria-hidden>
-      {Array.from({ length: rows }, (_, i) => (
-        <div key={i} className="card h-28 animate-pulse bg-surface-sunken" />
-      ))}
-    </div>
-  );
+/** A fixed-height placeholder, so a card streaming in does not shove the page. */
+function Skeleton({ className }: { className: 'h-28' | 'h-36' | 'h-48' | 'h-56' | 'h-64' | 'h-72' | 'h-80' | 'h-96' }) {
+  return <div aria-hidden className={`card animate-pulse bg-surface-sunken ${className}`} />;
 }
