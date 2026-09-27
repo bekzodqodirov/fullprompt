@@ -57,18 +57,27 @@ describe('the count-accept door', () => {
     expect(lot.indexOf('doorOpens(')).toBeLessThan(lot.indexOf('db.transaction('));
   });
 
-  it('a chunk takes the truck row first, every carton row before the lot lock, then reads the ledger fresh', () => {
+  it('a chunk takes the truck row, then the lot row, then every carton row before the lot lock, then reads fresh', () => {
     const text = body(ACCEPT, 'countChunk');
-    const truck = text.indexOf(".from(batches).where(eq(batches.id, T)).for('update')");
+    // NO KEY UPDATE: a phone's scan event on an ARRIVED truck key-shares this
+    // row, and FOR UPDATE here closed a cycle with it (review lock-1).
+    const truck = text.indexOf(".from(batches).where(eq(batches.id, T)).for('no key update')");
+    expect(text).not.toContain(".from(batches).where(eq(batches.id, T)).for('update')");
+    // The lot row before its cartons — the receipt card's switch and the lot
+    // form take them in that order, and a growth locks the lot (review lock-3).
+    const lotRow = text.indexOf(".from(receiptLots).where(eq(receiptLots.id, L)).for('update')");
     const lotLock = text.indexOf('lockLotOnTruck(tx, T, L)');
     const ledger = text.indexOf('readLedger(tx');
     expect(truck).toBeGreaterThan(0);
-    expect(lotLock).toBeGreaterThan(truck);
+    expect(lotRow).toBeGreaterThan(truck);
+    expect(lotLock).toBeGreaterThan(lotRow);
     const rowLocks = [...text.matchAll(/\.for\('update'\)/g)].map((m) => m.index!);
     expect(rowLocks.length).toBeGreaterThanOrEqual(3);
-    for (const at of rowLocks) expect(at, 'a row lock after the lot lock').toBeLessThan(lotLock);
+    for (const at of rowLocks) {
+      expect(at, 'a row lock after the lot lock').toBeLessThan(lotLock);
+      expect(at, 'a carton lock before the lot row').toBeGreaterThanOrEqual(lotRow);
+    }
     expect(ledger).toBeGreaterThan(lotLock);
-    // The lot ROW (growth) is locked after every carton row — by growLotInTx.
     expect(text.indexOf('growLotInTx(tx')).toBeGreaterThan(lotLock);
   });
 

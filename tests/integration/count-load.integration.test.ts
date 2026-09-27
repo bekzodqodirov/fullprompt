@@ -323,8 +323,10 @@ describe('a press moves cartons through the phone’s own body', () => {
     const other = await planTruck([{ lot: fresh, take: 5 }]);
     await count(other.id, fresh, 5);
     expect(await statusOf(lot)).toEqual(await statusOf(fresh));
+    // On, off, on: the press down is a count event too (review cargo-3), so
+    // the history says what the office did in both directions.
     const seqFive = await db.select().from(scanEvents).where(eq(scanEvents.boxId, lot.boxes[4]!.id));
-    expect(seqFive.map((e) => e.manualReason)).toEqual(['count_load', 'count_load']);
+    expect(seqFive.map((e) => e.manualReason)).toEqual(['count_load', 'count_load', 'count_load']);
   });
 
   it('a stale press re-sent after a correction is refused with the truth', async () => {

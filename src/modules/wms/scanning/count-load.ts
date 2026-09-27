@@ -2,7 +2,7 @@ import { and, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import { v5 as uuidv5 } from 'uuid';
 import { z } from 'zod';
 import { db, type Db, type Tx } from '../../platform/db/client';
-import { batches, boxes, boxMovements, crates, loadPlans, receiptLots } from '../../platform/db/schema';
+import { batches, boxes, boxMovements, crates, loadPlans, receiptLots, scanEvents } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { emitEvent } from '../../platform/events/service';
 import {
@@ -436,6 +436,30 @@ export async function countLoadLot(
           refType: 'batch',
           refId: batchId,
           actorId,
+        })),
+      );
+    }
+
+    // A press that only goes DOWN is a count too (his Q1 = b: after the
+    // office's number the phone does not touch the lot). The up path writes
+    // its count events through the phone's own body; the down path wrote
+    // none, so a first press of «2» over three phone-scanned cartons left the
+    // lot un-counted and the phone could scan the carton back on or take
+    // others off (review cargo-3). One event per carton taken off — the
+    // history Q5 asks for, and the stocktake's count-moved guard for it.
+    const takenOff = [...move.backToPlan, ...move.backToShelf];
+    if (takenOff.length > 0) {
+      await tx.insert(scanEvents).values(
+        takenOff.map((r) => ({
+          clientEventUuid: uuidv5(`load-off:${r.id}`, input.pressId),
+          boxId: r.id,
+          batchId,
+          type: 'load',
+          method: 'manual',
+          manualReason: COUNT_LOAD_REASON,
+          addedOnSpot: false,
+          scannedBy: actorId,
+          scannedAt: new Date(scannedAt),
         })),
       );
     }

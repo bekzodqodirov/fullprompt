@@ -16,9 +16,19 @@ import {
 } from '@/modules/platform/db/schema';
 import { confirmReceipt } from '@/modules/wms/receipts/service';
 import { recordVerdict, submitPlan } from '@/modules/wms/planning/service';
-import { departBatch, finishLoading, ingestLoadScans } from '@/modules/wms/scanning/service';
-import { aboardFilter, finishUnload, ingestUnloadScans, landUnloadInput } from '@/modules/wms/scanning/unload';
-import { countAcceptLot, CountError } from '@/modules/wms/scanning/count-accept';
+import { departBatch, finishLoading, ingestLoadScans, removeLoadedCode } from '@/modules/wms/scanning/service';
+import { countLoadCrate, countLoadLot } from '@/modules/wms/scanning/count-load';
+import { inventorySnapshot, reconcileInventory } from '@/modules/wms/inventory/service';
+import { createCrate } from '@/modules/wms/crates/service';
+import {
+  aboardFilter,
+  finishUnload,
+  ingestUnloadScans,
+  landUnloadInput,
+  resolveMissingLot,
+  unloadRemaining,
+} from '@/modules/wms/scanning/unload';
+import { countAcceptCrate, countAcceptLot, CountError } from '@/modules/wms/scanning/count-accept';
 import { countDoorFor } from '@/modules/wms/scanning/count-door';
 import { batchRegister } from '@/modules/wms/reports/queries';
 
@@ -118,6 +128,40 @@ async function aboard(batchId: string) {
 
 const office = (id: string, wh: string) =>
   countDoorFor({ id, permissions: new Set(['plans.manage']), warehouseScoped: false, warehouseIds: [] }, wh)!;
+
+let quickN = 0;
+/** A quick truck (no plan): the office counts straight off the origin's shelf. */
+async function quickTruck(origin: string, dest: string) {
+  quickN += 1;
+  const [row] = await db
+    .insert(batches)
+    .values({
+      code: `CRQ${S}${quickN}`,
+      originWarehouseId: origin,
+      destWarehouseId: dest,
+      type: 'transfer',
+      status: 'forming',
+      createdBy: actorId,
+    })
+    .returning();
+  madeTrucks.push(row!.id);
+  return row!;
+}
+
+/** What the stocktake at `wh` would do with every carton of these lots, all posted as missing. */
+async function stocktakeWritesOff(wh: string, lotIds: string[]) {
+  const ids = (await db.select({ id: boxes.id }).from(boxes).where(inArray(boxes.lotId, lotIds))).map((r) => r.id);
+  await reconcileInventory(
+    { warehouseId: wh, foundHereCodes: [], lostBoxIds: ids, scannedCount: 0 },
+    { canMarkLost: true },
+    ctx(),
+  );
+  const rows = await db
+    .select({ lotId: boxes.lotId, status: boxes.status })
+    .from(boxes)
+    .where(inArray(boxes.lotId, lotIds));
+  return lotIds.map((lotId) => rows.filter((r) => r.lotId === lotId && r.status === 'lost').length);
+}
 
 /** Loaded by phone, «yuklash tugadi», departed — a truck on the road with `take` of the lot. */
 async function onTheRoad(lotId: string, take: number) {
@@ -240,5 +284,95 @@ describe('the office count and a phone on an ARRIVED truck (review lock-1)', () 
     // The count then reads the phone's landing and says the screen is stale —
     // an answer, where the cycle made one of the two a deadlock victim.
     expect(c.code).toBe('count_stale');
+  });
+});
+
+describe('a count is a count in every direction (review cargo-3)', () => {
+  it('a first press that only goes DOWN makes the lot the office’s: the phone neither scans it back nor takes it off', async () => {
+    const lot = await mkLot(5, W.cn);
+    const t = await plan(W.cn, W.uz, lot.lotId, 5);
+    const acks = await ingestLoadScans(lot.boxes.slice(0, 3).map((b) => qr(t.id, b.code)), ctx());
+    expect(acks.map((a) => a.result)).toEqual(['ok', 'ok', 'ok']);
+    const res = await countLoadLot(
+      { batchId: t.id, lotId: lot.lotId, target: 2, seenAboard: 3, pressId: uuidv4(), overReason: '' },
+      ctx(),
+      office(actorId, W.cn),
+    );
+    expect(res.aboard).toBe(2);
+    // The carton the office took off, scanned back on by a phone…
+    const [again] = await ingestLoadScans([qr(t.id, lot.boxes[2]!.code)], ctx());
+    expect(again).toMatchObject({ result: 'rejected', detail: 'lot_counted' });
+    // …and a phone's removal of the office's number.
+    await expect(removeLoadedCode(t.id, lot.boxes[0]!.code, ctx())).rejects.toMatchObject({ code: 'lot_counted' });
+  });
+});
+
+describe('the stocktake never writes off a count-moved pile (review cargo-2, phone-1, cargo-5)', () => {
+  it('a load-counted lot the manager landed with «Hammasini qabul qilish»', async () => {
+    const lot = await mkLot(4, W.cn);
+    const t = await plan(W.cn, W.hub, lot.lotId, 4);
+    await countLoadLot(
+      { batchId: t.id, lotId: lot.lotId, target: 4, seenAboard: 0, pressId: uuidv4(), overReason: '' },
+      ctx(),
+      office(actorId, W.cn),
+    );
+    await finishLoading(t.id, ctx());
+    await departBatch(t.id, ctx());
+    // The phone is refused the counted lot; the bulk door lands it.
+    const [phone] = await ingestUnloadScans([qr(t.id, lot.boxes[0]!.code)], ctx());
+    expect(phone).toMatchObject({ result: 'rejected', detail: 'lot_counted' });
+    expect((await unloadRemaining(t.id, ctx())).accepted).toBe(4);
+    await finishUnload(t.id, ctx());
+    const snap = await inventorySnapshot(W.hub);
+    const mine = snap.boxes.filter((b) => lot.boxes.some((x) => x.code === b.shortCode));
+    expect(mine.map((b) => b.countMoved)).toEqual([true, true, true, true]);
+    expect(await stocktakeWritesOff(W.hub, [lot.lotId])).toEqual([0]);
+  });
+
+  it('cartons the office placed with a typed number on the missing-lot card', async () => {
+    const lot = await mkLot(4, W.cn);
+    const t = await onTheRoad(lot.lotId, 4);
+    const [landed] = await ingestUnloadScans([qr(t.id, lot.boxes[0]!.code)], ctx());
+    expect(landed!.result).toBe('ok');
+    await finishUnload(t.id, ctx(), { mayCloseWithMissing: true });
+    const res = await resolveMissingLot(
+      { batchId: t.id, lotId: lot.lotId, resolution: 'found_here', n: 2, seenMissing: 3 },
+      ctx(),
+      office(actorId, W.uz),
+    );
+    expect(res.resolved).toBe(2);
+    const snap = await inventorySnapshot(W.uz);
+    const placed = snap.boxes.filter((b) => res.shortCodes.includes(b.shortCode));
+    expect(placed.map((b) => b.countMoved)).toEqual([true, true]);
+    // The phone-scanned carton is witnessed and stays an ordinary one.
+    expect(snap.boxes.find((b) => b.shortCode === lot.boxes[0]!.code)?.countMoved).toBe(false);
+  });
+
+  it('a pallet pressed «(1 joy)» by the office is a scanned place like any other — not count-moved', async () => {
+    const lotA = await mkLot(3, W.cn);
+    const lotB = await mkLot(3, W.cn);
+    const pa = await createCrate(
+      { crateId: uuidv4(), warehouseId: W.cn, lotCounts: [{ lotId: lotA.lotId, count: 3 }], kind: 'palet', logistApproved: true },
+      ctx(),
+    );
+    const pb = await createCrate(
+      { crateId: uuidv4(), warehouseId: W.cn, lotCounts: [{ lotId: lotB.lotId, count: 3 }], kind: 'palet', logistApproved: true },
+      ctx(),
+    );
+    const t = await quickTruck(W.cn, W.hub);
+    await countLoadCrate({ batchId: t.id, crateId: pa!.id, pressId: uuidv4() }, ctx(), office(actorId, W.cn));
+    expect((await ingestLoadScans([qr(t.id, pb!.code)], ctx()))[0]!.result).toBe('ok');
+    await finishLoading(t.id, ctx());
+    await departBatch(t.id, ctx());
+    await countAcceptCrate(
+      { batchId: t.id, crateId: pa!.id, pressId: uuidv4(), confirmArrival: true },
+      ctx(),
+      { dest: office(actorId, W.hub) },
+    );
+    expect((await ingestUnloadScans([qr(t.id, pb!.code)], ctx()))[0]!.result).toBe('ok');
+    await finishUnload(t.id, ctx());
+    // Both pallets carry a CR- label: a really-missing one is written off by
+    // the stocktake whichever way it came off the truck.
+    expect(await stocktakeWritesOff(W.hub, [lotA.lotId, lotB.lotId])).toEqual([3, 3]);
   });
 });

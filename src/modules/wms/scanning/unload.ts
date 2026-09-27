@@ -1,5 +1,5 @@
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
-import { v5 as uuidv5 } from 'uuid';
+import { v4 as uuidv4, v5 as uuidv5 } from 'uuid';
 import { z } from 'zod';
 import { db, type Tx } from '../../platform/db/client';
 import {
@@ -29,6 +29,7 @@ import { codeIdentity } from '../labels/code-identity';
 import { doorOpens, type CountDoor } from './count-door';
 import {
   BULK_ACCEPT_REASON,
+  COUNT_ACCEPT_REASON,
   COUNT_OVER_REASON,
   countedOnTruckSql,
   isServerScanReason,
@@ -995,6 +996,27 @@ export async function resolveMissingLot(
     for (const box of rows.slice(0, input.n)) {
       done.push(
         await resolveOneMissingInTx(tx, box, batch, { resolution: input.resolution, reason: lossReason }, ctx),
+      );
+    }
+    // A typed N has no per-carton witness: which cartons «are» the N is the
+    // lowest numbers' guess, and a stocktake must not write them off for not
+    // being scanned (decision 33). The per-box buttons are witnessed and write
+    // no such event (review phone-1).
+    const placed = rows.slice(0, input.n).filter(() => input.resolution !== 'lost_in_transit');
+    if (placed.length > 0) {
+      const at = new Date();
+      await tx.insert(scanEvents).values(
+        placed.map((box) => ({
+          clientEventUuid: uuidv4(),
+          boxId: box.id,
+          batchId: batch.id,
+          type: 'unload',
+          method: 'manual',
+          manualReason: COUNT_ACCEPT_REASON,
+          addedOnSpot: false,
+          scannedBy: actorId,
+          scannedAt: at,
+        })),
       );
     }
     const [lot] = await missingLotLines(tx, rows.slice(0, input.n));

@@ -151,17 +151,28 @@ export function isPhoneScanSql(alias: string): SQL {
 }
 
 /**
- * The stocktake's guard: the box's latest load/unload event was a COUNT.
+ * The stocktake's guard: the box's latest load/unload WITNESS was a count.
  * A counted pile has no per-carton witness, so «not scanned at the
  * stocktake» says nothing about whether it is standing there. Pass the table
  * reference (`sql\`${boxes}\``), never a column (#128).
+ *
+ * Two kinds of event are not witnesses and are skipped. «Hammasini qabul
+ * qilish» (`bulk_accept`) is the door that lands a load-counted lot the
+ * phone was refused — reading it as «the latest event» un-guarded exactly
+ * the pile the round promised never to write off (review cargo-2 /
+ * phone-1). And a crate event: a crate is scanned — or pressed «(1 joy)» —
+ * as the crate, its CR- label is the witness, and counting its members as
+ * count-moved kept a really-missing pallet off every write-off for ever
+ * (review cargo-5), the rule `countedOnTruckSql` already keeps.
  */
 export function lastScanIsCountSql(boxRef: SQL): SQL {
   return sql`COALESCE((
     SELECT lse.manual_reason IN (${reasonList(COUNT_REASONS)})
     FROM scan_events lse
     WHERE lse.box_id = ${boxRef}.id AND lse.type IN ('load', 'unload')
-    ORDER BY lse.created_at DESC, lse.scanned_at DESC
+      AND lse.crate_id IS NULL
+      AND lse.manual_reason IS DISTINCT FROM ${BULK_ACCEPT_REASON}
+    ORDER BY lse.created_at DESC, lse.scanned_at DESC, lse.id DESC
     LIMIT 1
   ), false)`;
 }
