@@ -29,6 +29,12 @@ import { computeLotTotals } from './math';
  * whole). The money re-split is the caller's, AFTER its commit
  * (`recomputeForLot`, #714).
  */
+
+/** FOR SHARE NOWAIT on the prixod row — 55P03 at once instead of a wait (lock-rv2-3). */
+async function lockReceiptShareNoWait(tx: Tx, receiptId: string): Promise<void> {
+  await tx.execute(sql`SELECT 1 FROM receipts WHERE id = ${receiptId}::uuid FOR SHARE NOWAIT`);
+}
+
 export class GrowLotError extends Error {
   constructor(public readonly code: string) {
     super(code);
@@ -59,9 +65,15 @@ export async function growLotInTx(
   // (#723's shape, one door over). FOR SHARE, so the answer holds until the
   // growth commits: the super-admin's annul locks this row first and voids
   // only the cartons it saw, and a growth read unlocked could land two live
-  // cartons under a prixod voided a moment later (review lock-2) — now the
-  // two meet on this row and one of them waits or is told «band».
-  const [receipt] = await tx.select().from(receipts).where(eq(receipts.id, lot.receiptId)).for('share');
+  // cartons under a prixod voided a moment later (review lock-2). NOWAIT: a
+  // count reaches this row only after it holds the lot's cartons, and a void
+  // or annul holds this row and then waits for those cartons — waiting here
+  // would close that cycle and postgres would kill one of the two, usually
+  // the manager's void (review of the fixes, lock-rv2-3). Refused at once
+  // instead; every count door answers 55P03 as «band, qaytadan bosing».
+  // Raw, because drizzle spells the option «no wait», which postgres refuses.
+  await lockReceiptShareNoWait(tx, lot.receiptId);
+  const [receipt] = await tx.select().from(receipts).where(eq(receipts.id, lot.receiptId));
   if (!receipt || receipt.status !== 'confirmed') throw new GrowLotError('receipt_not_confirmed');
   const [home] = await tx.select().from(warehouses).where(eq(warehouses.id, receipt.warehouseId));
 
@@ -109,6 +121,12 @@ export async function growLotInTx(
           0,
         );
 
+  // The birth warehouse is key-shared BEFORE the code counter is bumped: the
+  // cartons' foreign key would take it after, while a prixod confirmed at that
+  // warehouse holds the row FOR UPDATE and then asks for the same counter —
+  // one of the two killed (review of the fixes, lock-rv2-5). confirmReceipt's
+  // order, warehouse then counter, is the one both follow now.
+  await tx.execute(sql`SELECT 1 FROM warehouses WHERE id = ${a.warehouseId}::uuid FOR KEY SHARE`);
   // Codes carry the RECEIPT's warehouse prefix, like every carton of the lot.
   const codes = await nextBoxCodes(tx, home!, a.add);
   const inserted = await tx
@@ -220,8 +238,9 @@ export async function grownCodesOnTruck(
  * `growLotInTx`, so a dial up and back lands where it started, in kg and m³
  * and in every cost shared over the lot.
  *
- * The caller decides WHICH cartons (only ones its own truck minted, never
- * labelled, loose) and holds their rows locked; this re-checks the lot and
+ * The caller decides WHICH cartons (only ones its own truck minted, loose —
+ * a sticker printed for a minted carton does not make it real, it dies with
+ * it) and holds their rows locked; this re-checks the lot and
  * the prixod under their locks and does the arithmetic. The money re-split is
  * the caller's, after its commit (`afterLotGrown`).
  */
@@ -239,7 +258,9 @@ export async function shrinkGrownInTx(
   if (a.boxIds.length === 0) throw new GrowLotError('bad_count');
   const [lot] = await tx.select().from(receiptLots).where(eq(receiptLots.id, a.lotId)).for('update');
   if (!lot) throw new GrowLotError('lot_not_found');
-  const [receipt] = await tx.select().from(receipts).where(eq(receipts.id, lot.receiptId)).for('share');
+  // NOWAIT for the same reason as the growth (lock-rv2-3).
+  await lockReceiptShareNoWait(tx, lot.receiptId);
+  const [receipt] = await tx.select().from(receipts).where(eq(receipts.id, lot.receiptId));
   if (!receipt || receipt.status !== 'confirmed') throw new GrowLotError('receipt_not_confirmed');
   const grown = await grownCodesOnTruck(tx, { receiptId: receipt.id, lotId: lot.id, batchId: a.batchId });
   const rows = await tx
@@ -249,7 +270,6 @@ export async function shrinkGrownInTx(
       status: boxes.status,
       lotId: boxes.lotId,
       crateId: boxes.crateId,
-      labelPrintedAt: boxes.labelPrintedAt,
     })
     .from(boxes)
     .where(inArray(boxes.id, a.boxIds));
@@ -258,7 +278,6 @@ export async function shrinkGrownInTx(
       row.lotId === lot.id &&
       grown.has(row.shortCode) &&
       row.crateId === null &&
-      row.labelPrintedAt === null &&
       ['loading', 'in_stock', 'ready_for_pickup'].includes(row.status),
   );
   if (takeable.length !== a.boxIds.length) throw new GrowLotError('not_grown_here');

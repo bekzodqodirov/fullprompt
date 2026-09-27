@@ -477,7 +477,8 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
             {full && costUsd === 0 && <p className="text-xs text-warn">⚠️ {t('noCostsYet')}</p>}
 
             {/* 0104: cartons left THIS truck after its price — short-loaded,
-                or scanned aboard and found back at the origin (Q2). */}
+                or scanned aboard and found back at the origin (Q2), or taken
+                back by a corrected office count (0112). */}
             {(() => {
               const off = droppedHere.get(group.clientId);
               if (!off) return null;
@@ -487,7 +488,9 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                   <p className="text-xs font-semibold text-warn">
                     {off.dropCause === 'found_back'
                       ? t('droppedFoundBack', { n, origin: off.originCode ?? '—', codes: codesOf(off) })
-                      : t('droppedShort', { n, codes: codesOf(off) })}
+                      : off.dropCause === 'taken_back'
+                        ? t('droppedTakenBack', { n })
+                        : t('droppedShort', { n, codes: codesOf(off) })}
                   </p>
                   {moveDoors(off, id, off.droppedTo)}
                 </div>

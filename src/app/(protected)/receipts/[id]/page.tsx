@@ -50,7 +50,7 @@ import { costSightFor, tillView } from '@/modules/wms/costing/cost-sight';
 import { mayPickTill } from '@/modules/wms/accounting/till-door';
 import { costEntriesFor } from '@/modules/wms/costing/service';
 import { lotQrState } from '@/modules/wms/labels/qrless';
-import { canEditReceipt, mayCorrectReceived, mayFlipQrSkip, qrSwitchPlaces } from '@/modules/wms/receipts/edit';
+import { canEditReceipt, mayCorrectReceived, mayEditReceiptAt, mayFlipQrSkip, qrSwitchPlaces } from '@/modules/wms/receipts/edit';
 import { QrSkipToggle } from './qr-skip-toggle';
 import { dayIn } from '@/modules/platform/time/tashkent';
 import { isBackdated, receivedDayBounds } from '@/modules/wms/receipts/received-day';
@@ -191,9 +191,14 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
   // «QR yopishtirilmadi» (0112): per lot, what the ordinary sheet would carry,
   // where the stickerless cartons stand, and whether the switch may move.
   const tq = await getTranslations('qrsiz');
+  const tbusy = await getTranslations('countAccept');
   const qrState = await lotQrState(lotIds, actor);
   const anyPrintable = lots.some((lot) => (qrState.get(lot.id)?.printable ?? 0) > 0);
-  const mayToggleQr = canEdit && canEditReceipt(actor, receipt, warehouse.timezone);
+  // The action's door is `receipts.edit` AT the prixod's warehouse; the page
+  // asks the same, or a destination-scoped person is drawn a switch that
+  // answers «forbidden» (review of the fixes, cargo-r5).
+  const mayToggleQr =
+    canEdit && mayEditReceiptAt(actor, receipt.warehouseId) && canEditReceipt(actor, receipt, warehouse.timezone);
   // The switch is drawn only where the service would let it move — the same
   // predicate over the same places (review access-1).
   const qrFlippable = new Set(
@@ -626,6 +631,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
               box_not_in_stock: t('voidBoxGone'),
               receipt_has_costs: t('voidHasCosts'),
               receipt_has_compensation: t('voidHasCompensation'),
+              busy_retry: tbusy('errors.busy_retry'),
             },
             // The slot is filled in the browser with the code the refusal
             // names; passed as a VALUE so next-intl leaves the braces alone.
@@ -671,6 +677,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
               reason_required: ta('reasonRequired'),
               not_found: ta('notFound'),
               validation: ta('reasonRequired'),
+              busy_retry: tbusy('errors.busy_retry'),
             },
           }}
         />

@@ -302,6 +302,8 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
     if (pile.length > 0) {
       const fresh = pile.filter((b) => !selected.has(b.boxId));
       if (fresh.length > 0) {
+        // A successful scan answers whatever the bar last said (ui2-5).
+        setError(null);
         setSelected((prev) => new Set([...prev, ...fresh.map((b) => b.boxId)]));
         scanFeedback('ok');
       } else scanFeedback('dup');
@@ -309,6 +311,7 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
     }
     const hit = list.find((b) => b.shortCode === code);
     if (hit && !selected.has(hit.boxId)) {
+      setError(null);
       toggle(hit.boxId);
       scanFeedback('ok');
     } else {
@@ -735,7 +738,11 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
                   <button
                     type="button"
                     className="flex w-full items-center gap-2 text-left"
-                    onClick={() =>
+                    onClick={() => {
+                      // The pile the «N lots» refusal asked for is picked
+                      // here — the refusal must not stay above «Topshirish»
+                      // reading as a refusal of this choice (ui2-5).
+                      setError(null);
                       setSelected((prev) => {
                         const next = new Set(prev);
                         for (const b of lotBoxes) {
@@ -743,8 +750,8 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
                           else next.add(b.boxId);
                         }
                         return next;
-                      })
-                    }
+                      });
+                    }}
                   >
                     <span className={`flex h-6 w-6 items-center justify-center rounded border text-sm font-bold ${allIn ? 'border-blue-700 bg-brand-600 text-white' : 'border-line-strong'}`}>
                       {allIn ? '✓' : ''}

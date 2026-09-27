@@ -37,6 +37,8 @@ interface Snapshot {
   crates: { code: string; boxShortCodes: string[] }[];
   /** Lots the office counts on this truck (0112). Absent from a cached old snapshot. */
   countOnly?: CountOnlyLot[];
+  /** The count-only list reached its cap (review phone-3) — absent from an old snapshot. */
+  countOnlyCapped?: boolean;
   /** Lots with a factory barcode (0112) — absent from an old cached snapshot. */
   lotBarcodes?: { lotId: string; key: string }[];
 }
@@ -53,6 +55,7 @@ export function UnloadScreen({ batchId, countHref }: { batchId: string; countHre
   const tc = useTranslations('common');
   const tr = useTranslations('scanRefusal');
   const tca = useTranslations('countAccept');
+  const tcount = useTranslations('countLoad');
   /**
    * The phone's refusal of a count-only lot, in words (0112): a literal
    * switch, so every key is one the bundles can see (#163).
@@ -536,6 +539,14 @@ export function UnloadScreen({ batchId, countHref }: { batchId: string; countHre
         countHref={countHref}
         onClose={() => setIdentify(null)}
       />
+
+      {/* The loading screen's sentence, on the sibling that reads the same
+          capped snapshot (review of the fixes, ui2-6). */}
+      {snapshot.countOnlyCapped && (
+        <p className="text-center text-xs text-ink-500" data-testid="count-only-capped">
+          {tcount('countOnlyCapped')}
+        </p>
+      )}
 
       <p className="text-center font-mono text-4xl font-extrabold" data-testid="unload-counter">
         {doneCount}

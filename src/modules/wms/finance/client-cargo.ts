@@ -71,7 +71,7 @@ export interface CargoTrip {
    */
   unpriced: boolean;
   /** Cartons that left this truck after its price (Q21 / Q2), or null. */
-  dropped: { boxes: number; to: string[]; cause: 'short_loaded' | 'found_back' | 'mixed' | null } | null;
+  dropped: { boxes: number; to: string[]; cause: 'short_loaded' | 'found_back' | 'taken_back' | 'mixed' | null } | null;
   /**
    * The truck crosses a border (or one end's country is unknown — an unknown
    * border is treated as crossed, `batches/internal.ts`). The card form lists

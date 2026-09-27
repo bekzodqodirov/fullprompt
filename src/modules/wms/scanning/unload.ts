@@ -190,12 +190,14 @@ export async function landUnloadInput(
     return { clientEventUuid: input.clientEventUuid, result: 'ok', detail: 'replay' };
   }
 
-  // First scan marks arrival.
+  // First scan marks arrival — conditional in the WHERE, not on the status
+  // read at the top: a truck finished meanwhile must not be put back to
+  // «arrived» by a phone's late scan (review of the fixes, lock-rv2-2).
   if (batch.status === 'in_transit') {
     await tx
       .update(batches)
       .set({ status: 'arrived', arrivedAt: new Date() })
-      .where(eq(batches.id, input.batchId));
+      .where(and(eq(batches.id, input.batchId), eq(batches.status, 'in_transit')));
   }
 
   const isCrate = /^CR-/i.test(input.code);

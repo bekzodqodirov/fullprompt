@@ -33,6 +33,10 @@ import { batchRegister } from '@/modules/wms/reports/queries';
 import { buildInvoiceXlsx } from '@/modules/wms/documents/ved-xlsx';
 import { createCrate, dissolveCrate } from '@/modules/wms/crates/service';
 import ExcelJS from 'exceljs';
+import { buildManifestXlsx } from '@/modules/wms/documents/manifest-xlsx';
+import { editLot, EditError, setLotQrSkipped } from '@/modules/wms/receipts/edit';
+import { countAcceptPanel } from '@/modules/wms/scanning/count-accept';
+import { receiptLots } from '@/modules/platform/db/schema';
 
 /*
  * The QR-siz round's review, made permanent (0112): each case here is a
@@ -424,5 +428,230 @@ describe('the customs invoice’s places are the truck’s own (review cargo-4)'
       ctx(),
     );
     expect(await invoicePlaces(t.id)).toEqual([3]);
+  });
+});
+
+/*
+ * The second review, of the FIXES (review of the fixes, 2026-09-27): each
+ * case is a defect a reviewer proved on the corrected round.
+ */
+async function hubLeg(lotId: string, codes: string[], countAtHub: boolean) {
+  const t1 = await plan(W.cn, W.hub, lotId, codes.length);
+  const acks = await ingestLoadScans(codes.map((c) => qr(t1.id, c)), ctx());
+  expect(acks.every((a) => a.result === 'ok')).toBe(true);
+  await finishLoading(t1.id, ctx());
+  await departBatch(t1.id, ctx());
+  if (countAtHub) {
+    await countAcceptLot(
+      { batchId: t1.id, lotId, target: codes.length, seenArrived: 0, pressId: uuidv4(), overReason: '', confirmArrival: true },
+      ctx(),
+      { dest: office(actorId, W.hub), origin: office(actorId, W.cn) },
+    );
+  } else {
+    const u = await ingestUnloadScans(codes.map((c) => qr(t1.id, c)), ctx());
+    expect(u.every((a) => a.result === 'ok')).toBe(true);
+  }
+  await finishUnload(t1.id, ctx());
+}
+
+describe('a pallet scanned by its label is a scan, whatever an earlier leg counted (review of the fixes, cargo-r1)', () => {
+  it('counted at the hub, then a pallet to UZ that never turns up: the stocktake writes it off', async () => {
+    const lot = await mkLot(3, W.cn);
+    await hubLeg(lot.lotId, lot.boxes.map((b) => b.code), true);
+    const crate = await createCrate(
+      { crateId: uuidv4(), warehouseId: W.hub, lotCounts: [{ lotId: lot.lotId, count: 3 }], kind: 'palet', logistApproved: true },
+      ctx(),
+    );
+    const t2 = await quickTruck(W.hub, W.uz);
+    expect((await ingestLoadScans([qr(t2.id, crate!.code)], ctx()))[0]!.result).toBe('ok');
+    await finishLoading(t2.id, ctx());
+    await departBatch(t2.id, ctx());
+    expect((await ingestUnloadScans([qr(t2.id, crate!.code)], ctx()))[0]!.result).toBe('ok');
+    await finishUnload(t2.id, ctx());
+    // The phone's CR- scan on the last leg is the newest word: not a count.
+    expect(await stocktakeWritesOff(W.uz, [lot.lotId])).toEqual([3]);
+  });
+});
+
+describe('a departed truck’s manifest does not follow the hub’s re-palletising (review of the fixes, cargo-r3)', () => {
+  async function manifestCrates(batchId: string) {
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load((await buildManifestXlsx(batchId))! as never);
+    const ws = wb.worksheets[1]!;
+    const out: string[] = [];
+    ws.eachRow((row, i) => {
+      if (i > 2) out.push(`${row.getCell(2).value}:${row.getCell(5).value ?? ''}`);
+    });
+    return out;
+  }
+
+  it('one pallet + two loose stays one pallet + two loose after the hub builds a new pallet of all six', async () => {
+    const lot = await mkLot(6, W.cn);
+    const crate = await createCrate(
+      { crateId: uuidv4(), warehouseId: W.cn, lotCounts: [{ lotId: lot.lotId, count: 4 }], kind: 'palet', logistApproved: true },
+      ctx(),
+    );
+    const sub = await submitPlan(
+      {
+        originWarehouseId: W.cn,
+        destWarehouseId: W.hub,
+        lines: [{ lotId: lot.lotId, boxCount: 2 }],
+        crateIds: [crate!.id],
+      } as never,
+      ctx(),
+    );
+    const { batch } = await recordVerdict({ versionId: sub.version.id, verdict: 'approved' } as never, ctx());
+    const t = batch!;
+    madeTrucks.push(t.id);
+    const loose = await db
+      .select()
+      .from(boxes)
+      .where(and(eq(boxes.lotId, lot.lotId), sql`${boxes.crateId} IS NULL`, eq(boxes.currentBatchId, t.id)));
+    await ingestLoadScans([qr(t.id, crate!.code), ...loose.map((b) => qr(t.id, b.shortCode))], ctx());
+    await finishLoading(t.id, ctx());
+    await departBatch(t.id, ctx());
+    const before = await manifestCrates(t.id);
+    expect(before.filter((line) => line.endsWith(crate!.code))).toHaveLength(4);
+    await ingestUnloadScans([qr(t.id, crate!.code), ...loose.map((b) => qr(t.id, b.shortCode))], ctx());
+    await finishUnload(t.id, ctx());
+    await dissolveCrate(crate!.id, ctx());
+    await createCrate(
+      { crateId: uuidv4(), warehouseId: W.hub, lotCounts: [{ lotId: lot.lotId, count: 6 }], kind: 'palet', logistApproved: true },
+      ctx(),
+    );
+    expect(await manifestCrates(t.id)).toEqual(before);
+  });
+});
+
+describe('the QR-siz switch counts crated cartons as held elsewhere (review of the fixes, cargo-r2)', () => {
+  it('a lot whose every carton is on the road in a pallet is not the origin’s alone to mark', async () => {
+    const lot = await mkLot(4, W.cn);
+    await db.update(boxes).set({ labelPrintedAt: new Date(Date.now() - 60_000) }).where(eq(boxes.lotId, lot.lotId));
+    const crate = await createCrate(
+      { crateId: uuidv4(), warehouseId: W.cn, lotCounts: [{ lotId: lot.lotId, count: 4 }], kind: 'palet', logistApproved: true },
+      ctx(),
+    );
+    const sub = await submitPlan(
+      { originWarehouseId: W.cn, destWarehouseId: W.hub, lines: [], crateIds: [crate!.id] } as never,
+      ctx(),
+    );
+    const { batch } = await recordVerdict({ versionId: sub.version.id, verdict: 'approved' } as never, ctx());
+    madeTrucks.push(batch!.id);
+    expect((await ingestLoadScans([qr(batch!.id, crate!.code)], ctx()))[0]!.result).toBe('ok');
+    await finishLoading(batch!.id, ctx());
+    await departBatch(batch!.id, ctx());
+    const originManager = {
+      id: actorId,
+      fullName: 'origin',
+      permissions: new Set(['receipts.create', 'receipts.edit', 'receipts.void']),
+      warehouseScoped: true,
+      warehouseIds: [W.cn],
+    } as never;
+    await expect(setLotQrSkipped({ lotId: lot.lotId, skipped: true }, originManager, ctx())).rejects.toBeInstanceOf(
+      EditError,
+    );
+    const [row] = await db.select({ at: receiptLots.qrSkippedAt }).from(receiptLots).where(eq(receiptLots.id, lot.lotId));
+    expect(row!.at).toBeNull();
+  });
+});
+
+describe('the lot form does not write over a count that grew the lot meanwhile (review of the fixes, lock-rv2-1)', () => {
+  it('the form saved from the old numbers is refused as «changed», the growth stands', async () => {
+    const lot = await mkLot(3, W.cn);
+    const truck = await plan(W.cn, W.uz, lot.lotId, 3);
+    const X = lot.boxes[0]!;
+    let held!: () => void;
+    const holding = new Promise<void>((r) => (held = r));
+    let go!: () => void;
+    const gate = new Promise<void>((r) => (go = r));
+    // A phone holding one carton for a moment — nothing more.
+    const phone = db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT id FROM boxes WHERE id = ${X.id}::uuid FOR UPDATE`);
+      held();
+      await gate;
+    });
+    await holding;
+    const count = countLoadLot(
+      { batchId: truck.id, lotId: lot.lotId, target: 5, seenAboard: 0, pressId: uuidv4(), overReason: 'ikki ortiq' },
+      ctx(),
+      office(actorId, W.cn),
+    );
+    expect(await waitForLock('boxes')).toBe(true);
+    const manager = {
+      id: actorId,
+      fullName: 'x',
+      permissions: new Set(['receipts.edit', 'receipts.void']),
+      warehouseScoped: false,
+      warehouseIds: [],
+      roles: [],
+    };
+    const form = editLot(
+      {
+        lotId: lot.lotId,
+        productNameZh: '审查货',
+        productNameRu: 'куртка (исправлено)',
+        boxCount: 3,
+        boxLengthCm: 50,
+        boxWidthCm: 40,
+        boxHeightCm: 30,
+        boxWeightKg: 10,
+        note: null,
+      } as never,
+      manager as never,
+      ctx(),
+    ).then(
+      () => 'saved',
+      (e: unknown) => (e instanceof EditError ? e.code : `other ${String(e)}`),
+    );
+    expect(await waitForLock('receipt_lots')).toBe(true);
+    go();
+    await phone;
+    expect((await count).grown).toBe(2);
+    expect(await form).toBe('lot_changed');
+    const [lr] = await db.select().from(receiptLots).where(eq(receiptLots.id, lot.lotId));
+    const live = await db.select({ status: boxes.status }).from(boxes).where(eq(boxes.lotId, lot.lotId));
+    expect(lr!.boxCount).toBe(5);
+    expect(live.filter((b) => b.status !== 'void')).toHaveLength(5);
+  });
+});
+
+describe('the take-back is told the truth before the press (review of the fixes, ui2-2, ui2-3)', () => {
+  it('the panel says how many the count may take back, and lowering asks for its own reason', async () => {
+    const lot = await mkLot(4, W.cn);
+    const truck = await plan(W.cn, W.uz, lot.lotId, 3);
+    const planned = await db
+      .select({ code: boxes.shortCode })
+      .from(boxes)
+      .where(and(eq(boxes.currentBatchId, truck.id), eq(boxes.status, 'planned')));
+    await ingestLoadScans(planned.map((p) => qr(truck.id, p.code)), ctx());
+    await finishLoading(truck.id, ctx());
+    await departBatch(truck.id, ctx());
+    const doors = { dest: office(actorId, W.uz), origin: office(actorId, W.cn) };
+    // 3 by phone, then the office counts 6: one spare from the shelf, two grown.
+    const phoneAcks = await ingestUnloadScans(planned.map((p) => qr(truck.id, p.code)), ctx());
+    expect(phoneAcks.every((a) => a.result === 'ok')).toBe(true);
+    await countAcceptLot(
+      { batchId: truck.id, lotId: lot.lotId, target: 6, seenArrived: 3, pressId: uuidv4(), overReason: 'ortiq keldi', confirmArrival: false },
+      ctx(),
+      doors,
+    );
+    const panel = await countAcceptPanel(truck.id);
+    const row = panel.lots.find((l) => l.lotId === lot.lotId)!;
+    // Only the office's own over-landings come back; the phone's three stay.
+    expect(row.takeBack).toBe(3);
+    await expect(
+      countAcceptLot(
+        { batchId: truck.id, lotId: lot.lotId, target: 5, seenArrived: 6, pressId: uuidv4(), overReason: '', confirmArrival: false },
+        ctx(),
+        doors,
+      ),
+    ).rejects.toMatchObject({ code: 'undo_needs_reason' });
+    await expect(
+      countAcceptLot(
+        { batchId: truck.id, lotId: lot.lotId, target: 2, seenArrived: 6, pressId: uuidv4(), overReason: 'xato', confirmArrival: false },
+        ctx(),
+        doors,
+      ),
+    ).rejects.toMatchObject({ code: 'count_below_arrived', detail: { min: 3 } });
   });
 });

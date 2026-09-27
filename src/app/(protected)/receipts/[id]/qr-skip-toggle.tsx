@@ -28,6 +28,7 @@ export function QrSkipToggle({
 }) {
   const t = useTranslations('qrsiz');
   const tc = useTranslations('common');
+  const tb = useTranslations('countAccept');
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -43,7 +44,9 @@ export function QrSkipToggle({
           ? t('toggleWindow')
           : res.error === 'structural_locked'
             ? t('toggleLocked')
-            : tc('error'),
+            : res.error === 'busy_retry'
+              ? tb('errors.busy_retry')
+              : tc('error'),
       );
     });
   }

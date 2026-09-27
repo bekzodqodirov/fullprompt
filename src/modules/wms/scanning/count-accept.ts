@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNotNull, isNull, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import { v5 as uuidv5 } from 'uuid';
 import { z } from 'zod';
 import { db, type Db, type Tx } from '../../platform/db/client';
@@ -31,7 +31,7 @@ import {
   setCountLockTimeout,
 } from './count-rules';
 import { doorOpens, type CountDoor } from './count-door';
-import { notifyPricedCargoGrew } from '../finance/off-truck';
+import { notifyPricedCargoGrew, notifyPricedCargoTakenBack } from '../finance/off-truck';
 
 /*
  * «Sanab qabul» — the office's count at unloading (0112, the owner's Q1-Q7).
@@ -92,6 +92,7 @@ export type CountAcceptRefusal =
   | 'count_stale'
   | 'count_below_arrived'
   | 'over_needs_reason'
+  | 'undo_needs_reason'
   | 'over_needs_origin_scope'
   | 'grow_limit'
   | 'grow_refused'
@@ -412,6 +413,13 @@ export async function countAcceptLot(
         console.error('[count-accept] priced-then-grew notice failed', input.batchId, err),
       );
     }
+    // …and a press below «arrived» that took cartons back off a priced truck
+    // (review of the fixes, money-2).
+    if (done && (done.undone ?? 0) > 0) {
+      await notifyPricedCargoTakenBack(input.batchId, input.lotId, actorId).catch((err) =>
+        console.error('[count-accept] priced-then-taken-back notice failed', input.batchId, err),
+      );
+    }
   }
 }
 
@@ -465,7 +473,9 @@ async function undoOver(
   if (rows.length < n) {
     throw new CountError('count_below_arrived', { arrived: led.arrived, min: led.arrived - rows.length });
   }
-  if (a.overReason.length < 3) throw new CountError('over_needs_reason', { max: led.arrived });
+  // Its own word: «to accept MORE, write the reason» named the opposite of
+  // what a person lowering the number is doing (review of the fixes, ui2-2).
+  if (a.overReason.length < 3) throw new CountError('undo_needs_reason', { arrived: led.arrived });
   if (!doorOpens(a.doors.origin, batch.originWarehouseId, actorId)) {
     throw new CountError('over_needs_origin_scope', { max: led.arrived });
   }
@@ -474,15 +484,12 @@ async function undoOver(
     .from(receiptLots)
     .where(eq(receiptLots.id, L));
   const grownHere = await grownCodesOnTruck(tx, { receiptId: lotRow!.receiptId, lotId: L, batchId: T });
-  const labelled = new Set(
-    (
-      await tx
-        .select({ id: boxes.id })
-        .from(boxes)
-        .where(and(inArray(boxes.id, rows.map((r) => r.id)), isNotNull(boxes.labelPrintedAt)))
-    ).map((r) => r.id),
-  );
-  const isGrown = (r: (typeof rows)[number]) => grownHere.has(r.shortCode) && !labelled.has(r.id);
+  // A carton this truck's growth MINTED never stood on the origin's shelf, so
+  // it goes out of the prixod whatever happened to it since — a sticker
+  // printed for it at the destination included (review of the fixes,
+  // money-1: sending it «back» put phantom stock in Yiwu). Its sticker dies
+  // with it: the code answers «void» to every scanner.
+  const isGrown = (r: (typeof rows)[number]) => grownHere.has(r.shortCode);
   // The growth went on last, so it comes off first; then the highest numbers.
   const picked = [...rows.filter(isGrown), ...rows.filter((r) => !isGrown(r))].slice(0, n);
   const toShrink = picked.filter(isGrown);
@@ -1069,6 +1076,12 @@ export interface CountPanelLot extends LotLedger {
   mode: 'counted' | 'qrless' | null;
   /** The last press on this lot — Q5 «kim va qachon». */
   last: { name: string; at: string; overReason: string | null } | null;
+  /**
+   * How many of this truck's office over-landings a press below «arrived»
+   * could still take back (`landedOverOf`'s count) — so the panel never
+   * promises «N go back» the service will refuse (review of the fixes, ui2-3).
+   */
+  takeBack: number;
 }
 
 /** The panel's data, on the pool — the page's read, never a press's. */
@@ -1078,7 +1091,7 @@ export async function countAcceptPanel(batchId: string): Promise<{
 }> {
   const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
   if (!batch) return { lots: [], crates: [] };
-  const [ledger, modes, lastRows, crateRows] = await Promise.all([
+  const [ledger, modes, lastRows, crateRows, takeRows] = await Promise.all([
     readLedger(db, { batchId, originId: batch.originWarehouseId, lotId: null }),
     countOnlyLotsOnTruck(db, { batchId, side: 'unload', countedSide: 'any', quickOriginId: null }),
     db.execute(sql`
@@ -1100,12 +1113,30 @@ export async function countAcceptPanel(batchId: string): Promise<{
       .where(and(eq(boxes.currentBatchId, batchId), eq(boxes.status, 'in_transit')))
       .groupBy(crates.id, crates.code)
       .orderBy(asc(crates.code)),
+    // `landedOverOf` for every lot at once, from the truck's own events.
+    db.execute(sql`
+      SELECT b.lot_id, count(DISTINCT b.id)::int AS n
+        FROM scan_events ose
+        JOIN boxes b ON b.id = ose.box_id
+       WHERE ose.batch_id = ${batchId}::uuid AND ose.type = 'unload'
+         AND ose.crate_id IS NULL AND ose.manual_reason = ${COUNT_OVER_REASON}
+         AND b.current_warehouse_id = ${batch.destWarehouseId}::uuid
+         AND b.status IN ('in_stock', 'ready_for_pickup')
+         AND b.current_batch_id IS NULL AND b.crate_id IS NULL
+       GROUP BY b.lot_id
+    `) as unknown as Promise<{ lot_id: string; n: number }[]>,
   ]);
+  const takeBy = new Map(takeRows.map((r) => [r.lot_id, Number(r.n)]));
   const lastBy = new Map(
     lastRows.map((r) => [r.lot_id, { name: r.name ?? '—', at: r.at, overReason: r.over_reason }]),
   );
   const lots = ledger
-    .map((lot) => ({ ...lot, mode: modes.get(lot.lotId) ?? null, last: lastBy.get(lot.lotId) ?? null }))
+    .map((lot) => ({
+      ...lot,
+      mode: modes.get(lot.lotId) ?? null,
+      last: lastBy.get(lot.lotId) ?? null,
+      takeBack: takeBy.get(lot.lotId) ?? 0,
+    }))
     // The office's work first: what is still aboard and the phone cannot
     // take, then what is still aboard, then what is done — by label.
     .sort((x, y) => {

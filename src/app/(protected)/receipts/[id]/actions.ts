@@ -7,6 +7,7 @@ import { db } from '@/modules/platform/db/client';
 import { boxes, receipts } from '@/modules/platform/db/schema';
 import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
 import { requestMeta } from '@/modules/platform/auth/session';
+import { isBusyError } from '@/modules/platform/db/errors';
 import { markBoxLost, VoidError, voidReceipt } from '@/modules/wms/receipts/service';
 import { AnnulError, annulReceipt, mayAnnul } from '@/modules/wms/receipts/annul';
 import { MoveError, moveReceipt } from '@/modules/wms/receipts/move';
@@ -53,6 +54,9 @@ export async function voidReceiptAction(
     // button — a box left the shelf, or the prixod still carries live costs
     // (money first, the batch-cancel rule).
     if (err instanceof VoidError) return { error: err.code, detail: err.detail };
+    // An office count held the prixod's cartons (review of the fixes,
+    // lock-rv2-3): «band, qaytadan bosing», never the error page.
+    if (isBusyError(err)) return { error: 'busy_retry' };
     throw err;
   }
   revalidatePath(`/receipts/${parsed.data.receiptId}`);
@@ -203,6 +207,7 @@ export async function annulReceiptAction(
     };
   } catch (err) {
     if (err instanceof AnnulError) return { error: err.code };
+    if (isBusyError(err)) return { error: 'busy_retry' };
     throw err;
   }
 }

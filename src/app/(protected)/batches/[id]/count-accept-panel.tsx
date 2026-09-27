@@ -133,6 +133,8 @@ function useRefusalText() {
         });
       case 'over_needs_reason':
         return t('errors.over_needs_reason', { max: Number(detail.max ?? 0) });
+      case 'undo_needs_reason':
+        return t('errors.undo_needs_reason', { arrived: Number(detail.arrived ?? 0) });
       case 'over_needs_origin_scope':
         return t('errors.over_needs_origin_scope');
       case 'grow_limit':
@@ -186,12 +188,24 @@ function LotRow({
   // Below what arrived: this truck's own over-landings taken back (review
   // money-1) — the service decides how far that can go and says so.
   const undo = valid ? Math.max(0, lot.arrived - typed) : 0;
+  // …which is only ever this truck's office over-landings: a lower number
+  // than those can reach is refused at once, in the service's own words,
+  // before a dialog promises what the press will not do (ui2-3).
+  const unreachable = undo > lot.takeBack;
 
   async function accept() {
     setError(null);
     setResult(null);
     if (!valid) {
       setError(refusal('validation'));
+      return;
+    }
+    if (unreachable) {
+      setError(refusal('count_below_arrived', { arrived: lot.arrived, min: lot.arrived - lot.takeBack }));
+      return;
+    }
+    if (undo > 0 && reason.trim().length < 3) {
+      setError(refusal('undo_needs_reason', { arrived: lot.arrived }));
       return;
     }
     const lines: string[] = [];
@@ -304,7 +318,7 @@ function LotRow({
           {t('accept')}
         </button>
       </div>
-      {(over > 0 || undo > 0) && (
+      {(over > 0 || (undo > 0 && !unreachable)) && (
         <div className="space-y-1">
           <input
             className="input"
@@ -314,9 +328,16 @@ function LotRow({
             onChange={(e) => setReason(e.target.value)}
           />
           {grow > 0 && <p className="text-xs font-semibold text-warn">{t('growHint', { n: grow })}</p>}
-          {undo > 0 && <p className="text-xs font-semibold text-warn">{t('undoHint', { n: undo })}</p>}
+          {undo > 0 && !unreachable && (
+            <p className="text-xs font-semibold text-warn">{t('undoHint', { n: undo })}</p>
+          )}
           {!mayOver && <p className="text-xs text-bad">{t('overNoScope')}</p>}
         </div>
+      )}
+      {unreachable && (
+        <p className="text-xs font-semibold text-bad" data-testid={`count-unreachable-${lot.lotId}`}>
+          {refusal('count_below_arrived', { arrived: lot.arrived, min: lot.arrived - lot.takeBack })}
+        </p>
       )}
       {lot.last && (
         <p className="text-2xs text-ink-500" data-testid={`count-last-${lot.lotId}`}>

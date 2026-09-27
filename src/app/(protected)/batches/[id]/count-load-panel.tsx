@@ -172,6 +172,8 @@ function CountRow({ batchId, quick, row }: { batchId: string; quick: boolean; ro
         return t('errors.grow_too_many', { max: d.max ?? 0 });
       case 'grow_refused':
         return t('errors.grow_refused');
+      case 'shrink_refused':
+        return t('errors.shrink_refused');
       case 'count_conflict':
       case 'busy_retry':
         return t('errors.busy');
@@ -202,7 +204,15 @@ function CountRow({ batchId, quick, row }: { batchId: string; quick: boolean; ro
     if (
       target < row.aboard &&
       !window.confirm(
-        t('reduceConfirm', { lot: row.label, from: row.aboard, to: target, n: row.aboard - target }),
+        // Cartons over the plan may be the prixod's own growth, which a
+        // dial-down voids and takes out of the prixod — the confirm says so
+        // before the press, not only the result line after (ui2-4).
+        t(row.over > 0 ? 'reduceConfirmPrixod' : 'reduceConfirm', {
+          lot: row.label,
+          from: row.aboard,
+          to: target,
+          n: row.aboard - target,
+        }),
       )
     ) {
       return;

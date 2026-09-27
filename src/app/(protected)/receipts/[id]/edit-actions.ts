@@ -18,7 +18,7 @@ import {
   setReceiptReceived,
   type LotEditResult,
 } from '@/modules/wms/receipts/edit';
-import { isServerBehind } from '@/modules/platform/db/errors';
+import { isBusyError, isServerBehind } from '@/modules/platform/db/errors';
 
 export interface EditLotState {
   ok?: boolean;
@@ -69,6 +69,9 @@ export async function editLotAction(_prev: EditLotState, formData: FormData): Pr
     return { ok: true, reconciliation };
   } catch (err) {
     if (err instanceof EditError) return { error: err.code };
+    // A count press held the lot at that moment — the form's own word for
+    // «somebody changed it, look again», never the error page (lock-rv2-4).
+    if (isBusyError(err)) return { error: 'lot_changed' };
     throw err;
   }
 }
@@ -182,6 +185,7 @@ export async function setLotQrSkippedAction(
     return { ok: true, reverted: result.reverted };
   } catch (err) {
     if (err instanceof EditError) return { ok: false, error: err.code };
+    if (isBusyError(err)) return { ok: false, error: 'busy_retry' };
     throw err;
   }
 }

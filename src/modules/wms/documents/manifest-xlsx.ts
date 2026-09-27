@@ -54,7 +54,9 @@ export async function buildManifestXlsx(batchId: string): Promise<Buffer | null>
   const loadEvents = await db
     .select({ boxId: scanEvents.boxId, crateId: scanEvents.crateId, addedOnSpot: scanEvents.addedOnSpot })
     .from(scanEvents)
-    .where(and(eq(scanEvents.batchId, batchId), eq(scanEvents.type, 'load')));
+    .where(and(eq(scanEvents.batchId, batchId), eq(scanEvents.type, 'load')))
+    .orderBy(asc(scanEvents.createdAt), asc(scanEvents.id));
+  // The NEWEST load event per box wins (the map keeps the last set).
   const eventByBox = new Map(loadEvents.map((e) => [e.boxId, e]));
   const eventCrateIds = [...new Set(loadEvents.map((e) => e.crateId).filter((id): id is string => !!id))];
   const eventCrates = eventCrateIds.length
@@ -103,9 +105,16 @@ export async function buildManifestXlsx(batchId: string): Promise<Buffer | null>
       shortCode: box.shortCode,
       code,
       product,
-      // Live pointer while the box still carries it (planned, not yet
-      // scanned), the load event once life moved on.
-      crate: crateCode ?? (event?.crateId ? crateCodeById.get(event.crateId) ?? '' : ''),
+      // THIS truck's load event when there is one — a null crate there means
+      // it went loose — and the live pointer only for a carton not yet
+      // scanned aboard: a hub that re-palletises after departure must not
+      // change a departed truck's paper (#645; the invoice's rule, review of
+      // the fixes cargo-r3).
+      crate: event
+        ? event.crateId
+          ? crateCodeById.get(event.crateId) ?? ''
+          : ''
+        : crateCode ?? '',
       onSpot: event?.addedOnSpot ? '⚠' : '',
     });
     const agg = byLot.get(lot.id) ?? { code, product, boxCount: 0, kg: 0, m3: 0 };

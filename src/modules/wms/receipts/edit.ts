@@ -16,6 +16,7 @@ import { diffFields, writeAudit, type AuditContext } from '../../platform/audit/
 import { emitEvent } from '../../platform/events/service';
 import { getSetting } from '../../platform/settings/service';
 import type { Actor } from '../../platform/rbac/authorize';
+import { inScope } from '../../platform/rbac/scope';
 import { nextBoxCodes } from '../codes';
 import { costOrphanedByVoid, lockCostsTouchingLots } from '../costing/void-guard';
 import { receiptHasCompensation } from '../finance/compensation-follow';
@@ -294,6 +295,26 @@ export async function editLot(
   );
 
   return db.transaction(async (tx) => {
+    // Every decision above was read on the pool. The lot row is taken first
+    // (the count doors' order: lot, then cartons) and the lot re-read under
+    // it: an office count that grew or shrank the prixod while this form was
+    // being decided would otherwise be written over with the form's stale
+    // count and totals — five live cartons under a prixod saying three
+    // (review of the fixes, lock-rv2-1).
+    const [locked] = await tx.select().from(receiptLots).where(eq(receiptLots.id, lot.id)).for('update');
+    const [live] = await tx
+      .select({ n: sql<number>`count(*)::int` })
+      .from(boxes)
+      .where(and(eq(boxes.lotId, lot.id), ne(boxes.status, 'void')));
+    if (
+      !locked ||
+      locked.boxCount !== lot.boxCount ||
+      Number(locked.totalWeightKg) !== Number(lot.totalWeightKg) ||
+      Number(locked.totalVolumeM3) !== Number(lot.totalVolumeM3) ||
+      Number(live!.n) !== activeBoxes.length
+    ) {
+      throw new EditError('lot_changed');
+    }
     const before = {
       productNameZh: lot.productNameZh,
       productNameRu: lot.productNameRu,
@@ -343,6 +364,8 @@ export async function editLot(
     // Label reconciliation on count change (spec 4.4, edge case 1).
     const delta = input.boxCount - activeBoxes.length;
     if (delta > 0) {
+      // Warehouse before counter — confirmReceipt's order (lock-rv2-5).
+      await tx.execute(sql`SELECT 1 FROM warehouses WHERE id = ${warehouse.id}::uuid FOR KEY SHARE`);
       const codes = await nextBoxCodes(tx, warehouse, delta);
       const maxSeq = Math.max(0, ...lotBoxes.map((b) => b.seqInLot));
       const inserted = await tx
@@ -545,13 +568,18 @@ export async function qrSwitchPlaces(
     })
     .from(boxes)
     .where(and(eq(boxes.lotId, lotId), ne(boxes.status, 'void')));
-  const loose = live.filter((box) => box.crateId === null && box.status !== 'issued' && box.status !== 'lost');
-  const onReceiptShelf = loose.every(
+  // Crated cartons included: the marker is the LOT's, and a pallet's members
+  // take it the moment the pallet is broken down. Judging loose cartons alone,
+  // a lot riding entirely inside a pallet looked «on the shelf» (an empty
+  // list agrees with anything) and the origin's manager could re-mark a lot
+  // on the road (review of the fixes, cargo-r2 — access-1 through a pallet).
+  const held = live.filter((box) => box.status !== 'issued' && box.status !== 'lost');
+  const onReceiptShelf = held.every(
     (box) => box.status === 'in_stock' && box.warehouseId === receiptWarehouseId && box.batchId === null,
   );
   const places = new Set<string>();
-  for (const box of loose) if (box.warehouseId) places.add(box.warehouseId);
-  const batchIds = [...new Set(loose.map((box) => box.batchId).filter((id): id is string => id !== null))];
+  for (const box of held) if (box.warehouseId) places.add(box.warehouseId);
+  const batchIds = [...new Set(held.map((box) => box.batchId).filter((id): id is string => id !== null))];
   if (batchIds.length > 0) {
     const ends = await exec
       .select({ origin: batches.originWarehouseId, dest: batches.destWarehouseId })
@@ -573,6 +601,20 @@ export async function qrSwitchPlaces(
 export function mayFlipQrSkip(actor: Actor, at: QrSwitchPlaces): boolean {
   if (at.onReceiptShelf) return !at.anyNotInStock || actor.permissions.has('receipts.void');
   return at.places.length > 0 && at.places.every((warehouseId) => mayCountMove(actor, warehouseId));
+}
+
+/**
+ * The QR-siz switch's door as the ACTION asks it — `receipts.edit` at the
+ * prixod's own warehouse — so the receipt card draws the switch exactly where
+ * pressing it is allowed (review of the fixes, cargo-r5). A write door, not
+ * the read door (`mayReadReceipt`): a destination may read a prixod it cannot
+ * edit.
+ */
+export function mayEditReceiptAt(
+  actor: Pick<Actor, 'permissions' | 'warehouseScoped' | 'warehouseIds'>,
+  warehouseId: string,
+): boolean {
+  return actor.permissions.has('receipts.edit') && inScope(actor, warehouseId);
 }
 
 /**

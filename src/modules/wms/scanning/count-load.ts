@@ -27,7 +27,7 @@ import {
   shrinkGrownInTx,
 } from '../receipts/grow-lot';
 import { likeNeedle } from '../search/query';
-import { notifyPricedCargoGrew } from '../finance/off-truck';
+import { notifyPricedCargoGrew, notifyPricedCargoTakenBack } from '../finance/off-truck';
 
 /*
  * «Sanab yuklash» — the office's count-load door (0112, the owner's Q1-Q7).
@@ -75,6 +75,7 @@ export const COUNT_LOAD_ERRORS = [
   'over_reason_required',
   'grow_too_many',
   'grow_refused',
+  'shrink_refused',
   'count_conflict',
   'crate_not_found',
   'crate_not_on_plan',
@@ -248,7 +249,7 @@ async function countRows(
     loadedFrom: r.loaded_from,
     // Minted by a count press on THIS truck and never printed: its inverse
     // is a void and a smaller lot, never a shelf (review money-3).
-    grown: grownHere.has(r.short_code) && r.unlabelled,
+    grown: grownHere.has(r.short_code),
   }));
 }
 
@@ -481,7 +482,9 @@ export async function countLoadLot(
           })
         ).codes;
       } catch (error) {
-        if (error instanceof GrowLotError) throw new CountError('grow_refused', { reason: error.code });
+        // Its own word: «could not be enlarged» names the wrong direction
+        // (review of the fixes, ui2-4).
+        if (error instanceof GrowLotError) throw new CountError('shrink_refused', { reason: error.code });
         throw error;
       }
     }
@@ -581,10 +584,18 @@ export async function countLoadLot(
   // after the commit, on the pool (#714).
   if (result.grown > 0 || result.shrunk > 0) await afterLotGrown(lotId);
   // Beyond the plan onto a truck already priced: the price no longer covers
-  // the cargo, and the accountant hears it (review money-4).
-  if (result.over > 0 || result.grown > 0) {
+  // the cargo, and the accountant hears it (review money-4). A plain add
+  // counts too — a quick truck has no plan, so its spare cartons arrive as
+  // adds (review of the fixes, money-5); the notice names only unseen ones.
+  if (result.added > 0 || result.over > 0 || result.grown > 0) {
     await notifyPricedCargoGrew(batchId, lotId, actorId).catch((err) =>
       console.error('[count-load] priced-then-grew notice failed', batchId, err),
+    );
+  }
+  // …and the mirror: a count lowered below what a price billed (money-2).
+  if (result.removed > 0 || result.shrunk > 0) {
+    await notifyPricedCargoTakenBack(batchId, lotId, actorId).catch((err) =>
+      console.error('[count-load] priced-then-taken-back notice failed', batchId, err),
     );
   }
   return result;

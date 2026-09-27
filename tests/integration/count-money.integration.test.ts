@@ -27,6 +27,8 @@ import { countAcceptLot } from '@/modules/wms/scanning/count-accept';
 import { riderRowsSql } from '@/modules/wms/batches/riders';
 import { addTransaction } from '@/modules/wms/finance/service';
 import { offTruckPrices } from '@/modules/wms/finance/off-truck';
+import { confirmQrLabelled } from '@/modules/wms/labels/qrless';
+import { writeAudit } from '@/modules/platform/audit/service';
 
 /**
  * The money a count's growth must NOT move (0112, his Q3 = b; review money-2).
@@ -130,7 +132,12 @@ afterAll(async () => {
   if (madeClients.length) await db.delete(clientTransactions).where(inArray(clientTransactions.clientId, madeClients));
   await db
     .delete(notifications)
-    .where(and(eq(notifications.type, 'PricedCargoGrew'), sql`${notifications.createdAt} >= ${startedAt.toISOString()}::timestamptz`));
+    .where(
+      and(
+        inArray(notifications.type, ['PricedCargoGrew', 'PricedCargoLeft']),
+        sql`${notifications.createdAt} >= ${startedAt.toISOString()}::timestamptz`,
+      ),
+    );
   await db.execute(sql`DELETE FROM cost_entries WHERE cost_date = '1638-02-02'`);
   await db.update(warehouses).set({ active: false }).where(inArray(warehouses.id, Object.values(W)));
   await pgClient.end();
@@ -443,5 +450,142 @@ describe('a price the count outgrew is named, and only that one (review money-4)
       { dest: office(W.uz), origin: office(W.cn) },
     );
     expect(await offTruckPrices(db, { batchIds: [t.id] })).toEqual([]);
+  });
+});
+
+describe('the second review of the count fixes (money-1, money-2, money-4)', () => {
+  const charge = (clientId: string, batchId: string, amount: number) =>
+    addTransaction(
+      { clientId, type: 'charge', amount, currency: 'USD', txDate: '1638-02-02', batchId } as never,
+      ctx(),
+    );
+  const noticesOf = async (type: string, code: string) =>
+    (
+      await db
+        .select({ payload: notifications.payload })
+        .from(notifications)
+        .where(and(eq(notifications.type, type), sql`${notifications.createdAt} >= ${startedAt.toISOString()}::timestamptz`))
+    )
+      .map((n) => String((n.payload as { text?: string }).text ?? ''))
+      .filter((text) => text.includes(code));
+  const codeOf = async (clientId: string) =>
+    (await db.select({ code: clients.clientCode }).from(clients).where(eq(clients.id, clientId)))[0]!.code;
+  const both = () => ({ dest: office(W.uz), origin: office(W.cn) });
+  const logist = () =>
+    ({
+      id: actorId,
+      permissions: new Set(['receipts.create', 'receipts.edit', 'plans.manage']),
+      warehouseScoped: false,
+      warehouseIds: [],
+    }) as never;
+
+  it('money-1: grown cartons that got their stickers are still taken back as the prixod’s own — voided, never sent to China', async () => {
+    const a = await mkLot({ ...uniform(3), qrSkipped: true });
+    const t = await planTruck([{ lotId: a.lotId, take: 3 }]);
+    await countLoadLot(
+      { batchId: t.id, lotId: a.lotId, target: 3, seenAboard: 0, pressId: uuidv4(), overReason: '' },
+      ctx(),
+      office(W.cn),
+    );
+    await finishLoading(t.id, ctx());
+    await departBatch(t.id, ctx());
+    const up = await countAcceptLot(
+      { batchId: t.id, lotId: a.lotId, target: 6, seenArrived: 0, pressId: uuidv4(), overReason: 'ortiq keldi', confirmArrival: true },
+      ctx(),
+      both(),
+    );
+    expect(up.grown).toBe(3);
+    // The office prints the six stickers at the gate.
+    const lotBoxes = await db.select({ id: boxes.id }).from(boxes).where(eq(boxes.lotId, a.lotId));
+    const stamped = await confirmQrLabelled(W.uz, lotBoxes.map((b) => b.id), logist(), ctx());
+    expect(stamped.labelled).toBeGreaterThan(0);
+
+    const back = await countAcceptLot(
+      { batchId: t.id, lotId: a.lotId, target: 3, seenArrived: 6, pressId: uuidv4(), overReason: 'xato yozilgan', confirmArrival: false },
+      ctx(),
+      both(),
+    );
+    expect(back.undone).toBe(3);
+    const after = await db
+      .select({ status: boxes.status, wh: boxes.currentWarehouseId })
+      .from(boxes)
+      .where(eq(boxes.lotId, a.lotId));
+    // No phantom on the Chinese shelf: the three were never there.
+    expect(after.filter((b) => b.wh === W.cn)).toEqual([]);
+    expect(after.filter((b) => b.status === 'void')).toHaveLength(3);
+    expect((await lotRow(a.lotId)).boxes).toBe(3);
+  });
+
+  it('money-2: a price typed on the grown cargo, then the count taken back — the pair names what left, the accountant is told', async () => {
+    const a = await mkLot(uniform(5));
+    const t = await planTruck([{ lotId: a.lotId, take: 5 }]);
+    await loadAll(t.id);
+    await finishLoading(t.id, ctx());
+    await departBatch(t.id, ctx());
+    await countAcceptLot(
+      { batchId: t.id, lotId: a.lotId, target: 8, seenArrived: 0, pressId: uuidv4(), overReason: 'ortiq keldi', confirmArrival: true },
+      ctx(),
+      both(),
+    );
+    await new Promise((r) => setTimeout(r, 20));
+    // The accountant bills the eight cartons the pricing page shows.
+    await charge(a.clientId, t.id, 240);
+    expect(await offTruckPrices(db, { batchIds: [t.id] })).toEqual([]);
+
+    await countAcceptLot(
+      { batchId: t.id, lotId: a.lotId, target: 5, seenArrived: 8, pressId: uuidv4(), overReason: 'xato yozilgan', confirmArrival: false },
+      ctx(),
+      both(),
+    );
+    const [row, ...rest] = await offTruckPrices(db, { batchIds: [t.id] });
+    expect(rest).toEqual([]);
+    expect([row!.kind, row!.dropCause, row!.droppedBoxIds.length]).toEqual(['partial', 'taken_back', 3]);
+    const texts = await noticesOf('PricedCargoLeft', await codeOf(a.clientId));
+    expect(texts.length).toBeGreaterThan(0);
+    expect(texts[0]).toContain('3 karobka mashinadan chiqdi');
+
+    // A client-scoped reader does not pay for the walk (money-3): off by default.
+    expect(await offTruckPrices(db, { clientIds: [a.clientId] })).toEqual([]);
+
+    // The accountant re-enters the price: the new decision saw five.
+    await new Promise((r) => setTimeout(r, 20));
+    const [live] = await db
+      .select({ id: clientTransactions.id })
+      .from(clientTransactions)
+      .where(and(eq(clientTransactions.batchId, t.id), eq(clientTransactions.clientId, a.clientId)));
+    await db.update(clientTransactions).set({ voidedAt: new Date() }).where(eq(clientTransactions.id, live!.id));
+    await charge(a.clientId, t.id, 150);
+    expect(await offTruckPrices(db, { batchIds: [t.id] })).toEqual([]);
+  });
+
+  it('money-4: a compensation re-post after the growth does not answer the extra cartons', async () => {
+    const a = await mkLot(uniform(3));
+    const t = await planTruck([{ lotId: a.lotId, take: 3 }]);
+    await loadAll(t.id);
+    await finishLoading(t.id, ctx());
+    await departBatch(t.id, ctx());
+    await charge(a.clientId, t.id, 90);
+    await new Promise((r) => setTimeout(r, 20));
+    await countAcceptLot(
+      { batchId: t.id, lotId: a.lotId, target: 5, seenArrived: 0, pressId: uuidv4(), overReason: 'ortiq keldi', confirmArrival: true },
+      ctx(),
+      both(),
+    );
+    expect((await offTruckPrices(db, { batchIds: [t.id] })).map((x) => x.kind)).toEqual(['grew']);
+    await new Promise((r) => setTimeout(r, 20));
+    // What `addCompensation` writes for its re-post: the create row with
+    // `repricedFrom` — a LOWER price for lost cargo, not a word about growth.
+    const [live] = await db
+      .select({ id: clientTransactions.id })
+      .from(clientTransactions)
+      .where(and(eq(clientTransactions.batchId, t.id), eq(clientTransactions.clientId, a.clientId)));
+    await writeAudit(db, ctx(), {
+      entityType: 'client_transaction',
+      entityId: live!.id,
+      action: 'create',
+      after: { repricedFrom: uuidv4() },
+    });
+    const rows = await offTruckPrices(db, { batchIds: [t.id] });
+    expect(rows.map((x) => [x.kind, x.grewBoxIds.length])).toEqual([['grew', 2]]);
   });
 });
