@@ -19,6 +19,7 @@ import {
 import { getSetting } from '../../platform/settings/service';
 import { reachableAt } from '../crm/site-assign-rules';
 import { telegramPhoneUrl } from '../../platform/telegram/map-link';
+import { chatLocaleFor } from '../../platform/telegram/cabinet-locale';
 import { ARRIVED_ON_A_TRUCK } from '../documents/arrivals';
 import { clientBalanceUsd, clientLedger } from '../finance/service';
 import { etaWindow, scheduleEstimate } from '../tracking/eta';
@@ -158,6 +159,10 @@ export async function linkPhoneSiblings(chatId: bigint): Promise<number> {
     }
   }
   let added = 0;
+  // The language the PERSON chose, read once and only when a code actually
+  // joins: a sibling with no language of its own would otherwise answer in the
+  // Russian fallback to somebody who picked Uzbek (round C, judge CX-7).
+  let chatLocale: string | null | undefined;
   // Bounded: a broker chat holds many people's codes, and each phone is one
   // query. Ten covers every person the owner has described.
   for (const phone of [...phones].slice(0, 10)) {
@@ -172,6 +177,16 @@ export async function linkPhoneSiblings(chatId: bigint): Promise<number> {
         createdBy: null,
       });
       added += 1;
+      if (sibling.locale === null) {
+        if (chatLocale === undefined) chatLocale = await chatLocaleFor(chatId);
+        // Only onto a NULL: a code whose own language somebody set keeps it.
+        if (chatLocale) {
+          await db
+            .update(clients)
+            .set({ locale: chatLocale })
+            .where(and(eq(clients.id, sibling.id), isNull(clients.locale)));
+        }
+      }
     }
   }
   return added;
@@ -564,6 +579,8 @@ export async function lotPhotoKeys(lotId: string, clientIds: string[], limit = 1
       storageKey: attachments.storageKey,
       thumb800Key: attachments.thumb800Key,
       contentType: attachments.contentType,
+      // The bot's 📷 sends an original only when Telegram will take it (≤ 10 MB).
+      sizeBytes: attachments.sizeBytes,
     })
     .from(attachments)
     .where(

@@ -228,11 +228,13 @@ export function registerStaffBot(bot: Bot): void {
       await ctx.answerCallbackQuery();
       if (parsed.who === 'client') {
         // The client door is the existing cabinet — nothing more (owner's
-        // answer 4). Same phone-verified entry as always.
-        const { clientLabels } = await import('./client-labels');
-        const t = clientLabels(ctx.from?.language_code);
+        // answer 4). Same phone-verified entry as always, in the phone's
+        // language NORMALISED (a raw «en-GB» fell back to Russian).
+        const { localeFromTelegram } = await import('./client-labels');
+        const locale = localeFromTelegram(ctx.from?.language_code);
+        const t = clientLabels(locale);
         await ctx.reply(`${t.notLinked}\n\n${t.linkByPhone}`, {
-          reply_markup: phoneKeyboard(ctx.from?.language_code),
+          reply_markup: phoneKeyboard(locale),
         });
         return;
       }
@@ -1187,7 +1189,6 @@ function queueRefusal(code: string | null | undefined): string {
   return (code && QUEUE_REFUSAL[code]) ?? 'kartadan qo‘lda yuboring.';
 }
 
-/** The two doors an unknown chat is offered (owner: «hodim yoki mijoz alohida kirish»). */
 /**
  * «Hodim sifatida ulanish» — ONE door, asked by the inline «👨‍💼 Hodim» button
  * and by the /hodim command.
@@ -1208,12 +1209,20 @@ export async function askStaffPhone(
   });
 }
 
-export function entryKeyboard() {
+/**
+ * The two doors an unknown chat is offered (owner: «hodim yoki mijoz alohida
+ * kirish»), in the language of the person who has not linked yet (round C) —
+ * a Russian speaker used to be asked «Кто вы?» and then offered two Uzbek
+ * buttons. Only the WORDS follow the language; the callback data is the
+ * router and stays.
+ */
+export function entryKeyboard(locale?: string | null) {
+  const t = clientLabels(locale);
   return {
     inline_keyboard: [
       [
-        { text: '👨‍💼 Hodim', callback_data: 'e:s' },
-        { text: '📦 Mijoz', callback_data: 'e:c' },
+        { text: t.entryStaff, callback_data: 'e:s' },
+        { text: t.entryClient, callback_data: 'e:c' },
       ],
     ],
   };

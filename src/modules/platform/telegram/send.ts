@@ -343,3 +343,87 @@ export async function editText(o: {
 export async function sendTyping(chatId: ChatId): Promise<void> {
   await botCall('sendChatAction', { chat_id: chatValue(chatId), action: 'typing' }, 5_000);
 }
+
+export interface AlbumMessage {
+  chatId: ChatId;
+  /** One to ten photos; one goes as a plain photo, more as a media group. */
+  photos: { bytes: Buffer | Uint8Array; filename: string; contentType: string }[];
+  /** Safe HTML under the FIRST photo — an album carries one caption. */
+  captionHtml?: string;
+  silent?: boolean;
+  timeoutMs?: number;
+}
+
+/**
+ * Several photos as ONE album (round C, the cabinet's 📷) — through the one
+ * sender, so the upload has a deadline and a verdict like every other call.
+ *
+ * It was grammy's `replyWithMediaGroup`, awaited on the sequential poller
+ * with grammy's 500-second default and no caption: ten photographs from our
+ * storage held every other customer's tap, and arrived with nothing saying
+ * which lot they were. An album carries no keyboard, which is why the pushes
+ * never use one; the 📷 answer has no button to lose.
+ *
+ * The caption is HTML with the same plain fallback as a message — refused
+ * markup goes again as the same words, unformatted, and the photos still
+ * arrive. One photo is simply `sendPhoto`: Telegram refuses a group of one.
+ */
+export async function sendAlbum(msg: AlbumMessage): Promise<SendResult> {
+  const photos = msg.photos.slice(0, 10);
+  if (photos.length === 0) {
+    return {
+      ok: false,
+      status: 0,
+      description: 'no_photos',
+      messageId: null,
+      retryAfter: null,
+      permanent: true,
+      botDown: false,
+      usedFallback: false,
+    };
+  }
+  if (photos.length === 1) {
+    const { fileId: _unused, ...one } = await sendPhoto({
+      chatId: msg.chatId,
+      photo: photos[0]!,
+      captionHtml: msg.captionHtml,
+      silent: msg.silent,
+      timeoutMs: msg.timeoutMs,
+    });
+    void _unused;
+    return one;
+  }
+  const build = (plain: boolean) => {
+    const form = new FormData();
+    form.append('chat_id', String(chatValue(msg.chatId)));
+    if (msg.silent) form.append('disable_notification', 'true');
+    const caption = msg.captionHtml
+      ? plain
+        ? { caption: htmlToPlain(msg.captionHtml) }
+        : { caption: msg.captionHtml, parse_mode: 'HTML' }
+      : {};
+    const media = photos.map((_, index) => ({
+      type: 'photo',
+      media: `attach://p${index}`,
+      ...(index === 0 ? caption : {}),
+    }));
+    form.append('media', JSON.stringify(media));
+    photos.forEach((p, index) => {
+      // Copied into a plain ArrayBuffer, as sendPhoto does: a Buffer may sit on
+      // a shared pool the Blob constructor does not accept.
+      form.append(`p${index}`, new Blob([new Uint8Array(p.bytes)], { type: p.contentType }), p.filename);
+    });
+    return form;
+  };
+  const timeoutMs = msg.timeoutMs ?? 60_000;
+  let answer = await botCall('sendMediaGroup', build(false), timeoutMs);
+  let usedFallback = false;
+  if (!answer.ok && answer.status === 400 && msg.captionHtml && PARSE_REFUSAL.test(answer.description)) {
+    logger.warn({ description: answer.description }, 'telegram refused our album caption — sent as plain text');
+    usedFallback = true;
+    answer = await botCall('sendMediaGroup', build(true), timeoutMs);
+  }
+  // The answer is the array of sent messages; the first carries the caption.
+  const first = Array.isArray(answer.result) ? ((answer.result[0] as unknown) ?? null) : null;
+  return verdict({ ...answer, result: first }, usedFallback);
+}

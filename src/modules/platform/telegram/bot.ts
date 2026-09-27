@@ -7,11 +7,15 @@ import { clientsForChat } from '../../wms/client-cabinet/service';
 import {
   beginClientLink,
   cabinetKeyboard,
+  dispatch,
   phoneKeyboard,
   registerClientCabinet,
+  sendInOrder,
+  type Outgoing,
 } from './client-cabinet';
-import { clientLabels } from './client-labels';
+import { clientLabels, localeFromTelegram } from './client-labels';
 import { adSourceFromPayload, rememberAdVisit } from './ad-intake';
+import { h } from './format';
 import { cabinetInlineKeyboard } from './menu-button';
 import { linkStaffChat, staffForChat, startMenuFor } from './staff-bot';
 import {
@@ -85,6 +89,9 @@ export function startTelegramBot(): void {
 
   bot.command('start', async (ctx) => {
     const code = ctx.match?.trim();
+    // The phone's own language, NORMALISED: a raw «en-GB» or «uz-Latn» is not
+    // a language the dictionary knows, and fell back to Russian.
+    const tg = localeFromTelegram(ctx.from?.language_code);
 
     // An ADVERT brought them here (`?start=ad_instagram`). Not a link code and
     // not a menu: somebody who tapped an advert wants a price, so the only
@@ -94,7 +101,6 @@ export function startTelegramBot(): void {
     // remembered, not acted on.
     const adSource = adSourceFromPayload(code);
     if (adSource) {
-      const tg = ctx.from?.language_code;
       rememberAdVisit(ctx.chat.id, adSource);
       await ctx.reply(clientLabels(tg).askPhone, { reply_markup: phoneKeyboard(tg) });
       return;
@@ -104,18 +110,34 @@ export function startTelegramBot(): void {
       // One decision, made in the testable layer (round 100, 13A): the
       // owner's own people also ship cargo, and the staff menu used to
       // REPLACE their cabinet buttons — reply keyboards are exclusive.
-      const staff = await staffForChat(BigInt(ctx.chat.id));
-      const linkedClients = await clientsForChat(BigInt(ctx.chat.id));
+      const chatId = ctx.chat.id;
+      const staff = await staffForChat(BigInt(chatId));
+      const linkedClients = await clientsForChat(BigInt(chatId));
       const menu = startMenuFor(staff, linkedClients.length);
-      if (menu === 'both') {
+      if (menu === 'both' || menu === 'cabinet') {
+        // Round C: a greeting by the name Telegram knows the person by (the
+        // client card's name is often a company or a marking), the codes, and
+        // then — a SECOND message, since a reply keyboard and an inline one
+        // cannot share one — the wide button. A client who types /start is
+        // looking for their cargo, not for the corner icon. A chat that is
+        // also staff is greeted by its staff name, as it always was.
         const locale = linkedClients.find((c) => c.locale)?.locale ?? null;
         const t = clientLabels(locale);
-        await ctx.reply(
-          `👋 ${staff!.fullName}\n${t.yourCodes}: ${linkedClients.map((c) => c.clientCode).join(', ')}`,
-          { reply_markup: bothKeyboard(locale) },
-        );
+        const { startGreetingHtml } = await import('../../wms/client-cabinet/bot-text');
         const app = cabinetInlineKeyboard(process.env.APP_URL, locale);
-        if (app) await ctx.reply(t.openAppPrompt, { reply_markup: app });
+        const messages: Outgoing[] = [
+          {
+            html: startGreetingHtml({
+              codes: linkedClients.map((c) => c.clientCode),
+              firstName: ctx.from?.first_name ?? null,
+              staffName: menu === 'both' ? staff!.fullName : null,
+              locale,
+            }),
+            replyMarkup: menu === 'both' ? bothKeyboard(locale) : cabinetKeyboard(locale),
+          },
+        ];
+        if (app) messages.push({ html: h(t.openAppPrompt), replyMarkup: app });
+        dispatch('start', chatId, () => sendInOrder(chatId, messages, 'start'));
         return;
       }
       // A linked member of STAFF gets the staff menu (round 35).
@@ -123,27 +145,14 @@ export function startTelegramBot(): void {
         await ctx.reply(`👋 ${staff!.fullName}`, { reply_markup: staffKeyboard() });
         return;
       }
-      // A linked client without a code gets the cabinet menu back.
-      if (menu === 'cabinet') {
-        const locale = linkedClients.find((c) => c.locale)?.locale ?? null;
-        const t = clientLabels(locale);
-        await ctx.reply(
-          `${t.yourCodes}: ${linkedClients.map((c) => c.clientCode).join(', ')}`,
-          { reply_markup: cabinetKeyboard(locale) },
-        );
-        // A client who types /start is looking for their cargo. Offer the app
-        // as a wide button rather than making them find the corner icon.
-        const app = cabinetInlineKeyboard(process.env.APP_URL, locale);
-        if (app) await ctx.reply(t.openAppPrompt, { reply_markup: app });
-        return;
-      }
       // An unknown chat is offered the two doors (owner: «hodim yoki mijoz
-      // alohida kirish bo'lsin buttonlar bilan»). The client door is the
-      // cabinet's phone flow; the staff door matches the shared number
-      // against the employee list.
-      const t = clientLabels(ctx.from?.language_code);
-      await ctx.reply(`${t.notLinked}\n\nKim sifatida kirasiz? / Кто вы?`, {
-        reply_markup: entryKeyboard(),
+      // alohida kirish bo'lsin buttonlar bilan»), asked in the person's own
+      // language — the question used to be hardcoded in two languages under a
+      // sentence in a third. The client door is the cabinet's phone flow; the
+      // staff door matches the shared number against the employee list.
+      const t = clientLabels(tg);
+      await ctx.reply(`${t.notLinked}\n\n${t.entryQuestion}`, {
+        reply_markup: entryKeyboard(tg),
       });
       return;
     }
@@ -155,16 +164,26 @@ export function startTelegramBot(): void {
       // is verified by phone BEFORE anything is linked or shown (owner's
       // incident: a link sent to the wrong person exposed another client).
       const step = await beginClientLink(code, ctx.chat.id);
-      const tg = ctx.from?.language_code;
       if (step === 'ask_phone') {
         await ctx.reply(clientLabels(tg).askPhone, { reply_markup: phoneKeyboard(tg) });
         return;
       }
       if (step === 'no_phone') {
-        await ctx.reply(clientLabels(tg).linkUnverifiable);
+        // The card has no phone to verify against — nothing this person can
+        // press will change that, so the office is the way forward (CX-16).
+        const chatId = ctx.chat.id;
+        const { officeContact } = await import('../../wms/client-cabinet/service');
+        const { officeLinesHtml } = await import('../../wms/client-cabinet/bot-text');
+        const office = await officeContact();
+        const html = `${h(clientLabels(tg).linkUnverifiable)}\n\n${officeLinesHtml(office, tg)}`;
+        dispatch('link-unverifiable', chatId, () => sendInOrder(chatId, [{ html }], 'link-unverifiable'));
         return;
       }
-      await ctx.reply(clientLabels(tg).linkExpired);
+      // A spent or unknown code is not the end: the self-service door needs no
+      // code at all — if the number is ours, the cabinet connects itself.
+      await ctx.reply(`${clientLabels(tg).linkExpired}\n\n${clientLabels(tg).linkByPhone}`, {
+        reply_markup: phoneKeyboard(tg),
+      });
       return;
     }
     // Through the same door the contact path uses (round 100, 13A): this
@@ -180,7 +199,9 @@ export function startTelegramBot(): void {
     }
     await tellOldChat(ctx, result.previousChatId);
     const user = await db.query.users.findFirst({ where: eq(users.id, link.userId) });
-    await ctx.reply(`✅ Telegram подключён: ${user?.fullName ?? ''}. Уведомления будут приходить сюда.`, {
+    // Uzbek, like the phone-contact door's own success line and every other
+    // staff sentence — this was the last Russian straggler on the path.
+    await ctx.reply(`✅ Ulandi: ${user?.fullName ?? ''}. Xabarnomalar shu yerga keladi.`, {
       reply_markup: await replyKeyboardFor(BigInt(ctx.chat.id)),
     });
     void offerStaffCommands(ctx, ctx.chat.id);

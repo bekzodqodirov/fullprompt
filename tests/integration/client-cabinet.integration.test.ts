@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { createHmac } from 'node:crypto';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
@@ -102,6 +102,13 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // Round C: a refused link warns its minter through the notification queue
+  // (CabinetLinkAlert) instead of a raw fetch that did nothing without a
+  // token — so the two warnings this file provokes are ROWS, and are cleaned.
+  await db.execute(
+    sql`DELETE FROM notifications WHERE type = 'CabinetLinkAlert'
+        AND (payload->>'text' LIKE ${`%C2${suffix}%`} OR payload->>'text' LIKE ${`%C9${suffix}%`})`,
+  );
   await pgClient.end();
 });
 
