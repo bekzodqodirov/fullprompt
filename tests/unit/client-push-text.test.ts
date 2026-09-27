@@ -201,12 +201,28 @@ describe('what the sweep does with a notice after every chat', () => {
   });
 });
 
-describe('the push prints kilos the way the app it opens does (round C review, INT-5)', () => {
-  it('a partial lot reads the same number in the push, the bot and the Mini App', async () => {
+describe('the push prints kilos the way the app it opens does (round C review)', () => {
+  it('a partial lot reads two places, as every cabinet surface rounds it', async () => {
     const { kgText } = await import('@/modules/wms/notices/client-text');
-    const { groupDigits } = await import('@/modules/platform/telegram/format');
-    // 3 of 7 boxes of a 10 kg lot.
-    const share = (10 * 3) / 7;
-    expect(kgText(share)).toBe(groupDigits(share));
+    // 3 of 7 boxes of a 10 kg lot. The Mini App's lot card and handover
+    // history both say 4.29 — the first fix printed 4.286 here and created the
+    // very mismatch it named.
+    expect(kgText((10 * 3) / 7)).toBe('4.29');
+  });
+
+  it('every cabinet reader rounds through the one helper, never inline', async () => {
+    const { readFileSync } = await import('node:fs');
+    for (const file of [
+      'src/modules/wms/client-cabinet/service.ts',
+      'src/modules/wms/client-cabinet/miniapp.ts',
+      'src/modules/wms/notices/client-text.ts',
+    ]) {
+      const src = readFileSync(file, 'utf8').replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+      // An inline `* 100) / 100` on a weight or `* 1000) / 1000` on a volume
+      // is a second rule that can drift from `roundKg`/`roundM3`.
+      expect(src, file).not.toMatch(/(weight|kg|volume|m3)[^\n;]*\*\s*100\)\s*\/\s*100/i);
+      expect(src, file).not.toMatch(/(weight|kg|volume|m3)[^\n;]*\*\s*1000\)\s*\/\s*1000/i);
+      expect(src, file).toMatch(/roundKg\(/);
+    }
   });
 });

@@ -6,19 +6,21 @@ import { db, pgClient } from '@/modules/platform/db/client';
 import {
   attachments,
   boxes,
+  boxMovements,
   clientNotices,
   clients,
   clientTelegramLinks,
   batches,
+  receiptLots,
   receipts,
   users,
   warehouses,
 } from '@/modules/platform/db/schema';
 import { getStorage } from '@/modules/platform/files/storage';
 import { clientLabels, formatDay } from '@/modules/platform/telegram/client-labels';
-import { htmlToPlain } from '@/modules/platform/telegram/format';
+import { groupDigits, htmlToPlain } from '@/modules/platform/telegram/format';
 import { __setTelegramTransport } from '@/modules/platform/telegram/send';
-import { cargoOverview } from '@/modules/wms/client-cabinet/service';
+import { cargoOverview, issuedHandovers } from '@/modules/wms/client-cabinet/service';
 import { issueBoxes } from '@/modules/wms/issue/service';
 import { MAX_NOTICE_ATTEMPTS, NOTICE_ARRIVED } from '@/modules/wms/notices/arrival';
 import { sendDueArrivalNotices } from '@/modules/wms/notices/arrival-jobs';
@@ -60,6 +62,7 @@ let actorId: string;
 let cnId: string;
 let uzId: string;
 let uzCustomsId: string;
+let cnHubId: string;
 const madeClients: string[] = [];
 const storedKeys: string[] = [];
 const ctx = () => ({ actorId });
@@ -190,6 +193,7 @@ beforeAll(async () => {
   cnId = await ensureWarehouse('PACN1', 'PA Yiwu', 'CN', 'origin');
   uzId = await ensureWarehouse('PAUZ1', 'PA Toshkent 1', 'UZ', 'distribution');
   uzCustomsId = await ensureWarehouse('PAUZC', 'PA Bojxona', 'UZ', 'customs');
+  cnHubId = await ensureWarehouse('PACNH', 'PA Qashqar', 'CN', 'hub');
   process.env.TELEGRAM_BOT_TOKEN = 'TEST:TOKEN';
   process.env.APP_URL = APP;
   __setTelegramTransport(async (url, init) => {
@@ -600,6 +604,40 @@ describe('C3 «berildi»', () => {
   });
 });
 
+describe('the push and the Mini App read ONE kilo figure (round C review, second pass)', () => {
+  it('3 of 7 boxes of a 10 kg lot say 4.29 in the «berildi» push AND on its handover card', async () => {
+    const chat = newChat();
+    const client = await makeClient('KG', { chat });
+    const r = await receive(client.id, uzId, { boxCount: 7 });
+    // A lot weighed as a whole, whose share does not divide evenly.
+    await db.update(receiptLots).set({ totalWeightKg: '10' }).where(eq(receiptLots.id, r.lotId));
+    const handoverId = uuidv4();
+    await issueBoxes(
+      {
+        handoverId,
+        clientId: client.id,
+        warehouseId: uzId,
+        boxIds: r.boxes.slice(0, 3).map((b) => b.id),
+        personName: 'Aziz',
+        personPhone: '+998901112233',
+        debtOk: true,
+        priceOk: true,
+      },
+      ctx(),
+    );
+    const [notice] = await noticesOf(client.id, NOTICE_ISSUED);
+    await makeDue(notice!.id);
+    await sendDueArrivalNotices(DAY);
+
+    const card = (await issuedHandovers(client.id)).find((h) => h.id === handoverId)!;
+    const onCard = groupDigits(card.lots[0]!.weightKg);
+    expect(onCard).toBe('4.29');
+    const text = htmlToPlain(bodyOf(callsTo(chat)[0]!));
+    expect(text).toContain(`${onCard} ${clientLabels(null).kg}`);
+    expect(text).not.toContain('4.286');
+  });
+});
+
 describe('C2 «yetib keldi» — the whole road', () => {
   function scan(batchId: string, code: string) {
     return { clientEventUuid: uuidv4(), batchId, code, method: 'qr' as const, scannedAt: new Date().toISOString() };
@@ -623,6 +661,18 @@ describe('C2 «yetib keldi» — the whole road', () => {
 
     const [notice] = await noticesOf(client.id, NOTICE_ARRIVED);
     expect(notice).toBeDefined();
+    // The cartons came off at 23:55 Tashkent the evening BEFORE the sweep
+    // (18:55 UTC), and the claim is older still — a notice re-armed by a
+    // second day of unloading keeps its first row's `created_at` (PA-4).
+    const landed = new Date(DAY.getTime() - 11 * 3_600_000 - 5 * 60_000);
+    await db
+      .update(boxMovements)
+      .set({ createdAt: landed })
+      .where(and(inArray(boxMovements.boxId, r.boxes.map((b) => b.id)), eq(boxMovements.cause, 'unload_scan')));
+    await db
+      .update(clientNotices)
+      .set({ createdAt: new Date(landed.getTime() - 86_400_000) })
+      .where(eq(clientNotices.id, notice!.id));
     await makeDue(notice!.id);
     await sendDueArrivalNotices(DAY);
 
@@ -636,9 +686,13 @@ describe('C2 «yetib keldi» — the whole road', () => {
     // Came from China and nobody pressed «rastamojka tugadi»: the honest caveat.
     expect(text).toContain(t.readyNote);
     expect(text).toContain(t.photoTakenOnReceipt);
-    // Dated the day the customer is TOLD — the sweep's clock — and not the
-    // claim's first `created_at` (PA-4: a re-armed notice kept yesterday's).
-    expect(text).toContain(formatDay(DAY));
+    // Dated the day the cartons LANDED: not the claim's first `created_at`
+    // (PA-4), and not the sweep's clock — told after midnight, the first fix
+    // printed a landing day that never happened.
+    expect(formatDay(landed)).not.toBe(formatDay(DAY));
+    expect(text).toContain(formatDay(landed));
+    expect(text).not.toContain(formatDay(DAY));
+    expect(text).not.toContain(formatDay(new Date(landed.getTime() - 86_400_000)));
     // The Mini App says what the push said (MA-1): nothing cleared here.
     const [lot] = (await cargoOverview(client.id)).filter((l) => l.lotId === r.lotId);
     expect(lot!.readyCleared).toBe(0);
@@ -686,6 +740,78 @@ describe('the app says what the push said, after the truck is unloaded (MA-1)', 
     const t = clientLabels(null);
     const arrival = callsTo(chat).find((c) => bodyOf(c).includes(t.readyTitle))!;
     expect(htmlToPlain(bodyOf(arrival))).toContain(t.pushReadyCleared);
+  });
+
+  it('a lot waiting at the Chinese hub after an internal leg has NO «in Uzbekistan» step (second pass)', async () => {
+    const client = await makeClient('HB');
+    const r = await receive(client.id, cnId, { boxCount: 2 });
+    const sub = await submitPlan(
+      { originWarehouseId: cnId, destWarehouseId: cnHubId, lines: [{ lotId: r.lotId, boxCount: 2 }] },
+      ctx(),
+    );
+    const { batch } = await recordVerdict({ versionId: sub.version.id, verdict: 'approved' }, ctx());
+    for (const box of r.boxes) {
+      await ingestLoadScans([{ ...scan(batch!.id, box.shortCode), addedOnSpot: false }], ctx());
+    }
+    await departBatch(batch!.id, ctx());
+    for (const box of r.boxes) await ingestUnloadScans([scan(batch!.id, box.shortCode)], ctx());
+    await finishUnload(batch!.id, ctx());
+
+    // Standing at Kashgar, waiting for its export truck: no live pointer.
+    const [lot] = (await cargoOverview(client.id)).filter((l) => l.lotId === r.lotId);
+    expect(lot!.groups.map((g) => g.stage)).toEqual(['hub']);
+    const keys = lot!.journey.map((s) => s.key);
+    expect(keys).toContain('atHub');
+    expect(keys).not.toContain('inUz');
+    expect(keys).not.toContain('customs');
+  });
+
+  it('a China-ending truck still unloading lends no «in Uzbekistan» day to the box still on it', async () => {
+    const client = await makeClient('HT');
+    const r = await receive(client.id, cnId, { boxCount: 2 });
+    const sub = await submitPlan(
+      { originWarehouseId: cnId, destWarehouseId: cnHubId, lines: [{ lotId: r.lotId, boxCount: 2 }] },
+      ctx(),
+    );
+    const { batch } = await recordVerdict({ versionId: sub.version.id, verdict: 'approved' }, ctx());
+    for (const box of r.boxes) {
+      await ingestLoadScans([{ ...scan(batch!.id, box.shortCode), addedOnSpot: false }], ctx());
+    }
+    await departBatch(batch!.id, ctx());
+    // The first carton is off at Kashgar — the truck is «arrived», the second
+    // carton still on it, its live pointer still naming the truck.
+    await ingestUnloadScans([scan(batch!.id, r.boxes[0]!.shortCode)], ctx());
+
+    const [lot] = (await cargoOverview(client.id)).filter((l) => l.lotId === r.lotId);
+    expect(lot!.journey.map((s) => s.key)).not.toContain('inUz');
+  });
+
+  it('a lot split between a Tashkent landing and a later Kashgar one keeps the Tashkent truck\'s customs step', async () => {
+    const client = await makeClient('HS');
+    const r = await receive(client.id, cnId, { boxCount: 2 });
+    const road = async (destWarehouseId: string, clear: boolean) => {
+      const sub = await submitPlan(
+        { originWarehouseId: cnId, destWarehouseId, lines: [{ lotId: r.lotId, boxCount: 1 }] },
+        ctx(),
+      );
+      const { batch } = await recordVerdict({ versionId: sub.version.id, verdict: 'approved' }, ctx());
+      const [planned] = await db
+        .select({ code: boxes.shortCode })
+        .from(boxes)
+        .where(and(eq(boxes.lotId, r.lotId), eq(boxes.status, 'planned')));
+      await ingestLoadScans([{ ...scan(batch!.id, planned!.code), addedOnSpot: false }], ctx());
+      await departBatch(batch!.id, ctx());
+      if (clear) await db.update(batches).set({ customsClearedAt: new Date() }).where(eq(batches.id, batch!.id));
+      await ingestUnloadScans([scan(batch!.id, planned!.code)], ctx());
+      await finishUnload(batch!.id, ctx());
+    };
+    // Straight to Tashkent and cleared first; the other carton reaches
+    // Kashgar AFTER it — the newer landing, off a truck that ends in China.
+    await road(uzId, true);
+    await road(cnHubId, false);
+
+    const [lot] = (await cargoOverview(client.id)).filter((l) => l.lotId === r.lotId);
+    expect(lot!.journey.map((s) => s.key)).toContain('customs');
   });
 
   it('cargo no truck brought (received in Uzbekistan) has no declaration to wait for', async () => {

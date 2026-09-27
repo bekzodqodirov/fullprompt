@@ -18,6 +18,7 @@ import {
 } from '../../platform/db/schema';
 import { getSetting } from '../../platform/settings/service';
 import { reachableAt } from '../crm/site-assign-rules';
+import { roundKg, roundM3 } from '../../platform/telegram/format';
 import { telegramPhoneUrl } from '../../platform/telegram/map-link';
 import { chatLocaleFor } from '../../platform/telegram/cabinet-locale';
 import { ARRIVED_ON_A_TRUCK } from '../documents/arrivals';
@@ -341,8 +342,16 @@ async function trucksFor(batchIds: string[]): Promise<Map<string, CabinetTruck>>
             etaToIso: window?.toIso ?? null,
           }
         : null,
+      // A truck that ends in China (Yiwu → Kashgar) never enters Uzbekistan,
+      // whatever its `arrived_at` says — the rule `truckStage` states. Without
+      // it a lot waiting at the hub after an internal leg read «O'zbekistonga
+      // kirdi», dated the day it reached Kashgar (round C review, second pass).
       inUzAt:
-        cp?.key === 'in_uz' && cp.at ? new Date(cp.at) : (r.arrivedAt ?? null),
+        r.destCountry === 'CN'
+          ? null
+          : cp?.key === 'in_uz' && cp.at
+            ? new Date(cp.at)
+            : (r.arrivedAt ?? null),
       customsClearedAt: r.customsClearedAt,
     });
   }
@@ -427,15 +436,16 @@ async function lotJourneys(
  */
 async function landedTrucks(
   clientId: string,
-): Promise<{ lotId: string; batchId: string | null; ready: boolean; n: number }[]> {
+): Promise<{ lotId: string; batchId: string | null; ready: boolean; n: number; landedAt: string | null }[]> {
   const rows = (await db.execute(sql`
     SELECT b.lot_id AS "lotId", lm.ref_id AS "batchId",
-           (b.status = 'ready_for_pickup') AS ready, count(*)::int AS n
+           (b.status = 'ready_for_pickup') AS ready, count(*)::int AS n,
+           max(lm.created_at)::text AS "landedAt"
     FROM boxes b
     JOIN receipt_lots rl ON rl.id = b.lot_id
     JOIN receipts r ON r.id = rl.receipt_id
     LEFT JOIN LATERAL (
-      SELECT m.ref_id FROM box_movements m
+      SELECT m.ref_id, m.created_at FROM box_movements m
       WHERE m.box_id = b.id
         AND m.cause IN (${sql.join(ARRIVED_ON_A_TRUCK.map((c) => sql`${c}`), sql`, `)})
         AND m.ref_type = 'batch'
@@ -446,7 +456,7 @@ async function landedTrucks(
       AND b.current_batch_id IS NULL
       AND b.status IN (${sql.join(ACTIVE_STATUSES.map((s) => sql`${s}`), sql`, `)})
     GROUP BY b.lot_id, lm.ref_id, (b.status = 'ready_for_pickup')
-  `)) as unknown as { lotId: string; batchId: string | null; ready: boolean; n: number }[];
+  `)) as unknown as { lotId: string; batchId: string | null; ready: boolean; n: number; landedAt: string | null }[];
   return rows.map((r) => ({ ...r, n: Number(r.n) }));
 }
 
@@ -575,11 +585,17 @@ export async function cargoOverview(clientId: string): Promise<CabinetLot[]> {
   for (const r of rows) {
     if (r.batchId && !lotTruck.get(r.lotId)) lotTruck.set(r.lotId, trucks.get(r.batchId) ?? null);
   }
-  for (const l of landed) {
+  // Newest landing first, so a lot split across two landings is answered by
+  // the same truck on every open — the rows come back in no order of their own.
+  const landedNewestFirst = [...landed].sort((a, b) => (b.landedAt ?? '').localeCompare(a.landedAt ?? ''));
+  for (const l of landedNewestFirst) {
     const lot = byLot.get(l.lotId);
     if (!lot) continue;
     const truck = l.batchId ? (trucks.get(l.batchId) ?? null) : null;
-    if (truck && !lotTruck.get(l.lotId)) lotTruck.set(l.lotId, truck);
+    // Only a truck that brought the cargo INTO Uzbekistan answers for its
+    // history: one that ended at a Chinese hub has no customs stamp and no
+    // «in Uzbekistan» day to lend a lot waiting there for its export truck.
+    if (truck && truck.stage.destCountry !== 'CN' && !lotTruck.get(l.lotId)) lotTruck.set(l.lotId, truck);
     // The push's own rule (`arrivalCleared`), so the card under the push says
     // what the push said. Cargo no truck brought (received at an Uzbek
     // warehouse) has no declaration of ours to wait for.
@@ -618,8 +634,8 @@ export async function cargoOverview(clientId: string): Promise<CabinetLot[]> {
     }
     // Rounded once, here, so every reader shows the same number.
     for (const lot of lots) {
-      lot.weightKg = Math.round(lot.weightKg * 100) / 100;
-      lot.volumeM3 = Math.round(lot.volumeM3 * 1000) / 1000;
+      lot.weightKg = roundKg(lot.weightKg);
+      lot.volumeM3 = roundM3(lot.volumeM3);
     }
   }
   return lots;
@@ -877,8 +893,8 @@ export async function issuedHandovers(
           productNameRu: r.productNameRu,
           receivedAt: new Date(r.receivedAt).toISOString(),
           n,
-          weightKg: Math.round(Number(r.lotKg ?? 0) * share * 100) / 100,
-          volumeM3: Math.round(Number(r.lotM3 ?? 0) * share * 1000) / 1000,
+          weightKg: roundKg(Number(r.lotKg ?? 0) * share),
+          volumeM3: roundM3(Number(r.lotM3 ?? 0) * share),
           photoCount: photos.get(r.lotId) ?? 0,
         };
       })

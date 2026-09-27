@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { groupsFromList, isTelegramMuted, JOINED_LATER, listFromGroups, MUTE_GROUPS } from '@/modules/platform/notifications/mutes';
+import { FOUNDERS, groupsFromList, isTelegramMuted, listFromGroups, MUTE_GROUPS } from '@/modules/platform/notifications/mutes';
 import { renderTelegramText } from '@/modules/platform/notifications/service';
 import { notificationLabels, approvalVerdictLine } from '@/modules/platform/notifications/labels';
 import {
@@ -24,46 +24,86 @@ const read = (p: string) =>
 
 const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 
-describe('a mute group that GROWS does not un-mute anybody (STAFF-11)', () => {
-  // Somebody who ticked «tasks» before CalcSealed joined the group has every
-  // OTHER member in their stored list, and not CalcSealed itself.
-  const before = MUTE_GROUPS.tasks.filter((t) => t !== 'CalcSealed');
+/*
+ * Lists exactly as the profile WROTE them on real days — the group's members
+ * that day, read off mutes.ts's git history. Literal on purpose: the first two
+ * versions of this rule were tested against a «before» list built from the
+ * rule's own constant, so the test could only ever agree with it, and the
+ * second one missed `PartnerDebtDue` for every list production actually holds
+ * (round C review, second pass).
+ */
+const ALERTS_TICKED_ON: Record<string, string[]> = {
+  '2026-07-24, the group is born': ['BoxScannedOnLoad', 'UndocumentedTransfer', 'MissingInTransit'],
+  '2026-08-09, CalcOverdue had left': [
+    'BoxScannedOnLoad', 'UndocumentedTransfer', 'MissingInTransit', 'UnquotedCargo', 'DealDeviation',
+    'DealDeferralEnded', 'ArrivalDiff', 'DebtApprovalRequested', 'DebtApprovalDecided', 'ClientWaiting',
+    'TelegramSessionEnded', 'TruckSilent',
+  ],
+  '2026-09-26, PR #88 — the code behind production\'s last confirmed deploy': [
+    'BoxScannedOnLoad', 'UndocumentedTransfer', 'MissingInTransit', 'UnquotedCargo', 'UnlinkedCargo',
+    'DealDeviation', 'DealDeferralEnded', 'ArrivalDiff', 'DebtApprovalRequested', 'DebtApprovalDecided',
+    'UnpricedIssued', 'PricedCargoLeft', 'ExpenseRequested', 'ExpenseRequestDecided', 'CalcOverdue',
+    'ClientWaiting', 'TelegramSessionEnded', 'TruckSilent', 'CalcBelowFloor', 'BoxFoundHere', 'BoxLost',
+    'CompensatedCargoFound', 'ReceiptMeasureCorrected',
+  ],
+};
+const TASKS_TICKED_ON: Record<string, string[]> = {
+  '2026-07-26, the group is born': ['TasksDue'],
+  '2026-09-26, PR #88': [
+    'TasksDue', 'TaskAssigned', 'TaskDone', 'CalcRequested', 'CalcTaken', 'CalcDone', 'CalcReturned', 'CalcPrefilled',
+  ],
+};
 
-  it('the newcomer counts as muted for them', () => {
-    expect(before).not.toContain('CalcSealed');
-    expect(isTelegramMuted(before, 'CalcSealed')).toBe(true);
-    // …and the checkbox reads back ticked, so the next save writes it in.
-    expect(groupsFromList(before).groups.tasks).toBe(true);
+describe('a mute group that GROWS does not un-mute anybody (STAFF-11, STAFF-MUTE-MULTI)', () => {
+  for (const [group, snapshots] of [
+    ['alerts', ALERTS_TICKED_ON],
+    ['tasks', TASKS_TICKED_ON],
+  ] as const) {
+    for (const [day, stored] of Object.entries(snapshots)) {
+      it(`«${group}» ticked on ${day}: every member TODAY is muted, the box reads ticked, a save keeps it`, () => {
+        for (const type of MUTE_GROUPS[group]) expect(isTelegramMuted(stored, type), type).toBe(true);
+        const read = groupsFromList(stored);
+        expect(read.groups[group]).toBe(true);
+        // The next save of ANY box writes the whole group back.
+        const saved = listFromGroups(read.all, { ...read.groups, calls: !read.groups.calls });
+        for (const type of MUTE_GROUPS[group]) expect(isTelegramMuted(saved, type), type).toBe(true);
+      });
+    }
+  }
+
+  it('a list that lacks a founder is not a tick — the rule does not mute on a guess', () => {
+    const stored = ALERTS_TICKED_ON['2026-08-09, CalcOverdue had left']!.filter((t) => t !== 'MissingInTransit');
+    expect(isTelegramMuted(stored, 'ClientBotMessage')).toBe(false);
+    expect(groupsFromList(stored).groups.alerts).toBe(false);
   });
 
-  it('but only when EVERY other member is there — a partial list is not a tick', () => {
-    const partial = before.slice(1);
-    expect(isTelegramMuted(partial, 'CalcSealed')).toBe(false);
+  it('another group\'s tick mutes nothing here', () => {
+    for (const type of MUTE_GROUPS.alerts) {
+      expect(isTelegramMuted([...MUTE_GROUPS.digest, ...MUTE_GROUPS.operations], type), type).toBe(false);
+    }
+    // `CrmFollowUps` moved from «digest» to «calls» (2026-09-19): an old
+    // «digest» tick holds it, and still means it.
+    const oldDigest = ['DailyDigest', 'CrmFollowUps', 'CrmDormant'];
+    expect(groupsFromList(oldDigest).groups).toMatchObject({ digest: true, calls: true, alerts: false });
   });
 
-  it('a group of one is muted only by name (no «every other member» to judge by)', () => {
-    expect(MUTE_GROUPS.calls).toHaveLength(1);
-    expect(isTelegramMuted([], 'CrmFollowUps')).toBe(false);
-    expect(isTelegramMuted(['DailyDigest'], 'CrmFollowUps')).toBe(false);
-  });
-
-  it('SEVERAL newcomers at once — the alerts group grew by three (STAFF-MUTE-MULTI)', () => {
-    // The footprint a pre-round-C «alerts» tick left: every founding member.
-    const alertsBefore = MUTE_GROUPS.alerts.filter((t) => !JOINED_LATER.has(t));
-    const newcomers = MUTE_GROUPS.alerts.filter((t) => JOINED_LATER.has(t));
-    expect(newcomers.length, 're-anchor: the alerts newcomers moved').toBeGreaterThan(1);
-    for (const type of newcomers) expect(isTelegramMuted(alertsBefore, type), type).toBe(true);
-    // The box reads back ticked, so the next save of ANY other box keeps the
-    // alarms quiet instead of writing them all out of the list.
-    const read = groupsFromList(alertsBefore);
-    expect(read.groups.alerts).toBe(true);
-    const saved = listFromGroups(read.all, read.groups);
-    for (const type of MUTE_GROUPS.alerts) expect(isTelegramMuted(saved, type), type).toBe(true);
+  it('FOUNDERS stay inside their groups, one group each, never empty', () => {
+    expect(Object.keys(FOUNDERS).sort()).toEqual(Object.keys(MUTE_GROUPS).sort());
+    const seen = new Set<string>();
+    for (const [group, founders] of Object.entries(FOUNDERS) as [keyof typeof MUTE_GROUPS, readonly string[]][]) {
+      expect(founders.length, group).toBeGreaterThan(0);
+      for (const type of founders) {
+        expect(MUTE_GROUPS[group] as readonly string[], `${group}: ${type}`).toContain(type);
+        expect(seen.has(type), type).toBe(false);
+        seen.add(type);
+      }
+    }
   });
 
   it('never mutes a type in no group, and nothing for somebody who muted nothing', () => {
     expect(isTelegramMuted(MUTE_GROUPS.alerts, 'TotallyNewType')).toBe(false);
     expect(isTelegramMuted([], 'CalcSealed')).toBe(false);
+    expect(isTelegramMuted(null, 'CalcSealed')).toBe(false);
   });
 });
 

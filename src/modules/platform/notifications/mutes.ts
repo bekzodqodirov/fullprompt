@@ -165,41 +165,56 @@ export const MUTE_GROUPS = {
 export type MuteGroup = keyof typeof MUTE_GROUPS;
 
 /**
- * Is this person silencing this type?
+ * The members each group has held CONTINUOUSLY since the day it was born —
+ * read off this file's git history, not remembered. The profile is the only
+ * writer of a stored list and it writes whole groups (`listFromGroups`), so
+ * whoever ticked a group at ANY point in its life holds every one of these.
  *
- * The stored list is a list of TYPES, written from group checkboxes — so a
- * type that JOINS a group after somebody ticked it (round C moved CalcSealed,
- * CalcDiscounted and two new types in) is not in their list, and the person
- * who silenced «tasks» a month ago would suddenly start hearing a member of
- * it. Growing a group must never un-mute it: a type counts as muted when the
- * list holds every other FOUNDING member of its group (`JOINED_LATER` are
- * not), which is exactly the footprint the checkbox left before the
- * newcomers arrived. A group of one has no other
- * members to judge by, so it is only ever muted by name.
+ * That is the whole test for «this group was ticked», and it has to be this
+ * set and no larger. Round C first judged a type against every other member of
+ * its group — three newcomers at once meant each needed the other two, a list
+ * nobody's checkbox ever wrote — and then against the members that had not
+ * «joined later», which named round C's four newcomers and missed
+ * `PartnerDebtDue`, added a day earlier: every production list predates it, so
+ * every muted «alerts» box read back unticked and the next save un-muted all
+ * of them (round C review, second pass). Groups have grown ~40 times since
+ * 2026-07-24; a stored list can be from any of those days. `CalcOverdue` left
+ * `alerts` on 2026-08-09 and came back on 08-22, so it is not here either.
+ *
+ * Never ADD a type to this map: a newcomer is exactly what old lists lack.
+ * Remove one only together with removing it from its group (the unit fence
+ * holds these to the groups).
  */
-/**
- * Types that joined a group AFTER people could tick it — never part of any
- * stored footprint, so never asked for when judging one. Judged against every
- * other member instead, three newcomers at once meant each needed the other
- * two in a list nobody's checkbox ever wrote: the rule never matched, the
- * alerts box read back UNTICKED, and the next save un-muted all 27 alarms
- * (round C review, STAFF-MUTE-MULTI). A type added to an existing group is
- * added here in the same change.
- */
-export const JOINED_LATER: ReadonlySet<string> = new Set([
-  'CalcSealed',
-  'CalcDiscounted',
-  'ClientBotMessage',
-  'CabinetLinkAlert',
-]);
+export const FOUNDERS: Readonly<Record<MuteGroup, readonly string[]>> = {
+  digest: ['DailyDigest'],
+  // Moved here from `digest` on 2026-09-19; every list that muted it did so
+  // as part of `digest` before that, and still holds it.
+  calls: ['CrmFollowUps'],
+  tasks: ['TasksDue'],
+  alerts: ['BoxScannedOnLoad', 'UndocumentedTransfer', 'MissingInTransit'],
+  operations: [
+    'ReceiptConfirmed',
+    'UnknownCargoReceived',
+    'ReadyForPickup',
+    'BoxIssued',
+    'PlanApproved',
+    'PlanChangesRequested',
+    'InventoryCompleted',
+  ],
+};
 
+/**
+ * Is this person silencing this type? By name, or because the list holds its
+ * group's founders — so a type that JOINS a group after somebody ticked it
+ * stays silenced for them, and growing a group never un-mutes it.
+ */
 export function isTelegramMuted(muted: unknown, type: string): boolean {
   if (!Array.isArray(muted)) return false;
   if (muted.includes('all') || muted.includes(type)) return true;
-  for (const members of Object.values(MUTE_GROUPS) as readonly (readonly string[])[]) {
-    if (!members.includes(type)) continue;
-    const others = members.filter((t) => t !== type && !JOINED_LATER.has(t));
-    if (others.length > 0 && others.every((t) => muted.includes(t))) return true;
+  for (const group of Object.keys(MUTE_GROUPS) as MuteGroup[]) {
+    if (!(MUTE_GROUPS[group] as readonly string[]).includes(type)) continue;
+    const founders = FOUNDERS[group];
+    if (founders.length > 0 && founders.every((t) => muted.includes(t))) return true;
   }
   return false;
 }

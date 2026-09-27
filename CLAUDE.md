@@ -1967,9 +1967,20 @@ answer said «delivered» about messages that reached nobody, and every line got
 its own «✅» (`ackDue`); a transient forward failure sent the sentence without
 the customer's only copy of the file; `slice` halved emoji into jsonb-refused
 surrogates (`clipText`, code points); a mute group that grew by THREE types
-un-muted everybody (`JOINED_LATER`: newcomers are judged by the founders); a
-decided approval's copy is muted at SEND time (`approvalDecided` in the
-drain); a stalled photo read trips a per-sweep breaker. 16 red proofs.
+un-muted everybody; a decided approval's copy is muted at SEND time
+(`approvalDecided` in the drain); a stalled photo read trips a per-sweep
+breaker. 16 red proofs. **Then the FIXES were reviewed before the merge
+(#1114) and four were wrong, each with a test that restated it**: kilos have
+one home (`roundKg`/`roundM3` in telegram/format.ts — every cabinet surface
+rounds to two places, the «fix» had printed three); the arrival is dated by its
+newest LANDING movement (`arrivedSummary.landedAt`), never the sweep's clock;
+a mute group is ticked when the list holds its `FOUNDERS` — the members held
+continuously since the group was born, read off the git history (unshallow the
+clone first: the shallow one starts on 08-10), never added to; and a truck that
+ends in China lends no «in Uzbekistan» step (`trucksFor` + the landed
+fallback). 7 more red proofs. LESSON: a test for a fix must be anchored on
+something the fix did not write — a literal, a second surface, a stored list
+from a real day.
 
 **Latest migration: 0111** (`nav_usage` — «Tez-tez»; ledger must reach
 **112**; `when` …090). Before it: **0110** (`lead_assign` — the website teams, the typed and

@@ -3,11 +3,13 @@ import { db } from '@/modules/platform/db/client';
 import type { Db, Tx } from '@/modules/platform/db/client';
 import {
   boxes,
+  boxMovements,
   clientNotices,
   receiptLots,
   receipts,
 } from '@/modules/platform/db/schema';
 import { isPermanentFailure } from '@/modules/platform/telegram/send';
+import { ARRIVED_ON_A_TRUCK } from '../documents/arrivals';
 import { pushLotName, type PushLot } from './client-text';
 
 /**
@@ -129,6 +131,15 @@ export interface ArrivedSummary {
   boxCount: number;
   weightKg: number;
   volumeM3: number;
+  /**
+   * When the newest of these cartons came off the truck — the day the push
+   * names. Read from the landing movements, never from the claim (a notice
+   * re-armed by a second day of unloading kept the first day's) nor from the
+   * sweep's clock (a truck scanned at 23:50 is told after midnight, and a queue
+   * held by a dead bot token drains days later). Null only for cargo whose
+   * landing wrote none of those causes.
+   */
+  landedAt?: Date | null;
   /** Filled by the sender from the batch's destination, not by the query. */
   warehouseCode: string;
   /** The place by NAME — «Toshkent 1», never the staff code «TAS1». */
@@ -231,11 +242,33 @@ export async function arrivedSummary(
     };
   });
 
+  // The newest landing off THIS truck among the cartons counted above — the
+  // same client, place, statuses and receipts, so the date and the count are
+  // about one set of boxes.
+  const [landing] = await exec
+    .select({ at: sql<string | null>`max(${boxMovements.createdAt})` })
+    .from(boxMovements)
+    .innerJoin(boxes, eq(boxMovements.boxId, boxes.id))
+    .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+    .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+    .where(
+      and(
+        eq(boxMovements.refType, 'batch'),
+        eq(boxMovements.refId, batchId),
+        inArray(boxMovements.cause, ARRIVED_ON_A_TRUCK),
+        eq(receipts.clientId, clientId),
+        eq(boxes.currentWarehouseId, warehouseId),
+        inArray(boxes.status, ['ready_for_pickup', 'in_stock']),
+        isNull(receipts.voidedAt),
+      ),
+    );
+
   return {
     lines,
     boxCount: lines.reduce((sum, line) => sum + line.boxCount, 0),
     weightKg: lines.reduce((sum, line) => sum + line.weightKg, 0),
     volumeM3: lines.reduce((sum, line) => sum + line.volumeM3, 0),
+    landedAt: landing?.at ? new Date(landing.at) : null,
     warehouseCode: '',
   };
 }

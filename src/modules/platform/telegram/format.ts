@@ -111,6 +111,23 @@ export function plainAsHtml(text: string, opts: { boldTitle?: boolean } = {}): s
 const NBSP = ' ';
 
 /**
+ * Kilos and cubic metres as the CUSTOMER reads them, on every surface — the
+ * push, the bot's «📦 Yuklarim», the Mini App's lot cards, totals and handover
+ * history. A box's weight is a SHARE of its lot's, so a raw figure carries as
+ * many places as the division gives; rounding it in one place and printing it
+ * raw in another made the push and the app one tap apart disagree (round C
+ * review). Two places for kilos, three for m³ (two turned a 0.004 m³ lot into
+ * «0 m³»).
+ */
+export function roundKg(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+export function roundM3(value: number): number {
+  return Math.round(value * 1000) / 1000;
+}
+
+/**
  * «12 845.5» — thousands grouped with a no-break space, so a number never
  * wraps across a line on a phone and a customer reads «12 845» and not
  * «12845». `decimals` fixes the places (money); without it up to three are

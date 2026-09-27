@@ -98,6 +98,26 @@ Migratsiya yo'q. Ledger o'zgarmaydi (**112**).
     endi umuman yuborilmaydi. Ertangi tungi soatga belgilangan vazifa
     «Bugunga» ostida sanasi bilan chiqadi.
 
+**Birlashtirishdan oldin yana bir bor tekshirdik — to'rtta xato o'zimizniki edi:**
+31. Kilo: xabarda «4.286 kg», Mini App'da «4.29 kg» chiqib qolgan edi (biz
+    tenglashtiraman deb teskarisini qilgan edik). Endi xabar, bot va Mini App
+    kiloni bitta qoida bilan yozadi — ikki xona.
+32. «Yetib keldi» xabaridagi sana endi yuk HAQIQATDA tushirilgan kun. Oldingi
+    tuzatish xabar YUBORILGAN kunni yozardi: yuk 23:50 da tushirilsa, xabar
+    yarim tundan keyin ertangi sana bilan borardi; bot bir-ikki kun to'xtab
+    qolsa, hamma xabar noto'g'ri sana bilan ketardi.
+33. «Ogohlantirishlar»ni o'chirib qo'ygan xodim: deploydan keyin yangi
+    turlar (mijozning botdagi xabari, chegirma, kabinet ogohlantirishi) baribir
+    kela boshlar edi va profildagi katak o'chiq ko'rinardi — keyingi saqlashda
+    hamma 27 ogohlantirish qayta yoqilardi. Sababi: kontragent qarz eslatmasi
+    ham shu guruhga yaqinda qo'shilgan edi va uni hisobga olmaganmiz. Endi
+    qoida guruhning birinchi kundan beri o'zgarmagan a'zolariga qaraydi:
+    katakni qachon belgilagan bo'lsangiz ham, o'chirilgani o'chirilganicha
+    qoladi.
+34. Qashqarda keyingi mashinani kutayotgan yuk Mini App tarixida
+    «O'zbekistonga kirdi» deb ko'rinib qolardi (Qashqarga kelgan kun bilan).
+    Endi Xitoyda tugaydigan mashina O'zbekiston qadamini bermaydi.
+
 **Bilib qo'ying:**
 - Mijoz klaviaturasidagi yangi «💬 Menejer» tugmasi mijozda bot unga
   klaviaturali xabar yuborgandan keyin paydo bo'ladi: /start, «💰 Balans»,

@@ -1,4 +1,4 @@
-import { b, clipText, code, groupDigits, h, stepBar } from '@/modules/platform/telegram/format';
+import { b, clipText, code, groupDigits, h, roundKg, roundM3, stepBar } from '@/modules/platform/telegram/format';
 import {
   boxWord,
   clientLabels,
@@ -89,23 +89,14 @@ const MS_LABEL: Record<Milestone, keyof ClientLabels> = {
   issued: 'msIssued',
 };
 
-/**
- * Kilos exactly as the bot's «📦 Yuklarim» and the Mini App print them
- * (`groupDigits`, three places): the push is the door into the app, and a
- * partial lot read «4.29 kg» here and «4.286 kg» one tap later (round C
- * review, INT-5). The comment that stood here claimed two places everywhere.
- */
+/** Kilos as every cabinet surface prints them (`roundKg`), grouped. */
 export function kgText(value: number): string {
-  return groupDigits(value);
+  return groupDigits(roundKg(value));
 }
 
-/**
- * Cubic metres to three places, grouped — the Mini App's own rounding
- * (`cargoOverview`), so a customer who opens the app from the push reads the
- * same number. Two places turned a 0.004 m³ lot into «0 m³».
- */
+/** Cubic metres as every cabinet surface prints them (`roundM3`), grouped. */
 export function m3Text(value: number): string {
-  return groupDigits(Math.round(value * 1000) / 1000);
+  return groupDigits(roundM3(value));
 }
 
 /** «6 quti», «3 коробки», «1 box» — a carton, counted, never «dona» (judge CX-10). */

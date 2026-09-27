@@ -49,8 +49,7 @@ export interface PreparedPush {
 }
 
 export type Skip = { skip: string };
-/** `now` is the sweep's clock — the moment the customer is told. */
-export type Preparer = (notice: NoticeRow, client: ClientRow, now: Date) => Promise<PreparedPush | Skip>;
+export type Preparer = (notice: NoticeRow, client: ClientRow) => Promise<PreparedPush | Skip>;
 
 /**
  * A photo that has failed to go twice goes no more: from the third attempt
