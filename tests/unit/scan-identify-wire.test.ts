@@ -64,3 +64,17 @@ describe('the identify branch on the scan screens', () => {
     expect(sheet).toContain('countHref');
   });
 });
+
+describe('the issue screen’s factory code', () => {
+  it('ticks one lot’s pile, and ticks nothing when the code names several lots', () => {
+    // A repeat client's two prixods share one factory code: ticking both let
+    // an unnoticed «Topshirish» hand over a pile still on the shelf (review
+    // phone-4). The refusal must come before anything is ticked.
+    const source = strip(readFileSync('src/app/(protected)/issue/issue-screen.tsx', 'utf8'));
+    const body = source.slice(source.indexOf('function onScan('), source.indexOf('async function submit('));
+    const refuse = body.indexOf('pileLots.size > 1');
+    expect(refuse).toBeGreaterThan(-1);
+    expect(refuse).toBeLessThan(body.indexOf('setSelected('));
+    expect(body.slice(refuse, body.indexOf('return;', refuse))).not.toContain('setSelected(');
+  });
+});

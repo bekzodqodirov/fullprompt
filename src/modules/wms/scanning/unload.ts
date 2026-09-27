@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { v5 as uuidv5 } from 'uuid';
 import { z } from 'zod';
 import { db, type Tx } from '../../platform/db/client';
@@ -515,9 +515,20 @@ export function batchMemberFilter(batchId: string) {
  * nothing took a scanned carton back off quietly; an office count can dial a
  * lot down, so the customs papers and the register read the cartons, and the
  * scan events only annotate them.
+ *
+ * «Merely reserved» is a fact about the LIVE pointer only: a carton that rode
+ * this truck, landed at a hub and was planned onto the NEXT truck is
+ * `planned` again, and reading the status on the departure branch too emptied
+ * this truck's packing list, TNVED page and register ➕ until the next truck
+ * started loading — a document changing its claims on re-download
+ * (review cargo-1, round 92's rule).
  */
 export function aboardFilter(batchId: string) {
-  return and(batchMemberFilter(batchId), ne(boxes.status, 'planned'))!;
+  return sql`((${boxes.currentBatchId} = ${batchId} AND ${boxes.status} <> 'planned') OR EXISTS (
+    SELECT 1 FROM box_movements bm
+    WHERE bm.box_id = ${boxes.id}
+      AND bm.ref_type = 'batch' AND bm.ref_id = ${batchId} AND bm.cause = 'batch_departed'
+  ))`;
 }
 
 /**
@@ -636,7 +647,10 @@ export async function finishUnload(
   if (!ctx.actorId) throw new ScanError('unauthenticated');
   const actorId = ctx.actorId;
   return db.transaction(async (tx) => {
-    const batch = await tx.query.batches.findFirst({ where: eq(batches.id, batchId) });
+    // The truck row BEFORE the cartons, as a phone's first scan and the
+    // office's count both take it; cartons first closed a cycle with a count
+    // press starting at the same moment (review lock-4).
+    const [batch] = await tx.select().from(batches).where(eq(batches.id, batchId)).for('no key update');
     if (!batch) throw new ScanError('batch_not_found');
     if (!['in_transit', 'arrived'].includes(batch.status)) throw new ScanError('batch_not_unloading');
 
@@ -756,6 +770,7 @@ async function missingLotLines(
       id: receiptLots.id,
       letter: receiptLots.letter,
       product: receiptLots.productNameZh,
+      productRu: receiptLots.productNameRu,
       clientCode: clients.clientCode,
       marking: receipts.unclaimedMarking,
     })
@@ -766,7 +781,8 @@ async function missingLotLines(
   return rows
     .map((r) => ({
       label: `${codeIdentity(r.marking, r.clientCode).main}-${r.letter ?? '?'}`,
-      product: r.product,
+      // Russian first, as every count alarm names a lot (review ui-6).
+      product: r.productRu || r.product,
       n: counts.get(r.id) ?? 0,
     }))
     .sort((a, b) => a.label.localeCompare(b.label));

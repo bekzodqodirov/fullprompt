@@ -55,9 +55,13 @@ export async function growLotInTx(
 
   const [lot] = await tx.select().from(receiptLots).where(eq(receiptLots.id, a.lotId)).for('update');
   if (!lot) throw new GrowLotError('lot_not_found');
-  const [receipt] = await tx.select().from(receipts).where(eq(receipts.id, lot.receiptId));
   // A voided prixod never happened; growing it would mint live cargo off it
-  // (#723's shape, one door over).
+  // (#723's shape, one door over). FOR SHARE, so the answer holds until the
+  // growth commits: the super-admin's annul locks this row first and voids
+  // only the cartons it saw, and a growth read unlocked could land two live
+  // cartons under a prixod voided a moment later (review lock-2) — now the
+  // two meet on this row and one of them waits or is told «band».
+  const [receipt] = await tx.select().from(receipts).where(eq(receipts.id, lot.receiptId)).for('share');
   if (!receipt || receipt.status !== 'confirmed') throw new GrowLotError('receipt_not_confirmed');
   const [home] = await tx.select().from(warehouses).where(eq(warehouses.id, receipt.warehouseId));
 

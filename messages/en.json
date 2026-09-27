@@ -4279,7 +4279,8 @@
       "barcode_is_ours_plain": "This is our own QR code, not the factory barcode",
       "server_behind": "The server is still updating — try again in a minute",
       "forbidden": "Not allowed"
-    }
+    },
+    "barcodeManyLots": "This factory code is on {n} lots — tap the pile you are handing over in the list."
   },
   "scanner": {
     "diagnostics": "Scanner diagnostics"

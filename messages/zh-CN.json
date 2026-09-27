@@ -4279,7 +4279,8 @@
       "barcode_is_ours_plain": "这是我们的二维码，不是工厂条码",
       "server_behind": "服务器仍在更新——请一分钟后重试",
       "forbidden": "没有权限"
-    }
+    },
+    "barcodeManyLots": "此工厂条码对应 {n} 个批次——请在列表中点选要交付的那一堆。"
   },
   "scanner": {
     "diagnostics": "扫描诊断"

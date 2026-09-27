@@ -133,9 +133,17 @@ export function planCountMove(rows: readonly CountRow[], target: number, o: Coun
       // measured against the PLAN, not against what happens to be reserved.
       const aboardPlain = aboard.filter((r) => !r.over).length;
       const room = Math.max(0, o.planN - aboardPlain - move.load.length);
-      move.reReserve = shelf.slice(0, Math.min(need - move.load.length, room));
+      // Only a shelf carton `in_stock` goes back onto the plan, as plan
+      // approval itself reserves: a `ready_for_pickup` one reserved here came
+      // back `in_stock` from «yuklash tugadi» or a cancel — at a collection
+      // warehouse, off every «tayyor» list (review cargo-6). It rides as an
+      // extra instead, and a dial-down returns it to where it stood.
+      move.reReserve = shelf
+        .filter((r) => r.status === 'in_stock')
+        .slice(0, Math.min(need - move.load.length, room));
+      const reReserved = new Set(move.reReserve.map((r) => r.id));
       const rest = need - move.load.length - move.reReserve.length;
-      move.loadOver = shelf.slice(move.reReserve.length, move.reReserve.length + rest);
+      move.loadOver = shelf.filter((r) => !reReserved.has(r.id)).slice(0, rest);
       move.grow = rest - move.loadOver.length;
     } else {
       move.loadSpare = shelf.slice(0, need);

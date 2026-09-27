@@ -394,17 +394,24 @@ async function countChunk(
   const T = input.batchId;
   const L = input.lotId;
   await setCountLockTimeout(tx);
-  // Lock order (decision 23): the truck row → the lot's rows by id → the
-  // (truck, lot) lock → a FRESH read. The truck row first because a phone's
-  // first scan of an in-transit truck updates it before it takes its carton,
-  // so a count holding cartons and waiting for the truck would deadlock
-  // with it.
-  const [batch] = await tx.select().from(batches).where(eq(batches.id, T)).for('update');
+  // Lock order (decision 23): the truck row → the lot row → the lot's
+  // cartons by id → the (truck, lot) lock → a FRESH read. The truck row first
+  // because a phone's first scan of an in-transit truck updates it before it
+  // takes its carton, so a count holding cartons and waiting for the truck
+  // would deadlock with it. NO KEY UPDATE and not UPDATE: every scan event a
+  // phone writes on an ARRIVED truck takes the key-share lock of its foreign
+  // key on this row, and a FOR UPDATE here closed a cycle with that phone's
+  // carton lock — and froze every scan of the truck for the chunk (review
+  // lock-1). The lot row before the cartons, as the receipt card's switch and
+  // the lot form take it, or a growth — which locks it — would deadlock with
+  // them (review lock-3).
+  const [batch] = await tx.select().from(batches).where(eq(batches.id, T)).for('no key update');
   if (!batch || !['in_transit', 'arrived'].includes(batch.status)) {
     throw new CountError('batch_not_unloading');
   }
   const wasInTransit = batch.status === 'in_transit';
   if (wasInTransit && !input.confirmArrival) throw new CountError('confirm_arrival_required');
+  await tx.select({ id: receiptLots.id }).from(receiptLots).where(eq(receiptLots.id, L)).for('update');
   const remainingPlan = a.need - state.landed;
   const awaitLocked = await tx
     .select({ id: boxes.id })
@@ -602,7 +609,7 @@ async function countChunk(
           batchCode: batch.code,
           warehouseId: batch.destWarehouseId,
           shortCodes: state.overCodes.slice(0, CODES_KEPT),
-          lot: { label: after.label, product: after.product, n: state.overCodes.length },
+          lot: { label: after.label, product: alarmProduct(after), n: state.overCodes.length },
           reason:
             grownN > 0 ? `${a.overReason} · prixodga +${grownN} karobka qo‘shildi` : a.overReason,
           via: 'count',
@@ -671,6 +678,16 @@ async function countChunk(
  * nothing. By insertion order, not by `created_at`: that is the moment a
  * transaction BEGAN, and a press that began first can commit second.
  */
+/**
+ * The goods' name an alarm prints — the Russian one when the prixod has it,
+ * as every other count alarm does (count-load's BoxScannedOnLoad), so one lot
+ * is not Chinese in one message and Russian in the next (review ui-6). The
+ * panel keeps both names side by side.
+ */
+function alarmProduct(lot: Pick<LotLedger, 'product' | 'productRu'>): string {
+  return lot.productRu || lot.product;
+}
+
 async function lastAlertedShortfall(tx: Tx, batchId: string, lotId: string): Promise<number> {
   const rows = (await tx.execute(sql`
     SELECT a.after->'countAccept'->>'alertedShortfall' AS alerted
@@ -709,7 +726,7 @@ async function shortfallText(
   const appUrl = process.env.APP_URL ?? '';
   return (
     `⚠️ ${batch.code} (${origin?.code ?? '?'}→${destCode}) — sanab qabul: kamomad\n` +
-    `${led.label} · ${led.product}\n` +
+    `${led.label} · ${alarmProduct(led)}\n` +
     `Jo‘natilgan: ${led.departed} · Sanaldi: ${led.arrived} · Yetmaydi: ${short}\n` +
     `Sanadi: ${await presserName(tx, actorId)}\n` +
     `${appUrl}/batches/${batch.id}`
@@ -724,7 +741,7 @@ async function closedText(
 ): Promise<string> {
   const appUrl = process.env.APP_URL ?? '';
   return (
-    `✅ ${batch.code} — ${led.label} · ${led.product}: endi ${led.arrived}/${led.departed}, kamomad yopildi\n` +
+    `✅ ${batch.code} — ${led.label} · ${alarmProduct(led)}: endi ${led.arrived}/${led.departed}, kamomad yopildi\n` +
     `Sanadi: ${await presserName(tx, actorId)}\n` +
     `${appUrl}/batches/${batch.id}`
   );
@@ -751,7 +768,11 @@ export async function countAcceptCrate(
   try {
     return await db.transaction(async (tx) => {
       await setCountLockTimeout(tx);
-      const [batch] = await tx.select().from(batches).where(eq(batches.id, input.batchId)).for('update');
+      const [batch] = await tx
+        .select()
+        .from(batches)
+        .where(eq(batches.id, input.batchId))
+        .for('no key update');
       if (!batch || !['in_transit', 'arrived'].includes(batch.status)) {
         throw new CountError('batch_not_unloading');
       }

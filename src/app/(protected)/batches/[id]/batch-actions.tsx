@@ -176,7 +176,15 @@ export function BatchActions({
       {summary && <p className="rounded-lg bg-brand-50 p-2 text-sm font-semibold">{summary}</p>}
       {error && (
         <p className="rounded-lg bg-bad/10 p-2 text-sm font-semibold text-bad">
-          {t(`errors.${error}` as never) || error}
+          {/* A code the bundle does not name — «forbidden» for a viewer who
+              presses 🏁 without the scan right — printed «batches.errors.forbidden»
+              as text (next-intl answers the key, never an empty string, so the
+              old `|| error` never fired; review ui-3). */}
+          {t.has(`errors.${error}`)
+            ? t(`errors.${error}` as 'errors.batch_not_loading')
+            : error === 'forbidden'
+              ? tc('forbidden')
+              : tc('error')}
         </p>
       )}
     </div>

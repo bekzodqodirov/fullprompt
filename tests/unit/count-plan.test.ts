@@ -51,6 +51,17 @@ describe('going up', () => {
     expect([m.reReserve, m.loadOver, m.grow]).toEqual([[], [], 0]);
   });
 
+  it('only an in_stock shelf carton goes back onto the plan; a ready one rides as an extra', () => {
+    // A UZ collection warehouse: row 4 stands «tayyor» for its client. The
+    // plan still has room for two, but reserving 4 would bring it back
+    // `in_stock` from «yuklash tugadi» — off every tayyor list (review cargo-6).
+    const rows = [row(4, { status: 'ready_for_pickup' }), row(5)];
+    const m = move(rows, 2, opts({ planN: 2, overReason: 'bor edi' }));
+    expect(ids(m.reReserve)).toEqual([5]);
+    expect(ids(m.loadOver)).toEqual([4]);
+    expect(m.grow).toBe(0);
+  });
+
   it('cartons the plan counted but the shelf got back are reserved again — no mark', () => {
     // «yuklash tugadi» sent 4 and 5 home; the plan still says 5.
     const rows = [aboard(1), aboard(2), aboard(3), row(4), row(5), row(6)];

@@ -98,7 +98,9 @@ export async function createCrate(input: CreateCrateInput, ctx: AuditContext) {
       .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
       .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
       .where(inArray(boxes.id, boxIds))
-      .for('update', { of: boxes });
+      // Only crate_id changes: a no-key lock, so a foreign-key insert
+      // elsewhere (a cost re-split's allocations) does not block it.
+      .for('no key update', { of: boxes });
 
     if (rows.length !== boxIds.length) throw new CrateError('box_not_found');
     for (const { box } of rows) {
@@ -251,7 +253,11 @@ async function pickLotCounts(
       )
       .orderBy(asc(boxes.seqInLot))
       .limit(count)
-      .for('update', { skipLocked: true });
+      // NO KEY: a key-share lock (any foreign-key insert naming the carton,
+      // e.g. a cost re-split) must not make a free carton look taken — SKIP
+      // LOCKED under FOR UPDATE refused «0 of A» about four free cartons
+      // (review lock-5).
+      .for('no key update', { skipLocked: true });
     if (rows.length < count) {
       const [lot] = await tx
         .select({ letter: receiptLots.letter })

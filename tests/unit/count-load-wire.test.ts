@@ -103,6 +103,16 @@ describe('the count door', () => {
 });
 
 describe('the phone and the office’s lot', () => {
+  it('the loading screen merges the quick truck’s shelf too, or a dialled-down carton stays «aboard»', () => {
+    // On a quick truck the office's dial-down puts the cartons back on the
+    // shelf with no pointer: they leave `boxes` for `available`, and a merge
+    // over `boxes` alone never takes them off the phone (review phone-2).
+    const screen = read(LOAD_SCREEN);
+    const calls = [...screen.matchAll(/mergeLoaded\(([^;]*?)data\.countOnly\)/g)].map((m) => m[1]!);
+    expect(calls).toHaveLength(2);
+    for (const args of calls) expect(args).toContain('...(data.available ?? [])');
+  });
+
   it('the phone’s removal refuses a counted lot, by the kernel’s load-side marker', () => {
     const text = body(SERVICE, 'removeLoadedCode');
     expect(text).toContain("countedOnTruckSql(batchId, sql`${aboard[0]!.lotId}::uuid`, 'load')");
@@ -120,7 +130,7 @@ describe('the phone and the office’s lot', () => {
     expect(refuse).toBeLessThan(onCode.indexOf('void accept('));
     expect(refuse).toBeGreaterThan(onCode.indexOf('isSendableCode(code)'));
     expect(src).toContain("res.error === 'lot_counted'");
-    expect(src).toContain('mergeLoaded(prev, data.boxes, data.countOnly)');
+    expect(src).toContain('mergeLoaded(prev, [...data.boxes, ...(data.available ?? [])], data.countOnly)');
     expect(src).toContain('data-testid="load-toast"');
   });
 });
@@ -173,7 +183,9 @@ describe('a truck’s papers read its cargo, never its scan history (decision 25
     const text = body('src/modules/wms/reports/queries.ts', 'batchRegister');
     const added = text.slice(text.indexOf('added: sql'), text.indexOf('costUsd: sql'));
     expect(added).toContain('count(DISTINCT se.box_id)');
-    expect(added).toContain("ab.status NOT IN ('planned', 'void')");
-    expect(added).toContain('ab.current_batch_id = ${batches.id} OR EXISTS');
+    expect(added).toContain("ab.status <> 'void'");
+    // «Reserved» only on the live pointer — a carton that rode this truck and
+    // is planned on the next one still rode this one (review cargo-1).
+    expect(added).toContain("(ab.current_batch_id = ${batches.id} AND ab.status <> 'planned') OR EXISTS");
   });
 });

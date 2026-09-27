@@ -162,7 +162,9 @@ export function LoadingScreen({
 
   const applySnapshot = useCallback((data: Snapshot) => {
     setSnapshot(data);
-    setLoaded(mergeLoaded(new Set(), data.boxes, data.countOnly));
+    // A quick truck's dialled-down cartons leave `boxes` for `available` —
+    // the merge must see them there to take them off (review phone-2).
+    setLoaded(mergeLoaded(new Set(), [...data.boxes, ...(data.available ?? [])], data.countOnly));
   }, []);
 
   // Snapshot: network-first, localStorage fallback for offline reopen.
@@ -329,7 +331,9 @@ export function LoadingScreen({
               setSnapshot(data);
               // A scanned lot's marks only grow between ticks; a lot the
               // office counts follows the server both ways (loaded-merge.ts).
-              setLoaded((prev) => mergeLoaded(prev, data.boxes, data.countOnly));
+              setLoaded((prev) =>
+                mergeLoaded(prev, [...data.boxes, ...(data.available ?? [])], data.countOnly),
+              );
             }
           } catch {
             /* snapshot refresh is best-effort */

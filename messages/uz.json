@@ -4279,7 +4279,8 @@
       "barcode_is_ours_plain": "Bu bizning QR kodimiz, zavod shtrix-kodi emas",
       "server_behind": "Server hali yangilanmoqda — bir daqiqadan keyin qayta urinib ko‘ring",
       "forbidden": "Ruxsatingiz yo‘q"
-    }
+    },
+    "barcodeManyLots": "Bu zavod kodi {n} ta lotda bor — qaysi uyumni berayotganingizni ro‘yxatdan bosing."
   },
   "scanner": {
     "diagnostics": "Skaner tekshiruvi"

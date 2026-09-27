@@ -275,6 +275,10 @@ export async function countLoadLot(
     const hasPlan = !!(await tx.query.loadPlans.findFirst({ where: eq(loadPlans.batchId, batchId) }));
     const planN = hasPlan ? await planNumber(tx, batchId, lotId) : 0;
 
+    // The lot row before its cartons — the order the receipt card's switch
+    // and the lot form take them in; a growth locks it too, and taking it
+    // after the cartons deadlocked with those two doors (review lock-3).
+    await tx.select({ id: receiptLots.id }).from(receiptLots).where(eq(receiptLots.id, lotId)).for('update');
     // Lock the lot's cartons in id order, THEN read them afresh: a phone
     // holding one of them makes this wait, and a statement that waited sees
     // the row it waited for but not what its own subqueries read before the

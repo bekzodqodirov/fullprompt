@@ -513,8 +513,8 @@ export async function batchRegister(warehouseIds?: string[]) {
         SELECT count(DISTINCT se.box_id) FROM scan_events se
           JOIN boxes ab ON ab.id = se.box_id
         WHERE se.batch_id = ${batches.id} AND se.added_on_spot = true AND se.type = 'load'
-          AND ab.status NOT IN ('planned', 'void')
-          AND (ab.current_batch_id = ${batches.id} OR EXISTS (
+          AND ab.status <> 'void'
+          AND ((ab.current_batch_id = ${batches.id} AND ab.status <> 'planned') OR EXISTS (
             SELECT 1 FROM box_movements abm
              WHERE abm.box_id = ab.id AND abm.ref_type = 'batch'
                AND abm.ref_id = ${batches.id} AND abm.cause = 'batch_departed'
