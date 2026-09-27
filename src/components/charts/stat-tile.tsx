@@ -10,7 +10,24 @@ import type { ReactNode } from 'react';
  *
  * The value is compact and never wraps (a nowrap figure wider than a
  * half-width tile at 360 px would rescale the page, #400): «$124.5K».
+ *
+ * Three additive options, each off by default so every existing tile renders
+ * exactly as before:
+ *  - `size: 'lg'` for a headline row: text-2xl, which still fits «−$1.24M» in
+ *    a half-width tile at 360 px (7 characters of mono ≈ 101 px of 134).
+ *  - `tag` after the label — a `ScopeTag` naming what the figure covers. The
+ *    row WRAPS rather than squeezing the label: a tag beside «TUSHUM» in a
+ *    half tile would otherwise truncate the one word that says what it is.
+ *  - `exact` — the unrounded figure as `data-value` on the value itself, so a
+ *    test can compare the tile with the report its link opens (#513) without
+ *    parsing «$124.5K» back into a number.
  */
+// A literal map: Tailwind compiles only classes it can see.
+const VALUE_SIZE: Record<'md' | 'lg', string> = {
+  md: 'text-xl',
+  lg: 'text-2xl',
+};
+
 export function StatTile({
   href,
   label,
@@ -20,6 +37,9 @@ export function StatTile({
   visual,
   footer,
   testid,
+  size = 'md',
+  tag,
+  exact,
 }: {
   href: string;
   label: string;
@@ -30,12 +50,32 @@ export function StatTile({
   /** Rendered OUTSIDE the link (a second link must never nest inside the first). */
   footer?: ReactNode;
   testid?: string;
+  size?: 'md' | 'lg';
+  /** Printed after the label, inside the link — plain text (a ScopeTag), never a link. */
+  tag?: ReactNode;
+  /** The exact value behind the compact one, rendered as `data-value`. */
+  exact?: string;
 }) {
+  const labelText = (
+    <p className="text-2xs font-semibold uppercase leading-tight tracking-wide text-ink-500">{label}</p>
+  );
   return (
     <div className="card flex min-w-0 flex-col !p-0" data-testid={testid}>
       <Link href={href} className="block min-w-0 flex-1 rounded-[inherit] p-3 hover:bg-surface-sunken">
-        <p className="text-2xs font-semibold uppercase leading-tight tracking-wide text-ink-500">{label}</p>
-        <p className={`mt-0.5 whitespace-nowrap font-mono text-xl font-bold tabular-nums ${valueTone}`}>{value}</p>
+        {tag ? (
+          <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5">
+            {labelText}
+            {tag}
+          </div>
+        ) : (
+          labelText
+        )}
+        <p
+          data-value={exact}
+          className={`mt-0.5 whitespace-nowrap font-mono font-bold tabular-nums ${VALUE_SIZE[size]} ${valueTone}`}
+        >
+          {value}
+        </p>
         {lines?.map((line, i) => (
           // Wraps rather than truncates: at 360 px a truncated line hid the
           // 60+ day debt, the number the tile exists to show (screenshot).

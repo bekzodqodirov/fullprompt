@@ -28,3 +28,14 @@ export function monthLabel(names: string[], month: string, withYear = false): st
   const name = names[Number(month.slice(5, 7)) - 1] ?? month;
   return withYear || month.endsWith('-01') ? `${name} ${month.slice(2, 4)}` : name;
 }
+
+/**
+ * «27 Sen» for 2026-09-27 — a day on a chart's axis and in its tip, from the
+ * same bundle names as the months and for the same reason (#678). The day is
+ * written without its leading zero, as a person writes it. A string that is
+ * not a date comes back unchanged rather than as «NaN undefined».
+ */
+export function dayLabel(names: string[], day: string): string {
+  const name = /^\d{4}-\d{2}-\d{2}$/.test(day) ? names[Number(day.slice(5, 7)) - 1] : undefined;
+  return name ? `${Number(day.slice(8, 10))} ${name}` : day;
+}
