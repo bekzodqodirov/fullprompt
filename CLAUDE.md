@@ -1891,6 +1891,33 @@ pickers through the scoped global search. Phone bars pinned per answer 6
 dashboard (canvas board 9, `Dashboard.dc.html`), round C the Telegram bot
 «wow», later the batch card (3a) and the client card's Pul tab (4a).
 
+**Round B — «Biznes holati», the dashboard from the canvas (2026-09-27;
+DECISIONS #1080-#1089; NO migration, ledger 112).** Built as four packages in
+parallel worktrees (money, cargo, trucks, charts) against an interface the lead
+wrote first, while the lead wrote the page against it; the four cherry-picked
+with no conflict. Order = the phone order: controls (`?davr=bugun|7|30|oy|otgan`,
+garbage → oy; `?ombor=` only from the viewer's own `warehouseOptions`, via
+`reports/report-scope.ts` — the journal asks the same rule now) → `ProfitHero`
+(net over the period, ABSOLUTE delta, the comparison printed as DATES, 12-month
+`AreaLine`) → four tiles (revenue / cost = `pnlParts` folded / cash / receivable;
+non-money viewers get intake / stock / trucks) → the alerts as cards (top 4,
+rest folded, `#diqqat` kept) → `CashWeeksCard` (`cashFlowByWeek`, one
+`bucket(unit)` in `cashFlowCore`) | `IntakeDaysCard` (`intakeByDay`, the
+journal's predicate) → `FillCard` | `TrucksCard` (`trucksOnRoad`, ranked;
+stuck = the attention row's count) | `FunnelCard` + `AgingCard` → «Batafsil»
+(every old block unchanged). Rules that now have ONE home: `priorPeriodOf`
+(`accounting/prior-period.ts`, adds `wholeMonth`; January stays against last
+January), `pctDelta` on BOTH the dashboard and the P&L page, `isGenericRoute`
+refused IN `scheduleEstimate` (no invented date on the dashboard, the cabinet,
+the bot or the map — such a truck with no phone fix is no longer drawn on
+/map, stated). Every money card takes `CompanyMoneySight` (finance/scope.ts),
+a branded value only `companyMoneySight(actor)` mints. Refused from the canvas
+and owed to him as «yo'q»: the funnel step %, the till and receivable
+sparklines, «Yuklanmoqda 32/48», red for money out, Google Fonts. TEST TRAP:
+a Suspense card is inserted HIDDEN before React swaps it in, so a
+`boundingBox()` read before `toBeVisible()` is null. NEXT: round C (the
+Telegram bot «wow»), then the batch card (3a) and the client card's Pul tab (4a).
+
 **Latest migration: 0111** (`nav_usage` — «Tez-tez»; ledger must reach
 **112**; `when` …090). Before it: **0110** (`lead_assign` — the website teams, the typed and
 the read Telegram handle, the offer ledger, the `site` arrival channel; ledger

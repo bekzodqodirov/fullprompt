@@ -166,33 +166,85 @@ function money(value: unknown): number {
 
 export type SalesAnalytics = Awaited<ReturnType<typeof salesAnalytics>>;
 
+/** The ARRIVAL clock (`created_at`) over a period, under the filters. */
+function arrivedWhere({ from, to }: Period, f: AnalyticsFilters) {
+  return and(gte(leads.createdAt, from), lt(leads.createdAt, to), ...leadFilterConds(f));
+}
+
+/** The DECISION clock (`closed_at`, 0076) over a period, under the filters. */
+function decidedWhere({ from, to }: Period, f: AnalyticsFilters) {
+  return and(isNotNull(leads.closedAt), gte(leads.closedAt, from), lt(leads.closedAt, to), ...leadFilterConds(f));
+}
+
 /**
- * Won/lost by the DECISION clock, for the admin home (round 107). The same
- * predicate as the scoreboard's `decided` cell above and — since round 107
- * moved it — `salesSnapshot`'s month counts: `closed_at` + the stage's kind,
- * never `updated_at` (round 98's two clocks). One lean query, because the
- * home page is the most-opened screen and `salesAnalytics` is ~14.
- *
- * `wonUsd` is dollars only (`won-money.ts`): this comment used to call the
- * sum safe unfiltered because «a lead's quote is USD-only», and the lead form
- * offers UZS and CNY — audit A19.
+ * Leads that ARRIVED in the period — the scoreboard's «Yangi» cell, and the
+ * dashboard's funnel line (O13). `salesAnalytics` calls this rather than
+ * holding its own copy, so the tahlil screen and the dashboard it links to
+ * cannot print two numbers for one period.
  */
-export async function decidedLeadCounts(from: Date, to: Date) {
+export async function leadArrivals(period: Period, f: AnalyticsFilters = {}): Promise<number> {
+  const [row] = await db.select({ n: sql<number>`count(*)` }).from(leads).where(arrivedWhere(period, f));
+  return Number(row?.n ?? 0);
+}
+
+export interface LeadDecisions {
+  won: number;
+  lost: number;
+  /** Won quotes in dollars only (`won-money.ts`, audit A19). */
+  wonUsd: number;
+  /** Won leads quoted in another currency — counted, never added to the dollars. */
+  wonOther: number;
+  /** Arrival → decision, averaged over the WON ones, in days to one decimal. */
+  cycleDays: number;
+}
+
+/**
+ * Decisions in the period: the win rate's denominator, the won money, and
+ * the cycle — arrival to decision, the only honest «how fast do we sell»
+ * there is (averaged over WON: a lost lead's speed is not a speed anybody
+ * wants more of). The scoreboard's decided cells, shared with the dashboard
+ * (O13) the way `leadArrivals` is.
+ */
+export async function leadDecisions(period: Period, f: AnalyticsFilters = {}): Promise<LeadDecisions> {
   const [row] = await db
     .select({
       won: sql<number>`count(*) FILTER (WHERE ${leadStages.kind} = 'won')`,
       lost: sql<number>`count(*) FILTER (WHERE ${leadStages.kind} = 'lost')`,
       wonUsd: leadWonUsdSql(),
       wonOther: leadWonOtherCurrencySql(),
+      cycleDays: sql<string>`coalesce(avg(extract(epoch from ${leads.closedAt} - ${leads.createdAt})) FILTER (WHERE ${leadStages.kind} = 'won'), 0)`,
     })
     .from(leads)
     .innerJoin(leadStages, eq(leads.stageId, leadStages.id))
-    .where(and(isNotNull(leads.closedAt), gte(leads.closedAt, from), lt(leads.closedAt, to)));
+    .where(decidedWhere(period, f));
   return {
     won: Number(row?.won ?? 0),
     lost: Number(row?.lost ?? 0),
     wonUsd: money(row?.wonUsd),
-    wonOtherCurrency: Number(row?.wonOther ?? 0),
+    wonOther: Number(row?.wonOther ?? 0),
+    cycleDays: Math.round((Number(row?.cycleDays ?? 0) / 86400) * 10) / 10,
+  };
+}
+
+/**
+ * Won/lost by the DECISION clock, for the admin home (round 107). The same
+ * predicate as the scoreboard's `decided` cell above and — since round 107
+ * moved it — `salesSnapshot`'s month counts: `closed_at` + the stage's kind,
+ * never `updated_at` (round 98's two clocks). It IS `leadDecisions` with no
+ * filters, in the admin home's field names — one lean query, because the home
+ * page is the most-opened screen and `salesAnalytics` is ~14.
+ *
+ * `wonUsd` is dollars only (`won-money.ts`): this comment used to call the
+ * sum safe unfiltered because «a lead's quote is USD-only», and the lead form
+ * offers UZS and CNY — audit A19.
+ */
+export async function decidedLeadCounts(from: Date, to: Date) {
+  const decided = await leadDecisions({ from, to });
+  return {
+    won: decided.won,
+    lost: decided.lost,
+    wonUsd: decided.wonUsd,
+    wonOtherCurrency: decided.wonOther,
   };
 }
 
@@ -246,15 +298,11 @@ export async function decidedLeadsByMonth(from: Date, to: Date, mtdDay = 31): Pr
   }));
 }
 
-export async function salesAnalytics({ from, to }: Period, f: AnalyticsFilters = {}) {
+export async function salesAnalytics(period: Period, f: AnalyticsFilters = {}) {
+  const { from, to } = period;
   const extra = leadFilterConds(f);
-  const created = and(gte(leads.createdAt, from), lt(leads.createdAt, to), ...extra);
-  const closed = and(
-    isNotNull(leads.closedAt),
-    gte(leads.closedAt, from),
-    lt(leads.closedAt, to),
-    ...extra,
-  );
+  const created = arrivedWhere(period, f);
+  const closed = decidedWhere(period, f);
   // The snapshots (open now, funnel) take the filters but deliberately not
   // the period — «what is in hand» has no date range.
   const openWhere = and(eq(leadStages.kind, 'open'), ...extra);
@@ -265,24 +313,10 @@ export async function salesAnalytics({ from, to }: Period, f: AnalyticsFilters =
 
   const [arrived, decided, openNow, perDayNew, perDayWon, sourceNew, sourceDecided, sellerNew, sellerDecided, sellerOpen, reasons, stageRows, dealsRow, people] =
     await Promise.all([
-      // Arrivals in the period, and who they came from rides in sourceNew.
-      db.select({ n: sql<number>`count(*)` }).from(leads).where(created),
-
-      // Decisions in the period: the win rate's denominator, the won money,
-      // and the cycle — arrival to decision, the only honest «how fast do we
-      // sell» there is (average over WON: a lost lead's speed is not a speed
-      // anybody wants more of).
-      db
-        .select({
-          won: sql<number>`count(*) FILTER (WHERE ${leadStages.kind} = 'won')`,
-          lost: sql<number>`count(*) FILTER (WHERE ${leadStages.kind} = 'lost')`,
-          wonUsd: leadWonUsdSql(),
-          wonOther: leadWonOtherCurrencySql(),
-          cycleDays: sql<string>`coalesce(avg(extract(epoch from ${leads.closedAt} - ${leads.createdAt})) FILTER (WHERE ${leadStages.kind} = 'won'), 0)`,
-        })
-        .from(leads)
-        .innerJoin(leadStages, eq(leads.stageId, leadStages.id))
-        .where(closed),
+      // Arrivals in the period (who they came from rides in sourceNew), and
+      // the decisions — the dashboard reads these two same functions (O13).
+      leadArrivals(period, f),
+      leadDecisions(period, f),
 
       db
         .select({ n: sql<number>`count(*)` })
@@ -488,20 +522,19 @@ export async function salesAnalytics({ from, to }: Period, f: AnalyticsFilters =
     s.wonUsd = money(row.wonUsd);
   }
 
-  const won = Number(decided[0]?.won ?? 0);
-  const lost = Number(decided[0]?.lost ?? 0);
+  const { won, lost } = decided;
   const stageTotal = stageRows.reduce((sum, row) => sum + Number(row.n), 0);
   const d = dealsRow[0];
 
   return {
     totals: {
-      fresh: Number(arrived[0]?.n ?? 0),
+      fresh: arrived,
       won,
       lost,
       winRate: pct(won, won + lost),
-      wonUsd: money(decided[0]?.wonUsd),
-      wonOtherCurrency: Number(decided[0]?.wonOther ?? 0),
-      cycleDays: Math.round((Number(decided[0]?.cycleDays ?? 0) / 86400) * 10) / 10,
+      wonUsd: decided.wonUsd,
+      wonOtherCurrency: decided.wonOther,
+      cycleDays: decided.cycleDays,
       open: Number(openNow[0]?.n ?? 0),
     },
     perDay: (() => {

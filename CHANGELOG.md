@@ -1,5 +1,60 @@
 # CHANGELOG
 
+## «Biznes holati» — yangi dashboard, bir qarashda — 2026-09-27
+
+Migratsiya yo'q. Ledger o'zgarmaydi (**112**).
+
+1. **Tepada — tanlangan davrning foydasi.** Katta raqam, yonida so'nggi 12
+   oyning sof foydasi chiziq bo'lib. Ostida qaysi kunlar bilan solishtirilgani
+   sana bilan yoziladi («01.08 – 26.08 bilan solishtirilganda»), chunki
+   «o'tgan davr» oy boshida va yanvarda boshqacha ma'no beradi. Oylik reja
+   bo'lsa — reja chizig'i va «Oy tugashiga 4 kun · kuniga $1 650 kerak».
+2. **Davr tanlash: Bugun · 7 kun · 30 kun · Bu oy · O'tgan oy.** Foyda,
+   tushum, xarajat va pul kirim-chiqimi shu davr bo'yicha. Kassadagi pul va
+   mijozlar qarzi — «Hozir» (davrga bog'liq emas). Har bir raqam bosilsa, o'z
+   hisoboti xuddi shu kunlar bilan ochiladi va u yerda ham aynan shu raqam
+   turadi.
+3. **Sklad tanlash** (bir nechta skladni ko'radiganlarga). Yuk kartalari
+   (qabul, mashinalar, skladlar) shu skladga torayadi; pul va savdo kartalarida
+   «Butun kompaniya» deb yoziladi — ularning sklad bo'yicha raqami yo'q.
+4. **4 ta karta:** Tushum · Xarajat (to'g'ridan-to'g'ri + umumiy + kurs farqi —
+   Tushum − Xarajat = tepadagi foyda) · Kassada · Mijozlar qarzi.
+   Buxgalter, logist va skladchilarda pul yo'q — ularda qabul, skladdagi yuk va
+   yo'ldagi mashinalar.
+5. **«Diqqat» — kartalar bo'lib, KPI'lardan keyin tepada.** Eng muhim 4 tasi
+   ko'rinib turadi, qolganlari «yana N ta» ostida.
+6. **Pul oqimi — haftalar bo'yicha** (12 hafta): kirim tepaga, chiqim pastga
+   (to'q sariq — qizil faqat xavf uchun). Shu, hali tugamagan hafta chiziq
+   bilan chizilgan.
+7. **Qabul — kunlar bo'yicha** (30 kun, m³). O'rtacha faqat tugagan kunlardan
+   olinadi, bugungisi alohida («Bugun (hozircha)»).
+8. **Yo'ldagi mashinalar:** avval darvozada 2 kundan beri tushirilmay turganlar
+   va jadvaldan o'tganlar, keyin yo'ldagilar — eng oldin yetib keladigani
+   birinchi. Yo'l chizig'i va «Taxminan 29.09 – 01.10» — sizning marshrut
+   jadvalingiz bo'yicha taxmin. Jadvali yo'q yo'nalishda (masalan YW→GZ,
+   Toshkent→Andijon) sana ham chiziq ham chiqmaydi — o'ylab topilgan sana
+   bo'lmasin. Bu mijozning Telegram kabinetiga va xaritaga ham tegishli:
+   bunday mashina telefon joylashuvi kelmaguncha xaritada ko'rinmaydi.
+9. **Skladlar to'lishi** va **savdo voronkasi** (hozir qaysi bosqichda nechta
+   lid; davr bo'yicha yangi · yutilgan · boy berilgan va yutish ulushi — pul
+   qismi faqat egasi/adminga). Bosqichdan bosqichga o'tish foizi yo'q: hozirgi
+   ma'lumotdan uni to'g'ri hisoblab bo'lmaydi.
+10. **«Batafsil»** — oldingi dashboardning hamma bloklari o'zgarmay pastda:
+    12 oylik P&L va pul oqimi, balans, eng katta qarzdorlar, reyslar foydasi,
+    narxsiz yuk, bugungi raqamlar, yuk yo'li.
+
+Yo'l-yo'lakay tuzatilganlar:
+- **Qabul jurnali** endi sklad tanlaydi (dashboarddan kelgan havola shu skladni
+  olib keladi). Skladsiz qolgan skladchi ilgari jurnalda butun kompaniyani
+  ko'rardi — endi hech narsa ko'rmaydi.
+- **P&L sahifasi va dashboard bitta foiz qoidasi bilan** — «▲ 7.6%» va «▲ 8%»
+  bir xil tushum uchun endi chiqmaydi.
+- Qarz yoshlari kartasining jami — o'z ustunlarining yig'indisi; ertangi sana
+  bilan yozilgan yozuv bo'lsa, alohida aytiladi.
+
+Sizdan (xohlasangiz): 9 ta skladning sig'imini (m³) Boshqaruv → Skladlar'da
+kiriting — shunda to'lish chizig'i chiqadi.
+
 ## Menyu ish bo'yicha: 8 ta bo'lim, «Tez-tez», «+ Yangi» — 2026-09-27
 
 Migratsiya bor: **0111** (`nav_usage` — «Tez-tez» uchun). Deploydan keyin

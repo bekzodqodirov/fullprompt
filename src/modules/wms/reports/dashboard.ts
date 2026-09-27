@@ -1,8 +1,10 @@
 import { cache } from 'react';
-import { tashkentDay, tashkentDayStart } from '@/modules/platform/time/tashkent';
+import { addDays, tashkentDay, tashkentDayStart } from '@/modules/platform/time/tashkent';
 import {
   arAging,
+  cashFlow,
   cashFlowByMonth,
+  cashFlowByWeek,
   companyBalance,
   companyBalanceParts,
   pnlGaps,
@@ -11,10 +13,19 @@ import {
   unbatchedRevenue,
 } from '../accounting/reports';
 import { targetsFor } from '../accounting/targets';
-import { decidedLeadsByMonth } from '../crm/analytics';
+import { leadArrivals, leadDecisions } from '../crm/analytics';
 import { openDealsSummary } from '../deals/service';
-import { cargoAtRisk, cargoPipeline, intakeByMonth, unbilledArrived } from './business';
-import { costMissingBatches, costMissingCount, inTransitBatches, unclaimedSummary, warehouseFill } from './queries';
+import { futureDatedEntries } from '../finance/service';
+import { trucksOnRoad } from '../tracking/on-road';
+import { cargoAtRisk, cargoPipeline, intakeByDay, unbilledArrived } from './business';
+import {
+  costMissingBatches,
+  costMissingCount,
+  receiptsJournalTotals,
+  unclaimedSummary,
+  warehouseFill,
+} from './queries';
+import { warehouseOptions } from './report-scope';
 import { salesSnapshot, todaySnapshot } from './overview';
 import { dashboardWindows } from './dashboard-math';
 
@@ -51,11 +62,21 @@ export const loadPnl12 = cache(() => {
   const w = loadWindows();
   return profitAndLoss(w.m12Start, w.today);
 });
-/** Last month's days 1..today's day — the like-for-like comparison. */
-export const loadPnlPrior = cache(() => {
+/**
+ * The P&L over the chosen period, and over its comparison window
+ * (`priorPeriodOf`) — the SAME call the P&L page makes for the link the tile
+ * carries, so the tile's ▲▼ and the page's are one computation (#513).
+ */
+export const loadPnlRange = cache((from: string, to: string) => profitAndLoss(from, to));
+/** Cash in / out over the chosen period — the cash-flow page's own total. */
+export const loadCashRange = cache((from: string, to: string) => cashFlow(from, to));
+/** Twelve Monday-weeks, this one included (partial), from the cash flow's core. */
+export const loadCashWeeks = cache(() => {
   const w = loadWindows();
-  return profitAndLoss(w.prevStart, w.prevSameDay);
+  return cashFlowByWeek(w.w12Start, w.today);
 });
+/** Rows dated after today: the receivable counts them, the aging does not (O8). */
+export const loadFutureDated = cache(() => futureDatedEntries());
 export const loadCashByMonth = cache(() => {
   const w = loadWindows();
   return cashFlowByMonth(w.m12Start, w.today);
@@ -73,23 +94,32 @@ export const loadGaps = cache(() => {
   const w = loadWindows();
   return pnlGaps(w.m12Start, w.today);
 });
-export const loadTarget = cache(async () => {
-  const w = loadWindows();
-  return (await targetsFor([w.month])).get(w.month) ?? null;
-});
+/** The monthly plan of a YYYY-MM — this month, or last month for «O'tgan oy». */
+export const loadTargetFor = cache(async (month: string) => (await targetsFor([month])).get(month) ?? null);
 export const loadUnbilled = cache((scopeKey: string) => unbilledArrived(unkey(scopeKey)));
 
 // Cargo — the page's own door, scoped.
 export const loadPipeline = cache((scopeKey: string) => cargoPipeline(unkey(scopeKey)));
 export const loadRisk = cache((scopeKey: string) => cargoAtRisk(unkey(scopeKey)));
-export const loadTransit = cache((scopeKey: string) => inTransitBatches(unkey(scopeKey)));
+/**
+ * The trucks card, the stock tile's count and the attention list's «stuck»
+ * row read ONE ranking, so the three cannot count a truck differently.
+ */
+export const loadTrucks = cache((scopeKey: string) => trucksOnRoad(unkey(scopeKey), { limit: 6 }));
 export const loadFill = cache((scopeKey: string, staleDays: number) => warehouseFill(unkey(scopeKey), staleDays));
 export const loadUnclaimed = cache((scopeKey: string) => unclaimedSummary(unkey(scopeKey)));
 export const loadToday = cache((scopeKey: string) => todaySnapshot(unkey(scopeKey)));
-export const loadIntake = cache((scopeKey: string) => {
+/** Thirty Tashkent days of intake, today (partial) last. */
+export const loadIntakeDays = cache((scopeKey: string) => {
   const w = loadWindows();
-  return intakeByMonth(w.m12Start, w.today, unkey(scopeKey), w.dom);
+  return intakeByDay(w.d30Start, w.today, unkey(scopeKey));
 });
+/** The receipts journal's own header over the chosen period — the tile links there. */
+export const loadIntakeRange = cache((scopeKey: string, from: string, to: string) =>
+  receiptsJournalTotals({ from, to }, unkey(scopeKey)),
+);
+/** The warehouse picker's options, over the viewer's BASE scope (never the narrowed one, O9). */
+export const loadWarehouseOptions = cache((baseKey: string) => warehouseOptions(unkey(baseKey)));
 export const loadCostMissing = cache(async (scopeKey: string) => {
   const count = await costMissingCount(3);
   return { count, rows: count > 0 ? await costMissingBatches(3, unkey(scopeKey)) : [] };
@@ -99,7 +129,13 @@ export const loadCostMissing = cache(async (scopeKey: string) => {
 export const loadOpenDeals = cache(() => openDealsSummary());
 /** `ownerId` '' = every seller's (crm.leads.view_all), else the viewer's own. */
 export const loadSales = cache((ownerId: string) => salesSnapshot(ownerId || undefined));
-export const loadDecided = cache(() => {
-  const w = loadWindows();
-  return decidedLeadsByMonth(tashkentDayStart(w.m12Start), tashkentDayStart(w.nextMonthStart), w.dom);
+/**
+ * New leads and decisions over the chosen period — the tahlil screen's own
+ * functions (`salesAnalytics` calls the same two), so the line and the page it
+ * links to cannot disagree. Tashkent midnights, the period's end exclusive.
+ */
+export const loadLeadFlow = cache(async (from: string, to: string) => {
+  const period = { from: tashkentDayStart(from), to: tashkentDayStart(addDays(to, 1)) };
+  const [fresh, decided] = await Promise.all([leadArrivals(period), leadDecisions(period)]);
+  return { fresh, ...decided };
 });

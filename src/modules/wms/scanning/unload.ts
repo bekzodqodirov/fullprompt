@@ -419,14 +419,43 @@ export function batchMemberFilter(batchId: string) {
   ))`;
 }
 
+/**
+ * «Still on the truck»: the live pointer names it and the box has not landed.
+ *
+ * The LIVE pointer on purpose, the opposite of `batchMemberFilter`: this is
+ * the question «what is left to scan off», and landing clears exactly the
+ * pointer this reads. One fragment for the unload screen's counter and the
+ * dashboard's per-truck count, so «N karobka tushirilmagan» on the owner's
+ * screen is the number the operator's screen is counting down (#513).
+ */
+function awaitingUnloadWhere(batchIds: string[]) {
+  return and(inArray(boxes.currentBatchId, batchIds), eq(boxes.status, 'in_transit'));
+}
+
 /** How many manifest boxes are still waiting to be accepted here. */
 export async function remainingToUnload(batchId: string): Promise<string[]> {
   const rows = await db
     .select({ shortCode: boxes.shortCode })
     .from(boxes)
-    .where(sql`${boxes.currentBatchId} = ${batchId} AND ${boxes.status} = 'in_transit'`)
+    .where(awaitingUnloadWhere([batchId]))
     .orderBy(boxes.shortCode);
   return rows.map((r) => r.shortCode);
+}
+
+/**
+ * `remainingToUnload(id).length` for many trucks in ONE grouped statement —
+ * the dashboard asks about every truck standing at a gate, and one query per
+ * truck is a list screen's cost growing with the fleet (#432). A truck with
+ * nothing left is ABSENT from the map; the caller reads that as 0.
+ */
+export async function awaitingUnloadCounts(batchIds: string[]): Promise<Map<string, number>> {
+  if (batchIds.length === 0) return new Map();
+  const rows = await db
+    .select({ batchId: boxes.currentBatchId, n: sql<number>`count(*)` })
+    .from(boxes)
+    .where(awaitingUnloadWhere(batchIds))
+    .groupBy(boxes.currentBatchId);
+  return new Map(rows.flatMap((r) => (r.batchId ? [[r.batchId, Number(r.n)] as const] : [])));
 }
 
 /**

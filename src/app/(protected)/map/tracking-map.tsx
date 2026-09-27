@@ -268,16 +268,25 @@ export function TrackingMap({
           </p>
           <p className={`text-xs font-semibold ${selTruck.overdue ? 'text-bad' : ''}`}>
             📍 {t(`seg_${selTruck.segKey}`)}
+            {/* A truck drawn at its phone's fix with NO schedule behind it
+                (an unmapped pair, or since round B a generic one) carries
+                remainingDays [0, 0] and progress 0 — «~0–0 kun» and an empty
+                bar are inventions, so both are left out: the bot's and the
+                cabinet map's rule (`remainingDays[1] > 0`). */}
             {selTruck.overdue
               ? ` — ${t('overdue')}`
-              : ` · ${t('eta', { min: selTruck.remainingDays[0], max: selTruck.remainingDays[1] })}`}
+              : selTruck.remainingDays[1] > 0
+                ? ` · ${t('eta', { min: selTruck.remainingDays[0], max: selTruck.remainingDays[1] })}`
+                : ''}
           </p>
-          <div className="h-2 overflow-hidden rounded bg-surface-sunken">
-            <div
-              className="h-full rounded bg-brand-600"
-              style={{ width: `${Math.round(selTruck.progress * 100)}%` }}
-            />
-          </div>
+          {selTruck.routePoints.length > 0 && (
+            <div className="h-2 overflow-hidden rounded bg-surface-sunken">
+              <div
+                className="h-full rounded bg-brand-600"
+                style={{ width: `${Math.round(selTruck.progress * 100)}%` }}
+              />
+            </div>
+          )}
           <div className="flex flex-wrap gap-1.5">
             {selTruck.contents.map((c) => (
               <span

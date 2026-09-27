@@ -1,105 +1,106 @@
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
-import { loadDecided, loadOpenDeals, loadSales, loadWindows } from '@/modules/wms/reports/dashboard';
+import { loadLeadFlow, loadOpenDeals, loadSales } from '@/modules/wms/reports/dashboard';
+import type { DashPeriod, DashPeriodKey } from '@/modules/wms/reports/dashboard-math';
 import { compactUsd, num, pct } from '@/components/charts/format';
-import { SERIES_BG } from '@/components/charts/legend';
+import { MeterRow } from '@/components/charts/meter-row';
+import { ScopeTag } from '@/components/charts/scope-tag';
 import { stageClass } from '../../crm/stage-color';
 
 /**
- * «Savdo» (spec «E»): is the funnel being worked, are we winning this month,
- * and how much open deal money is in hand. The funnel keeps the OWNER's stage
- * colours (the board's identity vocabulary, `stageClass`), and the win rate is
- * by the decision clock — the tahlil screen's own numbers (#513).
+ * «Savdo voronkasi»: where the open work sits NOW, stage by stage, in the
+ * owner's own stage colours (`stageClass`, the board's identity vocabulary) —
+ * and, for whoever decides the sales outcome, what the chosen period brought.
+ *
+ * No stage-to-stage percentage (judge, canvas row «84 · 70%»): the stage
+ * counts are a snapshot of open work, and nothing records how many leads
+ * passed through each stage, so a ratio of two snapshots would be a number
+ * nobody can check. The period line is the tahlil screen's own two functions
+ * (`leadArrivals`/`leadDecisions`), and it links there over the same days.
+ *
+ * The money half — the won dollars, the open deals' sum — stays inside the
+ * outcome gate (judge O7): the logist holds `crm.leads` and reads the bars,
+ * never the money.
  */
-export async function SalesSection({ ownerId, seesOutcome }: { ownerId: string; seesOutcome: boolean }) {
+export async function FunnelCard({
+  ownerId,
+  seesOutcome,
+  period,
+  company,
+}: {
+  ownerId: string;
+  seesOutcome: boolean;
+  period: DashPeriod;
+  /** A warehouse is chosen: sales have no warehouse, and the card says so. */
+  company: boolean;
+}) {
   const t = await getTranslations('dashboard');
   const tcrm = await getTranslations('crm');
-  const w = loadWindows();
-  const [sales, decided, deals] = await Promise.all([
+  const [sales, flow, deals] = await Promise.all([
     loadSales(ownerId),
-    seesOutcome ? loadDecided() : null,
+    seesOutcome ? loadLeadFlow(period.from, period.to) : null,
     seesOutcome ? loadOpenDeals() : null,
   ]);
   const max = Math.max(1, ...sales.byStage.map((row) => row.n));
-  const month = decided?.find((row) => row.month === w.month);
-  const decidedN = (month?.won ?? 0) + (month?.lost ?? 0);
-  const winRate = decidedN > 0 ? ((month?.won ?? 0) / decidedN) * 100 : null;
+  const decided = flow ? flow.won + flow.lost : 0;
+  const rate = flow && decided > 0 ? (flow.won / decided) * 100 : null;
+  const PERIOD: Record<DashPeriodKey, string> = {
+    bugun: t('period.bugun'),
+    '7': t('period.d7'),
+    '30': t('period.d30'),
+    oy: t('period.oy'),
+    otgan: t('period.otgan'),
+  };
 
   return (
-    <section data-testid="section-salesTitle" className="space-y-3">
-      <p className="section-title">🤝 {t('salesTitle')}</p>
-      <div className="grid gap-3 lg:grid-cols-2">
-        <div className="card min-w-0 space-y-2.5" data-testid="dash-funnel">
-          <div className="grid grid-cols-3 gap-2 text-center">
-            <div>
-              <p className="font-mono text-2xl font-extrabold tabular-nums text-brand-700">{sales.open}</p>
-              <p className="text-xs text-ink-500">{tcrm('leads')}</p>
-            </div>
-            <div>
-              <p className="font-mono text-2xl font-extrabold tabular-nums text-good">{sales.wonMonth}</p>
-              <p className="text-xs text-ink-500">{t('wonThisMonth')}</p>
-            </div>
-            <Link href="/crm/today">
-              <p
-                className={`font-mono text-2xl font-extrabold tabular-nums ${sales.dueToday ? 'text-warn' : 'text-ink-400'}`}
-              >
-                {sales.dueToday}
-              </p>
-              <p className="text-xs text-ink-500">{tcrm('today')}</p>
-            </Link>
-          </div>
-          {/* One bar per open stage, widths in proportion, so a pile-up is
-              visible without reading numbers. */}
-          <div className="space-y-1">
-            {sales.byStage.map((stage) => (
-              <div key={stage.name} className="flex items-center gap-2">
-                <span className="w-28 shrink-0 truncate text-xs font-semibold">{stage.name}</span>
-                <div className="h-4 min-w-0 flex-1 overflow-hidden rounded bg-surface-sunken">
-                  <div
-                    className={`h-full rounded ${stageClass(stage.color)}`}
-                    style={{ width: `${Math.max(stage.n > 0 ? 6 : 0, (stage.n / max) * 100)}%` }}
-                  />
-                </div>
-                <span className="w-8 shrink-0 text-right font-mono text-xs font-bold tabular-nums">{stage.n}</span>
-              </div>
-            ))}
-          </div>
-          <Link href="/crm" className="text-sm font-semibold text-brand-700">
-            {tcrm('funnel')} →
+    <div className="card min-w-0 space-y-2.5" data-testid="dash-funnel">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <p className="font-semibold">{t('funnelTitle')}</p>
+        <ScopeTag label={company ? t('scope.company') : t('scope.now')} />
+        <Link href="/crm" className="ml-auto shrink-0 text-xs font-semibold text-brand-700">
+          {tcrm('funnel')} →
+        </Link>
+      </div>
+      <p className="text-2xs text-ink-500">{t('funnelNow')}</p>
+      <ul className="space-y-1.5">
+        {sales.byStage.map((stage) => (
+          <li key={stage.name}>
+            <MeterRow
+              label={<span className="font-semibold">{stage.name}</span>}
+              value={<span className="font-mono font-bold tabular-nums">{stage.n}</span>}
+              pct={(stage.n / max) * 100}
+              barClass={stageClass(stage.color)}
+            />
+          </li>
+        ))}
+      </ul>
+      <Link href="/crm/today" className="block text-xs text-ink-700 hover:underline">
+        <span className={sales.dueToday ? 'font-semibold text-warn' : ''}>
+          {t('funnelOpen', { n: num(sales.open), calls: sales.dueToday })}
+        </span>
+      </Link>
+
+      {seesOutcome && flow && deals && (
+        <div className="space-y-1.5 border-t border-line pt-2" data-testid="dash-funnel-flow">
+          <Link
+            href={`/crm/tahlil?dan=${period.from}&gacha=${period.to}`}
+            className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs hover:underline"
+          >
+            <ScopeTag label={PERIOD[period.key]} />
+            <span>{t('funnelFlow', { fresh: num(flow.fresh), won: num(flow.won), lost: num(flow.lost) })}</span>
+            {rate !== null && <span className="font-semibold">· {t('funnelRate', { rate: pct(rate) })}</span>}
+            <span className="font-mono tabular-nums">· {compactUsd(flow.wonUsd)}</span>
+            {flow.wonOther > 0 && <span className="text-ink-500">· {t('otherCurrency', { n: flow.wonOther })}</span>}
+          </Link>
+          <Link href="/bitimlar" className="flex flex-wrap gap-x-1 text-xs hover:underline">
+            <span className="font-semibold">{t('openDeals', { n: num(deals.count) })}</span>
+            <span className="font-mono tabular-nums"> · {compactUsd(deals.usdSum)}</span>
+            {deals.otherCurrency > 0 && (
+              <span className="text-ink-500"> · {t('otherCurrency', { n: deals.otherCurrency })}</span>
+            )}
           </Link>
         </div>
-
-        {seesOutcome && deals && (
-          <div className="card min-w-0 space-y-2" data-testid="dash-winrate">
-            <Link
-              href={`/crm/tahlil?dan=${w.monthStart}&gacha=${w.today}`}
-              className="flex items-baseline justify-between gap-2"
-            >
-              <p className="font-semibold">{t('winRateTitle')}</p>
-              <span className="font-mono text-xl font-bold tabular-nums">{winRate === null ? '—' : pct(winRate)}</span>
-            </Link>
-            <div className="h-2 overflow-hidden rounded-full bg-surface-sunken">
-              <div className={`h-full rounded-full ${SERIES_BG.in}`} style={{ width: `${winRate ?? 0}%` }} />
-            </div>
-            <p className="flex flex-wrap gap-x-1 text-xs text-ink-700">
-              <span>
-                {month?.won ?? 0} ✓ · {month?.lost ?? 0} ✗
-              </span>
-              <span className="font-mono tabular-nums"> · {compactUsd(month?.wonUsd ?? 0)}</span>
-              {(month?.wonOtherCurrency ?? 0) > 0 && (
-                <span className="text-ink-500"> · {t('otherCurrency', { n: month?.wonOtherCurrency ?? 0 })}</span>
-              )}
-            </p>
-            <Link href="/bitimlar" className="flex flex-wrap gap-x-1 border-t border-line pt-2 text-xs">
-              <span className="font-semibold">{t('openDeals', { n: num(deals.count) })}</span>
-              <span className="font-mono tabular-nums"> · {compactUsd(deals.usdSum)}</span>
-              {deals.otherCurrency > 0 && (
-                <span className="text-ink-500"> · {t('otherCurrency', { n: deals.otherCurrency })}</span>
-              )}
-            </Link>
-          </div>
-        )}
-      </div>
-    </section>
+      )}
+    </div>
   );
 }

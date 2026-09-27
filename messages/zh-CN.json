@@ -107,7 +107,7 @@
     "birthdays": "今天生日——记得祝贺"
   },
   "dashboard": {
-    "title": "仪表盘",
+    "title": "业务概况",
     "toReports": "报表",
     "fill": "仓库占用率（60% 黄 / 80% 红）",
     "fillShipHint": "仓库快满了 — 该发货了！",
@@ -215,14 +215,14 @@
     "stageUz": "在乌兹别克斯坦仓库",
     "table": "表格",
     "tileCash": "现金账户",
-    "tileIntake": "本月收货",
+    "tileIntake": "收货",
     "tileIntakeSub": "{receipts}张入库单 · {boxes} 📦",
     "tileMonthFlow": "本月：+{in} / −{out}",
     "tileNet": "净头寸 {amount}",
     "tileProfit": "本月净利润",
     "tileReceivable": "客户欠款",
     "tileReceivableSub": "{n}位客户 · 60天以上：",
-    "tileRevenue": "本月收入",
+    "tileRevenue": "收入",
     "tileStock": "仓库货物",
     "tileStockBoxes": "{boxes} 📦",
     "tileStockSub": "{boxes} 📦 · 在途{trucks}辆",
@@ -295,7 +295,91 @@
     "sFxGain": "汇兑收益",
     "sFxLoss": "汇兑损失",
     "sCargoUnrated": "货物费用（无汇率）",
-    "pnlFxNote": "费用柱包含汇兑差额（收益减少、损失增加）。"
+    "pnlFxNote": "费用柱包含汇兑差额（收益减少、损失增加）。",
+    "clickHint": "每个数字都可打开对应报表",
+    "period": {
+      "label": "期间",
+      "bugun": "今天",
+      "d7": "7天",
+      "d30": "30天",
+      "oy": "本月",
+      "otgan": "上月"
+    },
+    "ombor": {
+      "label": "仓库",
+      "all": "全部仓库",
+      "apply": "显示"
+    },
+    "scope": {
+      "now": "当前",
+      "company": "全公司",
+      "m12": "12个月",
+      "w12": "12周",
+      "d30": "30天"
+    },
+    "hero": {
+      "bugun": "今日利润",
+      "d7": "7天利润",
+      "d30": "30天利润",
+      "oy": "本月利润",
+      "otgan": "上月利润"
+    },
+    "heroNoteDay": "单日利润波动大：货物价格与费用在不同日期录入。",
+    "vsRange": "对比 {from} – {to}",
+    "heroLine": "近12个月净利润",
+    "heroLineAria": "近12个月净利润，最近一个月 {last}",
+    "planNeed": "本月还剩{days}天 · 每天需{usd}",
+    "planDone": "月度计划已完成",
+    "tileCost": "支出",
+    "tileCostParts": "直接 {direct} · 间接 {opex}",
+    "tileCostFx": "汇兑差额 {fx}",
+    "tileTills": "{n, plural, other {#个现金账户}}",
+    "tilePeriodFlow": "期间：+{in} / −{out}",
+    "tileOld90": "超过90天：{usd}",
+    "tileTransit": "在途车辆",
+    "weeksTitle": "每周现金流",
+    "weeksLast": "上周（{week}）：流入{in}，流出{out}，净额{net}",
+    "weeksNote": "描边的柱为本周，尚未结束。",
+    "weekOf": "{day}当周",
+    "daysTitle": "每日收货量（m³）",
+    "daysSummary": "已结束的{days}天共{m3} m³ · 日均{avg} m³",
+    "daysToday": "今天（截至目前）：{m3} m³",
+    "daysShare": "最多：{list}",
+    "sReceipts": "入库单",
+    "sBoxes": "箱",
+    "trucksTitle": "在途车辆",
+    "toMap": "地图",
+    "truckKind": {
+      "stuck": "到达未卸货",
+      "unloading": "卸货中"
+    },
+    "truckStage": {
+      "cn_transit": "中国境内运输中",
+      "export_transit": "出口运输中",
+      "in_uz": "已入境乌兹别克斯坦",
+      "customs_done": "清关完成"
+    },
+    "truckEta": "预计 {from} – {to}",
+    "truckEstimate": "按时刻表估算",
+    "truckNoRoute": "无路线时刻表",
+    "truckGate": "未卸货：{n}箱",
+    "truckDeparted": "已发出：{n}箱",
+    "truckPin": "标记于{n, plural, =0 {今天} other {#天前}}",
+    "truckLoading": "装货中：{n}辆",
+    "truckMore": "还有{n}辆 — 全部",
+    "funnelTitle": "销售漏斗",
+    "funnelNow": "当前进行中（按阶段）",
+    "funnelOpen": "{n}条进行中线索 · 今天{calls}个电话",
+    "funnelFlow": "新{fresh} · 成交{won} · 流失{lost}",
+    "funnelRate": "成交率{rate}",
+    "level": {
+      "bad": "紧急",
+      "warn": "注意",
+      "info": "提示"
+    },
+    "detailsTitle": "详情",
+    "agingFuture": "另有{count}笔记录日期在今天之后（{usd}）——计入欠款总额，但不在账龄中。",
+    "vsDay": "对比 {day}"
   },
   "inventory": {
     "title": "盘点",
@@ -425,7 +509,10 @@
     "riskEmpty": "无",
     "riskCost": "运输此箱已花费（成本）",
     "journalTotals": "已确认：{receipts}张入库单 · {boxes} 📦",
-    "journalCapped": "列表仅显示最新{n}条——上方合计为整个期间。"
+    "journalCapped": "列表仅显示最新{n}条——上方合计为整个期间。",
+    "journalWarehouse": "仓库",
+    "journalAllWarehouses": "全部仓库",
+    "journalShow": "显示"
   },
   "warehouses": {
     "title": "仓库",

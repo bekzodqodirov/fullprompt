@@ -9,12 +9,16 @@ import {
 import {
   loadAging,
   loadBalance,
+  loadBalanceParts,
   loadCashByMonth,
+  loadCashWeeks,
+  loadFutureDated,
   loadPnl12,
   loadTrips,
   loadUnbilled,
   loadWindows,
 } from '@/modules/wms/reports/dashboard';
+import type { CompanyMoneySight } from '@/modules/wms/finance/scope';
 import {
   cashMonthParts,
   daysSince,
@@ -24,13 +28,15 @@ import {
   tripTotals,
 } from '@/modules/wms/reports/dashboard-math';
 import { ColumnPairs } from '@/components/charts/column-pairs';
+import { MirrorColumns } from '@/components/charts/mirror-columns';
+import { ScopeTag } from '@/components/charts/scope-tag';
 import { DivergingRows } from '@/components/charts/diverging-rows';
 import { DivergingBars } from '@/components/charts/diverging-bars';
 import { StackBar } from '@/components/charts/stack-bar';
 import { Legend, SERIES_BG } from '@/components/charts/legend';
 import { TableTwin } from '@/components/charts/table-twin';
 import { tipText } from '@/components/charts/tip-text';
-import { monthLabel, monthNames } from '@/components/charts/month-names';
+import { dayLabel, monthLabel, monthNames } from '@/components/charts/month-names';
 import { compactUsd, m3, num, pct, signedUsd, usd } from '@/components/charts/format';
 import { marginPct } from '@/modules/wms/accounting/margin';
 
@@ -50,6 +56,7 @@ export async function MoneySection({
   canExpenses,
   canUnpricedList,
 }: {
+  sight: CompanyMoneySight;
   scopeKey: string;
   canExpenses: boolean;
   /** The accountant's full list opens for this viewer (/finance's door). */
@@ -105,28 +112,10 @@ export async function MoneySection({
       [`${signedUsd(net[i] ?? 0)}${margin(i) === null ? '' : ` · ${pct(margin(i)!)}`}`, t('sNet')],
     ]),
   );
-  // One label per cash line (0103: the kurs farqi and unrated rows joined) —
-  // a literal map (#163); a zero line the month never had is left out.
-  const CASH_TIP: Record<string, string> = {
-    clientPayments: t('sClientPayments'),
-    partnerIn: t('sPartnerIn'),
-    fxGain: t('sFxGain'),
-    cargoCosts: t('sCargoCosts'),
-    cargoUnrated: t('sCargoUnrated'),
-    fxLoss: t('sFxLoss'),
-    partnerOut: t('sPartnerOut'),
-    clientRefunds: t('sRefunds'),
-    cashOpex: t('sCashOpex'),
-  };
-  const ALWAYS = new Set(['clientPayments', 'partnerIn', 'cargoCosts', 'partnerOut', 'clientRefunds', 'cashOpex']);
+  const CASH_TIP = await cashTipLabels();
   const cashTips = months.map((_, i) => {
     const cashParts = cashMonthParts(cashRows[i]);
-    return tipText(heading(i), [
-      ...cashParts.lines
-        .filter((line) => ALWAYS.has(line.key) || Math.abs(line.value) > 0.004)
-        .map((line) => [usd(Math.abs(line.value)), CASH_TIP[line.key] ?? line.key] as [string, string]),
-      [signedUsd(cashParts.net), t('sCashNet')],
-    ]);
+    return tipText(heading(i), cashTipRows(cashParts, CASH_TIP, t('sCashNet')));
   });
   const range = `from=${w.m12Start}&to=${w.today}`;
 
@@ -163,12 +152,8 @@ export async function MoneySection({
   const negative = tills.filter((row) => row.balance < 0);
   const tillMax = Math.max(1, ...shown.map((row) => row.balanceUsd ?? 0));
 
-  // ── C4: receivables by age ───────────────────────────────────────────────
-  const agingSum = agingTotals(aging);
-  const ageKeys = ['days0', 'days30', 'days60', 'days90'] as const;
-  const ageSeries = ['ord1', 'ord2', 'ord3', 'ord4'] as const;
+  // ── C4: the biggest debtors (the aging itself is AgingCard) ─────────────
   const debtorMax = Math.max(1, ...aging.slice(0, 5).map((row) => row.balance));
-  const agingDiffers = Math.abs(agingSum.balance - balance.receivableUsd) > 0.01;
 
   // ── C5: trucks ───────────────────────────────────────────────────────────
   // «Partiya foydasi»'s set (0107): the trucks a person marked. The
@@ -415,45 +400,15 @@ export async function MoneySection({
           </details>
         </div>
 
-        {/* C4 — how old the debt is. */}
-        <div className="card min-w-0 space-y-2" data-testid="dash-aging">
+        {/* The biggest debtors — the aging figure itself is a card at the
+            top (AgingCard); this is the list behind it. */}
+        <div className="card min-w-0 space-y-2" data-testid="dash-debtors">
           <div className="flex items-baseline justify-between gap-2">
-            <p className="font-semibold">{t('agingTitle')}</p>
+            <p className="font-semibold">{t('topDebtors')}</p>
             <Link href="/accounting/receivables" className="shrink-0 text-xs font-semibold text-brand-700">
               {ta('receivables')} →
             </Link>
           </div>
-          <p>
-            <span className="font-mono text-xl font-bold tabular-nums">{usd(balance.receivableUsd)}</span>{' '}
-            <span className="text-xs text-ink-500">{t('debtors', { n: aging.length })}</span>
-          </p>
-          <StackBar
-            testid="dash-aging-bar"
-            parts={agingSum.buckets.map((value, i) => ({
-              key: ageSeries[i] ?? 'ord4',
-              value,
-              tip: tipText(ta(ageKeys[i] ?? 'days90'), [[usd(value), '']]),
-            }))}
-          />
-          <ul className="grid grid-cols-1 gap-x-3 gap-y-1 text-2xs sm:grid-cols-2">
-            {agingSum.buckets.map((value, i) => (
-              <li key={i} className="flex items-center gap-1.5">
-                <span aria-hidden className={`h-2.5 w-2.5 shrink-0 rounded-sm ${SERIES_BG[ageSeries[i] ?? 'ord4']}`} />
-                <span className="min-w-0 flex-1 truncate text-ink-500">{ta(ageKeys[i] ?? 'days90')}</span>
-                <span
-                  className={`whitespace-nowrap font-mono tabular-nums ${
-                    i === 3 && value > 0.5 ? 'font-semibold text-bad' : i === 2 && value > 0.5 ? 'text-warn' : ''
-                  }`}
-                >
-                  {compactUsd(value)}
-                  {agingSum.balance > 0 && (
-                    <span className="text-ink-500"> · {pct((value / agingSum.balance) * 100)}</span>
-                  )}
-                </span>
-              </li>
-            ))}
-          </ul>
-          <p className="pt-1 text-xs font-semibold text-ink-700">{t('topDebtors')}</p>
           <ul className="space-y-1.5">
             {aging.slice(0, 5).map((row) => {
               const oldest = row.buckets[3]! > 0.009 ? 3 : row.buckets[2]! > 0.009 ? 2 : -1;
@@ -479,7 +434,6 @@ export async function MoneySection({
             })}
             {aging.length === 0 && <li className="text-xs text-ink-500">{t('noDebt')}</li>}
           </ul>
-          {agingDiffers && <p className="text-2xs text-warn">⚠ {t('agingDiffers')}</p>}
         </div>
       </div>
 
@@ -591,6 +545,196 @@ export async function MoneySection({
         )}
       </div>
     </section>
+  );
+}
+
+/**
+ * One label per cash line (0103: the kurs farqi and unrated rows joined) — a
+ * literal map (#163), shared by the monthly and the weekly chart so a week's
+ * tooltip and a month's say the same lines in the same words.
+ */
+async function cashTipLabels(): Promise<Record<string, string>> {
+  const t = await getTranslations('dashboard');
+  return {
+    clientPayments: t('sClientPayments'),
+    partnerIn: t('sPartnerIn'),
+    fxGain: t('sFxGain'),
+    cargoCosts: t('sCargoCosts'),
+    cargoUnrated: t('sCargoUnrated'),
+    fxLoss: t('sFxLoss'),
+    partnerOut: t('sPartnerOut'),
+    clientRefunds: t('sRefunds'),
+    cashOpex: t('sCashOpex'),
+  };
+}
+
+/** A zero line the period never had is left out; the everyday lines always print. */
+const ALWAYS = new Set(['clientPayments', 'partnerIn', 'cargoCosts', 'partnerOut', 'clientRefunds', 'cashOpex']);
+
+function cashTipRows(
+  parts: ReturnType<typeof cashMonthParts>,
+  labels: Record<string, string>,
+  netLabel: string,
+): [string, string][] {
+  return [
+    ...parts.lines
+      .filter((line) => ALWAYS.has(line.key) || Math.abs(line.value) > 0.004)
+      .map((line) => [usd(Math.abs(line.value)), labels[line.key] ?? line.key] as [string, string]),
+    [signedUsd(parts.net), netLabel],
+  ];
+}
+
+/**
+ * «Pul oqimi — haftalar bo'yicha» (the canvas's second row): twelve Monday
+ * weeks of money in against money out, from the cash flow's own core
+ * (`cashFlowByWeek`), so a week's bar and the cash-flow page over that week
+ * are one computation (#513). Out is drawn DOWN in the out colour — orange,
+ * never red, which on this page means «act now». The current week is
+ * OUTLINED, not filled: it is not over, and a partial week drawn like a whole
+ * one reads as a bad week. The sentence names the last COMPLETE week.
+ */
+export async function CashWeeksCard({ company }: { sight: CompanyMoneySight; company: boolean }) {
+  const t = await getTranslations('dashboard');
+  const names = await monthNames();
+  const w = loadWindows();
+  const [weeks, labels] = await Promise.all([loadCashWeeks(), cashTipLabels()]);
+  const keys = [...weeks.keys()];
+  const rows = keys.map((key) => weeks.get(key));
+  const inflow = rows.map((row) => row?.inflow ?? 0);
+  const outflow = rows.map((row) => row?.outflow ?? 0);
+  const net = rows.map((row) => row?.net ?? 0);
+  const last = keys.length - 1;
+  const done = last - 1;
+  // A floor of $100 keeps an empty or cents-only chart from printing «$1» on
+  // every gridline (compact dollars round a quarter-dollar tick away).
+  const { ticks, top } = niceTicks(Math.max(100, ...inflow, ...outflow));
+  const heading = (i: number) => t('weekOf', { day: dayLabel(names, keys[i] ?? '') });
+  const tips = keys.map((_, i) => tipText(heading(i), cashTipRows(cashMonthParts(rows[i]), labels, t('sCashNet'))));
+  const labelled = new Set(keys.map((_, i) => i).filter((i) => (last - i) % 3 === 0));
+
+  return (
+    <div className="card min-w-0 space-y-2" data-testid="dash-cash-weeks">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <p className="font-semibold">{t('weeksTitle')}</p>
+        <ScopeTag label={t('scope.w12')} />
+        {company && <ScopeTag label={t('scope.company')} />}
+        <Link
+          href={`/accounting/cashflow?from=${w.w12Start}&to=${w.today}`}
+          className="ml-auto shrink-0 text-xs font-semibold text-brand-700"
+        >
+          {t('cashLink')} →
+        </Link>
+      </div>
+      <Legend
+        items={[
+          { key: 'in', label: t('sInflow') },
+          { key: 'out', label: t('sOutflow') },
+        ]}
+      />
+      <MirrorColumns
+        bands={keys.map((key, i) => ({ key, label: dayLabel(names, key), partial: i === last }))}
+        inflow={inflow}
+        outflow={outflow}
+        top={top}
+        ticks={ticks}
+        tips={tips}
+        labelled={labelled}
+        netLabel={done >= 0 ? { index: done, text: `${(net[done] ?? 0) > 0 ? '+' : ''}${compactUsd(net[done] ?? 0)}` } : undefined}
+        testid="dash-cash-weeks-chart"
+      />
+      {done >= 0 && (
+        <p className="text-xs text-ink-700" data-testid="dash-cash-weeks-last">
+          {t('weeksLast', {
+            week: dayLabel(names, keys[done] ?? ''),
+            in: usd(inflow[done] ?? 0),
+            out: usd(outflow[done] ?? 0),
+            net: signedUsd(net[done] ?? 0),
+          })}
+        </p>
+      )}
+      <p className="text-2xs text-ink-500">{t('weeksNote')}</p>
+      <TableTwin
+        summary={t('table')}
+        testid="dash-cash-weeks-table"
+        head={['', t('sInflow'), t('sOutflow'), t('sCashNet')]}
+        rows={keys.map((_, i) => [
+          heading(i),
+          usd(inflow[i] ?? 0),
+          usd(outflow[i] ?? 0),
+          <span key="n" className={(net[i] ?? 0) < 0 ? 'text-bad' : ''}>
+            {signedUsd(net[i] ?? 0)}
+          </span>,
+        ])}
+      />
+    </div>
+  );
+}
+
+/**
+ * «Mijozlar qarzi — yoshi bo'yicha»: the receivable's four ages. The header is
+ * the sum of ITS OWN buckets (judge O8): the ledger accepts a row dated
+ * tomorrow, which the Balans's receivable counts and an aging «as of today»
+ * cannot place — so the difference is named in a sentence, the receivables
+ * page's own (`futureDatedEntries`), rather than printed as one figure twice
+ * that disagrees with its own bar.
+ */
+export async function AgingCard({ company }: { sight: CompanyMoneySight; company: boolean }) {
+  const t = await getTranslations('dashboard');
+  const ta = await getTranslations('accounting');
+  const [aging, balance, future] = await Promise.all([loadAging(), loadBalanceParts(), loadFutureDated()]);
+  const sum = agingTotals(aging);
+  const ageKeys = ['days0', 'days30', 'days60', 'days90'] as const;
+  const ageSeries = ['ord1', 'ord2', 'ord3', 'ord4'] as const;
+  // With nothing dated ahead, the two figures must agree to the cent; a gap
+  // left over is a rule the two reports stopped sharing.
+  const differs = future.count === 0 && Math.abs(sum.balance - balance.receivableUsd) > 0.01;
+
+  return (
+    <div className="card min-w-0 space-y-2" data-testid="dash-aging">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <p className="font-semibold">{t('agingTitle')}</p>
+        <ScopeTag label={company ? t('scope.company') : t('scope.now')} />
+        <Link href="/accounting/receivables" className="ml-auto shrink-0 text-xs font-semibold text-brand-700">
+          {ta('receivables')} →
+        </Link>
+      </div>
+      <p>
+        <span className="font-mono text-xl font-bold tabular-nums" data-value={usd(sum.balance)} data-testid="dash-aging-total">
+          {usd(sum.balance)}
+        </span>{' '}
+        <span className="text-xs text-ink-500">{t('debtors', { n: aging.length })}</span>
+      </p>
+      <StackBar
+        testid="dash-aging-bar"
+        parts={sum.buckets.map((value, i) => ({
+          key: ageSeries[i] ?? 'ord4',
+          value,
+          tip: tipText(ta(ageKeys[i] ?? 'days90'), [[usd(value), '']]),
+        }))}
+      />
+      <ul className="grid grid-cols-1 gap-x-3 gap-y-1 text-2xs sm:grid-cols-2">
+        {sum.buckets.map((value, i) => (
+          <li key={i} className="flex items-center gap-1.5">
+            <span aria-hidden className={`h-2.5 w-2.5 shrink-0 rounded-sm ${SERIES_BG[ageSeries[i] ?? 'ord4']}`} />
+            <span className="min-w-0 flex-1 truncate text-ink-500">{ta(ageKeys[i] ?? 'days90')}</span>
+            <span
+              className={`whitespace-nowrap font-mono tabular-nums ${
+                i === 3 && value > 0.5 ? 'font-semibold text-bad' : i === 2 && value > 0.5 ? 'text-warn' : ''
+              }`}
+            >
+              {compactUsd(value)}
+              {sum.balance > 0 && <span className="text-ink-500"> · {pct((value / sum.balance) * 100)}</span>}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {future.count > 0 && (
+        <p className="text-2xs text-warn" data-testid="dash-aging-future">
+          ⚠ {t('agingFuture', { count: future.count, usd: usd(future.usd) })}
+        </p>
+      )}
+      {differs && <p className="text-2xs text-warn">⚠ {t('agingDiffers')}</p>}
+    </div>
   );
 }
 

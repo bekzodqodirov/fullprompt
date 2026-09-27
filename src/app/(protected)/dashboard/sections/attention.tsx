@@ -8,8 +8,8 @@ import {
   loadCostMissing,
   loadGaps,
   loadRisk,
-  loadTransit,
   loadTrips,
+  loadTrucks,
   loadUnbatched,
   loadUnbilled,
   loadUnclaimed,
@@ -17,12 +17,12 @@ import {
 } from '@/modules/wms/reports/dashboard';
 import {
   approvalCounts,
-  daysSince,
   rankAttention,
   tripKind,
   type AttentionItem,
+  type AttentionLevel,
 } from '@/modules/wms/reports/dashboard-math';
-import { AttentionList, type AttentionRow } from '@/components/charts/attention-list';
+import { AttentionCards, AttentionList, type AttentionRow } from '@/components/charts/attention-list';
 import { m3, num, usd } from '@/components/charts/format';
 
 type Kind =
@@ -78,7 +78,7 @@ export async function AttentionSection({
   const canApprove = perms.has('finance.debt_override');
   const canCalc = perms.has('ved.docs');
 
-  const [balance, aging, trips, gaps, unbilled, risk, transit, unclaimed, costMissing, tasks, approvals, calc] =
+  const [balance, aging, trips, gaps, unbilled, risk, trucks, unclaimed, costMissing, tasks, approvals, calc] =
     await Promise.all([
       // The cash half only — the list prints no net, so it does not wait
       // for the Balans line's company-wide read (U03).
@@ -88,7 +88,7 @@ export async function AttentionSection({
       money ? loadGaps() : null,
       money ? loadUnbilled(scopeKey) : null,
       cargo ? loadRisk(scopeKey) : null,
-      cargo ? loadTransit(scopeKey) : null,
+      cargo ? loadTrucks(scopeKey) : null,
       loadUnclaimed(scopeKey),
       seesCostMissing ? loadCostMissing(scopeKey) : null,
       allWh ? taskPulse(new Date()) : null,
@@ -138,10 +138,11 @@ export async function AttentionSection({
       href: '/reports/yuk-xavfi#undocumented',
     });
   }
-  if (transit) {
-    // The transit card's own chip rule: standing at the gate 2+ days.
-    const stuck = transit.filter((row) => row.status === 'arrived' && daysSince(row.arrivedAt, w.today) >= 2);
-    push({ kind: 'stuck', level: 'warn', count: stuck.length, text: t('att.stuck', { n: stuck.length }), href: '/transit' });
+  if (trucks) {
+    // The trucks card's own ranking (`STUCK_AT_GATE_DAYS`): the row and the
+    // card cannot count a truck standing at the gate differently.
+    const stuck = trucks.counts.stuck;
+    push({ kind: 'stuck', level: 'warn', count: stuck, text: t('att.stuck', { n: stuck }), href: '/transit' });
   }
   if (balance) {
     // The Balans's own list (U14): one predicate for both screens.
@@ -328,16 +329,23 @@ export async function AttentionSection({
     push({ kind: 'calcLate', level: 'warn', count: calc.late, text: t('att.calcLate', { n: calc.late }), href: '/hisoblash' });
   }
 
-  const ranked = rankAttention(items, 7);
+  // Every live row is ranked; the first four become cards at the top of the
+  // page (the canvas), the rest wait one tap away under them.
+  const ranked = rankAttention(items, CARDS);
   const toRow = (item: (typeof items)[number]): AttentionRow => ({
     kind: item.kind,
     level: item.level,
     text: item.text,
     href: item.href,
   });
+  const LEVEL: Record<AttentionLevel, string> = {
+    bad: t('level.bad'),
+    warn: t('level.warn'),
+    info: t('level.info'),
+  };
 
   return (
-    <section id="diqqat" data-testid="section-attention" className="space-y-2">
+    <section id="diqqat" data-testid="section-attention" className="scroll-mt-20 space-y-2">
       <div className="flex items-baseline gap-2">
         <p className="section-title">⚠️ {t('attentionTitle')}</p>
         {ranked.visibleCount > 0 && (
@@ -346,14 +354,25 @@ export async function AttentionSection({
           </span>
         )}
       </div>
-      <div className="card">
-        <AttentionList
-          visible={ranked.visible.map(toRow)}
-          hidden={ranked.hidden.map(toRow)}
-          moreLabel={t('moreRows', { n: ranked.hidden.length })}
-          emptyLabel={t('allClear')}
-        />
-      </div>
+      <AttentionCards
+        rows={ranked.visible.map(toRow)}
+        levelLabel={LEVEL}
+        emptyLabel={t('allClear')}
+        testid="dash-alerts"
+      />
+      {ranked.hidden.length > 0 && (
+        <details className="card" data-testid="dash-alerts-more">
+          <summary className="cursor-pointer text-xs font-semibold text-brand-700">
+            {t('moreRows', { n: ranked.hidden.length })}
+          </summary>
+          <div className="mt-2">
+            <AttentionList visible={ranked.hidden.map(toRow)} hidden={[]} moreLabel="" emptyLabel={t('allClear')} />
+          </div>
+        </details>
+      )}
     </section>
   );
 }
+
+/** How many rows are cards; the canvas has four across at desktop width. */
+const CARDS = 4;

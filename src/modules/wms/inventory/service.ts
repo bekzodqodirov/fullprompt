@@ -60,21 +60,25 @@ export async function stockWarehouseOptions(selected?: string): Promise<StockWar
   return db
     .select({ id: warehouses.id, code: warehouses.code, active: warehouses.active })
     .from(warehouses)
-    .where(
-      or(
-        eq(warehouses.active, true),
-        // `${warehouses}.id` is #128's spelling: qualified in every place
-        // drizzle can render it, so it can never bind to the box's own id.
-        sql`EXISTS (SELECT 1 FROM ${boxes} b
-                     WHERE b.current_warehouse_id = ${warehouses}.id
-                       AND b.status IN (${sql.join(
-                         SHELF_STATUSES.map((status) => sql`${status}`),
-                         sql`, `,
-                       )}))`,
-        keepSelected ? eq(warehouses.id, keepSelected) : undefined,
-      ),
-    )
+    .where(or(listedWarehouseSql(), keepSelected ? eq(warehouses.id, keepSelected) : undefined))
     .orderBy(asc(warehouses.code));
+}
+
+/**
+ * The picker rule above as a fragment over `warehouses`, so every warehouse
+ * picker offers the same list (#513) — this one and the reports' «Ombor»
+ * select (`reports/report-scope.ts`): active, or a deactivated one that still
+ * has cargo standing in it.
+ */
+export function listedWarehouseSql() {
+  // `${warehouses}.id` is #128's spelling: qualified in every place drizzle
+  // can render it, so it can never bind to the box's own id.
+  return sql`(${warehouses}.active = true OR EXISTS (SELECT 1 FROM ${boxes} b
+               WHERE b.current_warehouse_id = ${warehouses}.id
+                 AND b.status IN (${sql.join(
+                   SHELF_STATUSES.map((status) => sql`${status}`),
+                   sql`, `,
+                 )})))`;
 }
 
 /**

@@ -32,6 +32,7 @@ const MONEY_READERS = [
   'profitAndLoss',
   'cashFlow',
   'cashFlowByMonth',
+  'cashFlowByWeek',
   'cashFlowCore',
   'companyBalance',
   // U03: the cash half (the admin home, the attention list, the hero tile)
@@ -56,6 +57,7 @@ const MONEY_READERS = [
   'loadGaps',
   'cashReconciliation',
   'pnlMonthParts',
+  'pnlParts',
   'cashMonthParts',
   'lossesInPeriod',
   'buildPnlXlsx',
@@ -65,6 +67,16 @@ const MONEY_READERS = [
   'batchScopeCostByType',
   'batchCostSheet',
   'costEntriesFor',
+  // Round B (judge O6): the dashboard's new money loaders and the readers
+  // behind them — every one was outside the list, so a card built on them
+  // escaped the fence the day it was written.
+  'loadBalanceParts',
+  'loadPnl12',
+  'loadPnlRange',
+  'loadCashRange',
+  'loadCashWeeks',
+  'loadCashByMonth',
+  'loadTargetFor',
 ];
 
 /** A predicate that keeps the VED out of a money read. */
@@ -96,9 +108,9 @@ const ALLOWED: Record<string, { why: string; renderedBy: string; gate: RegExp }>
     gate: /const money = seesCompanyMoney\(actor\) && analyst;/,
   },
   'src/app/(protected)/dashboard/sections/money.tsx': {
-    why: 'mounted only under the page’s `money` flag',
+    why: 'mounted only under the page’s `money` flag, and every card in it takes the CompanyMoneySight token',
     renderedBy: 'src/app/(protected)/dashboard/page.tsx',
-    gate: /\{money && \(\s*<Suspense[\s\S]{0,120}?<MoneySection/,
+    gate: /\{money && sight && \(\s*<Suspense[\s\S]{0,120}?<MoneySection/,
   },
 };
 
@@ -157,5 +169,32 @@ describe('every money reader under src/app keeps the VED out', () => {
       const importer = stripComments(readFileSync(entry.renderedBy, 'utf8'));
       expect(importer, `${path} — ${entry.why}`).toMatch(entry.gate);
     }
+  });
+
+  it('every dashboard money card demands the CompanyMoneySight token, minted by the one predicate (round B, O6)', () => {
+    // The import fence passes a whole FILE; a card exported from an allowed
+    // file and mounted outside the gate passed with it. So each exported
+    // component in the two money files that awaits a money loader must TYPE
+    // the token into its props — a branded value nobody can write by hand.
+    for (const path of [
+      'src/app/(protected)/dashboard/sections/hero.tsx',
+      'src/app/(protected)/dashboard/sections/money.tsx',
+    ]) {
+      const source = stripComments(readFileSync(path, 'utf8'));
+      const parts = source.split(/(?=export async function )/).slice(1);
+      expect(parts.length, path).toBeGreaterThan(1);
+      for (const part of parts) {
+        const name = /export async function (\w+)/.exec(part)![1]!;
+        const readsMoney = MONEY_READERS.some((reader) => new RegExp(`\\b${reader}\\(`).test(part));
+        if (!readsMoney) continue;
+        expect(part, `${path} ${name}`).toMatch(/sight: CompanyMoneySight( \| null)?;/);
+      }
+    }
+    const scope = stripComments(readFileSync('src/modules/wms/finance/scope.ts', 'utf8'));
+    expect(scope).toContain('return seesCompanyMoney(actor) ? SIGHT : null;');
+    const page = stripComments(readFileSync('src/app/(protected)/dashboard/page.tsx', 'utf8'));
+    expect(page).toContain('const sight = money ? companyMoneySight(actor) : null;');
+    // HeroTiles takes a nullable token and reads money only when it holds one.
+    expect(readFileSync('src/app/(protected)/dashboard/sections/hero.tsx', 'utf8')).toContain('const money = sight !== null;');
   });
 });

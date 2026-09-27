@@ -47,59 +47,119 @@ export async function WarehouseFillRows({
   rows,
   staleDays,
   canEditCapacity,
+  layout = 'row',
 }: {
   rows: WarehouseFillRow[];
   staleDays: number;
   /** Only somebody who can open the warehouse form is offered the link. */
   canEditCapacity: boolean;
+  /**
+   * `row` (the default, every existing caller): one line per warehouse.
+   * `stacked`: code and figure on line 1, a FULL-WIDTH bar (or the
+   * no-capacity sentence) on line 2, the age on line 3 — for a card a third
+   * of the dashboard wide, where the one-line row spends ~230 px on its fixed
+   * parts and leaves the bar nothing.
+   */
+  layout?: 'row' | 'stacked';
 }) {
   const t = await getTranslations('adminHome');
+  return (
+    <WarehouseFillView
+      rows={rows}
+      staleDays={staleDays}
+      canEditCapacity={canEditCapacity}
+      layout={layout}
+      labels={{
+        noCapacity: t('fillNoCapacity'),
+        oldestTitle: t('oldestTitle'),
+        daysShort: t('daysShort'),
+        oldestNote: t('oldestNote', { days: staleDays }),
+      }}
+    />
+  );
+}
+
+/**
+ * The drawing, with its words passed in — synchronous, so both layouts can be
+ * rendered and asserted in a unit test without a request's translations. The
+ * async wrapper above is its only caller in the app.
+ */
+export function WarehouseFillView({
+  rows,
+  staleDays,
+  canEditCapacity,
+  layout,
+  labels,
+}: {
+  rows: WarehouseFillRow[];
+  staleDays: number;
+  canEditCapacity: boolean;
+  layout: 'row' | 'stacked';
+  labels: { noCapacity: string; oldestTitle: string; daysShort: string; oldestNote: string };
+}) {
   if (rows.length === 0) return <p className="text-xs text-ink-500">—</p>;
 
   return (
-    <div className="space-y-1.5" data-testid="wh-fill">
+    <div className={layout === 'stacked' ? 'space-y-2.5' : 'space-y-1.5'} data-testid="wh-fill" data-layout={layout}>
       {rows.map((row) => {
         const tone = row.pct === null ? 'ok' : fillTone(row.pct);
         const age = row.oldestDays === null ? null : ageTone(row.oldestDays, staleDays);
+        const noCapacity = (
+          <span className="min-w-0 flex-1 truncate text-ink-500" data-testid="wh-fill-nocap">
+            {canEditCapacity ? (
+              <Link href={`/admin/warehouses/${row.id}`} className="underline">
+                {labels.noCapacity}
+              </Link>
+            ) : (
+              labels.noCapacity
+            )}
+          </span>
+        );
+        const bar = row.pct !== null && (
+          <div className="h-3 min-w-0 flex-1 overflow-hidden rounded bg-surface-sunken" data-testid="wh-fill-bar">
+            <div className={`h-full ${BAR[tone]}`} style={{ width: `${Math.min(100, Math.max(2, row.pct))}%` }} />
+          </div>
+        );
+        const figure = (
+          <span className={`shrink-0 whitespace-nowrap font-mono font-bold ${INK[tone]}`}>
+            {row.occupiedM3} m³
+            {row.pct !== null ? ` · ${row.pct}%` : ''}
+          </span>
+        );
+        const ageMark = age && row.oldestDays !== null && (
+          <span
+            className={`shrink-0 whitespace-nowrap font-mono ${INK[age]}`}
+            title={labels.oldestTitle}
+            data-testid="wh-fill-age"
+          >
+            🕓 {row.oldestDays} {labels.daysShort}
+            {row.staleCount > 0 ? ` (${row.staleCount})` : ''}
+          </span>
+        );
+
+        if (layout === 'stacked') {
+          return (
+            <div key={row.code} className="space-y-1 text-xs" data-testid="wh-fill-row">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="min-w-0 truncate font-mono text-sm font-extrabold">{row.code}</span>
+                {figure}
+              </div>
+              <div className="flex min-w-0">{bar || noCapacity}</div>
+              {ageMark && <div>{ageMark}</div>}
+            </div>
+          );
+        }
+
         return (
           <div key={row.code} className="flex items-center gap-2 text-xs" data-testid="wh-fill-row">
             <span className="w-14 shrink-0 font-mono text-sm font-extrabold">{row.code}</span>
-            {row.pct === null ? (
-              <span className="min-w-0 flex-1 truncate text-ink-500">
-                {canEditCapacity ? (
-                  <Link href={`/admin/warehouses/${row.id}`} className="underline">
-                    {t('fillNoCapacity')}
-                  </Link>
-                ) : (
-                  t('fillNoCapacity')
-                )}
-              </span>
-            ) : (
-              <div className="h-3 min-w-0 flex-1 overflow-hidden rounded bg-surface-sunken">
-                <div
-                  className={`h-full ${BAR[tone]}`}
-                  style={{ width: `${Math.min(100, Math.max(2, row.pct))}%` }}
-                />
-              </div>
-            )}
-            <span className={`shrink-0 whitespace-nowrap font-mono font-bold ${INK[tone]}`}>
-              {row.occupiedM3} m³
-              {row.pct !== null ? ` · ${row.pct}%` : ''}
-            </span>
-            {age && row.oldestDays !== null && (
-              <span
-                className={`shrink-0 whitespace-nowrap font-mono ${INK[age]}`}
-                title={t('oldestTitle')}
-                data-testid="wh-fill-age"
-              >
-                🕓 {row.oldestDays} {t('daysShort')}
-                {row.staleCount > 0 ? ` (${row.staleCount})` : ''}
-              </span>
-            )}
+            {bar || noCapacity}
+            {figure}
+            {ageMark}
           </div>
         );
       })}
-      <p className="text-2xs text-ink-500">{t('oldestNote', { days: staleDays })}</p>
+      <p className="text-2xs text-ink-500">{labels.oldestNote}</p>
     </div>
   );
 }

@@ -1,5 +1,8 @@
-import { addDays, tashkentDay } from '@/modules/platform/time/tashkent';
+import { addDays, mondayOf, tashkentDay } from '@/modules/platform/time/tashkent';
 import { marginPct } from '../accounting/margin';
+// The pure file, not `period.ts`: that one reads a rate from the database, and
+// this file must stay importable by anything that only draws.
+import { priorPeriodOf, type PriorKind } from '../accounting/prior-period';
 
 /**
  * The dashboard's arithmetic, PURE: windows, plan pace, deltas, scale ticks and
@@ -29,6 +32,12 @@ export interface DashboardWindows {
   /** The first of the month eleven before this one: twelve months, this one included. */
   m12Start: string;
   nextMonthStart: string;
+  /** The Monday of this ISO week — the weekly cash chart's current, partial column. */
+  weekStart: string;
+  /** Twelve weeks, this one included: `weekStart` − 77 days, always a Monday. */
+  w12Start: string;
+  /** Thirty Tashkent days with today last (and partial): `today` − 29. */
+  d30Start: string;
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -52,6 +61,7 @@ export function dashboardWindows(today: string): DashboardWindows {
   const [sy, sm] = shiftMonth(year, month, -11);
   const [ny, nm] = shiftMonth(year, month, 1);
   const prevLast = lastDayOf(py, pm);
+  const weekStart = mondayOf(today);
   return {
     today,
     month: `${year}-${pad(month)}`,
@@ -63,6 +73,9 @@ export function dashboardWindows(today: string): DashboardWindows {
     prevSameDay: `${py}-${pad(pm)}-${pad(Math.min(dom, prevLast))}`,
     m12Start: `${sy}-${pad(sm)}-01`,
     nextMonthStart: `${ny}-${pad(nm)}-01`,
+    weekStart,
+    w12Start: addDays(weekStart, -77),
+    d30Start: addDays(today, -29),
   };
 }
 
@@ -79,6 +92,88 @@ export function daysBetween(from: string, to: string): string[] {
   const out: string[] = [];
   for (let day = from; day <= to; day = addDays(day, 1)) out.push(day);
   return out;
+}
+
+/**
+ * The Monday of every ISO week the range touches, oldest first — the weekly
+ * cash chart's x-axis AND the keys `cashFlowByWeek` answers with, so a week
+ * with no money is a column of zeros and never a missing column. The first
+ * and last week may be partial: the range clips them, the key stays Monday.
+ */
+export function weeksBetween(from: string, to: string): string[] {
+  const out: string[] = [];
+  const last = mondayOf(to);
+  for (let week = mondayOf(from); week <= last; week = addDays(week, 7)) out.push(week);
+  return out;
+}
+
+/**
+ * The dashboard's period radio, `?davr=` — a CLOSED set (#514): anything else
+ * (absent, `07`, `OY`, garbage) reads as «Bu oy», never as a guess.
+ */
+export type DashPeriodKey = 'bugun' | '7' | '30' | 'oy' | 'otgan';
+
+/** In the order the radio draws them. */
+export const DASH_PERIODS: readonly DashPeriodKey[] = ['bugun', '7', '30', 'oy', 'otgan'];
+
+export interface DashPeriod {
+  key: DashPeriodKey;
+  /** Inclusive Tashkent days. */
+  from: string;
+  to: string;
+  /**
+   * What the period is compared with — `priorPeriodOf`, the P&L page's own
+   * rule, because every money figure here links to that page and the page
+   * must print the same ▲▼ (#513). `kind` lets the screen print the window as
+   * DATES instead of a sentence the calendar makes false (the judge's O1).
+   */
+  prior: { from: string; to: string; kind: PriorKind };
+  /** YYYY-MM when the period IS a calendar month (oy, otgan); the plan meter needs one. */
+  month: string | null;
+  /** A month that has ended (otgan): the plan meter reads it at pace 1, never «behind». */
+  closedMonth: boolean;
+  /**
+   * The plan meter's calendar: «oy» → today's day of this month; «otgan» →
+   * that month's length (pace 1). The day windows carry today's figures only
+   * so the shape is total — a plan is monthly and they draw no meter.
+   */
+  dom: number;
+  daysInMonth: number;
+}
+
+/**
+ * One of the five windows from Tashkent's today (R5). «bugun» is today alone,
+ * «7» / «30» end today and include it, «oy» is the month to date, «otgan» the
+ * whole previous month.
+ */
+export function dashPeriod(raw: string | undefined | null, today: string): DashPeriod {
+  const key: DashPeriodKey = (DASH_PERIODS as readonly string[]).includes(raw ?? '') ? (raw as DashPeriodKey) : 'oy';
+  const w = dashboardWindows(today);
+  const period = (from: string, to: string, month: string | null = null) => ({
+    key,
+    from,
+    to,
+    prior: priorPeriodOf(from, to),
+    month,
+    closedMonth: false,
+    dom: w.dom,
+    daysInMonth: w.daysInMonth,
+  });
+  switch (key) {
+    case 'bugun':
+      return period(today, today);
+    case '7':
+      return period(addDays(today, -6), today);
+    case '30':
+      return period(w.d30Start, today);
+    case 'otgan': {
+      const last = monthEnd(w.prevMonth, today);
+      const days = Number(last.slice(8, 10));
+      return { ...period(w.prevStart, last, w.prevMonth), closedMonth: true, dom: days, daysInMonth: days };
+    }
+    case 'oy':
+      return period(w.monthStart, today, w.month);
+  }
 }
 
 export interface PlanProgress {
@@ -115,10 +210,31 @@ export function planProgress(
 }
 
 /**
+ * The pace a live month needs from here: the days left INCLUDING today (the
+ * 27th of a 30-day month leaves 4 — today still counts) and the amount per
+ * day that closes the gap. Null with no positive plan (the meter's own rule)
+ * and once the fact has reached the plan — «kuniga $0» is not advice. The
+ * caller asks only for a month still running: a closed month has no pace.
+ */
+export function planPace(
+  fact: number,
+  plan: number | null | undefined,
+  dom: number,
+  daysInMonth: number,
+): { daysLeft: number; perDay: number } | null {
+  if (plan === null || plan === undefined || !(plan > 0) || !Number.isFinite(fact)) return null;
+  if (fact >= plan) return null;
+  const daysLeft = Math.max(1, daysInMonth - dom + 1);
+  return { daysLeft, perDay: Math.round(((plan - fact) / daysLeft) * 100) / 100 };
+}
+
+/**
  * A percentage change, or null when there is nothing to compare against. A
  * change against zero is not a percentage, and against a NEGATIVE base (a
  * loss month) the sign of a percentage lies — the caller prints the absolute
- * difference there instead.
+ * difference there instead. The ONE delta rule: the dashboard's tiles and the
+ * P&L page they open both print it, so «▲ 7.6%» on one is never «▲ 8%» on the
+ * other (the judge's O4).
  */
 export function pctDelta(current: number, previous: number): number | null {
   if (!(previous > 0)) return null;
@@ -140,6 +256,39 @@ export function niceTicks(max: number, count = 4): { ticks: number[]; top: numbe
   const ticks: number[] = [];
   for (let value = 0; value <= top + step / 1000; value += step) ticks.push(Math.round(value * 100) / 100);
   return { ticks, top };
+}
+
+/**
+ * Clean axis ticks over a range that may go below zero — a loss month on the
+ * profit line (the judge's O19; `niceTicks` only knows `[0, max]`). The same
+ * step ladder as `niceTicks`, the axis always holds 0 (the line a reader
+ * measures profit from), `bottom` ≤ min(0, min) and `top` ≥ max(0, max). With
+ * nothing below zero it answers exactly what `niceTicks` would.
+ */
+export function signedTicks(
+  min: number,
+  max: number,
+  count = 4,
+): { ticks: number[]; bottom: number; top: number } {
+  const lo = Math.min(0, Number.isFinite(min) ? min : 0);
+  const hi = Math.max(0, Number.isFinite(max) ? max : 0);
+  if (!(hi - lo > 0)) return { ticks: [0], bottom: 0, top: 1 };
+  const raw = (hi - lo) / count;
+  const magnitude = 10 ** Math.floor(Math.log10(raw));
+  const step =
+    [1, 2, 2.5, 5, 10].map((factor) => factor * magnitude).find((candidate) => candidate >= raw) ??
+    10 * magnitude;
+  // Tick INDICES, so the float error of one division cannot add a whole step
+  // (0.30000000000000004 / 0.1 is 3.0000000000000004), and −0 prints as 0.
+  const first = Math.floor(lo / step + 1e-9);
+  const last = Math.ceil(hi / step - 1e-9);
+  const clean = (value: number) => {
+    const rounded = Number(value.toPrecision(12));
+    return rounded === 0 ? 0 : rounded;
+  };
+  const ticks: number[] = [];
+  for (let i = first; i <= last; i += 1) ticks.push(clean(i * step));
+  return { ticks, bottom: clean(first * step), top: clean(last * step) };
 }
 
 export type AttentionLevel = 'bad' | 'warn' | 'info';
@@ -323,27 +472,54 @@ export function approvalCounts(
   return { debt: { n, usd: Math.round(usd * 100) / 100 }, price: { n: price } };
 }
 
-/** One P&L row's figures, the only part `pnlMonthParts` reads. */
+/** One P&L row's figures, the only part `pnlParts` reads: its months and its range total. */
 interface PnlRowLike {
   byPeriod: Record<string, number>;
+  total: number;
+}
+
+/** The five P&L rows the parts are made of. */
+interface PnlLike {
+  revenue: PnlRowLike;
+  directTotal: PnlRowLike;
+  opexTotal: PnlRowLike;
+  fxTotal: PnlRowLike;
+  netProfit: PnlRowLike;
 }
 
 /**
- * A P&L month in the chart's parts (0103): the kurs farqi FOLDS into the cost
- * bar — a gain lowers it, a loss raises it — so revenue − cost = the net the
- * P&L prints, and the chart never draws two columns whose difference is not
- * the net under them (the owner judge's finding).
+ * A P&L period in the chart's parts (0103): the kurs farqi FOLDS into the cost
+ * — a gain lowers it, a loss raises it — so revenue − cost = the net the P&L
+ * prints, and no screen draws two figures whose difference is not the net
+ * under them (the owner judge's finding). The ONE definition of «Xarajat»
+ * (the judge's O2): `direct` and `opex` are the P&L page's own KPIs and `fx`
+ * its «Kurs farqi» line, so every part the tile prints is a figure on the page
+ * it opens (O3).
+ *
+ * `key` is a month (`YYYY-MM`) or `'total'` — the whole range, which is how a
+ * 7- or 30-day window reads: `profitAndLoss` keeps the range total on each
+ * row's `.total` (its `byPeriod` holds months only), and the net's total is
+ * the P&L's own, never a re-sum of its rounded months.
  */
-export function pnlMonthParts(
-  pnl: { revenue: PnlRowLike; directTotal: PnlRowLike; opexTotal: PnlRowLike; fxTotal: PnlRowLike; netProfit: PnlRowLike },
-  month: string,
+export function pnlParts(
+  pnl: PnlLike,
+  key: string,
 ): { revenue: number; direct: number; opex: number; fx: number; cost: number; net: number } {
   const cents = (value: number) => Math.round(value * 100) / 100;
-  const revenue = pnl.revenue.byPeriod[month] ?? 0;
-  const direct = pnl.directTotal.byPeriod[month] ?? 0;
-  const opex = pnl.opexTotal.byPeriod[month] ?? 0;
-  const fx = pnl.fxTotal.byPeriod[month] ?? 0;
-  return { revenue, direct, opex, fx, cost: cents(direct + opex - fx), net: pnl.netProfit.byPeriod[month] ?? 0 };
+  const at = (row: PnlRowLike) => (key === 'total' ? row.total : (row.byPeriod[key] ?? 0));
+  const revenue = at(pnl.revenue);
+  const direct = at(pnl.directTotal);
+  const opex = at(pnl.opexTotal);
+  const fx = at(pnl.fxTotal);
+  return { revenue, direct, opex, fx, cost: cents(direct + opex - fx), net: at(pnl.netProfit) };
+}
+
+/** A month's parts — `pnlParts` under the name both P&L charts and the money fence know. */
+export function pnlMonthParts(
+  pnl: PnlLike,
+  month: string,
+): { revenue: number; direct: number; opex: number; fx: number; cost: number; net: number } {
+  return pnlParts(pnl, month);
 }
 
 /** A cash-flow month's parts, the only fields `cashMonthParts` reads. */

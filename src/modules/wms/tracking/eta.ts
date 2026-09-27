@@ -23,12 +23,44 @@ export interface ScheduleEstimate {
 }
 
 /**
+ * The key `routeFor` gives its straight-line fallback's only leg. Every route
+ * the owner actually described is built from named legs (cn_transit,
+ * to_border, border_wait, kg, uz); this one is what the table answers for a
+ * pair it has NO timings for.
+ */
+const GENERIC_LEG = 'transit';
+
+/**
+ * Is this `routeFor`'s straight-line fallback — a pair between two mapped
+ * warehouses that nobody wrote a schedule for (TAS1 → AND, YW → GZ, TAS1 →
+ * TAS2, anything driven back towards China)?
+ *
+ * Such a route carries a GENERIC 120-168 hours, which is a placeholder and
+ * not anybody's number: it promised a customer «taxminan 5-7 kun» for a
+ * shuttle across Tashkent and drew a lorry creeping along a straight line
+ * through the Tian Shan at that pace (round B, O14). It is not an estimate,
+ * so it must not become a date, a percentage or a dot.
+ */
+export function isGenericRoute(route: RouteDef): boolean {
+  return route.segments.length > 0 && route.segments.every((s) => s.key === GENERIC_LEG);
+}
+
+/**
  * What the schedule says about a departed truck, corrected by the last pin.
  *
  * A manual checkpoint re-anchors the clock — that is how the operator fixes
  * the border wait, which is the one leg no schedule can predict. Returns null
  * when there is no route between these two warehouses or the truck has not
  * left: an estimate with nothing to estimate from is worse than silence.
+ *
+ * A GENERIC route is «no route» for this question (`isGenericRoute`). The
+ * refusal lives HERE and not in `etaWindow` because this is the one door
+ * every reader walks through: the customer's cabinet (no road bar, no date —
+ * the rung alone), the staff map and the cabinet map (`truckFor`: no invented
+ * dot; a truck the driver's phone reports is still drawn at its fix), the
+ * staff bot (no «~5–7 kun»), and the dashboard's trucks card
+ * (`no_schedule`). Refused at `etaWindow`, the map would have kept its
+ * made-up dot and its made-up days while the cabinet said nothing.
  */
 export function scheduleEstimate(
   originCode: string,
@@ -38,7 +70,7 @@ export function scheduleEstimate(
   now: Date = new Date(),
 ): ScheduleEstimate | null {
   const route = routeFor(originCode, destCode);
-  if (!route || !departedAt) return null;
+  if (!route || isGenericRoute(route) || !departedAt) return null;
   const cp = checkpoint as { key?: string; at?: string } | null;
   const anchorSeg = cp?.key ? CHECKPOINT_SEGMENTS[cp.key] : undefined;
   const anchor =

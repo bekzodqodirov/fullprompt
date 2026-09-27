@@ -1,9 +1,9 @@
 import { and, asc, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { aliasedTable } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
-import { addDays, tashkentDayStart } from '../../platform/time/tashkent';
 import { resolvePeriod } from '../accounting/period';
 import { riderLoad } from '../batches/riders';
+import { intakeRuleSql, receiptScopeSql, receivedInRangeSql } from './business';
 import {
   batches,
   boxes,
@@ -177,6 +177,20 @@ export async function recentReceipts(warehouseIds?: string[]) {
   return rows.map((r) => ({ code: r.code, n: Number(r.n) }));
 }
 
+/**
+ * A truck belongs to BOTH of its ends — the scope every truck reader applies
+ * (a batch is judged by its two ends, stock by where it stands). Undefined
+ * for an absent or EMPTY list, i.e. «the whole company»: that is how every
+ * caller here has always read `[]`, so a caller that must NOT widen on an
+ * empty list — a scoped viewer with no warehouse — refuses before it asks
+ * (`trucksOnRoad` does).
+ */
+export function batchEndsWhere(warehouseIds?: string[]) {
+  return warehouseIds?.length
+    ? sql`(${inArray(batches.originWarehouseId, warehouseIds)} OR ${inArray(batches.destWarehouseId, warehouseIds)})`
+    : undefined;
+}
+
 export async function inTransitBatches(warehouseIds?: string[]) {
   const dest = aliasedTable(warehouses, 'dest');
   const rows = await db
@@ -190,6 +204,20 @@ export async function inTransitBatches(warehouseIds?: string[]) {
       // is the «stuck» attention row.
       status: batches.status,
       arrivedAt: batches.arrivedAt,
+      /*
+       * Additive (round B, the trucks card): what the customer's ladder needs
+       * to place this truck (`truckStage` — the two ends' countries, the
+       * logist's pin, the customs stamp) and what the schedule anchors on,
+       * so the card reads the SAME rows as this report instead of a second
+       * truck query with its own membership and box count (#513). The XLSX
+       * and the admin home ignore them.
+       */
+      trackingCheckpoint: batches.trackingCheckpoint,
+      customsClearedAt: batches.customsClearedAt,
+      originName: warehouses.name,
+      destName: dest.name,
+      originCountry: warehouses.country,
+      destCountry: dest.country,
       /**
        * What DEPARTED on this truck — never the live pointer. Landing NULLs
        * `current_batch_id` box by box, so the old count drained 180 → 0 while
@@ -207,12 +235,7 @@ export async function inTransitBatches(warehouseIds?: string[]) {
     .innerJoin(warehouses, eq(batches.originWarehouseId, warehouses.id))
     .innerJoin(dest, eq(batches.destWarehouseId, dest.id))
     .where(
-      and(
-        inArray(batches.status, ['in_transit', 'arrived']),
-        warehouseIds?.length
-          ? sql`(${inArray(batches.originWarehouseId, warehouseIds)} OR ${inArray(batches.destWarehouseId, warehouseIds)})`
-          : undefined,
-      ),
+      and(inArray(batches.status, ['in_transit', 'arrived']), batchEndsWhere(warehouseIds)),
     )
     .orderBy(desc(batches.departedAt));
   return rows.map((r) => ({ ...r, boxCount: Number(r.boxCount) }));
@@ -553,12 +576,14 @@ export function readJournalWindow(params: { from?: string | null; to?: string | 
   return Math.min(365, Math.max(1, Number(params.days) || 30));
 }
 
-function journalWindowWhere(window: JournalWindow) {
-  if (typeof window === 'number') return sql`${receipts.receivedAt} > now() - make_interval(days => ${window})`;
-  // Tashkent's midnight (R5), bound as ISO instants (#156) — intakeByMonth's own bounds.
-  const start = tashkentDayStart(window.from).toISOString();
-  const end = tashkentDayStart(addDays(window.to, 1)).toISOString();
-  return sql`${receipts.receivedAt} >= ${start}::timestamptz AND ${receipts.receivedAt} < ${end}::timestamptz`;
+/**
+ * The window over a receipts alias. A calendar range is the intake readers'
+ * own (`receivedInRangeSql` — Tashkent's midnights, R5, bound as ISO instants,
+ * #156); the presets are a rolling «the last N days from now».
+ */
+function journalWindowSql(window: JournalWindow, alias: string) {
+  if (typeof window !== 'number') return receivedInRangeSql(alias, window.from, window.to);
+  return sql`${sql.raw(alias)}.received_at > now() - make_interval(days => ${window})`;
 }
 
 /**
@@ -567,22 +592,18 @@ function journalWindowWhere(window: JournalWindow) {
  * that quietly stops at the cap.
  */
 export async function receiptsJournalTotals(window: JournalWindow, warehouseIds?: string[]) {
-  const [row] = await db
-    .select({
-      receipts: sql<number>`count(DISTINCT ${receipts.id})`,
-      boxes: sql<string>`coalesce(sum(${receiptLots.boxCount}), 0)`,
-      kg: sql<string>`coalesce(sum(${receiptLots.totalWeightKg}), 0)`,
-      m3: sql<string>`coalesce(sum(${receiptLots.totalVolumeM3}), 0)`,
-    })
-    .from(receipts)
-    .leftJoin(receiptLots, eq(receiptLots.receiptId, receipts.id))
-    .where(
-      and(
-        eq(receipts.status, 'confirmed'),
-        journalWindowWhere(window),
-        warehouseIds?.length ? inArray(receipts.warehouseId, warehouseIds) : undefined,
-      ),
-    );
+  // The intake rule itself (`intakeRuleSql`): over a calendar range this is
+  // `intakeWhereSql` to the character, so the dashboard's intake figures and
+  // this header are the same rows (#513). An EMPTY scope reads nothing.
+  const [row] = await db.execute<{ receipts: number; boxes: string; kg: string; m3: string }>(sql`
+    SELECT count(DISTINCT r.id)::int AS receipts,
+      coalesce(sum(rl.box_count), 0) AS boxes,
+      coalesce(sum(rl.total_weight_kg), 0) AS kg,
+      coalesce(sum(rl.total_volume_m3), 0) AS m3
+    FROM receipts r
+    LEFT JOIN receipt_lots rl ON rl.receipt_id = r.id
+    WHERE ${intakeRuleSql('r', journalWindowSql(window, 'r'), warehouseIds)}
+  `);
   return {
     receipts: Number(row?.receipts ?? 0),
     boxes: Number(row?.boxes ?? 0),
@@ -612,12 +633,11 @@ export async function receiptsJournal(window: JournalWindow, warehouseIds?: stri
     .from(receipts)
     .innerJoin(warehouses, eq(receipts.warehouseId, warehouses.id))
     .leftJoin(clients, eq(receipts.clientId, clients.id))
-    .where(
-      and(
-        journalWindowWhere(window),
-        warehouseIds?.length ? inArray(receipts.warehouseId, warehouseIds) : undefined,
-      ),
-    )
+    // `receipts`, unaliased, is the name drizzle renders, so the shared
+    // fragments take it as their alias; the correlated subqueries above name
+    // their own tables (`rl`, `u`) and cannot capture it (#128). An EMPTY
+    // scope reads nothing (`receiptScopeSql`).
+    .where(sql`${journalWindowSql(window, 'receipts')} AND ${receiptScopeSql('receipts', warehouseIds)}`)
     .orderBy(desc(receipts.receivedAt))
     .limit(JOURNAL_CAP);
   return rows.map((r) => ({
