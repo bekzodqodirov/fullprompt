@@ -4160,8 +4160,8 @@
     "modeTile": "🏷 Stickers: cartons without QR",
     "modeTileHint": "Cartons without QR at this warehouse: {n}",
     "listHint": "Print where there is a printer, stick them on the cartons, then press «✅ Stickers are on».",
-    "printAll": "🖨 All ({n})",
-    "printLot": "🖨 {n} stickers",
+    "printAll": "All ({n})",
+    "printLot": "{n} stickers",
     "plannedLocked": "🚚 {n} are planned onto a truck — the office prints those",
     "crated": "🧰 {n} in a crate — they travel on the crate QR",
     "stocktakeCount": "🏷 No QR: {n} — not scanned",
@@ -4170,7 +4170,7 @@
     "kindQrless": "🏷 no QR: {n}",
     "kindCounted": "🔢 office count: {n}",
     "keptDone": "🛡 {n} cartons were not written off (no QR or an office count)",
-    "printBox": "🖨 Sticker (carton without QR)"
+    "printBox": "Sticker (carton without QR)"
   },
   "ofis": {},
   "scanner": {

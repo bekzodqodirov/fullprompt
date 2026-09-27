@@ -4160,8 +4160,8 @@
     "modeTile": "🏷 Stiker: QR-siz karobkalar",
     "modeTileHint": "Shu skladda stikersiz karobkalar: {n} ta",
     "listHint": "Printer bor joyda chop eting, karobkalarga yopishtiring, keyin «✅ Stikerlar yopishtirildi» ni bosing.",
-    "printAll": "🖨 Hammasi ({n} ta)",
-    "printLot": "🖨 {n} ta stiker",
+    "printAll": "Hammasi ({n} ta)",
+    "printLot": "{n} ta stiker",
     "plannedLocked": "🚚 {n} tasi mashinaga rejalangan — stikerini ofis chop etadi",
     "crated": "🧰 {n} tasi yashikda — yashik QR bilan yuradi",
     "stocktakeCount": "🏷 QR-siz: {n} — skanerlanmaydi",
@@ -4170,7 +4170,7 @@
     "kindQrless": "🏷 QR-siz: {n}",
     "kindCounted": "🔢 ofis sanagan: {n}",
     "keptDone": "🛡 {n} ta karobka yo‘qolgan deb yozilmadi (QR-siz yoki ofis sanagan)",
-    "printBox": "🖨 Stiker (QR-siz karobka)"
+    "printBox": "Stiker (QR-siz karobka)"
   },
   "ofis": {},
   "scanner": {

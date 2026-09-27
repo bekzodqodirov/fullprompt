@@ -4160,8 +4160,8 @@
     "modeTile": "🏷 标签：无码箱",
     "modeTileHint": "本仓库无码箱：{n} 箱",
     "listHint": "在有打印机的地方打印，贴到箱子上，然后按「✅ 标签已贴好」。",
-    "printAll": "🖨 全部（{n}）",
-    "printLot": "🖨 {n} 张标签",
+    "printAll": "全部（{n}）",
+    "printLot": "{n} 张标签",
     "plannedLocked": "🚚 {n} 箱已计划装车——标签由办公室打印",
     "crated": "🧰 {n} 箱在木箱内——随木箱二维码走",
     "stocktakeCount": "🏷 无码：{n}——不扫描",
@@ -4170,7 +4170,7 @@
     "kindQrless": "🏷 无码：{n}",
     "kindCounted": "🔢 办公室计数：{n}",
     "keptDone": "🛡 {n} 箱未记为丢失（无码或办公室计数）",
-    "printBox": "🖨 标签（无码箱）"
+    "printBox": "标签（无码箱）"
   },
   "ofis": {},
   "scanner": {
