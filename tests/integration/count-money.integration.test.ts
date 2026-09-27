@@ -8,7 +8,9 @@ import {
   boxes,
   clients,
   costAllocations,
+  clientTransactions,
   costTypes,
+  notifications,
   receiptLots,
   users,
   warehouses,
@@ -23,6 +25,8 @@ import { setBoxStatus } from '@/modules/wms/boxes/status';
 import { ingestUnloadScans } from '@/modules/wms/scanning/unload';
 import { countAcceptLot } from '@/modules/wms/scanning/count-accept';
 import { riderRowsSql } from '@/modules/wms/batches/riders';
+import { addTransaction } from '@/modules/wms/finance/service';
+import { offTruckPrices } from '@/modules/wms/finance/off-truck';
 
 /**
  * The money a count's growth must NOT move (0112, his Q3 = b; review money-2).
@@ -42,6 +46,8 @@ let actorId: string;
 const W = { cn: '', uz: '' };
 let freightType = '';
 const ctx = () => ({ actorId });
+const startedAt = new Date();
+const madeClients: string[] = [];
 
 async function mintWarehouse(code: string, country: string, type: string) {
   const [row] = await db
@@ -58,6 +64,7 @@ async function mkLot(lot: Record<string, unknown>) {
     .insert(clients)
     .values({ clientCode: `CM${seq}${S}`.slice(0, 10), name: `Count money ${seq} ${S}` })
     .returning({ id: clients.id });
+  madeClients.push(client!.id);
   const receiptId = uuidv4();
   const lotId = uuidv4();
   await db.insert(attachments).values({
@@ -120,6 +127,10 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  if (madeClients.length) await db.delete(clientTransactions).where(inArray(clientTransactions.clientId, madeClients));
+  await db
+    .delete(notifications)
+    .where(and(eq(notifications.type, 'PricedCargoGrew'), sql`${notifications.createdAt} >= ${startedAt.toISOString()}::timestamptz`));
   await db.execute(sql`DELETE FROM cost_entries WHERE cost_date = '1638-02-02'`);
   await db.update(warehouses).set({ active: false }).where(inArray(warehouses.id, Object.values(W)));
   await pgClient.end();
@@ -338,5 +349,99 @@ describe('a growth the office takes back is undone, prixod and money (review mon
         { dest: office(W.uz), origin: office(W.cn) },
       ),
     ).rejects.toMatchObject({ code: 'count_below_arrived', detail: { arrived: 5, min: 5 } });
+  });
+});
+
+describe('a price the count outgrew is named, and only that one (review money-4)', () => {
+  const charge = (clientId: string, batchId: string, amount: number) =>
+    addTransaction(
+      { clientId, type: 'charge', amount, currency: 'USD', txDate: '1638-02-02', batchId } as never,
+      ctx(),
+    );
+  const grewNotices = async (code: string) =>
+    (
+      await db
+        .select({ payload: notifications.payload })
+        .from(notifications)
+        .where(and(eq(notifications.type, 'PricedCargoGrew'), sql`${notifications.createdAt} >= ${startedAt.toISOString()}::timestamptz`))
+    )
+      .map((n) => String((n.payload as { text?: string }).text ?? ''))
+      .filter((text) => text.includes(code));
+  const codeOf = async (clientId: string) =>
+    (await db.select({ code: clients.clientCode }).from(clients).where(eq(clients.id, clientId)))[0]!.code;
+
+  it('priced on the road, grown at the gate: the pair is «grew», the accountant is told, a second charge answers it', async () => {
+    const a = await mkLot(uniform(3));
+    const t = await planTruck([{ lotId: a.lotId, take: 3 }]);
+    await loadAll(t.id);
+    await finishLoading(t.id, ctx());
+    await departBatch(t.id, ctx());
+    await charge(a.clientId, t.id, 90);
+    expect(await offTruckPrices(db, { batchIds: [t.id] })).toEqual([]);
+
+    const res = await countAcceptLot(
+      { batchId: t.id, lotId: a.lotId, target: 6, seenArrived: 0, pressId: uuidv4(), overReason: 'uchta ortiq', confirmArrival: true },
+      ctx(),
+      { dest: office(W.uz), origin: office(W.cn) },
+    );
+    expect(res.grown).toBe(3);
+    const [row, ...rest] = await offTruckPrices(db, { batchIds: [t.id] });
+    expect(rest).toEqual([]);
+    expect([row!.kind, row!.grewBoxIds.length, row!.droppedBoxIds.length]).toEqual(['grew', 3, 0]);
+    const code = await codeOf(a.clientId);
+    const texts = await grewNotices(code);
+    expect(texts.length).toBeGreaterThan(0);
+    expect(texts[0]).toContain('+3 karobka');
+
+    // The accountant bills the three: the last decision saw them.
+    await charge(a.clientId, t.id, 90);
+    expect(await offTruckPrices(db, { batchIds: [t.id] })).toEqual([]);
+  });
+
+  it('priced while loading, then loaded, departed and landed as planned: nothing is named', async () => {
+    const a = await mkLot(uniform(4));
+    const t = await planTruck([{ lotId: a.lotId, take: 4 }]);
+    await charge(a.clientId, t.id, 120);
+    await loadAll(t.id);
+    await finishLoading(t.id, ctx());
+    await departBatch(t.id, ctx());
+    const acks = await ingestUnloadScans(a.boxes.map((b) => qr(t.id, b.code)), ctx());
+    expect(acks.every((x) => x.result === 'ok')).toBe(true);
+    expect(await offTruckPrices(db, { batchIds: [t.id] })).toEqual([]);
+  });
+
+  it('priced while loading, then the office loads past the plan: the extra cartons are named', async () => {
+    const a = await mkLot(uniform(6));
+    const t = await planTruck([{ lotId: a.lotId, take: 4 }]);
+    await charge(a.clientId, t.id, 120);
+    const r = await countLoadLot(
+      { batchId: t.id, lotId: a.lotId, target: 6, seenAboard: 0, pressId: uuidv4(), overReason: 'ikki ortiq' },
+      ctx(),
+      office(W.cn),
+    );
+    expect([r.aboard, r.over]).toEqual([6, 2]);
+    const rows = await offTruckPrices(db, { batchIds: [t.id] });
+    expect(rows.map((x) => [x.kind, x.grewBoxIds.length])).toEqual([['grew', 2]]);
+  });
+
+  it('an over-count taken back by the next press leaves nothing named', async () => {
+    const a = await mkLot(uniform(3));
+    const t = await planTruck([{ lotId: a.lotId, take: 3 }]);
+    await loadAll(t.id);
+    await finishLoading(t.id, ctx());
+    await departBatch(t.id, ctx());
+    await charge(a.clientId, t.id, 90);
+    await countAcceptLot(
+      { batchId: t.id, lotId: a.lotId, target: 5, seenArrived: 0, pressId: uuidv4(), overReason: 'xato', confirmArrival: true },
+      ctx(),
+      { dest: office(W.uz), origin: office(W.cn) },
+    );
+    expect((await offTruckPrices(db, { batchIds: [t.id] })).map((x) => x.kind)).toEqual(['grew']);
+    await countAcceptLot(
+      { batchId: t.id, lotId: a.lotId, target: 3, seenArrived: 5, pressId: uuidv4(), overReason: 'xato yozilgan', confirmArrival: false },
+      ctx(),
+      { dest: office(W.uz), origin: office(W.cn) },
+    );
+    expect(await offTruckPrices(db, { batchIds: [t.id] })).toEqual([]);
   });
 });

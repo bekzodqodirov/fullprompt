@@ -27,6 +27,7 @@ import {
   shrinkGrownInTx,
 } from '../receipts/grow-lot';
 import { likeNeedle } from '../search/query';
+import { notifyPricedCargoGrew } from '../finance/off-truck';
 
 /*
  * «Sanab yuklash» — the office's count-load door (0112, the owner's Q1-Q7).
@@ -579,6 +580,13 @@ export async function countLoadLot(
   // The lot's cartons changed, so every cost shared over them re-splits —
   // after the commit, on the pool (#714).
   if (result.grown > 0 || result.shrunk > 0) await afterLotGrown(lotId);
+  // Beyond the plan onto a truck already priced: the price no longer covers
+  // the cargo, and the accountant hears it (review money-4).
+  if (result.over > 0 || result.grown > 0) {
+    await notifyPricedCargoGrew(batchId, lotId, actorId).catch((err) =>
+      console.error('[count-load] priced-then-grew notice failed', batchId, err),
+    );
+  }
   return result;
 }
 

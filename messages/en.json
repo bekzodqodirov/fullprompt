@@ -1542,6 +1542,7 @@
     "orphanNever": "it had no cargo on this truck, or the cargo was annulled",
     "droppedShort": "⚠ {n} boxes were not loaded after this was priced — move their price to {codes}",
     "droppedFoundBack": "⚠ {n} boxes were scanned as loaded but found in {origin} — take them out of this price: both the freight and this truck’s customs share are billed on {codes}",
+    "grewAfterPrice": "⚠ After this was priced the client’s cargo on this truck grew by {n} boxes (a count or extra boxes) — price the added boxes or re-enter the price",
     "pricedElsewhereShort": "⚠ This client was priced on {code} ({usd}), but {n} boxes did not ride it — move the price to this truck",
     "pricedElsewhereFoundBack": "⚠ {n} boxes were scanned onto {code} but stayed in the warehouse — they are priced on this truck: the freight and {code}’s customs share (in the cost as «up to this trip»)",
     "fxDiff": "⚖️ Exchange difference",

@@ -31,6 +31,7 @@ import {
   setCountLockTimeout,
 } from './count-rules';
 import { doorOpens, type CountDoor } from './count-door';
+import { notifyPricedCargoGrew } from '../finance/off-truck';
 
 /*
  * «Sanab qabul» — the office's count at unloading (0112, the owner's Q1-Q7).
@@ -366,13 +367,17 @@ export async function countAcceptLot(
     arrivalMarked: false,
   };
   let grew = false;
+  let done: CountAcceptResult | null = null;
   try {
     for (let chunk = 0; ; chunk += 1) {
       const step = await db.transaction((tx) =>
         countChunk(tx, { input, ctx, actorId, doors, overReason, need, chunk, state, rogueTrucks }),
       );
       if (step.grew) grew = true;
-      if (step.result) return step.result;
+      if (step.result) {
+        done = step.result;
+        return step.result;
+      }
     }
   } catch (err) {
     if (isBusyError(err)) throw new CountError('busy_retry');
@@ -400,6 +405,13 @@ export async function countAcceptLot(
       }
     }
     if (grew) await afterLotGrown(input.lotId);
+    // Beyond the truck onto a price already typed: the accountant hears it
+    // (review money-4). Only a finished press — a refused one changed nothing.
+    if (done && done.over > 0) {
+      await notifyPricedCargoGrew(input.batchId, input.lotId, actorId).catch((err) =>
+        console.error('[count-accept] priced-then-grew notice failed', input.batchId, err),
+      );
+    }
   }
 }
 

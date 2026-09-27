@@ -1542,6 +1542,7 @@
     "orphanNever": "bu mashinada yuki bo‘lmagan yoki bekor qilingan",
     "droppedShort": "⚠ Narx qo‘yilgandan keyin {n} karobka bu mashinaga yuklanmadi — ularning narxini {codes} ga ko‘chiring",
     "droppedFoundBack": "⚠ {n} karobka yuklandi deb skanerlangan, lekin {origin} omborida topildi — ularni bu narxdan chiqaring: yo‘lkirasi ham, bu mashina rastamojkasi ulushi ham {codes} da yoziladi",
+    "grewAfterPrice": "⚠ Narx qo‘yilgandan keyin bu mijozning yuki mashinada {n} karobkaga ko‘paydi (sanash yoki ortiqcha yuk) — qo‘shilganiga narx qo‘ying yoki narxni qayta kiriting",
     "pricedElsewhereShort": "⚠ Bu mijozga {code} da narx qo‘yilgan ({usd}), lekin {n} karobka o‘sha mashinada ketmagan — narxni shu mashinaga ko‘chiring",
     "pricedElsewhereFoundBack": "⚠ {n} karobka {code} ga yuklandi deb skanerlangan, lekin omborda qolgan — ular shu mashinada narxlanadi: yo‘lkira ham, {code} rastamojka ulushi ham (tannarxda «shu reysgacha»)",
     "fxDiff": "⚖️ Kurs farqi",

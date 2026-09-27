@@ -1542,6 +1542,7 @@
     "orphanNever": "此车上没有其货物或货物已作废",
     "droppedShort": "⚠ 定价后有 {n} 箱未装上此车——请将其价格转到 {codes}",
     "droppedFoundBack": "⚠ {n} 箱被扫描为已装车，但在 {origin} 仓库找到——请从此价格中扣除：运费和本车清关费用份额都在 {codes} 计费",
+    "grewAfterPrice": "⚠ 定价后该客户在此车上的货物增加了 {n} 箱（清点或多出的箱）——请为新增的箱定价或重新录入价格",
     "pricedElsewhereShort": "⚠ 该客户在 {code} 已定价（{usd}），但有 {n} 箱未随其发出——请将价格转到此车次",
     "pricedElsewhereFoundBack": "⚠ {n} 箱被扫描装上 {code}，但留在仓库——在此车次定价：运费及 {code} 的清关份额（成本中的「至本车次」）",
     "fxDiff": "⚖️ 汇兑差额",
