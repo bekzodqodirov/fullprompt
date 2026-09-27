@@ -32,8 +32,27 @@ describe('the AI answer never holds the Telegram poller', () => {
   });
 
   it('delivers by chat id rather than through the held context', () => {
-    // ctx.reply would need the middleware still running; sendMessage does not.
-    expect(source).toMatch(/ctx\.api\.sendMessage\(/);
+    // ctx.reply would need the middleware still running; the sender does not.
+    // Re-anchored ON PURPOSE in round C (it read `ctx.api.sendMessage(`):
+    // the answer now goes through the one Bot-API sender as NEW message(s)
+    // addressed by chat id, and the helper takes no ctx at all — which is the
+    // property this test exists for, stated more strongly than before.
+    const fn = source.slice(source.indexOf('async function answerWithAssistant'));
+    const body = fn.slice(0, fn.indexOf('\n}\n'));
+    expect(body).toMatch(/sendText\(\{\s*chatId/);
+    expect(body, 'the helper must not need the middleware context').not.toMatch(/\bctx\b/);
+  });
+
+  it('keeps the placeholder and points it at the answer, typing while it waits', () => {
+    // Round C (REL-13/STAFF-10): the answer is a NEW message — an edit makes
+    // no sound — and the «O‘ylayapman…» it replaces is edited to point down.
+    const fn = source.slice(source.indexOf('async function answerWithAssistant'));
+    const body = fn.slice(0, fn.indexOf('\n}\n'));
+    expect(handlerHalf).toContain('void answerWithAssistant(chatId, text, thinking.message_id);');
+    expect(body).toContain('sendTyping(chatId)');
+    expect(body).toContain('clearInterval(typing)');
+    expect(body).toContain('splitMessage(answer)');
+    expect(body).toContain("html: '🤖 Javob pastda ⬇️'");
   });
 
   it('cannot leave an unhandled rejection behind', () => {

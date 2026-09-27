@@ -301,6 +301,13 @@ const DICT = {
     en: 'the date has passed',
   },
   deal: { ru: 'Сделка', uz: 'Bitim', 'zh-CN': '交易', en: 'Deal' },
+  // Round C: a list of box codes is capped where a message would otherwise
+  // run past Telegram's 4096 and be refused WHOLE — the tail is counted, not
+  // dropped in silence. `{n}` is filled by `fillCount`.
+  andMore: { ru: '… и ещё {n}', uz: '… yana {n} ta', 'zh-CN': '… 另有 {n} 个', en: '… and {n} more' },
+  // Round C: the card link at the foot of a staff message becomes a BUTTON
+  // (the drain moves it; the stored text keeps the link).
+  openInApp: { ru: '↗️ Открыть', uz: '↗️ Ochish', 'zh-CN': '↗️ 打开', en: '↗️ Open' },
 } satisfies Record<string, Record<Locale, string>>;
 
 export type NotificationLabels = { [K in keyof typeof DICT]: string };
@@ -313,4 +320,35 @@ export function notificationLabels(locale?: string | null): NotificationLabels {
   return Object.fromEntries(
     Object.entries(DICT).map(([name, values]) => [name, values[key]]),
   ) as NotificationLabels;
+}
+
+/** «… yana 12 ta» — a count spliced into its sentence. */
+export function fillCount(template: string, n: number): string {
+  return template.replace('{n}', String(n));
+}
+
+/**
+ * The line that closes a debtor/unpriced request — «✅ Qarzdorga berishga
+ * RUXSAT berildi — Aziz» — in the reader's language.
+ *
+ * The same words the requester's own DebtApprovalDecided message opens with,
+ * so the deciders' copies and the answer say one thing. Round C writes it
+ * under every decider's copy once the question is settled, which is what
+ * stops a second person pressing a button on a question that is already
+ * answered.
+ */
+export function approvalVerdictLine(
+  input: { verdict: 'approved' | 'refused'; reasons?: string | null; decidedByName?: string | null },
+  locale?: string | null,
+): string {
+  const L = notificationLabels(locale);
+  const [yes, no] =
+    input.reasons === 'price'
+      ? [L.priceApprovalYes, L.priceApprovalNo]
+      : input.reasons === 'both'
+        ? [L.issueApprovalYes, L.issueApprovalNo]
+        : [L.debtApprovalYes, L.debtApprovalNo];
+  const head = input.verdict === 'approved' ? `✅ ${yes}` : `⛔ ${no}`;
+  const who = input.decidedByName?.trim();
+  return who ? `${head} — ${who}` : head;
 }

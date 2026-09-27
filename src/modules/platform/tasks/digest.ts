@@ -4,7 +4,7 @@ import { db } from '../db/client';
 import { notifications, users } from '../db/schema';
 import { logger } from '../logger';
 import { isTelegramMuted } from '../notifications/mutes';
-import { aboutLabels, myDay, overdueByAssignee } from './service';
+import { aboutLabels, myDay, overdueByAssignee, telegramDue } from './service';
 
 export const JOB_TASKS_MORNING = 'tasks.morning';
 
@@ -19,25 +19,53 @@ export const JOB_TASKS_MORNING = 'tasks.morning';
  * The text is built here and stored whole; `renderTelegramText` sends a
  * pre-rendered body as-is (DECISIONS #164), so no case has to be added there.
  */
-async function deliver(userId: string, text: string): Promise<void> {
+async function deliver(
+  userId: string,
+  text: string,
+  tasks: { id: string; title: string }[] = [],
+): Promise<void> {
   const user = await db.query.users.findFirst({ where: eq(users.id, userId) });
   const muted = isTelegramMuted(user?.mutedNotificationTypes, 'TasksDue');
   await db.insert(notifications).values({
     userId,
     channel: 'telegram',
     type: 'TasksDue',
-    payload: { text },
+    // The tasks the «✅» buttons close ride beside the text (round C); the
+    // drain builds the rows from them at send time (`buttonsFor`).
+    payload: tasks.length > 0 ? { text, tasks } : { text },
     status: muted ? 'muted' : 'pending',
     error: muted ? 'muted by user' : null,
   });
 }
 
-function line(task: { typeIcon: string | null; title: string; dueAt: Date | null }, late: boolean) {
-  const when = task.dueAt ? task.dueAt.toISOString().slice(0, 10) : '';
-  return `${late ? '🔴' : '•'} ${task.typeIcon ?? ''} ${task.title}${late ? ` ⚠️ ${when}` : ''}`.replace(
-    /\s+/g,
-    ' ',
-  );
+function line(
+  task: { typeIcon: string | null; title: string; dueAt: Date | null; allDay: boolean },
+  late: boolean,
+  now: Date,
+) {
+  // Late: WHEN it was due. Today: only a timed task's hour — «today» is
+  // already the heading.
+  const when = task.dueAt
+    ? late
+      ? ` ⚠️ ${telegramDue(task.dueAt, task.allDay, now)}`
+      : task.allDay
+        ? ''
+        : ` · ${telegramDue(task.dueAt, false, now).split(' ')[1]}`
+    : '';
+  return `${late ? '🔴' : '•'} ${task.typeIcon ?? ''} ${task.title}${when}`.replace(/\s+/g, ' ');
+}
+
+/**
+ * How many tasks the day message offers to close with a button — the rest
+ * are one tap away in the app. One number for the text's list of ids and the
+ * keyboard built from it (staff-bot's `dayButtons` reads it from here).
+ */
+export const DAY_BUTTONS = 8;
+
+export interface MyDayMessage {
+  text: string;
+  /** Overdue first, then today's — the ones a «✅» button is drawn for. */
+  tasks: { id: string; title: string }[];
 }
 
 /**
@@ -45,8 +73,15 @@ function line(task: { typeIcon: string | null; title: string; dueAt: Date | null
  * served on demand by the staff bot's «Bugun» button (round 35): the same
  * words in the push and the pull, so nobody wonders which one is right.
  * Null when there is nothing due — an empty list is not a message.
+ *
+ * Round C: it also names the tasks its «✅» buttons close (at most eight,
+ * overdue first) — the digest and the button draw the same rows.
+ *
+ * «Today» stays the UTC day, deliberately: `/bugun`, the home banner and the
+ * dock all measure against the same `endOfToday`, and moving the convention
+ * in one of them would make them disagree about what is due (round 47).
  */
-export async function composeMyDayText(userId: string, now = new Date()): Promise<string | null> {
+export async function composeMyDay(userId: string, now = new Date()): Promise<MyDayMessage | null> {
   const endOfToday = new Date(now);
   endOfToday.setUTCHours(23, 59, 59, 999);
   const day = await myDay(userId, endOfToday);
@@ -68,16 +103,26 @@ export async function composeMyDayText(userId: string, now = new Date()): Promis
     // 187 late tasks that they have 40.
     parts.push(
       `🔴 Kechikkan (${day.counts.overdue})\n` +
-        late.slice(0, 15).map((task) => line(task, true) + about(task)).join('\n'),
+        late.slice(0, 15).map((task) => line(task, true, now) + about(task)).join('\n'),
     );
   }
   if (today.length) {
     parts.push(
       `🟡 Bugunga (${day.counts.today})\n` +
-        today.slice(0, 15).map((task) => line(task, false) + about(task)).join('\n'),
+        today.slice(0, 15).map((task) => line(task, false, now) + about(task)).join('\n'),
     );
   }
-  return `✅ Sizning vazifalaringiz\n\n${parts.join('\n\n')}`;
+  return {
+    text: `✅ Sizning vazifalaringiz\n\n${parts.join('\n\n')}`,
+    tasks: [...late.slice(0, 15), ...today.slice(0, 15)]
+      .slice(0, DAY_BUTTONS)
+      .map((task) => ({ id: task.id, title: task.title })),
+  };
+}
+
+/** The day as text alone — for the readers that draw no buttons (the AI tool). */
+export async function composeMyDayText(userId: string, now = new Date()): Promise<string | null> {
+  return (await composeMyDay(userId, now))?.text ?? null;
 }
 
 export async function sendTaskDigest(now = new Date()): Promise<number> {
@@ -94,9 +139,9 @@ export async function sendTaskDigest(now = new Date()): Promise<number> {
 
   let sent = 0;
   for (const userId of candidates) {
-    const text = await composeMyDayText(userId, now);
-    if (!text) continue;
-    await deliver(userId, text);
+    const day = await composeMyDay(userId, now);
+    if (!day) continue;
+    await deliver(userId, day.text, day.tasks);
     sent += 1;
   }
 
@@ -120,13 +165,16 @@ export async function sendTaskDigest(now = new Date()): Promise<number> {
 async function notifyAuthorsOfOverdue(
   overdue: Map<string, Awaited<ReturnType<typeof overdueByAssignee>> extends Map<string, infer T> ? T : never>,
 ): Promise<number> {
-  const byAuthor = new Map<string, { title: string; assigneeName: string | null; dueAt: Date | null }[]>();
+  const byAuthor = new Map<
+    string,
+    { title: string; assigneeName: string | null; dueAt: Date | null; allDay: boolean }[]
+  >();
   for (const [assigneeId, rows] of overdue) {
     for (const row of rows) {
       if (row.createdBy === assigneeId) continue;
       byAuthor.set(row.createdBy, [
         ...(byAuthor.get(row.createdBy) ?? []),
-        { title: row.title, assigneeName: row.assigneeName, dueAt: row.dueAt },
+        { title: row.title, assigneeName: row.assigneeName, dueAt: row.dueAt, allDay: row.allDay },
       ]);
     }
   }
@@ -138,7 +186,7 @@ async function notifyAuthorsOfOverdue(
       .map(
         (row) =>
           `🔴 ${row.title} — ${row.assigneeName ?? '?'}${
-            row.dueAt ? ` ⚠️ ${row.dueAt.toISOString().slice(0, 10)}` : ''
+            row.dueAt ? ` ⚠️ ${telegramDue(row.dueAt, row.allDay)}` : ''
           }`,
       )
       .join('\n');

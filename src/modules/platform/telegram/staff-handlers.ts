@@ -1,6 +1,9 @@
 import type { Bot } from 'grammy';
-import { composeMyDayText } from '../tasks/digest';
+import { composeMyDay } from '../tasks/digest';
 import { logger } from '../logger';
+import { keyboardOf, staffTextHtml } from '../notifications/staff-html';
+import { offerStaffCommands } from './commands';
+import { editText, sendText, sendTyping } from './send';
 import { clientAnswerKeyboard } from './map-link';
 import {
   AI_RASTAMOJKA,
@@ -10,7 +13,9 @@ import {
   HISOBLATISH,
   ZAMETKALAR,
   assistantFromBot,
+  closeTaskMessage,
   completeTaskFromBot,
+  dayButtons,
   decideApprovalFromBot,
   isCabinetText,
   landCollectedIntake,
@@ -20,6 +25,7 @@ import {
   noteTaskPending,
   parseCallback,
   escapesIntake,
+  settlePressedApproval,
   staffByPhone,
   staffForChat,
   takeStaffEntry,
@@ -52,7 +58,7 @@ import {
   type CaptureState,
 } from './note-capture';
 import { sendNote } from './note-send';
-import { buttonLabel } from './limits';
+import { buttonLabel, splitMessage } from './limits';
 
 /**
  * The grammy shell of the staff bot — thin on purpose: every decision lives
@@ -257,9 +263,31 @@ export function registerStaffBot(bot: Bot): void {
         await ctx.answerCallbackQuery({ text: 'Ulanmagan' });
         return;
       }
-      noteTaskPending(chatId, parsed.taskId);
+      // The pressed message is REMEMBERED and left exactly as it is (round
+      // C): nothing is closed until the result is typed, so a message that
+      // changed now would be announcing a close that may never happen. The
+      // close rewrites it — a task's own message whole, a list by one row.
+      const pressed = ctx.callbackQuery.message;
+      const pressedText = pressed && 'text' in pressed ? pressed.text : undefined;
+      noteTaskPending(
+        chatId,
+        parsed.taskId,
+        pressed && pressedText
+          ? {
+              messageId: pressed.message_id,
+              text: pressedText,
+              markup: 'reply_markup' in pressed ? pressed.reply_markup : undefined,
+              kind: parsed.list ? 'list' : 'single',
+            }
+          : null,
+      );
       await ctx.answerCallbackQuery();
-      await ctx.reply('Natijani yozib yuboring (natijasiz yopish uchun «-» yuboring):');
+      // On a LIST the prompt names the task — «which one did I just press?»
+      // is not a question the person should have to scroll back to answer.
+      const label = parsed.list ? pressedButtonText(pressed, ctx.callbackQuery.data) : null;
+      await ctx.reply(
+        (label ? `${label}\n` : '') + 'Natijani yozib yuboring (natijasiz yopish uchun «-» yuboring):',
+      );
       return;
     }
 
@@ -281,6 +309,28 @@ export function registerStaffBot(bot: Bot): void {
       not_found: 'So‘rov topilmadi',
     };
     await ctx.answerCallbackQuery({ text: answers[outcome] });
+    // The pressed copy is settled in place (round C) — ALSO when somebody
+    // else decided first: that press is the proof a stale copy was still
+    // asking. Off the poller, on the sender's short deadline.
+    const pressed = ctx.callbackQuery.message;
+    if (
+      (outcome === 'decided' || outcome === 'already_decided') &&
+      pressed &&
+      'text' in pressed &&
+      pressed.text
+    ) {
+      const staff = await staffForChat(chatId);
+      void settlePressedApproval(
+        chatId,
+        {
+          messageId: pressed.message_id,
+          text: pressed.text,
+          markup: 'reply_markup' in pressed ? pressed.reply_markup : undefined,
+        },
+        parsed.approvalId,
+        staff?.locale,
+      ).catch((err: unknown) => logger.warn({ err }, 'approval press not settled'));
+    }
     if (outcome === 'decided') {
       await ctx.reply(
         parsed.verdict === 'approved'
@@ -333,6 +383,9 @@ export function registerStaffBot(bot: Bot): void {
       // A client who just became staff keeps their cabinet rows (13A).
       reply_markup: await replyKeyboardFor(chatId),
     });
+    // The command menu too — until round C only `/start <code>` and /hodim
+    // offered it, so a person linked by sharing their number never had one.
+    offerStaffCommands(ctx, ctx.chat.id);
   });
 
   // Photos and documents during a collection: stored at once, pre-bound to
@@ -494,6 +547,32 @@ export function registerStaffBot(bot: Bot): void {
       return;
     }
 
+    // «📋 Bugun» ABOVE both captures (round C): pressed while a «Bajarildi»
+    // result was awaited it used to reach `takeTaskPending` first — which
+    // DELETES ON READ — and close the task with «📋 Bugun» as its result;
+    // pressed while a note was being written it was filed into the note.
+    if (ctx.message.text === BUGUN || ctx.message.text === '/bugun') {
+      const staff = await staffForChat(chatId);
+      if (!staff) return next();
+      const day = await composeMyDay(staff.id).catch((err) => {
+        logger.warn({ err }, 'bugun compose failed');
+        return null;
+      });
+      if (!day) {
+        await ctx.reply('✅ Bugunga ochiq vazifa yo‘q.');
+        return;
+      }
+      // The same words and the same «✅» rows as the 08:00 digest, so a task
+      // is closed from the list it is read on.
+      const sent = await sendText({
+        chatId,
+        html: staffTextHtml(day.text, 'TasksDue'),
+        replyMarkup: keyboardOf(dayButtons(day.tasks)),
+      });
+      if (!sent.ok) logger.warn({ description: sent.description }, 'bugun reply not sent');
+      return;
+    }
+
     // A note being written from the phone swallows what follows — its name
     // first, then everything else — and it sits in the same slot for the same
     // reasons.
@@ -505,31 +584,32 @@ export function registerStaffBot(bot: Bot): void {
       return;
     }
 
-    // Step 2 of «Bajarildi»: this text IS the result.
-    const pendingTask = takeTaskPending(chatId);
-    if (pendingTask) {
-      const result = ctx.message.text.trim() === '-' ? '' : ctx.message.text.trim();
-      const outcome = await completeTaskFromBot(chatId, pendingTask, result);
-      const answers: Record<string, string> = {
-        done: '✅ Vazifa yopildi.',
-        not_linked: 'Ulanmagan.',
-        not_yours: 'Bu vazifa sizniki emas.',
-        already_closed: 'Bu vazifa allaqachon yopilgan.',
-        not_found: 'Vazifa topilmadi.',
-      };
-      await ctx.reply(answers[outcome] ?? outcome);
-      return;
-    }
-
-    if (ctx.message.text === BUGUN || ctx.message.text === '/bugun') {
-      const staff = await staffForChat(chatId);
-      if (!staff) return next();
-      const text = await composeMyDayText(staff.id).catch((err) => {
-        logger.warn({ err }, 'bugun compose failed');
-        return null;
-      });
-      await ctx.reply(text ?? '✅ Bugunga ochiq vazifa yo‘q.');
-      return;
+    // Step 2 of «Bajarildi»: this text IS the result — unless it is one of the
+    // keyboard's own buttons, which is never anybody's result (every branch
+    // above answers them; this is the fence for the next button to join).
+    if (!escapesIntake(ctx.message.text)) {
+      const pendingTask = takeTaskPending(chatId);
+      if (pendingTask) {
+        const result = ctx.message.text.trim() === '-' ? '' : ctx.message.text.trim();
+        const outcome = await completeTaskFromBot(chatId, pendingTask.taskId, result);
+        const answers: Record<string, string> = {
+          done: '✅ Vazifa yopildi.',
+          not_linked: 'Ulanmagan.',
+          not_yours: 'Bu vazifa sizniki emas.',
+          already_closed: 'Bu vazifa allaqachon yopilgan.',
+          not_found: 'Vazifa topilmadi.',
+        };
+        await ctx.reply(answers[outcome] ?? outcome);
+        // The message the «✅» sat on becomes the record of the close (or, on
+        // a list, loses that one row). Off the poller: an edit is a network
+        // call and the answer above is what the person is waiting for.
+        if (outcome === 'done' || outcome === 'already_closed') {
+          void closeTaskMessage(chatId, pendingTask, outcome === 'done' ? result : '').catch(
+            (err: unknown) => logger.warn({ err }, 'task message not closed'),
+          );
+        }
+        return;
+      }
     }
 
     // Anything else a MEMBER OF STAFF types is a lookup: a client code, a box
@@ -572,7 +652,7 @@ export function registerStaffBot(bot: Bot): void {
       );
       return;
     }
-    await ctx.reply('🤖 O‘ylayapman…');
+    const thinking = await ctx.reply('🤖 O‘ylayapman…');
     // NOT awaited, and that is the whole point: grammy's built-in poller is
     // SEQUENTIAL — it handles one update at a time — so awaiting a model
     // loop here would hold the CUSTOMER bot for as long as the answer takes.
@@ -581,8 +661,19 @@ export function registerStaffBot(bot: Bot): void {
     // owner's own words are that 95 % of customer contact is this channel.
     // The answer is delivered by chat id when it lands, exactly as the
     // notification path already sends unsolicited messages.
-    void answerWithAssistant(ctx, chatId, text);
+    void answerWithAssistant(chatId, text, thinking.message_id);
   });
+}
+
+/** The words on the button a callback came from — its own message's keyboard. */
+function pressedButtonText(message: unknown, data: string): string | null {
+  const rows =
+    (message as { reply_markup?: { inline_keyboard?: { text?: string; callback_data?: string }[][] } })
+      ?.reply_markup?.inline_keyboard ?? [];
+  for (const row of rows) {
+    for (const button of row) if (button.callback_data === data && button.text) return button.text;
+  }
+  return null;
 }
 
 /**
@@ -783,9 +874,9 @@ async function analyseIntakeAndReply(
  * down rather than merely fail.
  */
 async function answerWithAssistant(
-  ctx: { api: { sendMessage: (chatId: number | string, text: string) => Promise<unknown> } },
   chatId: bigint,
   text: string,
+  thinkingMessageId: number | null,
 ): Promise<void> {
   const replies: Record<string, string> = {
     not_configured:
@@ -793,21 +884,42 @@ async function answerWithAssistant(
     limit: 'Bugungi AI savollar chegarasi tugadi — ertaga yana so‘rang.',
     error: 'AI javob berolmadi. Keyinroq urinib ko‘ring.',
   };
+  // «Typing…» at the top of the chat for as long as the model works — the
+  // answer takes tens of seconds and a silent chat reads as a dead bot.
+  // Telegram shows the action for about five seconds, hence four.
+  const typing = setInterval(() => void sendTyping(chatId).catch(() => {}), 4_000);
+  void sendTyping(chatId).catch(() => {});
+  let answer: string;
   try {
     const outcome = await assistantFromBot(chatId, text);
     if (!outcome) return;
-    const answer =
+    answer =
       outcome.status === 'ok'
         ? outcome.answer
         : outcome.status === 'gave_up'
           ? (outcome.answer ?? 'Oxirigacha yetolmadim — savolni soddaroq berib ko‘ring.')
           : (replies[outcome.status] ?? replies.error!);
-    await ctx.api.sendMessage(String(chatId), answer);
   } catch (err) {
     logger.warn({ err }, 'bot assistant failed');
-    await ctx.api
-      .sendMessage(String(chatId), replies.error!)
-      .catch((sendErr: unknown) => logger.warn({ err: sendErr }, 'bot assistant reply failed'));
+    answer = replies.error!;
+  } finally {
+    clearInterval(typing);
+  }
+  // NEW message(s) (round C), never the placeholder edited into the answer:
+  // an edit makes no sound, so the person who asked and put the phone down
+  // would never learn the answer came. Plain text (a model writes `<` and
+  // `*` freely), and split rather than refused — the model may write more
+  // than one message holds.
+  for (const part of splitMessage(answer)) {
+    const sent = await sendText({ chatId, text: part });
+    if (!sent.ok) {
+      logger.warn({ description: sent.description }, 'bot assistant reply failed');
+      break;
+    }
+  }
+  // The placeholder points DOWN to where the answer is — best-effort.
+  if (thinkingMessageId !== null) {
+    void editText({ chatId, messageId: thinkingMessageId, html: '🤖 Javob pastda ⬇️' }).catch(() => {});
   }
 }
 

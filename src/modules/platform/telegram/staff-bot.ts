@@ -12,7 +12,19 @@ import {
 import { writeAudit } from '../audit/service';
 import { loadUserRoles } from '../rbac/authorize';
 import { completeTask, TaskError } from '../tasks/service';
+import { DAY_BUTTONS } from '../tasks/digest';
+import { logger } from '../logger';
+import { approvalVerdictLine } from '../notifications/labels';
+import {
+  appendLine,
+  keyboardOf,
+  staffTextHtml,
+  urlRowsOf,
+  withoutCallback,
+} from '../notifications/staff-html';
 import { allLabelVariants } from './client-labels';
+import { buttonLabel } from './limits';
+import { editMarkup, editText } from './send';
 
 /**
  * The cabinet's phone rule, restated here because platform must never import
@@ -250,7 +262,12 @@ export function startMenuFor(
 }
 
 export type BotCallback =
-  | { kind: 'task_done'; taskId: string }
+  /**
+   * `list` — pressed on a LIST of tasks («📋 Bugun», the morning digest),
+   * whose message stays and only loses that task's row; without it the
+   * button was the single task's own message, which is closed whole.
+   */
+  | { kind: 'task_done'; taskId: string; list?: true }
   | { kind: 'approval'; approvalId: string; verdict: 'approved' | 'refused' }
   | { kind: 'entry'; who: 'staff' | 'client' }
   | { kind: 'calc'; step: CalcStep }
@@ -312,6 +329,9 @@ export function parseCallback(data: string): BotCallback | null {
   if (noteSend) return { kind: 'note', step: 'send', noteId: noteSend[1]! };
   const task = /^t:([0-9a-f-]{36})$/.exec(data);
   if (task) return { kind: 'task_done', taskId: task[1]! };
+  // Round C: the same «Bajarildi», pressed on a list of the day's tasks.
+  const listed = /^tb:([0-9a-f-]{36})$/.exec(data);
+  if (listed) return { kind: 'task_done', taskId: listed[1]!, list: true };
   const approval = /^a:([01]):([0-9a-f-]{36})$/.exec(data);
   if (approval) {
     return {
@@ -343,7 +363,40 @@ export function buttonsFor(
       ],
     ];
   }
+  // The 08:00 digest carries the same buttons «📋 Bugun» draws (round C), from
+  // the tasks it listed — so the push and the pull stay one thing.
+  if (type === 'TasksDue' && Array.isArray(payload.tasks)) {
+    return dayButtons(payload.tasks as DayTask[]);
+  }
   return null;
+}
+
+/** A task a day list offers to close — its id and the words on the button. */
+export interface DayTask {
+  id: string;
+  title: string;
+}
+
+/** How many «✅» buttons a day list carries — one number, the digest's. */
+export { DAY_BUTTONS };
+
+/**
+ * «✅ <title>» per task, one per row, overdue first (the caller's order).
+ *
+ * A NEW prefix, `tb:`, and not the task message's `t:`: the press on a list
+ * must shrink the list (remove that one row) where the press on a task's own
+ * message closes the message — and the handler learns which from the button
+ * itself. Null when there is nothing to offer, so the caller sends no empty
+ * keyboard (Telegram refuses one).
+ */
+export function dayButtons(tasks: DayTask[]): { text: string; callback_data: string }[][] | null {
+  const rows = tasks
+    .filter((task) => typeof task?.id === 'string' && /^[0-9a-f-]{36}$/.test(task.id))
+    .slice(0, DAY_BUTTONS)
+    .map((task) => [
+      { text: `✅ ${buttonLabel(String(task.title ?? ''), 'Vazifa')}`, callback_data: `tb:${task.id}` },
+    ]);
+  return rows.length > 0 ? rows : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -353,20 +406,77 @@ export function buttonsFor(
 // ---------------------------------------------------------------------------
 
 const PENDING_TTL_MS = 10 * 60_000;
-const pendingResults = new Map<string, { taskId: string; expires: number }>();
+
+/**
+ * The message the «✅» was pressed on — what the close rewrites once the
+ * result arrives (round C). Pressing changes NOTHING on it: the task is not
+ * closed until the result is typed, and a message that said «Yopildi» while
+ * the prompt was still waiting would be the lie this replaces.
+ */
+export interface TaskOrigin {
+  messageId: number;
+  /** The message's plain text as Telegram holds it (callbackQuery.message). */
+  text: string;
+  /** Its keyboard at the moment of the press. */
+  markup: unknown;
+  kind: 'single' | 'list';
+}
+
+export interface PendingTask {
+  taskId: string;
+  origin: TaskOrigin | null;
+}
+
+const pendingResults = new Map<string, PendingTask & { expires: number }>();
 /** Chats that pressed «Hodim» and were asked for their phone. */
 const staffEntryIntents = new Map<string, number>();
 
-export function noteTaskPending(chatId: bigint, taskId: string): void {
-  pendingResults.set(String(chatId), { taskId, expires: Date.now() + PENDING_TTL_MS });
+export function noteTaskPending(chatId: bigint, taskId: string, origin: TaskOrigin | null = null): void {
+  pendingResults.set(String(chatId), { taskId, origin, expires: Date.now() + PENDING_TTL_MS });
 }
 
-export function takeTaskPending(chatId: bigint): string | null {
+export function takeTaskPending(chatId: bigint): PendingTask | null {
   const key = String(chatId);
   const entry = pendingResults.get(key);
   if (!entry) return null;
   pendingResults.delete(key);
-  return entry.expires > Date.now() ? entry.taskId : null;
+  return entry.expires > Date.now() ? { taskId: entry.taskId, origin: entry.origin } : null;
+}
+
+/**
+ * The pressed message, once the task is closed (round C).
+ *
+ * A task's own message becomes its record: its text, «✅ Yopildi — <result>»
+ * under it, the «Bajarildi» button gone and its «↗️ Ochish» kept. A LIST
+ * («📋 Bugun», the morning digest) keeps its text and loses only that task's
+ * row, so the next press on it is the next task. Both are edits, and both are
+ * best-effort — Telegram will not edit a message older than 48 hours, and a
+ * button that outlives its task only answers «allaqachon yopilgan».
+ */
+export async function closeTaskMessage(
+  chatId: bigint,
+  pending: PendingTask,
+  result: string,
+): Promise<void> {
+  const origin = pending.origin;
+  if (!origin) return;
+  const res =
+    origin.kind === 'list'
+      ? await editMarkup({
+          chatId,
+          messageId: origin.messageId,
+          replyMarkup: keyboardOf(withoutCallback(origin.markup, `tb:${pending.taskId}`)),
+        })
+      : await editText({
+          chatId,
+          messageId: origin.messageId,
+          html: appendLine(
+            staffTextHtml(origin.text, 'TaskAssigned'),
+            result ? `✅ Yopildi — ${result}` : '✅ Yopildi',
+          ),
+          replyMarkup: keyboardOf(urlRowsOf(origin.markup)),
+        });
+  if (!res.ok) logger.warn({ description: res.description }, 'task message not updated');
 }
 
 export function noteStaffEntry(chatId: bigint): void {
@@ -536,6 +646,43 @@ export async function completeTaskFromBot(
     }
     throw err;
   }
+}
+
+/**
+ * How a request stands, in the words its deciders read — for the button that
+ * was pressed on it. Null while it is still pending (or not found).
+ */
+export async function approvalOutcomeLine(
+  approvalId: string,
+  locale?: string | null,
+): Promise<string | null> {
+  const { approvalVerdict } = await import('../../wms/issue/approvals');
+  const verdict = await approvalVerdict(approvalId);
+  if (!verdict) return null;
+  return approvalVerdictLine(verdict, locale);
+}
+
+/**
+ * The approval message a decider pressed, settled in place (round C): its
+ * text, the verdict under it, the «Ruxsat / Yo‘q» gone and the link kept.
+ * Done on `already_decided` too — that press is exactly the one that proves a
+ * stale copy was still asking.
+ */
+export async function settlePressedApproval(
+  chatId: bigint,
+  pressed: { messageId: number; text: string; markup: unknown },
+  approvalId: string,
+  locale?: string | null,
+): Promise<void> {
+  const line = await approvalOutcomeLine(approvalId, locale);
+  if (!line) return;
+  const res = await editText({
+    chatId,
+    messageId: pressed.messageId,
+    html: appendLine(staffTextHtml(pressed.text, 'DebtApprovalRequested'), line),
+    replyMarkup: keyboardOf(urlRowsOf(pressed.markup)),
+  });
+  if (!res.ok) logger.warn({ description: res.description }, 'approval message not updated');
 }
 
 export type BotApprovalResult =

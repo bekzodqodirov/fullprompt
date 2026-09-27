@@ -164,19 +164,41 @@ export const MUTE_GROUPS = {
 
 export type MuteGroup = keyof typeof MUTE_GROUPS;
 
+/**
+ * Is this person silencing this type?
+ *
+ * The stored list is a list of TYPES, written from group checkboxes — so a
+ * type that JOINS a group after somebody ticked it (round C moved CalcSealed,
+ * CalcDiscounted and two new types in) is not in their list, and the person
+ * who silenced «tasks» a month ago would suddenly start hearing a member of
+ * it. Growing a group must never un-mute it: a type counts as muted when the
+ * list holds every OTHER member of its group, which is exactly the footprint
+ * the checkbox left before the type arrived. A group of one has no other
+ * members to judge by, so it is only ever muted by name.
+ */
 export function isTelegramMuted(muted: unknown, type: string): boolean {
   if (!Array.isArray(muted)) return false;
-  return muted.includes('all') || muted.includes(type);
+  if (muted.includes('all') || muted.includes(type)) return true;
+  for (const members of Object.values(MUTE_GROUPS) as readonly (readonly string[])[]) {
+    if (!members.includes(type)) continue;
+    const others = members.filter((t) => t !== type);
+    if (others.length > 0 && others.every((t) => muted.includes(t))) return true;
+  }
+  return false;
 }
 
-/** Which groups are fully covered by the stored list (for checkbox state). */
+/**
+ * Which groups are fully covered by the stored list (for checkbox state).
+ * Asked through `isTelegramMuted`, so a group that grew reads back as ticked
+ * — and the next save writes the newcomer into the list for good.
+ */
 export function groupsFromList(muted: unknown): { all: boolean; groups: Record<MuteGroup, boolean> } {
   const list = Array.isArray(muted) ? (muted as string[]) : [];
   const all = list.includes('all');
   const groups = Object.fromEntries(
     (Object.keys(MUTE_GROUPS) as MuteGroup[]).map((g) => [
       g,
-      all || MUTE_GROUPS[g].every((t) => list.includes(t)),
+      all || MUTE_GROUPS[g].every((t) => isTelegramMuted(list, t)),
     ]),
   ) as Record<MuteGroup, boolean>;
   return { all, groups };

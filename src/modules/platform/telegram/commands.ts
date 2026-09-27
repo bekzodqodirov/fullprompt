@@ -31,6 +31,11 @@ export function offerStaffCommands(ctx: { api: CommandsApi }, chatId: number): v
         { command: 'hodim', description: 'Hodim rejimi' },
         { command: 'bugun', description: 'Bugungi vazifalar' },
         { command: 'zametka', description: 'Zametkalar' },
+        // Both have always WORKED as typed commands (staff-handlers answers
+        // «/hisoblatish» and «/ai» beside their buttons); round C puts them
+        // where a person can find them.
+        { command: 'hisoblatish', description: 'Hisoblatish' },
+        { command: 'ai', description: 'AI rastamojka' },
       ],
       { scope: { type: 'chat', chat_id: chatId } },
     )

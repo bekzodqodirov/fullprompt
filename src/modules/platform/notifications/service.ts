@@ -14,8 +14,18 @@ import {
 import { logger } from '../logger';
 import { runAutomationRules } from '../automation/service';
 import { buttonsFor } from '../telegram/staff-bot';
-import { notificationLabels } from './labels';
+import { approvalVerdictLine, fillCount, notificationLabels } from './labels';
 import { isTelegramMuted } from './mutes';
+import { h } from '../telegram/format';
+import {
+  botCall,
+  editText,
+  isBotFailure,
+  isPermanentFailure,
+  sendText,
+  type SendResult,
+} from '../telegram/send';
+import { appendLine, composeStaffHtml, keyboardOf, type StaffMessage } from './staff-html';
 
 /**
  * Event → recipient rules (spec §11). Each event fans out to notification
@@ -260,7 +270,7 @@ export function renderTelegramText(
     )
     .join('\n');
   const link = `${appUrl}/receipts/${payload.receiptId}`;
-  const codes = (payload.shortCodes as string[] | undefined)?.join(', ') ?? '';
+  const codes = capCodes((payload.shortCodes as string[] | undefined) ?? [], L.andMore);
 
   /**
    * A digest carries its own text and that text IS the message.
@@ -381,8 +391,8 @@ export function renderTelegramText(
       return (
         `📋 ${L.inventoryAt} ${payload.warehouseCode}\n` +
         `${L.scanned}: ${payload.scanned}\n` +
-        (moved.length ? `↩️ ${L.movedHere}: ${moved.join(', ')}\n` : '') +
-        (lost.length ? `❌ ${L.markedLost}: ${lost.join(', ')}\n` : '') +
+        (moved.length ? `↩️ ${L.movedHere}: ${capCodes(moved, L.andMore)}\n` : '') +
+        (lost.length ? `❌ ${L.markedLost}: ${capCodes(lost, L.andMore)}\n` : '') +
         (!moved.length && !lost.length ? `✅ ${L.noDiscrepancies}\n` : '') +
         `${appUrl}/dashboard`
       );
@@ -400,7 +410,7 @@ export function renderTelegramText(
         `🤝 ${L.issuedTo} ${payload.clientCode} (${payload.clientName}): ${payload.boxCount} ${L.boxesShort}` +
         // Only events emitted since round 100 carry the totals.
         (payload.weightKg !== undefined
-          ? ` · ${round(Number(payload.weightKg))} kg · ${round(Number(payload.volumeM3))} m³`
+          ? ` · ${round(Number(payload.weightKg))} ${L.kg} · ${round(Number(payload.volumeM3))} ${L.m3}`
           : '') +
         ` · ${L.warehouse} ${payload.warehouseCode}\n` +
         `${L.receivedBy}: ${payload.personName}${payload.personPhone ? ` (${payload.personPhone})` : ''}` +
@@ -440,15 +450,16 @@ export function renderTelegramText(
       );
     }
     case 'DebtApprovalDecided': {
-      const reasons = payload.reasons as string | undefined;
-      const [yes, no] =
-        reasons === 'price'
-          ? [L.priceApprovalYes, L.priceApprovalNo]
-          : reasons === 'both'
-            ? [L.issueApprovalYes, L.issueApprovalNo]
-            : [L.debtApprovalYes, L.debtApprovalNo];
+      // One home for the verdict's words (round C): the deciders' own copies
+      // are closed with the same line once the question is settled.
       return (
-        `${payload.verdict === 'approved' ? `✅ ${yes}` : `⛔ ${no}`}\n` +
+        `${approvalVerdictLine(
+          {
+            verdict: payload.verdict === 'approved' ? 'approved' : 'refused',
+            reasons: payload.reasons as string | undefined,
+          },
+          locale,
+        )}\n` +
         `${L.client}: ${payload.clientCode} (${payload.clientName})\n` +
         `${L.decidedByWord}: ${payload.decidedByName}` +
         (payload.note ? `\n${L.comment}: ${payload.note}` : '') +
@@ -486,6 +497,18 @@ export function renderTelegramText(
       // to send for every event that had no receipt.
       return payload.receiptId ? `${type}\n${link}` : `${type}\n${appUrl}`;
   }
+}
+
+/**
+ * Box codes in a staff message, at most thirty and then the COUNT of the
+ * rest. An uncapped list is the one way these texts outgrew 4096 characters,
+ * and Telegram refuses such a message whole — a truck with two hundred
+ * unplanned cartons produced an alarm nobody ever received (round C).
+ */
+const CODES_SHOWN = 30;
+function capCodes(codes: string[], andMore: string): string {
+  if (codes.length <= CODES_SHOWN) return codes.join(', ');
+  return `${codes.slice(0, CODES_SHOWN).join(', ')} ${fillCount(andMore, codes.length - CODES_SHOWN)}`;
 }
 
 /** Two decimals, without a trailing `.00` on a whole number. */
@@ -691,9 +714,154 @@ export async function claimPendingTelegram(limit: number): Promise<string[]> {
   return rows.map((r) => r.id);
 }
 
+/**
+ * Not before this moment (epoch ms) — the drain's own pause.
+ *
+ * A 429 is Telegram saying «not now», and a refused TOKEN (401/404) is the
+ * bot itself being down; neither is a fact about the message in hand, and
+ * before round C both were counted as a failed attempt on it, so a burst
+ * could spend all six in minutes and write off messages that were never
+ * wrong. Module-level because the drain is kicked from everywhere (every
+ * `notifyStaffTelegram` enqueues one, and a minute cron runs beside them):
+ * without a shared «wait until» each kick walked straight back into the
+ * wall it had just been told about.
+ */
+let notBefore = 0;
+
+/** Tests only: forget a pause a previous case set. */
+export function __resetTelegramPause(): void {
+  notBefore = 0;
+}
+
+/**
+ * A staff notification as Telegram will show it — the recipient's words,
+ * HTML from the escaped stored text, and our own card link lifted into a
+ * «↗️ Ochish» button (staff-html.ts). Exported because an EDIT of a sent
+ * message (the approval copies below) must rebuild exactly what was sent.
+ *
+ * A pre-rendered text was written in Uzbek by its caller, so its button is
+ * Uzbek too; an event-rendered one is in the reader's own language.
+ */
+export function composeStaffMessage(
+  type: string,
+  payload: Record<string, unknown>,
+  locale?: string | null,
+): StaffMessage {
+  const preRendered = typeof payload.text === 'string' && payload.text.trim() !== '';
+  return composeStaffHtml(type, renderTelegramText(type, payload, locale), {
+    appUrl: process.env.APP_URL,
+    openLabel: notificationLabels(preRendered ? 'uz' : locale).openInApp,
+  });
+}
+
+/** A Bot API answer as the sender's verdict — for the one call made by hand. */
+function answerAsResult(answer: Awaited<ReturnType<typeof botCall>>): SendResult {
+  const result = answer.result as { message_id?: number } | null;
+  return {
+    ok: answer.ok,
+    status: answer.status,
+    description: answer.description,
+    messageId: answer.ok && typeof result?.message_id === 'number' ? result.message_id : null,
+    retryAfter: answer.retryAfter,
+    permanent: !answer.ok && isPermanentFailure(answer.status),
+    botDown: !answer.ok && isBotFailure(answer.status),
+    usedFallback: false,
+  };
+}
+
+/** Telegram refused a BUTTON (not our markup, not the chat). */
+const BUTTON_REFUSAL = /button|keyboard|reply.?markup/i;
+
+/**
+ * Send one staff message.
+ *
+ * The ordinary path is the one sender and its fallbacks. The exception is a
+ * message whose card link was lifted into a button: the sender's own answer to
+ * a refused keyboard is to send the text WITHOUT it — which here would deliver
+ * a message that lost its link altogether. So that one attempt is made by
+ * hand, and a refused button puts the link back into the text (REL: the
+ * sentence must never depend on the button, map-link.ts's rule).
+ */
+async function deliverStaffMessage(
+  chatId: bigint,
+  message: StaffMessage,
+  buttons: { text: string; callback_data: string }[][] | null,
+): Promise<SendResult> {
+  const rows = [...(buttons ?? []), ...(message.urlRow ? [message.urlRow] : [])];
+  if (!message.url) {
+    return sendText({ chatId, html: message.html, replyMarkup: keyboardOf(rows) });
+  }
+  const first = await botCall('sendMessage', {
+    chat_id: Number(chatId),
+    text: message.html,
+    parse_mode: 'HTML',
+    link_preview_options: { is_disabled: true },
+    reply_markup: { inline_keyboard: rows },
+  });
+  if (first.ok || first.status !== 400) return answerAsResult(first);
+  if (BUTTON_REFUSAL.test(first.description)) {
+    logger.warn({ description: first.description }, 'telegram refused the link button — the link goes back in the text');
+    return sendText({
+      chatId,
+      html: `${message.html}\n${h(message.url)}`,
+      replyMarkup: keyboardOf(buttons),
+    });
+  }
+  // Anything else Telegram refused (our HTML, most likely): the sender's own
+  // fallbacks know what to do with it.
+  return sendText({ chatId, html: message.html, replyMarkup: keyboardOf(rows) });
+}
+
+/**
+ * Show a colleague the customer's OWN message before our sentence about it
+ * (round C, contract 2): a photo of a damaged carton or a voice note is not
+ * something a line of text can carry. Best-effort — the sentence goes either
+ * way — and remembered on the row, so a retry of the sentence after a 429
+ * does not forward the same photo twice.
+ */
+async function forwardOriginal(
+  notificationId: string,
+  staffChatId: bigint,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  const from = payload.forwardFrom as { chatId?: unknown; messageId?: unknown } | undefined;
+  if (!from || payload.forwarded === true) return;
+  const fromChat = Number(from.chatId);
+  const messageId = Number(from.messageId);
+  if (!Number.isFinite(fromChat) || !Number.isInteger(messageId)) return;
+  const answer = await botCall('forwardMessage', {
+    chat_id: Number(staffChatId),
+    from_chat_id: fromChat,
+    message_id: messageId,
+  });
+  if (!answer.ok) {
+    logger.warn({ notificationId, description: answer.description }, 'customer message not forwarded — the text still goes');
+    return;
+  }
+  await db.execute(sql`
+    UPDATE notifications SET payload = payload || '{"forwarded": true}'::jsonb
+    WHERE id = ${notificationId}`);
+}
+
+/**
+ * Hand the rest of a run back to the queue exactly as it was: pending, no
+ * claim, no attempt counted. ONE statement, so a pause can never leave half a
+ * run parked in 'sending' for the ten-minute reclaim to charge an attempt for.
+ */
+async function releaseClaims(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  await db
+    .update(notifications)
+    .set({ status: 'pending', claimedAt: null })
+    .where(and(inArray(notifications.id, ids), eq(notifications.status, 'sending')));
+}
+
 export async function sendPendingTelegram(): Promise<void> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) return;
+  // Asked BEFORE claiming, so the kicks that arrive during a pause cost a
+  // clock read and not a claim-and-release of thirty rows each.
+  if (Date.now() < notBefore) return;
 
   await reclaimStaleTelegram();
   const claimedIds = await claimPendingTelegram(30);
@@ -701,13 +869,15 @@ export async function sendPendingTelegram(): Promise<void> {
   const pending = await db
     .select()
     .from(notifications)
-    .where(inArray(notifications.id, claimedIds));
+    .where(inArray(notifications.id, claimedIds))
+    .orderBy(notifications.createdAt);
 
   // One dead chat must not hold up the queue. Every row is attempted, its
   // own failure recorded, and the batch reports at the end — before this,
   // the first driver who blocked the bot stopped every message behind them,
   // including "boxes missing in transit".
   let failed = 0;
+  const settled = new Set<string>();
 
   for (const notification of pending) {
     const recipient = await db.query.users.findFirst({
@@ -722,6 +892,7 @@ export async function sendPendingTelegram(): Promise<void> {
         .update(notifications)
         .set({ status: 'muted', error: 'user deactivated' })
         .where(eq(notifications.id, notification.id));
+      settled.add(notification.id);
       continue;
     }
     const link = await db.query.telegramLinks.findFirst({
@@ -735,57 +906,162 @@ export async function sendPendingTelegram(): Promise<void> {
         .update(notifications)
         .set({ status: 'muted', error: 'telegram not linked' })
         .where(eq(notifications.id, notification.id));
+      settled.add(notification.id);
       continue;
     }
+    const payload = notification.payload as Record<string, unknown>;
+    // Inline buttons ride on the send, by type (staff bot, round 35): a
+    // task lands with «Bajarildi», a debtor request with «Ruxsat / Yo‘q».
+    const buttons = buttonsFor(notification.type, payload);
+    const message = composeStaffMessage(notification.type, payload, recipient.locale);
+
+    let res: SendResult;
     try {
-      // Inline buttons ride on the send, by type (staff bot, round 35): a
-      // task lands with «Bajarildi», a debtor request with «Ruxsat / Yo‘q».
-      const buttons = buttonsFor(
-        notification.type,
-        notification.payload as Record<string, unknown>,
-      );
-      const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: Number(link.telegramChatId),
-          text: renderTelegramText(
-            notification.type,
-            notification.payload as Record<string, unknown>,
-            recipient?.locale,
-          ),
-          ...(buttons ? { reply_markup: { inline_keyboard: buttons } } : {}),
-        }),
-      });
-      const body = (await res.json()) as { ok: boolean; description?: string };
-      if (!body.ok) throw new Error(body.description ?? 'telegram send failed');
-      await db
-        .update(notifications)
-        .set({ status: 'sent', sentAt: new Date(), error: null })
-        .where(eq(notifications.id, notification.id));
+      await forwardOriginal(notification.id, link.telegramChatId, payload);
+      res = await deliverStaffMessage(link.telegramChatId, message, buttons);
     } catch (err) {
-      logger.error({ err, notificationId: notification.id }, 'telegram send failed');
-      failed += 1;
-      const attempts = notification.attempts + 1;
+      // The sender answers rather than throws; this is the database under it.
+      res = {
+        ok: false,
+        status: 0,
+        description: String(err),
+        messageId: null,
+        retryAfter: null,
+        permanent: false,
+        botDown: false,
+        usedFallback: false,
+      };
+    }
+
+    if (res.ok) {
+      // Which message it became (round C): an approval settled elsewhere
+      // edits every decider's copy by this, so nobody presses a question
+      // that is already answered. jsonb, so no migration.
+      const tg =
+        res.messageId !== null
+          ? { chatId: Number(link.telegramChatId), messageId: res.messageId }
+          : null;
       await db
         .update(notifications)
         .set({
-          attempts,
-          error: String(err),
-          // Out of attempts: stop asking. A blocked bot or a deleted chat
-          // never becomes deliverable, and a row that retries for ever keeps
-          // the whole job failing. Not terminal yet → back to 'pending', so
-          // the claim this drain took does not outlive it.
-          status: attempts >= MAX_TELEGRAM_ATTEMPTS ? 'failed' : 'pending',
+          status: 'sent',
+          sentAt: new Date(),
+          error: null,
+          // Merged in SQL, not spread from the row read above: the forward
+          // may have written `forwarded` onto it since.
+          ...(tg ? { payload: sql`${notifications.payload} || ${JSON.stringify({ tg })}::jsonb` } : {}),
         })
         .where(eq(notifications.id, notification.id));
+      settled.add(notification.id);
+      continue;
     }
+
+    if (res.status === 429 || res.botDown) {
+      // Not this message's fault: pause the drain, put the whole rest of the
+      // run back untouched (this row included) and stop. The next kick after
+      // the pause resumes where this left off.
+      const waitMs = res.botDown ? 60_000 : Math.max(1, res.retryAfter ?? 1) * 1000;
+      notBefore = Date.now() + waitMs;
+      await releaseClaims(pending.map((row) => row.id).filter((id) => !settled.has(id)));
+      logger.warn(
+        { status: res.status, description: res.description, waitMs },
+        res.botDown ? 'telegram refused the bot token — drain paused' : 'telegram rate limit — drain paused',
+      );
+      break;
+    }
+
+    logger.error({ notificationId: notification.id, status: res.status, description: res.description }, 'telegram send failed');
+    failed += 1;
+    const attempts = notification.attempts + 1;
+    await db
+      .update(notifications)
+      .set({
+        attempts,
+        error: res.description || `HTTP ${res.status}`,
+        // Out of attempts: stop asking. A blocked bot or a deleted chat
+        // never becomes deliverable, and a row that retries for ever keeps
+        // the whole job failing. Not terminal yet → back to 'pending', so
+        // the claim this drain took does not outlive it.
+        status: attempts >= MAX_TELEGRAM_ATTEMPTS ? 'failed' : 'pending',
+      })
+      .where(eq(notifications.id, notification.id));
+    settled.add(notification.id);
   }
 
   // Still throw so pg-boss retries — but only after every row had its turn.
   // Rows already marked `sent` are excluded from the next pass, so a retry
   // re-sends nothing.
   if (failed > 0) throw new Error(`${failed} telegram message(s) failed`);
+}
+
+/**
+ * Close every decider's copy of a settled debtor/unpriced request (round C).
+ *
+ * The request goes to everyone who may decide it, each copy carrying «✅
+ * Ruxsat / ⛔ Yo‘q». Until now the copies were never touched: the second
+ * decider pressed a button on a question already answered and read «allaqachon
+ * hal qilingan» — or, worse, a copy that looked open sat in three phones for
+ * days. ONE place both doors reach (the web action and the bot), called after
+ * the decision is written: each copy that remembers where it went
+ * (`payload.tg`, the drain writes it) is rewritten to its own text plus the
+ * verdict, the buttons gone and its link kept.
+ *
+ * Best-effort by nature: Telegram refuses edits to a message older than 48
+ * hours, and each edit carries the sender's short deadline.
+ */
+export async function retireApprovalCopies(input: {
+  approvalId: string;
+  /** When the request was made — nothing older can be one of its copies. */
+  since: Date;
+  /** Everyone who could have been sent one. */
+  userIds: string[];
+  verdict: 'approved' | 'refused';
+  reasons?: string | null;
+  decidedByName?: string | null;
+}): Promise<number> {
+  // No bot, no copies to close — the drain made none (its own first line).
+  if (!process.env.TELEGRAM_BOT_TOKEN || input.userIds.length === 0) return 0;
+  const rows = await db
+    .select({
+      id: notifications.id,
+      type: notifications.type,
+      payload: notifications.payload,
+      locale: users.locale,
+    })
+    .from(notifications)
+    .innerJoin(users, eq(users.id, notifications.userId))
+    .where(
+      and(
+        inArray(notifications.userId, input.userIds),
+        gte(notifications.createdAt, input.since),
+        eq(notifications.channel, 'telegram'),
+        eq(notifications.type, 'DebtApprovalRequested'),
+        sql`${notifications.payload}->>'approvalId' = ${input.approvalId}`,
+        sql`${notifications.payload}->'tg' IS NOT NULL`,
+      ),
+    );
+  let edited = 0;
+  for (const row of rows) {
+    const payload = row.payload as Record<string, unknown>;
+    const tg = payload.tg as { chatId?: unknown; messageId?: unknown } | undefined;
+    const chatId = Number(tg?.chatId);
+    const messageId = Number(tg?.messageId);
+    if (!Number.isFinite(chatId) || !Number.isInteger(messageId)) continue;
+    const message = composeStaffMessage(row.type, payload, row.locale);
+    const verdict = approvalVerdictLine(
+      { verdict: input.verdict, reasons: input.reasons, decidedByName: input.decidedByName },
+      row.locale,
+    );
+    const res = await editText({
+      chatId,
+      messageId,
+      html: appendLine(message.html, verdict),
+      replyMarkup: keyboardOf(message.urlRow ? [message.urlRow] : null),
+    });
+    if (res.ok) edited += 1;
+    else logger.warn({ notificationId: row.id, description: res.description }, 'approval copy not closed');
+  }
+  return edited;
 }
 
 export async function unreadCount(userId: string): Promise<number> {
