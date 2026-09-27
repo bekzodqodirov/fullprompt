@@ -1957,6 +1957,18 @@ other member of its group). The task «today» window stays UTC on purpose.
 TRAPS: a worktree agent starts at the last MERGE, not the branch head — name
 the base commit; a red proof run while reviewers read the tree was reported
 as a live defect.
+**Then reviewed as merged** (#1106-#1113, five lenses): the headline is that
+the Mini App's ready card could never say «cleared» for landed cargo — its
+truck came from the live pointer that unloading NULLs (#440 in the round that
+restated #440 for the pushes), so it now reads the landing movement
+(`landedTrucks`, a LATERAL — a correlated subquery in the grouped select is
+refused) and `readyCleared` uses the push's `arrivalCleared`. Also: the limit's
+answer said «delivered» about messages that reached nobody, and every line got
+its own «✅» (`ackDue`); a transient forward failure sent the sentence without
+the customer's only copy of the file; `slice` halved emoji into jsonb-refused
+surrogates (`clipText`, code points); a mute group that grew by THREE types
+un-muted everybody (`JOINED_LATER`: newcomers are judged by the founders); a
+decided approval's unsent copies went out with live buttons. 14 red proofs.
 
 **Latest migration: 0111** (`nav_usage` — «Tez-tez»; ledger must reach
 **112**; `when` …090). Before it: **0110** (`lead_assign` — the website teams, the typed and
