@@ -89,8 +89,8 @@ describe('the count door', () => {
   it('the batch card draws the panel only for a door holder; the phone screen never reaches the press', () => {
     const card = read(CARD);
     expect(card).toContain('const countDoor = countDoorFor(actor, batch.originWarehouseId)');
-    expect(card).toMatch(/const countPanel = countDoor && loadingNow \? await countLoadPanel\(batch\) : null/);
-    expect(card).toMatch(/\{countPanel && \(\s*<CountLoadPanel/);
+    expect(card).toMatch(/const loadPanel = countDoor && loadingNow \? await countLoadPanel\(batch\) : null/);
+    expect(card).toMatch(/\{loadPanel && \(\s*<CountLoadPanel/);
     expect(read(LOAD_SCREEN)).not.toContain('count-load-actions');
   });
 
