@@ -7,6 +7,7 @@ import { LightboxImg } from '@/components/lightbox-img';
 import { DensityBadge } from '@/components/density-badge';
 import { submitPlanAction } from '../actions';
 import { codeIdentity } from '@/modules/wms/labels/code-identity';
+import { QrlessChip } from '@/components/qrless-chip';
 
 interface WarehouseOption {
   id: string;
@@ -32,6 +33,8 @@ interface StockLot {
   photoId: string | null;
   /** Which truck(s) brought it here — '' for cargo received at this warehouse. */
   arrival: string;
+  /** Of `available`, the QR-siz cartons (0112); absent in a snapshot cached before it. */
+  qrless?: number;
 }
 interface StockCrate {
   crateId: string;
@@ -75,6 +78,7 @@ export function PlanEditor({
 }) {
   const t = useTranslations('plans');
   const tc = useTranslations('common');
+  const tq = useTranslations('qrsiz');
   const router = useRouter();
   const [originId, setOriginId] = useState(resubmit?.originWarehouseId ?? warehouses[0]?.id ?? '');
   const [destId, setDestId] = useState(
@@ -365,6 +369,11 @@ export function PlanEditor({
                           data-testid="lot-arrival"
                         >
                           🚚 {lot.arrival}
+                        </span>
+                      )}
+                      {(lot.qrless ?? 0) > 0 && (
+                        <span className="block">
+                          <QrlessChip n={lot.qrless!} total={lot.available} label={tq('chip')} />
                         </span>
                       )}
                     </td>

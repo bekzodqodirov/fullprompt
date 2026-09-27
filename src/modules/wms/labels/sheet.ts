@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import QRCode from 'qrcode';
 import { db } from '@/modules/platform/db/client';
 import {
@@ -11,6 +11,7 @@ import {
 import { writeAudit, type AuditContext } from '@/modules/platform/audit/service';
 import { QR_ECC, QR_MARGIN_MODULES } from './geometry';
 import type { LabelData } from './renderer';
+import { qrlessBoxSql } from './qrless-sql';
 
 /**
  * WHICH labels a print covers, decided in one place.
@@ -62,52 +63,31 @@ export async function labelsForReceipt(
     .select()
     .from(boxes)
     .where(
-      filter.boxId
-        ? and(inArray(boxes.lotId, lotIds), eq(boxes.id, filter.boxId))
-        : inArray(boxes.lotId, lotIds),
+      and(
+        filter.boxId
+          ? and(inArray(boxes.lotId, lotIds), eq(boxes.id, filter.boxId))
+          : inArray(boxes.lotId, lotIds),
+        // A QR-siz carton (0112, the owner's Q8) is not on this sheet: it has
+        // no sticker of ours, and a sheet printed here stamps every row it
+        // carries — which is what turns a carton into «expect a scan». Only
+        // the print-later door's explicit «stikerlar yopishtirildi» may do
+        // that (labels/qrless.ts), for the cartons standing where it prints.
+        sql`NOT ${qrlessBoxSql()}`,
+      ),
     )
     .orderBy(asc(boxes.seqInLot));
   if (boxRows.length === 0) return null;
 
-  const dateLocal = new Intl.DateTimeFormat('ru-RU', {
-    timeZone: warehouse.timezone,
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  }).format(receipt.receivedAt);
-
+  const origin: LabelOrigin = {
+    warehouseCode: warehouse.code,
+    timezone: warehouse.timezone,
+    receiptNumber: receipt.number,
+    receivedAt: receipt.receivedAt,
+    unclaimedMarking: receipt.unclaimedMarking,
+    clientCode: client?.clientCode ?? null,
+  };
   const lotById = new Map(lots.map((l) => [l.id, l]));
-  const labels: LabelData[] = boxRows.map((box) => {
-    const lot = lotById.get(box.lotId)!;
-    const perBoxWeight =
-      lot.dimsMode === 'uniform' && lot.boxWeightKg
-        ? lot.boxWeightKg
-        : (Number(lot.totalWeightKg) / lot.boxCount).toFixed(1);
-    return {
-      warehouseCode: warehouse.code,
-      dateLocal,
-      receiptNumber: receipt.number ?? '',
-      // The MARKING wins when there is one — the box physically carries it, so
-      // once written it is the box's code for life (round 98). A receipt
-      // claimed from birth has no marking and prints the client code as before.
-      clientCodeWithLetter: receipt.unclaimedMarking
-        ? `${receipt.unclaimedMarking}-${lot.letter}`
-        : client
-          ? `${client.clientCode}-${lot.letter}`
-          : '#UNKNOWN',
-      unclaimed: !client,
-      productZh: lot.productNameZh,
-      productRu: lot.productNameRu,
-      boxSeq: box.seqInLot,
-      boxTotal: lot.boxCount,
-      weightKg: perBoxWeight,
-      dimsCm:
-        lot.dimsMode === 'uniform'
-          ? `${lot.boxLengthCm}×${lot.boxWidthCm}×${lot.boxHeightCm}`
-          : null,
-      shortCode: box.shortCode,
-    };
-  });
+  const labels: LabelData[] = boxRows.map((box) => labelFor(origin, lotById.get(box.lotId)!, box));
 
   return {
     receiptId,
@@ -116,6 +96,77 @@ export async function labelsForReceipt(
     warehouseCode: warehouse.code,
     labels,
     boxIds: boxRows.map((b) => b.id),
+  };
+}
+
+/** Where a sticker says the cargo came from: the RECEIPT's warehouse, day and number. */
+export interface LabelOrigin {
+  warehouseCode: string;
+  timezone: string;
+  receiptNumber: string | null;
+  receivedAt: Date;
+  unclaimedMarking: string | null;
+  clientCode: string | null;
+}
+
+type LabelLot = Pick<
+  typeof receiptLots.$inferSelect,
+  | 'letter'
+  | 'productNameZh'
+  | 'productNameRu'
+  | 'boxCount'
+  | 'dimsMode'
+  | 'boxWeightKg'
+  | 'totalWeightKg'
+  | 'boxLengthCm'
+  | 'boxWidthCm'
+  | 'boxHeightCm'
+>;
+
+/**
+ * One sticker, from its receipt, lot and box — the ONE shape both sheets
+ * draw (the receipt's, and the print-later sheet of QR-siz cartons in
+ * labels/qrless.ts). A sticker printed weeks later in Tashkent still says
+ * where and when the cargo was RECEIVED: it is the same sticker the box would
+ * have carried from the first day, so the two sheets must not disagree.
+ */
+export function labelFor(
+  origin: LabelOrigin,
+  lot: LabelLot,
+  box: { seqInLot: number; shortCode: string },
+): LabelData {
+  const perBoxWeight =
+    lot.dimsMode === 'uniform' && lot.boxWeightKg
+      ? lot.boxWeightKg
+      : (Number(lot.totalWeightKg) / lot.boxCount).toFixed(1);
+  return {
+    warehouseCode: origin.warehouseCode,
+    dateLocal: new Intl.DateTimeFormat('ru-RU', {
+      timeZone: origin.timezone,
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    }).format(origin.receivedAt),
+    receiptNumber: origin.receiptNumber ?? '',
+    // The MARKING wins when there is one — the box physically carries it, so
+    // once written it is the box's code for life (round 98). A receipt
+    // claimed from birth has no marking and prints the client code as before.
+    clientCodeWithLetter: origin.unclaimedMarking
+      ? `${origin.unclaimedMarking}-${lot.letter}`
+      : origin.clientCode
+        ? `${origin.clientCode}-${lot.letter}`
+        : '#UNKNOWN',
+    unclaimed: !origin.clientCode,
+    productZh: lot.productNameZh,
+    productRu: lot.productNameRu,
+    boxSeq: box.seqInLot,
+    boxTotal: lot.boxCount,
+    weightKg: perBoxWeight,
+    dimsCm:
+      lot.dimsMode === 'uniform'
+        ? `${lot.boxLengthCm}×${lot.boxWidthCm}×${lot.boxHeightCm}`
+        : null,
+    shortCode: box.shortCode,
   };
 }
 
@@ -132,10 +183,13 @@ export async function recordLabelPrint(
   sheet: LabelSheet,
   shortCodes: string[],
 ): Promise<void> {
+  // Re-asked in the WHERE: a lot marked QR-siz between the sheet being read
+  // and this record keeps its cartons QR-siz — the one writer allowed to clear
+  // that is the explicit «stikerlar yopishtirildi» (labels/qrless.ts).
   await db
     .update(boxes)
     .set({ labelPrintedAt: new Date() })
-    .where(inArray(boxes.id, sheet.boxIds));
+    .where(and(inArray(boxes.id, sheet.boxIds), sql`NOT ${qrlessBoxSql()}`));
   await writeAudit(
     db,
     { ...context, warehouseId: sheet.warehouseId },

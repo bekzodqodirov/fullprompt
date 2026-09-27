@@ -4,17 +4,29 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Scanner } from '@/components/scan/scanner';
 import { armScanAudio, scanFeedback } from '@/components/scan/feedback';
+import { codeIdentity } from '@/modules/wms/labels/code-identity';
 import { reconcileInventoryAction, type ReconcileResult } from './actions';
 
 interface ExpectedBox {
   boxId: string;
   shortCode: string;
   status: string;
+  /** Absent from a snapshot cached before 0112; the lot row only groups. */
+  lotId?: string;
   letter: string | null;
   productNameZh: string;
   clientCode: string | null;
   marking: string | null;
   crateCode: string | null;
+  /** No sticker of ours (0112): no scan can find it, so none is expected. */
+  qrless?: boolean;
+  /** Last loaded or landed by an office COUNT: no per-carton witness. */
+  countMoved?: boolean;
+}
+
+/** A carton a missed scan says nothing about — never offered as lost (0112). */
+function guarded(box: ExpectedBox): boolean {
+  return Boolean(box.qrless || box.countMoved);
 }
 interface Snapshot {
   boxes: ExpectedBox[];
@@ -39,6 +51,7 @@ export function InventoryScreen({
 }) {
   const t = useTranslations('inventory');
   const tc = useTranslations('common');
+  const tq = useTranslations('qrsiz');
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [scanned, setScanned] = useState<Set<string>>(new Set());
   const [foundHere, setFoundHere] = useState<Set<string>>(new Set());
@@ -137,8 +150,22 @@ export function InventoryScreen({
     );
   }
 
-  const expectedScanned = snapshot.boxes.filter((b) => scanned.has(b.shortCode));
-  const missing = snapshot.boxes.filter((b) => !scanned.has(b.shortCode));
+  // The counter counts what a scan CAN find: a QR-siz carton is not «0/48
+  // missing», it is 48 cartons the office counts (0112, Q8).
+  const scannable = snapshot.boxes.filter((b) => !b.qrless);
+  const qrlessCount = snapshot.boxes.length - scannable.length;
+  const expectedScanned = scannable.filter((b) => scanned.has(b.shortCode));
+  const missing = snapshot.boxes.filter((b) => !scanned.has(b.shortCode) && !guarded(b));
+  const keptByLot = new Map<string, { box: ExpectedBox; qrless: number; counted: number }>();
+  for (const box of snapshot.boxes) {
+    if (scanned.has(box.shortCode) || !guarded(box)) continue;
+    const key = box.lotId ?? `${box.marking ?? box.clientCode}-${box.letter}`;
+    const row = keptByLot.get(key) ?? { box, qrless: 0, counted: 0 };
+    if (box.qrless) row.qrless += 1;
+    else row.counted += 1;
+    keptByLot.set(key, row);
+  }
+  const keptTotal = [...keptByLot.values()].reduce((n, row) => n + row.qrless + row.counted, 0);
 
   async function submit() {
     setSubmitting(true);
@@ -168,6 +195,13 @@ export function InventoryScreen({
         {(result.skipped?.length ?? 0) > 0 && (
           <p className="text-xs text-warn">
             ⚠️ {t('skipped')}: {result.skipped!.join(', ')}
+          </p>
+        )}
+        {(result.qrlessKept?.length ?? 0) + (result.countKept?.length ?? 0) > 0 && (
+          <p className="text-xs text-ink-700" data-testid="inventory-qrless-kept">
+            {tq('keptDone', {
+              n: (result.qrlessKept?.length ?? 0) + (result.countKept?.length ?? 0),
+            })}
           </p>
         )}
         <p className="text-xs text-ink-500">{t('telegramSent')}</p>
@@ -216,15 +250,25 @@ export function InventoryScreen({
 
       <p className="text-center font-mono text-3xl font-extrabold">
         {expectedScanned.length}
-        <span className="text-ink-400">/{snapshot.boxes.length}</span> 📦
+        <span className="text-ink-400">/{scannable.length}</span> 📦
       </p>
+      {qrlessCount > 0 && (
+        <p className="text-center text-sm font-semibold text-warn" data-testid="inventory-qrless-count">
+          {tq('stocktakeCount', { n: qrlessCount })}
+        </p>
+      )}
       <div className="flex justify-center gap-4 text-sm font-semibold">
         {foundHere.size > 0 && <span className="text-warn">↩️ {t('foundHere')}: {foundHere.size}</span>}
         {unknown.size > 0 && <span className="text-bad">❓ {t('unknown')}: {unknown.size}</span>}
       </div>
 
       {!finishing ? (
-        <button type="button" className="btn-primary w-full" onClick={() => setFinishing(true)}>
+        <button
+          type="button"
+          className="btn-primary w-full"
+          data-testid="inventory-finish"
+          onClick={() => setFinishing(true)}
+        >
           {t('finish')} →
         </button>
       ) : (
@@ -237,7 +281,7 @@ export function InventoryScreen({
             </div>
           )}
 
-          <div className="card space-y-2 !p-3">
+          <div className="card space-y-2 !p-3" data-testid="inventory-missing">
             <p className="text-sm font-bold">
               🔍 {t('missingTitle')} ({missing.length})
             </p>
@@ -293,6 +337,41 @@ export function InventoryScreen({
               </>
             )}
           </div>
+
+          {/* Shown apart and with no tick (0112, decision 33): the service
+              refuses to write these off even when their ids are posted, so a
+              checkbox here would be a promise it does not keep. */}
+          {keptTotal > 0 && (
+            <div className="card space-y-2 !p-3" data-testid="inventory-qrless">
+              <p className="text-sm font-bold">{tq('keptTitle', { n: keptTotal })}</p>
+              <p className="text-xs text-ink-500">{tq('keptHint')}</p>
+              <ul className="max-h-72 space-y-1 overflow-y-auto">
+                {[...keptByLot.entries()].map(([key, row]) => {
+                  const id = codeIdentity(row.box.marking, row.box.clientCode);
+                  return (
+                    <li key={key} className="flex items-center gap-2 text-sm">
+                      <span className="whitespace-nowrap font-mono font-extrabold text-brand-700">
+                        {id.main}-{row.box.letter}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-ink-500">
+                        {row.box.productNameZh}
+                      </span>
+                      {row.qrless > 0 && (
+                        <span className="chip-warn whitespace-nowrap">
+                          {tq('kindQrless', { n: row.qrless })}
+                        </span>
+                      )}
+                      {row.counted > 0 && (
+                        <span className="chip-neutral whitespace-nowrap">
+                          {tq('kindCounted', { n: row.counted })}
+                        </span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
 
           {result?.error && (
             <p role="alert" className="rounded-lg bg-bad/10 p-3 text-sm font-semibold text-bad">

@@ -19,7 +19,7 @@ export interface SubmitReceiptResult {
   ok: boolean;
   receiptId?: string;
   number?: string;
-  lots?: { lotId: string; letter: string; productNameZh: string; boxCount: number }[];
+  lots?: { lotId: string; letter: string; productNameZh: string; boxCount: number; qrSkipped: boolean }[];
   error?: string;
   detail?: string;
 }
@@ -60,6 +60,8 @@ export async function submitReceiptAction(input: unknown): Promise<SubmitReceipt
         letter: l.letter,
         productNameZh: l.productNameZh,
         boxCount: l.boxCount,
+        // A QR-siz lot gets no sticker on the success screen (0112).
+        qrSkipped: l.qrSkipped,
       })),
     };
   } catch (err) {

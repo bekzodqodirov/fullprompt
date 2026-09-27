@@ -54,6 +54,8 @@ import { CustomsFirm } from './customs-firm';
 import { CustomsPerReceipt } from './customs-per-receipt';
 import { batchCustomsRows } from '@/modules/wms/partners/customs';
 import { codeIdentity } from '@/modules/wms/labels/code-identity';
+import { qrlessJoinedSql } from '@/modules/wms/labels/qrless-sql';
+import { QrlessChip } from '@/components/qrless-chip';
 import { CrateRows } from '@/components/crate-rows';
 import { batchCrates } from '@/modules/wms/inventory/service';
 import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
@@ -88,6 +90,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
   // The contents table is the stock table applied to a truck, so it borrows
   // the stock screen's own column names rather than inventing second ones.
   const tstock = await getTranslations('stock');
+  const tqrsiz = await getTranslations('qrsiz');
   const format = await getFormatter();
 
   const dest = aliasedTable(warehouses, 'dest');
@@ -138,6 +141,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
       onBatch: sql<number>`count(*)`,
       planned: sql<number>`count(*) FILTER (WHERE ${boxes.status} = 'planned')`,
       loaded: sql<number>`count(*) FILTER (WHERE ${boxes.status} IN ('loading', 'in_transit'))`,
+      qrless: sql<number>`count(*) FILTER (WHERE ${qrlessJoinedSql()})`,
       photoId: sql<string | null>`(
         SELECT a.id FROM attachments a
         WHERE a.entity_type = 'receipt_lot' AND a.entity_id = ${receiptLots.id} AND a.kind = 'photo'
@@ -566,6 +570,11 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
                         </span>
                       )}
                     </Link>
+                    {Number(lot.qrless) > 0 && (
+                      <span className="block">
+                        <QrlessChip n={Number(lot.qrless)} total={lot.onBatch} label={tqrsiz('chip')} />
+                      </span>
+                    )}
                   </td>
                   <td className="max-w-56 p-2">
                     <Link href={`/receipts/${lot.receiptId}`} className="block truncate">

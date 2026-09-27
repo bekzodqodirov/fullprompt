@@ -19,6 +19,7 @@ import { nextBoxCodes } from '../codes';
 import { costOrphanedByVoid, lockCostsTouchingLots } from '../costing/void-guard';
 import { receiptHasCompensation } from '../finance/compensation-follow';
 import { claimReceivedNotice } from '../notices/client-claims';
+import { qrlessBoxSql } from '../labels/qrless-sql';
 import { computeLotTotals } from './math';
 
 export const editLotSchema = z.object({
@@ -241,7 +242,9 @@ export async function editLot(
           actorId: ctx.actorId,
         })),
       );
-      result.labelsToPrint = delta;
+      // A QR-siz lot's new cartons are QR-siz too (no label stamp, 0112): the
+      // office counts them, nobody prints them here.
+      result.labelsToPrint = lot.qrSkippedAt ? 0 : delta;
     } else if (delta < 0) {
       // The third door that writes `void`, now under the other two's rules
       // (review of wb2, U0/U8): every cost shared over the lot locked BEFORE
@@ -269,6 +272,16 @@ export async function editLot(
         tx,
       );
       if (orphan) throw new EditError('shared_cost_orphaned');
+      // Asked BEFORE the void clears crate_id: only a sticker that exists can
+      // be torn off, and a QR-siz carton has none of ours (0112).
+      const stickerless = new Set(
+        (
+          await tx
+            .select({ id: boxes.id })
+            .from(boxes)
+            .where(and(inArray(boxes.id, toVoid.map((box) => box.id)), qrlessBoxSql()))
+        ).map((row) => row.id),
+      );
       for (const box of toVoid) {
         // A voided box leaves its crate too: a void member made the crate
         // permanently undissolvable and unscannable (both walk the members
@@ -287,7 +300,7 @@ export async function editLot(
           actorId: ctx.actorId,
         });
       }
-      result.labelsToDestroy = toVoid.map((b) => b.shortCode);
+      result.labelsToDestroy = toVoid.filter((b) => !stickerless.has(b.id)).map((b) => b.shortCode);
       // Unlike the other write-off doors this one never asks the funnel
       // (`advanceDealsAfterWriteOff`): a count change is refused once any
       // box has left the shelf, and a lot keeps at least one box — so the
@@ -359,6 +372,112 @@ export async function editLot(
       }).catch(() => {});
     }
     return result;
+  });
+}
+
+/** Reverted codes an audit row names at most (the count is always whole). */
+const REVERTED_CODES_CAP = 500;
+
+/**
+ * «QR yopishtirilmadi» changed after the receipt (0112, decision 32) — a
+ * two-way switch on the receipt card, never a field in the lot form.
+ *
+ * The gate is the lot form's: the same-day creator fixes a slip of the
+ * wizard, and once cartons have left the shelf the decision is a manager's
+ * (`receipts.void`) — marking a lot that is already on a truck's list changes
+ * how that truck is loaded.
+ *
+ * MARK sets the marker to now(): on a lot whose stickers were printed and fell
+ * off (sacks, rolls), every live uncrated carton labelled before it becomes
+ * QR-siz again, and the audit names them. It is a no-op — no write, no audit
+ * row — when every live uncrated carton is already QR-siz. UNMARK clears it:
+ * the lot's cartons are expected to be scanned from now on.
+ */
+export async function setLotQrSkipped(
+  input: { lotId: string; skipped: boolean },
+  actor: Actor,
+  ctx: AuditContext,
+): Promise<{ changed: boolean; reverted: number }> {
+  const lot = await db.query.receiptLots.findFirst({ where: eq(receiptLots.id, input.lotId) });
+  if (!lot) throw new EditError('not_found');
+  const receipt = (await db.query.receipts.findFirst({ where: eq(receipts.id, lot.receiptId) }))!;
+  if (receipt.status !== 'confirmed') throw new EditError('receipt_not_confirmed');
+  const warehouse = (await db.query.warehouses.findFirst({
+    where: eq(warehouses.id, receipt.warehouseId),
+  }))!;
+  if (!canEditReceipt(actor, receipt, warehouse.timezone)) throw new EditError('edit_window_closed');
+
+  return db.transaction(async (tx) => {
+    // The lot row first: two presses of the switch take turns.
+    const [current] = await tx
+      .select({ qrSkippedAt: receiptLots.qrSkippedAt })
+      .from(receiptLots)
+      .where(eq(receiptLots.id, lot.id))
+      .for('update');
+    const live = await tx
+      .select({ id: boxes.id, status: boxes.status })
+      .from(boxes)
+      .where(and(eq(boxes.lotId, lot.id), ne(boxes.status, 'void')))
+      .orderBy(asc(boxes.id))
+      .for('update');
+    if (!actor.permissions.has('receipts.void') && live.some((box) => box.status !== 'in_stock')) {
+      throw new EditError('structural_locked');
+    }
+    const markedBefore = current?.qrSkippedAt ?? null;
+
+    if (!input.skipped) {
+      if (!markedBefore) return { changed: false, reverted: 0 };
+      await tx.update(receiptLots).set({ qrSkippedAt: null }).where(eq(receiptLots.id, lot.id));
+      await writeAudit(tx, { ...ctx, warehouseId: warehouse.id }, {
+        entityType: 'receipt',
+        entityId: receipt.id,
+        action: 'update',
+        before: { qrSkipped: lot.letter },
+        after: { qrSkipped: null },
+      });
+      return { changed: true, reverted: 0 };
+    }
+
+    // The cartons that are NOT QR-siz now and will be once the lot is marked:
+    // live, uncrated (a crate's own label stands in for its members).
+    const reverting = await tx
+      .select({ shortCode: boxes.shortCode, labelPrintedAt: boxes.labelPrintedAt })
+      .from(boxes)
+      .where(
+        and(
+          eq(boxes.lotId, lot.id),
+          ne(boxes.status, 'void'),
+          isNull(boxes.crateId),
+          sql`NOT ${qrlessBoxSql()}`,
+        ),
+      )
+      .orderBy(asc(boxes.seqInLot));
+    if (markedBefore && reverting.length === 0) return { changed: false, reverted: 0 };
+    // …and of those, the ones that carried a printed sticker: what the switch
+    // takes back is only ever a label that existed.
+    const reverted = reverting.filter((row) => row.labelPrintedAt !== null);
+    await tx
+      .update(receiptLots)
+      .set({ qrSkippedAt: sql`now()` })
+      .where(eq(receiptLots.id, lot.id));
+    await writeAudit(tx, { ...ctx, warehouseId: warehouse.id }, {
+      entityType: 'receipt',
+      entityId: receipt.id,
+      action: 'update',
+      before: { qrSkipped: markedBefore ? lot.letter : null },
+      after: {
+        qrSkipped: lot.letter,
+        // A mark takes back stickers that were printed (a re-mark always
+        // does): which ones is the only way to tell afterwards what it undid.
+        ...(reverted.length
+          ? {
+              qrReverted: reverted.length,
+              qrRevertedCodes: reverted.slice(0, REVERTED_CODES_CAP).map((row) => row.shortCode),
+            }
+          : {}),
+      },
+    });
+    return { changed: true, reverted: reverted.length };
   });
 }
 

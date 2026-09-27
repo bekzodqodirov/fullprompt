@@ -55,6 +55,12 @@ export const lotInputSchema = z
     totalVolumeM3: z.number().min(0.0001).max(10_000).optional(),
     /** Free-text remark per line (owner's Kashgar file has notes like "loader miscounted"). */
     note: z.string().trim().max(500).optional().or(z.literal('')),
+    /**
+     * «QR yopishtirilmadi» (0112, Q8): no sticker of ours goes on these
+     * cartons — the office counts them. Optional and never `.default()`, or
+     * z.infer makes it required on every receipt a test or a seed builds (#591).
+     */
+    qrSkipped: z.boolean().optional(),
   })
   .refine(
     (lot) =>
@@ -127,6 +133,8 @@ export interface ConfirmedLotSummary {
   boxCount: number;
   totalWeightKg: number;
   totalVolumeM3: number;
+  /** Declared stickerless at the door (0112) — the success screen prints none for it. */
+  qrSkipped: boolean;
 }
 
 /**
@@ -263,6 +271,9 @@ export async function confirmReceipt(
           totalWeightKg: totals.totalWeightKg.toString(),
           totalVolumeM3: totals.totalVolumeM3.toString(),
           note: lotInput.note || null,
+          // The same clock as the boxes minted below (the transaction's), so
+          // every carton of the lot starts QR-siz: none has a label stamp yet.
+          qrSkippedAt: lotInput.qrSkipped ? sql`now()` : null,
         })
         .returning();
 
@@ -316,6 +327,7 @@ export async function confirmReceipt(
         boxCount: lotInput.boxCount,
         totalWeightKg: totals.totalWeightKg,
         totalVolumeM3: totals.totalVolumeM3,
+        qrSkipped: Boolean(lotInput.qrSkipped),
       });
     }
 
@@ -340,7 +352,12 @@ export async function confirmReceipt(
       after: {
         number,
         client: input.clientId,
-        lots: summaries.map((s) => ({ letter: s.letter, zh: s.productNameZh, boxes: s.boxCount })),
+        lots: summaries.map((s) => ({
+          letter: s.letter,
+          zh: s.productNameZh,
+          boxes: s.boxCount,
+          ...(s.qrSkipped ? { qrSkipped: true } : {}),
+        })),
       },
     });
 
@@ -508,6 +525,7 @@ async function confirmedLotSummaries(receiptId: string): Promise<ConfirmedLotSum
     boxCount: lot.boxCount,
     totalWeightKg: Number(lot.totalWeightKg),
     totalVolumeM3: Number(lot.totalVolumeM3),
+    qrSkipped: lot.qrSkippedAt !== null,
   }));
 }
 

@@ -11,6 +11,7 @@ import {
 import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
 import { json } from '@/modules/platform/http/json';
 import { arrivalsForLots } from '@/modules/wms/documents/arrivals';
+import { qrlessJoinedSql } from '@/modules/wms/labels/qrless-sql';
 
 const querySchema = z.object({ warehouseId: z.string().uuid() });
 
@@ -43,6 +44,9 @@ export async function GET(request: Request) {
       marking: receipts.unclaimedMarking,
       receivedAt: receipts.receivedAt,
       available: sql<number>`count(*)`,
+      // Of those, the cartons no phone will scan (0112): the planner sees it
+      // before the truck, not the loader after.
+      qrless: sql<number>`count(*) FILTER (WHERE ${qrlessJoinedSql()})`,
       photoId: sql<string | null>`(
         SELECT a.id FROM attachments a
         WHERE a.entity_type = 'receipt_lot' AND a.entity_id = ${receiptLots.id} AND a.kind = 'photo'
@@ -110,6 +114,7 @@ export async function GET(request: Request) {
     lots: rows.map((r) => ({
       ...r,
       available: Number(r.available),
+      qrless: Number(r.qrless),
       perBoxKg: Number(r.totalWeightKg) / r.boxCount,
       perBoxM3: Number(r.totalVolumeM3) / r.boxCount,
       daysInStock: Math.floor((Date.now() - new Date(r.receivedAt).getTime()) / 86_400_000),

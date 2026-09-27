@@ -36,8 +36,12 @@ export function PrintSheet({
   pdfHref: string;
   backHref: string;
   fileName: string;
-  /** POSTed when the operator actually asks to print. */
-  recordHref: string;
+  /**
+   * POSTed when the operator actually asks to print. Absent on a sheet whose
+   * print must NOT be recorded as stickers on boxes — the QR-siz sheet
+   * (0112), where only the explicit «stikerlar yopishtirildi» press may.
+   */
+  recordHref?: string;
   count: number;
 }) {
   const t = useTranslations('receipts');
@@ -56,6 +60,7 @@ export function PrintSheet({
    * blocks the page and a plain fetch can be dropped underneath it.
    */
   const record = useCallback(() => {
+    if (!recordHref) return;
     try {
       void fetch(recordHref, { method: 'POST', keepalive: true }).catch(() => {});
     } catch {

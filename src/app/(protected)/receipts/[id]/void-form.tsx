@@ -48,6 +48,7 @@ export function VoidReceiptForm({
       <input
         id="void-reason"
         name="reason"
+        data-testid="void-receipt-reason"
         className="input"
         required
         minLength={3}
@@ -59,7 +60,12 @@ export function VoidReceiptForm({
           {errorText}
         </p>
       )}
-      <button type="submit" disabled={pending} className="btn-danger w-full disabled:opacity-60">
+      <button
+        type="submit"
+        disabled={pending}
+        data-testid="void-receipt-btn"
+        className="btn-danger w-full disabled:opacity-60"
+      >
         {pending ? '…' : labels.button}
       </button>
     </form>

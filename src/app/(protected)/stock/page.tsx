@@ -32,6 +32,9 @@ import {
 import { codeIdentity } from '@/modules/wms/labels/code-identity';
 import { CrateRows } from '@/components/crate-rows';
 import { isUuidShaped } from '@/modules/platform/audit/fields';
+import { qrlessBoxSql, qrlessJoinedSql } from '@/modules/wms/labels/qrless-sql';
+import { qrlessCountsAt } from '@/modules/wms/labels/qrless';
+import { QrlessChip } from '@/components/qrless-chip';
 
 /** Owner's request: order the stock table by any column, filters kept. */
 const SORTABLE = STOCK_COLUMNS.map((column) => column.key);
@@ -102,6 +105,19 @@ export default async function StockPage({
       .where(boxScope ? and(eq(boxes.lotId, params.lot), boxScope) : eq(boxes.lotId, params.lot))
       .orderBy(asc(boxes.seqInLot));
     const lot = await db.query.receiptLots.findFirst({ where: eq(receiptLots.id, params.lot) });
+    // Which of these cartons carry no sticker of ours (0112) — the same sentence
+    // the stocktake and the phones ask, one query for the whole lot.
+    const qrlessIds = new Set(
+      lot?.qrSkippedAt
+        ? (
+            await db
+              .select({ id: boxes.id })
+              .from(boxes)
+              .where(and(eq(boxes.lotId, params.lot), qrlessBoxSql()))
+          ).map((row) => row.id)
+        : [],
+    );
+    const tqLot = await getTranslations('qrsiz');
     return (
       <div className="space-y-3">
         <h1 className="text-xl font-bold">
@@ -118,6 +134,7 @@ export default async function StockPage({
               <span className="text-sm text-ink-500">
                 {box.seqInLot}/{lot?.boxCount}
               </span>
+              <QrlessChip n={qrlessIds.has(box.id) ? 1 : 0} total={1} label={tqLot('chip')} />
               <span className="ml-auto rounded bg-surface-sunken px-2 py-0.5 text-xs font-semibold">
                 {t(`statuses.${box.status}`)}
               </span>
@@ -208,6 +225,8 @@ export default async function StockPage({
       clientCode: clients.clientCode,
       whId: warehouses.id,
       inStock: sql<number>`count(*)`,
+      // «🏷 QR-siz» on the row (0112): its cartons at this warehouse no scan finds.
+      qrless: sql<number>`count(*) FILTER (WHERE ${qrlessJoinedSql()})`,
       photoId: sql<string | null>`(
         SELECT a.id FROM attachments a
         WHERE a.entity_type = 'receipt_lot' AND a.entity_id = ${receiptLots.id} AND a.kind = 'photo'
@@ -281,6 +300,16 @@ export default async function StockPage({
     );
 
   const allWhs = await stockWarehouseOptions(params.wh);
+  // «Stiker keyin» (0112): where QR-siz cartons stand that THIS person may
+  // print, each a door to that warehouse's print list. Asked of the page's
+  // own warehouse filter, else of the person's scope.
+  const tq = await getTranslations('qrsiz');
+  const qrlessDoors = actor.permissions.has('receipts.create')
+    ? await qrlessCountsAt(
+        params.wh ? [params.wh] : actor.warehouseScoped ? actor.warehouseIds : 'all',
+        actor,
+      )
+    : [];
   const densityThresholds = await getSetting('density_thresholds');
 
   // Flatten first: the numbers the owner sorts by (Σ kg, m³, density) are
@@ -419,6 +448,21 @@ export default async function StockPage({
         )}
       </p>
 
+      {qrlessDoors.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {qrlessDoors.map((door) => (
+            <Link
+              key={door.warehouseId}
+              href={`/inventory?warehouseId=${door.warehouseId}&mode=stiker`}
+              data-testid="stock-qrless-print"
+              className="card-tap block !py-1.5 px-3 text-sm font-semibold text-warn"
+            >
+              {tq('printHere', { wh: door.code, n: door.n })}
+            </Link>
+          ))}
+        </div>
+      )}
+
       {/* The yashik layer (round 107 item 6, re-shaped in round 109 to what
           he actually asked for: a LIST of places, not a chip strip, and the
           over-capacity ones at the top). Unlike the on-road strip this is a
@@ -539,6 +583,11 @@ export default async function StockPage({
                         {codeIdentity(row.line.marking, row.line.clientCode).sub && (
                           <span className="block font-sans text-2xs font-normal text-ink-500">
                             {codeIdentity(row.line.marking, row.line.clientCode).sub}
+                          </span>
+                        )}
+                        {Number(row.line.qrless) > 0 && (
+                          <span className="block">
+                            <QrlessChip n={Number(row.line.qrless)} total={row.boxes} label={tq('chip')} />
                           </span>
                         )}
                       </Link>

@@ -53,6 +53,8 @@ interface LotDraft {
    * our door, not an acceptance of the factory's number.
    */
   hint?: string;
+  /** «QR yopishtirilmadi» (0112): no sticker goes on these cartons. Absent in an old draft = no. */
+  qrSkipped?: boolean;
 }
 
 interface CostDraft {
@@ -135,6 +137,7 @@ function newLot(): LotDraft {
     totalWeightKg: '',
     totalVolumeM3: '',
     photoIds: [],
+    qrSkipped: false,
   };
 }
 
@@ -199,6 +202,7 @@ export function ReceiveWizard({
   const t = useTranslations('receive');
   const tc = useTranslations('common');
   const td = useTranslations('deals');
+  const tq = useTranslations('qrsiz');
   const [draft, setDraft] = useState<Draft | null>(null);
   const [clientQuery, setClientQuery] = useState('');
   const [clientHits, setClientHits] = useState<ClientHit[]>([]);
@@ -650,6 +654,7 @@ export function ReceiveWizard({
           productNameRu: lot.ru.trim(),
           boxCount: Number(lot.boxCount),
           dimsMode: lot.dimsMode,
+          qrSkipped: Boolean(lot.qrSkipped),
           ...(lot.dimsMode === 'uniform'
             ? {
                 boxLengthCm: Number(lot.lengthCm),
@@ -695,21 +700,37 @@ export function ReceiveWizard({
             <li key={lot.letter} className="flex items-baseline gap-2">
               <span className="font-mono text-xl font-extrabold text-brand-700">{lot.letter}</span>
               <span>{lot.productNameZh}</span>
+              {lot.qrSkipped && (
+                <span data-testid="receipt-lot-qrless" className="chip-warn whitespace-nowrap">
+                  🏷 {tq('chip')}
+                </span>
+              )}
               <span className="ml-auto text-sm text-ink-700">{lot.boxCount} 📦</span>
             </li>
           ))}
         </ul>
-        <PrintLabels href={`/print/receipts/${result.receiptId}`} label={t('printLabels')} />
-        {(result.lots?.length ?? 0) > 1 && (
+        {/* A QR-siz lot gets no sticker here (0112): its sheet would be empty
+            (the receipt's sheet leaves those cartons out), and a printed-and-
+            recorded one would make the phones expect a scan. */}
+        {(result.lots ?? []).some((lot) => !lot.qrSkipped) ? (
+          <PrintLabels href={`/print/receipts/${result.receiptId}`} label={t('printLabels')} />
+        ) : (
+          <p data-testid="receipt-qrless-note" className="text-sm text-ink-700">
+            {tq('noPrintNote')}
+          </p>
+        )}
+        {(result.lots ?? []).filter((lot) => !lot.qrSkipped).length > 1 && (
           <div className="grid grid-cols-3 gap-2">
-            {result.lots?.map((lot) => (
-              <PrintLabels
-                key={lot.lotId}
-                variant="secondary"
-                href={`/print/receipts/${result.receiptId}?lotId=${lot.lotId}`}
-                label={lot.letter}
-              />
-            ))}
+            {result.lots
+              ?.filter((lot) => !lot.qrSkipped)
+              .map((lot) => (
+                <PrintLabels
+                  key={lot.lotId}
+                  variant="secondary"
+                  href={`/print/receipts/${result.receiptId}?lotId=${lot.lotId}`}
+                  label={lot.letter}
+                />
+              ))}
           </div>
         )}
         <a href={`/receipts/${result.receiptId}`} className="btn-secondary w-full">
@@ -1399,6 +1420,22 @@ export function ReceiveWizard({
                 </div>
               </div>
             )}
+            {/* The box that says no sticker will go on these cartons (0112) —
+                sacks, rolls, a pile going straight onto a truck. Mobile card
+                only: the desktop table is `hidden md:block`, and a second
+                element with this testid would make every phone test's
+                `.check()` a strict-mode refusal. */}
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                data-testid="lot-qr-skipped"
+                className="h-4 w-4"
+                checked={Boolean(lot.qrSkipped)}
+                onChange={(e) => updateLot(lot.id, { qrSkipped: e.target.checked })}
+              />
+              🏷 {tq('skipped')}
+            </label>
+            {lot.qrSkipped && <p className="text-2xs text-ink-500">{tq('skippedHint')}</p>}
             <div className="flex items-center gap-2">
               {photosField(lot)}
               <span className="ml-auto">{totalsBadge(lot)}</span>

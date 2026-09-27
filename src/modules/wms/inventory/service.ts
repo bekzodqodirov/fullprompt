@@ -21,6 +21,8 @@ import { landedStatusFor } from '../warehouses/landed';
 import { claimArrivalNotice } from '../notices/arrival';
 import { isUuidShaped } from '../../platform/audit/fields';
 import { PRESENT_STATUSES } from './present';
+import { qrlessBoxSql, qrlessJoinedSql } from '../labels/qrless-sql';
+import { lastScanIsCountSql } from '../scanning/count-rules';
 
 export class InventoryError extends Error {
   constructor(public readonly code: string) {
@@ -91,11 +93,17 @@ export async function inventorySnapshot(warehouseId: string) {
       boxId: boxes.id,
       shortCode: boxes.shortCode,
       status: boxes.status,
+      lotId: boxes.lotId,
       letter: receiptLots.letter,
       productNameZh: receiptLots.productNameZh,
       clientCode: clients.clientCode,
       marking: receipts.unclaimedMarking,
       crateCode: crates.code,
+      // The two kinds of carton a stocktake cannot judge by a scan (0112):
+      // one with no sticker of ours, and one the office counted onto or off a
+      // truck without a per-carton witness. Neither is ever written off here.
+      qrless: sql<boolean>`${qrlessJoinedSql()}`,
+      countMoved: sql<boolean>`${lastScanIsCountSql(sql`${boxes}`)}`,
     })
     .from(boxes)
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
@@ -226,15 +234,38 @@ export async function reconcileInventory(
     }
 
     const lostCodes: string[] = [];
+    const qrlessKept: string[] = [];
+    const countKept: string[] = [];
     if (input.lostBoxIds.length) {
+      /*
+       * «Not scanned» is no evidence against a carton that could never be
+       * scanned (0112, decision 33): a QR-siz one carries no sticker of ours,
+       * and one whose last load or unload was an office COUNT had no witness
+       * per carton to begin with. The screen shows both apart with no tick —
+       * and this refuses them even when their ids ARE posted, naming what it
+       * kept rather than silently dropping the tick.
+       */
+      const posted = and(
+        inArray(boxes.id, input.lostBoxIds),
+        eq(boxes.currentWarehouseId, input.warehouseId),
+        inArray(boxes.status, [...PRESENT_STATUSES]),
+      );
+      const kept = await tx
+        .select({
+          shortCode: boxes.shortCode,
+          qrless: sql<boolean>`${qrlessBoxSql()}`,
+        })
+        .from(boxes)
+        .where(and(posted, sql`(${qrlessBoxSql()} OR ${lastScanIsCountSql(sql`${boxes}`)})`));
+      for (const row of kept) (row.qrless ? qrlessKept : countKept).push(row.shortCode);
       const lost = await tx
         .select()
         .from(boxes)
         .where(
           and(
-            inArray(boxes.id, input.lostBoxIds),
-            eq(boxes.currentWarehouseId, input.warehouseId),
-            inArray(boxes.status, [...PRESENT_STATUSES]),
+            posted,
+            sql`NOT ${qrlessBoxSql()}`,
+            sql`NOT ${lastScanIsCountSql(sql`${boxes}`)}`,
           ),
         )
         .for('update');
@@ -264,6 +295,8 @@ export async function reconcileInventory(
       moved: movedCodes,
       lost: lostCodes,
       skipped: skippedCodes,
+      qrlessKept,
+      countKept,
     };
     await writeAudit(tx, { ...ctx, warehouseId: input.warehouseId }, {
       entityType: 'warehouse',

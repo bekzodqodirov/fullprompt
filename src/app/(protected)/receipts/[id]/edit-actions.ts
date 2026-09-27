@@ -13,6 +13,7 @@ import {
   EditError,
   editLot,
   editLotSchema,
+  setLotQrSkipped,
   type LotEditResult,
 } from '@/modules/wms/receipts/edit';
 
@@ -109,4 +110,37 @@ export async function assignClientAction(
   await enqueue(JOB_PROCESS_EVENTS, {});
   revalidatePath(`/receipts/${parsed.data.receiptId}`);
   return {};
+}
+
+const qrSkipSchema = z.object({ lotId: z.string().uuid(), skipped: z.boolean() });
+
+/**
+ * «QR yopishtirilmadi» on the receipt card (0112). The lot form's door —
+ * `receipts.edit` at the receipt's warehouse — and the service decides the
+ * rest (same-day creator or a manager; a manager once cartons have left).
+ */
+export async function setLotQrSkippedAction(
+  input: unknown,
+): Promise<{ ok: boolean; error?: string; reverted?: number }> {
+  const parsed = qrSkipSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: 'validation' };
+  const lot = await db.query.receiptLots.findFirst({ where: eq(receiptLots.id, parsed.data.lotId) });
+  if (!lot) return { ok: false, error: 'not_found' };
+  const receipt = (await db.query.receipts.findFirst({ where: eq(receipts.id, lot.receiptId) }))!;
+  let actor: Actor;
+  try {
+    actor = await authorize('receipts.edit', { warehouseId: receipt.warehouseId });
+  } catch (err) {
+    if (err instanceof AuthError) return { ok: false, error: 'forbidden' };
+    throw err;
+  }
+  const meta = await requestMeta();
+  try {
+    const result = await setLotQrSkipped(parsed.data, actor, { actorId: actor.id, ...meta });
+    revalidatePath(`/receipts/${receipt.id}`);
+    return { ok: true, reverted: result.reverted };
+  } catch (err) {
+    if (err instanceof EditError) return { ok: false, error: err.code };
+    throw err;
+  }
 }

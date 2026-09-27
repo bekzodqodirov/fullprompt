@@ -47,6 +47,9 @@ import { tillOptionsFor } from '@/modules/wms/costing/till-props';
 import { costSightFor, tillView } from '@/modules/wms/costing/cost-sight';
 import { mayPickTill } from '@/modules/wms/accounting/till-door';
 import { costEntriesFor } from '@/modules/wms/costing/service';
+import { lotQrState } from '@/modules/wms/labels/qrless';
+import { canEditReceipt } from '@/modules/wms/receipts/edit';
+import { QrSkipToggle } from './qr-skip-toggle';
 
 export default async function ReceiptDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const actor = await getActor();
@@ -179,6 +182,12 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
   }
   const canPrint = actor.permissions.has('receipts.create');
   const canEdit = actor.permissions.has('receipts.edit') && receipt.status === 'confirmed';
+  // «QR yopishtirilmadi» (0112): per lot, what the ordinary sheet would carry,
+  // where the stickerless cartons stand, and whether the switch may move.
+  const tq = await getTranslations('qrsiz');
+  const qrState = await lotQrState(lotIds, actor);
+  const anyPrintable = lots.some((lot) => (qrState.get(lot.id)?.printable ?? 0) > 0);
+  const mayToggleQr = canEdit && canEditReceipt(actor, receipt, warehouse.timezone);
   const canAssign = actor.permissions.has('receipts.unclaimed.resolve') && receipt.status === 'confirmed';
 
   // Which job this cargo belongs to — shown, and correctable, from the cargo
@@ -245,7 +254,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
         >
           {t(`statuses.${receipt.status}`)}
         </span>
-        {canPrint && receipt.status === 'confirmed' && (
+        {canPrint && receipt.status === 'confirmed' && anyPrintable && (
           <div className="ml-auto w-44">
             <PrintLabels href={`/print/receipts/${id}`} label={t('reprint')} />
           </div>
@@ -356,7 +365,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
                   <span className="font-normal text-ink-700"> ({lot.productNameRu})</span>
                 )}
               </span>
-              {canPrint && receipt.status === 'confirmed' && (
+              {canPrint && receipt.status === 'confirmed' && (qrState.get(lot.id)?.printable ?? 0) > 0 && (
                 <div className="ml-auto w-28">
                   <PrintLabels
                     variant="secondary"
@@ -372,6 +381,38 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
                 ` · ${lot.boxLengthCm}×${lot.boxWidthCm}×${lot.boxHeightCm} cm`}
             </p>
             {lot.note && <p className="mt-1 text-sm italic text-ink-500">📝 {lot.note}</p>}
+            {lot.qrSkippedAt && (
+              <p className="mt-1 text-sm font-semibold text-warn" data-testid="lot-qrless">
+                {tq('since', { date: format.dateTime(lot.qrSkippedAt, { dateStyle: 'short' }) })}
+                {(qrState.get(lot.id)?.qrlessLive ?? 0) > 0 &&
+                  ` · ${tq('nowQrless', { n: qrState.get(lot.id)!.qrlessLive })}`}
+                {(qrState.get(lot.id)?.labelledLater ?? 0) > 0 &&
+                  ` · ${tq('labelledLater', { done: qrState.get(lot.id)!.labelledLater })}`}
+              </p>
+            )}
+            {canPrint && (qrState.get(lot.id)?.printableAt.length ?? 0) > 0 && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {qrState.get(lot.id)!.printableAt.map((at) => (
+                  <a
+                    key={at.warehouseId}
+                    href={`/print/qrsiz?warehouseId=${at.warehouseId}&lotId=${lot.id}`}
+                    data-testid="lot-qr-print"
+                    className="btn-secondary !min-h-9 px-3"
+                  >
+                    {tq('printAt', { wh: at.code, n: at.n })}
+                  </a>
+                ))}
+              </div>
+            )}
+            {mayToggleQr &&
+              (actor.permissions.has('receipts.void') || (qrState.get(lot.id)?.notInStock ?? 0) === 0) && (
+                <QrSkipToggle
+                  lotId={lot.id}
+                  letter={lot.letter ?? ''}
+                  marked={lot.qrSkippedAt !== null}
+                  canRemark={(qrState.get(lot.id)?.labelledLater ?? 0) > 0}
+                />
+              )}
             <div className="mt-2">
               <PhotoGallery photos={photosByLot.get(lot.id) ?? []} deletable={canEdit} />
             </div>
