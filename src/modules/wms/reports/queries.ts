@@ -177,6 +177,20 @@ export async function recentReceipts(warehouseIds?: string[]) {
   return rows.map((r) => ({ code: r.code, n: Number(r.n) }));
 }
 
+/**
+ * A truck belongs to BOTH of its ends — the scope every truck reader applies
+ * (a batch is judged by its two ends, stock by where it stands). Undefined
+ * for an absent or EMPTY list, i.e. «the whole company»: that is how every
+ * caller here has always read `[]`, so a caller that must NOT widen on an
+ * empty list — a scoped viewer with no warehouse — refuses before it asks
+ * (`trucksOnRoad` does).
+ */
+export function batchEndsWhere(warehouseIds?: string[]) {
+  return warehouseIds?.length
+    ? sql`(${inArray(batches.originWarehouseId, warehouseIds)} OR ${inArray(batches.destWarehouseId, warehouseIds)})`
+    : undefined;
+}
+
 export async function inTransitBatches(warehouseIds?: string[]) {
   const dest = aliasedTable(warehouses, 'dest');
   const rows = await db
@@ -190,6 +204,20 @@ export async function inTransitBatches(warehouseIds?: string[]) {
       // is the «stuck» attention row.
       status: batches.status,
       arrivedAt: batches.arrivedAt,
+      /*
+       * Additive (round B, the trucks card): what the customer's ladder needs
+       * to place this truck (`truckStage` — the two ends' countries, the
+       * logist's pin, the customs stamp) and what the schedule anchors on,
+       * so the card reads the SAME rows as this report instead of a second
+       * truck query with its own membership and box count (#513). The XLSX
+       * and the admin home ignore them.
+       */
+      trackingCheckpoint: batches.trackingCheckpoint,
+      customsClearedAt: batches.customsClearedAt,
+      originName: warehouses.name,
+      destName: dest.name,
+      originCountry: warehouses.country,
+      destCountry: dest.country,
       /**
        * What DEPARTED on this truck — never the live pointer. Landing NULLs
        * `current_batch_id` box by box, so the old count drained 180 → 0 while
@@ -207,12 +235,7 @@ export async function inTransitBatches(warehouseIds?: string[]) {
     .innerJoin(warehouses, eq(batches.originWarehouseId, warehouses.id))
     .innerJoin(dest, eq(batches.destWarehouseId, dest.id))
     .where(
-      and(
-        inArray(batches.status, ['in_transit', 'arrived']),
-        warehouseIds?.length
-          ? sql`(${inArray(batches.originWarehouseId, warehouseIds)} OR ${inArray(batches.destWarehouseId, warehouseIds)})`
-          : undefined,
-      ),
+      and(inArray(batches.status, ['in_transit', 'arrived']), batchEndsWhere(warehouseIds)),
     )
     .orderBy(desc(batches.departedAt));
   return rows.map((r) => ({ ...r, boxCount: Number(r.boxCount) }));

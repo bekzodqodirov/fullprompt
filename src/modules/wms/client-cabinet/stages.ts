@@ -68,6 +68,44 @@ export interface StageBatch {
 
 const LOADING = new Set(['planned', 'loading']);
 
+/** The rungs a TRUCK can stand on — the in-transit part of the ladder. */
+export type TruckStage = 'cn_transit' | 'export_transit' | 'in_uz' | 'customs_done';
+
+/**
+ * Where a truck is on the customer's ladder — the rung every box riding it
+ * stands on.
+ *
+ * Its own export because the office asks the same question about the truck
+ * itself (the dashboard's trucks card), and the office and the customer must
+ * not read one lorry two ways: a truck the logist pinned `in_uz` is
+ * «O'zbekistonda» with no date in the customer's cabinet, so it is that on
+ * the owner's screen too (round B, O15). `cargoStage` calls this — the rule
+ * is written once.
+ */
+export function truckStage(batch: StageBatch): TruckStage {
+  /*
+   * Three ways to know the truck is in Uzbekistan, and the customs stamp
+   * decides between the two rungs for all of them at once — so a declaration
+   * cleared while the truck is still driving to Tashkent shows as cleared,
+   * which is what actually happens.
+   *
+   * The pin the logist puts on the batch card outranks the schedule: a
+   * person who has seen the truck in Uzbekistan knows more than we do. The
+   * `arrived`/`unloaded` branch is the truck standing at its Uzbek
+   * destination with this box not yet scanned off. The Chinese leg
+   * deliberately gets no equivalent: his ladder has no rung for «the truck
+   * reached Kashgar but nothing is unloaded», and a box still sitting on a
+   * lorry is honestly described as being on the road.
+   */
+  const inUzbekistan =
+    batch.checkpointKey === 'in_uz' ||
+    (batch.destCountry !== 'CN' &&
+      (batch.originCountry === 'UZ' || ['arrived', 'unloaded', 'closed'].includes(batch.status)));
+  if (inUzbekistan) return batch.customsCleared ? 'customs_done' : 'in_uz';
+  if (batch.destCountry === 'CN') return 'cn_transit';
+  return 'export_transit';
+}
+
 /**
  * One box → one rung.
  *
@@ -85,30 +123,7 @@ export function cargoStage(
   if (status === 'issued') return 'issued';
   if (status === 'ready_for_pickup') return 'ready';
 
-  if (status === 'in_transit') {
-    /*
-     * Three ways to know the truck is in Uzbekistan, and the customs stamp
-     * decides between the two rungs for all of them at once — so a declaration
-     * cleared while the truck is still driving to Tashkent shows as cleared,
-     * which is what actually happens.
-     *
-     * The pin the logist puts on the batch card outranks the schedule: a
-     * person who has seen the truck in Uzbekistan knows more than we do. The
-     * `arrived`/`unloaded` branch is the truck standing at its Uzbek
-     * destination with this box not yet scanned off. The Chinese leg
-     * deliberately gets no equivalent: his ladder has no rung for «the truck
-     * reached Kashgar but nothing is unloaded», and a box still sitting on a
-     * lorry is honestly described as being on the road.
-     */
-    const inUzbekistan =
-      batch?.checkpointKey === 'in_uz' ||
-      (batch?.destCountry !== 'CN' &&
-        (batch?.originCountry === 'UZ' ||
-          (batch !== null && ['arrived', 'unloaded', 'closed'].includes(batch.status))));
-    if (inUzbekistan) return batch?.customsCleared ? 'customs_done' : 'in_uz';
-    if (batch?.destCountry === 'CN') return 'cn_transit';
-    return 'export_transit';
-  }
+  if (status === 'in_transit') return batch ? truckStage(batch) : 'export_transit';
 
   // Standing somewhere. `in_stock` in Uzbekistan means it landed at a
   // warehouse that does not hand cargo straight over — still ours, not yet

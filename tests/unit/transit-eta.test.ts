@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { etaWindow, scheduleEstimate } from '@/modules/wms/tracking/eta';
+import { etaWindow, isGenericRoute, scheduleEstimate } from '@/modules/wms/tracking/eta';
+import { routeFor } from '@/modules/wms/tracking/map-data';
 
 const HOUR = 3_600_000;
 const NOW = new Date('2026-08-12T09:00:00.000Z');
@@ -56,6 +57,42 @@ describe('scheduleEstimate — the owner’s own corridor timings', () => {
     expect(s.est.segKey).toBe('uz');
     // Osh → Tashkent over the Kamchik pass: 36-48 hours, less the two spent.
     expect(s.est.remainingHours[1]).toBeLessThanOrEqual(48);
+  });
+});
+
+describe('a generic route is no schedule (round B, O14)', () => {
+  // routeFor answers a pair nobody wrote timings for with a straight line at a
+  // placeholder 120-168 h. Priced as an estimate it told a customer «5-7 kun»
+  // for a shuttle across Tashkent, so the one assembler refuses it — and the
+  // cabinet, the map, the bot and the dashboard all stop at once.
+  const GENERIC = [
+    ['YW', 'GZ'],
+    ['TAS1', 'AND'],
+    ['TAS1', 'TAS2'],
+    ['KA', 'YW'],
+    ['TAS1', 'YW'],
+  ] as const;
+  const OWNERS = [
+    ['YW', 'KA'],
+    ['GZ', 'KA'],
+    ['UCH', 'KA'],
+    ['KA', 'AND'],
+    ['KA', 'TAS1'],
+    ['KA', 'TAS2'],
+    ['YW', 'TAS1'],
+    ['GZ', 'AND'],
+    ['AND', 'TAS1'],
+    ['AND', 'TAS2'],
+  ] as const;
+
+  it('knows the fallback from the routes the owner described', () => {
+    for (const [o, d] of GENERIC) expect(isGenericRoute(routeFor(o, d)!), `${o}→${d}`).toBe(true);
+    for (const [o, d] of OWNERS) expect(isGenericRoute(routeFor(o, d)!), `${o}→${d}`).toBe(false);
+  });
+
+  it('gives a generic pair no estimate, and every described pair one', () => {
+    for (const [o, d] of GENERIC) expect(scheduleEstimate(o, d, ago(10), null, NOW), `${o}→${d}`).toBeNull();
+    for (const [o, d] of OWNERS) expect(scheduleEstimate(o, d, ago(10), null, NOW), `${o}→${d}`).not.toBeNull();
   });
 });
 
