@@ -364,7 +364,7 @@
     "truckNoRoute": "No route schedule",
     "truckGate": "not unloaded: {n} boxes",
     "truckDeparted": "departed: {n} boxes",
-    "truckPin": "pinned {n, plural, =0 {today} one {# day ago} other {# days ago}}",
+    "truckPin": "{n, plural, =0 {pinned today} one {pinned # day ago} other {pinned # days ago}}",
     "truckLoading": "Loading: {n} trucks",
     "truckMore": "{n} more — all",
     "funnelTitle": "Sales funnel",

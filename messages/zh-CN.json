@@ -333,7 +333,7 @@
     "tileCost": "支出",
     "tileCostParts": "直接 {direct} · 间接 {opex}",
     "tileCostFx": "汇兑差额 {fx}",
-    "tileTills": "{n}个现金账户",
+    "tileTills": "{n, plural, other {#个现金账户}}",
     "tilePeriodFlow": "期间：+{in} / −{out}",
     "tileOld90": "超过90天：{usd}",
     "tileTransit": "在途车辆",
