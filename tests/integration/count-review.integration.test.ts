@@ -19,7 +19,6 @@ import { recordVerdict, submitPlan } from '@/modules/wms/planning/service';
 import { departBatch, finishLoading, ingestLoadScans, removeLoadedCode } from '@/modules/wms/scanning/service';
 import { countLoadCrate, countLoadLot } from '@/modules/wms/scanning/count-load';
 import { inventorySnapshot, reconcileInventory } from '@/modules/wms/inventory/service';
-import { createCrate } from '@/modules/wms/crates/service';
 import {
   aboardFilter,
   finishUnload,
@@ -31,6 +30,9 @@ import {
 import { countAcceptCrate, countAcceptLot, CountError } from '@/modules/wms/scanning/count-accept';
 import { countDoorFor } from '@/modules/wms/scanning/count-door';
 import { batchRegister } from '@/modules/wms/reports/queries';
+import { buildInvoiceXlsx } from '@/modules/wms/documents/ved-xlsx';
+import { createCrate, dissolveCrate } from '@/modules/wms/crates/service';
+import ExcelJS from 'exceljs';
 
 /*
  * The QR-siz round's review, made permanent (0112): each case here is a
@@ -374,5 +376,53 @@ describe('the stocktake never writes off a count-moved pile (review cargo-2, pho
     // Both pallets carry a CR- label: a really-missing one is written off by
     // the stocktake whichever way it came off the truck.
     expect(await stocktakeWritesOff(W.hub, [lotA.lotId, lotB.lotId])).toEqual([3, 3]);
+  });
+});
+
+describe('the customs invoice’s places are the truck’s own (review cargo-4)', () => {
+  /** «Кол-во мест» of every goods line, as the file prints it. */
+  async function invoicePlaces(batchId: string): Promise<number[]> {
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load((await buildInvoiceXlsx(batchId))! as never);
+    const out: number[] = [];
+    wb.worksheets[0]!.eachRow((row) => {
+      if (row.getCell(4).value === 'кг') out.push(Number(row.getCell(6).value));
+    });
+    return out;
+  }
+
+  it('a pallet that crossed as one place stays one after the hub dissolves it and builds another', async () => {
+    const lot = await mkLot(6, W.cn);
+    const crate = await createCrate(
+      { crateId: uuidv4(), warehouseId: W.cn, lotCounts: [{ lotId: lot.lotId, count: 4 }], kind: 'palet', logistApproved: true },
+      ctx(),
+    );
+    const sub = await submitPlan(
+      { originWarehouseId: W.cn, destWarehouseId: W.hub, lines: [{ lotId: lot.lotId, boxCount: 2 }], crateIds: [crate!.id] } as never,
+      ctx(),
+    );
+    const { batch } = await recordVerdict({ versionId: sub.version.id, verdict: 'approved' } as never, ctx());
+    madeTrucks.push(batch!.id);
+    const t = batch!;
+    const loose = await db
+      .select()
+      .from(boxes)
+      .where(and(eq(boxes.lotId, lot.lotId), sql`${boxes.crateId} IS NULL`, eq(boxes.currentBatchId, t.id)));
+    const acks = await ingestLoadScans([qr(t.id, crate!.code), ...loose.map((b) => qr(t.id, b.shortCode))], ctx());
+    expect(acks.map((a) => a.result)).toEqual(['ok', 'ok', 'ok']);
+    await finishLoading(t.id, ctx());
+    await departBatch(t.id, ctx());
+    // Two loose cartons and one pallet: three places.
+    expect(await invoicePlaces(t.id)).toEqual([3]);
+    const u = await ingestUnloadScans([qr(t.id, crate!.code), ...loose.map((b) => qr(t.id, b.shortCode))], ctx());
+    expect(u.every((a) => a.result === 'ok')).toBe(true);
+    await finishUnload(t.id, ctx());
+    await dissolveCrate(crate!.id, ctx());
+    expect(await invoicePlaces(t.id)).toEqual([3]);
+    await createCrate(
+      { crateId: uuidv4(), warehouseId: W.hub, lotCounts: [{ lotId: lot.lotId, count: 5 }], kind: 'palet', logistApproved: true },
+      ctx(),
+    );
+    expect(await invoicePlaces(t.id)).toEqual([3]);
   });
 });

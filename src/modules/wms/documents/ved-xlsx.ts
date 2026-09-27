@@ -1,5 +1,5 @@
 import { DOC } from './labels';
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import ExcelJS from 'exceljs';
 import { db } from '../../platform/db/client';
 import {
@@ -9,6 +9,7 @@ import {
   crates,
   receiptLots,
   receipts,
+  scanEvents,
   warehouses,
 } from '../../platform/db/schema';
 import { getSetting } from '../../platform/settings/service';
@@ -17,26 +18,61 @@ import { batchMemberFilter } from '../scanning/unload';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 async function batchLines(batchId: string) {
-  return db
+  const rows = await db
     .select({
+      boxId: boxes.id,
       lot: receiptLots,
       clientCode: clients.clientCode,
       marking: receipts.unclaimedMarking,
-      crateCode: crates.code,
-      crateId: crates.id,
-      crateKind: crates.kind,
+      liveCrateId: boxes.crateId,
     })
     .from(boxes)
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
     .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
     .leftJoin(clients, eq(receipts.clientId, clients.id))
-    .leftJoin(crates, eq(boxes.crateId, crates.id))
     // Membership by what DEPARTED, not by the live pointer: unloading clears
     // `current_batch_id` box by box, so a customs document regenerated after
     // the truck reached the border came out EMPTY — and these are the papers
     // the export agent works from. Same predicate as costing (#121, #152).
     .where(batchMemberFilter(batchId))
     .orderBy(asc(receiptLots.letter), asc(boxes.seqInLot));
+  // The crate a carton rode THIS truck in comes from this truck's own load
+  // events, not from the live pointer — the manifest's rule: handing a
+  // pallet over or dissolving it at the hub clears `crate_id`, and building
+  // a new one there sets it, so an invoice re-downloaded later said 10 places
+  // for what crossed as one, or 1 for what crossed as ten (review cargo-4).
+  // A carton not loaded yet (the invoice drafted off the plan) has no event
+  // and keeps its live crate.
+  const events = rows.length
+    ? await db
+        .select({ boxId: scanEvents.boxId, crateId: scanEvents.crateId })
+        .from(scanEvents)
+        .where(and(eq(scanEvents.batchId, batchId), eq(scanEvents.type, 'load')))
+        .orderBy(asc(scanEvents.createdAt), asc(scanEvents.id))
+    : [];
+  const rodeIn = new Map<string, string | null>();
+  for (const event of events) rodeIn.set(event.boxId, event.crateId);
+  const crateOf = (row: (typeof rows)[number]) =>
+    rodeIn.has(row.boxId) ? rodeIn.get(row.boxId)! : row.liveCrateId;
+  const crateIds = [...new Set(rows.map(crateOf).filter((id): id is string => id !== null))];
+  const crateRows = crateIds.length
+    ? await db
+        .select({ id: crates.id, code: crates.code, kind: crates.kind })
+        .from(crates)
+        .where(inArray(crates.id, crateIds))
+    : [];
+  const crateById = new Map(crateRows.map((c) => [c.id, c]));
+  return rows.map((row) => {
+    const crate = crateOf(row);
+    return {
+      lot: row.lot,
+      clientCode: row.clientCode,
+      marking: row.marking,
+      crateCode: crate ? (crateById.get(crate)?.code ?? null) : null,
+      crateId: crate,
+      crateKind: crate ? (crateById.get(crate)?.kind ?? null) : null,
+    };
+  });
 }
 
 /**
