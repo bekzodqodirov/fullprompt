@@ -178,7 +178,7 @@ export async function createCrate(input: CreateCrateInput, ctx: AuditContext) {
         note: input.note || null,
         // A count picked the cartons, so WHICH ones went in is on the record.
         ...(lotCounts.length
-          ? { lotCounts, shortCodes: rows.map(({ box }) => box.shortCode) }
+          ? { lotCounts, shortCodes: rows.map(({ box }) => box.shortCode).sort() }
           : {}),
       },
     });

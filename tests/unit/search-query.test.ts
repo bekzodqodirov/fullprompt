@@ -41,6 +41,21 @@ describe('parseQuery', () => {
     expect(parseQuery('GS777').clientCode).toBe(true);
     expect(parseQuery('Bobur').clientCode).toBe(false);
   });
+
+  it('reads a factory barcode as its canonical key, and keeps its phone reading (0112)', () => {
+    const ean = parseQuery('6901234567892');
+    expect(ean.barcode).toBe('6901234567892');
+    expect(ean.phone).toBe('234567892');
+    // The UPC reading of a product finds the same key the wizard stored.
+    expect(parseQuery('0012345678905').barcode).toBe('12345678905');
+  });
+
+  it('does not run the barcode lookup for a lot, a phrase or a short code', () => {
+    expect(parseQuery('GS777-A').barcode).toBeUndefined();
+    expect(parseQuery('ab cd').barcode).toBeUndefined();
+    expect(parseQuery('GS777').barcode).toBeUndefined();
+    expect(parseQuery('汉字汉字汉字').barcode).toBeUndefined();
+  });
 });
 
 describe('likeNeedle', () => {
