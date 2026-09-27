@@ -235,10 +235,23 @@ export function receivedText(summary: ReceivedSummary, locale?: string | null): 
     totalLine(sum(summary.lines, (l) => l.boxCount), measuresOf(summary.lines), locale),
     [
       stepLine(step, locale),
-      h(fresh ? t.pushNextReceived : stageLabel(summary.stage, t)),
+      fresh ? h(t.pushNextReceived) : restOfRung(summary.stage, step, t),
       summary.receiptNumber ? `${h(t.pushReceiptNo)}: ${code(h(summary.receiptNumber))}` : '',
     ],
   );
+}
+
+/**
+ * The rung's own sentence under the bar — unless it only says the bar again.
+ * «🟩🟩🟩🟩⬜ Olib ketishga tayyor» followed by «Olib ketishga tayyor ✅» is one
+ * fact twice (found by reading the rendered push, not by a test); the bot's
+ * cargo list drops the repeat by the same comparison.
+ */
+function restOfRung(stage: CargoStage, step: number, t: ReturnType<typeof clientLabels>): string {
+  const sentence = stageLabel(stage, t);
+  const milestone = MILESTONES[Math.max(0, Math.min(MILESTONES.length - 1, step))]!;
+  const bare = sentence.replace(/[\s\p{Extended_Pictographic}\u{FE0F}]+$/u, '').trim();
+  return bare === t[MS_LABEL[milestone]] ? '' : h(sentence);
 }
 
 // --- C3: handed over ---

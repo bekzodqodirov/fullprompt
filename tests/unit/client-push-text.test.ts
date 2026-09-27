@@ -57,6 +57,15 @@ describe('«qabul qilindi» knows where the cargo is when it is SENT', () => {
     expect(text).not.toContain(t.pushNextReceived);
   });
 
+  it('a rung whose sentence IS the step is not said twice', () => {
+    // Found by reading the rendered push: «🟩🟩🟩🟩⬜ Olib ketishga tayyor» and
+    // then «Olib ketishga tayyor ✅» on the next line.
+    const t = clientLabels('uz');
+    const text = plain(receivedText({ ...RECEIVED, stage: 'ready' }, 'uz'));
+    expect(text).toContain(`🟩🟩🟩🟩⬜ ${t.msReady}`);
+    expect(text.split(t.msReady).length - 1).toBe(1);
+  });
+
   it('numbers are grouped the way a person reads them, boxes counted in the customer’s grammar', () => {
     const text = plain(receivedText(RECEIVED, 'ru'));
     expect(text).toContain(`12${NBSP}845.5`);
