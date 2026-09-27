@@ -38,7 +38,12 @@ test('at a desk the canvas holds: profit beside its line, four tiles in a row, a
   await expect(page).toHaveURL('/');
   await page.goto('/dashboard');
 
-  const box = async (id: string) => (await page.getByTestId(id).boundingBox())!;
+  // A card streams in under its own Suspense: React inserts it HIDDEN and
+  // swaps it in a moment later, so a box read before it shows is null.
+  const box = async (id: string) => {
+    await expect(page.getByTestId(id)).toBeVisible();
+    return (await page.getByTestId(id).boundingBox())!;
+  };
   // The hero's figure and its twelve-month line share one row.
   const value = await box('dash-hero-value');
   const line = await box('dash-hero-line');

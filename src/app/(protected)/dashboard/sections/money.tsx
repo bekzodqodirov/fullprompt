@@ -605,7 +605,9 @@ export async function CashWeeksCard({ company }: { sight: CompanyMoneySight; com
   const net = rows.map((row) => row?.net ?? 0);
   const last = keys.length - 1;
   const done = last - 1;
-  const { ticks, top } = niceTicks(Math.max(1, ...inflow, ...outflow));
+  // A floor of $100 keeps an empty or cents-only chart from printing «$1» on
+  // every gridline (compact dollars round a quarter-dollar tick away).
+  const { ticks, top } = niceTicks(Math.max(100, ...inflow, ...outflow));
   const heading = (i: number) => t('weekOf', { day: dayLabel(names, keys[i] ?? '') });
   const tips = keys.map((_, i) => tipText(heading(i), cashTipRows(cashMonthParts(rows[i]), labels, t('sCashNet'))));
   const labelled = new Set(keys.map((_, i) => i).filter((i) => (last - i) % 3 === 0));

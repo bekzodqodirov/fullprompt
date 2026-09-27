@@ -215,14 +215,14 @@
     "stageUz": "O‘zbekiston skladlarida",
     "table": "Jadval",
     "tileCash": "Kassalarda",
-    "tileIntake": "Qabul · bu oy",
+    "tileIntake": "Qabul",
     "tileIntakeSub": "{receipts} prixod · {boxes} 📦",
     "tileMonthFlow": "Bu oy: +{in} / −{out}",
     "tileNet": "Sof holat {amount}",
     "tileProfit": "Sof foyda · bu oy",
     "tileReceivable": "Mijozlar qarzi",
     "tileReceivableSub": "{n} mijoz · 60+ kun:",
-    "tileRevenue": "Tushum · bu oy",
+    "tileRevenue": "Tushum",
     "tileStock": "Skladlarda yuk",
     "tileStockBoxes": "{boxes} 📦",
     "tileStockSub": "{boxes} 📦 · {trucks} fura yo‘lda",
@@ -306,8 +306,8 @@
       "otgan": "O‘tgan oy"
     },
     "ombor": {
-      "label": "Ombor",
-      "all": "Hamma omborlar",
+      "label": "Sklad",
+      "all": "Barcha skladlar",
       "apply": "Ko‘rsatish"
     },
     "scope": {

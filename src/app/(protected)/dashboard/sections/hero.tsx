@@ -510,6 +510,8 @@ function Delta({
   up: 'good' | 'bad';
 }) {
   if (delta === null && abs === null) return <span className="text-ink-500">— {none}</span>;
+  // No movement is not good news or bad news: a green «▲ $0» reads as growth.
+  if ((delta === null || delta === 0) && Math.abs(abs ?? 0) < 0.5) return <span className="text-ink-500">= $0</span>;
   const rising = (delta ?? abs ?? 0) >= 0;
   const tone = rising === (up === 'good') ? 'text-good' : 'text-bad';
   return (
@@ -522,6 +524,13 @@ function Delta({
 
 /** The hero's delta: absolute only (a percentage of a small or negative profit misleads). */
 function AbsDelta({ value, up }: { value: number; up: 'good' | 'bad' }) {
+  if (Math.abs(value) < 0.5) {
+    return (
+      <span className="font-semibold text-ink-500" data-testid="dash-hero-delta">
+        = $0
+      </span>
+    );
+  }
   const rising = value >= 0;
   const tone = rising === (up === 'good') ? 'text-good' : 'text-bad';
   return (

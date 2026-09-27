@@ -348,18 +348,20 @@ export async function TrucksCard({ scopeKey }: { scopeKey: string }) {
           ))}
         </ul>
       )}
-      <div className="flex flex-wrap gap-x-3 gap-y-1 border-t border-line pt-2 text-xs">
-        {trucks.loading > 0 && (
-          <Link href="/batches" className="font-semibold text-brand-700" data-testid="dash-trucks-loading">
-            {t('truckLoading', { n: trucks.loading })} →
-          </Link>
-        )}
-        {trucks.total > trucks.rows.length && (
-          <Link href="/transit" className="font-semibold text-brand-700">
-            {t('truckMore', { n: trucks.total - trucks.rows.length })} →
-          </Link>
-        )}
-      </div>
+      {(trucks.loading > 0 || trucks.total > trucks.rows.length) && (
+        <div className="flex flex-wrap gap-x-3 gap-y-1 border-t border-line pt-2 text-xs">
+          {trucks.loading > 0 && (
+            <Link href="/batches" className="font-semibold text-brand-700" data-testid="dash-trucks-loading">
+              {t('truckLoading', { n: trucks.loading })} →
+            </Link>
+          )}
+          {trucks.total > trucks.rows.length && (
+            <Link href="/transit" className="font-semibold text-brand-700">
+              {t('truckMore', { n: trucks.total - trucks.rows.length })} →
+            </Link>
+          )}
+        </div>
+      )}
     </div>
   );
 }

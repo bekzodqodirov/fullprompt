@@ -9,7 +9,7 @@ import { companyMoneySight, seesCompanyMoney } from '@/modules/wms/finance/scope
 import { mayReadBatches } from '@/modules/wms/batches/read-door';
 import { loadWarehouseOptions, loadWindows, scopeKeyOf } from '@/modules/wms/reports/dashboard';
 import { dashPeriod } from '@/modules/wms/reports/dashboard-math';
-import { reportScope } from '@/modules/wms/reports/report-scope';
+import { reportBaseIds, reportScope } from '@/modules/wms/reports/report-scope';
 import { PageHeader } from '@/components/ui/page';
 import { ChartTip } from '@/components/charts/chart-tip';
 import { DashControls } from './sections/controls';
@@ -74,8 +74,7 @@ export default async function DashboardPage({
   // all-warehouse grant on a warehouse-scoped role still reads its own
   // warehouses only, a scoped viewer with none reads nothing, and `ombor`
   // survives only when it is one of the viewer's own options.
-  const base = reportScope(actor, null, []);
-  const options = await loadWarehouseOptions(scopeKeyOf(base.baseIds));
+  const options = await loadWarehouseOptions(scopeKeyOf(reportBaseIds(actor)));
   const scope = reportScope(actor, params.ombor, options);
   const scopeKey = scopeKeyOf(scope.ids);
   const company = scope.ombor !== null;

@@ -77,8 +77,6 @@ const MONEY_READERS = [
   'loadCashWeeks',
   'loadCashByMonth',
   'loadTargetFor',
-  'cashFlowByWeek',
-  'pnlParts',
 ];
 
 /** A predicate that keeps the VED out of a money read. */

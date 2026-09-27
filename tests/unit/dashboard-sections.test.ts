@@ -60,7 +60,7 @@ describe('the period and the warehouse are the page’s two questions', () => {
   it('the warehouse comes through the shared scope rule, validated against the viewer’s own options', () => {
     const page = strip(read('src/app/(protected)/dashboard/page.tsx'));
     expect(page).toContain('const scope = reportScope(actor, params.ombor, options);');
-    expect(page).toContain('const options = await loadWarehouseOptions(scopeKeyOf(base.baseIds));');
+    expect(page).toContain('const options = await loadWarehouseOptions(scopeKeyOf(reportBaseIds(actor)));');
     // The list of trucks with no cost is company-wide: never under a warehouse.
     expect(page).toContain('const seesCostMissing = allWh && !scope.scoped && seesBatches && !company;');
   });
