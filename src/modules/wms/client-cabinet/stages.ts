@@ -142,3 +142,41 @@ export function stageIndex(stage: CargoStage): number {
 export function isMovingStage(stage: CargoStage): boolean {
   return stage === 'cn_transit' || stage === 'export_transit';
 }
+
+/**
+ * The customer's FIVE steps (round C) — China, the road, Uzbekistan, ready,
+ * handed over.
+ *
+ * The ten rungs above stay the truth and are still the sentence under every
+ * lot; these five are only the bar drawn above it, because ten dots on a
+ * phone are a row nobody reads and five are a journey anybody does. They are
+ * coarse on purpose so that no route can make the bar lie: a direct truck
+ * from Yiwu to Tashkent never stands at the border warehouse, and with the
+ * hub as its own step the bar would skip a square. Everything between
+ * leaving a Chinese warehouse and entering Uzbekistan — the domestic leg, the
+ * hub, loading for export, the export road — is one step, «yo'lda».
+ *
+ * Monotonic by construction: the mapping follows `CARGO_STAGES`' order, so a
+ * box moving forward on the ladder can never move backward on the bar
+ * (pinned by a test over the whole ladder).
+ */
+export const MILESTONES = ['china', 'road', 'uz', 'ready', 'issued'] as const;
+export type Milestone = (typeof MILESTONES)[number];
+
+const MILESTONE_OF: Record<CargoStage, number> = {
+  cn_warehouse: 0,
+  cn_loading: 0,
+  cn_transit: 1,
+  hub: 1,
+  hub_loading: 1,
+  export_transit: 1,
+  in_uz: 2,
+  customs_done: 2,
+  ready: 3,
+  issued: 4,
+};
+
+/** Which of the five steps a rung belongs to, 0-based. */
+export function milestoneOf(stage: CargoStage): number {
+  return MILESTONE_OF[stage];
+}

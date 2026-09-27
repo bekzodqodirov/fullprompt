@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { db } from '../../platform/db/client';
 import {
@@ -12,9 +12,12 @@ import {
   handovers,
   receiptLots,
   receipts,
+  tgAccounts,
   users,
   warehouses,
 } from '../../platform/db/schema';
+import { getSetting } from '../../platform/settings/service';
+import { telegramPhoneUrl } from '../../platform/telegram/map-link';
 import { ARRIVED_ON_A_TRUCK } from '../documents/arrivals';
 import { clientBalanceUsd, clientLedger } from '../finance/service';
 import { etaWindow, scheduleEstimate } from '../tracking/eta';
@@ -852,4 +855,80 @@ export async function paidHistory(clientId: string, days = HISTORY_DAYS) {
     .orderBy(desc(clientTransactions.txDate), desc(clientTransactions.createdAt))
     .limit(HISTORY_CAP);
   return rows.map((r) => ({ txDate: r.txDate, amount: Number(r.amount), currency: r.currency }));
+}
+
+/**
+ * The person a customer should write to (round C) — their code's sales
+ * manager — as the bot's «💬 Menejer», the Mini App card and the push
+ * buttons all show it. ONE read for all three, so the three never name
+ * different people.
+ *
+ * What is shown is what the offer PDF has always printed to the same
+ * customer (the seller's name and phone), plus the one thing a Telegram
+ * customer actually taps: a chat link. The handle the LISTENER read from the
+ * manager's own connected account wins over the one somebody typed on the
+ * users screen (it is the account the customer's messages already reach);
+ * with neither, Telegram's own `t.me/+<number>` link opens a chat by phone
+ * when the manager's privacy allows it. The phone is the connected
+ * Telegram number when there is one — the number customers already know —
+ * and the login phone otherwise.
+ *
+ * A deactivated manager is no manager: a customer must not be sent to a
+ * person who has left. One grouped query, never one per code (#432).
+ */
+export interface ManagerContact {
+  userId: string;
+  name: string;
+  phone: string | null;
+  telegramUrl: string | null;
+}
+
+export async function managersFor(clientIds: string[]): Promise<Map<string, ManagerContact>> {
+  const out = new Map<string, ManagerContact>();
+  if (clientIds.length === 0) return out;
+  const rows = await db
+    .select({
+      clientId: clients.id,
+      userId: users.id,
+      name: users.fullName,
+      loginPhone: users.phone,
+      typed: users.telegramUsername,
+      verified: tgAccounts.tgUsername,
+      tgPhone: tgAccounts.tgPhone,
+    })
+    .from(clients)
+    .innerJoin(users, and(eq(users.id, clients.salesManagerId), eq(users.active, true)))
+    // `manager_user_id` is UNIQUE, so this joins at most one account.
+    .leftJoin(
+      tgAccounts,
+      and(eq(tgAccounts.managerUserId, users.id), ne(tgAccounts.status, 'signed_out')),
+    )
+    .where(inArray(clients.id, clientIds));
+  for (const r of rows) {
+    const phone = r.tgPhone?.trim() || r.loginPhone?.trim() || null;
+    const handle = r.verified?.trim() || r.typed?.trim() || null;
+    out.set(r.clientId, {
+      userId: r.userId,
+      name: r.name,
+      phone,
+      telegramUrl: handle ? `https://t.me/${handle}` : phone ? telegramPhoneUrl(phone) : null,
+    });
+  }
+  return out;
+}
+
+/**
+ * The office, for a customer whose code has no manager — the settings the
+ * offer PDF prints. The seeded placeholder «—» means nobody filled it in, and
+ * is never shown as a phone number.
+ *
+ * On the POOL: never call this inside a transaction (#714).
+ */
+export async function officeContact(): Promise<{ name: string; phone: string | null }> {
+  const [name, phone] = await Promise.all([getSetting('company_name'), getSetting('company_phone')]);
+  const clean = (v: unknown) => {
+    const text = typeof v === 'string' ? v.trim() : '';
+    return text === '' || text === '—' || text === '-' ? null : text;
+  };
+  return { name: clean(name) ?? 'GSR LOGISTICS', phone: clean(phone) };
 }

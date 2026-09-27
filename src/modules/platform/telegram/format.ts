@@ -1,0 +1,179 @@
+import { MAX_MESSAGE_CHARS, splitMessage } from './limits';
+
+/**
+ * Telegram HTML — built from escaped parts, never trusted from a string.
+ *
+ * Until round C every message the bot sent was plain text: no bold, no
+ * layout, a wall of lines where the one number a customer wants sits in the
+ * same weight as the warehouse code under it. HTML is what makes a message
+ * readable at a glance, and it is also the one formatting mode where a single
+ * unescaped `<` in a goods name makes Telegram refuse the WHOLE message — so
+ * the rule is structural rather than remembered:
+ *
+ *   every helper here takes HTML that is ALREADY safe, and the only way a
+ *   typed value (a client's name, a product, a note, a model's answer) gets
+ *   in is through `h()`.
+ *
+ * Stored texts stay plain. `payload.text` has readers that are not Telegram —
+ * the lenta, the forwarded offer, a dozen tests — so markup is added at the
+ * moment of SENDING, from values, and a stored string is only ever escaped
+ * whole (`plainAsHtml`).
+ *
+ * Pure: no imports but the limits, so the wording tests need nothing.
+ */
+
+/** The three characters Telegram's HTML mode needs escaped in text. */
+export function escapeHtml(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/** A typed value, made safe for a message body. */
+export function h(value: string | number | null | undefined): string {
+  return escapeHtml(value === null || value === undefined ? '' : String(value));
+}
+
+/** Bold — the argument is already-safe HTML. */
+export function b(html: string): string {
+  return html === '' ? '' : `<b>${html}</b>`;
+}
+
+/** Italic — the argument is already-safe HTML. */
+export function i(html: string): string {
+  return html === '' ? '' : `<i>${html}</i>`;
+}
+
+/** Monospace — codes a person copies (a receipt number, a client code). */
+export function code(html: string): string {
+  return html === '' ? '' : `<code>${html}</code>`;
+}
+
+/**
+ * A link, only to a place Telegram will open. Anything else — an empty
+ * `APP_URL`, a `http://localhost` in CI, a relative path — prints the text
+ * alone: a refused link would take the whole message down with it, and the
+ * sentence must never depend on the link (map-link.ts's rule).
+ */
+export function a(href: string | null | undefined, textHtml: string): string {
+  const url = (href ?? '').trim();
+  if (!/^(https:\/\/|tg:\/\/)/.test(url)) return textHtml;
+  return `<a href="${escapeHtml(url).replace(/"/g, '&quot;')}">${textHtml}</a>`;
+}
+
+/**
+ * The same message with the markup removed — the fallback Telegram gets when
+ * it refuses to parse, and the thing its limits are measured against.
+ */
+export function htmlToPlain(html: string): string {
+  return html
+    .replace(/<[^>]*>/g, '')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&');
+}
+
+/**
+ * How long Telegram will think this is. The 4096 and 1024 ceilings count the
+ * PARSED text, in UTF-16 units (`String.length`), not the markup.
+ */
+export function visibleLength(html: string): number {
+  return htmlToPlain(html).length;
+}
+
+/**
+ * A stored plain text, sent as HTML: escaped whole, its first line bolded.
+ *
+ * This is how the staff drain turns thirty-odd pre-rendered messages into
+ * something with a title without touching one of them: every character that
+ * was typed stays typed, and the only markup is the one pair this adds.
+ */
+export function plainAsHtml(text: string, opts: { boldTitle?: boolean } = {}): string {
+  const safe = escapeHtml(text);
+  if (!opts.boldTitle) return safe;
+  const nl = safe.indexOf('\n');
+  const title = nl === -1 ? safe : safe.slice(0, nl);
+  const rest = nl === -1 ? '' : safe.slice(nl);
+  return title.trim() === '' ? safe : `${b(title)}${rest}`;
+}
+
+const NBSP = ' ';
+
+/**
+ * «12 845.5» — thousands grouped with a no-break space, so a number never
+ * wraps across a line on a phone and a customer reads «12 845» and not
+ * «12845». `decimals` fixes the places (money); without it up to three are
+ * kept and trailing zeros dropped (kilos, cubic metres).
+ *
+ * A dot for the decimal, in every language: the rest of the app, the
+ * warehouse screens and every printed document already write it that way,
+ * and two conventions on one screen is worse than either.
+ */
+export function groupDigits(value: number, decimals?: number): string {
+  if (!Number.isFinite(value)) return '0';
+  const negative = value < 0;
+  const abs = Math.abs(value);
+  let fixed = decimals === undefined ? String(Math.round(abs * 1000) / 1000) : abs.toFixed(decimals);
+  // `String()` switches to exponent notation for tiny values; the weights here
+  // never need it, and «1e-7 kg» is not a thing to show a customer.
+  if (fixed.includes('e')) fixed = abs.toFixed(decimals ?? 3).replace(/\.?0+$/, '');
+  const [whole = '0', frac] = fixed.split('.');
+  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, NBSP);
+  const out = frac ? `${grouped}.${frac}` : grouped;
+  return negative && out !== '0' ? `-${out}` : out;
+}
+
+/** «$1 250.00» — dollars, always two places, the sign before the symbol. */
+export function usd(value: number): string {
+  const body = groupDigits(Math.abs(value), 2);
+  return value < 0 && body !== '0.00' ? `-$${body}` : `$${body}`;
+}
+
+/**
+ * «🟩🟩🟩⬜⬜» — where the cargo is on its five-step road, drawn with
+ * characters every phone renders in colour. `step` is 0-based; a step at or
+ * past the end is all green (handed over).
+ */
+export function stepBar(step: number, total: number): string {
+  const done = Math.max(0, Math.min(total, step + 1));
+  return '🟩'.repeat(done) + '⬜'.repeat(total - done);
+}
+
+/**
+ * Pack whole blocks into as few messages as fit — never splitting a block,
+ * so no tag is ever cut in half. Each block must be self-contained HTML (no
+ * tag opened in one and closed in another). One block larger than a message
+ * on its own is the only thing ever cut, and it is cut as PLAIN text, because
+ * a cut through markup is a message Telegram refuses.
+ *
+ * `limit` counts visible characters and stays under 4096 with room for the
+ * markup Telegram does not count but a careless edit might add.
+ */
+export function packHtmlBlocks(
+  blocks: string[],
+  limit = MAX_MESSAGE_CHARS - 296,
+  separator = '\n\n',
+): string[] {
+  const out: string[] = [];
+  let current = '';
+  const flush = () => {
+    if (current !== '') out.push(current);
+    current = '';
+  };
+  for (const block of blocks) {
+    if (block === '') continue;
+    if (visibleLength(block) > limit) {
+      flush();
+      for (const piece of splitMessage(htmlToPlain(block), limit)) out.push(escapeHtml(piece));
+      continue;
+    }
+    const candidate = current === '' ? block : `${current}${separator}${block}`;
+    if (visibleLength(candidate) > limit) {
+      flush();
+      current = block;
+    } else {
+      current = candidate;
+    }
+  }
+  flush();
+  return out;
+}

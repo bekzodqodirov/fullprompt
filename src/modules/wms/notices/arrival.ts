@@ -7,6 +7,7 @@ import {
   receiptLots,
   receipts,
 } from '@/modules/platform/db/schema';
+import { isPermanentFailure } from '@/modules/platform/telegram/send';
 
 /**
  * «Yukingiz yetib keldi» — once per customer per truck, and true when it goes.
@@ -307,7 +308,8 @@ export const MAX_NOTICE_ATTEMPTS = 5;
  * change, and knocking again is noise.
  */
 export function isPermanentNoticeFailure(status: number): boolean {
-  return status === 400 || status === 401 || status === 403 || status === 404;
+  // One rule for every Bot-API sender since round C (`platform/telegram/send`).
+  return isPermanentFailure(status);
 }
 
 /**

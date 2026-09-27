@@ -22,6 +22,7 @@ import {
   staffKeyboard,
 } from './staff-handlers';
 import { replyKeyboardFor } from './keyboards';
+import { ensureBotProfile, offerStaffCommands } from './commands';
 
 /**
  * Staff-linking bot (spec 4.5): handles `/start <one-time-code>` from the
@@ -67,36 +68,6 @@ async function tellOldChat(
     .sendMessage(
       Number(previousChatId),
       'ℹ️ Sizning hodim akkountingiz boshqa Telegramga ko‘chirildi. Xabarnomalar endi bu yerga kelmaydi.',
-    )
-    .catch(() => {});
-}
-
-/**
- * Put «/hodim» in THIS chat's command menu, and only this chat's.
- *
- * A global command list would show a staff command to every customer, and in a
- * cabinet chat the corner button is the Mini App anyway. Fire and forget: the
- * poller is sequential and a command menu is not worth holding it.
- */
-function offerStaffCommands(
-  ctx: {
-    api: {
-      setMyCommands: (
-        commands: { command: string; description: string }[],
-        other?: Record<string, unknown>,
-      ) => Promise<unknown>;
-    };
-  },
-  chatId: number,
-): void {
-  void ctx.api
-    .setMyCommands(
-      [
-        { command: 'hodim', description: 'Hodim rejimi' },
-        { command: 'bugun', description: 'Bugungi vazifalar' },
-        { command: 'zametka', description: 'Zametkalar' },
-      ],
-      { scope: { type: 'chat', chat_id: chatId } },
     )
     .catch(() => {});
 }
@@ -264,6 +235,10 @@ export function startTelegramBot(): void {
   registerClientCabinet(bot);
 
   bot.catch((err) => logger.error({ err: err.error }, 'telegram bot error'));
+
+  // What a person reads before pressing Start, in their language (round C).
+  // Off the poller and never fatal: a profile that fails to set is a log line.
+  void ensureBotProfile().catch((err: unknown) => logger.warn({ err }, 'bot profile failed'));
 
   const startPolling = (retryMs: number) => {
     void bot.start({ drop_pending_updates: true }).catch((err: unknown) => {
