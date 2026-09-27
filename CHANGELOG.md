@@ -159,6 +159,39 @@ hammasi tuzatildi):
   deydi, yozilgan son saqlanadi.
 - Agent Excelida ofisdan kiritilgan prixod haqiqiy qabul kuni bilan chiqadi.
 
+**Tuzatishlarning o'zi ham tekshirildi** (46 ta tekshiruvchi, 20 ta topilma —
+hammasi tuzatildi):
+- Sanashda xato ko'p yozilib, keyin kamaytirilsa, prixodga qo'shilgan
+  karobkalar stikeri chop etilgan bo'lsa ham o'chiriladi. Oldin ular Xitoy
+  skladiga «qaytib» tushib, yo'q karobka bo'lib qolardi.
+- **Narx qo'yilgandan keyin sanash kamaytirilsa**, narx sahifasida «N karobka
+  bu mashinadan chiqdi — narxni kamaytiring» chiqadi, buxgalterga Telegram
+  xabar boradi. Oldin mijoz jimgina ortiqcha hisoblanib qolardi.
+- Kompensatsiya (narx tushirilishi) sanash bilan qo'shilgan karobkalar
+  haqidagi ogohlantirishni o'chirib yubormaydi.
+- Tezkor mashinada ortiqcha yuklangan karobkalar haqida ham buxgalter xabar
+  oladi.
+- Prixod formasi saqlanayotganda shu payt ofis sanashi prixodni o'zgartirgan
+  bo'lsa, forma eski son bilan ustidan yozmaydi — «o'zgardi, qaytadan
+  oching» deydi.
+- Tugatilgan mashina kechikkan telefon skaneridan «yetib keldi» holatiga
+  qaytib ketmaydi.
+- Bekor qilish, anulirovka va prixod formasi band bo'lsa xato sahifasi
+  chiqmaydi — «band, qaytadan bosing» deydi.
+- Hubda sanalib, keyin paletda Toshkentga ketgan va yo'qolgan yuk
+  inventarizatsiyada endi «yo'qolgan» deb yozila oladi.
+- Butun loti paletda yo'lda ketayotgan prixodning QR-siz belgisini jo'natish
+  skladi mudiri yolg'iz o'zgartira olmaydi.
+- Mashina manifestidagi palet ustuni hub keyin paletni qayta yig'sa ham
+  o'zgarmaydi.
+- QR-siz tugmasi faqat bosish mumkin bo'lgan odamga ko'rinadi.
+- Sanab qabulda son kamaytirilsa, o'z sababi so'raladi va panel qanchasini
+  qaytarish mumkinligini oldindan aytadi. Sanab yuklashda son kamaytirilsa,
+  tasdiq oynasida prixod ham kamayishi yoziladi.
+- Topshirish ekranida to'g'ri lot tanlangandan keyin eski qizil xato
+  o'chadi. Tushirish ekranida ham «ofis sanaydigan karobkalar ko'p» eslatmasi
+  chiqadi.
+
 **Qilinmagani (ataylab):**
 - Kompyuterdagi qabul jadvalida «QR yopishtirilmadi» katakchasi yo'q —
   belgi prixod kartasidan qo'yiladi.

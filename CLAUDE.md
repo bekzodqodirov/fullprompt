@@ -93,6 +93,9 @@ pnpm build && pnpm e2e  # 44 e2e
   and it refuses to send it. Bind an ISO string with `::timestamptz` (#156).
 - **A JS array bound into a raw `sql` fragment** does not become a postgres
   array. Use `inArray`/`notInArray`, or `sql.join`.
+- **Drizzle's `.for('share', { noWait: true })` renders «no wait»** and postgres
+  refuses the statement — write the lock as raw `FOR SHARE NOWAIT` (#1174).
+  Typecheck and lint are green on it; only a query that runs finds it.
 - **A dependency may fetch ITSELF from a CDN at runtime.**
   `browser-image-compression` builds a Web Worker that `importScripts` the
   library from `cdn.jsdelivr.net` on every photo — 12.7 s of silence here, and
@@ -1991,7 +1994,7 @@ in floating point. LESSON: a test for a fix must be anchored
 on something the fix did not write — a literal, a second surface computed a
 DIFFERENT way, a stored list from a real day.
 
-**Round — QR-siz qabul va yuklash (2026-09-27; DECISIONS #1117-#1170;
+**Round — QR-siz qabul va yuklash (2026-09-27; DECISIONS #1117-#1176;
 migration 0112 `qr_less` — ledger must reach 113).** His «hamma karobkani ham
 qr code qilish imkoni bolmay qolyabti … admin va logist tomonidan qabul qilib
 qolish va yuklash», answers Q1-Q10 then **1b / 2b / 3b**. One kernel, five
@@ -2016,7 +2019,14 @@ the stocktake never writes a count-moved pile off. Logist has `/receive`
 outgrew is named (`offTruckPrices` kind `grew`, `PricedCargoGrew`). The merged
 round was reviewed by six lenses BEFORE shipping — 26 findings, every blocker
 and defect fixed and red-proven (#1159-#1168); the pattern was the DOWN
-direction nobody had written. Stated: lock-6, ui-7, a grown carton on a
+direction nobody had written. Then the FIXES were reviewed (46 agents, 20
+confirmed, #1171-#1176): a grown carton is the prixod's by the growth audit,
+never by its sticker; a price a take-back undercuts is `taken_back` +
+`notifyPricedCargoTakenBack`; `offTruckPrices(…, {changes})` walks growth only
+for a truck's own read; only `movedFrom` answers growth; `editLot` re-reads
+the lot under its lock (`lot_changed`); the prixod is FOR SHARE **NOWAIT as
+RAW sql** — drizzle's `{ noWait: true }` renders «no wait», which postgres
+refuses. Stated: lock-6, ui-7, a grown carton on a
 cancelled truck stays in the prixod, and the scanner speed is proven only by
 simulation — his ⓘ screenshots from the slow phones are the oracle.
 
