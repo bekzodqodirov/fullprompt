@@ -127,17 +127,36 @@ export async function firstLotPhoto(lotIds: readonly string[]): Promise<PhotoRef
  */
 export const PHOTO_READ_MS = 15_000;
 
+/**
+ * One sweep's memory that storage has stopped answering. Without it a stalled
+ * store costs the deadline PER NOTICE (twice: thumbnail, then original), and
+ * thirty photo pushes from one unloaded truck outlast pg-boss's 15-minute
+ * expiry — the next sweep starts while this one is still sending, and rows it
+ * reclaims can go out twice (the review's verifier on PA-2). Tripped once, the
+ * rest of the sweep sends text.
+ */
+export interface PhotoBreaker {
+  stalled: boolean;
+}
+
+class ReadTimeout extends Error {}
+
 function readWithin(read: Promise<Buffer>, ms: number): Promise<Buffer> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`storage read took longer than ${ms} ms`)), ms);
+    timer = setTimeout(() => reject(new ReadTimeout(`storage read took longer than ${ms} ms`)), ms);
   });
   // The read itself cannot be cancelled; its late answer is simply dropped.
   read.catch(() => undefined);
   return Promise.race([read, deadline]).finally(() => clearTimeout(timer));
 }
 
-export async function loadPhoto(ref: PhotoRef, readMs = PHOTO_READ_MS): Promise<PhotoMessage['photo'] | null> {
+export async function loadPhoto(
+  ref: PhotoRef,
+  readMs = PHOTO_READ_MS,
+  breaker: PhotoBreaker = { stalled: false },
+): Promise<PhotoMessage['photo'] | null> {
+  if (breaker.stalled) return null;
   const storage = getStorage();
   const usable = (bytes: Buffer) => bytes.length > 0 && bytes.length <= MAX_TELEGRAM_PHOTO_BYTES;
   if (ref.thumb800Key) {
@@ -146,6 +165,11 @@ export async function loadPhoto(ref: PhotoRef, readMs = PHOTO_READ_MS): Promise<
       if (usable(bytes)) return { bytes, filename: 'photo.webp', contentType: 'image/webp' };
     } catch (err) {
       logger.warn({ err, key: ref.thumb800Key }, 'push photo: thumbnail unreadable');
+      // A store that did not ANSWER will not answer for the original either.
+      if (err instanceof ReadTimeout) {
+        breaker.stalled = true;
+        return null;
+      }
     }
   }
   if (ref.contentType.startsWith('image/') && ref.sizeBytes <= MAX_TELEGRAM_PHOTO_BYTES) {
@@ -157,6 +181,7 @@ export async function loadPhoto(ref: PhotoRef, readMs = PHOTO_READ_MS): Promise<
       }
     } catch (err) {
       logger.warn({ err, key: ref.storageKey }, 'push photo: original unreadable');
+      if (err instanceof ReadTimeout) breaker.stalled = true;
     }
   }
   return null;

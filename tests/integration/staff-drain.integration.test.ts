@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { and, eq, inArray, notInArray } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
-import { notifications, telegramLinks, users } from '@/modules/platform/db/schema';
+import { clients, issueApprovals, notifications, telegramLinks, users, warehouses } from '@/modules/platform/db/schema';
 import {
   __resetTelegramPause,
   sendPendingTelegram,
@@ -38,6 +38,8 @@ let nextMessageId = 100;
 const mine: string[] = [];
 const parked = new Set<string>();
 const people: string[] = [];
+const approvalsMade: string[] = [];
+const clientsMade: string[] = [];
 
 let staffId: string;
 let ruStaffId: string;
@@ -134,6 +136,8 @@ afterAll(async () => {
       .set({ status: 'pending', claimedAt: null })
       .where(and(inArray(notifications.id, [...parked]), eq(notifications.status, 'sending')));
   }
+  if (approvalsMade.length) await db.delete(issueApprovals).where(inArray(issueApprovals.id, approvalsMade));
+  if (clientsMade.length) await db.delete(clients).where(inArray(clients.id, clientsMade));
   if (people.length) {
     await db.delete(notifications).where(inArray(notifications.userId, people));
     await db.delete(telegramLinks).where(inArray(telegramLinks.userId, people));
@@ -336,5 +340,56 @@ describe('a customer\'s own message rides ahead of the sentence (contract 2)', (
     const done = await rowOf(id);
     expect(done.status).toBe('sent');
     expect((done.payload as { forwarded?: boolean }).forwarded).toBe(true);
+  });
+});
+
+describe('a debtor question already DECIDED is never sent with live buttons (round C review)', () => {
+  async function approval(status: 'pending' | 'refused'): Promise<string> {
+    seq += 1;
+    const [client] = await db
+      .insert(clients)
+      .values({ clientCode: `DQ${STAMP}${seq}`.slice(0, 10), name: `Drain qarzdor ${STAMP}` })
+      .returning({ id: clients.id });
+    clientsMade.push(client!.id);
+    const [wh] = await db.select({ id: warehouses.id }).from(warehouses).limit(1);
+    const [row] = await db
+      .insert(issueApprovals)
+      .values({
+        clientId: client!.id,
+        warehouseId: wh!.id,
+        blockingDebtUsd: '250.00',
+        requestedBy: staffId,
+        status,
+        ...(status === 'pending' ? {} : { decidedBy: staffId, decidedAt: new Date() }),
+      })
+      .returning({ id: issueApprovals.id });
+    approvalsMade.push(row!.id);
+    return row!.id;
+  }
+  const copy = (approvalId: string) =>
+    queue(staffId, 'DebtApprovalRequested', {
+      approvalId,
+      clientCode: 'GS301',
+      clientName: 'Aziz',
+      warehouseCode: 'TAS1',
+      blockingDebtUsd: 250,
+      requestedByName: 'Operator',
+    });
+
+  it('a copy that reaches the drain AFTER the decision is muted, not asked (cases B and C)', async () => {
+    // Written after the decision, or held in «sending» through it and put
+    // back: either way it is pending when the drain meets it.
+    const id = await copy(await approval('refused'));
+    await drain();
+    expect(sends()).toHaveLength(0);
+    expect(await rowOf(id)).toMatchObject({ status: 'muted', error: 'decided before it was sent' });
+  });
+
+  it('a question still open goes out with its buttons, as before', async () => {
+    const id = await copy(await approval('pending'));
+    await drain();
+    expect(sends()).toHaveLength(1);
+    expect(JSON.stringify(sends()[0]!.body.reply_markup)).toContain('a:1:');
+    expect((await rowOf(id)).status).toBe('sent');
   });
 });

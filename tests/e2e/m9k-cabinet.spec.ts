@@ -383,8 +383,9 @@ const PAYLOAD_C = {
           groups: [{ stage: 'ready', n: 12, transit: null }],
           journey: [
             { key: 'received', atIso: '2030-07-01T05:00:00Z' },
+            // No «customs» step on purpose: landed cargo's journey often lacks
+            // it, and the ✅ below must come from `readyCleared` alone.
             { key: 'inUz', atIso: '2030-07-20T05:00:00Z' },
-            { key: 'customs', atIso: '2030-07-21T05:00:00Z' },
             { key: 'ready', atIso: '2030-07-22T05:00:00Z' },
           ],
           total: 12,

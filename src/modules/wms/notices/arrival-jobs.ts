@@ -24,6 +24,7 @@ import {
   firstLotPhoto,
   linkedChats,
   loadPhoto,
+  type PhotoBreaker,
   PHOTO_ATTEMPTS,
   pushToChat,
   pushVerdict,
@@ -142,7 +143,7 @@ type Delivery = { kind: 'skipped'; reason: string } | PushVerdict;
  * no language of its own, and «in the new code's language» was the Russian
  * fallback to a person who had picked Uzbek (judge LOC-1/CX-7).
  */
-async function deliverNotice(notice: NoticeRow, now: Date): Promise<Delivery> {
+async function deliverNotice(notice: NoticeRow, now: Date, photos: PhotoBreaker): Promise<Delivery> {
   const prepare = PREPARERS[notice.kind];
   if (!prepare) return { kind: 'skipped', reason: 'unknown_kind' };
   const client = await db.query.clients.findFirst({ where: eq(clients.id, notice.clientId) });
@@ -153,7 +154,8 @@ async function deliverNotice(notice: NoticeRow, now: Date): Promise<Delivery> {
   if ('skip' in prepared) return { kind: 'skipped', reason: prepared.skip };
 
   // Read once for every chat; after the first upload the file id stands in.
-  let photo = prepared.photo && notice.attempts < PHOTO_ATTEMPTS ? await loadPhoto(prepared.photo) : null;
+  let photo =
+    prepared.photo && notice.attempts < PHOTO_ATTEMPTS ? await loadPhoto(prepared.photo, undefined, photos) : null;
   const silent = quietHour(now);
   const results: SendResult[] = [];
   for (const chatId of chats) {
@@ -240,12 +242,14 @@ export async function sendDueArrivalNotices(now = new Date()): Promise<number> {
 
   // Claimed, not merely selected: two overlapping sweeps must split the work.
   const due = await claimNoticesForSending(50, now, SWEPT_NOTICE_KINDS);
+  // One stalled photo read and the rest of this sweep goes as text.
+  const photos: PhotoBreaker = { stalled: false };
   let sent = 0;
   for (let i = 0; i < due.length; i += 1) {
     const notice = due[i]!;
     let delivery: Delivery;
     try {
-      delivery = await deliverNotice(notice, now);
+      delivery = await deliverNotice(notice, now, photos);
     } catch (err) {
       // The throw is almost always the network or the database, i.e. this
       // moment rather than this message — keep it queued until the budget

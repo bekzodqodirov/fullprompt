@@ -1968,7 +1968,8 @@ its own «✅» (`ackDue`); a transient forward failure sent the sentence withou
 the customer's only copy of the file; `slice` halved emoji into jsonb-refused
 surrogates (`clipText`, code points); a mute group that grew by THREE types
 un-muted everybody (`JOINED_LATER`: newcomers are judged by the founders); a
-decided approval's unsent copies went out with live buttons. 14 red proofs.
+decided approval's copy is muted at SEND time (`approvalDecided` in the
+drain); a stalled photo read trips a per-sweep breaker. 16 red proofs.
 
 **Latest migration: 0111** (`nav_usage` — «Tez-tez»; ledger must reach
 **112**; `when` …090). Before it: **0110** (`lead_assign` — the website teams, the typed and

@@ -3,6 +3,7 @@ import { db } from '../db/client';
 import {
   clients,
   events,
+  issueApprovals,
   notifications,
   permissions,
   rolePermissions,
@@ -934,6 +935,19 @@ export async function sendPendingTelegram(): Promise<void> {
       continue;
     }
     const payload = notification.payload as Record<string, unknown>;
+    // A debtor question already DECIDED is never asked with live buttons.
+    // Asked at SEND time because a decision cannot see every copy: one written
+    // after it (the event fan-out lagging a restart), or one the drain held in
+    // «sending» at that moment and later put back (round C review's verifier;
+    // `retireApprovalCopies` mutes the plainly-pending ones as a cheap belt).
+    if (notification.type === 'DebtApprovalRequested' && (await approvalDecided(payload.approvalId))) {
+      await db
+        .update(notifications)
+        .set({ status: 'muted', error: 'decided before it was sent' })
+        .where(eq(notifications.id, notification.id));
+      settled.add(notification.id);
+      continue;
+    }
 
     let res: SendResult;
     try {
@@ -1038,6 +1052,18 @@ export async function sendPendingTelegram(): Promise<void> {
  * Best-effort by nature: Telegram refuses edits to a message older than 48
  * hours, and each edit carries the sender's short deadline.
  */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Is this issue approval no longer waiting? A malformed or missing id answers no — the copy goes as it always did. */
+async function approvalDecided(approvalId: unknown): Promise<boolean> {
+  if (typeof approvalId !== 'string' || !UUID_RE.test(approvalId)) return false;
+  const [row] = await db
+    .select({ status: issueApprovals.status })
+    .from(issueApprovals)
+    .where(eq(issueApprovals.id, approvalId));
+  return row !== undefined && row.status !== 'pending';
+}
+
 export async function retireApprovalCopies(input: {
   approvalId: string;
   /** When the request was made — nothing older can be one of its copies. */
