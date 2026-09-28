@@ -1,5 +1,137 @@
 # CHANGELOG
 
+## Yetti yangilik: qarz nazorati, mijoz kartasida «Yuklar», olib ketilmagan yuk, lid chatlari, reklama lidi, kechki xulosa, tizim kuzatuvi — 2026-09-28
+
+Migratsiyalar **0113–0116**. Yangilangandan keyin ledger **117** bo'lishi kerak
+(serveringiz oxirgi marta 113 ni ko'rsatgan). Bu safar HAMMA konteyner bir marta
+qayta yaratiladi — ishdan tashqari vaqtda qiling.
+
+Sizning javoblaringiz: **2a · 3a · 4a · 5a · 7a · 11a**, «klient kartasida yuklar
+joyi» va B9 (tizim o'zini kuzatsin).
+
+### 1. Qarzga ruxsat — kim, kimga (2a)
+1. **Qarzga yuk berishga ruxsat** endi bitta qoida bilan: sotuvchi — faqat o'z
+   mijoziga, admin va buxgalter — hammaga. Sklad mudiri va operator qarzga
+   bera olmaydi, ular «🔐 Ruxsat so'rash» tugmasini bosadi.
+2. Ruxsat so'rovi faqat shu mijozga ruxsat bera oladigan odamga boradi
+   (sotuvchiga — faqat o'z mijozi haqida). Telegramdagi «Ruxsat / Yo'q» tugmasi ham
+   shu qoidaga bo'ysunadi. Bitimdagi «muddat» ham xuddi shunday.
+3. **Narx qo'yilmagan yukni** topshirish belgisi AVVALGIDEK qoldi — sklad mudiri
+   buni o'zi belgilay oladi. Sizning 2a javobingiz qarz haqida edi. Buni ham
+   qarzga o'xshatsak, Andijon va Qashqardagi har bir narxsiz karobka ofisdan
+   ruxsat kutib qolardi. Qanday bo'lishini o'zingiz ayting (pastdagi savollarda).
+4. **Yangi sahifa «Qarzga berilgan yuklar»** (Moliya): qaysi yuk qarz bilan
+   chiqqan, qancha qarz bilan, kim ruxsat bergan (✋ belgi, ✅ ruxsat, ⏳ muddat).
+   Keyin qancha qaytgani va qancha qolgani ham ko'rinadi. Pastida har bir ruxsat
+   beruvchi bo'yicha jami: nechta berish, qancha pul hali qaytmagan.
+5. **To'lov va'dasi** — mijozning «Pul» bo'limida «qachon va qancha to'laydi» deb
+   yoziladi. Sotuvchiga qo'ng'iroq vazifasi tushadi. Muddati o'tib pul kelmasa —
+   sotuvchi, siz va buxgalterga «va'da bajarilmadi» xabari keladi.
+
+### 2. Mijoz kartasida «Yuklar» bo'limi
+Mijoz kartasida endi uchta bo'lim bor: **Umumiy · Yuklar · Pul**.
+1. **Hozir qayerda** — mijozning yuki to'rt bosqichda (Xitoyda · Tranzitda ·
+   O'zbekistonda · Tayyor), har bir tovar: rasm, karobka, kg, kub, qaysi skladda
+   yoki qaysi mashinada, necha kundan beri kutyapti. Raqamlar Mini App'dagi bilan
+   bir xil chiqadi.
+2. Yo'lda yo'qolgan deb belgilangan karobkalar jami sonidan chiqarilib, alohida
+   qatorda ko'rsatiladi.
+3. **Topshirilgan** — oxirgi 90 kun (yoki 1 yil) ichida berilgan yuklar,
+   qaysi mashinalarda kelgani va akt (aktni ochishga ruxsati bor odamga).
+4. Bir telefondagi boshqa kodlar alohida belgi bo'lib turadi, jamiga qo'shilmaydi.
+
+### 3. Olib ketilmagan yuk (3a)
+1. Toshkent yoki Andijonda **5 kundan** ortiq kutib turgan yuk — mijozning
+   sotuvchisiga ertalab Telegram xabari. **10 kundan** keyin yana bir marta,
+   🔴 bilan. **Mijozga hech narsa yuborilmaydi.**
+2. Mijoz yukning bir qismini olib ketsa — kun hisobi boshidan boshlanmaydi,
+   «qoldiq» deb belgilanadi. Har kuni oz-ozdan olib ketsa, sotuvchiga har kuni
+   xabar kelmaydi: olib ketish to'xtagandan 5 kun keyin bir marta keladi.
+3. Ertalabki 09:00 **svodkada** — skladlar va sotuvchilar bo'yicha jami, bugun
+   ro'yxatga tushganlar.
+4. Yangi ro'yxat: **Mening mijozlarim → Olib ketilmagan** (10+ / 5+ / hammasi).
+   Unda mijoz, necha kun, telefon (bosib qo'ng'iroq qilish mumkin), «narxsiz»
+   belgisi, pulni ko'rishga ruxsati borga «qarz» belgisi. Bosh sahifada ham
+   shu son chiqadi.
+5. Kun chegaralari (5 va 10) sozlamalarda o'zgartiriladi.
+6. Tuzatildi: egasiz yuk mashinada ketayotganda «Egasiz yuk» ro'yxatidan
+   yo'qolib qolardi. Endi u yerda «🚚 yo'lda» belgisi bilan turadi.
+
+### 4. Lidlarning Telegram chatlari (4a)
+1. Hali mijoz kodi olmagan odam (lid) bilan chat endi mijoz chatlari kabi
+   ishlaydi: «Suhbatlar» ro'yxatida, o'ng paneldagi chatlarda, voronka
+   kartochkasida va bosh sahifadagi «javob kutmoqda» sonida ko'rinadi.
+2. 30 daqiqa javobsiz qolsa — menejerga eslatma keladi, mijoz chatlari bilan
+   bir xil.
+3. Eski o'qilmagan lid chatlari birdaniga jiringlab ketmaydi: faqat 28-sentabrdan
+   keyin yozilganlar hisoblanadi.
+4. Lid chatiga hozircha **faqat telefondan** javob beriladi. CRM ichidan javob
+   yozish keyingi bosqichda (savol pastda).
+
+### 5. Reklama lidi — sotuvchiga darhol (5a)
+1. Reklamadan lid kelishi bilan biriktirilgan sotuvchiga Telegram xabari
+   keladi: ism, telefon, kub, nima yozgani va **«📞 Bog'landim»** tugmasi.
+2. **15 daqiqa** ichida hech kim bog'lanmasa — sizga «⏰ tegilmagan lid»
+   eslatmasi keladi. Unda lid kimniki ekani va xabar yetib borgan-bormagani
+   yoziladi.
+3. Vaqt faqat ish soatida hisoblanadi (09:00 dan kechki tinch soatgacha).
+   Kechqurun 21:55 da kelgan lid ertalab 09:10 da «kechikkan» bo'ladi.
+4. «Bog'landim» deb nima hisoblanadi: qo'ng'iroq, Telegramdan yozish, lidning
+   o'z sotuvchisi yozgan izoh yoki bosqich o'zgarishi, yoki shu tugma. Boshqa
+   hodimning harakati sotuvchi nomidan hisoblanmaydi.
+5. Tugma sotuvchi keyingi kunga belgilagan qo'ng'iroq sanasini o'chirib
+   yubormaydi.
+6. «Tahlil» sahifasida har bir sotuvchining birinchi aloqagacha o'rtacha vaqti
+   ko'rinadi.
+7. Daqiqa soni sozlamalarda o'zgartiriladi; 0 qo'ysangiz eslatma o'chadi.
+
+### 6. Kechki xulosa — 20:00 da faqat sizga (7a)
+1. Har kuni **20:00** da Telegramga: tushum, mijozlar to'lagani, kassa kirim/
+   chiqim, kassalardagi pul, prixod, jo'nagan/kelgan mashinalar, lidlar va
+   dashboarddagi «E'tibor kerak» ro'yxatining eng muhim uchtasi.
+2. **Dushanba kuni** qo'shimcha: keyingi 4 haftadagi to'lovlar (ijara/oylik,
+   firmalarga qarz, sotuvchilar ulushi). Har biri o'z valyutasida, kursi yo'q
+   bo'lsa ⚠ bilan.
+3. Tinch kun bo'lsa — xabar yuborilmaydi.
+4. Botda **«📊 Holat»** tugmasi (yoki /holat) — xuddi shu xulosani istalgan
+   paytda so'rash mumkin.
+5. Profilda «🌙 Kechki xulosa» belgisi bilan o'chirib qo'yish mumkin.
+6. Diqqat: dushanba kuni 20:00 dan keyin kiritilgan narsa hech bir xabarga
+   tushmaydi — faqat yarim tungacha «📊 Holat» bosilsa ko'rinadi. Seshanbadan
+   yakshanbagacha kechqurun kiritilgani keyingi dushanba haftaligida chiqadi.
+7. «Kutilayotgan tushum» (taxmin) — **qilinmadi**.
+
+### 7. Tizim o'zini kuzatadi (B9)
+1. **Bot ishlamay qolsa** (token eskirgan, bloklangan) — dashboardning
+   «Signallar» qismida qizil qator chiqadi, nechta xabar kutib qolgani bilan.
+2. **Telegram tinglovchisi jim qolsa** (10 daqiqadan ko'p) — menejerga bitta
+   jumla, adminlarga ro'yxat va buyruqlar. Qayta ishlaganda — «qaytdi».
+3. **Tizim xatolari** — «Something went wrong» chiqqan har bir xato endi
+   yoziladi. Sahifa: Boshqaruv → Tizim xatolari (faqat super admin). U yerda
+   digest raqami bo'yicha qidirish mumkin.
+4. **Ilova qotib qolsa** — o'zi qayta ishga tushadi. Bazada ochiq qolib ketgan
+   so'rovlar ham 60 soniyada yopiladi.
+5. **Migratsiya yetmay qolsa** — adminlarga sariq banner: nechta migratsiya
+   yetishmaydi va qaysi buyruqni ishlatish kerak.
+6. **Disk 80 % dan to'lsa** — ogohlantirish (zaxira paneli va Telegram).
+7. Profilda yangi «Tizim» belgisi — bu xabarlarni o'chirish uchun.
+
+### Siz qilishingiz kerak
+1. Yangilashdan oldin — **zaxira** (odatdagidek, hajmi 0 emasligini tekshiring).
+2. Yangilash: `git pull`, keyin
+   `docker compose --profile https --profile telegram up -d --build`
+   — ikkala profil birga, chunki bu safar Telegram ko'prigi (tg-listen) ham,
+   Caddy ham yangi sozlama oladi va hamma konteyner bir marta qayta yaratiladi.
+3. Tekshirish (docs/UPDATE.md 4-qadam): ledger **117**, `docker compose ps -a`
+   da hammasi Up va migrate = Exited (0), `https://gsrwms.uz/api/version`
+   yangi vaqtni ko'rsatsin.
+4. Botda **/start** bosing — «📊 Holat» tugmasi paydo bo'lsin. Kechki xulosa
+   keladigan akkauntingiz Telegramga ulangan bo'lishi kerak (profilda
+   ogohlantirish chiqsa — ulanmagan).
+5. **Logistga qarz ruxsati**: agar logist qarzga yuk bera olmasligini
+   xohlasangiz, Boshqaruv → Rollar → Logist → «qarzga ruxsat» belgisini oling.
+   Bunda logist narxsiz yukni topshirish belgisini ham yo'qotadi.
+
 ## «Narx qo'yilgan N / M» — boshqa mashinada yoki bitimda narxlangan mijoz ham sanaladi — 2026-09-28
 
 Migratsiya yo'q. Ledger **113** bo'lib qoladi — yangilanganini
