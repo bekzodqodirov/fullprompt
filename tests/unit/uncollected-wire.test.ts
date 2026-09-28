@@ -80,6 +80,8 @@ describe('the svodka asks the screens, never a copy of them', () => {
     const queries = read(QUERIES);
     const fill = queries.slice(queries.indexOf('export async function warehouseFill('), queries.indexOf('export async function stockByWarehouse('));
     expect(fill).toContain("landedHereDaySql('b')");
+    expect(fill).toMatch(/withoutJit\(\(exec\) =>\s*exec\.execute\(/);
+    expect(fill).not.toMatch(/\bdb\./);
     expect(fill).not.toMatch(/DISTINCT ON|to_status <> 'in_transit'|'in_stock'/);
     const aging = body(queries, 'stockAging');
     expect(aging).toContain("landedHereDaySql('b')");

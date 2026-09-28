@@ -113,7 +113,12 @@ export async function warehouseFill(
         sql`, `,
       )})`
     : sql``;
-  const rows = (await db.execute(sql`
+  // Every carton standing anywhere, each with its landing subquery: JIT off
+  // (0104). Measured on a 63k-carton synthetic shape here: ~1.0 s with the
+  // server's default JIT, ~0.6 s without — the same as the two DISTINCT ON
+  // copies this replaced, which ran with JIT on the dashboard every render.
+  const rows = (await withoutJit((exec) =>
+    exec.execute(sql`
     SELECT w.id, w.code, w.capacity_m3,
            coalesce(f.occupied, 0) AS occupied,
            (${today}::date - f.oldest_day) AS oldest_days,
@@ -135,7 +140,8 @@ export async function warehouseFill(
       ) f ON true
      WHERE (w.active OR f.cartons > 0) ${only}
      ORDER BY w.code
-  `)) as unknown as {
+  `),
+  )) as unknown as {
     id: string;
     code: string;
     capacity_m3: string | null;
