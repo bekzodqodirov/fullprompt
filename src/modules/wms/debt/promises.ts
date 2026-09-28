@@ -442,7 +442,9 @@ export async function promisesDueBetween(
 ): Promise<PromiseDue[]> {
   const fromDay = calendarDay(from);
   const toDay = calendarDay(to);
-  if (!fromDay || !toDay || fromDay > toDay) return [];
+  // An unreadable day answers nothing rather than a guessed window (a
+  // reversed one is empty by BETWEEN's own reading).
+  if (!fromDay || !toDay) return [];
   const rows = await promiseLedger(
     sql`p.status = 'open' AND p.due_on BETWEEN ${fromDay}::date AND ${toDay}::date`,
   );

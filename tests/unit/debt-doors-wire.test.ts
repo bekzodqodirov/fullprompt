@@ -80,6 +80,16 @@ describe('every door asks the one predicate, with the person', () => {
     expect(page).toContain('{mayReadHandoverAct(actor, row.warehouseId) && (');
   });
 
+  it('a register row prints ITS part’s «qaytdi», so debt − qaytdi = qaytmagan on the line', () => {
+    const row = between(read('src/app/(protected)/finance/qarzga-berilgan/page.tsx'), 'data-testid="release-money"', '</p>');
+    // The handover's whole money since, beside ONE part of a two-part release,
+    // read $600 · $500 · $500 (the reviewer). Only a figureless older row,
+    // which has no share to print, falls back to it.
+    expect(row).toContain("{row.returnedUsd !== null ? (");
+    expect(row).toContain("t('releases.returned', { usd: usd(row.returnedUsd) })");
+    expect(row.indexOf('row.paidSinceUsd')).toBeGreaterThan(row.indexOf(') : ('));
+  });
+
   it('the lenta’s «went out on debt» mark is the register’s own rule (#513), for the ledger’s readers only', () => {
     const feed = read('src/modules/wms/crm/feed.ts');
     expect(feed).toContain("'debtOverride', ${opts.money ? wentOutOnDebtSql('h') : sql`false`}");
