@@ -326,10 +326,12 @@ describe('wiring no render test can see', () => {
  *
  * The day-difference idiom — two `YYYY-MM-DD` strings pinned to one clock
  * time, subtracted, divided by a day — is what a second clock looks like when
- * it is written; the two files that already carry it answer other questions
- * (a due date, a merge window) and are named. Anything else that needs a
- * whole-day count calls `daysSince`, which takes a day string as well as an
- * instant.
+ * it is written. It is written ONCE, in `calendarDaysBetween`
+ * (platform/time/tashkent.ts): the uncollected-cargo package minted it the
+ * same week this tab minted `daysSince`, so the merge made `daysSince` call
+ * it, and the two older copies (a partner's due date, the expense merge
+ * window) call it too. Anything that needs a whole-day count asks one of the
+ * two.
  */
 describe('the wait-here clock has one home', () => {
   const files = globSync('src/**/*.{ts,tsx}');
@@ -349,20 +351,17 @@ describe('the wait-here clock has one home', () => {
     expect(body).not.toMatch(/86_?400_?000|getTime\(\)|Date\.parse/);
   });
 
-  it('no second calendar-day difference is written beside it', () => {
+  it('the calendar-day difference is written once, and `daysSince` asks it', () => {
     const DAY = /`\$\{[^}`]+\}T\d{2}:\d{2}:\d{2}Z`/g;
-    const KNOWN = [
-      // Days until a partner's due date — a promise's calendar, not a wait.
-      'src/modules/wms/partners/terms.ts',
-      // How far apart two expenses' dates are, for the merge window.
-      'src/modules/wms/accounting/cost-merge.ts',
-    ];
     const writers = files.filter((f) =>
       code(f)
         .split(';')
         .some((statement) => (statement.match(DAY) ?? []).length >= 2 && /86_?400_?000|864e5/.test(statement)),
     );
-    expect(writers.sort()).toEqual([...KNOWN].sort());
+    expect(writers).toEqual(['src/modules/platform/time/tashkent.ts']);
+    const math = code('src/modules/wms/reports/dashboard-math.ts');
+    const body = math.slice(math.indexOf('export function daysSince'), math.indexOf('export interface ApprovalCounts'));
+    expect(body).toMatch(/calendarDaysBetween\(tashkentDay\(new Date\(at\)\), today\)/);
   });
 
   it('`daysSince` reads a day string the way it reads the instant that day began in Tashkent', () => {

@@ -59,8 +59,16 @@ describe('every door asks the one predicate, with the person', () => {
     expect(page).toContain('await pendingApprovals(actor)');
     expect(page).toContain("debtGrantScope(actor) === 'none'");
     expect(page).toContain('data-testid="approvals-none-yours"');
+    // The dashboard's sources moved into one reader shared with the evening
+    // summary (`reports/attention-sources.ts`) in the same week; the viewer
+    // travels to it, and it asks the list with that viewer — REQUIRED, so
+    // the summary cannot count somebody else's queue either.
     const attention = read('src/app/(protected)/dashboard/sections/attention.tsx');
-    expect(attention).toContain('pendingApprovals({ id: viewerId, permissions: perms })');
+    expect(attention).toContain('readAttentionSources(gates, scopeKey, new Date(), { id: viewerId, permissions: perms })');
+    const sources = read('src/modules/wms/reports/attention-sources.ts');
+    expect(sources).toContain('g.canApprove ? pendingApprovals(viewer) : null');
+    expect(sources).toMatch(/viewer: MoneyActor,\s*have:/);
+    expect(read('src/modules/wms/reports/owner-summary.ts')).toContain('readAttentionSources(gates, scopeKey, now, actor,');
     expect(read('src/app/(protected)/dashboard/page.tsx')).toContain('viewerId={actor.id}');
   });
 

@@ -50,6 +50,8 @@ import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { approvalCounts } from '@/modules/wms/reports/dashboard-math';
 import { withoutJit } from '@/modules/platform/db/no-jit';
 import { wholeLedger } from '../fixtures/money-actor';
+import type { MoneyActor } from '@/modules/wms/finance/scope';
+import { ROLE_MATRIX } from '@/modules/platform/rbac/catalog';
 
 /**
  * «Narx qo'yilmagan yuk» — the ONE rule behind the handover ban, the
@@ -226,7 +228,7 @@ async function issue(
   clientId: string,
   warehouseId: string,
   boxIds: string[],
-  opts: { priceOk?: boolean; debtOk?: boolean; handoverId?: string } = {},
+  opts: { priceOk?: boolean; debtOk?: boolean; handoverId?: string; as?: MoneyActor } = {},
 ): Promise<string> {
   try {
     await issueBoxes(
@@ -241,7 +243,7 @@ async function issue(
         priceOk: opts.priceOk ?? false,
       },
       ctx(),
-      wholeLedger(actorId),
+      opts.as ?? wholeLedger(actorId),
     );
     return 'ok';
   } catch (err) {
@@ -717,6 +719,23 @@ describe('one approval, two questions', () => {
     expect(approvalCovers(state!, { debtUsd: 40, boxIds: p.boxIds })).toBe(false);
     const second = await requestIssueApproval({ clientId: c, warehouseId: W.tas }, ctx());
     expect(second.id).not.toBe(first.id);
+  });
+
+  it('the price tick keeps its own rule after 0114: the warehouse manager clears a price and still may not wave a debt', async () => {
+    // The grant, no ledger — the shipped warehouse manager. 0114 took the
+    // DEBT tick from him (the owner's 2a); the price tick is `mayOverridePrice`,
+    // the grant alone, as it was (the qarz judge's #12, left open for him).
+    const manager = { id: actorId, permissions: new Set<string>(ROLE_MATRIX.warehouse_manager) };
+    const operator = { id: actorId, permissions: new Set<string>(ROLE_MATRIX.warehouse_operator) };
+    const { c, p } = await landed('WM', 2);
+    expect(await issue(c, W.tas, [p.boxIds[0]!], { priceOk: true, as: operator })).toBe('price_override_forbidden');
+    expect(await issue(c, W.tas, [p.boxIds[0]!], { priceOk: true, as: manager })).toBe('ok');
+
+    const owing = await landed('WD', 1);
+    await charge(owing.c, 30);
+    expect(await issue(owing.c, W.tas, owing.p.boxIds, { priceOk: true, debtOk: true, as: manager })).toBe(
+      'debt_override_forbidden',
+    );
   });
 
   it('debt + price compose: each tick answers its own question, one approval answers both', async () => {

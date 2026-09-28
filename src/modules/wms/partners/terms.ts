@@ -9,7 +9,7 @@
  * lowers the account (payment, offset, a negative adjust or kurs farqi) is
  * money paid; a row that raises it is a debt.
  */
-import { addDays } from '@/modules/platform/time/tashkent';
+import { addDays, calendarDaysBetween } from '@/modules/platform/time/tashkent';
 
 export const DUE_SOON_DAYS = 3;
 export const LIMIT_WARN_SHARE = 0.8;
@@ -68,7 +68,7 @@ export function dueStateOf(moves: LedgerMove[], payWithinDays: number, today: st
 
 /** Whole days from `today` to `day` (negative once it has passed). */
 export function daysUntil(day: string, today: string): number {
-  return Math.round((Date.parse(`${day}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000);
+  return calendarDaysBetween(today, day);
 }
 
 export type TermAlert =

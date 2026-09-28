@@ -18,7 +18,7 @@ import { emitEvent } from '../../platform/events/service';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { usersWithPermission } from '../../platform/notifications/service';
 import { blockingDebtOf, clientBalanceUsd, debtBlocks, deferredDealsUsd } from '../finance/service';
-import { mayGrantDebt, type MoneyActor } from '../finance/scope';
+import { mayGrantDebt, mayOverridePrice, type MoneyActor } from '../finance/scope';
 import { deferralCover, deferredTotal } from '../debt/rules';
 import { gatedAt, uncoveredBoxesOn, unpricedGate, unpricedReceiptsOn, type UncoveredBox } from '../finance/unpriced';
 import { claimIssuedNotice } from '../notices/client-claims';
@@ -142,7 +142,7 @@ export async function issueBoxes(request: IssueRequest, ctx: AuditContext, relea
     // and refusing it would stop a legitimate handover for a stale checkbox.
     // After the replay return — a replay is never refused.
     if (debtBlocks(balance, deferred) && input.debtOk && !mayGrant) throw new IssueError('debt_override_forbidden');
-    if (gated.length > 0 && input.priceOk && !mayGrant) throw new IssueError('price_override_forbidden');
+    if (gated.length > 0 && input.priceOk && !mayOverridePrice(releaser)) throw new IssueError('price_override_forbidden');
 
     // Phase 6 + 0104: an operator without the tick may still issue when a
     // RECORDED approval covers the question — live, unexpired, at least as

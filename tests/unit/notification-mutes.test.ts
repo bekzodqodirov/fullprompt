@@ -59,18 +59,22 @@ describe('notification mutes (spec §11 per-user mute)', () => {
     const everythingElse = listFromGroups(false, {
       digest: true,
       calls: true,
+      leads: true,
       tasks: true,
       alerts: true,
       operations: true,
+      system: true,
       owner: false,
     });
     expect(isTelegramMuted(everythingElse, 'OwnerSummary')).toBe(false);
     const own = listFromGroups(false, {
       digest: false,
       calls: false,
+      leads: false,
       tasks: false,
       alerts: false,
       operations: false,
+      system: false,
       owner: true,
     });
     expect(own).toEqual(['OwnerSummary']);

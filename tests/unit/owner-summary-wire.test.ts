@@ -236,7 +236,7 @@ describe('the /profile switch', () => {
     // The drain mutes a row for an unlinked reader — terminal, and no screen's
     // problem count — so the page is the one place that can say it.
     expect(page).toMatch(
-      /\{ownerReader \? \([\s\S]{0,900}?telegramLink !== null && telegramLink\?\.status !== 'linked' \?[\s\S]{0,200}?data-testid="profile-owner-unlinked"[\s\S]{0,80}?tk\('notLinked'\)/,
+      /\{ownerReader \? \([\s\S]{0,900}?telegramLink !== null && telegramLink\?\.status !== 'linked' \?[\s\S]{0,200}?data-testid="profile-owner-unlinked"[\s\S]{0,80}?tkx\('notLinked'\)/,
     );
   });
 

@@ -128,7 +128,9 @@ describe('the list', () => {
     expect(flows).toMatch(/withoutJit\(\s*\(exec\) =>\s*uncollectedCount\(exec,[\s\S]{0,160}timeoutMs: UNBILLED_BUDGET_MS/);
     expect(flows).toMatch(/ownerId: book\.ownerId, warehouseIds: book\.warehouseIds/);
     expect(flows).toMatch(/logistFlowCounts\(actor, today, \{ uncollected: uncollectedScope\(actor\) \}\)/);
-    expect(flows).toMatch(/salesFlowCounts\(actor\.id, today, \{ seesAllClients: seesAllClients\(actor\) \}\)/);
+    // The options object also carries the lead chats' switch (the lead chats
+    // round, merged the same week), so the call spans lines.
+    expect(flows).toMatch(/salesFlowCounts\(actor\.id, today, \{[^}]*\bseesAllClients: seesAllClients\(actor\),?\s*\}\)/);
     expect(read('src/app/(protected)/page.tsx')).toMatch(/href=\{flow\.uncollectedHref\}/);
     // The rule has one home now — nobody restates it by hand.
     for (const file of ['src/app/(protected)/my-clients/page.tsx', 'src/modules/wms/bot/lookup.ts', WAITING]) {

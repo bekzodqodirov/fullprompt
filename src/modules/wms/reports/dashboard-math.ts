@@ -1,4 +1,4 @@
-import { addDays, mondayOf, tashkentDay } from '@/modules/platform/time/tashkent';
+import { addDays, calendarDaysBetween, mondayOf, tashkentDay } from '@/modules/platform/time/tashkent';
 import { marginPct } from '../accounting/margin';
 // The pure file, not `period.ts`: that one reads a rate from the database, and
 // this file must stay importable by anything that only draws.
@@ -447,8 +447,7 @@ export function tripTotals(
  */
 export function daysSince(at: Date | string | null | undefined, today: string): number {
   if (!at) return 0;
-  const from = tashkentDay(new Date(at));
-  return Math.max(0, daysBetween(from, today).length - 1);
+  return Math.max(0, calendarDaysBetween(tashkentDay(new Date(at)), today));
 }
 
 export interface ApprovalCounts {

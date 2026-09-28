@@ -67,9 +67,10 @@ test('export → ready_for_pickup → issue with handover act', async ({ page })
   await expect(page.getByTestId('unload-counter')).toHaveText(/1\/1/);
   await expect(page.getByTestId('sync-banner')).not.toContainText('🔄', { timeout: 15_000 });
 
-  // Issue mode at AND for that client — as the ADMIN since 0114 (the
-  // owner's 2a): the price tick below is «may let this client's cargo go»,
-  // which the logist's default grants no longer carry.
+  // Issue mode at AND for that client — as the ADMIN since 0114: the price
+  // tick below needs `finance.debt_override`, which the logist's DEFAULT
+  // grants no longer carry (the owner's 2a named the admin and the
+  // accountant for debt; the seed follows it).
   await page.context().clearCookies();
   await page.goto('/login');
   await page.locator('input[name="identifier"]').fill(ADMIN_PHONE);

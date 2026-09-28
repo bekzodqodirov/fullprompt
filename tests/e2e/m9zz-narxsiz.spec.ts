@@ -169,9 +169,10 @@ test('the accountant sees it on the list, blocked, with the truck as a door; ano
 });
 
 test('the counter refuses it until the holder ticks the override, and the list then says it went out', async ({ page }) => {
-  // The ADMIN and not the logist since 0114 (the owner's 2a): the tick is
-  // «may let this client's cargo go on debt», the admin and the accountant
-  // hold it for everybody, and the logist's default grants no longer do.
+  // The ADMIN and not the logist since 0114: the price tick needs
+  // `finance.debt_override` (`mayOverridePrice`), and the logist's DEFAULT
+  // grants no longer carry it (the owner's 2a named the admin and the
+  // accountant for debt; the seed follows it).
   await login(page, ADMIN);
   await page.goto('/issue');
   await page.getByTestId('issue-wh').selectOption({ label: 'AND' });

@@ -335,7 +335,7 @@ describe('every figure is the dashboard’s own, over the same window (#513)', (
     const summary = await composeOwnerSummary(actor, sight, now);
     const baseIds = reportBaseIds(actor);
     const gates = attentionGates(actor.permissions, { sight, scoped: baseIds !== undefined, company: false });
-    const sources = await readAttentionSources(gates, scopeKeyOf(baseIds), now);
+    const sources = await readAttentionSources(gates, scopeKeyOf(baseIds), now, actor);
     const ranked = rankAttention(attentionFacts(gates, sources, dashboardWindows(DAY)), 3);
     expect(summary.facts.attention.top.map((fact) => fact.kind)).toEqual(ranked.visible.map((fact) => fact.kind));
     expect(summary.facts.attention.total).toBe(ranked.visibleCount);

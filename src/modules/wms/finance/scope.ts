@@ -141,6 +141,23 @@ export function mayGrantDebt(actor: MoneyActor, client: { salesManagerId: string
 }
 
 /**
+ * Who may let UNPRICED cargo go with the counter's tick (0104's «narx
+ * qo'yilmagan» ban) — the grant alone, as it was before 0114.
+ *
+ * Deliberately NOT `mayGrantDebt`: the owner's 2a answered a question about
+ * DEBT, and folding the price tick into it would take it from the warehouse
+ * manager at Andijan and Kashgar, who holds the grant and reads no ledger —
+ * every unpriced carton there would wait on an office approval, a change to
+ * the counter's day nobody asked for (the qarz judge's #12, kept open for
+ * him). A price is not a client's money on the ledger, so the ledger's
+ * owner fence has nothing to say about it. Asked by the service and by the
+ * list route that draws the tick (#531).
+ */
+export function mayOverridePrice(actor: MoneyActor): boolean {
+  return actor.permissions.has('finance.debt_override');
+}
+
+/**
  * Every grant the predicate above reads — for a reader that has to rebuild a
  * holder's permission set from the editable grants (who is pinged about a
  * request) instead of from a session, so it asks the predicate with exactly

@@ -5,7 +5,7 @@ import { boxes, clients, receiptLots, receipts } from '@/modules/platform/db/sch
 import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
 import { clientBalanceUsd, deferredBalanceUsd } from '@/modules/wms/finance/service';
 import { approvalStateFor } from '@/modules/wms/issue/approvals';
-import { mayGrantDebt } from '@/modules/wms/finance/scope';
+import { mayGrantDebt, mayOverridePrice } from '@/modules/wms/finance/scope';
 import { ISSUABLE_STATUSES } from '@/modules/wms/issue/parties';
 import { gatedAt, uncoveredBoxesOn, unpricedGate, unpricedReceiptsOn } from '@/modules/wms/finance/unpriced';
 import { compensatedReceiptsAmong } from '@/modules/wms/finance/compensation';
@@ -38,6 +38,8 @@ export async function GET(request: Request) {
     columns: { salesManagerId: true },
   });
   const canOverrideDebt = mayGrantDebt(actor, { salesManagerId: owner?.salesManagerId ?? null });
+  // The price tick keeps its own, older rule (`mayOverridePrice`).
+  const canOverridePrice = mayOverridePrice(actor);
 
   const rows = await db
     .select({
@@ -120,6 +122,7 @@ export async function GET(request: Request) {
     debtUsd,
     deferredUsd,
     canOverrideDebt,
+    canOverridePrice,
     approval,
     unpriced,
     compensated,
