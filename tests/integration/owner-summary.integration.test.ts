@@ -213,6 +213,22 @@ beforeAll(async () => {
     txDate: '1677-09-17',
     createdBy: actorId,
   });
+
+  // …and $10.00 of the same client's debt settled into that firm's account
+  // the same day (a three-cornered settlement, round 39): money the CLIENT
+  // closed, never a till of ours. «Mijozlar to'lagan (sof)» counts it — the
+  // homes' own figure (U26, judge 2) — and the kassa's «kirim» does not.
+  await db.insert(clientTransactions).values({
+    clientId,
+    type: 'payment',
+    amount: '10.00',
+    currency: 'USD',
+    rateToUsd: '1',
+    amountUsd: '10.00',
+    txDate: DAY,
+    partnerId,
+    createdBy: actorId,
+  });
 });
 
 afterAll(async () => {
@@ -255,15 +271,16 @@ describe('every figure is the dashboard’s own, over the same window (#513)', (
     expect([f.trucks.departed, f.trucks.arrived]).toEqual([moves.departed, moves.arrived]);
     expect(f.leads).toEqual({ fresh: leadFlow.fresh, won: leadFlow.won, wonUsd: leadFlow.wonUsd, wonOther: leadFlow.wonOther });
 
-    // …and the literals this file typed (#1116).
-    expect(f.collectedUsd).toBe(123.45);
+    // …and the literals this file typed (#1116): the settlement into a firm's
+    // account is the client's money closed, never cash in a till.
+    expect(f.collectedUsd).toBe(133.45);
     expect(f.cash.inUsd).toBe(123.45);
     expect(f.intake).toEqual({ receipts: 1, boxes: 4, m3: 1.25, kg: 250.5 });
     expect(f.trucks.departed).toBe(1);
     expect(f.leads?.fresh).toBe(1);
     const text = summary.text.replace(/ /g, ' ');
     expect(text.split('\n')[0]).toBe('📊 GSR — kun xulosasi, 15.06 (soat 17:00)');
-    expect(text).toContain('💵 Mijozlar to‘lagan (sof): $123.45');
+    expect(text).toContain('💵 Mijozlar to‘lagan (sof): $133.45');
     expect(text).toContain('🏦 Kassa: kirim $123.45');
     expect(text).toContain('📦 Prixod: 1 ta · 4 karobka · 1.25 m³ · 250.5 kg');
     expect(text).toContain('🚚 Jo‘nadi: 1 · Keldi: 0');
