@@ -1,5 +1,77 @@
 # CHANGELOG
 
+## Partiya — bitta karta, oltita bo'lim; mijoz kartasida «Pul» — 2026-09-28
+
+Migratsiya yo'q. Ledger **113** bo'lib qoladi — shuning uchun yangilanganini
+`https://gsrwms.uz/api/version` dagi vaqt yoki `/profile` pastidagi `build:`
+qatori bilan tekshiring (migratsiya soni o'zgarmaydi).
+
+Sizning javoblaringiz: **3a** — «Partiya bitta kartaga yig'ilsinmi?» → ha;
+**4a** — «Mijozning hisob varag'i mijoz kartasiga «Pul» bo'limi bo'lib
+kirsinmi? Kim pulni ko'radi, degan ruxsatlar o'zgarmaydi» → ha.
+
+**Partiya kartasi:**
+1. **Bitta karta, tepasida oltita bo'lim**: Ichidagilar · Yuklash/Tushirish ·
+   Xarajatlar · Narx · Bojxona · Mashina. Oldin bular oltita alohida sahifa
+   edi. Eski havolalar (Telegram xabarlari, boshqa ekranlar) avvalgidek
+   ochiladi — hech bir manzil o'zgarmadi.
+2. **Har kim faqat o'zi ocha oladigan bo'limni ko'radi.** Masalan, skladchi va
+   sotuvchi: Ichidagilar, Yuklash, Mashina. Buxgalter: bojxonasiz hammasi.
+   VED: hammasi, lekin tannarx va foydasiz (sizning Q19 javobingiz). Bosganda
+   «ruxsat yo'q» chiqadigan bo'lim umuman chizilmaydi — har bir demo xodim
+   nomidan tekshirildi.
+3. **Tepada — mashinaning holati bir qarashda**: kod, yo'nalish, bosqich
+   (Shakllanmoqda → … → Yopilgan, sanalari bilan), yo'lda bo'lsa necha kundan
+   beri va qachon yetib kelishi, «Rastamojka ✅/—». Kompyuterda yana
+   kartochkalar: yuk (karobka · m³ · kg), mijozlar, xarajatlar, narx
+   qo'yilgani va foyda — har biri o'z bo'limiga olib boradi.
+4. **«Qolgan ishlar»** — mashina bo'yicha nima qilinmagani: qabul
+   qilinmaganlar, yo'lda yo'qolganlar, sanash kerak bo'lgan prixodlar,
+   xarajat yozilmagani, TNVED kodi yo'q tovarlar, agentga yuborilmagan
+   hujjatlar. Har biri kerakli bo'limga olib boradi va faqat shu ishni qila
+   oladigan odamga ko'rinadi.
+5. **Skanerlash ekranlari (yuklash, tushirish) telefonda avvalgidek alohida,
+   to'liq ekran.** Tugmalari kartaning tepasida.
+6. **Karta sonlari endi pul hisobi bilan bir xil.** Oldin «Ichidagilar»
+   sklad topib qaytargan karobkani, bekor qilingan karobkani ham sanardi,
+   xarajat esa ularsiz bo'linardi (sinov nusxasida 1 422 mashinadan 1 200
+   tasida farq bor edi). Endi ikkalasi bitta qoida bilan sanaydi.
+7. **Tuzatilgan xatolar:** yopilgan mashina «0/0 yuklandi» demaydi; tushirib
+   bo'lingan mashina keyingi mashinaga rejalangan karobkalarni o'ziniki deb
+   sanamaydi; tushirish paytida (bojxona skladida, VED kod yozayotganda)
+   tushirilgan tovarlar TNVED ro'yxatidan yo'qolib qolmaydi.
+8. **Xavfsizlik:** mashina bo'yicha 8 ta tugma (agentga yuborildi, bojxona
+   firmasi, prixod bo'yicha rastamojka, «rastamojka tugadi», «Partiya»
+   belgisi, xaritadagi belgi, haydovchi telefonini ulash va o'chirish)
+   skladni tekshirmas edi — masalan, Yiwu skladchisi har qanday mashinaning
+   xaritadagi belgisini (mijozning Mini App'dagi bosqichi va sanasi)
+   o'zgartira olardi. Endi sklad xodimi faqat o'z skladidan chiqqan yoki
+   o'z skladiga keladigan mashinada bosa oladi. TNVED'ning AI tugmasi ham
+   faqat shu mashinadagi tovar uchun ishlaydi.
+
+**Mijoz kartasi:**
+9. **Mijoz kartasida ikki bo'lim: «Umumiy» va «Pul».** «Pul» — mijozning hisob
+   varag'i (qarz, to'lovlar), yonida «qarzdor $…» yoki «avans $…». Kim pulni
+   ko'rishi o'zgarmadi: sotuvchi faqat o'z mijozining pulini ko'radi,
+   buxgalter va VED hisob varag'ini ochadi.
+10. **Topilgan va yopilgan teshik:** mijoz kartasi, bitim va lid
+    kartalaridagi lenta har qanday mijozning to'lov va hisob-kitoblarini
+    `crm.leads` ruxsati bor har kimga ko'rsatardi — ya'ni sotuvchi boshqa
+    sotuvchining mijozi pulini lentadan o'qiy olardi. Endi lentada pul faqat
+    shu mijozning hisob varag'ini ko'ra oladiganlarga chiqadi.
+
+**Ataylab qilinmagan** (xohlasangiz keyingi roundda):
+- «Ichidagilar»da narx ustuni — uni skladchi o'qiydi, pulning o'z bo'limi bor.
+- Karta ichida kichik xarita va /map'da bitta mashinaga fokus.
+- Mijoz kartasining to'liq yangi dizayni (KPI qatori, Yuklar/Bitimlar
+  bo'limlari) — bu roundda faqat «Pul» bo'limi (4a).
+
+Tekshirildi: 4 368 unit/integratsion sinov (450 fayl) va 269 ta e2e sinov
+toza bazada, CI tartibida; har bir bo'lim 8 ta demo xodim nomidan server orqali ochib
+ko'rildi; 360 va 1280 px'da skrinshotlar — hamma bo'lim birinchi ekranda,
+sahifa ekrandan kengaymaydi.
+
+
 ## QR-siz qabul va yuklash — ofis sanaydi, skaner tezlashdi — 2026-09-27
 
 Migratsiya **0112** (`qr_less`). Ledger **113** bo'lishi kerak.

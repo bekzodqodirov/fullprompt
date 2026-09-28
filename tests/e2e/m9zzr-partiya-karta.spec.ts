@@ -98,6 +98,9 @@ for (const person of PEOPLE) {
 }
 
 test('an operator of a third warehouse is refused the whole card, tab by tab', async ({ page }) => {
+  // A failed test restarts the worker and resets this module (round 62): an
+  // empty path would ask about the home page and blame the wrong thing.
+  expect(batchPath).toMatch(/^\/batches\//);
   await login(page, GZ_OPERATOR);
   for (const tab of Object.keys(PATH)) {
     const status = await statusOf(page, `${batchPath}${PATH[tab]}`);
@@ -109,6 +112,7 @@ test('an operator of a third warehouse is refused the whole card, tab by tab', a
 });
 
 test('at 360 px every tab fits the phone and the tab body starts on the first screen', async ({ page }) => {
+  expect(batchPath).toMatch(/^\/batches\//);
   for (const phone of [OWNER, '+998900000006']) {
     await login(page, phone);
     const person = PEOPLE.find((p) => p.phone === phone)!;
@@ -124,6 +128,7 @@ test('at 360 px every tab fits the phone and the tab body starts on the first sc
 });
 
 test('cleanup: the truck is cancelled', async ({ page }) => {
+  expect(batchPath).toMatch(/^\/batches\//);
   await login(page, OWNER);
   await page.goto(batchPath);
   await page.getByTestId('cancel-batch').click();

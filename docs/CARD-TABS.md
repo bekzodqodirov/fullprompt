@@ -377,3 +377,7 @@ priced?
 - Narrowing the card's own door (any in-scope login).
 - Board 3's full client redesign (KPI row, Yuklar/Bitimlar/… tabs). 4a is the
   Pul tab.
+- A sweep of bare `authorize(code)` calls outside the truck's two action
+  files. The eight truck actions and the TNVED suggestion were the ones this
+  card draws; `saveTnvedAction` writes the company-wide TNVED memory, shared
+  across trucks by design, so it takes no truck and stays as it is.
