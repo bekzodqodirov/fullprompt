@@ -4,7 +4,7 @@ import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import { clients, currencies, deals } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { mayReadLedgers, ownsLedger } from '@/modules/wms/finance/scope';
+import { mayGrantDebt, mayReadLedgers, ownsLedger } from '@/modules/wms/finance/scope';
 import { clientLedger, clientNativeBalances } from '@/modules/wms/finance/service';
 import Link from 'next/link';
 import type { ClientKind } from '@/modules/wms/finance/ledger-kinds';
@@ -27,6 +27,7 @@ import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { mayPickTill } from '@/modules/wms/accounting/till-door';
 import { mayVoidLedgerRow } from '@/modules/wms/finance/void-rule';
 import { lostCargoChargesOn, lostCargoForClient } from '@/modules/wms/finance/compensation';
+import { PromisePanel } from './promise-panel';
 
 /**
  * One client's money ledger: balance, add charge/payment, full history.
@@ -180,6 +181,14 @@ export default async function ClientLedgerPage({
           ))}
         </p>
       )}
+      {/* To'lov va'dasi (0114): read by this ledger's readers, written by
+          whoever may let this client's cargo go on debt. */}
+      <PromisePanel
+        clientId={clientId}
+        canPromise={mayGrantDebt(actor, client)}
+        balanceUsd={balance}
+        today={tashkentDay()}
+      />
       {mayClassify && legacy && (
         <p className="text-xs">
           <Link href="/accounting/kurs-farqi" className="text-brand-700 underline" data-testid="finance-fx-legacy-link">

@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
@@ -15,6 +15,7 @@ import {
   warehouses,
 } from '@/modules/platform/db/schema';
 import { ApprovalError, decideIssueApproval } from '@/modules/wms/issue/approvals';
+import { wholeLedger } from '../fixtures/money-actor';
 import { closeTaskMessage, settlePressedApproval } from '@/modules/platform/telegram/staff-bot';
 import { createTask, reassignTask } from '@/modules/platform/tasks/service';
 import { composeMyDay } from '@/modules/platform/tasks/digest';
@@ -112,11 +113,19 @@ async function sentCopy(userId: string, approvalId: string, chatId: number, mess
 const edits = () => calls.filter((c) => c.method === 'editMessageText');
 
 beforeAll(async () => {
+  // A role that decides for EVERY client (0114: the grant AND a whole-ledger
+  // reader) — the first holder of the grant alone may be one that decides
+  // for nobody here (a warehouse manager) or for his own clients only.
   const [grant] = await db
     .select({ roleId: rolePermissions.roleId })
     .from(rolePermissions)
     .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
-    .where(eq(permissions.code, 'finance.debt_override'))
+    .where(
+      and(
+        eq(permissions.code, 'finance.debt_override'),
+        sql`${rolePermissions.roleId} IN (SELECT rp.role_id FROM role_permissions rp JOIN permissions p ON p.id = rp.permission_id WHERE p.code = 'finance.manage')`,
+      ),
+    )
     .limit(1);
   deciderRoleId = grant!.roleId;
   whId = (await db.select().from(warehouses).limit(1))[0]!.id;
@@ -173,6 +182,7 @@ describe('a settled approval closes every decider\'s copy', () => {
     await decideIssueApproval(
       { approvalId, verdict: 'approved', note: 'ekrandan' },
       { actorId: first.id, ip: null, userAgent: null },
+      wholeLedger(first.id),
     );
 
     // Off the caller's path (void-dispatched) — wait for it, do not assume.
@@ -207,7 +217,7 @@ describe('a settled approval closes every decider\'s copy', () => {
       })
       .returning({ id: notifications.id });
     rowsMade.push(row!.id);
-    await decideIssueApproval({ approvalId, verdict: 'refused' }, { actorId: decider.id, ip: null, userAgent: null });
+    await decideIssueApproval({ approvalId, verdict: 'refused' }, { actorId: decider.id, ip: null, userAgent: null }, wholeLedger(decider.id));
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect(edits()).toHaveLength(0);
   });
@@ -229,7 +239,7 @@ describe('a settled approval closes every decider\'s copy', () => {
       })
       .returning({ id: notifications.id });
     rowsMade.push(row!.id);
-    await decideIssueApproval({ approvalId, verdict: 'refused' }, { actorId: decider.id, ip: null, userAgent: null });
+    await decideIssueApproval({ approvalId, verdict: 'refused' }, { actorId: decider.id, ip: null, userAgent: null }, wholeLedger(decider.id));
     await vi.waitFor(
       async () => {
         const [after] = await db.select().from(notifications).where(eq(notifications.id, row!.id));
@@ -244,8 +254,8 @@ describe('a settled approval closes every decider\'s copy', () => {
     const b = await mintStaff({ decider: true });
     const approvalId = await mintApproval(a.id);
     const results = await Promise.allSettled([
-      decideIssueApproval({ approvalId, verdict: 'approved' }, { actorId: a.id, ip: null, userAgent: null }),
-      decideIssueApproval({ approvalId, verdict: 'refused' }, { actorId: b.id, ip: null, userAgent: null }),
+      decideIssueApproval({ approvalId, verdict: 'approved' }, { actorId: a.id, ip: null, userAgent: null }, wholeLedger(a.id)),
+      decideIssueApproval({ approvalId, verdict: 'refused' }, { actorId: b.id, ip: null, userAgent: null }, wholeLedger(b.id)),
     ]);
     expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
     const lost = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
@@ -259,7 +269,7 @@ describe('a settled approval closes every decider\'s copy', () => {
   it('the PRESSED copy is settled even when somebody else decided first', async () => {
     const decider = await mintStaff({ decider: true });
     const approvalId = await mintApproval(decider.id);
-    await decideIssueApproval({ approvalId, verdict: 'refused' }, { actorId: decider.id, ip: null, userAgent: null });
+    await decideIssueApproval({ approvalId, verdict: 'refused' }, { actorId: decider.id, ip: null, userAgent: null }, wholeLedger(decider.id));
     calls = [];
     await settlePressedApproval(
       903n,

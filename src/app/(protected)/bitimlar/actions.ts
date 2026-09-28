@@ -303,7 +303,8 @@ export async function deferPaymentAction(
   // Deliberately a different gate: granting a client more time to pay is a
   // money decision, and `finance.debt_override` already means exactly this
   // (DEALS.md answer 4). Reusing it keeps one answer to "who may let a debt
-  // slide" rather than two that drift apart.
+  // slide" rather than two that drift apart. WHOSE client it may be is the
+  // service's question since 0114 (`mayGrantDebt`), asked with this actor.
   const actor = await getActor();
   if (!actor?.permissions.has('finance.debt_override')) return { error: 'forbidden' };
   const untilAllArrived = form.get('until') === 'all_arrived';
@@ -316,6 +317,7 @@ export async function deferPaymentAction(
         untilDate: untilAllArrived ? null : String(form.get('untilDate') ?? '') || null,
       },
       ctx,
+      actor,
     ),
   );
 }

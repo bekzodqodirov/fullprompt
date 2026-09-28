@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { FEED_KINDS } from '../finance/ledger-kinds';
 import { kindList } from '../finance/ledger-sql';
+import { debtGateOpenedSql } from '../debt/releases';
 
 /**
  * One client, everything that happened, in order — the «lenta».
@@ -241,12 +242,14 @@ export async function clientFeed(clientId: string | null, opts: FeedOptions): Pr
       ${money}
 
       -- Handed over. The end of the job, and the only source that names the
-      -- human being who actually carried the cargo away.
+      -- human being who actually carried the cargo away. «Went out on debt»
+      -- is the register's own rule (debt/releases.ts, 0114): the tick alone
+      -- missed every approval release and marked a tick over nothing.
       SELECT
         'hv-' || h.id::text, 'handover', h.created_at, u.full_name, h.note,
         jsonb_build_object(
           'person', h.person_name, 'phone', h.person_phone,
-          'warehouse', w.code, 'debtOverride', h.debt_ok
+          'warehouse', w.code, 'debtOverride', ${debtGateOpenedSql('h')}
         )
       FROM handovers h
       JOIN warehouses w ON w.id = h.warehouse_id

@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { approvalUnpricedDetail, pendingApprovals } from '@/modules/wms/issue/approvals';
+import { debtGrantScope } from '@/modules/wms/finance/scope';
 import { mayOpenPricing } from '@/modules/wms/finance/pricing-door';
 import { decideIssueApprovalAction } from '../issue/actions';
 import { PageHeader } from '@/components/ui/page';
@@ -17,10 +18,15 @@ import { PageHeader } from '@/components/ui/page';
  * Q3b), so each row says which question it asks: the debt only when there is
  * one, and the prixods whose cartons have no price — re-read now, so a prixod
  * the accountant priced meanwhile reads «✅ narx qo'yildi», because pricing is
- * often the better answer than approving. STATED, not widened here: this
- * screen shows every client's pending debt to every holder, sellers included
- * (round 91's hole on one more screen) — narrowing what a decider SEES is its
- * own change.
+ * often the better answer than approving.
+ *
+ * Since 0114 (the owner's 2a) the list is the requests THIS person may decide
+ * — `pendingApprovals(actor)` asks `debtGrantScope`, the predicate the
+ * decision itself asks — so a seller reads his own clients' debts and nobody
+ * else's. The door stays the grant (the menu and the workspace strip promise
+ * it), and a holder who may decide nothing — the warehouse manager, who reads
+ * no ledger — gets one sentence saying where his requests go, not an empty
+ * screen that reads as «nothing is waiting».
  */
 export default async function ApprovalsPage() {
   const actor = await getActor();
@@ -30,14 +36,22 @@ export default async function ApprovalsPage() {
   const tc = await getTranslations('common');
   const format = await getFormatter();
 
-  const rows = await pendingApprovals();
+  const decidesNothing = debtGrantScope(actor) === 'none';
+  const tq = await getTranslations('qarz');
+  const rows = await pendingApprovals(actor);
   const unpriced = await approvalUnpricedDetail(rows);
   const pricingLinks = mayOpenPricing(actor.permissions);
 
   return (
     <div className="mx-auto max-w-lg space-y-3 md:max-w-2xl">
       <PageHeader icon="handshake" title={t('approvalsTitle')} />
-      {rows.length === 0 && <p className="card text-sm text-ink-500">{tc('empty')}</p>}
+      {decidesNothing ? (
+        <p className="card text-sm text-ink-700" data-testid="approvals-none-yours">
+          {tq('approvalsNoneYours')}
+        </p>
+      ) : (
+        rows.length === 0 && <p className="card text-sm text-ink-500">{tc('empty')}</p>
+      )}
       {rows.map((row) => (
         <div key={row.id} className="card space-y-2" data-testid="approval-row">
           <div className="flex flex-wrap items-baseline gap-2">

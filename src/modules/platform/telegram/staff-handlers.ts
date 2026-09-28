@@ -22,6 +22,7 @@ import {
   completeTaskFromBot,
   dayButtons,
   decideApprovalFromBot,
+  type BotApprovalResult,
   isCabinetText,
   landCollectedIntake,
   linkStaffChat,
@@ -362,12 +363,15 @@ export function registerStaffBot(bot: Bot): void {
     // off a notes callback.
     if (parsed.kind !== 'approval') return;
     const outcome = await decideApprovalFromBot(chatId, parsed.approvalId, parsed.verdict);
-    const answers: Record<string, string> = {
+    // Record<union>: a result the service can return and nobody wrote words
+    // for is a compile error here, not an empty spinner on the phone.
+    const answers: Record<BotApprovalResult, string> = {
       decided: parsed.verdict === 'approved' ? '✅ Ruxsat berildi' : '⛔ Rad etildi',
       not_linked: 'Ulanmagan',
       forbidden: 'Bu qaror sizning huquqingizda emas',
       already_decided: 'Allaqachon hal qilingan',
       not_found: 'So‘rov topilmadi',
+      not_your_client: 'Bu mijoz bo‘yicha qaror uning sotuvchisi yoki buxgalterda',
     };
     await ctx.answerCallbackQuery({ text: answers[outcome] });
     // The pressed copy is settled in place (round C) — ALSO when somebody

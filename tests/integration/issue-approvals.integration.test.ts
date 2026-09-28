@@ -19,6 +19,7 @@ import {
   decideIssueApproval,
   requestIssueApproval,
 } from '@/modules/wms/issue/approvals';
+import { wholeLedger } from '../fixtures/money-actor';
 
 /**
  * Phase 6 against a real database: the recorded permission opens the gate
@@ -96,6 +97,7 @@ const tryIssue = (boxId: string) =>
       note: '',
     },
     ctx(operatorId),
+    { id: operatorId, permissions: new Set(['scan.issue']) },
   );
 
 beforeAll(async () => {
@@ -149,7 +151,7 @@ describe('the recorded permission opens the gate', () => {
     // Still blocked while pending — asking is not being allowed.
     await expect(tryIssue(boxId)).rejects.toThrow('debt_block');
 
-    await decideIssueApproval({ approvalId: id, verdict: 'approved' }, ctx(deciderId));
+    await decideIssueApproval({ approvalId: id, verdict: 'approved' }, ctx(deciderId), wholeLedger(deciderId));
     const handover = await tryIssue(boxId);
     expect(handover.id).toBeTruthy();
 
@@ -181,7 +183,7 @@ describe('the recorded permission opens the gate', () => {
   it('an expired approval is no approval', async () => {
     const boxId = await issuableBox();
     const { id } = await requestIssueApproval({ clientId, warehouseId: whId }, ctx(operatorId));
-    await decideIssueApproval({ approvalId: id, verdict: 'approved' }, ctx(deciderId));
+    await decideIssueApproval({ approvalId: id, verdict: 'approved' }, ctx(deciderId), wholeLedger(deciderId));
     await db
       .update(issueApprovals)
       .set({ expiresAt: new Date(Date.now() - 60_000) })
@@ -193,7 +195,7 @@ describe('the recorded permission opens the gate', () => {
   it('a debt that GREW past the approved snapshot is a different debt', async () => {
     const boxId = await issuableBox();
     const { id } = await requestIssueApproval({ clientId, warehouseId: whId }, ctx(operatorId));
-    await decideIssueApproval({ approvalId: id, verdict: 'approved' }, ctx(deciderId));
+    await decideIssueApproval({ approvalId: id, verdict: 'approved' }, ctx(deciderId), wholeLedger(deciderId));
     // A new charge after the approval: the decider never saw this figure.
     await charge('50');
     await expect(tryIssue(boxId)).rejects.toThrow('debt_block');
@@ -206,11 +208,11 @@ describe('the recorded permission opens the gate', () => {
   it('a refusal blocks, and a decision is single-shot', async () => {
     const boxId = await issuableBox();
     const { id } = await requestIssueApproval({ clientId, warehouseId: whId }, ctx(operatorId));
-    await decideIssueApproval({ approvalId: id, verdict: 'refused' }, ctx(deciderId));
+    await decideIssueApproval({ approvalId: id, verdict: 'refused' }, ctx(deciderId), wholeLedger(deciderId));
     await expect(tryIssue(boxId)).rejects.toThrow('debt_block');
     // The second decider learns the question is closed.
     await expect(
-      decideIssueApproval({ approvalId: id, verdict: 'approved' }, ctx(deciderId)),
+      decideIssueApproval({ approvalId: id, verdict: 'approved' }, ctx(deciderId), wholeLedger(deciderId)),
     ).rejects.toThrow('already_decided');
   });
 
@@ -219,7 +221,7 @@ describe('the recorded permission opens the gate', () => {
     await expect(
       requestIssueApproval({ clientId, warehouseId: whId }, ctx(operatorId)),
     ).rejects.toThrow('already_requested');
-    await decideIssueApproval({ approvalId: id, verdict: 'refused' }, ctx(deciderId));
+    await decideIssueApproval({ approvalId: id, verdict: 'refused' }, ctx(deciderId), wholeLedger(deciderId));
   });
 
   // The refusal's word changed with 0104: a request now asks two questions

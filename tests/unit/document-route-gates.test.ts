@@ -24,15 +24,21 @@ import { describe, expect, it } from 'vitest';
  * helper and this file pins that they do.
  */
 
-const routes = [
-  {
-    file: 'src/app/api/handovers/[id]/act/route.ts',
-    // The act must ask what the handover's own ATTACHMENTS ask — one document,
-    // one rule (see access.ts's `handover` branch).
-    permissions: ['scan.issue', 'receipts.unclaimed.resolve'],
-    scopeColumn: 'warehouseId',
-  },
-];
+/**
+ * The act route's own fence (REWRITTEN in 0114, recorded per #974): the rule
+ * moved into `mayReadHandoverAct` (wms/issue/act-door.ts) so the debt
+ * register can ask it before drawing an act link (the judge's #7 — a door
+ * that bounces the accountant is worse than none). The route must still
+ * load the row, ASK the predicate with the row's warehouse, and refuse; the
+ * predicate must still name both grants and fence on the warehouse.
+ */
+const actRoute = {
+  file: 'src/app/api/handovers/[id]/act/route.ts',
+  door: 'src/modules/wms/issue/act-door.ts',
+  // The act must ask what the handover's own ATTACHMENTS ask — one document,
+  // one rule (see access.ts's `handover` branch).
+  permissions: ['scan.issue', 'receipts.unclaimed.resolve'],
+};
 
 /** The four that share `guardBatchDocument`. */
 const batchDocumentRoutes = [
@@ -46,28 +52,26 @@ const batchDocumentRoutes = [
 ];
 
 describe('document routes gate on permission AND warehouse, not just a session', () => {
-  for (const route of routes) {
-    it(`${route.file} checks its permissions and its scope`, () => {
-      const source = readFileSync(route.file, 'utf8');
+  it(`${actRoute.file} checks its permissions and its scope`, () => {
+    const source = readFileSync(actRoute.file, 'utf8');
+    const door = readFileSync(actRoute.door, 'utf8');
 
-      // It must look the row up — a gate that cannot see the document's
-      // warehouse cannot fence on it.
-      expect(source, 'loads the owning row').toMatch(/db\.query\.\w+\.findFirst/);
-      for (const permission of route.permissions) {
-        expect(source, `asks ${permission}`).toContain(`'${permission}'`);
-      }
-      // Anchored on the CALL, never on the word: the first version of this
-      // line asserted `toContain('inScope')` and stayed green with the check
-      // stripped, because the import survived it (#166 — a red proof that
-      // will not go red is evidence about the fixture).
-      expect(source, 'fences on the warehouse').toMatch(
-        new RegExp(`inScope\\(actor,\\s*row\\.${route.scopeColumn}\\)`),
-      );
-      // And it must actually refuse, not merely compute an opinion.
-      expect(source, 'refuses with 403').toContain('403');
-      expect(source, 'still answers 401 unauthenticated').toContain('401');
-    });
-  }
+    // It must look the row up — a gate that cannot see the document's
+    // warehouse cannot fence on it.
+    expect(source, 'loads the owning row').toMatch(/db\.query\.\w+\.findFirst/);
+    // Anchored on the CALL and on the REFUSAL, never on the word: the first
+    // version of this line asserted `toContain('inScope')` and stayed green
+    // with the check stripped, because the import survived it (#166 — a red
+    // proof that will not go red is evidence about the fixture).
+    expect(source, 'asks the door with the row\'s warehouse').toMatch(
+      /if \(!mayReadHandoverAct\(actor, row\.warehouseId\)\) return new Response\('Forbidden', \{ status: 403 \}\);/,
+    );
+    expect(source, 'still answers 401 unauthenticated').toContain('401');
+    for (const permission of actRoute.permissions) {
+      expect(door, `asks ${permission}`).toContain(`'${permission}'`);
+    }
+    expect(door, 'fences on the warehouse').toMatch(/inScope\(actor,\s*warehouseId\)/);
+  });
 
   for (const route of batchDocumentRoutes) {
     it(`${route.file} goes through the shared batch-document guard`, () => {

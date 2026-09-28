@@ -142,7 +142,7 @@ export async function composeOwnerSummary(
     trucksP,
     balanceP,
     seesOutcome ? loadLeadFlow(period.from, period.to) : null,
-    readAttentionSources(gates, scopeKey, now, { balance: balanceP, trucks: trucksP }),
+    readAttentionSources(gates, scopeKey, now, actor, { balance: balanceP, trucks: trucksP }),
     weekly
       ? Promise.all([recurringDue(today), partnersDue(today), partnersUnrated(today), openExpenseRequestTotals()])
       : null,

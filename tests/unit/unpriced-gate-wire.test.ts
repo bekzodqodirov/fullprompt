@@ -19,11 +19,19 @@ const between = (src: string, from: string, to: string) => {
 };
 
 describe('the ban at the counter', () => {
-  it('the action refuses the price tick to anyone without finance.debt_override', () => {
-    const action = between(read('src/app/(protected)/issue/actions.ts'), 'export async function issueBoxesAction', 'const meta');
-    expect(action).toMatch(
-      /parsed\.data\.priceOk && !actor\.permissions\.has\('finance\.debt_override'\)\)\s*\{\s*return \{ ok: false, error: 'price_override_forbidden' \}/,
-    );
+  // REWRITTEN in 0114 (the owner's 2a), recorded rather than silently
+  // dropped (#974): this pinned the ACTION's `has('finance.debt_override')`
+  // check, which 0114 deletes on purpose — WHO may tick now depends on whose
+  // client it is, so the service asks `mayGrantDebt` with the actor and the
+  // action holds no second copy of the rule (#531). The same refusal code
+  // reaches the screen from the service.
+  it('the service refuses the price tick to anyone who may not grant THIS client’s debt', () => {
+    const action = between(read('src/app/(protected)/issue/actions.ts'), 'export async function issueBoxesAction', '\n}');
+    expect(action).not.toContain("has('finance.debt_override')");
+    expect(action).toMatch(/issueBoxes\(parsed\.data, \{ actorId: actor\.id, \.\.\.meta \}, actor\)/);
+    const fn = between(read('src/modules/wms/issue/service.ts'), 'export async function issueBoxes', 'async function notifyUnpricedIssued');
+    expect(fn).toContain("if (gated.length > 0 && input.priceOk && !mayGrant) throw new IssueError('price_override_forbidden');");
+    expect(fn).toContain("if (blockingDebt > 0.009 && input.debtOk && !mayGrant) throw new IssueError('debt_override_forbidden');");
   });
 
   it('the schema carries the tick, the screen posts it, the list route says which boxes are gated', () => {

@@ -105,6 +105,52 @@ export function mayOpenClientLedger(actor: MoneyActor, client: { salesManagerId:
 }
 
 /**
+ * Who may let a client's cargo go ON DEBT, and for whom (the owner,
+ * 2026-09-28, his 2a: «sotuvchi faqat o'z mijoziga, admin va buxgalter
+ * hammaga»).
+ *
+ * Not a new list: it is the grant (`finance.debt_override`) AND the ledger
+ * this client's money lives in — `moneyOwnerFilter`'s answer, the same one
+ * the ledger page and the card's «Pul» tab ask. A person who may not READ a
+ * client's debt may not wave it through either, and a seller reads only his
+ * own book, so he releases only his own clients. The warehouse manager holds
+ * the grant and reads no ledger at all, so he asks («Ruxsat so'rash») like
+ * every operator does; the VED reads the ledger and holds no grant.
+ *
+ * ONE predicate for every door that lets a debt slide — the counter's tick,
+ * the approval's decision (web and bot), who is pinged about a request, the
+ * deal's «muddat» and the payment promise — asked in the SERVICES, so a
+ * screen that forgets to hide a control still cannot open the gate (#531).
+ * Three answers and no fourth (#199's shape): nothing, everybody's, or one
+ * owner's clients.
+ */
+export type DebtGrantScope = 'none' | 'all' | { ownerId: string };
+
+export function debtGrantScope(actor: MoneyActor): DebtGrantScope {
+  if (!actor.permissions.has('finance.debt_override') || !mayReadLedgers(actor)) return 'none';
+  const owner = moneyOwnerFilter(actor);
+  return owner === undefined ? 'all' : { ownerId: owner };
+}
+
+/** `debtGrantScope` applied to one client row — `debt_override && mayOpenClientLedger`. */
+export function mayGrantDebt(actor: MoneyActor, client: { salesManagerId: string | null }): boolean {
+  const scope = debtGrantScope(actor);
+  if (scope === 'none') return false;
+  if (scope === 'all') return true;
+  return client.salesManagerId === scope.ownerId;
+}
+
+/**
+ * Every grant the predicate above reads — for a reader that has to rebuild a
+ * holder's permission set from the editable grants (who is pinged about a
+ * request) instead of from a session, so it asks the predicate with exactly
+ * the codes the predicate looks at and not a copy of the rule.
+ */
+export const DEBT_GRANT_CODES: readonly string[] = [
+  ...new Set(['finance.debt_override', 'finance.view', 'finance.manage', ...SEES_ALL_MONEY_GRANTS]),
+];
+
+/**
  * The COMPANY's money — the kassa totals, the P&L and its plan, the
  * receivable in aggregate, the dollars at risk: the dashboard's money
  * blocks, the admin home's «Pul» card and the cargo-risk report. Law 4's key

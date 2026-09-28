@@ -49,6 +49,7 @@ import { unbilledArrived } from '@/modules/wms/reports/business';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { approvalCounts } from '@/modules/wms/reports/dashboard-math';
 import { withoutJit } from '@/modules/platform/db/no-jit';
+import { wholeLedger } from '../fixtures/money-actor';
 
 /**
  * «Narx qo'yilmagan yuk» — the ONE rule behind the handover ban, the
@@ -240,6 +241,7 @@ async function issue(
         priceOk: opts.priceOk ?? false,
       },
       ctx(),
+      wholeLedger(actorId),
     );
     return 'ok';
   } catch (err) {
@@ -257,7 +259,7 @@ async function uncovered(clientId: string) {
 }
 
 async function approve(approvalId: string) {
-  await decideIssueApproval({ approvalId, verdict: 'approved' }, ctx());
+  await decideIssueApproval({ approvalId, verdict: 'approved' }, ctx(), wholeLedger(actorId));
 }
 
 beforeAll(async () => {
@@ -747,11 +749,11 @@ describe('one approval, two questions', () => {
       { clientId: c, type: 'payment', amount: 300, currency: 'USD', method: 'cash', txDate: DAY },
       ctx(),
     );
-    const before = approvalCounts(await pendingApprovals());
+    const before = approvalCounts(await pendingApprovals(wholeLedger(actorId)));
     const { id } = await requestIssueApproval({ clientId: c, warehouseId: W.tas }, ctx());
     const [row] = await db.select().from(issueApprovals).where(eq(issueApprovals.id, id));
     expect(Number(row!.blockingDebtUsd)).toBe(0);
-    const after = approvalCounts(await pendingApprovals());
+    const after = approvalCounts(await pendingApprovals(wholeLedger(actorId)));
     expect(after.debt).toEqual(before.debt);
     expect(after.price.n).toBe(before.price.n + 1);
   });

@@ -27,6 +27,7 @@ export async function AttentionSection({
   company,
   scopeKey,
   perms,
+  viewerId,
 }: {
   /** Null for a viewer who may not read the company's money (`companyMoneySight`). */
   sight: CompanyMoneySight | null;
@@ -36,6 +37,11 @@ export async function AttentionSection({
   company: boolean;
   scopeKey: string;
   perms: Set<string>;
+  /**
+   * Who is reading (0114): the approvals count is the requests THIS person may
+   * decide (the owner's 2a), so it needs the viewer, not the permission set.
+   */
+  viewerId: string;
 }) {
   const t = await getTranslations('dashboard');
   const w = loadWindows();
@@ -43,7 +49,7 @@ export async function AttentionSection({
   // (`mayReadBatches`, the page's `seesCostMissing` sentence) — asked there
   // once, for this page and for the evening Telegram alike.
   const gates = attentionGates(perms, { sight, scoped, company });
-  const sources = await readAttentionSources(gates, scopeKey, new Date());
+  const sources = await readAttentionSources(gates, scopeKey, new Date(), { id: viewerId, permissions: perms });
   const fmt = { usd, m3, num };
   const items = attentionFacts(gates, sources, w).map((fact) => ({
     ...fact,

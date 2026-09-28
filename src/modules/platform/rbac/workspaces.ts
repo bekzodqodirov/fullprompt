@@ -273,6 +273,14 @@ export const WORKSPACES: WorkspaceSpec[] = [
         sight: 'kassa',
         via: ['/finance'],
       },
+      // `seesCompanyMoney` (0114): the whole receivable — the owner and the
+      // accountant, never a seller, the VED or the logist.
+      {
+        href: '/finance/qarzga-berilgan',
+        key: 'debtReleases',
+        need: [['finance.manage', 'clients.manage'], ['finance.reports']],
+        via: ['/finance'],
+      },
       { href: '/upsale', key: 'upsale' },
     ],
     settings: [

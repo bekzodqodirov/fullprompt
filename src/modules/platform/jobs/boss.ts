@@ -107,6 +107,7 @@ export const WORKER_REGISTRATIONS: [string, (boss: PgBoss) => Promise<void>][] =
     'inbound-contact',
     async (b) => (await import('../../wms/crm/inbound-contact-jobs')).registerInboundContactWorker(b),
   ],
+  ['debt-promises', async (b) => (await import('../../wms/debt/jobs')).registerDebtPromiseWorker(b)],
 ];
 
 /** Run each registration at most once per process, whatever failed before. */

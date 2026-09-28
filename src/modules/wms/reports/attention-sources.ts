@@ -1,5 +1,6 @@
 import { taskPulse } from '../../platform/tasks/analytics';
 import { pendingApprovals } from '../issue/approvals';
+import type { MoneyActor } from '../finance/scope';
 import { calcQueueCounts } from '../calc/service';
 import type { TrucksOnRoad } from '../tracking/on-road';
 import {
@@ -35,6 +36,8 @@ export async function readAttentionSources(
   g: AttentionGates,
   scopeKey: string,
   now: Date,
+  /** The reader: the approvals count is the requests THIS person may decide (0114, the owner's 2a). */
+  viewer: MoneyActor,
   have: { balance?: Resolved<BalanceParts>; trucks?: Resolved<TrucksOnRoad> } = {},
 ): Promise<AttentionSources> {
   const money = g.sight !== null;
@@ -52,7 +55,7 @@ export async function readAttentionSources(
       loadUnclaimed(scopeKey),
       g.seesCostMissing ? loadCostMissing(scopeKey) : null,
       g.allWh ? taskPulse(now) : null,
-      g.canApprove ? pendingApprovals() : null,
+      g.canApprove ? pendingApprovals(viewer) : null,
       g.canCalc ? calcQueueCounts() : null,
     ]);
   // The second-stage read, only when the unpriced row has something in it.

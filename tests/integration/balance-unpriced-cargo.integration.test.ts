@@ -55,6 +55,7 @@ import {
   type GateSince,
 } from '@/modules/wms/finance/unpriced';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
+import { wholeLedger } from '../fixtures/money-actor';
 
 /**
  * «Narxi hali yozilmagan yukka sarflangan» (U03, the owner's Q16 A): the
@@ -278,6 +279,7 @@ async function issue(clientId: string, warehouseId: string, boxIds: string[]) {
         priceOk: true,
       },
       ctx(),
+      wholeLedger(actorId),
     );
     return 'ok';
   } catch (err) {

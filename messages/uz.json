@@ -2725,7 +2725,8 @@
       "validation": "Maydonlarni tekshiring",
       "fx_missing": "Bu valyutaga kurs yo‘q",
       "discount_reason_required": "Chegirma uchun sabab kerak",
-      "quote_sealed": "Narx muhrlangan — o‘zgartirib bo‘lmaydi (qayta hisoblang)"
+      "quote_sealed": "Narx muhrlangan — o‘zgartirib bo‘lmaydi (qayta hisoblang)",
+      "not_your_client": "Bu mijozga muddatni uning sotuvchisi, buxgalter yoki admin beradi"
     },
     "discountTitle": "Chegirma (shikast)",
     "discountAmount": "Chegirma summasi",
@@ -4138,7 +4139,8 @@
       "staffActivity": "Xodimlar faoliyati",
       "labelPrints": "Stiker jurnali",
       "calcControl": "Hisob va haqiqat",
-      "admin": "Boshqaruv"
+      "admin": "Boshqaruv",
+      "debtReleases": "Qarzga berilgan"
     },
     "more": "Yana"
   },
@@ -4395,5 +4397,77 @@
   "kechkiXulosa": {
     "notifMuteOwner": "Kechki xulosa (20:00)",
     "notLinked": "Telegram ulanmagan — kechki xulosa yetib bormaydi. Yuqorida ulang."
+  },
+  "qarz": {
+    "approvalsNoneYours": "Qarzga ruxsat berish sizning qaroringiz emas — so‘rovlar mijozning sotuvchisi, buxgalter va adminga boradi. Topshirishda «Ruxsat so‘rash» tugmasini bosing.",
+    "promise": {
+      "title": "To‘lov va’dasi",
+      "amount": "Summa, $",
+      "dueOn": "Qachongacha to‘laydi",
+      "note": "Izoh (ixtiyoriy)",
+      "save": "Va’dani yozish",
+      "cancel": "Va’dani bekor qilish",
+      "cancelConfirm": "Bu va’da bekor qilinsinmi? Qo‘ng‘iroq vazifasi ham yopiladi.",
+      "due": "{date} gacha",
+      "progress": "Va’dadan keyin to‘landi: {paid} / {amount}",
+      "by": "yozdi: {name}",
+      "none": "Va’da yo‘q.",
+      "noDebt": "Qarz yo‘q — va’da kerak emas.",
+      "history": "Oldingi va’dalar ({n})",
+      "hint": "O‘sha kuni qo‘ng‘iroq mijozning sotuvchisiga vazifa bo‘lib tushadi (sotuvchi bo‘lmasa — sizga). Ertasi kuni tushgacha pul kelmasa — sotuvchi, egasi va buxgalteriyaga xabar boradi.",
+      "status": {
+        "open": "kutilmoqda",
+        "kept": "bajarildi",
+        "settled": "qarz boshqa yo‘l bilan yopildi",
+        "broken": "bajarilmadi",
+        "cancelled": "bekor qilindi"
+      },
+      "errors": {
+        "not_your_client": "Bu mijoz bo‘yicha va’dani uning sotuvchisi, buxgalter yoki admin yozadi",
+        "bad_amount": "Summa tushunarsiz",
+        "bad_date": "Sana — bugundan, 90 kundan oshmasin",
+        "no_debt": "Mijozning qarzi yo‘q",
+        "exceeds_debt": "Summa mijoz qarzidan katta",
+        "promise_open": "Mijozda ochiq va’da allaqachon bor",
+        "not_open": "Va’da allaqachon yopilgan",
+        "not_found": "Topilmadi",
+        "forbidden": "Ruxsat yo‘q",
+        "validation": "Maydonlarni tekshiring"
+      }
+    },
+    "releases": {
+      "title": "Qarzga berilgan yuklar",
+      "note": "Mijoz qarzdor bo‘la turib yuki berilgan har bir holat: kim ruxsat bergan va keyin qancha pul qaytgan. Odatda — barcha davr, faqat puli hali qaytmaganlari.",
+      "kindTick": "✋ belgi",
+      "kindApproval": "✅ so‘rov",
+      "kindDeferral": "⏳ muddat",
+      "allowedBy": "ruxsat: {name}",
+      "gaveBy": "berdi: {name}",
+      "debtAt": "berilgandagi qarz: {usd}",
+      "legacyDebt": "(so‘rov paytida)",
+      "unknownDebt": "berilgandagi qarz: —",
+      "deferredPart": "yana {usd} muddatli edi",
+      "deal": "bitim {code}",
+      "paidSince": "keyin to‘landi: {usd}",
+      "left": "qaytmagan: {usd}",
+      "currentDebt": "hozirgi qarz: {usd}",
+      "perApprover": "Ruxsat bergan bo‘yicha",
+      "totalsNote": "Har bir mijozning puli shu odamning OXIRGI ruxsati bo‘yicha sanaladi: keyingi berishdagi qarz oldingisining to‘lanmagan qismini o‘z ichiga oladi.",
+      "releasesN": "berish: {n}",
+      "clientsN": "mijoz: {n}",
+      "unknownN": "summasiz eskilari: {n}",
+      "cap": "{total} tadan {shown} tasi ko‘rsatildi",
+      "showAll": "Qaytganlarini ham ko‘rsatish",
+      "empty": "Bunday berishlar yo‘q.",
+      "from": "Dan",
+      "to": "Gacha",
+      "who": "Kim ruxsat bergan",
+      "everyone": "Hammasi",
+      "apply": "Ko‘rsatish",
+      "act": "akt",
+      "promiseOpen": "🤝 {date} gacha {usd} va’da qilgan",
+      "promiseBroken": "⚠ va’da bajarilmadi ({date})",
+      "unknownApprover": "—"
+    }
   }
 }

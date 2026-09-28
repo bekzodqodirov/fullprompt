@@ -22,7 +22,7 @@ import { calcControlScopeFor, mayReadCalcRegistry } from '@/modules/wms/calc/con
 import { mayClassifyFx } from '@/modules/wms/finance/fx-door';
 import { mayPickTill } from '@/modules/wms/accounting/till-door';
 import { mayReadUnpricedList } from '@/modules/wms/finance/unpriced-door';
-import { seesAllMoney } from '@/modules/wms/finance/scope';
+import { seesAllMoney, seesCompanyMoney } from '@/modules/wms/finance/scope';
 import { canReadTg } from '@/modules/wms/crm/conversations';
 import { canWriteDeal } from '@/modules/wms/deals/service';
 import { sellerReportScopeFor } from '@/modules/wms/crm/seller-report-scope';
@@ -143,6 +143,8 @@ const GATES: Record<string, (a: Actor) => boolean> = {
   '/accounting/xarajat-kassa': (a) => accounting(a) && mayPickTill(a.permissions),
   '/finance/narxsiz': (a) => mayReadUnpricedList(a.permissions),
   '/finance/reestr': (a) => has(a, 'finance.view', 'finance.manage') && !moneyHidden('kassa', a.permissions),
+  // finance/qarzga-berilgan/page.tsx: `companyMoneySight` (0114).
+  '/finance/qarzga-berilgan': (a) => seesCompanyMoney(a),
   '/upsale': (a) => upsaleScopeFor(a) !== 'none',
   '/admin/fx': (a) => adminLayout(a) && has(a, 'costs.fx.manage'),
   '/accounting/categories': (a) => accounting(a) && has(a, 'finance.expenses'),

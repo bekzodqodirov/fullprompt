@@ -7,6 +7,7 @@ import { expect, test } from '@playwright/test';
  */
 
 const LOGIST_PHONE = '+998900000003';
+const ADMIN_PHONE = '+998900000002';
 const PASSWORD = 'demo1234';
 
 test('export → ready_for_pickup → issue with handover act', async ({ page }) => {
@@ -66,7 +67,15 @@ test('export → ready_for_pickup → issue with handover act', async ({ page })
   await expect(page.getByTestId('unload-counter')).toHaveText(/1\/1/);
   await expect(page.getByTestId('sync-banner')).not.toContainText('🔄', { timeout: 15_000 });
 
-  // Issue mode at AND for that client
+  // Issue mode at AND for that client — as the ADMIN since 0114 (the
+  // owner's 2a): the price tick below is «may let this client's cargo go»,
+  // which the logist's default grants no longer carry.
+  await page.context().clearCookies();
+  await page.goto('/login');
+  await page.locator('input[name="identifier"]').fill(ADMIN_PHONE);
+  await page.locator('input[name="password"]').fill(PASSWORD);
+  await page.locator('main form button[type="submit"]').first().click();
+  await expect(page).toHaveURL('/');
   await page.goto('/issue');
   await page.getByTestId('issue-wh').selectOption({ label: 'AND' });
   const searchSettled = page.waitForResponse((r) => r.url().includes('/api/clients/search'));
@@ -80,7 +89,7 @@ test('export → ready_for_pickup → issue with handover act', async ({ page })
 
   // 0104: this seeded prixod landed by road with no price on its first pass
   // (m9-client-money prices it later in the run, so a second local pass
-  // finds it covered, #154). The logist holds the override and ticks it —
+  // finds it covered, #154). The admin holds the override and ticks it —
   // fixture adaptation, not this spec's assertion; the ban's own proof is
   // the integration suite and m9zz-narxsiz.
   const priceOk = page.getByTestId('issue-price-ok');

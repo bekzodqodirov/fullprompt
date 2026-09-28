@@ -18,19 +18,14 @@ export async function issueBoxesAction(
   const parsed = issueSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: 'validation' };
   const actor = await authorize('scan.issue', { warehouseId: parsed.data.warehouseId });
-  // Ticking "manager allowed" needs the actual permission — otherwise anyone
-  // could wave the debt gate through (Phase 2.1, owner's rule).
-  if (parsed.data.debtOk && !actor.permissions.has('finance.debt_override')) {
-    return { ok: false, error: 'debt_override_forbidden' };
-  }
-  // The price half of the same tick (0104): «narxsiz berishga ruxsat» is the
-  // same override the debt one is, and the same people hold it.
-  if (parsed.data.priceOk && !actor.permissions.has('finance.debt_override')) {
-    return { ok: false, error: 'price_override_forbidden' };
-  }
+  // WHO may tick «manager allowed» (debt or price) is the service's question
+  // since 0114 — it depends on whose client this is (the owner's 2a), so it
+  // is asked there, with the actor, and refused as
+  // debt_override_forbidden / price_override_forbidden (#531: a check only
+  // here would leave every other caller of issueBoxes open).
   const meta = await requestMeta();
   try {
-    const handover = await issueBoxes(parsed.data, { actorId: actor.id, ...meta });
+    const handover = await issueBoxes(parsed.data, { actorId: actor.id, ...meta }, actor);
     await enqueue(JOB_PROCESS_EVENTS, {});
     revalidatePath('/issue');
     return { ok: true, handoverId: handover.id };
@@ -81,9 +76,8 @@ export async function decideIssueApprovalAction(formData: FormData): Promise<voi
   });
   if (!parsed.success) return;
   // The same permission the direct checkbox needs: deciding IS the override.
-  // It used to authorize `finance.view` first, which the warehouse manager
-  // does not hold — so his ✅ on /approvals, the page his grant opens, was an
-  // AuthError while the same press in the bot worked (0104 design §2).
+  // WHICH clients' requests this person may decide is the service's answer
+  // (0114, `mayGrantDebt`), so the actor travels with the call.
   const actor = await authorize('finance.debt_override');
   const meta = await requestMeta();
   try {
@@ -94,6 +88,7 @@ export async function decideIssueApprovalAction(formData: FormData): Promise<voi
         note: parsed.data.note || undefined,
       },
       { actorId: actor.id, ...meta },
+      actor,
     );
     await enqueue(JOB_PROCESS_EVENTS, {});
   } catch (err) {

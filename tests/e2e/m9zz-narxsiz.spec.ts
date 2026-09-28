@@ -20,6 +20,7 @@ import sharp from 'sharp';
  */
 
 const PASSWORD = 'demo1234';
+const ADMIN = '+998900000002';
 const LOGIST = '+998900000003';
 const VED = '+998900000004';
 const OPERATOR = '+998900000006'; // YW
@@ -168,7 +169,10 @@ test('the accountant sees it on the list, blocked, with the truck as a door; ano
 });
 
 test('the counter refuses it until the holder ticks the override, and the list then says it went out', async ({ page }) => {
-  await login(page, LOGIST);
+  // The ADMIN and not the logist since 0114 (the owner's 2a): the tick is
+  // «may let this client's cargo go on debt», the admin and the accountant
+  // hold it for everybody, and the logist's default grants no longer do.
+  await login(page, ADMIN);
   await page.goto('/issue');
   await page.getByTestId('issue-wh').selectOption({ label: 'AND' });
   const searchSettled = page.waitForResponse((r) => r.url().includes('/api/clients/search'));

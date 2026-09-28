@@ -137,6 +137,10 @@ export const MUTE_GROUPS = {
     // two Russian raw-fetch pings onto the drain, where they can be muted and
     // retried like every other staff message).
     'CabinetLinkAlert',
+    // A debtor's payment promise passed unpaid (0114) — the call is due now,
+    // while the client still remembers saying it. A newcomer: never in
+    // FOUNDERS, so nobody's stored list is un-muted by it.
+    'PaymentPromiseBroken',
   ],
   operations: [
     // A client's birthday (0109): a reminder to congratulate, not an alarm.

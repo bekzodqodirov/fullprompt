@@ -736,6 +736,36 @@ export async function deferredBalanceUsd(clientId: string): Promise<number> {
   return Math.round(total * 100) / 100;
 }
 
+/**
+ * The same deferral, per JOB and with who granted it (0114, qarz nazorati) —
+ * what the handover stores so the register can name the person whose
+ * «muddat» let the cargo go. The one per-deal rule (`deferredPerDealSql`)
+ * with the deal's own columns beside it, never a second reading of it; the
+ * sum of `owedUsd` here, rounded once, is `deferredBalanceUsd`.
+ */
+export async function deferredDealsUsd(
+  clientId: string,
+): Promise<{ dealId: string; code: string; by: string | null; owedUsd: number }[]> {
+  const rows = (await db.execute(sql`
+    SELECT per.deal_id, per.owed, d.code, d.deferred_by
+      FROM (${deferredPerDealSql([clientId])}) per
+      JOIN deals d ON d.id = per.deal_id
+     ORDER BY d.deferred_at, d.code`)) as unknown as {
+    deal_id: string;
+    owed: string;
+    code: string;
+    deferred_by: string | null;
+  }[];
+  return [...rows].map((row) => ({
+    dealId: row.deal_id,
+    code: row.code,
+    by: row.deferred_by,
+    // Unrounded, like the sum `deferredBalanceUsd` rounds once: rounding
+    // each job first could move the total by a cent.
+    owedUsd: Number(row.owed ?? 0),
+  }));
+}
+
 /** Per-client totals for the balances screen — only clients with any activity. */
 export async function clientBalances(ownerId?: string) {
   const rows = await db

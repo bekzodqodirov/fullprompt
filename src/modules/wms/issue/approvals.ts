@@ -7,7 +7,7 @@ import { usersWithPermission } from '../../platform/notifications/service';
 import { getSetting } from '../../platform/settings/service';
 import { logger } from '../../platform/logger';
 import { clientBalanceUsd, deferredBalanceUsd } from '../finance/service';
-import { SEES_ALL_MONEY_GRANTS } from '../finance/scope';
+import { DEBT_GRANT_CODES, debtGrantScope, mayGrantDebt, type MoneyActor } from '../finance/scope';
 import { gatedAt, uncoveredBoxesOn, unpricedGate, unpricedReceiptsOn } from '../finance/unpriced';
 import type { ApprovalQuestion } from './approval-covers';
 import { ISSUABLE_STATUSES } from './parties';
@@ -21,8 +21,14 @@ import { ISSUABLE_STATUSES } from './parties';
  * asked, who allowed, why, until when — and the gate re-checks all of it at
  * read time, never trusting a status field alone.
  *
- * The direct checkbox stays for finance.debt_override holders standing at
- * the counter — a person allowed to decide should not petition themselves.
+ * The direct checkbox stays for the people allowed to decide standing at the
+ * counter — a person allowed to decide should not petition themselves.
+ *
+ * WHO decides is one predicate since 0114 (the owner's 2a): `mayGrantDebt` —
+ * the grant AND this client's ledger, so a seller decides for his own clients
+ * and the admin and the accountant for everybody. The same predicate picks
+ * who is pinged, filters /approvals and the dashboard's count, and refuses a
+ * decision here, in the service, whichever door it came through.
  *
  * 0104 (the owner's Q3b) gives the same row a SECOND question: cartons with no
  * price («ruxsat berilmasa olib ketolmasin»), decided by the same people the
@@ -63,27 +69,28 @@ async function gatedHere(clientId: string, warehouseId: string): Promise<{ boxId
 }
 
 /**
- * Who is pinged about a request (the owner lens of the 0104 design): every
- * `finance.debt_override` holder, MINUS the sellers of other clients.
+ * Who is pinged about a request: exactly the people who may DECIDE it
+ * (0114). Each holder's permission set is rebuilt from the editable grants —
+ * only the codes `mayGrantDebt` reads (`DEBT_GRANT_CODES`) — and the
+ * predicate itself answers, so the ping and the decision cannot disagree.
  *
- * A seller is a holder whose money view is their own book — `finance.view`
- * and none of `SEES_ALL_MONEY_GRANTS`, the list `seesAllMoney` itself asks —
- * and round 91 already decided a seller reads only their own clients' money.
- * The request carries a debt figure and names a client, so pinging every
- * seller about every client was that hole reaching Telegram. The client's own
- * seller stays in. WHO MAY DECIDE is unchanged: the bot and /approvals still
- * ask only the grant.
+ * The old filter subtracted the sellers of OTHER clients (0104) and nothing
+ * else, which pinged the warehouse manager — a holder who reads no ledger and
+ * now may not decide — about every debtor in the company.
  */
 export async function approvalRecipients(clientId: string): Promise<string[]> {
-  const [holders, viewers, wide, client] = await Promise.all([
-    usersWithPermission('finance.debt_override'),
-    usersWithPermission('finance.view'),
-    Promise.all(SEES_ALL_MONEY_GRANTS.map((code) => usersWithPermission(code))),
+  const [holders, client] = await Promise.all([
+    Promise.all(DEBT_GRANT_CODES.map(async (code) => [code, await usersWithPermission(code)] as const)),
     db.query.clients.findFirst({ where: eq(clients.id, clientId), columns: { salesManagerId: true } }),
   ]);
-  const viewer = new Set(viewers);
-  const seesAll = new Set(wide.flat());
-  return holders.filter((id) => !(viewer.has(id) && !seesAll.has(id)) || id === client?.salesManagerId);
+  const grants = new Map<string, Set<string>>();
+  for (const [code, ids] of holders) {
+    for (const id of ids) grants.set(id, (grants.get(id) ?? new Set()).add(code));
+  }
+  const owner = { salesManagerId: client?.salesManagerId ?? null };
+  return [...grants.entries()]
+    .filter(([id, permissions]) => mayGrantDebt({ id, permissions }, owner))
+    .map(([id]) => id);
 }
 
 export async function requestIssueApproval(
@@ -208,6 +215,11 @@ export async function requestIssueApproval(
 export async function decideIssueApproval(
   input: { approvalId: string; verdict: 'approved' | 'refused'; note?: string },
   ctx: AuditContext,
+  /**
+   * WHO is deciding, asked by the service (0114): REQUIRED, because an
+   * optional one fails open (#790) — the web page and the bot both pass it.
+   */
+  decider: MoneyActor,
 ): Promise<void> {
   if (!ctx.actorId) throw new ApprovalError('unauthenticated');
   const row = await db.query.issueApprovals.findFirst({
@@ -217,6 +229,18 @@ export async function decideIssueApproval(
   // Single-shot, like a plan verdict: the second decider learns the question
   // is closed instead of silently overwriting the first answer.
   if (row.status !== 'pending') throw new ApprovalError('already_decided');
+  // A seller decides for his own clients only (the owner's 2a). Read at the
+  // press, so a client reassigned meanwhile is decided by his NEW seller, and
+  // an old Telegram copy on a phone that may no longer decide is refused in
+  // words. BEFORE the claim — a refusal must leave the row pending for the
+  // person who may answer it.
+  const owner = await db.query.clients.findFirst({
+    where: eq(clients.id, row.clientId),
+    columns: { salesManagerId: true },
+  });
+  if (!mayGrantDebt(decider, { salesManagerId: owner?.salesManagerId ?? null })) {
+    throw new ApprovalError('not_your_client');
+  }
 
   const ttlHours = Number(await getSetting('debt_approval_ttl_hours')) || 24;
   const expiresAt =
@@ -247,7 +271,7 @@ export async function decideIssueApproval(
     after: { status: input.verdict, note: input.note?.trim() || null, expiresAt },
   });
 
-  const [client, decider] = await Promise.all([
+  const [client, deciderUser] = await Promise.all([
     db.query.clients.findFirst({ where: eq(clients.id, row.clientId) }),
     db.query.users.findFirst({ where: eq(users.id, ctx.actorId) }),
   ]);
@@ -263,7 +287,7 @@ export async function decideIssueApproval(
       // The answer names the question it answers (0104): a price-only
       // permission must not read «qarzdorga berish».
       reasons: approvalReasons(row),
-      decidedByName: decider?.fullName ?? '',
+      decidedByName: deciderUser?.fullName ?? '',
       note: input.note?.trim() || null,
     },
     entityType: 'issue_approval',
@@ -276,7 +300,7 @@ export async function decideIssueApproval(
   // phones' buttons exactly as a bot press does. After the write, off the
   // caller's path (a web action or the bot's sequential poller), each edit on
   // the sender's short deadline; a failure is a log line, never the decision.
-  void retireCopiesOf(row, input.verdict, decider?.fullName ?? '');
+  void retireCopiesOf(row, input.verdict, deciderUser?.fullName ?? '');
 }
 
 /** Which question(s) a request asked — the words its answer is written in. */
@@ -432,8 +456,15 @@ export async function approvalStateFor(
   };
 }
 
-/** Everything a decider needs to answer from one small screen. */
-export async function pendingApprovals() {
+/**
+ * Everything a decider needs to answer from one small screen — only the
+ * requests THIS viewer may decide (0114): the dashboard's count and
+ * /approvals read it, so a seller sees his own clients' requests and a
+ * warehouse manager none. `viewer` is REQUIRED (#790).
+ */
+export async function pendingApprovals(viewer: MoneyActor) {
+  const scope = debtGrantScope(viewer);
+  if (scope === 'none') return [];
   return db
     .select({
       id: issueApprovals.id,
@@ -451,7 +482,12 @@ export async function pendingApprovals() {
     .innerJoin(clients, eq(issueApprovals.clientId, clients.id))
     .innerJoin(warehouses, eq(issueApprovals.warehouseId, warehouses.id))
     .innerJoin(users, eq(issueApprovals.requestedBy, users.id))
-    .where(eq(issueApprovals.status, 'pending'))
+    .where(
+      and(
+        eq(issueApprovals.status, 'pending'),
+        scope === 'all' ? undefined : eq(clients.salesManagerId, scope.ownerId),
+      ),
+    )
     .orderBy(desc(issueApprovals.requestedAt));
 }
 

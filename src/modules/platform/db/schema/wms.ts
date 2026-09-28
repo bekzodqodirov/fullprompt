@@ -335,6 +335,15 @@ export const handovers = pgTable(
      * direct tick, recorded beside the debt half.
      */
     priceOk: boolean('price_ok').notNull().default(false),
+    /**
+     * 0114 (qarz nazorati): what the debt gate SAW at this handover — the
+     * balance, the part a deal deferral excused, what was left blocking, and
+     * which deferrals covered it and who granted them. NULL = older than 0114.
+     */
+    owedUsd: numeric('owed_usd', { precision: 14, scale: 2 }),
+    blockingUsd: numeric('blocking_usd', { precision: 14, scale: 2 }),
+    deferredUsd: numeric('deferred_usd', { precision: 14, scale: 2 }),
+    deferrals: jsonb('deferrals').$type<{ dealId: string; code: string; by: string | null; usd: number }[]>(),
     note: text('note'),
     createdBy: uuid('created_by')
       .notNull()

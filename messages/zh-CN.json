@@ -2725,7 +2725,8 @@
       "validation": "请检查字段",
       "fx_missing": "该货币没有汇率",
       "discount_reason_required": "折扣需要填写原因",
-      "quote_sealed": "价格已封存，无法修改（请重新计算）"
+      "quote_sealed": "价格已封存，无法修改（请重新计算）",
+      "not_your_client": "此客户的延期由其销售、会计或管理员授予"
     },
     "discountTitle": "折扣（货损）",
     "discountAmount": "折扣金额",
@@ -4138,7 +4139,8 @@
       "staffActivity": "员工活动",
       "labelPrints": "标签打印",
       "calcControl": "报价与实际",
-      "admin": "管理"
+      "admin": "管理",
+      "debtReleases": "赊账放货"
     },
     "more": "更多"
   },
@@ -4395,5 +4397,77 @@
   "kechkiXulosa": {
     "notifMuteOwner": "晚间汇总 (20:00)",
     "notLinked": "尚未连接 Telegram — 晚间汇总无法送达。请在上方连接。"
+  },
+  "qarz": {
+    "approvalsNoneYours": "赊账放货不由您决定——请求会发给客户的销售、会计和管理员。在提货处请按「请求批准」。",
+    "promise": {
+      "title": "付款承诺",
+      "amount": "金额，$",
+      "dueOn": "付款截止",
+      "note": "备注（可选）",
+      "save": "记录承诺",
+      "cancel": "取消承诺",
+      "cancelConfirm": "取消此承诺？电话任务也会关闭。",
+      "due": "{date} 前",
+      "progress": "承诺后已付：{paid} / {amount}",
+      "by": "记录人：{name}",
+      "none": "没有承诺。",
+      "noDebt": "没有欠款——无需承诺。",
+      "history": "以前的承诺（{n}）",
+      "hint": "当天会给客户的销售（没有销售时给您）生成电话任务。如果次日中午前未到账，将通知销售、老板和财务。",
+      "status": {
+        "open": "等待中",
+        "kept": "已兑现",
+        "settled": "欠款以其他方式结清",
+        "broken": "未兑现",
+        "cancelled": "已取消"
+      },
+      "errors": {
+        "not_your_client": "此客户的承诺由其销售、会计或管理员记录",
+        "bad_amount": "金额无法识别",
+        "bad_date": "日期须从今天起，且不超过 90 天",
+        "no_debt": "客户没有欠款",
+        "exceeds_debt": "金额大于客户欠款",
+        "promise_open": "客户已有未结的承诺",
+        "not_open": "承诺已关闭",
+        "not_found": "未找到",
+        "forbidden": "无权限",
+        "validation": "请检查字段"
+      }
+    },
+    "releases": {
+      "title": "赊账放货",
+      "note": "客户欠款时放出货物的每一次：谁批准的，以及之后收回了多少钱。默认显示全部时间内尚未收回的。",
+      "kindTick": "✋ 勾选",
+      "kindApproval": "✅ 请求",
+      "kindDeferral": "⏳ 延期",
+      "allowedBy": "批准人：{name}",
+      "gaveBy": "放货人：{name}",
+      "debtAt": "放货时欠款：{usd}",
+      "legacyDebt": "（请求时）",
+      "unknownDebt": "放货时欠款：—",
+      "deferredPart": "另有 {usd} 已延期",
+      "deal": "交易 {code}",
+      "paidSince": "之后已付：{usd}",
+      "left": "未收回：{usd}",
+      "currentDebt": "当前欠款：{usd}",
+      "perApprover": "按批准人",
+      "totalsNote": "每个客户的金额按此人最近一次放货计算：后一次放货的欠款已包含前一次未付的部分。",
+      "releasesN": "放货：{n}",
+      "clientsN": "客户：{n}",
+      "unknownN": "无金额的旧记录：{n}",
+      "cap": "显示 {total} 条中的 {shown} 条",
+      "showAll": "也显示已收回的",
+      "empty": "没有此类放货。",
+      "from": "从",
+      "to": "到",
+      "who": "批准人",
+      "everyone": "全部",
+      "apply": "显示",
+      "act": "交接单",
+      "promiseOpen": "🤝 承诺 {date} 前付 {usd}",
+      "promiseBroken": "⚠ 承诺未兑现（{date}）",
+      "unknownApprover": "—"
+    }
   }
 }

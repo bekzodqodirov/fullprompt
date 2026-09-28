@@ -140,6 +140,7 @@ export default async function DashboardPage({
           company={company}
           scopeKey={scopeKey}
           perms={perms}
+          viewerId={actor.id}
         />
       </Suspense>
 

@@ -741,7 +741,11 @@ export type BotApprovalResult =
   | 'not_linked'
   | 'forbidden'
   | 'already_decided'
-  | 'not_found';
+  | 'not_found'
+  // 0114: the presser holds the grant but this client is not in his book (a
+  // seller pressing on a colleague's client, from an old copy) — refused by
+  // the service, answered in words.
+  | 'not_your_client';
 
 /**
  * Decide a debtor-issue request from the button. The permission is checked
@@ -763,12 +767,16 @@ export async function decideApprovalFromBot(
     await decideIssueApproval(
       { approvalId, verdict, note: 'Telegram bot orqali' },
       { actorId: staff.id },
+      // WHICH clients this chat's person may decide is the service's answer
+      // (0114): the same grants, as the actor the web page passes.
+      { id: staff.id, permissions: grants },
     );
     return 'decided';
   } catch (err) {
     if (err instanceof ApprovalError) {
       if (err.code === 'already_decided') return 'already_decided';
       if (err.code === 'not_found') return 'not_found';
+      if (err.code === 'not_your_client') return 'not_your_client';
     }
     throw err;
   }
