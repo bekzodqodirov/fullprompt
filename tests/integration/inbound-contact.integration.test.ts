@@ -399,11 +399,17 @@ describe('what counts as contact', () => {
     expect(await stampedKind(done.leadId!)).toMatchObject({ kind: 'followup', by: sellerA });
   });
 
-  it('the landing’s own note is not contact — even on a lead that is nobody’s', async () => {
-    const landed = await land('system', sellerA);
+  it('a machine’s note is not contact — even on a lead that is nobody’s', async () => {
+    // The person writes AGAIN: the re-enquiry's own lenta note (no author) is
+    // written AFTER the first arrival, on a lead with nobody responsible for
+    // it — the one shape where only the missing author keeps it out.
+    const p = phone();
+    const landed = await land('system', sellerA, { phone: p });
     await db.update(leads).set({ ownerId: null }).where(eq(leads.id, landed.leadId!));
     await db.update(leadIntakes).set({ assignedUserId: null }).where(eq(leadIntakes.leadId, landed.leadId!));
-    expect((await stampedKind(landed.leadId!)).at).toBeNull();
+    expect((await land('system', null, { phone: p })).outcome).toBe('joined');
+    await stampFirstContacts(new Date());
+    expect((await intakeOf(landed.leadId!, 'created')).contactedAt).toBeNull();
   });
 
   it('a colleague’s note on somebody else’s lead is not contact (judge, 5)', async () => {
