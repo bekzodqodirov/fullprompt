@@ -63,8 +63,17 @@ test('export → ready_for_pickup → issue with handover act', async ({ page })
   await page.getByTestId('open-unloading').click();
   await expect(page.getByTestId('unload-counter')).toHaveText(/0\/1/, { timeout: 10_000 });
   await page.getByRole('button', { name: /🏷/ }).click();
+  // The SERVER's answer, not the screen's: the counter turns 1/1 before the
+  // scan is even queued, so «no 🔄 on the banner» can be read in the instant
+  // before the queue fills — and the account switch below then clears the
+  // session the queued scan needs, so it never lands (green here, red on a
+  // slower runner). An empty queue posts nothing, so this is the scan's POST.
+  const unloadSynced = page.waitForResponse(
+    (r) => r.url().includes('/api/scan/sync') && r.request().method() === 'POST' && r.ok(),
+  );
   await page.locator('button:has(span.font-mono)').filter({ hasText: /YW26-/ }).first().click();
   await expect(page.getByTestId('unload-counter')).toHaveText(/1\/1/);
+  await unloadSynced;
   await expect(page.getByTestId('sync-banner')).not.toContainText('🔄', { timeout: 15_000 });
 
   // Issue mode at AND for that client — as the ADMIN since 0114: the price
