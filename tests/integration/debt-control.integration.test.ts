@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { and, eq, inArray, sql } from 'drizzle-orm';
+import postgres from 'postgres';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
@@ -619,7 +620,39 @@ describe('to‘lov va’dasi', () => {
     const due = today();
     const { id } = await recordPromise({ clientId: c.id, amountUsd: 60, dueOn: due }, ctx(S1.id), S1.actor);
     const at = promiseBrokenAt(due);
-    const [first, second] = await Promise.all([sweepPromises(at), sweepPromises(at)]);
+    // Deterministic, not a race left to the scheduler: a second connection
+    // holds the promise's row, so BOTH sweeps read it open and BOTH claims
+    // queue behind the lock; released, the second claim re-reads the row the
+    // first one committed. Two unsynchronised sweeps usually do not overlap
+    // at all, and a test that only sometimes overlaps proves nothing (#166).
+    const helper = postgres(process.env.DATABASE_URL ?? 'postgres://postgres@127.0.0.1:5432/gsr_dev', {
+      max: 1,
+      onnotice: () => {},
+    });
+    const held = await helper.reserve();
+    let sweeps: Promise<[Awaited<ReturnType<typeof sweepPromises>>, Awaited<ReturnType<typeof sweepPromises>>]>;
+    try {
+      await held`BEGIN`;
+      await held`SELECT id FROM payment_promises WHERE id = ${id} FOR UPDATE`;
+      sweeps = Promise.all([sweepPromises(at), sweepPromises(at)]);
+      let waiting = 0;
+      // Observed through the POOL: pg_stat_activity freezes inside an open
+      // transaction, so the holder cannot watch for the waiters itself.
+      for (let i = 0; i < 250 && waiting < 2; i += 1) {
+        const rows = await db.execute<{ n: number }>(sql`
+          SELECT count(*)::int AS n FROM pg_stat_activity
+           WHERE datname = current_database() AND wait_event_type = 'Lock'
+             AND query ILIKE '%payment_promises%' AND pid <> pg_backend_pid()`);
+        waiting = Number(rows[0]?.n ?? 0);
+        if (waiting < 2) await new Promise((r) => setTimeout(r, 20));
+      }
+      expect(waiting, 'both sweeps must be queued on the claim').toBe(2);
+      await held`COMMIT`;
+    } finally {
+      held.release();
+      await helper.end();
+    }
+    const [first, second] = await sweeps!;
     expect(first.broken + second.broken).toBe(1);
     const alarms = await db
       .select({ userId: notifications.userId })
