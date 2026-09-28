@@ -137,6 +137,14 @@ export const CONVERSATIONS_ON_SCREEN = 200;
  *    ringing about messages the client half already answers (the design
  *    judge's third finding). Once a person's dialog carries a client, it is
  *    the client's conversation.
+ *
+ * Stated plainly because its red proof said so: the first clause is IMPLIED
+ * by the third — a row carrying a client is its own witness in the NOT
+ * EXISTS — so stripping it alone turns no behaviour red, only the source
+ * fence (`chat-conversation-key.test.ts`). It stays because it is the part
+ * an index can use: `client_id IS NULL` is a prefix of 0048's
+ * (manager_user_id, client_id, sent_at), and a reader should not have to
+ * derive the rule from a subquery.
  */
 export const leadChatOnlySql = sql`(m.client_id IS NULL AND m.lead_id IS NOT NULL AND NOT EXISTS (
     SELECT 1 FROM tg_messages moved
