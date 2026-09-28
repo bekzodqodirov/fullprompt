@@ -4380,7 +4380,7 @@
     "diagnostics": "扫描诊断"
   },
   "reklamaLid": {
-    "muteLeads": "广告线索（新线索及15分钟提醒）",
+    "muteLeads": "广告线索（新线索及提醒）",
     "muteLeadsHint": "关闭后，分配给您的新线索不会再通知您——负责人收到的提醒中会显示您已关闭通知。",
     "firstContact": "首次联系",
     "firstContactLegend": "中位数 · n · 1小时+ / 24小时+",

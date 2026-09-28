@@ -19,7 +19,7 @@ import {
   users,
 } from '@/modules/platform/db/schema';
 import { landInboundLead } from '@/modules/wms/crm/inbound';
-import { addActivity, moveLead, setFollowUp, setLeadOwner } from '@/modules/wms/crm/service';
+import { addActivity, moveLead, setFollowUp, setLeadOwner, updateLead } from '@/modules/wms/crm/service';
 import { claimUntouched, stampFirstContacts } from '@/modules/wms/crm/first-contact';
 import { CONTACT_NOTE, markContactedFromBot, remindUntouched } from '@/modules/wms/crm/inbound-notify';
 import { firstContactBySeller, readPeriod, salesAnalytics } from '@/modules/wms/crm/analytics';
@@ -60,9 +60,12 @@ let sellerB = '';
 let strangerC = '';
 let packerD = '';
 let fresh = '';
+/** A `logist`: `crm.leads` AND `crm.leads.view_all` — the office, answering for anybody. */
+let officeL = '';
 const CHAT_A = BigInt(710_000_000 + Number(STAMP));
 const CHAT_C = CHAT_A + 1n;
 const CHAT_D = CHAT_A + 2n;
+const CHAT_L = CHAT_A + 3n;
 const people: string[] = [];
 const clientsMade: string[] = [];
 const devicesMade: string[] = [];
@@ -112,9 +115,11 @@ beforeAll(async () => {
   strangerC = await mint('C', 'sales_manager');
   packerD = await mint('D', 'warehouse_operator');
   fresh = await mint('G', 'sales_manager');
+  officeL = await mint('L', 'logist');
   await link(sellerA, CHAT_A);
   await link(strangerC, CHAT_C);
   await link(packerD, CHAT_D);
+  await link(officeL, CHAT_L);
 
   const stages = await db
     .select({ id: leadStages.id })
@@ -421,6 +426,45 @@ describe('what counts as contact', () => {
     expect((await stampedKind(landed.leadId!)).at).toBeNull();
   });
 
+  it('a colleague’s ✏️-form stage move is not contact — no more than the same move on the board', async () => {
+    // One act, two doors (#513): the board's move audits the stage alone and
+    // the rule asks whose it was; the form's move ALSO clears the follow-up
+    // (`clearsFollowUp`), and that door is `crm.leads` and nothing more.
+    const viaForm = await land('form-move', sellerA);
+    const [before] = await db.select().from(leads).where(eq(leads.id, viaForm.leadId!));
+    await updateLead(
+      viaForm.leadId!,
+      {
+        // Everything as the form re-posts it, but the stage.
+        name: before!.name,
+        phone: before!.phone ?? '',
+        company: before!.company ?? '',
+        sourceId: before!.sourceId ?? '',
+        stageId: secondStage,
+        ownerId: sellerA,
+        note: before!.note ?? '',
+        nextActionAt: before!.nextActionAt ?? '',
+        nextActionNote: before!.nextActionNote ?? '',
+      },
+      { actorId: strangerC },
+    );
+    const [after] = await db.select().from(leads).where(eq(leads.id, viaForm.leadId!));
+    // The premise: the form really did clear the date in the colleague's name.
+    expect(after!.stageId).toBe(secondStage);
+    expect(after!.nextActionAt).toBeNull();
+    expect((await stampedKind(viaForm.leadId!)).at).toBeNull();
+
+    const viaBoard = await land('board-move', sellerA);
+    await moveLead(viaBoard.leadId!, secondStage, '', { actorId: strangerC });
+    expect((await stampedKind(viaBoard.leadId!)).at).toBeNull();
+  });
+
+  it('the office ticking a seller’s lead on /bugun is not the seller’s call', async () => {
+    const landed = await land('office-tick', sellerA);
+    await setFollowUp('lead', landed.leadId!, null, { actorId: officeL, viewAll: true });
+    expect((await stampedKind(landed.leadId!)).at).toBeNull();
+  });
+
   it('«Ertaga» is a postponement, not a call (judge, 5)', async () => {
     const landed = await land('tomorrow', sellerA);
     await setFollowUp('lead', landed.leadId!, addDays(tashkentDay(), 1), { actorId: sellerA });
@@ -495,6 +539,57 @@ describe('the owner’s reminder', () => {
     expect(reminder!.payload.intakeIds).toEqual(expect.arrayContaining([intake.id, second!.id]));
     const text = String(reminder!.payload.text);
     expect(text.split(NAME('twice')).length - 1).toBe(1);
+  });
+
+  it('one wait, one reminder: a re-enquiry falling due a sweep later is settled, not said again', async () => {
+    const landed = await land('rewrite', sellerA);
+    const first = await intakeOf(landed.leadId!);
+    await clockAt(first.id, 25, 10);
+    const [joined] = await db.execute<{ id: string }>(sql`
+      INSERT INTO lead_intakes (channel, source_key, name, outcome, lead_id, assigned_user_id,
+                                created_at, contact_clock_at, contact_due_at)
+      VALUES ('form', 'instagram', ${NAME('rewrite-2')}, 'joined', ${landed.leadId!}::uuid, ${sellerA}::uuid,
+              ${minutesFrom(F, -5)}::timestamptz, ${minutesFrom(F, -5)}::timestamptz, ${minutesFrom(F, 3)}::timestamptz)
+      RETURNING id`);
+    await remindUntouched(F);
+    const owners = (await remindersFor(first.id)).length;
+    expect(owners).toBeGreaterThan(0);
+    // The second arrival falls due three minutes later — a different sweep.
+    await remindUntouched(new Date(F.getTime() + 5 * 60_000));
+    expect(await remindersFor(joined!.id)).toHaveLength(0);
+    const naming = await db.execute<{ n: number }>(sql`
+      SELECT count(*)::int AS n FROM notifications
+       WHERE type = 'InboundLeadUntouched' AND payload ->> 'text' LIKE ${`%${NAME('rewrite')}%`}`);
+    expect(Number(naming[0]!.n)).toBe(owners);
+    // Settled, so no later sweep keeps asking about it.
+    const [row] = await db.select().from(leadIntakes).where(eq(leadIntakes.id, joined!.id));
+    expect(row!.contactAlertedAt).not.toBeNull();
+  });
+
+  it('a seller who has LEFT is named as gone — not as a push that never went', async () => {
+    const leaver = await mint('H', 'sales_manager');
+    await db.update(users).set({ active: false }).where(eq(users.id, leaver));
+    const landed = await land('gone', leaver);
+    const intake = await intakeOf(landed.leadId!);
+    await clockAt(intake.id, 20, 5);
+    await remindUntouched(F);
+    const [reminder] = await remindersFor(intake.id);
+    expect(String(reminder!.payload.text)).toContain(`Egasi: Kontakt H ${STAMP} — ⛔ ishlamaydi`);
+  });
+
+  it('says the minutes the arrival was HELD to, not what the setting says now', async () => {
+    const landed = await land('held', sellerB);
+    const intake = await intakeOf(landed.leadId!);
+    // Clocked at F−25, due at F−10: fifteen office minutes, as landed.
+    await clockAt(intake.id, 25, 10);
+    await db.update(settings).set({ value: 5 }).where(eq(settings.key, 'inbound_contact_minutes'));
+    try {
+      await remindUntouched(F);
+    } finally {
+      await db.update(settings).set({ value: 15 }).where(eq(settings.key, 'inbound_contact_minutes'));
+    }
+    const [reminder] = await remindersFor(intake.id);
+    expect(String(reminder!.payload.text).split('\n')[0]).toContain('15 daqiqadan beri');
   });
 
   it('never before its time, and never about a lead somebody reached', async () => {
@@ -581,6 +676,50 @@ describe('«📞 Bog‘landim»', () => {
     expect(again).toHaveLength(1);
   });
 
+  it('a callback the seller already booked SURVIVES the press — only the landing’s own booking goes', async () => {
+    // The ordinary order: call, agree «Thursday», put Thursday on the card,
+    // then press the button to stop the reminder.
+    const landed = await land('thursday', sellerA);
+    const thursday = addDays(tashkentDay(), 3);
+    await setFollowUp('lead', landed.leadId!, thursday, { actorId: sellerA });
+    await db.update(leads).set({ nextActionNote: 'payshanba qayta' }).where(eq(leads.id, landed.leadId!));
+
+    expect((await markContactedFromBot(CHAT_A, landed.leadId!)).outcome).toBe('recorded');
+    const [lead] = await db.select().from(leads).where(eq(leads.id, landed.leadId!));
+    expect(lead!.nextActionAt).toBe(thursday);
+    expect(lead!.nextActionNote).toBe('payshanba qayta');
+    // Still recorded: the note is the evidence.
+    const intake = await intakeOf(landed.leadId!);
+    expect(intake.contactedAt).not.toBeNull();
+    expect(intake.contactedBy).toBe(sellerA);
+  });
+
+  it('an «already» press writes NOTHING — not even today’s date', async () => {
+    const landed = await land('already', sellerA);
+    await addActivity(
+      { entityType: 'lead', entityId: landed.leadId!, kind: 'note', note: 'gaplashdik' },
+      { actorId: sellerA },
+    );
+    // Booked again for today after the conversation — somebody's decision.
+    await setFollowUp('lead', landed.leadId!, tashkentDay(), { actorId: sellerA });
+    expect((await markContactedFromBot(CHAT_A, landed.leadId!)).outcome).toBe('already');
+    const [lead] = await db.select().from(leads).where(eq(leads.id, landed.leadId!));
+    expect(lead!.nextActionAt).toBe(tashkentDay());
+    const notes = await db
+      .select()
+      .from(crmActivities)
+      .where(and(eq(crmActivities.entityId, landed.leadId!), eq(crmActivities.note, CONTACT_NOTE)));
+    expect(notes).toHaveLength(0);
+  });
+
+  it('the office answering for a seller’s lead counts — the button’s door let it through', async () => {
+    const landed = await land('office-press', sellerA);
+    expect((await markContactedFromBot(CHAT_L, landed.leadId!)).outcome).toBe('recorded');
+    const intake = await intakeOf(landed.leadId!);
+    expect(intake.contactedAt).not.toBeNull();
+    expect(intake.contactedBy).toBe(officeL);
+  });
+
   it('a colleague may not answer for somebody else’s lead; a packer may not press it at all', async () => {
     const landed = await land('not-yours', sellerA);
     expect((await markContactedFromBot(CHAT_C, landed.leadId!)).outcome).toBe('not_yours');
@@ -623,5 +762,31 @@ describe('«Birinchi aloqa» on /crm/tahlil', () => {
     const row = (await salesAnalytics(period)).sellers.find((s) => s.id === sellerA);
     expect(row?.firstContact?.medianMinutes).toBe(55);
     expect(row?.fresh).toBe(0);
+  });
+
+  it('a lead DECIDED without contact stopped waiting when it was decided — not late for ever', async () => {
+    const [open] = await db.select({ id: leadStages.id }).from(leadStages).where(eq(leadStages.kind, 'open')).limit(1);
+    const [lost] = await db.select({ id: leadStages.id }).from(leadStages).where(eq(leadStages.kind, 'lost')).limit(1);
+    const clock = new Date('2018-03-12T10:00:00+05:00');
+    // Never reached: lost after 30 min (spam, not late), lost after 2 h (an
+    // hour late, not a day), still open (late both ways, and counting).
+    const cases = [
+      { stage: lost!.id, closedAt: new Date(clock.getTime() + 30 * 60_000) },
+      { stage: lost!.id, closedAt: new Date(clock.getTime() + 2 * 3_600_000) },
+      { stage: open!.id, closedAt: null },
+    ];
+    for (const [i, c] of cases.entries()) {
+      const [lead] = await db
+        .insert(leads)
+        .values({ name: NAME(`2018-${i}`), stageId: c.stage, ownerId: strangerC, createdAt: clock, closedAt: c.closedAt })
+        .returning({ id: leads.id });
+      await db.execute(sql`
+        INSERT INTO lead_intakes (channel, source_key, name, outcome, lead_id, assigned_user_id,
+                                  created_at, contact_clock_at)
+        VALUES ('form', 'instagram', ${NAME(`2018-${i}`)}, 'created', ${lead!.id}::uuid, ${strangerC}::uuid,
+                ${clock.toISOString()}::timestamptz, ${clock.toISOString()}::timestamptz)`);
+    }
+    const stats = await firstContactBySeller(readPeriod({ dan: '2018-03-01', gacha: '2018-03-31' }));
+    expect(stats.get(strangerC)).toEqual({ medianMinutes: null, measured: 0, lateHour: 2, lateDay: 1 });
   });
 });

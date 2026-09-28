@@ -76,3 +76,22 @@ export function addOfficeMinutes(from: Date, minutes: number): Date {
   // Exactly at closing is already closed: the moment belongs to the morning.
   return officeClock(at);
 }
+
+/**
+ * The inverse of `addOfficeMinutes`: how many office minutes lie between
+ * `from` and `to` — the minutes an arrival was actually HELD to, read back
+ * off its stored clock and due time. The reminder says that number and not
+ * today's setting: an arrival clocked at 15 is not «5 minutes untouched»
+ * because somebody lowered the setting an hour later. The same walk and the
+ * same one-day bound as `addOfficeMinutes`, so the two cannot disagree.
+ */
+export function officeMinutesBetween(from: Date, to: Date): number {
+  let at = officeClock(from);
+  let minutes = 0;
+  while (at < to && minutes < 24 * 60) {
+    at = new Date(at.getTime() + 60_000);
+    minutes += 1;
+    if (at < to && !isOfficeTime(at)) at = nextOfficeOpen(at);
+  }
+  return minutes;
+}

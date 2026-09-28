@@ -4380,7 +4380,7 @@
     "diagnostics": "Scanner diagnostics"
   },
   "reklamaLid": {
-    "muteLeads": "Advert leads (a new lead and the 15-minute reminder)",
+    "muteLeads": "Advert leads (a new lead and the reminder)",
     "muteLeadsHint": "Muted, you get no message about new leads assigned to you — and the owner's reminder shows that you muted them.",
     "firstContact": "First contact",
     "firstContactLegend": "median · n · 1 h+ / 24 h+",

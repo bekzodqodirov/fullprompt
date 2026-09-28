@@ -4380,7 +4380,7 @@
     "diagnostics": "Skaner tekshiruvi"
   },
   "reklamaLid": {
-    "muteLeads": "Reklama lidlari (yangi lid va 15 daqiqa eslatmasi)",
+    "muteLeads": "Reklama lidlari (yangi lid va eslatma)",
     "muteLeadsHint": "O‘chirsangiz, sizga berilgan yangi lidlar haqida xabar kelmaydi — egasining eslatmasida «xabarlarni o‘chirib qo‘ygan» deb ko‘rinadi.",
     "firstContact": "Birinchi aloqa",
     "firstContactLegend": "mediana · n · 1 soat+ / 24 soat+",

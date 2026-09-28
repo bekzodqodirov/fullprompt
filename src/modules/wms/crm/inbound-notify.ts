@@ -8,11 +8,13 @@ import { cardLink } from '../../platform/notifications/links';
 import { usersWithRoles } from '../../platform/notifications/service';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { botActorFor } from '../../platform/telegram/staff-bot';
-import { isOfficeTime } from '../../platform/time/office-hours';
-import { addActivity, FollowUpError, setFollowUp } from './service';
+import { isOfficeTime, officeMinutesBetween } from '../../platform/time/office-hours';
+import { tashkentDay } from '../../platform/time/tashkent';
+import { addActivity, followUpDoor, FollowUpError, setFollowUp } from './service';
 import {
   alreadyContacted,
   claimUntouched,
+  CONTACT_NOTE,
   contactClockFrom,
   contactDueAt,
   contactedRecently,
@@ -290,6 +292,7 @@ async function untouchedLines(leadIds: string[], intakeIds: string[]): Promise<U
     lead_name: string | null;
     lead_phone: string | null;
     owner_name: string | null;
+    owner_active: boolean | null;
     source_name: string | null;
     source_key: string | null;
     push_status: string | null;
@@ -297,7 +300,7 @@ async function untouchedLines(leadIds: string[], intakeIds: string[]): Promise<U
   }>(sql`
     SELECT DISTINCT ON (i.lead_id)
            i.lead_id, l.name AS lead_name, l.phone AS lead_phone,
-           u.full_name AS owner_name, s.name AS source_name, i.source_key,
+           u.full_name AS owner_name, u.active AS owner_active, s.name AS source_name, i.source_key,
            n.status AS push_status, n.error AS push_error
       FROM lead_intakes i
       JOIN leads l ON l.id = i.lead_id
@@ -327,7 +330,13 @@ async function untouchedLines(leadIds: string[], intakeIds: string[]): Promise<U
       phone: row.lead_phone,
       sourceName: row.source_name ?? row.source_key ?? '—',
       ownerName: row.owner_name,
-      delivery: deliveryOf(row.push_status, row.push_error),
+      // A seller who has LEFT never had a row to settle — `notifyStaffTelegram`
+      // writes none for an inactive person, and the landing told the office
+      // instead — so the lookup finds nothing and would say «xabar bormagan»
+      // about somebody who simply no longer works here. The person's own
+      // state is the answer; the drain's `user deactivated` only covers a
+      // departure between queueing and sending.
+      delivery: row.owner_active === false ? 'inactive' : deliveryOf(row.push_status, row.push_error),
       link: cardLink('lead', row.lead_id),
     }));
 }
@@ -343,7 +352,9 @@ async function untouchedLines(leadIds: string[], intakeIds: string[]): Promise<U
 export async function remindUntouched(now: Date = new Date()): Promise<number> {
   const minutes = Number(await getSetting('inbound_contact_minutes')) || 0;
   if (minutes <= 0 || !isOfficeTime(now)) return 0;
-  const claimed = await claimUntouched(now);
+  // A re-enquiry whose wait the owner was already told about is settled by
+  // the claim and said nowhere: one reminder per lead, not per message.
+  const claimed = (await claimUntouched(now)).filter((row) => !row.told);
   if (claimed.length === 0) return 0;
 
   // One line per lead, newest arrival first, in the order they fell due.
@@ -354,18 +365,22 @@ export async function remindUntouched(now: Date = new Date()): Promise<number> {
   );
   const owners = await usersWithRoles(['super_admin']);
   if (owners.length === 0 || lines.length === 0) return lines.length;
+  // The minutes the arrivals were HELD to, fixed at landing — not today's
+  // setting. The smallest, because «N daqiqadan beri» must be true of every
+  // line in the message.
+  const heldTo = Math.min(...claimed.map((row) => officeMinutesBetween(row.clockAt, row.dueAt)));
   const appUrl = (process.env.APP_URL ?? '').replace(/\/$/, '');
   await notifyStaffTelegram({
     userIds: owners,
     type: 'InboundLeadUntouched',
-    text: untouchedText(lines, { minutes, ledgerLink: `${appUrl}/crm/kelganlar` }),
+    text: untouchedText(lines, { minutes: heldTo, ledgerLink: `${appUrl}/crm/kelganlar` }),
     extra: { intakeIds: claimed.map((row) => row.id) },
   });
   return lines.length;
 }
 
-/** What the lenta says a «📞 Bog'landim» press was — and the note it writes. */
-export const CONTACT_NOTE = '📞 Bog‘lanildi (Telegram tugmasi)';
+/** The button's lenta note — its home is beside the rule that reads it. */
+export { CONTACT_NOTE };
 
 export type LeadContactOutcome =
   | 'recorded'
@@ -382,14 +397,21 @@ export type LeadContactOutcome =
  *
  * The presser comes from the CHAT, never from the callback (a week-old
  * button in a forwarded message is not a login). The door is the day
- * screen's own: `crm.leads` first, as `setFollowUpAction` asks, then
- * `setFollowUp` — its ownership rule as it stands, and the write that takes
- * the lead off «bugun qo'ng'iroq» (round 102: ✓ means «I called»). An advert
- * lead is booked for today, so a note alone would leave it on the list after
- * the seller said they called (design judge, 4).
+ * screen's own: `crm.leads` first, as `setFollowUpAction` asks, then the ✓'s
+ * ownership rule as it stands (`followUpDoor`).
+ *
+ * What it CLEARS is only the call the landing booked: an advert lead arrives
+ * booked for today, and a note alone would leave it on «bugun qo'ng'iroq»
+ * after the seller said they called (design judge, 4) — so a date of today
+ * or earlier goes, exactly as the ✓ would take it. A LATER date stays with
+ * its note: the ordinary order is «call, agree Thursday, put Thursday on the
+ * card, then press the button to stop the reminder», and wiping Thursday
+ * would drop the lead off the day it was promised a call.
  *
  * «already» is read BEFORE the press writes anything — the press itself is
- * evidence, so afterwards the answer would always be yes.
+ * evidence, so afterwards the answer would always be yes — and an «already»
+ * press writes NOTHING: the lead was reached, and whatever date stands on it
+ * now is somebody's decision made after that.
  */
 export async function markContactedFromBot(
   chatId: bigint,
@@ -399,17 +421,21 @@ export async function markContactedFromBot(
   const actor = await botActorFor(chatId);
   if (!actor) return { outcome: 'not_linked' };
   if (!actor.permissions.has('crm.leads')) return { outcome: 'forbidden' };
-  const already = await alreadyContacted(leadId);
+  const ctx = { actorId: actor.id, viewAll: actor.permissions.has('crm.leads.view_all') };
+  let lead: { nextActionAt: string | null };
   try {
-    await setFollowUp('lead', leadId, null, {
-      actorId: actor.id,
-      viewAll: actor.permissions.has('crm.leads.view_all'),
-    });
+    lead = await followUpDoor('lead', leadId, ctx);
   } catch (err) {
     if (err instanceof FollowUpError) return { outcome: err.code };
     throw err;
   }
-  if (already) return { outcome: 'already', by: actor.fullName };
+  if (await alreadyContacted(leadId)) return { outcome: 'already', by: actor.fullName };
+  if (lead.nextActionAt !== null && lead.nextActionAt <= tashkentDay(now)) {
+    await setFollowUp('lead', leadId, null, ctx);
+  }
+  // The EVIDENCE is this note — the one the rule accepts from whoever the
+  // door let press (`CONTACT_NOTE`), so the office answering for a departed
+  // seller counts, and a press that clears no date still counts.
   await addActivity(
     { entityType: 'lead', entityId: leadId, kind: 'call', note: CONTACT_NOTE },
     { actorId: actor.id },

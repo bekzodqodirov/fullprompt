@@ -21,12 +21,19 @@ import { addOfficeMinutes, officeClock } from '../../platform/time/office-hours'
  *     or the seller the arrival was handed to; anybody when it is nobody's).
  *     The owner's own «@Aziz qo'ng'iroq qil» written after the reminder is a
  *     note about the lead, not a conversation with it (design judge, 5), and
- *     the landing's own note has no author at all;
- *  4. a STAGE move on the lead, by that same person;
+ *     the landing's own note has no author at all. The ONE note that counts
+ *     from anybody is the «📞 Bog'landim» button's own (`CONTACT_NOTE`): it
+ *     is written only after the button's door — `crm.leads` and the ✓'s
+ *     ownership rule — let the presser through, and that door admits the
+ *     office answering for a lead whose seller has left (the office is who
+ *     that push went to);
+ *  4. a STAGE move on the lead, by that same responsible person;
  *  5. the follow-up CLEARED — «✓ Bajarildi» on /bugun, which round 102 made
- *     mean «I called», and the bot's «📞 Bog'landim», which is that same door.
- *     Its door (`setFollowUp`) already asks whether the presser may act on the
- *     lead, so it counts from anybody it let through. «Ertaga» writes a DATE
+ *     mean «I called» — by that same person too. Its door is not one door:
+ *     the ✏️ form's stage change clears the date as well (`clearsFollowUp`),
+ *     and that form is gated on `crm.leads` alone, so «anybody it let
+ *     through» would count a colleague's form move that the same move on the
+ *     board does not — one act, two answers (#513). «Ertaga» writes a DATE
  *     and is a postponement, so only an explicit `null` counts.
  * An owner change alone is not contact: handing a lead on is not talking to it.
  *
@@ -37,6 +44,13 @@ import { addOfficeMinutes, officeClock } from '../../platform/time/office-hours'
  */
 
 export const CONTACT_KINDS = ['call', 'telegram', 'note', 'stage', 'followup'] as const;
+
+/**
+ * What the lenta says a «📞 Bog'landim» press was — the note it writes, and
+ * the one note the rule below accepts from whoever pressed. Lives beside the
+ * rule that reads it, so the button and the rule cannot drift apart.
+ */
+export const CONTACT_NOTE = '📞 Bog‘lanildi (Telegram tugmasi)';
 export type ContactKind = (typeof CONTACT_KINDS)[number];
 
 /**
@@ -110,7 +124,7 @@ export function contactEvidenceSql(o: {
        AND ca.entity_id = ${o.leadId}
        AND ca.created_by IS NOT NULL
        AND ca.created_at >= ${o.since}
-       AND ${responsible(sql`ca.created_by`)}
+       AND (${responsible(sql`ca.created_by`)} OR (ca.kind = 'call' AND ca.note = ${CONTACT_NOTE}))
     UNION ALL
     SELECT al.created_at, 'stage'::text, al.actor_id
       FROM audit_log al
@@ -130,6 +144,7 @@ export function contactEvidenceSql(o: {
        AND al.actor_id IS NOT NULL
        AND al.created_at >= ${o.since}
        AND al.after -> 'nextActionAt' = 'null'::jsonb
+       AND ${responsible(sql`al.actor_id`)}
   )`;
 }
 
@@ -139,6 +154,17 @@ const ARRIVAL_EVIDENCE = contactEvidenceSql({
   since: sql`i.created_at`,
   ownerId: sql`l.owner_id`,
   assignedId: sql`i.assigned_user_id`,
+});
+
+/**
+ * The same rule over an EARLIER arrival `e` on the same lead — the claim's
+ * «has the owner already been told about this wait» (below).
+ */
+const EARLIER_EVIDENCE = contactEvidenceSql({
+  leadId: sql`e.lead_id`,
+  since: sql`e.created_at`,
+  ownerId: sql`l.owner_id`,
+  assignedId: sql`e.assigned_user_id`,
 });
 
 /** The FIRST contact for arrival `i` (a LATERAL body): earliest wins. */
@@ -186,6 +212,14 @@ export interface UntouchedArrival {
   id: string;
   leadId: string;
   createdAt: string;
+  /** When its clock started and when it fell due — the minutes it was held to. */
+  clockAt: Date;
+  dueAt: Date;
+  /**
+   * The owner was ALREADY reminded about this lead by an earlier sweep, and
+   * nobody has reached it since: the row is settled, not re-announced.
+   */
+  told: boolean;
 }
 
 /**
@@ -204,13 +238,39 @@ export interface UntouchedArrival {
  * the stamp and the claim cannot be reminded about. The calls app gets its
  * grace: while the owner's live, paired phone has not reported since the
  * reminder fell due, the row waits, at most DEVICE_GRACE_MINUTES.
+ *
+ * ONE reminder per WAIT, not per arrival: a person who writes again while
+ * their first message is still untouched gets an arrival — and a clock — of
+ * their own, and the two fall due minutes apart, in different sweeps. The
+ * second is claimed like any other (so it is settled and never looked at
+ * again) but comes back `told` when an earlier arrival on the same lead, of
+ * the same reminder window, was already announced by an EARLIER sweep and is
+ * still untouched by the rule: the owner has this lead in a message already.
+ * «Earlier sweep» is the statement's own snapshot — rows this statement
+ * stamps are invisible to its subquery, so two arrivals due in the same
+ * minute are both untold and share one message line.
  */
 export async function claimUntouched(now: Date = new Date()): Promise<UntouchedArrival[]> {
   const at = now.toISOString();
-  const rows = await db.execute<{ id: string; lead_id: string; created_at: string }>(sql`
-    UPDATE lead_intakes SET contact_alerted_at = ${at}::timestamptz
-     WHERE id IN (
-       SELECT i.id
+  const rows = await db.execute<{
+    id: string;
+    lead_id: string;
+    created_at: string;
+    contact_clock_at: string;
+    contact_due_at: string;
+    told: boolean;
+  }>(sql`
+    WITH due AS (
+       SELECT i.id,
+              EXISTS (
+                SELECT 1 FROM lead_intakes e
+                 WHERE e.lead_id = i.lead_id
+                   AND e.id <> i.id
+                   AND e.contact_alerted_at IS NOT NULL
+                   AND e.contacted_at IS NULL
+                   AND e.created_at >= ${at}::timestamptz - make_interval(hours => ${REMIND_WITHIN_HOURS})
+                   AND NOT EXISTS (SELECT 1 FROM ${EARLIER_EVIDENCE} ev)
+              ) AS told
          FROM lead_intakes i
          JOIN leads l ON l.id = i.lead_id
          -- A lead already DECIDED (won, or lost by whoever) needs nobody to
@@ -236,9 +296,19 @@ export async function claimUntouched(now: Date = new Date()): Promise<UntouchedA
             )
           )
         FOR UPDATE OF i SKIP LOCKED
-     )
-    RETURNING id, lead_id, created_at`);
-  return rows.map((r) => ({ id: r.id, leadId: r.lead_id, createdAt: String(r.created_at) }));
+    )
+    UPDATE lead_intakes t SET contact_alerted_at = ${at}::timestamptz
+      FROM due
+     WHERE t.id = due.id
+    RETURNING t.id, t.lead_id, t.created_at, t.contact_clock_at, t.contact_due_at, due.told`);
+  return rows.map((r) => ({
+    id: r.id,
+    leadId: r.lead_id,
+    createdAt: String(r.created_at),
+    clockAt: new Date(r.contact_clock_at),
+    dueAt: new Date(r.contact_due_at),
+    told: r.told === true,
+  }));
 }
 
 /**

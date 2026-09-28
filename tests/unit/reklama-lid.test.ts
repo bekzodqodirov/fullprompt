@@ -15,7 +15,7 @@ import { FOUNDERS, groupsFromList, isTelegramMuted, MUTE_GROUPS } from '@/module
 import { sendsSilently } from '@/modules/platform/notifications/night';
 import { buttonsFor, LEAD_CONTACTED_BUTTON, parseCallback } from '@/modules/platform/telegram/staff-bot';
 import { STALE_AUTOMATION_CRON } from '@/modules/platform/automation/stale-jobs';
-import { OFFICE_OPEN_HOUR } from '@/modules/platform/time/office-hours';
+import { OFFICE_OPEN_HOUR, officeMinutesBetween } from '@/modules/platform/time/office-hours';
 
 /**
  * «Reklama lidi sotuvchiga darhol yetib borsin» (0113), where it is pure:
@@ -65,6 +65,25 @@ describe('the first-contact clock is office time', () => {
     expect(contactDueAt(tk('2026-09-01T10:00'), 0)).toBeNull();
     // The same 21:55 arrival is measured from 21:55 whatever the setting says.
     expect(contactClockFrom(tk('2026-09-01T21:55'))).toEqual(tk('2026-09-01T21:55'));
+  });
+
+  it('reads back the minutes an arrival was HELD to — across the night too', () => {
+    // Literal pairs, each the due time written out above.
+    expect(officeMinutesBetween(tk('2026-09-01T10:00'), tk('2026-09-01T10:15'))).toBe(15);
+    expect(officeMinutesBetween(tk('2026-09-01T21:46'), tk('2026-09-02T09:01'))).toBe(15);
+    expect(officeMinutesBetween(tk('2026-09-01T21:55'), tk('2026-09-02T09:10'))).toBe(15);
+    expect(officeMinutesBetween(tk('2026-09-01T21:45'), tk('2026-09-02T09:00'))).toBe(15);
+    // A night arrival's clock is the morning: its fifteen start at 09:00.
+    expect(officeMinutesBetween(tk('2026-09-01T23:30'), tk('2026-09-02T09:15'))).toBe(15);
+    expect(officeMinutesBetween(tk('2026-09-01T10:00'), tk('2026-09-01T10:05'))).toBe(5);
+    expect(officeMinutesBetween(tk('2026-09-01T10:00'), tk('2026-09-01T10:00'))).toBe(0);
+    // And it agrees with the forward walk wherever it starts.
+    for (const at of ['2026-09-01T09:00', '2026-09-01T21:30', '2026-09-01T21:59', '2026-09-02T03:00', '2026-09-02T08:59']) {
+      for (const minutes of [1, 15, 60, 300]) {
+        const due = contactDueAt(contactClockFrom(tk(at)), minutes)!;
+        expect(officeMinutesBetween(contactClockFrom(tk(at)), due)).toBe(minutes);
+      }
+    }
   });
 
   it('the automation sweep opens with the same office (one constant, not two)', () => {

@@ -1352,6 +1352,33 @@ export class FollowUpError extends Error {
 }
 
 /**
+ * `setFollowUp`'s door on its own: the row when this person may close or
+ * postpone its follow-up, a `FollowUpError` when not. Exported for the one
+ * caller that must ask the question WITHOUT writing a date — the advert
+ * lead's «📞 Bog'landim» with a callback the seller already booked (0113):
+ * the press must refuse whom the ✓ refuses, and must not wipe Thursday.
+ */
+export async function followUpDoor(
+  kind: 'lead' | 'client',
+  id: string,
+  ctx: AuditContext & { viewAll?: boolean },
+): Promise<{ nextActionAt: string | null }> {
+  if (!ctx.actorId) throw new CrmError('unauthenticated');
+  const row =
+    kind === 'lead'
+      ? await db.query.leads.findFirst({ where: eq(leads.id, id) })
+      : await db.query.clients.findFirst({ where: eq(clients.id, id) });
+  if (!row) throw new FollowUpError('not_found');
+
+  const owner = 'ownerId' in row ? row.ownerId : row.salesManagerId;
+  // A lead nobody has claimed is on everybody's list (round 74), so anyone
+  // whose list showed it may also clear it.
+  const mine = owner === ctx.actorId || (kind === 'lead' && owner === null);
+  if (!ctx.viewAll && !mine) throw new FollowUpError('not_yours');
+  return row;
+}
+
+/**
  * Close or postpone one row of «bugun qo'ng'iroq», from the day screen.
  *
  * The list had no action at all: the only way to take a name off it was to
@@ -1371,18 +1398,7 @@ export async function setFollowUp(
   until: string | null,
   ctx: AuditContext & { viewAll?: boolean },
 ): Promise<void> {
-  if (!ctx.actorId) throw new CrmError('unauthenticated');
-  const row =
-    kind === 'lead'
-      ? await db.query.leads.findFirst({ where: eq(leads.id, id) })
-      : await db.query.clients.findFirst({ where: eq(clients.id, id) });
-  if (!row) throw new FollowUpError('not_found');
-
-  const owner = 'ownerId' in row ? row.ownerId : row.salesManagerId;
-  // A lead nobody has claimed is on everybody's list (round 74), so anyone
-  // whose list showed it may also clear it.
-  const mine = owner === ctx.actorId || (kind === 'lead' && owner === null);
-  if (!ctx.viewAll && !mine) throw new FollowUpError('not_yours');
+  const row = await followUpDoor(kind, id, ctx);
 
   const table = kind === 'lead' ? leads : clients;
   await db

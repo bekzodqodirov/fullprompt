@@ -326,8 +326,14 @@ export interface FirstContactStat {
  * person again, and everything before 0113 has no clock to measure from.
  * The median covers the CONTACTED ones, in minutes from the clock (office
  * time — a lead that landed at 23:00 starts at 09:00); the late counts also
- * take the still-untouched, whose contact is «now» and later. `extract(epoch
- * …)` because `percentile_cont` over an interval hands back TEXT and
+ * take the still-untouched, whose wait runs until «now» — but only while
+ * their lead is still OPEN. A lead decided without anybody reaching it (the
+ * office moving spam to lost) stopped waiting the moment it was decided, so
+ * its wait ends at `closed_at`: the reminder stops asking about a decided
+ * lead (`claimUntouched`), and the seller's «late» figure must not go on
+ * counting one for ever. A closed lead with no `closed_at` (older than the
+ * column) has no known end and is counted by nothing. `extract(epoch …)`
+ * because `percentile_cont` over an interval hands back TEXT and
  * `Number('00:12:30')` is NaN (design judge, 13).
  */
 export async function firstContactBySeller(
@@ -344,7 +350,8 @@ export async function firstContactBySeller(
       : f.owner
         ? eq(leadIntakes.assignedUserId, f.owner)
         : undefined;
-  const waited = sql`coalesce(${leadIntakes.contactedAt}, ${at}::timestamptz) - ${leadIntakes.contactClockAt}`;
+  const waitedUntil = sql`coalesce(${leadIntakes.contactedAt}, CASE WHEN ${leadStages.kind} = 'open' THEN ${at}::timestamptz ELSE ${leads.closedAt} END)`;
+  const waited = sql`${waitedUntil} - ${leadIntakes.contactClockAt}`;
   const rows = await db
     .select({
       assignedUserId: leadIntakes.assignedUserId,
@@ -355,6 +362,7 @@ export async function firstContactBySeller(
     })
     .from(leadIntakes)
     .innerJoin(leads, eq(leads.id, leadIntakes.leadId))
+    .innerJoin(leadStages, eq(leadStages.id, leads.stageId))
     .where(
       and(
         eq(leadIntakes.outcome, 'created'),
