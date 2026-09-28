@@ -26,7 +26,9 @@ import { addOfficeMinutes, officeClock } from '../../platform/time/office-hours'
  *     is written only after the button's door — `crm.leads` and the ✓'s
  *     ownership rule — let the presser through, and that door admits the
  *     office answering for a lead whose seller has left (the office is who
- *     that push went to);
+ *     that push went to). No screen writes a `call` note on a LEAD (the
+ *     contact log with its kinds lives on the client card), so matching the
+ *     text and the kind is the button and nothing typed by hand;
  *  4. a STAGE move on the lead, by that same responsible person;
  *  5. the follow-up CLEARED — «✓ Bajarildi» on /bugun, which round 102 made
  *     mean «I called» — by that same person too. Its door is not one door:
@@ -44,6 +46,7 @@ import { addOfficeMinutes, officeClock } from '../../platform/time/office-hours'
  */
 
 export const CONTACT_KINDS = ['call', 'telegram', 'note', 'stage', 'followup'] as const;
+export type ContactKind = (typeof CONTACT_KINDS)[number];
 
 /**
  * What the lenta says a «📞 Bog'landim» press was — the note it writes, and
@@ -51,7 +54,6 @@ export const CONTACT_KINDS = ['call', 'telegram', 'note', 'stage', 'followup'] a
  * rule that reads it, so the button and the rule cannot drift apart.
  */
 export const CONTACT_NOTE = '📞 Bog‘lanildi (Telegram tugmasi)';
-export type ContactKind = (typeof CONTACT_KINDS)[number];
 
 /**
  * How long to wait for the lead owner's calls app before believing «nobody
