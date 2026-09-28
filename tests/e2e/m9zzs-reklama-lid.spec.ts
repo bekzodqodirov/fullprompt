@@ -31,8 +31,9 @@ test('the sellers table says how fast each seller reached their advert leads', a
   await page.goto('/crm/tahlil');
   const header = page.getByTestId('seller-first-contact');
   await expect(header).toBeVisible();
-  // The legend is IN the header, not a tooltip (#420).
-  await expect(header).toContainText('n');
+  // The legend is IN the header, not a tooltip (#420) — «… 1 h+ / 24 h+» in
+  // every locale.
+  await expect(header).toContainText('24');
   // The wider table scrolls inside its own box; the page does not grow (#400).
   const width = await page.evaluate(() => document.documentElement.scrollWidth);
   expect(width, 'the page grew sideways').toBeLessThanOrEqual(360);
