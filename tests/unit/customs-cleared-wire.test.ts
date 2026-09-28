@@ -26,7 +26,8 @@ describe('the customs-cleared wire', () => {
 
   it('the action is the customs manager’s, not the warehouse’s', () => {
     const body = action.slice(action.indexOf('export async function setCustomsClearedAction'));
-    expect(body.slice(0, 1200)).toContain("authorize('ved.docs'");
+    // Same permission, now asked at the truck's two ends (batch-door-wire).
+    expect(body.slice(0, 1200)).toContain("authorizeOnBatch('ved.docs', batchId)");
   });
 
   it('the action TOGGLES, so a wrong truck can be un-marked', () => {

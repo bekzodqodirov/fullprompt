@@ -193,7 +193,7 @@ export default async function BatchTnvedPage({ params }: { params: Promise<{ id:
           took 32 px off a 360 px phone the editor's buttons needed. */}
       <section className="space-y-2">
         <h2 className="text-lg font-bold">🏷 {ttn('title')}</h2>
-        {rows.length === 0 ? <p className="text-sm text-ink-500">{ttn('empty')}</p> : <TnvedEditor rows={rows} />}
+        {rows.length === 0 ? <p className="text-sm text-ink-500">{ttn('empty')}</p> : <TnvedEditor batchId={id} rows={rows} />}
       </section>
     </BatchCard>
   );
