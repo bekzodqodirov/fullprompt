@@ -1,9 +1,9 @@
 import { randomBytes } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { db } from '../db/client';
-import { permissions, rolePermissions, telegramLinks, userRoles, users } from '../db/schema';
+import { telegramLinks, users } from '../db/schema';
 import { writeAudit } from '../audit/service';
-import { actorGrants } from '../rbac/authorize';
+import { actorGrants, userPermissions } from '../rbac/authorize';
 import { completeTask, TaskError } from '../tasks/service';
 import { DAY_BUTTONS } from '../tasks/digest';
 import { logger } from '../logger';
@@ -528,15 +528,8 @@ export function takeStaffEntry(chatId: bigint): boolean {
   return expires > Date.now();
 }
 
-async function permissionsOf(userId: string): Promise<Set<string>> {
-  const rows = await db
-    .select({ code: permissions.code })
-    .from(userRoles)
-    .innerJoin(rolePermissions, eq(userRoles.roleId, rolePermissions.roleId))
-    .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
-    .where(eq(userRoles.userId, userId));
-  return new Set(rows.map((r) => r.code));
-}
+/** The grants alone — `userPermissions`, the one home of the join `actorGrants` reads. */
+const permissionsOf = userPermissions;
 
 /**
  * `getActor` for a chat instead of a session — the SAME three answers

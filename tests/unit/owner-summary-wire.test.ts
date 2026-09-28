@@ -85,6 +85,16 @@ describe('«📊 Holat» on the keyboard', () => {
     expect(commands).toContain('await holatFor(BigInt(chatId))');
     expect(commands).toMatch(/\.\.\.\(holat \? \[\{ command: 'holat'/);
   });
+
+  it('a bare /start refreshes the command menu too — the deploy step says «/start» (review 9)', () => {
+    const bot = strip(read('src/modules/platform/telegram/bot.ts'));
+    const bare = bot.slice(bot.indexOf('const bareStart = async'), bot.indexOf('if (!code) {'));
+    expect(bare.length, 're-anchor: bareStart moved').toBeGreaterThan(100);
+    // The both-chat and the staff-chat branch, each before its return.
+    expect(bare).toContain("if (menu === 'both') void offerStaffCommands(ctx, chatId);");
+    const staff = bare.slice(bare.indexOf("if (menu === 'staff') {"));
+    expect(staff.slice(0, staff.indexOf('return;'))).toContain('void offerStaffCommands(ctx, chatId);');
+  });
 });
 
 describe('the handler sits where a button is safe', () => {
@@ -115,6 +125,67 @@ describe('the handler sits where a button is safe', () => {
     expect(fn).toContain('holatInFlight.delete(key)');
     // The door is asked on EVERY press, before anything is computed.
     expect(fn.indexOf('await holatFor(chatId)')).toBeLessThan(fn.indexOf('ownerSummaryFromBot(chatId)'));
+  });
+
+  const answerHolat = () => {
+    const code = strip(handlers);
+    const body = code.slice(code.indexOf('async function answerHolat('));
+    return body.slice(0, body.indexOf('\n}\n'));
+  };
+
+  it('a door that THREW is «try again», never «not yours» (review 2, #475)', () => {
+    const fn = answerHolat();
+    // The keyboard may read a throw as «no»; the press must not.
+    expect(fn).not.toMatch(/holatFor\(chatId\)\.catch\(/);
+    const tryAt = fn.indexOf('admitted = await holatFor(chatId);');
+    const failedAt = fn.indexOf('await ctx.reply(HOLAT_FAILED);');
+    const refusedAt = fn.indexOf("await ctx.reply('📊 Holat faqat egasi uchun.');");
+    for (const [name, at] of Object.entries({ tryAt, failedAt, refusedAt })) {
+      expect(at, `re-anchor: ${name}`).toBeGreaterThan(-1);
+    }
+    expect(tryAt).toBeLessThan(failedAt);
+    expect(failedAt).toBeLessThan(refusedAt);
+    expect(handlers).toContain("const HOLAT_FAILED = 'Holatni hisoblab bo‘lmadi — keyinroq urinib ko‘ring.';");
+  });
+
+  it('the pull is DELIVERED by the drain’s own path, not only dressed like it (review 1, #513)', () => {
+    const fn = answerHolat();
+    expect(fn).toContain("await sendStaffMessage(chatId, 'OwnerSummary', { text: outcome.text })");
+    // A plain sendText of the dressed html drops a refused keyboard — and the
+    // link with it.
+    expect(fn).not.toContain('composeStaffMessage(');
+    expect(fn).not.toMatch(/sendText\(\{\s*chatId,\s*html:/);
+  });
+});
+
+describe('one home per rule (review 5, #513)', () => {
+  const summary = strip(read('src/modules/wms/reports/owner-summary.ts'));
+
+  it('the funnel’s outcome gate asks `isAnalyst`, and a row’s liveness is the ranked list’s own test', () => {
+    expect(summary).toContain("isAnalyst(actor) && actor.permissions.has('crm.manage')");
+    expect(summary).not.toMatch(/roles\.includes\('super_admin'\)/);
+    expect(summary).toContain("fact.kind === 'recurringDue' && attentionLive(fact)");
+    expect(summary).not.toMatch(/\.count > 0 \|\|/);
+    const math = strip(read('src/modules/wms/reports/dashboard-math.ts'));
+    expect(math).toContain('.filter(attentionLive)');
+  });
+
+  it('the Monday arrears print the Balans’s CASH count, never the attention row’s total (review 6)', () => {
+    expect(summary).toContain('cashCount: balance.recurringArrearsCount,');
+    expect(summary).toContain('usd: balance.recurringArrearsUsd,');
+    expect(summary).toContain('unrated: balance.recurringArrearsUnrated,');
+    // The total appears only to NAME the book entries apart.
+    expect(summary.match(/recurringArrearsTotal/g)).toHaveLength(1);
+    expect(summary).toContain('bookCount: Math.max(0, balance.recurringArrearsTotal - balance.recurringArrearsCount - unratedMonths)');
+  });
+
+  it('the staff bot reads grants through the one join (`userPermissions`), never a copy of it', () => {
+    const bot = strip(read('src/modules/platform/telegram/staff-bot.ts'));
+    expect(bot).not.toContain('innerJoin(rolePermissions');
+    expect(bot).toContain('const permissionsOf = userPermissions;');
+    const authorize = strip(read('src/modules/platform/rbac/authorize.ts'));
+    expect(authorize.match(/innerJoin\(rolePermissions/g)).toHaveLength(1);
+    expect(authorize).toContain('const granted = await userPermissions(userId);');
   });
 });
 
@@ -159,6 +230,14 @@ describe('the /profile switch', () => {
   it('is drawn by the same door the job and the button ask', () => {
     expect(page).toContain('const ownerReader = actor ? readsOwnerSummary(actor) : false;');
     expect(page).toMatch(/\{ownerReader \? \([\s\S]{0,200}?name="mute_owner"/);
+  });
+
+  it('the owner is told on the page when his summary goes nowhere (no linked Telegram)', () => {
+    // The drain mutes a row for an unlinked reader — terminal, and no screen's
+    // problem count — so the page is the one place that can say it.
+    expect(page).toMatch(
+      /\{ownerReader \? \([\s\S]{0,900}?telegramLink !== null && telegramLink\?\.status !== 'linked' \?[\s\S]{0,200}?data-testid="profile-owner-unlinked"[\s\S]{0,80}?tk\('notLinked'\)/,
+    );
   });
 
   it('a choice already made survives a save by somebody the box is not drawn for (#171)', () => {

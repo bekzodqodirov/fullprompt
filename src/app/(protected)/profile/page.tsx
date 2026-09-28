@@ -275,16 +275,28 @@ export default async function ProfilePage() {
               🛠 {tk('muteSystem')}
             </label>
             {ownerReader ? (
-              <label className="flex min-h-10 items-center gap-3">
-                <input
-                  type="checkbox"
-                  name="mute_owner"
-                  defaultChecked={mutes.groups.owner}
-                  className="h-5 w-5"
-                  data-testid="profile-mute-owner"
-                />
-                🌙 {tkx('notifMuteOwner')}
-              </label>
+              <>
+                <label className="flex min-h-10 items-center gap-3">
+                  <input
+                    type="checkbox"
+                    name="mute_owner"
+                    defaultChecked={mutes.groups.owner}
+                    className="h-5 w-5"
+                    data-testid="profile-mute-owner"
+                  />
+                  🌙 {tkx('notifMuteOwner')}
+                </label>
+                {/* The drain settles a message for a person with no linked chat
+                    as muted — terminal, and counted as no problem anywhere —
+                    so the one person this is for is told HERE that it goes
+                    nowhere. Only on a read that answered (null = the panel
+                    failed, and a guess is not a warning). */}
+                {telegramLink !== null && telegramLink?.status !== 'linked' ? (
+                  <p className="text-sm text-warn" data-testid="profile-owner-unlinked">
+                    ⚠ {tkx('notLinked')}
+                  </p>
+                ) : null}
+              </>
             ) : (
               // Not drawn, but a choice already made is re-posted (#171): the
               // form is replace-all, and a box that is absent reads as «off».

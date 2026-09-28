@@ -2,7 +2,7 @@ import type { Bot } from 'grammy';
 import { composeMyDay } from '../tasks/digest';
 import { logger } from '../logger';
 import { keyboardOf, staffTextHtml } from '../notifications/staff-html';
-import { composeStaffMessage } from '../notifications/service';
+import { sendStaffMessage } from '../notifications/service';
 import { offerStaffCommands } from './commands';
 import { editText, sendText, sendTyping } from './send';
 import { clientAnswerKeyboard } from './map-link';
@@ -740,6 +740,9 @@ export function registerStaffBot(bot: Bot): void {
 /** Chats whose «📊 Holat» is being computed right now. */
 const holatInFlight = new Set<string>();
 
+/** The pull's «not now» — a failed read is never told «not yours» (#475). */
+const HOLAT_FAILED = 'Holatni hisoblab bo‘lmadi — keyinroq urinib ko‘ring.';
+
 /**
  * «📊 Holat» — the evening summary on demand, in the push's own words.
  *
@@ -756,7 +759,19 @@ async function answerHolat(ctx: CalcReplyCtx, chatId: bigint): Promise<void> {
     await ctx.reply('⏳ Hali hisoblanmoqda — biroz kuting.');
     return;
   }
-  if (!(await holatFor(chatId).catch(() => false))) {
+  // A door that THREW is not a door that said no: during a database blip the
+  // owner himself would be told the button is not his. The keyboard and the
+  // command menu may read a throw as «no» (losing the button for one reply is
+  // their stated trade); a press is a question asked, and gets «try again».
+  let admitted: boolean;
+  try {
+    admitted = await holatFor(chatId);
+  } catch (err) {
+    logger.warn({ err }, 'holat door failed');
+    await ctx.reply(HOLAT_FAILED);
+    return;
+  }
+  if (!admitted) {
     await ctx.reply('📊 Holat faqat egasi uchun.');
     return;
   }
@@ -769,18 +784,16 @@ async function answerHolat(ctx: CalcReplyCtx, chatId: bigint): Promise<void> {
         await sendText({ chatId, text: '📊 Holat faqat egasi uchun.' });
         return;
       }
-      // The drain's own dressing (`composeStaffMessage`): the bold title and
-      // the dashboard link lifted into «↗️ Ochish» — what 20:00 sends.
-      const message = composeStaffMessage('OwnerSummary', { text: outcome.text });
-      const sent = await sendText({
-        chatId,
-        html: message.html,
-        replyMarkup: keyboardOf(message.urlRow ? [message.urlRow] : null),
-      });
+      // The drain's own dressing AND delivery (`sendStaffMessage`): the bold
+      // title, the dashboard link lifted into «↗️ Ochish», and — when Telegram
+      // refuses that button — the link put back into the text, exactly as the
+      // 20:00 push does. A plain `sendText` would drop the refused keyboard and
+      // with it the only copy of the link.
+      const sent = await sendStaffMessage(chatId, 'OwnerSummary', { text: outcome.text });
       if (!sent.ok) logger.warn({ description: sent.description }, 'holat reply not sent');
     } catch (err) {
       logger.warn({ err }, 'holat compose failed');
-      await sendText({ chatId, text: 'Holatni hisoblab bo‘lmadi — keyinroq urinib ko‘ring.' }).catch(() => {});
+      await sendText({ chatId, text: HOLAT_FAILED }).catch(() => {});
     } finally {
       holatInFlight.delete(key);
     }

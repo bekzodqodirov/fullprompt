@@ -4393,6 +4393,7 @@
     "minutes": "{n} daq"
   },
   "kechkiXulosa": {
-    "notifMuteOwner": "Kechki xulosa (20:00)"
+    "notifMuteOwner": "Kechki xulosa (20:00)",
+    "notLinked": "Telegram ulanmagan — kechki xulosa yetib bormaydi. Yuqorida ulang."
   }
 }

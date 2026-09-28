@@ -165,11 +165,16 @@ export function startTelegramBot(): void {
         ];
         if (app) messages.push({ html: h(t.openAppPrompt), replyMarkup: app });
         dispatch('start', chatId, () => sendInOrder(chatId, messages, 'start'));
+        // The command menu is per PERSON too (/holat for the owner alone), and
+        // a bare /start is the one thing a person is told to send after a
+        // deploy — so it refreshes the menu as well as the keyboard.
+        if (menu === 'both') void offerStaffCommands(ctx, chatId);
         return;
       }
       // A linked member of STAFF gets the staff menu (round 35).
       if (menu === 'staff') {
         await ctx.reply(`👋 ${staff!.fullName}`, { reply_markup: await replyKeyboardFor(BigInt(chatId)) });
+        void offerStaffCommands(ctx, chatId);
         return;
       }
       // An unknown chat is offered the two doors (owner: «hodim yoki mijoz

@@ -86,6 +86,8 @@ export interface DueItem {
   amount: number;
   currency: string;
   overdue: boolean;
+  /** Money with no rate yet — named in its own currency with ⚠, never $0 (#86). */
+  unrated: boolean;
   /** «qisman to'langan», «arxivda» — said beside the figure, never folded into it. */
   note: string | null;
 }
@@ -110,6 +112,21 @@ export interface DuePartner {
   open: DuePart[];
 }
 
+/**
+ * A cost that names a dated firm as its payer and has NO dollars yet (its
+ * currency had no rate that day). `chargeForCost` posts the firm's charge
+ * only once the rate exists — a charge is frozen in dollars (R1) — so until
+ * then this debt is on no partner ledger and `termStates` cannot see it.
+ * `dueDate` = the cost's day + the firm's `pay_within_days`.
+ */
+export interface DueUnratedCost {
+  name: string;
+  active: boolean;
+  currency: string;
+  amount: number;
+  dueDate: string;
+}
+
 export interface PaymentsDue {
   items: DueItem[];
   /** Every item AND the arrears, per currency in its own money — never one converted sum. */
@@ -122,14 +139,21 @@ export interface PaymentsDue {
  * - Recurring months still AHEAD (due after today, within the window) —
  *   cash ones only (a book entry moves no kassa) of a live template. A month
  *   whose day has come is NOT listed: those are the Balans's arrears, printed
- *   once above the list in the attention row's own words and numbers (judge 5
- *   — two rules for one overdue rent in one message is the #513 defect), and
- *   only their money joins the totals. A part-paid month prints what is left
+ *   once above the list (`arrearsLine`, the Balans's own cash count and
+ *   dollars, book entries said apart — judge 5: two rules for one overdue
+ *   rent in one message is the #513 defect), and only their money joins the
+ *   totals. A part-paid month prints what is left
  *   (`remainderOf`); when that cannot be known (a part in another currency)
  *   it prints the whole amount and says «qisman».
  * - Counterparties' FIFO open debts with a due day: an overdue part and the
- *   coming part, each summed per firm. A retired firm we still owe is listed
+ *   coming part, each summed per firm. A due day of TODAY is coming, not
+ *   overdue (`dueStateOf`'s own «strictly before today»), and the heading
+ *   starts today so it stands under it. A retired firm we still owe is listed
  *   and says so (#428) — retiring is a menu decision, not a payment.
+ * - A dated firm's costs that have no rate yet (`DueUnratedCost`): the same
+ *   overdue/coming split, per firm AND currency, in the firm's own money with
+ *   ⚠ — they cannot enter the FIFO walk without dollars, and leaving them out
+ *   would tell the owner the firm is owed nothing.
  * - The sellers' commissions that are payable now (U10's uncapped figure).
  *
  * No inflow and no «net» line: a coming payment is a fact with a date, and
@@ -140,6 +164,8 @@ export function paymentsDue(input: {
   days?: number;
   recurring: readonly DueRecurring[];
   partners: readonly DuePartner[];
+  /** Required: a caller that forgets the unrated half prints a firm as owed nothing. */
+  partnersUnrated: readonly DueUnratedCost[];
   upsale: { usd: number; count: number };
   arrears: { usd: number; unrated: readonly { currency: string; amount: number }[] } | null;
 }): PaymentsDue {
@@ -159,6 +185,7 @@ export function paymentsDue(input: {
       amount: left ?? row.amount,
       currency: row.currency,
       overdue: false,
+      unrated: false,
       note: left === null ? 'qisman to‘langan' : null,
     });
   }
@@ -170,12 +197,37 @@ export function paymentsDue(input: {
     const note = partner.active ? null : 'arxivda';
     const sum = (parts: DuePart[]) => Math.round(parts.reduce((acc, part) => acc + part.usd, 0) * 100) / 100;
     if (overdue.length > 0) {
-      items.push({ date: overdue[0]!.dueDate, label: name, amount: sum(overdue), currency: 'USD', overdue: true, note });
+      items.push({ date: overdue[0]!.dueDate, label: name, amount: sum(overdue), currency: 'USD', overdue: true, unrated: false, note });
     }
     if (coming.length > 0) {
-      items.push({ date: coming[0]!.dueDate, label: name, amount: sum(coming), currency: 'USD', overdue: false, note });
+      items.push({ date: coming[0]!.dueDate, label: name, amount: sum(coming), currency: 'USD', overdue: false, unrated: false, note });
     }
   }
+
+  // The same split for the firms' costs that have no dollars yet, per firm
+  // AND currency: yuan and so'm are never one figure.
+  const unrated = new Map<string, DueItem>();
+  for (const cost of input.partnersUnrated) {
+    if (cost.dueDate > last) continue;
+    const overdue = cost.dueDate < today;
+    const key = JSON.stringify([cost.name, cost.active, cost.currency, overdue]);
+    const item = unrated.get(key);
+    if (item) {
+      item.amount = Math.round((item.amount + cost.amount) * 100) / 100;
+      if (cost.dueDate < item.date!) item.date = cost.dueDate;
+      continue;
+    }
+    unrated.set(key, {
+      date: cost.dueDate,
+      label: clipText(cost.name, NAME_MAX),
+      amount: Math.round(cost.amount * 100) / 100,
+      currency: cost.currency,
+      overdue,
+      unrated: true,
+      note: cost.active ? null : 'arxivda',
+    });
+  }
+  items.push(...unrated.values());
 
   if (input.upsale.count > 0 && input.upsale.usd > 0.004) {
     items.push({
@@ -184,6 +236,7 @@ export function paymentsDue(input: {
       amount: input.upsale.usd,
       currency: 'USD',
       overdue: false,
+      unrated: false,
       note: null,
     });
   }
@@ -243,9 +296,8 @@ export interface SummaryFacts {
   /** Monday only. */
   weeklyBlock: {
     payments: PaymentsDue;
-    /** The arrears row (the attention fact), moved here from the attention list. */
-    arrears: AttentionFact | null;
-    arrearsUnrated: readonly { currency: string; amount: number }[];
+    /** The overdue recurring months, moved here from the attention list. */
+    arrears: SummaryArrears | null;
     pendingSpend: {
       count: number;
       byCurrency: readonly { currency: string; amount: number }[];
@@ -255,6 +307,38 @@ export interface SummaryFacts {
   } | null;
   /** The dashboard over exactly this window (#513) — the drain lifts it into «↗️ Ochish». */
   link: string;
+}
+
+/**
+ * The rent-and-salary months whose day has come and nobody has paid — the
+ * Balans's own arrears (`recurringArrears`), in the payments block's words
+ * (judge 5). The attention row counts every such month, book entries
+ * (depreciation) included; under a PAYMENTS heading a month that moves no
+ * money must not be counted as one to pay, so the three are said apart.
+ */
+export interface SummaryArrears {
+  /** Cash months with a rate — `recurringArrearsCount`. */
+  cashCount: number;
+  /** What those months still owe, in dollars — `recurringArrearsUsd`. */
+  usd: number;
+  /** Cash months in a currency with no rate, in their own money — `recurringArrearsUnrated`. */
+  unrated: readonly { currency: string; amount: number; count: number }[];
+  /** Book entries: due, unpaid, and no kassa ever opens for them. */
+  bookCount: number;
+}
+
+/** Is there anything in the arrears a kassa must pay? */
+const arrearsPayable = (a: SummaryArrears | null) => a !== null && (a.cashCount > 0 || a.unrated.length > 0);
+
+/** The arrears line: payable months first, their money, then what is not a payment. */
+export function arrearsLine(a: SummaryArrears): string {
+  const parts: string[] = [];
+  if (a.cashCount > 0) parts.push(`${a.cashCount} ta — ${usd(a.usd)}`);
+  if (a.unrated.length > 0) {
+    parts.push(`kursi yo‘q: ${a.unrated.map((row) => `${ownMoney(row.currency, row.amount)} (${row.count} ta)`).join(' · ')}`);
+  }
+  if (a.bookCount > 0) parts.push(`+${a.bookCount} ta hisob yozuvi (pul chiqmaydi)`);
+  return `⚠ Muddati o‘tgan doimiy xarajat: ${parts.join(' · ')}`;
 }
 
 /**
@@ -277,7 +361,8 @@ export function summaryQuiet(f: SummaryFacts): boolean {
     (f.leads === null || (f.leads.fresh === 0 && f.leads.won === 0));
   if (!flows) return false;
   if (!f.weeklyBlock) return true;
-  return f.weeklyBlock.payments.items.length === 0 && f.weeklyBlock.arrears === null;
+  // A book entry alone is standing state, not a payment: it wakes nothing.
+  return f.weeklyBlock.payments.items.length === 0 && !arrearsPayable(f.weeklyBlock.arrears);
 }
 
 const listOf = (lines: string[], cap = LIST_CAP) =>
@@ -333,14 +418,13 @@ export function ownerSummaryText(f: SummaryFacts, opts: { quietLine?: boolean } 
   if (f.weeklyBlock) {
     const w = f.weeklyBlock;
     lines.push('');
-    lines.push(`📅 Keyingi 4 hafta to‘lovlari (${ddmm(addDays(f.day, 1))}–${ddmm(addDays(f.day, PAYMENTS_DAYS))}):`);
-    if (w.arrears) {
-      const unrated = w.arrearsUnrated.length > 0 ? ` (+ ${sums(w.arrearsUnrated)}, kursi yo‘q)` : '';
-      lines.push(`⚠ ${attentionLine(w.arrears)}${unrated}`);
-    }
+    // From TODAY: a firm's part due today is listed as coming (it is not
+    // overdue until tomorrow), so the heading must not start tomorrow.
+    lines.push(`📅 Keyingi 4 hafta to‘lovlari (${ddmm(f.day)}–${ddmm(addDays(f.day, PAYMENTS_DAYS))}):`);
+    if (w.arrears) lines.push(arrearsLine(w.arrears));
     const items = w.payments.items.map((item) => {
-      const when = item.date ? `${item.overdue ? '⚠ ' : ''}${ddmm(item.date)} — ` : '';
-      const notes = [item.overdue ? 'muddati o‘tgan' : null, item.note].filter(Boolean);
+      const when = item.date ? `${item.overdue || item.unrated ? '⚠ ' : ''}${ddmm(item.date)} — ` : '';
+      const notes = [item.overdue ? 'muddati o‘tgan' : null, item.unrated ? 'kursi yo‘q' : null, item.note].filter(Boolean);
       return `• ${when}${item.label}: ${ownMoney(item.currency, item.amount)}${notes.length ? ` (${notes.join(', ')})` : ''}`;
     });
     if (items.length === 0 && !w.arrears) lines.push('• to‘lov yo‘q');

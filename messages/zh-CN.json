@@ -4393,6 +4393,7 @@
     "minutes": "{n} 分钟"
   },
   "kechkiXulosa": {
-    "notifMuteOwner": "晚间汇总 (20:00)"
+    "notifMuteOwner": "晚间汇总 (20:00)",
+    "notLinked": "尚未连接 Telegram — 晚间汇总无法送达。请在上方连接。"
   }
 }

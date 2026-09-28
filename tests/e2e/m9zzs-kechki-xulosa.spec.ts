@@ -32,6 +32,9 @@ test('the owner sees the evening summary’s own switch, inside a 360 px page', 
   const box = page.getByTestId('profile-mute-owner');
   await expect(box).toBeVisible();
   await expect(page.locator('label', { has: box })).toContainText('20:00');
+  // No spec links the demo owner's Telegram (the seed does not either), so the
+  // page must say the summary goes nowhere — the drain would mute it silently.
+  await expect(page.getByTestId('profile-owner-unlinked')).toBeVisible();
   // The switch must not widen the page (a row wider than the phone rescales it, #400).
   const width = await page.evaluate(() => document.documentElement.scrollWidth);
   expect(width).toBeLessThanOrEqual(360);
@@ -43,5 +46,6 @@ test('a seller and an admin are never offered it — «faqat sizga»', async ({ 
     await page.goto('/profile');
     await expect(page.locator('form').filter({ has: page.locator('input[name="mute_all"]') })).toBeVisible();
     await expect(page.getByTestId('profile-mute-owner')).toHaveCount(0);
+    await expect(page.getByTestId('profile-owner-unlinked')).toHaveCount(0);
   }
 });

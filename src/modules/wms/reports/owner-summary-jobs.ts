@@ -1,7 +1,7 @@
 import type PgBoss from 'pg-boss';
 import { and, eq, gte, inArray, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
-import { notifications, users } from '../../platform/db/schema';
+import { notifications, telegramLinks, users } from '../../platform/db/schema';
 import { enqueue, JOB_SEND_TELEGRAM } from '../../platform/jobs/boss';
 import { logger } from '../../platform/logger';
 import { isTelegramMuted } from '../../platform/notifications/mutes';
@@ -25,6 +25,13 @@ export interface OwnerSummaryRun {
   /** Nothing moved in the window, or the day's row already exists. */
   skipped: number;
   failed: number;
+  /**
+   * Of `queued`: rows for a reader with NO linked Telegram. The drain settles
+   * those as `muted / telegram not linked` — terminal, and deliberately not
+   * a «problem» on any screen — so this count and its log line are the only
+   * place a summary going nowhere is said out loud.
+   */
+  unlinked: number;
 }
 
 /**
@@ -86,13 +93,21 @@ async function deliverOnce(userId: string, summary: OwnerSummary, muted: boolean
  * time — stated to the owner.
  */
 export async function sendOwnerSummaries(now: Date = new Date()): Promise<OwnerSummaryRun> {
-  const run: OwnerSummaryRun = { queued: 0, muted: 0, skipped: 0, failed: 0 };
+  const run: OwnerSummaryRun = { queued: 0, muted: 0, skipped: 0, failed: 0, unlinked: 0 };
   const userIds = await usersWithRoles(['super_admin']);
   if (userIds.length === 0) return run;
   const people = await db
     .select({ id: users.id, muted: users.mutedNotificationTypes, active: users.active })
     .from(users)
     .where(inArray(users.id, userIds));
+  const linked = new Set(
+    (
+      await db
+        .select({ userId: telegramLinks.userId })
+        .from(telegramLinks)
+        .where(and(inArray(telegramLinks.userId, userIds), eq(telegramLinks.status, 'linked')))
+    ).map((row) => row.userId),
+  );
   const memo = new Map<string, Promise<OwnerSummary>>();
 
   for (const person of people) {
@@ -116,7 +131,16 @@ export async function sendOwnerSummaries(now: Date = new Date()): Promise<OwnerS
       const written = await deliverOnce(person.id, summary, muted);
       if (!written) run.skipped += 1;
       else if (muted) run.muted += 1;
-      else run.queued += 1;
+      else {
+        run.queued += 1;
+        if (!linked.has(person.id)) {
+          run.unlinked += 1;
+          logger.warn(
+            { userId: person.id },
+            'owner summary written for a reader with no linked Telegram — the drain will mute it; link the chat on /profile',
+          );
+        }
+      }
     } catch (err) {
       run.failed += 1;
       logger.error({ err, userId: person.id }, 'owner summary failed for one person');
@@ -133,8 +157,12 @@ export async function sendOwnerSummaries(now: Date = new Date()): Promise<OwnerS
 export async function registerOwnerSummaryWorker(boss: PgBoss): Promise<void> {
   await boss.createQueue(JOB_OWNER_SUMMARY);
   // 20:00 Asia/Tashkent (UTC+5, no DST) = 15:00 UTC. A push covers 00:00 to
-  // 20:00 of its day: money typed after 20:00 reaches the next Monday's week
-  // and the «📊 Holat» pull, never a daily push — stated to the owner.
+  // 20:00 of its day. What is typed after 20:00 on Tuesday to Sunday reaches
+  // the next Monday's week (Tuesday to Monday); what is typed after 20:00 on
+  // a MONDAY reaches NO push at all — that week was sent at 20:00 and the
+  // next one starts on Tuesday — only a «📊 Holat» pull before midnight shows
+  // it. Kept, and stated to the owner, because the week is the dashboard's
+  // own «7 kun» and the message's link opens exactly it (#513).
   await boss.schedule(JOB_OWNER_SUMMARY, '0 15 * * *');
   await boss.work(JOB_OWNER_SUMMARY, async () => {
     try {

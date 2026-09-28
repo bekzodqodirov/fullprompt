@@ -1,7 +1,8 @@
-import { inArray } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
-import { partners } from '../../platform/db/schema';
-import { tashkentMinute } from '../../platform/time/tashkent';
+import { costEntries, partners } from '../../platform/db/schema';
+import { isAnalyst } from '../../platform/ai/tools';
+import { addDays, tashkentMinute } from '../../platform/time/tashkent';
 import { cashFlow, companyBalanceParts, profitAndLoss } from '../accounting/reports';
 import { recurringDue } from '../accounting/recurring';
 import { openExpenseRequestTotals } from '../accounting/expense-requests';
@@ -9,19 +10,21 @@ import { clientMoneyInPeriod } from '../finance/service';
 import type { CompanyMoneySight } from '../finance/scope';
 import { termStates } from '../partners/terms-service';
 import { trucksOnRoad } from '../tracking/on-road';
-import { attentionFacts, attentionGates, type AttentionFact } from './attention';
+import { attentionFacts, attentionGates } from './attention';
 import { readAttentionSources } from './attention-sources';
 import { intakeByDay } from './business';
 import { loadLeadFlow, scopeKeyOf, unkey } from './dashboard';
-import { dashboardWindows, pnlParts, rankAttention } from './dashboard-math';
+import { attentionLive, dashboardWindows, pnlParts, rankAttention } from './dashboard-math';
 import { truckMoves } from './overview';
 import { ownerSummarySight, type OwnerSummaryActor } from './owner-summary-door';
 import {
   ownerSummaryText,
   paymentsDue,
+  PAYMENTS_DAYS,
   summaryQuiet,
   summaryWindow,
   type DuePartner,
+  type DueUnratedCost,
   type SummaryFacts,
   type SummaryWindowKey,
 } from './owner-summary-text';
@@ -68,6 +71,40 @@ async function partnersDue(today: string): Promise<DuePartner[]> {
 }
 
 /**
+ * The dated firms' debts that have no dollars yet — `partnersDue`'s other
+ * half. A cost that names a firm as its payer posts the firm's charge only
+ * once its currency has a rate (`chargeForCost`: a charge is frozen in
+ * dollars, R1), so until the rate arrives the debt is on NO partner ledger
+ * and `termStates` cannot see it. Read from the cost itself, in its own
+ * money, per cost row: the grouping is the pure file's (overdue and coming
+ * apart, per firm and currency), and only the window's bound is asked here.
+ * Dated firms only — a firm with no `pay_within_days` owes no dated money,
+ * converted or not.
+ */
+async function partnersUnrated(today: string): Promise<DueUnratedCost[]> {
+  const dueDay = sql`(${costEntries.costDate} + ${partners.payWithinDays})`;
+  const rows = await db
+    .select({
+      name: partners.name,
+      active: partners.active,
+      currency: costEntries.currency,
+      amount: costEntries.amount,
+      dueDate: sql<string>`${dueDay}::text`,
+    })
+    .from(costEntries)
+    .innerJoin(partners, eq(partners.id, costEntries.partnerId))
+    .where(
+      and(
+        isNull(costEntries.amountUsd),
+        isNull(costEntries.voidedAt),
+        isNotNull(partners.payWithinDays),
+        sql`${dueDay} <= ${addDays(today, PAYMENTS_DAYS)}::date`,
+      ),
+    );
+  return rows.map((row) => ({ ...row, amount: Number(row.amount) }));
+}
+
+/**
  * Everything the message says, read ONCE. The `sight` is REQUIRED and can only
  * come from `companyMoneySight` / `ownerSummarySight` — a caller cannot reach
  * the company's money here without having asked the door (round B, O6).
@@ -89,8 +126,7 @@ export async function composeOwnerSummary(
   const gates = attentionGates(actor.permissions, { sight, scoped: baseIds !== undefined, company: false });
   // The funnel card's own outcome gate (analyst + crm.manage): the won
   // dollars are the sales outcome, not the company's cash.
-  const analyst = actor.roles.includes('super_admin') || actor.roles.includes('admin');
-  const seesOutcome = analyst && actor.permissions.has('crm.manage');
+  const seesOutcome = isAnalyst(actor) && actor.permissions.has('crm.manage');
 
   // Read ONCE and handed to the attention list too (judge 7): outside a
   // render the loaders' `cache()` is a plain call-through, so asking twice
@@ -107,15 +143,17 @@ export async function composeOwnerSummary(
     balanceP,
     seesOutcome ? loadLeadFlow(period.from, period.to) : null,
     readAttentionSources(gates, scopeKey, now, { balance: balanceP, trucks: trucksP }),
-    weekly ? Promise.all([recurringDue(today), partnersDue(today), openExpenseRequestTotals()]) : null,
+    weekly
+      ? Promise.all([recurringDue(today), partnersDue(today), partnersUnrated(today), openExpenseRequestTotals()])
+      : null,
   ]);
 
   const facts = attentionFacts(gates, sources, dashboardWindows(today));
-  const live = (fact: AttentionFact) => fact.count > 0 || (fact.usd ?? 0) > 0.009;
-  // On a Monday the rent-and-salary row moves INTO the payments block, in its
-  // own words and numbers (judge 5): one message must not count one overdue
-  // month twice by two rules.
-  const arrearsFact = weekly ? (facts.find((fact) => fact.kind === 'recurringDue' && live(fact)) ?? null) : null;
+  // On a Monday the rent-and-salary row moves INTO the payments block, in the
+  // block's own words and numbers (judge 5): one message must not count one
+  // overdue month twice by two rules. The row's own gate and liveness decide
+  // whether there is anything to move (`attentionLive`, the list's test).
+  const arrearsFact = weekly ? (facts.find((fact) => fact.kind === 'recurringDue' && attentionLive(fact)) ?? null) : null;
   const ranked = rankAttention(
     weekly ? facts.filter((fact) => fact.kind !== 'recurringDue') : facts,
     ATTENTION_TOP,
@@ -123,19 +161,30 @@ export async function composeOwnerSummary(
 
   let weeklyBlock: SummaryFacts['weeklyBlock'] = null;
   if (weeklyReads) {
-    const [recurring, duePartners, pending] = weeklyReads;
+    const [recurring, duePartners, unratedPartners, pending] = weeklyReads;
+    // The Balans's arrears, split the way a payments heading must say them:
+    // the cash months (the Balans's count and dollars), the cash months with
+    // no rate (their own money), and the book entries the attention row's
+    // total also counts — which move no kassa and are named, never paid.
+    const unratedMonths = balance.recurringArrearsUnrated.reduce((n, row) => n + row.count, 0);
+    const arrears = arrearsFact
+      ? {
+          cashCount: balance.recurringArrearsCount,
+          usd: balance.recurringArrearsUsd,
+          unrated: balance.recurringArrearsUnrated,
+          bookCount: Math.max(0, balance.recurringArrearsTotal - balance.recurringArrearsCount - unratedMonths),
+        }
+      : null;
     weeklyBlock = {
       payments: paymentsDue({
         today,
         recurring,
         partners: duePartners,
+        partnersUnrated: unratedPartners,
         upsale: { usd: balance.sellerCommissionsUsd, count: balance.sellerCommissionsCount },
-        arrears: arrearsFact
-          ? { usd: balance.recurringArrearsUsd, unrated: balance.recurringArrearsUnrated }
-          : null,
+        arrears: arrears ? { usd: arrears.usd, unrated: arrears.unrated } : null,
       }),
-      arrears: arrearsFact,
-      arrearsUnrated: arrearsFact ? balance.recurringArrearsUnrated : [],
+      arrears,
       pendingSpend: pending,
       receivableUsd: balance.receivableUsd,
     };

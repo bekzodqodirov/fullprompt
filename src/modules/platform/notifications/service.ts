@@ -912,6 +912,22 @@ export function composeStaffMessage(
   });
 }
 
+/**
+ * A pre-rendered staff message sent NOW, to a person who asked for it — the
+ * drain's own dressing AND its own delivery (`deliverStaffMessage`), so the
+ * copy a person pulls from the bot («📊 Holat») and the copy the drain pushes
+ * cannot follow two rules: on both roads a refused «↗️ Ochish» button puts the
+ * link back into the text instead of dropping it with the keyboard (REL).
+ * No row, no mute, no retry — the person is looking at the chat.
+ */
+export async function sendStaffMessage(
+  chatId: bigint,
+  type: string,
+  payload: Record<string, unknown>,
+): Promise<SendResult> {
+  return deliverStaffMessage(chatId, composeStaffMessage(type, payload), null);
+}
+
 /** A Bot API answer as the sender's verdict — for the one call made by hand. */
 function answerAsResult(answer: Awaited<ReturnType<typeof botCall>>): SendResult {
   const result = answer.result as { message_id?: number } | null;

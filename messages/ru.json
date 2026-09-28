@@ -4393,6 +4393,7 @@
     "minutes": "{n} мин"
   },
   "kechkiXulosa": {
-    "notifMuteOwner": "Вечерняя сводка (20:00)"
+    "notifMuteOwner": "Вечерняя сводка (20:00)",
+    "notLinked": "Telegram не подключён — вечерняя сводка не дойдёт. Подключите его выше."
   }
 }

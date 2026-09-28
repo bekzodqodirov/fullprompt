@@ -48,6 +48,22 @@ export async function loadUserRoles(
     .where(eq(userRoles.userId, userId));
 }
 
+/**
+ * One user's permission codes — the union of their roles' EDITABLE grants.
+ * The one home of that join: `actorGrants` reads it, and so do the staff
+ * bot's two grant-only doors («Bajarildi», the debtor «Ruxsat»), which need
+ * the grants and none of the scope.
+ */
+export async function userPermissions(userId: string): Promise<Set<string>> {
+  const rows = await db
+    .select({ code: permissions.code })
+    .from(userRoles)
+    .innerJoin(rolePermissions, eq(userRoles.roleId, rolePermissions.roleId))
+    .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
+    .where(eq(userRoles.userId, userId));
+  return new Set(rows.map((p) => p.code));
+}
+
 /** Everything an actor is besides who they are: the grants and the scope. */
 export type ActorGrants = Pick<Actor, 'roles' | 'permissions' | 'warehouseIds' | 'warehouseScoped'>;
 
@@ -57,18 +73,14 @@ export type ActorGrants = Pick<Actor, 'roles' | 'permissions' | 'warehouseIds' |
  * id. ONE «actor without a session»: the staff bot's `botActorFor` and the
  * owner's evening summary (a job, with no request at all) read it, so a read
  * made for them can never be wider than the screen's read for the same
- * person (#411's rule).
+ * person (#411's rule). The bot's grant-only doors read `userPermissions`,
+ * the same join, with nothing wider.
  */
 export async function actorGrants(userId: string): Promise<ActorGrants> {
   const roleRows = await loadUserRoles(userId);
   const roleCodes = roleRows.map((r) => r.code as RoleCode);
 
-  const permRows = await db
-    .select({ code: permissions.code })
-    .from(userRoles)
-    .innerJoin(rolePermissions, eq(userRoles.roleId, rolePermissions.roleId))
-    .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
-    .where(eq(userRoles.userId, userId));
+  const granted = await userPermissions(userId);
 
   const whRows = await db
     .select({ warehouseId: userWarehouses.warehouseId })
@@ -83,7 +95,7 @@ export async function actorGrants(userId: string): Promise<ActorGrants> {
 
   return {
     roles: roleCodes,
-    permissions: new Set(permRows.map((p) => p.code)),
+    permissions: granted,
     warehouseIds: whRows.map((w) => w.warehouseId),
     warehouseScoped,
   };

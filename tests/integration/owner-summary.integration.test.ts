@@ -6,6 +6,8 @@ import {
   batches,
   clients,
   clientTransactions,
+  costEntries,
+  costTypes,
   expenseRequests,
   leads,
   leadStages,
@@ -71,6 +73,8 @@ let whId = '';
 let clientId = '';
 let receiptId = '';
 let batchId = '';
+let laterBatchId = '';
+let costId = '';
 let leadId = '';
 let partnerId = '';
 const PARTNER = `Kechki firma ${STAMP}`;
@@ -169,6 +173,22 @@ beforeAll(async () => {
     })
     .returning({ id: batches.id });
   batchId = batch!.id;
+  // …and one that left FIVE days later: a window with no upper bound would
+  // count it on DAY too (review 8 — the bound's own anchor, not another
+  // file's leftover truck).
+  const [later] = await db
+    .insert(batches)
+    .values({
+      code: `KX${STAMP}-002`,
+      originWarehouseId: whId,
+      destWarehouseId: dest!.id,
+      status: 'closed',
+      departedAt: at('1677-06-20', '09:00'),
+      arrivedAt: at('1677-07-02', '09:00'),
+      createdBy: actorId,
+    })
+    .returning({ id: batches.id });
+  laterBatchId = later!.id;
 
   // One lead that arrived that day.
   const [stage] = await db.select({ id: leadStages.id }).from(leadStages).where(eq(leadStages.kind, 'open')).limit(1);
@@ -213,6 +233,25 @@ beforeAll(async () => {
     txDate: '1677-09-17',
     createdBy: actorId,
   });
+
+  // …and a cost that firm paid for us in YUAN, on a day with no rate: its
+  // charge is posted only once the rate exists (`chargeForCost`), so no
+  // partner ledger holds this debt yet — due 18 Sep + 10 = 28 Sep (review 3).
+  const [costType] = await db.select({ id: costTypes.id }).from(costTypes).limit(1);
+  const [cost] = await db
+    .insert(costEntries)
+    .values({
+      scope: 'batch',
+      batchId,
+      costTypeId: costType!.id,
+      amount: '5000.00',
+      currency: 'CNY',
+      costDate: '1677-09-18',
+      partnerId,
+      enteredBy: actorId,
+    })
+    .returning({ id: costEntries.id });
+  costId = cost!.id;
 
   // …and $10.00 of the same client's debt settled into that firm's account
   // the same day (a three-cornered settlement, round 39): money the CLIENT
@@ -309,8 +348,12 @@ describe('every figure is the dashboard’s own, over the same window (#513)', (
     expect([summary.facts.from, summary.facts.to]).toEqual(['1677-09-14', MONDAY]);
     const text = summary.text.replace(/ /g, ' ');
     expect(text.split('\n')[0]).toBe('📊 GSR — hafta xulosasi, 14.09–20.09 (soat 17:00)');
-    expect(text).toContain('📅 Keyingi 4 hafta to‘lovlari (21.09–18.10):');
+    expect(text).toContain('📅 Keyingi 4 hafta to‘lovlari (20.09–18.10):');
     expect(text).toContain(`• 27.09 — ${PARTNER}: $777.00`);
+    // The yuan cost with no rate: named in its own money, never $0, never
+    // left out because no ledger row carries it yet (review 3).
+    expect(text).toContain(`• ⚠ 28.09 — ${PARTNER}: CNY 5 000 (kursi yo‘q)`);
+    expect(text).toContain('Jami: $777.00 · CNY 5 000');
     expect(text.endsWith('/dashboard?davr=7')).toBe(true);
     // Nothing moved that week — only the payment makes it worth sending.
     expect(summary.facts.revenueUsd).toBe(0);
@@ -322,6 +365,14 @@ describe('who receives it, and how often', () => {
   it('the owner and the muted super_admin get a row; the admin and the deactivated one none', async () => {
     const run = await sendOwnerSummaries(at(DAY, '15:00'));
     expect(run.failed).toBe(0);
+    // The demo owner has no linked Telegram: the drain will mute his row, and
+    // the run SAYS so (the only place it is said out loud besides /profile).
+    const ownerLinks = await db
+      .select({ id: telegramLinks.id })
+      .from(telegramLinks)
+      .where(and(eq(telegramLinks.userId, ownerId), eq(telegramLinks.status, 'linked')));
+    expect(ownerLinks).toEqual([]);
+    expect(run.unlinked).toBeGreaterThanOrEqual(1);
     const rows = await rowsFor(DAY);
     const mine = (userId: string) => rows.filter((row) => row.userId === userId);
     expect(mine(ownerId).map((row) => row.status)).toEqual(['pending']);
@@ -414,7 +465,8 @@ describe('cleanup (the last test, #183)', () => {
     await db.delete(clientTransactions).where(eq(clientTransactions.clientId, clientId));
     await db.delete(clients).where(eq(clients.id, clientId));
     await db.delete(leads).where(eq(leads.id, leadId));
-    await db.delete(batches).where(eq(batches.id, batchId));
+    await db.delete(costEntries).where(eq(costEntries.id, costId));
+    await db.delete(batches).where(inArray(batches.id, [batchId, laterBatchId]));
     await db.delete(receiptLots).where(eq(receiptLots.receiptId, receiptId));
     await db.delete(receipts).where(eq(receipts.id, receiptId));
     await db.update(warehouses).set({ active: false }).where(like(warehouses.code, `K_${STAMP}`));
