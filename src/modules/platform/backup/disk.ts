@@ -51,8 +51,11 @@ export interface DiskLine {
 /** A statfs that has not answered in this long is «noma'lum». */
 export const DISK_READ_MS = 3_000;
 
+/** The three settings that say where to look (a test passes its own). */
+export type DiskEnv = Record<string, string | undefined>;
+
 /** Where to look. Null = nothing mounted to look at (reads «noma'lum»). */
-export function diskPaths(env: NodeJS.ProcessEnv = process.env): { db: string; photos: string | null } {
+export function diskPaths(env: DiskEnv = process.env): { db: string; photos: string | null } {
   const db = path.resolve(env.BACKUP_DIR ?? '.data/backups');
   const photos =
     (env.STORAGE_DRIVER ?? 'local') === 's3'
@@ -124,7 +127,7 @@ export function mergeDisks(db: DiskReading | null, photos: DiskReading | null): 
   ];
 }
 
-export async function diskLines(env: NodeJS.ProcessEnv = process.env): Promise<DiskLine[]> {
+export async function diskLines(env: DiskEnv = process.env): Promise<DiskLine[]> {
   const where = diskPaths(env);
   const [db, photos] = await Promise.all([readDisk(where.db), readDisk(where.photos)]);
   return mergeDisks(db, photos);
@@ -174,7 +177,7 @@ function signalKey(key: DiskLineKey): DiskSignalKey {
  * that failed leaves its level alone — «we could not look» is not «it
  * emptied».
  */
-export async function checkDisks(env: NodeJS.ProcessEnv = process.env): Promise<number> {
+export async function checkDisks(env: DiskEnv = process.env): Promise<number> {
   const lines = await diskLines(env);
   const levels = await diskLevels();
   let alerted = 0;

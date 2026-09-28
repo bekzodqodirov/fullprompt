@@ -380,6 +380,61 @@ yagona nusxangiz.
 Eslatma: `gsr_` prefiksi compose loyihasining nomidan keladi. O'zingizdagi
 nomni `docker volume ls` bilan tekshiring.
 
+## Tizim o'zini kuzatadi (B9, 2026-09-28)
+
+Bu yangilanishdan keyin tizim o'zi aytadi: bot to'xtasa — admin ekranlari
+qizaradi; menejerning Telegram ko'prigi jim qolsa — o'ziga va adminlarga xabar
+boradi, qaytganda yana; disk 80% va 90% ga yetsa — adminlarga xabar; server
+xatosining raqamini (skrinshotdagi `#2832070603`) **Boshqaruv → Tizim
+xatolari** sahifasida topasiz (faqat super admin).
+
+**Bu deployda HAMMA konteyner bir marta qayta yaratiladi** (har bir servisga
+log chegarasi qo'shildi, postgres'ga yangi sozlama qo'shildi). Shuning uchun:
+ish vaqtidan tashqari, avval zaxira (0 bo'lmasin), keyin:
+
+```bash
+cd gsr
+docker compose exec -T postgres pg_dump -U gsr -d gsr -Fc --no-owner > pre-b9-$(date +%F).dump
+ls -lh pre-b9-*.dump                       # 0 bo'lmasin
+git pull
+docker compose build migrate app           # `build app` EMAS — migrate alohida image
+docker compose --profile telegram build tg-listen
+docker compose --profile telegram up -d    # tg-listen ham yangi log sozlamasini olsin
+```
+
+**Tekshirish:**
+
+```bash
+# 1) ilova «healthy» bo'lishi kerak (1-2 daqiqadan keyin)
+docker compose ps app
+# 2) sxema soni kod bilan teng — psql kerak emas
+curl -s https://gsrwms.uz/api/health
+#   ... "schema":{"applied":N,"expected":N,"state":"ok"} ... "pool":"ok"
+# 3) ko'rinmasa — watchdog nima deganini ko'ring
+docker inspect --format '{{json .State.Health}}' $(docker compose ps -q app)
+```
+
+**Watchdog (qotib qolishni o'zi tuzatadi).** `ops/health-probe.mjs` har 30
+soniyada `/api/health` ni so'raydi. Ilova ketma-ket 3 marta javob bermasa
+(yoki `pool` «stuck» desa) — ilovani o'zi o'chiradi va Docker uni qayta
+ko'taradi. MinIO yoki baza o'chgani uchun kelgan 503 — sabab EMAS (restart
+ularni tuzatmaydi). Ilova birinchi marta sog' javob berguncha hech narsa
+o'chirilmaydi. Nima bo'lgani **Tizim xatolari** sahifasida «ilova qayta ishga
+tushirildi» deb yoziladi. Docker o'zi `unhealthy` konteynerni qayta
+ishga tushirmaydi — shuning uchun o'chirishni skript qiladi (`init: true`
+buning uchun kerak).
+
+**Postgres:** `idle_in_transaction_session_timeout=60s` — bir daqiqadan ortiq
+tranzaksiya ichida «uxlab» qolgan ulanishni baza o'zi uzadi (#714 dagi to'liq
+qotish shu yo'l bilan o'zi yechiladi). Postgres konteyneri qayta yaratilganda
+kuchga kiradi.
+
+**Disk:** «Rasmlar diski» qatori MinIO volume'ini ilovaga faqat O'QISH uchun
+ulash orqali o'qiladi (`miniodata:/minio-data:ro`). Yuqoridagi «Disk» bo'limi
+bo'yicha rasmlar ikkinchi diskka ko'chirilgan bo'lsa ham shu nom o'sha diskni
+ko'rsatadi. Qator «noma'lum» desa — hech narsa buzilmagan, shunchaki o'qib
+bo'lmadi.
+
 ## Faqat HTTPS orqali kirilsin (2026-08-09)
 
 `docker-compose.yml` ilova uchun `3000:3000` portini ochib qo'ygan edi, ya'ni

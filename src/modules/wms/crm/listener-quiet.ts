@@ -121,7 +121,7 @@ async function quietCandidates(): Promise<QuietAccount[]> {
 }
 
 /** Claim the right to say «jim» — one sweep wins, and only past the re-alarm gap. */
-async function claimAlarm(id: string, now: Date): Promise<boolean> {
+export async function claimQuietAlarm(id: string, now: Date): Promise<boolean> {
   const gap = new Date(now.getTime() - QUIET_REALARM_MS);
   const won = await db
     .update(tgAccounts)
@@ -157,7 +157,7 @@ export async function sweepQuietListeners(now = new Date()): Promise<{ quiet: nu
   const back: QuietAccount[] = [];
   for (const account of accounts) {
     const action = quietAction(account, now);
-    if (action === 'alarm' && (await claimAlarm(account.id, now))) quiet.push(account);
+    if (action === 'alarm' && (await claimQuietAlarm(account.id, now))) quiet.push(account);
     if (action === 'back' && (await claimBack(account.id))) back.push(account);
   }
   if (quiet.length === 0 && back.length === 0) return { quiet: 0, back: 0 };
