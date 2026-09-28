@@ -68,7 +68,7 @@ describe('1 — results: the price-only pricing page, its door, the box card', (
     expect(card).toContain('batchCostSheet(id, costSightFor(actor))');
     expect(card).not.toContain('ALL_COSTS');
     // The margin tile is the full sight's only.
-    expect(card).toContain('const margin = view && full ? view.totals : null;');
+    expect(card).toContain('const margin = pricing && full ? pricing.view.totals : null;');
   });
 
   it('the box card never reads the landed cost for the VED', () => {
