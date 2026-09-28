@@ -1185,11 +1185,11 @@
     "tabTruck": "Truck",
     "tabsAria": "{code} — sections",
     "ladderAria": "Batch stages",
-    "todoTitle": "Still to do",
-    "todoRemaining": "Not accepted yet",
-    "todoCountLoad": "Lots to count on loading",
-    "todoCountAccept": "Lots to count on arrival",
-    "todoAgent": "Papers not sent to the agent",
+    "todoTitle": "To do",
+    "todoRemaining": "Not accepted",
+    "todoCountLoad": "Count to load",
+    "todoCountAccept": "Count on arrival",
+    "todoAgent": "Not sent to the agent",
     "tileBoxes": "{n} boxes",
     "tileReceipts": "receipts: {n}",
     "tileUnclaimed": "unclaimed: {n}",
@@ -1198,7 +1198,8 @@
     "nothingLoaded": "Nothing is loaded yet",
     "profitChipOn": "In the profit report",
     "profitChipSet": "Add to the profit report",
-    "todoNoCosts": "No costs entered"
+    "todoNoCosts": "No costs entered",
+    "todoTnved": "No HS code"
   },
   "batches": {
     "title": "Batches",

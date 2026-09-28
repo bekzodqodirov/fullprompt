@@ -1186,10 +1186,10 @@
     "tabsAria": "{code} — bo‘limlar",
     "ladderAria": "Partiya bosqichlari",
     "todoTitle": "Qolgan ishlar",
-    "todoRemaining": "Hali qabul qilinmagan",
-    "todoCountLoad": "Sanab yuklanadigan lotlar",
-    "todoCountAccept": "Sanab qabul qilinadigan lotlar",
-    "todoAgent": "Hujjatlar agentga yuborilmagan",
+    "todoRemaining": "Qabul qilinmagan",
+    "todoCountLoad": "Sanab yuklash",
+    "todoCountAccept": "Sanab qabul",
+    "todoAgent": "Agentga yuborilmagan",
     "tileBoxes": "{n} karobka",
     "tileReceipts": "{n} ta prixod",
     "tileUnclaimed": "egasiz: {n}",
@@ -1198,7 +1198,8 @@
     "nothingLoaded": "Hali hech narsa yuklanmagan",
     "profitChipOn": "Foyda hisobida",
     "profitChipSet": "Foyda hisobiga olish",
-    "todoNoCosts": "Xarajat yozilmagan"
+    "todoNoCosts": "Xarajat yozilmagan",
+    "todoTnved": "TNVED kodsiz"
   },
   "batches": {
     "title": "Partiyalar",

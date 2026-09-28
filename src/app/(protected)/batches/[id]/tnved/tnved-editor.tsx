@@ -99,7 +99,7 @@ export function TnvedEditor({ rows: initial }: { rows: TnvedRow[] }) {
         {missing > 0 && (
           <button
             type="button"
-            className="btn-secondary flex-1 whitespace-nowrap px-3 disabled:opacity-50"
+            className="btn-secondary min-w-0 flex-1 px-3 disabled:opacity-50"
             disabled={busy !== null || saving}
             onClick={() => void suggestAllMissing()}
           >
@@ -108,7 +108,7 @@ export function TnvedEditor({ rows: initial }: { rows: TnvedRow[] }) {
         )}
         <button
           type="button"
-          className="btn-primary flex-1 whitespace-nowrap px-3 disabled:opacity-50"
+          className="btn-primary min-w-0 flex-1 px-3 disabled:opacity-50"
           disabled={saving || busy !== null}
           onClick={() => void saveAll()}
         >

@@ -35,7 +35,6 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
   const head = await loadBatchHead(id);
   if (!head) notFound();
   if (!mayOpenBatchCard(actor, head.batch)) notFound();
-  const t = await getTranslations('batches');
   const tc = await getTranslations('common');
   // The contents table is the stock table applied to a truck, so it borrows
   // the stock screen's own column names rather than inventing second ones.
@@ -78,8 +77,8 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
 
   return (
     <BatchCard head={head} actor={actor} active="tarkib">
+      {/* No title of its own: the strip above names the tab («Ichidagilar»). */}
       <div className="card space-y-2">
-        <h2 className="text-lg font-bold">{t('contents')}</h2>
         <p className="text-sm font-semibold text-ink-700" data-testid="batch-contents-total">
           Σ {totalBoxes} 📦 · {Math.round(totalKg)} kg · {Math.round(totalM3 * 100) / 100} m³
         </p>

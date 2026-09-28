@@ -153,7 +153,6 @@ export async function BatchCard({
   const t = await getTranslations('batches');
   const tc = await getTranslations('batchCard');
   const tf = await getTranslations('finance');
-  const th = await getTranslations('home');
   const tu = await getTranslations('unloading');
   const tcount = await getTranslations('countLoad');
   const tca = await getTranslations('countAccept');
@@ -266,7 +265,7 @@ export async function BatchCard({
   if (mayOpenBatchVed(actor.permissions) && head.crossesBorder && !batch.customsClearedAt && !cancelled) {
     const missingCodes = missingTnvedCount(await batchTnvedProducts(id, departed));
     if (missingCodes > 0) {
-      todos.push({ tab: 'bojxona', label: th('flowTnvedMissing'), count: missingCodes, testid: 'batch-todo-tnved' });
+      todos.push({ tab: 'bojxona', label: tc('todoTnved'), count: missingCodes, testid: 'batch-todo-tnved' });
     }
   }
   if (actor.permissions.has('ved.docs') && unloadingNow && (await batchDocsPending(id))) {
@@ -554,11 +553,14 @@ export async function BatchCard({
               href={tabHref(tab)}
               aria-current={lit ? 'page' : undefined}
               data-testid={`batch-tab-${tab}`}
-              className={`flex min-h-10 min-w-0 items-center justify-center gap-1 rounded-lg px-2 text-sm font-semibold md:px-3 ${
+              // 12 px on a phone: a third of 328 px holds «Себестоимость» on
+              // one line there, and a label that still does not fit wraps
+              // rather than being cut to «Тамо…» (measured, first draft).
+              className={`flex min-h-10 min-w-0 items-center justify-center gap-1 rounded-lg px-1.5 text-center text-xs font-semibold leading-tight md:px-3 md:text-sm ${
                 lit ? 'bg-brand-50 text-brand-800' : 'bg-surface-sunken text-ink-700 hover:bg-line'
               }`}
             >
-              <span className="truncate">{labels[tab]}</span>
+              <span className="min-w-0 [overflow-wrap:anywhere]">{labels[tab]}</span>
               {n > 0 && (
                 <span className="shrink-0 rounded-full bg-warn/15 px-1.5 text-xs text-warn" aria-label={`⚠️ ${n}`}>
                   {n}

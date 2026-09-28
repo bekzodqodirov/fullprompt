@@ -1185,11 +1185,11 @@
     "tabTruck": "Машина",
     "tabsAria": "{code} — разделы",
     "ladderAria": "Этапы партии",
-    "todoTitle": "Что осталось сделать",
-    "todoRemaining": "Ещё не принято",
-    "todoCountLoad": "Лоты к подсчёту при погрузке",
-    "todoCountAccept": "Лоты к подсчёту при приёмке",
-    "todoAgent": "Документы не отправлены агенту",
+    "todoTitle": "Осталось",
+    "todoRemaining": "Не принято",
+    "todoCountLoad": "Подсчёт погрузки",
+    "todoCountAccept": "Подсчёт приёмки",
+    "todoAgent": "Агенту не отправлено",
     "tileBoxes": "{n} кор.",
     "tileReceipts": "приходов: {n}",
     "tileUnclaimed": "без клиента: {n}",
@@ -1198,7 +1198,8 @@
     "nothingLoaded": "Ещё ничего не погружено",
     "profitChipOn": "В отчёте прибыли",
     "profitChipSet": "В отчёт прибыли",
-    "todoNoCosts": "Нет расходов"
+    "todoNoCosts": "Нет расходов",
+    "todoTnved": "Без кода ТНВЭД"
   },
   "batches": {
     "title": "Партии",

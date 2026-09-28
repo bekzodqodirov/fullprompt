@@ -1185,11 +1185,11 @@
     "tabTruck": "车辆",
     "tabsAria": "{code} — 分区",
     "ladderAria": "车次阶段",
-    "todoTitle": "待办事项",
-    "todoRemaining": "尚未接收",
-    "todoCountLoad": "装车待计数的批次",
-    "todoCountAccept": "到货待计数的批次",
-    "todoAgent": "单证未发给代理",
+    "todoTitle": "待办",
+    "todoRemaining": "未接收",
+    "todoCountLoad": "装车计数",
+    "todoCountAccept": "到货计数",
+    "todoAgent": "未发给代理",
     "tileBoxes": "{n} 箱",
     "tileReceipts": "入库单：{n}",
     "tileUnclaimed": "无主：{n}",
@@ -1198,7 +1198,8 @@
     "nothingLoaded": "尚未装车",
     "profitChipOn": "计入利润",
     "profitChipSet": "计入利润报表",
-    "todoNoCosts": "未录入费用"
+    "todoNoCosts": "未录入费用",
+    "todoTnved": "无海关编码"
   },
   "batches": {
     "title": "车次",
