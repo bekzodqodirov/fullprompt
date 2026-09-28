@@ -139,7 +139,7 @@ describe('the list', () => {
 
   it('the «qarz» tag and the counter share one debt rule — the amount AND the line', () => {
     const issue = read('src/modules/wms/issue/service.ts');
-    expect(issue).toMatch(/blockingDebtUsd\(balance, deferred\)/);
+    expect(issue).toMatch(/blockingDebtOf\(balance, deferred\)/);
     expect(issue).toMatch(/const needDebt = debtBlocks\(balance, deferred\) && !input\.debtOk;/);
     const waiting = read(WAITING);
     expect(waiting).toMatch(/debtBlocks\(money\.balanceUsd, money\.deferredUsd\)/);

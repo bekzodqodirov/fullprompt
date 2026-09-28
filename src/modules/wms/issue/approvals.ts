@@ -6,7 +6,7 @@ import { emitEvent } from '../../platform/events/service';
 import { usersWithPermission } from '../../platform/notifications/service';
 import { getSetting } from '../../platform/settings/service';
 import { logger } from '../../platform/logger';
-import { clientBalanceUsd, deferredBalanceUsd } from '../finance/service';
+import { blockingDebtOf, clientBalanceUsd, deferredBalanceUsd } from '../finance/service';
 import { DEBT_GRANT_CODES, debtGrantScope, mayGrantDebt, type MoneyActor } from '../finance/scope';
 import { gatedAt, uncoveredBoxesOn, unpricedGate, unpricedReceiptsOn } from '../finance/unpriced';
 import type { ApprovalQuestion } from './approval-covers';
@@ -49,7 +49,7 @@ export async function blockingDebtUsd(clientId: string): Promise<number> {
     clientBalanceUsd(clientId),
     deferredBalanceUsd(clientId),
   ]);
-  return Math.round((balance - deferred) * 100) / 100;
+  return blockingDebtOf(balance, deferred);
 }
 
 /**

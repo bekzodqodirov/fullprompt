@@ -491,7 +491,7 @@ export async function waitingPriceGate(
 }
 
 /**
- * «Qarz» per client: the handover gate's own debt (`blockingDebtUsd` over
+ * «Qarz» per client: the handover gate's own debt (`debtBlocks` over
  * `balancesForClients` — the balance less what a live deferral excuses), so
  * the tag says exactly what the counter will say. A money fact: the caller
  * shows it only where `mayOpenClientLedger` would.

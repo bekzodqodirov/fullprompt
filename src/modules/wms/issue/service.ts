@@ -17,7 +17,7 @@ import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { emitEvent } from '../../platform/events/service';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { usersWithPermission } from '../../platform/notifications/service';
-import { blockingDebtUsd, clientBalanceUsd, debtBlocks, deferredDealsUsd } from '../finance/service';
+import { blockingDebtOf, clientBalanceUsd, debtBlocks, deferredDealsUsd } from '../finance/service';
 import { mayGrantDebt, type MoneyActor } from '../finance/scope';
 import { deferralCover, deferredTotal } from '../debt/rules';
 import { gatedAt, uncoveredBoxesOn, unpricedGate, unpricedReceiptsOn, type UncoveredBox } from '../finance/unpriced';
@@ -97,7 +97,7 @@ export async function issueBoxes(request: IssueRequest, ctx: AuditContext, relea
   // `deferredBalanceUsd`'s own arithmetic on the same list — one function,
   // so the counter screen and this gate cannot drift by a cent.
   const deferred = deferredTotal(deferredDeals);
-  const blockingDebt = blockingDebtUsd(balance, deferred);
+  const blockingDebt = blockingDebtOf(balance, deferred);
   const mayGrant = mayGrantDebt(releaser, { salesManagerId: owner?.salesManagerId ?? null });
   // Which «muddat» let how much of this balance through, and whose it was.
   const covered = deferralCover(balance, deferredDeals);

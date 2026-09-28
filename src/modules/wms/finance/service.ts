@@ -1109,8 +1109,13 @@ export async function paymentsRegister(
  * The debt the handover gate blocks on: the balance less what a live deferral
  * excuses, to the cent. One home, because the counter and the waiting list's
  * «qarz» tag must say the same thing about the same client.
+ *
+ * Not `blockingDebtUsd`: `issue/approvals.ts` has an async one of that name
+ * that reads the pool, and the tx-pool fence (rightly) matches by name — a
+ * pure function sharing it reads as a pooled call inside the handover's
+ * transaction.
  */
-export function blockingDebtUsd(balanceUsd: number, deferredUsd: number): number {
+export function blockingDebtOf(balanceUsd: number, deferredUsd: number): number {
   return Math.round((balanceUsd - deferredUsd) * 100) / 100;
 }
 
@@ -1121,7 +1126,7 @@ export function blockingDebtUsd(balanceUsd: number, deferredUsd: number): number
  * counter would let through (or stay dark for one it refuses).
  */
 export function debtBlocks(balanceUsd: number, deferredUsd: number): boolean {
-  return blockingDebtUsd(balanceUsd, deferredUsd) > 0.009;
+  return blockingDebtOf(balanceUsd, deferredUsd) > 0.009;
 }
 
 /**
