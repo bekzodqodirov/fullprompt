@@ -10,6 +10,7 @@ import { mayReadBatches } from '@/modules/wms/batches/read-door';
 import { loadWarehouseOptions, loadWindows, scopeKeyOf } from '@/modules/wms/reports/dashboard';
 import { dashPeriod } from '@/modules/wms/reports/dashboard-math';
 import { reportBaseIds, reportScope } from '@/modules/wms/reports/report-scope';
+import { attentionGates } from '@/modules/wms/reports/attention';
 import { PageHeader } from '@/components/ui/page';
 import { ChartTip } from '@/components/charts/chart-tip';
 import { DashControls } from './sections/controls';
@@ -81,8 +82,9 @@ export default async function DashboardPage({
   const staleDays = Number(await getSetting('stale_stock_days')) || 30;
   // The trucks-with-no-cost list: company-wide count (costMissingCount takes
   // no scope), so only an unscoped all-warehouse viewer gets it, and not while
-  // one warehouse is chosen.
-  const seesCostMissing = allWh && !scope.scoped && seesBatches && !company;
+  // one warehouse is chosen. Said once, in the attention gates, so the list
+  // and the row that jumps to it cannot disagree.
+  const seesCostMissing = attentionGates(perms, { sight, scoped: scope.scoped, company }).seesCostMissing;
   const canPlan = analyst && perms.has('admin.settings.manage');
 
   const t = await getTranslations('dashboard');
@@ -133,11 +135,12 @@ export default async function DashboardPage({
 
       <Suspense fallback={<Skeleton className="h-28" />}>
         <AttentionSection
-          money={money}
-          cargo={seesBatches}
+          sight={sight}
+          scoped={scope.scoped}
+          company={company}
           scopeKey={scopeKey}
           perms={perms}
-          seesCostMissing={seesCostMissing}
+          viewerId={actor.id}
         />
       </Suspense>
 

@@ -360,6 +360,118 @@ A card tab carries `aria-current="page"`. Three places lit a PREFIX with
 
 They now say `"page"` only on their exact page and `"true"` beneath it.
 
+## The client: «Yuklar» (2026-09-28)
+
+A third tab between the two: **Umumiy · Yuklar · Pul**. «Yuklar» answers
+«where is this client's cargo right now», and under it what they have already
+collected. **No money on it** — not drawn and not read.
+
+| Tab | URL | Door |
+|---|---|---|
+| **Yuklar** | `/admin/clients/<id>/yuklar` (new) | `mayOpenClientCard(actor)` — the card's own door, not a copy, asked BEFORE the lookup (then `notFound`). Audience: super_admin, admin, logist, sales_manager; the accountant and the VED are refused it exactly as they are refused «Umumiy» |
+
+The shell (`ClientCard`) asks `clientTabsFor(actor, client)`
+(`wms/client-card/tabs.ts`), the same predicates the three pages ask. The
+strip is drawn when **two tabs or more** admit the viewer (a seller on a
+colleague's client gets «Umumiy · Yuklar»), in a literal `grid-cols-2|3`
+map. The «Pul» badge's balance is READ only when «Pul» is drawn (rule 3); the
+«Yuklar» badge is the tab's own Σ («19 📦»), soft-failing.
+
+### What it shows
+
+- **Σ now** — boxes · kg · m³ — and one chip per non-empty section
+  (`#xitoy`, `#tranzit`, `#uz`, `#tayyor`).
+- **Four sections, the customer's own steps**: `milestoneOf(cargoStage(…))`
+  minus «issued», so the office and the Mini App the client holds never
+  bucket one carton two ways. The Kashgar hub is under «Tranzitda» (open
+  point 1, default a).
+- **One row per (lot, place)**: photo, letter · goods, the marking when the
+  prixod was claimed from unclaimed, `n 📦 · kg · m³` (a lot's SHARE through
+  `shareOf`, sums as printed through `sumRounded` — the Mini App's digits),
+  the status split for a mixed row («omborda 3 · rejada 2 → YW-002»), the
+  place — «🏭 TAS1 · 5 kun» plus «🚚 keldi: B-00120», or «🚚 B-00123 (YW →
+  TAS1)» with the dashboard's truck word and sentence — and the prixod.
+  Within a section: place, then the longest wait first. 40 rows a section,
+  «+N · Hammasini ko'rsatish» (`?toliq=1`) beyond.
+- **Days waiting** count from the day the cargo reached the warehouse it
+  stands in NOW, from the cartons STILL standing there
+  (`arrivalsForPairs(…, {standing: true})` + `waitingDays`), never from the
+  prixod's day and never from a lot's earlier, handed-over half. The clock
+  has two halves and each one home, fenced by walking `src/`
+  (`client-cargo-fold.test.ts`): the landing INSTANT is the CASE in
+  `documents/arrivals.ts` (a walk-in dated by its prixod's day), and the DAYS
+  are `daysSince` — any other «days waiting» list (the parallel «olib
+  ketilmagan» one included) calls it rather than writing a day difference of
+  its own.
+- **Missing on the road**: cartons an unload declared missing
+  (`in_transit` + `declaredMissingSql`, still on the unloaded truck — the
+  fragment the dashboard's risk card counts too) are one
+  warn line, outside every section and the Σ, linking the truck's
+  `/yuklash#missing` for a reader that card admits. The customer's Mini App
+  still counts them under «O'zbekistonda»; the office does not.
+- **Phone siblings** (the same person's other codes): chips «GS555 · 12 📦 →»
+  linking to that code's tab — never merged into this code's list or Σ
+  (#407).
+- **Topshirilgan**: `issuedHandoversPage` — one block per handover (date,
+  place, receiver, who issued it, lots, the trucks the cartons rode with
+  departed/arrived days), 90 days with a «1 yil» toggle (`?tarix=90|365`,
+  anything else is 90); «oxirgi 60 ta» only when the cap really cut it.
+- **«Umumiy» and «Pul»** print ONE line from the same fold — the sections'
+  counts and the Σ — in place of the old per-warehouse «Qayerda» list, which
+  was a second read with three states of its own. It links to «Yuklar» on
+  «Umumiy», and on «Pul» only for a reader the card's door admits.
+
+### Doors of the links (each asked of the page it opens)
+
+- a prixod: `receiptsReadableBy` — `mayReadReceipt` for the whole list, one
+  grouped query for a scoped reader;
+- a truck: `mayOpenBatchCard`;
+- «Akt»: `mayReadHandoverAct` (`issue/act-door.ts`) — the one
+  home of the act's rule, asked by the act route, the attachment gate's
+  `handover` branch and this tab;
+- a photograph: drawn only where the row's cargo stands near the reader (its
+  warehouse, or either end of the truck it rides) — a subset of
+  `cargoNearActor`, so a drawn photo is always served.
+
+### One function per question
+
+`inventory/client-cargo-now.ts` is the rows read (lifted from the bot's client
+answer, which reads it too — its text and rounding unchanged) and
+`inventory/client-cargo-fold.ts` the pure fold; `client-card/yuklar-view.ts`
+assembles the tab for ONE reader, so every door above is proven by calling it
+as that reader. The photo is a separate grouped read
+(`receipts/first-photo.ts`), kept off the bot's sequential poller.
+`boxes/active.ts` holds the one «still ours» status list (the dashboard's
+pipeline reads it too, and the fence compares every literal list as a SET); `stageBatchOf`
+maps a truck row onto the ladder; `phoneSiblingClients` is the one sibling
+list; `trucksOnRoadRows` gives many trucks' rows in three statements.
+
+### Deliberately not built
+
+- **Factory pickups** pressed «Olindi» but not yet received
+  (`pickup_lines.client_id`) — the client has been told; the tab does not
+  show them yet. A «Zavoddan olingan» row under «Xitoyda» is its own round.
+- **Promised cargo** (`expected_arrivals`, the seller's promise) — a promise
+  is not cargo.
+- The cabinet's own `cargoOverview` keeps its query (the customer surface,
+  fenced); agreement is pinned by a test instead.
+- «Mening mijozlarim» (`managedClients`, 1-decimal kilos) — its own list round.
+
+### How it is pinned
+
+- `tests/unit/client-card.test.ts` — the literal tab table for every seeded
+  role, «Yuklar» = the card's door for invented roles too, the strip rule,
+  the page's door order, the balance read gated on «Pul», and a money fence
+  that NAMES the money identifiers over every file the tab is made of.
+- `tests/unit/client-cargo-fold.test.ts` — the whole ladder, the split, the
+  Σ as printed, the missing line, the days clock, the caps.
+- `tests/integration/client-cargo-now.integration.test.ts` — one client with
+  every edge, read as the owner, a seller, a Tashkent desk and a stranger;
+  anchored on the cabinet's own figures (`cargoOverview`, `milestoneCounts`).
+- `tests/unit/document-route-gates.test.ts` — the act's one door, three askers.
+- `tests/e2e/m9zzs-yuklar.spec.ts` — the SERVER as the oracle, as the demo
+  people, and 360 px.
+
 ## The owner's question, answered (1a, 2026-09-28)
 
 «Narx qo‘yilgan N / M» counted clients with a price on THIS truck, so a client
@@ -378,8 +490,8 @@ under its «—».
 - Board 4's «2 turi hali kiritilmagan». No rule says which cost types a truck
   must carry.
 - Narrowing the card's own door (any in-scope login).
-- Board 3's full client redesign (KPI row, Yuklar/Bitimlar/… tabs). 4a is the
-  Pul tab.
+- Board 3's full client redesign (KPI row, Bitimlar/… tabs). 4a is the Pul
+  tab; «Yuklar» came later (above).
 - A sweep of bare `authorize(code)` calls outside the truck's two action
   files. The eight truck actions and the TNVED suggestion were the ones this
   card draws; `saveTnvedAction` writes the company-wide TNVED memory, shared

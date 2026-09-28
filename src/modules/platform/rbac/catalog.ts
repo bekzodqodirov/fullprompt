@@ -135,7 +135,12 @@ export const ROLE_MATRIX: Record<RoleCode, PermissionCode[]> = {
     'batches.vehicle_info',
     'costs.enter_batch',
     'finance.view',
-    'finance.debt_override',
+    // No `finance.debt_override` (the owner's 2a, 2026-09-28: «admin va
+    // buxgalter hammaga» — the logist was not named). He still reads every
+    // client's money (`clients.manage`), so the grant alone would have let
+    // him release anybody's cargo on debt; he asks like the counter does.
+    // A seed writes only into an EMPTY table, so on a live database this is
+    // the owner's untick on /admin/roles, not this line.
     'crm.leads',
     'crm.leads.view_all',
     'reports.all_warehouses',

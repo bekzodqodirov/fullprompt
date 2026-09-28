@@ -19,11 +19,27 @@ const between = (src: string, from: string, to: string) => {
 };
 
 describe('the ban at the counter', () => {
-  it('the action refuses the price tick to anyone without finance.debt_override', () => {
-    const action = between(read('src/app/(protected)/issue/actions.ts'), 'export async function issueBoxesAction', 'const meta');
-    expect(action).toMatch(
-      /parsed\.data\.priceOk && !actor\.permissions\.has\('finance\.debt_override'\)\)\s*\{\s*return \{ ok: false, error: 'price_override_forbidden' \}/,
-    );
+  // REWRITTEN in 0114 (the owner's 2a), recorded rather than silently
+  // dropped (#974): this pinned the ACTION's `has('finance.debt_override')`
+  // check, which 0114 deletes on purpose — WHO may tick now depends on whose
+  // client it is, so the service asks `mayGrantDebt` with the actor and the
+  // action holds no second copy of the rule (#531). The same refusal code
+  // reaches the screen from the service.
+  it('the service asks both ticks, each by its own rule — the action holds no copy', () => {
+    const action = between(read('src/app/(protected)/issue/actions.ts'), 'export async function issueBoxesAction', '\n}');
+    expect(action).not.toContain("has('finance.debt_override')");
+    expect(action).toMatch(/issueBoxes\(parsed\.data, \{ actorId: actor\.id, \.\.\.meta \}, actor\)/);
+    const fn = between(read('src/modules/wms/issue/service.ts'), 'export async function issueBoxes', 'async function notifyUnpricedIssued');
+    // The price tick answers `mayOverridePrice` (the grant alone, as before
+    // 0114), the debt tick `mayGrantDebt` — two rules since the owner's 2a
+    // answered a question about debt only (the qarz judge's #12).
+    expect(fn).toContain("if (gated.length > 0 && input.priceOk && !mayOverridePrice(releaser)) throw new IssueError('price_override_forbidden');");
+    expect(fn).toContain("if (debtBlocks(balance, deferred) && input.debtOk && !mayGrant) throw new IssueError('debt_override_forbidden');");
+    // …and the list route draws each tick by the same predicate the service asks.
+    const route = read('src/app/api/issue/list/route.ts');
+    expect(route).toContain('const canOverridePrice = mayOverridePrice(actor);');
+    const screen = read('src/app/(protected)/issue/issue-screen.tsx');
+    expect(screen).toContain('{canOverridePrice && selectedGated.length > 0 && (');
   });
 
   it('the schema carries the tick, the screen posts it, the list route says which boxes are gated', () => {

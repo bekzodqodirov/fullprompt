@@ -49,12 +49,18 @@ async function mintWarehouse(code: string, capacity: string | null) {
 
 /** A box standing at `warehouseId`, landed `daysAgo` days ago. */
 async function standingBox(warehouseId: string, tag: string, daysAgo: number, m3: string) {
+  const at = new Date(Date.now() - daysAgo * 86_400_000);
+  // A walk-in is dated by its RECEIPT's day (0112 Q9b, `landingInstantSql`),
+  // so a carton received here `daysAgo` days ago was received that day — a
+  // receipt dated today under a 120-day-old receipt movement is a state no
+  // door writes.
   const [receipt] = await db
     .insert(receipts)
     .values({
       warehouseId,
       clientId,
       status: 'confirmed',
+      receivedAt: at,
       confirmedAt: new Date(),
       createdBy: actorId,
     })
@@ -83,7 +89,6 @@ async function standingBox(warehouseId: string, tag: string, daysAgo: number, m3
       currentWarehouseId: warehouseId,
     })
     .returning();
-  const at = new Date(Date.now() - daysAgo * 86_400_000);
   // The arrival: a receipt writes a movement with a NULL from-warehouse, which
   // is why no `confirmed_at` fallback is needed anywhere.
   await db.insert(boxMovements).values({

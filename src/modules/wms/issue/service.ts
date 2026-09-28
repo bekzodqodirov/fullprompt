@@ -17,7 +17,9 @@ import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { emitEvent } from '../../platform/events/service';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { usersWithPermission } from '../../platform/notifications/service';
-import { clientBalanceUsd, deferredBalanceUsd } from '../finance/service';
+import { blockingDebtOf, clientBalanceUsd, debtBlocks, deferredDealsUsd } from '../finance/service';
+import { mayGrantDebt, mayOverridePrice, type MoneyActor } from '../finance/scope';
+import { deferralCover, deferredTotal } from '../debt/rules';
 import { gatedAt, uncoveredBoxesOn, unpricedGate, unpricedReceiptsOn, type UncoveredBox } from '../finance/unpriced';
 import { claimIssuedNotice } from '../notices/client-claims';
 import { lockLiveApproval, markApprovalConsumed } from './approvals';
@@ -39,10 +41,10 @@ export const issueSchema = z.object({
   /** Debt gate override (Phase 2.1): a permitted manager allows issuing to a debtor. */
   debtOk: z.boolean().default(false),
   /**
-   * The price half of the same tick (0104, the owner's Q3b): a
-   * `finance.debt_override` holder at the counter allows cargo with no price
-   * to go out. Checked against the permission in the action layer, like
-   * `debtOk`.
+   * The price half of the same tick (0104, the owner's Q3b): a person who may
+   * let this client's cargo go on debt (`mayGrantDebt`) allows cargo with no
+   * price to go out — «xuddi qarzdagidek», so the same predicate, asked in
+   * the service like `debtOk` (0114).
    */
   priceOk: z.boolean().default(false),
   note: z.string().trim().max(500).optional().or(z.literal('')),
@@ -69,25 +71,36 @@ export type IssueRequest = Omit<IssueInput, 'priceOk'> & { priceOk?: boolean };
  * door that writes `issued_to_client` (a wire test pins it), so the ban lives
  * in the service and not on the screen (#531).
  */
-export async function issueBoxes(request: IssueRequest, ctx: AuditContext) {
+export async function issueBoxes(request: IssueRequest, ctx: AuditContext, releaser: MoneyActor) {
   if (!ctx.actorId) throw new IssueError('unauthenticated');
   const input: IssueInput = { ...request, priceOk: request.priceOk ?? false };
   const actorId = ctx.actorId;
   // Debt gate (Phase 2.1, owner's rule): a debtor gets cargo only with a
-  // manager's permission — debtOk is that permission, checked in the action
-  // layer against finance.debt_override.
+  // manager's permission — debtOk is that permission. Since 0114 (the owner's
+  // 2a) WHOSE permission is the service's question and not the action's: the
+  // releaser must be allowed to grant THIS client's debt (`mayGrantDebt` — a
+  // seller his own clients, the admin and the accountant everybody's), and
+  // `releaser` is REQUIRED because an optional one fails open (#790).
   // Money the client agreed to pay LATER, on a job that is still waiting for
   // its last box, is not overdue (docs/DEALS.md answer 4). The client's
   // displayed balance stays honest — only the figure the GATE reads is
   // reduced, and only by charges raised on a deal that is deferred right now.
-  // Both read on the POOL before the transaction opens (#714): the balance,
-  // and the ban's instant (a setting).
-  const [balance, deferred, gate] = await Promise.all([
+  // All read on the POOL before the transaction opens (#714): the balance,
+  // the deferrals job by job (0114 stores who granted them), the ban's
+  // instant (a setting) and whose client this is.
+  const [balance, deferredDeals, gate, owner] = await Promise.all([
     clientBalanceUsd(input.clientId),
-    deferredBalanceUsd(input.clientId),
+    deferredDealsUsd(input.clientId),
     unpricedGate(),
+    db.query.clients.findFirst({ where: eq(clients.id, input.clientId), columns: { salesManagerId: true } }),
   ]);
-  const blockingDebt = Math.round((balance - deferred) * 100) / 100;
+  // `deferredBalanceUsd`'s own arithmetic on the same list — one function,
+  // so the counter screen and this gate cannot drift by a cent.
+  const deferred = deferredTotal(deferredDeals);
+  const blockingDebt = blockingDebtOf(balance, deferred);
+  const mayGrant = mayGrantDebt(releaser, { salesManagerId: owner?.salesManagerId ?? null });
+  // Which «muddat» let how much of this balance through, and whose it was.
+  const covered = deferralCover(balance, deferredDeals);
   const result = await db.transaction(async (tx) => {
     const existing = await tx.query.handovers.findFirst({
       where: eq(handovers.id, input.handoverId),
@@ -124,13 +137,20 @@ export async function issueBoxes(request: IssueRequest, ctx: AuditContext) {
       (box) => gatedAt(box.roadLandedAt, gate),
     );
 
+    // A tick is refused only when it is USED (the judge's #16): the screen's
+    // box posted over a debt that a payment cleared meanwhile opens nothing,
+    // and refusing it would stop a legitimate handover for a stale checkbox.
+    // After the replay return — a replay is never refused.
+    if (debtBlocks(balance, deferred) && input.debtOk && !mayGrant) throw new IssueError('debt_override_forbidden');
+    if (gated.length > 0 && input.priceOk && !mayOverridePrice(releaser)) throw new IssueError('price_override_forbidden');
+
     // Phase 6 + 0104: an operator without the tick may still issue when a
     // RECORDED approval covers the question — live, unexpired, at least as
     // large as today's debt, and naming every gated carton. Locked here (FOR
     // UPDATE, so two phones cannot spend one permission) and marked consumed
     // once the handover row exists; one transaction makes the pair atomic.
     // A deferral (#207) excuses a DEBT and never a missing price.
-    const needDebt = blockingDebt > 0.009 && !input.debtOk;
+    const needDebt = debtBlocks(balance, deferred) && !input.debtOk;
     const needPrice = gated.length > 0 && !input.priceOk;
     let approvalId: string | null = null;
     if (needDebt || needPrice) {
@@ -161,6 +181,12 @@ export async function issueBoxes(request: IssueRequest, ctx: AuditContext) {
         personPhone: input.personPhone,
         debtOk: input.debtOk,
         priceOk: input.priceOk,
+        // What the gate saw (0114) — the figures read above, stored, never
+        // recomputed: the register lists a release on debt from these.
+        owedUsd: balance.toFixed(2),
+        blockingUsd: blockingDebt.toFixed(2),
+        deferredUsd: deferred.toFixed(2),
+        deferrals: covered.length > 0 ? covered : null,
         note: input.note || null,
         createdBy: actorId,
       })
@@ -267,6 +293,8 @@ export async function issueBoxes(request: IssueRequest, ctx: AuditContext) {
         personName: input.personName,
         debtOk: input.debtOk,
         priceOk: input.priceOk,
+        // The debt the cargo left under (0114), when there was one.
+        ...(balance > 0.009 ? { debt: { owedUsd: balance, blockingUsd: blockingDebt, deferredUsd: deferred } } : {}),
         // Cargo with no price that went out anyway, by prixod — the money
         // most at risk, on the record beside the permission that let it.
         ...(gated.length

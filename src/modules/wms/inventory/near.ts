@@ -1,6 +1,6 @@
 import { and, eq, inArray, or, type SQL } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
-import { batches, boxes } from '../../platform/db/schema';
+import { batches, boxes, receiptLots } from '../../platform/db/schema';
 
 /**
  * Is the cargo where this person is standing?
@@ -34,16 +34,41 @@ export async function cargoNearActor(
     .select({ boxId: boxes.id })
     .from(boxes)
     .leftJoin(batches, eq(boxes.currentBatchId, batches.id))
-    .where(
-      and(
-        lotFilter,
-        or(
-          inArray(boxes.currentWarehouseId, ids),
-          inArray(batches.originWarehouseId, ids),
-          inArray(batches.destWarehouseId, ids),
-        ),
-      ),
-    )
+    .where(and(lotFilter, nearWarehouses(ids)))
     .limit(1);
   return Boolean(row);
+}
+
+/**
+ * The rule's clause, stated once for its two askers: the box stands in one of
+ * these warehouses, or rides a truck with an end in one. Needs `boxes` and a
+ * LEFT JOIN of `batches` on the live pointer.
+ */
+function nearWarehouses(ids: string[]): SQL | undefined {
+  return or(
+    inArray(boxes.currentWarehouseId, ids),
+    inArray(batches.originWarehouseId, ids),
+    inArray(batches.destWarehouseId, ids),
+  );
+}
+
+/**
+ * `cargoNearActor` for many prixods at once: which of these receipts have a
+ * carton near this person. ONE grouped statement — the client card's «Yuklar»
+ * tab asks it about every prixod it lists, and a query per row is the shape
+ * #432 retired (the tab's judge, finding 11).
+ */
+export async function receiptsNearActor(
+  actor: { warehouseIds: string[] },
+  receiptIds: string[],
+): Promise<Set<string>> {
+  const ids = actor.warehouseIds;
+  if (ids.length === 0 || receiptIds.length === 0) return new Set();
+  const rows = await db
+    .selectDistinct({ receiptId: receiptLots.receiptId })
+    .from(boxes)
+    .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+    .leftJoin(batches, eq(boxes.currentBatchId, batches.id))
+    .where(and(inArray(receiptLots.receiptId, receiptIds), nearWarehouses(ids)));
+  return new Set(rows.map((r) => r.receiptId));
 }

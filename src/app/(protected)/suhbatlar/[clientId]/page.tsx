@@ -198,7 +198,12 @@ export default async function ConversationPage({
 
       {/* Reading it here counts as reading it, exactly as opening it in
           Telegram does — the owner's «chatni ichiga kirgandan keyin». */}
-      <ChatMarkRead clientId={clientId} />
+      {/* Keyed on the newest INCOMING message on screen, so one the pulse
+          draws while the thread is open is marked too. */}
+      <ChatMarkRead
+        clientId={clientId}
+        newest={messages.find((msg) => msg.direction === 'in')?.id ?? null}
+      />
 
       {/* One sheet for every ➦ in the thread; it finds its button by
           delegation rather than being rendered inside each bubble. */}

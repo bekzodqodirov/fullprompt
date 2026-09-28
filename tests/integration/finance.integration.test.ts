@@ -27,6 +27,7 @@ import {
   voidTransaction,
 } from '@/modules/wms/finance/service';
 import { IssueError, issueBoxes } from '@/modules/wms/issue/service';
+import { wholeLedger } from '../fixtures/money-actor';
 
 /**
  * Phase 2.1: client money ledger + debt gate. No tariffs — charges are the
@@ -295,10 +296,10 @@ describe('debt gate on issue (owner: debtor cargo only with manager permission)'
       personPhone: '+998900000000',
     };
     await expect(
-      issueBoxes({ ...base, handoverId: uuidv4(), debtOk: false }, ctx()),
+      issueBoxes({ ...base, handoverId: uuidv4(), debtOk: false }, ctx(), wholeLedger(actorId)),
     ).rejects.toMatchObject({ code: 'debt_block' } satisfies Partial<IssueError>);
 
-    const handover = await issueBoxes({ ...base, handoverId: uuidv4(), debtOk: true }, ctx());
+    const handover = await issueBoxes({ ...base, handoverId: uuidv4(), debtOk: true }, ctx(), wholeLedger(actorId));
     expect(handover.debtOk).toBe(true);
     const after = (await db.select().from(boxes).where(eq(boxes.id, box.id)))[0]!;
     expect(after.status).toBe('issued');
@@ -347,6 +348,7 @@ describe('debt gate on issue (owner: debtor cargo only with manager permission)'
         debtOk: false,
       },
       ctx(),
+      wholeLedger(actorId),
     );
     expect(handover.kind).toBe('issued_to_client');
   });

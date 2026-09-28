@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { globSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 /**
@@ -24,15 +24,81 @@ import { describe, expect, it } from 'vitest';
  * helper and this file pins that they do.
  */
 
-const routes = [
-  {
-    file: 'src/app/api/handovers/[id]/act/route.ts',
-    // The act must ask what the handover's own ATTACHMENTS ask — one document,
-    // one rule (see access.ts's `handover` branch).
-    permissions: ['scan.issue', 'receipts.unclaimed.resolve'],
-    scopeColumn: 'warehouseId',
-  },
-];
+/** Comments out, so a fence cannot match the sentence explaining it (#725). */
+const code = (path: string) =>
+  readFileSync(path, 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1');
+
+const ACT_DOOR = 'src/modules/wms/issue/act-door.ts';
+
+/**
+ * The handover act's door has ONE home (`issue/act-door.ts`) and every asker
+ * goes through it — the act route, the attachment gate's `handover` branch,
+ * and each screen that links to an act (the client card's «Yuklar» tab draws
+ * «Akt» beside every handover it lists). It was two restatements with a
+ * comment each saying they must never disagree; a third copy is how the
+ * three would (the tab's judge, finding 5). And two parallel packages then
+ * minted the door the same week, under one name, in two modules — so the
+ * fence below does not trust a path: it walks `src/` for a second definition
+ * and for a second statement of the permission pair.
+ */
+describe('the handover act asks one door, from every place that reads or links it', () => {
+  it('the door names the two permissions and fences on the handover’s warehouse', () => {
+    const door = code(ACT_DOOR);
+    expect(door).toContain("'scan.issue'");
+    expect(door).toContain("'receipts.unclaimed.resolve'");
+    expect(door).toMatch(/inScope\(actor,\s*warehouseId\)/);
+  });
+
+  it('is defined once under src/, and the permission pair is stated nowhere else', () => {
+    const files = globSync('src/**/*.{ts,tsx}');
+    const defines = (name: string) =>
+      files.filter((f) => new RegExp(`(?:function|const|let|var)\\s+${name}\\b`).test(code(f)));
+    expect(defines('mayReadHandoverAct')).toEqual([ACT_DOOR]);
+    expect(defines('handoverActRefusal')).toEqual([ACT_DOOR]);
+    // The grant list itself is the other place both codes are written; any
+    // third file naming the pair is the rule restated beside the door.
+    const pair = files.filter((f) => {
+      const c = code(f);
+      return c.includes("'scan.issue'") && c.includes("'receipts.unclaimed.resolve'");
+    });
+    expect(pair.sort()).toEqual([ACT_DOOR, 'src/modules/platform/rbac/catalog.ts'].sort());
+  });
+
+  it('the act route looks the handover up, asks the door with ITS warehouse, and refuses', () => {
+    const route = code('src/app/api/handovers/[id]/act/route.ts');
+    expect(route, 'loads the owning row').toMatch(/db\.query\.handovers\.findFirst/);
+    // Anchored on the CALL and on the REFUSAL, never on the word (#166).
+    expect(route).toMatch(
+      /if \(!mayReadHandoverAct\(actor, row\.warehouseId\)\) return new Response\('Forbidden', \{ status: 403 \}\);/,
+    );
+    expect(route, 'still answers 401 unauthenticated').toContain('401');
+  });
+
+  it('the attachment gate’s handover branch asks the same door', () => {
+    const access = code('src/modules/wms/attachments/access.ts');
+    const branch = access.slice(access.indexOf("case 'handover':"), access.indexOf("case 'crm_activity':"));
+    expect(branch).toMatch(/handoverActRefusal\(actor, row\.warehouseId\)/);
+  });
+
+  it('the «Yuklar» tab draws «Akt» only where the door admits, asked with the handover’s warehouse', () => {
+    const view = code('src/modules/wms/client-card/yuklar-view.ts');
+    expect(view).toMatch(/mayReadHandoverAct\(actor, warehouseId\)/);
+    // …and the component draws the link from that answer alone.
+    expect(code('src/components/client-cargo-history.tsx')).toMatch(/\{actOpen\.has\(h\.id\) && \(/);
+  });
+
+  it('the debt register draws «Akt» only where the same door admits, asked with the release’s warehouse', () => {
+    // 0114's register links every release to its act; its reader is the
+    // accountant, who holds neither grant — a link that bounces is worse than
+    // none (the qarz judge's #7).
+    const page = code('src/app/(protected)/finance/qarzga-berilgan/page.tsx');
+    expect(page).toContain("from '@/modules/wms/issue/act-door'");
+    expect(page).toMatch(/mayReadHandoverAct\(actor, row\.warehouseId\)/);
+    expect(page).not.toContain("'scan.issue'");
+  });
+});
 
 /** The four that share `guardBatchDocument`. */
 const batchDocumentRoutes = [
@@ -46,29 +112,6 @@ const batchDocumentRoutes = [
 ];
 
 describe('document routes gate on permission AND warehouse, not just a session', () => {
-  for (const route of routes) {
-    it(`${route.file} checks its permissions and its scope`, () => {
-      const source = readFileSync(route.file, 'utf8');
-
-      // It must look the row up — a gate that cannot see the document's
-      // warehouse cannot fence on it.
-      expect(source, 'loads the owning row').toMatch(/db\.query\.\w+\.findFirst/);
-      for (const permission of route.permissions) {
-        expect(source, `asks ${permission}`).toContain(`'${permission}'`);
-      }
-      // Anchored on the CALL, never on the word: the first version of this
-      // line asserted `toContain('inScope')` and stayed green with the check
-      // stripped, because the import survived it (#166 — a red proof that
-      // will not go red is evidence about the fixture).
-      expect(source, 'fences on the warehouse').toMatch(
-        new RegExp(`inScope\\(actor,\\s*row\\.${route.scopeColumn}\\)`),
-      );
-      // And it must actually refuse, not merely compute an opinion.
-      expect(source, 'refuses with 403').toContain('403');
-      expect(source, 'still answers 401 unauthenticated').toContain('401');
-    });
-  }
-
   for (const route of batchDocumentRoutes) {
     it(`${route.file} goes through the shared batch-document guard`, () => {
       const source = readFileSync(route.file, 'utf8');

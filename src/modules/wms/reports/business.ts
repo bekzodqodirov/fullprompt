@@ -2,7 +2,8 @@ import { sql, type SQL } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { tashkentDayStart, addDays } from '@/modules/platform/time/tashkent';
 import { leftBehindSql } from '../batches/riders';
-import { roadLossBatchSql } from '../boxes/road-loss';
+import { CLIENT_ACTIVE_STATUSES } from '../boxes/active';
+import { declaredMissingSql, roadLossBatchSql } from '../boxes/road-loss';
 import { customsCostTypeIds } from '../costing/service';
 import { withoutJit } from '../../platform/db/no-jit';
 import { GATE_OFF, unpricedReceiptsOn } from '../finance/unpriced';
@@ -34,6 +35,13 @@ function idList(ids: string[]): SQL {
 
 /** Cargo on a shelf (the /stock statuses). */
 const ON_SHELF = sql`('in_stock', 'planned', 'loading', 'ready_for_pickup')`;
+
+/**
+ * Everything still ours — the pipeline's population, from the one list
+ * (`boxes/active.ts`): the client card's «Yuklar» tab and the Mini App count
+ * the same cartons, and a status added to the ladder is decided there once.
+ */
+const STILL_OURS = sql.raw(`(${CLIENT_ACTIVE_STATUSES.map((s) => `'${s}'`).join(', ')})`);
 
 export interface PipelineStage {
   boxes: number;
@@ -73,7 +81,7 @@ export async function cargoPipeline(warehouseIds?: string[]): Promise<Pipeline> 
       JOIN receipt_lots rl ON rl.id = b.lot_id
       LEFT JOIN warehouses w ON w.id = b.current_warehouse_id
       LEFT JOIN batches bt ON bt.id = b.current_batch_id
-      WHERE b.status IN ('in_stock', 'planned', 'loading', 'ready_for_pickup', 'in_transit')
+      WHERE b.status IN ${STILL_OURS}
       ${scope}
     ) x
     WHERE stage IS NOT NULL
@@ -142,7 +150,7 @@ function riskCtes(warehouseIds: string[] | undefined, sinceIso: string, customsT
     missing AS (
       SELECT b.id AS box_id, bt.id AS batch_id
       FROM boxes b JOIN batches bt ON bt.id = b.current_batch_id
-      WHERE b.flags @> '["missing_in_transit"]'::jsonb AND b.status <> 'void' ${truckScope('bt')}
+      WHERE ${declaredMissingSql(sql`b.flags`)} AND b.status <> 'void' ${truckScope('bt')}
     ),
     lost AS (
       -- A carton lost ON THE ROAD (U38) stands in no warehouse, so the shelf
@@ -599,7 +607,7 @@ export async function lossesInPeriod(from: string, to: string): Promise<LossSumm
       -- its words: a flag carries no date to bound it by.
       SELECT 'missing', rl.total_volume_m3 / rl.box_count, ${cost}
       FROM boxes b JOIN receipt_lots rl ON rl.id = b.lot_id
-      WHERE b.flags @> '["missing_in_transit"]'::jsonb AND b.status <> 'void'
+      WHERE ${declaredMissingSql(sql`b.flags`)} AND b.status <> 'void'
     ) x
   `);
   return {

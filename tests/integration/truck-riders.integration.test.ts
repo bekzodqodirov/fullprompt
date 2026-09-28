@@ -52,6 +52,7 @@ import {
 import { cargoRiskList } from '@/modules/wms/reports/business';
 import { buildProfitXlsx } from '@/modules/wms/accounting/xlsx';
 import { reportLabels } from '@/modules/wms/reports/labels';
+import { wholeLedger } from '../fixtures/money-actor';
 
 /**
  * Who REALLY rode a truck for money, and each allocation counted on one
@@ -655,6 +656,7 @@ describe('U37 — cost on cargo that rode no priced truck is named', () => {
     await issueBoxes(
       { handoverId: uuidv4(), clientId: cc, warehouseId: W.tas, boxIds: lc.boxIds, personName: 'Mijoz C', personPhone: '+998900000000', debtOk: true },
       ctx(),
+      wholeLedger(actorId),
     );
 
     const unbatched = await unbatchedMoney('1637-10-01', '1637-10-31');

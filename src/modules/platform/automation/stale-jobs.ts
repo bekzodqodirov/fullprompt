@@ -1,8 +1,16 @@
 import type PgBoss from 'pg-boss';
 import { logger } from '../logger';
 import { runStaleAutomation } from './service';
+import { OFFICE_OPEN_HOUR, utcHourOf } from '../time/office-hours';
 
 export const JOB_AUTOMATION_STALE = 'automation.stale';
+
+/**
+ * The first hour is the office's opening, read from `time/office-hours.ts`
+ * (0113): the advert-lead reminder starts its morning at the same hour, and
+ * two constants for one office would drift the day somebody moves one.
+ */
+export const STALE_AUTOMATION_CRON = `20 ${utcHourOf(OFFICE_OPEN_HOUR)}-14 * * *`;
 
 /**
  * The clock behind the two time triggers (round 86).
@@ -20,7 +28,7 @@ export const JOB_AUTOMATION_STALE = 'automation.stale';
  */
 export async function registerStaleAutomationWorker(boss: PgBoss): Promise<void> {
   await boss.createQueue(JOB_AUTOMATION_STALE);
-  await boss.schedule(JOB_AUTOMATION_STALE, '20 4-14 * * *');
+  await boss.schedule(JOB_AUTOMATION_STALE, STALE_AUTOMATION_CRON);
   await boss.work(JOB_AUTOMATION_STALE, async () => {
     try {
       const fired = await runStaleAutomation();

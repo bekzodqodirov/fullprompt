@@ -2,6 +2,7 @@ import { and, eq, sql, type SQL } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { leads, tgAccounts, tgOutbox } from '../../platform/db/schema';
 import { canReadTg, threadClientFor, tgViewerFor, type TgViewer } from './conversations';
+import { mayOpenLead } from './lead-door';
 import { bridgeState } from './telegram-live';
 import { STUCK_SENDING_MS } from './telegram-send';
 
@@ -172,13 +173,14 @@ export async function chatPulseForLead(
   actor: { id: string; roles: readonly string[]; permissions: ReadonlySet<string> },
   leadId: string,
 ): Promise<ChatPulse | null> {
-  if (!canReadTg(actor) || !actor.permissions.has('crm.leads')) return null;
+  if (!canReadTg(actor)) return null;
   const [lead] = await db
     .select({ ownerId: leads.ownerId })
     .from(leads)
     .where(eq(leads.id, leadId));
   if (!lead) return null;
-  if (!actor.permissions.has('crm.leads.view_all') && lead.ownerId !== actor.id) return null;
+  // The lead card's own door, the one predicate every lead link asks.
+  if (!mayOpenLead(actor, lead)) return null;
 
   const viewer = tgViewerFor(actor);
   const fence = viewer.all

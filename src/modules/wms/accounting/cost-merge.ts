@@ -2,7 +2,7 @@ import { and, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { db, type Tx } from '../../platform/db/client';
 import { costEntries, expenses } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
-import { tashkentDayStart } from '../../platform/time/tashkent';
+import { calendarDaysBetween, tashkentDayStart } from '../../platform/time/tashkent';
 import { fxResidueAllowance } from '../finance/money-bounds';
 import { unplacedCostSince } from '../costing/service';
 
@@ -83,8 +83,7 @@ export function sameMoney(
   opts: { window?: boolean } = {},
 ): string | null {
   if (costs.length === 0) return 'no_costs';
-  const days = (a: string, b: string) =>
-    Math.abs(new Date(`${a}T00:00:00Z`).getTime() - new Date(`${b}T00:00:00Z`).getTime()) / 86_400_000;
+  const days = (a: string, b: string) => Math.abs(calendarDaysBetween(b, a));
   if (opts.window !== false && costs.some((cost) => days(cost.costDate, expense.expenseDate) > MERGE_DAYS)) {
     return 'too_far_apart';
   }

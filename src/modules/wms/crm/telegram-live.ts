@@ -216,6 +216,12 @@ export function secondsBehind(lastSeenAt: Date | null, now: Date): number | null
 export const HEARTBEAT_MS = 30 * 1000;
 /** Two missed beats plus slack: a tick late is not an outage. */
 export const LIVE_WINDOW_S = 90;
+/**
+ * Past this, a bridge that is not live is an OUTAGE somebody is told about
+ * (B9, `listener-quiet.ts`): long enough for a deploy's stop-and-start, short
+ * enough that customers have not been writing into the void for an hour.
+ */
+export const QUIET_ALARM_MS = 10 * 60 * 1000;
 
 export type BridgeState = 'live' | 'stale' | 'never' | 'stopped' | 'signed_out';
 

@@ -41,3 +41,37 @@ describe('postgres tuning in docker-compose.yml', () => {
     expect(block).toContain('shm_size:');
   });
 });
+
+/**
+ * B9 — the container settings that make the system heal itself. Tripwires
+ * like the block above: the proof is `docker inspect` on the server, this only
+ * pins that the file keeps saying it.
+ */
+describe('the self-healing half of docker-compose.yml (B9)', () => {
+  const compose = readFileSync(path.join(__dirname, '../../docker-compose.yml'), 'utf8');
+  const services = compose.slice(compose.indexOf('\nservices:\n'), compose.indexOf('\nvolumes:\n'));
+  const blockOf = (name: string) =>
+    new RegExp(`\\n {2}${name}:\\n([\\s\\S]*?)(?=\\n {2}\\S|$)`).exec(services)?.[1] ?? '';
+
+  it('postgres ends a transaction left idle for a minute — #714 broken from the database side', () => {
+    expect(blockOf('postgres')).toContain("'idle_in_transaction_session_timeout=60s'");
+  });
+
+  it('the app runs under an init and carries the watchdog probe', () => {
+    const app = blockOf('app');
+    // Without tini node is PID 1, and PID 1 cannot be killed from inside.
+    expect(app).toMatch(/\n {4}init: true\n/);
+    expect(app).toMatch(/healthcheck:\n\s+test: \['CMD', 'node', '\/app\/ops\/health-probe\.mjs'\]/);
+    // The photo disk, read-only, for the disk watch.
+    expect(app).toContain('- miniodata:/minio-data:ro');
+    const docker = readFileSync(path.join(__dirname, '../../Dockerfile'), 'utf8');
+    expect(docker).toContain('COPY --from=build /app/ops/health-probe.mjs ./ops/health-probe.mjs');
+  });
+
+  it('every service caps its log — derived from the service list, so a new one must too', () => {
+    const names = [...services.matchAll(/\n {2}([a-z][a-z0-9-]*):\n/g)].map((m) => m[1]!);
+    expect(names.length).toBeGreaterThan(5);
+    for (const name of names) expect(blockOf(name), name).toMatch(/\n {4}logging: \*logging\n/);
+    expect(compose).toMatch(/x-logging: &logging\n {2}driver: json-file\n {2}options:\n {4}max-size: '10m'/);
+  });
+});

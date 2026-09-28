@@ -163,3 +163,56 @@ describe('one answer about a reply that has not left', () => {
     expect(actions).toContain("form.get('path')");
   });
 });
+
+/**
+ * The lead card's chat and its dock marker come from ONE decision (the lead
+ * chats round, the design judge's fourth finding).
+ *
+ * The lead card resolves a client by the lead's typed phone for its lenta,
+ * and used to hand the same id to the chat panel AND the dock. Once a lead's
+ * OWN conversation wins the panel (`leadThreadSource`), a marker still
+ * carrying the phone-matched client would open the drawer onto a different
+ * person's chat than the panel shows — round 52's two stories on one card.
+ */
+describe('the lead card tells one story about which chat it is about', () => {
+  const page = read('src/app/(protected)/crm/leads/[id]/page.tsx');
+
+  it('decides once, and both the panel and the marker read that decision', () => {
+    expect(page.match(/leadThreadSource\(/g)).toHaveLength(1);
+    expect(page).toContain("threadSource.kind === 'client' ? threadSource.clientId : null");
+    expect(page).toMatch(
+      /threadSource\.kind === 'client' && \(\s*<span data-dock-client=\{threadSource\.clientId\}/,
+    );
+  });
+
+  it('and neither carries the phone match straight through', () => {
+    expect(page).not.toContain('data-dock-client={dockClientId}');
+    expect(page).not.toMatch(/<TelegramThread\s+clientId=\{dockClientId\}/);
+  });
+});
+
+/**
+ * One door for the lead card (the design judge's first finding): the page and
+ * every surface that links to a lead ask the same predicate, so no row,
+ * button or pulse points at a card that would bounce its reader.
+ */
+describe('every lead door asks mayOpenLead', () => {
+  it('the card, the pulse, the chat list, the nudge and the read route', () => {
+    for (const file of [
+      'src/app/(protected)/crm/leads/[id]/page.tsx',
+      'src/modules/wms/crm/pulse.ts',
+      'src/modules/wms/crm/unanswered.ts',
+      'src/app/api/chat/read/route.ts',
+    ]) {
+      expect(read(file), file).toContain('mayOpenLead(');
+    }
+    expect(read('src/modules/wms/crm/conversations.ts')).toContain('mayOpenLeadSql(');
+    // The old inline copy must not quietly return beside it.
+    for (const file of [
+      'src/app/(protected)/crm/leads/[id]/page.tsx',
+      'src/modules/wms/crm/pulse.ts',
+    ]) {
+      expect(read(file), file).not.toMatch(/lead\.ownerId !== actor\.id/);
+    }
+  });
+});

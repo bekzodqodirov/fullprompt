@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dueStateOf, termAlerts } from '@/modules/wms/partners/terms';
+import { dueStateOf, openDueParts, termAlerts } from '@/modules/wms/partners/terms';
 
 /** The owner's 8a (2026-09-26): due N days after each debt, paid oldest first. */
 describe('a counterparty’s due date', () => {
@@ -20,6 +20,18 @@ describe('a counterparty’s due date', () => {
 
   it('nothing owed is no due date', () => {
     expect(dueStateOf([...moves, { date: '2026-09-20', usd: -800 }], 20, '2026-10-05').dueDate).toBeNull();
+  });
+
+  it('the FIFO walk as a list: every debt still open, its own day and what is left of it', () => {
+    // 700 paid closes 700 of the 1 Sep debt; 300 of it and all 500 of the
+    // 10 Sep one are open — the owner's weekly «kelgusi to'lovlar» reads this.
+    expect(openDueParts(moves, 20)).toEqual([
+      { dueDate: '2026-09-21', usd: 300 },
+      { dueDate: '2026-09-30', usd: 500 },
+    ]);
+    expect(openDueParts([...moves, { date: '2026-09-20', usd: -800 }], 20)).toEqual([]);
+    // Unsorted input is walked in date order, as the card's due date is.
+    expect(openDueParts([...moves].reverse(), 20)).toEqual(openDueParts(moves, 20));
   });
 });
 

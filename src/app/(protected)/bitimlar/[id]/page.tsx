@@ -3,7 +3,7 @@ import { notFound, redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { quoteLockedFor } from '@/modules/wms/crm/service';
-import { mayOpenClientLedger } from '@/modules/wms/finance/scope';
+import { mayGrantDebt, mayOpenClientLedger } from '@/modules/wms/finance/scope';
 import { PageHeader, Section } from '@/components/ui/page';
 import { Panel } from '@/components/panel';
 import { CardCols } from '@/components/card-cols';
@@ -413,7 +413,9 @@ export default async function DealPage({
         </section>
       )}
 
-      {actor.permissions.has('finance.debt_override') && (
+      {/* Drawn exactly where the service will honour it (0114): a seller on
+          his own clients' deals, the admin and the accountant on all. */}
+      {mayGrantDebt(actor, { salesManagerId: row.clientSalesManagerId }) && (
         <Panel title={`⏳ ${t('defer')}`} testId="deal-defer-panel">
           <DeferForm dealId={row.deal.id} />
         </Panel>

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, or } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../../platform/db/client';
 import {
@@ -121,9 +121,66 @@ export async function requestExpense(input: ExpenseRequestInput, ctx: AuditConte
 }
 
 /**
- * The decider's queue: open requests, oldest first — plus any claimed row
- * whose expense never landed (a crash between the claim and the save), which
- * must stay VISIBLE rather than silently re-enterable.
+ * What the queue holds: open requests, plus any claimed row whose expense
+ * never landed (a crash between the claim and the save), which must stay
+ * VISIBLE rather than silently re-enterable. ONE predicate for the queue and
+ * for its uncapped totals below, so a count cannot disagree with the list.
+ */
+export function openRequestWhere() {
+  return or(
+    eq(expenseRequests.status, 'open'),
+    and(eq(expenseRequests.status, 'done'), isNull(expenseRequests.expenseId)),
+  );
+}
+
+export interface OpenRequestTotals {
+  /** Every request the queue holds — not the queue's first hundred. */
+  count: number;
+  /** Per currency, in its own money (never converted, #86), largest first. */
+  byCurrency: { currency: string; amount: number; count: number }[];
+  /** The part the reporter paid out of their own pocket (M1a) — a debt to a colleague. */
+  ownPocket: { count: number; byCurrency: { currency: string; amount: number }[] };
+}
+
+/**
+ * The queue as TOTALS — money that has ALREADY left a warehouse's pocket and
+ * is not yet written into the books (the owner's evening summary).
+ *
+ * Its own grouped aggregate and never `openExpenseRequests().length`: the
+ * list is `limit(100)` for the screen, and a count taken over a capped list
+ * stops at a hundred exactly when the backlog is worth saying (audit U10's
+ * shape). The own-pocket part is named apart because it is the one piece that
+ * is still OWED — to a member of staff, not to a supplier.
+ */
+export async function openExpenseRequestTotals(): Promise<OpenRequestTotals> {
+  const rows = await db
+    .select({
+      currency: expenseRequests.currency,
+      amount: sql<string>`coalesce(sum(${expenseRequests.amount}), 0)`,
+      n: sql<number>`count(*)::int`,
+      selfAmount: sql<string>`coalesce(sum(${expenseRequests.amount}) FILTER (WHERE ${expenseRequests.paidBySelf}), 0)`,
+      selfN: sql<number>`(count(*) FILTER (WHERE ${expenseRequests.paidBySelf}))::int`,
+    })
+    .from(expenseRequests)
+    .where(openRequestWhere())
+    .groupBy(expenseRequests.currency);
+  const cents = (value: unknown) => Math.round(Number(value ?? 0) * 100) / 100;
+  const byCurrency = rows
+    .map((row) => ({ currency: row.currency, amount: cents(row.amount), count: Number(row.n) }))
+    .sort((a, b) => b.amount - a.amount || a.currency.localeCompare(b.currency));
+  const own = rows
+    .filter((row) => Number(row.selfN) > 0)
+    .map((row) => ({ currency: row.currency, amount: cents(row.selfAmount) }))
+    .sort((a, b) => b.amount - a.amount || a.currency.localeCompare(b.currency));
+  return {
+    count: byCurrency.reduce((sum, row) => sum + row.count, 0),
+    byCurrency,
+    ownPocket: { count: rows.reduce((sum, row) => sum + Number(row.selfN), 0), byCurrency: own },
+  };
+}
+
+/**
+ * The decider's queue: `openRequestWhere`'s rows, oldest first.
  */
 export async function openExpenseRequests() {
   const rows = await db
@@ -148,12 +205,7 @@ export async function openExpenseRequests() {
     // reporter's money gone silent with the fold still saying «⏳».
     .leftJoin(warehouses, eq(expenseRequests.warehouseId, warehouses.id))
     .innerJoin(users, eq(expenseRequests.createdBy, users.id))
-    .where(
-      or(
-        eq(expenseRequests.status, 'open'),
-        and(eq(expenseRequests.status, 'done'), isNull(expenseRequests.expenseId)),
-      ),
-    )
+    .where(openRequestWhere())
     .orderBy(expenseRequests.createdAt)
     .limit(100);
   const kept = rows;

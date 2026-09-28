@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNull, lt, lte, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { clientMoneyInPeriod, creditUsdSql, debitUsdSql, signedUsdSql } from '../finance/service';
 import {
@@ -56,25 +56,7 @@ export async function todaySnapshot(warehouseIds?: string[]): Promise<TodaySnaps
       ),
     );
 
-  const [departedRow] = await db
-    .select({ n: sql<number>`count(*)` })
-    .from(batches)
-    .where(
-      and(
-        gte(batches.departedAt, midnight),
-        whFilter ? inArray(batches.originWarehouseId, whFilter) : undefined,
-      ),
-    );
-
-  const [arrivedRow] = await db
-    .select({ n: sql<number>`count(*)` })
-    .from(batches)
-    .where(
-      and(
-        gte(batches.arrivedAt, midnight),
-        whFilter ? inArray(batches.destWarehouseId, whFilter) : undefined,
-      ),
-    );
+  const moves = await truckMoves(today, today, warehouseIds);
 
   const [expectedRow] = await db
     .select({
@@ -91,11 +73,65 @@ export async function todaySnapshot(warehouseIds?: string[]): Promise<TodaySnaps
 
   return {
     receipts: Number(receiptRow?.n ?? 0),
-    departed: Number(departedRow?.n ?? 0),
-    arrived: Number(arrivedRow?.n ?? 0),
+    departed: moves.departed,
+    arrived: moves.arrived,
     expectedToday: Number(expectedRow?.due ?? 0),
     expectedLate: Number(expectedRow?.late ?? 0),
   };
+}
+
+/**
+ * Trucks that DEPARTED and trucks that ARRIVED over Tashkent days
+ * `fromDay`..`toDay` inclusive — a departure counted at its origin warehouse,
+ * an arrival at its destination (a scoped viewer sees their own ends).
+ *
+ * BOUNDED at both ends on purpose (judge 3): «today» alone could be written
+ * `>= midnight`, but a past window with no upper bound counts every truck
+ * that moved from that day until NOW, so the owner's weekly summary would
+ * have carried this week's trucks into last week's line. The end is the next
+ * day's Tashkent midnight, exclusive (R5).
+ *
+ * Stated, not filtered: an annulled truck keeps its `departed_at` (#847's
+ * cascade retires a batch without rewriting its history), so a truck annulled
+ * after it left still counts as having left that day — the dashboard's «Bugun»
+ * has always read it that way, and this is its function.
+ *
+ * `warehouseIds` as the report loaders pass it: undefined = the company, a
+ * list = those warehouses (the nil-uuid list of a scoped viewer with none
+ * matches nothing, `scopeKeyOf`).
+ */
+export async function truckMoves(
+  fromDay: string,
+  toDay: string,
+  warehouseIds?: string[],
+): Promise<{ departed: number; arrived: number }> {
+  const start = tashkentDayStart(fromDay);
+  const end = tashkentDayStart(addDays(toDay, 1));
+  const whFilter = warehouseIds?.length ? warehouseIds : null;
+
+  const [departedRow] = await db
+    .select({ n: sql<number>`count(*)` })
+    .from(batches)
+    .where(
+      and(
+        gte(batches.departedAt, start),
+        lt(batches.departedAt, end),
+        whFilter ? inArray(batches.originWarehouseId, whFilter) : undefined,
+      ),
+    );
+
+  const [arrivedRow] = await db
+    .select({ n: sql<number>`count(*)` })
+    .from(batches)
+    .where(
+      and(
+        gte(batches.arrivedAt, start),
+        lt(batches.arrivedAt, end),
+        whFilter ? inArray(batches.destWarehouseId, whFilter) : undefined,
+      ),
+    );
+
+  return { departed: Number(departedRow?.n ?? 0), arrived: Number(arrivedRow?.n ?? 0) };
 }
 
 export interface MoneySnapshot {

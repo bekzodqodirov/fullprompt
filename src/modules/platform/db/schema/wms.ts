@@ -335,6 +335,15 @@ export const handovers = pgTable(
      * direct tick, recorded beside the debt half.
      */
     priceOk: boolean('price_ok').notNull().default(false),
+    /**
+     * 0114 (qarz nazorati): what the debt gate SAW at this handover — the
+     * balance, the part a deal deferral excused, what was left blocking, and
+     * which deferrals covered it and who granted them. NULL = older than 0114.
+     */
+    owedUsd: numeric('owed_usd', { precision: 14, scale: 2 }),
+    blockingUsd: numeric('blocking_usd', { precision: 14, scale: 2 }),
+    deferredUsd: numeric('deferred_usd', { precision: 14, scale: 2 }),
+    deferrals: jsonb('deferrals').$type<{ dealId: string; code: string; by: string | null; usd: number }[]>(),
     note: text('note'),
     createdBy: uuid('created_by')
       .notNull()
@@ -1576,8 +1585,34 @@ export const leadIntakes = pgTable(
     clientId: uuid('client_id').references(() => clients.id, { onDelete: 'set null' }),
     assignedUserId: uuid('assigned_user_id').references(() => users.id, { onDelete: 'set null' }),
     createdAt: createdAt(),
+    /**
+     * The first-contact clock (0113, the owner's 5a). NULL = not measured:
+     * every row before it, and every site/client/dropped arrival. Both
+     * writers of these columns are RAW SQL on purpose (wms/crm/inbound.ts
+     * `record`, site-assign.ts, wms/crm/first-contact.ts): drizzle's insert
+     * names every column it knows, so a drizzle insert here would refuse the
+     * whole arrival on a database one migration behind — and the arrival
+     * ledger is the replay fence.
+     */
+    contactClockAt: timestamp('contact_clock_at', { withTimezone: true }),
+    contactDueAt: timestamp('contact_due_at', { withTimezone: true }),
+    contactedAt: timestamp('contacted_at', { withTimezone: true }),
+    contactKind: text('contact_kind'),
+    contactedBy: uuid('contacted_by').references(() => users.id, { onDelete: 'set null' }),
+    contactAlertedAt: timestamp('contact_alerted_at', { withTimezone: true }),
   },
   (t) => [
+    check(
+      'lead_intakes_contact_kind_check',
+      sql`${t.contactKind} IS NULL OR ${t.contactKind} IN ('call', 'telegram', 'note', 'stage', 'followup')`,
+    ),
+    check(
+      'lead_intakes_contact_pair_check',
+      sql`(${t.contactedAt} IS NULL) = (${t.contactKind} IS NULL)`,
+    ),
+    index('lead_intakes_contact_clock_idx')
+      .on(t.contactClockAt)
+      .where(sql`${t.contactClockAt} IS NOT NULL`),
     check(
       'lead_intakes_channel_check',
       sql`${t.channel} IN ('form', 'meta', 'telegram', 'webhook', 'site')`,
@@ -2026,6 +2061,14 @@ export const tgAccounts = pgTable(
      */
     tgUsername: text('tg_username'),
     tgUsernameCheckedAt: timestamp('tg_username_checked_at', { withTimezone: true }),
+    /**
+     * The quiet-bridge alarm (0115, wms/crm/listener-quiet.ts): `quietOpen`
+     * = «jim» was said and «qaytdi» has not been; `quietNotifiedAt` = when
+     * «jim» was last said, kept after the bridge returns — the clock that
+     * spaces one flapping listener's alarms out.
+     */
+    quietNotifiedAt: timestamp('quiet_notified_at', { withTimezone: true }),
+    quietOpen: boolean('quiet_open').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -3444,5 +3487,32 @@ export const pickupLines = pgTable(
       'pickup_lines_measure_check',
       sql`(${t.volumeM3} IS NULL OR (${t.volumeM3} > 0 AND ${t.volumeM3} <> 'NaN'::numeric)) AND (${t.weightKg} IS NULL OR (${t.weightKg} > 0 AND ${t.weightKg} <> 'NaN'::numeric))`,
     ),
+  ],
+);
+
+/**
+ * «Olib ketilmagan yuk» — which waiting episodes the morning sweep has already
+ * announced (0116, the owner's 3a). One row per (client, warehouse, LEVEL) —
+ * level 1 the warn threshold, 2 the alarm — never per day count, so moving a
+ * threshold does not re-announce everybody. Re-won by the UPSERT when the
+ * waiting set's clock (`clock_from`) moved past the last announcement
+ * (`issue/waiting-alerts.ts`). Nothing prunes it: deleting a row re-arms it.
+ */
+export const cargoWaitAlerts = pgTable(
+  'cargo_wait_alerts',
+  {
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => clients.id, { onDelete: 'cascade' }),
+    warehouseId: uuid('warehouse_id')
+      .notNull()
+      .references(() => warehouses.id),
+    level: integer('level').notNull(),
+    clockFrom: timestamp('clock_from', { withTimezone: true }).notNull(),
+    sentAt: timestamp('sent_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.clientId, t.warehouseId, t.level] }),
+    check('cargo_wait_alerts_level_check', sql`${t.level} IN (1, 2)`),
   ],
 );

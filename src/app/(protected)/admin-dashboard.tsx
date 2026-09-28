@@ -18,6 +18,7 @@ import { openDealsSummary } from '@/modules/wms/deals/service';
 import { taskPulse } from '@/modules/platform/tasks/analytics';
 import { notificationProblemCount } from '@/modules/platform/notifications/service';
 import { backupStatus, type BackupStatus } from '@/modules/platform/backup/objects';
+import { SystemSignals } from '@/components/system-signals';
 import { addDays, tashkentDay, tashkentDayStart, tashkentMonth, tashkentMonthStart } from '@/modules/platform/time/tashkent';
 
 /**
@@ -261,6 +262,8 @@ export async function AdminDashboard({ actor }: { actor: Actor }) {
             <section className="card order-5 min-w-0 !p-3 sm:order-none" data-testid="adm-signal">
               <Head href="/admin" icon="🔔" title={t('signals')} />
               <div className="mt-1 space-y-0.5 text-xs">
+                {/* The system watching itself (B9): the bot, the disk, the errors. */}
+                <SystemSignals actor={actor} Row={Row} />
                 {backupState && (
                   <Row
                     href="/admin"

@@ -263,8 +263,9 @@ function FeedRow({
         <p className="font-semibold">
           {String(item.meta.person ?? '')} {String(item.meta.phone ?? '')} ·{' '}
           {String(item.meta.warehouse ?? '')}
-          {/* A manager overrode the debt gate to let this cargo go. Exactly the
-              kind of thing the owner wants visible in one place. */}
+          {/* The cargo went out while the client owed — a tick, an approval or
+              a deal «muddat» (the register's rule, debt/releases.ts). Only a
+              reader of this client's money is sent the flag at all. */}
           {item.meta.debtOverride === true && ` · ⚠ ${t('feedDebtOverride')}`}
         </p>
       )}

@@ -2,9 +2,10 @@ import { eq } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
+import { mayOpenClientCard } from '@/modules/platform/clients/card-door';
 import { clients, currencies, deals } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { mayReadLedgers, ownsLedger } from '@/modules/wms/finance/scope';
+import { mayGrantDebt, mayReadLedgers, ownsLedger } from '@/modules/wms/finance/scope';
 import { clientLedger, clientNativeBalances } from '@/modules/wms/finance/service';
 import Link from 'next/link';
 import type { ClientKind } from '@/modules/wms/finance/ledger-kinds';
@@ -27,6 +28,7 @@ import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { mayPickTill } from '@/modules/wms/accounting/till-door';
 import { mayVoidLedgerRow } from '@/modules/wms/finance/void-rule';
 import { lostCargoChargesOn, lostCargoForClient } from '@/modules/wms/finance/compensation';
+import { PromisePanel } from './promise-panel';
 
 /**
  * One client's money ledger: balance, add charge/payment, full history.
@@ -180,6 +182,14 @@ export default async function ClientLedgerPage({
           ))}
         </p>
       )}
+      {/* To'lov va'dasi (0114): read by this ledger's readers, written by
+          whoever may let this client's cargo go on debt. */}
+      <PromisePanel
+        clientId={clientId}
+        canPromise={mayGrantDebt(actor, client)}
+        balanceUsd={balance}
+        today={tashkentDay()}
+      />
       {mayClassify && legacy && (
         <p className="text-xs">
           <Link href="/accounting/kurs-farqi" className="text-brand-700 underline" data-testid="finance-fx-legacy-link">
@@ -249,7 +259,14 @@ export default async function ClientLedgerPage({
           rule the receivables ageing report uses. */}
       <div className="card space-y-2">
         <h2 className="text-sm font-bold uppercase text-ink-500">📦 {tcargo('title')}</h2>
-        <CargoSummary clientId={clientId} data={cargo} />
+        {/* The «where is it now» line links to «Yuklar» only for a reader
+            that tab's door admits — the accountant and the VED read this
+            ledger and are refused the card and its cargo tab alike. */}
+        <CargoSummary
+          clientId={clientId}
+          data={cargo}
+          yuklarHref={mayOpenClientCard(actor) ? `/admin/clients/${clientId}/yuklar` : null}
+        />
       </div>
 
       <div className="card space-y-1 !p-3">

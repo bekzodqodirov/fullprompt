@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { eq, inArray, like } from 'drizzle-orm';
+import { eq, inArray, like, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import { leadIntakes, leadSources, leads } from '@/modules/platform/db/schema';
@@ -52,6 +52,11 @@ afterAll(async () => {
     .update(leadSources)
     .set({ webhookSecret: null, active: true })
     .where(eq(leadSources.key, KEY));
+  // The arrivals' pushes to the office (0113 — these leads have no owner) go
+  // with the arrivals, or they sit in the shared queue for every later drain.
+  await db.execute(sql`
+    DELETE FROM notifications
+     WHERE payload ->> 'intakeId' IN (SELECT id::text FROM lead_intakes WHERE name LIKE ${`WH-${STAMP}%`})`);
   await db.delete(leadIntakes).where(like(leadIntakes.name, `WH-${STAMP}%`));
   if (madeLeads.length) await db.delete(leads).where(inArray(leads.id, madeLeads));
   await pgClient.end();

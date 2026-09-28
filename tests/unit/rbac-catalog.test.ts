@@ -63,6 +63,16 @@ describe('RBAC catalog (spec §16 matrix)', () => {
     expect(ROLE_MATRIX.warehouse_operator).not.toContain('finance.debt_override');
   });
 
+  it('the logist does not release cargo on debt by default (the owner\'s 2a)', () => {
+    // «sotuvchi faqat o'z mijoziga, admin va buxgalter hammaga» — the logist
+    // was not named. He reads every client's money (`clients.manage`), so the
+    // grant alone would have let him release anybody's cargo on debt.
+    expect(ROLE_MATRIX.logist).not.toContain('finance.debt_override');
+    for (const role of ['admin', 'super_admin', 'accountant', 'sales_manager'] as const) {
+      expect(ROLE_MATRIX[role], role).toContain('finance.debt_override');
+    }
+  });
+
   it('only logist/admin manage load plans', () => {
     for (const role of ROLE_CODES) {
       const hasPlans = ROLE_MATRIX[role].includes('plans.manage');

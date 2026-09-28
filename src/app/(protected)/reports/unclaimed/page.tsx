@@ -7,9 +7,9 @@ import { unclaimedReport } from '@/modules/wms/reports/queries';
 import { BackLink } from '@/components/back-link';
 import { PageHeader } from '@/components/ui/page';
 
-const SORTABLE = ['number', 'marking', 'whCode', 'days', 'boxesInStock', 'kg'] as const;
+const SORTABLE = ['number', 'marking', 'whCode', 'days', 'boxes', 'kg'] as const;
 
-/** Report §13.5: unclaimed cargo still sitting in stock. */
+/** Report §13.5: unclaimed cargo still to resolve — in a warehouse, or on a truck («yo'lda»). */
 export default async function UnclaimedReportPage({
   searchParams,
 }: {
@@ -20,6 +20,7 @@ export default async function UnclaimedReportPage({
   const allWh = actor.permissions.has('reports.all_warehouses');
   if (!allWh && !actor.permissions.has('reports.own_warehouse')) redirect('/');
   const t = await getTranslations('reports');
+  const tu = await getTranslations('uncollected');
   const format = await getFormatter();
   const { sort, dir } = await searchParams;
 
@@ -49,7 +50,7 @@ export default async function UnclaimedReportPage({
                 <SortTh label={t('marking')} field="marking" sort={sort} dir={dir} />
                 <SortTh label="WH" field="whCode" sort={sort} dir={dir} />
                 <SortTh label={t('days')} field="days" sort={sort} dir={dir} className="p-2 text-right" />
-                <SortTh label="📦" field="boxesInStock" sort={sort} dir={dir} className="p-2 text-right" />
+                <SortTh label="📦" field="boxes" sort={sort} dir={dir} className="p-2 text-right" />
                 <SortTh label="kg" field="kg" sort={sort} dir={dir} className="p-2 text-right" />
               </tr>
             </thead>
@@ -69,7 +70,12 @@ export default async function UnclaimedReportPage({
                   <td className={`p-2 text-right font-bold ${row.days >= 14 ? 'text-bad' : row.days >= 7 ? 'text-yellow-600' : ''}`}>
                     {row.days}
                   </td>
-                  <td className="p-2 text-right font-semibold">{row.boxesInStock}</td>
+                  <td className="p-2 text-right font-semibold">
+                    {row.boxes}
+                    {row.boxesOnRoad > 0 && (
+                      <span className="block text-xs font-normal text-warn">🚚 {tu('onRoad', { n: row.boxesOnRoad })}</span>
+                    )}
+                  </td>
                   <td className="p-2 text-right">{row.kg}</td>
                 </tr>
               ))}

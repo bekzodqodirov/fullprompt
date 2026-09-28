@@ -18,6 +18,15 @@ export const SETTING_DEFAULTS = {
   density_thresholds: { light: 150, medium: 250, heavy: 450 },
   unclaimed_aging_days: 7,
   stale_stock_days: 30,
+  /**
+   * «Olib ketilmagan yuk» (0116, the owner's 3a): after this many Tashkent
+   * days in an issuing warehouse a client's cargo is announced to their
+   * seller and on the office's svodka (level 1), and again at the alarm
+   * (level 2). The claim is keyed on the LEVEL, never the number, so moving
+   * either does not re-announce everybody.
+   */
+  uncollected_warn_days: 5,
+  uncollected_alarm_days: 10,
   /** Days of silence before a client counts as gone quiet (owner: 60). */
   crm_dormant_days: 60,
   /**
@@ -48,6 +57,15 @@ export const SETTING_DEFAULTS = {
    * phone call, too long and the point of it is gone. 0 switches it off.
    */
   unanswered_reminder_minutes: 30,
+  /**
+   * How many OFFICE minutes an advert lead may wait for its first contact
+   * before the owner is reminded (0113, his 5a: «15 minutdan keyin …»). Read
+   * when the lead LANDS and frozen onto its arrival, like the quote's
+   * validity; the sweep also asks it, so 0 switches the reminder off at once.
+   * The measurement on /crm/tahlil does not read it — turning a reminder off
+   * must not move anybody's numbers.
+   */
+  inbound_contact_minutes: 15,
   /**
    * How long a sealed VED price stands before it has to be recalculated
    * (owner: «bu narx turishi menimcha 1 oy bo'lgani yaxshi»).

@@ -792,6 +792,34 @@
       "when": 1785190000091,
       "tag": "0112_qr_less",
       "breakpoints": true
+    },
+    {
+      "idx": 113,
+      "version": "7",
+      "when": 1785190000092,
+      "tag": "0113_inbound_contact",
+      "breakpoints": true
+    },
+    {
+      "idx": 114,
+      "version": "7",
+      "when": 1785190000093,
+      "tag": "0114_debt_control",
+      "breakpoints": true
+    },
+    {
+      "idx": 115,
+      "version": "7",
+      "when": 1785190000094,
+      "tag": "0115_system_watch",
+      "breakpoints": true
+    },
+    {
+      "idx": 116,
+      "version": "7",
+      "when": 1785190000095,
+      "tag": "0116_cargo_wait_alerts",
+      "breakpoints": true
     }
   ]
 }

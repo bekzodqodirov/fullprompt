@@ -938,9 +938,9 @@ describe('the conversation list', () => {
     // The same fact, in the shape a kanban card asks for (round 25) — and
     // scoped to the viewer like every other chat read (#383).
     const badges = await chatBadges({ id: actorId });
-    expect(badges.get(waiting.id)).toBe('waiting');
+    expect(badges.clients.get(waiting.id)).toBe('waiting');
     if (managerId !== actorId) {
-      expect((await chatBadges({ id: managerId })).has(waiting.id)).toBe(false);
+      expect((await chatBadges({ id: managerId })).clients.has(waiting.id)).toBe(false);
     }
   });
 

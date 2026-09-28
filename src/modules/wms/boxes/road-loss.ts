@@ -1,4 +1,4 @@
-import { sql, type SQL } from 'drizzle-orm';
+import { sql, type AnyColumn, type SQL } from 'drizzle-orm';
 import { db, type Db, type Tx } from '../../platform/db/client';
 import { inScope, type ScopedActor } from '../../platform/rbac/scope';
 
@@ -30,6 +30,22 @@ export function roadLossBatchSql(boxAlias: string): SQL {
      ORDER BY lm.created_at DESC, lm.id DESC
      LIMIT 1
   ) END)`;
+}
+
+/**
+ * «An unload declared this carton missing on the road»: `finishUnload` flags
+ * every carton the truck was loaded with and nobody scanned off, and leaves it
+ * `in_transit` on the unloaded truck until `resolveMissing` answers «found» or
+ * «lost». The fact the dashboard's risk card counts (`reports/business.ts`,
+ * the `missing` rows) and the client card's «Yuklar» tab takes OUT of
+ * «O'zbekistonda» — asked of one fragment, or the tab and the card would
+ * disagree about which cartons are missing. The tab also asks
+ * `status = 'in_transit'`, the state such a carton stands in while the flag
+ * is open; the dashboard asks `status <> 'void'`; for an unresolved flag the
+ * two are the same cartons.
+ */
+export function declaredMissingSql(flags: AnyColumn | SQL): SQL {
+  return sql`${flags} @> '["missing_in_transit"]'::jsonb`;
 }
 
 export interface RoadLossTruck {

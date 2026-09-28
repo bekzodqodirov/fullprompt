@@ -42,7 +42,8 @@ import { dashboardWindows } from './dashboard-math';
 
 export const loadWindows = cache(() => dashboardWindows(tashkentDay()));
 
-const unkey = (scopeKey: string) => (scopeKey ? scopeKey.split(',') : undefined);
+/** The loaders' scope key back into the id list the report functions take. */
+export const unkey = (scopeKey: string) => (scopeKey ? scopeKey.split(',') : undefined);
 const NO_WAREHOUSE = '00000000-0000-0000-0000-000000000000';
 /**
  * `undefined` = the whole company. An EMPTY list is a scoped viewer with no

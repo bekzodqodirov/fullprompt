@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
 import { handovers } from '@/modules/platform/db/schema';
 import { AuthError, requireActor } from '@/modules/platform/rbac/authorize';
-import { inScope } from '@/modules/platform/rbac/scope';
+import { mayReadHandoverAct } from '@/modules/wms/issue/act-door';
 import { buildHandoverAct } from '@/modules/wms/documents/handover-act';
 
 /**
@@ -17,6 +17,7 @@ import { buildHandoverAct } from '@/modules/wms/documents/handover-act';
  * card. The permission mirrors the attachment branch for the SAME document
  * verbatim (`scan.issue || receipts.unclaimed.resolve`, in scope) — the act
  * and the files hanging off it must not disagree about who may read them.
+ * The rule lives in `mayReadHandoverAct` so a screen linking here asks it too.
  */
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   let actor;
@@ -33,11 +34,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     columns: { warehouseId: true },
   });
   if (!row) return new Response('Not found', { status: 404 });
-  const mayRead =
-    (actor.permissions.has('scan.issue') ||
-      actor.permissions.has('receipts.unclaimed.resolve')) &&
-    inScope(actor, row.warehouseId);
-  if (!mayRead) return new Response('Forbidden', { status: 403 });
+  if (!mayReadHandoverAct(actor, row.warehouseId)) return new Response('Forbidden', { status: 403 });
 
   const pdf = await buildHandoverAct(id);
   if (!pdf) return new Response('Not found', { status: 404 });

@@ -169,6 +169,20 @@ export function addDays(day: string, n: number): string {
 }
 
 /**
+ * Whole calendar days from `from` to `to`, both `YYYY-MM-DD` (0 = the same
+ * day, negative when `to` comes first). Calendar arithmetic at UTC noon like
+ * `addDays`, so it answers in DAYS and never in 24-hour periods: a carton that
+ * landed at 23:50 is one day old at 00:10, the way the office counts. The one
+ * home for the question «how many days has it been» that the waiting list,
+ * the stock-aging report and the unclaimed list each wrote out by hand.
+ */
+export function calendarDaysBetween(from: string, to: string): number {
+  return Math.round(
+    (new Date(`${to}T12:00:00Z`).getTime() - new Date(`${from}T12:00:00Z`).getTime()) / 86_400_000,
+  );
+}
+
+/**
  * The Monday of the ISO week `day` falls in, `YYYY-MM-DD` — a Sunday belongs
  * to the week that began six days before it, never to the next one. The key
  * of the dashboard's weekly cash columns: postgres's `date_trunc('week', …)`

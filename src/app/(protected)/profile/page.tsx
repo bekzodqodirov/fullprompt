@@ -8,6 +8,8 @@ import { getSessionUser, listSessions } from '@/modules/platform/auth/session';
 import { logoutAction, logoutOtherDevicesAction } from '@/modules/platform/auth/actions';
 import { createTelegramLinkAction, telegramLinkStatus } from '@/modules/platform/telegram/actions';
 import { groupsFromList } from '@/modules/platform/notifications/mutes';
+import { getActor } from '@/modules/platform/rbac/authorize';
+import { readsOwnerSummary } from '@/modules/wms/reports/owner-summary-door';
 import { currentCallsApk } from '@/modules/wms/calls/apk';
 import { callDevicesFor } from '@/modules/wms/calls/service';
 import { setNotificationMutesAction } from './actions';
@@ -26,6 +28,8 @@ export default async function ProfilePage() {
   const tc = await getTranslations('common');
   const tNav = await getTranslations('nav');
   const tn = await getTranslations('notes');
+  const tk = await getTranslations('kuzatuv');
+  const tl = await getTranslations('reklamaLid');
   const format = await getFormatter();
   // Everything below the name is a PANEL, and this page is now the only way
   // out of the app. A panel that throws used to cost a screen; it would now
@@ -53,6 +57,13 @@ export default async function ProfilePage() {
     undefined,
   );
   const mutes = groupsFromList(userRow?.mutedNotificationTypes);
+  // The evening summary's own switch, drawn only for the person who receives
+  // it (the owner's «faqat sizga» — `readsOwnerSummary`, the job's and the
+  // bot's door). For anybody else the absent box posts nothing and reads as
+  // «off», which mutes a message they are never sent (#171 stated, harmless).
+  const actor = await panel(getActor(), null);
+  const ownerReader = actor ? readsOwnerSummary(actor) : false;
+  const tkx = await getTranslations('kechkiXulosa');
   // The rasxod xabari for people who belong to no warehouse (owner M1a) and
   // the person's own account with the company (A2a). Both keyed on the
   // SESSION's user and nothing from the URL (#514); both panels, so a
@@ -236,6 +247,21 @@ export default async function ProfilePage() {
               <input type="checkbox" name="mute_calls" defaultChecked={mutes.groups.calls} className="h-5 w-5" />
               📞 {t('notifMuteCalls')}
             </label>
+            {/* 0113. The hint is the point: a seller who ticks this stops
+                hearing about their own new leads, and the owner's reminder
+                then says so by name — the choice has to be made knowing it. */}
+            <label className="flex min-h-10 items-start gap-3">
+              <input
+                type="checkbox"
+                name="mute_leads"
+                defaultChecked={mutes.groups.leads}
+                className="mt-2.5 h-5 w-5 shrink-0"
+              />
+              <span className="pt-2">
+                🆕 {tl('muteLeads')}
+                <span className="mt-0.5 block text-xs text-ink-500">{tl('muteLeadsHint')}</span>
+              </span>
+            </label>
             <label className="flex min-h-10 items-center gap-3">
               <input type="checkbox" name="mute_alerts" defaultChecked={mutes.groups.alerts} className="h-5 w-5" />
               🚨 {t('notifMuteAlerts')}
@@ -244,6 +270,38 @@ export default async function ProfilePage() {
               <input type="checkbox" name="mute_operations" defaultChecked={mutes.groups.operations} className="h-5 w-5" />
               📥 {t('notifMuteOps')}
             </label>
+            <label className="flex min-h-10 items-center gap-3">
+              <input type="checkbox" name="mute_system" defaultChecked={mutes.groups.system} className="h-5 w-5" />
+              🛠 {tk('muteSystem')}
+            </label>
+            {ownerReader ? (
+              <>
+                <label className="flex min-h-10 items-center gap-3">
+                  <input
+                    type="checkbox"
+                    name="mute_owner"
+                    defaultChecked={mutes.groups.owner}
+                    className="h-5 w-5"
+                    data-testid="profile-mute-owner"
+                  />
+                  🌙 {tkx('notifMuteOwner')}
+                </label>
+                {/* The drain settles a message for a person with no linked chat
+                    as muted — terminal, and counted as no problem anywhere —
+                    so the one person this is for is told HERE that it goes
+                    nowhere. Only on a read that answered (null = the panel
+                    failed, and a guess is not a warning). */}
+                {telegramLink !== null && telegramLink?.status !== 'linked' ? (
+                  <p className="text-sm text-warn" data-testid="profile-owner-unlinked">
+                    ⚠ {tkx('notLinked')}
+                  </p>
+                ) : null}
+              </>
+            ) : (
+              // Not drawn, but a choice already made is re-posted (#171): the
+              // form is replace-all, and a box that is absent reads as «off».
+              mutes.groups.owner && !mutes.all && <input type="hidden" name="mute_owner" value="on" />
+            )}
           </div>
           <button type="submit" className="btn-primary w-full">
             {tc('save')}

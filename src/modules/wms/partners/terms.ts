@@ -9,7 +9,7 @@
  * lowers the account (payment, offset, a negative adjust or kurs farqi) is
  * money paid; a row that raises it is a debt.
  */
-import { addDays } from '@/modules/platform/time/tashkent';
+import { addDays, calendarDaysBetween } from '@/modules/platform/time/tashkent';
 
 export const DUE_SOON_DAYS = 3;
 export const LIMIT_WARN_SHARE = 0.8;
@@ -32,30 +32,43 @@ export interface DueState {
 
 const cents = (n: number) => Math.round(n * 100) / 100;
 
-export function dueStateOf(moves: LedgerMove[], payWithinDays: number, today: string): DueState {
+/** One debt still open after FIFO: the day it falls due and what is left of it. */
+export interface DuePart {
+  dueDate: string;
+  usd: number;
+}
+
+/**
+ * Every debt the payments have not covered, oldest first — the FIFO walk
+ * itself, so the card's «next due» and the owner's weekly «kelgusi to'lovlar»
+ * (owner-summary) read ONE loop: `dueStateOf` is derived from this list, never
+ * a second pass that could round a half-cent the other way.
+ */
+export function openDueParts(moves: LedgerMove[], payWithinDays: number): DuePart[] {
   const sorted = [...moves].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   let paid = sorted.filter((m) => m.usd < 0).reduce((sum, m) => sum - m.usd, 0);
-  let dueDate: string | null = null;
-  let dueUsd = 0;
-  let overdueUsd = 0;
+  const parts: DuePart[] = [];
   for (const debt of sorted.filter((m) => m.usd > 0)) {
     const covered = Math.min(paid, debt.usd);
     paid -= covered;
     const open = cents(debt.usd - covered);
     if (open <= 0.009) continue;
-    const due = addDays(debt.date, payWithinDays);
-    if (dueDate === null) {
-      dueDate = due;
-      dueUsd = open;
-    }
-    if (due < today) overdueUsd = cents(overdueUsd + open);
+    parts.push({ dueDate: addDays(debt.date, payWithinDays), usd: open });
   }
-  return { dueDate, dueUsd, overdueUsd };
+  return parts;
+}
+
+export function dueStateOf(moves: LedgerMove[], payWithinDays: number, today: string): DueState {
+  const parts = openDueParts(moves, payWithinDays);
+  let overdueUsd = 0;
+  for (const part of parts) if (part.dueDate < today) overdueUsd = cents(overdueUsd + part.usd);
+  const first = parts[0];
+  return { dueDate: first?.dueDate ?? null, dueUsd: first?.usd ?? 0, overdueUsd };
 }
 
 /** Whole days from `today` to `day` (negative once it has passed). */
 export function daysUntil(day: string, today: string): number {
-  return Math.round((Date.parse(`${day}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000);
+  return calendarDaysBetween(today, day);
 }
 
 export type TermAlert =

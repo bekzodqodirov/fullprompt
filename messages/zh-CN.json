@@ -547,6 +547,43 @@
     "overview": "概览",
     "money": "资金"
   },
+  "yuklar": {
+    "tab": "货物",
+    "sections": {
+      "china": "在中国",
+      "transit": "运输中",
+      "uz": "在乌兹别克斯坦",
+      "ready": "可提货"
+    },
+    "now": "当前",
+    "empty": "该客户目前在仓库和途中都没有货物。",
+    "siblings": "同一电话的其他代码：",
+    "daysHere": "{n, plural, =0 {今天到达} other {#天}}",
+    "arrivedOn": "到达车次：",
+    "status": {
+      "in_stock": "在库",
+      "planned": "已计划",
+      "loading": "装车中",
+      "in_transit": "在途",
+      "ready_for_pickup": "可提货"
+    },
+    "receipt": "入库单",
+    "marking": "唛头",
+    "unknownTruck": "车辆未知",
+    "missing": "途中丢失",
+    "showAll": "显示全部",
+    "history": "已提货",
+    "historyDays": "{days, plural, other {#天}}",
+    "historyYear": "1年",
+    "historyCapped": "仅显示最近{n}条",
+    "historyEmpty": "此期间没有提货。",
+    "receiver": "收货人",
+    "issuedBy": "经手人",
+    "act": "交接单",
+    "departed": "发车",
+    "arrived": "到达",
+    "openTab": "详情"
+  },
   "clients": {
     "title": "客户",
     "new": "新建客户",
@@ -616,6 +653,8 @@
       "density_thresholds": "密度阈值（轻/中/重）",
       "unclaimed_aging_days": "无主货物提醒天数",
       "stale_stock_days": "滞留货物提醒天数",
+      "uncollected_warn_days": "未提货物：首次通知销售和日报（天）",
+      "uncollected_alarm_days": "未提货物：第二次红色提醒（天）",
       "costing_base_currency": "成本核算基准货币",
       "client_code_prefix": "客户代码前缀",
       "label_size": "标签尺寸（毫米）",
@@ -638,6 +677,7 @@
       "quote_valid_days": "封存的报价有效天数（到期后需重新计算）",
       "debt_approval_ttl_hours": "交付许可（欠款或未定价货物）有效小时数",
       "unanswered_reminder_minutes": "客户等待多少分钟后提醒其经理（0 = 关闭）",
+      "inbound_contact_minutes": "广告线索在这么多个工作分钟内无人联系，就提醒负责人（0 = 关闭；统计照常进行）",
       "crm_calc_stage": "机器人发来「报价」时，线索移到该阶段（只向前；「—」表示不移动）",
       "deal_calc_stage": "交易看板同理——已有客户编号的请求会落在交易上",
       "ai_daily_limit": "每人每天的 AI 提问上限（机器人 + AI 页面合计；0 为关闭）",
@@ -785,7 +825,7 @@
     "callRecApp": "下载应用（安卓）",
     "telegramReconnect": "重新连接",
     "telegramReconnectHint": "更换了手机或 Telegram 账号？用新账号打开机器人，通知将发送到那里。在新账号连接之前，旧会话仍然有效。",
-    "notifMuteCalls": "早间来电清单",
+    "notifMuteCalls": "早间来电清单与未提货物",
     "rasxodHint": "为工作花了钱——告知财务，并附上小票照片。",
     "staffAccountTitle": "我与公司的往来",
     "staffOwes": "公司欠您：{amount}",
@@ -1450,6 +1490,7 @@
     "note": "发送失败会自动重试。'muted' — 用户已关闭或未绑定 Telegram。",
     "statuses": {
       "pending": "排队中",
+      "sending": "发送中",
       "sent": "已发送",
       "failed": "失败",
       "muted": "已关闭"
@@ -2027,6 +2068,12 @@
     "pnlByMonth": "按月：收入与支出",
     "pnlDetail": "明细表——每个科目、每个月"
   },
+  "lidChat": {
+    "mark": "线索",
+    "markTitle": "线索——尚无客户编号",
+    "owner": "线索负责人：{name}",
+    "ownerNone": "线索无负责人"
+  },
   "crm": {
     "title": "CRM",
     "leads": "潜在客户",
@@ -2428,6 +2475,32 @@
     "pricedElsewhere": "已在其他车次或交易中定价",
     "compensatedTotal": "🤝 赔偿："
   },
+  "uncollected": {
+    "title": "未提货物",
+    "hint": "天数从货物到达本仓库之日起计算。“余货”——客户已提走一部分，其余仍在库。",
+    "tabLevel": "{n}+ 天",
+    "tabAll": "全部",
+    "allWarehouses": "全部仓库",
+    "seller": "销售",
+    "allSellers": "全部销售",
+    "noSeller": "无销售",
+    "show": "显示",
+    "summary": "{clients} 个客户 · {boxes} 箱",
+    "capped": "显示前 {shown} 条（共 {total} 条）",
+    "empty": "没有等待提货的货物",
+    "days": "{n} 天",
+    "boxes": "{n} 箱",
+    "moreLots": "+{n}",
+    "leftover": "余货",
+    "lastPickup": "上次提货 {date}",
+    "customs": "海关仓库",
+    "unpriced": "未定价 {n} 箱",
+    "debt": "欠款",
+    "tagsFailed": "暂时无法读取价格和欠款标记",
+    "homeRow": "未提货物",
+    "homeSub": "{n} 个客户",
+    "onRoad": "{n} 在途"
+  },
   "arrivals": {
     "title": "待收货物",
     "trucksTitle": "开往本仓的车辆",
@@ -2717,7 +2790,8 @@
       "validation": "请检查字段",
       "fx_missing": "该货币没有汇率",
       "discount_reason_required": "折扣需要填写原因",
-      "quote_sealed": "价格已封存，无法修改（请重新计算）"
+      "quote_sealed": "价格已封存，无法修改（请重新计算）",
+      "not_your_client": "此客户的延期由其销售、会计或管理员授予"
     },
     "discountTitle": "折扣（货损）",
     "discountAmount": "折扣金额",
@@ -3589,6 +3663,52 @@
     "remaining": "剩余 {n}",
     "copied": "已复制 {n} 个文件"
   },
+  "kuzatuv": {
+    "hubLabel": "系统错误",
+    "muteSystem": "系统警报（Telegram 桥接、磁盘）",
+    "botRefused": "Telegram 机器人已停止工作 — 自 {since} 起",
+    "botNoToken": "没有 Telegram 机器人令牌 — 员工收不到消息",
+    "botBacklog": "Telegram 队列已 {minutes} 分钟未推进",
+    "botWaiting": "{n} 条消息待发送",
+    "botClientsWaiting": "{n} 条客户消息待发送",
+    "botDetail": "Telegram 回复：{detail}",
+    "schemaBehind": "数据库与代码不一致：{applied}/{expected} 个迁移。在服务器上运行：docker compose build migrate && docker compose run --rm migrate",
+    "schemaAhead": "数据库比代码更新：{applied}/{expected} 个迁移 — 服务器运行的是旧代码。请安装新代码：git pull，docker compose build migrate app，docker compose up -d",
+    "errorsTitle": "系统错误",
+    "errorsSubtitle": "最近 24 小时：{n} 种错误",
+    "searchPlaceholder": "错误编号，例如 #2832070603",
+    "searchButton": "查找",
+    "badQuery": "请输入截图中 # 号后面的编号",
+    "noMatch": "未找到该编号的错误（超过 30 天的不保留）",
+    "empty": "没有错误",
+    "tabRecent": "24 小时",
+    "tabMonth": "30 天",
+    "count": "{n} 次",
+    "kindLabel": "类型",
+    "kind": {
+      "render": "页面",
+      "action": "按钮",
+      "route": "API",
+      "other": "系统"
+    },
+    "path": "地址",
+    "user": "用户",
+    "firstSeen": "首次",
+    "lastSeen": "最近一次",
+    "stack": "技术细节",
+    "jobsTitle": "已停止的后台任务（7 天）",
+    "jobsEmpty": "没有已停止的任务",
+    "jobLast": "最后错误",
+    "clientSideNote": "这里只记录服务器上的错误 — 手机或浏览器本身的错误不会出现在此列表中。",
+    "homeErrors": "系统错误（24 小时）",
+    "homeDisk": "磁盘",
+    "mutedTab": "已静音",
+    "diskOne": "服务器磁盘（数据库、备份、照片）",
+    "diskDb": "数据库与备份磁盘",
+    "diskPhotos": "照片磁盘",
+    "diskUnknown": "未知",
+    "diskUsage": "已用 {pct}% · 剩余 {free}"
+  },
   "rasxod": {
     "title": "报告支出",
     "warehouse": "仓库",
@@ -4032,6 +4152,7 @@
       "clients": "客户",
       "suhbatlar": "对话",
       "myClients": "我的客户",
+      "uncollected": "未提货物",
       "dormant": "沉睡客户",
       "kelganlar": "咨询",
       "people": "联系人",
@@ -4084,7 +4205,8 @@
       "staffActivity": "员工活动",
       "labelPrints": "标签打印",
       "calcControl": "报价与实际",
-      "admin": "管理"
+      "admin": "管理",
+      "debtReleases": "赊账放货"
     },
     "more": "更多"
   },
@@ -4330,5 +4452,89 @@
   },
   "scanner": {
     "diagnostics": "扫描诊断"
+  },
+  "reklamaLid": {
+    "muteLeads": "广告线索（新线索及提醒）",
+    "muteLeadsHint": "关闭后，分配给您的新线索不会再通知您——负责人收到的提醒中会显示您已关闭通知。",
+    "firstContact": "首次联系",
+    "firstContactLegend": "中位数 · n · 1小时+ / 24小时+",
+    "minutes": "{n} 分钟"
+  },
+  "kechkiXulosa": {
+    "notifMuteOwner": "晚间汇总 (20:00)",
+    "notLinked": "尚未连接 Telegram — 晚间汇总无法送达。请在上方连接。"
+  },
+  "qarz": {
+    "approvalsNoneYours": "赊账放货不由您决定——请求会发给客户的销售、会计和管理员。在提货处请按「请求批准」。",
+    "promise": {
+      "title": "付款承诺",
+      "amount": "金额，$",
+      "dueOn": "付款截止",
+      "note": "备注（可选）",
+      "save": "记录承诺",
+      "cancel": "取消承诺",
+      "cancelConfirm": "取消此承诺？电话任务也会关闭。",
+      "due": "{date} 前",
+      "progress": "承诺后已付：{paid} / {amount}",
+      "by": "记录人：{name}",
+      "none": "没有承诺。",
+      "noDebt": "没有欠款——无需承诺。",
+      "history": "以前的承诺（{n}）",
+      "hint": "当天会给客户的销售（没有销售时给您）生成电话任务。如果次日中午前未到账，将通知销售、老板和财务。",
+      "status": {
+        "open": "等待中",
+        "kept": "已兑现",
+        "settled": "欠款以其他方式结清",
+        "broken": "未兑现",
+        "cancelled": "已取消"
+      },
+      "errors": {
+        "not_your_client": "此客户的承诺由其销售、会计或管理员记录",
+        "bad_amount": "金额无法识别",
+        "bad_date": "日期须从今天起，且不超过 90 天",
+        "no_debt": "客户没有欠款",
+        "exceeds_debt": "金额大于客户欠款",
+        "promise_open": "客户已有未结的承诺",
+        "not_open": "承诺已关闭",
+        "not_found": "未找到",
+        "forbidden": "无权限",
+        "validation": "请检查字段"
+      }
+    },
+    "releases": {
+      "title": "赊账放货",
+      "note": "客户欠款时放出货物的每一次：谁批准的，以及之后收回了多少钱。默认显示全部时间内尚未收回的。",
+      "kindTick": "✋ 勾选",
+      "kindApproval": "✅ 请求",
+      "kindDeferral": "⏳ 延期",
+      "allowedBy": "批准人：{name}",
+      "gaveBy": "放货人：{name}",
+      "debtAt": "放货时欠款：{usd}",
+      "legacyDebt": "（请求时）",
+      "unknownDebt": "放货时欠款：—",
+      "deferredPart": "另有 {usd} 已延期",
+      "deal": "交易 {code}",
+      "paidSince": "之后已付：{usd}",
+      "returned": "已收回：{usd}",
+      "left": "未收回：{usd}",
+      "currentDebt": "当前欠款：{usd}",
+      "perApprover": "按批准人",
+      "totalsNote": "每个客户的金额按此人最近一次放货计算：后一次放货的欠款已包含前一次未付的部分。",
+      "releasesN": "放货：{n}",
+      "clientsN": "客户：{n}",
+      "unknownN": "无金额的旧记录：{n}",
+      "cap": "显示 {total} 条中的 {shown} 条",
+      "showAll": "也显示已收回的",
+      "empty": "没有此类放货。",
+      "from": "从",
+      "to": "到",
+      "who": "批准人",
+      "everyone": "全部",
+      "apply": "显示",
+      "act": "交接单",
+      "promiseOpen": "🤝 承诺 {date} 前付 {usd}",
+      "promiseBroken": "⚠ 承诺未兑现（{date}）",
+      "unknownApprover": "—"
+    }
   }
 }

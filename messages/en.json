@@ -547,6 +547,43 @@
     "overview": "Overview",
     "money": "Money"
   },
+  "yuklar": {
+    "tab": "Cargo",
+    "sections": {
+      "china": "In China",
+      "transit": "In transit",
+      "uz": "In Uzbekistan",
+      "ready": "Ready for pickup"
+    },
+    "now": "Now",
+    "empty": "This client has no cargo in a warehouse or on the road right now.",
+    "siblings": "Other codes on this phone:",
+    "daysHere": "{n, plural, =0 {arrived today} one {# day} other {# days}}",
+    "arrivedOn": "came on:",
+    "status": {
+      "in_stock": "in stock",
+      "planned": "planned",
+      "loading": "loading",
+      "in_transit": "on the road",
+      "ready_for_pickup": "ready"
+    },
+    "receipt": "Receipt",
+    "marking": "Marking",
+    "unknownTruck": "truck unknown",
+    "missing": "Lost on the road",
+    "showAll": "Show all",
+    "history": "Handed over",
+    "historyDays": "{days, plural, one {# day} other {# days}}",
+    "historyYear": "1 year",
+    "historyCapped": "showing the latest {n}",
+    "historyEmpty": "Nothing was handed over in this period.",
+    "receiver": "Receiver",
+    "issuedBy": "Issued by",
+    "act": "Act",
+    "departed": "left",
+    "arrived": "arrived",
+    "openTab": "Details"
+  },
   "clients": {
     "title": "Clients",
     "new": "New client",
@@ -616,6 +653,8 @@
       "density_thresholds": "Density thresholds (light / medium / heavy)",
       "unclaimed_aging_days": "Days before an alert about unidentified cargo",
       "stale_stock_days": "Days before an alert about cargo sitting too long",
+      "uncollected_warn_days": "Uncollected cargo: first message to the seller and the digest (days)",
+      "uncollected_alarm_days": "Uncollected cargo: second, red message (days)",
       "costing_base_currency": "Base currency for cost accounting",
       "client_code_prefix": "Client code prefix",
       "label_size": "Label size (mm)",
@@ -638,6 +677,7 @@
       "quote_valid_days": "How many days a sealed calculation price stays valid (after that — recalculate)",
       "debt_approval_ttl_hours": "How many hours a handover permission (debt or unpriced cargo) stays valid",
       "unanswered_reminder_minutes": "A client waiting this many minutes for an answer gets their manager reminded (0 = off)",
+      "inbound_contact_minutes": "An advert lead nobody has contacted within this many office minutes gets the owner reminded (0 = off; the measurement runs regardless)",
       "crm_calc_stage": "A request for a price from the bot moves the lead to this stage (forward only; «—» means do not move)",
       "deal_calc_stage": "The same for the deal board — a coded client's request lands on a deal",
       "ai_daily_limit": "AI questions per person per day (bot + AI screen together; 0 — off)",
@@ -785,7 +825,7 @@
     "callRecApp": "Download the app (Android)",
     "telegramReconnect": "Reconnect",
     "telegramReconnectHint": "Changed phone or Telegram account? Open the bot from the new one — notifications go there. The old chat keeps working until the new one takes over.",
-    "notifMuteCalls": "Morning call list",
+    "notifMuteCalls": "Morning call list and uncollected cargo",
     "rasxodHint": "Spent money for work? Tell finance, and attach a photo of the receipt.",
     "staffAccountTitle": "My account with the company",
     "staffOwes": "The company owes you: {amount}",
@@ -1450,6 +1490,7 @@
     "note": "Failed sends are retried automatically. 'muted' — turned off by the user or Telegram is not linked.",
     "statuses": {
       "pending": "queued",
+      "sending": "sending",
       "sent": "sent",
       "failed": "failed",
       "muted": "muted"
@@ -2027,6 +2068,12 @@
     "pnlByMonth": "By month: revenue and costs",
     "pnlDetail": "Full table — every line, every month"
   },
+  "lidChat": {
+    "mark": "Lead",
+    "markTitle": "Lead — no client code yet",
+    "owner": "Lead owner: {name}",
+    "ownerNone": "Lead has no owner"
+  },
   "crm": {
     "title": "CRM",
     "leads": "Leads",
@@ -2428,6 +2475,32 @@
     "pricedElsewhere": "priced on another truck or the deal",
     "compensatedTotal": "🤝 Compensation:"
   },
+  "uncollected": {
+    "title": "Uncollected cargo",
+    "hint": "Days count from the day the cargo landed at this warehouse. «Leftover» — the client took part of it and the rest is still here.",
+    "tabLevel": "{n}+ days",
+    "tabAll": "All",
+    "allWarehouses": "All warehouses",
+    "seller": "Seller",
+    "allSellers": "All sellers",
+    "noSeller": "No seller",
+    "show": "Show",
+    "summary": "{clients} clients · {boxes} boxes",
+    "capped": "first {shown} of {total} shown",
+    "empty": "No cargo is waiting",
+    "days": "{n} days",
+    "boxes": "{n} boxes",
+    "moreLots": "+{n}",
+    "leftover": "leftover",
+    "lastPickup": "last collected {date}",
+    "customs": "customs warehouse",
+    "unpriced": "unpriced {n} boxes",
+    "debt": "debt",
+    "tagsFailed": "Price and debt tags could not be read right now",
+    "homeRow": "Uncollected cargo",
+    "homeSub": "{n} clients",
+    "onRoad": "{n} on the road"
+  },
   "arrivals": {
     "title": "Incoming cargo",
     "trucksTitle": "Trucks heading here",
@@ -2717,7 +2790,8 @@
       "validation": "Check the fields",
       "fx_missing": "No exchange rate for that currency",
       "discount_reason_required": "A discount needs a reason",
-      "quote_sealed": "The price is sealed — it cannot be edited (recalculate instead)"
+      "quote_sealed": "The price is sealed — it cannot be edited (recalculate instead)",
+      "not_your_client": "A deferral for this client is granted by his seller, the accountant or an admin"
     },
     "discountTitle": "Discount (damage)",
     "discountAmount": "Discount amount",
@@ -3589,6 +3663,52 @@
     "remaining": "{n} left",
     "copied": "{n} files copied"
   },
+  "kuzatuv": {
+    "hubLabel": "System errors",
+    "muteSystem": "System alerts (Telegram bridge, disk)",
+    "botRefused": "The Telegram bot is not working — since {since}",
+    "botNoToken": "No Telegram bot token — staff messages are not going out",
+    "botBacklog": "The Telegram queue has not moved for {minutes} min",
+    "botWaiting": "{n} messages waiting",
+    "botClientsWaiting": "{n} client messages waiting",
+    "botDetail": "Telegram said: {detail}",
+    "schemaBehind": "The database does not match the code: {applied}/{expected} migrations. On the server: docker compose build migrate && docker compose run --rm migrate",
+    "schemaAhead": "The database is newer than the code: {applied}/{expected} migrations — the server runs old code. Install the new code: git pull, docker compose build migrate app, docker compose up -d",
+    "errorsTitle": "System errors",
+    "errorsSubtitle": "Last 24 hours: {n} distinct errors",
+    "searchPlaceholder": "Error number, e.g. #2832070603",
+    "searchButton": "Find",
+    "badQuery": "Type the number after the # on the screenshot",
+    "noMatch": "No error with that number (older than 30 days is not kept)",
+    "empty": "No errors",
+    "tabRecent": "24 hours",
+    "tabMonth": "30 days",
+    "count": "{n} times",
+    "kindLabel": "Kind",
+    "kind": {
+      "render": "Page",
+      "action": "Button",
+      "route": "API",
+      "other": "System"
+    },
+    "path": "Address",
+    "user": "Who",
+    "firstSeen": "First seen",
+    "lastSeen": "Last seen",
+    "stack": "Technical details",
+    "jobsTitle": "Background jobs that stopped (7 days)",
+    "jobsEmpty": "No stopped jobs",
+    "jobLast": "Last error",
+    "clientSideNote": "Only server errors land here — an error inside the phone or the browser itself does not show in this list.",
+    "homeErrors": "System errors (24 h)",
+    "homeDisk": "Disk",
+    "mutedTab": "Muted",
+    "diskOne": "Server disk (database, backups, photos)",
+    "diskDb": "Database and backup disk",
+    "diskPhotos": "Photo disk",
+    "diskUnknown": "unknown",
+    "diskUsage": "{pct}% used · {free} free"
+  },
   "rasxod": {
     "title": "Report an expense",
     "warehouse": "Warehouse",
@@ -4032,6 +4152,7 @@
       "clients": "Clients",
       "suhbatlar": "Chats",
       "myClients": "My clients",
+      "uncollected": "Uncollected",
       "dormant": "Dormant",
       "kelganlar": "Enquiries",
       "people": "People",
@@ -4084,7 +4205,8 @@
       "staffActivity": "Staff activity",
       "labelPrints": "Label prints",
       "calcControl": "Quote vs actual",
-      "admin": "Administration"
+      "admin": "Administration",
+      "debtReleases": "On debt"
     },
     "more": "More"
   },
@@ -4330,5 +4452,89 @@
   },
   "scanner": {
     "diagnostics": "Scanner diagnostics"
+  },
+  "reklamaLid": {
+    "muteLeads": "Advert leads (a new lead and the reminder)",
+    "muteLeadsHint": "Muted, you get no message about new leads assigned to you — and the owner's reminder shows that you muted them.",
+    "firstContact": "First contact",
+    "firstContactLegend": "median · n · 1 h+ / 24 h+",
+    "minutes": "{n} min"
+  },
+  "kechkiXulosa": {
+    "notifMuteOwner": "Evening summary (20:00)",
+    "notLinked": "Telegram is not linked — the evening summary will not arrive. Link it above."
+  },
+  "qarz": {
+    "approvalsNoneYours": "Letting cargo go on debt is not your call — requests go to the client’s seller, the accountant and the admin. At the counter, press «Request permission».",
+    "promise": {
+      "title": "Payment promise",
+      "amount": "Amount, $",
+      "dueOn": "Will pay by",
+      "note": "Comment (optional)",
+      "save": "Record the promise",
+      "cancel": "Cancel the promise",
+      "cancelConfirm": "Cancel this promise? Its call task closes too.",
+      "due": "by {date}",
+      "progress": "Paid since the promise: {paid} of {amount}",
+      "by": "recorded by {name}",
+      "none": "No promises.",
+      "noDebt": "No debt — no promise needed.",
+      "history": "Earlier promises ({n})",
+      "hint": "On that day the call lands as a task for the client’s seller (or for you when there is none). If the money is not in by noon the next day, the seller, the owner and accounting are told.",
+      "status": {
+        "open": "waiting",
+        "kept": "kept",
+        "settled": "debt closed otherwise",
+        "broken": "broken",
+        "cancelled": "cancelled"
+      },
+      "errors": {
+        "not_your_client": "A promise for this client is recorded by his seller, the accountant or an admin",
+        "bad_amount": "The amount could not be read",
+        "bad_date": "The date must be from today and within 90 days",
+        "no_debt": "The client owes nothing",
+        "exceeds_debt": "The amount is more than the client owes",
+        "promise_open": "The client already has an open promise",
+        "not_open": "The promise is already closed",
+        "not_found": "Not found",
+        "forbidden": "No access",
+        "validation": "Check the fields"
+      }
+    },
+    "releases": {
+      "title": "Released on debt",
+      "note": "Every time a client’s cargo went out while he owed money: who allowed it and how much has come back since. By default — all time, only those whose money has not come back.",
+      "kindTick": "✋ tick",
+      "kindApproval": "✅ request",
+      "kindDeferral": "⏳ deferral",
+      "allowedBy": "allowed by {name}",
+      "gaveBy": "handed over by {name}",
+      "debtAt": "debt at release: {usd}",
+      "legacyDebt": "(at the time of the request)",
+      "unknownDebt": "debt at release: —",
+      "deferredPart": "{usd} more was deferred",
+      "deal": "deal {code}",
+      "paidSince": "paid since: {usd}",
+      "returned": "returned: {usd}",
+      "left": "not returned: {usd}",
+      "currentDebt": "owes now: {usd}",
+      "perApprover": "By who allowed it",
+      "totalsNote": "Each client’s money counts once, by this person’s LATEST release: a later release’s debt already holds the unpaid part of an earlier one.",
+      "releasesN": "releases: {n}",
+      "clientsN": "clients: {n}",
+      "unknownN": "older, no amount: {n}",
+      "cap": "Showing {shown} of {total}",
+      "showAll": "Show returned ones too",
+      "empty": "No such releases.",
+      "from": "From",
+      "to": "To",
+      "who": "Allowed by",
+      "everyone": "Everyone",
+      "apply": "Show",
+      "act": "act",
+      "promiseOpen": "🤝 promised {usd} by {date}",
+      "promiseBroken": "⚠ promise broken ({date})",
+      "unknownApprover": "—"
+    }
   }
 }

@@ -2068,7 +2068,45 @@ on another truck or on the deal (DECISIONS #1189-#1190) — `tripCoverageOn`
 for the tile and the «Narx» tab, `totals.priced` removed; a price typed on the
 truck itself always counts.
 
-**Latest migration: 0112** (`qr_less` — the count reasons, the QR-siz lot
+**Round — seven packages from his answers of 2026-09-28 (DECISIONS
+#1191-#1203; migrations 0113-0116 — ledger must reach 117).** His message
+with the company KPI table answered 2a/3a/4a/5a/7a/11a and asked FIRST for a
+salary place, cargo on the client card and a per-employee dashboard, plus
+Khorgos. Salary/KPI, Khorgos and the pricing-page lot icons WAIT on the
+questions sent back to him (tasks: KPI engine, Khorgos route/ETA, the two lot
+icons); everything else was built as seven parallel worktree packages
+(design → judge → build → review → fix → cherry-pick, migration numbers and
+`when` assigned by the lead up front): **qarz** (0114 — `mayGrantDebt` one
+predicate asked in the services, the «Qarzga berilgan yuklar» register from
+figures stored AT release, the payment promise as a task + sweep), **Yuklar**
+(the client card's third tab — where the cargo is now + what went out, one
+door per link), **olib-ketilmagan** (0116 — 5/10-day waits to the seller,
+never the customer; `announceLevel` so a client collecting daily is announced
+once; the svodka moved to `wms/reports/daily-digest.ts`), **lid-chat** (lead
+chats on every chat surface via `leadDialogsSql`, asked per DIALOG; read-only),
+**reklama-lid** (0113 — push on arrival, office-minute clock, ONE contact rule
+`contactEvidenceSql`, «📞 Bog'landim»), **kechki-xulosa** (20:00 summary for
+the super_admin ROLE with the company sight, «📊 Holat»; the attention list
+moved into wms and is shared with the dashboard, viewer REQUIRED), **kuzatuv**
+(0115 — dead bot / quiet listener / `system_errors` / schema banner / disk;
+`idle_in_transaction_session_timeout=60s`; the watchdog's review blocker was
+that under `init: true` PID 1 is tini and cannot be killed). THE MERGE found
+#513 five times, each by a fence (#1203): two act doors → `issue/act-door.ts`;
+two day counts → `calendarDaysBetween` (platform/time/tashkent.ts) is the ONE
+day difference and `daysSince` asks it; two «balance less deferral» →
+`blockingDebtOf`; the price tick split from the debt tick
+(`mayOverridePrice` — the grant alone, as before; the judge's #12, ASKED of
+him); and `bot-lookup`'s phone shared with `telegram-live`. STILL OWED to him
+as questions: the price tick rule, lead-chat replies from the CRM (needs
+`tg_outbox.lead_id`), whether Sunday is an office day for the lead clock,
+the logist's `finance.debt_override` on the LIVE server (seed never removes a
+grant — an untick on /admin/roles, which also removes his price tick). The
+pre-0114 tick branch of the register still seq-scans (its index is owed).
+
+**Latest migration: 0116** (`cargo_wait_alerts`; ledger must reach **117**).
+Before it: 0115 (`system_watch`), 0114 (`debt_control`), 0113
+(`inbound_contact`) — `when` …092-…095, assigned in that order before the
+packages were built. Before them: **0112** (`qr_less` — the count reasons, the QR-siz lot
 marker, the office receipt's receiver, the factory barcode, the pallet kind;
 ledger must reach **113**). Before it: **0111** (`nav_usage` — «Tez-tez»;
 ledger 112; `when` …090). Before it: **0110** (`lead_assign` — the website teams, the typed and
@@ -2189,10 +2227,12 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **113** since 0112, and his server CONFIRMED **113** («deploy qildim
-113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), so every
-migration on this branch is live; a code-only round after it is checked by
-`/api/version`, not the count.
+length — **117** since 0116, and his server CONFIRMED **113** («deploy qildim
+113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), so the next
+deploy applies 0113-0116 and must recreate EVERY container once
+(`--profile https --profile telegram up -d --build`: compose gained `init`, a
+healthcheck, log caps and a postgres flag); a code-only round after it is
+checked by `/api/version`, not the count.
 Never carry this number over from a previous session: read it
 (`ls src/modules/platform/db/migrations/*.sql | wc -l`) before writing the
 owner a step list, because the count is the only check that separates «the

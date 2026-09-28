@@ -134,10 +134,11 @@ export default async function DealsPage({
   // AFTER the rows on purpose: bounded to the clients this board actually
   // drew, so a supervisor's badge query stops sorting the whole company's
   // message history per render (round 108).
-  const badges = await chatBadges(
-    tgViewerFor(actor),
-    [...new Set(rows.map((row) => row.clientId).filter((id): id is string => Boolean(id)))],
-  );
+  // Client ids ONLY: a deal is always a client's, so the deal board never
+  // runs the lead statement (a bound kind with no ids asks nothing).
+  const badges = await chatBadges(tgViewerFor(actor), {
+    clientIds: [...new Set(rows.map((row) => row.clientId).filter((id): id is string => Boolean(id)))],
+  });
   const shownClosed = new Map<string, number>();
   for (const row of rows) {
     shownClosed.set(row.stageId, (shownClosed.get(row.stageId) ?? 0) + 1);
@@ -169,7 +170,7 @@ export default async function DealsPage({
       deferred: row.deferred,
       flag: (flag?.reason as 'deviation' | 'unpriced' | undefined) ?? null,
       flagPct: flag?.pct ?? null,
-      chat: badges.get(row.clientId) ?? null,
+      chat: badges.clients.get(row.clientId) ?? null,
     };
   });
 

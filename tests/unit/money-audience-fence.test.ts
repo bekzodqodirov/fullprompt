@@ -12,11 +12,12 @@ import { describe, expect, it } from 'vitest';
  */
 const VED_GRANTS = ['finance.manage', 'finance.view', 'costs.enter_batch', 'reports.all_warehouses'];
 const ALLOWED: Record<string, string> = {
-  // 0104: `finance.view` is SUBTRACTED there, never picked — a seller of
-  // ANOTHER client drops out of the approval request's audience (the request
-  // names a client and a debt). The audience itself is `finance.debt_override`
-  // and the message carries no kassa, profit or tannarx.
-  'src/modules/wms/issue/approvals.ts': 'narrows the debt_override list',
+  // 0114: the request's audience is exactly the people who may DECIDE it —
+  // every `finance.debt_override` holder's grant set is rebuilt from the
+  // editable grants and asked `mayGrantDebt`, so `finance.view` is READ as
+  // part of «whose ledger may this person read», never used as an audience
+  // of its own. The message carries no kassa, profit or tannarx.
+  'src/modules/wms/issue/approvals.ts': 'recipients = mayGrantDebt over the debt_override holders',
 };
 
 const stripComments = (source: string) =>

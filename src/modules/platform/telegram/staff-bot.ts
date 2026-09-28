@@ -1,16 +1,9 @@
 import { randomBytes } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { db } from '../db/client';
-import {
-  permissions,
-  rolePermissions,
-  telegramLinks,
-  userRoles,
-  users,
-  userWarehouses,
-} from '../db/schema';
+import { telegramLinks, users } from '../db/schema';
 import { writeAudit } from '../audit/service';
-import { loadUserRoles } from '../rbac/authorize';
+import { actorGrants, userPermissions } from '../rbac/authorize';
 import { completeTask, TaskError } from '../tasks/service';
 import { DAY_BUTTONS } from '../tasks/digest';
 import { logger } from '../logger';
@@ -196,6 +189,15 @@ export const AI_RASTAMOJKA = '🤖 AI rastamojka';
  * library of things the office sends the same customers over and over.
  */
 export const ZAMETKALAR = '📌 Zametkalar';
+/** The advert lead's one button (0113) — named once, for the push and its tests. */
+export const LEAD_CONTACTED_BUTTON = '📞 Bog‘landim';
+/**
+ * The owner's evening summary, on demand (his 7a: «har kuni 20:00 faqat
+ * sizga»). Drawn only for the person the summary is for — `holatFor` — and
+ * re-asked on every press, because a keyboard outlives the grant it was
+ * drawn for.
+ */
+export const HOLAT = '📊 Holat';
 
 /** The two labels that open a collection — one list, so every reader agrees. */
 export const CALC_ENTRY_LABELS = [HISOBLATISH, AI_RASTAMOJKA];
@@ -219,6 +221,8 @@ export function escapesIntake(text: string): boolean {
     t === '/bugun' ||
     t === ZAMETKALAR ||
     t === '/zametka' ||
+    t === HOLAT ||
+    t === '/holat' ||
     // A chat that is both staff and client pressing «📦 Yuklarim» in the middle
     // of a collection had it filed as intake material (round C's scouts).
     isCabinetText(t)
@@ -271,7 +275,9 @@ export type BotCallback =
   | { kind: 'approval'; approvalId: string; verdict: 'approved' | 'refused' }
   | { kind: 'entry'; who: 'staff' | 'client' }
   | { kind: 'calc'; step: CalcStep }
-  | { kind: 'note'; step: NoteStep; noteId?: string; page?: number };
+  | { kind: 'note'; step: NoteStep; noteId?: string; page?: number }
+  /** «📞 Bog'landim» under an advert lead's push (0113). */
+  | { kind: 'lead_contacted'; leadId: string };
 
 /**
  * The zametka buttons. `send` is a note id; the rest are the capture's own
@@ -332,6 +338,10 @@ export function parseCallback(data: string): BotCallback | null {
   // Round C: the same «Bajarildi», pressed on a list of the day's tasks.
   const listed = /^tb:([0-9a-f-]{36})$/.exec(data);
   if (listed) return { kind: 'task_done', taskId: listed[1]!, list: true };
+  // 0113: the seller says they reached the advert lead. `lc:` collides with
+  // none of the cabinet's own three (`lang:`, `ph:`, `mg`).
+  const contacted = /^lc:([0-9a-f-]{36})$/.exec(data);
+  if (contacted) return { kind: 'lead_contacted', leadId: contacted[1]! };
   const approval = /^a:([01]):([0-9a-f-]{36})$/.exec(data);
   if (approval) {
     return {
@@ -362,6 +372,11 @@ export function buttonsFor(
         { text: '⛔ Yo‘q', callback_data: `a:0:${payload.approvalId}` },
       ],
     ];
+  }
+  // An advert lead (0113): the one press that says «I reached them» from a
+  // phone the system cannot see — a personal Telegram, a call with no app.
+  if (type === 'InboundLeadArrived' && typeof payload.leadId === 'string') {
+    return [[{ text: LEAD_CONTACTED_BUTTON, callback_data: `lc:${payload.leadId}` }]];
   }
   // The 08:00 digest carries the same buttons «📋 Bugun» draws (round C), from
   // the tasks it listed — so the push and the pull stay one thing.
@@ -479,6 +494,28 @@ export async function closeTaskMessage(
   if (!res.ok) logger.warn({ description: res.description }, 'task message not updated');
 }
 
+/**
+ * Settle the advert-lead push a «📞 Bog'landim» was pressed on (0113): the
+ * text keeps what it said and gains who reached the lead; the pressed button
+ * goes and the «↗️ Ochish» link row STAYS — an edit must never leave a
+ * message with less to open than it had (`urlRowsOf`'s rule, via
+ * `withoutCallback`, which removes exactly that one row).
+ */
+export async function closeLeadMessage(
+  chatId: bigint,
+  origin: { messageId: number; text: string; markup: unknown },
+  leadId: string,
+  line: string,
+): Promise<void> {
+  const res = await editText({
+    chatId,
+    messageId: origin.messageId,
+    html: appendLine(staffTextHtml(origin.text, 'InboundLeadArrived'), line),
+    replyMarkup: keyboardOf(withoutCallback(origin.markup, `lc:${leadId}`)),
+  });
+  if (!res.ok) logger.warn({ description: res.description }, 'lead message not updated');
+}
+
 export function noteStaffEntry(chatId: bigint): void {
   staffEntryIntents.set(String(chatId), Date.now() + PENDING_TTL_MS);
 }
@@ -491,15 +528,8 @@ export function takeStaffEntry(chatId: bigint): boolean {
   return expires > Date.now();
 }
 
-async function permissionsOf(userId: string): Promise<Set<string>> {
-  const rows = await db
-    .select({ code: permissions.code })
-    .from(userRoles)
-    .innerJoin(rolePermissions, eq(userRoles.roleId, rolePermissions.roleId))
-    .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
-    .where(eq(userRoles.userId, userId));
-  return new Set(rows.map((r) => r.code));
-}
+/** The grants alone — `userPermissions`, the one home of the join `actorGrants` reads. */
+const permissionsOf = userPermissions;
 
 /**
  * `getActor` for a chat instead of a session — the SAME three answers
@@ -518,21 +548,12 @@ export async function botActorFor(chatId: bigint): Promise<
 > {
   const staff = await staffForChat(chatId);
   if (!staff) return null;
-  const roleRows = await loadUserRoles(staff.id);
-  const whRows = await db
-    .select({ warehouseId: userWarehouses.warehouseId })
-    .from(userWarehouses)
-    .where(eq(userWarehouses.userId, staff.id));
-  return {
-    ...staff,
-    permissions: await permissionsOf(staff.id),
-    // The role CODES ride along for the one decision made on a role rather
-    // than a grant: whether the AI assistant's analyst tier opens (round 21's
-    // shape — supervision breadth is super_admin/admin, not a permission).
-    roles: roleRows.map((r) => r.code),
-    warehouseScoped: roleRows.some((r) => r.warehouseScoped),
-    warehouseIds: whRows.map((w) => w.warehouseId),
-  };
+  // The role CODES ride along for the decisions made on a role rather than a
+  // grant: whether the AI assistant's analyst tier opens (round 21's shape —
+  // supervision breadth is super_admin/admin, not a permission) and whether
+  // «📊 Holat» is this person's (the owner's evening summary). `actorGrants`
+  // is `getActor`'s own body, so the chat is exactly the person on the screen.
+  return { ...staff, ...(await actorGrants(staff.id)) };
 }
 
 /**
@@ -547,6 +568,36 @@ export async function lookupFromBot(
   if (!actor) return null;
   const { botLookupAnswer } = await import('../../wms/bot/lookup');
   return botLookupAnswer(actor, query);
+}
+
+/**
+ * Is «📊 Holat» this chat's? The ONE door (`readsOwnerSummary`: the super_admin
+ * role and the company's money sight) asked by the keyboard, the command
+ * menu and the handler alike. The predicate lives in wms and is reached by
+ * dynamic import — platform never imports wms statically (the startBoss
+ * crossing). False for a chat that is not a linked member of staff.
+ */
+export async function holatFor(chatId: bigint): Promise<boolean> {
+  const actor = await botActorFor(chatId);
+  if (!actor) return false;
+  const { readsOwnerSummary } = await import('../../wms/reports/owner-summary-door');
+  return readsOwnerSummary(actor);
+}
+
+/**
+ * The evening summary for the chat that pressed «📊 Holat» — the door and the
+ * compose in wms (`ownerSummaryForActor` asks it before a single figure is
+ * read). `not_linked` for a stranger, `refused` for a member of staff the door
+ * does not admit; the text for the owner, the same words the 20:00 push sends.
+ */
+export async function ownerSummaryFromBot(
+  chatId: bigint,
+): Promise<{ status: 'ok'; text: string } | { status: 'not_linked' | 'refused' }> {
+  const actor = await botActorFor(chatId);
+  if (!actor) return { status: 'not_linked' };
+  const { ownerSummaryForActor } = await import('../../wms/reports/owner-summary');
+  const summary = await ownerSummaryForActor(actor);
+  return summary ? { status: 'ok', text: summary.text } : { status: 'refused' };
 }
 
 /**
@@ -690,7 +741,11 @@ export type BotApprovalResult =
   | 'not_linked'
   | 'forbidden'
   | 'already_decided'
-  | 'not_found';
+  | 'not_found'
+  // 0114: the presser holds the grant but this client is not in his book (a
+  // seller pressing on a colleague's client, from an old copy) — refused by
+  // the service, answered in words.
+  | 'not_your_client';
 
 /**
  * Decide a debtor-issue request from the button. The permission is checked
@@ -712,12 +767,16 @@ export async function decideApprovalFromBot(
     await decideIssueApproval(
       { approvalId, verdict, note: 'Telegram bot orqali' },
       { actorId: staff.id },
+      // WHICH clients this chat's person may decide is the service's answer
+      // (0114): the same grants, as the actor the web page passes.
+      { id: staff.id, permissions: grants },
     );
     return 'decided';
   } catch (err) {
     if (err instanceof ApprovalError) {
       if (err.code === 'already_decided') return 'already_decided';
       if (err.code === 'not_found') return 'not_found';
+      if (err.code === 'not_your_client') return 'not_your_client';
     }
     throw err;
   }

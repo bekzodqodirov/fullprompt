@@ -151,10 +151,15 @@ export default async function LeadsPage({
   // AFTER the rows on purpose: bounded to the clients this board actually
   // drew, so a supervisor's badge query stops sorting the whole company's
   // message history per render (round 108).
-  const badges = await chatBadges(
-    tgViewerFor(actor),
-    [...new Set(rows.map((row) => row.lead.clientId).filter((id): id is string => Boolean(id)))],
-  );
+  // A lead with a client wears the CLIENT's chat; a lead without one wears its
+  // own (the lead chats round, owner's 4a) — each id asked only in its own
+  // kind, so a board with no prospects pays for no lead statement.
+  const badges = await chatBadges(tgViewerFor(actor), {
+    clientIds: [
+      ...new Set(rows.map((row) => row.lead.clientId).filter((id): id is string => Boolean(id))),
+    ],
+    leadIds: rows.filter((row) => !row.lead.clientId).map((row) => row.lead.id),
+  });
   // What each column HOLDS versus what it was handed — one map for both
   // halves, so an open column that was capped says «+N» exactly as a closed
   // one always did.
@@ -363,7 +368,9 @@ export default async function LeadsPage({
           quotedVolumeM3: lead.quotedVolumeM3,
           quotedWeightKg: lead.quotedWeightKg,
           nextActionAt: lead.nextActionAt,
-          chat: (lead.clientId && badges.get(lead.clientId)) || null,
+          chat:
+            (lead.clientId ? badges.clients.get(lead.clientId) : badges.leads.get(lead.id)) ??
+            null,
         }))}
         hidden={hidden}
         archiveHref={`/crm${hrefWith(carried, { arxiv: '1' })}`}

@@ -3,7 +3,6 @@ import { db, type Db, type Tx } from '../../platform/db/client';
 import {
   clients,
   leadAssignments,
-  leadIntakes,
   leads,
   tgChatRules,
   users,
@@ -595,20 +594,20 @@ export async function confirmSiteTagOnCard(input: {
     { system: true },
   );
   // The arrivals ledger answers «is the website producing anything» — a
-  // returning customer arriving through it is part of that answer.
-  await db
-    .insert(leadIntakes)
-    .values({
-      channel: 'site',
-      externalId: input.tag,
-      sourceKey: 'sayt',
-      ref: { tag: input.tag, team: offer.team, topic: offer.topic, page: offer.page },
-      outcome: input.leadId ? 'joined' : 'client',
-      leadId: input.leadId,
-      clientId: input.leadId ? null : input.clientId,
-      assignedUserId: input.managerUserId,
-    })
-    .onConflictDoNothing();
+  // returning customer arriving through it is part of that answer. RAW, on
+  // the ledger's pre-0113 columns: drizzle's insert names every column its
+  // schema knows, and on a database one migration behind that refusal would
+  // take this whole landing with it (inbound.ts `record`, the same rule).
+  const ref = { tag: input.tag, team: offer.team, topic: offer.topic, page: offer.page };
+  await db.execute(sql`
+    INSERT INTO lead_intakes
+      (channel, external_id, source_key, ref, outcome, lead_id, client_id, assigned_user_id)
+    VALUES ('site', ${input.tag}, 'sayt', ${JSON.stringify(ref)}::jsonb,
+            ${input.leadId ? 'joined' : 'client'},
+            ${input.leadId ?? null}::uuid,
+            ${input.leadId ? null : (input.clientId ?? null)}::uuid,
+            ${input.managerUserId}::uuid)
+    ON CONFLICT DO NOTHING`);
   return true;
 }
 

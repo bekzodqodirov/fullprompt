@@ -40,6 +40,7 @@ import {
   unlinkedReceipts,
   updateDeal,
 } from '@/modules/wms/deals/service';
+import { wholeLedger } from '../fixtures/money-actor';
 
 /**
  * Bitim — the quote and the reality, and the alert that fires between them.
@@ -552,10 +553,10 @@ describe('"I will pay when it is all here"', () => {
   it('refuses a deferral with no reason and no end', async () => {
     const id = await newDeal();
     await expect(
-      deferPayment(id, { reason: '', untilAllArrived: true }, ctx()),
+      deferPayment(id, { reason: '', untilAllArrived: true }, ctx(), wholeLedger(actorId)),
     ).rejects.toThrow('reason_required');
     await expect(
-      deferPayment(id, { reason: '1 karobka yo‘lda', untilAllArrived: false, untilDate: null }, ctx()),
+      deferPayment(id, { reason: '1 karobka yo‘lda', untilAllArrived: false, untilDate: null }, ctx(), wholeLedger(actorId)),
     ).rejects.toThrow('end_required');
   });
 
@@ -563,7 +564,7 @@ describe('"I will pay when it is all here"', () => {
     const who = await freshClient();
     const id = await newDeal({ clientId: who });
     await receiveCargo(1, 100, 10, id, who);
-    await deferPayment(id, { reason: '1 karobka yo‘lda', untilAllArrived: true }, ctx());
+    await deferPayment(id, { reason: '1 karobka yo‘lda', untilAllArrived: true }, ctx(), wholeLedger(actorId));
 
     // The gate must honour it now…
     expect(await activeDeferrals(who)).toHaveLength(1);
@@ -597,7 +598,7 @@ describe('"I will pay when it is all here"', () => {
     const who = await freshClient();
     const id = await newDeal({ clientId: who });
     await receiveCargo(1, 100, 4, id, who);
-    await deferPayment(id, { reason: 'yo‘qolgan karobka', untilAllArrived: true }, ctx());
+    await deferPayment(id, { reason: 'yo‘qolgan karobka', untilAllArrived: true }, ctx(), wholeLedger(actorId));
     const lots = await db
       .select({ id: receiptLots.id })
       .from(receiptLots)
@@ -637,7 +638,7 @@ describe('"I will pay when it is all here"', () => {
     expect(await clientBalanceUsd(who)).toBeCloseTo(200, 2);
     expect(await deferredBalanceUsd(who)).toBe(0);
 
-    await deferPayment(id, { reason: '1 karobka yo‘lda', untilAllArrived: true }, ctx());
+    await deferPayment(id, { reason: '1 karobka yo‘lda', untilAllArrived: true }, ctx(), wholeLedger(actorId));
     // The client still OWES it — the balance is not rewritten, only the figure
     // the gate decides on.
     expect(await clientBalanceUsd(who)).toBeCloseTo(200, 2);
@@ -660,7 +661,7 @@ describe('"I will pay when it is all here"', () => {
       ctx(),
     );
     madeTransactions.push(onDeal.id, old.id);
-    await deferPayment(deferredDeal, { reason: 'yuk to‘liq emas', untilAllArrived: true }, ctx());
+    await deferPayment(deferredDeal, { reason: 'yuk to‘liq emas', untilAllArrived: true }, ctx(), wholeLedger(actorId));
 
     expect(await clientBalanceUsd(who)).toBeCloseTo(290, 2);
     // Only the job's own 200 is excused; the old 90 still blocks.
@@ -710,7 +711,7 @@ describe('"I will pay when it is all here"', () => {
       { clientId: who, type: 'charge', amount: 500, currency: 'USD', txDate: today },
       ctx(),
     );
-    await deferPayment(dealId, { reason: 'yuk to‘liq emas', untilAllArrived: true }, ctx());
+    await deferPayment(dealId, { reason: 'yuk to‘liq emas', untilAllArrived: true }, ctx(), wholeLedger(actorId));
 
     // …and then the client pays the deferred job in full.
     const paid = await addTransaction(
@@ -738,7 +739,7 @@ describe('"I will pay when it is all here"', () => {
       { clientId: who, dealId, type: 'charge', amount: 1000, currency: 'USD', txDate: today },
       ctx(),
     );
-    await deferPayment(dealId, { reason: 'kutamiz', untilAllArrived: true }, ctx());
+    await deferPayment(dealId, { reason: 'kutamiz', untilAllArrived: true }, ctx(), wholeLedger(actorId));
     const over = await addTransaction(
       { clientId: who, dealId, type: 'payment', amount: 1200, currency: 'USD', txDate: today },
       ctx(),
@@ -756,6 +757,7 @@ describe('"I will pay when it is all here"', () => {
       id,
       { reason: 'kelasi haftagacha', untilAllArrived: false, untilDate: yesterday },
       ctx(),
+      wholeLedger(actorId),
     );
     // The gate stops honouring it immediately, before the sweep has run —
     // otherwise a debtor is invisible until the next job tick.

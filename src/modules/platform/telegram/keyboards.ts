@@ -1,4 +1,4 @@
-import { staffForChat, startMenuFor } from './staff-bot';
+import { holatFor, staffForChat, startMenuFor } from './staff-bot';
 import { bothKeyboard, staffKeyboard } from './staff-handlers';
 import { cabinetKeyboard } from './client-cabinet';
 
@@ -22,8 +22,13 @@ export async function replyKeyboardFor(chatId: bigint, locale?: string | null) {
   const linked = await clientsForChat(chatId).catch(() => []);
   const menu = startMenuFor(staff, linked.length);
   const loc = locale ?? linked.find((c) => c.locale)?.locale ?? null;
-  if (menu === 'both') return bothKeyboard(loc);
-  if (menu === 'staff') return staffKeyboard();
+  // «📊 Holat» is asked of the PERSON (the owner's evening summary door), and
+  // only for a staff chat — a customer's keyboard never carries it. A failed
+  // question draws the ordinary keyboard: losing the button for one reply is
+  // better than losing every button to a thrown keyboard.
+  const holat = menu === 'both' || menu === 'staff' ? await holatFor(chatId).catch(() => false) : false;
+  if (menu === 'both') return bothKeyboard(loc, { holat });
+  if (menu === 'staff') return staffKeyboard({ holat });
   if (menu === 'cabinet') return cabinetKeyboard(loc);
   return undefined;
 }

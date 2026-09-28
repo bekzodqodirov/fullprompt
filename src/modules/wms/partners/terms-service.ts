@@ -8,7 +8,15 @@ import { usersWithPermission } from '../../platform/notifications/service';
 import { tashkentDay } from '../../platform/time/tashkent';
 import { partnerSignedSql } from './ledger-sign';
 import { PartnerError } from './service';
-import { dueStateOf, termAlerts, type DueState, type LedgerMove, type TermAlert } from './terms';
+import {
+  dueStateOf,
+  openDueParts,
+  termAlerts,
+  type DuePart,
+  type DueState,
+  type LedgerMove,
+  type TermAlert,
+} from './terms';
 
 /**
  * The counterparty's payment terms on the database (0108): the card's own
@@ -53,6 +61,11 @@ export interface TermState {
   debtLimitUsd: number | null;
   balanceUsd: number;
   due: DueState;
+  /**
+   * Every open debt with its due day (FIFO) — `due` is its first part. Empty
+   * with no `payWithinDays`: an account with no terms owes no DATED money.
+   */
+  open: DuePart[];
   /** Share of the limit the debt has reached, when there is a limit. */
   limitPct: number | null;
 }
@@ -115,6 +128,7 @@ export async function termStates(partnerIds?: string[], today = tashkentDay()): 
         a.payWithinDays === null
           ? { dueDate: null, dueUsd: 0, overdueUsd: 0 }
           : dueStateOf(list, a.payWithinDays, today),
+      open: a.payWithinDays === null ? [] : openDueParts(list, a.payWithinDays),
       limitPct: limit ? Math.round((balanceUsd / limit) * 100) : null,
     });
   }

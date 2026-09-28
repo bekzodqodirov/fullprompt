@@ -65,6 +65,9 @@ export default defineConfig({
       // demo accounts through every spec, and a menu that rearranges itself
       // from what the previous spec opened is state left for the next (#183).
       NAV_AUTO: 'off',
+      // B9's error list is proven by a page that throws on purpose; it is a
+      // 404 everywhere this switch is not set (app/(protected)/sinov-xato).
+      ERROR_PROBE: 'on',
     },
     url: 'http://localhost:3000/api/health',
     reuseExistingServer: !process.env.CI,

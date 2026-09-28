@@ -28,6 +28,7 @@ import { followCompensationDealTx } from '../finance/compensation-follow';
 import { revenueUsdSql } from '../finance/ledger-sql';
 import { REVENUE_TYPES } from '../finance/ledger-kinds';
 import { marginPct } from '../accounting/margin';
+import { mayGrantDebt, type MoneyActor } from '../finance/scope';
 import { STAGE_COLORS, activeLostReasonLabels } from '../crm/service';
 import { closedAtFor, reasonAllowed, stageWrite } from '../crm/stage-law';
 import { orderForMove, topOfColumn, type BoardTable, bottomOfColumn } from '../crm/board-place';
@@ -1086,11 +1087,25 @@ export async function deferPayment(
   dealId: string,
   input: { reason: string; untilAllArrived: boolean; untilDate?: string | null },
   ctx: AuditContext,
+  /**
+   * WHO grants the «muddat» (0114, the owner's 2a): a deferral lets cargo go
+   * with money owed, so it is the same decision as the counter's tick and
+   * asks the same predicate — a seller for his own clients, the admin and
+   * the accountant for everybody. REQUIRED: an optional one fails open (#790).
+   */
+  granter: MoneyActor,
 ): Promise<void> {
   if (!input.reason.trim()) throw new DealError('reason_required');
   if (!input.untilAllArrived && !input.untilDate) throw new DealError('end_required');
   const deal = await db.query.deals.findFirst({ where: eq(deals.id, dealId) });
   if (!deal) throw new DealError('not_found');
+  const owner = await db.query.clients.findFirst({
+    where: eq(clients.id, deal.clientId),
+    columns: { salesManagerId: true },
+  });
+  if (!mayGrantDebt(granter, { salesManagerId: owner?.salesManagerId ?? null })) {
+    throw new DealError('not_your_client');
+  }
 
   await db.transaction(async (tx) => {
     await tx

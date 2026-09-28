@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { and, eq, inArray, like } from 'drizzle-orm';
+import { and, eq, inArray, like, sql } from 'drizzle-orm';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
   clients,
@@ -78,6 +78,14 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // The arrivals' Telegram pushes (0113) — to this file's sellers, or to the
+  // office when nobody owned the lead — go with the arrivals; the push's user
+  // foreign key would otherwise refuse the users' own delete below.
+  await db.execute(sql`
+    DELETE FROM notifications
+     WHERE payload ->> 'intakeId' IN (SELECT id::text FROM lead_intakes WHERE name LIKE ${`%${STAMP}%`})
+        OR payload ->> 'leadId' IN (SELECT id::text FROM leads WHERE name LIKE ${`%${STAMP}%`})
+        OR user_id IN (SELECT id FROM users WHERE full_name LIKE ${`Sotuvchi %${STAMP}`})`);
   await db.delete(leadIntakes).where(like(leadIntakes.name, `%${STAMP}%`));
   const made = await db
     .select({ id: leads.id })

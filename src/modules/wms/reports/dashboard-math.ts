@@ -1,4 +1,4 @@
-import { addDays, mondayOf, tashkentDay } from '@/modules/platform/time/tashkent';
+import { addDays, calendarDaysBetween, mondayOf, tashkentDay } from '@/modules/platform/time/tashkent';
 import { marginPct } from '../accounting/margin';
 // The pure file, not `period.ts`: that one reads a rate from the database, and
 // this file must stay importable by anything that only draws.
@@ -305,6 +305,16 @@ export interface AttentionItem<K extends string = string> {
 const LEVEL_ORDER: Record<AttentionLevel, number> = { bad: 0, warn: 1, info: 2 };
 
 /**
+ * Does this row say anything — a count, or money at stake? The ONE test the
+ * ranked list drops empty rows by, exported so a reader that picks a row out
+ * of the facts (the owner's Monday summary moves the arrears row into its
+ * payments block) asks the list's own question, never a copy of it (#513).
+ */
+export function attentionLive(item: AttentionItem): boolean {
+  return item.count > 0 || (item.usd ?? 0) > 0.009;
+}
+
+/**
  * ONE ranked list of what needs a person: bad before warn before info, then
  * the money at stake, then the count. A row with nothing in it is dropped —
  * «0 ta yo'qolgan» is a row nobody reads. `visibleCount` (what the header chip
@@ -312,7 +322,7 @@ const LEVEL_ORDER: Record<AttentionLevel, number> = { bad: 0, warn: 1, info: 2 }
  */
 export function rankAttention<T extends AttentionItem>(items: T[], visible = 7) {
   const live = items
-    .filter((item) => item.count > 0 || (item.usd ?? 0) > 0.009)
+    .filter(attentionLive)
     .sort(
       (a, b) =>
         LEVEL_ORDER[a.level] - LEVEL_ORDER[b.level] ||
@@ -437,8 +447,7 @@ export function tripTotals(
  */
 export function daysSince(at: Date | string | null | undefined, today: string): number {
   if (!at) return 0;
-  const from = tashkentDay(new Date(at));
-  return Math.max(0, daysBetween(from, today).length - 1);
+  return Math.max(0, calendarDaysBetween(tashkentDay(new Date(at)), today));
 }
 
 export interface ApprovalCounts {

@@ -95,7 +95,7 @@ describe('a chat the manager has READ is no longer waiting', () => {
 
     expect(await waitingOnList(id)).toBe(false);
     // …and the funnel card badge, which asks the same question (#513).
-    expect((await chatBadges({ id: actorId })).get(id)).toBe('yes');
+    expect((await chatBadges({ id: actorId })).clients.get(id)).toBe('yes');
   });
 
   it('keeps the mark when the read pointer is BEHIND the newest message', async () => {

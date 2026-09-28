@@ -320,6 +320,44 @@ Tartib shunday, yuqoridan pastga:
 Meta bitta leadni bir necha marta yuborishi normal (u 200 javobini olguncha
 takrorlaydi) — ikkinchisi bazaning o'zi tomonidan rad etiladi.
 
+## Lid kelgan zahoti — sotuvchiga xabar va eslatma (0113)
+
+Egasining 5a javobi: «reklamadan lid kelsa sotuvchiga darhol Telegram,
+15 minutda bog'lanilmasa menga eslatma».
+
+| Kim | Qachon | Nima oladi |
+|---|---|---|
+| Lid berilgan **sotuvchi** | Lid tushgan zahoti | «🆕 Yangi lid · Instagram», ism, telefon, kub, yozgan gapi, **📞 Bog'landim** tugmasi va kartaga havola |
+| O'sha sotuvchi | Odam yana yozsa | «🔁 Qayta yozdi» |
+| Mijozning **menejeri** | Tanish mijoz reklamadan yozsa | «📣 Mijoz GS123 reklamadan yozdi» (eslatma soati yo'q) |
+| **Super admin** | Lidning egasi yo'q / ishdan ketgan / mijozning menejeri yo'q | Xuddi shu xabar + **nima uchun** sizga kelgani |
+| **Super admin** | `inbound_contact_minutes` (standart 15) **ish** daqiqasida tizim hech qanday aloqani ko'rmasa | Bitta «⏰ … tegilmagan» xabari — ro'yxat bilan, egasi va sotuvchiga xabar yetganmi |
+
+- **Aloqa deb nima hisoblanadi:** lidga qo'ng'iroq (chiqqan yoki javob
+  berilgan), Telegramda yuborilgan xabar, lidning **o'z sotuvchisi**
+  yozgan izoh, etapni o'zgartirishi yoki «✓ Bajarildi» bosishi, va
+  botdagi «📞 Bog'landim» (kim bosgan bo'lsa ham — tugmaning o'zi
+  ruxsatni tekshiradi). «Ertaga» (keyinga surish), lidni boshqaga berish
+  va hamkasbning ✏️ formadan etapni o'zgartirishi aloqa emas.
+- **«📞 Bog'landim» qo'ng'iroq sanasini o'chirmaydi**, agar sotuvchi
+  keyingi kunga sana qo'ygan bo'lsa (masalan payshanba) — faqat bugungi
+  yoki o'tgan sanani olib tashlaydi.
+- **Bitta lid — bitta eslatma:** odam birinchi xabari javobsiz turganda
+  yana yozsa, egasiga ikkinchi eslatma bormaydi.
+- **Tun (22:00–09:00):** sotuvchiga xabar ovozsiz keladi, eslatma
+  yuborilmaydi; eslatma daqiqalari ertalab 09:00 dan hisoblanadi.
+- **Qo'ng'iroq ilovasi** o'rnatilgan sotuvchi uchun eslatma telefon
+  hisobot berishini kutadi (ko'pi bilan 30 daqiqa) — qo'ng'iroq kechroq
+  yuklanadi.
+- **Sozlash:** Boshqaruv → Sozlamalar → `inbound_contact_minutes` (15;
+  **0 = eslatma o'chadi**, o'lchov baribir yuritiladi).
+- **O'lchov:** /crm/tahlil → sotuvchilar jadvali → «Birinchi aloqa»
+  (mediana · nechta lid · 1 soatdan / 24 soatdan kech).
+- Sotuvchi profilida «🆕 Reklama lidlari» katagini belgilasa, xabar
+  unga bormaydi — eslatmada buni ko'rasiz.
+- Sayt orqali (round 113) kelgan mehmon allaqachon menejerga yozayotgan
+  bo'ladi — unga alohida xabar ham, eslatma ham yo'q.
+
 ## Nima ataylab qilinmagan
 
 - **TikTok'ning o'z Lead Ads API'si.** U tasdiqlangan ilova va Business

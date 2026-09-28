@@ -85,3 +85,61 @@ export function chatState(facts: ChatFacts): ChatState {
 export function chatNeedsAnswer(state: ChatState): boolean {
   return state === 'new';
 }
+
+/**
+ * When a LEAD's conversation started ringing (the lead chats round, owner's
+ * answer 4a — «lidlarning chatlari ham mijoz chatlari kabi, 30 daqiqa»).
+ *
+ * Lead-owned chat rows have been stored since 0064 and NOTHING has ever
+ * stamped them: the 30-minute sweep read client chats only, so `reminded_at`
+ * is NULL on every one, and the home count never looked. Switching the watch
+ * on without a line would ring, on the first sweep after the deploy, for
+ * every lead chat whose newest message is an unread incoming one — months-old
+ * lost leads included — and lift the seller's «javob kutmoqda» by the same
+ * number: the false alarm the owner called «juda yomon» (#649), manufactured
+ * wholesale (the design judge's second finding).
+ *
+ * A fixed instant and not a migration's stamp, because this round adds no
+ * migration: the day the round was built. What arrives after it rings like a
+ * client's chat; what sat before it stays on the list, quietly. The same
+ * burst, smaller, follows a connect-time backfill (history-backfill.ts): a
+ * week pulled on connect rings once for whatever in it is unread and after
+ * this line — exactly as a client chat's backfill always has.
+ */
+export const LEAD_CHAT_ALARMS_FROM = new Date('2026-09-28T00:00:00+05:00');
+
+/**
+ * Does a lead chat's alarm stand — the one extra door a CLIENT chat does not
+ * have?
+ *
+ * Two lines, and a lead's newest incoming message must be past both:
+ *  - the watch's own start (`LEAD_CHAT_ALARMS_FROM`, above);
+ *  - the lead's CLOSING, when it is closed. Moving a lead to won or lost is a
+ *    decision about the conversation — nobody owes an answer to something the
+ *    funnel already settled — while a person writing AGAIN after that is a
+ *    new enquiry (round 79's reasoning for lost leads), and rings.
+ *
+ * Pure, so the rule is stated once: `resolveChatStates` applies it to every
+ * lead seed, and all four readers (the list, the card badges, the home count,
+ * the nudge) go through that one resolver.
+ */
+export function leadAlarmStands(input: { sentAt: Date; closedAt: Date | null }): boolean {
+  if (input.sentAt.getTime() < LEAD_CHAT_ALARMS_FROM.getTime()) return false;
+  if (input.closedAt && input.sentAt.getTime() <= input.closedAt.getTime()) return false;
+  return true;
+}
+
+/**
+ * A lead chat's state, once `leadAlarmStands` has been asked.
+ *
+ * A `new` state whose alarm does not stand reads `answered` — the state that
+ * already means «nothing is asked of anybody here» (see `chatState`'s first
+ * line). NOT `seen`: that one prints «✓ o'qildi», and nobody read it.
+ */
+export function leadChatState(
+  state: ChatState,
+  facts: { sentAt: Date; closedAt: Date | null },
+): ChatState {
+  if (state === 'new' && !leadAlarmStands(facts)) return 'answered';
+  return state;
+}

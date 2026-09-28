@@ -22,12 +22,13 @@ import { calcControlScopeFor, mayReadCalcRegistry } from '@/modules/wms/calc/con
 import { mayClassifyFx } from '@/modules/wms/finance/fx-door';
 import { mayPickTill } from '@/modules/wms/accounting/till-door';
 import { mayReadUnpricedList } from '@/modules/wms/finance/unpriced-door';
-import { seesAllMoney } from '@/modules/wms/finance/scope';
+import { seesAllMoney, seesCompanyMoney } from '@/modules/wms/finance/scope';
 import { canReadTg } from '@/modules/wms/crm/conversations';
 import { canWriteDeal } from '@/modules/wms/deals/service';
 import { sellerReportScopeFor } from '@/modules/wms/crm/seller-report-scope';
 import { mayBroadcast } from '@/modules/platform/broadcast/service';
 import { isAnalyst } from '@/modules/platform/ai/tools';
+import { mayOpenMyClients } from '@/modules/platform/clients/card-door';
 
 /**
  * The menu by job (2026-09-26, docs/NAV-WORKSPACES.md).
@@ -118,6 +119,7 @@ const GATES: Record<string, (a: Actor) => boolean> = {
   '/admin/clients': (a) => adminLayout(a) && has(a, 'clients.manage'),
   '/suhbatlar': (a) => canReadTg(a),
   '/my-clients': (a) => has(a, 'crm.leads', 'clients.manage'),
+  '/my-clients/olib-ketilmagan': (a) => mayOpenMyClients(a),
   '/crm/dormant': crm,
   '/crm/kelganlar': (a) => crm(a) && has(a, 'crm.manage'),
   '/crm/people': (a) => crm(a) && has(a, 'crm.manage'),
@@ -143,6 +145,8 @@ const GATES: Record<string, (a: Actor) => boolean> = {
   '/accounting/xarajat-kassa': (a) => accounting(a) && mayPickTill(a.permissions),
   '/finance/narxsiz': (a) => mayReadUnpricedList(a.permissions),
   '/finance/reestr': (a) => has(a, 'finance.view', 'finance.manage') && !moneyHidden('kassa', a.permissions),
+  // finance/qarzga-berilgan/page.tsx: `companyMoneySight` (0114).
+  '/finance/qarzga-berilgan': (a) => seesCompanyMoney(a),
   '/upsale': (a) => upsaleScopeFor(a) !== 'none',
   '/admin/fx': (a) => adminLayout(a) && has(a, 'costs.fx.manage'),
   '/accounting/categories': (a) => accounting(a) && has(a, 'finance.expenses'),
@@ -175,8 +179,11 @@ const GATES: Record<string, (a: Actor) => boolean> = {
   '/reports/label-prints': (a) => has(a, 'reports.all_warehouses'),
   '/hisoblash/nazorat': (a) => calcControlScopeFor(a) !== 'none',
 
-  // The hub sends a visitor with no door home.
-  '/admin': (a) => adminLayout(a) && openDoors((code) => a.permissions.has(code)).length > 0,
+  // The hub sends a visitor with no door home. The page's own call, roles
+  // included (a door may be role-gated — B9's /admin/xatolar), so the mirror
+  // cannot drift from the page it mirrors.
+  '/admin': (a) =>
+    adminLayout(a) && openDoors((code) => a.permissions.has(code), a.roles).length > 0,
 };
 
 /** The shipped roles, and the combinations the owner is known to hold or invent. */

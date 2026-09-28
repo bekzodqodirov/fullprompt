@@ -547,6 +547,43 @@
     "overview": "Umumiy",
     "money": "Pul"
   },
+  "yuklar": {
+    "tab": "Yuklar",
+    "sections": {
+      "china": "Xitoyda",
+      "transit": "Tranzitda",
+      "uz": "O‘zbekistonda",
+      "ready": "Olib ketishga tayyor"
+    },
+    "now": "Hozir",
+    "empty": "Hozir bu mijozning omborda ham, yo‘lda ham yuki yo‘q.",
+    "siblings": "Shu telefondagi boshqa kodlar:",
+    "daysHere": "{n, plural, =0 {bugun keldi} other {# kun}}",
+    "arrivedOn": "keldi:",
+    "status": {
+      "in_stock": "omborda",
+      "planned": "rejada",
+      "loading": "yuklanmoqda",
+      "in_transit": "yo‘lda",
+      "ready_for_pickup": "tayyor"
+    },
+    "receipt": "Prixod",
+    "marking": "Markirovka",
+    "unknownTruck": "mashina noma’lum",
+    "missing": "Yo‘lda yo‘qolgan",
+    "showAll": "Hammasini ko‘rsatish",
+    "history": "Topshirilgan",
+    "historyDays": "{days, plural, other {# kun}}",
+    "historyYear": "1 yil",
+    "historyCapped": "oxirgi {n} tasi ko‘rsatildi",
+    "historyEmpty": "Bu davrda topshirilgan yuk yo‘q.",
+    "receiver": "Oluvchi",
+    "issuedBy": "Bergan",
+    "act": "Akt",
+    "departed": "jo‘nadi",
+    "arrived": "keldi",
+    "openTab": "Batafsil"
+  },
   "clients": {
     "title": "Mijozlar",
     "new": "Yangi mijoz",
@@ -616,6 +653,8 @@
       "density_thresholds": "Zichlik chegaralari (yengil/o'rta/og'ir)",
       "unclaimed_aging_days": "Aniqlanmagan yuk signaligacha kunlar",
       "stale_stock_days": "Qolib ketgan yuk signaligacha kunlar",
+      "uncollected_warn_days": "Olib ketilmagan yuk: sotuvchi va svodkaga birinchi xabar (kun)",
+      "uncollected_alarm_days": "Olib ketilmagan yuk: ikkinchi, qizil xabar (kun)",
       "costing_base_currency": "Tan narx bazaviy valyutasi",
       "client_code_prefix": "Mijoz kodi prefiksi",
       "label_size": "Stiker o'lchami (mm)",
@@ -638,6 +677,7 @@
       "quote_valid_days": "Muhrlangan hisob narxi necha kun amal qiladi (muddat tugagach — qayta hisoblash)",
       "debt_approval_ttl_hours": "Yuk berishga ruxsat (qarz yoki narxsiz yuk) necha soat amal qiladi",
       "unanswered_reminder_minutes": "Mijoz javob kutgan shuncha daqiqadan keyin menejeriga eslatma boradi (0 — o‘chirilgan)",
+      "inbound_contact_minutes": "Reklamadan kelgan lid bilan shuncha ish daqiqasi ichida hech kim bog‘lanmasa, egasiga eslatma boradi (0 — o‘chirilgan; o‘lchov baribir yuritiladi)",
       "crm_calc_stage": "Botdan «Hisoblatish» kelganda lead shu bosqichga o‘tadi (faqat oldinga; «—» — ko‘chirilmaydi)",
       "deal_calc_stage": "Xuddi shu, bitimlar taxtasi uchun — kodli mijozning so‘rovi bitimga tushadi",
       "ai_daily_limit": "Bir kishiga kuniga AI savollar chegarasi (bot + AI ekrani birga; 0 — o'chirilgan)",
@@ -785,7 +825,7 @@
     "callRecApp": "Ilovani yuklab olish (Android)",
     "telegramReconnect": "Qayta ulash",
     "telegramReconnectHint": "Telefon yoki Telegram akkaunt o‘zgardimi? Botni yangisidan oching — xabarnomalar o‘sha yerga keladi. Yangisi ulanmaguncha eski chat ishlab turaveradi.",
-    "notifMuteCalls": "Ertalabki qo‘ng‘iroqlar ro‘yxati",
+    "notifMuteCalls": "Ertalabki qo‘ng‘iroqlar va olib ketilmagan yuk",
     "rasxodHint": "Ish uchun pul sarfladingizmi — moliyaga xabar bering, chekni rasmga olib qo‘shing.",
     "staffAccountTitle": "Kompaniya bilan hisob-kitobim",
     "staffOwes": "Kompaniya sizga qarz: {amount}",
@@ -1450,6 +1490,7 @@
     "note": "Xato bo'lgan yuborishlar avtomatik qayta uriniladi. 'muted' — foydalanuvchi o'chirgan yoki Telegram ulanmagan.",
     "statuses": {
       "pending": "navbatda",
+      "sending": "yuborilmoqda",
       "sent": "yuborildi",
       "failed": "xato",
       "muted": "o'chirilgan"
@@ -2027,6 +2068,12 @@
     "pnlByMonth": "Oyma-oy: tushum va xarajat",
     "pnlDetail": "Batafsil jadval — har bir toifa, har bir oy"
   },
+  "lidChat": {
+    "mark": "Lid",
+    "markTitle": "Lid — mijoz kodi hali yo‘q",
+    "owner": "Lid egasi: {name}",
+    "ownerNone": "Lidning egasi yo‘q"
+  },
   "crm": {
     "title": "CRM",
     "leads": "Lidlar",
@@ -2428,6 +2475,32 @@
     "pricedElsewhere": "narx boshqa reysda yoki bitimda",
     "compensatedTotal": "🤝 Kompensatsiya:"
   },
+  "uncollected": {
+    "title": "Olib ketilmagan yuk",
+    "hint": "Kun — yuk shu skladga tushgan kundan. «Qoldiq» — mijoz bir qismini olib ketgan, qolgani turibdi.",
+    "tabLevel": "{n}+ kun",
+    "tabAll": "Hammasi",
+    "allWarehouses": "Barcha skladlar",
+    "seller": "Sotuvchi",
+    "allSellers": "Barcha sotuvchilar",
+    "noSeller": "Sotuvchisiz",
+    "show": "Ko'rsatish",
+    "summary": "{clients} mijoz · {boxes} karobka",
+    "capped": "birinchi {shown} tasi ko'rsatildi ({total} dan)",
+    "empty": "Kutib turgan yuk yo'q",
+    "days": "{n} kun",
+    "boxes": "{n} kor.",
+    "moreLots": "+{n}",
+    "leftover": "qoldiq",
+    "lastPickup": "oxirgi olib ketgan {date}",
+    "customs": "bojxona skladi",
+    "unpriced": "narxsiz {n} kor.",
+    "debt": "qarz",
+    "tagsFailed": "Narx va qarz belgilari hozir o'qilmadi",
+    "homeRow": "Olib ketilmagan yuk",
+    "homeSub": "{n} mijoz",
+    "onRoad": "{n} yo'lda"
+  },
   "arrivals": {
     "title": "Kelayotgan yuklar",
     "trucksTitle": "Bizga kelayotgan mashinalar",
@@ -2717,7 +2790,8 @@
       "validation": "Maydonlarni tekshiring",
       "fx_missing": "Bu valyutaga kurs yo‘q",
       "discount_reason_required": "Chegirma uchun sabab kerak",
-      "quote_sealed": "Narx muhrlangan — o‘zgartirib bo‘lmaydi (qayta hisoblang)"
+      "quote_sealed": "Narx muhrlangan — o‘zgartirib bo‘lmaydi (qayta hisoblang)",
+      "not_your_client": "Bu mijozga muddatni uning sotuvchisi, buxgalter yoki admin beradi"
     },
     "discountTitle": "Chegirma (shikast)",
     "discountAmount": "Chegirma summasi",
@@ -3589,6 +3663,52 @@
     "remaining": "{n} ta qoldi",
     "copied": "{n} ta fayl ko‘chirilgan"
   },
+  "kuzatuv": {
+    "hubLabel": "Tizim xatolari",
+    "muteSystem": "Tizim ogohlantirishlari (Telegram ko'prigi, disk)",
+    "botRefused": "Telegram bot ishlamayapti — {since} dan beri",
+    "botNoToken": "Telegram bot tokeni yo'q — xodimlarga xabar ketmayapti",
+    "botBacklog": "Telegram navbati {minutes} daqiqadan beri siljimayapti",
+    "botWaiting": "{n} ta xabar kutmoqda",
+    "botClientsWaiting": "mijozlarga {n} ta xabar kutmoqda",
+    "botDetail": "Telegram javobi: {detail}",
+    "schemaBehind": "Baza kodga mos emas: {applied}/{expected} migratsiya. Serverda: docker compose build migrate && docker compose run --rm migrate",
+    "schemaAhead": "Baza koddan yangiroq: {applied}/{expected} migratsiya — server eski kodda ishlayapti. Yangi kodni o'rnating: git pull, docker compose build migrate app, docker compose up -d",
+    "errorsTitle": "Tizim xatolari",
+    "errorsSubtitle": "Oxirgi 24 soatda: {n} xil xato",
+    "searchPlaceholder": "Xato raqami, masalan #2832070603",
+    "searchButton": "Topish",
+    "badQuery": "Skrinshotdagi # belgisidan keyingi raqamni kiriting",
+    "noMatch": "Bu raqamli xato topilmadi (30 kundan eskisi saqlanmaydi)",
+    "empty": "Xato yo'q",
+    "tabRecent": "24 soat",
+    "tabMonth": "30 kun",
+    "count": "{n} marta",
+    "kindLabel": "Turi",
+    "kind": {
+      "render": "Sahifa",
+      "action": "Tugma",
+      "route": "API",
+      "other": "Tizim"
+    },
+    "path": "Manzil",
+    "user": "Kim",
+    "firstSeen": "Birinchi marta",
+    "lastSeen": "Oxirgi marta",
+    "stack": "Texnik tafsilot",
+    "jobsTitle": "To'xtagan orqa fon ishlari (7 kun)",
+    "jobsEmpty": "To'xtagan ish yo'q",
+    "jobLast": "Oxirgi xato",
+    "clientSideNote": "Bu yerga faqat serverdagi xatolar tushadi — telefon yoki brauzerning o'zidagi xato bu ro'yxatda ko'rinmaydi.",
+    "homeErrors": "Tizim xatolari (24 soat)",
+    "homeDisk": "Disk",
+    "mutedTab": "O'chirilgan",
+    "diskOne": "Server diski (baza, zaxira, rasmlar)",
+    "diskDb": "Baza va zaxira diski",
+    "diskPhotos": "Rasmlar diski",
+    "diskUnknown": "noma'lum",
+    "diskUsage": "{pct}% band · bo'sh {free}"
+  },
   "rasxod": {
     "title": "Rasxod xabari",
     "warehouse": "Sklad",
@@ -4032,6 +4152,7 @@
       "clients": "Mijozlar",
       "suhbatlar": "Suhbatlar",
       "myClients": "Mening mijozlarim",
+      "uncollected": "Olib ketilmagan",
       "dormant": "Uxlab qolganlar",
       "kelganlar": "Arizalar",
       "people": "Odamlar",
@@ -4084,7 +4205,8 @@
       "staffActivity": "Xodimlar faoliyati",
       "labelPrints": "Stiker jurnali",
       "calcControl": "Hisob va haqiqat",
-      "admin": "Boshqaruv"
+      "admin": "Boshqaruv",
+      "debtReleases": "Qarzga berilgan"
     },
     "more": "Yana"
   },
@@ -4330,5 +4452,89 @@
   },
   "scanner": {
     "diagnostics": "Skaner tekshiruvi"
+  },
+  "reklamaLid": {
+    "muteLeads": "Reklama lidlari (yangi lid va eslatma)",
+    "muteLeadsHint": "O‘chirsangiz, sizga berilgan yangi lidlar haqida xabar kelmaydi — egasining eslatmasida «xabarlarni o‘chirib qo‘ygan» deb ko‘rinadi.",
+    "firstContact": "Birinchi aloqa",
+    "firstContactLegend": "mediana · n · 1 soat+ / 24 soat+",
+    "minutes": "{n} daq"
+  },
+  "kechkiXulosa": {
+    "notifMuteOwner": "Kechki xulosa (20:00)",
+    "notLinked": "Telegram ulanmagan — kechki xulosa yetib bormaydi. Yuqorida ulang."
+  },
+  "qarz": {
+    "approvalsNoneYours": "Qarzga ruxsat berish sizning qaroringiz emas — so‘rovlar mijozning sotuvchisi, buxgalter va adminga boradi. Topshirishda «Ruxsat so‘rash» tugmasini bosing.",
+    "promise": {
+      "title": "To‘lov va’dasi",
+      "amount": "Summa, $",
+      "dueOn": "Qachongacha to‘laydi",
+      "note": "Izoh (ixtiyoriy)",
+      "save": "Va’dani yozish",
+      "cancel": "Va’dani bekor qilish",
+      "cancelConfirm": "Bu va’da bekor qilinsinmi? Qo‘ng‘iroq vazifasi ham yopiladi.",
+      "due": "{date} gacha",
+      "progress": "Va’dadan keyin to‘landi: {paid} / {amount}",
+      "by": "yozdi: {name}",
+      "none": "Va’da yo‘q.",
+      "noDebt": "Qarz yo‘q — va’da kerak emas.",
+      "history": "Oldingi va’dalar ({n})",
+      "hint": "O‘sha kuni qo‘ng‘iroq mijozning sotuvchisiga vazifa bo‘lib tushadi (sotuvchi bo‘lmasa — sizga). Ertasi kuni tushgacha pul kelmasa — sotuvchi, egasi va buxgalteriyaga xabar boradi.",
+      "status": {
+        "open": "kutilmoqda",
+        "kept": "bajarildi",
+        "settled": "qarz boshqa yo‘l bilan yopildi",
+        "broken": "bajarilmadi",
+        "cancelled": "bekor qilindi"
+      },
+      "errors": {
+        "not_your_client": "Bu mijoz bo‘yicha va’dani uning sotuvchisi, buxgalter yoki admin yozadi",
+        "bad_amount": "Summa tushunarsiz",
+        "bad_date": "Sana — bugundan, 90 kundan oshmasin",
+        "no_debt": "Mijozning qarzi yo‘q",
+        "exceeds_debt": "Summa mijoz qarzidan katta",
+        "promise_open": "Mijozda ochiq va’da allaqachon bor",
+        "not_open": "Va’da allaqachon yopilgan",
+        "not_found": "Topilmadi",
+        "forbidden": "Ruxsat yo‘q",
+        "validation": "Maydonlarni tekshiring"
+      }
+    },
+    "releases": {
+      "title": "Qarzga berilgan yuklar",
+      "note": "Mijoz qarzdor bo‘la turib yuki berilgan har bir holat: kim ruxsat bergan va keyin qancha pul qaytgan. Odatda — barcha davr, faqat puli hali qaytmaganlari.",
+      "kindTick": "✋ belgi",
+      "kindApproval": "✅ so‘rov",
+      "kindDeferral": "⏳ muddat",
+      "allowedBy": "ruxsat: {name}",
+      "gaveBy": "berdi: {name}",
+      "debtAt": "berilgandagi qarz: {usd}",
+      "legacyDebt": "(so‘rov paytida)",
+      "unknownDebt": "berilgandagi qarz: —",
+      "deferredPart": "yana {usd} muddatli edi",
+      "deal": "bitim {code}",
+      "paidSince": "keyin to‘landi: {usd}",
+      "returned": "qaytdi: {usd}",
+      "left": "qaytmagan: {usd}",
+      "currentDebt": "hozirgi qarz: {usd}",
+      "perApprover": "Ruxsat bergan bo‘yicha",
+      "totalsNote": "Har bir mijozning puli shu odamning OXIRGI ruxsati bo‘yicha sanaladi: keyingi berishdagi qarz oldingisining to‘lanmagan qismini o‘z ichiga oladi.",
+      "releasesN": "berish: {n}",
+      "clientsN": "mijoz: {n}",
+      "unknownN": "summasiz eskilari: {n}",
+      "cap": "{total} tadan {shown} tasi ko‘rsatildi",
+      "showAll": "Qaytganlarini ham ko‘rsatish",
+      "empty": "Bunday berishlar yo‘q.",
+      "from": "Dan",
+      "to": "Gacha",
+      "who": "Kim ruxsat bergan",
+      "everyone": "Hammasi",
+      "apply": "Ko‘rsatish",
+      "act": "akt",
+      "promiseOpen": "🤝 {date} gacha {usd} va’da qilgan",
+      "promiseBroken": "⚠ va’da bajarilmadi ({date})",
+      "unknownApprover": "—"
+    }
   }
 }
