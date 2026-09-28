@@ -51,7 +51,7 @@ export interface DiskLine {
 /** A statfs that has not answered in this long is «noma'lum». */
 export const DISK_READ_MS = 3_000;
 
-/** The three settings that say where to look (a test passes its own). */
+/** The settings that say where to look — BACKUP_DIR, STORAGE_DRIVER, STORAGE_LOCAL_DIR, MINIO_DATA_DIR (a test passes its own). */
 export type DiskEnv = Record<string, string | undefined>;
 
 /** Where to look. Null = nothing mounted to look at (reads «noma'lum»). */
