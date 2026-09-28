@@ -2,13 +2,14 @@ import Link from 'next/link';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { groupDigits } from '@/modules/platform/telegram/format';
 import type { IssuedHandover } from '@/modules/wms/client-cabinet/service';
+import { pushLotName } from '@/modules/wms/notices/client-text';
 
 /**
  * «Topshirilgan» — what this client has already collected, one block per
  * handover, the same list the client reads in the Mini App (`issuedHandovers`,
  * whose wire shape does not move) with the office's two additions: the truck
  * codes are links where the truck card admits the reader, and «Akt» is drawn
- * where the act's own door does (`documents/handover-act-door.ts` — the route,
+ * where the act's own door does (`issue/act-door.ts` — the route,
  * the attachment gate and this link ask one function).
  *
  * The window is the Mini App's 90 days with a «1 yil» toggle; «oxirgi 60 ta»
@@ -99,7 +100,7 @@ export async function ClientCargoHistory({
                   <li key={lot.lotId} className="flex flex-wrap gap-x-1">
                     <span className="[overflow-wrap:anywhere]">
                       {lot.letter && <span className="font-mono">{lot.letter} · </span>}
-                      {lot.productNameRu?.trim() || lot.productNameZh}
+                      {pushLotName(lot.productNameRu, lot.productNameZh)}
                     </span>
                     <span className="flex flex-wrap gap-x-1 font-mono tabular-nums text-ink-700">
                       <span className="whitespace-nowrap">· {groupDigits(lot.n)} 📦</span>
@@ -117,7 +118,11 @@ export async function ClientCargoHistory({
                       <li key={leg.batchCode} className="flex flex-wrap gap-x-1">
                         <span>🚚</span>
                         {id ? (
-                          <Link href={`/batches/${id}`} className="font-mono text-brand-700 underline">
+                          <Link
+                            href={`/batches/${id}`}
+                            className="font-mono text-brand-700 underline"
+                            data-testid="yuklar-leg-truck"
+                          >
                             {leg.batchCode}
                           </Link>
                         ) : (

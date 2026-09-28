@@ -1,5 +1,6 @@
 import { roundKg, roundM3, shareOf, sumRounded } from '../../platform/telegram/format';
 import { cargoStage, milestoneOf, MILESTONES, type StageBatch } from '../client-cabinet/stages';
+import { pushLotName } from '../notices/client-text';
 import { daysSince } from '../reports/dashboard-math';
 
 /**
@@ -122,11 +123,6 @@ export interface CargoNow {
   missing: NowMissing[];
 }
 
-/** A lot's name the way every customer surface prints it — Russian when typed, the Chinese otherwise. */
-function lotName(ru: string | null, zh: string): string {
-  return ru?.trim() || zh;
-}
-
 /** A lot figure, or null when nothing was measured (the bot's `share` refusal, #1116). */
 function measured(total: string | null): number | null {
   if (total === null) return null;
@@ -190,7 +186,7 @@ export function foldCargoNow(
         clientId: r.clientId,
         lotId: r.lotId,
         letter: r.letter,
-        name: lotName(r.productRu, r.productZh),
+        name: pushLotName(r.productRu, r.productZh),
         receiptId: r.receiptId,
         receiptNumber: r.receiptNumber,
         receiptWarehouseId: r.receiptWarehouseId,

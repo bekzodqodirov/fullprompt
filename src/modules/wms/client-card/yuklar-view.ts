@@ -7,7 +7,7 @@ import {
   type IssuedHandover,
 } from '../client-cabinet/service';
 import { arrivalsForPairs } from '../documents/arrivals';
-import { mayReadHandoverAct } from '../documents/handover-act-door';
+import { mayReadHandoverAct } from '../issue/act-door';
 import { cargoTrucks, clientCargoNow, clientCargoNowOnce } from '../inventory/client-cargo-now';
 import { foldCargoNow, NOW_SECTIONS, type CargoNow } from '../inventory/client-cargo-fold';
 import { firstLotPhotos } from '../receipts/first-photo';

@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { globSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 /**
@@ -30,42 +30,61 @@ const code = (path: string) =>
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/(^|[^:])\/\/.*$/gm, '$1');
 
+const ACT_DOOR = 'src/modules/wms/issue/act-door.ts';
+
 /**
- * The handover act's door has ONE home (`documents/handover-act-door.ts`) and
- * three askers — the act route, the attachment gate's `handover` branch, and
- * the client card's «Yuklar» tab, which draws an «Akt» link beside every
- * handover it lists. It was two restatements with a comment each saying they
- * must never disagree; a third copy is how the three would (the tab's judge,
- * finding 5).
+ * The handover act's door has ONE home (`issue/act-door.ts`) and every asker
+ * goes through it — the act route, the attachment gate's `handover` branch,
+ * and each screen that links to an act (the client card's «Yuklar» tab draws
+ * «Akt» beside every handover it lists). It was two restatements with a
+ * comment each saying they must never disagree; a third copy is how the
+ * three would (the tab's judge, finding 5). And two parallel packages then
+ * minted the door the same week, under one name, in two modules — so the
+ * fence below does not trust a path: it walks `src/` for a second definition
+ * and for a second statement of the permission pair.
  */
-describe('the handover act asks one door, from all three places', () => {
+describe('the handover act asks one door, from every place that reads or links it', () => {
   it('the door names the two permissions and fences on the handover’s warehouse', () => {
-    const door = code('src/modules/wms/documents/handover-act-door.ts');
+    const door = code(ACT_DOOR);
     expect(door).toContain("'scan.issue'");
     expect(door).toContain("'receipts.unclaimed.resolve'");
     expect(door).toMatch(/inScope\(actor,\s*warehouseId\)/);
   });
 
+  it('is defined once under src/, and the permission pair is stated nowhere else', () => {
+    const files = globSync('src/**/*.{ts,tsx}');
+    const defines = (name: string) =>
+      files.filter((f) => new RegExp(`(?:function|const|let|var)\\s+${name}\\b`).test(code(f)));
+    expect(defines('mayReadHandoverAct')).toEqual([ACT_DOOR]);
+    expect(defines('handoverActRefusal')).toEqual([ACT_DOOR]);
+    // The grant list itself is the other place both codes are written; any
+    // third file naming the pair is the rule restated beside the door.
+    const pair = files.filter((f) => {
+      const c = code(f);
+      return c.includes("'scan.issue'") && c.includes("'receipts.unclaimed.resolve'");
+    });
+    expect(pair.sort()).toEqual([ACT_DOOR, 'src/modules/platform/rbac/catalog.ts'].sort());
+  });
+
   it('the act route looks the handover up, asks the door with ITS warehouse, and refuses', () => {
     const route = code('src/app/api/handovers/[id]/act/route.ts');
     expect(route, 'loads the owning row').toMatch(/db\.query\.handovers\.findFirst/);
-    expect(route).toMatch(/if \(!mayReadHandoverAct\(actor, row\.warehouseId\)\) return new Response\('Forbidden', \{ status: 403 \}\);/);
+    // Anchored on the CALL and on the REFUSAL, never on the word (#166).
+    expect(route).toMatch(
+      /if \(!mayReadHandoverAct\(actor, row\.warehouseId\)\) return new Response\('Forbidden', \{ status: 403 \}\);/,
+    );
     expect(route, 'still answers 401 unauthenticated').toContain('401');
-    // No second statement of the rule beside the call.
-    expect(route).not.toContain("'scan.issue'");
   });
 
   it('the attachment gate’s handover branch asks the same door', () => {
     const access = code('src/modules/wms/attachments/access.ts');
     const branch = access.slice(access.indexOf("case 'handover':"), access.indexOf("case 'crm_activity':"));
     expect(branch).toMatch(/handoverActRefusal\(actor, row\.warehouseId\)/);
-    expect(branch).not.toContain("'scan.issue'");
   });
 
   it('the «Yuklar» tab draws «Akt» only where the door admits, asked with the handover’s warehouse', () => {
     const view = code('src/modules/wms/client-card/yuklar-view.ts');
     expect(view).toMatch(/mayReadHandoverAct\(actor, warehouseId\)/);
-    expect(view).not.toContain("'scan.issue'");
     // …and the component draws the link from that answer alone.
     expect(code('src/components/client-cargo-history.tsx')).toMatch(/\{actOpen\.has\(h\.id\) && \(/);
   });

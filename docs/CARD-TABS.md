@@ -396,9 +396,16 @@ map. The «Pul» badge's balance is READ only when «Pul» is drawn (rule 3); th
 - **Days waiting** count from the day the cargo reached the warehouse it
   stands in NOW, from the cartons STILL standing there
   (`arrivalsForPairs(…, {standing: true})` + `waitingDays`), never from the
-  prixod's day and never from a lot's earlier, handed-over half.
+  prixod's day and never from a lot's earlier, handed-over half. The clock
+  has two halves and each one home, fenced by walking `src/`
+  (`client-cargo-fold.test.ts`): the landing INSTANT is the CASE in
+  `documents/arrivals.ts` (a walk-in dated by its prixod's day), and the DAYS
+  are `daysSince` — any other «days waiting» list (the parallel «olib
+  ketilmagan» one included) calls it rather than writing a day difference of
+  its own.
 - **Missing on the road**: cartons an unload declared missing
-  (`in_transit` + `missing_in_transit`, still on the unloaded truck) are one
+  (`in_transit` + `declaredMissingSql`, still on the unloaded truck — the
+  fragment the dashboard's risk card counts too) are one
   warn line, outside every section and the Σ, linking the truck's
   `/yuklash#missing` for a reader that card admits. The customer's Mini App
   still counts them under «O'zbekistonda»; the office does not.
@@ -419,7 +426,7 @@ map. The «Pul» badge's balance is READ only when «Pul» is drawn (rule 3); th
 - a prixod: `receiptsReadableBy` — `mayReadReceipt` for the whole list, one
   grouped query for a scoped reader;
 - a truck: `mayOpenBatchCard`;
-- «Akt»: `mayReadHandoverAct` (`documents/handover-act-door.ts`) — the one
+- «Akt»: `mayReadHandoverAct` (`issue/act-door.ts`) — the one
   home of the act's rule, asked by the act route, the attachment gate's
   `handover` branch and this tab;
 - a photograph: drawn only where the row's cargo stands near the reader (its
@@ -434,7 +441,8 @@ answer, which reads it too — its text and rounding unchanged) and
 assembles the tab for ONE reader, so every door above is proven by calling it
 as that reader. The photo is a separate grouped read
 (`receipts/first-photo.ts`), kept off the bot's sequential poller.
-`boxes/active.ts` holds the one «still ours» status list; `stageBatchOf`
+`boxes/active.ts` holds the one «still ours» status list (the dashboard's
+pipeline reads it too, and the fence compares every literal list as a SET); `stageBatchOf`
 maps a truck row onto the ladder; `phoneSiblingClients` is the one sibling
 list; `trucksOnRoadRows` gives many trucks' rows in three statements.
 

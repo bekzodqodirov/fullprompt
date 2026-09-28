@@ -192,17 +192,31 @@ export interface PairArrival extends LotArrival {
   since: Date;
 }
 
-/** `foldArrivals`, plus the two facts `PairArrival` adds — pure, for the tests. */
+/**
+ * `foldArrivals`, plus the two facts `PairArrival` adds — pure, for the tests.
+ *
+ * The rows are grouped by lot ONCE: it sits under `arrivalCodesForPairs`, so
+ * /stock, its XLSX and the bot pay for it on every read, and a filter over
+ * every row per lot is quadratic in the fullest warehouse. Each lot's own
+ * rows then go through `foldArrivals` itself, so `codes` and `arrivedAt` keep
+ * their one home, and `batchIds` is sorted by the same stable comparator over
+ * the same rows — it lines up with `codes` index for index.
+ */
 export function foldPairArrivals(rows: ArrivalRow[]): Map<string, PairArrival> {
+  const byLot = new Map<string, ArrivalRow[]>();
+  for (const row of rows) {
+    const own = byLot.get(row.lotId);
+    if (own) own.push(row);
+    else byLot.set(row.lotId, [row]);
+  }
   const out = new Map<string, PairArrival>();
-  for (const [lotId, arrival] of foldArrivals(rows)) {
-    const own = rows
-      .filter((r) => r.lotId === lotId)
-      .sort((a, b) => a.arrivedAt.getTime() - b.arrivedAt.getTime());
+  for (const [lotId, own] of byLot) {
+    const arrival = foldArrivals(own).get(lotId)!;
+    const sorted = [...own].sort((a, b) => a.arrivedAt.getTime() - b.arrivedAt.getTime());
     out.set(lotId, {
       ...arrival,
-      batchIds: own.filter((r) => r.batchCode).map((r) => r.batchId ?? ''),
-      since: own[0]!.arrivedAt,
+      batchIds: sorted.filter((r) => r.batchCode).map((r) => r.batchId ?? ''),
+      since: sorted[0]!.arrivedAt,
     });
   }
   return out;

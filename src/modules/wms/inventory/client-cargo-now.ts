@@ -4,6 +4,7 @@ import { alias } from 'drizzle-orm/pg-core';
 import { db } from '../../platform/db/client';
 import { batches, boxes, receiptLots, receipts, warehouses } from '../../platform/db/schema';
 import { CLIENT_ACTIVE_STATUSES } from '../boxes/active';
+import { declaredMissingSql } from '../boxes/road-loss';
 import { stageBatchOf, type StageBatch } from '../client-cabinet/stages';
 
 /**
@@ -33,6 +34,8 @@ import { stageBatchOf, type StageBatch } from '../client-cabinet/stages';
  * flagged, and `truckStage` puts an unloaded truck in Uzbekistan — so without
  * this count the office would read «O'zbekistonda» about cargo the system has
  * written down as lost (the tab's judge, finding 1).
+ * «Declared missing» is `declaredMissingSql` — the fragment the dashboard's
+ * risk card counts too.
  */
 export interface ClientCargoRow {
   clientId: string;
@@ -90,7 +93,7 @@ export async function clientCargoRows(clientIds: string[]): Promise<ClientCargoR
       batchId: boxes.currentBatchId,
       n: sql<number>`count(*)`,
       missing: sql<number>`count(*) FILTER (WHERE ${boxes.status} = 'in_transit'
-        AND ${boxes.flags} @> '["missing_in_transit"]'::jsonb)`,
+        AND ${declaredMissingSql(boxes.flags)})`,
     })
     .from(boxes)
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))

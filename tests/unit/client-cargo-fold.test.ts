@@ -11,6 +11,8 @@ import {
 } from '@/modules/wms/inventory/client-cargo-fold';
 import { foldPairArrivals } from '@/modules/wms/documents/arrivals';
 import { readHistoryDays } from '@/modules/wms/client-card/history-window';
+import { CLIENT_ACTIVE_STATUSES } from '@/modules/wms/boxes/active';
+import { daysSince } from '@/modules/wms/reports/dashboard-math';
 
 /**
  * The client card's «Yuklar» tab, folded with no database and no clock of
@@ -231,6 +233,21 @@ describe('the arrival of what stands, folded', () => {
     // The document's date stays the earliest TRUCKED landing (#645).
     expect(folded.arrivedAt.toISOString()).toBe('2026-09-12T00:00:00.000Z');
   });
+
+  it('rows of several lots, interleaved, fold each lot from its own rows alone', () => {
+    const folded = foldPairArrivals([
+      { lotId: 'a', batchCode: 'KA-020', batchId: 'b20', arrivedAt: new Date('2026-09-20T00:00:00Z'), boxes: 2 },
+      { lotId: 'b', batchCode: null, batchId: null, arrivedAt: new Date('2026-09-01T00:00:00Z'), boxes: 4 },
+      { lotId: 'a', batchCode: 'KA-012', batchId: 'b12', arrivedAt: new Date('2026-09-12T00:00:00Z'), boxes: 3 },
+      { lotId: 'b', batchCode: 'KA-030', batchId: 'b30', arrivedAt: new Date('2026-09-25T00:00:00Z'), boxes: 1 },
+    ]);
+    expect([...folded.keys()].sort()).toEqual(['a', 'b']);
+    expect(folded.get('a')).toMatchObject({ codes: ['KA-012', 'KA-020'], batchIds: ['b12', 'b20'] });
+    expect(folded.get('a')!.since.toISOString()).toBe('2026-09-12T00:00:00.000Z');
+    expect(folded.get('b')).toMatchObject({ codes: ['KA-030'], batchIds: ['b30'] });
+    expect(folded.get('b')!.since.toISOString()).toBe('2026-09-01T00:00:00.000Z');
+    expect(folded.get('b')!.arrivedAt.toISOString()).toBe('2026-09-25T00:00:00.000Z');
+  });
 });
 
 describe('a big client is drawn in slices', () => {
@@ -274,12 +291,83 @@ describe('wiring no render test can see', () => {
     expect(code('src/modules/wms/bot/lookup.ts')).toContain('await clientCargoRows([client.id])');
   });
 
-  it('the «still ours» statuses are written down in ONE place', () => {
-    // The five-status list, closed right after `ready_for_pickup` — the
-    // schema's CHECK and the unpriced rule go on to name `issued` and are
-    // different lists.
-    const LIST = /'in_stock',\s*'planned',\s*'loading',\s*'in_transit',\s*'ready_for_pickup',?\s*[\])]/;
-    const holders = globSync('src/**/*.{ts,tsx}').filter((file) => LIST.test(code(file)));
+  it('the «still ours» statuses are written down in ONE place, in any order', () => {
+    // Every literal list of quoted statuses is read as a SET: the dashboard's
+    // pipeline held the same five as `…'ready_for_pickup', 'in_transit')`,
+    // and an order-bound pattern walked past it. A list that goes on to name
+    // `issued` (the schema's CHECK, the unpriced rule) is a different set.
+    const want = [...CLIENT_ACTIVE_STATUSES].sort().join();
+    const LIST = /[[(]\s*((?:(['"])[a-z_]+\2\s*,\s*)+(['"])[a-z_]+\3)\s*,?\s*[\])]/g;
+    const holders = globSync('src/**/*.{ts,tsx}').filter((file) =>
+      [...code(file).matchAll(LIST)].some(
+        (m) => [...new Set([...m[1]!.matchAll(/['"]([a-z_]+)['"]/g)].map((x) => x[1]))].sort().join() === want,
+      ),
+    );
     expect(holders).toEqual(['src/modules/wms/boxes/active.ts']);
+  });
+
+  it('«declared missing on the road» is one fragment, asked by the tab and the dashboard’s risk card', () => {
+    for (const file of ['src/modules/wms/inventory/client-cargo-now.ts', 'src/modules/wms/reports/business.ts']) {
+      expect(code(file), file).toContain('declaredMissingSql(');
+      expect(code(file), file).not.toContain('["missing_in_transit"]');
+    }
+  });
+});
+
+/**
+ * «How many days has this carton waited here» — two halves, each with one
+ * home, and the fences walk `src/` rather than trusting a path (the tab's
+ * reviewer: a parallel package minted a second clock the same week).
+ *
+ * - The INSTANT: the newest landing, a walk-in dated by its prixod's day —
+ *   the CASE in `documents/arrivals.ts` and nowhere else.
+ * - The DAYS: whole Tashkent calendar days, `daysSince` (dashboard-math);
+ *   `waitingDays` is that and a fallback, never arithmetic of its own.
+ *
+ * The day-difference idiom — two `YYYY-MM-DD` strings pinned to one clock
+ * time, subtracted, divided by a day — is what a second clock looks like when
+ * it is written; the two files that already carry it answer other questions
+ * (a due date, a merge window) and are named. Anything else that needs a
+ * whole-day count calls `daysSince`, which takes a day string as well as an
+ * instant.
+ */
+describe('the wait-here clock has one home', () => {
+  const files = globSync('src/**/*.{ts,tsx}');
+
+  it('the walk-in landing instant is written in documents/arrivals.ts alone', () => {
+    const CASE = /'receipt'\s+THEN\s+coalesce\(\(\s*SELECT\s+\w+\.received_at/;
+    expect(files.filter((f) => CASE.test(code(f)))).toEqual(['src/modules/wms/documents/arrivals.ts']);
+  });
+
+  it('the whole-day count is `daysSince`, defined once, and `waitingDays` does no arithmetic of its own', () => {
+    expect(files.filter((f) => /(?:function|const)\s+daysSince\b/.test(code(f)))).toEqual([
+      'src/modules/wms/reports/dashboard-math.ts',
+    ]);
+    const fold = code('src/modules/wms/inventory/client-cargo-fold.ts');
+    const body = fold.slice(fold.indexOf('export function waitingDays'), fold.indexOf('export function foldCargoNow'));
+    expect(body).toMatch(/return daysSince\(arrival\.since, today\)/);
+    expect(body).not.toMatch(/86_?400_?000|getTime\(\)|Date\.parse/);
+  });
+
+  it('no second calendar-day difference is written beside it', () => {
+    const DAY = /`\$\{[^}`]+\}T\d{2}:\d{2}:\d{2}Z`/g;
+    const KNOWN = [
+      // Days until a partner's due date — a promise's calendar, not a wait.
+      'src/modules/wms/partners/terms.ts',
+      // How far apart two expenses' dates are, for the merge window.
+      'src/modules/wms/accounting/cost-merge.ts',
+    ];
+    const writers = files.filter((f) =>
+      code(f)
+        .split(';')
+        .some((statement) => (statement.match(DAY) ?? []).length >= 2 && /86_?400_?000|864e5/.test(statement)),
+    );
+    expect(writers.sort()).toEqual([...KNOWN].sort());
+  });
+
+  it('`daysSince` reads a day string the way it reads the instant that day began in Tashkent', () => {
+    expect(daysSince('2026-09-20', TODAY)).toBe(8);
+    expect(daysSince(new Date('2026-09-19T19:00:00Z'), TODAY)).toBe(8);
+    expect(daysSince(TODAY, TODAY)).toBe(0);
   });
 });

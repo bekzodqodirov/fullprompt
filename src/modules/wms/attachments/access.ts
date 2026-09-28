@@ -21,7 +21,7 @@ import {
 import { resolveEntity } from '../../platform/entities/service';
 import { inScope, type ScopedActor } from '../../platform/rbac/scope';
 import { cargoNearActor } from '../inventory/near';
-import { handoverActRefusal } from '../documents/handover-act-door';
+import { handoverActRefusal } from '../issue/act-door';
 import { seesAllTg } from '../crm/conversations';
 import { seesAllMoney } from '../finance/scope';
 import { mayReadPickup } from '../pickups/service';
@@ -146,7 +146,7 @@ async function decide(
         columns: { warehouseId: true },
       });
       if (!row) return { allow: false, rule: 'orphan' };
-      // The act's own door (`documents/handover-act-door.ts`) — the act and
+      // The act's own door (`issue/act-door.ts`) — the act and
       // the files hanging off it must not disagree about who may read them.
       const refusal = handoverActRefusal(actor, row.warehouseId);
       if (refusal === 'no-permission') return { allow: false, rule: 'handover-no-permission' };

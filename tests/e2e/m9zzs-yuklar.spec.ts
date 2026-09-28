@@ -5,9 +5,10 @@ import { expect, test, type Page } from '@playwright/test';
  * who use it, on demo GS777.
  *
  * The oracle is the SERVER: every client tab the strip draws for a person
- * answers that person 200, every truck and prixod link the tab draws answers
- * 200, and the people the card's door refuses — the accountant and the VED —
- * are refused the tab and are not shown it on the ledger they do open.
+ * answers that person 200, every link and photograph the tab's body draws
+ * answers 200, and the people the card's door refuses — the accountant and
+ * the VED — are refused the tab and are not shown it on the ledger they do
+ * open.
  *
  * It only READS: nothing is created, so nothing is left behind for the next
  * spec (#183). GS777's cargo is whatever earlier specs made of it, so the
@@ -74,12 +75,25 @@ for (const person of CARD_READERS) {
     expect(tabs).toContain(path);
     for (const href of tabs) expect(await statusOf(page, href), `${person.who} ${href}`).toBe(200);
 
-    // Every truck and prixod link the tab draws answers 200 (a link that
-    // bounces is worse than no link).
-    const links = await page
-      .locator('[data-testid="yuklar-truck-link"], [data-testid="yuklar-receipt-link"]')
-      .evaluateAll((nodes) => [...new Set(nodes.map((n) => n.getAttribute('href') ?? ''))]);
-    for (const href of links) expect(await statusOf(page, href), `${person.who} ${href}`).toBe(200);
+    // EVERY link the tab's body draws answers 200 — trucks, prixods, the
+    // history's legs and act PDFs, the missing line's truck, the sibling
+    // codes, the window toggles — and every photograph it shows. Swept by
+    // element, not by a list of testids, so a link added next month is
+    // checked by the same line (a link that bounces is worse than no link).
+    const body = page.locator('[data-testid="yuklar-now"], [data-testid="yuklar-history"]');
+    const hrefs = await body.locator('a[href]').evaluateAll((nodes) =>
+      nodes.map((n) => n.getAttribute('href') ?? '').filter((h) => h !== '' && !h.startsWith('#')),
+    );
+    const photos = await body
+      .locator('img[src^="/api/attachments/"]')
+      .evaluateAll((nodes) => nodes.map((n) => n.getAttribute('src') ?? ''));
+    const targets = [...new Set([...hrefs, ...photos].map((h) => h.split('#')[0]!))];
+    for (const href of targets) expect(await statusOf(page, href), `${person.who} ${href}`).toBe(200);
+    // …and the sweep saw the kinds it exists for, or it proved nothing.
+    for (const id of ['yuklar-leg-truck', 'yuklar-missing-link', 'yuklar-sibling', 'yuklar-act']) {
+      const drawn = await page.getByTestId(id).evaluateAll((nodes) => nodes.map((n) => n.getAttribute('href') ?? ''));
+      for (const href of drawn) expect(targets, `${person.who} ${id}`).toContain(href.split('#')[0]);
+    }
 
     // The Σ is the rows' sum, and the chips add up to it.
     const total = boxesIn((await page.getByTestId('yuklar-total').innerText()).trim());

@@ -558,7 +558,7 @@
     "now": "Now",
     "empty": "This client has no cargo in a warehouse or on the road right now.",
     "siblings": "Other codes on this phone:",
-    "daysHere": "{n, plural, =0 {today} one {# day} other {# days}}",
+    "daysHere": "{n, plural, =0 {arrived today} one {# day} other {# days}}",
     "arrivedOn": "came on:",
     "status": {
       "in_stock": "in stock",

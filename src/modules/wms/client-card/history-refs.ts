@@ -5,7 +5,7 @@ import { batches, handovers } from '../../platform/db/schema';
 /**
  * What the client card's «Topshirilgan» list needs beside the Mini App's
  * history and the Mini App must never be sent: each handover's WAREHOUSE
- * (the act's door is the warehouse's, `documents/handover-act-door.ts`) and
+ * (the act's door is the warehouse's, `issue/act-door.ts`) and
  * each leg's TRUCK with its two ends (a truck code is linked only when the
  * truck card's door admits). `issuedHandovers` is the customer's wire shape
  * and stays as it is; the office resolves these two beside it, one statement

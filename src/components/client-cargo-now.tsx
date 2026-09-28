@@ -187,7 +187,11 @@ export async function ClientCargoNow({
                 <>
                   {' · '}
                   {truck.open ? (
-                    <Link href={`/batches/${m.truckId}/yuklash#missing`} className="font-mono underline">
+                    <Link
+                      href={`/batches/${m.truckId}/yuklash#missing`}
+                      className="font-mono underline"
+                      data-testid="yuklar-missing-link"
+                    >
                       {truck.code}
                     </Link>
                   ) : (
