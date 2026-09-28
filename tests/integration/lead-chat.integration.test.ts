@@ -5,10 +5,12 @@ import { db, pgClient } from '@/modules/platform/db/client';
 import { clients, leadStages, leads, tgMessages, users } from '@/modules/platform/db/schema';
 import {
   chatBadges,
+  conversationForLead,
   leadOwnChatRows,
   listConversations,
   markLeadThreadRead,
   resolveChatStates,
+  threadManagersForLead,
 } from '@/modules/wms/crm/conversations';
 import { recordChatRead } from '@/modules/wms/crm/telegram-accounts';
 import { unansweredChats, unansweredText } from '@/modules/wms/crm/unanswered';
@@ -295,6 +297,26 @@ describe('the own-account fence', () => {
 
     await markLeadThreadRead(id, seller);
     expect((await sellerList()).find((r) => r.leadId === id)!.state).toBe('seen');
+  });
+
+  it('two managers on one lead are two conversations: the supervisor picks whose to read', async () => {
+    // A website lead routed to the seller and later messaged by a colleague
+    // is two chats on two personal accounts; merged by timestamp they show
+    // one that never happened (#639, the design judge's fifth finding).
+    const id = await lead({ owner: seller });
+    await say({ leadId: id, manager: seller, body: `${MARK} sotuvchiga` });
+    await say({ leadId: id, manager: colleague, body: `${MARK} kollegaga` });
+
+    const chips = await threadManagersForLead(id);
+    expect(chips.map((chip) => chip.id).sort()).toEqual([seller, colleague].sort());
+
+    const bodies = async (viewer: { id: string; all?: boolean }, managerId?: string) =>
+      (await conversationForLead(id, viewer, 200, managerId)).map((m) => m.body);
+    // The supervision view reads the one it picked…
+    expect(await bodies({ id: boss, all: true }, seller)).toEqual([`${MARK} sotuvchiga`]);
+    expect(await bodies({ id: boss, all: true }, colleague)).toEqual([`${MARK} kollegaga`]);
+    // …and a seller's hand-typed pick cannot widen their own account.
+    expect(await bodies({ id: seller }, colleague)).toEqual([`${MARK} sotuvchiga`]);
   });
 });
 
