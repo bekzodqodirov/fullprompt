@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import { asc, eq, ne, sql, and } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { boxes, clients, deals, receiptLots, receipts } from '../../platform/db/schema';
@@ -80,7 +81,7 @@ export interface BatchLot {
   boxPhotoId: string | null;
 }
 
-export async function batchLots(batchId: string): Promise<BatchLot[]> {
+export const batchLots = cache(async function batchLots(batchId: string): Promise<BatchLot[]> {
   const rows = await db
     .select({
       lotId: receiptLots.id,
@@ -177,7 +178,7 @@ export async function batchLots(batchId: string): Promise<BatchLot[]> {
       boxPhotoId: row.boxPhotoId,
     };
   });
-}
+});
 
 /**
  * Is this client's cargo aboard this truck, and the deal a price set here is

@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import { and, desc, eq, gte, inArray, isNull, lte, sql, type SQL } from 'drizzle-orm';
 import { latestTxDate } from './dates';
 import { fxResidueAllowance, exceedsRowUsd, nativeAmount } from './money-bounds';
@@ -837,7 +838,7 @@ export async function clientLedger(clientId: string) {
 }
 
 /** Active charges already entered against one batch (pricing screen). */
-export async function batchCharges(batchId: string) {
+export const batchCharges = cache(async function batchCharges(batchId: string) {
   return db
     .select({
       tx: clientTransactions,
@@ -848,7 +849,7 @@ export async function batchCharges(batchId: string) {
     .innerJoin(clients, eq(clientTransactions.clientId, clients.id))
     .where(and(eq(clientTransactions.batchId, batchId), isNull(clientTransactions.voidedAt)))
     .orderBy(desc(clientTransactions.createdAt));
-}
+});
 
 // ---------------------------------------------------------------------------
 // The payments register (round 29) — «kimdan qancha pul olganimni qanday

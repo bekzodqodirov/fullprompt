@@ -192,7 +192,12 @@ export function batchEndsWhere(warehouseIds?: string[]) {
     : undefined;
 }
 
-export async function inTransitBatches(warehouseIds?: string[]) {
+/**
+ * `opts.batchIds` narrows the SAME rows to named trucks — the truck card asks
+ * its own row here (its ETA sentence), so the card and the dashboard read one
+ * membership and one box count (#513). Absent = no narrowing.
+ */
+export async function inTransitBatches(warehouseIds?: string[], opts: { batchIds?: string[] } = {}) {
   const dest = aliasedTable(warehouses, 'dest');
   const rows = await db
     .select({
@@ -236,7 +241,11 @@ export async function inTransitBatches(warehouseIds?: string[]) {
     .innerJoin(warehouses, eq(batches.originWarehouseId, warehouses.id))
     .innerJoin(dest, eq(batches.destWarehouseId, dest.id))
     .where(
-      and(inArray(batches.status, ['in_transit', 'arrived']), batchEndsWhere(warehouseIds)),
+      and(
+        inArray(batches.status, ['in_transit', 'arrived']),
+        batchEndsWhere(warehouseIds),
+        opts.batchIds ? inArray(batches.id, opts.batchIds) : undefined,
+      ),
     )
     .orderBy(desc(batches.departedAt));
   return rows.map((r) => ({ ...r, boxCount: Number(r.boxCount) }));

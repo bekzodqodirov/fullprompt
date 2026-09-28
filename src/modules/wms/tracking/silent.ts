@@ -1,4 +1,5 @@
 import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
+import { batchTabHref } from '../batches/card-door';
 import { db } from '../../platform/db/client';
 import { batches, driverDevices } from '../../platform/db/schema';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
@@ -84,7 +85,8 @@ export function silentTruckText(truck: SilentTruck, appUrl: string): string {
   return (
     `📵 ${truck.batchCode}${who ? ` (${who})` : ''}: haydovchi telefoni ${hours} soatdan beri jim.\n` +
     `Aloqa yo'q hududda bo'lishi ham mumkin — haydovchidan so'rang; kerak bo'lsa ilovani ochib «Hozir yuborish»ni bosish kifoya.\n` +
-    `${appUrl}/batches/${truck.batchId}`
+    // The driver's phone is on the truck card's «Mashina» tab.
+    `${appUrl}${batchTabHref(truck.batchId, 'mashina')}`
   );
 }
 

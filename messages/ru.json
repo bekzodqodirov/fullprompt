@@ -1178,6 +1178,28 @@
     "errMergedCost": "Этот расход объединён с записью бухгалтера в «Расходах» — сначала отмените объединение (↩ в этой строке).",
     "errMergedCostAsk": "Этот расход объединён с записью бухгалтера — чтобы отменить, скажите бухгалтеру."
   },
+  "batchCard": {
+    "tabLoading": "Погрузка",
+    "tabUnloading": "Выгрузка",
+    "tabCustoms": "Таможня",
+    "tabTruck": "Машина",
+    "tabsAria": "{code} — разделы",
+    "ladderAria": "Этапы партии",
+    "todoTitle": "Что осталось сделать",
+    "todoRemaining": "Ещё не принято",
+    "todoCountLoad": "Лоты к подсчёту при погрузке",
+    "todoCountAccept": "Лоты к подсчёту при приёмке",
+    "todoAgent": "Документы не отправлены агенту",
+    "tileBoxes": "{n} кор.",
+    "tileReceipts": "приходов: {n}",
+    "tileUnclaimed": "без клиента: {n}",
+    "tilePriced": "С ценой",
+    "tileNoPrice": "нет цены",
+    "nothingLoaded": "Ещё ничего не погружено",
+    "profitChipOn": "В отчёте прибыли",
+    "profitChipSet": "В отчёт прибыли",
+    "todoNoCosts": "Нет расходов"
+  },
   "batches": {
     "title": "Партии",
     "costs": "Расходы",

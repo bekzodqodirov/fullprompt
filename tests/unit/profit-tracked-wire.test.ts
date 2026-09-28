@@ -26,7 +26,8 @@ describe('the «Partiya» mark', () => {
   });
 
   it('is offered on the card only to the people who may set it', () => {
-    const page = read('src/app/(protected)/batches/[id]/page.tsx');
+    // On the truck card's header since 2026-09-28 — drawn on every tab.
+    const page = read('src/app/(protected)/batches/[id]/batch-card.tsx');
     expect(page).toMatch(/permissions\.has\('finance\.reports'\) && \(\s*<ProfitTracked/);
   });
 

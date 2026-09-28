@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import { moneyHidden } from '../../platform/rbac/money-sight';
 
 /**
@@ -17,12 +18,12 @@ export interface CostSight {
 
 export const ALL_COSTS: CostSight = { ownOnly: null };
 
-export function costSightFor(actor: { id: string; permissions: ReadonlySet<string> }): CostSight {
+export const costSightFor = cache(function costSightFor(actor: { id: string; permissions: ReadonlySet<string> }): CostSight {
   // The whole list next to the truck's kg/m³ IS the tannarx (#791): the VED
   // reads what he typed, and the TYPES of what others typed (no sums) — so
   // he still sees that the customs bill exists and does not enter it twice.
   return { ownOnly: moneyHidden('results', actor.permissions) ? actor.id : null };
-}
+});
 
 /**
  * Whether a cost row may print the NAME of the kassa it was paid from: money

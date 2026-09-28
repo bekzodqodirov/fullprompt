@@ -14,7 +14,8 @@ import { describe, expect, it } from 'vitest';
 
 const action = readFileSync('src/app/(protected)/batches/batch-actions-server.ts', 'utf8');
 const button = readFileSync('src/app/(protected)/batches/[id]/customs-cleared.tsx', 'utf8');
-const page = readFileSync('src/app/(protected)/batches/[id]/page.tsx', 'utf8');
+// The customs panel lives on the truck card's «Bojxona» tab since 2026-09-28.
+const page = readFileSync('src/app/(protected)/batches/[id]/tnved/page.tsx', 'utf8');
 const cabinet = readFileSync('src/modules/wms/client-cabinet/service.ts', 'utf8');
 
 describe('the customs-cleared wire', () => {

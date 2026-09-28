@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { v4 as uuidv4, v5 as uuidv5 } from 'uuid';
 import { z } from 'zod';
@@ -503,13 +504,23 @@ async function lettersFor(
  * the unload screen's counter went down instead of up, and a page reload
  * showed nothing had been accepted at all. What departed is written to
  * box_movements once and never changes.
+ *
+ * Written as the UNION of the two indexed lookups, never as `pointer OR
+ * EXISTS(…)` (#152, riders.ts's own rule). The OR form answered the same set
+ * by reading EVERY box ever received and probing each: measured on a 120k-box
+ * copy, 79-95 ms per call with JIT off and 280-590 ms with it on — and the
+ * truck card asks this on every tab. As a UNION it is two index lookups
+ * (1.3 ms). The outer box is also named OUTSIDE the subquery now, so a
+ * one-table select — where drizzle writes the column bare — can no longer
+ * bind it to the subquery's own table (#128).
  */
 export function batchMemberFilter(batchId: string) {
-  return sql`(${boxes.currentBatchId} = ${batchId} OR EXISTS (
-    SELECT 1 FROM box_movements bm
-    WHERE bm.box_id = ${boxes.id}
-      AND bm.ref_type = 'batch' AND bm.ref_id = ${batchId} AND bm.cause = 'batch_departed'
-  ))`;
+  return sql`${boxes.id} IN (
+    SELECT bmf_b.id FROM boxes bmf_b WHERE bmf_b.current_batch_id = ${batchId}
+    UNION
+    SELECT bmf_m.box_id FROM box_movements bmf_m
+     WHERE bmf_m.ref_type = 'batch' AND bmf_m.ref_id = ${batchId} AND bmf_m.cause = 'batch_departed'
+  )`;
 }
 
 /**
@@ -525,13 +536,17 @@ export function batchMemberFilter(batchId: string) {
  * this truck's packing list, TNVED page and register ➕ until the next truck
  * started loading — a document changing its claims on re-download
  * (review cargo-1, round 92's rule).
+ *
+ * The UNION of two index lookups, for `batchMemberFilter`'s reason above.
  */
 export function aboardFilter(batchId: string) {
-  return sql`((${boxes.currentBatchId} = ${batchId} AND ${boxes.status} <> 'planned') OR EXISTS (
-    SELECT 1 FROM box_movements bm
-    WHERE bm.box_id = ${boxes.id}
-      AND bm.ref_type = 'batch' AND bm.ref_id = ${batchId} AND bm.cause = 'batch_departed'
-  ))`;
+  return sql`${boxes.id} IN (
+    SELECT abf_b.id FROM boxes abf_b
+     WHERE abf_b.current_batch_id = ${batchId} AND abf_b.status <> 'planned'
+    UNION
+    SELECT abf_m.box_id FROM box_movements abf_m
+     WHERE abf_m.ref_type = 'batch' AND abf_m.ref_id = ${batchId} AND abf_m.cause = 'batch_departed'
+  )`;
 }
 
 /**
@@ -547,15 +562,37 @@ function awaitingUnloadWhere(batchIds: string[]) {
   return and(inArray(boxes.currentBatchId, batchIds), eq(boxes.status, 'in_transit'));
 }
 
+/**
+ * The cartons `finishUnload` flagged as lost on the road and nobody has
+ * resolved yet — still pointing at THIS truck. ONE read for the truck card's
+ * header («Yo'lda yo'qolganlar · N») and the resolution list on its
+ * «Tushirish» tab, so the count on the header is the list below it.
+ */
+export const batchMissingBoxes = cache(async function batchMissingBoxes(batchId: string) {
+  return db
+    .select({
+      box: boxes,
+      letter: receiptLots.letter,
+      clientCode: clients.clientCode,
+      marking: receipts.unclaimedMarking,
+      product: receiptLots.productNameZh,
+    })
+    .from(boxes)
+    .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+    .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+    .leftJoin(clients, eq(receipts.clientId, clients.id))
+    .where(sql`${boxes.currentBatchId} = ${batchId} AND ${boxes.flags} @> '["missing_in_transit"]'::jsonb`);
+});
+
 /** How many manifest boxes are still waiting to be accepted here. */
-export async function remainingToUnload(batchId: string): Promise<string[]> {
+export const remainingToUnload = cache(async function remainingToUnload(batchId: string): Promise<string[]> {
   const rows = await db
     .select({ shortCode: boxes.shortCode })
     .from(boxes)
     .where(awaitingUnloadWhere([batchId]))
     .orderBy(boxes.shortCode);
   return rows.map((r) => r.shortCode);
-}
+});
 
 /**
  * `remainingToUnload(id).length` for many trucks in ONE grouped statement —

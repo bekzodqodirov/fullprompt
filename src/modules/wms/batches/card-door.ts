@@ -39,7 +39,7 @@ export function mayOpenBatchVed(permissions: Grants): boolean {
 }
 
 /** The card's six tabs, in the strip's order. A key is also the testid suffix. */
-export const BATCH_TABS = ['tarkib', 'yuklash', 'xarajat', 'narx', 'bojxona', 'yol'] as const;
+export const BATCH_TABS = ['tarkib', 'yuklash', 'xarajat', 'narx', 'bojxona', 'mashina'] as const;
 export type BatchTab = (typeof BATCH_TABS)[number];
 
 /** Where each tab lives — the existing URLs keep their names (rule 1). */
@@ -56,8 +56,8 @@ export function batchTabHref(batchId: string, tab: BatchTab): string {
       return `${base}/pricing`;
     case 'bojxona':
       return `${base}/tnved`;
-    case 'yol':
-      return `${base}/yol`;
+    case 'mashina':
+      return `${base}/mashina`;
   }
 }
 
@@ -74,7 +74,7 @@ export function batchTabsFor(
     switch (tab) {
       case 'tarkib':
       case 'yuklash':
-      case 'yol':
+      case 'mashina':
         return true;
       case 'xarajat':
         return mayOpenBatchCosts(actor.permissions);

@@ -1178,6 +1178,28 @@
     "errMergedCost": "This cost is merged with the accountant's expense entry — undo the merge first (↩ on this row).",
     "errMergedCostAsk": "This cost is merged with the accountant's entry — ask the accountant to cancel it."
   },
+  "batchCard": {
+    "tabLoading": "Loading",
+    "tabUnloading": "Unloading",
+    "tabCustoms": "Customs",
+    "tabTruck": "Truck",
+    "tabsAria": "{code} — sections",
+    "ladderAria": "Batch stages",
+    "todoTitle": "Still to do",
+    "todoRemaining": "Not accepted yet",
+    "todoCountLoad": "Lots to count on loading",
+    "todoCountAccept": "Lots to count on arrival",
+    "todoAgent": "Papers not sent to the agent",
+    "tileBoxes": "{n} boxes",
+    "tileReceipts": "receipts: {n}",
+    "tileUnclaimed": "unclaimed: {n}",
+    "tilePriced": "Priced",
+    "tileNoPrice": "no price",
+    "nothingLoaded": "Nothing is loaded yet",
+    "profitChipOn": "In the profit report",
+    "profitChipSet": "Add to the profit report",
+    "todoNoCosts": "No costs entered"
+  },
   "batches": {
     "title": "Batches",
     "costs": "Costs",
