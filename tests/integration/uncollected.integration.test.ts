@@ -351,12 +351,31 @@ describe('the svodka and the reports age a carton from where it stands', () => {
       status: 'ready_for_pickup',
       landedAt: before(3),
     });
+    // A second unclaimed prixod whose cartons have all LEFT — on a truck now.
+    const gone = await cargo({
+      clientId: null,
+      marking: `MG${next()}`,
+      receivedAt: before(20),
+      receiptWh: whYw,
+      boxes: 2,
+      kg: 2,
+      m3: 0.02,
+      standAt: whYw,
+      status: 'in_stock',
+    });
+    await db
+      .update(boxes)
+      .set({ status: 'in_transit', currentWarehouseId: null })
+      .where(inArray(boxes.id, gone.boxIds));
+
     const report = await unclaimedReport([whYw], BASE);
     const row = report.find((r) => r.marking === marking);
     expect(row?.boxesInStock).toBe(4);
     expect(row?.days).toBe(20);
-    const summary = await unclaimedSummary([whYw]);
-    expect(summary.boxes).toBeGreaterThanOrEqual(4);
+    expect(report.map((r) => r.id)).not.toContain(gone.receiptId);
+    // The dashboard's row counts exactly what the list lists: the prixod with
+    // cargo standing, and its cartons — never the one whose cartons left.
+    expect(await unclaimedSummary([whYw])).toEqual({ receipts: 1, boxes: 4 });
     // …and the waiting list, which is about CLIENTS, does not carry it.
     const waiting = await uncollectedCargo(db, {
       asOf: BASE,
