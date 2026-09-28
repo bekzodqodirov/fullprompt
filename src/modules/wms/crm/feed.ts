@@ -86,16 +86,34 @@ interface Row extends Record<string, unknown> {
 }
 
 /**
+ * What a lenta reader may be shown. `money` is REQUIRED — an optional flag
+ * fails open, and the whole defect it closes was a surface that never asked.
+ */
+export interface FeedOptions {
+  /**
+   * May this reader see THIS client's money — the charges, payments, refunds
+   * and compensations? The caller's answer is the ledger's own door,
+   * `mayOpenClientLedger(actor, client)` (docs/CARD-TABS.md): the lenta
+   * printed every amount to anyone holding `crm.leads`, for ANY client, on
+   * three cards, while since round 91 a seller may read only their own
+   * clients' money. False drops those kinds from the QUERY — the table is
+   * not read — rather than hiding rows a page already holds.
+   */
+  money: boolean;
+  limit?: number;
+  before?: Date;
+  leadId?: string | null;
+  dealId?: string | null;
+}
+
+/**
  * The newest `limit` items, or the newest before `before` when paging.
  *
  * Newest-first out of the database and rendered in a `flex-col-reverse` box,
  * the same trick the conversation screen uses (#302): reading order on screen,
  * and a first painted frame already at the bottom.
  */
-export async function clientFeed(
-  clientId: string | null,
-  opts: { limit?: number; before?: Date; leadId?: string | null; dealId?: string | null } = {},
-): Promise<FeedItem[]> {
+export async function clientFeed(clientId: string | null, opts: FeedOptions): Promise<FeedItem[]> {
   const limit = Math.min(Math.max(opts.limit ?? 60, 1), 200);
   // A LEAD is not a client, and most leads never become one — but the sales
   // work on them (calls, notes) is exactly what a timeline is for. When a
@@ -110,6 +128,33 @@ export async function clientFeed(
   // A bound every branch can use, so the union never sorts more than it must.
   const before = opts.before ?? null;
   const cutoff = before ? sql`${before.toISOString()}::timestamptz` : sql`'infinity'::timestamptz`;
+
+  // Money. A voided entry stays on the timeline and says so: it happened,
+  // and then somebody undid it, and both are part of the story. The branch
+  // exists only for a reader the client's ledger would admit (FeedOptions):
+  // for anyone else it is not in the statement at all, so there is nothing
+  // to filter out afterwards and nothing to forget to.
+  const money = opts.money
+    ? sql`
+      SELECT
+        'tx-' || t.id::text,
+        t.type,
+        t.created_at, u.full_name, t.note,
+        jsonb_build_object(
+          'amount', t.amount, 'currency', t.currency, 'amountUsd', t.amount_usd,
+          'method', t.method, 'voided', t.voided_at IS NOT NULL
+        )
+      FROM client_transactions t
+      JOIN users u ON u.id = t.created_by
+      -- The kinds the lenta shows (LEDGER_FEED): a kurs farqi row (0103)
+      -- moves dollars, not money, and stays off it; a compensation (0105) is
+      -- drawn as itself — the old «else it is a charge» CASE read it as a
+      -- price on the seller's card.
+      WHERE t.client_id = ${clientId} AND t.created_at < ${cutoff} AND t.type IN (${kindList(FEED_KINDS)})
+
+      UNION ALL
+    `
+    : sql``;
 
   const rows = await db.execute<Row>(sql`
     SELECT * FROM (
@@ -191,25 +236,9 @@ export async function clientFeed(
 
       UNION ALL
 
-      -- Money. A voided entry stays on the timeline and says so: it happened,
-      -- and then somebody undid it, and both are part of the story.
-      SELECT
-        'tx-' || t.id::text,
-        t.type,
-        t.created_at, u.full_name, t.note,
-        jsonb_build_object(
-          'amount', t.amount, 'currency', t.currency, 'amountUsd', t.amount_usd,
-          'method', t.method, 'voided', t.voided_at IS NOT NULL
-        )
-      FROM client_transactions t
-      JOIN users u ON u.id = t.created_by
-      -- The kinds the lenta shows (LEDGER_FEED): a kurs farqi row (0103)
-      -- moves dollars, not money, and stays off it; a compensation (0105) is
-      -- drawn as itself — the old «else it is a charge» CASE read it as a
-      -- price on the seller's card.
-      WHERE t.client_id = ${clientId} AND t.created_at < ${cutoff} AND t.type IN (${kindList(FEED_KINDS)})
-
-      UNION ALL
+      -- Money, for the ledger's readers only (above); for anyone else this
+      -- line is empty and the union goes straight on to the handovers.
+      ${money}
 
       -- Handed over. The end of the job, and the only source that names the
       -- human being who actually carried the cargo away.
@@ -306,13 +335,23 @@ export async function clientFeed(
  * Cheaper than fetching a page, and used to decide whether a card gets a
  * timeline or nothing — a panel that renders an empty box on every card in the
  * system is the clutter this codebase keeps deciding against (#183).
+ *
+ * It takes the lenta's own money answer: «there is something» about a client
+ * whose only history is money would otherwise tell a reader the ledger does
+ * not admit that the client has one.
  */
-export async function clientFeedHasAnything(clientId: string): Promise<boolean> {
+export async function clientFeedHasAnything(
+  clientId: string,
+  opts: Pick<FeedOptions, 'money'>,
+): Promise<boolean> {
+  const money = opts.money
+    ? sql`UNION ALL SELECT 1 FROM client_transactions WHERE client_id = ${clientId}`
+    : sql``;
   const [row] = await db.execute<{ n: number }>(sql`
     SELECT 1 AS n WHERE EXISTS (
       SELECT 1 FROM crm_activities WHERE entity_type = 'client' AND entity_id = ${clientId}
       UNION ALL SELECT 1 FROM receipts WHERE client_id = ${clientId} AND confirmed_at IS NOT NULL
-      UNION ALL SELECT 1 FROM client_transactions WHERE client_id = ${clientId}
+      ${money}
     )
   `);
   return row !== undefined;

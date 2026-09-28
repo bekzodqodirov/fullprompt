@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import { and, inArray, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { batches } from '../../platform/db/schema';
@@ -88,21 +89,54 @@ export async function trucksOnRoad(
     awaitingUnloadCounts(arrivedIds),
   ]);
 
-  // Re-derived from the enriched input rather than patched onto the row, so
-  // truckRow stays the one place a row's fields are decided. The enrichment
-  // changes no kind and no order: a position never moves the schedule (the
-  // map's own rule) and the unload count is not what makes a truck stuck.
   const rows = sliced.map((row) =>
-    truckRow(
-      {
-        ...byId.get(row.id)!,
-        awaitingUnload: row.status === 'arrived' ? (awaiting.get(row.id) ?? 0) : null,
-        lastPositionAt: positions.get(row.id)?.recordedAt ?? null,
-      },
-      now,
-      today,
-    ),
+    enrichedRow(byId.get(row.id)!, row, positions, awaiting, now, today),
   );
 
   return { rows, total: ranked.length, counts, loading: Number(loadingRow[0]?.n ?? 0) };
 }
+
+/**
+ * Re-derived from the enriched input rather than patched onto the row, so
+ * truckRow stays the one place a row's fields are decided. The enrichment
+ * changes no kind and no order: a position never moves the schedule (the
+ * map's own rule) and the unload count is not what makes a truck stuck.
+ */
+function enrichedRow(
+  input: TruckInput,
+  row: TruckRow,
+  positions: Map<string, { recordedAt: Date }>,
+  awaiting: Map<string, number>,
+  now: Date,
+  today: string,
+): TruckRow {
+  return truckRow(
+    {
+      ...input,
+      awaitingUnload: row.status === 'arrived' ? (awaiting.get(row.id) ?? 0) : null,
+      lastPositionAt: positions.get(row.id)?.recordedAt ?? null,
+    },
+    now,
+    today,
+  );
+}
+
+/**
+ * ONE truck's row, assembled exactly as the dashboard's trucks card
+ * assembles each of its rows — the same report row, the same enrichment, the
+ * same `truckRow` — so the truck card's ETA sentence is the dashboard's
+ * sentence about the same lorry. Null unless the truck is on the road or at
+ * its gate: fed an unloaded truck, `truckRow` would call it overdue.
+ */
+export const truckOnRoadRow = cache(async function truckOnRoadRow(batchId: string): Promise<TruckRow | null> {
+  const now = new Date();
+  const today = tashkentDay(now);
+  const [input] = await inTransitBatches(undefined, { batchIds: [batchId] });
+  if (!input) return null;
+  const row = truckRow(input, now, today);
+  const [positions, awaiting] = await Promise.all([
+    latestPositions([batchId]),
+    awaitingUnloadCounts(row.status === 'arrived' ? [batchId] : []),
+  ]);
+  return enrichedRow(input, row, positions, awaiting, now, today);
+});

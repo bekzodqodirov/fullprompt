@@ -54,7 +54,9 @@ test('export → ready_for_pickup → issue with handover act', async ({ page })
   await page.getByTestId('finish-loading').click();
   page.once('dialog', (d) => void d.accept()); // depart confirm
   await page.getByTestId('depart-batch').click();
-  await expect(page.getByText(/🚀/).first()).toBeVisible({ timeout: 15_000 });
+  // The depart button is itself labelled 🚀; the unloading door is drawn only
+  // once the truck is on the road.
+  await expect(page.getByTestId('open-unloading')).toBeVisible({ timeout: 15_000 });
 
   // Unload at AND → ready_for_pickup
   await page.getByTestId('open-unloading').click();

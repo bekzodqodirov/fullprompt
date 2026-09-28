@@ -50,9 +50,15 @@ describe('the loading surface shows the carton, not its contents', () => {
   });
 
   it('the batch card still selects both, so the fallback is real', () => {
+    // The card reads its rows from `batchLots` since 2026-09-28 (the riders —
+    // the money tabs' membership); the two photo reads are there, and the
+    // card maps them onto the names its ternary above tests.
+    const lots = read('src/modules/wms/batches/lots.ts');
+    expect(lots).toContain("a.entity_type = 'receipt_lot'");
+    expect(lots).toContain("a.entity_type = 'receipt'");
     const src = read(BATCH_CARD);
-    expect(src).toContain("a.entity_type = 'receipt_lot'");
-    expect(src).toContain("a.entity_type = 'receipt'");
+    expect(src).toContain('generalPhotoId: lot.boxPhotoId');
+    expect(src).toContain('photoId: lot.goodsPhotoId');
   });
 
   it('/stock keeps the opposite order — that screen answers «what is inside»', () => {

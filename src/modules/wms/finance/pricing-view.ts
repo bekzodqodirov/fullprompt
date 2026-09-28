@@ -124,6 +124,22 @@ export function fateOf(lots: BatchLot[]): PricingClientGroup['fate'] {
   };
 }
 
+/**
+ * `batchCharges` rows as the view reads them — ONE mapping for the pricing
+ * page and the truck card's header, which print the same totals (#513).
+ */
+export function pricingChargesOf(
+  rows: { tx: { clientId: string; type: string; amountUsd: string | null }; clientCode: string; clientName: string }[],
+): PricingCharge[] {
+  return rows.map(({ tx, clientCode, clientName }) => ({
+    clientId: tx.clientId,
+    clientCode,
+    clientName,
+    type: tx.type,
+    amountUsd: Number(tx.amountUsd),
+  }));
+}
+
 export function pricingView(
   lots: BatchLot[],
   lotCost: Map<string, LotLandedCost>,

@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { mayOpenClientCard } from '@/modules/platform/clients/card-door';
 import { AdminBack } from './admin-back';
 import { openDoors } from './hub-doors';
 
@@ -38,11 +39,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   // /admin/clients. Without this a sales manager was bounced home from their
   // own call list, the dormant list and "my clients", every one of which
   // links straight here. The card checks its own permission; this gate is
-  // cosmetic (spec 4.2).
-  const canClients =
-    actor.permissions.has('clients.manage') ||
-    actor.permissions.has('clients.view_own') ||
-    actor.permissions.has('crm.leads');
+  // cosmetic (spec 4.2) — and it is the card's own door, the one function
+  // the card and its «Umumiy» tab ask, so the two cannot drift apart.
+  const canClients = mayOpenClientCard(actor);
   if (!canManage && !canAudit && !canFx && !canClients && !canRoles && !canFields && !canJobSettings) {
     redirect('/');
   }

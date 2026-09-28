@@ -1,6 +1,5 @@
 import Link from 'next/link';
 import { getFormatter, getTranslations } from 'next-intl/server';
-import { formatEtaRange } from '@/modules/platform/telegram/client-labels';
 import {
   loadCostMissing,
   loadFill,
@@ -11,7 +10,7 @@ import {
   loadWindows,
 } from '@/modules/wms/reports/dashboard';
 import { niceTicks } from '@/modules/wms/reports/dashboard-math';
-import type { TruckKind, TruckRow } from '@/modules/wms/tracking/on-road-state';
+import type { TruckKind } from '@/modules/wms/tracking/on-road-state';
 import { StackBar } from '@/components/charts/stack-bar';
 import { SERIES_BG, type SeriesKey } from '@/components/charts/legend';
 import { tipText } from '@/components/charts/tip-text';
@@ -22,6 +21,7 @@ import { TableTwin } from '@/components/charts/table-twin';
 import { dayLabel, monthNames } from '@/components/charts/month-names';
 import { m3, num } from '@/components/charts/format';
 import { WarehouseFillRows } from '@/components/warehouse-fill';
+import { truckRoadWords } from '@/components/truck-road';
 
 /**
  * «Yuk» under «Batafsil» (spec «D»): what happened since midnight, where the
@@ -157,9 +157,6 @@ export async function CargoSection({
   );
 }
 
-/** «27.09» in Tashkent — an estimate is always days away, so no year (formatEtaRange's rule). */
-const etaDay = (iso: string) => formatEtaRange(iso, iso);
-
 /**
  * «Qabul qilingan yuk — kunlar bo'yicha» (the canvas's intake card): thirty
  * Tashkent days of cubic metres, today last. Past days in a mid step of the
@@ -262,55 +259,10 @@ const TRUCK_CHIP: Record<TruckKind, string> = {
  */
 export async function TrucksCard({ scopeKey }: { scopeKey: string }) {
   const t = await getTranslations('dashboard');
-  const tb = await getTranslations('batches');
-  const tm = await getTranslations('map');
   const trucks = await loadTrucks(scopeKey);
-  const STAGE: Record<NonNullable<TruckRow['stage']>, string> = {
-    cn_transit: t('truckStage.cn_transit'),
-    export_transit: t('truckStage.export_transit'),
-    in_uz: t('truckStage.in_uz'),
-    customs_done: t('truckStage.customs_done'),
-  };
-  const PIN: Record<string, string> = { at_border: tb('cpBorder'), in_kg: tb('cpKg'), in_uz: tb('cpUz') };
-
-  const word = (row: TruckRow) =>
-    row.kind === 'stuck'
-      ? t('truckKind.stuck')
-      : row.kind === 'unloading'
-        ? t('truckKind.unloading')
-        : row.stage
-          ? STAGE[row.stage]
-          : t('truckStage.export_transit');
-  const sub = (row: TruckRow) => {
-    const parts: React.ReactNode[] = [];
-    if (row.status === 'arrived') {
-      parts.push(t('arrivedDays', { n: row.days }));
-      if ((row.awaitingUnload ?? 0) > 0) parts.push(t('truckGate', { n: num(row.awaitingUnload ?? 0) }));
-    } else {
-      parts.push(t('roadDays', { n: row.days }));
-      if (row.kind === 'overdue') {
-        parts.push(
-          <span key="late" className="font-semibold text-warn">
-            {tm('overdue')}
-          </span>,
-        );
-      } else if (row.eta) {
-        parts.push(`${t('truckEta', { from: etaDay(row.eta.fromIso), to: etaDay(row.eta.toIso) })} (${t('truckEstimate')})`);
-      } else if (row.kind === 'no_schedule') {
-        parts.push(t('truckNoRoute'));
-      }
-      if (row.checkpoint && PIN[row.checkpoint.key]) {
-        parts.push(`${PIN[row.checkpoint.key]} · ${t('truckPin', { n: row.pinDays ?? 0 })}`);
-      }
-      parts.push(t('truckDeparted', { n: num(row.departedBoxes) }));
-    }
-    return parts.map((part, i) => (
-      <span key={i}>
-        {i > 0 && ' · '}
-        {part}
-      </span>
-    ));
-  };
+  // The words live beside the truck card's header, which says the same
+  // sentence about the same lorry (#513).
+  const { word, sentence: sub } = await truckRoadWords();
 
   return (
     <div className="card min-w-0 space-y-2" data-testid="dash-trucks">

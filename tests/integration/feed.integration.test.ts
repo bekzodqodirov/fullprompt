@@ -145,7 +145,7 @@ afterAll(async () => {
 
 describe('one client, several sources, one order', () => {
   it('merges the sources newest-first', async () => {
-    const items = await clientFeed(clientId);
+    const items = await clientFeed(clientId, { money: true });
     const kinds = items.map((i) => i.kind);
     expect(kinds).toEqual(['charge', 'note']);
     // Newest first is the contract the flex-col-reverse rendering relies on.
@@ -155,16 +155,16 @@ describe('one client, several sources, one order', () => {
   });
 
   it('pages by timestamp across sources, without duplication', async () => {
-    const first = await clientFeed(clientId, { limit: 1 });
+    const first = await clientFeed(clientId, { money: true, limit: 1 });
     expect(first).toHaveLength(1);
-    const rest = await clientFeed(clientId, { before: first[0]!.at });
+    const rest = await clientFeed(clientId, { money: true, before: first[0]!.at });
     expect(rest.map((i) => i.kind)).toEqual(['note']);
     // No row appears on both pages — the cutoff is strict.
     expect(rest.map((i) => i.id)).not.toContain(first[0]!.id);
   });
 
   it('knows whether there is anything at all', async () => {
-    expect(await clientFeedHasAnything(clientId)).toBe(true);
+    expect(await clientFeedHasAnything(clientId, { money: true })).toBe(true);
   });
 
   /**
@@ -173,7 +173,7 @@ describe('one client, several sources, one order', () => {
    * — the chat lives in its own panel with its own per-account rule (#383).
    */
   it('never carries telegram lines — the chat is a separate panel now', async () => {
-    const kinds = (await clientFeed(clientId)).map((i) => String(i.kind));
+    const kinds = (await clientFeed(clientId, { money: true })).map((i) => String(i.kind));
     expect(kinds).toContain('charge');
     expect(kinds).toContain('note');
     expect(kinds).not.toContain('tg_in');
@@ -186,7 +186,7 @@ describe('a lead that is not a client yet — the case the owner caught', () => 
   it('still has a living lenta', async () => {
     // No client at all: every client-keyed branch compares against NULL and
     // yields nothing, and the lead's own notes are what remains.
-    const items = await clientFeed(null, { leadId });
+    const items = await clientFeed(null, { money: true, leadId });
     expect(items).toHaveLength(1);
     expect(items[0]!.kind).toBe('note');
     expect(items[0]!.body).toBe('lid bilan gaplashdik');
@@ -194,13 +194,13 @@ describe('a lead that is not a client yet — the case the owner caught', () => 
 
   it('merges the lead notes into the client feed once the lead is linked', async () => {
     // The converted-lead case: both halves of the history, one column.
-    const items = await clientFeed(clientId, { leadId });
+    const items = await clientFeed(clientId, { money: true, leadId });
     expect(items.map((i) => i.kind)).toEqual(['note', 'charge', 'note']);
   });
 
   it('shows another lead nothing that is not its own', async () => {
     // A wrong id must yield an empty feed, not somebody else's notes.
-    const items = await clientFeed(null, { leadId: clientId });
+    const items = await clientFeed(null, { money: true, leadId: clientId });
     expect(items).toHaveLength(0);
   });
 });
@@ -214,14 +214,14 @@ describe('a photographed message shows its photograph (item 15)', () => {
 
 describe('the deal’s own chat — per job, not per client', () => {
   it('shows on the deal card, merged with the client history', async () => {
-    const items = await clientFeed(clientId, { dealId });
+    const items = await clientFeed(clientId, { money: true, dealId });
     expect(items[0]!.body).toBe('bitim bo‘yicha izoh');
   });
 
   it('does NOT leak onto the plain client card', async () => {
     // Two deals with one client are two conversations; a price argument about
     // one must not surface everywhere the client appears.
-    const items = await clientFeed(clientId);
+    const items = await clientFeed(clientId, { money: true });
     expect(items.map((i) => i.body)).not.toContain('bitim bo‘yicha izoh');
   });
 });
@@ -317,7 +317,7 @@ describe('cargo detail and note authorship (round 100, 1A)', () => {
   });
 
   it('the arrival names WHAT arrived — goods, kilos, cubes — not just a box count', async () => {
-    const items = await clientFeed(cargoClientId);
+    const items = await clientFeed(cargoClientId, { money: true });
     const cargo = items.find((i) => i.kind === 'cargo')!;
     expect(cargo).toBeTruthy();
     // Russian name preferred; Chinese kept only where nothing else exists.
@@ -330,9 +330,98 @@ describe('cargo detail and note authorship (round 100, 1A)', () => {
   });
 
   it('a note carries its author id, and a machine note carries none', async () => {
-    const items = await clientFeed(cargoClientId);
+    const items = await clientFeed(cargoClientId, { money: true });
     const notes = items.filter((i) => i.kind === 'note');
     expect(notes.map((n) => n.meta.authorId)).toContain(managerId);
     expect(notes.map((n) => n.meta.authorId)).toContain(null);
+  });
+});
+
+/**
+ * The lenta leaked money (docs/CARD-TABS.md): it printed every charge,
+ * payment, refund and compensation to anyone who could read it — a seller on
+ * ANY client's card — while since round 91 a seller reads only their own
+ * clients' money. The caller now answers with the ledger's door, and a «no»
+ * must take the money out of the QUERY: a page holding the rows is one
+ * render away from printing them.
+ *
+ * Its own clients, for the reason the cargo block above has its own: the
+ * shared fixture is read by exact kind sequences.
+ */
+describe('the lenta’s money is the ledger’s audience', () => {
+  const MONEY_KINDS = ['charge', 'payment', 'refund', 'compensation'];
+  let mixedClientId = '';
+  let moneyOnlyClientId = '';
+
+  beforeAll(async () => {
+    const [mixed] = await db
+      .insert(clients)
+      .values({ clientCode: `FM${STAMP}`.slice(0, 12), name: `FeedMoney ${STAMP}`, phones: [] })
+      .returning({ id: clients.id });
+    mixedClientId = mixed!.id;
+    const [only] = await db
+      .insert(clients)
+      .values({ clientCode: `FN${STAMP}`.slice(0, 12), name: `FeedMoneyOnly ${STAMP}`, phones: [] })
+      .returning({ id: clients.id });
+    moneyOnlyClientId = only!.id;
+
+    await db.insert(crmActivities).values({
+      entityType: 'client',
+      entityId: mixedClientId,
+      kind: 'note',
+      note: 'pul haqida emas',
+      happenedAt: at(30),
+      createdBy: managerId,
+    });
+    const tx = (clientId: string, type: 'charge' | 'payment', amount: string, minutesAgo: number) => ({
+      clientId,
+      type,
+      amount,
+      currency: 'USD',
+      rateToUsd: '1',
+      amountUsd: amount,
+      method: type === 'payment' ? 'cash' : null,
+      txDate: '2026-07-28',
+      createdBy: managerId,
+      createdAt: at(minutesAgo),
+    });
+    await db
+      .insert(clientTransactions)
+      .values([
+        tx(mixedClientId, 'charge', '200.00', 20),
+        tx(mixedClientId, 'payment', '50.00', 10),
+        tx(moneyOnlyClientId, 'charge', '75.00', 15),
+      ]);
+  });
+
+  afterAll(async () => {
+    await db.delete(crmActivities).where(eq(crmActivities.entityId, mixedClientId));
+    await db
+      .delete(clientTransactions)
+      .where(inArray(clientTransactions.clientId, [mixedClientId, moneyOnlyClientId]));
+    await db.delete(clients).where(inArray(clients.id, [mixedClientId, moneyOnlyClientId]));
+  });
+
+  it('a reader the ledger admits sees the charges and payments beside the note', async () => {
+    const kinds = (await clientFeed(mixedClientId, { money: true })).map((i) => String(i.kind));
+    expect(kinds).toEqual(['payment', 'charge', 'note']);
+  });
+
+  it('anyone else gets the same lenta with no money in it — not an empty one', async () => {
+    const items = await clientFeed(mixedClientId, { money: false });
+    expect(items.map((i) => String(i.kind))).toEqual(['note']);
+    for (const kind of MONEY_KINDS) expect(items.some((i) => i.kind === kind), kind).toBe(false);
+    // No amount travels by another road either: nothing left carries one.
+    expect(items.some((i) => 'amount' in i.meta || 'amountUsd' in i.meta)).toBe(false);
+  });
+
+  it('«is there anything» does not answer for money it may not show', async () => {
+    // A client whose ONLY history is a charge: to a reader the ledger does
+    // not admit, the lenta is empty, and «there is something» would say
+    // there is money there.
+    expect(await clientFeedHasAnything(moneyOnlyClientId, { money: true })).toBe(true);
+    expect(await clientFeedHasAnything(moneyOnlyClientId, { money: false })).toBe(false);
+    // …and it still finds everything that is not money.
+    expect(await clientFeedHasAnything(mixedClientId, { money: false })).toBe(true);
   });
 });

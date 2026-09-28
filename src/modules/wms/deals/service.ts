@@ -1533,6 +1533,9 @@ export async function dealById(id: string) {
       /** Pre-selects the offer's language. NULL for nearly everybody, which
           is exactly why the seller chooses rather than the column deciding. */
       clientLocale: clients.locale,
+      /** Whose book the client is in — the card asks the client's LEDGER
+          door with it before its lenta prints the client's money. */
+      clientSalesManagerId: clients.salesManagerId,
       stageName: dealStages.name,
       stageKind: dealStages.kind,
       stageColor: dealStages.color,

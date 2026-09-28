@@ -63,6 +63,11 @@ export function WorkspaceTabs({
   // list pages that own the screen anyway.
   const onPhone = pathname === placement.href && pathname !== '/crm' && pathname !== '/bitimlar';
   const active = placement.tab ? placement.href : null;
+  // «This page» only ON the page. Under it — a card under its list, a truck's
+  // tab under /batches — the lit tab says `true`, because the card's own tab
+  // strip carries `page` there, and a document with two «current page» links
+  // tells a screen reader two different things (nav.tsx's rule).
+  const litAs: LitAs = pathname === placement.href ? 'page' : 'true';
 
   return (
     <nav
@@ -72,9 +77,9 @@ export function WorkspaceTabs({
     >
       <div className="flex h-11 items-center gap-1 px-2 md:px-3">
         {ws.groups ? (
-          <GroupedTabs key={placement.href} ws={ws} active={active} more={labels.more} />
+          <GroupedTabs key={placement.href} ws={ws} active={active} litAs={litAs} more={labels.more} />
         ) : (
-          <TabRow tabs={ws.tabs} active={active} more={labels.more} />
+          <TabRow tabs={ws.tabs} active={active} litAs={litAs} more={labels.more} />
         )}
         {placement.tab && (
           <StarButton
@@ -90,6 +95,7 @@ export function WorkspaceTabs({
             key={pathname}
             settings={ws.settings}
             active={placement.settings ? placement.href : null}
+            litAs={litAs}
             label={labels.settings}
           />
         )}
@@ -105,7 +111,19 @@ export function WorkspaceTabs({
  * last one simply were not there — so what does not fit folds into «Yana ▾»
  * at the row's end, with the lit page always kept in view.
  */
-function TabRow({ tabs, active, more }: { tabs: WsNav['tabs']; active: string | null; more: string }) {
+type LitAs = 'page' | 'true';
+
+function TabRow({
+  tabs,
+  active,
+  litAs,
+  more,
+}: {
+  tabs: WsNav['tabs'];
+  active: string | null;
+  litAs: LitAs;
+  more: string;
+}) {
   const row = useRef<HTMLDivElement>(null);
   // How many tabs fit from `md` up; null = all of them (a phone, or not yet
   // measured). Widths are read ONCE from the full render — a tab's width does
@@ -144,7 +162,7 @@ function TabRow({ tabs, active, more }: { tabs: WsNav['tabs']; active: string | 
   // Bring the lit tab into view on a phone: a narrow screen shows three or
   // four of a workspace's pages, and the one you are on may be the ninth.
   useEffect(() => {
-    row.current?.querySelector('[aria-current="page"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    row.current?.querySelector('[aria-current]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }, [active]);
 
   let shown = tabs;
@@ -170,7 +188,7 @@ function TabRow({ tabs, active, more }: { tabs: WsNav['tabs']; active: string | 
             href={tab.href}
             data-testid="ws-tab"
             data-ws-tab=""
-            aria-current={lit ? 'page' : undefined}
+            aria-current={lit ? litAs : undefined}
             className={`shrink-0 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-sm font-semibold ${
               lit ? 'bg-brand-50 text-brand-800' : 'text-ink-700 hover:bg-surface-sunken'
             }`}
@@ -210,11 +228,21 @@ function TabRow({ tabs, active, more }: { tabs: WsNav['tabs']; active: string | 
  * in the DOM (hidden but one), so nothing about which reports exist depends
  * on a click.
  */
-function GroupedTabs({ ws, active, more }: { ws: WsNav; active: string | null; more: string }) {
+function GroupedTabs({
+  ws,
+  active,
+  litAs,
+  more,
+}: {
+  ws: WsNav;
+  active: string | null;
+  litAs: LitAs;
+  more: string;
+}) {
   const groups = ws.groups ?? [];
   const current = ws.tabs.find((tab) => tab.href === active)?.group ?? groups[0]?.key;
   const [shown, setShown] = useState(current);
-  if (groups.length < 2) return <TabRow tabs={ws.tabs} active={active} more={more} />;
+  if (groups.length < 2) return <TabRow tabs={ws.tabs} active={active} litAs={litAs} more={more} />;
   return (
     <div className="flex min-w-0 flex-1 items-center gap-2">
       <select
@@ -232,7 +260,7 @@ function GroupedTabs({ ws, active, more }: { ws: WsNav; active: string | null; m
       </select>
       {groups.map((group) => (
         <div key={group.key} className={group.key === shown ? 'flex min-w-0 flex-1' : 'hidden'}>
-          <TabRow tabs={ws.tabs.filter((tab) => tab.group === group.key)} active={active} more={more} />
+          <TabRow tabs={ws.tabs.filter((tab) => tab.group === group.key)} active={active} litAs={litAs} more={more} />
         </div>
       ))}
     </div>
@@ -289,10 +317,12 @@ function StarButton({
 function SettingsMenu({
   settings,
   active,
+  litAs,
   label,
 }: {
   settings: WsNav['settings'];
   active: string | null;
+  litAs: LitAs;
   label: string;
 }) {
   return (
@@ -313,7 +343,7 @@ function SettingsMenu({
             key={item.href}
             href={item.href}
             data-testid="ws-setting"
-            aria-current={item.href === active ? 'page' : undefined}
+            aria-current={item.href === active ? litAs : undefined}
             className={`block rounded-lg px-2.5 py-2 text-sm font-semibold ${
               item.href === active ? 'bg-brand-50 text-brand-800' : 'text-ink-700 hover:bg-surface-sunken'
             }`}

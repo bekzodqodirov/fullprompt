@@ -99,7 +99,8 @@ test('the logist plans three of the four onto a YW → AND truck', async ({ page
 test('the warehouse manager has no count door (Q3) — neither on the card nor on the scan screen', async ({ page }) => {
   expect(batchUrl).toMatch(/\/batches\//);
   await login(page, MANAGER);
-  await page.goto(batchUrl);
+  // The office's count doors are the card's «Yuklash» tab.
+  await page.goto(`${batchUrl}/yuklash`);
   await expect(page.locator('h1').first()).toBeVisible();
   await expect(page.getByTestId('count-load-open')).toHaveCount(0);
   await page.goto(`${batchUrl}/load`);
@@ -153,7 +154,7 @@ test('the operator’s phone refuses the counted lot at once, by name, and queue
 
 test('over the plan asks for a reason, then loads with the ⚠ mark; finish and depart carry four', async ({ page }) => {
   await login(page, LOGIST);
-  await page.goto(`${batchUrl}#count-load`);
+  await page.goto(`${batchUrl}/yuklash#count-load`);
   await expect(ourRow(page)).toBeVisible({ timeout: 15_000 });
   await ourRow(page).getByTestId('count-load-input').fill('4');
   await expect(ourRow(page).getByTestId('count-load-reason')).toBeVisible();
@@ -171,6 +172,9 @@ test('over the plan asks for a reason, then loads with the ⚠ mark; finish and 
   await page.getByTestId('finish-loading').click();
   page.once('dialog', (d) => void d.accept());
   await page.getByTestId('depart-batch').click();
-  await expect(page.getByText(/🚀/).first()).toBeVisible({ timeout: 15_000 });
+  // The depart button is itself labelled 🚀; the departure line is drawn
+  // only once the truck has left.
+  await expect(page.getByTestId('batch-facts')).toBeVisible({ timeout: 15_000 });
+  await page.goto(batchUrl);
   await expect(page.getByTestId('batch-contents-total')).toContainText('4 📦');
 });

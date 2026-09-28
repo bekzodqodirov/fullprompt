@@ -27,6 +27,7 @@ import { TelegramLookback } from '@/components/telegram-lookback';
 import { CallsPanel } from '@/components/calls-panel';
 import { CardCols } from '@/components/card-cols';
 import { conversationClientForLead } from '@/modules/wms/crm/conversations';
+import { mayOpenClientLedger } from '@/modules/wms/finance/scope';
 
 /** One lead: where it stands, what was said, and the button that ends it. */
 export default async function LeadPage({
@@ -83,13 +84,19 @@ export default async function LeadPage({
   // The conversation this lead belongs to, when there is one — shared by the
   // lenta and the dock's card marker.
   const dockClientId = await conversationClientForLead(lead);
+  // That client's row, read once: its code for the won dialog and its book
+  // for the lenta's money. When the lead carries a client it IS this one —
+  // `conversationClientForLead` answers `lead.clientId` first.
+  const dockClient = dockClientId
+    ? await db.query.clients.findFirst({ where: eq(clients.id, dockClientId) })
+    : undefined;
   // The lead's own client CODE, for the won dialog's confirm-only mode: a
   // lead that already carries a client wins by opening a new deal, and the
   // dialog names whose (round 107).
-  const clientCodeOnLead = lead.clientId
-    ? ((await db.query.clients.findFirst({ where: eq(clients.id, lead.clientId) }))?.clientCode ??
-      null)
-    : null;
+  const clientCodeOnLead = lead.clientId ? (dockClient?.clientCode ?? null) : null;
+  // The lenta prints a client's money only for whoever that client's ledger
+  // admits (docs/CARD-TABS.md) — nothing when no client resolves.
+  const feedMoney = dockClient ? mayOpenClientLedger(actor, dockClient) : false;
 
   return (
     // Wide like the funnel it came from: the amoCRM card shape (owner,
@@ -127,7 +134,7 @@ export default async function LeadPage({
              with them. A brand new prospect has none, and the panel simply
              does not render. */
           <>
-            <ClientFeed clientId={dockClientId} leadId={lead.id} limit={60} tall />
+            <ClientFeed clientId={dockClientId} money={feedMoney} leadId={lead.id} limit={60} tall />
             {/* The chat stands BESIDE the lenta, never inside it (round 21). */}
             <TelegramThread
               clientId={dockClientId}

@@ -84,10 +84,10 @@ test('plan → approve → load → depart lifecycle', async ({ page }) => {
   await page.getByTestId('depart-batch').click();
   // The depart button ITSELF is labelled 🚀, so waiting for 🚀 proved nothing:
   // on a slow runner the next goto landed while the action was still in
-  // flight, the card read `loading`, and the in_transit-only where-panel
-  // never appeared (CI-red, green locally). The panel appearing IS the
-  // depart's postcondition — wait for the real thing.
-  await expect(page.getByTestId('batch-where-panel')).toBeVisible({ timeout: 15_000 });
+  // flight, the card read `loading`, and the in_transit-only controls never
+  // appeared (CI-red, green locally). The unloading door is drawn only on a
+  // truck on the road — it appearing IS the depart's postcondition.
+  await expect(page.getByTestId('open-unloading')).toBeVisible({ timeout: 15_000 });
 
   const manifestRes = await page.request.get(`${new URL(batchUrl).pathname.replace('/batches/', '/api/batches/')}/manifest`);
   expect(manifestRes.status()).toBe(200);
@@ -95,10 +95,10 @@ test('plan → approve → load → depart lifecycle', async ({ page }) => {
 
   // --- Tracking map: the departed truck shows up, checkpoint pin works ---
   const batchCode = await page.getByText(/YW-\d{3}/).first().innerText();
-  await page.goto(batchUrl);
-  // «Где машина» folds now (owner's round-46 item 7): the checkpoint pins are
-  // behind its summary, so open it before pressing one.
-  await page.getByTestId('batch-where-panel').click();
+  // The truck itself — plate, driver's phone, «where is it» — is the card's
+  // «Mashina» tab, each section open (docs/CARD-TABS.md).
+  await page.goto(`${batchUrl}/mashina`);
+  await expect(page.getByTestId('batch-where-panel')).toBeVisible();
   await page.getByRole('button', { name: /🛃/ }).click(); // "at the border" pin
   await expect(page.getByRole('button', { name: /🛃/ })).toHaveClass(/border-blue-700/, {
     timeout: 10_000,
@@ -106,8 +106,7 @@ test('plan → approve → load → depart lifecycle', async ({ page }) => {
   // --- The phone row's own door to the map (owner: «ulangan telefonni
   // kirgizganda tagida kartaga o'tish havolasi turar edi») ---
   // Pair a phone the way the APK does: mint a code on the card, exchange it.
-  // The panel folds (round 46's idiom) — open it before pressing anything.
-  await page.getByTestId('batch-driver-panel').click();
+  await expect(page.getByTestId('batch-driver-panel')).toBeVisible();
   await page.getByRole('button', { name: /📲/ }).click();
   const pairCode = await page
     .locator('span.font-mono.tracking-widest')
@@ -118,8 +117,6 @@ test('plan → approve → load → depart lifecycle', async ({ page }) => {
   });
   expect(paired.status()).toBe(200);
   await page.reload();
-  // The panel folds shut on every load; the link lives inside it.
-  await page.getByTestId('batch-driver-panel').click();
   await expect(page.getByTestId('device-map-link')).toBeVisible();
   // Revoke before leaving: a quiet PAIRED phone on an in-transit batch is a
   // silent truck to this server's round-55 sweep (#154 — state a spec leaves

@@ -542,6 +542,11 @@
     "allowsQuickBatch": "Tezkor yuklashga ruxsat",
     "allowsQuickBatchHint": "Plansiz va tasdiqsiz mashina. Yuk chegara kesib o‘tadigan skladda belgini olib tashlang."
   },
+  "clientCard": {
+    "tabs": "Mijoz kartasi bo‘limlari",
+    "overview": "Umumiy",
+    "money": "Pul"
+  },
   "clients": {
     "title": "Mijozlar",
     "new": "Yangi mijoz",
@@ -1177,6 +1182,29 @@
     "mergedChip": "birlashtirilgan",
     "errMergedCost": "Bu xarajat buxgalterning «Xarajatlar»dagi yozuvi bilan birlashtirilgan — avval birlashtirishni bekor qiling (↩ shu qatorda).",
     "errMergedCostAsk": "Bu xarajat buxgalterning yozuvi bilan birlashtirilgan — bekor qilish uchun buxgalterga ayting."
+  },
+  "batchCard": {
+    "tabLoading": "Yuklash",
+    "tabUnloading": "Tushirish",
+    "tabCustoms": "Bojxona",
+    "tabTruck": "Mashina",
+    "tabsAria": "{code} — bo‘limlar",
+    "ladderAria": "Partiya bosqichlari",
+    "todoTitle": "Qolgan ishlar",
+    "todoRemaining": "Qabul qilinmagan",
+    "todoCountLoad": "Sanab yuklash",
+    "todoCountAccept": "Sanab qabul",
+    "todoAgent": "Agentga yuborilmagan",
+    "tileBoxes": "{n} karobka",
+    "tileReceipts": "{n} ta prixod",
+    "tileUnclaimed": "egasiz: {n}",
+    "tilePriced": "Narx qo‘yilgan",
+    "tileNoPrice": "narx yo‘q",
+    "nothingLoaded": "Hali hech narsa yuklanmagan",
+    "profitChipOn": "Foyda hisobida",
+    "profitChipSet": "Foyda hisobiga olish",
+    "todoNoCosts": "Xarajat yozilmagan",
+    "todoTnved": "TNVED kodsiz"
   },
   "batches": {
     "title": "Partiyalar",

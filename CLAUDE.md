@@ -139,6 +139,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
 | The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batches 1-4 COMPLETE; 5 in progress |
 | Website visitor → least-busy manager (the site's contract) | `docs/SAYT-TAQSIMOT.md` — round 113, give the contract to the site's session verbatim |
+| The truck card's six tabs and the client's «Pul» tab | `docs/CARD-TABS.md` — agreed 2026-09-28 (his 3a/4a), SHIPPED |
 
 ## State — 2026-08-23
 
@@ -2029,6 +2030,39 @@ RAW sql** — drizzle's `{ noWait: true }` renders «no wait», which postgres
 refuses. Stated: lock-6, ui-7, a grown carton on a
 cancelled truck stays in the prixod, and the scanner speed is proven only by
 simulation — his ⓘ screenshots from the slow phones are the oracle.
+
+**Round — one card per truck + the client's «Pul» tab (2026-09-28;
+DECISIONS #1177-#1188; NO migration, ledger 113; spec `docs/CARD-TABS.md`).**
+His 3a/4a. Six tabs — Ichidagilar `/batches/<id>` · Yuklash `/yuklash` (new) ·
+Xarajatlar `/xarajatlar` · Narx `/pricing` · Bojxona `/tnved` · Mashina
+`/mashina` (new) — no route moved. `wms/batches/card-door.ts` is ONE
+predicate per tab, asked by the tab's page AND the strip (`batchTabsFor`);
+`BatchCard` is a per-page server component, NOT a layout (it would wrap
+/load and /unload). Every header number is the destination's own function
+(#513): `batchLots` (riders — the card no longer reads the manifest for
+contents; documents still do), `batchCostSheet`, `pricingView`+`tripKind`,
+`docsPendingWhere` (shared with `vedFlowCounts`), `missingTnvedCount`,
+`truckOnRoadRow` + `components/truck-road.tsx` (the dashboard's words).
+Reads are `cache()`-wrapped by primitives; header money reads soft-fail.
+`batchMemberFilter`/`aboardFilter` are UNIONs now (0 diffs over 1,422
+trucks). Fixed on the way: the loaded line counted over membership
+(`batchLoadProgress` = live pointer), TNVED hid lots mid-unload (departure
+is the switch), the tile's m³ spelling (`cargoLine`). The OTHER package's
+half: `authorizeOnBatch` (`wms/batches/batch-authorize.ts`) puts the card's
+door on eight truck actions that judged no warehouse, + receipt/device/lot
+membership checks. Client: `ClientCard` strip Umumiy/Pul, `mayOpenClientLedger`
+(redirect BEFORE the lookup, then notFound), and `clientFeed(money)` REQUIRED
+— the lenta had shown every client's money to any `crm.leads` holder.
+aria-current: «page» once (the card tab); menus say «true» beneath their
+page. Pinned by `truck-card.test.ts` (unit), `truck-card.integration.test.ts`,
+`batch-door-wire`/`batch-authorize`/`batch-door.integration`, and e2e
+`m9zzr-partiya-karta` (+ `.desktop`) — the SERVER as the oracle, every drawn
+tab 200 and every other refused, as all eight demo people. Measured on the
+shaped copy: 30-37 statements and 113-169 ms per tab; the tab body on the
+first screen for every role at 360×800 and 1280×900. TEST TRAPS: a prefix
+testid selector (`batch-tab-` also matched `batch-tab-body`); a red proof
+whose `next build` failed on lint tests the previous build. OPEN, asked of
+him: should «Narx qo'yilgan N / M» count a client priced on another truck?
 
 **Latest migration: 0112** (`qr_less` — the count reasons, the QR-siz lot
 marker, the office receipt's receiver, the factory barcode, the pallet kind;

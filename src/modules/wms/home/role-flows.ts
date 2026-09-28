@@ -1,4 +1,4 @@
-import { aliasedTable, and, eq, inArray, isNull, not, sql } from 'drizzle-orm';
+import { aliasedTable, and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { withoutJit } from '../../platform/db/no-jit';
 import { unpricedCount } from '../finance/unpriced';
 import { db } from '../../platform/db/client';
@@ -18,7 +18,7 @@ import { managedClients } from '../finance/client-cargo';
 import { unplacedPaymentSql } from '../finance/service';
 import { moneySnapshot, type MoneySnapshot } from '../reports/overview';
 import { costMissingCount } from '../reports/queries';
-import { sameCountryLegSql } from '../batches/internal';
+import { docsPendingWhere } from '../batches/docs-pending';
 import { warehouseFlowCounts, type WarehouseFlowCounts } from './flow';
 import { unplacedCostTotals } from '../costing/service';
 import { recurringDueCount } from '../accounting/recurring';
@@ -223,13 +223,9 @@ export async function vedFlowCounts(): Promise<VedFlowCounts> {
       .from(batches)
       .innerJoin(originWh, eq(batches.originWarehouseId, originWh.id))
       .innerJoin(destWh, eq(batches.destWarehouseId, destWh.id))
-      .where(
-        and(
-          inArray(batches.status, ['in_transit', 'arrived']),
-          isNull(batches.sentToAgentAt),
-          not(sameCountryLegSql(sql`${originWh}`, sql`${destWh}`)),
-        ),
-      ),
+      // The truck card's «Agentga yuborilmagan» asks the same sentence of
+      // one truck (`batchDocsPending`), so the two cannot disagree (#513).
+      .where(docsPendingWhere(sql`${originWh}`, sql`${destWh}`)),
     db.execute<{ n: number }>(sql`
       SELECT count(*)::int AS n
       FROM deal_lines dl

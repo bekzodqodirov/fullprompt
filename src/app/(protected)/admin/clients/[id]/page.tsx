@@ -5,7 +5,8 @@ import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import { clients, clientTelegramLinks } from '@/modules/platform/db/schema';
 import { getSetting } from '@/modules/platform/settings/service';
-import { seesAllMoney } from '@/modules/wms/finance/scope';
+import { mayOpenClientCard } from '@/modules/platform/clients/card-door';
+import { mayOpenClientLedger } from '@/modules/wms/finance/scope';
 import { getBotUsername } from '@/modules/platform/telegram/bot';
 import { CardCols } from '@/components/card-cols';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
@@ -23,7 +24,7 @@ import { TelegramThread } from '@/components/telegram-thread';
 import { TelegramLookback } from '@/components/telegram-lookback';
 import { CallsPanel } from '@/components/calls-panel';
 import { ClientDeals } from '@/components/client-deals';
-import { CopyChip } from '@/components/copy-chip';
+import { ClientCard } from '@/components/client-card';
 
 export default async function ClientDetailPage({
   params,
@@ -38,21 +39,22 @@ export default async function ClientDetailPage({
   const actor = await getActor();
   if (!actor) redirect('/login');
   // Sales staff read the card their CRM sends them to; only an admin edits
-  // it or mints a cabinet link.
+  // it or mints a cabinet link. The door is «Umumiy»'s — the same function
+  // the card's strip and the admin layout ask.
   const canEdit = actor.permissions.has('clients.manage');
-  if (!canEdit && !actor.permissions.has('clients.view_own') && !actor.permissions.has('crm.leads')) {
-    redirect('/');
-  }
+  if (!mayOpenClientCard(actor)) redirect('/');
   const client = await db.query.clients.findFirst({ where: eq(clients.id, id) });
   if (!client) notFound();
 
   const tc = await getTranslations('common');
-  const tq = await getTranslations('quick');
   const tcab = await getTranslations('clients');
   const tcargo = await getTranslations('cargo');
   const format = await getFormatter();
   /**
-   * The money block asks round 91's question, not the pre-91 one.
+   * The money on this card asks round 91's question, not the pre-91 one —
+   * and since the ledger became this card's «Pul» tab (the owner's 4a), it
+   * asks it through the tab's own door: whoever the ledger would admit sees
+   * the money here, nobody else.
    *
    * `finance.view` is a SELLER's own-book grant — `sales_manager` holds it
    * alongside `clients.view_own` — so `finance.view || finance.manage` meant
@@ -62,11 +64,10 @@ export default async function ClientDetailPage({
    * client card is the one door that never learned. It is reachable by
    * clicking, not only by typing a uuid: /suhbatlar links straight here, and
    * a Telegram conversation is scoped to the manager's ACCOUNT, never to who
-   * owns the client.
+   * owns the client. The lenta below is the second surface that had not
+   * learned it (docs/CARD-TABS.md): it takes the same answer.
    */
-  const canSeeMoney =
-    (actor.permissions.has('finance.view') || actor.permissions.has('finance.manage')) &&
-    (seesAllMoney(actor) || client.salesManagerId === actor.id);
+  const canSeeMoney = mayOpenClientLedger(actor, client);
   // Only the admin half of the card needs these — a sales manager reading a
   // card should not cost a settings read and a call to Telegram.
   const managers = canEdit ? await salesManagerOptions(client.salesManagerId) : [];
@@ -97,26 +98,22 @@ export default async function ClientDetailPage({
   };
 
   return (
+    // The h1, the copy chip and the «Umumiy | Pul» strip are the shell's —
+    // the same header the ledger draws, so the two tabs read as one card.
+    <ClientCard client={client} active="umumiy">
     <div className="space-y-6">
+      {/* The first row of the body, not the shell: deactivating is this
+          tab's act, and the shell is shared with a ledger that has none. It
+          is still the first danger/primary button on the page. */}
+      {canEdit && (
+        <form action={toggle} className="flex justify-end">
+          <button type="submit" className={client.active ? 'btn-danger' : 'btn-primary'}>
+            {client.active ? tc('deactivate') : tc('activate')}
+          </button>
+        </form>
+      )}
       {/* The dock opens straight into this client's conversation from here. */}
       <span data-dock-client={client.id} hidden />
-      {/* flex-wrap + min-w-0: a long client name and the deactivate button
-          must coexist on a 360 px screen instead of squeezing each other. */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="min-w-0 text-xl font-bold [overflow-wrap:anywhere]">
-          <span className="font-mono text-brand-700">{client.clientCode}</span> — {client.name}
-        </h1>
-        {/* The code goes onto cartons and into Telegram all day — one tap
-            beats selecting a mono span by thumb (round 107, item 1). */}
-        <CopyChip value={client.clientCode} label={tq('copy')} copiedLabel={tq('copied')} />
-        {canEdit && (
-          <form action={toggle}>
-            <button type="submit" className={client.active ? 'btn-danger' : 'btn-primary'}>
-              {client.active ? tc('deactivate') : tc('activate')}
-            </button>
-          </form>
-        )}
-      </div>
 
       <CardCols
         main={
@@ -129,8 +126,9 @@ export default async function ClientDetailPage({
             </section>
 
             {/* What was actually said, in the place it was actually said —
-                the working surface of the card (owner: the amoCRM shape). */}
-            <ClientFeed clientId={client.id} tall />
+                the working surface of the card (owner: the amoCRM shape).
+                Its money rows are the ledger's, for the ledger's audience. */}
+            <ClientFeed clientId={client.id} money={canSeeMoney} tall />
             <TelegramThread
               clientId={client.id}
               hodim={hodim}
@@ -264,5 +262,6 @@ export default async function ClientDetailPage({
         }
       />
     </div>
+    </ClientCard>
   );
 }

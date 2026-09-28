@@ -542,6 +542,11 @@
     "allowsQuickBatch": "Разрешить быструю погрузку",
     "allowsQuickBatchHint": "Машина без плана и без утверждения. Снимите галочку там, где груз пересекает границу."
   },
+  "clientCard": {
+    "tabs": "Разделы карточки клиента",
+    "overview": "Общее",
+    "money": "Деньги"
+  },
   "clients": {
     "title": "Клиенты",
     "new": "Новый клиент",
@@ -1177,6 +1182,29 @@
     "mergedChip": "объединён",
     "errMergedCost": "Этот расход объединён с записью бухгалтера в «Расходах» — сначала отмените объединение (↩ в этой строке).",
     "errMergedCostAsk": "Этот расход объединён с записью бухгалтера — чтобы отменить, скажите бухгалтеру."
+  },
+  "batchCard": {
+    "tabLoading": "Погрузка",
+    "tabUnloading": "Выгрузка",
+    "tabCustoms": "Таможня",
+    "tabTruck": "Машина",
+    "tabsAria": "{code} — разделы",
+    "ladderAria": "Этапы партии",
+    "todoTitle": "Осталось",
+    "todoRemaining": "Не принято",
+    "todoCountLoad": "Подсчёт погрузки",
+    "todoCountAccept": "Подсчёт приёмки",
+    "todoAgent": "Агенту не отправлено",
+    "tileBoxes": "{n} кор.",
+    "tileReceipts": "приходов: {n}",
+    "tileUnclaimed": "без клиента: {n}",
+    "tilePriced": "С ценой",
+    "tileNoPrice": "нет цены",
+    "nothingLoaded": "Ещё ничего не погружено",
+    "profitChipOn": "В отчёте прибыли",
+    "profitChipSet": "В отчёт прибыли",
+    "todoNoCosts": "Нет расходов",
+    "todoTnved": "Без кода ТНВЭД"
   },
   "batches": {
     "title": "Партии",

@@ -132,8 +132,18 @@ describe('a merged cost is the only record of its money until the merge is undon
   });
 
   it('every cost card names the merge and says who may undo it', () => {
-    for (const card of ['batches', 'receipts', 'crates', 'zavod']) {
-      const page = read(`src/app/(protected)/${card}/[id]/page.tsx`);
+    // Derived from where a CostPanel is drawn (the truck's moved to its card's
+    // «Xarajatlar» tab, 2026-09-28), and anchored on the four it must find so a
+    // move can never make the loop vacuous.
+    const cards = [
+      'src/app/(protected)/batches/[id]/xarajatlar/page.tsx',
+      'src/app/(protected)/receipts/[id]/page.tsx',
+      'src/app/(protected)/crates/[id]/page.tsx',
+      'src/app/(protected)/zavod/[id]/page.tsx',
+    ];
+    for (const card of cards) expect(read(card), card).toContain('<CostPanel');
+    for (const card of cards) {
+      const page = read(card);
       expect(page, card).toContain('mergedExpenseId: entry.mergedExpenseId');
       expect(page, card).toContain('canUnmerge={mayPickTill(actor.permissions)}');
     }

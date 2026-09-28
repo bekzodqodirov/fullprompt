@@ -35,7 +35,8 @@ interface ElsewhereHit {
  * only show what this person may already open.
  *
  * `countHref` is the slot the count packages fill: a door-holder's link to
- * the office count panel (`/batches/<id>#count-load` / `#count-accept`). The
+ * the office count panel on the truck card's loading tab
+ * (`/batches/<id>/yuklash#count-load` / `#count-accept`). The
  * hint says who counts stickerless cartons whether or not the link is there.
  *
  * Kept MOUNTED and toggled with `open`: an Overlay rendered already-open runs

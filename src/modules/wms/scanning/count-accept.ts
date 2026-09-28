@@ -1,4 +1,6 @@
+import { cache } from 'react';
 import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
+import { batchTabHref } from '../batches/card-door';
 import { v5 as uuidv5 } from 'uuid';
 import { z } from 'zod';
 import { db, type Db, type Tx } from '../../platform/db/client';
@@ -955,7 +957,9 @@ async function shortfallText(
     `${led.label} · ${alarmProduct(led)}\n` +
     `Jo‘natilgan: ${led.departed} · Sanaldi: ${led.arrived} · Yetmaydi: ${short}\n` +
     `Sanadi: ${await presserName(tx, actorId)}\n` +
-    `${appUrl}/batches/${batch.id}`
+    // The count panel is where the answer is given — the truck card's
+    // unloading tab, at its anchor (a link from Telegram lands on it).
+    `${appUrl}${batchTabHref(batch.id, 'yuklash')}#count-accept`
   );
 }
 
@@ -969,7 +973,7 @@ async function closedText(
   return (
     `✅ ${batch.code} — ${led.label} · ${alarmProduct(led)}: endi ${led.arrived}/${led.departed}, kamomad yopildi\n` +
     `Sanadi: ${await presserName(tx, actorId)}\n` +
-    `${appUrl}/batches/${batch.id}`
+    `${appUrl}${batchTabHref(batch.id, 'yuklash')}#count-accept`
   );
 }
 
@@ -1056,7 +1060,7 @@ export async function countAcceptCrate(
  * the number it will really land (decision 21). Crated members are not in it:
  * a crate is accepted as the crate.
  */
-export async function countedLotAwaiting(batchId: string): Promise<number> {
+export const countedLotAwaiting = cache(async function countedLotAwaiting(batchId: string): Promise<number> {
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(boxes)
@@ -1069,7 +1073,7 @@ export async function countedLotAwaiting(batchId: string): Promise<number> {
       ),
     );
   return Number(row?.n ?? 0);
-}
+});
 
 export interface CountPanelLot extends LotLedger {
   /** Why the phone will not take it: counted (either end) or QR-siz aboard. */
@@ -1085,7 +1089,7 @@ export interface CountPanelLot extends LotLedger {
 }
 
 /** The panel's data, on the pool — the page's read, never a press's. */
-export async function countAcceptPanel(batchId: string): Promise<{
+export const countAcceptPanel = cache(async function countAcceptPanel(batchId: string): Promise<{
   lots: CountPanelLot[];
   crates: { crateId: string; code: string; n: number }[];
 }> {
@@ -1144,4 +1148,4 @@ export async function countAcceptPanel(batchId: string): Promise<{
       return rank(x) - rank(y) || x.label.localeCompare(y.label);
     });
   return { lots, crates: crateRows.map((c) => ({ ...c, n: Number(c.n) })) };
-}
+});

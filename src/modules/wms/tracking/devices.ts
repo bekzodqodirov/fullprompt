@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import { createHash, randomBytes, randomInt } from 'node:crypto';
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
@@ -259,7 +260,7 @@ export async function latestPositions(batchIds: string[]): Promise<Map<string, L
 }
 
 /** Paired devices of a trip for the batch card (never exposes the token). */
-export async function devicesForBatch(batchId: string) {
+export const devicesForBatch = cache(async function devicesForBatch(batchId: string) {
   const devices = await db
     .select({
       id: driverDevices.id,
@@ -281,4 +282,4 @@ export async function devicesForBatch(batchId: string) {
     .groupBy(driverPositions.deviceId);
   const byDevice = new Map(counts.map((c) => [c.deviceId, Number(c.n)]));
   return devices.map((d) => ({ ...d, fixes: byDevice.get(d.id) ?? 0 }));
-}
+});

@@ -542,6 +542,11 @@
     "allowsQuickBatch": "Allow quick loading",
     "allowsQuickBatchHint": "A truck with no plan and no approval. Untick it where cargo crosses a border."
   },
+  "clientCard": {
+    "tabs": "Client card sections",
+    "overview": "Overview",
+    "money": "Money"
+  },
   "clients": {
     "title": "Clients",
     "new": "New client",
@@ -1177,6 +1182,29 @@
     "mergedChip": "merged",
     "errMergedCost": "This cost is merged with the accountant's expense entry — undo the merge first (↩ on this row).",
     "errMergedCostAsk": "This cost is merged with the accountant's entry — ask the accountant to cancel it."
+  },
+  "batchCard": {
+    "tabLoading": "Loading",
+    "tabUnloading": "Unloading",
+    "tabCustoms": "Customs",
+    "tabTruck": "Truck",
+    "tabsAria": "{code} — sections",
+    "ladderAria": "Batch stages",
+    "todoTitle": "To do",
+    "todoRemaining": "Not accepted",
+    "todoCountLoad": "Count to load",
+    "todoCountAccept": "Count on arrival",
+    "todoAgent": "Not sent to the agent",
+    "tileBoxes": "{n} boxes",
+    "tileReceipts": "receipts: {n}",
+    "tileUnclaimed": "unclaimed: {n}",
+    "tilePriced": "Priced",
+    "tileNoPrice": "no price",
+    "nothingLoaded": "Nothing is loaded yet",
+    "profitChipOn": "In the profit report",
+    "profitChipSet": "Add to the profit report",
+    "todoNoCosts": "No costs entered",
+    "todoTnved": "No HS code"
   },
   "batches": {
     "title": "Batches",

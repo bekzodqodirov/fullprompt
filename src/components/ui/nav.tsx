@@ -226,7 +226,10 @@ export function MobileNav({
               <Link
                 key={item.href}
                 href={item.href}
-                aria-current={active ? 'page' : undefined}
+                // «page» only ON the page: under it (a card of this list) the
+                // card's own tab strip is the current page (see nav.tsx's rule
+                // at the sidebar, and ws-tabs' `litAs`).
+                aria-current={active ? (pathname === item.href ? 'page' : 'true') : undefined}
                 className={`flex flex-1 flex-col items-center gap-0.5 px-1 pt-2 text-2xs font-semibold ${
                   active ? 'text-brand-700' : 'text-ink-500'
                 }`}

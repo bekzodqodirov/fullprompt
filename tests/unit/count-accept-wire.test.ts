@@ -27,7 +27,10 @@ const ACCEPT = 'src/modules/wms/scanning/count-accept.ts';
 const UNLOAD = 'src/modules/wms/scanning/unload.ts';
 const ACTIONS = 'src/app/(protected)/batches/batch-actions-server.ts';
 const PANEL = 'src/app/(protected)/batches/[id]/count-accept-panel.tsx';
-const PAGE = 'src/app/(protected)/batches/[id]/page.tsx';
+// The count panel and the unloading controls live on the truck card's
+// «Tushirish» tab since 2026-09-28 (docs/CARD-TABS.md); the header only counts.
+const PAGE = 'src/app/(protected)/batches/[id]/yuklash/page.tsx';
+const HEADER = 'src/app/(protected)/batches/[id]/batch-card.tsx';
 const SCREEN = 'src/app/(protected)/batches/[id]/unload/unload-screen.tsx';
 const MISSING = 'src/app/(protected)/batches/[id]/unload-actions.tsx';
 
@@ -120,6 +123,19 @@ describe('the count-accept door', () => {
     expect(panel).toBeGreaterThan(0);
     expect(page.lastIndexOf('{countPanel &&', panel)).toBeGreaterThan(0);
     expect(page).toContain('id="count-accept"');
+  });
+
+  it('the header counts the same office work, for the same door, that the tab draws', () => {
+    const header = read(HEADER);
+    expect(header).toContain('const destCount = mayCountMove(actor, batch.destWarehouseId);');
+    const from = header.indexOf('if (unloadingNow && destCount) {');
+    expect(from).toBeGreaterThan(0);
+    const branch = header.slice(from, header.indexOf('}', header.indexOf('todos.push(', from)));
+    expect(branch).toContain('const panel = await countAcceptPanel(id);')
+    // «awaiting» alone is every carton still aboard; the office's work is a
+    // lot the phone cannot scan (a mode) with cartons left (review D6).
+    expect(header).toContain('lot.mode !== null && lot.awaiting > 0');
+    expect(header).toContain("hash: 'count-accept'");
   });
 
   it('every refusal the service can give has a sentence on the panel (#906)', () => {

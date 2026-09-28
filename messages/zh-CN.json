@@ -542,6 +542,11 @@
     "allowsQuickBatch": "允许快速装车",
     "allowsQuickBatchHint": "无计划、无审批的车。货物需过境的仓库请取消勾选。"
   },
+  "clientCard": {
+    "tabs": "客户卡片分区",
+    "overview": "概览",
+    "money": "资金"
+  },
   "clients": {
     "title": "客户",
     "new": "新建客户",
@@ -1177,6 +1182,29 @@
     "mergedChip": "已合并",
     "errMergedCost": "该费用已与会计的费用记录合并——请先取消合并（本行的 ↩）。",
     "errMergedCostAsk": "该费用已与会计记录合并——如需作废请告知会计。"
+  },
+  "batchCard": {
+    "tabLoading": "装车",
+    "tabUnloading": "卸车",
+    "tabCustoms": "报关",
+    "tabTruck": "车辆",
+    "tabsAria": "{code} — 分区",
+    "ladderAria": "车次阶段",
+    "todoTitle": "待办",
+    "todoRemaining": "未接收",
+    "todoCountLoad": "装车计数",
+    "todoCountAccept": "到货计数",
+    "todoAgent": "未发给代理",
+    "tileBoxes": "{n} 箱",
+    "tileReceipts": "入库单：{n}",
+    "tileUnclaimed": "无主：{n}",
+    "tilePriced": "已定价",
+    "tileNoPrice": "未定价",
+    "nothingLoaded": "尚未装车",
+    "profitChipOn": "计入利润",
+    "profitChipSet": "计入利润报表",
+    "todoNoCosts": "未录入费用",
+    "todoTnved": "无海关编码"
   },
   "batches": {
     "title": "车次",
