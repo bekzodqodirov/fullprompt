@@ -39,6 +39,8 @@ test('a cost typed with no kassa waits on the queue, and one press names its kas
   await first.click();
   await expect(page).toHaveURL(/\/batches\/[0-9a-f-]{36}$/);
   batchUrl = new URL(page.url()).pathname;
+  // A truck's bills are the card's «Xarajatlar» tab.
+  await page.goto(`${batchUrl}/xarajatlar`);
 
   await page.getByTestId('add-cost').click();
   await page.getByTestId('cost-amount').fill(AMOUNT);
@@ -68,7 +70,7 @@ test('a cost typed with no kassa waits on the queue, and one press names its kas
   );
 
   // The card now says a kassa paid it.
-  await page.goto(batchUrl);
+  await page.goto(`${batchUrl}/xarajatlar`);
   const entry = page.locator('div').filter({ hasText: `≈ $${AMOUNT}` }).last();
   await expect(entry.getByTestId('cost-till')).toBeVisible();
 });
@@ -76,7 +78,7 @@ test('a cost typed with no kassa waits on the queue, and one press names its kas
 test('cleanup: the cost is voided and the kassa gets its money back', async ({ page }) => {
   expect(batchUrl).not.toBe('');
   await login(page);
-  await page.goto(batchUrl);
+  await page.goto(`${batchUrl}/xarajatlar`);
   const entry = page.locator('div').filter({ hasText: `≈ $${AMOUNT}` }).last();
   page.once('dialog', (dialog) => void dialog.accept('e2e cleanup'));
   // The button's accessible name is its aria-label (the locale's «void»);

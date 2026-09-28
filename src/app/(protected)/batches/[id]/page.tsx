@@ -12,7 +12,7 @@ import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 import { LightboxImg } from '@/components/lightbox-img';
 import { QrlessChip } from '@/components/qrless-chip';
 import { TasksPanel } from '@/components/tasks-panel';
-import { BatchCard, batchTabMetadata } from './batch-card';
+import { BatchCard, batchTabMetadata, cargoLine } from './batch-card';
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   return batchTabMetadata((await params).id, 'tarkib');
@@ -80,7 +80,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
       {/* No title of its own: the strip above names the tab («Ichidagilar»). */}
       <div className="card space-y-2">
         <p className="text-sm font-semibold text-ink-700" data-testid="batch-contents-total">
-          Σ {totalBoxes} 📦 · {Math.round(totalKg)} kg · {Math.round(totalM3 * 100) / 100} m³
+          Σ {totalBoxes} 📦 · {cargoLine(totalKg, totalM3)}
         </p>
         {contents.length === 0 && <p className="text-sm text-ink-500">{tc('empty')}</p>}
         {/* Its own sideways scroll: a row wider than the phone rescales the

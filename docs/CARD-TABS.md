@@ -54,13 +54,16 @@ errors and one bad read must not take every tab down **(R)**.
 | **Xarajatlar** | `/batches/<id>/xarajatlar` | `costs.enter_batch ∨ reports.all_warehouses` + card door |
 | **Narx** (internal leg: **Tannarx**) | `/batches/<id>/pricing` | `pricingSight ≠ 'none'` + card door |
 | **Bojxona** | `/batches/<id>/tnved` | `ved.docs ∨ plans.manage` + card door. **The scope half was missing — closed** |
-| **Yo'l** | `/batches/<id>/yol` (new) | card door |
+| **Mashina** | `/batches/<id>/mashina` (new) | card door |
 
-Tab labels are short on every width. The body's own h2 carries the full name,
-and the pricing page's h1 and the grid page's h1 become h2s, so the code stays
-the page's one h1. On a phone the strip is a 3-column grid of chips: no JS,
-every tab and badge visible. From `md` it is a wrapping row. Each link carries
-`#tabs`, and the strip has `id="tabs" tabIndex=-1`:
+Tab labels are short on every width. The pricing page's h1 and the grid
+page's h1 became h2s, so the code stays the page's one h1; Tarkib carries no
+title of its own, because the lit tab names it. On a phone the strip is a
+3-column grid of chips: no JS, every tab and badge visible, labels at 12 px so
+«Себестоимость» fits a third of 328 px and a label that still does not fit
+wraps rather than being cut to «Тамо…» (measured, first build). From `md` it is
+a wrapping row. Each link carries `#tabs`, and the strip has
+`id="tabs" tabIndex=-1`:
 - on a phone `scroll-mt` lands the strip under the app bar, so a tap SHOWS the
   new body instead of the same header;
 - from `lg` a margin larger than the header clamps the scroll to 0, so the
@@ -92,12 +95,13 @@ The header now is:
      the next truck **(R)**. Its chips follow: on-spot and counted.
    - After departure, one `text-xs` facts line:
      - «🚀 date»;
-     - the latest pin, dated the dashboard's way («belgi 2 kun oldin», never
-       «still there»);
      - «Rastamojka ✅ dd.mm / —», for a truck that crosses a border by the
        VED's `sameCountryLeg` rule;
-     - the over-arrived chip.
-   - While in transit or arrived: the ETA — the dashboard's own sentence.
+     - the on-spot and over-arrived chips.
+   - While in transit or arrived: the dashboard's own word and sentence
+     (`components/truck-road.tsx`, moved out of the dashboard's trucks card) —
+     days on the road, the ETA where a schedule gives one, and the latest pin
+     as a DATED fact («belgi 2 kun oldin», never «still there»).
    - The pairing code, while forming/loading only, on one line.
    - The stage buttons this viewer can press, and only those:
      - `open-loading`;
@@ -106,9 +110,11 @@ The header now is:
      - `open-unloading`.
 3. **KPI tiles, from `lg` only.** On a phone they repeated the tab below them
    and cost 130–384 px.
-4. **«Qolgan ishlar»** — a `<details>`: closed on a phone («⚠ Qolgan ishlar ·
-   3»), open from lg, absent when empty. Each item is a label plus a count
-   pill, so no plurals are needed.
+4. **«Qolgan ishlar»** — one wrapping row of warn chips under the card,
+   absent when empty. The first build folded it into a `<details>` on a phone
+   and the fold cost a tap to learn there were three things to do; the chips
+   are shorter than the fold's own summary was once the labels were cut to
+   two words. Each item is a label plus a count, so no plurals are needed.
 5. **The strip.**
 
 `UnloadActions` (acceptance, finish, the missing-carton resolution, close) and
@@ -150,14 +156,18 @@ prints «≈», which the m9 specs read strictly.
   trucks of one database. Before departure it now reads the live pointer, after
   departure the departed cartons (`aboardFilter`).
 
-**Yo'l** — vehicle and driver, the driver's phone (the pairing code lives here
-after departure), «Mashina qayerda?» pins, the ETA, and «Xaritada ko'rish» for
-`mayReadBatches` only. /map bounces everybody else **(R)**.
+**Mashina** — vehicle and driver, the driver's phone (the pairing code lives
+here after departure), «Mashina qayerda?» pins, and «Xaritada ko'rish» for
+`mayReadBatches` only; /map bounces everybody else **(R)**. The sections were
+the card's folded rail panels; here they are the page, so each is open. The ETA
+is the header's, said once. (Named «Yo'l» in the first draft: the tab holds
+the lorry, the driver and his phone, and the road is the header's sentence.)
 
 ### Header numbers (lg tiles; links)
 
 **Yuk** — riders Σ boxes, with m³ · kg beneath.
-- Source: `batchContents(id)` — the Tarkib table's Σ, and equal to `riderLoad`.
+- Source: `batchLots(id)` — the Tarkib table's own rows, and its Σ equals
+  `riderLoad` (pinned by `truck-card.integration.test.ts`).
 - Audience: the card.
 - Links to: Tarkib.
 
@@ -190,25 +200,25 @@ different figures. Each carries its destination's own label.
 
 ### «Qolgan ishlar» — each gated by the door of the exact thing it links to **(R)**
 
-- **«Hali qabul qilinmagan · N»** → `/yuklash`
+- **«Qabul qilinmagan N»** → `/yuklash`
   - Rule: `remainingToUnload`.
   - Shown to: in_transit/arrived, for whoever can act: `scan.unload` or the
     destination's shortcut or count door.
-- **«Yo‘lda yo‘qolgan · N»** → `/yuklash#missing`
+- **«Yo‘lda yo‘qolganlar N»** → `/yuklash#missing`
   - Rule: the missing list.
   - Shown to: the resolution doors (`receipts.void` at the destination, or its
     count door).
-- **«Sanab yuklash · N lot»** → `/yuklash#count-load`
+- **«Sanab yuklash N»** (lots) → `/yuklash#count-load`
   - Rule: `qrlessUncountedByTruck`.
   - Shown to: loading, `countDoorFor(actor, origin)`.
-- **«Sanab qabul · N lot»** → `/yuklash#count-accept`
+- **«Sanab qabul N»** (lots) → `/yuklash#count-accept`
   - Rule: lots with `mode ≠ null` and awaiting > 0. «awaiting» alone is every
     carton still aboard **(R)**.
   - Shown to: unloading, `mayCountMove(actor, dest)`.
 - **«Xarajat yozilmagan»** → `/xarajatlar`
   - Rule: `batchCostEntryCount = 0` after departure (the tab's own warning).
   - Shown to: the cost door.
-- **«TNVED kodsiz · N tovar»** → `/tnved`
+- **«TNVED kodsiz N»** (products) → `/tnved`
   - Rule: distinct `productKey` over the editor's own list with no
     `tnved_assignments` row.
   - Shown to: `ved.docs ∨ plans.manage`, while customs is not cleared.
@@ -257,10 +267,20 @@ unloaded truck, `truckRow` says «overdue».
   held by SCOPED seeded roles, so a Yiwu operator could move any truck's map
   pin — the customer's stage and ETA — and pair or revoke any truck's driver
   phone.
-  - All eight now pass one door: the permission + the card's origin-or-
-    destination scope.
-  - Per-prixod customs also checks that the prixod rides the truck.
-  - Revoke checks that the phone belongs to it.
+  - All eight now pass one door, `authorizeOnBatch(permission, batchId)`
+    (`wms/batches/batch-authorize.ts`): the permission, then the truck, then
+    `mayOpenBatchCard` — the card's own door, never restated — refused as
+    authorize's own `AuthError('forbidden')`. A truck that is not there is
+    `null` and the action returns quietly, as before; an id that is not a uuid
+    counts as not there instead of reaching postgres as a 22P02.
+  - Per-prixod customs also checks that the prixod is one of
+    `batchCustomsRows(batchId)` — the list the panel draws.
+  - Revoke checks that the phone belongs to the truck.
+  - Only the three `batches.vehicle_info` actions were reachable by a seeded
+    scoped role; the other five matter for a scoped role he invents. All
+    eight are pinned by a DERIVED source fence over every exported action
+    (`batch-door-wire.test.ts`) and pressed for real as the demo people
+    (`batch-door.integration.test.ts`).
 - **`suggestTnvedForLotAction` took any lot id in the company,** read its
   photo and spent the AI budget. It now takes the truck and asks the card's
   door, and the lot must ride the truck.
@@ -269,6 +289,29 @@ unloaded truck, `truckRow` says «overdue».
 - **`VehicleForm` and `BatchCodeForm` were drawn to people their actions
   refuse** (a destination-scoped holder). They are drawn with the action's
   own door now.
+
+### How it is pinned
+
+- `tests/unit/truck-card.test.ts` — the tabs each seeded role is offered (this
+  file's table, literal); for every role and both kinds of leg, «Xarajat» is
+  `mayOpenBatchCosts`, «Bojxona» `mayOpenBatchVed`, «Narx» exactly when the
+  pricing page's sight is not 'none'; every tab page lives where the strip
+  links, lights its own tab, asks the two-ends door before drawing the card
+  and keeps no permission redirect of its own; each «Qolgan ishlar» chip asks
+  the door of the tab it links to.
+- `tests/integration/truck-card.integration.test.ts` — one truck carrying
+  every edge the membership rules disagree on. The UNION rewrites of
+  `batchMemberFilter`/`aboardFilter` answer the old OR forms; the contents Σ
+  is `riderLoad` (the old card counted two cartons that never rode and missed
+  one that did); the loaded line reads the live pointer only; the TNVED list
+  keeps a lot scanned off mid-unload; «Agentga yuborilmagan» is the VED home's
+  sentence; the header's road row is the dashboard's.
+- `tests/e2e/m9zzr-partiya-karta.spec.ts` — the SERVER as the oracle: as each
+  demo person, every drawn tab answers 200 and every other one refuses; a
+  third warehouse's operator is refused the whole card; at 360 px every tab
+  fits and its body starts on the first screen. The `.desktop` twin: the
+  tiles, one `aria-current="page"` on the page, and a tab link at 1280 keeps
+  the header in view.
 
 ## The client: «Umumiy» and «Pul»
 

@@ -178,6 +178,11 @@ describe('the strip and the header', () => {
     expect(push('batch-todo-agent')).toContain('batchDocsPending(id)');
   });
 
+  it('the «Yuk» tile and the Tarkib Σ line print the same two numbers the same way', () => {
+    expect(card).toContain('lines={[cargoLine(kgTotal, m3Total)]}');
+    expect(strip(read(pageOf('tarkib')))).toContain('Σ {totalBoxes} 📦 · {cargoLine(totalKg, totalM3)}');
+  });
+
   it('the header’s money figures are behind their tabs’ doors (Q19: no cost to the VED)', () => {
     expect(card).toContain("const costSheet = costDoor ? await soft('cost sheet', () => batchCostSheet(id, costSightFor(actor))) : null;");
     expect(card).toContain('const sight = pricingSight(actor.permissions, head.internal);');

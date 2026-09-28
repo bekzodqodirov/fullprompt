@@ -107,12 +107,15 @@ test('the logist sends the lot YW → AND and the truck leaves with all four', a
   await page.getByTestId('finish-loading').click();
   page.once('dialog', (d) => void d.accept());
   await page.getByTestId('depart-batch').click();
-  await expect(page.getByText(/🚀/).first()).toBeVisible({ timeout: 15_000 });
+  // The depart button is itself labelled 🚀; the departure line is drawn
+  // only once the truck has left.
+  await expect(page.getByTestId('batch-facts')).toBeVisible({ timeout: 15_000 });
 });
 
 test('the office counts 2 of the lot from the batch card: one confirm, the truck arrives, the lot is the office’s', async ({ page }) => {
   await login(page, LOGIST);
-  await page.goto(`${batchUrl}#count-accept`);
+  // The office's count doors are the card's «Yuklash» tab.
+  await page.goto(`${batchUrl}/yuklash#count-accept`);
   // The anchor opens the panel by itself.
   const lot = page.locator('[data-testid^="count-lot-"]').filter({ hasText: PRODUCT });
   await expect(lot).toBeVisible({ timeout: 10_000 });
@@ -136,7 +139,7 @@ test('the office counts 2 of the lot from the batch card: one confirm, the truck
   expect(dialogs[0]).toMatch(/4[^0-9]+2/);
 
   // A counted lot still aboard is the office's open work: the panel opens by itself.
-  await page.goto(batchUrl);
+  await page.goto(`${batchUrl}/yuklash`);
   await expect(page.getByTestId('count-accept-panel')).toBeVisible();
   const after = page.getByTestId(`count-lot-${lotId}`);
   await expect(after).toContainText('🔢');
@@ -174,7 +177,7 @@ test('the phone refuses the counted lot in words, and its counter does not move'
 
 test('the finish names the missing by lot, and «2 of them are here» closes the gap', async ({ page }) => {
   await login(page, LOGIST);
-  await page.goto(batchUrl);
+  await page.goto(`${batchUrl}/yuklash`);
   page.on('dialog', (d) => void d.accept());
   await page.getByTestId('finish-unload').click();
   const missing = page.getByTestId(`missing-lot-${lotId}`);

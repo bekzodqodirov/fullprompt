@@ -38,7 +38,7 @@ import { batchTnvedProducts, missingTnvedCount } from '@/modules/wms/tnved/batch
 import { devicesForBatch } from '@/modules/wms/tracking/devices';
 import { truckOnRoadRow } from '@/modules/wms/tracking/on-road';
 import { BackLink } from '@/components/back-link';
-import { compactUsd, m3 as fmtM3, num } from '@/components/charts/format';
+import { compactUsd, num } from '@/components/charts/format';
 import { truckRoadWords } from '@/components/truck-road';
 import { BatchActions } from './batch-actions';
 import { BatchCodeForm } from './batch-code-form';
@@ -87,6 +87,16 @@ const TILE_TONE = {
   bad: 'text-bad',
   muted: 'text-ink-500',
 } as const;
+
+/**
+ * «60 kg · 0.18 m³» — ONE spelling for the Tarkib table's Σ line and the
+ * header's «Yuk» tile, which print the same two numbers (#513). The tile
+ * first used the charts' one-decimal m³, and the owner's first screenshot
+ * read «0.2 m³» on the tile over «0.18 m³» on the table beneath it.
+ */
+export function cargoLine(kg: number, m3: number): string {
+  return `${Math.round(kg)} kg · ${Math.round(m3 * 100) / 100} m³`;
+}
 
 /** The tab strip's words — short on every width; a body's own h2 says the rest. */
 async function tabLabels(head: BatchHead): Promise<Record<BatchTab, string>> {
@@ -466,7 +476,7 @@ export async function BatchCard({
           href={active === 'tarkib' ? null : tabHref('tarkib')}
           label={tcargo('title')}
           value={tc('tileBoxes', { n: num(boxTotal) })}
-          lines={[`${fmtM3(m3Total)} m³ · ${num(Math.round(kgTotal))} kg`]}
+          lines={[cargoLine(kgTotal, m3Total)]}
           testid="batch-tile-cargo"
         />
         <Tile

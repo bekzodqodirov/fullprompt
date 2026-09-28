@@ -68,10 +68,13 @@ test('cost → price → margin, and the client card knows which trip', async ({
   await page.getByTestId('finish-loading').click();
   page.once('dialog', (d) => void d.accept());
   await page.getByTestId('depart-batch').click();
-  await expect(page.getByText(/🚀/).first()).toBeVisible({ timeout: 15_000 });
+  // The depart button is itself labelled 🚀; the departure line is drawn
+  // only once the truck has left.
+  await expect(page.getByTestId('batch-facts')).toBeVisible({ timeout: 15_000 });
 
-  // Customs for the whole truck, in USD so no FX rate is needed.
-  await page.goto(batchUrl);
+  // Customs for the whole truck, in USD so no FX rate is needed — on the
+  // card's «Xarajatlar» tab, with the prixod grid under it.
+  await page.goto(`${batchUrl}/xarajatlar`);
   await page.getByTestId('add-cost').click();
   await page.getByTestId('cost-amount').fill('90');
   await page.locator('select[aria-label="currency"]').selectOption('USD');
@@ -101,11 +104,17 @@ test('cost → price → margin, and the client card knows which trip', async ({
   // --- The VED: the truck's costs are the logist's, so he reads their TYPE
   // and never their amount (Q19 D1) ---
   await login(page, VED);
-  await page.goto(batchUrl);
+  await page.goto(`${batchUrl}/xarajatlar`);
   await expect(page.getByText('≈ $90')).toHaveCount(0);
   await expect(page.getByTestId('cost-others')).toBeVisible();
   await expect(page.getByTestId('cost-others')).toContainText('🔒');
-  await expect(page.getByTestId('batch-pricing-link')).toBeVisible();
+  // The card's header says no cost and no margin to him either — the tiles
+  // are not drawn at all, not merely hidden below lg — while his price tab
+  // is there.
+  await expect(page.getByTestId('batch-tile-costs')).toHaveCount(0);
+  await expect(page.getByTestId('batch-tile-margin')).toHaveCount(0);
+  await expect(page.getByTestId('batch-tile-priced')).toHaveCount(1);
+  await expect(page.getByTestId('batch-tab-narx')).toBeVisible();
 
   // --- …and prices it on a page with no cost, no margin, no tannarx ---
   await page.goto(`${batchUrl}/pricing`);
@@ -132,6 +141,9 @@ test('cost → price → margin, and the client card knows which trip', async ({
   // --- The accountant reads the tannarx the VED no longer does ---
   await login(page, ACCOUNTANT);
   await page.goto(`${batchUrl}/pricing`);
+  // …and the header's two money tiles the VED was not given.
+  await expect(page.getByTestId('batch-tile-costs')).toHaveCount(1);
+  await expect(page.getByTestId('batch-tile-margin')).toHaveCount(1);
   const costed = page.getByTestId('pricing-client').filter({ hasText: clientCode });
   // The truck's customs reached this client as their own share…
   await expect(costed.getByTestId('client-cost')).not.toHaveText('$0.00');
