@@ -539,7 +539,7 @@ describe('«Qarzga berilgan yuklar» — the register', () => {
     const c = await mkClient(seller.id);
     const jobA = await mkDeal(c.id);
     const jobB = await mkDeal(c.id);
-    await ledger(c.id, 'charge', 300, { dealId: jobA });
+    const chargeA = await ledger(c.id, 'charge', 300, { dealId: jobA });
     await ledger(c.id, 'charge', 200, { dealId: jobB });
     const input = { reason: 'hammasi kelganda', untilAllArrived: true };
     await deferPayment(jobA, input, ctx(seller.id), seller.actor);
@@ -565,6 +565,17 @@ describe('«Qarzga berilgan yuklar» — the register', () => {
         unknown: 0,
       },
     ]);
+
+    // The first job's price was a mistake and is voided: he owes $200 today.
+    // Each part is capped at that on its own ($200 + $200), and so is their
+    // sum — «qaytmagan» never outlives the debt it counts.
+    await db
+      .update(clientTransactions)
+      .set({ voidedAt: new Date(), voidedBy: A.id, voidReason: 'xato narx' })
+      .where(eq(clientTransactions.id, chargeA));
+    const after = await debtReleases(sight, { ...ALL, approverId: seller.id });
+    expect(after.rows.map((row) => row.leftUsd)).toEqual([200, 200]);
+    expect(after.totals).toEqual([expect.objectContaining({ releases: 1, debtUsd: 500, leftUsd: 200 })]);
   });
 
   it('a tick over a muddat the same person granted: one release, both parts, the money since shared between them', async () => {
