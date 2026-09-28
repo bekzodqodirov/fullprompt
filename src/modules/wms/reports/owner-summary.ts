@@ -1,7 +1,7 @@
 import { inArray } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { partners } from '../../platform/db/schema';
-import { mondayOf, tashkentDay, tashkentMinute } from '../../platform/time/tashkent';
+import { tashkentMinute } from '../../platform/time/tashkent';
 import { cashFlow, companyBalanceParts, profitAndLoss } from '../accounting/reports';
 import { recurringDue } from '../accounting/recurring';
 import { openExpenseRequestTotals } from '../accounting/expense-requests';
@@ -13,10 +13,18 @@ import { attentionFacts, attentionGates, type AttentionFact } from './attention'
 import { readAttentionSources } from './attention-sources';
 import { intakeByDay } from './business';
 import { loadLeadFlow, scopeKeyOf, unkey } from './dashboard';
-import { dashboardWindows, dashPeriod, pnlParts, rankAttention, type DashPeriod } from './dashboard-math';
+import { dashboardWindows, pnlParts, rankAttention } from './dashboard-math';
 import { truckMoves } from './overview';
 import { ownerSummarySight, type OwnerSummaryActor } from './owner-summary-door';
-import { ownerSummaryText, paymentsDue, summaryQuiet, type DuePartner, type SummaryFacts } from './owner-summary-text';
+import {
+  ownerSummaryText,
+  paymentsDue,
+  summaryQuiet,
+  summaryWindow,
+  type DuePartner,
+  type SummaryFacts,
+  type SummaryWindowKey,
+} from './owner-summary-text';
 import { reportBaseIds, type ScopeActor } from './report-scope';
 
 /**
@@ -36,20 +44,6 @@ import { reportBaseIds, type ScopeActor } from './report-scope';
 
 /** How many attention rows the message names; the rest are counted. */
 export const ATTENTION_TOP = 3;
-
-export type SummaryWindowKey = 'bugun' | '7';
-
-/**
- * Which window a moment belongs to — decided on TASHKENT's day (R5, #1063):
- * 19:30 UTC on a Monday is 00:30 on Tuesday here, a daily message. Monday is
- * the week's message, over the dashboard's own «7 kun» (Tuesday to Monday).
- */
-export function summaryWindow(now: Date): { today: string; weekly: boolean; key: SummaryWindowKey; period: DashPeriod } {
-  const today = tashkentDay(now);
-  const weekly = mondayOf(today) === today;
-  const key: SummaryWindowKey = weekly ? '7' : 'bugun';
-  return { today, weekly, key, period: dashPeriod(key, today) };
-}
 
 export interface OwnerSummary {
   text: string;

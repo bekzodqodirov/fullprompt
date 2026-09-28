@@ -1,6 +1,7 @@
 import { createTranslator, type AbstractIntlMessages } from 'next-intl';
 import uz from '../../../../messages/uz.json';
-import { addDays } from '../../platform/time/tashkent';
+import { addDays, mondayOf, tashkentDay } from '../../platform/time/tashkent';
+import { dashPeriod, type DashPeriod } from './dashboard-math';
 import { clipText, groupDigits, roundKg, roundM3, usd } from '../../platform/telegram/format';
 import { STAFF_TEXT_CAP } from '../../platform/notifications/staff-html';
 import { remainderOf } from '../accounting/recurring-math';
@@ -30,6 +31,21 @@ export const NAME_MAX = 40;
 const SENTENCE_MAX = 300;
 /** The weekly block looks this far ahead — the approved «keyingi 4 hafta». */
 export const PAYMENTS_DAYS = 28;
+
+export type SummaryWindowKey = 'bugun' | '7';
+
+/**
+ * Which window a moment belongs to — decided on TASHKENT's day (R5, #1063):
+ * 19:30 UTC on a Monday is 00:30 on Tuesday here, a daily message. Monday is
+ * the week's message, over the dashboard's own «7 kun» (Tuesday to Monday)
+ * and its weekday is `mondayOf`'s, never `getUTCDay()` of an instant.
+ */
+export function summaryWindow(now: Date): { today: string; weekly: boolean; key: SummaryWindowKey; period: DashPeriod } {
+  const today = tashkentDay(now);
+  const weekly = mondayOf(today) === today;
+  const key: SummaryWindowKey = weekly ? '7' : 'bugun';
+  return { today, weekly, key, period: dashPeriod(key, today) };
+}
 
 /** `YYYY-MM-DD` → `dd.MM`, from the string (#678). */
 export const ddmm = (day: string) => `${day.slice(8, 10)}.${day.slice(5, 7)}`;
