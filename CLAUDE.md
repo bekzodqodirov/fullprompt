@@ -2030,6 +2030,22 @@ refuses. Stated: lock-6, ui-7, a grown carton on a
 cancelled truck stays in the prixod, and the scanner speed is proven only by
 simulation — his ⓘ screenshots from the slow phones are the oracle.
 
+**Round — Andijondan Toshkentga ichki reys (2026-09-28; DECISIONS
+#1177-#1179; NO migration, ledger 113).** His «andijon skladga olib keldim …
+ichki reys qilib toshkentga … sklatda yuk korinmay qolyabti»: a truck lands
+cargo `ready_for_pickup` at a collection warehouse and the PLAN path (editor
+list, `availableByLot`, the submit's crate check, the approval's reservation)
+read `in_stock` alone, while the quick truck always took both.
+`boxes/shelf.ts` is the one home: `PLANNABLE_STATUSES` (what a truck may take)
+and `shelfBefore`/`shelfBeforeSql` (the shelf a carton LEFT, from the
+movement ledger — every give-back asks it: short_loaded, load_removed,
+batch_cancelled, found_at_origin at both unload doors, and the count press's
+own way back). History, not warehouse type: a walk-in at Tashkent goes back
+`in_stock`. The editor's query is `planning/stock.ts` `plannableStock`.
+Review cargo-6's «ready carton rides as an extra» is reversed (#1179). A
+pre-existing count-press path dependence (re-reserve vs dial-down order) was
+found by the widened simulation and queued, not fixed. 16 red proofs.
+
 **Latest migration: 0112** (`qr_less` — the count reasons, the QR-siz lot
 marker, the office receipt's receiver, the factory barcode, the pallet kind;
 ledger must reach **113**). Before it: **0111** (`nav_usage` — «Tez-tez»;

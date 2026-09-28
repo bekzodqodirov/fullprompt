@@ -16,6 +16,7 @@ import {
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { cancelTasksFor } from '../../platform/tasks/service';
 import { emitEvent } from '../../platform/events/service';
+import { PLANNABLE_STATUSES } from '../boxes/shelf';
 import { nextBatchCode } from '../codes';
 import { mintBatchPairCode } from '../tracking/devices';
 
@@ -50,9 +51,11 @@ export const submitPlanSchema = z.object({
 export type SubmitPlanInput = z.infer<typeof submitPlanSchema>;
 
 /**
- * How many LOOSE boxes of a lot are still available to plan: in_stock at the
- * origin WH, not reserved by another batch and not packed in a crate (crated
- * cargo is planned as whole crates — one place each).
+ * How many LOOSE boxes of a lot are still available to plan: free on the
+ * origin WH's shelf (`PLANNABLE_STATUSES` — cargo a truck unloaded at a
+ * collection warehouse stands `ready_for_pickup`, and Andijan → Tashkent is
+ * exactly that cargo), not reserved by another batch and not packed in a
+ * crate (crated cargo is planned as whole crates — one place each).
  */
 /**
  * How many boxes of each lot are free to plan, right now.
@@ -77,7 +80,7 @@ export async function availableByLot(
     .where(
       and(
         inArray(boxes.lotId, lotIds),
-        eq(boxes.status, 'in_stock'),
+        inArray(boxes.status, [...PLANNABLE_STATUSES]),
         eq(boxes.currentWarehouseId, originWarehouseId),
         isNull(boxes.crateId),
       ),
@@ -125,7 +128,7 @@ export async function submitPlan(input: SubmitPlanInput, ctx: AuditContext) {
         .where(
           and(
             inArray(boxes.crateId, crateIds),
-            eq(boxes.status, 'in_stock'),
+            inArray(boxes.status, [...PLANNABLE_STATUSES]),
             eq(boxes.currentWarehouseId, input.originWarehouseId),
           ),
         )
@@ -364,13 +367,15 @@ export async function recordVerdict(input: VerdictInput, ctx: AuditContext) {
     for (const line of lines) {
       // Crate lines take the crate's exact boxes (the crate is one place);
       // loose lines take the lowest sequence numbers among un-crated stock.
+      // Either shelf status: the movement below records which one it was, and
+      // every door that gives the carton back reads it there (`shelfBefore`).
       const candidates = await tx
         .select()
         .from(boxes)
         .where(
           and(
             eq(boxes.lotId, line.lotId),
-            eq(boxes.status, 'in_stock'),
+            inArray(boxes.status, [...PLANNABLE_STATUSES]),
             eq(boxes.currentWarehouseId, plan.originWarehouseId),
             line.crateId ? eq(boxes.crateId, line.crateId) : isNull(boxes.crateId),
           ),

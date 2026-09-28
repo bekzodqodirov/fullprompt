@@ -17,6 +17,7 @@ import { loadScanInTx } from './service';
 import { aboardFilter } from './unload';
 import { planCountMove, shelfStatus, type CountRow } from './count-plan';
 import { qrlessRowSql } from '../labels/qrless-sql';
+import { PLANNABLE_STATUSES, shelfBeforeSql } from '../boxes/shelf';
 import { codeIdentity } from '../labels/code-identity';
 import {
   GROW_LOT_MAX,
@@ -217,10 +218,7 @@ async function countRows(
            (b.flags @> '["added_on_spot"]'::jsonb) AS over,
            ${byCountSql('b', batchId)} AS by_count,
            ${qrlessRowSql(sql`b`, sql`l`)} AS qrless,
-           (SELECT m.from_status FROM box_movements m
-             WHERE m.box_id = b.id AND m.ref_type = 'batch' AND m.ref_id = ${batchId}::uuid
-               AND m.cause IN ('load_scan', 'loaded_on_spot')
-             ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS loaded_from
+           ${shelfBeforeSql('b', sql`${batchId}::uuid`)} AS loaded_from
       FROM boxes b
       JOIN receipt_lots l ON l.id = b.lot_id
      WHERE ${candidatesSql('b', batchId, lotId, originId)}
@@ -443,7 +441,7 @@ export async function countLoadLot(
         })),
       );
     }
-    for (const status of ['in_stock', 'ready_for_pickup'] as const) {
+    for (const status of PLANNABLE_STATUSES) {
       const home = move.backToShelf.filter((r) => shelfStatus(r.loadedFrom) === status);
       if (home.length === 0) continue;
       await tx

@@ -25,6 +25,7 @@ import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { usersWithPermission } from '../../platform/notifications/service';
 import { ScanError } from './service';
 import { landedStatusFor } from '../warehouses/landed';
+import { byShelf, shelfBefore } from '../boxes/shelf';
 import { codeIdentity } from '../labels/code-identity';
 import { doorOpens, type CountDoor } from './count-door';
 import {
@@ -1169,9 +1170,12 @@ async function resolveOneMissingInTx(
     where: eq(warehouses.id, targetWh),
   }))!;
   // Found at the ORIGIN is a box that never arrived — it goes back on the
-  // shelf it left, and only a box found HERE lands by the destination's own
+  // shelf it left, as it stood there (`shelfBefore`: «tayyor» at Andijan is
+  // «tayyor» again), and only a box found HERE lands by the destination's own
   // rule.
-  const landedStatus = foundHere ? landedStatusFor(targetWhRow.type) : 'in_stock';
+  const landedStatus = foundHere
+    ? landedStatusFor(targetWhRow.type)
+    : ((await shelfBefore(tx, batch.id, [box.id])).get(box.id) ?? 'in_stock');
 
   await tx
     .update(boxes)
@@ -1311,22 +1315,24 @@ export async function cancelBatch(batchId: string, reason: string, ctx: AuditCon
     const stuck = memberBoxes.filter((b) => !['planned', 'loading'].includes(b.status));
     if (stuck.length > 0) throw new ScanError('batch_has_moved_boxes');
 
-    if (memberBoxes.length > 0) {
+    // The same shape `finishLoading` writes for a short-loaded box: the
+    // cargo goes back to the shelf it never left, as it stood there
+    // (`shelfBefore`), and the movement says why.
+    const back = await shelfBefore(tx, batchId, memberBoxes.map((b) => b.id));
+    for (const [status, home] of byShelf(memberBoxes, back)) {
       await tx
         .update(boxes)
         // The journey is over: an on-spot flag picked up on this batch must
         // not ride into the box's next life on the shelf.
-        .set({ status: 'in_stock', currentBatchId: null, flags: [] })
-        .where(inArray(boxes.id, memberBoxes.map((b) => b.id)));
-      // The same shape `finishLoading` writes for a short-loaded box: the
-      // cargo goes back to the shelf it never left, and the movement says why.
+        .set({ status, currentBatchId: null, flags: [] })
+        .where(inArray(boxes.id, home.map((b) => b.id)));
       await tx.insert(boxMovements).values(
-        memberBoxes.map((box) => ({
+        home.map((box) => ({
           boxId: box.id,
           fromWarehouseId: box.currentWarehouseId,
           toWarehouseId: box.currentWarehouseId,
           fromStatus: box.status,
-          toStatus: 'in_stock',
+          toStatus: status,
           cause: 'batch_cancelled',
           refType: 'batch',
           refId: batchId,

@@ -1,5 +1,41 @@
 # CHANGELOG
 
+## Andijondan Toshkentga ichki reys — reja ekranida yuk ko'rinadi — 2026-09-28
+
+Migratsiya yo'q (ledger **113** o'zgarmaydi). Bu kod-faqat deploy: oxirida
+`curl -s https://gsrwms.uz/api/version` bilan build vaqtini tekshiring.
+
+Sizning xabaringiz: «yuklarni partiya qilib Andijon skladga olib keldim, endi
+ularni ichki reys qilib Toshkentga olib kelaman desam, skladda yuk ko'rinmay
+qolyapti».
+
+**Sababi:** Andijon — mijoz yukini oladigan sklad (bojxona/tarqatish turi).
+Mashinadan tushgan yuk u yerda «mijozga berishga tayyor» holatida turadi.
+Reja ekrani (yangi reja → jo'natish skladi) esa faqat «skladda» holatidagi
+yukni ko'rsatardi — shuning uchun Andijondagi yuk ro'yxatda yo'q edi, ombor
+(ostatka) sahifasida esa bor edi. Tezkor yuklash buni doim qabul qilgan.
+
+1. **Reja ekrani Andijondagi «tayyor» yukni ham ko'rsatadi** — lotlar ham,
+   Xitoydan kelgan yashiklar ham. Reja yuborish va agent tasdig'i ham shu
+   yukni qabul qiladi.
+2. **Yuk qaytarilganda o'z holatiga qaytadi.** «Yuklash tugadi»da
+   yuklanmay qolgan karobka, mashinadan qaytarib tushirilgan karobka, bekor
+   qilingan partiya, Toshkentga yetib bormay Andijonda topilgan karobka —
+   hammasi olingan holatiga qaytadi: Andijonda «tayyor» bo'lsa, yana «tayyor»
+   (mijozlarga berish ro'yxatida qoladi, kabinetda «Tayyor» deb turadi).
+   Oldin hammasi «skladda» holatiga tushib, «tayyor» ro'yxatlaridan chiqib
+   ketardi — tezkor yuklashda ham shunday edi, endi tuzatildi.
+3. Toshkentning o'zida qabul qilingan yuk (mashinada kelmagan) reja bekor
+   bo'lsa, o'zining «skladda» holatiga qaytadi — «tayyor»ga aylanib
+   qolmaydi.
+4. Rejadagi karobkani ofis sanab qayta yuklasa, Andijondagi «tayyor» karobka
+   ham rejaga qaytadi — «rejadan ortiq ⚠» va sabab so'ralmaydi.
+
+Tekshirildi: 7 ta yangi integratsion test (Andijon → Toshkent: reja,
+tasdiq, «yuklash tugadi», qaytarib tushirish, bekor qilish, yo'lda
+topilmagan karobka, qabulda ortiqcha sanalganini qaytarish) va har bir
+tuzatish uchun test tuzatishsiz yiqilishi ko'rsatildi (16 ta).
+
 ## QR-siz qabul va yuklash — ofis sanaydi, skaner tezlashdi — 2026-09-27
 
 Migratsiya **0112** (`qr_less`). Ledger **113** bo'lishi kerak.

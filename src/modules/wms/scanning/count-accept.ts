@@ -10,6 +10,7 @@ import { ARRIVED_ON_A_TRUCK } from '../documents/arrivals';
 import { codeIdentity } from '../labels/code-identity';
 import { qrlessJoinedSql } from '../labels/qrless-sql';
 import { landedStatusFor } from '../warehouses/landed';
+import { byShelf, shelfBefore } from '../boxes/shelf';
 import {
   afterLotGrown,
   GROW_LOT_MAX,
@@ -506,26 +507,29 @@ async function undoOver(
         })
       ).codes
     : [];
-  if (toOrigin.length > 0) {
+  // Back on the origin's shelf as each stood there before the over-count
+  // took it (`shelfBefore` — «tayyor» at a collection warehouse stays so).
+  const back = await shelfBefore(tx, T, toOrigin.map((r) => r.id));
+  for (const [status, home] of byShelf(toOrigin, back)) {
     await tx
       .update(boxes)
-      .set({ status: 'in_stock', currentWarehouseId: batch.originWarehouseId, flags: [] })
-      .where(inArray(boxes.id, toOrigin.map((r) => r.id)));
+      .set({ status, currentWarehouseId: batch.originWarehouseId, flags: [] })
+      .where(inArray(boxes.id, home.map((r) => r.id)));
     await tx.insert(boxMovements).values(
-      toOrigin.map((r) => ({
+      home.map((r) => ({
         boxId: r.id,
         fromWarehouseId: batch.destWarehouseId,
         toWarehouseId: batch.originWarehouseId,
         fromStatus: r.status,
-        toStatus: 'in_stock',
+        toStatus: status,
         cause: 'found_at_origin',
         refType: 'batch',
         refId: T,
         actorId,
       })),
     );
-    state.returnedToOrigin = true;
   }
+  if (toOrigin.length > 0) state.returnedToOrigin = true;
   const [after] = await readLedger(tx, { batchId: T, originId: batch.originWarehouseId, lotId: L });
   if (!after || after.arrived !== input.target) throw new CountError('count_conflict');
   const destWh = (await tx.query.warehouses.findFirst({ where: eq(warehouses.id, batch.destWarehouseId) }))!;
