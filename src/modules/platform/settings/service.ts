@@ -49,6 +49,15 @@ export const SETTING_DEFAULTS = {
    */
   unanswered_reminder_minutes: 30,
   /**
+   * How many OFFICE minutes an advert lead may wait for its first contact
+   * before the owner is reminded (0113, his 5a: «15 minutdan keyin …»). Read
+   * when the lead LANDS and frozen onto its arrival, like the quote's
+   * validity; the sweep also asks it, so 0 switches the reminder off at once.
+   * The measurement on /crm/tahlil does not read it — turning a reminder off
+   * must not move anybody's numbers.
+   */
+  inbound_contact_minutes: 15,
+  /**
    * How long a sealed VED price stands before it has to be recalculated
    * (owner: «bu narx turishi menimcha 1 oy bo'lgani yaxshi»).
    *

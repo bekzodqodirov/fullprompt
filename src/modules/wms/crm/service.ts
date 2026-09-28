@@ -621,6 +621,7 @@ export async function updateLead(id: string, input: LeadInput, ctx: AuditContext
     });
   }
   if (values.stageId !== before.stageId) await announceLeadStage(row!, values.stageId, ctx);
+  if (values.ownerId !== before.ownerId) await announceOwnerChange(id, values.ownerId, ctx.actorId);
   return row!;
 }
 
@@ -645,6 +646,23 @@ export async function setLeadOwner(id: string, ownerId: string | null, ctx: Audi
     before: { ownerId: before.ownerId },
     after: { ownerId },
   });
+  await announceOwnerChange(id, ownerId, ctx.actorId);
+}
+
+/**
+ * A lead handed over while its advert clock still runs is announced to the
+ * new owner (0113, the design judge's MISSING item) — or the owner's
+ * 15-minute reminder would name a seller who was never told. After the write
+ * and in a catch of its own: a Telegram hiccup must not refuse a handover.
+ * Dynamic import, because `inbound-notify` reads this module.
+ */
+async function announceOwnerChange(leadId: string, ownerId: string | null, actorId: string | null) {
+  try {
+    const { announceReassigned } = await import('./inbound-notify');
+    await announceReassigned(leadId, ownerId, actorId);
+  } catch (err) {
+    logger.error({ err, leadId }, '[inbound] reassignment push failed');
+  }
 }
 
 /**

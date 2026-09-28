@@ -18,6 +18,7 @@ import { botRefused } from '../diagnostics/signals';
 import { buttonsFor } from '../telegram/staff-bot';
 import { approvalVerdictLine, fillCount, notificationLabels } from './labels';
 import { isTelegramMuted } from './mutes';
+import { sendsSilently } from './night';
 import { h } from '../telegram/format';
 import {
   botCall,
@@ -943,16 +944,21 @@ async function deliverStaffMessage(
   chatId: bigint,
   message: StaffMessage,
   buttons: { text: string; callback_data: string }[][] | null,
+  // Carried into ALL THREE sends, the hand-made one included: a night-silent
+  // push whose card link became a button used to ring, because that attempt
+  // never went through `sendText` (0113, the design judge's finding 1).
+  silent = false,
 ): Promise<SendResult> {
   const rows = [...(buttons ?? []), ...(message.urlRow ? [message.urlRow] : [])];
   if (!message.url) {
-    return sendText({ chatId, html: message.html, replyMarkup: keyboardOf(rows) });
+    return sendText({ chatId, html: message.html, replyMarkup: keyboardOf(rows), silent });
   }
   const first = await botCall('sendMessage', {
     chat_id: Number(chatId),
     text: message.html,
     parse_mode: 'HTML',
     link_preview_options: { is_disabled: true },
+    ...(silent ? { disable_notification: true } : {}),
     reply_markup: { inline_keyboard: rows },
   });
   if (first.ok || first.status !== 400) return answerAsResult(first);
@@ -962,11 +968,12 @@ async function deliverStaffMessage(
       chatId,
       html: `${message.html}\n${h(message.url)}`,
       replyMarkup: keyboardOf(buttons),
+      silent,
     });
   }
   // Anything else Telegram refused (our HTML, most likely): the sender's own
   // fallbacks know what to do with it.
-  return sendText({ chatId, html: message.html, replyMarkup: keyboardOf(rows) });
+  return sendText({ chatId, html: message.html, replyMarkup: keyboardOf(rows), silent });
 }
 
 /**
@@ -1037,7 +1044,7 @@ async function releaseClaims(ids: string[]): Promise<void> {
     .where(and(inArray(notifications.id, ids), eq(notifications.status, 'sending')));
 }
 
-export async function sendPendingTelegram(): Promise<void> {
+export async function sendPendingTelegram(now: Date = new Date()): Promise<void> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) return;
   // Asked BEFORE claiming, so the kicks that arrive during a pause cost a
@@ -1116,7 +1123,12 @@ export async function sendPendingTelegram(): Promise<void> {
       const message = composeStaffMessage(notification.type, payload, recipient.locale);
       res =
         (await forwardOriginal(notification.id, link.telegramChatId, payload)) ??
-        (await deliverStaffMessage(link.telegramChatId, message, buttons));
+        (await deliverStaffMessage(
+          link.telegramChatId,
+          message,
+          buttons,
+          sendsSilently(notification.type, payload, now),
+        ));
     } catch (err) {
       // The sender answers rather than throws; this is the database under
       // it, or a payload no renderer can read.

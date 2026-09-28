@@ -638,6 +638,7 @@
       "quote_valid_days": "Muhrlangan hisob narxi necha kun amal qiladi (muddat tugagach — qayta hisoblash)",
       "debt_approval_ttl_hours": "Yuk berishga ruxsat (qarz yoki narxsiz yuk) necha soat amal qiladi",
       "unanswered_reminder_minutes": "Mijoz javob kutgan shuncha daqiqadan keyin menejeriga eslatma boradi (0 — o‘chirilgan)",
+      "inbound_contact_minutes": "Reklamadan kelgan lid bilan shuncha ish daqiqasi ichida hech kim bog‘lanmasa, egasiga eslatma boradi (0 — o‘chirilgan; o‘lchov baribir yuritiladi)",
       "crm_calc_stage": "Botdan «Hisoblatish» kelganda lead shu bosqichga o‘tadi (faqat oldinga; «—» — ko‘chirilmaydi)",
       "deal_calc_stage": "Xuddi shu, bitimlar taxtasi uchun — kodli mijozning so‘rovi bitimga tushadi",
       "ai_daily_limit": "Bir kishiga kuniga AI savollar chegarasi (bot + AI ekrani birga; 0 — o'chirilgan)",
@@ -4377,5 +4378,12 @@
   },
   "scanner": {
     "diagnostics": "Skaner tekshiruvi"
+  },
+  "reklamaLid": {
+    "muteLeads": "Reklama lidlari (yangi lid va 15 daqiqa eslatmasi)",
+    "muteLeadsHint": "O‘chirsangiz, sizga berilgan yangi lidlar haqida xabar kelmaydi — egasining eslatmasida «xabarlarni o‘chirib qo‘ygan» deb ko‘rinadi.",
+    "firstContact": "Birinchi aloqa",
+    "firstContactLegend": "mediana · n · 1 soat+ / 24 soat+",
+    "minutes": "{n} daq"
   }
 }

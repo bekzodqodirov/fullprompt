@@ -27,6 +27,7 @@ export default async function ProfilePage() {
   const tNav = await getTranslations('nav');
   const tn = await getTranslations('notes');
   const tk = await getTranslations('kuzatuv');
+  const tl = await getTranslations('reklamaLid');
   const format = await getFormatter();
   // Everything below the name is a PANEL, and this page is now the only way
   // out of the app. A panel that throws used to cost a screen; it would now
@@ -236,6 +237,21 @@ export default async function ProfilePage() {
             <label className="flex min-h-10 items-center gap-3">
               <input type="checkbox" name="mute_calls" defaultChecked={mutes.groups.calls} className="h-5 w-5" />
               📞 {t('notifMuteCalls')}
+            </label>
+            {/* 0113. The hint is the point: a seller who ticks this stops
+                hearing about their own new leads, and the owner's reminder
+                then says so by name — the choice has to be made knowing it. */}
+            <label className="flex min-h-10 items-start gap-3">
+              <input
+                type="checkbox"
+                name="mute_leads"
+                defaultChecked={mutes.groups.leads}
+                className="mt-2.5 h-5 w-5 shrink-0"
+              />
+              <span className="pt-2">
+                🆕 {tl('muteLeads')}
+                <span className="mt-0.5 block text-xs text-ink-500">{tl('muteLeadsHint')}</span>
+              </span>
             </label>
             <label className="flex min-h-10 items-center gap-3">
               <input type="checkbox" name="mute_alerts" defaultChecked={mutes.groups.alerts} className="h-5 w-5" />

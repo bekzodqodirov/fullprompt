@@ -1576,8 +1576,34 @@ export const leadIntakes = pgTable(
     clientId: uuid('client_id').references(() => clients.id, { onDelete: 'set null' }),
     assignedUserId: uuid('assigned_user_id').references(() => users.id, { onDelete: 'set null' }),
     createdAt: createdAt(),
+    /**
+     * The first-contact clock (0113, the owner's 5a). NULL = not measured:
+     * every row before it, and every site/client/dropped arrival. Both
+     * writers of these columns are RAW SQL on purpose (wms/crm/inbound.ts
+     * `record`, site-assign.ts, wms/crm/first-contact.ts): drizzle's insert
+     * names every column it knows, so a drizzle insert here would refuse the
+     * whole arrival on a database one migration behind — and the arrival
+     * ledger is the replay fence.
+     */
+    contactClockAt: timestamp('contact_clock_at', { withTimezone: true }),
+    contactDueAt: timestamp('contact_due_at', { withTimezone: true }),
+    contactedAt: timestamp('contacted_at', { withTimezone: true }),
+    contactKind: text('contact_kind'),
+    contactedBy: uuid('contacted_by').references(() => users.id, { onDelete: 'set null' }),
+    contactAlertedAt: timestamp('contact_alerted_at', { withTimezone: true }),
   },
   (t) => [
+    check(
+      'lead_intakes_contact_kind_check',
+      sql`${t.contactKind} IS NULL OR ${t.contactKind} IN ('call', 'telegram', 'note', 'stage', 'followup')`,
+    ),
+    check(
+      'lead_intakes_contact_pair_check',
+      sql`(${t.contactedAt} IS NULL) = (${t.contactKind} IS NULL)`,
+    ),
+    index('lead_intakes_contact_clock_idx')
+      .on(t.contactClockAt)
+      .where(sql`${t.contactClockAt} IS NOT NULL`),
     check(
       'lead_intakes_channel_check',
       sql`${t.channel} IN ('form', 'meta', 'telegram', 'webhook', 'site')`,

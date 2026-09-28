@@ -196,6 +196,8 @@ export const AI_RASTAMOJKA = '🤖 AI rastamojka';
  * library of things the office sends the same customers over and over.
  */
 export const ZAMETKALAR = '📌 Zametkalar';
+/** The advert lead's one button (0113) — named once, for the push and its tests. */
+export const LEAD_CONTACTED_BUTTON = '📞 Bog‘landim';
 
 /** The two labels that open a collection — one list, so every reader agrees. */
 export const CALC_ENTRY_LABELS = [HISOBLATISH, AI_RASTAMOJKA];
@@ -271,7 +273,9 @@ export type BotCallback =
   | { kind: 'approval'; approvalId: string; verdict: 'approved' | 'refused' }
   | { kind: 'entry'; who: 'staff' | 'client' }
   | { kind: 'calc'; step: CalcStep }
-  | { kind: 'note'; step: NoteStep; noteId?: string; page?: number };
+  | { kind: 'note'; step: NoteStep; noteId?: string; page?: number }
+  /** «📞 Bog'landim» under an advert lead's push (0113). */
+  | { kind: 'lead_contacted'; leadId: string };
 
 /**
  * The zametka buttons. `send` is a note id; the rest are the capture's own
@@ -332,6 +336,10 @@ export function parseCallback(data: string): BotCallback | null {
   // Round C: the same «Bajarildi», pressed on a list of the day's tasks.
   const listed = /^tb:([0-9a-f-]{36})$/.exec(data);
   if (listed) return { kind: 'task_done', taskId: listed[1]!, list: true };
+  // 0113: the seller says they reached the advert lead. `lc:` collides with
+  // none of the cabinet's own three (`lang:`, `ph:`, `mg`).
+  const contacted = /^lc:([0-9a-f-]{36})$/.exec(data);
+  if (contacted) return { kind: 'lead_contacted', leadId: contacted[1]! };
   const approval = /^a:([01]):([0-9a-f-]{36})$/.exec(data);
   if (approval) {
     return {
@@ -362,6 +370,11 @@ export function buttonsFor(
         { text: '⛔ Yo‘q', callback_data: `a:0:${payload.approvalId}` },
       ],
     ];
+  }
+  // An advert lead (0113): the one press that says «I reached them» from a
+  // phone the system cannot see — a personal Telegram, a call with no app.
+  if (type === 'InboundLeadArrived' && typeof payload.leadId === 'string') {
+    return [[{ text: LEAD_CONTACTED_BUTTON, callback_data: `lc:${payload.leadId}` }]];
   }
   // The 08:00 digest carries the same buttons «📋 Bugun» draws (round C), from
   // the tasks it listed — so the push and the pull stay one thing.
@@ -477,6 +490,28 @@ export async function closeTaskMessage(
           replyMarkup: keyboardOf(urlRowsOf(origin.markup)),
         });
   if (!res.ok) logger.warn({ description: res.description }, 'task message not updated');
+}
+
+/**
+ * Settle the advert-lead push a «📞 Bog'landim» was pressed on (0113): the
+ * text keeps what it said and gains who reached the lead; the pressed button
+ * goes and the «↗️ Ochish» link row STAYS — an edit must never leave a
+ * message with less to open than it had (`urlRowsOf`'s rule, via
+ * `withoutCallback`, which removes exactly that one row).
+ */
+export async function closeLeadMessage(
+  chatId: bigint,
+  origin: { messageId: number; text: string; markup: unknown },
+  leadId: string,
+  line: string,
+): Promise<void> {
+  const res = await editText({
+    chatId,
+    messageId: origin.messageId,
+    html: appendLine(staffTextHtml(origin.text, 'InboundLeadArrived'), line),
+    replyMarkup: keyboardOf(withoutCallback(origin.markup, `lc:${leadId}`)),
+  });
+  if (!res.ok) logger.warn({ description: res.description }, 'lead message not updated');
 }
 
 export function noteStaffEntry(chatId: bigint): void {

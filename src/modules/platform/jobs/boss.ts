@@ -102,6 +102,10 @@ export const WORKER_REGISTRATIONS: [string, (boss: PgBoss) => Promise<void>][] =
   ],
   ['system-errors-prune', async (b) => (await import('../diagnostics/jobs')).registerErrorsPruneWorker(b)],
   ['system-disk', async (b) => (await import('../diagnostics/jobs')).registerDiskWorker(b)],
+  [
+    'inbound-contact',
+    async (b) => (await import('../../wms/crm/inbound-contact-jobs')).registerInboundContactWorker(b),
+  ],
 ];
 
 /** Run each registration at most once per process, whatever failed before. */

@@ -7,7 +7,8 @@ import {
   leadWonUsdSql,
 } from './won-money';
 import { db } from '../../platform/db/client';
-import { deals, dealStages, leads, leadSources, leadStages, users } from '../../platform/db/schema';
+import { deals, dealStages, leadIntakes, leads, leadSources, leadStages, users } from '../../platform/db/schema';
+import { isServerBehind } from '../../platform/db/errors';
 import { addDays, calendarDay, tashkentDay, tashkentDayStart, tashkentMonthStart } from '@/modules/platform/time/tashkent';
 
 /**
@@ -298,6 +299,86 @@ export async function decidedLeadsByMonth(from: Date, to: Date, mtdDay = 31): Pr
   }));
 }
 
+/** One seller's «Birinchi aloqa» cell. */
+export interface FirstContactStat {
+  /** Median minutes from the clock to the first contact, over the contacted. */
+  medianMinutes: number | null;
+  /** How many arrivals that median covers. */
+  measured: number;
+  /** Arrivals first reached more than an hour / a day after the clock — or not yet. */
+  lateHour: number;
+  lateDay: number;
+}
+
+/**
+ * How fast each seller first reached their advert leads (0113, the owner's
+ * 5a) — the sellers table's «Birinchi aloqa» column.
+ *
+ * Keyed on the arrival's `assigned_user_id` — whom it was HANDED to — and not
+ * on today's `leads.owner_id`: a lead reassigned after its deadline must not
+ * move that missed deadline onto the person who inherited it. That is a
+ * different key from the rest of the row (the table counts by owner), so the
+ * cell prints how many arrivals it covers, and a seller whose only advert
+ * lead was later handed away still gets a row carrying just this figure
+ * (design judge, 15).
+ *
+ * Only `created` arrivals with a clock: a joined re-enquiry is the same
+ * person again, and everything before 0113 has no clock to measure from.
+ * The median covers the CONTACTED ones, in minutes from the clock (office
+ * time — a lead that landed at 23:00 starts at 09:00); the late counts also
+ * take the still-untouched, whose contact is «now» and later. `extract(epoch
+ * …)` because `percentile_cont` over an interval hands back TEXT and
+ * `Number('00:12:30')` is NaN (design judge, 13).
+ */
+export async function firstContactBySeller(
+  { from, to }: Period,
+  f: AnalyticsFilters = {},
+  now: Date = new Date(),
+): Promise<Map<string | null, FirstContactStat>> {
+  const at = now.toISOString();
+  // The seller filter names the person the arrival was HANDED to, for the
+  // reason above; every other filter is the lead's, through the shared conds.
+  const seller =
+    f.owner === 'none'
+      ? isNull(leadIntakes.assignedUserId)
+      : f.owner
+        ? eq(leadIntakes.assignedUserId, f.owner)
+        : undefined;
+  const waited = sql`coalesce(${leadIntakes.contactedAt}, ${at}::timestamptz) - ${leadIntakes.contactClockAt}`;
+  const rows = await db
+    .select({
+      assignedUserId: leadIntakes.assignedUserId,
+      median: sql<string | null>`percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM greatest(interval '0', ${leadIntakes.contactedAt} - ${leadIntakes.contactClockAt})) / 60) FILTER (WHERE ${leadIntakes.contactedAt} IS NOT NULL)`,
+      measured: sql<number>`count(*) FILTER (WHERE ${leadIntakes.contactedAt} IS NOT NULL)`,
+      lateHour: sql<number>`count(*) FILTER (WHERE ${waited} > interval '1 hour')`,
+      lateDay: sql<number>`count(*) FILTER (WHERE ${waited} > interval '24 hours')`,
+    })
+    .from(leadIntakes)
+    .innerJoin(leads, eq(leads.id, leadIntakes.leadId))
+    .where(
+      and(
+        eq(leadIntakes.outcome, 'created'),
+        isNotNull(leadIntakes.contactClockAt),
+        gte(leadIntakes.createdAt, from),
+        lt(leadIntakes.createdAt, to),
+        seller,
+        ...leadFilterConds({ ...f, owner: undefined }),
+      ),
+    )
+    .groupBy(leadIntakes.assignedUserId);
+  return new Map(
+    rows.map((row) => [
+      row.assignedUserId,
+      {
+        medianMinutes: row.median === null ? null : Math.round(Number(row.median)),
+        measured: Number(row.measured),
+        lateHour: Number(row.lateHour),
+        lateDay: Number(row.lateDay),
+      },
+    ]),
+  );
+}
+
 export async function salesAnalytics(period: Period, f: AnalyticsFilters = {}) {
   const { from, to } = period;
   const extra = leadFilterConds(f);
@@ -311,7 +392,7 @@ export async function salesAnalytics(period: Period, f: AnalyticsFilters = {}) {
   // hidden instead, and the page says why.
   const dealsApply = !f.source;
 
-  const [arrived, decided, openNow, perDayNew, perDayWon, sourceNew, sourceDecided, sellerNew, sellerDecided, sellerOpen, reasons, stageRows, dealsRow, people] =
+  const [arrived, decided, openNow, perDayNew, perDayWon, sourceNew, sourceDecided, sellerNew, sellerDecided, sellerOpen, reasons, stageRows, dealsRow, people, firstContact] =
     await Promise.all([
       // Arrivals in the period (who they came from rides in sourceNew), and
       // the decisions — the dashboard reads these two same functions (O13).
@@ -465,13 +546,30 @@ export async function salesAnalytics(period: Period, f: AnalyticsFilters = {}) {
       db
         .select({ id: users.id, name: users.fullName })
         .from(users),
+
+      // Soft: on a database one migration behind (0113) the column reads «—»
+      // and the rest of the page stands.
+      firstContactBySeller(period, f).catch((err: unknown) => {
+        if (isServerBehind(err)) return null;
+        throw err;
+      }),
     ]);
 
   const nameOf = new Map(people.map((p) => [p.id, p.name]));
 
   const sellers = new Map<
     string,
-    { id: string | null; name: string; fresh: number; won: number; lost: number; wonUsd: number; cycleDays: number; open: number }
+    {
+      id: string | null;
+      name: string;
+      fresh: number;
+      won: number;
+      lost: number;
+      wonUsd: number;
+      cycleDays: number;
+      open: number;
+      firstContact: FirstContactStat | null;
+    }
   >();
   const seller = (ownerId: string | null) => {
     const key = ownerId ?? '';
@@ -486,6 +584,7 @@ export async function salesAnalytics(period: Period, f: AnalyticsFilters = {}) {
         wonUsd: 0,
         cycleDays: 0,
         open: 0,
+        firstContact: null,
       };
       sellers.set(key, row);
     }
@@ -500,6 +599,8 @@ export async function salesAnalytics(period: Period, f: AnalyticsFilters = {}) {
     s.cycleDays = Math.round((Number(row.cycleDays) / 86400) * 10) / 10;
   }
   for (const row of sellerOpen) seller(row.ownerId).open = Number(row.n);
+  // May CREATE a row: a seller measured on arrivals later handed to others.
+  for (const [assignedUserId, stat] of firstContact ?? []) seller(assignedUserId).firstContact = stat;
 
   const sources = new Map<
     string,

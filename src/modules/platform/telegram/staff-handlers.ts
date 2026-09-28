@@ -13,6 +13,7 @@ import {
   HISOBLATISH,
   ZAMETKALAR,
   assistantFromBot,
+  closeLeadMessage,
   closeTaskMessage,
   completeTaskFromBot,
   dayButtons,
@@ -293,6 +294,47 @@ export function registerStaffBot(bot: Bot): void {
 
     if (parsed.kind === 'note') {
       await handleNoteCallback(ctx, chatId, parsed.step, parsed.noteId, parsed.page);
+      return;
+    }
+
+    // «📞 Bog'landim» under an advert lead (0113). BEFORE the approval guard
+    // below, which returns on every kind it does not name (#939). The decision
+    // lives in wms — reached the established way, by dynamic import.
+    if (parsed.kind === 'lead_contacted') {
+      const { markContactedFromBot } = await import('../../wms/crm/inbound-notify');
+      const { outcome, by } = await markContactedFromBot(chatId, parsed.leadId);
+      const answers: Record<typeof outcome, string> = {
+        recorded: '✅ Qayd etildi',
+        already: 'Allaqachon qayd etilgan',
+        not_linked: 'Ulanmagan',
+        forbidden: 'Bu sizning huquqingizda emas',
+        not_yours: 'Bu lid sizniki emas',
+        not_found: 'Lid topilmadi',
+      };
+      await ctx.answerCallbackQuery({ text: answers[outcome] });
+      const pressed = ctx.callbackQuery.message;
+      if (
+        (outcome === 'recorded' || outcome === 'already') &&
+        pressed &&
+        'text' in pressed &&
+        pressed.text
+      ) {
+        // Off the poller, on the sender's short deadline (#706).
+        void closeLeadMessage(
+          chatId,
+          {
+            messageId: pressed.message_id,
+            text: pressed.text,
+            markup: 'reply_markup' in pressed ? pressed.reply_markup : undefined,
+          },
+          parsed.leadId,
+          outcome === 'already'
+            ? '📞 Allaqachon bog‘lanilgan'
+            : by
+              ? `📞 Bog‘lanildi — ${by}`
+              : '📞 Bog‘lanildi',
+        ).catch((err: unknown) => logger.warn({ err }, 'lead press not settled'));
+      }
       return;
     }
 

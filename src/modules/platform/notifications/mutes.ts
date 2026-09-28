@@ -15,6 +15,12 @@ export const MUTE_GROUPS = {
   // arrives every single working day, so it is the one somebody will want to
   // turn off on its own.
   calls: ['CrmFollowUps'],
+  // The advert lead (0113, the owner's 5a): the push a seller gets the moment
+  // a lead is theirs, and the owner's «15 minutes and nobody has called».
+  // A group of its OWN, not `calls`: whoever muted the morning call list holds
+  // that group's founder, and folding these in would silently take new leads
+  // away from exactly the sellers who wanted fewer morning messages.
+  leads: ['InboundLeadArrived', 'InboundLeadUntouched'],
   // A group of its own rather than folded into `digest`: someone silencing the
   // warehouse summary is not saying "stop telling me about the work I was
   // personally given", and that is the one message nobody should lose by
@@ -205,6 +211,8 @@ export const FOUNDERS: Readonly<Record<MuteGroup, readonly string[]>> = {
   // Moved here from `digest` on 2026-09-19; every list that muted it did so
   // as part of `digest` before that, and still holds it.
   calls: ['CrmFollowUps'],
+  // Born whole on 2026-09-28 with both members, so both are founders.
+  leads: ['InboundLeadArrived', 'InboundLeadUntouched'],
   tasks: ['TasksDue'],
   alerts: ['BoxScannedOnLoad', 'UndocumentedTransfer', 'MissingInTransit'],
   operations: [

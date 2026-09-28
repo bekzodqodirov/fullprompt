@@ -638,6 +638,7 @@
       "quote_valid_days": "How many days a sealed calculation price stays valid (after that — recalculate)",
       "debt_approval_ttl_hours": "How many hours a handover permission (debt or unpriced cargo) stays valid",
       "unanswered_reminder_minutes": "A client waiting this many minutes for an answer gets their manager reminded (0 = off)",
+      "inbound_contact_minutes": "An advert lead nobody has contacted within this many office minutes gets the owner reminded (0 = off; the measurement runs regardless)",
       "crm_calc_stage": "A request for a price from the bot moves the lead to this stage (forward only; «—» means do not move)",
       "deal_calc_stage": "The same for the deal board — a coded client's request lands on a deal",
       "ai_daily_limit": "AI questions per person per day (bot + AI screen together; 0 — off)",
@@ -4377,5 +4378,12 @@
   },
   "scanner": {
     "diagnostics": "Scanner diagnostics"
+  },
+  "reklamaLid": {
+    "muteLeads": "Advert leads (a new lead and the 15-minute reminder)",
+    "muteLeadsHint": "Muted, you get no message about new leads assigned to you — and the owner's reminder shows that you muted them.",
+    "firstContact": "First contact",
+    "firstContactLegend": "median · n · 1 h+ / 24 h+",
+    "minutes": "{n} min"
   }
 }
