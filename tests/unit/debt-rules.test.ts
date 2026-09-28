@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { deferralCover, promiseBrokenAt, promiseVerdict } from '@/modules/wms/debt/rules';
+import { readFileSync } from 'node:fs';
+import {
+  CENT,
+  deferralCover,
+  deferredTotal,
+  INDEX_CENT_LITERAL,
+  promiseBrokenAt,
+  promiseVerdict,
+} from '@/modules/wms/debt/rules';
 
 /**
  * The payment promise's verdict and the muddat's share of a release (0114),
@@ -79,5 +87,24 @@ describe('deferralCover — which «muddat» let how much of a release through',
     expect(deferralCover(0, deals)).toEqual([]);
     expect(deferralCover(-50, deals)).toEqual([]);
     expect(deferralCover(0.005, deals)).toEqual([]);
+  });
+});
+
+describe('deferredTotal — the ONE arithmetic behind the counter screen and the gate', () => {
+  it('sums the jobs unrounded and rounds once: three $0.004 jobs are a cent, not nothing', () => {
+    // Rounded per job, each is $0.00 and the total $0.00; the ledger's own
+    // figure is $0.012 → $0.01. Two copies of this line disagreed by exactly
+    // this cent (the reviewer's #513).
+    expect(deferredTotal([{ owedUsd: 0.004 }, { owedUsd: 0.004 }, { owedUsd: 0.004 }])).toBe(0.01);
+    expect(deferredTotal([{ owedUsd: 600 }, { owedUsd: 299.995 }])).toBe(900);
+    expect(deferredTotal([])).toBe(0);
+  });
+});
+
+describe('the partial indexes are written with the cent the rules use', () => {
+  it('INDEX_CENT_LITERAL is CENT, and the migration’s index predicate says the same literal', () => {
+    expect(Number(INDEX_CENT_LITERAL)).toBe(CENT);
+    const migration = readFileSync('src/modules/platform/db/migrations/0114_debt_control.sql', 'utf8');
+    expect(migration).toContain(`("blocking_usd" > ${INDEX_CENT_LITERAL} OR "deferrals" IS NOT NULL)`);
   });
 });

@@ -9,6 +9,17 @@ import { fxResidueAllowance } from '../finance/money-bounds';
 /** Below a cent is nothing — the ledger's own threshold everywhere. */
 export const CENT = 0.009;
 
+/**
+ * `CENT` as the partial indexes of 0114 are WRITTEN, for the register to put
+ * in its statement's TEXT — never a bound parameter: the planner proves «this
+ * query only wants rows the index holds» from the text, and neither a
+ * parameter under a generic plan nor `debtGateOpenedSql`'s CASE proves
+ * anything, so every render scanned every handover ever made (#934's shape:
+ * an index shipped that nothing read). A unit test pins it to `CENT` and to
+ * the migration.
+ */
+export const INDEX_CENT_LITERAL = '0.009';
+
 /** How far ahead a promise may be dated: a quarter, never «some day». */
 export const PROMISE_HORIZON_DAYS = 90;
 
@@ -57,6 +68,18 @@ export function promiseVerdict(input: {
   if (input.balanceUsd <= CENT) return 'settled';
   if (input.now.getTime() >= promiseBrokenAt(input.dueOn).getTime()) return 'broken';
   return 'open';
+}
+
+/**
+ * What the live deferrals excuse, in total — the jobs summed UNROUNDED and
+ * rounded once (rounding each job first could move the total by a cent).
+ * The ONE arithmetic behind `deferredBalanceUsd` (the counter screen, the
+ * approval's snapshot) and the gate inside `issueBoxes` (#513): with two
+ * copies, a drift of one cent was the screen saying «no tick needed» while
+ * the service refused, or an approval's ceiling a cent short of the gate.
+ */
+export function deferredTotal(deals: { owedUsd: number }[]): number {
+  return Math.round(deals.reduce((sum, deal) => sum + deal.owedUsd, 0) * 100) / 100;
 }
 
 export interface DeferralPart {

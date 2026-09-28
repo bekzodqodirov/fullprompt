@@ -110,7 +110,7 @@ export default async function DebtReleasesPage({
                 </p>
                 <p className="num flex flex-wrap gap-x-3 text-xs">
                   <span>{t('releases.debtAt', { usd: usd(row.debtUsd) })}</span>
-                  <span className="text-good">{t('releases.paidSince', { usd: usd(row.returnedUsd) })}</span>
+                  <span className="text-good">{t('releases.returned', { usd: usd(row.returnedUsd) })}</span>
                   <span className="font-bold text-bad" data-testid="releases-total-left">
                     {t('releases.left', { usd: usd(row.leftUsd) })}
                   </span>
@@ -169,7 +169,19 @@ export default async function DebtReleasesPage({
                 {row.deferredUsd !== null && row.deferredUsd > 0.009 && (
                   <span className="text-ink-500">{t('releases.deferredPart', { usd: usd(row.deferredUsd) })}</span>
                 )}
-                <span className="text-good">{t('releases.paidSince', { usd: usd(row.paidSinceUsd) })}</span>
+                {/* «qaytdi» is THIS part's share of the money since — debt − qaytdi
+                    = qaytmagan on the same line. All the money since, whole, would
+                    sit beside a part it does not belong to on a two-part release
+                    ($600 · $500 · $500). An older release stored no figure, so
+                    there is nothing to share and the plain «keyin to‘landi» says
+                    what is known. */}
+                {row.returnedUsd !== null ? (
+                  <span className="text-good" data-testid="release-returned">
+                    {t('releases.returned', { usd: usd(row.returnedUsd) })}
+                  </span>
+                ) : (
+                  <span className="text-good">{t('releases.paidSince', { usd: usd(row.paidSinceUsd) })}</span>
+                )}
                 {row.leftUsd !== null && (
                   <span className="font-bold text-bad" data-testid="release-left">
                     {t('releases.left', { usd: usd(row.leftUsd) })}

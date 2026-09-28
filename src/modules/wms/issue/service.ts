@@ -19,7 +19,7 @@ import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { usersWithPermission } from '../../platform/notifications/service';
 import { clientBalanceUsd, deferredDealsUsd } from '../finance/service';
 import { mayGrantDebt, type MoneyActor } from '../finance/scope';
-import { deferralCover } from '../debt/rules';
+import { deferralCover, deferredTotal } from '../debt/rules';
 import { gatedAt, uncoveredBoxesOn, unpricedGate, unpricedReceiptsOn, type UncoveredBox } from '../finance/unpriced';
 import { claimIssuedNotice } from '../notices/client-claims';
 import { lockLiveApproval, markApprovalConsumed } from './approvals';
@@ -94,8 +94,9 @@ export async function issueBoxes(request: IssueRequest, ctx: AuditContext, relea
     unpricedGate(),
     db.query.clients.findFirst({ where: eq(clients.id, input.clientId), columns: { salesManagerId: true } }),
   ]);
-  // Summed unrounded and rounded once — `deferredBalanceUsd`'s arithmetic.
-  const deferred = Math.round(deferredDeals.reduce((sum, deal) => sum + deal.owedUsd, 0) * 100) / 100;
+  // `deferredBalanceUsd`'s own arithmetic on the same list — one function,
+  // so the counter screen and this gate cannot drift by a cent.
+  const deferred = deferredTotal(deferredDeals);
   const blockingDebt = Math.round((balance - deferred) * 100) / 100;
   const mayGrant = mayGrantDebt(releaser, { salesManagerId: owner?.salesManagerId ?? null });
   // Which «muddat» let how much of this balance through, and whose it was.

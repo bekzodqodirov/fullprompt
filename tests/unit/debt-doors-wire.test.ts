@@ -80,11 +80,23 @@ describe('every door asks the one predicate, with the person', () => {
     expect(page).toContain('{mayReadHandoverAct(actor, row.warehouseId) && (');
   });
 
-  it('the lenta’s «went out on debt» mark is the register’s own rule (#513)', () => {
+  it('the lenta’s «went out on debt» mark is the register’s own rule (#513), for the ledger’s readers only', () => {
     const feed = read('src/modules/wms/crm/feed.ts');
-    expect(feed).toContain("'debtOverride', ${debtGateOpenedSql('h')}");
+    expect(feed).toContain("'debtOverride', ${opts.money ? wentOutOnDebtSql('h') : sql`false`}");
     expect(feed).not.toContain("'debtOverride', h.debt_ok");
-    expect(read('src/modules/wms/debt/releases.ts')).toMatch(/WHERE h\.kind = 'issued_to_client' AND \$\{debtGateOpenedSql\('h'\)\}/);
+    // The register's four branches each stand on the same rule; a branch is
+    // an access path to an index, never a second reading of «on debt».
+    const parts = between(read('src/modules/wms/debt/releases.ts'), 'export function releasePartsSql', '\n}');
+    expect(parts.match(/AND \$\{debtGateOpenedSql\('h'\)\}/g)).toHaveLength(3);
+    expect(parts).toContain("AND h.deferrals IS NOT NULL AND ${wentOutOnDebtSql('h')}");
+  });
+
+  it('the counter screen, the approval’s snapshot and the gate total the muddat with ONE function', () => {
+    const finance = between(read('src/modules/wms/finance/service.ts'), 'export async function deferredBalanceUsd', '\n}');
+    expect(finance).toContain('return deferredTotal(await deferredDealsUsd(clientId));');
+    const issue = between(read('src/modules/wms/issue/service.ts'), 'export async function issueBoxes', 'const result = await');
+    expect(issue).toContain('const deferred = deferredTotal(deferredDeals);');
+    expect(issue).not.toMatch(/deferredDeals\.reduce\(/);
   });
 
   it('the broken-promise alarm can be muted, is a newcomer (never a founder), and has a sweep', () => {

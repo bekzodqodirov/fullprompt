@@ -330,11 +330,13 @@ async function buildRecipients(event: {
       }));
     }
     // Phase 6: the request reaches everyone who may decide it; the decision
-    // reaches exactly the person who asked. Since 0104 the request names its
-    // own recipients — every holder minus the sellers of OTHER clients, round
-    // 91's money rule reaching the ping — computed where the money rule lives
-    // (wms), because platform must not import it. An event written before
-    // that carries no list and reaches every holder, as it always did.
+    // reaches exactly the person who asked. The request names its own
+    // recipients (0104), and since 0114 they are exactly the people the
+    // decision's own predicate admits — `approvalRecipients` = `mayGrantDebt`
+    // over the grant holders (the owner's 2a: the client's seller, the admin,
+    // the accountant) — computed where the money rule lives (wms), because
+    // platform must not import it. An event written before 0104 carries no
+    // list and reaches every holder, as it always did.
     case 'DebtApprovalRequested': {
       const named = event.payload.recipientIds;
       const userIds = Array.isArray(named)

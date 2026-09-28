@@ -4449,6 +4449,7 @@
       "deferredPart": "另有 {usd} 已延期",
       "deal": "交易 {code}",
       "paidSince": "之后已付：{usd}",
+      "returned": "已收回：{usd}",
       "left": "未收回：{usd}",
       "currentDebt": "当前欠款：{usd}",
       "perApprover": "按批准人",

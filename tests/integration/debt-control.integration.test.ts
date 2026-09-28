@@ -38,8 +38,15 @@ import {
 } from '@/modules/wms/issue/approvals';
 import { deferPayment } from '@/modules/wms/deals/service';
 import { clientFeed } from '@/modules/wms/crm/feed';
-import { debtReleases, type DebtReleaseFilter } from '@/modules/wms/debt/releases';
-import { cancelPromise, clientPromises, PROMISE_TASK_TITLE, recordPromise, sweepPromises } from '@/modules/wms/debt/promises';
+import { debtReleases, releasePartsSql, wentOutOnDebtSql, type DebtReleaseFilter } from '@/modules/wms/debt/releases';
+import {
+  cancelPromise,
+  clientPromises,
+  PROMISE_TASK_TITLE,
+  promisesDueBetween,
+  recordPromise,
+  sweepPromises,
+} from '@/modules/wms/debt/promises';
 import { promiseBrokenAt } from '@/modules/wms/debt/rules';
 import { companyMoneySight, type MoneyActor } from '@/modules/wms/finance/scope';
 
@@ -383,13 +390,33 @@ describe('«Qarzga berilgan yuklar» — the register', () => {
     expect(stored!.deferrals).toEqual([{ dealId, code: expect.any(String), by: S1.id, usd: 90 }]);
 
     // The client's lenta marks the SAME releases (#513): the approval now
-    // carries the ⚠ it used to lack, the tick over nothing does not.
-    const mark = async (clientId: string, handoverId: string) =>
-      (await clientFeed(clientId, { money: false })).find((item) => item.id === `hv-${handoverId}`)?.meta
-        .debtOverride;
+    // carries the ⚠ it used to lack, the ⏳ muddat release too (the kind a
+    // seller controls — the reviewer's third), the tick over nothing does not.
+    const mark = async (clientId: string, handoverId: string, money = true) =>
+      (await clientFeed(clientId, { money })).find((item) => item.id === `hv-${handoverId}`)?.meta.debtOverride;
     expect(await mark(tickClient.id, tick.id)).toBe(true);
     expect(await mark(apprClient.id, appr.id)).toBe(true);
+    expect(await mark(defClient.id, def.id)).toBe(true);
     expect(await mark(zeroClient.id, zeroTick.id)).toBe(false);
+    // «Went out on debt» says the client OWED: money, so it rides the
+    // ledger's door (4a) — a lenta reader without it gets the handover alone.
+    expect(await mark(tickClient.id, tick.id, false)).toBe(false);
+    expect(await mark(defClient.id, def.id, false)).toBe(false);
+
+    // And as SETS, over every handover of these four clients: the handovers
+    // the register lists are exactly the ones the lenta's rule marks.
+    const mine = [tickClient.id, apprClient.id, defClient.id, zeroClient.id];
+    const listed = new Set(
+      (await debtReleases(sight, ALL)).rows.filter((row) => mine.includes(row.clientId)).map((row) => row.handoverId),
+    );
+    const marked = await db.execute<{ id: string }>(sql`
+      SELECT h.id FROM handovers h
+       WHERE h.client_id IN (${sql.join(
+         mine.map((id) => sql`${id}::uuid`),
+         sql`, `,
+       )}) AND h.kind = 'issued_to_client' AND ${wentOutOnDebtSql('h')}`);
+    expect([...listed].sort()).toEqual([...marked].map((row) => row.id).sort());
+    expect(listed.size).toBe(3);
   });
 
   it('«keyin to‘landi» counts money after the release — net of refunds, never a voided row or one before', async () => {
@@ -504,6 +531,100 @@ describe('«Qarzga berilgan yuklar» — the register', () => {
     expect(byId.get(oldTick)).toMatchObject({ kind: 'tick', debtUsd: null, legacy: false, approverId: W.id });
     expect(byId.get(oldAppr)).toMatchObject({ kind: 'approval', debtUsd: 140, legacy: true, approverId: A.id });
     expect(byId.has(priceOnly)).toBe(false);
+  });
+
+  it('a release of two parts by ONE person is one release and its whole money (the reviewer: the last part alone was summed)', async () => {
+    // A seller of his own, so the totals are this test's and nobody else's.
+    const seller = await mkUser('sales_manager', 'Ikki');
+    const c = await mkClient(seller.id);
+    const jobA = await mkDeal(c.id);
+    const jobB = await mkDeal(c.id);
+    await ledger(c.id, 'charge', 300, { dealId: jobA });
+    await ledger(c.id, 'charge', 200, { dealId: jobB });
+    const input = { reason: 'hammasi kelganda', untilAllArrived: true };
+    await deferPayment(jobA, input, ctx(seller.id), seller.actor);
+    await deferPayment(jobB, input, ctx(seller.id), seller.actor);
+    // Nothing blocks — both jobs are deferred — so the warehouse presses nothing.
+    await issue(c.id, W.actor);
+
+    const { rows, total, totals } = await debtReleases(sight, { ...ALL, approverId: seller.id });
+    expect(rows.map((row) => [row.kind, row.debtUsd])).toEqual([
+      ['deferral', 300],
+      ['deferral', 200],
+    ]);
+    expect(total).toBe(2);
+    expect(totals).toEqual([
+      {
+        approverId: seller.id,
+        approverName: seller.name,
+        releases: 1,
+        clients: 1,
+        debtUsd: 500,
+        returnedUsd: 0,
+        leftUsd: 500,
+        unknown: 0,
+      },
+    ]);
+  });
+
+  it('a tick over a muddat the same person granted: one release, both parts, the money since shared between them', async () => {
+    const acc = await mkUser('accountant', 'Ikkalasi');
+    const c = await mkClient(null);
+    const dealId = await mkDeal(c.id);
+    await ledger(c.id, 'charge', 400);
+    await ledger(c.id, 'charge', 600, { dealId });
+    await deferPayment(dealId, { reason: 'kutamiz', untilAllArrived: true }, ctx(acc.id), acc.actor);
+    await issue(c.id, acc.actor, { debtOk: true });
+    await ledger(c.id, 'payment', 500, { createdAt: new Date(Date.now() + 1000) });
+
+    const { rows, totals } = await debtReleases(sight, { ...ALL, approverId: acc.id });
+    // Each part's «qaytdi» is ITS share — debt − qaytdi = qaytmagan on every
+    // line (the page used to print the handover's whole $500 on both).
+    expect(rows.map((row) => [row.kind, row.debtUsd, row.returnedUsd, row.leftUsd])).toEqual([
+      ['tick', 400, 400, 0],
+      ['deferral', 600, 100, 500],
+    ]);
+    expect(totals).toEqual([
+      {
+        approverId: acc.id,
+        approverName: acc.name,
+        releases: 1,
+        clients: 1,
+        debtUsd: 1000,
+        returnedUsd: 500,
+        leftUsd: 500,
+        unknown: 0,
+      },
+    ]);
+    // By default only money still out: the gate part is back, the release is
+    // still ONE release with $500 out.
+    const open = await debtReleases(sight, { ...ALL, approverId: acc.id, includeReturned: false });
+    expect(open.rows.map((row) => row.kind)).toEqual(['deferral']);
+    expect(open.totals).toEqual([expect.objectContaining({ releases: 1, clients: 1, debtUsd: 1000, leftUsd: 500 })]);
+  });
+
+  it('the register reads its partial index — the handovers written from 0114 on are never a full scan (#934)', async () => {
+    type Node = { 'Node Type': string; 'Relation Name'?: string; 'Index Name'?: string; Plans?: Node[] };
+    const plan = await db.transaction(async (tx) => {
+      // Refused seq scans cost 1e10, so a scan the planner cannot avoid is
+      // one no index could serve at all — what the statement's own text
+      // proves, never what a small table happened to make cheap.
+      await tx.execute(sql`SET LOCAL enable_seqscan = off`);
+      return tx.execute<{ 'QUERY PLAN': unknown }>(sql`EXPLAIN (FORMAT JSON) ${releasePartsSql()}`);
+    });
+    const raw = plan[0]!['QUERY PLAN'];
+    const root = (typeof raw === 'string' ? JSON.parse(raw) : raw) as { Plan: Node }[];
+    const nodes: Node[] = [];
+    const walk = (node: Node) => {
+      nodes.push(node);
+      node.Plans?.forEach(walk);
+    };
+    walk(root[0]!.Plan);
+    // The gate branch AND the deferrals branch — both grow with every handover.
+    expect(nodes.filter((node) => node['Index Name'] === 'handovers_debt_release_idx').length).toBeGreaterThanOrEqual(2);
+    // At most the older ticks: a fixed set, and no index of their own (stated).
+    const scans = nodes.filter((node) => node['Node Type'] === 'Seq Scan' && node['Relation Name'] === 'handovers');
+    expect(scans.length).toBeLessThanOrEqual(1);
   });
 
   it('money paid since repays the overdue part first, then the deferred job', async () => {
@@ -720,5 +841,94 @@ describe('to‘lov va’dasi', () => {
     expect(alarms.some((row) => row.userId === S2.id)).toBe(false);
     expect(alarms.some((row) => row.userId === W.id)).toBe(false);
     await db.update(tasks).set({ status: 'cancelled' }).where(eq(tasks.id, p!.taskId!));
+  });
+
+  const alarmsFor = async (code: string) =>
+    db
+      .select({ userId: notifications.userId })
+      .from(notifications)
+      .where(and(eq(notifications.type, 'PaymentPromiseBroken'), sql`${notifications.payload}->>'text' LIKE ${`%${code}%`}`));
+
+  it('the alarm reaches whoever holds the call — a colleague the task was handed to, not the seller who handed it', async () => {
+    const c = await mkClient(S1.id);
+    await ledger(c.id, 'charge', 90);
+    const due = today();
+    const { id } = await recordPromise({ clientId: c.id, amountUsd: 90, dueOn: due }, ctx(S1.id), S1.actor);
+    const [p] = await db.select().from(paymentPromises).where(eq(paymentPromises.id, id));
+    await db.update(tasks).set({ assigneeId: S2.id }).where(eq(tasks.id, p!.taskId!));
+    await sweepPromises(promiseBrokenAt(due));
+    const alarms = await alarmsFor(c.code);
+    expect(alarms.filter((row) => row.userId === S2.id)).toHaveLength(1);
+    expect(alarms.some((row) => row.userId === S1.id)).toBe(false);
+    await db.update(tasks).set({ status: 'cancelled' }).where(eq(tasks.id, p!.taskId!));
+  });
+
+  it('a seller who has LEFT hears nothing, so the alarm falls back to whoever took the promise', async () => {
+    const seller = await mkUser('sales_manager', 'Ketgan');
+    // A logist the owner re-ticked with the grant: he may promise for anyone
+    // and is on neither the owner's nor the money readers' list.
+    const logist = await mkUser('logist', 'L');
+    const logistActor = { id: logist.id, permissions: new Set<string>([...logist.actor.permissions, 'finance.debt_override']) };
+    const c = await mkClient(seller.id);
+    await ledger(c.id, 'charge', 70);
+    const due = today();
+    const { id } = await recordPromise({ clientId: c.id, amountUsd: 70, dueOn: due }, ctx(logist.id), logistActor);
+    // The call went to the seller, who then left the company.
+    const [p] = await db.select().from(paymentPromises).where(eq(paymentPromises.id, id));
+    expect((await db.select().from(tasks).where(eq(tasks.id, p!.taskId!)))[0]!.assigneeId).toBe(seller.id);
+    await db.update(users).set({ active: false }).where(eq(users.id, seller.id));
+    await sweepPromises(promiseBrokenAt(due));
+    const alarms = await alarmsFor(c.code);
+    expect(alarms.filter((row) => row.userId === logist.id)).toHaveLength(1);
+    await db.update(tasks).set({ status: 'cancelled' }).where(eq(tasks.id, p!.taskId!));
+  });
+
+  it('a new promise closes the broken one’s call — one «💵 To‘lov va’dasi» per client, never two', async () => {
+    const c = await mkClient(S1.id);
+    await ledger(c.id, 'charge', 300);
+    const due = today();
+    const first = await recordPromise({ clientId: c.id, amountUsd: 100, dueOn: due }, ctx(S1.id), S1.actor);
+    await sweepPromises(promiseBrokenAt(due));
+    const [broken] = await db.select().from(paymentPromises).where(eq(paymentPromises.id, first.id));
+    expect(broken!.status).toBe('broken');
+    expect((await db.select().from(tasks).where(eq(tasks.id, broken!.taskId!)))[0]!.status).toBe('open');
+
+    const second = await recordPromise(
+      { clientId: c.id, amountUsd: 100, dueOn: addDays(today(), 2) },
+      ctx(S1.id),
+      S1.actor,
+    );
+    const [oldCall] = await db.select().from(tasks).where(eq(tasks.id, broken!.taskId!));
+    expect(oldCall).toMatchObject({ status: 'done', result: 'Yangi va’da olindi' });
+    const open = await db
+      .select({ id: tasks.id })
+      .from(tasks)
+      .where(and(eq(tasks.entityType, 'client'), eq(tasks.entityId, c.id), eq(tasks.status, 'open')));
+    const [p2] = await db.select().from(paymentPromises).where(eq(paymentPromises.id, second.id));
+    expect(open.map((row) => row.id)).toEqual([p2!.taskId]);
+    await cancelPromise(second.id, ctx(S1.id), S1.actor);
+  });
+
+  it('the coming payments: open promises due in a window, soonest first, for a money reader', async () => {
+    const early = await mkClient(S1.id);
+    const late = await mkClient(S1.id);
+    const outside = await mkClient(S1.id);
+    for (const c of [early, late, outside]) await ledger(c.id, 'charge', 400);
+    const a = await recordPromise({ clientId: late.id, amountUsd: 150, dueOn: addDays(today(), 5) }, ctx(S1.id), S1.actor);
+    const b = await recordPromise({ clientId: early.id, amountUsd: 250, dueOn: addDays(today(), 1) }, ctx(S1.id), S1.actor);
+    const x = await recordPromise({ clientId: outside.id, amountUsd: 50, dueOn: addDays(today(), 20) }, ctx(S1.id), S1.actor);
+    await ledger(early.id, 'payment', 40, { createdAt: new Date(Date.now() + 1000) });
+
+    const due = (await promisesDueBetween(sight, today(), addDays(today(), 6))).filter((row) =>
+      [early.id, late.id, outside.id].includes(row.clientId),
+    );
+    expect(due.map((row) => [row.clientCode, row.amountUsd, row.paidSinceUsd, row.balanceUsd])).toEqual([
+      [early.code, 250, 40, 360],
+      [late.code, 150, 0, 400],
+    ]);
+    // A reversed or unreadable window answers nothing rather than guessing.
+    expect(await promisesDueBetween(sight, addDays(today(), 6), today())).toEqual([]);
+    expect(await promisesDueBetween(sight, 'ertaga', today())).toEqual([]);
+    for (const p of [a, b, x]) await cancelPromise(p.id, ctx(S1.id), S1.actor);
   });
 });

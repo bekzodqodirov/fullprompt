@@ -4449,6 +4449,7 @@
       "deferredPart": "{usd} more was deferred",
       "deal": "deal {code}",
       "paidSince": "paid since: {usd}",
+      "returned": "returned: {usd}",
       "left": "not returned: {usd}",
       "currentDebt": "owes now: {usd}",
       "perApprover": "By who allowed it",

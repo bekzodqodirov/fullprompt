@@ -2,7 +2,7 @@ import { sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { FEED_KINDS } from '../finance/ledger-kinds';
 import { kindList } from '../finance/ledger-sql';
-import { debtGateOpenedSql } from '../debt/releases';
+import { wentOutOnDebtSql } from '../debt/releases';
 
 /**
  * One client, everything that happened, in order — the «lenta».
@@ -244,12 +244,15 @@ export async function clientFeed(clientId: string | null, opts: FeedOptions): Pr
       -- Handed over. The end of the job, and the only source that names the
       -- human being who actually carried the cargo away. «Went out on debt»
       -- is the register's own rule (debt/releases.ts, 0114): the tick alone
-      -- missed every approval release and marked a tick over nothing.
+      -- missed every approval release, every «muddat» release and marked a
+      -- tick over nothing. It says the client OWED, so it is money and rides
+      -- the ledger's door like the amounts do (4a) — for anyone else the
+      -- handover is drawn without it.
       SELECT
         'hv-' || h.id::text, 'handover', h.created_at, u.full_name, h.note,
         jsonb_build_object(
           'person', h.person_name, 'phone', h.person_phone,
-          'warehouse', w.code, 'debtOverride', ${debtGateOpenedSql('h')}
+          'warehouse', w.code, 'debtOverride', ${opts.money ? wentOutOnDebtSql('h') : sql`false`}
         )
       FROM handovers h
       JOIN warehouses w ON w.id = h.warehouse_id

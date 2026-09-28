@@ -4449,6 +4449,7 @@
       "deferredPart": "yana {usd} muddatli edi",
       "deal": "bitim {code}",
       "paidSince": "keyin to‘landi: {usd}",
+      "returned": "qaytdi: {usd}",
       "left": "qaytmagan: {usd}",
       "currentDebt": "hozirgi qarz: {usd}",
       "perApprover": "Ruxsat bergan bo‘yicha",

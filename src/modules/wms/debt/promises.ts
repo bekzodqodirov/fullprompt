@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { clients, paymentPromises, tasks, users } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
@@ -10,7 +10,7 @@ import { addDays, calendarDay, tashkentDay } from '../../platform/time/tashkent'
 import { clientBalanceUsd } from '../finance/service';
 import { ledgerAlias, netPaidUsdSql, signedUsdSql } from '../finance/ledger-sql';
 import { MAX_ROW_USD } from '../finance/money-bounds';
-import { mayGrantDebt, type MoneyActor } from '../finance/scope';
+import { mayGrantDebt, type CompanyMoneySight, type MoneyActor } from '../finance/scope';
 import { CENT, PROMISE_HORIZON_DAYS, promiseVerdict, type PromiseStatus, type PromiseVerdict } from './rules';
 
 /**
@@ -133,8 +133,40 @@ export async function recordPromise(
     throw err;
   }
 
+  await closeBrokenCalls(input.clientId, now);
   await openPromiseTask(id, { clientId: client.id, code: client.clientCode, sellerId: client.salesManagerId, dueOn }, ctx);
   return { id };
+}
+
+/**
+ * A broken promise leaves its call OPEN on purpose — somebody must ring. A new
+ * promise is that call's answer and books its own, so the old one closes
+ * here: without it the seller carried two «💵 To‘lov va’dasi» for one client,
+ * and the stale one came back in every morning digest until somebody closed
+ * it by hand. Only a call still open (`closePromiseTasks`), never a person's
+ * other work; never fatal — the new promise is already recorded.
+ */
+async function closeBrokenCalls(clientId: string, now: Date): Promise<void> {
+  try {
+    const stale = await db
+      .select({ taskId: paymentPromises.taskId })
+      .from(paymentPromises)
+      .where(
+        and(
+          eq(paymentPromises.clientId, clientId),
+          eq(paymentPromises.status, 'broken'),
+          isNotNull(paymentPromises.taskId),
+        ),
+      );
+    await closePromiseTasks(
+      stale.flatMap((row) => (row.taskId ? [row.taskId] : [])),
+      'done',
+      'Yangi va’da olindi',
+      now,
+    );
+  } catch (err) {
+    logger.error({ err, clientId }, '[debt] broken promise call not closed');
+  }
 }
 
 /** The call, as a task: the seller's, or the recorder's when there is none. */
@@ -238,6 +270,7 @@ async function promiseLedger(where: ReturnType<typeof sql>): Promise<
     client_code: string;
     client_name: string;
     seller_id: string | null;
+    caller_id: string;
     recorder_name: string | null;
     paid: string;
     foreign_since: boolean;
@@ -249,12 +282,22 @@ async function promiseLedger(where: ReturnType<typeof sql>): Promise<
   const rows = await db.execute(sql`
     SELECT p.id, p.client_id, p.amount_usd, p.due_on::text AS due_on, p.created_by, p.task_id,
            c.client_code, c.name AS client_name, c.sales_manager_id AS seller_id,
+           -- Who holds the call: the task's assignee (a person may have handed
+           -- it on), else the client's seller, else whoever took the promise —
+           -- each only while ACTIVE, because the Telegram drain skips a
+           -- deactivated person in silence (openPromiseTask's own fallback).
+           coalesce(CASE WHEN ta.active THEN ta.id END,
+                    CASE WHEN us.active THEN us.id END,
+                    p.created_by) AS caller_id,
            u.full_name AS recorder_name,
            coalesce(since.paid, 0) AS paid, coalesce(since.foreign_since, false) AS foreign_since,
            coalesce(bal.balance, 0) AS balance
       FROM payment_promises p
       JOIN clients c ON c.id = p.client_id
       LEFT JOIN users u ON u.id = p.created_by
+      LEFT JOIN tasks t ON t.id = p.task_id
+      LEFT JOIN users ta ON ta.id = t.assignee_id
+      LEFT JOIN users us ON us.id = c.sales_manager_id
       LEFT JOIN LATERAL (
         SELECT sum(${paid}) AS paid,
                bool_or(ct.currency <> 'USD' AND ${paid} <> 0) AS foreign_since
@@ -346,17 +389,18 @@ async function writeAuditRows(rows: { id: string }[], verdict: Exclude<PromiseVe
 }
 
 /**
- * «Va'da bajarilmadi» — to the client's seller (the person who rings him; the
- * recorder when he has none), the owner (the super_admin ROLE) and the
- * register's own audience (`finance.reports`: the accountant and the admins —
- * the people chasing the money). Law 4's grants only; the VED hears nothing.
+ * «Va'da bajarilmadi» — to whoever holds the call (`caller_id`: the promise
+ * task's assignee, else the client's seller, else the recorder — the first
+ * one still active), the owner (the super_admin ROLE) and the register's own
+ * audience (`finance.reports`: the accountant and the admins — the people
+ * chasing the money). Law 4's grants only; the VED hears nothing.
  */
 async function alertBroken(row: Awaited<ReturnType<typeof promiseLedger>>[number]): Promise<void> {
   const [owners, reporters] = await Promise.all([usersWithRoles(['super_admin']), usersWithPermission('finance.reports')]);
   const appUrl = process.env.APP_URL ?? '';
   const [y, m, d] = row.due_on.split('-');
   await notifyStaffTelegram({
-    userIds: [row.seller_id ?? row.created_by, ...owners, ...reporters],
+    userIds: [row.caller_id, ...owners, ...reporters],
     type: 'PaymentPromiseBroken',
     text:
       `⚠️ To‘lov va’dasi bajarilmadi — ${row.client_code} · ${row.client_name}\n` +
@@ -365,6 +409,56 @@ async function alertBroken(row: Awaited<ReturnType<typeof promiseLedger>>[number
       `Va’da oldi: ${row.recorder_name ?? '—'}\n` +
       `${appUrl}/finance/${row.client_id}`,
   });
+}
+
+export interface PromiseDue {
+  id: string;
+  clientId: string;
+  clientCode: string;
+  clientName: string;
+  amountUsd: number;
+  dueOn: string;
+  /** Net money in since the promise was taken (payments − refunds). */
+  paidSinceUsd: number;
+  /** What the client owes today, the ledger's own sign rule. */
+  balanceUsd: number;
+  recorderName: string | null;
+}
+
+/**
+ * The OPEN promises falling due between two Tashkent days, inclusive, soonest
+ * first — «the coming payments» a weekly summary lists (the owner's 7a). The
+ * same ledger read the sweep judges by, so a promise the summary calls «due»
+ * is one the sweep has not yet called kept, settled or broken.
+ *
+ * Money about named clients, so `sight` is REQUIRED — the branded proof that
+ * the reader is a company-money reader (#790; a job minting it for the owner
+ * asks `companyMoneySight` with his grants, never assumes).
+ */
+export async function promisesDueBetween(
+  _sight: CompanyMoneySight,
+  from: string,
+  to: string,
+): Promise<PromiseDue[]> {
+  const fromDay = calendarDay(from);
+  const toDay = calendarDay(to);
+  if (!fromDay || !toDay || fromDay > toDay) return [];
+  const rows = await promiseLedger(
+    sql`p.status = 'open' AND p.due_on BETWEEN ${fromDay}::date AND ${toDay}::date`,
+  );
+  return rows
+    .map((row) => ({
+      id: row.id,
+      clientId: row.client_id,
+      clientCode: row.client_code,
+      clientName: row.client_name,
+      amountUsd: Number(row.amount_usd),
+      dueOn: row.due_on,
+      paidSinceUsd: Math.round(Number(row.paid) * 100) / 100,
+      balanceUsd: Math.round(Number(row.balance) * 100) / 100,
+      recorderName: row.recorder_name,
+    }))
+    .sort((a, b) => a.dueOn.localeCompare(b.dueOn) || a.clientCode.localeCompare(b.clientCode));
 }
 
 /** The client's promises for the «Pul» tab, newest first, with the money in since each. */

@@ -4449,6 +4449,7 @@
       "deferredPart": "ещё {usd} было отсрочено",
       "deal": "сделка {code}",
       "paidSince": "оплачено после: {usd}",
+      "returned": "вернулось: {usd}",
       "left": "не вернулось: {usd}",
       "currentDebt": "долг сейчас: {usd}",
       "perApprover": "По тому, кто разрешил",

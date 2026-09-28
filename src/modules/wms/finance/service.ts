@@ -25,6 +25,7 @@ import { batchRoute } from '../batches/internal';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { cargoAboard } from '../batches/lots';
 import { tripCoverageOn } from './unpriced';
+import { deferredTotal } from '../debt/rules';
 
 /**
  * Client money ledger (Phase 2.1, owner's rules): there are NO tariffs — the
@@ -730,18 +731,22 @@ function deferredPerDealSql(clientIds: string[]): SQL {
      GROUP BY client_transactions.client_id, client_transactions.deal_id`;
 }
 
+/**
+ * The client's deferred total — the per-job figures below summed by the one
+ * `deferredTotal`, which the counter's gate (`issueBoxes`) also calls on the
+ * same list, so the screen, the approval's snapshot and the gate cannot drift
+ * apart by a rounding (#513).
+ */
 export async function deferredBalanceUsd(clientId: string): Promise<number> {
-  const rows = (await db.execute(deferredPerDealSql([clientId]))) as unknown as { owed: string }[];
-  const total = [...rows].reduce((sum, row) => sum + Number(row.owed ?? 0), 0);
-  return Math.round(total * 100) / 100;
+  return deferredTotal(await deferredDealsUsd(clientId));
 }
 
 /**
  * The same deferral, per JOB and with who granted it (0114, qarz nazorati) —
  * what the handover stores so the register can name the person whose
  * «muddat» let the cargo go. The one per-deal rule (`deferredPerDealSql`)
- * with the deal's own columns beside it, never a second reading of it; the
- * sum of `owedUsd` here, rounded once, is `deferredBalanceUsd`.
+ * with the deal's own columns beside it, never a second reading of it;
+ * `deferredTotal` of this list IS `deferredBalanceUsd`.
  */
 export async function deferredDealsUsd(
   clientId: string,
