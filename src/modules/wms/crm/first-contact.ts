@@ -199,7 +199,7 @@ export interface UntouchedArrival {
  *
  * A row is due when its reminder time has come, it is not a day old, its lead
  * still exists (a deleted lead's arrival has `lead_id` NULL and the join drops
- * it), nobody has been stamped, and — asked again here, in the same
+ * it) and is still open, nobody has been stamped, and — asked again here, in the same
  * statement — the rule still finds no contact, so a call that landed between
  * the stamp and the claim cannot be reminded about. The calls app gets its
  * grace: while the owner's live, paired phone has not reported since the
@@ -213,6 +213,9 @@ export async function claimUntouched(now: Date = new Date()): Promise<UntouchedA
        SELECT i.id
          FROM lead_intakes i
          JOIN leads l ON l.id = i.lead_id
+         -- A lead already DECIDED (won, or lost by whoever) needs nobody to
+         -- call it: a reminder about it is noise the owner learns to skip.
+         JOIN lead_stages st ON st.id = l.stage_id AND st.kind = 'open'
         WHERE i.contact_clock_at IS NOT NULL
           AND i.contact_clock_at >= ${at}::timestamptz - interval '2 days'
           AND i.contact_due_at IS NOT NULL

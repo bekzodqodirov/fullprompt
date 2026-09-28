@@ -505,10 +505,19 @@ describe('the owner’s reminder', () => {
     const reachedIntake = await intakeOf(reached.leadId!);
     await clockAt(reachedIntake.id, 20, 5);
     await setFollowUp('lead', reached.leadId!, null, { actorId: sellerA });
+    // Lost by somebody who is not its seller — not contact, but decided.
+    const decided = await land('decided', sellerA);
+    const decidedIntake = await intakeOf(decided.leadId!);
+    await clockAt(decidedIntake.id, 20, 5);
+    const [lost] = await db.select({ id: leadStages.id }).from(leadStages).where(eq(leadStages.kind, 'lost')).limit(1);
+    // Written directly: the lost-reason dictionary is another file's
+    // configuration, and the door's refusal is not what is under test.
+    await db.update(leads).set({ stageId: lost!.id }).where(eq(leads.id, decided.leadId!));
 
     const claimed = (await claimUntouched(F)).map((row) => row.id);
     expect(claimed).not.toContain(earlyIntake.id);
     expect(claimed).not.toContain(reachedIntake.id);
+    expect(claimed).not.toContain(decidedIntake.id);
   });
 
   it('waits for the seller’s calls app to report — at most thirty minutes', async () => {

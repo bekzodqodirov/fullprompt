@@ -6,6 +6,13 @@ import { OFFICE_OPEN_HOUR, utcHourOf } from '../time/office-hours';
 export const JOB_AUTOMATION_STALE = 'automation.stale';
 
 /**
+ * The first hour is the office's opening, read from `time/office-hours.ts`
+ * (0113): the advert-lead reminder starts its morning at the same hour, and
+ * two constants for one office would drift the day somebody moves one.
+ */
+export const STALE_AUTOMATION_CRON = `20 ${utcHourOf(OFFICE_OPEN_HOUR)}-14 * * *`;
+
+/**
  * The clock behind the two time triggers (round 86).
  *
  * HOURLY, and during working hours only. The threshold is measured in DAYS,
@@ -18,13 +25,7 @@ export const JOB_AUTOMATION_STALE = 'automation.stale';
  *
  * Nothing is lost by sleeping: a card that went quiet at midnight is just as
  * quiet at nine, and `staleCandidates` orders by how long it has been sitting.
- *
- * The first hour is the office's opening, read from `time/office-hours.ts`
- * (0113): the advert-lead reminder starts its morning at the same hour, and
- * two constants for one office would drift the day somebody moves one.
  */
-export const STALE_AUTOMATION_CRON = `20 ${utcHourOf(OFFICE_OPEN_HOUR)}-14 * * *`;
-
 export async function registerStaleAutomationWorker(boss: PgBoss): Promise<void> {
   await boss.createQueue(JOB_AUTOMATION_STALE);
   await boss.schedule(JOB_AUTOMATION_STALE, STALE_AUTOMATION_CRON);
