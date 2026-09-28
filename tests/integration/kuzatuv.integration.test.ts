@@ -229,22 +229,40 @@ describe('the bot state is recorded where every sender passes', () => {
     process.env.TELEGRAM_BOT_TOKEN = 'TEST:TOKEN';
 
     const who = await mintUser('Kuzatuv navbat');
-    const [row] = await db
-      .insert(notifications)
-      .values({
-        userId: who,
-        channel: 'telegram',
-        type: 'TaskAssigned',
-        payload: { text: 'eski' },
-        status: 'pending',
-        createdAt: new Date(Date.now() - 40 * 60_000),
-      })
-      .returning({ id: notifications.id });
-    notes.push(row!.id);
+    const before = await telegramBotState();
+    const pendingAt = async (createdAt: Date) => {
+      const [row] = await db
+        .insert(notifications)
+        .values({
+          userId: who,
+          channel: 'telegram',
+          type: 'TaskAssigned',
+          payload: { text: 'eski' },
+          status: 'pending',
+          createdAt,
+        })
+        .returning({ id: notifications.id });
+      notes.push(row!.id);
+    };
+    await pendingAt(new Date(Date.now() - 40 * 60_000));
     const backlog = await telegramBotState();
     expect(backlog.oldestPendingAt!.getTime()).toBeLessThanOrEqual(Date.now() - 40 * 60_000 + 1_000);
-    expect(backlog.waiting).toBeGreaterThanOrEqual(1);
+    expect(backlog.waiting).toBe(before.waiting + 1);
     expect(backlog.down).toBe(true);
+
+    // «N ta xabar kutmoqda» links to /admin/notifications' problems view, so it
+    // counts what that view lists (the review, finding 3): a row queued a
+    // minute ago is the drain's ordinary next tick, and a row older than the
+    // week is outside the page's window — neither is a row the reader finds.
+    await pendingAt(new Date(Date.now() - 60_000));
+    await pendingAt(new Date(Date.now() - 8 * 86_400_000));
+    const after = await telegramBotState();
+    expect(after.waiting).toBe(before.waiting + 1);
+    const [page] = await db
+      .select({ n: sql<number>`count(*)` })
+      .from(notifications)
+      .where(and(telegramProblemSql(problemSince()), eq(notifications.status, 'pending')));
+    expect(after.waiting).toBe(Number(page!.n));
   });
 });
 

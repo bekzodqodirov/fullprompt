@@ -14,7 +14,13 @@
  * compose `init: true`) exits with it, and `restart: unless-stopped` brings
  * the app back. Without `init: true` node would be PID 1, which a process in
  * its own namespace cannot kill, and a hung event loop never runs its own
- * SIGTERM handler.
+ * SIGTERM handler. WITH it, PID 1 is tini — `/sbin/docker-init -- node
+ * server.js` — whose command line also names `server.js`, and `/proc` lists
+ * PID 1 first: a finder that asked «does any argument say server.js» picked
+ * tini, whose SIGKILL the kernel discards, and the probe announced a kill
+ * every 30 s for ever while the stuck server went on standing. So the target
+ * is the process whose PROGRAM is node and whose script is server.js, and
+ * PID 1 is never a target at all.
  *
  * What counts as a failure is the whole design:
  *  - HEALTHY = any HTTP answer inside `ANSWER_MS` whose `pool` is not
@@ -36,6 +42,7 @@
  * Node builtins only: the runner image is `node:22-slim`, with no curl.
  */
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { basename } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 export const HEALTH_URL = 'http://127.0.0.1:3000/api/health';
@@ -88,23 +95,45 @@ export function startTimeFromStat(stat) {
 }
 
 /**
- * The Next server — `node server.js` — and never this probe, whose own command
- * line names this file.
+ * The Next server — the PROGRAM is node and the script it runs is server.js
+ * (the Dockerfile's `CMD ["node", "server.js"]`). Asked of the program and not
+ * of «any argument», because tini's command line is `/sbin/docker-init -- node
+ * server.js` and names the script too. A node flag written `--name=value`
+ * before the script is allowed; this probe's own command line is not a match
+ * because its script is not server.js.
  *
  * @param {string} cmdline NUL-separated, as /proc gives it
  */
 export function isServerCmdline(cmdline) {
   const args = cmdline.split('\0').filter(Boolean);
-  return args.some((arg) => arg === 'server.js' || arg.endsWith('/server.js')) && !cmdline.includes('health-probe');
+  if (args.length < 2 || basename(args[0]) !== 'node') return false;
+  const script = args.slice(1).find((arg) => !arg.startsWith('-'));
+  return script === 'server.js' || (script?.endsWith('/server.js') ?? false);
 }
 
-function findServer() {
-  for (const entry of readdirSync('/proc')) {
-    if (!/^\d+$/.test(entry)) continue;
+/**
+ * The server's pid and start time, read from `procDir` (a parameter so a test
+ * can hand it a fake /proc — a green suite must say something about WHAT this
+ * would kill). PID 1 is skipped whatever it runs: with `init: true` it is
+ * tini, and without it it is node as its namespace's init — which ignores a
+ * SIGKILL sent from inside the namespace. Either way a kill aimed there is a
+ * kill that does nothing, so no server found is the honest answer: nothing is
+ * armed and the healthcheck only reports.
+ *
+ * @param {string} [procDir]
+ * @returns {{ pid: number, start: string } | null}
+ */
+export function findServer(procDir = '/proc') {
+  const pids = readdirSync(procDir)
+    .filter((entry) => /^\d+$/.test(entry))
+    .map(Number)
+    .filter((pid) => pid !== 1)
+    .sort((a, b) => a - b);
+  for (const pid of pids) {
     try {
-      if (!isServerCmdline(readFileSync(`/proc/${entry}/cmdline`, 'utf8'))) continue;
-      const start = startTimeFromStat(readFileSync(`/proc/${entry}/stat`, 'utf8'));
-      if (start) return { pid: Number(entry), start };
+      if (!isServerCmdline(readFileSync(`${procDir}/${pid}/cmdline`, 'utf8'))) continue;
+      const start = startTimeFromStat(readFileSync(`${procDir}/${pid}/stat`, 'utf8'));
+      if (start) return { pid, start };
     } catch {
       // A process that ended while we looked — not ours to worry about.
     }

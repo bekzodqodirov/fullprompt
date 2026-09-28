@@ -399,7 +399,9 @@ ls -lh pre-b9-*.dump                       # 0 bo'lmasin
 git pull
 docker compose build migrate app           # `build app` EMAS — migrate alohida image
 docker compose --profile telegram build tg-listen
-docker compose --profile telegram up -d    # tg-listen ham yangi log sozlamasini olsin
+# IKKALA profil ham: `https` bo'lmasa Caddy qayta yaratilmaydi va log
+# chegarasini olmaydi, `telegram` bo'lmasa tg-listen olmaydi.
+docker compose --profile https --profile telegram up -d
 ```
 
 **Tekshirish:**
@@ -407,12 +409,23 @@ docker compose --profile telegram up -d    # tg-listen ham yangi log sozlamasini
 ```bash
 # 1) ilova «healthy» bo'lishi kerak (1-2 daqiqadan keyin)
 docker compose ps app
-# 2) sxema soni kod bilan teng — psql kerak emas
+# 2) HAMMA narsa joyidami — shu javobni o'qing, «healthy»ga ishonmang
 curl -s https://gsrwms.uz/api/health
-#   ... "schema":{"applied":N,"expected":N,"state":"ok"} ... "pool":"ok"
+#   {"status":"ok","db":"up","storage":"up","jobs":"up","pool":"ok",
+#    "schema":{"applied":N,"expected":N,"state":"ok"}}
 # 3) ko'rinmasa — watchdog nima deganini ko'ring
 docker inspect --format '{{json .State.Health}}' $(docker compose ps -q app)
 ```
+
+**«healthy» nimani anglatadi — va nimani ANGLATMAYDI.** Docker'dagi
+`healthy` = «ilova 10 soniya ichida javob beryapti va ulanishlar hovuzi
+(`pool`) qotib qolmagan». Bu watchdog'ning savoli, xolos. Baza yoki MinIO
+o'chiq bo'lsa ham ilova `503` bilan JAVOB beradi va `healthy` bo'lib qolaveradi
+(ataylab: restart ularni tuzatmaydi). Shuning uchun «hammasi ishlayaptimi»
+degan savolning javobi 2-qadamdagi `curl` — `status` `ok`, `db` / `storage` /
+`jobs` `up`, `pool` `ok`, `schema.state` `ok` bo'lishi kerak. Biror maydon
+boshqacha desa — o'sha xizmatni tekshiring (`docker compose ps -a`,
+`docker compose logs --tail=40 <xizmat>`).
 
 **Watchdog (qotib qolishni o'zi tuzatadi).** `ops/health-probe.mjs` har 30
 soniyada `/api/health` ni so'raydi. Ilova ketma-ket 3 marta javob bermasa

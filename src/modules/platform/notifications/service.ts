@@ -103,6 +103,17 @@ export async function usersWithPermission(code: string): Promise<string[]> {
 export const TELEGRAM_BACKLOG_MINUTES = 15;
 
 /**
+ * «Pending past the backlog window» — the fourth clause above, in one place:
+ * the problem list counts it and the bot's red line fires on it, and a second
+ * copy of the fifteen minutes (it once lived in JS beside this one) is two
+ * clocks for one sentence.
+ */
+function telegramBacklogSql(): SQL {
+  return sql`(${notifications.status} = 'pending'
+          AND ${notifications.createdAt} < now() - make_interval(mins => ${TELEGRAM_BACKLOG_MINUTES}))`;
+}
+
+/**
  * The ONE sentence «this staff message is a delivery problem», shared by the
  * home counter and the /admin/notifications «problems» list — so the 37 on the
  * home screen and the 37 rows behind its link are one predicate (#513; the
@@ -114,7 +125,7 @@ export function telegramProblemSql(since: Date): SQL {
     gte(notifications.createdAt, since),
     sql`(${notifications.status} = 'failed'
           OR (${notifications.status} = 'pending' AND ${notifications.error} IS NOT NULL)
-          OR (${notifications.status} = 'pending' AND ${notifications.createdAt} < now() - make_interval(mins => ${TELEGRAM_BACKLOG_MINUTES}))
+          OR ${telegramBacklogSql()}
           OR (${notifications.status} = 'sending' AND ${notifications.claimedAt} < now() - interval '10 minutes'))`,
   )!;
 }
@@ -141,8 +152,11 @@ export async function notificationProblemCount(sinceDays = 7): Promise<number> {
  *  - `noToken` — this process has no token at all, read from its own
  *    environment and never stored (a test run without one must not write the
  *    company's alarm state);
- *  - `waiting` / `oldestPendingAt` — the staff queue itself, off the pending
- *    index; a backlog older than the problem window is the symptom that needs
+ *  - `waiting` / `oldestPendingAt` — the PENDING rows of the problem list the
+ *    red line links to (`telegramProblemSql` over the same week), so «N ta
+ *    xabar kutmoqda» is a count of rows the reader finds behind the link and
+ *    not a second, wider count of every queued row; a backlog past the window
+ *    (`telegramBacklogSql`, the list's own clause) is the symptom that needs
  *    no cause to be named;
  *  - `clientWaiting` — customer notices the same dead bot is holding (their own
  *    sweep pauses on the same refusal), so the sentence can say they wait too.
@@ -159,13 +173,17 @@ export interface TelegramBotState {
   down: boolean;
 }
 
-export async function telegramBotState(now = new Date()): Promise<TelegramBotState> {
+export async function telegramBotState(sinceDays = 7): Promise<TelegramBotState> {
   const [refused, [queue], clientRows] = await Promise.all([
     botRefused(),
     db
-      .select({ n: sql<number>`count(*)`, oldest: sql<string | null>`min(${notifications.createdAt})` })
+      .select({
+        n: sql<number>`count(*)`,
+        backlog: sql<number>`count(*) FILTER (WHERE ${telegramBacklogSql()})`,
+        oldest: sql<string | null>`min(${notifications.createdAt})`,
+      })
       .from(notifications)
-      .where(and(eq(notifications.channel, 'telegram'), eq(notifications.status, 'pending'))),
+      .where(and(telegramProblemSql(problemSince(sinceDays)), eq(notifications.status, 'pending'))),
     db.execute<{ n: number }>(sql`
       SELECT count(*)::int AS n FROM client_notices
        WHERE status = 'pending'
@@ -174,16 +192,13 @@ export async function telegramBotState(now = new Date()): Promise<TelegramBotSta
   const noToken = !process.env.TELEGRAM_BOT_TOKEN;
   // Raw aggregates come back as TEXT (#923): through Date before any maths.
   const oldestPendingAt = queue?.oldest ? new Date(queue.oldest) : null;
-  const backlog =
-    oldestPendingAt !== null &&
-    now.getTime() - oldestPendingAt.getTime() > TELEGRAM_BACKLOG_MINUTES * 60_000;
   return {
     refused,
     noToken,
     waiting: Number(queue?.n ?? 0),
     oldestPendingAt,
     clientWaiting: Number(clientRows[0]?.n ?? 0),
-    down: refused !== null || noToken || backlog,
+    down: refused !== null || noToken || Number(queue?.backlog ?? 0) > 0,
   };
 }
 

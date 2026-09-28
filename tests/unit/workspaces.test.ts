@@ -175,8 +175,11 @@ const GATES: Record<string, (a: Actor) => boolean> = {
   '/reports/label-prints': (a) => has(a, 'reports.all_warehouses'),
   '/hisoblash/nazorat': (a) => calcControlScopeFor(a) !== 'none',
 
-  // The hub sends a visitor with no door home.
-  '/admin': (a) => adminLayout(a) && openDoors((code) => a.permissions.has(code)).length > 0,
+  // The hub sends a visitor with no door home. The page's own call, roles
+  // included (a door may be role-gated — B9's /admin/xatolar), so the mirror
+  // cannot drift from the page it mirrors.
+  '/admin': (a) =>
+    adminLayout(a) && openDoors((code) => a.permissions.has(code), a.roles).length > 0,
 };
 
 /** The shipped roles, and the combinations the owner is known to hold or invent. */

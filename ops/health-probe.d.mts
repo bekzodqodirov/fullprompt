@@ -19,3 +19,4 @@ export declare function probeVerdict(
 
 export declare function startTimeFromStat(stat: string): string | null;
 export declare function isServerCmdline(cmdline: string): boolean;
+export declare function findServer(procDir?: string): { pid: number; start: string } | null;

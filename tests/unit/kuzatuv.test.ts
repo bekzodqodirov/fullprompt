@@ -1,6 +1,9 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  findServer,
   isServerCmdline,
   KILL_AFTER,
   probeVerdict,
@@ -104,8 +107,57 @@ describe('the watchdog probe (ops/health-probe.mjs)', () => {
   it('finds `node server.js` and never itself', () => {
     expect(isServerCmdline('node\0server.js\0')).toBe(true);
     expect(isServerCmdline('node\0/app/server.js\0')).toBe(true);
+    expect(isServerCmdline('/usr/local/bin/node\0--max-old-space-size=2048\0server.js\0')).toBe(
+      true,
+    );
     expect(isServerCmdline('node\0/app/ops/health-probe.mjs\0')).toBe(false);
     expect(isServerCmdline('node\0scripts/start-standalone.mjs\0')).toBe(false);
+  });
+
+  it('tini names server.js too, and is never the server (the review, blocker 1)', () => {
+    // `init: true` = `/sbin/docker-init -- node server.js` as PID 1.
+    expect(isServerCmdline('/sbin/docker-init\0--\0node\0server.js\0')).toBe(false);
+  });
+
+  /**
+   * A fake /proc, so the suite says what the probe would SIGKILL — the kill
+   * path was untested, and it aimed at tini. `stat` carries the start time in
+   * field 22; each process gets its own so the answer names WHICH one won.
+   */
+  function fakeProc(procs: Record<number, string>): string {
+    const dir = mkdtempSync(join(tmpdir(), 'gsr-proc-'));
+    for (const [pid, cmdline] of Object.entries(procs)) {
+      mkdirSync(join(dir, pid));
+      writeFileSync(join(dir, pid, 'cmdline'), cmdline);
+      const fields = Array.from({ length: 50 }, (_, i) =>
+        i + 3 === 22 ? `start-${pid}` : String(i + 3),
+      );
+      writeFileSync(join(dir, pid, 'stat'), `${pid} (x) ${fields.join(' ')}`);
+    }
+    mkdirSync(join(dir, 'self'));
+    return dir;
+  }
+
+  it('under tini, the target is node — never PID 1', () => {
+    const dir = fakeProc({
+      1: '/sbin/docker-init\0--\0node\0server.js\0',
+      7: 'node\0server.js\0',
+      12: 'node\0/app/ops/health-probe.mjs\0',
+    });
+    try {
+      expect(findServer(dir)).toEqual({ pid: 7, start: 'start-7' });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('without tini node IS PID 1, which ignores the kill — so nothing is a target', () => {
+    const dir = fakeProc({ 1: 'node\0server.js\0', 12: 'node\0/app/ops/health-probe.mjs\0' });
+    try {
+      expect(findServer(dir)).toBeNull();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('leaves its note where the next boot reads it', () => {
