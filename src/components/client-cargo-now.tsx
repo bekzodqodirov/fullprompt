@@ -2,7 +2,8 @@ import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { groupDigits } from '@/modules/platform/telegram/format';
 import type { CargoNow, NowRow, NowSection } from '@/modules/wms/inventory/client-cargo-fold';
-import { NOW_SECTIONS } from '@/modules/wms/inventory/client-cargo-fold';
+import { capRows, NOW_SECTIONS } from '@/modules/wms/inventory/client-cargo-fold';
+import type { NowSibling, NowTruck } from '@/modules/wms/client-card/yuklar-view';
 import type { TruckRow } from '@/modules/wms/tracking/on-road-state';
 import { LightboxImg } from './lightbox-img';
 import { truckRoadWords } from './truck-road';
@@ -14,29 +15,6 @@ export const SECTION_ANCHOR: Record<NowSection, string> = {
   uz: 'uz',
   ready: 'tayyor',
 };
-
-/**
- * A section draws this many rows before «+N». The bot caps its answer at 20
- * lines and /stock pages its render at 120 (#527); a client with hundreds of
- * lots would otherwise put thousands of nodes on a phone (the tab's judge,
- * finding 13). `?toliq=1` draws them all; the Σ is always the whole section.
- */
-export const SECTION_ROW_CAP = 40;
-
-/** A truck as this list needs it — code, the two ends' codes, and whether its card opens. */
-export interface NowTruck {
-  code: string;
-  originCode: string;
-  destCode: string;
-  /** The truck card's door (`mayOpenBatchCard`) answered yes. */
-  open: boolean;
-}
-
-export interface NowSibling {
-  id: string;
-  code: string;
-  boxes: number;
-}
 
 /**
  * «Yuklar» — where this client's cargo is right now, section by section.
@@ -249,8 +227,7 @@ export async function ClientCargoNow({
 
       {filled.map((s) => {
         const section = now.sections[s];
-        const drawn = full ? section.rows : section.rows.slice(0, SECTION_ROW_CAP);
-        const more = section.rows.length - drawn.length;
+        const { drawn, more } = capRows(section.rows, full);
         return (
           <section
             key={s}

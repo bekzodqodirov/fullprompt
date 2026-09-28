@@ -440,6 +440,7 @@ describe('«Yuklar» — the card’s cargo tab (docs/CARD-TABS.md)', () => {
   it('reads no money anywhere in its body', () => {
     const BODY = [
       'src/app/(protected)/admin/clients/[id]/yuklar/page.tsx',
+      'src/modules/wms/client-card/yuklar-view.ts',
       'src/components/client-cargo-now.tsx',
       'src/components/client-cargo-history.tsx',
       'src/modules/wms/inventory/client-cargo-now.ts',

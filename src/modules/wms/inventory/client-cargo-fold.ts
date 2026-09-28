@@ -270,6 +270,19 @@ export function totalsOf(rows: readonly { n: number; kg: number | null; m3: numb
   };
 }
 
+/**
+ * A section draws this many rows before «+N». The bot caps its answer at 20
+ * lines and /stock pages its render at 120 (#527); a client with hundreds of
+ * lots would otherwise put thousands of nodes on a phone (the tab's judge,
+ * finding 13). `?toliq=1` draws them all; the Σ is always the whole section.
+ */
+export const SECTION_ROW_CAP = 40;
+
+export function capRows<T>(rows: readonly T[], full: boolean): { drawn: readonly T[]; more: number } {
+  const drawn = full ? rows : rows.slice(0, SECTION_ROW_CAP);
+  return { drawn, more: rows.length - drawn.length };
+}
+
 /** How many cartons stand in each section — the «Umumiy» summary line and the tab's chips. */
 export function sectionCounts(now: CargoNow): Record<NowSection, number> {
   return Object.fromEntries(NOW_SECTIONS.map((s) => [s, now.sections[s].total.boxes])) as Record<

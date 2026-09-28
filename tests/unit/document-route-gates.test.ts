@@ -63,9 +63,11 @@ describe('the handover act asks one door, from all three places', () => {
   });
 
   it('the «Yuklar» tab draws «Akt» only where the door admits, asked with the handover’s warehouse', () => {
-    const page = code('src/app/(protected)/admin/clients/[id]/yuklar/page.tsx');
-    expect(page).toMatch(/mayReadHandoverAct\(actor, warehouseId\)/);
-    expect(page).not.toContain("'scan.issue'");
+    const view = code('src/modules/wms/client-card/yuklar-view.ts');
+    expect(view).toMatch(/mayReadHandoverAct\(actor, warehouseId\)/);
+    expect(view).not.toContain("'scan.issue'");
+    // …and the component draws the link from that answer alone.
+    expect(code('src/components/client-cargo-history.tsx')).toMatch(/\{actOpen\.has\(h\.id\) && \(/);
   });
 
   it('the debt register draws «Akt» only where the same door admits, asked with the release’s warehouse', () => {
