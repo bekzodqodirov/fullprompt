@@ -15,6 +15,8 @@ import {
   warehouses,
 } from '../../platform/db/schema';
 import { COUNT_REASONS } from '../scanning/count-rules';
+import { landedHereAtSql } from '../documents/arrivals';
+import { addDays, tashkentDay } from '../../platform/time/tashkent';
 
 /**
  * Read models for the M6 dashboard + §13 reports. Every query takes an
@@ -22,7 +24,14 @@ import { COUNT_REASONS } from '../scanning/count-rules';
  * warehouses; undefined = all (reports.all_warehouses holders).
  */
 
-const IN_WAREHOUSE = ['in_stock', 'planned', 'loading', 'ready_for_pickup'] as const;
+/**
+ * The statuses a carton can have while it physically stands in a warehouse —
+ * on the shelf, planned onto a truck, being loaded, or waiting for its client.
+ * Exported so the svodka and the waiting list mean the same cartons by «in the
+ * warehouse» as the reports do.
+ */
+export const IN_WAREHOUSE = ['in_stock', 'planned', 'loading', 'ready_for_pickup'] as const;
+const IN_WAREHOUSE_SQL = sql.raw(`(${IN_WAREHOUSE.map((s) => `'${s}'`).join(', ')})`);
 
 export interface WarehouseFillRow {
   id: string;
@@ -46,7 +55,10 @@ export interface WarehouseFillRow {
  * ONE query, and deliberately this one rather than a new neighbour: the fill
  * bar already existed here and on /dashboard, and a second «how full is it»
  * query would have been born disagreeing with this one about which
- * warehouses count.
+ * warehouses count. The morning svodka's «Uzoq turgan yuk» reads it too
+ * (it used to date a Tashkent carton by its CHINA receipt and ask for
+ * `in_stock` alone, so cargo landed `ready_for_pickup` a month ago was never
+ * old and a week-old arrival from a 40-day-old receipt always was).
  *
  * Two rules the review had to correct:
  *
@@ -55,70 +67,66 @@ export interface WarehouseFillRow {
  *    today, so the old `isNotNull` filter is why this card has never once
  *    rendered in production.
  *  - «how many days here» is measured from the movement that LANDED the box
- *    here — `landedHereSql`, the same three clauses the agent sheet uses.
+ *    here — `landedHereAtSql`, the agent sheet's rule and its walk-in clock.
  *    Trusting `to_warehouse_id` alone resets the age to zero the morning a
  *    logist plans the carton onto a truck (`plan_approved` carries the same
  *    warehouse on both sides), which is precisely the cargo somebody is
- *    already arguing about. There is no `confirmed_at` fallback: a receipt
- *    writes a movement with a NULL from-warehouse, so `IS DISTINCT FROM`
- *    already covers cargo received here and never moved.
+ *    already arguing about. The rule was written out here twice by hand and
+ *    never learned the walk-in half, so an office prixod typed late read young.
+ *
+ * Days are TASHKENT CALENDAR DAYS at `asOf` (R5), the oldest age and the stale
+ * count both — so a carton cannot read «30 kun» and not be counted stale. It
+ * used to be whole 24-hour periods since the landing, which is up to one day
+ * younger for the same carton; the stated cost of agreeing with the svodka and
+ * the waiting list. The landing is computed ONCE per carton (a LATERAL over
+ * each warehouse), where the two correlated copies each walked every carton's
+ * movements again.
  */
 export async function warehouseFill(
   warehouseIds?: string[],
   staleDays = 30,
+  asOf: Date = new Date(),
 ): Promise<WarehouseFillRow[]> {
-  const rows = await db
-    .select({
-      id: warehouses.id,
-      code: warehouses.code,
-      capacityM3: warehouses.capacityM3,
-      occupied: sql<string>`coalesce((
-        SELECT sum(rl.total_volume_m3 / rl.box_count)
-        FROM ${boxes} b JOIN ${receiptLots} rl ON b.lot_id = rl.id
-        WHERE b.current_warehouse_id = "warehouses"."id"
-          AND b.status IN ('in_stock', 'planned', 'loading', 'ready_for_pickup')
-      ), 0)`,
-      oldestDays: sql<string | null>`(
-        SELECT max(EXTRACT(day FROM now() - landed.at))
-        FROM (
-          SELECT DISTINCT ON (bm.box_id) bm.created_at AS at
-          FROM box_movements bm
-          JOIN boxes b2 ON b2.id = bm.box_id
-          WHERE b2.current_warehouse_id = "warehouses"."id"
-            AND b2.status IN ('in_stock', 'planned', 'loading', 'ready_for_pickup')
-            AND bm.to_warehouse_id = "warehouses"."id"
-            AND bm.from_warehouse_id IS DISTINCT FROM bm.to_warehouse_id
-            AND bm.to_status <> 'in_transit'
-            AND bm.cause <> 'found_at_origin'
-          ORDER BY bm.box_id, bm.created_at DESC, bm.id DESC
-        ) landed
-      )`,
-      staleCount: sql<string>`(
-        SELECT count(*) FROM (
-          SELECT DISTINCT ON (bm.box_id) bm.created_at AS at
-          FROM box_movements bm
-          JOIN boxes b3 ON b3.id = bm.box_id
-          WHERE b3.current_warehouse_id = "warehouses"."id"
-            AND b3.status IN ('in_stock', 'planned', 'loading', 'ready_for_pickup')
-            AND bm.to_warehouse_id = "warehouses"."id"
-            AND bm.from_warehouse_id IS DISTINCT FROM bm.to_warehouse_id
-            AND bm.to_status <> 'in_transit'
-            AND bm.cause <> 'found_at_origin'
-          ORDER BY bm.box_id, bm.created_at DESC, bm.id DESC
-        ) landed2
-        WHERE landed2.at < now() - make_interval(days => ${staleDays})
-      )`,
-    })
-    .from(warehouses)
-    .where(
-      and(
-        eq(warehouses.active, true),
-        warehouseIds?.length ? inArray(warehouses.id, warehouseIds) : undefined,
-      ),
-    )
-    .orderBy(asc(warehouses.code));
+  const today = tashkentDay(asOf);
+  // `today − landed ≥ staleDays` ⇔ `landed ≤ today − staleDays`.
+  const staleOn = addDays(today, -staleDays);
+  const only = warehouseIds?.length
+    ? sql`AND w.id IN (${sql.join(
+        warehouseIds.map((id) => sql`${id}::uuid`),
+        sql`, `,
+      )})`
+    : sql``;
+  const rows = (await db.execute(sql`
+    SELECT w.id, w.code, w.capacity_m3,
+           coalesce(f.occupied, 0) AS occupied,
+           (${today}::date - f.oldest_day) AS oldest_days,
+           coalesce(f.stale, 0) AS stale
+      FROM warehouses w
+      LEFT JOIN LATERAL (
+        SELECT sum(l.m3) AS occupied,
+               min(l.landed_day) AS oldest_day,
+               count(*) FILTER (WHERE l.landed_day <= ${staleOn}::date) AS stale
+          FROM (
+            SELECT rl.total_volume_m3 / rl.box_count AS m3,
+                   (${landedHereAtSql('b')} AT TIME ZONE 'Asia/Tashkent')::date AS landed_day
+              FROM boxes b
+              JOIN receipt_lots rl ON rl.id = b.lot_id
+             WHERE b.current_warehouse_id = w.id
+               AND b.status IN ${IN_WAREHOUSE_SQL}
+          ) l
+      ) f ON true
+     WHERE w.active ${only}
+     ORDER BY w.code
+  `)) as unknown as {
+    id: string;
+    code: string;
+    capacity_m3: string | null;
+    occupied: string | number;
+    oldest_days: number | string | null;
+    stale: number | string;
+  }[];
   return rows.map((r) => {
-    const capacityM3 = r.capacityM3 === null ? null : Number(r.capacityM3);
+    const capacityM3 = r.capacity_m3 === null ? null : Number(r.capacity_m3);
     const occupiedM3 = Math.round(Number(r.occupied) * 10) / 10;
     return {
       id: r.id,
@@ -126,8 +134,8 @@ export async function warehouseFill(
       capacityM3,
       occupiedM3,
       pct: capacityM3 && capacityM3 > 0 ? Math.round((occupiedM3 / capacityM3) * 100) : null,
-      oldestDays: r.oldestDays === null ? null : Math.round(Number(r.oldestDays)),
-      staleCount: Number(r.staleCount ?? 0),
+      oldestDays: r.oldest_days === null ? null : Number(r.oldest_days),
+      staleCount: Number(r.stale ?? 0),
     };
   });
 }
@@ -251,11 +259,22 @@ export async function inTransitBatches(warehouseIds?: string[], opts: { batchIds
   return rows.map((r) => ({ ...r, boxCount: Number(r.boxCount) }));
 }
 
+/**
+ * The dashboard's «egasiz yuk» row: prixods whose owner is unknown and that
+ * still have cargo STANDING in a warehouse, and those cartons.
+ *
+ * Asked about the same cartons as `unclaimedReport` (the list the row links to)
+ * — `IN_WAREHOUSE`, in the WHERE and not merely in the box count. It counted
+ * `in_stock` boxes under a receipt count with no status filter at all, so an
+ * unclaimed prixod that reached Tashkent (`ready_for_pickup` — every UZ
+ * warehouse lands cargo that way) was a receipt with «0 karobka», and one
+ * whose cartons had all left was still counted.
+ */
 export async function unclaimedSummary(warehouseIds?: string[]) {
   const [row] = await db
     .select({
       receipts: sql<number>`count(DISTINCT ${receipts.id})`,
-      boxes: sql<number>`count(*) FILTER (WHERE ${boxes.status} = 'in_stock')`,
+      boxes: sql<number>`count(*)`,
     })
     .from(receipts)
     .innerJoin(receiptLots, eq(receiptLots.receiptId, receipts.id))
@@ -264,37 +283,11 @@ export async function unclaimedSummary(warehouseIds?: string[]) {
       and(
         isNull(receipts.clientId),
         eq(receipts.status, 'confirmed'),
+        inArray(boxes.status, [...IN_WAREHOUSE]),
         warehouseIds?.length ? inArray(receipts.warehouseId, warehouseIds) : undefined,
       ),
     );
   return { receipts: Number(row?.receipts ?? 0), boxes: Number(row?.boxes ?? 0) };
-}
-
-/** Boxes sitting in stock longer than `staleDays`, per warehouse (+ worst age). */
-export async function agingSummary(staleDays: number, warehouseIds?: string[]) {
-  const rows = await db
-    .select({
-      code: warehouses.code,
-      n: sql<number>`count(*)`,
-      worstDays: sql<number>`max(EXTRACT(day FROM now() - ${receipts.receivedAt}))`,
-    })
-    .from(boxes)
-    .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
-    .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
-    .innerJoin(warehouses, eq(boxes.currentWarehouseId, warehouses.id))
-    .where(
-      and(
-        // Every Uzbek warehouse lands cargo `ready_for_pickup`, so asking for
-        // `in_stock` alone made the aging report blind to exactly the
-        // uncollected cargo it is read for.
-        inArray(boxes.status, [...IN_WAREHOUSE]),
-        sql`${receipts.receivedAt} < now() - make_interval(days => ${staleDays})`,
-        warehouseIds?.length ? inArray(boxes.currentWarehouseId, warehouseIds) : undefined,
-      ),
-    )
-    .groupBy(warehouses.code)
-    .orderBy(asc(warehouses.code));
-  return rows.map((r) => ({ code: r.code, n: Number(r.n), worstDays: Number(r.worstDays) }));
 }
 
 /** Open flags: missing_in_transit / undocumented_transfer boxes. */
@@ -431,7 +424,18 @@ export async function landedCostByLot(clientId: string | null) {
 // Report 2: stock with aging
 // ---------------------------------------------------------------------------
 
-export async function stockAging(warehouseIds?: string[]) {
+/**
+ * Stock with its age (§13.1). The age is how long the cargo has been standing
+ * WHERE IT STANDS — the landing (`landedHereAtSql`, the oldest carton of the
+ * row), in Tashkent calendar days at `asOf` — and no longer the day the
+ * receipt was typed in China: a lot that spent five weeks on the road and
+ * landed in Tashkent on Monday is two days old there, and one that landed a
+ * month ago was reading as young whenever its receipt was recent. Now the
+ * report, its XLSX, the dashboard's fill card and the morning svodka give one
+ * carton one age.
+ */
+export async function stockAging(warehouseIds?: string[], asOf: Date = new Date()) {
+  const today = tashkentDay(asOf);
   const rows = await db
     .select({
       whCode: warehouses.code,
@@ -440,10 +444,12 @@ export async function stockAging(warehouseIds?: string[]) {
       letter: receiptLots.letter,
       productNameZh: receiptLots.productNameZh,
       productNameRu: receiptLots.productNameRu,
-      receivedAt: receipts.receivedAt,
       boxCount: sql<number>`count(*)`,
       kg: sql<string>`sum(${receiptLots.totalWeightKg} / ${receiptLots.boxCount})`,
       m3: sql<string>`sum(${receiptLots.totalVolumeM3} / ${receiptLots.boxCount})`,
+      // The oldest carton's landing day; NULL only for a carton with no
+      // landing movement at all, which the receipt's own movement rules out.
+      landedDay: sql<string | null>`min((${landedHereAtSql('"boxes"')} AT TIME ZONE 'Asia/Tashkent')::date)::text`,
     })
     .from(boxes)
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
@@ -460,24 +466,31 @@ export async function stockAging(warehouseIds?: string[]) {
       warehouses.code,
       clients.clientCode,
       receipts.unclaimedMarking,
-      receipts.receivedAt,
       receiptLots.id,
-    )
-    .orderBy(asc(receipts.receivedAt));
-  return rows.map((r) => {
-    const kg = Number(r.kg);
-    const m3 = Number(r.m3);
-    return {
-      whCode: r.whCode,
-      code: `${r.clientCode ?? r.marking ?? '?'}-${r.letter ?? ''}`,
-      product: `${r.productNameZh}${r.productNameRu ? ` (${r.productNameRu})` : ''}`,
-      boxCount: Number(r.boxCount),
-      kg: Math.round(kg * 10) / 10,
-      m3: Math.round(m3 * 100) / 100,
-      density: m3 > 0 ? Math.round(kg / m3) : null,
-      days: Math.floor((Date.now() - new Date(r.receivedAt).getTime()) / 86_400_000),
-    };
-  });
+    );
+  return rows
+    .map((r) => {
+      const kg = Number(r.kg);
+      const m3 = Number(r.m3);
+      return {
+        whCode: r.whCode,
+        code: `${r.clientCode ?? r.marking ?? '?'}-${r.letter ?? ''}`,
+        product: `${r.productNameZh}${r.productNameRu ? ` (${r.productNameRu})` : ''}`,
+        boxCount: Number(r.boxCount),
+        kg: Math.round(kg * 10) / 10,
+        m3: Math.round(m3 * 100) / 100,
+        density: m3 > 0 ? Math.round(kg / m3) : null,
+        days: r.landedDay ? calendarDaysBetween(r.landedDay, today) : 0,
+      };
+    })
+    .sort((a, b) => b.days - a.days);
+}
+
+/** Whole calendar days from `from` to `to`, both `YYYY-MM-DD`. */
+function calendarDaysBetween(from: string, to: string): number {
+  return Math.round(
+    (new Date(`${to}T12:00:00Z`).getTime() - new Date(`${from}T12:00:00Z`).getTime()) / 86_400_000,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -673,17 +686,33 @@ export async function receiptsJournal(window: JournalWindow, warehouseIds?: stri
   }));
 }
 
-export async function unclaimedReport(warehouseIds?: string[]) {
+/**
+ * Prixods whose owner nobody has named yet, with cargo still standing in a
+ * warehouse — the one list behind /reports/unclaimed, its XLSX, the /unclaimed
+ * pool, the dashboard's «egasiz yuk» row (`unclaimedSummary`, the same WHERE)
+ * and the morning svodka.
+ *
+ * «Standing» is `IN_WAREHOUSE`, and it used to be `in_stock` alone — so the
+ * unclaimed cargo that had already crossed to Tashkent (landed
+ * `ready_for_pickup`, like everything in a UZ warehouse) dropped off every one
+ * of those surfaces exactly when its owner was likeliest to turn up. The field
+ * keeps its old name, `boxesInStock`, for the two screens that print it.
+ *
+ * The age stays the RECEIPT's: this list is about how long nobody has claimed
+ * the goods, not how long they have stood where they stand.
+ */
+export async function unclaimedReport(warehouseIds?: string[], asOf: Date = new Date()) {
   const rows = await db
     .select({
       id: receipts.id,
       number: receipts.number,
       marking: receipts.unclaimedMarking,
+      sourceNote: receipts.sourceNote,
       whCode: warehouses.code,
       receivedAt: receipts.receivedAt,
       boxesInStock: sql<number>`(
         SELECT count(*) FROM ${boxes} b JOIN receipt_lots rl ON b.lot_id = rl.id
-        WHERE rl.receipt_id = ${receipts.id} AND b.status = 'in_stock'
+        WHERE rl.receipt_id = ${receipts.id} AND b.status IN ${IN_WAREHOUSE_SQL}
       )`,
       kg: sql<string>`(SELECT coalesce(sum(rl.total_weight_kg), 0) FROM receipt_lots rl WHERE rl.receipt_id = ${receipts.id})`,
     })
@@ -702,7 +731,7 @@ export async function unclaimedReport(warehouseIds?: string[]) {
       ...r,
       boxesInStock: Number(r.boxesInStock),
       kg: Math.round(Number(r.kg) * 10) / 10,
-      days: Math.floor((Date.now() - new Date(r.receivedAt).getTime()) / 86_400_000),
+      days: Math.floor((asOf.getTime() - new Date(r.receivedAt).getTime()) / 86_400_000),
     }))
     .filter((r) => r.boxesInStock > 0);
 }

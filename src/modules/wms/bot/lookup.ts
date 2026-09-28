@@ -11,6 +11,7 @@ import {
 } from '../../platform/db/schema';
 import { inScope, type ScopedActor } from '../../platform/rbac/scope';
 import { seesAllMoney } from '../finance/scope';
+import { seesAllClients } from '../../platform/clients/card-door';
 import { clientBalanceUsd } from '../finance/service';
 import { arrivalCodesForPairs } from '../documents/arrivals';
 import { clientCargoRows } from '../inventory/client-cargo-now';
@@ -131,9 +132,7 @@ function maySeePhones(
   cargoInReach: boolean,
 ): boolean {
   if (cargoInReach) return true;
-  if (actor.permissions.has('clients.manage') || actor.permissions.has('crm.leads.view_all')) {
-    return true;
-  }
+  if (seesAllClients(actor)) return true;
   return (
     (actor.permissions.has('clients.view_own') || actor.permissions.has('crm.leads')) &&
     salesManagerId === actor.id

@@ -22,6 +22,7 @@ import { docsPendingWhere } from '../batches/docs-pending';
 import { warehouseFlowCounts, type WarehouseFlowCounts } from './flow';
 import { unplacedCostTotals } from '../costing/service';
 import { recurringDueCount } from '../accounting/recurring';
+import { uncollectedCount, waitThresholds } from '../issue/waiting';
 
 /**
  * The other three workflow homes (owner: "har bir hodim qiladigan ishiga
@@ -50,6 +51,11 @@ export interface SalesFlowCounts {
   /** Own clients currently owing money. */
   debtors: number;
   openDeals: number;
+  /**
+   * Own clients whose cargo has waited past the warn line in an issuing
+   * warehouse (0116) — the «Olib ketilmagan yuk» list's own count.
+   */
+  uncollected: number;
 }
 
 export async function salesFlowCounts(
@@ -65,7 +71,9 @@ export async function salesFlowCounts(
     leadChats?: boolean;
   } = {},
 ): Promise<SalesFlowCounts> {
-  const [calls, openLeads, waiting, book, openDealRows] = await Promise.all([
+  // Settings on the pool, before anything reads (the list takes no pool of its own).
+  const { warn } = await waitThresholds();
+  const [calls, openLeads, waiting, book, openDealRows, uncollected] = await Promise.all([
     followUps(today, actorId),
     openLeadCount(actorId),
     /**
@@ -94,6 +102,9 @@ export async function salesFlowCounts(
       .from(deals)
       .innerJoin(dealStages, eq(deals.stageId, dealStages.id))
       .where(and(eq(deals.ownerId, actorId), eq(dealStages.kind, 'open'))),
+    // Own clients only — a seller's book is a handful of rows, so the plain
+    // pool is enough here; the company-wide count below is the heavy one.
+    uncollectedCount(db, { asOf: new Date(), minDays: warn, ownerId: actorId, warehouseIds: undefined }),
   ]);
   return {
     callsDue: calls.length,
@@ -107,6 +118,7 @@ export async function salesFlowCounts(
     // The same 0.009 line the my-clients screen draws.
     debtors: book.filter((client) => client.balanceUsd > 0.009).length,
     openDeals: Number(openDealRows[0]?.n ?? 0),
+    uncollected,
   };
 }
 
@@ -122,13 +134,19 @@ export interface LogistFlowCounts {
    * yozmading» — and trips with received prixods nobody has linked yet.
    */
   pickups: { noCost: number; unlinked: number };
+  /**
+   * Clients whose cargo has waited past the warn line, company-wide (0116).
+   * Null when the read missed its budget — the row is then a plain link.
+   */
+  uncollected: number | null;
 }
 
 export async function logistFlowCounts(
   actor: ScopedActor,
   today: string,
 ): Promise<LogistFlowCounts> {
-  const [plans, warehouse, costMissing, pickups] = await Promise.all([
+  const { warn } = await waitThresholds();
+  const [plans, warehouse, costMissing, pickups, uncollected] = await Promise.all([
     db
       .select({ n: sql<number>`count(*)` })
       .from(loadPlans)
@@ -141,12 +159,23 @@ export async function logistFlowCounts(
     import('../pickups/service')
       .then((m) => m.pickupAttentionCounts())
       .catch(() => ({ noCost: 0, unlinked: 0 })),
+    // Every client in the company, so JIT off and the accountant row's BUDGET
+    // (design §5.1): measured 155-190 ms warm on the 18k-carton shaped copy,
+    // and a cold cache can miss it — the row then carries no number.
+    withoutJit(
+      (exec) => uncollectedCount(exec, { asOf: new Date(), minDays: warn, ownerId: undefined, warehouseIds: undefined }),
+      { timeoutMs: UNBILLED_BUDGET_MS },
+    ).catch((err) => {
+      console.warn('[home] uncollected count missed its budget', err instanceof Error ? err.message : err);
+      return null;
+    }),
   ]);
   return {
     plansPending: Number(plans[0]?.n ?? 0),
     warehouse,
     costMissing,
     pickups,
+    uncollected,
   };
 }
 

@@ -64,6 +64,54 @@ export function landedHereSql(warehouseIdCol: SQL | SQLWrapper): SQL {
     AND ${boxMovements.cause} <> 'found_at_origin'`;
 }
 
+/**
+ * WHEN a landing movement put the box here — the clock of «how long has it
+ * been standing here», stated once for every reader.
+ *
+ * A walk-in (`cause = 'receipt'`) is dated by the day the goods came in, not
+ * the minute the office typed them: an office prixod may be entered up to a
+ * week late (0112, Q9b — review cargo-7), and its movement carries the typing
+ * minute while `receipts.received_at` carries the day. Every other landing is
+ * its own movement's clock. Reads the `box_movements` row in scope (qualified
+ * or not, #128) and the box's lot through `lotIdCol`.
+ *
+ * `warehouseFill`'s two inline copies of the landing rule never learned the
+ * walk-in half, so an office prixod at Tashkent typed six days late read
+ * «0 kun» on the dashboard while the agent sheet dated it right (#513).
+ */
+export function landingInstantSql(lotIdCol: SQL | SQLWrapper): SQL {
+  return sql`CASE WHEN ${boxMovements.cause} = 'receipt'
+    THEN coalesce((
+      SELECT ar.received_at FROM receipt_lots arl JOIN receipts ar ON ar.id = arl.receipt_id
+       WHERE arl.id = ${lotIdCol}
+    ), ${boxMovements.createdAt})
+    ELSE ${boxMovements.createdAt} END`;
+}
+
+/**
+ * When the box standing in its warehouse landed THERE: the newest movement
+ * that passes `landedHereSql` for the box's own `current_warehouse_id`, dated
+ * by `landingInstantSql`. A scalar subquery over the outer boxes row `box`
+ * (an alias — `b`, or `"boxes"` in a builder query).
+ *
+ * `box_movements` is deliberately left UNALIASED inside: drizzle renders the
+ * helpers' columns unqualified in a single-table select (#128), and an
+ * unqualified name binds to the innermost FROM — which is this one, and not
+ * the outer query's table. No fallback for a box with no landing at all: the
+ * receipt writes a movement from a NULL warehouse, so there is always one
+ * (#845); a box with none reads NULL and is dated by nobody rather than by its
+ * China receipt.
+ */
+export function landedHereAtSql(box: string): SQL {
+  const b = sql.raw(box);
+  return sql`(SELECT ${landingInstantSql(sql`${b}.lot_id`)}
+      FROM ${boxMovements}
+     WHERE ${boxMovements.boxId} = ${b}.id
+       AND ${landedHereSql(sql`${b}.current_warehouse_id`)}
+     ORDER BY ${boxMovements.createdAt} DESC, ${boxMovements.id} DESC
+     LIMIT 1)`;
+}
+
 /** One (lot, truck) pair: how many boxes it brought and when the first landed. */
 export interface ArrivalRow {
   lotId: string;
@@ -306,15 +354,8 @@ export async function arrivalRowsForLots(
           refType: boxMovements.refType,
           refId: boxMovements.refId,
           // A walk-in is dated by the day the goods came in, not the minute
-          // the office typed them (0112, Q9b: an office prixod may be entered
-          // up to a week late — review cargo-7). Every other landing is its
-          // own movement's clock.
-          createdAt: sql<Date>`CASE WHEN ${boxMovements.cause} = 'receipt'
-            THEN coalesce((
-              SELECT ar.received_at FROM receipt_lots arl JOIN receipts ar ON ar.id = arl.receipt_id
-               WHERE arl.id = ${boxes.lotId}
-            ), ${boxMovements.createdAt})
-            ELSE ${boxMovements.createdAt} END`.as('landed_at'),
+          // the office typed them — the clock's one home (`landingInstantSql`).
+          createdAt: sql<Date>`${landingInstantSql(boxes.lotId)}`.as('landed_at'),
         })
         .from(boxMovements)
         .innerJoin(boxes, eq(boxes.id, boxMovements.boxId))

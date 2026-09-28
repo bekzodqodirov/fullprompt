@@ -3489,3 +3489,30 @@ export const pickupLines = pgTable(
     ),
   ],
 );
+
+/**
+ * «Olib ketilmagan yuk» — which waiting episodes the morning sweep has already
+ * announced (0116, the owner's 3a). One row per (client, warehouse, LEVEL) —
+ * level 1 the warn threshold, 2 the alarm — never per day count, so moving a
+ * threshold does not re-announce everybody. Re-won by the UPSERT when the
+ * waiting set's clock (`clock_from`) moved past the last announcement
+ * (`issue/waiting-alerts.ts`). Nothing prunes it: deleting a row re-arms it.
+ */
+export const cargoWaitAlerts = pgTable(
+  'cargo_wait_alerts',
+  {
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => clients.id, { onDelete: 'cascade' }),
+    warehouseId: uuid('warehouse_id')
+      .notNull()
+      .references(() => warehouses.id),
+    level: integer('level').notNull(),
+    clockFrom: timestamp('clock_from', { withTimezone: true }).notNull(),
+    sentAt: timestamp('sent_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.clientId, t.warehouseId, t.level] }),
+    check('cargo_wait_alerts_level_check', sql`${t.level} IN (1, 2)`),
+  ],
+);

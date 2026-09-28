@@ -1106,6 +1106,15 @@ export async function paymentsRegister(
 }
 
 /**
+ * The debt the handover gate blocks on: the balance less what a live deferral
+ * excuses, to the cent. One home, because the counter and the waiting list's
+ * «qarz» tag must say the same thing about the same client.
+ */
+export function blockingDebtUsd(balanceUsd: number, deferredUsd: number): number {
+  return Math.round((balanceUsd - deferredUsd) * 100) / 100;
+}
+
+/**
  * Balance and live-deferral totals for MANY clients, in one query each.
  *
  * The per-client pair above is right for a counter where one customer is

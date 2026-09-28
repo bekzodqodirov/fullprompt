@@ -14,7 +14,12 @@ export const MUTE_GROUPS = {
   // messages behind one checkbox. It is also the one CRM message that
   // arrives every single working day, so it is the one somebody will want to
   // turn off on its own.
-  calls: ['CrmFollowUps'],
+  // «Olib ketilmagan yuk» (0116) rides with it: the seller's morning «ring
+  // these clients», about cargo instead of leads — not in `digest`, where a
+  // seller who ticked «Kunlik svodka» to stop the monthly dormant list would
+  // silently lose the feature's only message. A newcomer, so not a founder:
+  // an old «calls» tick mutes it too.
+  calls: ['CrmFollowUps', 'CargoWaiting'],
   // The advert lead (0113, the owner's 5a): the push a seller gets the moment
   // a lead is theirs, and the owner's «15 minutes and nobody has called».
   // A group of its OWN, not `calls`: whoever muted the morning call list holds

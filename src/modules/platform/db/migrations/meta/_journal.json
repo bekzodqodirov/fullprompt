@@ -813,6 +813,13 @@
       "when": 1785190000094,
       "tag": "0115_system_watch",
       "breakpoints": true
+    },
+    {
+      "idx": 116,
+      "version": "7",
+      "when": 1785190000095,
+      "tag": "0116_cargo_wait_alerts",
+      "breakpoints": true
     }
   ]
 }

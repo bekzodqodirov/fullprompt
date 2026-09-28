@@ -65,7 +65,7 @@ async function ensureListening(): Promise<PgBoss> {
 export const WORKER_REGISTRATIONS: [string, (boss: PgBoss) => Promise<void>][] = [
   ['thumbnails', async (b) => (await import('./thumbnails')).registerThumbnailWorker(b)],
   ['notifications', async (b) => (await import('./notifications')).registerNotificationWorkers(b)],
-  ['digest', async (b) => (await import('./digest')).registerDigestWorker(b)],
+  ['digest', async (b) => (await import('../../wms/reports/daily-digest')).registerDigestWorker(b)],
   ['cost-recompute', async (b) => (await import('./cost-recompute')).registerCostRecomputeWorker(b)],
   ['backup', async (b) => (await import('./backup')).registerBackupWorker(b)],
   ['object-backup', async (b) => (await import('./object-backup')).registerObjectBackupWorker(b)],

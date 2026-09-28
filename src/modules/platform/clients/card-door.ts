@@ -37,6 +37,21 @@ export function mayOpenMyClients(actor: Grants): boolean {
 }
 
 /**
+ * Does this person read the WHOLE client book, or only the clients they
+ * manage? The book's administrator and whoever works every seller's leads —
+ * the funnel's own «Hammasi» grant — see everybody; a seller sees the clients
+ * whose `sales_manager_id` is theirs.
+ *
+ * One home for a sentence three places wrote by hand (/my-clients, the bot's
+ * phone rule, the waiting-cargo list), so the list a seller is shown and the
+ * phone numbers they may read on it cannot drift apart. Deliberately not a
+ * MONEY answer: whose money a person reads is `finance/scope.ts`'s.
+ */
+export function seesAllClients(actor: Grants): boolean {
+  return actor.permissions.has('clients.manage') || actor.permissions.has('crm.leads.view_all');
+}
+
+/**
  * Where «←» on the card goes: the client book for whoever administers it,
  * a seller's own book for a seller, and nowhere for anybody else — a person
  * whose only grant is `clients.view_own` has no list page to go back to, and

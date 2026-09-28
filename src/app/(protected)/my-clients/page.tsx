@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { mayOpenMyClients } from '@/modules/platform/clients/card-door';
+import { mayOpenMyClients, seesAllClients } from '@/modules/platform/clients/card-door';
 import { managedClients } from '@/modules/wms/finance/client-cargo';
 import { EmptyState, PageHeader, Stat } from '@/components/ui/page';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
@@ -29,7 +29,7 @@ export default async function MyClientsPage({
   const tf = await getTranslations('finance');
   const params = await searchParams;
 
-  const seesAll = actor.permissions.has('crm.leads.view_all') || actor.permissions.has('clients.manage');
+  const seesAll = seesAllClients(actor);
   const all = seesAll && params.scope === 'all';
   const rows = await managedClients(all ? undefined : actor.id);
   const today = tashkentDay();

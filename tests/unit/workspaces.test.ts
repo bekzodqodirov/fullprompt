@@ -28,6 +28,7 @@ import { canWriteDeal } from '@/modules/wms/deals/service';
 import { sellerReportScopeFor } from '@/modules/wms/crm/seller-report-scope';
 import { mayBroadcast } from '@/modules/platform/broadcast/service';
 import { isAnalyst } from '@/modules/platform/ai/tools';
+import { mayOpenMyClients } from '@/modules/platform/clients/card-door';
 
 /**
  * The menu by job (2026-09-26, docs/NAV-WORKSPACES.md).
@@ -118,6 +119,7 @@ const GATES: Record<string, (a: Actor) => boolean> = {
   '/admin/clients': (a) => adminLayout(a) && has(a, 'clients.manage'),
   '/suhbatlar': (a) => canReadTg(a),
   '/my-clients': (a) => has(a, 'crm.leads', 'clients.manage'),
+  '/my-clients/olib-ketilmagan': (a) => mayOpenMyClients(a),
   '/crm/dormant': crm,
   '/crm/kelganlar': (a) => crm(a) && has(a, 'crm.manage'),
   '/crm/people': (a) => crm(a) && has(a, 'crm.manage'),

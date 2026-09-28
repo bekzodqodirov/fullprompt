@@ -18,6 +18,15 @@ export const SETTING_DEFAULTS = {
   density_thresholds: { light: 150, medium: 250, heavy: 450 },
   unclaimed_aging_days: 7,
   stale_stock_days: 30,
+  /**
+   * «Olib ketilmagan yuk» (0116, the owner's 3a): after this many Tashkent
+   * days in an issuing warehouse a client's cargo is announced to their
+   * seller and on the office's svodka (level 1), and again at the alarm
+   * (level 2). The claim is keyed on the LEVEL, never the number, so moving
+   * either does not re-announce everybody.
+   */
+  uncollected_warn_days: 5,
+  uncollected_alarm_days: 10,
   /** Days of silence before a client counts as gone quiet (owner: 60). */
   crm_dormant_days: 60,
   /**

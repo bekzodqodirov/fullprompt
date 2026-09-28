@@ -257,6 +257,7 @@ async function LogistFlow({ flow }: { flow: LogistFlowCounts }) {
   const tb = await getTranslations('batches');
   const td = await getTranslations('dashboard');
   const tz = await getTranslations('pickups');
+  const tu = await getTranslations('uncollected');
 
   const wh = flow.warehouse;
   const incoming = wh.trucksIncoming + wh.expectedWaiting;
@@ -341,6 +342,17 @@ async function LogistFlow({ flow }: { flow: LogistFlowCounts }) {
           warn={flow.costMissing > 0}
           sub={null}
         />
+        {/* 0116: every client's cargo waiting past the warn line in Tashkent
+            and Andijan. A missed budget (null) leaves a plain link. */}
+        <FlowRow
+          href="/my-clients/olib-ketilmagan"
+          icon="clock"
+          testid="logist-flow-uncollected"
+          label={tu('homeRow')}
+          count={flow.uncollected ?? 0}
+          warn={(flow.uncollected ?? 0) > 0}
+          sub={flow.uncollected ? tu('homeSub', { n: flow.uncollected }) : null}
+        />
       </div>
     </Section>
   );
@@ -356,6 +368,7 @@ async function SalesFlow({ flow }: { flow: SalesFlowCounts }) {
   const tg = await getTranslations('cargo');
   const tdl = await getTranslations('deals');
   const tt = await getTranslations('tasks');
+  const tu = await getTranslations('uncollected');
 
   return (
     <Section title={t('flowTitle')}>
@@ -405,6 +418,17 @@ async function SalesFlow({ flow }: { flow: SalesFlowCounts }) {
           label={tg('withDebt')}
           count={flow.debtors}
           sub={null}
+        />
+        {/* 0116: my clients' cargo waiting past the warn line — the same
+            count the list opens on. */}
+        <FlowRow
+          href="/my-clients/olib-ketilmagan"
+          icon="clock"
+          testid="sales-flow-uncollected"
+          label={tu('homeRow')}
+          count={flow.uncollected}
+          warn={flow.uncollected > 0}
+          sub={flow.uncollected > 0 ? tu('homeSub', { n: flow.uncollected }) : null}
         />
       </div>
     </Section>
