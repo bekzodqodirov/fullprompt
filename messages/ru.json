@@ -547,6 +547,43 @@
     "overview": "Общее",
     "money": "Деньги"
   },
+  "yuklar": {
+    "tab": "Грузы",
+    "sections": {
+      "china": "В Китае",
+      "transit": "Транзит",
+      "uz": "В Узбекистане",
+      "ready": "Готово к выдаче"
+    },
+    "now": "Сейчас",
+    "empty": "Сейчас у клиента нет груза ни на складе, ни в пути.",
+    "siblings": "Другие коды на этом телефоне:",
+    "daysHere": "{n, plural, =0 {сегодня} one {# день} few {# дня} many {# дней} other {# дня}}",
+    "arrivedOn": "пришёл:",
+    "status": {
+      "in_stock": "на складе",
+      "planned": "в плане",
+      "loading": "грузится",
+      "in_transit": "в пути",
+      "ready_for_pickup": "готово"
+    },
+    "receipt": "Приход",
+    "marking": "Маркировка",
+    "unknownTruck": "машина неизвестна",
+    "missing": "Пропало в пути",
+    "showAll": "Показать все",
+    "history": "Выдано",
+    "historyDays": "{days, plural, one {# день} few {# дня} many {# дней} other {# дня}}",
+    "historyYear": "1 год",
+    "historyCapped": "показаны последние {n}",
+    "historyEmpty": "За этот период ничего не выдано.",
+    "receiver": "Получил",
+    "issuedBy": "Выдал",
+    "act": "Акт",
+    "departed": "отпр.",
+    "arrived": "приб.",
+    "openTab": "Подробнее"
+  },
   "clients": {
     "title": "Клиенты",
     "new": "Новый клиент",

@@ -129,14 +129,31 @@ function enrichedRow(
  * its gate: fed an unloaded truck, `truckRow` would call it overdue.
  */
 export const truckOnRoadRow = cache(async function truckOnRoadRow(batchId: string): Promise<TruckRow | null> {
+  return (await trucksOnRoadRows([batchId])).get(batchId) ?? null;
+});
+
+/**
+ * Several trucks' rows at once, each assembled as `truckOnRoadRow` assembles
+ * one — for a surface that names many lorries (the client card's «Yuklar»
+ * tab: every truck a client's cargo is riding). Three statements for any
+ * number of trucks, never three per truck (#432). A truck not on the road or
+ * at its gate is simply absent, for the reason `truckOnRoadRow` states.
+ */
+export async function trucksOnRoadRows(batchIds: string[]): Promise<Map<string, TruckRow>> {
+  const out = new Map<string, TruckRow>();
+  const ids = [...new Set(batchIds)];
+  if (ids.length === 0) return out;
   const now = new Date();
   const today = tashkentDay(now);
-  const [input] = await inTransitBatches(undefined, { batchIds: [batchId] });
-  if (!input) return null;
-  const row = truckRow(input, now, today);
+  const inputs = await inTransitBatches(undefined, { batchIds: ids });
+  if (inputs.length === 0) return out;
+  const rows = inputs.map((input) => ({ input, row: truckRow(input, now, today) }));
   const [positions, awaiting] = await Promise.all([
-    latestPositions([batchId]),
-    awaitingUnloadCounts(row.status === 'arrived' ? [batchId] : []),
+    latestPositions(rows.map((r) => r.input.id)),
+    awaitingUnloadCounts(rows.filter((r) => r.row.status === 'arrived').map((r) => r.input.id)),
   ]);
-  return enrichedRow(input, row, positions, awaiting, now, today);
-});
+  for (const { input, row } of rows) {
+    out.set(input.id, enrichedRow(input, row, positions, awaiting, now, today));
+  }
+  return out;
+}

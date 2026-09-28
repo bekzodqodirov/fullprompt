@@ -66,6 +66,32 @@ export interface StageBatch {
   customsCleared: boolean;
 }
 
+/**
+ * A truck row's columns → the `StageBatch` this file asks about.
+ *
+ * The mapping was written inline four times (the cabinet's `trucksFor`, the
+ * dashboard's `truckRow`, the arrival summary, and the client card's «Yuklar»
+ * tab would have been the fifth). It is a small mapping, but its two
+ * judgements — the pin is the jsonb's `key`, and «cleared» is «somebody
+ * stamped a date» — are exactly the kind that drift when restated.
+ */
+export function stageBatchOf(row: {
+  originCountry: string | null;
+  destCountry: string | null;
+  status: string;
+  trackingCheckpoint: unknown;
+  customsClearedAt: Date | string | null;
+}): StageBatch {
+  const cp = row.trackingCheckpoint as { key?: unknown } | null;
+  return {
+    originCountry: row.originCountry,
+    destCountry: row.destCountry,
+    status: row.status,
+    checkpointKey: typeof cp?.key === 'string' ? cp.key : null,
+    customsCleared: row.customsClearedAt !== null,
+  };
+}
+
 const LOADING = new Set(['planned', 'loading']);
 
 /** The rungs a TRUCK can stand on — the in-transit part of the ladder. */

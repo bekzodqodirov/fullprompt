@@ -547,6 +547,43 @@
     "overview": "Overview",
     "money": "Money"
   },
+  "yuklar": {
+    "tab": "Cargo",
+    "sections": {
+      "china": "In China",
+      "transit": "In transit",
+      "uz": "In Uzbekistan",
+      "ready": "Ready for pickup"
+    },
+    "now": "Now",
+    "empty": "This client has no cargo in a warehouse or on the road right now.",
+    "siblings": "Other codes on this phone:",
+    "daysHere": "{n, plural, =0 {today} one {# day} other {# days}}",
+    "arrivedOn": "came on:",
+    "status": {
+      "in_stock": "in stock",
+      "planned": "planned",
+      "loading": "loading",
+      "in_transit": "on the road",
+      "ready_for_pickup": "ready"
+    },
+    "receipt": "Receipt",
+    "marking": "Marking",
+    "unknownTruck": "truck unknown",
+    "missing": "Lost on the road",
+    "showAll": "Show all",
+    "history": "Handed over",
+    "historyDays": "{days, plural, one {# day} other {# days}}",
+    "historyYear": "1 year",
+    "historyCapped": "showing the latest {n}",
+    "historyEmpty": "Nothing was handed over in this period.",
+    "receiver": "Receiver",
+    "issuedBy": "Issued by",
+    "act": "Act",
+    "departed": "left",
+    "arrived": "arrived",
+    "openTab": "Details"
+  },
   "clients": {
     "title": "Clients",
     "new": "New client",

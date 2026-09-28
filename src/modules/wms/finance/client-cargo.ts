@@ -13,6 +13,7 @@ import {
   warehouses,
 } from '../../platform/db/schema';
 import { isInternalLeg } from '../batches/internal';
+import { CLIENT_ACTIVE_STATUSES } from '../boxes/active';
 import { settlesUsd } from './ledger-kinds';
 import { ledgerAlias, signedUsdSql } from './ledger-sql';
 import { rideMovementSql } from '../batches/riders';
@@ -27,17 +28,6 @@ import { uncoveredTripsOn } from './unpriced';
  * yukdan kelgan" in finance, "mening mijozlarim" for a sales manager — so it
  * is answered once here and rendered three ways.
  */
-
-/** Cargo still ours: on a shelf, on a truck, or waiting to be handed over. */
-export interface CargoLocation {
-  warehouseId: string | null;
-  warehouseCode: string | null;
-  /** stock = on the shelf here, transit = on a truck, ready = waiting for pickup. */
-  state: 'stock' | 'transit' | 'ready';
-  boxCount: number;
-  kg: number;
-  m3: number;
-}
 
 /** One trip this client's cargo travelled on, with its money. */
 export interface CargoTrip {
@@ -99,11 +89,17 @@ export interface CargoOffTrip {
   crossesBorder: boolean;
 }
 
+/**
+ * «Where is it now» is not here any more: it was a second read of the same
+ * cartons (`locations`/`totals`, one row per warehouse and state) beside the
+ * client card's «Yuklar» tab, and its three states disagreed with the
+ * customer's five steps about a truck at customs. The tab's own read
+ * (`inventory/client-cargo-now.ts`) answers it on every surface now, the
+ * summary line above this block included.
+ */
 export interface ClientCargo {
-  locations: CargoLocation[];
   trips: CargoTrip[];
   offTrip: CargoOffTrip[];
-  totals: { boxCount: number; kg: number; m3: number };
   chargedUsd: number;
   paidUsd: number;
   /** Taken off for lost cargo (0105) — its own line, never «To‘langan». */
@@ -114,6 +110,12 @@ export interface ClientCargo {
 }
 
 const round1 = (value: number) => Math.round(value * 10) / 10;
+
+/** The one «still ours» list (`boxes/active.ts`), bound as parameters into the raw subqueries. */
+const ACTIVE_SQL = sql.join(
+  CLIENT_ACTIVE_STATUSES.map((s) => sql`${s}`),
+  sql`, `,
+);
 
 /** `sameCountryLegSql`'s rule for two countries in hand: an empty one is a crossing. */
 const crosses = (origin: string | null | undefined, dest: string | null | undefined) => {
@@ -132,44 +134,10 @@ const cents = (value: number) => Math.round(value * 100) / 100;
 const boxKg = sql<string>`coalesce(sum(${receiptLots.totalWeightKg} / ${receiptLots.boxCount}), 0)`;
 const boxM3 = sql<string>`coalesce(sum(${receiptLots.totalVolumeM3} / ${receiptLots.boxCount}), 0)`;
 
-/** Which state bucket a box status belongs to, or null if it is no longer ours. */
-const STATE_SQL = sql<'stock' | 'transit' | 'ready'>`CASE
-  WHEN ${boxes.status} = 'in_transit' THEN 'transit'
-  WHEN ${boxes.status} = 'ready_for_pickup' THEN 'ready'
-  ELSE 'stock' END`;
-
 export async function clientCargo(clientId: string): Promise<ClientCargo> {
   const dest = aliasedTable(warehouses, 'dest');
 
-  const [locationRows, tripRows, ledger] = await Promise.all([
-    // Still ours: everything that has not been issued, lost or voided.
-    db
-      .select({
-        warehouseId: boxes.currentWarehouseId,
-        warehouseCode: warehouses.code,
-        state: STATE_SQL,
-        boxCount: sql<number>`count(*)`,
-        kg: boxKg,
-        m3: boxM3,
-      })
-      .from(boxes)
-      .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
-      .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
-      .leftJoin(warehouses, eq(boxes.currentWarehouseId, warehouses.id))
-      .where(
-        and(
-          eq(receipts.clientId, clientId),
-          inArray(boxes.status, [
-            'in_stock',
-            'planned',
-            'loading',
-            'in_transit',
-            'ready_for_pickup',
-          ]),
-        ),
-      )
-      .groupBy(boxes.currentWarehouseId, warehouses.code, STATE_SQL),
-
+  const [tripRows, ledger] = await Promise.all([
     // Trips: what RODE is the ground truth (DECISIONS #121) — accepting a
     // box clears its batch pointer, so a live-pointer query would lose the
     // client's whole history the moment the cargo arrived. The money rule
@@ -283,17 +251,6 @@ export async function clientCargo(clientId: string): Promise<ClientCargo> {
     chargedByBatch.set(row.batchId, (chargedByBatch.get(row.batchId) ?? 0) + Number(row.amountUsd));
   }
 
-  const locations = locationRows
-    .map((row) => ({
-      warehouseId: row.warehouseId,
-      warehouseCode: row.warehouseCode,
-      state: row.state,
-      boxCount: Number(row.boxCount),
-      kg: round1(Number(row.kg)),
-      m3: round3(Number(row.m3)),
-    }))
-    .sort((a, b) => (a.warehouseCode ?? '').localeCompare(b.warehouseCode ?? ''));
-
   // Which internal trips carry no cost at all — ONE grouped read over the
   // client's trips, never a query per trip (#432).
   const internalIds = tripRows
@@ -384,14 +341,8 @@ export async function clientCargo(clientId: string): Promise<ClientCargo> {
   }));
 
   return {
-    locations,
     trips,
     offTrip,
-    totals: {
-      boxCount: locations.reduce((a, r) => a + r.boxCount, 0),
-      kg: round1(locations.reduce((a, r) => a + r.kg, 0)),
-      m3: round3(locations.reduce((a, r) => a + r.m3, 0)),
-    },
     chargedUsd: cents(chargedUsd),
     paidUsd: cents(paidUsd),
     compensatedUsd: cents(compensatedUsd),
@@ -430,21 +381,21 @@ export async function managedClients(managerId?: string): Promise<ManagedClient[
         JOIN receipt_lots rl ON rl.id = b.lot_id
         JOIN receipts r ON r.id = rl.receipt_id
         WHERE r.client_id = ${clients}.id
-          AND b.status IN ('in_stock','planned','loading','in_transit','ready_for_pickup')
+          AND b.status IN (${ACTIVE_SQL})
       )`,
       kg: sql<string>`coalesce((
         SELECT sum(rl.total_weight_kg / rl.box_count) FROM boxes b
         JOIN receipt_lots rl ON rl.id = b.lot_id
         JOIN receipts r ON r.id = rl.receipt_id
         WHERE r.client_id = ${clients}.id
-          AND b.status IN ('in_stock','planned','loading','in_transit','ready_for_pickup')
+          AND b.status IN (${ACTIVE_SQL})
       ), 0)`,
       m3: sql<string>`coalesce((
         SELECT sum(rl.total_volume_m3 / rl.box_count) FROM boxes b
         JOIN receipt_lots rl ON rl.id = b.lot_id
         JOIN receipts r ON r.id = rl.receipt_id
         WHERE r.client_id = ${clients}.id
-          AND b.status IN ('in_stock','planned','loading','in_transit','ready_for_pickup')
+          AND b.status IN (${ACTIVE_SQL})
       ), 0)`,
       balanceUsd: sql<string>`coalesce((
         SELECT sum(${signedUsdSql(ledgerAlias('ct'))})

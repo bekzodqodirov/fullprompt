@@ -2,7 +2,7 @@ import { and, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { chatNeedsAnswer, chatState, leadChatState, type ChatState } from './waiting';
 import { attachments, clients, tgMessages, users } from '../../platform/db/schema';
-import { activeClientsByPhone } from '../client-cabinet/service';
+import { activeClientsByPhone, phoneSiblingClients } from '../client-cabinet/service';
 import { conversationHref, type ConversationKind } from './conversation-row';
 import { mayOpenLeadSql, type LeadReader } from './lead-door';
 import { leadTextWhere } from './service';
@@ -990,20 +990,8 @@ export async function chatBadges(
  * code comes first, the rest alphabetically.
  */
 export async function codesSharingPhones(clientId: string): Promise<string[]> {
-  const client = await conversationClient(clientId);
-  if (!client) return [];
-  const phones = Array.isArray(client.phones) ? (client.phones as string[]) : [];
-  const seen = new Map<string, string>([[client.id, client.clientCode]]);
-  for (const phone of phones) {
-    for (const match of await activeClientsByPhone(phone)) {
-      seen.set(match.id, match.clientCode);
-    }
-  }
-  const others = [...seen.entries()]
-    .filter(([id]) => id !== client.id)
-    .map(([, code]) => code)
-    .sort();
-  return [client.clientCode, ...others];
+  // The one sibling list (the client card's «Yuklar» tab counts the same codes).
+  return (await phoneSiblingClients(clientId)).map((c) => c.clientCode);
 }
 
 /** How many clients THE VIEWER holds a conversation with — the menu badge. */

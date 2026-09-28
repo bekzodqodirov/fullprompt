@@ -547,6 +547,43 @@
     "overview": "概览",
     "money": "资金"
   },
+  "yuklar": {
+    "tab": "货物",
+    "sections": {
+      "china": "在中国",
+      "transit": "运输中",
+      "uz": "在乌兹别克斯坦",
+      "ready": "可提货"
+    },
+    "now": "当前",
+    "empty": "该客户目前在仓库和途中都没有货物。",
+    "siblings": "同一电话的其他代码：",
+    "daysHere": "{n, plural, =0 {今天到达} other {#天}}",
+    "arrivedOn": "到达车次：",
+    "status": {
+      "in_stock": "在库",
+      "planned": "已计划",
+      "loading": "装车中",
+      "in_transit": "在途",
+      "ready_for_pickup": "可提货"
+    },
+    "receipt": "入库单",
+    "marking": "唛头",
+    "unknownTruck": "车辆未知",
+    "missing": "途中丢失",
+    "showAll": "显示全部",
+    "history": "已提货",
+    "historyDays": "{days, plural, other {#天}}",
+    "historyYear": "1年",
+    "historyCapped": "仅显示最近{n}条",
+    "historyEmpty": "此期间没有提货。",
+    "receiver": "收货人",
+    "issuedBy": "经手人",
+    "act": "交接单",
+    "departed": "发车",
+    "arrived": "到达",
+    "openTab": "详情"
+  },
   "clients": {
     "title": "客户",
     "new": "新建客户",

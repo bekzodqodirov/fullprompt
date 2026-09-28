@@ -18,8 +18,15 @@ const etaDay = (iso: string) => formatEtaRange(iso, iso);
  * window, «overdue», or «no modelled road» — never an invented date (judge
  * O14) — then the logist's latest pin as a DATED fact («belgi 2 kun oldin»,
  * never «still there»), then what departed on it.
+ *
+ * `counts: false` leaves out the two parts that count the WHOLE truck — what
+ * departed on it and what still waits at its gate. The client card's «Yuklar»
+ * tab prints this sentence under ONE client's row, whose own «5 📦» sits on
+ * the same line; «… · 180 karobka jo'nadi» beside it reads as that client's
+ * number (the tab's judge, finding 3). Everything else is the lorry's and
+ * stays.
  */
-export async function truckRoadWords() {
+export async function truckRoadWords({ counts = true }: { counts?: boolean } = {}) {
   const t = await getTranslations('dashboard');
   const tb = await getTranslations('batches');
   const tm = await getTranslations('map');
@@ -44,7 +51,7 @@ export async function truckRoadWords() {
     const parts: ReactNode[] = [];
     if (row.status === 'arrived') {
       parts.push(t('arrivedDays', { n: row.days }));
-      if ((row.awaitingUnload ?? 0) > 0) parts.push(t('truckGate', { n: num(row.awaitingUnload ?? 0) }));
+      if (counts && (row.awaitingUnload ?? 0) > 0) parts.push(t('truckGate', { n: num(row.awaitingUnload ?? 0) }));
     } else {
       parts.push(t('roadDays', { n: row.days }));
       if (row.kind === 'overdue') {
@@ -61,7 +68,7 @@ export async function truckRoadWords() {
       if (row.checkpoint && PIN[row.checkpoint.key]) {
         parts.push(`${PIN[row.checkpoint.key]} · ${t('truckPin', { n: row.pinDays ?? 0 })}`);
       }
-      parts.push(t('truckDeparted', { n: num(row.departedBoxes) }));
+      if (counts) parts.push(t('truckDeparted', { n: num(row.departedBoxes) }));
     }
     return parts.map((part, i) => (
       <span key={i}>

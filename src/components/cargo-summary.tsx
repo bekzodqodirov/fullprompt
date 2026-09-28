@@ -1,6 +1,10 @@
 import Link from 'next/link';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { clientCargo, type ClientCargo } from '@/modules/wms/finance/client-cargo';
+import { clientCargoNowOnce } from '@/modules/wms/inventory/client-cargo-now';
+import { foldCargoNow, NOW_SECTIONS, sectionCounts, type NowSection } from '@/modules/wms/inventory/client-cargo-fold';
+import { groupDigits } from '@/modules/platform/telegram/format';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { Icon } from '@/components/ui/icon';
 
 /**
@@ -12,57 +16,75 @@ import { Icon } from '@/components/ui/icon';
  *
  * `money` false hides the debt figures for a viewer without finance rights —
  * the cargo half is not a secret, the balances are.
+ *
+ * «Where is it now» is ONE line here — the customer's steps and the Σ — from
+ * the client card's «Yuklar» tab's own read and fold, so the card, the ledger
+ * and the tab print one number (#513). It used to be a per-warehouse list
+ * with three states of its own, which put a truck at customs under «в пути»
+ * while the customer's Mini App said «O'zbekistonda». `yuklarHref` links the
+ * line to the tab; the ledger passes it only when the reader may open the
+ * card (the accountant and the VED read «Pul» and not «Yuklar»).
  */
 export async function CargoSummary({
   clientId,
   money = true,
   data,
+  yuklarHref = null,
 }: {
   clientId: string;
   money?: boolean;
   /** Already read by the page (the ledger's card form lists its trucks) — not read twice. */
   data?: ClientCargo;
+  /** The «Yuklar» tab, for a reader its door admits; null draws no link. */
+  yuklarHref?: string | null;
 }) {
-  const cargo = data ?? (await clientCargo(clientId));
+  const [cargo, nowData] = await Promise.all([data ?? clientCargo(clientId), clientCargoNowOnce(clientId)]);
   const t = await getTranslations('cargo');
+  const ty = await getTranslations('yuklar');
   const format = await getFormatter();
+  const now = foldCargoNow(nowData.rows, nowData.trucks, null, tashkentDay());
+  const counts = sectionCounts(now);
+  const missing = now.missing.reduce((acc, m) => acc + m.n, 0);
+  const hasNow = now.total.boxes > 0 || missing > 0;
 
-  if (cargo.locations.length === 0 && cargo.trips.length === 0 && (!money || cargo.offTrip.length === 0)) {
+  if (!hasNow && cargo.trips.length === 0 && (!money || cargo.offTrip.length === 0)) {
     return <p className="text-sm text-ink-500">{t('noCargo')}</p>;
   }
 
-  const stateLabel: Record<string, string> = {
-    stock: t('stateStock'),
-    transit: t('stateTransit'),
-    ready: t('stateReady'),
-  };
-  const stateTone: Record<string, string> = {
-    stock: 'text-ink-700',
-    transit: 'text-warn',
-    ready: 'text-good',
+  // A literal map — a key built at runtime is one the i18n fence cannot see (#163).
+  const sectionLabel: Record<NowSection, string> = {
+    china: ty('sections.china'),
+    transit: ty('sections.transit'),
+    uz: ty('sections.uz'),
+    ready: ty('sections.ready'),
   };
 
   return (
     <div className="space-y-3">
-      {cargo.locations.length > 0 && (
-        <div className="space-y-1">
+      {hasNow && (
+        <div className="space-y-1" data-testid="cargo-now">
           <p className="section-title">{t('whereTitle')}</p>
-          {cargo.locations.map((loc) => (
-            <div
-              key={`${loc.warehouseId}-${loc.state}`}
-              className="flex flex-wrap items-baseline gap-2 rounded-lg border border-line px-2.5 py-1.5 text-sm"
-            >
-              <span className="font-mono font-extrabold">{loc.warehouseCode ?? '—'}</span>
-              <span className={`text-xs font-semibold ${stateTone[loc.state]}`}>
-                {stateLabel[loc.state]}
+          <p className="flex flex-wrap gap-x-3 text-sm">
+            {NOW_SECTIONS.filter((s) => counts[s] > 0).map((s) => (
+              <span key={s} className="whitespace-nowrap">
+                {sectionLabel[s]} · <b className="font-mono tabular-nums">{groupDigits(counts[s])}</b>
               </span>
-              <span className="num ml-auto whitespace-nowrap">
-                {loc.boxCount} 📦 · {loc.kg} kg · {loc.m3} m³
+            ))}
+            {missing > 0 && (
+              <span className="whitespace-nowrap font-semibold text-warn">
+                ⚠ {ty('missing')} · {groupDigits(missing)}
               </span>
-            </div>
-          ))}
-          <p className="num text-right text-sm font-bold">
-            Σ {cargo.totals.boxCount} 📦 · {cargo.totals.kg} kg · {cargo.totals.m3} m³
+            )}
+          </p>
+          <p className="flex flex-wrap items-baseline gap-x-3 text-sm">
+            <b className="font-mono tabular-nums" data-testid="cargo-now-total">
+              Σ {groupDigits(now.total.boxes)} 📦 · {groupDigits(now.total.kg)} kg · {groupDigits(now.total.m3)} m³
+            </b>
+            {yuklarHref && (
+              <Link href={yuklarHref} className="text-brand-700 underline" data-testid="cargo-now-link">
+                {ty('openTab')} →
+              </Link>
+            )}
           </p>
         </div>
       )}

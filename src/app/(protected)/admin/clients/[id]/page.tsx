@@ -122,7 +122,11 @@ export default async function ClientDetailPage({
                 and what do they owe" without a trip to two other screens. */}
             <section className="card space-y-2">
               <h2 className="text-lg font-bold">📦 {tcargo('title')}</h2>
-              <CargoSummary clientId={client.id} money={canSeeMoney} />
+              <CargoSummary
+                clientId={client.id}
+                money={canSeeMoney}
+                yuklarHref={`/admin/clients/${client.id}/yuklar`}
+              />
             </section>
 
             {/* What was actually said, in the place it was actually said —

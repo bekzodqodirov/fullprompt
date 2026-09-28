@@ -5,6 +5,7 @@ import { db } from '@/modules/platform/db/client';
 import { clients, currencies, deals } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { mayGrantDebt, mayReadLedgers, ownsLedger } from '@/modules/wms/finance/scope';
+import { mayOpenClientCard } from '@/modules/platform/clients/card-door';
 import { clientLedger, clientNativeBalances } from '@/modules/wms/finance/service';
 import Link from 'next/link';
 import type { ClientKind } from '@/modules/wms/finance/ledger-kinds';
@@ -258,7 +259,14 @@ export default async function ClientLedgerPage({
           rule the receivables ageing report uses. */}
       <div className="card space-y-2">
         <h2 className="text-sm font-bold uppercase text-ink-500">📦 {tcargo('title')}</h2>
-        <CargoSummary clientId={clientId} data={cargo} />
+        {/* The «where is it now» line links to «Yuklar» only for a reader
+            that tab's door admits — the accountant and the VED read this
+            ledger and are refused the card and its cargo tab alike. */}
+        <CargoSummary
+          clientId={clientId}
+          data={cargo}
+          yuklarHref={mayOpenClientCard(actor) ? `/admin/clients/${clientId}/yuklar` : null}
+        />
       </div>
 
       <div className="card space-y-1 !p-3">

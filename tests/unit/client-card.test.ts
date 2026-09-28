@@ -1,4 +1,4 @@
-import { globSync, readFileSync } from 'node:fs';
+import { existsSync, globSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ROLE_MATRIX } from '@/modules/platform/rbac/catalog';
 import {
@@ -12,6 +12,7 @@ import {
   ownsLedger,
   seesAllMoney,
 } from '@/modules/wms/finance/scope';
+import { clientTabHref, clientTabsFor } from '@/modules/wms/client-card/tabs';
 
 /**
  * The client card and its «Pul» tab (the owner's 4a, docs/CARD-TABS.md):
@@ -50,16 +51,16 @@ type Whose = keyof typeof CLIENTS;
  * `finance.manage`/`clients.manage` and own-clients-only for a seller.
  * A role added to ROLE_MATRIX turns this red until somebody decides it.
  */
-const EXPECTED: Record<string, { card: boolean; ledger: Whose[] }> = {
-  super_admin: { card: true, ledger: ['own', 'other', 'unowned'] },
-  admin: { card: true, ledger: ['own', 'other', 'unowned'] },
-  logist: { card: true, ledger: ['own', 'other', 'unowned'] },
-  ved_manager: { card: false, ledger: ['own', 'other', 'unowned'] },
-  warehouse_manager: { card: false, ledger: [] },
-  warehouse_operator: { card: false, ledger: [] },
-  sales_manager: { card: true, ledger: ['own'] },
-  accountant: { card: false, ledger: ['own', 'other', 'unowned'] },
-  viewer: { card: false, ledger: [] },
+const EXPECTED: Record<string, { card: boolean; yuklar: boolean; ledger: Whose[] }> = {
+  super_admin: { card: true, yuklar: true, ledger: ['own', 'other', 'unowned'] },
+  admin: { card: true, yuklar: true, ledger: ['own', 'other', 'unowned'] },
+  logist: { card: true, yuklar: true, ledger: ['own', 'other', 'unowned'] },
+  ved_manager: { card: false, yuklar: false, ledger: ['own', 'other', 'unowned'] },
+  warehouse_manager: { card: false, yuklar: false, ledger: [] },
+  warehouse_operator: { card: false, yuklar: false, ledger: [] },
+  sales_manager: { card: true, yuklar: true, ledger: ['own'] },
+  accountant: { card: false, yuklar: false, ledger: ['own', 'other', 'unowned'] },
+  viewer: { card: false, yuklar: false, ledger: [] },
 };
 
 /** The combinations the owner is known to hold or could invent on /admin/roles. */
@@ -113,24 +114,52 @@ describe('the doors, over every seeded role', () => {
       expect(mayOpenClientCard(actor)).toBe(want.card);
       for (const whose of Object.keys(CLIENTS) as Whose[]) {
         expect(mayOpenClientLedger(actor, CLIENTS[whose]), whose).toBe(want.ledger.includes(whose));
+        // The strip's own answer is the table's, tab by tab.
+        const tabs = clientTabsFor(actor, CLIENTS[whose]);
+        expect(tabs.includes('umumiy'), `${whose} umumiy`).toBe(want.card);
+        expect(tabs.includes('yuklar'), `${whose} yuklar`).toBe(want.yuklar);
+        expect(tabs.includes('pul'), `${whose} pul`).toBe(want.ledger.includes(whose));
       }
     });
   }
 
-  it('the strip is drawn exactly where both tabs are: the owner, the admin, the logist, and a seller on their own client', () => {
-    const striped: string[] = [];
+  it('«Yuklar» is the card’s own door, for every seeded role and every invented one', () => {
+    // Not a copy of the door: the tab is the card's cargo block given room
+    // (the design's default for the owner's open question), so whoever may
+    // read «Umumiy» reads «Yuklar» and nobody else does.
+    for (const [name, actor] of PEOPLE) {
+      for (const whose of Object.keys(CLIENTS) as Whose[]) {
+        expect(clientTabsFor(actor, CLIENTS[whose]).includes('yuklar'), `${name}:${whose}`).toBe(
+          mayOpenClientCard(actor),
+        );
+      }
+    }
+  });
+
+  it('each tab lives at the URL its page serves — none moved', () => {
+    expect(clientTabHref('umumiy', 'c1')).toBe('/admin/clients/c1');
+    expect(clientTabHref('yuklar', 'c1')).toBe('/admin/clients/c1/yuklar');
+    expect(clientTabHref('pul', 'c1')).toBe('/finance/c1');
+  });
+
+  it('the strip is drawn where there are two tabs or more: every card reader, with «Pul» only on a ledger they own', () => {
+    const drawn: string[] = [];
     for (const role of Object.keys(MATRIX)) {
       const actor = actorWith(MATRIX[role]!);
       for (const whose of Object.keys(CLIENTS) as Whose[]) {
-        if (mayOpenClientCard(actor) && mayOpenClientLedger(actor, CLIENTS[whose])) striped.push(`${role}:${whose}`);
+        const tabs = clientTabsFor(actor, CLIENTS[whose]);
+        if (tabs.length >= 2) drawn.push(`${role}:${whose}=${tabs.join('+')}`);
       }
     }
-    expect(striped.sort()).toEqual(
+    // Written down, not derived: a seller on a colleague's client now gets
+    // «Umumiy · Yuklar» and no «Pul»; the accountant and the VED — one tab,
+    // the ledger — get no strip at all.
+    expect(drawn.sort()).toEqual(
       [
-        'super_admin:own', 'super_admin:other', 'super_admin:unowned',
-        'admin:own', 'admin:other', 'admin:unowned',
-        'logist:own', 'logist:other', 'logist:unowned',
-        'sales_manager:own',
+        'super_admin:own=umumiy+yuklar+pul', 'super_admin:other=umumiy+yuklar+pul', 'super_admin:unowned=umumiy+yuklar+pul',
+        'admin:own=umumiy+yuklar+pul', 'admin:other=umumiy+yuklar+pul', 'admin:unowned=umumiy+yuklar+pul',
+        'logist:own=umumiy+yuklar+pul', 'logist:other=umumiy+yuklar+pul', 'logist:unowned=umumiy+yuklar+pul',
+        'sales_manager:own=umumiy+yuklar+pul', 'sales_manager:other=umumiy+yuklar', 'sales_manager:unowned=umumiy+yuklar',
       ].sort(),
     );
   });
@@ -245,7 +274,13 @@ describe('the pages ask the doors, in the right order', () => {
     expect(door).toBeGreaterThan(0);
     expect(CARD.indexOf('db.query.clients.findFirst(')).toBeGreaterThan(door);
     expect(CARD).toContain('const canSeeMoney = mayOpenClientLedger(actor, client);');
-    expect(CARD).toContain('<CargoSummary clientId={client.id} money={canSeeMoney} />');
+    // The card's «where is it now» line links to its own «Yuklar» tab — the
+    // same door this page asked, so the link never bounces.
+    expect(CARD).toMatch(
+      /<CargoSummary\s+clientId=\{client\.id\}\s+money=\{canSeeMoney\}\s+yuklarHref=\{`\/admin\/clients\/\$\{client\.id\}\/yuklar`\}\s*\/>/,
+    );
+    // The ledger links it only for a reader the card's door admits.
+    expect(LEDGER).toMatch(/yuklarHref=\{mayOpenClientCard\(actor\) \? `\/admin\/clients\/\$\{clientId\}\/yuklar` : null\}/);
     expect(CARD).not.toContain('seesAllMoney');
   });
 
@@ -273,11 +308,13 @@ describe('the pages ask the doors, in the right order', () => {
     expect(SHELL.match(/<CopyChip/g)).toHaveLength(1);
   });
 
-  it('the strip is two plain links, drawn only when both doors admit, each asked of its page’s own door', () => {
-    expect(SHELL).toContain('const umumiy = mayOpenClientCard(actor);');
-    expect(SHELL).toContain('const pul = mayOpenClientLedger(actor, client);');
-    expect(SHELL).toContain('const strip = umumiy && pul;');
+  it('the strip is plain links, drawn when two doors or more admit, each asked of its page’s own door', () => {
+    expect(SHELL).toContain('const tabs = clientTabsFor(actor, client);');
+    expect(SHELL).toContain('const strip = tabs.length >= 2;');
     expect(SHELL).toMatch(/\{strip && \(\s*<nav/);
+    // A column count built at runtime is a class Tailwind never compiled.
+    expect(SHELL).toContain("const STRIP_COLS: Record<number, string> = { 2: 'grid-cols-2', 3: 'grid-cols-3' };");
+    expect(SHELL).not.toMatch(/grid-cols-\$\{/);
     expect(SHELL).toContain("aria-current={lit ? 'page' : undefined}");
     // Nothing a spec presses as «the card's first button», nothing sticky,
     // no CardCols (m9zl measures the first rail), no truck link (m9 reads the
@@ -285,8 +322,14 @@ describe('the pages ask the doors, in the right order', () => {
     expect(SHELL).not.toMatch(/<form|<button|btn-danger|btn-primary|sticky|CardCols|\/batches\//);
   });
 
-  it('the badge reads the balance the ledger reads, once per request', () => {
+  it('the badge reads the balance the ledger reads, once per request — and only when «Pul» is drawn', () => {
     expect(SHELL).toMatch(/export const clientBalanceOnce = cache\(\(clientId: string\) => clientBalanceUsd\(clientId\)\)/);
+    // A seller on a colleague's client gets a strip now («Umumiy · Yuklar»),
+    // and a loader never READS what its viewer cannot see (CARD-TABS rule 3;
+    // the tab's judge, finding 7).
+    expect(SHELL).toContain("const pul = tabs.includes('pul');");
+    expect(SHELL).toContain('const balance = strip && pul ? await clientBalanceOnce(client.id) : 0;');
+    expect(SHELL.match(/clientBalanceOnce\(/g)).toHaveLength(1);
     expect(LEDGER).toContain('clientBalanceOnce(clientId),');
     expect(LEDGER).not.toContain('clientBalanceUsd(');
   });
@@ -360,5 +403,62 @@ describe('no lenta without a money answer', () => {
     }
     expect(calls.length).toBeGreaterThan(0);
     for (const [file, call] of calls) expect(call, file).toMatch(/[{,]\s*money\s*[:,}]/);
+  });
+});
+
+describe('«Yuklar» — the card’s cargo tab (docs/CARD-TABS.md)', () => {
+  const PAGE = read('src/app/(protected)/admin/clients/[id]/yuklar/page.tsx');
+
+  it('asks the card’s own door BEFORE the lookup, and answers «not found» after it', () => {
+    const door = PAGE.indexOf("if (!mayOpenClientCard(actor)) redirect('/');");
+    const lookup = PAGE.indexOf('await clientHeadOnce(id)');
+    const missing = PAGE.indexOf('if (!client) notFound();');
+    expect(door).toBeGreaterThan(0);
+    expect(lookup).toBeGreaterThan(door);
+    expect(missing).toBeGreaterThan(lookup);
+    // After the lookup nothing may answer in a different word (CARD-TABS (R)).
+    expect(PAGE.slice(lookup)).not.toContain('redirect(');
+  });
+
+  it('renders the one shell and names itself', () => {
+    expect(PAGE).toContain('<ClientCard client={client} active="yuklar">');
+    expect(PAGE).not.toContain('<h1');
+  });
+
+  it('has no segment loading.tsx (#98)', () => {
+    expect(existsSync('src/app/(protected)/admin/clients/[id]/yuklar/page.tsx')).toBe(true);
+    expect(existsSync('src/app/(protected)/admin/clients/[id]/yuklar/loading.tsx')).toBe(false);
+  });
+
+  /**
+   * The tab carries NO money — not drawn, not read. A fence on «imports
+   * nothing from finance/» stays green with the ledger's balance rendered,
+   * because `clientBalanceOnce` is exported from the card SHELL, not from
+   * finance/ (the tab's judge, finding 6). So the fence names the money
+   * identifiers themselves, over every file the tab's body is made of.
+   */
+  it('reads no money anywhere in its body', () => {
+    const BODY = [
+      'src/app/(protected)/admin/clients/[id]/yuklar/page.tsx',
+      'src/components/client-cargo-now.tsx',
+      'src/components/client-cargo-history.tsx',
+      'src/modules/wms/inventory/client-cargo-now.ts',
+      'src/modules/wms/inventory/client-cargo-fold.ts',
+    ];
+    const MONEY = [
+      'clientBalanceOnce',
+      'clientBalanceUsd',
+      'clientCargo(',
+      'mayOpenClientLedger',
+      'clientLedger',
+      'client_transactions',
+      'clientTransactions',
+      'amountUsd',
+    ];
+    for (const file of BODY) {
+      const source = read(file);
+      for (const name of MONEY) expect(source, `${file} names ${name}`).not.toContain(name);
+      expect(source, `${file} imports from finance/`).not.toMatch(/from '[^']*\/finance\//);
+    }
   });
 });

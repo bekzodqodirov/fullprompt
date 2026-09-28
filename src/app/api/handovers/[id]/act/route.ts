@@ -2,8 +2,8 @@ import { eq } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
 import { handovers } from '@/modules/platform/db/schema';
 import { AuthError, requireActor } from '@/modules/platform/rbac/authorize';
-import { mayReadHandoverAct } from '@/modules/wms/issue/act-door';
 import { buildHandoverAct } from '@/modules/wms/documents/handover-act';
+import { mayReadHandoverAct } from '@/modules/wms/documents/handover-act-door';
 
 /**
  * Handover act PDF (optional per issue, spec 6.7).
@@ -34,6 +34,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     columns: { warehouseId: true },
   });
   if (!row) return new Response('Not found', { status: 404 });
+  // The one rule, asked by this route, the attachment gate and the client
+  // card's «Yuklar» tab alike (`documents/handover-act-door.ts`).
   if (!mayReadHandoverAct(actor, row.warehouseId)) return new Response('Forbidden', { status: 403 });
 
   const pdf = await buildHandoverAct(id);

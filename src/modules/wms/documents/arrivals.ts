@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { batches, boxes, boxMovements } from '../../platform/db/schema';
+import { CLIENT_ACTIVE_STATUSES } from '../boxes/active';
 
 /**
  * «Qaysi partiyada Qashqarga kelgan» — which truck brought this cargo to the
@@ -68,6 +69,8 @@ export interface ArrivalRow {
   lotId: string;
   /** null = received or moved here, on no truck of ours. */
   batchCode: string | null;
+  /** The same truck's id — absent where a caller only ever needed the code. */
+  batchId?: string | null;
   arrivedAt: Date;
   boxes: number;
 }
@@ -173,27 +176,78 @@ export function groupByArrival<T>(
 }
 
 /**
+ * One (lot, warehouse) pair's arrival, with what the codes alone could not
+ * carry: the trucks' ids (a link is asked of the truck card's door, which
+ * needs the truck) and `since` — the EARLIEST landing of any kind among the
+ * boxes read, i.e. how long the carton that has waited longest has waited.
+ *
+ * `since` is not `arrivedAt`. `arrivedAt` is the document's date (the earliest
+ * TRUCKED landing, so a walk-in half does not back-date a truck's block);
+ * «how many days has this stood here» is a question about every carton, and a
+ * walk-in carton that has stood here a month has waited a month.
+ */
+export interface PairArrival extends LotArrival {
+  /** The trucks that brought it, in the order of `codes`. */
+  batchIds: string[];
+  since: Date;
+}
+
+/** `foldArrivals`, plus the two facts `PairArrival` adds — pure, for the tests. */
+export function foldPairArrivals(rows: ArrivalRow[]): Map<string, PairArrival> {
+  const out = new Map<string, PairArrival>();
+  for (const [lotId, arrival] of foldArrivals(rows)) {
+    const own = rows
+      .filter((r) => r.lotId === lotId)
+      .sort((a, b) => a.arrivedAt.getTime() - b.arrivedAt.getTime());
+    out.set(lotId, {
+      ...arrival,
+      batchIds: own.filter((r) => r.batchCode).map((r) => r.batchId ?? ''),
+      since: own[0]!.arrivedAt,
+    });
+  }
+  return out;
+}
+
+/**
  * «Qaysi partiyada kelgan», for rows that span WAREHOUSES — the stock table
  * groups by (lot, warehouse) and a lot standing in two places arrived on two
- * different answers. One `arrivalsForLots` call per distinct warehouse
+ * different answers. One `arrivalRowsForLots` call per distinct warehouse
  * (bounded by the nine he has), never one per row (#432), keyed
  * `lotId|warehouseId`.
+ *
+ * `standing` reads only the cartons that are STILL here and still ours. The
+ * plain read asks about every carton of the lot that ever landed here, which
+ * is right for «which truck brought this lot» and wrong for «how long has
+ * what stands here waited»: a lot whose first half landed thirty days ago and
+ * was handed over, and whose second half landed three days ago, read «30 kun»
+ * about cartons that arrived on Tuesday (the client card «Yuklar» tab's judge,
+ * finding 2 — 21 of 3,981 standing pairs on the shaped copy, and unbounded in
+ * general).
  */
-export async function arrivalCodesForPairs(
+export async function arrivalsForPairs(
   pairs: { lotId: string; warehouseId: string }[],
-): Promise<Map<string, string[]>> {
+  opts: { standing?: boolean } = {},
+): Promise<Map<string, PairArrival>> {
   const byWh = new Map<string, Set<string>>();
   for (const { lotId, warehouseId } of pairs) {
     byWh.set(warehouseId, (byWh.get(warehouseId) ?? new Set()).add(lotId));
   }
-  const out = new Map<string, string[]>();
+  const out = new Map<string, PairArrival>();
   for (const [warehouseId, lotIds] of byWh) {
-    const arrivals = await arrivalsForLots([...lotIds], warehouseId);
+    const arrivals = foldPairArrivals(await arrivalRowsForLots([...lotIds], warehouseId, opts));
     for (const [lotId, arrival] of arrivals) {
-      out.set(`${lotId}|${warehouseId}`, arrival.codes);
+      out.set(`${lotId}|${warehouseId}`, arrival);
     }
   }
   return out;
+}
+
+/** The codes of `arrivalsForPairs` — what the stock table, its XLSX and the bot print. */
+export async function arrivalCodesForPairs(
+  pairs: { lotId: string; warehouseId: string }[],
+): Promise<Map<string, string[]>> {
+  const arrivals = await arrivalsForPairs(pairs);
+  return new Map([...arrivals].map(([key, arrival]) => [key, arrival.codes]));
 }
 
 /**
@@ -209,7 +263,19 @@ export async function arrivalsForLots(
   lotIds: string[],
   warehouseId: string,
 ): Promise<Map<string, LotArrival>> {
-  if (lotIds.length === 0) return new Map();
+  return foldArrivals(await arrivalRowsForLots(lotIds, warehouseId));
+}
+
+/**
+ * The per-truck rows `arrivalsForLots` folds — its query, exported so the pair
+ * read can fold the same rows its own way. `standing`: see `arrivalsForPairs`.
+ */
+export async function arrivalRowsForLots(
+  lotIds: string[],
+  warehouseId: string,
+  opts: { standing?: boolean } = {},
+): Promise<ArrivalRow[]> {
+  if (lotIds.length === 0) return [];
 
   // The newest into-this-warehouse movement per box. DISTINCT ON is the only
   // shape that answers "the newest one" without a correlated subquery per box
@@ -244,6 +310,15 @@ export async function arrivalsForLots(
             // The rule itself, from its one home — the comment above spells
             // out what each clause keeps out.
             landedHereSql(sql`${warehouseId}::uuid`),
+            // Only what still stands HERE and is still ours (see
+            // `arrivalsForPairs`): a carton handed over or moved on does not
+            // date the ones left behind.
+            opts.standing
+              ? and(
+                  eq(boxes.currentWarehouseId, warehouseId),
+                  inArray(boxes.status, [...CLIENT_ACTIVE_STATUSES]),
+                )
+              : undefined,
           ),
         )
         .orderBy(boxMovements.boxId, desc(boxMovements.createdAt), desc(boxMovements.id)),
@@ -256,6 +331,7 @@ export async function arrivalsForLots(
       // NULL for anything that did not ride a truck of ours — the join carries
       // the cause test, so one query answers both halves of the rule.
       batchCode: batches.code,
+      batchId: batches.id,
       arrivedAt: sql<Date>`min(${newestPerBox.createdAt})`,
       boxes: sql<number>`count(*)::int`,
     })
@@ -268,14 +344,13 @@ export async function arrivalsForLots(
         inArray(newestPerBox.cause, ARRIVED_ON_A_TRUCK),
       ),
     )
-    .groupBy(newestPerBox.lotId, batches.code);
+    .groupBy(newestPerBox.lotId, batches.code, batches.id);
 
-  return foldArrivals(
-    rows.map((r) => ({
-      lotId: r.lotId,
-      batchCode: r.batchCode,
-      arrivedAt: new Date(r.arrivedAt),
-      boxes: Number(r.boxes),
-    })),
-  );
+  return rows.map((r) => ({
+    lotId: r.lotId,
+    batchCode: r.batchCode,
+    batchId: r.batchId,
+    arrivedAt: new Date(r.arrivedAt),
+    boxes: Number(r.boxes),
+  }));
 }

@@ -24,21 +24,61 @@ import { describe, expect, it } from 'vitest';
  * helper and this file pins that they do.
  */
 
+/** Comments out, so a fence cannot match the sentence explaining it (#725). */
+const code = (path: string) =>
+  readFileSync(path, 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1');
+
 /**
- * The act route's own fence (REWRITTEN in 0114, recorded per #974): the rule
- * moved into `mayReadHandoverAct` (wms/issue/act-door.ts) so the debt
- * register can ask it before drawing an act link (the judge's #7 — a door
- * that bounces the accountant is worse than none). The route must still
- * load the row, ASK the predicate with the row's warehouse, and refuse; the
- * predicate must still name both grants and fence on the warehouse.
+ * The handover act's door has ONE home (`documents/handover-act-door.ts`) and
+ * three askers — the act route, the attachment gate's `handover` branch, and
+ * the client card's «Yuklar» tab, which draws an «Akt» link beside every
+ * handover it lists. It was two restatements with a comment each saying they
+ * must never disagree; a third copy is how the three would (the tab's judge,
+ * finding 5).
  */
-const actRoute = {
-  file: 'src/app/api/handovers/[id]/act/route.ts',
-  door: 'src/modules/wms/issue/act-door.ts',
-  // The act must ask what the handover's own ATTACHMENTS ask — one document,
-  // one rule (see access.ts's `handover` branch).
-  permissions: ['scan.issue', 'receipts.unclaimed.resolve'],
-};
+describe('the handover act asks one door, from all three places', () => {
+  it('the door names the two permissions and fences on the handover’s warehouse', () => {
+    const door = code('src/modules/wms/documents/handover-act-door.ts');
+    expect(door).toContain("'scan.issue'");
+    expect(door).toContain("'receipts.unclaimed.resolve'");
+    expect(door).toMatch(/inScope\(actor,\s*warehouseId\)/);
+  });
+
+  it('the act route looks the handover up, asks the door with ITS warehouse, and refuses', () => {
+    const route = code('src/app/api/handovers/[id]/act/route.ts');
+    expect(route, 'loads the owning row').toMatch(/db\.query\.handovers\.findFirst/);
+    expect(route).toMatch(/if \(!mayReadHandoverAct\(actor, row\.warehouseId\)\) return new Response\('Forbidden', \{ status: 403 \}\);/);
+    expect(route, 'still answers 401 unauthenticated').toContain('401');
+    // No second statement of the rule beside the call.
+    expect(route).not.toContain("'scan.issue'");
+  });
+
+  it('the attachment gate’s handover branch asks the same door', () => {
+    const access = code('src/modules/wms/attachments/access.ts');
+    const branch = access.slice(access.indexOf("case 'handover':"), access.indexOf("case 'crm_activity':"));
+    expect(branch).toMatch(/handoverActRefusal\(actor, row\.warehouseId\)/);
+    expect(branch).not.toContain("'scan.issue'");
+  });
+
+  it('the «Yuklar» tab draws «Akt» only where the door admits, asked with the handover’s warehouse', () => {
+    const page = code('src/app/(protected)/admin/clients/[id]/yuklar/page.tsx');
+    expect(page).toMatch(/mayReadHandoverAct\(actor, warehouseId\)/);
+    expect(page).not.toContain("'scan.issue'");
+  });
+
+  it('the debt register draws «Akt» only where the same door admits, asked with the release’s warehouse', () => {
+    // 0114's register links every release to its act; its reader is the
+    // accountant, who holds neither grant — a link that bounces is worse than
+    // none (the qarz judge's #7). It had grown a door of its own the same day
+    // the «Yuklar» tab grew this one; the merge kept ONE.
+    const page = code('src/app/(protected)/finance/qarzga-berilgan/page.tsx');
+    expect(page).toContain("from '@/modules/wms/documents/handover-act-door'");
+    expect(page).toMatch(/mayReadHandoverAct\(actor, row\.warehouseId\)/);
+    expect(page).not.toContain("'scan.issue'");
+  });
+});
 
 /** The four that share `guardBatchDocument`. */
 const batchDocumentRoutes = [
@@ -52,27 +92,6 @@ const batchDocumentRoutes = [
 ];
 
 describe('document routes gate on permission AND warehouse, not just a session', () => {
-  it(`${actRoute.file} checks its permissions and its scope`, () => {
-    const source = readFileSync(actRoute.file, 'utf8');
-    const door = readFileSync(actRoute.door, 'utf8');
-
-    // It must look the row up — a gate that cannot see the document's
-    // warehouse cannot fence on it.
-    expect(source, 'loads the owning row').toMatch(/db\.query\.\w+\.findFirst/);
-    // Anchored on the CALL and on the REFUSAL, never on the word: the first
-    // version of this line asserted `toContain('inScope')` and stayed green
-    // with the check stripped, because the import survived it (#166 — a red
-    // proof that will not go red is evidence about the fixture).
-    expect(source, 'asks the door with the row\'s warehouse').toMatch(
-      /if \(!mayReadHandoverAct\(actor, row\.warehouseId\)\) return new Response\('Forbidden', \{ status: 403 \}\);/,
-    );
-    expect(source, 'still answers 401 unauthenticated').toContain('401');
-    for (const permission of actRoute.permissions) {
-      expect(door, `asks ${permission}`).toContain(`'${permission}'`);
-    }
-    expect(door, 'fences on the warehouse').toMatch(/inScope\(actor,\s*warehouseId\)/);
-  });
-
   for (const route of batchDocumentRoutes) {
     it(`${route.file} goes through the shared batch-document guard`, () => {
       const source = readFileSync(route.file, 'utf8');

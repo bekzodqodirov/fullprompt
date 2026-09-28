@@ -547,6 +547,43 @@
     "overview": "Umumiy",
     "money": "Pul"
   },
+  "yuklar": {
+    "tab": "Yuklar",
+    "sections": {
+      "china": "Xitoyda",
+      "transit": "Tranzitda",
+      "uz": "O‘zbekistonda",
+      "ready": "Olib ketishga tayyor"
+    },
+    "now": "Hozir",
+    "empty": "Hozir bu mijozning omborda ham, yo‘lda ham yuki yo‘q.",
+    "siblings": "Shu telefondagi boshqa kodlar:",
+    "daysHere": "{n, plural, =0 {bugun keldi} other {# kun}}",
+    "arrivedOn": "keldi:",
+    "status": {
+      "in_stock": "omborda",
+      "planned": "rejada",
+      "loading": "yuklanmoqda",
+      "in_transit": "yo‘lda",
+      "ready_for_pickup": "tayyor"
+    },
+    "receipt": "Prixod",
+    "marking": "Markirovka",
+    "unknownTruck": "mashina noma’lum",
+    "missing": "Yo‘lda yo‘qolgan",
+    "showAll": "Hammasini ko‘rsatish",
+    "history": "Topshirilgan",
+    "historyDays": "{days, plural, other {# kun}}",
+    "historyYear": "1 yil",
+    "historyCapped": "oxirgi {n} tasi ko‘rsatildi",
+    "historyEmpty": "Bu davrda topshirilgan yuk yo‘q.",
+    "receiver": "Oluvchi",
+    "issuedBy": "Bergan",
+    "act": "Akt",
+    "departed": "jo‘nadi",
+    "arrived": "keldi",
+    "openTab": "Batafsil"
+  },
   "clients": {
     "title": "Mijozlar",
     "new": "Yangi mijoz",
