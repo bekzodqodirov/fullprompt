@@ -19,6 +19,9 @@ import { ISSUABLE_STATUSES } from '../issue/parties';
  * `unpricedCargoMoney` in accounting/reports.ts), which sums the cost of
  * exactly the cartons this fragment calls uncovered — the part whose money
  * already left Sof holat, over the Balans's scope (`handedOverSinceSql`).
+ * Two more read it per TRUCK and must agree with those four: the client
+ * card's trip chip (`uncoveredTripsOn`) and the truck card's «Narx qo'yilgan
+ * N / M» (`tripCoverageOn`), which are one question asked from the two ends.
  * Two screens one tap apart that disagree about which cargo is unpriced are
  * worse than either alone — the operator refused at the counter looks for
  * the row, the accountant clears the row and expects the counter to open.
@@ -80,6 +83,8 @@ export type UnpricedScope =
   | { kind: 'client'; clientId: string }
   | { kind: 'clients'; clientIds: string[] }
   | { kind: 'receipts'; receiptIds: string[] }
+  /** The cartons that rode or stand on one truck — its riders (`riderRowsSql`). */
+  | { kind: 'trip'; batchId: string }
   | {
       kind: 'company';
       warehouseIds: string[] | undefined;
@@ -166,6 +171,8 @@ export function unpricedScopeSql(scope: UnpricedScope): SQL {
       return scope.clientIds.length ? sql`r.client_id IN (${idList(scope.clientIds)})` : sql`false`;
     case 'receipts':
       return scope.receiptIds.length ? sql`rl.receipt_id IN (${idList(scope.receiptIds)})` : sql`false`;
+    case 'trip':
+      return sql`b.id IN (SELECT tr.box_id FROM (${riderRowsSql({ batches: sql`${scope.batchId}::uuid` })}) tr)`;
     case 'company': {
       const owner =
         scope.ownerId !== undefined
@@ -520,6 +527,37 @@ export async function uncoveredTripsOn(exec: Exec, scope: UnpricedScope): Promis
     SELECT DISTINCT rr.batch_id FROM (${riderRowsSql({ boxes: sql`SELECT box_id FROM u_unc` })}) rr
   `)) as unknown as { batch_id: string }[];
   return new Set(rows.map((row) => row.batch_id));
+}
+
+/**
+ * Which clients on ONE truck the rule calls priced — the truck card's «Narx
+ * qo'yilgan N / M» and the pricing page's line under it (owner's 1a,
+ * 2026-09-28: «boshqa mashinada yoki bitimda narxlangan mijoz ham narx
+ * qo'yilgan»). `uncoveredTripsOn` asked from the truck's end: the same
+ * fragment over the truck's riders, no landing filter, so a truck still on
+ * the road answers and a client's cargo priced on the China truck or on the
+ * deal reads priced on every truck it rides (answer 7) — while a price typed
+ * on a local leg that covers nothing (Q1) does not. `unpriced` = clients
+ * with an uncovered carton aboard; `covered` = clients with a covered one;
+ * a client in neither has no cargo left to bill there (lost, void) and is
+ * priced only by a price on the truck itself (`tripPriced`).
+ */
+export interface TripCoverage {
+  unpriced: ReadonlySet<string>;
+  covered: ReadonlySet<string>;
+}
+
+export async function tripCoverageOn(exec: Exec, batchId: string): Promise<TripCoverage> {
+  const rows = (await exec.execute(sql`
+    WITH ${uncoveredCtes(unpricedScopeSql({ kind: 'trip', batchId }), { landedOnly: false })}
+    SELECT client_id, bool_or(NOT covered) AS unpriced, bool_or(covered) AS covered
+      FROM u_cov
+     GROUP BY client_id
+  `)) as unknown as { client_id: string; unpriced: boolean; covered: boolean }[];
+  return {
+    unpriced: new Set(rows.filter((row) => row.unpriced).map((row) => row.client_id)),
+    covered: new Set(rows.filter((row) => row.covered).map((row) => row.client_id)),
+  };
 }
 
 /**

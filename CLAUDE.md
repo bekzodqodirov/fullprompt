@@ -2061,8 +2061,12 @@ tab 200 and every other refused, as all eight demo people. Measured on the
 shaped copy: 30-37 statements and 113-169 ms per tab; the tab body on the
 first screen for every role at 360×800 and 1280×900. TEST TRAPS: a prefix
 testid selector (`batch-tab-` also matched `batch-tab-body`); a red proof
-whose `next build` failed on lint tests the previous build. OPEN, asked of
-him: should «Narx qo'yilgan N / M» count a client priced on another truck?
+whose `next build` failed on lint tests the previous build. His answer
+**1a** (the same day) is built: «Narx qo'yilgan N / M» counts a client priced
+on another truck or on the deal (DECISIONS #1189-#1190) — `tripCoverageOn`
+(the unpriced rule over a `trip` scope = the riders) + `tripPriced`, one count
+for the tile and the «Narx» tab, `totals.priced` removed; a price typed on the
+truck itself always counts.
 
 **Latest migration: 0112** (`qr_less` — the count reasons, the QR-siz lot
 marker, the office receipt's receiver, the factory barcode, the pallet kind;
@@ -2185,10 +2189,10 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **113** since 0112, and his server last CONFIRMED **107** («deploy
-qildim 107 chiqdi», 2026-09-26); nothing after 107 was confirmed back to this
-session, so the next deploy applies 0112 and whatever of 0107-0111 is still
-missing — count, do not assume.
+length — **113** since 0112, and his server CONFIRMED **113** («deploy qildim
+113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), so every
+migration on this branch is live; a code-only round after it is checked by
+`/api/version`, not the count.
 Never carry this number over from a previous session: read it
 (`ls src/modules/platform/db/migrations/*.sql | wc -l`) before writing the
 owner a step list, because the count is the only check that separates «the

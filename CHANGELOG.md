@@ -1,5 +1,32 @@
 # CHANGELOG
 
+## «Narx qo'yilgan N / M» — boshqa mashinada yoki bitimda narxlangan mijoz ham sanaladi — 2026-09-28
+
+Migratsiya yo'q. Ledger **113** bo'lib qoladi — yangilanganini
+`https://gsrwms.uz/api/version` dagi vaqt bilan tekshiring.
+
+Sizning javobingiz: **1a** — partiya kartasidagi «Narx qo'yilgan N / M»
+boshqa mashinada yoki bitimda narxlangan mijozni ham «narx qo'yilgan» deb
+sanasin.
+
+1. **Endi sanoq topshirishdagi qoida bilan bir xil.** Mijozning shu
+   mashinadagi yuki Xitoy mashinasida (masalan, prixod ikki mashinaga
+   bo'linib, bittasida narxlangan) yoki bitimning o'zida narxlangan bo'lsa —
+   u «narx qo'yilgan» hisoblanadi. Oldin faqat SHU mashinaga yozilgan narx
+   sanalardi, shuning uchun hammasi to'langan mashina «0 / 5» ko'rsatib,
+   buxgalterni ikkinchi marta narx qo'yishga undardi.
+2. **Qisman narxlangan mijoz sanalmaydi.** Masalan, bir prixodi bitimda
+   narxlangan, ikkinchisi hech qayerda — bu mijoz «narx qo'yilmagan» bo'lib
+   qoladi (topshirishda ham shunday to'xtaydi).
+3. **Shu mashinaga o'zingiz yozgan narx har doim sanaladi** — mashina hali
+   jo'namagan bo'lsa ham, mahalliy yo'lda (Andijon → Toshkent) bo'lsa ham.
+   Bunday narx yukni yopmasa, buni «Narxsiz yuk» ro'yxati alohida aytadi.
+4. **«Narx» bo'limida**: narxi shu mashinada emas, lekin sanalgan mijozning
+   narx katagida «—» ostida «narx boshqa reysda yoki bitimda» yozuvi chiqadi —
+   mijoz kartasidagi reys belgisi bilan bir xil so'z.
+5. Kartaning tepasidagi kartochka va «Narx» bo'limidagi qator bitta
+   hisobdan olinadi — ikkalasi hech qachon har xil son ko'rsatmaydi.
+
 ## Partiya — bitta karta, oltita bo'lim; mijoz kartasida «Pul» — 2026-09-28
 
 Migratsiya yo'q. Ledger **113** bo'lib qoladi — shuning uchun yangilanganini

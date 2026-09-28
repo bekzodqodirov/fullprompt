@@ -183,6 +183,19 @@ describe('the strip and the header', () => {
     expect(strip(read(pageOf('tarkib')))).toContain('Σ {totalBoxes} 📦 · {cargoLine(totalKg, totalM3)}');
   });
 
+  it('«Narx qo‘yilgan N / M» is counted ONE way on the card and on the «Narx» tab (1a)', () => {
+    // Both ask the unpriced rule for the truck through the same cached read
+    // and count through the same function; the charge-only count is gone
+    // from `pricingView`, so neither can fall back to it.
+    const page = strip(read(pageOf('narx')));
+    expect(card).toContain('batchTripCoverage(id)');
+    expect(card).toContain('priced: tripPricedCount(view.clients, coverage)');
+    expect(card).toContain('value={`${pricing.priced} / ${pricing.view.clients.length}`}');
+    expect(page).toContain('batchTripCoverage(id)');
+    expect(page).toContain("t('pricedOf', { priced: tripPricedCount(view.clients, coverage), total: view.clients.length })");
+    for (const src of [card, page]) expect(src).not.toMatch(/totals\.priced|chargedUsd > 0\)\.length/);
+  });
+
   it('the header’s money figures are behind their tabs’ doors (Q19: no cost to the VED)', () => {
     expect(card).toContain("const costSheet = costDoor ? await soft('cost sheet', () => batchCostSheet(id, costSightFor(actor))) : null;");
     expect(card).toContain('const sight = pricingSight(actor.permissions, head.internal);');
