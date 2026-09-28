@@ -153,6 +153,24 @@ describe('the token and the reads (round B, O6)', () => {
   });
 });
 
+describe('the /profile switch', () => {
+  const page = strip(read('src/app/(protected)/profile/page.tsx'));
+
+  it('is drawn by the same door the job and the button ask', () => {
+    expect(page).toContain('const ownerReader = actor ? readsOwnerSummary(actor) : false;');
+    expect(page).toMatch(/\{ownerReader \? \([\s\S]{0,200}?name="mute_owner"/);
+  });
+
+  it('a choice already made survives a save by somebody the box is not drawn for (#171)', () => {
+    // The form is replace-all: an absent box reads as «off», so a person who
+    // muted it and then lost the super_admin role must not be un-muted by
+    // saving an unrelated switch.
+    expect(page).toContain('mutes.groups.owner && !mutes.all && <input type="hidden" name="mute_owner" value="on" />');
+    const action = strip(read('src/app/(protected)/profile/actions.ts'));
+    expect(action).toContain('formData.get(`mute_${g}`) === \'on\'');
+  });
+});
+
 describe('the evening job', () => {
   it('is registered, and fires at 20:00 Tashkent = 15:00 UTC', () => {
     expect(WORKER_REGISTRATIONS.map(([name]) => name)).toContain('owner-summary');
