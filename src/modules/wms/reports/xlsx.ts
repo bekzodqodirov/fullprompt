@@ -108,7 +108,7 @@ export async function buildStockAgingXlsx(warehouseIds?: string[], locale?: stri
     { width: 10 }, { width: 8 }, { width: 8 }, { width: 14 },
   ];
   for (const row of rows) {
-    sheet.addRow([row.whCode, row.code, row.product, row.boxCount, row.kg, row.m3, row.density ?? '', row.days]);
+    sheet.addRow([row.whCode, row.code, row.product, row.boxCount, row.kg, row.m3, row.density ?? '', row.days ?? '?']);
   }
   const total = sheet.addRow([
     L.total, '', '',
@@ -204,15 +204,15 @@ export async function buildUnclaimedXlsx(warehouseIds?: string[], locale?: strin
   const rows = await unclaimedReport(warehouseIds);
   const workbook = new ExcelJS.Workbook();
   const sheet = sheetSetup(workbook, 'Unclaimed', `${L.tUnclaimed} · ${tashkentDay()}`);
-  const head = sheet.addRow([L.number, L.marking, L.warehouse, L.date, L.days, L.boxes, L.kg]);
+  const head = sheet.addRow([L.number, L.marking, L.warehouse, L.date, L.days, L.boxes, L.inTransit, L.kg]);
   head.font = { bold: true };
   sheet.columns = [
-    { width: 20 }, { width: 14 }, { width: 8 }, { width: 12 }, { width: 8 }, { width: 10 }, { width: 10 },
+    { width: 20 }, { width: 14 }, { width: 8 }, { width: 12 }, { width: 8 }, { width: 10 }, { width: 10 }, { width: 10 },
   ];
   for (const row of rows) {
     sheet.addRow([
       row.number, row.marking ?? '', row.whCode, dayIn(row.receivedAt, OFFICE_TZ),
-      row.days, row.boxesInStock, row.kg,
+      row.days, row.boxes, row.boxesOnRoad, row.kg,
     ]);
   }
   return Buffer.from(await workbook.xlsx.writeBuffer());

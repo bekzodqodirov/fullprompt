@@ -106,7 +106,14 @@ export const DIGEST_UNCLAIMED_SHOWN = 20;
 export function dailyDigestText(input: {
   agingDays: number;
   staleDays: number;
-  unclaimed: { whCode: string; number: string | null; marking: string | null; boxesInStock: number; days: number }[];
+  unclaimed: {
+    whCode: string;
+    number: string | null;
+    marking: string | null;
+    boxes: number;
+    boxesOnRoad: number;
+    days: number;
+  }[];
   stale: Pick<WarehouseFillRow, 'code' | 'staleCount' | 'oldestDays'>[];
   waiting?: string[];
 }): string {
@@ -115,7 +122,9 @@ export function dailyDigestText(input: {
     lines.push('', `❓ Egasiz yuk (${input.agingDays} kundan eski):`);
     for (const r of input.unclaimed.slice(0, DIGEST_UNCLAIMED_SHOWN)) {
       lines.push(
-        `• ${r.whCode} ${r.number ?? ''}${r.marking ? ` [${r.marking}]` : ''} — ${r.boxesInStock} kor., ${r.days} kun`,
+        `• ${r.whCode} ${r.number ?? ''}${r.marking ? ` [${r.marking}]` : ''} — ${r.boxes} kor.${
+          r.boxesOnRoad > 0 ? ` (${r.boxesOnRoad} yo'lda)` : ''
+        }, ${r.days} kun`,
       );
     }
     if (input.unclaimed.length > DIGEST_UNCLAIMED_SHOWN) {

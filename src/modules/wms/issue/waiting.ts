@@ -1,12 +1,13 @@
 import { and, asc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { warehouses } from '../../platform/db/schema';
+import { seesAllClients } from '../../platform/clients/card-door';
 import { getSetting } from '../../platform/settings/service';
 import { roundKg, roundM3, shareOf, sumRounded } from '../../platform/telegram/format';
-import { calendarDay, tashkentDay } from '../../platform/time/tashkent';
+import { calendarDaysBetween, tashkentDay } from '../../platform/time/tashkent';
 import { landedHereAtSql } from '../documents/arrivals';
 import { gatedAt, uncoveredBoxesOn, type Exec, type GateSince } from '../finance/unpriced';
-import { balancesForClients, blockingDebtUsd } from '../finance/service';
+import { balancesForClients, debtBlocks } from '../finance/service';
 import { ISSUABLE_STATUSES } from './parties';
 
 /**
@@ -31,13 +32,16 @@ import { ISSUABLE_STATUSES } from './parties';
  * different age for the same carton (the design review's #6). The pickup does
  * two other things: it marks the row «qoldiq» — cartons left behind at a
  * visit, which is also how the office finds the ghost carton recorded as
- * standing and long gone — and it re-arms the alert (`clockFrom`, read by the
- * claim in `waiting-alerts.ts`).
+ * standing and long gone — and it moves the ALERT's clock (`clockFrom`): the
+ * leftovers are announced again only once they have waited the warn line
+ * since that visit (`announceLevel`), never the next morning.
  *
- * No money on the list. What a row may carry about money — the «narxsiz» and
- * «qarz» tags, the two reasons the counter itself would refuse the cargo — is
- * asked separately (`waitingPriceGate`, `waitingDebtors`) by callers that have
- * decided the reader may know it.
+ * No money on the list. The two reasons the counter itself would refuse the
+ * cargo are asked separately: «narxsiz» (`waitingPriceGate`) is a CARGO fact —
+ * no amount, and the issue screen already tells a warehouse operator with no
+ * money grant exactly which cartons have no price — so every reader of the row
+ * gets it, on the screen and in Telegram alike; «qarz» (`waitingDebtors`) is a
+ * money fact, shown only where the client's ledger would open.
  */
 
 export interface UncollectedRow {
@@ -116,13 +120,6 @@ const idList = (ids: string[]) =>
 
 const ISSUABLE_SQL = sql.raw(`(${ISSUABLE_STATUSES.map((s) => `'${s}'`).join(', ')})`);
 
-/** Whole calendar days from `from` to `to`, both `YYYY-MM-DD`. */
-export function waitDays(from: string, to: string): number {
-  return Math.round(
-    (new Date(`${to}T12:00:00Z`).getTime() - new Date(`${from}T12:00:00Z`).getTime()) / 86_400_000,
-  );
-}
-
 export interface WaitThresholds {
   /** Level 1 — the seller's first message and the svodka. */
   warn: number;
@@ -136,6 +133,31 @@ export function waitLevel(days: number | null, t: WaitThresholds): 0 | 1 | 2 {
   if (days >= t.alarm) return 2;
   if (days >= t.warn) return 1;
   return 0;
+}
+
+/**
+ * The level a row may be ANNOUNCED at this morning — its age's level, but only
+ * once its alert clock (`clockFrom`: the landing, or the last visit that left
+ * cartons behind) has been quiet for the warn line.
+ *
+ * A visit is proof somebody is in touch with the client, so it buys the
+ * leftovers the same five days the landing gave the whole shipment. Without
+ * that, the visit re-armed the claim and the age — counted from the landing,
+ * already past the line — announced the leftovers the very next morning: a
+ * client who takes a few cartons a day set the seller's Telegram off every
+ * day, and the svodka listed them under «today» every day (reproduced: five
+ * mornings, five messages). The age on every line stays the landing's; only
+ * WHEN it may be said moves. For a row nobody has visited the clock is the
+ * landing itself, so the first announcement comes exactly as before.
+ */
+export function announceLevel(
+  row: Pick<UncollectedRow, 'days' | 'clockFrom'>,
+  t: WaitThresholds,
+  asOf: Date,
+): 0 | 1 | 2 {
+  if (!row.clockFrom) return 0;
+  if (calendarDaysBetween(tashkentDay(row.clockFrom), tashkentDay(asOf)) < t.warn) return 0;
+  return waitLevel(row.days, t);
 }
 
 /**
@@ -218,7 +240,6 @@ export async function uncollectedCargo(exec: Exec, q: UncollectedQuery): Promise
            l.n, rl.box_count, rl.total_weight_kg, rl.total_volume_m3,
            coalesce(nullif(rl.product_name_ru, ''), rl.product_name_zh) AS goods,
            l.landed_from::text AS landed_from,
-           ((l.landed_from AT TIME ZONE 'Asia/Tashkent')::date)::text AS landed_day,
            p.last_pickup_at::text AS last_pickup_at
       FROM w_lot l
       JOIN clients c ON c.id = l.client_id
@@ -245,15 +266,11 @@ export async function uncollectedCargo(exec: Exec, q: UncollectedQuery): Promise
     total_volume_m3: string | null;
     goods: string | null;
     landed_from: string | null;
-    landed_day: string | null;
     last_pickup_at: string | null;
   }[];
 
   const today = tashkentDay(q.asOf);
-  const folded = new Map<
-    string,
-    { row: UncollectedRow; kg: number[]; m3: number[]; landedDay: string | null; lots: number }
-  >();
+  const folded = new Map<string, { row: UncollectedRow; kg: number[]; m3: number[]; lots: number }>();
   for (const lot of lots) {
     const key = `${lot.client_id}|${lot.warehouse_id}`;
     let entry = folded.get(key);
@@ -284,7 +301,6 @@ export async function uncollectedCargo(exec: Exec, q: UncollectedQuery): Promise
         },
         kg: [],
         m3: [],
-        landedDay: null,
         lots: 0,
       };
       folded.set(key, entry);
@@ -299,16 +315,16 @@ export async function uncollectedCargo(exec: Exec, q: UncollectedQuery): Promise
       const at = new Date(lot.landed_from);
       if (!entry.row.landedFrom || at < entry.row.landedFrom) entry.row.landedFrom = at;
     }
-    const day = calendarDay(lot.landed_day);
-    if (day && (!entry.landedDay || day < entry.landedDay)) entry.landedDay = day;
   }
 
   const rows: UncollectedRow[] = [];
-  for (const { row, kg, m3, landedDay, lots: lotCount } of folded.values()) {
+  for (const { row, kg, m3, lots: lotCount } of folded.values()) {
     row.kg = sumRounded(kg, roundKg);
     row.m3 = sumRounded(m3, roundM3);
     row.moreLots = lotCount - 1;
-    row.days = landedDay ? waitDays(landedDay, today) : null;
+    // The oldest landing's TASHKENT day — the earliest instant is on the
+    // earliest day, so the day is read off the instant (R5's one home).
+    row.days = row.landedFrom ? calendarDaysBetween(tashkentDay(row.landedFrom), today) : null;
     row.leftover = Boolean(row.lastPickupAt && row.landedFrom && row.lastPickupAt > row.landedFrom);
     row.clockFrom =
       row.landedFrom && row.lastPickupAt && row.lastPickupAt > row.landedFrom
@@ -376,6 +392,69 @@ export function tabMinDays(tab: WaitTab, t: WaitThresholds): number {
   return tab === 'qizil' ? t.alarm : tab === 'sariq' ? t.warn : 0;
 }
 
+/** A tab's rows out of the whole list — the page reads every tab off one read. */
+export function rowsInTab<R extends { days: number | null }>(rows: readonly R[], tab: WaitTab, t: WaitThresholds): R[] {
+  const min = tabMinDays(tab, t);
+  return min === 0 ? [...rows] : rows.filter((row) => row.days !== null && row.days >= min);
+}
+
+/** Who is reading — the fields the book's scope is decided by. */
+export interface UncollectedViewer {
+  id: string;
+  permissions: { has(code: string): boolean };
+  warehouseScoped: boolean;
+  warehouseIds: string[];
+}
+
+export interface UncollectedScope {
+  /** Reads every client (`seesAllClients`), so the seller chip is theirs to use. */
+  seesAll: boolean;
+  ownerId: string | undefined;
+  /** `warehouseScope`'s three answers as ids. */
+  warehouseIds: string[] | undefined;
+}
+
+/**
+ * Whose waiting cargo this viewer reads: every client for whoever reads the
+ * whole book, their own for a seller, always inside `warehouseScope`. The
+ * page's answer — asked by the logist's home row as well, so the number on
+ * the row and the list it opens are counted over ONE book (#513).
+ */
+export function uncollectedScope(viewer: UncollectedViewer): UncollectedScope {
+  const seesAll = seesAllClients(viewer);
+  return {
+    seesAll,
+    ownerId: seesAll ? undefined : viewer.id,
+    warehouseIds: viewer.warehouseScoped ? viewer.warehouseIds : undefined,
+  };
+}
+
+/** The page's read, from its scope and its (validated) filters — everything waiting; the tabs slice it. */
+export function uncollectedPageQuery(scope: UncollectedScope, filters: UncollectedFilters, asOf: Date): UncollectedQuery {
+  return {
+    asOf,
+    minDays: 0,
+    ownerId: scope.ownerId,
+    warehouseIds: scope.warehouseIds,
+    sellerId: filters.sellerId ?? undefined,
+    warehouseId: filters.warehouseId ?? undefined,
+  };
+}
+
+/**
+ * Where a «my clients» home row points. The row counts the viewer's OWN
+ * clients; the bare page opens on the viewer's BOOK — which for somebody who
+ * reads every client is the whole company, and that is how the owner's own
+ * accounts are set up («bir admin va sotuvchi», round 109): «3» on the row,
+ * forty clients behind it. So for exactly those viewers the link names them
+ * as the seller filter the page honours for them; for a seller the page is
+ * already theirs and a `sotuvchi` would be ignored anyway (#514).
+ */
+export function myUncollectedHref(viewer: { id: string; seesAll: boolean }): string {
+  const base = '/my-clients/olib-ketilmagan';
+  return viewer.seesAll ? `${base}?sotuvchi=${viewer.id}` : base;
+}
+
 /** A row's key — one client at one warehouse. */
 export function waitRowKey(row: { clientId: string; warehouseId: string }): string {
   return `${row.clientId}|${row.warehouseId}`;
@@ -387,6 +466,10 @@ export function waitRowKey(row: { clientId: string; warehouseId: string }): stri
  * `gatedAt`), asked of the listed clients and never restated. Only issuable
  * cartons standing in the row's warehouse count. With the ban off nothing is
  * gated and nothing is read.
+ *
+ * Not a money answer (no sum, no price — the counter says the same to a
+ * warehouse operator), so it needs no ledger door; it does read every carton
+ * of the listed clients, so a company-wide caller runs it under `withoutJit`.
  */
 export async function waitingPriceGate(
   exec: Exec,
@@ -417,7 +500,7 @@ export async function waitingDebtors(clientIds: readonly string[]): Promise<Set<
   const balances = await balancesForClients([...clientIds]);
   const out = new Set<string>();
   for (const [clientId, money] of balances) {
-    if (blockingDebtUsd(money.balanceUsd, money.deferredUsd) > 0.009) out.add(clientId);
+    if (debtBlocks(money.balanceUsd, money.deferredUsd)) out.add(clientId);
   }
   return out;
 }

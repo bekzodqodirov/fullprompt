@@ -181,7 +181,8 @@ describe('the daily svodka', () => {
     whCode: 'YW',
     number: `R-${i}`,
     marking: i === 0 ? 'GS500' : null,
-    boxesInStock: 3,
+    boxes: 3,
+    boxesOnRoad: i === 1 ? 2 : 0,
     days: 17,
   }));
 
@@ -195,6 +196,8 @@ describe('the daily svodka', () => {
     expect(text).toContain('📊 GSR — kunlik hisobot');
     expect(text).toContain('❓ Egasiz yuk (7 kundan eski):');
     expect(text).toContain('• YW R-0 [GS500] — 3 kor., 17 kun');
+    // Unclaimed cargo on a truck stays on the list, and says it is on the road.
+    expect(text).toContain("• YW R-1 — 3 kor. (2 yo'lda), 17 kun");
     expect(text).toContain(`… yana ${27 - DIGEST_UNCLAIMED_SHOWN} ta`);
     expect(text).toContain('• TAS1: 12 kor., eng eskisi — 57 kun');
     expect(text.split('\n').filter((l) => l.startsWith('• YW'))).toHaveLength(DIGEST_UNCLAIMED_SHOWN);

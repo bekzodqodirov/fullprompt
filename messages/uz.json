@@ -2498,7 +2498,8 @@
     "debt": "qarz",
     "tagsFailed": "Narx va qarz belgilari hozir o'qilmadi",
     "homeRow": "Olib ketilmagan yuk",
-    "homeSub": "{n} mijoz"
+    "homeSub": "{n} mijoz",
+    "onRoad": "{n} yo'lda"
   },
   "arrivals": {
     "title": "Kelayotgan yuklar",

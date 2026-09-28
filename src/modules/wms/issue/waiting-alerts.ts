@@ -6,10 +6,10 @@ import { logger } from '../../platform/logger';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { groupDigits } from '../../platform/telegram/format';
 import { addDays, tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
-import { unpricedGate, type GateSince } from '../finance/unpriced';
+import { unpricedGate } from '../finance/unpriced';
 import {
+  announceLevel,
   uncollectedCargo,
-  waitLevel,
   waitRowKey,
   waitThresholds,
   waitingPriceGate,
@@ -56,13 +56,17 @@ export interface ClaimedCrossing {
 }
 
 /**
- * Claim these rows' crossings — every level a row has reached, ONE statement.
+ * Claim these rows' crossings — every level a row may be announced at
+ * (`announceLevel`), ONE statement.
  *
  * automation_fires' shape (0067): an UPSERT re-won only when the waiting
  * set's clock moved past the last announcement (`sent_at < clock_from`), so
  * cargo collected and landing again, or cartons left behind at a visit, are
  * announced again, and a set that simply keeps waiting is announced once per
- * level. `sent_at` is bound from `asOf`, never `now()`, so a test pins it.
+ * level. A moved clock is only OFFERED once it has been quiet for the warn
+ * line (`announceLevel`) — the WHERE alone would re-win the morning after
+ * every visit, since the age counts from the landing and is already past it.
+ * `sent_at` is bound from `asOf`, never `now()`, so a test pins it.
  * On the POOL and never inside a transaction (#714).
  */
 export async function claimWaitAlerts(
@@ -72,7 +76,7 @@ export async function claimWaitAlerts(
 ): Promise<ClaimedCrossing[]> {
   const values: SQL[] = [];
   for (const row of rows) {
-    const level = waitLevel(row.days, thresholds);
+    const level = announceLevel(row, thresholds, asOf);
     if (level === 0 || !row.clockFrom) continue;
     for (let l = 1; l <= level; l += 1) {
       values.push(
@@ -237,7 +241,11 @@ export interface WaitSweep {
   claimed: Map<string, 1 | 2>;
   /** Seller messages queued. */
   messages: number;
-  gate: GateSince;
+  /**
+   * «Narxsiz» per row, for every row above — read ONCE, JIT off, before any
+   * seller is told; empty when the read failed (a courtesy, never the message).
+   */
+  unpriced: Map<string, number>;
 }
 
 /**
@@ -266,6 +274,16 @@ export async function sweepCargoWaiting(opts: { asOf: Date; clientIds?: string[]
     }),
   );
 
+  // The price tags for every row in ONE read, with JIT off like the list:
+  // `uncoveredBoxesOn` is 0104's company-wide question, and asked per seller
+  // on the pool it was up to ~20 separate JIT-compiled reads inside the 09:00
+  // job. Before any claim, so a failure here costs the tags and nothing else.
+  const unpriced = await withoutJit((exec) => waitingPriceGate(exec, rows, gate)).catch((err) => {
+    if (isServerBehind(err)) throw err;
+    logger.warn({ err }, 'cargo waiting: price tags unavailable');
+    return new Map<string, number>();
+  });
+
   const bySeller = new Map<string, UncollectedRow[]>();
   for (const row of rows) {
     const key = row.sellerId ?? '';
@@ -281,11 +299,6 @@ export async function sweepCargoWaiting(opts: { asOf: Date; clientIds?: string[]
       for (const [key, level] of levels) claimed.set(key, level);
       if (!sellerId || levels.size === 0) continue;
       const fresh = sellerRows.filter((row) => levels.has(waitRowKey(row)));
-      // The price tag is a courtesy; a failed read must not cost the message.
-      const unpriced = await waitingPriceGate(db, fresh, gate).catch((err) => {
-        logger.warn({ err, sellerId }, 'cargo waiting: price tags unavailable');
-        return new Map<string, number>();
-      });
       const text = sellerWaitingText({
         fresh,
         levels,
@@ -300,7 +313,7 @@ export async function sweepCargoWaiting(opts: { asOf: Date; clientIds?: string[]
       logger.error({ err, sellerId: sellerId || null }, 'cargo waiting: one seller failed');
     }
   }
-  return { rows, thresholds, claimed, messages, gate };
+  return { rows, thresholds, claimed, messages, unpriced };
 }
 
 /**
@@ -341,16 +354,11 @@ export async function waitingDigestSection(opts: { asOf: Date; clientIds?: strin
   const sweep = await sweepCargoWaiting(opts);
   if (sweep.rows.length === 0) return [];
   const today = await crossedOn(tashkentDay(opts.asOf), opts.clientIds);
-  const fresh = sweep.rows.filter((row) => today.has(waitRowKey(row)));
-  const unpriced = await waitingPriceGate(db, fresh, sweep.gate).catch((err) => {
-    logger.warn({ err }, 'cargo waiting: office price tags unavailable');
-    return new Map<string, number>();
-  });
   return officeWaitingSection({
     rows: sweep.rows,
     today,
     thresholds: sweep.thresholds,
-    unpriced,
+    unpriced: sweep.unpriced,
     link: waitingListLink(),
   });
 }

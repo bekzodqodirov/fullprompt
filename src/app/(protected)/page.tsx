@@ -420,9 +420,10 @@ async function SalesFlow({ flow }: { flow: SalesFlowCounts }) {
           sub={null}
         />
         {/* 0116: my clients' cargo waiting past the warn line — the same
-            count the list opens on. */}
+            count the list opens on (`uncollectedHref` names the seller for
+            a viewer whose bare page would show every client). */}
         <FlowRow
-          href="/my-clients/olib-ketilmagan"
+          href={flow.uncollectedHref}
           icon="clock"
           testid="sales-flow-uncollected"
           label={tu('homeRow')}

@@ -1115,6 +1115,16 @@ export function blockingDebtUsd(balanceUsd: number, deferredUsd: number): number
 }
 
 /**
+ * Does that debt STOP the counter — more than a cent after the deferral? The
+ * question the handover asks and the waiting list's «qarz» tag repeats; the
+ * line is stated here once so the tag cannot light up for a client the
+ * counter would let through (or stay dark for one it refuses).
+ */
+export function debtBlocks(balanceUsd: number, deferredUsd: number): boolean {
+  return blockingDebtUsd(balanceUsd, deferredUsd) > 0.009;
+}
+
+/**
  * Balance and live-deferral totals for MANY clients, in one query each.
  *
  * The per-client pair above is right for a counter where one customer is

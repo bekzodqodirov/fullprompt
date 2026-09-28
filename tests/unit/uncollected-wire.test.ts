@@ -79,10 +79,18 @@ describe('the svodka asks the screens, never a copy of them', () => {
   it('warehouseFill and stockAging read the landing helper, and warehouseFill no longer spells the rule out', () => {
     const queries = read(QUERIES);
     const fill = queries.slice(queries.indexOf('export async function warehouseFill('), queries.indexOf('export async function stockByWarehouse('));
-    expect(fill).toContain("landedHereAtSql('b')");
+    expect(fill).toContain("landedHereDaySql('b')");
     expect(fill).not.toMatch(/DISTINCT ON|to_status <> 'in_transit'|'in_stock'/);
-    const aging = queries.slice(queries.indexOf('export async function stockAging('));
-    expect(aging.slice(0, aging.indexOf('\n}\n'))).toContain('landedHereAtSql(');
+    const aging = body(queries, 'stockAging');
+    expect(aging).toContain("landedHereDaySql('b')");
+    // A per-carton correlated read across every warehouse: JIT off (0104).
+    expect(aging).toMatch(/withoutJit\(/);
+    expect(aging).not.toMatch(/\bdb\./);
+    // The Tashkent day of a landing has ONE home beside the landing itself.
+    expect(fill + aging).not.toContain("AT TIME ZONE 'Asia/Tashkent'");
+    expect(read('src/modules/wms/documents/arrivals.ts')).toMatch(
+      /export function landedHereDaySql\(box: string\): SQL \{\s*return sql`\(\(\$\{landedHereAtSql\(box\)\}\) AT TIME ZONE 'Asia\/Tashkent'\)::date`;/,
+    );
     expect(queries).not.toMatch(/export async function agingSummary/);
   });
 
@@ -102,18 +110,26 @@ describe('the list', () => {
     expect(fn).not.toMatch(/getSetting|getActor|waitThresholds/);
   });
 
-  it('every door asks seesAllClients and reads the one function', () => {
+  it('every door asks the one scope and reads the one function', () => {
     const page = read(PAGE);
     expect(page).toMatch(/mayOpenMyClients\(actor\)/);
-    expect(page).toMatch(/seesAllClients\(actor\)/);
+    expect(page).toMatch(/uncollectedScope\(actor\)/);
+    expect(page).toMatch(/uncollectedPageQuery\(scope, filters,/);
     expect(page).toMatch(/uncollectedCargo\(/);
+    // «Qarz» is money's; «narxsiz» is the cargo's and every drawn row gets it.
     expect(page).toMatch(/mayOpenClientLedger\(actor/);
+    expect(page).toMatch(/waitingPriceGate\(exec, rows, gate\)/);
     const flows = read(FLOWS);
     expect(flows.match(/uncollectedCount\(/g)).toHaveLength(2);
-    // The company-wide one runs with JIT off and inside the home's budget.
-    expect(flows).toMatch(/withoutJit\(\s*\(exec\) => uncollectedCount\(exec,[\s\S]{0,160}timeoutMs: UNBILLED_BUDGET_MS/);
+    // The company-wide one runs with JIT off and inside the home's budget,
+    // over the page's own book.
+    expect(flows).toMatch(/withoutJit\(\s*\(exec\) =>\s*uncollectedCount\(exec,[\s\S]{0,160}timeoutMs: UNBILLED_BUDGET_MS/);
+    expect(flows).toMatch(/ownerId: book\.ownerId, warehouseIds: book\.warehouseIds/);
+    expect(flows).toMatch(/logistFlowCounts\(actor, today, \{ uncollected: uncollectedScope\(actor\) \}\)/);
+    expect(flows).toMatch(/salesFlowCounts\(actor\.id, today, \{ seesAllClients: seesAllClients\(actor\) \}\)/);
+    expect(read('src/app/(protected)/page.tsx')).toMatch(/href=\{flow\.uncollectedHref\}/);
     // The rule has one home now — nobody restates it by hand.
-    for (const file of ['src/app/(protected)/my-clients/page.tsx', 'src/modules/wms/bot/lookup.ts', PAGE]) {
+    for (const file of ['src/app/(protected)/my-clients/page.tsx', 'src/modules/wms/bot/lookup.ts', WAITING]) {
       const src = read(file);
       expect(src, file).toMatch(/seesAllClients\(/);
       expect(src, file).not.toMatch(/has\('crm\.leads\.view_all'\)\s*\|\|\s*[\w.]*permissions\.has\('clients\.manage'\)/);
@@ -121,9 +137,13 @@ describe('the list', () => {
     }
   });
 
-  it('the «qarz» tag and the counter share one debt rule', () => {
-    expect(read('src/modules/wms/issue/service.ts')).toMatch(/blockingDebtUsd\(balance, deferred\)/);
-    expect(read(WAITING)).toMatch(/blockingDebtUsd\(money\.balanceUsd, money\.deferredUsd\)/);
+  it('the «qarz» tag and the counter share one debt rule — the amount AND the line', () => {
+    const issue = read('src/modules/wms/issue/service.ts');
+    expect(issue).toMatch(/blockingDebtUsd\(balance, deferred\)/);
+    expect(issue).toMatch(/const needDebt = debtBlocks\(balance, deferred\) && !input\.debtOk;/);
+    const waiting = read(WAITING);
+    expect(waiting).toMatch(/debtBlocks\(money\.balanceUsd, money\.deferredUsd\)/);
+    expect(waiting).not.toContain('0.009');
   });
 });
 
@@ -136,6 +156,23 @@ describe('the sweep', () => {
     expect(loop.indexOf('try {')).toBeGreaterThan(-1);
     expect(loop.indexOf('try {')).toBeLessThan(loop.indexOf('claimWaitAlerts('));
     expect(loop.indexOf('claimWaitAlerts(')).toBeLessThan(loop.indexOf('notifyStaffTelegram('));
+  });
+
+  it('reads the price tags ONCE, JIT off, before any seller — never per seller on the pool', () => {
+    const alerts = read(ALERTS);
+    const sweep = body(alerts, 'sweepCargoWaiting');
+    const loopAt = sweep.indexOf('for (const [sellerId, sellerRows] of bySeller)');
+    const read1 = sweep.indexOf('withoutJit((exec) => waitingPriceGate(exec, rows, gate))');
+    expect(read1).toBeGreaterThan(-1);
+    expect(read1).toBeLessThan(loopAt);
+    expect(alerts.match(/waitingPriceGate\(/g)).toHaveLength(1);
+    expect(alerts).not.toMatch(/waitingPriceGate\(db,/);
+  });
+
+  it('a claim is offered at the level a row may be ANNOUNCED at, never its bare age', () => {
+    const claim = body(read(ALERTS), 'claimWaitAlerts');
+    expect(claim).toMatch(/announceLevel\(row, thresholds, asOf\)/);
+    expect(claim).not.toMatch(/waitLevel\(/);
   });
 });
 

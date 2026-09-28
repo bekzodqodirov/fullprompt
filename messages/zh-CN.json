@@ -2498,7 +2498,8 @@
     "debt": "欠款",
     "tagsFailed": "暂时无法读取价格和欠款标记",
     "homeRow": "未提货物",
-    "homeSub": "{n} 个客户"
+    "homeSub": "{n} 个客户",
+    "onRoad": "{n} 在途"
   },
   "arrivals": {
     "title": "待收货物",

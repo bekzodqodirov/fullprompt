@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
@@ -18,14 +18,20 @@ import {
 import { stockAging, unclaimedReport, unclaimedSummary, warehouseFill } from '@/modules/wms/reports/queries';
 import { sendDailyDigest } from '@/modules/wms/reports/daily-digest';
 import {
+  readUncollectedFilters,
+  rowsInTab,
   uncollectedCargo,
   uncollectedCount,
+  uncollectedPageQuery,
+  uncollectedScope,
   waitLevel,
+  waitThresholds,
   waitingDebtors,
   waitingPriceGate,
   type UncollectedQuery,
 } from '@/modules/wms/issue/waiting';
 import { crossedOn, sweepCargoWaiting, waitingDigestSection } from '@/modules/wms/issue/waiting-alerts';
+import { salesFlowCounts } from '@/modules/wms/home/role-flows';
 
 /**
  * «Olib ketilmagan yuk» (0116, the owner's 3a) against a real database.
@@ -247,10 +253,13 @@ function list(clientIds: string[], extra: Partial<UncollectedQuery> = {}, asOf =
 }
 
 async function waitingMessages(sellerId: string): Promise<{ text: string; status: string }[]> {
+  // Oldest first, by an ORDER BY — an unordered read comes back in whatever
+  // order the heap holds it (67b).
   const rows = await db
     .select({ payload: notifications.payload, status: notifications.status })
     .from(notifications)
-    .where(and(eq(notifications.userId, sellerId), eq(notifications.type, 'CargoWaiting')));
+    .where(and(eq(notifications.userId, sellerId), eq(notifications.type, 'CargoWaiting')))
+    .orderBy(asc(notifications.createdAt), asc(notifications.id));
   return rows.map((r) => ({ text: String((r.payload as { text?: string }).text ?? ''), status: r.status }));
 }
 
@@ -334,10 +343,49 @@ describe('the svodka and the reports age a carton from where it stands', () => {
     expect(fill!.oldestDays).toBe(35);
 
     const aging = await stockAging([whTas], BASE);
-    expect(aging.map((r) => r.days).sort((a, b) => a - b)).toEqual([2, 35]);
+    expect(aging.map((r) => r.days ?? -1).sort((a, b) => a - b)).toEqual([2, 35]);
   });
 
-  it('unclaimed cargo that crossed to Tashkent is still «egasiz yuk» — list and count agree', async () => {
+  it('a retired warehouse still holding cargo stays on the fill card and the svodka; a carton nobody can date reads «?», not «0»', async () => {
+    const retired = await mintWarehouse('OR', { country: 'UZ', type: 'distribution', issues: false });
+    const empty = await mintWarehouse('OE', { country: 'UZ', type: 'distribution', issues: false });
+    const c = await mintClient(null);
+    await cargo({
+      clientId: c.id,
+      receivedAt: before(60),
+      receiptWh: whYw,
+      boxes: 2,
+      kg: 2,
+      m3: 0.02,
+      standAt: retired,
+      status: 'in_stock',
+      landedAt: before(40),
+    });
+    // A carton with no movement at all — no landing to count from.
+    const ghost = await cargo({
+      clientId: c.id,
+      receivedAt: before(3),
+      receiptWh: whYw,
+      boxes: 1,
+      kg: 1,
+      m3: 0.01,
+      standAt: retired,
+      status: 'in_stock',
+    });
+    await db.delete(boxMovements).where(inArray(boxMovements.boxId, ghost.boxIds));
+    await db.update(warehouses).set({ active: false }).where(inArray(warehouses.id, [retired, empty]));
+
+    const fill = await warehouseFill([retired, empty], 30, BASE);
+    // Switching the shed off moved none of its cargo; the empty one goes.
+    expect(fill.map((w) => w.id)).toEqual([retired]);
+    expect(fill[0]!.staleCount).toBe(2);
+    expect(fill[0]!.oldestDays).toBe(40);
+
+    const aging = await stockAging([retired], BASE);
+    expect(aging.map((r) => r.days)).toEqual([null, 40]);
+  });
+
+  it('unclaimed cargo that crossed to Tashkent, or is on a truck, is still «egasiz yuk» — list and count agree', async () => {
     const marking = `MK${next()}`;
     await cargo({
       clientId: null,
@@ -351,8 +399,9 @@ describe('the svodka and the reports age a carton from where it stands', () => {
       status: 'ready_for_pickup',
       landedAt: before(3),
     });
-    // A second unclaimed prixod whose cartons have all LEFT — on a truck now.
-    const gone = await cargo({
+    // A second unclaimed prixod whose cartons are all on a TRUCK now: the road
+    // is exactly when the office wants its owner named — it stays, «yo'lda».
+    const onTruck = await cargo({
       clientId: null,
       marking: `MG${next()}`,
       receivedAt: before(20),
@@ -366,16 +415,52 @@ describe('the svodka and the reports age a carton from where it stands', () => {
     await db
       .update(boxes)
       .set({ status: 'in_transit', currentWarehouseId: null })
-      .where(inArray(boxes.id, gone.boxIds));
+      .where(inArray(boxes.id, onTruck.boxIds));
+    // A third, returned to its sender (`issued`, statusReason returned_to_sender):
+    // resolved, and off every surface.
+    const returned = await cargo({
+      clientId: null,
+      marking: `MR${next()}`,
+      receivedAt: before(20),
+      receiptWh: whYw,
+      boxes: 3,
+      kg: 3,
+      m3: 0.03,
+      standAt: whYw,
+      status: 'in_stock',
+    });
+    await db
+      .update(boxes)
+      .set({ status: 'issued', statusReason: 'returned_to_sender', currentWarehouseId: null })
+      .where(inArray(boxes.id, returned.boxIds));
+    // A fourth, received at 23:30 Tashkent: its age is Tashkent CALENDAR days,
+    // like every «N kun» in the svodka — eight at 09:00 on the 26th, not the
+    // seven whole 24-hour periods since.
+    const late = await cargo({
+      clientId: null,
+      marking: `ML${next()}`,
+      receivedAt: new Date('2026-09-18T18:30:00Z'),
+      receiptWh: whYw,
+      boxes: 1,
+      kg: 1,
+      m3: 0.01,
+      standAt: whYw,
+      status: 'in_stock',
+    });
 
     const report = await unclaimedReport([whYw], BASE);
     const row = report.find((r) => r.marking === marking);
-    expect(row?.boxesInStock).toBe(4);
+    expect(row?.boxes).toBe(4);
+    expect(row?.boxesOnRoad).toBe(0);
     expect(row?.days).toBe(20);
-    expect(report.map((r) => r.id)).not.toContain(gone.receiptId);
-    // The dashboard's row counts exactly what the list lists: the prixod with
-    // cargo standing, and its cartons — never the one whose cartons left.
-    expect(await unclaimedSummary([whYw])).toEqual({ receipts: 1, boxes: 4 });
+    const road = report.find((r) => r.id === onTruck.receiptId);
+    expect(road?.boxes).toBe(2);
+    expect(road?.boxesOnRoad).toBe(2);
+    expect(report.map((r) => r.id)).not.toContain(returned.receiptId);
+    expect(report.find((r) => r.id === late.receiptId)?.days).toBe(8);
+    // The dashboard's row counts exactly what the list lists: the prixods with
+    // cargo to resolve, and their cartons — never the one returned.
+    expect(await unclaimedSummary([whYw])).toEqual({ receipts: 3, boxes: 7 });
     // …and the waiting list, which is about CLIENTS, does not carry it.
     const waiting = await uncollectedCargo(db, {
       asOf: BASE,
@@ -614,7 +699,7 @@ describe('the morning sweep', () => {
     expect(await waitingMessages(seller)).toHaveLength(2);
   });
 
-  it('cartons left behind at a visit re-arm the alert, marked «qoldiq»', async () => {
+  it('cartons left behind at a visit are announced again once they have waited the warn line since it, marked «qoldiq»', async () => {
     const seller = await mintUser('Qoldiq seller');
     const c = await mintClient(seller);
     const made = await cargo({
@@ -631,11 +716,53 @@ describe('the morning sweep', () => {
     await sweepCargoWaiting({ asOf: BASE, clientIds: [c.id] });
     // The client came an hour AFTER the morning's message and left three.
     await pickup(c.id, whTas, new Date(BASE.getTime() + 3_600_000), made.boxIds.slice(0, 7));
-    await sweepCargoWaiting({ asOf: new Date(BASE.getTime() + DAY), clientIds: [c.id] });
+    // The visit buys the leftovers the same five quiet days the landing gave
+    // the shipment: not the next morning, not on the fourth.
+    for (const day of [1, 4]) {
+      await sweepCargoWaiting({ asOf: new Date(BASE.getTime() + day * DAY), clientIds: [c.id] });
+    }
+    expect(await waitingMessages(seller)).toHaveLength(1);
+    // The fifth morning after the visit: announced, aged from the LANDING.
+    await sweepCargoWaiting({ asOf: new Date(BASE.getTime() + 5 * DAY), clientIds: [c.id] });
     const messages = await waitingMessages(seller);
     expect(messages).toHaveLength(2);
     expect(messages[1]!.text).toContain('3 kor.');
-    expect(messages[1]!.text).toContain('7 kun (qoldiq)');
+    expect(messages[1]!.text).toContain('11 kun (qoldiq)');
+    expect(messages[1]!.text).toContain('🔴 10+ kun:');
+  });
+
+  it('a client collecting a few cartons a day is announced ONCE, not every morning — and again once they stop coming', async () => {
+    const seller = await mintUser('Portions seller');
+    const c = await mintClient(seller);
+    const made = await cargo({
+      clientId: c.id,
+      receivedAt: before(30),
+      receiptWh: whYw,
+      boxes: 10,
+      kg: 10,
+      m3: 0.1,
+      standAt: whTas,
+      status: 'ready_for_pickup',
+      landedAt: before(8),
+    });
+    await sweepCargoWaiting({ asOf: BASE, clientIds: [c.id] });
+    // Three afternoons in a row, two cartons each; a sweep every morning.
+    for (let d = 0; d < 3; d += 1) {
+      await pickup(c.id, whTas, new Date(BASE.getTime() + d * DAY + 2 * 3_600_000), made.boxIds.slice(d * 2, d * 2 + 2));
+      await sweepCargoWaiting({ asOf: new Date(BASE.getTime() + (d + 1) * DAY), clientIds: [c.id] });
+      // …and the office's «today» does not list them either.
+      expect((await crossedOn(`2026-09-${27 + d}`, [c.id])).size).toBe(0);
+    }
+    expect(await waitingMessages(seller)).toHaveLength(1);
+    // They stop coming after the third visit (the 28th): four quiet days are
+    // still quiet, the fifth speaks — at the landing's age.
+    await sweepCargoWaiting({ asOf: new Date(BASE.getTime() + 6 * DAY), clientIds: [c.id] });
+    expect(await waitingMessages(seller)).toHaveLength(1);
+    await sweepCargoWaiting({ asOf: new Date(BASE.getTime() + 7 * DAY), clientIds: [c.id] });
+    const messages = await waitingMessages(seller);
+    expect(messages).toHaveLength(2);
+    expect(messages[1]!.text).toContain('4 kor.');
+    expect(messages[1]!.text).toContain('15 kun (qoldiq)');
   });
 
   it('a client with no seller reaches only the office; a muted seller\'s claim is written all the same', async () => {
@@ -750,5 +877,45 @@ describe('the morning sweep', () => {
     expect(text.split('\n').at(-1)).toMatch(/^🔗 .*\/my-clients\/olib-ketilmagan$/);
     // The seller was told by the same run.
     expect(await waitingMessages(seller)).toHaveLength(1);
+  });
+});
+
+describe('the home rows', () => {
+  it("a both-hats viewer's «mine» row opens exactly the rows it counted (the owner's own setup, round 109)", async () => {
+    const owner = await mintUser('Both hats');
+    const other = await mintUser('Other seller');
+    const mine = await mintClient(owner);
+    const theirs = await mintClient(other);
+    for (const c of [mine, theirs]) {
+      await cargo({
+        clientId: c.id,
+        receivedAt: before(20),
+        receiptWh: whYw,
+        boxes: 1,
+        kg: 1,
+        m3: 0.01,
+        standAt: whTas,
+        status: 'ready_for_pickup',
+        landedAt: before(7),
+      });
+    }
+    const viewer = {
+      id: owner,
+      permissions: new Set(['clients.manage', 'crm.leads', 'crm.leads.view_all']),
+      warehouseScoped: false,
+      warehouseIds: [] as string[],
+    };
+    const scope = uncollectedScope(viewer);
+    expect(scope.seesAll).toBe(true);
+    const flow = await salesFlowCounts(owner, '2026-09-26', { seesAllClients: scope.seesAll, asOf: BASE });
+    expect(flow.uncollected).toBe(1);
+
+    // The page, reading the link the row carries: its filters, its query, its tab.
+    const params = Object.fromEntries(new URL(flow.uncollectedHref, 'https://gsr.test').searchParams);
+    const filters = readUncollectedFilters(params, { seesAll: scope.seesAll, warehouseIds: [whTas] });
+    const page = await uncollectedCargo(db, uncollectedPageQuery(scope, filters, BASE));
+    const tab = rowsInTab(page.rows, filters.tab, await waitThresholds());
+    expect(new Set(tab.map((r) => r.clientId)).size).toBe(flow.uncollected);
+    expect(tab.map((r) => r.clientCode)).toEqual([mine.code]);
   });
 });

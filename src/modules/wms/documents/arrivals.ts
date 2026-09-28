@@ -112,6 +112,16 @@ export function landedHereAtSql(box: string): SQL {
      LIMIT 1)`;
 }
 
+/**
+ * The TASHKENT CALENDAR DAY of `landedHereAtSql` — what every «N kun» beside a
+ * carton standing here counts from (R5: the office's day, never the UTC one,
+ * or a landing at 00:30 Tashkent is yesterday's). One home for the cast the
+ * dashboard's fill card and the stock-aging report each wrote by hand.
+ */
+export function landedHereDaySql(box: string): SQL {
+  return sql`((${landedHereAtSql(box)}) AT TIME ZONE 'Asia/Tashkent')::date`;
+}
+
 /** One (lot, truck) pair: how many boxes it brought and when the first landed. */
 export interface ArrivalRow {
   lotId: string;

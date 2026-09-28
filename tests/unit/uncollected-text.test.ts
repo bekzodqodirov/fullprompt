@@ -7,13 +7,17 @@ import {
   waitLine,
 } from '@/modules/wms/issue/waiting-alerts';
 import {
+  announceLevel,
+  myUncollectedHref,
   readUncollectedFilters,
+  rowsInTab,
   tabMinDays,
-  waitDays,
+  uncollectedScope,
   waitLevel,
   waitRowKey,
   type UncollectedRow,
 } from '@/modules/wms/issue/waiting';
+import { calendarDaysBetween } from '@/modules/platform/time/tashkent';
 
 /**
  * «Olib ketilmagan yuk»'s words (0116) — pure, so the rules are provable
@@ -51,8 +55,9 @@ function row(over: Partial<UncollectedRow> & { clientCode: string }): Uncollecte
 
 describe('the waiting list\'s arithmetic', () => {
   it('counts whole calendar days, and the levels are the thresholds', () => {
-    expect(waitDays('2026-09-21', '2026-09-26')).toBe(5);
-    expect(waitDays('2026-02-27', '2026-03-01')).toBe(2);
+    expect(calendarDaysBetween('2026-09-21', '2026-09-26')).toBe(5);
+    expect(calendarDaysBetween('2026-02-27', '2026-03-01')).toBe(2);
+    expect(calendarDaysBetween('2026-09-26', '2026-09-26')).toBe(0);
     expect(waitLevel(4, T)).toBe(0);
     expect(waitLevel(5, T)).toBe(1);
     expect(waitLevel(10, T)).toBe(2);
@@ -73,6 +78,59 @@ describe('the waiting list\'s arithmetic', () => {
     expect(odd).toEqual({ tab: 'sariq', warehouseId: null, sellerId: 'none' });
     expect(readUncollectedFilters({ sotuvchi: "x' OR 1=1" }, { seesAll: true, warehouseIds: [] }).sellerId).toBeNull();
     expect([tabMinDays('qizil', T), tabMinDays('sariq', T), tabMinDays('hammasi', T)]).toEqual([10, 5, 0]);
+  });
+});
+
+describe('when a row may be announced', () => {
+  // 09:00 in Tashkent on 2026-09-26 — the sweep's own minute.
+  const at9 = new Date('2026-09-26T04:00:00Z');
+
+  it('a row nobody has visited speaks at its age\'s level, from the landing', () => {
+    const landed = new Date('2026-09-14T04:00:00Z');
+    expect(announceLevel({ days: 12, clockFrom: landed }, T, at9)).toBe(2);
+    expect(announceLevel({ days: 4, clockFrom: new Date('2026-09-22T04:00:00Z') }, T, at9)).toBe(0);
+  });
+
+  it('a visit buys the leftovers the warn line of quiet — then they speak at the LANDING\'s level', () => {
+    // Landed twelve days ago, the client came yesterday afternoon and left some.
+    const yesterday = new Date('2026-09-25T10:00:00Z');
+    expect(announceLevel({ days: 12, clockFrom: yesterday }, T, at9)).toBe(0);
+    // Four days after the visit: still quiet.
+    expect(announceLevel({ days: 12, clockFrom: new Date('2026-09-22T10:00:00Z') }, T, at9)).toBe(0);
+    // Five days after the visit: the age (not the quiet) decides the level.
+    expect(announceLevel({ days: 12, clockFrom: new Date('2026-09-21T10:00:00Z') }, T, at9)).toBe(2);
+    expect(announceLevel({ days: 7, clockFrom: new Date('2026-09-21T10:00:00Z') }, T, at9)).toBe(1);
+    // A visit at 23:30 Tashkent is that Tashkent day, not the UTC one (R5).
+    expect(announceLevel({ days: 12, clockFrom: new Date('2026-09-20T18:30:00Z') }, T, at9)).toBe(2);
+    expect(announceLevel({ days: 12, clockFrom: null }, T, at9)).toBe(0);
+  });
+});
+
+describe('the book a viewer reads, and where a home row points', () => {
+  const grants = (...codes: string[]) => ({ has: (code: string) => codes.includes(code) });
+
+  it('a seller reads their own clients; the office everybody; warehouse scope always applies', () => {
+    const seller = uncollectedScope({ id: 's1', permissions: grants('crm.leads'), warehouseScoped: false, warehouseIds: [] });
+    expect(seller).toEqual({ seesAll: false, ownerId: 's1', warehouseIds: undefined });
+    const office = uncollectedScope({ id: 'a1', permissions: grants('clients.manage'), warehouseScoped: true, warehouseIds: ['w1'] });
+    expect(office).toEqual({ seesAll: true, ownerId: undefined, warehouseIds: ['w1'] });
+  });
+
+  it('a «mine» row names its viewer as the seller when their bare page would show every client', () => {
+    const id = '0199a0b1-0000-7000-8000-000000000009';
+    expect(myUncollectedHref({ id, seesAll: false })).toBe('/my-clients/olib-ketilmagan');
+    const both = myUncollectedHref({ id, seesAll: true });
+    expect(both).toBe(`/my-clients/olib-ketilmagan?sotuvchi=${id}`);
+    // …which the page reads back as exactly that seller (#514 admits it for this viewer).
+    const params = Object.fromEntries(new URL(both, 'https://x').searchParams);
+    expect(readUncollectedFilters(params, { seesAll: true, warehouseIds: [] }).sellerId).toBe(id);
+  });
+
+  it('a tab is the list sliced at its level', () => {
+    const rows = [{ days: 12 }, { days: 6 }, { days: 2 }, { days: null }];
+    expect(rowsInTab(rows, 'qizil', T)).toEqual([{ days: 12 }]);
+    expect(rowsInTab(rows, 'sariq', T)).toEqual([{ days: 12 }, { days: 6 }]);
+    expect(rowsInTab(rows, 'hammasi', T)).toHaveLength(4);
   });
 });
 

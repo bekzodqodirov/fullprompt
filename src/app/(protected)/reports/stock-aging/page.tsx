@@ -62,9 +62,14 @@ export default async function StockAgingReportPage({
                   <td className="p-2 text-right">{row.kg}</td>
                   <td className="p-2 text-right">{row.m3}</td>
                   <td className="p-2 text-right text-ink-500">{row.density ?? '—'}</td>
-                  {/* Owner's thresholds: ≥7 days yellow, ≥14 days red. */}
-                  <td className={`p-2 text-right font-bold ${row.days >= 14 ? 'text-bad' : row.days >= 7 ? 'text-yellow-600' : ''}`}>
-                    {row.days}
+                  {/* Owner's thresholds: ≥7 days yellow, ≥14 days red. «?» = no
+                      landing movement to count from (dated by nobody). */}
+                  <td
+                    className={`p-2 text-right font-bold ${
+                      row.days === null ? 'text-ink-500' : row.days >= 14 ? 'text-bad' : row.days >= 7 ? 'text-yellow-600' : ''
+                    }`}
+                  >
+                    {row.days ?? '?'}
                   </td>
                 </tr>
               ))}

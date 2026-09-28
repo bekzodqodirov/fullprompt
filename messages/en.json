@@ -2498,7 +2498,8 @@
     "debt": "debt",
     "tagsFailed": "Price and debt tags could not be read right now",
     "homeRow": "Uncollected cargo",
-    "homeSub": "{n} clients"
+    "homeSub": "{n} clients",
+    "onRoad": "{n} on the road"
   },
   "arrivals": {
     "title": "Incoming cargo",

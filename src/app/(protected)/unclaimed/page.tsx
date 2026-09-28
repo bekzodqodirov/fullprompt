@@ -11,15 +11,18 @@ import { unclaimedReport } from '@/modules/wms/reports/queries';
  *
  * The dashboard's «egasiz yuk» row links here, so this page reads the SAME
  * list the row counts (`unclaimedReport` / `unclaimedSummary`): prixods with
- * cargo still standing in a warehouse. It was a fourth hand-written copy that
- * listed every unclaimed prixod ever confirmed, cartons long gone included,
- * under a number that counted something else.
+ * cargo still to resolve — in a warehouse or on a truck, the road labelled
+ * «yo'lda» (a prixod on the way is exactly the one whose owner the office
+ * wants named before it lands). It was a fourth hand-written copy that listed
+ * every unclaimed prixod ever confirmed, cartons returned to their sender
+ * included, under a number that counted something else.
  */
 export default async function UnclaimedPage() {
   const actor = await getActor();
   if (!actor) redirect('/login');
   const t = await getTranslations('receipts');
   const tc = await getTranslations('common');
+  const tu = await getTranslations('uncollected');
   const format = await getFormatter();
 
   // `warehouseScope`'s three answers, for a list that takes ids: a scoped
@@ -48,7 +51,14 @@ export default async function UnclaimedPage() {
               </span>
             </div>
             <p className="text-sm text-ink-700">
-              {row.whCode} · {row.boxesInStock} 📦 {row.sourceNote && `· ${row.sourceNote}`}
+              {row.whCode} · {row.boxes} 📦
+              {row.boxesOnRoad > 0 && (
+                <span className="font-semibold text-warn" data-testid="unclaimed-on-road">
+                  {' · 🚚 '}
+                  {tu('onRoad', { n: row.boxesOnRoad })}
+                </span>
+              )}
+              {row.sourceNote && ` · ${row.sourceNote}`}
             </p>
           </Link>
         ))}

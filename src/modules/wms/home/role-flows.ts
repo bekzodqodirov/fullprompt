@@ -22,7 +22,14 @@ import { docsPendingWhere } from '../batches/docs-pending';
 import { warehouseFlowCounts, type WarehouseFlowCounts } from './flow';
 import { unplacedCostTotals } from '../costing/service';
 import { recurringDueCount } from '../accounting/recurring';
-import { uncollectedCount, waitThresholds } from '../issue/waiting';
+import { seesAllClients } from '../../platform/clients/card-door';
+import {
+  myUncollectedHref,
+  uncollectedCount,
+  uncollectedScope,
+  waitThresholds,
+  type UncollectedScope,
+} from '../issue/waiting';
 
 /**
  * The other three workflow homes (owner: "har bir hodim qiladigan ishiga
@@ -56,6 +63,8 @@ export interface SalesFlowCounts {
    * warehouse (0116) — the «Olib ketilmagan yuk» list's own count.
    */
   uncollected: number;
+  /** Where that row opens: exactly the rows it counted (`myUncollectedHref`). */
+  uncollectedHref: string;
 }
 
 export async function salesFlowCounts(
@@ -69,6 +78,13 @@ export async function salesFlowCounts(
      * rows the list does not draw is #651's phantom in a new costume.
      */
     leadChats?: boolean;
+    /**
+     * `seesAllClients` for this person — an admin or the owner wearing the
+     * seller's hat too (round 109) reads every client on the bare page, so their
+     * row's link has to name them. `asOf` pins «today» for a test (R5).
+     */
+    seesAllClients?: boolean;
+    asOf?: Date;
   } = {},
 ): Promise<SalesFlowCounts> {
   // Settings on the pool, before anything reads (the list takes no pool of its own).
@@ -104,7 +120,7 @@ export async function salesFlowCounts(
       .where(and(eq(deals.ownerId, actorId), eq(dealStages.kind, 'open'))),
     // Own clients only — a seller's book is a handful of rows, so the plain
     // pool is enough here; the company-wide count below is the heavy one.
-    uncollectedCount(db, { asOf: new Date(), minDays: warn, ownerId: actorId, warehouseIds: undefined }),
+    uncollectedCount(db, { asOf: opts.asOf ?? new Date(), minDays: warn, ownerId: actorId, warehouseIds: undefined }),
   ]);
   return {
     callsDue: calls.length,
@@ -119,6 +135,7 @@ export async function salesFlowCounts(
     debtors: book.filter((client) => client.balanceUsd > 0.009).length,
     openDeals: Number(openDealRows[0]?.n ?? 0),
     uncollected,
+    uncollectedHref: myUncollectedHref({ id: actorId, seesAll: opts.seesAllClients ?? false }),
   };
 }
 
@@ -144,8 +161,16 @@ export interface LogistFlowCounts {
 export async function logistFlowCounts(
   actor: ScopedActor,
   today: string,
+  /**
+   * The waiting list's book for this person (`uncollectedScope` — what the
+   * page itself reads), so the row cannot count the company while the page
+   * shows one seller's clients. Omitted = every client, the shipped logist's
+   * grants (`clients.manage`).
+   */
+  opts: { uncollected?: UncollectedScope } = {},
 ): Promise<LogistFlowCounts> {
   const { warn } = await waitThresholds();
+  const book = opts.uncollected ?? { seesAll: true, ownerId: undefined, warehouseIds: undefined };
   const [plans, warehouse, costMissing, pickups, uncollected] = await Promise.all([
     db
       .select({ n: sql<number>`count(*)` })
@@ -164,7 +189,8 @@ export async function logistFlowCounts(
     // 18k-carton shaped copy, and a cold cache can miss it — the row then
     // carries no number.
     withoutJit(
-      (exec) => uncollectedCount(exec, { asOf: new Date(), minDays: warn, ownerId: undefined, warehouseIds: undefined }),
+      (exec) =>
+        uncollectedCount(exec, { asOf: new Date(), minDays: warn, ownerId: book.ownerId, warehouseIds: book.warehouseIds }),
       { timeoutMs: UNBILLED_BUDGET_MS },
     ).catch((err) => {
       console.warn('[home] uncollected count missed its budget', err instanceof Error ? err.message : err);
@@ -308,7 +334,7 @@ export type HomeFlow =
  * owner keeps the tile overview.
  */
 export async function buildHomeFlow(
-  actor: ScopedActor & { id: string; roles: string[]; permissions?: ReadonlySet<string> },
+  actor: ScopedActor & { id: string; roles: string[]; permissions: { has(code: string): boolean } },
   today: string,
 ): Promise<HomeFlow | null> {
   if (actor.warehouseScoped) {
@@ -322,7 +348,7 @@ export async function buildHomeFlow(
     return {
       kind: 'logist',
       hrefs: ['/plans', '/batches', '/arrivals'],
-      counts: await logistFlowCounts(actor, today),
+      counts: await logistFlowCounts(actor, today, { uncollected: uncollectedScope(actor) }),
     };
   }
   if (actor.roles.includes('sales_manager')) {
@@ -333,7 +359,8 @@ export async function buildHomeFlow(
       // is still named here by its bare NAV href.
       hrefs: ['/crm/today', '/bitimlar', '/crm', '/suhbatlar', '/my-clients'],
       counts: await salesFlowCounts(actor.id, today, {
-        leadChats: actor.permissions?.has('crm.leads') ?? false,
+        leadChats: actor.permissions.has('crm.leads'),
+        seesAllClients: seesAllClients(actor),
       }),
     };
   }

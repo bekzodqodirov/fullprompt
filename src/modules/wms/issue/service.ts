@@ -17,7 +17,7 @@ import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { emitEvent } from '../../platform/events/service';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { usersWithPermission } from '../../platform/notifications/service';
-import { blockingDebtUsd, clientBalanceUsd, deferredDealsUsd } from '../finance/service';
+import { blockingDebtUsd, clientBalanceUsd, debtBlocks, deferredDealsUsd } from '../finance/service';
 import { mayGrantDebt, type MoneyActor } from '../finance/scope';
 import { deferralCover, deferredTotal } from '../debt/rules';
 import { gatedAt, uncoveredBoxesOn, unpricedGate, unpricedReceiptsOn, type UncoveredBox } from '../finance/unpriced';
@@ -141,7 +141,7 @@ export async function issueBoxes(request: IssueRequest, ctx: AuditContext, relea
     // box posted over a debt that a payment cleared meanwhile opens nothing,
     // and refusing it would stop a legitimate handover for a stale checkbox.
     // After the replay return — a replay is never refused.
-    if (blockingDebt > 0.009 && input.debtOk && !mayGrant) throw new IssueError('debt_override_forbidden');
+    if (debtBlocks(balance, deferred) && input.debtOk && !mayGrant) throw new IssueError('debt_override_forbidden');
     if (gated.length > 0 && input.priceOk && !mayGrant) throw new IssueError('price_override_forbidden');
 
     // Phase 6 + 0104: an operator without the tick may still issue when a
@@ -150,7 +150,7 @@ export async function issueBoxes(request: IssueRequest, ctx: AuditContext, relea
     // UPDATE, so two phones cannot spend one permission) and marked consumed
     // once the handover row exists; one transaction makes the pair atomic.
     // A deferral (#207) excuses a DEBT and never a missing price.
-    const needDebt = blockingDebt > 0.009 && !input.debtOk;
+    const needDebt = debtBlocks(balance, deferred) && !input.debtOk;
     const needPrice = gated.length > 0 && !input.priceOk;
     let approvalId: string | null = null;
     if (needDebt || needPrice) {

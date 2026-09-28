@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { mayOpenMyClients, seesAllClients } from '@/modules/platform/clients/card-door';
+import { mayOpenMyClients } from '@/modules/platform/clients/card-door';
 import { salesManagerOptions } from '@/modules/platform/rbac/queries';
 import { db } from '@/modules/platform/db/client';
 import { withoutJit } from '@/modules/platform/db/no-jit';
@@ -14,8 +14,10 @@ import { unpricedGate } from '@/modules/wms/finance/unpriced';
 import {
   issuingWarehouses,
   readUncollectedFilters,
-  tabMinDays,
+  rowsInTab,
   uncollectedCargo,
+  uncollectedPageQuery,
+  uncollectedScope,
   waitRowKey,
   waitThresholds,
   waitingDebtors,
@@ -32,15 +34,17 @@ const SHOWN = 200;
  * «Olib ketilmagan yuk» (0116, the owner's 3a) — cargo standing in Tashkent or
  * Andijan waiting for its client, oldest first.
  *
- * Whose rows: `mayOpenMyClients` opens the page, `seesAllClients` decides the
- * book — a seller reads the clients they manage, the office everybody — and
- * `warehouseScope` narrows both. The same function the seller's morning
- * message and the svodka read, so a row on the screen and a line in Telegram
- * are one fact (#513).
+ * Whose rows: `mayOpenMyClients` opens the page, `uncollectedScope` decides
+ * the book (`seesAllClients` — a seller reads the clients they manage, the
+ * office everybody — inside `warehouseScope`), and the home rows count with
+ * the same answer. The same function the seller's morning message and the
+ * svodka read, so a row on the screen and a line in Telegram are one fact
+ * (#513).
  *
- * No money on the list; the two tags that are money's («narxsiz», «qarz» —
- * the two reasons the counter itself refuses the cargo) appear only on rows
- * whose ledger this reader may open (`mayOpenClientLedger`).
+ * No money on the list. Of the two reasons the counter itself refuses the
+ * cargo, «narxsiz» is a cargo fact every reader of the row gets (the Telegram
+ * line carries it too); «qarz» is money's and appears only on rows whose
+ * ledger this reader may open (`mayOpenClientLedger`).
  */
 export default async function UncollectedPage({
   searchParams,
@@ -53,53 +57,46 @@ export default async function UncollectedPage({
   const t = await getTranslations('uncollected');
   const params = await searchParams;
 
-  const seesAll = seesAllClients(actor);
-  const scope = actor.warehouseScoped ? actor.warehouseIds : undefined;
+  const scope = uncollectedScope(actor);
+  const seesAll = scope.seesAll;
   // Settings and the warehouse list on the POOL, before the read — the list
   // itself takes no pool of its own (#714).
   const [thresholds, whOptions, gate] = await Promise.all([
     waitThresholds(),
-    issuingWarehouses(scope),
+    issuingWarehouses(scope.warehouseIds),
     unpricedGate(),
   ]);
   const filters = readUncollectedFilters(params, {
     seesAll,
     warehouseIds: whOptions.map((w) => w.id),
   });
-  const query = {
-    asOf: new Date(),
-    // Everything waiting, once — the three tabs' counts are slices of it.
-    minDays: 0,
-    ownerId: seesAll ? undefined : actor.id,
-    warehouseIds: scope,
-    sellerId: filters.sellerId ?? undefined,
-    warehouseId: filters.warehouseId ?? undefined,
-  };
+  // Everything waiting, once — the three tabs' counts are slices of it.
+  const query = uncollectedPageQuery(scope, filters, new Date());
   // The whole company is a read over every waiting carton — JIT off for it
   // (0104's lesson); a seller's own book is a handful of rows.
   const list = seesAll
     ? await withoutJit((exec) => uncollectedCargo(exec, query))
     : await uncollectedCargo(db, query);
 
-  const inTab = (tab: WaitTab) => {
-    const min = tabMinDays(tab, thresholds);
-    return min === 0 ? list.rows : list.rows.filter((row) => row.days !== null && row.days >= min);
-  };
+  const inTab = (tab: WaitTab) => rowsInTab(list.rows, tab, thresholds);
   const tabRows = inTab(filters.tab);
   const rows = tabRows.slice(0, SHOWN);
   const tabClients = new Set(tabRows.map((row) => row.clientId)).size;
   const tabBoxes = tabRows.reduce((sum, row) => sum + row.boxes, 0);
 
-  // The two money tags, for the rows this reader may read money on.
+  // «Narxsiz» for every drawn row — the same tag the Telegram line carries;
+  // «qarz» only for the rows whose ledger this reader may open.
   const moneyRows = rows.filter((row) => mayOpenClientLedger(actor, { salesManagerId: row.sellerId }));
   let unpriced = new Map<string, number>();
   let debtors = new Set<string>();
   let tagsFailed = false;
-  if (moneyRows.length > 0) {
+  if (rows.length > 0) {
     try {
       [unpriced, debtors] = await Promise.all([
-        withoutJit((exec) => waitingPriceGate(exec, moneyRows, gate)),
-        waitingDebtors([...new Set(moneyRows.map((row) => row.clientId))]),
+        withoutJit((exec) => waitingPriceGate(exec, rows, gate)),
+        moneyRows.length > 0
+          ? waitingDebtors([...new Set(moneyRows.map((row) => row.clientId))])
+          : Promise.resolve(new Set<string>()),
       ]);
     } catch (err) {
       console.warn('[uncollected] tags unavailable', err instanceof Error ? err.message : err);
@@ -219,7 +216,7 @@ export default async function UncollectedPage({
               key={waitRowKey(row)}
               row={row}
               level={row.days === null ? 0 : row.days >= thresholds.alarm ? 2 : row.days >= thresholds.warn ? 1 : 0}
-              unpriced={moneyKeys.has(waitRowKey(row)) ? (unpriced.get(waitRowKey(row)) ?? 0) : 0}
+              unpriced={unpriced.get(waitRowKey(row)) ?? 0}
               debt={moneyKeys.has(waitRowKey(row)) && debtors.has(row.clientId)}
               t={t}
             />
