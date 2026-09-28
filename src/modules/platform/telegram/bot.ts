@@ -27,7 +27,7 @@ import {
 } from './staff-handlers';
 import { replyKeyboardFor } from './keyboards';
 import { ensureBotProfile, offerStaffCommands } from './commands';
-import { botCall } from './send';
+import { botCall, noteBotAnswer } from './send';
 
 /**
  * Staff-linking bot (spec 4.5): handles `/start <one-time-code>` from the
@@ -76,13 +76,38 @@ async function tellOldChat(
     .catch(() => {});
 }
 
+/**
+ * A 401/404 from grammy's own getMe/getUpdates is the TOKEN, noticed with
+ * nothing queued to send — told to the same memo every `botCall` feeds, so
+ * the admin screens turn red whichever door found it first (B9).
+ */
+function noteRefusedToken(err: unknown): void {
+  if (typeof err !== 'object' || err === null || !('error_code' in err)) return;
+  const code = Number(err.error_code);
+  if (code !== 401 && code !== 404) return;
+  noteBotAnswer(code, 'description' in err ? String(err.description) : `HTTP ${code}`);
+}
+
 export function startTelegramBot(): void {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   // TELEGRAM_POLLING=0 disables receiving (linking) on this instance —
   // Telegram allows only ONE getUpdates poller per bot, so extra
   // environments (CI, staging, a second dev machine) must opt out.
   // Sending notifications still works everywhere.
-  if (!token || process.env.TELEGRAM_POLLING === '0' || globalForBot.telegramBot) return;
+  //
+  // Three exits, and the first two SAY so (B9, CLAUDE.md's «two silent bot
+  // killers»): a missing token and a disabled poller used to return here with
+  // nothing logged anywhere, so a server whose staff never got another
+  // message looked exactly like a server whose staff had nothing to be told.
+  if (!token) {
+    logger.error("TELEGRAM_BOT_TOKEN yo'q — xodimlarga Telegram xabari ketmaydi");
+    return;
+  }
+  if (process.env.TELEGRAM_POLLING === '0') {
+    logger.warn("TELEGRAM_POLLING=0 — bot xabar yuboradi, lekin tugmalar va /start qabul qilinmaydi");
+    return;
+  }
+  if (globalForBot.telegramBot) return;
 
   const bot = new Bot(token);
   globalForBot.telegramBot = bot;
@@ -280,7 +305,11 @@ export function startTelegramBot(): void {
   void ensureBotProfile().catch((err: unknown) => logger.warn({ err }, 'bot profile failed'));
 
   const startPolling = (retryMs: number) => {
-    void bot.start({ drop_pending_updates: true }).catch((err: unknown) => {
+    // `onStart` runs once grammy's getMe has answered — the token WORKS, which
+    // clears a «bot ishlamayapti» left by a revoked one even when nothing is
+    // queued to prove it (B9); `noteRefusedToken` records the opposite.
+    void bot.start({ drop_pending_updates: true, onStart: () => noteBotAnswer(200, '', true) }).catch((err: unknown) => {
+      noteRefusedToken(err);
       const is409 =
         typeof err === 'object' && err !== null && 'error_code' in err && err.error_code === 409;
       if (is409) {

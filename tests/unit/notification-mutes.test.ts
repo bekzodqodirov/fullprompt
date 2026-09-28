@@ -33,6 +33,7 @@ describe('notification mutes (spec §11 per-user mute)', () => {
       tasks: false,
       alerts: false,
       operations: true,
+      system: false,
     });
     expect(list).toEqual([...MUTE_GROUPS.digest, ...MUTE_GROUPS.operations]);
     const back = groupsFromList(list);
@@ -43,6 +44,7 @@ describe('notification mutes (spec §11 per-user mute)', () => {
       tasks: false,
       alerts: false,
       operations: true,
+      system: false,
     });
   });
 
@@ -53,6 +55,7 @@ describe('notification mutes (spec §11 per-user mute)', () => {
       tasks: false,
       alerts: false,
       operations: false,
+      system: false,
     });
     expect(list).toEqual(['all']);
     const back = groupsFromList(list);
@@ -63,6 +66,7 @@ describe('notification mutes (spec §11 per-user mute)', () => {
       tasks: true,
       alerts: true,
       operations: true,
+      system: true,
     });
   });
 

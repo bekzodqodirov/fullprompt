@@ -28,7 +28,7 @@ export default async function AdminHubPage() {
 
   // One namespace-less translator: a door carries its FULL key.
   const t = await getTranslations();
-  const tiles = openDoors((code) => actor.permissions.has(code));
+  const tiles = openDoors((code) => actor.permissions.has(code), actor.roles);
 
   // Somebody with exactly one door gets walked through it instead of being
   // shown a hub of one button.

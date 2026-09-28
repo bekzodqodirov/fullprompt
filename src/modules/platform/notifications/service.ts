@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import { db } from '../db/client';
 import {
   clients,
@@ -14,6 +14,7 @@ import {
 } from '../db/schema';
 import { logger } from '../logger';
 import { runAutomationRules } from '../automation/service';
+import { botRefused } from '../diagnostics/signals';
 import { buttonsFor } from '../telegram/staff-bot';
 import { approvalVerdictLine, fillCount, notificationLabels } from './labels';
 import { isTelegramMuted } from './mutes';
@@ -90,22 +91,100 @@ export async function usersWithPermission(code: string): Promise<string[]> {
  * teaches the eye to skip it. Failed, a pending row that already errored,
  * or a claim stuck in 'sending' past the reclaim window (0082) — those are
  * the three that mean somebody should look.
+ *
+ * And a fourth (B9): a row still PENDING a quarter of an hour after it was
+ * written. The first three need a send to have been ATTEMPTED — and a dead
+ * bot attempts nothing: a revoked token pauses the drain and puts every row
+ * back untouched, a missing token returns before claiming one. So the day the
+ * bot died, 37 messages sat pending with no error and this counter read 0.
+ * Fifteen minutes is fifteen of the drain's one-minute ticks; nothing healthy
+ * waits that long.
  */
+export const TELEGRAM_BACKLOG_MINUTES = 15;
+
+/**
+ * The ONE sentence «this staff message is a delivery problem», shared by the
+ * home counter and the /admin/notifications «problems» list — so the 37 on the
+ * home screen and the 37 rows behind its link are one predicate (#513; the
+ * page used to keep its own copy, with `muted` in it and no window).
+ */
+export function telegramProblemSql(since: Date): SQL {
+  return and(
+    eq(notifications.channel, 'telegram'),
+    gte(notifications.createdAt, since),
+    sql`(${notifications.status} = 'failed'
+          OR (${notifications.status} = 'pending' AND ${notifications.error} IS NOT NULL)
+          OR (${notifications.status} = 'pending' AND ${notifications.createdAt} < now() - make_interval(mins => ${TELEGRAM_BACKLOG_MINUTES}))
+          OR (${notifications.status} = 'sending' AND ${notifications.claimedAt} < now() - interval '10 minutes'))`,
+  )!;
+}
+
+/** The window both the counter and the page read — one week. */
+export function problemSince(sinceDays = 7, now = Date.now()): Date {
+  return new Date(now - sinceDays * 86_400_000);
+}
+
 export async function notificationProblemCount(sinceDays = 7): Promise<number> {
-  const since = new Date(Date.now() - sinceDays * 86_400_000);
   const [row] = await db
     .select({ n: sql<number>`count(*)` })
     .from(notifications)
-    .where(
-      and(
-        eq(notifications.channel, 'telegram'),
-        gte(notifications.createdAt, since),
-        sql`(${notifications.status} = 'failed'
-          OR (${notifications.status} = 'pending' AND ${notifications.error} IS NOT NULL)
-          OR (${notifications.status} = 'sending' AND ${notifications.claimedAt} < now() - interval '10 minutes'))`,
-      ),
-    );
+    .where(telegramProblemSql(problemSince(sinceDays)));
   return Number(row?.n ?? 0);
+}
+
+/**
+ * Is the staff bot delivering at all (B9)? Everything a red line needs, and
+ * nothing it would have to guess:
+ *
+ *  - `refused` — Telegram took the token back (401/404), recorded by the one
+ *    sender every Bot API call goes through, with the moment it began;
+ *  - `noToken` — this process has no token at all, read from its own
+ *    environment and never stored (a test run without one must not write the
+ *    company's alarm state);
+ *  - `waiting` / `oldestPendingAt` — the staff queue itself, off the pending
+ *    index; a backlog older than the problem window is the symptom that needs
+ *    no cause to be named;
+ *  - `clientWaiting` — customer notices the same dead bot is holding (their own
+ *    sweep pauses on the same refusal), so the sentence can say they wait too.
+ *
+ * Never sent through the bot. The bot is the thing that died.
+ */
+export interface TelegramBotState {
+  refused: { since: Date; detail: string | null } | null;
+  noToken: boolean;
+  waiting: number;
+  oldestPendingAt: Date | null;
+  clientWaiting: number;
+  /** A red line is due: refused, tokenless, or a backlog past the window. */
+  down: boolean;
+}
+
+export async function telegramBotState(now = new Date()): Promise<TelegramBotState> {
+  const [refused, [queue], clientRows] = await Promise.all([
+    botRefused(),
+    db
+      .select({ n: sql<number>`count(*)`, oldest: sql<string | null>`min(${notifications.createdAt})` })
+      .from(notifications)
+      .where(and(eq(notifications.channel, 'telegram'), eq(notifications.status, 'pending'))),
+    db.execute<{ n: number }>(sql`
+      SELECT count(*)::int AS n FROM client_notices
+       WHERE status = 'pending'
+         AND send_after < now() - make_interval(mins => ${TELEGRAM_BACKLOG_MINUTES})`),
+  ]);
+  const noToken = !process.env.TELEGRAM_BOT_TOKEN;
+  // Raw aggregates come back as TEXT (#923): through Date before any maths.
+  const oldestPendingAt = queue?.oldest ? new Date(queue.oldest) : null;
+  const backlog =
+    oldestPendingAt !== null &&
+    now.getTime() - oldestPendingAt.getTime() > TELEGRAM_BACKLOG_MINUTES * 60_000;
+  return {
+    refused,
+    noToken,
+    waiting: Number(queue?.n ?? 0),
+    oldestPendingAt,
+    clientWaiting: Number(clientRows[0]?.n ?? 0),
+    down: refused !== null || noToken || backlog,
+  };
 }
 
 /**

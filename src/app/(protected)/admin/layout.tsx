@@ -54,7 +54,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   // to the page they are standing on. Round 75 created that second case for
   // the logist by taking the client book off the hub; asking the hub's own
   // list is what stops the two answers drifting again.
-  const hasHub = openDoors((code) => actor.permissions.has(code)).length > 1;
+  const hasHub = openDoors((code) => actor.permissions.has(code), actor.roles).length > 1;
 
   return (
     <>

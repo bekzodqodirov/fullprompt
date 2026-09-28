@@ -10,6 +10,8 @@ import { canMintClient } from '@/modules/platform/clients/service';
 import { readTheme } from '@/modules/platform/theme/theme';
 import { Icon } from '@/components/ui/icon';
 import { UpdateBanner } from '@/components/update-banner';
+import { SchemaBanner } from '@/components/schema-banner';
+import { isAnalyst } from '@/modules/platform/ai/tools';
 import { NavProgress } from '@/components/nav-progress';
 import {
   MobileNav,
@@ -231,6 +233,9 @@ export default async function ProtectedLayout({ children }: { children: React.Re
 
       {/* The phone can be showing yesterday's app; only the app can notice. */}
       <UpdateBanner />
+      {/* …and the server can be running on yesterday's database (B9) — said to
+          the two roles who can act on it, and never able to throw. */}
+      {isAnalyst(actor) && <SchemaBanner />}
 
       <div className="mx-auto flex w-full max-w-6xl">
         <Sidebar workspaces={workspaces} frequent={frequent} labels={navLabels} />

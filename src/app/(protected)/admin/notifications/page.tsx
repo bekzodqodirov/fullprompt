@@ -1,11 +1,18 @@
 import Link from 'next/link';
-import { and, desc, eq, gte, isNotNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, gte, sql, type SQL } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import { notifications, users } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { PageHeader } from '@/components/ui/page';
+import { BotDownLine } from '@/components/system-signals';
+import {
+  problemSince,
+  telegramBotState,
+  telegramProblemSql,
+  type TelegramBotState,
+} from '@/modules/platform/notifications/service';
 
 async function weekTotals(telegramOnly: SQL) {
   const weekAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000);
@@ -18,7 +25,14 @@ async function weekTotals(telegramOnly: SQL) {
 
 /**
  * Spec §11: "failures visible in admin" — Telegram delivery log with a
- * problems-first filter (send errors being retried, muted/unlinked rows).
+ * problems-first filter.
+ *
+ * «Muammolar» is `telegramProblemSql` over the same week, and nothing else
+ * (B9): the home screen's «yuborilmagan 37» links here, and it used to land
+ * on a list with its own predicate — `muted` in it, no window — so the 37
+ * became 300 rows nobody could reconcile (#513). Muted rows are by-design
+ * settlements (a person's own mute, no linked chat, deactivated), so they
+ * have a tab of their own instead of hiding among the failures.
  */
 export default async function NotificationDeliveryPage({
   searchParams,
@@ -30,15 +44,17 @@ export default async function NotificationDeliveryPage({
   const t = await getTranslations('notifDelivery');
   const format = await getFormatter();
   const { view: rawView } = await searchParams;
-  const view = rawView === 'all' ? 'all' : 'problems';
+  const view = rawView === 'all' ? 'all' : rawView === 'muted' ? 'muted' : 'problems';
+  const tk = await getTranslations('kuzatuv');
 
   const telegramOnly = eq(notifications.channel, 'telegram');
-  const problems = or(
-    eq(notifications.status, 'failed'),
-    and(eq(notifications.status, 'pending'), isNotNull(notifications.error)),
-    eq(notifications.status, 'muted'),
-  )!;
-  const where: SQL = view === 'problems' ? and(telegramOnly, problems)! : telegramOnly;
+  const where: SQL =
+    view === 'problems'
+      ? telegramProblemSql(problemSince())
+      : view === 'muted'
+        ? and(telegramOnly, eq(notifications.status, 'muted'))!
+        : telegramOnly;
+  const bot = await telegramBotState().catch((): TelegramBotState | null => null);
 
   const rows = await db
     .select({
@@ -80,6 +96,12 @@ export default async function NotificationDeliveryPage({
             {t('problems')}
           </Link>
           <Link
+            href="?view=muted"
+            className={`rounded px-2 py-0.5 font-semibold ${view === 'muted' ? 'bg-brand-600 text-white' : 'bg-surface-sunken'}`}
+          >
+            {tk('mutedTab')}
+          </Link>
+          <Link
             href="?view=all"
             className={`rounded px-2 py-0.5 font-semibold ${view === 'all' ? 'bg-brand-600 text-white' : 'bg-surface-sunken'}`}
           >
@@ -87,6 +109,9 @@ export default async function NotificationDeliveryPage({
           </Link>
         </span>
       </div>
+
+      {/* The bot's own state, above the rows it explains (B9). */}
+      <BotDownLine state={bot} />
 
       <p className="text-sm text-ink-700">
         {t('week')}: ✅ {count('sent')} · ⏳ {count('pending')} · ❌ {count('failed')} · 🔕{' '}

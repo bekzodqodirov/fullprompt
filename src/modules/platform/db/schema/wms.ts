@@ -2026,6 +2026,14 @@ export const tgAccounts = pgTable(
      */
     tgUsername: text('tg_username'),
     tgUsernameCheckedAt: timestamp('tg_username_checked_at', { withTimezone: true }),
+    /**
+     * The quiet-bridge alarm (0115, wms/crm/listener-quiet.ts): `quietOpen`
+     * = «jim» was said and «qaytdi» has not been; `quietNotifiedAt` = when
+     * «jim» was last said, kept after the bridge returns — the clock that
+     * spaces one flapping listener's alarms out.
+     */
+    quietNotifiedAt: timestamp('quiet_notified_at', { withTimezone: true }),
+    quietOpen: boolean('quiet_open').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

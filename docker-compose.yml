@@ -1,9 +1,38 @@
 # Production deployment topology (spec §3). Dev in this repo runs against a
 # local Postgres directly; this file is for the VPS.
+
+# Every service's log, capped (B9). Docker's default json-file driver keeps a
+# container's whole stdout for as long as the container lives — on a disk the
+# database and the photographs share, where a full disk stops postgres and the
+# backup together (round 74). Five files of 10 MB each per service is days of
+# history and a known ceiling. Takes effect when each container is RECREATED.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: '10m'
+    max-file: '5'
+
 services:
   app:
     build: .
     restart: unless-stopped
+    logging: *logging
+    # tini as PID 1 (B9). With `node server.js` as PID 1 the watchdog below
+    # could not kill it — a process cannot SIGKILL its own namespace's init —
+    # and a hung event loop never runs its SIGTERM handler.
+    init: true
+    # The watchdog (ops/health-probe.mjs): HEALTHY = any answer within 10 s
+    # whose pool is not stuck; after three armed failures it kills the server
+    # itself, because Docker does not restart an `unhealthy` container, and
+    # `restart: unless-stopped` brings the app back. A 503 for MinIO or the
+    # database is NOT a failure — a restart fixes neither. `start_period` only
+    # quiets Docker's report; the probe arms after the first good answer.
+    healthcheck:
+      test: ['CMD', 'node', '/app/ops/health-probe.mjs']
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 90s
     # NO published port, deliberately. Caddy reaches the app as `app:3000` on
     # the internal network; publishing 3000 to the host put the SAME login form
     # on plain `http://<vps>:3000`, outside TLS and outside the proxy — so a
@@ -17,6 +46,8 @@ services:
       S3_ENDPOINT: http://minio:9000
       STORAGE_DRIVER: s3
       BACKUP_DIR: /backups
+      # The photo disk, read for its free space only (B9, backup/disk.ts).
+      MINIO_DATA_DIR: /minio-data
     volumes:
       # Self-hosted OSM basemap for /map (ops/fetch-basemap.sh downloads it).
       - ./.data/basemap:/app/.data/basemap:ro
@@ -26,6 +57,12 @@ services:
       # a file the real backup had never written. Two backup systems that
       # could not see each other.
       - backups:/backups
+      # MinIO's volume, READ-ONLY, so the disk watch can `statfs` the disk the
+      # photographs are on (B9). A named volume and not a bind: a bind to a
+      # missing path refuses to start the container (#472), a named volume
+      # always exists — and after the «Disk» move in docs/DEPLOY.md the same
+      # name points at the second disk, so the reading follows it.
+      - miniodata:/minio-data:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -41,6 +78,7 @@ services:
     profiles: ['basemap']
     image: alpine:3.20
     restart: 'no'
+    logging: *logging
     volumes:
       - ./.data/basemap:/out
     # Inline script in exec-list form: no mounted .sh file (CRLF-proof on
@@ -84,6 +122,7 @@ services:
       context: .
       target: build
     restart: 'no'
+    logging: *logging
     env_file: .env
     environment:
       DATABASE_URL: postgres://gsr:${POSTGRES_PASSWORD}@postgres:5432/gsr
@@ -124,6 +163,7 @@ services:
       target: build
     profiles: ['telegram']
     restart: unless-stopped
+    logging: *logging
     env_file: .env
     environment:
       DATABASE_URL: postgres://gsr:${POSTGRES_PASSWORD}@postgres:5432/gsr
@@ -142,6 +182,7 @@ services:
     image: caddy:2
     profiles: ['https-local']
     restart: unless-stopped
+    logging: *logging
     ports:
       - '443:443'
     environment:
@@ -163,6 +204,7 @@ services:
     image: caddy:2
     profiles: ['https']
     restart: unless-stopped
+    logging: *logging
     ports:
       - '80:80'
       - '443:443'
@@ -199,6 +241,7 @@ services:
   postgres:
     image: postgres:16
     restart: unless-stopped
+    logging: *logging
     # Tuned for a ~4 GB VPS shared with the app and MinIO: the stock image
     # runs shared_buffers=128MB and prices the SSD like a spinning disk
     # (random_page_cost=4), the planner bias behind the #152 class of scans.
@@ -240,6 +283,16 @@ services:
       # after the backup, like every change to this block.
       - '-c'
       - 'jit=off'
+      # #714's freeze, broken from the database's side (B9): ten transactions
+      # each holding a pool connection while they wait for an eleventh sit
+      # `idle in transaction` for ever, and every page of the app with them.
+      # After a minute postgres ends such a session — those requests fail, the
+      # pool gets its connections back, and the app lives. Nothing in this app
+      # legitimately idles inside a transaction for a minute (a transaction
+      # that awaits the network is #714's shape and a defect in its own right).
+      # Takes effect when the postgres container is RECREATED.
+      - '-c'
+      - 'idle_in_transaction_session_timeout=60s'
     environment:
       POSTGRES_USER: gsr
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -255,6 +308,7 @@ services:
   minio:
     image: minio/minio
     restart: unless-stopped
+    logging: *logging
     command: server /data --console-address ':9001'
     environment:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY}
@@ -265,6 +319,7 @@ services:
   backup:
     image: postgres:16
     restart: unless-stopped
+    logging: *logging
     entrypoint: ['/bin/sh', '-c', 'while true; do /backup.sh; sleep 86400; done']
     environment:
       PGPASSWORD: ${POSTGRES_PASSWORD}

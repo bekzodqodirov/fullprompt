@@ -30,5 +30,7 @@ COPY --from=build /app/.next/static ./.next/static
 COPY --from=build /app/public ./public
 COPY --from=build /app/src/modules/platform/db/migrations ./migrations
 COPY --from=build /app/src/assets ./src/assets
+# The healthcheck + watchdog (docker-compose.yml, B9) — node builtins only.
+COPY --from=build /app/ops/health-probe.mjs ./ops/health-probe.mjs
 EXPOSE 3000
 CMD ["node", "server.js"]

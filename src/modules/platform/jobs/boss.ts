@@ -95,6 +95,13 @@ export const WORKER_REGISTRATIONS: [string, (boss: PgBoss) => Promise<void>][] =
     'customs-import-sweep',
     async (b) => (await import('../../wms/customs/jobs')).registerCustomsImportSweep(b),
   ],
+  // B9 — the system watching itself (0115).
+  [
+    'listener-quiet',
+    async (b) => (await import('../../wms/crm/listener-quiet-jobs')).registerListenerQuietWorker(b),
+  ],
+  ['system-errors-prune', async (b) => (await import('../diagnostics/jobs')).registerErrorsPruneWorker(b)],
+  ['system-disk', async (b) => (await import('../diagnostics/jobs')).registerDiskWorker(b)],
 ];
 
 /** Run each registration at most once per process, whatever failed before. */

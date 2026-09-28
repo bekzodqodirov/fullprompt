@@ -26,6 +26,7 @@ export default async function ProfilePage() {
   const tc = await getTranslations('common');
   const tNav = await getTranslations('nav');
   const tn = await getTranslations('notes');
+  const tk = await getTranslations('kuzatuv');
   const format = await getFormatter();
   // Everything below the name is a PANEL, and this page is now the only way
   // out of the app. A panel that throws used to cost a screen; it would now
@@ -243,6 +244,10 @@ export default async function ProfilePage() {
             <label className="flex min-h-10 items-center gap-3">
               <input type="checkbox" name="mute_operations" defaultChecked={mutes.groups.operations} className="h-5 w-5" />
               📥 {t('notifMuteOps')}
+            </label>
+            <label className="flex min-h-10 items-center gap-3">
+              <input type="checkbox" name="mute_system" defaultChecked={mutes.groups.system} className="h-5 w-5" />
+              🛠 {tk('muteSystem')}
             </label>
           </div>
           <button type="submit" className="btn-primary w-full">

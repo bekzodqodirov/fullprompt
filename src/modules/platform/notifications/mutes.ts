@@ -168,6 +168,13 @@ export const MUTE_GROUPS = {
     // press and never an alert.
     'CalcOffer',
   ],
+  // The system watching itself (B9, 0115): a manager's Telegram bridge went
+  // quiet and came back, and a disk crossed 80 / 90 %. A group of its OWN and
+  // not `alerts`: `alerts` is muted by whoever holds its founders, and an admin
+  // who silenced the price-control noise years ago must still hear that the
+  // disk under the database is filling. Born with all three, so its founders
+  // are its members.
+  system: ['TelegramListenerQuiet', 'TelegramListenerBack', 'DiskFilling'],
 } as const;
 
 export type MuteGroup = keyof typeof MUTE_GROUPS;
@@ -209,6 +216,8 @@ export const FOUNDERS: Readonly<Record<MuteGroup, readonly string[]>> = {
     'PlanChangesRequested',
     'InventoryCompleted',
   ],
+  // Born whole on 2026-09-28 (0115), so every list that ever ticked it holds all three.
+  system: ['TelegramListenerQuiet', 'TelegramListenerBack', 'DiskFilling'],
 };
 
 /**
