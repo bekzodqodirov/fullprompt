@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { clientBalances, clientTotals } from '@/modules/wms/finance/service';
-import { moneyOwnerFilter } from '@/modules/wms/finance/scope';
+import { mayReadLedgers, moneyOwnerFilter } from '@/modules/wms/finance/scope';
 import { FinanceClientSearch } from './client-search';
 import { PageHeader } from '@/components/ui/page';
 import { moneyHidden } from '@/modules/platform/rbac/money-sight';
@@ -15,9 +15,9 @@ import { moneyHidden } from '@/modules/platform/rbac/money-sight';
 export default async function FinancePage() {
   const actor = await getActor();
   if (!actor) redirect('/login');
-  if (!actor.permissions.has('finance.view') && !actor.permissions.has('finance.manage')) {
-    redirect('/');
-  }
+  // The ledgers' own door — the same function a client ledger asks first, so
+  // its «← Moliya» (the card shell's back row) can never bounce.
+  if (!mayReadLedgers(actor)) redirect('/');
   const t = await getTranslations('finance');
 
   // A seller reads their own book: `finance.view` is a door, not a licence

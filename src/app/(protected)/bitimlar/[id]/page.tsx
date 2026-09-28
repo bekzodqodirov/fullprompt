@@ -3,6 +3,7 @@ import { notFound, redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { quoteLockedFor } from '@/modules/wms/crm/service';
+import { mayOpenClientLedger } from '@/modules/wms/finance/scope';
 import { PageHeader, Section } from '@/components/ui/page';
 import { Panel } from '@/components/panel';
 import { CardCols } from '@/components/card-cols';
@@ -141,7 +142,16 @@ export default async function DealPage({
              itself: this card is open to the VED manager too, and a client's
              conversation is not his to read. */
           <>
-            <ClientFeed clientId={row.deal.clientId} dealId={row.deal.id} limit={60} tall />
+            {/* The client's money rows only for whoever that client's ledger
+                admits — a seller working somebody else's client's job reads
+                the job, not the client's account (docs/CARD-TABS.md). */}
+            <ClientFeed
+              clientId={row.deal.clientId}
+              money={mayOpenClientLedger(actor, { salesManagerId: row.clientSalesManagerId })}
+              dealId={row.deal.id}
+              limit={60}
+              tall
+            />
             {/* The chat stands BESIDE the lenta, never inside it (round 21). */}
             <TelegramThread
               clientId={row.deal.clientId}

@@ -295,7 +295,7 @@ describe('D1-D5 — the system closes a so’m account at zero (U32 A)', () => {
 
   it('D16: the seller’s lenta carries no «0 ZRA» charge for the system’s row', async () => {
     const [fx] = await fxRows('client', d1);
-    const feed = await clientFeed(d1, { limit: 200 });
+    const feed = await clientFeed(d1, { money: true, limit: 200 });
     expect(feed.some((item) => item.id === `tx-${fx!.id}`)).toBe(false);
     expect(feed.some((item) => item.id === `tx-${payment}`)).toBe(true);
   });

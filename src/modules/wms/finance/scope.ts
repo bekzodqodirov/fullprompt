@@ -64,6 +64,47 @@ export function moneyOwnerFilter(actor: MoneyActor): string | undefined {
 }
 
 /**
+ * Does this person read client LEDGERS at all — `/finance` and the first of
+ * `/finance/<id>`'s two questions?
+ *
+ * Asked BEFORE the client is looked up, on purpose: it does not depend on
+ * which client, so refusing here says nothing about whether one exists. A
+ * seller's `finance.view` passes it; WHICH ledgers is `ownsLedger`'s answer.
+ */
+export function mayReadLedgers(actor: MoneyActor): boolean {
+  return actor.permissions.has('finance.view') || actor.permissions.has('finance.manage');
+}
+
+/**
+ * Is this client's money in the reader's book? Everybody's for a whole-ledger
+ * reader, a seller's own clients otherwise — `moneyOwnerFilter`'s answer
+ * applied to one row, so there is still exactly one list of the grants that
+ * see everything. «No filter» is the only answer that admits a stranger's
+ * client; an owner id that happens to be falsy is still a filter.
+ */
+export function ownsLedger(actor: MoneyActor, client: { salesManagerId: string | null }): boolean {
+  const owner = moneyOwnerFilter(actor);
+  return owner === undefined || client.salesManagerId === owner;
+}
+
+/**
+ * The client card's «Pul» tab: the ledger page's two questions in one.
+ *
+ * Also the question every CARD asks before it prints this client's money —
+ * the cargo block's sums, the lenta's money rows and the tab's badge — which
+ * is what «who sees money does not change» (the owner's 4a) means: a figure
+ * reaches exactly the people the ledger it comes from would admit.
+ *
+ * The ledger PAGE does not call this: it asks `mayReadLedgers` before its
+ * lookup (else a redirect) and `ownsLedger` after it (else a 404), because a
+ * single check after the lookup would answer a seller whether the client
+ * exists — a redirect for somebody else's, a 404 for nobody's.
+ */
+export function mayOpenClientLedger(actor: MoneyActor, client: { salesManagerId: string | null }): boolean {
+  return mayReadLedgers(actor) && ownsLedger(actor, client);
+}
+
+/**
  * The COMPANY's money — the kassa totals, the P&L and its plan, the
  * receivable in aggregate, the dollars at risk: the dashboard's money
  * blocks, the admin home's «Pul» card and the cargo-risk report. Law 4's key

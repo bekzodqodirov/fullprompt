@@ -4,8 +4,8 @@ import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import { clients, currencies, deals } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { moneyOwnerFilter } from '@/modules/wms/finance/scope';
-import { clientBalanceUsd, clientLedger, clientNativeBalances } from '@/modules/wms/finance/service';
+import { mayReadLedgers, ownsLedger } from '@/modules/wms/finance/scope';
+import { clientLedger, clientNativeBalances } from '@/modules/wms/finance/service';
 import Link from 'next/link';
 import type { ClientKind } from '@/modules/wms/finance/ledger-kinds';
 import { mayClassifyFx } from '@/modules/wms/finance/fx-door';
@@ -16,7 +16,7 @@ import { listAccounts } from '@/modules/wms/accounting/service';
 import { ledgerDealsForClient } from '@/modules/wms/deals/service';
 import { bothFiguresForDeals } from '@/modules/wms/calc/upsale-service';
 import { upsaleScopeFor } from '@/modules/wms/calc/upsale-scope';
-import { BackLink } from '@/components/back-link';
+import { ClientCard, clientBalanceOnce } from '@/components/client-card';
 import { CargoSummary } from '@/components/cargo-summary';
 import { clientCargo } from '@/modules/wms/finance/client-cargo';
 import { MoveChargeForm } from '../move-charge-form';
@@ -28,7 +28,13 @@ import { mayPickTill } from '@/modules/wms/accounting/till-door';
 import { mayVoidLedgerRow } from '@/modules/wms/finance/void-rule';
 import { lostCargoChargesOn, lostCargoForClient } from '@/modules/wms/finance/compensation';
 
-/** One client's money ledger: balance, add charge/payment, full history. */
+/**
+ * One client's money ledger: balance, add charge/payment, full history.
+ *
+ * Since the owner's 4a it is the client card's «Pul» tab — the same header
+ * as «Umumiy» (`ClientCard`) over this page's own body, at its own URL, with
+ * its own door. Who reads it did not change.
+ */
 export default async function ClientLedgerPage({
   params,
 }: {
@@ -42,7 +48,9 @@ export default async function ClientLedgerPage({
   // one back (U33) — one predicate for the button, the create door and the
   // void door.
   const canRefund = mayPickTill(actor.permissions);
-  if (!actor.permissions.has('finance.view') && !canManage) redirect('/');
+  // The first of the ledger's two questions, BEFORE the lookup: it does not
+  // depend on the client, so the refusal says nothing about one.
+  if (!mayReadLedgers(actor)) redirect('/');
   const t = await getTranslations('finance');
   const ta = await getTranslations('accounting');
   const tcargo = await getTranslations('cargo');
@@ -57,9 +65,11 @@ export default async function ClientLedgerPage({
   // Scoping a LIST and leaving the address bar open is not scoping: the row
   // is gone from /finance and the ledger is one typed uuid away. `notFound`
   // rather than a refusal, so the URL cannot be used to ask whether a client
-  // exists at all.
-  const ownerFilter = moneyOwnerFilter(actor);
-  if (ownerFilter && client.salesManagerId !== ownerFilter) notFound();
+  // exists at all — which is why this is the SECOND question, asked after the
+  // lookup, and never folded into one check with the first (the card's
+  // «Pul» tab asks both at once as `mayOpenClientLedger`, which is safe there:
+  // the card has already found its client).
+  if (!ownsLedger(actor, client)) notFound();
 
   // Law 4's accountant half: at cash INTAKE the person taking the money sees
   // the sealed floor and the client price side by side. Gated on the upsale
@@ -74,7 +84,8 @@ export default async function ClientLedgerPage({
         .where(eq(deals.clientId, clientId))
     : [];
   const [balance, ledger, currencyRows, accounts, openDeals, figures, cargo, natives, legacy, closeOffer] = await Promise.all([
-    clientBalanceUsd(clientId),
+    // The per-request memo the tab badge reads too — one query for both.
+    clientBalanceOnce(clientId),
     clientLedger(clientId),
     db.select({ code: currencies.code }).from(currencies).where(eq(currencies.active, true)),
     // The drawers are the kassa holders' to name (Q19): nobody else's form
@@ -138,12 +149,11 @@ export default async function ClientLedgerPage({
     .filter((d): d is typeof d & { fig: { floorUsd: number; clientPriceUsd: number } } => Boolean(d.fig));
 
   return (
-    <div className="mx-auto max-w-lg space-y-4 md:max-w-2xl">
-      <BackLink href="/finance" label={t('title')} />
-      <h1 className="text-xl font-bold">
-        💰 <span className="font-mono text-brand-700">{client.clientCode}</span> — {client.name}
-      </h1>
-
+    // The way back, the h1 and the strip are the card's shell (the same
+    // header «Umumiy» draws); the body keeps its reading width, no longer
+    // centred, because the shell above it is full width.
+    <ClientCard client={client} active="pul">
+    <div className="max-w-lg space-y-4 md:max-w-2xl">
       <div className="card flex items-baseline gap-2">
         <span className="text-sm text-ink-700">{t('balance')}:</span>
         <span
@@ -360,5 +370,6 @@ export default async function ClientLedgerPage({
         ))}
       </div>
     </div>
+    </ClientCard>
   );
 }

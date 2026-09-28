@@ -542,6 +542,11 @@
     "allowsQuickBatch": "允许快速装车",
     "allowsQuickBatchHint": "无计划、无审批的车。货物需过境的仓库请取消勾选。"
   },
+  "clientCard": {
+    "tabs": "客户卡片分区",
+    "overview": "概览",
+    "money": "资金"
+  },
   "clients": {
     "title": "客户",
     "new": "新建客户",

@@ -255,7 +255,7 @@ describe('a lead nobody typed', () => {
     const landed = await landInboundLead(
       arrival({ phone: `+9989${STAMP}77`.slice(0, 13), name: `Lenta ${STAMP}`, note: 'lenta sinov' }),
     );
-    const feed = await clientFeed(null, { leadId: landed.leadId!, limit: 20 });
+    const feed = await clientFeed(null, { money: true, leadId: landed.leadId!, limit: 20 });
     const note = feed.find((row) => row.body?.includes('lenta sinov'));
     expect(note, 'the advert message is missing from the lenta').toBeTruthy();
     expect(note!.actor).toBeNull();

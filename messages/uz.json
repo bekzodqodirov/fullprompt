@@ -542,6 +542,11 @@
     "allowsQuickBatch": "Tezkor yuklashga ruxsat",
     "allowsQuickBatchHint": "Plansiz va tasdiqsiz mashina. Yuk chegara kesib o‘tadigan skladda belgini olib tashlang."
   },
+  "clientCard": {
+    "tabs": "Mijoz kartasi bo‘limlari",
+    "overview": "Umumiy",
+    "money": "Pul"
+  },
   "clients": {
     "title": "Mijozlar",
     "new": "Yangi mijoz",
