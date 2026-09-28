@@ -4391,5 +4391,8 @@
     "firstContact": "首次联系",
     "firstContactLegend": "中位数 · n · 1小时+ / 24小时+",
     "minutes": "{n} 分钟"
+  },
+  "kechkiXulosa": {
+    "notifMuteOwner": "晚间汇总 (20:00)"
   }
 }

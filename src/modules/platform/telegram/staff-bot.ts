@@ -1,16 +1,9 @@
 import { randomBytes } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { db } from '../db/client';
-import {
-  permissions,
-  rolePermissions,
-  telegramLinks,
-  userRoles,
-  users,
-  userWarehouses,
-} from '../db/schema';
+import { permissions, rolePermissions, telegramLinks, userRoles, users } from '../db/schema';
 import { writeAudit } from '../audit/service';
-import { loadUserRoles } from '../rbac/authorize';
+import { actorGrants } from '../rbac/authorize';
 import { completeTask, TaskError } from '../tasks/service';
 import { DAY_BUTTONS } from '../tasks/digest';
 import { logger } from '../logger';
@@ -198,6 +191,13 @@ export const AI_RASTAMOJKA = '🤖 AI rastamojka';
 export const ZAMETKALAR = '📌 Zametkalar';
 /** The advert lead's one button (0113) — named once, for the push and its tests. */
 export const LEAD_CONTACTED_BUTTON = '📞 Bog‘landim';
+/**
+ * The owner's evening summary, on demand (his 7a: «har kuni 20:00 faqat
+ * sizga»). Drawn only for the person the summary is for — `holatFor` — and
+ * re-asked on every press, because a keyboard outlives the grant it was
+ * drawn for.
+ */
+export const HOLAT = '📊 Holat';
 
 /** The two labels that open a collection — one list, so every reader agrees. */
 export const CALC_ENTRY_LABELS = [HISOBLATISH, AI_RASTAMOJKA];
@@ -221,6 +221,8 @@ export function escapesIntake(text: string): boolean {
     t === '/bugun' ||
     t === ZAMETKALAR ||
     t === '/zametka' ||
+    t === HOLAT ||
+    t === '/holat' ||
     // A chat that is both staff and client pressing «📦 Yuklarim» in the middle
     // of a collection had it filed as intake material (round C's scouts).
     isCabinetText(t)
@@ -553,21 +555,12 @@ export async function botActorFor(chatId: bigint): Promise<
 > {
   const staff = await staffForChat(chatId);
   if (!staff) return null;
-  const roleRows = await loadUserRoles(staff.id);
-  const whRows = await db
-    .select({ warehouseId: userWarehouses.warehouseId })
-    .from(userWarehouses)
-    .where(eq(userWarehouses.userId, staff.id));
-  return {
-    ...staff,
-    permissions: await permissionsOf(staff.id),
-    // The role CODES ride along for the one decision made on a role rather
-    // than a grant: whether the AI assistant's analyst tier opens (round 21's
-    // shape — supervision breadth is super_admin/admin, not a permission).
-    roles: roleRows.map((r) => r.code),
-    warehouseScoped: roleRows.some((r) => r.warehouseScoped),
-    warehouseIds: whRows.map((w) => w.warehouseId),
-  };
+  // The role CODES ride along for the decisions made on a role rather than a
+  // grant: whether the AI assistant's analyst tier opens (round 21's shape —
+  // supervision breadth is super_admin/admin, not a permission) and whether
+  // «📊 Holat» is this person's (the owner's evening summary). `actorGrants`
+  // is `getActor`'s own body, so the chat is exactly the person on the screen.
+  return { ...staff, ...(await actorGrants(staff.id)) };
 }
 
 /**
@@ -582,6 +575,36 @@ export async function lookupFromBot(
   if (!actor) return null;
   const { botLookupAnswer } = await import('../../wms/bot/lookup');
   return botLookupAnswer(actor, query);
+}
+
+/**
+ * Is «📊 Holat» this chat's? The ONE door (`readsOwnerSummary`: the super_admin
+ * role and the company's money sight) asked by the keyboard, the command
+ * menu and the handler alike. The predicate lives in wms and is reached by
+ * dynamic import — platform never imports wms statically (the startBoss
+ * crossing). False for a chat that is not a linked member of staff.
+ */
+export async function holatFor(chatId: bigint): Promise<boolean> {
+  const actor = await botActorFor(chatId);
+  if (!actor) return false;
+  const { readsOwnerSummary } = await import('../../wms/reports/owner-summary-door');
+  return readsOwnerSummary(actor);
+}
+
+/**
+ * The evening summary for the chat that pressed «📊 Holat» — the door and the
+ * compose in wms (`ownerSummaryForActor` asks it before a single figure is
+ * read). `not_linked` for a stranger, `refused` for a member of staff the door
+ * does not admit; the text for the owner, the same words the 20:00 push sends.
+ */
+export async function ownerSummaryFromBot(
+  chatId: bigint,
+): Promise<{ status: 'ok'; text: string } | { status: 'not_linked' | 'refused' }> {
+  const actor = await botActorFor(chatId);
+  if (!actor) return { status: 'not_linked' };
+  const { ownerSummaryForActor } = await import('../../wms/reports/owner-summary');
+  const summary = await ownerSummaryForActor(actor);
+  return summary ? { status: 'ok', text: summary.text } : { status: 'refused' };
 }
 
 /**

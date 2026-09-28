@@ -40,11 +40,16 @@ describe('every chart on the dashboard has its table twin', () => {
 
 describe('the trucks are ranked once, and three places read that one ranking', () => {
   it('the trucks card, the stock tile and the attention row read loadTrucks, never inTransitBatches', () => {
-    for (const file of ['cargo.tsx', 'hero.tsx', 'attention.tsx']) {
-      const source = strip(read(`${SECTIONS}/${file}`));
-      expect(source, file).not.toMatch(/inTransitBatches|loadTransit\b/);
+    // The attention rows moved to wms/reports/attention.ts and their reads to
+    // attention-sources.ts (the evening Telegram builds the same rows).
+    const ATTENTION = 'src/modules/wms/reports/attention.ts';
+    const SOURCES = 'src/modules/wms/reports/attention-sources.ts';
+    for (const path of [`${SECTIONS}/cargo.tsx`, `${SECTIONS}/hero.tsx`, `${SECTIONS}/attention.tsx`, ATTENTION, SOURCES]) {
+      const source = strip(read(path));
+      expect(source, path).not.toMatch(/inTransitBatches|loadTransit\b/);
     }
-    expect(strip(read(`${SECTIONS}/attention.tsx`))).toContain('trucks.counts.stuck');
+    expect(strip(read(ATTENTION))).toContain('trucks.counts.stuck');
+    expect(strip(read(SOURCES))).toContain('loadTrucks(scopeKey)');
     expect(strip(read(`${SECTIONS}/cargo.tsx`))).toContain('loadTrucks(scopeKey)');
   });
 });
@@ -62,7 +67,13 @@ describe('the period and the warehouse are the page’s two questions', () => {
     expect(page).toContain('const scope = reportScope(actor, params.ombor, options);');
     expect(page).toContain('const options = await loadWarehouseOptions(scopeKeyOf(reportBaseIds(actor)));');
     // The list of trucks with no cost is company-wide: never under a warehouse.
-    expect(page).toContain('const seesCostMissing = allWh && !scope.scoped && seesBatches && !company;');
+    // Said once, in the attention gates, and the page reads it from there.
+    expect(page).toContain(
+      'const seesCostMissing = attentionGates(perms, { sight, scoped: scope.scoped, company }).seesCostMissing;',
+    );
+    expect(strip(read('src/modules/wms/reports/attention.ts'))).toContain(
+      'seesCostMissing: allWh && !input.scoped && cargo && !input.company,',
+    );
   });
 
   it('the money cards say «Butun kompaniya» while a warehouse is chosen', () => {

@@ -4391,5 +4391,8 @@
     "firstContact": "Birinchi aloqa",
     "firstContactLegend": "mediana · n · 1 soat+ / 24 soat+",
     "minutes": "{n} daq"
+  },
+  "kechkiXulosa": {
+    "notifMuteOwner": "Kechki xulosa (20:00)"
   }
 }

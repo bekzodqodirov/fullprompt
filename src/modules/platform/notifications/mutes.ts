@@ -181,6 +181,11 @@ export const MUTE_GROUPS = {
   // disk under the database is filling. Born with all three, so its founders
   // are its members.
   system: ['TelegramListenerQuiet', 'TelegramListenerBack', 'DiskFilling'],
+  // The owner's evening summary (answer 7a, 2026-09-28) — its own switch on
+  // /profile, drawn only for the person who receives it: silencing the
+  // warehouse svodka is not silencing the company's day, and neither is a
+  // reason to lose the other.
+  owner: ['OwnerSummary'],
 } as const;
 
 export type MuteGroup = keyof typeof MUTE_GROUPS;
@@ -226,6 +231,8 @@ export const FOUNDERS: Readonly<Record<MuteGroup, readonly string[]>> = {
   ],
   // Born whole on 2026-09-28 (0115), so every list that ever ticked it holds all three.
   system: ['TelegramListenerQuiet', 'TelegramListenerBack', 'DiskFilling'],
+  // Born 2026-09-28 with its one member — its birth list, not an addition.
+  owner: ['OwnerSummary'],
 };
 
 /**

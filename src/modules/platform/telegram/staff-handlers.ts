@@ -2,6 +2,7 @@ import type { Bot } from 'grammy';
 import { composeMyDay } from '../tasks/digest';
 import { logger } from '../logger';
 import { keyboardOf, staffTextHtml } from '../notifications/staff-html';
+import { composeStaffMessage } from '../notifications/service';
 import { offerStaffCommands } from './commands';
 import { editText, sendText, sendTyping } from './send';
 import { clientAnswerKeyboard } from './map-link';
@@ -11,6 +12,9 @@ import {
   CALC_ENTRY_LABELS,
   botActorFor,
   HISOBLATISH,
+  HOLAT,
+  holatFor,
+  ownerSummaryFromBot,
   ZAMETKALAR,
   assistantFromBot,
   closeLeadMessage,
@@ -84,12 +88,28 @@ type CalcReplyCtx = { reply: (text: string, extra?: Record<string, unknown>) => 
  */
 export { CALC_ENTRY_LABELS };
 
-export function staffKeyboard() {
+/**
+ * The keyboard's options, REQUIRED: whether «📊 Holat» is this person's is a
+ * question about the person (`holatFor`), and an optional flag would let a
+ * caller forget to ask it and quietly draw the button for everybody — or for
+ * nobody, including the owner it exists for.
+ */
+export interface StaffKeyboardOptions {
+  holat: boolean;
+}
+
+/** The staff rows — one list for both keyboards, so they cannot drift. */
+function staffRows(opts: StaffKeyboardOptions) {
+  return [
+    [{ text: BUGUN }, { text: HISOBLATISH }],
+    [{ text: AI_RASTAMOJKA }, { text: ZAMETKALAR }],
+    ...(opts.holat ? [[{ text: HOLAT }]] : []),
+  ];
+}
+
+export function staffKeyboard(opts: StaffKeyboardOptions) {
   return {
-    keyboard: [
-      [{ text: BUGUN }, { text: HISOBLATISH }],
-      [{ text: AI_RASTAMOJKA }, { text: ZAMETKALAR }],
-    ],
+    keyboard: staffRows(opts),
     resize_keyboard: true,
     is_persistent: true,
   };
@@ -103,12 +123,11 @@ export function staffKeyboard() {
  * cabinet labels come from the same dictionary its own keyboard and its
  * router read.
  */
-export function bothKeyboard(locale?: string | null) {
+export function bothKeyboard(locale: string | null | undefined, opts: StaffKeyboardOptions) {
   const t = clientLabels(locale);
   return {
     keyboard: [
-      [{ text: BUGUN }, { text: HISOBLATISH }],
-      [{ text: AI_RASTAMOJKA }, { text: ZAMETKALAR }],
+      ...staffRows(opts),
       [{ text: t.btnCargo }, { text: t.btnBalance }],
       [{ text: t.btnHistory }, { text: t.btnLanguage }],
       [{ text: t.btnManager }],
@@ -589,6 +608,17 @@ export function registerStaffBot(bot: Bot): void {
       return;
     }
 
+    // «📊 Holat» in the same slot as «📋 Bugun» and for the same reasons:
+    // below the cabinet pass-through, ABOVE both captures — `takeTaskPending`
+    // deletes on read and would close a task with «📊 Holat» as its result —
+    // and far above the paid model, which a refused press must never reach.
+    if (ctx.message.text === HOLAT || ctx.message.text === '/holat') {
+      const staff = await staffForChat(chatId);
+      if (!staff) return next();
+      await answerHolat(ctx as unknown as CalcReplyCtx, chatId);
+      return;
+    }
+
     // «📋 Bugun» ABOVE both captures (round C): pressed while a «Bajarildi»
     // result was awaited it used to reach `takeTaskPending` first — which
     // DELETES ON READ — and close the task with «📋 Bugun» as its result;
@@ -705,6 +735,56 @@ export function registerStaffBot(bot: Bot): void {
     // notification path already sends unsolicited messages.
     void answerWithAssistant(chatId, text, thinking.message_id);
   });
+}
+
+/** Chats whose «📊 Holat» is being computed right now. */
+const holatInFlight = new Set<string>();
+
+/**
+ * «📊 Holat» — the evening summary on demand, in the push's own words.
+ *
+ * The door is asked on EVERY press (the keyboard on a phone outlives the grant
+ * it was drawn for), and a refused person hears so in a sentence. The compose
+ * reads what a dashboard render reads — seconds on a busy database, measured
+ * 6.6 s on the shaped copy — so it runs OFF the sequential poller (#706) after
+ * an immediate «⏳», and a chat already waiting is told to wait rather than
+ * starting a second computation on the one Node process (round 108).
+ */
+async function answerHolat(ctx: CalcReplyCtx, chatId: bigint): Promise<void> {
+  const key = String(chatId);
+  if (holatInFlight.has(key)) {
+    await ctx.reply('⏳ Hali hisoblanmoqda — biroz kuting.');
+    return;
+  }
+  if (!(await holatFor(chatId).catch(() => false))) {
+    await ctx.reply('📊 Holat faqat egasi uchun.');
+    return;
+  }
+  holatInFlight.add(key);
+  await ctx.reply('⏳ Hisoblanmoqda…');
+  void (async () => {
+    try {
+      const outcome = await ownerSummaryFromBot(chatId);
+      if (outcome.status !== 'ok') {
+        await sendText({ chatId, text: '📊 Holat faqat egasi uchun.' });
+        return;
+      }
+      // The drain's own dressing (`composeStaffMessage`): the bold title and
+      // the dashboard link lifted into «↗️ Ochish» — what 20:00 sends.
+      const message = composeStaffMessage('OwnerSummary', { text: outcome.text });
+      const sent = await sendText({
+        chatId,
+        html: message.html,
+        replyMarkup: keyboardOf(message.urlRow ? [message.urlRow] : null),
+      });
+      if (!sent.ok) logger.warn({ description: sent.description }, 'holat reply not sent');
+    } catch (err) {
+      logger.warn({ err }, 'holat compose failed');
+      await sendText({ chatId, text: 'Holatni hisoblab bo‘lmadi — keyinroq urinib ko‘ring.' }).catch(() => {});
+    } finally {
+      holatInFlight.delete(key);
+    }
+  })();
 }
 
 /** The words on the button a callback came from — its own message's keyboard. */

@@ -35,6 +35,7 @@ describe('notification mutes (spec §11 per-user mute)', () => {
       alerts: false,
       operations: true,
       system: false,
+      owner: false,
     });
     expect(list).toEqual([...MUTE_GROUPS.digest, ...MUTE_GROUPS.operations]);
     const back = groupsFromList(list);
@@ -47,7 +48,35 @@ describe('notification mutes (spec §11 per-user mute)', () => {
       alerts: false,
       operations: true,
       system: false,
+      owner: false,
     });
+  });
+
+  it('the evening summary has its own switch, and no other box silences it', () => {
+    // «owner» (2026-09-28) is a group of one: somebody who muted the
+    // warehouse svodka, the tasks or the alerts before it was born has NOT
+    // said «stop the company's evening summary» — only its own box, or «all».
+    const everythingElse = listFromGroups(false, {
+      digest: true,
+      calls: true,
+      tasks: true,
+      alerts: true,
+      operations: true,
+      owner: false,
+    });
+    expect(isTelegramMuted(everythingElse, 'OwnerSummary')).toBe(false);
+    const own = listFromGroups(false, {
+      digest: false,
+      calls: false,
+      tasks: false,
+      alerts: false,
+      operations: false,
+      owner: true,
+    });
+    expect(own).toEqual(['OwnerSummary']);
+    expect(isTelegramMuted(own, 'OwnerSummary')).toBe(true);
+    expect(groupsFromList(own).groups.owner).toBe(true);
+    expect(isTelegramMuted(['all'], 'OwnerSummary')).toBe(true);
   });
 
   it("'all' wins over group detail and reads back as everything checked", () => {
@@ -59,6 +88,7 @@ describe('notification mutes (spec §11 per-user mute)', () => {
       alerts: false,
       operations: false,
       system: false,
+      owner: false,
     });
     expect(list).toEqual(['all']);
     const back = groupsFromList(list);
@@ -71,6 +101,7 @@ describe('notification mutes (spec §11 per-user mute)', () => {
       alerts: true,
       operations: true,
       system: true,
+      owner: true,
     });
   });
 
@@ -94,7 +125,8 @@ describe('notification mutes (spec §11 per-user mute)', () => {
     );
     const routed = [...routing.matchAll(/case '([A-Za-z]+)':/g)].map((m) => m[1]!);
     // The digests are composed elsewhere and never pass through buildRecipients.
-    const digests = ['DailyDigest', 'CrmFollowUps', 'CrmDormant', 'TasksDue'];
+    // The owner's evening summary is one of them (reports/owner-summary-jobs).
+    const digests = ['DailyDigest', 'CrmFollowUps', 'CrmDormant', 'TasksDue', 'OwnerSummary'];
 
     expect(routed.length).toBeGreaterThan(8);
     const covered = new Set<string>(Object.values(MUTE_GROUPS).flat());

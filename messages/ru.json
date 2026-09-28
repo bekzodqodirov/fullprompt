@@ -4391,5 +4391,8 @@
     "firstContact": "Первый контакт",
     "firstContactLegend": "медиана · n · 1 ч+ / 24 ч+",
     "minutes": "{n} мин"
+  },
+  "kechkiXulosa": {
+    "notifMuteOwner": "Вечерняя сводка (20:00)"
   }
 }

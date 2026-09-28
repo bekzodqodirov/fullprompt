@@ -76,6 +76,7 @@ export const WORKER_REGISTRATIONS: [string, (boss: PgBoss) => Promise<void>][] =
   ['unanswered', async (b) => (await import('../../wms/crm/unanswered-jobs')).registerUnansweredWorker(b)],
   ['silent-trucks', async (b) => (await import('../../wms/tracking/silent-jobs')).registerSilentTrucksWorker(b)],
   ['partner-terms', async (b) => (await import('../../wms/partners/terms-jobs')).registerPartnerTermsWorker(b)],
+  ['owner-summary', async (b) => (await import('../../wms/reports/owner-summary-jobs')).registerOwnerSummaryWorker(b)],
   ['broadcast', async (b) => (await import('../broadcast/jobs')).registerBroadcastWorker(b)],
   ['birthdays', async (b) => (await import('../broadcast/jobs')).registerBirthdayWorker(b)],
   ['meta-leads', async (b) => (await import('../../wms/crm/meta-jobs')).registerMetaLeadWorker(b)],

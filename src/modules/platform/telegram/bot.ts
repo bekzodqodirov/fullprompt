@@ -6,7 +6,6 @@ import { logger } from '../logger';
 import { clientsForChat } from '../../wms/client-cabinet/service';
 import {
   beginClientLink,
-  cabinetKeyboard,
   dispatch,
   phoneKeyboard,
   registerClientCabinet,
@@ -18,13 +17,7 @@ import { adSourceFromPayload, rememberAdVisit } from './ad-intake';
 import { h } from './format';
 import { cabinetInlineKeyboard } from './menu-button';
 import { linkStaffChat, staffForChat, startMenuFor } from './staff-bot';
-import {
-  askStaffPhone,
-  bothKeyboard,
-  entryKeyboard,
-  registerStaffBot,
-  staffKeyboard,
-} from './staff-handlers';
+import { askStaffPhone, entryKeyboard, registerStaffBot } from './staff-handlers';
 import { replyKeyboardFor } from './keyboards';
 import { ensureBotProfile, offerStaffCommands } from './commands';
 import { botCall, noteBotAnswer } from './send';
@@ -165,7 +158,9 @@ export function startTelegramBot(): void {
               staffName: menu === 'both' ? staff!.fullName : null,
               locale,
             }),
-            replyMarkup: menu === 'both' ? bothKeyboard(locale) : cabinetKeyboard(locale),
+            // Re-derived, never named (13A): the both-keyboard now carries a
+            // per-PERSON row («📊 Holat»), which only the one resolver asks.
+            replyMarkup: await replyKeyboardFor(BigInt(chatId), locale),
           },
         ];
         if (app) messages.push({ html: h(t.openAppPrompt), replyMarkup: app });
@@ -174,7 +169,7 @@ export function startTelegramBot(): void {
       }
       // A linked member of STAFF gets the staff menu (round 35).
       if (menu === 'staff') {
-        await ctx.reply(`👋 ${staff!.fullName}`, { reply_markup: staffKeyboard() });
+        await ctx.reply(`👋 ${staff!.fullName}`, { reply_markup: await replyKeyboardFor(BigInt(chatId)) });
         return;
       }
       // An unknown chat is offered the two doors (owner: «hodim yoki mijoz

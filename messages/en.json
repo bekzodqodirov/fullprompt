@@ -4391,5 +4391,8 @@
     "firstContact": "First contact",
     "firstContactLegend": "median · n · 1 h+ / 24 h+",
     "minutes": "{n} min"
+  },
+  "kechkiXulosa": {
+    "notifMuteOwner": "Evening summary (20:00)"
   }
 }

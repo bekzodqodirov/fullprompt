@@ -48,11 +48,19 @@ export async function loadUserRoles(
     .where(eq(userRoles.userId, userId));
 }
 
-export const getActor = cache(async function getActor(): Promise<Actor | null> {
-  const user = await getSessionUser();
-  if (!user) return null;
+/** Everything an actor is besides who they are: the grants and the scope. */
+export type ActorGrants = Pick<Actor, 'roles' | 'permissions' | 'warehouseIds' | 'warehouseScoped'>;
 
-  const roleRows = await loadUserRoles(user.id);
+/**
+ * One user's roles, permissions (from the EDITABLE grants) and warehouse
+ * scope — the three answers `getActor` gives a session, for a user named by
+ * id. ONE «actor without a session»: the staff bot's `botActorFor` and the
+ * owner's evening summary (a job, with no request at all) read it, so a read
+ * made for them can never be wider than the screen's read for the same
+ * person (#411's rule).
+ */
+export async function actorGrants(userId: string): Promise<ActorGrants> {
+  const roleRows = await loadUserRoles(userId);
   const roleCodes = roleRows.map((r) => r.code as RoleCode);
 
   const permRows = await db
@@ -60,12 +68,12 @@ export const getActor = cache(async function getActor(): Promise<Actor | null> {
     .from(userRoles)
     .innerJoin(rolePermissions, eq(userRoles.roleId, rolePermissions.roleId))
     .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
-    .where(eq(userRoles.userId, user.id));
+    .where(eq(userRoles.userId, userId));
 
   const whRows = await db
     .select({ warehouseId: userWarehouses.warehouseId })
     .from(userWarehouses)
-    .where(eq(userWarehouses.userId, user.id));
+    .where(eq(userWarehouses.userId, userId));
 
   // From the COLUMN, not the compiled role-name list (migration 0049): a
   // role invented on /admin/roles carries its own answer. ANY scoped role
@@ -74,12 +82,17 @@ export const getActor = cache(async function getActor(): Promise<Actor | null> {
   const warehouseScoped = roleRows.some((r) => r.warehouseScoped);
 
   return {
-    ...user,
     roles: roleCodes,
     permissions: new Set(permRows.map((p) => p.code)),
     warehouseIds: whRows.map((w) => w.warehouseId),
     warehouseScoped,
   };
+}
+
+export const getActor = cache(async function getActor(): Promise<Actor | null> {
+  const user = await getSessionUser();
+  if (!user) return null;
+  return { ...user, ...(await actorGrants(user.id)) };
 });
 
 /**
