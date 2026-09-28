@@ -17,6 +17,8 @@ const button = readFileSync('src/app/(protected)/batches/[id]/customs-cleared.ts
 // The customs panel lives on the truck card's «Bojxona» tab since 2026-09-28.
 const page = readFileSync('src/app/(protected)/batches/[id]/tnved/page.tsx', 'utf8');
 const cabinet = readFileSync('src/modules/wms/client-cabinet/service.ts', 'utf8');
+const stages = readFileSync('src/modules/wms/client-cabinet/stages.ts', 'utf8');
+const cargoNow = readFileSync('src/modules/wms/inventory/client-cargo-now.ts', 'utf8');
 
 describe('the customs-cleared wire', () => {
   it('the button posts the batch and calls the action', () => {
@@ -44,6 +46,15 @@ describe('the customs-cleared wire', () => {
 
   it('the customer’s timeline reads the same column', () => {
     expect(cabinet).toContain('customsClearedAt: batches.customsClearedAt');
-    expect(cabinet).toContain('customsCleared: r.customsClearedAt !== null');
+    // «Cleared» = «somebody stamped a date» has ONE home since the client
+    // card's «Yuklar» tab (`stageBatchOf`); the cabinet hands it the row it
+    // selected, the column included.
+    expect(cabinet).toContain('stage: stageBatchOf({ ...r, trackingCheckpoint: r.checkpoint })');
+    expect(stages).toContain('customsCleared: row.customsClearedAt !== null');
+  });
+
+  it('the client card’s «Yuklar» tab reads it through the same door', () => {
+    expect(cargoNow).toContain('customsClearedAt: batches.customsClearedAt');
+    expect(cargoNow).toContain('stage: stageBatchOf(r)');
   });
 });
