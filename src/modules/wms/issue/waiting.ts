@@ -164,9 +164,9 @@ export async function waitThresholds(): Promise<WaitThresholds> {
  * (the design review's #3; `uncollected-wire.test.ts` holds the body to it).
  *
  * ONE statement. The landing is computed once per waiting carton in a
- * MATERIALIZED CTE — measured on the 18k-carton shaped copy, the inlined form
- * evaluated the landing subplan twice — and the pickups are one grouped read
- * through `handovers_client_idx`. Lots are folded in JS so kilos and cubes are
+ * MATERIALIZED CTE — the design review measured the inlined form on the
+ * 18k-carton shaped copy evaluating the landing subplan twice — and the
+ * pickups are one grouped read through `handovers_client_idx`. Lots are folded in JS so kilos and cubes are
  * per-carton SHARES (`shareOf`): a 700-carton lot with three left behind is
  * three cartons' worth, never the lot's total.
  */

@@ -160,8 +160,9 @@ export async function logistFlowCounts(
       .then((m) => m.pickupAttentionCounts())
       .catch(() => ({ noCost: 0, unlinked: 0 })),
     // Every client in the company, so JIT off and the accountant row's BUDGET
-    // (design §5.1): measured 155-190 ms warm on the 18k-carton shaped copy,
-    // and a cold cache can miss it — the row then carries no number.
+    // (design §5.1): the design review measured 155-190 ms warm on the
+    // 18k-carton shaped copy, and a cold cache can miss it — the row then
+    // carries no number.
     withoutJit(
       (exec) => uncollectedCount(exec, { asOf: new Date(), minDays: warn, ownerId: undefined, warehouseIds: undefined }),
       { timeoutMs: UNBILLED_BUDGET_MS },
