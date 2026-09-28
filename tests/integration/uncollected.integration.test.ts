@@ -110,10 +110,14 @@ async function mintWarehouse(
 }
 
 async function mintClient(sellerId: string | null): Promise<{ id: string; code: string }> {
-  const code = `OK${next()}`;
+  const tag = next();
+  const code = `OK${tag}`;
+  // A phone of this run's OWN: a fixed number is another file's fixture —
+  // the Telegram bridge matches clients by phone, and vitest runs files side
+  // by side on one database.
   const [row] = await db
     .insert(clients)
-    .values({ clientCode: code, name: `Olib ${code}`, salesManagerId: sellerId, phones: ['+998901112233'] })
+    .values({ clientCode: code, name: `Olib ${code}`, salesManagerId: sellerId, phones: [`+9989${tag.slice(-8)}`] })
     .returning({ id: clients.id });
   const made = { id: row!.id, code };
   madeClients.push(made);
@@ -468,6 +472,7 @@ describe('the list', () => {
     expect(mine.rows[0]!.warehouseId).toBe(whAnd);
     expect(mine.rows[0]!.customs).toBe(true);
     expect(mine.rows[0]!.boxes).toBe(1);
+    expect(mine.rows[0]!.phones).toHaveLength(1);
     expect(await uncollectedCount(db, { asOf: BASE, minDays: 5, ownerId: sellerA, warehouseIds: undefined, clientIds: [cA.id, cB.id] })).toBe(1);
     // The all-scope chip for «nobody's clients» names neither.
     expect((await list([cA.id, cB.id], { sellerId: 'none' })).rows).toHaveLength(0);
