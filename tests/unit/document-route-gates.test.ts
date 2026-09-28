@@ -92,10 +92,9 @@ describe('the handover act asks one door, from every place that reads or links i
   it('the debt register draws «Akt» only where the same door admits, asked with the release’s warehouse', () => {
     // 0114's register links every release to its act; its reader is the
     // accountant, who holds neither grant — a link that bounces is worse than
-    // none (the qarz judge's #7). It had grown a door of its own the same day
-    // the «Yuklar» tab grew this one; the merge kept ONE.
+    // none (the qarz judge's #7).
     const page = code('src/app/(protected)/finance/qarzga-berilgan/page.tsx');
-    expect(page).toContain("from '@/modules/wms/documents/handover-act-door'");
+    expect(page).toContain("from '@/modules/wms/issue/act-door'");
     expect(page).toMatch(/mayReadHandoverAct\(actor, row\.warehouseId\)/);
     expect(page).not.toContain("'scan.issue'");
   });

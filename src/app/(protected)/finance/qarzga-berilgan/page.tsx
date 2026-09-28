@@ -7,7 +7,7 @@ import { BackLink } from '@/components/back-link';
 import { PageHeader } from '@/components/ui/page';
 import { companyMoneySight } from '@/modules/wms/finance/scope';
 import { debtReleases, releaseApprovers, type ReleaseKind } from '@/modules/wms/debt/releases';
-import { mayReadHandoverAct } from '@/modules/wms/documents/handover-act-door';
+import { mayReadHandoverAct } from '@/modules/wms/issue/act-door';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
