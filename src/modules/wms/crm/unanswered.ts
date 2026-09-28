@@ -3,7 +3,7 @@ import { db } from '../../platform/db/client';
 import { getSetting } from '../../platform/settings/service';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { usersWithPermission } from '../../platform/notifications/service';
-import { leadChatOnlySql, resolveChatStates } from './conversations';
+import { leadDialogsSql, resolveChatStates } from './conversations';
 import { conversationHref, type ConversationKind } from './conversation-row';
 import { mayOpenLead } from './lead-door';
 import { chatNeedsAnswer } from './waiting';
@@ -75,6 +75,18 @@ export async function unansweredChats(
     peer_id: string;
     tg_message_id: string;
   };
+  /**
+   * Who a LEAD chat may ring: the account holders who hold `crm.leads`. The
+   * list (`listConversations`' `leadsFor`) and the home count
+   * (`buildHomeFlow`'s `leadChats`) carry lead chats for exactly those
+   * people, and the nudge follows the same rule — one rule for the three
+   * readers (the review's fourth finding). A logist or a VED who pressed
+   * «Yangi lid» on their own tray owns a lead no screen of theirs shows and
+   * whose card sends them away; a Telegram line about it, naming themselves
+   * as its owner, is a message about a door they do not have. Fed the grants
+   * from the editable matrix (#170), deactivated people already left out.
+   */
+  const leadReaders = await usersWithPermission('crm.leads');
   const [clientRows, leadRows] = await Promise.all([
     db.execute<Row & { client_id: string; client_code: string; client_name: string }>(sql`
       SELECT DISTINCT ON (m.client_id, m.manager_user_id)
@@ -86,24 +98,30 @@ export async function unansweredChats(
       WHERE m.client_id IS NOT NULL
       ORDER BY m.client_id, m.manager_user_id, m.sent_at DESC
     `),
-    db.execute<
-      Row & {
-        lead_id: string;
-        lead_name: string;
-        owner_id: string | null;
-        owner_name: string | null;
-      }
-    >(sql`
-      SELECT DISTINCT ON (m.lead_id, m.manager_user_id)
-        m.lead_id, leads.name AS lead_name, leads.owner_id, lo.full_name AS owner_name,
-        m.manager_user_id, m.id AS message_id, m.sent_at, m.body, m.direction,
-        m.reminded_at, m.peer_id, m.tg_message_id
-      FROM tg_messages m
-      JOIN leads ON leads.id = m.lead_id
-      LEFT JOIN users lo ON lo.id = leads.owner_id
-      WHERE ${leadChatOnlySql}
-      ORDER BY m.lead_id, m.manager_user_id, m.sent_at DESC
-    `),
+    leadReaders.length === 0
+      ? Promise.resolve([])
+      : db.execute<
+          Row & {
+            lead_id: string;
+            lead_name: string;
+            owner_id: string | null;
+            owner_name: string | null;
+          }
+        >(sql`
+          SELECT DISTINCT ON (d.lead_id, d.manager_user_id)
+            d.lead_id, leads.name AS lead_name, leads.owner_id, lo.full_name AS owner_name,
+            d.manager_user_id, d.id AS message_id, d.sent_at, d.body, d.direction,
+            d.reminded_at, d.peer_id, d.tg_message_id
+          FROM ${leadDialogsSql(
+            sql`m.manager_user_id IN (${sql.join(
+              leadReaders.map((id) => sql`${id}`),
+              sql`, `,
+            )})`,
+          )} d
+          JOIN leads ON leads.id = d.lead_id
+          LEFT JOIN users lo ON lo.id = leads.owner_id
+          ORDER BY d.lead_id, d.manager_user_id, d.sent_at DESC
+        `),
   ]);
 
   const isDue = (r: Row) =>
@@ -162,17 +180,14 @@ export async function unansweredChats(
 
   // Whether each nudged manager may open the LEAD card the link would point
   // at — asked through the card's own predicate, fed the grants from the
-  // editable matrix (#170). Two queries, and only when a lead chat is due.
-  const leadHolders = due.some((c) => c.kind === 'lead')
-    ? await Promise.all([
-        usersWithPermission('crm.leads'),
-        usersWithPermission('crm.leads.view_all'),
-      ])
-    : null;
+  // editable matrix (#170). One more query, and only when a lead chat is due.
+  const viewAll = due.some((c) => c.kind === 'lead')
+    ? await usersWithPermission('crm.leads.view_all')
+    : [];
   const grantsOf = (userId: string): Set<string> => {
     const grants = new Set<string>();
-    if (leadHolders?.[0].includes(userId)) grants.add('crm.leads');
-    if (leadHolders?.[1].includes(userId)) grants.add('crm.leads.view_all');
+    if (leadReaders.includes(userId)) grants.add('crm.leads');
+    if (viewAll.includes(userId)) grants.add('crm.leads.view_all');
     return grants;
   };
 

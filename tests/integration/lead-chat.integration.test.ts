@@ -47,6 +47,7 @@ const nextPeer = () => PEER_BASE + BigInt((peerSeq += 1));
 let seller = '';
 let boss = '';
 let colleague = '';
+let ved = '';
 let bossName = '';
 let sellerName = '';
 let openStage = '';
@@ -131,11 +132,13 @@ beforeAll(async () => {
   const s = await byPhone('+998900000009'); // Dilnoza — sales_manager: crm.leads, not view_all
   const b = await byPhone('+998900000001'); // the owner — super_admin: the whole funnel
   const c = await byPhone('+998900000002'); // an admin — a colleague with an account of their own
+  const v = await byPhone('+998900000004'); // the VED — ved.docs, no crm.leads
   seller = s.id;
   sellerName = s.fullName;
   boss = b.id;
   bossName = b.fullName;
   colleague = c.id;
+  ved = v.id;
   const stages = await db.select().from(leadStages);
   openStage = stages.find((row) => row.kind === 'open')!.id;
   lostStage = stages.find((row) => row.kind === 'lost')!.id;
@@ -264,6 +267,29 @@ describe('one person’s conversation is ONE row', () => {
     // …and the lead card no longer claims its chat panel with that half.
     expect(await leadOwnChatRows(moved, { id: seller })).toBe(0);
   });
+
+  it('the door swings back: a dialog filed under a lead AFTER its client half rings as the lead', async () => {
+    // The tray's «↩» put a client-filed chat back and «Yangi lid» filed what
+    // followed under a lead — or the lead card's «Chatni qo'shish» attached a
+    // client-book dialog to a lead. Here the client rows are the OLD half,
+    // and only a NEWER client row may supersede (the review's second
+    // finding: an unordered witness hid every new message the prospect wrote).
+    const clientId = await client();
+    const flipped = await lead({ owner: seller });
+    const peer = nextPeer();
+    await say({ clientId, peer, tgId: 1n, at: ago(3 * 24 * 60), dir: 'out' });
+    const fresh = await say({ leadId: flipped, peer, tgId: 2n, at: ago(40) });
+
+    const row = (await sellerList()).find((r) => r.leadId === flipped);
+    expect(row?.state).toBe('new');
+    expect(row?.messages).toBe(1);
+    expect((await chatBadges({ id: seller }, { leadIds: [flipped] })).leads.get(flipped)).toBe(
+      'waiting',
+    );
+    expect((await unansweredChats(30)).some((chat) => chat.messageId === fresh.id)).toBe(true);
+    // …and the card's panel is the lead's own, not the phone-matched client's.
+    expect(await leadOwnChatRows(flipped, { id: seller })).toBe(1);
+  });
 });
 
 describe('the own-account fence', () => {
@@ -380,6 +406,16 @@ describe('the seller’s home and the nudge', () => {
     const read = await say({ leadId: other, at: ago(45) });
     await recordChatRead({ managerUserId: seller, peerId: read.peer, maxTgMessageId: 7n });
     expect((await unansweredChats(30)).some((chat) => chat.messageId === read.id)).toBe(false);
+  });
+
+  it('rings only an account whose screens carry lead chats (crm.leads) — one rule for all three', async () => {
+    // The VED pressed «Yangi lid» on their own tray: `leadForChat` made them
+    // the owner of a lead no screen of theirs lists and whose card sends
+    // them away. The list and the home count leave it out for them, and so
+    // does the nudge (the review's fourth finding).
+    const id = await lead({ owner: ved });
+    const msg = await say({ leadId: id, manager: ved });
+    expect((await unansweredChats(30)).some((chat) => chat.messageId === msg.id)).toBe(false);
   });
 
   it('a chat on someone else’s lead is shown without a door, naming whose lead it is', async () => {

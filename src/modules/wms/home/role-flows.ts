@@ -80,8 +80,14 @@ export async function salesFlowCounts(
      * no `client_id IS NOT NULL`, and postgres groups all NULLs together, so
      * every lead-owned chat in the company collapsed into one phantom
      * «waiting» on this screen, openable nowhere and clearable by nothing.
+     *
+     * The lead kind is not even ASKED for a person whose list draws no lead
+     * rows: fetched and thrown away, it was this screen's most expensive
+     * statement (the lead chats review's fifth finding).
      */
-    chatBadges({ id: actorId }),
+    chatBadges({ id: actorId }, undefined, {
+      kinds: opts.leadChats ? ['client', 'lead'] : ['client'],
+    }),
     managedClients(actorId),
     db
       .select({ n: sql<number>`count(*)` })
@@ -95,10 +101,9 @@ export async function salesFlowCounts(
     openLeads,
     // Both kinds through the one resolver — a prospect waiting on an answer
     // is the same line on the same home as a client waiting (owner's 4a).
-    waitingChats: [
-      ...waiting.clients.values(),
-      ...(opts.leadChats ? waiting.leads.values() : []),
-    ].filter((mark) => mark === 'waiting').length,
+    waitingChats: [...waiting.clients.values(), ...waiting.leads.values()].filter(
+      (mark) => mark === 'waiting',
+    ).length,
     // The same 0.009 line the my-clients screen draws.
     debtors: book.filter((client) => client.balanceUsd > 0.009).length,
     openDeals: Number(openDealRows[0]?.n ?? 0),

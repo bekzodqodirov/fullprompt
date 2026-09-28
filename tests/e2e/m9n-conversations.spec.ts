@@ -57,7 +57,13 @@ test('the conversation list opens and leads into a thread', async ({ page }) => 
   // ever stops, this asserts the empty state instead of quietly passing on an
   // empty page — a screen that shows nothing must say so.
   if ((await rows.count()) === 0) {
-    await expect(page.getByTestId('conversations-empty')).toBeVisible();
+    // The empty state is drawn only when there is no row of EITHER kind, so
+    // it is asserted only then: a page holding nothing but lead rows (the
+    // case the filter above exists for) has no thread to open and no empty
+    // sentence either — that is a stop, not a failure.
+    if ((await page.getByTestId('conversation-row').count()) === 0) {
+      await expect(page.getByTestId('conversations-empty')).toBeVisible();
+    }
     return;
   }
 

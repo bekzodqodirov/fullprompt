@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { chatNeedsAnswer, chatState, leadChatState, type ChatState } from './waiting';
 import { attachments, clients, tgMessages, users } from '../../platform/db/schema';
@@ -116,13 +116,14 @@ export interface ConversationRow {
 export const CONVERSATIONS_ON_SCREEN = 200;
 
 /**
- * The one sentence that makes a stored message part of a LEAD's conversation
- * (the lead chats round). Every statement that keys a conversation on
- * `lead_id` carries it — the row's DISTINCT ON, the count and the names on
- * the list, the card badges, the nudge and the card's precedence rule — over
- * the alias `m`.
+ * A LEAD's conversation, read one DIALOG at a time — the one statement every
+ * reader keyed on `lead_id` takes its rows from (the lead chats round): the
+ * list's row, its count and its names, the card badges, the nudge and the
+ * card's precedence rule.
  *
- * Three clauses, each a way the naive `lead_id IS NOT NULL` lies:
+ * It answers, per (lead, manager, peer), the dialog's newest lead-only row
+ * and how many lead-only rows it holds — and only for a dialog that still
+ * STANDS. Four clauses, each a way the naive `lead_id IS NOT NULL` lies:
  *  - `client_id IS NULL`: a row written after the lead was WON carries both
  *    ids (`storeIncoming` fills the client in from the lead, and
  *    `rekeyLeadChats` keeps `lead_id` on the moved rows). The client id always
@@ -132,26 +133,76 @@ export const CONVERSATIONS_ON_SCREEN = 200;
  *    company's chats into ONE phantom row (#651);
  *  - NOT EXISTS a client row on the same (manager, peer): the tray's client
  *    door (`decideChat`) rewrites the RULE and leaves the lead-only rows it
- *    had already stored with no client — so the same person, on the same
- *    account, would read as a client row AND a stale lead row, the lead half
- *    ringing about messages the client half already answers (the design
- *    judge's third finding). Once a person's dialog carries a client, it is
- *    the client's conversation.
+ *    had already stored with no client — so the same person would read as a
+ *    client row AND a stale lead row, the lead half ringing about messages
+ *    the client half already answers (the design judge's third finding);
+ *  - …but only a client row NEWER than the dialog's newest lead-only one
+ *    (`moved.tg_message_id > g.tg_message_id` — Telegram numbers a private
+ *    dialog in order). The door swings both ways: the tray's «↩» puts a
+ *    client-filed chat back on the tray and «Yangi lid» files what follows
+ *    under a lead, and the lead card's «Chatni qo'shish» attaches a
+ *    client-book dialog to a lead. There the client rows are the OLD half,
+ *    and an unordered witness hid every new message the prospect wrote from
+ *    the list, the badge, the home count and the nudge (the review's second
+ *    finding, measured in a rolled-back transaction).
  *
- * Stated plainly because its red proof said so: the first clause is IMPLIED
- * by the third — a row carrying a client is its own witness in the NOT
- * EXISTS — so stripping it alone turns no behaviour red, only the source
- * fence (`chat-conversation-key.test.ts`). It stays because it is the part
- * an index can use: `client_id IS NULL` is a prefix of 0048's
- * (manager_user_id, client_id, sent_at), and a reader should not have to
- * derive the rule from a subquery.
+ * The SHAPE is the other half of the rule, and it was measured, not argued
+ * (the review's first finding). The first version asked the NOT EXISTS once
+ * per MESSAGE: the unique index it can use carries no `client_id`, so every
+ * lead row scanned its whole dialog — quadratic in the dialog's length, on
+ * the seller's home, «Suhbatlar», the dock and the nudge, and lost leads'
+ * chats never leave those statements. On a shaped copy (120k client rows +
+ * 300 lead dialogs × 200 messages on one seller) the whole list took 2.5 s
+ * and the nudge 2.3 s. Now: GROUP the lead rows per dialog first (an
+ * aggregate over narrow columns, never a sort of message bodies), then per
+ * DIALOG one probe of the unique index (manager, peer, tg_message_id) for its
+ * newest row and one range probe of the same index for a newer client row —
+ * the list 0.1 s, the home count 0.15 s, the nudge 0.3 s (its CLIENT half,
+ * unchanged, is most of that); 50 dialogs × 500 messages the same. Two
+ * shapes the planner chose on its own and that were measured wrong before
+ * this one: a plain JOIN back to the newest row, which it hashed over the
+ * WHOLE table (131 ms at 180k rows, growing with every client's chat), and
+ * the NOT EXISTS beside it, which became a hash anti-join over every client
+ * row. Inside a LATERAL with LIMIT 1 neither can be flattened, so both stay
+ * probes — per dialog, whatever the table grows to.
+ *
+ * `where` is ANDed inside, over the alias `m` — the caller's own-account
+ * fence and any bound on `m.lead_id`. The result's columns: id, lead_id,
+ * manager_user_id, peer_id, tg_message_id, sent_at, body, has_media,
+ * direction, reminded_at, messages — one row per standing dialog, which the
+ * caller aliases and folds to what it keys on.
  */
-export const leadChatOnlySql = sql`(m.client_id IS NULL AND m.lead_id IS NOT NULL AND NOT EXISTS (
-    SELECT 1 FROM tg_messages moved
-    WHERE moved.manager_user_id = m.manager_user_id
-      AND moved.peer_id = m.peer_id
-      AND moved.client_id IS NOT NULL
-  ))`;
+export function leadDialogsSql(where: SQL): SQL {
+  return sql`(
+    SELECT last.id, g.lead_id, g.manager_user_id, g.peer_id, g.tg_message_id,
+           last.sent_at, last.body, last.has_media, last.direction, last.reminded_at,
+           g.messages
+    FROM (
+      SELECT m.lead_id, m.manager_user_id, m.peer_id,
+             max(m.tg_message_id) AS tg_message_id, count(*) AS messages
+      FROM tg_messages m
+      WHERE m.client_id IS NULL
+        AND m.lead_id IS NOT NULL
+        AND ${where}
+      GROUP BY m.lead_id, m.manager_user_id, m.peer_id
+    ) g
+    CROSS JOIN LATERAL (
+      SELECT t.id, t.sent_at, t.body, t.has_media, t.direction, t.reminded_at
+      FROM tg_messages t
+      WHERE t.manager_user_id = g.manager_user_id
+        AND t.peer_id = g.peer_id
+        AND t.tg_message_id = g.tg_message_id
+        AND NOT EXISTS (
+          SELECT 1 FROM tg_messages moved
+          WHERE moved.manager_user_id = t.manager_user_id
+            AND moved.peer_id = t.peer_id
+            AND moved.tg_message_id > t.tg_message_id
+            AND moved.client_id IS NOT NULL
+        )
+      LIMIT 1
+    ) last
+  )`;
+}
 
 /**
  * Every client — and, for a reader who may open lead cards, every LEAD — THE
@@ -258,28 +309,30 @@ export async function listConversations(
           manager_user_id: string;
           peer_id: string;
           tg_message_id: string;
+          messages: string;
         }>(sql`
-          SELECT DISTINCT ON (m.lead_id)
-            m.lead_id,
+          SELECT DISTINCT ON (d.lead_id)
+            d.lead_id,
             leads.name AS lead_name,
             lo.full_name AS owner_name,
             -- The lead card's own door, asked HERE so a row the reader cannot
             -- follow is drawn without a link and names whose lead it is.
             ${mayOpenLeadSql(leadReader)} AS openable,
-            m.sent_at,
-            m.body,
-            m.has_media,
-            m.direction,
-            m.manager_user_id,
-            m.peer_id,
-            m.tg_message_id
-          FROM tg_messages m
-          JOIN leads ON leads.id = m.lead_id
+            d.sent_at,
+            d.body,
+            d.has_media,
+            d.direction,
+            d.manager_user_id,
+            d.peer_id,
+            d.tg_message_id,
+            -- Every standing dialog of the lead, summed: the row describes
+            -- them all (a supervisor's lead can live on two accounts).
+            sum(d.messages) OVER (PARTITION BY d.lead_id) AS messages
+          FROM ${leadDialogsSql(mine)} d
+          JOIN leads ON leads.id = d.lead_id
           LEFT JOIN users lo ON lo.id = leads.owner_id
-          WHERE ${mine}
-            AND ${leadChatOnlySql}
-          ${q ? sql`AND ${leadTextWhere(q)}` : sql``}
-          ORDER BY m.lead_id, m.sent_at DESC
+          ${q ? sql`WHERE ${leadTextWhere(q)}` : sql``}
+          ORDER BY d.lead_id, d.sent_at DESC
         `)
       : Promise.resolve([]),
   ]);
@@ -304,6 +357,8 @@ export async function listConversations(
       managerUserId: r.manager_user_id,
       peerId: r.peer_id,
       tgMessageId: r.tg_message_id,
+      /** Counted below, over the page — see there. */
+      messages: null as number | null,
     })),
     ...leadRows.map((r) => ({
       kind: 'lead' as const,
@@ -320,6 +375,10 @@ export async function listConversations(
       managerUserId: r.manager_user_id,
       peerId: r.peer_id,
       tgMessageId: r.tg_message_id,
+      // Counted by the row's own statement: the dialogs `leadDialogsSql`
+      // answered already carry their count, so a second pass over the
+      // lead's rows would only restate it.
+      messages: Number(r.messages) as number | null,
     })),
   ];
   const page = merged.sort((a, b) => b.sentAt.getTime() - a.sentAt.getTime()).slice(0, limit);
@@ -344,36 +403,27 @@ export async function listConversations(
   for (const [seed, state] of states) stateOf.set(seed.row, state);
 
   // Counts for the conversations actually on screen — a list of ids, never
-  // the whole table. An empty half asks nothing (an empty `IN ()` is a
-  // syntax error, not an empty answer).
+  // the whole table. An empty list asks nothing (an empty `IN ()` is a
+  // syntax error, not an empty answer). The lead rows came with theirs: the
+  // count is of what the row DESCRIBES — its standing dialogs, behind the
+  // same own-account fence — or a rekeyed row would inflate a lead's number
+  // with messages that live on a client's card (the design judge's ninth
+  // finding).
   const counts = new Map<string, number>();
-  const [clientCounts, leadCounts] = await Promise.all([
+  const clientCounts =
     clientIds.length > 0
-      ? db.execute<{ id: string; messages: string }>(sql`
+      ? await db.execute<{ id: string; messages: string }>(sql`
           SELECT n.client_id AS id, count(*) AS messages
           FROM tg_messages n
           WHERE ${mineN}
             AND n.client_id IN (${sql.join(clientIds, sql`, `)})
           GROUP BY n.client_id
         `)
-      : Promise.resolve([]),
-    // The lead half counts what its row DESCRIBES: the same own-account
-    // fence and the same lead-only sentence as the row, or a rekeyed row
-    // inflates a lead's number with messages that live on a client's card
-    // (the design judge's ninth finding).
-    leadIds.length > 0
-      ? db.execute<{ id: string; messages: string }>(sql`
-          SELECT m.lead_id AS id, count(*) AS messages
-          FROM tg_messages m
-          WHERE ${mine}
-            AND ${leadChatOnlySql}
-            AND m.lead_id IN (${sql.join(leadIds, sql`, `)})
-          GROUP BY m.lead_id
-        `)
-      : Promise.resolve([]),
-  ]);
+      : [];
   for (const row of clientCounts) counts.set(`client:${row.id}`, Number(row.messages));
-  for (const row of leadCounts) counts.set(`lead:${row.id}`, Number(row.messages));
+  for (const row of page) {
+    if (row.kind === 'lead' && row.messages !== null) counts.set(`lead:${row.leadId}`, row.messages);
+  }
 
   // The supervision view names whose account each conversation lives on —
   // the boss reads a company of threads, and a row without its manager's
@@ -390,14 +440,14 @@ export async function listConversations(
             GROUP BY m.client_id
           `)
         : Promise.resolve([]),
+      // The accounts holding a STANDING dialog of the lead — the same rows
+      // the row describes, never a half the tray moved to a client.
       leadIds.length > 0
         ? db.execute<{ id: string; names: string[] }>(sql`
-            SELECT m.lead_id AS id, array_agg(DISTINCT u.full_name) AS names
-            FROM tg_messages m
-            JOIN users u ON u.id = m.manager_user_id
-            WHERE ${leadChatOnlySql}
-              AND m.lead_id IN (${sql.join(leadIds, sql`, `)})
-            GROUP BY m.lead_id
+            SELECT d.lead_id AS id, array_agg(DISTINCT u.full_name) AS names
+            FROM ${leadDialogsSql(sql`m.lead_id IN (${sql.join(leadIds, sql`, `)})`)} d
+            JOIN users u ON u.id = d.manager_user_id
+            GROUP BY d.lead_id
           `)
         : Promise.resolve([]),
     ]);
@@ -703,17 +753,19 @@ export async function threadManagersForLead(leadId: string): Promise<ThreadManag
 
 /**
  * How many of this lead's OWN standing chat rows the viewer may read — the
- * number `leadThreadSource` decides the card's panel on. Same fence as every
- * other lead branch (`leadChatOnlySql`), so a lead whose dialog has moved to
- * a client does not claim the panel with its stale half.
+ * number `leadThreadSource` decides the card's panel on. Read through
+ * `leadDialogsSql` like every other lead branch, so a lead whose dialog has
+ * moved on to a client does not claim the panel with its stale half — and a
+ * lead the prospect wrote to AFTER a client half does (the review's second
+ * finding: an unordered witness sent the card to the phone-matched client's
+ * thread, which does not hold those messages either). Asked on every render
+ * of the lead card, so it is the same per-dialog shape, never per message.
  */
 export async function leadOwnChatRows(leadId: string, viewer: TgViewer): Promise<number> {
+  const own = viewer.all ? sql`` : sql`AND m.manager_user_id = ${viewer.id}::uuid`;
   const [row] = await db.execute<{ n: string }>(sql`
-    SELECT count(*) AS n
-    FROM tg_messages m
-    WHERE m.lead_id = ${leadId}::uuid
-      AND ${leadChatOnlySql}
-      ${viewer.all ? sql`` : sql`AND m.manager_user_id = ${viewer.id}::uuid`}
+    SELECT coalesce(sum(d.messages), 0) AS n
+    FROM ${leadDialogsSql(sql`m.lead_id = ${leadId}::uuid ${own}`)} d
   `);
   return Number(row?.n ?? 0);
 }
@@ -843,9 +895,20 @@ export async function chatBadges(
    * «all my chats», and that one is bounded by the manager filter instead.
    */
   bound?: { clientIds?: string[]; leadIds?: string[] },
+  opts: {
+    /**
+     * Which kinds to ask at all. The home count of a person whose list
+     * carries no lead rows (no `crm.leads`) wants «all my CLIENT chats»: an
+     * unbounded lead statement it would only throw away is the most
+     * expensive thing on that screen (the review's fifth finding). Absent =
+     * both.
+     */
+    kinds?: readonly ConversationKind[];
+  } = {},
 ): Promise<ChatBadges> {
-  const clientIds = bound ? (bound.clientIds ?? []) : null;
-  const leadIds = bound ? (bound.leadIds ?? []) : null;
+  const wants = (kind: ConversationKind) => !opts.kinds || opts.kinds.includes(kind);
+  const clientIds = !wants('client') ? [] : bound ? (bound.clientIds ?? []) : null;
+  const leadIds = !wants('lead') ? [] : bound ? (bound.leadIds ?? []) : null;
   const mine = viewer.all ? sql`true` : sql`manager_user_id = ${viewer.id}`;
   const mineM = viewer.all ? sql`true` : sql`m.manager_user_id = ${viewer.id}`;
   // sql.join, never a bare array: a JS array bound into a raw fragment does
@@ -882,13 +945,10 @@ export async function chatBadges(
     leadIds && leadIds.length === 0
       ? Promise.resolve([])
       : db.execute<SeedRow & { lead_id: string }>(sql`
-          SELECT DISTINCT ON (m.lead_id)
-            m.lead_id, m.direction, m.manager_user_id, m.peer_id, m.tg_message_id, m.sent_at
-          FROM tg_messages m
-          WHERE ${mineM}
-            AND ${leadChatOnlySql}
-            ${leadBound}
-          ORDER BY m.lead_id, m.sent_at DESC
+          SELECT DISTINCT ON (d.lead_id)
+            d.lead_id, d.direction, d.manager_user_id, d.peer_id, d.tg_message_id, d.sent_at
+          FROM ${leadDialogsSql(sql`${mineM} ${leadBound}`)} d
+          ORDER BY d.lead_id, d.sent_at DESC
         `),
   ]);
 
@@ -1069,7 +1129,7 @@ export async function markThreadRead(clientId: string, actorId: string): Promise
  * lead card writes nothing and silences nobody (#650). Keyed on exactly the
  * rows the panel draws (`conversationForLead` — `lead_id` alone), because
  * the read pointer is a fact about the dialog on screen; the conversation's
- * KEYING clause (`leadChatOnlySql`) is a question about which list row a
+ * KEYING statement (`leadDialogsSql`) is a question about which list row a
  * message belongs to, and this statement makes no row.
  */
 export async function markLeadThreadRead(leadId: string, actorId: string): Promise<void> {
