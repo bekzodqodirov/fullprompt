@@ -570,6 +570,11 @@ export function Dock({ canChat }: { canChat: boolean }) {
                         <Link
                           key={`lead:${row.leadId}`}
                           href={row.href}
+                          // Closed by hand as well: from the lead's OWN card the
+                          // path does not change (only the #anchor does), so the
+                          // close-on-navigation effect would leave the drawer
+                          // covering the very chat it just scrolled to.
+                          onClick={() => setOpen(false)}
                           data-testid="dock-conversation"
                           data-kind="lead"
                           className={rowClass}
