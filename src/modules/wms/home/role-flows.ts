@@ -52,7 +52,19 @@ export interface SalesFlowCounts {
   openDeals: number;
 }
 
-export async function salesFlowCounts(actorId: string, today: string): Promise<SalesFlowCounts> {
+export async function salesFlowCounts(
+  actorId: string,
+  today: string,
+  opts: {
+    /**
+     * Count the person's LEAD chats too (the lead chats round) — exactly when
+     * their «Suhbatlar» list carries lead rows, i.e. when they hold
+     * `crm.leads` (`listConversations`' `leadsFor`). A count that includes
+     * rows the list does not draw is #651's phantom in a new costume.
+     */
+    leadChats?: boolean;
+  } = {},
+): Promise<SalesFlowCounts> {
   const [calls, openLeads, waiting, book, openDealRows] = await Promise.all([
     followUps(today, actorId),
     openLeadCount(actorId),
@@ -81,7 +93,12 @@ export async function salesFlowCounts(actorId: string, today: string): Promise<S
     callsDue: calls.length,
     callsOverdue: calls.filter((call) => call.dueOn < today).length,
     openLeads,
-    waitingChats: [...waiting.values()].filter((mark) => mark === 'waiting').length,
+    // Both kinds through the one resolver — a prospect waiting on an answer
+    // is the same line on the same home as a client waiting (owner's 4a).
+    waitingChats: [
+      ...waiting.clients.values(),
+      ...(opts.leadChats ? waiting.leads.values() : []),
+    ].filter((mark) => mark === 'waiting').length,
     // The same 0.009 line the my-clients screen draws.
     debtors: book.filter((client) => client.balanceUsd > 0.009).length,
     openDeals: Number(openDealRows[0]?.n ?? 0),
@@ -256,7 +273,7 @@ export type HomeFlow =
  * owner keeps the tile overview.
  */
 export async function buildHomeFlow(
-  actor: ScopedActor & { id: string; roles: string[] },
+  actor: ScopedActor & { id: string; roles: string[]; permissions?: ReadonlySet<string> },
   today: string,
 ): Promise<HomeFlow | null> {
   if (actor.warehouseScoped) {
@@ -280,7 +297,9 @@ export async function buildHomeFlow(
       // row whose link carries a query string (`/my-clients?filter=debt`)
       // is still named here by its bare NAV href.
       hrefs: ['/crm/today', '/bitimlar', '/crm', '/suhbatlar', '/my-clients'],
-      counts: await salesFlowCounts(actor.id, today),
+      counts: await salesFlowCounts(actor.id, today, {
+        leadChats: actor.permissions?.has('crm.leads') ?? false,
+      }),
     };
   }
   // Round 30 — the last working role without a workflow home. After sales:

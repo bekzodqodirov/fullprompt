@@ -7,17 +7,28 @@ import {
   conversationClient,
   conversationFor,
   conversationForLead,
+  defaultThreadManager,
   tgViewerFor,
   threadClientFor,
   threadManagers,
+  threadManagersForLead,
 } from '@/modules/wms/crm/conversations';
+import { LEAD_THREAD_ANCHOR } from '@/modules/wms/crm/conversation-row';
 import { chatPulseForClient, chatPulseForLead } from '@/modules/wms/crm/pulse';
 import { ChatPulse } from './chat-pulse';
+import { LeadChatReadSentinel } from './chat-mark-read';
 import { OutboxBubble } from './outbox-bubble';
 import { TelegramBubble } from './telegram-bubble';
 import { ThreadManagers } from './thread-managers';
 import { TelegramReply } from './telegram-reply';
 import { ThreadCalc } from './thread-calc';
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** A manager id off the URL, or nothing — never a string the uuid column refuses. */
+function asManager(value: string | undefined): string | undefined {
+  return value && UUID.test(value) ? value : undefined;
+}
 
 /**
  * The Telegram conversation with this client, as a panel on a card.
@@ -57,10 +68,11 @@ export async function TelegramThread({
   clientId: string | null;
   /**
    * Round 100: a chat that OPENED a lead (0064 gave `tg_messages` a
-   * `lead_id`) was invisible on the very card it minted. When no client
-   * resolves, the panel shows the lead's own rows instead — read-only,
-   * because the outbox is keyed to the client book and the conversation
-   * lives on the manager's own phone.
+   * `lead_id`) was invisible on the very card it minted. With no `clientId`
+   * the panel shows the lead's own rows instead — read-only, because the
+   * outbox is keyed to the client book and the conversation lives on the
+   * manager's own phone. WHICH of the two a lead card shows is the page's
+   * `leadThreadSource`, decided once for the panel and the dock alike.
    */
   leadId?: string;
   limit?: number;
@@ -98,18 +110,54 @@ export async function TelegramThread({
     // keyed to the lead itself (round 82). Without this branch the card that
     // exists BECAUSE somebody wrote showed no trace of what they wrote.
     if (!leadId) return null;
-    const rows = await conversationForLead(leadId, viewer, limit);
-    if (rows.length === 0) return null;
+    // The client thread's selector, on the lead's (the design judge's fifth
+    // finding): a lead routed to one manager and later messaged by another
+    // is two conversations on two personal accounts, and merging them shows
+    // one that never happened (#639). The supervision view opens on whoever
+    // spoke LAST (`defaultThreadManager`) and asks for «Hammasi» on purpose.
+    const managers = await threadManagersForLead(leadId);
+    const asked = asManager(hodim);
+    const chosen = viewer.all
+      ? hodim === 'all'
+        ? undefined
+        : (asked ?? defaultThreadManager(managers) ?? undefined)
+      : undefined;
+    const rows = await conversationForLead(leadId, viewer, limit, chosen);
+    // Nothing at all → no panel. A filter that matches nothing keeps it, or
+    // the way back (the fold) vanishes with the click that emptied it.
+    if (rows.length === 0 && !chosen) return null;
     const pulse = await chatPulseForLead(actor, leadId);
+    const newestIn = rows.find((row) => row.direction === 'in')?.id ?? null;
     return (
-      <section className="card space-y-2" data-testid="tg-thread">
+      <section
+        id={LEAD_THREAD_ANCHOR}
+        // The «Lid» row on «Suhbatlar» lands here by its `#tg-thread`; the
+        // margin keeps the heading clear of the sticky app bar.
+        className="card scroll-mt-20 space-y-2"
+        data-testid="tg-thread"
+      >
         <h2 className="text-lg font-bold">✈️ {t('telegramThread')}</h2>
+        <div data-testid="card-managers">
+          <ThreadManagers
+            managers={managers}
+            active={chosen ?? null}
+            // «Hammasi» is `hodim=all` here, because the default is no
+            // longer «everybody» (round 91's rule on the client screen).
+            hrefFor={viewer.all && hrefFor ? (id) => hrefFor(id ?? 'all') : undefined}
+            labels={{ who: t('whoTalked'), all: t('allManagers') }}
+          />
+        </div>
         {/* Refresh only when the thread MOVED — the blind 10 s full-page
             loop was round 108's headline load (the token is computed in
             THIS render, so nothing between render and first poll is
             swallowed). */}
         {pulse && <ChatPulse query={`lead=${leadId}`} initial={pulse.t} fast={pulse.fast} />}
         <div className="flex max-h-96 flex-col-reverse gap-1.5 overflow-y-auto">
+          {/* FIRST in a reversed box = the newest end: the lead chat is
+              marked read when THAT is on screen, never merely because the
+              card mounted (a phone draws the rail first and the chat far
+              below it). */}
+          {newestIn && <LeadChatReadSentinel leadId={leadId} newest={newestIn} />}
           {rows.map((row) => (
             <TelegramBubble
               key={row.id}
@@ -133,11 +181,14 @@ export async function TelegramThread({
   // Nothing imported for this person — say nothing rather than show an empty
   // box on every card in the system.
   if (!threadClientId) return null;
-  const rows = await conversationFor(threadClientId, viewer, limit, hodim);
+  // A uuid or nothing: the lead branch's «Hammasi» writes `hodim=all` onto
+  // the same card URL, and a non-uuid reaching the manager column is a
+  // 22P02 — a white card instead of a chat (#514).
+  const rows = await conversationFor(threadClientId, viewer, limit, asManager(hodim));
   // Nothing at all → the panel stays away. But a filter that matches nothing
   // must NOT make the panel disappear: vanishing on a click reads as a broken
   // screen, and the way back is the fold that is no longer on screen.
-  if (rows.length === 0 && !hodim) return null;
+  if (rows.length === 0 && !asManager(hodim)) return null;
   const siblingCode =
     threadClientId === clientId ? null : (await conversationClient(threadClientId))?.clientCode;
   // WHO has talked with this person (owner: the card must list the staff so
@@ -157,7 +208,7 @@ export async function TelegramThread({
   const pulse = await chatPulseForClient(actor, clientId, { sibling: true });
 
   return (
-    <section className="card space-y-2" data-testid="tg-thread">
+    <section id={LEAD_THREAD_ANCHOR} className="card scroll-mt-20 space-y-2" data-testid="tg-thread">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-lg font-bold">
           ✈️ {t('telegramThread')}
@@ -174,7 +225,7 @@ export async function TelegramThread({
       <div data-testid="card-managers">
         <ThreadManagers
           managers={managers}
-          active={hodim ?? null}
+          active={asManager(hodim) ?? null}
           // Only where the page can carry the choice, and only for the eyes
           // `conversationFor` will actually honour it for.
           hrefFor={viewer.all && hrefFor ? hrefFor : undefined}

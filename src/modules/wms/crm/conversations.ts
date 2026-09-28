@@ -1,8 +1,11 @@
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
-import { chatNeedsAnswer, chatState, type ChatState } from './waiting';
+import { chatNeedsAnswer, chatState, leadChatState, type ChatState } from './waiting';
 import { attachments, clients, tgMessages, users } from '../../platform/db/schema';
 import { activeClientsByPhone } from '../client-cabinet/service';
+import { conversationHref, type ConversationKind } from './conversation-row';
+import { mayOpenLeadSql, type LeadReader } from './lead-door';
+import { leadTextWhere } from './service';
 
 /**
  * The conversation list and one conversation — phase 2 of bringing the
@@ -69,9 +72,27 @@ export function canReadTg(actor: {
 }
 
 export interface ConversationRow {
-  clientId: string;
-  clientCode: string;
-  clientName: string;
+  /**
+   * A client's conversation, or a LEAD's — a person who wrote in before
+   * anybody gave them a GS code (the lead chats round). `conversation-row.ts`
+   * says what each kind is and where it opens.
+   */
+  kind: ConversationKind;
+  /** Set on a client row; null on a lead row. */
+  clientId: string | null;
+  /** Set on a lead row; null on a client row. */
+  leadId: string | null;
+  /**
+   * The GS code, or null on a lead row. Renamed from `clientCode`/`clientName`
+   * when the row stopped being a client's by definition — so `pnpm typecheck`
+   * names every reader that assumed it was (#591's lesson, used on purpose).
+   */
+  code: string | null;
+  name: string;
+  /** Where the row opens (`conversationHref`); null = a lead the reader may not open. */
+  href: string | null;
+  /** The lead's owner, named on a lead row the reader may not open. */
+  leadOwner: string | null;
   lastAt: Date;
   lastBody: string | null;
   lastHasMedia: boolean;
@@ -95,8 +116,38 @@ export interface ConversationRow {
 export const CONVERSATIONS_ON_SCREEN = 200;
 
 /**
- * Every client THE VIEWER holds a conversation with, most recently active
- * first.
+ * The one sentence that makes a stored message part of a LEAD's conversation
+ * (the lead chats round). Every statement that keys a conversation on
+ * `lead_id` carries it — the row's DISTINCT ON, the count and the names on
+ * the list, the card badges, the nudge and the card's precedence rule — over
+ * the alias `m`.
+ *
+ * Three clauses, each a way the naive `lead_id IS NOT NULL` lies:
+ *  - `client_id IS NULL`: a row written after the lead was WON carries both
+ *    ids (`storeIncoming` fills the client in from the lead, and
+ *    `rekeyLeadChats` keeps `lead_id` on the moved rows). The client id always
+ *    wins, or one person's conversation is two rows on the list;
+ *  - `lead_id IS NOT NULL`: postgres groups every NULL together, so a branch
+ *    keyed on a nullable column without its null clause collapses the whole
+ *    company's chats into ONE phantom row (#651);
+ *  - NOT EXISTS a client row on the same (manager, peer): the tray's client
+ *    door (`decideChat`) rewrites the RULE and leaves the lead-only rows it
+ *    had already stored with no client — so the same person, on the same
+ *    account, would read as a client row AND a stale lead row, the lead half
+ *    ringing about messages the client half already answers (the design
+ *    judge's third finding). Once a person's dialog carries a client, it is
+ *    the client's conversation.
+ */
+export const leadChatOnlySql = sql`(m.client_id IS NULL AND m.lead_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM tg_messages moved
+    WHERE moved.manager_user_id = m.manager_user_id
+      AND moved.peer_id = m.peer_id
+      AND moved.client_id IS NOT NULL
+  ))`;
+
+/**
+ * Every client — and, for a reader who may open lead cards, every LEAD — THE
+ * VIEWER holds a conversation with, most recently active first.
  *
  * Scoped to the viewer's own Telegram account (owner, 2026-07-29: each
  * manager connects their OWN account and talks to clients there — reading a
@@ -115,12 +166,24 @@ export async function listConversations(
   viewer: TgViewer,
   search?: string,
   limit = CONVERSATIONS_ON_SCREEN,
+  opts: {
+    /**
+     * Who is reading, for the LEAD rows. Absent — or a reader without
+     * `crm.leads` — runs no lead statement at all: the lead card redirects
+     * anybody without that grant, and `canReadTg` admits `ved.docs` and
+     * `clients.manage` holders who have it not, so a lead row on their list
+     * would be a door onto a bounce. Explicit rather than defaulted, so a
+     * caller that forgets gets the list it always had.
+     */
+    leadsFor?: LeadReader | null;
+  } = {},
 ): Promise<ConversationRow[]> {
   const q = (search ?? '').trim();
   // One fragment, used identically in the top row and the count, so the two
   // can never disagree about whose messages a row is describing.
   const mine = viewer.all ? sql`true` : sql`m.manager_user_id = ${viewer.id}`;
   const mineN = viewer.all ? sql`true` : sql`n.manager_user_id = ${viewer.id}`;
+  const leadReader = opts.leadsFor?.permissions.has('crm.leads') ? opts.leadsFor : null;
   // The newest message per client, and NOTHING per message (round 74).
   //
   // The message COUNT used to be a correlated subquery in this projection —
@@ -130,111 +193,237 @@ export async function listConversations(
   // opens most and on the 💬 dock reachable from every page. It is now one
   // grouped query joined in JS — round 45's `accountBalances` fix, same
   // shape, same reason.
-  const rows = await db.execute<{
-    client_id: string;
-    client_code: string;
-    client_name: string;
-    sent_at: Date;
-    body: string | null;
-    has_media: boolean;
-    direction: string;
-    manager_user_id: string;
-    peer_id: string;
-    tg_message_id: string;
-  }>(sql`
-    SELECT DISTINCT ON (m.client_id)
-      m.client_id,
-      c.client_code,
-      c.name AS client_name,
-      m.sent_at,
-      m.body,
-      m.has_media,
-      m.direction,
-      -- Carried so the state can be resolved AFTER the page is sliced. Round
-      -- 74 removed a correlated subquery from this very projection because a
-      -- DISTINCT ON evaluates it once per MESSAGE, not once per conversation;
-      -- the read pointer and the outbox are asked the same way the message
-      -- count now is — grouped, over the page, below. (No backticks in here:
-      -- this comment lives inside a template literal.)
-      m.manager_user_id,
-      m.peer_id,
-      m.tg_message_id
-    FROM tg_messages m
-    JOIN clients c ON c.id = m.client_id
-    WHERE ${mine}
-    ${q ? sql`AND (c.name ILIKE ${'%' + q + '%'} OR c.client_code ILIKE ${'%' + q + '%'})` : sql``}
-    ORDER BY m.client_id, m.sent_at DESC
-  `);
-  // Newest first, then the ceiling — BEFORE anything is counted or named.
-  // The two follow-up queries then ask about at most `limit` clients rather
-  // than about every client the company has ever written to, which is the
-  // difference between a fixed cost and one that grows every month.
-  const page = rows
-    .sort((a, b) => new Date(b.sent_at).getTime() - new Date(a.sent_at).getTime())
-    .slice(0, limit);
-  const ids = page.map((r) => sql`${r.client_id}`);
+  //
+  // TWO statements since the lead chats round, each keyed by exactly ONE
+  // owner column with that column's null clause: never the (client, lead)
+  // PAIR — a won lead's rows carry both ids while the tray's client door
+  // writes only the client, so the pair would split one person's
+  // conversation into two rows — and never a bare `client_id` over rows
+  // where it can be NULL (#651's phantom row).
+  const [clientRows, leadRows] = await Promise.all([
+    db.execute<{
+      client_id: string;
+      client_code: string;
+      client_name: string;
+      sent_at: Date;
+      body: string | null;
+      has_media: boolean;
+      direction: string;
+      manager_user_id: string;
+      peer_id: string;
+      tg_message_id: string;
+    }>(sql`
+      SELECT DISTINCT ON (m.client_id)
+        m.client_id,
+        c.client_code,
+        c.name AS client_name,
+        m.sent_at,
+        m.body,
+        m.has_media,
+        m.direction,
+        -- Carried so the state can be resolved AFTER the page is sliced. Round
+        -- 74 removed a correlated subquery from this very projection because a
+        -- DISTINCT ON evaluates it once per MESSAGE, not once per conversation;
+        -- the read pointer and the outbox are asked the same way the message
+        -- count now is — grouped, over the page, below. (No backticks in here:
+        -- this comment lives inside a template literal.)
+        m.manager_user_id,
+        m.peer_id,
+        m.tg_message_id
+      FROM tg_messages m
+      JOIN clients c ON c.id = m.client_id
+      WHERE ${mine}
+        AND m.client_id IS NOT NULL
+      ${q ? sql`AND (c.name ILIKE ${'%' + q + '%'} OR c.client_code ILIKE ${'%' + q + '%'})` : sql``}
+      ORDER BY m.client_id, m.sent_at DESC
+    `),
+    leadReader
+      ? db.execute<{
+          lead_id: string;
+          lead_name: string;
+          owner_name: string | null;
+          openable: boolean;
+          sent_at: Date;
+          body: string | null;
+          has_media: boolean;
+          direction: string;
+          manager_user_id: string;
+          peer_id: string;
+          tg_message_id: string;
+        }>(sql`
+          SELECT DISTINCT ON (m.lead_id)
+            m.lead_id,
+            leads.name AS lead_name,
+            lo.full_name AS owner_name,
+            -- The lead card's own door, asked HERE so a row the reader cannot
+            -- follow is drawn without a link and names whose lead it is.
+            ${mayOpenLeadSql(leadReader)} AS openable,
+            m.sent_at,
+            m.body,
+            m.has_media,
+            m.direction,
+            m.manager_user_id,
+            m.peer_id,
+            m.tg_message_id
+          FROM tg_messages m
+          JOIN leads ON leads.id = m.lead_id
+          LEFT JOIN users lo ON lo.id = leads.owner_id
+          WHERE ${mine}
+            AND ${leadChatOnlySql}
+          ${q ? sql`AND ${leadTextWhere(q)}` : sql``}
+          ORDER BY m.lead_id, m.sent_at DESC
+        `)
+      : Promise.resolve([]),
+  ]);
 
-  // Three states, one rule, resolved over the page (round 88).
-  const states = await resolveChatStates(
-    page.map((r) => ({
-      clientId: r.client_id,
+  // Newest first, then the ceiling — BEFORE anything is counted or named.
+  // The follow-up queries then ask about at most `limit` conversations rather
+  // than about every one the company has ever held, which is the difference
+  // between a fixed cost and one that grows every month.
+  const merged = [
+    ...clientRows.map((r) => ({
+      kind: 'client' as const,
+      clientId: r.client_id as string | null,
+      leadId: null as string | null,
+      code: r.client_code as string | null,
+      name: r.client_name,
+      openable: true,
+      leadOwner: null as string | null,
+      sentAt: new Date(r.sent_at),
+      body: r.body,
+      hasMedia: r.has_media,
+      direction: r.direction,
       managerUserId: r.manager_user_id,
       peerId: r.peer_id,
       tgMessageId: r.tg_message_id,
-      direction: r.direction,
+    })),
+    ...leadRows.map((r) => ({
+      kind: 'lead' as const,
+      clientId: null as string | null,
+      leadId: r.lead_id as string | null,
+      code: null as string | null,
+      name: r.lead_name,
+      openable: r.openable === true,
+      leadOwner: r.owner_name,
       sentAt: new Date(r.sent_at),
+      body: r.body,
+      hasMedia: r.has_media,
+      direction: r.direction,
+      managerUserId: r.manager_user_id,
+      peerId: r.peer_id,
+      tgMessageId: r.tg_message_id,
+    })),
+  ];
+  const page = merged.sort((a, b) => b.sentAt.getTime() - a.sentAt.getTime()).slice(0, limit);
+  const clientIds = page.flatMap((r) => (r.clientId ? [sql`${r.clientId}`] : []));
+  const leadIds = page.flatMap((r) => (r.leadId ? [sql`${r.leadId}`] : []));
+
+  // Three states, one rule, resolved over the page (round 88) — the lead
+  // rows through the same resolver, which also applies their extra door.
+  const states = await resolveChatStates(
+    page.map((r) => ({
+      clientId: r.clientId,
+      leadId: r.leadId,
+      managerUserId: r.managerUserId,
+      peerId: r.peerId,
+      tgMessageId: r.tgMessageId,
+      direction: r.direction,
+      sentAt: r.sentAt,
       row: r,
     })),
   );
-  const stateByClient = new Map<string, ChatState>();
-  for (const [seed, state] of states) stateByClient.set(seed.clientId, state);
+  const stateOf = new Map<(typeof page)[number], ChatState>();
+  for (const [seed, state] of states) stateOf.set(seed.row, state);
 
-  // Counts for the clients actually on screen — a list of ids, never the
-  // whole table. An empty page asks nothing.
+  // Counts for the conversations actually on screen — a list of ids, never
+  // the whole table. An empty half asks nothing (an empty `IN ()` is a
+  // syntax error, not an empty answer).
   const counts = new Map<string, number>();
-  if (page.length > 0) {
-    const countRows = await db.execute<{ client_id: string; messages: string }>(sql`
-      SELECT n.client_id, count(*) AS messages
-      FROM tg_messages n
-      WHERE ${mineN}
-        AND n.client_id IN (${sql.join(ids, sql`, `)})
-      GROUP BY n.client_id
-    `);
-    for (const row of countRows) counts.set(row.client_id, Number(row.messages));
-  }
+  const [clientCounts, leadCounts] = await Promise.all([
+    clientIds.length > 0
+      ? db.execute<{ id: string; messages: string }>(sql`
+          SELECT n.client_id AS id, count(*) AS messages
+          FROM tg_messages n
+          WHERE ${mineN}
+            AND n.client_id IN (${sql.join(clientIds, sql`, `)})
+          GROUP BY n.client_id
+        `)
+      : Promise.resolve([]),
+    // The lead half counts what its row DESCRIBES: the same own-account
+    // fence and the same lead-only sentence as the row, or a rekeyed row
+    // inflates a lead's number with messages that live on a client's card
+    // (the design judge's ninth finding).
+    leadIds.length > 0
+      ? db.execute<{ id: string; messages: string }>(sql`
+          SELECT m.lead_id AS id, count(*) AS messages
+          FROM tg_messages m
+          WHERE ${mine}
+            AND ${leadChatOnlySql}
+            AND m.lead_id IN (${sql.join(leadIds, sql`, `)})
+          GROUP BY m.lead_id
+        `)
+      : Promise.resolve([]),
+  ]);
+  for (const row of clientCounts) counts.set(`client:${row.id}`, Number(row.messages));
+  for (const row of leadCounts) counts.set(`lead:${row.id}`, Number(row.messages));
 
   // The supervision view names whose account each conversation lives on —
   // the boss reads a company of threads, and a row without its manager's
   // name is exactly the «tushunarsiz» he complained about.
-  const managersByClient = new Map<string, string[]>();
-  if (viewer.all && page.length > 0) {
-    const nameRows = await db.execute<{ client_id: string; names: string[] }>(sql`
-      SELECT m.client_id, array_agg(DISTINCT u.full_name) AS names
-      FROM tg_messages m
-      JOIN users u ON u.id = m.manager_user_id
-      WHERE m.client_id IN (${sql.join(ids, sql`, `)})
-      GROUP BY m.client_id
-    `);
-    for (const row of nameRows) managersByClient.set(row.client_id, row.names);
+  const managersBy = new Map<string, string[]>();
+  if (viewer.all) {
+    const [clientNames, leadNames] = await Promise.all([
+      clientIds.length > 0
+        ? db.execute<{ id: string; names: string[] }>(sql`
+            SELECT m.client_id AS id, array_agg(DISTINCT u.full_name) AS names
+            FROM tg_messages m
+            JOIN users u ON u.id = m.manager_user_id
+            WHERE m.client_id IN (${sql.join(clientIds, sql`, `)})
+            GROUP BY m.client_id
+          `)
+        : Promise.resolve([]),
+      leadIds.length > 0
+        ? db.execute<{ id: string; names: string[] }>(sql`
+            SELECT m.lead_id AS id, array_agg(DISTINCT u.full_name) AS names
+            FROM tg_messages m
+            JOIN users u ON u.id = m.manager_user_id
+            WHERE ${leadChatOnlySql}
+              AND m.lead_id IN (${sql.join(leadIds, sql`, `)})
+            GROUP BY m.lead_id
+          `)
+        : Promise.resolve([]),
+    ]);
+    for (const row of clientNames) managersBy.set(`client:${row.id}`, row.names);
+    for (const row of leadNames) managersBy.set(`lead:${row.id}`, row.names);
   }
 
-  return page.map((r) => ({
-      clientId: r.client_id,
-      clientCode: r.client_code,
-      clientName: r.client_name,
-      lastAt: new Date(r.sent_at),
+  return page.map((r) => {
+    const key = `${r.kind}:${r.clientId ?? r.leadId}`;
+    // The single most useful fact on the screen, and since round 88 it has
+    // three values rather than two: a client who wrote «ok» is READ and
+    // finished, and a mark that cannot tell that from an unanswered
+    // question is a mark people stop looking at (the owner's own words).
+    const state = stateOf.get(r) ?? 'answered';
+    return {
+      kind: r.kind,
+      clientId: r.clientId,
+      leadId: r.leadId,
+      code: r.code,
+      name: r.name,
+      href: conversationHref(r),
+      // Named only where the row cannot be followed: there the owner's name
+      // is the reader's way to the lead — ask whoever holds it.
+      leadOwner: r.kind === 'lead' && !r.openable ? r.leadOwner : null,
+      lastAt: r.sentAt,
       lastBody: r.body,
-      lastHasMedia: r.has_media,
-      // The single most useful fact on the screen, and since round 88 it has
-      // three values rather than two: a client who wrote «ok» is READ and
-      // finished, and a mark that cannot tell that from an unanswered
-      // question is a mark people stop looking at (the owner's own words).
-      state: stateByClient.get(r.client_id) ?? 'answered',
+      lastHasMedia: r.hasMedia,
+      state,
       /** Kept so nothing that reads the old field breaks: the ALARM only. */
-      waitingOnUs: chatNeedsAnswer(stateByClient.get(r.client_id) ?? 'answered'),
-      messages: counts.get(r.client_id) ?? 0,
-      managers: managersByClient.get(r.client_id) ?? [],
-    }));
+      waitingOnUs: chatNeedsAnswer(state),
+      messages: counts.get(key) ?? 0,
+      managers: managersBy.get(key) ?? [],
+    };
+  });
 }
 
 export interface ConversationMessage {
@@ -337,8 +526,20 @@ export async function conversationForLead(
   leadId: string,
   viewer: TgViewer,
   limit = 200,
+  /**
+   * The supervision view's selector, exactly `conversationFor`'s (the design
+   * judge's fifth finding): a website lead routed to one manager and later
+   * messaged by another is two conversations on two personal accounts, and
+   * interleaving them by timestamp shows one that never happened (#639).
+   * Honoured only under `viewer.all`; everyone else reads their own account.
+   */
+  managerId?: string,
 ): Promise<ConversationMessage[]> {
-  const accountFilter = viewer.all ? undefined : eq(tgMessages.managerUserId, viewer.id);
+  const accountFilter = viewer.all
+    ? managerId
+      ? eq(tgMessages.managerUserId, managerId)
+      : undefined
+    : eq(tgMessages.managerUserId, viewer.id);
   const rows = await db
     .select({
       id: tgMessages.id,
@@ -467,6 +668,49 @@ export async function threadManagers(clientId: string): Promise<ThreadManager[]>
 }
 
 /**
+ * `threadManagers` for a LEAD's conversation — the same chips, the same
+ * counts, keyed on `lead_id` over exactly the rows `conversationForLead`
+ * draws, so a chip's number is the number of bubbles it filters to.
+ */
+export async function threadManagersForLead(leadId: string): Promise<ThreadManager[]> {
+  const rows = await db
+    .select({
+      id: users.id,
+      name: users.fullName,
+      messages: sql<number>`count(*)`,
+      lastAt: sql<string>`max(${tgMessages.sentAt})`,
+    })
+    .from(tgMessages)
+    .innerJoin(users, eq(tgMessages.managerUserId, users.id))
+    .where(eq(tgMessages.leadId, leadId))
+    .groupBy(users.id, users.fullName)
+    .orderBy(desc(sql`count(*)`));
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    messages: Number(r.messages),
+    lastAt: r.lastAt,
+  }));
+}
+
+/**
+ * How many of this lead's OWN standing chat rows the viewer may read — the
+ * number `leadThreadSource` decides the card's panel on. Same fence as every
+ * other lead branch (`leadChatOnlySql`), so a lead whose dialog has moved to
+ * a client does not claim the panel with its stale half.
+ */
+export async function leadOwnChatRows(leadId: string, viewer: TgViewer): Promise<number> {
+  const [row] = await db.execute<{ n: string }>(sql`
+    SELECT count(*) AS n
+    FROM tg_messages m
+    WHERE m.lead_id = ${leadId}::uuid
+      AND ${leadChatOnlySql}
+      ${viewer.all ? sql`` : sql`AND m.manager_user_id = ${viewer.id}::uuid`}
+  `);
+  return Number(row?.n ?? 0);
+}
+
+/**
  * Whose conversation the screen opens on when the reader asked for nobody in
  * particular.
  *
@@ -563,64 +807,110 @@ export async function conversationClient(clientId: string) {
 }
 
 /**
- * Which clients the viewer holds a chat with, and whether the client spoke
- * last — one query for a whole kanban board (owner, round 25: «varonkadagi
- * kartochkalarda ham chat ko'rinsa»). A Map so a card asks by client id.
+ * Which clients — and which LEADS — the viewer holds a chat with, and
+ * whether the other side spoke last: one query per kind for a whole kanban
+ * board (owner, round 25: «varonkadagi kartochkalarda ham chat ko'rinsa»).
+ * Two maps so a card asks by the id it is keyed on.
  */
+export type ChatMark = 'waiting' | 'yes';
+
+export interface ChatBadges {
+  clients: Map<string, ChatMark>;
+  leads: Map<string, ChatMark>;
+}
+
 export async function chatBadges(
   viewer: TgViewer,
   /**
-   * The client ids actually on the screen asking. Without it, a viewer.all
+   * The ids actually on the screen asking. Without it, a viewer.all
    * supervisor's board sorted the ENTIRE tg_messages table per render
    * (measured: the whole-table DISTINCT ON was the /crm board's biggest
    * statement at production scale, round 108) — a board only ever badges
-   * the cards it drew, so it must only ask about them. The sales home's
-   * waiting COUNT passes nothing: its question really is «all my chats»,
-   * and that one is bounded by the manager filter instead.
+   * the cards it drew, so it must only ask about them. With `bound` each
+   * kind is asked only for its OWN listed ids, and an absent or empty list
+   * asks nothing: the deal board passes client ids alone and never pays for
+   * the lead statement.
+   *
+   * The sales home's waiting COUNT passes nothing: its question really is
+   * «all my chats», and that one is bounded by the manager filter instead.
    */
-  clientIds?: string[],
-): Promise<Map<string, 'waiting' | 'yes'>> {
-  if (clientIds && clientIds.length === 0) return new Map();
+  bound?: { clientIds?: string[]; leadIds?: string[] },
+): Promise<ChatBadges> {
+  const clientIds = bound ? (bound.clientIds ?? []) : null;
+  const leadIds = bound ? (bound.leadIds ?? []) : null;
   const mine = viewer.all ? sql`true` : sql`manager_user_id = ${viewer.id}`;
+  const mineM = viewer.all ? sql`true` : sql`m.manager_user_id = ${viewer.id}`;
   // sql.join, never a bare array: a JS array bound into a raw fragment does
   // not become a postgres array (the house footgun).
-  const bounded = clientIds
+  const clientBound = clientIds
     ? sql`AND client_id IN (${sql.join(clientIds.map((id) => sql`${id}`), sql`, `)})`
     : sql``;
-  const rows = await db.execute<{
-    client_id: string;
+  const leadBound = leadIds
+    ? sql`AND m.lead_id IN (${sql.join(leadIds.map((id) => sql`${id}`), sql`, `)})`
+    : sql``;
+
+  type SeedRow = {
     direction: string;
     manager_user_id: string;
     peer_id: string;
     tg_message_id: string;
     sent_at: Date;
-  }>(sql`
-    SELECT DISTINCT ON (client_id)
-      client_id, direction, manager_user_id, peer_id, tg_message_id, sent_at
-    FROM tg_messages
-    WHERE ${mine}
-      -- A lead-owned chat has no client to badge (0064 relaxed the column),
-      -- and postgres groups every NULL together — so without this the whole
-      -- company's lead chats collapse into ONE phantom row.
-      AND client_id IS NOT NULL
-      ${bounded}
-    ORDER BY client_id, sent_at DESC
-  `);
-  const states = await resolveChatStates(
-    rows.map((r) => ({
-      clientId: r.client_id,
+  };
+  const [clientRows, leadRows] = await Promise.all([
+    clientIds && clientIds.length === 0
+      ? Promise.resolve([])
+      : db.execute<SeedRow & { client_id: string }>(sql`
+          SELECT DISTINCT ON (client_id)
+            client_id, direction, manager_user_id, peer_id, tg_message_id, sent_at
+          FROM tg_messages
+          WHERE ${mine}
+            -- A lead-owned chat has no client to badge (0064 relaxed the column),
+            -- and postgres groups every NULL together — so without this the whole
+            -- company's lead chats collapse into ONE phantom row.
+            AND client_id IS NOT NULL
+            ${clientBound}
+          ORDER BY client_id, sent_at DESC
+        `),
+    leadIds && leadIds.length === 0
+      ? Promise.resolve([])
+      : db.execute<SeedRow & { lead_id: string }>(sql`
+          SELECT DISTINCT ON (m.lead_id)
+            m.lead_id, m.direction, m.manager_user_id, m.peer_id, m.tg_message_id, m.sent_at
+          FROM tg_messages m
+          WHERE ${mineM}
+            AND ${leadChatOnlySql}
+            ${leadBound}
+          ORDER BY m.lead_id, m.sent_at DESC
+        `),
+  ]);
+
+  const states = await resolveChatStates([
+    ...clientRows.map((r) => ({
+      clientId: r.client_id as string | null,
+      leadId: null as string | null,
       managerUserId: r.manager_user_id,
       peerId: r.peer_id,
       tgMessageId: r.tg_message_id,
       direction: r.direction,
       sentAt: new Date(r.sent_at),
     })),
-  );
+    ...leadRows.map((r) => ({
+      clientId: null as string | null,
+      leadId: r.lead_id as string | null,
+      managerUserId: r.manager_user_id,
+      peerId: r.peer_id,
+      tgMessageId: r.tg_message_id,
+      direction: r.direction,
+      sentAt: new Date(r.sent_at),
+    })),
+  ]);
   // The card keeps its two marks: 💬! only for the ALARM. A chat the manager
   // has read and left ('seen') is an ordinary 💬 — the owner's «ok» case.
-  const out = new Map<string, 'waiting' | 'yes'>();
+  const out: ChatBadges = { clients: new Map(), leads: new Map() };
   for (const [seed, state] of states) {
-    out.set(seed.clientId, chatNeedsAnswer(state) ? 'waiting' : 'yes');
+    const mark: ChatMark = chatNeedsAnswer(state) ? 'waiting' : 'yes';
+    if (seed.clientId) out.clients.set(seed.clientId, mark);
+    else if (seed.leadId) out.leads.set(seed.leadId, mark);
   }
   return out;
 }
@@ -763,6 +1053,34 @@ export async function markThreadRead(clientId: string, actorId: string): Promise
 }
 
 /**
+ * `markThreadRead` for a LEAD's conversation — the lead card's chat panel is
+ * where a lead chat is read on our screen (the lead chats round).
+ *
+ * The same law, word for word: own account only, as a property of the WHERE
+ * (`m.manager_user_id` IS the reader), so a supervisor opening a seller's
+ * lead card writes nothing and silences nobody (#650). Keyed on exactly the
+ * rows the panel draws (`conversationForLead` — `lead_id` alone), because
+ * the read pointer is a fact about the dialog on screen; the conversation's
+ * KEYING clause (`leadChatOnlySql`) is a question about which list row a
+ * message belongs to, and this statement makes no row.
+ */
+export async function markLeadThreadRead(leadId: string, actorId: string): Promise<void> {
+  await db.execute(sql`
+    INSERT INTO tg_chat_reads (manager_user_id, peer_id, last_read_tg_message_id)
+    SELECT m.manager_user_id, m.peer_id, max(m.tg_message_id)
+    FROM tg_messages m
+    WHERE m.lead_id = ${leadId}::uuid
+      AND m.manager_user_id = ${actorId}::uuid
+      AND m.direction = 'in'
+    GROUP BY m.manager_user_id, m.peer_id
+    ON CONFLICT (manager_user_id, peer_id) DO UPDATE
+      SET last_read_tg_message_id =
+            GREATEST(tg_chat_reads.last_read_tg_message_id, EXCLUDED.last_read_tg_message_id),
+          read_at = now()
+  `);
+}
+
+/**
  * The two facts `chatState` needs that the newest-message row cannot carry:
  * how far the manager has READ, and whether a reply is already on its way.
  *
@@ -776,7 +1094,10 @@ export async function markThreadRead(clientId: string, actorId: string): Promise
  * seller's home counter and the Telegram reminder.
  */
 export interface ChatStateSeed {
-  clientId: string;
+  /** Null on a LEAD seed — a lead's conversation is keyed by `leadId`. */
+  clientId: string | null;
+  /** Set on a lead seed (`clientId` null); ignored when `clientId` is set. */
+  leadId?: string | null;
   managerUserId: string;
   peerId: string | bigint;
   tgMessageId: string | bigint;
@@ -792,13 +1113,26 @@ export async function resolveChatStates<T extends ChatStateSeed>(
 
   const managers = [...new Set(seeds.map((s) => s.managerUserId))].map((id) => sql`${id}`);
   const peers = [...new Set(seeds.map((s) => String(s.peerId)))].map((p) => sql`${p}`);
-  const clientIds = [...new Set(seeds.map((s) => s.clientId))].map((id) => sql`${id}`);
+  // Filtered BEFORE the join: a lead seed has no client, and binding its null
+  // into `IN (…)` would ask the outbox about nobody at best — and a page of
+  // nothing but leads would then render `IN ()`, which postgres refuses as a
+  // syntax error rather than answering «none».
+  const clientIds = [
+    ...new Set(seeds.flatMap((s) => (s.clientId ? [s.clientId] : []))),
+  ].map((id) => sql`${id}`);
+  const leadIds = [
+    ...new Set(seeds.flatMap((s) => (!s.clientId && s.leadId ? [s.leadId] : []))),
+  ].map((id) => sql`${id}`);
 
   /**
    * The read pointers. The two `IN` lists are a cross product — wider than
    * the question — and that is safe ONLY because the answer is consumed as a
    * map keyed on the exact (manager, peer) pair, which is also this table's
    * primary key. The same reasoning `offerableMatches` records (#598).
+   *
+   * Keyed on (manager, peer) — the DIALOG — so a lead chat's pointer is the
+   * same row the listener has been writing all along: `recordChatRead` never
+   * asked whether the person was in the client book.
    */
   const readRows = await db.execute<{
     manager_user_id: string;
@@ -821,32 +1155,62 @@ export async function resolveChatStates<T extends ChatStateSeed>(
    * answer, and whether the socket has agreed yet is the listener's problem,
    * not the alarm's. `failed` and `cancelled` deliberately do not — those are
    * exactly the cases where the customer is still waiting and nobody knows.
+   *
+   * A lead seed has no term here and needs none: `tg_outbox.client_id` is NOT
+   * NULL and the lead thread is read-only (#689), so a lead's reply is typed
+   * on the phone — where it is stored as an `out` row, which `chatState`
+   * already reads as «answered».
    */
-  const outRows = await db.execute<{
-    client_id: string;
-    manager_user_id: string;
-    last_out: Date;
-  }>(sql`
-    SELECT client_id, manager_user_id, max(queued_at) AS last_out
-    FROM tg_outbox
-    WHERE status IN ('queued', 'sending', 'sent')
-      AND client_id IN (${sql.join(clientIds, sql`, `)})
-    GROUP BY client_id, manager_user_id
-  `);
+  const outRows =
+    clientIds.length === 0
+      ? []
+      : await db.execute<{
+          client_id: string;
+          manager_user_id: string;
+          last_out: Date;
+        }>(sql`
+          SELECT client_id, manager_user_id, max(queued_at) AS last_out
+          FROM tg_outbox
+          WHERE status IN ('queued', 'sending', 'sent')
+            AND client_id IN (${sql.join(clientIds, sql`, `)})
+          GROUP BY client_id, manager_user_id
+        `);
   const pending = new Map(
     outRows.map((r) => [`${r.client_id}:${r.manager_user_id}`, new Date(r.last_out)]),
   );
 
+  /**
+   * A lead seed's extra door (`leadChatState`): when its lead CLOSED. Asked
+   * here, by the resolver, rather than carried on every caller's seed —
+   * four readers each remembering to select `closed_at` is four chances for
+   * one to forget and ring about every lost lead in the company.
+   */
+  const closedRows =
+    leadIds.length === 0
+      ? []
+      : await db.execute<{ id: string; closed_at: string | null }>(sql`
+          SELECT id, closed_at FROM leads WHERE id IN (${sql.join(leadIds, sql`, `)})
+        `);
+  const closedAt = new Map(
+    closedRows.map((r) => [r.id, r.closed_at ? new Date(r.closed_at) : null]),
+  );
+
   for (const seed of seeds) {
-    const lastOut = pending.get(`${seed.clientId}:${seed.managerUserId}`);
+    const lastOut = seed.clientId ? pending.get(`${seed.clientId}:${seed.managerUserId}`) : undefined;
+    const state = chatState({
+      lastDirection: seed.direction,
+      lastInboundTgId: seed.direction === 'in' ? BigInt(seed.tgMessageId) : null,
+      lastReadTgId: reads.get(`${seed.managerUserId}:${String(seed.peerId)}`) ?? null,
+      replyPending: lastOut ? lastOut > new Date(seed.sentAt) : false,
+    });
     out.set(
       seed,
-      chatState({
-        lastDirection: seed.direction,
-        lastInboundTgId: seed.direction === 'in' ? BigInt(seed.tgMessageId) : null,
-        lastReadTgId: reads.get(`${seed.managerUserId}:${String(seed.peerId)}`) ?? null,
-        replyPending: lastOut ? lastOut > new Date(seed.sentAt) : false,
-      }),
+      seed.clientId
+        ? state
+        : leadChatState(state, {
+            sentAt: new Date(seed.sentAt),
+            closedAt: (seed.leadId ? closedAt.get(seed.leadId) : null) ?? null,
+          }),
     );
   }
   return out;

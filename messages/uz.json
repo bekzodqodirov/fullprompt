@@ -2029,6 +2029,12 @@
     "pnlByMonth": "Oyma-oy: tushum va xarajat",
     "pnlDetail": "Batafsil jadval — har bir toifa, har bir oy"
   },
+  "lidChat": {
+    "mark": "Lid",
+    "markTitle": "Lid — mijoz kodi hali yo‘q",
+    "owner": "Lid egasi: {name}",
+    "ownerNone": "Lidning egasi yo‘q"
+  },
   "crm": {
     "title": "CRM",
     "leads": "Lidlar",

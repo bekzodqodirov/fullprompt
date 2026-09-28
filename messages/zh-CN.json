@@ -2029,6 +2029,12 @@
     "pnlByMonth": "按月：收入与支出",
     "pnlDetail": "明细表——每个科目、每个月"
   },
+  "lidChat": {
+    "mark": "线索",
+    "markTitle": "线索——尚无客户编号",
+    "owner": "线索负责人：{name}",
+    "ownerNone": "线索无负责人"
+  },
   "crm": {
     "title": "CRM",
     "leads": "潜在客户",

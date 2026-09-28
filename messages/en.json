@@ -2029,6 +2029,12 @@
     "pnlByMonth": "By month: revenue and costs",
     "pnlDetail": "Full table — every line, every month"
   },
+  "lidChat": {
+    "mark": "Lead",
+    "markTitle": "Lead — no client code yet",
+    "owner": "Lead owner: {name}",
+    "ownerNone": "Lead has no owner"
+  },
   "crm": {
     "title": "CRM",
     "leads": "Leads",

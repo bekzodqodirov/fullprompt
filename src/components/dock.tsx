@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -13,6 +13,9 @@ import { TelegramBubble } from '@/components/telegram-bubble';
 import { entityHref } from '@/modules/platform/notifications/links';
 import { sendReplyAction } from '@/modules/wms/crm/reply-actions';
 import { completeTaskAction } from '@/modules/platform/tasks/actions';
+// A TYPE from the pure module the route builds its answer with: the JSON
+// crossing has one shape on both ends (the design judge's eighth finding).
+import type { DockConversation } from '@/modules/wms/crm/conversation-row';
 
 /**
  * The dock — chat and tasks, reachable from ANY page (owner, items 5+7:
@@ -41,15 +44,6 @@ interface DockTask {
   dueAt: string | null;
   entityType: string | null;
   entityId: string | null;
-}
-interface DockConversation {
-  clientId: string;
-  clientCode: string;
-  clientName: string;
-  lastAt: string;
-  lastBody: string | null;
-  lastHasMedia: boolean;
-  waitingOnUs: boolean;
 }
 interface DockThread {
   client: { id: string; code: string; name: string };
@@ -85,6 +79,7 @@ interface DockThread {
 export function Dock({ canChat }: { canChat: boolean }) {
   const pathname = usePathname();
   const t = useTranslations('crm');
+  const tl = useTranslations('lidChat');
   const tt = useTranslations('tasks');
   const tn = useTranslations('navShort');
   const tc = useTranslations('common');
@@ -132,27 +127,57 @@ export function Dock({ canChat }: { canChat: boolean }) {
    * that one blanks the panel first (right for opening a new conversation,
    * wrong for a tick — the messages would flicker away every ten seconds).
    */
-  const refreshThread = useCallback(async (clientId: string) => {
-    const res = await fetch(`/api/dock/thread?client=${clientId}`);
-    if (res.ok) setThread((await res.json()) as DockThread);
-  }, []);
+  /**
+   * The newest INCOMING message the open thread has shown. The mark used to
+   * move once, on open — so a message that arrived while the drawer stood
+   * open, drawn by the 10 s refresh in front of the manager's eyes, stayed
+   * «new» and rang thirty minutes later (the design judge's seventh finding).
+   * A refresh that draws a newer incoming message now marks it too.
+   */
+  const lastInbound = useRef<string | null>(null);
 
-  const loadThread = useCallback(async (clientId: string) => {
-    setThreadFor(clientId);
-    setThread(null);
-    setSendError(null);
-    // Opening the drawer's thread is opening the chat (round 88) — the same
-    // mark the page sets, and the same server-side re-derivation of what it
-    // means. Never on the LIST: a glance down a list is not reading.
+  const markRead = useCallback((clientId: string) => {
     void fetch('/api/chat/read', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ clientId }),
       keepalive: true,
     }).catch(() => {});
-    const res = await fetch(`/api/dock/thread?client=${clientId}`);
-    if (res.ok) setThread((await res.json()) as DockThread);
   }, []);
+
+  const refreshThread = useCallback(
+    async (clientId: string) => {
+      const res = await fetch(`/api/dock/thread?client=${clientId}`);
+      if (!res.ok) return;
+      const next = (await res.json()) as DockThread;
+      setThread(next);
+      const newest = next.messages.find((m) => m.direction === 'in')?.id ?? null;
+      if (newest && newest !== lastInbound.current) {
+        lastInbound.current = newest;
+        markRead(clientId);
+      }
+    },
+    [markRead],
+  );
+
+  const loadThread = useCallback(
+    async (clientId: string) => {
+      setThreadFor(clientId);
+      setThread(null);
+      setSendError(null);
+      // Opening the drawer's thread is opening the chat (round 88) — the same
+      // mark the page sets, and the same server-side re-derivation of what it
+      // means. Never on the LIST: a glance down a list is not reading.
+      markRead(clientId);
+      const res = await fetch(`/api/dock/thread?client=${clientId}`);
+      if (res.ok) {
+        const next = (await res.json()) as DockThread;
+        lastInbound.current = next.messages.find((m) => m.direction === 'in')?.id ?? null;
+        setThread(next);
+      }
+    },
+    [markRead],
+  );
 
   // The queue moves while the drawer is open — the listener sends within
   // seconds — so an open thread re-reads itself. Same 10 s as the two page
@@ -482,38 +507,86 @@ export function Dock({ canChat }: { canChat: boolean }) {
                         {t('conversationsEmpty')}
                       </p>
                     )}
-                    {conversations?.map((row) => (
-                      <button
-                        key={row.clientId}
-                        type="button"
-                        data-testid="dock-conversation"
-                        onClick={() => void loadThread(row.clientId)}
-                        className="flex w-full items-baseline gap-2 rounded-xl p-2.5 text-left hover:bg-surface-sunken"
-                      >
-                        <span className="shrink-0 font-mono text-sm font-extrabold text-brand-700">
-                          {row.clientCode}
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-semibold">
-                            {row.clientName}
+                    {conversations?.map((row) => {
+                      const body = (
+                        <>
+                          <span
+                            className="shrink-0 font-mono text-sm font-extrabold text-brand-700"
+                            title={row.kind === 'lead' ? tl('markTitle') : undefined}
+                          >
+                            {row.kind === 'lead' ? tl('mark') : row.code}
                           </span>
-                          <span className="block truncate text-xs text-ink-500">
-                            {row.lastBody ?? `📎 ${t('telegramMedia')}`}
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-semibold">
+                              {row.name}
+                            </span>
+                            {row.kind === 'lead' && !row.href && (
+                              <span className="block truncate text-xs text-ink-500">
+                                {row.leadOwner
+                                  ? tl('owner', { name: row.leadOwner })
+                                  : tl('ownerNone')}
+                              </span>
+                            )}
+                            <span className="block truncate text-xs text-ink-500">
+                              {row.lastBody ?? `📎 ${t('telegramMedia')}`}
+                            </span>
                           </span>
-                        </span>
-                        {/* The alarm only, and by the same rule the page uses
-                            (round 88 `chatState`). The page also prints a
-                            quiet «✓ o'qildi» for a chat that is read and
-                            deliberately unanswered; this drawer is 3/4 the
-                            width and drops it — showing less is not
-                            disagreeing. */}
-                        {row.waitingOnUs && (
-                          <span className="shrink-0 rounded-full bg-warn/15 px-2 py-0.5 text-xs font-bold text-warn">
-                            {t('waitingOnUs')}
-                          </span>
-                        )}
-                      </button>
-                    ))}
+                          {/* The alarm only, and by the same rule the page uses
+                              (round 88 `chatState`). The page also prints a
+                              quiet «✓ o'qildi» for a chat that is read and
+                              deliberately unanswered; this drawer is 3/4 the
+                              width and drops it — showing less is not
+                              disagreeing. */}
+                          {row.waitingOnUs && (
+                            <span className="shrink-0 rounded-full bg-warn/15 px-2 py-0.5 text-xs font-bold text-warn">
+                              {t('waitingOnUs')}
+                            </span>
+                          )}
+                        </>
+                      );
+                      const rowClass =
+                        'flex w-full items-baseline gap-2 rounded-xl p-2.5 text-left hover:bg-surface-sunken';
+                      // A CLIENT row opens in the drawer — its thread and its
+                      // composer are client-keyed. A LEAD row goes to the lead
+                      // card's chat (the only screen that draws one), and the
+                      // navigation closes the drawer by itself; a lead this
+                      // reader may not open is text, never a bouncing link.
+                      if (row.kind === 'client' && row.clientId) {
+                        const clientId = row.clientId;
+                        return (
+                          <button
+                            key={`client:${clientId}`}
+                            type="button"
+                            data-testid="dock-conversation"
+                            data-kind="client"
+                            onClick={() => void loadThread(clientId)}
+                            className={rowClass}
+                          >
+                            {body}
+                          </button>
+                        );
+                      }
+                      return row.href ? (
+                        <Link
+                          key={`lead:${row.leadId}`}
+                          href={row.href}
+                          data-testid="dock-conversation"
+                          data-kind="lead"
+                          className={rowClass}
+                        >
+                          {body}
+                        </Link>
+                      ) : (
+                        <div
+                          key={`lead:${row.leadId}`}
+                          data-testid="dock-conversation"
+                          data-kind="lead"
+                          className={rowClass}
+                        >
+                          {body}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>

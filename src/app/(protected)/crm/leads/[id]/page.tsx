@@ -26,7 +26,14 @@ import { TelegramThread } from '@/components/telegram-thread';
 import { TelegramLookback } from '@/components/telegram-lookback';
 import { CallsPanel } from '@/components/calls-panel';
 import { CardCols } from '@/components/card-cols';
-import { conversationClientForLead } from '@/modules/wms/crm/conversations';
+import {
+  canReadTg,
+  conversationClientForLead,
+  leadOwnChatRows,
+  tgViewerFor,
+} from '@/modules/wms/crm/conversations';
+import { leadThreadSource } from '@/modules/wms/crm/conversation-row';
+import { mayOpenLead } from '@/modules/wms/crm/lead-door';
 import { mayOpenClientLedger } from '@/modules/wms/finance/scope';
 
 /** One lead: where it stands, what was said, and the button that ends it. */
@@ -60,8 +67,10 @@ export default async function LeadPage({
     return `/crm/leads/${lead.id}${qs ? `?${qs}` : ''}`;
   };
   // A sales manager works their own leads; seeing someone else's would let
-  // two people call the same person about the same cargo.
-  if (!actor.permissions.has('crm.leads.view_all') && lead.ownerId !== actor.id) redirect('/crm');
+  // two people call the same person about the same cargo. ONE predicate,
+  // asked by every door that points here — the chat list, the dock, the
+  // nudge's button and the pulse — so none of them draws a link this bounces.
+  if (!mayOpenLead(actor, lead)) redirect('/crm');
 
   const t = await getTranslations('crm');
   const tc = await getTranslations('common');
@@ -97,6 +106,16 @@ export default async function LeadPage({
   // The lenta prints a client's money only for whoever that client's ledger
   // admits (docs/CARD-TABS.md) — nothing when no client resolves.
   const feedMoney = dockClient ? mayOpenClientLedger(actor, dockClient) : false;
+  // WHICH chat this card is about — the lead's own standing conversation
+  // first, the phone-matched client's only when the lead has none — decided
+  // ONCE and handed to the panel and the dock marker alike, so the two can
+  // never tell two stories (round 52's rule; the lead chats round's judge,
+  // fourth finding). The lenta and the calls keep the phone-matched client:
+  // this is a rule about the CHAT.
+  const threadSource = leadThreadSource({
+    ownLeadRows: canReadTg(actor) ? await leadOwnChatRows(lead.id, tgViewerFor(actor)) : 0,
+    resolvedClientId: dockClientId,
+  });
 
   return (
     // Wide like the funnel it came from: the amoCRM card shape (owner,
@@ -107,8 +126,13 @@ export default async function LeadPage({
         ← {t('funnel')}
       </Link>
       <h1 className="text-xl font-bold [overflow-wrap:anywhere]">{lead.name}</h1>
-      {/* The dock opens straight into this lead's conversation, if any. */}
-      {dockClientId && <span data-dock-client={dockClientId} hidden />}
+      {/* The dock opens straight into this card's conversation — when that
+          conversation is a CLIENT's. A lead's own chat has no dock thread
+          (the drawer is client-keyed), so the marker is dropped rather than
+          opening the drawer onto a different person's chat than the panel. */}
+      {threadSource.kind === 'client' && (
+        <span data-dock-client={threadSource.clientId} hidden />
+      )}
 
       <StageMover
         leadId={id}
@@ -137,7 +161,7 @@ export default async function LeadPage({
             <ClientFeed clientId={dockClientId} money={feedMoney} leadId={lead.id} limit={60} tall />
             {/* The chat stands BESIDE the lenta, never inside it (round 21). */}
             <TelegramThread
-              clientId={dockClientId}
+              clientId={threadSource.kind === 'client' ? threadSource.clientId : null}
               // A lead the chat itself opened (round 82) shows that chat here.
               leadId={lead.id}
               hodim={hodim}
