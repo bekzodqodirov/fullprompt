@@ -6,7 +6,7 @@ import { db } from '@/modules/platform/db/client';
 import { currencies, deals } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
-import { balancesForClients, batchCharges } from '@/modules/wms/finance/service';
+import { balancesForClients, batchCharges, batchTripCoverage } from '@/modules/wms/finance/service';
 import {
   batchClientCostBreakdown,
   batchCostEntryCount,
@@ -20,7 +20,7 @@ import { mayOpenBatchCard } from '@/modules/wms/batches/card-door';
 import { loadBatchHead } from '@/modules/wms/batches/card-head';
 import { tripKind } from '@/modules/wms/reports/dashboard-math';
 import { canWriteDeal } from '@/modules/wms/deals/service';
-import { pricingChargesOf, pricingSight, pricingView } from '@/modules/wms/finance/pricing-view';
+import { pricingChargesOf, pricingSight, pricingView, tripPriced, tripPricedCount } from '@/modules/wms/finance/pricing-view';
 import { offTruckPrices, pricedElsewhereFor, type OffTruckPrice } from '@/modules/wms/finance/off-truck';
 import { codeIdentity } from '@/modules/wms/labels/code-identity';
 import { LightboxImg } from '@/components/lightbox-img';
@@ -75,6 +75,7 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
   const t = await getTranslations('finance');
   const tb = await getTranslations('batches');
   const tbc = await getTranslations('batchCard');
+  const tcargo = await getTranslations('cargo');
 
   const head = await loadBatchHead(id);
   if (!head) notFound();
@@ -110,12 +111,15 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
   // another truck's whose dropped cartons ride THIS one now. Prices only, no
   // cost, so both sights read them; an internal truck is never priced.
   const clientIds = view.clients.map((group) => group.clientId);
-  const [balances, offHere, offElsewhere] = await Promise.all([
+  // «Narx qo'yilgan» (1a): a price here, or cargo the unpriced rule calls
+  // covered elsewhere — the China truck, the deal — the card header's count.
+  const [balances, offHere, offElsewhere, coverage] = await Promise.all([
     balancesForClients([...clientIds, ...view.orphans.map((row) => row.clientId)]),
     internal ? Promise.resolve([] as OffTruckPrice[]) : offTruckPrices(db, { batchIds: [id] }),
     internal || clientIds.length === 0
       ? Promise.resolve([] as OffTruckPrice[])
       : offTruckPrices(db, { clientIds }).then((rows) => pricedElsewhereFor(rows, id)),
+    internal ? Promise.resolve({ unpriced: new Set<string>(), covered: new Set<string>() }) : batchTripCoverage(id),
   ]);
   // The price the seller SOLD at (his item 7): the deal's quote, and — for
   // the owner and the accountant only (law 4: the VED who computed the floor
@@ -344,7 +348,7 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
             </>
           )}
           <p className={`${full ? 'col-span-3' : ''} text-xs text-ink-500`}>
-            {!internal && t('pricedOf', { priced: totals.priced, total: view.clients.length })}
+            {!internal && t('pricedOf', { priced: tripPricedCount(view.clients, coverage), total: view.clients.length })}
             {full && totals.prevUsd > 0.009 && (
               <span className="num">
                 {internal ? '' : ' · '}
@@ -462,6 +466,14 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
               <div>
                 <p className="text-xs text-ink-500">{t('priceLabel')}</p>
                 <p className="num font-bold">{charged > 0 ? money(charged) : '—'}</p>
+                {/* Counted as priced in «N / M» with no price here: the
+                    client card's trip chip says the same words from the
+                    other end. */}
+                {charged === 0 && tripPriced(group, coverage) && (
+                  <p className="text-xs text-ink-500" data-testid="pricing-priced-other">
+                    {tcargo('pricedElsewhere')}
+                  </p>
+                )}
                 {charged > 0 && priceKg > 0 && (
                   <p className="num text-xs text-ink-500">
                     {(charged / priceKg).toFixed(2)}

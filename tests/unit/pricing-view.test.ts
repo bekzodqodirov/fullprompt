@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { BatchLot } from '@/modules/wms/batches/lots';
-import { pricingView, soleDealOf } from '@/modules/wms/finance/pricing-view';
+import { pricingView, soleDealOf, tripPriced, tripPricedCount } from '@/modules/wms/finance/pricing-view';
 
 /**
  * «Partiya moliyasi» by goods (owner, 2026-09-24, answer 1c: the price stays
@@ -80,10 +80,42 @@ describe('pricingView', () => {
 
   it('counts every charge on the truck and names the ones with no cargo under them', () => {
     expect(view.orphans).toEqual([{ clientId: 'C9', code: 'GS9', name: 'Toqqiz', chargedUsd: 40 }]);
-    expect(view.totals).toMatchObject({ chargedUsd: 240, marginUsd: 53, prevUsd: 20, priced: 1 });
+    expect(view.totals).toMatchObject({ chargedUsd: 240, marginUsd: 53, prevUsd: 20 });
     // 0104 under his (a): the orphan's $40 is named as a PART of «Narx» —
     // still inside the 240 and the margin, printed beside them.
     expect(view.totals.noCargoUsd).toBe(40);
+  });
+});
+
+/**
+ * «Narx qo'yilgan N / M» (owner's 1a, 2026-09-28): a client counts as priced
+ * when a price sits on this truck, OR when the unpriced rule finds their
+ * cargo aboard covered elsewhere — the China truck, the deal. The coverage
+ * sets are what `tripCoverageOn` returns; the integration file asks the real
+ * rule for them.
+ */
+describe('tripPriced — the header and the page count one way', () => {
+  const view = pricingView(LOTS, COST, CHARGES);
+  const none = { unpriced: new Set<string>(), covered: new Set<string>() };
+
+  it('counts a price on this truck, and nothing else, when the rule knows nothing more', () => {
+    expect(tripPricedCount(view.clients, none)).toBe(1);
+  });
+
+  it('counts a client whose cargo aboard the rule calls covered — priced on another truck or the deal', () => {
+    expect(tripPricedCount(view.clients, { unpriced: new Set(), covered: new Set(['C2']) })).toBe(2);
+  });
+
+  it('does not count a client covered only in part', () => {
+    expect(tripPricedCount(view.clients, { unpriced: new Set(['C2']), covered: new Set(['C2']) })).toBe(1);
+  });
+
+  it('keeps a price typed on this truck counted even where the rule does not let it cover (a local leg, before departure)', () => {
+    expect(tripPriced({ clientId: 'C1', chargedUsd: 200 }, { unpriced: new Set(['C1']), covered: new Set() })).toBe(true);
+  });
+
+  it('leaves the charge-only count behind — no header can read the old way', () => {
+    expect('priced' in view.totals).toBe(false);
   });
 });
 

@@ -1,5 +1,6 @@
 import type { BatchLot } from '../batches/lots';
 import type { LotLandedCost } from '../costing/service';
+import type { TripCoverage } from './unpriced';
 import { moneyHidden } from '../../platform/rbac/money-sight';
 
 /**
@@ -86,7 +87,6 @@ export interface PricingView {
     chargedUsd: number;
     noCargoUsd: number;
     marginUsd: number;
-    priced: number;
   };
 }
 
@@ -226,7 +226,35 @@ export function pricingView(
       chargedUsd,
       noCargoUsd: cents(orphans.reduce((a, row) => a + row.chargedUsd, 0)),
       marginUsd: cents(chargedUsd - costUsd),
-      priced: clients.filter((group) => group.chargedUsd > 0).length,
     },
   };
+}
+
+/**
+ * «Narx qo'yilgan» for one client on a truck — the header's «N / M» and the
+ * pricing page's line under its totals, one answer (#513). Priced when a
+ * price sits on THIS truck, or when the unpriced rule (`tripCoverageOn`)
+ * finds every carton of theirs aboard covered — by the China truck, by the
+ * deal (owner's 1a, 2026-09-28: the handover gate already lets that cargo
+ * out, and «0 / 5» on a truck whose cargo is all paid for sent the
+ * accountant to price it twice). A client with nothing covered and nothing
+ * charged here stays unpriced, and so does one whose cargo is covered only
+ * in part.
+ *
+ * Deliberately NOT «only what the rule covers»: a price typed on this truck
+ * before it departs covers nothing yet (the live pointer never counts, Q21),
+ * and one on a local leg never covers cargo received in China (Q1) — the
+ * accountant's own price on the screen above must not read as «not priced».
+ * Those disagreements are the «Narxsiz yuk» list's to name.
+ *
+ * Its count's charge-only predecessor (`totals.priced`) is gone rather than
+ * kept beside it, so no header can go on counting the old way.
+ */
+export function tripPriced(group: { clientId: string; chargedUsd: number }, coverage: TripCoverage): boolean {
+  if (group.chargedUsd > 0) return true;
+  return coverage.covered.has(group.clientId) && !coverage.unpriced.has(group.clientId);
+}
+
+export function tripPricedCount(clients: { clientId: string; chargedUsd: number }[], coverage: TripCoverage): number {
+  return clients.filter((group) => tripPriced(group, coverage)).length;
 }

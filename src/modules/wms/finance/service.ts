@@ -24,6 +24,7 @@ import { rateFor } from '../costing/service';
 import { batchRoute } from '../batches/internal';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { cargoAboard } from '../batches/lots';
+import { tripCoverageOn } from './unpriced';
 
 /**
  * Client money ledger (Phase 2.1, owner's rules): there are NO tariffs — the
@@ -849,6 +850,15 @@ export const batchCharges = cache(async function batchCharges(batchId: string) {
     .innerJoin(clients, eq(clientTransactions.clientId, clients.id))
     .where(and(eq(clientTransactions.batchId, batchId), isNull(clientTransactions.voidedAt)))
     .orderBy(desc(clientTransactions.createdAt));
+});
+
+/**
+ * The unpriced rule asked of one truck (`tripCoverageOn`), once per request:
+ * the truck card's header and the «Narx» tab under it both count «Narx
+ * qo'yilgan» from it (owner's 1a).
+ */
+export const batchTripCoverage = cache(async function batchTripCoverage(batchId: string) {
+  return tripCoverageOn(db, batchId);
 });
 
 // ---------------------------------------------------------------------------

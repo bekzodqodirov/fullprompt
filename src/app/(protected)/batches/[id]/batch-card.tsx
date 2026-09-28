@@ -26,8 +26,14 @@ import {
   type LotLandedCost,
 } from '@/modules/wms/costing/service';
 import { costSightFor } from '@/modules/wms/costing/cost-sight';
-import { pricingChargesOf, pricingSight, pricingView, type PricingView } from '@/modules/wms/finance/pricing-view';
-import { batchCharges } from '@/modules/wms/finance/service';
+import {
+  pricingChargesOf,
+  pricingSight,
+  pricingView,
+  tripPricedCount,
+  type PricingView,
+} from '@/modules/wms/finance/pricing-view';
+import { batchCharges, batchTripCoverage } from '@/modules/wms/finance/service';
 import { tripKind } from '@/modules/wms/reports/dashboard-math';
 import { countAcceptPanel } from '@/modules/wms/scanning/count-accept';
 import { countDoorFor, mayCountMove } from '@/modules/wms/scanning/count-door';
@@ -226,14 +232,18 @@ export async function BatchCard({
   const ownCostCount = costDoor && departed ? await soft('cost count', () => batchCostEntryCount(id)) : null;
   const sight = pricingSight(actor.permissions, head.internal);
   const full = sight === 'full';
-  const view: PricingView | null =
+  const pricing: { view: PricingView; priced: number } | null =
     sight !== 'none' && !head.internal
       ? await soft('pricing', async () => {
-          const [charges, lotCost] = await Promise.all([
+          const [charges, lotCost, coverage] = await Promise.all([
             batchCharges(id),
             full ? batchLandedCostByLot(id) : Promise.resolve(new Map<string, LotLandedCost>()),
+            batchTripCoverage(id),
           ]);
-          return pricingView(lots, lotCost, pricingChargesOf(charges));
+          const view = pricingView(lots, lotCost, pricingChargesOf(charges));
+          // The pricing page's own count (1a): a client priced on the China
+          // truck or the deal counts, as the handover gate lets them out.
+          return { view, priced: tripPricedCount(view.clients, coverage) };
         })
       : null;
 
@@ -312,7 +322,7 @@ export async function BatchCard({
   const boxTotal = lots.reduce((a, lot) => a + lot.onBatch, 0);
   const kgTotal = lots.reduce((a, lot) => a + lot.kg, 0);
   const m3Total = lots.reduce((a, lot) => a + lot.m3, 0);
-  const margin = view && full ? view.totals : null;
+  const margin = pricing && full ? pricing.view.totals : null;
   const marginKind = margin
     ? tripKind({ internal: false, revenueUsd: margin.chargedUsd, profitUsd: margin.marginUsd })
     : null;
@@ -500,11 +510,11 @@ export async function BatchCard({
             testid="batch-tile-costs"
           />
         )}
-        {view && (
+        {pricing && (
           <Tile
             href={active === 'narx' ? null : tabHref('narx')}
             label={tc('tilePriced')}
-            value={`${view.totals.priced} / ${view.clients.length}`}
+            value={`${pricing.priced} / ${pricing.view.clients.length}`}
             testid="batch-tile-priced"
           />
         )}

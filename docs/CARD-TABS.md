@@ -183,8 +183,9 @@ the lorry, the driver and his phone, and the road is the header's sentence.)
 - Links to: Xarajatlar.
 
 **Narx qo‘yilgan** — «N / M».
-- Source: `pricingView(...).totals.priced / clients` — the page's own
-  `pricedOf`. Neutral colour (see the open question).
+- Source: `tripPricedCount(view.clients, batchTripCoverage(id))` — the page's
+  own `pricedOf`: a price on this truck, or cargo aboard the unpriced rule
+  calls covered (another truck, the deal) — his answer 1a. Neutral colour.
 - Audience: the pricing door, and not on an internal leg.
 - Links to: Narx.
 
@@ -359,13 +360,15 @@ A card tab carries `aria-current="page"`. Three places lit a PREFIX with
 
 They now say `"page"` only on their exact page and `"true"` beneath it.
 
-## Open question for the owner
+## The owner's question, answered (1a, 2026-09-28)
 
-«Narx qo‘yilgan N / M» counts clients with a price on THIS truck. A client
-whose prixod was priced on another truck, or on the deal, reads as unpriced
-there, although the handover gate treats that cargo as priced. The page names
-such clients «boshqa mashinada narxlangan». Should «N / M» count them as
-priced?
+«Narx qo‘yilgan N / M» counted clients with a price on THIS truck, so a client
+whose prixod was priced on another truck, or on the deal, read as unpriced
+there although the handover gate let that cargo out. Asked; answered **1a**:
+count them. Built as DECISIONS #1189 — the unpriced rule over the truck's
+riders (`tripCoverageOn`), plus a price on the truck itself (`tripPriced`); a
+counted client with no price here reads «narx boshqa reysda yoki bitimda»
+under its «—».
 
 ## Deliberately not built
 
