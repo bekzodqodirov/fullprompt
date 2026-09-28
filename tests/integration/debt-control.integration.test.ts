@@ -412,6 +412,19 @@ describe('«Qarzga berilgan yuklar» — the register', () => {
     expect(() => new Intl.DateTimeFormat('uz', { timeZone: 'Asia/Tashkent' }).format(row!.createdAt)).not.toThrow();
   });
 
+  it('«qaytmagan» never outlives the debt: a charge voided after the release takes it away', async () => {
+    const c = await mkClient(S1.id);
+    const charge = await ledger(c.id, 'charge', 100);
+    await issue(c.id, A.actor, { debtOk: true });
+    await db
+      .update(clientTransactions)
+      .set({ voidedAt: new Date(), voidedBy: A.id, voidReason: 'xato narx' })
+      .where(eq(clientTransactions.id, charge));
+    const [row] = await rowsFor(c.id);
+    expect(row).toMatchObject({ debtUsd: 100, paidSinceUsd: 0, leftUsd: 0, currentDebtUsd: 0 });
+    expect(await rowsFor(c.id, { ...ALL, includeReturned: false })).toEqual([]);
+  });
+
   it('per-person totals count each client’s LATEST release once — in SQL, whatever the list cap', async () => {
     // A person of his own, so the totals are this test's and nobody else's.
     const solo = await mkUser('accountant', 'Solo');
