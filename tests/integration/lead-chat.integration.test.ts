@@ -251,6 +251,23 @@ describe('one person’s conversation is ONE row', () => {
     expect((await chatBadges({ id: seller }, { leadIds: [won] })).leads.has(won)).toBe(false);
   });
 
+  it('a won lead whose every row carries both ids is the client’s row alone', async () => {
+    // No client-only row after the win to witness it: the rows' own client id
+    // is what keeps them off the lead list. Since only a NEWER client row
+    // supersedes, `client_id IS NULL` is load-bearing here and not implied.
+    const clientId = await client();
+    const won = await lead({ owner: seller, clientId });
+    const peer = nextPeer();
+    await say({ leadId: won, clientId, peer, tgId: 1n, at: ago(90) });
+    await say({ leadId: won, clientId, peer, tgId: 2n, at: ago(40) });
+
+    const rows = await sellerList();
+    expect(rows.filter((r) => r.clientId === clientId)).toHaveLength(1);
+    expect(rows.some((r) => r.leadId === won)).toBe(false);
+    expect((await chatBadges({ id: seller }, { leadIds: [won] })).leads.has(won)).toBe(false);
+    expect(await leadOwnChatRows(won, { id: seller })).toBe(0);
+  });
+
   it('a chat the tray moved to a client stops being a lead row (the stale half)', async () => {
     // The client door (`decideChat`) rewrites the RULE only: the lead-only
     // rows it had already stored keep no client, and the same dialog then
