@@ -61,8 +61,11 @@ pnpm build && pnpm e2e  # 44 e2e
 ## Verification ritual (follow it, it catches real bugs)
 
 1. Postgres dies between turns:
-   `su postgres -c "/usr/lib/postgresql/16/bin/pg_ctl -D /var/local/pg/data -l /var/local/pg/log/server.log -o '-k /tmp' start"`
-   (`-l` takes a FILE: `/var/local/pg/log` is a directory and pg_ctl refuses it.)
+   `su postgres -c "/usr/lib/postgresql/16/bin/pg_ctl -D /var/local/pg/data -l /var/local/pg/server.log -o '-k /tmp' start"`
+   (`-l` takes a FILE in a folder that exists. `/var/local/pg/log` has been a
+   directory in some containers and is a plain FILE in others — no path can be
+   created under a file, and pg_ctl then refuses to start — so the log sits
+   beside it.)
    Tests that all report «skipped» mean postgres is down, not that they pass.
 2. `gsr_dev` = the owner's real imported data. `gsr_ci` / `gsr_test` = throwaway.
 3. Before e2e: **`fuser -k 3000/tcp`** — `pkill -f start-standalone` does not
@@ -72,9 +75,10 @@ pnpm build && pnpm e2e  # 44 e2e
 5. **Reproduce CI's order before pushing**: seed once, run vitest, then run
    Playwright *without re-seeding*. CI uses ONE database for both. This is how
    the field tests leaking definitions was found — after CI went red.
-6. **`pnpm typecheck` before every push.** `next build` types `src/` only, so a
-   widened union that breaks a TEST's narrowing is green locally and red in CI
-   (#591). Vitest transpiles without checking, so the tests pass too.
+6. **`pnpm typecheck` before every push.** `next build` types `src/` only
+   (`tsconfig.build.json`, #1223), so a widened union that breaks a TEST's
+   narrowing is green locally and red in CI (#591). Vitest transpiles without
+   checking, so the tests pass too.
 
 ## Footguns that have cost real time
 
@@ -2186,6 +2190,23 @@ closed Monday-Sunday week (money rows carry a day, not a minute) + a dashboard
 non-login staff, the «paid» rule for upsale vs KPI, profit attribution on a
 reassigned client, admins as sellers, self-pay; Urumqi→Horgos days; old queue
 numbers; Irkeshtam queue; HOR's country must be CN.
+
+**Round — the deploy that ran out of memory (2026-09-29; DECISIONS #1223 —
+renumbered from #1210 on the merge, the EIGHTEENTH collision; NO migration).**
+His first try at the 0113-0116 deploy died inside `next build`: «JavaScript
+heap out of memory» at 2,044 MB, type-checking. Next checks ONE
+program from the tsconfig it is given, the root one includes `**/*.ts` (4,193
+files with the tests), and it drops test files' diagnostics only AFTER
+checking them. From scratch that program dies at an 1,800 MB cap. V8's default
+on his server is ~2 GB, while here it is 8 GB, which is why CI never saw it.
+Now `next.config.ts` builds with `tsconfig.build.json` (src + `next-env.d.ts` +
+`.next/types`, under 1,500 MB) and the Dockerfile's build line carries
+`--max-old-space-size=3072`. The line and not an ENV, because
+`migrate`/`tg-listen` run that stage. Fence: `tests/unit/build-typecheck.test.ts`
+(TypeScript's own parser lists both programs). Production was untouched: compose
+builds before it recreates. **Deploy tip that follows from it**: build
+`migrate` first (`docker compose build migrate`), so the shared build stage
+runs ONCE before `up -d --build` reuses it.
 
 **Latest migration: 0119** (`price_icons`; ledger must reach **120**). Before
 it: 0118 (`border_queue`), 0117 (`staff_pay`) — `when` …096-…098. Before them:

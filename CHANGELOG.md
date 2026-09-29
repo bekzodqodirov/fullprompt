@@ -1,5 +1,27 @@
 # CHANGELOG
 
+## Deploy xotira yetmay to'xtadi — tuzatildi — 2026-09-29
+
+Kod o'zgarishi, migratsiya yo'q. Keyingi deploy bilan birga chiqadi: yangilangandan
+keyin ledger **120** bo'lishi kerak.
+
+Serverda `up -d --build` «JavaScript heap out of memory» bilan to'xtadi.
+**Sayt ishlashda davom etdi**: yangi versiya qurilmay qolgani uchun eski
+konteynerlar almashtirilmadi, baza 113 da qoldi.
+
+Sabab: build ilovani qurishdan oldin kodni tekshiradi. Bu tekshiruv ilovaning
+kodidan tashqari testlarni ham (569 fayl) tekshirib, ularning natijasini
+keyin tashlab yuborardi. Loyiha o'sib, bu tekshiruv serverdagi ~2 GB
+xotira chegarasidan oshib ketdi.
+
+1. Build endi faqat ilovaning kodini tekshiradi. Testlarni GitHub alohida
+   tekshiradi, shuning uchun hech narsa tekshiruvsiz qolmaydi.
+2. Build'ga 3 GB gacha xotira ruxsat berildi. Bu faqat qurish paytiga
+   tegishli, ishlab turgan tizimga ta'sir qilmaydi.
+
+Tekshirildi: eski tekshiruv 1800 MB chegarada xotira tugab to'xtaydi. Yangisi
+1500 MB da ham o'tadi, to'liq build esa 1800 MB da o'tadi.
+
 ## Oylik va KPI, Horgos, partiya moliyasidagi ikki belgi, haftalik xulosa — 2026-09-29
 
 Migratsiyalar **0117–0119**. Yangilangandan keyin ledger **120** bo'lishi kerak
@@ -88,6 +110,7 @@ marta sanalmaydi. Dashboardda ham «O'tgan hafta» tugmasi qo'shildi.
   chiziladi; GitHub'da bir marta «road-geometry» ni ishga tushirish kerak.
 - Tizimga kirmaydigan hodimlarga oylik (savol quyida).
 - Omborchi va VED uchun KPI — hozir faqat sotuvchilarga (7a).
+
 ## Telegram ulash — ikki bosqichli parolli hodimlar ham ulanadi — 2026-09-29
 
 Kod o'zgarishi, migratsiya yo'q. Andijon tuzatishi va «Yetti yangilik» bilan
