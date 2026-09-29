@@ -72,9 +72,10 @@ pnpm build && pnpm e2e  # 44 e2e
 5. **Reproduce CI's order before pushing**: seed once, run vitest, then run
    Playwright *without re-seeding*. CI uses ONE database for both. This is how
    the field tests leaking definitions was found — after CI went red.
-6. **`pnpm typecheck` before every push.** `next build` types `src/` only, so a
-   widened union that breaks a TEST's narrowing is green locally and red in CI
-   (#591). Vitest transpiles without checking, so the tests pass too.
+6. **`pnpm typecheck` before every push.** `next build` types `src/` only
+   (`tsconfig.build.json`, #1210), so a widened union that breaks a TEST's
+   narrowing is green locally and red in CI (#591). Vitest transpiles without
+   checking, so the tests pass too.
 
 ## Footguns that have cost real time
 
@@ -2148,6 +2149,22 @@ The server decides the step after a refusal (`next`), the pure
 `afterFinish` (connect-state.ts) maps it. Pinned by
 `tests/unit/telegram-connect-lifecycle.test.ts` (gramjs replaced by a fake
 that records `destroyed`); 13 more red proofs.
+
+**Round — the deploy that ran out of memory (2026-09-29; DECISIONS #1210; NO
+migration).** His first try at the 0113-0116 deploy died inside `next build`:
+«JavaScript heap out of memory» at 2,044 MB, type-checking. Next checks ONE
+program from the tsconfig it is given, the root one includes `**/*.ts` (4,193
+files with the tests), and it drops test files' diagnostics only AFTER
+checking them. From scratch that program dies at an 1,800 MB cap. V8's default
+on his server is ~2 GB, while here it is 8 GB, which is why CI never saw it.
+Now `next.config.ts` builds with `tsconfig.build.json` (src + `next-env.d.ts` +
+`.next/types`, under 1,500 MB) and the Dockerfile's build line carries
+`--max-old-space-size=3072`. The line and not an ENV, because
+`migrate`/`tg-listen` run that stage. Fence: `tests/unit/build-typecheck.test.ts`
+(TypeScript's own parser lists both programs). Production was untouched: compose
+builds before it recreates. **Deploy tip that follows from it**: build
+`migrate` first (`docker compose build migrate`), so the shared build stage
+runs ONCE before `up -d --build` reuses it.
 
 **Latest migration: 0116** (`cargo_wait_alerts`; ledger must reach **117**).
 Before it: 0115 (`system_watch`), 0114 (`debt_control`), 0113

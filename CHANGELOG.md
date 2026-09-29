@@ -1,5 +1,26 @@
 # CHANGELOG
 
+## Deploy xotira yetmay to'xtadi — tuzatildi — 2026-09-29
+
+Kod o'zgarishi, migratsiya yo'q. Oldingi deploy (ledger 117) bilan birga chiqadi.
+
+Serverda `up -d --build` «JavaScript heap out of memory» bilan to'xtadi.
+**Sayt ishlashda davom etdi**: yangi versiya qurilmay qolgani uchun eski
+konteynerlar almashtirilmadi, baza 113 da qoldi.
+
+Sabab: build ilovani qurishdan oldin kodni tekshiradi. Bu tekshiruv ilovaning
+kodidan tashqari testlarni ham (569 fayl) tekshirib, ularning natijasini
+keyin tashlab yuborardi. Loyiha o'sib, bu tekshiruv serverdagi ~2 GB
+xotira chegarasidan oshib ketdi.
+
+1. Build endi faqat ilovaning kodini tekshiradi. Testlarni GitHub alohida
+   tekshiradi, shuning uchun hech narsa tekshiruvsiz qolmaydi.
+2. Build'ga 3 GB gacha xotira ruxsat berildi. Bu faqat qurish paytiga
+   tegishli, ishlab turgan tizimga ta'sir qilmaydi.
+
+Tekshirildi: eski tekshiruv 1800 MB chegarada xotira tugab to'xtaydi. Yangisi
+1500 MB da ham o'tadi, to'liq build esa 1800 MB da o'tadi.
+
 ## Telegram ulash — ikki bosqichli parolli hodimlar ham ulanadi — 2026-09-29
 
 Kod o'zgarishi, migratsiya yo'q. Andijon tuzatishi va «Yetti yangilik» bilan

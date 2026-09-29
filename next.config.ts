@@ -51,6 +51,12 @@ const nextConfig: NextConfig = {
   // build into .next/standalone/<project>/ where start-standalone.mjs can't find it.
   outputFileTracingRoot: __dirname,
   serverExternalPackages: NODE_ONLY_PACKAGES,
+  // The build type-checks the APP — src and Next's route types — and never
+  // the tests (tsconfig.build.json). One program over the whole repo, 4,193
+  // files with the tests in it, needed about 2 GB of heap and ran out of it on
+  // the owner's server at the 0113-0116 deploy (DECISIONS #1210). The tests are
+  // typed by `pnpm typecheck`, which CI runs before it builds.
+  typescript: { tsconfigPath: 'tsconfig.build.json' },
   webpack: (config, { isServer }) => {
     if (isServer) {
       config.externals = [

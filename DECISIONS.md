@@ -2204,3 +2204,15 @@ His «telegram chatni ulashni korib chiq», the day after being told that a webs
    - The password input is `autoComplete="off"`, so a browser does not offer this SITE's saved password for the Telegram one.
 
    The lifecycle is proved by `tests/unit/telegram-connect-lifecycle.test.ts`, which replaces gramjs with a fake client that records whether it was destroyed. Thirteen red proofs by string edit each turned their own test red. The first run of one turned FIVE red: its reset sat after the failing assertion, so four innocent tests started on a broken fake. The reset lives in `afterEach` now, and that proof turns exactly one test red.
+
+## The 0113-0116 deploy ran out of memory building (2026-09-29; NO migration)
+
+His terminal, the first try at the deploy: `FATAL ERROR: Ineffective mark-compacts near heap limit … JavaScript heap out of memory`, inside `next build` at «Linting and checking validity of types», with the process at 2,044 MB.
+
+1210. **The build type-checked the tests and then threw the answer away.** Next's `runTypeCheck` builds ONE program from the tsconfig it is given, and the root `tsconfig.json` includes `**/*.ts`: 4,193 files, the tests and scripts among them. It runs `getPreEmitDiagnostics` over all of it, and only then filters out the diagnostics of `*.test.*` / `*.spec.*` files. So every test file was fully checked, and its result was dropped. CLAUDE.md's «`next build` types `src/` only» was true of the ERRORS it reports and false of the memory it spends.
+   - **Measured from scratch.** The whole program reports ~2.5 GB in use. It dies at an 1,800 MB heap cap and gets through at 2,048. V8's default heap on the owner's server is about 2 GB. Here and in CI the default is 8 GB (16 GB of RAM), which is why the tree crossed the line on his machine first. The seven packages' tests pushed it over.
+   - **The fix, part 1.** `next.config.ts` points the build at `tsconfig.build.json`. That file extends the root and includes only `src/**`, `next-env.d.ts` and `.next/types/**`. The app's program finishes under a 1,500 MB cap, and a full `next build` passes at 1,800.
+   - **The tests lose nothing.** `pnpm typecheck` types them against the root tsconfig, and CI runs it before it builds.
+   - **The fix, part 2.** The Dockerfile's build line carries `--max-old-space-size=3072`. It is on the RUN line and not an ENV, because `migrate` and `tg-listen` run the build stage's image.
+   - **The fence.** `tests/unit/build-typecheck.test.ts` asks TypeScript's own config parser for both programs' files, instead of reading the JSON. The build program has every `src` file and no test, and the root program still has the tests.
+   - **Nothing in production was touched.** Compose builds every image before it recreates any container, so the failed build left the old containers running and the ledger at 113.
