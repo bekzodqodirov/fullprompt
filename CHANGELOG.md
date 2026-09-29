@@ -1,5 +1,94 @@
 # CHANGELOG
 
+## Oylik va KPI, Horgos, partiya moliyasidagi ikki belgi, haftalik xulosa — 2026-09-29
+
+Migratsiyalar **0117–0119**. Yangilangandan keyin ledger **120** bo'lishi kerak
+(avvalgi yangilanish 0113–0116 ni ham olib keladi, agar hali qo'ymagan bo'lsangiz).
+
+Sizning javoblaringiz: **1a · 2a · 3a · 4a · 5b · 6b · 7a · 8a · 9 · 10a**
+(oylik/KPI), **12-15, 21-23** (Horgos), **16a-20a, 26a-28a, B10** (belgilar),
+va yangi savollarga **1a · 2b · 3b · 4a · 5b**.
+
+### 1. «Hodimlar» sahifasi — oylik, KPI, upsale (Moliya bo'limida)
+1. Har bir hodim uchun kartochka: **oylik** (summa, valyuta, qaysi kuni), shu oy
+   to'langanmi; ✏️ bilan o'zgartiriladi. Oylik — bu o'sha hodimga yozilgan
+   doimiy xarajat, alohida yangi hisob ochilmagan.
+2. **KPI** sizning jadvalingiz bo'yicha: oy davomida sotuvchi mijozlarining
+   kelgan yuki (Xitoyda VA O'zbekistonda qabul qilingan, qabul kuni bo'yicha)
+   — kub, kg, o'rtacha zichlik (kg ÷ kub), jadvaldagi qator va $/kub. Masalan
+   40 kub, 150 kg/kub → «50 gacha» qatori, $3 × 40 = **$120**. Aynan 100 kg/kub
+   «100 gacha»ga tushadi.
+3. **Yuk kimniki**: prixod qabul qilingan kuni mijozning sotuvchisi kim bo'lsa,
+   yuk o'shaniki bo'lib qoladi (2a). Keyin mijozni boshqa sotuvchiga o'tkazsangiz,
+   eski yuk eski sotuvchida qoladi. Sotuvchisi yo'q mijozga birinchi marta
+   sotuvchi belgilasangiz — uning oldingi yuklari ham o'sha sotuvchiga o'tadi.
+4. **KPI faqat to'langan yukdan** (6b): mijoz qaysi yukning pulini to'lagan
+   bo'lsa, o'sha yuk hisobga kiradi. To'lovlar eng eski qarzni birinchi yopadi.
+   Mijozlar to'lagan sari o'tgan oyning KPI'si ham to'lanadigan bo'lib boradi.
+5. Oy **keyingi oyning 8-sanasida yopiladi** (prixodlar 7 kungacha orqaga
+   yozilishi mumkin), shundan keyin «KPI to'lash» tugmasi. To'langan KPI
+   xarajat bo'lib yoziladi; bekor qilinsa, yana to'lanadigan bo'lib qaytadi.
+   Ortiqcha to'langan bo'lsa «ortiqcha berilgan» deb ko'rsatiladi, qaytarib
+   olinmaydi.
+6. **KPI jadvalini** o'zingiz o'zgartira olasiz — yangi jadval keyingi oydan
+   kuchga kiradi, to'langan oylar qayta hisoblanmaydi. Sizning 24 ta raqamingiz
+   sentabr 2026 dan kiritilgan.
+7. **Upsale** qatori alohida. Sotuvchisi belgilanmagan mijozlarning yuki
+   «Sotuvchisiz yuk» ro'yxatida turadi.
+8. **Profil → «Bu oy»**: har bir hodim faqat O'ZINING shu oydagi daromadini
+   ko'radi — oylik + KPI + upsale. Sklad xodimi qabul qilgan prixodlarini,
+   VED muhrlagan hisoblarini ko'radi.
+9. **Biznes holati → «Hodimlar keltirgan foyda»**: har bir sotuvchi bo'yicha
+   yukdan foyda va upsale yonma-yon. Ularni qo'shib bo'lmaydi — upsale yuk
+   narxining ichida.
+10. «Sotuvchilar hisoboti»dagi kub/kg ham endi shu qoida bilan (qabul kunidagi
+    sotuvchi) hisoblanadi.
+
+### 2. Horgos (HOR)
+1. Xaritada Horgos skladi sizning koordinatangizda. Yiwu/Guangzhou → Horgos
+   yo'li Urumchi orqali, Horgos → Toshkent: Horgos posti → Olmaota → Chimkent →
+   **Yallama** → Toshkent (Andijonga Kamchiq orqali).
+2. Vaqtlar sizniki: Yiwu/GZ → Horgos 6-7 kun, Xitoy chegarasi ~3 kun,
+   Qozog'iston ~1 kun, O'zbekistonga kirish navbati 3-4 kun.
+3. **Navbatni qo'lda kiritish** — «Mashinalar» sahifasida logist Horgos va
+   Yallama uchun «hozir necha kun kutilyapti» deb yozadi; xarita, mijoz
+   kabineti, bot va dashboarddagi yetib kelish sanasi darhol shunga moslashadi.
+   Chegaradan o'tib bo'lgan mashina o'zgarmaydi. 3 kundan eski raqam ⚠ bilan
+   ko'rinadi.
+4. Mashina kartasidagi «qayerda» tugmalari endi shu mashinaning yo'liga qarab
+   chiqadi: Horgos mashinasida «Chegarada / Qozog'istonda / O'zbekistonda».
+5. **Horgos yo'lkira zonasi** qo'shildi — narxlarini «Tarif» sahifasida o'zingiz
+   kiritasiz. Narx kiritilmaguncha bot Horgos tugmasini ko'rsatmaydi.
+
+### 3. Partiya moliyasi: har bir lot yonida ikki belgi
+1. **📈 Oldingi narx** — shunga o'xshash tovar oldin qaysi mashinalarda
+   qanchaga ketgan: avval shu mijozniki, keyin boshqalarniki; oxirgi 5 ta,
+   12 oy ichida; $/kub va $/kg; mijozning o'sha mashinada boshqa tovarlari ham
+   bo'lsa «aralash». Avval bepul qidiradi (xitoycha nom, TNVED kodi, o'xshash
+   nom); topilmasa «AI qidirsin» tugmasi chiqadi.
+2. **🧮 Bitim hisobi** — prixod ulangan bitimning hisobi: guruhlar, TNVED,
+   baza, poshlina, QQS, yig'im, yo'lkira, jami; qayta hisoblangan bo'lsa
+   oldingi versiya; muhrlanmagan «Готово» javoblari «muhrlanmagan» deb.
+   Buxgalter, admin va VED ko'radi. VED jami summani ko'radi, mijoz narxi va
+   upsale unga yopiq (26a).
+3. **VED tasdiqlashi (20a)**: hisob muhrlanganda shu bitimga hisob amal
+   qiladigan muddat ichida kelgan prixodlar hisobga o'zi ulanadi; VEDga
+   Telegramda har bir prixod uchun ✅/❌ keladi (08:00-20:00), bosh sahifasida
+   «Tasdiqlash kerak: N». Yangilangan kuni eski taxminlar Telegramga
+   yuborilmaydi — faqat «Hisob nazorati»da turadi.
+
+### 4. Dushanba kechki xulosasi (5b)
+Dushanba xabari endi **o'tgan to'liq hafta (dushanba–yakshanba)** haqida.
+Chegara 20:00 emas, yarim tun: to'lov va xarajatlar soat bilan emas, kun
+bilan yoziladi. Natija siz so'ragandek — hech bir kun tushib qolmaydi va ikki
+marta sanalmaydi. Dashboardda ham «O'tgan hafta» tugmasi qo'shildi.
+
+### Hali qilinmaganlar
+- Horgos yo'lining aniq shakli (yo'l chizig'i) — hozircha shaharlar orqali
+  chiziladi; GitHub'da bir marta «road-geometry» ni ishga tushirish kerak.
+- Tizimga kirmaydigan hodimlarga oylik (savol quyida).
+- Omborchi va VED uchun KPI — hozir faqat sotuvchilarga (7a).
+
 ## Yetti yangilik: qarz nazorati, mijoz kartasida «Yuklar», olib ketilmagan yuk, lid chatlari, reklama lidi, kechki xulosa, tizim kuzatuvi — 2026-09-28
 
 Migratsiyalar **0113–0116**. Yangilangandan keyin ledger **117** bo'lishi kerak

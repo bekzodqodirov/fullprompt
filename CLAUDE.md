@@ -2103,8 +2103,45 @@ the logist's `finance.debt_override` on the LIVE server (seed never removes a
 grant — an untick on /admin/roles, which also removes his price tick). The
 pre-0114 tick branch of the register still seq-scans (its index is owed).
 
-**Latest migration: 0116** (`cargo_wait_alerts`; ledger must reach **117**).
-Before it: 0115 (`system_watch`), 0114 (`debt_control`), 0113
+**Round — his answers of 2026-09-29: pay + KPI, Horgos, the lot icons, the
+weekly window (DECISIONS #1204-#1216; migrations 0117-0119 — ledger must reach
+120).** Three packages designed → judged by four lenses → revised → built in
+worktrees → reviewed by two → fixed; the container restarted mid-build and a
+finisher per package re-audited its committed branch against the final design.
+**Pay** (0117): the prixod's seller is STAMPED on `receipts.sales_manager_id` in
+the same statement as the client (`staff/stamp.ts` `stampFor`; a nobody→A
+assignment back-dates the unstamped cargo, A→B never restamps); ONE cargo
+reader `staff/cargo.ts` `stampedCargo` (carton grain, Tashkent month of
+`received_at`) replaced `sellerCargo` AND `cargoByManager`; `kpi_rates` is a
+month-versioned table (his 24 cells seeded at 2026-09, no earliest fallback, a
+version never reprices a paid month); `kpi-engine.ts` pure; «paid cargo» =
+`finance/fifo.ts settleCharges` (compensation → own receipt, deferral → own
+deal, then oldest first; `clientCargo` asks it too); months close on the 8th,
+payable netted per seller, `payKpi` re-derives under an advisory lock,
+`commissionPayoutSql` is the one «commission payout» predicate. /hodimlar
+(`maySeeStaffMoney`; salary = the recurring template; pay = `mayPayCommission`),
+profile «Bu oy» (own only), dashboard «Hodimlar keltirgan foyda». **Horgos**
+(0118): HOR is a second named corridor in map-data (through Urumqi; Almaty →
+Shymkent → Yallama); `border_queue` = the logist's typed waits with the previous
+regime and two clocks, `routeWithWaits` judges «crossed» by the wait the truck
+was GIVEN; `waits` REQUIRED on every ETA reader (derived fence); pins
+route-aware (`checkpointsFor`, `in_kz`); a «horgos» tariff zone drawn only when
+priced; `migration-journal.test.ts` fences `when` order and holes. The road
+shape needs `road-geometry.yml` run once (OSRM is blocked here). **Icons**
+(0119): 📈 past prices (`productKeySql` + expression index, 10-digit TNVED,
+`similarity` with `%`; AI picks by index, billed kind `similar`), 🧮 the deal's
+calc (`calc/sheet.ts` behind branded `CalcRegistrySight`, no price field), the
+seal stamps in-window prixods and the sealer is asked ✅/❌ in Telegram
+(`cl:` callback, the id's random tail). **5b**: the Monday message is the
+closed Monday-Sunday week (money rows carry a day, not a minute) + a dashboard
+«O'tgan hafta» chip. OWED to him as questions: KPI start month, salary for
+non-login staff, the «paid» rule for upsale vs KPI, profit attribution on a
+reassigned client, admins as sellers, self-pay; Urumqi→Horgos days; old queue
+numbers; Irkeshtam queue; HOR's country must be CN.
+
+**Latest migration: 0119** (`price_icons`; ledger must reach **120**). Before
+it: 0118 (`border_queue`), 0117 (`staff_pay`) — `when` …096-…098. Before them:
+**0116** (`cargo_wait_alerts`; ledger 117). Before it: 0115 (`system_watch`), 0114 (`debt_control`), 0113
 (`inbound_contact`) — `when` …092-…095, assigned in that order before the
 packages were built. Before them: **0112** (`qr_less` — the count reasons, the QR-siz lot
 marker, the office receipt's receiver, the factory barcode, the pallet kind;
@@ -2227,7 +2264,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **117** since 0116, and his server CONFIRMED **113** («deploy qildim
+length — **120** since 0119 (117 since 0116), and his server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), so the next
 deploy applies 0113-0116 and must recreate EVERY container once
 (`--profile https --profile telegram up -d --build`: compose gained `init`, a
