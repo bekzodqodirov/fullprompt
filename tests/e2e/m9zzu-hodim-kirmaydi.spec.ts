@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { database } from './chegara-fixture';
+import { openFold } from './fold';
 
 /**
  * A person who never signs in (0120, the owner's 2b: «Tizimga kirmaydigan
@@ -76,7 +77,7 @@ test('T1 — the accountant mints him, lands on his card, and a same name NAMES 
   await page.goto('/hodimlar');
   const fold = page.getByTestId('hodimlar-person-new');
   await expect(fold).toBeVisible();
-  await fold.locator('summary').click();
+  await openFold(fold);
   await page.getByTestId('hodimlar-person-name').fill(NAME);
   await page.getByTestId('hodimlar-person-phone').fill(PHONE);
   await page.getByTestId('hodimlar-person-save').click();
@@ -96,13 +97,13 @@ test('T1 — the accountant mints him, lands on his card, and a same name NAMES 
   // The accountant does not hold admin.users.manage: the way to a login is not hers.
   await expect(card(page).getByTestId('staff-enable-login')).toHaveCount(0);
   await fitsViewport(page);
-  await card(page).getByTestId('staff-person-edit').locator('summary').click();
+  await openFold(card(page).getByTestId('staff-person-edit'));
   await expect(card(page).getByTestId('staff-person-name')).toHaveValue(NAME);
   await fitsViewport(page);
 
   // The same name again: the fold names who holds it and mints nothing yet.
   await page.goto('/hodimlar');
-  await page.getByTestId('hodimlar-person-new').locator('summary').click();
+  await openFold(page.getByTestId('hodimlar-person-new'));
   await page.getByTestId('hodimlar-person-name').fill(NAME);
   await page.getByTestId('hodimlar-person-save').click();
   const same = page.getByTestId('hodimlar-person-same-name');
@@ -175,7 +176,7 @@ test('T3 — the owner sees the admin side: the one door to a login, never submi
   await page.goto('/admin/users/new');
   await expect(page.getByTestId('users-new-hodimlar-line')).toBeVisible();
   const list = page.getByTestId('users-new-no-login');
-  await list.locator('summary').click();
+  await openFold(list);
   await expect(list).toContainText(NAME);
   await fitsViewport(page);
 });
@@ -215,7 +216,7 @@ test('T5 — he leaves: still listed while a template names him, gone once it st
     await expect(card(page).getByTestId('staff-no-login')).toBeVisible();
 
     const edit = card(page).getByTestId('recurring-edit');
-    await edit.locator('summary').click();
+    await openFold(edit);
     await edit.getByTestId('recurring-edit-active').uncheck();
     await edit.getByTestId('recurring-edit-save').click();
     // The stop revalidates /hodimlar and nothing owes him any more, so the
@@ -227,7 +228,7 @@ test('T5 — he leaves: still listed while a template names him, gone once it st
     await expect(card(page)).toHaveCount(0);
     // …and is named in «Ketganlar» instead, the one door back to his card.
     const leavers = page.getByTestId('hodimlar-leavers');
-    await leavers.locator('summary').click();
+    await openFold(leavers);
     await expect(leavers.getByTestId('hodimlar-leaver').filter({ hasText: NAME })).toHaveAttribute(
       'href',
       `/hodimlar?hodim=${personId}`,
