@@ -61,8 +61,11 @@ pnpm build && pnpm e2e  # 44 e2e
 ## Verification ritual (follow it, it catches real bugs)
 
 1. Postgres dies between turns:
-   `su postgres -c "/usr/lib/postgresql/16/bin/pg_ctl -D /var/local/pg/data -l /var/local/pg/log/server.log -o '-k /tmp' start"`
-   (`-l` takes a FILE: `/var/local/pg/log` is a directory and pg_ctl refuses it.)
+   `su postgres -c "/usr/lib/postgresql/16/bin/pg_ctl -D /var/local/pg/data -l /var/local/pg/server.log -o '-k /tmp' start"`
+   (`-l` takes a FILE in a folder that exists. `/var/local/pg/log` has been a
+   directory in some containers and is a plain FILE in others — no path can be
+   created under a file, and pg_ctl then refuses to start — so the log sits
+   beside it.)
    Tests that all report «skipped» mean postgres is down, not that they pass.
 2. `gsr_dev` = the owner's real imported data. `gsr_ci` / `gsr_test` = throwaway.
 3. Before e2e: **`fuser -k 3000/tcp`** — `pkill -f start-standalone` does not

@@ -7,7 +7,7 @@
 ## 1. Zaxira nusxa (majburiy, 20 soniya)
 
 ```bash
-cd /root/gsr-erp            # loyiha papkasi
+cd ~/gsr                    # loyiha papkasi
 docker compose exec -T backup /backup.sh
 docker compose run --rm -T backup sh -c 'ls -lh /backups | tail -3'
 ```
@@ -31,8 +31,13 @@ fayllar bo'lsa — bu normal, ular 3-qadamda avtomatik qo'llanadi.
 ## 3. Yangilash
 
 ```bash
+docker compose build migrate
 docker compose --profile https up -d --build
 ```
+
+Birinchi qator kodni bir marta quradi, ikkinchisi o'sha natijani qayta
+ishlatadi — og'ir qurish serverda faqat bir marta yuradi. 2026-09-29 dagi
+deploy qurish paytida xotira yetmay to'xtagan edi (DECISIONS #1223).
 
 Nima bo'ladi: yangi image quriladi → `migrate` xizmati migratsiyalarni
 qo'llaydi va seedni ishga tushiradi (yangi ruxsatlar shu yerda tarqaladi) →

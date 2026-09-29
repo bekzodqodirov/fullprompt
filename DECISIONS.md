@@ -2204,6 +2204,7 @@ His «telegram chatni ulashni korib chiq», the day after being told that a webs
    - The password input is `autoComplete="off"`, so a browser does not offer this SITE's saved password for the Telegram one.
 
    The lifecycle is proved by `tests/unit/telegram-connect-lifecycle.test.ts`, which replaces gramjs with a fake client that records whether it was destroyed. Thirteen red proofs by string edit each turned their own test red. The first run of one turned FIVE red: its reset sat after the failing assertion, so four innocent tests started on a broken fake. The reset lives in `afterEach` now, and that proof turns exactly one test red.
+
 ## His answers of 2026-09-29: pay + KPI, Horgos, the lot icons, the weekly window (migrations 0117-0119, ledger 120) — renumbered from #1204-#1216 on the merge, the SEVENTEENTH collision: the other session's Andijan trip and Telegram connect took #1204-#1209 first
 
 Three packages designed against the tree, judged by four lenses each (code truth, money sight, data/clocks, owner fit), revised, then built in worktrees and reviewed by two more lenses each. The container restarted mid-build; every builder had committed, so a finisher per package audited its branch against the final design, completed it and ran the gates and red proofs again. Designs live beside the session's scratch record; what follows is what was decided.

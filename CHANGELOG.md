@@ -110,6 +110,7 @@ marta sanalmaydi. Dashboardda ham «O'tgan hafta» tugmasi qo'shildi.
   chiziladi; GitHub'da bir marta «road-geometry» ni ishga tushirish kerak.
 - Tizimga kirmaydigan hodimlarga oylik (savol quyida).
 - Omborchi va VED uchun KPI — hozir faqat sotuvchilarga (7a).
+
 ## Telegram ulash — ikki bosqichli parolli hodimlar ham ulanadi — 2026-09-29
 
 Kod o'zgarishi, migratsiya yo'q. Andijon tuzatishi va «Yetti yangilik» bilan
