@@ -15,6 +15,7 @@ import { writeAudit, type AuditContext } from '@/modules/platform/audit/service'
 import { createTask } from '@/modules/platform/tasks/service';
 import { notifyStaffTelegram, userName } from '@/modules/platform/notifications/staff';
 import { usersWithPermission, usersWithRoles } from '@/modules/platform/notifications/service';
+import { canLogInSql } from '@/modules/platform/users/login';
 import { cardLink } from '@/modules/platform/notifications/links';
 import { logger } from '@/modules/platform/logger';
 import { addActivity } from '../crm/service';
@@ -127,7 +128,7 @@ export async function nextVedAssignee(): Promise<string | null> {
     })
     .from(users)
     .leftJoin(calcRequests, and(eq(calcRequests.assigneeId, users.id), openRequests))
-    .where(and(eq(users.active, true), inArray(users.id, pool)))
+    .where(and(canLogInSql(), inArray(users.id, pool)))
     .groupBy(users.id)
     .orderBy(
       sql`count(${calcRequests.id}) asc, max(${calcRequests.requestedAt}) asc nulls first`,

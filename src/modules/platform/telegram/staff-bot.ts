@@ -19,18 +19,14 @@ import { allLabelVariants } from './client-labels';
 import { buttonLabel } from './limits';
 import { editMarkup, editText } from './send';
 
+import { canLogInSql, staffPhonesMatch } from '../users/login';
+
 /**
- * The cabinet's phone rule, restated here because platform must never import
- * wms: digits only, compare the last 9 — "+998 90…" and "90…" are the same
- * person, and anything under 7 digits is too short to trust.
+ * The cabinet's phone rule (digits only, the last 9) lives in users/login.ts
+ * since 0120, so the conversion door can ask the bot's own rule without
+ * importing the bot; re-exported here for the bot's existing readers.
  */
-export function staffPhonesMatch(a: string, b: string): boolean {
-  const da = a.replace(/\D/g, '');
-  const db2 = b.replace(/\D/g, '');
-  if (da.length < 7 || db2.length < 7) return false;
-  const n = Math.min(9, da.length, db2.length);
-  return da.slice(-n) === db2.slice(-n);
-}
+export { staffPhonesMatch } from '../users/login';
 
 /**
  * The STAFF side of the bot (owner's round: «endi telegram botni mukammal
@@ -52,30 +48,32 @@ export interface StaffChat {
   locale: string | null;
 }
 
-/** The staff member behind a chat — linked and still employed, or nobody. */
+/** The staff member behind a chat — linked and a colleague now (`canLogIn`), or nobody. */
 export async function staffForChat(chatId: bigint): Promise<StaffChat | null> {
   const [row] = await db
-    .select({ id: users.id, fullName: users.fullName, locale: users.locale, active: users.active })
+    .select({ id: users.id, fullName: users.fullName, locale: users.locale, live: canLogInSql() })
     .from(telegramLinks)
     .innerJoin(users, eq(telegramLinks.userId, users.id))
     .where(and(eq(telegramLinks.telegramChatId, chatId), eq(telegramLinks.status, 'linked')))
     .limit(1);
-  if (!row || !row.active) return null;
+  if (!row || !row.live) return null;
   return { id: row.id, fullName: row.fullName, locale: row.locale };
 }
 
 /**
- * The ACTIVE staff member a Telegram-shared phone belongs to. The contact
- * button shares the sender's OWN verified number (the cabinet's spoof-proof
- * rule), so matching it against the login phone is the same trust the client
- * link already runs on.
+ * The staff member a Telegram-shared phone belongs to — a colleague NOW
+ * (`canLogIn`: active AND a login; a payroll-only person's phone is the
+ * accountant's note, never a key to the staff bot). The contact button shares
+ * the sender's OWN verified number (the cabinet's spoof-proof rule), so
+ * matching it against the login phone is the same trust the client link
+ * already runs on.
  */
 export async function staffByPhone(phone: string): Promise<StaffChat | null> {
   const rows = await db
     .select({ id: users.id, fullName: users.fullName, locale: users.locale, phone: users.phone })
     .from(users)
-    .where(eq(users.active, true));
-  const hit = rows.find((u) => staffPhonesMatch(phone, u.phone));
+    .where(canLogInSql());
+  const hit = rows.find((u) => u.phone !== null && staffPhonesMatch(phone, u.phone));
   return hit ? { id: hit.id, fullName: hit.fullName, locale: hit.locale } : null;
 }
 

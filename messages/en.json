@@ -655,7 +655,26 @@
       "accountant": "Accountant",
       "viewer": "Viewer"
     },
-    "superAdminLocked": "Only a super admin may grant or remove the super_admin role"
+    "superAdminLocked": "Only a super admin may grant or remove the super_admin role",
+    "noLogin": "no login",
+    "enableLoginTitle": "Give a login",
+    "enableLoginHint": "This person does not sign in today — only their salary is kept, on «Staff: salary and KPI». Once the login is given they sign in with the phone and password below, link the Telegram bot with that phone, and see their salary on their profile under «This month». This cannot be undone: when they leave, press «Deactivate».",
+    "enableLoginInactive": "This person is inactive. Press «Activate» above first, then the login can be given.",
+    "payrollPhone": "Phone kept on the salary page: {phone}",
+    "payrollPhoneNone": "No phone is kept on the salary page.",
+    "loginPhoneHint": "Type the person’s OWN number (type it again even if the one above is right): it is how they sign in and how the Telegram bot recognises them as staff. Not a shared warehouse phone, not somebody else’s.",
+    "enableLoginSave": "Give the login",
+    "enableLoginDone": "✅ Login given",
+    "noLoginRow": "This person has no login — use «Give a login» first",
+    "alreadyLogin": "This person already has a login",
+    "usernameExists": "This login name is taken",
+    "inactivePerson": "The person is inactive — «Activate» first",
+    "badPhone": "The phone is not valid",
+    "salaryOnHodimlar": "Salary: on «Staff: salary and KPI» →",
+    "newNoLoginLine": "A person who never signs in (for example, a worker at a Chinese warehouse — salary only) is added not here but on «Staff: salary and KPI».",
+    "newNoLoginGo": "Open →",
+    "newNoLoginList": "People who never sign in: {count}",
+    "newNoLoginListHint": "If one of them needs a login, do not add a new employee — open their card and use «Give a login»; otherwise the salary sits on one record and the work on another."
   },
   "settings": {
     "title": "Settings",
@@ -814,7 +833,8 @@
       "weightKg": "Weight, kg",
       "widthCm": "Width, cm",
       "cargoStampedTo": "Cargo attributed to",
-      "receipts": "Receipts"
+      "receipts": "Receipts",
+      "loginEnabled": "Login"
     }
   },
   "profile": {
@@ -2827,7 +2847,8 @@
       "already_closed": "Already closed",
       "bad_due_date": "Bad deadline",
       "not_created": "Could not create",
-      "repeat_needs_due": "A repeating task needs a deadline"
+      "repeat_needs_due": "A repeating task needs a deadline",
+      "assignee_no_login": "This person has no login — they would never see the task"
     },
     "repeat": "Repeat",
     "repeatNever": "no repeat",
@@ -3564,9 +3585,9 @@
     "chargeMoved": "A debt for a service (a truck, customs, rent, a salary) is now entered in the cost or expense form with «Settled by» picked. The debt lands here by itself and reaches the profit report too.",
     "manualCharge": "Not linked to a cost — missing from the profit report",
     "owedToUs": "Owe us",
-    "login": "Staff member (login)",
+    "login": "Staff member",
     "noLogin": "Not a staff member",
-    "loginHint": "Linking a login makes this a staff account: its balance is seen only by the accountant, the admin and the person themselves.",
+    "loginHint": "Linking a staff member makes this their account: its balance is seen only by the accountant, the admin and — if they sign in — the person themselves.",
     "userTaken": "This staff member already has an account — one account per person.",
     "staffForbidden": "Staff accounts are kept by the accountant and the admin only.",
     "staffKinds": {
@@ -4761,7 +4782,17 @@
       "kpi_version_paid": "KPI for this month is already paid — a new table can only start with a later month",
       "category_clash": "this expense type is already chosen for another pay (salary, KPI or upsale) — each needs its own",
       "before_first_version": "a table cannot start before the first KPI month",
-      "no_seller": "the client has no seller"
+      "no_seller": "the client has no seller",
+      "name_required": "no name given",
+      "bad_phone": "the phone is not valid — digits only, with an optional leading + (7–15 digits)",
+      "phone_exists": "another person has this phone — leave it empty or type another",
+      "username_exists": "this login name is taken",
+      "same_name": "somebody with this name is already listed",
+      "is_login": "this person signs in — only an admin changes them, under «Administration → Employees»",
+      "already_login": "this person already has a login",
+      "no_login_row": "this person has no login — an admin first uses «Give a login» under «Administration → Employees»",
+      "inactive_person": "the person is inactive — «Reactivate» first",
+      "super_admin_locked": "only a super admin can grant or remove the super admin role"
     },
     "table": {
       "title": "KPI table",
@@ -4787,7 +4818,26 @@
     "salaryNotDue": "— not due this month yet",
     "salaryMonth": "{month}:",
     "unstampedRepair": "→ move to {name}",
-    "upsaleNotComputed": "Part of the sellers’ share could not be checked in the time allowed — the “payable” figure is incomplete. Open the seller on their own."
+    "upsaleNotComputed": "Part of the sellers’ share could not be checked in the time allowed — the “payable” figure is incomplete. Open the seller on their own.",
+    "noLogin": "no login",
+    "personNew": "Add a person who never signs in",
+    "personNewHint": "For example, a worker at a Chinese warehouse: never signs in, and only their salary is kept on this page. They get no tasks, messages or clients. If they need a login later, an admin uses «Give a login» on their card under «Administration → Employees».",
+    "personName": "Full name",
+    "personPhone": "Phone (optional)",
+    "personPhoneHint": "Digits only, with an optional leading + (7–15 digits).",
+    "personAdd": "Add",
+    "personAdded": "Added — open their card →",
+    "personSameName": "Already listed under this name:",
+    "personSameNameMore": "and {count} more",
+    "personSameNameAgain": "If it is the same person, open their card (the salary goes there). If it is somebody else, press «Add» once more.",
+    "personStateLogin": "signs in",
+    "personEdit": "Name, phone",
+    "personLeave": "Has left",
+    "personLeaveConfirm": "Has {name} left? If the last salary is not paid yet, pay it with «✓ Paid» on «Expenses» — the plain expense form cannot pick a person who has left. The salary template does not stop by itself: once the last month is closed, stop it with ✏️ «Amount, day or stop» on the card.",
+    "personReturn": "Reactivate",
+    "enableLogin": "Give a login →",
+    "salaryFailed": "The salaries could not be read — people who left are shown too. Reload the page, and do not press «Set a salary» for now.",
+    "salaryUnknown": "the salary could not be read"
   },
   "calcSheet": {
     "group": "Group",

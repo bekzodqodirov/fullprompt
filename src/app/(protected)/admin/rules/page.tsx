@@ -1,8 +1,9 @@
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
-import { asc, eq } from 'drizzle-orm';
+import { asc } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
 import { users } from '@/modules/platform/db/schema';
+import { canLogInSql } from '@/modules/platform/users/login';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { PageHeader, Section } from '@/components/ui/page';
 import { Panel } from '@/components/panel';
@@ -36,7 +37,9 @@ export default async function RulesPage() {
     db
       .select({ id: users.id, name: users.fullName })
       .from(users)
-      .where(eq(users.active, true))
+      // A colleague NOW (`canLogIn`, 0120) — a rule's task or message must
+      // reach somebody who signs in.
+      .where(canLogInSql())
       .orderBy(asc(users.fullName)),
   ]);
 

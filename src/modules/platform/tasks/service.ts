@@ -9,6 +9,7 @@ import { recordNames, resolveEntity } from '../entities/service';
 import { taskLink } from '../notifications/links';
 import { notifyStaffTelegram, userName } from '../notifications/staff';
 import { logger } from '../logger';
+import { canLogIn } from '../users/login';
 
 /**
  * Work one person gives another (owner: "tasklar calendarlar").
@@ -262,8 +263,9 @@ export async function createTask(input: TaskInput, ctx: AuditContext): Promise<T
   const person = await db.query.users.findFirst({ where: eq(users.id, input.assigneeId) });
   if (!person) throw new TaskError('no_assignee');
   // Giving work to someone who has left is how a task disappears: nobody sees
-  // it on a screen they no longer open.
-  if (!person.active) throw new TaskError('assignee_inactive');
+  // it on a screen they no longer open — and a person who never signs in
+  // (0120) has no screen to open at all.
+  if (!canLogIn(person)) throw new TaskError(person.active ? 'assignee_no_login' : 'assignee_inactive');
 
   const { dueAt, allDay } = parseDue(input.dueAt, input.tzOffsetMin);
   // "Every week" starting when? A rule needs something to repeat from.
@@ -479,7 +481,8 @@ export async function reassignTask(
   if (!canActOnTask(before, ctx.actor)) throw new TaskError('not_yours');
   if (before.status !== 'open') throw new TaskError('already_closed');
   const person = await db.query.users.findFirst({ where: eq(users.id, assigneeId) });
-  if (!person?.active) throw new TaskError('assignee_inactive');
+  if (!person) throw new TaskError('assignee_inactive');
+  if (!canLogIn(person)) throw new TaskError(person.active ? 'assignee_no_login' : 'assignee_inactive');
 
   await db.update(tasks).set({ assigneeId, updatedAt: new Date() }).where(eq(tasks.id, id));
   await writeAudit(db, ctx, {

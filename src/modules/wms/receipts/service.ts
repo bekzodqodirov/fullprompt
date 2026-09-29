@@ -20,6 +20,7 @@ import { emitEvent } from '../../platform/events/service';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { usersWithPermission } from '../../platform/notifications/service';
 import { getSetting } from '../../platform/settings/service';
+import { canLogInSql } from '../../platform/users/login';
 import { assignLetters } from '../sequencer';
 import { nextBoxCodes, nextReceiptNumber } from '../codes';
 import { splitForCorrection } from './box-state';
@@ -640,7 +641,7 @@ export async function checkReceiver(
       assigned: sql<boolean>`EXISTS (SELECT 1 FROM user_warehouses uw WHERE uw.user_id = ${users}.id AND uw.warehouse_id = ${warehouseId}::uuid)`,
     })
     .from(users)
-    .where(and(eq(users.id, receiver.userId), eq(users.active, true)));
+    .where(and(eq(users.id, receiver.userId), canLogInSql()));
   if (!row || (row.id !== actorId && !row.assigned)) throw new ReceiptError('receiver_invalid');
   return { receivedByUserId: row.id, receivedByName: null };
 }

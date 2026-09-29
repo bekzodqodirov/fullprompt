@@ -1,6 +1,7 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { db } from '../db/client';
 import { users } from '../db/schema';
+import { loginRowSql } from '../users/login';
 
 /**
  * Who is trying to log in.
@@ -20,14 +21,29 @@ import { users } from '../db/schema';
  * random, with nothing on the screen or in the log to explain it.
  *
  * Two reads, and the precedence is a decision rather than the planner's:
- * **the phone wins**. Every account in this system is minted with a phone,
- * usernames are optional and no import has ever written one, so a collision
- * means somebody typed a colleague's number into a username box — and the
- * number is the identity the owner hands out.
+ * **the phone wins**. Every LOGIN is minted with a phone
+ * (`users_login_phone_check`), usernames are optional and no import has ever
+ * written one, so a collision means somebody typed a colleague's number into a
+ * username box — and the number is the identity the owner hands out.
+ *
+ * A no-login row (0120, the owner's 2b) is never an identity: its phone is
+ * typed by the accountant, not handed out by the owner, and it must never
+ * shadow a login's username — so BOTH reads ask `loginRowSql()`. Not
+ * `canLogInSql()`: a DEACTIVATED login keeps its identity, so «the phone wins»
+ * stays true for it exactly as before, and `loginAction` refuses it by
+ * `canLogIn`.
  */
 export async function findUserByIdentifier(identifier: string) {
-  const [byPhone] = await db.select().from(users).where(eq(users.phone, identifier)).limit(1);
+  const [byPhone] = await db
+    .select()
+    .from(users)
+    .where(and(eq(users.phone, identifier), loginRowSql()))
+    .limit(1);
   if (byPhone) return byPhone;
-  const [byUsername] = await db.select().from(users).where(eq(users.username, identifier)).limit(1);
+  const [byUsername] = await db
+    .select()
+    .from(users)
+    .where(and(eq(users.username, identifier), loginRowSql()))
+    .limit(1);
   return byUsername;
 }

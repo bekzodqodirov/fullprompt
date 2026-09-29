@@ -77,7 +77,7 @@ describe('managersFor — who the customer writes to', () => {
       telegramUrl: 'https://t.me/real_handle',
     });
     expect(map.get(b.id)?.telegramUrl).toBe('https://t.me/only_typed');
-    expect(map.get(c.id)?.telegramUrl).toBe(`https://t.me/+${phoneOnly.phone.replace(/\D/g, '')}`);
+    expect(map.get(c.id)?.telegramUrl).toBe(`https://t.me/+${phoneOnly.phone!.replace(/\D/g, '')}`);
     expect(map.has(d.id)).toBe(false);
     expect(map.has(e.id)).toBe(false);
   });

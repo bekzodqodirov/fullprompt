@@ -655,7 +655,26 @@
       "accountant": "Buxgalter",
       "viewer": "Kuzatuvchi"
     },
-    "superAdminLocked": "Super-admin rolini faqat super-adminning o'zi berishi yoki olishi mumkin"
+    "superAdminLocked": "Super-admin rolini faqat super-adminning o'zi berishi yoki olishi mumkin",
+    "noLogin": "tizimga kirmaydi",
+    "enableLoginTitle": "Tizimga kirish ochish",
+    "enableLoginHint": "Bu hodim hozir tizimga kirmaydi — «Hodimlar: oylik va KPI» sahifasida faqat oyligi yuritiladi. Kirish ochilgach u pastdagi telefon va parol bilan kiradi, shu telefon bilan Telegram botga ulanadi va o‘z profilidagi «Bu oy»da oyligini ko‘radi. Buni ortga qaytarib bo‘lmaydi: ishdan ketsa, «Faolsizlantirish» bosiladi.",
+    "enableLoginInactive": "Bu hodim faol emas. Avval yuqoridagi «Faollashtirish»ni bosing, keyin kirish ochiladi.",
+    "payrollPhone": "Oylik sahifasida yozilgan telefon: {phone}",
+    "payrollPhoneNone": "Oylik sahifasida telefon yozilmagan.",
+    "loginPhoneHint": "Hodimning O‘Z raqamini yozing (yuqoridagisi to‘g‘ri bo‘lsa ham qayta yozing): shu raqam bilan u tizimga kiradi va Telegram botda hodim sifatida taniladi. Sklad yoki boshqa odamning umumiy telefoni bo‘lmasin.",
+    "enableLoginSave": "Tizimga kirishni ochish",
+    "enableLoginDone": "✅ Kirish ochildi",
+    "noLoginRow": "Bu hodim tizimga kirmaydi — avval «Tizimga kirish ochish»",
+    "alreadyLogin": "Bu hodim allaqachon tizimga kiradi",
+    "usernameExists": "Bu login boshqa xodimda bor",
+    "inactivePerson": "Hodim faol emas — avval «Faollashtirish»",
+    "badPhone": "Telefon noto‘g‘ri",
+    "salaryOnHodimlar": "Oylik: «Hodimlar: oylik va KPI» sahifasida →",
+    "newNoLoginLine": "Tizimga kirmaydigan hodim (masalan, Xitoy skladidagi ishchi — faqat oylik uchun) bu yerda emas, «Hodimlar: oylik va KPI» sahifasida qo‘shiladi.",
+    "newNoLoginGo": "Ochish →",
+    "newNoLoginList": "Tizimga kirmaydigan hodimlar: {count} ta",
+    "newNoLoginListHint": "Ulardan biriga kirish kerak bo‘lsa, yangi xodim qo‘shmang — uning kartasini oching va «Tizimga kirish ochish»: aks holda oyligi bir yozuvda, ishi boshqasida qoladi."
   },
   "settings": {
     "title": "Sozlamalar",
@@ -814,7 +833,8 @@
       "weightKg": "Og‘irlik, kg",
       "widthCm": "Eni, sm",
       "cargoStampedTo": "Yuk menejerga o‘tkazildi",
-      "receipts": "Prixodlar"
+      "receipts": "Prixodlar",
+      "loginEnabled": "Tizimga kirish"
     }
   },
   "profile": {
@@ -2827,7 +2847,8 @@
       "already_closed": "Vazifa allaqachon yopilgan",
       "bad_due_date": "Muddat noto‘g‘ri",
       "not_created": "Yaratib bo‘lmadi",
-      "repeat_needs_due": "Takrorlanuvchi vazifada muddat bo‘lishi shart"
+      "repeat_needs_due": "Takrorlanuvchi vazifada muddat bo‘lishi shart",
+      "assignee_no_login": "Bu hodim tizimga kirmaydi — vazifani ko‘ra olmaydi"
     },
     "repeat": "Takror",
     "repeatNever": "takrorlanmaydi",
@@ -3564,9 +3585,9 @@
     "chargeMoved": "Xizmat uchun qarz (mashina, rastamojka, ijara, oylik) endi xarajat formasida «Kim to‘ladi»ni tanlab yoziladi. Qarz shu yerga o‘zi tushadi va foyda hisobotiga ham kiradi.",
     "manualCharge": "Xarajatga bog‘lanmagan — foyda hisobotida yo‘q",
     "owedToUs": "Bizga qarzdor",
-    "login": "Hodim (login)",
+    "login": "Hodim",
     "noLogin": "Hodim emas",
-    "loginHint": "Login bog‘lansa, bu hodimning hisobi bo‘ladi: qoldig‘ini faqat buxgalter, admin va hodimning o‘zi ko‘radi.",
+    "loginHint": "Hodim bog‘lansa, bu uning hisobi bo‘ladi: qoldig‘ini faqat buxgalter, admin va — agar tizimga kirsa — hodimning o‘zi ko‘radi.",
     "userTaken": "Bu hodimning hisobi allaqachon ochilgan — bitta hodimga bitta hisob.",
     "staffForbidden": "Hodimlar hisobini faqat buxgalter va admin yuritadi.",
     "staffKinds": {
@@ -4761,7 +4782,17 @@
       "kpi_version_paid": "bu oy uchun KPI allaqachon to‘langan — yangi jadval faqat keyingi oydan",
       "category_clash": "bu xarajat turi boshqa to‘lov (oylik, KPI yoki upsale) uchun tanlangan — har biriga alohida tur kerak",
       "before_first_version": "jadval birinchi KPI oyidan oldin boshlana olmaydi",
-      "no_seller": "mijozga sotuvchi belgilanmagan"
+      "no_seller": "mijozga sotuvchi belgilanmagan",
+      "name_required": "ism kiritilmagan",
+      "bad_phone": "telefon noto‘g‘ri — faqat raqamlar, boshida + bo‘lishi mumkin (7–15 ta raqam)",
+      "phone_exists": "bu telefon boshqa hodimda bor — bo‘sh qoldiring yoki boshqasini yozing",
+      "username_exists": "bu login boshqa hodimda bor",
+      "same_name": "bu ism bilan ro‘yxatda hodim bor",
+      "is_login": "bu hodim tizimga kiradi — uni faqat admin «Boshqaruv → Xodimlar» sahifasida o‘zgartiradi",
+      "already_login": "bu hodim allaqachon tizimga kiradi",
+      "no_login_row": "bu hodim tizimga kirmaydi — avval admin «Boshqaruv → Xodimlar»da «Tizimga kirish ochish»ni bosadi",
+      "inactive_person": "hodim faol emas — avval «Qayta faollashtirish»",
+      "super_admin_locked": "super admin rolini faqat super admin bera oladi yoki olib tashlay oladi"
     },
     "table": {
       "title": "KPI jadvali",
@@ -4787,7 +4818,26 @@
     "salaryNotDue": "— bu oy hali to‘lanmaydi",
     "salaryMonth": "{month}:",
     "unstampedRepair": "→ {name} ga o‘tkazish",
-    "upsaleNotComputed": "Sotuvchi ulushining bir qismi ajratilgan vaqt ichida tekshirilmadi — «to‘lanadi» summasi to‘liq emas. Sotuvchini alohida oching."
+    "upsaleNotComputed": "Sotuvchi ulushining bir qismi ajratilgan vaqt ichida tekshirilmadi — «to‘lanadi» summasi to‘liq emas. Sotuvchini alohida oching.",
+    "noLogin": "tizimga kirmaydi",
+    "personNew": "Tizimga kirmaydigan hodim qo‘shish",
+    "personNewHint": "Masalan, Xitoy skladidagi ishchi: tizimga kirmaydi, bu sahifada faqat oyligi yuritiladi. Unga vazifa, xabar yoki mijoz berilmaydi. Keyinchalik unga kirish kerak bo‘lsa, admin «Boshqaruv → Xodimlar»da uning kartasidan «Tizimga kirish ochish»ni bosadi.",
+    "personName": "Ism familiya",
+    "personPhone": "Telefon (ixtiyoriy)",
+    "personPhoneHint": "Faqat raqamlar, boshida + bo‘lishi mumkin (7–15 ta raqam).",
+    "personAdd": "Qo‘shish",
+    "personAdded": "Qo‘shildi — kartasini ochish →",
+    "personSameName": "Bu ism bilan ro‘yxatda bor:",
+    "personSameNameMore": "va yana {count} ta",
+    "personSameNameAgain": "Shu odam bo‘lsa — uning kartasini oching (oylik o‘sha kartaga kiritiladi). Boshqa odam bo‘lsa — «Qo‘shish»ni yana bir marta bosing.",
+    "personStateLogin": "tizimga kiradi",
+    "personEdit": "Ism, telefon",
+    "personLeave": "Ishdan ketdi",
+    "personLeaveConfirm": "{name} ishdan ketdimi? Oxirgi oyligi hali to‘lanmagan bo‘lsa, uni «Xarajatlar»dagi «✓ To‘landi» bilan to‘lang — oddiy xarajat formasida ketgan hodimni tanlab bo‘lmaydi. Oylik shabloni o‘zi to‘xtamaydi: oxirgi oy yopilgach, kartadagi ✏️ «Summa, kun yoki to‘xtatish» orqali to‘xtating.",
+    "personReturn": "Qayta faollashtirish",
+    "enableLogin": "Tizimga kirish ochish →",
+    "salaryFailed": "Oyliklar o‘qilmadi — ketgan hodimlar ham ko‘rsatildi. Sahifani yangilang; hozircha «Oylik kiritish»ni bosmang.",
+    "salaryUnknown": "oylik o‘qilmadi"
   },
   "calcSheet": {
     "group": "Guruh",

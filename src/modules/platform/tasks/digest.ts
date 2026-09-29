@@ -5,6 +5,7 @@ import { notifications, users } from '../db/schema';
 import { logger } from '../logger';
 import { isTelegramMuted } from '../notifications/mutes';
 import { aboutLabels, myDay, overdueByAssignee, telegramDue } from './service';
+import { canLogInSql } from '../users/login';
 
 export const JOB_TASKS_MORNING = 'tasks.morning';
 
@@ -141,7 +142,7 @@ export async function sendTaskDigest(now = new Date()): Promise<number> {
   for (const row of await db
     .select({ id: users.id })
     .from(users)
-    .where(eq(users.active, true))) {
+    .where(canLogInSql())) {
     candidates.add(row.id);
   }
 

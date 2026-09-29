@@ -3,6 +3,7 @@ import { and, eq, gt, isNull } from 'drizzle-orm';
 import { cookies, headers } from 'next/headers';
 import { db } from '../db/client';
 import { sessions, users } from '../db/schema';
+import { canLogIn } from '../users/login';
 
 export const SESSION_COOKIE = 'gsr_session';
 const SESSION_DAYS = 30;
@@ -106,7 +107,11 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     .limit(1);
 
   const row = rows[0];
-  if (!row || !row.user.active) return null;
+  // `canLogIn` (0120): a deactivated person, or a row that is not a login,
+  // holds no session. A belt for the second half — sessions are minted only
+  // by `loginAction`, which asks the same rule — and the phone check is what
+  // keeps `SessionUser.phone` a string.
+  if (!row || !canLogIn(row.user) || row.user.phone === null) return null;
 
   // Slide expiry / last-seen at most once an hour to avoid a write per request.
   if (now.getTime() - row.session.lastSeenAt.getTime() > 60 * 60 * 1000) {

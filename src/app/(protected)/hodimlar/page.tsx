@@ -28,10 +28,11 @@ import {
 } from '@/modules/wms/staff/kpi-service';
 import { kpiVersions, versionFor } from '@/modules/wms/staff/kpi-table';
 import { calendarMonth, monthEndDay, monthRange } from '@/modules/wms/staff/month';
-import { staffTemplates } from '@/modules/wms/staff/salary';
+import { owedEmployeeIds, staffTemplates } from '@/modules/wms/staff/salary';
+import { visibleStaff } from '@/modules/wms/staff/visible';
 import { PageHeader } from '@/components/ui/page';
 import { StaffCard, type RecurringOptions } from './staff-card';
-import { StaffCategoryForm, StampRepairButton } from './forms';
+import { NoLoginPersonNew, StaffCategoryForm, StampRepairButton } from './forms';
 import { KpiTableForm } from './kpi-table-form';
 
 export const dynamic = 'force-dynamic';
@@ -42,7 +43,8 @@ const KPI_BUDGET_MS = 8000;
 /**
  * «Hodimlar» — every person's pay in one place (0117, the owner's 8a: «one
  * page: per employee salary amount, currency, pay day; KPI and upsale are
- * SEPARATE lines added to it»).
+ * SEPARATE lines added to it») — logins AND people who never sign in (0120,
+ * his 2b: a worker in a Chinese warehouse is minted, paid and let go here).
  *
  * The DOOR is `maySeeStaffMoney` = `finance.expenses`, the staff account's
  * own (the accountant and the admin). Inside it, each write asks its own
@@ -96,6 +98,10 @@ export default async function HodimlarPage({
         <p className="w-full text-2xs text-ink-500">{t('roundingNote')}</p>
       </form>
 
+      {/* Outside the slow boundary: it needs no server data, so the add fold
+          is there before the budgeted KPI reads finish. */}
+      <NoLoginPersonNew />
+
       <Suspense fallback={<div aria-hidden className="card h-64 animate-pulse bg-surface-sunken" />}>
         <StaffList
           actor={actor}
@@ -127,7 +133,7 @@ async function StaffList({
 
   // What went wrong while reading — a record the reads write into, not two
   // reassigned locals (a server component's body is not a place for those).
-  const failed = { behind: false, kpi: false };
+  const failed = { behind: false, kpi: false, salary: false };
   const safe = async <T,>(load: Promise<T>, fallback: T, where: string): Promise<T> => {
     try {
       return await load;
@@ -151,12 +157,38 @@ async function StaffList({
   // (5.6 s over twelve months on the shaped copy, and a month longer every
   // month); when it runs out, each seller's card links to their OWN pass
   // (`?hodim=`, 0.7 s), where the figure and «KPI to'lash» are.
-  const [people, templates, kpiLines, payables, kpiSellers, unstamped, versions, categories, accounts, warehouseRows, currencyRows, partnerRows, upsale] =
+  const [people, templates, owed, kpiLines, payables, kpiSellers, unstamped, versions, categories, accounts, warehouseRows, currencyRows, partnerRows, upsale] =
     await Promise.all([
-      db.select({ id: users.id, name: users.fullName, active: users.active }).from(users).orderBy(asc(users.fullName)),
+      // Payroll lists EVERY person, logins and people who never sign in —
+      // `visibleStaff` decides who shows (the fence's payroll allowlist).
+      db
+        .select({
+          id: users.id,
+          name: users.fullName,
+          active: users.active,
+          loginEnabled: users.loginEnabled,
+          phone: users.phone,
+        })
+        .from(users)
+        .orderBy(asc(users.fullName)),
       // The salary's state is THIS month's, whatever `?oy` the KPI is read
-      // for — the chip names the month it is about.
-      safe(staffTemplates(db, { today, salaryCategoryId: salarySetting }), [], 'templates'),
+      // for — the chip names the month it is about. A failed read is said,
+      // never an empty list that reads «nobody has a salary» (2b).
+      staffTemplates(db, { today, salaryCategoryId: salarySetting }).catch((err) => {
+        failed.salary = true;
+        if (isServerBehind(err)) failed.behind = true;
+        logger.error({ err }, '[hodimlar] templates');
+        return [];
+      }),
+      // Who a template still owes or is owed by — the due list's own set; a
+      // leaver stays listed until it is empty. null = unknown, so nobody is
+      // dropped (visibleStaff).
+      owedEmployeeIds(db, today).catch((err) => {
+        failed.salary = true;
+        if (isServerBehind(err)) failed.behind = true;
+        logger.error({ err }, '[hodimlar] owed');
+        return null;
+      }),
       withoutJit((exec) => kpiMonth(exec, month, hodim ? { kind: 'own', userId: hodim } : { kind: 'all' }, today), {
         deadlineMs: KPI_BUDGET_MS,
       }).catch((err) => {
@@ -220,19 +252,20 @@ async function StaffList({
     ]),
   );
 
-  // Everybody active, plus a deactivated person who still has cargo this
-  // month or money owed either way — a seller who left is still paid. When
-  // the KPI reads ran out of time nobody's figures are known, so a departed
-  // SELLER stays listed with «hisoblanmadi» rather than vanishing.
-  const visible = people.filter(
-    (p) =>
-      (hodim === null || p.id === hodim) &&
-      (p.active ||
-        kpiLines.has(p.id) ||
-        (payables.get(p.id)?.payableUsd ?? 0) > 0 ||
-        (payables.get(p.id)?.overpaidUsd ?? 0) > 0 ||
-        (failed.kpi && kpiSellers.has(p.id))),
-  );
+  // Everybody active, plus a deactivated person who is still owed or still
+  // owes — the due list's set, cargo this month, money either way (a seller
+  // who left is still paid, and so is a warehouse worker who left before his
+  // last «To'landi»). When the KPI reads ran out of time a departed SELLER
+  // stays listed with «hisoblanmadi»; `?hodim=` always shows that one person.
+  const visible = visibleStaff(people, {
+    hodim,
+    owed,
+    kpiLineIds: new Set(kpiLines.keys()),
+    payables,
+    kpiFailed: failed.kpi,
+    kpiSellers,
+  });
+  const mayGiveLogin = actor.permissions.has('admin.users.manage');
   const hasPay = (id: string) => templates.some((tpl) => tpl.employeeId === id && tpl.salary) || kpiLines.has(id);
   visible.sort((a, b) => Number(hasPay(b.id)) - Number(hasPay(a.id)) || a.name.localeCompare(b.name));
 
@@ -271,7 +304,8 @@ async function StaffList({
     payPartners: partnerRows.map((row) => ({ id: row.id, name: row.name })),
   };
   const payAccounts = accounts.filter((row) => row.active).map((row) => ({ id: row.id, name: row.name, currency: row.currency }));
-  const noSalaryYet = !templates.some((tpl) => tpl.salary);
+  // An empty list from a FAILED read must not say «nobody has a salary».
+  const noSalaryYet = !failed.salary && !templates.some((tpl) => tpl.salary);
   const categoryChoices = categories.map((c) => ({ id: c.id, name: c.name }));
 
   return (
@@ -282,6 +316,11 @@ async function StaffList({
       {failed.kpi ? (
         <p className="card !p-3 text-sm text-warn" data-testid="hodimlar-kpi-failed">
           ⚠ {t('kpiFailed')}
+        </p>
+      ) : null}
+      {failed.salary ? (
+        <p className="card !p-3 text-sm text-warn" data-testid="hodimlar-salary-failed">
+          ⚠ {t('salaryFailed')}
         </p>
       ) : null}
       {upsale?.truncated ? (
@@ -340,6 +379,9 @@ async function StaffList({
               upsale={seesUpsale ? (upsaleBySeller.get(person.id) ?? null) : null}
               upsaleHref={`/upsale?hodim=${person.id}&dan=${month}-01&gacha=${monthEndDay(month)}`}
               mayPay={mayPay}
+              mayGiveLogin={mayGiveLogin}
+              salaryUnavailable={failed.salary}
+              openSalaryForm={hodim === person.id && person.active && !failed.salary}
               payAccounts={payAccounts}
               today={today}
               salaryCategoryId={salarySetting}

@@ -3,6 +3,7 @@ import { db } from '../db/client';
 import { notifications, users } from '../db/schema';
 import { enqueue, JOB_SEND_TELEGRAM } from '../jobs/boss';
 import { isTelegramMuted } from './mutes';
+import { canLogInSql } from '../users/login';
 
 /**
  * One instant Telegram message to named colleagues.
@@ -38,13 +39,15 @@ export async function notifyStaffTelegram(input: {
   if (ids.length === 0) return 0;
 
   const rows = await db
-    .select({ id: users.id, muted: users.mutedNotificationTypes, active: users.active })
+    .select({ id: users.id, muted: users.mutedNotificationTypes, live: canLogInSql() })
     .from(users)
     .where(inArray(users.id, ids));
 
   let queued = 0;
   for (const person of rows) {
-    if (!person.active) continue;
+    // A colleague NOW (`canLogIn`, 0120): a leaver, or a person who never
+    // signs in, gets no queued row at all.
+    if (!person.live) continue;
     const muted = isTelegramMuted(person.muted, input.type);
     await db.insert(notifications).values({
       userId: person.id,

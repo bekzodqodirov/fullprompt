@@ -33,6 +33,7 @@ import { cabinetInlineKeyboard, setCabinetMenuButton } from './menu-button';
 import { adVisitFor, clearAdVisit } from './ad-intake';
 import { editText, quietHour, sendAlbum, sendPhoto, sendText, type ChatId } from './send';
 import { isCabinetText, staffForChat } from './staff-bot';
+import { canLogInSql } from '../users/login';
 
 /**
  * The client cabinet inside the bot (Phase 2.2, owner's spec 3.1/3.2) — the
@@ -439,7 +440,7 @@ async function reachableStaff(userIds: string[]): Promise<Set<string>> {
       telegramLinks,
       and(eq(telegramLinks.userId, users.id), eq(telegramLinks.status, 'linked'), isNotNull(telegramLinks.telegramChatId)),
     )
-    .where(and(inArray(users.id, [...new Set(userIds)]), eq(users.active, true)));
+    .where(and(inArray(users.id, [...new Set(userIds)]), canLogInSql()));
   return new Set(rows.filter((r) => !isTelegramMuted(r.muted, 'ClientBotMessage')).map((r) => r.id));
 }
 

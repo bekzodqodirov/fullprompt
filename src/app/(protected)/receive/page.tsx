@@ -19,6 +19,7 @@ import { myExpenseRequests } from '@/modules/wms/accounting/expense-requests';
 import { incomingForWarehouses, receivePrefillFor } from '@/modules/wms/pickups/service';
 import { IncomingPickups } from './incoming-pickups';
 import { mayCountMove } from '@/modules/wms/scanning/count-door';
+import { canLogInSql } from '@/modules/platform/users/login';
 
 export default async function ReceivePage({
   searchParams,
@@ -75,7 +76,7 @@ export default async function ReceivePage({
         .select({ id: users.id, name: users.fullName, warehouseId: userWarehouses.warehouseId })
         .from(userWarehouses)
         .innerJoin(users, eq(users.id, userWarehouses.userId))
-        .where(and(inArray(userWarehouses.warehouseId, officeWarehouses), eq(users.active, true)))
+        .where(and(inArray(userWarehouses.warehouseId, officeWarehouses), canLogInSql()))
         .orderBy(asc(users.fullName))
     : [];
   const receivers: Record<string, { id: string; name: string }[]> = {};

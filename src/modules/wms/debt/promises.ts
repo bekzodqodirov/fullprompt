@@ -6,6 +6,7 @@ import { logger } from '../../platform/logger';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { usersWithPermission, usersWithRoles } from '../../platform/notifications/service';
 import { createTask } from '../../platform/tasks/service';
+import { canLogIn, canLogInSql } from '../../platform/users/login';
 import { addDays, calendarDay, tashkentDay } from '../../platform/time/tashkent';
 import { clientBalanceUsd } from '../finance/service';
 import { ledgerAlias, netPaidUsdSql, signedUsdSql } from '../finance/ledger-sql';
@@ -176,15 +177,21 @@ async function openPromiseTask(
   ctx: AuditContext,
 ): Promise<void> {
   try {
+    // A leaver — or a person who never signs in (0120; reachable only by a
+    // forged client post) — falls back to the recorder rather than making
+    // `createTask` refuse into the catch below that only logs.
     const seller = client.sellerId
-      ? await db.query.users.findFirst({ where: eq(users.id, client.sellerId), columns: { active: true } })
+      ? await db.query.users.findFirst({
+          where: eq(users.id, client.sellerId),
+          columns: { active: true, loginEnabled: true },
+        })
       : null;
     const task = await createTask(
       {
         title: `${PROMISE_TASK_TITLE} · ${client.code}`,
         note: '',
         typeId: null,
-        assigneeId: seller?.active ? client.sellerId! : ctx.actorId!,
+        assigneeId: seller && canLogIn(seller) ? client.sellerId! : ctx.actorId!,
         // A bare DATE: `parseDue` treats only `YYYY-MM-DD` as all-day (#978's
         // lesson — a full ISO string became a timed 04:59 deadline).
         dueAt: client.dueOn,
@@ -284,10 +291,12 @@ async function promiseLedger(where: ReturnType<typeof sql>): Promise<
            c.client_code, c.name AS client_name, c.sales_manager_id AS seller_id,
            -- Who holds the call: the task's assignee (a person may have handed
            -- it on), else the client's seller, else whoever took the promise —
-           -- each only while ACTIVE, because the Telegram drain skips a
-           -- deactivated person in silence (openPromiseTask's own fallback).
-           coalesce(CASE WHEN ta.active THEN ta.id END,
-                    CASE WHEN us.active THEN us.id END,
+           -- each only while a colleague NOW (canLogIn — the rule
+           -- openPromiseTask's own fallback asks, so both readers of «who holds
+           -- the call» give one answer), because the Telegram drain skips a
+           -- deactivated person in silence.
+           coalesce(CASE WHEN ${canLogInSql('ta')} THEN ta.id END,
+                    CASE WHEN ${canLogInSql('us')} THEN us.id END,
                     p.created_by) AS caller_id,
            u.full_name AS recorder_name,
            coalesce(since.paid, 0) AS paid, coalesce(since.foreign_since, false) AS foreign_since,

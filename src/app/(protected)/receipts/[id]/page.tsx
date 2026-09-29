@@ -56,6 +56,7 @@ import { dayIn } from '@/modules/platform/time/tashkent';
 import { isBackdated, receivedDayBounds } from '@/modules/wms/receipts/received-day';
 import { palletDoorsFor } from '@/modules/wms/crates/service';
 import { ReceivedEditForm } from './received-edit-form';
+import { canLogInSql } from '@/modules/platform/users/login';
 
 export default async function ReceiptDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const actor = await getActor();
@@ -281,7 +282,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
         .select({ id: users.id, name: users.fullName })
         .from(userWarehouses)
         .innerJoin(users, eq(users.id, userWarehouses.userId))
-        .where(and(eq(userWarehouses.warehouseId, receipt.warehouseId), eq(users.active, true)))
+        .where(and(eq(userWarehouses.warehouseId, receipt.warehouseId), canLogInSql()))
         .orderBy(asc(users.fullName))
     : [];
   // «🧱 Palet qilish» per lot and warehouse (0112, Q10 d) — ONE grouped query.

@@ -38,6 +38,7 @@ export default async function UsersPage() {
             key={user.id}
             href={`/admin/users/${user.id}`}
             className={`card block hover:bg-surface-sunken ${user.active ? '' : 'opacity-50'}`}
+            data-testid="user-card"
           >
             <div className="flex items-baseline gap-2">
               <span className="font-semibold">{user.fullName}</span>
@@ -45,12 +46,24 @@ export default async function UsersPage() {
                 {user.active ? tc('active') : tc('inactive')}
               </span>
             </div>
-            <div className="mt-1 text-sm text-ink-700">
-              {user.phone} ·{' '}
-              {(rolesByUser.get(user.id) ?? [])
-                .map((code) => t(`roleNames.${code}`))
-                .join(', ') || '—'}
-            </div>
+            {/* A person who never signs in (0120) holds no role by invariant —
+                the chip says what they are, and a missing phone prints nothing
+                rather than «— · —». */}
+            {user.loginEnabled ? (
+              <div className="mt-1 text-sm text-ink-700">
+                {user.phone} ·{' '}
+                {(rolesByUser.get(user.id) ?? [])
+                  .map((code) => t(`roleNames.${code}`))
+                  .join(', ') || '—'}
+              </div>
+            ) : (
+              <div className="mt-1 flex flex-wrap items-baseline gap-2 text-sm text-ink-700">
+                <span className="chip chip-neutral" data-testid="user-no-login">
+                  {t('noLogin')}
+                </span>
+                {user.phone ? <span>{user.phone}</span> : null}
+              </div>
+            )}
           </Link>
         ))}
       </div>

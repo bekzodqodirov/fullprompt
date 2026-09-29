@@ -3,6 +3,7 @@ import { getFormatter, getTranslations } from 'next-intl/server';
 import { redirect } from 'next/navigation';
 import { db } from '@/modules/platform/db/client';
 import { auditLog, users, warehouses } from '@/modules/platform/db/schema';
+import { loginRowSql } from '@/modules/platform/users/login';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { tashkentDayStart } from '@/modules/platform/time/tashkent';
 
@@ -45,9 +46,12 @@ export default async function AuditBrowserPage({
     .orderBy(desc(auditLog.createdAt))
     .limit(200);
 
+  // The actor filter: every LOGIN, leavers included (they acted), and never a
+  // person who never signs in (0120) — they cannot have done anything here.
   const allUsers = await db
     .select({ id: users.id, fullName: users.fullName })
     .from(users)
+    .where(loginRowSql())
     .orderBy(users.fullName);
 
   return (

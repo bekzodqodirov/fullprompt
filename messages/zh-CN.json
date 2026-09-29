@@ -655,7 +655,26 @@
       "accountant": "会计",
       "viewer": "观察者"
     },
-    "superAdminLocked": "只有超级管理员可以授予或移除超级管理员角色"
+    "superAdminLocked": "只有超级管理员可以授予或移除超级管理员角色",
+    "noLogin": "不登录系统",
+    "enableLoginTitle": "开通登录",
+    "enableLoginHint": "该员工目前不登录系统——只在「员工：工资与KPI」页面记录其工资。开通后，他用下方的电话和密码登录，用该电话连接 Telegram 机器人，并在个人资料的「本月」中看到自己的工资。此操作不可撤销：离职时请点击「停用」。",
+    "enableLoginInactive": "该员工已停用。请先点击上方的「启用」，然后才能开通登录。",
+    "payrollPhone": "工资页面记录的电话：{phone}",
+    "payrollPhoneNone": "工资页面未记录电话。",
+    "loginPhoneHint": "请输入员工本人的号码（即使上面的号码正确也请重新输入）：他用此号码登录，Telegram 机器人也以此识别员工身份。不要填写仓库公用电话或他人号码。",
+    "enableLoginSave": "确认开通登录",
+    "enableLoginDone": "✅ 已开通登录",
+    "noLoginRow": "该员工没有登录——请先「开通登录」",
+    "alreadyLogin": "该员工已经可以登录",
+    "usernameExists": "该登录名已被占用",
+    "inactivePerson": "该员工已停用——请先「启用」",
+    "badPhone": "电话无效",
+    "salaryOnHodimlar": "工资：在「员工：工资与KPI」页面 →",
+    "newNoLoginLine": "不登录系统的员工（例如中国仓库的工人——仅用于工资）不在此处添加，而是在「员工：工资与KPI」页面添加。",
+    "newNoLoginGo": "打开 →",
+    "newNoLoginList": "不登录系统的员工：{count} 人",
+    "newNoLoginListHint": "如需为其中某人开通登录，请不要新建员工——打开其卡片并点击「开通登录」；否则工资在一条记录上，工作却在另一条上。"
   },
   "settings": {
     "title": "设置",
@@ -814,7 +833,8 @@
       "weightKg": "重量 kg",
       "widthCm": "宽 cm",
       "cargoStampedTo": "货物归属于",
-      "receipts": "入库单"
+      "receipts": "入库单",
+      "loginEnabled": "登录系统"
     }
   },
   "profile": {
@@ -2827,7 +2847,8 @@
       "already_closed": "任务已关闭",
       "bad_due_date": "截止时间无效",
       "not_created": "创建失败",
-      "repeat_needs_due": "重复任务必须有截止日期"
+      "repeat_needs_due": "重复任务必须有截止日期",
+      "assignee_no_login": "该员工不登录系统——看不到任务"
     },
     "repeat": "重复",
     "repeatNever": "不重复",
@@ -3564,9 +3585,9 @@
     "chargeMoved": "服务欠款（车辆、清关、租金、工资）现在在费用表单中选择「由谁支付」录入。欠款会自动记到这里，也会计入利润报表。",
     "manualCharge": "未关联费用——利润报表中没有",
     "owedToUs": "欠我们",
-    "login": "员工（登录账号）",
+    "login": "员工",
     "noLogin": "非员工",
-    "loginHint": "绑定登录账号后即为员工账户：余额仅会计、管理员及员工本人可见。",
+    "loginHint": "绑定员工后即为其账户：余额仅会计、管理员及（如其登录系统）员工本人可见。",
     "userTaken": "该员工已有账户——每位员工一个账户。",
     "staffForbidden": "员工账户仅由会计和管理员管理。",
     "staffKinds": {
@@ -4761,7 +4782,17 @@
       "kpi_version_paid": "该月KPI已支付——新表只能从之后的月份开始",
       "category_clash": "此费用类型已用于另一种支付（工资、KPI 或加价）——每种需要单独的类型",
       "before_first_version": "表格不能早于第一个 KPI 月份开始",
-      "no_seller": "客户没有指定销售"
+      "no_seller": "客户没有指定销售",
+      "name_required": "未填写姓名",
+      "bad_phone": "电话无效——仅限数字，开头可带 +（7–15 位）",
+      "phone_exists": "该电话已属于其他员工——请留空或填写其他号码",
+      "username_exists": "该登录名已被占用",
+      "same_name": "名单中已有同名员工",
+      "is_login": "该员工可登录系统——只能由管理员在「管理 → 员工」中修改",
+      "already_login": "该员工已经可以登录",
+      "no_login_row": "该员工没有登录——需先由管理员在「管理 → 员工」中「开通登录」",
+      "inactive_person": "该员工已停用——请先「重新启用」",
+      "super_admin_locked": "只有超级管理员可以授予或撤销超级管理员角色"
     },
     "table": {
       "title": "KPI表",
@@ -4787,7 +4818,26 @@
     "salaryNotDue": "——本月尚未到付款期",
     "salaryMonth": "{month}：",
     "unstampedRepair": "→ 转给{name}",
-    "upsaleNotComputed": "部分销售分成未能在规定时间内核对——“应付”金额不完整。请单独打开该销售。"
+    "upsaleNotComputed": "部分销售分成未能在规定时间内核对——“应付”金额不完整。请单独打开该销售。",
+    "noLogin": "不登录系统",
+    "personNew": "添加不登录系统的员工",
+    "personNewHint": "例如中国仓库的工人：不登录系统，本页只记录其工资。不会给他分配任务、消息或客户。以后如需登录，由管理员在「管理 → 员工」中其卡片上点击「开通登录」。",
+    "personName": "姓名",
+    "personPhone": "电话（可选）",
+    "personPhoneHint": "仅限数字，开头可带 +（7–15 位）。",
+    "personAdd": "添加",
+    "personAdded": "已添加——打开其卡片 →",
+    "personSameName": "名单中已有同名员工：",
+    "personSameNameMore": "另有 {count} 人",
+    "personSameNameAgain": "如果是同一个人——请打开其卡片（工资在那里设置）。如果是另一个人——请再按一次「添加」。",
+    "personStateLogin": "可登录",
+    "personEdit": "姓名、电话",
+    "personLeave": "已离职",
+    "personLeaveConfirm": "{name} 已离职吗？如果最后一个月工资尚未支付，请在「费用」中用「✓ 已付」支付——普通费用表单无法选择已离职员工。工资模板不会自动停止：最后一个月结清后，请在卡片上通过 ✏️「金额、日期或停用」停用。",
+    "personReturn": "重新启用",
+    "enableLogin": "开通登录 →",
+    "salaryFailed": "工资读取失败——已离职员工也一并显示。请刷新页面；暂时不要点「设置工资」。",
+    "salaryUnknown": "工资读取失败"
   },
   "calcSheet": {
     "group": "分组",

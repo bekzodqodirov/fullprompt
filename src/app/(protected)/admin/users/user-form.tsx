@@ -126,7 +126,11 @@ export function UserForm({
             ? t('phoneExists')
             : state.error === 'super_admin_locked'
               ? t('superAdminLocked')
-              : tc('error')}
+              : state.error === 'username_exists'
+                ? t('usernameExists')
+                : state.error === 'no_login_row'
+                  ? t('noLoginRow')
+                  : tc('error')}
         </p>
       )}
       <button type="submit" disabled={pending} className="btn-primary w-full disabled:opacity-60">

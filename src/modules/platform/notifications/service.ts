@@ -13,6 +13,7 @@ import {
   users,
 } from '../db/schema';
 import { logger } from '../logger';
+import { canLogInSql } from '../users/login';
 import { runAutomationRules } from '../automation/service';
 import { botRefused } from '../diagnostics/signals';
 import { buttonsFor } from '../telegram/staff-bot';
@@ -61,7 +62,8 @@ export async function usersWithRoles(roleCodes: string[]): Promise<string[]> {
     // here. Their user_roles rows survive deactivation by design (a
     // reactivated person gets their job back), so the filter lives HERE.
     .innerJoin(users, eq(userRoles.userId, users.id))
-    .where(and(inArray(roles.code, roleCodes), eq(users.active, true)));
+    // `canLogIn` (0120) — a belt: a person who never signs in holds no role.
+    .where(and(inArray(roles.code, roleCodes), canLogInSql()));
   return [...new Set(rows.map((r) => r.userId))];
 }
 
@@ -79,7 +81,7 @@ export async function usersWithPermission(code: string): Promise<string[]> {
     // Same rule as usersWithRoles above: a grant belongs to the role, but a
     // notification belongs to a person who still works here.
     .innerJoin(users, eq(userRoles.userId, users.id))
-    .where(and(eq(permissions.code, code), eq(users.active, true)));
+    .where(and(eq(permissions.code, code), canLogInSql()));
   return [...new Set(rows.map((r) => r.userId))];
 }
 

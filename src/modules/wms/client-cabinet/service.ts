@@ -17,6 +17,7 @@ import {
   warehouses,
 } from '../../platform/db/schema';
 import { getSetting } from '../../platform/settings/service';
+import { canLogInSql } from '../../platform/users/login';
 import { reachableAt } from '../crm/site-assign-rules';
 import { roundKg, roundM3, shareOf } from '../../platform/telegram/format';
 import { telegramPhoneUrl } from '../../platform/telegram/map-link';
@@ -1064,7 +1065,7 @@ export async function managersFor(
       checkedAt: tgAccounts.tgUsernameCheckedAt,
     })
     .from(clients)
-    .innerJoin(users, and(eq(users.id, clients.salesManagerId), eq(users.active, true)))
+    .innerJoin(users, and(eq(users.id, clients.salesManagerId), canLogInSql()))
     // `manager_user_id` is UNIQUE, so this joins at most one account.
     .leftJoin(tgAccounts, eq(tgAccounts.managerUserId, users.id))
     .where(inArray(clients.id, clientIds));

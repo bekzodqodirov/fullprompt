@@ -5,7 +5,7 @@ import type { StaffTemplate } from '@/modules/wms/staff/salary';
 import { RecurringForm, RecurringRowEdit } from '../accounting/expenses/recurring-form';
 import type { CategoryOption } from '../accounting/expenses/expense-form';
 import type { PayPartner, PayTill } from '../accounting/expenses/recurring-due';
-import { KpiPayForm } from './forms';
+import { KpiPayForm, NoLoginPersonActive, NoLoginPersonTools } from './forms';
 
 /**
  * One person on /hodimlar (0117, his 8a): the salary, then the KPI and the
@@ -42,6 +42,9 @@ export async function StaffCard({
   upsale,
   upsaleHref,
   mayPay,
+  mayGiveLogin,
+  salaryUnavailable,
+  openSalaryForm,
   payAccounts,
   today,
   salaryCategoryId,
@@ -50,7 +53,7 @@ export async function StaffCard({
   bandLabel,
   closesOn,
 }: {
-  person: { id: string; name: string; active: boolean };
+  person: { id: string; name: string; active: boolean; loginEnabled: boolean; phone: string | null };
   salary: StaffTemplate[];
   others: StaffTemplate[];
   kpi: KpiMonthLine | undefined;
@@ -67,6 +70,15 @@ export async function StaffCard({
   upsale: { earnedUsd: number; payableUsd: number; notComputed: number } | null;
   upsaleHref: string;
   mayPay: boolean;
+  /** `admin.users.manage` — the «Tizimga kirish ochish» link to /admin/users is drawn only for them (0120). */
+  mayGiveLogin: boolean;
+  /**
+   * The salary reads failed: the card says so and offers NO «Oylik kiritish»
+   * — nobody mints a duplicate template while the page cannot see the first.
+   */
+  salaryUnavailable: boolean;
+  /** Land here open: the person was just added, or `?hodim=` asked for them (2b). */
+  openSalaryForm: boolean;
   payAccounts: { id: string; name: string; currency: string }[];
   today: string;
   salaryCategoryId: string;
@@ -99,12 +111,37 @@ export async function StaffCard({
       <div className="flex flex-wrap items-baseline gap-2">
         <span className="font-semibold">{person.name}</span>
         {!person.active ? <span className="chip chip-neutral">{t('inactive')}</span> : null}
+        {/* A person who never signs in (0120, his 2b): paid here, a colleague
+            nowhere else. The way to a login is the admin's, on /admin/users. */}
+        {!person.loginEnabled ? (
+          <span className="chip chip-neutral" data-testid="staff-no-login">
+            {t('noLogin')}
+          </span>
+        ) : null}
+        {!person.loginEnabled && person.active && mayGiveLogin ? (
+          <Link
+            href={`/admin/users/${person.id}`}
+            className="text-xs font-semibold text-brand-700"
+            data-testid="staff-enable-login"
+          >
+            {t('enableLogin')}
+          </Link>
+        ) : null}
+        {!person.loginEnabled ? (
+          <NoLoginPersonActive person={{ id: person.id, name: person.name, active: person.active }} />
+        ) : null}
       </div>
 
       {/* Oylik */}
       <div className="space-y-1" data-testid="staff-salary">
         <p className="text-2xs uppercase text-ink-500">{t('salary')}</p>
-        {salary.length === 0 ? <p className="text-sm text-ink-500">{t('salaryNone')}</p> : null}
+        {salaryUnavailable ? (
+          <p className="text-sm text-warn" data-testid="staff-salary-unknown">
+            {t('salaryUnknown')}
+          </p>
+        ) : salary.length === 0 ? (
+          <p className="text-sm text-ink-500">{t('salaryNone')}</p>
+        ) : null}
         {salary.map((tpl) => (
           <div key={tpl.id} className="flex flex-wrap items-baseline gap-2 text-sm">
             <span className="font-mono font-bold tabular-nums">
@@ -137,8 +174,8 @@ export async function StaffCard({
             />
           </div>
         ))}
-        {salary.length === 0 && options.categories.length > 0 ? (
-          <details data-testid="staff-salary-new">
+        {!salaryUnavailable && salary.length === 0 && options.categories.length > 0 ? (
+          <details data-testid="staff-salary-new" open={openSalaryForm}>
             <summary className="cursor-pointer text-xs font-semibold text-brand-700">✏️ {t('salarySet')}</summary>
             <div className="mt-2">
               <RecurringForm
@@ -164,6 +201,10 @@ export async function StaffCard({
           </p>
         ) : null}
       </div>
+
+      {!person.loginEnabled ? (
+        <NoLoginPersonTools person={{ id: person.id, name: person.name, phone: person.phone }} />
+      ) : null}
 
       {/* KPI */}
       {showKpi ? (

@@ -46,11 +46,27 @@ export const users = pgTable(
   'users',
   {
     id: id(),
-    phone: text('phone').notNull().unique(),
+    /**
+     * NULL only on a person who never signs in (0120): the accountant often
+     * has no number for a warehouse worker in China. A login always has one
+     * (`users_login_phone_check`) — it is how the login box and the staff bot
+     * identify them.
+     */
+    phone: text('phone').unique(),
     username: text('username').unique(),
     fullName: text('full_name').notNull(),
-    passwordHash: text('password_hash').notNull(),
+    /** NULL exactly when `loginEnabled` is false (`users_login_password_check`). */
+    passwordHash: text('password_hash'),
     quickPinHash: text('quick_pin_hash'),
+    /**
+     * Whether this row is a LOGIN at all (0120, the owner's 2b). False = a
+     * person who is paid here and never signs in — a worker in a Chinese
+     * warehouse: no password, no username, no PIN, no roles, no warehouses.
+     * «A colleague now» is `canLogIn` (platform/users/login.ts), never this
+     * column or `active` read alone; only platform/users/service.ts writes it,
+     * and nothing turns a login back into a no-login row.
+     */
+    loginEnabled: boolean('login_enabled').notNull().default(true),
     locale: text('locale').notNull().default('ru'),
     // Telegram mute list (spec §11): event type names, or 'all'. The in-app
     // bell is never muted — it mirrors everything.
@@ -86,6 +102,10 @@ export const users = pgTable(
       'users_telegram_username_check',
       sql`${t.telegramUsername} IS NULL OR ${t.telegramUsername} ~ '^[A-Za-z][A-Za-z0-9_]{3,31}$'`,
     ),
+    check('users_login_password_check', sql`${t.loginEnabled} = (${t.passwordHash} IS NOT NULL)`),
+    check('users_login_phone_check', sql`NOT ${t.loginEnabled} OR ${t.phone} IS NOT NULL`),
+    check('users_login_username_check', sql`${t.loginEnabled} OR ${t.username} IS NULL`),
+    check('users_login_pin_check', sql`${t.loginEnabled} OR ${t.quickPinHash} IS NULL`),
   ],
 );
 

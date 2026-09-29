@@ -1,10 +1,19 @@
 'use client';
 
 import { useActionState, useState, useTransition } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { latestTxDate } from '@/modules/wms/finance/dates';
-import { payKpiAction, setStaffCategoryAction, stampClientCargoAction, type StaffFormState } from './actions';
+import {
+  editPersonAction,
+  mintPersonAction,
+  payKpiAction,
+  setPersonActiveAction,
+  setStaffCategoryAction,
+  stampClientCargoAction,
+  type StaffFormState,
+} from './actions';
 
 /**
  * A refusal in WORDS — `hodimlar.refusal.<code>`. The key is built at runtime,
@@ -211,5 +220,213 @@ export function StampRepairButton({ clientId, sellerName }: { clientId: string; 
       {state.ok && <span className="text-sm text-good">✅</span>}
       <RefusalText state={state} />
     </form>
+  );
+}
+
+/**
+ * «➕ Tizimga kirmaydigan hodim qo'shish» (0120, the owner's 2b) — a warehouse
+ * worker in China who is paid here and never signs in.
+ *
+ * Controlled, no `<form action>` (KpiPayForm's pattern): a refusal keeps what
+ * was typed. On success it LANDS on the new person's card
+ * (`/hodimlar?hodim=<id>`, the fast one-person pass) with «Oylik kiritish»
+ * open — adding somebody is the first half of giving them a salary.
+ *
+ * A name already listed is NAMED, never a bare «shu ism bor»: each match is a
+ * link to its card with its state, and the second press mints (any edit of the
+ * name takes the confirmation back — the quick-create rule).
+ */
+export function NoLoginPersonNew() {
+  const t = useTranslations('hodimlar');
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [confirm, setConfirm] = useState(false);
+  const [result, setResult] = useState<StaffFormState>({});
+
+  return (
+    <details className="card !p-3" data-testid="hodimlar-person-new">
+      <summary className="cursor-pointer text-sm font-semibold text-brand-700">➕ {t('personNew')}</summary>
+      <div className="mt-2 space-y-2">
+        <p className="text-2xs text-ink-500">{t('personNewHint')}</p>
+        <label className="block">
+          <span className="label">{t('personName')}</span>
+          <input
+            className="input"
+            value={name}
+            onChange={(e) => {
+              setName(e.target.value);
+              setConfirm(false);
+            }}
+            data-testid="hodimlar-person-name"
+          />
+        </label>
+        <label className="block">
+          <span className="label">{t('personPhone')}</span>
+          <input
+            className="input"
+            inputMode="tel"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            data-testid="hodimlar-person-phone"
+          />
+          <span className="mt-1 block text-2xs text-ink-500">{t('personPhoneHint')}</span>
+        </label>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className="btn-primary"
+            data-testid="hodimlar-person-save"
+            disabled={pending || name.trim() === ''}
+            onClick={() =>
+              startTransition(async () => {
+                const res = await mintPersonAction({ fullName: name, phone, confirmSameName: confirm });
+                setResult(res);
+                if (res.ok && res.id) {
+                  router.push(`/hodimlar?hodim=${res.id}`);
+                  return;
+                }
+                if (res.error === 'same_name') setConfirm(true);
+              })
+            }
+          >
+            {t('personAdd')}
+          </button>
+          {result.ok && result.id ? (
+            <Link className="chip chip-good" data-testid="hodimlar-person-added" href={`/hodimlar?hodim=${result.id}`}>
+              ✅ {t('personAdded')}
+            </Link>
+          ) : null}
+          {result.error && result.error !== 'same_name' ? <RefusalText state={result} /> : null}
+        </div>
+        {result.error === 'same_name' ? (
+          <div className="card space-y-1 !p-2 text-sm" data-testid="hodimlar-person-same-name">
+            <p>{t('personSameName')}</p>
+            <ul className="space-y-1">
+              {(result.matches ?? []).map((m) => (
+                <li key={m.id} className="flex flex-wrap items-baseline gap-x-2">
+                  <Link
+                    href={`/hodimlar?hodim=${m.id}`}
+                    className="font-semibold text-brand-700"
+                    data-testid="hodimlar-person-match"
+                  >
+                    {m.name}
+                  </Link>
+                  <span className="text-2xs text-ink-500">
+                    {m.loginEnabled ? t('personStateLogin') : t('noLogin')}
+                    {m.active ? '' : ` · ${t('inactive')}`}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            {result.more ? (
+              <p className="text-2xs text-ink-500">{t('personSameNameMore', { count: result.more })}</p>
+            ) : null}
+            <p className="text-2xs text-ink-600">{t('personSameNameAgain')}</p>
+          </div>
+        ) : null}
+      </div>
+    </details>
+  );
+}
+
+/**
+ * «Ishdan ketdi» / «Qayta faollashtirish» — ONE visible button in the card's
+ * header of a person who never signs in. The confirm tells the right order:
+ * pay the last month through «To'landi», then stop the template.
+ */
+export function NoLoginPersonActive({ person }: { person: { id: string; name: string; active: boolean } }) {
+  const t = useTranslations('hodimlar');
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [result, setResult] = useState<StaffFormState>({});
+  const press = (active: boolean) =>
+    startTransition(async () => {
+      const res = await setPersonActiveAction(person.id, active);
+      setResult(res);
+      if (res.ok) router.refresh();
+    });
+
+  return (
+    <span className="ml-auto inline-flex flex-wrap items-center gap-2">
+      {person.active ? (
+        <button
+          type="button"
+          className="btn-danger"
+          data-testid="staff-person-leave"
+          disabled={pending}
+          onClick={() => {
+            if (window.confirm(t('personLeaveConfirm', { name: person.name }))) press(false);
+          }}
+        >
+          {t('personLeave')}
+        </button>
+      ) : (
+        <button
+          type="button"
+          className="btn-secondary"
+          data-testid="staff-person-return"
+          disabled={pending}
+          onClick={() => press(true)}
+        >
+          {t('personReturn')}
+        </button>
+      )}
+      <RefusalText state={result} />
+    </span>
+  );
+}
+
+/** «✏️ Ism, telefon» — the name and the payroll phone of a person who never signs in. */
+export function NoLoginPersonTools({ person }: { person: { id: string; name: string; phone: string | null } }) {
+  const t = useTranslations('hodimlar');
+  const tc = useTranslations('common');
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [name, setName] = useState(person.name);
+  const [phone, setPhone] = useState(person.phone ?? '');
+  const [result, setResult] = useState<StaffFormState>({});
+
+  return (
+    <details className="border-t border-line pt-2" data-testid="staff-person-edit">
+      <summary className="cursor-pointer text-xs font-semibold text-brand-700">✏️ {t('personEdit')}</summary>
+      <div className="mt-2 space-y-2">
+        <label className="block">
+          <span className="label">{t('personName')}</span>
+          <input className="input" value={name} onChange={(e) => setName(e.target.value)} data-testid="staff-person-name" />
+        </label>
+        <label className="block">
+          <span className="label">{t('personPhone')}</span>
+          <input
+            className="input"
+            inputMode="tel"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            data-testid="staff-person-phone"
+          />
+          <span className="mt-1 block text-2xs text-ink-500">{t('personPhoneHint')}</span>
+        </label>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className="btn-primary"
+            data-testid="staff-person-save"
+            disabled={pending || name.trim() === ''}
+            onClick={() =>
+              startTransition(async () => {
+                const res = await editPersonAction(person.id, { fullName: name, phone });
+                setResult(res);
+                if (res.ok) router.refresh();
+              })
+            }
+          >
+            {tc('save')}
+          </button>
+          {result.ok ? <span className="text-sm text-good">✅ {tc('saved')}</span> : null}
+          <RefusalText state={result} />
+        </div>
+      </div>
+    </details>
   );
 }

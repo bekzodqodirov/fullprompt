@@ -61,6 +61,37 @@ describe('a link is drawn only where its page admits the reader', () => {
   });
 });
 
+describe('a person who never signs in (0120, his 2b)', () => {
+  it('the list is the pure rule over every person, the due list’s «owed» included', () => {
+    expect(page).toContain('visibleStaff(');
+    expect(page).toContain('owedEmployeeIds(');
+    expect(page).toContain('loginEnabled: users.loginEnabled');
+  });
+
+  it('a failed salary read is SAID — by both reads — and never reads «nobody has a salary»', () => {
+    const templatesCatch = /staffTemplates\([^)]*\)\.catch\(\(err\) => \{([\s\S]*?)\}\)/.exec(page);
+    const owedCatch = /owedEmployeeIds\([^)]*\)\.catch\(\(err\) => \{([\s\S]*?)\}\)/.exec(page);
+    expect(templatesCatch, 'templates catch').not.toBeNull();
+    expect(owedCatch, 'owed catch').not.toBeNull();
+    expect(templatesCatch![1]).toContain('failed.salary = true');
+    expect(owedCatch![1]).toContain('failed.salary = true');
+    expect(page).toMatch(/failed\.salary \? \(\s*<p[^>]*data-testid="hodimlar-salary-failed"/);
+    expect(page).toMatch(/const noSalaryYet = !failed\.salary &&/);
+  });
+
+  it('the card names it, and its tools hang on the same flag', () => {
+    expect(card).toMatch(/!person\.loginEnabled \? \(\s*<span[^>]*data-testid="staff-no-login"/);
+    expect(card).toMatch(/!person\.loginEnabled \? \(\s*<NoLoginPersonTools/);
+    expect(card).toMatch(/!person\.loginEnabled \? \(\s*<NoLoginPersonActive/);
+    expect(card).toMatch(/mayGiveLogin \? \(\s*<Link[\s\S]{0,200}data-testid="staff-enable-login"/);
+  });
+
+  it('no «Oylik kiritish» while the salary read is down; the fold opens where it was asked for', () => {
+    expect(card).toMatch(/!salaryUnavailable && salary\.length === 0/);
+    expect(card).toMatch(/data-testid="staff-salary-new" open=\{openSalaryForm\}/);
+  });
+});
+
 describe('the table editor edits the version in force THIS month', () => {
   it('prefilled from the current month’s version, never the viewed month’s', () => {
     expect(page).toContain('const editVersion = versionFor(versions, thisMonth);');
