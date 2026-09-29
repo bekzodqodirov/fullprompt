@@ -127,6 +127,11 @@ pnpm build && pnpm e2e  # 44 e2e
 - Migrations are hand-written SQL + an entry in `meta/_journal.json`. Drizzle
   wraps **all pending migrations in one transaction**, so `CREATE INDEX
   CONCURRENTLY` is impossible and a failure rolls everything back.
+- **`pnpm` is not in the node image — corepack DOWNLOADS it** from
+  registry.npmjs.org the first time it runs, into that stage's own cache. Every
+  Dockerfile stage that runs `pnpm` must descend from the deps stage (where the
+  install downloaded it), or each code change re-fetches it and a deploy dies
+  on npm's schedule (#1228). Fenced by `tests/unit/dockerfile-offline.test.ts`.
 
 ## Where the truth lives
 
@@ -2234,6 +2239,20 @@ BOX's word; a receipt is `'voided'`). 8 red proofs by string edit; the guard's
 fence first stayed GREEN under `false && ` and now pins the condition
 verbatim. STATED to him: a KNOWN client's cargo has no field for a factory's
 text.
+
+**Round — the deploy that could not reach npm (2026-09-29; DECISIONS #1228;
+NO migration).** Deploying #104, his `docker compose build migrate` died at
+`RUN … pnpm build` on «Corepack is about to download … pnpm-10.33.0.tgz» →
+`ConnectTimeoutError` (production untouched: compose builds before it
+recreates). The build stage started `FROM base`, so it lacked the pnpm that
+corepack had downloaded during deps' `pnpm install`, and re-fetched it on EVERY
+code change. Now `FROM deps AS build` (the `COPY --from=deps node_modules`
+line is gone). MEASURED in Docker (dockerd starts in this container; a local
+`node:22-slim` retag carries the sandbox proxy's CA so the production
+Dockerfile stays byte-identical; iptables DROP on the registry's twelve
+addresses reproduces his `UND_ERR_CONNECT_TIMEOUT`): old graph + a code change
+fails in 11 s with his exact log, new graph builds with no download line.
+Derived fence over the stage graph + compose's pnpm services; red-proven.
 
 **Latest migration: 0119** (`price_icons`; ledger must reach **120**). Before
 it: 0118 (`border_queue`), 0117 (`staff_pay`) — `when` …096-…098. Before them:
