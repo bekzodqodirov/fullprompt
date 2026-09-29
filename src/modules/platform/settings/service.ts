@@ -160,6 +160,20 @@ export const SETTING_DEFAULTS = {
    */
   upsale_expense_category_id: '',
   /**
+   * The expense category a KPI payout is written into (0117) — the upsale
+   * category's rule for the same reason: mandatory, and refused in words while
+   * empty, because a commission paid out of «Oyliklar» would sit on the salary
+   * line and close that seller's month on the due list.
+   */
+  kpi_expense_category_id: '',
+  /**
+   * Which expense category IS the salary (0117, /hodimlar): a person's
+   * recurring template in it reads as their «Oylik», any other template of
+   * theirs as «Boshqa doimiy to'lovlar». Empty = every template naming a
+   * person reads as salary, and the screen asks for the category in words.
+   */
+  salary_expense_category_id: '',
+  /**
    * The funnel stage a request for a price lands on (owner, round 83: «kim
    * botga tashlayotgan bo'lsa o'sha odamning accountiga biriktirilishi kerak
    * … va hisoblatish etapiga tushishi kerak»).

@@ -85,6 +85,13 @@ export type UnpricedScope =
   | { kind: 'receipts'; receiptIds: string[] }
   /** The cartons that rode or stand on one truck — its riders (`riderRowsSql`). */
   | { kind: 'trip'; batchId: string }
+  /**
+   * The KPI's cartons (0117): receipts carrying a seller STAMP, received in
+   * [from, to) — one seller's, or every stamped seller's when `sellerId` is
+   * absent. The same set `staff/cargo.ts` counts, so the paid part is always
+   * a part of the whole.
+   */
+  | { kind: 'stamped'; sellerId: string | undefined; from: Date; to: Date }
   | {
       kind: 'company';
       warehouseIds: string[] | undefined;
@@ -173,6 +180,10 @@ export function unpricedScopeSql(scope: UnpricedScope): SQL {
       return scope.receiptIds.length ? sql`rl.receipt_id IN (${idList(scope.receiptIds)})` : sql`false`;
     case 'trip':
       return sql`b.id IN (SELECT tr.box_id FROM (${riderRowsSql({ batches: sql`${scope.batchId}::uuid` })}) tr)`;
+    case 'stamped':
+      return sql`${scope.sellerId ? sql`r.sales_manager_id = ${scope.sellerId}::uuid` : sql`r.sales_manager_id IS NOT NULL`}
+        AND r.received_at >= ${scope.from.toISOString()}::timestamptz
+        AND r.received_at < ${scope.to.toISOString()}::timestamptz`;
     case 'company': {
       const owner =
         scope.ownerId !== undefined

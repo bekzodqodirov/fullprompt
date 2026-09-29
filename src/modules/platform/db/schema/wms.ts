@@ -128,6 +128,14 @@ export const receipts = pgTable(
      */
     receivedByUserId: uuid('received_by_user_id').references(() => users.id),
     receivedByName: text('received_by_name'),
+    /**
+     * The client's seller ON THE DAY this cargo was received (0117, the
+     * owner's 2a) — written in the same statement as `clientId` by its two
+     * writers (`stampFor`, wms/staff/stamp.ts), never later from the client
+     * book. NULL = nobody was the seller then; the first seller named
+     * afterwards takes it (`stampUnattributedCargo`).
+     */
+    salesManagerId: uuid('sales_manager_id').references(() => users.id),
     voidedAt: timestamp('voided_at', { withTimezone: true }),
     voidedBy: uuid('voided_by').references(() => users.id),
     voidReason: text('void_reason'),
@@ -136,6 +144,12 @@ export const receipts = pgTable(
   },
   (t) => [
     check('receipts_status_check', sql`${t.status} IN ('draft', 'confirmed', 'voided')`),
+    index('receipts_seller_received_idx')
+      .on(t.salesManagerId, t.receivedAt)
+      .where(sql`${t.status} = 'confirmed' AND ${t.salesManagerId} IS NOT NULL`),
+    index('receipts_unstamped_received_idx')
+      .on(t.receivedAt)
+      .where(sql`${t.status} = 'confirmed' AND ${t.salesManagerId} IS NULL AND ${t.clientId} IS NOT NULL`),
     check(
       'receipts_void_consistency',
       sql`(${t.voidedAt} IS NULL) = (${t.voidReason} IS NULL)`,
@@ -3514,5 +3528,68 @@ export const cargoWaitAlerts = pgTable(
   (t) => [
     primaryKey({ columns: [t.clientId, t.warehouseId, t.level] }),
     check('cargo_wait_alerts_level_check', sql`${t.level} IN (1, 2)`),
+  ],
+);
+
+/**
+ * The owner's KPI table (0117, answers 3a/4a): $ per m³ by the month's m³ tier
+ * × the month's average-density band, one row per cell, VERSIONED by the month
+ * it starts to apply and never read before its first version (no earliest-row
+ * fallback). NULL max = the open top. The engine is wms/staff/kpi-engine.ts.
+ */
+export const kpiRates = pgTable(
+  'kpi_rates',
+  {
+    id: id(),
+    effectiveMonth: date('effective_month').notNull(),
+    maxM3: numeric('max_m3', { precision: 10, scale: 3 }),
+    maxDensity: integer('max_density'),
+    rateUsd: numeric('rate_usd', { precision: 8, scale: 2 }).notNull(),
+    createdBy: uuid('created_by').references(() => users.id),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check('kpi_rates_month_check', sql`${t.effectiveMonth} = date_trunc('month', ${t.effectiveMonth})::date`),
+    check('kpi_rates_max_m3_check', sql`${t.maxM3} IS NULL OR (${t.maxM3} > 0 AND ${t.maxM3} <> 'NaN'::numeric)`),
+    check('kpi_rates_max_density_check', sql`${t.maxDensity} IS NULL OR ${t.maxDensity} > 0`),
+    check('kpi_rates_rate_check', sql`${t.rateUsd} >= 0 AND ${t.rateUsd} <> 'NaN'::numeric`),
+    uniqueIndex('kpi_rates_cell').on(t.effectiveMonth, sql`coalesce(${t.maxM3}, -1)`, sql`coalesce(${t.maxDensity}, -1)`),
+  ],
+);
+
+/**
+ * A KPI payout (0117): the expense that moved the money plus a snapshot of
+ * what it paid for. LIVE while its expense is (every reader joins `expenses`
+ * with `voided_at IS NULL`), so voiding the expense re-opens the money by
+ * derivation — no hook. Netted per seller over every closed month.
+ */
+export const kpiPayouts = pgTable(
+  'kpi_payouts',
+  {
+    id: id(),
+    sellerId: uuid('seller_id')
+      .notNull()
+      .references(() => users.id),
+    expenseId: uuid('expense_id')
+      .notNull()
+      .unique()
+      .references(() => expenses.id),
+    amountUsd: numeric('amount_usd', { precision: 14, scale: 2 }).notNull(),
+    throughMonth: date('through_month').notNull(),
+    earnedPaidUsd: numeric('earned_paid_usd', { precision: 14, scale: 2 }).notNull(),
+    paidBeforeUsd: numeric('paid_before_usd', { precision: 14, scale: 2 }).notNull(),
+    /** [{month,m3,kg,density,tierMaxM3,bandMaxDensity,rate,paidM3,earnedPaidUsd}] */
+    breakdown: jsonb('breakdown').notNull(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check('kpi_payouts_amount_check', sql`${t.amountUsd} > 0 AND ${t.amountUsd} <> 'NaN'::numeric`),
+    check('kpi_payouts_month_check', sql`${t.throughMonth} = date_trunc('month', ${t.throughMonth})::date`),
+    check('kpi_payouts_earned_check', sql`${t.earnedPaidUsd} <> 'NaN'::numeric`),
+    check('kpi_payouts_before_check', sql`${t.paidBeforeUsd} <> 'NaN'::numeric`),
+    index('kpi_payouts_seller_idx').on(t.sellerId),
   ],
 );

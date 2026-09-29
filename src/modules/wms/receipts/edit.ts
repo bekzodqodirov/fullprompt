@@ -29,6 +29,7 @@ import { receivedAtFor, receivedDayRefusal, type ReceivedDayRefusal } from './re
 import { checkReceiver, ReceiptError, receivedBySchema } from './service';
 import { mayCountMove } from '../scanning/count-door';
 import { dayIn } from '../../platform/time/tashkent';
+import { stampFor } from '../staff/stamp';
 
 export const editLotSchema = z.object({
   lotId: z.string().uuid(),
@@ -797,7 +798,16 @@ export async function assignReceiptClient(
     // owns the cargo underneath it. Safe because «unclaimed» is decided by
     // `clientId IS NULL` everywhere, never by the marking's presence — so a
     // claimed receipt that keeps its marking is still counted as claimed.
-    await tx.update(receipts).set({ clientId }).where(eq(receipts.id, receiptId));
+    //
+    // The seller stamp moves WITH the client, in the same statement (0117):
+    // a claim stamps whoever sells to the claimant now, and an A→B
+    // correction restamps to B's seller — the cargo was never A's. A month
+    // already paid to A is absorbed by the per-seller netting, never paid
+    // twice (wms/staff/kpi-service.ts).
+    await tx
+      .update(receipts)
+      .set({ clientId, salesManagerId: stampFor(sql`${clientId}::uuid`) })
+      .where(eq(receipts.id, receiptId));
     // Re-asked under the row lock the UPDATE just took: a compensation
     // written between the pre-check and here waited on the prixod's lock
     // (`addCompensation` takes it FOR UPDATE first) or is seen now.

@@ -12,7 +12,6 @@ import {
   bySeller,
   earnedOf,
   pendingBelowFloor,
-  sellerCargo,
   upsaleRows,
   UPSALE_CAP,
   type UpsaleRow,
@@ -22,6 +21,8 @@ import { PageHeader } from '@/components/ui/page';
 import { hrefWith } from '@/components/list/board-filter';
 import { CategoryForm, PayForm, ReleaseButton } from './pay-form';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
+import { db } from '@/modules/platform/db/client';
+import { stampedCargo, type StampedCargo } from '@/modules/wms/staff/cargo';
 
 /**
  * «Sotuvchi ulushi» — what a seller earns, and the accountant's Friday.
@@ -79,7 +80,7 @@ export default async function UpsalePage({
   let rows: UpsaleRow[] = [];
   let truncated = false;
   let pending: Awaited<ReturnType<typeof pendingBelowFloor>> = [];
-  let cargo: Awaited<ReturnType<typeof sellerCargo>> = [];
+  let cargo: StampedCargo[] = [];
   let accounts: Awaited<ReturnType<typeof listAccounts>> = [];
   let categories: Awaited<ReturnType<typeof listCategories>> = [];
   let categoryId = '';
@@ -92,7 +93,14 @@ export default async function UpsalePage({
     });
     rows = res.rows;
     truncated = res.truncated;
-    cargo = await sellerCargo(scope, actor.id, { from: period.dan, to: period.gacha, sellerId: params.hodim });
+    // The seller's cargo is the RECEIPT's seller stamp now, the KPI's one
+    // reader (0117) — the deal-owner attribution this block had (#1047/#1055)
+    // is overturned by his 1a: «the client card's seller», on the day the
+    // cargo was received (2a). A forged `?hodim` narrows nothing it may not
+    // see: the own scope ignores it, and the all scope only filters.
+    cargo = (
+      await stampedCargo(db, period, scope === 'own' ? { kind: 'own', userId: actor.id } : { kind: 'all' })
+    ).filter((row) => scope === 'own' || !params.hodim || row.sellerId === params.hodim);
     if (mayApproveBelowFloor(actor)) pending = await pendingBelowFloor();
     if (actor.permissions.has('finance.expenses') && scope === 'all') {
       // The payer's two questions: out of which till, and under which cost
@@ -175,9 +183,10 @@ export default async function UpsalePage({
         ))}
       </div>
 
-      {/* The monthly KPI (his 3a/x): the cargo each seller brought, by the
-          day the warehouse confirmed it — a different clock from the offers
-          above, said in the heading. */}
+      {/* The cargo each seller brought (his 1a/2a/5b): the receipt's seller
+          stamp, by the day the cargo was RECEIVED — a different clock from
+          the offers above, said in the heading. The KPI itself (the table,
+          the paid part, the payout) lives on /hodimlar. */}
       {cargo.length > 0 ? (
         <section className="card !p-3" data-testid="upsale-cargo-kpi">
           <p className="text-2xs uppercase text-ink-500">{t('cargoKpi')}</p>
@@ -193,8 +202,16 @@ export default async function UpsalePage({
             </thead>
             <tbody>
               {cargo.map((c) => (
-                <tr key={c.sellerId ?? 'none'} className="border-b border-line/60">
-                  <td className="py-1 pr-2">{c.sellerName ?? '—'}</td>
+                <tr key={c.sellerId} className="border-b border-line/60">
+                  <td className="py-1 pr-2">
+                    {scope === 'all' ? (
+                      <Link href={`/hodimlar?hodim=${c.sellerId}`} className="underline">
+                        {c.sellerName ?? '—'}
+                      </Link>
+                    ) : (
+                      c.sellerName ?? '—'
+                    )}
+                  </td>
                   <td className="py-1 pr-2 text-right font-mono tabular-nums">{c.receipts}</td>
                   <td className="py-1 pr-2 text-right font-mono font-semibold tabular-nums">{c.m3.toFixed(2)}</td>
                   <td className="py-1 text-right font-mono tabular-nums">{Math.round(c.kg)}</td>

@@ -41,6 +41,7 @@ import { claimReceivedNotice } from '../notices/client-claims';
 import { receivedAtFor, receivedDayRefusal, type ReceivedDayRefusal } from './received-day';
 import { factoryBarcodeKey } from './factory-barcode';
 import { isOwnCodeShape } from '@/offline/code-shape';
+import { stampFor } from '../staff/stamp';
 
 export const lotInputSchema = z
   .object({
@@ -246,6 +247,10 @@ export async function confirmReceipt(
         number,
         warehouseId: warehouse.id,
         clientId: input.clientId,
+        // Whose cargo it is ON THE DAY it came (0117, his 2a) — in the same
+        // statement as the client, so no reader ever sees one without the
+        // other. Unclaimed cargo stamps NULL and is stamped at its claim.
+        salesManagerId: stampFor(sql`${input.clientId}::uuid`),
         status: 'confirmed',
         sourceNote: input.sourceNote || null,
         unclaimedMarking: input.clientId ? null : input.unclaimedMarking || null,

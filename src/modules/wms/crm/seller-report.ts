@@ -1,10 +1,11 @@
-import { and, eq, gte, inArray, isNull, lt, lte, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
-import { clients, clientTransactions, receiptLots, receipts, users } from '@/modules/platform/db/schema';
+import { clients, clientTransactions, users } from '@/modules/platform/db/schema';
 import { profitByClient } from '../accounting/reports';
 import { marginPct } from '../accounting/margin';
 import { REVENUE_TYPES } from '../finance/ledger-kinds';
 import { revenueUsdSql } from '../finance/ledger-sql';
+import { stampedCargo, unstampedCargo } from '../staff/cargo';
 
 /**
  * Sotuvchi samaradorligi (docs/VED.md, the Reports line; owner 2026-08-25:
@@ -18,17 +19,25 @@ import { revenueUsdSql } from '../finance/ledger-sql';
  * `sellerPerformanceOwn` must never call `profitByClient` — the fence test
  * reads this file and refuses the name below the marker line.
  *
- * Attribution is `clients.sales_manager_id` — round 91's money-scope column,
- * reused rather than re-invented. It is a DIFFERENT clock from tahlil's
- * sellers table on purpose: tahlil counts leads won by `leads.owner_id` at
- * QUOTED money, this screen counts a manager's clients at CHARGED money and
- * received cargo — the funnel's promise vs the ledger's fact.
+ * TWO attributions, one per half, and the screen labels both (0117):
+ *  - the CARGO (prixodlar, m³, kg) is the receipt's own seller stamp, carton
+ *    by carton on the day it was received (`staff/cargo.ts`, the KPI's one
+ *    reader — his 1a/2a: a client moved to another seller keeps the old cargo
+ *    with whoever sold to them that day). Unstamped cargo is the «—» row's.
+ *  - the MONEY (revenue, cost, profit) is still `clients.sales_manager_id` —
+ *    round 91's money-scope column — the book as it stands. Moving it to the
+ *    stamp would split one charge over two sellers and make this table and
+ *    /accounting/profit's client rows disagree (open point 4 put to him).
+ * It is a DIFFERENT clock from tahlil's sellers table on purpose: tahlil
+ * counts leads won by `leads.owner_id` at QUOTED money, this screen counts a
+ * manager's clients at CHARGED money and received cargo — the funnel's
+ * promise vs the ledger's fact.
  *
  * Two period vocabularies meet here and are converted ONCE: `readPeriod`'s
  * `dan`/`gacha` are the INCLUSIVE day strings `profitByClient` expects
  * (it compares `date` columns with gte/lte), while `from`/`to` are the
  * half-open timestamptz pair (`to` = next midnight, EXCLUSIVE) the
- * `confirmed_at` predicate needs. Mixing them counts one extra day at every
+ * `received_at` predicate needs. Mixing them counts one extra day at every
  * month end.
  */
 export interface SellerCargo {
@@ -53,38 +62,6 @@ export interface SellerAllRow extends SellerCargo {
 export type SellerOwnRow = SellerCargo;
 
 const num = (v: unknown) => Math.round(Number(v ?? 0) * 100) / 100;
-
-/**
- * Cargo RECEIVED in the period, per client's manager: confirmed receipts by
- * `confirmed_at`. «Qabul qilingan» and not «kelgan» — `confirmed_at` is
- * stamped at the ORIGIN warehouse when the prixod is confirmed, which is the
- * moment the seller's client actually shipped; arrival in Uzbekistan is a
- * different clock (E1's own audit headline) and not this report's question.
- * `status = 'confirmed'` is the liveness — voidReceipt keeps `confirmed_at`,
- * so the clock alone would count voided prixods for ever.
- */
-async function cargoByManager(period: { from: Date; to: Date }, managerId?: string) {
-  return db
-    .select({
-      managerId: clients.salesManagerId,
-      clientCount: sql<string>`count(DISTINCT ${clients.id})`,
-      receiptCount: sql<string>`count(DISTINCT ${receipts.id})`,
-      weightKg: sql<string>`coalesce(sum(${receiptLots.totalWeightKg}), 0)`,
-      volumeM3: sql<string>`coalesce(sum(${receiptLots.totalVolumeM3}), 0)`,
-    })
-    .from(receipts)
-    .innerJoin(receiptLots, eq(receiptLots.receiptId, receipts.id))
-    .innerJoin(clients, eq(receipts.clientId, clients.id))
-    .where(
-      and(
-        eq(receipts.status, 'confirmed'),
-        gte(receipts.confirmedAt, period.from),
-        lt(receipts.confirmedAt, period.to),
-        managerId ? eq(clients.salesManagerId, managerId) : undefined,
-      ),
-    )
-    .groupBy(clients.salesManagerId);
-}
 
 /** Active clients per manager — the book as it stands, not period-bound. */
 async function clientsByManager(managerId?: string) {
@@ -113,10 +90,12 @@ export async function sellerPerformanceAll(period: {
   dan: string;
   gacha: string;
 }): Promise<{ rows: SellerAllRow[]; totals: SellerAllRow; unassignedClients: number }> {
-  const [profitRows, cargoRows, clientRows] = await Promise.all([
+  const [profitRows, cargoRows, unstamped, clientRows] = await Promise.all([
     // dan/gacha: profitByClient compares DATE columns inclusively.
     profitByClient(period.dan, period.gacha),
-    cargoByManager(period),
+    // from/to: the half-open received_at pair, stamp by stamp (0117).
+    stampedCargo(db, period, { kind: 'all' }),
+    unstampedCargo(db, period),
     clientsByManager(),
   ]);
 
@@ -158,12 +137,15 @@ export async function sellerPerformanceAll(period: {
     row.costUsd = num(row.costUsd + p.costUsd);
     row.profitUsd = num(row.profitUsd + p.profitUsd);
   }
-  for (const c of cargoRows) {
-    const row = rowFor(c.managerId);
-    row.receipts += Number(c.receiptCount);
-    row.weightKg = Math.round((row.weightKg + Number(c.weightKg)) * 1000) / 1000;
-    row.volumeM3 = Math.round((row.volumeM3 + Number(c.volumeM3)) * 1000) / 1000;
-  }
+  const addCargo = (row: SellerAllRow, c: { receipts: number; kg: number; m3: number }) => {
+    row.receipts += c.receipts;
+    row.weightKg = Math.round((row.weightKg + c.kg) * 1000) / 1000;
+    row.volumeM3 = Math.round((row.volumeM3 + c.m3) * 1000) / 1000;
+  };
+  for (const c of cargoRows) addCargo(rowFor(c.sellerId), c);
+  // Cargo nobody was named on the day it came is the «—» cohort's — the same
+  // row as the book's managerless clients, so the totals still cover it all.
+  for (const c of unstamped) addCargo(rowFor(null), c);
   let unassignedClients = 0;
   for (const c of clientRows) {
     rowFor(c.managerId).clients = Number(c.n);
@@ -246,7 +228,7 @@ export async function sellerPerformanceOwn(
   period: { from: Date; to: Date; dan: string; gacha: string },
 ): Promise<SellerOwnRow> {
   const [cargoRows, clientRows, revenueRows] = await Promise.all([
-    cargoByManager(period, actorId),
+    stampedCargo(db, period, { kind: 'own', userId: actorId }),
     clientsByManager(actorId),
     db
       .select({ revenueUsd: sql<string>`coalesce(sum(${revenueUsdSql()}), 0)` })
@@ -265,9 +247,9 @@ export async function sellerPerformanceOwn(
   const cargo = cargoRows[0];
   return {
     clients: Number(clientRows[0]?.n ?? 0),
-    receipts: Number(cargo?.receiptCount ?? 0),
-    weightKg: Number(cargo?.weightKg ?? 0),
-    volumeM3: Number(cargo?.volumeM3 ?? 0),
+    receipts: cargo?.receipts ?? 0,
+    weightKg: Math.round((cargo?.kg ?? 0) * 1000) / 1000,
+    volumeM3: Math.round((cargo?.m3 ?? 0) * 1000) / 1000,
     revenueUsd: num(revenueRows[0]?.revenueUsd),
   };
 }
