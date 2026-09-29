@@ -2266,7 +2266,7 @@ are `docs/ADS.md` §3 and DECISIONS #659.
 **Deploy note, still true for the next one:** migrations must reach the journal
 length — **120** since 0119 (117 since 0116), and his server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), so the next
-deploy applies 0113-0116 and must recreate EVERY container once
+deploy applies 0113-0119 and must recreate EVERY container once
 (`--profile https --profile telegram up -d --build`: compose gained `init`, a
 healthcheck, log caps and a postgres flag); a code-only round after it is
 checked by `/api/version`, not the count.
