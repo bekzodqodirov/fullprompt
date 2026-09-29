@@ -1,3 +1,4 @@
+import { sql, type SQL } from 'drizzle-orm';
 import { inScope, type ScopedActor } from '../../platform/rbac/scope';
 import { pricingSight } from '../finance/pricing-view';
 
@@ -19,6 +20,26 @@ export interface BatchEnds {
 
 export function mayOpenBatchCard(actor: ScopedActor, batch: BatchEnds): boolean {
   return inScope(actor, batch.originWarehouseId) || inScope(actor, batch.destWarehouseId);
+}
+
+/**
+ * `mayOpenBatchCard` as a predicate over a `batches` alias, for a read that
+ * lists OTHER trucks (0119's «Oldingi narx»): a warehouse-scoped reader is
+ * shown a past truck's price only where they could open that truck's card.
+ * The alias is explicit because drizzle renders a single-table column
+ * unqualified and it would bind to the wrong table inside a subquery (#128).
+ * Three answers and no fourth, `warehouseScope`'s rule: unscoped → true,
+ * scoped with no warehouse → false, else either end.
+ */
+export function batchEndsInScopeSql(actor: ScopedActor, alias: string): SQL {
+  if (!actor.warehouseScoped) return sql`true`;
+  if (actor.warehouseIds.length === 0) return sql`false`;
+  const a = sql.raw(alias);
+  const ids = sql.join(
+    actor.warehouseIds.map((id) => sql`${id}::uuid`),
+    sql`, `,
+  );
+  return sql`(${a}.origin_warehouse_id IN (${ids}) OR ${a}.dest_warehouse_id IN (${ids}))`;
 }
 
 type Grants = { has(code: string): boolean };

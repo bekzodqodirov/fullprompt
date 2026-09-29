@@ -115,6 +115,12 @@ export const receipts = pgTable(
     calcLinkConfirmedAt: timestamp('calc_link_confirmed_at', { withTimezone: true }),
     calcLinkConfirmedBy: uuid('calc_link_confirmed_by').references(() => users.id),
     /**
+     * When the sealer was ASKED in Telegram about this `auto` link (0119).
+     * The sweep claims by stamping it before the message leaves; every stamp
+     * door writes NULL, so a new guess is asked about once.
+     */
+    calcLinkNotifiedAt: timestamp('calc_link_notified_at', { withTimezone: true }),
+    /**
      * The factory stop this prixod came from (0100, «zavod reysi»): the STOP,
      * so «which factory, which phone» is one answer on the receipt card, and
      * the truck's cost splits over the cargo its stops brought. Written by
@@ -171,6 +177,12 @@ export const receipts = pgTable(
     index('receipts_calc_request_idx')
       .on(t.calcRequestId)
       .where(sql`${t.calcRequestId} IS NOT NULL`),
+    // The ✅/❌ sweep's rows (0119): guesses nobody has been asked about yet.
+    index('receipts_calc_link_ask_idx')
+      .on(t.calcRequestId)
+      .where(
+        sql`${t.calcRequestId} IS NOT NULL AND ${t.calcLinkConfirmedAt} IS NULL AND ${t.calcLinkNotifiedAt} IS NULL AND ${t.voidedAt} IS NULL`,
+      ),
     check(
       'receipts_received_by_one',
       sql`${t.receivedByUserId} IS NULL OR ${t.receivedByName} IS NULL`,
@@ -229,6 +241,9 @@ export const receiptLots = pgTable(
     index('receipt_lots_factory_barcode_idx')
       .on(t.factoryBarcode)
       .where(sql`${t.factoryBarcode} IS NOT NULL`),
+    // `receipt_lots_product_key_idx` (0119, «Oldingi narx») is created in SQL:
+    // an expression index that must equal `productKeySql` character for
+    // character, like the trigram indexes 0003 made on the two names.
   ],
 );
 
@@ -3373,11 +3388,10 @@ export const aiCalcPasses = pgTable(
   'ai_calc_passes',
   {
     id: id(),
-    requestId: uuid('request_id')
-      .notNull()
-      .references(() => calcRequests.id, { onDelete: 'cascade' }),
+    /** NULL only for kind 'similar' (0119): «Oldingi narx» asks about a LOT. */
+    requestId: uuid('request_id').references(() => calcRequests.id, { onDelete: 'cascade' }),
     staffId: uuid('staff_id').references(() => users.id),
-    /** 'intake' | 'grouping' | 'pick' | 'invoice'. */
+    /** 'intake' | 'grouping' | 'pick' | 'invoice' | 'similar'. */
     kind: text('kind').notNull(),
     model: text('model').notNull(),
     inputTokens: integer('input_tokens').notNull().default(0),
@@ -3386,13 +3400,34 @@ export const aiCalcPasses = pgTable(
   },
   (t) => [
     index('ai_calc_passes_day_idx').on(t.createdAt),
-    check('ai_calc_passes_kind_check', sql`${t.kind} IN ('intake', 'grouping', 'pick', 'invoice')`),
+    check(
+      'ai_calc_passes_kind_check',
+      sql`${t.kind} IN ('intake', 'grouping', 'pick', 'invoice', 'similar')`,
+    ),
+    // One anchor per kind. Safe beside the FK: CASCADE, not SET NULL (#809).
+    check('ai_calc_passes_anchor_check', sql`(${t.kind} = 'similar') = (${t.requestId} IS NULL)`),
     check(
       'ai_calc_passes_tokens_check',
       sql`${t.inputTokens} >= 0 AND ${t.outputTokens} >= 0`,
     ),
   ],
 );
+
+/**
+ * «Oldingi narx»'s AI fallback (0119): which REAL past lots the model named
+ * for a lot the free search found nothing for. Ids only — the price of every
+ * picked lot is read from the ledger at render, never stored beside it.
+ */
+export const lotSimilarPicks = pgTable('lot_similar_picks', {
+  lotId: uuid('lot_id')
+    .primaryKey()
+    .references(() => receiptLots.id, { onDelete: 'cascade' }),
+  pickedLotIds: uuid('picked_lot_ids').array().notNull(),
+  reasons: jsonb('reasons').notNull().default([]),
+  model: text('model').notNull(),
+  createdBy: uuid('created_by').references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
 
 // ---------------------------------------------------------------------------
 // «Zavod reysi» — a truck we hire collects cargo from factories (0100)

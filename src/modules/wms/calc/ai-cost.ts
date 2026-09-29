@@ -22,20 +22,31 @@ import { logger } from '../../platform/logger';
  * table lock on the path that must never hold one (#714).
  */
 
-export type AiPassKind = 'intake' | 'grouping' | 'pick' | 'invoice';
+export type AiPassKind = 'intake' | 'grouping' | 'pick' | 'invoice' | 'similar';
+
+/**
+ * What a pass is billed TO (0119): a calculation request, or — for
+ * «Oldingi narx»'s fallback, which asks about a truck's lot and belongs to no
+ * request — nothing. A union rather than an optional id, so the anchor CHECK
+ * is a compile error before it is a 23514: `similar` cannot be handed a
+ * request, and every other kind cannot be written without one.
+ */
+type AiPassAnchor =
+  | { kind: 'similar'; requestId: null }
+  | { kind: Exclude<AiPassKind, 'similar'>; requestId: string };
 
 /**
  * Record one model call. Never throws: a ledger that cannot be written must
  * not cost the answer it was measuring.
  */
-export async function recordAiPass(input: {
-  requestId: string;
-  staffId?: string | null;
-  kind: AiPassKind;
-  model: string;
-  inputTokens?: number | null;
-  outputTokens?: number | null;
-}): Promise<void> {
+export async function recordAiPass(
+  input: AiPassAnchor & {
+    staffId?: string | null;
+    model: string;
+    inputTokens?: number | null;
+    outputTokens?: number | null;
+  },
+): Promise<void> {
   try {
     await db.insert(aiCalcPasses).values({
       requestId: input.requestId,

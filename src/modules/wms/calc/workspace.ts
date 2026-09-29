@@ -21,6 +21,7 @@ import { getSetting } from '@/modules/platform/settings/service';
 import { isUniqueViolation } from '@/modules/platform/db/errors';
 import { logger } from '@/modules/platform/logger';
 import { recordAiPass } from './ai-cost';
+import { stampCalcLinksTx } from './link';
 import { itemNameNorm, memoryProvenanceFor, sealedMemoryFor } from './memory';
 import { aiConfigured } from '@/modules/platform/ai/model';
 import { notifyStaffTelegram, userName } from '@/modules/platform/notifications/staff';
@@ -1681,8 +1682,28 @@ export async function sealCalc(
     if (superseded) {
       await tx
         .update(receipts)
-        .set({ calcRequestId: requestId })
+        // An unconfirmed guess changes hands with the cargo, and the sealer of
+        // THIS version may be a different person from the one who was asked
+        // about it (0119): asking again is the only way the right VED sees it.
+        // A confirmed link keeps its record — nobody is asked twice about an
+        // answer.
+        .set({
+          calcRequestId: requestId,
+          calcLinkNotifiedAt: sql`CASE WHEN ${receipts.calcLinkConfirmedAt} IS NULL THEN NULL ELSE ${receipts.calcLinkNotifiedAt} END`,
+        })
         .where(eq(receipts.calcRequestId, superseded));
+    }
+
+    // The cargo that arrived WHILE this calculation was being worked on
+    // (0119). Before this, a prixod confirmed between the request and the seal
+    // was never suggested at all — the only stamp doors were the receipt's own
+    // confirm and a re-file, and at both moments there was no sealed price to
+    // stamp. Inside the seal's transaction on `tx` only (#714), and BEFORE the
+    // deals UPDATE below: receipts → deals is `linkReceipt`'s lock order too,
+    // so the two can never wait on each other in opposite directions. The
+    // receipt-count doors meet a «band» for these milliseconds, stated.
+    if (row.entityType === 'deal') {
+      await stampCalcLinksTx(tx, row.entityId);
     }
 
     // Law 2: the price lands on the card LOCKED. Writing it here is what

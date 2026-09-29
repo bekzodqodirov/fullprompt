@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { inArray } from 'drizzle-orm';
+import { inArray, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../../platform/db/client';
 import { tnvedAssignments } from '../../platform/db/schema';
@@ -16,6 +16,30 @@ import { aiConfigured, ANALYST_MODEL } from '../../platform/ai/model';
 /** Normalized lookup key: same product written slightly differently → one row. */
 export function productKey(nameZh: string): string {
   return nameZh.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+/**
+ * JS `\s`, spelled out for postgres (0119). Postgres' own `\s` misses NBSP,
+ * the BOM, U+202F and the ideographic space U+3000 — which is exactly the
+ * space a Chinese name is typed with — so a key built with it agrees with
+ * `productKey` on ASCII and silently disagrees on the names this is for.
+ */
+export const PRODUCT_KEY_WS =
+  "U&'[\\0009\\000A\\000B\\000C\\000D\\0020\\00A0\\1680\\2000-\\200A\\2028\\2029\\202F\\205F\\3000\\FEFF]+'";
+
+/**
+ * `productKey`'s twin in SQL, over a column or an expression.
+ *
+ * It must render EXACTLY the expression of `receipt_lots_product_key_idx`, or
+ * the planner never reads the index and «Oldingi narx» scans every lot ever
+ * received. The order is JS's: collapse every whitespace run to one space,
+ * then strip the one space a leading or trailing run became (`trim` then
+ * `replace`, restated), then lower — `lower()` follows the database's ctype,
+ * which is `C.UTF-8`/`en_US.utf8` on every server this runs on and lowers
+ * Cyrillic like JS does (measured beside the test that pins it).
+ */
+export function productKeySql(col: SQL): SQL {
+  return sql`lower(regexp_replace(regexp_replace(${col}, ${sql.raw(PRODUCT_KEY_WS)}, ' ', 'g'), '^ | $', '', 'g'))`;
 }
 
 /** UZ ТНВЭД codes are 4–10 digits (10 in the declaration). */
