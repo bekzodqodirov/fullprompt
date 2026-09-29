@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 /**
  * The production build type-checks the app, and has the heap to do it
- * (DECISIONS #1210).
+ * (DECISIONS #1223).
  *
  * The 0113-0116 deploy died inside `next build`: its type check built ONE
  * program over every `.ts` in the repo — the tests included, 4,193 files —

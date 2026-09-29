@@ -120,6 +120,7 @@ async function main() {
   await seedCrm();
   await seedFreightTariff();
   await seedPp3818Rates();
+  await seedKpiRates();
 
   // --- Single audit marker for the seed run ---
   await db.insert(auditLog).values({
@@ -387,6 +388,27 @@ async function seedPp3818Rates() {
     inserted += res.length;
   }
   console.log(`PP-3818 rates seeded: ${inserted} inserted, ${rows.length - inserted} already present`);
+}
+
+/**
+ * The owner's KPI table (0117, his 3a/4a) — his 24 cells at the month he
+ * starts from. The freight tariff's rule: only into an EMPTY table, so a
+ * version he types on /hodimlar is never touched by a later deploy.
+ */
+async function seedKpiRates() {
+  const { kpiRates } = await import('../src/modules/platform/db/schema');
+  const existing = await db.select({ id: kpiRates.id }).from(kpiRates).limit(1);
+  if (existing.length > 0) return;
+  const { ownerKpiCells, OWNER_KPI_FROM } = await import('../src/modules/wms/staff/kpi-seed');
+  await db.insert(kpiRates).values(
+    ownerKpiCells().map((cell) => ({
+      effectiveMonth: OWNER_KPI_FROM,
+      maxM3: cell.maxM3 === null ? null : cell.maxM3.toFixed(3),
+      maxDensity: cell.maxDensity,
+      rateUsd: cell.rateUsd.toFixed(2),
+    })),
+  );
+  console.log('KPI table seeded (owner’s grid, editable on /hodimlar)');
 }
 
 main()

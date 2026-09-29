@@ -291,6 +291,14 @@ export const WORKSPACES: WorkspaceSpec[] = [
         via: ['/finance'],
       },
       { href: '/upsale', key: 'upsale' },
+      // «Hodimlar» (0117): `maySeeStaffMoney` = finance.expenses, the staff
+      // account's own door (wms/partners/staff.ts — platform may not import it).
+      {
+        href: '/hodimlar',
+        key: 'staff',
+        need: [['finance.expenses']],
+        via: ['/accounting', '/accounting/expenses'],
+      },
     ],
     settings: [
       {

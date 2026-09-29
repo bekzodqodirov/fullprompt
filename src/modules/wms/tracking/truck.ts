@@ -1,7 +1,7 @@
 import { and, eq, ne, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { batches, boxes, boxMovements, clients, receiptLots, receipts } from '../../platform/db/schema';
-import { scheduleEstimate } from './eta';
+import { scheduleEstimate, type BorderHours } from './eta';
 import { snapToRoute } from './engine';
 import type { LatestPosition } from './devices';
 
@@ -43,12 +43,22 @@ export async function truckFor(
   batch: typeof batches.$inferSelect,
   originCode: string,
   destCode: string,
+  // The logist's typed border queues (`loadBorderHours`), loaded ONCE by the
+  // caller for its whole list — before the optional fix, because it is not
+  // optional: the map must not ignore a queue the cabinet counts.
+  waits: BorderHours,
   fix?: LatestPosition,
 ): Promise<TruckMarker | null> {
   // One assembler for the whole app (`tracking/eta.ts`): the customer's
   // cabinet reads the same schedule through the same anchoring, so the truck
   // on the map and the date in the client's phone cannot disagree.
-  const schedule = scheduleEstimate(originCode, destCode, batch.departedAt, batch.trackingCheckpoint);
+  const schedule = scheduleEstimate(
+    originCode,
+    destCode,
+    batch.departedAt,
+    batch.trackingCheckpoint,
+    waits,
+  );
   if (!schedule && !fix) return null;
 
   const contents = await db

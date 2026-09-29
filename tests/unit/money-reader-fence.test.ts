@@ -83,6 +83,9 @@ const MONEY_READERS = [
   'attentionFacts',
   'readAttentionSources',
   'composeOwnerSummary',
+  // 0117: the dashboard's «Hodimlar keltirgan foyda» — the per-seller cargo
+  // PROFIT (sellerPerformanceAll's landed cost) in one call.
+  'staffProfit',
 ];
 
 /** A predicate that keeps the VED out of a money read. */
@@ -101,6 +104,9 @@ const GATES = [
   // and show the VED only what he typed (Q19 D1). Pinned precisely below for
   // the grid, because a file passes this list on any mention.
   /costSightFor\(/,
+  // 0117's /hodimlar: `maySeeStaffMoney` IS `.has('finance.expenses')`
+  // (partners/staff.ts — the staff account's one door), asked by name.
+  /maySeeStaffMoney\(/,
 ];
 
 /**
@@ -122,6 +128,11 @@ const ALLOWED: Record<string, { why: string; renderedBy: string; gate: RegExp }>
     why: 'its money rows are read only when the page hands it the CompanyMoneySight token (attention-sources.ts gates every money loader on it)',
     renderedBy: 'src/app/(protected)/dashboard/page.tsx',
     gate: /<AttentionSection\s+sight=\{sight\}/,
+  },
+  'src/app/(protected)/dashboard/sections/staff-profit.tsx': {
+    why: 'mounted only under the page’s `money` flag, and the card takes the CompanyMoneySight token (0117)',
+    renderedBy: 'src/app/(protected)/dashboard/page.tsx',
+    gate: /\{money && sight && \(\s*<Suspense[\s\S]{0,120}?<StaffProfitCard sight=\{sight\}/,
   },
 };
 
@@ -207,6 +218,13 @@ describe('every money reader under src/app keeps the VED out', () => {
     expect(page).toContain('const sight = money ? companyMoneySight(actor) : null;');
     // HeroTiles takes a nullable token and reads money only when it holds one.
     expect(readFileSync('src/app/(protected)/dashboard/sections/hero.tsx', 'utf8')).toContain('const money = sight !== null;');
+    // The per-seller profit card (0117) is one component: its props TYPE the
+    // token as required, and staffProfit itself takes it.
+    const staff = stripComments(readFileSync('src/app/(protected)/dashboard/sections/staff-profit.tsx', 'utf8'));
+    expect(staff).toMatch(/\{ sight: CompanyMoneySight; period: DashPeriod \}/);
+    expect(stripComments(readFileSync('src/modules/wms/staff/seller-profit.ts', 'utf8'))).toMatch(
+      /export async function staffProfit\([\s\S]{0,120}?sight: CompanyMoneySight/,
+    );
     // …and so does the attention section, whose rows now live in wms.
     const attention = stripComments(readFileSync('src/app/(protected)/dashboard/sections/attention.tsx', 'utf8'));
     expect(attention).toMatch(/sight: CompanyMoneySight \| null;/);

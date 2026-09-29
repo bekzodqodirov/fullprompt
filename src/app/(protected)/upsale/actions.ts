@@ -8,7 +8,8 @@ import { logger } from '@/modules/platform/logger';
 import { CalcError } from '@/modules/wms/calc/service';
 import { releaseOffer } from '@/modules/wms/calc/workspace';
 import { payUpsale, setUpsaleCategory } from '@/modules/wms/calc/upsale-service';
-import { mayApproveBelowFloor, upsaleScopeFor } from '@/modules/wms/calc/upsale-scope';
+import { mayApproveBelowFloor } from '@/modules/wms/calc/upsale-scope';
+import { mayPayCommission } from '@/modules/wms/staff/door';
 
 export interface UpsaleFormState {
   ok?: boolean;
@@ -24,7 +25,9 @@ export interface UpsaleFormState {
  * accountant's power, and seeing whose commission it is is law 4's. Neither
  * alone is the right door — the first would let anyone who may spend money
  * read every seller's earnings, the second would let the owner's read-only
- * analyst press pay.
+ * analyst press pay. ONE predicate since the KPI payout arrived (0117,
+ * `mayPayCommission` in staff/door.ts): two doors that pay a seller must not
+ * be able to disagree about who may press.
  */
 export async function payUpsaleAction(
   offerIds: string[],
@@ -32,8 +35,7 @@ export async function payUpsaleAction(
 ): Promise<UpsaleFormState> {
   const actor = await getActor();
   if (!actor) return { error: 'unauthenticated' };
-  if (!actor.permissions.has('finance.expenses')) return { error: 'forbidden' };
-  if (upsaleScopeFor(actor) !== 'all') return { error: 'forbidden' };
+  if (!mayPayCommission(actor)) return { error: 'forbidden' };
 
   const meta = await requestMeta();
   try {

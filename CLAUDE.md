@@ -73,7 +73,7 @@ pnpm build && pnpm e2e  # 44 e2e
    Playwright *without re-seeding*. CI uses ONE database for both. This is how
    the field tests leaking definitions was found — after CI went red.
 6. **`pnpm typecheck` before every push.** `next build` types `src/` only
-   (`tsconfig.build.json`, #1210), so a widened union that breaks a TEST's
+   (`tsconfig.build.json`, #1223), so a widened union that breaks a TEST's
    narrowing is green locally and red in CI (#591). Vitest transpiles without
    checking, so the tests pass too.
 
@@ -2150,9 +2150,48 @@ The server decides the step after a refusal (`next`), the pure
 `tests/unit/telegram-connect-lifecycle.test.ts` (gramjs replaced by a fake
 that records `destroyed`); 13 more red proofs.
 
-**Round — the deploy that ran out of memory (2026-09-29; DECISIONS #1210; NO
-migration).** His first try at the 0113-0116 deploy died inside `next build`:
-«JavaScript heap out of memory» at 2,044 MB, type-checking. Next checks ONE
+**Round — his answers of 2026-09-29: pay + KPI, Horgos, the lot icons, the
+weekly window (DECISIONS #1210-#1222 — renumbered from #1204-#1216 on the merge,
+the SEVENTEENTH collision: the Andijan trip and Telegram connect took
+#1204-#1209 first; migrations 0117-0119 — ledger must reach
+120).** Three packages designed → judged by four lenses → revised → built in
+worktrees → reviewed by two → fixed; the container restarted mid-build and a
+finisher per package re-audited its committed branch against the final design.
+**Pay** (0117): the prixod's seller is STAMPED on `receipts.sales_manager_id` in
+the same statement as the client (`staff/stamp.ts` `stampFor`; a nobody→A
+assignment back-dates the unstamped cargo, A→B never restamps); ONE cargo
+reader `staff/cargo.ts` `stampedCargo` (carton grain, Tashkent month of
+`received_at`) replaced `sellerCargo` AND `cargoByManager`; `kpi_rates` is a
+month-versioned table (his 24 cells seeded at 2026-09, no earliest fallback, a
+version never reprices a paid month); `kpi-engine.ts` pure; «paid cargo» =
+`finance/fifo.ts settleCharges` (compensation → own receipt, deferral → own
+deal, then oldest first; `clientCargo` asks it too); months close on the 8th,
+payable netted per seller, `payKpi` re-derives under an advisory lock,
+`commissionPayoutSql` is the one «commission payout» predicate. /hodimlar
+(`maySeeStaffMoney`; salary = the recurring template; pay = `mayPayCommission`),
+profile «Bu oy» (own only), dashboard «Hodimlar keltirgan foyda». **Horgos**
+(0118): HOR is a second named corridor in map-data (through Urumqi; Almaty →
+Shymkent → Yallama); `border_queue` = the logist's typed waits with the previous
+regime and two clocks, `routeWithWaits` judges «crossed» by the wait the truck
+was GIVEN; `waits` REQUIRED on every ETA reader (derived fence); pins
+route-aware (`checkpointsFor`, `in_kz`); a «horgos» tariff zone drawn only when
+priced; `migration-journal.test.ts` fences `when` order and holes. The road
+shape needs `road-geometry.yml` run once (OSRM is blocked here). **Icons**
+(0119): 📈 past prices (`productKeySql` + expression index, 10-digit TNVED,
+`similarity` with `%`; AI picks by index, billed kind `similar`), 🧮 the deal's
+calc (`calc/sheet.ts` behind branded `CalcRegistrySight`, no price field), the
+seal stamps in-window prixods and the sealer is asked ✅/❌ in Telegram
+(`cl:` callback, the id's random tail). **5b**: the Monday message is the
+closed Monday-Sunday week (money rows carry a day, not a minute) + a dashboard
+«O'tgan hafta» chip. OWED to him as questions: KPI start month, salary for
+non-login staff, the «paid» rule for upsale vs KPI, profit attribution on a
+reassigned client, admins as sellers, self-pay; Urumqi→Horgos days; old queue
+numbers; Irkeshtam queue; HOR's country must be CN.
+
+**Round — the deploy that ran out of memory (2026-09-29; DECISIONS #1223 —
+renumbered from #1210 on the merge, the EIGHTEENTH collision; NO migration).**
+His first try at the 0113-0116 deploy died inside `next build`: «JavaScript
+heap out of memory» at 2,044 MB, type-checking. Next checks ONE
 program from the tsconfig it is given, the root one includes `**/*.ts` (4,193
 files with the tests), and it drops test files' diagnostics only AFTER
 checking them. From scratch that program dies at an 1,800 MB cap. V8's default
@@ -2166,8 +2205,9 @@ builds before it recreates. **Deploy tip that follows from it**: build
 `migrate` first (`docker compose build migrate`), so the shared build stage
 runs ONCE before `up -d --build` reuses it.
 
-**Latest migration: 0116** (`cargo_wait_alerts`; ledger must reach **117**).
-Before it: 0115 (`system_watch`), 0114 (`debt_control`), 0113
+**Latest migration: 0119** (`price_icons`; ledger must reach **120**). Before
+it: 0118 (`border_queue`), 0117 (`staff_pay`) — `when` …096-…098. Before them:
+**0116** (`cargo_wait_alerts`; ledger 117). Before it: 0115 (`system_watch`), 0114 (`debt_control`), 0113
 (`inbound_contact`) — `when` …092-…095, assigned in that order before the
 packages were built. Before them: **0112** (`qr_less` — the count reasons, the QR-siz lot
 marker, the office receipt's receiver, the factory barcode, the pallet kind;
@@ -2290,9 +2330,9 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **117** since 0116, and his server CONFIRMED **113** («deploy qildim
+length — **120** since 0119 (117 since 0116), and his server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), so the next
-deploy applies 0113-0116 and must recreate EVERY container once
+deploy applies 0113-0119 and must recreate EVERY container once
 (`--profile https --profile telegram up -d --build`: compose gained `init`, a
 healthcheck, log caps and a postgres flag); a code-only round after it is
 checked by `/api/version`, not the count.

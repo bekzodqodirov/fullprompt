@@ -104,7 +104,8 @@
     "flowCalcLate": "kechikkan",
     "flowUnplacedCosts": "Kassasi ko‘rsatilmagan xarajatlar",
     "flowUnbilled": "Narxsiz yetib kelgan yuk: {n} prixod",
-    "birthdays": "Bugun tug‘ilgan kun — tabriklab qo‘ying"
+    "birthdays": "Bugun tug‘ilgan kun — tabriklab qo‘ying",
+    "flowCalcLinks": "Tasdiqlash kerak (prixod ↔ hisob)"
   },
   "dashboard": {
     "title": "Biznes holati",
@@ -301,6 +302,7 @@
       "label": "Davr",
       "bugun": "Bugun",
       "d7": "7 kun",
+      "hafta": "O‘tgan hafta",
       "d30": "30 kun",
       "oy": "Bu oy",
       "otgan": "O‘tgan oy"
@@ -320,6 +322,7 @@
     "hero": {
       "bugun": "Bugungi foyda",
       "d7": "7 kunlik foyda",
+      "hafta": "O‘tgan hafta foydasi",
       "d30": "30 kunlik foyda",
       "oy": "Bu oy foydasi",
       "otgan": "O‘tgan oy foydasi"
@@ -379,7 +382,18 @@
     },
     "detailsTitle": "Batafsil",
     "agingFuture": "Yana {count} ta yozuv bugundan keyingi sana bilan ({usd}) — qarz jamida bor, yoshlar bo‘yicha yo‘q.",
-    "vsDay": "{day} bilan solishtirilganda"
+    "vsDay": "{day} bilan solishtirilganda",
+    "staffProfit": {
+      "title": "Hodimlar keltirgan foyda",
+      "report": "Hisobot",
+      "failed": "hisoblab bo‘lmadi",
+      "none": "Davr uchun ma’lumot yo‘q.",
+      "nobody": "Menejersiz",
+      "cargo": "yuk",
+      "upsale": "upsale",
+      "note": "Yuk foydasi — mijozning hozirgi menejeri bo‘yicha; upsale uning ichida, alohida qo‘shilmaydi.",
+      "truncated": "upsale to‘liq emas — davrda takliflar juda ko‘p."
+    }
   },
   "inventory": {
     "title": "Inventarizatsiya",
@@ -695,7 +709,11 @@
       "cost_kassa_since": "Shu kundan boshlab kiritilgan, kassasi ko‘rsatilmagan xarajatlar buxgalter navbatiga tushadi (YYYY-MM-DD; bo‘sh = hammasi)",
       "unpriced_gate_since": "Shu vaqtdan keyin mashinada O‘zbekistonga yetib kelgan, narxi yozilmagan yuk mijozga faqat ruxsat bilan beriladi (sana yoki vaqt; bo‘sh = taqiq o‘chiq)",
       "fx_residue_auto": "Hisob o‘z valyutasida 0 ga tushganda dollar qoldig‘ini tizim o‘zi «kurs farqi» bilan yopsinmi. «Yo‘q» — yangi yozuv qo‘shilmaydi, borlari yuritilaveradi.",
-      "lead_assign_origins": "Saytdan «kimga yozsin?» deb so'rashga ruxsat berilgan sahifalar (bo'sh joy bilan, har biri https://…)"
+      "lead_assign_origins": "Saytdan «kimga yozsin?» deb so'rashga ruxsat berilgan sahifalar (bo'sh joy bilan, har biri https://…)",
+      "kpi_expense_category_id": "Sotuvchilarga KPI to‘lovi yoziladigan xarajat turi (faqat kassa). «Hodimlar» sahifasida tanlanadi.",
+      "salary_expense_category_id": "Oyliklar xarajat turi: «Hodimlar» sahifasi oylik va uning to‘lanishini shu turdagi shablonlardan ko‘rsatadi.",
+      "price_history_min_sim": "«Oldingi narx» o‘tgan prixod mashinasini ko‘rsatishi uchun tovar nomi o‘xshashligi darajasi (0..1)",
+      "price_history_ai_daily_limit": "«Oldingi narx» 🤖 tugmasi kuniga necha marta AI so'rashi mumkin (hisoblash limitidan alohida)"
     },
     "driverApp": "Haydovchi ilovasi",
     "callsApp": "Qo'ng'iroq ilovasi",
@@ -793,7 +811,9 @@
       "warehouse": "Sklad",
       "warehouses": "Skladlar",
       "weightKg": "Og‘irlik, kg",
-      "widthCm": "Eni, sm"
+      "widthCm": "Eni, sm",
+      "cargoStampedTo": "Yuk menejerga o‘tkazildi",
+      "receipts": "Prixodlar"
     }
   },
   "profile": {
@@ -837,7 +857,34 @@
     "staffKindAdjust": "Tuzatish",
     "staffKindOffset": "Hisob-kitob",
     "staffPendingTitle": "Hali tasdiqlanmagan",
-    "staffPendingHint": "Bu hali kompaniyaning qarzi emas — moliya kiritgach hisobga tushadi."
+    "staffPendingHint": "Bu hali kompaniyaning qarzi emas — moliya kiritgach hisobga tushadi.",
+    "month": {
+      "title": "Bu oy",
+      "salary": "Oylik",
+      "salaryNone": "Oylik kiritilmagan",
+      "payDay": "har oyning {day}-sanasi",
+      "salaryPaid": "✅ to‘langan",
+      "salarySkipped": "⏭ o‘tkazib yuborilgan",
+      "salaryWaiting": "⏳ to‘lov kutilmoqda",
+      "kpi": "Yuk uchun KPI",
+      "m3": "m³",
+      "density": "zichlik",
+      "kpiOutside": "KPI birinchi jadvaldan boshlanadi — bu oy uchun hisoblanmaydi.",
+      "kpiEarned": "Hisoblangan",
+      "kpiPaidPart": "to‘langan yukdan",
+      "notComputed": "to‘langan qismi hisoblanmadi",
+      "kpiRefused": "KPI hisoblanmadi — buxgalterdan so‘rang",
+      "kpiEstimate": "Taxminiy: yuk qabul qilingan oy bo‘yicha, keyingi oyning 8-sanasidan keyin yakuniy.",
+      "upsale": "Sotuvchi ulushi (upsale)",
+      "upsaleOffers": "{n} ta taklif",
+      "income": "Oylik daromad",
+      "incomeNoRate": "oylik uchun kurs yo‘q — summa qo‘shilmadi",
+      "converted": "Oylik shu oy kursi bo‘yicha dollarga o‘girildi.",
+      "work": "Mening ishim",
+      "workLine": "Prixodlar: {receipts} · muhrlangan hisoblar: {sealed} · «Tayyor» javoblari: {answered}",
+      "advanceHint": "Avans va kompaniyadan qarzingiz — pastdagi «{panel}» blokida.",
+      "salaryNotDue": "bu oy hali to‘lanmaydi"
+    }
   },
   "receive": {
     "title": "Qabul",
@@ -1333,7 +1380,14 @@
     "noCostsWarn": "Bu partiyaga hali xarajat yozilmagan",
     "profitTrackedOn": "Partiya — «Partiya foydasi»da hisoblanadi",
     "profitTrackedSet": "Partiya deb belgilash («Partiya foydasi» uchun)",
-    "profitTrackedHint": "«Partiya foydasi» hisobotida faqat shu belgisi bor partiyalar chiqadi."
+    "profitTrackedHint": "«Partiya foydasi» hisobotida faqat shu belgisi bor partiyalar chiqadi.",
+    "cpKz": "Qozog‘istonda",
+    "checkpointErrors": {
+      "forbidden": "Bu mashinaga ruxsatingiz yo‘q",
+      "not_in_transit": "Mashina yo‘lda emas — belgi faqat yo‘ldagi mashinaga qo‘yiladi",
+      "unknown_key": "Bunday belgi yo‘q",
+      "not_on_route": "Bu mashina u yerdan o‘tmaydi — o‘z yo‘lining belgisini tanlang"
+    }
   },
   "loading": {
     "title": "Pogruzka",
@@ -1681,7 +1735,39 @@
     "dealShareHere": "bu mashinada {receipts} ta prixod · {m3} m³ · {kg} kg",
     "dealNoQuote": "bitimda narx yozilmagan",
     "dealNoFigures": "hisoblangan narx va upsale yozilmagan (taklif berilmagan)",
-    "dealSoldPrice": "sotilgan narx {price}{measure}"
+    "dealSoldPrice": "sotilgan narx {price}{measure}",
+    "priceHistory": "Oldingi narx",
+    "priceHistoryHint": "Shu tovarga oldingi mashinalarda qancha olganmiz (12 oy)",
+    "priceHistoryOwnMark": "shu mijoz",
+    "priceHistoryNone": "Topilmadi: o‘xshash tovar narxi yozilgan mashina yo‘q (12 oy)",
+    "priceHistoryMixed": "aralash: {n, plural, other {# xil tovar}}",
+    "priceHistoryMatchExact": "aynan nom",
+    "priceHistoryMatchCode": "TNVED",
+    "priceHistoryMatchName": "o‘xshash nom",
+    "priceHistoryMatchAi": "🤖 AI",
+    "priceHistoryCargoMoved": "yukning bir qismi boshqa mashinada",
+    "priceHistoryFailed": "Hozir hisoblab bo‘lmadi — keyinroq oching",
+    "priceHistoryAiAsk": "AI bilan qidirish",
+    "priceHistoryAiBusy": "AI qidirmoqda…",
+    "priceHistoryAiNone": "AI ham bunday tovar topmadi",
+    "priceHistoryAiError": {
+      "not_configured": "AI sozlanmagan",
+      "budget": "AI kunlik limiti tugadi",
+      "found_free": "AIsiz topildi — sahifani yangilang",
+      "failed": "AI javob bermadi — keyinroq urinib ko‘ring",
+      "forbidden": "Ruxsat yo‘q",
+      "already": "AI bu tovar uchun allaqachon so‘ralgan — sahifani yangilang"
+    },
+    "dealCalc": "Bitim hisobi",
+    "dealCalcHint": "Shu prixod bitimining VED hisobi: guruhlar, TNVED, baza, boj, QQS, yo‘lkira, jami",
+    "calcUnsealed": "muhrlanmagan",
+    "calcLinkConfirmed": "prixod shu hisobga tasdiqlangan",
+    "calcLinkSuggested": "taxmin (VED tasdiqlashi kutilmoqda)",
+    "calcLinkConfirmHere": "Hisob nazoratida tasdiqlash",
+    "calcPrevVersion": "Oldingi: V{n}",
+    "calcRecalcOpen": "qayta hisoblanmoqda — eski narx turibdi",
+    "calcMore": "yana {n} ta hisob",
+    "calcSeeAbove": "yuqorida: {code} hisobi"
   },
   "map": {
     "title": "Xarita",
@@ -1695,7 +1781,7 @@
     "eta": "yetib kelishiga ~{min}–{max} kun",
     "seg_cn_transit": "Xitoy ichida yo‘lda",
     "seg_to_border": "Chegara tomon yo‘lda",
-    "seg_border_wait": "Chegarada navbatda (1–3 kun)",
+    "seg_border_wait": "Chegarada navbatda",
     "seg_kg": "Qirg‘iziston hududida",
     "seg_uz": "O‘zbekiston hududida",
     "seg_transit": "Yo‘lda",
@@ -1721,7 +1807,9 @@
     "cargoLoading": "Yuk ro‘yxati yuklanmoqda…",
     "cargoFailed": "Yuk ro‘yxatini olib bo‘lmadi",
     "cargoReceived": "qabul {date}",
-    "cargoMore": "yana {n} ta tovar — to‘liq ro‘yxat ostatkada"
+    "cargoMore": "yana {n} ta tovar — to‘liq ro‘yxat ostatkada",
+    "seg_kz": "Qozog‘iston hududida",
+    "seg_uz_queue": "O‘zbekiston chegarasida navbatda"
   },
   "accounting": {
     "title": "Boshqaruv hisobi",
@@ -2545,7 +2633,36 @@
     "noSignal": "signal yo‘q",
     "notDeparted": "hali yo‘lga chiqmagan",
     "showClosed": "Yopilganlarni ham ko‘rsatish",
-    "activeOnly": "Faqat faollari"
+    "activeOnly": "Faqat faollari",
+    "queue": {
+      "title": "Chegara navbatlari",
+      "meaning": "Hozir navbatga kelgan mashina qancha kutadi. Navbatda turganlar ham shu paytdan boshlab hisoblanadi; chegaradan o‘tganlar o‘zgarmaydi.",
+      "post": {
+        "khorgos": "Horgos (Xitoy→Qozog‘iston)",
+        "yallama": "Yallama (Qozog‘iston→O‘zbekiston)"
+      },
+      "current": "{min}–{max} kun",
+      "usual": "Odatdagi: {min}–{max} kun",
+      "typedBy": "{name}, {when}",
+      "warn": "⚠ {n} kun oldin kiritilgan",
+      "edit": "O‘zgartirish",
+      "minDays": "Kamida, kun",
+      "maxDays": "Ko‘pi bilan, kun",
+      "note": "Izoh",
+      "save": "Saqlash",
+      "reset": "Odatdagi jadvalga qaytarish",
+      "saved": "Saqlandi",
+      "errors": {
+        "forbidden": "Navbatni o‘zgartirishga ruxsatingiz yo‘q",
+        "scoped_actor": "Navbatni omborga bog‘lanmagan logist o‘zgartiradi — chegara hech bir omborniki emas",
+        "unknown_post": "Noma’lum chegara punkti",
+        "bad_number": "Kunni raqam bilan yozing, masalan 3 yoki 3,5",
+        "bad_range": "0 dan 30 kungacha, «ko‘pi bilan» «kamida»dan kam bo‘lmasin",
+        "note_too_long": "Izoh 300 belgidan oshmasin",
+        "changed": "Hamkasbingiz hozirgina o‘zgartirdi — sahifani yangilab, qaytadan kiriting",
+        "server_behind": "Baza hali yangilanmagan — odatdagi muddatlar amal qilmoqda"
+      }
+    }
   },
   "roles": {
     "title": "Rollar va huquqlar",
@@ -3183,7 +3300,8 @@
     },
     "zones": {
       "cn": "Yiwu / Guangzhou → Toshkent",
-      "kashgar": "Qashqar → Toshkent"
+      "kashgar": "Qashqar → Toshkent",
+      "horgos": "Horgos → Toshkent"
     },
     "source": {
       "dictionary": "lug‘atdan",
@@ -3381,7 +3499,9 @@
     "regAll": "Hammasi",
     "registryNav": "Hisoblar tarixi",
     "feeOverride": "Deklaratsiya yig'imi (qo'lda)",
-    "feeAuto": "avto"
+    "feeAuto": "avto",
+    "linksShownOf": "{total} tadan {shown} tasi ko‘rsatilgan",
+    "sheetTitle": "Hisob tafsiloti"
   },
   "partners": {
     "title": "Kontragentlar",
@@ -3803,7 +3923,7 @@
     "onCargo": "Kelishilgan {promised} · kelgan yuk: {m3} m³, {kg} kg",
     "promisedOnly": "Kelishilgan {promised} · yuk hali kelmagan",
     "cargoKpi": "Olib kelgan yuk (KPI)",
-    "cargoKpiHint": "Sotuvchining bitimlariga biriktirilgan prixodlar — omborda qabul qilingan kuni bo‘yicha.",
+    "cargoKpiHint": "Qabul paytida sotuvchiga yozilgan prixodlar (o‘sha kuni mijozning menejeri) — omborda qabul qilingan kuni bo‘yicha. Ulardan KPI — «Hodimlar» sahifasida.",
     "cargoReceipts": "Prixod"
   },
   "sellerReport": {
@@ -3823,7 +3943,9 @@
     "unassigned": "{n} ta mijozda menejer yo‘q — ularning yuki va puli «—» qatorida.",
     "clientBook": "Mijozlar kitobi",
     "funnelLink": "Voronka bo‘yicha tahlil",
-    "empty": "Bu davrda ma’lumot yo‘q"
+    "empty": "Bu davrda ma’lumot yo‘q",
+    "cargoByStamp": "Yuk va prixodlar — qabul kuni prixodga yozilgan sotuvchi bo‘yicha",
+    "moneyByBook": "pul va foyda — mijozning hozirgi menejeri bo‘yicha"
   },
   "annul": {
     "open": "Anulirovka (kaskad)…",
@@ -4210,7 +4332,8 @@
       "labelPrints": "Stiker jurnali",
       "calcControl": "Hisob va haqiqat",
       "admin": "Boshqaruv",
-      "debtReleases": "Qarzga berilgan"
+      "debtReleases": "Qarzga berilgan",
+      "staff": "Hodimlar"
     },
     "more": "Yana"
   },
@@ -4540,5 +4663,134 @@
       "promiseBroken": "⚠ va’da bajarilmadi ({date})",
       "unknownApprover": "—"
     }
+  },
+  "hodimlar": {
+    "title": "Hodimlar: oylik va KPI",
+    "month": "Oy",
+    "show": "Ko‘rsatish",
+    "everyone": "Hamma hodimlar",
+    "monthNote": "KPI yuk omborda qabul qilingan oy bo‘yicha hisoblanadi (Toshkent vaqti). Oy keyingi oyning 8-sanasida yopiladi — ungacha raqamlar taxminiy.",
+    "roundingNote": "Kub har bir karobka bo‘yicha (lotdagi ulushi); stavka — oyning butun kg/m³ ga yaxlitlangan zichligi bo‘yicha. Faqat mijoz to‘lagan qismi to‘lanadi.",
+    "behind": "Baza hali yangilanmagan (0117 migratsiya) — ekran yangilanishdan keyin ishlaydi.",
+    "salaryCategory": "Oylik xarajat turi",
+    "salaryCategoryUnset": "Oylik xarajat turi tanlanmagan",
+    "salaryCategoryHint": "Oylik — shu turdagi hodimga yozilgan har oylik xarajat shabloni. «To‘langan / kutilmoqda» shundan o‘qiladi.",
+    "kpiCategory": "KPI to‘lovi xarajat turi",
+    "kpiCategoryUnset": "KPI to‘lovi xarajat turi tanlanmagan — KPI to‘lab bo‘lmaydi",
+    "kpiCategoryHint": "Alohida, kassadan to‘lanadigan xarajat turi. «Oyliklar» va «Sotuvchi ulushi»ni tanlamang: bir turdagi to‘lov oylik bilan to‘qnashadi.",
+    "categoryAsk": "Xarajat turini administrator tanlaydi.",
+    "empty": "Hali hech kimga oylik kiritilmagan — hodim kartasidagi ✏️ «Oylik kiritish» orqali qo‘shing.",
+    "unstamped": "Sotuvchisiz yuk",
+    "unstampedNone": "Bu oyda bunday yuk yo‘q.",
+    "unstampedHint": "Qabul paytida mijozning menejeri yo‘q edi. Mijoz kartasida menejer belgilang — bu yuk unga o‘tadi.",
+    "m3": "m³",
+    "density": "zichlik",
+    "inactive": "faol emas",
+    "salary": "Oylik",
+    "salaryNone": "Oylik shabloni kiritilmagan",
+    "payDay": "har oyning {day}-sanasi",
+    "salaryPaid": "✅ to‘langan",
+    "salarySkipped": "⏭ o‘tkazib yuborilgan",
+    "salaryWaiting": "⏳ to‘lov kutilmoqda",
+    "salarySet": "Oylik kiritish",
+    "otherRecurring": "Hodimga boshqa oylik xarajatlar",
+    "kpi": "KPI",
+    "notComputed": "hisoblab bo‘lmadi — keyinroq urinib ko‘ring",
+    "kpiOutside": "Bu oy birinchi KPI jadvalidan oldin — KPI hisoblanmaydi.",
+    "earned": "Hisoblangan",
+    "earnedPaid": "to‘langan yukdan",
+    "noCargo": "Bu oyda yuk yo‘q",
+    "monthOpen": "Oy hali ochiq — {day} da yopiladi",
+    "overpaid": "{amount} ortiqcha to‘langan — keyingi KPI dan ayiriladi",
+    "payable": "To‘lanadi",
+    "reopenHint": "Mijoz eski yuk uchun keyinroq to‘lasa, bu summa o‘zi oshadi — oyni to‘lash uni yopmaydi.",
+    "upsale": "Sotuvchi ulushi (upsale)",
+    "upsaleEarned": "ishlangan",
+    "upsalePayable": "to‘lanadi",
+    "upsaleLink": "Upsale sahifasida to‘lash",
+    "kpiPay": "KPI ni to‘lash",
+    "kassa": "Kassa",
+    "payDate": "Sana",
+    "payNote": "Izoh",
+    "kpiPayHint": "Summani server bosilgan paytda qaytadan hisoblaydi. O‘zgargan bo‘lsa, to‘lov rad etiladi — sahifani yangilang.",
+    "refusal": {
+      "no_cargo": "yuk yo‘q",
+      "lot_unmeasured": "yukning bir qismida kub yo‘q — prixodni to‘g‘rilang",
+      "rate_missing": "KPI jadvalida bu hajm va zichlik uchun stavka yo‘q",
+      "rate_ambiguous": "KPI jadvalida bitta katak uchun ikki stavka bor",
+      "not_a_number": "ma’lumotda son bo‘lmagan qiymat bor",
+      "unauthenticated": "qaytadan kiring",
+      "forbidden": "ruxsat yo‘q",
+      "server_behind": "baza hali yangilanmagan (0117 migratsiya)",
+      "future_date": "sana kelajakda",
+      "kpi_category_unset": "KPI to‘lovi xarajat turi tanlanmagan",
+      "non_cash_category": "bu xarajat turi kassadan to‘lanmaydi",
+      "fx_missing": "bu sana uchun valyuta kursi yo‘q",
+      "account_currency_mismatch": "kassa valyutasi mos emas",
+      "not_found": "topilmadi",
+      "nothing_to_pay": "to‘lanadigan narsa yo‘q",
+      "amount_moved": "summa o‘zgardi — sahifani yangilang",
+      "kpi_month_refused": "bu oyning KPI si hisoblanmadi",
+      "month_open": "hali birorta oy yopilmagan",
+      "grid_empty": "jadval bo‘sh",
+      "grid_hole": "jadvalda bo‘sh katak bor",
+      "grid_duplicate": "ikkita bir xil chegara",
+      "grid_no_open_tier": "oxirgi qator «dan ko‘p» bo‘lishi kerak",
+      "grid_no_open_band": "oxirgi ustun «dan ko‘p» bo‘lishi kerak",
+      "bad_rate": "stavka 0 dan 1 000 000 gacha bo‘lgan son bo‘lishi kerak",
+      "bad_bound": "chegara musbat, o‘sib boruvchi va juda katta bo‘lmagan son bo‘lishi kerak",
+      "bad_month": "noto‘g‘ri oy",
+      "kpi_version_paid": "bu oy uchun KPI allaqachon to‘langan — yangi jadval faqat keyingi oydan",
+      "category_clash": "bu xarajat turi boshqa to‘lov (oylik, KPI yoki upsale) uchun tanlangan — har biriga alohida tur kerak",
+      "before_first_version": "jadval birinchi KPI oyidan oldin boshlana olmaydi",
+      "no_seller": "mijozga sotuvchi belgilanmagan"
+    },
+    "table": {
+      "title": "KPI jadvali",
+      "version": "{month} dan amalda",
+      "corner": "Kub ↓ · zichlik →",
+      "none": "KPI jadvali hali yo‘q.",
+      "edit": "Jadvalning yangi versiyasi",
+      "tierOver": "{n} m³ dan ko‘p",
+      "tierUpTo": "{n} m³ gacha",
+      "bandOver": "{n} kg/m³ dan ko‘p",
+      "bandUpTo": "{n} kg/m³ gacha",
+      "from": "Qaysi oydan amalda",
+      "bandTop": "Zichlikning yuqori chegarasi, kg/m³",
+      "tierTop": "Kubning yuqori chegarasi",
+      "rate": "Stavka, 1 m³ uchun $",
+      "open": "dan ko‘p",
+      "saveHint": "Yangi jadval tanlangan oydan amal qiladi; eski oylar o‘z jadvali bo‘yicha hisoblanadi. KPI to‘langan oyni o‘zgartirib bo‘lmaydi.",
+      "editBase": "{month} dagi amaldagi jadval asosida"
+    },
+    "kpiFailed": "KPI ajratilgan vaqt ichida hisoblanmadi — bu sahifadagi KPI raqamlari ko‘rsatilmadi. Har bir sotuvchini alohida ochib hisoblang.",
+    "upsaleTruncated": "Bu oyda takliflar juda ko‘p — upsale ustuni to‘liq emas. Sotuvchini alohida oching.",
+    "computeOne": "faqat shu hodimni hisoblash",
+    "salaryNotDue": "— bu oy hali to‘lanmaydi",
+    "salaryMonth": "{month}:",
+    "unstampedRepair": "→ {name} ga o‘tkazish"
+  },
+  "calcSheet": {
+    "group": "Guruh",
+    "code": "kod",
+    "baza": "baza",
+    "duty": "Boj",
+    "vat": "QQS",
+    "excise": "aksiz",
+    "fee": "Yig‘im",
+    "freight": "Yo‘lkira",
+    "zone": "zona",
+    "band": "oraliq",
+    "rate": "stavka",
+    "listPrice": "prays bo‘yicha",
+    "discount": "Chegirma",
+    "extras": "Qo‘shimcha",
+    "total": "Jami",
+    "perM3": "m³ uchun",
+    "perKg": "kg uchun",
+    "validUntil": "Amal qiladi",
+    "expired": "muddati o‘tgan",
+    "goods": "Tovarlar",
+    "sealedBy": "muhrlagan"
   }
 }

@@ -9,6 +9,7 @@ import { calcControlScopeFor } from '@/modules/wms/calc/control-scope';
 import {
   calcActuals,
   calcCoverage,
+  linkSuggestionCount,
   linkSuggestions,
   warnedGroups,
   type CalcActualRow,
@@ -63,10 +64,14 @@ export default async function CalcControlPage() {
   let warned: Awaited<ReturnType<typeof warnedGroups>> = [];
   let rows: CalcActualRow[] = [];
   let settleDays = 7;
+  // The queue's true length (0119): the list is capped at 50, and the VED
+  // home's «Tasdiqlash kerak: N» counts all of them — the same predicate.
+  let queueTotal = 0;
   try {
-    [coverage, queue, warned, rows, settleDays] = await Promise.all([
+    [coverage, queue, queueTotal, warned, rows, settleDays] = await Promise.all([
       calcCoverage(who, monthStart),
       linkSuggestions(who),
+      linkSuggestionCount(who),
       warnedGroups(who, monthStart),
       // Settled only, filtered in SQL: see `settledFilter` — a JS filter after
       // the LIMIT empties this table exactly when the month is busiest.
@@ -140,6 +145,11 @@ export default async function CalcControlPage() {
             ))}
           </ul>
         )}
+        {queueTotal > queue.length ? (
+          <p className="text-2xs text-ink-500" data-testid="link-shown-of">
+            {t('linksShownOf', { shown: queue.length, total: queueTotal })}
+          </p>
+        ) : null}
       </section>
 
       {/* 3 — CONFIRMED OVER A WARNING. The owner's «ko'rmasdan tasdiqlagan». */}

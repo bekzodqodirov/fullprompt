@@ -111,10 +111,14 @@ export function weeksBetween(from: string, to: string): string[] {
  * The dashboard's period radio, `?davr=` — a CLOSED set (#514): anything else
  * (absent, `07`, `OY`, garbage) reads as «Bu oy», never as a guess.
  */
-export type DashPeriodKey = 'bugun' | '7' | '30' | 'oy' | 'otgan';
+export type DashPeriodKey = 'bugun' | '7' | 'hafta' | '30' | 'oy' | 'otgan';
 
-/** In the order the radio draws them. */
-export const DASH_PERIODS: readonly DashPeriodKey[] = ['bugun', '7', '30', 'oy', 'otgan'];
+/**
+ * In the order the radio draws them — on a phone two rows of three, each row
+ * «running, running, closed»: today · 7 days · last week, then 30 days ·
+ * this month · last month.
+ */
+export const DASH_PERIODS: readonly DashPeriodKey[] = ['bugun', '7', 'hafta', '30', 'oy', 'otgan'];
 
 export interface DashPeriod {
   key: DashPeriodKey;
@@ -142,9 +146,10 @@ export interface DashPeriod {
 }
 
 /**
- * One of the five windows from Tashkent's today (R5). «bugun» is today alone,
- * «7» / «30» end today and include it, «oy» is the month to date, «otgan» the
- * whole previous month.
+ * One of the six windows from Tashkent's today (R5). «bugun» is today alone,
+ * «7» / «30» end today and include it, «hafta» is the whole previous ISO week
+ * (Monday–Sunday — the Monday evening Telegram's window, owner's 5b), «oy» is
+ * the month to date, «otgan» the whole previous month.
  */
 export function dashPeriod(raw: string | undefined | null, today: string): DashPeriod {
   const key: DashPeriodKey = (DASH_PERIODS as readonly string[]).includes(raw ?? '') ? (raw as DashPeriodKey) : 'oy';
@@ -164,6 +169,11 @@ export function dashPeriod(raw: string | undefined | null, today: string): DashP
       return period(today, today);
     case '7':
       return period(addDays(today, -6), today);
+    case 'hafta':
+      // The week that has ENDED: every day of it complete, so a sum over it
+      // never changes after it is read — which is what lets the Monday
+      // evening message count each day exactly once.
+      return period(addDays(w.weekStart, -7), addDays(w.weekStart, -1));
     case '30':
       return period(w.d30Start, today);
     case 'otgan': {

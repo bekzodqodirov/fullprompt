@@ -29,6 +29,17 @@ export type OwnerBand = readonly [number, number | null, number, number];
 export const OWNER_TARIFF_ZONES = ['cn', 'kashgar'] as const;
 
 /**
+ * Every zone the app knows how to NAME — his seeded two plus «horgos»
+ * (2026-09-29, answer 22: «horgosdan yolkira narxi senga nega kerak uni
+ * sistemadan men ozim kirita olamanku»). Horgos is a PLACE, never a price:
+ * the seed writes no row for it, the tariff form offers the name so he types
+ * «horgos» and not a second spelling of it, and the bot draws its button only
+ * once his own rows exist. A zone means cargo whose road STARTS there (his
+ * 15c); Yiwu/Guangzhou cargo stays «cn» whichever border it crosses (21a).
+ */
+export const KNOWN_TARIFF_ZONES = [...OWNER_TARIFF_ZONES, 'horgos'] as const;
+
+/**
  * The date the seeded tariff takes effect.
  *
  * FIXED, never `new Date()`: a tariff dated «whenever the seed happened to

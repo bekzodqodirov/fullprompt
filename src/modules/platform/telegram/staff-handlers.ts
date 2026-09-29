@@ -32,12 +32,17 @@ import {
   parseCallback,
   escapesIntake,
   settlePressedApproval,
+  settleLinkAskRow,
   staffByPhone,
   staffForChat,
   takeStaffEntry,
   takeTaskPending,
   type CalcStep,
   type NoteStep,
+  AI_ZONE_ROUTES,
+  isZoneStep,
+  zonePressAnswer,
+  type ZoneStep,
 } from './staff-bot';
 import { aiConfigured } from '../ai/model';
 import { codeCandidates } from '../ai/route-text';
@@ -164,25 +169,42 @@ function aiSectionKeyboard() {
 }
 
 /**
- * «Yuk qayerdan chiqadi?» — his tariff's two zones, as buttons. A button and
- * not a typed city: the zone is a 36-58 % difference in the road's price, and
+ * «Yuk qayerdan chiqadi?» — his tariff's zones, as buttons. A button and not
+ * a typed city: the zone is a 36-58 % difference in the road's price, and
  * `guessZone` over free text is a SUGGESTION the workspace makes a person
  * confirm (workspace.ts). Here the person IS confirming, by pressing.
+ *
+ * Only the zones the tariff PRICES today are drawn (`priced`, read at the
+ * moment the question is asked): «horgos» appears the day he types its
+ * prices on /admin/tarif and not before. Pure, so the rule is a test.
  */
-function zoneKeyboard() {
+export function zoneKeyboard(priced: readonly string[]) {
   return {
     inline_keyboard: [
-      [{ text: '🇨🇳 Xitoydan (Yiwu, Guangzhou…) → O‘zbekiston', callback_data: 'c:zone_cn' }],
-      [{ text: '🏔 Qashg‘ardan → O‘zbekiston', callback_data: 'c:zone_kashgar' }],
+      ...(Object.entries(AI_ZONE_ROUTES) as [ZoneStep, (typeof AI_ZONE_ROUTES)[ZoneStep]][])
+        .filter(([, r]) => priced.includes(r.zone))
+        .map(([step, r]) => [{ text: r.label, callback_data: `c:${step}` }]),
       [{ text: '✖️ Bekor qilish', callback_data: 'c:cancel' }],
     ],
   };
 }
 
-export const AI_ZONE_ROUTES: Record<'zone_cn' | 'zone_kashgar', { zone: string; fromCity: string; toCity: string }> = {
-  zone_cn: { zone: 'cn', fromCity: 'Xitoy (Yiwu/Guangzhou)', toCity: 'O‘zbekiston' },
-  zone_kashgar: { zone: 'kashgar', fromCity: 'Qashg‘ar', toCity: 'O‘zbekiston' },
-};
+/**
+ * The zones the tariff prices today — through a dynamic import, because
+ * platform must not import wms statically. A failed read answers his two
+ * seeded zones rather than no buttons at all: the question must stay
+ * answerable, and the landing still drops a zone that turned out unpriced.
+ */
+async function pricedZonesNow(): Promise<string[]> {
+  try {
+    const { onDate, tariffZones } = await import('../../wms/calc/dictionaries');
+    return await tariffZones(onDate());
+  } catch (err) {
+    logger.error({ err }, '[staff-bot] tariff zones unreadable — offering the seeded two');
+    const { OWNER_TARIFF_ZONES } = await import('../../wms/calc/tariff-seed');
+    return [...OWNER_TARIFF_ZONES];
+  }
+}
 
 const CLIENT_QUESTION =
   'Mijozni yozing: **kodi** (GS777) yoki **telefon raqami**. Kod bo‘lmasa — ismini yozing.';
@@ -354,6 +376,45 @@ export function registerStaffBot(bot: Bot): void {
               ? `📞 Bog‘lanildi — ${by}`
               : '📞 Bog‘lanildi',
         ).catch((err: unknown) => logger.warn({ err }, 'lead press not settled'));
+      }
+      return;
+    }
+
+    // ✅/❌ on a calc↔prixod guess (0119). BEFORE the approval guard (#939),
+    // the decision in wms by dynamic import, the settle off the poller (#706).
+    if (parsed.kind === 'calc_link') {
+      const { decideLinkFromBot } = await import('../../wms/calc/link-bot');
+      const outcome = await decideLinkFromBot(chatId, parsed.receiptId, parsed.requestTag, parsed.verdict);
+      // Record<union>: an outcome nobody wrote words for is a compile error,
+      // not an empty spinner on the phone.
+      const answers: Record<typeof outcome, string> = {
+        confirmed: '✅ Tasdiqlandi',
+        dropped: '❌ Olib tashlandi',
+        already: 'Allaqachon hal qilingan',
+        changed: 'Bu prixod o‘zgargan — Hisob nazoratini oching',
+        not_mine: 'Bu hisob sizniki emas',
+        request_foreign: 'Boshqa mijozning hisobi',
+        not_linked: 'Ulanmagan',
+        forbidden: 'Huquqingiz yo‘q',
+      };
+      await ctx.answerCallbackQuery({ text: answers[outcome] });
+      const pressed = ctx.callbackQuery.message;
+      if (
+        (outcome === 'confirmed' || outcome === 'dropped' || outcome === 'already' || outcome === 'changed') &&
+        pressed &&
+        'text' in pressed &&
+        pressed.text
+      ) {
+        void settleLinkAskRow(
+          chatId,
+          {
+            messageId: pressed.message_id,
+            text: pressed.text,
+            markup: 'reply_markup' in pressed ? pressed.reply_markup : undefined,
+          },
+          ctx.callbackQuery.data,
+          answers[outcome],
+        ).catch((err: unknown) => logger.warn({ err }, 'calc link press not settled'));
       }
       return;
     }
@@ -550,7 +611,9 @@ export function registerStaffBot(bot: Bot): void {
         // The podklyuch door is waiting for «qayerdan?» — a typed word here
         // is not the customer's name yet, and filing it as one would skip
         // the only question that prices the road.
-        await ctx.reply('Avval yuk qayerdan chiqishini tanlang:', { reply_markup: zoneKeyboard() });
+        await ctx.reply('Avval yuk qayerdan chiqishini tanlang:', {
+          reply_markup: zoneKeyboard(await pricedZonesNow()),
+        });
         return;
       }
       if (intake.stage === 'question') {
@@ -1303,7 +1366,7 @@ async function handleCalcCallback(
       updateIntake(chatId, { stage: 'section' });
       await ctx.reply(
         '🤖 AI podklyuch: rastamojka + yo‘lkira (tarif narxida).\n\nYuk qayerdan chiqadi?',
-        { reply_markup: zoneKeyboard() },
+        { reply_markup: zoneKeyboard(await pricedZonesNow()) },
       );
       return;
     }
@@ -1321,14 +1384,20 @@ async function handleCalcCallback(
     return;
   }
 
-  if (step === 'zone_cn' || step === 'zone_kashgar') {
+  if (isZoneStep(step)) {
     // Only the question it answers: a stale zone button from yesterday's
     // message must not rewrite a live collection's road.
     if (state.stage !== 'section' || state.section !== 'podklyuch') {
       await ctx.reply('Bu tugma eskirgan.');
       return;
     }
-    const route = AI_ZONE_ROUTES[step];
+    // …nor land a zone whose price has gone since the button was drawn.
+    const answer = zonePressAnswer(step, await pricedZonesNow());
+    if (!answer.ok) {
+      await ctx.reply(answer.text);
+      return;
+    }
+    const { route } = answer;
     updateIntake(chatId, { route, stage: 'client' });
     await ctx.reply(`✅ ${route.fromCity} → ${route.toCity}\n\n${CLIENT_QUESTION}`, {
       parse_mode: 'Markdown',

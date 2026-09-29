@@ -397,6 +397,7 @@ async function requestAbout(
 export const ZONE_ROUTE: Record<string, string> = {
   cn: 'Xitoy → O‘zbekiston',
   kashgar: 'Qashg‘ar → O‘zbekiston',
+  horgos: 'Horgos → O‘zbekiston',
 };
 
 /**

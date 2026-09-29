@@ -45,8 +45,8 @@ const input = (over: Partial<TruckInput> = {}): TruckInput => ({
 
 describe('truckRow — one truck, one honest row', () => {
   it('a truck on the road reads the ONE assembler: the same % and the same window', () => {
-    const row = truckRow(input(), NOW, TODAY);
-    const s = scheduleEstimate('YW', 'TAS1', ago(72), null, NOW)!;
+    const row = truckRow(input(), NOW, TODAY, {});
+    const s = scheduleEstimate('YW', 'TAS1', ago(72), null, {}, NOW)!;
     expect(row.kind).toBe('on_road');
     expect(row.stage).toBe('export_transit');
     expect(row.roadPct).toBe(Math.round(s.est.progress * 100));
@@ -67,6 +67,7 @@ describe('truckRow — one truck, one honest row', () => {
       input({ destCode: 'GZ', destName: 'Guangzhou', destCountry: 'CN', departedAt: ago(24) }),
       NOW,
       TODAY,
+      {},
     );
     expect(row.stage).toBe('cn_transit');
     expect(row.kind).toBe('no_schedule');
@@ -76,12 +77,12 @@ describe('truckRow — one truck, one honest row', () => {
   });
 
   it('an unmapped pair and a missing departure are no schedule too — null, never 0', () => {
-    expect(truckRow(input({ originCode: 'QOQ', destCode: 'NAM' }), NOW, TODAY)).toMatchObject({
+    expect(truckRow(input({ originCode: 'QOQ', destCode: 'NAM' }), NOW, TODAY, {})).toMatchObject({
       kind: 'no_schedule',
       roadPct: null,
       eta: null,
     });
-    expect(truckRow(input({ departedAt: null }), NOW, TODAY)).toMatchObject({
+    expect(truckRow(input({ departedAt: null }), NOW, TODAY, {})).toMatchObject({
       kind: 'no_schedule',
       roadPct: null,
       days: 0,
@@ -89,8 +90,8 @@ describe('truckRow — one truck, one honest row', () => {
   });
 
   it('past its schedule: overdue, and then it says nothing about a date', () => {
-    const row = truckRow(input({ destCode: 'KA', destName: 'Qashqar', destCountry: 'CN', departedAt: ago(400) }), NOW, TODAY);
-    expect(scheduleEstimate('YW', 'KA', ago(400), null, NOW)!.est.overdue).toBe(true);
+    const row = truckRow(input({ destCode: 'KA', destName: 'Qashqar', destCountry: 'CN', departedAt: ago(400) }), NOW, TODAY, {});
+    expect(scheduleEstimate('YW', 'KA', ago(400), null, {}, NOW)!.est.overdue).toBe(true);
     expect(row.kind).toBe('overdue');
     expect(row.eta).toBeNull();
     expect(row.roadPct).toBeNull();
@@ -108,6 +109,7 @@ describe('truckRow — one truck, one honest row', () => {
       }),
       NOW,
       TODAY,
+      {},
     );
     expect(row.stage).toBe('in_uz');
     expect(row.kind).toBe('on_road');
@@ -115,7 +117,7 @@ describe('truckRow — one truck, one honest row', () => {
     expect(row.eta).toBeNull();
     // Ordered by the hidden schedule all the same.
     expect(row.arrivalOrder).toBe(
-      scheduleEstimate('KA', 'TAS1', ago(200), { key: 'in_uz', at: ago(3).toISOString() }, NOW)!.est
+      scheduleEstimate('KA', 'TAS1', ago(200), { key: 'in_uz', at: ago(3).toISOString() }, {}, NOW)!.est
         .remainingHours[0],
     );
     // The customs stamp moves the rung, as it does in the cabinet.
@@ -128,6 +130,7 @@ describe('truckRow — one truck, one honest row', () => {
       }),
       NOW,
       TODAY,
+      {},
     );
     expect(cleared.stage).toBe('customs_done');
     expect(cleared.eta).toBeNull();
@@ -144,13 +147,41 @@ describe('truckRow — one truck, one honest row', () => {
       }),
       NOW,
       TODAY,
+      {},
     );
     expect(row.checkpoint).toEqual({ key: 'at_border', at: '2026-08-25T20:30:00.000Z' });
     expect(row.pinDays).toBe(1);
   });
 
+  it('a Horgos truck is on the road with a date, and its Kazakh pin survives', () => {
+    // Before the Horgos round HOR → TAS1 was a generic straight line
+    // («no_schedule»), and the card's three-key list dropped every `in_kz`.
+    const row = truckRow(
+      input({
+        originCode: 'HOR',
+        originName: 'Horgos',
+        departedAt: ago(100),
+        trackingCheckpoint: { key: 'in_kz', at: ago(5).toISOString() },
+      }),
+      NOW,
+      TODAY,
+      {},
+    );
+    expect(row.kind).toBe('on_road');
+    expect(row.checkpoint).toEqual({ key: 'in_kz', at: ago(5).toISOString() });
+    expect(row.eta).not.toBeNull();
+    // …while a Kyrgyz pin left on the same Kazakh road is no position.
+    const stray = truckRow(
+      input({ originCode: 'HOR', departedAt: ago(100), trackingCheckpoint: { key: 'in_kg', at: ago(5).toISOString() } }),
+      NOW,
+      TODAY,
+      {},
+    );
+    expect(stray.checkpoint).toBeNull();
+  });
+
   it('a pin with a key the batch card never writes is not a checkpoint', () => {
-    const row = truckRow(input({ trackingCheckpoint: { key: 'somewhere', at: ago(5).toISOString() } }), NOW, TODAY);
+    const row = truckRow(input({ trackingCheckpoint: { key: 'somewhere', at: ago(5).toISOString() } }), NOW, TODAY, {});
     expect(row.checkpoint).toBeNull();
     expect(row.pinDays).toBeNull();
   });
@@ -158,11 +189,11 @@ describe('truckRow — one truck, one honest row', () => {
   it('at the gate: days count from ARRIVAL, stuck from STUCK_AT_GATE_DAYS, no stage', () => {
     const arrived = (hoursAgo: number) =>
       input({ status: 'arrived', departedAt: ago(400), arrivedAt: ago(hoursAgo), awaitingUnload: 7 });
-    const fresh = truckRow(arrived(20), NOW, TODAY);
+    const fresh = truckRow(arrived(20), NOW, TODAY, {});
     expect(fresh).toMatchObject({ kind: 'unloading', status: 'arrived', stage: null, days: 1, awaitingUnload: 7 });
     expect(fresh.roadPct).toBeNull();
     expect(fresh.eta).toBeNull();
-    const stuck = truckRow(arrived(STUCK_AT_GATE_DAYS * 24 + 2), NOW, TODAY);
+    const stuck = truckRow(arrived(STUCK_AT_GATE_DAYS * 24 + 2), NOW, TODAY, {});
     expect(stuck.kind).toBe('stuck');
     expect(stuck.days).toBe(STUCK_AT_GATE_DAYS);
     // The attention list's predicate and the card's chip are one rule.
@@ -172,7 +203,7 @@ describe('truckRow — one truck, one honest row', () => {
   });
 
   it('an unload count on a truck still on the road is not carried', () => {
-    expect(truckRow(input({ awaitingUnload: 5 }), NOW, TODAY).awaitingUnload).toBeNull();
+    expect(truckRow(input({ awaitingUnload: 5 }), NOW, TODAY, {}).awaitingUnload).toBeNull();
   });
 });
 
@@ -196,13 +227,13 @@ describe('truckStage — the cabinet ladder, extracted, not restated', () => {
 describe('rankTrucks — what needs a person first', () => {
   it('stuck, overdue, unloading, the road by soonest arrival, then the unplaceable', () => {
     const rows = [
-      truckRow(input({ id: 'ns', code: 'B-NS', destCode: 'GZ', destCountry: 'CN', departedAt: ago(30) }), NOW, TODAY),
-      truckRow(input({ id: 'far', code: 'B-FAR', departedAt: ago(10) }), NOW, TODAY),
-      truckRow(input({ id: 'near', code: 'B-NEAR', originCode: 'KA', departedAt: ago(100) }), NOW, TODAY),
-      truckRow(input({ id: 'unl', code: 'B-UNL', status: 'arrived', arrivedAt: ago(5) }), NOW, TODAY),
-      truckRow(input({ id: 'late', code: 'B-LATE', destCode: 'KA', destCountry: 'CN', departedAt: ago(400) }), NOW, TODAY),
-      truckRow(input({ id: 'stuck2', code: 'B-S2', status: 'arrived', arrivedAt: ago(50) }), NOW, TODAY),
-      truckRow(input({ id: 'stuck5', code: 'B-S5', status: 'arrived', arrivedAt: ago(122) }), NOW, TODAY),
+      truckRow(input({ id: 'ns', code: 'B-NS', destCode: 'GZ', destCountry: 'CN', departedAt: ago(30) }), NOW, TODAY, {}),
+      truckRow(input({ id: 'far', code: 'B-FAR', departedAt: ago(10) }), NOW, TODAY, {}),
+      truckRow(input({ id: 'near', code: 'B-NEAR', originCode: 'KA', departedAt: ago(100) }), NOW, TODAY, {}),
+      truckRow(input({ id: 'unl', code: 'B-UNL', status: 'arrived', arrivedAt: ago(5) }), NOW, TODAY, {}),
+      truckRow(input({ id: 'late', code: 'B-LATE', destCode: 'KA', destCountry: 'CN', departedAt: ago(400) }), NOW, TODAY, {}),
+      truckRow(input({ id: 'stuck2', code: 'B-S2', status: 'arrived', arrivedAt: ago(50) }), NOW, TODAY, {}),
+      truckRow(input({ id: 'stuck5', code: 'B-S5', status: 'arrived', arrivedAt: ago(122) }), NOW, TODAY, {}),
     ];
     expect(rankTrucks(rows).map((r) => r.id)).toEqual([
       'stuck5',
@@ -218,8 +249,8 @@ describe('rankTrucks — what needs a person first', () => {
   });
 
   it('breaks a tie by code, so a re-render never shuffles two equal rows', () => {
-    const a = truckRow(input({ id: 'x', code: 'B-002', status: 'arrived', arrivedAt: ago(5) }), NOW, TODAY);
-    const b = truckRow(input({ id: 'y', code: 'B-001', status: 'arrived', arrivedAt: ago(6) }), NOW, TODAY);
+    const a = truckRow(input({ id: 'x', code: 'B-002', status: 'arrived', arrivedAt: ago(5) }), NOW, TODAY, {});
+    const b = truckRow(input({ id: 'y', code: 'B-001', status: 'arrived', arrivedAt: ago(6) }), NOW, TODAY, {});
     expect(rankTrucks([a, b]).map((r) => r.code)).toEqual(['B-001', 'B-002']);
   });
 });

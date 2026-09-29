@@ -115,6 +115,12 @@ export const receipts = pgTable(
     calcLinkConfirmedAt: timestamp('calc_link_confirmed_at', { withTimezone: true }),
     calcLinkConfirmedBy: uuid('calc_link_confirmed_by').references(() => users.id),
     /**
+     * When the sealer was ASKED in Telegram about this `auto` link (0119).
+     * The sweep claims by stamping it before the message leaves; every stamp
+     * door writes NULL, so a new guess is asked about once.
+     */
+    calcLinkNotifiedAt: timestamp('calc_link_notified_at', { withTimezone: true }),
+    /**
      * The factory stop this prixod came from (0100, «zavod reysi»): the STOP,
      * so «which factory, which phone» is one answer on the receipt card, and
      * the truck's cost splits over the cargo its stops brought. Written by
@@ -128,6 +134,14 @@ export const receipts = pgTable(
      */
     receivedByUserId: uuid('received_by_user_id').references(() => users.id),
     receivedByName: text('received_by_name'),
+    /**
+     * The client's seller ON THE DAY this cargo was received (0117, the
+     * owner's 2a) — written in the same statement as `clientId` by its two
+     * writers (`stampFor`, wms/staff/stamp.ts), never later from the client
+     * book. NULL = nobody was the seller then; the first seller named
+     * afterwards takes it (`stampUnattributedCargo`).
+     */
+    salesManagerId: uuid('sales_manager_id').references(() => users.id),
     voidedAt: timestamp('voided_at', { withTimezone: true }),
     voidedBy: uuid('voided_by').references(() => users.id),
     voidReason: text('void_reason'),
@@ -136,6 +150,12 @@ export const receipts = pgTable(
   },
   (t) => [
     check('receipts_status_check', sql`${t.status} IN ('draft', 'confirmed', 'voided')`),
+    index('receipts_seller_received_idx')
+      .on(t.salesManagerId, t.receivedAt)
+      .where(sql`${t.status} = 'confirmed' AND ${t.salesManagerId} IS NOT NULL`),
+    index('receipts_unstamped_received_idx')
+      .on(t.receivedAt)
+      .where(sql`${t.status} = 'confirmed' AND ${t.salesManagerId} IS NULL AND ${t.clientId} IS NOT NULL`),
     check(
       'receipts_void_consistency',
       sql`(${t.voidedAt} IS NULL) = (${t.voidReason} IS NULL)`,
@@ -157,6 +177,12 @@ export const receipts = pgTable(
     index('receipts_calc_request_idx')
       .on(t.calcRequestId)
       .where(sql`${t.calcRequestId} IS NOT NULL`),
+    // The ✅/❌ sweep's rows (0119): guesses nobody has been asked about yet.
+    index('receipts_calc_link_ask_idx')
+      .on(t.calcRequestId)
+      .where(
+        sql`${t.calcRequestId} IS NOT NULL AND ${t.calcLinkConfirmedAt} IS NULL AND ${t.calcLinkNotifiedAt} IS NULL AND ${t.voidedAt} IS NULL`,
+      ),
     check(
       'receipts_received_by_one',
       sql`${t.receivedByUserId} IS NULL OR ${t.receivedByName} IS NULL`,
@@ -215,6 +241,9 @@ export const receiptLots = pgTable(
     index('receipt_lots_factory_barcode_idx')
       .on(t.factoryBarcode)
       .where(sql`${t.factoryBarcode} IS NOT NULL`),
+    // `receipt_lots_product_key_idx` (0119, «Oldingi narx») is created in SQL:
+    // an expression index that must equal `productKeySql` character for
+    // character, like the trigram indexes 0003 made on the two names.
   ],
 );
 
@@ -666,7 +695,12 @@ export const batches = pgTable(
      */
     customsPartnerId: uuid('customs_partner_id').references(() => partners.id),
     customsByClient: boolean('customs_by_client').notNull().default(false),
-    /** Latest manual position pin: {key: at_border|in_kg|in_uz, at: ISO} — re-anchors the map estimate. */
+    /**
+     * Latest manual position pin: {key: at_border|in_kg|in_kz|in_uz, at: ISO} —
+     * re-anchors the map estimate. The keys have ONE home
+     * (`CHECKPOINT_KEYS`, tracking/map-data.ts), and a truck is offered and
+     * accepted only the keys its own road carries (`checkpointsFor`).
+     */
     trackingCheckpoint: jsonb('tracking_checkpoint'),
     /**
      * When the customs declaration cleared (owner: «ha rastamojka tugadi
@@ -696,6 +730,47 @@ export const batches = pgTable(
     ),
     check('batches_route_check', sql`${t.originWarehouseId} <> ${t.destWarehouseId}`),
     index('batches_origin_status_idx').on(t.originWarehouseId, t.status),
+  ],
+);
+
+/**
+ * «Chegara navbatlari» (0118): the queue at a border post as the logist typed
+ * it, one row per post. Absent, or NULL hours, = the corridor's default
+ * (`BORDER_POSTS`, tracking/map-data.ts — the only list of posts, hence no
+ * CHECK on `post`). Two clocks: `updated_at` is the last write (the panel's
+ * age and the colleague check), `hours_since` is when the HOURS changed — the
+ * ETA counts queued trucks from it — and `prev_*` is the regime before it, so
+ * «had this truck already crossed» is judged against the wait it was being
+ * given (`routeWithWaits`). Written by the service only.
+ */
+export const borderQueue = pgTable(
+  'border_queue',
+  {
+    id: id(),
+    post: text('post').notNull(),
+    minHours: integer('min_hours'),
+    maxHours: integer('max_hours'),
+    note: text('note'),
+    updatedBy: uuid('updated_by').references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    hoursSince: timestamp('hours_since', { withTimezone: true }).notNull().defaultNow(),
+    prevMinHours: integer('prev_min_hours'),
+    prevMaxHours: integer('prev_max_hours'),
+    prevSince: timestamp('prev_since', { withTimezone: true }),
+  },
+  (t) => [
+    unique('border_queue_post_unique').on(t.post),
+    check('border_queue_pair_check', sql`(${t.minHours} IS NULL) = (${t.maxHours} IS NULL)`),
+    check(
+      'border_queue_range_check',
+      sql`${t.minHours} IS NULL OR (${t.minHours} >= 0 AND ${t.maxHours} >= ${t.minHours} AND ${t.maxHours} <= 720)`,
+    ),
+    check('border_queue_prev_pair_check', sql`(${t.prevMinHours} IS NULL) = (${t.prevMaxHours} IS NULL)`),
+    check(
+      'border_queue_prev_range_check',
+      sql`${t.prevMinHours} IS NULL OR (${t.prevMinHours} >= 0 AND ${t.prevMaxHours} >= ${t.prevMinHours} AND ${t.prevMaxHours} <= 720 AND ${t.prevSince} IS NOT NULL)`,
+    ),
+    check('border_queue_note_len', sql`${t.note} IS NULL OR length(${t.note}) <= 300`),
   ],
 );
 
@@ -3313,11 +3388,10 @@ export const aiCalcPasses = pgTable(
   'ai_calc_passes',
   {
     id: id(),
-    requestId: uuid('request_id')
-      .notNull()
-      .references(() => calcRequests.id, { onDelete: 'cascade' }),
+    /** NULL only for kind 'similar' (0119): «Oldingi narx» asks about a LOT. */
+    requestId: uuid('request_id').references(() => calcRequests.id, { onDelete: 'cascade' }),
     staffId: uuid('staff_id').references(() => users.id),
-    /** 'intake' | 'grouping' | 'pick' | 'invoice'. */
+    /** 'intake' | 'grouping' | 'pick' | 'invoice' | 'similar'. */
     kind: text('kind').notNull(),
     model: text('model').notNull(),
     inputTokens: integer('input_tokens').notNull().default(0),
@@ -3326,13 +3400,35 @@ export const aiCalcPasses = pgTable(
   },
   (t) => [
     index('ai_calc_passes_day_idx').on(t.createdAt),
-    check('ai_calc_passes_kind_check', sql`${t.kind} IN ('intake', 'grouping', 'pick', 'invoice')`),
+    check(
+      'ai_calc_passes_kind_check',
+      sql`${t.kind} IN ('intake', 'grouping', 'pick', 'invoice', 'similar')`,
+    ),
+    // One anchor per kind. Safe beside the FK: CASCADE, not SET NULL (#809).
+    check('ai_calc_passes_anchor_check', sql`(${t.kind} = 'similar') = (${t.requestId} IS NULL)`),
     check(
       'ai_calc_passes_tokens_check',
       sql`${t.inputTokens} >= 0 AND ${t.outputTokens} >= 0`,
     ),
   ],
 );
+
+/**
+ * «Oldingi narx»'s AI fallback (0119): which REAL past lots the model named
+ * for a lot the free search found nothing for. Ids only — the price of every
+ * picked lot is read from the ledger at render, never stored beside it.
+ */
+export const lotSimilarPicks = pgTable('lot_similar_picks', {
+  lotId: uuid('lot_id')
+    .primaryKey()
+    .references(() => receiptLots.id, { onDelete: 'cascade' }),
+  pickedLotIds: uuid('picked_lot_ids').array().notNull(),
+  reasons: jsonb('reasons').notNull().default([]),
+  /** The model that answered — or `'pending'` while the call is out: the route's claim on the lot. */
+  model: text('model').notNull(),
+  createdBy: uuid('created_by').references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
 
 // ---------------------------------------------------------------------------
 // «Zavod reysi» — a truck we hire collects cargo from factories (0100)
@@ -3514,5 +3610,68 @@ export const cargoWaitAlerts = pgTable(
   (t) => [
     primaryKey({ columns: [t.clientId, t.warehouseId, t.level] }),
     check('cargo_wait_alerts_level_check', sql`${t.level} IN (1, 2)`),
+  ],
+);
+
+/**
+ * The owner's KPI table (0117, answers 3a/4a): $ per m³ by the month's m³ tier
+ * × the month's average-density band, one row per cell, VERSIONED by the month
+ * it starts to apply and never read before its first version (no earliest-row
+ * fallback). NULL max = the open top. The engine is wms/staff/kpi-engine.ts.
+ */
+export const kpiRates = pgTable(
+  'kpi_rates',
+  {
+    id: id(),
+    effectiveMonth: date('effective_month').notNull(),
+    maxM3: numeric('max_m3', { precision: 10, scale: 3 }),
+    maxDensity: integer('max_density'),
+    rateUsd: numeric('rate_usd', { precision: 8, scale: 2 }).notNull(),
+    createdBy: uuid('created_by').references(() => users.id),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check('kpi_rates_month_check', sql`${t.effectiveMonth} = date_trunc('month', ${t.effectiveMonth})::date`),
+    check('kpi_rates_max_m3_check', sql`${t.maxM3} IS NULL OR (${t.maxM3} > 0 AND ${t.maxM3} <> 'NaN'::numeric)`),
+    check('kpi_rates_max_density_check', sql`${t.maxDensity} IS NULL OR ${t.maxDensity} > 0`),
+    check('kpi_rates_rate_check', sql`${t.rateUsd} >= 0 AND ${t.rateUsd} <> 'NaN'::numeric`),
+    uniqueIndex('kpi_rates_cell').on(t.effectiveMonth, sql`coalesce(${t.maxM3}, -1)`, sql`coalesce(${t.maxDensity}, -1)`),
+  ],
+);
+
+/**
+ * A KPI payout (0117): the expense that moved the money plus a snapshot of
+ * what it paid for. LIVE while its expense is (every reader joins `expenses`
+ * with `voided_at IS NULL`), so voiding the expense re-opens the money by
+ * derivation — no hook. Netted per seller over every closed month.
+ */
+export const kpiPayouts = pgTable(
+  'kpi_payouts',
+  {
+    id: id(),
+    sellerId: uuid('seller_id')
+      .notNull()
+      .references(() => users.id),
+    expenseId: uuid('expense_id')
+      .notNull()
+      .unique()
+      .references(() => expenses.id),
+    amountUsd: numeric('amount_usd', { precision: 14, scale: 2 }).notNull(),
+    throughMonth: date('through_month').notNull(),
+    earnedPaidUsd: numeric('earned_paid_usd', { precision: 14, scale: 2 }).notNull(),
+    paidBeforeUsd: numeric('paid_before_usd', { precision: 14, scale: 2 }).notNull(),
+    /** [{month,m3,kg,density,tierMaxM3,bandMaxDensity,rate,paidM3,earnedPaidUsd}] */
+    breakdown: jsonb('breakdown').notNull(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check('kpi_payouts_amount_check', sql`${t.amountUsd} > 0 AND ${t.amountUsd} <> 'NaN'::numeric`),
+    check('kpi_payouts_month_check', sql`${t.throughMonth} = date_trunc('month', ${t.throughMonth})::date`),
+    check('kpi_payouts_earned_check', sql`${t.earnedPaidUsd} <> 'NaN'::numeric`),
+    check('kpi_payouts_before_check', sql`${t.paidBeforeUsd} <> 'NaN'::numeric`),
+    index('kpi_payouts_seller_idx').on(t.sellerId),
   ],
 );

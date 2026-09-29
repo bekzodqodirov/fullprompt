@@ -1,4 +1,6 @@
 import { aliasedTable, and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { linkSuggestionCount } from '../calc/actuals';
+import { calcControlScopeFor } from '../calc/control-scope';
 import { withoutJit } from '../../platform/db/no-jit';
 import { unpricedCount } from '../finance/unpriced';
 import { db } from '../../platform/db/client';
@@ -283,9 +285,15 @@ export interface VedFlowCounts {
   docsPending: number;
   /** Goods lines on OPEN deals with no TNVED code — the classification queue. */
   tnvedMissing: number;
+  /**
+   * Calc↔prixod guesses waiting for this person's ✅ (0119) — asked beside
+   * `vedFlowCounts` by `buildHomeFlow`, because it is the one count here that
+   * is the READER's own (their seals), and the signature stays argument-free.
+   */
+  calcLinksPending: number;
 }
 
-export async function vedFlowCounts(): Promise<VedFlowCounts> {
+export async function vedFlowCounts(): Promise<Omit<VedFlowCounts, 'calcLinksPending'>> {
   const originWh = aliasedTable(warehouses, 'origin_wh');
   const destWh = aliasedTable(warehouses, 'dest_wh');
   const [calc, docs, tnved] = await Promise.all([
@@ -377,7 +385,14 @@ export async function buildHomeFlow(
       // drawn even when the count is zero, or a quiet morning would leave
       // this person with no door to it at all.
       hrefs: ['/hisoblash', '/batches', '/bitimlar'],
-      counts: await vedFlowCounts(),
+      // Side by side, not one after the other: this home is opened on every
+      // login, and the second read owes the first nothing. The count is the
+      // control screen's own list, uncapped (#513) — scoped by its own door:
+      // the VED's seals, everybody's for a finance.reports holder.
+      counts: await Promise.all([
+        vedFlowCounts(),
+        linkSuggestionCount({ scope: calcControlScopeFor(actor), actorId: actor.id }),
+      ]).then(([base, calcLinksPending]) => ({ ...base, calcLinksPending })),
     };
   }
   if (actor.roles.includes('accountant')) {

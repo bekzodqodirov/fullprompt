@@ -5,6 +5,7 @@ import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { calendarDaysBetween, tashkentDayStart } from '../../platform/time/tashkent';
 import { fxResidueAllowance } from '../finance/money-bounds';
 import { unplacedCostSince } from '../costing/service';
+import { commissionPayoutSql } from './payout-sql';
 
 /**
  * «Xarajatlarda takror» — the owner's 3b, merged away (0101, A3 + M4a).
@@ -154,7 +155,7 @@ function mergeableExpenseSql() {
     isNull(expenses.voidedAt),
     isNull(expenses.partnerId),
     isNull(expenses.recurringId),
-    sql`NOT EXISTS (SELECT 1 FROM calc_offers o WHERE o.payout_expense_id = ${expenses}.id)`,
+    sql`NOT ${commissionPayoutSql(sql`${expenses}.id`)}`,
     sql`EXISTS (SELECT 1 FROM expense_categories mc WHERE mc.id = ${expenses}.category_id AND mc.cash)`,
   )!;
 }

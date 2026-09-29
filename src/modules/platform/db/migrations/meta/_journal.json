@@ -820,6 +820,27 @@
       "when": 1785190000095,
       "tag": "0116_cargo_wait_alerts",
       "breakpoints": true
+    },
+    {
+      "idx": 117,
+      "version": "7",
+      "when": 1785190000096,
+      "tag": "0117_staff_pay",
+      "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1785190000097,
+      "tag": "0118_border_queue",
+      "breakpoints": true
+    },
+    {
+      "idx": 119,
+      "version": "7",
+      "when": 1785190000098,
+      "tag": "0119_price_icons",
+      "breakpoints": true
     }
   ]
 }

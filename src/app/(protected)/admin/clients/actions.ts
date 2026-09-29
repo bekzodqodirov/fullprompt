@@ -11,6 +11,7 @@ import { diffFields, writeAudit } from '@/modules/platform/audit/service';
 import { requestMeta } from '@/modules/platform/auth/session';
 import { autoLinkClientToVerifiedChats } from '@/modules/platform/telegram/client-cabinet';
 import { activeClientsByPhone } from '@/modules/wms/client-cabinet/service';
+import { stampUnattributedCargo } from '@/modules/wms/staff/stamp';
 import {
   ClientError,
   canMintClient,
@@ -329,6 +330,13 @@ export async function updateClientAction(
       { actorId: actor.id, ...meta },
       { entityType: 'client', entityId: id, action: 'update', ...diff },
     );
+  }
+  // The first seller named on a client takes the cargo nobody was named on
+  // (0117, his «hamma mijozlarga biriktirib chiqdim» — the book was filled in
+  // after the cargo came). Only NULL → someone: a move from A to B leaves
+  // A's cargo with A (his 2a).
+  if (!before.salesManagerId && values.salesManagerId) {
+    await stampUnattributedCargo(db, id, values.salesManagerId, { actorId: actor.id, ...(await requestMeta()) });
   }
   // Phone edits may connect this code to an already-verified cabinet chat.
   await autoLinkClientToVerifiedChats(id, actor.id).catch(() => {});

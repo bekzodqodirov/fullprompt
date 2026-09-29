@@ -262,7 +262,7 @@ describe('trucksOnRoad — the in-transit report, classified', () => {
   it('a seeded YW → TAS1 truck gets the cabinet’s own window', async () => {
     const out = await trucksOnRoad([whYW], { limit: 1000, now: NOW });
     const row = out.rows.find((r) => r.id === batchIds.YWTAS)!;
-    const s = scheduleEstimate('YW', 'TAS1', ago(72), null, NOW)!;
+    const s = scheduleEstimate('YW', 'TAS1', ago(72), null, {}, NOW)!;
     expect(row.kind).toBe('on_road');
     expect(row.stage).toBe('export_transit');
     expect(row.roadPct).toBe(Math.round(s.est.progress * 100));

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { getTranslations } from 'next-intl/server';
 import { formatEtaRange } from '@/modules/platform/telegram/client-labels';
 import type { TruckRow } from '@/modules/wms/tracking/on-road-state';
+import { CHECKPOINT_LABEL } from '@/modules/wms/tracking/map-data';
 import { num } from '@/components/charts/format';
 
 /** «27.09» in Tashkent — an estimate is always days away, so no year (formatEtaRange's rule). */
@@ -36,7 +37,6 @@ export async function truckRoadWords({ counts = true }: { counts?: boolean } = {
     in_uz: t('truckStage.in_uz'),
     customs_done: t('truckStage.customs_done'),
   };
-  const PIN: Record<string, string> = { at_border: tb('cpBorder'), in_kg: tb('cpKg'), in_uz: tb('cpUz') };
 
   const word = (row: TruckRow): string =>
     row.kind === 'stuck'
@@ -65,8 +65,10 @@ export async function truckRoadWords({ counts = true }: { counts?: boolean } = {
       } else if (row.kind === 'no_schedule') {
         parts.push(t('truckNoRoute'));
       }
-      if (row.checkpoint && PIN[row.checkpoint.key]) {
-        parts.push(`${PIN[row.checkpoint.key]} · ${t('truckPin', { n: row.pinDays ?? 0 })}`);
+      // `row.checkpoint` is already the truck's own road's pin (`pinOnRoute`);
+      // the words have one home, beside the keys.
+      if (row.checkpoint) {
+        parts.push(`${tb(CHECKPOINT_LABEL[row.checkpoint.key].label)} · ${t('truckPin', { n: row.pinDays ?? 0 })}`);
       }
       if (counts) parts.push(t('truckDeparted', { n: num(row.departedBoxes) }));
     }

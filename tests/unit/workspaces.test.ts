@@ -29,6 +29,7 @@ import { sellerReportScopeFor } from '@/modules/wms/crm/seller-report-scope';
 import { mayBroadcast } from '@/modules/platform/broadcast/service';
 import { isAnalyst } from '@/modules/platform/ai/tools';
 import { mayOpenMyClients } from '@/modules/platform/clients/card-door';
+import { maySeeStaffMoney } from '@/modules/wms/staff/door';
 
 /**
  * The menu by job (2026-09-26, docs/NAV-WORKSPACES.md).
@@ -148,6 +149,8 @@ const GATES: Record<string, (a: Actor) => boolean> = {
   // finance/qarzga-berilgan/page.tsx: `companyMoneySight` (0114).
   '/finance/qarzga-berilgan': (a) => seesCompanyMoney(a),
   '/upsale': (a) => upsaleScopeFor(a) !== 'none',
+  // hodimlar/page.tsx asks the door itself (0117).
+  '/hodimlar': (a) => maySeeStaffMoney(a.permissions),
   '/admin/fx': (a) => adminLayout(a) && has(a, 'costs.fx.manage'),
   '/accounting/categories': (a) => accounting(a) && has(a, 'finance.expenses'),
   '/admin/cost-types': (a) => adminLayout(a) && has(a, 'admin.dictionaries.manage'),

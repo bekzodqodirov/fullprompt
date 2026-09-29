@@ -52,6 +52,10 @@ export const MUTE_GROUPS = {
     // so the only way to silence it was to silence everything (round C's
     // scouts); it is the same family as «hisoblash tayyor».
     'CalcSealed',
+    // «Bu prixodlar hisobingizga tegishlimi?» (0119) — a VED's own job, asked
+    // with buttons. A newcomer, so never in FOUNDERS: a list that muted the
+    // group before it existed must not start muting it by growing.
+    'CalcLinkAsk',
   ],
   // "Something is wrong, act now." The three price-control messages belong
   // here rather than in `operations`: cargo that arrived is routine, cargo

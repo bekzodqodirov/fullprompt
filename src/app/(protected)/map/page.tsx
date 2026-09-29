@@ -16,6 +16,7 @@ import { basemapAvailable } from '@/modules/wms/tracking/basemap';
 import { latestPositions } from '@/modules/wms/tracking/devices';
 import { warehousePoint } from '@/modules/wms/tracking/warehouse-point';
 import { truckFor } from '@/modules/wms/tracking/truck';
+import { loadBorderHours } from '@/modules/wms/tracking/border-queue';
 import { TrackingMap, type MapPickup, type MapTruck, type MapWarehouse } from './tracking-map';
 import { mayReadPickups, pickupsForMap } from '@/modules/wms/pickups/service';
 import { pickupTimeline } from '@/modules/wms/tracking/pickup-route';
@@ -150,10 +151,12 @@ export default async function MapPage({
   // Real fixes from paired driver phones win over the schedule estimate
   // while they are fresh (owner's flow: Android streams, other phones don't).
   const fixes = await latestPositions(transit.map((t) => t.batch.id));
+  // The typed border queues, once for every truck on the page (#432).
+  const waits = await loadBorderHours();
 
   const trucks: MapTruck[] = [];
   for (const { batch, originCode, destCode } of transit) {
-    const truck = await truckFor(batch, originCode, destCode, fixes.get(batch.id));
+    const truck = await truckFor(batch, originCode, destCode, waits, fixes.get(batch.id));
     if (truck) trucks.push(truck);
   }
 

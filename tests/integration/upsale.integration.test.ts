@@ -1,8 +1,10 @@
 import 'dotenv/config';
 import { eq, inArray, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { addDays, tashkentDay } from '@/modules/platform/time/tashkent';
+import { addDays, tashkentDay, tashkentDayStart } from '@/modules/platform/time/tashkent';
 import { arriveOnDeal, removeArrived } from '../fixtures/deal-cargo';
+import { receiveStamped, removeStamped } from '../fixtures/stamped-cargo';
+import { stampedCargo } from '@/modules/wms/staff/cargo';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
   calcExtras,
@@ -36,7 +38,6 @@ import {
   payUpsale,
   UPSALE_CAP,
   upsaleLiability,
-  sellerCargo,
   upsaleRows,
 } from '@/modules/wms/calc/upsale-service';
 import { voidExpense } from '@/modules/wms/accounting/service';
@@ -72,6 +73,7 @@ const madeRequests: string[] = [];
 const madeExpenses: string[] = [];
 const madeDeals: string[] = [];
 const madeReceipts: string[] = [];
+const stampedReceipts: string[] = [];
 let categoryBefore: unknown;
 let categoryExisted = false;
 let fxId = '';
@@ -166,6 +168,7 @@ afterAll(async () => {
   if (fxId) await db.execute(sql`DELETE FROM fx_rates WHERE id = ${fxId}::uuid`);
   await db.delete(clientTransactions).where(eq(clientTransactions.clientId, clientId));
   await removeArrived(madeReceipts);
+  await removeStamped(stampedReceipts);
   if (madeRequests.length > 0) {
     const vs = await db
       .select({ id: calcVersions.id })
@@ -1049,25 +1052,28 @@ describe('the share follows the cargo that arrived (4b)', () => {
     expect(paid.paidUsd).toBe(200);
   });
 
-  it('the KPI counts the cargo on the seller\'s OWN deals, by the day it was received (3a/x)', async () => {
-    const stage = await db.query.dealStages.findFirst({ where: eq(dealStages.kind, 'open') });
-    const [d] = await db
-      .insert(deals)
-      .values({ code: `UK-${SUFFIX}`, clientId, stageId: stage!.id, title: 'KPI', createdBy: actorId, ownerId: sellerId })
-      .returning();
-    madeDeals.push(d!.id);
-    madeReceipts.push(await arriveOnDeal({ dealId: d!.id, clientId, actorId, m3: 12.5, kg: 640 }));
-    // The app's clock (R5): the KPI counts Tashkent days, so the test asks
-    // for one — a UTC «today» is tomorrow in Tashkent after 19:00 UTC.
+  it('the seller\'s cargo is the RECEIPT\'s seller stamp, by the day it was received (0117, his 1a/2a)', async () => {
+    // Rewritten with the reason recorded: this block used to count the cargo
+    // on the seller's own DEALS (#1047/#1055, the deal owner). His answer 1a
+    // overturned that — a seller's cargo is every cargo of the clients whose
+    // card names them, stamped on the day it was received (2a) — and the
+    // /upsale block now reads the KPI's one reader, `stampedCargo`. The
+    // cartons are the grain, so the fixture carries boxes.
+    const { receiptId } = await receiveStamped({ clientId, actorId, sellerId, m3: 12.5, kg: 640, boxes: 5 });
+    stampedReceipts.push(receiptId);
+    // The app's clock (R5): a Tashkent day, never a UTC one.
     const day = tashkentDay();
-    const mine = await sellerCargo('own', sellerId, { from: day, to: day });
-    expect(mine).toEqual([{ sellerId, sellerName: `Upsale seller ${SUFFIX}`, receipts: 1, m3: 12.5, kg: 640 }]);
+    const window = { from: tashkentDayStart(day), to: tashkentDayStart(addDays(day, 1)) };
+    const mine = await stampedCargo(db, window, { kind: 'own', userId: sellerId });
+    expect(mine).toEqual([
+      { sellerId, sellerName: `Upsale seller ${SUFFIX}`, receipts: 1, m3: 12.5, kg: 640, unmeasured: [] },
+    ]);
     // The same seller as the owner sees them, and nobody else's cargo leaks
     // into a seller's own row.
-    const all = await sellerCargo('all', actorId, { from: day, to: day, sellerId });
-    expect(all).toEqual(mine);
-    // Received yesterday's window holds none of it.
-    const yesterday = addDays(day, -1);
-    expect(await sellerCargo('own', sellerId, { from: yesterday, to: yesterday })).toEqual([]);
+    const all = await stampedCargo(db, window, { kind: 'all' });
+    expect(all.filter((row) => row.sellerId === sellerId)).toEqual(mine);
+    // Yesterday's window holds none of it.
+    const yesterday = { from: tashkentDayStart(addDays(day, -1)), to: tashkentDayStart(day) };
+    expect(await stampedCargo(db, yesterday, { kind: 'own', userId: sellerId })).toEqual([]);
   });
 });

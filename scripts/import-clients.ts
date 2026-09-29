@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import { eq, sql } from 'drizzle-orm';
 import { db, pgClient } from '../src/modules/platform/db/client';
 import { clients, roles, userRoles, users } from '../src/modules/platform/db/schema';
+import { diffFields, writeAudit } from '../src/modules/platform/audit/service';
+import { stampUnattributedCargo } from '../src/modules/wms/staff/stamp';
 import { createClient, ClientError } from '../src/modules/platform/clients/service';
 import { markDuplicates, parseTsv, type ParsedClientRow } from '../src/modules/platform/clients/import';
 import { listFields, saveField, setFieldValues } from '../src/modules/platform/fields/service';
@@ -176,14 +178,22 @@ async function main() {
         clientId = client.id;
         created += 1;
       } else if (UPDATE) {
-        await db
-          .update(clients)
-          .set({
-            name: row.name,
-            phones: row.phone ? [row.phone] : [],
-            salesManagerId: sellerToUser.get(row.seller) ?? null,
-          })
-          .where(eq(clients.id, known));
+        const before = await db.query.clients.findFirst({ where: eq(clients.id, known) });
+        const values = {
+          name: row.name,
+          phones: row.phone ? [row.phone] : [],
+          salesManagerId: sellerToUser.get(row.seller) ?? null,
+        };
+        await db.update(clients).set(values).where(eq(clients.id, known));
+        // Audited like the client form (0117): the manager history is what the
+        // KPI's backfill reads to know whose cargo a past day was, and an
+        // unaudited change here was the one hole in it.
+        const diff = before ? diffFields(before as unknown as Record<string, unknown>, values) : null;
+        if (diff) await writeAudit(db, ctx, { entityType: 'client', entityId: known, action: 'update', ...diff });
+        // …and the first seller named takes the cargo nobody was named on.
+        if (before && !before.salesManagerId && values.salesManagerId) {
+          await stampUnattributedCargo(db, known, values.salesManagerId, ctx);
+        }
         updated += 1;
       }
       if (clientId && row.seller) {

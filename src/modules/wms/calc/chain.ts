@@ -176,6 +176,45 @@ export async function chainOf(requestId: string, now = new Date()): Promise<Chai
   return rows.map((r) => toChain(r, now));
 }
 
+/**
+ * `chainOf` for MANY requests in ONE query (0119) — the deal's calculation
+ * sheet and the Telegram ask print a «V2» per request, and a query per request
+ * is #432's shape on a list. Each request id maps to its whole chain, oldest
+ * seal first, exactly what `chainOf` answers for it alone (a test says so).
+ */
+export async function chainVersionsFor(
+  requestIds: string[],
+  now = new Date(),
+): Promise<Map<string, ChainVersion[]>> {
+  const ids = [...new Set(requestIds)].filter(Boolean);
+  const out = new Map<string, ChainVersion[]>();
+  if (ids.length === 0) return out;
+  const list = sql.join(
+    ids.map((id) => sql`${id}::uuid`),
+    sql`, `,
+  );
+  const rows = await db.execute<RankedRow & { start_id: string }>(sql`
+    WITH RECURSIVE up AS (
+      SELECT id AS start_id, id, supersedes_request_id, 0 AS depth
+        FROM calc_requests WHERE id IN (${list})
+      UNION ALL
+      SELECT u.start_id, r.id, r.supersedes_request_id, u.depth + 1
+        FROM calc_requests r JOIN up u ON r.id = u.supersedes_request_id
+       WHERE u.depth < 64
+    ),
+    roots AS (SELECT DISTINCT start_id, id AS root_id FROM up WHERE supersedes_request_id IS NULL),
+    ${treeSql()}
+    SELECT ro.start_id::text AS start_id, rk.*, u.full_name AS sealed_by_name
+      FROM roots ro
+      JOIN ranked rk ON rk.root_id = ro.root_id
+      LEFT JOIN users u ON u.id = rk.sealed_by
+     ORDER BY rk.sealed_at, rk.version_id
+  `);
+  for (const id of ids) out.set(id, []);
+  for (const r of rows) out.get(r.start_id)?.push(toChain(r, now));
+  return out;
+}
+
 /** The printed number for ONE version, or null when it has none (never sealed). */
 export async function quoteNoFor(versionId: string): Promise<number | null> {
   const rows = await db.execute<{ quote_no: number }>(sql`

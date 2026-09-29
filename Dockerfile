@@ -11,7 +11,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 # V8's default heap on the owner's server is about 2 GB, and the 0113-0116
-# build died at 2,044 MB checking types (DECISIONS #1210). The flag rides on
+# build died at 2,044 MB checking types (DECISIONS #1223). The flag rides on
 # this line and not an ENV: `migrate` and `tg-listen` run THIS stage's image,
 # and a heap chosen for a compiler is not theirs.
 RUN NODE_OPTIONS=--max-old-space-size=3072 pnpm build

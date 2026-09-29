@@ -32,18 +32,29 @@ const SENTENCE_MAX = 300;
 /** The weekly block looks this far ahead — the approved «keyingi 4 hafta». */
 export const PAYMENTS_DAYS = 28;
 
-export type SummaryWindowKey = 'bugun' | '7';
+export type SummaryWindowKey = 'bugun' | 'hafta';
 
 /**
  * Which window a moment belongs to — decided on TASHKENT's day (R5, #1063):
  * 19:30 UTC on a Monday is 00:30 on Tuesday here, a daily message. Monday is
- * the week's message, over the dashboard's own «7 kun» (Tuesday to Monday)
- * and its weekday is `mondayOf`'s, never `getUTCDay()` of an instant.
+ * the week's message and its weekday is `mondayOf`'s, never `getUTCDay()` of
+ * an instant.
+ *
+ * The week is the one that has ENDED, Monday to Sunday (the dashboard's
+ * «O'tgan hafta»), and not «7 kun» ending today (the owner's 5b). «7 kun»
+ * on a Monday is Tuesday to Monday, and the message goes out at 20:00 — so
+ * what was typed on a Monday evening, dated that Monday, was in neither that
+ * Monday's message (already sent) nor the next one (which began on Tuesday).
+ * He asked for «dushanba 20:00 → dushanba 20:00»; the border is midnight
+ * instead because the money rows carry a DAY and not a minute (a payment
+ * typed at 21:00 is dated Monday), so a 20:00 cut cannot be drawn through
+ * them. A closed week gives what he asked for: every day is counted once,
+ * whole, after it has ended; the Monday itself is counted the next Monday.
  */
 export function summaryWindow(now: Date): { today: string; weekly: boolean; key: SummaryWindowKey; period: DashPeriod } {
   const today = tashkentDay(now);
   const weekly = mondayOf(today) === today;
-  const key: SummaryWindowKey = weekly ? '7' : 'bugun';
+  const key: SummaryWindowKey = weekly ? 'hafta' : 'bugun';
   return { today, weekly, key, period: dashPeriod(key, today) };
 }
 

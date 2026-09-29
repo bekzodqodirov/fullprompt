@@ -240,55 +240,6 @@ export async function upsaleRows(
 }
 
 /**
- * The KPI the owner pays once a month (2026-09-26, his 3a/x): the cargo each
- * seller BROUGHT — the confirmed prixods linked to the seller's own deals
- * (the deal's owner), counted on the day the warehouse confirmed them. m³ and
- * kg are the lots' own totals, the figures the prixod card prints. One
- * grouped read for any number of sellers (#432); a deal with no owner is its
- * own «—» row rather than nobody's cargo silently dropped.
- */
-export async function sellerCargo(
-  scope: UpsaleScope,
-  actorId: string,
-  opts: { from?: string; to?: string; sellerId?: string } = {},
-): Promise<{ sellerId: string | null; sellerName: string | null; receipts: number; m3: number; kg: number }[]> {
-  if (scope === 'none') return [];
-  const where = [sql`rc.status = 'confirmed'`, sql`rc.deal_id IS NOT NULL`];
-  if (scope === 'own') where.push(sql`d.owner_id = ${actorId}::uuid`);
-  else if (opts.sellerId) where.push(sql`d.owner_id = ${opts.sellerId}::uuid`);
-  // Tashkent's days (R5), inclusive to the end of the named day.
-  if (opts.from) where.push(sql`rc.confirmed_at >= ((${opts.from}::date)::timestamp AT TIME ZONE 'Asia/Tashkent')`);
-  if (opts.to) where.push(sql`rc.confirmed_at < ((${opts.to}::date + 1)::timestamp AT TIME ZONE 'Asia/Tashkent')`);
-  const rows = await db.execute<{
-    seller_id: string | null;
-    seller_name: string | null;
-    receipts: string;
-    m3: string;
-    kg: string;
-  }>(sql`
-    SELECT d.owner_id AS seller_id,
-           u.full_name AS seller_name,
-           count(DISTINCT rc.id) AS receipts,
-           coalesce(sum(rl.total_volume_m3), 0) AS m3,
-           coalesce(sum(rl.total_weight_kg), 0) AS kg
-      FROM receipts rc
-      JOIN deals d ON d.id = rc.deal_id
-      JOIN receipt_lots rl ON rl.receipt_id = rc.id
-      LEFT JOIN users u ON u.id = d.owner_id
-     WHERE ${sql.join(where, sql` AND `)}
-     GROUP BY d.owner_id, u.full_name
-     ORDER BY sum(rl.total_volume_m3) DESC NULLS LAST
-  `);
-  return rows.map((r) => ({
-    sellerId: r.seller_id,
-    sellerName: r.seller_name,
-    receipts: Number(r.receipts),
-    m3: Math.round(Number(r.m3) * 1000) / 1000,
-    kg: Math.round(Number(r.kg) * 10) / 10,
-  }));
-}
-
-/**
  * What one row adds to «earned»: the money actually handed over on a paid
  * row, and what is still owed on an unpaid one — never the promise's whole
  * difference. Since audit A18 a sale's paid row stays listed beside a later,

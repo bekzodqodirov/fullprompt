@@ -5,7 +5,9 @@ import { batches } from '../../platform/db/schema';
 import { tashkentDay } from '../../platform/time/tashkent';
 import { batchEndsWhere, inTransitBatches } from '../reports/queries';
 import { awaitingUnloadCounts } from '../scanning/unload';
+import { loadBorderHours } from './border-queue';
 import { latestPositions } from './devices';
+import type { BorderHours } from './eta';
 import {
   rankTrucks,
   TRUCK_KINDS,
@@ -68,16 +70,18 @@ export async function trucksOnRoad(
   const now = opts.now ?? new Date();
   const today = tashkentDay(now);
 
-  const [inputs, loadingRow] = await Promise.all([
+  const [inputs, loadingRow, waits] = await Promise.all([
     inTransitBatches(warehouseIds),
     db
       .select({ n: sql<number>`count(*)` })
       .from(batches)
       .where(and(inArray(batches.status, [...LOADING_STATUSES]), batchEndsWhere(warehouseIds))),
+    // The logist's typed border queues — once for the whole card (#432).
+    loadBorderHours(),
   ]);
 
   const byId = new Map<string, TruckInput>(inputs.map((r) => [r.id, r]));
-  const ranked = rankTrucks(inputs.map((r) => truckRow(r, now, today)));
+  const ranked = rankTrucks(inputs.map((r) => truckRow(r, now, today, waits)));
   const counts = zeroCounts();
   for (const r of ranked) counts[r.kind] += 1;
 
@@ -90,7 +94,7 @@ export async function trucksOnRoad(
   ]);
 
   const rows = sliced.map((row) =>
-    enrichedRow(byId.get(row.id)!, row, positions, awaiting, now, today),
+    enrichedRow(byId.get(row.id)!, row, positions, awaiting, now, today, waits),
   );
 
   return { rows, total: ranked.length, counts, loading: Number(loadingRow[0]?.n ?? 0) };
@@ -109,6 +113,7 @@ function enrichedRow(
   awaiting: Map<string, number>,
   now: Date,
   today: string,
+  waits: BorderHours,
 ): TruckRow {
   return truckRow(
     {
@@ -118,6 +123,7 @@ function enrichedRow(
     },
     now,
     today,
+    waits,
   );
 }
 
@@ -145,15 +151,18 @@ export async function trucksOnRoadRows(batchIds: string[]): Promise<Map<string, 
   if (ids.length === 0) return out;
   const now = new Date();
   const today = tashkentDay(now);
-  const inputs = await inTransitBatches(undefined, { batchIds: ids });
+  const [inputs, waits] = await Promise.all([
+    inTransitBatches(undefined, { batchIds: ids }),
+    loadBorderHours(),
+  ]);
   if (inputs.length === 0) return out;
-  const rows = inputs.map((input) => ({ input, row: truckRow(input, now, today) }));
+  const rows = inputs.map((input) => ({ input, row: truckRow(input, now, today, waits) }));
   const [positions, awaiting] = await Promise.all([
     latestPositions(rows.map((r) => r.input.id)),
     awaitingUnloadCounts(rows.filter((r) => r.row.status === 'arrived').map((r) => r.input.id)),
   ]);
   for (const { input, row } of rows) {
-    out.set(input.id, enrichedRow(input, row, positions, awaiting, now, today));
+    out.set(input.id, enrichedRow(input, row, positions, awaiting, now, today, waits));
   }
   return out;
 }

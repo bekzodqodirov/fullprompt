@@ -434,6 +434,13 @@ export async function linkReceipt(
 ): Promise<void> {
   const receipt = await db.query.receipts.findFirst({ where: eq(receipts.id, receiptId) });
   if (!receipt) throw new DealError('receipt_not_found');
+  // Filing a prixod onto the deal it is ALREADY on moves nothing, so it
+  // writes nothing. The receipt card's picker always offers the current deal
+  // (round 38), and pressing it used to run the re-file branch below: a
+  // person's ✅ erased, and a link the VED had ❌'d stamped back onto the
+  // standing request with `calc_link_notified_at` NULL — i.e. the VED asked
+  // again, in Telegram, about a prixod they had already refused (0119).
+  if (dealId !== null && dealId === receipt.dealId) return;
   if (dealId) {
     const deal = await db.query.deals.findFirst({ where: eq(deals.id, dealId) });
     if (!deal) throw new DealError('not_found');
