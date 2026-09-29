@@ -127,6 +127,11 @@ pnpm build && pnpm e2e  # 44 e2e
 - Migrations are hand-written SQL + an entry in `meta/_journal.json`. Drizzle
   wraps **all pending migrations in one transaction**, so `CREATE INDEX
   CONCURRENTLY` is impossible and a failure rolls everything back.
+- **`pnpm` is not in the node image — corepack DOWNLOADS it** from
+  registry.npmjs.org the first time it runs, into that stage's own cache. Every
+  Dockerfile stage that runs `pnpm` must descend from the deps stage (where the
+  install downloaded it), or each code change re-fetches it and a deploy dies
+  on npm's schedule (#1228). Fenced by `tests/unit/dockerfile-offline.test.ts`.
 
 ## Where the truth lives
 
@@ -2235,15 +2240,30 @@ fence first stayed GREEN under `false && ` and now pins the condition
 verbatim. STATED to him: a KNOWN client's cargo has no field for a factory's
 text.
 
+**Round — the deploy that could not reach npm (2026-09-29; DECISIONS #1228;
+NO migration).** Deploying #104, his `docker compose build migrate` died at
+`RUN … pnpm build` on «Corepack is about to download … pnpm-10.33.0.tgz» →
+`ConnectTimeoutError` (production untouched: compose builds before it
+recreates). The build stage started `FROM base`, so it lacked the pnpm that
+corepack had downloaded during deps' `pnpm install`, and re-fetched it on EVERY
+code change. Now `FROM deps AS build` (the `COPY --from=deps node_modules`
+line is gone). MEASURED in Docker (dockerd starts in this container; a local
+`node:22-slim` retag carries the sandbox proxy's CA so the production
+Dockerfile stays byte-identical; iptables DROP on the registry's twelve
+addresses reproduces his `UND_ERR_CONNECT_TIMEOUT`): old graph + a code change
+fails in 11 s with his exact log, new graph builds with no download line.
+Derived fence over the stage graph + compose's pnpm services; red-proven.
+
 **Round — his answers to the twelve questions of 2026-09-29 (DECISIONS
-#1228-#1241 — renumbered from #1224-#1237 on the merge, the EIGHTEENTH
-collision: the factory-barcode round took #1224-#1227 and merged first;
+#1229-#1242 — renumbered from #1224-#1237 on two merges, the EIGHTEENTH and
+NINETEENTH collisions: the factory-barcode round took #1224-#1227 and the npm
+round #1228, both merged first;
 migration 0120 `no_login_staff` — ledger must reach 121).** His
 «1a 2b 3a 4a 5a 6a 7 ha 8a 9a 10 keyin 11a 12a». Every answer was checked
 against the SHIPPED code by a scout first: eight confirm what #1210-#1222 built
 (comments now cite his answer), and **4a did not** — my message had printed the
 stamp version as «standart» while the book version shipped, because my option
-letters were not the design's (#1228: read a «standart» against the code before
+letters were not the design's (#1229: read a «standart» against the code before
 sending it). **2b** (0120): a paid person who never signs in is a `users` row
 with `login_enabled = false` (password/phone nullable, four CHECKs), so the
 salary chain is unchanged; ONE login rule `platform/users/login.ts`
@@ -2269,13 +2289,13 @@ m³ → kg → count by largest remainder; All and Own move together; per-client
 reconciliation with «Mijoz foydasi», not its Jami. Three packages in worktrees,
 each reviewed by three lenses with skeptics (3a: two confirmed defects fixed;
 2b, 4a: nits). Found, queued, not fixed: `companyBalance()` 3.8-6.1 s on the
-shaped copy. **Found by the round's SCREENSHOT (#1240)**: a long unbroken name
+shaped copy. **Found by the round's SCREENSHOT (#1241)**: a long unbroken name
 overflowed /admin/users (2,056 px at 360) and the staff card, and ten specs'
 «fits the viewport» check could not see it — under mobile emulation
 `window.innerWidth` GROWS with Chrome's zoom-out (1,440 read against a 2,056
 document). Measure `document.documentElement.clientWidth` or the configured
 viewport; `e2e-width-oracle.test.ts` refuses `innerWidth` in specs. And
-(#1241) two /hodimlar buttons could save and never land, only on a WARM
+(#1242) two /hodimlar buttons could save and never land, only on a WARM
 server (a fresh server per test never shows it): a `router.push` right after
 an action DISCARDS the action still being applied and Next 15.5 never settles
 it (→ full `window.location.assign`), and an action whose revalidated content

@@ -280,7 +280,7 @@ export function NoLoginPersonNew() {
                 const res = await mintPersonAction({ fullName: name, phone, confirmSameName: confirm });
                 setResult(res);
                 if (res.ok && res.id) {
-                  // A FULL load, not router.push (#1241): `await` returns with the
+                  // A FULL load, not router.push (#1242): `await` returns with the
                   // action's value while the router is still applying the page the
                   // action revalidated, and a navigation arriving then DISCARDS that
                   // pending action — whose promise Next 15.5 never settles, so the
@@ -362,7 +362,7 @@ export function NoLoginPersonActive({ person }: { person: { id: string; name: st
   const t = useTranslations('hodimlar');
   const [pending, startTransition] = useTransition();
   const [result, setResult] = useState<StaffFormState>({});
-  // No router.refresh() after these actions (#1241): each one revalidates
+  // No router.refresh() after these actions (#1242): each one revalidates
   // /hodimlar, so its answer already carries the new page — and a refresh
   // fired while that page is still streaming in made the router drop both,
   // leaving the button greyed for ever (measured 1 in 5 on a warm server).

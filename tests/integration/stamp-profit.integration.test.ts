@@ -41,7 +41,7 @@ import { revenueByStamp } from '@/modules/wms/staff/stamp-revenue';
  * clients; the whole-database ones are two-sided reconciliations or ≥.
  *
  * Every red proof of this round is anchored on a fixture where the stripped
- * clause is the ONLY route (#1239's lesson): c12 is cNew's only price and cNew
+ * clause is the ONLY route (#1240's lesson): c12 is cNew's only price and cNew
  * has no prixod, so only the book reaches C; the compensation carries a deal
  * that would split it, so only the receipt branch lands it whole on B.
  */
@@ -452,7 +452,7 @@ describe('who a price belongs to (4a)', () => {
     // 18.75 A / 6.25 B. A row that names a prixod is never asked about its
     // deal or a fallback, so with the receipt branch stripped it falls to the
     // BOOK — which is B here too. The book is moved to D for this test, so
-    // the receipt is the ONLY route that lands the −25 on B (#1239's lesson).
+    // the receipt is the ONLY route that lands the −25 on B (#1240's lesson).
     await db.update(clients).set({ salesManagerId: D }).where(eq(clients.id, cMoved));
     try {
       expect((await sellerRow(B)).revenueUsd).toBe(193.33);

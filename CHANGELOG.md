@@ -97,6 +97,34 @@ Xodim kartasidagi skladlar ro'yxati ham telefonda 28 px chiqib ketardi — tuzat
    yozuvi chiqib qolardi.
 3. Ikkalasi ham tuzatildi. Buning narxi: sahifa endi bir martada ochiladi. KPI hisobi uzoq
    bo'lsa (ko'pi bilan 8 soniya), shu vaqt ichida tepada yuklanish chizig'i yuradi.
+## Deploy npm saytiga ulana olmay to'xtadi — tuzatildi — 2026-09-29
+
+Kod o'zgarishi, migratsiya yo'q. Ledger **120** o'zgarmaydi.
+
+`docker compose build migrate` «Corepack is about to download …
+registry.npmjs.org … ConnectTimeoutError» bilan to'xtadi. **Sayt ishlashda
+davom etdi**: yangi versiya qurilmay qolgani uchun eski konteynerlar
+almashtirilmadi.
+
+Sabab: build har safar pnpm dasturini npm saytidan qaytadan yuklab olardi.
+Kod o'zgargan har bir deployda shunday bo'lardi. O'sha kuni serveringiz npm
+saytiga ulana olmadi, shuning uchun build to'xtadi.
+
+1. Endi pnpm oldingi qadamdan olinadi. Faqat kod o'zgargan deploy npm
+   saytiga umuman murojaat qilmaydi.
+2. Quyidagi hollarda npm hali ham kerak bo'ladi:
+   - `package.json` yoki kutubxonalar ro'yxati (`pnpm-lock.yaml`)
+     o'zgargan bo'lsa (yangi skript qo'shilgani ham hisob);
+   - Docker Hub'da `node:22-slim` yangilangan bo'lsa;
+   - serverda build keshi tozalangan bo'lsa.
+   Unda xato chiqsa, nima qilish kerakligi `docs/UPDATE.md` ning 3-qadamida
+   yozilgan. Bu holatlarni ham npm'siz qiladigan tuzatish keyinga qoldi:
+   uning o'zi birinchi marta npm'ni talab qiladi.
+
+Tekshirildi Docker'da, npm sayti ataylab yopilgan holda:
+- eski tartib aynan serveringizdagi xato bilan to'xtadi;
+- yangisi xatosiz qurildi.
+
 ## Zavod shtrix-kodi olib tashlandi, zavod yozuvi markirovkaga — 2026-09-29
 
 Kod o'zgarishi, migratsiya yo'q. Ledger **120** o'zgarmaydi. Yangi kod
