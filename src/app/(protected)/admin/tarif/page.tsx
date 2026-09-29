@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { listTariff } from '@/modules/wms/calc/dictionaries';
+import { KNOWN_TARIFF_ZONES } from '@/modules/wms/calc/tariff-seed';
 import { isServerBehind } from '@/modules/platform/db/errors';
 import { logger } from '@/modules/platform/logger';
 import { TariffForm } from './tariff-form';
@@ -35,7 +36,10 @@ export default async function TariffPage() {
     <div className="mx-auto max-w-3xl space-y-3">
       <h1 className="text-xl font-bold">🚚 {t('dictTariff')}</h1>
       <div className="card !p-3" data-testid="tariff-admin">
-        <TariffForm zones={[...new Set(rows.map((r) => r.zone))]} />
+        {/* The zones already priced, plus every zone the app can name — so
+            he picks «horgos» from the list instead of typing «Xorgos» into
+            a second zone nothing else reads. */}
+        <TariffForm zones={[...new Set([...rows.map((r) => r.zone), ...KNOWN_TARIFF_ZONES])]} />
         <div className="table-wrap mt-3 overflow-x-auto">
           <table className="w-full min-w-[30rem] text-sm">
             <thead>

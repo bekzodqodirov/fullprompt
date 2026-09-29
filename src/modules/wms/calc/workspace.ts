@@ -283,8 +283,22 @@ export function guessZone(fromCity: string | null): string | null {
   const c = (fromCity ?? '').toLowerCase();
   if (!c) return null;
   if (/qashqar|кашгар|kashgar|喀什/.test(c)) return 'kashgar';
+  // AFTER «cn» on purpose: «Yiwu (Horgos orqali)» is Yiwu cargo, and his
+  // 21a keeps it on the China price whichever border the truck takes.
   if (/yiwu|иу|义乌|guangzhou|гуанчжоу|广州|yw|gz/.test(c)) return 'cn';
+  if (/horgos|khorgos|xorgos|хоргос|коргас|қорғас|霍尔果斯/.test(c)) return 'horgos';
   return null;
+}
+
+/**
+ * The hint the workspace shows — a guessed zone only when the tariff PRICES
+ * it. «horgos» is guessable from a city the day he opens the warehouse and
+ * priceable only once he types its rows (answer 22); a hint naming an
+ * unpriced zone points at a picker option that does not exist.
+ */
+export function guessedZoneFor(fromCity: string | null, priced: readonly string[]): string | null {
+  const g = guessZone(fromCity);
+  return g !== null && priced.includes(g) ? g : null;
 }
 
 /**
@@ -579,7 +593,7 @@ export async function loadWorkspace(
     density: weightKg !== null && volumeM3 !== null && volumeM3 > 0 ? weightKg / volumeM3 : null,
     freightZone: request.freightZone,
     zones,
-    guessedZone: guessZone(request.fromCity),
+    guessedZone: guessedZoneFor(request.fromCity, zones),
     fromCity: request.fromCity,
     groups,
     ungrouped: items.filter((i) => i.groupId === null),

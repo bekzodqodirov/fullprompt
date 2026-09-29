@@ -310,6 +310,9 @@ const CALC_STEPS = [
   'go_aipk',
   'zone_cn',
   'zone_kashgar',
+  // The Horgos round (2026-09-29): a third zone, drawn only once he has
+  // priced it (`zoneKeyboard`), refused in words if an old button is pressed.
+  'zone_horgos',
   'cert',
   'skip',
   'done',
@@ -319,6 +322,66 @@ const CALC_STEPS = [
 ] as const;
 
 export type CalcStep = (typeof CALC_STEPS)[number];
+
+/** The podklyuch door's «Yuk qayerdan chiqadi?» answers — one per zone the bot can name. */
+export type ZoneStep = Extract<CalcStep, `zone_${string}`>;
+
+/**
+ * Each zone button: the tariff zone it lands on the request, the road it
+ * writes onto the collection, and its label. His two seeded zones plus
+ * «horgos», which HE prices on /admin/tarif (answer 22: «uni sistemadan men
+ * ozim kirita olamanku») — the button appears once a price exists, never
+ * before, because an unpriced zone is silently dropped at landing
+ * (`requestCalc`) and the seller would be told «zona tanlanmagan» after
+ * choosing one. Yiwu/Guangzhou cargo stays «cn» whichever border its truck
+ * takes (his 21a); «horgos» is cargo whose road STARTS at Horgos (15c).
+ */
+export const AI_ZONE_ROUTES: Record<
+  ZoneStep,
+  { zone: string; fromCity: string; toCity: string; label: string }
+> = {
+  zone_cn: {
+    zone: 'cn',
+    fromCity: 'Xitoy (Yiwu/Guangzhou)',
+    toCity: 'O‘zbekiston',
+    label: '🇨🇳 Xitoydan (Yiwu, Guangzhou…) → O‘zbekiston',
+  },
+  zone_kashgar: {
+    zone: 'kashgar',
+    fromCity: 'Qashg‘ar',
+    toCity: 'O‘zbekiston',
+    label: '🏔 Qashg‘ardan → O‘zbekiston',
+  },
+  zone_horgos: {
+    zone: 'horgos',
+    fromCity: 'Horgos',
+    toCity: 'O‘zbekiston',
+    label: '📦 Horgos skladidan → O‘zbekiston',
+  },
+};
+
+/** A pressed step IS a zone button — `hasOwn`, so `toString` is not one. */
+export function isZoneStep(step: string): step is ZoneStep {
+  return Object.hasOwn(AI_ZONE_ROUTES, step);
+}
+
+/**
+ * A zone button pressed: the road to write, or the sentence that refuses it.
+ * The keyboard draws only priced zones, but a button is a message that
+ * outlives the tariff it was drawn from — a price deleted since is refused
+ * here, in words, before anything is written (the landing's silent drop
+ * stays as the last guard).
+ */
+export function zonePressAnswer(
+  step: ZoneStep,
+  priced: readonly string[],
+): { ok: true; route: { zone: string; fromCity: string; toCity: string } } | { ok: false; text: string } {
+  const r = AI_ZONE_ROUTES[step];
+  if (!priced.includes(r.zone)) {
+    return { ok: false, text: 'Bu yo‘nalish narxi hali kiritilmagan — boshqasini tanlang yoki bekor qiling.' };
+  }
+  return { ok: true, route: { zone: r.zone, fromCity: r.fromCity, toCity: r.toCity } };
+}
 
 export function parseCallback(data: string): BotCallback | null {
   if (data === 'e:s') return { kind: 'entry', who: 'staff' };

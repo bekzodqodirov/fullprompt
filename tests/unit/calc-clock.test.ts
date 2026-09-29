@@ -65,6 +65,8 @@ const MUTATORS = [
  * not a hole. */
 const EXEMPT: Record<string, string> = {
   guessZone: 'pure',
+  // The Horgos round: the hint names only a PRICED zone. Reads its arguments.
+  guessedZoneFor: 'pure',
   // Round 112: the seal's gate, exported so «Готово» and the seal button ask
   // the same question. Reads the workspace it is handed, writes nothing.
   canSeal: 'pure',
