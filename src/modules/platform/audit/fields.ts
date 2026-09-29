@@ -102,6 +102,10 @@ export const AUDIT_FIELD_LABELS: Record<string, string> = {
   count: 'boxCount',
   boxes: 'boxes',
   at: 'warehouse',
+  // A manager named on a client that had none (0117): the client's unstamped
+  // cargo moved to them — `stampUnattributedCargo`'s one audit line.
+  cargoStampedTo: 'cargoStampedTo',
+  receipts: 'receipts',
 
   // Housekeeping
   note: 'note',
@@ -155,6 +159,7 @@ export const AUDIT_FIELD_REFS: Record<string, AuditRefKind> = {
   dealId: 'deal',
   partnerId: 'partner',
   receivedByUserId: 'user',
+  cargoStampedTo: 'user',
 };
 
 /** Only a uuid is looked up; codes and names in the same columns pass through. */

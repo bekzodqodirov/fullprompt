@@ -11,13 +11,27 @@ export interface RoutePoint {
   y: number;
 }
 
+/**
+ * A border post whose queue the logist types by hand (owner, 2026-09-29,
+ * answer 14: «ochered kamaysa tez otb ketadiku»). The list with its default
+ * hours lives in map-data.ts (`BORDER_POSTS`); this is only the name.
+ */
+export type BorderPost = 'khorgos' | 'yallama';
+
 export interface RouteSegment {
-  /** Phase key — also the i18n label key (cn_transit, to_border, border_wait, kg, uz, transit). */
+  /** Phase key — also the i18n label key (cn_transit, to_border, border_wait, kz, uz_queue, kg, uz, transit). */
   key: string;
   /** Typical duration range in hours; position uses the midpoint. */
   hours: [number, number];
   /** Point-index span on the route polyline; span[0] === span[1] = stationary (border wait). */
   span: [number, number];
+  /**
+   * The post whose typed queue replaces `hours` (tracking/eta.ts
+   * `routeWithWaits`). Keyed by the POST and never by the shape of the leg:
+   * the Kashgar road's `border_wait` is stationary too, and no typed number
+   * is about it.
+   */
+  post?: BorderPost;
 }
 
 export interface RouteDef {
@@ -37,7 +51,10 @@ export interface TransitEstimate {
   remainingHours: [number, number];
 }
 
-const mid = (h: [number, number]) => (h[0] + h[1]) / 2;
+/** A segment's hours as the position reads them — exported so eta.ts walks
+ *  the schedule with the engine's own arithmetic and never a copy of it. */
+export const segMid = (h: readonly [number, number]) => (h[0] + h[1]) / 2;
+const mid = segMid;
 
 /**
  * The length of one chord, in degrees, with the east-west axis weighted by

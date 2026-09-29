@@ -1,8 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { escapesIntake, parseCallback } from '@/modules/platform/telegram/staff-bot';
-import { AI_ZONE_ROUTES } from '@/modules/platform/telegram/staff-handlers';
-import { OWNER_TARIFF_ZONES } from '@/modules/wms/calc/tariff-seed';
+import {
+  AI_ZONE_ROUTES,
+  escapesIntake,
+  isZoneStep,
+  parseCallback,
+  zonePressAnswer,
+} from '@/modules/platform/telegram/staff-bot';
+import { zoneKeyboard } from '@/modules/platform/telegram/staff-handlers';
+import { KNOWN_TARIFF_ZONES, OWNER_TARIFF_ZONES, ownerTariffRows } from '@/modules/wms/calc/tariff-seed';
 import { ZONE_ROUTE } from '@/modules/wms/calc/prefill';
 
 /**
@@ -35,6 +41,8 @@ describe('the callback vocabulary', () => {
       'go_aipk',
       'zone_cn',
       'zone_kashgar',
+      // The Horgos round: a third zone button.
+      'zone_horgos',
     ]) {
       expect(parseCallback(`c:${step}`), step).toEqual({ kind: 'calc', step });
     }
@@ -59,12 +67,63 @@ describe('the rules a shell cannot exercise', () => {
     expect(handlers).toContain("startIntake(chatId, 'podklyuch', { ai: true })");
   });
 
-  it('every zone button is a zone of his tariff, and the reply names each one', () => {
-    // A button for a zone the tariff lacks would store NULL (openCalcRequest
-    // drops it) and quote «zona tanlanmagan» after the seller chose one.
+  it('every zone button is a zone the app can name, and the reply names each one', () => {
+    // REWRITTEN in the Horgos round, with the reason: this used to assert the
+    // buttons EQUAL the seeded zones, because a button for a zone the tariff
+    // lacks stores NULL (openCalcRequest drops it) and quotes «zona
+    // tanlanmagan» after the seller chose one. «horgos» is a zone he prices
+    // himself (answer 22), so that gate moved to RUNTIME — the keyboard draws
+    // only priced zones and a press re-checks (the two tests below). What
+    // stays static is that every button names a zone the app knows.
     const zones = Object.values(AI_ZONE_ROUTES).map((r) => r.zone);
-    expect([...zones].sort()).toEqual([...OWNER_TARIFF_ZONES].sort());
-    for (const z of zones) expect(ZONE_ROUTE[z], z).toBeTruthy();
+    for (const z of zones) {
+      expect(KNOWN_TARIFF_ZONES as readonly string[], z).toContain(z);
+      expect(ZONE_ROUTE[z], z).toBeTruthy();
+    }
+    // …and the seed still writes his two and nothing for Horgos.
+    expect([...new Set(ownerTariffRows().map((r) => r.zone))].sort()).toEqual([...OWNER_TARIFF_ZONES].sort());
+  });
+
+  it('draws a zone button only for a zone the tariff prices today', () => {
+    const steps = (priced: string[]) =>
+      zoneKeyboard(priced)
+        .inline_keyboard.flat()
+        .map((b) => b.callback_data)
+        .filter((d) => d !== 'c:cancel');
+    expect(steps(['cn', 'kashgar'])).toEqual(['c:zone_cn', 'c:zone_kashgar']);
+    // Every known zone priced (and one nobody has a button for): three, each
+    // parsed — an unparsed callback spins for fifteen seconds (#937).
+    const all = steps([...KNOWN_TARIFF_ZONES, 'almaty']);
+    expect(all).toHaveLength(3);
+    for (const data of all) expect(parseCallback(data), data).not.toBeNull();
+    // Cancel is always there: the question must stay answerable.
+    expect(zoneKeyboard([]).inline_keyboard.flat().map((b) => b.callback_data)).toEqual(['c:cancel']);
+  });
+
+  it('a zone press whose price is gone is refused in words, before anything is written', () => {
+    expect(zonePressAnswer('zone_horgos', ['cn', 'kashgar'])).toEqual({
+      ok: false,
+      text: expect.stringContaining('narxi hali kiritilmagan'),
+    });
+    expect(zonePressAnswer('zone_horgos', ['cn', 'kashgar', 'horgos'])).toEqual({
+      ok: true,
+      route: { zone: 'horgos', fromCity: 'Horgos', toCity: 'O‘zbekiston' },
+    });
+    // `hasOwn`: a step that merely resolves on the prototype is no zone.
+    expect(isZoneStep('toString')).toBe(false);
+    expect(isZoneStep('zone_cn')).toBe(true);
+  });
+
+  it('both zone questions ask the tariff NOW, and a press is judged before it is written', () => {
+    // The keyboard is pure, so the two sites that draw it are where «only
+    // priced zones» lives — a site that forgot would draw a stale list.
+    expect(handlers.match(/zoneKeyboard\(await pricedZonesNow\(\)\)/g)).toHaveLength(2);
+    expect(handlers).not.toMatch(/zoneKeyboard\(\)/);
+    const judged = handlers.indexOf('zonePressAnswer(step, await pricedZonesNow())');
+    const written = handlers.indexOf("updateIntake(chatId, { route, stage: 'client' })");
+    expect(judged, 'the press is no longer judged — re-anchor this fence').toBeGreaterThan(-1);
+    expect(judged).toBeLessThan(written);
+    expect(handlers).toContain('if (isZoneStep(step))');
   });
 
   it('the zone travels from the collection to the request row', () => {

@@ -56,3 +56,23 @@ export function mayReadCalcRegistry(actor: {
 }): boolean {
   return actor.permissions.has('finance.reports') || actor.permissions.has('ved.docs');
 }
+
+declare const CALC_REGISTRY: unique symbol;
+
+/**
+ * The proof that a render asked `mayReadCalcRegistry` (0119) — `companyMoneySight`'s
+ * shape. A deal's calculation sheet (every figure on it a FLOOR, law 4) is
+ * loaded and drawn only with one of these in hand, and the only way to hold
+ * one is to ask the predicate: a sheet mounted on a seller's screen is a
+ * compile error that names itself, not a leak found later.
+ */
+export type CalcRegistrySight = { readonly [CALC_REGISTRY]: true };
+
+const REGISTRY_SIGHT = Object.freeze({}) as CalcRegistrySight;
+
+/** The ONE mint. Null for everybody `mayReadCalcRegistry` refuses. */
+export function calcRegistrySight(actor: {
+  permissions: { has(code: string): boolean };
+}): CalcRegistrySight | null {
+  return mayReadCalcRegistry(actor) ? REGISTRY_SIGHT : null;
+}

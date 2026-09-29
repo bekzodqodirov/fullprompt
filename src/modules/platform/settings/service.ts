@@ -97,6 +97,13 @@ export const SETTING_DEFAULTS = {
    */
   calc_memory_min_sim: 0.6,
   /**
+   * How close a lot's NAME must be to a past lot's before «Oldingi narx»
+   * shows that lot's truck price (0119). Its own number, not the memory's:
+   * the corpus is every prixod ever received, not sealed calculations, and
+   * the owner tunes the two apart.
+   */
+  price_history_min_sim: 0.6,
+  /**
    * How many AI calls the calculation half may make in a day (0096).
    *
    * A soft budget, not a claim: one worker drains this queue, so two passes
@@ -106,6 +113,13 @@ export const SETTING_DEFAULTS = {
    * and the reply says the model was not asked.
    */
   ai_calc_daily_limit: 200,
+  /**
+   * How many times a day «Oldingi narx»'s 🤖 may ask the model (0119). Its
+   * own count, not `ai_calc_daily_limit`'s: the accountant presses it across
+   * a truck's lots, and a shared budget would let those presses stop the
+   * VED's Telegram estimates until midnight.
+   */
+  price_history_ai_daily_limit: 50,
   /**
    * Write the AI-VED's estimate onto the card's lenta as well as into the
    * seller's chat (his answer 2a). A switch because it is the only thing on
@@ -159,6 +173,20 @@ export const SETTING_DEFAULTS = {
    * payout refuses with a sentence rather than guessing.
    */
   upsale_expense_category_id: '',
+  /**
+   * The expense category a KPI payout is written into (0117) — the upsale
+   * category's rule for the same reason: mandatory, and refused in words while
+   * empty, because a commission paid out of «Oyliklar» would sit on the salary
+   * line and close that seller's month on the due list.
+   */
+  kpi_expense_category_id: '',
+  /**
+   * Which expense category IS the salary (0117, /hodimlar): a person's
+   * recurring template in it reads as their «Oylik», any other template of
+   * theirs as «Boshqa doimiy to'lovlar». Empty = every template naming a
+   * person reads as salary, and the screen asks for the category in words.
+   */
+  salary_expense_category_id: '',
   /**
    * The funnel stage a request for a price lands on (owner, round 83: «kim
    * botga tashlayotgan bo'lsa o'sha odamning accountiga biriktirilishi kerak

@@ -54,7 +54,7 @@ afterAll(async () => {
 
 describe('a truck between unmapped warehouses', () => {
   it('is drawn at its phone fix — live GPS needs no route table', async () => {
-    const truck = await truckFor(batchRow, `QO${STAMP.slice(-4)}`, `QD${STAMP.slice(-4)}`, {
+    const truck = await truckFor(batchRow, `QO${STAMP.slice(-4)}`, `QD${STAMP.slice(-4)}`, {}, {
       batchId: batchRow.id,
       lat: 40.1,
       lon: 72.5,
@@ -73,12 +73,12 @@ describe('a truck between unmapped warehouses', () => {
 
   it('stays off the map only when there is NOTHING to draw', async () => {
     expect(
-      await truckFor(batchRow, `QO${STAMP.slice(-4)}`, `QD${STAMP.slice(-4)}`, undefined),
+      await truckFor(batchRow, `QO${STAMP.slice(-4)}`, `QD${STAMP.slice(-4)}`, {}, undefined),
     ).toBeNull();
   });
 
   it('a mapped pair still rides the estimate when the fix is stale', async () => {
-    const truck = await truckFor(batchRow, 'YW', 'AND', {
+    const truck = await truckFor(batchRow, 'YW', 'AND', {}, {
       batchId: batchRow.id,
       lat: 40.1,
       lon: 72.5,

@@ -1,5 +1,5 @@
 import { ROAD_LEG_POINTS } from './road-geometry';
-import type { RouteDef, RoutePoint, RouteSegment } from './engine';
+import type { BorderPost, RouteDef, RoutePoint, RouteSegment } from './engine';
 
 /**
  * Corridor geometry (owner's routes). Points are REAL lon/lat (x = lon,
@@ -55,6 +55,18 @@ const P = {
   CSX: { x: 113.0, y: 28.2 }, // Changsha
   YW: { x: 120.07, y: 29.31 }, // Yiwu
   GZ: { x: 113.26, y: 23.13 }, // Guangzhou
+  // Horgos (owner, 2026-09-29, answer 12): HIS point, typed on the warehouse
+  // row, copied to the digit — the Chinese road ends ON the dot /map draws.
+  HOR: { x: 80.459135, y: 44.154112 },
+  // The Nur Zholy post, the Kazakh side of the Khorgos crossing — where the
+  // truck waits in the queue.
+  NZL: { x: 80.3958, y: 44.1577 },
+  ALA: { x: 76.8897, y: 43.2389 }, // Almaty
+  SHY: { x: 69.5901, y: 42.3417 }, // Shymkent
+  // Yallama (his 23a), the Kazakhstan → Uzbekistan post. APPROXIMATE, from a
+  // public coordinate: the logist looks at it on /map once and says if the
+  // post sits in the wrong spot.
+  YAL: { x: 69.3587, y: 41.479 },
 } satisfies Record<string, RoutePoint>;
 
 /**
@@ -127,6 +139,19 @@ const W = {
   FEG: { x: 70.94, y: 40.53 }, // Kokand
   KMC: { x: 70.55, y: 41.13 }, // Kamchik pass
   ANG: { x: 70.14, y: 41.02 }, // Angren
+  // G30, Urumqi → Horgos: the north side of the Tian Shan, past the Sayram
+  // lake and down the Guozigou gorge.
+  CHJ: { x: 87.3, y: 44.01 }, // Changji
+  SHZ: { x: 86.04, y: 44.31 }, // Shihezi
+  KYT: { x: 84.9, y: 44.43 }, // Kuytun
+  JNG: { x: 82.9, y: 44.6 }, // Jinghe
+  SAY: { x: 81.2, y: 44.6 }, // Sayram lake
+  GZG: { x: 80.9, y: 44.2 }, // Guozigou
+  // A2/M39 through Kazakhstan: Nur Zholy → Almaty → Shymkent → Yallama.
+  ZHK: { x: 80.0, y: 44.1667 }, // Zharkent
+  KRD: { x: 74.71, y: 43.035 }, // Kordai
+  MRK: { x: 73.18, y: 42.87 }, // Merke
+  TRZ: { x: 71.3667, y: 42.9 }, // Taraz
 } satisfies Record<string, RoutePoint>;
 
 /**
@@ -145,6 +170,8 @@ interface RouteLeg {
   key: string;
   hours: [number, number];
   points: RoutePoint[];
+  /** A queue the logist types by hand replaces this leg's hours (`BORDER_POSTS`). */
+  post?: BorderPost;
 }
 
 function build(legs: RouteLeg[]): RouteDef {
@@ -157,7 +184,14 @@ function build(legs: RouteLeg[]): RouteDef {
       points[points.length - 1]!.x === leg.points[0]!.x &&
       points[points.length - 1]!.y === leg.points[0]!.y;
     points.push(...(same ? leg.points.slice(1) : leg.points));
-    segments.push({ key: leg.key, hours: leg.hours, span: [start, points.length - 1] });
+    segments.push({
+      key: leg.key,
+      hours: leg.hours,
+      span: [start, points.length - 1],
+      // Only where there is one: every route without a post keeps the exact
+      // segment objects it always had.
+      ...(leg.post ? { post: leg.post } : {}),
+    });
   }
   return { points, segments };
 }
@@ -182,12 +216,24 @@ function roadTo(key: string, dest: RoutePoint, fallback: RoutePoint[]): RoutePoi
   return last.x === dest.x && last.y === dest.y ? pts : [...pts, dest];
 }
 
+/**
+ * `pts` joined onto a leg that must start at `at` — without a duplicate
+ * point when the fallback chain already starts there. The stored roads end a
+ * few hundred metres from our own dots, the hand chains end ON them, and a
+ * leg has to begin where the previous one stopped either way.
+ */
+function from(at: RoutePoint, pts: RoutePoint[]): RoutePoint[] {
+  const first = pts[0];
+  return first && first.x === at.x && first.y === at.y ? pts : [at, ...pts];
+}
+
 /** Warehouse code → map dot. TAS2 sits beside TAS1 so both stay clickable. */
 export const WAREHOUSE_POINTS: Record<string, RoutePoint> = {
   YW: P.YW,
   GZ: P.GZ,
   UCH: P.UCH,
   KA: P.KA,
+  HOR: P.HOR,
   AND: P.AND,
   TAS1: P.TAS,
   TAS2: { x: P.TAS.x - 0.85, y: P.TAS.y - 0.58 },
@@ -197,7 +243,29 @@ export const WAREHOUSE_POINTS: Record<string, RoutePoint> = {
 export const LANDMARKS: { name: string; p: RoutePoint }[] = [
   { name: 'Irkeshtam', p: P.IRK },
   { name: 'Osh', p: P.OSH },
+  // The Horgos road through Kazakhstan (his 13a). The Nur Zholy post is 5 km
+  // from the HOR dot and would sit on top of it, so it is not drawn.
+  { name: 'Almaty', p: P.ALA },
+  { name: 'Shymkent', p: P.SHY },
+  { name: 'Yallama', p: P.YAL },
 ];
+
+/**
+ * The border posts whose queue the logist types by hand (owner, 2026-09-29,
+ * answer 14), with his default wait in hours — ONE home, read by the legs
+ * below AND by the /trucks panel's «Odatdagi: …», so the default a person
+ * reads is the default the ETA uses.
+ *
+ * Khorgos «3 kuncha» = 60-84 h; Yallama «3-4 kun» = 72-96 h. The Kashgar
+ * road's Irkeshtam wait is deliberately NOT here: he asked about the Horgos
+ * road, and the Kashgar trucks keep their pin (adding it is one line).
+ */
+export const BORDER_POSTS = {
+  khorgos: [60, 84],
+  yallama: [72, 96],
+} as const satisfies Record<BorderPost, readonly [number, number]>;
+
+export const BORDER_POST_KEYS = Object.keys(BORDER_POSTS) as BorderPost[];
 
 /** Leaflet initial view: whole corridor. */
 export const MAP_BOUNDS: [[number, number], [number, number]] = [
@@ -205,18 +273,36 @@ export const MAP_BOUNDS: [[number, number], [number, number]] = [
   [47, 125], // north-east
 ];
 
-/** Xi'an → Kashgar: the G30 and G3012, the way a truck really drives it. */
-const CN_SPINE = [
+/**
+ * Xi'an → Turpan: the G30, the road every Chinese truck of ours shares
+ * whichever border it is heading for. Split out of the Kashgar spine
+ * (value-identical — `CN_SPINE` below is the two halves joined) so the Horgos
+ * road can turn north at Turpan instead of restating eight hundred
+ * kilometres of Hexi corridor.
+ */
+const CN_TRUNK = [
   P.XIA, W.BAO, W.TSN, W.DNX, P.LAN,
   W.TZU, W.WUW, W.SDN, W.ZHY, W.JIQ, W.JYG, W.GUA, W.XXX, P.HAM,
-  // Turpan → TOKSUN, never Urumqi (owner, round 109: «YW GZ dan ketadgan yol
-  // urumchiga kirmaydi togri qashqarga ketadi»). The G3012 turns south-west
-  // at Toksun; going up to Urumqi and back down is ~300 km the road does not
-  // drive — and the fetched geometry confirms it, never rising above 43.4°N.
   W.SHS, W.TFU,
+];
+/**
+ * Turpan → Kashgar. Turpan → TOKSUN, never Urumqi (owner, round 109: «YW GZ
+ * dan ketadgan yol urumchiga kirmaydi togri qashqarga ketadi»). The G3012
+ * turns south-west at Toksun; going up to Urumqi and back down is ~300 km the
+ * road does not drive — and the fetched geometry confirms it, never rising
+ * above 43.4°N.
+ */
+const KA_TAIL = [
   W.TOK, W.YNQ, W.KRL, W.LUN, W.KCA, P.AKS,
   W.BCH, W.ATX, P.KA,
 ];
+/** Xi'an → Kashgar: the G30 and G3012, the way a truck really drives it. */
+const CN_SPINE = [...CN_TRUNK, ...KA_TAIL];
+/**
+ * Urumqi → Horgos: the Horgos road DOES go through Urumqi (the Kashgar one
+ * does not), then west along the G30 north of the Tian Shan.
+ */
+const HOR_TAIL = [P.UCH, W.CHJ, W.SHZ, W.KYT, W.JNG, W.SAY, W.GZG, P.HOR];
 /** Andijan → Tashkent over the Kamchik pass. */
 const AND_TAS = (dest: RoutePoint) => [P.AND, W.FEG, W.KMC, W.ANG, dest];
 
@@ -261,8 +347,87 @@ function ka2uz(dest: RoutePoint, uzHours: [number, number]): RouteDef {
   return build(ka2uzLegs(dest, uzHours));
 }
 
-/** The Chinese leg of a truck that starts at one of the three CN warehouses. */
-function cnLeg(origin: string): RouteLeg | null {
+/**
+ * Horgos → an Uzbek warehouse through Kazakhstan (owner, 2026-09-29, answers
+ * 13a, 14 and 23a): the Khorgos post, Almaty, Shymkent, the Yallama post,
+ * Tashkent — and Andijan on over the Kamchik pass.
+ *
+ * TWO queues, each a stationary leg holding exactly the previous leg's last
+ * point (the wait-point pattern of `ka2uzLegs`, verbatim — a wait on a
+ * different point is a leg the engine walks along, and the truck creeps
+ * across the border through the whole queue). Each carries its `post`, so
+ * the logist's typed number replaces its hours (`routeWithWaits`).
+ */
+function hor2uzLegs(dest: RoutePoint): RouteLeg[] {
+  // His «~3 days at the China border» starts once the truck is at the post:
+  // the 5 km from our yard to it is its own short leg.
+  const atCn = P.NZL;
+  const kzRoad = road('nzl_yal') ?? [P.NZL, W.ZHK, P.ALA, W.KRD, W.MRK, W.TRZ, P.SHY, P.YAL];
+  // WHERE THE KAZAKH ROAD ENDS, not our Yallama dot (the same reason as
+  // `ka2uzLegs`' atBorder): the queue must hold the kz leg's own last point.
+  const atUz = kzRoad[kzRoad.length - 1]!;
+  const toUz =
+    dest === P.AND
+      ? [
+          ...from(atUz, road('yal_tas') ?? [P.YAL, P.TAS]),
+          ...reverse(road('and_tas') ?? AND_TAS(P.TAS)),
+        ]
+      : from(atUz, roadTo('yal_tas', dest, [P.YAL, dest]));
+  return [
+    { key: 'to_border', hours: [1, 3], points: [P.HOR, P.NZL] },
+    { key: 'border_wait', hours: [...BORDER_POSTS.khorgos], points: [atCn], post: 'khorgos' },
+    // «keyin 1 kun yolda oxb chegaragacha».
+    { key: 'kz', hours: [18, 30], points: from(atCn, kzRoad) },
+    // «3-4 kun ozbga kiriw ochered».
+    { key: 'uz_queue', hours: [...BORDER_POSTS.yallama], points: [atUz], post: 'yallama' },
+    {
+      key: 'uz',
+      // Yallama → Tashkent is a hundred kilometres; Andijan is the Kamchik
+      // pass on top of it, the same road `AND_TAS` draws the other way.
+      hours: dest === P.AND ? [14, 30] : [2, 6],
+      points: dropRepeats(toUz),
+    },
+  ];
+}
+
+/** A stored or hand-drawn chain, driven the other way. */
+function reverse(pts: RoutePoint[]): RoutePoint[] {
+  return [...pts].reverse();
+}
+
+/** Consecutive duplicates out — a zero-length chord is a point the dot sits on for nothing. */
+function dropRepeats(pts: RoutePoint[]): RoutePoint[] {
+  return pts.filter((p, i) => i === 0 || p.x !== pts[i - 1]!.x || p.y !== pts[i - 1]!.y);
+}
+
+/**
+ * The Chinese leg of a truck that starts at one of the three CN warehouses,
+ * heading for one of the two hubs a truck unloads at (his 21a: no direct
+ * trucks — every truck unloads at Horgos or Kashgar).
+ */
+function cnLeg(origin: string, hub: 'KA' | 'HOR'): RouteLeg | null {
+  if (hub === 'HOR') {
+    // «6-7 kun» from Yiwu or Guangzhou (answer 14).
+    if (origin === 'YW') {
+      return {
+        key: 'cn_transit',
+        hours: [144, 168],
+        points: road('yw_hor') ?? [P.YW, W.HGH, W.NKG, W.CGO, ...CN_TRUNK, ...HOR_TAIL],
+      };
+    }
+    if (origin === 'GZ') {
+      return {
+        key: 'cn_transit',
+        hours: [144, 168],
+        points: road('gz_hor') ?? [P.GZ, W.SHG, W.HNY, P.CSX, W.XFN, W.ANK, ...CN_TRUNK, ...HOR_TAIL],
+      };
+    }
+    if (origin === 'UCH') {
+      // An estimate and not his number (open point 1): ~650 km of G30.
+      return { key: 'cn_transit', hours: [12, 24], points: road('uch_hor') ?? HOR_TAIL };
+    }
+    return null;
+  }
   if (origin === 'YW') {
     return {
       key: 'cn_transit',
@@ -294,8 +459,16 @@ export function routeFor(originCode: string, destCode: string): RouteDef | null 
   const destPoint = WAREHOUSE_POINTS[d];
   if (!destPoint || !WAREHOUSE_POINTS[o]) return null;
 
-  const cn = cnLeg(o);
+  const cn = cnLeg(o, 'KA');
   if (cn && d === 'KA') return build([cn]);
+  // The Horgos road (0118's round). Before the generic line, which would
+  // otherwise answer both with a placeholder «5-7 kun» straight across the
+  // Tian Shan. KA ↔ HOR stays generic: nobody described that road.
+  const toHor = d === 'HOR' ? cnLeg(o, 'HOR') : null;
+  if (toHor) return build([toHor]);
+  if (o === 'HOR' && (d === 'AND' || d === 'TAS1' || d === 'TAS2')) {
+    return build(hor2uzLegs(d === 'AND' ? P.AND : WAREHOUSE_POINTS[d]!));
+  }
   if (o === 'KA' && d === 'AND') return ka2uz(P.AND, [12, 24]);
   if (o === 'KA' && (d === 'TAS1' || d === 'TAS2')) {
     return ka2uz(WAREHOUSE_POINTS[d]!, [36, 48]);
@@ -325,11 +498,38 @@ export function routeFor(originCode: string, destCode: string): RouteDef | null 
   return build([{ key: 'transit', hours: [120, 168], points: [WAREHOUSE_POINTS[o]!, destPoint] }]);
 }
 
+/**
+ * The positions the batch card's «где машина» pins can record — ONE list
+ * (it used to be restated in six places, and `checkpointOf` silently dropped
+ * any key a copy lacked). Which of them a given truck is OFFERED is its road's
+ * question (`checkpointsFor`, eta.ts): the Kashgar road passes Kyrgyzstan,
+ * the Horgos road Kazakhstan.
+ */
+export const CHECKPOINT_KEYS = ['at_border', 'in_kg', 'in_kz', 'in_uz'] as const;
+export type CheckpointKey = (typeof CHECKPOINT_KEYS)[number];
+
 /** Checkpoint key → the segment it anchors (batch card buttons). */
-export const CHECKPOINT_SEGMENTS: Record<string, string> = {
+export const CHECKPOINT_SEGMENTS: Record<CheckpointKey, string> = {
   at_border: 'border_wait',
   in_kg: 'kg',
+  in_kz: 'kz',
   in_uz: 'uz',
+};
+
+/**
+ * A pin as a person reads it — one home for the Mashina tab's buttons and
+ * badge, the dashboard's road line and /trucks (three hand-written copies
+ * before). `label` is a `batches.*` key; a Record, so a fifth key that
+ * forgets its label fails `pnpm typecheck`.
+ */
+export const CHECKPOINT_LABEL: Record<
+  CheckpointKey,
+  { icon: string; label: 'cpBorder' | 'cpKg' | 'cpKz' | 'cpUz' }
+> = {
+  at_border: { icon: '🛃', label: 'cpBorder' },
+  in_kg: { icon: '🇰🇬', label: 'cpKg' },
+  in_kz: { icon: '🇰🇿', label: 'cpKz' },
+  in_uz: { icon: '🇺🇿', label: 'cpUz' },
 };
 
 /**

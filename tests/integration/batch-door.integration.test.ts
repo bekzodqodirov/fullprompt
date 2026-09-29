@@ -86,11 +86,18 @@ const PHONES = {
 type Person = keyof typeof PHONES;
 
 const people = new Map<Person, typeof users.$inferSelect>();
-const wh: Record<'YW' | 'KA' | 'GZ' | 'AND', string> = { YW: '', KA: '', GZ: '', AND: '' };
+const wh: Record<'YW' | 'KA' | 'GZ' | 'AND' | 'TAS1', string> = { YW: '', KA: '', GZ: '', AND: '', TAS1: '' };
 /** YW → KA: two of the three operators stand at one of its ends. */
 let truck = '';
 /** GZ → AND: a truck neither of them can open. */
 let otherTruck = '';
+/**
+ * YW → TAS1, the through road via Kashgar and Kyrgyzstan: the truck the
+ * pins are pressed on. YW → KA ends in China, so since the Horgos round its
+ * road carries NO pin at all (`checkpointsFor`) — it is the not-on-route
+ * proof instead.
+ */
+let pinTruck = '';
 let clientId = '';
 let receiptOn = '';
 let receiptOff = '';
@@ -118,10 +125,17 @@ function form(fields: Record<string, string>): FormData {
   return data;
 }
 
-/** `null` when the press went through, else the refusal's code. */
+/**
+ * `null` when the press went through, else the refusal's code — thrown as
+ * authorize's `AuthError`, or RETURNED in words by an action that answers its
+ * refusals (the map pin, since the Horgos round: `{ error }`).
+ */
 async function refusal(press: Promise<unknown>): Promise<string | null> {
   try {
-    await press;
+    const answer = await press;
+    if (answer && typeof answer === 'object' && 'error' in answer) {
+      return String((answer as { error: unknown }).error);
+    }
     return null;
   } catch (err) {
     if (err instanceof AuthError) return err.code;
@@ -130,7 +144,8 @@ async function refusal(press: Promise<unknown>): Promise<string | null> {
 }
 
 const truckRow = async (id = truck) => (await db.query.batches.findFirst({ where: eq(batches.id, id) }))!;
-const pinOf = async () => ((await truckRow()).trackingCheckpoint as { key?: string } | null)?.key ?? null;
+const pinOf = async (id = pinTruck) =>
+  ((await truckRow(id)).trackingCheckpoint as { key?: string } | null)?.key ?? null;
 
 beforeAll(async () => {
   for (const code of Object.keys(wh) as (keyof typeof wh)[]) {
@@ -154,7 +169,7 @@ beforeAll(async () => {
   }
 
   const author = people.get('logist')!.id;
-  [truck, otherTruck] = (
+  [truck, otherTruck, pinTruck] = (
     await db
       .insert(batches)
       .values([
@@ -174,9 +189,17 @@ beforeAll(async () => {
           departedAt: new Date(),
           createdBy: author,
         },
+        {
+          code: `ESH${SUFFIX}-3`,
+          originWarehouseId: wh.YW,
+          destWarehouseId: wh.TAS1,
+          status: 'in_transit',
+          departedAt: new Date(),
+          createdBy: author,
+        },
       ])
       .returning({ id: batches.id })
-  ).map((row) => row.id) as [string, string];
+  ).map((row) => row.id) as [string, string, string];
 
   clientId = (
     await db
@@ -232,7 +255,7 @@ beforeAll(async () => {
 afterAll(async () => {
   session.user = null;
   // Children first (the phones, cartons, lots and prixods all point up).
-  const trucks = [truck, otherTruck].filter(Boolean);
+  const trucks = [truck, otherTruck, pinTruck].filter(Boolean);
   if (trucks.length) await db.delete(driverDevices).where(inArray(driverDevices.batchId, trucks));
   if (madeBoxes.length) await db.delete(boxes).where(inArray(boxes.id, madeBoxes));
   const lots = [lotOn, lotOff].filter(Boolean);
@@ -245,7 +268,14 @@ afterAll(async () => {
 });
 
 describe('the map pin — batches.vehicle_info, which the seed gives to SCOPED roles', () => {
-  const pin = (key: string) => setTrackingCheckpointAction(form({ batchId: truck, key }));
+  const pin = (key: string, batchId = pinTruck) =>
+    setTrackingCheckpointAction(null, form({ batchId, key }));
+
+  // The destination-operator case («a trip belongs to both ends») left this
+  // file with the Horgos round: its truck ended at Kashgar, whose road
+  // carries no pin, and the demo has no Tashkent operator to stand at the far
+  // end of a truck that does. The two-end rule itself is the card door's and
+  // stays proven over every seeded role in tests/unit/batch-authorize.test.ts.
 
   it('the operator at the truck’s origin moves it', async () => {
     signIn('yw');
@@ -253,22 +283,23 @@ describe('the map pin — batches.vehicle_info, which the seed gives to SCOPED r
     expect(await pinOf()).toBe('at_border');
   });
 
-  it('the operator at its destination moves it too — a trip belongs to both ends', async () => {
-    signIn('ka');
-    expect(await refusal(pin('in_kg'))).toBeNull();
-    expect(await pinOf()).toBe('in_kg');
-  });
-
   it('an operator at a third warehouse is refused, and the customer’s stage stays where it was', async () => {
     signIn('gz');
     expect(await refusal(pin('in_uz'))).toBe('forbidden');
-    expect(await pinOf()).toBe('in_kg');
+    expect(await pinOf()).toBe('at_border');
   });
 
   it('the logist, who is scoped to nothing, is admitted on any truck', async () => {
     signIn('logist');
     expect(await refusal(pin('in_uz'))).toBeNull();
     expect(await pinOf()).toBe('in_uz');
+  });
+
+  it('a pin the truck’s road does not carry is refused IN WORDS, and nothing is written', async () => {
+    // YW → KA ends in China: no border, no Kyrgyzstan, no Uzbekistan on it.
+    signIn('logist');
+    expect(await refusal(pin('at_border', truck))).toBe('not_on_route');
+    expect(await pinOf(truck)).toBeNull();
   });
 });
 

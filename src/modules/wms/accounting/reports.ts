@@ -1210,6 +1210,10 @@ export async function arAging(asOf: string) {
 
   // Payments settle the OLDEST charge first (standard AR practice), so a
   // client who pays regularly never looks 90 days overdue on new cargo.
+  // Deliberately NOT `settleCharges` (finance/fifo.ts): that walk asks which
+  // PRICE is paid for (the client card's trips, the KPI's paid cargo) and
+  // settles charges only; this one asks how OLD the debt is, so every debit
+  // ages — a refund owes again from its own day.
   const charges = new Map<string, { date: string; amount: number }[]>();
   for (const row of rows) {
     const entry =

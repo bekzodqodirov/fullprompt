@@ -31,6 +31,7 @@ import {
 import { countDoorFor } from '@/modules/wms/scanning/count-door';
 import { isBusyError } from '@/modules/platform/db/errors';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
+import type { CheckpointActionState } from '@/modules/wms/tracking/checkpoint';
 
 /**
  * Accept the whole remaining manifest at the destination without scanning.
@@ -482,27 +483,39 @@ export async function setProfitTrackedAction(formData: FormData): Promise<void> 
 /**
  * Manual position pin for the tracking map ("still at the border") — the
  * simulation re-anchors from this moment. Tapping the active pin clears it.
+ *
+ * The writing is `setTrackingCheckpoint`'s (tracking/checkpoint.ts), which
+ * asks the truck's ROAD which pins it carries; this door answers its refusal
+ * in words instead of returning quietly, because a press that silently does
+ * nothing reads as a press that worked (`CheckpointButtons` prints it).
  */
-export async function setTrackingCheckpointAction(formData: FormData): Promise<void> {
+export async function setTrackingCheckpointAction(
+  _prev: CheckpointActionState,
+  formData: FormData,
+): Promise<CheckpointActionState> {
   const batchId = String(formData.get('batchId') ?? '');
   const key = String(formData.get('key') ?? '');
-  if (!['at_border', 'in_kg', 'in_uz'].includes(key)) return;
-  const door = await authorizeOnBatch('batches.vehicle_info', batchId);
-  if (!door || door.batch.status !== 'in_transit') return;
-  const { actor, batch } = door;
+  let door: Awaited<ReturnType<typeof authorizeOnBatch>>;
+  try {
+    door = await authorizeOnBatch('batches.vehicle_info', batchId);
+  } catch (err) {
+    if (err instanceof AuthError) return { error: 'forbidden' };
+    throw err;
+  }
+  // A truck that is not there is not on the road — words, not a white page.
+  if (!door) return { error: 'not_in_transit' };
   const meta = await requestMeta();
-  const current = batch.trackingCheckpoint as { key?: string } | null;
-  const next = current?.key === key ? null : { key, at: new Date().toISOString() };
-  await db.update(batches).set({ trackingCheckpoint: next }).where(eq(batches.id, batchId));
-  const { writeAudit } = await import('@/modules/platform/audit/service');
-  await writeAudit(db, { actorId: actor.id, ...meta, warehouseId: batch.originWarehouseId }, {
-    entityType: 'batch',
-    entityId: batchId,
-    action: 'update',
-    after: { trackingCheckpoint: next },
-  });
-  revalidatePath(`/batches/${batchId}`);
+  const { setTrackingCheckpoint, CheckpointError } = await import('@/modules/wms/tracking/checkpoint');
+  try {
+    await setTrackingCheckpoint(door.actor, batchId, key, meta);
+  } catch (err) {
+    if (err instanceof CheckpointError) return { error: err.code };
+    throw err;
+  }
+  // The pin moves the header's ETA on every tab of the card, not only this one.
+  revalidatePath(`/batches/${batchId}`, 'layout');
   revalidatePath('/map');
+  return { ok: true };
 }
 
 /**

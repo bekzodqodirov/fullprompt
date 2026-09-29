@@ -156,13 +156,12 @@ export async function sendOwnerSummaries(now: Date = new Date()): Promise<OwnerS
 
 export async function registerOwnerSummaryWorker(boss: PgBoss): Promise<void> {
   await boss.createQueue(JOB_OWNER_SUMMARY);
-  // 20:00 Asia/Tashkent (UTC+5, no DST) = 15:00 UTC. A push covers 00:00 to
-  // 20:00 of its day. What is typed after 20:00 on Tuesday to Sunday reaches
-  // the next Monday's week (Tuesday to Monday); what is typed after 20:00 on
-  // a MONDAY reaches NO push at all — that week was sent at 20:00 and the
-  // next one starts on Tuesday — only a «📊 Holat» pull before midnight shows
-  // it. Kept, and stated to the owner, because the week is the dashboard's
-  // own «7 kun» and the message's link opens exactly it (#513).
+  // 20:00 Asia/Tashkent (UTC+5, no DST) = 15:00 UTC. A daily push covers 00:00
+  // to 20:00 of its day; what is typed after 20:00 reaches the next Monday's
+  // week. The Monday push is the week that ENDED on Sunday (the dashboard's
+  // «O'tgan hafta», owner's 5b) — so every day, Mondays included, is counted
+  // whole in exactly one weekly message. It used to be «7 kun» (Tuesday to
+  // Monday), which left a Monday's evening in no push at all.
   await boss.schedule(JOB_OWNER_SUMMARY, '0 15 * * *');
   await boss.work(JOB_OWNER_SUMMARY, async () => {
     try {

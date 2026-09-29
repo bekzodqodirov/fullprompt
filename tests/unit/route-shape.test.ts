@@ -1,6 +1,7 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { estimateTransit, type RouteDef, type RoutePoint } from '@/modules/wms/tracking/engine';
-import { routeFor } from '@/modules/wms/tracking/map-data';
+import { routeFor, WAREHOUSE_POINTS } from '@/modules/wms/tracking/map-data';
 import { ROAD_LEG_POINTS } from '@/modules/wms/tracking/road-geometry';
 
 /**
@@ -28,11 +29,34 @@ const PAIRS: [string, string][] = [
   ['KA', 'TAS2'],
   ['AND', 'TAS1'],
   ['YW', 'TAS1'], // no corridor defined: the honest straight line
+  // The Horgos road (2026-09-29): China to the Horgos warehouse, and on
+  // through Kazakhstan to Uzbekistan.
+  ['YW', 'HOR'],
+  ['GZ', 'HOR'],
+  ['UCH', 'HOR'],
+  ['HOR', 'TAS1'],
+  ['HOR', 'TAS2'],
+  ['HOR', 'AND'],
 ];
 
 /** Closest approach of a sampled path to a point, in degrees. */
 function nearest(path: RoutePoint[], target: RoutePoint): number {
   return Math.min(...path.map((p) => Math.hypot(p.x - target.x, p.y - target.y)));
+}
+
+/** Closest approach of the drawn POLYLINE to a point — its segments, not its corners. */
+function nearestOnLine(points: RoutePoint[], target: RoutePoint): number {
+  let best = Infinity;
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const a = points[i]!;
+    const b = points[i + 1]!;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len2 = dx * dx + dy * dy;
+    const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((target.x - a.x) * dx + (target.y - a.y) * dy) / len2));
+    best = Math.min(best, Math.hypot(target.x - (a.x + dx * t), target.y - (a.y + dy * t)));
+  }
+  return best;
 }
 
 /** Walk the whole schedule and collect where the truck is said to be. */
@@ -75,6 +99,63 @@ describe('the corridor a truck is drawn on', () => {
     const at = route.points[wait.span[0]]!;
     // Irkeshtam.
     expect(Math.hypot(at.x - 73.91, at.y - 39.68)).toBeLessThan(0.01);
+  });
+
+  it('every queue leg is stationary, ON the previous leg’s last point — derived over every route', () => {
+    // A queue that holds a DIFFERENT point is a two-point leg the engine walks
+    // along: the truck creeps across the border through the whole wait
+    // (round 109). Derived from the `post` a leg carries, so a third queue
+    // is fenced the day it is added.
+    let queues = 0;
+    for (const [origin, dest] of PAIRS) {
+      const route = routeFor(origin, dest)!;
+      route.segments.forEach((seg, i) => {
+        if (!seg.post) return;
+        queues += 1;
+        const where = `${origin}→${dest} ${seg.key}`;
+        expect(seg.span[0], where).toBe(seg.span[1]);
+        expect(i, where).toBeGreaterThan(0);
+        const previousLast = route.points[route.segments[i - 1]!.span[1]]!;
+        expect(route.points[seg.span[0]], where).toEqual(previousLast);
+      });
+    }
+    // Two posts on each of the three Horgos → Uzbekistan roads.
+    expect(queues).toBe(6);
+  });
+
+  it('drives Horgos → Tashkent through Almaty, Shymkent and the Yallama post', () => {
+    for (const dest of ['TAS1', 'TAS2', 'AND']) {
+      const route = routeFor('HOR', dest)!;
+      // His own point, to the digit: the road starts ON the warehouse dot.
+      expect(route.points[0], dest).toEqual({ x: 80.459135, y: 44.154112 });
+      expect(route.points.at(-1), dest).toEqual(WAREHOUSE_POINTS[dest]);
+      expect(nearestOnLine(route.points, { x: 76.8897, y: 43.2389 }), `${dest} Almaty`).toBeLessThan(0.15);
+      expect(nearestOnLine(route.points, { x: 69.5901, y: 42.3417 }), `${dest} Shymkent`).toBeLessThan(0.15);
+      const yallama = route.segments.find((s) => s.post === 'yallama')!;
+      const post = route.points[yallama.span[0]]!;
+      expect(Math.hypot(post.x - 69.3587, post.y - 41.479), `${dest} Yallama`).toBeLessThan(0.15);
+      expect(route.segments.map((s) => s.key), dest).toEqual(['to_border', 'border_wait', 'kz', 'uz_queue', 'uz']);
+    }
+  });
+
+  it('the Horgos road DOES go through Urumqi — the inverse of the Kashgar fence', () => {
+    for (const origin of ['YW', 'GZ', 'UCH']) {
+      const route = routeFor(origin, 'HOR')!;
+      expect(nearestOnLine(route.points, { x: 87.62, y: 43.83 }), origin).toBeLessThan(0.3);
+      expect(route.points.at(-1), origin).toEqual(WAREHOUSE_POINTS.HOR);
+    }
+  });
+
+  it('the Kashgar through road is untouched by the Horgos round', () => {
+    expect(routeFor('YW', 'TAS1')!.segments.map((s) => s.key)).toEqual([
+      'cn_transit',
+      'to_border',
+      'border_wait',
+      'kg',
+      'uz',
+    ]);
+    // …and carries no typed queue: the owner asked about the Horgos road.
+    expect(routeFor('YW', 'TAS1')!.segments.some((s) => s.post)).toBe(false);
   });
 
   it('goes around the Tian Shan through Korla, not over it', () => {
@@ -186,6 +267,13 @@ describe('the stored road geometry ends where the app says the place is', () => 
     expect(through.points.slice(0, cn.points.length)).toEqual(cn.points);
   });
 
+  it('stores a leg only with its ENDS entry — and every ENDS entry is a stored leg', () => {
+    // The new Horgos legs' ENDS land in the SAME commit as their fetched
+    // geometry, never as a skip-if-absent entry (a conditional test proves
+    // nothing): until then the town chains draw.
+    expect(Object.keys(ENDS).sort()).toEqual(Object.keys(ROAD_LEG_POINTS).sort());
+  });
+
   it('the China corridor never climbs to Urumqi', () => {
     // The owner's correction (round 109): the road turns south-west at
     // Toksun; Urumqi is 43.83°N and a ~300 km detour the truck does not make.
@@ -193,5 +281,61 @@ describe('the stored road geometry ends where the app says the place is', () => 
       const top = Math.max(...ROAD_LEG_POINTS[key]!.map((p) => p[1]));
       expect(top, key).toBeLessThan(43.5);
     }
+  });
+});
+
+/**
+ * THREE lists name the corridor's places — map-data's `P`, the fetch
+ * script's `P` and this file's — and the first run of the script shows what
+ * a hand-typed one costs (80 km short of Irkeshtam). So the two copies are
+ * fenced against map-data's, and every stored road the app asks for is a leg
+ * the script can fetch (the Horgos round added five).
+ */
+describe('the places the corridor is drawn between have one set of numbers', () => {
+  const MAP = readFileSync('src/modules/wms/tracking/map-data.ts', 'utf8');
+  const SCRIPT = readFileSync('scripts/fetch-road-geometry.mjs', 'utf8');
+  const TEST = readFileSync('tests/unit/route-shape.test.ts', 'utf8');
+  const block = (src: string, open: string) => {
+    const at = src.indexOf(open);
+    expect(at, open).toBeGreaterThan(-1);
+    return src.slice(at, src.indexOf('};', at));
+  };
+  const mapP = new Map(
+    [...block(MAP, 'const P = {').matchAll(/(\w+): \{ x: (-?[\d.]+), y: (-?[\d.]+) \}/g)].map((m) => [
+      m[1]!,
+      [Number(m[2]), Number(m[3])],
+    ]),
+  );
+  const scriptP = new Map(
+    [...block(SCRIPT, 'const P = {').matchAll(/(\w+): \[(-?[\d.]+), (-?[\d.]+)\]/g)].map((m) => [
+      m[1]!,
+      [Number(m[2]), Number(m[3])],
+    ]),
+  );
+  const testP = new Map(
+    [...block(TEST, '  const P = {').matchAll(/(\w+): \{ x: (-?[\d.]+), y: (-?[\d.]+) \}/g)].map((m) => [
+      m[1]!,
+      [Number(m[2]), Number(m[3])],
+    ]),
+  );
+
+  it('parses what it must — a parse that finds nothing is not a pass', () => {
+    for (const name of ['YW', 'KA', 'IRK', 'TAS', 'HOR', 'NZL', 'YAL']) {
+      expect(mapP.has(name), `map-data P.${name}`).toBe(true);
+      expect(scriptP.has(name), `script P.${name}`).toBe(true);
+    }
+    expect(testP.size).toBeGreaterThanOrEqual(8);
+  });
+
+  it('the script and this file copy map-data to the digit', () => {
+    for (const [name, xy] of scriptP) expect(xy, `script P.${name}`).toEqual(mapP.get(name));
+    for (const [name, xy] of testP) expect(xy, `route-shape P.${name}`).toEqual(mapP.get(name));
+  });
+
+  it('every stored road map-data asks for is a leg the script fetches', () => {
+    const asked = [...MAP.matchAll(/road(?:To)?\('(\w+)'/g)].map((m) => m[1]!);
+    expect(asked).toContain('nzl_yal');
+    const legs = new Set([...SCRIPT.matchAll(/\['(\w+)', P\.\w+, P\.\w+\]/g)].map((m) => m[1]!));
+    for (const key of new Set(asked)) expect(legs, key).toContain(key);
   });
 });

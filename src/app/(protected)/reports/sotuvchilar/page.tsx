@@ -62,6 +62,13 @@ export default async function SellerReportPage({
     <div className="mx-auto max-w-4xl space-y-4">
       <PageHeader icon="report" title={t('title')} />
       <p className="text-xs text-ink-500">{t('subtitle')}</p>
+      {/* Two attributions on one page (0117): the cargo columns read the
+          receipt's own seller stamp, the money columns the client book — so
+          the page says which is which rather than let one row look like one
+          fact. */}
+      <p className="text-2xs text-ink-500" data-testid="seller-attribution">
+        {t('cargoByStamp')}; {t('moneyByBook')}.
+      </p>
 
       <form className="card flex flex-wrap items-end gap-2 !p-3" data-testid="seller-period">
         <label className="text-2xs">

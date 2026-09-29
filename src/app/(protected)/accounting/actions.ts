@@ -250,6 +250,8 @@ export async function saveRecurringAction(
       throw new AccountingError('account_or_payer_required');
     }
     await saveRecurring(parsed.data, ctx);
+    // /hodimlar's salary ✏️ writes through this door too (0117).
+    revalidatePath('/hodimlar');
   });
 }
 
@@ -275,7 +277,10 @@ export async function updateRecurringAction(
   if (!id.success) return { error: 'validation' };
   if (!parsed.success) return refusal(parsed.error);
   const state = await run('finance.expenses', (ctx) => updateRecurring(id.data, parsed.data, ctx));
-  if (state.ok) revalidateRecurring();
+  if (state.ok) {
+    revalidateRecurring();
+    revalidatePath('/hodimlar');
+  }
   return state;
 }
 

@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
@@ -37,9 +37,11 @@ let clientId = '';
 let dealId = '';
 let requestId = '';
 let originalLimit: unknown = null;
+let originalSimilarLimit: unknown = null;
 
 beforeAll(async () => {
   originalLimit = await getSetting('ai_calc_daily_limit');
+  originalSimilarLimit = await getSetting('price_history_ai_daily_limit');
   const [actor] = await db
     .insert(users)
     .values({
@@ -83,7 +85,9 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await setSetting('ai_calc_daily_limit', originalLimit as never, actorId);
+  await setSetting('price_history_ai_daily_limit', originalSimilarLimit as never, actorId);
   await db.delete(aiCalcPasses).where(eq(aiCalcPasses.requestId, requestId));
+  await db.delete(aiCalcPasses).where(and(eq(aiCalcPasses.kind, 'similar'), eq(aiCalcPasses.staffId, actorId)));
   await db.delete(calcRequestItems).where(eq(calcRequestItems.requestId, requestId));
   const rows = await db
     .select({ taskId: calcRequests.taskId })
@@ -137,14 +141,37 @@ describe('the AI pass keeps a bill', () => {
     // Counted with the FUNCTION's own predicate — today, not all time — or
     // this asserts about rows another day left behind (#713's rule about
     // claiming on a shared table).
-    const [used] = await db.execute<{ n: string }>(
-      sql`SELECT count(*)::text AS n FROM ai_calc_passes WHERE created_at >= date_trunc('day', now())`,
-    );
+    const [used] = await db.execute<{ n: string }>(sql`
+      SELECT count(*)::text AS n FROM ai_calc_passes
+       WHERE created_at >= date_trunc('day', now() AT TIME ZONE 'Asia/Tashkent') AT TIME ZONE 'Asia/Tashkent'
+         AND kind <> 'similar'`);
     await setSetting('ai_calc_daily_limit', Number(used!.n) + 1, actorId);
     expect(await aiCalcBudgetLeft()).toBe(1);
 
     await recordAiPass({ requestId, staffId: actorId, kind: 'pick', model: 'claude-opus-5' });
     expect(await aiCalcBudgetLeft()).toBe(0);
+  });
+
+  it('the 🤖 in «Oldingi narx» spends its OWN budget and never the calculation half\'s (0119)', async () => {
+    // An afternoon of pricing presses must not stop the VED's Telegram
+    // estimates until midnight: the two are counted apart.
+    const [used] = await db.execute<{ calc: string; similar: string }>(sql`
+      SELECT count(*) FILTER (WHERE kind <> 'similar')::text AS calc,
+             count(*) FILTER (WHERE kind = 'similar')::text AS similar
+        FROM ai_calc_passes
+       WHERE created_at >= date_trunc('day', now() AT TIME ZONE 'Asia/Tashkent') AT TIME ZONE 'Asia/Tashkent'`);
+    await setSetting('ai_calc_daily_limit', Number(used!.calc) + 1, actorId);
+    await setSetting('price_history_ai_daily_limit', Number(used!.similar) + 1, actorId);
+    expect(await aiCalcBudgetLeft()).toBe(1);
+    expect(await aiCalcBudgetLeft('similar')).toBe(1);
+
+    await recordAiPass({ requestId: null, staffId: actorId, kind: 'similar', model: 'x' });
+    expect(await aiCalcBudgetLeft('similar')).toBe(0);
+    expect(await aiCalcBudgetLeft()).toBe(1);
+
+    await recordAiPass({ requestId, staffId: actorId, kind: 'pick', model: 'x' });
+    expect(await aiCalcBudgetLeft()).toBe(0);
+    expect(await aiCalcBudgetLeft('similar')).toBe(0);
   });
 
   it('an unreadable cap stops being a cap, never the feature', async () => {

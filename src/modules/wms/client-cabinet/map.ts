@@ -5,6 +5,7 @@ import { batches, boxes, receiptLots, receipts, warehouses } from '../../platfor
 import { roundKg, roundM3, shareOf, sumRounded } from '../../platform/telegram/format';
 import { latestPositions } from '../tracking/devices';
 import { truckFor } from '../tracking/truck';
+import { loadBorderHours } from '../tracking/border-queue';
 import { warehousePoint } from '../tracking/warehouse-point';
 
 /**
@@ -180,12 +181,15 @@ export async function cabinetMap(clientIds: string[]): Promise<CabinetMapPlace[]
       ...finish(place),
     });
   }
+  // The typed border queues, once for the whole map (#432) — the dates on it
+  // are the dates the cabinet prints.
+  const waits = batchRows.length ? await loadBorderHours() : {};
   for (const b of batchRows) {
     const place = places.get(`truck:${b.batch.id}`);
     if (!place) continue;
     // A truck with neither a phone nor a known road has no position — it is
     // still the client's cargo, so it is listed rather than dropped.
-    const marker = await truckFor(b.batch, b.originCode, b.destCode, fixes.get(b.batch.id)).catch(
+    const marker = await truckFor(b.batch, b.originCode, b.destCode, waits, fixes.get(b.batch.id)).catch(
       () => null,
     );
     out.push({

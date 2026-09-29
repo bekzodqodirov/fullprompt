@@ -140,6 +140,13 @@ export function pricingChargesOf(
   }));
 }
 
+/**
+ * Which ledger rows are a client's PRICE on a truck — one list for this page
+ * and for «Oldingi narx» (0119), which reads the same price off past trucks,
+ * so the two cannot disagree about what «the price» is (#513).
+ */
+export const PRICING_CHARGE_TYPES = ['charge'] as const;
+
 export function pricingView(
   lots: BatchLot[],
   lotCost: Map<string, LotLandedCost>,
@@ -149,7 +156,7 @@ export function pricingView(
   // truck is money received, not money asked, and must not read as a price.
   const charged = new Map<string, { usd: number; code: string; name: string }>();
   for (const row of charges) {
-    if (row.type !== 'charge') continue;
+    if (!(PRICING_CHARGE_TYPES as readonly string[]).includes(row.type)) continue;
     const prev = charged.get(row.clientId);
     charged.set(row.clientId, {
       usd: (prev?.usd ?? 0) + row.amountUsd,

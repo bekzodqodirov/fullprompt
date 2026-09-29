@@ -1,4 +1,5 @@
 import { sql, type SQL } from 'drizzle-orm';
+import { commissionPayoutSql } from './payout-sql';
 
 /**
  * WHICH recurring months are owed — the one home of the rule (#513), as
@@ -105,7 +106,8 @@ export const partialPartsSql = (rid: SQL, month: SQL) => sql`
  * live, unlinked expense of the template's kind (and its person and
  * warehouse when the template names them), from a week before the month to
  * the end of the month after — a salary paid on the 3rd of the next month is
- * the ordinary case. Never an upsale payout (cost-merge's own fence). One
+ * the ordinary case. Never a seller's commission — the upsale's or the KPI's
+ * (`commissionPayoutSql`, cost-merge's own fence). One
  * home for the row's warning, the «To'landi» refusal and the «Bog'lash»
  * claim, so what the screen offers is exactly what the door accepts.
  *
@@ -124,4 +126,4 @@ export const candidatesSql = (rid: SQL, month: SQL) => sql`
      AND (r.employee_id IS NULL OR e.employee_id = r.employee_id)
      AND (r.warehouse_id IS NULL OR e.warehouse_id = r.warehouse_id)
      AND e.expense_date BETWEEN ${month} - 7 AND (${month} + interval '2 months')::date - 1
-     AND NOT EXISTS (SELECT 1 FROM calc_offers co WHERE co.payout_expense_id = e.id)`;
+     AND NOT ${commissionPayoutSql(sql`e.id`)}`;

@@ -41,10 +41,13 @@ describe('the upsale screen’s own door', () => {
 });
 
 describe('the actions re-derive every gate', () => {
-  it('paying asks for BOTH powers, server-side', () => {
+  it('paying asks for BOTH powers, server-side — through the one commission door', () => {
+    // Rewritten with the reason recorded (0117): the pair moved into
+    // `mayPayCommission` (staff/door.ts) when the KPI payout became the second
+    // door that pays a seller, so the two cannot disagree about who may press;
+    // pay-door-wire.test pins the pair inside the predicate.
     const body = code(ACTIONS).slice(code(ACTIONS).indexOf('export async function payUpsaleAction'));
-    expect(body).toContain("actor.permissions.has('finance.expenses')");
-    expect(body).toContain("upsaleScopeFor(actor) !== 'all'");
+    expect(body).toContain('if (!mayPayCommission(actor))');
   });
 
   it('allowing a below-floor price asks law 4’s own predicate', () => {

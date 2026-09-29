@@ -15,6 +15,7 @@ import {
 import { isInternalLeg } from '../batches/internal';
 import { CLIENT_ACTIVE_STATUSES } from '../boxes/active';
 import { settlesUsd } from './ledger-kinds';
+import { settleCharges } from './fifo';
 import { ledgerAlias, signedUsdSql } from './ledger-sql';
 import { rideMovementSql } from '../batches/riders';
 import { offTruckPrices } from './off-truck';
@@ -201,13 +202,15 @@ export async function clientCargo(clientId: string): Promise<ClientCargo> {
       .orderBy(asc(clientTransactions.txDate), asc(clientTransactions.createdAt)),
   ]);
 
-  // Settle payments against the OLDEST charge first — the same rule the
-  // receivables ageing report uses, so the two screens can never disagree
-  // about which invoice is still open.
-  const charges = ledger
-    .filter((row) => row.type === 'charge')
-    .map((row) => ({ batchId: row.batchId, owed: Number(row.amountUsd) }));
-  const chargedUsd = charges.reduce((a, c) => a + c.owed, 0);
+  // Settle payments against the OLDEST charge first — `settleCharges`
+  // (finance/fifo.ts), the one walk the KPI's «paid cargo» reads too (0117).
+  // NOT the receivables ageing report's walk, which this comment used to
+  // claim: arAging ages every DEBIT (a refund included) to say how old a
+  // debt is; this settles PRICES to say which trip is paid for. The card
+  // passes general credit only — compensations settle like a payment here,
+  // as they always have, and a deferral is not money on this screen.
+  const priced = ledger.filter((row) => row.type === 'charge');
+  const chargedUsd = priced.reduce((a, row) => a + Number(row.amountUsd), 0);
   // Net of what was handed back (R6a): a refund puts money the client paid
   // back into their hands, so it no longer settles anything. A kurs farqi row
   // (0103) settles by its own dollars, or the trips keep showing the residue
@@ -222,13 +225,17 @@ export async function clientCargo(clientId: string): Promise<ClientCargo> {
     .reduce((a, row) => a + Number(row.amountUsd), 0);
   const paidUsd = settledUsd - compensatedUsd;
 
-  let unapplied = settledUsd;
-  for (const charge of charges) {
-    if (unapplied <= 0) break;
-    const applied = Math.min(unapplied, charge.owed);
-    charge.owed -= applied;
-    unapplied -= applied;
-  }
+  const owedById = settleCharges(
+    priced.map((row) => ({
+      id: row.id,
+      txDate: row.txDate,
+      createdAt: row.createdAt,
+      amountUsd: Number(row.amountUsd),
+      dealId: null,
+    })),
+    { generalUsd: settledUsd },
+  );
+  const charges = priced.map((row) => ({ batchId: row.batchId, owed: owedById.get(row.id) ?? 0 }));
 
   // A charge's truck is a trip (the cargo rode it), an off-trip truck (0104:
   // still loading, or the cargo never rode it), or none at all — exactly one,

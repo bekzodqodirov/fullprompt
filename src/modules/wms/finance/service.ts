@@ -714,8 +714,13 @@ export function liveDeferralWhere(today: string = tashkentDay()) {
  * USD row is in no cycle and counts as before, and the filter can only LOWER
  * a deferral, never widen the gate. Raw and unaliased so `signedUsdSql()`
  * and `liveDeferralWhere()` render against their own tables.
+ *
+ * Exported for the KPI's paid-cargo walk (0117, staff/kpi-paid.ts): there a
+ * deferral settles ITS OWN deal's charges, and this is the one home of what
+ * a live deferral is worth. A SQL builder, run on whichever executor the
+ * caller holds (#714).
  */
-function deferredPerDealSql(clientIds: string[]): SQL {
+export function deferredPerDealSql(clientIds: string[]): SQL {
   return sql`
     WITH w AS (${fxWalkSql('client', ownersSql('client', clientIds), null)})
     SELECT client_transactions.client_id, client_transactions.deal_id,

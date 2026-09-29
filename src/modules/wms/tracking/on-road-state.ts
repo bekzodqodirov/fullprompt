@@ -1,6 +1,7 @@
 import { isMovingStage, truckStage, type TruckStage } from '../client-cabinet/stages';
 import { daysSince } from '../reports/dashboard-math';
-import { etaWindow, scheduleEstimate } from './eta';
+import { etaWindow, pinOnRoute, scheduleEstimate, type BorderHours } from './eta';
+import type { CheckpointKey } from './map-data';
 
 /**
  * «Yo'ldagi mashinalar» — what the owner's dashboard says about each truck,
@@ -41,10 +42,6 @@ export function isStuckAtGate(
 ): boolean {
   return row.status === 'arrived' && daysSince(row.arrivedAt, today) >= STUCK_AT_GATE_DAYS;
 }
-
-/** The three positions the batch card's «где машина» pins can record. */
-export type CheckpointKey = 'at_border' | 'in_kg' | 'in_uz';
-const CHECKPOINT_KEYS: ReadonlySet<string> = new Set<CheckpointKey>(['at_border', 'in_kg', 'in_uz']);
 
 export type TruckKind = 'stuck' | 'overdue' | 'unloading' | 'on_road' | 'no_schedule';
 
@@ -112,21 +109,24 @@ export interface TruckRow {
   arrivalOrder: number | null;
 }
 
-function checkpointOf(raw: unknown): { key: CheckpointKey; at: string } | null {
-  const cp = raw as { key?: unknown; at?: unknown } | null;
-  if (!cp || typeof cp.key !== 'string' || typeof cp.at !== 'string' || !cp.at) return null;
-  if (!CHECKPOINT_KEYS.has(cp.key)) return null;
-  if (Number.isNaN(new Date(cp.at).getTime())) return null;
-  return { key: cp.key as CheckpointKey, at: cp.at };
-}
-
 /**
  * One truck → one row. `now` drives the schedule (hours) and `today` the
  * calendar (Tashkent days) — both passed in, so a test pins both clocks.
+ * `waits` is the logist's typed border queues (`loadBorderHours`), loaded
+ * ONCE by the caller for the whole list (#432) — `{}` = nothing typed.
+ *
+ * The pin is `pinOnRoute`'s: a key the batch card never writes, or one this
+ * truck's road does not carry (a Kyrgyz pin on a Kazakh road), is no
+ * checkpoint — not drawn, and not the anchor of any date.
  */
-export function truckRow(input: TruckInput, now: Date, today: string): TruckRow {
+export function truckRow(input: TruckInput, now: Date, today: string, waits: BorderHours): TruckRow {
   const arrived = input.status === 'arrived';
-  const checkpoint = checkpointOf(input.trackingCheckpoint);
+  const checkpoint = pinOnRoute(
+    input.trackingCheckpoint,
+    input.originCode,
+    input.destCode,
+    input.destCountry,
+  );
   const base = {
     id: input.id,
     code: input.code,
@@ -173,7 +173,8 @@ export function truckRow(input: TruckInput, now: Date, today: string): TruckRow 
     input.originCode,
     input.destCode,
     input.departedAt,
-    input.trackingCheckpoint,
+    checkpoint,
+    waits,
     now,
   );
   if (!schedule) {

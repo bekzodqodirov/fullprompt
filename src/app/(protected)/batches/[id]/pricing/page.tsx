@@ -16,7 +16,7 @@ import {
   type LotLandedCost,
 } from '@/modules/wms/costing/service';
 import { batchLots, type BatchLot } from '@/modules/wms/batches/lots';
-import { mayOpenBatchCard } from '@/modules/wms/batches/card-door';
+import { mayOpenBatchCard, mayOpenBatchPricing } from '@/modules/wms/batches/card-door';
 import { loadBatchHead } from '@/modules/wms/batches/card-head';
 import { tripKind } from '@/modules/wms/reports/dashboard-math';
 import { canWriteDeal } from '@/modules/wms/deals/service';
@@ -30,6 +30,20 @@ import { upsaleScopeFor } from '@/modules/wms/calc/upsale-scope';
 import { bothFiguresForDeals } from '@/modules/wms/calc/upsale-service';
 import { dealSharesOf, expectedForDeals, expectedPriceFor } from '@/modules/wms/finance/deal-price-hint';
 import { BatchCard, batchTabMetadata } from '../batch-card';
+import {
+  priceHistoryForLots,
+  pricedRowsForLots,
+  similarPicksFor,
+  type PickedHistory,
+  type PriceHistory,
+  type SimilarPickRecord,
+} from '@/modules/wms/finance/price-history';
+import { calcControlScopeFor, calcRegistrySight } from '@/modules/wms/calc/control-scope';
+import { SECTION_LABELS } from '@/modules/wms/calc/labels';
+import { logger } from '@/modules/platform/logger';
+import { dealCalcSheets, type CalcAnswer, type CalcSheet as CalcSheetData } from '@/modules/wms/calc/sheet';
+import { CalcAnswers, CalcSheet } from '@/components/calc-sheet';
+import { PriceHistoryBody } from '@/components/price-history';
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   return batchTabMetadata((await params).id, 'narx');
@@ -76,6 +90,7 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
   const tb = await getTranslations('batches');
   const tbc = await getTranslations('batchCard');
   const tcargo = await getTranslations('cargo');
+  const tc = await getTranslations('calc');
 
   const head = await loadBatchHead(id);
   if (!head) notFound();
@@ -158,6 +173,57 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
       },
     ]),
   );
+  // The two icons on every lot (0119). «📈 Oldingi narx» for every reader of
+  // this page — past truck prices only, no tannarx, one shape for both sights;
+  // «🧮 Bitim hisobi» for the calculation registry's audience (accountant,
+  // admins, the VED — 26a: the VED sees the total, never the client price),
+  // and never on an internal leg, which is never priced.
+  const sheetSight = calcRegistrySight(actor);
+  const lotDealIds = [...new Set(lots.map((lot) => lot.dealId).filter((x): x is string => Boolean(x)))];
+  type DealCalc = { sheets: CalcSheetData[]; answers: CalcAnswer[]; more: number };
+  // Every read here is a HINT beside the money, and each one fails soft: a
+  // slow or broken hint is logged and drawn as nothing (or «hozir hisoblab
+  // bo'lmadi»), never the error page on the screen trucks are priced on. The
+  // history reads carry their own ceiling and `failed` flag
+  // (`price-history.ts`); these catches are for the rest. An internal leg is
+  // never priced, so it pays for neither icon.
+  const soft = <T,>(what: string, read: Promise<T>, fallback: T) =>
+    read.catch((err: unknown) => {
+      logger.warn({ err, batchId: id }, `[pricing] ${what} failed`);
+      return fallback;
+    });
+  const [history, picks, sheets] = await Promise.all([
+    internal ? Promise.resolve(new Map<string, PriceHistory>()) : priceHistoryForLots(lots, id, actor),
+    internal
+      ? Promise.resolve(new Map<string, SimilarPickRecord>())
+      : soft('similar picks', similarPicksFor(lots.map((lot) => lot.lotId)), new Map<string, SimilarPickRecord>()),
+    sheetSight && !internal && lotDealIds.length > 0
+      ? soft('deal calc sheets', dealCalcSheets(lotDealIds, sheetSight), new Map<string, DealCalc>())
+      : Promise.resolve(new Map<string, DealCalc>()),
+  ]);
+  // The AI's picks are priced by the ledger like every other row — only for
+  // a lot the free search still finds nothing for (18a). `pricedRowsForLots`
+  // answers `failed` itself rather than throwing.
+  const picked = new Map<string, PickedHistory>(
+    await Promise.all(
+      lots
+        .filter((lot) => picks.has(lot.lotId) && (history.get(lot.lotId)?.rows.length ?? 0) === 0)
+        .map(async (lot) => {
+          const priced = await pricedRowsForLots(picks.get(lot.lotId)!.pickedLotIds, id, actor, lot.clientId);
+          return [lot.lotId, priced] as const;
+        }),
+    ),
+  );
+  // «Which calculation» for a lot's link state: its V# and section, and for
+  // the reader who confirms links, one tap to where that happens.
+  const linkDoor = calcControlScopeFor(actor) !== 'none';
+  const linkedCalcLabel = (dealCalc: DealCalc, requestId: string) => {
+    const sheet = dealCalc.sheets.find((row) => row.requestId === requestId);
+    return sheet ? `V${sheet.quoteNo} · ${tc(SECTION_LABELS[sheet.section] as 'sections.podklyuch')}` : null;
+  };
+  const truckLinks = mayOpenBatchPricing(actor.permissions, false);
+  const emptyHistory: PriceHistory = { rows: [], failed: false };
+
   const droppedHere = new Map(offHere.filter((row) => row.kind === 'partial').map((row) => [row.clientId, row]));
   const noCargoHere = new Map(offHere.filter((row) => row.kind === 'no_cargo').map((row) => [row.clientId, row]));
   // Review money-4: cartons joined this truck after its price (an office
@@ -191,15 +257,26 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
       fate.leftBehind > 0 ? t('fateLeftBehind', { count: fate.leftBehind }) : null,
     ].filter(Boolean);
 
-  const lotRows = (list: BatchLot[]) => (
+  const lotRows = (list: BatchLot[]) => {
+    // The deal's sheet is drawn ONCE per (client group, deal) — on its first
+    // lot; the later lots point up to it (#527: a truck of forty lots on one
+    // deal would otherwise carry forty copies of one calculation).
+    const drawnSheets = new Set<string>();
+    return (
     <ul className="divide-y divide-line rounded-lg border border-line" data-testid="pricing-lots">
       {list.map((lot) => {
         const cost = costOf(lot);
         const id = codeIdentity(lot.marking, lot.clientCode);
         const photo = lot.goodsPhotoId ?? lot.boxPhotoId;
         const prev = cost ? Math.round((cost.totalUsd - cost.batchUsd) * 100) / 100 : 0;
+        const dealCalc = lot.dealId ? sheets.get(lot.dealId) : undefined;
+        const hasCalc = Boolean(dealCalc && (dealCalc.sheets.length > 0 || dealCalc.answers.length > 0));
+        const anchor = `calc-${lot.clientId ?? 'u'}-${lot.dealId ?? ''}`;
+        const firstOfDeal = hasCalc && !drawnSheets.has(anchor);
+        if (firstOfDeal) drawnSheets.add(anchor);
         return (
-          <li key={lot.lotId} className="flex gap-2 p-2" data-testid="pricing-lot">
+          <li key={lot.lotId} className="p-2" data-testid="pricing-lot">
+          <div className="flex gap-2">
             {photo ? (
               <LightboxImg attachmentId={photo} className="h-14 w-14 rounded object-cover" />
             ) : (
@@ -276,11 +353,93 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                 )}
               </div>
             )}
+          </div>
+          {/* The two icons (0119): icon-only 44 px summaries in a strip under
+              the row, and a fold that opens takes the whole width — at 360 px
+              a body beside its icon is a column two words wide. A press, not
+              a hover: phones have none; the title is the desktop's hint. */}
+          {internal ? null : (
+          <div className="mt-1 flex flex-wrap gap-2" data-testid="lot-icons">
+            <details className="min-w-0 open:basis-full" data-testid="lot-price-history">
+              <summary
+                aria-label={t('priceHistory')}
+                title={t('priceHistoryHint')}
+                className="grid h-11 w-11 cursor-pointer list-none place-items-center rounded-lg border border-line text-lg hover:bg-surface-sunken [&::-webkit-details-marker]:hidden"
+              >
+                📈
+              </summary>
+              <div className="mt-1 rounded-lg border border-line p-2">
+                <PriceHistoryBody
+                  history={history.get(lot.lotId) ?? emptyHistory}
+                  pick={picks.get(lot.lotId) ?? null}
+                  picked={picked.get(lot.lotId) ?? null}
+                  lotId={lot.lotId}
+                  batchId={batch.id}
+                  truckLinks={truckLinks}
+                />
+              </div>
+            </details>
+            {hasCalc && sheetSight && dealCalc ? (
+              <details
+                id={firstOfDeal ? anchor : undefined}
+                className="min-w-0 open:basis-full"
+                data-testid="lot-deal-calc"
+              >
+                <summary
+                  aria-label={t('dealCalc')}
+                  title={t('dealCalcHint')}
+                  className="grid h-11 w-11 cursor-pointer list-none place-items-center rounded-lg border border-line text-lg hover:bg-surface-sunken [&::-webkit-details-marker]:hidden"
+                >
+                  🧮
+                </summary>
+                <div className="mt-1 space-y-2 rounded-lg border border-line p-2 text-xs">
+                  {/* Whether THIS prixod is the calculation's cargo: a person's
+                      ✅, or the machine's guess still waiting for the VED. */}
+                  {lot.calcRequestId ? (
+                    <p className={lot.calcLinkConfirmed ? 'text-good' : 'text-warn'} data-testid="lot-calc-link">
+                      {/* WHICH calculation: a deal can carry a rastamojka and
+                          a yo'lkira sheet, and «this calculation» is then
+                          two claims. */}
+                      {linkedCalcLabel(dealCalc, lot.calcRequestId) ? (
+                        <b className="font-mono">{linkedCalcLabel(dealCalc, lot.calcRequestId)} — </b>
+                      ) : null}
+                      {lot.calcLinkConfirmed ? `✅ ${t('calcLinkConfirmed')}` : `⏳ ${t('calcLinkSuggested')}`}
+                      {!lot.calcLinkConfirmed && linkDoor ? (
+                        <>
+                          {' · '}
+                          <Link href="/hisoblash/nazorat" className="text-brand-700 underline" data-testid="lot-calc-confirm">
+                            {t('calcLinkConfirmHere')}
+                          </Link>
+                        </>
+                      ) : null}
+                    </p>
+                  ) : null}
+                  {firstOfDeal ? (
+                    <>
+                      {dealCalc.sheets.map((sheet) => (
+                        <CalcSheet key={sheet.requestId} data={sheet} sight={sheetSight} />
+                      ))}
+                      <CalcAnswers answers={dealCalc.answers} sight={sheetSight} />
+                      {dealCalc.more > 0 ? (
+                        <p className="text-ink-500">{t('calcMore', { n: dealCalc.more })}</p>
+                      ) : null}
+                    </>
+                  ) : (
+                    <a href={`#${anchor}`} className="text-brand-700 underline" data-testid="lot-calc-above">
+                      ↑ {t('calcSeeAbove', { code: lot.dealCode ?? '—' })}
+                    </a>
+                  )}
+                </div>
+              </details>
+            ) : null}
+          </div>
+          )}
           </li>
         );
       })}
     </ul>
-  );
+    );
+  };
 
   return (
     <BatchCard head={head} actor={actor} active="narx">

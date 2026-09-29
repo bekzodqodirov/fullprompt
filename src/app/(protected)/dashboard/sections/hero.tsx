@@ -80,6 +80,7 @@ export async function ProfitHero({
   const HERO: Record<DashPeriodKey, string> = {
     bugun: t('hero.bugun'),
     '7': t('hero.d7'),
+    hafta: t('hero.hafta'),
     '30': t('hero.d30'),
     oy: t('hero.oy'),
     otgan: t('hero.otgan'),
@@ -118,6 +119,7 @@ export async function ProfitHero({
   const PERIOD: Record<DashPeriodKey, string> = {
     bugun: t('period.bugun'),
     '7': t('period.d7'),
+    hafta: t('period.hafta'),
     '30': t('period.d30'),
     oy: t('period.oy'),
     otgan: t('period.otgan'),
@@ -257,6 +259,7 @@ export async function HeroTiles({
   const PERIOD: Record<DashPeriodKey, string> = {
     bugun: t('period.bugun'),
     '7': t('period.d7'),
+    hafta: t('period.hafta'),
     '30': t('period.d30'),
     oy: t('period.oy'),
     otgan: t('period.otgan'),

@@ -277,7 +277,13 @@ export type BotCallback =
   | { kind: 'calc'; step: CalcStep }
   | { kind: 'note'; step: NoteStep; noteId?: string; page?: number }
   /** «📞 Bog'landim» under an advert lead's push (0113). */
-  | { kind: 'lead_contacted'; leadId: string };
+  | { kind: 'lead_contacted'; leadId: string }
+  /**
+   * ✅/❌ on a calc↔prixod guess (0119). `requestTag` is the LAST 8 hex of
+   * the request the message named (`linkAskTag`), so a press can never land
+   * on a calculation the message did not show.
+   */
+  | { kind: 'calc_link'; receiptId: string; requestTag: string; verdict: 'confirm' | 'drop' };
 
 /**
  * The zametka buttons. `send` is a note id; the rest are the capture's own
@@ -310,6 +316,9 @@ const CALC_STEPS = [
   'go_aipk',
   'zone_cn',
   'zone_kashgar',
+  // The Horgos round (2026-09-29): a third zone, drawn only once he has
+  // priced it (`zoneKeyboard`), refused in words if an old button is pressed.
+  'zone_horgos',
   'cert',
   'skip',
   'done',
@@ -319,6 +328,66 @@ const CALC_STEPS = [
 ] as const;
 
 export type CalcStep = (typeof CALC_STEPS)[number];
+
+/** The podklyuch door's «Yuk qayerdan chiqadi?» answers — one per zone the bot can name. */
+export type ZoneStep = Extract<CalcStep, `zone_${string}`>;
+
+/**
+ * Each zone button: the tariff zone it lands on the request, the road it
+ * writes onto the collection, and its label. His two seeded zones plus
+ * «horgos», which HE prices on /admin/tarif (answer 22: «uni sistemadan men
+ * ozim kirita olamanku») — the button appears once a price exists, never
+ * before, because an unpriced zone is silently dropped at landing
+ * (`requestCalc`) and the seller would be told «zona tanlanmagan» after
+ * choosing one. Yiwu/Guangzhou cargo stays «cn» whichever border its truck
+ * takes (his 21a); «horgos» is cargo whose road STARTS at Horgos (15c).
+ */
+export const AI_ZONE_ROUTES: Record<
+  ZoneStep,
+  { zone: string; fromCity: string; toCity: string; label: string }
+> = {
+  zone_cn: {
+    zone: 'cn',
+    fromCity: 'Xitoy (Yiwu/Guangzhou)',
+    toCity: 'O‘zbekiston',
+    label: '🇨🇳 Xitoydan (Yiwu, Guangzhou…) → O‘zbekiston',
+  },
+  zone_kashgar: {
+    zone: 'kashgar',
+    fromCity: 'Qashg‘ar',
+    toCity: 'O‘zbekiston',
+    label: '🏔 Qashg‘ardan → O‘zbekiston',
+  },
+  zone_horgos: {
+    zone: 'horgos',
+    fromCity: 'Horgos',
+    toCity: 'O‘zbekiston',
+    label: '📦 Horgos skladidan → O‘zbekiston',
+  },
+};
+
+/** A pressed step IS a zone button — `hasOwn`, so `toString` is not one. */
+export function isZoneStep(step: string): step is ZoneStep {
+  return Object.hasOwn(AI_ZONE_ROUTES, step);
+}
+
+/**
+ * A zone button pressed: the road to write, or the sentence that refuses it.
+ * The keyboard draws only priced zones, but a button is a message that
+ * outlives the tariff it was drawn from — a price deleted since is refused
+ * here, in words, before anything is written (the landing's silent drop
+ * stays as the last guard).
+ */
+export function zonePressAnswer(
+  step: ZoneStep,
+  priced: readonly string[],
+): { ok: true; route: { zone: string; fromCity: string; toCity: string } } | { ok: false; text: string } {
+  const r = AI_ZONE_ROUTES[step];
+  if (!priced.includes(r.zone)) {
+    return { ok: false, text: 'Bu yo‘nalish narxi hali kiritilmagan — boshqasini tanlang yoki bekor qiling.' };
+  }
+  return { ok: true, route: { zone: r.zone, fromCity: r.fromCity, toCity: r.toCity } };
+}
 
 export function parseCallback(data: string): BotCallback | null {
   if (data === 'e:s') return { kind: 'entry', who: 'staff' };
@@ -342,6 +411,17 @@ export function parseCallback(data: string): BotCallback | null {
   // none of the cabinet's own three (`lang:`, `ph:`, `mg`).
   const contacted = /^lc:([0-9a-f-]{36})$/.exec(data);
   if (contacted) return { kind: 'lead_contacted', leadId: contacted[1]! };
+  // 0119: the VED's answer about one guess. `cl:` collides with nothing —
+  // `c:` is anchored to one word, and `lc:` starts with its own letter.
+  const calcLink = /^cl:([01]):([0-9a-f-]{36}):([0-9a-f]{8})$/.exec(data);
+  if (calcLink) {
+    return {
+      kind: 'calc_link',
+      receiptId: calcLink[2]!,
+      requestTag: calcLink[3]!,
+      verdict: calcLink[1] === '1' ? 'confirm' : 'drop',
+    };
+  }
   const approval = /^a:([01]):([0-9a-f-]{36})$/.exec(data);
   if (approval) {
     return {
@@ -383,7 +463,68 @@ export function buttonsFor(
   if (type === 'TasksDue' && Array.isArray(payload.tasks)) {
     return dayButtons(payload.tasks as DayTask[]);
   }
+  // 0119: one row per prixod the VED is asked about, ✅ with its number, ❌
+  // beside it. Only rows the parser will accept are drawn — an unparsed
+  // callback is answered by nobody and spins for fifteen seconds (#939).
+  if (type === 'CalcLinkAsk' && Array.isArray(payload.asks)) {
+    const rows = (payload.asks as { receiptId?: unknown; req8?: unknown; number?: unknown }[])
+      .filter(
+        (ask): ask is { receiptId: string; req8: string; number?: unknown } =>
+          typeof ask.receiptId === 'string' &&
+          /^[0-9a-f-]{36}$/.test(ask.receiptId) &&
+          typeof ask.req8 === 'string' &&
+          /^[0-9a-f]{8}$/.test(ask.req8),
+      )
+      .slice(0, LINK_ASK_BUTTONS)
+      .map((ask) => [
+        {
+          text: `✅ ${typeof ask.number === 'string' && ask.number ? ask.number : 'Prixod'}`.slice(0, 40),
+          callback_data: `cl:1:${ask.receiptId}:${ask.req8}`,
+        },
+        { text: '❌', callback_data: `cl:0:${ask.receiptId}:${ask.req8}` },
+      ]);
+    return rows.length > 0 ? rows : null;
+  }
   return null;
+}
+
+/** How many prixods one «Bu prixodlar hisobingizga tegishlimi?» carries buttons for. */
+export const LINK_ASK_BUTTONS = 5;
+
+/**
+ * Which prixod a pressed «tegishlimi?» row was about — the receipt number on
+ * its ✅ button, read off the keyboard BEFORE the row is removed. The row is
+ * the only place the message named it; without this, three presses leave
+ * three anonymous verdicts under a list whose rows have gone.
+ */
+export function pressedLinkAskLabel(markup: unknown, data: string): string | null {
+  const rows = (markup as { inline_keyboard?: { text?: string; callback_data?: string }[][] })?.inline_keyboard ?? [];
+  const row = rows.find((r) => r.some((button) => button.callback_data === data));
+  const label = row?.find((button) => button.callback_data?.startsWith('cl:1:'))?.text ?? '';
+  const number = label.replace(/^✅\s*/u, '').trim();
+  return number || null;
+}
+
+/**
+ * Settle one row of a «tegishlimi?» message (0119): the text keeps what it
+ * said and gains the answer, NAMED — «✅ Tasdiqlandi — R-00123»; the pressed
+ * row goes, every other row and any link row stay — `withoutCallback` takes
+ * out exactly the row it names.
+ */
+export async function settleLinkAskRow(
+  chatId: bigint,
+  origin: { messageId: number; text: string; markup: unknown },
+  data: string,
+  line: string,
+): Promise<void> {
+  const number = pressedLinkAskLabel(origin.markup, data);
+  const res = await editText({
+    chatId,
+    messageId: origin.messageId,
+    html: appendLine(staffTextHtml(origin.text, 'CalcLinkAsk'), number ? `${line} — ${number}` : line),
+    replyMarkup: keyboardOf(withoutCallback(origin.markup, data)),
+  });
+  if (!res.ok) logger.warn({ description: res.description }, 'calc link ask not updated');
 }
 
 /** A task a day list offers to close — its id and the words on the button. */

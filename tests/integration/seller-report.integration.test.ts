@@ -3,6 +3,7 @@ import { eq, inArray } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
+  boxes,
   clients,
   clientTransactions,
   receiptLots,
@@ -52,25 +53,51 @@ async function charge(clientId: string, amount: string, txDate: string, voided =
   });
 }
 
-async function received(clientId: string, confirmedAt: string, kg: string, m3: string, voided = false) {
+/**
+ * A received prixod as 0117 writes one: the seller STAMPED on it (the client's
+ * seller that day) and a carton under the lot — the report's cargo half is the
+ * KPI's reader now (staff/cargo.ts), carton-grain on `received_at`. Rewritten
+ * with the reason recorded: the old fixture had no box and dated the cargo by
+ * `confirmed_at`, and both stopped being what «received cargo» means.
+ */
+async function received(
+  clientId: string,
+  receivedAt: string,
+  kg: string,
+  m3: string,
+  opts: { voided?: boolean; stamp: string | null },
+) {
   const [r] = await db
     .insert(receipts)
     .values({
       warehouseId: whId,
       clientId,
-      status: voided ? 'voided' : 'confirmed',
-      confirmedAt: new Date(confirmedAt),
+      salesManagerId: opts.stamp,
+      status: opts.voided ? 'voided' : 'confirmed',
+      ...(opts.voided ? { voidedAt: new Date(), voidReason: 'test' } : {}),
+      receivedAt: new Date(receivedAt),
+      confirmedAt: new Date(receivedAt),
       createdBy: sellerA,
     })
     .returning();
   madeReceipts.push(r!.id);
-  await db.insert(receiptLots).values({
-    receiptId: r!.id,
-    seq: 1,
-    productNameZh: '测试',
-    boxCount: 1,
-    totalWeightKg: kg,
-    totalVolumeM3: m3,
+  const [lot] = await db
+    .insert(receiptLots)
+    .values({
+      receiptId: r!.id,
+      seq: 1,
+      productNameZh: '测试',
+      boxCount: 1,
+      totalWeightKg: kg,
+      totalVolumeM3: m3,
+    })
+    .returning();
+  await db.insert(boxes).values({
+    lotId: lot!.id,
+    shortCode: `SR${SUFFIX}-${madeReceipts.length}`,
+    seqInLot: 1,
+    status: opts.voided ? 'void' : 'in_stock',
+    currentWarehouseId: whId,
   });
 }
 
@@ -115,15 +142,21 @@ beforeAll(async () => {
   await charge(clientNobody, '40', '2019-02-20');
 
   // Cargo: A received one confirmed prixod inside the period, one VOIDED one
-  // (voidReceipt keeps confirmed_at — the status is the liveness).
-  await received(clientA, '2019-02-05T10:00:00Z', '120', '1.5');
-  await received(clientA, '2019-02-06T10:00:00Z', '500', '9', true);
-  await received(clientNobody, '2019-02-07T10:00:00Z', '30', '0.4');
+  // (voidReceipt keeps received_at — the status is the liveness), and the
+  // managerless client's cargo carries no stamp.
+  await received(clientA, '2019-02-05T10:00:00Z', '120', '1.5', { stamp: sellerA });
+  await received(clientA, '2019-02-06T10:00:00Z', '500', '9', { voided: true, stamp: sellerA });
+  await received(clientNobody, '2019-02-07T10:00:00Z', '30', '0.4', { stamp: null });
 });
 
 afterAll(async () => {
   await db.delete(clientTransactions).where(inArray(clientTransactions.clientId, madeClients));
   if (madeReceipts.length > 0) {
+    const lots = await db
+      .select({ id: receiptLots.id })
+      .from(receiptLots)
+      .where(inArray(receiptLots.receiptId, madeReceipts));
+    if (lots.length > 0) await db.delete(boxes).where(inArray(boxes.lotId, lots.map((l) => l.id)));
     await db.delete(receiptLots).where(inArray(receiptLots.receiptId, madeReceipts));
     await db.delete(receipts).where(inArray(receipts.id, madeReceipts));
   }
@@ -147,10 +180,12 @@ describe('the full table (scope all)', () => {
     expect(nobody.revenueUsd).toBeGreaterThanOrEqual(40);
     expect(unassignedClients).toBeGreaterThanOrEqual(1);
 
-    // Cargo: the voided prixod kept its confirmed_at and must not count.
+    // Cargo: the voided prixod kept its received_at and must not count.
     expect(a.weightKg).toBe(120);
     expect(a.volumeM3).toBe(1.5);
     expect(a.receipts).toBe(1);
+    // The unstamped cargo is the «—» cohort's, beside the managerless book.
+    expect(nobody.volumeM3).toBeGreaterThanOrEqual(0.4);
 
     // The totals reconcile: the sum of the rows IS the totals row.
     const sum = rows.reduce((s, r) => s + r.revenueUsd, 0);

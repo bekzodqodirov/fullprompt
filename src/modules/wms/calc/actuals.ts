@@ -40,7 +40,7 @@ import { compareQuote } from '../deals/deviation';
 import { ARRIVED_ON_A_TRUCK } from '../documents/arrivals';
 import { freightFor, sectionParts, type CalcSectionName, type FreightBand } from './pricing';
 import { bandsAsOf, tariffHistory } from './dictionaries';
-import { LINK_IMPLAUSIBLE_FACTOR, measurableLinkSql } from './link';
+import { LINK_IMPLAUSIBLE_FACTOR, measurableLinkSql, pendingLinkSql, PENDING_LINK_FROM } from './link';
 import { measurableRequestSql } from './version-set';
 import { CUSTOMS_CODES_SETTING, parseCustomsCodes } from './customs-codes';
 
@@ -779,26 +779,22 @@ export interface LinkSuggestion {
  * a second from two pairs of numbers.
  */
 export async function linkSuggestions(who: ActualsScope, limit = 50): Promise<LinkSuggestion[]> {
-  const ownFilter = who.scope === 'own' ? sql`AND v.sealed_by = ${who.actorId}` : sql``;
+  // The predicate and its FROM are `link.ts`'s (0119): the VED home's count
+  // and the Telegram sweep ask the same sentence, so the number on the home
+  // is this list's own length.
   const rows = await db.execute<Record<string, unknown>>(sql`
     SELECT rc.id AS receipt_id, rc.number, rc.confirmed_at,
            v.request_id, v.section, v.volume_m3, v.weight_kg,
            c.client_code,
            coalesce(m.volume_m3, 0) AS actual_volume_m3,
            coalesce(m.weight_kg, 0) AS actual_weight_kg
-      FROM receipts rc
-      JOIN calc_versions v ON v.request_id = rc.calc_request_id
-      JOIN calc_requests r ON r.id = v.request_id
+      FROM ${PENDING_LINK_FROM}
       LEFT JOIN clients c ON c.id = rc.client_id
       LEFT JOIN LATERAL (
         SELECT sum(rl.total_volume_m3) AS volume_m3, sum(rl.total_weight_kg) AS weight_kg
           FROM receipt_lots rl WHERE rl.receipt_id = rc.id
       ) m ON true
-     WHERE rc.calc_link_confirmed_at IS NULL
-       AND rc.status = 'confirmed'
-       AND rc.voided_at IS NULL
-       AND ${currentVersion()}
-       ${ownFilter}
+     WHERE ${pendingLinkSql(who)}
      ORDER BY rc.confirmed_at DESC
      LIMIT ${limit}
   `);
@@ -814,6 +810,25 @@ export async function linkSuggestions(who: ActualsScope, limit = 50): Promise<Li
     actualVolumeM3: Number(row.actual_volume_m3 ?? 0),
     actualWeightKg: Number(row.actual_weight_kg ?? 0),
   }));
+}
+
+/**
+ * How many guesses wait for this reader — the VED home's «Tasdiqlash kerak:
+ * N» and the control screen's «50 / N» (0119). Uncapped, over the list's own
+ * predicate, so the two can never disagree. `'none'` answers 0 without a
+ * query: the home asks it for every VED-flow person and the door is the
+ * control screen's.
+ */
+export async function linkSuggestionCount(who: {
+  scope: 'all' | 'own' | 'none';
+  actorId: string;
+}): Promise<number> {
+  if (who.scope === 'none') return 0;
+  const [row] = await db.execute<{ n: number }>(sql`
+    SELECT count(*)::int AS n FROM ${PENDING_LINK_FROM}
+     WHERE ${pendingLinkSql({ scope: who.scope, actorId: who.actorId })}
+  `);
+  return Number(row?.n ?? 0);
 }
 
 export interface WarnedGroup {
