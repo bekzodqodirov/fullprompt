@@ -3847,7 +3847,7 @@
   },
   "sellerReport": {
     "title": "Sotuvchilar: natija",
-    "subtitle": "Yuk — prixodga qabul paytida yozilgan sotuvchi bo‘yicha; pul — mijozning hozirgi menejeri bo‘yicha. Voronka (narx takliflari) — alohida hisobot.",
+    "subtitle": "Mijozning sotuv menejeri bo‘yicha: davrda qabul qilingan yuk va haqiqiy hisoblangan pul. Voronka (narx takliflari) — alohida hisobot.",
     "period": "Davr",
     "show": "Ko‘rsatish",
     "ownTitle": "Mening natijam",
@@ -3862,7 +3862,9 @@
     "unassigned": "{n} ta mijozda menejer yo‘q — ularning yuki va puli «—» qatorida.",
     "clientBook": "Mijozlar kitobi",
     "funnelLink": "Voronka bo‘yicha tahlil",
-    "empty": "Bu davrda ma’lumot yo‘q"
+    "empty": "Bu davrda ma’lumot yo‘q",
+    "cargoByStamp": "Yuk va prixodlar — qabul kuni prixodga yozilgan sotuvchi bo‘yicha",
+    "moneyByBook": "pul va foyda — mijozning hozirgi menejeri bo‘yicha"
   },
   "annul": {
     "open": "Anulirovka (kaskad)…",

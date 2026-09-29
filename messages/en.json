@@ -3847,7 +3847,7 @@
   },
   "sellerReport": {
     "title": "Sellers: results",
-    "subtitle": "Cargo follows the seller stamped on the receipt when it was received; money follows the client’s current manager. The funnel (quotes) is a separate report.",
+    "subtitle": "By the client’s sales manager: cargo received and actual charges in the period. The funnel (quotes) is a separate report.",
     "period": "Period",
     "show": "Show",
     "ownTitle": "My results",
@@ -3862,7 +3862,9 @@
     "unassigned": "{n} clients carry no manager — their cargo and money sit in the «—» row.",
     "clientBook": "Client book",
     "funnelLink": "Funnel analytics",
-    "empty": "Nothing in this period"
+    "empty": "Nothing in this period",
+    "cargoByStamp": "Cargo and receipts follow the seller stamped on the receipt the day it was received",
+    "moneyByBook": "money and profit follow the client’s current manager"
   },
   "annul": {
     "open": "Annul (cascade)…",

@@ -249,8 +249,11 @@ export async function confirmReceipt(
         clientId: input.clientId,
         // Whose cargo it is ON THE DAY it came (0117, his 2a) — in the same
         // statement as the client, so no reader ever sees one without the
-        // other. Unclaimed cargo stamps NULL and is stamped at its claim.
-        salesManagerId: stampFor(sql`${input.clientId}::uuid`),
+        // other. Unclaimed cargo stamps NULL and is stamped at its claim —
+        // and binds no id at all: an absent client renders as NOTHING in the
+        // fragment, and `= ::uuid` is a syntax error (the suite's own
+        // unclaimed receipts found it).
+        salesManagerId: input.clientId ? stampFor(sql`${input.clientId}::uuid`) : null,
         status: 'confirmed',
         sourceNote: input.sourceNote || null,
         unclaimedMarking: input.clientId ? null : input.unclaimedMarking || null,
