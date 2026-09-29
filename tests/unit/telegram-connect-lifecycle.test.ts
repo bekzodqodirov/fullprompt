@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 /**
  * The connect module's gramjs glue with gramjs replaced — what happens to the
@@ -72,6 +72,11 @@ beforeAll(() => {
   process.env.TELEGRAM_API_ID = '1';
   process.env.TELEGRAM_API_HASH = 'hash';
 });
+// A test that fails before its own reset line must not hand its broken
+// Telegram to every test after it.
+afterEach(() => {
+  h.state.next = {};
+});
 
 async function connect() {
   return import('@/modules/wms/crm/telegram-connect');
@@ -91,7 +96,6 @@ describe('a begin that fails closes the client it opened', () => {
       next: 'phone',
     });
     expect(h.made.at(-1)?.destroyed).toBe(true);
-    h.state.next = {};
   });
 
   it('when the connection never opens', async () => {
@@ -99,7 +103,6 @@ describe('a begin that fails closes the client it opened', () => {
     h.state.next = { connect: () => Promise.resolve(false) };
     expect(await beginTgLogin('u-offline', PHONE)).toMatchObject({ ok: false, error: 'failed' });
     expect(h.made.at(-1)?.destroyed).toBe(true);
-    h.state.next = {};
   });
 });
 
