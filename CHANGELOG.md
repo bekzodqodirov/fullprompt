@@ -1,5 +1,85 @@
 # CHANGELOG
 
+## Sizning 12 javobingiz: login'siz hodimga oylik, upsale eng eski qarzdan, foyda yuk kelgan kundagi sotuvchiga — 2026-09-29
+
+Migratsiya **0120**. Yangilangandan keyin ledger **121** bo'lishi kerak (serveringiz
+113 da bo'lsa, bu yangilanish 0113–0120 ni birga olib keladi).
+
+Sizning javoblaringiz: **1a · 2b · 3a · 4a · 5a · 6a · 7 ha · 8a · 9a · 10 keyin · 11a · 12a**
+
+**Tekshirildi, o'zgarmadi** — 1, 5, 6, 7, 8, 9, 11, 12: tizim allaqachon siz tanlagandek
+ishlaydi (KPI sentabrdan; admin ham sotuvchi bo'lsa KPI oladi; o'ziga o'zi to'lay oladi,
+tarixda yoziladi; Urumchi→Horgos 0,5–1 kun; eski navbat raqami ⚠ bilan hisoblanaveradi;
+Irkeshtam navbati yo'q; VED ketgan bo'lsa prixodlar «Hisob nazorati»da buxgalterga
+ko'rinadi; tasdiqlash xabarlari faqat 08:00–20:00). 10 — Yallama nuqtasi hozircha turadi.
+
+### 1. Tizimga kirmaydigan hodimlarga oylik (2b)
+
+1. «Hodimlar: oylik va KPI» sahifasi tepasida **«➕ Tizimga kirmaydigan hodim qo'shish»**:
+   ismi va telefoni (ixtiyoriy). «Qo'shish»dan keyin uning kartasi o'zi ochiladi va
+   «Oylik kiritish» ochiq turadi.
+2. Oylik boshqalarniki bilan bir xil yuritiladi: summa, valyuta, to'lov kuni, kassa yoki
+   «transport firmasi orqali». Kuni kelganda «Xarajatlar»da «✓ To'landi» chiqadi.
+3. Shu ismli odam bor bo'lsa, tizim kimligini ko'rsatadi (tizimga kiradimi, faolmi).
+4. Bunday hodim tizimga kira olmaydi, Telegram botga ulanmaydi, unga vazifa, lid yoki
+   saytdan mijoz tushmaydi.
+5. Ishdan ketsa — kartadagi **«Ishdan ketdi»**. Oyligi to'lanmaguncha ro'yxatda turadi.
+   Qaytib kelsa — sahifadagi **«Ketganlar (N)»** ro'yxatidan ochib **«Qayta
+   faollashtirish»**. Ketgan hodimga yangi oylik kiritib bo'lmaydi — avval qayta
+   faollashtiriladi.
+6. Keyin tizimga kirish kerak bo'lsa — faqat admin, «Boshqaruv → Xodimlar»da uning
+   kartasidan **«Tizimga kirish ochish»**: hodimning O'Z telefon raqami qaytadan yoziladi
+   (sklad umumiy telefoni emas), parol va rol beriladi. Yangi xodim qo'shilmaydi.
+
+Yo'l-yo'lakay tuzatildi: ishdan ketgan hodimning oyligi hali to'lanmagan bo'lsa u
+«Hodimlar»dan yo'qolib qolardi — endi to'lov yopilmaguncha turadi.
+
+### 2. Upsale endi KPI qoidasi bilan: eng eski qarzdan (3a)
+
+Mijozning puli har doim eng eski qarzini birinchi yopadi. Bitimning yuki va shu bitimga
+yozilgan narxlar to'langan bo'lsa, sotuvchi ulushi **«To'lashga tayyor»** — mijoz yangi
+mashina uchun qarz bo'lsa ham. Misol: A yuk uchun $1300, B yuk uchun $1300 qarz, mijoz
+$1300 to'ladi → A ulushi to'lanadi, B kutadi, tagida «Mijoz yana $1300 to'lasa ochiladi».
+
+Deploy kuni:
+- Balansdagi **«Sotuvchilarga to'lanadigan ulush»** qatori o'zgaradi — ko'pincha oshadi.
+  Deploydan oldin shu raqamni yozib qo'ying. Dushanba xabaridagi «Sotuvchilar ulushi»
+  ham shunday.
+- Ba'zi ishlar «Hisob-faktura yo'q»ga o'tadi: narx hali jo'namagan mashinaga yoki ichki
+  reysga yozilgan, yoki bitim narxi bitta mashinaga yozilib, yukning bir qismi boshqa
+  mashinani kutayotgan bo'lsa. Sababi ish tagida yozib turadi.
+- Hamma karobkasi yo'qolgan bitim «Yuk qolmagan» — to'lanmaydi.
+- Allaqachon to'langan ulush qaytarib olinmaydi. KPI raqamlari va «ishlab topilgan»
+  summalar o'zgarmaydi.
+- Hisoblash vaqtga sig'masa (kam bo'ladi), ish «Tekshirilmadi» deb chiqadi va to'lovga
+  qo'yilmaydi; Balans buni alohida ⚠ bilan ko'rsatadi.
+
+### 3. «Hodimlar keltirgan foyda» — yuk kelgan kundagi sotuvchiga (4a)
+
+Ochig'i: o'tgan safar «standart — yuk kelgan kundagi sotuvchi» deb yozgan edim, lekin
+dashboard kartasi va «Sotuvchilar» hisobotidagi pul qismi mijozning HOZIRGI menejeri
+bo'yicha qurilgan edi. Bu mening xatoyim edi, endi siz tanlagandek tuzatildi.
+
+1. Har bir narx qaysi yuk uchun bo'lsa, o'sha prixodga qabul kuni yozilgan sotuvchiga
+   tushadi. Mijozni A dan B ga o'tkazsangiz, A davridagi yuk foydasi A da qoladi.
+2. Tannarx — har bir karobkaning xarajati, o'sha karobka prixodining sotuvchisiga.
+3. Qaysi yuk uchunligi ko'rinmaydigan narx (mijoz hisobida mashinasiz, yuki o'sha
+   mashinada ketmagan, bitimida hali prixod yo'q) — mijozning o'sha kungacha kelgan oxirgi
+   prixodi sotuvchisiga. «Sotuvchilar» hisobotida bunday narxlar soni alohida yoziladi;
+   «🚚 Ko'chirish» bilan to'g'ri mashinaga o'tkazilsa, o'sha yuk sotuvchisiga o'tadi.
+4. Bitta mashina narxi ikki sotuvchining yukiga to'g'ri kelsa, kub bo'yicha bo'linadi
+   (kub yozilmagan bo'lsa kg, u ham bo'lmasa karobka soni bo'yicha).
+5. Har bir mijoz bo'yicha summa «Mijoz foydasi»dagi o'sha mijoz qatori bilan tiyinigacha
+   bir xil. Ikki hisobotning «Jami»si «Egasiz yuk (markirovka)» summasiga farq qilishi
+   mumkin — bu xato emas.
+6. «Mijozlar» soni hozirgi menejer bo'yicha qoladi; kim qaysi mijoz pul sahifasini
+   ochishi ham o'zgarmadi. Upsale — taklifni bergan sotuvchiga, avvalgidek.
+
+Deploy kuni o'tgan oylarning ham, shu oyning ham raqamlari o'zgaradi. Sotuvchining o'z
+sahifasidagi «Hisoblangan» summasi ham shu qoidaga o'tadi. Ishdan ketgan sotuvchi
+«(faol emas)» belgisi bilan ko'rinadi. Kartadagi «Hisobot →» endi kartada tanlangan
+davrni ochadi.
+
 ## Deploy xotira yetmay to'xtadi — tuzatildi — 2026-09-29
 
 Kod o'zgarishi, migratsiya yo'q. Keyingi deploy bilan birga chiqadi: yangilangandan
