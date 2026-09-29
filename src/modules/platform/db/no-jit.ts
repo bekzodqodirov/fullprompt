@@ -21,17 +21,43 @@ import { db } from './client';
  * the same tax off every heavy report once the container is recreated; this
  * stays because a server whose postgres was not recreated still has JIT on.
  *
- * `timeoutMs` is a BUDGET (design §5.1): the read is abandoned by postgres
- * itself at that point — nothing keeps holding the connection — and the
- * caller's catch renders the row without its number.
+ * `timeoutMs` is a budget PER STATEMENT (design §5.1): each is abandoned by
+ * postgres itself at that point — nothing keeps holding the connection — and
+ * the caller's catch renders the row without its number.
+ *
+ * `deadlineMs` is a budget for the WHOLE read: a read of four statements
+ * under an 8 s `timeoutMs` may still hold a page for 32 s. Every statement is
+ * sent with `statement_timeout` = what is LEFT of the deadline, and a
+ * statement asked for after it has passed is refused before it is sent — so
+ * the page waits at most the deadline (and one round trip), whatever the
+ * read's shape. Statements the read fires in parallel share the one
+ * connection and queue on it, so each one's timeout is at most what was left
+ * when its own was set: bounded, never longer.
  */
+export class ReadDeadlineError extends Error {
+  constructor() {
+    super('read deadline passed');
+  }
+}
+
 export function withoutJit<T>(
   readWith: (exec: Pick<typeof db, 'execute'>) => Promise<T>,
-  opts: { timeoutMs?: number } = {},
+  opts: { timeoutMs?: number; deadlineMs?: number } = {},
 ): Promise<T> {
   return db.transaction(async (tx) => {
     await tx.execute(sql`SET LOCAL jit = off`);
     if (opts.timeoutMs) await tx.execute(sql.raw(`SET LOCAL statement_timeout = ${Math.trunc(opts.timeoutMs)}`));
-    return readWith(tx);
+    if (!opts.deadlineMs) return readWith(tx);
+    const deadline = Date.now() + opts.deadlineMs;
+    const execute = (async (query: Parameters<typeof tx.execute>[0]) => {
+      const left = Math.trunc(deadline - Date.now());
+      if (left <= 0) throw new ReadDeadlineError();
+      await tx.execute(sql.raw(`SET LOCAL statement_timeout = ${left}`));
+      return tx.execute(query);
+      // A promise where drizzle types a lazy `PgRaw`: every reader AWAITS
+      // `execute`, and a read that chains the builder's other methods has no
+      // business inside a budgeted company read.
+    }) as unknown as typeof tx.execute;
+    return readWith({ execute });
   });
 }

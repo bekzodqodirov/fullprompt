@@ -23,6 +23,7 @@ import { CategoryForm, PayForm, ReleaseButton } from './pay-form';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { db } from '@/modules/platform/db/client';
 import { stampedCargo, type StampedCargo } from '@/modules/wms/staff/cargo';
+import { maySeeStaffMoney } from '@/modules/wms/staff/door';
 
 /**
  * «Sotuvchi ulushi» — what a seller earns, and the accountant's Friday.
@@ -204,7 +205,9 @@ export default async function UpsalePage({
               {cargo.map((c) => (
                 <tr key={c.sellerId} className="border-b border-line/60">
                   <td className="py-1 pr-2">
-                    {scope === 'all' ? (
+                    {/* /hodimlar is the payroll door (`maySeeStaffMoney`), not the
+                        upsale's — a link its page would bounce is not drawn. */}
+                    {scope === 'all' && maySeeStaffMoney(actor.permissions) ? (
                       <Link href={`/hodimlar?hodim=${c.sellerId}`} className="underline">
                         {c.sellerName ?? '—'}
                       </Link>

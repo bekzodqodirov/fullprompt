@@ -25,18 +25,20 @@ import {
   warehouses,
 } from '@/modules/platform/db/schema';
 import { writeAudit } from '@/modules/platform/audit/service';
-import { tashkentDay } from '@/modules/platform/time/tashkent';
+import { addDays, tashkentDay } from '@/modules/platform/time/tashkent';
 import { receiveStamped, removeStamped } from '../fixtures/stamped-cargo';
 import { confirmReceipt } from '@/modules/wms/receipts/service';
 import { assignReceiptClient } from '@/modules/wms/receipts/edit';
-import { stampUnattributedCargo } from '@/modules/wms/staff/stamp';
-import { stampedCargo } from '@/modules/wms/staff/cargo';
+import { stampToCurrentSeller, stampUnattributedCargo } from '@/modules/wms/staff/stamp';
+import { stampedCargo, stampedCargoByMonth, unstampedCargo } from '@/modules/wms/staff/cargo';
 import { paidM3ByMonth } from '@/modules/wms/staff/kpi-paid';
-import { KpiError, kpiPayable, lastClosedMonth, payKpi } from '@/modules/wms/staff/kpi-service';
+import { KpiError, kpiPayable, lastClosedMonth, payKpi, setStaffCategory } from '@/modules/wms/staff/kpi-service';
 import { KpiTableRefusal, saveKpiTable } from '@/modules/wms/staff/kpi-table';
 import { ownerKpiCells } from '@/modules/wms/staff/kpi-seed';
 import { monthRange } from '@/modules/wms/staff/month';
 import { myMonth } from '@/modules/wms/staff/my-month';
+import { staffTemplates } from '@/modules/wms/staff/salary';
+import { ReadDeadlineError, withoutJit } from '@/modules/platform/db/no-jit';
 import { uncoveredCtes, unpricedScopeSql } from '@/modules/wms/finance/unpriced';
 import { sellerPerformanceOwn } from '@/modules/wms/crm/seller-report';
 import { voidExpense } from '@/modules/wms/accounting/service';
@@ -816,5 +818,148 @@ describe('«Bu oy» on the profile', () => {
 
     expect((await myMonth({ id: operator, permissions: new Set<string>() })).work.receipts).toBe(2);
     expect((await myMonth({ id: office, permissions: new Set<string>() })).work.receipts).toBe(0);
+  });
+});
+
+describe('the Tashkent month, at its edges (one label for the reader and the paid part)', () => {
+  it('00:30 and 04:30 on the 1st are the new month; 23:30 on the 30th is the old one — in the kub AND the paid m³', async () => {
+    const seller = await mintUser('edge');
+    const client = await mintClient(seller);
+    const deal = await mintDeal(client);
+    // A Yiwu receipt made 00:00-03:00 on the 1st Yiwu time is the day before
+    // in Tashkent; these are Tashkent clock times, so they are exactly the
+    // month they read.
+    const at = async (iso: string, m3: number) => {
+      const made = await receiveStamped({
+        clientId: client,
+        actorId,
+        sellerId: seller,
+        m3,
+        kg: m3 * 150,
+        dealId: deal,
+        receivedAt: new Date(iso),
+      });
+      stamped.push(made.receiptId);
+    };
+    await at('2021-10-01T00:30:00+05:00', 1);
+    await at('2021-10-01T04:30:00+05:00', 2);
+    await at('2021-09-30T23:30:00+05:00', 4);
+    await ledger(client, 'charge', 70, '2021-10-02', { dealId: deal });
+    await ledger(client, 'payment', 70, '2021-10-03');
+
+    const byMonth = new Map((await stampedCargoByMonth(db, seller, '2021-09', '2021-10')).map((r) => [r.month, r.m3]));
+    expect(byMonth.get('2021-09')).toBe(4);
+    expect(byMonth.get('2021-10')).toBe(3);
+
+    const paid = await paidM3ByMonth(db, { sellerId: seller, from: monthRange('2021-09').from, to: monthRange('2021-10').to });
+    expect(paidIn(paid, seller, '2021-09')).toBe(4);
+    expect(paidIn(paid, seller, '2021-10')).toBe(3);
+  });
+});
+
+describe('the salary chip is THIS month’s, and a month the template does not owe is not «kutilmoqda»', () => {
+  it('a template starting next month reads not_due; one starting this month reads waiting', async () => {
+    const person = await mintUser('salary state');
+    const today = tashkentDay();
+    const thisMonth = today.slice(0, 7);
+    const nextMonthFirst = addDays(`${thisMonth}-28`, 7).slice(0, 7) + '-01';
+    const mint = async (dueFrom: string, amount: string) => {
+      const [row] = await db
+        .insert(recurringExpenses)
+        .values({
+          categoryId: salaryCategoryId,
+          amount,
+          currency: 'USD',
+          dayOfMonth: 5,
+          employeeId: person,
+          dueFrom,
+          createdBy: actorId,
+        })
+        .returning({ id: recurringExpenses.id });
+      madeTemplates.push(row!.id);
+      return row!.id;
+    };
+    const later = await mint(nextMonthFirst, '500.00');
+    const now = await mint(`${thisMonth}-01`, '600.00');
+
+    const rows = await staffTemplates(db, { today, salaryCategoryId, userId: person });
+    const state = new Map(rows.map((r) => [r.id, r]));
+    expect(state.get(later)!.state).toBe('not_due');
+    expect(state.get(now)!.state).toBe('waiting');
+    expect(state.get(now)!.month).toBe(thisMonth);
+  });
+});
+
+describe('the KPI table’s start and the three kinds of pay', () => {
+  it('a version may not start before the first one — the start is the owner’s, not a month box’s', async () => {
+    // The file's own version is January 2019, the earliest there is.
+    expect(await refusal(saveKpiTable(ownerKpiCells(), '2018-12', ctx()))).toBe('before_first_version');
+  });
+
+  it('the KPI kind may not be the salary kind, nor the reverse; a kind of its own is taken', async () => {
+    expect(await refusal(setStaffCategory('kpi_expense_category_id', salaryCategoryId, ctx()))).toBe('category_clash');
+    expect(await refusal(setStaffCategory('salary_expense_category_id', kpiCategoryId, ctx()))).toBe('category_clash');
+    const [own] = await db
+      .insert(expenseCategories)
+      .values({ name: `KPI boshqa ${SUFFIX}`, cash: true })
+      .returning({ id: expenseCategories.id });
+    try {
+      expect(await refusal(setStaffCategory('kpi_expense_category_id', own!.id, ctx()))).toBe('no refusal');
+    } finally {
+      await setSetting('kpi_expense_category_id', kpiCategoryId);
+      await db.update(expenseCategories).set({ active: false }).where(eq(expenseCategories.id, own!.id));
+    }
+  });
+});
+
+describe('«Sotuvchisiz yuk» repairs what the form’s stamp raced past', () => {
+  it('a client that names a seller while its cargo carries none is offered, and the repair names the card’s seller', async () => {
+    const seller = await mintUser('race');
+    // The race's end state, written straight: the client names a seller, the
+    // receipt confirmed in that moment carries nobody.
+    const client = await mintClient(seller);
+    const bare = await mintClient(null);
+    await cargo({ clientId: client, sellerId: null, day: '2021-11-10', m3: 2, kg: 300 });
+    await cargo({ clientId: bare, sellerId: null, day: '2021-11-11', m3: 1, kg: 150 });
+
+    const list = await unstampedCargo(db, monthRange('2021-11'));
+    const raced = list.find((row) => row.clientId === client);
+    expect(raced?.currentSellerId).toBe(seller);
+    expect(list.find((row) => row.clientId === bare)?.currentSellerId).toBeNull();
+
+    expect(await stampToCurrentSeller(db, bare, ctx())).toBeNull();
+    expect(await stampToCurrentSeller(db, client, ctx())).toEqual({ sellerId: seller, receipts: 1 });
+    const after = await unstampedCargo(db, monthRange('2021-11'));
+    expect(after.some((row) => row.clientId === client)).toBe(false);
+    expect(after.some((row) => row.clientId === bare)).toBe(true);
+  });
+});
+
+describe('withoutJit’s deadline is a budget for the WHOLE read', () => {
+  const twoSleeps = (exec: { execute: typeof db.execute }) =>
+    (async () => {
+      await exec.execute(sql`SELECT pg_sleep(0.3)`);
+      await exec.execute(sql`SELECT pg_sleep(0.3)`);
+      return 'done';
+    })();
+
+  it('two 0.3 s statements under a 0.4 s deadline are refused, not waited for', async () => {
+    const started = Date.now();
+    // Postgres cancels the second statement at what was LEFT (57014), or the
+    // wrapper refuses to send it once nothing is — either is the budget.
+    const refusedByBudget = (err: unknown) => {
+      const e = err as { code?: string; cause?: { code?: string } };
+      return err instanceof ReadDeadlineError || e.code === '57014' || e.cause?.code === '57014';
+    };
+    const outcome = await withoutJit(twoSleeps as never, { deadlineMs: 400 }).then(
+      () => 'finished',
+      (err: unknown) => (refusedByBudget(err) ? 'refused' : String(err)),
+    );
+    expect(outcome).toBe('refused');
+    expect(Date.now() - started).toBeLessThan(550);
+  });
+
+  it('the same read under a 2 s deadline finishes', async () => {
+    expect(await withoutJit(twoSleeps as never, { deadlineMs: 2000 })).toBe('done');
   });
 });

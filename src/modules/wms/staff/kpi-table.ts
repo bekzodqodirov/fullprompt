@@ -31,7 +31,8 @@ export type KpiTableError =
   | 'bad_rate'
   | 'bad_bound'
   | 'bad_month'
-  | 'kpi_version_paid';
+  | 'kpi_version_paid'
+  | 'before_first_version';
 
 export class KpiTableRefusal extends Error {
   constructor(public readonly code: KpiTableError) {
@@ -44,13 +45,29 @@ export const KPI_TABLE_AUDIT_ID = '00000000-0000-0000-0000-000000000117';
 
 const isNumber = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n);
 
-/** Every tier × band cell exactly once, one open tier, one open band, a finite rate ≥ 0. Pure. */
+/**
+ * What the columns can STORE (0117): `rate_usd numeric(8,2)`, `max_m3
+ * numeric(10,3)`, `max_density integer`. A figure past them passes every
+ * other rule, and postgres answers the INSERT with 22003 — which the action
+ * does not map, so a typo of one extra zero was the error page instead of a
+ * sentence (round 105's uncaught white pages). Refused here, by name.
+ */
+export const KPI_RATE_LIMIT = 1_000_000;
+export const KPI_M3_LIMIT = 10_000_000;
+export const KPI_DENSITY_LIMIT = 2_147_483_647;
+
+/** Every tier × band cell exactly once, one open tier, one open band, a finite rate ≥ 0 the columns can hold. Pure. */
 export function validateKpiGrid(cells: KpiCell[]): { ok: true } | { ok: false; reason: KpiTableError } {
   if (cells.length === 0) return { ok: false, reason: 'grid_empty' };
   for (const cell of cells) {
-    if (!isNumber(cell.rateUsd) || cell.rateUsd < 0) return { ok: false, reason: 'bad_rate' };
-    if (cell.maxM3 !== null && (!isNumber(cell.maxM3) || cell.maxM3 <= 0)) return { ok: false, reason: 'bad_bound' };
-    if (cell.maxDensity !== null && (!Number.isInteger(cell.maxDensity) || cell.maxDensity <= 0)) {
+    if (!isNumber(cell.rateUsd) || cell.rateUsd < 0 || cell.rateUsd >= KPI_RATE_LIMIT) return { ok: false, reason: 'bad_rate' };
+    if (cell.maxM3 !== null && (!isNumber(cell.maxM3) || cell.maxM3 <= 0 || cell.maxM3 >= KPI_M3_LIMIT)) {
+      return { ok: false, reason: 'bad_bound' };
+    }
+    if (
+      cell.maxDensity !== null &&
+      (!Number.isInteger(cell.maxDensity) || cell.maxDensity <= 0 || cell.maxDensity > KPI_DENSITY_LIMIT)
+    ) {
       return { ok: false, reason: 'bad_bound' };
     }
   }
@@ -158,12 +175,21 @@ export async function saveKpiTable(cells: KpiCell[], effectiveMonth: string, ctx
 
   await db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('kpi:table'))`);
+    // No version may start BEFORE the first one. KPI counts from the
+    // first version's month (`firstKpiMonth`, his open point 1 — September
+    // 2026), and before the first payout the paid-month fence below has
+    // nothing to stand on: an early month typed in the editor would move the
+    // start back and put every closed month since then on every seller's
+    // «KPI to'lash» at once. Moving the start is the owner's decision, not a
+    // side effect of a month box.
+    const first = await firstKpiMonth(tx);
+    if (first && month < first) throw new KpiTableRefusal('before_first_version');
+
     const [paid] = (await tx.execute(sql`
       SELECT to_char(max(kp.through_month), 'YYYY-MM') AS month
         FROM kpi_payouts kp
         JOIN expenses e ON e.id = kp.expense_id AND e.voided_at IS NULL`)) as unknown as { month: string | null }[];
     if (paid?.month && month <= paid.month) throw new KpiTableRefusal('kpi_version_paid');
-
     const before = (await tx.execute(sql`
       SELECT count(*)::int AS n FROM kpi_rates WHERE effective_month = ${`${month}-01`}::date`)) as unknown as {
       n: number;

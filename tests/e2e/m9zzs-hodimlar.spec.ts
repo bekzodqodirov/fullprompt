@@ -49,8 +49,31 @@ for (const size of [
     // The two category pickers are the settings power's — the owner has it.
     await expect(page.getByTestId('staff-category-kpi_expense_category_id')).toBeVisible();
     await fitsViewport(page);
+    // The widest things on the page are folded: open them and measure again
+    // (#400 — a fold that opens past the viewport zooms the whole page out).
+    // Opening a fold saves nothing.
+    await page.getByTestId('kpi-table-edit').locator('summary').click();
+    await expect(page.getByTestId('kpi-table-edit').locator('form')).toBeVisible();
+    await fitsViewport(page);
+    const salaryNew = page.getByTestId('staff-salary-new').first();
+    await salaryNew.locator('summary').click();
+    await expect(salaryNew.locator('form').first()).toBeVisible();
+    await fitsViewport(page);
   });
 }
+
+test('the owner reads a seller’s KPI line for the month the suite received cargo in', async ({ page }) => {
+  await login(page, OWNER);
+  // m1-receive took GS777's cargo in THIS Tashkent month through the real
+  // wizard, and GS777's card names Dilnoza — so her card carries a KPI
+  // section for this month (open, «taxminiy»), whatever its figures are.
+  const month = new Date(Date.now() + 5 * 3600_000).toISOString().slice(0, 7);
+  await page.goto(`/hodimlar?oy=${month}`);
+  const kpi = page.getByTestId('staff-card').filter({ hasText: 'Dilnoza (Sales)' }).getByTestId('staff-kpi');
+  await expect(kpi).toBeVisible();
+  await expect(kpi).toContainText('KPI');
+  await expect(page.getByTestId('hodimlar-kpi-failed')).toHaveCount(0);
+});
 
 test('the accountant opens /hodimlar; the tab sits in the money workspace', async ({ page }) => {
   await login(page, ACCOUNTANT);

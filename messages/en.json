@@ -879,7 +879,8 @@
       "converted": "The salary is converted to dollars at this month’s rate.",
       "work": "My work",
       "workLine": "Receipts: {receipts} · calculations sealed: {sealed} · «Done» answers: {answered}",
-      "advanceHint": "Advances and what you owe the company are in «My account» below."
+      "advanceHint": "Advances and what you owe the company are in «{panel}» below.",
+      "salaryNotDue": "not due this month yet"
     }
   },
   "receive": {
@@ -4598,7 +4599,7 @@
     "kpiCategoryUnset": "KPI payout category not chosen — KPI cannot be paid",
     "kpiCategoryHint": "A separate, cash-paid category. Do not pick salaries or the seller share: a payout in the same category collides with the salary.",
     "categoryAsk": "An administrator chooses the category.",
-    "empty": "No salary template and no cargo for this month.",
+    "empty": "Nobody has a salary yet — add one with ✏️ «Set a salary» on a person’s card.",
     "unstamped": "Cargo with no seller",
     "unstampedNone": "None this month.",
     "unstampedHint": "The client had no manager when the cargo was received. Assign one on the client card and this cargo moves to them.",
@@ -4656,10 +4657,13 @@
       "grid_duplicate": "two identical bounds",
       "grid_no_open_tier": "the last row must be «over»",
       "grid_no_open_band": "the last column must be «over»",
-      "bad_rate": "a rate must be a number of zero or more",
-      "bad_bound": "a bound must be a positive, increasing number",
+      "bad_rate": "a rate must be a number from 0 to 1,000,000",
+      "bad_bound": "a bound must be a positive, increasing and not absurdly large number",
       "bad_month": "invalid month",
-      "kpi_version_paid": "KPI for this month is already paid — a new table can only start with a later month"
+      "kpi_version_paid": "KPI for this month is already paid — a new table can only start with a later month",
+      "category_clash": "this expense type is already chosen for another pay (salary, KPI or upsale) — each needs its own",
+      "before_first_version": "a table cannot start before the first KPI month",
+      "no_seller": "the client has no seller"
     },
     "table": {
       "title": "KPI table",
@@ -4676,7 +4680,14 @@
       "tierTop": "Top of the cubes tier",
       "rate": "Rate, $ per m³",
       "open": "over",
-      "saveHint": "A new table applies from the chosen month; older months keep their own table. A month whose KPI is paid cannot be changed."
-    }
+      "saveHint": "A new table applies from the chosen month; older months keep their own table. A month whose KPI is paid cannot be changed.",
+      "editBase": "Based on the table in force in {month}"
+    },
+    "kpiFailed": "The KPI could not be computed in the time allowed — KPI figures are not shown on this page. Open each seller on their own.",
+    "upsaleTruncated": "Too many offers this month — the upsale column is incomplete. Open the seller on their own.",
+    "computeOne": "compute this person only",
+    "salaryNotDue": "— not due this month yet",
+    "salaryMonth": "{month}:",
+    "unstampedRepair": "→ move to {name}"
   }
 }

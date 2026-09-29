@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { kpiMonthClosed, lastClosedMonth } from '@/modules/wms/staff/kpi-service';
+import { readFileSync } from 'node:fs';
+import { kpiCloseDay, kpiMonthClosed, lastClosedMonth } from '@/modules/wms/staff/kpi-service';
 import { RECEIPT_BACKDATE_DAYS } from '@/modules/wms/receipts/received-day';
 import { addMonths, monthEndDay, monthRange, monthsBetween, calendarMonth } from '@/modules/wms/staff/month';
 
@@ -47,5 +48,18 @@ describe('Tashkent months', () => {
     expect(calendarMonth('2026-13')).toBeNull();
     expect(calendarMonth('2026-09')).toBe('2026-09');
     expect(calendarMonth('x')).toBeNull();
+  });
+});
+
+describe('the close day the screen prints is the rule’s own', () => {
+  it('September closes on 2026-10-08, December on 2027-01-08', () => {
+    expect(kpiCloseDay('2026-09')).toBe('2026-10-08');
+    expect(kpiCloseDay('2026-12')).toBe('2027-01-08');
+  });
+
+  it('/hodimlar asks kpiCloseDay and restates no window of its own (#513)', () => {
+    const page = readFileSync('src/app/(protected)/hodimlar/page.tsx', 'utf8');
+    expect(page).toContain('kpiCloseDay(month)');
+    expect(page).not.toMatch(/addDays\(/);
   });
 });

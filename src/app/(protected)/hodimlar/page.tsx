@@ -10,29 +10,34 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { isServerBehind } from '@/modules/platform/db/errors';
 import { logger } from '@/modules/platform/logger';
 import { getSetting } from '@/modules/platform/settings/service';
-import { addDays, tashkentDay } from '@/modules/platform/time/tashkent';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { listAccounts, listCategories } from '@/modules/wms/accounting/service';
 import { listPartners } from '@/modules/wms/partners/service';
 import { earnedOf, upsaleRows } from '@/modules/wms/calc/upsale-service';
 import { mayEditKpiTable, mayPayCommission, maySeeStaffMoney, maySeeStaffUpsale } from '@/modules/wms/staff/door';
 import { unstampedCargo } from '@/modules/wms/staff/cargo';
 import {
+  kpiCloseDay,
   kpiMonth,
   kpiPayable,
   kpiPayableAll,
+  kpiSellerIds,
   lastClosedMonth,
   type KpiMonthLine,
   type KpiPayable,
 } from '@/modules/wms/staff/kpi-service';
 import { kpiVersions, versionFor } from '@/modules/wms/staff/kpi-table';
-import { addMonths, calendarMonth, monthEndDay, monthRange } from '@/modules/wms/staff/month';
+import { calendarMonth, monthEndDay, monthRange } from '@/modules/wms/staff/month';
 import { staffTemplates } from '@/modules/wms/staff/salary';
 import { PageHeader } from '@/components/ui/page';
 import { StaffCard, type RecurringOptions } from './staff-card';
-import { StaffCategoryForm } from './forms';
+import { StaffCategoryForm, StampRepairButton } from './forms';
 import { KpiTableForm } from './kpi-table-form';
 
 export const dynamic = 'force-dynamic';
+
+/** The whole KPI read's budget on this page — past it, «hisoblanmadi» (design §6). */
+const KPI_BUDGET_MS = 8000;
 
 /**
  * «Hodimlar» — every person's pay in one place (0117, the owner's 8a: «one
@@ -139,14 +144,21 @@ async function StaffList({
   ]);
 
   // The heavy two (every covering price of every client behind a month's
-  // cargo) run with JIT off and a BUDGET: past it the KPI line reads
-  // «hisoblanmadi», never a $0 and never a stuck page (design §6).
-  const [people, templates, kpiLines, payables, unstamped, versions, categories, accounts, warehouseRows, currencyRows, partnerRows, upsale] =
+  // cargo) run with JIT off and a BUDGET for the WHOLE read (`deadlineMs` —
+  // a per-statement timeout lets a four-statement read hold the page four
+  // times over): past it the KPI reads «hisoblanmadi», never a $0 and never
+  // a stuck page (design §6). The whole company's payable is the heavy one
+  // (5.6 s over twelve months on the shaped copy, and a month longer every
+  // month); when it runs out, each seller's card links to their OWN pass
+  // (`?hodim=`, 0.7 s), where the figure and «KPI to'lash» are.
+  const [people, templates, kpiLines, payables, kpiSellers, unstamped, versions, categories, accounts, warehouseRows, currencyRows, partnerRows, upsale] =
     await Promise.all([
       db.select({ id: users.id, name: users.fullName, active: users.active }).from(users).orderBy(asc(users.fullName)),
-      safe(staffTemplates(db, { month, salaryCategoryId: salarySetting }), [], 'templates'),
+      // The salary's state is THIS month's, whatever `?oy` the KPI is read
+      // for — the chip names the month it is about.
+      safe(staffTemplates(db, { today, salaryCategoryId: salarySetting }), [], 'templates'),
       withoutJit((exec) => kpiMonth(exec, month, hodim ? { kind: 'own', userId: hodim } : { kind: 'all' }, today), {
-        timeoutMs: 8000,
+        deadlineMs: KPI_BUDGET_MS,
       }).catch((err) => {
         failed.kpi = true;
         if (isServerBehind(err)) failed.behind = true;
@@ -161,13 +173,16 @@ async function StaffList({
           hodim
             ? kpiPayable(exec, hodim, today).then((one) => new Map<string, KpiPayable>([[hodim, one]]))
             : kpiPayableAll(exec, today),
-        { timeoutMs: 8000 },
+        { deadlineMs: KPI_BUDGET_MS },
       ).catch((err) => {
         failed.kpi = true;
         if (isServerBehind(err)) failed.behind = true;
         logger.error({ err }, '[hodimlar] kpi payable');
         return new Map<string, KpiPayable>();
       }),
+      // Who COULD carry a KPI line — cheap, and asked beside the budgeted
+      // reads so that their failure still knows whose card must say so.
+      safe(kpiSellerIds(db), new Set<string>(), 'kpi sellers'),
       safe(unstampedCargo(db, range), [], 'unstamped'),
       safe(kpiVersions(db), [], 'versions'),
       listCategories(),
@@ -179,8 +194,14 @@ async function StaffList({
         .orderBy(asc(warehouses.code)),
       db.select({ code: currencies.code }).from(currencies).where(eq(currencies.active, true)),
       listPartners({ includeStaff: true }),
+      // One person asked for is ONE seller's offers — never their share of a
+      // company-wide list the cap may have cut (`UPSALE_CAP`).
       seesUpsale
-        ? safe(upsaleRows('all', actor.id, { from: `${month}-01`, to: monthEndDay(month) }), { rows: [], truncated: false }, 'upsale')
+        ? safe(
+            upsaleRows('all', actor.id, { from: `${month}-01`, to: monthEndDay(month), sellerId: hodim ?? undefined }),
+            { rows: [], truncated: false },
+            'upsale',
+          )
         : Promise.resolve(null),
     ]);
 
@@ -193,28 +214,44 @@ async function StaffList({
   }
 
   // Everybody active, plus a deactivated person who still has cargo this
-  // month or money owed either way — a seller who left is still paid.
+  // month or money owed either way — a seller who left is still paid. When
+  // the KPI reads ran out of time nobody's figures are known, so a departed
+  // SELLER stays listed with «hisoblanmadi» rather than vanishing.
   const visible = people.filter(
     (p) =>
       (hodim === null || p.id === hodim) &&
       (p.active ||
         kpiLines.has(p.id) ||
         (payables.get(p.id)?.payableUsd ?? 0) > 0 ||
-        (payables.get(p.id)?.overpaidUsd ?? 0) > 0),
+        (payables.get(p.id)?.overpaidUsd ?? 0) > 0 ||
+        (failed.kpi && kpiSellers.has(p.id))),
   );
   const hasPay = (id: string) => templates.some((tpl) => tpl.employeeId === id && tpl.salary) || kpiLines.has(id);
   visible.sort((a, b) => Number(hasPay(b.id)) - Number(hasPay(a.id)) || a.name.localeCompare(b.name));
 
+  // The editor edits the version a save would SUPERSEDE — the one in force
+  // this month — never the one pricing the month being viewed: prefilled from
+  // an old `?oy`, «Saqlash» would put an older grid back over a newer one.
+  const cellTops = (v: ReturnType<typeof versionFor>) => ({
+    tiers: [...new Set((v?.cells ?? []).map((c) => c.maxM3).filter((x): x is number => x !== null))].sort((a, b) => a - b),
+    bands: [...new Set((v?.cells ?? []).map((c) => c.maxDensity).filter((x): x is number => x !== null))].sort(
+      (a, b) => a - b,
+    ),
+  });
   const version = versionFor(versions, month);
-  const tiers = [...new Set((version?.cells ?? []).map((c) => c.maxM3).filter((v): v is number => v !== null))].sort((a, b) => a - b);
-  const bands = [...new Set((version?.cells ?? []).map((c) => c.maxDensity).filter((v): v is number => v !== null))].sort((a, b) => a - b);
+  const { tiers, bands } = cellTops(version);
+  const thisMonth = today.slice(0, 7);
+  const editVersion = versionFor(versions, thisMonth);
+  const editTops = cellTops(editVersion);
+  const editRate = (tier: number | null, band: number | null) =>
+    editVersion?.cells.find((c) => c.maxM3 === tier && c.maxDensity === band)?.rateUsd;
   const tierLabel = (top: number | null) =>
     top === null ? t('table.tierOver', { n: tiers.at(-1) ?? 0 }) : t('table.tierUpTo', { n: top });
   const bandLabel = (top: number | null) =>
     top === null ? t('table.bandOver', { n: bands.at(-1) ?? 0 }) : t('table.bandUpTo', { n: top });
   const rateAt = (tier: number | null, band: number | null) =>
     version?.cells.find((c) => c.maxM3 === tier && c.maxDensity === band)?.rateUsd;
-  const closeDay = addDays(`${addMonths(month, 1)}-01`, 7);
+  const closeDay = kpiCloseDay(month);
 
   const options: RecurringOptions = {
     categories: categories.map((row) => ({ id: row.id, label: row.name, cash: row.cash })),
@@ -233,6 +270,18 @@ async function StaffList({
   return (
     <>
       {failed.behind ? <p className="chip chip-warn">{t('behind')}</p> : null}
+      {/* The KPI reads ran out of their budget: said ONCE for the page, and
+          on every seller's card below — never a silent absence. */}
+      {failed.kpi ? (
+        <p className="card !p-3 text-sm text-warn" data-testid="hodimlar-kpi-failed">
+          ⚠ {t('kpiFailed')}
+        </p>
+      ) : null}
+      {upsale?.truncated ? (
+        <p className="card !p-3 text-sm text-warn" data-testid="hodimlar-upsale-truncated">
+          ⚠ {t('upsaleTruncated')}
+        </p>
+      ) : null}
 
       <div className="grid gap-2 md:grid-cols-2">
         <StaffCategoryForm
@@ -272,7 +321,8 @@ async function StaffList({
               others={mine.filter((tpl) => !tpl.salary)}
               kpi={kpiLines.get(person.id)}
               payable={payables.get(person.id)}
-              kpiUnavailable={failed.kpi && (kpiLines.has(person.id) || payables.has(person.id))}
+              kpiUnavailable={failed.kpi && kpiSellers.has(person.id)}
+              ownHref={`/hodimlar?oy=${month}&hodim=${person.id}`}
               upsale={seesUpsale ? (upsaleBySeller.get(person.id) ?? null) : null}
               upsaleHref={`/upsale?hodim=${person.id}&dan=${month}-01&gacha=${monthEndDay(month)}`}
               mayPay={mayPay}
@@ -307,6 +357,11 @@ async function StaffList({
                   <span className="text-2xs text-ink-500">
                     {row.receipts} · {row.m3.toFixed(2)} {t('m3')} · {Math.round(row.kg)} kg
                   </span>
+                  {/* The card names a seller now and these still carry none —
+                      the form's stamp missed them; no later save will. */}
+                  {row.currentSellerId ? (
+                    <StampRepairButton clientId={row.clientId} sellerName={row.currentSellerName ?? '—'} />
+                  ) : null}
                 </li>
               ))}
             </ul>
@@ -350,15 +405,18 @@ async function StaffList({
         ) : (
           <p className="text-sm text-ink-500">{t('table.none')}</p>
         )}
-        {mayEdit && version ? (
-          <details>
+        {mayEdit && editVersion ? (
+          <details data-testid="kpi-table-edit">
             <summary className="cursor-pointer text-xs font-semibold text-brand-700">✏️ {t('table.edit')}</summary>
             <div className="mt-2">
+              <p className="text-2xs text-ink-500">{t('table.editBase', { month: editVersion.month })}</p>
               <KpiTableForm
-                tiers={tiers}
-                bands={bands}
-                rates={[...tiers, null].map((tier) => [...bands, null].map((band) => rateAt(tier, band) ?? 0))}
-                month={today.slice(0, 7)}
+                tiers={editTops.tiers}
+                bands={editTops.bands}
+                rates={[...editTops.tiers, null].map((tier) =>
+                  [...editTops.bands, null].map((band) => editRate(tier, band) ?? 0),
+                )}
+                month={thisMonth}
               />
             </div>
           </details>

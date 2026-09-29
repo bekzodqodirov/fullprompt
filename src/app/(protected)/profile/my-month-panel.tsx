@@ -11,10 +11,16 @@ import type { MyMonth } from '@/modules/wms/staff/my-month';
  * salary is the template's month, the KPI the cargo's receipt month (and it
  * is «taxminiy» until the month closes on the 8th), the upsale the offer's day.
  */
-export async function MyMonthPanel({ data }: { data: MyMonth }) {
+export async function MyMonthPanel({ data, showAdvance }: { data: MyMonth; showAdvance: boolean }) {
   const t = await getTranslations('profile.month');
+  const tp = await getTranslations('profile');
   const money = (n: number) => `$${n.toFixed(2)}`;
-  const stateText = { paid: t('salaryPaid'), skipped: t('salarySkipped'), waiting: t('salaryWaiting') };
+  const stateText = {
+    paid: t('salaryPaid'),
+    skipped: t('salarySkipped'),
+    waiting: t('salaryWaiting'),
+    not_due: t('salaryNotDue'),
+  };
 
   return (
     <section className="card space-y-2 !p-3" data-testid="profile-month">
@@ -103,7 +109,11 @@ export async function MyMonthPanel({ data }: { data: MyMonth }) {
           {t('workLine', { receipts: data.work.receipts, sealed: data.work.sealed, answered: data.work.answered })}
         </p>
       </div>
-      <p className="text-2xs text-ink-500">{t('advanceHint')}</p>
+      {/* Points at the staff-account panel by its OWN title, and only when
+          that panel is drawn — a person with no staff account has none. */}
+      {showAdvance ? (
+        <p className="text-2xs text-ink-500">{t('advanceHint', { panel: tp('staffAccountTitle') })}</p>
+      ) : null}
     </section>
   );
 }

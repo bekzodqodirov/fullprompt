@@ -6,7 +6,9 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { requestMeta } from '@/modules/platform/auth/session';
 import { isServerBehind } from '@/modules/platform/db/errors';
 import { logger } from '@/modules/platform/logger';
-import { mayEditKpiTable, mayPayCommission } from '@/modules/wms/staff/door';
+import { db } from '@/modules/platform/db/client';
+import { mayEditKpiTable, mayPayCommission, maySeeStaffMoney } from '@/modules/wms/staff/door';
+import { stampToCurrentSeller } from '@/modules/wms/staff/stamp';
 import { KpiError, payKpi, setStaffCategory } from '@/modules/wms/staff/kpi-service';
 import { KpiTableRefusal, parseKpiGridPost, saveKpiTable } from '@/modules/wms/staff/kpi-table';
 import type { KpiCell } from '@/modules/wms/staff/kpi-engine';
@@ -97,6 +99,32 @@ export async function setStaffCategoryAction(_prev: StaffFormState, formData: Fo
     return { ok: true };
   } catch (err) {
     if (err instanceof KpiError) return { error: err.code };
+    throw err;
+  }
+}
+
+/**
+ * «Sotuvchisiz yuk»'s repair: a client whose card names a seller while some
+ * of its receipts still carry none (a prixod confirmed in the very moment the
+ * first seller was named — `unstampedCargo`'s `currentSellerId`). The button
+ * applies the decision the client card already holds and chooses nobody: the
+ * seller is re-read from the client row, never taken from the post. Asked by
+ * the page's own door (`maySeeStaffMoney`), the list's only reader.
+ */
+export async function stampClientCargoAction(_prev: StaffFormState, formData: FormData): Promise<StaffFormState> {
+  const actor = await getActor();
+  if (!actor) return { error: 'unauthenticated' };
+  if (!maySeeStaffMoney(actor.permissions)) return { error: 'forbidden' };
+  const clientId = String(formData.get('clientId') ?? '');
+  if (!uuid.safeParse(clientId).success) return { error: 'not_found' };
+  const meta = await requestMeta();
+  try {
+    const res = await stampToCurrentSeller(db, clientId, { actorId: actor.id, ...meta });
+    if (!res) return { error: 'no_seller' };
+    revalidatePath('/hodimlar');
+    return { ok: true };
+  } catch (err) {
+    if (isServerBehind(err)) return { error: 'server_behind' };
     throw err;
   }
 }

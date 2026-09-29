@@ -4,7 +4,7 @@ import { useActionState, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { latestTxDate } from '@/modules/wms/finance/dates';
-import { payKpiAction, setStaffCategoryAction, type StaffFormState } from './actions';
+import { payKpiAction, setStaffCategoryAction, stampClientCargoAction, type StaffFormState } from './actions';
 
 /**
  * A refusal in WORDS — `hodimlar.refusal.<code>`. The key is built at runtime,
@@ -191,5 +191,25 @@ export function StaffCategoryForm({
         )}
       </div>
     </details>
+  );
+}
+
+/**
+ * «→ {seller}» on a «Sotuvchisiz yuk» row whose client already names a
+ * seller: stamps that client's unstamped cargo to the seller the card names
+ * (the action re-reads it — the button only carries the client).
+ */
+export function StampRepairButton({ clientId, sellerName }: { clientId: string; sellerName: string }) {
+  const t = useTranslations('hodimlar');
+  const [state, formAction, pending] = useActionState<StaffFormState, FormData>(stampClientCargoAction, {});
+  return (
+    <form action={formAction} className="inline-flex flex-wrap items-center gap-2">
+      <input type="hidden" name="clientId" value={clientId} />
+      <button type="submit" className="btn-secondary !px-2 !py-1 text-xs" disabled={pending} data-testid="unstamped-repair">
+        {t('unstampedRepair', { name: sellerName })}
+      </button>
+      {state.ok && <span className="text-sm text-good">✅</span>}
+      <RefusalText state={state} />
+    </form>
   );
 }

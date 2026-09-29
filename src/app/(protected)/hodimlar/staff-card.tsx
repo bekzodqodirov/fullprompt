@@ -38,6 +38,7 @@ export async function StaffCard({
   kpi,
   payable,
   kpiUnavailable,
+  ownHref,
   upsale,
   upsaleHref,
   mayPay,
@@ -54,8 +55,14 @@ export async function StaffCard({
   others: StaffTemplate[];
   kpi: KpiMonthLine | undefined;
   payable: KpiPayable | undefined;
-  /** The KPI reads ran out of their budget — «hisoblanmadi», never a $0. */
+  /**
+   * The KPI reads ran out of their budget and this person carries cargo —
+   * «hisoblanmadi», never a $0 and never a missing section: the block is
+   * drawn on this flag ALONE, because the failed reads' answers are empty.
+   */
   kpiUnavailable: boolean;
+  /** This person's own pass (`?hodim=`) — the fast one, where «KPI to'lash» still is. */
+  ownHref: string;
   /** null = this viewer is not shown a colleague's upsale (`maySeeStaffUpsale`). */
   upsale: { earnedUsd: number; payableUsd: number } | null;
   upsaleHref: string;
@@ -70,9 +77,22 @@ export async function StaffCard({
   closesOn: string;
 }) {
   const t = await getTranslations('hodimlar');
-  const stateText = { paid: t('salaryPaid'), skipped: t('salarySkipped'), waiting: t('salaryWaiting') };
-  const stateClass = { paid: 'chip chip-good', skipped: 'chip chip-neutral', waiting: 'chip chip-warn' };
-  const showKpi = kpi !== undefined || (payable !== undefined && (payable.payableUsd > 0 || payable.overpaidUsd > 0));
+  const stateText = {
+    paid: t('salaryPaid'),
+    skipped: t('salarySkipped'),
+    waiting: t('salaryWaiting'),
+    not_due: t('salaryNotDue'),
+  };
+  const stateClass = {
+    paid: 'chip chip-good',
+    skipped: 'chip chip-neutral',
+    waiting: 'chip chip-warn',
+    not_due: 'chip chip-neutral',
+  };
+  const showKpi =
+    kpiUnavailable ||
+    kpi !== undefined ||
+    (payable !== undefined && (payable.payableUsd > 0 || payable.overpaidUsd > 0));
 
   return (
     <li className="card space-y-2 !p-3" data-testid="staff-card">
@@ -91,7 +111,10 @@ export async function StaffCard({
               {Number(tpl.amount).toLocaleString('en-US')} {tpl.currency}
             </span>
             <span className="text-2xs text-ink-500">{t('payDay', { day: tpl.dayOfMonth })}</span>
-            <span className={stateClass[tpl.state]}>{stateText[tpl.state]}</span>
+            {/* The state is THIS month's (whatever `?oy` the KPI shows) — named. */}
+            <span className={stateClass[tpl.state]} data-testid="staff-salary-state">
+              {t('salaryMonth', { month: tpl.month })} {stateText[tpl.state]}
+            </span>
             <RecurringRowEdit
               id={tpl.id}
               amount={tpl.amount}
@@ -146,7 +169,14 @@ export async function StaffCard({
       {showKpi ? (
         <div className="space-y-1 border-t border-line pt-2" data-testid="staff-kpi">
           <p className="text-2xs uppercase text-ink-500">{t('kpi')}</p>
-          {kpiUnavailable ? <p className="text-sm text-warn">⚠ {t('notComputed')}</p> : null}
+          {kpiUnavailable ? (
+            <p className="text-sm text-warn" data-testid="staff-kpi-unavailable">
+              ⚠ {t('notComputed')}{' '}
+              <Link href={ownHref} className="font-semibold text-brand-700">
+                {t('computeOne')} →
+              </Link>
+            </p>
+          ) : null}
           {kpi ? (
             kpi.outside ? (
               <p className="text-sm text-ink-500">{t('kpiOutside')}</p>

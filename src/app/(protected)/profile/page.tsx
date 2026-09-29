@@ -166,7 +166,7 @@ export default async function ProfilePage() {
         apkVersion={callsApk?.version ?? null}
       />
 
-      {month && <MyMonthPanel data={month} />}
+      {month && <MyMonthPanel data={month} showAdvance={Boolean(staffAccount)} />}
 
       {staffAccount && <StaffAccountPanel view={staffAccount} />}
 

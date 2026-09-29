@@ -4,7 +4,7 @@ import { deferredPerDealSql } from '../finance/service';
 import { settleCharges, type FifoCharge } from '../finance/fifo';
 import { uncoveredCtes, unpricedScopeSql } from '../finance/unpriced';
 import { MONEY_EPSILON } from '../calc/upsale';
-import type { Exec } from './cargo';
+import { receivedMonthSql, type Exec } from './cargo';
 
 /**
  * The PAID part of a seller's cargo (0117, the owner's 6b: «KPI is earned only
@@ -46,7 +46,7 @@ export async function paidM3ByMonth(
   const cartons = (await exec.execute(sql`
     WITH ${uncoveredCtes(unpricedScopeSql({ kind: 'stamped', sellerId: q.sellerId, from: q.from, to: q.to }), { landedOnly: false })}
     SELECT ub.box_id, ub.client_id, ub.m3::text AS m3, r.sales_manager_id AS seller_id,
-           to_char(r.received_at AT TIME ZONE 'Asia/Tashkent', 'YYYY-MM') AS month,
+           ${receivedMonthSql(sql`r.received_at`)} AS month,
            string_agg(up.charge_id::text, ',') FILTER (WHERE up.covers AND NOT uc.zeroed) AS charges
       FROM u_box ub
       JOIN receipts r ON r.id = ub.receipt_id

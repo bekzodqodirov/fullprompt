@@ -62,3 +62,25 @@ export async function stampUnattributedCargo(
   }
   return n;
 }
+
+/**
+ * The repair «Sotuvchisiz yuk» offers for a client whose card names a seller
+ * while some of its receipts still carry none — the one race the client
+ * form's stamp cannot see (unstampedCargo's `currentSellerId` says how it
+ * happens), and after which no later save stamps them. It applies the
+ * decision the client card ALREADY holds: the seller is read from the client
+ * row here, never taken from the post, so the button can name nobody the
+ * card does not. Null when the client has no seller (nothing to apply) —
+ * the list then says «mijozga sotuvchi belgilang» instead.
+ */
+export async function stampToCurrentSeller(
+  exec: Db | Tx,
+  clientId: string,
+  ctx: AuditContext,
+): Promise<{ sellerId: string; receipts: number } | null> {
+  const [client] = await exec.execute<{ sales_manager_id: string | null }>(sql`
+    SELECT sales_manager_id FROM clients WHERE id = ${clientId}::uuid`);
+  if (!client?.sales_manager_id) return null;
+  const receipts = await stampUnattributedCargo(exec, clientId, client.sales_manager_id, ctx);
+  return { sellerId: client.sales_manager_id, receipts };
+}

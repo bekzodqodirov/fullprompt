@@ -7,7 +7,8 @@ import { rateFor } from '../costing/service';
 import { upsaleScopeFor } from '../calc/upsale-scope';
 import { earnedOf, upsaleRows } from '../calc/upsale-service';
 import { stampedCargoByMonth } from './cargo';
-import { kpiFor, earnedOnPaid, type KpiRefusal } from './kpi-engine';
+import type { KpiRefusal } from './kpi-engine';
+import { lineFor } from './kpi-service';
 import { kpiVersions, versionFor } from './kpi-table';
 import { paidM3ByMonth } from './kpi-paid';
 import { monthRange } from './month';
@@ -70,7 +71,7 @@ export async function myMonth(actor: {
   const salaryCategoryId = String((await getSetting('salary_expense_category_id')) ?? '').trim();
 
   const [templates, cargo, versions, work] = await Promise.all([
-    staffTemplates(db, { month, salaryCategoryId, userId }),
+    staffTemplates(db, { today, salaryCategoryId, userId }),
     stampedCargoByMonth(db, userId, month, month),
     kpiVersions(db),
     myWork(userId, range),
@@ -91,10 +92,8 @@ export async function myMonth(actor: {
   if (salaryUsd !== null) salaryUsd = round2(salaryUsd);
 
   let kpi: MyMonth['kpi'] = null;
-  const line = cargo[0];
-  if (line) {
-    const version = versionFor(versions, month);
-    const result = kpiFor(version?.cells ?? null, line);
+  const cargoLine = cargo[0];
+  if (cargoLine) {
     // The paid part is the heavy read (every covering price of every client
     // behind the cargo): budgeted, because /profile is the logout door and a
     // slow panel must never hold it (#472's morning).
@@ -105,15 +104,21 @@ export async function myMonth(actor: {
     } catch (err) {
       console.error('[my-month] paid read', err);
     }
+    // /hodimlar's own line for the month (`lineFor`, #513): the engine, the
+    // «outside KPI» rule and the paid part at the month's rate are that
+    // function's, never re-derived here. Only the budget is this panel's —
+    // a paid read that ran out of time is «hisoblanmadi», not 0.
+    const line = lineFor(month, cargoLine, versionFor(versions, month), paidM3 ?? 0, today);
+    const { result } = line;
     kpi = {
       m3: line.m3,
       kg: line.kg,
       density: result.ok ? result.density : null,
       rate: result.ok ? result.rate : null,
-      earnedUsd: result.ok && version ? result.earnedUsd : null,
-      earnedPaidUsd: result.ok && version && paidM3 !== null ? earnedOnPaid(paidM3, result.rate) : null,
+      earnedUsd: result.ok && !line.outside ? result.earnedUsd : null,
+      earnedPaidUsd: result.ok && !line.outside && paidM3 !== null ? line.earnedPaidUsd : null,
       refusal: result.ok ? null : result.reason,
-      outside: version === null,
+      outside: line.outside,
     };
   }
 

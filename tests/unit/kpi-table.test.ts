@@ -90,3 +90,24 @@ describe('parseKpiGridPost — what the editor posts', () => {
     expect(parseKpiGridPost({ grid: 1 })).toBeNull();
   });
 });
+
+describe('validateKpiGrid — nothing the columns cannot store', () => {
+  // rate_usd numeric(8,2), max_m3 numeric(10,3), max_density integer (0117).
+  // Past them postgres answers 22003 and the editor showed the error page.
+  const with1 = (patch: Partial<KpiCell>) => [{ ...FULL[0]!, ...patch }, ...FULL.slice(1)];
+
+  it('a rate of a million is a typo, refused by name; 999 999.99 is storable', () => {
+    expect(validateKpiGrid(with1({ rateUsd: 1_000_000 }))).toEqual({ ok: false, reason: 'bad_rate' });
+    expect(validateKpiGrid(with1({ rateUsd: 999_999.99 }))).toEqual({ ok: true });
+  });
+
+  it('a kub top of ten million, and a density past the integer, are refused', () => {
+    // The whole row / column moves, or the grid has a hole before it has a bound.
+    const tier = (top: number) => FULL.map((c) => ({ ...c, maxM3: c.maxM3 === null ? null : top }));
+    const band = (top: number) => FULL.map((c) => ({ ...c, maxDensity: c.maxDensity === null ? null : top }));
+    expect(validateKpiGrid(tier(10_000_000))).toEqual({ ok: false, reason: 'bad_bound' });
+    expect(validateKpiGrid(tier(9_999_999.999))).toEqual({ ok: true });
+    expect(validateKpiGrid(band(2_147_483_648))).toEqual({ ok: false, reason: 'bad_bound' });
+    expect(validateKpiGrid(band(2_147_483_647))).toEqual({ ok: true });
+  });
+});

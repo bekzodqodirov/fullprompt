@@ -879,7 +879,8 @@
       "converted": "工资已按本月汇率换算为美元。",
       "work": "我的工作",
       "workLine": "入库：{receipts} · 已封存核算：{sealed} · 「完成」答复：{answered}",
-      "advanceHint": "预支款及欠公司款项见下方「我的账户」。"
+      "advanceHint": "预支款及欠公司款项见下方「{panel}」。",
+      "salaryNotDue": "本月尚未到付款期"
     }
   },
   "receive": {
@@ -4598,7 +4599,7 @@
     "kpiCategoryUnset": "未选择KPI支付类别——无法支付KPI",
     "kpiCategoryHint": "单独的、以现金支付的类别。请勿选择工资或销售分成：同一类别的支付会与工资冲突。",
     "categoryAsk": "由管理员选择类别。",
-    "empty": "本月既无工资模板也无货物。",
+    "empty": "还没有人设置工资——在员工卡片上用 ✏️「设置工资」添加。",
     "unstamped": "无销售员的货物",
     "unstampedNone": "本月没有此类货物。",
     "unstampedHint": "收货时客户没有经理。在客户卡片上指定经理后，这些货物将归属该经理。",
@@ -4656,10 +4657,13 @@
       "grid_duplicate": "两个相同的界限",
       "grid_no_open_tier": "最后一行必须为「以上」",
       "grid_no_open_band": "最后一列必须为「以上」",
-      "bad_rate": "费率必须是不小于零的数字",
-      "bad_bound": "界限必须为递增的正数",
+      "bad_rate": "费率必须是 0 到 1 000 000 之间的数字",
+      "bad_bound": "界限必须为递增的正数，且不能过大",
       "bad_month": "月份无效",
-      "kpi_version_paid": "该月KPI已支付——新表只能从之后的月份开始"
+      "kpi_version_paid": "该月KPI已支付——新表只能从之后的月份开始",
+      "category_clash": "此费用类型已用于另一种支付（工资、KPI 或加价）——每种需要单独的类型",
+      "before_first_version": "表格不能早于第一个 KPI 月份开始",
+      "no_seller": "客户没有指定销售"
     },
     "table": {
       "title": "KPI表",
@@ -4676,7 +4680,14 @@
       "tierTop": "立方上限",
       "rate": "费率，每m³美元",
       "open": "以上",
-      "saveHint": "新表从所选月份起生效；旧月份按各自的表计算。已支付KPI的月份不可更改。"
-    }
+      "saveHint": "新表从所选月份起生效；旧月份按各自的表计算。已支付KPI的月份不可更改。",
+      "editBase": "基于{month}生效的表格"
+    },
+    "kpiFailed": "KPI 未能在规定时间内算出——本页不显示 KPI 数字。请单独打开每位销售。",
+    "upsaleTruncated": "本月报价过多——加价一栏不完整。请单独打开该销售。",
+    "computeOne": "只计算此员工",
+    "salaryNotDue": "——本月尚未到付款期",
+    "salaryMonth": "{month}：",
+    "unstampedRepair": "→ 转给{name}"
   }
 }

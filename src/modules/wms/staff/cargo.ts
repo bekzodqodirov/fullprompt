@@ -44,6 +44,17 @@ const ownerSql = (who: CartonOwner): SQL =>
       : sql`r.sales_manager_id = ${who.sellerId}::uuid`;
 
 /**
+ * The Tashkent month (`YYYY-MM`) a receipt was received in — ONE fragment for
+ * the cargo reader and the paid part (kpi-paid.ts), because a label that
+ * drifted from `monthRange`'s Tashkent BOUNDS would file a receipt of 00:30
+ * on the 1st inside month M's range under M-1, and the month's cargo would
+ * vanish from both the KPI and its paid m³. `received_at` is a timestamptz,
+ * so the zone is named here and never left to the session's.
+ */
+export const receivedMonthSql = (receivedAt: SQL): SQL =>
+  sql`to_char(${receivedAt} AT TIME ZONE 'Asia/Tashkent', 'YYYY-MM')`;
+
+/**
  * The cartons, one row each: the receipt, its number, client and stamp, the
  * TASHKENT month it was received in, and the carton's share of its lot. A lot
  * whose kg or m³ is not positive would move the density band without being
@@ -53,7 +64,7 @@ const ownerSql = (who: CartonOwner): SQL =>
 export function stampedCartonsSql(q: { from: Date; to: Date; who: CartonOwner }): SQL {
   return sql`
     SELECT b.id AS box_id, r.id AS receipt_id, r.number, r.client_id, r.sales_manager_id AS seller_id,
-           to_char(r.received_at AT TIME ZONE 'Asia/Tashkent', 'YYYY-MM') AS month,
+           ${receivedMonthSql(sql`r.received_at`)} AS month,
            rl.total_volume_m3 / rl.box_count AS m3,
            rl.total_weight_kg / rl.box_count AS kg,
            (rl.total_volume_m3 <= 0 OR rl.total_weight_kg <= 0) AS unmeasured
@@ -174,6 +185,16 @@ export interface UnstampedClientCargo {
   clientId: string;
   clientCode: string;
   clientName: string;
+  /**
+   * The seller the client card names NOW, or null. Non-null here means the
+   * client form's stamp missed these receipts — a prixod confirmed in the
+   * same moment the first seller was named (its INSERT read the client before
+   * the save, and committed after `stampUnattributedCargo` had run) — and no
+   * later save will ever stamp them, because the client has a seller now.
+   * The list offers the repair (`stampToCurrentSeller`).
+   */
+  currentSellerId: string | null;
+  currentSellerName: string | null;
   receipts: number;
   kg: number;
   m3: number;
@@ -186,17 +207,20 @@ export interface UnstampedClientCargo {
  */
 export async function unstampedCargo(exec: Exec, q: { from: Date; to: Date }): Promise<UnstampedClientCargo[]> {
   const rows = (await exec.execute(sql`
-    SELECT c.client_id, cl.client_code, cl.name,
+    SELECT c.client_id, cl.client_code, cl.name, cl.sales_manager_id, su.full_name AS seller_name,
            count(DISTINCT c.receipt_id) AS receipts,
            coalesce(sum(c.kg), 0) AS kg,
            coalesce(sum(c.m3), 0) AS m3
       FROM (${stampedCartonsSql({ ...q, who: 'unstamped' })}) c
       JOIN clients cl ON cl.id = c.client_id
-     GROUP BY c.client_id, cl.client_code, cl.name
+      LEFT JOIN users su ON su.id = cl.sales_manager_id
+     GROUP BY c.client_id, cl.client_code, cl.name, cl.sales_manager_id, su.full_name
      ORDER BY sum(c.m3) DESC, cl.client_code`)) as unknown as {
     client_id: string;
     client_code: string;
     name: string;
+    sales_manager_id: string | null;
+    seller_name: string | null;
     receipts: string | number;
     kg: string;
     m3: string;
@@ -205,6 +229,8 @@ export async function unstampedCargo(exec: Exec, q: { from: Date; to: Date }): P
     clientId: row.client_id,
     clientCode: row.client_code,
     clientName: row.name,
+    currentSellerId: row.sales_manager_id,
+    currentSellerName: row.seller_name,
     receipts: Number(row.receipts),
     kg: round3(row.kg),
     m3: round4(row.m3),

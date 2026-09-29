@@ -46,7 +46,8 @@ export type PayKpiError =
   | 'nothing_to_pay'
   | 'amount_moved'
   | 'kpi_month_refused'
-  | 'month_open';
+  | 'month_open'
+  | 'category_clash';
 
 export class KpiError extends Error {
   constructor(
@@ -60,9 +61,19 @@ export class KpiError extends Error {
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-/** Month `YYYY-MM` is closed once `today` has reached the 1st of the next month + the back-date window. */
+/**
+ * The day month `YYYY-MM` closes: the 1st of the next month + the back-date
+ * window. ONE home for the date the rule and the screen both state — /hodimlar
+ * prints «oy {day} da yopiladi» off this, so the sentence cannot name a day
+ * the payout does not honour (#513).
+ */
+export function kpiCloseDay(month: string): string {
+  return addDays(`${addMonths(month, 1)}-01`, RECEIPT_BACKDATE_DAYS);
+}
+
+/** Month `YYYY-MM` is closed once `today` has reached its close day. */
 export function kpiMonthClosed(month: string, today: string): boolean {
-  return today >= addDays(`${addMonths(month, 1)}-01`, RECEIPT_BACKDATE_DAYS);
+  return today >= kpiCloseDay(month);
 }
 
 /** The newest closed month as of `today`. */
@@ -86,7 +97,13 @@ export interface KpiMonthLine {
   closed: boolean;
 }
 
-function lineFor(
+/**
+ * One seller-month: the engine over ALL the month's cargo, and the paid part
+ * at the month's rate. The ONE sentence /hodimlar's line, the payable netting
+ * and the profile's «Bu oy» share (#513) — the profile passes the paid m³ it
+ * could read in its budget, 0 when it could not, and says so itself.
+ */
+export function lineFor(
   month: string,
   cargo: { receipts: number; m3: number; kg: number; unmeasured: string[] } | undefined,
   version: ReturnType<typeof versionFor>,
@@ -245,6 +262,23 @@ export async function kpiPayableAll(exec: Exec, today: string): Promise<Map<stri
 }
 
 /**
+ * Everybody who could carry a KPI line at all: stamped on any confirmed cargo,
+ * or paid a KPI ever. A cheap read (the stamp's partial index) that /hodimlar
+ * asks BESIDE the budgeted ones, so that when those run out of time the
+ * screen still knows whose card must say «hisoblanmadi» — the failed reads'
+ * own empty answers cannot tell a seller from a warehouse hand.
+ */
+export async function kpiSellerIds(exec: Exec): Promise<Set<string>> {
+  const rows = (await exec.execute(sql`
+    SELECT DISTINCT r.sales_manager_id AS id
+      FROM receipts r
+     WHERE r.status = 'confirmed' AND r.sales_manager_id IS NOT NULL
+    UNION
+    SELECT kp.seller_id FROM kpi_payouts kp`)) as unknown as { id: string }[];
+  return new Set([...rows].map((row) => row.id));
+}
+
+/**
  * Pay a seller their KPI — the whole netted amount through the last closed
  * month, never a typed figure (`payUpsale`'s rule: a typed amount is how a
  * screen says $340 while $200 leaves the till).
@@ -366,6 +400,19 @@ export async function setStaffCategory(
     if (!row) throw new KpiError('not_found');
     // A KPI payout leaves a till every time (U06), as the upsale's does.
     if (key === 'kpi_expense_category_id' && !row.cash) throw new KpiError('non_cash_category');
+    // Three kinds of pay, three kinds of expense. The salary is read as «the
+    // templates in the salary kind» (salary.ts), so a KPI or upsale payout
+    // booked in that kind would sit on the salary line and read as the
+    // month's oylik paid; and the recurring slot has no discriminator beyond
+    // (kind, date, person), so one kind for two presses cancels one of them
+    // (0088's reason for a dedicated upsale kind). The setting's own hint
+    // says «don't pick Oyliklar» — the service refuses it too.
+    const others = (['kpi_expense_category_id', 'salary_expense_category_id', 'upsale_expense_category_id'] as const).filter(
+      (other) => other !== key,
+    );
+    for (const other of others) {
+      if (String((await getSetting(other)) ?? '').trim() === id) throw new KpiError('category_clash');
+    }
   }
   const { setSetting, SETTINGS_AUDIT_ID } = await import('@/modules/platform/settings/service');
   const before = await getSetting(key);

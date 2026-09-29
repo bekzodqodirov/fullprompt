@@ -879,7 +879,8 @@
       "converted": "Oylik shu oy kursi bo‘yicha dollarga o‘girildi.",
       "work": "Mening ishim",
       "workLine": "Prixodlar: {receipts} · muhrlangan hisoblar: {sealed} · «Tayyor» javoblari: {answered}",
-      "advanceHint": "Avans va kompaniyadan qarzingiz — pastdagi «Mening hisobim» blokida."
+      "advanceHint": "Avans va kompaniyadan qarzingiz — pastdagi «{panel}» blokida.",
+      "salaryNotDue": "bu oy hali to‘lanmaydi"
     }
   },
   "receive": {
@@ -4598,7 +4599,7 @@
     "kpiCategoryUnset": "KPI to‘lovi xarajat turi tanlanmagan — KPI to‘lab bo‘lmaydi",
     "kpiCategoryHint": "Alohida, kassadan to‘lanadigan xarajat turi. «Oyliklar» va «Sotuvchi ulushi»ni tanlamang: bir turdagi to‘lov oylik bilan to‘qnashadi.",
     "categoryAsk": "Xarajat turini administrator tanlaydi.",
-    "empty": "Bu oy uchun oylik shabloni ham, yuk ham yo‘q.",
+    "empty": "Hali hech kimga oylik kiritilmagan — hodim kartasidagi ✏️ «Oylik kiritish» orqali qo‘shing.",
     "unstamped": "Sotuvchisiz yuk",
     "unstampedNone": "Bu oyda bunday yuk yo‘q.",
     "unstampedHint": "Qabul paytida mijozning menejeri yo‘q edi. Mijoz kartasida menejer belgilang — bu yuk unga o‘tadi.",
@@ -4656,10 +4657,13 @@
       "grid_duplicate": "ikkita bir xil chegara",
       "grid_no_open_tier": "oxirgi qator «dan ko‘p» bo‘lishi kerak",
       "grid_no_open_band": "oxirgi ustun «dan ko‘p» bo‘lishi kerak",
-      "bad_rate": "stavka noldan kichik bo‘lmagan son bo‘lishi kerak",
-      "bad_bound": "chegara musbat son bo‘lib, o‘sib borishi kerak",
+      "bad_rate": "stavka 0 dan 1 000 000 gacha bo‘lgan son bo‘lishi kerak",
+      "bad_bound": "chegara musbat, o‘sib boruvchi va juda katta bo‘lmagan son bo‘lishi kerak",
       "bad_month": "noto‘g‘ri oy",
-      "kpi_version_paid": "bu oy uchun KPI allaqachon to‘langan — yangi jadval faqat keyingi oydan"
+      "kpi_version_paid": "bu oy uchun KPI allaqachon to‘langan — yangi jadval faqat keyingi oydan",
+      "category_clash": "bu xarajat turi boshqa to‘lov (oylik, KPI yoki upsale) uchun tanlangan — har biriga alohida tur kerak",
+      "before_first_version": "jadval birinchi KPI oyidan oldin boshlana olmaydi",
+      "no_seller": "mijozga sotuvchi belgilanmagan"
     },
     "table": {
       "title": "KPI jadvali",
@@ -4676,7 +4680,14 @@
       "tierTop": "Kubning yuqori chegarasi",
       "rate": "Stavka, 1 m³ uchun $",
       "open": "dan ko‘p",
-      "saveHint": "Yangi jadval tanlangan oydan amal qiladi; eski oylar o‘z jadvali bo‘yicha hisoblanadi. KPI to‘langan oyni o‘zgartirib bo‘lmaydi."
-    }
+      "saveHint": "Yangi jadval tanlangan oydan amal qiladi; eski oylar o‘z jadvali bo‘yicha hisoblanadi. KPI to‘langan oyni o‘zgartirib bo‘lmaydi.",
+      "editBase": "{month} dagi amaldagi jadval asosida"
+    },
+    "kpiFailed": "KPI ajratilgan vaqt ichida hisoblanmadi — bu sahifadagi KPI raqamlari ko‘rsatilmadi. Har bir sotuvchini alohida ochib hisoblang.",
+    "upsaleTruncated": "Bu oyda takliflar juda ko‘p — upsale ustuni to‘liq emas. Sotuvchini alohida oching.",
+    "computeOne": "faqat shu hodimni hisoblash",
+    "salaryNotDue": "— bu oy hali to‘lanmaydi",
+    "salaryMonth": "{month}:",
+    "unstampedRepair": "→ {name} ga o‘tkazish"
   }
 }
