@@ -1,5 +1,27 @@
 # CHANGELOG
 
+## Deploy npm saytiga ulana olmay to'xtadi — tuzatildi — 2026-09-29
+
+Kod o'zgarishi, migratsiya yo'q. Ledger **120** o'zgarmaydi.
+
+`docker compose build migrate` «Corepack is about to download …
+registry.npmjs.org … ConnectTimeoutError» bilan to'xtadi. **Sayt ishlashda
+davom etdi**: yangi versiya qurilmay qolgani uchun eski konteynerlar
+almashtirilmadi.
+
+Sabab: build har safar pnpm dasturini npm saytidan qaytadan yuklab olardi.
+Kod o'zgargan har bir deployda shunday bo'lardi. O'sha kuni serveringiz npm
+saytiga ulana olmadi, shuning uchun build to'xtadi.
+
+1. Endi pnpm oldingi qadamdan olinadi. Faqat kod o'zgargan deploy npm
+   saytiga umuman murojaat qilmaydi.
+2. Yangi kutubxona qo'shilgan deployda npm hali ham kerak bo'ladi. Unda xato
+   chiqsa, nima qilish kerakligi `docs/UPDATE.md` ning 3-qadamida yozilgan.
+
+Tekshirildi Docker'da, npm sayti ataylab yopilgan holda:
+- eski tartib aynan serveringizdagi xato bilan to'xtadi;
+- yangisi xatosiz qurildi.
+
 ## Zavod shtrix-kodi olib tashlandi, zavod yozuvi markirovkaga — 2026-09-29
 
 Kod o'zgarishi, migratsiya yo'q. Ledger **120** o'zgarmaydi. Yangi kod

@@ -2284,3 +2284,23 @@ His words the evening the 0113-0119 deploy went live («Ishladi yahwi hammasi»)
    - It matters more now: a mistyped factory text that begins like a code (`GS457…`) and is voided must not cost a code.
    - Swept `src/` for any other receipt status compared to `'void'`: none.
    - Red-proven.
+
+## The deploy that could not reach npm (2026-09-29; NO migration)
+
+His terminal, deploying PR #104: `docker compose build migrate` died at `[build 3/3] RUN NODE_OPTIONS=--max-old-space-size=3072 pnpm build`. The log read «! Corepack is about to download https://registry.npmjs.org/pnpm/-/pnpm-10.33.0.tgz», then a `ConnectTimeoutError` to 104.16.5.34 / 104.16.7.34. Every earlier layer was CACHED, the deps stage's `pnpm install` included. Production was untouched, because compose builds before it recreates anything.
+
+1228. **The build stage downloaded pnpm itself on every code change.**
+   - **The cause.** The node image carries no pnpm: `corepack enable pnpm` only writes a shim, and corepack downloads the real thing the first time `pnpm` runs. It stores it under the running stage's own `/root/.cache/node/corepack`.
+     - That first run is the deps stage's `pnpm install`.
+     - The build stage started `FROM base`, and `COPY --from=deps /app/node_modules` brought the packages without pnpm. So every rebuild of that stage, meaning every code change, fetched pnpm from registry.npmjs.org again. Build A's log shows the download twice: once in deps, once in build.
+     - It worked for months because the registry answered. Today it did not answer from his server.
+   - **Measured in Docker, with his exact error.** The context was the committed tree. The registry's twelve addresses were dropped with iptables, which gives the same `UND_ERR_CONNECT_TIMEOUT` a container saw.
+     - Build A: the old Dockerfile with the network, which fills the cache the way his earlier deploys had.
+     - Build B: the old Dockerfile, one source file changed, registry blocked. It FAILS in 11 s at `pnpm build` with his exact log, deps CACHED.
+     - Build C: `FROM deps AS build`, same change, registry blocked. It BUILDS with no «Corepack is about to download» line at all.
+   - **What changed.** The build stage is `FROM deps` and drops the `COPY --from=deps` of `node_modules`. It already has both the packages and pnpm, and `.dockerignore` keeps the host's `node_modules` from being copied over them.
+     - `migrate` and `tg-listen` run this stage's image and call `pnpm` at runtime, so they carry pnpm the same way.
+     - The runner stage is untouched.
+     - A code-only deploy now reaches no registry. A lockfile change still needs npm, for the packages themselves, and `docs/UPDATE.md` says what that failure looks like and that the site keeps running meanwhile.
+   - **The fence is derived.** `tests/unit/dockerfile-offline.test.ts` parses the stage graph and demands the install stage among the ancestors of the stage that runs `pnpm build` and of every compose service whose command runs `pnpm`. Red-proven: `FROM base` again turns two of its three tests red.
+   - **The lesson.** #1223's advice was to build `migrate` first so the heavy stage runs once, and that advice carried this network dependency with it unseen. A deploy step that needs the internet is a deploy step that fails on the internet's schedule.
