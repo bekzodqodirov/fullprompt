@@ -72,6 +72,27 @@ export async function registerCalcReviewWorker(boss: PgBoss): Promise<void> {
 }
 
 /**
+ * «Bu prixodlar hisobingizga tegishlimi?» (0119) — every five minutes, and
+ * only 03:00-14:55 UTC = 08:00-19:55 in Tashkent (the owner's open point 2,
+ * built as its default): a question with buttons at 23:00 is a question
+ * answered wrong or not at all. The sweep claims before it sends, so two
+ * overlapping runs split the work.
+ */
+export async function registerCalcLinkAskWorker(boss: PgBoss): Promise<void> {
+  await boss.createQueue(JOB_CALC_LINK_ASK);
+  await boss.schedule(JOB_CALC_LINK_ASK, '*/5 3-14 * * *');
+  await boss.work(JOB_CALC_LINK_ASK, async () => {
+    try {
+      const sent = await sendLinkAsks();
+      if (sent > 0) logger.info({ sent }, 'calc link asks sent');
+    } catch (err) {
+      logger.error({ err }, 'calc link ask sweep failed');
+      throw err;
+    }
+  });
+}
+
+/**
  * The AI VED hodimi's pass, OWNED.
  *
  * It was dispatched with `void` from the staff bot, which polls inside the
@@ -174,25 +195,4 @@ async function writeReplyToLenta(requestId: string, text: string): Promise<void>
     { actorId: null },
     { system: true },
   );
-}
-
-/**
- * «Bu prixodlar hisobingizga tegishlimi?» (0119) — every five minutes, and
- * only 03:00-14:55 UTC = 08:00-19:55 in Tashkent (the owner's open point 2,
- * built as its default): a question with buttons at 23:00 is a question
- * answered wrong or not at all. The sweep claims before it sends, so two
- * overlapping runs split the work.
- */
-export async function registerCalcLinkAskWorker(boss: PgBoss): Promise<void> {
-  await boss.createQueue(JOB_CALC_LINK_ASK);
-  await boss.schedule(JOB_CALC_LINK_ASK, '*/5 3-14 * * *');
-  await boss.work(JOB_CALC_LINK_ASK, async () => {
-    try {
-      const sent = await sendLinkAsks();
-      if (sent > 0) logger.info({ sent }, 'calc link asks sent');
-    } catch (err) {
-      logger.error({ err }, 'calc link ask sweep failed');
-      throw err;
-    }
-  });
 }
