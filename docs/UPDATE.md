@@ -43,10 +43,12 @@ deploy qurish paytida xotira yetmay to'xtagan edi (DECISIONS #1223).
 > `ConnectTimeoutError` bilan to'xtasa** — server npm saytiga ulana olmayapti.
 > Sayt bu paytda eski versiyada ishlab turadi: yangi versiya qurilmaguncha
 > hech bir konteyner almashtirilmaydi. 2026-09-29 dan boshlab faqat kod
-> o'zgargan yangilanish npm'ga umuman murojaat qilmaydi (DECISIONS #1228);
-> bu xato endi faqat yangi kutubxona qo'shilgan (`pnpm-lock.yaml` o'zgargan)
-> yangilanishda chiqishi mumkin. Unda ulanishni tekshiring va bir necha
-> daqiqadan keyin qayta urining:
+> o'zgargan yangilanish npm'ga murojaat qilmaydi (DECISIONS #1228). npm
+> faqat quyidagi hollarda kerak bo'ladi: `package.json` o'zgargan bo'lsa
+> (yangi buyruq qo'shilgani ham hisob), `pnpm-lock.yaml` o'zgargan bo'lsa,
+> Docker Hub'da `node:22-slim` yangilangan bo'lsa yoki build keshi
+> tozalangan bo'lsa. Unda ulanishni tekshiring va bir necha daqiqadan keyin
+> qayta urining:
 > `curl -sS -m 15 -o /dev/null -w '%{http_code}\n' https://registry.npmjs.org/`
 > → `200` chiqsa, qurishni qaytaring.
 

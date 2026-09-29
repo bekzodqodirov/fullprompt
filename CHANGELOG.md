@@ -15,8 +15,14 @@ saytiga ulana olmadi, shuning uchun build to'xtadi.
 
 1. Endi pnpm oldingi qadamdan olinadi. Faqat kod o'zgargan deploy npm
    saytiga umuman murojaat qilmaydi.
-2. Yangi kutubxona qo'shilgan deployda npm hali ham kerak bo'ladi. Unda xato
-   chiqsa, nima qilish kerakligi `docs/UPDATE.md` ning 3-qadamida yozilgan.
+2. Quyidagi hollarda npm hali ham kerak bo'ladi:
+   - `package.json` yoki kutubxonalar ro'yxati (`pnpm-lock.yaml`)
+     o'zgargan bo'lsa (yangi skript qo'shilgani ham hisob);
+   - Docker Hub'da `node:22-slim` yangilangan bo'lsa;
+   - serverda build keshi tozalangan bo'lsa.
+   Unda xato chiqsa, nima qilish kerakligi `docs/UPDATE.md` ning 3-qadamida
+   yozilgan. Bu holatlarni ham npm'siz qiladigan tuzatish keyinga qoldi:
+   uning o'zi birinchi marta npm'ni talab qiladi.
 
 Tekshirildi Docker'da, npm sayti ataylab yopilgan holda:
 - eski tartib aynan serveringizdagi xato bilan to'xtadi;

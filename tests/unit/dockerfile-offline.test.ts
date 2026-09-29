@@ -2,7 +2,9 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 /**
- * A code-only deploy reaches no package registry (DECISIONS #1228).
+ * A code-only deploy reaches no package registry while the deps layer is
+ * cached (DECISIONS #1228 — a package.json edit, a new node:22-slim digest or
+ * a pruned cache still rebuilds deps, and the install needs npm).
  *
  * `pnpm` is not in the node image: corepack downloads it from
  * registry.npmjs.org the first time it runs, into the stage's own
@@ -59,6 +61,16 @@ describe('the image build needs no registry for a code change', () => {
 
   it('builds on top of the install, where corepack left pnpm', () => {
     expect(ancestry(all, build!.name)).toContain(install!.name);
+  });
+
+  it('keeps the source tree out of the install, so a code change leaves it cached', () => {
+    // The install stage and everything under it copy only the manifests: a
+    // `COPY . .` there would put every source edit into the install's cache
+    // key and send each deploy back to the registry.
+    for (const name of ancestry(all, install!.name)) {
+      const stage = all.find((s) => s.name === name);
+      expect(stage?.body ?? '', name).not.toMatch(/^COPY\s+\.\s/m);
+    }
   });
 
   it('every compose service that runs pnpm runs it in a stage that has it', () => {

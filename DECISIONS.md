@@ -2301,6 +2301,16 @@ His terminal, deploying PR #104: `docker compose build migrate` died at `[build 
    - **What changed.** The build stage is `FROM deps` and drops the `COPY --from=deps` of `node_modules`. It already has both the packages and pnpm, and `.dockerignore` keeps the host's `node_modules` from being copied over them.
      - `migrate` and `tg-listen` run this stage's image and call `pnpm` at runtime, so they carry pnpm the same way.
      - The runner stage is untouched.
-     - A code-only deploy now reaches no registry. A lockfile change still needs npm, for the packages themselves, and `docs/UPDATE.md` says what that failure looks like and that the site keeps running meanwhile.
+     - A deploy that finds the deps layer cached now reaches no registry.
+     - **The layer is not always cached — corrected by the review before merge.** The first wording said «only a lockfile change still needs npm», and that was false. The install still needs registry.npmjs.org, for pnpm and every package, whenever the deps layer rebuilds:
+       - `package.json` changed. This happens routinely: all 8 of its changes since the lockfile last moved were script lines.
+       - `pnpm-lock.yaml` or `pnpm-workspace.yaml` changed.
+       - `node:22-slim` resolves to a new digest. On Docker's containerd image store, the default for fresh Docker 29 installs, which `ops/bootstrap.sh` gets from get.docker.com, BuildKit asks Docker Hub first and falls back to the local copy only on an error.
+       - The build cache was pruned.
+     - `docs/UPDATE.md` names all four, says what the failure looks like, and says the site keeps running meanwhile.
+     - **Deliberately NOT done in this release.** Both hardenings are one-time deps rebuilds. Today's deploy exists precisely because npm is unreachable from his server, so a rebuild now would sink it again.
+       - A manifest stage that strips `scripts` and `description` before the install, so a script-only edit leaves the deps layer cached. `--frozen-lockfile` compares dependency fields only.
+       - Pinning `node:22-slim` to a digest.
+       - Both are owed for a deploy made while npm answers.
    - **The fence is derived.** `tests/unit/dockerfile-offline.test.ts` parses the stage graph and demands the install stage among the ancestors of the stage that runs `pnpm build` and of every compose service whose command runs `pnpm`. Red-proven: `FROM base` again turns two of its three tests red.
    - **The lesson.** #1223's advice was to build `migrate` first so the heavy stage runs once, and that advice carried this network dependency with it unseen. A deploy step that needs the internet is a deploy step that fails on the internet's schedule.

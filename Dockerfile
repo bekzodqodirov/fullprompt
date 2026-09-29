@@ -11,10 +11,14 @@ RUN pnpm install --frozen-lockfile
 # stage's install. A build stage started from `base` has no copy, so every
 # code change fetched pnpm from registry.npmjs.org again, and the 2026-09-29
 # deploy died on that one fetch (a connect timeout from the server) with
-# nothing of ours changed (DECISIONS #1228). From deps, a code-only deploy
-# reaches no registry at all; only a lockfile change still needs npm, for the
-# packages themselves. `.dockerignore` keeps the host's node_modules out, so
-# `COPY . .` does not replace the installed ones.
+# nothing of ours changed (DECISIONS #1228). From deps, a deploy that finds
+# the deps layer cached fetches nothing from npm. The layer is NOT cached — and
+# the install needs registry.npmjs.org, for pnpm and every package — when
+# package.json (a new script counts), pnpm-lock.yaml or pnpm-workspace.yaml
+# changed, when node:22-slim resolves to a new digest (Docker's containerd
+# image store asks Docker Hub first), or when the build cache was pruned.
+# `.dockerignore` keeps the host's node_modules out, so `COPY . .` does not
+# replace the installed ones.
 FROM deps AS build
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
