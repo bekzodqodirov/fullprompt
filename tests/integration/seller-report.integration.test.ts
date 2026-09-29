@@ -29,6 +29,8 @@ let sellerB = '';
 let clientA = '';
 let clientB = '';
 let clientNobody = '';
+/** Booked to B, but its only prixod was received while nobody was its seller. */
+let clientStampless = '';
 let whId = '';
 const madeClients: string[] = [];
 const madeReceipts: string[] = [];
@@ -131,6 +133,7 @@ beforeAll(async () => {
   clientA = await client(`SRA${SUFFIX}`.slice(0, 10), sellerA);
   clientB = await client(`SRB${SUFFIX}`.slice(0, 10), sellerB);
   clientNobody = await client(`SRN${SUFFIX}`.slice(0, 10), null);
+  clientStampless = await client(`SRS${SUFFIX}`.slice(0, 10), sellerB);
 
   // Revenue: A charged twice (one on the period's LAST day — the inclusive
   // boundary), B once, the unassigned client once, and one VOIDED charge
@@ -141,6 +144,7 @@ beforeAll(async () => {
   await charge(clientA, '777', '2019-02-11', true);
   await charge(clientB, '200', '2019-02-15');
   await charge(clientNobody, '40', '2019-02-20');
+  await charge(clientStampless, '25', '2019-02-12');
 
   // Cargo: A received one confirmed prixod inside the period, one VOIDED one
   // (voidReceipt keeps received_at — the status is the liveness), and the
@@ -148,6 +152,8 @@ beforeAll(async () => {
   await received(clientA, '2019-02-05T10:00:00Z', '120', '1.5', { stamp: sellerA });
   await received(clientA, '2019-02-06T10:00:00Z', '500', '9', { voided: true, stamp: sellerA });
   await received(clientNobody, '2019-02-07T10:00:00Z', '30', '0.4', { stamp: null });
+  // Received with no seller named, before the client was booked to B.
+  await received(clientStampless, '2019-02-03T10:00:00Z', '10', '0.1', { stamp: null });
 });
 
 afterAll(async () => {
@@ -221,11 +227,16 @@ describe('the seller’s own card (scope own)', () => {
 });
 
 describe('the money follows the stamp (4a)', () => {
-  it('a card price follows the client’s latest prixod, and only a client with none follows the book', async () => {
-    // Every charge here names no truck and no job, so each is the fallback:
-    // clientA's 100 + 50 → the newest CONFIRMED prixod by that day (02-05,
-    // stamped A — the voided 02-06 one is not confirmed); clientB has no
-    // prixod → its book, B; clientNobody → its 02-07 prixod stamped nobody.
+  it('a card price follows the client’s latest prixod — even one stamped nobody — and only a client with none follows the book', async () => {
+    // Every charge here names no truck and no job, so each is the fallback.
+    // What the assertions prove:
+    //  - clientA's 100 + 50 land on A through its newest CONFIRMED prixod by
+    //    that day (02-05, stamped A; the voided 02-06 one is not confirmed);
+    //  - clientB has no prixod at all, so ONLY there does the book (B) answer;
+    //  - clientStampless is booked to B, but its only prixod by 02-12 was
+    //    stamped nobody: its price is the «—» row's through that prixod, and
+    //    the book is NOT asked (a NULL stamp is an answer, not a miss);
+    //  - clientNobody's 40 is «—» through its 02-07 prixod stamped nobody.
     const mine = new Set(madeClients);
     const rows = (await revenueByStamp(db, PERIOD, { kind: 'all' })).rows.filter((r) => mine.has(r.clientId));
     const find = (clientId: string, sellerId: string | null) =>
@@ -233,7 +244,9 @@ describe('the money follows the stamp (4a)', () => {
     expect(find(clientA, sellerA)).toMatchObject({ cents: 15000, unlinkedCents: 15000, splitCents: 0 });
     expect(find(clientB, sellerB)).toMatchObject({ cents: 20000, unlinkedCents: 20000, splitCents: 0 });
     expect(find(clientNobody, null)).toMatchObject({ cents: 4000, unlinkedCents: 4000, splitCents: 0 });
-    expect(rows).toHaveLength(3);
+    expect(find(clientStampless, null)).toMatchObject({ cents: 2500, unlinkedCents: 2500, splitCents: 0 });
+    expect(find(clientStampless, sellerB)).toBeUndefined();
+    expect(rows).toHaveLength(4);
 
     // Moving clientA to B moves none of A's money: every one of its prices had
     // a prixod by its day, and that prixod carries A's stamp (his «a»).

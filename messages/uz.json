@@ -3981,6 +3981,7 @@
     "cargoByStamp": "Yuk va prixodlar — qabul kuni prixodga yozilgan sotuvchi bo‘yicha",
     "moneyByStamp": "pul va foyda ham shunday: narx qaysi yuk uchun qo‘yilgan bo‘lsa, o‘sha prixodning sotuvchisiga",
     "clientsByBook": "«Mijozlar» ustuni — mijozning hozirgi menejeri bo‘yicha",
+    "ownAttribution": "Summangiz — prixod kelgan kundagi sotuvchi bo‘yicha.",
     "nobodyRow": "«—» qatori — sotuvchisiz qabul qilingan yuk va uning puli, hamda hali prixodi ham, sotuvchisi ham yo‘q mijozlarning narxlari. Mijozga birinchi sotuvchi belgilansa, o‘sha yuk va puli unga o‘tadi.",
     "unlinked": "{n} ta narx ({usd}) qaysi yuk uchunligi ko‘rinmaydi — mijoz hisobida partiyasiz qo‘yilgan narx, yuki o‘sha mashinada ketmagan narx yoki prixodi hali yo‘q bitim narxi. Ular mijozning o‘sha kungacha kelgan oxirgi prixodi sotuvchisiga yozildi (prixodi umuman bo‘lmasa — hozirgi menejeriga). Buxgalter narxni mijoz hisobidagi «🚚 Ko‘chirish» bilan yuk ketgan mashinaga o‘tkazsa, o‘sha yuk sotuvchisiga o‘tadi.",
     "split": "{n} ta narx ({usd}) bir necha sotuvchining yukiga qo‘yilgan — kub bo‘yicha bo‘lindi (biror karobkada kub bo‘lmasa kg, u ham bo‘lmasa karobka soni bo‘yicha).",

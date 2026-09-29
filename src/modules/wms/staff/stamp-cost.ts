@@ -61,6 +61,7 @@ export async function costByStamp(exec: Exec, period: { dan: string; gacha: stri
     for (const p of roundPreservingTotal(parts, target)) out.push({ clientId, sellerId: p.sellerId, cents: p.cents });
   }
   // Client, then seller with the «—» last — deterministic, like foldParts.
-  const key = (row: StampCostRow) => `${row.clientId}|${row.sellerId ?? '￿'}`;
+  // '\uffff' is the highest BMP code unit, so a NULL seller sorts after every uuid.
+  const key = (row: StampCostRow) => `${row.clientId}|${row.sellerId ?? '\uffff'}`;
   return out.sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
 }

@@ -170,6 +170,12 @@ export async function revenueByStamp(
         );
 
   // C — the job prixods of the period's deal-only prices, over their non-void cartons.
+  // No date bound, on purpose: the price is on THAT job's cargo, so the job's
+  // own cargo wins whenever it exists. A deal price typed before its first
+  // prixod falls back to the client's latest prixod (D) until the job's cargo
+  // arrives — and then moves to that cargo's seller by itself, past months
+  // included (stated to the owner: «bitim yuki kelganda o'sha yukning
+  // sotuvchisiga o'tadi»).
   const deals = [
     ...new Set(
       rows.filter((r) => r.receiptId === null && r.batchId === null && r.dealId !== null).map((r) => r.dealId!),

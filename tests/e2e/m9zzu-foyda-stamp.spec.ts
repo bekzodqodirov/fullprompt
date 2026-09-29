@@ -73,10 +73,12 @@ test('the owner reads the stamp sentence and both figures', async ({ page }) => 
     const table = page.getByTestId('seller-table');
     await expect(table).toBeVisible();
     // The stamp holder of a client whose book is Dilnoza, with no cargo of
-    // Admin Demo received in the period: money that only the stamp can bring.
+    // Admin Demo received in the period: money that only the stamp can bring —
+    // his 2 m³ of the $90 truck price (2:1 by m³), measured by the fixture
+    // probe. The book would have put all $130 on Dilnoza and $0 here.
     const admin = table.locator('tbody tr', { hasText: 'Admin Demo' });
     await expect(admin).toHaveCount(1);
-    await expect(admin.locator('td').nth(4)).not.toHaveText('$0.00');
+    await expect(admin.getByTestId('seller-revenue')).toHaveText('$60.00');
     await expect(page.getByTestId('seller-split')).toBeVisible();
     await expect(page.getByTestId('seller-unlinked')).toBeVisible();
     await fitsViewport(page);
@@ -87,6 +89,9 @@ test('the seller reads her own card, which carries no profit and no figures', as
   await login(page, BOOK);
   await page.goto(PERIOD);
   await expect(page.getByTestId('seller-own')).toBeVisible();
+  // Her own line about her own sum — never the whole table's sentence.
+  await expect(page.getByTestId('seller-attribution-own')).toBeVisible();
+  await expect(page.getByTestId('seller-attribution')).toHaveCount(0);
   await expect(page.getByTestId('seller-table')).toHaveCount(0);
   await expect(page.getByTestId('seller-split')).toHaveCount(0);
   await expect(page.getByTestId('seller-unlinked')).toHaveCount(0);
@@ -102,10 +107,12 @@ test('the dashboard card says where the profit goes, and its link opens the card
   const link = page.getByTestId('dash-staff-profit-report');
   const href = await link.getAttribute('href');
   expect(href).toMatch(/^\/reports\/sotuvchilar\?dan=\d{4}-\d{2}-\d{2}&gacha=\d{4}-\d{2}-\d{2}$/);
-  const dan = /dan=(\d{4}-\d{2}-\d{2})/.exec(href!)![1]!;
+  const [, dan, gacha] = /dan=(\d{4}-\d{2}-\d{2})&gacha=(\d{4}-\d{2}-\d{2})/.exec(href!)!;
   await link.click();
   await expect(page).toHaveURL(/\/reports\/sotuvchilar\?dan=/);
-  await expect(page.getByTestId('seller-period').locator('input[name="dan"]')).toHaveValue(dan);
+  const form = page.getByTestId('seller-period');
+  await expect(form.locator('input[name="dan"]')).toHaveValue(dan!);
+  await expect(form.locator('input[name="gacha"]')).toHaveValue(gacha!);
 });
 
 test('cleanup: nothing the spec minted is left behind', async () => {

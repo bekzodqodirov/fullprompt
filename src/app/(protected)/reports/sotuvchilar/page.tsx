@@ -73,10 +73,18 @@ export default async function SellerReportPage({
       {/* One attribution for the cargo AND the money (0117, his 4a): the
           receipt's own seller stamp. Only the «Mijozlar» column is the client
           book — so the page says which is which rather than let one row look
-          like one fact. */}
-      <p className="text-2xs text-ink-500" data-testid="seller-attribution">
-        {t('cargoByStamp')}; {t('moneyByStamp')}; {t('clientsByBook')}.
-      </p>
+          like one fact. The full sentence describes the whole table (its
+          «—» row, its unlinked and split lines); the seller's own card shows
+          none of those, so it gets one line about its own sum. */}
+      {scope === 'all' ? (
+        <p className="text-2xs text-ink-500" data-testid="seller-attribution">
+          {t('cargoByStamp')}; {t('moneyByStamp')}; {t('clientsByBook')}.
+        </p>
+      ) : (
+        <p className="text-2xs text-ink-500" data-testid="seller-attribution-own">
+          {t('ownAttribution')}
+        </p>
+      )}
 
       <form className="card flex flex-wrap items-end gap-2 !p-3" data-testid="seller-period">
         <label className="text-2xs">
@@ -165,7 +173,9 @@ export default async function SellerReportPage({
                     <td className="p-2 text-right font-mono tabular-nums">{row.clients}</td>
                     <td className="p-2 text-right font-mono tabular-nums">{row.receipts}</td>
                     <td className="p-2 text-right font-mono tabular-nums">{size(row)}</td>
-                    <td className="p-2 text-right font-mono tabular-nums">{money(row.revenueUsd)}</td>
+                    <td className="p-2 text-right font-mono tabular-nums" data-testid="seller-revenue">
+                      {money(row.revenueUsd)}
+                    </td>
                     <td
                       className={`p-2 text-right font-mono font-semibold tabular-nums ${row.profitUsd < 0 ? 'text-bad' : ''}`}
                     >

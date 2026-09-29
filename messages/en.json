@@ -3981,9 +3981,10 @@
     "cargoByStamp": "Cargo and receipts follow the seller stamped on the receipt the day it was received",
     "moneyByStamp": "money and profit the same way: a price goes to the seller of the receipt whose cargo it was charged for",
     "clientsByBook": "the «Clients» column follows the client’s current manager",
+    "ownAttribution": "Your total follows the seller on the day each receipt arrived.",
     "nobodyRow": "The «—» row is cargo received with no seller and its money, plus prices of clients who have neither a receipt nor a seller yet. When a client gets its first seller, that cargo and its money move to them.",
-    "unlinked": "{n} prices ({usd}) name no cargo we can see — prices set on a client’s ledger with no truck, prices on a truck the client’s cargo did not ride, or a deal’s price before its first receipt. They went to the seller of the client’s latest receipt by that day (to the current manager when there is none). When the accountant moves such a price with «🚚 Move» on the client’s ledger to the truck the cargo rode, it goes to that cargo’s seller.",
-    "split": "{n} prices ({usd}) covered cargo of several sellers and were split by m³ (by kg when some carton has no m³, by carton count when some has no kg either).",
+    "unlinked": "Prices naming no cargo: {n} ({usd}) — prices set on a client’s ledger with no truck, prices on a truck the client’s cargo did not ride, or a deal’s price before its first receipt. They went to the seller of the client’s latest receipt by that day (to the current manager when there is none). When the accountant moves such a price with «🚚 Move» on the client’s ledger to the truck the cargo rode, it goes to that cargo’s seller.",
+    "split": "Prices over several sellers’ cargo: {n} ({usd}) — split by m³ (by kg when some carton has no m³, by carton count when some has no kg either).",
     "inactive": "inactive"
   },
   "annul": {

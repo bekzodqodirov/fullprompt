@@ -54,6 +54,14 @@ describe('one attribution for the seller’s money (4a)', () => {
     expect(code('src/modules/wms/staff/seller-profit.ts')).toMatch(/sellerPerformanceAll\(/);
   });
 
+  it('the full attribution sentence is the full table’s; the own card reads one line of its own', () => {
+    // The sentence names the «—» row and the unlinked / split lines — figures
+    // only the full table carries — so a seller's own card must not print it.
+    const page = code('src/app/(protected)/reports/sotuvchilar/page.tsx');
+    expect(page).toMatch(/\{scope === 'all' \? \(\s*<p[^>]*data-testid="seller-attribution"/);
+    expect(page).toMatch(/data-testid="seller-attribution-own"[^>]*>\s*\{t\('ownAttribution'\)\}/);
+  });
+
   it('the «—» row is explained whenever it carries a figure', () => {
     const page = code('src/app/(protected)/reports/sotuvchilar/page.tsx');
     expect(page).toContain('const nobodyShown = nobody !== undefined &&');

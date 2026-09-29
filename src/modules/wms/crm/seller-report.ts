@@ -41,8 +41,8 @@ import { revenueByStamp } from '../staff/stamp-revenue';
  *    money ACCESS (round 91): access is not attribution.
  * It is a DIFFERENT clock from tahlil's sellers table on purpose: tahlil
  * counts leads won by `leads.owner_id` at QUOTED money, this screen counts a
- * manager's clients at CHARGED money and received cargo — the funnel's
- * promise vs the ledger's fact.
+ * seller's stamped cargo and the CHARGED money priced on it (only «Mijozlar»
+ * is the book) — the funnel's promise vs the ledger's fact.
  *
  * Two period vocabularies meet here and are converted ONCE: `readPeriod`'s
  * `dan`/`gacha` are the INCLUSIVE day strings the money readers expect
