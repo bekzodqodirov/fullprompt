@@ -481,6 +481,21 @@ async function VedFlow({ flow }: { flow: VedFlowCounts }) {
           count={flow.tnvedMissing}
           sub={null}
         />
+        {/* «Tasdiqlash kerak» (0119): the guesses on this person's seals,
+            drawn only when there are some — the control screen has its own
+            door from /hisoblash, so a quiet row here would be noise, and the
+            href is not in the flow's `hrefs` (no tile is suppressed by it). */}
+        {flow.calcLinksPending > 0 && (
+          <FlowRow
+            href="/hisoblash/nazorat"
+            icon="check"
+            testid="ved-flow-links"
+            label={t('flowCalcLinks')}
+            count={flow.calcLinksPending}
+            warn
+            sub={null}
+          />
+        )}
       </div>
     </Section>
   );

@@ -32,6 +32,7 @@ import {
   parseCallback,
   escapesIntake,
   settlePressedApproval,
+  settleLinkAskRow,
   staffByPhone,
   staffForChat,
   takeStaffEntry,
@@ -375,6 +376,45 @@ export function registerStaffBot(bot: Bot): void {
               ? `📞 Bog‘lanildi — ${by}`
               : '📞 Bog‘lanildi',
         ).catch((err: unknown) => logger.warn({ err }, 'lead press not settled'));
+      }
+      return;
+    }
+
+    // ✅/❌ on a calc↔prixod guess (0119). BEFORE the approval guard (#939),
+    // the decision in wms by dynamic import, the settle off the poller (#706).
+    if (parsed.kind === 'calc_link') {
+      const { decideLinkFromBot } = await import('../../wms/calc/link-bot');
+      const outcome = await decideLinkFromBot(chatId, parsed.receiptId, parsed.requestPrefix, parsed.verdict);
+      // Record<union>: an outcome nobody wrote words for is a compile error,
+      // not an empty spinner on the phone.
+      const answers: Record<typeof outcome, string> = {
+        confirmed: '✅ Tasdiqlandi',
+        dropped: '❌ Olib tashlandi',
+        already: 'Allaqachon hal qilingan',
+        changed: 'Bu prixod o‘zgargan — Hisob nazoratini oching',
+        not_mine: 'Bu hisob sizniki emas',
+        request_foreign: 'Boshqa mijozning hisobi',
+        not_linked: 'Ulanmagan',
+        forbidden: 'Huquqingiz yo‘q',
+      };
+      await ctx.answerCallbackQuery({ text: answers[outcome] });
+      const pressed = ctx.callbackQuery.message;
+      if (
+        (outcome === 'confirmed' || outcome === 'dropped' || outcome === 'already' || outcome === 'changed') &&
+        pressed &&
+        'text' in pressed &&
+        pressed.text
+      ) {
+        void settleLinkAskRow(
+          chatId,
+          {
+            messageId: pressed.message_id,
+            text: pressed.text,
+            markup: 'reply_markup' in pressed ? pressed.reply_markup : undefined,
+          },
+          ctx.callbackQuery.data,
+          answers[outcome],
+        ).catch((err: unknown) => logger.warn({ err }, 'calc link press not settled'));
       }
       return;
     }

@@ -277,7 +277,13 @@ export type BotCallback =
   | { kind: 'calc'; step: CalcStep }
   | { kind: 'note'; step: NoteStep; noteId?: string; page?: number }
   /** «📞 Bog'landim» under an advert lead's push (0113). */
-  | { kind: 'lead_contacted'; leadId: string };
+  | { kind: 'lead_contacted'; leadId: string }
+  /**
+   * ✅/❌ on a calc↔prixod guess (0119). `requestPrefix` is the first 8 hex
+   * of the request the message named, so a press can never land on a
+   * calculation the message did not show.
+   */
+  | { kind: 'calc_link'; receiptId: string; requestPrefix: string; verdict: 'confirm' | 'drop' };
 
 /**
  * The zametka buttons. `send` is a note id; the rest are the capture's own
@@ -405,6 +411,17 @@ export function parseCallback(data: string): BotCallback | null {
   // none of the cabinet's own three (`lang:`, `ph:`, `mg`).
   const contacted = /^lc:([0-9a-f-]{36})$/.exec(data);
   if (contacted) return { kind: 'lead_contacted', leadId: contacted[1]! };
+  // 0119: the VED's answer about one guess. `cl:` collides with nothing —
+  // `c:` is anchored to one word, and `lc:` starts with its own letter.
+  const calcLink = /^cl:([01]):([0-9a-f-]{36}):([0-9a-f]{8})$/.exec(data);
+  if (calcLink) {
+    return {
+      kind: 'calc_link',
+      receiptId: calcLink[2]!,
+      requestPrefix: calcLink[3]!,
+      verdict: calcLink[1] === '1' ? 'confirm' : 'drop',
+    };
+  }
   const approval = /^a:([01]):([0-9a-f-]{36})$/.exec(data);
   if (approval) {
     return {
@@ -446,7 +463,52 @@ export function buttonsFor(
   if (type === 'TasksDue' && Array.isArray(payload.tasks)) {
     return dayButtons(payload.tasks as DayTask[]);
   }
+  // 0119: one row per prixod the VED is asked about, ✅ with its number, ❌
+  // beside it. Only rows the parser will accept are drawn — an unparsed
+  // callback is answered by nobody and spins for fifteen seconds (#939).
+  if (type === 'CalcLinkAsk' && Array.isArray(payload.asks)) {
+    const rows = (payload.asks as { receiptId?: unknown; req8?: unknown; number?: unknown }[])
+      .filter(
+        (ask): ask is { receiptId: string; req8: string; number?: unknown } =>
+          typeof ask.receiptId === 'string' &&
+          /^[0-9a-f-]{36}$/.test(ask.receiptId) &&
+          typeof ask.req8 === 'string' &&
+          /^[0-9a-f]{8}$/.test(ask.req8),
+      )
+      .slice(0, LINK_ASK_BUTTONS)
+      .map((ask) => [
+        {
+          text: `✅ ${typeof ask.number === 'string' && ask.number ? ask.number : 'Prixod'}`.slice(0, 40),
+          callback_data: `cl:1:${ask.receiptId}:${ask.req8}`,
+        },
+        { text: '❌', callback_data: `cl:0:${ask.receiptId}:${ask.req8}` },
+      ]);
+    return rows.length > 0 ? rows : null;
+  }
   return null;
+}
+
+/** How many prixods one «Bu prixodlar hisobingizga tegishlimi?» carries buttons for. */
+export const LINK_ASK_BUTTONS = 5;
+
+/**
+ * Settle one row of a «tegishlimi?» message (0119): the text keeps what it
+ * said and gains the answer; the pressed row goes, every other row and any
+ * link row stay — `withoutCallback` takes out exactly the row it names.
+ */
+export async function settleLinkAskRow(
+  chatId: bigint,
+  origin: { messageId: number; text: string; markup: unknown },
+  data: string,
+  line: string,
+): Promise<void> {
+  const res = await editText({
+    chatId,
+    messageId: origin.messageId,
+    html: appendLine(staffTextHtml(origin.text, 'CalcLinkAsk'), line),
+    replyMarkup: keyboardOf(withoutCallback(origin.markup, data)),
+  });
+  if (!res.ok) logger.warn({ description: res.description }, 'calc link ask not updated');
 }
 
 /** A task a day list offers to close — its id and the words on the button. */
