@@ -153,6 +153,33 @@ describe('truckRow — one truck, one honest row', () => {
     expect(row.pinDays).toBe(1);
   });
 
+  it('a Horgos truck is on the road with a date, and its Kazakh pin survives', () => {
+    // Before the Horgos round HOR → TAS1 was a generic straight line
+    // («no_schedule»), and the card's three-key list dropped every `in_kz`.
+    const row = truckRow(
+      input({
+        originCode: 'HOR',
+        originName: 'Horgos',
+        departedAt: ago(100),
+        trackingCheckpoint: { key: 'in_kz', at: ago(5).toISOString() },
+      }),
+      NOW,
+      TODAY,
+      {},
+    );
+    expect(row.kind).toBe('on_road');
+    expect(row.checkpoint).toEqual({ key: 'in_kz', at: ago(5).toISOString() });
+    expect(row.eta).not.toBeNull();
+    // …while a Kyrgyz pin left on the same Kazakh road is no position.
+    const stray = truckRow(
+      input({ originCode: 'HOR', departedAt: ago(100), trackingCheckpoint: { key: 'in_kg', at: ago(5).toISOString() } }),
+      NOW,
+      TODAY,
+      {},
+    );
+    expect(stray.checkpoint).toBeNull();
+  });
+
   it('a pin with a key the batch card never writes is not a checkpoint', () => {
     const row = truckRow(input({ trackingCheckpoint: { key: 'somewhere', at: ago(5).toISOString() } }), NOW, TODAY, {});
     expect(row.checkpoint).toBeNull();

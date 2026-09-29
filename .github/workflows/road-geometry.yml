@@ -1,0 +1,39 @@
+name: road-geometry
+
+# The corridor's stored road (src/modules/wms/tracking/road-geometry.ts) is
+# fetched ONCE from a public router and committed (round 109). The dev
+# container cannot reach the router and the production image carries no
+# source, so the runner is where it can happen: press «Run workflow», name the
+# legs (or leave empty for all), download the artifact, and commit it only
+# after tests/unit/route-shape.test.ts passes with the new legs' ENDS entries
+# and /map has been LOOKED at (the Horgos round's legs: yw_hor, gz_hor,
+# uch_hor, nzl_yal, yal_tas). Until then the hand-drawn town chains draw —
+# degraded, never missing.
+on:
+  workflow_dispatch:
+    inputs:
+      only:
+        description: 'Legs to fetch, comma-separated (empty = every leg)'
+        required: false
+        default: 'yw_hor,gz_hor,uch_hor,nzl_yal,yal_tas'
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # The script imports nothing but node:fs and the global fetch, so no
+      # install step: a dependency tree to download is a way for this job to
+      # fail that has nothing to do with roads.
+      - name: Fetch the road geometry
+        env:
+          ONLY: ${{ inputs.only }}
+        run: node scripts/fetch-road-geometry.mjs --only "$ONLY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: road-geometry
+          path: src/modules/wms/tracking/road-geometry.ts

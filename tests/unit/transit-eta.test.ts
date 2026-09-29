@@ -53,6 +53,26 @@ describe('scheduleEstimate — the owner’s own corridor timings', () => {
     expect(unpinned.est.overdue).toBe(true);
   });
 
+  it('a Horgos truck 30 h out is in the Khorgos queue, and the typed queue moves its date', () => {
+    // The Horgos round: the road through Kazakhstan has a schedule now
+    // («Marshrut jadvali yo'q» no more), and its queue is the logist's number.
+    const usual = scheduleEstimate('HOR', 'TAS1', ago(30), null, {}, NOW)!;
+    expect(usual.est.segKey).toBe('border_wait');
+    const shorter = scheduleEstimate(
+      'HOR',
+      'TAS1',
+      ago(30),
+      null,
+      { khorgos: { hours: [36, 48], sinceMs: NOW.getTime() } },
+      NOW,
+    )!;
+    expect(shorter.est.segKey).toBe('border_wait');
+    // A shorter queue is an earlier date — for the customer, the map and the
+    // dashboard alike, since they all ask this one function.
+    expect(shorter.est.remainingHours[0]).toBeLessThan(usual.est.remainingHours[0]);
+    expect(shorter.est.remainingHours[1]).toBeLessThan(usual.est.remainingHours[1]);
+  });
+
   it('a pin inside Uzbekistan leaves only the last leg', () => {
     const s = scheduleEstimate('KA', 'TAS1', ago(300), { key: 'in_uz', at: ago(2).toISOString() }, {}, NOW)!;
     expect(s.est.segKey).toBe('uz');
@@ -72,6 +92,8 @@ describe('a generic route is no schedule (round B, O14)', () => {
     ['TAS1', 'TAS2'],
     ['KA', 'YW'],
     ['TAS1', 'YW'],
+    // Nobody described Kashgar ↔ Horgos (the Horgos round keeps it generic).
+    ['KA', 'HOR'],
   ] as const;
   const OWNERS = [
     ['YW', 'KA'],
@@ -84,6 +106,12 @@ describe('a generic route is no schedule (round B, O14)', () => {
     ['GZ', 'AND'],
     ['AND', 'TAS1'],
     ['AND', 'TAS2'],
+    ['YW', 'HOR'],
+    ['GZ', 'HOR'],
+    ['UCH', 'HOR'],
+    ['HOR', 'TAS1'],
+    ['HOR', 'TAS2'],
+    ['HOR', 'AND'],
   ] as const;
 
   it('knows the fallback from the routes the owner described', () => {
