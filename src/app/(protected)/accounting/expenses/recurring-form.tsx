@@ -26,6 +26,8 @@ export function RecurringForm({
   currencies,
   partners,
   today,
+  lockedEmployeeId,
+  defaultCategoryId,
 }: {
   categories: CategoryOption[];
   accounts: Option[];
@@ -35,6 +37,14 @@ export function RecurringForm({
   partners: Option[];
   /** Tashkent's day, `YYYY-MM-DD` — the «Birinchi to'lov» default reads it. */
   today: string;
+  /**
+   * /hodimlar's salary ✏️ (0117): the person is the card's, never a choice —
+   * re-posted as a hidden input (#171), so the template cannot land on
+   * somebody else.
+   */
+  lockedEmployeeId?: string;
+  /** The salary category, preselected (still a choice: a person may be paid a bonus kind too). */
+  defaultCategoryId?: string;
 }) {
   const t = useTranslations('accounting');
   const tc = useTranslations('common');
@@ -46,7 +56,9 @@ export function RecurringForm({
   // takes the till away, the expense form's own rule.
   const [partnerId, setPartnerId] = useState('');
   // A non-cash kind names no kassa and no payer (U06) — the expense form's rule.
-  const [categoryId, setCategoryId] = useState(categories[0]?.id ?? '');
+  const [categoryId, setCategoryId] = useState(
+    categories.some((option) => option.id === defaultCategoryId) ? defaultCategoryId! : (categories[0]?.id ?? ''),
+  );
   const bookEntry = categories.find((option) => option.id === categoryId)?.cash === false;
   // «Birinchi to'lov» (G10): until the person touches it, it follows the
   // typed day — a payday already past this month starts next month, so a
@@ -157,14 +169,18 @@ export function RecurringForm({
             </option>
           ))}
         </select>
-        <select name="employeeId" aria-label={t('employee')} className="input min-w-36 flex-1">
-          <option value="">— {t('employee')} —</option>
-          {employees.map((option) => (
-            <option key={option.id} value={option.id}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+        {lockedEmployeeId ? (
+          <input type="hidden" name="employeeId" value={lockedEmployeeId} />
+        ) : (
+          <select name="employeeId" aria-label={t('employee')} className="input min-w-36 flex-1">
+            <option value="">— {t('employee')} —</option>
+            {employees.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
       {bookEntry && <p className="text-xs text-ink-500">{t('nonCashHint')}</p>}
       <input name="note" placeholder={t('note')} aria-label={t('note')} className="input" />

@@ -19,6 +19,8 @@ import { ExpenseRequestFold } from '../receive/expense-request-fold';
 import { myExpenseRequests, reporterWarehouses } from '@/modules/wms/accounting/expense-requests';
 import { staffAccountView } from '@/modules/wms/partners/staff-account';
 import { StaffAccountPanel } from './staff-account-panel';
+import { myMonth } from '@/modules/wms/staff/my-month';
+import { MyMonthPanel } from './my-month-panel';
 import { Icon } from '@/components/ui/icon';
 
 export default async function ProfilePage() {
@@ -79,6 +81,10 @@ export default async function ProfilePage() {
     [],
   );
   const staffAccount = await panel(staffAccountView(user.id), null);
+  // «Bu oy» (0117): the SESSION user's own month — the loader takes the actor
+  // and no id, so nothing on this page can ask it about a colleague. A panel
+  // like the others: the page is the logout door and must stand without it.
+  const month = await panel(actor ? myMonth(actor) : Promise.resolve(null), null);
 
   return (
     <div className="space-y-6">
@@ -159,6 +165,8 @@ export default async function ProfilePage() {
         }}
         apkVersion={callsApk?.version ?? null}
       />
+
+      {month && <MyMonthPanel data={month} />}
 
       {staffAccount && <StaffAccountPanel view={staffAccount} />}
 

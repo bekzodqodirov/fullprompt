@@ -31,6 +31,12 @@ export interface StaffTemplate {
   active: boolean;
   accountId: string | null;
   partnerId: string | null;
+  /** The template's own kassa / firm, open or closed — what the row edit re-posts. */
+  accountName: string | null;
+  accountCurrency: string | null;
+  accountActive: boolean | null;
+  partnerName: string | null;
+  partnerActive: boolean | null;
   /** In the salary category (or the category is unset). */
   salary: boolean;
   /** This month's occurrence. */
@@ -49,10 +55,14 @@ export async function staffTemplates(
   const rows = (await exec.execute(sql`
     SELECT r.id, r.employee_id, r.category_id, ec.name AS category_name, ec.cash AS category_cash,
            r.amount::text AS amount, r.currency, r.day_of_month, r.active, r.account_id, r.partner_id,
+           ma.name AS account_name, ma.currency AS account_currency, ma.active AS account_active,
+           p.name AS partner_name, p.active AS partner_active,
            ${paidSql(sql`r.id`, month)} AS paid,
            ${skippedSql(sql`r.id`, month)} AS skipped
       FROM recurring_expenses r
       JOIN expense_categories ec ON ec.id = r.category_id
+      LEFT JOIN money_accounts ma ON ma.id = r.account_id
+      LEFT JOIN partners p ON p.id = r.partner_id
      WHERE r.employee_id IS NOT NULL AND r.active
        ${q.userId ? sql`AND r.employee_id = ${q.userId}::uuid` : sql``}
      ORDER BY r.employee_id, r.created_at`)) as unknown as {
@@ -67,6 +77,11 @@ export async function staffTemplates(
     active: boolean;
     account_id: string | null;
     partner_id: string | null;
+    account_name: string | null;
+    account_currency: string | null;
+    account_active: boolean | null;
+    partner_name: string | null;
+    partner_active: boolean | null;
     paid: boolean;
     skipped: boolean;
   }[];
@@ -82,6 +97,11 @@ export async function staffTemplates(
     active: row.active,
     accountId: row.account_id,
     partnerId: row.partner_id,
+    accountName: row.account_name,
+    accountCurrency: row.account_currency,
+    accountActive: row.account_active,
+    partnerName: row.partner_name,
+    partnerActive: row.partner_active,
     salary: !q.salaryCategoryId || row.category_id === q.salaryCategoryId,
     state: row.paid ? 'paid' : row.skipped ? 'skipped' : 'waiting',
   }));

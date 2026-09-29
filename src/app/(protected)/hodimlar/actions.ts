@@ -1,0 +1,108 @@
+'use server';
+
+import { revalidatePath } from 'next/cache';
+import { z } from 'zod';
+import { getActor } from '@/modules/platform/rbac/authorize';
+import { requestMeta } from '@/modules/platform/auth/session';
+import { isServerBehind } from '@/modules/platform/db/errors';
+import { logger } from '@/modules/platform/logger';
+import { mayEditKpiTable, mayPayCommission } from '@/modules/wms/staff/door';
+import { KpiError, payKpi, setStaffCategory } from '@/modules/wms/staff/kpi-service';
+import { KpiTableRefusal, saveKpiTable } from '@/modules/wms/staff/kpi-table';
+import type { KpiCell } from '@/modules/wms/staff/kpi-engine';
+
+export interface StaffFormState {
+  ok?: boolean;
+  /** A refusal code — the screen prints `hodimlar.refusal.<code>` (a union-derived map, never a bare code). */
+  error?: string;
+  /** The month a `kpi_month_refused` names, and why. */
+  month?: string;
+  reason?: string;
+  paidUsd?: number;
+}
+
+const uuid = z.string().uuid();
+
+/**
+ * «KPI to'lash» — the kassa holder who may also see whose commission it is
+ * (`mayPayCommission`, the same pair the upsale payout asks). The AMOUNT is
+ * the server's: `expectedUsd` is only what the payer SAW, and a figure that
+ * moved in between is refused rather than paid.
+ */
+export async function payKpiAction(
+  sellerId: string,
+  input: { accountId: string; currency: string; expenseDate: string; expectedUsd: number; note?: string },
+): Promise<StaffFormState> {
+  const actor = await getActor();
+  if (!actor) return { error: 'unauthenticated' };
+  if (!mayPayCommission(actor)) return { error: 'forbidden' };
+  // A posted id is a forged post until proven (#514); the service re-checks it exists.
+  if (!uuid.safeParse(sellerId).success || !uuid.safeParse(input.accountId).success) return { error: 'not_found' };
+  if (!Number.isFinite(input.expectedUsd)) return { error: 'amount_moved' };
+  const meta = await requestMeta();
+  try {
+    const res = await payKpi(sellerId, input, { actorId: actor.id, ...meta });
+    revalidatePath('/hodimlar');
+    revalidatePath('/accounting/expenses');
+    return { ok: true, paidUsd: res.paidUsd };
+  } catch (err) {
+    if (err instanceof KpiError) return { error: err.code, month: err.month, reason: err.reason };
+    // 0117's tables. On deploy morning this screen says a sentence (#472).
+    if (isServerBehind(err)) {
+      logger.error({ err }, '[hodimlar] server behind — migration 0117 not applied');
+      return { error: 'server_behind' };
+    }
+    throw err;
+  }
+}
+
+/** The table editor: ONE full grid as a new version (`admin.settings.manage`). */
+export async function saveKpiTableAction(_prev: StaffFormState, formData: FormData): Promise<StaffFormState> {
+  const actor = await getActor();
+  if (!actor) return { error: 'unauthenticated' };
+  if (!mayEditKpiTable(actor)) return { error: 'forbidden' };
+
+  let cells: KpiCell[];
+  try {
+    const raw = JSON.parse(String(formData.get('grid') ?? '[]')) as unknown;
+    if (!Array.isArray(raw)) return { error: 'grid_empty' };
+    // Rounded to the columns' own scales BEFORE the validator, so two tops
+    // that store as the same number are a duplicate here and not a 23505 later.
+    cells = raw.map((cell: { maxM3?: unknown; maxDensity?: unknown; rateUsd?: unknown }) => ({
+      maxM3: cell.maxM3 === null || cell.maxM3 === '' ? null : Math.round(Number(cell.maxM3) * 1000) / 1000,
+      maxDensity: cell.maxDensity === null || cell.maxDensity === '' ? null : Number(cell.maxDensity),
+      rateUsd: Math.round(Number(cell.rateUsd) * 100) / 100,
+    }));
+  } catch {
+    return { error: 'grid_empty' };
+  }
+  const meta = await requestMeta();
+  try {
+    await saveKpiTable(cells, String(formData.get('month') ?? ''), { actorId: actor.id, ...meta });
+    revalidatePath('/hodimlar');
+    return { ok: true };
+  } catch (err) {
+    if (err instanceof KpiTableRefusal) return { error: err.code };
+    if (isServerBehind(err)) return { error: 'server_behind' };
+    throw err;
+  }
+}
+
+/** The KPI payout's and the salary's categories — a company setting, the upsale picker's door. */
+export async function setStaffCategoryAction(_prev: StaffFormState, formData: FormData): Promise<StaffFormState> {
+  const actor = await getActor();
+  if (!actor) return { error: 'unauthenticated' };
+  if (!mayEditKpiTable(actor)) return { error: 'forbidden' };
+  const key = String(formData.get('key') ?? '');
+  // Exactly the two keys this screen owns — never a setting named by the post.
+  if (key !== 'kpi_expense_category_id' && key !== 'salary_expense_category_id') return { error: 'forbidden' };
+  const meta = await requestMeta();
+  try {
+    await setStaffCategory(key, String(formData.get('categoryId') ?? ''), { actorId: actor.id, ...meta });
+    revalidatePath('/hodimlar');
+    return { ok: true };
+  } catch (err) {
+    if (err instanceof KpiError) return { error: err.code };
+    throw err;
+  }
+}

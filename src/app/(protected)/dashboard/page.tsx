@@ -19,6 +19,7 @@ import { AttentionSection } from './sections/attention';
 import { AgingCard, CashWeeksCard, MoneySection } from './sections/money';
 import { CargoSection, FillCard, IntakeDaysCard, TrucksCard } from './sections/cargo';
 import { FunnelCard } from './sections/sales';
+import { StaffProfitCard } from './sections/staff-profit';
 import { mayReadUnpricedList } from '@/modules/wms/finance/unpriced-door';
 
 export const dynamic = 'force-dynamic';
@@ -184,6 +185,14 @@ export default async function DashboardPage({
           </div>
         )}
       </div>
+
+      {/* «Hodimlar keltirgan foyda» (0117, his 9): the company's money per
+          seller — under the same `money` gate as every other money card. */}
+      {money && sight && (
+        <Suspense fallback={<Skeleton className="h-48" />}>
+          <StaffProfitCard sight={sight} period={period} />
+        </Suspense>
+      )}
 
       {/* «Batafsil»: every block the page had before the redesign, unchanged —
           the twelve-month charts, the Balans bridge, the trucks' profit, the
