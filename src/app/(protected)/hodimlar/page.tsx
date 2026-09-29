@@ -16,7 +16,14 @@ import { listPartners } from '@/modules/wms/partners/service';
 import { earnedOf, upsaleRows } from '@/modules/wms/calc/upsale-service';
 import { mayEditKpiTable, mayPayCommission, maySeeStaffMoney, maySeeStaffUpsale } from '@/modules/wms/staff/door';
 import { unstampedCargo } from '@/modules/wms/staff/cargo';
-import { kpiMonth, kpiPayableAll, lastClosedMonth, type KpiMonthLine, type KpiPayable } from '@/modules/wms/staff/kpi-service';
+import {
+  kpiMonth,
+  kpiPayable,
+  kpiPayableAll,
+  lastClosedMonth,
+  type KpiMonthLine,
+  type KpiPayable,
+} from '@/modules/wms/staff/kpi-service';
 import { kpiVersions, versionFor } from '@/modules/wms/staff/kpi-table';
 import { addMonths, calendarMonth, monthEndDay, monthRange } from '@/modules/wms/staff/month';
 import { staffTemplates } from '@/modules/wms/staff/salary';
@@ -56,7 +63,8 @@ export default async function HodimlarPage({
   const params = await searchParams;
   const today = tashkentDay();
   const month = calendarMonth(params.oy) ?? lastClosedMonth(today);
-  const hodim = params.hodim && /^[0-9a-f-]{36}$/i.test(params.hodim) ? params.hodim : null;
+  const hodim =
+    params.hodim && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(params.hodim) ? params.hodim : null;
 
   return (
     <div className="mx-auto max-w-4xl space-y-4">
@@ -137,13 +145,24 @@ async function StaffList({
     await Promise.all([
       db.select({ id: users.id, name: users.fullName, active: users.active }).from(users).orderBy(asc(users.fullName)),
       safe(staffTemplates(db, { month, salaryCategoryId: salarySetting }), [], 'templates'),
-      withoutJit((exec) => kpiMonth(exec, month, { kind: 'all' }, today), { timeoutMs: 8000 }).catch((err) => {
+      withoutJit((exec) => kpiMonth(exec, month, hodim ? { kind: 'own', userId: hodim } : { kind: 'all' }, today), {
+        timeoutMs: 8000,
+      }).catch((err) => {
         failed.kpi = true;
         if (isServerBehind(err)) failed.behind = true;
         logger.error({ err }, '[hodimlar] kpi month');
         return new Map<string, KpiMonthLine>();
       }),
-      withoutJit((exec) => kpiPayableAll(exec, today), { timeoutMs: 8000 }).catch((err) => {
+      // One person asked for (`?hodim=`) is ONE seller's pass — measured
+      // 0.7 s against 5.6 s for the whole company over twelve months on the
+      // shaped copy — the same netting either way (`payableOf`).
+      withoutJit(
+        (exec) =>
+          hodim
+            ? kpiPayable(exec, hodim, today).then((one) => new Map<string, KpiPayable>([[hodim, one]]))
+            : kpiPayableAll(exec, today),
+        { timeoutMs: 8000 },
+      ).catch((err) => {
         failed.kpi = true;
         if (isServerBehind(err)) failed.behind = true;
         logger.error({ err }, '[hodimlar] kpi payable');
