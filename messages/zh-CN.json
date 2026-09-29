@@ -104,7 +104,8 @@
     "flowCalcLate": "逾期",
     "flowUnplacedCosts": "未指定账户的费用",
     "flowUnbilled": "已到达未定价货物：{n} 张入库单",
-    "birthdays": "今天生日——记得祝贺"
+    "birthdays": "今天生日——记得祝贺",
+    "flowCalcLinks": "待确认（入库 ↔ 计算）"
   },
   "dashboard": {
     "title": "业务概况",
@@ -710,7 +711,8 @@
       "fx_residue_auto": "账户按原币归零时，系统是否自动以汇兑差额结清美元余差。“否”——不再新建记录，已有记录继续维护。",
       "lead_assign_origins": "允许询问「访客联系谁」的网页（以空格分隔，每个为 https://…）",
       "kpi_expense_category_id": "销售员KPI支付所记入的费用类别（仅现金）。在「员工」页面选择。",
-      "salary_expense_category_id": "工资类别：「员工」页面据其月度模板显示工资及支付状态。"
+      "salary_expense_category_id": "工资类别：「员工」页面据其月度模板显示工资及支付状态。",
+      "price_history_min_sim": "货物名称与以往入库的相似度达到多少时，「以往价格」才显示其车次（0..1）"
     },
     "driverApp": "司机应用",
     "callsApp": "通话应用",
@@ -1732,7 +1734,38 @@
     "dealShareHere": "本车 {receipts} 张收货单 · {m3} m³ · {kg} kg",
     "dealNoQuote": "交易未填价格",
     "dealNoFigures": "尚无核算价格和加价（未报价）",
-    "dealSoldPrice": "售价 {price}{measure}"
+    "dealSoldPrice": "售价 {price}{measure}",
+    "priceHistory": "以往价格",
+    "priceHistoryHint": "过去 12 个月同类货物在以往车次上的收费",
+    "priceHistoryOwnMark": "本客户",
+    "priceHistoryNone": "未找到：12 个月内没有为类似货物定价的车次",
+    "priceHistoryMixed": "混装：{n} 种货物",
+    "priceHistoryMatchExact": "名称一致",
+    "priceHistoryMatchCode": "HS 编码",
+    "priceHistoryMatchName": "名称相似",
+    "priceHistoryMatchAi": "🤖 AI",
+    "priceHistoryNoFx": "{n} 个价格没有汇率——未显示",
+    "priceHistoryCargoMoved": "部分货物在其他车次",
+    "priceHistoryFailed": "暂时无法计算——请稍后再打开",
+    "priceHistoryAiAsk": "用 AI 查找",
+    "priceHistoryAiBusy": "AI 查找中…",
+    "priceHistoryAiNone": "AI 也未找到同类货物",
+    "priceHistoryAiError": {
+      "not_configured": "AI 未配置",
+      "budget": "AI 当日额度已用完",
+      "found_free": "无需 AI 已找到——请刷新页面",
+      "failed": "AI 未响应——请稍后再试",
+      "forbidden": "无权限"
+    },
+    "dealCalc": "交易计算",
+    "dealCalcHint": "该入库所属交易的报关计算：分组、HS 编码、基价、关税、增值税、运费、合计",
+    "calcUnsealed": "未封存",
+    "calcLinkConfirmed": "该入库已确认属于此计算",
+    "calcLinkSuggested": "推测（等待报关员确认）",
+    "calcPrevVersion": "上一版：V{n}",
+    "calcRecalcOpen": "重新计算中——旧价格仍有效",
+    "calcMore": "另有 {n} 个计算",
+    "calcSeeAbove": "见上方：{code} 的计算"
   },
   "map": {
     "title": "地图",
@@ -3460,7 +3493,9 @@
     "regAll": "全部",
     "registryNav": "计算历史",
     "feeOverride": "报关费（手动）",
-    "feeAuto": "自动"
+    "feeAuto": "自动",
+    "linksShownOf": "显示 {shown} / {total}",
+    "sheetTitle": "计算明细"
   },
   "partners": {
     "title": "合作方",
@@ -4728,5 +4763,28 @@
     "salaryNotDue": "——本月尚未到付款期",
     "salaryMonth": "{month}：",
     "unstampedRepair": "→ 转给{name}"
+  },
+  "calcSheet": {
+    "group": "分组",
+    "code": "编码",
+    "baza": "基价",
+    "duty": "关税",
+    "vat": "增值税",
+    "excise": "消费税",
+    "fee": "规费",
+    "freight": "运费",
+    "zone": "区域",
+    "band": "区间",
+    "rate": "费率",
+    "listPrice": "标价",
+    "discount": "折扣",
+    "extras": "附加费用",
+    "total": "合计",
+    "perM3": "每立方米",
+    "perKg": "每公斤",
+    "validUntil": "有效期至",
+    "expired": "已过期",
+    "goods": "货物",
+    "sealedBy": "封存人"
   }
 }

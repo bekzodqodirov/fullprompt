@@ -97,6 +97,13 @@ export const SETTING_DEFAULTS = {
    */
   calc_memory_min_sim: 0.6,
   /**
+   * How close a lot's NAME must be to a past lot's before «Oldingi narx»
+   * shows that lot's truck price (0119). Its own number, not the memory's:
+   * the corpus is every prixod ever received, not sealed calculations, and
+   * the owner tunes the two apart.
+   */
+  price_history_min_sim: 0.6,
+  /**
    * How many AI calls the calculation half may make in a day (0096).
    *
    * A soft budget, not a claim: one worker drains this queue, so two passes

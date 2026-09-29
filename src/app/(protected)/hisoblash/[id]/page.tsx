@@ -18,6 +18,9 @@ import { isServerBehind } from '@/modules/platform/db/errors';
 import { logger } from '@/modules/platform/logger';
 import { CalcActions } from './calc-actions';
 import { CalcWorkspace } from './calc-workspace';
+import { calcRegistrySight } from '@/modules/wms/calc/control-scope';
+import { calcSheetsForRequest, type CalcSheet as CalcSheetData } from '@/modules/wms/calc/sheet';
+import { CalcSheet } from '@/components/calc-sheet';
 import { CargoFactsForm } from './cargo-facts';
 import { LastQuotes } from './last-quotes';
 
@@ -79,8 +82,19 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
   let linked: Awaited<ReturnType<typeof linkedReceipts>> = [];
   // The correction chain this request sits in — what «V2» counts.
   let chain: ChainVersion[] = [];
+  // The sealed calculation laid out block by block (0119, audit A39) — the
+  // same sheet «Partiya moliyasi» shows the accountant. The page's own door is
+  // `ved.docs`, so the registry's sight is always granted here; the VED sees
+  // any colleague's calculation, as the registry already lets them.
+  const sheetSight = calcRegistrySight(actor);
+  let sheet: CalcSheetData | null = null;
   try {
-    [workspace, linked, chain] = await Promise.all([loadWorkspace(id), linkedReceipts(id), chainOf(id)]);
+    [workspace, linked, chain, sheet] = await Promise.all([
+      loadWorkspace(id),
+      linkedReceipts(id),
+      chainOf(id),
+      sheetSight ? calcSheetsForRequest(id, sheetSight) : Promise.resolve(null),
+    ]);
   } catch (err) {
     if (!isServerBehind(err)) throw err;
     logger.error({ err, id }, '[calc] workspace: server behind');
@@ -220,7 +234,14 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
         </div>
       </details>
 
-      {workspace ? <CalcWorkspace workspace={workspace} canRecalc={canRecalc} chain={chain} /> : null}
+      {workspace ? (
+        <CalcWorkspace
+          workspace={workspace}
+          canRecalc={canRecalc}
+          chain={chain}
+          sealedSheet={sheet && sheetSight ? <CalcSheet data={sheet} sight={sheetSight} /> : null}
+        />
+      ) : null}
 
       {/* The workspace's own table renders `calc-items` when it is on screen;
           everywhere else (server behind, yolkira, closed) this read-only

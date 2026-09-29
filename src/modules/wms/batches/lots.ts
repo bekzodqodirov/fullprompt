@@ -53,6 +53,13 @@ export interface BatchLot {
   dealId: string | null;
   dealCode: string | null;
   dealTitle: string | null;
+  /**
+   * The calculation this lot's prixod is linked to (0119, «🧮 Bitim hisobi»)
+   * and whether a PERSON confirmed it — a guess and an answer read differently
+   * on the sheet. Ids and a flag only; never the calculation's money.
+   */
+  calcRequestId: string | null;
+  calcLinkConfirmed: boolean;
   /** Boxes of this lot on this truck. */
   onBatch: number;
   /** Boxes the lot was received with — `onBatch < lotBoxCount` is a split lot. */
@@ -100,6 +107,8 @@ export const batchLots = cache(async function batchLots(batchId: string): Promis
       dealId: deals.id,
       dealCode: deals.code,
       dealTitle: deals.title,
+      calcRequestId: receipts.calcRequestId,
+      calcLinkConfirmedAt: receipts.calcLinkConfirmedAt,
       onBatch: sql<number>`count(*)`,
       // Lost on THIS leg — or after it landed, before it rode on: a carton
       // this truck delivered and the NEXT truck lost is not «not arrived»
@@ -165,6 +174,8 @@ export const batchLots = cache(async function batchLots(batchId: string): Promis
       dealId: row.dealId,
       dealCode: row.dealCode,
       dealTitle: row.dealTitle,
+      calcRequestId: row.calcRequestId,
+      calcLinkConfirmed: row.calcLinkConfirmedAt !== null,
       onBatch,
       lotBoxCount: row.lotBoxCount,
       kg: Math.round(Number(row.lotWeightKg) * share * 10) / 10,

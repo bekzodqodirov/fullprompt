@@ -104,7 +104,8 @@
     "flowCalcLate": "kechikkan",
     "flowUnplacedCosts": "Kassasi ko‘rsatilmagan xarajatlar",
     "flowUnbilled": "Narxsiz yetib kelgan yuk: {n} prixod",
-    "birthdays": "Bugun tug‘ilgan kun — tabriklab qo‘ying"
+    "birthdays": "Bugun tug‘ilgan kun — tabriklab qo‘ying",
+    "flowCalcLinks": "Tasdiqlash kerak (prixod ↔ hisob)"
   },
   "dashboard": {
     "title": "Biznes holati",
@@ -710,7 +711,8 @@
       "fx_residue_auto": "Hisob o‘z valyutasida 0 ga tushganda dollar qoldig‘ini tizim o‘zi «kurs farqi» bilan yopsinmi. «Yo‘q» — yangi yozuv qo‘shilmaydi, borlari yuritilaveradi.",
       "lead_assign_origins": "Saytdan «kimga yozsin?» deb so'rashga ruxsat berilgan sahifalar (bo'sh joy bilan, har biri https://…)",
       "kpi_expense_category_id": "Sotuvchilarga KPI to‘lovi yoziladigan xarajat turi (faqat kassa). «Hodimlar» sahifasida tanlanadi.",
-      "salary_expense_category_id": "Oyliklar xarajat turi: «Hodimlar» sahifasi oylik va uning to‘lanishini shu turdagi shablonlardan ko‘rsatadi."
+      "salary_expense_category_id": "Oyliklar xarajat turi: «Hodimlar» sahifasi oylik va uning to‘lanishini shu turdagi shablonlardan ko‘rsatadi.",
+      "price_history_min_sim": "«Oldingi narx» o‘tgan prixod mashinasini ko‘rsatishi uchun tovar nomi o‘xshashligi darajasi (0..1)"
     },
     "driverApp": "Haydovchi ilovasi",
     "callsApp": "Qo'ng'iroq ilovasi",
@@ -1732,7 +1734,38 @@
     "dealShareHere": "bu mashinada {receipts} ta prixod · {m3} m³ · {kg} kg",
     "dealNoQuote": "bitimda narx yozilmagan",
     "dealNoFigures": "hisoblangan narx va upsale yozilmagan (taklif berilmagan)",
-    "dealSoldPrice": "sotilgan narx {price}{measure}"
+    "dealSoldPrice": "sotilgan narx {price}{measure}",
+    "priceHistory": "Oldingi narx",
+    "priceHistoryHint": "Shu tovarga oldingi mashinalarda qancha olganmiz (12 oy)",
+    "priceHistoryOwnMark": "shu mijoz",
+    "priceHistoryNone": "Topilmadi: o‘xshash tovar narxi yozilgan mashina yo‘q (12 oy)",
+    "priceHistoryMixed": "aralash: {n} xil tovar",
+    "priceHistoryMatchExact": "aynan nom",
+    "priceHistoryMatchCode": "TNVED",
+    "priceHistoryMatchName": "o‘xshash nom",
+    "priceHistoryMatchAi": "🤖 AI",
+    "priceHistoryNoFx": "{n} ta narx kursi yo‘q — ko‘rsatilmadi",
+    "priceHistoryCargoMoved": "yukning bir qismi boshqa mashinada",
+    "priceHistoryFailed": "Hozir hisoblab bo‘lmadi — keyinroq oching",
+    "priceHistoryAiAsk": "AI bilan qidirish",
+    "priceHistoryAiBusy": "AI qidirmoqda…",
+    "priceHistoryAiNone": "AI ham bunday tovar topmadi",
+    "priceHistoryAiError": {
+      "not_configured": "AI sozlanmagan",
+      "budget": "AI kunlik limiti tugadi",
+      "found_free": "AIsiz topildi — sahifani yangilang",
+      "failed": "AI javob bermadi — keyinroq urinib ko‘ring",
+      "forbidden": "Ruxsat yo‘q"
+    },
+    "dealCalc": "Bitim hisobi",
+    "dealCalcHint": "Shu prixod bitimining VED hisobi: guruhlar, TNVED, baza, boj, QQS, yo‘lkira, jami",
+    "calcUnsealed": "muhrlanmagan",
+    "calcLinkConfirmed": "prixod shu hisobga tasdiqlangan",
+    "calcLinkSuggested": "taxmin (VED tasdiqlashi kutilmoqda)",
+    "calcPrevVersion": "Oldingi: V{n}",
+    "calcRecalcOpen": "qayta hisoblanmoqda — eski narx turibdi",
+    "calcMore": "yana {n} ta hisob",
+    "calcSeeAbove": "yuqorida: {code} hisobi"
   },
   "map": {
     "title": "Xarita",
@@ -3460,7 +3493,9 @@
     "regAll": "Hammasi",
     "registryNav": "Hisoblar tarixi",
     "feeOverride": "Deklaratsiya yig'imi (qo'lda)",
-    "feeAuto": "avto"
+    "feeAuto": "avto",
+    "linksShownOf": "{total} tadan {shown} tasi ko‘rsatilgan",
+    "sheetTitle": "Hisob tafsiloti"
   },
   "partners": {
     "title": "Kontragentlar",
@@ -4728,5 +4763,28 @@
     "salaryNotDue": "— bu oy hali to‘lanmaydi",
     "salaryMonth": "{month}:",
     "unstampedRepair": "→ {name} ga o‘tkazish"
+  },
+  "calcSheet": {
+    "group": "Guruh",
+    "code": "kod",
+    "baza": "baza",
+    "duty": "Boj",
+    "vat": "QQS",
+    "excise": "aksiz",
+    "fee": "Yig‘im",
+    "freight": "Yo‘lkira",
+    "zone": "zona",
+    "band": "oraliq",
+    "rate": "stavka",
+    "listPrice": "prays bo‘yicha",
+    "discount": "Chegirma",
+    "extras": "Qo‘shimcha",
+    "total": "Jami",
+    "perM3": "m³ uchun",
+    "perKg": "kg uchun",
+    "validUntil": "Amal qiladi",
+    "expired": "muddati o‘tgan",
+    "goods": "Tovarlar",
+    "sealedBy": "muhrlagan"
   }
 }

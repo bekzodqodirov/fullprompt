@@ -22,6 +22,8 @@ const lot = (over: Partial<BatchLot>): BatchLot => ({
   dealId: null,
   dealCode: null,
   dealTitle: null,
+  calcRequestId: null,
+  calcLinkConfirmed: false,
   onBatch: 1,
   lotBoxCount: 1,
   kg: 10,

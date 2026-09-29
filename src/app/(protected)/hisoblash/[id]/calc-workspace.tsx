@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useState, useTransition, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { sectionParts } from '@/modules/wms/calc/pricing';
@@ -39,11 +39,18 @@ export function CalcWorkspace({
   workspace,
   canRecalc,
   chain = [],
+  sealedSheet = null,
 }: {
   workspace: Workspace;
   canRecalc: boolean;
   /** The sealed version's correction chain (chain.ts), oldest first. */
   chain?: ChainVersion[];
+  /**
+   * The sealed calculation laid out (0119) — rendered by the SERVER page and
+   * handed in, because this file is a client component and the sheet is a
+   * server one (it reads its words with `getTranslations`).
+   */
+  sealedSheet?: ReactNode;
 }) {
   const t = useTranslations('calc');
   const router = useRouter();
@@ -72,7 +79,9 @@ export function CalcWorkspace({
         </p>
       ) : null}
 
-      {sealed ? <SealedPanel sealed={sealed} id={id} canRecalc={canRecalc} chain={chain} /> : null}
+      {sealed ? (
+        <SealedPanel sealed={sealed} id={id} canRecalc={canRecalc} chain={chain} sheet={sealedSheet} />
+      ) : null}
 
       {!locked ? (
         <>
@@ -504,11 +513,13 @@ function SealedPanel({
   id,
   canRecalc,
   chain,
+  sheet,
 }: {
   sealed: NonNullable<Workspace['sealedVersion']>;
   id: string;
   canRecalc: boolean;
   chain: ChainVersion[];
+  sheet: ReactNode;
 }) {
   const t = useTranslations('calc');
   const router = useRouter();
@@ -624,6 +635,16 @@ function SealedPanel({
             ))}
           </ul>
         </div>
+      ) : null}
+
+      {/* What the price is made of, under the price (0119, audit A39): the
+          groups, the law, the bazas and the road, as sealed. A fold, because
+          the VED opens this page to work, not to re-read a closed job. */}
+      {sheet ? (
+        <details className="mt-2 border-t border-line pt-2" data-testid="calc-sealed-sheet">
+          <summary className="cursor-pointer text-2xs font-semibold text-brand-700">🧮 {t('sheetTitle')}</summary>
+          <div className="mt-1">{sheet}</div>
+        </details>
       ) : null}
 
       {canRecalc ? (

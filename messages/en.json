@@ -104,7 +104,8 @@
     "flowCalcLate": "late",
     "flowUnplacedCosts": "Costs with no cash box",
     "flowUnbilled": "Arrived cargo with no price: {n} receipts",
-    "birthdays": "Birthdays today — congratulate them"
+    "birthdays": "Birthdays today — congratulate them",
+    "flowCalcLinks": "To confirm (receipt ↔ calculation)"
   },
   "dashboard": {
     "title": "Business at a glance",
@@ -710,7 +711,8 @@
       "fx_residue_auto": "Whether the system closes the dollar residue as an exchange difference when an account reaches zero in its own currency. «No» — no new entries; existing ones are still maintained.",
       "lead_assign_origins": "Web pages allowed to ask «who should the visitor write to?» (space-separated, each https://…)",
       "kpi_expense_category_id": "Expense category that sellers’ KPI payouts are written into (cash only). Chosen on the «Staff» page.",
-      "salary_expense_category_id": "Salary category: the «Staff» page shows each salary and whether it was paid from its monthly templates."
+      "salary_expense_category_id": "Salary category: the «Staff» page shows each salary and whether it was paid from its monthly templates.",
+      "price_history_min_sim": "How close a goods name must be to a past receipt before «Previous price» shows its truck (0..1)"
     },
     "driverApp": "Driver app",
     "callsApp": "Calls app",
@@ -1732,7 +1734,38 @@
     "dealShareHere": "on this truck {receipts} receipts · {m3} m³ · {kg} kg",
     "dealNoQuote": "no price on the deal",
     "dealNoFigures": "no calculated price or upsale yet (no offer)",
-    "dealSoldPrice": "sold at {price}{measure}"
+    "dealSoldPrice": "sold at {price}{measure}",
+    "priceHistory": "Previous price",
+    "priceHistoryHint": "What we charged for the same goods on past trucks (12 months)",
+    "priceHistoryOwnMark": "this client",
+    "priceHistoryNone": "Nothing found: no truck priced similar goods in 12 months",
+    "priceHistoryMixed": "mixed: {n} kinds of goods",
+    "priceHistoryMatchExact": "same name",
+    "priceHistoryMatchCode": "TNVED",
+    "priceHistoryMatchName": "similar name",
+    "priceHistoryMatchAi": "🤖 AI",
+    "priceHistoryNoFx": "{n} prices have no exchange rate — not shown",
+    "priceHistoryCargoMoved": "part of the cargo is on another truck",
+    "priceHistoryFailed": "Could not be computed right now — open it later",
+    "priceHistoryAiAsk": "Search with AI",
+    "priceHistoryAiBusy": "AI is searching…",
+    "priceHistoryAiNone": "The AI found no such goods either",
+    "priceHistoryAiError": {
+      "not_configured": "AI is not configured",
+      "budget": "The AI daily limit is used up",
+      "found_free": "Found without AI — refresh the page",
+      "failed": "The AI did not answer — try again later",
+      "forbidden": "No access"
+    },
+    "dealCalc": "Deal calculation",
+    "dealCalcHint": "The customs calculation of this receipt’s deal: groups, TNVED, baza, duty, VAT, freight, total",
+    "calcUnsealed": "not sealed",
+    "calcLinkConfirmed": "receipt confirmed for this calculation",
+    "calcLinkSuggested": "a guess (waiting for the VED to confirm)",
+    "calcPrevVersion": "Previous: V{n}",
+    "calcRecalcOpen": "being recalculated — the old price stands",
+    "calcMore": "{n} more calculations",
+    "calcSeeAbove": "above: the {code} calculation"
   },
   "map": {
     "title": "Map",
@@ -3460,7 +3493,9 @@
     "regAll": "All",
     "registryNav": "Calc history",
     "feeOverride": "Declaration fee (manual)",
-    "feeAuto": "auto"
+    "feeAuto": "auto",
+    "linksShownOf": "Showing {shown} of {total}",
+    "sheetTitle": "What the price is made of"
   },
   "partners": {
     "title": "Counterparties",
@@ -4728,5 +4763,28 @@
     "salaryNotDue": "— not due this month yet",
     "salaryMonth": "{month}:",
     "unstampedRepair": "→ move to {name}"
+  },
+  "calcSheet": {
+    "group": "Group",
+    "code": "code",
+    "baza": "baza",
+    "duty": "Duty",
+    "vat": "VAT",
+    "excise": "excise",
+    "fee": "Fee",
+    "freight": "Freight",
+    "zone": "zone",
+    "band": "band",
+    "rate": "rate",
+    "listPrice": "list",
+    "discount": "Discount",
+    "extras": "Extras",
+    "total": "Total",
+    "perM3": "per m³",
+    "perKg": "per kg",
+    "validUntil": "Valid until",
+    "expired": "expired",
+    "goods": "Goods",
+    "sealedBy": "sealed by"
   }
 }
