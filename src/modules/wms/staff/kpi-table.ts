@@ -66,6 +66,33 @@ export function validateKpiGrid(cells: KpiCell[]): { ok: true } | { ok: false; r
   return { ok: true };
 }
 
+/**
+ * The editor's posted grid → cells, pure (the action's one parser). Only an
+ * explicit `null` is an OPEN top — the form posts it for the last row and
+ * column; a BLANK box is not «open» and not zero: it becomes NaN, which the
+ * validator refuses by name (`bad_bound` / `bad_rate`). `Number('')` is 0,
+ * so a rate cell left empty would otherwise save as $0/m³ — a number nobody
+ * typed (#767's law, #777's cousin). Rounded to the columns' own scales
+ * BEFORE the validator, so two tops that store as the same number are a
+ * duplicate here and not a 23505 later. Null when the post is not a list.
+ */
+export function parseKpiGridPost(raw: unknown): KpiCell[] | null {
+  if (!Array.isArray(raw)) return null;
+  const num = (value: unknown): number => {
+    if (typeof value === 'number') return value;
+    if (typeof value !== 'string' || value.trim() === '') return Number.NaN;
+    return Number(value.trim().replace(',', '.'));
+  };
+  return raw.map((cell: { maxM3?: unknown; maxDensity?: unknown; rateUsd?: unknown } | null) => {
+    const c = cell ?? {};
+    return {
+      maxM3: c.maxM3 === null ? null : Math.round(num(c.maxM3) * 1000) / 1000,
+      maxDensity: c.maxDensity === null ? null : num(c.maxDensity),
+      rateUsd: Math.round(num(c.rateUsd) * 100) / 100,
+    };
+  });
+}
+
 export interface KpiVersion {
   /** `YYYY-MM`. */
   month: string;

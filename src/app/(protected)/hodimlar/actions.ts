@@ -8,7 +8,7 @@ import { isServerBehind } from '@/modules/platform/db/errors';
 import { logger } from '@/modules/platform/logger';
 import { mayEditKpiTable, mayPayCommission } from '@/modules/wms/staff/door';
 import { KpiError, payKpi, setStaffCategory } from '@/modules/wms/staff/kpi-service';
-import { KpiTableRefusal, saveKpiTable } from '@/modules/wms/staff/kpi-table';
+import { KpiTableRefusal, parseKpiGridPost, saveKpiTable } from '@/modules/wms/staff/kpi-table';
 import type { KpiCell } from '@/modules/wms/staff/kpi-engine';
 
 export interface StaffFormState {
@@ -62,20 +62,14 @@ export async function saveKpiTableAction(_prev: StaffFormState, formData: FormDa
   if (!actor) return { error: 'unauthenticated' };
   if (!mayEditKpiTable(actor)) return { error: 'forbidden' };
 
-  let cells: KpiCell[];
+  let cells: KpiCell[] | null;
   try {
-    const raw = JSON.parse(String(formData.get('grid') ?? '[]')) as unknown;
-    if (!Array.isArray(raw)) return { error: 'grid_empty' };
-    // Rounded to the columns' own scales BEFORE the validator, so two tops
-    // that store as the same number are a duplicate here and not a 23505 later.
-    cells = raw.map((cell: { maxM3?: unknown; maxDensity?: unknown; rateUsd?: unknown }) => ({
-      maxM3: cell.maxM3 === null || cell.maxM3 === '' ? null : Math.round(Number(cell.maxM3) * 1000) / 1000,
-      maxDensity: cell.maxDensity === null || cell.maxDensity === '' ? null : Number(cell.maxDensity),
-      rateUsd: Math.round(Number(cell.rateUsd) * 100) / 100,
-    }));
+    // The one pure parser (kpi-table.ts): a blank cell is refused, never $0.
+    cells = parseKpiGridPost(JSON.parse(String(formData.get('grid') ?? '[]')) as unknown);
   } catch {
     return { error: 'grid_empty' };
   }
+  if (!cells) return { error: 'grid_empty' };
   const meta = await requestMeta();
   try {
     await saveKpiTable(cells, String(formData.get('month') ?? ''), { actorId: actor.id, ...meta });

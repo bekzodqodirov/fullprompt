@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validateKpiGrid, versionFor, type KpiVersion } from '@/modules/wms/staff/kpi-table';
+import { parseKpiGridPost, validateKpiGrid, versionFor, type KpiVersion } from '@/modules/wms/staff/kpi-table';
 import type { KpiCell } from '@/modules/wms/staff/kpi-engine';
 
 /** A small full grid: two tiers × two bands, each with its open top. */
@@ -56,5 +56,37 @@ describe('versionFor — the newest on or before, never an earlier-row fallback'
 
   it('a month before the first version is outside KPI', () => {
     expect(versionFor(versions, '2026-08')).toBeNull();
+  });
+});
+
+describe('parseKpiGridPost — what the editor posts', () => {
+  const post = (patch: Record<string, unknown>) => [
+    { maxM3: '30', maxDensity: '100', rateUsd: '1', ...patch },
+    { maxM3: '30', maxDensity: null, rateUsd: '2' },
+    { maxM3: null, maxDensity: '100', rateUsd: '3' },
+    { maxM3: null, maxDensity: null, rateUsd: '4' },
+  ];
+
+  it('reads the typed strings, a comma decimal included, and null as the open top', () => {
+    expect(parseKpiGridPost(post({ rateUsd: '1,5' }))).toEqual([
+      { maxM3: 30, maxDensity: 100, rateUsd: 1.5 },
+      { maxM3: 30, maxDensity: null, rateUsd: 2 },
+      { maxM3: null, maxDensity: 100, rateUsd: 3 },
+      { maxM3: null, maxDensity: null, rateUsd: 4 },
+    ]);
+  });
+
+  it('a BLANK rate is refused, never saved as $0 (Number("") is 0)', () => {
+    const cells = parseKpiGridPost(post({ rateUsd: '' }))!;
+    expect(validateKpiGrid(cells)).toEqual({ ok: false, reason: 'bad_rate' });
+  });
+
+  it('a blank top is not «open» — it is refused by name', () => {
+    expect(validateKpiGrid(parseKpiGridPost(post({ maxM3: ' ' }))!)).toEqual({ ok: false, reason: 'bad_bound' });
+    expect(validateKpiGrid(parseKpiGridPost(post({ maxDensity: '' }))!)).toEqual({ ok: false, reason: 'bad_bound' });
+  });
+
+  it('something that is not a list is nothing', () => {
+    expect(parseKpiGridPost({ grid: 1 })).toBeNull();
   });
 });
