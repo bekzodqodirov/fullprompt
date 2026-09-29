@@ -344,17 +344,18 @@ describe('every figure is the dashboard’s own, over the same window (#513)', (
   it('Monday is the week, and names what must be paid over the next four weeks', async () => {
     const actor = await ownerActor();
     const summary = await composeOwnerSummary(actor, ownerSummarySight(actor)!, at(MONDAY, '12:00'));
-    expect(summary.window).toBe('7');
-    expect([summary.facts.from, summary.facts.to]).toEqual(['1677-09-14', MONDAY]);
+    // The week that ENDED (5b): Monday the 13th to Sunday the 19th.
+    expect(summary.window).toBe('hafta');
+    expect([summary.facts.from, summary.facts.to]).toEqual(['1677-09-13', '1677-09-19']);
     const text = summary.text.replace(/ /g, ' ');
-    expect(text.split('\n')[0]).toBe('📊 GSR — hafta xulosasi, 14.09–20.09 (soat 17:00)');
+    expect(text.split('\n')[0]).toBe('📊 GSR — hafta xulosasi, 13.09–19.09 (soat 17:00)');
     expect(text).toContain('📅 Keyingi 4 hafta to‘lovlari (20.09–18.10):');
     expect(text).toContain(`• 27.09 — ${PARTNER}: $777.00`);
     // The yuan cost with no rate: named in its own money, never $0, never
     // left out because no ledger row carries it yet (review 3).
     expect(text).toContain(`• ⚠ 28.09 — ${PARTNER}: CNY 5 000 (kursi yo‘q)`);
     expect(text).toContain('Jami: $777.00 · CNY 5 000');
-    expect(text.endsWith('/dashboard?davr=7')).toBe(true);
+    expect(text.endsWith('/dashboard?davr=hafta')).toBe(true);
     // Nothing moved that week — only the payment makes it worth sending.
     expect(summary.facts.revenueUsd).toBe(0);
     expect(summary.quiet).toBe(false);

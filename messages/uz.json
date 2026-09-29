@@ -301,6 +301,7 @@
       "label": "Davr",
       "bugun": "Bugun",
       "d7": "7 kun",
+      "hafta": "O‘tgan hafta",
       "d30": "30 kun",
       "oy": "Bu oy",
       "otgan": "O‘tgan oy"
@@ -320,6 +321,7 @@
     "hero": {
       "bugun": "Bugungi foyda",
       "d7": "7 kunlik foyda",
+      "hafta": "O‘tgan hafta foydasi",
       "d30": "30 kunlik foyda",
       "oy": "Bu oy foydasi",
       "otgan": "O‘tgan oy foydasi"

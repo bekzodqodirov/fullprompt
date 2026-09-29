@@ -301,6 +301,7 @@
       "label": "Period",
       "bugun": "Today",
       "d7": "7 days",
+      "hafta": "Last week",
       "d30": "30 days",
       "oy": "This month",
       "otgan": "Last month"
@@ -320,6 +321,7 @@
     "hero": {
       "bugun": "Profit today",
       "d7": "Profit, 7 days",
+      "hafta": "Profit last week",
       "d30": "Profit, 30 days",
       "oy": "Profit this month",
       "otgan": "Profit last month"

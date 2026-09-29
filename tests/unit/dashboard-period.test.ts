@@ -56,11 +56,11 @@ describe('weeksBetween — the weekly chart\'s keys', () => {
 });
 
 describe('dashPeriod — the radio is a closed set, each window compared by the P&L page\'s rule', () => {
-  it('draws the five in order', () => {
-    expect(DASH_PERIODS).toEqual(['bugun', '7', '30', 'oy', 'otgan']);
+  it('draws the six in order', () => {
+    expect(DASH_PERIODS).toEqual(['bugun', '7', 'hafta', '30', 'oy', 'otgan']);
   });
 
-  it('anything but the five reads as «Bu oy»', () => {
+  it('anything but the six reads as «Bu oy»', () => {
     for (const raw of [undefined, null, '', '07', 'OY', 'xx', ' oy', 'toString', '__proto__', '31']) {
       expect(dashPeriod(raw, '2026-09-27').key, String(raw)).toBe('oy');
     }
@@ -110,6 +110,22 @@ describe('dashPeriod — the radio is a closed set, each window compared by the 
       closedMonth: false,
     });
     expect(dashPeriod('bugun', '2026-10-02').prior).toEqual({ from: '2026-10-01', to: '2026-10-01', kind: 'span' });
+  });
+
+  it('«O\'tgan hafta» is the whole week that ENDED, Monday to Sunday — the same seen from any day of this one', () => {
+    // Monday 2026-09-28: the week of 21–27; Sunday 2026-10-04 still reads it.
+    for (const today of ['2026-09-28', '2026-10-01', '2026-10-04']) {
+      expect(dashPeriod('hafta', today), today).toMatchObject({
+        key: 'hafta',
+        from: '2026-09-21',
+        to: '2026-09-27',
+        prior: { from: '2026-09-14', to: '2026-09-20', kind: 'span' },
+        month: null,
+        closedMonth: false,
+      });
+    }
+    // Across a year: the week of Monday 2025-12-29 ends on 2026-01-04.
+    expect(dashPeriod('hafta', '2026-01-07')).toMatchObject({ from: '2025-12-29', to: '2026-01-04' });
   });
 
   it('«7» and «30» end today and include it', () => {

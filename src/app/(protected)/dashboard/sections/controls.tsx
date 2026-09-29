@@ -9,9 +9,10 @@ import { DASH_PERIODS, type DashPeriodKey } from '@/modules/wms/reports/dashboar
  * client island (the chart tooltip). A link carries the other choice with it
  * (`hrefWith`, #514): picking «7 kun» must not drop the chosen warehouse.
  *
- * Five cells in a grid at every width: one row of five needs ~344 px and the
- * phone has 328, so the labels are allowed to wrap onto two lines inside a
- * 44 px cell rather than push the page wider (#400).
+ * Six cells: two rows of three on a phone (one row of six would leave ~50 px a
+ * cell, and «Прошлая неделя» is wider than that), one row from `md`. The
+ * labels may still wrap onto two lines inside a 44 px cell rather than push
+ * the page wider (#400).
  */
 export async function DashControls({
   period,
@@ -28,6 +29,7 @@ export async function DashControls({
   const LABEL: Record<DashPeriodKey, string> = {
     bugun: t('period.bugun'),
     '7': t('period.d7'),
+    hafta: t('period.hafta'),
     '30': t('period.d30'),
     oy: t('period.oy'),
     otgan: t('period.otgan'),
@@ -36,7 +38,7 @@ export async function DashControls({
 
   return (
     <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-3" data-testid="dash-controls">
-      <nav aria-label={t('period.label')} className="grid grid-cols-5 gap-1 rounded-xl bg-surface-sunken p-1 md:w-[26rem]">
+      <nav aria-label={t('period.label')} className="grid grid-cols-3 gap-1 rounded-xl bg-surface-sunken p-1 md:w-[32rem] md:grid-cols-6">
         {DASH_PERIODS.map((key) => {
           const active = key === period;
           return (

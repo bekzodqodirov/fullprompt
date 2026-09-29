@@ -175,11 +175,31 @@ describe('silence (the push stays quiet when nothing HAPPENED)', () => {
 });
 
 describe('the window is Tashkent’s day (R5, #1063)', () => {
-  it('15:00 UTC on a Monday is 20:00 Monday here: the weekly message over «7 kun»', () => {
+  it('15:00 UTC on a Monday is 20:00 Monday here: the weekly message over the week that ENDED (5b)', () => {
     const w = summaryWindow(new Date('2026-09-28T15:00:00Z'));
-    expect(w).toMatchObject({ today: '2026-09-28', weekly: true, key: '7' });
-    expect(w.period.from).toBe('2026-09-22');
-    expect(w.period.to).toBe('2026-09-28');
+    expect(w).toMatchObject({ today: '2026-09-28', weekly: true, key: 'hafta' });
+    // Monday to Sunday. The old «7 kun» (Tuesday 22nd to Monday 28th) left the
+    // PREVIOUS Monday's evening — typed after its 20:00 message, dated that
+    // Monday — in no message at all.
+    expect(w.period.from).toBe('2026-09-21');
+    expect(w.period.to).toBe('2026-09-27');
+  });
+
+  it('consecutive weekly messages tile the calendar, and each is read only after its last day has ended', () => {
+    const weeks = ['2026-09-21T15:00:00Z', '2026-09-28T15:00:00Z', '2026-10-05T15:00:00Z'].map((at) =>
+      summaryWindow(new Date(at)),
+    );
+    for (const w of weeks) {
+      // The defect was never the tiling (Tuesday–Monday tiles too): it was
+      // that the window's last day was still running at 20:00 when it was
+      // read, so its evening belonged to nobody.
+      expect(w.period.to < w.today, w.today).toBe(true);
+    }
+    for (let i = 1; i < weeks.length; i++) {
+      const prevTo = new Date(`${weeks[i - 1]!.period.to}T12:00:00Z`);
+      prevTo.setUTCDate(prevTo.getUTCDate() + 1);
+      expect(weeks[i]!.period.from).toBe(prevTo.toISOString().slice(0, 10));
+    }
   });
 
   it('19:30 UTC on a Monday is 00:30 TUESDAY here: a daily message about Tuesday', () => {
