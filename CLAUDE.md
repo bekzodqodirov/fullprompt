@@ -2122,6 +2122,20 @@ reversed (#1206). A pre-existing count-press path dependence (re-reserve vs
 dial-down order) was found by the widened simulation and queued, not fixed.
 18 red proofs.
 
+**Round — Telegram ulash (2026-09-29; DECISIONS #1207-#1208; NO
+migration).** His «telegram chatni ulashni korib chiq», the day after the
+site-lead reply named a CONNECTED account as condition 3. A two-step account
+could never connect: the connect form's inputs were uncontrolled (its own
+comment said otherwise), React's reset after the first press emptied the
+code, and the password press signed in again with an empty code → `failed`,
+login dropped. `finishLogin` (telegram-connect.ts) decides the step from the
+login (`codeAccepted`), never from the form, over injected network steps;
+the inputs are controlled; m9x asserts a refused number stays in its box.
+`phoneHolder` refuses a number another person holds BEFORE the code is sent
+(digits compared, own row excluded, the holder named), an expired code ends
+the attempt, and every refusal is logged `[tg-connect]`. A signed-out holder
+still blocks the number — no release door, stated. 6 red proofs.
+
 **Latest migration: 0116** (`cargo_wait_alerts`; ledger must reach **117**).
 Before it: 0115 (`system_watch`), 0114 (`debt_control`), 0113
 (`inbound_contact`) — `when` …092-…095, assigned in that order before the

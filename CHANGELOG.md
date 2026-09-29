@@ -1,5 +1,40 @@
 # CHANGELOG
 
+## Telegram ulash — ikki bosqichli parolli hodimlar ham ulanadi — 2026-09-29
+
+Kod o'zgarishi, migratsiya yo'q. Andijon tuzatishi va «Yetti yangilik» bilan
+bitta deployda chiqadi.
+
+Sizning so'rovingiz: «telegram chatni ulashni korib chiq». Saytdan lid
+ochilishi uchun hodimning Telegrami «Suhbatlar → Telegram ulash» orqali
+tizimga ulangan bo'lishi kerak — shu ulashni tekshirdim.
+
+1. **Telegramida ikki bosqichli paroli bor hodim ulana olmas edi.** Kod
+   yozilib «Ulash» bosilganda Telegram parol so'raydi. Shu paytda ekran kod
+   maydonini tozalab yuborardi. Hodim parolni yozib bosganda tizim bo'sh kod
+   yuborardi va «Bo'lmadi» chiqardi — har safar. Endi kod qabul qilingach
+   «✓ Kod qabul qilindi» chiqadi va faqat parol so'raladi.
+2. **Raqam boshqa hodimga ulangan bo'lsa**, tizim endi kodni yubormasdan
+   oldin aytadi: «Bu raqam tizimda allaqachon <ism> hisobiga ulangan».
+   Oldin kod kelardi, yozilardi, oxirida sababsiz «Bo'lmadi» chiqardi.
+   Bitta Telegram faqat bitta hodimga ulanadi.
+3. Muddati o'tgan kod endi «Vaqt tugadi. Kodni qaytadan so'rang» deydi.
+   Oldin «tekshirib qayta kiriting» deb, eskirgan kodni qayta-qayta so'rardi.
+4. Rad etilganda yozilgan raqam maydondan o'chib ketmaydi.
+5. Har bir muvaffaqiyatsiz urinish endi server logiga yoziladi. «Bo'lmadi»
+   chiqsa, sababini ko'rish mumkin:
+   `docker compose logs --since 1h app | grep tg-connect`
+
+**Hali qilinmagan:** raqam avval boshqa hodimga ulangan va o'sha ulanish
+uzilgan bo'lsa (masalan, ishdan ketgan hodimning ish telefoni yangi hodimga
+berilgan), uni hozir ekrandan bo'shatib bo'lmaydi. Shunday holat bo'lsa
+ayting — admin uchun «bo'shatish» tugmasini qo'shaman.
+
+Tekshirildi: kod → parol → ulash ketma-ketligi Telegramsiz sinovda
+to'liq o'tkazildi; boshqa hodimning raqami kod yuborilishidan oldin rad
+etilishi bazada sinaldi; to'rt tilning hammasida har bir xato uchun matn
+bor. Har bir tuzatish uchun test tuzatishsiz yiqilishi ko'rsatildi (6 ta).
+
 ## Andijondan Toshkentga ichki reys — reja ekranida yuk ko'rinadi — 2026-09-28
 
 Bu tuzatishning o'z migratsiyasi yo'q. U pastdagi «Yetti yangilik» bilan bitta
