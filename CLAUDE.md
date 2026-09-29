@@ -2246,10 +2246,13 @@ overflowed /admin/users (2,056 px at 360) and the staff card, and ten specs'
 `window.innerWidth` GROWS with Chrome's zoom-out (1,440 read against a 2,056
 document). Measure `document.documentElement.clientWidth` or the configured
 viewport; `e2e-width-oracle.test.ts` refuses `innerWidth` in specs. And
-(#1237) «add a no-login person» sometimes never opened the card: a
-`router.push` to the SAME route right after an action that revalidated it is
-dropped by the router on a WARM server (3-4 of 8; a fresh server per test
-never shows it) — the card now opens with a full `window.location.assign`.
+(#1237) two /hodimlar buttons could save and never land, only on a WARM
+server (a fresh server per test never shows it): a `router.push` right after
+an action DISCARDS the action still being applied and Next 15.5 never settles
+it (→ full `window.location.assign`), and an action whose revalidated content
+streams into a `<Suspense>` can stay pending for ever (upstream #87529/#98303
+→ no boundary around action buttons; no `router.refresh()` after an action
+that already revalidates).
 
 **Latest migration: 0120** (`no_login_staff`, `when` …099; ledger must reach **121**). Before
 it: 0119 (`price_icons`), 0118 (`border_queue`), 0117 (`staff_pay`) — `when` …096-…098. Before them:

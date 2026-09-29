@@ -2,7 +2,6 @@
 
 import { useActionState, useState, useTransition } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { latestTxDate } from '@/modules/wms/finance/dates';
 import {
@@ -55,7 +54,6 @@ export function KpiPayForm({
   today: string;
 }) {
   const t = useTranslations('hodimlar');
-  const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? '');
   const [date, setDate] = useState(today);
@@ -116,7 +114,6 @@ export function KpiPayForm({
                   note,
                 });
                 setResult(res);
-                if (res.ok) router.refresh();
               })
             }
           >
@@ -283,12 +280,13 @@ export function NoLoginPersonNew() {
                 const res = await mintPersonAction({ fullName: name, phone, confirmSameName: confirm });
                 setResult(res);
                 if (res.ok && res.id) {
-                  // A FULL load, not router.push: this is /hodimlar → /hodimlar?hodim=
-                  // right after an action that refreshed /hodimlar, and on a warm
-                  // server the soft navigation lost that race about half the time
-                  // (measured 3-4 of 8): its RSC answer arrived and the router
-                  // dropped the stream (ERR_ABORTED, no JS abort, no history call),
-                  // so the URL never moved. A document load cannot be dropped.
+                  // A FULL load, not router.push (#1237): `await` returns with the
+                  // action's value while the router is still applying the page the
+                  // action revalidated, and a navigation arriving then DISCARDS that
+                  // pending action — whose promise Next 15.5 never settles, so the
+                  // navigation it is entangled with never commits (3-4 of 8 on a
+                  // warm server; the URL never moved). A document load is not in
+                  // the router's queue at all.
                   window.location.assign(`/hodimlar?hodim=${res.id}`);
                   return;
                 }
@@ -362,14 +360,16 @@ export function NoLoginPersonNew() {
  */
 export function NoLoginPersonActive({ person }: { person: { id: string; name: string; active: boolean } }) {
   const t = useTranslations('hodimlar');
-  const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [result, setResult] = useState<StaffFormState>({});
+  // No router.refresh() after these actions (#1237): each one revalidates
+  // /hodimlar, so its answer already carries the new page — and a refresh
+  // fired while that page is still streaming in made the router drop both,
+  // leaving the button greyed for ever (measured 1 in 5 on a warm server).
   const press = (active: boolean) =>
     startTransition(async () => {
       const res = await setPersonActiveAction(person.id, active);
       setResult(res);
-      if (res.ok) router.refresh();
     });
 
   return (
@@ -406,7 +406,6 @@ export function NoLoginPersonActive({ person }: { person: { id: string; name: st
 export function NoLoginPersonTools({ person }: { person: { id: string; name: string; phone: string | null } }) {
   const t = useTranslations('hodimlar');
   const tc = useTranslations('common');
-  const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [name, setName] = useState(person.name);
   const [phone, setPhone] = useState(person.phone ?? '');
@@ -441,7 +440,6 @@ export function NoLoginPersonTools({ person }: { person: { id: string; name: str
               startTransition(async () => {
                 const res = await editPersonAction(person.id, { fullName: name, phone });
                 setResult(res);
-                if (res.ok) router.refresh();
               })
             }
           >

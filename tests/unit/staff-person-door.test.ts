@@ -86,11 +86,24 @@ describe('/admin/users — thin doors over the one writer', () => {
   });
 });
 
-describe('/hodimlar — the add fold is outside the slow boundary', () => {
-  it('<NoLoginPersonNew renders before the first <Suspense', () => {
-    const page = read('src/app/(protected)/hodimlar/page.tsx');
-    const fold = page.indexOf('<NoLoginPersonNew');
-    expect(fold).toBeGreaterThan(-1);
-    expect(fold).toBeLessThan(page.indexOf('<Suspense'));
+describe('/hodimlar — every button lands (#1237)', () => {
+  // Comments stripped (#725): the page explains the rule in words.
+  const code = (file: string) =>
+    read(file).replace(/\{\/\*[\s\S]*?\*\/\}/g, '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+  const page = code('src/app/(protected)/hodimlar/page.tsx');
+  const forms = code('src/app/(protected)/hodimlar/forms.tsx');
+
+  it('the cards are not inside a <Suspense>: an action revalidating streamed content can hang for ever', () => {
+    expect(page).toContain('<StaffList');
+    expect(page).not.toMatch(/<Suspense\b/);
+  });
+
+  it('no router.refresh() after an action that already revalidates the page', () => {
+    expect(forms).not.toMatch(/router\.refresh\(/);
+  });
+
+  it('a new person\'s card opens with a full load, never a soft push from inside the transition', () => {
+    expect(forms).toContain('window.location.assign(`/hodimlar?hodim=${res.id}`)');
+    expect(forms).not.toMatch(/\.push\(`\/hodimlar\?hodim=/);
   });
 });

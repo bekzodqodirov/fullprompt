@@ -1,5 +1,4 @@
 import Link from 'next/link';
-import { Suspense } from 'react';
 import { redirect } from 'next/navigation';
 import { asc, eq } from 'drizzle-orm';
 import { getTranslations } from 'next-intl/server';
@@ -98,18 +97,18 @@ export default async function HodimlarPage({
         <p className="w-full text-2xs text-ink-500">{t('roundingNote')}</p>
       </form>
 
-      {/* Outside the slow boundary: it needs no server data, so the add fold
-          is there before the budgeted KPI reads finish. */}
       <NoLoginPersonNew />
 
-      <Suspense fallback={<div aria-hidden className="card h-64 animate-pulse bg-surface-sunken" />}>
-        <StaffList
-          actor={actor}
-          month={month}
-          hodim={hodim}
-          today={today}
-        />
-      </Suspense>
+      {/* NOT inside a <Suspense> (#1237). It was, so the header painted before
+          the budgeted KPI reads; but every button on the cards is a server
+          action that revalidates this page, and in Next 15.5 an action whose
+          revalidated content streams into a boundary sometimes never commits —
+          the answer arrives in full and the transition stays pending, the
+          button greyed until a reload (measured 1-3 in 20 presses, 0 in 40
+          without the boundary; vercel/next.js #87529, #98303). The cost: on
+          the company view the wait (bounded by KPI_BUDGET_MS) is the
+          navigation bar on the previous page instead of a skeleton here. */}
+      <StaffList actor={actor} month={month} hodim={hodim} today={today} />
     </div>
   );
 }
