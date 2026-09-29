@@ -58,7 +58,8 @@ async function main() {
 
   const toDisable: typeof rows = [];
   for (const row of rows) {
-    const stillDemoPassword = await verifyPassword(row.passwordHash, DEMO_PASSWORD);
+    // A person who never signs in (0120) has no password to be the demo one.
+    const stillDemoPassword = row.passwordHash !== null && (await verifyPassword(row.passwordHash, DEMO_PASSWORD));
     const isSuper = superAdmins.has(row.id);
     const label = `${row.phone}  ${row.fullName}`;
     if (!row.active) {

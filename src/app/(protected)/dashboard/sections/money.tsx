@@ -320,6 +320,17 @@ export async function MoneySection({
             testid="dash-balance-rows"
           />
           {unrated > 0 && <p className="text-2xs text-warn">⚠ {t('unratedTills', { n: unrated })}</p>}
+          {/* A commission the walk could not check (3a): out of the bridge
+              and the net, and said — the Balans's own sentence. */}
+          {balance.sellerCommissionsUnknownCount > 0 && (
+            <p className="text-2xs text-warn" data-testid="dash-commissions-unknown">
+              ⚠{' '}
+              {ta('balSellerCommissionsUnknown', {
+                n: balance.sellerCommissionsUnknownCount,
+                usd: num(balance.sellerCommissionsUnknownUsd, 2),
+              })}
+            </p>
+          )}
           {cargoNotes > 0 && (
             <Link
               href="/accounting/balance#balance-unpriced"

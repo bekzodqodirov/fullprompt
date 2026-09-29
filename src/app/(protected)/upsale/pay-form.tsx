@@ -81,6 +81,7 @@ export function PayForm({
               key={r.offerId}
               className={`flex flex-wrap items-center gap-2 text-sm ${other ? 'opacity-40' : ''}`}
               data-testid="upsale-pay-row"
+              data-offer={r.offerId}
             >
               <input
                 type="checkbox"

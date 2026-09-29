@@ -648,6 +648,21 @@ export async function saveRecurring(input: z.infer<typeof recurringSchema>, ctx:
     throw new AccountingError('non_cash_category');
   }
   await assertRecurringUsd(input.amount, input.currency);
+  // A template is a promise to pay a person every month, so it is never
+  // minted on one who has left (0120's review, F1): the leaver would stay
+  // «faol emas» with a salary falling due for ever. Payroll wants the person
+  // logins or not, so this is `active` and not `canLogIn` — the card offers
+  // «Qayta faollashtirish» first, and a login leaver is the admin's to bring
+  // back. An edit of an EXISTING template is `updateRecurring`'s and is not
+  // asked: stopping a leaver's last template must stay possible.
+  if (input.employeeId) {
+    const [employee] = await db
+      .select({ active: users.active })
+      .from(users)
+      .where(eq(users.id, input.employeeId));
+    if (!employee) throw new AccountingError('not_found');
+    if (!employee.active) throw new AccountingError('employee_inactive');
+  }
   // Absent or 'this' = the column default (Tashkent's today, so this month
   // is in the window); 'next' = the first of next month.
   const dueFrom = input.firstMonth === 'next' ? nextMonthStart(tashkentDay()) : undefined;

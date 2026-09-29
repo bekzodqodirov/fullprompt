@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { db } from '../db/client';
 import { users } from '../db/schema';
 import { writeAudit } from '../audit/service';
+import { canLogIn } from '../users/login';
 import { findUserByIdentifier } from './identify';
 import { verifyPassword } from './password';
 import { accountLocked, addressBlocked, recordLoginAttempt } from './rate-limit';
@@ -48,7 +49,10 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
 
   const user = await findUserByIdentifier(identifier);
 
-  const valid = user && user.active && (await verifyPassword(user.passwordHash, password));
+  // `canLogIn` = active AND a login (0120). The null check is what TS needs;
+  // `users_login_password_check` makes it redundant for a login row.
+  const valid =
+    user && canLogIn(user) && user.passwordHash !== null && (await verifyPassword(user.passwordHash, password));
   await recordLoginAttempt(identifier, ipForLimit, Boolean(valid));
   if (!valid || !user) {
     return { error: (await accountLocked(identifier)) ? 'rate_limited' : 'invalid' };

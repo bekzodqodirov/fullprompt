@@ -1536,9 +1536,10 @@ export async function unbatchedMoney(from: string, to: string): Promise<Unbatche
  * - unclaimed: allocations on cargo nobody has claimed (client_id NULL). It
  *   cost us money (#980/#1010) and it moves onto the client when somebody
  *   claims it (`assignReceiptClient` rewrites the allocations). Kept OUT of
- *   `profitByClient`'s array on purpose: `sellerPerformanceAll` files a null
- *   client under the «—» cohort of unassigned clients, and unclaimed cargo is
- *   not a client of anybody's.
+ *   `profitByClient`'s array on purpose: the seller table's cost reader
+ *   (`staff/stamp-cost.ts`) drops it by the same `ca.client_id IS NOT NULL` —
+ *   unclaimed cargo is nobody's cargo and nobody's score until it is claimed,
+ *   when it takes the claim day's seller (0117).
  * - unallocated: a live, converted entry that reached no box, or reached them
  *   short — a truck cost typed while the truck is empty, a factory truck with
  *   no prixod linked, a direct-to-client share with no box of that client in
@@ -2180,7 +2181,6 @@ export async function unpricedCargoMoney(opts: {
  */
 export const companyBalanceParts = cache(async function companyBalanceParts() {
   const { accountBalances, countedAccount } = await import('./service');
-  const { upsaleLiability } = await import('../calc/upsale-service');
   const [accounts, rate, rates] = await Promise.all([accountBalances(), uzsRate(), kassaRatesToday()]);
 
   // Per box in its own money, and a USD total. EVERY currency converts at
@@ -2311,14 +2311,10 @@ export const companyBalanceParts = cache(async function companyBalanceParts() {
   // net, as placing does for U09's ambiguous payments.
   const unplacedCosts = await unplacedCostTotals();
 
-  // What the sellers have earned on jobs the client has already paid for
-  // (audit U10, #793 — derived, never stored): owed from money already in
-  // the tills above, so until the payout it is a liability, not profit.
-  const commissions = await upsaleLiability();
-
   // Rent and salaries whose day has come and nobody has paid (owner's Q6,
-  // 0106) — the same noun as the commissions above: a debt whose day has
-  // come, owed out of money already in the tills. Nothing leaves a kassa by
+  // 0106) — the same noun as the sellers' commissions (`companyBalance`): a
+  // debt whose day has come, owed out of money already in the tills. Nothing
+  // leaves a kassa by
   // itself any more, so until «To'landi» the money is still counted in the
   // drawer; without this line Sof holat would stand too high by every unpaid
   // salary. Book entries (depreciation) are counted in the list, never here.
@@ -2347,9 +2343,6 @@ export const companyBalanceParts = cache(async function companyBalanceParts() {
     payableUsd: money(owedByUs),
     /** Counterparties who are in front on their account. */
     partnerReceivableUsd: money(owedToUsByPartners),
-    /** Seller commissions owed on jobs the client has paid for (U10) — in the net. */
-    sellerCommissionsUsd: commissions.payableUsd,
-    sellerCommissionsCount: commissions.payableCount,
     /** Due, unpaid recurring months with money behind them (0106) — in the net. */
     recurringArrearsUsd: arrears.usd,
     recurringArrearsCount: arrears.cashCount,
@@ -2379,12 +2372,20 @@ export async function companyBalance() {
   // kassa-paid costs the line may value.
   const [since, gate, rates] = await Promise.all([unplacedCostSince(), unpricedGate(), kassaRatesToday()]);
   const ratedCurrencies = ratedCurrenciesOf(rates);
-  // Side by side, so the page costs max(parts, line), not their sum — and
-  // both awaited in ONE Promise.all: a promise started early and awaited
-  // later is an unhandled rejection while another await is pending.
-  const [parts, cargo] = await Promise.all([
+  const { upsaleLiabilityForNet } = await import('../calc/upsale-service');
+  // Side by side, so the page costs max(parts, line, walk), not their sum —
+  // and all awaited in ONE Promise.all: a promise started early and awaited
+  // later is an unhandled rejection while another await is pending. The
+  // seller commissions are a company-wide walk (his 3a), read only for the
+  // net: the parts' readers (the admin home, the hero's cash, the attention
+  // list) print no net and must not wait for it (the parts' contract above).
+  // Read through the minute-long memo (calc/liability-memo.ts): every render
+  // of the Balans, the dashboard and the hero's net asks it, and the walk's
+  // candidates are every unpaid deal offer ever made.
+  const [parts, cargo, commissions] = await Promise.all([
     companyBalanceParts(),
     unpricedCargoMoney({ since, ratedCurrencies, gate, cardRule: CARD_PRICE_RULE, history: 'since_gate' }),
+    upsaleLiabilityForNet(),
   ]);
   const unplacedCostsOut = money(parts.unplacedCostUsd - parts.unplacedCostInCountUsd);
 
@@ -2396,7 +2397,12 @@ export async function companyBalance() {
     parts.payableUsd -
     parts.clientAdvancesUsd -
     unplacedCostsOut -
-    parts.sellerCommissionsUsd -
+    // What the sellers have earned on jobs whose cargo the client has paid
+    // for, oldest debt first (3a, the KPI's rule; U10, #793 — derived, never
+    // stored): owed from money already in the tills above, so until the
+    // payout it is a liability, not profit. A job the walk did not reach is
+    // OUT of this sum and named beside it (U14), never guessed.
+    commissions.payableUsd -
     parts.recurringArrearsUsd +
     // U03: exactly the allocations whose money already left this net (the
     // pair rule, #528) — the cost of cargo whose price is not written yet.
@@ -2408,6 +2414,12 @@ export async function companyBalance() {
   // The line and what it left out come before the net, in ~450 characters.
   return {
     ...totals,
+    /** Commissions owed on jobs whose cargo and invoice the client has paid for, oldest debt first (U10, 3a) — IN the net. */
+    sellerCommissionsUsd: commissions.payableUsd,
+    sellerCommissionsCount: commissions.payableCount,
+    /** Candidates the walk did not reach in its budget — OUT of the net, named, with the most they could be (U14). */
+    sellerCommissionsUnknownCount: commissions.unknownCount,
+    sellerCommissionsUnknownUsd: commissions.unknownUsd,
     /** Spent on cargo whose price is not written yet (U03) — IN the net. */
     unpricedCargoUsd: cargo.lineUsd,
     /** The line's arithmetic and what it names beside it. */

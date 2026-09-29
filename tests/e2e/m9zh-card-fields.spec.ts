@@ -94,7 +94,7 @@ test('the menu costs the board no height while it is closed', async ({ page }) =
   expect(Math.round(open!.y)).toBe(Math.round(shut!.y));
   // …and the open panel does not make the document wider than the phone.
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
-    await page.evaluate(() => window.innerWidth),
+    await page.evaluate(() => document.documentElement.clientWidth),
   );
 });
 

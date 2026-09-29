@@ -4,6 +4,7 @@ import { clients, crmActivities, deals, leads, users } from '../../platform/db/s
 import { cardLink } from '../../platform/notifications/links';
 import { notifyStaffTelegram, userName } from '../../platform/notifications/staff';
 import { extractMentions, type MentionPerson } from './mentions';
+import { canLogInSql } from '../../platform/users/login';
 
 /**
  * The internal conversation, carried by Telegram.
@@ -74,7 +75,9 @@ export async function mentionablePeople(): Promise<MentionPerson[]> {
   return db
     .select({ id: users.id, name: users.fullName })
     .from(users)
-    .where(eq(users.active, true))
+    // A colleague NOW (`canLogIn`, 0120): a typed name never mentions a person
+    // who never signs in — they would never read it.
+    .where(canLogInSql())
     .orderBy(asc(users.fullName));
 }
 

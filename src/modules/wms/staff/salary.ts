@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { occurrencesSql, paidSql, skippedSql } from '../accounting/recurring-sql';
+import { occurrencesSql, openOccurrencesSql, paidSql, skippedSql } from '../accounting/recurring-sql';
 import type { Exec } from './cargo';
 
 /**
@@ -117,4 +117,24 @@ export async function staffTemplates(
     state: row.paid ? 'paid' : row.skipped ? 'skipped' : row.owed ? 'waiting' : 'not_due',
     month: thisMonth,
   }));
+}
+
+/**
+ * Everyone a recurring template still owes or is still owed by — the DUE
+ * LIST's own predicate (`openOccurrencesSql`), never a restatement (#513): an
+ * ACTIVE template (its window runs through next month), or any template,
+ * stopped included, with an open occurrence (a voided «To'landi» re-opens its
+ * month on a stopped template — recurring-sql.ts `occurrencesSql`). /hodimlar
+ * keeps these people listed whether or not they are active (0120, the owner's
+ * 2b: a worker who left is still paid his last month).
+ */
+export async function owedEmployeeIds(exec: Exec, today: string): Promise<Set<string>> {
+  const rows = (await exec.execute(sql`
+    SELECT r.employee_id FROM recurring_expenses r
+     WHERE r.employee_id IS NOT NULL AND r.active
+    UNION
+    SELECT r.employee_id FROM (${openOccurrencesSql(today)}) o
+      JOIN recurring_expenses r ON r.id = o.recurring_id
+     WHERE r.employee_id IS NOT NULL`)) as unknown as { employee_id: string }[];
+  return new Set([...rows].map((row) => row.employee_id));
 }

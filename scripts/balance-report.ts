@@ -76,6 +76,13 @@ async function main() {
     for (const line of balanceLines(balance, { cash: '', cargo: '' })) {
       console.log(`  ${(uz[line.key] ?? line.key).padEnd(56)} ${usd(line.value)}`);
     }
+    // A commission the walk could not check in its budget (3a) is OUT of the
+    // line and of the net — said here, never read as $0.
+    if (balance.sellerCommissionsUnknownCount > 0) {
+      console.log(
+        `  ⚠ Sotuvchilar ulushi: ${balance.sellerCommissionsUnknownCount} ta ish tekshirilmadi (ko‘pi bilan ${usd(balance.sellerCommissionsUnknownUsd)}) — qatorga va Sof holatga kirmagan`,
+      );
+    }
     console.log(`  ${(uz.balNet ?? 'Sof holat').padEnd(56)} ${usd(balance.netUsd)}`);
     console.log(`  (bu qatorsiz Sof holat: ${usd(balance.netUsd - balance.unpricedCargoUsd)})`);
 

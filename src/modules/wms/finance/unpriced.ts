@@ -25,6 +25,9 @@ import { ISSUABLE_STATUSES } from '../issue/parties';
  * Two screens one tap apart that disagree about which cargo is unpriced are
  * worse than either alone — the operator refused at the counter looks for
  * the row, the accountant clears the row and expects the counter to open.
+ * The paid-cargo walk (`finance/paid-cartons.ts`), which the KPI and the
+ * upsale share, continues from `u_pair.covers` and the `elsewhere` tag and
+ * restates nothing.
  *
  * The grain is the CARTON. A carton k of a confirmed prixod R with a client C
  * is COVERED when a live charge of C satisfies clause 1 or clause 2, and —
@@ -92,6 +95,14 @@ export type UnpricedScope =
    * a part of the whole.
    */
   | { kind: 'stamped'; sellerId: string | undefined; from: Date; to: Date }
+  /**
+   * The cartons of the confirmed prixods linked to these DEALS whose client
+   * IS the deal's client — the upsale's paid-cargo walk (3a). The client
+   * clause is load-bearing: `assignReceiptClient` moves a prixod to another
+   * client and leaves its deal_id (receipts/edit.ts), and that client's
+   * ledger must never decide this deal's commission. Uses `receipts_deal_idx`.
+   */
+  | { kind: 'deals'; dealIds: string[] }
   | {
       kind: 'company';
       warehouseIds: string[] | undefined;
@@ -184,6 +195,11 @@ export function unpricedScopeSql(scope: UnpricedScope): SQL {
       return sql`${scope.sellerId ? sql`r.sales_manager_id = ${scope.sellerId}::uuid` : sql`r.sales_manager_id IS NOT NULL`}
         AND r.received_at >= ${scope.from.toISOString()}::timestamptz
         AND r.received_at < ${scope.to.toISOString()}::timestamptz`;
+    case 'deals':
+      return scope.dealIds.length
+        ? sql`r.deal_id IN (${idList(scope.dealIds)})
+              AND EXISTS (SELECT 1 FROM deals sd WHERE sd.id = r.deal_id AND sd.client_id = r.client_id)`
+        : sql`false`;
     case 'company': {
       const owner =
         scope.ownerId !== undefined

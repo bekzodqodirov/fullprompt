@@ -3,6 +3,7 @@ import { db } from '../../platform/db/client';
 import { inboundRoutes, leads, users } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { INBOUND_SOURCE_KEYS } from './inbound';
+import { canLogInSql } from '../../platform/users/login';
 
 /**
  * Taqsimot: which stream of inbound leads lands on whom (round 96).
@@ -126,7 +127,8 @@ export async function nextInboundOwner(pool?: string[]): Promise<string | null> 
       leads,
       and(eq(leads.ownerId, users.id), isNotNull(leads.inboundAt), gt(leads.inboundAt, since)),
     )
-    .where(and(eq(users.active, true), membership))
+    // `canLogIn` (0120): a flag set on a person who never signs in routes nothing to them.
+    .where(and(canLogInSql(), membership))
     .groupBy(users.id)
     // NULLS FIRST is the whole point: a seller with no inbound lead yet is at
     // the front of the queue, not sorted arbitrarily among the rest.
@@ -161,12 +163,12 @@ export async function routeInboundOwner(arrival: {
   return { ownerId: await nextInboundOwner(), routeId: null };
 }
 
-/** The people on the taqsimot screen: every active user, ticked or not. */
+/** The people on the taqsimot screen: every colleague now (`canLogIn`), ticked or not. */
 export async function rotaMembers() {
   return db
     .select({ id: users.id, fullName: users.fullName, inRota: users.inboundRota })
     .from(users)
-    .where(eq(users.active, true))
+    .where(canLogInSql())
     .orderBy(desc(users.inboundRota), asc(users.fullName));
 }
 
@@ -179,28 +181,33 @@ export async function setRotaMembers(userIds: string[], ctx: AuditContext): Prom
   const before = await db
     .select({ id: users.id })
     .from(users)
-    .where(and(eq(users.active, true), eq(users.inboundRota, true)));
+    .where(and(canLogInSql(), eq(users.inboundRota, true)));
   const wanted = new Set(userIds);
   const had = new Set(before.map((row) => row.id));
   const add = userIds.filter((id) => !had.has(id));
   const remove = [...had].filter((id) => !wanted.has(id));
-  if (add.length) {
-    await db
-      .update(users)
-      .set({ inboundRota: true })
-      .where(and(inArray(users.id, add), eq(users.active, true)));
+  // Validated FIRST, so the audit counts what was written: a forged id, a
+  // leaver or a person who never signs in (0120) is not added — and a press
+  // that added nobody and removed nobody writes no «added: 1» line.
+  const addable = add.length
+    ? (await db.select({ id: users.id }).from(users).where(and(inArray(users.id, add), canLogInSql()))).map(
+        (r) => r.id,
+      )
+    : [];
+  if (addable.length) {
+    await db.update(users).set({ inboundRota: true }).where(inArray(users.id, addable));
   }
   if (remove.length) {
     await db.update(users).set({ inboundRota: false }).where(inArray(users.id, remove));
   }
-  if (add.length || remove.length) {
+  if (addable.length || remove.length) {
     await writeAudit(db, ctx, {
       entityType: 'settings',
       // The settings screen's own well-known id — membership is one company
       // setting, not a change to any single user's record.
       entityId: SETTINGS_ENTITY_ID,
       action: 'update',
-      after: { inboundRota: { added: add.length, removed: remove.length } },
+      after: { inboundRota: { added: addable.length, removed: remove.length } },
     });
   }
 }
@@ -239,7 +246,7 @@ export async function createRoute(
   const members = await db
     .select({ id: users.id })
     .from(users)
-    .where(and(inArray(users.id, input.userIds), eq(users.active, true)));
+    .where(and(inArray(users.id, input.userIds), canLogInSql()));
   if (members.length === 0) throw new RoutingError('members_required');
 
   const [last] = await db

@@ -49,6 +49,22 @@ describe('the own path cannot produce a cost', () => {
     expect(own).not.toContain('profitByClient');
     expect(own).not.toContain('costEntries');
     expect(own).not.toContain('costAllocations');
+    // 4a: the full table's cost-by-stamp reader is the cost half's only door.
+    expect(own).not.toContain('costByStamp');
+  });
+
+  it('the revenue module the own path calls names no cost source', () => {
+    // `sellerPerformanceOwn` and the full table share ONE revenue function
+    // (4a, #1212's own == all by construction), so that function — and the
+    // pure rules it folds with — must be as cost-blind as the own path itself.
+    for (const path of ['src/modules/wms/staff/stamp-revenue.ts', 'src/modules/wms/staff/stamp-split.ts']) {
+      const text = readFileSync(path, 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/\/\/.*$/gm, '');
+      expect(text, path).not.toMatch(
+        /profitByClient|costEntries|costAllocations|cost_allocations|cost_entries|costByStamp|stamp-cost/,
+      );
+    }
   });
 
   it('the own return type carries no cost-derived property', () => {

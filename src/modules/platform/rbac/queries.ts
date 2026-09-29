@@ -1,6 +1,7 @@
 import { and, asc, eq, inArray, or, sql } from 'drizzle-orm';
 import { db } from '../db/client';
 import { permissions, rolePermissions, roles, userRoles, users } from '../db/schema';
+import { canLogInSql } from '../users/login';
 
 /**
  * Who may be a client's or a lead's owner.
@@ -41,7 +42,7 @@ export async function salesManagerOptions(
     .from(users)
     .where(
       or(
-        and(eq(users.active, true), sql`${users.id} IN ${holders}`),
+        and(canLogInSql(), sql`${users.id} IN ${holders}`),
         // The current holder, whoever they now are. Rendering them is what
         // stops the next save from erasing them.
         include ? eq(users.id, include) : sql`false`,

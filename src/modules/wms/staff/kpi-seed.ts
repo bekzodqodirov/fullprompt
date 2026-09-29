@@ -11,7 +11,7 @@
  * illustrations of the rule, not a second rule, and are not stored.
  */
 
-/** The month his table starts to apply — open point 1's default (a): September 2026. */
+/** The month his table starts to apply — September 2026, his answer 1a (2026-09-29). */
 export const OWNER_KPI_FROM = '2026-09-01';
 
 /** Tier tops in m³; null = the open top. */

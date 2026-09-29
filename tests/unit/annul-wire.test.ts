@@ -40,12 +40,25 @@ describe('the gate — super_admin, one home, both sides of every door', () => {
     expect(doors).toMatch(/anulirovka[\s\S]{0,120}admin\.audit\.browse/);
   });
 
-  it('the super_admin ROLE cannot be self-assigned: both users actions guard the change', () => {
-    const src = read('src/app/(protected)/admin/users/actions.ts');
-    expect(
-      [...src.matchAll(/actor\.roles\.includes\('super_admin'\)/g)].length,
-    ).toBeGreaterThanOrEqual(2);
-    expect(src).toContain("'super_admin_locked'");
+  it('the super_admin ROLE cannot be self-assigned: the ONE writer of user_roles guards every door', () => {
+    // Moved INTO the writer by 0120 (the judges' A4): it was copied into two
+    // actions in two shapes, and the conversion door would have been the
+    // third. Every door that writes roles goes through `setRolesAndWarehouses`,
+    // so asking there asks for all of them.
+    const writer = read('src/modules/platform/users/service.ts');
+    const body = writer.slice(
+      writer.indexOf('async function setRolesAndWarehouses'),
+      writer.indexOf('export interface LoginInput'),
+    );
+    expect(body).toMatch(/!actorRoles\.includes\('super_admin'\)/);
+    expect(body).toContain("new UserWriteError('super_admin_locked')");
+    for (const door of ['createLogin', 'updateLogin', 'enableLogin']) {
+      const start = writer.indexOf(`export async function ${door}(`);
+      const next = writer.indexOf('\nexport ', start + 10);
+      expect(writer.slice(start, next), door).toContain('setRolesAndWarehouses(tx,');
+    }
+    const actions = read('src/app/(protected)/admin/users/actions.ts');
+    expect(actions).toContain("'super_admin_locked'");
   });
 });
 

@@ -7,6 +7,7 @@ import { getSetting } from '../../platform/settings/service';
 import { cardLink } from '../../platform/notifications/links';
 import { usersWithRoles } from '../../platform/notifications/service';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
+import { canLogInSql } from '../../platform/users/login';
 import { botActorFor } from '../../platform/telegram/staff-bot';
 import { isOfficeTime, officeMinutesBetween } from '../../platform/time/office-hours';
 import { tashkentDay } from '../../platform/time/tashkent';
@@ -95,11 +96,11 @@ async function recipientsFor(
 ): Promise<{ userIds: string[]; orphan: Orphan | null; ownerName: string | null }> {
   if (ownerId) {
     const [owner] = await db
-      .select({ active: users.active, name: users.fullName })
+      .select({ live: canLogInSql(), name: users.fullName })
       .from(users)
       .where(eq(users.id, ownerId))
       .limit(1);
-    if (owner?.active) return { userIds: [ownerId], orphan: null, ownerName: owner.name };
+    if (owner?.live) return { userIds: [ownerId], orphan: null, ownerName: owner.name };
     return {
       userIds: await usersWithRoles(['super_admin']),
       orphan: 'inactive',
@@ -300,7 +301,7 @@ async function untouchedLines(leadIds: string[], intakeIds: string[]): Promise<U
   }>(sql`
     SELECT DISTINCT ON (i.lead_id)
            i.lead_id, l.name AS lead_name, l.phone AS lead_phone,
-           u.full_name AS owner_name, u.active AS owner_active, s.name AS source_name, i.source_key,
+           u.full_name AS owner_name, ${canLogInSql('u')} AS owner_active, s.name AS source_name, i.source_key,
            n.status AS push_status, n.error AS push_error
       FROM lead_intakes i
       JOIN leads l ON l.id = i.lead_id

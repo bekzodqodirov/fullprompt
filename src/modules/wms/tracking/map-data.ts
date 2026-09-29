@@ -257,8 +257,8 @@ export const LANDMARKS: { name: string; p: RoutePoint }[] = [
  * reads is the default the ETA uses.
  *
  * Khorgos «3 kuncha» = 60-84 h; Yallama «3-4 kun» = 72-96 h. The Kashgar
- * road's Irkeshtam wait is deliberately NOT here: he asked about the Horgos
- * road, and the Kashgar trucks keep their pin (adding it is one line).
+ * road's Irkeshtam wait is deliberately NOT here — his answer 9a: the Kashgar
+ * trucks keep their pin (adding it later is one line).
  */
 export const BORDER_POSTS = {
   khorgos: [60, 84],
@@ -423,7 +423,7 @@ function cnLeg(origin: string, hub: 'KA' | 'HOR'): RouteLeg | null {
       };
     }
     if (origin === 'UCH') {
-      // An estimate and not his number (open point 1): ~650 km of G30.
+      // ~650 km of G30: our estimate, which he confirmed (answer 7, «ha»).
       return { key: 'cn_transit', hours: [12, 24], points: road('uch_hor') ?? HOR_TAIL };
     }
     return null;

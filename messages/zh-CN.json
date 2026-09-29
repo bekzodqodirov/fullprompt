@@ -388,11 +388,12 @@
       "report": "报表",
       "failed": "无法计算",
       "none": "该期间无数据。",
-      "nobody": "无经理",
+      "nobody": "无销售员",
       "cargo": "货物",
       "upsale": "upsale",
-      "note": "货物利润按客户当前经理计算；upsale已包含在内，不再相加。",
-      "truncated": "upsale不完整——该期间报价过多。"
+      "note": "货物利润记在收货当天的销售员名下；upsale已包含在货价中，不再相加。",
+      "truncated": "upsale不完整——该期间报价过多。",
+      "inactive": "已停用"
     }
   },
   "inventory": {
@@ -654,7 +655,26 @@
       "accountant": "会计",
       "viewer": "观察者"
     },
-    "superAdminLocked": "只有超级管理员可以授予或移除超级管理员角色"
+    "superAdminLocked": "只有超级管理员可以授予或移除超级管理员角色",
+    "noLogin": "不登录系统",
+    "enableLoginTitle": "开通登录",
+    "enableLoginHint": "该员工目前不登录系统——只在「员工：工资与KPI」页面记录其工资。开通后，用下方的电话和密码登录，用该电话连接 Telegram 机器人，并在个人资料的「本月」中看到自己的工资。此操作不可撤销：离职时请点击「停用」。",
+    "enableLoginInactive": "该员工已停用。请先点击上方的「启用」，然后才能开通登录。",
+    "payrollPhone": "工资页面记录的电话：{phone}",
+    "payrollPhoneNone": "工资页面未记录电话。",
+    "loginPhoneHint": "请输入员工本人的号码（即使上面的号码正确也请重新输入）：登录用此号码，Telegram 机器人也以此识别员工身份。不要填写仓库公用电话或他人号码。",
+    "enableLoginSave": "确认开通登录",
+    "enableLoginDone": "✅ 已开通登录",
+    "noLoginRow": "该员工没有登录——请先「开通登录」",
+    "alreadyLogin": "该员工已经可以登录",
+    "usernameExists": "该登录名已被占用",
+    "inactivePerson": "该员工已停用——请先「启用」",
+    "badPhone": "电话无效",
+    "salaryOnHodimlar": "工资：在「员工：工资与KPI」页面 →",
+    "newNoLoginLine": "不登录系统的员工（例如中国仓库的工人——仅用于工资）不在此处添加，而是在「员工：工资与KPI」页面添加。",
+    "newNoLoginGo": "打开 →",
+    "newNoLoginList": "不登录系统的员工：{count} 人",
+    "newNoLoginListHint": "如需为其中某人开通登录，请不要新建员工——打开其卡片并点击「开通登录」；否则工资在一条记录上，工作却在另一条上。"
   },
   "settings": {
     "title": "设置",
@@ -813,7 +833,8 @@
       "weightKg": "重量 kg",
       "widthCm": "宽 cm",
       "cargoStampedTo": "货物归属于",
-      "receipts": "入库单"
+      "receipts": "入库单",
+      "loginEnabled": "登录系统"
     }
   },
   "profile": {
@@ -1903,6 +1924,7 @@
     "partnerIn": "合作方转入",
     "partnerOut": "支付给合作方",
     "accountCurrencyMismatch": "账户币种与金额币种不符",
+    "employeeInactive": "该员工已离职——不能设置新工资。请先在其卡片上点击「重新启用」。",
     "requestsTitle": "仓库支出——待入账",
     "enterRequest": "入账",
     "requestStuck": "入账未完成——请检查支出列表",
@@ -2154,7 +2176,8 @@
     "pnlVsPriorNone": "上期无数据",
     "pnlVsPrior": "▲▼ — 与 {from} — {to} 相比（相同日期）。",
     "pnlByMonth": "按月：收入与支出",
-    "pnlDetail": "明细表——每个科目、每个月"
+    "pnlDetail": "明细表——每个科目、每个月",
+    "balSellerCommissionsUnknown": "销售提成：{n} 项业务的货款未能及时核对——最多 ${usd}，未计入此行，也未计入净头寸"
   },
   "lidChat": {
     "mark": "线索",
@@ -2825,7 +2848,8 @@
       "already_closed": "任务已关闭",
       "bad_due_date": "截止时间无效",
       "not_created": "创建失败",
-      "repeat_needs_due": "重复任务必须有截止日期"
+      "repeat_needs_due": "重复任务必须有截止日期",
+      "assignee_no_login": "该员工不登录系统——看不到任务"
     },
     "repeat": "重复",
     "repeatNever": "不重复",
@@ -3220,7 +3244,8 @@
       "account_currency_mismatch": "钱箱币种与支付币种不一致",
       "future_date": "日期不能晚于明天。",
       "non_cash_category": "所选费用类型不涉及现金——不能将付款记入其中。",
-      "amount_too_large": "金额过大——单行无法容纳。"
+      "amount_too_large": "金额过大——单行无法容纳。",
+      "upsale_not_computed": "核对货物付款超时——请稍后再按一次"
     },
     "openCard": "卡片",
     "freight": "运费",
@@ -3561,9 +3586,9 @@
     "chargeMoved": "服务欠款（车辆、清关、租金、工资）现在在费用表单中选择「由谁支付」录入。欠款会自动记到这里，也会计入利润报表。",
     "manualCharge": "未关联费用——利润报表中没有",
     "owedToUs": "欠我们",
-    "login": "员工（登录账号）",
+    "login": "员工",
     "noLogin": "非员工",
-    "loginHint": "绑定登录账号后即为员工账户：余额仅会计、管理员及员工本人可见。",
+    "loginHint": "绑定员工后即为其账户：余额仅会计、管理员及（如其登录系统）员工本人可见。",
     "userTaken": "该员工已有账户——每位员工一个账户。",
     "staffForbidden": "员工账户仅由会计和管理员管理。",
     "staffKinds": {
@@ -3898,7 +3923,7 @@
     "jobs": "业务",
     "stPaid": "已支付",
     "stPayable": "可支付",
-    "stAwaiting": "客户未付款",
+    "stAwaiting": "货物未付款",
     "stNoInvoice": "未开票",
     "stNoDeal": "未开立交易",
     "pay": "支付",
@@ -3924,11 +3949,21 @@
     "promisedOnly": "承诺 {promised} · 货物尚未到达",
     "cargoKpi": "带来的货物（KPI）",
     "cargoKpiHint": "入库时记在销售员名下的入库单（当天客户的经理）——按仓库收货日期。其KPI见「员工」页面。",
-    "cargoReceipts": "入库单"
+    "cargoReceipts": "入库单",
+    "stNotComputed": "未核对",
+    "stCargoLost": "已无货物",
+    "fifoToOpen": "客户再付 {amount} 后即可支付",
+    "fifoToOpenOlder": "客户再付 {amount} 后即可支付——付款先冲抵其较早的欠款",
+    "fifoPricedElsewhere": "价格记在某辆车上，但此货尚未随该车出发，或该车为境内线路——这笔价格不算此货的（{uncovered} / {cartons} 箱）",
+    "fifoUncovered": "未定价箱数：{uncovered} / {cartons}——请把价格记在货物所乘车辆或交易上",
+    "fifoNoLive": "该交易已无剩余货物：丢失、作废或已转给其他客户",
+    "fifoNotComputed": "核对超时——请刷新页面",
+    "notComputedPage": "部分业务的货物付款未能及时核对——未列入待支付。请刷新页面。",
+    "paidRule": "交易货物及记在交易上的价格付清后才支付提成。客户的付款从最早的欠款开始冲抵（KPI 规则）。"
   },
   "sellerReport": {
     "title": "销售业绩",
-    "subtitle": "按客户的销售经理统计：期间收货量与实际计费。漏斗（报价）为单独报表。",
+    "subtitle": "按销售员统计：期间收货量与实际计费。漏斗（报价）为单独报表。",
     "period": "期间",
     "show": "显示",
     "ownTitle": "我的业绩",
@@ -3938,14 +3973,20 @@
     "revenue": "计费",
     "profit": "利润",
     "seller": "销售",
-    "nobody": "—（无经理）",
+    "nobody": "—（无销售员）",
     "total": "合计",
-    "unassigned": "{n} 个客户没有经理——其货量与金额在「—」行。",
+    "unassigned": "目前有 {n} 个客户没有经理。",
     "clientBook": "客户簿",
     "funnelLink": "漏斗分析",
     "empty": "该期间暂无数据",
     "cargoByStamp": "货物与入库单按收货当天记在入库单上的销售员统计",
-    "moneyByBook": "金额与利润按客户当前经理统计"
+    "moneyByStamp": "金额与利润同理：价格记在其所计费货物的入库单销售员名下",
+    "clientsByBook": "「客户」列按客户当前经理统计",
+    "ownAttribution": "您的金额按入库当天的销售员计算。",
+    "nobodyRow": "「—」行为收货时没有销售员的货物及其金额，以及既无入库单也无销售员的客户的价格。客户被指定第一位销售员后，这些货物及金额将转给该销售员。",
+    "unlinked": "{n} 笔价格（{usd}）看不出对应哪批货——在客户账上定的无车次价格、客户货物未随其出发的车次价格，或尚无入库单的交易价格。它们记在客户截至当日最近一张入库单的销售员名下（若无入库单则记在当前经理名下）。会计在客户账上用「🚚 转移」把价格转到货物所乘车次后，将记到该货物的销售员名下。",
+    "split": "{n} 笔价格（{usd}）涉及多位销售员的货物，按立方数分摊（若有箱子无立方数则按公斤，仍缺则按箱数）。",
+    "inactive": "已停用"
   },
   "annul": {
     "open": "作废（级联）…",
@@ -4727,7 +4768,18 @@
       "kpi_version_paid": "该月KPI已支付——新表只能从之后的月份开始",
       "category_clash": "此费用类型已用于另一种支付（工资、KPI 或加价）——每种需要单独的类型",
       "before_first_version": "表格不能早于第一个 KPI 月份开始",
-      "no_seller": "客户没有指定销售"
+      "no_seller": "客户没有指定销售",
+      "name_required": "未填写姓名",
+      "name_too_long": "姓名过长——最多 200 个字符",
+      "bad_phone": "电话无效——仅限数字，开头可带 +（7–15 位）",
+      "phone_exists": "该电话已属于其他员工——请留空或填写其他号码",
+      "username_exists": "该登录名已被占用",
+      "same_name": "名单中已有同名员工",
+      "is_login": "该员工可登录系统——只能由管理员在「管理 → 员工」中修改",
+      "already_login": "该员工已经可以登录",
+      "no_login_row": "该员工没有登录——需先由管理员在「管理 → 员工」中「开通登录」",
+      "inactive_person": "该员工已停用——请先「重新启用」",
+      "super_admin_locked": "只有超级管理员可以授予或撤销超级管理员角色"
     },
     "table": {
       "title": "KPI表",
@@ -4752,7 +4804,34 @@
     "computeOne": "只计算此员工",
     "salaryNotDue": "——本月尚未到付款期",
     "salaryMonth": "{month}：",
-    "unstampedRepair": "→ 转给{name}"
+    "unstampedRepair": "→ 转给{name}",
+    "upsaleNotComputed": "部分销售分成的货款未能及时核对——“应付”金额不完整。请通过销售卡片上的链接单独打开：单个销售的核对通常来得及。",
+    "noLogin": "不登录系统",
+    "personNew": "添加不登录系统的员工",
+    "personNewHint": "例如中国仓库的工人：不登录系统，本页只记录其工资。不分配任务、消息或客户。以后如需登录，由管理员在「管理 → 员工」中该员工的卡片上点击「开通登录」。",
+    "personName": "姓名",
+    "personPhone": "电话（可选）",
+    "personPhoneHint": "仅限数字，开头可带 +（7–15 位）。",
+    "personAdd": "添加",
+    "personAdded": "已添加——打开其卡片 →",
+    "personSameName": "名单中已有同名员工：",
+    "personSameNameMore": "另有 {count} 人",
+    "personSameNameAgain": "如果是同一个人——请打开其卡片（工资在那里设置）。",
+    "personSameNameReturn": "如果标记为「已停用」的人回来了——请打开其卡片并先点击「重新启用」，之后再设置工资。",
+    "personSameNameOther": "如果是另一个人——请再按一次「添加」。",
+    "personStateLogin": "可登录",
+    "personEdit": "姓名、电话",
+    "personLeave": "已离职",
+    "personLeaveConfirm": "{name} 已离职吗？如果最后一个月工资尚未支付，请在「费用」中用「✓ 已付」支付——普通费用表单无法选择已离职员工。工资模板不会自动停止：最后一个月结清后，请在卡片上通过 ✏️「金额、日期或停用」停用。",
+    "personReturn": "重新启用",
+    "enableLogin": "开通登录 →",
+    "salaryFailed": "工资读取失败。请刷新页面；暂时不要点「设置工资」。",
+    "owedFailed": "无法读取尚有工资未结的人员——已离职员工也一并显示。请刷新页面。",
+    "leavers": "已离职（{count}）",
+    "leaversHint": "不登录系统、工资已停用且已结清的员工。如有人回来——点击姓名，在卡片上点「重新启用」。",
+    "salaryUnknown": "工资读取失败",
+    "salaryInactive": "已标记为离职——不能设置新工资。如已回来，请点击上方的「重新启用」。",
+    "salaryInactiveLogin": "已标记为离职——不能设置新工资。如已回来，由管理员在「管理 → 员工」中重新启用。"
   },
   "calcSheet": {
     "group": "分组",

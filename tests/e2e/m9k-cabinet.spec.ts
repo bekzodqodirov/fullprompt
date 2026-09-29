@@ -353,7 +353,7 @@ test('the other two tabs carry the money and the history', async ({ page }) => {
   await expect(page.getByTestId('cab-payments')).toContainText('+300 USD');
   await expect(page.getByTestId('cab-payments')).not.toContainText('250');
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
-    await page.evaluate(() => window.innerWidth),
+    await page.evaluate(() => document.documentElement.clientWidth),
   );
 });
 
@@ -444,7 +444,7 @@ test('the header says where everything is and what is owed; every lot has its fi
   expect(head!.height).toBeLessThan(199);
   // Nothing wider than the phone, with the stepper in it.
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
-    await page.evaluate(() => window.innerWidth),
+    await page.evaluate(() => document.documentElement.clientWidth),
   );
 
   // A server that sent no people draws no empty contact card.
@@ -568,7 +568,7 @@ test('the map is a real map: markers to tap, and every place listed under it (it
   await expect(page.getByTestId('cab-map-truck')).toHaveAttribute('aria-expanded', 'true');
   // Nothing wider than the phone.
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
-    await page.evaluate(() => window.innerWidth),
+    await page.evaluate(() => document.documentElement.clientWidth),
   );
   // Closing gives the page its scroll back.
   await page.locator('.cab-map-close').click();

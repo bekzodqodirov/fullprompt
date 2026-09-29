@@ -15,15 +15,16 @@ import {
   upsaleRows,
   UPSALE_CAP,
   type UpsaleRow,
-  type UpsaleState,
 } from '@/modules/wms/calc/upsale-service';
 import { PageHeader } from '@/components/ui/page';
 import { hrefWith } from '@/components/list/board-filter';
 import { CategoryForm, PayForm, ReleaseButton } from './pay-form';
+import { hintOf, STATE_CLASS, stateKeyOf } from './state-words';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { db } from '@/modules/platform/db/client';
 import { stampedCargo, type StampedCargo } from '@/modules/wms/staff/cargo';
 import { maySeeStaffMoney } from '@/modules/wms/staff/door';
+import { mayOpenClientLedger } from '@/modules/wms/finance/scope';
 
 /**
  * «Sotuvchi ulushi» — what a seller earns, and the accountant's Friday.
@@ -36,32 +37,10 @@ import { maySeeStaffMoney } from '@/modules/wms/staff/door';
  * Law 4 decides who reads what, in one place: the owner and the accountant
  * see everyone, a seller sees their own, and the VED — who computed the floor
  * — sees none of it at all and is not queried.
+ *
+ * The chips' colours and words and the «why it waits» hint live in
+ * `state-words.ts` (pure, so the words are checked against all four bundles).
  */
-const STATE_CLASS: Record<UpsaleState, string> = {
-  paid: 'chip chip-good',
-  // Deliberately NOT brand: on this screen «ready to pay» is the ordinary
-  // state, and painting the commonest row red makes the table a wall of
-  // alarms — which is how the one row that DOES need attention («the client
-  // has not paid») stops being visible.
-  payable: 'chip chip-neutral',
-  awaiting_payment: 'chip chip-warn',
-  no_invoice: 'chip chip-neutral',
-  no_cargo: 'chip chip-neutral',
-  no_deal: 'chip chip-neutral',
-};
-
-const STATE_KEY: Record<
-  UpsaleState,
-  'stPaid' | 'stPayable' | 'stAwaiting' | 'stNoInvoice' | 'stNoCargo' | 'stNoDeal'
-> = {
-  paid: 'stPaid',
-  payable: 'stPayable',
-  awaiting_payment: 'stAwaiting',
-  no_invoice: 'stNoInvoice',
-  no_cargo: 'stNoCargo',
-  no_deal: 'stNoDeal',
-};
-
 export default async function UpsalePage({
   searchParams,
 }: {
@@ -91,6 +70,7 @@ export default async function UpsalePage({
       from: period.dan,
       to: period.gacha,
       sellerId: params.hodim,
+      walk: 'fifo',
     });
     rows = res.rows;
     truncated = res.truncated;
@@ -137,6 +117,15 @@ export default async function UpsalePage({
       ? t('onCargo', { promised: money(r.promisedUsd), m3: r.cargoM3.toFixed(2), kg: Math.round(r.cargoKg) })
       : t('promisedOnly', { promised: money(r.promisedUsd) });
   const current = { dan: period.dan, gacha: period.gacha, hodim: params.hodim ?? '' };
+  // Rule 10 (round 91): a client's money is named only to whom that client's
+  // LEDGER already opens — the one rule (finance/scope.ts), never restated
+  // here (#513): a reader who may not open /finance/<client> reads no sum of
+  // that client's money in a hint either.
+  const seesMoney = (r: UpsaleRow) => mayOpenClientLedger(actor, { salesManagerId: r.clientManagerId });
+  const hintText = (r: UpsaleRow) => {
+    const hint = hintOf(r, { seesMoney: seesMoney(r), money });
+    return hint ? t(hint.key, hint.values) : null;
+  };
 
   return (
     <div className="mx-auto max-w-5xl space-y-4">
@@ -145,6 +134,14 @@ export default async function UpsalePage({
       {behind ? (
         <p className="chip chip-warn" data-testid="upsale-behind">
           {t('none')}
+        </p>
+      ) : null}
+
+      {/* The walk ran out of its budget for some jobs (3a): said once, above
+          the list — those rows carry their own chip and are never ticked. */}
+      {rows.some((r) => r.state === 'not_computed') ? (
+        <p className="card !p-3 text-sm text-warn" data-testid="upsale-not-computed">
+          ⚠ {t('notComputedPage')}
         </p>
       ) : null}
 
@@ -167,6 +164,10 @@ export default async function UpsalePage({
             October is «To'langan» on September here and in October's P&L —
             both right, and unexplained they read as a contradiction. */}
         <p className="w-full text-2xs text-ink-500">{t('periodHint')}</p>
+        {/* The rule, said once (his 3a): which money opens a share. */}
+        <p className="w-full text-2xs text-ink-500" data-testid="upsale-rule">
+          {t('paidRule')}
+        </p>
       </form>
 
       <div className="grid grid-cols-3 gap-2" data-testid="upsale-scoreboard">
@@ -319,12 +320,14 @@ export default async function UpsalePage({
               page, and this is the screen a seller reads their own pay on. */}
           <ul className="space-y-2 md:hidden" data-testid="upsale-list">
             {rows.map((r) => (
-              <li key={r.offerId} className="card !p-3" data-testid="upsale-row">
+              <li key={r.offerId} className="card !p-3" data-testid="upsale-row" data-offer={r.offerId}>
                 <div className="flex flex-wrap items-baseline gap-2">
                   <span className="font-mono text-base font-bold tabular-nums">
                     {money(r.upsaleUsd)}
                   </span>
-                  <span className={STATE_CLASS[r.state]}>{t(STATE_KEY[r.state])}</span>
+                  <span className={STATE_CLASS[r.state]} data-testid="upsale-state" data-state={r.state}>
+                    {t(stateKeyOf(r))}
+                  </span>
                   <span className="text-2xs text-ink-500">
                     {format.dateTime(r.offeredAt, { dateStyle: 'short' })}
                   </span>
@@ -332,6 +335,11 @@ export default async function UpsalePage({
                 <p className="text-2xs text-ink-600" data-testid="upsale-cargo">
                   {cargoLine(r)}
                 </p>
+                {hintText(r) ? (
+                  <p className="text-2xs text-ink-500" data-testid="upsale-fifo-hint">
+                    {hintText(r)}
+                  </p>
+                ) : null}
                 {/* Why the commission waits (0105): neutral words, both scopes —
                     the amount is on the seller's own client's ledger already. */}
                 {r.compensatedUsd > 0.009 && (
@@ -371,7 +379,7 @@ export default async function UpsalePage({
                 </thead>
                 <tbody>
                   {rows.map((r) => (
-                    <tr key={r.offerId} className="border-b border-line/60" data-testid="upsale-tr">
+                    <tr key={r.offerId} className="border-b border-line/60" data-testid="upsale-tr" data-offer={r.offerId}>
                       <td className="p-2 font-mono tabular-nums">
                         {format.dateTime(r.offeredAt, { dateStyle: 'short' })}
                       </td>
@@ -394,7 +402,14 @@ export default async function UpsalePage({
                         </span>
                       </td>
                       <td className="p-2">
-                        <span className={STATE_CLASS[r.state]}>{t(STATE_KEY[r.state])}</span>
+                        <span className={STATE_CLASS[r.state]} data-testid="upsale-state" data-state={r.state}>
+                          {t(stateKeyOf(r))}
+                        </span>
+                        {hintText(r) ? (
+                          <span className="block text-2xs text-ink-500" data-testid="upsale-fifo-hint">
+                            {hintText(r)}
+                          </span>
+                        ) : null}
                         {r.compensatedUsd > 0.009 && (
                           <span className="block text-2xs text-warn">
                             {t('compensated', { amount: money(r.compensatedUsd) })}

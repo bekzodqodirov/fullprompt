@@ -8,6 +8,7 @@ import {
   users,
 } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
+import { canLogInSql } from '../../platform/users/login';
 import { tashkentDay, tashkentDayStart } from '@/modules/platform/time/tashkent';
 import { landInboundLead, type InboundOutcome } from './inbound';
 import { addActivity } from './service';
@@ -102,7 +103,7 @@ async function roster(handle: Db | Tx = db, now: Date = new Date()): Promise<Ros
       LEFT JOIN offered o ON o.uid = u.id
       LEFT JOIN confirmed c ON c.uid = u.id
       LEFT JOIN routed r ON r.uid = u.id
-     WHERE u.active
+     WHERE ${canLogInSql('u')}
      ORDER BY u.full_name, u.id
   `)) as unknown as {
     id: string;
@@ -272,7 +273,7 @@ export async function assignForTag(
       .select({
         username: leadAssignments.username,
         createdAt: leadAssignments.createdAt,
-        active: users.active,
+        live: canLogInSql(),
       })
       .from(leadAssignments)
       .innerJoin(users, eq(users.id, leadAssignments.userId))
@@ -285,7 +286,7 @@ export async function assignForTag(
     // second pick under it would break the one-row-per-tag load count.
     if (existing) {
       const live =
-        existing.active && Date.now() - existing.createdAt.getTime() < TAG_VALID_MS;
+        existing.live && Date.now() - existing.createdAt.getTime() < TAG_VALID_MS;
       return { username: live ? existing.username : null, reused: true };
     }
 
@@ -768,7 +769,9 @@ export async function saveSiteTeams(
       username: users.telegramUsername,
     })
     .from(users)
-    .where(inArray(users.id, ids));
+    // Colleagues now (`canLogIn`, 0120): an unknown id, a leaver or a person
+    // who never signs in falls to `continue` below and is written nothing.
+    .where(and(inArray(users.id, ids), canLogInSql()));
   const known = new Map(before.map((row) => [row.id, row]));
 
   if (typed.length) {

@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import { users } from '@/modules/platform/db/schema';
+import { canLogInSql } from '@/modules/platform/users/login';
 import { listFields } from '@/modules/platform/fields/service';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { MAPPABLE_FIELD_TYPES, listFieldMap, seenKeys } from '@/modules/wms/crm/field-map';
@@ -46,11 +47,13 @@ export default async function TaqsimotPage() {
   const memberIds = [...new Set(routes.flatMap((route) => route.userIds))];
   const named = memberIds.length
     ? await db
-        .select({ id: users.id, fullName: users.fullName, active: users.active })
+        .select({ id: users.id, fullName: users.fullName, live: canLogInSql() })
         .from(users)
         .where(inArray(users.id, memberIds))
     : [];
-  const names = new Map(named.map((row) => [row.id, row.active ? row.fullName : `${row.fullName} ⚠`]));
+  // ⚠ = not a colleague now (`canLogIn`): a leaver, or a person who never
+  // signs in — neither takes a lead, and both rows need fixing.
+  const names = new Map(named.map((row) => [row.id, row.live ? row.fullName : `${row.fullName} ⚠`]));
 
   // The website panel (round 113) — the SAME roster and pick the route runs,
   // so «keyingi» here is the answer the next visitor gets.

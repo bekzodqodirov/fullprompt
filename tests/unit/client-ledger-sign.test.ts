@@ -82,7 +82,8 @@ describe('the client ledger sign rule', () => {
       ['src/modules/wms/accounting/reports.ts', 'unbatchedMoney'],
       ['src/modules/wms/accounting/reports.ts', 'profitByClient'],
       ['src/modules/wms/deals/service.ts', 'dealProfit'],
-      ['src/modules/wms/crm/seller-report.ts', 'sellerPerformanceOwn'],
+      // 4a: the seller report's revenue (both scopes) is read here now.
+      ['src/modules/wms/staff/stamp-revenue.ts', 'revenueByStamp'],
       ['src/modules/wms/finance/service.ts', 'clientMoneyInPeriod'],
       ['src/modules/wms/finance/service.ts', 'clientBalances'],
       ['src/modules/wms/finance/client-cargo.ts', 'clientCargo'],

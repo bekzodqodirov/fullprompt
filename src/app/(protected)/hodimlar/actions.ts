@@ -12,6 +12,12 @@ import { stampToCurrentSeller } from '@/modules/wms/staff/stamp';
 import { KpiError, payKpi, setStaffCategory } from '@/modules/wms/staff/kpi-service';
 import { KpiTableRefusal, parseKpiGridPost, saveKpiTable } from '@/modules/wms/staff/kpi-table';
 import type { KpiCell } from '@/modules/wms/staff/kpi-engine';
+import {
+  editNoLoginPerson,
+  mintNoLoginPerson,
+  setNoLoginPersonActive,
+  UserWriteError,
+} from '@/modules/platform/users/service';
 
 export interface StaffFormState {
   ok?: boolean;
@@ -21,6 +27,12 @@ export interface StaffFormState {
   month?: string;
   reason?: string;
   paidUsd?: number;
+  /** The person a mint just wrote — the form lands on their card (2b). */
+  id?: string;
+  /** `same_name`: who is already listed under the name (≤ 5), each a link. */
+  matches?: { id: string; name: string; active: boolean; loginEnabled: boolean }[];
+  /** `same_name`: how many more than `matches` share it. */
+  more?: number;
 }
 
 const uuid = z.string().uuid();
@@ -127,4 +139,106 @@ export async function stampClientCargoAction(_prev: StaffFormState, formData: Fo
     if (isServerBehind(err)) return { error: 'server_behind' };
     throw err;
   }
+}
+
+// ---------------------------------------------------------------------------
+// A person who never signs in (0120, the owner's 2b). The door is the page's
+// own (`maySeeStaffMoney` = `finance.expenses`, the staff account's); the
+// posted values are forged until parsed (#514), and the SERVICE decides —
+// platform/users/service.ts is the one writer of a person (#531).
+// ---------------------------------------------------------------------------
+
+const personInput = z.object({ fullName: z.string().trim().min(1).max(200), phone: z.string().max(40) });
+const mintInput = personInput.extend({ confirmSameName: z.boolean() });
+
+/**
+ * A failed parse in words: the phone box, or the name box — and for the name,
+ * empty and too long are two sentences («ism kiritilmagan» under a 300-character
+ * paste reads as a broken form). The service says the same two (personName).
+ */
+function personInputRefusal(error: z.ZodError): StaffFormState {
+  const issue = error.issues[0];
+  if (issue?.path[0] === 'phone') return { error: 'bad_phone' };
+  return { error: issue?.code === 'too_big' ? 'name_too_long' : 'name_required' };
+}
+
+/** A writer's refusal, or the deploy-morning sentence; anything else is not ours to name. */
+function personRefusal(err: unknown): StaffFormState | null {
+  if (err instanceof UserWriteError) {
+    return {
+      error: err.code,
+      matches: err.same?.matches,
+      more: err.same ? err.same.total - err.same.matches.length : undefined,
+    };
+  }
+  if (isServerBehind(err)) {
+    logger.error({ err }, '[hodimlar] server behind — migration 0120 not applied');
+    return { error: 'server_behind' };
+  }
+  return null;
+}
+
+/** «➕ Tizimga kirmaydigan hodim qo'shish». */
+export async function mintPersonAction(input: {
+  fullName: string;
+  phone: string;
+  confirmSameName: boolean;
+}): Promise<StaffFormState> {
+  const actor = await getActor();
+  if (!actor) return { error: 'unauthenticated' };
+  if (!maySeeStaffMoney(actor.permissions)) return { error: 'forbidden' };
+  const parsed = mintInput.safeParse(input);
+  if (!parsed.success) return personInputRefusal(parsed.error);
+  const meta = await requestMeta();
+  let id: string;
+  try {
+    ({ id } = await mintNoLoginPerson(parsed.data, { actorId: actor.id, ...meta }));
+  } catch (err) {
+    const refusal = personRefusal(err);
+    if (refusal) return refusal;
+    throw err;
+  }
+  revalidatePath('/hodimlar');
+  revalidatePath('/admin/users');
+  return { ok: true, id };
+}
+
+/** «✏️ Ism, telefon» on a no-login person's card. */
+export async function editPersonAction(id: string, input: { fullName: string; phone: string }): Promise<StaffFormState> {
+  const actor = await getActor();
+  if (!actor) return { error: 'unauthenticated' };
+  if (!maySeeStaffMoney(actor.permissions)) return { error: 'forbidden' };
+  if (!uuid.safeParse(id).success) return { error: 'not_found' };
+  const parsed = personInput.safeParse(input);
+  if (!parsed.success) return personInputRefusal(parsed.error);
+  const meta = await requestMeta();
+  try {
+    await editNoLoginPerson(id, parsed.data, { actorId: actor.id, ...meta });
+  } catch (err) {
+    const refusal = personRefusal(err);
+    if (refusal) return refusal;
+    throw err;
+  }
+  revalidatePath('/hodimlar');
+  revalidatePath('/admin/users');
+  return { ok: true };
+}
+
+/** «Ishdan ketdi» / «Qayta faollashtirish» on a no-login person's card. */
+export async function setPersonActiveAction(id: string, active: boolean): Promise<StaffFormState> {
+  const actor = await getActor();
+  if (!actor) return { error: 'unauthenticated' };
+  if (!maySeeStaffMoney(actor.permissions)) return { error: 'forbidden' };
+  if (!uuid.safeParse(id).success || typeof active !== 'boolean') return { error: 'not_found' };
+  const meta = await requestMeta();
+  try {
+    await setNoLoginPersonActive(id, active, { actorId: actor.id, ...meta });
+  } catch (err) {
+    const refusal = personRefusal(err);
+    if (refusal) return refusal;
+    throw err;
+  }
+  revalidatePath('/hodimlar');
+  revalidatePath('/admin/users');
+  return { ok: true };
 }

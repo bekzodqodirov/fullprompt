@@ -41,3 +41,13 @@ export function isBusyError(err: unknown): boolean {
   const code = (err as { code?: string } | null)?.code;
   return typeof code === 'string' && BUSY.has(code);
 }
+
+/**
+ * Postgres cancelled the statement — a `statement_timeout` ran out (57014).
+ * drizzle may wrap the driver's error, so its `cause` is asked too (the shape
+ * staff-pay.integration's budget test already accepts).
+ */
+export function isQueryCanceled(err: unknown): boolean {
+  const e = err as { code?: string; cause?: { code?: string } } | null;
+  return e?.code === '57014' || e?.cause?.code === '57014';
+}

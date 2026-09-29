@@ -1,5 +1,4 @@
 import Link from 'next/link';
-import { Suspense } from 'react';
 import { redirect } from 'next/navigation';
 import { asc, eq } from 'drizzle-orm';
 import { getTranslations } from 'next-intl/server';
@@ -13,7 +12,7 @@ import { getSetting } from '@/modules/platform/settings/service';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { listAccounts, listCategories } from '@/modules/wms/accounting/service';
 import { listPartners } from '@/modules/wms/partners/service';
-import { earnedOf, upsaleRows } from '@/modules/wms/calc/upsale-service';
+import { bySeller, upsaleRows } from '@/modules/wms/calc/upsale-service';
 import { mayEditKpiTable, mayPayCommission, maySeeStaffMoney, maySeeStaffUpsale } from '@/modules/wms/staff/door';
 import { unstampedCargo } from '@/modules/wms/staff/cargo';
 import {
@@ -28,10 +27,11 @@ import {
 } from '@/modules/wms/staff/kpi-service';
 import { kpiVersions, versionFor } from '@/modules/wms/staff/kpi-table';
 import { calendarMonth, monthEndDay, monthRange } from '@/modules/wms/staff/month';
-import { staffTemplates } from '@/modules/wms/staff/salary';
+import { owedEmployeeIds, staffTemplates } from '@/modules/wms/staff/salary';
+import { droppedLeavers, visibleStaff } from '@/modules/wms/staff/visible';
 import { PageHeader } from '@/components/ui/page';
 import { StaffCard, type RecurringOptions } from './staff-card';
-import { StaffCategoryForm, StampRepairButton } from './forms';
+import { NoLoginPersonNew, StaffCategoryForm, StampRepairButton } from './forms';
 import { KpiTableForm } from './kpi-table-form';
 
 export const dynamic = 'force-dynamic';
@@ -42,7 +42,8 @@ const KPI_BUDGET_MS = 8000;
 /**
  * «Hodimlar» — every person's pay in one place (0117, the owner's 8a: «one
  * page: per employee salary amount, currency, pay day; KPI and upsale are
- * SEPARATE lines added to it»).
+ * SEPARATE lines added to it») — logins AND people who never sign in (0120,
+ * his 2b: a worker in a Chinese warehouse is minted, paid and let go here).
  *
  * The DOOR is `maySeeStaffMoney` = `finance.expenses`, the staff account's
  * own (the accountant and the admin). Inside it, each write asks its own
@@ -96,14 +97,18 @@ export default async function HodimlarPage({
         <p className="w-full text-2xs text-ink-500">{t('roundingNote')}</p>
       </form>
 
-      <Suspense fallback={<div aria-hidden className="card h-64 animate-pulse bg-surface-sunken" />}>
-        <StaffList
-          actor={actor}
-          month={month}
-          hodim={hodim}
-          today={today}
-        />
-      </Suspense>
+      <NoLoginPersonNew />
+
+      {/* NOT inside a <Suspense> (#1242). It was, so the header painted before
+          the budgeted KPI reads; but every button on the cards is a server
+          action that revalidates this page, and in Next 15.5 an action whose
+          revalidated content streams into a boundary sometimes never commits —
+          the answer arrives in full and the transition stays pending, the
+          button greyed until a reload (measured 1-3 in 20 presses, 0 in 40
+          without the boundary; vercel/next.js #87529, #98303). The cost: on
+          the company view the wait (bounded by KPI_BUDGET_MS) is the
+          navigation bar on the previous page instead of a skeleton here. */}
+      <StaffList actor={actor} month={month} hodim={hodim} today={today} />
     </div>
   );
 }
@@ -127,7 +132,10 @@ async function StaffList({
 
   // What went wrong while reading — a record the reads write into, not two
   // reassigned locals (a server component's body is not a place for those).
-  const failed = { behind: false, kpi: false };
+  // `salary` = the templates themselves (no «Oylik kiritish» without them);
+  // `owed` = who a template still owes (only the leavers' list widens) — two
+  // flags, because the banner's two sentences are true of different failures.
+  const failed = { behind: false, kpi: false, salary: false, owed: false };
   const safe = async <T,>(load: Promise<T>, fallback: T, where: string): Promise<T> => {
     try {
       return await load;
@@ -151,12 +159,38 @@ async function StaffList({
   // (5.6 s over twelve months on the shaped copy, and a month longer every
   // month); when it runs out, each seller's card links to their OWN pass
   // (`?hodim=`, 0.7 s), where the figure and «KPI to'lash» are.
-  const [people, templates, kpiLines, payables, kpiSellers, unstamped, versions, categories, accounts, warehouseRows, currencyRows, partnerRows, upsale] =
+  const [people, templates, owed, kpiLines, payables, kpiSellers, unstamped, versions, categories, accounts, warehouseRows, currencyRows, partnerRows, upsale] =
     await Promise.all([
-      db.select({ id: users.id, name: users.fullName, active: users.active }).from(users).orderBy(asc(users.fullName)),
+      // Payroll lists EVERY person, logins and people who never sign in —
+      // `visibleStaff` decides who shows (the fence's payroll allowlist).
+      db
+        .select({
+          id: users.id,
+          name: users.fullName,
+          active: users.active,
+          loginEnabled: users.loginEnabled,
+          phone: users.phone,
+        })
+        .from(users)
+        .orderBy(asc(users.fullName)),
       // The salary's state is THIS month's, whatever `?oy` the KPI is read
-      // for — the chip names the month it is about.
-      safe(staffTemplates(db, { today, salaryCategoryId: salarySetting }), [], 'templates'),
+      // for — the chip names the month it is about. A failed read is said,
+      // never an empty list that reads «nobody has a salary» (2b).
+      staffTemplates(db, { today, salaryCategoryId: salarySetting }).catch((err) => {
+        failed.salary = true;
+        if (isServerBehind(err)) failed.behind = true;
+        logger.error({ err }, '[hodimlar] templates');
+        return [];
+      }),
+      // Who a template still owes or is owed by — the due list's own set; a
+      // leaver stays listed until it is empty. null = unknown, so nobody is
+      // dropped (visibleStaff).
+      owedEmployeeIds(db, today).catch((err) => {
+        failed.owed = true;
+        if (isServerBehind(err)) failed.behind = true;
+        logger.error({ err }, '[hodimlar] owed');
+        return null;
+      }),
       withoutJit((exec) => kpiMonth(exec, month, hodim ? { kind: 'own', userId: hodim } : { kind: 'all' }, today), {
         deadlineMs: KPI_BUDGET_MS,
       }).catch((err) => {
@@ -198,34 +232,45 @@ async function StaffList({
       // company-wide list the cap may have cut (`UPSALE_CAP`).
       seesUpsale
         ? safe(
-            upsaleRows('all', actor.id, { from: `${month}-01`, to: monthEndDay(month), sellerId: hodim ?? undefined }),
+            upsaleRows('all', actor.id, {
+              from: `${month}-01`,
+              to: monthEndDay(month),
+              sellerId: hodim ?? undefined,
+              walk: 'fifo',
+            }),
             { rows: [], truncated: false },
             'upsale',
           )
         : Promise.resolve(null),
     ]);
 
-  const upsaleBySeller = new Map<string, { earnedUsd: number; payableUsd: number }>();
-  for (const row of upsale?.rows ?? []) {
-    const cur = upsaleBySeller.get(row.sellerId) ?? { earnedUsd: 0, payableUsd: 0 };
-    cur.earnedUsd = Math.round((cur.earnedUsd + earnedOf(row)) * 100) / 100;
-    if (row.state === 'payable') cur.payableUsd = Math.round((cur.payableUsd + row.payableUsd) * 100) / 100;
-    upsaleBySeller.set(row.sellerId, cur);
-  }
-
-  // Everybody active, plus a deactivated person who still has cargo this
-  // month or money owed either way — a seller who left is still paid. When
-  // the KPI reads ran out of time nobody's figures are known, so a departed
-  // SELLER stays listed with «hisoblanmadi» rather than vanishing.
-  const visible = people.filter(
-    (p) =>
-      (hodim === null || p.id === hodim) &&
-      (p.active ||
-        kpiLines.has(p.id) ||
-        (payables.get(p.id)?.payableUsd ?? 0) > 0 ||
-        (payables.get(p.id)?.overpaidUsd ?? 0) > 0 ||
-        (failed.kpi && kpiSellers.has(p.id))),
+  // The ONE per-seller fold /upsale's scoreboard reads too (#513): «to'lanadi»
+  // is only what is payable NOW, and a row the walk did not reach is counted
+  // apart so the card can say it instead of printing a short figure.
+  const upsaleBySeller = new Map(
+    bySeller(upsale?.rows ?? []).map((s) => [
+      s.sellerId,
+      { earnedUsd: s.earnedUsd, payableUsd: s.payableUsd, notComputed: s.notComputed },
+    ]),
   );
+
+  // Everybody active, plus a deactivated person who is still owed or still
+  // owes — the due list's set, cargo this month, money either way (a seller
+  // who left is still paid, and so is a warehouse worker who left before his
+  // last «To'landi»). When the KPI reads ran out of time a departed SELLER
+  // stays listed with «hisoblanmadi»; `?hodim=` always shows that one person.
+  const visible = visibleStaff(people, {
+    hodim,
+    owed,
+    kpiLineIds: new Set(kpiLines.keys()),
+    payables,
+    kpiFailed: failed.kpi,
+    kpiSellers,
+  });
+  // The way back to a leaver the list let go (UI-2): whole-page view only —
+  // `?hodim=` already IS that person's card.
+  const leavers = hodim === null ? droppedLeavers(people, new Set(visible.map((p) => p.id))) : [];
+  const mayGiveLogin = actor.permissions.has('admin.users.manage');
   const hasPay = (id: string) => templates.some((tpl) => tpl.employeeId === id && tpl.salary) || kpiLines.has(id);
   visible.sort((a, b) => Number(hasPay(b.id)) - Number(hasPay(a.id)) || a.name.localeCompare(b.name));
 
@@ -264,7 +309,8 @@ async function StaffList({
     payPartners: partnerRows.map((row) => ({ id: row.id, name: row.name })),
   };
   const payAccounts = accounts.filter((row) => row.active).map((row) => ({ id: row.id, name: row.name, currency: row.currency }));
-  const noSalaryYet = !templates.some((tpl) => tpl.salary);
+  // An empty list from a FAILED read must not say «nobody has a salary».
+  const noSalaryYet = !failed.salary && !templates.some((tpl) => tpl.salary);
   const categoryChoices = categories.map((c) => ({ id: c.id, name: c.name }));
 
   return (
@@ -277,9 +323,24 @@ async function StaffList({
           ⚠ {t('kpiFailed')}
         </p>
       ) : null}
+      {/* Each sentence only when it is true: «the leavers are shown too» is
+          the owed read's failure alone (the review's F3). */}
+      {failed.salary || failed.owed ? (
+        <p className="card !p-3 text-sm text-warn" data-testid="hodimlar-salary-failed">
+          ⚠ {failed.salary ? <span data-testid="hodimlar-templates-failed">{t('salaryFailed')} </span> : null}
+          {failed.owed ? <span data-testid="hodimlar-owed-failed">{t('owedFailed')}</span> : null}
+        </p>
+      ) : null}
       {upsale?.truncated ? (
         <p className="card !p-3 text-sm text-warn" data-testid="hodimlar-upsale-truncated">
           ⚠ {t('upsaleTruncated')}
+        </p>
+      ) : null}
+      {/* The upsale's paid-cargo walk ran out of its budget for some jobs
+          (3a): said once here, and on each seller's card below. */}
+      {upsale?.rows.some((r) => r.state === 'not_computed') ? (
+        <p className="card !p-3 text-sm text-warn" data-testid="hodimlar-upsale-not-computed">
+          ⚠ {t('upsaleNotComputed')}
         </p>
       ) : null}
 
@@ -326,6 +387,9 @@ async function StaffList({
               upsale={seesUpsale ? (upsaleBySeller.get(person.id) ?? null) : null}
               upsaleHref={`/upsale?hodim=${person.id}&dan=${month}-01&gacha=${monthEndDay(month)}`}
               mayPay={mayPay}
+              mayGiveLogin={mayGiveLogin}
+              salaryUnavailable={failed.salary}
+              openSalaryForm={hodim === person.id && person.active && !failed.salary}
               payAccounts={payAccounts}
               today={today}
               salaryCategoryId={salarySetting}
@@ -337,6 +401,31 @@ async function StaffList({
           );
         })}
       </ul>
+
+      {/* «Ketganlar (N)»: a person who never signs in, let go and settled, is
+          off the list above — each name opens their card, where «Qayta
+          faollashtirish» is (UI-2). Folded: it is a way back, not the work. */}
+      {leavers.length > 0 ? (
+        <details className="card !p-3" data-testid="hodimlar-leavers">
+          <summary className="cursor-pointer text-sm font-semibold text-ink-700">
+            {t('leavers', { count: leavers.length })}
+          </summary>
+          <p className="mt-1 text-2xs text-ink-500">{t('leaversHint')}</p>
+          <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm">
+            {leavers.map((person) => (
+              <li key={person.id} className="min-w-0">
+                <Link
+                  href={`/hodimlar?hodim=${person.id}`}
+                  className="min-w-0 [overflow-wrap:anywhere] font-semibold text-brand-700"
+                  data-testid="hodimlar-leaver"
+                >
+                  {person.name}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
 
       {/* «Sotuvchisiz yuk»: the month's cargo nobody was named on. Naming a
           seller on the client card is what stamps it — the sentence says so. */}

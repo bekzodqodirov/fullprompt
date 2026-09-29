@@ -25,7 +25,7 @@ test('the phone gets a list, and the page is not rescaled', async ({ page }) => 
 
   const width = await page.evaluate(() => ({
     doc: document.documentElement.scrollWidth,
-    view: window.innerWidth,
+    view: document.documentElement.clientWidth,
   }));
   expect(width.doc, 'a document wider than the viewport rescales the page').toBe(width.view);
 

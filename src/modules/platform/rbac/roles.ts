@@ -4,6 +4,7 @@ import { db, type Db, type Tx } from '../db/client';
 import { permissions, rolePermissions, roles, userRoles, users } from '../db/schema';
 import { writeAudit, type AuditContext } from '../audit/service';
 import { PERMISSION_CODES } from './catalog';
+import { canLogInSql } from '../users/login';
 
 /**
  * Roles as data the owner edits (owner: "rol konstruktori", "hech narsa
@@ -194,7 +195,7 @@ export async function someoneCanStillManageRoles(tx: Db | Tx): Promise<boolean> 
     .innerJoin(users, eq(userRoles.userId, users.id))
     .innerJoin(rolePermissions, eq(userRoles.roleId, rolePermissions.roleId))
     .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
-    .where(and(eq(users.active, true), eq(permissions.code, 'platform.roles.manage')));
+    .where(and(canLogInSql(), eq(permissions.code, 'platform.roles.manage')));
   return Number(row?.n ?? 0) > 0;
 }
 

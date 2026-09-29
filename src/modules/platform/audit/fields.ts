@@ -114,6 +114,8 @@ export const AUDIT_FIELD_LABELS: Record<string, string> = {
   notes: 'note',
   reason: 'reason',
   active: 'active',
+  // Whether a person signs in at all (0120) — the conversion's own line.
+  loginEnabled: 'loginEnabled',
   status: 'status',
   order: 'order',
   roles: 'roles',

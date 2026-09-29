@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { openFold } from './fold';
 
 /**
  * «Hodimlar» and «Bu oy» (0117), opened by the people they are for — and
@@ -28,7 +29,7 @@ async function login(page: Page, phone: string) {
 async function fitsViewport(page: Page) {
   const { doc, view } = await page.evaluate(() => ({
     doc: document.documentElement.scrollWidth,
-    view: window.innerWidth,
+    view: document.documentElement.clientWidth,
   }));
   expect(doc).toBeLessThanOrEqual(view);
 }
@@ -52,11 +53,11 @@ for (const size of [
     // The widest things on the page are folded: open them and measure again
     // (#400 — a fold that opens past the viewport zooms the whole page out).
     // Opening a fold saves nothing.
-    await page.getByTestId('kpi-table-edit').locator('summary').click();
+    await openFold(page.getByTestId('kpi-table-edit'));
     await expect(page.getByTestId('kpi-table-edit').locator('form')).toBeVisible();
     await fitsViewport(page);
     const salaryNew = page.getByTestId('staff-salary-new').first();
-    await salaryNew.locator('summary').click();
+    await openFold(salaryNew);
     await expect(salaryNew.locator('form').first()).toBeVisible();
     await fitsViewport(page);
   });

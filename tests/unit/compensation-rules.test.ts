@@ -19,7 +19,16 @@ describe('C12 — upsaleStateOf reads the job net of its compensation', () => {
     charged_usd: charged.toFixed(2),
     compensated_usd: compensated.toFixed(2),
   });
-  const settled = { balanceUsd: 0, deferredUsd: 0 };
+  // The deal's paid-cargo walk (his 3a) with its one carton covered and paid.
+  const settled = {
+    cartons: 1,
+    uncovered: 0,
+    uncoveredElsewhere: 0,
+    unpaid: 0,
+    ownChargesOwed: 0,
+    toOpenUsd: 0,
+    olderOwedElsewhere: false,
+  };
 
   it('whole: payable', () => {
     expect(upsaleStateOf(row(1200, 0), settled)).toBe('payable');
@@ -27,6 +36,14 @@ describe('C12 — upsaleStateOf reads the job net of its compensation', () => {
 
   it('kept the charge, compensated above it: no invoice', () => {
     expect(upsaleStateOf(row(1200, 3500), settled)).toBe('no_invoice');
+  });
+
+  it('a compensated job waits even when the walk calls its cargo paid (the order rule, 3a)', () => {
+    // The FIFO settles a compensation onto its own prixod's price first, so
+    // the walk reads the carton PAID — and #1038/C12 says the job waits until
+    // it is whole. The net-price check stands IN FRONT of the walk.
+    expect(upsaleStateOf(row(1200, 3500), settled)).toBe('no_invoice');
+    expect(upsaleStateOf(row(1200, 400), settled)).toBe('no_invoice');
   });
 
   it('lowered the charge to 0 and compensated the rest: no invoice', () => {

@@ -67,7 +67,8 @@ async function mintStaff(opts: { active?: boolean } = {}) {
       active: opts.active ?? true,
     })
     .returning();
-  return user!;
+  // Minted a LOGIN, so the phone is there (`users_login_phone_check`, 0120).
+  return { ...user!, phone };
 }
 
 beforeAll(async () => {

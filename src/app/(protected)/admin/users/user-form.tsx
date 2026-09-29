@@ -96,9 +96,9 @@ export function UserForm({
                 name="roleCodes"
                 value={role.code}
                 defaultChecked={initial?.roleCodes.includes(role.code)}
-                className="h-5 w-5"
+                className="h-5 w-5 shrink-0"
               />
-              {role.label}
+              <span className="min-w-0 [overflow-wrap:anywhere]">{role.label}</span>
             </label>
           ))}
         </div>
@@ -113,9 +113,14 @@ export function UserForm({
                 name="warehouseIds"
                 value={wh.id}
                 defaultChecked={initial?.warehouseIds.includes(wh.id)}
-                className="h-5 w-5"
+                className="h-5 w-5 shrink-0"
               />
-              <span className="font-mono font-bold">{wh.code}</span> {wh.name}
+              {/* One wrapping box for code + name: as two loose flex items the
+                  pair could not shrink below both words, and in a two-column
+                  grid at 360 px the right column pushed the page 28 px wide. */}
+              <span className="min-w-0 [overflow-wrap:anywhere]">
+                <span className="font-mono font-bold">{wh.code}</span> {wh.name}
+              </span>
             </label>
           ))}
         </div>
@@ -126,7 +131,11 @@ export function UserForm({
             ? t('phoneExists')
             : state.error === 'super_admin_locked'
               ? t('superAdminLocked')
-              : tc('error')}
+              : state.error === 'username_exists'
+                ? t('usernameExists')
+                : state.error === 'no_login_row'
+                  ? t('noLoginRow')
+                  : tc('error')}
         </p>
       )}
       <button type="submit" disabled={pending} className="btn-primary w-full disabled:opacity-60">

@@ -21,9 +21,14 @@ import { hashPassword } from '@/modules/platform/auth/password';
 
 const SUFFIX = String(Date.now()).slice(-9);
 const SHARED = `+9989${SUFFIX}`;
+// 0120: a person who never signs in carries a payroll phone the accountant
+// typed — which must never shadow a LOGIN's username in the login box.
+const SHARED2 = `+9987${SUFFIX}`;
 
 let phoneUserId = '';
 let usernameUserId = '';
+let noLoginId = '';
+let loginByNameId = '';
 
 beforeAll(async () => {
   const passwordHash = await hashPassword('demo1234');
@@ -58,10 +63,23 @@ beforeAll(async () => {
     })
     .returning();
   phoneUserId = byPhone!.id;
+
+  // The NO-LOGIN row goes in FIRST, for the same reason as above: an unfixed
+  // phone read reaches it before the login and hands it back.
+  const [noLogin] = await db
+    .insert(users)
+    .values({ fullName: `Xitoy ishchi ${SUFFIX}`, phone: SHARED2, passwordHash: null, loginEnabled: false })
+    .returning();
+  noLoginId = noLogin!.id;
+  const [loginByName] = await db
+    .insert(users)
+    .values({ fullName: `Login nomi ${SUFFIX}`, phone: `+9986${SUFFIX}`, username: SHARED2, passwordHash })
+    .returning();
+  loginByNameId = loginByName!.id;
 });
 
 afterAll(async () => {
-  await db.delete(users).where(inArray(users.id, [phoneUserId, usernameUserId]));
+  await db.delete(users).where(inArray(users.id, [phoneUserId, usernameUserId, noLoginId, loginByNameId]));
   await pgClient.end();
 });
 
@@ -80,6 +98,13 @@ describe('a string that two different people answer to', () => {
     expect(found?.id).toBe(usernameUserId);
     const [row] = await db.select().from(users).where(eq(users.id, usernameUserId));
     expect(row!.username).toBe(SHARED);
+  });
+
+  it('a payroll phone never shadows a login’s username (0120)', async () => {
+    for (let i = 0; i < 10; i += 1) {
+      const found = await findUserByIdentifier(SHARED2);
+      expect(found?.id).toBe(loginByNameId);
+    }
   });
 
   it('answers nothing for a string nobody owns', async () => {

@@ -12,6 +12,7 @@ import {
   users,
 } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
+import { canLogInSql } from '../../platform/users/login';
 import { phoneBelongsToClient, phonesMatch, phonesOverlap } from '../client-cabinet/service';
 import { seesAllTg, type TgViewer } from '../crm/conversations';
 
@@ -100,8 +101,8 @@ export async function pairCallDevice(pairCode: string, platform: 'android' | 'ot
     where: eq(callRecorderDevices.pairCode, code),
   });
   if (!device || device.revokedAt) throw new CallsError('bad_code');
-  const [user] = await db.select({ active: users.active }).from(users).where(eq(users.id, device.userId));
-  if (!user?.active) throw new CallsError('bad_code');
+  const [user] = await db.select({ live: canLogInSql() }).from(users).where(eq(users.id, device.userId));
+  if (!user?.live) throw new CallsError('bad_code');
 
   const token = randomBytes(32).toString('base64url');
   await db

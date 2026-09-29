@@ -5,6 +5,7 @@ import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { cardLink } from '../../platform/notifications/links';
 import { seesAllTg, type TgViewer } from './conversations';
+import { canLogInSql } from '../../platform/users/login';
 
 /**
  * Show a colleague what a client wrote (owner's item 4, «habarni forward
@@ -64,12 +65,12 @@ export async function shareableMessage(
   return row;
 }
 
-/** Active colleagues this person can hand a message to — never themselves. */
+/** Colleagues NOW (`canLogIn`) this person can hand a message to — never themselves. */
 export async function shareTargets(actorId: string): Promise<{ id: string; name: string }[]> {
   return db
     .select({ id: users.id, name: users.fullName })
     .from(users)
-    .where(and(eq(users.active, true), ne(users.id, actorId)))
+    .where(and(canLogInSql(), ne(users.id, actorId)))
     .orderBy(users.fullName);
 }
 
@@ -101,13 +102,14 @@ export async function shareMessage(
   if (!message) throw new ShareError('not_found');
   if (input.toUserId === actor.id) throw new ShareError('bad_target');
 
-  // Re-derived, never trusted from the form: an inactive account is not a
-  // colleague, and a uuid that is not a user at all must refuse here rather
-  // than reach `notifyStaffTelegram` and quietly send nothing.
+  // Re-derived, never trusted from the form: an inactive account — or a
+  // person who never signs in (0120) — is not a colleague, and a uuid that is
+  // not a user at all must refuse here rather than reach `notifyStaffTelegram`
+  // and quietly send nothing.
   const [target] = await db
     .select({ id: users.id, name: users.fullName })
     .from(users)
-    .where(and(eq(users.id, input.toUserId), eq(users.active, true)))
+    .where(and(eq(users.id, input.toUserId), canLogInSql()))
     .limit(1);
   if (!target) throw new ShareError('bad_target');
 

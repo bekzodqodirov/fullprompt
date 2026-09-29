@@ -7,6 +7,7 @@ import { logger } from '../../platform/logger';
 import { isTelegramMuted } from '../../platform/notifications/mutes';
 import { usersWithRoles } from '../../platform/notifications/service';
 import { actorGrants } from '../../platform/rbac/authorize';
+import { canLogInSql } from '../../platform/users/login';
 import { tashkentDayStart } from '../../platform/time/tashkent';
 import { scopeKeyOf } from './dashboard';
 import { composeOwnerSummary, type OwnerSummary } from './owner-summary';
@@ -97,7 +98,7 @@ export async function sendOwnerSummaries(now: Date = new Date()): Promise<OwnerS
   const userIds = await usersWithRoles(['super_admin']);
   if (userIds.length === 0) return run;
   const people = await db
-    .select({ id: users.id, muted: users.mutedNotificationTypes, active: users.active })
+    .select({ id: users.id, muted: users.mutedNotificationTypes, live: canLogInSql() })
     .from(users)
     .where(inArray(users.id, userIds));
   const linked = new Set(
@@ -111,7 +112,7 @@ export async function sendOwnerSummaries(now: Date = new Date()): Promise<OwnerS
   const memo = new Map<string, Promise<OwnerSummary>>();
 
   for (const person of people) {
-    if (!person.active) continue;
+    if (!person.live) continue;
     try {
       const actor = { id: person.id, ...(await actorGrants(person.id)) };
       const sight = ownerSummarySight(actor);

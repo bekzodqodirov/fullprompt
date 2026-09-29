@@ -1,8 +1,9 @@
-import { asc, eq } from 'drizzle-orm';
+import { asc } from 'drizzle-orm';
 import { db } from '../db/client';
 import { users } from '../db/schema';
 import type { Person, TaskType, TaskView } from '@/components/task-list';
 import { aboutLabels, listTaskTypes, openCounts, type TaskRow } from './service';
+import { canLogInSql } from '../users/login';
 
 /**
  * The route a record of each kind lives at.
@@ -79,7 +80,9 @@ export async function assignablePeople(): Promise<Person[]> {
     db
       .select({ id: users.id, name: users.fullName })
       .from(users)
-      .where(eq(users.active, true))
+      // A colleague NOW (`canLogIn`, 0120): a person who never signs in would
+      // never see the task.
+      .where(canLogInSql())
       .orderBy(asc(users.fullName)),
     openCounts(),
   ]);

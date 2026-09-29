@@ -10,13 +10,17 @@ import { earnedOf, upsaleRows } from '../calc/upsale-service';
  * report its link opens (#513), never a third calculation:
  *
  *  - «Yukdan foyda» = `sellerPerformanceAll`'s profit, i.e. /reports/sotuvchilar
- *    — the money on the clients whose card names the seller NOW (the report's
- *    money half; open point 4 put the receipt-day alternative to him);
+ *    — the money on the cargo each seller was STAMPED on the day it was
+ *    received (his 4a: a client moved to another seller keeps the old cargo's
+ *    profit with whoever sold to them then; `staff/stamp-split.ts`);
  *  - «Upsale» = the upsale screen's own «earned» (`earnedOf`) over the offers
  *    the seller made in the period.
  *
  * The upsale is INSIDE the cargo profit (it is part of the price the client
- * was charged), so the two are never added — the card says so.
+ * was charged), so the two are never added — the card says so. Its seller is
+ * the one who MADE the offer (`offered_by`), which may differ from the stamp
+ * holding that cargo's profit after a client moves — two figures, two
+ * questions, stated here and in DECISIONS rather than on the card.
  *
  * Takes the `CompanyMoneySight` token as a REQUIRED argument (round B, O6):
  * a cost-derived profit per seller is company money, and the only way to hold
@@ -26,6 +30,12 @@ import { earnedOf, upsaleRows } from '../calc/upsale-service';
 export interface StaffProfitRow {
   sellerId: string | null;
   sellerName: string | null;
+  /**
+   * The report row's `managerActive` — false marks a seller who has left but
+   * still carries stamped cargo's money. Null for the «—» cohort and for an
+   * upsale-only row: an offer made in the period means the person worked in it.
+   */
+  sellerActive: boolean | null;
   cargoProfitUsd: number;
   upsaleUsd: number;
 }
@@ -44,14 +54,16 @@ export async function staffProfit(
       dan: period.from,
       gacha: period.to,
     }),
-    // Scope 'all' reads no actor id; the token above is the door.
-    upsaleRows('all', '', { from: period.from, to: period.to }),
+    // Scope 'all' reads no actor id; the token above is the door. `earnedOf`
+    // alone, so no paid-cargo walk (3a): the payable state is not read here.
+    upsaleRows('all', '', { from: period.from, to: period.to, walk: 'skip' }),
   ]);
   const bySeller = new Map<string | null, StaffProfitRow>();
   for (const row of report.rows) {
     bySeller.set(row.managerId, {
       sellerId: row.managerId,
       sellerName: row.managerName,
+      sellerActive: row.managerActive,
       cargoProfitUsd: row.profitUsd,
       upsaleUsd: 0,
     });
@@ -60,6 +72,7 @@ export async function staffProfit(
     const row = bySeller.get(offer.sellerId) ?? {
       sellerId: offer.sellerId,
       sellerName: offer.sellerName,
+      sellerActive: null,
       cargoProfitUsd: 0,
       upsaleUsd: 0,
     };

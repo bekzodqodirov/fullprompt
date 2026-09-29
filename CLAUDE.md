@@ -2254,8 +2254,57 @@ addresses reproduces his `UND_ERR_CONNECT_TIMEOUT`): old graph + a code change
 fails in 11 s with his exact log, new graph builds with no download line.
 Derived fence over the stage graph + compose's pnpm services; red-proven.
 
-**Latest migration: 0119** (`price_icons`; ledger must reach **120**). Before
-it: 0118 (`border_queue`), 0117 (`staff_pay`) — `when` …096-…098. Before them:
+**Round — his answers to the twelve questions of 2026-09-29 (DECISIONS
+#1229-#1242 — renumbered from #1224-#1237 on two merges, the EIGHTEENTH and
+NINETEENTH collisions: the factory-barcode round took #1224-#1227 and the npm
+round #1228, both merged first;
+migration 0120 `no_login_staff` — ledger must reach 121).** His
+«1a 2b 3a 4a 5a 6a 7 ha 8a 9a 10 keyin 11a 12a». Every answer was checked
+against the SHIPPED code by a scout first: eight confirm what #1210-#1222 built
+(comments now cite his answer), and **4a did not** — my message had printed the
+stamp version as «standart» while the book version shipped, because my option
+letters were not the design's (#1229: read a «standart» against the code before
+sending it). **2b** (0120): a paid person who never signs in is a `users` row
+with `login_enabled = false` (password/phone nullable, four CHECKs), so the
+salary chain is unchanged; ONE login rule `platform/users/login.ts`
+(`canLogIn`/`canLogInSql`/`loginRowSql`) asked by login, both identify reads,
+the staff bot, task/automation/mention/share pickers, the rota, site-assign and
+the digest, fenced by `login-person-fence.test.ts` (every `users.active` read in
+src is the rule's, the writer's, or on a counted allowlist); ONE users writer
+`platform/users/service.ts` (roles, the super_admin rule, mint/deactivate,
+`enableLogin` — only on /admin/users, phone typed afresh, refused on another
+row's phone/username or last-9 match); /hodimlar keeps whoever the due list
+still owes (`owedEmployeeIds`), a «Ketganlar (N)» fold, no salary on a leaver.
+**3a**: the upsale is payable only when its deal's cartons (the deal's own
+client) are paid by the KPI's FIFO predicate AND its deal-stamped prices are
+settled; the compensation check stays first; one reader
+`finance/paid-cartons.ts` (KPI and upsale folds); budgets 4 s / 20 s,
+`not_computed` is never money and sits OUT of the net; the net reads a
+60-second memo (`calc/liability-memo.ts`) cleared by the pay/reopen/offer
+doors; `upsaleRows(… , {walk})` REQUIRED; hints ask `mayOpenClientLedger`.
+**4a**: `revenueByStamp` / `costByStamp` (`staff/stamp-*.ts`) — cost by box →
+stamp, revenue by the RIDERS (batch beats deal, compensation → its receipt, a
+no-cargo price → the client's newest prixod by that day), mixed prices split
+m³ → kg → count by largest remainder; All and Own move together; per-client
+reconciliation with «Mijoz foydasi», not its Jami. Three packages in worktrees,
+each reviewed by three lenses with skeptics (3a: two confirmed defects fixed;
+2b, 4a: nits). Found, queued, not fixed: `companyBalance()` 3.8-6.1 s on the
+shaped copy. **Found by the round's SCREENSHOT (#1241)**: a long unbroken name
+overflowed /admin/users (2,056 px at 360) and the staff card, and ten specs'
+«fits the viewport» check could not see it — under mobile emulation
+`window.innerWidth` GROWS with Chrome's zoom-out (1,440 read against a 2,056
+document). Measure `document.documentElement.clientWidth` or the configured
+viewport; `e2e-width-oracle.test.ts` refuses `innerWidth` in specs. And
+(#1242) two /hodimlar buttons could save and never land, only on a WARM
+server (a fresh server per test never shows it): a `router.push` right after
+an action DISCARDS the action still being applied and Next 15.5 never settles
+it (→ full `window.location.assign`), and an action whose revalidated content
+streams into a `<Suspense>` can stay pending for ever (upstream #87529/#98303
+→ no boundary around action buttons; no `router.refresh()` after an action
+that already revalidates).
+
+**Latest migration: 0120** (`no_login_staff`, `when` …099; ledger must reach **121**). Before
+it: 0119 (`price_icons`), 0118 (`border_queue`), 0117 (`staff_pay`) — `when` …096-…098. Before them:
 **0116** (`cargo_wait_alerts`; ledger 117). Before it: 0115 (`system_watch`), 0114 (`debt_control`), 0113
 (`inbound_contact`) — `when` …092-…095, assigned in that order before the
 packages were built. Before them: **0112** (`qr_less` — the count reasons, the QR-siz lot
@@ -2379,10 +2428,14 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **120** since 0119 (117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **121** since 0120 (120 since 0119, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
-0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted);
-a code-only round after it is checked by `/api/version`, not the count.
+0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
+so the next deploy applies 0120 — COUNT FIRST, because 120 was never quoted
+(if it reads 113, that deploy did not land and the next one applies 0113-0120
+and must recreate EVERY container once: `--profile https --profile telegram
+up -d --build`, compose gained `init`, a healthcheck, log caps and a postgres
+flag); a code-only round after it is checked by `/api/version`, not the count.
 Never carry this number over from a previous session: read it
 (`ls src/modules/platform/db/migrations/*.sql | wc -l`) before writing the
 owner a step list, because the count is the only check that separates «the

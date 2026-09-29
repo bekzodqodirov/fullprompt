@@ -124,7 +124,9 @@ export async function myMonth(actor: {
 
   let upsale: MyMonth['upsale'] = null;
   if (upsaleScopeFor(actor) !== 'none') {
-    const { rows } = await upsaleRows('own', userId, { from: `${month}-01`, to: today });
+    // `earnedOf` alone: the payable state is /upsale's, so this panel pays for
+    // no paid-cargo walk (3a) and holds no extra pool connection.
+    const { rows } = await upsaleRows('own', userId, { from: `${month}-01`, to: today, walk: 'skip' });
     upsale = { earnedUsd: round2(rows.reduce((sum, row) => sum + earnedOf(row), 0)), offers: rows.length };
   }
 

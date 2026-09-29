@@ -74,6 +74,7 @@ import {
   type PricedItem,
 } from './pricing';
 import { CalcError, MAX_CALC_ITEMS } from './service';
+import { forgetUpsaleLiability } from './liability-memo';
 import {
   sealCounters,
   unchangedFromProposal,
@@ -3879,6 +3880,9 @@ export async function recordOffer(
       offeredBy: ctx.actorId,
     })
     .returning({ id: calcOffers.id });
+  // A new standing offer can change what the sellers are owed (it replaces
+  // the job's payable row): the Balans's minute-long memo forgets it (3a).
+  forgetUpsaleLiability();
 
   await writeAudit(db, ctx, {
     entityType: 'calc_offer',
@@ -4044,6 +4048,9 @@ export async function releaseOffer(offerId: string, ctx: AuditContext): Promise<
     if (still && still.belowFloor && !still.approvedAt) throw new CalcError('superseded');
     throw new CalcError('not_pending');
   }
+  // Released: the Balans's minute-long memo of the sellers' commissions
+  // forgets itself (3a) — the release is a door that moves the payable set.
+  forgetUpsaleLiability();
 
   // The card write resolves the request from the offer's OWN anchor — a
   // request-anchored offer has no version to look through (judge blocker:

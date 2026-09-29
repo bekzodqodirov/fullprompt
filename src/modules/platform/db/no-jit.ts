@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { db } from './client';
+import { isQueryCanceled } from './errors';
 
 /**
  * A company-wide READ with Postgres's JIT switched off for it alone (0104).
@@ -38,6 +39,15 @@ export class ReadDeadlineError extends Error {
   constructor() {
     super('read deadline passed');
   }
+}
+
+/**
+ * A budgeted read that ran out — refused before sending (`ReadDeadlineError`)
+ * or cancelled by postgres at what was left (57014). The ONE predicate for
+ * «soft: say it was not computed»; anything else is a bug and stays loud.
+ */
+export function isBudgetMiss(err: unknown): boolean {
+  return err instanceof ReadDeadlineError || isQueryCanceled(err);
 }
 
 export function withoutJit<T>(

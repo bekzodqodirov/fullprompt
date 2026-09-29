@@ -44,6 +44,15 @@ describe('the login gate asks the address net first and the account lock last', 
     expect(loginAction).toMatch(/accountLocked\(identifier\)\)\s*\?\s*'rate_limited'/);
   });
 
+  it('asks the login rule before any password work', () => {
+    // 0120: a person who never signs in has no hash to verify, and a leaver
+    // must not be verified either — `canLogIn` (active AND a login) decides
+    // before argon2 runs.
+    const ruleAt = loginAction.indexOf('canLogIn(');
+    expect(ruleAt, 'login rule present').toBeGreaterThan(-1);
+    expect(ruleAt).toBeLessThan(loginAction.indexOf('verifyPassword('));
+  });
+
   it('still records every failed attempt, so the cap keeps counting', () => {
     // Without this the lock would have nothing to count and the round-81
     // unbounded-guess fix would be undone by the reordering.

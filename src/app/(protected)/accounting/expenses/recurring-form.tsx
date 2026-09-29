@@ -205,7 +205,9 @@ export function RecurringForm({
                   ? t('accountOrPayerRequired')
                   : state.error === 'amount_too_large'
                     ? tc('amountTooLarge')
-                    : tc('error')}
+                    : state.error === 'employee_inactive'
+                      ? t('employeeInactive')
+                      : tc('error')}
         </p>
       )}
     </form>

@@ -86,6 +86,12 @@ const MONEY_READERS = [
   // 0117: the dashboard's «Hodimlar keltirgan foyda» — the per-seller cargo
   // PROFIT (sellerPerformanceAll's landed cost) in one call.
   'staffProfit',
+  // 4a: per-seller client money and its cost — law 4's other half. The two
+  // stamp readers and the report functions that fold them.
+  'revenueByStamp',
+  'costByStamp',
+  'sellerPerformanceAll',
+  'sellerPerformanceOwn',
 ];
 
 /** A predicate that keeps the VED out of a money read. */

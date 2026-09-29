@@ -12,6 +12,7 @@ export const RECURRING_ERRORS: Record<string, string> = {
   account_or_payer_required: 'accounting.accountOrPayerRequired',
   non_cash_category: 'accounting.nonCashCategory',
   account_currency_mismatch: 'accounting.accountCurrencyMismatch',
+  employee_inactive: 'accounting.employeeInactive',
   account_not_found: 'accounting.recurringErrTill',
   partner_not_found: 'accounting.recurringErrPartner',
   recurring_not_due: 'accounting.recurringErrNotDue',

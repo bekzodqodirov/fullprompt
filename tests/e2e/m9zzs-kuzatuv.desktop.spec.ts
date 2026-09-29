@@ -21,7 +21,7 @@ test('the error list and the disk lines at desktop width', async ({ page }) => {
   await login(page, OWNER);
   await page.goto('/admin/xatolar?davr=30');
   await expect(page.getByTestId('system-errors')).toBeVisible();
-  const w = await page.evaluate(() => ({ doc: document.documentElement.scrollWidth, view: window.innerWidth }));
+  const w = await page.evaluate(() => ({ doc: document.documentElement.scrollWidth, view: document.documentElement.clientWidth }));
   expect(w.doc).toBeLessThanOrEqual(w.view);
   await page.screenshot({ path: 'test-results/kuzatuv-xatolar-1280.png', fullPage: true });
 
