@@ -370,13 +370,10 @@ export async function priceHistoryForLots(
   const minSim = Number.isFinite(configured) && configured > 0 ? configured : 0.6;
   const codes = await tnvedFor(lots.map((lot) => lot.productNameZh));
 
-  // Lots with the same name, code and client ask the same question once.
-  const needles: Needle[] = [];
-  const needleOf = new Map<string, number>();
-  for (const lot of lots) {
+  const needleFor = (lot: BatchLot): Needle => {
     const key = productKey(lot.productNameZh);
     const code = codes.get(key)?.tnvedCode ?? null;
-    const needle: Needle = {
+    return {
       key,
       zh: lot.productNameZh,
       ru: lot.productNameRu?.trim() ? lot.productNameRu : null,
@@ -384,31 +381,22 @@ export async function priceHistoryForLots(
       code: code && /^\d{10}$/.test(code) ? code : null,
       clientId: lot.clientId,
     };
+  };
+
+  // Lots with the same name, code and client ask the same question once.
+  const needles: Needle[] = [];
+  const needleOf = new Map<string, number>();
+  const lotNeedle = new Map<string, number>();
+  for (const lot of lots) {
+    const needle = needleFor(lot);
     const id = JSON.stringify(needle);
     if (!needleOf.has(id)) {
       needleOf.set(id, needles.length);
       needles.push(needle);
     }
+    lotNeedle.set(lot.lotId, needleOf.get(id)!);
     out.set(lot.lotId, { rows: [], failed: false });
   }
-  const lotNeedle = new Map(
-    lots.map((lot) => {
-      const key = productKey(lot.productNameZh);
-      const code = codes.get(key)?.tnvedCode ?? null;
-      return [
-        lot.lotId,
-        needleOf.get(
-          JSON.stringify({
-            key,
-            zh: lot.productNameZh,
-            ru: lot.productNameRu?.trim() ? lot.productNameRu : null,
-            code: code && /^\d{10}$/.test(code) ? code : null,
-            clientId: lot.clientId,
-          }),
-        )!,
-      ];
-    }),
-  );
   let pairs: PairRow[];
   try {
     pairs = await db.transaction(async (tx) => {
