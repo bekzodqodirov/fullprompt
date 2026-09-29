@@ -717,6 +717,30 @@ describe('to‘lov va’dasi', () => {
     await cancelPromise(id, ctx(A.id), A.actor);
   });
 
+  it('a seller who never signs in (0120) is no seller for the call — it falls to the recorder', async () => {
+    // Reachable only by a forged client post: the pickers never offer a
+    // no-login person. Without the rule `createTask` refuses
+    // `assignee_no_login` into the catch that only LOGS — a promise with no
+    // call at all.
+    const [nobody] = await db
+      .insert(users)
+      .values({ fullName: `Qarz xitoy ${STAMP}`, phone: null, passwordHash: null, loginEnabled: false })
+      .returning({ id: users.id });
+    people.push(nobody!.id);
+    const c = await mkClient(nobody!.id);
+    await ledger(c.id, 'charge', 300);
+    const { id } = await recordPromise(
+      { clientId: c.id, amountUsd: 100, dueOn: addDays(today(), 3) },
+      ctx(A.id),
+      A.actor,
+    );
+    const [p] = await db.select().from(paymentPromises).where(eq(paymentPromises.id, id));
+    expect(p!.taskId).not.toBeNull();
+    const [task] = await db.select().from(tasks).where(eq(tasks.id, p!.taskId!));
+    expect(task!.assigneeId).toBe(A.id);
+    await cancelPromise(id, ctx(A.id), A.actor);
+  });
+
   it('kept when the money came — a so‘m payment a few dollars short included; the task closes itself', async () => {
     const c = await mkClient(S1.id);
     await ledger(c.id, 'charge', 500);
