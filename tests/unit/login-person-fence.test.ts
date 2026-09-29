@@ -101,6 +101,10 @@ const ALLOW: Record<string, { count: number; why: string }> = {
     why: 'the same, plus the leaver already linked',
   },
   'src/modules/wms/partners/service.ts': { count: 1, why: 'savePartner validates that link' },
+  'src/modules/wms/crm/seller-report.ts': {
+    count: 1,
+    why: 'marks a seller who holds stamped money «(faol emas)» (4a); it names, it never picks a colleague',
+  },
 };
 
 describe('(1) a users-table .active read is the rule’s, the writer’s or payroll’s', () => {
