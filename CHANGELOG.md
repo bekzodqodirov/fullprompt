@@ -86,6 +86,17 @@ Ism 200 harfgacha bo'lishi mumkin. Orasida bo'sh joy bo'lmasa, «Boshqaruv → X
 ro'yxati, xodim kartasi va «Hodimlar» sahifasi telefonda ekrandan chiqib ketardi. Bunda
 butun sahifa kichrayib qolardi va ism o'sha odamning «✏️» tugmasini to'sib qo'yardi. Endi
 uzun ism keyingi qatorga o'tadi.
+Xodim kartasidagi skladlar ro'yxati ham telefonda 28 px chiqib ketardi — tuzatildi.
+
+### 5. «Hodimlar» sahifasidagi tugmalar endi qotib qolmaydi
+
+1. «Ishdan ketdi», «Qayta faollashtirish», ✏️ ism/telefon va «KPI to'lash» tugmalari ba'zan
+   bosilgandan keyin kulrang bo'lib qotib qolardi. Ma'lumot saqlanar edi, lekin ekran
+   yangilanmasdi. Sahifani qayta ochish kerak bo'lardi.
+2. «Qo'shish»dan keyin yangi hodimning kartasi ba'zan ochilmasdi. Faqat «✅ Qo'shildi»
+   yozuvi chiqib qolardi.
+3. Ikkalasi ham tuzatildi. Buning narxi: sahifa endi bir martada ochiladi. KPI hisobi uzoq
+   bo'lsa (ko'pi bilan 8 soniya), shu vaqt ichida tepada yuklanish chizig'i yuradi.
 
 ## Deploy xotira yetmay to'xtadi — tuzatildi — 2026-09-29
 
