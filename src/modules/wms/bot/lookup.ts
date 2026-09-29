@@ -21,6 +21,7 @@ import { alias } from 'drizzle-orm/pg-core';
 import { mayReadBatches } from '../batches/read-door';
 import { latestPositions } from '../tracking/devices';
 import { truckFor } from '../tracking/truck';
+import { loadBorderHours } from '../tracking/border-queue';
 
 /**
  * "Where is it?" — answered in the bot (owner's item 2).
@@ -407,11 +408,13 @@ async function lookupClient(
   const fixes = transit.size
     ? await latestPositions([...transit.values()].flatMap((tr) => (tr.batchId ? [tr.batchId] : [])))
     : new Map();
+  // The typed border queues, once for the answer (#432).
+  const waits = transit.size ? await loadBorderHours() : {};
   const transitLines: string[] = [];
   for (const tr of transit.values()) {
     const ends = tr.batchId ? endsById.get(tr.batchId) : undefined;
     const marker = ends
-      ? await truckFor(ends.batch, ends.originCode, ends.destCode, fixes.get(ends.batch.id)).catch(
+      ? await truckFor(ends.batch, ends.originCode, ends.destCode, waits, fixes.get(ends.batch.id)).catch(
           () => null,
         )
       : null;

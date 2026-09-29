@@ -9,14 +9,14 @@ const ago = (hours: number) => new Date(NOW.getTime() - hours * HOUR);
 
 describe('scheduleEstimate — the owner’s own corridor timings', () => {
   it('needs a route AND a departure', () => {
-    expect(scheduleEstimate('YW', 'KA', null, null, NOW)).toBeNull();
+    expect(scheduleEstimate('YW', 'KA', null, null, {}, NOW)).toBeNull();
     // A pair the map does not know: honest silence, not an invented road.
-    expect(scheduleEstimate('NOPE', 'ALSONOPE', ago(10), null, NOW)).toBeNull();
+    expect(scheduleEstimate('NOPE', 'ALSONOPE', ago(10), null, {}, NOW)).toBeNull();
   });
 
   it('a truck that left Yiwu an hour ago is about a week from Kashgar', () => {
     // map-data.ts: YW→KA is 144-168 hours, his own number.
-    const s = scheduleEstimate('YW', 'KA', ago(1), null, NOW)!;
+    const s = scheduleEstimate('YW', 'KA', ago(1), null, {}, NOW)!;
     expect(s.est.overdue).toBe(false);
     const [min, max] = s.est.remainingHours;
     expect(min).toBeGreaterThan(120);
@@ -24,7 +24,7 @@ describe('scheduleEstimate — the owner’s own corridor timings', () => {
   });
 
   it('runs out of schedule rather than promising for ever', () => {
-    const s = scheduleEstimate('YW', 'KA', ago(400), null, NOW)!;
+    const s = scheduleEstimate('YW', 'KA', ago(400), null, {}, NOW)!;
     expect(s.est.overdue).toBe(true);
     expect(s.est.remainingHours).toEqual([0, 0]);
     // And then it says nothing: «taxminan kecha» is worse than silence while
@@ -42,18 +42,19 @@ describe('scheduleEstimate — the owner’s own corridor timings', () => {
       'TAS1',
       ago(500),
       { key: 'at_border', at: ago(1).toISOString() },
+      {},
       NOW,
     )!;
     expect(pinned.est.overdue).toBe(false);
     expect(pinned.est.segKey).toBe('border_wait');
     // Without the pin the same truck is long overdue — which is exactly the
     // drift the pin exists to correct.
-    const unpinned = scheduleEstimate('KA', 'TAS1', ago(500), null, NOW)!;
+    const unpinned = scheduleEstimate('KA', 'TAS1', ago(500), null, {}, NOW)!;
     expect(unpinned.est.overdue).toBe(true);
   });
 
   it('a pin inside Uzbekistan leaves only the last leg', () => {
-    const s = scheduleEstimate('KA', 'TAS1', ago(300), { key: 'in_uz', at: ago(2).toISOString() }, NOW)!;
+    const s = scheduleEstimate('KA', 'TAS1', ago(300), { key: 'in_uz', at: ago(2).toISOString() }, {}, NOW)!;
     expect(s.est.segKey).toBe('uz');
     // Osh → Tashkent over the Kamchik pass: 36-48 hours, less the two spent.
     expect(s.est.remainingHours[1]).toBeLessThanOrEqual(48);
@@ -91,14 +92,14 @@ describe('a generic route is no schedule (round B, O14)', () => {
   });
 
   it('gives a generic pair no estimate, and every described pair one', () => {
-    for (const [o, d] of GENERIC) expect(scheduleEstimate(o, d, ago(10), null, NOW), `${o}→${d}`).toBeNull();
-    for (const [o, d] of OWNERS) expect(scheduleEstimate(o, d, ago(10), null, NOW), `${o}→${d}`).not.toBeNull();
+    for (const [o, d] of GENERIC) expect(scheduleEstimate(o, d, ago(10), null, {}, NOW), `${o}→${d}`).toBeNull();
+    for (const [o, d] of OWNERS) expect(scheduleEstimate(o, d, ago(10), null, {}, NOW), `${o}→${d}`).not.toBeNull();
   });
 });
 
 describe('etaWindow — two dates, never one', () => {
   it('turns the remaining hours into a window a person can read', () => {
-    const s = scheduleEstimate('YW', 'KA', ago(1), null, NOW)!;
+    const s = scheduleEstimate('YW', 'KA', ago(1), null, {}, NOW)!;
     const w = etaWindow(s.est, NOW)!;
     expect(new Date(w.fromIso).getTime()).toBeGreaterThan(NOW.getTime());
     expect(new Date(w.toIso).getTime()).toBeGreaterThan(new Date(w.fromIso).getTime());

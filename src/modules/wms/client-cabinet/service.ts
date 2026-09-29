@@ -26,6 +26,7 @@ import { CLIENT_ACTIVE_STATUSES } from '../boxes/active';
 import { arrivalCleared } from '../notices/arrival-text';
 import { clientBalanceUsd, clientLedger } from '../finance/service';
 import { etaWindow, scheduleEstimate } from '../tracking/eta';
+import { loadBorderHours } from '../tracking/border-queue';
 import { journeyFromEvents, type JourneyStep } from './journey';
 import {
   cargoStage,
@@ -349,9 +350,12 @@ async function trucksFor(batchIds: string[]): Promise<Map<string, CabinetTruck>>
     .where(inArray(batches.id, batchIds));
 
   const now = new Date();
+  // The typed border queues, once for every truck in the cabinet (#432) —
+  // the same number the office's map and dashboard read.
+  const waits = rows.length ? await loadBorderHours() : {};
   for (const r of rows) {
     const cp = r.checkpoint as { key?: string; at?: string } | null;
-    const schedule = scheduleEstimate(r.originCode, r.destCode, r.departedAt, r.checkpoint, now);
+    const schedule = scheduleEstimate(r.originCode, r.destCode, r.departedAt, r.checkpoint, waits, now);
     const window = schedule ? etaWindow(schedule.est, now) : null;
     out.set(r.id, {
       stage: stageBatchOf({ ...r, trackingCheckpoint: r.checkpoint }),

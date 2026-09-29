@@ -124,9 +124,14 @@ export function truckStage(batch: StageBatch): TruckStage {
    * deliberately gets no equivalent: his ladder has no rung for «the truck
    * reached Kashgar but nothing is unloaded», and a box still sitting on a
    * lorry is honestly described as being on the road.
+   *
+   * The pin counts only on a truck bound for somewhere other than China: an
+   * «O'zbekistonda» left on a Yiwu → Horgos truck is a slip, and the rule
+   * lives HERE so the cabinet, the Yuklar tab, the pushes and the dashboard
+   * all refuse it at once (the pin service refuses to write it, too).
    */
   const inUzbekistan =
-    batch.checkpointKey === 'in_uz' ||
+    (batch.checkpointKey === 'in_uz' && batch.destCountry !== 'CN') ||
     (batch.destCountry !== 'CN' &&
       (batch.originCountry === 'UZ' || ['arrived', 'unloaded', 'closed'].includes(batch.status)));
   if (inUzbekistan) return batch.customsCleared ? 'customs_done' : 'in_uz';

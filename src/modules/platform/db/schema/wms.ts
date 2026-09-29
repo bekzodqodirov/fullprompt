@@ -680,7 +680,12 @@ export const batches = pgTable(
      */
     customsPartnerId: uuid('customs_partner_id').references(() => partners.id),
     customsByClient: boolean('customs_by_client').notNull().default(false),
-    /** Latest manual position pin: {key: at_border|in_kg|in_uz, at: ISO} — re-anchors the map estimate. */
+    /**
+     * Latest manual position pin: {key: at_border|in_kg|in_kz|in_uz, at: ISO} —
+     * re-anchors the map estimate. The keys have ONE home
+     * (`CHECKPOINT_KEYS`, tracking/map-data.ts), and a truck is offered and
+     * accepted only the keys its own road carries (`checkpointsFor`).
+     */
     trackingCheckpoint: jsonb('tracking_checkpoint'),
     /**
      * When the customs declaration cleared (owner: «ha rastamojka tugadi
@@ -710,6 +715,35 @@ export const batches = pgTable(
     ),
     check('batches_route_check', sql`${t.originWarehouseId} <> ${t.destWarehouseId}`),
     index('batches_origin_status_idx').on(t.originWarehouseId, t.status),
+  ],
+);
+
+/**
+ * «Chegara navbatlari» (0118): the queue at a border post as the logist typed
+ * it, one row per post. Absent, or NULL hours, = the corridor's default
+ * (`BORDER_POSTS`, tracking/map-data.ts — the only list of posts, hence no
+ * CHECK on `post`). `updated_at` is when the number was typed and is part of
+ * the ETA rule (`routeWithWaits`), so it is written by the service only.
+ */
+export const borderQueue = pgTable(
+  'border_queue',
+  {
+    id: id(),
+    post: text('post').notNull(),
+    minHours: integer('min_hours'),
+    maxHours: integer('max_hours'),
+    note: text('note'),
+    updatedBy: uuid('updated_by').references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('border_queue_post_unique').on(t.post),
+    check('border_queue_pair_check', sql`(${t.minHours} IS NULL) = (${t.maxHours} IS NULL)`),
+    check(
+      'border_queue_range_check',
+      sql`${t.minHours} IS NULL OR (${t.minHours} >= 0 AND ${t.maxHours} >= ${t.minHours} AND ${t.maxHours} <= 720)`,
+    ),
+    check('border_queue_note_len', sql`${t.note} IS NULL OR length(${t.note}) <= 300`),
   ],
 );
 
