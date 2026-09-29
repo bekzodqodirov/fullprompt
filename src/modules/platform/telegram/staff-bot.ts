@@ -492,9 +492,24 @@ export function buttonsFor(
 export const LINK_ASK_BUTTONS = 5;
 
 /**
+ * Which prixod a pressed «tegishlimi?» row was about — the receipt number on
+ * its ✅ button, read off the keyboard BEFORE the row is removed. The row is
+ * the only place the message named it; without this, three presses leave
+ * three anonymous verdicts under a list whose rows have gone.
+ */
+export function pressedLinkAskLabel(markup: unknown, data: string): string | null {
+  const rows = (markup as { inline_keyboard?: { text?: string; callback_data?: string }[][] })?.inline_keyboard ?? [];
+  const row = rows.find((r) => r.some((button) => button.callback_data === data));
+  const label = row?.find((button) => button.callback_data?.startsWith('cl:1:'))?.text ?? '';
+  const number = label.replace(/^✅\s*/u, '').trim();
+  return number || null;
+}
+
+/**
  * Settle one row of a «tegishlimi?» message (0119): the text keeps what it
- * said and gains the answer; the pressed row goes, every other row and any
- * link row stay — `withoutCallback` takes out exactly the row it names.
+ * said and gains the answer, NAMED — «✅ Tasdiqlandi — R-00123»; the pressed
+ * row goes, every other row and any link row stay — `withoutCallback` takes
+ * out exactly the row it names.
  */
 export async function settleLinkAskRow(
   chatId: bigint,
@@ -502,10 +517,11 @@ export async function settleLinkAskRow(
   data: string,
   line: string,
 ): Promise<void> {
+  const number = pressedLinkAskLabel(origin.markup, data);
   const res = await editText({
     chatId,
     messageId: origin.messageId,
-    html: appendLine(staffTextHtml(origin.text, 'CalcLinkAsk'), line),
+    html: appendLine(staffTextHtml(origin.text, 'CalcLinkAsk'), number ? `${line} — ${number}` : line),
     replyMarkup: keyboardOf(withoutCallback(origin.markup, data)),
   });
   if (!res.ok) logger.warn({ description: res.description }, 'calc link ask not updated');

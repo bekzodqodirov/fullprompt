@@ -385,12 +385,14 @@ export async function buildHomeFlow(
       // drawn even when the count is zero, or a quiet morning would leave
       // this person with no door to it at all.
       hrefs: ['/hisoblash', '/batches', '/bitimlar'],
-      counts: {
-        ...(await vedFlowCounts()),
-        // The control screen's own list, uncapped (#513) — scoped by its own
-        // door: the VED's seals, everybody's for a finance.reports holder.
-        calcLinksPending: await linkSuggestionCount({ scope: calcControlScopeFor(actor), actorId: actor.id }),
-      },
+      // Side by side, not one after the other: this home is opened on every
+      // login, and the second read owes the first nothing. The count is the
+      // control screen's own list, uncapped (#513) — scoped by its own door:
+      // the VED's seals, everybody's for a finance.reports holder.
+      counts: await Promise.all([
+        vedFlowCounts(),
+        linkSuggestionCount({ scope: calcControlScopeFor(actor), actorId: actor.id }),
+      ]).then(([base, calcLinksPending]) => ({ ...base, calcLinksPending })),
     };
   }
   if (actor.roles.includes('accountant')) {

@@ -9,6 +9,7 @@ import {
   dayButtons,
   LINK_ASK_BUTTONS,
   parseCallback,
+  pressedLinkAskLabel,
 } from '@/modules/platform/telegram/staff-bot';
 import { telegramDue } from '@/modules/platform/tasks/service';
 import { dailyDigestText, DIGEST_UNCLAIMED_SHOWN } from '@/modules/wms/reports/daily-digest';
@@ -244,6 +245,20 @@ describe('«Bu prixodlar hisobingizga tegishlimi?» — the VED answers a guess 
     expect(linkAskTag(one)).not.toBe(linkAskTag(two));
     expect(linkAskTag(one)).toMatch(/^[0-9a-f]{8}$/);
     expect(parseCallback(`cl:1:${one}:${linkAskTag(two)}`)).toMatchObject({ requestTag: linkAskTag(two) });
+  });
+
+  it('a settled row names its prixod, read off the ✅ of the pressed row — either button', () => {
+    const asks = [0, 1, 2].map((i) => ({ receiptId: uuid(i), req8, number: `R-0012${i}` }));
+    const markup = { inline_keyboard: buttonsFor('CalcLinkAsk', { text: 'x', asks }) };
+    expect(pressedLinkAskLabel(markup, `cl:0:${uuid(1)}:${req8}`)).toBe('R-00121');
+    expect(pressedLinkAskLabel(markup, `cl:1:${uuid(2)}:${req8}`)).toBe('R-00122');
+    // A message whose rows are already gone says the verdict alone, never a stranger's number.
+    expect(pressedLinkAskLabel(markup, `cl:1:${uuid(5)}:${req8}`)).toBeNull();
+    expect(pressedLinkAskLabel(undefined, `cl:1:${uuid(0)}:${req8}`)).toBeNull();
+    // …and the settle passes it on.
+    expect(read('src/modules/platform/telegram/staff-bot.ts')).toMatch(
+      /const number = pressedLinkAskLabel\(origin\.markup, data\);[\s\S]{0,300}number \? `\$\{line\} — \$\{number\}` : line/,
+    );
   });
 
   it('the ask is a job for the person, muted with the tasks and never a founder', () => {
