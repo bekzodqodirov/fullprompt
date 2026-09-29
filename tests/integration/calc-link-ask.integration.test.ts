@@ -273,6 +273,33 @@ describe('a ❌ stays a ❌, and a correction asks its own sealer', () => {
   });
 });
 
+describe('filing a prixod onto the deal it is already on moves nothing (review, 2026-09-29)', () => {
+  it('a ❌ is not stamped back and re-asked; a ✅ is not erased', async () => {
+    const dealId = await newDeal();
+    const requestId = await openJob(dealId);
+    const refused = await receiptOn(dealId, later());
+    const kept = await receiptOn(dealId, later());
+    await sealCalc(requestId, SEAL, ctx());
+    expect(await answerLinkAsk(refused, prefix(requestId), 'drop', 'all', ctx())).toBe('dropped');
+    expect(await answerLinkAsk(kept, prefix(requestId), 'confirm', 'all', ctx())).toBe('confirmed');
+    const askedAt = new Date(Date.now() - 60_000);
+    await db.update(receipts).set({ calcLinkNotifiedAt: askedAt }).where(inArray(receipts.id, [refused, kept]));
+
+    // The receipt card's picker always offers the current deal; pressing it
+    // used to run the re-file branch: clear, then stamp with notified NULL.
+    await linkReceipt(refused, dealId, ctx());
+    await linkReceipt(kept, dealId, ctx());
+
+    const r = await read(refused);
+    expect(r!.calcRequestId).toBeNull();
+    expect(r!.calcLinkNotifiedAt).not.toBeNull();
+    const k = await read(kept);
+    expect(k!.calcRequestId).toBe(requestId);
+    expect(k!.calcLinkConfirmedAt).not.toBeNull();
+    expect(k!.calcLinkSource).toBe('person');
+  });
+});
+
 describe('a press answers about the request it named', () => {
   it('a second ✅ is «already»', async () => {
     const dealId = await newDeal();
