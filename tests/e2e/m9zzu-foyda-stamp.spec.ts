@@ -46,7 +46,7 @@ async function login(page: Page, phone: string) {
 async function fitsViewport(page: Page) {
   const { doc, view } = await page.evaluate(() => ({
     doc: document.documentElement.scrollWidth,
-    view: window.innerWidth,
+    view: document.documentElement.clientWidth,
   }));
   expect(doc).toBeLessThanOrEqual(view);
 }

@@ -85,7 +85,7 @@ test('the seller at 360: her own client’s money is hers to read, the floor nev
   // A wider document makes a phone zoom the whole page out (#400).
   const { doc, view } = await page.evaluate(() => ({
     doc: document.documentElement.scrollWidth,
-    view: window.innerWidth,
+    view: document.documentElement.clientWidth,
   }));
   expect(doc).toBeLessThanOrEqual(view);
 });

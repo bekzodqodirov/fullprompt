@@ -124,7 +124,7 @@ test('at 360 px, with both folds open on a long name, the page is still 360 wide
   await lot.getByTestId('lot-price-history').locator('summary').click();
   await lot.getByTestId('lot-deal-calc').locator('summary').click();
   await expect(lot.getByTestId('calc-answer')).toBeVisible();
-  const w = await page.evaluate(() => ({ doc: document.documentElement.scrollWidth, view: window.innerWidth }));
+  const w = await page.evaluate(() => ({ doc: document.documentElement.scrollWidth, view: document.documentElement.clientWidth }));
   expect(w.doc).toBeLessThanOrEqual(w.view);
   // Each summary is a 44 px press target (a thumb, not a cursor).
   const box = (await lot.getByTestId('lot-price-history').locator('summary').boundingBox())!;

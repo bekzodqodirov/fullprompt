@@ -49,7 +49,7 @@ async function login(page: Page, phone: string) {
 }
 
 async function widthFits(page: Page) {
-  const w = await page.evaluate(() => ({ doc: document.documentElement.scrollWidth, view: window.innerWidth }));
+  const w = await page.evaluate(() => ({ doc: document.documentElement.scrollWidth, view: document.documentElement.clientWidth }));
   expect(w.doc).toBeLessThanOrEqual(w.view);
 }
 

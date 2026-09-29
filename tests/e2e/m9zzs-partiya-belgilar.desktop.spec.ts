@@ -49,7 +49,7 @@ test('an open fold takes the row\'s whole width, and the page stays the viewport
   await expect(calc.getByTestId('calc-answer')).toBeVisible();
   const [stripBox, calcBox] = [(await strip.boundingBox())!, (await calc.boundingBox())!];
   expect(calcBox.width).toBeGreaterThan(stripBox.width - 2);
-  const w = await page.evaluate(() => ({ doc: document.documentElement.scrollWidth, view: window.innerWidth }));
+  const w = await page.evaluate(() => ({ doc: document.documentElement.scrollWidth, view: document.documentElement.clientWidth }));
   expect(w.doc).toBeLessThanOrEqual(w.view);
 });
 

@@ -414,10 +414,10 @@ async function StaffList({
           <p className="mt-1 text-2xs text-ink-500">{t('leaversHint')}</p>
           <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm">
             {leavers.map((person) => (
-              <li key={person.id}>
+              <li key={person.id} className="min-w-0">
                 <Link
                   href={`/hodimlar?hodim=${person.id}`}
-                  className="font-semibold text-brand-700"
+                  className="min-w-0 [overflow-wrap:anywhere] font-semibold text-brand-700"
                   data-testid="hodimlar-leaver"
                 >
                   {person.name}

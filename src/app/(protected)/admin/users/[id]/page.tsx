@@ -63,7 +63,7 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
       <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-baseline gap-2">
-            <h1 className="text-xl font-bold">{user.fullName}</h1>
+            <h1 className="min-w-0 [overflow-wrap:anywhere] text-xl font-bold">{user.fullName}</h1>
             <span className="chip chip-neutral" data-testid="user-no-login">
               {t('noLogin')}
             </span>
@@ -116,7 +116,7 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">{user.fullName}</h1>
+        <h1 className="min-w-0 [overflow-wrap:anywhere] text-xl font-bold">{user.fullName}</h1>
         {toggleForm}
       </div>
 

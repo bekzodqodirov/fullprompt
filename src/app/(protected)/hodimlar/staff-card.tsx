@@ -109,7 +109,7 @@ export async function StaffCard({
   return (
     <li className="card space-y-2 !p-3" data-testid="staff-card">
       <div className="flex flex-wrap items-baseline gap-2">
-        <span className="font-semibold">{person.name}</span>
+        <span className="min-w-0 [overflow-wrap:anywhere] font-semibold">{person.name}</span>
         {!person.active ? <span className="chip chip-neutral">{t('inactive')}</span> : null}
         {/* A person who never signs in (0120, his 2b): paid here, a colleague
             nowhere else. The way to a login is the admin's, on /admin/users. */}

@@ -66,7 +66,7 @@ test('a cost typed with no kassa waits on the queue, and one press names its kas
   await row.getByTestId('queue-till-save').click();
   await expect(page.getByTestId('queue-row').filter({ hasText: AMOUNT })).toHaveCount(0, { timeout: 15_000 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
-    await page.evaluate(() => window.innerWidth),
+    await page.evaluate(() => document.documentElement.clientWidth),
   );
 
   // The card now says a kassa paid it.

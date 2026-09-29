@@ -41,7 +41,7 @@ export default async function UsersPage() {
             data-testid="user-card"
           >
             <div className="flex items-baseline gap-2">
-              <span className="font-semibold">{user.fullName}</span>
+              <span className="min-w-0 [overflow-wrap:anywhere] font-semibold">{user.fullName}</span>
               <span className="ml-auto text-xs text-ink-500">
                 {user.active ? tc('active') : tc('inactive')}
               </span>
