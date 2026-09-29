@@ -14,9 +14,13 @@ import { logger } from '@/modules/platform/logger';
  * their own exported functions (`staffProfit`) and never re-derived here.
  *
  * The upsale is INSIDE the cargo profit, so the card never adds the two, and
- * it says so under the rows. The money half follows the client's CURRENT
- * seller (open point 4, stated), and it is company-wide whatever warehouse is
- * picked — a profit has no warehouse, and the tag says «Butun kompaniya».
+ * it says so under the rows. The cargo money follows the seller stamped on the
+ * prixod the day it was received (his 4a — a moved client's old cargo stays
+ * with whoever sold it); the card shows the report's figures and nothing else,
+ * and the report is where the stamp names what it could not place. It is
+ * company-wide whatever warehouse is picked — a profit has no warehouse, and
+ * the tag says «Butun kompaniya». The link carries the card's own period, so
+ * the report opens on the numbers the card printed.
  *
  * A soft-fail card: a read that throws renders the sentence, never the page's
  * error boundary. Phone first — each seller is a card of wrapping lines.
@@ -35,7 +39,11 @@ export async function StaffProfitCard({ sight, period }: { sight: CompanyMoneySi
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <p className="font-semibold">{t('staffProfit.title')}</p>
         <ScopeTag label={t('scope.company')} />
-        <Link href="/reports/sotuvchilar" className="ml-auto shrink-0 text-xs font-semibold text-brand-700">
+        <Link
+          href={`/reports/sotuvchilar?dan=${period.from}&gacha=${period.to}`}
+          className="ml-auto shrink-0 text-xs font-semibold text-brand-700"
+          data-testid="dash-staff-profit-report"
+        >
           {t('staffProfit.report')} →
         </Link>
       </div>
@@ -51,7 +59,14 @@ export async function StaffProfitCard({ sight, period }: { sight: CompanyMoneySi
               className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 border-b border-line/60 pb-1.5 text-sm last:border-0"
               data-testid="dash-staff-profit-row"
             >
-              <span className="min-w-0 font-semibold">{row.sellerName ?? t('staffProfit.nobody')}</span>
+              <span className="min-w-0 font-semibold">
+                {row.sellerName ?? t('staffProfit.nobody')}
+                {row.sellerActive === false ? (
+                  <span className="ml-1 text-2xs font-normal text-ink-500" data-testid="dash-staff-profit-inactive">
+                    ({t('staffProfit.inactive')})
+                  </span>
+                ) : null}
+              </span>
               <span className="text-2xs text-ink-500">
                 {t('staffProfit.cargo')}{' '}
                 <span className={`font-mono text-sm font-bold tabular-nums ${row.cargoProfitUsd < 0 ? 'text-bad' : 'text-ink-900'}`}>

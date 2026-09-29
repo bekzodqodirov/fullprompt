@@ -14,16 +14,19 @@ import { receivedMonthSql } from '../staff/cargo';
  *
  * A carton is paid when:
  *  - at least one LIVE, non-zeroed charge COVERS it — the unpriced rule's own
- *    `u_pair.covers` (finance/unpriced.ts), never re-derived here: which price
- *    belongs to which cargo is that file's one sentence (#513). A carton
- *    covered only by a price the lost-cargo door lowered to zero is NOT paid:
- *    nobody paid anything for it;
+ *    `u_pair.covers` (finance/unpriced.ts), never re-derived here: whether a price
+ *    COVERS a carton — is it priced, is it paid — is that file's one sentence
+ *    (#513). WHOSE revenue a price is asks a different question and has the
+ *    price door's relation (the riders, `staff/stamp-revenue.ts`); the two
+ *    differ on purpose — a price before departure, a local-leg price (4a). A
+ *    carton covered only by a price the lost-cargo door lowered to zero is NOT
+ *    paid: nobody paid anything for it;
  *  - and EVERY live charge covering it is settled — `settleCharges`
  *    (finance/fifo.ts) over the client's whole live ledger: a compensation
  *    first onto its own receipt's charges, a deferral onto its own deal's,
  *    then the money oldest charge first. So a client who ships all the time
  *    and has paid for the old months has PAID cargo in those months while the
- *    newest truck is still owed (open point 3, the default).
+ *    newest truck is still owed (his answer 3a).
  *
  * Two readers fold it, and neither restates it:
  *  - the KPI (`staff/kpi-paid.ts` `paidM3ByMonth`) per seller × month, over

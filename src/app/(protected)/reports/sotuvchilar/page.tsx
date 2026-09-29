@@ -23,9 +23,11 @@ import { PageHeader } from '@/components/ui/page';
  *
  * A different clock from /crm/tahlil's sellers table on purpose: tahlil is
  * the funnel's promise (leads won by owner, QUOTED money), this is the
- * ledger's fact (a manager's clients, CHARGED money and received cargo).
- * The subtitle names the attribution so the owner comparing the two tables
- * reads a difference, not a bug.
+ * ledger's fact (a seller's STAMPED cargo and the money priced on it — his
+ * 4a; only the «Mijozlar» column is the client book). The subtitle and the
+ * attribution line name it so the owner comparing the two tables reads a
+ * difference, not a bug; what the stamp could not place is counted under the
+ * full table, never on the seller's own card.
  */
 export default async function SellerReportPage({
   searchParams,
@@ -54,6 +56,12 @@ export default async function SellerReportPage({
     behind = true;
   }
 
+  // The «—» row is explained whenever it carries a figure — not only while
+  // some client has no manager (its money can be a moved client's unstamped
+  // cargo, or a price of a client with neither a prixod nor a seller).
+  const nobody = all?.rows.find((row) => row.managerId === null);
+  const nobodyShown = nobody !== undefined && (nobody.revenueUsd !== 0 || nobody.costUsd !== 0 || nobody.receipts !== 0);
+
   const money = (n: number) => `$${n.toFixed(2)}`;
   const size = (r: SellerOwnRow | SellerAllRow) =>
     `${r.volumeM3.toFixed(3)} m³ · ${r.weightKg.toFixed(1)} kg`;
@@ -62,12 +70,12 @@ export default async function SellerReportPage({
     <div className="mx-auto max-w-4xl space-y-4">
       <PageHeader icon="report" title={t('title')} />
       <p className="text-xs text-ink-500">{t('subtitle')}</p>
-      {/* Two attributions on one page (0117): the cargo columns read the
-          receipt's own seller stamp, the money columns the client book — so
-          the page says which is which rather than let one row look like one
-          fact. */}
+      {/* One attribution for the cargo AND the money (0117, his 4a): the
+          receipt's own seller stamp. Only the «Mijozlar» column is the client
+          book — so the page says which is which rather than let one row look
+          like one fact. */}
       <p className="text-2xs text-ink-500" data-testid="seller-attribution">
-        {t('cargoByStamp')}; {t('moneyByBook')}.
+        {t('cargoByStamp')}; {t('moneyByStamp')}; {t('clientsByBook')}.
       </p>
 
       <form className="card flex flex-wrap items-end gap-2 !p-3" data-testid="seller-period">
@@ -118,11 +126,16 @@ export default async function SellerReportPage({
       {all ? (
         <section className="card !p-0" data-testid="seller-table">
           {all.unassignedClients > 0 ? (
-            <p className="px-3 pt-3 text-xs text-ink-500">
+            <p className="px-3 pt-3 text-xs text-ink-500" data-testid="seller-unassigned">
               {t('unassigned', { n: all.unassignedClients })}{' '}
               <Link href="/admin/clients" className="underline">
                 {t('clientBook')} →
               </Link>
+            </p>
+          ) : null}
+          {nobodyShown ? (
+            <p className="px-3 pt-2 text-xs text-ink-500" data-testid="seller-nobody-note">
+              {t('nobodyRow')}
             </p>
           ) : null}
           <div className="overflow-x-auto p-3">
@@ -141,7 +154,14 @@ export default async function SellerReportPage({
               <tbody>
                 {all.rows.map((row) => (
                   <tr key={row.managerId ?? '—'} className="border-b border-line/60">
-                    <td className="p-2">{row.managerName ?? t('nobody')}</td>
+                    <td className="p-2">
+                      {row.managerName ?? t('nobody')}
+                      {row.managerActive === false ? (
+                        <span className="ml-1 text-2xs text-ink-500" data-testid="seller-inactive">
+                          ({t('inactive')})
+                        </span>
+                      ) : null}
+                    </td>
                     <td className="p-2 text-right font-mono tabular-nums">{row.clients}</td>
                     <td className="p-2 text-right font-mono tabular-nums">{row.receipts}</td>
                     <td className="p-2 text-right font-mono tabular-nums">{size(row)}</td>
@@ -170,6 +190,16 @@ export default async function SellerReportPage({
               </tbody>
             </table>
           </div>
+          {all.unlinked.charges > 0 ? (
+            <p className="px-3 pb-1 text-2xs text-ink-500" data-testid="seller-unlinked">
+              {t('unlinked', { n: all.unlinked.charges, usd: money(all.unlinked.usd) })}
+            </p>
+          ) : null}
+          {all.split.charges > 0 ? (
+            <p className="px-3 pb-1 text-2xs text-ink-500" data-testid="seller-split">
+              {t('split', { n: all.split.charges, usd: money(all.split.usd) })}
+            </p>
+          ) : null}
           {all.rows.length === 0 ? <p className="px-3 pb-3 text-sm text-ink-500">{t('empty')}</p> : null}
           <p className="px-3 pb-3 text-2xs text-ink-500">
             <Link href="/crm/tahlil" className="underline">

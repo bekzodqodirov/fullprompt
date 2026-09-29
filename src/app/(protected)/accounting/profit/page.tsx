@@ -75,8 +75,9 @@ export default async function ProfitPage({
   const isInternal = (row: (typeof rows)[number]) => 'internal' in row && row.internal;
   // Unclaimed cargo cost us money too (#980/#1010): on the client tab it is a
   // row of its own inside the Jami, so the tab reconciles to the P&L (U19).
-  // Never a row of `profitByClient` — the seller report would file it under
-  // the «—» cohort of unassigned clients.
+  // Never a row of `profitByClient` — the seller report leaves it out of every
+  // seller row (it is nobody's cargo yet), so its totals are Σ of the CLIENT
+  // rows, not this Jami.
   const unclaimedUsd = clientGaps && clientGaps.unclaimed.usd > 0.009 ? clientGaps.unclaimed.usd : 0;
   const totals = tripTotals(
     unclaimedUsd > 0

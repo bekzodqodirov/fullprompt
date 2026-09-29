@@ -1536,9 +1536,10 @@ export async function unbatchedMoney(from: string, to: string): Promise<Unbatche
  * - unclaimed: allocations on cargo nobody has claimed (client_id NULL). It
  *   cost us money (#980/#1010) and it moves onto the client when somebody
  *   claims it (`assignReceiptClient` rewrites the allocations). Kept OUT of
- *   `profitByClient`'s array on purpose: `sellerPerformanceAll` files a null
- *   client under the «—» cohort of unassigned clients, and unclaimed cargo is
- *   not a client of anybody's.
+ *   `profitByClient`'s array on purpose: the seller table's cost reader
+ *   (`staff/stamp-cost.ts`) drops it by the same `ca.client_id IS NOT NULL` —
+ *   unclaimed cargo is nobody's cargo and nobody's score until it is claimed,
+ *   when it takes the claim day's seller (0117).
  * - unallocated: a live, converted entry that reached no box, or reached them
  *   short — a truck cost typed while the truck is empty, a factory truck with
  *   no prixod linked, a direct-to-client share with no box of that client in
