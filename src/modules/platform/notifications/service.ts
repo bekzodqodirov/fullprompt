@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import { db } from '../db/client';
 import {
   clients,
@@ -14,9 +14,11 @@ import {
 } from '../db/schema';
 import { logger } from '../logger';
 import { runAutomationRules } from '../automation/service';
+import { botRefused } from '../diagnostics/signals';
 import { buttonsFor } from '../telegram/staff-bot';
 import { approvalVerdictLine, fillCount, notificationLabels } from './labels';
 import { isTelegramMuted } from './mutes';
+import { sendsSilently } from './night';
 import { h } from '../telegram/format';
 import {
   botCall,
@@ -90,22 +92,115 @@ export async function usersWithPermission(code: string): Promise<string[]> {
  * teaches the eye to skip it. Failed, a pending row that already errored,
  * or a claim stuck in 'sending' past the reclaim window (0082) — those are
  * the three that mean somebody should look.
+ *
+ * And a fourth (B9): a row still PENDING a quarter of an hour after it was
+ * written. The first three need a send to have been ATTEMPTED — and a dead
+ * bot attempts nothing: a revoked token pauses the drain and puts every row
+ * back untouched, a missing token returns before claiming one. So the day the
+ * bot died, 37 messages sat pending with no error and this counter read 0.
+ * Fifteen minutes is fifteen of the drain's one-minute ticks; nothing healthy
+ * waits that long.
  */
+export const TELEGRAM_BACKLOG_MINUTES = 15;
+
+/**
+ * «Pending past the backlog window» — the fourth clause above, in one place:
+ * the problem list counts it and the bot's red line fires on it, and a second
+ * copy of the fifteen minutes (it once lived in JS beside this one) is two
+ * clocks for one sentence.
+ */
+function telegramBacklogSql(): SQL {
+  return sql`(${notifications.status} = 'pending'
+          AND ${notifications.createdAt} < now() - make_interval(mins => ${TELEGRAM_BACKLOG_MINUTES}))`;
+}
+
+/**
+ * The ONE sentence «this staff message is a delivery problem», shared by the
+ * home counter and the /admin/notifications «problems» list — so the 37 on the
+ * home screen and the 37 rows behind its link are one predicate (#513; the
+ * page used to keep its own copy, with `muted` in it and no window).
+ */
+export function telegramProblemSql(since: Date): SQL {
+  return and(
+    eq(notifications.channel, 'telegram'),
+    gte(notifications.createdAt, since),
+    sql`(${notifications.status} = 'failed'
+          OR (${notifications.status} = 'pending' AND ${notifications.error} IS NOT NULL)
+          OR ${telegramBacklogSql()}
+          OR (${notifications.status} = 'sending' AND ${notifications.claimedAt} < now() - interval '10 minutes'))`,
+  )!;
+}
+
+/** The window both the counter and the page read — one week. */
+export function problemSince(sinceDays = 7, now = Date.now()): Date {
+  return new Date(now - sinceDays * 86_400_000);
+}
+
 export async function notificationProblemCount(sinceDays = 7): Promise<number> {
-  const since = new Date(Date.now() - sinceDays * 86_400_000);
   const [row] = await db
     .select({ n: sql<number>`count(*)` })
     .from(notifications)
-    .where(
-      and(
-        eq(notifications.channel, 'telegram'),
-        gte(notifications.createdAt, since),
-        sql`(${notifications.status} = 'failed'
-          OR (${notifications.status} = 'pending' AND ${notifications.error} IS NOT NULL)
-          OR (${notifications.status} = 'sending' AND ${notifications.claimedAt} < now() - interval '10 minutes'))`,
-      ),
-    );
+    .where(telegramProblemSql(problemSince(sinceDays)));
   return Number(row?.n ?? 0);
+}
+
+/**
+ * Is the staff bot delivering at all (B9)? Everything a red line needs, and
+ * nothing it would have to guess:
+ *
+ *  - `refused` — Telegram took the token back (401/404), recorded by the one
+ *    sender every Bot API call goes through, with the moment it began;
+ *  - `noToken` — this process has no token at all, read from its own
+ *    environment and never stored (a test run without one must not write the
+ *    company's alarm state);
+ *  - `waiting` / `oldestPendingAt` — the PENDING rows of the problem list the
+ *    red line links to (`telegramProblemSql` over the same week), so «N ta
+ *    xabar kutmoqda» is a count of rows the reader finds behind the link and
+ *    not a second, wider count of every queued row; a backlog past the window
+ *    (`telegramBacklogSql`, the list's own clause) is the symptom that needs
+ *    no cause to be named;
+ *  - `clientWaiting` — customer notices the same dead bot is holding (their own
+ *    sweep pauses on the same refusal), so the sentence can say they wait too.
+ *
+ * Never sent through the bot. The bot is the thing that died.
+ */
+export interface TelegramBotState {
+  refused: { since: Date; detail: string | null } | null;
+  noToken: boolean;
+  waiting: number;
+  oldestPendingAt: Date | null;
+  clientWaiting: number;
+  /** A red line is due: refused, tokenless, or a backlog past the window. */
+  down: boolean;
+}
+
+export async function telegramBotState(sinceDays = 7): Promise<TelegramBotState> {
+  const [refused, [queue], clientRows] = await Promise.all([
+    botRefused(),
+    db
+      .select({
+        n: sql<number>`count(*)`,
+        backlog: sql<number>`count(*) FILTER (WHERE ${telegramBacklogSql()})`,
+        oldest: sql<string | null>`min(${notifications.createdAt})`,
+      })
+      .from(notifications)
+      .where(and(telegramProblemSql(problemSince(sinceDays)), eq(notifications.status, 'pending'))),
+    db.execute<{ n: number }>(sql`
+      SELECT count(*)::int AS n FROM client_notices
+       WHERE status = 'pending'
+         AND send_after < now() - make_interval(mins => ${TELEGRAM_BACKLOG_MINUTES})`),
+  ]);
+  const noToken = !process.env.TELEGRAM_BOT_TOKEN;
+  // Raw aggregates come back as TEXT (#923): through Date before any maths.
+  const oldestPendingAt = queue?.oldest ? new Date(queue.oldest) : null;
+  return {
+    refused,
+    noToken,
+    waiting: Number(queue?.n ?? 0),
+    oldestPendingAt,
+    clientWaiting: Number(clientRows[0]?.n ?? 0),
+    down: refused !== null || noToken || Number(queue?.backlog ?? 0) > 0,
+  };
 }
 
 /**
@@ -235,11 +330,13 @@ async function buildRecipients(event: {
       }));
     }
     // Phase 6: the request reaches everyone who may decide it; the decision
-    // reaches exactly the person who asked. Since 0104 the request names its
-    // own recipients — every holder minus the sellers of OTHER clients, round
-    // 91's money rule reaching the ping — computed where the money rule lives
-    // (wms), because platform must not import it. An event written before
-    // that carries no list and reaches every holder, as it always did.
+    // reaches exactly the person who asked. The request names its own
+    // recipients (0104), and since 0114 they are exactly the people the
+    // decision's own predicate admits — `approvalRecipients` = `mayGrantDebt`
+    // over the grant holders (the owner's 2a: the client's seller, the admin,
+    // the accountant) — computed where the money rule lives (wms), because
+    // platform must not import it. An event written before 0104 carries no
+    // list and reaches every holder, as it always did.
     case 'DebtApprovalRequested': {
       const named = event.payload.recipientIds;
       const userIds = Array.isArray(named)
@@ -817,6 +914,22 @@ export function composeStaffMessage(
   });
 }
 
+/**
+ * A pre-rendered staff message sent NOW, to a person who asked for it — the
+ * drain's own dressing AND its own delivery (`deliverStaffMessage`), so the
+ * copy a person pulls from the bot («📊 Holat») and the copy the drain pushes
+ * cannot follow two rules: on both roads a refused «↗️ Ochish» button puts the
+ * link back into the text instead of dropping it with the keyboard (REL).
+ * No row, no mute, no retry — the person is looking at the chat.
+ */
+export async function sendStaffMessage(
+  chatId: bigint,
+  type: string,
+  payload: Record<string, unknown>,
+): Promise<SendResult> {
+  return deliverStaffMessage(chatId, composeStaffMessage(type, payload), null);
+}
+
 /** A Bot API answer as the sender's verdict — for the one call made by hand. */
 function answerAsResult(answer: Awaited<ReturnType<typeof botCall>>): SendResult {
   const result = answer.result as { message_id?: number } | null;
@@ -849,16 +962,21 @@ async function deliverStaffMessage(
   chatId: bigint,
   message: StaffMessage,
   buttons: { text: string; callback_data: string }[][] | null,
+  // Carried into ALL THREE sends, the hand-made one included: a night-silent
+  // push whose card link became a button used to ring, because that attempt
+  // never went through `sendText` (0113, the design judge's finding 1).
+  silent = false,
 ): Promise<SendResult> {
   const rows = [...(buttons ?? []), ...(message.urlRow ? [message.urlRow] : [])];
   if (!message.url) {
-    return sendText({ chatId, html: message.html, replyMarkup: keyboardOf(rows) });
+    return sendText({ chatId, html: message.html, replyMarkup: keyboardOf(rows), silent });
   }
   const first = await botCall('sendMessage', {
     chat_id: Number(chatId),
     text: message.html,
     parse_mode: 'HTML',
     link_preview_options: { is_disabled: true },
+    ...(silent ? { disable_notification: true } : {}),
     reply_markup: { inline_keyboard: rows },
   });
   if (first.ok || first.status !== 400) return answerAsResult(first);
@@ -868,11 +986,12 @@ async function deliverStaffMessage(
       chatId,
       html: `${message.html}\n${h(message.url)}`,
       replyMarkup: keyboardOf(buttons),
+      silent,
     });
   }
   // Anything else Telegram refused (our HTML, most likely): the sender's own
   // fallbacks know what to do with it.
-  return sendText({ chatId, html: message.html, replyMarkup: keyboardOf(rows) });
+  return sendText({ chatId, html: message.html, replyMarkup: keyboardOf(rows), silent });
 }
 
 /**
@@ -943,7 +1062,7 @@ async function releaseClaims(ids: string[]): Promise<void> {
     .where(and(inArray(notifications.id, ids), eq(notifications.status, 'sending')));
 }
 
-export async function sendPendingTelegram(): Promise<void> {
+export async function sendPendingTelegram(now: Date = new Date()): Promise<void> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) return;
   // Asked BEFORE claiming, so the kicks that arrive during a pause cost a
@@ -1022,7 +1141,12 @@ export async function sendPendingTelegram(): Promise<void> {
       const message = composeStaffMessage(notification.type, payload, recipient.locale);
       res =
         (await forwardOriginal(notification.id, link.telegramChatId, payload)) ??
-        (await deliverStaffMessage(link.telegramChatId, message, buttons));
+        (await deliverStaffMessage(
+          link.telegramChatId,
+          message,
+          buttons,
+          sendsSilently(notification.type, payload, now),
+        ));
     } catch (err) {
       // The sender answers rather than throws; this is the database under
       // it, or a payload no renderer can read.

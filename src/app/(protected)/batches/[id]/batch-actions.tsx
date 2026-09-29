@@ -19,10 +19,18 @@ import { cancelBatchAction, departBatchAction, finishLoadingAction } from '../..
  */
 export function BatchActions({
   batchId,
+  canFinish,
   canDepart,
   canCancel,
 }: {
   batchId: string;
+  /**
+   * The loader at the ORIGIN — `finishLoadingAction`'s own door (scan.load
+   * there). It was drawn for everybody who opened a loading truck, and
+   * answered «forbidden» to the seller, the accountant and the destination
+   * that pressed it (review, phone lens).
+   */
+  canFinish: boolean;
   canDepart: boolean;
   canCancel: boolean;
 }) {
@@ -94,15 +102,17 @@ export function BatchActions({
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          data-testid="finish-loading"
-          className="btn-secondary flex-1 whitespace-nowrap px-3 disabled:opacity-50"
-          disabled={pending}
-          onClick={() => void finish()}
-        >
-          🏁 {t('finishLoading')}
-        </button>
+        {canFinish && (
+          <button
+            type="button"
+            data-testid="finish-loading"
+            className="btn-secondary flex-1 whitespace-nowrap px-3 disabled:opacity-50"
+            disabled={pending}
+            onClick={() => void finish()}
+          >
+            🏁 {t('finishLoading')}
+          </button>
+        )}
         {canDepart && (
           <button
             type="button"

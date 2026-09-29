@@ -607,7 +607,7 @@ describe('C10 — the lenta and the client’s own labels name it', () => {
   it('the feed carries a compensation item and the cabinet’s summary its row', async () => {
     const w = await world('10');
     await compensate(w, 75, day('10', '12'));
-    expect((await clientFeed(w.clientId)).some((item) => item.kind === 'compensation')).toBe(true);
+    expect((await clientFeed(w.clientId, { money: true })).some((item) => item.kind === 'compensation')).toBe(true);
     expect((await debtSummary(w.clientId)).recent.some((row) => row.type === 'compensation')).toBe(true);
   });
 });

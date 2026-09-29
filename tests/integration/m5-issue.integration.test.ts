@@ -23,6 +23,7 @@ import { issueBoxes } from '@/modules/wms/issue/service';
 import { buildHandoverAct } from '@/modules/wms/documents/handover-act';
 import { nextBatchCode } from '@/modules/wms/codes';
 import { PDFDocument } from 'pdf-lib';
+import { wholeLedger } from '../fixtures/money-actor';
 
 /** M5: ready_for_pickup at customs unload, issue-to-client, quick batch. */
 
@@ -171,6 +172,7 @@ describe('UZ side', () => {
         priceOk: true,
       },
       ctx(),
+      wholeLedger(actorId),
     );
     expect(handover.kind).toBe('issued_to_client');
 
@@ -187,6 +189,7 @@ describe('UZ side', () => {
         priceOk: true,
       },
       ctx(),
+      wholeLedger(actorId),
     );
     expect(again.id).toBe(handover.id);
 
@@ -238,6 +241,7 @@ describe('UZ side', () => {
         debtOk: true,
       },
       ctx(),
+      wholeLedger(actorId),
     );
 
     const pdf = await buildHandoverAct(handoverId);

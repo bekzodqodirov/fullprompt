@@ -88,7 +88,9 @@ describe('U03 — the Balans line’s wiring', () => {
     const home = read('src/app/(protected)/admin-dashboard.tsx');
     expect(home).toContain('companyBalanceParts()');
     expect(home).not.toMatch(/\bcompanyBalance\(\)/);
-    const attention = read('src/app/(protected)/dashboard/sections/attention.tsx');
+    // The rows' sources are read in wms/reports/attention-sources.ts (the
+    // evening Telegram reads the same ones); the section only draws them.
+    const attention = read('src/modules/wms/reports/attention-sources.ts');
     expect(attention).toContain('loadBalanceParts()');
     expect(attention).not.toMatch(/\bloadBalance\(\)/);
   });

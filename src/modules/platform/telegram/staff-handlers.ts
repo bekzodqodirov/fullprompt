@@ -2,6 +2,7 @@ import type { Bot } from 'grammy';
 import { composeMyDay } from '../tasks/digest';
 import { logger } from '../logger';
 import { keyboardOf, staffTextHtml } from '../notifications/staff-html';
+import { sendStaffMessage } from '../notifications/service';
 import { offerStaffCommands } from './commands';
 import { editText, sendText, sendTyping } from './send';
 import { clientAnswerKeyboard } from './map-link';
@@ -11,12 +12,17 @@ import {
   CALC_ENTRY_LABELS,
   botActorFor,
   HISOBLATISH,
+  HOLAT,
+  holatFor,
+  ownerSummaryFromBot,
   ZAMETKALAR,
   assistantFromBot,
+  closeLeadMessage,
   closeTaskMessage,
   completeTaskFromBot,
   dayButtons,
   decideApprovalFromBot,
+  type BotApprovalResult,
   isCabinetText,
   landCollectedIntake,
   linkStaffChat,
@@ -83,12 +89,28 @@ type CalcReplyCtx = { reply: (text: string, extra?: Record<string, unknown>) => 
  */
 export { CALC_ENTRY_LABELS };
 
-export function staffKeyboard() {
+/**
+ * The keyboard's options, REQUIRED: whether «📊 Holat» is this person's is a
+ * question about the person (`holatFor`), and an optional flag would let a
+ * caller forget to ask it and quietly draw the button for everybody — or for
+ * nobody, including the owner it exists for.
+ */
+export interface StaffKeyboardOptions {
+  holat: boolean;
+}
+
+/** The staff rows — one list for both keyboards, so they cannot drift. */
+function staffRows(opts: StaffKeyboardOptions) {
+  return [
+    [{ text: BUGUN }, { text: HISOBLATISH }],
+    [{ text: AI_RASTAMOJKA }, { text: ZAMETKALAR }],
+    ...(opts.holat ? [[{ text: HOLAT }]] : []),
+  ];
+}
+
+export function staffKeyboard(opts: StaffKeyboardOptions) {
   return {
-    keyboard: [
-      [{ text: BUGUN }, { text: HISOBLATISH }],
-      [{ text: AI_RASTAMOJKA }, { text: ZAMETKALAR }],
-    ],
+    keyboard: staffRows(opts),
     resize_keyboard: true,
     is_persistent: true,
   };
@@ -102,12 +124,11 @@ export function staffKeyboard() {
  * cabinet labels come from the same dictionary its own keyboard and its
  * router read.
  */
-export function bothKeyboard(locale?: string | null) {
+export function bothKeyboard(locale: string | null | undefined, opts: StaffKeyboardOptions) {
   const t = clientLabels(locale);
   return {
     keyboard: [
-      [{ text: BUGUN }, { text: HISOBLATISH }],
-      [{ text: AI_RASTAMOJKA }, { text: ZAMETKALAR }],
+      ...staffRows(opts),
       [{ text: t.btnCargo }, { text: t.btnBalance }],
       [{ text: t.btnHistory }, { text: t.btnLanguage }],
       [{ text: t.btnManager }],
@@ -296,17 +317,61 @@ export function registerStaffBot(bot: Bot): void {
       return;
     }
 
+    // «📞 Bog'landim» under an advert lead (0113). BEFORE the approval guard
+    // below, which returns on every kind it does not name (#939). The decision
+    // lives in wms — reached the established way, by dynamic import.
+    if (parsed.kind === 'lead_contacted') {
+      const { markContactedFromBot } = await import('../../wms/crm/inbound-notify');
+      const { outcome, by } = await markContactedFromBot(chatId, parsed.leadId);
+      const answers: Record<typeof outcome, string> = {
+        recorded: '✅ Qayd etildi',
+        already: 'Allaqachon qayd etilgan',
+        not_linked: 'Ulanmagan',
+        forbidden: 'Bu sizning huquqingizda emas',
+        not_yours: 'Bu lid sizniki emas',
+        not_found: 'Lid topilmadi',
+      };
+      await ctx.answerCallbackQuery({ text: answers[outcome] });
+      const pressed = ctx.callbackQuery.message;
+      if (
+        (outcome === 'recorded' || outcome === 'already') &&
+        pressed &&
+        'text' in pressed &&
+        pressed.text
+      ) {
+        // Off the poller, on the sender's short deadline (#706).
+        void closeLeadMessage(
+          chatId,
+          {
+            messageId: pressed.message_id,
+            text: pressed.text,
+            markup: 'reply_markup' in pressed ? pressed.reply_markup : undefined,
+          },
+          parsed.leadId,
+          outcome === 'already'
+            ? '📞 Allaqachon bog‘lanilgan'
+            : by
+              ? `📞 Bog‘lanildi — ${by}`
+              : '📞 Bog‘lanildi',
+        ).catch((err: unknown) => logger.warn({ err }, 'lead press not settled'));
+      }
+      return;
+    }
+
     // approval. Guarded now rather than reached by falling through: the union
     // grew a fifth member and an unguarded tail would have read `approvalId`
     // off a notes callback.
     if (parsed.kind !== 'approval') return;
     const outcome = await decideApprovalFromBot(chatId, parsed.approvalId, parsed.verdict);
-    const answers: Record<string, string> = {
+    // Record<union>: a result the service can return and nobody wrote words
+    // for is a compile error here, not an empty spinner on the phone.
+    const answers: Record<BotApprovalResult, string> = {
       decided: parsed.verdict === 'approved' ? '✅ Ruxsat berildi' : '⛔ Rad etildi',
       not_linked: 'Ulanmagan',
       forbidden: 'Bu qaror sizning huquqingizda emas',
       already_decided: 'Allaqachon hal qilingan',
       not_found: 'So‘rov topilmadi',
+      not_your_client: 'Bu mijoz bo‘yicha qaror uning sotuvchisi yoki buxgalterda',
     };
     await ctx.answerCallbackQuery({ text: answers[outcome] });
     // The pressed copy is settled in place (round C) — ALSO when somebody
@@ -547,6 +612,17 @@ export function registerStaffBot(bot: Bot): void {
       return;
     }
 
+    // «📊 Holat» in the same slot as «📋 Bugun» and for the same reasons:
+    // below the cabinet pass-through, ABOVE both captures — `takeTaskPending`
+    // deletes on read and would close a task with «📊 Holat» as its result —
+    // and far above the paid model, which a refused press must never reach.
+    if (ctx.message.text === HOLAT || ctx.message.text === '/holat') {
+      const staff = await staffForChat(chatId);
+      if (!staff) return next();
+      await answerHolat(ctx as unknown as CalcReplyCtx, chatId);
+      return;
+    }
+
     // «📋 Bugun» ABOVE both captures (round C): pressed while a «Bajarildi»
     // result was awaited it used to reach `takeTaskPending` first — which
     // DELETES ON READ — and close the task with «📋 Bugun» as its result;
@@ -663,6 +739,69 @@ export function registerStaffBot(bot: Bot): void {
     // notification path already sends unsolicited messages.
     void answerWithAssistant(chatId, text, thinking.message_id);
   });
+}
+
+/** Chats whose «📊 Holat» is being computed right now. */
+const holatInFlight = new Set<string>();
+
+/** The pull's «not now» — a failed read is never told «not yours» (#475). */
+const HOLAT_FAILED = 'Holatni hisoblab bo‘lmadi — keyinroq urinib ko‘ring.';
+
+/**
+ * «📊 Holat» — the evening summary on demand, in the push's own words.
+ *
+ * The door is asked on EVERY press (the keyboard on a phone outlives the grant
+ * it was drawn for), and a refused person hears so in a sentence. The compose
+ * reads what a dashboard render reads — seconds on a busy database, measured
+ * 6.6 s on the shaped copy — so it runs OFF the sequential poller (#706) after
+ * an immediate «⏳», and a chat already waiting is told to wait rather than
+ * starting a second computation on the one Node process (round 108).
+ */
+async function answerHolat(ctx: CalcReplyCtx, chatId: bigint): Promise<void> {
+  const key = String(chatId);
+  if (holatInFlight.has(key)) {
+    await ctx.reply('⏳ Hali hisoblanmoqda — biroz kuting.');
+    return;
+  }
+  // A door that THREW is not a door that said no: during a database blip the
+  // owner himself would be told the button is not his. The keyboard and the
+  // command menu may read a throw as «no» (losing the button for one reply is
+  // their stated trade); a press is a question asked, and gets «try again».
+  let admitted: boolean;
+  try {
+    admitted = await holatFor(chatId);
+  } catch (err) {
+    logger.warn({ err }, 'holat door failed');
+    await ctx.reply(HOLAT_FAILED);
+    return;
+  }
+  if (!admitted) {
+    await ctx.reply('📊 Holat faqat egasi uchun.');
+    return;
+  }
+  holatInFlight.add(key);
+  await ctx.reply('⏳ Hisoblanmoqda…');
+  void (async () => {
+    try {
+      const outcome = await ownerSummaryFromBot(chatId);
+      if (outcome.status !== 'ok') {
+        await sendText({ chatId, text: '📊 Holat faqat egasi uchun.' });
+        return;
+      }
+      // The drain's own dressing AND delivery (`sendStaffMessage`): the bold
+      // title, the dashboard link lifted into «↗️ Ochish», and — when Telegram
+      // refuses that button — the link put back into the text, exactly as the
+      // 20:00 push does. A plain `sendText` would drop the refused keyboard and
+      // with it the only copy of the link.
+      const sent = await sendStaffMessage(chatId, 'OwnerSummary', { text: outcome.text });
+      if (!sent.ok) logger.warn({ description: sent.description }, 'holat reply not sent');
+    } catch (err) {
+      logger.warn({ err }, 'holat compose failed');
+      await sendText({ chatId, text: HOLAT_FAILED }).catch(() => {});
+    } finally {
+      holatInFlight.delete(key);
+    }
+  })();
 }
 
 /** The words on the button a callback came from — its own message's keyboard. */

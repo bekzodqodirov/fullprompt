@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import { and, desc, eq, gte, inArray, isNull, lte, sql, type SQL } from 'drizzle-orm';
 import { latestTxDate } from './dates';
 import { fxResidueAllowance, exceedsRowUsd, nativeAmount } from './money-bounds';
@@ -23,6 +24,8 @@ import { rateFor } from '../costing/service';
 import { batchRoute } from '../batches/internal';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { cargoAboard } from '../batches/lots';
+import { tripCoverageOn } from './unpriced';
+import { deferredTotal } from '../debt/rules';
 
 /**
  * Client money ledger (Phase 2.1, owner's rules): there are NO tariffs — the
@@ -728,10 +731,44 @@ function deferredPerDealSql(clientIds: string[]): SQL {
      GROUP BY client_transactions.client_id, client_transactions.deal_id`;
 }
 
+/**
+ * The client's deferred total — the per-job figures below summed by the one
+ * `deferredTotal`, which the counter's gate (`issueBoxes`) also calls on the
+ * same list, so the screen, the approval's snapshot and the gate cannot drift
+ * apart by a rounding (#513).
+ */
 export async function deferredBalanceUsd(clientId: string): Promise<number> {
-  const rows = (await db.execute(deferredPerDealSql([clientId]))) as unknown as { owed: string }[];
-  const total = [...rows].reduce((sum, row) => sum + Number(row.owed ?? 0), 0);
-  return Math.round(total * 100) / 100;
+  return deferredTotal(await deferredDealsUsd(clientId));
+}
+
+/**
+ * The same deferral, per JOB and with who granted it (0114, qarz nazorati) —
+ * what the handover stores so the register can name the person whose
+ * «muddat» let the cargo go. The one per-deal rule (`deferredPerDealSql`)
+ * with the deal's own columns beside it, never a second reading of it;
+ * `deferredTotal` of this list IS `deferredBalanceUsd`.
+ */
+export async function deferredDealsUsd(
+  clientId: string,
+): Promise<{ dealId: string; code: string; by: string | null; owedUsd: number }[]> {
+  const rows = (await db.execute(sql`
+    SELECT per.deal_id, per.owed, d.code, d.deferred_by
+      FROM (${deferredPerDealSql([clientId])}) per
+      JOIN deals d ON d.id = per.deal_id
+     ORDER BY d.deferred_at, d.code`)) as unknown as {
+    deal_id: string;
+    owed: string;
+    code: string;
+    deferred_by: string | null;
+  }[];
+  return [...rows].map((row) => ({
+    dealId: row.deal_id,
+    code: row.code,
+    by: row.deferred_by,
+    // Unrounded, like the sum `deferredBalanceUsd` rounds once: rounding
+    // each job first could move the total by a cent.
+    owedUsd: Number(row.owed ?? 0),
+  }));
 }
 
 /** Per-client totals for the balances screen — only clients with any activity. */
@@ -837,7 +874,7 @@ export async function clientLedger(clientId: string) {
 }
 
 /** Active charges already entered against one batch (pricing screen). */
-export async function batchCharges(batchId: string) {
+export const batchCharges = cache(async function batchCharges(batchId: string) {
   return db
     .select({
       tx: clientTransactions,
@@ -848,7 +885,16 @@ export async function batchCharges(batchId: string) {
     .innerJoin(clients, eq(clientTransactions.clientId, clients.id))
     .where(and(eq(clientTransactions.batchId, batchId), isNull(clientTransactions.voidedAt)))
     .orderBy(desc(clientTransactions.createdAt));
-}
+});
+
+/**
+ * The unpriced rule asked of one truck (`tripCoverageOn`), once per request:
+ * the truck card's header and the «Narx» tab under it both count «Narx
+ * qo'yilgan» from it (owner's 1a).
+ */
+export const batchTripCoverage = cache(async function batchTripCoverage(batchId: string) {
+  return tripCoverageOn(db, batchId);
+});
 
 // ---------------------------------------------------------------------------
 // The payments register (round 29) — «kimdan qancha pul olganimni qanday
@@ -1057,6 +1103,30 @@ export async function paymentsRegister(
     count,
     truncated: rows.length < count,
   };
+}
+
+/**
+ * The debt the handover gate blocks on: the balance less what a live deferral
+ * excuses, to the cent. One home, because the counter and the waiting list's
+ * «qarz» tag must say the same thing about the same client.
+ *
+ * Not `blockingDebtUsd`: `issue/approvals.ts` has an async one of that name
+ * that reads the pool, and the tx-pool fence (rightly) matches by name — a
+ * pure function sharing it reads as a pooled call inside the handover's
+ * transaction.
+ */
+export function blockingDebtOf(balanceUsd: number, deferredUsd: number): number {
+  return Math.round((balanceUsd - deferredUsd) * 100) / 100;
+}
+
+/**
+ * Does that debt STOP the counter — more than a cent after the deferral? The
+ * question the handover asks and the waiting list's «qarz» tag repeats; the
+ * line is stated here once so the tag cannot light up for a client the
+ * counter would let through (or stay dark for one it refuses).
+ */
+export function debtBlocks(balanceUsd: number, deferredUsd: number): boolean {
+  return blockingDebtOf(balanceUsd, deferredUsd) > 0.009;
 }
 
 /**

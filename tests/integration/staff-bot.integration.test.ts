@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
@@ -285,12 +285,20 @@ describe('deciding a debtor request from the button', () => {
     expect(await decideApprovalFromBot(plainChat, approval.id, 'approved')).toBe('forbidden');
 
     // Give the SAME person the grant (through a role that holds it — grants
-    // are editable data, #170) and the button starts working.
+    // are editable data, #170) and the button starts working. A role that
+    // decides for EVERY client (0114: the grant AND a whole-ledger reader) —
+    // the first holder of the grant alone may be a warehouse manager or a
+    // seller, who may not decide for this seller-less client.
     const [grantRole] = await db
       .select({ roleId: rolePermissions.roleId })
       .from(rolePermissions)
       .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
-      .where(eq(permissions.code, 'finance.debt_override'))
+      .where(
+        and(
+          eq(permissions.code, 'finance.debt_override'),
+          sql`${rolePermissions.roleId} IN (SELECT rp.role_id FROM role_permissions rp JOIN permissions p ON p.id = rp.permission_id WHERE p.code = 'finance.manage')`,
+        ),
+      )
       .limit(1);
     await db.insert(userRoles).values({ userId: plain.id, roleId: grantRole!.roleId });
 

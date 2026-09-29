@@ -219,6 +219,9 @@ describe('the push prints kilos the way the app it opens does (round C review)',
       'src/modules/wms/notices/client-text.ts',
       'src/modules/wms/notices/client-summary.ts',
       'src/modules/wms/notices/arrival.ts',
+      // The client card's «Yuklar» tab: the office reads the kilos the client
+      // is reading in the Mini App on the phone, to the digit.
+      'src/modules/wms/inventory/client-cargo-fold.ts',
     ]) {
       const src = readFileSync(file, 'utf8').replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
       // An inline `* 100) / 100` on a weight or `* 1000) / 1000` on a volume,

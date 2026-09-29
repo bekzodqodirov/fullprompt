@@ -38,7 +38,9 @@ test('unload lifecycle: scan in at destination, finish, close', async ({ page })
   await page.getByTestId('finish-loading').click();
   page.once('dialog', (d) => void d.accept()); // depart confirm
   await page.getByTestId('depart-batch').click();
-  await expect(page.getByText(/🚀/).first()).toBeVisible({ timeout: 15_000 });
+  // The depart button is itself labelled 🚀; the unloading door is drawn only
+  // once the truck is on the road.
+  await expect(page.getByTestId('open-unloading')).toBeVisible({ timeout: 15_000 });
 
   // Unload at the destination
   await page.getByTestId('open-unloading').click();
@@ -51,10 +53,10 @@ test('unload lifecycle: scan in at destination, finish, close', async ({ page })
   // Finish unload (no discrepancies) and close.
   // The scan has to have REACHED THE SERVER first: the counter above is the
   // phone's own optimistic mark and the outbox may still be flushing, so
-  // finishing here would rightly offer to declare the box lost. The batch
-  // card is the server's answer, so poll it.
+  // finishing here would rightly offer to declare the box lost. The card's
+  // «Yuklash» tab is the server's answer, so poll it.
   await expect(async () => {
-    await page.goto(batchUrl);
+    await page.goto(`${batchUrl}/yuklash`);
     await expect(page.getByTestId('unload-remaining')).toContainText('✅');
   }).toPass({ timeout: 20_000 });
   await page.getByTestId('finish-unload').click();
@@ -68,6 +70,7 @@ test('unload lifecycle: scan in at destination, finish, close', async ({ page })
   // went blank the moment the cargo arrived, which is exactly when he looks.
   // The weight is a share of the lot, so it must be a real number, not a zero
   // standing in for "we no longer know" — the lightest seeded lot is 8 kg a box.
+  await page.goto(batchUrl);
   await expect(page.getByTestId('batch-contents-total')).toContainText(/Σ 1 📦 · [1-9]\d* kg/);
 
   // Transit report renders. The page's own title, not «a heading»: the

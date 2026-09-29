@@ -4,10 +4,11 @@ import { eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { db } from '@/modules/platform/db/client';
-import { batches, boxes } from '@/modules/platform/db/schema';
+import { batches, boxes, driverDevices } from '@/modules/platform/db/schema';
 import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
 import { requestMeta } from '@/modules/platform/auth/session';
 import { enqueue, JOB_PROCESS_EVENTS } from '@/modules/platform/jobs/boss';
+import { authorizeOnBatch } from '@/modules/wms/batches/batch-authorize';
 import { removeLoadedCode, ScanError } from '@/modules/wms/scanning/service';
 import {
   closeBatch,
@@ -331,12 +332,20 @@ export async function createQuickBatchAction(
   redirect(`/batches/${batch.id}`);
 }
 
-/** VED "sent to agent" flag (spec 6.6). */
+/**
+ * VED "sent to agent" flag (spec 6.6).
+ *
+ * Judged at the truck's two ends by `authorizeOnBatch` — the card's own door —
+ * like every action here that changes one truck. It was `authorize(code, {})`,
+ * which checks no warehouse at all, so a scoped holder of the permission could
+ * press it on any truck in the company (docs/CARD-TABS.md, «Holes found on the
+ * way»).
+ */
 export async function setSentToAgentAction(formData: FormData): Promise<void> {
   const batchId = String(formData.get('batchId') ?? '');
-  const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
-  if (!batch) return;
-  const actor = await authorize('ved.docs', {});
+  const door = await authorizeOnBatch('ved.docs', batchId);
+  if (!door) return;
+  const { actor, batch } = door;
   const meta = await requestMeta();
   await db
     .update(batches)
@@ -359,9 +368,9 @@ export async function setSentToAgentAction(formData: FormData): Promise<void> {
  * because there is no account to keep for a firm we never pay.
  */
 export async function setCustomsFirmAction(batchId: string, value: string): Promise<void> {
-  const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
-  if (!batch) return;
-  const actor = await authorize('ved.docs', {});
+  const door = await authorizeOnBatch('ved.docs', batchId);
+  if (!door) return;
+  const { actor, batch } = door;
   const meta = await requestMeta();
   const byClient = value === 'client';
   await db
@@ -385,15 +394,26 @@ export async function setCustomsFirmAction(batchId: string, value: string): Prom
 /**
  * One prixod's own customs answer (round 39 follow-up). Same gate as the
  * truck-level choice: this is VED paperwork, not warehouse work.
+ *
+ * The truck's door says nothing about the receipt id in the same post, so the
+ * prixod must also be one of THIS truck's rows — the very list the panel
+ * draws (`batchCustomsRows`), never a membership rule restated here. Without
+ * it, any truck the person may open was a key to every prixod in the company.
  */
 export async function setReceiptCustomsAction(
   batchId: string,
   receiptId: string,
   value: string,
 ): Promise<void> {
-  const actor = await authorize('ved.docs', {});
+  const door = await authorizeOnBatch('ved.docs', batchId);
+  if (!door) return;
+  const { actor } = door;
   const meta = await requestMeta();
-  const { setReceiptCustoms } = await import('@/modules/wms/partners/customs');
+  const { batchCustomsRows, setReceiptCustoms } = await import('@/modules/wms/partners/customs');
+  const rows = await batchCustomsRows(batchId);
+  if (!rows.some((row) => row.receiptId === receiptId)) {
+    throw new AuthError('Receipt is not on this batch', 'forbidden');
+  }
   await setReceiptCustoms(receiptId, value, { actorId: actor.id, ...meta });
   revalidatePath(`/batches/${batchId}`);
   revalidatePath(`/receipts/${receiptId}`);
@@ -414,9 +434,9 @@ export async function setReceiptCustomsAction(
  */
 export async function setCustomsClearedAction(formData: FormData): Promise<void> {
   const batchId = String(formData.get('batchId') ?? '');
-  const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
-  if (!batch) return;
-  const actor = await authorize('ved.docs', {});
+  const door = await authorizeOnBatch('ved.docs', batchId);
+  if (!door) return;
+  const { actor, batch } = door;
   const meta = await requestMeta();
   const next = batch.customsClearedAt ? null : new Date();
   await db.update(batches).set({ customsClearedAt: next }).where(eq(batches.id, batchId));
@@ -441,9 +461,9 @@ export async function setCustomsClearedAction(formData: FormData): Promise<void>
 export async function setProfitTrackedAction(formData: FormData): Promise<void> {
   const batchId = String(formData.get('batchId') ?? '');
   const next = formData.get('tracked') === '1';
-  const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
-  if (!batch) return;
-  const actor = await authorize('finance.reports', {});
+  const door = await authorizeOnBatch('finance.reports', batchId);
+  if (!door) return;
+  const { actor, batch } = door;
   if (batch.profitTracked === next) return;
   const meta = await requestMeta();
   await db.update(batches).set({ profitTracked: next }).where(eq(batches.id, batchId));
@@ -467,9 +487,9 @@ export async function setTrackingCheckpointAction(formData: FormData): Promise<v
   const batchId = String(formData.get('batchId') ?? '');
   const key = String(formData.get('key') ?? '');
   if (!['at_border', 'in_kg', 'in_uz'].includes(key)) return;
-  const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
-  if (!batch || batch.status !== 'in_transit') return;
-  const actor = await authorize('batches.vehicle_info', {});
+  const door = await authorizeOnBatch('batches.vehicle_info', batchId);
+  if (!door || door.batch.status !== 'in_transit') return;
+  const { actor, batch } = door;
   const meta = await requestMeta();
   const current = batch.trackingCheckpoint as { key?: string } | null;
   const next = current?.key === key ? null : { key, at: new Date().toISOString() };
@@ -492,9 +512,9 @@ export async function setTrackingCheckpointAction(formData: FormData): Promise<v
 export async function createDriverDeviceAction(formData: FormData): Promise<void> {
   const batchId = String(formData.get('batchId') ?? '');
   const label = String(formData.get('label') ?? '');
-  const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
-  if (!batch) return;
-  const actor = await authorize('batches.vehicle_info', {});
+  const door = await authorizeOnBatch('batches.vehicle_info', batchId);
+  if (!door) return;
+  const { actor } = door;
   const meta = await requestMeta();
   const { createDriverDevice, TrackingError } = await import('@/modules/wms/tracking/devices');
   try {
@@ -506,11 +526,26 @@ export async function createDriverDeviceAction(formData: FormData): Promise<void
   revalidatePath(`/batches/${batchId}`);
 }
 
+/**
+ * Revoke a paired phone. The truck's door is asked about the truck in the
+ * post, so the phone must be THAT truck's — otherwise opening one card was a
+ * key to every driver's phone in the fleet. A device id that names nothing
+ * goes on to the service, whose own answer to it is a quiet no-op.
+ */
 export async function revokeDriverDeviceAction(formData: FormData): Promise<void> {
   const deviceId = String(formData.get('deviceId') ?? '');
   const batchId = String(formData.get('batchId') ?? '');
   if (!deviceId) return;
-  const actor = await authorize('batches.vehicle_info', {});
+  const door = await authorizeOnBatch('batches.vehicle_info', batchId);
+  if (!door) return;
+  const { actor, batch } = door;
+  const device = await db.query.driverDevices.findFirst({
+    where: eq(driverDevices.id, deviceId),
+    columns: { batchId: true },
+  });
+  if (device && device.batchId !== batch.id) {
+    throw new AuthError('Device is not on this batch', 'forbidden');
+  }
   const meta = await requestMeta();
   const { revokeDriverDevice } = await import('@/modules/wms/tracking/devices');
   await revokeDriverDevice(deviceId, { actorId: actor.id, ...meta });

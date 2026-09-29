@@ -1,181 +1,69 @@
 import Link from 'next/link';
-import { and, asc, eq, sql } from 'drizzle-orm';
-import { aliasedTable } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
-import { getFormatter, getTranslations } from 'next-intl/server';
-import { db } from '@/modules/platform/db/client';
-import {
-  batches,
-  boxes,
-  clients,
-  receiptLots,
-  receipts,
-  scanEvents,
-  warehouses,
-} from '@/modules/platform/db/schema';
+import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import {
-  batchCostEntryCount,
-  batchCostSheet,
-  batchReceiptRows,
-} from '@/modules/wms/costing/service';
-import { isInternalLeg } from '@/modules/wms/batches/internal';
-import { attachments, costTypes, currencies } from '@/modules/platform/db/schema';
-import { CostPanel } from '@/components/cost-panel';
-import { VehicleForm } from './vehicle-form';
-import {
-  createDriverDeviceAction,
-  revokeDriverDeviceAction,
-  setSentToAgentAction,
-  setTrackingCheckpointAction,
-} from '../batch-actions-server';
-import { devicesForBatch } from '@/modules/wms/tracking/devices';
-import { aboardFilter, batchMemberFilter, remainingToUnload } from '@/modules/wms/scanning/unload';
-import { countDoorFor } from '@/modules/wms/scanning/count-door';
-import { countedOnTruck, countLoadPanel } from '@/modules/wms/scanning/count-load';
-import { qrlessUncountedByTruck } from '@/modules/wms/scanning/service';
-import { CountLoadPanel } from './count-load-panel';
-import { LightboxImg } from '@/components/lightbox-img';
-import { Panel } from '@/components/panel';
-import { BatchCodeForm } from './batch-code-form';
-import { BatchActions } from './batch-actions';
-import { UnloadActions } from './unload-actions';
-// Region B — «sanab qabul» (0112).
-import { CountAcceptPanel } from './count-accept-panel';
-import { countAcceptPanel, countedLotAwaiting } from '@/modules/wms/scanning/count-accept';
-import { mayCountMove } from '@/modules/wms/scanning/count-door';
-import { landedStatusFor } from '@/modules/wms/warehouses/landed';
-import { BackLink } from '@/components/back-link';
-import { CardCols } from '@/components/card-cols';
-import { CustomFieldsPanel } from '@/components/custom-fields-panel';
-import { TasksPanel } from '@/components/tasks-panel';
-import { inScope } from '@/modules/platform/rbac/scope';
-import { listPartners } from '@/modules/wms/partners/service';
-import { AttachmentsPanel } from '@/components/attachments-panel';
-import { CustomsCleared } from './customs-cleared';
-import { ProfitTracked } from './profit-tracked';
-import { CustomsFirm } from './customs-firm';
-import { CustomsPerReceipt } from './customs-per-receipt';
-import { batchCustomsRows } from '@/modules/wms/partners/customs';
-import { codeIdentity } from '@/modules/wms/labels/code-identity';
-import { qrlessJoinedSql } from '@/modules/wms/labels/qrless-sql';
-import { QrlessChip } from '@/components/qrless-chip';
-import { CrateRows } from '@/components/crate-rows';
+import { mayOpenBatchCard } from '@/modules/wms/batches/card-door';
+import { batchLoadProgress, loadBatchHead } from '@/modules/wms/batches/card-head';
+import { batchLots } from '@/modules/wms/batches/lots';
 import { batchCrates } from '@/modules/wms/inventory/service';
-import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
-import { tashkentDay } from '@/modules/platform/time/tashkent';
-import { tillOptionsFor } from '@/modules/wms/costing/till-props';
-import { costSightFor, tillView } from '@/modules/wms/costing/cost-sight';
-import { mayPickTill } from '@/modules/wms/accounting/till-door';
-import { pricingSight } from '@/modules/wms/finance/pricing-view';
+import { codeIdentity } from '@/modules/wms/labels/code-identity';
+import { CrateRows } from '@/components/crate-rows';
+import { CustomFieldsPanel } from '@/components/custom-fields-panel';
+import { LightboxImg } from '@/components/lightbox-img';
+import { QrlessChip } from '@/components/qrless-chip';
+import { TasksPanel } from '@/components/tasks-panel';
+import { BatchCard, batchTabMetadata, cargoLine } from './batch-card';
+
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+  return batchTabMetadata((await params).id, 'tarkib');
+}
 
 /**
- * The status chip wears the stage's colour so the card answers "where is
- * this trip" before a word is read. A lookup of full literal classes —
- * Tailwind cannot see a class built at runtime.
+ * The truck card's first tab — «Ichidagilar», what the truck carries
+ * (docs/CARD-TABS.md). The header, the ladder, the stage buttons and the
+ * other five tabs are `BatchCard`'s; this page is the contents table, the
+ * crates, and the truck's tasks and fields, stacked AFTER the table so the
+ * loader's list is the first thing under the header on a phone.
+ *
+ * The door is the card's own: origin OR destination in scope, exactly the
+ * rule the batch list uses (a trip belongs to both warehouses).
  */
-const STATUS_CLASS: Record<string, string> = {
-  forming: 'bg-surface-sunken text-ink-700',
-  loading: 'bg-warn/10 text-warn',
-  in_transit: 'bg-brand-50 text-brand-700',
-  arrived: 'bg-good/10 text-good',
-  unloaded: 'bg-good/10 text-good',
-  closed: 'bg-surface-sunken text-ink-500',
-  cancelled: 'bg-bad/10 text-bad',
-};
-
 export default async function BatchDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const actor = await getActor();
   if (!actor) redirect('/login');
-  const t = await getTranslations('batches');
+  const head = await loadBatchHead(id);
+  if (!head) notFound();
+  if (!mayOpenBatchCard(actor, head.batch)) notFound();
   const tc = await getTranslations('common');
-  const tcost = await getTranslations('costing');
   // The contents table is the stock table applied to a truck, so it borrows
   // the stock screen's own column names rather than inventing second ones.
   const tstock = await getTranslations('stock');
   const tqrsiz = await getTranslations('qrsiz');
-  const tcount = await getTranslations('countLoad');
-  const format = await getFormatter();
-
-  const dest = aliasedTable(warehouses, 'dest');
-  const rows = await db
-    .select({
-      batch: batches,
-      originCode: warehouses.code,
-      destCode: dest.code,
-      originCountry: warehouses.country,
-      destCountry: dest.country,
-    })
-    .from(batches)
-    .innerJoin(warehouses, eq(batches.originWarehouseId, warehouses.id))
-    .innerJoin(dest, eq(batches.destWarehouseId, dest.id))
-    .where(eq(batches.id, id))
-    .limit(1);
-  const hit = rows[0];
-  if (!hit) notFound();
-  // Origin OR destination — exactly the rule the batch LIST already uses. A
-  // trip belongs to both warehouses; only the list was saying so.
-  if (!inScope(actor, hit.batch.originWarehouseId) && !inScope(actor, hit.batch.destWarehouseId)) {
-    notFound();
-  }
-  const { batch, originCode, destCode } = hit;
-  // A truck that crosses no border is never priced (owner's C1a) — its money
-  // page is a cost page, and the warning it earns is a missing cost.
-  const internal = isInternalLeg(hit.originCountry, hit.destCountry);
 
   // The truck's contents, read the way the stock screen reads a shelf (owner:
   // «uni ichidagisni sklad qoldiqlaridek toliq neccha kub necha kg rasimlari
-  // bn»). Two things had to change for that to be true after departure:
-  // membership is `batchMemberFilter`, not the live pointer — an unloaded box
-  // no longer points at its truck and the old count read 0/0 for a whole
-  // arrived batch — and kg/m³ come off the lot, shared per box, so a truck
-  // carrying half a lot is credited with half its weight.
-  const lots = await db
-    .select({
-      lotId: receiptLots.id,
-      receiptId: receipts.id,
-      letter: receiptLots.letter,
-      productNameZh: receiptLots.productNameZh,
-      productNameRu: receiptLots.productNameRu,
-      lotBoxCount: receiptLots.boxCount,
-      lotWeightKg: receiptLots.totalWeightKg,
-      lotVolumeM3: receiptLots.totalVolumeM3,
-      clientCode: clients.clientCode,
-      marking: receipts.unclaimedMarking,
-      onBatch: sql<number>`count(*)`,
-      planned: sql<number>`count(*) FILTER (WHERE ${boxes.status} = 'planned')`,
-      loaded: sql<number>`count(*) FILTER (WHERE ${boxes.status} IN ('loading', 'in_transit'))`,
-      qrless: sql<number>`count(*) FILTER (WHERE ${qrlessJoinedSql()})`,
-      photoId: sql<string | null>`(
-        SELECT a.id FROM attachments a
-        WHERE a.entity_type = 'receipt_lot' AND a.entity_id = ${receiptLots.id} AND a.kind = 'photo'
-        ORDER BY a.created_at LIMIT 1
-      )`,
-      generalPhotoId: sql<string | null>`(
-        SELECT a.id FROM attachments a
-        WHERE a.entity_type = 'receipt' AND a.entity_id = ${receipts.id} AND a.kind = 'photo'
-        ORDER BY a.created_at LIMIT 1
-      )`,
-    })
-    .from(boxes)
-    .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
-    .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
-    .leftJoin(clients, eq(receipts.clientId, clients.id))
-    .where(batchMemberFilter(id))
-    .groupBy(receiptLots.id, receipts.id, clients.clientCode)
-    .orderBy(asc(receiptLots.letter));
-
-  // Per-lot kg/m³ are a share of the lot, so the totals have to be derived
-  // before they can be summed — same shape as the stock table.
+  // bn»). Membership is the truck's RIDERS, an annulled box excluded — the
+  // rule every money tab, the grid and «Partiya foydasi» split the truck's
+  // bills over (`batchLots`), so the Σ here is the header's «Yuk» tile and
+  // the divisor on the cost tab. The card's old rule (the live pointer or a
+  // departure record) put a carton found back at the origin, an annulled one
+  // and an office count-over on the table but not on the money: 100 cartons
+  // here, 99 on the cost line, on 1 200 of 1 422 trucks of a shaped copy.
+  // kg/m³ come off the lot, shared per box, so a truck carrying half a lot is
+  // credited with half its weight.
+  const [lots, progress] = await Promise.all([batchLots(id), batchLoadProgress(id)]);
   const contents = lots.map((lot) => {
-    const onBatch = Number(lot.onBatch);
-    const per = lot.lotBoxCount > 0 ? onBatch / lot.lotBoxCount : 0;
+    const p = progress.get(lot.lotId);
     return {
       ...lot,
-      onBatch,
-      kg: Number(lot.lotWeightKg) * per,
-      m3: Number(lot.lotVolumeM3) * per,
+      // The loader's photo order (tests/unit/loading-photo-order): the
+      // OUTSIDE of the carton first, the goods as the fallback.
+      generalPhotoId: lot.boxPhotoId,
+      photoId: lot.goodsPhotoId,
+      planned: p?.planned ?? 0,
+      loaded: p?.loaded ?? 0,
+      qrless: p?.qrless ?? 0,
     };
   });
   const totalKg = contents.reduce((acc, row) => acc + row.kg, 0);
@@ -183,379 +71,16 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
   const totalBoxes = contents.reduce((acc, row) => acc + row.onBatch, 0);
 
   // The crates riding this truck, as PLACES beneath the cargo table (round
-  // 109). Gated on `crates.manage` like every other crate surface — the
-  // batch card itself is open to five permissions, and the row is a door to
-  // the crate card, which redirects whoever may not open it.
+  // 109). Gated on `crates.manage` like every other crate surface — the row
+  // is a door to the crate card, which redirects whoever may not open it.
   const crateRows = actor.permissions.has('crates.manage') ? await batchCrates(id) : [];
 
-  // «Sanab yuklash» (0112) — region A. The ⚠ chip counts the cartons beyond
-  // the plan that RIDE the truck, once each (decision 25): an office count
-  // dialled down keeps its scan events. The count panel is the office's
-  // door at the origin (the kernel's CountDoor), shown while the truck loads.
-  const onSpotCount = (
-    await db
-      .select({ n: sql<number>`count(DISTINCT ${scanEvents.boxId})` })
-      .from(scanEvents)
-      .innerJoin(boxes, eq(boxes.id, scanEvents.boxId))
-      .where(
-        and(
-          eq(scanEvents.batchId, id),
-          eq(scanEvents.addedOnSpot, true),
-          eq(scanEvents.type, 'load'),
-          aboardFilter(id),
-        ),
-      )
-  )[0]!.n;
-  const loadingNow = ['forming', 'loading'].includes(batch.status);
-  const countDoor = countDoorFor(actor, batch.originWarehouseId);
-  const loadPanel = countDoor && loadingNow ? await countLoadPanel(batch) : null;
-  const counted = await countedOnTruck(id);
-  const loadAwaiting =
-    loadingNow && actor.permissions.has('plans.manage')
-      ? ((await qrlessUncountedByTruck(db, [id])).get(id) ?? [])
-      : [];
-
-  const totalPlanned = lots.reduce((a, l) => a + Number(l.planned), 0);
-  const totalLoaded = lots.reduce((a, l) => a + Number(l.loaded), 0);
-  const canLoad = actor.permissions.has('scan.load') && ['forming', 'loading'].includes(batch.status);
-  const canDepartClose = actor.permissions.has('batches.depart_close');
-  // Owner's rule: the origin-warehouse loader can also send the truck off
-  // (with a confirm dialog); closing/arrival stays manager-only.
-  const inOriginScope = !actor.warehouseScoped || actor.warehouseIds.includes(batch.originWarehouseId);
-  const canDepart = canDepartClose || (actor.permissions.has('scan.load') && inOriginScope);
-  const canVehicle = actor.permissions.has('batches.vehicle_info');
-  const canUnload = actor.permissions.has('scan.unload');
-  const canCloseWithMissing =
-    actor.permissions.has('receipts.void') && inScope(actor, batch.destWarehouseId);
-  const canEnterCosts = actor.permissions.has('costs.enter_batch');
-  const canSeeCosts = canEnterCosts || actor.permissions.has('reports.all_warehouses');
-
-  const devices = canVehicle ? await devicesForBatch(id) : [];
-  // Every batch is minted with a driver code, so the header can carry it
-  // (owner) instead of making the loader scroll to a panel and press a button
-  // while the driver waits with the phone in their hand. It disappears the
-  // moment a phone claims it — a burnt code on a header teaches nothing.
-  const pairCode = devices.find((device) => device.pairCode)?.pairCode ?? null;
-  // Q19 (owner, 2026-09-25): the VED lists only the entries he typed, and
-  // the truck's total and per-unit cost come back null for him — everybody's
-  // entries beside this truck's kg/m³ are the tannarx one division away.
-  const costSheet = canSeeCosts ? await batchCostSheet(id, costSightFor(actor)) : null;
-  // «Rasxodini yozmading» (owner, 2026-09-24): a truck that has LEFT with
-  // nothing attributed to it — no bill of its own, no stamped grid cell.
-  const ownCostCount = canSeeCosts && batch.departedAt ? await batchCostEntryCount(id) : null;
-  // Round 39: a truck's freight and its customs bill are usually settled by
-  // somebody else's account, so the cost form has to be able to say whose.
-  // The papers that ride with the truck (owner: «1 ta partiyaga yo'lda
-  // bo'ladigan dokumentlarni qo'shib ketadigan joy»).
-  // Only the customs firms, plus whichever partner is already on this truck
-  // — a firm retired last month must not vanish from the record it is on.
-  // Retired firms included on purpose: the `|| row.id === batch.customsPartnerId`
-  // escape below was dead code while this read active-only, so a firm retired
-  // after it cleared this truck dropped out of the picker — and a select whose
-  // value matches no option silently shows the FIRST one, which here reads
-  // «as the truck says». New rows are offered the live firms only.
-  const allPartners = await listPartners({ includeInactive: true, includeStaff: maySeeStaffMoney(actor.permissions) });
-  const partnerOptions = canEnterCosts
-    ? allPartners.filter((r) => r.active).map((r) => ({ id: r.id, name: r.name }))
-    : [];
-  const customsRows = await batchCustomsRows(id);
-  const customsChosen = new Set(
-    [batch.customsPartnerId, ...customsRows.map((row) => row.partnerId)].filter(
-      (value): value is string => value !== null,
-    ),
-  );
-  const customsPartners = allPartners
-    .filter((row) => (row.typeCode === 'customs' && row.active) || customsChosen.has(row.id))
-    .map((row) => ({ id: row.id, name: row.name }));
-  // What the collapsed panel says out loud: which firm clears this truck, and
-  // how many prixods answer for themselves. Without it the panel is one more
-  // shut door among seven and nobody opens it (round 43).
-  const customsOwnAnswers = customsRows.filter((row) => !row.fromBatch).length;
-  const customsBadge = [
-    // The stamp goes on the FOLD's face, because a collapsed panel with
-    // nothing on it is invisible whatever it holds — round 43's own lesson,
-    // learned on this very panel.
-    batch.customsClearedAt ? '✅' : null,
-    batch.customsByClient
-      ? t('customsByClient')
-      : (customsPartners.find((row) => row.id === batch.customsPartnerId)?.name ?? '—'),
-    customsOwnAnswers > 0 ? `+${customsOwnAnswers}` : null,
-  ]
-    .filter(Boolean)
-    .join(' · ');
-  const batchFiles = await db
-    .select({
-      id: attachments.id,
-      fileName: attachments.fileName,
-      contentType: attachments.contentType,
-      kind: attachments.kind,
-    })
-    .from(attachments)
-    .where(and(eq(attachments.entityType, 'batch'), eq(attachments.entityId, id)));
-  // Round 29's grid lives on its own screen since round 47; the card only
-  // needs to know how big it is, to decide whether to offer the door at all.
-  const gridRows = canSeeCosts ? await batchReceiptRows(id) : [];
-  const costMeta = canSeeCosts
-    ? {
-        types: await db
-          .select({ id: costTypes.id, code: costTypes.code, name: costTypes.name })
-          .from(costTypes)
-          .where(eq(costTypes.active, true)),
-        currencies: (
-          await db.select({ code: currencies.code }).from(currencies).where(eq(currencies.active, true))
-        ).map((c) => c.code),
-        clients: await db
-          .selectDistinct({ id: clients.id, clientCode: clients.clientCode })
-          .from(boxes)
-          .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
-          .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
-          .innerJoin(clients, eq(receipts.clientId, clients.id))
-          .where(eq(boxes.currentBatchId, id)),
-      }
-    : null;
-
-  const missingRows = await db
-    .select({
-      box: boxes,
-      letter: receiptLots.letter,
-      clientCode: clients.clientCode,
-      marking: receipts.unclaimedMarking,
-      product: receiptLots.productNameZh,
-    })
-    .from(boxes)
-    .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
-    .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
-    .leftJoin(clients, eq(receipts.clientId, clients.id))
-    .where(sql`${boxes.currentBatchId} = ${id} AND ${boxes.flags} @> '["missing_in_transit"]'::jsonb`);
-
-  // Still on the truck as far as the system knows. Shown next to the unload
-  // actions so nobody finishes an unload without seeing what it will declare
-  // missing (owner's report).
-  const remainingToAccept = ['in_transit', 'arrived'].includes(batch.status)
-    ? (await remainingToUnload(id)).length
-    : 0;
-
-  // Region B — «sanab qabul» (0112): the office's count at the destination.
-  // The door is the count door there (plans.manage in scope, Q3a); the
-  // panel's cartons beyond the truck also need the ORIGIN's door.
-  const unloadingNow = ['in_transit', 'arrived'].includes(batch.status);
-  const mayCountAccept = unloadingNow && mayCountMove(actor, batch.destWarehouseId);
-  const [countPanel, countedAwaiting, overArrivedRows, destTypeRow] = await Promise.all([
-    mayCountAccept ? countAcceptPanel(id) : null,
-    unloadingNow ? countedLotAwaiting(id) : 0,
-    db
-      .select({ n: sql<number>`count(DISTINCT ${scanEvents.boxId})` })
-      .from(scanEvents)
-      .where(sql`${scanEvents.batchId} = ${id} AND ${scanEvents.type} = 'unload' AND ${scanEvents.addedOnSpot} = true`),
-    db.select({ type: warehouses.type }).from(warehouses).where(eq(warehouses.id, batch.destWarehouseId)),
-  ]);
-  const overArrived = Number(overArrivedRows[0]?.n ?? 0);
-  const countAwaiting = countPanel?.lots.reduce((acc, lot) => acc + lot.awaiting, 0) ?? 0;
-  const tca = await getTranslations('countAccept');
-
-  // What was actually loaded, box by box — the truck's real cargo, so the
-  // list survives unload/close (owner: after the truck leaves, the sending
-  // warehouse only needs to SEE what it loaded — read-only) and follows an
-  // office count dialled down (0112: the scan history keeps every carton that
-  // was ever put on).
-  const loadedBoxes = ['forming'].includes(batch.status)
-    ? []
-    : await db
-        .selectDistinct({
-          shortCode: boxes.shortCode,
-          lotId: boxes.lotId,
-          letter: receiptLots.letter,
-          clientCode: clients.clientCode,
-          marking: receipts.unclaimedMarking,
-        })
-        .from(boxes)
-        .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
-        .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
-        .leftJoin(clients, eq(receipts.clientId, clients.id))
-        .where(aboardFilter(id))
-        .orderBy(asc(receiptLots.letter), asc(boxes.shortCode));
-
   return (
-    // Full width like the other redesigned cards: the header block (code,
-    // status, THE stage action) stays above the grid — CardCols renders its
-    // rail first on a phone, and the loading button must never sit under six
-    // folded panels.
-    <div className="space-y-4">
-      <BackLink href="/batches" label={t('title')} />
+    <BatchCard head={head} actor={actor} active="tarkib">
+      {/* No title of its own: the strip above names the tab («Ichidagilar»). */}
       <div className="card space-y-2">
-        <div className="flex flex-wrap items-baseline gap-2">
-          <BatchCodeForm
-            batchId={batch.id}
-            code={batch.code}
-            editable={
-              actor.permissions.has('plans.manage') &&
-              ['forming', 'loading'].includes(batch.status)
-            }
-          />
-          <span className="font-mono font-bold">
-            {originCode} → {destCode}
-          </span>
-          <span
-            className={`rounded px-2 py-0.5 text-sm font-semibold ${
-              STATUS_CLASS[batch.status] ?? 'bg-surface-sunken text-ink-700'
-            }`}
-          >
-            {t(`statuses.${batch.status}`)}
-          </span>
-          <span className="ml-auto text-xs text-ink-500">
-            {format.dateTime(batch.createdAt, { dateStyle: 'short' })}
-          </span>
-        </div>
-        <p className="text-sm">
-          <b>
-            {totalLoaded}/{totalLoaded + totalPlanned} 📦
-          </b>{' '}
-          {t('loadedOfPlanned')}
-          {Number(onSpotCount) > 0 && (
-            <span className="ml-2 rounded bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-800">
-              +{onSpotCount} {t('onSpot')}
-            </span>
-          )}
-          {overArrived > 0 && (
-            <span
-              className="ml-2 rounded bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-800"
-              data-testid="batch-over-arrived"
-            >
-              +{overArrived} {tca('overArrived')}
-            </span>
-          )}
-          {counted.cartons > 0 && (
-            <span
-              data-testid="batch-counted-chip"
-              className="ml-2 rounded bg-brand-50 px-2 py-0.5 text-xs font-semibold text-brand-700"
-            >
-              {tcount('countedChip', { n: counted.cartons })}
-            </span>
-          )}
-          {loadAwaiting.length > 0 && (
-            <span
-              data-testid="batch-count-awaiting"
-              title={loadAwaiting.map((lot) => lot.label).join(', ')}
-              className="ml-2 rounded bg-warn/10 px-2 py-0.5 text-xs font-semibold text-warn"
-            >
-              {tcount('awaitingChip')}
-            </span>
-          )}
-        </p>
-        {batch.departedAt && (
-          <p className="text-sm text-ink-700">
-            🚀 {format.dateTime(batch.departedAt, { dateStyle: 'short', timeStyle: 'short' })}
-          </p>
-        )}
-        {pairCode && !['closed', 'cancelled'].includes(batch.status) && (
-          <p className="flex flex-wrap items-baseline gap-2">
-            <span className="text-sm text-ink-500">📲 {t('pairCodeLabel')}</span>
-            <span
-              data-testid="batch-pair-code"
-              className="font-mono text-2xl font-extrabold tracking-widest text-brand-700"
-            >
-              {pairCode}
-            </span>
-          </p>
-        )}
-        <div className="flex flex-wrap gap-2">
-          {canLoad && (
-            <Link
-              href={`/batches/${batch.id}/load`}
-              className="btn-primary flex-1 whitespace-nowrap px-3"
-              data-testid="open-loading"
-            >
-              📱 {t('startLoading')}
-            </Link>
-          )}
-          {canUnload && ['in_transit', 'arrived'].includes(batch.status) && (
-            <Link
-              href={`/batches/${batch.id}/unload`}
-              className="btn-primary flex-1 whitespace-nowrap px-3"
-              data-testid="open-unloading"
-            >
-              📤 {t('startUnloading')}
-            </Link>
-          )}
-          {/* The manifest XLSX is gone (owner): the VED papers and the photo
-              packing list are what actually travel with the truck. The route
-              /api/batches/[id]/manifest still exists if it is ever wanted. */}
-        </div>
-        {['forming', 'loading'].includes(batch.status) && (
-          <BatchActions
-            batchId={batch.id}
-            canDepart={canDepart}
-            // Giving the cargo back and retiring the trip is a manager's call,
-            // not the loader's — unlike departure, which the person standing
-            // at the truck may do.
-            canCancel={actor.permissions.has('batches.depart_close')}
-          />
-        )}
-        {(['in_transit', 'arrived', 'unloaded'].includes(batch.status) || missingRows.length > 0) && (
-          <UnloadActions
-            batchId={batch.id}
-            status={batch.status}
-            missing={missingRows.map(({ box, letter, clientCode, marking, product }) => ({
-              boxId: box.id,
-              shortCode: box.shortCode,
-              label: `${codeIdentity(marking, clientCode).main}-${letter}`,
-              lotId: box.lotId,
-              product,
-              crated: box.crateId !== null,
-            }))}
-            remaining={remainingToAccept}
-            // «Hammasini qabul qilish» leaves a lot counted HERE to the count
-            // (decision 21), so its button says what it will really land.
-            acceptable={remainingToAccept - countedAwaiting}
-            canCountResolve={mayCountMove(actor, batch.destWarehouseId)}
-            // The two shortcuts and the missing-box resolution are the same
-            // manager act at the same warehouse — and the WAREHOUSE half was
-            // missing on `canResolve`, so the screen drew a button whose
-            // action then threw an AuthError into an onClick with no
-            // boundary: nothing appeared at all.
-            canShortcut={canCloseWithMissing}
-            canResolve={canCloseWithMissing}
-            canClose={canDepartClose}
-          />
-        )}
-      </div>
-
-      {/* Region B — «sanab qabul» (0112), in the slot under the header card. */}
-      {countPanel && (countPanel.lots.length > 0 || countPanel.crates.length > 0) && (
-        <Panel
-          id="count-accept"
-          title={`🔢 ${tca('title')}`}
-          badge={tca('badge', { lots: countPanel.lots.length, n: countAwaiting })}
-          open={countPanel.lots.some((lot) => lot.awaiting > 0 && lot.mode !== null)}
-          testId="count-accept-open"
-        >
-          <CountAcceptPanel
-            batchId={batch.id}
-            status={batch.status}
-            notifiesClients={landedStatusFor(destTypeRow[0]?.type ?? '') === 'ready_for_pickup'}
-            mayOver={mayCountMove(actor, batch.originWarehouseId)}
-            lots={countPanel.lots}
-            crates={countPanel.crates}
-          />
-        </Panel>
-      )}
-      {loadPanel && (
-        <CountLoadPanel
-          batchId={batch.id}
-          quick={loadPanel.quick}
-          rows={loadPanel.rows}
-          crates={loadPanel.crates}
-          defaultOpen={loadPanel.rows.some((row) => row.mode === 'counted' || row.mode === 'qrless')}
-        />
-      )}
-
-      <CardCols
-        main={
-          <>
-      <div className="card space-y-2">
-        <h2 className="text-lg font-bold">{t('contents')}</h2>
         <p className="text-sm font-semibold text-ink-700" data-testid="batch-contents-total">
-          Σ {totalBoxes} 📦 · {Math.round(totalKg)} kg · {Math.round(totalM3 * 100) / 100} m³
+          Σ {totalBoxes} 📦 · {cargoLine(totalKg, totalM3)}
         </p>
         {contents.length === 0 && <p className="text-sm text-ink-500">{tc('empty')}</p>}
         {/* Its own sideways scroll: a row wider than the phone rescales the
@@ -563,94 +88,94 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
             truck gets the sentence alone — a header row over nothing reads as
             a broken table. */}
         {contents.length > 0 && (
-        <div className="overflow-x-auto rounded-xl border border-line">
-          <table className="w-full min-w-[520px] text-sm">
-            <thead>
-              <tr className="border-b border-line-strong bg-surface-sunken text-left">
-                <th className="p-2">📷</th>
-                <th className="p-2">{tstock('colCode')}</th>
-                <th className="p-2">{tstock('colProduct')}</th>
-                <th className="p-2 text-right">📦</th>
-                <th className="p-2 text-right">kg</th>
-                <th className="p-2 text-right">m³</th>
-              </tr>
-            </thead>
-            <tbody>
-              {contents.map((lot) => {
-                const id = codeIdentity(lot.marking, lot.clientCode);
-                return (
-                <tr key={lot.lotId} className="border-b border-line last:border-0">
-                  <td className="p-1.5">
-                    <div className="flex items-center gap-1">
-                      {/*
-                        THE OUTSIDE OF THE CARTON COMES FIRST HERE, and this is
-                        the one table where that is true. The owner, at a truck:
-                        «skladchi yuklash payitida karobkani ichini kormaydiku
-                        shu payitda tovarni tashqa rasimi turishi kerak unga».
-                        This is the list a loader reads to know WHICH cartons to
-                        put on the truck, so the useful picture is the receipt's
-                        general box photo; the per-lot goods photo answers «what
-                        is inside», which is the question /stock and the receipt
-                        card are for — and there the order stays the other way
-                        round. The amber ring therefore marks the UNEXPECTED
-                        one on this screen: a lot with no box photo falls back
-                        to the goods photo rather than to nothing, and says so.
-                      */}
-                      {lot.generalPhotoId ? (
-                        <LightboxImg
-                          attachmentId={lot.generalPhotoId}
-                          className="h-20 w-20 rounded-lg object-cover"
-                        />
-                      ) : lot.photoId ? (
-                        <LightboxImg
-                          attachmentId={lot.photoId}
-                          className="h-20 w-20 rounded-lg border-2 border-warn/40 object-cover"
-                        />
-                      ) : (
-                        <span className="text-ink-400">—</span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="whitespace-nowrap p-2">
-                    <Link
-                      href={`/stock?lot=${lot.lotId}`}
-                      className="font-mono font-extrabold text-brand-700"
-                    >
-                      {id.main}-{lot.letter}
-                      {id.sub && (
-                        <span className="block font-sans text-2xs font-normal text-ink-500">
-                          {id.sub}
-                        </span>
-                      )}
-                    </Link>
-                    {Number(lot.qrless) > 0 && (
-                      <span className="block">
-                        <QrlessChip n={Number(lot.qrless)} total={lot.onBatch} label={tqrsiz('chip')} />
-                      </span>
-                    )}
-                  </td>
-                  <td className="max-w-56 p-2">
-                    <Link href={`/receipts/${lot.receiptId}`} className="block truncate">
-                      {lot.productNameZh}
-                      {lot.productNameRu && (
-                        <span className="text-ink-500"> ({lot.productNameRu})</span>
-                      )}
-                    </Link>
-                  </td>
-                  <td className="p-2 text-right font-semibold">
-                    {/* While the truck is being filled the useful number is
-                        progress; once it has left, the plan is history and the
-                        count IS the cargo. */}
-                    {Number(lot.planned) > 0 ? `${lot.loaded}/${lot.onBatch}` : lot.onBatch}
-                  </td>
-                  <td className="p-2 text-right">{Math.round(lot.kg)}</td>
-                  <td className="p-2 text-right">{Math.round(lot.m3 * 100) / 100}</td>
+          <div className="overflow-x-auto rounded-xl border border-line">
+            <table className="w-full min-w-[520px] text-sm">
+              <thead>
+                <tr className="border-b border-line-strong bg-surface-sunken text-left">
+                  <th className="p-2">📷</th>
+                  <th className="p-2">{tstock('colCode')}</th>
+                  <th className="p-2">{tstock('colProduct')}</th>
+                  <th className="p-2 text-right">📦</th>
+                  <th className="p-2 text-right">kg</th>
+                  <th className="p-2 text-right">m³</th>
                 </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {contents.map((lot) => {
+                  const who = codeIdentity(lot.marking, lot.clientCode);
+                  return (
+                    <tr key={lot.lotId} className="border-b border-line last:border-0">
+                      <td className="p-1.5">
+                        <div className="flex items-center gap-1">
+                          {/*
+                            THE OUTSIDE OF THE CARTON COMES FIRST HERE, and this is
+                            the one table where that is true. The owner, at a truck:
+                            «skladchi yuklash payitida karobkani ichini kormaydiku
+                            shu payitda tovarni tashqa rasimi turishi kerak unga».
+                            This is the list a loader reads to know WHICH cartons to
+                            put on the truck, so the useful picture is the receipt's
+                            general box photo; the per-lot goods photo answers «what
+                            is inside», which is the question /stock and the receipt
+                            card are for — and there the order stays the other way
+                            round. The amber ring therefore marks the UNEXPECTED
+                            one on this screen: a lot with no box photo falls back
+                            to the goods photo rather than to nothing, and says so.
+                          */}
+                          {lot.generalPhotoId ? (
+                            <LightboxImg
+                              attachmentId={lot.generalPhotoId}
+                              className="h-20 w-20 rounded-lg object-cover"
+                            />
+                          ) : lot.photoId ? (
+                            <LightboxImg
+                              attachmentId={lot.photoId}
+                              className="h-20 w-20 rounded-lg border-2 border-warn/40 object-cover"
+                            />
+                          ) : (
+                            <span className="text-ink-400">—</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="whitespace-nowrap p-2">
+                        <Link
+                          href={`/stock?lot=${lot.lotId}`}
+                          className="font-mono font-extrabold text-brand-700"
+                        >
+                          {who.main}-{lot.letter}
+                          {who.sub && (
+                            <span className="block font-sans text-2xs font-normal text-ink-500">
+                              {who.sub}
+                            </span>
+                          )}
+                        </Link>
+                        {lot.qrless > 0 && (
+                          <span className="block">
+                            <QrlessChip n={lot.qrless} total={lot.onBatch} label={tqrsiz('chip')} />
+                          </span>
+                        )}
+                      </td>
+                      <td className="max-w-56 p-2">
+                        <Link href={`/receipts/${lot.receiptId}`} className="block truncate">
+                          {lot.productNameZh}
+                          {lot.productNameRu && (
+                            <span className="text-ink-500"> ({lot.productNameRu})</span>
+                          )}
+                        </Link>
+                      </td>
+                      <td className="p-2 text-right font-semibold">
+                        {/* While the truck is being filled the useful number is
+                            progress; once it has left, the plan is history and the
+                            count IS the cargo. */}
+                        {lot.planned > 0 ? `${lot.loaded}/${lot.onBatch}` : lot.onBatch}
+                      </td>
+                      <td className="p-2 text-right">{Math.round(lot.kg)}</td>
+                      <td className="p-2 text-right">{Math.round(lot.m3 * 100) / 100}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
         <CrateRows
           rows={crateRows}
@@ -663,378 +188,10 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
         />
       </div>
 
-      {loadedBoxes.length > 0 && (
-        <details className="card">
-          <summary className="cursor-pointer text-lg font-bold">
-            🧾 {t('loadedBoxes')} ({loadedBoxes.length})
-          </summary>
-          <div className="mt-2 space-y-1 text-sm">
-            {[...loadedBoxes
-              .reduce((acc, b) => {
-                const label = `${codeIdentity(b.marking, b.clientCode).main}-${b.letter}`;
-                const entry = acc.get(label) ?? { counted: counted.lotIds.includes(b.lotId), codes: [] };
-                entry.codes.push(b.shortCode);
-                acc.set(label, entry);
-                return acc;
-              }, new Map<string, { counted: boolean; codes: string[] }>())
-              .entries()].map(([label, lot]) => (
-              <p key={label} className="border-b border-line py-1 last:border-0">
-                <span className="font-mono font-extrabold text-brand-700">{label}</span>{' '}
-                {/* A counted lot's cartons carry no sticker to find by code. */}
-                <span className="font-mono text-xs text-ink-700">
-                  {lot.counted ? tcount('loadedCounted', { n: lot.codes.length }) : lot.codes.join(', ')}
-                </span>
-              </p>
-            ))}
-          </div>
-        </details>
-      )}
-
-      {costSheet && costMeta && (
-        <div className="card space-y-2">
-          <h2 className="text-lg font-bold">💰 {t('costs')}</h2>
-          {ownCostCount === 0 && (
-            <p className="text-sm font-semibold text-warn" data-testid="batch-no-costs">
-              ⚠️ {t('noCostsWarn')}
-            </p>
-          )}
-          <CostPanel
-            scope="batch"
-            targetId={batch.id}
-            entries={costSheet.entries.map(({ entry, typeName, clientCode, partnerName, accountName }) => ({
-              id: entry.id,
-              typeName,
-              amount: entry.amount,
-              currency: entry.currency,
-              amountUsd: entry.amountUsd,
-              costDate: entry.costDate,
-              allocationBasis: entry.allocationBasis,
-              note: entry.note,
-              clientCode,
-              partnerName,
-              ...tillView(actor.permissions, { accountId: entry.accountId, accountName, mergedExpenseId: entry.mergedExpenseId }),
-            }))}
-            costTypes={costMeta.types}
-            currencies={costMeta.currencies}
-            clientOptions={costMeta.clients}
-            defaultCurrency={costMeta.currencies.includes('CNY') ? 'CNY' : 'USD'}
-            canEdit={canEnterCosts}
-            today={tashkentDay()}
-            canUnmerge={mayPickTill(actor.permissions)}
-            tillOptions={await tillOptionsFor(actor.permissions)}
-            partnerOptions={partnerOptions}
-          />
-          {/* What colleagues wrote here, for a reader who sees only their
-              own entries: the TYPES and never a sum, so «Rastamojka» is not
-              typed a second time by somebody who cannot see it (Q19 D1). */}
-          {costSheet.others.count > 0 && (
-            <p className="text-xs text-ink-500" data-testid="cost-others">
-              🔒 {tcost('othersEntered', { count: costSheet.others.count, types: costSheet.others.types.join(' · ') })}
-            </p>
-          )}
-          {costSheet.totalUsd !== null && costSheet.entries.length > 0 && (
-            <p className="border-t border-line pt-2 text-sm">
-              <b>Σ ${costSheet.totalUsd}</b>
-              {costSheet.usdPerKg !== null && (
-                <span className="text-ink-700">
-                  {' '}· ${costSheet.usdPerKg}/kg · ${costSheet.usdPerM3}/m³ ({costSheet.boxCount} 📦,{' '}
-                  {costSheet.kg} kg, {costSheet.m3} m³)
-                </span>
-              )}
-              {costSheet.unconverted > 0 && (
-                <span className="ml-2 rounded bg-orange-100 px-1.5 text-xs font-semibold text-orange-800">
-                  ⚠️ {costSheet.unconverted}
-                </span>
-              )}
-            </p>
-          )}
-        </div>
-      )}
-
-      {/* Round 29's grid moved OUT of the card in round 47 (owner: «kichkina
-          joyga katta narsa tiqilgan»). Twelve prixods across six cost types
-          is 72 boxes, and half of a two-column card is not a spreadsheet.
-          What stays here is the door, with the count that says whether it is
-          worth opening. */}
-      {canSeeCosts && gridRows.length > 0 && (
-        <Link
-          href={`/batches/${batch.id}/xarajatlar`}
-          data-testid="batch-cost-grid-link"
-          className="card-tap flex items-center gap-3"
-        >
-          <span className="text-xl">🧾</span>
-          <span className="min-w-0 flex-1">
-            <span className="block font-bold">{t('receiptGridTitle')}</span>
-            <span className="block text-xs text-ink-500">
-              {gridRows.length} × {costMeta?.types.length ?? 0}
-            </span>
-          </span>
-          <span className="text-ink-400">›</span>
-        </Link>
-      )}
-          </>
-        }
-        rail={
-          <>
-      {(actor.permissions.has('ved.docs') || actor.permissions.has('plans.manage')) && (
-        <Panel title={`📑 ${t('vedDocs')}`}>
-          <div className="flex flex-wrap gap-2">
-            <a href={`/api/batches/${batch.id}/invoice`} target="_blank" className="btn-secondary flex-1 whitespace-nowrap px-3">
-              ⬇️ {t('invoice')}
-            </a>
-            {/* The draft packing list is gone: the photo packing list replaced
-                it in practice (owner). The generator stays reachable at
-                /api/batches/[id]/packing if it is ever needed again. */}
-            {(totalLoaded > 0 || loadedBoxes.length > 0) && (
-              <a href={`/api/batches/${batch.id}/packing-photos`} target="_blank" className="btn-secondary flex-1 whitespace-nowrap px-3">
-                ⬇️ 📷 {t('packingPhotos')}
-              </a>
-            )}
-            <Link href={`/batches/${batch.id}/tnved`} className="btn-secondary flex-1 whitespace-nowrap px-3">
-              🏷 ТНВЭД
-            </Link>
-          </div>
-          {/* The papers that travel with the truck. Same fence as the card
-              itself — a declaration is not more secret than the manifest. */}
-          <div className="border-t border-line pt-2">
-            <p className="section-title">📎 {t('documents')}</p>
-            <AttachmentsPanel
-              entityType="batch"
-              entityId={batch.id}
-              initial={batchFiles}
-              editable={actor.permissions.has('ved.docs') || canVehicle}
-            />
-          </div>
-          {actor.permissions.has('ved.docs') && (
-            <form action={setSentToAgentAction}>
-              <input type="hidden" name="batchId" value={batch.id} />
-              <button type="submit" className={`w-full rounded-lg border-2 border-dashed p-2.5 text-sm font-semibold ${batch.sentToAgentAt ? 'border-green-500 bg-good/10 text-good' : 'border-line-strong text-ink-700'}`}>
-                {batch.sentToAgentAt
-                  ? `✅ ${t('sentToAgent')}: ${format.dateTime(new Date(batch.sentToAgentAt), { dateStyle: 'short' })}`
-                  : `📤 ${t('markSentToAgent')}`}
-              </button>
-            </form>
-          )}
-        </Panel>
-      )}
-
-      {/* Rastamojka has a panel of its own, and it is deliberately NOT inside
-          the VED papers. It shipped there, folded inside another fold, and the
-          owner reported the feature as missing — a collapsed panel with
-          nothing on its face is invisible whatever it holds (round 43). The
-          badge names the firm on the collapsed card, so the answer to "who is
-          clearing this truck" needs no tap at all. */}
-      {(actor.permissions.has('ved.docs') || actor.permissions.has('plans.manage')) && (
-        <Panel title={`🛃 ${t('customs')}`} badge={customsBadge} testId="batch-customs-panel">
-          <CustomsFirm
-            batchId={batch.id}
-            partnerId={batch.customsPartnerId}
-            byClient={batch.customsByClient}
-            partners={customsPartners}
-            canEdit={actor.permissions.has('ved.docs')}
-          />
-          {/* His third case: inside one truck some clients clear their own
-              cargo and we clear the rest, so the answer lives per prixod
-              with the truck's as the default. */}
-          <CustomsPerReceipt
-            batchId={batch.id}
-            rows={customsRows}
-            partners={customsPartners}
-            canEdit={actor.permissions.has('ved.docs')}
-          />
-          {/* The one thing in the system that knows a declaration cleared —
-              which is what splits «O'zbekistonga kirdi» from «Rastamojka
-              tugadi» on the customer's own timeline (owner: «ha rastamojka
-              tugadi tugmasini qo'sh»). */}
-          <CustomsCleared
-            batchId={batch.id}
-            clearedAt={batch.customsClearedAt}
-            canEdit={actor.permissions.has('ved.docs')}
-          />
-        </Panel>
-      )}
-
-      {/* Truck and driver: folded, and below the papers (owner). Editable
-          until the batch closes — a wrong plate must be fixable even after
-          departure. The summary carries the plate so a collapsed panel still
-          answers "which truck is this". */}
-      <Panel
-        title={`🚛 ${t('vehicleTitle')}`}
-        badge={batch.vehiclePlate || undefined}
-      >
-        {canVehicle && !['closed', 'cancelled'].includes(batch.status) ? (
-          <VehicleForm
-            batchId={batch.id}
-            vehiclePlate={batch.vehiclePlate ?? ''}
-            driverName={batch.driverName ?? ''}
-            driverPhone={batch.driverPhone ?? ''}
-          />
-        ) : (
-          <p className="text-sm">
-            <span className="font-mono font-bold">{batch.vehiclePlate || '—'}</span>
-            {batch.driverName && ` · ${batch.driverName}`}
-            {batch.driverPhone && ` · ${batch.driverPhone}`}
-          </p>
-        )}
-      </Panel>
-
-
-      {/* Driver phone (owner's flow): while the truck is being loaded the
-          warehouse worker installs the app on the driver's phone and types
-          this code once. Android then streams real positions; iPhone /
-          HarmonyOS stay on the manual pins below.
-
-          Folded away by default (owner: "it should sit somewhere small where
-          it bothers nobody") — it is touched once per trip, at loading. The
-          badge shows a pending code so it is still findable at a glance. */}
-      {canVehicle && !['closed', 'cancelled'].includes(batch.status) && (
-        <Panel
-          title={`📲 ${t('driverPhone')}`}
-          badge={devices.find((d) => d.pairCode)?.pairCode ?? (devices.length > 0 ? '✅' : undefined)}
-          testId="batch-driver-panel"
-        >
-          {devices.length === 0 && <p className="text-xs text-ink-500">{t('driverPhoneHint')}</p>}
-          {/* The door the phone row always had, put back where he looks for
-              it (owner: «ulangan telefonni kirgizganda tagida kartaga o'tish
-              havolasi turar edi»). Round 46 folded «Где машина» into its own
-              panel and the map link folded away WITH it — still there, but
-              two taps deep with nothing on this panel saying so. A paired
-              phone on a moving truck IS the reason somebody opens the map. */}
-          {batch.status === 'in_transit' && devices.some((d) => !d.pairCode) && (
-            <Link
-              href="/map"
-              className="block text-sm font-semibold text-brand-700 underline"
-              data-testid="device-map-link"
-            >
-              🗺 {t('openMap')} →
-            </Link>
-          )}
-          {devices.map((device) => (
-            <div key={device.id} className="flex flex-wrap items-center gap-2 border-b border-line pb-2 text-sm last:border-0">
-              {device.pairCode ? (
-                <>
-                  <span className="font-mono text-2xl font-extrabold tracking-widest text-brand-700">
-                    {device.pairCode}
-                  </span>
-                  <span className="text-xs text-ink-500">{t('pairCodeHint')}</span>
-                </>
-              ) : (
-                <span className="font-semibold text-good">
-                  ✅ {device.label || t('driverPhone')}
-                  {device.lastSeenAt
-                    ? ` · ${t('lastSeen', { when: format.dateTime(new Date(device.lastSeenAt), { dateStyle: 'short', timeStyle: 'short' }) })}`
-                    : ` · ${t('noFixesYet')}`}
-                  {device.fixes > 0 && ` · ${device.fixes} 📍`}
-                </span>
-              )}
-              <form action={revokeDriverDeviceAction} className="ml-auto">
-                <input type="hidden" name="deviceId" value={device.id} />
-                <input type="hidden" name="batchId" value={batch.id} />
-                <button type="submit" className="text-xs font-semibold text-bad underline">
-                  ✖ {tc('delete')}
-                </button>
-              </form>
-            </div>
-          ))}
-          <form action={createDriverDeviceAction} className="flex flex-wrap gap-2">
-            <input type="hidden" name="batchId" value={batch.id} />
-            <input
-              name="label"
-              className="input min-w-40 flex-1"
-              placeholder={batch.driverName || t('driverPhoneLabel')}
-              maxLength={100}
-            />
-            <button type="submit" className="btn-secondary whitespace-nowrap px-3">
-              📲 {t('newPairCode')}
-            </button>
-          </form>
-        </Panel>
-      )}
-
-      {/* Tracking map pins: the logist marks where the truck ACTUALLY is —
-          the map's estimate re-anchors from that moment (owner's feature). */}
-      {batch.status === 'in_transit' && canVehicle && (
-        // Folded like every other rail panel (owner): three buttons and a map
-        // link are worth a tap, not a permanent block of the card.
-        <Panel
-          title={`📍 ${t('whereIsTruck')}`}
-          badge={
-            (batch.trackingCheckpoint as { key?: string } | null)?.key
-              ? t(
-                  `cp${((batch.trackingCheckpoint as { key: string }).key === 'at_border'
-                    ? 'Border'
-                    : (batch.trackingCheckpoint as { key: string }).key === 'in_kg'
-                      ? 'Kg'
-                      : 'Uz') as 'cpBorder'}`,
-                )
-              : undefined
-          }
-          testId="batch-where-panel"
-        >
-          <div className="flex flex-wrap gap-2">
-            {(
-              [
-                ['at_border', `🛃 ${t('cpBorder')}`],
-                ['in_kg', `🇰🇬 ${t('cpKg')}`],
-                ['in_uz', `🇺🇿 ${t('cpUz')}`],
-              ] as const
-            ).map(([key, label]) => {
-              const active =
-                (batch.trackingCheckpoint as { key?: string } | null)?.key === key;
-              return (
-                <form key={key} action={setTrackingCheckpointAction} className="flex-1">
-                  <input type="hidden" name="batchId" value={batch.id} />
-                  <input type="hidden" name="key" value={key} />
-                  <button
-                    type="submit"
-                    className={`w-full whitespace-nowrap rounded-lg border-2 px-3 py-2 text-sm font-semibold ${
-                      active ? 'border-blue-700 bg-brand-50 text-brand-700' : 'border-line text-ink-700'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                </form>
-              );
-            })}
-          </div>
-          <Link href="/map" className="text-sm font-semibold text-brand-700 underline">
-            🗺 {t('openMap')} →
-          </Link>
-        </Panel>
-      )}
-
-      {/* Phase 2.1: VED manager + accountant set each client's negotiated
-          price after customs — charges land in the client ledger. */}
-      {pricingSight(actor.permissions, internal) !== 'none' && (
-        <Link
-          href={`/batches/${batch.id}/pricing`}
-          className={`card block text-center font-bold ${internal ? 'text-ink-700 hover:bg-surface-sunken' : 'text-warn hover:bg-warn/10'}`}
-          data-testid="batch-pricing-link"
-        >
-          💰 {internal ? t('internalCosts') : t('pricing')}
-        </Link>
-      )}
-
-      {/* «Partiya foydasi» reads only the trucks marked here (0107) — the
-          owner's rule, set by the admin or the accountant. */}
-      {actor.permissions.has('finance.reports') && (
-        <ProfitTracked batchId={batch.id} tracked={batch.profitTracked} />
-      )}
-
-      <TasksPanel
-        entityType="batch"
-        entityId={batch.id}
-        revalidate={`/batches/${batch.id}`}
-      />
-
-      <CustomFieldsPanel
-        entityType="batch"
-        entityId={batch.id}
-        revalidate={`/batches/${batch.id}`}
-      />
-          </>
-        }
-      />
-    </div>
+      <div className="grid gap-4 md:grid-cols-2 md:items-start">
+        <TasksPanel entityType="batch" entityId={id} revalidate={`/batches/${id}`} />
+        <CustomFieldsPanel entityType="batch" entityId={id} revalidate={`/batches/${id}`} />
+      </div>
+    </BatchCard>
   );
 }

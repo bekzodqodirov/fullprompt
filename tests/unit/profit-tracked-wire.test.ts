@@ -20,13 +20,15 @@ describe('the «Partiya» mark', () => {
       read('src/app/(protected)/batches/batch-actions-server.ts'),
       'export async function setProfitTrackedAction',
     );
-    expect(action).toContain("authorize('finance.reports'");
+    // Same permission, now asked at the truck's two ends (batch-door-wire).
+    expect(action).toContain("authorizeOnBatch('finance.reports', batchId)");
     expect(action).toContain("formData.get('tracked') === '1'");
     expect(action).toContain('before: { profitTracked: batch.profitTracked }');
   });
 
   it('is offered on the card only to the people who may set it', () => {
-    const page = read('src/app/(protected)/batches/[id]/page.tsx');
+    // On the truck card's header since 2026-09-28 — drawn on every tab.
+    const page = read('src/app/(protected)/batches/[id]/batch-card.tsx');
     expect(page).toMatch(/permissions\.has\('finance\.reports'\) && \(\s*<ProfitTracked/);
   });
 

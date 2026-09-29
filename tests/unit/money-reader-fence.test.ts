@@ -77,6 +77,12 @@ const MONEY_READERS = [
   'loadCashWeeks',
   'loadCashByMonth',
   'loadTargetFor',
+  // The evening summary (answer 7a): the attention rows left src/app for a
+  // module the bot can reach (judge 6), so the fence follows them there, and
+  // the compose is the company's money in one call.
+  'attentionFacts',
+  'readAttentionSources',
+  'composeOwnerSummary',
 ];
 
 /** A predicate that keeps the VED out of a money read. */
@@ -111,6 +117,11 @@ const ALLOWED: Record<string, { why: string; renderedBy: string; gate: RegExp }>
     why: 'mounted only under the page’s `money` flag, and every card in it takes the CompanyMoneySight token',
     renderedBy: 'src/app/(protected)/dashboard/page.tsx',
     gate: /\{money && sight && \(\s*<Suspense[\s\S]{0,120}?<MoneySection/,
+  },
+  'src/app/(protected)/dashboard/sections/attention.tsx': {
+    why: 'its money rows are read only when the page hands it the CompanyMoneySight token (attention-sources.ts gates every money loader on it)',
+    renderedBy: 'src/app/(protected)/dashboard/page.tsx',
+    gate: /<AttentionSection\s+sight=\{sight\}/,
   },
 };
 
@@ -196,5 +207,38 @@ describe('every money reader under src/app keeps the VED out', () => {
     expect(page).toContain('const sight = money ? companyMoneySight(actor) : null;');
     // HeroTiles takes a nullable token and reads money only when it holds one.
     expect(readFileSync('src/app/(protected)/dashboard/sections/hero.tsx', 'utf8')).toContain('const money = sight !== null;');
+    // …and so does the attention section, whose rows now live in wms.
+    const attention = stripComments(readFileSync('src/app/(protected)/dashboard/sections/attention.tsx', 'utf8'));
+    expect(attention).toMatch(/sight: CompanyMoneySight \| null;/);
+  });
+});
+
+describe('the Telegram module reads no money of its own (the evening summary, 7a)', () => {
+  /*
+   * `src/modules/platform/telegram/**` answers anybody who writes to the bot,
+   * and platform may reach wms only by dynamic import — which the import scan
+   * above reads too. The one door into the company's money from there is
+   * `ownerSummaryForActor`, which asks `ownerSummarySight` itself; a bare
+   * reader (or the compose) imported here would be a second, unguarded door.
+   */
+  const files = globSync('src/modules/platform/telegram/**/*.ts');
+
+  it('finds the bot', () => {
+    expect(files.length).toBeGreaterThan(10);
+  });
+
+  it('no file there imports a money reader, statically or dynamically', () => {
+    const offenders: string[] = [];
+    for (const path of files) {
+      const source = stripComments(readFileSync(path, 'utf8'));
+      const readers = MONEY_READERS.filter((name) => importedNames(source).has(name));
+      if (readers.length > 0) offenders.push(`${path}: ${readers.join(', ')}`);
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('the pull crosses through the door-asking function only', () => {
+    const bot = stripComments(readFileSync('src/modules/platform/telegram/staff-bot.ts', 'utf8'));
+    expect(bot).toContain("const { ownerSummaryForActor } = await import('../../wms/reports/owner-summary');");
   });
 });

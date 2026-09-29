@@ -114,6 +114,8 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
    */
   const blockingDebt = debtUsd - deferredUsd;
   const [canOverrideDebt, setCanOverrideDebt] = useState(false);
+  // The price tick's own rule (`mayOverridePrice`) — not the debt's since 0114.
+  const [canOverridePrice, setCanOverridePrice] = useState(false);
   /** Phase 6: the live request/approval for this client at this warehouse. */
   const [approval, setApproval] = useState<ApprovalState | null>(null);
   const [asking, setAsking] = useState(false);
@@ -228,6 +230,7 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
             debtUsd: number;
             deferredUsd: number;
             canOverrideDebt: boolean;
+            canOverridePrice?: boolean;
             approval: ApprovalState | null;
             unpriced?: UnpricedHere[];
             compensated?: { receiptNumber: string }[];
@@ -237,6 +240,7 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
           setDebtUsd(data.debtUsd);
           setDeferredUsd(data.deferredUsd ?? 0);
           setCanOverrideDebt(data.canOverrideDebt);
+          setCanOverridePrice(data.canOverridePrice ?? false);
           setApproval(data.approval ?? null);
           setUnpriced(data.unpriced ?? []);
           setCompensated(data.compensated ?? []);
@@ -382,13 +386,17 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
     debtUsd: needDebt ? blockingDebt : null,
     boxIds: needPrice ? selectedGated : [],
   });
-  // The strip asks about the whole counter: the selection when there is one,
-  // every gated carton here when nothing is picked yet.
+  // The strip asks about the whole counter — the selection when there is one,
+  // every gated carton here when nothing is picked yet — and only about what
+  // THIS person cannot tick: since 0114 the two ticks answer to different
+  // rules, so a warehouse manager clears the price and still asks about debt.
+  const askDebt = blockingDebt > 0.009 && !canOverrideDebt;
+  const askPrice = gatedIds.size > 0 && !canOverridePrice;
   const stripQuestion = {
-    debtUsd: blockingDebt > 0.009 ? blockingDebt : null,
-    boxIds: selectedGated.length ? selectedGated : [...gatedIds],
+    debtUsd: askDebt ? blockingDebt : null,
+    boxIds: askPrice ? (selectedGated.length ? selectedGated : [...gatedIds]) : [],
   };
-  const showStrip = client !== null && !canOverrideDebt && (blockingDebt > 0.009 || gatedIds.size > 0);
+  const showStrip = client !== null && (askDebt || askPrice);
   const money = (usd: number) => `$${usd.toFixed(2)}`;
   const untilText = (at: string | null) =>
     at
@@ -630,7 +638,7 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
             ))}
           </ul>
           <p className="mt-1 text-xs text-ink-700">{t('unpricedRule')}</p>
-          {canOverrideDebt && selectedGated.length > 0 && (
+          {canOverridePrice && selectedGated.length > 0 && (
             <label className="mt-2 flex items-center gap-2 font-semibold text-bad">
               <input
                 type="checkbox"
@@ -691,7 +699,7 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
               <p className="text-bad">
                 {approval?.status === 'approved'
                   ? t('approvalStale')
-                  : blockingDebt > 0.009
+                  : askDebt
                     ? t('debtNeedsManager')
                     : t('priceNeedsManager')}
               </p>

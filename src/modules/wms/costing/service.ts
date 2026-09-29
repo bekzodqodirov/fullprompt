@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import { and, asc, desc, eq, inArray, isNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
@@ -1591,9 +1592,9 @@ export interface LotLandedCost {
  * «Partiya foydasi» are one query and cannot drift apart (owner's R2a,
  * 2026-09-24: «bitta mashina bitta foyda»).
  */
-export async function batchLandedCostByLot(batchId: string): Promise<Map<string, LotLandedCost>> {
+export const batchLandedCostByLot = cache(async function batchLandedCostByLot(batchId: string): Promise<Map<string, LotLandedCost>> {
   return (await batchLandedCostTotals([batchId])).get(batchId) ?? new Map();
-}
+});
 
 /**
  * `batchLandedCostByLot` for MANY trucks at once — per truck, per lot — so
@@ -1660,13 +1661,13 @@ export async function unconvertedCostCount(batchId: string, receiptIds: string[]
  * the grid's stamped prixod cells. The «rasxodini yozmading» warning (owner,
  * 2026-09-24) reads zero here; `costMissingBatches` asks the same question.
  */
-export async function batchCostEntryCount(batchId: string): Promise<number> {
+export const batchCostEntryCount = cache(async function batchCostEntryCount(batchId: string): Promise<number> {
   const [row] = await db
     .select({ n: sql<number>`count(*)` })
     .from(costEntries)
     .where(and(eq(costEntries.batchId, batchId), isNull(costEntries.voidedAt)));
   return Number(row?.n ?? 0);
-}
+});
 
 /** The cost entries a card lists: the target they hang on. */
 export type CostTarget =
@@ -1751,7 +1752,7 @@ export async function costEntriesFor(
  * only half sees would be a wrong number, and the whole of it is the
  * tannarx per kilo he may not read (#791).
  */
-export async function batchCostSheet(batchId: string, sight: CostSight) {
+export const batchCostSheet = cache(async function batchCostSheet(batchId: string, sight: CostSight) {
   const { entries, others } = await costEntriesFor({ batchId }, sight);
 
   // The per-unit costs divide by what the freight was split over — the
@@ -1774,7 +1775,7 @@ export async function batchCostSheet(batchId: string, sight: CostSight) {
     usdPerKg: whole && kg > 0 ? Math.round((totalUsd / kg) * 1000) / 1000 : null,
     usdPerM3: whole && m3 > 0 ? Math.round((totalUsd / m3) * 100) / 100 : null,
   };
-}
+});
 
 // ---------------------------------------------------------------------------
 // The receipt-cost grid (round 29) — the accountant's Excel, kept

@@ -33,6 +33,13 @@ let actorId: string;
 let clientId: string;
 let clientCode: string;
 const ctx = () => ({ actorId });
+/**
+ * A number of this run's own. It was the fixed `+998901112233`, which
+ * `telegram-live` also gives its client — on one database (CI's) the chat
+ * then resolved to whichever carried it first in the book, so that file went
+ * red or green by run order.
+ */
+const PHONE = `+99890${String(Date.now()).slice(-7)}`;
 
 /** The unscoped reader (a logist): sees everything, money included. */
 const boss = (): BotActor => ({
@@ -244,7 +251,7 @@ describe('the bot answers "where is it?"', () => {
 
   it('a warehouse row wears 🏭, and the phone goes only to whoever may read it (2026-09-26)', async () => {
     await makeLot(1);
-    await db.update(clients).set({ phones: ['+998901112233'] }).where(eq(clients.id, clientId));
+    await db.update(clients).set({ phones: [PHONE] }).where(eq(clients.id, clientId));
     // A hand whose floor and trucks hold none of this client's cargo gets
     // the code and no number — the answer's own Σ decides, nothing wider.
     const elsewhere = await botLookupAnswer(
@@ -252,7 +259,7 @@ describe('the bot answers "where is it?"', () => {
       clientCode,
     );
     expect(elsewhere?.text).toContain(clientCode);
-    expect(elsewhere?.text).not.toContain('+998901112233');
+    expect(elsewhere?.text).not.toContain(PHONE);
     expect(elsewhere?.phones).toBeUndefined();
     // The hand standing next to the carton does (the owner: «skladchilarga
     // ham kerak»), beside the name and as a chat button.
@@ -261,20 +268,20 @@ describe('the bot answers "where is it?"', () => {
       clientCode,
     );
     expect(hand?.text).toContain('· 🏭 ');
-    expect(hand?.text).toContain(`👤 ${clientCode} · Bot lookup mijoz · 📞 +998901112233`);
-    expect(hand?.phones).toEqual(['+998901112233']);
+    expect(hand?.text).toContain(`👤 ${clientCode} · Bot lookup mijoz · 📞 ${PHONE}`);
+    expect(hand?.phones).toEqual([PHONE]);
     // The client book's reader does whatever the cargo…
     const book = await botLookupAnswer(
       { ...boss(), permissions: new Set(['clients.manage', 'plans.manage']), warehouseScoped: true, warehouseIds: [uuidv4()] },
       clientCode,
     );
-    expect(book?.phones).toEqual(['+998901112233']);
+    expect(book?.phones).toEqual([PHONE]);
     // …and so does the client's own seller, for their own client only.
     const own = await botLookupAnswer(
       { ...boss(), permissions: new Set(['clients.view_own']), warehouseScoped: true, warehouseIds: [uuidv4()] },
       clientCode,
     );
-    expect(own?.phones).toEqual(['+998901112233']);
+    expect(own?.phones).toEqual([PHONE]);
   });
 
   it('the staff map’s popup lists the place’s cargo lot by lot, narrowed to one client', async () => {

@@ -205,7 +205,9 @@ describe('W8 — the counters read the one fragment', () => {
   });
 
   it('the dashboard row reads the Balans’ own figures', () => {
-    const attention = read('src/app/(protected)/dashboard/sections/attention.tsx');
+    // The row is built in wms/reports/attention.ts since the evening summary
+    // reads the same rows; the section only draws it.
+    const attention = read('src/modules/wms/reports/attention.ts');
     expect(attention).toContain('balance.recurringArrearsTotal');
     expect(attention).toContain('balance.recurringArrearsUsd');
     expect(attention).not.toContain('recurringDueCount');

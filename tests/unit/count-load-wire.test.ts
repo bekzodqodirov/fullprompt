@@ -28,7 +28,11 @@ const SERVICE = 'src/modules/wms/scanning/service.ts';
 const COUNT_LOAD = 'src/modules/wms/scanning/count-load.ts';
 const ACTIONS = 'src/app/(protected)/batches/count-load-actions.ts';
 const PANEL = 'src/app/(protected)/batches/[id]/count-load-panel.tsx';
-const CARD = 'src/app/(protected)/batches/[id]/page.tsx';
+// Since 2026-09-28 the truck card is six tabs (docs/CARD-TABS.md): the count
+// panel and the loaded list live on the «Yuklash» tab, the ⚠ chip in the
+// header every tab draws, and the TNVED list in its own module.
+const CARD = 'src/app/(protected)/batches/[id]/yuklash/page.tsx';
+const HEADER = 'src/app/(protected)/batches/[id]/batch-card.tsx';
 const LOAD_SCREEN = 'src/app/(protected)/batches/[id]/load/loading-screen.tsx';
 
 describe('the count door', () => {
@@ -163,17 +167,33 @@ describe('a truck’s papers read its cargo, never its scan history (decision 25
     const packing = read('src/modules/wms/documents/packing-photos-xlsx.ts');
     expect(packing).not.toContain('scanEvents');
     expect(packing).toContain('aboardFilter(batchId)');
-    const tnved = read('src/app/(protected)/batches/[id]/tnved/page.tsx');
+    // The editor's rows AND the header's «TNVED kodsiz» count read one list.
+    const tnved = read('src/modules/wms/tnved/batch-lots.ts');
     expect(tnved).not.toContain('scanEvents');
-    expect(tnved).toContain('aboardFilter(id)');
+    expect(tnved).toContain('aboardFilter(batchId)');
+    const page = read('src/app/(protected)/batches/[id]/tnved/page.tsx');
+    expect(page).not.toContain('scanEvents');
+    expect(page).toContain('batchTnvedProducts(id,');
   });
 
   it('the batch card’s loaded list and ⚠ chip', () => {
+    // A marker that is missing makes `indexOf` -1 and `slice(start, -1)` runs
+    // to the end of the file, where any later query passes the checks — so
+    // both ends are asserted before anything is read between them.
     const card = read(CARD);
-    const loaded = card.slice(card.indexOf('const loadedBoxes'), card.indexOf('return ('));
+    const from = card.indexOf('const loadedBoxes');
+    const to = card.indexOf('return (', from);
+    expect(from).toBeGreaterThan(0);
+    expect(to).toBeGreaterThan(from);
+    const loaded = card.slice(from, to);
     expect(loaded).toContain('.where(aboardFilter(id))');
     expect(loaded).not.toContain('scanEvents');
-    const spot = card.slice(card.indexOf('const onSpotCount'), card.indexOf('const loadingNow'));
+    const header = read(HEADER);
+    const spotFrom = header.indexOf('const onSpotCount');
+    const spotTo = header.indexOf('const loadingNow', spotFrom);
+    expect(spotFrom).toBeGreaterThan(0);
+    expect(spotTo).toBeGreaterThan(spotFrom);
+    const spot = header.slice(spotFrom, spotTo);
     expect(spot).toContain('count(DISTINCT ${scanEvents.boxId})');
     expect(spot).toContain("eq(scanEvents.type, 'load')");
     expect(spot).toContain('aboardFilter(id)');

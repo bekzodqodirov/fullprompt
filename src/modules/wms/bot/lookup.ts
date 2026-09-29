@@ -11,8 +11,10 @@ import {
 } from '../../platform/db/schema';
 import { inScope, type ScopedActor } from '../../platform/rbac/scope';
 import { seesAllMoney } from '../finance/scope';
+import { seesAllClients } from '../../platform/clients/card-door';
 import { clientBalanceUsd } from '../finance/service';
 import { arrivalCodesForPairs } from '../documents/arrivals';
+import { clientCargoRows } from '../inventory/client-cargo-now';
 import { roadLossInScope, roadLossTruck } from '../boxes/road-loss';
 import { dayIn, OFFICE_TZ } from '@/modules/platform/time/tashkent';
 import { alias } from 'drizzle-orm/pg-core';
@@ -130,9 +132,7 @@ function maySeePhones(
   cargoInReach: boolean,
 ): boolean {
   if (cargoInReach) return true;
-  if (actor.permissions.has('clients.manage') || actor.permissions.has('crm.leads.view_all')) {
-    return true;
-  }
+  if (seesAllClients(actor)) return true;
   return (
     (actor.permissions.has('clients.view_own') || actor.permissions.has('crm.leads')) &&
     salesManagerId === actor.id
@@ -281,45 +281,11 @@ async function lookupClient(
   // The FULL cargo picture (phase 4, the owner's item 6): per (lot,
   // warehouse) — goods · boxes with the status split · kg · m³ · the truck
   // it arrived on — inside the same cut the stock screen makes. ONE grouped
-  // query (the bot answers on grammy's sequential poller, round 101), then
-  // #853's arrival rule for the partiya, one query per warehouse the client
-  // actually stands in.
-  const rows = await db
-    .select({
-      lotId: receiptLots.id,
-      productZh: receiptLots.productNameZh,
-      productRu: receiptLots.productNameRu,
-      lotBoxes: receiptLots.boxCount,
-      lotKg: receiptLots.totalWeightKg,
-      lotM3: receiptLots.totalVolumeM3,
-      status: boxes.status,
-      warehouseId: boxes.currentWarehouseId,
-      whCode: warehouses.code,
-      batchId: boxes.currentBatchId,
-      n: sql<number>`count(*)`,
-    })
-    .from(boxes)
-    .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
-    .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
-    .leftJoin(warehouses, eq(boxes.currentWarehouseId, warehouses.id))
-    .where(
-      and(
-        eq(receipts.clientId, client.id),
-        inArray(boxes.status, ['in_stock', 'planned', 'loading', 'in_transit', 'ready_for_pickup']),
-      ),
-    )
-    .groupBy(
-      receiptLots.id,
-      receiptLots.productNameZh,
-      receiptLots.productNameRu,
-      receiptLots.boxCount,
-      receiptLots.totalWeightKg,
-      receiptLots.totalVolumeM3,
-      boxes.status,
-      boxes.currentWarehouseId,
-      warehouses.code,
-      boxes.currentBatchId,
-    );
+  // query (the bot answers on grammy's sequential poller, round 101) — the
+  // client card's «Yuklar» tab reads the same rows, so the bot and the card
+  // cannot disagree about where a carton is — then #853's arrival rule for
+  // the partiya, one query per warehouse the client actually stands in.
+  const rows = await clientCargoRows([client.id]);
 
   // In-transit visibility: unscoped actors as always, PLUS the batch's two
   // ends for scoped ones — wms/search's own rule, a recorded widening.

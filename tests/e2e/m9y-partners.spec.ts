@@ -263,9 +263,10 @@ test('one prixod inside a truck is cleared by the client, and it sticks', async 
   );
   expect(hrefs.length, 'the board must hold at least one batch by now').toBeGreaterThan(0);
 
+  // Customs is the card's «Bojxona» tab.
   let found = '';
   for (const href of hrefs.slice(0, 6)) {
-    await page.goto(href);
+    await page.goto(`${href}/tnved`);
     const panel = page.getByTestId('batch-customs-panel');
     if ((await panel.count()) === 0) continue;
     await panel.click();
@@ -301,7 +302,7 @@ test('one prixod inside a truck is cleared by the client, and it sticks', async 
 
   // Reload and read it back — the answer is on the prixod, not in the page.
   await expect(async () => {
-    await page.goto(found);
+    await page.goto(`${found}/tnved`);
     await page.getByTestId('batch-customs-panel').click();
     await expect(page.getByTestId('receipt-customs-pick').first()).toHaveValue('client');
   }).toPass({ timeout: 20_000 });
@@ -311,7 +312,7 @@ test('one prixod inside a truck is cleared by the client, and it sticks', async 
   await page.getByTestId('receipt-customs-pick').first().selectOption('');
   await page.getByTestId('receipt-customs-save').first().click();
   await expect(async () => {
-    await page.goto(found);
+    await page.goto(`${found}/tnved`);
     await page.getByTestId('batch-customs-panel').click();
     await expect(page.getByTestId('receipt-customs-pick').first()).toHaveValue('');
   }).toPass({ timeout: 20_000 });

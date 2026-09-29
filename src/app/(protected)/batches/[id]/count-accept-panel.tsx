@@ -40,7 +40,7 @@ export function CountAcceptPanel({
   crates: { crateId: string; code: string; n: number }[];
 }) {
   const t = useTranslations('countAccept');
-  // The anchor another screen links to (`/batches/<id>#count-accept`): the
+  // The anchor another screen links to (`/batches/<id>/yuklash#count-accept`): the
   // Panel is a native <details>, so the hash alone scrolls to it shut.
   useEffect(() => {
     if (window.location.hash !== '#count-accept') return;

@@ -3,11 +3,10 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
-import { batches, currencies, deals } from '@/modules/platform/db/schema';
+import { currencies, deals } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { inScope } from '@/modules/platform/rbac/scope';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
-import { balancesForClients, batchCharges } from '@/modules/wms/finance/service';
+import { balancesForClients, batchCharges, batchTripCoverage } from '@/modules/wms/finance/service';
 import {
   batchClientCostBreakdown,
   batchCostEntryCount,
@@ -17,19 +16,24 @@ import {
   type LotLandedCost,
 } from '@/modules/wms/costing/service';
 import { batchLots, type BatchLot } from '@/modules/wms/batches/lots';
-import { batchRoute } from '@/modules/wms/batches/internal';
+import { mayOpenBatchCard } from '@/modules/wms/batches/card-door';
+import { loadBatchHead } from '@/modules/wms/batches/card-head';
+import { tripKind } from '@/modules/wms/reports/dashboard-math';
 import { canWriteDeal } from '@/modules/wms/deals/service';
-import { pricingSight, pricingView } from '@/modules/wms/finance/pricing-view';
+import { pricingChargesOf, pricingSight, pricingView, tripPriced, tripPricedCount } from '@/modules/wms/finance/pricing-view';
 import { offTruckPrices, pricedElsewhereFor, type OffTruckPrice } from '@/modules/wms/finance/off-truck';
 import { codeIdentity } from '@/modules/wms/labels/code-identity';
-import { BackLink } from '@/components/back-link';
 import { LightboxImg } from '@/components/lightbox-img';
 import { MoveChargeForm } from '@/app/(protected)/finance/move-charge-form';
 import { PricingForm } from './pricing-form';
 import { upsaleScopeFor } from '@/modules/wms/calc/upsale-scope';
 import { bothFiguresForDeals } from '@/modules/wms/calc/upsale-service';
 import { dealSharesOf, expectedForDeals, expectedPriceFor } from '@/modules/wms/finance/deal-price-hint';
-import { PageHeader } from '@/components/ui/page';
+import { BatchCard, batchTabMetadata } from '../batch-card';
+
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+  return batchTabMetadata((await params).id, 'narx');
+}
 
 /**
  * Batch pricing (Phase 2.1, owner's flow): when the cargo is through customs
@@ -69,22 +73,23 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
   if (!actor) redirect('/login');
   if (!actor.permissions.has('finance.manage')) redirect('/');
   const t = await getTranslations('finance');
+  const tb = await getTranslations('batches');
+  const tbc = await getTranslations('batchCard');
+  const tcargo = await getTranslations('cargo');
 
-  const batch = await db.query.batches.findFirst({ where: eq(batches.id, id) });
-  if (!batch) notFound();
+  const head = await loadBatchHead(id);
+  if (!head) notFound();
   // The grid's rule and the batch card's: a warehouse-scoped reader sees a
   // truck that starts or ends at one of their warehouses, and no other.
-  if (!inScope(actor, batch.originWarehouseId) && !inScope(actor, batch.destWarehouseId)) {
-    notFound();
-  }
+  if (!mayOpenBatchCard(actor, head.batch)) notFound();
+  const { batch } = head;
 
   // An internal truck is never priced (owner's C1a, 2026-09-24): the page
   // stays — its cost per goods is still the question — but the price, the
   // margin and the form go, and the warning becomes the one he asked for:
   // «rasxodini yozmading». Decided BEFORE the reads, because it decides
   // which of them this reader may have at all.
-  const route = await batchRoute(id);
-  const internal = route?.internal ?? false;
+  const internal = head.internal;
   const sight = pricingSight(actor.permissions, internal);
   if (sight === 'none') redirect(`/batches/${id}`);
   const full = sight === 'full';
@@ -100,28 +105,21 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
     full ? batchCostEntryCount(id) : Promise.resolve(0),
   ]);
 
-  const view = pricingView(
-    lots,
-    lotCost,
-    charges.map(({ tx, clientCode, clientName }) => ({
-      clientId: tx.clientId,
-      clientCode,
-      clientName,
-      type: tx.type,
-      amountUsd: Number(tx.amountUsd),
-    })),
-  );
+  const view = pricingView(lots, lotCost, pricingChargesOf(charges));
   // Prices whose cargo left a truck (0104, Q21a / Q2): THIS truck's own
   // (partial → inside the client's card, no cargo → the orphan section), and
   // another truck's whose dropped cartons ride THIS one now. Prices only, no
   // cost, so both sights read them; an internal truck is never priced.
   const clientIds = view.clients.map((group) => group.clientId);
-  const [balances, offHere, offElsewhere] = await Promise.all([
+  // «Narx qo'yilgan» (1a): a price here, or cargo the unpriced rule calls
+  // covered elsewhere — the China truck, the deal — the card header's count.
+  const [balances, offHere, offElsewhere, coverage] = await Promise.all([
     balancesForClients([...clientIds, ...view.orphans.map((row) => row.clientId)]),
     internal ? Promise.resolve([] as OffTruckPrice[]) : offTruckPrices(db, { batchIds: [id] }),
     internal || clientIds.length === 0
       ? Promise.resolve([] as OffTruckPrice[])
       : offTruckPrices(db, { clientIds }).then((rows) => pricedElsewhereFor(rows, id)),
+    internal ? Promise.resolve({ unpriced: new Set<string>(), covered: new Set<string>() }) : batchTripCoverage(id),
   ]);
   // The price the seller SOLD at (his item 7): the deal's quote, and — for
   // the owner and the accountant only (law 4: the VED who computed the floor
@@ -285,10 +283,17 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
   );
 
   return (
-    <div className="mx-auto max-w-lg space-y-4 md:max-w-3xl">
-      <BackLink href={`/batches/${id}`} label={batch.code} />
-      <PageHeader icon="wallet" title={t('pricingTitle')} />
+    <BatchCard head={head} actor={actor} active="narx">
+    <div className="max-w-3xl space-y-4">
+      <h2 className="text-lg font-bold">💰 {t('pricingTitle')}</h2>
       <p className="text-sm text-ink-500">{t('pricingHint')}</p>
+      {/* The «Partiya foydasi» mark sits on the card's header as a chip; its
+          sentence lives here, beside the numbers it is about. */}
+      {actor.permissions.has('finance.reports') && (
+        <p className="text-xs text-ink-500" data-testid="pricing-profit-hint">
+          📊 {tb('profitTrackedHint')}
+        </p>
+      )}
 
       {(lots.length > 0 || view.orphans.length > 0) && (
         <div className={`card grid ${full ? 'grid-cols-3' : 'grid-cols-1'} gap-2 text-center`}>
@@ -321,19 +326,29 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
               {full && (
                 <div>
                   <p className="text-xs uppercase tracking-wide text-ink-500">{t('marginLabel')}</p>
-                  <p
-                    className={`num text-lg font-extrabold ${
-                      totals.marginUsd >= 0 ? 'text-good' : 'text-bad'
-                    }`}
-                  >
-                    {money(totals.marginUsd)}
-                  </p>
+                  {/* A truck nobody has priced has no margin: −tannarx in red
+                      read as a trip that LOST money (the dashboard's
+                      `tripKind`, and the card's header tile, say the same). */}
+                  {tripKind({ internal, revenueUsd: totals.chargedUsd, profitUsd: totals.marginUsd }) === 'unpriced' ? (
+                    <p className="text-lg font-extrabold text-ink-500" data-testid="pricing-total-margin">
+                      {tbc('tileNoPrice')}
+                    </p>
+                  ) : (
+                    <p
+                      className={`num text-lg font-extrabold ${
+                        totals.marginUsd >= 0 ? 'text-good' : 'text-bad'
+                      }`}
+                      data-testid="pricing-total-margin"
+                    >
+                      {money(totals.marginUsd)}
+                    </p>
+                  )}
                 </div>
               )}
             </>
           )}
           <p className={`${full ? 'col-span-3' : ''} text-xs text-ink-500`}>
-            {!internal && t('pricedOf', { priced: totals.priced, total: view.clients.length })}
+            {!internal && t('pricedOf', { priced: tripPricedCount(view.clients, coverage), total: view.clients.length })}
             {full && totals.prevUsd > 0.009 && (
               <span className="num">
                 {internal ? '' : ' · '}
@@ -451,6 +466,14 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
               <div>
                 <p className="text-xs text-ink-500">{t('priceLabel')}</p>
                 <p className="num font-bold">{charged > 0 ? money(charged) : '—'}</p>
+                {/* Counted as priced in «N / M» with no price here: the
+                    client card's trip chip says the same words from the
+                    other end. */}
+                {charged === 0 && tripPriced(group, coverage) && (
+                  <p className="text-xs text-ink-500" data-testid="pricing-priced-other">
+                    {tcargo('pricedElsewhere')}
+                  </p>
+                )}
                 {charged > 0 && priceKg > 0 && (
                   <p className="num text-xs text-ink-500">
                     {(charged / priceKg).toFixed(2)}
@@ -736,5 +759,6 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
         </div>
       )}
     </div>
+    </BatchCard>
   );
 }

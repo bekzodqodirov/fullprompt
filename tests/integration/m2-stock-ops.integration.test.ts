@@ -15,7 +15,7 @@ import {
   users,
   warehouses,
 } from '@/modules/platform/db/schema';
-import { sendDailyDigest } from '@/modules/platform/jobs/digest';
+import { sendDailyDigest } from '@/modules/wms/reports/daily-digest';
 import type { Actor } from '@/modules/platform/rbac/authorize';
 import { confirmReceipt, voidReceipt } from '@/modules/wms/receipts/service';
 import { assignReceiptClient, editLot } from '@/modules/wms/receipts/edit';
@@ -523,7 +523,9 @@ describe('daily digest', () => {
     await makeReceipt({ clientId: null, marking: 'DG1' });
     const before = await db.$count(notifications, eq(notifications.type, 'DailyDigest'));
     const future = new Date(Date.now() + 10 * 86_400_000);
-    const sent = await sendDailyDigest(future);
+    // The waiting-cargo sweep CLAIMS and MESSAGES; this test is about the
+    // unclaimed section, so it sweeps nobody (#713 — CI shares one database).
+    const sent = await sendDailyDigest(future, { waitingClientIds: [] });
     expect(sent).toBe(true);
     const after = await db.$count(notifications, eq(notifications.type, 'DailyDigest'));
     expect(after).toBeGreaterThan(before);

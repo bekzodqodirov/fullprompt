@@ -65,7 +65,7 @@ async function ensureListening(): Promise<PgBoss> {
 export const WORKER_REGISTRATIONS: [string, (boss: PgBoss) => Promise<void>][] = [
   ['thumbnails', async (b) => (await import('./thumbnails')).registerThumbnailWorker(b)],
   ['notifications', async (b) => (await import('./notifications')).registerNotificationWorkers(b)],
-  ['digest', async (b) => (await import('./digest')).registerDigestWorker(b)],
+  ['digest', async (b) => (await import('../../wms/reports/daily-digest')).registerDigestWorker(b)],
   ['cost-recompute', async (b) => (await import('./cost-recompute')).registerCostRecomputeWorker(b)],
   ['backup', async (b) => (await import('./backup')).registerBackupWorker(b)],
   ['object-backup', async (b) => (await import('./object-backup')).registerObjectBackupWorker(b)],
@@ -76,6 +76,7 @@ export const WORKER_REGISTRATIONS: [string, (boss: PgBoss) => Promise<void>][] =
   ['unanswered', async (b) => (await import('../../wms/crm/unanswered-jobs')).registerUnansweredWorker(b)],
   ['silent-trucks', async (b) => (await import('../../wms/tracking/silent-jobs')).registerSilentTrucksWorker(b)],
   ['partner-terms', async (b) => (await import('../../wms/partners/terms-jobs')).registerPartnerTermsWorker(b)],
+  ['owner-summary', async (b) => (await import('../../wms/reports/owner-summary-jobs')).registerOwnerSummaryWorker(b)],
   ['broadcast', async (b) => (await import('../broadcast/jobs')).registerBroadcastWorker(b)],
   ['birthdays', async (b) => (await import('../broadcast/jobs')).registerBirthdayWorker(b)],
   ['meta-leads', async (b) => (await import('../../wms/crm/meta-jobs')).registerMetaLeadWorker(b)],
@@ -95,6 +96,18 @@ export const WORKER_REGISTRATIONS: [string, (boss: PgBoss) => Promise<void>][] =
     'customs-import-sweep',
     async (b) => (await import('../../wms/customs/jobs')).registerCustomsImportSweep(b),
   ],
+  // B9 — the system watching itself (0115).
+  [
+    'listener-quiet',
+    async (b) => (await import('../../wms/crm/listener-quiet-jobs')).registerListenerQuietWorker(b),
+  ],
+  ['system-errors-prune', async (b) => (await import('../diagnostics/jobs')).registerErrorsPruneWorker(b)],
+  ['system-disk', async (b) => (await import('../diagnostics/jobs')).registerDiskWorker(b)],
+  [
+    'inbound-contact',
+    async (b) => (await import('../../wms/crm/inbound-contact-jobs')).registerInboundContactWorker(b),
+  ],
+  ['debt-promises', async (b) => (await import('../../wms/debt/jobs')).registerDebtPromiseWorker(b)],
 ];
 
 /** Run each registration at most once per process, whatever failed before. */

@@ -17,6 +17,7 @@ import {
   textVolume,
 } from './field-map';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
+import { announceArrival, type LandedArrival } from './inbound-notify';
 
 /**
  * A lead that arrived by itself — from an advert, the public form, or the bot.
@@ -226,30 +227,63 @@ export async function landInboundLead(arrival: InboundArrival): Promise<InboundR
   // questions is worth keeping and worth showing the mapping screen.
   const pairs = capturePairs(arrival.fields);
 
+  /**
+   * The ledger row. Answers its id, or null when the database refused it as
+   * a second copy — and only a row that came back may be announced, so the
+   * replay race cannot push one lead twice.
+   *
+   * RAW SQL on today's columns only (0113, design judge 2): drizzle's insert
+   * names EVERY column its schema knows, so once the contact-clock columns
+   * are in the schema a drizzle insert refuses the whole arrival on a
+   * database one migration behind — deploy morning (#472) — and this row is
+   * the replay fence: without it Meta's retry passes the check below and a
+   * SECOND lead is created. The clock is a separate UPDATE that may fail.
+   */
   const record = async (
     outcome: InboundOutcome,
     extra: { reason?: string; leadId?: string; clientId?: string; assignedUserId?: string },
+  ): Promise<string | null> => {
+    const rows = await db.execute<{ id: string }>(sql`
+      INSERT INTO lead_intakes
+        (channel, external_id, source_key, ref, phone, name, outcome, reason,
+         fields, lead_id, client_id, assigned_user_id)
+      VALUES (${arrival.channel}, ${arrival.externalId ?? null}, ${sourceKey},
+              ${arrival.ref ? JSON.stringify(arrival.ref) : null}::jsonb,
+              ${phone}, ${name}, ${outcome}, ${extra.reason ?? null},
+              ${pairs ? JSON.stringify(pairs) : null}::jsonb,
+              ${extra.leadId ?? null}::uuid, ${extra.clientId ?? null}::uuid,
+              ${extra.assignedUserId ?? null}::uuid)
+      -- The SECOND delivery of the same advert lead is refused by the
+      -- database rather than by a check somebody can forget: Meta re-sends
+      -- until it gets a 200, and a form page reloads.
+      ON CONFLICT DO NOTHING
+      RETURNING id`);
+    return rows[0]?.id ?? null;
+  };
+
+  /**
+   * Tell a person (0113). After the ledger row, in a catch of its own: what
+   * a public door ANSWERS must never depend on Telegram, and a throw here
+   * would otherwise be logged as the landing failing — which it did not.
+   */
+  const announce = async (
+    landed: Pick<LandedArrival, 'intakeId' | 'outcome' | 'leadId' | 'clientId' | 'ownerId'> & {
+      volumeM3?: number | null;
+    },
   ) => {
-    await db
-      .insert(leadIntakes)
-      .values({
+    try {
+      await announceArrival({
+        ...landed,
         channel: arrival.channel,
-        externalId: arrival.externalId ?? null,
         sourceKey,
-        ref: arrival.ref ?? null,
-        phone,
         name,
-        outcome,
-        reason: extra.reason ?? null,
-        fields: pairs,
-        leadId: extra.leadId ?? null,
-        clientId: extra.clientId ?? null,
-        assignedUserId: extra.assignedUserId ?? null,
-      })
-      // The SECOND delivery of the same advert lead is refused by the database
-      // rather than by a check somebody can forget: Meta re-sends until it
-      // gets a 200, and a form page reloads.
-      .onConflictDoNothing();
+        phone: trim(arrival.phone, 40),
+        note,
+        volumeM3: landed.volumeM3 ?? null,
+      });
+    } catch (err) {
+      logger.error({ err, intakeId: landed.intakeId }, '[inbound] notify failed');
+    }
   };
 
   // Nothing to work with. Recorded anyway — a run of these is what a broken
@@ -305,7 +339,15 @@ export async function landInboundLead(arrival: InboundArrival): Promise<InboundR
         { actorId: null },
         { system: true },
       );
-      await record('client', { clientId: client.id });
+      const intakeId = await record('client', { clientId: client.id });
+      if (intakeId) {
+        await announce({
+          intakeId,
+          outcome: 'client',
+          clientId: client.id,
+          ownerId: client.salesManagerId ?? null,
+        });
+      }
       return { outcome: 'client', clientId: client.id };
     }
   }
@@ -332,7 +374,13 @@ export async function landInboundLead(arrival: InboundArrival): Promise<InboundR
       // `updated_at` — so without this the second enquiry would be invisible
       // exactly where somebody is looking for it.
       await db.update(leads).set({ updatedAt: new Date() }).where(eq(leads.id, open.id));
-      await record('joined', { leadId: open.id, assignedUserId: open.ownerId ?? undefined });
+      const intakeId = await record('joined', {
+        leadId: open.id,
+        assignedUserId: open.ownerId ?? undefined,
+      });
+      if (intakeId) {
+        await announce({ intakeId, outcome: 'joined', leadId: open.id, ownerId: open.ownerId });
+      }
       return { outcome: 'joined', leadId: open.id };
     }
   }
@@ -430,7 +478,17 @@ export async function landInboundLead(arrival: InboundArrival): Promise<InboundR
     { actorId: null },
     { system: true },
   );
-  await record('created', { leadId: lead.id, assignedUserId: ownerId ?? undefined });
+  const intakeId = await record('created', { leadId: lead.id, assignedUserId: ownerId ?? undefined });
+  if (intakeId) {
+    await announce({
+      intakeId,
+      outcome: 'created',
+      leadId: lead.id,
+      ownerId: ownerId ?? null,
+      // The MAPPED kub only — the free-text guess routes, it is never printed.
+      volumeM3: mapped.volumeM3,
+    });
+  }
   return { outcome: 'created', leadId: lead.id };
 }
 

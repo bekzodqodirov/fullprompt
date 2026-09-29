@@ -25,7 +25,14 @@ function ago(date: Date, t: (k: string, v?: Record<string, unknown>) => string):
   const mins = Math.round((Date.now() - date.getTime()) / 60000);
   if (mins < 60) return t('minsAgo', { n: Math.max(mins, 1) });
   if (mins < 60 * 24) return t('hoursAgo', { n: Math.round(mins / 60) });
-  return date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
+  // The office's calendar, not the server's: a message at 01:00 Tashkent is
+  // yesterday in UTC, and the list would date it a day early (R5's rule).
+  return date.toLocaleDateString('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    year: '2-digit',
+    timeZone: 'Asia/Tashkent',
+  });
 }
 
 export default async function ConversationsPage({
@@ -42,11 +49,14 @@ export default async function ConversationsPage({
     redirect('/');
   }
   const t = await getTranslations('crm');
+  const tl = await getTranslations('lidChat');
   const { q } = await searchParams;
   // Own account only — except the owner's supervision view: as super_admin
   // he reads the whole company's threads, each row naming its manager
   // (his instruction, round 21: «rahbar sifatida hamma yozishmalar korinsin»).
-  const rows = await listConversations(tgViewerFor(actor), q);
+  // A prospect's chat is a row here too (owner's 4a) — for whoever may open
+  // lead cards at all; everyone else keeps the list they had.
+  const rows = await listConversations(tgViewerFor(actor), q, undefined, { leadsFor: actor });
 
   // The tray's door is the manager's own connected account (or the
   // administrator's clients.manage — round 93); a manager counts only their
@@ -128,19 +138,29 @@ export default async function ConversationsPage({
         </p>
       ) : (
         <div className="space-y-1.5">
-          {rows.map((row) => (
-            <Link
-              key={row.clientId}
-              href={`/suhbatlar/${row.clientId}`}
-              className="card flex items-baseline gap-2 !py-2.5"
-              data-testid="conversation-row"
-            >
-              <span className="font-mono text-sm font-extrabold text-brand-700">
-                {row.clientCode}
+          {rows.map((row) => {
+            // The row's content is the same whichever kind it is; only the
+            // way it opens differs. A lead row the reader may not open is
+            // drawn WITHOUT a link — never with one that bounces off the lead
+            // card's door (the design judge's first finding) — and names
+            // whose lead it is, because that person can open it.
+            const body = (
+              <>
+              <span
+                className="font-mono text-sm font-extrabold text-brand-700"
+                {...(row.kind === 'lead'
+                  ? { title: tl('markTitle'), 'aria-label': tl('markTitle') }
+                  : {})}
+              >
+                {/* A prospect has no GS code yet, so the slot says what the
+                    person IS — «Lid», never «Yangi lid»: a lead chat can be
+                    months old, and «new» already means «unread» on this very
+                    row (the design judge's eleventh finding). */}
+                {row.kind === 'lead' ? tl('mark') : row.code}
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate font-semibold">
-                  {row.clientName}
+                  {row.name}
                   {/* Supervision view only: whose Telegram this thread lives on. */}
                   {row.managers.length > 0 && (
                     <span className="ml-1.5 text-xs font-normal text-ink-500">
@@ -148,6 +168,14 @@ export default async function ConversationsPage({
                     </span>
                   )}
                 </span>
+                {row.kind === 'lead' && !row.href && (
+                  <span
+                    className="block truncate text-xs text-ink-500"
+                    data-testid="conversation-lead-owner"
+                  >
+                    {row.leadOwner ? tl('owner', { name: row.leadOwner }) : tl('ownerNone')}
+                  </span>
+                )}
                 <span className="block truncate text-sm text-ink-500">
                   {row.lastBody ?? `📎 ${t('telegramMedia')}`}
                 </span>
@@ -185,8 +213,33 @@ export default async function ConversationsPage({
                   {ago(row.lastAt, t as never)}
                 </span>
               </span>
-            </Link>
-          ))}
+              </>
+            );
+            // `data-kind` is an API for the e2e suite: CI's one database can
+            // hold lead chats other files left behind, and a spec that clicks
+            // the FIRST row must say which kind it means (#653).
+            const key = `${row.kind}:${row.clientId ?? row.leadId}`;
+            return row.href ? (
+              <Link
+                key={key}
+                href={row.href}
+                className="card flex items-baseline gap-2 !py-2.5"
+                data-testid="conversation-row"
+                data-kind={row.kind}
+              >
+                {body}
+              </Link>
+            ) : (
+              <div
+                key={key}
+                className="card flex items-baseline gap-2 !py-2.5"
+                data-testid="conversation-row"
+                data-kind={row.kind}
+              >
+                {body}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

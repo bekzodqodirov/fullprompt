@@ -139,6 +139,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | Client chat into the CRM | `docs/TELEGRAM-CRM.md` |
 | The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batches 1-4 COMPLETE; 5 in progress |
 | Website visitor → least-busy manager (the site's contract) | `docs/SAYT-TAQSIMOT.md` — round 113, give the contract to the site's session verbatim |
+| The truck card's six tabs and the client's «Pul» tab | `docs/CARD-TABS.md` — agreed 2026-09-28 (his 3a/4a), SHIPPED |
 
 ## State — 2026-08-23
 
@@ -2030,23 +2031,101 @@ refuses. Stated: lock-6, ui-7, a grown carton on a
 cancelled truck stays in the prixod, and the scanner speed is proven only by
 simulation — his ⓘ screenshots from the slow phones are the oracle.
 
-**Round — Andijondan Toshkentga ichki reys (2026-09-28; DECISIONS
-#1177-#1179; NO migration, ledger 113).** His «andijon skladga olib keldim …
-ichki reys qilib toshkentga … sklatda yuk korinmay qolyabti»: a truck lands
-cargo `ready_for_pickup` at a collection warehouse and the PLAN path (editor
-list, `availableByLot`, the submit's crate check, the approval's reservation)
-read `in_stock` alone, while the quick truck always took both.
-`boxes/shelf.ts` is the one home: `PLANNABLE_STATUSES` (what a truck may take)
-and `shelfBefore`/`shelfBeforeSql` (the shelf a carton LEFT, from the
-movement ledger — every give-back asks it: short_loaded, load_removed,
-batch_cancelled, found_at_origin at both unload doors, and the count press's
-own way back). History, not warehouse type: a walk-in at Tashkent goes back
-`in_stock`. The editor's query is `planning/stock.ts` `plannableStock`.
-Review cargo-6's «ready carton rides as an extra» is reversed (#1179). A
-pre-existing count-press path dependence (re-reserve vs dial-down order) was
-found by the widened simulation and queued, not fixed. 16 red proofs.
+**Round — one card per truck + the client's «Pul» tab (2026-09-28;
+DECISIONS #1177-#1188; NO migration, ledger 113; spec `docs/CARD-TABS.md`).**
+His 3a/4a. Six tabs — Ichidagilar `/batches/<id>` · Yuklash `/yuklash` (new) ·
+Xarajatlar `/xarajatlar` · Narx `/pricing` · Bojxona `/tnved` · Mashina
+`/mashina` (new) — no route moved. `wms/batches/card-door.ts` is ONE
+predicate per tab, asked by the tab's page AND the strip (`batchTabsFor`);
+`BatchCard` is a per-page server component, NOT a layout (it would wrap
+/load and /unload). Every header number is the destination's own function
+(#513): `batchLots` (riders — the card no longer reads the manifest for
+contents; documents still do), `batchCostSheet`, `pricingView`+`tripKind`,
+`docsPendingWhere` (shared with `vedFlowCounts`), `missingTnvedCount`,
+`truckOnRoadRow` + `components/truck-road.tsx` (the dashboard's words).
+Reads are `cache()`-wrapped by primitives; header money reads soft-fail.
+`batchMemberFilter`/`aboardFilter` are UNIONs now (0 diffs over 1,422
+trucks). Fixed on the way: the loaded line counted over membership
+(`batchLoadProgress` = live pointer), TNVED hid lots mid-unload (departure
+is the switch), the tile's m³ spelling (`cargoLine`). The OTHER package's
+half: `authorizeOnBatch` (`wms/batches/batch-authorize.ts`) puts the card's
+door on eight truck actions that judged no warehouse, + receipt/device/lot
+membership checks. Client: `ClientCard` strip Umumiy/Pul, `mayOpenClientLedger`
+(redirect BEFORE the lookup, then notFound), and `clientFeed(money)` REQUIRED
+— the lenta had shown every client's money to any `crm.leads` holder.
+aria-current: «page» once (the card tab); menus say «true» beneath their
+page. Pinned by `truck-card.test.ts` (unit), `truck-card.integration.test.ts`,
+`batch-door-wire`/`batch-authorize`/`batch-door.integration`, and e2e
+`m9zzr-partiya-karta` (+ `.desktop`) — the SERVER as the oracle, every drawn
+tab 200 and every other refused, as all eight demo people. Measured on the
+shaped copy: 30-37 statements and 113-169 ms per tab; the tab body on the
+first screen for every role at 360×800 and 1280×900. TEST TRAPS: a prefix
+testid selector (`batch-tab-` also matched `batch-tab-body`); a red proof
+whose `next build` failed on lint tests the previous build. His answer
+**1a** (the same day) is built: «Narx qo'yilgan N / M» counts a client priced
+on another truck or on the deal (DECISIONS #1189-#1190) — `tripCoverageOn`
+(the unpriced rule over a `trip` scope = the riders) + `tripPriced`, one count
+for the tile and the «Narx» tab, `totals.priced` removed; a price typed on the
+truck itself always counts.
 
-**Latest migration: 0112** (`qr_less` — the count reasons, the QR-siz lot
+**Round — seven packages from his answers of 2026-09-28 (DECISIONS
+#1191-#1203; migrations 0113-0116 — ledger must reach 117).** His message
+with the company KPI table answered 2a/3a/4a/5a/7a/11a and asked FIRST for a
+salary place, cargo on the client card and a per-employee dashboard, plus
+Khorgos. Salary/KPI, Khorgos and the pricing-page lot icons WAIT on the
+questions sent back to him (tasks: KPI engine, Khorgos route/ETA, the two lot
+icons); everything else was built as seven parallel worktree packages
+(design → judge → build → review → fix → cherry-pick, migration numbers and
+`when` assigned by the lead up front): **qarz** (0114 — `mayGrantDebt` one
+predicate asked in the services, the «Qarzga berilgan yuklar» register from
+figures stored AT release, the payment promise as a task + sweep), **Yuklar**
+(the client card's third tab — where the cargo is now + what went out, one
+door per link), **olib-ketilmagan** (0116 — 5/10-day waits to the seller,
+never the customer; `announceLevel` so a client collecting daily is announced
+once; the svodka moved to `wms/reports/daily-digest.ts`), **lid-chat** (lead
+chats on every chat surface via `leadDialogsSql`, asked per DIALOG; read-only),
+**reklama-lid** (0113 — push on arrival, office-minute clock, ONE contact rule
+`contactEvidenceSql`, «📞 Bog'landim»), **kechki-xulosa** (20:00 summary for
+the super_admin ROLE with the company sight, «📊 Holat»; the attention list
+moved into wms and is shared with the dashboard, viewer REQUIRED), **kuzatuv**
+(0115 — dead bot / quiet listener / `system_errors` / schema banner / disk;
+`idle_in_transaction_session_timeout=60s`; the watchdog's review blocker was
+that under `init: true` PID 1 is tini and cannot be killed). THE MERGE found
+#513 five times, each by a fence (#1203): two act doors → `issue/act-door.ts`;
+two day counts → `calendarDaysBetween` (platform/time/tashkent.ts) is the ONE
+day difference and `daysSince` asks it; two «balance less deferral» →
+`blockingDebtOf`; the price tick split from the debt tick
+(`mayOverridePrice` — the grant alone, as before; the judge's #12, ASKED of
+him); and `bot-lookup`'s phone shared with `telegram-live`. STILL OWED to him
+as questions: the price tick rule, lead-chat replies from the CRM (needs
+`tg_outbox.lead_id`), whether Sunday is an office day for the lead clock,
+the logist's `finance.debt_override` on the LIVE server (seed never removes a
+grant — an untick on /admin/roles, which also removes his price tick). The
+pre-0114 tick branch of the register still seq-scans (its index is owed).
+
+**Round — Andijondan Toshkentga ichki reys (2026-09-28; DECISIONS
+#1204-#1206 — renumbered from #1177-#1179 on the merge, the SIXTEENTH
+collision: the card round and the seven packages took #1177-#1203 first; NO
+migration of its own, it deploys with the packages' 0113-0116, ledger 117).**
+His «andijon skladga olib keldim … ichki reys qilib toshkentga … sklatda yuk
+korinmay qolyabti»: a truck lands cargo `ready_for_pickup` at a collection
+warehouse and the PLAN path (editor list, `availableByLot`, the submit's crate
+check, the approval's reservation) read `in_stock` alone, while the quick
+truck always took both. `boxes/shelf.ts` is the one home: `PLANNABLE_STATUSES`
+(what a truck may take) and `shelfBefore`/`shelfBeforeSql` (the shelf a carton
+LEFT, from the movement ledger — every give-back asks it: short_loaded,
+load_removed, batch_cancelled, found_at_origin at both unload doors, and the
+count press's own way back). History, not warehouse type: a walk-in at
+Tashkent goes back `in_stock`. The editor's query is `planning/stock.ts`
+`plannableStock`. Review cargo-6's «ready carton rides as an extra» is
+reversed (#1206). A pre-existing count-press path dependence (re-reserve vs
+dial-down order) was found by the widened simulation and queued, not fixed.
+18 red proofs.
+
+**Latest migration: 0116** (`cargo_wait_alerts`; ledger must reach **117**).
+Before it: 0115 (`system_watch`), 0114 (`debt_control`), 0113
+(`inbound_contact`) — `when` …092-…095, assigned in that order before the
+packages were built. Before them: **0112** (`qr_less` — the count reasons, the QR-siz lot
 marker, the office receipt's receiver, the factory barcode, the pallet kind;
 ledger must reach **113**). Before it: **0111** (`nav_usage` — «Tez-tez»;
 ledger 112; `when` …090). Before it: **0110** (`lead_assign` — the website teams, the typed and
@@ -2167,10 +2246,12 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **113** since 0112, and his server last CONFIRMED **107** («deploy
-qildim 107 chiqdi», 2026-09-26); nothing after 107 was confirmed back to this
-session, so the next deploy applies 0112 and whatever of 0107-0111 is still
-missing — count, do not assume.
+length — **117** since 0116, and his server CONFIRMED **113** («deploy qildim
+113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), so the next
+deploy applies 0113-0116 and must recreate EVERY container once
+(`--profile https --profile telegram up -d --build`: compose gained `init`, a
+healthcheck, log caps and a postgres flag); a code-only round after it is
+checked by `/api/version`, not the count.
 Never carry this number over from a previous session: read it
 (`ls src/modules/platform/db/migrations/*.sql | wc -l`) before writing the
 owner a step list, because the count is the only check that separates «the

@@ -119,6 +119,53 @@ function chatValue(id: ChatId): number | string {
   return typeof id === 'bigint' ? Number(id) : id;
 }
 
+/**
+ * Is the bot's TOKEN working — told once per CHANGE, to whoever listens.
+ *
+ * «Kill the bot and every admin screen stays green» (B9): the staff drain
+ * paused on a 401 and wrote nothing a screen could read, the customer notices
+ * and the broadcast did the same each on their own, and the one alarm channel
+ * the owner reads — Telegram — is the thing that died. Every Bot API call in
+ * the app comes through `botCall`, so this is where the fact is learnt, for all
+ * three senders at once (the package judge's finding: a fact recorded by one
+ * consumer and cleared by another rule goes stale).
+ *
+ * Remembered per process and passed on only when it FLIPS, so a drain paused
+ * on the same 401 every minute writes nothing, and the first success after a
+ * rotated token clears it — whoever sent it. A 400/403/429 is Telegram having
+ * ACCEPTED the token and refused something else, so it counts as «working»; a
+ * dead socket or a 5xx says nothing about the token and changes nothing.
+ *
+ * The listener is installed at boot by the app (instrumentation-node.ts), not
+ * imported here: a test, a script or the listener container that sends through
+ * this module must not write the company's alarm state as a side effect.
+ */
+type BotStateListener = (state: { down: boolean; detail: string }) => Promise<void> | void;
+let botStateListener: BotStateListener | null = null;
+let lastBotState: 'up' | 'down' | null = null;
+
+export function setBotStateListener(fn: BotStateListener | null): void {
+  botStateListener = fn;
+  lastBotState = null;
+}
+
+export function noteBotAnswer(status: number, description: string, ok = false): void {
+  const next: 'up' | 'down' | null =
+    ok || isPermanentFailure(status) || status === 429 ? 'up' : isBotFailure(status) ? 'down' : null;
+  if (next === null || next === lastBotState) return;
+  lastBotState = next;
+  const listener = botStateListener;
+  if (!listener) return;
+  void Promise.resolve()
+    .then(() => listener({ down: next === 'down', detail: description }))
+    .catch((err: unknown) => {
+      // Not recorded (a database blip): forget the memo so the next answer
+      // tries again, rather than believing a state nobody wrote down.
+      lastBotState = null;
+      logger.warn({ err }, 'bot state not recorded');
+    });
+}
+
 /** One Bot API method, answered — never thrown. */
 export async function botCall(
   method: string,
@@ -144,6 +191,7 @@ export async function botCall(
       json = null;
     }
     const ok = res.ok && json?.ok === true;
+    noteBotAnswer(res.status, json?.description ?? `HTTP ${res.status}`, ok);
     return {
       ok,
       status: res.status,

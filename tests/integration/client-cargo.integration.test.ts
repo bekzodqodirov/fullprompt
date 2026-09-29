@@ -10,6 +10,9 @@ import { departBatch, ingestLoadScans } from '@/modules/wms/scanning/service';
 import { addCostEntry, batchLandedCostByClient, upsertFxRate } from '@/modules/wms/costing/service';
 import { addTransaction } from '@/modules/wms/finance/service';
 import { clientCargo, managedClients } from '@/modules/wms/finance/client-cargo';
+import { clientCargoNow } from '@/modules/wms/inventory/client-cargo-now';
+import { foldCargoNow } from '@/modules/wms/inventory/client-cargo-fold';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * The owner's question, asked from three screens and answered once: where is
@@ -189,12 +192,13 @@ describe("one client's cargo and the money on it", () => {
   it('says where the cargo is, what it weighs and which trip the debt is from', async () => {
     const cargo = await clientCargo(clientId);
 
-    // Departed but not yet accepted: on a truck.
-    expect(cargo.locations).toHaveLength(1);
-    expect(cargo.locations[0]!.state).toBe('transit');
-    expect(cargo.locations[0]!.boxCount).toBe(2);
-    expect(cargo.totals.kg).toBeCloseTo(50, 1);
-    expect(cargo.totals.m3).toBeCloseTo(0.12, 3);
+    // Departed but not yet accepted: on a truck. «Where is it now» is the
+    // client card's «Yuklar» read since that tab shipped — the card's summary
+    // line and the tab print the fold of these same rows, one Σ.
+    const nowData = await clientCargoNow([clientId]);
+    const now = foldCargoNow(nowData.rows, nowData.trucks, null, tashkentDay());
+    expect(now.sections.transit.total).toEqual({ boxes: 2, kg: 50, m3: 0.12 });
+    expect(now.total).toEqual(now.sections.transit.total);
 
     expect(cargo.trips).toHaveLength(1);
     const trip = cargo.trips[0]!;

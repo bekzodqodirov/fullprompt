@@ -45,9 +45,30 @@ describe('1 — results: the price-only pricing page, its door, the box card', (
   });
 
   it('the batch card door asks the same sight (no door that bounces)', () => {
-    const card = read('src/app/(protected)/batches/[id]/page.tsx');
-    expect(card).toContain("pricingSight(actor.permissions, internal) !== 'none'");
-    expect(card).not.toMatch(/actor\.permissions\.has\('finance\.manage'\) && \(\s*<Link\s*href=\{`\/batches\/\$\{batch\.id\}\/pricing`\}/);
+    // The door is the card's «Narx» tab since 2026-09-28: one predicate,
+    // asked by the strip and answering exactly what the page's gate answers.
+    const doors = read('src/modules/wms/batches/card-door.ts');
+    expect(doors).toContain("return pricingSight(permissions, internal) !== 'none';");
+    expect(doors).toContain('return mayOpenBatchPricing(actor.permissions, internal);');
+    const card = read('src/app/(protected)/batches/[id]/batch-card.tsx');
+    expect(card).toContain('const tabs = batchTabsFor(actor, head.internal);');
+    expect(card).not.toMatch(/actor\.permissions\.has\('finance\.manage'\) && \(\s*<Link/);
+  });
+
+  it('the card header never READS the tannarx for the price-only sight, nor anyone else’s costs', () => {
+    // The header prints the Narx tab's figures on EVERY tab; the pricing
+    // page's own rule (Q19) has to hold there too — the landed cost is not
+    // read for `price`, not merely left undrawn — and the cost tile reads the
+    // sheet through the reader's own sight, never the whole truck.
+    const card = read('src/app/(protected)/batches/[id]/batch-card.tsx');
+    expect(card).toContain('const sight = pricingSight(actor.permissions, head.internal);');
+    expect(card).toContain("const full = sight === 'full';");
+    expect(card).toContain('full ? batchLandedCostByLot(id) : Promise.resolve(new Map<string, LotLandedCost>())');
+    expect(card.match(/batchLandedCostByLot\(/g)).toHaveLength(1);
+    expect(card).toContain('batchCostSheet(id, costSightFor(actor))');
+    expect(card).not.toContain('ALL_COSTS');
+    // The margin tile is the full sight's only.
+    expect(card).toContain('const margin = pricing && full ? pricing.view.totals : null;');
   });
 
   it('the box card never reads the landed cost for the VED', () => {

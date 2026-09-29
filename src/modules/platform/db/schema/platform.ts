@@ -461,6 +461,46 @@ export const telegramLinks = pgTable(
 );
 
 /**
+ * What is wrong with the system right now (0115) — one row per standing
+ * fault, deleted when it clears. `since` is written once; a repeat moves
+ * only `detail`/`updatedAt`. Written by platform/diagnostics/signals.ts and
+ * nothing else.
+ */
+export const systemSignals = pgTable('system_signals', {
+  key: text('key').primaryKey(),
+  since: timestamp('since', { withTimezone: true }).notNull().defaultNow(),
+  /** The disk's alarm step (0 / 80 / 90); every other signal leaves it 0. */
+  level: integer('level').notNull().default(0),
+  detail: text('detail'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * The server's own errors (0115), one COUNTED row per digest, so the number in
+ * a staff screenshot can be looked up. Written on a side connection by
+ * platform/diagnostics/errors.ts; read by /admin/xatolar.
+ */
+export const systemErrors = pgTable(
+  'system_errors',
+  {
+    key: text('key').primaryKey(),
+    digest: text('digest'),
+    kind: text('kind').notNull(),
+    path: text('path'),
+    message: text('message').notNull(),
+    stack: text('stack'),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+    count: integer('count').notNull().default(1),
+    firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check('system_errors_kind_check', sql`${t.kind} IN ('render', 'action', 'route', 'other')`),
+    index('system_errors_last_seen_idx').on(t.lastSeenAt.desc()),
+  ],
+);
+
+/**
  * Client cabinet links (Phase 2.2): a CLIENT (not a staff user) connected to
  * the same bot via a one-time code minted by staff. A chat may represent
  * several clients (broker) and a client may have several chats.

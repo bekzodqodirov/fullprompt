@@ -76,7 +76,9 @@ describe('audit 2026-09-25 — what the reports say', () => {
     for (const page of [BALANCE_PAGE, 'src/app/(protected)/accounting/accounts/page.tsx', 'src/app/(protected)/accounting/page.tsx']) {
       expect(read(page), page).toContain("t('tillNegative')");
     }
-    expect(read('src/app/(protected)/dashboard/sections/attention.tsx')).toContain('balance.negativeTills.length');
+    // The attention rows are built in wms/reports/attention.ts (the evening
+    // summary reads the same rows).
+    expect(read('src/modules/wms/reports/attention.ts')).toContain('balance.negativeTills.length');
   });
 
   it('U26 (answer A): the homes print the net with its parts, and the register row the register\'s own figure', () => {

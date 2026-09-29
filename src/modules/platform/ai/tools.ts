@@ -27,7 +27,7 @@ export interface AssistantActor {
   warehouseIds: string[];
 }
 
-export function isAnalyst(actor: Pick<AssistantActor, 'roles'>): boolean {
+export function isAnalyst(actor: { readonly roles: readonly string[] }): boolean {
   return actor.roles.includes('super_admin') || actor.roles.includes('admin');
 }
 

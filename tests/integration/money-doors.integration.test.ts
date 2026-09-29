@@ -49,6 +49,7 @@ import {
 } from '@/modules/wms/partners/service';
 import { recordSettlement } from '@/modules/wms/partners/settlement';
 import { payRecurring } from '@/modules/wms/accounting/recurring';
+import { wholeLedger } from '../fixtures/money-actor';
 
 /**
  * The finance audit's money DOORS, proven through the services they call
@@ -593,7 +594,7 @@ describe('U30 — a settlement can name the deferred job it pays', () => {
     );
     const otherDebt = await addTransaction({ clientId: deferClientId, type: 'charge', amount: 500, currency: 'USD', txDate: DAY }, ctx());
     liveClientTx.push(deferredCharge.id, otherDebt.id);
-    await deferPayment(dealId, { reason: 'hammasi kelganda', untilAllArrived: true }, ctx());
+    await deferPayment(dealId, { reason: 'hammasi kelganda', untilAllArrived: true }, ctx(), wholeLedger(actorId));
     expect(await deferredBalanceUsd(deferClientId)).toBeCloseTo(1000, 2);
 
     const settled = await recordSettlement(
@@ -651,6 +652,7 @@ describe('U30 — a settlement can name the deferred job it pays', () => {
           note: '',
         },
         ctx(),
+        wholeLedger(actorId),
       ),
     ).rejects.toMatchObject({ code: 'debt_block' });
   });

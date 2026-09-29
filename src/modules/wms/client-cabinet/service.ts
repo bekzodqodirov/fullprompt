@@ -22,6 +22,7 @@ import { roundKg, roundM3, shareOf } from '../../platform/telegram/format';
 import { telegramPhoneUrl } from '../../platform/telegram/map-link';
 import { chatLocaleFor } from '../../platform/telegram/cabinet-locale';
 import { ARRIVED_ON_A_TRUCK } from '../documents/arrivals';
+import { CLIENT_ACTIVE_STATUSES } from '../boxes/active';
 import { arrivalCleared } from '../notices/arrival-text';
 import { clientBalanceUsd, clientLedger } from '../finance/service';
 import { etaWindow, scheduleEstimate } from '../tracking/eta';
@@ -29,6 +30,7 @@ import { journeyFromEvents, type JourneyStep } from './journey';
 import {
   cargoStage,
   isMovingStage,
+  stageBatchOf,
   stageIndex,
   type CargoStage,
   type StageBatch,
@@ -102,6 +104,31 @@ export async function activeClientsByPhone(phone: string) {
       ),
     );
   return rows.filter((c) => phoneBelongsToClient(phone, c.phones));
+}
+
+/**
+ * The codes ONE person holds: this client first, then every other ACTIVE
+ * client any of its phones answers to, by code (round 25's «1 nomerda ko'p gs
+ * code bo'lsa hammasini ko'rsatsin», round 32's sibling rule). The chat
+ * thread's header names them and the client card's «Yuklar» tab counts their
+ * cargo, so both ask this one list rather than each walking the phones.
+ * Empty when the client does not exist; the client itself is listed whether
+ * or not it is active — it is the card being read.
+ */
+export async function phoneSiblingClients(clientId: string): Promise<{ id: string; clientCode: string }[]> {
+  const client = await db.query.clients.findFirst({ where: eq(clients.id, clientId) });
+  if (!client) return [];
+  const phones = Array.isArray(client.phones) ? (client.phones as string[]) : [];
+  const seen = new Map<string, string>([[client.id, client.clientCode]]);
+  for (const phone of phones) {
+    for (const match of await activeClientsByPhone(phone)) seen.set(match.id, match.clientCode);
+  }
+  const others = [...seen]
+    .filter(([id]) => id !== client.id)
+    .map(([id, clientCode]) => ({ id, clientCode }))
+    // Code-unit order, exactly the thread header's old `.sort()` of the codes.
+    .sort((a, b) => (a.clientCode < b.clientCode ? -1 : a.clientCode > b.clientCode ? 1 : 0));
+  return [{ id: client.id, clientCode: client.clientCode }, ...others];
 }
 
 /** Clients represented by a Telegram chat (a broker chat may hold several). */
@@ -277,7 +304,8 @@ export interface CabinetLot {
   photoCount: number;
 }
 
-const ACTIVE_STATUSES = ['in_stock', 'planned', 'loading', 'in_transit', 'ready_for_pickup'];
+/** The one list (`boxes/active.ts`) — a constant, so the fenced customer query is unchanged. */
+const ACTIVE_STATUSES: string[] = [...CLIENT_ACTIVE_STATUSES];
 
 interface CabinetTruck {
   stage: StageBatch;
@@ -326,13 +354,7 @@ async function trucksFor(batchIds: string[]): Promise<Map<string, CabinetTruck>>
     const schedule = scheduleEstimate(r.originCode, r.destCode, r.departedAt, r.checkpoint, now);
     const window = schedule ? etaWindow(schedule.est, now) : null;
     out.set(r.id, {
-      stage: {
-        originCountry: r.originCountry,
-        destCountry: r.destCountry,
-        status: r.status,
-        checkpointKey: cp?.key ?? null,
-        customsCleared: r.customsClearedAt !== null,
-      },
+      stage: stageBatchOf({ ...r, trackingCheckpoint: r.checkpoint }),
       transit: schedule
         ? {
             fromPlace: r.originName,
@@ -727,8 +749,12 @@ export async function debtSummary(clientId: string): Promise<DebtSummary> {
 
 /** How far back the history reaches — the owner's «3 oy». */
 export const HISTORY_DAYS = 90;
-/** A bound, said on nothing because nobody hands over 60 times a quarter. */
-const HISTORY_CAP = 60;
+/**
+ * A bound. The Mini App says nothing about it because nobody hands over 60
+ * times a quarter; the office's «Yuklar» tab also reads a YEAR, where it can
+ * bite, so `issuedHandoversPage` says when it did.
+ */
+export const HISTORY_CAP = 60;
 
 export interface IssuedLeg {
   /** The truck's code — the owner's explicit ask («qaysi partiyada kelgan»). */
@@ -791,8 +817,21 @@ export async function issuedHandovers(
   clientId: string,
   days = HISTORY_DAYS,
 ): Promise<IssuedHandover[]> {
+  return (await issuedHandoversPage(clientId, days)).rows;
+}
+
+/**
+ * `issuedHandovers`, and whether `HISTORY_CAP` cut it. Asked for one row more
+ * than the cap, so «oxirgi 60 ta» is printed only when there really was a
+ * 61st (#913's rule: a cap is said only when it bites). The Mini App keeps
+ * reading `issuedHandovers`, whose wire shape does not move.
+ */
+export async function issuedHandoversPage(
+  clientId: string,
+  days = HISTORY_DAYS,
+): Promise<{ rows: IssuedHandover[]; capped: boolean }> {
   const since = new Date(Date.now() - days * 86_400_000);
-  const head = await db
+  const fetched = await db
     .select({
       id: handovers.id,
       createdAt: handovers.createdAt,
@@ -811,8 +850,10 @@ export async function issuedHandovers(
       ),
     )
     .orderBy(desc(handovers.createdAt))
-    .limit(HISTORY_CAP);
-  if (head.length === 0) return [];
+    .limit(HISTORY_CAP + 1);
+  const capped = fetched.length > HISTORY_CAP;
+  const head = fetched.slice(0, HISTORY_CAP);
+  if (head.length === 0) return { rows: [], capped };
   const ids = head.map((h) => h.id);
 
   const [lotRows, legRows] = await Promise.all([
@@ -897,7 +938,7 @@ export async function issuedHandovers(
   const photos = new Map(photoRows.map((r) => [r.entityId, Number(r.n)]));
 
   const iso = (v: string | Date | null) => (v === null ? null : new Date(v).toISOString());
-  return head.map((h) => {
+  const rows = head.map((h) => {
     const lots = lotRows
       .filter((r) => r.handoverId === h.id)
       .map((r) => {
@@ -941,6 +982,7 @@ export async function issuedHandovers(
       legs,
     };
   });
+  return { rows, capped };
 }
 
 /**

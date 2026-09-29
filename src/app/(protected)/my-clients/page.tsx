@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { mayOpenMyClients, seesAllClients } from '@/modules/platform/clients/card-door';
 import { managedClients } from '@/modules/wms/finance/client-cargo';
 import { EmptyState, PageHeader, Stat } from '@/components/ui/page';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
@@ -21,12 +22,14 @@ export default async function MyClientsPage({
 }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
-  if (!actor.permissions.has('crm.leads') && !actor.permissions.has('clients.manage')) redirect('/');
+  // Asked of the function the client card's «←» is drawn from, so the way
+  // back from a card never lands on a page that bounces.
+  if (!mayOpenMyClients(actor)) redirect('/');
   const t = await getTranslations('cargo');
   const tf = await getTranslations('finance');
   const params = await searchParams;
 
-  const seesAll = actor.permissions.has('crm.leads.view_all') || actor.permissions.has('clients.manage');
+  const seesAll = seesAllClients(actor);
   const all = seesAll && params.scope === 'all';
   const rows = await managedClients(all ? undefined : actor.id);
   const today = tashkentDay();

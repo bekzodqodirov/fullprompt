@@ -20,6 +20,14 @@ export interface HubDoor {
   icon: IconName;
   /** Any one of these is enough. */
   allow: string[];
+  /**
+   * AND a ROLE, when a permission cannot say it (B9's error list is the super
+   * admin's, `mayAnnul`'s shape — admin and super admin hold the same codes).
+   * ANDed with `allow`, never instead of it: an ORed role would draw a door
+   * for somebody the page bounces (#792), and the /admin menu entry is pinned
+   * to the union of `allow` alone (workspaces.test).
+   */
+  roles?: string[];
 }
 
 export const HUB_DOORS: HubDoor[] = [
@@ -58,11 +66,26 @@ export const HUB_DOORS: HubDoor[] = [
   // teases a role the page bounces (#792's cousin).
   { href: '/admin/anulirovka', label: 'annul.registryTitle', icon: 'alert', allow: ['admin.audit.browse'] },
   { href: '/admin/notifications', label: 'nav.notifications', icon: 'alert', allow: ['admin.audit.browse'] },
+  // The server's own errors, found by the digest in a staff screenshot (B9).
+  // Messages can carry a client's phone, so it is the super admin's alone —
+  // the page asks `mayReadSystemErrors`, the same role this door names.
+  {
+    href: '/admin/xatolar',
+    label: 'kuzatuv.hubLabel',
+    icon: 'alert',
+    allow: ['admin.audit.browse'],
+    roles: ['super_admin'],
+  },
   // Lead routing (Savdo's ⚙) and the broadcast to clients (a Savdo tab) moved
   // with the rest — `workspaces.ts` is where they are offered now.
 ];
 
-/** The doors this person may actually open. */
-export function openDoors(has: (code: string) => boolean): HubDoor[] {
-  return HUB_DOORS.filter((door) => door.allow.some(has));
+/**
+ * The doors this person may actually open. `roles` is the person's roles; a
+ * caller that passes none is shown no role-gated door — fail closed.
+ */
+export function openDoors(has: (code: string) => boolean, roles: readonly string[] = []): HubDoor[] {
+  return HUB_DOORS.filter(
+    (door) => door.allow.some(has) && (!door.roles || door.roles.some((role) => roles.includes(role))),
+  );
 }

@@ -10,7 +10,7 @@ import {
   parseCallback,
 } from '@/modules/platform/telegram/staff-bot';
 import { telegramDue } from '@/modules/platform/tasks/service';
-import { dailyDigestText, DIGEST_UNCLAIMED_SHOWN } from '@/modules/platform/jobs/digest';
+import { dailyDigestText, DIGEST_UNCLAIMED_SHOWN } from '@/modules/wms/reports/daily-digest';
 
 /**
  * The staff side of round C, where it is pure: mutes that must not un-mute,
@@ -175,26 +175,29 @@ describe('a deadline in a Telegram message', () => {
 });
 
 describe('the daily svodka', () => {
-  const now = new Date('2026-09-27T04:00:00Z');
+  // The rows arrive as `unclaimedReport` and `warehouseFill` answer them (0116):
+  // the ages are theirs, the text only prints them.
   const unclaimed = Array.from({ length: 27 }, (_, i) => ({
     whCode: 'YW',
     number: `R-${i}`,
     marking: i === 0 ? 'GS500' : null,
-    receivedAt: new Date('2026-09-10T00:00:00Z'),
-    boxCount: 3,
+    boxes: 3,
+    boxesOnRoad: i === 1 ? 2 : 0,
+    days: 17,
   }));
 
   it('speaks Uzbek like every other staff message, and says how many it did not list', () => {
     const text = dailyDigestText({
-      now,
       agingDays: 7,
       staleDays: 30,
       unclaimed,
-      stale: [{ whCode: 'TAS1', boxCount: 12, oldestAt: '2026-08-01T00:00:00Z' }],
+      stale: [{ code: 'TAS1', staleCount: 12, oldestDays: 57 }],
     });
     expect(text).toContain('📊 GSR — kunlik hisobot');
     expect(text).toContain('❓ Egasiz yuk (7 kundan eski):');
     expect(text).toContain('• YW R-0 [GS500] — 3 kor., 17 kun');
+    // Unclaimed cargo on a truck stays on the list, and says it is on the road.
+    expect(text).toContain("• YW R-1 — 3 kor. (2 yo'lda), 17 kun");
     expect(text).toContain(`… yana ${27 - DIGEST_UNCLAIMED_SHOWN} ta`);
     expect(text).toContain('• TAS1: 12 kor., eng eskisi — 57 kun');
     expect(text.split('\n').filter((l) => l.startsWith('• YW'))).toHaveLength(DIGEST_UNCLAIMED_SHOWN);

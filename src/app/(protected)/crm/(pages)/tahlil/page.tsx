@@ -38,6 +38,7 @@ export default async function SalesAnalyticsPage({
   if (!actor.permissions.has('crm.manage')) redirect('/crm');
   const t = await getTranslations('crm');
   const tc = await getTranslations('common');
+  const tl = await getTranslations('reklamaLid');
 
   const raw = await searchParams;
   const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
@@ -372,7 +373,7 @@ export default async function SalesAnalyticsPage({
       <section className="card space-y-2">
         <h2 className="text-sm font-bold">{t('bySeller')}</h2>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[640px] text-sm" data-testid="seller-table">
+          <table className="w-full min-w-[720px] text-sm" data-testid="seller-table">
             <thead>
               <tr className="border-b border-line-strong text-left text-xs text-ink-500">
                 <th className="p-2">{t('seller')}</th>
@@ -382,6 +383,13 @@ export default async function SalesAnalyticsPage({
                 <th className="p-2 text-right">{t('statWonUsd')}</th>
                 <th className="p-2 text-right">{t('statCycle')}</th>
                 <th className="p-2 text-right">{t('statOpen')}</th>
+                {/* 0113. The header spells the cell's three figures out — the
+                    reader must not need a tooltip to read «12 daq · n=7 · 3/1»
+                    (#420). */}
+                <th className="p-2 text-right" data-testid="seller-first-contact">
+                  {tl('firstContact')}
+                  <span className="block font-normal">{tl('firstContactLegend')}</span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -404,6 +412,13 @@ export default async function SalesAnalyticsPage({
                     <td className="p-2 text-right font-mono tabular-nums">{usd(row.wonUsd)}</td>
                     <td className="p-2 text-right">{row.cycleDays || '—'}</td>
                     <td className="p-2 text-right">{row.open}</td>
+                    <td className="whitespace-nowrap p-2 text-right font-mono tabular-nums">
+                      {row.firstContact && row.firstContact.medianMinutes !== null
+                        ? `${tl('minutes', { n: row.firstContact.medianMinutes })} · n=${row.firstContact.measured} · ${row.firstContact.lateHour}/${row.firstContact.lateDay}`
+                        : row.firstContact && row.firstContact.lateHour > 0
+                          ? `— · ${row.firstContact.lateHour}/${row.firstContact.lateDay}`
+                          : '—'}
+                    </td>
                   </tr>
                 );
               })}

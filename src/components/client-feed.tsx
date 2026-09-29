@@ -89,6 +89,8 @@ function money(meta: Record<string, unknown>): string {
 
 export async function ClientFeed({
   clientId,
+  // Bound under another name: `money()` above is this file's amount formatter.
+  money: showMoney,
   leadId = null,
   dealId = null,
   limit = 60,
@@ -96,6 +98,15 @@ export async function ClientFeed({
   tall = false,
 }: {
   clientId: string | null;
+  /**
+   * May this reader see this client's money rows? REQUIRED, never defaulted —
+   * every card passes the ledger's own door for the card's client,
+   * `mayOpenClientLedger(actor, client)`, and false where no client resolves.
+   * The panel's own gate below decides who reads the lenta at all; this
+   * decides whose MONEY is in it, which the lenta never asked until the
+   * client's ledger became the card's «Pul» tab (docs/CARD-TABS.md).
+   */
+  money: boolean;
   /** Set on a lead card: the lenta then lives even before there is a client. */
   leadId?: string | null;
   /** Set on a deal card: notes written here belong to THIS job, and the deal's
@@ -116,7 +127,7 @@ export async function ClientFeed({
   }
 
   const t = await getTranslations('crm');
-  const items = await clientFeed(clientId, { limit, leadId, dealId });
+  const items = await clientFeed(clientId, { money: showMoney, limit, leadId, dealId });
 
   return (
     <section className="card space-y-2" data-testid="client-feed">
@@ -252,8 +263,9 @@ function FeedRow({
         <p className="font-semibold">
           {String(item.meta.person ?? '')} {String(item.meta.phone ?? '')} ·{' '}
           {String(item.meta.warehouse ?? '')}
-          {/* A manager overrode the debt gate to let this cargo go. Exactly the
-              kind of thing the owner wants visible in one place. */}
+          {/* The cargo went out while the client owed — a tick, an approval or
+              a deal «muddat» (the register's rule, debt/releases.ts). Only a
+              reader of this client's money is sent the flag at all. */}
           {item.meta.debtOverride === true && ` · ⚠ ${t('feedDebtOverride')}`}
         </p>
       )}

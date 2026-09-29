@@ -31,6 +31,7 @@ import { assignReceiptClient } from '@/modules/wms/receipts/edit';
 import { confirmReceipt } from '@/modules/wms/receipts/service';
 import { departBatch, ingestLoadScans } from '@/modules/wms/scanning/service';
 import { finishUnload, ingestUnloadScans } from '@/modules/wms/scanning/unload';
+import { wholeLedger } from '../fixtures/money-actor';
 
 /**
  * Round C's customer pushes, end to end through the ONE sweep — with the Bot
@@ -517,6 +518,7 @@ describe('C3 «berildi»', () => {
         priceOk: true,
       },
       ctx(),
+      wholeLedger(actorId),
     );
     const [firstIssued] = await noticesOf(client.id, NOTICE_ISSUED);
     expect(firstIssued).toMatchObject({ refType: 'handover', status: 'pending' });
@@ -549,6 +551,7 @@ describe('C3 «berildi»', () => {
         priceOk: true,
       },
       ctx(),
+      wholeLedger(actorId),
     );
     const second = (await noticesOf(client.id, NOTICE_ISSUED)).find((row) => row.status === 'pending')!;
     await makeDue(second.id);
@@ -571,6 +574,7 @@ describe('C3 «berildi»', () => {
         priceOk: true,
       },
       ctx(),
+      wholeLedger(actorId),
     );
     expect(await noticesOf(unlinked.id)).toHaveLength(0);
   });
@@ -592,6 +596,7 @@ describe('C3 «berildi»', () => {
         priceOk: true,
       },
       ctx(),
+      wholeLedger(actorId),
     );
     const [notice] = await noticesOf(client.id, NOTICE_ISSUED);
     await makeDue(notice!.id);
@@ -625,6 +630,7 @@ describe('the push and the Mini App read ONE kilo figure (round C review, second
         priceOk: true,
       },
       ctx(),
+      wholeLedger(actorId),
     );
     const [notice] = await noticesOf(client.id, NOTICE_ISSUED);
     await makeDue(notice!.id);

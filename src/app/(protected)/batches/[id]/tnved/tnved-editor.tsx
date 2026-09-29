@@ -20,8 +20,11 @@ export interface TnvedRow {
  * ТНВЭД editor (Phase 1.5): per-product code entry with an AI suggestion
  * button. Confirmed codes land in the shared memory, so a product is only
  * ever classified once — next batches pre-fill automatically.
+ *
+ * `batchId` rides along with every 🤖: the action asks the truck's door and
+ * refuses a lot that is not on it.
  */
-export function TnvedEditor({ rows: initial }: { rows: TnvedRow[] }) {
+export function TnvedEditor({ batchId, rows: initial }: { batchId: string; rows: TnvedRow[] }) {
   const t = useTranslations('tnved');
   const tc = useTranslations('common');
   const router = useRouter();
@@ -40,7 +43,7 @@ export function TnvedEditor({ rows: initial }: { rows: TnvedRow[] }) {
     setBusy(row.lotId);
     setError(null);
     try {
-      const res = await suggestTnvedForLotAction(row.lotId);
+      const res = await suggestTnvedForLotAction(batchId, row.lotId);
       if (res.ok && res.suggestion) {
         setCode(row.lotId, res.suggestion.tnved_code, 'ai');
         setReasonings((prev) => ({
@@ -48,7 +51,15 @@ export function TnvedEditor({ rows: initial }: { rows: TnvedRow[] }) {
           [row.lotId]: `${t(`confidence.${res.suggestion!.confidence}`)} · ${res.suggestion!.reasoning}`,
         }));
       } else {
-        setError(res.error === 'ai_not_configured' ? t('aiNotConfigured') : t('aiFailed'));
+        // A refusal is not the model failing: «AI did not answer — try later»
+        // would send the person to press again at a door that stays shut.
+        setError(
+          res.error === 'ai_not_configured'
+            ? t('aiNotConfigured')
+            : res.error === 'forbidden'
+              ? tc('forbidden')
+              : t('aiFailed'),
+        );
       }
     } finally {
       setBusy(null);
@@ -99,7 +110,7 @@ export function TnvedEditor({ rows: initial }: { rows: TnvedRow[] }) {
         {missing > 0 && (
           <button
             type="button"
-            className="btn-secondary flex-1 whitespace-nowrap px-3 disabled:opacity-50"
+            className="btn-secondary min-w-0 flex-1 px-3 disabled:opacity-50"
             disabled={busy !== null || saving}
             onClick={() => void suggestAllMissing()}
           >
@@ -108,7 +119,7 @@ export function TnvedEditor({ rows: initial }: { rows: TnvedRow[] }) {
         )}
         <button
           type="button"
-          className="btn-primary flex-1 whitespace-nowrap px-3 disabled:opacity-50"
+          className="btn-primary min-w-0 flex-1 px-3 disabled:opacity-50"
           disabled={saving || busy !== null}
           onClick={() => void saveAll()}
         >

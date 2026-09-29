@@ -66,6 +66,34 @@ export interface StageBatch {
   customsCleared: boolean;
 }
 
+/**
+ * A truck row's columns → the `StageBatch` this file asks about.
+ *
+ * It is a small mapping, but its two judgements — the pin is the jsonb's
+ * `key`, and «cleared» is «somebody stamped a date» — are exactly the kind
+ * that drift when restated. The cabinet's `trucksFor` and the client card's
+ * «Yuklar» tab (`inventory/client-cargo-now.ts`) ask it; two older copies
+ * still restate it inline — the dashboard's `tracking/on-road-state.ts` and
+ * the arrival push's `notices/client-summary.ts` — and were left alone by the
+ * round that wrote this, which was not theirs to touch (docs/CARD-TABS.md).
+ */
+export function stageBatchOf(row: {
+  originCountry: string | null;
+  destCountry: string | null;
+  status: string;
+  trackingCheckpoint: unknown;
+  customsClearedAt: Date | string | null;
+}): StageBatch {
+  const cp = row.trackingCheckpoint as { key?: unknown } | null;
+  return {
+    originCountry: row.originCountry,
+    destCountry: row.destCountry,
+    status: row.status,
+    checkpointKey: typeof cp?.key === 'string' ? cp.key : null,
+    customsCleared: row.customsClearedAt !== null,
+  };
+}
+
 const LOADING = new Set(['planned', 'loading']);
 
 /** The rungs a TRUCK can stand on — the in-transit part of the ladder. */

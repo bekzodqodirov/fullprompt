@@ -2,10 +2,12 @@
 
 import { and, asc, eq } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
-import { attachments, receiptLots } from '@/modules/platform/db/schema';
+import { attachments, batches, boxes, receiptLots } from '@/modules/platform/db/schema';
 import { requestMeta } from '@/modules/platform/auth/session';
 import { getStorage } from '@/modules/platform/files/storage';
 import { requireActor } from '@/modules/platform/rbac/authorize';
+import { mayOpenBatchCard } from '@/modules/wms/batches/card-door';
+import { batchMemberFilter } from '@/modules/wms/scanning/unload';
 import {
   saveTnved,
   suggestTnved,
@@ -19,13 +21,36 @@ async function vedActor() {
   return actor;
 }
 
+/**
+ * The model's guess for one lot of THIS truck.
+ *
+ * It took a lot id alone, so anybody holding the permission could name any
+ * lot in the company: its photo was read and sent to the model, and the AI
+ * budget paid for it. Now the truck's card door is asked (its two ends,
+ * `mayOpenBatchCard`), and the lot must have a carton that is a member of the
+ * truck by the invoice's own rule (`batchMemberFilter`) — both before the
+ * photo is touched. A truck that is not there answers like one the person may
+ * not open, so the refusal says nothing about which ids exist.
+ */
 export async function suggestTnvedForLotAction(
+  batchId: string,
   lotId: string,
 ): Promise<{ ok: boolean; suggestion?: TnvedSuggestion; error?: string }> {
   const actor = await vedActor();
   if (!actor) return { ok: false, error: 'forbidden' };
+  const batch = await db.query.batches.findFirst({
+    where: eq(batches.id, batchId),
+    columns: { originWarehouseId: true, destWarehouseId: true },
+  });
+  if (!batch || !mayOpenBatchCard(actor, batch)) return { ok: false, error: 'forbidden' };
   const lot = await db.query.receiptLots.findFirst({ where: eq(receiptLots.id, lotId) });
   if (!lot) return { ok: false, error: 'not_found' };
+  const [aboard] = await db
+    .select({ id: boxes.id })
+    .from(boxes)
+    .where(and(eq(boxes.lotId, lotId), batchMemberFilter(batchId)))
+    .limit(1);
+  if (!aboard) return { ok: false, error: 'forbidden' };
 
   // First photo of the lot, smaller variant preferred — enough for the AI.
   const photoRow = await db

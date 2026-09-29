@@ -174,6 +174,15 @@ export const WORKSPACES: WorkspaceSpec[] = [
       { href: '/admin/clients', key: 'clients' },
       { href: '/suhbatlar', key: 'suhbatlar' },
       { href: '/my-clients', key: 'myClients' },
+      // «Olib ketilmagan yuk» (0116) — `mayOpenMyClients`'s grants. Hung off
+      // the client book too: the logist's menu carries /admin/clients and not
+      // /my-clients, and the page's door admits him.
+      {
+        href: '/my-clients/olib-ketilmagan',
+        key: 'uncollected',
+        need: [['crm.leads', 'clients.manage']],
+        via: ['/my-clients', '/admin/clients'],
+      },
       { href: '/crm/dormant', key: 'dormant', need: [['crm.leads']], via: ['/crm'] },
       { href: '/crm/kelganlar', key: 'kelganlar', need: [['crm.leads'], ['crm.manage']], via: ['/crm'] },
       { href: '/crm/people', key: 'people', need: [['crm.leads'], ['crm.manage']], via: ['/crm'] },
@@ -271,6 +280,14 @@ export const WORKSPACES: WorkspaceSpec[] = [
         key: 'payments',
         need: [['finance.view', 'finance.manage']],
         sight: 'kassa',
+        via: ['/finance'],
+      },
+      // `seesCompanyMoney` (0114): the whole receivable — the owner and the
+      // accountant, never a seller, the VED or the logist.
+      {
+        href: '/finance/qarzga-berilgan',
+        key: 'debtReleases',
+        need: [['finance.manage', 'clients.manage'], ['finance.reports']],
         via: ['/finance'],
       },
       { href: '/upsale', key: 'upsale' },

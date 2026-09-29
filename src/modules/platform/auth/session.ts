@@ -7,7 +7,7 @@ import { sessions, users } from '../db/schema';
 export const SESSION_COOKIE = 'gsr_session';
 const SESSION_DAYS = 30;
 
-function hashToken(token: string): string {
+export function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 

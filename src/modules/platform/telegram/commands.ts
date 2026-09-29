@@ -1,6 +1,7 @@
 import { logger } from '../logger';
 import { CLIENT_LOCALES, clientLabels, type ClientLocale } from './client-labels';
 import { botCall } from './send';
+import { holatFor } from './staff-bot';
 
 /**
  * What the bot says about itself — its command menus and its profile.
@@ -25,8 +26,12 @@ interface CommandsApi {
  * person linked by sharing their number never got one.
  */
 export function offerStaffCommands(ctx: { api: CommandsApi }, chatId: number): void {
-  void ctx.api
-    .setMyCommands(
+  void (async () => {
+    // «/holat» only for the person the evening summary is for — the same
+    // door as the «📊 Holat» button (`holatFor`); a failed question offers
+    // the ordinary menu rather than none.
+    const holat = await holatFor(BigInt(chatId)).catch(() => false);
+    await ctx.api.setMyCommands(
       [
         { command: 'hodim', description: 'Hodim rejimi' },
         { command: 'bugun', description: 'Bugungi vazifalar' },
@@ -36,10 +41,11 @@ export function offerStaffCommands(ctx: { api: CommandsApi }, chatId: number): v
         // where a person can find them.
         { command: 'hisoblatish', description: 'Hisoblatish' },
         { command: 'ai', description: 'AI rastamojka' },
+        ...(holat ? [{ command: 'holat', description: 'Kompaniya holati (kechki xulosa)' }] : []),
       ],
       { scope: { type: 'chat', chat_id: chatId } },
-    )
-    .catch(() => {});
+    );
+  })().catch(() => {});
 }
 
 /** Once per process — a deploy restarts it, and that is often enough. */

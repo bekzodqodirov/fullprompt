@@ -269,12 +269,15 @@ describe('round 108’s two other fences', () => {
     // proof lied (#166).
     await say(managerA, { clientId: clientY });
     const viewer = { id: managerA, all: true };
-    const bounded = await chatBadges(viewer, [clientX]);
+    const bounded = await chatBadges(viewer, { clientIds: [clientX] });
     // clientY holds rows; the board that asked only about X must not get Y.
-    expect(bounded.has(clientY)).toBe(false);
-    const asked = await chatBadges(viewer, [clientY]);
-    expect(asked.has(clientY)).toBe(true);
-    expect(await chatBadges(viewer, [])).toEqual(new Map());
+    expect(bounded.clients.has(clientY)).toBe(false);
+    const asked = await chatBadges(viewer, { clientIds: [clientY] });
+    expect(asked.clients.has(clientY)).toBe(true);
+    // An empty board asks nothing — of either kind (the lead chats round).
+    const empty = await chatBadges(viewer, { clientIds: [] });
+    expect(empty.clients).toEqual(new Map());
+    expect(empty.leads).toEqual(new Map());
   });
 
   it('activeClientsByPhone still matches a FORMATTED stored phone', async () => {

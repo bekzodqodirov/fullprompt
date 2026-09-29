@@ -46,7 +46,7 @@ describe('the partiya surfaces read the ONE arrivals home', () => {
   });
 
   it('the plan editor API and the plan view read arrivalsForLots at the plan ORIGIN', () => {
-    // The editor's question lives in `plannableStock` (DECISIONS #1177); the
+    // The editor's question lives in `plannableStock` (DECISIONS #1204); the
     // route is its door and must hand it the warehouse it was asked about.
     const route = read('src/app/api/plans/stock/route.ts');
     expect(route).toContain('plannableStock(query.data.warehouseId)');

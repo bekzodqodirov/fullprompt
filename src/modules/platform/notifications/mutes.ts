@@ -14,7 +14,18 @@ export const MUTE_GROUPS = {
   // messages behind one checkbox. It is also the one CRM message that
   // arrives every single working day, so it is the one somebody will want to
   // turn off on its own.
-  calls: ['CrmFollowUps'],
+  // «Olib ketilmagan yuk» (0116) rides with it: the seller's morning «ring
+  // these clients», about cargo instead of leads — not in `digest`, where a
+  // seller who ticked «Kunlik svodka» to stop the monthly dormant list would
+  // silently lose the feature's only message. A newcomer, so not a founder:
+  // an old «calls» tick mutes it too.
+  calls: ['CrmFollowUps', 'CargoWaiting'],
+  // The advert lead (0113, the owner's 5a): the push a seller gets the moment
+  // a lead is theirs, and the owner's «15 minutes and nobody has called».
+  // A group of its OWN, not `calls`: whoever muted the morning call list holds
+  // that group's founder, and folding these in would silently take new leads
+  // away from exactly the sellers who wanted fewer morning messages.
+  leads: ['InboundLeadArrived', 'InboundLeadUntouched'],
   // A group of its own rather than folded into `digest`: someone silencing the
   // warehouse summary is not saying "stop telling me about the work I was
   // personally given", and that is the one message nobody should lose by
@@ -131,6 +142,10 @@ export const MUTE_GROUPS = {
     // two Russian raw-fetch pings onto the drain, where they can be muted and
     // retried like every other staff message).
     'CabinetLinkAlert',
+    // A debtor's payment promise passed unpaid (0114) — the call is due now,
+    // while the client still remembers saying it. A newcomer: never in
+    // FOUNDERS, so nobody's stored list is un-muted by it.
+    'PaymentPromiseBroken',
   ],
   operations: [
     // A client's birthday (0109): a reminder to congratulate, not an alarm.
@@ -168,6 +183,18 @@ export const MUTE_GROUPS = {
     // press and never an alert.
     'CalcOffer',
   ],
+  // The system watching itself (B9, 0115): a manager's Telegram bridge went
+  // quiet and came back, and a disk crossed 80 / 90 %. A group of its OWN and
+  // not `alerts`: `alerts` is muted by whoever holds its founders, and an admin
+  // who silenced the price-control noise years ago must still hear that the
+  // disk under the database is filling. Born with all three, so its founders
+  // are its members.
+  system: ['TelegramListenerQuiet', 'TelegramListenerBack', 'DiskFilling'],
+  // The owner's evening summary (answer 7a, 2026-09-28) — its own switch on
+  // /profile, drawn only for the person who receives it: silencing the
+  // warehouse svodka is not silencing the company's day, and neither is a
+  // reason to lose the other.
+  owner: ['OwnerSummary'],
 } as const;
 
 export type MuteGroup = keyof typeof MUTE_GROUPS;
@@ -198,6 +225,8 @@ export const FOUNDERS: Readonly<Record<MuteGroup, readonly string[]>> = {
   // Moved here from `digest` on 2026-09-19; every list that muted it did so
   // as part of `digest` before that, and still holds it.
   calls: ['CrmFollowUps'],
+  // Born whole on 2026-09-28 with both members, so both are founders.
+  leads: ['InboundLeadArrived', 'InboundLeadUntouched'],
   tasks: ['TasksDue'],
   alerts: ['BoxScannedOnLoad', 'UndocumentedTransfer', 'MissingInTransit'],
   operations: [
@@ -209,6 +238,10 @@ export const FOUNDERS: Readonly<Record<MuteGroup, readonly string[]>> = {
     'PlanChangesRequested',
     'InventoryCompleted',
   ],
+  // Born whole on 2026-09-28 (0115), so every list that ever ticked it holds all three.
+  system: ['TelegramListenerQuiet', 'TelegramListenerBack', 'DiskFilling'],
+  // Born 2026-09-28 with its one member — its birth list, not an addition.
+  owner: ['OwnerSummary'],
 };
 
 /**

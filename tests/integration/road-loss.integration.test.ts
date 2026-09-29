@@ -417,7 +417,7 @@ describe('lost on the road — the third resolution', () => {
   });
 
   it('the client’s lenta says «lost», on the truck’s line', async () => {
-    const feed = await clientFeed(clientC);
+    const feed = await clientFeed(clientC, { money: true });
     const lost = feed.find((f) => f.kind === 'lost');
     expect(lost?.meta).toMatchObject({ batch: batchCode });
   });

@@ -20,6 +20,7 @@ import sharp from 'sharp';
  */
 
 const PASSWORD = 'demo1234';
+const ADMIN = '+998900000002';
 const LOGIST = '+998900000003';
 const VED = '+998900000004';
 const OPERATOR = '+998900000006'; // YW
@@ -125,7 +126,7 @@ test('the logist sends it YW → AND by truck and unloads it', async ({ page }) 
   await page.getByTestId('finish-loading').click();
   page.once('dialog', (d) => void d.accept());
   await page.getByTestId('depart-batch').click();
-  await expect(page.getByText(/🚀/).first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('open-unloading')).toBeVisible({ timeout: 15_000 });
 
   await page.getByTestId('open-unloading').click();
   await expect(page.getByTestId('unload-counter')).toHaveText(/0\/1/, { timeout: 10_000 });
@@ -136,10 +137,10 @@ test('the logist sends it YW → AND by truck and unloads it', async ({ page }) 
   // The counter is the phone's own optimistic mark and the banner can read
   // ✅ before the queue has even counted the scan, so a test that ends here
   // closes the page with the landing still in the outbox — the carton stays
-  // in_transit and is on no list (seen in CI and here). The batch card is
-  // the server's answer: poll it, as m4 does.
+  // in_transit and is on no list (seen in CI and here). The card's «Yuklash»
+  // tab is the server's answer: poll it, as m4 does.
   await expect(async () => {
-    await page.goto(batchUrl);
+    await page.goto(`${batchUrl}/yuklash`);
     await expect(page.getByTestId('unload-remaining')).toContainText('✅');
   }).toPass({ timeout: 20_000 });
 });
@@ -168,7 +169,11 @@ test('the accountant sees it on the list, blocked, with the truck as a door; ano
 });
 
 test('the counter refuses it until the holder ticks the override, and the list then says it went out', async ({ page }) => {
-  await login(page, LOGIST);
+  // The ADMIN and not the logist since 0114: the price tick needs
+  // `finance.debt_override` (`mayOverridePrice`), and the logist's DEFAULT
+  // grants no longer carry it (the owner's 2a named the admin and the
+  // accountant for debt; the seed follows it).
+  await login(page, ADMIN);
   await page.goto('/issue');
   await page.getByTestId('issue-wh').selectOption({ label: 'AND' });
   const searchSettled = page.waitForResponse((r) => r.url().includes('/api/clients/search'));

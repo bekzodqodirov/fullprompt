@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import { and, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import { v5 as uuidv5 } from 'uuid';
 import { z } from 'zod';
@@ -943,7 +944,7 @@ export async function countableLotsAt(
  * truck that ride it now — before departure and after (the truck's real
  * cargo, `aboard`), with the lot ids the loaded-box list groups by.
  */
-export async function countedOnTruck(batchId: string): Promise<{ cartons: number; lotIds: string[] }> {
+export const countedOnTruck = cache(async function countedOnTruck(batchId: string): Promise<{ cartons: number; lotIds: string[] }> {
   const counted = await countOnlyLotsOnTruck(db, {
     batchId,
     side: 'load',
@@ -961,4 +962,4 @@ export async function countedOnTruck(batchId: string): Promise<{ cartons: number
     .innerJoin(receiptLots, eq(receiptLots.id, boxes.lotId))
     .where(and(inArray(boxes.lotId, lotIds), isNull(boxes.crateId), aboardFilter(batchId)));
   return { cartons: Number(row?.n ?? 0), lotIds };
-}
+});
