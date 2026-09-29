@@ -1,5 +1,6 @@
 import 'dotenv/config';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
+import postgres from 'postgres';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import { auditLog, borderQueue, users } from '@/modules/platform/db/schema';
@@ -190,16 +191,40 @@ describe('setBorderWait — only a change of hours moves the ETA', () => {
   });
 
   it('two logists who both saw «Odatdagi»: the second is refused, not written over the first', async () => {
-    // FOR UPDATE on a row that does not exist locks nothing — the per-post
-    // advisory lock is what makes the second press wait and then see a row.
-    const [a, b] = await Promise.all([
-      codeOf(save(logist, { minDays: '1', maxDays: '2' })),
-      codeOf(save(logist, { minDays: '6', maxDays: '7' })),
-    ]);
-    expect([a, b].sort()).toEqual(['changed', null].sort());
+    // FOR UPDATE on a row that does not exist locks nothing, so the race is
+    // made deterministic rather than hoped for: a colleague's first save is
+    // held open at the point where it has written its row (the service's own
+    // steps — the per-post lock, then the insert), ours is started, and only
+    // once it is WAITING does the colleague commit.
+    const helper = postgres(process.env.DATABASE_URL ?? 'postgres://postgres@127.0.0.1:5432/gsr_dev', {
+      max: 1,
+      onnotice: () => {},
+    });
+    const held = await helper.reserve();
+    try {
+      await held`BEGIN`;
+      await held`SELECT pg_advisory_xact_lock(hashtext(${'border_queue:khorgos'}::text))`;
+      await held`INSERT INTO border_queue (post, min_hours, max_hours, updated_by) VALUES ('khorgos', 24, 48, ${logist.id})`;
+      const ours = codeOf(save(logist, { minDays: '6', maxDays: '7' }));
+      let waiting = false;
+      for (let i = 0; i < 250 && !waiting; i += 1) {
+        const rows = await db.execute<{ n: number }>(sql`
+          SELECT count(*)::int AS n FROM pg_stat_activity
+           WHERE datname = current_database() AND wait_event_type = 'Lock'
+             AND (query ILIKE '%border_queue%' OR query ILIKE '%pg_advisory_xact_lock%')
+             AND pid <> pg_backend_pid()`);
+        waiting = Number(rows[0]?.n ?? 0) > 0;
+        if (!waiting) await new Promise((r) => setTimeout(r, 20));
+      }
+      expect(waiting, 'our save never had to wait for the colleague').toBe(true);
+      await held`COMMIT`;
+      expect(await ours).toBe('changed');
+    } finally {
+      held.release();
+      await helper.end();
+    }
     const row = (await rowOf('khorgos'))!;
-    expect([row.minHours, row.maxHours]).toEqual(a === null ? [24, 48] : [144, 168]);
-    expect(await auditCount(row.id)).toBe(1);
+    expect([row.minHours, row.maxHours]).toEqual([24, 48]);
   });
 });
 
