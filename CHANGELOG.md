@@ -21,19 +21,41 @@ tizimga ulangan bo'lishi kerak — shu ulashni tekshirdim.
 3. Muddati o'tgan kod endi «Vaqt tugadi. Kodni qaytadan so'rang» deydi.
    Oldin «tekshirib qayta kiriting» deb, eskirgan kodni qayta-qayta so'rardi.
 4. Rad etilganda yozilgan raqam maydondan o'chib ketmaydi.
-5. Har bir muvaffaqiyatsiz urinish endi server logiga yoziladi. «Bo'lmadi»
-   chiqsa, sababini ko'rish mumkin:
+5. Har bir muvaffaqiyatsiz urinish endi server logiga Telegramning o'z
+   so'zlari bilan yoziladi. «Bo'lmadi» chiqsa, sababini ko'rish mumkin:
    `docker compose logs --since 1h app | grep tg-connect`
+6. **Telegram «ko'p urinish bo'ldi, kuting» desa**, ekran endi shuni aytadi.
+   Oldin «Bo'lmadi, yana urinib ko'ring» derdi. Qayta urinish esa kutishni
+   yanada uzaytiradi.
+7. **Telegram akkaunti yo'q raqamga ✅ chiqmaydi.** Oldin shunday raqam
+   «ulandi» deb saqlanardi, aslida esa hech narsa ulanmagan edi. Endi ekran
+   «Bu raqamda Telegram akkaunti yo'q» deydi.
+8. **Chala qolgan urinish serverda ochiq ulanish qoldirmaydi.** Oldin har bir
+   muvaffaqiyatsiz yoki tashlab ketilgan urinish server qayta ishga
+   tushguncha Telegramga ulanib turardi. Endi hammasi yopiladi. Bitta hodim
+   ikki oynada ulashni boshlasa ham urinishlar bir-birini buzmaydi.
+9. **Parol maydoni:**
+   - Parol noto'g'ri bo'lsa, maydon tozalanadi — Telegram noto'g'ri
+     urinishlarni sanaydi.
+   - Brauzer endi saytning o'z parolini Telegram paroli o'rniga taklif
+     qilmaydi.
+   - Parol yozilmay «Ulash» bosilsa, «parolni kiriting» deydi.
 
 **Hali qilinmagan:** raqam avval boshqa hodimga ulangan va o'sha ulanish
 uzilgan bo'lsa (masalan, ishdan ketgan hodimning ish telefoni yangi hodimga
 berilgan), uni hozir ekrandan bo'shatib bo'lmaydi. Shunday holat bo'lsa
 ayting — admin uchun «bo'shatish» tugmasini qo'shaman.
 
-Tekshirildi: kod → parol → ulash ketma-ketligi Telegramsiz sinovda
-to'liq o'tkazildi; boshqa hodimning raqami kod yuborilishidan oldin rad
-etilishi bazada sinaldi; to'rt tilning hammasida har bir xato uchun matn
-bor. Har bir tuzatish uchun test tuzatishsiz yiqilishi ko'rsatildi (6 ta).
+Tekshirildi:
+- Kod → parol → ulash ketma-ketligi Telegramsiz sinovda to'liq o'tkazildi.
+- Boshqa hodimning raqami kod yuborilishidan oldin rad etilishi bazada
+  sinaldi.
+- To'rt tilning hammasida har bir xato uchun matn bor.
+- Tuzatish birlashtirilishidan oldin yana bir bor ko'rib chiqildi. Yana
+  7 ta kamchilik topildi va hammasi tuzatildi, asosiylari 6–9-bandlarda.
+  Ulardan 4 tasi tuzatishdan oldin ham bor edi. Qolgan 3 tasi tuzatishning
+  o'zida edi va serverga chiqmagan.
+- Har bir tuzatish uchun test tuzatishsiz yiqilishi ko'rsatildi (jami 19 ta).
 
 ## Andijondan Toshkentga ichki reys — reja ekranida yuk ko'rinadi — 2026-09-28
 

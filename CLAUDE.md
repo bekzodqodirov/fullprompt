@@ -2122,7 +2122,7 @@ reversed (#1206). A pre-existing count-press path dependence (re-reserve vs
 dial-down order) was found by the widened simulation and queued, not fixed.
 18 red proofs.
 
-**Round — Telegram ulash (2026-09-29; DECISIONS #1207-#1208; NO
+**Round — Telegram ulash (2026-09-29; DECISIONS #1207-#1209; NO
 migration).** His «telegram chatni ulashni korib chiq», the day after the
 site-lead reply named a CONNECTED account as condition 3. A two-step account
 could never connect: the connect form's inputs were uncontrolled (its own
@@ -2135,6 +2135,19 @@ the inputs are controlled; m9x asserts a refused number stays in its box.
 (digits compared, own row excluded, the holder named), an expired code ends
 the attempt, and every refusal is logged `[tg-connect]`. A signed-out holder
 still blocks the number — no release door, stated. 6 red proofs.
+**Then reviewed before the merge (#1209)** — four of its seven defects
+predate it. gramjs REWRITES `FLOOD_WAIT_N` into a FloodWaitError whose
+message lacks the name (it survives in `errorMessage`), so every long wait
+read «try again»; `describeError` is the one string for folding and logging,
+and test errors are built BY gramjs (`RPCMessageToError`), never typed by
+hand. `auth.SignIn` RESOLVES with `auth.AuthorizationSignUpRequired` for a
+number with no account, and that had been stored `active` with ✅. Clients
+are closed on every failed exit, `release(userId, entry)` frees a slot only
+while it holds THAT entry (two tabs), and `sweepExpired` runs on each begin.
+The server decides the step after a refusal (`next`), the pure
+`afterFinish` (connect-state.ts) maps it. Pinned by
+`tests/unit/telegram-connect-lifecycle.test.ts` (gramjs replaced by a fake
+that records `destroyed`); 13 more red proofs.
 
 **Latest migration: 0116** (`cargo_wait_alerts`; ledger must reach **117**).
 Before it: 0115 (`system_watch`), 0114 (`debt_control`), 0113
