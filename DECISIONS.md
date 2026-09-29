@@ -2246,3 +2246,41 @@ His terminal, the first try at the deploy: `FATAL ERROR: Ineffective mark-compac
    - **The fix, part 2.** The Dockerfile's build line carries `--max-old-space-size=3072`. It is on the RUN line and not an ENV, because `migrate` and `tg-listen` run the build stage's image.
    - **The fence.** `tests/unit/build-typecheck.test.ts` asks TypeScript's own config parser for both programs' files, instead of reading the JSON. The build program has every `src` file and no test, and the root program still has the tests.
    - **Nothing in production was touched.** Compose builds every image before it recreates any container, so the failed build left the old containers running and the ledger at 113.
+
+## The factory barcode is retired; the factory's text code goes in the marking (2026-09-29; NO migration)
+
+His words the evening the 0113-0119 deploy went live («Ishladi yahwi hammasi»): «skladchilar prixod qilganda ularda factory barcode degan input field bor shu kerak emas skladchiga. Ofisga ham kerak emas u joy zavotdan bar code kelmaydi faqat qandaydur text da yozilgan kod bn kelishi mumkun son isim hariflar bu klient codini yozadgan joydan ham hal qilsa boladi». Supersedes #1154, #1155, #1169(b) and #1170(a).
+
+1224. **The barcode is retired everywhere a person meets it; its column is kept.** 0112's Q10 c assumed a factory prints a retail barcode on the carton. He says it writes a text code instead.
+   - **Deleted, not hidden** (round 70's rule: a control taken off a screen while the action still accepts the field is hidden, not removed):
+     - the receive wizard's input on both layouts and its camera sheet;
+     - the lot correction form's input, and the `barcode_invalid` / `barcode_is_ours` refusals at both doors;
+     - the prixod card's chip, and /stock's 📷 button and chip;
+     - ⌘K's exact-key lot lookup (`searchLotsByBarcode`, `ParsedQuery.barcode`);
+     - the scan snapshot's `lotBarcodes`, the identify sheet (`barcode-identify.tsx`), and the «🏭 Zavod kodi» toggle on the loading, unload and issue screens;
+     - the issue counter's pile-pick, and `factory-barcode.ts`;
+     - 16 `ofis` keys × 4 bundles.
+   - **Kept:** `receipt_lots.factory_barcode`, its CHECK and its partial index hold what was typed on 09-28/29, and a column that holds data is not dropped in the release that stops using it. `audit.fields.factoryBarcode` is kept too, because the history tab must still name old rows' key.
+   - **Both lot schemas stay NON-strict on purpose.** A phone still running the old bundle posts `factoryBarcode`. zod strips the key rather than refusing the prixod, and a stale lot form neither clears nor rewrites a stored value. The integration test sends the stale payload through the actions' own schemas, and `.strict()` on either turns it red.
+
+1225. **The factory's text goes in the unclaimed marking, which already took any script. Three things did not follow the marking, and now do.**
+   - **What already worked.** `unclaimedMarking` is any 50 characters, and the wizard's «❓ … notanish yuk sifatida qabul qilish» already puts the typed code there.
+   - **(a) The box label PDF.** Measured: `ЗАВОД 12-A`, `义乌工厂-A`, `NIKE №5-A` and `ОЛМА-A` each threw «WinAnsi cannot encode» in Helvetica Bold. That made `/api/receipts/[id]/labels` and the QR-siz print-later sheet a 500. The phone's HTML sticker was never affected.
+     - `codeFontFor` keeps an encodable code in Helvetica Bold, and draws anything else in the CJK font through `pdfTextCleaner()`, so #788's Uzbek Cyrillic is transliterated and not a hole. The product line is cleaned too: «Ўзбек» had printed a blank box.
+     - Looked at through pdfium, not only asserted.
+   - **(b) ⌘K.** The lot search matched product names only. It now matches the marking too, as /stock's box always did.
+   - **(c) /unclaimed** prints the marking. It is the only thing on the row that the person holding the carton can match.
+   - **Stated, his call:** a KNOWN client's cargo has no place for a factory's text. The marking exists only for unclaimed cargo, and the wizard sends `null` once a client is chosen.
+
+1226. **A guard replaces the identify branch on the two scan screens.** Deleting the branch alone would have let an 8-14-digit code fall through to `isSendableCode` (3-40 characters) and be queued as a carton:
+   - on unload, which queues unknown codes on purpose (reality wins), it would answer as an unknown carton, with the unclaimed-intake toast;
+   - on loading, it would open the red not-on-plan confirm.
+   - **Now:** `!isOwnCodeShape(code) && looksLikeRetailBarcode(code)` is refused BEFORE the sendable check, with the screens' existing `foreignCode` sentence. Our own codes always carry a dash.
+   - **The scanner:** its `retail` mode has no caller now and stays dormant; its decoder tests still describe it.
+   - **The fence:** it first stayed GREEN with `false && ` in front of the condition, so it now pins the condition verbatim (#166).
+
+1227. **The client-code generator's voided filter used the BOX's word.**
+   - `unclaimedNumbers` read `status <> 'void'`. A receipt's status is `'voided'` (receipts_status_check), so the clause matched every receipt, and a cancelled prixod held its number for ever.
+   - It matters more now: a mistyped factory text that begins like a code (`GS457…`) and is voided must not cost a code.
+   - Swept `src/` for any other receipt status compared to `'void'`: none.
+   - Red-proven.

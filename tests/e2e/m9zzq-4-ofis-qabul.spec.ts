@@ -2,14 +2,15 @@ import { expect, test, type Page } from '@playwright/test';
 import sharp from 'sharp';
 
 /**
- * The office receipt, the factory barcode and the pallet (0112, the owner's
- * Q9 b, Q10 c and Q10 d), walked as the LOGIST on a phone:
+ * The office receipt and the pallet (0112, the owner's Q9 b and Q10 d),
+ * walked as the LOGIST on a phone. The factory barcode (Q10 c) is RETIRED
+ * (DECISIONS #1224 — «zavotdan bar code kelmaydi»), and two tests say so:
  *
  *  t1 the prixod the floor could not type, entered from the office — who
  *     physically received it (Wang Lei, the YW operator) and the real day
- *     (yesterday in Yiwu), with the factory's barcode on the lot;
- *  t2 the barcode finds the lot in the search and on /stock;
- *  t4 on a loading screen the barcode IDENTIFIES the pile and loads nothing;
+ *     (yesterday in Yiwu); the lot form has no barcode box any more;
+ *  t4 on a loading screen a factory's retail barcode is REFUSED as a foreign
+ *     code and loads nothing, and there is no «🏭 Zavod kodi» toggle;
  *  t5 a pallet of two of its cartons, made from the prixod card's door;
  *  t6 the cleanup IS a test (#183, round 57): the prixod is voided, so the
  *     spec leaves audit rows and nothing a later spec could trip on.
@@ -23,8 +24,8 @@ const LOGIST = '+998900000003';
 const PASSWORD = 'demo1234';
 const runId = String(Date.now()).slice(-8);
 const PRODUCT = `办公室${runId}`;
-// A unique EAN-13: the lookups are exact, and another run's lot is a true hit.
-const BARCODE = `69${String(Date.now()).slice(-11)}`;
+// An EAN-13 as a factory prints it: digits only, which none of our codes is.
+const RETAIL = `69${String(Date.now()).slice(-11)}`;
 
 let receiptUrl = '';
 
@@ -73,8 +74,9 @@ test('t1: the logist enters a prixod from the office, naming who received it and
   await page.getByTestId('lot-W').fill('30');
   await page.getByTestId('lot-H').fill('20');
   await page.getByTestId('lot-kg').fill('6');
-  await page.getByTestId('lot-barcode').fill(BARCODE);
-  await expect(page.getByTestId('lot-barcode-invalid')).toHaveCount(0);
+  // The retired box is gone from the form (#1224).
+  await expect(page.getByTestId('lot-barcode')).toHaveCount(0);
+  await expect(page.getByTestId('lot-barcode-scan')).toHaveCount(0);
 
   const photo = await sharp({
     create: { width: 320, height: 240, channels: 3, background: { r: 120, g: 150, b: 90 } },
@@ -108,22 +110,10 @@ test('t1: the logist enters a prixod from the office, naming who received it and
   await expect(page.getByTestId('receipt-received-date')).toHaveAttribute('data-day', day);
   await expect(page.getByTestId('receipt-received-by')).toContainText('Wang Lei');
   await expect(page.getByTestId('receipt-entered-by')).toContainText('Logist Demo');
-  await expect(page.getByTestId('lot-barcode-fact')).toContainText(BARCODE);
+  await expect(page.getByTestId('lot-barcode-fact')).toHaveCount(0);
 });
 
-test('t2: the barcode finds the lot in the search and on /stock', async ({ page }) => {
-  expect(receiptUrl, 't1 made the prixod').not.toBe('');
-  await login(page);
-  await page.goto(`/search?q=${BARCODE}`);
-  await expect(page.getByTestId('search-hit').filter({ hasText: BARCODE }).first()).toContainText('GS777-');
-
-  await page.goto(`/stock?q=${BARCODE}`);
-  const rows = page.locator('td a[href*="/stock?lot="]');
-  await expect(rows).toHaveCount(1);
-  await expect(page.locator('table')).toContainText(PRODUCT);
-});
-
-test('t4: on the loading screen the barcode identifies the pile and loads nothing', async ({ page }) => {
+test('t4: on the loading screen a retail barcode is refused as foreign and loads nothing', async ({ page }) => {
   expect(receiptUrl, 't1 made the prixod').not.toBe('');
   await login(page);
   await page.goto('/batches');
@@ -138,20 +128,17 @@ test('t4: on the loading screen the barcode identifies the pile and loads nothin
     const counter = page.getByTestId('load-counter');
     await expect(counter).toBeVisible({ timeout: 20_000 });
     const before = await counter.textContent();
+    await expect(page.getByTestId('scan-mode-barcode')).toHaveCount(0);
 
     await page.getByTestId('manual-open').click();
-    await page.getByTestId('manual-code').fill(BARCODE);
+    await page.getByTestId('manual-code').fill(RETAIL);
     await page.getByTestId('manual-submit').click();
 
-    const sheet = page.getByTestId('barcode-identify');
-    await expect(sheet).toBeVisible();
-    await expect(sheet.getByTestId('barcode-identify-lot')).toContainText('GS777-');
-    await expect(sheet.getByTestId('barcode-identify-lot')).toContainText(PRODUCT);
-    // Nothing was queued or loaded.
+    // Said out loud, as a foreign code — never queued as a carton.
+    await expect(page.getByTestId('load-toast')).toContainText('❓');
+    await expect(page.getByTestId('barcode-identify')).toHaveCount(0);
     await expect(counter).toHaveText(before ?? '');
     await expect(page.getByTestId('sync-banner')).toContainText('✅');
-    await sheet.getByTestId('barcode-identify-close').click();
-    await expect(sheet).toHaveCount(0);
   } finally {
     // The truck is cancelled whatever happened above — a forming truck left
     // behind would be the next spec's input (#154).
@@ -202,6 +189,6 @@ test('t6: cleanup — the prixod is voided and leaves the shelf', async ({ page 
   await page.locator('form:has(#void-reason) button[type="submit"]').click();
   await expect(page.getByTestId('void-error')).toHaveCount(0);
   await expect(page.locator('#void-reason')).toHaveCount(0, { timeout: 15_000 });
-  await page.goto(`/stock?q=${BARCODE}`);
+  await page.goto(`/stock?q=${encodeURIComponent(PRODUCT)}`);
   await expect(page.locator('td a[href*="/stock?lot="]')).toHaveCount(0);
 });

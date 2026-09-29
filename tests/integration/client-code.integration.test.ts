@@ -140,6 +140,27 @@ describe('the counter (round 112: «gs451 dan davom etsin»)', () => {
     expect(await nextClientCode(db, 'ZZT')).toBe('ZZT456');
   });
 
+  it('a VOIDED receipt\'s marking holds no number (the receipt\'s word is \'voided\')', async () => {
+    // The filter read `status <> 'void'` — the BOX's word — so it matched
+    // every receipt there is and a cancelled prixod held its number for ever.
+    // It matters more once factories' own text codes go in the marking
+    // (DECISIONS #1224): a mistyped one is voided and must not cost a code.
+    const wh = await db.query.warehouses.findFirst();
+    const who = await db.query.users.findFirst();
+    await db.insert(receipts).values({
+      warehouseId: wh!.id,
+      createdBy: who!.id,
+      clientId: null,
+      unclaimedMarking: 'ZZT457ZAVOD',
+      status: 'voided',
+      voidedAt: new Date(),
+      voidedBy: who!.id,
+      voidReason: 'zavod kodi xato yozildi',
+    });
+    await setCounter('457');
+    expect(await nextClientCode(db, 'ZZT')).toBe('ZZT457');
+  });
+
   it('a typed code never moves the counter', async () => {
     await setCounter('460');
     const who = await db.query.users.findFirst();

@@ -497,13 +497,8 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
                   canRemark={(qrState.get(lot.id)?.labelledLater ?? 0) > 0}
                 />
               )}
-            {(lot.factoryBarcode || palletDoors.some((door) => door.lotId === lot.id)) && (
+            {palletDoors.some((door) => door.lotId === lot.id) && (
               <div className="mt-1 flex flex-wrap items-center gap-2 text-sm">
-                {lot.factoryBarcode && (
-                  <span data-testid="lot-barcode-fact" className="chip-neutral font-mono">
-                    🏷 {lot.factoryBarcode}
-                  </span>
-                )}
                 {palletDoors
                   .filter((door) => door.lotId === lot.id)
                   .map((door) => (
@@ -537,7 +532,6 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
                     totalWeightKg: lot.totalWeightKg,
                     totalVolumeM3: lot.totalVolumeM3,
                     note: lot.note,
-                    factoryBarcode: lot.factoryBarcode,
                   }}
                 />
               </div>

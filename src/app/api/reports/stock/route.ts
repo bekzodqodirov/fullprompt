@@ -54,7 +54,7 @@ export async function GET(request: Request) {
   const scope = warehouseScope(actor, boxes.currentWarehouseId);
   if (scope) filters.push(scope);
   if (wh) filters.push(eq(boxes.currentWarehouseId, wh));
-  // The screen's own predicate (#513), barcode half included.
+  // The screen's own predicate (#513).
   if (q) filters.push(stockTextWhere(q));
 
   const lines = await db

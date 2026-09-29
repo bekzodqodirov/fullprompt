@@ -46,7 +46,18 @@ export default async function UnclaimedPage() {
           >
             <div className="flex items-baseline gap-2">
               <span className="font-mono font-bold">{row.number}</span>
-              <span className="ml-auto text-xs text-ink-500">
+              {/* What the carton SAYS — a factory writes its own text code
+                  there (DECISIONS #1224), and it is the only thing on this
+                  row the person holding the carton can match. */}
+              {row.marking && (
+                <span
+                  data-testid="unclaimed-marking"
+                  className="min-w-0 truncate font-mono text-sm font-semibold text-orange-800"
+                >
+                  {row.marking}
+                </span>
+              )}
+              <span className="ml-auto shrink-0 text-xs text-ink-500">
                 {format.dateTime(new Date(row.receivedAt), { dateStyle: 'short' })}
               </span>
             </div>

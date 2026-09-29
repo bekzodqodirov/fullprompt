@@ -14,8 +14,9 @@ export function isOwnCodeShape(code: string): boolean {
 
 /**
  * A factory's retail barcode: EAN-8/13, UPC-A/E, ITF-14 — digits only,
- * 8 to 14 of them. It names a PRODUCT, never a carton, so it identifies a lot
- * and is never queued as a scan (0112, Q10 c).
+ * 8 to 14 of them. It names a PRODUCT, never a carton, so the scan screens
+ * refuse it as a foreign code instead of queueing it (DECISIONS #1224 — it
+ * used to open an «identify the pile» sheet, retired with the barcode field).
  */
 export function looksLikeRetailBarcode(code: string): boolean {
   return /^\d{8,14}$/.test(code.trim());

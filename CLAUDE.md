@@ -2207,6 +2207,33 @@ Now `next.config.ts` builds with `tsconfig.build.json` (src + `next-env.d.ts` +
 builds before it recreates. **Deploy tip that follows from it**: build
 `migrate` first (`docker compose build migrate`), so the shared build stage
 runs ONCE before `up -d --build` reuses it.
+**He deployed it the same evening and it WORKED** («Ishladi yahwi hammasi»,
+PRs #101 + #102 — 0113-0119 are live; he did not quote the count).
+
+**Round — zavod shtrix-kodi olib tashlandi (2026-09-29; DECISIONS #1224-#1227;
+NO migration, ledger 120).** His «factory barcode degan input field … kerak
+emas skladchiga. Ofisga ham kerak emas … zavotdan bar code kelmaydi faqat
+qandaydur text da yozilgan kod … klient codini yozadgan joydan ham hal qilsa
+boladi». 0112's Q10 c is RETIRED everywhere a person meets it — the wizard
+(both layouts), the lot form, the card/stock chips, /stock's 📷, ⌘K's
+exact-key lookup, the snapshot's `lotBarcodes`, the identify sheet, the «🏭
+Zavod kodi» toggle on load/unload/issue, the issue pile-pick,
+`factory-barcode.ts`, 16 `ofis` keys ×4 — DELETED, not hidden. KEPT: the
+column + CHECK + index (09-28/29's values) and `audit.fields.factoryBarcode`
+(old history rows). The two lot schemas stay NON-strict ON PURPOSE (a stale
+phone's `factoryBarcode` is stripped, never refused, never clears a stored
+value — `.strict()` on either is a red proof). The factory's TEXT goes in the
+unclaimed marking, and three things finally follow it: the box-label PDF
+(`codeFontFor` — Helvetica threw «WinAnsi cannot encode» on Cyrillic/Chinese/№
+and the sheet was a 500; non-WinAnsi codes draw in the CJK font through
+`pdfTextCleaner`, looked at through pdfium), ⌘K's lot search, and /unclaimed.
+A retail-barcode GUARD replaces the identify branch on both scan screens —
+without it an EAN fits `isSendableCode` and unload queues it as an unknown
+carton. Found on the way: `unclaimedNumbers` filtered `status <> 'void'` (the
+BOX's word; a receipt is `'voided'`). 8 red proofs by string edit; the guard's
+fence first stayed GREEN under `false && ` and now pins the condition
+verbatim. STATED to him: a KNOWN client's cargo has no field for a factory's
+text.
 
 **Latest migration: 0119** (`price_icons`; ledger must reach **120**). Before
 it: 0118 (`border_queue`), 0117 (`staff_pay`) — `when` …096-…098. Before them:
@@ -2333,12 +2360,10 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **120** since 0119 (117 since 0116), and his server CONFIRMED **113** («deploy qildim
-113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), so the next
-deploy applies 0113-0119 and must recreate EVERY container once
-(`--profile https --profile telegram up -d --build`: compose gained `init`, a
-healthcheck, log caps and a postgres flag); a code-only round after it is
-checked by `/api/version`, not the count.
+length — **120** since 0119 (117 since 0116). His server CONFIRMED **113** («deploy qildim
+113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
+0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted);
+a code-only round after it is checked by `/api/version`, not the count.
 Never carry this number over from a previous session: read it
 (`ls src/modules/platform/db/migrations/*.sql | wc -l`) before writing the
 owner a step list, because the count is the only check that separates «the
