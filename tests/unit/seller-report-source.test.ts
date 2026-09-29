@@ -34,9 +34,29 @@ describe('one reader for a seller’s cargo', () => {
     expect(cargo).toMatch(/rl\.total_volume_m3 \/ rl\.box_count AS m3/);
   });
 
-  it('the page says which half is which', () => {
+  it('the page says which part is which', () => {
     const page = code('src/app/(protected)/reports/sotuvchilar/page.tsx');
     expect(page).toContain("t('cargoByStamp')");
-    expect(page).toContain("t('moneyByBook')");
+    expect(page).toContain("t('moneyByStamp')");
+    expect(page).toContain("t('clientsByBook')");
+    expect(page).not.toContain('moneyByBook');
+  });
+});
+
+describe('one attribution for the seller’s money (4a)', () => {
+  it('the report’s money is the stamp’s', () => {
+    const report = code('src/modules/wms/crm/seller-report.ts');
+    expect(report).toMatch(/revenueByStamp\(/);
+    expect(report).toMatch(/costByStamp\(/);
+    expect(report).not.toContain('profitByClient');
+    expect(report).not.toContain('managerOf');
+    // The dashboard card is the report's number, never a third calculation (#513).
+    expect(code('src/modules/wms/staff/seller-profit.ts')).toMatch(/sellerPerformanceAll\(/);
+  });
+
+  it('the «—» row is explained whenever it carries a figure', () => {
+    const page = code('src/app/(protected)/reports/sotuvchilar/page.tsx');
+    expect(page).toContain('const nobodyShown = nobody !== undefined &&');
+    expect(page).toMatch(/\{nobodyShown \? \(\s*<p[^>]*data-testid="seller-nobody-note"/);
   });
 });

@@ -12,6 +12,7 @@ import {
   warehouses,
 } from '@/modules/platform/db/schema';
 import { sellerPerformanceAll, sellerPerformanceOwn } from '@/modules/wms/crm/seller-report';
+import { revenueByStamp } from '@/modules/wms/staff/stamp-revenue';
 
 /**
  * The seller report against a real database (owner, 2026-08-25: «ha qur …
@@ -197,9 +198,9 @@ describe('the full table (scope all)', () => {
 describe('the seller’s own card (scope own)', () => {
   it('agrees with the full table’s row for the same person', async () => {
     // #513's shape: the seller's own number and the owner's number for that
-    // seller must be one fact. The two queries live in two code paths ON
-    // PURPOSE (the own path may not hold the cost query even discarded), so
-    // their agreement is pinned here instead of by construction.
+    // seller must be one fact. Since 4a the two cards call ONE revenue
+    // function (`revenueByStamp`, the own scope filtering before it folds),
+    // so they agree by construction — and this pins it anyway.
     const own = await sellerPerformanceOwn(sellerA, PERIOD);
     const { rows } = await sellerPerformanceAll(PERIOD);
     const a = rows.find((r) => r.managerId === sellerA)!;
@@ -216,5 +217,33 @@ describe('the seller’s own card (scope own)', () => {
     expect(Object.keys(own).sort()).toEqual(
       ['clients', 'receipts', 'revenueUsd', 'volumeM3', 'weightKg'].sort(),
     );
+  });
+});
+
+describe('the money follows the stamp (4a)', () => {
+  it('a card price follows the client’s latest prixod, and only a client with none follows the book', async () => {
+    // Every charge here names no truck and no job, so each is the fallback:
+    // clientA's 100 + 50 → the newest CONFIRMED prixod by that day (02-05,
+    // stamped A — the voided 02-06 one is not confirmed); clientB has no
+    // prixod → its book, B; clientNobody → its 02-07 prixod stamped nobody.
+    const mine = new Set(madeClients);
+    const rows = (await revenueByStamp(db, PERIOD, { kind: 'all' })).rows.filter((r) => mine.has(r.clientId));
+    const find = (clientId: string, sellerId: string | null) =>
+      rows.find((r) => r.clientId === clientId && r.sellerId === sellerId);
+    expect(find(clientA, sellerA)).toMatchObject({ cents: 15000, unlinkedCents: 15000, splitCents: 0 });
+    expect(find(clientB, sellerB)).toMatchObject({ cents: 20000, unlinkedCents: 20000, splitCents: 0 });
+    expect(find(clientNobody, null)).toMatchObject({ cents: 4000, unlinkedCents: 4000, splitCents: 0 });
+    expect(rows).toHaveLength(3);
+
+    // Moving clientA to B moves none of A's money: every one of its prices had
+    // a prixod by its day, and that prixod carries A's stamp (his «a»).
+    await db.update(clients).set({ salesManagerId: sellerB }).where(eq(clients.id, clientA));
+    try {
+      const { rows: after } = await sellerPerformanceAll(PERIOD);
+      expect(after.find((r) => r.managerId === sellerA)!.revenueUsd).toBe(150);
+      expect(after.find((r) => r.managerId === sellerB)!.revenueUsd).toBe(200);
+    } finally {
+      await db.update(clients).set({ salesManagerId: sellerA }).where(eq(clients.id, clientA));
+    }
   });
 });
