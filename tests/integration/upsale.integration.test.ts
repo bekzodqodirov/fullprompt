@@ -7,6 +7,8 @@ import { receiveStamped, removeStamped } from '../fixtures/stamped-cargo';
 import { stampedCargo } from '@/modules/wms/staff/cargo';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
+  batches,
+  boxes,
   calcExtras,
   calcGroups,
   calcOffers,
@@ -39,7 +41,10 @@ import {
   UPSALE_CAP,
   upsaleLiability,
   upsaleRows,
+  upsaleStateOf,
+  walkDealsWithin,
 } from '@/modules/wms/calc/upsale-service';
+import { paidCargo } from '@/modules/wms/finance/paid-cartons';
 import { voidExpense } from '@/modules/wms/accounting/service';
 import { companyBalance } from '@/modules/wms/accounting/reports';
 import { addTransaction } from '@/modules/wms/finance/service';
@@ -74,6 +79,9 @@ const madeExpenses: string[] = [];
 const madeDeals: string[] = [];
 const madeReceipts: string[] = [];
 const stampedReceipts: string[] = [];
+/** 3a's own clients and trucks: a client's whole ledger decides its jobs, so each case gets one. */
+const fifoClients: string[] = [];
+const fifoBatches: string[] = [];
 let categoryBefore: unknown;
 let categoryExisted = false;
 let fxId = '';
@@ -167,6 +175,21 @@ afterAll(async () => {
   }
   if (fxId) await db.execute(sql`DELETE FROM fx_rates WHERE id = ${fxId}::uuid`);
   await db.delete(clientTransactions).where(eq(clientTransactions.clientId, clientId));
+  // 3a's own: the cartons off the trucks, the money, the trucks, then the
+  // clients retired (a client is referenced by its prixods and deals). Here
+  // and not in the describe's own hook, so a filtered run still cleans the
+  // money before the deals it names are deleted below.
+  if (fifoBatches.length > 0) {
+    await db.execute(sql`UPDATE boxes SET current_batch_id = NULL WHERE current_batch_id IN (${sql.join(
+      fifoBatches.map((id) => sql`${id}::uuid`),
+      sql`, `,
+    )})`);
+  }
+  if (fifoClients.length > 0) {
+    await db.delete(clientTransactions).where(inArray(clientTransactions.clientId, fifoClients));
+  }
+  if (fifoBatches.length > 0) await db.delete(batches).where(inArray(batches.id, fifoBatches));
+  if (fifoClients.length > 0) await db.update(clients).set({ active: false }).where(inArray(clients.id, fifoClients));
   await removeArrived(madeReceipts);
   await removeStamped(stampedReceipts);
   if (madeRequests.length > 0) {
@@ -308,8 +331,110 @@ async function invoiceAndCollect(onDeal: string, price: number) {
 
 const today = () => new Date().toISOString().slice(0, 10);
 
+// Bounded to THIS run's seller (money-O9): on a long-lived local database the
+// company's whole list is somebody else's leftovers, and the walk would spend
+// its budget on them (#653).
 const mine = async (offerId: string) =>
-  (await upsaleRows('all', actorId, {})).rows.find((r) => r.offerId === offerId) ?? null;
+  (await upsaleRows('all', actorId, { sellerId, walk: 'fifo' })).rows.find((r) => r.offerId === offerId) ?? null;
+
+/** A client of 3a's own, whose card names this run's seller. */
+let fifoN = 0;
+async function ownClient(): Promise<string> {
+  fifoN += 1;
+  const [c] = await db
+    .insert(clients)
+    .values({ clientCode: `UG${SUFFIX}${fifoN}`, name: `Upsale FIFO ${SUFFIX} ${fifoN}`, salesManagerId: sellerId })
+    .returning({ id: clients.id });
+  fifoClients.push(c!.id);
+  return c!.id;
+}
+
+async function ownDeal(client: string): Promise<string> {
+  fifoN += 1;
+  const stage = await db.query.dealStages.findFirst({ where: eq(dealStages.kind, 'open') });
+  const [d] = await db
+    .insert(deals)
+    .values({ code: `UG-${SUFFIX}-${fifoN}`, clientId: client, stageId: stage!.id, title: 'Upsale FIFO', createdBy: actorId })
+    .returning({ id: deals.id });
+  madeDeals.push(d!.id);
+  return d!.id;
+}
+
+/**
+ * A Готово-answered rastamojka job on the deal, quoted 10 m³ / 500 kg and
+ * offered to the client at `price` over an answer floor of `answer` — the
+ * shortest honest road to a standing offer (the seal needs dictionaries).
+ */
+async function answered(onDeal: string, answer = 1000, price = 1300): Promise<string> {
+  const opened = await openCalcRequest(
+    {
+      entityType: 'deal',
+      entityId: onDeal,
+      section: 'rastamojka',
+      fromCity: 'Yiwu',
+      toCity: 'Toshkent',
+      weightKg: 500,
+      volumeM3: 10,
+      items: [{ name: `monitor ${tag()}`, quantity: 100 }],
+      source: 'card',
+    },
+    ctx(),
+  );
+  madeRequests.push(opened.id);
+  await takeCalcRequest(opened.id, ctx());
+  await finishCalcRequest(opened.id, { amount: answer, currency: 'USD', note: 'fifo' }, ctx());
+  const offer = await recordOffer({ requestId: opened.id }, { clientPriceUsd: price, locale: 'uz' }, sellerCtx());
+  return offer.id;
+}
+
+/** One ledger row, raw — the ledger's own doors are proven elsewhere. */
+async function ledgerRow(
+  client: string,
+  type: 'charge' | 'payment' | 'compensation',
+  amount: number,
+  txDate: string,
+  extra: { dealId?: string; receiptId?: string; batchId?: string; note?: string } = {},
+): Promise<string> {
+  const [row] = await db
+    .insert(clientTransactions)
+    .values({
+      clientId: client,
+      type,
+      amount: amount.toFixed(2),
+      currency: 'USD',
+      rateToUsd: '1',
+      amountUsd: amount.toFixed(2),
+      txDate,
+      note: extra.note ?? `upsale fifo ${type}`,
+      dealId: extra.dealId ?? null,
+      receiptId: extra.receiptId ?? null,
+      batchId: extra.batchId ?? null,
+      createdBy: actorId,
+    })
+    .returning({ id: clientTransactions.id });
+  return row!.id;
+}
+
+/** A truck of 3a's own between the first two warehouses, still forming. */
+async function mintBatch(): Promise<string> {
+  const whs = await db.execute<{ id: string }>(sql`SELECT id FROM warehouses ORDER BY code LIMIT 2`);
+  fifoN += 1;
+  const [b] = await db
+    .insert(batches)
+    .values({
+      code: `UG${SUFFIX}B${fifoN}`,
+      originWarehouseId: whs[0]!.id,
+      destWarehouseId: whs[1]!.id,
+      status: 'forming',
+      createdBy: actorId,
+    })
+    .returning({ id: batches.id });
+  fifoBatches.push(b!.id);
+  return b!.id;
+}
+
+/** The app's clock (R5): a Tashkent day, never a UTC one. */
+const dayAt = (n: number) => addDays(tashkentDay(), n);
 
 describe('law 4: any concession kills the upsale', () => {
   it('a clean job carries one', async () => {
@@ -460,7 +585,7 @@ describe('one sale, one commission', () => {
 
     // The scoreboard counts the sale once: 300 handed over + 100 still owed,
     // not both promises' whole differences (300 + 400).
-    const sale = (await upsaleRows('all', actorId, {})).rows.filter((r) =>
+    const sale = (await upsaleRows('all', actorId, { sellerId, walk: 'fifo' })).rows.filter((r) =>
       [job.offerId, higher.id].includes(r.offerId),
     );
     expect(bySeller(sale)[0]).toMatchObject({ earnedUsd: 400, paidUsd: 300, waitingUsd: 100 });
@@ -527,7 +652,12 @@ describe('the three states before payable', () => {
   });
 
   it('walks no_invoice → awaiting_payment → payable as the money arrives', async () => {
-    const job = await sealedJob();
+    // Its own client and deal (3a): on the shared client this test depended
+    // on every earlier one leaving the ledger exactly settled.
+    const client = await ownClient();
+    const onDeal = await ownDeal(client);
+    madeReceipts.push(await arriveOnDeal({ dealId: onDeal, clientId: client, actorId, m3: 30, kg: 1500 }));
+    const job = await sealedJob({ dealId: onDeal });
     const price = job.floor + 600;
     const offer = await recordOffer({ versionId: job.versionId }, { clientPriceUsd: price, locale: 'uz' }, sellerCtx());
     expect((await mine(offer.id))!.state).toBe('no_invoice');
@@ -537,8 +667,8 @@ describe('the three states before payable', () => {
     await expect(pay()).rejects.toMatchObject({ code: 'offer_not_payable' });
 
     await db.insert(clientTransactions).values({
-      clientId,
-      dealId,
+      clientId: client,
+      dealId: onDeal,
       type: 'charge',
       amount: String(price),
       currency: 'USD',
@@ -553,8 +683,8 @@ describe('the three states before payable', () => {
     await expect(pay()).rejects.toMatchObject({ code: 'offer_not_payable' });
 
     await db.insert(clientTransactions).values({
-      clientId,
-      dealId,
+      clientId: client,
+      dealId: onDeal,
       type: 'payment',
       amount: String(price),
       currency: 'USD',
@@ -612,7 +742,7 @@ describe('paying it', () => {
       .where(eq(expenses.employeeId, sellerId));
     expect(expensesAfter[0]!.n).toBe(expensesBefore[0]!.n);
 
-    const rowNow = (await upsaleRows('all', actorId, {})).rows.find((r) => r.offerId === ids[0]);
+    const rowNow = (await upsaleRows('all', actorId, { sellerId, walk: 'fifo' })).rows.find((r) => r.offerId === ids[0]);
     expect(rowNow!.state).toBe('paid');
   });
 
@@ -653,17 +783,17 @@ describe('paying it', () => {
 
 describe('who may read it', () => {
   it('a seller sees only their own, and the VED sees none at all', async () => {
-    const all = await upsaleRows('all', actorId, {});
+    const all = await upsaleRows('all', actorId, { walk: 'skip' });
     expect(all.rows.length).toBeGreaterThan(0);
 
-    const own = await upsaleRows('own', sellerId, {});
+    const own = await upsaleRows('own', sellerId, { walk: 'skip' });
     expect(own.rows.every((r) => r.sellerId === sellerId)).toBe(true);
 
-    const otherSeller = await upsaleRows('own', actorId, {});
+    const otherSeller = await upsaleRows('own', actorId, { walk: 'skip' });
     expect(otherSeller.rows.some((r) => r.sellerId === sellerId)).toBe(false);
 
     // Law 4. Not filtered — not fetched.
-    expect((await upsaleRows('none', actorId, {})).rows).toEqual([]);
+    expect((await upsaleRows('none', actorId, { walk: 'skip' })).rows).toEqual([]);
   });
 });
 
@@ -968,9 +1098,9 @@ describe('the Balans owes the sellers what the clients have paid for (U10)', () 
   });
 
   it('an old unpaid commission is not pushed off the Balans by the screen\'s cap of newer paid ones', async () => {
-    const before = await upsaleLiability();
+    const before = await upsaleLiability('net');
     const owed = await collectedJob(250);
-    const withOwed = await upsaleLiability();
+    const withOwed = await upsaleLiability('net');
     expect(cents(withOwed.payableUsd - before.payableUsd)).toBe(250);
 
     const done = await collectedJob(400);
@@ -988,12 +1118,12 @@ describe('the Balans owes the sellers what the clients have paid for (U10)', () 
         FROM calc_offers, generate_series(1, ${UPSALE_CAP + 1}) g
        WHERE id = ${done.offerId}::uuid`);
     try {
-      const screen = await upsaleRows('all', actorId, {});
+      const screen = await upsaleRows('all', actorId, { walk: 'skip' });
       // The premise: the screen's slice has lost the unpaid commission…
       expect(screen.truncated).toBe(true);
       expect(screen.rows.some((row) => row.offerId === owed.offerId)).toBe(false);
       // …and the balance sheet has not.
-      expect((await upsaleLiability()).payableUsd).toBe(withOwed.payableUsd);
+      expect((await upsaleLiability('net')).payableUsd).toBe(withOwed.payableUsd);
     } finally {
       await db.execute(sql`DELETE FROM calc_offers WHERE version_id = ${done.versionId}::uuid AND id <> ${done.offerId}::uuid`);
     }
@@ -1029,7 +1159,7 @@ describe('the share follows the cargo that arrived (4b)', () => {
       sellerCtx(),
     );
     await invoiceAndCollect(onDeal, job.floor + 300);
-    const row = (await upsaleRows('all', actorId, {})).rows.find((r) => r.offerId === offer.id)!;
+    const row = (await upsaleRows('all', actorId, { sellerId, walk: 'fifo' })).rows.find((r) => r.offerId === offer.id)!;
     expect(row).toMatchObject({ state: 'no_cargo', promisedUsd: 300, upsaleUsd: 0, payableUsd: 0, cargoReceipts: 0 });
     await expect(
       payUpsale([offer.id], { accountId, currency: 'USD', expenseDate: today() }, ctx()),
@@ -1045,7 +1175,7 @@ describe('the share follows the cargo that arrived (4b)', () => {
     const due = Math.round(((price * 20) / 30) * 100) / 100;
     // The client pays for what came — and that invoice is whole.
     await invoiceAndCollect(onDeal, due);
-    const row = (await upsaleRows('all', actorId, {})).rows.find((r) => r.offerId === offer.id)!;
+    const row = (await upsaleRows('all', actorId, { sellerId, walk: 'fifo' })).rows.find((r) => r.offerId === offer.id)!;
     expect(row).toMatchObject({ state: 'payable', promisedUsd: 300, upsaleUsd: 200, payableUsd: 200, cargoM3: 20 });
     const paid = await payUpsale([offer.id], { accountId, currency: 'USD', expenseDate: today() }, ctx());
     madeExpenses.push(paid.expenseId);
@@ -1075,5 +1205,329 @@ describe('the share follows the cargo that arrived (4b)', () => {
     // Yesterday's window holds none of it.
     const yesterday = { from: tashkentDayStart(addDays(day, -1)), to: tashkentDayStart(day) };
     expect(await stampedCargo(db, yesterday, { kind: 'own', userId: sellerId })).toEqual([]);
+  });
+});
+
+/**
+ * His 3a (2026-09-29): «Upsale uchun «to'langan yuk» qoidasi KPI bilan bir
+ * xil bo'lsin — a) ha, eng eski qarzdan boshlab yopiladi». A job is payable
+ * when its own cargo is paid for by the KPI's carton rule AND every price
+ * stamped with its deal is settled — the client's money settling the OLDEST
+ * debt first. Each case on a client of its own: a client's whole ledger
+ * decides its jobs.
+ */
+describe('3a — the upsale waits on the KPI’s paid-cargo rule (FIFO)', () => {
+  const pay = (offerId: string) =>
+    payUpsale([offerId], { accountId, currency: 'USD', expenseDate: today() }, ctx());
+
+  it('T1 — the owner’s example: the old job’s cargo is paid, the new truck’s debt holds only the new job', async () => {
+    const client = await ownClient();
+    const dealA = await ownDeal(client);
+    const dealB = await ownDeal(client);
+    madeReceipts.push(await arriveOnDeal({ dealId: dealA, clientId: client, actorId, m3: 10, kg: 500 }));
+    madeReceipts.push(await arriveOnDeal({ dealId: dealB, clientId: client, actorId, m3: 10, kg: 500 }));
+    const offerA = await answered(dealA);
+    const offerB = await answered(dealB);
+    await ledgerRow(client, 'charge', 1300, dayAt(-30), { dealId: dealA });
+    await ledgerRow(client, 'charge', 1300, dayAt(0), { dealId: dealB });
+    await ledgerRow(client, 'payment', 1300, dayAt(0));
+
+    // The old rule (the client's balance) held BOTH: he still owes $1300.
+    expect((await mine(offerA))!.state).toBe('payable');
+    const b = (await mine(offerB))!;
+    expect(b.state).toBe('awaiting_payment');
+    expect(b.cargoWalk).toMatchObject({ unpaid: 1, toOpenUsd: 1300, olderOwedElsewhere: false });
+
+    const paid = await pay(offerA);
+    madeExpenses.push(paid.expenseId);
+    expect(paid.paidUsd).toBe(300);
+    await expect(pay(offerB)).rejects.toMatchObject({ code: 'offer_not_payable' });
+  });
+
+  it('T2 — an older debt on another deal is settled first, and the hint says how much opens the job', async () => {
+    const client = await ownClient();
+    const dealX = await ownDeal(client);
+    const dealA = await ownDeal(client);
+    madeReceipts.push(await arriveOnDeal({ dealId: dealA, clientId: client, actorId, m3: 10, kg: 500 }));
+    const offer = await answered(dealA);
+    await ledgerRow(client, 'charge', 500, dayAt(-60), { dealId: dealX });
+    await ledgerRow(client, 'charge', 1300, dayAt(-30), { dealId: dealA });
+
+    let row = (await mine(offer))!;
+    expect(row.state).toBe('awaiting_payment');
+    expect(row.cargoWalk).toMatchObject({ toOpenUsd: 1800, olderOwedElsewhere: true });
+
+    await ledgerRow(client, 'payment', 1300, dayAt(0));
+    row = (await mine(offer))!;
+    expect(row.state).toBe('awaiting_payment');
+    expect(row.cargoWalk).toMatchObject({ toOpenUsd: 500, olderOwedElsewhere: false });
+
+    await ledgerRow(client, 'payment', 500, dayAt(0));
+    expect((await mine(offer))!.state).toBe('payable');
+  });
+
+  it('T3 — a deferral settles only ITS OWN deal, never an older job', async () => {
+    // Rebuilt so R7 can turn it red (money-O3): the deferred deal's charge is
+    // NEWER than A's, so a deferral walking oldest first would settle A.
+    const client = await ownClient();
+    const dealA = await ownDeal(client);
+    const dealX = await ownDeal(client);
+    madeReceipts.push(await arriveOnDeal({ dealId: dealA, clientId: client, actorId, m3: 10, kg: 500 }));
+    const offer = await answered(dealA);
+    await ledgerRow(client, 'charge', 1300, dayAt(-60), { dealId: dealA });
+    await ledgerRow(client, 'charge', 1500, dayAt(-30), { dealId: dealX });
+    await db
+      .update(deals)
+      .set({ deferredAt: new Date(), deferredBy: actorId, deferralReason: 'test', deferUntilAllArrived: true })
+      .where(eq(deals.id, dealX));
+
+    const row = (await mine(offer))!;
+    expect(row.state).toBe('awaiting_payment');
+    expect(row.cargoWalk).toMatchObject({ toOpenUsd: 1300 });
+
+    await ledgerRow(client, 'payment', 1300, dayAt(0));
+    expect((await mine(offer))!.state).toBe('payable');
+  });
+
+  it('T3b — the job’s own deferral counts as collected (#798’s decision, now per deal)', async () => {
+    const client = await ownClient();
+    const dealA = await ownDeal(client);
+    madeReceipts.push(await arriveOnDeal({ dealId: dealA, clientId: client, actorId, m3: 10, kg: 500 }));
+    const offer = await answered(dealA);
+    await ledgerRow(client, 'charge', 1300, dayAt(-5), { dealId: dealA });
+    await db
+      .update(deals)
+      .set({ deferredAt: new Date(), deferredBy: actorId, deferralReason: 'test', deferUntilAllArrived: true })
+      .where(eq(deals.id, dealA));
+    expect((await mine(offer))!.state).toBe('payable');
+  });
+
+  it('T3c — the stated widening (money-O2): a deferred job opens though an OLDER debt elsewhere is unpaid', async () => {
+    // The old gate read the client's balance less the deferral — 3300 − 1300
+    // = 2000 owed — and held this commission. The KPI's rule settles a
+    // deferral onto its own deal, so the job is collected; stated to the
+    // owner as the KPI's own reading.
+    const client = await ownClient();
+    const dealA = await ownDeal(client);
+    const dealX = await ownDeal(client);
+    madeReceipts.push(await arriveOnDeal({ dealId: dealA, clientId: client, actorId, m3: 10, kg: 500 }));
+    const offer = await answered(dealA);
+    await ledgerRow(client, 'charge', 2000, dayAt(-60), { dealId: dealX });
+    await ledgerRow(client, 'charge', 1300, dayAt(-30), { dealId: dealA });
+    await db
+      .update(deals)
+      .set({ deferredAt: new Date(), deferredBy: actorId, deferralReason: 'test', deferUntilAllArrived: true })
+      .where(eq(deals.id, dealA));
+    expect((await mine(offer))!.state).toBe('payable');
+  });
+
+  it('T4 — a compensated job waits although the walk calls its cargo paid', async () => {
+    const client = await ownClient();
+    const dealA = await ownDeal(client);
+    const receipt = await arriveOnDeal({ dealId: dealA, clientId: client, actorId, m3: 10, kg: 500 });
+    madeReceipts.push(receipt);
+    const offer = await answered(dealA);
+    await ledgerRow(client, 'charge', 1300, dayAt(-5), { dealId: dealA });
+    await ledgerRow(client, 'compensation', 400, dayAt(-2), { dealId: dealA, receiptId: receipt, note: 'yo‘qolgan' });
+    await ledgerRow(client, 'payment', 900, dayAt(0));
+
+    // The walk: compensation onto its own prixod's price, then the money —
+    // the carton is PAID…
+    const walked = await paidCargo(db, { kind: 'deals', dealIds: [dealA] }, { elsewhere: false });
+    expect(walked.cartons.map((c) => c.paid)).toEqual([true]);
+    // …and the job still waits: net of what was taken back it is not whole
+    // (#1038/C12), and that check stands in FRONT of the walk.
+    expect((await mine(offer))!.state).toBe('no_invoice');
+  });
+
+  it('T5 — every carton lost: «no cargo left», and nothing is paid', async () => {
+    const client = await ownClient();
+    const dealA = await ownDeal(client);
+    const receipt = await arriveOnDeal({ dealId: dealA, clientId: client, actorId, m3: 10, kg: 500 });
+    madeReceipts.push(receipt);
+    const offer = await answered(dealA);
+    await ledgerRow(client, 'charge', 1300, dayAt(-5), { dealId: dealA });
+    await ledgerRow(client, 'payment', 1300, dayAt(0));
+    expect((await mine(offer))!.state).toBe('payable');
+
+    await db.execute(sql`
+      UPDATE boxes SET status = 'lost'
+       WHERE lot_id IN (SELECT id FROM receipt_lots WHERE receipt_id = ${receipt}::uuid)`);
+    const row = (await mine(offer))!;
+    expect(row).toMatchObject({ state: 'no_cargo', cargoReceipts: 1 });
+    await expect(pay(offer)).rejects.toMatchObject({ code: 'offer_not_payable' });
+  });
+
+  it('T6 — a price on a truck the cargo never touched covers nothing; the accountant’s fix opens it', async () => {
+    const client = await ownClient();
+    const dealA = await ownDeal(client);
+    madeReceipts.push(await arriveOnDeal({ dealId: dealA, clientId: client, actorId, m3: 10, kg: 500 }));
+    const offer = await answered(dealA);
+    const truck = await mintBatch();
+    const wrong = await ledgerRow(client, 'charge', 1300, dayAt(-5), { dealId: dealA, batchId: truck });
+    await ledgerRow(client, 'payment', 1300, dayAt(0));
+
+    // The old rule said payable: the deal was charged and the client paid.
+    const row = (await mine(offer))!;
+    expect(row.state).toBe('no_invoice');
+    expect(row.cargoWalk).toMatchObject({ uncovered: 1, uncoveredElsewhere: 0 });
+
+    // Void it (a plain void — not a price lowered to zero) and put the price
+    // on the deal with no truck.
+    await db.update(clientTransactions).set({ voidedAt: new Date() }).where(eq(clientTransactions.id, wrong));
+    await ledgerRow(client, 'charge', 1300, dayAt(0), { dealId: dealA });
+    await ledgerRow(client, 'payment', 1300, dayAt(0));
+    expect((await mine(offer))!.state).toBe('payable');
+  });
+
+  it('T7 — a press re-derives the FIFO state: an older debt written after the screen holds the payout', async () => {
+    const client = await ownClient();
+    const dealA = await ownDeal(client);
+    const dealX = await ownDeal(client);
+    madeReceipts.push(await arriveOnDeal({ dealId: dealA, clientId: client, actorId, m3: 10, kg: 500 }));
+    const offer = await answered(dealA);
+    await ledgerRow(client, 'charge', 1300, dayAt(0), { dealId: dealA });
+    await ledgerRow(client, 'payment', 1300, dayAt(0));
+    expect((await mine(offer))!.state).toBe('payable');
+
+    // An OLDER unpaid price surfaces: the money that paid A now pays it first.
+    await ledgerRow(client, 'charge', 1300, dayAt(-90), { dealId: dealX });
+    const count = async () =>
+      Number(
+        (await db.select({ n: sql<string>`count(*)` }).from(expenses).where(eq(expenses.employeeId, sellerId)))[0]!.n,
+      );
+    const before = await count();
+    await expect(pay(offer)).rejects.toMatchObject({ code: 'offer_not_payable' });
+    expect(await count()).toBe(before);
+    const stored = await db.query.calcOffers.findFirst({ where: eq(calcOffers.id, offer) });
+    expect(stored!.payoutExpenseId).toBeNull();
+  });
+
+  it('T8 — a walk that misses its budget reads «not computed», never payable', async () => {
+    const client = await ownClient();
+    const dealA = await ownDeal(client);
+    madeReceipts.push(await arriveOnDeal({ dealId: dealA, clientId: client, actorId, m3: 10, kg: 500 }));
+    const offer = await answered(dealA);
+    await ledgerRow(client, 'charge', 1300, dayAt(-5), { dealId: dealA });
+    await ledgerRow(client, 'payment', 1300, dayAt(0));
+
+    const missed = await walkDealsWithin([{ dealId: dealA, clientId: client }], 0);
+    expect(missed.walked.size).toBe(0);
+    expect(missed.missed).toBe(1);
+    expect(await walkDealsWithin([], 0)).toEqual({ walked: new Map(), missed: 0 });
+
+    // The same row with no walk: a candidate the budget did not reach.
+    const skipped = (await upsaleRows('all', actorId, { sellerId, walk: 'skip' })).rows.find((r) => r.offerId === offer)!;
+    expect(skipped.state).toBe('not_computed');
+    expect(
+      upsaleStateOf(
+        {
+          payout_at: null,
+          entity_type: 'deal',
+          due_price_usd: String(skipped.clientPriceUsd),
+          cargo_receipts: skipped.cargoReceipts,
+          charged_usd: '1300.00',
+          compensated_usd: '0',
+        },
+        missed.walked.get(dealA) ?? null,
+      ),
+    ).toBe('not_computed');
+    // …and walked, the same job is payable.
+    expect((await mine(offer))!.state).toBe('payable');
+  });
+
+  it('T9 — the deals scope selects the same cartons, covered and paid, as the KPI’s stamped scope', async () => {
+    const client = await ownClient();
+    const dealA = await ownDeal(client);
+    const { receiptId } = await receiveStamped({
+      clientId: client,
+      actorId,
+      sellerId,
+      dealId: dealA,
+      boxes: 2,
+      m3: 4,
+      kg: 200,
+    });
+    stampedReceipts.push(receiptId);
+    await ledgerRow(client, 'charge', 400, dayAt(0), { dealId: dealA });
+    const today0 = tashkentDay();
+    const window = { from: tashkentDayStart(today0), to: tashkentDayStart(addDays(today0, 1)) };
+    const both = async () => {
+      const byDeal = (await paidCargo(db, { kind: 'deals', dealIds: [dealA] }, { elsewhere: false })).cartons;
+      const byStamp = (
+        await paidCargo(db, { kind: 'stamped', sellerId, from: window.from, to: window.to }, { elsewhere: false })
+      ).cartons.filter((c) => c.receiptId === receiptId);
+      const shape = (list: typeof byDeal) =>
+        list.map((c) => [c.boxId, c.covered, c.paid] as const).sort((x, y) => x[0].localeCompare(y[0]));
+      return { byDeal: shape(byDeal), byStamp: shape(byStamp) };
+    };
+    const unpaid = await both();
+    expect(unpaid.byDeal).toHaveLength(2);
+    expect(unpaid.byDeal).toEqual(unpaid.byStamp);
+    expect(unpaid.byDeal.every(([, covered, paid]) => covered && !paid)).toBe(true);
+
+    await ledgerRow(client, 'payment', 400, dayAt(0));
+    const settled = await both();
+    expect(settled.byDeal).toEqual(settled.byStamp);
+    expect(settled.byDeal.every(([, , paid]) => paid)).toBe(true);
+  });
+
+  it('T10 — the job’s own price that covers no carton holds the job until it is paid (money-O1)', async () => {
+    const client = await ownClient();
+    const dealA = await ownDeal(client);
+    madeReceipts.push(await arriveOnDeal({ dealId: dealA, clientId: client, actorId, m3: 10, kg: 500 }));
+    const offer = await answered(dealA);
+    const truck = await mintBatch();
+    // 1000 on the deal covers the carton; 300 on a truck it never touched —
+    // the shape of the Andijan → Tashkent leg, whatever the fixture's country.
+    await ledgerRow(client, 'charge', 1000, dayAt(-10), { dealId: dealA });
+    await ledgerRow(client, 'charge', 300, dayAt(0), { dealId: dealA, batchId: truck });
+    await ledgerRow(client, 'payment', 1000, dayAt(0));
+
+    const row = (await mine(offer))!;
+    expect(row.state).toBe('awaiting_payment');
+    expect(row.cargoWalk).toMatchObject({ ownChargesOwed: 1, unpaid: 0, toOpenUsd: 300 });
+
+    await ledgerRow(client, 'payment', 300, dayAt(0));
+    expect((await mine(offer))!.state).toBe('payable');
+  });
+
+  it('T11 — a prixod moved to another client stays on the deal and never decides it (access-A1)', async () => {
+    const clientX = await ownClient();
+    const clientY = await ownClient();
+    const dealA = await ownDeal(clientX);
+    const r1 = await arriveOnDeal({ dealId: dealA, clientId: clientX, actorId, m3: 5, kg: 250 });
+    const r2 = await arriveOnDeal({ dealId: dealA, clientId: clientX, actorId, m3: 5, kg: 250 });
+    madeReceipts.push(r1, r2);
+    const offer = await answered(dealA);
+    // Exactly what `assignReceiptClient` leaves (receipts/edit.ts): the
+    // client and the stamp move, the deal stays.
+    await db.execute(sql`UPDATE receipts SET client_id = ${clientY}::uuid, sales_manager_id = NULL WHERE id = ${r2}::uuid`);
+    await ledgerRow(clientX, 'charge', 1300, dayAt(-5), { dealId: dealA });
+    await ledgerRow(clientX, 'payment', 1300, dayAt(0));
+
+    const row = (await mine(offer))!;
+    expect(row.state).toBe('payable');
+    expect(row.cargoWalk?.cartons).toBe(1);
+  });
+
+  it('T12 — a price on the truck the cargo is being loaded on does not cover it yet', async () => {
+    const client = await ownClient();
+    const dealA = await ownDeal(client);
+    const receipt = await arriveOnDeal({ dealId: dealA, clientId: client, actorId, m3: 10, kg: 500 });
+    madeReceipts.push(receipt);
+    const offer = await answered(dealA);
+    const truck = await mintBatch();
+    await db.execute(sql`
+      UPDATE boxes SET current_batch_id = ${truck}::uuid, status = 'loading'
+       WHERE lot_id IN (SELECT id FROM receipt_lots WHERE receipt_id = ${receipt}::uuid)`);
+    await ledgerRow(client, 'charge', 1300, dayAt(-5), { dealId: dealA, batchId: truck });
+    await ledgerRow(client, 'payment', 1300, dayAt(0));
+
+    // The old rule said payable. The price is written on the truck the cargo
+    // has not left on: «narx mashinaga yozilgan, lekin yuk hali jo'namagan».
+    const row = (await mine(offer))!;
+    expect(row.state).toBe('no_invoice');
+    expect(row.cargoWalk).toMatchObject({ uncovered: 1, uncoveredElsewhere: 1 });
   });
 });

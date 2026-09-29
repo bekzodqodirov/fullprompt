@@ -155,7 +155,7 @@ describe('silence (the push stays quiet when nothing HAPPENED)', () => {
       recurring: [],
       partners: [{ name: 'Yiwu Trans', active: true, open: [{ dueDate: '2026-10-03', usd: 800 }] }],
       partnersUnrated: [],
-      upsale: { usd: 0, count: 0 },
+      upsale: { usd: 0, count: 0, unknownCount: 0, unknownUsd: 0 },
       arrears: null,
     });
     const weekly = {
@@ -169,7 +169,7 @@ describe('silence (the push stays quiet when nothing HAPPENED)', () => {
       },
     };
     expect(summaryQuiet(weekly)).toBe(false);
-    const nothing = { ...weekly, weeklyBlock: { ...weekly.weeklyBlock, payments: { items: [], totals: [] } } };
+    const nothing = { ...weekly, weeklyBlock: { ...weekly.weeklyBlock, payments: { items: [], totals: [], upsaleUnknown: null } } };
     expect(summaryQuiet(nothing)).toBe(true);
   });
 });
@@ -237,7 +237,7 @@ describe('the weekly payments (outflows only, each in its own money)', () => {
       recurring: [rec({ dueDate: '2026-10-26' }), rec({ dueDate: '2026-10-27', categoryName: 'Kechroq' })],
       partners: [],
       partnersUnrated: [],
-      upsale: { usd: 0, count: 0 },
+      upsale: { usd: 0, count: 0, unknownCount: 0, unknownUsd: 0 },
       arrears: null,
     });
     expect(PAYMENTS_DAYS).toBe(28);
@@ -255,7 +255,7 @@ describe('the weekly payments (outflows only, each in its own money)', () => {
       ],
       partners: [],
       partnersUnrated: [],
-      upsale: { usd: 0, count: 0 },
+      upsale: { usd: 0, count: 0, unknownCount: 0, unknownUsd: 0 },
       arrears: { usd: 700, unrated: [{ currency: 'KZT', amount: 1000 }] },
     });
     expect(due.items.map((item) => item.label)).toEqual(['Oylik · Alisher']);
@@ -279,7 +279,7 @@ describe('the weekly payments (outflows only, each in its own money)', () => {
       ],
       partners: [],
       partnersUnrated: [],
-      upsale: { usd: 0, count: 0 },
+      upsale: { usd: 0, count: 0, unknownCount: 0, unknownUsd: 0 },
       arrears: null,
     });
     expect(due.items.map((item) => [item.label, item.amount, item.note])).toEqual([
@@ -305,7 +305,7 @@ describe('the weekly payments (outflows only, each in its own money)', () => {
         },
       ],
       partnersUnrated: [],
-      upsale: { usd: 120, count: 3 },
+      upsale: { usd: 120, count: 3, unknownCount: 0, unknownUsd: 0 },
       arrears: null,
     });
     expect(due.items.map((item) => [item.date, item.label, item.amount, item.overdue, item.note])).toEqual([
@@ -355,7 +355,7 @@ describe('the weekly payments (outflows only, each in its own money)', () => {
       recurring: [],
       partners: [{ name: 'Yiwu Trans', active: true, open: [{ dueDate: today, usd: 50 }] }],
       partnersUnrated: [],
-      upsale: { usd: 0, count: 0 },
+      upsale: { usd: 0, count: 0, unknownCount: 0, unknownUsd: 0 },
       arrears: null,
     });
     expect(payments.items.map((item) => [item.date, item.overdue])).toEqual([[today, false]]);
@@ -386,7 +386,7 @@ describe('the weekly payments (outflows only, each in its own money)', () => {
         cost('2026-11-30', 999),
         cost('2026-10-01', 1000000, 'UZS'),
       ],
-      upsale: { usd: 0, count: 0 },
+      upsale: { usd: 0, count: 0, unknownCount: 0, unknownUsd: 0 },
       arrears: null,
     });
     expect(payments.items.map((item) => [item.date, item.amount, item.currency, item.overdue, item.unrated])).toEqual([
@@ -421,7 +421,7 @@ describe('the weekly payments (outflows only, each in its own money)', () => {
       recurring: [],
       partners: [],
       partnersUnrated: [],
-      upsale: { usd: 0, count: 0 },
+      upsale: { usd: 0, count: 0, unknownCount: 0, unknownUsd: 0 },
       arrears: { usd: 450, unrated: [] },
     });
     const text = weeklyText({
@@ -439,13 +439,70 @@ describe('the weekly payments (outflows only, each in its own money)', () => {
     const weekly = (arrears: NonNullable<SummaryFacts['weeklyBlock']>['arrears']) => ({
       ...quietFacts(),
       weekly: true,
-      weeklyBlock: { payments: { items: [], totals: [] }, arrears, pendingSpend: noSpend, receivableUsd: 0 },
+      weeklyBlock: { payments: { items: [], totals: [], upsaleUnknown: null }, arrears, pendingSpend: noSpend, receivableUsd: 0 },
     });
     expect(summaryQuiet(weekly({ cashCount: 0, usd: 0, unrated: [], bookCount: 3 }))).toBe(true);
     expect(summaryQuiet(weekly({ cashCount: 1, usd: 450, unrated: [], bookCount: 0 }))).toBe(false);
     expect(summaryQuiet(weekly({ cashCount: 0, usd: 0, unrated: [{ currency: 'KZT', amount: 1, count: 1 }], bookCount: 0 }))).toBe(
       false,
     );
+  });
+
+  // His 3a: the commissions are a budgeted walk, and a job it did not reach
+  // is an unknown — its own ⚠ line with the most it could be, never an item,
+  // never inside «Jami», and never a $0 (a Telegram message has no page to
+  // reload, so it says how many and how much at most).
+  it('commissions the walk could not check are their own ⚠ line, out of «Jami»', () => {
+    const payments = paymentsDue({
+      today,
+      recurring: [],
+      partners: [],
+      partnersUnrated: [],
+      upsale: { usd: 120, count: 3, unknownCount: 2, unknownUsd: 80 },
+      arrears: null,
+    });
+    expect(payments.items.map((item) => [item.date, item.label, item.amount, item.overdue, item.note])).toEqual([
+      [null, 'Sotuvchilar ulushi (3 ta)', 120, false, null],
+    ]);
+    expect(payments.upsaleUnknown).toEqual({ count: 2, usd: 80 });
+    expect(payments.totals).toEqual([{ currency: 'USD', amount: 120 }]);
+    const text = weeklyText({ payments, arrears: null, pendingSpend: noSpend, receivableUsd: 0 });
+    expect(text).toContain('• Sotuvchilar ulushi (3 ta): $120.00');
+    expect(text).toContain('⚠ Sotuvchilar ulushi: 2 ta ish tekshirilmadi (ko‘pi bilan $80.00) — jamiga kirmagan');
+    expect(text).toContain('Jami: $120.00');
+    expect(text).not.toContain('Jami: $200.00');
+  });
+
+  it('only unknown commissions: no $0 item, no «to‘lov yo‘q», just the ⚠ line', () => {
+    const payments = paymentsDue({
+      today,
+      recurring: [],
+      partners: [],
+      partnersUnrated: [],
+      upsale: { usd: 0, count: 0, unknownCount: 1, unknownUsd: 50 },
+      arrears: null,
+    });
+    expect(payments.items.some((item) => item.label.startsWith('Sotuvchilar ulushi ('))).toBe(false);
+    expect(payments.upsaleUnknown).toEqual({ count: 1, usd: 50 });
+    const text = weeklyText({ payments, arrears: null, pendingSpend: noSpend, receivableUsd: 0 });
+    expect(text).toContain('⚠ Sotuvchilar ulushi: 1 ta ish tekshirilmadi (ko‘pi bilan $50.00) — jamiga kirmagan');
+    expect(text).not.toMatch(/Sotuvchilar ulushi[^\n]*\$0\.00/);
+    expect(text).not.toContain('to‘lov yo‘q');
+  });
+
+  it('nothing unknown: no ⚠ commission line at all', () => {
+    const payments = paymentsDue({
+      today,
+      recurring: [],
+      partners: [],
+      partnersUnrated: [],
+      upsale: { usd: 0, count: 0, unknownCount: 0, unknownUsd: 0 },
+      arrears: null,
+    });
+    expect(payments.upsaleUnknown).toBeNull();
+    const text = weeklyText({ payments, arrears: null, pendingSpend: noSpend, receivableUsd: 0 });
+    expect(text).not.toContain('tekshirilmadi');
+    expect(text).toContain('• to‘lov yo‘q');
   });
 });
 
@@ -463,7 +520,7 @@ describe('the worst case still fits one Telegram message and keeps its link', ()
         { dueDate: '2026-10-02', usd: 20 + i },
       ],
     }));
-    const payments = paymentsDue({ today: '2026-09-28', recurring, partners, partnersUnrated: [], upsale: { usd: 5, count: 1 }, arrears: null });
+    const payments = paymentsDue({ today: '2026-09-28', recurring, partners, partnersUnrated: [], upsale: { usd: 5, count: 1, unknownCount: 0, unknownUsd: 0 }, arrears: null });
     const fact = (i: number): AttentionFact => ({
       kind: 'unconverted',
       level: 'warn',

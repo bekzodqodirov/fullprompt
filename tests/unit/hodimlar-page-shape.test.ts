@@ -43,6 +43,16 @@ describe('the upsale column is never a silently cut list', () => {
   it('a cut list is said on the page', () => {
     expect(page).toMatch(/upsale\?\.truncated \?/);
   });
+
+  // His 3a: «to'lanadi» comes from the ONE per-seller fold /upsale reads too,
+  // and a seller whose jobs the walk could not finish says so on the card —
+  // never a short figure that looks whole (the KPI's own per-card pattern).
+  it('the card’s upsale is the shared fold, and its unknown is said on the card', () => {
+    expect(page).toContain('bySeller(');
+    expect(page).not.toContain("row.state === 'payable'");
+    expect(card).toMatch(/upsale\.notComputed > 0 \? \(\s*<span[^>]*data-testid="staff-upsale-unknown"/);
+    expect(page).toMatch(/upsale\?\.rows\.some\(\(r\) => r\.state === 'not_computed'\) \? \(\s*<p[^>]*data-testid="hodimlar-upsale-not-computed"/);
+  });
 });
 
 describe('a link is drawn only where its page admits the reader', () => {
