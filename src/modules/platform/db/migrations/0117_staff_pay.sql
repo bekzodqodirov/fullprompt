@@ -82,17 +82,19 @@ CREATE INDEX kpi_payouts_seller_idx ON kpi_payouts (seller_id);
 -- whole migration on one odd audit row; an id whose user no longer exists is
 -- left NULL rather than failing the foreign key. Both laterals ride
 -- `audit_entity_idx` (entity_type, entity_id, created_at).
+-- The design's `CASE WHEN nx.found IS NULL THEN current ELSE nx.before_m END`
+-- is this coalesce exactly: with no later audited change there is no `dx`
+-- either (every `dx` row is an `nx` candidate), so both read the current
+-- manager — its red proof stayed green, and the dead branch is gone.
 UPDATE receipts r SET sales_manager_id = s.m
 FROM (
   SELECT r2.id,
-         coalesce(CASE WHEN nx.found IS NULL THEN c.sales_manager_id ELSE nx.before_m END,
-                  dx.m, c.sales_manager_id) AS m
+         coalesce(nx.before_m, dx.m, c.sales_manager_id) AS m
     FROM receipts r2
     JOIN clients c ON c.id = r2.client_id
     LEFT JOIN LATERAL (
-      SELECT true AS found,
-             CASE WHEN a.before->>'salesManagerId' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-                  THEN (a.before->>'salesManagerId')::uuid END AS before_m
+      SELECT CASE WHEN a.before->>'salesManagerId' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+             THEN (a.before->>'salesManagerId')::uuid END AS before_m
         FROM audit_log a
        WHERE a.entity_type = 'client' AND a.entity_id = r2.client_id AND a.created_at > r2.received_at
          AND a.action IN ('create', 'update') AND a.after ? 'salesManagerId'
