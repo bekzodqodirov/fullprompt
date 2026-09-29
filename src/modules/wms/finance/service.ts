@@ -686,8 +686,9 @@ export async function clientBalanceUsd(clientId: string): Promise<number> {
  * What counts as a LIVE deferral, in one place.
  *
  * Written once because two things ask it now — the handover gate through
- * `deferredBalanceUsd`, and the upsale payout, which by law 4 must not be
- * stricter than the gate that already released the cargo. A deferral whose
+ * `deferredBalanceUsd`, and the paid-cargo walk (finance/paid-cartons.ts, the
+ * KPI and the upsale), through `deferredPerDealSql`: there a deferral
+ * settles its own deal's prices. A deferral whose
  * date has passed is no longer a deferral and the hourly sweep may not have
  * run yet, so neither caller may honour it in the meantime (#251).
  *
@@ -715,7 +716,8 @@ export function liveDeferralWhere(today: string = tashkentDay()) {
  * a deferral, never widen the gate. Raw and unaliased so `signedUsdSql()`
  * and `liveDeferralWhere()` render against their own tables.
  *
- * Exported for the KPI's paid-cargo walk (0117, staff/kpi-paid.ts): there a
+ * Exported for the paid-cargo walk (0117, finance/paid-cartons.ts — the KPI
+ * and, since his 3a, the upsale): there a
  * deferral settles ITS OWN deal's charges, and this is the one home of what
  * a live deferral is worth. A SQL builder, run on whichever executor the
  * caller holds (#714).
@@ -1138,7 +1140,8 @@ export function debtBlocks(balanceUsd: number, deferredUsd: number): boolean {
  * Balance and live-deferral totals for MANY clients, in one query each.
  *
  * The per-client pair above is right for a counter where one customer is
- * standing; a payout queue asks about every seller's every job at once, and
+ * standing; the waiting list (issue/waiting.ts) and the truck's pricing page
+ * ask about many clients at once, and
  * calling them per row is the shape rounds 45, 68 and 108 each found
  * saturating the one Node process (#432). Same two predicates, one home.
  */

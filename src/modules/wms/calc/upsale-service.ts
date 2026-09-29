@@ -4,7 +4,9 @@ import { calcOffers, expenseCategories, moneyAccounts } from '@/modules/platform
 import { writeAudit, type AuditContext } from '@/modules/platform/audit/service';
 import { getSetting } from '@/modules/platform/settings/service';
 import { logger } from '@/modules/platform/logger';
-import { balancesForClients } from '../finance/service';
+import { isBudgetMiss, withoutJit } from '@/modules/platform/db/no-jit';
+import { isQueryCanceled } from '@/modules/platform/db/errors';
+import { dealCargoPaid, type DealCargoPaid } from '../finance/paid-cartons';
 import { rateFor } from '../costing/service';
 import { latestTxDate } from '../finance/dates';
 import { CalcError } from './service';
@@ -21,14 +23,21 @@ import type { UpsaleScope } from './upsale-scope';
  * VED can discount a job or a colleague can pay it, and a claim that trusts
  * the posted list pays money the rule no longer allows.
  *
- * The client's money is asked in a SECOND grouped query rather than joined
- * into the first. That keeps the deferral rule where it already lives —
- * `liveDeferralWhere` in finance/service.ts, the handover gate's own — instead
- * of restating it in a string here (#513), and it is two queries for any
- * number of rows rather than two per row (#432).
+ * The money is the KPI's paid-cargo walk (finance/paid-cartons.ts) over the
+ * candidate deals — chunked, budgeted by the caller, one pass per read, never
+ * a query per row (#432). The deferral rule stays where it already lives —
+ * `deferredPerDealSql` in finance/service.ts, the handover gate's own — and
+ * is not restated in a string here (#513).
  */
 
-export type UpsaleState = 'paid' | 'payable' | 'awaiting_payment' | 'no_invoice' | 'no_cargo' | 'no_deal';
+export type UpsaleState =
+  | 'paid'
+  | 'payable'
+  | 'awaiting_payment'
+  | 'no_invoice'
+  | 'no_cargo'
+  | 'no_deal'
+  | 'not_computed';
 
 export interface UpsaleRow {
   offerId: string;
@@ -60,6 +69,10 @@ export interface UpsaleRow {
   paidUsd: number | null;
   /** Taken back for the job's lost cargo (0105) — why a commission waits. */
   compensatedUsd: number;
+  /** The deal's paid-cargo walk (3a) — null when the state was decided before it, or the walk did not reach it. */
+  cargoWalk: DealCargoPaid | null;
+  /** The client's own seller (`clients.sales_manager_id`) — who may read this client's money (round 91). */
+  clientManagerId: string | null;
   state: UpsaleState;
 }
 
@@ -86,6 +99,7 @@ interface RawRow extends Record<string, unknown> {
   client_id: string | null;
   client_code: string | null;
   client_name: string | null;
+  client_manager_id: string | null;
   charged_usd: string | null;
   compensated_usd: string | null;
 }
@@ -95,11 +109,36 @@ const money = (n: unknown) => Math.round(Number(n ?? 0) * 100) / 100;
 /** How many rows a screen may hold before it is a slice and says so (#559). */
 export const UPSALE_CAP = 300;
 
+/** The walk's budget per reader (3a; §8's measurements): a list page, and the net's readers, which wait like U03. */
+export const UPSALE_WALK_BUDGET_MS = { list: 4000, net: 20000 } as const;
+export type UpsaleWalkBudget = keyof typeof UPSALE_WALK_BUDGET_MS;
+/** Deals per chunk: a miss costs only its chunk; a client's deals are never split (its ledger is read once). */
+export const UPSALE_WALK_CHUNK = 40;
+
 /**
  * Why one offer is or is not payable yet — the rule, ONCE, for the /upsale
- * screen and the Balans's liability line (audit U10), so the screen and the
- * balance sheet cannot drift about which commission is owed (#513). See
- * `upsaleRows` for the three states and why each is asked of the DEAL.
+ * screen, the pay door and the Balans's liability line (audit U10), so the
+ * screen and the balance sheet cannot drift about which commission is owed
+ * (#513). The ladder, in this order:
+ *
+ *   paid              — the payout was made
+ *   no_deal           — an offer on a lead: there is no job to invoice
+ *   no_cargo          — no confirmed prixod on the deal (4b)
+ *   no_invoice        — the job's charges, net of what was taken back for
+ *                       lost cargo, are below the price of the cargo that
+ *                       arrived
+ *   …then the deal's paid-cargo walk (his 3a — the KPI's rule, oldest debt
+ *   first), which the caller passes as `cargo`:
+ *   not_computed      — the walk did not reach or finish this deal (never paid)
+ *   no_cargo          — none of its cartons is live any more (lost, voided, moved)
+ *   no_invoice        — a carton no live price covers
+ *   awaiting_payment  — a covered carton is not paid for, or a price stamped
+ *                       with the deal is still owed
+ *   payable
+ *
+ * The compensation check stays IN FRONT of the walk: the FIFO counts a
+ * compensation as settling its own prixod's price, so compensated cargo reads
+ * «paid» there — and #1038/C12 says such a job waits until it is whole.
  */
 export function upsaleStateOf(
   row: {
@@ -119,7 +158,7 @@ export function upsaleStateOf(
      */
     compensated_usd: string | null;
   },
-  bal: { balanceUsd: number; deferredUsd: number } | undefined,
+  cargo: DealCargoPaid | null,
 ): UpsaleState {
   if (row.payout_at) return 'paid';
   if (row.entity_type !== 'deal') return 'no_deal';
@@ -131,8 +170,123 @@ export function upsaleStateOf(
   if (money(money(row.charged_usd) - money(row.compensated_usd)) < money(row.due_price_usd) - MONEY_EPSILON) {
     return 'no_invoice';
   }
-  if ((bal?.balanceUsd ?? 0) - (bal?.deferredUsd ?? 0) > MONEY_EPSILON) return 'awaiting_payment';
+  // His 3a: the KPI's paid-cargo rule over THIS deal's cartons — oldest debt
+  // first, so a newer truck's debt no longer holds a job whose cargo is paid —
+  // plus the job's own invoice (every price stamped with the deal, money-O1).
+  // AFTER the compensation check: the FIFO calls compensated cargo settled.
+  if (cargo === null) return 'not_computed';
+  if (cargo.cartons === 0) return 'no_cargo';
+  if (cargo.uncovered > 0) return 'no_invoice';
+  if (cargo.unpaid > 0 || cargo.ownChargesOwed > 0) return 'awaiting_payment';
   return 'payable';
+}
+
+type StateRow = Parameters<typeof upsaleStateOf>[0];
+
+/** The rows whose state waits on the walk — asked of upsaleStateOf itself, never restated (#513). Order kept (= priority). */
+export function walkCandidates(
+  rows: readonly (StateRow & { entity_id: string; client_id: string | null })[],
+): { dealId: string; clientId: string | null }[] {
+  return rows
+    .filter((r) => upsaleStateOf(r, null) === 'not_computed')
+    .map((r) => ({ dealId: r.entity_id, clientId: r.client_id }));
+}
+
+/**
+ * Client-grouped chunks, in first-appearance order. A client's deals are
+ * never split — its whole ledger is read once per chunk, and a client split
+ * over two chunks would read it twice — and a client with more deals than a
+ * chunk holds is a chunk alone.
+ */
+export function walkChunks(
+  deals: readonly { dealId: string; clientId: string | null }[],
+  size: number = UPSALE_WALK_CHUNK,
+): string[][] {
+  const groups = new Map<string, string[]>();
+  const seen = new Set<string>();
+  for (const { dealId, clientId } of deals) {
+    if (seen.has(dealId)) continue;
+    seen.add(dealId);
+    // A deal with no client is its own group: it shares a ledger with nobody.
+    const key = clientId === null ? `deal:${dealId}` : `client:${clientId}`;
+    const group = groups.get(key) ?? [];
+    group.push(dealId);
+    groups.set(key, group);
+  }
+  const chunks: string[][] = [];
+  let current: string[] = [];
+  for (const group of groups.values()) {
+    if (current.length > 0 && current.length + group.length > size) {
+      chunks.push(current);
+      current = [];
+    }
+    current.push(...group);
+  }
+  if (current.length > 0) chunks.push(current);
+  return chunks;
+}
+
+/**
+ * Walk the deals within `deadlineMs`, chunk by chunk, each chunk its own
+ * `withoutJit` read (one pool connection at a time, never inside a
+ * transaction — #714). A chunk that misses the budget leaves ITS deals out
+ * of `walked` (= «hisoblanmadi»); later chunks get what is left. Only a
+ * budget miss is soft (`isBudgetMiss`): anything else is a bug and stays
+ * loud. Exported for the budget test; production calls `walkDealsBudgeted`.
+ */
+export async function walkDealsWithin(
+  deals: readonly { dealId: string; clientId: string | null }[],
+  deadlineMs: number,
+): Promise<{ walked: Map<string, DealCargoPaid>; missed: number }> {
+  const walked = new Map<string, DealCargoPaid>();
+  let missed = 0;
+  const deadline = Date.now() + deadlineMs;
+  for (const chunk of walkChunks(deals)) {
+    const left = Math.trunc(deadline - Date.now());
+    if (left <= 0) {
+      missed += chunk.length;
+      continue;
+    }
+    try {
+      const got = await withoutJit((exec) => dealCargoPaid(exec, chunk), { deadlineMs: left });
+      for (const [id, value] of got) walked.set(id, value);
+    } catch (err) {
+      if (!isBudgetMiss(err)) throw err;
+      missed += chunk.length;
+    }
+  }
+  if (missed > 0) {
+    logger.warn({ missed, deals: deals.length, deadlineMs }, '[upsale] paid-cargo walk left deals not computed');
+  }
+  return { walked, missed };
+}
+
+/** The walk under the reader's own budget (`UPSALE_WALK_BUDGET_MS`). */
+export function walkDealsBudgeted(
+  deals: readonly { dealId: string; clientId: string | null }[],
+  budget: UpsaleWalkBudget,
+) {
+  return walkDealsWithin(deals, UPSALE_WALK_BUDGET_MS[budget]);
+}
+
+/**
+ * The job's invoice — its prices AND what was taken back for its lost cargo
+ * (0105) — as the LATERAL every reader joins after `payableOffersSql()` as
+ * `p` (the screen, the Balans liability and the pay door), so all three
+ * decide in ONE place (upsaleStateOf) on the job's NET price. Every price
+ * stamped with the deal, with no truck filter: which of them covers which
+ * carton is the walk's question, not this one's.
+ */
+function jobInvoiceSql() {
+  return sql`
+      LEFT JOIN LATERAL (
+        SELECT coalesce(sum(ct.amount_usd) FILTER (WHERE ct.type = 'charge'), 0) AS charged,
+               coalesce(sum(ct.amount_usd) FILTER (WHERE ct.type = 'compensation'), 0) AS compensated
+          FROM client_transactions ct
+         WHERE ct.deal_id = p.entity_id
+           AND ct.voided_at IS NULL
+           AND ct.type IN ('charge', 'compensation')
+      ) inv ON p.entity_type = 'deal'`;
 }
 
 /**
@@ -142,21 +296,27 @@ export function upsaleStateOf(
  * alone: a balance of zero is true of a client who has settled AND of a
  * client nobody has invoiced, and a client with no ledger rows at all has no
  * row to read, so the offer falls out of every bucket and is never paid,
- * silently. Three states, asked about the DEAL:
+ * silently. So the states are asked about the DEAL, in `upsaleStateOf`'s
+ * ladder: no_deal → no_cargo → no_invoice → the walk (not_computed /
+ * no_cargo / no_invoice / awaiting_payment) → payable.
  *
- *   no_invoice        — less has been charged on this deal than was quoted
- *   awaiting_payment  — charged, and the client still owes past their deferral
- *   payable           — charged and collected
+ * Collection is his 3a: the KPI's paid-cargo rule over the deal's own
+ * cartons plus the prices stamped with the deal, oldest debt first — a newer
+ * truck's debt no longer holds a job whose cargo the client has paid for. A
+ * deferral is still honoured, now per deal inside the FIFO
+ * (`deferredPerDealSql`): a decision the owner already made, and a commission
+ * gate stricter than the gate that released the cargo leaves sellers unpaid
+ * on goods the company has already handed over.
  *
- * Collection uses `balance − deferred`, the handover gate's own arithmetic:
- * a deferral is a decision the owner already made, and a commission gate
- * stricter than the gate that released the cargo leaves sellers unpaid on
- * goods the company has already handed over.
+ * `walk` is REQUIRED (#790: an optional walk fails silently one way or the
+ * other). 'fifo' walks the candidates under the list budget; 'skip' is for a
+ * reader that folds `earnedOf` only — its candidates read `not_computed`,
+ * which `earnedOf` ignores, so it pays for no walk and no pool connection.
  */
 export async function upsaleRows(
   scope: UpsaleScope,
   actorId: string,
-  opts: { from?: string; to?: string; sellerId?: string } = {},
+  opts: { from?: string; to?: string; sellerId?: string; walk: 'fifo' | 'skip' },
 ): Promise<{ rows: UpsaleRow[]; truncated: boolean }> {
   if (scope === 'none') return { rows: [], truncated: false };
 
@@ -176,23 +336,14 @@ export async function upsaleRows(
            c.id        AS client_id,
            c.client_code,
            c.name      AS client_name,
+           c.sales_manager_id AS client_manager_id,
            inv.charged AS charged_usd,
            inv.compensated AS compensated_usd
       FROM (${payableOffersSql()}) p
       JOIN users u ON u.id = p.offered_by
       LEFT JOIN deals d   ON d.id = p.entity_id AND p.entity_type = 'deal'
       LEFT JOIN clients c ON c.id = d.client_id
-      LEFT JOIN LATERAL (
-        -- The job's prices AND what was taken back for its lost cargo (0105),
-        -- in both readers — the screen and the Balans liability decide in
-        -- ONE place (upsaleStateOf) on the job's NET price.
-        SELECT coalesce(sum(ct.amount_usd) FILTER (WHERE ct.type = 'charge'), 0) AS charged,
-               coalesce(sum(ct.amount_usd) FILTER (WHERE ct.type = 'compensation'), 0) AS compensated
-          FROM client_transactions ct
-         WHERE ct.deal_id = p.entity_id
-           AND ct.voided_at IS NULL
-           AND ct.type IN ('charge', 'compensation')
-      ) inv ON p.entity_type = 'deal'
+      ${jobInvoiceSql()}
      WHERE ${sql.join(where, sql` AND `)}
      ORDER BY p.offered_at DESC
      LIMIT ${UPSALE_CAP + 1}
@@ -201,13 +352,15 @@ export async function upsaleRows(
   const truncated = raw.length > UPSALE_CAP;
   const slice = truncated ? raw.slice(0, UPSALE_CAP) : raw;
 
-  const balances = await balancesForClients(
-    slice.map((r) => r.client_id).filter((x): x is string => Boolean(x)),
-  );
+  const { walked } =
+    opts.walk === 'fifo'
+      ? await walkDealsBudgeted(walkCandidates(slice), 'list')
+      : { walked: new Map<string, DealCargoPaid>() };
 
   const rows = slice.map((r): UpsaleRow => {
     const clientPriceUsd = money(r.client_price_usd);
-    const state = upsaleStateOf(r, r.client_id ? balances.get(r.client_id) : undefined);
+    const cargoWalk = upsaleStateOf(r, null) === 'not_computed' ? (walked.get(r.entity_id) ?? null) : null;
+    const state = upsaleStateOf(r, cargoWalk);
 
     return {
       offerId: r.id,
@@ -232,6 +385,8 @@ export async function upsaleRows(
       paidAt: r.payout_at ? new Date(r.payout_at) : null,
       paidUsd: r.payout_usd === null ? null : money(r.payout_usd),
       compensatedUsd: money(r.compensated_usd),
+      cargoWalk,
+      clientManagerId: r.client_manager_id,
       state,
     };
   });
@@ -250,45 +405,114 @@ export function earnedOf(row: UpsaleRow): number {
   return row.state === 'paid' ? (row.paidUsd ?? 0) : row.payableUsd;
 }
 
-/** Per-seller totals for the scoreboard — ONE grouped pass over the rows. */
+/**
+ * Per-seller totals — ONE grouped pass over the rows, and the ONE per-seller
+ * fold /upsale's scoreboard and /hodimlar's cards both read (#513).
+ */
 export function bySeller(rows: UpsaleRow[]) {
   const out = new Map<
     string,
-    { sellerId: string; sellerName: string | null; jobs: number; earnedUsd: number; paidUsd: number; waitingUsd: number }
+    {
+      sellerId: string;
+      sellerName: string | null;
+      jobs: number;
+      earnedUsd: number;
+      paidUsd: number;
+      waitingUsd: number;
+      /** Σ remaining amount of the rows that are payable NOW. */
+      payableUsd: number;
+      /** Rows whose walk did not finish — «hisoblanmadi», never inside payableUsd. */
+      notComputed: number;
+    }
   >();
   for (const r of rows) {
-    const cur =
-      out.get(r.sellerId) ??
-      { sellerId: r.sellerId, sellerName: r.sellerName, jobs: 0, earnedUsd: 0, paidUsd: 0, waitingUsd: 0 };
+    const cur = out.get(r.sellerId) ?? {
+      sellerId: r.sellerId,
+      sellerName: r.sellerName,
+      jobs: 0,
+      earnedUsd: 0,
+      paidUsd: 0,
+      waitingUsd: 0,
+      payableUsd: 0,
+      notComputed: 0,
+    };
     cur.jobs += 1;
     cur.earnedUsd = money(cur.earnedUsd + earnedOf(r));
     if (r.state === 'paid') cur.paidUsd = money(cur.paidUsd + (r.paidUsd ?? 0));
     else cur.waitingUsd = money(cur.waitingUsd + r.payableUsd);
+    if (r.state === 'payable') cur.payableUsd = money(cur.payableUsd + r.payableUsd);
+    if (r.state === 'not_computed') cur.notComputed += 1;
     out.set(r.sellerId, cur);
   }
   return [...out.values()].sort((a, b) => b.earnedUsd - a.earnedUsd);
 }
 
 /**
+ * The liability's arithmetic — PURE, exported for its unit test. A row the
+ * walk did not reach is counted APART with the most it could be (U14's
+ * rule), never inside `payableUsd`: an unknown subtracted from the net would
+ * treat it as payable, and the Balans's lines must add up to the net.
+ */
+export function liabilityOf(
+  rows: readonly (StateRow & { entity_id: string; payable_usd: string })[],
+  walked: ReadonlyMap<string, DealCargoPaid>,
+): { payableUsd: number; payableCount: number; accruedUsd: number; unknownCount: number; unknownUsd: number } {
+  let payableUsd = 0;
+  let payableCount = 0;
+  let accruedUsd = 0;
+  let unknownCount = 0;
+  let unknownUsd = 0;
+  for (const r of rows) {
+    // The LIABILITY is what is still owed, so it reads the remaining figure —
+    // a job that already paid a commission owes only what a later, higher
+    // re-offer added (audit A1).
+    const state = upsaleStateOf(r, walked.get(r.entity_id) ?? null);
+    if (state === 'payable') {
+      payableUsd = money(payableUsd + money(r.payable_usd));
+      payableCount += 1;
+    } else if (state === 'not_computed') {
+      unknownUsd = money(unknownUsd + money(r.payable_usd));
+      unknownCount += 1;
+    } else if (state !== 'paid') accruedUsd = money(accruedUsd + money(r.payable_usd));
+  }
+  return { payableUsd, payableCount, accruedUsd, unknownCount, unknownUsd };
+}
+
+/**
  * What the company owes its sellers, for the balance sheet.
  *
- * `payableUsd` only — an upsale is payable exactly when the client's cash is
- * already in, so it is a real liability against real money. What is merely
+ * `payableUsd` only — an upsale is payable exactly when the job's cargo and
+ * its own invoice are paid for, oldest debt first (his 3a, the KPI's rule);
+ * a deferred job counts as collected on its own deal (#798's decision, now
+ * per deal). So it is a real liability against real money. What is merely
  * ACCRUED (earned on a job nobody has invoiced or collected) is returned for
  * a hint and deliberately kept off the balance sheet: it is not owed until
- * the sale is.
+ * the sale is. A deal the walk did not reach in its budget is counted apart
+ * (`unknownCount` / `unknownUsd`) and never guessed.
  *
  * An UNCAPPED aggregate (audit U10): it used to read `upsaleRows`, whose list
  * is the screen's — capped at UPSALE_CAP newest rows, paid ones kept for ever
  * — so once a year of paid commissions had piled up, an older unpaid one fell
- * off the slice and the liability read $0. Same fragment, same deal/charged
- * LATERAL and the same state rule (`upsaleStateOf`) as the screen, with no
- * ORDER BY and no LIMIT, over the unpaid DEAL offers only; two grouped
- * queries for any number of rows (#432).
+ * off the slice and the liability read $0. Same fragment, same job invoice
+ * (`jobInvoiceSql`) and the same state rule (`upsaleStateOf`) as the screen,
+ * with no LIMIT, over the unpaid DEAL offers only — newest first, so a
+ * budget miss leaves the OLDEST unknown and the jobs about to be paid are
+ * walked first.
+ *
+ * The budget is REQUIRED and the caller's: today every reader prints a net
+ * and waits like U03's line ('net').
  */
-export async function upsaleLiability(): Promise<{ payableUsd: number; payableCount: number; accruedUsd: number }> {
+export async function upsaleLiability(budget: UpsaleWalkBudget): Promise<{
+  payableUsd: number;
+  payableCount: number;
+  accruedUsd: number;
+  unknownCount: number;
+  unknownUsd: number;
+}> {
   const raw = await db.execute<{
     entity_type: string;
+    entity_id: string;
+    offered_at: Date;
     due_price_usd: string;
     cargo_receipts: string | number;
     payable_usd: string;
@@ -297,43 +521,19 @@ export async function upsaleLiability(): Promise<{ payableUsd: number; payableCo
     charged_usd: string | null;
     compensated_usd: string | null;
   }>(sql`
-    SELECT p.entity_type, p.due_price_usd, p.cargo_receipts, p.payable_usd, p.payout_at,
+    SELECT p.entity_type, p.entity_id, p.offered_at, p.due_price_usd, p.cargo_receipts, p.payable_usd, p.payout_at,
            d.client_id,
            inv.charged AS charged_usd,
            inv.compensated AS compensated_usd
       FROM (${payableOffersSql()}) p
       LEFT JOIN deals d ON d.id = p.entity_id AND p.entity_type = 'deal'
-      LEFT JOIN LATERAL (
-        -- The job's prices AND what was taken back for its lost cargo (0105),
-        -- in both readers — the screen and the Balans liability decide in
-        -- ONE place (upsaleStateOf) on the job's NET price.
-        SELECT coalesce(sum(ct.amount_usd) FILTER (WHERE ct.type = 'charge'), 0) AS charged,
-               coalesce(sum(ct.amount_usd) FILTER (WHERE ct.type = 'compensation'), 0) AS compensated
-          FROM client_transactions ct
-         WHERE ct.deal_id = p.entity_id
-           AND ct.voided_at IS NULL
-           AND ct.type IN ('charge', 'compensation')
-      ) inv ON p.entity_type = 'deal'
+      ${jobInvoiceSql()}
      WHERE p.payout_expense_id IS NULL
        AND p.entity_type = 'deal'
+     ORDER BY p.offered_at DESC, p.id
   `);
-  const balances = await balancesForClients(
-    raw.map((r) => r.client_id).filter((x): x is string => Boolean(x)),
-  );
-  let payableUsd = 0;
-  let payableCount = 0;
-  let accruedUsd = 0;
-  for (const r of raw) {
-    // The LIABILITY is what is still owed, so it reads the remaining figure —
-    // a job that already paid a commission owes only what a later, higher
-    // re-offer added (audit A1).
-    const state = upsaleStateOf(r, r.client_id ? balances.get(r.client_id) : undefined);
-    if (state === 'payable') {
-      payableUsd = money(payableUsd + money(r.payable_usd));
-      payableCount += 1;
-    } else if (state !== 'paid') accruedUsd = money(accruedUsd + money(r.payable_usd));
-  }
-  return { payableUsd, payableCount, accruedUsd };
+  const { walked } = await walkDealsBudgeted(walkCandidates(raw), budget);
+  return liabilityOf(raw, walked);
 }
 
 /**
@@ -345,9 +545,14 @@ export async function upsaleLiability(): Promise<{ payableUsd: number; payableCo
  * while $200 leaves the till, and a partial payment is expressed by ticking
  * fewer jobs rather than by writing a smaller number.
  *
- * Everything that READS happens before the transaction (#714/#725): the rate,
- * the category setting and the account's currency all come from the pool, and
- * inside the transaction only the expense insert, the claim and the audit run.
+ * The setting, the category's kind, the rate and the account are POOL reads
+ * before the transaction (#714/#725) — `getSetting` and `rateFor` run on the
+ * pool and must never be asked from inside one. Everything that DECIDES runs
+ * on the transaction's own connection: the offers, the paid-cargo walk of
+ * their deals (his 3a), the state, the amount, the expense, the claim. A
+ * ledger write that commits between the walk and the claim is not seen (read
+ * committed), as with `payKpi`; there is no advisory lock — the pay-twice
+ * fence is the row claim `payout_expense_id IS NULL`.
  */
 export async function payUpsale(
   offerIds: string[],
@@ -390,118 +595,134 @@ export async function payUpsale(
   if (!account) throw new CalcError('not_found');
   if (account.currency !== input.currency) throw new CalcError('account_currency_mismatch');
 
-  // What these jobs are worth, by the rule and not by the browser. Read here
-  // rather than inside the transaction because the expense must carry the
-  // amount at the moment it is inserted, and the claim below re-derives the
-  // same rule and refuses if anything moved in between.
   const idList = sql.join(
     ids.map((offerId) => sql`${offerId}::uuid`),
     sql`, `,
   );
-  // …and by the STATE rule the screen draws the tick from (review of the
-  // comp unit): «a job whose price was taken back pays no commission» and
-  // «the client has not paid yet» lived in upsaleStateOf alone, so a posted
-  // id — a stale tab, a forged post — paid a commission the screen would
-  // not have offered. The same two sums, the same balances, the same word.
-  const quoted = await db.execute<{
-    id: string;
-    payable_usd: string;
-    offered_by: string;
-    payout_at: Date | null;
-    entity_type: string;
-    due_price_usd: string;
-    cargo_receipts: string | number;
-    client_id: string | null;
-    charged_usd: string | null;
-    compensated_usd: string | null;
-  }>(sql`
-    SELECT p.id, p.payable_usd, p.offered_by, p.payout_at, p.entity_type, p.due_price_usd, p.cargo_receipts,
-           d.client_id, inv.charged AS charged_usd, inv.compensated AS compensated_usd
-      FROM (${payableOffersSql()}) p
-      LEFT JOIN deals d ON d.id = p.entity_id AND p.entity_type = 'deal'
-      LEFT JOIN LATERAL (
-        SELECT coalesce(sum(ct.amount_usd) FILTER (WHERE ct.type = 'charge'), 0) AS charged,
-               coalesce(sum(ct.amount_usd) FILTER (WHERE ct.type = 'compensation'), 0) AS compensated
-          FROM client_transactions ct
-         WHERE ct.deal_id = p.entity_id AND ct.voided_at IS NULL AND ct.type IN ('charge', 'compensation')
-      ) inv ON p.entity_type = 'deal'
-     WHERE p.id IN (${idList}) AND p.payout_expense_id IS NULL
-  `);
-  if (quoted.length !== ids.length) throw new CalcError('offer_not_payable');
-  const stateBalances = await balancesForClients(
-    quoted.map((q) => q.client_id).filter((x): x is string => Boolean(x)),
-  );
-  if (quoted.some((q) => upsaleStateOf(q, q.client_id ? stateBalances.get(q.client_id) : undefined) !== 'payable')) {
-    throw new CalcError('offer_not_payable');
-  }
+  try {
+    return await db.transaction(async (tx) => {
+      // payKpi's pair (kpi-service.ts): a hung read must not hold the offers'
+      // rows, and a company-scale plan is read, not compiled.
+      await tx.execute(sql`SET LOCAL jit = off`);
+      await tx.execute(sql`SET LOCAL statement_timeout = 20000`);
 
-  const sellers = new Set(quoted.map((q) => q.offered_by));
-  // One expense names one employee. Paying two sellers on one row puts both
-  // names on it and neither on the P&L honestly.
-  if (sellers.size !== 1) throw new CalcError('one_seller_at_a_time');
-  const employeeId = [...sellers][0]!;
+      // What these jobs are worth, by the rule and not by the browser — and
+      // by the STATE rule the screen draws the tick from (review of the comp
+      // unit): «a job whose price was taken back pays no commission» and «the
+      // cargo is not paid for yet» live in upsaleStateOf alone, so a posted
+      // id — a stale tab, a forged post — must not pay a commission the
+      // screen would not have offered. The same sums, the same walk, the same
+      // word, read on THIS connection.
+      const quoted = await tx.execute<{
+        id: string;
+        payable_usd: string;
+        offered_by: string;
+        payout_at: Date | null;
+        entity_type: string;
+        entity_id: string;
+        due_price_usd: string;
+        cargo_receipts: string | number;
+        client_id: string | null;
+        charged_usd: string | null;
+        compensated_usd: string | null;
+      }>(sql`
+        SELECT p.id, p.payable_usd, p.offered_by, p.payout_at, p.entity_type, p.entity_id, p.due_price_usd,
+               p.cargo_receipts, d.client_id, inv.charged AS charged_usd, inv.compensated AS compensated_usd
+          FROM (${payableOffersSql()}) p
+          LEFT JOIN deals d ON d.id = p.entity_id AND p.entity_type = 'deal'
+          ${jobInvoiceSql()}
+         WHERE p.id IN (${idList}) AND p.payout_expense_id IS NULL
+      `);
+      if (quoted.length !== ids.length) throw new CalcError('offer_not_payable');
+      // 3a — the walk on THIS connection, after the rows it judges are read.
+      // Never withoutJit / walkDealsBudgeted here: each takes a pool
+      // connection of its own (#714).
+      const walk = await dealCargoPaid(tx, [...new Set(walkCandidates(quoted).map((c) => c.dealId))]);
+      if (quoted.some((q) => upsaleStateOf(q, walk.get(q.entity_id) ?? null) !== 'payable')) {
+        throw new CalcError('offer_not_payable');
+      }
 
-  // The REMAINING amount, not the promise's whole difference: a job that has
-  // already paid a commission pays only what a higher re-offer added (A1).
-  // A ticked job whose arrived cargo is already paid for moves nothing (4b).
-  if (quoted.some((q) => !(Number(q.payable_usd) > 0))) throw new CalcError('nothing_to_pay');
-  const paidUsd = money(quoted.reduce((sum, q) => sum + Number(q.payable_usd), 0));
-  if (!(paidUsd > 0)) throw new CalcError('nothing_to_pay');
-  const amount = Math.round((paidUsd / rate) * 100) / 100;
+      const sellers = new Set(quoted.map((q) => q.offered_by));
+      // One expense names one employee. Paying two sellers on one row puts
+      // both names on it and neither on the P&L honestly.
+      if (sellers.size !== 1) throw new CalcError('one_seller_at_a_time');
+      const employeeId = [...sellers][0]!;
 
-  return db.transaction(async (tx) => {
-    const expense = await addExpenseTx(
-      tx,
-      {
-        categoryId,
-        amount,
-        currency: input.currency,
-        expenseDate: input.expenseDate,
-        accountId: input.accountId,
-        employeeId,
-        note: input.note?.trim() || `Upsale · ${quoted.length}`,
-      } as Parameters<typeof addExpenseTx>[1],
-      rate,
-      ctx,
-    );
+      // The REMAINING amount, not the promise's whole difference: a job that
+      // has already paid a commission pays only what a higher re-offer added
+      // (A1). A ticked job whose arrived cargo is already paid for moves
+      // nothing (4b).
+      if (quoted.some((q) => !(Number(q.payable_usd) > 0))) throw new CalcError('nothing_to_pay');
+      const paidUsd = money(quoted.reduce((sum, q) => sum + Number(q.payable_usd), 0));
+      if (!(paidUsd > 0)) throw new CalcError('nothing_to_pay');
+      const amount = Math.round((paidUsd / rate) * 100) / 100;
 
-    // The claim IS the UPDATE, and it re-derives the whole payable rule rather
-    // than trusting the ids that were ticked: between the queue rendering and
-    // the press a VED can discount a job or a colleague can pay it, and a
-    // claim that trusts the posted list pays money the rule no longer allows.
-    //
-    // All four payout columns are set in ONE statement, because
-    // `calc_offers_payout_pair_check` says paid is all four or none — which
-    // caught the first version of this function writing them in two steps.
-    const claimed = await tx.execute<{ id: string; payout_usd: string }>(sql`
-      UPDATE calc_offers o
-         SET payout_expense_id = ${expense.id}::uuid,
-             payout_at = now(),
-             payout_by = ${ctx.actorId}::uuid,
-             payout_usd = p.payable_usd
-        FROM (${payableOffersSql()}) p
-       WHERE o.id = p.id
-         AND o.id IN (${idList})
-         AND o.payout_expense_id IS NULL
-      RETURNING o.id, o.payout_usd
-    `);
+      const expense = await addExpenseTx(
+        tx,
+        {
+          categoryId,
+          amount,
+          currency: input.currency,
+          expenseDate: input.expenseDate,
+          accountId: input.accountId,
+          employeeId,
+          note: input.note?.trim() || `Upsale · ${quoted.length}`,
+        } as Parameters<typeof addExpenseTx>[1],
+        rate,
+        ctx,
+      );
 
-    // Short by one row, or short by a cent, and the amount already written on
-    // the expense is no longer the right amount — so the whole thing rolls
-    // back rather than paying a figure nothing agrees with.
-    if (claimed.length !== ids.length) throw new CalcError('offer_already_paid');
-    const claimedUsd = money(claimed.reduce((sum, c) => sum + Number(c.payout_usd), 0));
-    if (claimedUsd !== paidUsd) throw new CalcError('amount_moved');
+      // The claim IS the UPDATE, and it re-derives the whole payable rule
+      // rather than trusting the ids that were ticked: between the queue
+      // rendering and the press a VED can discount a job or a colleague can
+      // pay it, and a claim that trusts the posted list pays money the rule
+      // no longer allows.
+      //
+      // All four payout columns are set in ONE statement, because
+      // `calc_offers_payout_pair_check` says paid is all four or none — which
+      // caught the first version of this function writing them in two steps.
+      const claimed = await tx.execute<{ id: string; payout_usd: string }>(sql`
+        UPDATE calc_offers o
+           SET payout_expense_id = ${expense.id}::uuid,
+               payout_at = now(),
+               payout_by = ${ctx.actorId}::uuid,
+               payout_usd = p.payable_usd
+          FROM (${payableOffersSql()}) p
+         WHERE o.id = p.id
+           AND o.id IN (${idList})
+           AND o.payout_expense_id IS NULL
+        RETURNING o.id, o.payout_usd
+      `);
 
-    await writeAudit(tx, ctx, {
-      entityType: 'expense',
-      entityId: expense.id,
-      action: 'update',
-      after: { upsaleOffers: claimed.length, paidUsd, employeeId },
+      // Short by one row, or short by a cent, and the amount already written
+      // on the expense is no longer the right amount — so the whole thing
+      // rolls back rather than paying a figure nothing agrees with.
+      if (claimed.length !== ids.length) throw new CalcError('offer_already_paid');
+      const claimedUsd = money(claimed.reduce((sum, c) => sum + Number(c.payout_usd), 0));
+      if (claimedUsd !== paidUsd) throw new CalcError('amount_moved');
+
+      await writeAudit(tx, ctx, {
+        entityType: 'expense',
+        entityId: expense.id,
+        action: 'update',
+        after: {
+          upsaleOffers: claimed.length,
+          paidUsd,
+          employeeId,
+          // What the walk said at the press. A later void can flip it; nothing
+          // is clawed back.
+          cargo: quoted.map((q) => ({ dealId: q.entity_id, cartons: walk.get(q.entity_id)?.cartons ?? 0 })),
+        },
+      });
+
+      return { expenseId: expense.id, paidUsd, count: claimed.length };
     });
-
-    return { expenseId: expense.id, paidUsd, count: claimed.length };
-  });
+  } catch (err) {
+    // The walk ran out of its 20 s on this connection: said in words, never a
+    // digest — and nothing was paid, the transaction rolled back.
+    if (isQueryCanceled(err)) throw new CalcError('upsale_not_computed');
+    throw err;
+  }
 }
 
 /**

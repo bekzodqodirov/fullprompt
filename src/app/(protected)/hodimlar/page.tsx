@@ -13,7 +13,7 @@ import { getSetting } from '@/modules/platform/settings/service';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { listAccounts, listCategories } from '@/modules/wms/accounting/service';
 import { listPartners } from '@/modules/wms/partners/service';
-import { earnedOf, upsaleRows } from '@/modules/wms/calc/upsale-service';
+import { bySeller, upsaleRows } from '@/modules/wms/calc/upsale-service';
 import { mayEditKpiTable, mayPayCommission, maySeeStaffMoney, maySeeStaffUpsale } from '@/modules/wms/staff/door';
 import { unstampedCargo } from '@/modules/wms/staff/cargo';
 import {
@@ -198,20 +198,27 @@ async function StaffList({
       // company-wide list the cap may have cut (`UPSALE_CAP`).
       seesUpsale
         ? safe(
-            upsaleRows('all', actor.id, { from: `${month}-01`, to: monthEndDay(month), sellerId: hodim ?? undefined }),
+            upsaleRows('all', actor.id, {
+              from: `${month}-01`,
+              to: monthEndDay(month),
+              sellerId: hodim ?? undefined,
+              walk: 'fifo',
+            }),
             { rows: [], truncated: false },
             'upsale',
           )
         : Promise.resolve(null),
     ]);
 
-  const upsaleBySeller = new Map<string, { earnedUsd: number; payableUsd: number }>();
-  for (const row of upsale?.rows ?? []) {
-    const cur = upsaleBySeller.get(row.sellerId) ?? { earnedUsd: 0, payableUsd: 0 };
-    cur.earnedUsd = Math.round((cur.earnedUsd + earnedOf(row)) * 100) / 100;
-    if (row.state === 'payable') cur.payableUsd = Math.round((cur.payableUsd + row.payableUsd) * 100) / 100;
-    upsaleBySeller.set(row.sellerId, cur);
-  }
+  // The ONE per-seller fold /upsale's scoreboard reads too (#513): «to'lanadi»
+  // is only what is payable NOW, and a row the walk did not reach is counted
+  // apart so the card can say it instead of printing a short figure.
+  const upsaleBySeller = new Map(
+    bySeller(upsale?.rows ?? []).map((s) => [
+      s.sellerId,
+      { earnedUsd: s.earnedUsd, payableUsd: s.payableUsd, notComputed: s.notComputed },
+    ]),
+  );
 
   // Everybody active, plus a deactivated person who still has cargo this
   // month or money owed either way — a seller who left is still paid. When
@@ -280,6 +287,13 @@ async function StaffList({
       {upsale?.truncated ? (
         <p className="card !p-3 text-sm text-warn" data-testid="hodimlar-upsale-truncated">
           ⚠ {t('upsaleTruncated')}
+        </p>
+      ) : null}
+      {/* The upsale's paid-cargo walk ran out of its budget for some jobs
+          (3a): said once here, and on each seller's card below. */}
+      {upsale?.rows.some((r) => r.state === 'not_computed') ? (
+        <p className="card !p-3 text-sm text-warn" data-testid="hodimlar-upsale-not-computed">
+          ⚠ {t('upsaleNotComputed')}
         </p>
       ) : null}
 

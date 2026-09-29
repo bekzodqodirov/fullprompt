@@ -131,6 +131,12 @@ export async function composeOwnerSummary(
   // Read ONCE and handed to the attention list too (judge 7): outside a
   // render the loaders' `cache()` is a plain call-through, so asking twice
   // would pay twice. Both are awaited inside the ONE Promise.all below.
+  // The sellers' commissions are a company-wide walk (his 3a) that left the
+  // parts: read below, on Mondays only — the daily message never prints them
+  // and must not pay for the walk. Imported where asked, like reports.ts, and
+  // BEFORE the two promises start (one awaited later while another await is
+  // pending is an unhandled rejection).
+  const { upsaleLiability } = await import('../calc/upsale-service');
   const balanceP = companyBalanceParts();
   const trucksP = trucksOnRoad(ids, { limit: 0, now });
   const [pnl, flow, collected, intake, moves, trucks, balance, leads, sources, weeklyReads] = await Promise.all([
@@ -144,7 +150,13 @@ export async function composeOwnerSummary(
     seesOutcome ? loadLeadFlow(period.from, period.to) : null,
     readAttentionSources(gates, scopeKey, now, actor, { balance: balanceP, trucks: trucksP }),
     weekly
-      ? Promise.all([recurringDue(today), partnersDue(today), partnersUnrated(today), openExpenseRequestTotals()])
+      ? Promise.all([
+          recurringDue(today),
+          partnersDue(today),
+          partnersUnrated(today),
+          openExpenseRequestTotals(),
+          upsaleLiability('net'),
+        ])
       : null,
   ]);
 
@@ -161,7 +173,7 @@ export async function composeOwnerSummary(
 
   let weeklyBlock: SummaryFacts['weeklyBlock'] = null;
   if (weeklyReads) {
-    const [recurring, duePartners, unratedPartners, pending] = weeklyReads;
+    const [recurring, duePartners, unratedPartners, pending, commissions] = weeklyReads;
     // The Balans's arrears, split the way a payments heading must say them:
     // the cash months (the Balans's count and dollars), the cash months with
     // no rate (their own money), and the book entries the attention row's
@@ -181,7 +193,12 @@ export async function composeOwnerSummary(
         recurring,
         partners: duePartners,
         partnersUnrated: unratedPartners,
-        upsale: { usd: balance.sellerCommissionsUsd, count: balance.sellerCommissionsCount },
+        upsale: {
+          usd: commissions.payableUsd,
+          count: commissions.payableCount,
+          unknownCount: commissions.unknownCount,
+          unknownUsd: commissions.unknownUsd,
+        },
         arrears: arrears ? { usd: arrears.usd, unrated: arrears.unrated } : null,
       }),
       arrears,

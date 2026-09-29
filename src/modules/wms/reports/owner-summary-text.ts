@@ -142,6 +142,12 @@ export interface PaymentsDue {
   items: DueItem[];
   /** Every item AND the arrears, per currency in its own money — never one converted sum. */
   totals: { currency: string; amount: number }[];
+  /**
+   * Commissions the walk could not check (3a) — never an item and never in
+   * «Jami» (a $0 for an unknown is refused); its own ⚠ line, with the most
+   * it could be.
+   */
+  upsaleUnknown: { count: number; usd: number } | null;
 }
 
 /**
@@ -165,7 +171,10 @@ export interface PaymentsDue {
  *   overdue/coming split, per firm AND currency, in the firm's own money with
  *   ⚠ — they cannot enter the FIFO walk without dollars, and leaving them out
  *   would tell the owner the firm is owed nothing.
- * - The sellers' commissions that are payable now (U10's uncapped figure).
+ * - The sellers' commissions that are payable now (U10's uncapped figure,
+ *   his 3a's rule). The ones the walk could not check in its budget are
+ *   NOT an item: `upsaleUnknown` carries them to their own ⚠ line, out of
+ *   «Jami» — a $0 printed for an unknown would read «nothing owed».
  *
  * No inflow and no «net» line: a coming payment is a fact with a date, and
  * nothing in the books promises when a client will pay.
@@ -177,7 +186,8 @@ export function paymentsDue(input: {
   partners: readonly DuePartner[];
   /** Required: a caller that forgets the unrated half prints a firm as owed nothing. */
   partnersUnrated: readonly DueUnratedCost[];
-  upsale: { usd: number; count: number };
+  /** REQUIRED with its unknown half: a caller that forgets it prints an unchecked commission as nothing. */
+  upsale: { usd: number; count: number; unknownCount: number; unknownUsd: number };
   arrears: { usd: number; unrated: readonly { currency: string; amount: number }[] } | null;
 }): PaymentsDue {
   const today = input.today;
@@ -271,6 +281,10 @@ export function paymentsDue(input: {
     items,
     totals: [...totals].map(([currency, amount]) => ({ currency, amount })).filter((row) => row.amount > 0.004)
       .sort((a, b) => (a.currency === 'USD' ? -1 : b.currency === 'USD' ? 1 : a.currency.localeCompare(b.currency))),
+    upsaleUnknown:
+      input.upsale.unknownCount > 0
+        ? { count: input.upsale.unknownCount, usd: Math.round(input.upsale.unknownUsd * 100) / 100 }
+        : null,
   };
 }
 
@@ -438,8 +452,15 @@ export function ownerSummaryText(f: SummaryFacts, opts: { quietLine?: boolean } 
       const notes = [item.overdue ? 'muddati o‘tgan' : null, item.unrated ? 'kursi yo‘q' : null, item.note].filter(Boolean);
       return `• ${when}${item.label}: ${ownMoney(item.currency, item.amount)}${notes.length ? ` (${notes.join(', ')})` : ''}`;
     });
-    if (items.length === 0 && !w.arrears) lines.push('• to‘lov yo‘q');
+    if (items.length === 0 && !w.arrears && !w.payments.upsaleUnknown) lines.push('• to‘lov yo‘q');
     lines.push(...listOf(items));
+    // Out of «Jami» and never a $0 (3a): a Telegram message has no page to
+    // reload, so it says how many and the most they could be.
+    if (w.payments.upsaleUnknown) {
+      lines.push(
+        `⚠ Sotuvchilar ulushi: ${w.payments.upsaleUnknown.count} ta ish tekshirilmadi (ko‘pi bilan ${usd(w.payments.upsaleUnknown.usd)}) — jamiga kirmagan`,
+      );
+    }
     if (w.payments.totals.length > 0) lines.push(`Jami: ${sums(w.payments.totals)}`);
     if (w.pendingSpend.count > 0) {
       lines.push(`🧾 Chiqib ketgan, hali yozilmagan: ${w.pendingSpend.count} ta — ${sums(w.pendingSpend.byCurrency)}`);

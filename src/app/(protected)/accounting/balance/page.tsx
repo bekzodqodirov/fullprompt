@@ -245,6 +245,19 @@ export default async function BalancePage() {
         </section>
       )}
 
+      {/* A seller commission the paid-cargo walk could not check in its
+          budget (3a) is OUT of its line and of the net — named with the most
+          it could be (U14), never counted as $0 and never as owed. */}
+      {balance.sellerCommissionsUnknownCount > 0 && (
+        <p className="text-xs font-semibold text-warn" data-testid="balance-commissions-unknown">
+          ⚠{' '}
+          {t('balSellerCommissionsUnknown', {
+            n: balance.sellerCommissionsUnknownCount,
+            usd: usd(balance.sellerCommissionsUnknownUsd),
+          })}
+        </p>
+      )}
+
       {/* A due rent or salary in a currency with no rate is OUT of the
           arrears line — named in its own money, never counted as $0 (U14). */}
       {balance.recurringArrearsUnrated.length > 0 && (

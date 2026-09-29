@@ -44,8 +44,9 @@ export async function staffProfit(
       dan: period.from,
       gacha: period.to,
     }),
-    // Scope 'all' reads no actor id; the token above is the door.
-    upsaleRows('all', '', { from: period.from, to: period.to }),
+    // Scope 'all' reads no actor id; the token above is the door. `earnedOf`
+    // alone, so no paid-cargo walk (3a): the payable state is not read here.
+    upsaleRows('all', '', { from: period.from, to: period.to, walk: 'skip' }),
   ]);
   const bySeller = new Map<string | null, StaffProfitRow>();
   for (const row of report.rows) {

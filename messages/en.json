@@ -2154,7 +2154,8 @@
     "pnlVsPriorNone": "none in the prior period",
     "pnlVsPrior": "▲▼ — against {from} — {to} (the same days).",
     "pnlByMonth": "By month: revenue and costs",
-    "pnlDetail": "Full table — every line, every month"
+    "pnlDetail": "Full table — every line, every month",
+    "balSellerCommissionsUnknown": "Seller commissions: {n} jobs were not checked — at most ${usd}, left out of this line and of the net position"
   },
   "lidChat": {
     "mark": "Lead",
@@ -3220,7 +3221,8 @@
       "account_currency_mismatch": "The till’s currency does not match the payout currency",
       "future_date": "The date cannot be later than tomorrow.",
       "non_cash_category": "The chosen expense kind moves no money — a payout cannot be written into it.",
-      "amount_too_large": "The amount is too large for one row."
+      "amount_too_large": "The amount is too large for one row.",
+      "upsale_not_computed": "Ran out of time checking the cargo payment — press again in a moment"
     },
     "openCard": "Card",
     "freight": "Freight",
@@ -3898,7 +3900,7 @@
     "jobs": "Jobs",
     "stPaid": "Paid",
     "stPayable": "Ready to pay",
-    "stAwaiting": "Client has not paid",
+    "stAwaiting": "Cargo not paid for",
     "stNoInvoice": "Not invoiced",
     "stNoDeal": "No deal opened",
     "pay": "Pay",
@@ -3924,7 +3926,17 @@
     "promisedOnly": "Promised {promised} · no cargo yet",
     "cargoKpi": "Cargo brought (KPI)",
     "cargoKpiHint": "Receipts stamped to the seller at the moment of receipt (the client’s manager that day) — by the day the warehouse received them. The KPI on them is on the «Staff» page.",
-    "cargoReceipts": "Receipts"
+    "cargoReceipts": "Receipts",
+    "stNotComputed": "Not computed",
+    "stCargoLost": "No cargo left",
+    "fifoToOpen": "Opens once the client pays {amount} more",
+    "fifoToOpenOlder": "Opens once the client pays {amount} more — payments settle his older debts first",
+    "fifoPricedElsewhere": "The price is on a truck this cargo has not left on yet, or on a domestic leg — it does not cover the cargo ({uncovered} / {cartons} cartons)",
+    "fifoUncovered": "Cartons with no price: {uncovered} / {cartons} — the price belongs on the truck the cargo rode or on the deal",
+    "fifoNoLive": "No live carton left on this deal: lost, voided or moved to another client",
+    "fifoNotComputed": "Ran out of time checking — reload the page",
+    "notComputedPage": "For some jobs the cargo payment could not be checked in time — they are not offered for payout. Reload the page.",
+    "paidRule": "A share is paid once the deal's cargo and the prices written on the deal are paid for. The client's money settles the oldest debt first (the KPI rule)."
   },
   "sellerReport": {
     "title": "Sellers: results",
@@ -4768,7 +4780,8 @@
     "computeOne": "compute this person only",
     "salaryNotDue": "— not due this month yet",
     "salaryMonth": "{month}:",
-    "unstampedRepair": "→ move to {name}"
+    "unstampedRepair": "→ move to {name}",
+    "upsaleNotComputed": "Part of the sellers’ share could not be checked in the time allowed — the “payable” figure is incomplete. Open the seller on their own."
   },
   "calcSheet": {
     "group": "Group",

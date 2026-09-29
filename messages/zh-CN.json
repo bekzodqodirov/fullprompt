@@ -2154,7 +2154,8 @@
     "pnlVsPriorNone": "上期无数据",
     "pnlVsPrior": "▲▼ — 与 {from} — {to} 相比（相同日期）。",
     "pnlByMonth": "按月：收入与支出",
-    "pnlDetail": "明细表——每个科目、每个月"
+    "pnlDetail": "明细表——每个科目、每个月",
+    "balSellerCommissionsUnknown": "销售提成：{n} 项业务的付款未能核对——最多 ${usd}，未计入此行及净头寸"
   },
   "lidChat": {
     "mark": "线索",
@@ -3220,7 +3221,8 @@
       "account_currency_mismatch": "钱箱币种与支付币种不一致",
       "future_date": "日期不能晚于明天。",
       "non_cash_category": "所选费用类型不涉及现金——不能将付款记入其中。",
-      "amount_too_large": "金额过大——单行无法容纳。"
+      "amount_too_large": "金额过大——单行无法容纳。",
+      "upsale_not_computed": "核对货物付款超时——请稍后再按一次"
     },
     "openCard": "卡片",
     "freight": "运费",
@@ -3898,7 +3900,7 @@
     "jobs": "业务",
     "stPaid": "已支付",
     "stPayable": "可支付",
-    "stAwaiting": "客户未付款",
+    "stAwaiting": "货物未付款",
     "stNoInvoice": "未开票",
     "stNoDeal": "未开立交易",
     "pay": "支付",
@@ -3924,7 +3926,17 @@
     "promisedOnly": "承诺 {promised} · 货物尚未到达",
     "cargoKpi": "带来的货物（KPI）",
     "cargoKpiHint": "入库时记在销售员名下的入库单（当天客户的经理）——按仓库收货日期。其KPI见「员工」页面。",
-    "cargoReceipts": "入库单"
+    "cargoReceipts": "入库单",
+    "stNotComputed": "未计算",
+    "stCargoLost": "已无货物",
+    "fifoToOpen": "客户再付 {amount} 后即可支付",
+    "fifoToOpenOlder": "客户再付 {amount} 后即可支付——付款先冲抵其较早的欠款",
+    "fifoPricedElsewhere": "价格记在某辆车上，但此货尚未随该车出发，或该车为境内线路——未覆盖此货（{uncovered} / {cartons} 箱）",
+    "fifoUncovered": "未定价箱数：{uncovered} / {cartons}——价格应记在货物所乘车辆或交易上",
+    "fifoNoLive": "该交易已无有效箱子：丢失、作废或已转给其他客户",
+    "fifoNotComputed": "核对超时——请刷新页面",
+    "notComputedPage": "部分业务的货物付款未能及时核对——未列入待支付。请刷新页面。",
+    "paidRule": "交易货物及记在交易上的价格付清后才支付提成。客户的付款从最早的欠款开始冲抵（KPI 规则）。"
   },
   "sellerReport": {
     "title": "销售业绩",
@@ -4768,7 +4780,8 @@
     "computeOne": "只计算此员工",
     "salaryNotDue": "——本月尚未到付款期",
     "salaryMonth": "{month}：",
-    "unstampedRepair": "→ 转给{name}"
+    "unstampedRepair": "→ 转给{name}",
+    "upsaleNotComputed": "部分销售分成未能在规定时间内核对——“应付”金额不完整。请单独打开该销售。"
   },
   "calcSheet": {
     "group": "分组",

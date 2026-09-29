@@ -64,7 +64,7 @@ export async function StaffCard({
   /** This person's own pass (`?hodim=`) — the fast one, where «KPI to'lash» still is. */
   ownHref: string;
   /** null = this viewer is not shown a colleague's upsale (`maySeeStaffUpsale`). */
-  upsale: { earnedUsd: number; payableUsd: number } | null;
+  upsale: { earnedUsd: number; payableUsd: number; notComputed: number } | null;
   upsaleHref: string;
   mayPay: boolean;
   payAccounts: { id: string; name: string; currency: string }[];
@@ -236,7 +236,7 @@ export async function StaffCard({
       ) : null}
 
       {/* Upsale */}
-      {upsale && (upsale.earnedUsd > 0 || upsale.payableUsd > 0) ? (
+      {upsale && (upsale.earnedUsd > 0 || upsale.payableUsd > 0 || upsale.notComputed > 0) ? (
         <div className="flex flex-wrap items-baseline gap-2 border-t border-line pt-2 text-sm" data-testid="staff-upsale">
           <span className="text-2xs uppercase text-ink-500">{t('upsale')}</span>
           <span>
@@ -245,6 +245,13 @@ export async function StaffCard({
           <span>
             {t('upsalePayable')}: <span className="font-mono tabular-nums">{money(upsale.payableUsd)}</span>
           </span>
+          {/* The KPI's own per-card pattern: a figure the walk could not
+              finish is said on the card it is short on (3a). */}
+          {upsale.notComputed > 0 ? (
+            <span className="text-warn" data-testid="staff-upsale-unknown">
+              ⚠ {t('notComputed')}
+            </span>
+          ) : null}
           <Link href={upsaleHref} className="text-xs font-semibold text-brand-700">
             {t('upsaleLink')} →
           </Link>
