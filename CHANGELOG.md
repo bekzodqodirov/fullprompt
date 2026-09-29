@@ -80,6 +80,13 @@ sahifasidagi «Hisoblangan» summasi ham shu qoidaga o'tadi. Ishdan ketgan sotuv
 «(faol emas)» belgisi bilan ko'rinadi. Kartadagi «Hisobot →» endi kartada tanlangan
 davrni ochadi.
 
+### 4. Juda uzun ism ekrandan chiqib ketmaydi
+
+Ism 200 harfgacha bo'lishi mumkin. Orasida bo'sh joy bo'lmasa, «Boshqaruv → Xodimlar»
+ro'yxati, xodim kartasi va «Hodimlar» sahifasi telefonda ekrandan chiqib ketardi. Bunda
+butun sahifa kichrayib qolardi va ism o'sha odamning «✏️» tugmasini to'sib qo'yardi. Endi
+uzun ism keyingi qatorga o'tadi.
+
 ## Deploy xotira yetmay to'xtadi — tuzatildi — 2026-09-29
 
 Kod o'zgarishi, migratsiya yo'q. Keyingi deploy bilan birga chiqadi: yangilangandan

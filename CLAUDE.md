@@ -2209,7 +2209,7 @@ builds before it recreates. **Deploy tip that follows from it**: build
 runs ONCE before `up -d --build` reuses it.
 
 **Round — his answers to the twelve questions of 2026-09-29 (DECISIONS
-#1224-#1235; migration 0120 `no_login_staff` — ledger must reach 121).** His
+#1224-#1236; migration 0120 `no_login_staff` — ledger must reach 121).** His
 «1a 2b 3a 4a 5a 6a 7 ha 8a 9a 10 keyin 11a 12a». Every answer was checked
 against the SHIPPED code by a scout first: eight confirm what #1210-#1222 built
 (comments now cite his answer), and **4a did not** — my message had printed the
@@ -2240,7 +2240,12 @@ m³ → kg → count by largest remainder; All and Own move together; per-client
 reconciliation with «Mijoz foydasi», not its Jami. Three packages in worktrees,
 each reviewed by three lenses with skeptics (3a: two confirmed defects fixed;
 2b, 4a: nits). Found, queued, not fixed: `companyBalance()` 3.8-6.1 s on the
-shaped copy.
+shaped copy. **Found by the round's SCREENSHOT (#1236)**: a long unbroken name
+overflowed /admin/users (2,056 px at 360) and the staff card, and ten specs'
+«fits the viewport» check could not see it — under mobile emulation
+`window.innerWidth` GROWS with Chrome's zoom-out (1,440 read against a 2,056
+document). Measure `document.documentElement.clientWidth` or the configured
+viewport; `e2e-width-oracle.test.ts` refuses `innerWidth` in specs.
 
 **Latest migration: 0120** (`no_login_staff`, `when` …099; ledger must reach **121**). Before
 it: 0119 (`price_icons`), 0118 (`border_queue`), 0117 (`staff_pay`) — `when` …096-…098. Before them:
