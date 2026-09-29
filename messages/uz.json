@@ -2176,7 +2176,7 @@
     "pnlVsPrior": "▲▼ — {from} — {to} davriga nisbatan (bir xil kunlar).",
     "pnlByMonth": "Oyma-oy: tushum va xarajat",
     "pnlDetail": "Batafsil jadval — har bir toifa, har bir oy",
-    "balSellerCommissionsUnknown": "Sotuvchilar ulushi: {n} ta ishning to‘langani tekshirilmadi — ko‘pi bilan ${usd}, bu qatorga va Sof holatga kirmadi"
+    "balSellerCommissionsUnknown": "Sotuvchilar ulushi: {n} ta ishda yukning to‘langani vaqtida tekshirilmadi — ko‘pi bilan ${usd}; bu summa shu qatorga ham, Sof holatga ham kirmadi"
   },
   "lidChat": {
     "mark": "Lid",
@@ -3949,13 +3949,13 @@
     "cargoKpi": "Olib kelgan yuk (KPI)",
     "cargoKpiHint": "Qabul paytida sotuvchiga yozilgan prixodlar (o‘sha kuni mijozning menejeri) — omborda qabul qilingan kuni bo‘yicha. Ulardan KPI — «Hodimlar» sahifasida.",
     "cargoReceipts": "Prixod",
-    "stNotComputed": "Hisoblanmadi",
+    "stNotComputed": "Tekshirilmadi",
     "stCargoLost": "Yuk qolmagan",
     "fifoToOpen": "Mijoz yana {amount} to‘lasa ochiladi",
     "fifoToOpenOlder": "Mijoz yana {amount} to‘lasa ochiladi — to‘lov avval eski qarzlarini yopadi",
-    "fifoPricedElsewhere": "Narx mashinaga yozilgan, lekin bu yuk u mashinada hali jo‘namagan yoki u ichki reys — yukni qoplamaydi ({uncovered} / {cartons} karobka)",
-    "fifoUncovered": "Narxsiz karobka: {uncovered} / {cartons} — narx yuk yurgan mashinaga yoki bitimga yozilishi kerak",
-    "fifoNoLive": "Bitimda tirik karobka qolmadi: yo‘qolgan, bekor qilingan yoki boshqa mijozga o‘tkazilgan",
+    "fifoPricedElsewhere": "Narx mashinaga yozilgan, lekin bu yuk u mashinada hali jo‘namagan yoki u ichki reys — bu narx shu yukniki hisoblanmaydi ({uncovered} / {cartons} karobka)",
+    "fifoUncovered": "Narxi yozilmagan karobka: {uncovered} / {cartons} — narxni yuk ketgan mashinaga yoki bitimga yozing",
+    "fifoNoLive": "Bitimda qolgan yuk yo‘q: yo‘qolgan, bekor qilingan yoki boshqa mijozga o‘tkazilgan",
     "fifoNotComputed": "Tekshirishga vaqt yetmadi — sahifani yangilang",
     "notComputedPage": "Ba’zi ishlarda yukning to‘langani vaqtida tekshirilmadi — ular to‘lovga qo‘yilmadi. Sahifani yangilang.",
     "paidRule": "Ulush bitim yukining va bitimga yozilgan narxlarning puli kelgach to‘lanadi. Mijozning puli eng eski qarzidan boshlab yopiladi (KPI qoidasi)."
@@ -4819,7 +4819,7 @@
     "salaryNotDue": "— bu oy hali to‘lanmaydi",
     "salaryMonth": "{month}:",
     "unstampedRepair": "→ {name} ga o‘tkazish",
-    "upsaleNotComputed": "Sotuvchi ulushining bir qismi ajratilgan vaqt ichida tekshirilmadi — «to‘lanadi» summasi to‘liq emas. Sotuvchini alohida oching.",
+    "upsaleNotComputed": "Sotuvchi ulushining bir qismida yukning to‘langani vaqtida tekshirilmadi — «to‘lanadi» summasi to‘liq emas. Sotuvchini kartasidagi havola orqali alohida oching: bitta sotuvchi uchun tekshiruv odatda ulguradi.",
     "noLogin": "tizimga kirmaydi",
     "personNew": "Tizimga kirmaydigan hodim qo‘shish",
     "personNewHint": "Masalan, Xitoy skladidagi ishchi: tizimga kirmaydi, bu sahifada faqat oyligi yuritiladi. Unga vazifa, xabar yoki mijoz berilmaydi. Keyinchalik unga kirish kerak bo‘lsa, admin «Boshqaruv → Xodimlar»da uning kartasidan «Tizimga kirish ochish»ni bosadi.",

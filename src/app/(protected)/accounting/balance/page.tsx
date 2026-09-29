@@ -55,6 +55,9 @@ export default async function BalancePage() {
     .map((row) => `${row.balance.toLocaleString('en-US', { maximumFractionDigits: 2 })} ${row.currency}`)
     .join(', ');
   const canFx = actor.permissions.has('costs.fx.manage');
+  // Seller commissions the paid-cargo walk could not check in its budget
+  // (3a): OUT of the net, so the net carries a ⚠ like the unrated tills.
+  const commissionsUnknown = balance.sellerCommissionsUnknownCount > 0;
   // The kassa screen is `finance.expenses`'s; a report reader without it
   // reads the old-costs sentence as text instead of a door that bounces.
   const canAccounts = actor.permissions.has('finance.expenses');
@@ -73,6 +76,13 @@ export default async function BalancePage() {
         >
           ${usd(balance.netUsd)}
           {unrated && <span className="text-warn"> ⚠</span>}
+          {/* A commission the walk could not check is OUT of this figure
+              (3a): the ⚠ stands beside it and leads to the sentence below. */}
+          {commissionsUnknown && (
+            <a href="#balance-commissions-unknown" className="text-warn" data-testid="balance-net-commissions-unknown">
+              {' '}⚠
+            </a>
+          )}
         </p>
         {som(balance.netUsd) && (
           <p className="text-sm text-ink-500">≈ {som(balance.netUsd)} so‘m</p>
@@ -107,6 +117,9 @@ export default async function BalancePage() {
                   <Link href={line.href} className="block p-3 hover:bg-surface-sunken">
                     {t(line.key)}
                     {line.key === 'balCash' && unrated && <span className="text-warn"> ⚠</span>}
+                    {line.key === 'balSellerCommissions' && commissionsUnknown && (
+                      <span className="text-warn"> ⚠</span>
+                    )}
                   </Link>
                 </td>
                 <td className={`p-3 text-right font-mono font-bold ${line.tone}`}>
@@ -249,7 +262,11 @@ export default async function BalancePage() {
           budget (3a) is OUT of its line and of the net — named with the most
           it could be (U14), never counted as $0 and never as owed. */}
       {balance.sellerCommissionsUnknownCount > 0 && (
-        <p className="text-xs font-semibold text-warn" data-testid="balance-commissions-unknown">
+        <p
+          id="balance-commissions-unknown"
+          className="scroll-mt-20 text-xs font-semibold text-warn"
+          data-testid="balance-commissions-unknown"
+        >
           ⚠{' '}
           {t('balSellerCommissionsUnknown', {
             n: balance.sellerCommissionsUnknownCount,

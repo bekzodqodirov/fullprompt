@@ -2372,17 +2372,20 @@ export async function companyBalance() {
   // kassa-paid costs the line may value.
   const [since, gate, rates] = await Promise.all([unplacedCostSince(), unpricedGate(), kassaRatesToday()]);
   const ratedCurrencies = ratedCurrenciesOf(rates);
-  const { upsaleLiability } = await import('../calc/upsale-service');
+  const { upsaleLiabilityForNet } = await import('../calc/upsale-service');
   // Side by side, so the page costs max(parts, line, walk), not their sum —
   // and all awaited in ONE Promise.all: a promise started early and awaited
   // later is an unhandled rejection while another await is pending. The
   // seller commissions are a company-wide walk (his 3a), read only for the
   // net: the parts' readers (the admin home, the hero's cash, the attention
   // list) print no net and must not wait for it (the parts' contract above).
+  // Read through the minute-long memo (calc/liability-memo.ts): every render
+  // of the Balans, the dashboard and the hero's net asks it, and the walk's
+  // candidates are every unpaid deal offer ever made.
   const [parts, cargo, commissions] = await Promise.all([
     companyBalanceParts(),
     unpricedCargoMoney({ since, ratedCurrencies, gate, cardRule: CARD_PRICE_RULE, history: 'since_gate' }),
-    upsaleLiability('net'),
+    upsaleLiabilityForNet(),
   ]);
   const unplacedCostsOut = money(parts.unplacedCostUsd - parts.unplacedCostInCountUsd);
 

@@ -458,7 +458,7 @@ export function ownerSummaryText(f: SummaryFacts, opts: { quietLine?: boolean } 
     // reload, so it says how many and the most they could be.
     if (w.payments.upsaleUnknown) {
       lines.push(
-        `⚠ Sotuvchilar ulushi: ${w.payments.upsaleUnknown.count} ta ish tekshirilmadi (ko‘pi bilan ${usd(w.payments.upsaleUnknown.usd)}) — jamiga kirmagan`,
+        `⚠ Sotuvchilar ulushi: ${w.payments.upsaleUnknown.count} ta ishda yukning to‘langani tekshirilmadi (ko‘pi bilan ${usd(w.payments.upsaleUnknown.usd)}) — jamiga kirmagan`,
       );
     }
     if (w.payments.totals.length > 0) lines.push(`Jami: ${sums(w.payments.totals)}`);

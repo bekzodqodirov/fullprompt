@@ -24,6 +24,7 @@ import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { db } from '@/modules/platform/db/client';
 import { stampedCargo, type StampedCargo } from '@/modules/wms/staff/cargo';
 import { maySeeStaffMoney } from '@/modules/wms/staff/door';
+import { mayOpenClientLedger } from '@/modules/wms/finance/scope';
 
 /**
  * «Sotuvchi ulushi» — what a seller earns, and the accountant's Friday.
@@ -116,9 +117,11 @@ export default async function UpsalePage({
       ? t('onCargo', { promised: money(r.promisedUsd), m3: r.cargoM3.toFixed(2), kg: Math.round(r.cargoKg) })
       : t('promisedOnly', { promised: money(r.promisedUsd) });
   const current = { dan: period.dan, gacha: period.gacha, hodim: params.hodim ?? '' };
-  // Rule 10 (round 91): a client's money is named only where it is already
-  // shown — to the whole-company scope, or to the seller whose client it is.
-  const seesMoney = (r: UpsaleRow) => scope === 'all' || r.clientManagerId === actor.id;
+  // Rule 10 (round 91): a client's money is named only to whom that client's
+  // LEDGER already opens — the one rule (finance/scope.ts), never restated
+  // here (#513): a reader who may not open /finance/<client> reads no sum of
+  // that client's money in a hint either.
+  const seesMoney = (r: UpsaleRow) => mayOpenClientLedger(actor, { salesManagerId: r.clientManagerId });
   const hintText = (r: UpsaleRow) => {
     const hint = hintOf(r, { seesMoney: seesMoney(r), money });
     return hint ? t(hint.key, hint.values) : null;

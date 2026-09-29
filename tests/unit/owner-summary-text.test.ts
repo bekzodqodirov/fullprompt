@@ -468,7 +468,7 @@ describe('the weekly payments (outflows only, each in its own money)', () => {
     expect(payments.totals).toEqual([{ currency: 'USD', amount: 120 }]);
     const text = weeklyText({ payments, arrears: null, pendingSpend: noSpend, receivableUsd: 0 });
     expect(text).toContain('• Sotuvchilar ulushi (3 ta): $120.00');
-    expect(text).toContain('⚠ Sotuvchilar ulushi: 2 ta ish tekshirilmadi (ko‘pi bilan $80.00) — jamiga kirmagan');
+    expect(text).toContain('⚠ Sotuvchilar ulushi: 2 ta ishda yukning to‘langani tekshirilmadi (ko‘pi bilan $80.00) — jamiga kirmagan');
     expect(text).toContain('Jami: $120.00');
     expect(text).not.toContain('Jami: $200.00');
   });
@@ -485,7 +485,7 @@ describe('the weekly payments (outflows only, each in its own money)', () => {
     expect(payments.items.some((item) => item.label.startsWith('Sotuvchilar ulushi ('))).toBe(false);
     expect(payments.upsaleUnknown).toEqual({ count: 1, usd: 50 });
     const text = weeklyText({ payments, arrears: null, pendingSpend: noSpend, receivableUsd: 0 });
-    expect(text).toContain('⚠ Sotuvchilar ulushi: 1 ta ish tekshirilmadi (ko‘pi bilan $50.00) — jamiga kirmagan');
+    expect(text).toContain('⚠ Sotuvchilar ulushi: 1 ta ishda yukning to‘langani tekshirilmadi (ko‘pi bilan $50.00) — jamiga kirmagan');
     expect(text).not.toMatch(/Sotuvchilar ulushi[^\n]*\$0\.00/);
     expect(text).not.toContain('to‘lov yo‘q');
   });

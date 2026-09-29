@@ -132,11 +132,12 @@ export async function composeOwnerSummary(
   // render the loaders' `cache()` is a plain call-through, so asking twice
   // would pay twice. Both are awaited inside the ONE Promise.all below.
   // The sellers' commissions are a company-wide walk (his 3a) that left the
-  // parts: read below, on Mondays only — the daily message never prints them
-  // and must not pay for the walk. Imported where asked, like reports.ts, and
+  // parts: read below, on Mondays only and through the Balans's minute-long
+  // memo — the daily message never prints them and must not pay for the
+  // walk. Imported where asked, like reports.ts, and
   // BEFORE the two promises start (one awaited later while another await is
   // pending is an unhandled rejection).
-  const { upsaleLiability } = await import('../calc/upsale-service');
+  const { upsaleLiabilityForNet } = await import('../calc/upsale-service');
   const balanceP = companyBalanceParts();
   const trucksP = trucksOnRoad(ids, { limit: 0, now });
   const [pnl, flow, collected, intake, moves, trucks, balance, leads, sources, weeklyReads] = await Promise.all([
@@ -155,7 +156,7 @@ export async function composeOwnerSummary(
           partnersDue(today),
           partnersUnrated(today),
           openExpenseRequestTotals(),
-          upsaleLiability('net'),
+          upsaleLiabilityForNet(),
         ])
       : null,
   ]);

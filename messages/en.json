@@ -2176,7 +2176,7 @@
     "pnlVsPrior": "▲▼ — against {from} — {to} (the same days).",
     "pnlByMonth": "By month: revenue and costs",
     "pnlDetail": "Full table — every line, every month",
-    "balSellerCommissionsUnknown": "Seller commissions: {n} jobs were not checked — at most ${usd}, left out of this line and of the net position"
+    "balSellerCommissionsUnknown": "Seller commissions: for {n} jobs the cargo payment could not be checked in time — at most ${usd}, left out of this line and of the net position"
   },
   "lidChat": {
     "mark": "Lead",
@@ -3949,13 +3949,13 @@
     "cargoKpi": "Cargo brought (KPI)",
     "cargoKpiHint": "Receipts stamped to the seller at the moment of receipt (the client’s manager that day) — by the day the warehouse received them. The KPI on them is on the «Staff» page.",
     "cargoReceipts": "Receipts",
-    "stNotComputed": "Not computed",
+    "stNotComputed": "Not checked",
     "stCargoLost": "No cargo left",
     "fifoToOpen": "Opens once the client pays {amount} more",
     "fifoToOpenOlder": "Opens once the client pays {amount} more — payments settle his older debts first",
-    "fifoPricedElsewhere": "The price is on a truck this cargo has not left on yet, or on a domestic leg — it does not cover the cargo ({uncovered} / {cartons} cartons)",
-    "fifoUncovered": "Cartons with no price: {uncovered} / {cartons} — the price belongs on the truck the cargo rode or on the deal",
-    "fifoNoLive": "No live carton left on this deal: lost, voided or moved to another client",
+    "fifoPricedElsewhere": "The price is on a truck this cargo has not left on yet, or on a domestic leg — it does not count for this cargo ({uncovered} / {cartons} cartons)",
+    "fifoUncovered": "Cartons with no price: {uncovered} / {cartons} — write the price on the truck the cargo left on, or on the deal",
+    "fifoNoLive": "No cargo left on this deal: lost, voided or moved to another client",
     "fifoNotComputed": "Ran out of time checking — reload the page",
     "notComputedPage": "For some jobs the cargo payment could not be checked in time — they are not offered for payout. Reload the page.",
     "paidRule": "A share is paid once the deal's cargo and the prices written on the deal are paid for. The client's money settles the oldest debt first (the KPI rule)."
@@ -4819,7 +4819,7 @@
     "salaryNotDue": "— not due this month yet",
     "salaryMonth": "{month}:",
     "unstampedRepair": "→ move to {name}",
-    "upsaleNotComputed": "Part of the sellers’ share could not be checked in the time allowed — the “payable” figure is incomplete. Open the seller on their own.",
+    "upsaleNotComputed": "For part of the sellers’ share the cargo payment could not be checked in time — the “payable” figure is incomplete. Open a seller through the link on their card: one seller’s check usually fits.",
     "noLogin": "no login",
     "personNew": "Add a person who never signs in",
     "personNewHint": "For example, a worker at a Chinese warehouse: never signs in, and only their salary is kept on this page. They get no tasks, messages or clients. If they need a login later, an admin uses «Give a login» on their card under «Administration → Employees».",

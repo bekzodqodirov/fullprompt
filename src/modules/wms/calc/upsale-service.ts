@@ -11,6 +11,7 @@ import { rateFor } from '../costing/service';
 import { latestTxDate } from '../finance/dates';
 import { CalcError } from './service';
 import { MONEY_EPSILON, payableOffersSql } from './upsale';
+import { forgetUpsaleLiability, rememberedLiability } from './liability-memo';
 import type { UpsaleScope } from './upsale-scope';
 
 /**
@@ -537,6 +538,18 @@ export async function upsaleLiability(budget: UpsaleWalkBudget): Promise<{
 }
 
 /**
+ * What the NET's readers ask — `companyBalance()` and the Monday summary:
+ * `upsaleLiability('net')` through the minute-long memo (liability-memo.ts),
+ * so the Balans page, the dashboard and the AI tool rendering together pay
+ * for one company-wide walk a minute instead of one each. The doors that
+ * change the answer in this process forget it (see that file for which, and
+ * for the staleness accepted on a ledger write).
+ */
+export function upsaleLiabilityForNet(): ReturnType<typeof upsaleLiability> {
+  return rememberedLiability(() => upsaleLiability('net'));
+}
+
+/**
  * Pay a seller for the offers the accountant ticked.
  *
  * The amount is DERIVED, never typed. The accountant chooses which jobs, the
@@ -600,7 +613,7 @@ export async function payUpsale(
     sql`, `,
   );
   try {
-    return await db.transaction(async (tx) => {
+    const paid = await db.transaction(async (tx) => {
       // payKpi's pair (kpi-service.ts): a hung read must not hold the offers'
       // rows, and a company-scale plan is read, not compiled.
       await tx.execute(sql`SET LOCAL jit = off`);
@@ -717,6 +730,10 @@ export async function payUpsale(
 
       return { expenseId: expense.id, paidUsd, count: claimed.length };
     });
+    // Committed: the Balans's remembered commissions are wrong now, and the
+    // person who pressed «To'lash» must see his own press on the next render.
+    forgetUpsaleLiability();
+    return paid;
   } catch (err) {
     // The walk ran out of its 20 s on this connection: said in words, never a
     // digest — and nothing was paid, the transaction rolled back.
@@ -737,7 +754,11 @@ export async function reopenUpsaleForExpense(expenseId: string): Promise<number>
     .set({ payoutExpenseId: null, payoutAt: null, payoutBy: null, payoutUsd: null })
     .where(eq(calcOffers.payoutExpenseId, expenseId))
     .returning({ id: calcOffers.id });
-  if (rows.length > 0) logger.info({ expenseId, count: rows.length }, '[upsale] payout reopened');
+  if (rows.length > 0) {
+    // The re-opened offers are owed again: the Balans's memo forgets (3a).
+    forgetUpsaleLiability();
+    logger.info({ expenseId, count: rows.length }, '[upsale] payout reopened');
+  }
   return rows.length;
 }
 

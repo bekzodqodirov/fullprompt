@@ -46,6 +46,7 @@ import {
 import { paidCargo } from '@/modules/wms/finance/paid-cartons';
 import { voidExpense } from '@/modules/wms/accounting/service';
 import { companyBalance } from '@/modules/wms/accounting/reports';
+import { forgetUpsaleLiability } from '@/modules/wms/calc/liability-memo';
 import { addTransaction } from '@/modules/wms/finance/service';
 
 /**
@@ -1083,6 +1084,13 @@ describe('the Balans owes the sellers what the clients have paid for (U10)', () 
       { clientId: own.client, type: 'payment', amount: price, currency: 'USD', txDate: today(), dealId: own.deal, accountId },
       ctx(),
     );
+    // The net's commissions are remembered for a minute (liability-memo.ts,
+    // review defect 2) and a client's payment deliberately does not forget
+    // them — the staleness is the stated price of the memo, and reading it
+    // here proves companyBalance() goes THROUGH the memo: a net that walked
+    // the company itself would already see the 600.
+    expect((await companyBalance()).sellerCommissionsUsd).toBe(invoiced.sellerCommissionsUsd);
+    forgetUpsaleLiability();
     const collected = await companyBalance();
     // Not owed before the client paid («not owed until the sale is»)…
     expect(cents(collected.sellerCommissionsUsd - invoiced.sellerCommissionsUsd)).toBe(600);
@@ -1091,6 +1099,8 @@ describe('the Balans owes the sellers what the clients have paid for (U10)', () 
 
     const paid = await payUpsale([offer.id], { accountId, currency: 'USD', expenseDate: today() }, ctx());
     madeExpenses.push(paid.expenseId);
+    // NO forget here: the pay door forgets the memo itself, so the person who
+    // pressed «To'lash» sees his own press on the very next render.
     const settled = await companyBalance();
     expect(cents(settled.sellerCommissionsUsd - collected.sellerCommissionsUsd)).toBe(-600);
     expect(cents(settled.netUsd - collected.netUsd)).toBe(0);

@@ -45,6 +45,7 @@ const KPI_PAID = 'src/modules/wms/staff/kpi-paid.ts';
 const UNPRICED = 'src/modules/wms/finance/unpriced.ts';
 const REPORTS = 'src/modules/wms/accounting/reports.ts';
 const SUMMARY = 'src/modules/wms/reports/owner-summary.ts';
+const WORKSPACE = 'src/modules/wms/calc/workspace.ts';
 
 describe('ONE carton × FIFO reader (a, b, c)', () => {
   it('only paid-cartons and the client card call settleCharges — the declaration is not a call', () => {
@@ -119,15 +120,43 @@ describe('the deals scope is client-consistent (f)', () => {
   });
 });
 
-describe('the liability is read only where a net is printed (g)', () => {
-  it('the parts never wait for it; the net and the Monday summary read it', () => {
+describe('the liability is read only where a net is printed, through the memo (g)', () => {
+  it('the parts never wait for it; the net and the Monday summary read it through the memo', () => {
     const reports = read(REPORTS);
     const parts = section(reports, 'export const companyBalanceParts');
     expect(parts).not.toContain('upsaleLiability');
-    expect(section(reports, 'export async function companyBalance()')).toContain("upsaleLiability('net')");
+    const net = section(reports, 'export async function companyBalance()');
+    expect(net).toContain('upsaleLiabilityForNet()');
+    expect(net).not.toContain("upsaleLiability('net')");
     const summary = read(SUMMARY);
-    expect(summary).toContain("upsaleLiability('net')");
+    expect(summary).toContain('upsaleLiabilityForNet()');
+    expect(summary).not.toContain("upsaleLiability('net')");
     expect(summary).not.toContain('balance.sellerCommissions');
+  });
+
+  it('the memo wraps the walk, and nothing in src walks the company past it', () => {
+    const body = section(read(SERVICE), 'export function upsaleLiabilityForNet');
+    expect(body).toContain('rememberedLiability(');
+    expect(body).toContain("upsaleLiability('net')");
+    const direct = SRC.filter((f) => f.path !== SERVICE && /(?<!function\s)\bupsaleLiability\(/.test(f.code));
+    expect(direct.map((f) => f.path)).toEqual([]);
+  });
+
+  it('every door in this process that changes the answer forgets it', () => {
+    const service = read(SERVICE);
+    const pay = section(service, 'export async function payUpsale');
+    // After the commit — a forget inside the transaction would let a reader
+    // remember the pre-pay figure again before the claim is visible — and
+    // never on the refusal path, where nothing changed.
+    const forgot = pay.indexOf('forgetUpsaleLiability()');
+    expect(forgot).toBeGreaterThan(pay.indexOf('UPDATE calc_offers o'));
+    expect(forgot).toBeGreaterThan(pay.indexOf('return { expenseId'));
+    expect(forgot).toBeLessThan(pay.indexOf('catch (err)'));
+    expect(section(service, 'export async function reopenUpsaleForExpense')).toContain('forgetUpsaleLiability()');
+    const workspace = read(WORKSPACE);
+    for (const door of ['export async function recordOffer', 'export async function releaseOffer']) {
+      expect(section(workspace, door), door).toContain('forgetUpsaleLiability()');
+    }
   });
 });
 
@@ -175,10 +204,24 @@ describe('every reader of upsaleRows is classified (h)', () => {
 });
 
 describe('an unknown is SAID on every surface that prints the figure (i, j)', () => {
-  it('the Balans page and the dashboard bridge', () => {
+  it('the Balans page — beside the headline net, on its line, and in words — and the dashboard bridge', () => {
     const balance = read('src/app/(protected)/accounting/balance/page.tsx');
-    expect(balance).toMatch(/sellerCommissionsUnknownCount > 0 &&[\s\S]{0,120}data-testid="balance-commissions-unknown"/);
+    expect(balance).toMatch(/sellerCommissionsUnknownCount > 0 &&[\s\S]{0,300}data-testid="balance-commissions-unknown"/);
+    // Review nit A3: the ⚠ stands INSIDE the headline net's own element, so
+    // the figure the owner reads first says it is short of something.
+    const net = balance.indexOf('data-testid="balance-net"');
+    const mark = balance.indexOf('data-testid="balance-net-commissions-unknown"');
+    expect(net).toBeGreaterThan(-1);
+    expect(mark).toBeGreaterThan(net);
+    expect(mark).toBeLessThan(balance.indexOf('</p>', net));
+    expect(balance.slice(net, mark)).toContain('commissionsUnknown &&');
     expect(read('src/app/(protected)/dashboard/sections/money.tsx')).toContain('dash-commissions-unknown');
+  });
+
+  it('/upsale asks the ledger door for money sight, never restates it by hand (#513)', () => {
+    const page = read('src/app/(protected)/upsale/page.tsx');
+    expect(page).toContain('mayOpenClientLedger(');
+    expect(page).not.toMatch(/clientManagerId\s*===|===\s*[\w.]*clientManagerId\b/);
   });
 
   it('/upsale: the chip, the hint, the page warning, the rule — and the pay list ticks payable only', () => {
