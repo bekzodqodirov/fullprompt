@@ -299,6 +299,18 @@ export async function setCalcLink(
  * correction), `already` is «somebody answered first» — the screen, a
  * colleague, or this same button pressed twice.
  */
+/**
+ * Which request a «tegishlimi?» button is about, in the 8 hex a callback has
+ * room for: the id's LAST eight. The ids are UUIDv7, whose FIRST eight are the
+ * top of a millisecond clock — shared by every request minted in the same
+ * minute, so a prefix would let a button for one calculation confirm the next
+ * one on a re-filed prixod (found by the re-file test, 0119). The tail is the
+ * random part.
+ */
+export function linkAskTag(requestId: string): string {
+  return requestId.replace(/-/g, '').slice(-8).toLowerCase();
+}
+
 export type LinkAskOutcome =
   | 'confirmed'
   | 'dropped'
@@ -310,10 +322,11 @@ export type LinkAskOutcome =
 /**
  * The bot's ✅/❌ on one guess (0119, the owner's 20a).
  *
- * The button carries the receipt AND an 8-hex prefix of the request it asked
- * about, so a press can never land on a different calculation than the one
- * the message named: a correction that adopted the guess, a re-file, or a
- * detach all answer `changed`, and the message is struck rather than obeyed.
+ * The button carries the receipt AND an 8-hex tag of the request it asked
+ * about (`linkAskTag`), so a press can never land on a different calculation
+ * than the one the message named: a correction that adopted the guess, a
+ * re-file, or a detach all answer `changed`, and the message is struck rather
+ * than obeyed.
  *
  * The write is CONDITIONAL — `calc_request_id` still the asked request AND
  * not yet confirmed — because the check above it runs on the pool and a
@@ -327,13 +340,13 @@ export type LinkAskOutcome =
  */
 export async function answerLinkAsk(
   receiptId: string,
-  requestPrefix: string,
+  requestTag: string,
   verdict: 'confirm' | 'drop',
   scope: 'all' | 'own',
   ctx: AuditContext,
 ): Promise<LinkAskOutcome> {
   const receipt = await db.query.receipts.findFirst({ where: eq(receipts.id, receiptId) });
-  if (!receipt?.calcRequestId || !receipt.calcRequestId.startsWith(requestPrefix)) return 'changed';
+  if (!receipt?.calcRequestId || linkAskTag(receipt.calcRequestId) !== requestTag) return 'changed';
   const requestId = receipt.calcRequestId;
   if (receipt.calcLinkConfirmedAt) return 'already';
   // `confirmCalcLink`'s re-proof, for the same reason: a ✅ is what makes a

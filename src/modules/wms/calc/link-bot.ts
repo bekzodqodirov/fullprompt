@@ -18,12 +18,12 @@ export type LinkBotOutcome = LinkAskOutcome | 'not_linked' | 'forbidden';
 export async function decideLinkFromBot(
   chatId: bigint,
   receiptId: string,
-  requestPrefix: string,
+  requestTag: string,
   verdict: 'confirm' | 'drop',
 ): Promise<LinkBotOutcome> {
   const actor = await botActorFor(chatId);
   if (!actor) return 'not_linked';
   const scope = calcControlScopeFor(actor);
   if (scope === 'none') return 'forbidden';
-  return answerLinkAsk(receiptId, requestPrefix, verdict, scope, { actorId: actor.id });
+  return answerLinkAsk(receiptId, requestTag, verdict, scope, { actorId: actor.id });
 }

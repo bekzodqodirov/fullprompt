@@ -384,7 +384,7 @@ export function registerStaffBot(bot: Bot): void {
     // the decision in wms by dynamic import, the settle off the poller (#706).
     if (parsed.kind === 'calc_link') {
       const { decideLinkFromBot } = await import('../../wms/calc/link-bot');
-      const outcome = await decideLinkFromBot(chatId, parsed.receiptId, parsed.requestPrefix, parsed.verdict);
+      const outcome = await decideLinkFromBot(chatId, parsed.receiptId, parsed.requestTag, parsed.verdict);
       // Record<union>: an outcome nobody wrote words for is a compile error,
       // not an empty spinner on the phone.
       const answers: Record<typeof outcome, string> = {

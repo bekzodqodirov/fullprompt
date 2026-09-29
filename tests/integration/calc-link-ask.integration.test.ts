@@ -24,7 +24,7 @@ import {
 } from '@/modules/platform/db/schema';
 import { openCalcRequest } from '@/modules/wms/calc/service';
 import { recalcFromSealed, sealCalc, setFreightZone } from '@/modules/wms/calc/workspace';
-import { answerLinkAsk, confirmCalcLink } from '@/modules/wms/calc/link';
+import { answerLinkAsk, confirmCalcLink, linkAskTag } from '@/modules/wms/calc/link';
 import { linkSuggestionCount, linkSuggestions } from '@/modules/wms/calc/actuals';
 import { claimLinkAsks, linkAskEligible } from '@/modules/wms/calc/link-ask';
 import { decideLinkFromBot } from '@/modules/wms/calc/link-bot';
@@ -208,7 +208,7 @@ async function receiptOn(dealId: string, confirmedAt: Date, opts: { voided?: boo
 /** Inside the window and in the PAST — a correction is requested after it, as in life. */
 const later = () => new Date(Date.now() - 5000);
 const read = (id: string) => db.query.receipts.findFirst({ where: eq(receipts.id, id) });
-const prefix = (requestId: string) => requestId.slice(0, 8);
+const prefix = (requestId: string) => linkAskTag(requestId);
 
 describe('the seal stamps the cargo that arrived while it was being worked on', () => {
   it('in the window: suggested and owed a question; before the request: left alone', async () => {
@@ -300,9 +300,16 @@ describe('a press answers about the request it named', () => {
     const requestId = await openJob(dealId);
     const id = await receiptOn(dealId, later());
     await sealCalc(requestId, SEAL, ctx());
+    // The deal it moves to has a standing seal of its own, so the re-file
+    // stamps the prixod with ANOTHER request — the old button must not
+    // confirm that one (the prefix is the request the question was about).
     const other = await newDeal();
+    const otherRequest = await openJob(other);
+    await sealCalc(otherRequest, SEAL, ctx());
     await linkReceipt(id, other, ctx());
+    expect((await read(id))!.calcRequestId).toBe(otherRequest);
     expect(await answerLinkAsk(id, prefix(requestId), 'confirm', 'all', ctx())).toBe('changed');
+    expect((await read(id))!.calcLinkConfirmedAt).toBeNull();
   });
 
   it('through the bot: the sealer confirms; a colleague VED is «not mine»; a chat with no door learns nothing', async () => {

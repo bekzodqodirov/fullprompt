@@ -279,11 +279,11 @@ export type BotCallback =
   /** «📞 Bog'landim» under an advert lead's push (0113). */
   | { kind: 'lead_contacted'; leadId: string }
   /**
-   * ✅/❌ on a calc↔prixod guess (0119). `requestPrefix` is the first 8 hex
-   * of the request the message named, so a press can never land on a
-   * calculation the message did not show.
+   * ✅/❌ on a calc↔prixod guess (0119). `requestTag` is the LAST 8 hex of
+   * the request the message named (`linkAskTag`), so a press can never land
+   * on a calculation the message did not show.
    */
-  | { kind: 'calc_link'; receiptId: string; requestPrefix: string; verdict: 'confirm' | 'drop' };
+  | { kind: 'calc_link'; receiptId: string; requestTag: string; verdict: 'confirm' | 'drop' };
 
 /**
  * The zametka buttons. `send` is a note id; the rest are the capture's own
@@ -418,7 +418,7 @@ export function parseCallback(data: string): BotCallback | null {
     return {
       kind: 'calc_link',
       receiptId: calcLink[2]!,
-      requestPrefix: calcLink[3]!,
+      requestTag: calcLink[3]!,
       verdict: calcLink[1] === '1' ? 'confirm' : 'drop',
     };
   }

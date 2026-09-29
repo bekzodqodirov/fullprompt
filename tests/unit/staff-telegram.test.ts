@@ -12,6 +12,8 @@ import {
 } from '@/modules/platform/telegram/staff-bot';
 import { telegramDue } from '@/modules/platform/tasks/service';
 import { dailyDigestText, DIGEST_UNCLAIMED_SHOWN } from '@/modules/wms/reports/daily-digest';
+import { linkAskTag } from '@/modules/wms/calc/link';
+import { v7 as uuidv7 } from 'uuid';
 
 /**
  * The staff side of round C, where it is pure: mutes that must not un-mute,
@@ -160,23 +162,23 @@ describe('the day list closes tasks from its own buttons', () => {
 describe('«Bu prixodlar hisobingizga tegishlimi?» — the VED answers a guess (0119)', () => {
   const req8 = 'a1b2c3d4';
 
-  it('cl:1/cl:0 parse to the verdict, the receipt and the request\'s prefix', () => {
+  it('cl:1/cl:0 parse to the verdict, the receipt and the request\'s tag', () => {
     expect(parseCallback(`cl:1:${uuid(3)}:${req8}`)).toEqual({
       kind: 'calc_link',
       receiptId: uuid(3),
-      requestPrefix: req8,
+      requestTag: req8,
       verdict: 'confirm',
     });
     expect(parseCallback(`cl:0:${uuid(3)}:${req8}`)).toEqual({
       kind: 'calc_link',
       receiptId: uuid(3),
-      requestPrefix: req8,
+      requestTag: req8,
       verdict: 'drop',
     });
     expect(Buffer.byteLength(`cl:1:${uuid(3)}:${req8}`)).toBeLessThanOrEqual(64);
   });
 
-  it('refuses a third verdict, a missing prefix, a short prefix and an upper-case one', () => {
+  it('refuses a third verdict, a missing tag, a short tag and an upper-case one', () => {
     for (const data of [
       `cl:2:${uuid(3)}:${req8}`,
       `cl:1:${uuid(3)}`,
@@ -232,6 +234,16 @@ describe('«Bu prixodlar hisobingizga tegishlimi?» — the VED answers a guess 
     expect(link, 'calc_link branch').toBeGreaterThan(-1);
     if (approval > -1) expect(link).toBeLessThan(approval);
     expect(handlers).toMatch(/void settleLinkAskRow\(/);
+  });
+
+  it('the tag is the request id\'s random TAIL — UUIDv7 ids minted together share their head', () => {
+    const [one, two] = [uuidv7(), uuidv7()];
+    // The premise, stated: the first eight hex are the top of a millisecond
+    // clock, so two requests of the same minute carry the same «prefix».
+    expect(one.slice(0, 8)).toBe(two.slice(0, 8));
+    expect(linkAskTag(one)).not.toBe(linkAskTag(two));
+    expect(linkAskTag(one)).toMatch(/^[0-9a-f]{8}$/);
+    expect(parseCallback(`cl:1:${one}:${linkAskTag(two)}`)).toMatchObject({ requestTag: linkAskTag(two) });
   });
 
   it('the ask is a job for the person, muted with the tasks and never a founder', () => {

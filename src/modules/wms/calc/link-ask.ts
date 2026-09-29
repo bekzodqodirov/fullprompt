@@ -4,7 +4,7 @@ import { usersWithPermission } from '../../platform/notifications/service';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import type { Exec } from '../finance/unpriced';
 import { chainVersionsFor } from './chain';
-import { pendingLinkSql, PENDING_LINK_FROM } from './link';
+import { linkAskTag, pendingLinkSql, PENDING_LINK_FROM } from './link';
 
 /**
  * «Bu prixodlar hisobingizga tegishlimi?» — the VED is ASKED about a guess
@@ -230,7 +230,7 @@ export async function sendLinkAsks(): Promise<number> {
       extra: {
         asks: group.rows.slice(0, LINK_ASK_SHOWN).map((row) => ({
           receiptId: row.receiptId,
-          req8: group.requestId.replace(/-/g, '').slice(0, 8),
+          req8: linkAskTag(group.requestId),
           number: row.number,
         })),
       },
