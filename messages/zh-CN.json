@@ -1377,7 +1377,14 @@
     "noCostsWarn": "该车次尚未录入费用",
     "profitTrackedOn": "批次 — 计入「批次利润」",
     "profitTrackedSet": "标记为批次（用于「批次利润」）",
-    "profitTrackedHint": "「批次利润」报表只显示已标记的批次。"
+    "profitTrackedHint": "「批次利润」报表只显示已标记的批次。",
+    "cpKz": "在哈萨克斯坦",
+    "checkpointErrors": {
+      "forbidden": "无权操作此车",
+      "not_in_transit": "车辆不在途中——只能给在途车辆打点",
+      "unknown_key": "没有这个位置标记",
+      "not_on_route": "该车不经过此处——请选择其路线上的标记"
+    }
   },
   "loading": {
     "title": "装车",
@@ -1739,7 +1746,7 @@
     "eta": "预计 ~{min}–{max} 天到达",
     "seg_cn_transit": "中国境内运输中",
     "seg_to_border": "驶向口岸",
-    "seg_border_wait": "口岸排队（1–3天）",
+    "seg_border_wait": "口岸排队",
     "seg_kg": "吉尔吉斯斯坦境内",
     "seg_uz": "乌兹别克斯坦境内",
     "seg_transit": "运输中",
@@ -1765,7 +1772,9 @@
     "cargoLoading": "正在加载货物清单…",
     "cargoFailed": "无法加载货物清单",
     "cargoReceived": "收货 {date}",
-    "cargoMore": "还有 {n} 项 — 完整列表见库存"
+    "cargoMore": "还有 {n} 项 — 完整列表见库存",
+    "seg_kz": "哈萨克斯坦境内",
+    "seg_uz_queue": "乌兹别克斯坦口岸排队"
   },
   "accounting": {
     "title": "管理会计",
@@ -2585,7 +2594,36 @@
     "noSignal": "无信号",
     "notDeparted": "尚未发车",
     "showClosed": "同时显示已关闭",
-    "activeOnly": "仅活动中"
+    "activeOnly": "仅活动中",
+    "queue": {
+      "title": "口岸排队",
+      "meaning": "现在到达排队的车辆需要等待多久。已在排队的车辆也从此刻起计算；已过境的车辆不变。",
+      "post": {
+        "khorgos": "霍尔果斯（中国→哈萨克斯坦）",
+        "yallama": "亚拉马（哈萨克斯坦→乌兹别克斯坦）"
+      },
+      "current": "{min}–{max} 天",
+      "usual": "通常：{min}–{max} 天",
+      "typedBy": "{name}，{when}",
+      "warn": "⚠ {n} 天前录入",
+      "edit": "修改",
+      "minDays": "最少（天）",
+      "maxDays": "最多（天）",
+      "note": "备注",
+      "save": "保存",
+      "reset": "恢复通常时间",
+      "saved": "已保存",
+      "errors": {
+        "forbidden": "无权修改排队时间",
+        "scoped_actor": "排队时间由不绑定仓库的物流员修改——口岸不属于任何仓库",
+        "unknown_post": "未知口岸",
+        "bad_number": "请输入天数，例如 3 或 3.5",
+        "bad_range": "0 到 30 天，且最多不少于最少",
+        "note_too_long": "备注不超过 300 字",
+        "changed": "同事刚刚修改了此值——请刷新页面后重新输入",
+        "server_behind": "数据库尚未更新——按通常时间计算"
+      }
+    }
   },
   "roles": {
     "title": "角色与权限",
@@ -3223,7 +3261,8 @@
     },
     "zones": {
       "cn": "义乌 / 广州 → 塔什干",
-      "kashgar": "喀什 → 塔什干"
+      "kashgar": "喀什 → 塔什干",
+      "horgos": "霍尔果斯 → 塔什干"
     },
     "source": {
       "dictionary": "来自字典",

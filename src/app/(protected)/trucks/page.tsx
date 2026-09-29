@@ -10,6 +10,9 @@ import { Icon } from '@/components/ui/icon';
 import { EmptyState, PageHeader, Stat } from '@/components/ui/page';
 import { warehouseScopeEither } from '@/modules/platform/rbac/scope';
 import { mayReadBatches } from '@/modules/wms/batches/read-door';
+import { pinOnRoute } from '@/modules/wms/tracking/eta';
+import { CHECKPOINT_LABEL } from '@/modules/wms/tracking/map-data';
+import { BorderQueuePanel } from './border-queue-panel';
 
 /**
  * Where every truck is (owner: "/trucks o'rniga «qaysi partiya qayerga yetib
@@ -52,6 +55,7 @@ export default async function TrucksPage({
       status: batches.status,
       originCode: origin.code,
       destCode: dest.code,
+      destCountry: dest.country,
       destId: batches.destWarehouseId,
       vehiclePlate: batches.vehiclePlate,
       driverName: batches.driverName,
@@ -86,7 +90,7 @@ export default async function TrucksPage({
         warehouseScopeEither(actor, batches.originWarehouseId, batches.destWarehouseId),
       ),
     )
-    .groupBy(batches.id, origin.code, dest.code)
+    .groupBy(batches.id, origin.code, dest.code, dest.country)
     .orderBy(desc(batches.departedAt), desc(batches.createdAt))
     .limit(200);
 
@@ -97,11 +101,6 @@ export default async function TrucksPage({
   const landed = rows.filter((row) => ['arrived', 'unloaded'].includes(row.status)).length;
   const loading = rows.filter((row) => ['forming', 'loading'].includes(row.status)).length;
 
-  const CHECKPOINTS: Record<string, string> = {
-    at_border: `🛃 ${tb('cpBorder')}`,
-    in_kg: `🇰🇬 ${tb('cpKg')}`,
-    in_uz: `🇺🇿 ${tb('cpUz')}`,
-  };
 
   return (
     <div className="mx-auto max-w-lg space-y-4 md:max-w-4xl">
@@ -116,6 +115,9 @@ export default async function TrucksPage({
         }
       />
 
+      {/* The Horgos road's two queues — typed here, read by every date. */}
+      <BorderQueuePanel actor={actor} />
+
       <div className="grid grid-cols-3 gap-2.5">
         <Stat label={t('loading')} value={loading} tone="neutral" />
         <Stat label={t('onRoad')} value={onRoad} tone={onRoad ? 'warn' : 'neutral'} />
@@ -128,7 +130,14 @@ export default async function TrucksPage({
         <div className="space-y-2">
           {rows.map((row) => {
             const position = positions.get(row.id);
-            const checkpoint = (row.checkpoint as { key?: string } | null)?.key;
+            // The truck's own road's pin — a Kyrgyz pin left on a Kazakh road
+            // is no position, here as on the dashboard (`pinOnRoute`).
+            const checkpoint = pinOnRoute(
+              row.checkpoint,
+              row.originCode ?? '',
+              row.destCode ?? '',
+              row.destCountry,
+            )?.key;
             return (
               <Link
                 key={row.id}
@@ -183,7 +192,9 @@ export default async function TrucksPage({
                         : t('staleFix')}
                     </span>
                   ) : checkpoint ? (
-                    <span className="text-ink-500">{CHECKPOINTS[checkpoint]}</span>
+                    <span className="text-ink-500">
+                      {CHECKPOINT_LABEL[checkpoint].icon} {tb(CHECKPOINT_LABEL[checkpoint].label)}
+                    </span>
                   ) : row.departedAt ? (
                     <span className="text-ink-500">
                       🚀 {format.dateTime(new Date(row.departedAt), { dateStyle: 'short' })} ·{' '}

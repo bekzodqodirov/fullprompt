@@ -7,14 +7,13 @@ import { mayOpenBatchCard } from '@/modules/wms/batches/card-door';
 import { loadBatchHead } from '@/modules/wms/batches/card-head';
 import { mayReadBatches } from '@/modules/wms/batches/read-door';
 import { devicesForBatch } from '@/modules/wms/tracking/devices';
+import { checkpointsFor } from '@/modules/wms/tracking/eta';
+import { CHECKPOINT_KEYS, CHECKPOINT_LABEL, type CheckpointKey } from '@/modules/wms/tracking/map-data';
 import { Panel } from '@/components/panel';
-import {
-  createDriverDeviceAction,
-  revokeDriverDeviceAction,
-  setTrackingCheckpointAction,
-} from '../../batch-actions-server';
+import { createDriverDeviceAction, revokeDriverDeviceAction } from '../../batch-actions-server';
 import { BatchCard, batchTabMetadata } from '../batch-card';
 import { VehicleForm } from '../vehicle-form';
+import { CheckpointButtons } from './checkpoint-buttons';
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   return batchTabMetadata((await params).id, 'mashina');
@@ -46,7 +45,17 @@ export default async function BatchTruckTabPage({ params }: { params: Promise<{ 
   // /map lets in only the batch readers (read-door.ts); a link it bounces is
   // worse than none (#1023).
   const mapDoor = mayReadBatches(actor.permissions);
-  const checkpointKey = (batch.trackingCheckpoint as { key?: string } | null)?.key ?? null;
+  const rawPin = (batch.trackingCheckpoint as { key?: unknown } | null)?.key;
+  const checkpointKey =
+    typeof rawPin === 'string' && (CHECKPOINT_KEYS as readonly string[]).includes(rawPin)
+      ? (rawPin as CheckpointKey)
+      : null;
+  // The pins THIS truck's road carries (Kashgar: Kyrgyzstan; Horgos:
+  // Kazakhstan) — the list the pin service obeys. The pin the truck already
+  // carries is offered too when its road does not, so a pin written before
+  // the rule can still be pressed off.
+  const pinOptions: CheckpointKey[] = checkpointsFor(head.originCode, head.destCode, head.destCountry);
+  if (checkpointKey && !pinOptions.includes(checkpointKey)) pinOptions.push(checkpointKey);
 
   return (
     <BatchCard head={head} actor={actor} active="mashina">
@@ -140,42 +149,24 @@ export default async function BatchTruckTabPage({ params }: { params: Promise<{ 
 
         {/* Tracking map pins: the logist marks where the truck ACTUALLY is —
             the map's estimate re-anchors from that moment (owner's feature). */}
-        {batch.status === 'in_transit' && canVehicle && (
+        {/* Hidden when the truck's road carries no pin at all (a leg inside
+            China) and none is set: an empty panel is a question with no
+            answers. */}
+        {batch.status === 'in_transit' && canVehicle && pinOptions.length > 0 && (
           <Panel
             title={`📍 ${t('whereIsTruck')}`}
-            badge={
-              checkpointKey
-                ? t(checkpointKey === 'at_border' ? 'cpBorder' : checkpointKey === 'in_kg' ? 'cpKg' : 'cpUz')
-                : undefined
-            }
+            badge={checkpointKey ? t(CHECKPOINT_LABEL[checkpointKey].label) : undefined}
             testId="batch-where-panel"
             open
           >
-            <div className="flex flex-wrap gap-2">
-              {(
-                [
-                  ['at_border', `🛃 ${t('cpBorder')}`],
-                  ['in_kg', `🇰🇬 ${t('cpKg')}`],
-                  ['in_uz', `🇺🇿 ${t('cpUz')}`],
-                ] as const
-              ).map(([key, label]) => {
-                const active = checkpointKey === key;
-                return (
-                  <form key={key} action={setTrackingCheckpointAction} className="flex-1">
-                    <input type="hidden" name="batchId" value={batch.id} />
-                    <input type="hidden" name="key" value={key} />
-                    <button
-                      type="submit"
-                      className={`w-full whitespace-nowrap rounded-lg border-2 px-3 py-2 text-sm font-semibold ${
-                        active ? 'border-blue-700 bg-brand-50 text-brand-700' : 'border-line text-ink-700'
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  </form>
-                );
-              })}
-            </div>
+            <CheckpointButtons
+              batchId={batch.id}
+              current={checkpointKey}
+              options={pinOptions.map((key) => ({
+                key,
+                label: `${CHECKPOINT_LABEL[key].icon} ${t(CHECKPOINT_LABEL[key].label)}`,
+              }))}
+            />
           </Panel>
         )}
 

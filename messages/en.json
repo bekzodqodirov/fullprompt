@@ -1377,7 +1377,14 @@
     "noCostsWarn": "No costs are entered on this batch yet",
     "profitTrackedOn": "Consignment — counted in «Profit by batch»",
     "profitTrackedSet": "Mark as a consignment (for «Profit by batch»)",
-    "profitTrackedHint": "The «Profit by batch» report lists only the batches marked here."
+    "profitTrackedHint": "The «Profit by batch» report lists only the batches marked here.",
+    "cpKz": "In Kazakhstan",
+    "checkpointErrors": {
+      "forbidden": "No access to this truck",
+      "not_in_transit": "The truck is not on the road — pins are for trucks in transit",
+      "unknown_key": "No such pin",
+      "not_on_route": "This truck does not pass there — choose a pin on its own road"
+    }
   },
   "loading": {
     "title": "Loading",
@@ -1739,7 +1746,7 @@
     "eta": "arriving in ~{min}–{max} days",
     "seg_cn_transit": "On the road inside China",
     "seg_to_border": "Heading for the border",
-    "seg_border_wait": "Queueing at the border (1–3 days)",
+    "seg_border_wait": "Queueing at the border",
     "seg_kg": "In Kyrgyzstan",
     "seg_uz": "In Uzbekistan",
     "seg_transit": "On the road",
@@ -1765,7 +1772,9 @@
     "cargoLoading": "Loading the cargo list…",
     "cargoFailed": "Could not load the cargo list",
     "cargoReceived": "received {date}",
-    "cargoMore": "{n} more items — the full list is in stock"
+    "cargoMore": "{n} more items — the full list is in stock",
+    "seg_kz": "In Kazakhstan",
+    "seg_uz_queue": "Queueing at the Uzbek border"
   },
   "accounting": {
     "title": "Management accounting",
@@ -2585,7 +2594,36 @@
     "noSignal": "no signal",
     "notDeparted": "not departed yet",
     "showClosed": "Show closed ones too",
-    "activeOnly": "Active only"
+    "activeOnly": "Active only",
+    "queue": {
+      "title": "Border queues",
+      "meaning": "How long a truck arriving at the queue now will wait. Trucks already queueing are counted from this moment too; trucks that have crossed are unchanged.",
+      "post": {
+        "khorgos": "Khorgos (China→Kazakhstan)",
+        "yallama": "Yallama (Kazakhstan→Uzbekistan)"
+      },
+      "current": "{min}–{max} days",
+      "usual": "Usual: {min}–{max} days",
+      "typedBy": "{name}, {when}",
+      "warn": "⚠ typed {n} days ago",
+      "edit": "Change",
+      "minDays": "At least, days",
+      "maxDays": "At most, days",
+      "note": "Note",
+      "save": "Save",
+      "reset": "Back to the usual days",
+      "saved": "Saved",
+      "errors": {
+        "forbidden": "You may not change the queue",
+        "scoped_actor": "The queue is changed by a logist bound to no warehouse — a border post belongs to none",
+        "unknown_post": "Unknown border post",
+        "bad_number": "Type the days as a number, e.g. 3 or 3.5",
+        "bad_range": "0 to 30 days, and «at most» not below «at least»",
+        "note_too_long": "Note: 300 characters at most",
+        "changed": "A colleague has just changed it — reload the page and type again",
+        "server_behind": "The database is not updated yet — the usual days apply"
+      }
+    }
   },
   "roles": {
     "title": "Roles and permissions",
@@ -3223,7 +3261,8 @@
     },
     "zones": {
       "cn": "Yiwu / Guangzhou → Tashkent",
-      "kashgar": "Kashgar → Tashkent"
+      "kashgar": "Kashgar → Tashkent",
+      "horgos": "Horgos → Tashkent"
     },
     "source": {
       "dictionary": "from dictionary",

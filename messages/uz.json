@@ -1377,7 +1377,14 @@
     "noCostsWarn": "Bu partiyaga hali xarajat yozilmagan",
     "profitTrackedOn": "Partiya — «Partiya foydasi»da hisoblanadi",
     "profitTrackedSet": "Partiya deb belgilash («Partiya foydasi» uchun)",
-    "profitTrackedHint": "«Partiya foydasi» hisobotida faqat shu belgisi bor partiyalar chiqadi."
+    "profitTrackedHint": "«Partiya foydasi» hisobotida faqat shu belgisi bor partiyalar chiqadi.",
+    "cpKz": "Qozog‘istonda",
+    "checkpointErrors": {
+      "forbidden": "Bu mashinaga ruxsatingiz yo‘q",
+      "not_in_transit": "Mashina yo‘lda emas — belgi faqat yo‘ldagi mashinaga qo‘yiladi",
+      "unknown_key": "Bunday belgi yo‘q",
+      "not_on_route": "Bu mashina u yerdan o‘tmaydi — o‘z yo‘lining belgisini tanlang"
+    }
   },
   "loading": {
     "title": "Pogruzka",
@@ -1739,7 +1746,7 @@
     "eta": "yetib kelishiga ~{min}–{max} kun",
     "seg_cn_transit": "Xitoy ichida yo‘lda",
     "seg_to_border": "Chegara tomon yo‘lda",
-    "seg_border_wait": "Chegarada navbatda (1–3 kun)",
+    "seg_border_wait": "Chegarada navbatda",
     "seg_kg": "Qirg‘iziston hududida",
     "seg_uz": "O‘zbekiston hududida",
     "seg_transit": "Yo‘lda",
@@ -1765,7 +1772,9 @@
     "cargoLoading": "Yuk ro‘yxati yuklanmoqda…",
     "cargoFailed": "Yuk ro‘yxatini olib bo‘lmadi",
     "cargoReceived": "qabul {date}",
-    "cargoMore": "yana {n} ta tovar — to‘liq ro‘yxat ostatkada"
+    "cargoMore": "yana {n} ta tovar — to‘liq ro‘yxat ostatkada",
+    "seg_kz": "Qozog‘iston hududida",
+    "seg_uz_queue": "O‘zbekiston chegarasida navbatda"
   },
   "accounting": {
     "title": "Boshqaruv hisobi",
@@ -2585,7 +2594,36 @@
     "noSignal": "signal yo‘q",
     "notDeparted": "hali yo‘lga chiqmagan",
     "showClosed": "Yopilganlarni ham ko‘rsatish",
-    "activeOnly": "Faqat faollari"
+    "activeOnly": "Faqat faollari",
+    "queue": {
+      "title": "Chegara navbatlari",
+      "meaning": "Hozir navbatga kelgan mashina qancha kutadi. Navbatda turganlar ham shu paytdan boshlab hisoblanadi; chegaradan o‘tganlar o‘zgarmaydi.",
+      "post": {
+        "khorgos": "Horgos (Xitoy→Qozog‘iston)",
+        "yallama": "Yallama (Qozog‘iston→O‘zbekiston)"
+      },
+      "current": "{min}–{max} kun",
+      "usual": "Odatdagi: {min}–{max} kun",
+      "typedBy": "{name}, {when}",
+      "warn": "⚠ {n} kun oldin kiritilgan",
+      "edit": "O‘zgartirish",
+      "minDays": "Kamida, kun",
+      "maxDays": "Ko‘pi bilan, kun",
+      "note": "Izoh",
+      "save": "Saqlash",
+      "reset": "Odatdagi jadvalga qaytarish",
+      "saved": "Saqlandi",
+      "errors": {
+        "forbidden": "Navbatni o‘zgartirishga ruxsatingiz yo‘q",
+        "scoped_actor": "Navbatni omborga bog‘lanmagan logist o‘zgartiradi — chegara hech bir omborniki emas",
+        "unknown_post": "Noma’lum chegara punkti",
+        "bad_number": "Kunni raqam bilan yozing, masalan 3 yoki 3,5",
+        "bad_range": "0 dan 30 kungacha, «ko‘pi bilan» «kamida»dan kam bo‘lmasin",
+        "note_too_long": "Izoh 300 belgidan oshmasin",
+        "changed": "Hamkasbingiz hozirgina o‘zgartirdi — sahifani yangilab, qaytadan kiriting",
+        "server_behind": "Baza hali yangilanmagan — odatdagi muddatlar amal qilmoqda"
+      }
+    }
   },
   "roles": {
     "title": "Rollar va huquqlar",
@@ -3223,7 +3261,8 @@
     },
     "zones": {
       "cn": "Yiwu / Guangzhou → Toshkent",
-      "kashgar": "Qashqar → Toshkent"
+      "kashgar": "Qashqar → Toshkent",
+      "horgos": "Horgos → Toshkent"
     },
     "source": {
       "dictionary": "lug‘atdan",
