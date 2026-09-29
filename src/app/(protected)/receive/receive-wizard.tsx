@@ -19,10 +19,6 @@ import {
   type ReceiverOption,
 } from '../receipts/[id]/received-edit-form';
 import { receivedDayBounds } from '@/modules/wms/receipts/received-day';
-import { factoryBarcodeKey } from '@/modules/wms/receipts/factory-barcode';
-import { isOwnCodeShape } from '@/offline/code-shape';
-import { Overlay } from '@/components/ui/overlay';
-import { Scanner } from '@/components/scan/scanner';
 
 /**
  * Single-window receiving (owner's request): client on top, product LINES in
@@ -61,8 +57,6 @@ interface LotDraft {
   totalWeightKg: string;
   totalVolumeM3: string;
   photoIds: string[];
-  /** The factory's barcode as typed or read (0112, Q10 c) — '' = none. */
-  barcode: string;
   /**
    * What the factory truck said about this line — «zavod: 50 · haydovchi: 48»
    * — printed beside the count box, which stays EMPTY: B2 is a recount at
@@ -142,8 +136,6 @@ const OFFICE_ERRORS: Record<string, true> = {
   received_day_invalid: true,
   received_in_future: true,
   received_too_old: true,
-  barcode_invalid: true,
-  barcode_is_ours: true,
   server_behind: true,
 };
 
@@ -171,7 +163,6 @@ function newLot(): LotDraft {
     totalVolumeM3: '',
     photoIds: [],
     qrSkipped: false,
-    barcode: '',
   };
 }
 
@@ -253,8 +244,6 @@ export function ReceiveWizard({
   const td = useTranslations('deals');
   const tq = useTranslations('qrsiz');
   const to = useTranslations('ofis');
-  /** The lot whose barcode the camera is reading (0112), or null. */
-  const [barcodeLot, setBarcodeLot] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [clientQuery, setClientQuery] = useState('');
   const [clientHits, setClientHits] = useState<ClientHit[]>([]);
@@ -671,18 +660,6 @@ export function ReceiveWizard({
   const officeBounds = officeWh ? receivedDayBounds(new Date(), officeWh.timezone) : null;
   const receivedBy = receiverPayload(draft.receiver ?? null);
   const officeReady = !canOnBehalf || receivedBy !== null;
-  /** A barcode box that holds something the key refuses (or one of OUR codes). */
-  const barcodeBad = (lot: LotDraft) => {
-    if (!lot.barcode.trim()) return false;
-    const key = factoryBarcodeKey(lot.barcode);
-    return !key || isOwnCodeShape(key);
-  };
-  /** The sentence for a bad barcode box — one of OUR codes is a different
-   *  mistake (the QR sticker scanned into the wrong box) from a typo. */
-  const barcodeWord = (lot: LotDraft) => {
-    const key = factoryBarcodeKey(lot.barcode);
-    return key && isOwnCodeShape(key) ? to('errors.barcode_is_ours_plain') : to('errors.barcode_invalid_plain');
-  };
 
   /** First missing thing per lot — shown next to the disabled confirm so the operator knows WHAT is wrong. */
   function firstProblem(): string | null {
@@ -696,7 +673,6 @@ export function ReceiveWizard({
       if (!(Number(lot.boxCount) >= 1)) return `${line}: ${t('problems.count')}`;
       if (!lotTotals(lot)) return `${line}: ${t('problems.dims')}`;
       if (lot.photoIds.length === 0) return `${line}: ${t('problems.photo')}`;
-      if (barcodeBad(lot)) return `${line}: ${barcodeWord(lot)}`;
     }
     return null;
   }
@@ -707,7 +683,7 @@ export function ReceiveWizard({
       officeReady &&
       draft!.lots.every(
         (lot) =>
-          lot.zh.trim() && Number(lot.boxCount) && lot.photoIds.length > 0 && lotTotals(lot) && !barcodeBad(lot),
+          lot.zh.trim() && Number(lot.boxCount) && lot.photoIds.length > 0 && lotTotals(lot),
       )
     );
   }
@@ -740,7 +716,6 @@ export function ReceiveWizard({
           id: lot.id,
           productNameZh: lot.zh.trim(),
           productNameRu: lot.ru.trim(),
-          factoryBarcode: lot.barcode.trim(),
           boxCount: Number(lot.boxCount),
           dimsMode: lot.dimsMode,
           qrSkipped: Boolean(lot.qrSkipped),
@@ -772,8 +747,8 @@ export function ReceiveWizard({
       } else if (res.error === 'amount_too_large') {
         setError(tc('amountTooLarge'));
       } else if (res.error && res.error in OFFICE_ERRORS) {
-        // The office receipt's and the barcode's refusals, in words (0112).
-        setError(receivedErrorText(res.error, to, tc, res.detail));
+        // The office receipt's refusals, in words (0112).
+        setError(receivedErrorText(res.error, to, tc));
       } else {
         setError(res.detail ? `${res.error}: ${res.detail}` : (res.error ?? 'error'));
       }
@@ -1393,17 +1368,6 @@ export function ReceiveWizard({
                       {lot.ru && (
                         <p className="mt-0.5 truncate px-1 text-xs text-ink-500">({lot.ru})</p>
                       )}
-                      <input
-                        aria-label={to('barcode')}
-                        className={`input-cell mt-1 font-mono text-xs uppercase ${barcodeBad(lot) ? '!border-bad' : ''}`}
-                        value={lot.barcode}
-                        maxLength={64}
-                        placeholder={`🏷 ${to('barcode')}`}
-                        onChange={(e) => updateLot(lot.id, { barcode: e.target.value })}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') e.preventDefault();
-                        }}
-                      />
                     </td>
                     <td className="p-1.5">
                       <input
@@ -1501,39 +1465,6 @@ export function ReceiveWizard({
               )}
             </div>
             {lot.ru && <p className="px-10 text-sm text-ink-500">({lot.ru})</p>}
-            {/* The factory's barcode (0112, Q10 c): typed, read by an HID
-                scanner (which types Enter after it — swallowed here), or read
-                by the camera in retail mode. Optional; it only identifies. */}
-            <div className="flex items-center gap-2">
-              <input
-                data-testid="lot-barcode"
-                aria-label={to('barcode')}
-                className={`input min-w-0 flex-1 font-mono uppercase ${barcodeBad(lot) ? '!border-bad' : ''}`}
-                inputMode="text"
-                autoCapitalize="characters"
-                maxLength={64}
-                placeholder={`🏷 ${to('barcode')}`}
-                value={lot.barcode}
-                onChange={(e) => updateLot(lot.id, { barcode: e.target.value })}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') e.preventDefault();
-                }}
-              />
-              <button
-                type="button"
-                data-testid="lot-barcode-scan"
-                aria-label={to('barcodeScan')}
-                className="btn-secondary !min-h-12 shrink-0 px-3"
-                onClick={() => setBarcodeLot(lot.id)}
-              >
-                📷
-              </button>
-            </div>
-            {barcodeBad(lot) && (
-              <p data-testid="lot-barcode-invalid" className="text-xs font-semibold text-bad">
-                {barcodeWord(lot)}
-              </p>
-            )}
             <div className="flex items-center gap-2">
               <div className="flex-1">
                 <p className="mb-0.5 text-[11px] font-semibold text-ink-500">
@@ -1619,29 +1550,6 @@ export function ReceiveWizard({
           ＋ {t('addLot')}
         </button>
       </div>
-
-      {/* Kept MOUNTED, toggled by `open` (#684). The scanner inside exists
-          only while it is open, so the camera is released on close. */}
-      <Overlay
-        open={barcodeLot !== null}
-        onClose={() => setBarcodeLot(null)}
-        closeLabel={to('close')}
-        testId="barcode-scan-overlay"
-        className="absolute inset-x-0 bottom-0 space-y-3 rounded-t-2xl bg-surface-raised p-4 pb-safe shadow-xl sm:inset-x-auto sm:left-1/2 sm:top-1/2 sm:bottom-auto sm:w-96 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl"
-      >
-        <p className="text-sm font-bold">🏷 {to('barcodeScan')}</p>
-        <Scanner
-          active={barcodeLot !== null}
-          mode="retail"
-          onCode={(code) => {
-            if (barcodeLot) updateLot(barcodeLot, { barcode: code });
-            setBarcodeLot(null);
-          }}
-        />
-        <button type="button" className="btn-secondary w-full" onClick={() => setBarcodeLot(null)}>
-          {to('close')}
-        </button>
-      </Overlay>
 
       {error && (
         <p role="alert" data-testid="receive-error" className="rounded-lg bg-bad/10 p-3 text-sm font-semibold text-bad">

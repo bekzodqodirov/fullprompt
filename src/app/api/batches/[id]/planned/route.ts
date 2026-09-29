@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNotNull, isNull, notInArray, or, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, notInArray, or, sql } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
 import {
   batches,
@@ -216,19 +216,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     siblings: siblingsByLot.get(l.id) ?? [],
   }));
 
-  // The factory's barcode per lot (0112, Q10 c): a code the camera reads that
-  // names a PRODUCT, so the phone can say which lot it is instead of
-  // «unknown code». Only lots the snapshot already carries.
-  const snapshotLotIds = [...new Set([...memberBoxes, ...available].map((b) => b.lotId))];
-  const lotBarcodes = snapshotLotIds.length
-    ? (
-        await db
-          .select({ lotId: receiptLots.id, key: receiptLots.factoryBarcode })
-          .from(receiptLots)
-          .where(and(inArray(receiptLots.id, snapshotLotIds), isNotNull(receiptLots.factoryBarcode)))
-      ).map((r) => ({ lotId: r.lotId, key: r.key! }))
-    : [];
-
   // Compressed, and with an ETag: the phone re-reads this every 15 seconds
   // and Next does not compress a Route Handler's own response (round 110 —
   // measured 28,506 bytes on the wire against 975 gzipped).
@@ -240,6 +227,5 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     crates: originCrates.map((c) => ({ code: c.code, boxShortCodes: byCrate.get(c.id) ?? [] })),
     countOnly,
     countOnlyCapped,
-    lotBarcodes,
   });
 }

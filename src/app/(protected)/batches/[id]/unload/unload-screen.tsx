@@ -17,8 +17,6 @@ import { codeIdentity } from '@/modules/wms/labels/code-identity';
 import { codesToUnmark } from '@/offline/ack-verdict';
 import { countOnlyLotOf, type CountOnlyLot } from '@/offline/count-only';
 import { isScanRefusal, type ScanRefusal } from '@/offline/scan-refusal';
-import { BarcodeIdentify, type IdentifiedLot } from '@/components/barcode-identify';
-import { lotsForBarcode } from '@/modules/wms/receipts/factory-barcode';
 import { isOwnCodeShape, looksLikeRetailBarcode } from '@/offline/code-shape';
 
 interface MemberBox {
@@ -39,8 +37,6 @@ interface Snapshot {
   countOnly?: CountOnlyLot[];
   /** The count-only list reached its cap (review phone-3) — absent from an old snapshot. */
   countOnlyCapped?: boolean;
-  /** Lots with a factory barcode (0112) — absent from an old cached snapshot. */
-  lotBarcodes?: { lotId: string; key: string }[];
 }
 
 /**
@@ -51,7 +47,6 @@ interface Snapshot {
  */
 export function UnloadScreen({ batchId, countHref }: { batchId: string; countHref?: string }) {
   const t = useTranslations('unloading');
-  const to = useTranslations('ofis');
   const tc = useTranslations('common');
   const tr = useTranslations('scanRefusal');
   const tca = useTranslations('countAccept');
@@ -88,10 +83,6 @@ export function UnloadScreen({ batchId, countHref }: { batchId: string; countHre
   const [toast, setToast] = useState<{ text: string; intake?: boolean } | null>(null);
   const [manualOpen, setManualOpen] = useState(false);
   const [manualCode, setManualCode] = useState('');
-  /** A factory barcode just read (0112, Q10 c) — the identify sheet is open. */
-  const [identify, setIdentify] = useState<{ code: string; lotIds: string[] } | null>(null);
-  /** «🏭 Zavod kodi»: the camera reads ONE retail barcode, then goes back to QR. */
-  const [scanMode, setScanMode] = useState<'qr' | 'retail'>('qr');
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cacheKey = `gsr-unload-${batchId}`;
   /**
@@ -371,17 +362,15 @@ export function UnloadScreen({ batchId, countHref }: { batchId: string; countHre
 
   function onCode(code: string, method: 'qr' | 'manual' = 'qr', manualReason?: string) {
     if (!snapshot) return;
-    // FIRST: a factory's barcode (0112, Q10 c) identifies a pile and is never
-    // queued. It used to be queued ON PURPOSE (reality wins at unload) and
-    // come back «unknown code» with the unclaimed-intake toast — a barcode is
-    // no box at all, and pure digits can never be one of ours.
-    if (!isOwnCodeShape(code)) {
-      const lotIds = lotsForBarcode(code, snapshot.lotBarcodes ?? []);
-      if (lotIds.length > 0 || looksLikeRetailBarcode(code)) {
-        feedback('dup');
-        setIdentify({ code, lotIds });
-        return;
-      }
+    // FIRST: a factory's retail barcode (8-14 digits, never one of ours —
+    // ours always carry a dash) is no box at all. Unknown codes are queued ON
+    // PURPOSE here (reality wins at unload), so without this one would land
+    // as an «unknown carton» with the unclaimed-intake toast; refused here,
+    // out loud (DECISIONS #1224 — the identify sheet it used to open is gone).
+    if (!isOwnCodeShape(code) && looksLikeRetailBarcode(code)) {
+      feedback('bad');
+      setToast({ text: `❓ ${t('foreignCode')}` });
+      return;
     }
     // A Chinese carton carries the supplier's own QR too, and that one is a
     // URL. It is not an unknown BOX — the server cannot even parse it — and
@@ -475,14 +464,6 @@ export function UnloadScreen({ batchId, countHref }: { batchId: string; countHre
     byLot.set(box.lotId, entry);
   }
 
-  /** The identify sheet's rows, from this truck's own manifest. */
-  function identifiedLots(lotIds: string[]): IdentifiedLot[] {
-    return lotIds.flatMap((lotId) => {
-      const entry = byLot.get(lotId);
-      return entry ? [{ lotId, label: entry.label, product: entry.product, done: entry.done, total: entry.total }] : [];
-    });
-  }
-
   return (
     <div
       className={`space-y-3 pb-6 transition-colors ${flash === 'ok' ? 'bg-good/15' : flash ? 'bg-bad/15' : ''}`}
@@ -504,41 +485,7 @@ export function UnloadScreen({ batchId, countHref }: { batchId: string; countHre
           : `📴 ${t('offline', { n: pending })}`}
       </div>
 
-      <Scanner
-        active={identify === null}
-        mode={scanMode}
-        onCode={(code) => {
-          // Retail mode is for ONE read: a non-own code goes to the sheet
-          // whatever its symbology, and our own code falls through as a scan.
-          if (scanMode === 'retail') {
-            setScanMode('qr');
-            if (!isOwnCodeShape(code)) {
-              feedback('dup');
-              setIdentify({ code, lotIds: lotsForBarcode(code, snapshot.lotBarcodes ?? []) });
-              return;
-            }
-          }
-          onCode(code);
-        }}
-      />
-      <div className="flex justify-center">
-        <button
-          type="button"
-          data-testid="scan-mode-barcode"
-          aria-pressed={scanMode === 'retail'}
-          className={`btn-secondary !min-h-9 px-3 ${scanMode === 'retail' ? '!bg-brand-600 !text-white' : ''}`}
-          onClick={() => setScanMode((mode) => (mode === 'retail' ? 'qr' : 'retail'))}
-        >
-          🏭 {to('barcodeMode')}
-        </button>
-      </div>
-      <BarcodeIdentify
-        open={identify !== null}
-        code={identify?.code ?? ''}
-        lots={identifiedLots(identify?.lotIds ?? [])}
-        countHref={countHref}
-        onClose={() => setIdentify(null)}
-      />
+      <Scanner active onCode={(code) => onCode(code)} />
 
       {/* The loading screen's sentence, on the sibling that reads the same
           capped snapshot (review of the fixes, ui2-6). */}

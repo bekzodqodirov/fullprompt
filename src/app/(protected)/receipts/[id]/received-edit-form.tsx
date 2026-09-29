@@ -215,11 +215,9 @@ export function ReceivedEditForm({
  */
 export function receivedErrorText(
   code: string,
-  t: (key: string, values?: Record<string, string>) => string,
+  t: (key: string) => string,
   tc: (key: string) => string,
-  detail?: string,
 ): string {
-  const lot = detail ?? '';
   switch (code) {
     case 'on_behalf_forbidden':
       return t('errors.on_behalf_forbidden');
@@ -235,10 +233,6 @@ export function receivedErrorText(
       return t('errors.received_too_old');
     case 'received_locked':
       return t('errors.received_locked');
-    case 'barcode_invalid':
-      return t('errors.barcode_invalid', { lot });
-    case 'barcode_is_ours':
-      return t('errors.barcode_is_ours', { lot });
     case 'server_behind':
       return t('errors.server_behind');
     case 'forbidden':

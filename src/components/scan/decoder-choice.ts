@@ -28,8 +28,10 @@
 
 /**
  * What the camera is being asked to read. `qr` is our own label — the hot
- * path, every carton of every truck. `retail` is a factory's barcode on the
- * carton (EAN/UPC/ITF), read only when somebody asks for it (Q10 c).
+ * path, every carton of every truck. `retail` (a factory's EAN/UPC/ITF on the
+ * carton) has NO caller since the factory barcode was retired (DECISIONS
+ * #1224 — factories send a text code, not a barcode); it stays as a mode so
+ * the decoder's own tests keep describing a scanner that can read one.
  */
 export type ScanMode = 'qr' | 'retail';
 

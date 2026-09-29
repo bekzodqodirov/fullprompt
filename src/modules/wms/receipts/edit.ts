@@ -23,8 +23,6 @@ import { receiptHasCompensation } from '../finance/compensation-follow';
 import { claimReceivedNotice } from '../notices/client-claims';
 import { qrlessBoxSql } from '../labels/qrless-sql';
 import { computeLotTotals } from './math';
-import { factoryBarcodeKey } from './factory-barcode';
-import { isOwnCodeShape } from '@/offline/code-shape';
 import { receivedAtFor, receivedDayRefusal, type ReceivedDayRefusal } from './received-day';
 import { checkReceiver, ReceiptError, receivedBySchema } from './service';
 import { mayCountMove } from '../scanning/count-door';
@@ -43,8 +41,9 @@ export const editLotSchema = z.object({
   totalWeightKg: z.number().min(0.001).max(1_000_000).optional(),
   totalVolumeM3: z.number().min(0.0001).max(10_000).optional(),
   note: z.string().trim().max(500).nullable().optional(),
-  /** The factory barcode (0112, Q10 c): undefined = leave it, '' or null = clear it. */
-  factoryBarcode: z.string().trim().max(64).nullable().optional(),
+  // No factory barcode (retired 2026-09-29, DECISIONS #1224). NON-strict on
+  // purpose: a stale page that still posts `factoryBarcode` has it stripped,
+  // so a value a lot already carries is neither cleared nor rewritten.
 });
 
 export type EditLotInput = z.infer<typeof editLotSchema>;
@@ -61,9 +60,7 @@ export class EditError extends Error {
       | 'receipt_has_compensation'
       | 'lot_changed'
       | 'shared_cost_orphaned'
-      // The factory barcode and the office receipt's correction door (0112).
-      | 'barcode_invalid'
-      | 'barcode_is_ours'
+      // The office receipt's correction door (0112).
       | 'received_locked'
       | 'receiver_invalid'
       | ReceivedDayRefusal,
@@ -89,21 +86,6 @@ export function canEditReceipt(
   const localDate = (d: Date) =>
     new Intl.DateTimeFormat('en-CA', { timeZone: warehouseTimezone, dateStyle: 'short' }).format(d);
   return localDate(receipt.createdAt) === localDate(new Date());
-}
-
-/**
- * The lot form's barcode field, as the service stores it: undefined when the
- * form said nothing (leave it), null to clear, else the canonical key —
- * refused in words, as the receive door refuses it (`service.ts`).
- */
-function barcodeEdit(raw: string | null | undefined): string | null | undefined {
-  if (raw === undefined) return undefined;
-  const typed = raw?.trim() ?? '';
-  if (!typed) return null;
-  const key = factoryBarcodeKey(typed);
-  if (!key) throw new EditError('barcode_invalid');
-  if (isOwnCodeShape(key)) throw new EditError('barcode_is_ours');
-  return key;
 }
 
 // --- The office receipt's correction door (0112, the owner's Q9 b) ---
@@ -271,10 +253,6 @@ export async function editLot(
     throw new EditError('structural_locked');
   }
 
-  // The factory barcode (0112, Q10 c): NOT structural — it identifies the pile
-  // and moves nothing, so it is correctable after the cartons have left.
-  const barcode = barcodeEdit(input.factoryBarcode);
-
   const chargeableFactor = await getSetting('chargeable_weight_factor');
   const totals = computeLotTotals(
     lot.dimsMode === 'uniform'
@@ -327,7 +305,6 @@ export async function editLot(
       totalWeightKg: Number(lot.totalWeightKg),
       totalVolumeM3: Number(lot.totalVolumeM3),
       note: lot.note,
-      ...(barcode !== undefined ? { factoryBarcode: lot.factoryBarcode } : {}),
     };
     const after = {
       productNameZh: input.productNameZh,
@@ -340,7 +317,6 @@ export async function editLot(
       totalWeightKg: totals.totalWeightKg,
       totalVolumeM3: totals.totalVolumeM3,
       note: input.note ?? null,
-      ...(barcode !== undefined ? { factoryBarcode: barcode } : {}),
     };
 
     await tx
@@ -356,7 +332,6 @@ export async function editLot(
         totalWeightKg: totals.totalWeightKg.toString(),
         totalVolumeM3: totals.totalVolumeM3.toString(),
         note: input.note ?? null,
-        ...(barcode !== undefined ? { factoryBarcode: barcode } : {}),
       })
       .where(eq(receiptLots.id, lot.id));
 

@@ -4535,17 +4535,6 @@
     "receivedEdit": "Received on / by",
     "problemWarehouse": "Choose the warehouse",
     "problemReceiver": "Choose who received it",
-    "barcode": "Factory barcode",
-    "barcodeScan": "Read the factory barcode",
-    "barcodeMode": "Factory code",
-    "barcodeTitle": "🏭 Factory code: {code}",
-    "barcodeHere": "On this truck:",
-    "barcodeNotHere": "No lot with this code is on this truck.",
-    "barcodeElsewhere": "Elsewhere:",
-    "barcodeOffline": "No internet — could not look elsewhere.",
-    "barcodeCountHint": "A factory code only finds the lot — it counts nothing. Cartons without our QR are counted by the office.",
-    "barcodeCountLink": "Count in the office",
-    "close": "Close",
     "makePallet": "Make a pallet",
     "createPallet": "Create pallet",
     "palet": "PALLET",
@@ -4568,14 +4557,9 @@
       "received_in_future": "The received day cannot be in the future",
       "received_too_old": "A prixod older than 7 days cannot be entered this way — enter it with today’s date and write the real day in the note",
       "received_locked": "Only the office corrects the day and the receiver, and only on the day it was entered",
-      "barcode_invalid": "{lot}: the factory barcode is not valid (letters and digits, 4–48 characters)",
-      "barcode_is_ours": "{lot}: this is our own QR code, not the factory barcode",
-      "barcode_invalid_plain": "The factory barcode is not valid (letters and digits, 4–48 characters)",
-      "barcode_is_ours_plain": "This is our own QR code, not the factory barcode",
       "server_behind": "The server is still updating — try again in a minute",
       "forbidden": "Not allowed"
-    },
-    "barcodeManyLots": "This factory code is on {n} lots — tap the pile you are handing over in the list."
+    }
   },
   "scanner": {
     "diagnostics": "Scanner diagnostics"

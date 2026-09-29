@@ -1,7 +1,7 @@
 import fontkit from '@pdf-lib/fontkit';
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
 import QRCode from 'qrcode';
-import { cjkSubsetFor } from './cjk-font';
+import { cjkSubsetFor, pdfTextCleaner } from './cjk-font';
 import { CRATE_KIND_MARKER, crateMarker } from './crate-kind';
 import {
   BOX_LABEL,
@@ -70,12 +70,19 @@ export class PdfLabelRenderer implements LabelRenderer {
     // HarfBuzz-subsetted to this document's characters, GSUB cut out;
     // fontkit's own subsetter is the one #103 removed (see cjk-font.ts, #881),
     // hence subset: false.
-    const cjkBytes = await cjkSubsetFor(labels.flatMap((l) => [l.productZh, l.productRu]));
+    // The code is in it too: an unclaimed carton prints its MARKING, and a
+    // marking is whatever the factory wrote — «ЗАВОД 12», «义乌工厂» (DECISIONS
+    // #1224).
+    const cjkBytes = await cjkSubsetFor(
+      labels.flatMap((l) => [l.productZh, l.productRu, l.clientCodeWithLetter]),
+    );
     const cjk = await doc.embedFont(cjkBytes, { subset: false });
+    const clean = await pdfTextCleaner();
+    const winAnsi = new Set(bold.getCharacterSet());
 
     for (const label of labels) {
       const page = doc.addPage([PAGE, PAGE]);
-      await drawLabel(page, doc, label, { bold, regular, cjk });
+      await drawLabel(page, doc, label, { bold, regular, cjk, clean, winAnsi });
     }
     return doc.save();
   }
@@ -85,6 +92,22 @@ interface Fonts {
   bold: PDFFont;
   regular: PDFFont;
   cjk: PDFFont;
+  /** Drops what the CJK font cannot draw (glyph 0) — `cjk-font.ts`, #788. */
+  clean: (text: string) => string;
+  /** What Helvetica can encode. Anything else THROWS in pdf-lib, it does not draw a box. */
+  winAnsi: Set<number>;
+}
+
+/**
+ * The font for the dominant code. A client code is `[A-Z0-9]` and stays in
+ * Helvetica Bold, as it always has; a marking may be Cyrillic or Chinese, and
+ * Helvetica refuses those — pdf-lib throws «WinAnsi cannot encode», which
+ * made the whole sheet a 500 (DECISIONS #1224). Such a code is drawn in the
+ * CJK font, cleaned of what that font lacks.
+ */
+export function codeFontFor(fonts: Pick<Fonts, 'bold' | 'cjk' | 'clean' | 'winAnsi'>, code: string) {
+  const plain = [...code].every((ch) => fonts.winAnsi.has(ch.codePointAt(0)!));
+  return plain ? { font: fonts.bold, text: code } : { font: fonts.cjk, text: fonts.clean(code) };
 }
 
 /**
@@ -157,20 +180,21 @@ async function drawLabel(
 
   // --- Dominant element: client code + letter (spec §7). It hangs from a top
   // edge, so a shrunk code moves up rather than down into the product line.
-  const codeText = label.clientCodeWithLetter;
-  const codeSize = fitMm(fonts.bold, codeText, g.clientCode.maxSize, g.clientCode.maxWidth);
+  const { font: codeFont, text: codeText } = codeFontFor(fonts, label.clientCodeWithLetter);
+  const codeSize = fitMm(codeFont, codeText, g.clientCode.maxSize, g.clientCode.maxWidth);
   page.drawText(codeText, {
-    x: centre(fonts.bold, codeText, codeSize),
+    x: centre(codeFont, codeText, codeSize),
     y: y(g.clientCode.top + codeSize),
     size: size(codeSize),
-    font: fonts.bold,
+    font: codeFont,
     color: black,
   });
 
-  // --- Product zh (ru) ---
-  const productText = label.productRu
-    ? `${label.productZh} (${label.productRu})`
-    : label.productZh;
+  // --- Product zh (ru) --- cleaned: an Uzbek Cyrillic «ў» is glyph 0 in the
+  // CJK font and would print as a hole (#788).
+  const productText = fonts.clean(
+    label.productRu ? `${label.productZh} (${label.productRu})` : label.productZh,
+  );
   page.drawText(productText, {
     x: x(g.product.x),
     y: y(g.product.baseline),

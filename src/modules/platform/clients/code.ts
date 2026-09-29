@@ -121,7 +121,9 @@ async function unclaimedNumbers(tx: Db | Tx, prefix: string): Promise<number[]> 
     SELECT DISTINCT (regexp_match(upper(unclaimed_marking), ${pattern}))[1] AS n
     FROM receipts
     WHERE client_id IS NULL AND unclaimed_marking IS NOT NULL
-      AND status <> 'void'
+      -- 'voided', the receipt's word (receipts_status_check). It read
+      -- 'void' — the BOX's word — and so matched every receipt there is.
+      AND status <> 'voided'
       AND upper(unclaimed_marking) ~ ${pattern}
   `)) as unknown as { n: string | null }[];
   return rows.map((r) => Number(r.n)).filter((n) => Number.isSafeInteger(n));

@@ -37,7 +37,6 @@ import { qrlessCountsAt } from '@/modules/wms/labels/qrless';
 import { QrlessChip } from '@/components/qrless-chip';
 import { stockTextWhere } from '@/modules/wms/inventory/stock-filter';
 import { palletDoorsFor } from '@/modules/wms/crates/service';
-import { StockScanButton } from './stock-scan-button';
 
 /** Owner's request: order the stock table by any column, filters kept. */
 const SORTABLE = STOCK_COLUMNS.map((column) => column.key);
@@ -131,13 +130,8 @@ export default async function StockPage({
         <h1 className="text-xl font-bold">
           {lot?.letter} — {lot?.productNameZh} {lot?.productNameRu && `(${lot.productNameRu})`}
         </h1>
-        {(lot?.factoryBarcode || palletDoors.length > 0) && (
+        {palletDoors.length > 0 && (
           <div className="flex flex-wrap items-center gap-2 text-sm">
-            {lot?.factoryBarcode && (
-              <span data-testid="stock-lot-barcode" className="chip-neutral font-mono">
-                🏷 {lot.factoryBarcode}
-              </span>
-            )}
             {palletDoors.map((door) => (
               <Link
                 key={door.warehouseId}
@@ -224,8 +218,7 @@ export default async function StockPage({
   // Top level: Excel-like line table (owner's Kashgar file layout) — one row
   // per lot with in-stock boxes: photo, code+letter, product, counts, kg, m³,
   // density, pieces, WH, date.
-  // One predicate with the XLSX (#513) — it also finds a lot by the factory's
-  // barcode (0112, Q10 c), which is what the 📷 beside the box types in.
+  // One predicate with the XLSX (#513).
   if (params.q) scopeFilter.push(stockTextWhere(params.q));
   // The trucks on the road (round 100, owner's 5A). Its own query with its
   // own scope: `scopeFilter` is built on `currentWarehouseId`, which is NULL
@@ -452,7 +445,6 @@ export default async function StockPage({
         <button type="submit" className="btn-primary">
           🔍
         </button>
-        <StockScanButton warehouseId={params.wh} />
         <a
           href={`/api/reports/stock?${exportQuery.toString()}`}
           className="btn-secondary whitespace-nowrap"

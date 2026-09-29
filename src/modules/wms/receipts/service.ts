@@ -39,8 +39,6 @@ import { MAX_NATIVE_AMOUNT } from '../finance/money-bounds';
 import { receiptHasCompensation } from '../finance/compensation-follow';
 import { claimReceivedNotice } from '../notices/client-claims';
 import { receivedAtFor, receivedDayRefusal, type ReceivedDayRefusal } from './received-day';
-import { factoryBarcodeKey } from './factory-barcode';
-import { isOwnCodeShape } from '@/offline/code-shape';
 import { stampFor } from '../staff/stamp';
 
 export const lotInputSchema = z
@@ -66,8 +64,10 @@ export const lotInputSchema = z
      * z.infer makes it required on every receipt a test or a seed builds (#591).
      */
     qrSkipped: z.boolean().optional(),
-    /** The factory's barcode as typed or read (0112, Q10 c); normalised in the service. */
-    factoryBarcode: z.string().trim().max(64).optional().or(z.literal('')),
+    // No factory barcode (0112's Q10 c, retired 2026-09-29 — DECISIONS #1224).
+    // The object stays NON-strict on purpose: a phone still running the old
+    // bundle posts `factoryBarcode`, and zod strips the key instead of
+    // refusing the prixod.
   })
   .refine(
     (lot) =>
@@ -140,13 +140,11 @@ export class ReceiptError extends Error {
       | 'photo_required'
       | 'already_confirmed'
       | 'pickup_invalid'
-      // The office receipt (0112, Q9 b) and the factory barcode (Q10 c).
+      // The office receipt (0112, Q9 b).
       | 'on_behalf_forbidden'
       | 'receiver_required'
       | 'receiver_invalid'
-      | ReceivedDayRefusal
-      | 'barcode_invalid'
-      | 'barcode_is_ours',
+      | ReceivedDayRefusal,
     message?: string,
   ) {
     super(message ?? code);
@@ -324,7 +322,6 @@ export async function confirmReceipt(
           // The same clock as the boxes minted below (the transaction's), so
           // every carton of the lot starts QR-siz: none has a label stamp yet.
           qrSkippedAt: lotInput.qrSkipped ? sql`now()` : null,
-          factoryBarcode: office.barcodes.get(lotInput.id) ?? null,
         })
         .returning();
 
@@ -408,7 +405,6 @@ export async function confirmReceipt(
           zh: s.productNameZh,
           boxes: s.boxCount,
           ...(s.qrSkipped ? { qrSkipped: true } : {}),
-          ...(office.barcodes.has(s.lotId) ? { barcode: office.barcodes.get(s.lotId) } : {}),
         })),
         // The office receipt, on the record that created it.
         ...(office.receivedAt ? { receivedAt: office.receivedAt.toISOString() } : {}),
@@ -571,22 +567,17 @@ interface OfficeFacts {
   receivedAt: Date | null;
   receivedByUserId: string | null;
   receivedByName: string | null;
-  /** lot id → canonical barcode key, for the lots that carry one. */
-  barcodes: Map<string, string>;
 }
 
 /**
- * What the office receipt and the factory barcodes add to a prixod, decided
- * BEFORE the transaction on the pool (#714), refused in words.
+ * What the office receipt adds to a prixod, decided BEFORE the transaction on
+ * the pool (#714), refused in words.
  *
  *  - The receiver and the real day only through `opts.onBehalf` (Q9 b, the
  *    count door); on an office entry the receiver is REQUIRED — «who counted
  *    these cartons» is the whole point of typing it from the office.
  *  - The day through the one rule (`received-day.ts`), measured from NOW in
  *    the warehouse's zone.
- *  - A barcode normalised to its key; one shaped like OUR code is refused,
- *    because the scan screens route our shapes to the scan path and a lot
- *    keyed by one could never be identified.
  */
 async function officeFacts(
   input: ConfirmReceiptInput,
@@ -608,15 +599,7 @@ async function officeFacts(
     if (refusal) throw new ReceiptError(refusal);
     receivedAt = receivedAtFor(input.receivedDay, now, warehouse.timezone);
   }
-  const barcodes = new Map<string, string>();
-  for (const lot of input.lots) {
-    if (!lot.factoryBarcode) continue;
-    const key = factoryBarcodeKey(lot.factoryBarcode);
-    if (!key) throw new ReceiptError('barcode_invalid', lot.productNameZh);
-    if (isOwnCodeShape(key)) throw new ReceiptError('barcode_is_ours', lot.productNameZh);
-    barcodes.set(lot.id, key);
-  }
-  return { receivedAt, ...receiver, barcodes };
+  return { receivedAt, ...receiver };
 }
 
 /**
