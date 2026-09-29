@@ -101,7 +101,6 @@ export default async function TrucksPage({
   const landed = rows.filter((row) => ['arrived', 'unloaded'].includes(row.status)).length;
   const loading = rows.filter((row) => ['forming', 'loading'].includes(row.status)).length;
 
-
   return (
     <div className="mx-auto max-w-lg space-y-4 md:max-w-4xl">
       <PageHeader
