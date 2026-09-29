@@ -4576,17 +4576,6 @@
     "receivedEdit": "收货日期 / 收货人",
     "problemWarehouse": "请选择仓库",
     "problemReceiver": "请选择收货人",
-    "barcode": "工厂条码",
-    "barcodeScan": "扫描工厂条码",
-    "barcodeMode": "工厂条码",
-    "barcodeTitle": "🏭 工厂条码：{code}",
-    "barcodeHere": "本车上：",
-    "barcodeNotHere": "本车上没有此条码的批次。",
-    "barcodeElsewhere": "其他地方：",
-    "barcodeOffline": "没有网络——无法在其他地方查找。",
-    "barcodeCountHint": "工厂条码只用于找到批次，不计数。没有二维码的箱子由办公室计数录入。",
-    "barcodeCountLink": "在办公室计数",
-    "close": "关闭",
     "makePallet": "打托盘",
     "createPallet": "创建托盘",
     "palet": "托盘",
@@ -4609,14 +4598,9 @@
       "received_in_future": "收货日期不能是将来的日期",
       "received_too_old": "超过 7 天的入库不能这样录入——请用今天的日期录入，并在备注中写明实际日期",
       "received_locked": "收货日期和收货人只能由办公室在录入当天更正",
-      "barcode_invalid": "{lot}：工厂条码无效（字母和数字，4–48 位）",
-      "barcode_is_ours": "{lot}：这是我们的二维码，不是工厂条码",
-      "barcode_invalid_plain": "工厂条码无效（字母和数字，4–48 位）",
-      "barcode_is_ours_plain": "这是我们的二维码，不是工厂条码",
       "server_behind": "服务器仍在更新——请一分钟后重试",
       "forbidden": "没有权限"
-    },
-    "barcodeManyLots": "此工厂条码对应 {n} 个批次——请在列表中点选要交付的那一堆。"
+    }
   },
   "scanner": {
     "diagnostics": "扫描诊断"

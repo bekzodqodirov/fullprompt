@@ -82,7 +82,7 @@ test('T1 — the accountant mints him, lands on his card, and a same name NAMES 
   await page.getByTestId('hodimlar-person-phone').fill(PHONE);
   await page.getByTestId('hodimlar-person-save').click();
 
-  // A FULL page load now (#1237: the soft navigation was dropped about half
+  // A FULL page load now (#1241: the soft navigation was dropped about half
   // the time on a warm server), and the card is a heavy page.
   await expect(page).toHaveURL(/\/hodimlar\?hodim=[0-9a-f-]{36}$/, { timeout: 20_000 });
   personId = new URL(page.url()).searchParams.get('hodim')!;

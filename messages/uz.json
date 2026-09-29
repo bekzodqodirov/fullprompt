@@ -4576,17 +4576,6 @@
     "receivedEdit": "Qabul sanasi / kim qabul qildi",
     "problemWarehouse": "Omborni tanlang",
     "problemReceiver": "Kim qabul qilganini tanlang",
-    "barcode": "Zavod shtrix-kodi",
-    "barcodeScan": "Zavod shtrix-kodini o‘qish",
-    "barcodeMode": "Zavod kodi",
-    "barcodeTitle": "🏭 Zavod kodi: {code}",
-    "barcodeHere": "Shu mashinada:",
-    "barcodeNotHere": "Bu kodli lot shu mashinada yo‘q.",
-    "barcodeElsewhere": "Boshqa joyda:",
-    "barcodeOffline": "Internet yo‘q — boshqa joylardan qidirib bo‘lmadi.",
-    "barcodeCountHint": "Zavod kodi lotni faqat topadi — karobkani sanamaydi. QR yo‘q karobkalarni ofis sanab kiritadi.",
-    "barcodeCountLink": "Ofisda sanash",
-    "close": "Yopish",
     "makePallet": "Palet qilish",
     "createPallet": "Palet yaratish",
     "palet": "PALET",
@@ -4609,14 +4598,9 @@
       "received_in_future": "Qabul sanasi kelajakda bo‘lolmaydi",
       "received_too_old": "7 kundan eski prixodni bunday kiritib bo‘lmaydi — bugungi sana bilan kiriting va haqiqiy kunni izohga yozing",
       "received_locked": "Qabul sanasini va kishini faqat ofis, prixod kiritilgan kuni tuzatadi",
-      "barcode_invalid": "{lot}: zavod shtrix-kodi noto‘g‘ri (harf va raqam, 4–48 belgi)",
-      "barcode_is_ours": "{lot}: bu bizning QR kodimiz, zavod shtrix-kodi emas",
-      "barcode_invalid_plain": "Zavod shtrix-kodi noto‘g‘ri (harf va raqam, 4–48 belgi)",
-      "barcode_is_ours_plain": "Bu bizning QR kodimiz, zavod shtrix-kodi emas",
       "server_behind": "Server hali yangilanmoqda — bir daqiqadan keyin qayta urinib ko‘ring",
       "forbidden": "Ruxsatingiz yo‘q"
-    },
-    "barcodeManyLots": "Bu zavod kodi {n} ta lotda bor — qaysi uyumni berayotganingizni ro‘yxatdan bosing."
+    }
   },
   "scanner": {
     "diagnostics": "Skaner tekshiruvi"

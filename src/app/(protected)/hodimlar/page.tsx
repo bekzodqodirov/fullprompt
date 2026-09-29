@@ -99,7 +99,7 @@ export default async function HodimlarPage({
 
       <NoLoginPersonNew />
 
-      {/* NOT inside a <Suspense> (#1237). It was, so the header painted before
+      {/* NOT inside a <Suspense> (#1241). It was, so the header painted before
           the budgeted KPI reads; but every button on the cards is a server
           action that revalidates this page, and in Next 15.5 an action whose
           revalidated content streams into a boundary sometimes never commits —

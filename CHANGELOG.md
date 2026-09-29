@@ -2,8 +2,8 @@
 
 ## Sizning 12 javobingiz: login'siz hodimga oylik, upsale eng eski qarzdan, foyda yuk kelgan kundagi sotuvchiga — 2026-09-29
 
-Migratsiya **0120**. Yangilangandan keyin ledger **121** bo'lishi kerak (serveringiz
-113 da bo'lsa, bu yangilanish 0113–0120 ni birga olib keladi).
+Migratsiya **0120**. Yangilangandan keyin ledger **121** bo'lishi kerak. Bugungi
+yangilanishdan keyin serveringiz 120 da bo'lishi kerak; bu safar faqat 0120 qo'shiladi.
 
 Sizning javoblaringiz: **1a · 2b · 3a · 4a · 5a · 6a · 7 ha · 8a · 9a · 10 keyin · 11a · 12a**
 
@@ -97,6 +97,41 @@ Xodim kartasidagi skladlar ro'yxati ham telefonda 28 px chiqib ketardi — tuzat
    yozuvi chiqib qolardi.
 3. Ikkalasi ham tuzatildi. Buning narxi: sahifa endi bir martada ochiladi. KPI hisobi uzoq
    bo'lsa (ko'pi bilan 8 soniya), shu vaqt ichida tepada yuklanish chizig'i yuradi.
+## Zavod shtrix-kodi olib tashlandi, zavod yozuvi markirovkaga — 2026-09-29
+
+Kod o'zgarishi, migratsiya yo'q. Ledger **120** o'zgarmaydi. Yangi kod
+ketganini `/api/version` (yoki Profil pastidagi `build:`) bilan tekshiring.
+
+Siz aytdingiz: zavoddan shtrix-kod kelmaydi, faqat qandaydir yozilgan kod
+keladi (raqam, ism, harflar), va uni mijoz kodi yoziladigan joyga yozsa
+bo'ladi.
+
+1. **«Zavod shtrix-kodi» maydoni olib tashlandi**: skladchining prixod
+   ekranidan ham, ofisdan kiritishdan ham, qatorni tahrirlash formasidan
+   ham. Prixod kartasidagi va ostatkadagi 🏷 belgisi, ostatkadagi 📷 tugmasi,
+   yuklash / tushirish / topshirish ekranlaridagi «🏭 Zavod kodi» tugmasi
+   ham yo'q.
+2. **Zavodning yozuvi — markirovka maydoniga.** Mijoz kodi joyiga zavodning
+   kodini yozing. Mijoz topilmasa, «❓ … notanish yuk sifatida qabul qilish»
+   ni bosing: yozgan narsangiz yuk ustidagi markirovka bo'ladi. U raqam, ism,
+   lotin, kirill yoki xitoycha harflarda bo'lishi mumkin, 50 belgigacha.
+3. **Shu markirovka endi hamma joyda ishlaydi:**
+   - yorliq (stiker) PDF'i kirill, xitoycha va «№» belgilarni chizadi. Oldin
+     bunday markirovkali prixodning stikerini chop etib bo'lmasdi, xato
+     chiqardi;
+   - 🔍 qidiruv yukni markirovkaning bir bo'lagidan topadi (ostatkadagi
+     qidiruv buni oldin ham qilardi);
+   - «Egasiz yuk» ro'yxatida har bir prixod yonida markirovkasi ko'rinadi.
+4. Skaner begona shtrix-kodni (8-14 raqam) o'qisa, «❓ begona kod» deydi va
+   uni quti deb yozmaydi.
+5. Mayda xato tuzatildi: bekor qilingan prixodning markirovkasi yangi mijoz
+   kodini «band» qilib turardi. Endi band qilmaydi.
+
+**Bilib qo'ying:**
+- 28-29 sentyabrda kiritilgan shtrix-kodlar bazada saqlanib qoldi, lekin
+  hech qayerda ko'rinmaydi va qidiruvda topilmaydi.
+- Mijozi ma'lum yukda (masalan GS777) zavod yozuvi uchun alohida maydon yo'q.
+  Markirovka faqat egasiz yuk uchun.
 
 ## Deploy xotira yetmay to'xtadi — tuzatildi — 2026-09-29
 

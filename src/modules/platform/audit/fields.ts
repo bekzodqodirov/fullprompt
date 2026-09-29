@@ -83,8 +83,10 @@ export const AUDIT_FIELD_LABELS: Record<string, string> = {
   dealId: 'deal',
   partnerId: 'partner',
 
-  // QR-siz qabul (0112): the lot's marker, its factory barcode, and who
-  // physically received an office-entered prixod, on which day.
+  // QR-siz qabul (0112): the lot's marker, and who physically received an
+  // office-entered prixod, on which day. `factoryBarcode` is retired (DECISIONS
+  // #1224) and nothing writes it now; the label stays because audit rows from
+  // 2026-09-28/29 still carry the key and the history tab must name it.
   qrSkipped: 'qrSkipped',
   factoryBarcode: 'factoryBarcode',
   receivedByUserId: 'receivedBy',

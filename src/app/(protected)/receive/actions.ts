@@ -72,8 +72,8 @@ export async function submitReceiptAction(input: unknown): Promise<SubmitReceipt
       })),
     };
   } catch (err) {
-    // The lot a barcode refusal is about travels as the message (the
-    // photo rule's shape), so the sentence can name it.
+    // The lot a refusal is about (the photo rule) travels as the message,
+    // so the sentence can name it.
     if (err instanceof ReceiptError) {
       return { ok: false, error: err.code, detail: err.message !== err.code ? err.message : undefined };
     }

@@ -2207,14 +2207,43 @@ Now `next.config.ts` builds with `tsconfig.build.json` (src + `next-env.d.ts` +
 builds before it recreates. **Deploy tip that follows from it**: build
 `migrate` first (`docker compose build migrate`), so the shared build stage
 runs ONCE before `up -d --build` reuses it.
+**He deployed it the same evening and it WORKED** («Ishladi yahwi hammasi»,
+PRs #101 + #102 — 0113-0119 are live; he did not quote the count).
+
+**Round — zavod shtrix-kodi olib tashlandi (2026-09-29; DECISIONS #1224-#1227;
+NO migration, ledger 120).** His «factory barcode degan input field … kerak
+emas skladchiga. Ofisga ham kerak emas … zavotdan bar code kelmaydi faqat
+qandaydur text da yozilgan kod … klient codini yozadgan joydan ham hal qilsa
+boladi». 0112's Q10 c is RETIRED everywhere a person meets it — the wizard
+(both layouts), the lot form, the card/stock chips, /stock's 📷, ⌘K's
+exact-key lookup, the snapshot's `lotBarcodes`, the identify sheet, the «🏭
+Zavod kodi» toggle on load/unload/issue, the issue pile-pick,
+`factory-barcode.ts`, 16 `ofis` keys ×4 — DELETED, not hidden. KEPT: the
+column + CHECK + index (09-28/29's values) and `audit.fields.factoryBarcode`
+(old history rows). The two lot schemas stay NON-strict ON PURPOSE (a stale
+phone's `factoryBarcode` is stripped, never refused, never clears a stored
+value — `.strict()` on either is a red proof). The factory's TEXT goes in the
+unclaimed marking, and three things finally follow it: the box-label PDF
+(`codeFontFor` — Helvetica threw «WinAnsi cannot encode» on Cyrillic/Chinese/№
+and the sheet was a 500; non-WinAnsi codes draw in the CJK font through
+`pdfTextCleaner`, looked at through pdfium), ⌘K's lot search, and /unclaimed.
+A retail-barcode GUARD replaces the identify branch on both scan screens —
+without it an EAN fits `isSendableCode` and unload queues it as an unknown
+carton. Found on the way: `unclaimedNumbers` filtered `status <> 'void'` (the
+BOX's word; a receipt is `'voided'`). 8 red proofs by string edit; the guard's
+fence first stayed GREEN under `false && ` and now pins the condition
+verbatim. STATED to him: a KNOWN client's cargo has no field for a factory's
+text.
 
 **Round — his answers to the twelve questions of 2026-09-29 (DECISIONS
-#1224-#1237; migration 0120 `no_login_staff` — ledger must reach 121).** His
+#1228-#1241 — renumbered from #1224-#1237 on the merge, the EIGHTEENTH
+collision: the factory-barcode round took #1224-#1227 and merged first;
+migration 0120 `no_login_staff` — ledger must reach 121).** His
 «1a 2b 3a 4a 5a 6a 7 ha 8a 9a 10 keyin 11a 12a». Every answer was checked
 against the SHIPPED code by a scout first: eight confirm what #1210-#1222 built
 (comments now cite his answer), and **4a did not** — my message had printed the
 stamp version as «standart» while the book version shipped, because my option
-letters were not the design's (#1224: read a «standart» against the code before
+letters were not the design's (#1228: read a «standart» against the code before
 sending it). **2b** (0120): a paid person who never signs in is a `users` row
 with `login_enabled = false` (password/phone nullable, four CHECKs), so the
 salary chain is unchanged; ONE login rule `platform/users/login.ts`
@@ -2240,13 +2269,13 @@ m³ → kg → count by largest remainder; All and Own move together; per-client
 reconciliation with «Mijoz foydasi», not its Jami. Three packages in worktrees,
 each reviewed by three lenses with skeptics (3a: two confirmed defects fixed;
 2b, 4a: nits). Found, queued, not fixed: `companyBalance()` 3.8-6.1 s on the
-shaped copy. **Found by the round's SCREENSHOT (#1236)**: a long unbroken name
+shaped copy. **Found by the round's SCREENSHOT (#1240)**: a long unbroken name
 overflowed /admin/users (2,056 px at 360) and the staff card, and ten specs'
 «fits the viewport» check could not see it — under mobile emulation
 `window.innerWidth` GROWS with Chrome's zoom-out (1,440 read against a 2,056
 document). Measure `document.documentElement.clientWidth` or the configured
 viewport; `e2e-width-oracle.test.ts` refuses `innerWidth` in specs. And
-(#1237) two /hodimlar buttons could save and never land, only on a WARM
+(#1241) two /hodimlar buttons could save and never land, only on a WARM
 server (a fresh server per test never shows it): a `router.push` right after
 an action DISCARDS the action still being applied and Next 15.5 never settles
 it (→ full `window.location.assign`), and an action whose revalidated content
@@ -2379,12 +2408,14 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **121** since 0120 (120 since 0119, 117 since 0116), and his server CONFIRMED **113** («deploy qildim
-113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), so the next
-deploy applies 0113-0120 and must recreate EVERY container once
-(`--profile https --profile telegram up -d --build`: compose gained `init`, a
-healthcheck, log caps and a postgres flag); a code-only round after it is
-checked by `/api/version`, not the count.
+length — **121** since 0120 (120 since 0119, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
+0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
+so the next deploy applies 0120 — COUNT FIRST, because 120 was never quoted
+(if it reads 113, that deploy did not land and the next one applies 0113-0120
+and must recreate EVERY container once: `--profile https --profile telegram
+up -d --build`, compose gained `init`, a healthcheck, log caps and a postgres
+flag); a code-only round after it is checked by `/api/version`, not the count.
 Never carry this number over from a previous session: read it
 (`ls src/modules/platform/db/migrations/*.sql | wc -l`) before writing the
 owner a step list, because the count is the only check that separates «the

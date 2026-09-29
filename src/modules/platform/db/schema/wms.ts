@@ -223,7 +223,12 @@ export const receiptLots = pgTable(
      * the sentence lives in `labels/qrless-sql.ts` and nowhere else.
      */
     qrSkippedAt: timestamp('qr_skipped_at', { withTimezone: true }),
-    /** The factory's own barcode as a canonical key (0112, Q10 c) — identifies, never unique. */
+    /**
+     * The factory's own barcode as a canonical key (0112, Q10 c). RETIRED
+     * (DECISIONS #1224): nothing writes or reads it any more — factories send
+     * a text code, which goes in the receipt's unclaimed marking. The column,
+     * its CHECK and its index stay for the values typed on 2026-09-28/29.
+     */
     factoryBarcode: text('factory_barcode'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),

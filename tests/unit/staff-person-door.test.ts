@@ -86,7 +86,7 @@ describe('/admin/users — thin doors over the one writer', () => {
   });
 });
 
-describe('/hodimlar — every button lands (#1237)', () => {
+describe('/hodimlar — every button lands (#1241)', () => {
   // Comments stripped (#725): the page explains the rule in words.
   const code = (file: string) =>
     read(file).replace(/\{\/\*[\s\S]*?\*\/\}/g, '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');

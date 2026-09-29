@@ -43,8 +43,6 @@ export async function editLotAction(_prev: EditLotState, formData: FormData): Pr
     totalWeightKg: num('totalWeightKg'),
     totalVolumeM3: num('totalVolumeM3'),
     note: formData.get('note') ?? '',
-    // Absent from the form = leave the barcode alone (0112, Q10 c).
-    factoryBarcode: formData.get('factoryBarcode') ?? undefined,
   });
   if (!parsed.success) return { error: 'validation' };
 

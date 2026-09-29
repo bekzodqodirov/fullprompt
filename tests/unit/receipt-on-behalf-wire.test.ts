@@ -52,7 +52,11 @@ describe('the office receipt, end to end on the wire', () => {
     expect(door).toContain('dayIn(receipt.createdAt, warehouseTimezone) === dayIn(now, warehouseTimezone)');
     expect(door).not.toContain('receivedByUserId');
     // canEditReceipt is NOT widened to the named receiver (decision 39).
-    const canEdit = edit.slice(edit.indexOf('export function canEditReceipt'), edit.indexOf('function barcodeEdit'));
+    const start = edit.indexOf('export function canEditReceipt');
+    const end = edit.indexOf('export const receivedEditSchema');
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const canEdit = edit.slice(start, end);
     expect(canEdit).not.toContain('receivedByUserId');
   });
 });
