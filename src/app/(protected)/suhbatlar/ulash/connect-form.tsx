@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import {
@@ -15,18 +15,31 @@ import {
  *
  * Controlled inputs, because a refused code must not eat what was typed
  * (the round-17 discount-form lesson: React resets an uncontrolled form
- * when its action returns).
+ * when its action returns). This comment said so for a year while the three
+ * inputs were uncontrolled: every refusal emptied the box, and on a two-step
+ * account the first press — the one that makes Telegram ask for the
+ * password — emptied the CODE, so the password press posted no code at all.
+ * The server no longer needs the code a second time (`finishLogin`), and the
+ * boxes now keep what was typed.
  */
 export function ConnectForm() {
   const t = useTranslations('crm');
   const tc = useTranslations('common');
   const router = useRouter();
+  const [phone, setPhone] = useState('');
+  const [code, setCode] = useState('');
+  const [password, setPassword] = useState('');
   const [state, formAction, pending] = useActionState<ConnectState, FormData>(
     async (prev, form) => {
       const next =
         prev.stage === 'phone'
           ? await beginConnectAction(prev, form)
           : await completeConnectAction(prev, form);
+      // A new attempt starts from a clean code and password; the number stays.
+      if (next.stage === 'phone') {
+        setCode('');
+        setPassword('');
+      }
       if (next.stage === 'done') router.refresh();
       return next;
     },
@@ -58,8 +71,31 @@ export function ConnectForm() {
             autoComplete="tel"
             data-testid="connect-phone"
             className="input"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
           />
           <p className="text-xs text-ink-500">{t('connectPhoneHint')}</p>
+        </>
+      ) : state.needPassword ? (
+        <>
+          {/* Telegram has taken the code; only the password is left. */}
+          <p className="text-sm font-semibold text-good" data-testid="connect-code-accepted">
+            ✓ {t('connectCodeAccepted')}
+          </p>
+          <label className="block text-sm font-semibold" htmlFor="tg-password">
+            {t('connectPassword')}
+          </label>
+          <input
+            id="tg-password"
+            name="password"
+            type="password"
+            autoComplete="current-password"
+            data-testid="connect-password"
+            className="input"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <p className="text-xs text-ink-500">{t('connectPasswordHint')}</p>
         </>
       ) : (
         <>
@@ -74,24 +110,10 @@ export function ConnectForm() {
             placeholder="12345"
             data-testid="connect-code"
             className="input"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
           />
           <p className="text-xs text-ink-500">{t('connectCodeHint')}</p>
-          {state.needPassword && (
-            <>
-              <label className="block text-sm font-semibold" htmlFor="tg-password">
-                {t('connectPassword')}
-              </label>
-              <input
-                id="tg-password"
-                name="password"
-                type="password"
-                autoComplete="current-password"
-                data-testid="connect-password"
-                className="input"
-              />
-              <p className="text-xs text-ink-500">{t('connectPasswordHint')}</p>
-            </>
-          )}
         </>
       )}
 
@@ -110,7 +132,7 @@ export function ConnectForm() {
 
       {state.error && (
         <p role="alert" data-testid="connect-error" className="text-sm font-semibold text-bad">
-          {t(`connectErrors.${state.error}` as 'connectErrors.failed')}
+          {t(`connectErrors.${state.error}` as 'connectErrors.failed', { name: state.holder ?? '' })}
         </p>
       )}
     </form>

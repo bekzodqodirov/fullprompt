@@ -25,6 +25,8 @@ export interface ConnectState {
   stage: 'phone' | 'code' | 'done';
   needPassword?: boolean;
   error?: string;
+  /** Whose account already holds the number — `phone_taken`'s name. */
+  holder?: string;
   /** A save that changed something — the work-account switch's ✅. */
   ok?: boolean;
 }
@@ -44,7 +46,7 @@ export async function beginConnectAction(
   const actor = await connector();
   if (!actor) return { stage: 'phone', error: 'forbidden' };
   const result = await beginTgLogin(actor.id, String(form.get('phone') ?? ''));
-  if (!result.ok) return { stage: 'phone', error: result.error };
+  if (!result.ok) return { stage: 'phone', error: result.error, holder: result.holder };
   return { stage: 'code' };
 }
 
@@ -61,15 +63,18 @@ export async function completeConnectAction(
     password || undefined,
   );
   if (!result.ok) {
-    // 2FA: the login is still alive — the screen asks for the password and
-    // resubmits the same code with it.
+    // 2FA: Telegram took the code and the login is still alive — the screen
+    // asks for the password alone; the server remembers the code was taken
+    // (`finishLogin`), so the next press carries the password and nothing else.
     if (result.error === 'password_needed') return { stage: 'code', needPassword: true };
-    if (result.error === 'expired') return { stage: 'phone', error: 'expired' };
-    return {
-      stage: 'code',
-      needPassword: result.error === 'password_invalid' || password.length > 0,
-      error: result.error,
-    };
+    if (result.error === 'password_invalid') {
+      return { stage: 'code', needPassword: true, error: result.error };
+    }
+    // A wrong code: the same login, retype it.
+    if (result.error === 'code_invalid') return { stage: 'code', error: result.error };
+    // Anything else ended the attempt on the server — start again from the
+    // number, which is still in its box.
+    return { stage: 'phone', error: result.error, holder: result.holder };
   }
   return { stage: 'done' };
 }
