@@ -255,7 +255,7 @@ async function pricePairs(
 const dayOf = (at: string) =>
   new Date(at).toLocaleDateString('en-CA', { timeZone: 'Asia/Tashkent' });
 
-interface Needle {
+export interface Needle {
   key: string;
   zh: string;
   ru: string | null;
@@ -264,65 +264,21 @@ interface Needle {
 }
 
 /**
- * The icon's list for every lot on the page — one read transaction for all
- * the needles, then one price read for the survivors. `actor` is REQUIRED:
- * a warehouse-scoped reader sees only trucks whose card they could open, and
- * an optional scope fails OPEN (#790).
+ * The one read behind the icon, as a statement — exported so a test can
+ * EXPLAIN the very text the page runs: the indexes are the design, and only
+ * a plan can say they are read. The caller sets the trigram threshold for
+ * the transaction; `%` beside each `similarity` is what reaches the indexes.
  */
-export async function priceHistoryForLots(
-  lots: BatchLot[],
-  batchId: string,
-  actor: ScopedActor,
-): Promise<Map<string, PriceHistory>> {
-  const out = new Map<string, PriceHistory>();
-  if (lots.length === 0) return out;
-
-  // Before any transaction (#714): the setting and the code memory ride the pool.
-  const configured = Number(await getSetting('price_history_min_sim'));
-  const minSim = Number.isFinite(configured) && configured > 0 ? configured : 0.6;
-  const codes = await tnvedFor(lots.map((lot) => lot.productNameZh));
-
-  // Lots with the same name, code and client ask the same question once.
-  const needles: Needle[] = [];
-  const needleOf = new Map<string, number>();
-  for (const lot of lots) {
-    const key = productKey(lot.productNameZh);
-    const code = codes.get(key)?.tnvedCode ?? null;
-    const needle: Needle = {
-      key,
-      zh: lot.productNameZh,
-      ru: lot.productNameRu?.trim() ? lot.productNameRu : null,
-      // A 4-digit heading is every shoe: only the full declaration code matches.
-      code: code && /^\d{10}$/.test(code) ? code : null,
-      clientId: lot.clientId,
-    };
-    const id = JSON.stringify(needle);
-    if (!needleOf.has(id)) {
-      needleOf.set(id, needles.length);
-      needles.push(needle);
-    }
-    out.set(lot.lotId, { rows: [], failed: false });
-  }
-  const lotNeedle = new Map(
-    lots.map((lot) => {
-      const key = productKey(lot.productNameZh);
-      const code = codes.get(key)?.tnvedCode ?? null;
-      return [
-        lot.lotId,
-        needleOf.get(
-          JSON.stringify({
-            key,
-            zh: lot.productNameZh,
-            ru: lot.productNameRu?.trim() ? lot.productNameRu : null,
-            code: code && /^\d{10}$/.test(code) ? code : null,
-            clientId: lot.clientId,
-          }),
-        )!,
-      ];
-    }),
-  );
+export function historyPairsSql(input: {
+  needles: Needle[];
+  pageLotIds: string[];
+  minSim: number;
+  batchId: string;
+  actor: ScopedActor;
+}): SQL {
+  const { needles, minSim, batchId, actor } = input;
   // The cargo on THIS page is what is being priced, never its own precedent.
-  const pageLots = uuidList([...new Set(lots.map((lot) => lot.lotId))]);
+  const pageLots = uuidList([...new Set(input.pageLotIds)]);
   const needleValues = sql.join(
     needles.map(
       (n, i) =>
@@ -331,16 +287,7 @@ export async function priceHistoryForLots(
     sql`, `,
   );
 
-  let pairs: PairRow[];
-  try {
-    pairs = await db.transaction(async (tx) => {
-      // One statement for both: the trigram operator's threshold from the same
-      // setting the comparison uses, and a ceiling on the read — a page must
-      // never hang on its own hint.
-      await tx.execute(sql`
-        SELECT set_config('pg_trgm.similarity_threshold', ${String(minSim)}, true),
-               set_config('statement_timeout', '1500', true)`);
-      return tx.execute<PairRow>(sql`
+  return sql`
         WITH needles(needle, nkey, nzh, nru, ncode, nclient) AS (VALUES ${needleValues})
         SELECT n.needle, h.client_id::text AS client_id, h.client_code, h.batch_id::text AS batch_id,
                h.batch_code, h.departed_at, h.past_lot_id::text AS past_lot_id, h.strength, h.own
@@ -401,7 +348,79 @@ export async function priceHistoryForLots(
              ORDER BY w.own DESC, w.strength DESC, w.departed_at DESC, w.batch_id
              LIMIT ${PRICE_HISTORY_CAP}
           ) h
-      `);
+      `;
+}
+
+/**
+ * The icon's list for every lot on the page — one read transaction for all
+ * the needles, then one price read for the survivors. `actor` is REQUIRED:
+ * a warehouse-scoped reader sees only trucks whose card they could open, and
+ * an optional scope fails OPEN (#790).
+ */
+export async function priceHistoryForLots(
+  lots: BatchLot[],
+  batchId: string,
+  actor: ScopedActor,
+): Promise<Map<string, PriceHistory>> {
+  const out = new Map<string, PriceHistory>();
+  if (lots.length === 0) return out;
+
+  // Before any transaction (#714): the setting and the code memory ride the pool.
+  const configured = Number(await getSetting('price_history_min_sim'));
+  const minSim = Number.isFinite(configured) && configured > 0 ? configured : 0.6;
+  const codes = await tnvedFor(lots.map((lot) => lot.productNameZh));
+
+  // Lots with the same name, code and client ask the same question once.
+  const needles: Needle[] = [];
+  const needleOf = new Map<string, number>();
+  for (const lot of lots) {
+    const key = productKey(lot.productNameZh);
+    const code = codes.get(key)?.tnvedCode ?? null;
+    const needle: Needle = {
+      key,
+      zh: lot.productNameZh,
+      ru: lot.productNameRu?.trim() ? lot.productNameRu : null,
+      // A 4-digit heading is every shoe: only the full declaration code matches.
+      code: code && /^\d{10}$/.test(code) ? code : null,
+      clientId: lot.clientId,
+    };
+    const id = JSON.stringify(needle);
+    if (!needleOf.has(id)) {
+      needleOf.set(id, needles.length);
+      needles.push(needle);
+    }
+    out.set(lot.lotId, { rows: [], failed: false });
+  }
+  const lotNeedle = new Map(
+    lots.map((lot) => {
+      const key = productKey(lot.productNameZh);
+      const code = codes.get(key)?.tnvedCode ?? null;
+      return [
+        lot.lotId,
+        needleOf.get(
+          JSON.stringify({
+            key,
+            zh: lot.productNameZh,
+            ru: lot.productNameRu?.trim() ? lot.productNameRu : null,
+            code: code && /^\d{10}$/.test(code) ? code : null,
+            clientId: lot.clientId,
+          }),
+        )!,
+      ];
+    }),
+  );
+  let pairs: PairRow[];
+  try {
+    pairs = await db.transaction(async (tx) => {
+      // One statement for both: the trigram operator's threshold from the same
+      // setting the comparison uses, and a ceiling on the read — a page must
+      // never hang on its own hint.
+      await tx.execute(sql`
+        SELECT set_config('pg_trgm.similarity_threshold', ${String(minSim)}, true),
+               set_config('statement_timeout', '1500', true)`);
+      return tx.execute<PairRow>(
+        historyPairsSql({ needles, pageLotIds: lots.map((lot) => lot.lotId), minSim, batchId, actor }),
+      );
     });
   } catch (err) {
     // A timeout or any failure is a sentence on the page, never a broken one.

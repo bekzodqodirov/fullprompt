@@ -7,6 +7,7 @@ import {
   buttonsFor,
   DAY_BUTTONS,
   dayButtons,
+  LINK_ASK_BUTTONS,
   parseCallback,
 } from '@/modules/platform/telegram/staff-bot';
 import { telegramDue } from '@/modules/platform/tasks/service';
@@ -153,6 +154,89 @@ describe('the day list closes tasks from its own buttons', () => {
       const data = raw.replace(/\$\{[^}]+\}/g, uuid(7));
       expect(parseCallback(data), data).not.toBeNull();
     }
+  });
+});
+
+describe('«Bu prixodlar hisobingizga tegishlimi?» — the VED answers a guess (0119)', () => {
+  const req8 = 'a1b2c3d4';
+
+  it('cl:1/cl:0 parse to the verdict, the receipt and the request\'s prefix', () => {
+    expect(parseCallback(`cl:1:${uuid(3)}:${req8}`)).toEqual({
+      kind: 'calc_link',
+      receiptId: uuid(3),
+      requestPrefix: req8,
+      verdict: 'confirm',
+    });
+    expect(parseCallback(`cl:0:${uuid(3)}:${req8}`)).toEqual({
+      kind: 'calc_link',
+      receiptId: uuid(3),
+      requestPrefix: req8,
+      verdict: 'drop',
+    });
+    expect(Buffer.byteLength(`cl:1:${uuid(3)}:${req8}`)).toBeLessThanOrEqual(64);
+  });
+
+  it('refuses a third verdict, a missing prefix, a short prefix and an upper-case one', () => {
+    for (const data of [
+      `cl:2:${uuid(3)}:${req8}`,
+      `cl:1:${uuid(3)}`,
+      `cl:1:${uuid(3)}:`,
+      `cl:1:${uuid(3)}:a1b2c3d`,
+      `cl:1:${uuid(3)}:A1B2C3D4`,
+      `cl:1:short:${req8}`,
+      `lc:${uuid(3)}`.replace('lc', 'cl'),
+    ]) {
+      expect(parseCallback(data), data).toBeNull();
+    }
+    // The advert lead's own button still parses as itself.
+    expect(parseCallback(`lc:${uuid(3)}`)).toEqual({ kind: 'lead_contacted', leadId: uuid(3) });
+  });
+
+  it('one ✅/❌ row per prixod, five at most, every button one the parser accepts', () => {
+    const asks = Array.from({ length: 8 }, (_, i) => ({ receiptId: uuid(i), req8, number: `P-${i}` }));
+    const rows = buttonsFor('CalcLinkAsk', { text: 'x', asks: [{ receiptId: 'junk', req8 }, ...asks] })!;
+    expect(LINK_ASK_BUTTONS).toBe(5);
+    expect(rows).toHaveLength(LINK_ASK_BUTTONS);
+    expect(rows[0]).toEqual([
+      { text: '✅ P-0', callback_data: `cl:1:${uuid(0)}:${req8}` },
+      { text: '❌', callback_data: `cl:0:${uuid(0)}:${req8}` },
+    ]);
+    for (const row of rows) {
+      for (const button of row) {
+        expect(parseCallback(button.callback_data), button.callback_data).not.toBeNull();
+        expect(Buffer.byteLength(button.callback_data)).toBeLessThanOrEqual(64);
+      }
+    }
+    // A payload with nothing drawable sends as plain text rather than an empty keyboard.
+    expect(buttonsFor('CalcLinkAsk', { text: 'x', asks: [{ receiptId: uuid(1), req8: 'nothex!!' }] })).toBeNull();
+    expect(buttonsFor('CalcLinkAsk', { text: 'x' })).toBeNull();
+  });
+
+  it('DERIVED: every cl: button the sources build is one the parser accepts (#939)', () => {
+    const sources = [
+      read('src/modules/platform/telegram/staff-bot.ts'),
+      read('src/modules/platform/telegram/staff-handlers.ts'),
+    ].join('\n');
+    const literals = [...sources.matchAll(/callback_data:\s*`(cl:[^`]*)`/g)].map((m) => m[1]!);
+    expect(literals.length, 'no cl: buttons found — re-anchor this fence').toBeGreaterThanOrEqual(2);
+    for (const raw of literals) {
+      const data = raw.replace(/\$\{ask\.receiptId\}/g, uuid(7)).replace(/\$\{ask\.req8\}/g, req8);
+      expect(parseCallback(data), data).not.toBeNull();
+    }
+  });
+
+  it('the handler answers a calc_link press BEFORE the approval guard, off the poller (#706)', () => {
+    const handlers = read('src/modules/platform/telegram/staff-handlers.ts');
+    const link = handlers.indexOf("parsed.kind === 'calc_link'");
+    const approval = handlers.indexOf("parsed.kind !== 'approval'");
+    expect(link, 'calc_link branch').toBeGreaterThan(-1);
+    if (approval > -1) expect(link).toBeLessThan(approval);
+    expect(handlers).toMatch(/void settleLinkAskRow\(/);
+  });
+
+  it('the ask is a job for the person, muted with the tasks and never a founder', () => {
+    expect(MUTE_GROUPS.tasks).toContain('CalcLinkAsk');
+    for (const founders of Object.values(FOUNDERS)) expect(founders).not.toContain('CalcLinkAsk');
   });
 });
 
