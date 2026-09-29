@@ -295,6 +295,43 @@ describe('a press answers about the request it named', () => {
     expect(row!.calcLinkConfirmedBy).toBe(bystanderId);
   });
 
+  it('a ❌ RACING a person’s ✅: the write re-checks under the row lock, and the ✅ stands', async () => {
+    // The test above answers from the pool read before any write. This one
+    // makes that read stale on purpose: the ✅ is written and NOT committed,
+    // so the ❌ reads «unconfirmed», passes every check, and its UPDATE waits
+    // on the row. Only the UPDATE's own `calc_link_confirmed_at IS NULL` —
+    // re-evaluated by postgres on the committed row — can still refuse it.
+    const dealId = await newDeal();
+    const requestId = await openJob(dealId);
+    const id = await receiptOn(dealId, later());
+    await sealCalc(requestId, SEAL, ctx());
+
+    let answer: Promise<string> | null = null;
+    let waited = false;
+    await db.transaction(async (tx) => {
+      await tx
+        .update(receipts)
+        .set({ calcLinkSource: 'person', calcLinkConfirmedAt: new Date(), calcLinkConfirmedBy: bystanderId })
+        .where(eq(receipts.id, id));
+      answer = answerLinkAsk(id, prefix(requestId), 'drop', 'own', ctx());
+      // Through the POOL, one statement each: pg_stat_activity's snapshot
+      // freezes inside an open transaction (#873's observer lesson).
+      for (let i = 0; i < 100 && !waited; i++) {
+        const [row] = await db.execute<{ n: number }>(sql`
+          SELECT count(*)::int AS n FROM pg_stat_activity
+           WHERE datname = current_database() AND wait_event_type = 'Lock'
+             AND query ILIKE '%update "receipts"%'`);
+        waited = Number(row?.n ?? 0) > 0;
+        if (!waited) await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    });
+    expect(waited).toBe(true);
+    expect(await answer).toBe('already');
+    const row = await read(id);
+    expect(row!.calcRequestId).toBe(requestId);
+    expect(row!.calcLinkConfirmedBy).toBe(bystanderId);
+  });
+
   it('a re-filed prixod is «changed» — the button does not follow it to another job', async () => {
     const dealId = await newDeal();
     const requestId = await openJob(dealId);
