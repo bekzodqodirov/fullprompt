@@ -31,6 +31,7 @@ import { canLogInSql, noLoginPhone, staffPhonesMatch } from './login';
 
 export type UserWriteRefusal =
   | 'name_required'
+  | 'name_too_long'
   | 'bad_phone'
   | 'phone_exists'
   | 'username_exists'
@@ -87,10 +88,16 @@ async function mapUnique<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
-/** Trimmed, inner whitespace collapsed — the one shape a person's name is stored and compared in. */
-function personName(raw: string): string | null {
+/**
+ * Trimmed, inner whitespace collapsed — the one shape a person's name is
+ * stored and compared in. Empty and too long are two different sentences:
+ * «ism kiritilmagan» under a 300-character paste reads as a broken form.
+ */
+function personName(raw: string): string {
   const name = raw.trim().replace(/\s+/g, ' ');
-  return name.length >= 1 && name.length <= 200 ? name : null;
+  if (name.length === 0) throw new UserWriteError('name_required');
+  if (name.length > 200) throw new UserWriteError('name_too_long');
+  return name;
 }
 
 /**
@@ -139,7 +146,6 @@ export async function mintNoLoginPerson(
   ctx: AuditContext,
 ): Promise<{ id: string }> {
   const name = personName(input.fullName);
-  if (!name) throw new UserWriteError('name_required');
   const phoned = noLoginPhone(input.phone);
   if (!phoned.ok) throw new UserWriteError('bad_phone');
   const phone = phoned.phone;
@@ -175,7 +181,6 @@ export async function editNoLoginPerson(
   ctx: AuditContext,
 ): Promise<void> {
   const name = personName(input.fullName);
-  if (!name) throw new UserWriteError('name_required');
   const phoned = noLoginPhone(input.phone);
   if (!phoned.ok) throw new UserWriteError('bad_phone');
   const phone = phoned.phone;
@@ -438,12 +443,10 @@ export async function enableLogin(
   const phone = input.phone.trim();
   if (phone.length < 5 || phone.length > 30) throw new UserWriteError('bad_phone');
 
-  const [exact] = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(and(eq(users.phone, phone), ne(users.id, id)))
-    .limit(1);
-  if (exact) throw new UserWriteError('phone_exists');
+  // As a phone OR as somebody's USERNAME: the login box reads both and the
+  // phone wins (identify.ts), so a login whose username is this string would
+  // be taken over by the new login without a word (the review's F2).
+  if (await phoneTaken(phone, id)) throw new UserWriteError('phone_exists');
   const colleagues = await db
     .select({ phone: users.phone })
     .from(users)

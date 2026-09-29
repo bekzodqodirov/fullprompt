@@ -34,7 +34,7 @@ import { staffByPhone, staffForChat } from '@/modules/platform/telegram/staff-bo
 import { assignablePeople } from '@/modules/platform/tasks/view';
 import { createTask, reassignTask } from '@/modules/platform/tasks/service';
 import { notifyStaffTelegram } from '@/modules/platform/notifications/staff';
-import { usersWithPermission } from '@/modules/platform/notifications/service';
+import { usersWithPermission, usersWithRoles } from '@/modules/platform/notifications/service';
 import { salesManagerOptions } from '@/modules/platform/rbac/queries';
 import { mentionablePeople } from '@/modules/wms/crm/internal-chat';
 import { shareTargets } from '@/modules/wms/crm/share';
@@ -88,6 +88,7 @@ let actorPhone = '';
 let l2Id = '';
 let l2Username = '';
 let viewerRoleId = '';
+let adminRoleId = '';
 let superAdminRoleId = '';
 let cat = '';
 let catName = '';
@@ -156,6 +157,7 @@ beforeAll(async () => {
   madeUsers.push(l2Id);
 
   viewerRoleId = (await db.select({ id: roles.id }).from(roles).where(eq(roles.code, 'viewer')))[0]!.id;
+  adminRoleId = (await db.select({ id: roles.id }).from(roles).where(eq(roles.code, 'admin')))[0]!.id;
   superAdminRoleId = (await db.select({ id: roles.id }).from(roles).where(eq(roles.code, 'super_admin')))[0]!.id;
 
   catName = `Oylik ${STAMP}`;
@@ -295,6 +297,17 @@ describe('A — the writer and the database', () => {
     }
   });
 
+  it('an empty name and a too-long one are two different refusals — at mint and at edit', async () => {
+    const long = `Juda uzun ism ${STAMP} `.padEnd(201, 'x');
+    await rejectsWith(mintNoLoginPerson({ fullName: '   ', phone: '', confirmSameName: true }, ctx()), 'name_required');
+    await rejectsWith(mintNoLoginPerson({ fullName: long, phone: '', confirmSameName: true }, ctx()), 'name_too_long');
+    expect(await db.select().from(users).where(eq(users.fullName, long))).toHaveLength(0);
+    // Exactly 200 after the collapse is a name.
+    const p = await mint(`Chegara ${STAMP} `.padEnd(200, 'y'));
+    await rejectsWith(editNoLoginPerson(p, { fullName: long, phone: '' }, ctx()), 'name_too_long');
+    expect((await row(p)).fullName).toHaveLength(200);
+  });
+
   it('the database refuses the impossible shapes, by constraint name', async () => {
     const cases: [string, Partial<typeof users.$inferInsert>][] = [
       ['users_login_password_check', { loginEnabled: false, passwordHash: 'x' }],
@@ -430,6 +443,17 @@ describe('A — the writer and the database', () => {
       expect(r.phone).toBe(`+86139${STAMP}9`);
     });
 
+    it('refuses a phone that is another login’s USERNAME — the login box would hand that login to this person', async () => {
+      // identify.ts reads the phone first: a new login whose phone is L2's
+      // username would silently take L2's sign-in over (the review's F2).
+      const r0 = await mint(`Nom telefon ${STAMP}`);
+      await rejectsWith(enableLogin(r0, { ...base(), phone: l2Username }, ['super_admin'], ctx()), 'phone_exists');
+      const r = await row(r0);
+      expect(r.loginEnabled).toBe(false);
+      expect(r.passwordHash).toBeNull();
+      expect((await findUserByIdentifier(l2Username))?.id).toBe(l2Id);
+    });
+
     it('is ONE transaction — a failure in the roles step leaves the person exactly as they were', async () => {
       const err = await enableLogin(q, { ...base(), warehouseIds: [randomUUID()] }, ['super_admin'], ctx()).then(
         () => null,
@@ -548,6 +572,34 @@ describe('B — the salary chain, unchanged, and «still owed» is the due list�
     const due = (await recurringDue(TODAY)).filter((r) => r.recurringId === recurringId);
     expect(due.map((r) => r.month.slice(0, 7))).toContain(MONTH);
   });
+
+  it('a NEW salary is never minted on a leaver — refused in words; reactivated, the same press saves', async () => {
+    // The review's F1: the card drew «Oylik kiritish» on a «faol emas» person,
+    // and a template on a leaver falls due every month with nobody to pay.
+    const gone = await mint(`Ketgan oylik ${STAMP}`);
+    await setNoLoginPersonActive(gone, false, ctx());
+    const input = {
+      employeeId: gone,
+      categoryId: cat,
+      amount: 90,
+      currency: 'USD',
+      dayOfMonth: 1,
+      firstMonth: 'next' as const,
+      accountId: till,
+      partnerId: '',
+      warehouseId: '',
+      note: '',
+      active: true,
+    };
+    await expect(saveRecurring(input, ctx())).rejects.toMatchObject({ code: 'employee_inactive' });
+    const none = await db.select().from(recurringExpenses).where(eq(recurringExpenses.employeeId, gone));
+    expect(none).toHaveLength(0);
+
+    await setNoLoginPersonActive(gone, true, ctx());
+    const tpl = await saveRecurring(input, ctx());
+    templates.push(tpl.id);
+    expect(tpl.employeeId).toBe(gone);
+  });
 });
 
 describe('C — nobody treats them as a colleague, even with the flags forced on', () => {
@@ -562,6 +614,17 @@ describe('C — nobody treats them as a colleague, even with the flags forced on
       .set({ leadTeams: sql`'{cargo}'::text[]`, inboundRota: true })
       .where(eq(users.id, p3));
     await db.insert(telegramLinks).values({ userId: p3, telegramChatId: chatId, status: 'linked', linkedAt: new Date() });
+    // A ROLE forced on too — past the writer, which refuses it (`no_login_row`):
+    // without a grant the role-keyed lists below would leave p3 out whatever
+    // their filter said, and the assertions would be vacuous (the review's
+    // T2). The seeded admin role holds both `crm.leads` (the seller picker's
+    // key) and `finance.expenses`; the grant is checked, not assumed. Swept
+    // in afterAll with the ids.
+    await db.insert(userRoles).values({ userId: p3, roleId: adminRoleId });
+    const granted = await db.execute<{ code: string }>(sql`
+      SELECT p.code FROM role_permissions rp JOIN permissions p ON p.id = rp.permission_id
+       WHERE rp.role_id = ${adminRoleId} AND p.code IN ('crm.leads', 'finance.expenses')`);
+    expect([...granted].map((r) => r.code).sort()).toEqual(['crm.leads', 'finance.expenses']);
   });
 
   it('the staff bot knows them by no phone and no chat — the actor is the control', async () => {
@@ -622,9 +685,20 @@ describe('C — nobody treats them as a colleague, even with the flags forced on
     expect((await row(p3)).leadTeams).toEqual(['cargo']);
   });
 
-  it('no role-keyed list and no Telegram row', async () => {
+  it('no role-keyed list and no Telegram row — while holding the role', async () => {
+    // The actor, given the same role for this one assertion, is the control:
+    // the lists DO answer holders of it, so p3's absence is the filter's.
+    await db.insert(userRoles).values({ userId: actorId, roleId: adminRoleId });
+    try {
+      expect((await salesManagerOptions()).map((p) => p.id)).toContain(actorId);
+      expect(await usersWithPermission('finance.expenses')).toContain(actorId);
+      expect(await usersWithRoles(['admin'])).toContain(actorId);
+    } finally {
+      await db.delete(userRoles).where(and(eq(userRoles.userId, actorId), eq(userRoles.roleId, adminRoleId)));
+    }
     expect((await salesManagerOptions()).map((p) => p.id)).not.toContain(p3);
     expect(await usersWithPermission('finance.expenses')).not.toContain(p3);
+    expect(await usersWithRoles(['admin'])).not.toContain(p3);
     expect(await notifyStaffTelegram({ userIds: [p3], type: 'TaskAssigned', text: 'x' })).toBe(0);
     expect(await db.select().from(notifications).where(eq(notifications.userId, p3))).toHaveLength(0);
   });

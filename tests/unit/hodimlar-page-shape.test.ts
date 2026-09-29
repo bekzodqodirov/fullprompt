@@ -68,15 +68,28 @@ describe('a person who never signs in (0120, his 2b)', () => {
     expect(page).toContain('loginEnabled: users.loginEnabled');
   });
 
-  it('a failed salary read is SAID — by both reads — and never reads «nobody has a salary»', () => {
+  it('a failed salary read is SAID — each read its own flag — and never reads «nobody has a salary»', () => {
     const templatesCatch = /staffTemplates\([^)]*\)\.catch\(\(err\) => \{([\s\S]*?)\}\)/.exec(page);
     const owedCatch = /owedEmployeeIds\([^)]*\)\.catch\(\(err\) => \{([\s\S]*?)\}\)/.exec(page);
     expect(templatesCatch, 'templates catch').not.toBeNull();
     expect(owedCatch, 'owed catch').not.toBeNull();
     expect(templatesCatch![1]).toContain('failed.salary = true');
-    expect(owedCatch![1]).toContain('failed.salary = true');
-    expect(page).toMatch(/failed\.salary \? \(\s*<p[^>]*data-testid="hodimlar-salary-failed"/);
+    // The review's F3: «the leavers are shown too» is the OWED read's failure
+    // alone — it sets its own flag and never the templates' one.
+    expect(owedCatch![1]).toContain('failed.owed = true');
+    expect(owedCatch![1]).not.toContain('failed.salary');
+    expect(page).toMatch(/failed\.salary \|\| failed\.owed \? \(\s*<p[^>]*data-testid="hodimlar-salary-failed"/);
+    expect(page).toMatch(/failed\.salary \? <span data-testid="hodimlar-templates-failed">\{t\('salaryFailed'\)\}/);
+    expect(page).toMatch(/failed\.owed \? <span data-testid="hodimlar-owed-failed">\{t\('owedFailed'\)\}/);
     expect(page).toMatch(/const noSalaryYet = !failed\.salary &&/);
+    // An owed failure does not hide «Oylik kiritish»: the templates were read.
+    expect(page).toContain('salaryUnavailable={failed.salary}');
+  });
+
+  it('«Ketganlar (N)»: the way back to a leaver the list let go, on the whole page only (UI-2)', () => {
+    expect(page).toMatch(/const leavers = hodim === null \? droppedLeavers\(people, new Set\(visible\.map/);
+    expect(page).toMatch(/leavers\.length > 0 \? \(\s*<details[^>]*data-testid="hodimlar-leavers"/);
+    expect(page).toMatch(/href=\{`\/hodimlar\?hodim=\$\{person\.id\}`\}[\s\S]{0,120}data-testid="hodimlar-leaver"/);
   });
 
   it('the card names it, and its tools hang on the same flag', () => {
@@ -89,6 +102,23 @@ describe('a person who never signs in (0120, his 2b)', () => {
   it('no «Oylik kiritish» while the salary read is down; the fold opens where it was asked for', () => {
     expect(card).toMatch(/!salaryUnavailable && salary\.length === 0/);
     expect(card).toMatch(/data-testid="staff-salary-new" open=\{openSalaryForm\}/);
+  });
+
+  it('no «Oylik kiritish» on a leaver — the way back is named instead (the review’s F1)', () => {
+    expect(card).toMatch(
+      /!salaryUnavailable && salary\.length === 0 && person\.active && options\.categories\.length > 0 \? \(\s*<details data-testid="staff-salary-new"/,
+    );
+    expect(card).toMatch(
+      /!salaryUnavailable && salary\.length === 0 && !person\.active \? \(\s*<p[^>]*data-testid="staff-salary-inactive"/,
+    );
+    expect(card).toContain("person.loginEnabled ? t('salaryInactiveLogin') : t('salaryInactive')");
+    expect(page).toContain('openSalaryForm={hodim === person.id && person.active && !failed.salary}');
+  });
+
+  it('a same-name leaver is pointed at reactivation, never at «the salary goes on that card»', () => {
+    const forms = strip(readFileSync('src/app/(protected)/hodimlar/forms.tsx', 'utf8'));
+    expect(forms).toMatch(/\.some\(\(m\) => m\.active\) \? \(\s*<p[^>]*>\{t\('personSameNameAgain'\)\}/);
+    expect(forms).toMatch(/\.some\(\(m\) => !m\.active\) \? \(\s*<p[^>]*data-testid="hodimlar-person-same-return"/);
   });
 });
 

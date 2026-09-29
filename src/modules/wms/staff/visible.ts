@@ -33,3 +33,18 @@ export function visibleStaff<P extends { id: string; active: boolean }>(
       (q.kpiFailed && q.kpiSellers.has(p.id)),
   );
 }
+
+/**
+ * «Ketganlar» — the way BACK for a person who never signs in and has dropped
+ * off the list (0120's review, UI-2): once their last template is stopped and
+ * settled, `visibleStaff` lets them go, and «Qayta faollashtirish» lives on
+ * their own card. Without this fold the accountant's only road there was
+ * retyping the name and reading the same-name warning. Only people the page
+ * does NOT already draw; a login leaver is the admin's, on /admin/users.
+ */
+export function droppedLeavers<P extends { id: string; active: boolean; loginEnabled: boolean }>(
+  people: readonly P[],
+  shown: ReadonlySet<string>,
+): P[] {
+  return people.filter((p) => !p.active && !p.loginEnabled && !shown.has(p.id));
+}

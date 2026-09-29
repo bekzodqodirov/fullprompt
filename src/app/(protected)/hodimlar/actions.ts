@@ -151,9 +151,15 @@ export async function stampClientCargoAction(_prev: StaffFormState, formData: Fo
 const personInput = z.object({ fullName: z.string().trim().min(1).max(200), phone: z.string().max(40) });
 const mintInput = personInput.extend({ confirmSameName: z.boolean() });
 
-/** A failed parse in words: the phone box or the name box. */
+/**
+ * A failed parse in words: the phone box, or the name box — and for the name,
+ * empty and too long are two sentences («ism kiritilmagan» under a 300-character
+ * paste reads as a broken form). The service says the same two (personName).
+ */
 function personInputRefusal(error: z.ZodError): StaffFormState {
-  return { error: error.issues[0]?.path[0] === 'phone' ? 'bad_phone' : 'name_required' };
+  const issue = error.issues[0];
+  if (issue?.path[0] === 'phone') return { error: 'bad_phone' };
+  return { error: issue?.code === 'too_big' ? 'name_too_long' : 'name_required' };
 }
 
 /** A writer's refusal, or the deploy-morning sentence; anything else is not ours to name. */

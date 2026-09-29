@@ -29,7 +29,7 @@ import {
 import { kpiVersions, versionFor } from '@/modules/wms/staff/kpi-table';
 import { calendarMonth, monthEndDay, monthRange } from '@/modules/wms/staff/month';
 import { owedEmployeeIds, staffTemplates } from '@/modules/wms/staff/salary';
-import { visibleStaff } from '@/modules/wms/staff/visible';
+import { droppedLeavers, visibleStaff } from '@/modules/wms/staff/visible';
 import { PageHeader } from '@/components/ui/page';
 import { StaffCard, type RecurringOptions } from './staff-card';
 import { NoLoginPersonNew, StaffCategoryForm, StampRepairButton } from './forms';
@@ -133,7 +133,10 @@ async function StaffList({
 
   // What went wrong while reading — a record the reads write into, not two
   // reassigned locals (a server component's body is not a place for those).
-  const failed = { behind: false, kpi: false, salary: false };
+  // `salary` = the templates themselves (no «Oylik kiritish» without them);
+  // `owed` = who a template still owes (only the leavers' list widens) — two
+  // flags, because the banner's two sentences are true of different failures.
+  const failed = { behind: false, kpi: false, salary: false, owed: false };
   const safe = async <T,>(load: Promise<T>, fallback: T, where: string): Promise<T> => {
     try {
       return await load;
@@ -184,7 +187,7 @@ async function StaffList({
       // leaver stays listed until it is empty. null = unknown, so nobody is
       // dropped (visibleStaff).
       owedEmployeeIds(db, today).catch((err) => {
-        failed.salary = true;
+        failed.owed = true;
         if (isServerBehind(err)) failed.behind = true;
         logger.error({ err }, '[hodimlar] owed');
         return null;
@@ -265,6 +268,9 @@ async function StaffList({
     kpiFailed: failed.kpi,
     kpiSellers,
   });
+  // The way back to a leaver the list let go (UI-2): whole-page view only —
+  // `?hodim=` already IS that person's card.
+  const leavers = hodim === null ? droppedLeavers(people, new Set(visible.map((p) => p.id))) : [];
   const mayGiveLogin = actor.permissions.has('admin.users.manage');
   const hasPay = (id: string) => templates.some((tpl) => tpl.employeeId === id && tpl.salary) || kpiLines.has(id);
   visible.sort((a, b) => Number(hasPay(b.id)) - Number(hasPay(a.id)) || a.name.localeCompare(b.name));
@@ -318,9 +324,12 @@ async function StaffList({
           ⚠ {t('kpiFailed')}
         </p>
       ) : null}
-      {failed.salary ? (
+      {/* Each sentence only when it is true: «the leavers are shown too» is
+          the owed read's failure alone (the review's F3). */}
+      {failed.salary || failed.owed ? (
         <p className="card !p-3 text-sm text-warn" data-testid="hodimlar-salary-failed">
-          ⚠ {t('salaryFailed')}
+          ⚠ {failed.salary ? <span data-testid="hodimlar-templates-failed">{t('salaryFailed')} </span> : null}
+          {failed.owed ? <span data-testid="hodimlar-owed-failed">{t('owedFailed')}</span> : null}
         </p>
       ) : null}
       {upsale?.truncated ? (
@@ -393,6 +402,31 @@ async function StaffList({
           );
         })}
       </ul>
+
+      {/* «Ketganlar (N)»: a person who never signs in, let go and settled, is
+          off the list above — each name opens their card, where «Qayta
+          faollashtirish» is (UI-2). Folded: it is a way back, not the work. */}
+      {leavers.length > 0 ? (
+        <details className="card !p-3" data-testid="hodimlar-leavers">
+          <summary className="cursor-pointer text-sm font-semibold text-ink-700">
+            {t('leavers', { count: leavers.length })}
+          </summary>
+          <p className="mt-1 text-2xs text-ink-500">{t('leaversHint')}</p>
+          <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm">
+            {leavers.map((person) => (
+              <li key={person.id}>
+                <Link
+                  href={`/hodimlar?hodim=${person.id}`}
+                  className="font-semibold text-brand-700"
+                  data-testid="hodimlar-leaver"
+                >
+                  {person.name}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
 
       {/* «Sotuvchisiz yuk»: the month's cargo nobody was named on. Naming a
           seller on the client card is what stamps it — the sentence says so. */}

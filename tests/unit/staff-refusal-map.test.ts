@@ -23,8 +23,8 @@ const ACTION_CODES = [...read('src/app/(protected)/hodimlar/actions.ts').matchAl
   (m) => m[1]!,
 );
 
-/** The measured length — 30 before 0120, +10 for the no-login writer's refusals. */
-const FLOOR = 40;
+/** The measured length — 30 before 0120, +10 for the no-login writer's refusals, +1 name_too_long (F4). */
+const FLOOR = 41;
 
 const CODES = [
   ...new Set([
@@ -49,6 +49,7 @@ describe('every staff refusal is a sentence', () => {
         'same_name',
         'is_login',
         'super_admin_locked',
+        'name_too_long',
       ]),
     );
     expect(CODES.length).toBeGreaterThanOrEqual(FLOOR);

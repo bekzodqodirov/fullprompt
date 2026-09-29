@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 
 /**
  * The doors of a person who never signs in (0120, the owner's 2b), pinned by
@@ -38,6 +39,25 @@ describe('/hodimlar — the payroll door, then the parse, then the writer', () =
       expect(call, 'service').toBeGreaterThan(parse);
     });
   }
+});
+
+describe('/hodimlar — a too-long name is its own sentence (the review’s F4)', () => {
+  const actions = read('src/app/(protected)/hodimlar/actions.ts');
+
+  it('the parse maps zod’s too_big on the name to name_too_long, never to «ism kiritilmagan»', () => {
+    const at = actions.indexOf('function personInputRefusal(');
+    expect(at).toBeGreaterThan(-1);
+    const body = actions.slice(at, actions.indexOf('\n}', at));
+    expect(body).toContain("issue?.path[0] === 'phone'");
+    expect(body).toContain("issue?.code === 'too_big' ? 'name_too_long' : 'name_required'");
+  });
+
+  it('the premise: the name schema’s max answers too_big (zod 3), and an empty one does not', () => {
+    const schema = z.object({ fullName: z.string().trim().min(1).max(200) });
+    expect(schema.safeParse({ fullName: 'x'.repeat(201) }).error?.issues[0]?.code).toBe('too_big');
+    expect(schema.safeParse({ fullName: '   ' }).error?.issues[0]?.code).toBe('too_small');
+    expect(actions).toContain('fullName: z.string().trim().min(1).max(200)');
+  });
 });
 
 describe('/admin/users — thin doors over the one writer', () => {

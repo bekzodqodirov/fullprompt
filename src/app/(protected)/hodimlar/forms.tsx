@@ -323,7 +323,18 @@ export function NoLoginPersonNew() {
             {result.more ? (
               <p className="text-2xs text-ink-500">{t('personSameNameMore', { count: result.more })}</p>
             ) : null}
-            <p className="text-2xs text-ink-600">{t('personSameNameAgain')}</p>
+            {/* «The salary goes on that card» is true of a person who still
+                works here; a leaver's card refuses a new salary, so their way
+                is «Qayta faollashtirish» first (the review's F1). */}
+            {(result.matches ?? []).some((m) => m.active) ? (
+              <p className="text-2xs text-ink-600">{t('personSameNameAgain')}</p>
+            ) : null}
+            {(result.matches ?? []).some((m) => !m.active) ? (
+              <p className="text-2xs text-ink-600" data-testid="hodimlar-person-same-return">
+                {t('personSameNameReturn')}
+              </p>
+            ) : null}
+            <p className="text-2xs text-ink-600">{t('personSameNameOther')}</p>
           </div>
         ) : null}
       </div>

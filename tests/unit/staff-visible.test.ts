@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { visibleStaff } from '@/modules/wms/staff/visible';
+import { droppedLeavers, visibleStaff } from '@/modules/wms/staff/visible';
 
 /**
  * Who /hodimlar lists (0120, the owner's 2b). A person who never signs in is
@@ -62,5 +62,31 @@ describe('visibleStaff', () => {
 
   it('?hodim= with an unknown id answers nobody', () => {
     expect(visibleStaff([person('a', true)], { ...empty, hodim: 'zzz' })).toEqual([]);
+  });
+});
+
+/**
+ * «Ketganlar (N)» (0120's review, UI-2): the way back to a person who never
+ * signs in and has dropped off the list. Its whole rule is three clauses —
+ * each one a case.
+ */
+describe('droppedLeavers', () => {
+  type L = { id: string; active: boolean; loginEnabled: boolean };
+  const who = (id: string, active: boolean, loginEnabled: boolean): L => ({ id, active, loginEnabled });
+  const people = [who('worker', true, false), who('gone', false, false), who('login-gone', false, true), who('login', true, true)];
+
+  it('lists the no-login leaver the page no longer draws', () => {
+    expect(droppedLeavers(people, new Set(['worker', 'login'])).map((p) => p.id)).toEqual(['gone']);
+  });
+
+  it('never lists a person still at work, nor a login leaver (the admin’s, on /admin/users)', () => {
+    const out = droppedLeavers(people, new Set()).map((p) => p.id);
+    expect(out).not.toContain('worker');
+    expect(out).not.toContain('login');
+    expect(out).not.toContain('login-gone');
+  });
+
+  it('never repeats a leaver the list still shows (still owed, or `?hodim=`)', () => {
+    expect(droppedLeavers(people, new Set(['gone']))).toEqual([]);
   });
 });

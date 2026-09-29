@@ -105,6 +105,10 @@ const ALLOW: Record<string, { count: number; why: string }> = {
     count: 1,
     why: 'marks a seller who holds stamped money «(faol emas)» (4a); it names, it never picks a colleague',
   },
+  'src/modules/wms/accounting/service.ts': {
+    count: 1,
+    why: 'saveRecurring mints a salary only on a person who still works here, logins or not',
+  },
 };
 
 describe('(1) a users-table .active read is the rule’s, the writer’s or payroll’s', () => {

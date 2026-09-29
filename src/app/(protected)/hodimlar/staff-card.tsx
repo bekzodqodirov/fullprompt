@@ -174,7 +174,16 @@ export async function StaffCard({
             />
           </div>
         ))}
-        {!salaryUnavailable && salary.length === 0 && options.categories.length > 0 ? (
+        {/* A leaver gets no NEW template (the review's F1 — the service
+            refuses it too): the way back is «Qayta faollashtirish», the
+            header's button for a person who never signs in, the admin's for a
+            login. An existing template still shows and still stops above. */}
+        {!salaryUnavailable && salary.length === 0 && !person.active ? (
+          <p className="text-2xs text-ink-600" data-testid="staff-salary-inactive">
+            {person.loginEnabled ? t('salaryInactiveLogin') : t('salaryInactive')}
+          </p>
+        ) : null}
+        {!salaryUnavailable && salary.length === 0 && person.active && options.categories.length > 0 ? (
           <details data-testid="staff-salary-new" open={openSalaryForm}>
             <summary className="cursor-pointer text-xs font-semibold text-brand-700">✏️ {t('salarySet')}</summary>
             <div className="mt-2">
