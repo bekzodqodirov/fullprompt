@@ -195,8 +195,14 @@ afterAll(async () => {
     await db.delete(tasks).where(inArray(tasks.createdBy, ids));
     await db.delete(notifications).where(inArray(notifications.userId, ids));
     await db.delete(telegramLinks).where(inArray(telegramLinks.userId, ids));
-    await db.delete(userRoles).where(inArray(userRoles.userId, ids));
-    await db.delete(userWarehouses).where(inArray(userWarehouses.userId, ids));
+    // Roles by the STAMP as well as by the ids this file collected: a login a
+    // red proof let through (a refusal turned into a success) was never
+    // collected, and a leftover super_admin grant is CONFIGURATION (#523).
+    const stamped = sql`(SELECT id FROM users WHERE full_name LIKE ${`%${STAMP}%`})`;
+    await db.delete(userRoles).where(sql`${userRoles.userId} IN ${stamped} OR ${inArray(userRoles.userId, ids)}`);
+    await db
+      .delete(userWarehouses)
+      .where(sql`${userWarehouses.userId} IN ${stamped} OR ${inArray(userWarehouses.userId, ids)}`);
     // The global flag: this file's forced ones off, the snapshot back on.
     await db.update(users).set({ inboundRota: false, leadTeams: sql`'{}'::text[]` }).where(inArray(users.id, ids));
     if (previouslyFlagged.length) {
