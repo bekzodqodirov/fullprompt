@@ -1,3 +1,4 @@
+import { isUniqueViolation } from '@/modules/platform/db/errors';
 import { sessionKey } from './telegram-session';
 import { phoneHolder, saveAccount } from './telegram-accounts';
 
@@ -65,9 +66,9 @@ export type ConnectError =
   | 'failed';
 
 /**
- * Telegram's error names, folded to what a screen can say. The strings are
- * the library's RPC error messages — matched by inclusion because gramjs
- * wraps them differently between versions.
+ * Telegram's error names, folded to what a screen can say. The input is
+ * `describeError`'s string, never a bare `.message` — matched by inclusion
+ * because gramjs wraps the names differently between versions.
  *
  * An EXPIRED code is not a wrong one: retyping it can never work, so it
  * ends the attempt and asks for a new code instead of «check and retype»,
@@ -111,7 +112,8 @@ export function connectConfig(
 
 /** The two network steps of a login's second half. */
 export interface LoginSteps {
-  signIn(code: string): Promise<void>;
+  /** Resolves with Telegram's ANSWER — which is not always a login. */
+  signIn(code: string): Promise<unknown>;
   checkPassword(password: string): Promise<void>;
 }
 
@@ -122,10 +124,41 @@ export type FinishResult =
       error: ConnectError;
       /** The login is still usable: a wrong code, a wrong or missing password. */
       alive: boolean;
+      /** Telegram's own words, for the log — never shown, never a secret. */
+      raw?: string;
     };
 
-function messageOf(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+/**
+ * A failure as ONE string, for both the folding and the log. gramjs REWRITES
+ * some errors on their way in: a FLOOD_WAIT_3600 arrives as a FloodWaitError
+ * whose message reads «A wait of 3600 seconds is required (caused by
+ * auth.SignIn)», with the error's name left only in `errorMessage` ('FLOOD').
+ * Folding the message alone turned every long wait into `failed` — «Bo'lmadi,
+ * yana urinib ko'ring», the one advice that makes a flood wait longer. The
+ * name goes in front whenever the message does not already carry it.
+ */
+export function describeError(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+  const name = (err as { errorMessage?: unknown }).errorMessage;
+  return typeof name === 'string' && name && !err.message.includes(name)
+    ? `${name}: ${err.message}`
+    : err.message;
+}
+
+/**
+ * Telegram's answer to a right code for a number that has NO Telegram
+ * account: not an error but a result asking for a sign-up (gramjs's own
+ * `signInUser` breaks out of its loop on it). Read by class name, so this
+ * file keeps its lazy import of the library.
+ */
+const SIGN_UP_REQUIRED = 'auth.AuthorizationSignUpRequired';
+
+function isSignUpRequired(answer: unknown): boolean {
+  return (
+    typeof answer === 'object' &&
+    answer !== null &&
+    (answer as { className?: unknown }).className === SIGN_UP_REQUIRED
+  );
 }
 
 /**
@@ -153,13 +186,21 @@ export async function finishLogin(
     const code = normalizeTgCode(rawCode);
     if (!code) return { ok: false, error: 'code_invalid', alive: true };
     try {
-      await steps.signIn(code);
+      const answer = await steps.signIn(code);
+      // Reading this as success stored an unauthorised session as `active`
+      // and put ✅ on the screen; the listener found out later, alone.
+      if (isSignUpRequired(answer)) {
+        return { ok: false, error: 'phone_unregistered', alive: false, raw: SIGN_UP_REQUIRED };
+      }
       return { ok: true };
     } catch (err) {
-      const error = connectErrorCode(messageOf(err));
+      const raw = describeError(err);
+      const error = connectErrorCode(raw);
       // A wrong CODE keeps the login alive — the person retypes it. Any
       // other failure is terminal for this attempt.
-      if (error !== 'password_needed') return { ok: false, error, alive: error === 'code_invalid' };
+      if (error !== 'password_needed') {
+        return { ok: false, error, alive: error === 'code_invalid', raw };
+      }
       state.codeAccepted = true;
     }
   }
@@ -170,9 +211,10 @@ export async function finishLogin(
     await steps.checkPassword(password);
     return { ok: true };
   } catch (err) {
-    const error = connectErrorCode(messageOf(err));
+    const raw = describeError(err);
+    const error = connectErrorCode(raw);
     // A wrong 2FA password also keeps the login alive for another try.
-    return { ok: false, error, alive: error === 'password_invalid' };
+    return { ok: false, error, alive: error === 'password_invalid', raw };
   }
 }
 
@@ -195,12 +237,27 @@ interface PendingLogin {
 /** Per MANAGER: a second «kod yuborish» replaces the first, never joins it. */
 const pending = new Map<string, PendingLogin>();
 
-async function dropPending(userId: string): Promise<void> {
-  const entry = pending.get(userId);
-  pending.delete(userId);
-  if (entry) {
-    await entry.client.disconnect().catch(() => {});
-    await entry.client.destroy().catch(() => {});
+/** A client is a live connection to Telegram with a loop of its own until destroyed. */
+async function closeClient(client: Pick<PendingLogin['client'], 'disconnect' | 'destroy'>) {
+  await client.disconnect().catch(() => {});
+  await client.destroy().catch(() => {});
+}
+
+/**
+ * Ends THIS login — its client always, its slot only while it is still the
+ * one there. Dropping «whatever is under the user» let a press that
+ * finished in one tab destroy the login a second tab had just started, and
+ * leave its own authorised client connected for the life of the process.
+ */
+async function release(userId: string, entry: PendingLogin): Promise<void> {
+  if (pending.get(userId) === entry) pending.delete(userId);
+  await closeClient(entry.client);
+}
+
+/** A login nobody came back to holds its connection until something sweeps it. */
+function sweepExpired(now: number): void {
+  for (const [userId, entry] of pending) {
+    if (pendingExpired(entry.startedAt, now)) void release(userId, entry);
   }
 }
 
@@ -217,41 +274,69 @@ function logRefusal(userId: string, step: 'begin' | 'finish' | 'save', error: st
 export type ConnectStep =
   | { ok: true; step: 'code_sent' }
   | { ok: true; step: 'connected' }
-  | { ok: false; error: ConnectError; holder?: string };
+  | {
+      ok: false;
+      error: ConnectError;
+      /**
+       * Where the login stands now, decided HERE — the screen shows that
+       * step and does not re-derive it from the error's name.
+       */
+      next: 'phone' | 'code' | 'password';
+      holder?: string;
+    };
 
 /** Step 1: ask Telegram to send the login code to the manager's phone. */
 export async function beginTgLogin(userId: string, rawPhone: string): Promise<ConnectStep> {
   const config = connectConfig();
-  if (!config) return { ok: false, error: 'not_configured' };
+  if (!config) return { ok: false, error: 'not_configured', next: 'phone' };
   const phone = normalizeTgPhone(rawPhone);
-  if (!phone) return { ok: false, error: 'phone_invalid' };
+  if (!phone) return { ok: false, error: 'phone_invalid', next: 'phone' };
+  sweepExpired(Date.now());
 
   // One Telegram account belongs to ONE person here (`tg_phone` is unique,
   // 0038 — two listeners on one account is what gets it flagged). Asked
   // BEFORE Telegram sends a code: the first version found out at the very
   // end, when the insert refused, and printed «Bo'lmadi» over a code the
   // person had already typed — with nothing to say whose number it was.
-  const holder = await phoneHolder(phone, userId);
+  let holder: { name: string } | null;
+  try {
+    holder = await phoneHolder(phone, userId);
+  } catch (err) {
+    // A sentence and a log line, never the error page (#472's rule).
+    logRefusal(userId, 'begin', 'failed', describeError(err));
+    return { ok: false, error: 'failed', next: 'phone' };
+  }
   if (holder) {
     logRefusal(userId, 'begin', 'phone_taken');
-    return { ok: false, error: 'phone_taken', holder: holder.name };
+    return { ok: false, error: 'phone_taken', next: 'phone', holder: holder.name };
   }
 
-  await dropPending(userId);
+  const previous = pending.get(userId);
+  if (previous) await release(userId, previous);
+  // Every client opened here is closed on every way out that does not
+  // hand it to `pending` — a failed attempt used to keep its connection
+  // (and gramjs's update loop) for the life of the process.
+  let opened: Pick<PendingLogin['client'], 'disconnect' | 'destroy'> | undefined;
   try {
     const { TelegramClient } = await import('telegram');
     const { StringSession } = await import('telegram/sessions');
     const client = new TelegramClient(new StringSession(''), config.apiId, config.apiHash, {
       connectionRetries: 3,
     });
+    opened = client;
     if ((await client.connect()) === false) {
+      await closeClient(client);
       logRefusal(userId, 'begin', 'failed', 'connect returned false');
-      return { ok: false, error: 'failed' };
+      return { ok: false, error: 'failed', next: 'phone' };
     }
     const sent = (await client.sendCode(
       { apiId: config.apiId, apiHash: config.apiHash },
       phone,
     )) as { phoneCodeHash: string };
+    // Two «kod yuborish» from two tabs at once: the later one stands, and
+    // the one it replaces is closed rather than orphaned.
+    const raced = pending.get(userId);
+    if (raced) await release(userId, raced);
     pending.set(userId, {
       client: client as unknown as PendingLogin['client'],
       phone,
@@ -261,10 +346,11 @@ export async function beginTgLogin(userId: string, rawPhone: string): Promise<Co
     });
     return { ok: true, step: 'code_sent' };
   } catch (err) {
-    await dropPending(userId);
-    const error = connectErrorCode(messageOf(err));
-    logRefusal(userId, 'begin', error, messageOf(err));
-    return { ok: false, error };
+    if (opened) await closeClient(opened);
+    const raw = describeError(err);
+    const error = connectErrorCode(raw);
+    logRefusal(userId, 'begin', error, raw);
+    return { ok: false, error, next: 'phone' };
   }
 }
 
@@ -279,23 +365,22 @@ export async function completeTgLogin(
   password?: string,
 ): Promise<ConnectStep> {
   const entry = pending.get(userId);
-  if (!entry) return { ok: false, error: 'expired' };
+  if (!entry) return { ok: false, error: 'expired', next: 'phone' };
   if (pendingExpired(entry.startedAt, Date.now())) {
-    await dropPending(userId);
-    return { ok: false, error: 'expired' };
+    await release(userId, entry);
+    return { ok: false, error: 'expired', next: 'phone' };
   }
 
   const { Api } = await import('telegram');
   const steps: LoginSteps = {
-    signIn: async (phoneCode) => {
-      await entry.client.invoke(
+    signIn: (phoneCode) =>
+      entry.client.invoke(
         new Api.auth.SignIn({
           phoneNumber: entry.phone,
           phoneCodeHash: entry.phoneCodeHash,
           phoneCode,
         }),
-      );
-    },
+      ),
     checkPassword: async (secret) => {
       const { computeCheck } = await import('telegram/Password');
       const srp = await entry.client.invoke(new Api.account.GetPassword());
@@ -307,9 +392,13 @@ export async function completeTgLogin(
 
   const done = await finishLogin(entry, steps, code, password);
   if (!done.ok) {
-    if (done.error !== 'password_needed') logRefusal(userId, 'finish', done.error);
-    if (!done.alive) await dropPending(userId);
-    return { ok: false, error: done.error };
+    if (done.error !== 'password_needed') logRefusal(userId, 'finish', done.error, done.raw);
+    if (!done.alive) await release(userId, entry);
+    return {
+      ok: false,
+      error: done.error,
+      next: !done.alive ? 'phone' : entry.codeAccepted ? 'password' : 'code',
+    };
   }
 
   try {
@@ -319,16 +408,20 @@ export async function completeTgLogin(
     // The login is authorised on Telegram's side and we cannot keep it:
     // end it there too rather than leave a session nobody holds.
     await entry.client.invoke(new Api.auth.LogOut()).catch(() => {});
-    await dropPending(userId);
+    await release(userId, entry);
     // Somebody connected this number in the minutes since the code was sent.
-    if ((err as { code?: string }).code === '23505') {
-      const holder = await phoneHolder(entry.phone, userId);
+    // Without a holder to name, the sentence would read «…ulangan by .» —
+    // «try again» is the honest answer then.
+    const holder = isUniqueViolation(err)
+      ? await phoneHolder(entry.phone, userId).catch(() => null)
+      : null;
+    if (holder) {
       logRefusal(userId, 'save', 'phone_taken');
-      return { ok: false, error: 'phone_taken', holder: holder?.name };
+      return { ok: false, error: 'phone_taken', next: 'phone', holder: holder.name };
     }
-    logRefusal(userId, 'save', 'failed', messageOf(err));
-    return { ok: false, error: 'failed' };
+    logRefusal(userId, 'save', 'failed', describeError(err));
+    return { ok: false, error: 'failed', next: 'phone' };
   }
-  await dropPending(userId);
+  await release(userId, entry);
   return { ok: true, step: 'connected' };
 }

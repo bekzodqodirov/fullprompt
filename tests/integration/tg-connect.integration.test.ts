@@ -71,6 +71,7 @@ describe('a Telegram number another manager already holds', () => {
     expect(await beginTgLogin(newcomer.id, typed)).toEqual({
       ok: false,
       error: 'phone_taken',
+      next: 'phone',
       holder: 'Ulangan Hodim',
     });
   }, 8_000);

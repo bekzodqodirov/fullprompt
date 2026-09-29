@@ -10,6 +10,7 @@ import {
   setWorkAccount,
 } from '@/modules/wms/crm/telegram-accounts';
 import { beginTgLogin, completeTgLogin } from '@/modules/wms/crm/telegram-connect';
+import { afterFinish } from './connect-state';
 
 /**
  * The connect flow's two doors — round 21.
@@ -51,7 +52,7 @@ export async function beginConnectAction(
 }
 
 export async function completeConnectAction(
-  _prev: ConnectState,
+  prev: ConnectState,
   form: FormData,
 ): Promise<ConnectState> {
   const actor = await connector();
@@ -62,20 +63,9 @@ export async function completeConnectAction(
     String(form.get('code') ?? ''),
     password || undefined,
   );
-  if (!result.ok) {
-    // 2FA: Telegram took the code and the login is still alive — the screen
-    // asks for the password alone; the server remembers the code was taken
-    // (`finishLogin`), so the next press carries the password and nothing else.
-    if (result.error === 'password_needed') return { stage: 'code', needPassword: true };
-    if (result.error === 'password_invalid') {
-      return { stage: 'code', needPassword: true, error: result.error };
-    }
-    // A wrong code: the same login, retype it.
-    if (result.error === 'code_invalid') return { stage: 'code', error: result.error };
-    // Anything else ended the attempt on the server — start again from the
-    // number, which is still in its box.
-    return { stage: 'phone', error: result.error, holder: result.holder };
-  }
+  // 2FA: once Telegram has taken the code the server remembers it
+  // (`finishLogin`), so the password press carries the password alone.
+  if (!result.ok) return afterFinish(prev, result);
   return { stage: 'done' };
 }
 

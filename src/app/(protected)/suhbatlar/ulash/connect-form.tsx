@@ -40,6 +40,9 @@ export function ConnectForm() {
         setCode('');
         setPassword('');
       }
+      // A refused password is not left in the box to be sent again as it is:
+      // Telegram counts wrong tries, and the second one looks like the first.
+      if (next.error === 'password_invalid') setPassword('');
       if (next.stage === 'done') router.refresh();
       return next;
     },
@@ -89,7 +92,9 @@ export function ConnectForm() {
             id="tg-password"
             name="password"
             type="password"
-            autoComplete="current-password"
+            // The TELEGRAM account's password, not this site's — a browser
+            // must not offer the saved login password for it.
+            autoComplete="off"
             data-testid="connect-password"
             className="input"
             value={password}
