@@ -90,7 +90,9 @@ test('the panel at 1280×900 in Russian and in Uzbek, the fold open', async ({ p
 test('the Mashina tab offers a truck bound for Tashkent the pins of its own road', async ({ page }) => {
   await login(page, LOGIST);
   await page.goto(`/batches/${truckId}/mashina`);
-  const panel = page.getByTestId('batch-where-panel');
+  // The testid sits on the Panel's SUMMARY (components/panel.tsx), so the
+  // buttons are looked for in the <details> that summary heads.
+  const panel = page.locator('details').filter({ has: page.getByTestId('batch-where-panel') });
   await expect(panel).toBeVisible();
   await expect(panel.locator('form button[type="submit"]')).toHaveCount(3);
   await widthFits(page);

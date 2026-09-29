@@ -153,7 +153,9 @@ test('the Mashina pins at 360 px, in Russian and in Uzbek: every one inside the 
     }
     await login(page, LOGIST);
     await page.goto(`/batches/${truckId}/mashina`);
-    const panel = page.getByTestId('batch-where-panel');
+    // The testid sits on the Panel's SUMMARY (components/panel.tsx), so the
+    // buttons are looked for in the <details> that summary heads.
+    const panel = page.locator('details').filter({ has: page.getByTestId('batch-where-panel') });
     await expect(panel).toBeVisible();
     // Yiwu → Tashkent carries three pins: the border, Kyrgyzstan, Uzbekistan.
     const pins = panel.locator('form button[type="submit"]');

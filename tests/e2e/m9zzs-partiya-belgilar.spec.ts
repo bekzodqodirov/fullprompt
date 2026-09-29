@@ -26,8 +26,13 @@ const ACCOUNTANT = '+998900000010';
 const run = Date.now().toString().slice(-6);
 let batchPath = '';
 let seeded: Seeded | null = null;
-/** The seeded offer's client price as `money()` prints it (`$987.65`) — the fixture's `offerPrice`. */
-const offerDigits = '987.65';
+/**
+ * What law 4 keeps from the VED on this page, as the page prints it: the
+ * deal's client price (the fixture's `clientPrice`, 4321.00) and the upsale
+ * the released offer makes above the 700 floor (987.65 − 700). The offer's
+ * own figure is never printed here at all, so it cannot be the control.
+ */
+const LAW_FOUR = ['4321.00', '287.65'];
 
 async function login(page: Page, phone: string) {
   await page.context().clearCookies();
@@ -80,7 +85,7 @@ test('the accountant: 📈 opens by a press to the honest empty sentence and the
   // the VED half's absences below are absences of something that exists.
   await expect(page.getByTestId('pricing-deal-price')).toBeVisible();
   await expect(page.getByTestId('pricing-deal-upsale')).toBeVisible();
-  await expect(page.getByTestId('pricing-deal-price')).toContainText(offerDigits);
+  for (const digits of LAW_FOUR) await expect(page.getByTestId('pricing-deal-price')).toContainText(digits);
 });
 
 test('the VED: 🧮 and the answer, and none of the money law 4 keeps from them', async ({ page }) => {
@@ -103,11 +108,13 @@ test('the VED: 🧮 and the answer, and none of the money law 4 keeps from them'
   ]) {
     await expect(page.getByTestId(testid), testid).toHaveCount(0);
   }
-  // The offer's price nowhere on the page — not in the open fold, not in
-  // the markup (a hidden node is still sent to the VED's browser).
+  // The client price and the upsale nowhere on the page — not in the open
+  // fold, not in the markup (a hidden node is still sent to the VED's browser).
   const html = await page.content();
-  expect(html).not.toContain(offerDigits);
-  expect(await calc.innerText()).not.toContain(offerDigits);
+  for (const digits of LAW_FOUR) {
+    expect(html, digits).not.toContain(digits);
+    expect(await calc.innerText(), digits).not.toContain(digits);
+  }
 });
 
 test('at 360 px, with both folds open on a long name, the page is still 360 wide', async ({ page }) => {
