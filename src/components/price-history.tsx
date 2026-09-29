@@ -2,6 +2,8 @@ import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import {
   isMixed,
+  visibleReasons,
+  type PickedHistory,
   type PriceHistory,
   type PriceHistoryRow,
   type PriceMatch,
@@ -60,7 +62,7 @@ async function Rows({ rows, truckLinks }: { rows: PriceHistoryRow[]; truckLinks:
           </p>
           <p className="font-mono tabular-nums text-ink-600">
             {[
-              row.usdPerM3 !== null ? `$${row.usdPerM3}/m³` : null,
+              row.usdPerM3 !== null ? `$${row.usdPerM3.toFixed(2)}/m³` : null,
               row.usdPerKg !== null ? `$${row.usdPerKg.toFixed(2)}${t('perKgLoaded')}` : null,
               row.kgPerM3 !== null ? `${row.kgPerM3} kg/m³` : null,
             ]
@@ -80,7 +82,7 @@ async function Rows({ rows, truckLinks }: { rows: PriceHistoryRow[]; truckLinks:
 export async function PriceHistoryBody({
   history,
   pick,
-  pickedRows,
+  picked,
   lotId,
   batchId,
   truckLinks,
@@ -88,14 +90,14 @@ export async function PriceHistoryBody({
   history: PriceHistory;
   /** The model's stored answer for this lot, when one was asked for. */
   pick: SimilarPickRecord | null;
-  /** Its lots, priced by the ledger (`pricedRowsForLots`). */
-  pickedRows: PriceHistoryRow[];
+  /** Its lots, priced by the ledger for THIS reader (`pricedRowsForLots`). */
+  picked: PickedHistory | null;
   lotId: string;
   batchId: string;
   truckLinks: boolean;
 }) {
   const t = await getTranslations('finance');
-  if (history.failed) {
+  if (history.failed || picked?.failed) {
     return (
       <p className="text-xs text-warn" data-testid="price-history-failed">
         ⚠ {t('priceHistoryFailed')}
@@ -109,6 +111,10 @@ export async function PriceHistoryBody({
       </div>
     );
   }
+  const pickedRows = picked?.rows ?? [];
+  // Only reasons whose lots reached THIS reader's rows: a reason names
+  // another client's goods, chosen from the presser's trucks.
+  const reasons = pick && picked ? visibleReasons(pick, picked.reachedLotIds) : [];
   return (
     <div className="space-y-1.5 text-xs" data-testid="price-history">
       <p className="text-ink-500" data-testid="price-history-none">
@@ -118,9 +124,9 @@ export async function PriceHistoryBody({
         pickedRows.length > 0 ? (
           <>
             <Rows rows={pickedRows} truckLinks={truckLinks} />
-            {pick.reasons.length > 0 ? (
+            {reasons.length > 0 ? (
               <ul className="space-y-0.5 text-2xs text-ink-500" data-testid="price-history-ai-reasons">
-                {pick.reasons.map((r, i) => (
+                {reasons.map((r, i) => (
                   <li key={i} className="break-words">
                     🤖 {r.name}: {r.reason}
                   </li>

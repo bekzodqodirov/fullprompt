@@ -9,8 +9,8 @@ import { cleanPriceIcons, leftovers, seedPriceIcons, type Seeded } from '../fixt
  * no hover), that the accountant reads the Готово answer marked «не
  * запечатан» beside the deal's client price, that the VED reads the same
  * answer and none of the page's money that law 4 keeps from them — no cost,
- * no margin, no client price, no upsale, and not the typed client price
- * anywhere inside the open sheet — and that with BOTH folds open and a long
+ * no margin, no client price, no upsale, and the seeded OFFER's price nowhere
+ * in the page's markup — and that with BOTH folds open and a long
  * name the page is still 360 wide. The list itself, the sheet's rules and the
  * role matrix are proven in `price-history`, `deal-calc-sheet` and
  * `price-icons-matrix` (integration); the home row by `calc-link-ask` (a seal
@@ -26,6 +26,8 @@ const ACCOUNTANT = '+998900000010';
 const run = Date.now().toString().slice(-6);
 let batchPath = '';
 let seeded: Seeded | null = null;
+/** The seeded offer's client price as `money()` prints it (`$987.65`) — the fixture's `offerPrice`. */
+const offerDigits = '987.65';
 
 async function login(page: Page, phone: string) {
   await page.context().clearCookies();
@@ -73,8 +75,12 @@ test('the accountant: 📈 opens by a press to the honest empty sentence and the
   await expect(answer).toContainText('700');
   await expect(answer).toContainText('не запечатан');
 
-  // The control: the accountant IS law 4's audience for the client price.
+  // The control: the accountant IS law 4's audience for the client price —
+  // the offer's own figure is on the page and the upsale line is drawn, so
+  // the VED half's absences below are absences of something that exists.
   await expect(page.getByTestId('pricing-deal-price')).toBeVisible();
+  await expect(page.getByTestId('pricing-deal-upsale')).toBeVisible();
+  await expect(page.getByTestId('pricing-deal-price')).toContainText(offerDigits);
 });
 
 test('the VED: 🧮 and the answer, and none of the money law 4 keeps from them', async ({ page }) => {
@@ -97,8 +103,11 @@ test('the VED: 🧮 and the answer, and none of the money law 4 keeps from them'
   ]) {
     await expect(page.getByTestId(testid), testid).toHaveCount(0);
   }
-  const body = await calc.innerText();
-  for (const spelled of ['4321', '4 321', '4,321', '4 321']) expect(body).not.toContain(spelled);
+  // The offer's price nowhere on the page — not in the open fold, not in
+  // the markup (a hidden node is still sent to the VED's browser).
+  const html = await page.content();
+  expect(html).not.toContain(offerDigits);
+  expect(await calc.innerText()).not.toContain(offerDigits);
 });
 
 test('at 360 px, with both folds open on a long name, the page is still 360 wide', async ({ page }) => {

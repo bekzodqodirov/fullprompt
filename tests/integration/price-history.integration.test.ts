@@ -21,7 +21,10 @@ import { addTransaction, voidTransaction } from '@/modules/wms/finance/service';
 import { batchLots, type BatchLot } from '@/modules/wms/batches/lots';
 import {
   historyPairsSql,
+  HINT_STATEMENT_MS,
   priceHistoryForLots,
+  pricedRowsForLots,
+  underCeiling,
   type Needle,
   type PriceHistory,
 } from '@/modules/wms/finance/price-history';
@@ -59,6 +62,7 @@ let actorId: string;
 const ctx = () => ({ actorId });
 const W = { yw: '', tas: '', gz: '', and: '' };
 const madeClients: string[] = [];
+const madeBatches: string[] = [];
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const UNSCOPED = { warehouseScoped: false, warehouseIds: [] as string[] };
 const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000);
@@ -167,6 +171,7 @@ async function truck(
     ctx(),
   );
   const { batch } = await recordVerdict({ versionId: sub.version.id, verdict: 'approved' } as never, ctx());
+  madeBatches.push(batch!.id);
   for (const lot of lots) {
     for (const code of lot.codes.slice(0, lot.load ?? lot.codes.length)) {
       const [ack] = await ingestLoadScans([scan(batch!.id, code)], ctx());
@@ -286,10 +291,18 @@ beforeAll(async () => {
 
 afterAll(async () => {
   // Money first, then the claims the loads wrote; the cargo stays and the
-  // warehouses are DEACTIVATED (an audited action touched them).
+  // warehouses are DEACTIVATED (an audited action touched them). CI hands
+  // this ONE database to Playwright next (#154): a dozen trucks left «in
+  // transit» would ride the transit strip and the map of every later spec,
+  // and two active clients the client book — so the trucks go to a terminal
+  // state and the clients are retired, as money-doors' fixtures are.
   if (madeClients.length) {
     await db.delete(clientTransactions).where(inArray(clientTransactions.clientId, madeClients));
     await db.delete(clientNotices).where(inArray(clientNotices.clientId, madeClients));
+    await db.update(clients).set({ active: false }).where(inArray(clients.id, madeClients));
+  }
+  if (madeBatches.length) {
+    await db.update(batches).set({ status: 'cancelled' }).where(inArray(batches.id, madeBatches));
   }
   await db
     .delete(tnvedAssignments)
@@ -409,5 +422,41 @@ describe('the read the page runs', () => {
     expect(plan).toContain('receipt_lots_product_key_idx');
     expect(plan).toContain('receipt_lots_ru_trgm_idx');
     expect(plan).toContain('receipt_lots_zh_trgm_idx');
+  });
+});
+
+describe('the hint never holds the page (review, 2026-09-29)', () => {
+  it('every statement under the ceiling is cut at it, not only the first', async () => {
+    // Two statements in one ceiling: the first is quick, the SECOND is where a
+    // wide truck spends its time (the riders walk, the off-truck read), and
+    // the second is what the first version left unbounded.
+    const started = Date.now();
+    await expect(
+      underCeiling(async (tx) => {
+        await tx.execute(sql`SELECT 1`);
+        await tx.execute(sql`SELECT pg_sleep(${(HINT_STATEMENT_MS * 3) / 1000})`);
+      }),
+    ).rejects.toThrow();
+    expect(Date.now() - started).toBeLessThan(HINT_STATEMENT_MS * 2);
+  });
+
+  it('the ceiling is the transaction\'s, never the pooled connection\'s', async () => {
+    await underCeiling(async (tx) => tx.execute(sql`SELECT 1`));
+    const [row] = await db.execute<{ t: string }>(sql`SELECT current_setting('statement_timeout') AS t`);
+    expect(row!.t).not.toBe(`${HINT_STATEMENT_MS}ms`);
+  });
+
+  it('the AI\'s rows name which picked lots reached THIS reader', async () => {
+    // One lot on an in-scope truck, one on the Guangzhou→Andijan truck a
+    // Yiwu-scoped reader cannot open: only the first may carry a reason.
+    const [a1Lot] = await batchLots(F.t.a2!.id);
+    const [farLot] = await batchLots(F.t.far!.id);
+    const all = await pricedRowsForLots([a1Lot!.lotId, farLot!.lotId], F.t0.id, UNSCOPED, F.a);
+    expect(all.failed).toBe(false);
+    expect(new Set(all.reachedLotIds)).toEqual(new Set([a1Lot!.lotId, farLot!.lotId]));
+    const scoped = { warehouseScoped: true, warehouseIds: [W.yw] };
+    const some = await pricedRowsForLots([a1Lot!.lotId, farLot!.lotId], F.t0.id, scoped, F.a);
+    expect(some.reachedLotIds).toEqual([a1Lot!.lotId]);
+    expect(some.rows.map((r) => r.batchId)).toEqual([F.t.a2!.id]);
   });
 });

@@ -62,20 +62,37 @@ export async function recordAiPass(
 }
 
 /**
- * How many model calls are left today.
+ * The two budgets the ledger is counted against (0119). The calculation
+ * half — intake, grouping, the pick, the invoice — is what the VED's Telegram
+ * estimate and the queued prefill run on; «Oldingi narx»'s 🤖 is pressed by
+ * the accountant across a truck's lots. One shared count would let an
+ * afternoon of pricing presses stop the VED's estimates until midnight, so
+ * each is counted apart, against its own setting.
+ */
+export type AiBudget = 'calc' | 'similar';
+
+const BUDGET_SETTING = {
+  calc: 'ai_calc_daily_limit',
+  similar: 'price_history_ai_daily_limit',
+} as const satisfies Record<AiBudget, string>;
+
+/**
+ * How many model calls are left today on one budget.
  *
  * The day is Tashkent's (R5) — the AI assistant's daily cap cuts at the same
  * midnight, so the two budgets a person meets reset together. Infinity when
  * the setting is not a positive number: an unreadable cap must not stop the
  * feature, it must stop being a cap.
  */
-export async function aiCalcBudgetLeft(): Promise<number> {
-  const configured = Number(await getSetting('ai_calc_daily_limit'));
+export async function aiCalcBudgetLeft(budget: AiBudget = 'calc'): Promise<number> {
+  const configured = Number(await getSetting(BUDGET_SETTING[budget]));
   if (!Number.isFinite(configured) || configured <= 0) return Number.POSITIVE_INFINITY;
+  const kind = budget === 'similar' ? sql`kind = 'similar'` : sql`kind <> 'similar'`;
   const [row] = await db.execute<{ used: string }>(sql`
     SELECT count(*)::text AS used
       FROM ai_calc_passes
      WHERE created_at >= date_trunc('day', now() AT TIME ZONE 'Asia/Tashkent') AT TIME ZONE 'Asia/Tashkent'
+       AND ${kind}
   `);
   return Math.max(0, configured - Number(row?.used ?? 0));
 }

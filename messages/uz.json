@@ -712,7 +712,8 @@
       "lead_assign_origins": "Saytdan «kimga yozsin?» deb so'rashga ruxsat berilgan sahifalar (bo'sh joy bilan, har biri https://…)",
       "kpi_expense_category_id": "Sotuvchilarga KPI to‘lovi yoziladigan xarajat turi (faqat kassa). «Hodimlar» sahifasida tanlanadi.",
       "salary_expense_category_id": "Oyliklar xarajat turi: «Hodimlar» sahifasi oylik va uning to‘lanishini shu turdagi shablonlardan ko‘rsatadi.",
-      "price_history_min_sim": "«Oldingi narx» o‘tgan prixod mashinasini ko‘rsatishi uchun tovar nomi o‘xshashligi darajasi (0..1)"
+      "price_history_min_sim": "«Oldingi narx» o‘tgan prixod mashinasini ko‘rsatishi uchun tovar nomi o‘xshashligi darajasi (0..1)",
+      "price_history_ai_daily_limit": "«Oldingi narx» 🤖 tugmasi kuniga necha marta AI so'rashi mumkin (hisoblash limitidan alohida)"
     },
     "driverApp": "Haydovchi ilovasi",
     "callsApp": "Qo'ng'iroq ilovasi",
@@ -1739,7 +1740,7 @@
     "priceHistoryHint": "Shu tovarga oldingi mashinalarda qancha olganmiz (12 oy)",
     "priceHistoryOwnMark": "shu mijoz",
     "priceHistoryNone": "Topilmadi: o‘xshash tovar narxi yozilgan mashina yo‘q (12 oy)",
-    "priceHistoryMixed": "aralash: {n} xil tovar",
+    "priceHistoryMixed": "aralash: {n, plural, other {# xil tovar}}",
     "priceHistoryMatchExact": "aynan nom",
     "priceHistoryMatchCode": "TNVED",
     "priceHistoryMatchName": "o‘xshash nom",
@@ -1754,13 +1755,15 @@
       "budget": "AI kunlik limiti tugadi",
       "found_free": "AIsiz topildi — sahifani yangilang",
       "failed": "AI javob bermadi — keyinroq urinib ko‘ring",
-      "forbidden": "Ruxsat yo‘q"
+      "forbidden": "Ruxsat yo‘q",
+      "already": "AI bu tovar uchun allaqachon so‘ralgan — sahifani yangilang"
     },
     "dealCalc": "Bitim hisobi",
     "dealCalcHint": "Shu prixod bitimining VED hisobi: guruhlar, TNVED, baza, boj, QQS, yo‘lkira, jami",
     "calcUnsealed": "muhrlanmagan",
     "calcLinkConfirmed": "prixod shu hisobga tasdiqlangan",
     "calcLinkSuggested": "taxmin (VED tasdiqlashi kutilmoqda)",
+    "calcLinkConfirmHere": "Hisob nazoratida tasdiqlash",
     "calcPrevVersion": "Oldingi: V{n}",
     "calcRecalcOpen": "qayta hisoblanmoqda — eski narx turibdi",
     "calcMore": "yana {n} ta hisob",

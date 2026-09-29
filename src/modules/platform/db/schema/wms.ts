@@ -3424,6 +3424,7 @@ export const lotSimilarPicks = pgTable('lot_similar_picks', {
     .references(() => receiptLots.id, { onDelete: 'cascade' }),
   pickedLotIds: uuid('picked_lot_ids').array().notNull(),
   reasons: jsonb('reasons').notNull().default([]),
+  /** The model that answered — or `'pending'` while the call is out: the route's claim on the lot. */
   model: text('model').notNull(),
   createdBy: uuid('created_by').references(() => users.id),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

@@ -177,15 +177,56 @@ const uuidList = (ids: string[]) =>
     sql`, `,
   );
 
-/** The truck frame every arm shares: which (client, truck) a past lot's price may come from. */
-function truckFrame(batchId: string, actor: ScopedActor): SQL {
+const CHARGE_TYPES = sql.raw(`(${PRICING_CHARGE_TYPES.map((t) => `'${t}'`).join(', ')})`);
+
+/**
+ * WHICH TRUCK a past lot's price may come from, as one sentence over the
+ * alias `b` — the free list, the AI's picks and the AI's candidate list all
+ * say it through here (#513): a departed truck that is not this one, within
+ * twelve Tashkent months, one the reader could open, carrying a live charge
+ * of `client` (the SQL column naming the past lot's client). Were the model
+ * offered a truck the free list would refuse, the reader would be shown a
+ * name whose price the page then declines to print.
+ */
+export function pricedTruckSql(batchId: string, actor: ScopedActor, client: SQL): SQL {
   return sql`b.id <> ${batchId}::uuid
     AND b.departed_at IS NOT NULL
     AND b.departed_at >= ${windowStart(12)}::timestamptz
-    AND ${batchEndsInScopeSql(actor, 'b')}`;
+    AND ${batchEndsInScopeSql(actor, 'b')}
+    AND EXISTS (
+      SELECT 1 FROM client_transactions c
+       WHERE c.client_id = ${client} AND c.batch_id = b.id
+         AND c.type IN ${CHARGE_TYPES} AND c.voided_at IS NULL
+    )`;
 }
 
-const CHARGE_TYPES = sql.raw(`(${PRICING_CHARGE_TYPES.map((t) => `'${t}'`).join(', ')})`);
+/**
+ * Every statement a hint issues gets this ceiling (ms), set for the
+ * transaction the reads share. A hint is not the page: the accountant prices
+ * trucks on this screen, and a slow «what did we charge last time» must
+ * become a sentence («hozir hisoblab bo'lmadi»), never a hung or broken tab.
+ */
+export const HINT_STATEMENT_MS = 1500;
+
+type ReadTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * One short read transaction under the ceiling — every statement of the
+ * hint, not only the first: the riders walk and `offTruckPrices` after the
+ * match are where a wide truck spends its time. `threshold` sets the trigram
+ * operator's cut-off for the same transaction.
+ */
+export async function underCeiling<T>(fn: (tx: ReadTx) => Promise<T>, threshold?: number): Promise<T> {
+  return db.transaction(async (tx) => {
+    await tx.execute(
+      threshold === undefined
+        ? sql`SELECT set_config('statement_timeout', ${String(HINT_STATEMENT_MS)}, true)`
+        : sql`SELECT set_config('pg_trgm.similarity_threshold', ${String(threshold)}, true),
+                     set_config('statement_timeout', ${String(HINT_STATEMENT_MS)}, true)`,
+    );
+    return fn(tx);
+  });
+}
 
 type PairRow = {
   needle: number;
@@ -206,6 +247,7 @@ type PairRow = {
  * in dollars, and whether the cargo left the truck after the price.
  */
 async function pricePairs(
+  exec: ReadTx,
   pairs: { clientId: string; batchId: string }[],
 ): Promise<Map<string, { kg: number; m3: number; kinds: number; usd: number; moved: 'no_cargo' | 'partial' | null }>> {
   const out = new Map<string, { kg: number; m3: number; kinds: number; usd: number; moved: 'no_cargo' | 'partial' | null }>();
@@ -216,7 +258,7 @@ async function pricePairs(
     unique.map((p) => sql`(${p.clientId}::uuid, ${p.batchId}::uuid)`),
     sql`, `,
   );
-  const rows = await db.execute<{ batch_id: string; client_id: string; kg: string; m3: string; kinds: number; usd: string }>(sql`
+  const rows = await exec.execute<{ batch_id: string; client_id: string; kg: string; m3: string; kinds: number; usd: string }>(sql`
     WITH ${riderCtesSql(uuidList(batchIds))},
     pairs(client_id, batch_id) AS (VALUES ${values}),
     load AS (
@@ -241,7 +283,7 @@ async function pricePairs(
     SELECT l.batch_id::text AS batch_id, l.client_id::text AS client_id, l.kg, l.m3, l.kinds, mo.usd
       FROM load l JOIN money mo ON mo.batch_id = l.batch_id AND mo.client_id = l.client_id
   `);
-  const moved = await offTruckPrices(db, { batchIds }, { changes: false });
+  const moved = await offTruckPrices(exec, { batchIds }, { changes: false });
   const movedOf = new Map(
     moved
       .filter((row) => row.kind === 'no_cargo' || row.kind === 'partial')
@@ -343,12 +385,7 @@ export function historyPairsSql(input: {
                   ) rode ON true
                   JOIN batches b ON b.id = rode.batch_id
                   JOIN clients cl ON cl.id = ml.client_id
-                 WHERE ${truckFrame(batchId, actor)}
-                   AND EXISTS (
-                     SELECT 1 FROM client_transactions c
-                      WHERE c.client_id = ml.client_id AND c.batch_id = b.id
-                        AND c.type IN ${CHARGE_TYPES} AND c.voided_at IS NULL
-                   )
+                 WHERE ${pricedTruckSql(batchId, actor, sql`ml.client_id`)}
                  ORDER BY ml.client_id, b.id, ml.strength DESC, ml.past_lot_id
               ) w
              -- His 28a, in SQL: the cap per needle, own client first (16a),
@@ -405,25 +442,29 @@ export async function priceHistoryForLots(
     lotNeedle.set(lot.lotId, needleOf.get(id)!);
     out.set(lot.lotId, { rows: [], failed: false });
   }
-  let pairs: PairRow[];
+  // ONE read transaction for all of it — the match, the riders walk and the
+  // off-truck read — so the ceiling covers every statement and one catch
+  // covers every failure: the list is a hint beside the money, and the page
+  // must go on rendering without it.
+  let read: { pairs: PairRow[]; priced: Awaited<ReturnType<typeof pricePairs>> };
   try {
-    pairs = await db.transaction(async (tx) => {
-      // One statement for both: the trigram operator's threshold from the same
-      // setting the comparison uses, and a ceiling on the read — a page must
-      // never hang on its own hint.
-      await tx.execute(sql`
-        SELECT set_config('pg_trgm.similarity_threshold', ${String(minSim)}, true),
-               set_config('statement_timeout', '1500', true)`);
-      return tx.execute<PairRow>(
+    read = await underCeiling(async (tx) => {
+      const pairs = await tx.execute<PairRow>(
         historyPairsSql({ needles, pageLotIds: lots.map((lot) => lot.lotId), minSim, batchId, actor }),
       );
-    });
+      const priced = await pricePairs(
+        tx,
+        pairs.map((row) => ({ clientId: row.client_id, batchId: row.batch_id })),
+      );
+      return { pairs: [...pairs], priced };
+    }, minSim);
   } catch (err) {
     // A timeout or any failure is a sentence on the page, never a broken one.
     logger.warn({ err, batchId }, '[price-history] read failed');
     for (const history of out.values()) history.failed = true;
     return out;
   }
+  const { pairs, priced } = read;
 
   const byNeedle = new Map<number, PairRow[]>();
   for (const row of pairs) {
@@ -431,7 +472,6 @@ export async function priceHistoryForLots(
     list.push(row);
     byNeedle.set(Number(row.needle), list);
   }
-  const priced = await pricePairs(pairs.map((row) => ({ clientId: row.client_id, batchId: row.batch_id })));
 
   const historyOf = new Map<number, PriceHistory>();
   for (const [needle, rows] of byNeedle) {
@@ -464,54 +504,84 @@ export async function priceHistoryForLots(
   return out;
 }
 
+/** The AI's rows, and which of the named lots reached a row THIS reader may see. */
+export interface PickedHistory extends PriceHistory {
+  /**
+   * The picked lots that landed on a priced, in-scope truck for this reader —
+   * what a stored reason may be printed against. A reason names a past lot's
+   * goods, chosen from the PRESSER's trucks; printed to a reader whose door
+   * refuses those trucks, it would be another client's goods name from a
+   * truck they cannot open.
+   */
+  reachedLotIds: string[];
+}
+
 /**
  * The priced rows for lots the MODEL named (0119, 18a) — the same frame and
  * the same price read as the free list, so an AI row and a free row can
  * never disagree about a price: the model picks lots, the ledger prices them.
+ * Soft like the free list: under the same ceiling, and `failed` rather than
+ * a thrown page.
  */
 export async function pricedRowsForLots(
   pastLotIds: string[],
   batchId: string,
   actor: ScopedActor,
   ownClientId: string | null,
-): Promise<PriceHistory> {
+): Promise<PickedHistory> {
   const ids = [...new Set(pastLotIds)].filter(Boolean);
-  if (ids.length === 0) return { rows: [], failed: false };
-  const pairs = await db.execute<{
+  if (ids.length === 0) return { rows: [], failed: false, reachedLotIds: [] };
+  type Hit = {
     client_id: string;
     client_code: string | null;
     batch_id: string;
     batch_code: string;
     departed_at: string;
     past_lot_id: string;
-  }>(sql`
-    SELECT DISTINCT ON (pr.client_id, b.id)
-           pr.client_id::text AS client_id, cl.client_code, b.id::text AS batch_id, b.code AS batch_code,
-           b.departed_at, pl.id::text AS past_lot_id
-      FROM receipt_lots pl
-      JOIN receipts pr ON pr.id = pl.receipt_id AND pr.client_id IS NOT NULL AND pr.voided_at IS NULL
-      JOIN clients cl ON cl.id = pr.client_id
-      JOIN LATERAL (
-        SELECT DISTINCT rides.batch_id FROM (
-          ${riderRowsSql({ boxes: sql`SELECT lb.id FROM boxes lb WHERE lb.lot_id = pl.id` })}
-        ) rides
-      ) rode ON true
-      JOIN batches b ON b.id = rode.batch_id
-     WHERE pl.id IN (${uuidList(ids)})
-       AND ${truckFrame(batchId, actor)}
-       AND EXISTS (
-         SELECT 1 FROM client_transactions c
-          WHERE c.client_id = pr.client_id AND c.batch_id = b.id
-            AND c.type IN ${CHARGE_TYPES} AND c.voided_at IS NULL
-       )
-     ORDER BY pr.client_id, b.id, pl.id
-  `);
-  const priced = await pricePairs(pairs.map((row) => ({ clientId: row.client_id, batchId: row.batch_id })));
-  const candidates: PriceCandidate[] = [];
-  for (const row of pairs) {
-    const p = priced.get(`${row.client_id}:${row.batch_id}`);
+  };
+  let hits: Hit[];
+  let priced: Awaited<ReturnType<typeof pricePairs>>;
+  try {
+    ({ hits, priced } = await underCeiling(async (tx) => {
+      // Every (lot, truck) and not one per pair: which LOTS reached a row is
+      // what the reasons are filtered by.
+      const found = [
+        ...(await tx.execute<Hit>(sql`
+          SELECT pr.client_id::text AS client_id, cl.client_code, b.id::text AS batch_id, b.code AS batch_code,
+                 b.departed_at, pl.id::text AS past_lot_id
+            FROM receipt_lots pl
+            JOIN receipts pr ON pr.id = pl.receipt_id AND pr.client_id IS NOT NULL AND pr.voided_at IS NULL
+            JOIN clients cl ON cl.id = pr.client_id
+            JOIN LATERAL (
+              SELECT DISTINCT rides.batch_id FROM (
+                ${riderRowsSql({ boxes: sql`SELECT lb.id FROM boxes lb WHERE lb.lot_id = pl.id` })}
+              ) rides
+            ) rode ON true
+            JOIN batches b ON b.id = rode.batch_id
+           WHERE pl.id IN (${uuidList(ids)})
+             AND ${pricedTruckSql(batchId, actor, sql`pr.client_id`)}
+           ORDER BY pr.client_id, b.id, pl.id
+        `)),
+      ];
+      const prices = await pricePairs(
+        tx,
+        found.map((row) => ({ clientId: row.client_id, batchId: row.batch_id })),
+      );
+      return { hits: found, priced: prices };
+    }));
+  } catch (err) {
+    logger.warn({ err, batchId }, '[price-history] picked rows failed');
+    return { rows: [], failed: true, reachedLotIds: [] };
+  }
+  const candidates = new Map<string, PriceCandidate>();
+  const reached = new Set<string>();
+  for (const row of hits) {
+    const key = `${row.client_id}:${row.batch_id}`;
+    const p = priced.get(key);
     if (!p) continue;
-    candidates.push({
+    reached.add(row.past_lot_id);
+    if (candidates.has(key)) continue;
+    candidates.set(key, {
       batchId: row.batch_id,
       batchCode: row.batch_code,
       departedDay: dayOf(row.departed_at),
@@ -527,31 +597,62 @@ export async function pricedRowsForLots(
       pastLotId: row.past_lot_id,
     });
   }
-  return { rows: rankPriceHistory(candidates), failed: false };
+  return { rows: rankPriceHistory([...candidates.values()]), failed: false, reachedLotIds: [...reached] };
+}
+
+/**
+ * The model's words about one candidate, and the past lots that candidate
+ * stood for. The lots are what the reason is printed against: a reader sees
+ * a reason only when one of its lots reached a row priced for THEM.
+ */
+export interface SimilarPickReason {
+  name: string;
+  reason: string;
+  lotIds: string[];
 }
 
 /** A stored AI pick for a lot (0119): the past lots it named and why. */
 export interface SimilarPickRecord {
   pickedLotIds: string[];
-  reasons: { name: string; reason: string }[];
+  reasons: SimilarPickReason[];
 }
 
-/** The page's picks in ONE query, keyed by the lot they were asked for. */
+/**
+ * The `model` a pick row carries while its model call is still out — the
+ * route's CLAIM on the lot (one press pays once, however many tabs press),
+ * written before the call and replaced by the answer or deleted on a
+ * failure. A claim older than `SIMILAR_CLAIM_STALE_MS` is a process that died
+ * mid-call, and the next press takes it over (the workspace lock's window).
+ */
+export const SIMILAR_PICK_PENDING = 'pending';
+export const SIMILAR_CLAIM_STALE_MS = 10 * 60_000;
+
+/**
+ * Which of a pick's reasons THIS reader may be shown: those whose candidate
+ * reached one of the reader's priced rows. Pure — the filter is the fence.
+ */
+export function visibleReasons(pick: SimilarPickRecord, reachedLotIds: string[]): SimilarPickReason[] {
+  const reached = new Set(reachedLotIds);
+  return pick.reasons.filter((r) => r.lotIds.some((id) => reached.has(id)));
+}
+
+/** The page's picks in ONE query, keyed by the lot they were asked for; a claim still out is not a pick. */
 export async function similarPicksFor(lotIds: string[]): Promise<Map<string, SimilarPickRecord>> {
   const out = new Map<string, SimilarPickRecord>();
   const ids = [...new Set(lotIds)].filter(Boolean);
   if (ids.length === 0) return out;
   const rows = await db.execute<{ lot_id: string; picked_lot_ids: string[] | null; reasons: unknown }>(sql`
     SELECT lot_id::text AS lot_id, picked_lot_ids::text[] AS picked_lot_ids, reasons
-      FROM lot_similar_picks WHERE lot_id IN (${uuidList(ids)})
+      FROM lot_similar_picks WHERE lot_id IN (${uuidList(ids)}) AND model <> ${SIMILAR_PICK_PENDING}
   `);
   for (const r of rows) {
     out.set(r.lot_id, {
       pickedLotIds: r.picked_lot_ids ?? [],
       reasons: Array.isArray(r.reasons)
-        ? (r.reasons as { name?: unknown; reason?: unknown }[]).map((x) => ({
+        ? (r.reasons as { name?: unknown; reason?: unknown; lotIds?: unknown }[]).map((x) => ({
             name: String(x.name ?? ''),
             reason: String(x.reason ?? ''),
+            lotIds: Array.isArray(x.lotIds) ? x.lotIds.map(String) : [],
           }))
         : [],
     });

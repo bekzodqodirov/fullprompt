@@ -34,10 +34,13 @@ import {
   priceHistoryForLots,
   pricedRowsForLots,
   similarPicksFor,
+  type PickedHistory,
   type PriceHistory,
-  type PriceHistoryRow,
+  type SimilarPickRecord,
 } from '@/modules/wms/finance/price-history';
-import { calcRegistrySight } from '@/modules/wms/calc/control-scope';
+import { calcControlScopeFor, calcRegistrySight } from '@/modules/wms/calc/control-scope';
+import { SECTION_LABELS } from '@/modules/wms/calc/labels';
+import { logger } from '@/modules/platform/logger';
 import { dealCalcSheets, type CalcAnswer, type CalcSheet as CalcSheetData } from '@/modules/wms/calc/sheet';
 import { CalcAnswers, CalcSheet } from '@/components/calc-sheet';
 import { PriceHistoryBody } from '@/components/price-history';
@@ -87,6 +90,7 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
   const tb = await getTranslations('batches');
   const tbc = await getTranslations('batchCard');
   const tcargo = await getTranslations('cargo');
+  const tc = await getTranslations('calc');
 
   const head = await loadBatchHead(id);
   if (!head) notFound();
@@ -176,25 +180,47 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
   // and never on an internal leg, which is never priced.
   const sheetSight = calcRegistrySight(actor);
   const lotDealIds = [...new Set(lots.map((lot) => lot.dealId).filter((x): x is string => Boolean(x)))];
+  type DealCalc = { sheets: CalcSheetData[]; answers: CalcAnswer[]; more: number };
+  // Every read here is a HINT beside the money, and each one fails soft: a
+  // slow or broken hint is logged and drawn as nothing (or «hozir hisoblab
+  // bo'lmadi»), never the error page on the screen trucks are priced on. The
+  // history reads carry their own ceiling and `failed` flag
+  // (`price-history.ts`); these catches are for the rest. An internal leg is
+  // never priced, so it pays for neither icon.
+  const soft = <T,>(what: string, read: Promise<T>, fallback: T) =>
+    read.catch((err: unknown) => {
+      logger.warn({ err, batchId: id }, `[pricing] ${what} failed`);
+      return fallback;
+    });
   const [history, picks, sheets] = await Promise.all([
-    priceHistoryForLots(lots, id, actor),
-    similarPicksFor(lots.map((lot) => lot.lotId)),
+    internal ? Promise.resolve(new Map<string, PriceHistory>()) : priceHistoryForLots(lots, id, actor),
+    internal
+      ? Promise.resolve(new Map<string, SimilarPickRecord>())
+      : soft('similar picks', similarPicksFor(lots.map((lot) => lot.lotId)), new Map<string, SimilarPickRecord>()),
     sheetSight && !internal && lotDealIds.length > 0
-      ? dealCalcSheets(lotDealIds, sheetSight)
-      : Promise.resolve(new Map<string, { sheets: CalcSheetData[]; answers: CalcAnswer[]; more: number }>()),
+      ? soft('deal calc sheets', dealCalcSheets(lotDealIds, sheetSight), new Map<string, DealCalc>())
+      : Promise.resolve(new Map<string, DealCalc>()),
   ]);
   // The AI's picks are priced by the ledger like every other row — only for
-  // a lot the free search still finds nothing for (18a).
-  const pickedRows = new Map<string, PriceHistoryRow[]>(
+  // a lot the free search still finds nothing for (18a). `pricedRowsForLots`
+  // answers `failed` itself rather than throwing.
+  const picked = new Map<string, PickedHistory>(
     await Promise.all(
       lots
         .filter((lot) => picks.has(lot.lotId) && (history.get(lot.lotId)?.rows.length ?? 0) === 0)
         .map(async (lot) => {
           const priced = await pricedRowsForLots(picks.get(lot.lotId)!.pickedLotIds, id, actor, lot.clientId);
-          return [lot.lotId, priced.rows] as const;
+          return [lot.lotId, priced] as const;
         }),
     ),
   );
+  // «Which calculation» for a lot's link state: its V# and section, and for
+  // the reader who confirms links, one tap to where that happens.
+  const linkDoor = calcControlScopeFor(actor) !== 'none';
+  const linkedCalcLabel = (dealCalc: DealCalc, requestId: string) => {
+    const sheet = dealCalc.sheets.find((row) => row.requestId === requestId);
+    return sheet ? `V${sheet.quoteNo} · ${tc(SECTION_LABELS[sheet.section] as 'sections.podklyuch')}` : null;
+  };
   const truckLinks = mayOpenBatchPricing(actor.permissions, false);
   const emptyHistory: PriceHistory = { rows: [], failed: false };
 
@@ -332,6 +358,7 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
               the row, and a fold that opens takes the whole width — at 360 px
               a body beside its icon is a column two words wide. A press, not
               a hover: phones have none; the title is the desktop's hint. */}
+          {internal ? null : (
           <div className="mt-1 flex flex-wrap gap-2" data-testid="lot-icons">
             <details className="min-w-0 open:basis-full" data-testid="lot-price-history">
               <summary
@@ -345,7 +372,7 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                 <PriceHistoryBody
                   history={history.get(lot.lotId) ?? emptyHistory}
                   pick={picks.get(lot.lotId) ?? null}
-                  pickedRows={pickedRows.get(lot.lotId) ?? []}
+                  picked={picked.get(lot.lotId) ?? null}
                   lotId={lot.lotId}
                   batchId={batch.id}
                   truckLinks={truckLinks}
@@ -370,7 +397,21 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                       ✅, or the machine's guess still waiting for the VED. */}
                   {lot.calcRequestId ? (
                     <p className={lot.calcLinkConfirmed ? 'text-good' : 'text-warn'} data-testid="lot-calc-link">
+                      {/* WHICH calculation: a deal can carry a rastamojka and
+                          a yo'lkira sheet, and «this calculation» is then
+                          two claims. */}
+                      {linkedCalcLabel(dealCalc, lot.calcRequestId) ? (
+                        <b className="font-mono">{linkedCalcLabel(dealCalc, lot.calcRequestId)} — </b>
+                      ) : null}
                       {lot.calcLinkConfirmed ? `✅ ${t('calcLinkConfirmed')}` : `⏳ ${t('calcLinkSuggested')}`}
+                      {!lot.calcLinkConfirmed && linkDoor ? (
+                        <>
+                          {' · '}
+                          <Link href="/hisoblash/nazorat" className="text-brand-700 underline" data-testid="lot-calc-confirm">
+                            {t('calcLinkConfirmHere')}
+                          </Link>
+                        </>
+                      ) : null}
                     </p>
                   ) : null}
                   {firstOfDeal ? (
@@ -392,6 +433,7 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
               </details>
             ) : null}
           </div>
+          )}
           </li>
         );
       })}

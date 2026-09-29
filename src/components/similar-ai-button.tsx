@@ -19,6 +19,7 @@ const ERRORS = {
   found_free: 'priceHistoryAiError.found_free',
   failed: 'priceHistoryAiError.failed',
   forbidden: 'priceHistoryAiError.forbidden',
+  already: 'priceHistoryAiError.already',
 } as const;
 
 type ErrorCode = keyof typeof ERRORS;
@@ -43,7 +44,8 @@ export function SimilarAiButton({ lotId, batchId }: { lotId: string; batchId: st
         router.refresh();
         return;
       }
-      const code = !res.ok ? 'forbidden' : (body.error ?? 'failed');
+      // Only the door's 404 means «not yours»; a 500 is a blip, not a refusal.
+      const code = res.status === 404 ? 'forbidden' : !res.ok ? 'failed' : (body.error ?? 'failed');
       setError(code in ERRORS ? (code as ErrorCode) : 'failed');
     } catch {
       setError('failed');

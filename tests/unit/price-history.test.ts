@@ -3,6 +3,7 @@ import {
   isMixed,
   PRICE_HISTORY_CAP,
   rankPriceHistory,
+  visibleReasons,
   type PriceCandidate,
 } from '@/modules/wms/finance/price-history';
 
@@ -108,5 +109,28 @@ describe('«aralash» (17a)', () => {
     expect(isMixed({ goodsKinds: 1 })).toBe(false);
     // «we do not know» is not a blend either.
     expect(isMixed({ goodsKinds: 0 })).toBe(false);
+  });
+});
+
+describe('the AI\'s reasons a reader is shown', () => {
+  // A reason names another client's goods, chosen from the PRESSER's trucks:
+  // it is printed only beside lots that reached a row priced for THIS reader.
+  const pick = {
+    pickedLotIds: ['l1', 'l2', 'l3'],
+    reasons: [
+      { name: '鼠标 / мышь', reason: 'same goods', lotIds: ['l1', 'l2'] },
+      { name: '键盘 / клавиатура', reason: 'same set', lotIds: ['l3'] },
+      { name: 'legacy', reason: 'no lots stored', lotIds: [] },
+    ],
+  };
+
+  it('keeps a reason only when one of its lots reached the reader', () => {
+    expect(visibleReasons(pick, ['l2']).map((r) => r.name)).toEqual(['鼠标 / мышь']);
+    expect(visibleReasons(pick, ['l1', 'l3']).map((r) => r.name)).toEqual(['鼠标 / мышь', '键盘 / клавиатура']);
+  });
+
+  it('shows nothing to a reader none of whose rows came from them', () => {
+    expect(visibleReasons(pick, [])).toEqual([]);
+    expect(visibleReasons(pick, ['elsewhere'])).toEqual([]);
   });
 });

@@ -114,6 +114,13 @@ export const SETTING_DEFAULTS = {
    */
   ai_calc_daily_limit: 200,
   /**
+   * How many times a day «Oldingi narx»'s 🤖 may ask the model (0119). Its
+   * own count, not `ai_calc_daily_limit`'s: the accountant presses it across
+   * a truck's lots, and a shared budget would let those presses stop the
+   * VED's Telegram estimates until midnight.
+   */
+  price_history_ai_daily_limit: 50,
+  /**
    * Write the AI-VED's estimate onto the card's lenta as well as into the
    * seller's chat (his answer 2a). A switch because it is the only thing on
    * this path that writes where OTHER people read.

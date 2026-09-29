@@ -1,15 +1,12 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { db } from '../../platform/db/client';
 import { logger } from '../../platform/logger';
 import { aiConfigured, ANALYST_MODEL } from '../../platform/ai/model';
 import type { ScopedActor } from '../../platform/rbac/scope';
-import { batchEndsInScopeSql } from '../batches/card-door';
 import { riderRowsSql } from '../batches/riders';
 import { productKeySql } from '../tnved/service';
-import { PRICING_CHARGE_TYPES } from './pricing-view';
-import { windowStart } from './price-history';
+import { pricedTruckSql, underCeiling, windowStart } from './price-history';
 
 /**
  * «📈 Oldingi narx»'s fallback (owner's 18a: «topa olmasa AI»). A Chinese
@@ -145,9 +142,14 @@ export async function pickSimilarLots(
 /**
  * What the model may choose from: distinct goods names of past lots that
  * carry a live price on a departed, in-scope truck within twelve
- * months — the free list's own frame, without its match arms — ordered by the
- * closer of the two trigram scores, then newest. Sixty names, cut at 120
- * characters: a declaration paragraph is not a name.
+ * months — the free list's own truck sentence (`pricedTruckSql`, #513),
+ * without its match arms — ordered by the closer of the two trigram scores,
+ * then newest. Sixty names, cut at 120 characters: a declaration paragraph is
+ * not a name.
+ *
+ * No indexed arm can serve «every lot, closest first», so the read is bounded
+ * the way the free list is (`underCeiling`): a statement past the ceiling
+ * throws, and the route answers `failed` rather than holding the POST.
  */
 export async function similarCandidates(
   lot: { id: string; zh: string; ru: string | null },
@@ -155,33 +157,29 @@ export async function similarCandidates(
   actor: ScopedActor,
 ): Promise<SimilarCandidate[]> {
   const since = windowStart(13);
-  const truckSince = windowStart(12);
-  const types = sql.raw(`(${PRICING_CHARGE_TYPES.map((t) => `'${t}'`).join(', ')})`);
-  const rows = await db.execute<{ key: string; name: string; lot_ids: string[] }>(sql`
-    SELECT ${productKeySql(sql`pl.product_name_zh`)} AS key,
-           min(pl.product_name_zh || coalesce(' / ' || pl.product_name_ru, '')) AS name,
-           (array_agg(pl.id::text ORDER BY pr.confirmed_at DESC))[1:10] AS lot_ids,
-           max(greatest(similarity(pl.product_name_zh, ${lot.zh}),
-                        similarity(coalesce(pl.product_name_ru, ''), ${lot.ru ?? ''}))) AS sim,
-           max(pr.confirmed_at) AS newest
-      FROM receipt_lots pl
-      JOIN receipts pr ON pr.id = pl.receipt_id
-     WHERE pr.client_id IS NOT NULL AND pr.voided_at IS NULL AND pr.status = 'confirmed'
-       AND pr.confirmed_at >= ${since}::timestamptz
-       AND pl.id <> ${lot.id}::uuid
-       AND EXISTS (
-         SELECT 1
-           FROM (${riderRowsSql({ boxes: sql`SELECT lb.id FROM boxes lb WHERE lb.lot_id = pl.id` })}) rides
-           JOIN batches b ON b.id = rides.batch_id
-           JOIN client_transactions c ON c.batch_id = b.id AND c.client_id = pr.client_id
-          WHERE b.id <> ${batchId}::uuid AND b.departed_at IS NOT NULL
-            AND b.departed_at >= ${truckSince}::timestamptz
-            AND ${batchEndsInScopeSql(actor, 'b')}
-            AND c.type IN ${types} AND c.voided_at IS NULL
-       )
-     GROUP BY 1
-     ORDER BY sim DESC, newest DESC
-     LIMIT ${SIMILAR_CANDIDATES}
-  `);
-  return rows.map((r) => ({ name: r.name.slice(0, 120), lotIds: r.lot_ids ?? [] }));
+  const rows = await underCeiling((tx) =>
+    tx.execute<{ key: string; name: string; lot_ids: string[] }>(sql`
+      SELECT ${productKeySql(sql`pl.product_name_zh`)} AS key,
+             min(pl.product_name_zh || coalesce(' / ' || pl.product_name_ru, '')) AS name,
+             (array_agg(pl.id::text ORDER BY pr.confirmed_at DESC))[1:10] AS lot_ids,
+             max(greatest(similarity(pl.product_name_zh, ${lot.zh}),
+                          similarity(coalesce(pl.product_name_ru, ''), ${lot.ru ?? ''}))) AS sim,
+             max(pr.confirmed_at) AS newest
+        FROM receipt_lots pl
+        JOIN receipts pr ON pr.id = pl.receipt_id
+       WHERE pr.client_id IS NOT NULL AND pr.voided_at IS NULL AND pr.status = 'confirmed'
+         AND pr.confirmed_at >= ${since}::timestamptz
+         AND pl.id <> ${lot.id}::uuid
+         AND EXISTS (
+           SELECT 1
+             FROM (${riderRowsSql({ boxes: sql`SELECT lb.id FROM boxes lb WHERE lb.lot_id = pl.id` })}) rides
+             JOIN batches b ON b.id = rides.batch_id
+            WHERE ${pricedTruckSql(batchId, actor, sql`pr.client_id`)}
+         )
+       GROUP BY 1
+       ORDER BY sim DESC, newest DESC
+       LIMIT ${SIMILAR_CANDIDATES}
+    `),
+  );
+  return [...rows].map((r) => ({ name: r.name.slice(0, 120), lotIds: r.lot_ids ?? [] }));
 }

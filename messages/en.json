@@ -712,7 +712,8 @@
       "lead_assign_origins": "Web pages allowed to ask «who should the visitor write to?» (space-separated, each https://…)",
       "kpi_expense_category_id": "Expense category that sellers’ KPI payouts are written into (cash only). Chosen on the «Staff» page.",
       "salary_expense_category_id": "Salary category: the «Staff» page shows each salary and whether it was paid from its monthly templates.",
-      "price_history_min_sim": "How close a goods name must be to a past receipt before «Previous price» shows its truck (0..1)"
+      "price_history_min_sim": "How close a goods name must be to a past receipt before «Previous price» shows its truck (0..1)",
+      "price_history_ai_daily_limit": "How many times a day the 🤖 button in «Previous price» may ask the AI (separate from the calculation limit)"
     },
     "driverApp": "Driver app",
     "callsApp": "Calls app",
@@ -1739,7 +1740,7 @@
     "priceHistoryHint": "What we charged for the same goods on past trucks (12 months)",
     "priceHistoryOwnMark": "this client",
     "priceHistoryNone": "Nothing found: no truck priced similar goods in 12 months",
-    "priceHistoryMixed": "mixed: {n} kinds of goods",
+    "priceHistoryMixed": "mixed: {n, plural, one {# kind} other {# kinds}} of goods",
     "priceHistoryMatchExact": "same name",
     "priceHistoryMatchCode": "TNVED",
     "priceHistoryMatchName": "similar name",
@@ -1754,13 +1755,15 @@
       "budget": "The AI daily limit is used up",
       "found_free": "Found without AI — refresh the page",
       "failed": "The AI did not answer — try again later",
-      "forbidden": "No access"
+      "forbidden": "No access",
+      "already": "The AI has already been asked about these goods — refresh the page"
     },
     "dealCalc": "Deal calculation",
     "dealCalcHint": "The customs calculation of this receipt’s deal: groups, TNVED, baza, duty, VAT, freight, total",
     "calcUnsealed": "not sealed",
     "calcLinkConfirmed": "receipt confirmed for this calculation",
     "calcLinkSuggested": "a guess (waiting for the VED to confirm)",
+    "calcLinkConfirmHere": "confirm on Calculation control",
     "calcPrevVersion": "Previous: V{n}",
     "calcRecalcOpen": "being recalculated — the old price stands",
     "calcMore": "{n} more calculations",

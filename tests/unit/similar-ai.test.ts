@@ -87,3 +87,43 @@ describe('the model can never reach a number (source shape)', () => {
     expect(source).toMatch(/new Anthropic\(\{[^}]*timeout:/);
   });
 });
+
+describe('the 🤖 route never pays for a known answer, nor twice (review, 2026-09-29)', () => {
+  const route = strip(readFileSync('src/app/api/pricing/similar/[lotId]/route.ts', 'utf8'));
+  const at = (needle: string) => {
+    const i = route.indexOf(needle);
+    expect(i, needle).toBeGreaterThan(-1);
+    return i;
+  };
+
+  it('a free read that FAILED is refused before any paid step — not read as «nothing found»', () => {
+    const failed = at("if (!free || free.failed) return refuse('failed');");
+    expect(failed).toBeLessThan(at("if (free.rows.length > 0) return refuse('found_free');"));
+    expect(failed).toBeLessThan(at('similarCandidates('));
+    expect(failed).toBeLessThan(at('pickSimilarLots('));
+  });
+
+  it('the lot is CLAIMED before the model is called, and a lost claim is refused', () => {
+    const claim = at('.insert(lotSimilarPicks)');
+    expect(claim).toBeLessThan(at('pickSimilarLots('));
+    expect(at("if (claimed.length === 0) return refuse('already');")).toBeLessThan(at('pickSimilarLots('));
+    // Takes over only a DEAD claim, never a stored pick.
+    expect(route).toMatch(/setWhere: sql`\$\{lotSimilarPicks\.model\} = \$\{SIMILAR_PICK_PENDING\}/);
+  });
+
+  it('spends its own budget, not the calculation half\'s', () => {
+    expect(route).toContain("aiCalcBudgetLeft('similar')");
+  });
+
+  it('only the door\'s 404 reads as «no access» on the button', () => {
+    const button = strip(readFileSync('src/components/similar-ai-button.tsx', 'utf8'));
+    expect(button).toContain("res.status === 404 ? 'forbidden' : !res.ok ? 'failed'");
+  });
+
+  it('the candidates say the free list\'s truck sentence, not a copy of it (#513)', () => {
+    const lib = strip(readFileSync('src/modules/wms/finance/similar-ai.ts', 'utf8'));
+    expect(lib).toMatch(/pricedTruckSql\(batchId, actor, sql`pr\.client_id`\)/);
+    expect(lib).not.toMatch(/departed_at IS NOT NULL/);
+    expect(lib).toContain('underCeiling(');
+  });
+});

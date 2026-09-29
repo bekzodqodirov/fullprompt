@@ -21,6 +21,13 @@ export interface Seeded {
   clientPrice: string;
   /** The Готово answer — the figure both sheets print. */
   answer: string;
+  /**
+   * What the seller OFFERED the client on that answer (the m9zt path's
+   * `calc_offers` row, answer-anchored): the price that reaches the pricing
+   * row as «client price − floor = upsale». Distinctive digits, so its absence
+   * from a VED's page is a claim a search can check.
+   */
+  offerPrice: string;
   /** A Russian name long enough to push a fold past 360 px if it could. */
   ruName: string;
 }
@@ -66,6 +73,12 @@ export async function seedPriceIcons(batchId: string, run: string): Promise<Seed
                                  completed_at, completed_via, completed_by, answer_amount, answer_currency, answer_note)
       VALUES (gen_random_uuid(), 'deal', ${deal!.id}, 'rastamojka', ${owner!.id}, 1, now(),
               now(), 'task', ${ved!.id}, ${answer}, 'USD', 'belgilar e2e') RETURNING id`;
+    const offerPrice = '987.65';
+    await q`
+      INSERT INTO calc_offers (id, request_id, entity_type, entity_id, client_price_usd, below_floor,
+                               locale, text, offered_by)
+      VALUES (gen_random_uuid(), ${request!.id}, 'deal', ${deal!.id}, ${offerPrice}, false,
+              'uz', ${`belgilar e2e ${run}`}, ${owner!.id})`;
     return {
       clientId: client!.id,
       dealId: deal!.id,
@@ -75,6 +88,7 @@ export async function seedPriceIcons(batchId: string, run: string): Promise<Seed
       requestId: request!.id,
       clientPrice,
       answer,
+      offerPrice,
       ruName,
     };
   } finally {
@@ -94,6 +108,7 @@ export async function cleanPriceIcons(s: Seeded): Promise<void> {
     await q`UPDATE receipts SET status = 'voided', voided_at = now(), void_reason = 'e2e', deal_id = NULL
              WHERE id = ${s.receiptId}`;
     await q`DELETE FROM lot_similar_picks WHERE lot_id = ${s.lotId}`;
+    await q`DELETE FROM calc_offers WHERE request_id = ${s.requestId}`;
     await q`DELETE FROM calc_requests WHERE id = ${s.requestId}`;
     await q`DELETE FROM crm_activities WHERE entity_id = ${s.dealId}`;
     await q`DELETE FROM deals WHERE id = ${s.dealId}`;
@@ -110,6 +125,7 @@ export async function leftovers(s: Seeded): Promise<number> {
     const [row] = await q`
       SELECT (SELECT count(*) FROM deals WHERE id = ${s.dealId})
            + (SELECT count(*) FROM calc_requests WHERE id = ${s.requestId})
+           + (SELECT count(*) FROM calc_offers WHERE request_id = ${s.requestId})
            + (SELECT count(*) FROM boxes WHERE id = ${s.boxId} AND current_batch_id IS NOT NULL)
            + (SELECT count(*) FROM receipts WHERE id = ${s.receiptId} AND voided_at IS NULL) AS n`;
     return Number(row!.n);
