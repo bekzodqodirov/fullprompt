@@ -6,8 +6,16 @@ FROM base AS deps
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 
-FROM base AS build
-COPY --from=deps /app/node_modules ./node_modules
+# FROM deps, not base: pnpm ITSELF is downloaded by corepack the first time
+# `pnpm` runs, into /root/.cache/node/corepack — that happened in the deps
+# stage's install. A build stage started from `base` has no copy, so every
+# code change fetched pnpm from registry.npmjs.org again, and the 2026-09-29
+# deploy died on that one fetch (a connect timeout from the server) with
+# nothing of ours changed (DECISIONS #1228). From deps, a code-only deploy
+# reaches no registry at all; only a lockfile change still needs npm, for the
+# packages themselves. `.dockerignore` keeps the host's node_modules out, so
+# `COPY . .` does not replace the installed ones.
+FROM deps AS build
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 # V8's default heap on the owner's server is about 2 GB, and the 0113-0116

@@ -39,6 +39,17 @@ Birinchi qator kodni bir marta quradi, ikkinchisi o'sha natijani qayta
 ishlatadi — og'ir qurish serverda faqat bir marta yuradi. 2026-09-29 dagi
 deploy qurish paytida xotira yetmay to'xtagan edi (DECISIONS #1223).
 
+> **Qurish «Corepack is about to download … registry.npmjs.org …» va
+> `ConnectTimeoutError` bilan to'xtasa** — server npm saytiga ulana olmayapti.
+> Sayt bu paytda eski versiyada ishlab turadi: yangi versiya qurilmaguncha
+> hech bir konteyner almashtirilmaydi. 2026-09-29 dan boshlab faqat kod
+> o'zgargan yangilanish npm'ga umuman murojaat qilmaydi (DECISIONS #1228);
+> bu xato endi faqat yangi kutubxona qo'shilgan (`pnpm-lock.yaml` o'zgargan)
+> yangilanishda chiqishi mumkin. Unda ulanishni tekshiring va bir necha
+> daqiqadan keyin qayta urining:
+> `curl -sS -m 15 -o /dev/null -w '%{http_code}\n' https://registry.npmjs.org/`
+> → `200` chiqsa, qurishni qaytaring.
+
 Nima bo'ladi: yangi image quriladi → `migrate` xizmati migratsiyalarni
 qo'llaydi va seedni ishga tushiradi (yangi ruxsatlar shu yerda tarqaladi) →
 ilova qayta ishga tushadi. Umumiy vaqt: 2-5 daqiqa, sayt shu davrda qisqa
