@@ -92,8 +92,16 @@ export function isMixed(row: { goodsKinds: number }): boolean {
 /** His 28a: the last five, within twelve months. */
 export const PRICE_HISTORY_CAP = 5;
 
-/** Past lots probed per needle, newest-and-own first — the read's bound, stated. */
-const MATCHED_LOTS_CAP = 300;
+/**
+ * Past lots probed per needle, own client first, then the strongest match,
+ * then the newest — the read's bound, stated. Each probed lot costs a riders
+ * walk over its cartons, and that walk is the whole bill: MEASURED on the
+ * shaped copy (every one of its 4,026 lots carries one name, so every lot
+ * matches every needle), a four-lot truck read in ~650 ms at 300 and ~270 ms
+ * at 100. Five rows are wanted; a hundred candidates leave room for ninety-
+ * five that were never priced.
+ */
+const MATCHED_LOTS_CAP = 100;
 
 const STRENGTH: Record<Exclude<PriceMatch, 'ai'>, number> = { exact: 3, code: 2, name: 1 };
 const MATCH_OF = (strength: number): PriceMatch => (strength >= 3 ? 'exact' : strength === 2 ? 'code' : 'name');
