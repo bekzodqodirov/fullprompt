@@ -1,5 +1,5 @@
 import { cache } from 'react';
-import { eq, isNotNull, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { writeAudit } from '../../platform/audit/service';
 import { db, type Tx } from '../../platform/db/client';
 import { isServerBehind } from '../../platform/db/errors';
@@ -37,16 +37,20 @@ const NOTE_MAX = 300;
 const isPost = (post: string): post is BorderPost => Object.hasOwn(BORDER_POSTS, post);
 
 /**
- * The typed queues as the schedule needs them: hours and WHEN they were
- * typed, nothing else. No names and no notes — this reaches the customer's
+ * The typed queues as the schedule needs them: the hours, WHEN they took
+ * effect (`hours_since` — never `updated_at`, which a note edit moves), and
+ * the regime before them. No names and no notes — this reaches the customer's
  * cabinet and the bot, and who typed a number is the logist's trail, not the
  * customer's business.
  *
  * Once per request (React `cache`, no arguments — so every reader on one page
  * shares one read), on the pool: none of its callers is inside a transaction
- * (#714). A row that breaks the table's own rules — an unknown post, a range
- * upside down — is skipped rather than trusted: the default is always an
- * honest answer, a nonsense wait never is.
+ * (#714). A range that breaks the table's own rules — an unknown post, a
+ * range upside down — is skipped rather than trusted: the default is always
+ * an honest answer, a nonsense wait never is. A reset row is kept (its hours
+ * are the default, counted from the reset for the trucks queueing at that
+ * moment) only while it carries the regime it replaced; with nothing before
+ * it, it IS the default.
  *
  * `server_behind` (the table not migrated yet — deploy morning, #472) reads
  * as «nothing typed», i.e. exactly today's dates.
@@ -58,15 +62,23 @@ export const loadBorderHours = cache(async function loadBorderHours(): Promise<B
         post: borderQueue.post,
         minHours: borderQueue.minHours,
         maxHours: borderQueue.maxHours,
-        updatedAt: borderQueue.updatedAt,
+        hoursSince: borderQueue.hoursSince,
+        prevMinHours: borderQueue.prevMinHours,
+        prevMaxHours: borderQueue.prevMaxHours,
+        prevSince: borderQueue.prevSince,
       })
-      .from(borderQueue)
-      .where(isNotNull(borderQueue.minHours));
+      .from(borderQueue);
     const out: BorderHours = {};
     for (const r of rows) {
-      if (!isPost(r.post) || r.minHours === null || r.maxHours === null) continue;
-      if (r.minHours < 0 || r.maxHours < r.minHours) continue;
-      out[r.post] = { hours: [r.minHours, r.maxHours], sinceMs: r.updatedAt.getTime() };
+      if (!isPost(r.post)) continue;
+      const hours = range(r.minHours, r.maxHours);
+      const prev = range(r.prevMinHours, r.prevMaxHours);
+      if (hours === undefined || prev === undefined) continue;
+      const before = r.prevSince ? { hours: prev, sinceMs: r.prevSince.getTime() } : undefined;
+      if (hours === null && !before) continue;
+      out[r.post] = before
+        ? { hours, sinceMs: r.hoursSince.getTime(), before }
+        : { hours, sinceMs: r.hoursSince.getTime() };
     }
     return out;
   } catch (err) {
@@ -77,6 +89,13 @@ export const loadBorderHours = cache(async function loadBorderHours(): Promise<B
     throw err;
   }
 });
+
+/** A stored pair: the range, `null` for «his default», `undefined` for nonsense. */
+function range(min: number | null, max: number | null): readonly [number, number] | null | undefined {
+  if (min === null && max === null) return null;
+  if (min === null || max === null || min < 0 || max < min) return undefined;
+  return [min, max];
+}
 
 export interface BorderQueueRow {
   post: BorderPost;
@@ -213,12 +232,21 @@ function parseDays(raw: string): number {
   return Number(text.replace(',', '.'));
 }
 
-/** The row under a lock, with the concurrency check the panel's `seenAt` makes. */
+/**
+ * The row under a lock, with the concurrency check the panel's `seenAt` makes.
+ *
+ * The advisory lock comes first because `FOR UPDATE` on a row that does not
+ * exist yet locks nothing: two logists who both saw «Odatdagi» (seenAt null)
+ * would both pass the check, and the second insert would land on the first
+ * number in silence — exactly what `changed` promises to refuse. Keyed per
+ * post, so Khorgos and Yallama never wait on each other.
+ */
 async function lockedRow(
   tx: Tx,
   post: BorderPost,
   seenAt: string | null,
 ) {
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`border_queue:${post}`}::text))`);
   const [row] = await tx.select().from(borderQueue).where(eq(borderQueue.post, post)).for('update');
   if ((row?.updatedAt.toISOString() ?? null) !== seenAt) throw new BorderQueueError('changed');
   return row ?? null;
@@ -227,8 +255,16 @@ async function lockedRow(
 /**
  * Type a queue: the range in DAYS as the logist thinks of it, stored in whole
  * hours as the schedule counts them. One transaction, `tx` only (#714): the
- * row under `FOR UPDATE`, the colleague check, the upsert, the audit.
- * `updated_by` is the actor, never a posted field.
+ * lock, the colleague check, the write, the audit. `updated_by` is the actor,
+ * never a posted field.
+ *
+ * Only a change of HOURS moves the ETA's clock (`hours_since`) and hands the
+ * old range down as `prev_*`. A note edit is written and audited but leaves
+ * every queued truck's count alone. The same hours and the same note again —
+ * the natural answer to the panel's «⚠ N kun oldin» — is a CONFIRMATION: the
+ * age and the name move (so the warning goes and the panel says who looked),
+ * the clock and the history do not, and there is no audit line whose before
+ * equals its after (#502).
  */
 export async function setBorderWait(
   actor: Writer,
@@ -240,46 +276,71 @@ export async function setBorderWait(
   const minDays = parseDays(input.minDays);
   const maxDays = parseDays(input.maxDays);
   if (minDays < 0 || maxDays < minDays || maxDays > MAX_DAYS) throw new BorderQueueError('bad_range');
-  const note = input.note.trim();
-  if (note.length > NOTE_MAX) throw new BorderQueueError('note_too_long');
+  const note = input.note.trim() || null;
+  if (note && note.length > NOTE_MAX) throw new BorderQueueError('note_too_long');
   const minHours = Math.round(minDays * 24);
   const maxHours = Math.round(maxDays * 24);
 
   await db.transaction(async (tx) => {
     const before = await lockedRow(tx, post, input.seenAt);
-    const [saved] = await tx
-      .insert(borderQueue)
-      .values({ post, minHours, maxHours, note: note || null, updatedBy: actor.id })
-      .onConflictDoUpdate({
-        target: borderQueue.post,
-        set: {
-          minHours,
-          maxHours,
-          note: note || null,
-          updatedBy: actor.id,
-          // The database's clock, as the column default is — one clock for
-          // the stamp the ETA counts from, whichever door wrote it.
-          updatedAt: sql`now()`,
-        },
+    // The database's clock, as the column defaults are — one clock for the
+    // stamps the ETA and the panel count from, whichever door wrote them.
+    const stamp = { updatedBy: actor.id, updatedAt: sql`now()` };
+    if (!before) {
+      const [saved] = await tx
+        .insert(borderQueue)
+        .values({ post, minHours, maxHours, note, updatedBy: actor.id })
+        .returning({ id: borderQueue.id });
+      await writeAudit(tx, { actorId: actor.id, ...meta }, {
+        entityType: 'border_queue',
+        entityId: saved!.id,
+        action: 'update',
+        before: null,
+        after: { post, minHours, maxHours, note },
+      });
+      return;
+    }
+    const hoursChanged = before.minHours !== minHours || before.maxHours !== maxHours;
+    if (!hoursChanged && before.note === note) {
+      await tx.update(borderQueue).set(stamp).where(eq(borderQueue.id, before.id));
+      return;
+    }
+    await tx
+      .update(borderQueue)
+      .set({
+        minHours,
+        maxHours,
+        note,
+        ...stamp,
+        ...(hoursChanged
+          ? {
+              hoursSince: sql`now()`,
+              prevMinHours: before.minHours,
+              prevMaxHours: before.maxHours,
+              prevSince: before.hoursSince,
+            }
+          : {}),
       })
-      .returning({ id: borderQueue.id });
+      .where(eq(borderQueue.id, before.id));
     await writeAudit(tx, { actorId: actor.id, ...meta }, {
       entityType: 'border_queue',
-      entityId: saved!.id,
+      entityId: before.id,
       action: 'update',
-      before: before
-        ? { post, minHours: before.minHours, maxHours: before.maxHours, note: before.note }
-        : null,
-      after: { post, minHours, maxHours, note: note || null },
+      before: { post, minHours: before.minHours, maxHours: before.maxHours, note: before.note },
+      after: { post, minHours, maxHours, note },
     });
   });
 }
 
 /**
  * «Odatdagi jadvalga qaytarish»: the hours and the note go, the row and its
- * id stay, so the audit history keeps naming one thing. Nothing typed is
- * nothing to clear — no row, or a row already reset, writes nothing (an
- * audit line whose before equals its after is noise, #502).
+ * id stay, so the audit history keeps naming one thing. The reset is a change
+ * of hours like any other — his default from now, the typed range handed down
+ * as `prev_*` — so a truck queueing under the typed number is counted from
+ * this moment and does not jump the border because the default is shorter
+ * than what it has stood. Nothing typed is nothing to clear — no row, or a row
+ * already reset, writes nothing (an audit line whose before equals its after
+ * is noise, #502).
  */
 export async function clearBorderWait(
   actor: Writer,
@@ -291,9 +352,24 @@ export async function clearBorderWait(
   await db.transaction(async (tx) => {
     const before = await lockedRow(tx, post, input.seenAt);
     if (!before || (before.minHours === null && before.note === null)) return;
+    const hoursChanged = before.minHours !== null;
     await tx
       .update(borderQueue)
-      .set({ minHours: null, maxHours: null, note: null, updatedBy: actor.id, updatedAt: sql`now()` })
+      .set({
+        minHours: null,
+        maxHours: null,
+        note: null,
+        updatedBy: actor.id,
+        updatedAt: sql`now()`,
+        ...(hoursChanged
+          ? {
+              hoursSince: sql`now()`,
+              prevMinHours: before.minHours,
+              prevMaxHours: before.maxHours,
+              prevSince: before.hoursSince,
+            }
+          : {}),
+      })
       .where(eq(borderQueue.id, before.id));
     await writeAudit(tx, { actorId: actor.id, ...meta }, {
       entityType: 'border_queue',

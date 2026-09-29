@@ -89,7 +89,7 @@ describe('setBorderWait — the door and the numbers', () => {
     expect(audit[0]!.actorId).toBe(logist.id);
     expect(audit[0]!.after).toMatchObject({ post: 'khorgos', minHours: 84, maxHours: 96 });
     const hours = await loadBorderHours();
-    expect(hours.khorgos).toEqual({ hours: [84, 96], sinceMs: row.updatedAt.getTime() });
+    expect(hours.khorgos).toEqual({ hours: [84, 96], sinceMs: row.hoursSince.getTime() });
     expect(hours.yallama).toBeUndefined();
   });
 
@@ -131,6 +131,78 @@ describe('setBorderWait — the door and the numbers', () => {
   });
 });
 
+/**
+ * The two clocks (0118): `updated_at` moves on every write, `hours_since` —
+ * the moment the ETA counts queued trucks from — only when the HOURS change.
+ * One clock made a note edit add everything a queued truck had already stood
+ * to its customer's date (measured: 60 h queued, «3–4 kun» re-saved →
+ * 164–228 h left instead of 113–159).
+ */
+describe('setBorderWait — only a change of hours moves the ETA', () => {
+  const backdate = async (hours: number) => {
+    const t = new Date(Date.now() - hours * 3_600_000);
+    await db.update(borderQueue).set({ updatedAt: t, hoursSince: t }).where(eq(borderQueue.post, 'khorgos'));
+  };
+  const auditCount = async (id: string) =>
+    (await db.select().from(auditLog).where(and(eq(auditLog.entityType, 'border_queue'), eq(auditLog.entityId, id))))
+      .length;
+
+  it('a NOTE-only save leaves the clock and the history where they were, and is audited', async () => {
+    await save(logist);
+    await backdate(60);
+    const before = (await rowOf('khorgos'))!;
+    const sinceBefore = (await loadBorderHours()).khorgos!.sinceMs;
+    await save(logist, { note: 'Qor, navbat sekin', seenAt: before.updatedAt.toISOString() });
+    const after = (await rowOf('khorgos'))!;
+    expect(after.note).toBe('Qor, navbat sekin');
+    expect(after.updatedAt.getTime()).toBeGreaterThan(before.updatedAt.getTime());
+    expect((await loadBorderHours()).khorgos).toEqual({ hours: [72, 96], sinceMs: sinceBefore });
+    expect(after).toMatchObject({ prevMinHours: null, prevSince: null });
+    expect(await auditCount(after.id)).toBe(2);
+  });
+
+  it('the SAME hours and note again is a confirmation: the ⚠ goes, the clock stays, no audit line', async () => {
+    await save(logist, { note: 'navbat' });
+    await backdate(24 * 4);
+    const before = (await rowOf('khorgos'))!;
+    const today = tashkentDay();
+    expect((await borderQueueRows(today)).rows.find((r) => r.post === 'khorgos')!.typed!.warn).toBe(true);
+    await save(logist, { note: ' navbat ', seenAt: before.updatedAt.toISOString() });
+    const after = (await rowOf('khorgos'))!;
+    expect(after.hoursSince.getTime()).toBe(before.hoursSince.getTime());
+    expect(after.prevSince).toBeNull();
+    expect((await borderQueueRows(today)).rows.find((r) => r.post === 'khorgos')!.typed!.warn).toBe(false);
+    expect(await auditCount(after.id)).toBe(1);
+  });
+
+  it('a change of hours moves the clock and hands the old range down as the regime before it', async () => {
+    await save(logist, { minDays: '4', maxDays: '5' });
+    await backdate(80);
+    const before = (await rowOf('khorgos'))!;
+    await save(logist, { minDays: '5', maxDays: '6', seenAt: before.updatedAt.toISOString() });
+    const after = (await rowOf('khorgos'))!;
+    expect(after.hoursSince.getTime()).toBeGreaterThan(before.hoursSince.getTime());
+    expect((await loadBorderHours()).khorgos).toEqual({
+      hours: [120, 144],
+      sinceMs: after.hoursSince.getTime(),
+      before: { hours: [96, 120], sinceMs: before.hoursSince.getTime() },
+    });
+  });
+
+  it('two logists who both saw «Odatdagi»: the second is refused, not written over the first', async () => {
+    // FOR UPDATE on a row that does not exist locks nothing — the per-post
+    // advisory lock is what makes the second press wait and then see a row.
+    const [a, b] = await Promise.all([
+      codeOf(save(logist, { minDays: '1', maxDays: '2' })),
+      codeOf(save(logist, { minDays: '6', maxDays: '7' })),
+    ]);
+    expect([a, b].sort()).toEqual(['changed', null].sort());
+    const row = (await rowOf('khorgos'))!;
+    expect([row.minHours, row.maxHours]).toEqual(a === null ? [24, 48] : [144, 168]);
+    expect(await auditCount(row.id)).toBe(1);
+  });
+});
+
 describe('clearBorderWait — «Odatdagi jadvalga qaytarish»', () => {
   it('NULLs the hours and the note, keeps the row id, and the dates fall back to his defaults', async () => {
     await save(logist, { note: 'navbat' });
@@ -139,7 +211,13 @@ describe('clearBorderWait — «Odatdagi jadvalga qaytarish»', () => {
     const after = (await rowOf('khorgos'))!;
     expect(after.id).toBe(before.id);
     expect(after).toMatchObject({ minHours: null, maxHours: null, note: null, updatedBy: logist.id });
-    expect((await loadBorderHours()).khorgos).toBeUndefined();
+    // His default from the reset on, with the typed range handed down: a
+    // truck queueing under «3–4 kun» is counted from here (eta.ts (k)).
+    expect((await loadBorderHours()).khorgos).toEqual({
+      hours: null,
+      sinceMs: after.hoursSince.getTime(),
+      before: { hours: [72, 96], sinceMs: before.hoursSince.getTime() },
+    });
     // A reset row reads exactly like no row on the panel — no name, no note.
     const { rows } = await borderQueueRows(tashkentDay());
     const khorgos = rows.find((r) => r.post === 'khorgos')!;

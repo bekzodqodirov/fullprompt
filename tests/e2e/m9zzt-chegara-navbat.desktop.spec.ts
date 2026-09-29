@@ -1,17 +1,17 @@
 import 'dotenv/config';
 import { expect, test, type Page } from '@playwright/test';
-import postgres from 'postgres';
+import { database, dropTruck, mintTruck, putQueueBack, readQueue, type QueueRow } from './chegara-fixture';
 
 /**
  * «Chegara navbatlari» at 1280×900, in Russian and in Uzbek, with the edit
  * fold open — the screenshots the round is looked at through — and the
- * Mashina tab's pins on a truck bound for Uzbekistan.
+ * Mashina tab's pins on a truck of this spec's own, bound for Tashkent.
  *
  * Two pieces of configuration are borrowed and returned EXACTLY (#183): the
  * border_queue table (a typed wait moves every Horgos date) and the logist's
- * own language (the screen's language is the person's, not a cookie). The
- * returns are the last TEST, and repeated in afterAll with no browser in
- * case an earlier test failed and skipped it.
+ * own language (the screen's language is the person's, not a cookie) — and
+ * the truck it mints is deleted. The returns are the last TEST, and repeated
+ * in afterAll with no browser in case an earlier test failed and skipped it.
  */
 
 test.describe.configure({ mode: 'serial' });
@@ -19,46 +19,20 @@ test.describe.configure({ mode: 'serial' });
 const PASSWORD = 'demo1234';
 const LOGIST = '+998900000003';
 
-function database() {
-  const url = process.env.DATABASE_URL;
-  if (!url) throw new Error('DATABASE_URL is required to snapshot and restore this spec');
-  return postgres(url, { max: 1, onnotice: () => {} });
-}
-
-type QueueRow = {
-  id: string;
-  post: string;
-  min_hours: number | null;
-  max_hours: number | null;
-  note: string | null;
-  updated_by: string | null;
-  updated_at: string;
-};
-
 let queue: QueueRow[] | null = null;
 let locale: string | null = null;
+let truckId: string | null = null;
 let restored = false;
-
-async function readQueue(sql: postgres.Sql): Promise<QueueRow[]> {
-  return sql<QueueRow[]>`
-    SELECT id, post, min_hours, max_hours, note, updated_by, updated_at::text AS updated_at
-    FROM border_queue ORDER BY post`;
-}
 
 async function restore() {
   if (restored || queue === null) return;
   const sql = database();
   try {
     await sql.begin(async (tx) => {
-      await tx`DELETE FROM border_queue`;
-      for (const r of queue!) {
-        await tx`
-          INSERT INTO border_queue (id, post, min_hours, max_hours, note, updated_by, updated_at)
-          VALUES (${r.id}, ${r.post}, ${r.min_hours}, ${r.max_hours}, ${r.note}, ${r.updated_by},
-                  ${r.updated_at}::timestamptz)`;
-      }
+      await putQueueBack(tx, queue!);
       if (locale !== null) await tx`UPDATE users SET locale = ${locale} WHERE phone = ${LOGIST}`;
     });
+    if (truckId) await dropTruck(sql, truckId);
     restored = true;
   } finally {
     await sql.end();
@@ -83,12 +57,13 @@ test.afterAll(async () => {
   await restore();
 });
 
-test('borrow the queues and the logist’s language', async () => {
+test('borrow the queues and the logist’s language, mint a truck to Tashkent', async () => {
   const sql = database();
   try {
     queue = await readQueue(sql);
     const [row] = await sql<{ locale: string }[]>`SELECT locale FROM users WHERE phone = ${LOGIST}`;
     locale = row!.locale;
+    truckId = await mintTruck(sql, LOGIST);
   } finally {
     await sql.end();
   }
@@ -112,34 +87,24 @@ test('the panel at 1280×900 in Russian and in Uzbek, the fold open', async ({ p
   }
 });
 
-test('the Mashina tab offers a truck bound for Uzbekistan the pins of its own road', async ({ page }) => {
-  const sql = database();
-  let batchId: string | undefined;
-  try {
-    // Any truck on the road to Uzbekistan the demo has (m3 departs one to
-    // Tashkent) — a screenshot of the pins, not a claim about how many exist.
-    const [row] = await sql<{ id: string }[]>`
-      SELECT b.id FROM batches b JOIN warehouses d ON d.id = b.dest_warehouse_id
-      WHERE b.status = 'in_transit' AND d.country = 'UZ' ORDER BY b.departed_at DESC NULLS LAST LIMIT 1`;
-    batchId = row?.id;
-  } finally {
-    await sql.end();
-  }
-  test.skip(!batchId, 'no truck on the road to Uzbekistan in this database');
+test('the Mashina tab offers a truck bound for Tashkent the pins of its own road', async ({ page }) => {
   await login(page, LOGIST);
-  await page.goto(`/batches/${batchId}/mashina`);
-  await expect(page.getByTestId('batch-where-panel')).toBeVisible();
+  await page.goto(`/batches/${truckId}/mashina`);
+  const panel = page.getByTestId('batch-where-panel');
+  await expect(panel).toBeVisible();
+  await expect(panel.locator('form button[type="submit"]')).toHaveCount(3);
   await widthFits(page);
   await page.screenshot({ path: 'test-results/chegara-mashina-pins-1280.png', fullPage: true });
 });
 
-test('the queues and the language are returned exactly', async () => {
+test('the queues, the language and the truck are returned exactly', async () => {
   await restore();
   const sql = database();
   try {
     expect(await readQueue(sql)).toEqual(queue);
     const [row] = await sql<{ locale: string }[]>`SELECT locale FROM users WHERE phone = ${LOGIST}`;
     expect(row!.locale).toBe(locale);
+    expect(await sql`SELECT 1 FROM batches WHERE id = ${truckId}`).toHaveLength(0);
   } finally {
     await sql.end();
   }

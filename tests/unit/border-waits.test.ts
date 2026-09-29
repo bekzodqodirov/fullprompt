@@ -34,7 +34,7 @@ describe('routeWithWaits — the typed queue in place of the default wait', () =
   it('(a) a truck not yet at the post waits exactly the typed range', () => {
     // Departed now, the number typed now: it reaches the post in ~2 h.
     const waits: BorderHours = { khorgos: { hours: [24, 48], sinceMs: at(0) } };
-    const route = routeWithWaits(HOR, { segIdx: 0, atMs: at(0) }, waits);
+    const route = routeWithWaits(HOR, { segIdx: 0, atMs: at(0), pinned: false }, waits);
     expect(seg(route, 'border_wait').hours).toEqual([24, 48]);
     // Nothing else moved, and the input was not mutated.
     expect(seg(HOR, 'border_wait').hours).toEqual([...BORDER_POSTS.khorgos]);
@@ -85,7 +85,7 @@ describe('routeWithWaits — the typed queue in place of the default wait', () =
       khorgos: { hours: [12, 24], sinceMs: departed + (toBorder + 8) * HOUR },
       yallama: { hours: [24, 48], sinceMs: departed + (entersYallama + 8) * HOUR },
     };
-    const route = routeWithWaits(HOR, { segIdx: 0, atMs: departed }, waits);
+    const route = routeWithWaits(HOR, { segIdx: 0, atMs: departed, pinned: false }, waits);
     const y = seg(route, 'uz_queue').hours;
     expect(segMid(y)).toBeCloseTo(8 + 36, 6);
     expect(y[0]).toBeCloseTo((24 * (36 + 8)) / 36, 6);
@@ -99,7 +99,7 @@ describe('routeWithWaits — the typed queue in place of the default wait', () =
     };
     for (const [o, d] of [['KA', 'TAS1'], ['YW', 'TAS1'], ['KA', 'AND']] as const) {
       const route = routeFor(o, d)!;
-      expect(routeWithWaits(route, { segIdx: 0, atMs: at(-30) }, waits), `${o}→${d}`).toEqual(route);
+      expect(routeWithWaits(route, { segIdx: 0, atMs: at(-30), pinned: false }, waits), `${o}→${d}`).toEqual(route);
       const typed = scheduleEstimate(o, d, ago(30), null, waits, NOW)!;
       const none = scheduleEstimate(o, d, ago(30), null, {}, NOW)!;
       expect(typed.est, `${o}→${d}`).toEqual(none.est);
@@ -131,11 +131,92 @@ describe('routeWithWaits — the typed queue in place of the default wait', () =
     expect(pinned.est.segKey).toBe('kz');
   });
 
+  // (h)-(k): «had it already crossed?» is judged against the wait the truck
+  // was actually being GIVEN, not the default midpoint (72 h at Khorgos).
+  // Each fixture puts the truck PAST that midpoint, which is exactly where a
+  // default-based judgement moves it across the border (the blocker's own
+  // measurements: 73 h and 80 h queued → «kz», 86–122 h left).
+  const departed80 = ago(82); // ~2 h to the post, then 80 h in the queue
+  const entered80 = departed80.getTime() + segMid(seg(HOR, 'to_border').hours) * HOUR;
+
+  it('(h) «4–5 kun» typed before it arrived, queued 80 h, RAISED to «5–6»: still queueing, 5–6 days left', () => {
+    const waits: BorderHours = {
+      khorgos: { hours: [120, 144], sinceMs: NOW.getTime(), before: { hours: [96, 120], sinceMs: at(-100) } },
+    };
+    const s = scheduleEstimate('HOR', 'TAS1', departed80, null, waits, NOW)!;
+    expect(s.est.segKey).toBe('border_wait');
+    const later = after(s.route, 'border_wait');
+    expect(s.est.remainingHours[0]).toBeCloseTo(120 + later[0], 6);
+    expect(s.est.remainingHours[1]).toBeCloseTo(144 + later[1], 6);
+    // The regime walk itself: 80 h stood when it changed, and the new range
+    // on top of it.
+    const route = routeWithWaits(HOR, { segIdx: 0, atMs: departed80.getTime(), pinned: false }, waits);
+    expect(segMid(seg(route, 'border_wait').hours)).toBeCloseTo((NOW.getTime() - entered80) / HOUR + 132, 6);
+  });
+
+  it('(i) the same «3–4 kun» re-dated after 73 h in the queue: it does not jump the border', () => {
+    // Whatever re-dates a regime without changing it, the truck judged by
+    // the 3–4 days it was being given is still standing there.
+    const departed = ago(75);
+    const waits: BorderHours = {
+      khorgos: { hours: [72, 96], sinceMs: NOW.getTime(), before: { hours: [72, 96], sinceMs: at(-100) } },
+    };
+    expect(scheduleEstimate('HOR', 'TAS1', departed, null, waits, NOW)!.est.segKey).toBe('border_wait');
+  });
+
+  it('(j) a truck the typed regime HAD moved past keeps that regime, not the defaults', () => {
+    // «1–2 kun» (mid 36 h) typed before it arrived; it crossed ~46 h later
+    // by that number, before «5–6» was typed now: it is on the Kazakh road
+    // on the 1–2 days it was given.
+    const departed = ago(50);
+    const waits: BorderHours = {
+      khorgos: { hours: [120, 144], sinceMs: NOW.getTime(), before: { hours: [24, 48], sinceMs: at(-100) } },
+    };
+    const s = scheduleEstimate('HOR', 'TAS1', departed, null, waits, NOW)!;
+    expect(s.est.segKey).toBe('kz');
+    expect(seg(s.route, 'border_wait').hours).toEqual([24, 48]);
+  });
+
+  it('(k) a reset to his default after 80 h under «5–6 kun»: counted from the reset, not across', () => {
+    const waits: BorderHours = {
+      khorgos: { hours: null, sinceMs: NOW.getTime(), before: { hours: [120, 144], sinceMs: at(-100) } },
+    };
+    const s = scheduleEstimate('HOR', 'TAS1', departed80, null, waits, NOW)!;
+    expect(s.est.segKey).toBe('border_wait');
+    const later = after(s.route, 'border_wait');
+    expect(s.est.remainingHours[0]).toBeCloseTo(BORDER_POSTS.khorgos[0] + later[0], 6);
+    expect(s.est.remainingHours[1]).toBeCloseTo(BORDER_POSTS.khorgos[1] + later[1], 6);
+    // And a truck arriving after the reset simply waits the default.
+    const fresh = routeWithWaits(HOR, { segIdx: 0, atMs: NOW.getTime(), pinned: false }, waits);
+    expect(seg(fresh, 'border_wait').hours).toEqual([...BORDER_POSTS.khorgos]);
+  });
+
+  it('(l) PINNED at the post 80 h ago, «5–6 kun» typed now: still at the border, 5–6 days left', () => {
+    // The pin is the logist's own word that the truck has not crossed; no
+    // midpoint may overrule it. Without this, the truck waiting longest is
+    // drawn furthest ahead (80 h → «kz», 100 h → «uz_queue»).
+    for (const pinnedAgo of [48, 80, 100]) {
+      const waits: BorderHours = { khorgos: { hours: [120, 144], sinceMs: NOW.getTime() } };
+      const s = scheduleEstimate(
+        'HOR',
+        'TAS1',
+        ago(pinnedAgo + 5),
+        { key: 'at_border', at: ago(pinnedAgo).toISOString() },
+        waits,
+        NOW,
+      )!;
+      expect(s.est.segKey, `${pinnedAgo} h`).toBe('border_wait');
+      const later = after(s.route, 'border_wait');
+      expect(s.est.remainingHours[0], `${pinnedAgo} h`).toBeCloseTo(120 + later[0], 6);
+      expect(s.est.remainingHours[1], `${pinnedAgo} h`).toBeCloseTo(144 + later[1], 6);
+    }
+  });
+
   it('the engine reads the adjusted route exactly as it reads any route', () => {
     // routeWithWaits returns a RouteDef, nothing more: the dot and the date
     // are the engine's, so the map and the cabinet cannot disagree.
     const waits: BorderHours = { khorgos: { hours: [24, 48], sinceMs: at(0) } };
-    const route = routeWithWaits(HOR, { segIdx: 0, atMs: ago(30).getTime() }, waits);
+    const route = routeWithWaits(HOR, { segIdx: 0, atMs: ago(30).getTime(), pinned: false }, waits);
     expect(scheduleEstimate('HOR', 'TAS1', ago(30), null, waits, NOW)!.est).toEqual(
       estimateTransit(route, 30),
     );

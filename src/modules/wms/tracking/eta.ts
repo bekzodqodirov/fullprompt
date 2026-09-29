@@ -49,15 +49,69 @@ const HOUR_MS = 3_600_000;
 
 /**
  * One border queue as the logist typed it on /trucks (0118): the range in
- * hours, and WHEN it was typed — the second half is the rule, not metadata.
+ * hours, and WHEN those hours took effect — the second half is the rule, not
+ * metadata. `hours: null` is a reset («Odatdagi jadvalga qaytarish»): his
+ * default, counted from that moment like any typed number.
+ *
+ * `before` is the regime that stood until `sinceMs` (absent = his default),
+ * because «had this truck already crossed when the number changed» must be
+ * judged against the wait it was actually being given. Judged against the
+ * defaults, raising a long queue moved every truck that had stood longer than
+ * the DEFAULT midpoint across the border — an earlier date for every customer
+ * at the very moment the queue grew (measured: queued 80 h under «4–5 kun»,
+ * raised to «5–6 kun» → 86–122 h left instead of 212–276). One level of
+ * history: a truck that entered before `before.sinceMs` is judged by the
+ * default.
  */
 export interface TypedWait {
-  hours: readonly [number, number];
+  hours: readonly [number, number] | null;
   sinceMs: number;
+  before?: { hours: readonly [number, number] | null; sinceMs: number };
 }
 
 /** Only the posts somebody has typed; an absent post is his default. */
 export type BorderHours = Partial<Record<BorderPost, TypedWait>>;
+
+/** A range stretched so its midpoint is `lead` + its own, and its spread is its own. */
+function withLead(hours: readonly [number, number], lead: number): [number, number] {
+  const mid = segMid(hours);
+  // «0–0»: the queue is gone. Whatever the truck already stood there is all
+  // it stands.
+  if (mid <= 0) return [lead, lead];
+  return [(hours[0] * (mid + lead)) / mid, (hours[1] * (mid + lead)) / mid];
+}
+
+/**
+ * The hours ONE truck stands in a queue it entered at `enters`, under the
+ * regime `w` (and, through `w.before`, the one before it).
+ *
+ * - Entered after the hours took effect: the range, as typed.
+ * - Entered before, and — by the wait it was being given then — had crossed
+ *   before they changed: that earlier wait stands. A queue changing today
+ *   does not move a truck that crossed yesterday, forwards or back.
+ * - Entered before and still queueing when they changed: it waits the new
+ *   range counted from that moment, `lead` being what it had already stood.
+ *
+ * `pinned` = the logist's own pin puts the truck IN this queue: positive
+ * evidence it has not crossed, so the «had crossed» judgement is skipped —
+ * a truck pinned at the border 80 h ago is still at the border when a long
+ * queue is typed, and must not be shown furthest ahead for having waited
+ * longest.
+ */
+function queueHours(
+  defaults: [number, number],
+  w: { hours: readonly [number, number] | null; sinceMs: number; before?: TypedWait['before'] },
+  enters: number,
+  pinned: boolean,
+): [number, number] {
+  const current: [number, number] = w.hours ? [w.hours[0], w.hours[1]] : defaults;
+  if (enters >= w.sinceMs) return current;
+  if (!pinned) {
+    const prior = w.before ? queueHours(defaults, w.before, enters, false) : defaults;
+    if (enters + segMid(prior) * HOUR_MS <= w.sinceMs) return prior;
+  }
+  return withLead(current, (w.sinceMs - enters) / HOUR_MS);
+}
 
 /**
  * The route with the logist's typed queues in place of the default waits
@@ -69,17 +123,9 @@ export type BorderHours = Partial<Record<BorderPost, TypedWait>>;
  * The schedule is walked from where the clock starts (`from`: the pinned
  * segment at the pin's moment, or the departure), each leg's midpoint after
  * the other — the engine's own arithmetic (`segMid`), so the walk and the dot
- * cannot disagree about where the truck is. At a leg with a typed queue, E is
- * when the schedule puts the truck INTO that queue:
- *
- * - it had passed before the number was typed (E plus the DEFAULT wait is
- *   before `sinceMs`): the defaults stay. A queue shrinking today does not
- *   move a truck that crossed yesterday across the border again.
- * - otherwise it waits the typed range counted from `sinceMs`: `lead` is the
- *   time it had already stood there when the number was typed (0 for a truck
- *   still on its way), and the leg lasts lead + the typed wait. A truck
- *   already queueing therefore never teleports across the border when the
- *   number drops below the time it has waited.
+ * cannot disagree about where the truck is. At a leg with a typed queue, the
+ * moment the schedule puts the truck INTO it decides its hours
+ * (`queueHours`).
  *
  * The range is widened with the lead rather than shifted by it, because the
  * engine prices the rest of a leg as `hours × (1 − fraction walked)`: shifted,
@@ -89,39 +135,20 @@ export type BorderHours = Partial<Record<BorderPost, TypedWait>>;
  * remaining range at the moment of typing is exactly the typed one.
  *
  * Segments before `from.segIdx` are untouched: a later pin wins over any
- * queue behind it. The result is a copy; nothing is mutated.
- *
- * Stated limit: the table keeps only TODAY's number, so «had passed» is
- * judged against the defaults. A truck the logist knows has crossed is
- * corrected with a pin, which is what pins are for.
+ * queue behind it. `from.pinned` says the clock starts at a PIN, so the leg
+ * at `from.segIdx` is where the logist put the truck. The result is a copy;
+ * nothing is mutated.
  */
 export function routeWithWaits(
   route: RouteDef,
-  from: { segIdx: number; atMs: number },
+  from: { segIdx: number; atMs: number; pinned: boolean },
   waits: BorderHours,
 ): RouteDef {
   let t = from.atMs;
   const segments = route.segments.map((seg, i) => {
     if (i < from.segIdx) return seg;
-    let hours = seg.hours;
     const w = seg.post && Object.hasOwn(waits, seg.post) ? waits[seg.post] : undefined;
-    if (w) {
-      const enters = t;
-      const passedBeforeTyped = enters + segMid(seg.hours) * HOUR_MS <= w.sinceMs;
-      if (!passedBeforeTyped) {
-        const lead = Math.max(0, w.sinceMs - enters) / HOUR_MS;
-        const typedMid = segMid(w.hours);
-        hours =
-          typedMid > 0
-            ? [
-                (w.hours[0] * (typedMid + lead)) / typedMid,
-                (w.hours[1] * (typedMid + lead)) / typedMid,
-              ]
-            : // «0–0»: the queue is gone. Whatever the truck already stood
-              // there is all it stands.
-              [lead, lead];
-      }
-    }
+    const hours = w ? queueHours(seg.hours, w, t, from.pinned && i === from.segIdx) : seg.hours;
     t += segMid(hours) * HOUR_MS;
     return hours === seg.hours ? seg : { ...seg, hours };
   });
@@ -223,7 +250,9 @@ export function scheduleEstimate(
   const anchored = idx >= 0 && Number.isFinite(atMs);
   const route = routeWithWaits(
     base,
-    anchored ? { segIdx: idx, atMs } : { segIdx: 0, atMs: departedAt.getTime() },
+    anchored
+      ? { segIdx: idx, atMs, pinned: true }
+      : { segIdx: 0, atMs: departedAt.getTime(), pinned: false },
     waits,
   );
   const est = estimateTransit(

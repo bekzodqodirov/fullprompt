@@ -722,8 +722,11 @@ export const batches = pgTable(
  * «Chegara navbatlari» (0118): the queue at a border post as the logist typed
  * it, one row per post. Absent, or NULL hours, = the corridor's default
  * (`BORDER_POSTS`, tracking/map-data.ts — the only list of posts, hence no
- * CHECK on `post`). `updated_at` is when the number was typed and is part of
- * the ETA rule (`routeWithWaits`), so it is written by the service only.
+ * CHECK on `post`). Two clocks: `updated_at` is the last write (the panel's
+ * age and the colleague check), `hours_since` is when the HOURS changed — the
+ * ETA counts queued trucks from it — and `prev_*` is the regime before it, so
+ * «had this truck already crossed» is judged against the wait it was being
+ * given (`routeWithWaits`). Written by the service only.
  */
 export const borderQueue = pgTable(
   'border_queue',
@@ -735,6 +738,10 @@ export const borderQueue = pgTable(
     note: text('note'),
     updatedBy: uuid('updated_by').references(() => users.id),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    hoursSince: timestamp('hours_since', { withTimezone: true }).notNull().defaultNow(),
+    prevMinHours: integer('prev_min_hours'),
+    prevMaxHours: integer('prev_max_hours'),
+    prevSince: timestamp('prev_since', { withTimezone: true }),
   },
   (t) => [
     unique('border_queue_post_unique').on(t.post),
@@ -742,6 +749,11 @@ export const borderQueue = pgTable(
     check(
       'border_queue_range_check',
       sql`${t.minHours} IS NULL OR (${t.minHours} >= 0 AND ${t.maxHours} >= ${t.minHours} AND ${t.maxHours} <= 720)`,
+    ),
+    check('border_queue_prev_pair_check', sql`(${t.prevMinHours} IS NULL) = (${t.prevMaxHours} IS NULL)`),
+    check(
+      'border_queue_prev_range_check',
+      sql`${t.prevMinHours} IS NULL OR (${t.prevMinHours} >= 0 AND ${t.prevMaxHours} >= ${t.prevMinHours} AND ${t.prevMaxHours} <= 720 AND ${t.prevSince} IS NOT NULL)`,
     ),
     check('border_queue_note_len', sql`${t.note} IS NULL OR length(${t.note}) <= 300`),
   ],
