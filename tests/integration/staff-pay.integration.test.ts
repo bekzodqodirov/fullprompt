@@ -259,6 +259,12 @@ afterAll(async () => {
   // Receipts the real writers made stay (audited); their deals are none.
   if (madeDeals.length) await db.delete(deals).where(inArray(deals.id, madeDeals));
   await db.delete(kpiRates).where(eq(kpiRates.effectiveMonth, FIXTURE_MONTH));
+  // …and any version this file's own admin SAVED: the `kpi_version_paid`
+  // test is refusal-shaped, so a red proof that turns the refusal into a
+  // success writes a real version at the last closed month — CONFIGURATION
+  // that reprices every later reader (#183). Swept by author, never by the
+  // ids a passing run collected (#523).
+  await db.delete(kpiRates).where(eq(kpiRates.createdBy, actorId));
   for (const [key, before] of settingsBefore) {
     if (before.exists) await db.update(settings).set({ value: before.value }).where(eq(settings.key, key));
     else await db.delete(settings).where(eq(settings.key, key));
