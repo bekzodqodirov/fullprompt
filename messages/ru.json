@@ -1744,7 +1744,6 @@
     "priceHistoryMatchCode": "ТН ВЭД",
     "priceHistoryMatchName": "похожее имя",
     "priceHistoryMatchAi": "🤖 ИИ",
-    "priceHistoryNoFx": "{n} цен без курса валют — не показаны",
     "priceHistoryCargoMoved": "часть груза на другой машине",
     "priceHistoryFailed": "Сейчас посчитать не удалось — откройте позже",
     "priceHistoryAiAsk": "Искать с ИИ",

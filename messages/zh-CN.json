@@ -1744,7 +1744,6 @@
     "priceHistoryMatchCode": "HS 编码",
     "priceHistoryMatchName": "名称相似",
     "priceHistoryMatchAi": "🤖 AI",
-    "priceHistoryNoFx": "{n} 个价格没有汇率——未显示",
     "priceHistoryCargoMoved": "部分货物在其他车次",
     "priceHistoryFailed": "暂时无法计算——请稍后再打开",
     "priceHistoryAiAsk": "用 AI 查找",

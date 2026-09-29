@@ -1744,7 +1744,6 @@
     "priceHistoryMatchCode": "TNVED",
     "priceHistoryMatchName": "o‘xshash nom",
     "priceHistoryMatchAi": "🤖 AI",
-    "priceHistoryNoFx": "{n} ta narx kursi yo‘q — ko‘rsatilmadi",
     "priceHistoryCargoMoved": "yukning bir qismi boshqa mashinada",
     "priceHistoryFailed": "Hozir hisoblab bo‘lmadi — keyinroq oching",
     "priceHistoryAiAsk": "AI bilan qidirish",

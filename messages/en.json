@@ -1744,7 +1744,6 @@
     "priceHistoryMatchCode": "TNVED",
     "priceHistoryMatchName": "similar name",
     "priceHistoryMatchAi": "🤖 AI",
-    "priceHistoryNoFx": "{n} prices have no exchange rate — not shown",
     "priceHistoryCargoMoved": "part of the cargo is on another truck",
     "priceHistoryFailed": "Could not be computed right now — open it later",
     "priceHistoryAiAsk": "Search with AI",

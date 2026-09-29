@@ -1,6 +1,12 @@
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
-import type { PriceHistory, PriceHistoryRow, PriceMatch, SimilarPickRecord } from '@/modules/wms/finance/price-history';
+import {
+  isMixed,
+  type PriceHistory,
+  type PriceHistoryRow,
+  type PriceMatch,
+  type SimilarPickRecord,
+} from '@/modules/wms/finance/price-history';
 import { SimilarAiButton } from './similar-ai-button';
 
 /**
@@ -60,7 +66,7 @@ async function Rows({ rows, truckLinks }: { rows: PriceHistoryRow[]; truckLinks:
             ]
               .filter(Boolean)
               .join(' · ')}
-            {row.goodsKinds > 1 ? (
+            {isMixed(row) ? (
               <span className="font-sans text-warn"> · {t('priceHistoryMixed', { n: row.goodsKinds })}</span>
             ) : null}
             {row.cargoMoved ? <span className="font-sans text-warn"> · ⚠ {t('priceHistoryCargoMoved')}</span> : null}
@@ -96,17 +102,10 @@ export async function PriceHistoryBody({
       </p>
     );
   }
-  const footer =
-    history.noFx > 0 ? (
-      <p className="text-2xs text-warn" data-testid="price-history-nofx">
-        {t('priceHistoryNoFx', { n: history.noFx })}
-      </p>
-    ) : null;
   if (history.rows.length > 0) {
     return (
       <div className="space-y-1 text-xs" data-testid="price-history">
         <Rows rows={history.rows} truckLinks={truckLinks} />
-        {footer}
       </div>
     );
   }
@@ -137,7 +136,6 @@ export async function PriceHistoryBody({
       ) : (
         <SimilarAiButton lotId={lotId} batchId={batchId} />
       )}
-      {footer}
     </div>
   );
 }

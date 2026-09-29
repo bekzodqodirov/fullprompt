@@ -38,10 +38,11 @@ import { PRICING_CHARGE_TYPES } from './pricing-view';
  * WHICH TRUCKS: departed, within twelve Tashkent months, not this truck, one
  * the reader could open (`batchEndsInScopeSql`, the card door's twin), a
  * live charge of that client on it (PRICING_CHARGE_TYPES — this page's own
- * «price»), and the past lot must really have ridden it. A (client, truck)
- * with an UNCONVERTED charge is never a row — its dollars are unknown, and
- * «$0» or a partial sum would be a price nobody asked — it is counted into
- * `noFx` and said in the footer. Unclaimed cargo has no client and no price.
+ * «price»), and the past lot must really have ridden it. A charge's dollars
+ * are always known: `client_transactions.amount_usd` is NOT NULL and a charge
+ * with no FX rate is refused at the door (`fx_missing`), so there is no
+ * «unconverted» price to skip or count. Unclaimed cargo has no client and no
+ * price.
  *
  * There is no tannarx and no margin in a row, so the accountant and the VED
  * read the same shape (Q19): a past truck price is the kind of figure the VED
@@ -75,10 +76,17 @@ export interface PriceHistoryRow {
 
 export interface PriceHistory {
   rows: PriceHistoryRow[];
-  /** (client, truck) pairs skipped for a charge with no FX rate. */
-  noFx: number;
   /** The read timed out or failed: the page says so and keeps rendering. */
   failed: boolean;
+}
+
+/**
+ * «aralash» (his 17a): the client had more than one kind of goods on that
+ * truck, so the per-cube figure is a blend of them. One kind is not mixed,
+ * and neither is «we do not know» (0).
+ */
+export function isMixed(row: { goodsKinds: number }): boolean {
+  return row.goodsKinds > 1;
 }
 
 /** His 28a: the last five, within twelve months. */
@@ -181,8 +189,6 @@ type PairRow = {
   past_lot_id: string;
   strength: number;
   own: boolean;
-  unconverted: boolean;
-  no_fx: number;
 };
 
 /**
@@ -202,7 +208,7 @@ async function pricePairs(
     unique.map((p) => sql`(${p.clientId}::uuid, ${p.batchId}::uuid)`),
     sql`, `,
   );
-  const rows = await db.execute<{ batch_id: string; client_id: string; kg: string; m3: string; kinds: number; usd: string | null }>(sql`
+  const rows = await db.execute<{ batch_id: string; client_id: string; kg: string; m3: string; kinds: number; usd: string }>(sql`
     WITH ${riderCtesSql(uuidList(batchIds))},
     pairs(client_id, batch_id) AS (VALUES ${values}),
     load AS (
@@ -234,7 +240,6 @@ async function pricePairs(
       .map((row) => [`${row.clientId}:${row.batchId}`, row.kind as 'no_cargo' | 'partial']),
   );
   for (const r of rows) {
-    if (r.usd === null) continue;
     const key = `${r.client_id}:${r.batch_id}`;
     out.set(key, {
       kg: Number(r.kg),
@@ -296,7 +301,7 @@ export async function priceHistoryForLots(
       needleOf.set(id, needles.length);
       needles.push(needle);
     }
-    out.set(lot.lotId, { rows: [], noFx: 0, failed: false });
+    out.set(lot.lotId, { rows: [], failed: false });
   }
   const lotNeedle = new Map(
     lots.map((lot) => {
@@ -338,24 +343,14 @@ export async function priceHistoryForLots(
       return tx.execute<PairRow>(sql`
         WITH needles(needle, nkey, nzh, nru, ncode, nclient) AS (VALUES ${needleValues})
         SELECT n.needle, h.client_id::text AS client_id, h.client_code, h.batch_id::text AS batch_id,
-               h.batch_code, h.departed_at, h.past_lot_id::text AS past_lot_id, h.strength, h.own,
-               h.unconverted, h.no_fx
+               h.batch_code, h.departed_at, h.past_lot_id::text AS past_lot_id, h.strength, h.own
           FROM needles n
           CROSS JOIN LATERAL (
-            SELECT w.*, count(*) FILTER (WHERE w.unconverted) OVER () AS no_fx,
-                   row_number() OVER (
-                     PARTITION BY w.unconverted
-                     ORDER BY w.own DESC, w.strength DESC, w.departed_at DESC, w.batch_id
-                   ) AS rk
+            SELECT w.*
               FROM (
                 SELECT DISTINCT ON (ml.client_id, b.id)
                        ml.client_id, cl.client_code, b.id AS batch_id, b.code AS batch_code, b.departed_at,
-                       ml.past_lot_id, ml.strength, ml.own,
-                       EXISTS (
-                         SELECT 1 FROM client_transactions cu
-                          WHERE cu.client_id = ml.client_id AND cu.batch_id = b.id
-                            AND cu.type IN ${CHARGE_TYPES} AND cu.voided_at IS NULL AND cu.amount_usd IS NULL
-                       ) AS unconverted
+                       ml.past_lot_id, ml.strength, ml.own
                   FROM (
                     SELECT x.past_lot_id, max(x.strength) AS strength, pr.client_id,
                            coalesce(pr.client_id = n.nclient, false) AS own
@@ -401,8 +396,11 @@ export async function priceHistoryForLots(
                    )
                  ORDER BY ml.client_id, b.id, ml.strength DESC, ml.past_lot_id
               ) w
+             -- His 28a, in SQL: the cap per needle, own client first (16a),
+             -- then the stronger match, then the newest truck.
+             ORDER BY w.own DESC, w.strength DESC, w.departed_at DESC, w.batch_id
+             LIMIT ${PRICE_HISTORY_CAP}
           ) h
-         WHERE (NOT h.unconverted AND h.rk <= ${PRICE_HISTORY_CAP}) OR (h.unconverted AND h.rk = 1)
       `);
     });
   } catch (err) {
@@ -418,14 +416,12 @@ export async function priceHistoryForLots(
     list.push(row);
     byNeedle.set(Number(row.needle), list);
   }
-  const survivors = pairs.filter((row) => !row.unconverted);
-  const priced = await pricePairs(survivors.map((row) => ({ clientId: row.client_id, batchId: row.batch_id })));
+  const priced = await pricePairs(pairs.map((row) => ({ clientId: row.client_id, batchId: row.batch_id })));
 
   const historyOf = new Map<number, PriceHistory>();
   for (const [needle, rows] of byNeedle) {
     const candidates: PriceCandidate[] = [];
     for (const row of rows) {
-      if (row.unconverted) continue;
       const p = priced.get(`${row.client_id}:${row.batch_id}`);
       if (!p) continue;
       candidates.push({
@@ -444,11 +440,7 @@ export async function priceHistoryForLots(
         pastLotId: row.past_lot_id,
       });
     }
-    historyOf.set(needle, {
-      rows: rankPriceHistory(candidates),
-      noFx: Number(rows[0]?.no_fx ?? 0),
-      failed: false,
-    });
+    historyOf.set(needle, { rows: rankPriceHistory(candidates), failed: false });
   }
   for (const lot of lots) {
     const found = historyOf.get(lotNeedle.get(lot.lotId)!);
@@ -469,7 +461,7 @@ export async function pricedRowsForLots(
   ownClientId: string | null,
 ): Promise<PriceHistory> {
   const ids = [...new Set(pastLotIds)].filter(Boolean);
-  if (ids.length === 0) return { rows: [], noFx: 0, failed: false };
+  if (ids.length === 0) return { rows: [], failed: false };
   const pairs = await db.execute<{
     client_id: string;
     client_code: string | null;
@@ -477,16 +469,10 @@ export async function pricedRowsForLots(
     batch_code: string;
     departed_at: string;
     past_lot_id: string;
-    unconverted: boolean;
   }>(sql`
     SELECT DISTINCT ON (pr.client_id, b.id)
            pr.client_id::text AS client_id, cl.client_code, b.id::text AS batch_id, b.code AS batch_code,
-           b.departed_at, pl.id::text AS past_lot_id,
-           EXISTS (
-             SELECT 1 FROM client_transactions cu
-              WHERE cu.client_id = pr.client_id AND cu.batch_id = b.id
-                AND cu.type IN ${CHARGE_TYPES} AND cu.voided_at IS NULL AND cu.amount_usd IS NULL
-           ) AS unconverted
+           b.departed_at, pl.id::text AS past_lot_id
       FROM receipt_lots pl
       JOIN receipts pr ON pr.id = pl.receipt_id AND pr.client_id IS NOT NULL AND pr.voided_at IS NULL
       JOIN clients cl ON cl.id = pr.client_id
@@ -505,10 +491,9 @@ export async function pricedRowsForLots(
        )
      ORDER BY pr.client_id, b.id, pl.id
   `);
-  const convertible = pairs.filter((row) => !row.unconverted);
-  const priced = await pricePairs(convertible.map((row) => ({ clientId: row.client_id, batchId: row.batch_id })));
+  const priced = await pricePairs(pairs.map((row) => ({ clientId: row.client_id, batchId: row.batch_id })));
   const candidates: PriceCandidate[] = [];
-  for (const row of convertible) {
+  for (const row of pairs) {
     const p = priced.get(`${row.client_id}:${row.batch_id}`);
     if (!p) continue;
     candidates.push({
@@ -527,11 +512,7 @@ export async function pricedRowsForLots(
       pastLotId: row.past_lot_id,
     });
   }
-  return {
-    rows: rankPriceHistory(candidates),
-    noFx: pairs.length - convertible.length,
-    failed: false,
-  };
+  return { rows: rankPriceHistory(candidates), failed: false };
 }
 
 /** A stored AI pick for a lot (0119): the past lots it named and why. */

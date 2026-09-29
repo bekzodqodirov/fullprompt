@@ -144,7 +144,7 @@ export async function pickSimilarLots(
 
 /**
  * What the model may choose from: distinct goods names of past lots that
- * carry a CONVERTED price on a departed, in-scope truck within twelve
+ * carry a live price on a departed, in-scope truck within twelve
  * months — the free list's own frame, without its match arms — ordered by the
  * closer of the two trigram scores, then newest. Sixty names, cut at 120
  * characters: a declaration paragraph is not a name.
@@ -177,7 +177,7 @@ export async function similarCandidates(
           WHERE b.id <> ${batchId}::uuid AND b.departed_at IS NOT NULL
             AND b.departed_at >= ${truckSince}::timestamptz
             AND ${batchEndsInScopeSql(actor, 'b')}
-            AND c.type IN ${types} AND c.voided_at IS NULL AND c.amount_usd IS NOT NULL
+            AND c.type IN ${types} AND c.voided_at IS NULL
        )
      GROUP BY 1
      ORDER BY sim DESC, newest DESC

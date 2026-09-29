@@ -196,7 +196,7 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
     ),
   );
   const truckLinks = mayOpenBatchPricing(actor.permissions, false);
-  const emptyHistory: PriceHistory = { rows: [], noFx: 0, failed: false };
+  const emptyHistory: PriceHistory = { rows: [], failed: false };
 
   const droppedHere = new Map(offHere.filter((row) => row.kind === 'partial').map((row) => [row.clientId, row]));
   const noCargoHere = new Map(offHere.filter((row) => row.kind === 'no_cargo').map((row) => [row.clientId, row]));
