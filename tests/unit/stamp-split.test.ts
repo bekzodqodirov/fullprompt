@@ -173,7 +173,12 @@ describe('attributeRow', () => {
   }): CargoLookup => ({
     truck: (batchId, clientId) => over.truck?.[`${batchId}|${clientId}`],
     deal: (dealId, clientId) => over.deal?.[`${dealId}|${clientId}`],
-    lastPrixod: () => ('last' in over ? (over.last === undefined ? undefined : { sellerId: over.last }) : undefined),
+    // Answers only for the row's own client and day — a lookup that ignored its
+    // arguments would pass a caller that asks about the wrong client.
+    lastPrixod: (clientId, txDate) =>
+      clientId === 'c1' && txDate === '2018-08-15' && 'last' in over && over.last !== undefined
+        ? { sellerId: over.last }
+        : undefined,
   });
 
   it('a row that names a prixod is that prixod’s, whatever its deal says', () => {

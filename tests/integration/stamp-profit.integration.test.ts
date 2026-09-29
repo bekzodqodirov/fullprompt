@@ -447,11 +447,20 @@ describe('who a price belongs to (4a)', () => {
     expect(rowOf(rows, cMoved, A)!.cents - 30000 - 6667 - 6000 - 2000 - 4000).toBe(5000);
   });
 
-  it('a compensation lowers its prixod’s seller, whatever its deal', async () => {
+  it('a compensation lowers its prixod’s seller, whatever its deal or its client’s book', async () => {
     // D_M carries A's R8 and B's R7: through the deal the −25 would split
-    // 18.75 A / 6.25 B. Through the receipt it is B's whole.
-    expect((await sellerRow(B)).revenueUsd).toBe(193.33);
-    expect((await sellerRow(A)).revenueUsd).toBe(756.67);
+    // 18.75 A / 6.25 B. A row that names a prixod is never asked about its
+    // deal or a fallback, so with the receipt branch stripped it falls to the
+    // BOOK — which is B here too. The book is moved to D for this test, so
+    // the receipt is the ONLY route that lands the −25 on B (#1226's lesson).
+    await db.update(clients).set({ salesManagerId: D }).where(eq(clients.id, cMoved));
+    try {
+      expect((await sellerRow(B)).revenueUsd).toBe(193.33);
+      expect((await sellerRow(A)).revenueUsd).toBe(756.67);
+      expect((await sellerRow(D)).revenueUsd).toBe(300);
+    } finally {
+      await db.update(clients).set({ salesManagerId: B }).where(eq(clients.id, cMoved));
+    }
   });
 });
 
@@ -495,7 +504,10 @@ describe('the reconciliation', () => {
   });
 
   it('cost follows the carton, lost or not, and never unclaimed cargo', async () => {
-    const costs = (await costByStamp(db, PERIOD)).filter((r) => mine().has(r.clientId));
+    const every = await costByStamp(db, PERIOD);
+    // E3 sits on unclaimed cargo: no row of nobody's client, anywhere.
+    expect(every.some((r) => r.clientId === null)).toBe(false);
+    const costs = every.filter((r) => mine().has(r.clientId));
     // E2 sits on 3b — LOST, and its client's book is C: the stamp is A.
     expect(rowOf(costs, cStay, A)).toMatchObject({ cents: 700 });
     expect(rowOf(costs, cStay, C)).toBeUndefined();
