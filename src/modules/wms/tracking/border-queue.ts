@@ -22,7 +22,7 @@ import { daysSince } from '../reports/dashboard-math';
  * here and 720 hours in the table — and every save is audited with who typed
  * it. There is no confirmation step: he asked for the typed wait to count.
  *
- * A typed number counts until somebody changes it (the design's default (b));
+ * A typed number counts until somebody changes it (his answer 8a);
  * after `BORDER_QUEUE_WARN_DAYS` Tashkent days the panel says how old it is,
  * and «Odatdagi jadvalga qaytarish» brings his usual days back.
  */

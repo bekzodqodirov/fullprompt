@@ -152,7 +152,7 @@ export async function kpiTableFor(exec: Exec, month: string): Promise<KpiVersion
   return versionFor(await kpiVersions(exec), month);
 }
 
-/** The first month KPI counts at all — his open point 1, the seed's `OWNER_KPI_FROM`. */
+/** The first month KPI counts at all — his answer 1a, the seed's `OWNER_KPI_FROM`. */
 export async function firstKpiMonth(exec: Exec): Promise<string | null> {
   const [row] = (await exec.execute(sql`
     SELECT to_char(min(effective_month), 'YYYY-MM') AS month FROM kpi_rates`)) as unknown as { month: string | null }[];
@@ -176,7 +176,7 @@ export async function saveKpiTable(cells: KpiCell[], effectiveMonth: string, ctx
   await db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('kpi:table'))`);
     // No version may start BEFORE the first one. KPI counts from the
-    // first version's month (`firstKpiMonth`, his open point 1 — September
+    // first version's month (`firstKpiMonth`, his answer 1a — September
     // 2026), and before the first payout the paid-month fence below has
     // nothing to stand on: an early month typed in the editor would move the
     // start back and put every closed month since then on every seller's

@@ -73,8 +73,7 @@ export async function registerCalcReviewWorker(boss: PgBoss): Promise<void> {
 
 /**
  * «Bu prixodlar hisobingizga tegishlimi?» (0119) — every five minutes, and
- * only 03:00-14:55 UTC = 08:00-19:55 in Tashkent (the owner's open point 2,
- * built as its default): a question with buttons at 23:00 is a question
+ * only 03:00-14:55 UTC = 08:00-19:55 in Tashkent (his answer 12a): a question with buttons at 23:00 is a question
  * answered wrong or not at all. The sweep claims before it sends, so two
  * overlapping runs split the work.
  */

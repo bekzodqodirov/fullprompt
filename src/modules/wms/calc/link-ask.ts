@@ -19,8 +19,8 @@ import { linkAskTag, pendingLinkSql, PENDING_LINK_FROM } from './link';
  * comparison will measure — and only while they still hold `ved.docs` or
  * `finance.reports` and are active (`usersWithPermission` reads `active`). A
  * VED who left or lost the role is asked nothing and their guesses wait on
- * «Hisob nazorati», where the accountant sees them (the owner's open point 1,
- * built as its default).
+ * «Hisob nazorati», where the accountant sees them (his answer 11a — no
+ * message goes to the accountant).
  *
  * THE CLAIM is the drain's shape (0082): one UPDATE stamps
  * `calc_link_notified_at` BEFORE anything leaves, over rows locked `FOR NO
