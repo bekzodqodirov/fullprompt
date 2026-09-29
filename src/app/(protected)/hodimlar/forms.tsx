@@ -238,7 +238,6 @@ export function StampRepairButton({ clientId, sellerName }: { clientId: string; 
  */
 export function NoLoginPersonNew() {
   const t = useTranslations('hodimlar');
-  const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -284,7 +283,13 @@ export function NoLoginPersonNew() {
                 const res = await mintPersonAction({ fullName: name, phone, confirmSameName: confirm });
                 setResult(res);
                 if (res.ok && res.id) {
-                  router.push(`/hodimlar?hodim=${res.id}`);
+                  // A FULL load, not router.push: this is /hodimlar → /hodimlar?hodim=
+                  // right after an action that refreshed /hodimlar, and on a warm
+                  // server the soft navigation lost that race about half the time
+                  // (measured 3-4 of 8): its RSC answer arrived and the router
+                  // dropped the stream (ERR_ABORTED, no JS abort, no history call),
+                  // so the URL never moved. A document load cannot be dropped.
+                  window.location.assign(`/hodimlar?hodim=${res.id}`);
                   return;
                 }
                 if (res.error === 'same_name') setConfirm(true);
@@ -293,8 +298,16 @@ export function NoLoginPersonNew() {
           >
             {t('personAdd')}
           </button>
+          {/* The fallback if the load above is slow. No prefetch: the page is
+              being loaded anyway, and a prefetch here was the first thing the
+              lost soft navigation reused. */}
           {result.ok && result.id ? (
-            <Link className="chip chip-good" data-testid="hodimlar-person-added" href={`/hodimlar?hodim=${result.id}`}>
+            <Link
+              className="chip chip-good"
+              data-testid="hodimlar-person-added"
+              href={`/hodimlar?hodim=${result.id}`}
+              prefetch={false}
+            >
               ✅ {t('personAdded')}
             </Link>
           ) : null}

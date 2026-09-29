@@ -2209,7 +2209,7 @@ builds before it recreates. **Deploy tip that follows from it**: build
 runs ONCE before `up -d --build` reuses it.
 
 **Round — his answers to the twelve questions of 2026-09-29 (DECISIONS
-#1224-#1236; migration 0120 `no_login_staff` — ledger must reach 121).** His
+#1224-#1237; migration 0120 `no_login_staff` — ledger must reach 121).** His
 «1a 2b 3a 4a 5a 6a 7 ha 8a 9a 10 keyin 11a 12a». Every answer was checked
 against the SHIPPED code by a scout first: eight confirm what #1210-#1222 built
 (comments now cite his answer), and **4a did not** — my message had printed the
@@ -2245,7 +2245,11 @@ overflowed /admin/users (2,056 px at 360) and the staff card, and ten specs'
 «fits the viewport» check could not see it — under mobile emulation
 `window.innerWidth` GROWS with Chrome's zoom-out (1,440 read against a 2,056
 document). Measure `document.documentElement.clientWidth` or the configured
-viewport; `e2e-width-oracle.test.ts` refuses `innerWidth` in specs.
+viewport; `e2e-width-oracle.test.ts` refuses `innerWidth` in specs. And
+(#1237) «add a no-login person» sometimes never opened the card: a
+`router.push` to the SAME route right after an action that revalidated it is
+dropped by the router on a WARM server (3-4 of 8; a fresh server per test
+never shows it) — the card now opens with a full `window.location.assign`.
 
 **Latest migration: 0120** (`no_login_staff`, `when` …099; ledger must reach **121**). Before
 it: 0119 (`price_icons`), 0118 (`border_queue`), 0117 (`staff_pay`) — `when` …096-…098. Before them:
