@@ -123,11 +123,11 @@ export function EnableLoginForm({
             <label key={role.code} className="flex min-h-10 items-center gap-2 text-sm">
               <input
                 type="checkbox"
-                className="h-5 w-5"
+                className="h-5 w-5 shrink-0"
                 checked={roleCodes.has(role.code)}
                 onChange={(e) => setRoleCodes((s) => toggle(s, role.code, e.target.checked))}
               />
-              {role.label}
+              <span className="min-w-0 [overflow-wrap:anywhere]">{role.label}</span>
             </label>
           ))}
         </div>
@@ -139,11 +139,16 @@ export function EnableLoginForm({
             <label key={wh.id} className="flex min-h-10 items-center gap-2 text-sm">
               <input
                 type="checkbox"
-                className="h-5 w-5"
+                className="h-5 w-5 shrink-0"
                 checked={warehouseIds.has(wh.id)}
                 onChange={(e) => setWarehouseIds((s) => toggle(s, wh.id, e.target.checked))}
               />
-              <span className="font-mono font-bold">{wh.code}</span> {wh.name}
+              {/* One wrapping box for code + name: as two loose flex items the
+                  pair could not shrink below both words, and in a two-column
+                  grid at 360 px the right column pushed the page 28 px wide. */}
+              <span className="min-w-0 [overflow-wrap:anywhere]">
+                <span className="font-mono font-bold">{wh.code}</span> {wh.name}
+              </span>
             </label>
           ))}
         </div>

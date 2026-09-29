@@ -176,6 +176,7 @@ test('T3 — the owner sees the admin side: the one door to a login, never submi
   const list = page.getByTestId('users-new-no-login');
   await list.locator('summary').click();
   await expect(list).toContainText(NAME);
+  await fitsViewport(page);
 });
 
 test('T4 — he is nobody’s colleague: no task, no rule, no rota, no website', async ({ page }) => {

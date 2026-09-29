@@ -48,7 +48,7 @@ export default async function NewUserPage() {
           <ul className="mt-2 space-y-1">
             {noLogin.map((p) => (
               <li key={p.id}>
-                <Link href={`/admin/users/${p.id}`} className="text-brand-700">
+                <Link href={`/admin/users/${p.id}`} className="text-brand-700 [overflow-wrap:anywhere]">
                   {p.fullName}
                 </Link>
               </li>
