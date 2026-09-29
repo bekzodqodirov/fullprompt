@@ -46,11 +46,15 @@ describe('the partiya surfaces read the ONE arrivals home', () => {
   });
 
   it('the plan editor API and the plan view read arrivalsForLots at the plan ORIGIN', () => {
+    // The editor's question lives in `plannableStock` (DECISIONS #1204); the
+    // route is its door and must hand it the warehouse it was asked about.
     const route = read('src/app/api/plans/stock/route.ts');
-    expect(route).toContain('arrivalsForLots(');
+    expect(route).toContain('plannableStock(query.data.warehouseId)');
+    const stock = read('src/modules/wms/planning/stock.ts');
+    expect(stock).toMatch(/arrivalsForLots\([\s\S]*?warehouseId,\s*\)/);
     // BOTH feeds — the loose lots and the crates. One occurrence let the
     // crate half stand in for a stripped lot half (the proof stayed green).
-    expect([...route.matchAll(/arrival:/g)].length).toBeGreaterThanOrEqual(2);
+    expect([...stock.matchAll(/arrival:/g)].length).toBeGreaterThanOrEqual(2);
     const view = read('src/app/(protected)/plans/[id]/page.tsx');
     expect(view).toContain('arrivalsForLots(');
     expect(view).toContain('plan.originWarehouseId');

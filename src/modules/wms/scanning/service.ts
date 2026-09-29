@@ -17,6 +17,7 @@ import { emitEvent } from '../../platform/events/service';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { usersWithPermission } from '../../platform/notifications/service';
 import { notifyPricedCargoLeft } from '../finance/off-truck';
+import { byShelf, PLANNABLE_STATUSES, shelfBefore } from '../boxes/shelf';
 import {
   COUNT_LOAD_REASON,
   countedOnTruckSql,
@@ -200,8 +201,10 @@ export async function loadScanInTx(
       };
     }
   }
+  // The same shelf the plan reserves from (`PLANNABLE_STATUSES`): a quick
+  // truck and a planned one take the same cargo.
   const looseAtOrigin = (b: (typeof members)[number]) =>
-    ['in_stock', 'ready_for_pickup'].includes(b.status) &&
+    (PLANNABLE_STATUSES as readonly string[]).includes(b.status) &&
     b.currentWarehouseId === batch.originWarehouseId;
 
   /**
@@ -455,11 +458,14 @@ export async function removeLoadedCode(batchId: string, code: string, ctx: Audit
       if (mark?.counted) throw new ScanError('lot_counted');
     }
 
+    // Back to the shelf each one left, «tayyor» included (`shelfBefore`).
+    const back = await shelfBefore(tx, batchId, aboard.map((b) => b.id));
+    const home = (box: (typeof aboard)[number]) => back.get(box.id) ?? 'in_stock';
     for (const box of aboard) {
       await tx
         .update(boxes)
         .set({
-          status: 'in_stock',
+          status: home(box),
           currentBatchId: null,
           // An on-spot flag picked up on this load must not ride into the
           // box's next life on the shelf (the batch-cancel rule).
@@ -474,7 +480,7 @@ export async function removeLoadedCode(batchId: string, code: string, ctx: Audit
         fromWarehouseId: box.currentWarehouseId,
         toWarehouseId: box.currentWarehouseId,
         fromStatus: 'loading',
-        toStatus: 'in_stock',
+        toStatus: home(box),
         cause: 'load_removed',
         refType: 'batch',
         refId: batchId,
@@ -532,18 +538,21 @@ export async function finishLoading(
     const shortLoaded = memberBoxes.filter((b) => b.status === 'planned');
     const loaded = memberBoxes.filter((b) => b.status === 'loading');
 
-    if (shortLoaded.length > 0) {
+    // Back to the shelf each one left: a carton the plan took «tayyor» at
+    // Andijan is «tayyor» there again, not `in_stock` off every list.
+    const back = await shelfBefore(tx, batchId, shortLoaded.map((b) => b.id));
+    for (const [status, home] of byShelf(shortLoaded, back)) {
       await tx
         .update(boxes)
-        .set({ status: 'in_stock', currentBatchId: null })
-        .where(inArray(boxes.id, shortLoaded.map((b) => b.id)));
+        .set({ status, currentBatchId: null })
+        .where(inArray(boxes.id, home.map((b) => b.id)));
       await tx.insert(boxMovements).values(
-        shortLoaded.map((box) => ({
+        home.map((box) => ({
           boxId: box.id,
           fromWarehouseId: box.currentWarehouseId,
           toWarehouseId: box.currentWarehouseId,
           fromStatus: 'planned',
-          toStatus: 'in_stock',
+          toStatus: status,
           cause: 'short_loaded',
           refType: 'batch',
           refId: batchId,

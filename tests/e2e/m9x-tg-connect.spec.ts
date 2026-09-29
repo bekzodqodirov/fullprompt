@@ -41,6 +41,11 @@ test('a sales manager reaches the connect screen from the conversations list', a
   await page.getByTestId('connect-phone').fill('+998901234567');
   await page.getByTestId('connect-submit').click();
   await expect(page.getByTestId('connect-error')).toBeVisible();
+  // …and the refusal keeps what was typed. React resets a form when its
+  // action returns; the inputs were uncontrolled for a year, so every refusal
+  // emptied the box — and on a two-step account the first press emptied the
+  // CODE before the password press. Only a browser runs that reset.
+  await expect(page.getByTestId('connect-phone')).toHaveValue('+998901234567');
 });
 
 test('the warehouse does not connect Telegram accounts', async ({ page }) => {

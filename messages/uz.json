@@ -2356,6 +2356,7 @@
     "connectSendCode": "Kod yuborish",
     "connectCode": "Telegramdan kelgan kod",
     "connectCodeHint": "Kod Telegram ilovangizga keldi (SMS emas).",
+    "connectCodeAccepted": "Kod qabul qilindi",
     "connectPassword": "Ikki bosqichli parol",
     "connectPasswordHint": "Akkauntda ikki bosqichli himoya yoqilgan — o'sha parolni kiriting.",
     "connectFinish": "Ulash",
@@ -2364,7 +2365,10 @@
     "connectErrors": {
       "not_configured": "Server Telegram ulash uchun sozlanmagan — administratorga ayting.",
       "phone_invalid": "Raqam telefon raqamiga o'xshamaydi. Format: +998901234567.",
+      "phone_unregistered": "Bu raqamda Telegram akkaunti yo'q. Raqamni tekshiring.",
+      "phone_taken": "Bu raqam tizimda allaqachon {name} hisobiga ulangan. Bitta Telegram faqat bitta hodimga ulanadi — administratorga ayting.",
       "code_invalid": "Kod to'g'ri kelmadi. Tekshirib qayta kiriting.",
+      "password_needed": "Akkauntda ikki bosqichli parol bor — uni kiriting.",
       "password_invalid": "Parol to'g'ri kelmadi. Yana urinib ko'ring.",
       "flood_wait": "Telegram kutishni so'rayapti — urinishlar ko'p bo'ldi. Keyinroq urining.",
       "expired": "Vaqt tugadi. Kodni qaytadan so'rang.",

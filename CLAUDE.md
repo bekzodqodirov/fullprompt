@@ -2103,8 +2103,56 @@ the logist's `finance.debt_override` on the LIVE server (seed never removes a
 grant — an untick on /admin/roles, which also removes his price tick). The
 pre-0114 tick branch of the register still seq-scans (its index is owed).
 
+**Round — Andijondan Toshkentga ichki reys (2026-09-28; DECISIONS
+#1204-#1206 — renumbered from #1177-#1179 on the merge, the SIXTEENTH
+collision: the card round and the seven packages took #1177-#1203 first; NO
+migration of its own, it deploys with the packages' 0113-0116, ledger 117).**
+His «andijon skladga olib keldim … ichki reys qilib toshkentga … sklatda yuk
+korinmay qolyabti»: a truck lands cargo `ready_for_pickup` at a collection
+warehouse and the PLAN path (editor list, `availableByLot`, the submit's crate
+check, the approval's reservation) read `in_stock` alone, while the quick
+truck always took both. `boxes/shelf.ts` is the one home: `PLANNABLE_STATUSES`
+(what a truck may take) and `shelfBefore`/`shelfBeforeSql` (the shelf a carton
+LEFT, from the movement ledger — every give-back asks it: short_loaded,
+load_removed, batch_cancelled, found_at_origin at both unload doors, and the
+count press's own way back). History, not warehouse type: a walk-in at
+Tashkent goes back `in_stock`. The editor's query is `planning/stock.ts`
+`plannableStock`. Review cargo-6's «ready carton rides as an extra» is
+reversed (#1206). A pre-existing count-press path dependence (re-reserve vs
+dial-down order) was found by the widened simulation and queued, not fixed.
+18 red proofs.
+
+**Round — Telegram ulash (2026-09-29; DECISIONS #1207-#1209; NO
+migration).** His «telegram chatni ulashni korib chiq», the day after the
+site-lead reply named a CONNECTED account as condition 3. A two-step account
+could never connect: the connect form's inputs were uncontrolled (its own
+comment said otherwise), React's reset after the first press emptied the
+code, and the password press signed in again with an empty code → `failed`,
+login dropped. `finishLogin` (telegram-connect.ts) decides the step from the
+login (`codeAccepted`), never from the form, over injected network steps;
+the inputs are controlled; m9x asserts a refused number stays in its box.
+`phoneHolder` refuses a number another person holds BEFORE the code is sent
+(digits compared, own row excluded, the holder named), an expired code ends
+the attempt, and every refusal is logged `[tg-connect]`. A signed-out holder
+still blocks the number — no release door, stated. 6 red proofs.
+**Then reviewed before the merge (#1209)** — four of its seven defects
+predate it. gramjs REWRITES `FLOOD_WAIT_N` into a FloodWaitError whose
+message lacks the name (it survives in `errorMessage`), so every long wait
+read «try again»; `describeError` is the one string for folding and logging,
+and test errors are built BY gramjs (`RPCMessageToError`), never typed by
+hand. `auth.SignIn` RESOLVES with `auth.AuthorizationSignUpRequired` for a
+number with no account, and that had been stored `active` with ✅. Clients
+are closed on every failed exit, `release(userId, entry)` frees a slot only
+while it holds THAT entry (two tabs), and `sweepExpired` runs on each begin.
+The server decides the step after a refusal (`next`), the pure
+`afterFinish` (connect-state.ts) maps it. Pinned by
+`tests/unit/telegram-connect-lifecycle.test.ts` (gramjs replaced by a fake
+that records `destroyed`); 13 more red proofs.
+
 **Round — his answers of 2026-09-29: pay + KPI, Horgos, the lot icons, the
-weekly window (DECISIONS #1204-#1216; migrations 0117-0119 — ledger must reach
+weekly window (DECISIONS #1210-#1222 — renumbered from #1204-#1216 on the merge,
+the SEVENTEENTH collision: the Andijan trip and Telegram connect took
+#1204-#1209 first; migrations 0117-0119 — ledger must reach
 120).** Three packages designed → judged by four lenses → revised → built in
 worktrees → reviewed by two → fixed; the container restarted mid-build and a
 finisher per package re-audited its committed branch against the final design.

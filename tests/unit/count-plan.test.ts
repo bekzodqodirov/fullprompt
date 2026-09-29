@@ -52,14 +52,17 @@ describe('going up', () => {
     expect([m.reReserve, m.loadOver, m.grow]).toEqual([[], [], 0]);
   });
 
-  it('only an in_stock shelf carton goes back onto the plan; a ready one rides as an extra', () => {
-    // A UZ collection warehouse: row 4 stands «tayyor» for its client. The
-    // plan still has room for two, but reserving 4 would bring it back
-    // `in_stock` from «yuklash tugadi» — off every tayyor list (review cargo-6).
+  it('a «tayyor» shelf carton goes back onto the plan like an in_stock one — no ⚠, no reason', () => {
+    // A UZ collection warehouse: row 4 stands «tayyor» for its client, and an
+    // Andijan → Tashkent plan is reserved out of exactly such cargo. Review
+    // cargo-6 made it ride as an extra because «yuklash tugadi» brought it
+    // back `in_stock`; every give-back now returns it as it stood
+    // (`shelfBefore`), and the extra would put a false ⚠ on a carton the plan
+    // counted. No reason is passed — the press must not ask for one.
     const rows = [row(4, { status: 'ready_for_pickup' }), row(5)];
-    const m = move(rows, 2, opts({ planN: 2, overReason: 'bor edi' }));
-    expect(ids(m.reReserve)).toEqual([5]);
-    expect(ids(m.loadOver)).toEqual([4]);
+    const m = move(rows, 2, opts({ planN: 2 }));
+    expect(ids(m.reReserve)).toEqual([4, 5]);
+    expect(m.loadOver).toEqual([]);
     expect(m.grow).toBe(0);
   });
 
@@ -191,21 +194,34 @@ describe('path independence', () => {
     for (const hasPlan of [true, false]) {
       for (let planN = 0; planN <= 3; planN += 1) {
         for (let shelfN = 0; shelfN <= 3; shelfN += 1) {
-          for (let mask = 0; mask < 1 << shelfN; mask += 1) {
+          // Every mix of stickerless and «tayyor» shelf cartons: a collection
+          // warehouse's shelf holds both statuses at once.
+          for (let mask = 0; mask < 1 << (2 * shelfN); mask += 1) {
             const start = [
               ...Array.from({ length: hasPlan ? planN : 0 }, (_, i) => reserved(i + 1)),
-              ...Array.from({ length: shelfN }, (_, i) => row(10 + ((i * 7) % 5) + i, { qrless: !!(mask & (1 << i)) })),
+              ...Array.from({ length: shelfN }, (_, i) =>
+                row(10 + ((i * 7) % 5) + i, {
+                  qrless: !!(mask & (1 << i)),
+                  status: mask & (1 << (shelfN + i)) ? 'ready_for_pickup' : 'in_stock',
+                }),
+              ),
             ];
             const most = start.length;
             const o = opts({ hasPlan, planN, overReason: 'sabab' });
             for (let t1 = 0; t1 <= most; t1 += 1) {
               for (let t2 = 0; t2 <= most; t2 += 1) {
+                const label = `plan=${hasPlan}/${planN} shelf=${shelfN}/${mask} ${t1}→${t2}`;
                 const direct = apply(start, move(start, t2, o), hasPlan);
                 const first = apply(start, move(start, t1, o), hasPlan);
                 const second = apply(first, move(first, t2, o), hasPlan);
-                expect(aboardSet(second), `plan=${hasPlan}/${planN} shelf=${shelfN}/${mask} ${t1}→${t2}`).toEqual(
-                  aboardSet(direct),
-                );
+                expect(aboardSet(second), label).toEqual(aboardSet(direct));
+                // A carton off the truck both ways stands as it stood: a
+                // trip on and back never turns «tayyor» into `in_stock`.
+                const alone = new Map(direct.map((r) => [r.id, r]));
+                for (const r of second) {
+                  const d = alone.get(r.id)!;
+                  if (!r.onTruck && !d.onTruck) expect(`${r.seq}:${r.status}`, label).toBe(`${d.seq}:${d.status}`);
+                }
                 cases += 1;
               }
             }

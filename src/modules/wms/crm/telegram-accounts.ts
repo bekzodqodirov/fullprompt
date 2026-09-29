@@ -54,6 +54,32 @@ export async function saveAccount(input: {
 }
 
 /**
+ * Who ELSE holds this Telegram number here — the person `tg_phone`'s unique
+ * index (0038) would refuse the new login for, named so the screen can say
+ * whose it is. Their row counts whatever its state: a signed-out row still
+ * holds the number, and the insert refuses it just the same.
+ *
+ * Compared as digits: rows from `pnpm tg-login` predate the screen's
+ * `+998…` shape, and a missed match only moves the refusal to the end of
+ * the login, after the code has been spent.
+ */
+export async function phoneHolder(
+  phone: string,
+  userId: string,
+): Promise<{ name: string } | null> {
+  const [row] = await db
+    .select({ name: users.fullName })
+    .from(tgAccounts)
+    .innerJoin(users, eq(users.id, tgAccounts.managerUserId))
+    .where(
+      sql`regexp_replace(${tgAccounts.tgPhone}, '\\D', '', 'g') = ${phone.replace(/\D/g, '')}
+        AND ${tgAccounts.managerUserId} <> ${userId}`,
+    )
+    .limit(1);
+  return row ? { name: row.name } : null;
+}
+
+/**
  * Does this person hold a connected Telegram account — signed out not
  * counting, because a signed-out row has no session and no chats to answer
  * for. This is the tray's door (round 93): the person who decides whether a
