@@ -32,7 +32,10 @@ export interface CountRow {
   byCount: boolean;
   /** A stickerless carton — preferred when the office picks from the shelf. */
   qrless: boolean;
-  /** Where it stood before it was loaded onto this truck, for the way back. */
+  /**
+   * Where it stood before this truck took it, for the way back — the
+   * service reads `shelfBeforeSql`, the one rule every give-back asks.
+   */
   loadedFrom: string | null;
   /**
    * Minted into the lot by a count press on THIS truck and never labelled:
@@ -145,14 +148,13 @@ export function planCountMove(rows: readonly CountRow[], target: number, o: Coun
       // measured against the PLAN, not against what happens to be reserved.
       const aboardPlain = aboard.filter((r) => !r.over).length;
       const room = Math.max(0, o.planN - aboardPlain - move.load.length);
-      // Only a shelf carton `in_stock` goes back onto the plan, as plan
-      // approval itself reserves: a `ready_for_pickup` one reserved here came
-      // back `in_stock` from «yuklash tugadi» or a cancel — at a collection
-      // warehouse, off every «tayyor» list (review cargo-6). It rides as an
-      // extra instead, and a dial-down returns it to where it stood.
-      move.reReserve = shelf
-        .filter((r) => r.status === 'in_stock')
-        .slice(0, Math.min(need - move.load.length, room));
+      // Either shelf status, as plan approval itself reserves: a truck from
+      // Andijan is planned out of `ready_for_pickup` cargo. Review cargo-6 kept
+      // those off the plan because «yuklash tugadi» and a cancel gave every
+      // carton back `in_stock` — off every «tayyor» list at a collection
+      // warehouse; they give it back as it stood now (`shelfBefore`), so a
+      // carton the plan counted is a carton the plan counted, with no ⚠.
+      move.reReserve = shelf.slice(0, Math.min(need - move.load.length, room));
       const reReserved = new Set(move.reReserve.map((r) => r.id));
       const rest = need - move.load.length - move.reReserve.length;
       move.loadOver = shelf.filter((r) => !reReserved.has(r.id)).slice(0, rest);

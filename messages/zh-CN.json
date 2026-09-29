@@ -2268,6 +2268,7 @@
     "connectSendCode": "发送验证码",
     "connectCode": "Telegram 验证码",
     "connectCodeHint": "验证码已发送到您的 Telegram 应用（不是短信）。",
+    "connectCodeAccepted": "验证码已通过",
     "connectPassword": "两步验证密码",
     "connectPasswordHint": "该账号开启了两步验证——请输入其密码。",
     "connectFinish": "连接",
@@ -2276,7 +2277,10 @@
     "connectErrors": {
       "not_configured": "服务器尚未配置 Telegram 连接——请联系管理员。",
       "phone_invalid": "号码格式不正确。格式：+998901234567。",
+      "phone_unregistered": "该号码没有 Telegram 账号，请检查号码。",
+      "phone_taken": "该号码已在系统中连接到员工 {name}。一个 Telegram 只能连接一名员工——请联系管理员。",
       "code_invalid": "验证码不正确，请重新输入。",
+      "password_needed": "该账号设置了两步验证密码——请输入。",
       "password_invalid": "密码不正确，请重试。",
       "flood_wait": "Telegram 要求稍候——尝试次数过多，请稍后再试。",
       "expired": "已超时，请重新获取验证码。",

@@ -10,6 +10,7 @@ import {
   setWorkAccount,
 } from '@/modules/wms/crm/telegram-accounts';
 import { beginTgLogin, completeTgLogin } from '@/modules/wms/crm/telegram-connect';
+import { afterFinish } from './connect-state';
 
 /**
  * The connect flow's two doors — round 21.
@@ -25,6 +26,8 @@ export interface ConnectState {
   stage: 'phone' | 'code' | 'done';
   needPassword?: boolean;
   error?: string;
+  /** Whose account already holds the number — `phone_taken`'s name. */
+  holder?: string;
   /** A save that changed something — the work-account switch's ✅. */
   ok?: boolean;
 }
@@ -44,12 +47,12 @@ export async function beginConnectAction(
   const actor = await connector();
   if (!actor) return { stage: 'phone', error: 'forbidden' };
   const result = await beginTgLogin(actor.id, String(form.get('phone') ?? ''));
-  if (!result.ok) return { stage: 'phone', error: result.error };
+  if (!result.ok) return { stage: 'phone', error: result.error, holder: result.holder };
   return { stage: 'code' };
 }
 
 export async function completeConnectAction(
-  _prev: ConnectState,
+  prev: ConnectState,
   form: FormData,
 ): Promise<ConnectState> {
   const actor = await connector();
@@ -60,17 +63,9 @@ export async function completeConnectAction(
     String(form.get('code') ?? ''),
     password || undefined,
   );
-  if (!result.ok) {
-    // 2FA: the login is still alive — the screen asks for the password and
-    // resubmits the same code with it.
-    if (result.error === 'password_needed') return { stage: 'code', needPassword: true };
-    if (result.error === 'expired') return { stage: 'phone', error: 'expired' };
-    return {
-      stage: 'code',
-      needPassword: result.error === 'password_invalid' || password.length > 0,
-      error: result.error,
-    };
-  }
+  // 2FA: once Telegram has taken the code the server remembers it
+  // (`finishLogin`), so the password press carries the password alone.
+  if (!result.ok) return afterFinish(prev, result);
   return { stage: 'done' };
 }
 
