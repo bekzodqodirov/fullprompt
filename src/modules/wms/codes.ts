@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import type { Db, Tx } from '../platform/db/client';
+import { codeEverWorn, lockBatchCode } from './batches/former-codes';
 
 /**
  * Atomically advance a named counter by `by` and return the NEW value
@@ -62,13 +63,20 @@ export async function nextBatchCode(
   // so after one successful mint the counter stands clear of the collision
   // block. Concurrent minters serialize on the counter row's lock, and the
   // unique index stays the final arbiter.
+  //
+  // «Taken» means EVERY name a truck has worn, not only the codes standing
+  // today (the owner's 1a, 2026-09-30): a rename away does not free a name —
+  // the old papers, the bot and ⌘K still answer to it — so the walk skips a
+  // former name exactly as it skips a current one (`codeEverWorn`). The
+  // per-candidate lock makes a mint WAIT for an in-flight rename to that
+  // same number and then see it, instead of meeting it as a 23505 inside
+  // approvePlan or a quick batch. A rename takes the truck row first and this
+  // lock second; the walk never takes a truck row, so there is no cycle.
   for (;;) {
     const seq = await bumpCounter(tx, 'batch_seq', prefix);
     const code = `${prefix}-${String(seq).padStart(3, '0')}`;
-    const taken = (await tx.execute(
-      sql`SELECT 1 FROM batches WHERE code = ${code} LIMIT 1`,
-    )) as unknown as unknown[];
-    if (taken.length === 0) return code;
+    await lockBatchCode(tx, code);
+    if (!(await codeEverWorn(tx, code, null))) return code;
   }
 }
 

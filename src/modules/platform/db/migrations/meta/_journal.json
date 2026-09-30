@@ -848,6 +848,13 @@
       "when": 1785190000099,
       "tag": "0120_no_login_staff",
       "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "7",
+      "when": 1785190000100,
+      "tag": "0121_batch_rename",
+      "breakpoints": true
     }
   ]
 }

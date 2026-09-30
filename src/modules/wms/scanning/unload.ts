@@ -2,7 +2,7 @@ import { cache } from 'react';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { v4 as uuidv4, v5 as uuidv5 } from 'uuid';
 import { z } from 'zod';
-import { db, type Tx } from '../../platform/db/client';
+import { db, type Db, type Tx } from '../../platform/db/client';
 import {
   batches,
   boxes,
@@ -561,6 +561,21 @@ export function aboardFilter(batchId: string) {
  */
 function awaitingUnloadWhere(batchIds: string[]) {
   return and(inArray(boxes.currentBatchId, batchIds), eq(boxes.status, 'in_transit'));
+}
+
+/**
+ * The same count for ONE truck on the caller's handle — the rename's stage
+ * (`batches/rename-door.ts`): a truck with nothing left to scan off is
+ * finished whether or not anybody pressed «Tushirish tugadi», and the rename
+ * must count exactly what this screen counts down (#513). On the
+ * transaction, so it reads under the truck's row lock.
+ */
+export async function awaitingUnloadCount(tx: Db | Tx, batchId: string): Promise<number> {
+  const [row] = await tx
+    .select({ n: sql<number>`count(*)` })
+    .from(boxes)
+    .where(awaitingUnloadWhere([batchId]));
+  return Number(row?.n ?? 0);
 }
 
 /**

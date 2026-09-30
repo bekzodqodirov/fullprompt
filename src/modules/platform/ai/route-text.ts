@@ -12,11 +12,21 @@
 const CANDIDATE = /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9-]{3,20}$/;
 const MAX_CANDIDATES = 3;
 
+/**
+ * One token, asked the bot's own question. Exported because a truck renamed
+ * on the road must be a name the bot RECOGNISES as a code
+ * (`batches/batch-code.ts` `roadCodeProblem`) — its accept rule is this
+ * function, never a restatement of the pattern beside it (#513).
+ */
+export function isCodeCandidate(token: string): boolean {
+  return CANDIDATE.test(token);
+}
+
 export function codeCandidates(text: string): string[] {
   const seen = new Set<string>();
   for (const token of text.split(/\s+/)) {
     const clean = token.replace(/[.,!?:;()«»"']/g, '');
-    if (CANDIDATE.test(clean)) seen.add(clean.toUpperCase());
+    if (isCodeCandidate(clean)) seen.add(clean.toUpperCase());
     if (seen.size >= MAX_CANDIDATES) break;
   }
   return [...seen];
