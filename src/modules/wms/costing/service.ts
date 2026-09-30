@@ -1548,12 +1548,11 @@ function landedAllocationsSql(list: SQL): { with: SQL; joins: SQL; where: SQL } 
     with: sql`
       ${carriageCtesSql(list)},
       prev_priced AS (
-        SELECT m.batch_id, m.box_id, max(p.departed_at) AS prev_at
-          FROM members m
-          JOIN clock c ON c.batch_id = m.batch_id AND NOT c.internal
-          JOIN rides p ON p.box_id = m.box_id AND p.batch_id <> m.batch_id
-         WHERE p.departed_at IS NOT NULL AND p.departed_at < c.at AND NOT p.internal
-         GROUP BY m.batch_id, m.box_id
+        SELECT t.batch_id, t.box_id, t.prev_nonint_at AS prev_at
+          FROM rides t
+          JOIN members m ON m.batch_id = t.batch_id AND m.box_id = t.box_id
+          JOIN clock c ON c.batch_id = t.batch_id AND NOT c.internal
+         WHERE t.prev_nonint_at IS NOT NULL
       )`,
     joins: sql`
       FROM members m
@@ -1609,7 +1608,13 @@ function carriageCtesSql(list: SQL): SQL {
     rides AS (
       SELECT r.batch_id, r.box_id, rb.departed_at,
              ${internalLegSql('ro', 'rd')} AS internal,
-             ${bearsPriceSql('ro', 'rd', 'rw')} AS bears
+             ${bearsPriceSql('ro', 'rd', 'rw')} AS bears,
+             -- Windows over the box's own rides, strictly before this one
+             -- (EXCLUDE GROUP drops the ride and its same-instant peers; a
+             -- forming ride sorts last and sees every departure). One pass,
+             -- not a correlated probe per ride: measured 5× slower that way.
+             max(rb.departed_at) FILTER (WHERE NOT ${internalLegSql('ro', 'rd')}) OVER w AS prev_nonint_at,
+             max(rb.departed_at) FILTER (WHERE ${bearsPriceSql('ro', 'rd', 'rw')}) OVER w AS prev_bear_at
         FROM box_rides r
         JOIN (SELECT DISTINCT box_id FROM members) mb ON mb.box_id = r.box_id
         JOIN batches rb ON rb.id = r.batch_id
@@ -1619,33 +1624,33 @@ function carriageCtesSql(list: SQL): SQL {
         JOIN receipt_lots hl ON hl.id = hb.lot_id
         JOIN receipts hr ON hr.id = hl.receipt_id
         JOIN warehouses rw ON rw.id = hr.warehouse_id
+      WINDOW w AS (PARTITION BY r.box_id ORDER BY rb.departed_at
+                   RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW EXCLUDE GROUP)
+    ),
+    -- Every non-bearing ride of a member box (on ANY truck, listed or not)
+    -- and the price-bearing truck before it — one row per (truck, box).
+    chain AS (
+      SELECT DISTINCT ON (h.batch_id, h.box_id) h.batch_id, h.box_id, h.departed_at, p.batch_id AS carrier_id
+        FROM rides h
+        JOIN rides p ON p.box_id = h.box_id AND p.bears AND p.departed_at = h.prev_bear_at
+       WHERE NOT h.internal AND NOT h.bears
+       ORDER BY h.batch_id, h.box_id, p.batch_id
     ),
     follows AS (
-      SELECT t.batch_id, t.box_id, t.departed_at,
-             (SELECT p.batch_id FROM rides p
-               WHERE p.box_id = t.box_id AND p.bears AND p.departed_at IS NOT NULL
-                 AND p.departed_at < coalesce(t.departed_at, now())
-               ORDER BY p.departed_at DESC LIMIT 1) AS carrier_id
-        FROM rides t
-        JOIN members m ON m.batch_id = t.batch_id AND m.box_id = t.box_id
-       WHERE NOT t.internal AND NOT t.bears
+      SELECT f.batch_id, f.box_id, f.departed_at, f.carrier_id
+        FROM chain f
+        JOIN members m ON m.batch_id = f.batch_id AND m.box_id = f.box_id
     ),
     given_back AS (
-      SELECT batch_id, box_id FROM follows WHERE carrier_id IS NOT NULL AND departed_at IS NOT NULL
+      SELECT batch_id, box_id FROM follows WHERE departed_at IS NOT NULL
     ),
+    -- How far forward a price-bearing truck carries each carton: the last
+    -- departed ride whose carrier it is (answer 5a: every Uzbek leg after).
     carried AS (
-      SELECT t.batch_id, t.box_id, max(h.departed_at) AS upto
-        FROM rides t
-        JOIN members m ON m.batch_id = t.batch_id AND m.box_id = t.box_id
-        JOIN rides h ON h.box_id = t.box_id AND NOT h.internal AND NOT h.bears
-                    AND h.departed_at > t.departed_at
-       WHERE t.bears AND t.departed_at IS NOT NULL
-         AND NOT EXISTS (
-           SELECT 1 FROM rides n
-            WHERE n.box_id = t.box_id AND n.bears
-              AND n.departed_at > t.departed_at AND n.departed_at < h.departed_at
-         )
-       GROUP BY t.batch_id, t.box_id
+      SELECT carrier_id AS batch_id, box_id, max(departed_at) AS upto
+        FROM chain
+       WHERE departed_at IS NOT NULL
+       GROUP BY carrier_id, box_id
     )`;
 }
 
