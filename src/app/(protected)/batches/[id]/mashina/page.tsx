@@ -65,7 +65,7 @@ export default async function BatchTruckTabPage({ params }: { params: Promise<{ 
   // options the service admits (#531: the service asks again).
   const reroutes = await rerouteHistory(id);
   const mayReroute = mayRerouteTruck(actor, batch);
-  const rerouteOptions = mayReroute ? await rerouteTargets(batch, head, actor) : [];
+  const rerouteOptions = mayReroute ? await rerouteTargets(batch, head, actor) : { options: [], hiddenByScope: 0 };
   const plannedCode =
     reroutes.length > 0 ? ((await departureDestination(id))?.code ?? reroutes[0]!.fromCode) : null;
 
@@ -220,7 +220,8 @@ export default async function BatchTruckTabPage({ params }: { params: Promise<{ 
                 batchCode={batch.code}
                 fromId={batch.destWarehouseId}
                 fromCode={head.destCode}
-                targets={rerouteOptions}
+                targets={rerouteOptions.options}
+                hiddenByScope={rerouteOptions.hiddenByScope}
               />
             )}
           </Panel>

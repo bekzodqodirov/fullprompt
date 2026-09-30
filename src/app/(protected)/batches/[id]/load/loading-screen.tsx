@@ -20,6 +20,7 @@ import { codeIdentity } from '@/modules/wms/labels/code-identity';
 import { countOnlyLotOf, type CountOnlyLot } from '@/offline/count-only';
 import { isScanRefusal, type ScanRefusal } from '@/offline/scan-refusal';
 import { mergeLoaded } from '@/offline/loaded-merge';
+import { rerouteVerdict } from '@/offline/reroute-acks';
 import { removeLoadedAction } from '../../batch-actions-server';
 import { isOwnCodeShape, looksLikeRetailBarcode } from '@/offline/code-shape';
 
@@ -82,7 +83,10 @@ export function LoadingScreen({
   const tc = useTranslations('common');
   const tr = useTranslations('scanRefusal');
   const tcount = useTranslations('countLoad');
+  const tu = useTranslations('unloading');
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
+  /** Rows of trucks this person may not touch, still on the phone — a line, not a toast. */
+  const [withheldN, setWithheldN] = useState(0);
   /** Why there is no snapshot yet — `null` while it is simply still loading. */
   const [snapError, setSnapError] = useState<
     { kind: 'forbidden' | 'offline' | 'server'; status?: number } | null
@@ -253,9 +257,26 @@ export function LoadingScreen({
         // the same scan with addedOnSpot, and a crate must go back as a crate.
         reopen = ack.scannedCode ?? codes[0] ?? null;
         setToast(`⚠️ ${t('notOnPlan')}`);
+      } else if (ack.detail === 'batch_rerouted') {
+        // Never this truck's: a loading row cannot be rerouted. The outbox is
+        // one queue, so an UNLOAD row of another truck — Kashgar unloads and
+        // loads on the same phones — comes back here; it is named below by
+        // `rerouteVerdict`, once per truck, and nothing of this truck is
+        // rolled back (`codes` is empty for a row this screen never marked).
+        continue;
+      } else if (ack.detail === 'batch_not_found') {
+        setToast(`❌ ${tu('errors.not_found')}`);
       } else {
         setToast(`❌ ${ack.detail ?? ack.result}`);
       }
+    }
+    const elsewhere = rerouteVerdict(acks, batchId).elsewhere;
+    if (elsewhere.length > 0) {
+      setToast(
+        elsewhere
+          .map((other) => tu('otherTruckRerouted', { code: other.code ?? '—', to: other.to, n: other.n }))
+          .join(' '),
+      );
     }
 
     if (rollback.length > 0) {
@@ -277,7 +298,7 @@ export function LoadingScreen({
       setConfirmCode(first.code);
       setConfirmReason('');
     }
-  }, [t, refusalText]);
+  }, [t, tu, refusalText, batchId]);
 
   /**
    * The snapshot is the whole truck, and it was being re-downloaded after
@@ -306,9 +327,11 @@ export function LoadingScreen({
           });
         }
         // A truck this person may not touch keeps its rows on the phone and
-        // no longer stops the others (the reroute round) — said as that.
-        if (withheld > 0) setToast(`🚫 ${tc('scanWithheld', { n: withheld })}`);
-        else if (refusedForbidden) setToast(`🚫 ${t('notYourTruck')}`);
+        // no longer stops the others (the reroute round) — said as that, on
+        // its own line: in the one toast slot it overwrote every scan's own
+        // answer on every flush for as long as the rows stayed.
+        setWithheldN(withheld);
+        if (withheld === 0 && refusedForbidden) setToast(`🚫 ${t('notYourTruck')}`);
         setOnline(true);
         if (sync) {
           try {
@@ -338,7 +361,7 @@ export function LoadingScreen({
       }
       await refreshPending();
     },
-    [handleAcks, refreshPending, batchId, cacheKey, t, tc],
+    [handleAcks, refreshPending, batchId, cacheKey, t],
   );
 
   /**
@@ -735,6 +758,12 @@ export function LoadingScreen({
       >
         {online ? (pending > 0 ? `🔄 ${t('syncing', { n: pending })}` : `✅ ${t('online')}`) : `📴 ${t('offline', { n: pending })}`}
       </div>
+
+      {withheldN > 0 && (
+        <p className="text-center text-xs text-ink-500" data-testid="scan-withheld">
+          🚫 {tc('scanWithheld', { n: withheldN })}
+        </p>
+      )}
 
       {/* The snapshot carries only so many of the office's cartons (review
           phone-3): past the cap an offline read of one of them is queued and

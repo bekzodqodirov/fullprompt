@@ -39,15 +39,27 @@ import { ingestUnloadScans, type UnloadAck } from './unload';
  * (`expectDest`), which the ingest compares again under the truck's lock — a
  * reroute committing between this read and the landing refuses the row
  * instead of landing it at a warehouse this person was never authorized at.
+ *
+ * And the destination is judged at SCAN time, not at sync time (the reroute
+ * review): an unload row carries `expectDestId`, the destination the phone's
+ * snapshot was drawn for. A row scanned for another destination than the
+ * truck has now is `batch_rerouted` for EVERYBODY — the unscoped logist and
+ * the admin included, who pass `mayAt` at any warehouse and whose scans made
+ * at the old gate would otherwise land the cartons, the arrival and the
+ * customers' «yukingiz keldi» at the new one while the cartons stand at the
+ * old. A row from an older phone carries none and is judged at the live
+ * destination, as before.
  */
 
 export const syncItemSchema = loadScanSchema.extend({
   scanType: z.enum(['load', 'unload']).default('load'),
+  /** Unload rows: the destination the phone's snapshot named when it was scanned. */
+  expectDestId: z.string().uuid().optional(),
 });
 export const syncBodySchema = z.object({ scans: z.array(syncItemSchema).min(1).max(200) });
 export type SyncItem = z.infer<typeof syncItemSchema>;
 
-export type SyncAckOut = (ScanAck | UnloadAck) & { rerouteTo?: string };
+export type SyncAckOut = (ScanAck | UnloadAck) & { rerouteTo?: string; batchCode?: string };
 
 export interface SyncResult {
   acks: SyncAckOut[];
@@ -65,6 +77,7 @@ export async function syncScans(
     ? await db
         .select({
           id: batches.id,
+          code: batches.code,
           originWarehouseId: batches.originWarehouseId,
           destWarehouseId: batches.destWarehouseId,
         })
@@ -78,6 +91,8 @@ export async function syncScans(
   const loads: SyncItem[] = [];
   const unloads: SyncItem[] = [];
   const refusedUnloads: SyncItem[] = [];
+  /** Rows scanned for a destination the truck no longer has, by a person who may act at the live one. */
+  const staleUnloads: SyncItem[] = [];
   const expectDest = new Map<string, string>();
 
   for (const scan of scans) {
@@ -96,7 +111,16 @@ export async function syncScans(
       else withheld.add(truck.id);
       continue;
     }
-    if (mayAt(actor, 'scan.unload', truck.destWarehouseId)) {
+    const mayUnloadHere = mayAt(actor, 'scan.unload', truck.destWarehouseId);
+    if ((scan.expectDestId ?? truck.destWarehouseId) !== truck.destWarehouseId) {
+      // Scanned against a snapshot of another destination: never landed here.
+      // Answered as the reroute to whoever may act at the live warehouse;
+      // anyone else goes through the refused path's own question below.
+      if (mayUnloadHere) staleUnloads.push(scan);
+      else refusedUnloads.push(scan);
+      continue;
+    }
+    if (mayUnloadHere) {
       unloads.push(scan);
       expectDest.set(truck.id, truck.destWarehouseId);
     } else {
@@ -106,34 +130,41 @@ export async function syncScans(
 
   // ONE read of the reroute history for every truck the person was refused
   // at: a truck they lost through a reroute is answered, anything else held.
+  const rerouted: SyncItem[] = [...staleUnloads];
   if (refusedUnloads.length > 0) {
     const refusedIds = [...new Set(refusedUnloads.map((s) => s.batchId))];
     const former = await formerDestinationsFor(refusedIds);
-    const lost = refusedIds.filter((id) =>
-      lostThroughReroute(actor, 'scan.unload', former.get(id) ?? [], byId.get(id)!.destWarehouseId),
+    const lost = new Set(
+      refusedIds.filter((id) =>
+        lostThroughReroute(actor, 'scan.unload', former.get(id) ?? [], byId.get(id)!.destWarehouseId),
+      ),
     );
-    const codes = lost.length
-      ? new Map(
-          (
-            await db
-              .select({ id: warehouses.id, code: warehouses.code })
-              .from(warehouses)
-              .where(inArray(warehouses.id, [...new Set(lost.map((id) => byId.get(id)!.destWarehouseId))]))
-          ).map((w) => [w.id, w.code]),
-        )
-      : new Map<string, string>();
-    const lostSet = new Set(lost);
     for (const scan of refusedUnloads) {
-      if (!lostSet.has(scan.batchId)) {
-        withheld.add(scan.batchId);
-        continue;
-      }
-      const to = codes.get(byId.get(scan.batchId)!.destWarehouseId);
+      if (lost.has(scan.batchId)) rerouted.push(scan);
+      else withheld.add(scan.batchId);
+    }
+  }
+  if (rerouted.length > 0) {
+    const destIds = [...new Set(rerouted.map((s) => byId.get(s.batchId)!.destWarehouseId))];
+    const codes = new Map(
+      (
+        await db
+          .select({ id: warehouses.id, code: warehouses.code })
+          .from(warehouses)
+          .where(inArray(warehouses.id, destIds))
+      ).map((w) => [w.id, w.code]),
+    );
+    for (const scan of rerouted) {
+      const truck = byId.get(scan.batchId)!;
+      const to = codes.get(truck.destWarehouseId);
       acks.push({
         clientEventUuid: scan.clientEventUuid,
         result: 'rejected',
         detail: 'batch_rerouted',
         scannedCode: scan.code,
+        // The truck's own code: the outbox is one queue for every truck, and
+        // another truck's screen names it instead of taking it as its own.
+        batchCode: truck.code,
         ...(to ? { rerouteTo: to } : {}),
       });
     }

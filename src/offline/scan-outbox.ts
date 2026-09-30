@@ -16,6 +16,13 @@ export interface OutboxScan {
   addedReason?: string;
   scannedAt: string;
   scanType?: 'load' | 'unload';
+  /**
+   * Unload rows: the destination the screen's snapshot named when the carton
+   * was scanned (the reroute review). The server judges the row by it, so a
+   * scan made at the old gate is never landed at the new one — not even by a
+   * logist or an admin, who may act at both. Absent on an older phone's row.
+   */
+  expectDestId?: string;
 }
 
 export interface SyncAck {
@@ -45,6 +52,16 @@ export interface SyncAck {
    * old destination's screen says «endi {to} ga boradi» (the reroute round).
    */
   rerouteTo?: string;
+  /** `batch_rerouted` only: the truck's code, so another truck's screen can name it. */
+  batchCode?: string;
+  /**
+   * The truck of the ROW this ack answers — written by the flush from the
+   * queued row, never by the server. The outbox is one queue for every truck,
+   * so a screen receives other trucks' answers too, and only this field lets
+   * it tell its own from a neighbour's (the reroute review: truck B's screen
+   * took truck A's «rerouted» as its own and refused every scan of B).
+   */
+  batchId?: string;
 }
 
 /**
@@ -220,7 +237,8 @@ async function sendSlice(slice: OutboxScan[], out: FlushOut, deps: FlushDeps): P
   const res = await deps.post(slice);
   if (res.ok) {
     const body = (await res.json()) as { acks: SyncAck[]; withheld?: unknown };
-    out.acks.push(...body.acks);
+    const truckOf = new Map(slice.map((row) => [row.clientEventUuid, row.batchId]));
+    out.acks.push(...body.acks.map((ack) => ({ ...ack, batchId: truckOf.get(ack.clientEventUuid) })));
     // Only what the server answered leaves the queue; a withheld truck's
     // rows stay, counted, for the day the person may send them.
     await deps.remove(body.acks.map((a) => a.clientEventUuid));

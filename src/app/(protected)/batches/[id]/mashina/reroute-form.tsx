@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { rerouteBatchAction } from '../../batch-actions-server';
 import type { RerouteErrorCode } from '@/modules/wms/batches/reroute-rules';
@@ -13,7 +14,7 @@ export interface RerouteOption {
   noSchedule: boolean;
 }
 
-type Refusal = RerouteErrorCode | 'busy_retry' | 'validation' | 'offline';
+type Refusal = RerouteErrorCode | 'busy_retry' | 'validation' | 'offline' | 'unauthenticated';
 
 /**
  * «Yo'nalishni o'zgartirish» — the Mashina tab's form (the reroute round).
@@ -21,9 +22,13 @@ type Refusal = RerouteErrorCode | 'busy_retry' | 'validation' | 'offline';
  * Controlled inputs, and not a `<form action>`: a refusal keeps both the
  * chosen warehouse and the typed reason (#377/#463), and the press awaits the
  * action inside try/finally so `pending` can never stick (#882). No
- * `router.refresh()` — the action revalidates, and a refresh after it is the
- * pending-for-ever shape (#1242). What the new road means (no pin on it, no
- * date for it) is said UNDER the choice, before the press.
+ * `router.refresh()` after a success — the action revalidates, and a refresh
+ * after it is the pending-for-ever shape (#1242). The one refresh is after
+ * `dest_changed`: nothing was written, no action is pending, and the page
+ * must show the destination a colleague just chose — the kept choice and
+ * reason survive it, because the component keeps its state across a refresh
+ * (the reroute review). What the new road means (no pin on it, no date for
+ * it) is said UNDER the choice, before the press.
  *
  * Imports only the refusal TYPE from the rules: a value import that reached
  * the database client would ship postgres to the phone (#276).
@@ -34,6 +39,7 @@ export function RerouteForm({
   fromId,
   fromCode,
   targets,
+  hiddenByScope = 0,
 }: {
   batchId: string;
   batchCode: string;
@@ -41,9 +47,12 @@ export function RerouteForm({
   fromId: string;
   fromCode: string;
   targets: RerouteOption[];
+  /** Admissible warehouses left out only because they are not this person's. */
+  hiddenByScope?: number;
 }) {
   const t = useTranslations('batches');
   const tc = useTranslations('common');
+  const router = useRouter();
   const [target, setTarget] = useState('');
   const [reason, setReason] = useState('');
   const [pending, setPending] = useState(false);
@@ -70,12 +79,15 @@ export function RerouteForm({
     busy_retry: t('reroute.errors.busy_retry'),
     validation: t('reroute.errors.validation'),
     offline: t('reroute.errors.offline'),
+    unauthenticated: t('reroute.errors.unauthenticated'),
   };
 
   if (targets.length === 0) {
+    // «There is none» and «there are some, not yours» are different answers
+    // (the reroute review): the second one is a question for an admin.
     return (
       <p className="text-sm text-ink-500" data-testid="reroute-no-targets">
-        {t('reroute.noTargets')}
+        {hiddenByScope > 0 ? t('reroute.noTargetsInScope') : t('reroute.noTargets')}
       </p>
     );
   }
@@ -97,6 +109,9 @@ export function RerouteForm({
       });
       if (!res.ok) {
         setError(res.error);
+        // A colleague moved the truck first: show the destination as it is
+        // now (the «seen» this form posts comes from the page).
+        if (res.error === 'dest_changed') router.refresh();
         return;
       }
       setDone({ to: res.toCode, pinOffRoute: res.pinOffRoute, noSchedule: res.noSchedule });

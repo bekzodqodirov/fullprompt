@@ -372,6 +372,16 @@ export interface RerouteTarget {
   noSchedule: boolean;
 }
 
+export interface RerouteTargets {
+  options: RerouteTarget[];
+  /**
+   * Admissible warehouses left out only because they are outside the
+   * person's scope — so an empty list says «not assigned to you» instead of
+   * «there is no other warehouse in this country» (the reroute review).
+   */
+  hiddenByScope: number;
+}
+
 /**
  * The warehouses the form offers — exactly the ones the service admits:
  * active, not either end, the destination's own country (answer 5a), in the
@@ -382,9 +392,9 @@ export async function rerouteTargets(
   batch: { originWarehouseId: string; destWarehouseId: string; trackingCheckpoint: unknown },
   head: { originCode: string; destCountry: string | null },
   actor: ScopedActor,
-): Promise<RerouteTarget[]> {
+): Promise<RerouteTargets> {
   const key = countryKey(head.destCountry);
-  if (!key) return [];
+  if (!key) return { options: [], hiddenByScope: 0 };
   const rows = await db
     .select({ id: warehouses.id, code: warehouses.code, name: warehouses.name, country: warehouses.country })
     .from(warehouses)
@@ -397,12 +407,14 @@ export async function rerouteTargets(
       ),
     )
     .orderBy(asc(warehouses.code));
-  return rows
-    .filter((row) => inScope(actor, row.id))
-    .map((row) => ({
+  const mine = rows.filter((row) => inScope(actor, row.id));
+  return {
+    options: mine.map((row) => ({
       id: row.id,
       label: `${row.code} · ${row.name}`,
       code: row.code,
       ...consequencesOf(batch.trackingCheckpoint, head.originCode, row),
-    }));
+    })),
+    hiddenByScope: rows.length - mine.length,
+  };
 }

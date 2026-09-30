@@ -106,6 +106,35 @@ describe('flushScansWith', () => {
     expect(result.refusedForbidden).toBe(true);
   });
 
+  it('every ack is tagged with the truck of the ROW it answers — never with what the server says', async () => {
+    // The reroute review: a screen must tell its own truck's answers from a
+    // neighbour's, and the queued row is the only honest witness of that.
+    const mine = row(B);
+    const lost = row(A);
+    const w = world([mine, lost], () =>
+      json({
+        acks: [
+          { clientEventUuid: mine.clientEventUuid, result: 'ok', batchId: A },
+          {
+            clientEventUuid: lost.clientEventUuid,
+            result: 'rejected',
+            detail: 'batch_rerouted',
+            rerouteTo: 'HOR',
+            batchCode: 'KA-7',
+          },
+        ],
+        withheld: [],
+      }),
+    );
+    const { acks } = await flushScansWith(w.deps);
+    expect(new Map(acks.map((a) => [a.clientEventUuid, a.batchId]))).toEqual(
+      new Map([
+        [mine.clientEventUuid, B],
+        [lost.clientEventUuid, A],
+      ]),
+    );
+  });
+
   it('withheld rows inside an answered body stay queued and are counted', async () => {
     const ours = row(B);
     const held = [row(C), row(C)];

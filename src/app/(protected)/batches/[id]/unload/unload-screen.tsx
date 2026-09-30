@@ -17,6 +17,7 @@ import { codeIdentity } from '@/modules/wms/labels/code-identity';
 import { codesToUnmark } from '@/offline/ack-verdict';
 import { countOnlyLotOf, type CountOnlyLot } from '@/offline/count-only';
 import { isScanRefusal, type ScanRefusal } from '@/offline/scan-refusal';
+import { rerouteVerdict, snapshotRerouted } from '@/offline/reroute-acks';
 import { isOwnCodeShape, looksLikeRetailBarcode } from '@/offline/code-shape';
 
 interface MemberBox {
@@ -30,7 +31,11 @@ interface MemberBox {
   crateCode?: string | null;
 }
 interface Snapshot {
-  batch: { id: string; code: string; status: string };
+  /**
+   * `destWarehouseId`/`destCode`: the destination this snapshot was drawn for
+   * (the reroute review). Absent from a snapshot cached by an older build.
+   */
+  batch: { id: string; code: string; status: string; destWarehouseId?: string; destCode?: string | null };
   boxes: MemberBox[];
   crates: { code: string; boxShortCodes: string[] }[];
   /** Lots the office counts on this truck (0112). Absent from a cached old snapshot. */
@@ -77,10 +82,21 @@ export function UnloadScreen({ batchId, countHref }: { batchId: string; countHre
   >(null);
   /**
    * The truck was rerouted away from this warehouse (the reroute round) — by
-   * the server's 409 on the snapshot or a scan's `batch_rerouted` ack. While
-   * set, a red line says where it goes now and nothing more is queued.
+   * the server's 409 on the snapshot, a changed destination on a 200, or a
+   * scan's `batch_rerouted` ack FOR THIS TRUCK. While set, a red line says
+   * where it goes now and nothing more is queued; a later snapshot naming the
+   * destination this screen was opened for (the truck sent back) clears it.
    */
   const [reroutedTo, setReroutedTo] = useState<string | null>(null);
+  /**
+   * The destination this screen was opened for — the first snapshot's. Every
+   * queued scan carries it (`expectDestId`), and the server refuses a row
+   * whose truck no longer goes there, for EVERY viewer (the reroute review:
+   * an unscoped logist's scans at the old gate landed at the new one).
+   */
+  const baseDest = useRef<string | null>(null);
+  /** Rows of trucks this person may not touch, still on the phone — a line, not a toast. */
+  const [withheldN, setWithheldN] = useState(0);
   const [done, setDone] = useState<Set<string>>(new Set());
   const [extra, setExtra] = useState<string[]>([]);
   const [pending, setPending] = useState(0);
@@ -100,6 +116,7 @@ export function UnloadScreen({ batchId, countHref }: { batchId: string; countHre
 
   const applySnapshot = useCallback((data: Snapshot) => {
     snapRef.current = data;
+    if (baseDest.current === null) baseDest.current = data.batch.destWarehouseId ?? null;
     setSnapshot(data);
     // "Accepted here" is "no longer in transit" — NOT "in_stock". A customs or
     // distribution destination lands cargo straight in ready_for_pickup, and
@@ -180,7 +197,10 @@ export function UnloadScreen({ batchId, countHref }: { batchId: string; countHre
        * toast (a single slot, overwritten by the next) was the whole of the
        * telling.
        */
-      let rerouted: SyncAck | null = null;
+      // Whose reroute: only THIS truck's latches the screen. The outbox is one
+      // queue for every truck, so a neighbour's rerouted rows come back here
+      // too — they are named in a toast and never block this truck's scans.
+      const reroute = rerouteVerdict(acks, batchId);
       for (const ack of acks) {
         if (ack.result === 'auto_transfer') {
           setToast({
@@ -190,9 +210,14 @@ export function UnloadScreen({ batchId, countHref }: { batchId: string; countHre
           setToast({ text: `❓ ${t('unknownCode')}`, intake: true });
         } else if (ack.result === 'rejected') {
           // BEFORE the count-only refusals: a truck rerouted away is not a
-          // lot the office counts, and its lot label means nothing here.
+          // lot the office counts, and its lot label means nothing here. Said
+          // once below, per truck, by `rerouteVerdict`.
           if (ack.detail === 'batch_rerouted') {
-            rerouted = ack;
+            continue;
+          } else if (ack.detail === 'batch_not_found') {
+            // A truck deleted while its scans waited (the reroute round's
+            // per-row answer): words, never the bare code.
+            setToast({ text: `❌ ${t('errors.not_found')}` });
           } else if (isScanRefusal(ack.detail)) {
             // A lot the office counts: said by NAME, the server's words and
             // the phone's own being the same sentence (0112).
@@ -230,13 +255,18 @@ export function UnloadScreen({ batchId, countHref }: { batchId: string; countHre
       }
       // LAST, so no count toast writes over it: the marks are back off, and
       // the one thing to know is where the truck went.
-      if (rerouted) {
-        const to = rerouted.rerouteTo ?? '—';
-        setReroutedTo(to);
-        setToast({ text: t('batchRerouted', { to }) });
+      if (reroute.own) {
+        setReroutedTo(reroute.own);
+        setToast({ text: t('batchRerouted', { to: reroute.own }) });
+      } else if (reroute.elsewhere.length > 0) {
+        setToast({
+          text: reroute.elsewhere
+            .map((other) => t('otherTruckRerouted', { code: other.code ?? '—', to: other.to, n: other.n }))
+            .join(' '),
+        });
       }
     },
-    [t, refusalText],
+    [t, refusalText, batchId],
   );
 
   /**
@@ -265,9 +295,11 @@ export function UnloadScreen({ batchId, countHref }: { batchId: string; countHre
         }
         // Rows of a truck this person may not touch stay on the phone — and
         // since the reroute round they no longer stop the others: said as
-        // exactly that, not as «session expired».
-        if (withheld > 0) setToast({ text: `🚫 ${tc('scanWithheld', { n: withheld })}` });
-        else if (refusedForbidden) setToast({ text: `🚫 ${t('notYourTruck')}` });
+        // exactly that, not as «session expired», and on its own line under
+        // the sync banner rather than in the one toast slot, which it would
+        // otherwise take from every scan's own answer on every flush.
+        setWithheldN(withheld);
+        if (withheld === 0 && refusedForbidden) setToast({ text: `🚫 ${t('notYourTruck')}` });
         setOnline(true);
         // Live counter across phones: merge the server's unloaded set in.
         if (sync) {
@@ -288,6 +320,11 @@ export function UnloadScreen({ batchId, countHref }: { batchId: string; countHre
               snapEtag.current = res.headers.get('etag');
               localStorage.setItem(cacheKey, JSON.stringify(data));
               snapRef.current = data;
+              if (baseDest.current === null) baseDest.current = data.batch.destWarehouseId ?? null;
+              // The destination as the server has it now, for every viewer:
+              // moved away → the red line (an unscoped viewer never gets the
+              // 409), back to the one this screen was opened for → cleared.
+              setReroutedTo(snapshotRerouted(baseDest.current, data.batch));
               setSnapshot(data);
               setDone((prev) => {
                 const next = new Set(prev);
@@ -304,7 +341,7 @@ export function UnloadScreen({ batchId, countHref }: { batchId: string; countHre
       }
       await refreshPending();
     },
-    [handleAcks, refreshPending, batchId, cacheKey, t, tc],
+    [handleAcks, refreshPending, batchId, cacheKey, t],
   );
 
   /**
@@ -406,6 +443,9 @@ export function UnloadScreen({ batchId, countHref }: { batchId: string; countHre
       addedOnSpot: false,
       scannedAt: new Date().toISOString(),
       scanType: 'unload',
+      // The destination this screen was opened for: the server refuses the
+      // row if the truck no longer goes there, whoever pressed.
+      ...(baseDest.current ? { expectDestId: baseDest.current } : {}),
     });
     await refreshPending();
     flushSoon();
@@ -553,12 +593,23 @@ export function UnloadScreen({ batchId, countHref }: { batchId: string; countHre
           above the scanner, where the eye is, and held there — a toast is one
           slot the next scan writes over. */}
       {reroutedTo && (
-        <p
+        <div
           role="alert"
           data-testid="unload-rerouted"
-          className="sticky top-16 z-10 rounded-lg bg-bad/15 p-3 text-center text-sm font-semibold text-bad"
+          className="sticky top-16 z-10 space-y-2 rounded-lg bg-bad/15 p-3 text-center text-sm font-semibold text-bad"
         >
-          {t('batchRerouted', { to: reroutedTo })}
+          <p>{t('batchRerouted', { to: reroutedTo })}</p>
+          {/* A person standing at the NEW warehouse reloads into its own
+              snapshot; one at the old gets the same sentence back. */}
+          <button type="button" className="btn-secondary w-full" onClick={() => location.reload()}>
+            {tc('updateNow')}
+          </button>
+        </div>
+      )}
+
+      {withheldN > 0 && (
+        <p className="text-center text-xs text-ink-500" data-testid="scan-withheld">
+          🚫 {tc('scanWithheld', { n: withheldN })}
         </p>
       )}
 

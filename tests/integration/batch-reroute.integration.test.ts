@@ -57,6 +57,7 @@ import {
   RerouteError,
   rerouteBatch,
   rerouteHistory,
+  rerouteTargets,
   type RerouteActor,
 } from '@/modules/wms/batches/reroute';
 import { clientFeed } from '@/modules/wms/crm/feed';
@@ -677,6 +678,51 @@ describe('6 — the phone’s sync, per truck (the blocker)', () => {
     // The route answers 200 whenever something was acked.
     expect(result.acks.length > 0 || result.withheld.length === 0).toBe(true);
   });
+
+  it('a row scanned for the OLD destination is refused for an unscoped logist too — judged at scan time', async () => {
+    // The reroute review: the sync used to judge the destination when the
+    // body ARRIVED. A logist or an admin passes at any warehouse, so the
+    // cartons they scanned at RRA's gate — queued while the truck was still
+    // heading there — landed at RRB, flipped the truck arrived at RRB and
+    // told RRB's customers, while the cartons stood at RRA.
+    const t = await truckOnRoad(3);
+    const unloadRow = (code: string, expectDestId?: string): SyncItem => ({
+      ...scan(t.id, code),
+      addedOnSpot: false,
+      scanType: 'unload',
+      ...(expectDestId ? { expectDestId } : {}),
+    });
+    const atOldGate = [unloadRow(t.lot.codes[0]!, W.a.id), unloadRow(t.lot.codes[1]!, W.a.id)];
+    await reroute(P.logistA, t.id, W.a.id, W.b.id);
+
+    const first = await syncScans(P.logistB, atOldGate, META);
+    expect(first.withheld).toEqual([]);
+    for (const row of atOldGate) {
+      expect(first.acks.find((a) => a.clientEventUuid === row.clientEventUuid)).toMatchObject({
+        result: 'rejected',
+        detail: 'batch_rerouted',
+        rerouteTo: W.b.code,
+        batchCode: t.code,
+        scannedCode: row.code,
+      });
+    }
+    for (const id of t.lot.boxIds.slice(0, 2)) {
+      const box = await boxRow(id);
+      expect(box.status).toBe('in_transit');
+      expect(box.currentWarehouseId).toBeNull();
+    }
+    expect((await truckRow(t.id)).status).toBe('in_transit');
+
+    // A scan drawn for RRB, after the reroute, lands there…
+    const [atNewGate] = (await syncScans(P.logistB, [unloadRow(t.lot.codes[0]!, W.b.id)], META)).acks;
+    expect(atNewGate!.result).toBe('ok');
+    expect((await boxRow(t.lot.boxIds[0]!)).currentWarehouseId).toBe(W.b.id);
+    // …and a row from an older phone, which names no destination, is judged
+    // at the live one, as it always was.
+    const [legacy] = (await syncScans(P.logistB, [unloadRow(t.lot.codes[2]!)], META)).acks;
+    expect(legacy!.result).toBe('ok');
+    expect((await boxRow(t.lot.boxIds[2]!)).currentWarehouseId).toBe(W.b.id);
+  });
 });
 
 describe('7 — who hears it (the owner’s 4a)', () => {
@@ -832,6 +878,27 @@ describe('10 — the doors as the buttons press them', () => {
     expect((await truckRow(t.id)).destWarehouseId).toBe(W.b.id);
     // The same stale page again: the compare-and-set, in words.
     expect(await press()).toEqual({ ok: false, error: 'dest_changed' });
+    // A planner scoped to the OLD destination, on the tab drawn before: the
+    // card's door shut because somebody moved the truck — said as that, not
+    // as «not assigned to you» (the reroute review).
+    await signIn(P.plannerAtA);
+    expect(await press()).toEqual({ ok: false, error: 'dest_changed' });
+    // …and an expired session is «sign in again», not «only an admin or a logist».
+    session.user = null;
+    expect(await press()).toEqual({ ok: false, error: 'unauthenticated' });
+  });
+
+  it('an empty target list says whether there is none or none of them is yours', async () => {
+    const t = await truckOnRoad(1);
+    const truck = await truckRow(t.id);
+    const head = { originCode: W.org.code, destCountry: 'UZ' };
+    // Scoped to RRA only: every other UZ warehouse is admissible and not theirs.
+    const scoped = await rerouteTargets(truck, head, P.plannerAtA);
+    expect(scoped.options).toEqual([]);
+    expect(scoped.hiddenByScope).toBeGreaterThan(0);
+    const all = await rerouteTargets(truck, head, P.logistA);
+    expect(all.hiddenByScope).toBe(0);
+    expect(all.options.map((o) => o.id)).toEqual(expect.arrayContaining([W.b.id, W.c.id]));
   });
 
   it('a page drawn for RRA before the reroute: every office button says «rerouted», none lands anything', async () => {
@@ -839,11 +906,13 @@ describe('10 — the doors as the buttons press them', () => {
     await reroute(P.logistA, t.id, W.a.id, W.b.id);
     // The old warehouse's own operator: authorized at the page's warehouse,
     // refused by the service — «the destination changed», never «no right».
+    // Every refusal names WHERE the truck goes now (the reroute review): the
+    // buttons print the phone's own sentence and do not refresh into a 404.
     await signIn(P.opA);
-    expect(await finishUnloadAction(t.id, W.a.id)).toEqual({ ok: false, error: 'batch_rerouted' });
+    expect(await finishUnloadAction(t.id, W.a.id)).toEqual({ ok: false, error: 'batch_rerouted', to: W.b.code });
     // An unscoped logist on the stale page is refused the same way.
     await signIn(P.logistA);
-    expect(await unloadRemainingAction(t.id, W.a.id)).toEqual({ ok: false, error: 'batch_rerouted' });
+    expect(await unloadRemainingAction(t.id, W.a.id)).toEqual({ ok: false, error: 'batch_rerouted', to: W.b.code });
     expect(
       await countAcceptLotAction({
         batchId: t.id,
@@ -854,7 +923,7 @@ describe('10 — the doors as the buttons press them', () => {
         confirmArrival: true,
         seenDestWarehouseId: W.a.id,
       }),
-    ).toMatchObject({ ok: false, error: 'batch_rerouted' });
+    ).toMatchObject({ ok: false, error: 'batch_rerouted', detail: { to: W.b.code } });
     expect(
       await countAcceptCrateAction({
         batchId: t.id,
@@ -863,7 +932,7 @@ describe('10 — the doors as the buttons press them', () => {
         confirmArrival: true,
         seenDestWarehouseId: W.a.id,
       }),
-    ).toMatchObject({ ok: false, error: 'batch_rerouted' });
+    ).toMatchObject({ ok: false, error: 'batch_rerouted', detail: { to: W.b.code } });
     for (const id of t.lot.boxIds) expect((await boxRow(id)).status).toBe('in_transit');
     expect((await truckRow(t.id)).status).toBe('in_transit');
     session.user = null;

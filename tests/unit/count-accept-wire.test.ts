@@ -61,23 +61,26 @@ describe('the count-accept door', () => {
   it('a door minted for this person at another warehouse is the reroute, asked before and after the lock', () => {
     for (const fn of ['countAcceptLot', 'countAcceptCrate']) {
       const text = body(ACCEPT, fn);
-      expect(text, fn).toContain(
-        'throw new CountError(await reroutedOrForbidden(doors.dest, actorId, pre.id));',
-      );
+      expect(text, fn).toContain('throw await preCheckRefusal(doors.dest, actorId, pre);');
     }
     // «Rerouted» only about a warehouse the truck really was sent away from:
     // the answer reads the reroute's own history, never the door alone.
     const helper = body(ACCEPT, 'reroutedOrForbidden');
     expect(helper).toContain('formerDestinationsFor([batchId])');
     expect(helper).toContain("former.includes(door.warehouseId) ? 'batch_rerouted' : 'forbidden'");
+    expect(body(ACCEPT, 'preCheckRefusal')).toContain('await reroutedOrForbidden(door, actorId, batch.id)');
+    // …carrying WHERE the truck goes now (the reroute review): the panel
+    // prints the phone's sentence, never «refresh the page».
+    expect(body(ACCEPT, 'reroutedCountError')).toContain("new CountError('batch_rerouted', { to: dest?.code ?? '—' })");
     // …and on the LOCKED truck row, which the reroute takes too.
     const chunk = body(ACCEPT, 'countChunk');
     const lock = chunk.indexOf(".from(batches).where(eq(batches.id, T)).for('no key update')");
-    const recheck = chunk.indexOf("if (!doorOpens(a.doors.dest, batch.destWarehouseId, actorId)) throw new CountError('batch_rerouted');");
+    const recheck = chunk.indexOf('if (!doorOpens(a.doors.dest, batch.destWarehouseId, actorId)) {');
     expect(lock).toBeGreaterThan(0);
     expect(recheck).toBeGreaterThan(lock);
+    expect(chunk.indexOf('throw await reroutedCountError(tx, batch.destWarehouseId);')).toBeGreaterThan(recheck);
     const crate = body(ACCEPT, 'countAcceptCrate');
-    expect(crate.indexOf("if (!doorOpens(doors.dest, batch.destWarehouseId, actorId)) throw new CountError('batch_rerouted');"))
+    expect(crate.indexOf('if (!doorOpens(doors.dest, batch.destWarehouseId, actorId)) {'))
       .toBeGreaterThan(crate.indexOf(".for('no key update')"));
   });
 

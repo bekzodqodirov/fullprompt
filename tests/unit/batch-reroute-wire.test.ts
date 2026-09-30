@@ -130,8 +130,18 @@ describe('(b) the action’s door', () => {
     expect(callArgs(text, 'authorizeOnBatch')).toEqual(["'plans.manage', batchId"]);
     expect(callArgs(text, 'authorize')).toEqual([]);
     expect(text).toContain("if (!door) return { ok: false, error: 'batch_not_found' };");
-    // A scope refusal is its own sentence, not «only an admin or a logist».
-    expect(text).toContain("'out_of_scope' : 'forbidden'");
+    // Every AuthError is its own sentence (the reroute review): an expired
+    // session is not «only an admin or a logist», a scope refusal is not
+    // either, and a planner at the OLD destination on a stale tab is told
+    // somebody just moved the truck — decided in that order.
+    const unauth = text.indexOf("if (err.code === 'unauthenticated') return { ok: false, error: 'unauthenticated' };");
+    const forbidden = text.indexOf("if (!actor?.permissions.has('plans.manage')) return { ok: false, error: 'forbidden' };");
+    const changed = text.indexOf("if (live && live.dest !== parsed.data.seenDestWarehouseId) return { ok: false, error: 'dest_changed' };");
+    const scope = text.indexOf("return { ok: false, error: 'out_of_scope' };");
+    expect(unauth).toBeGreaterThan(0);
+    expect(forbidden).toBeGreaterThan(unauth);
+    expect(changed).toBeGreaterThan(forbidden);
+    expect(scope).toBeGreaterThan(changed);
   });
 });
 
@@ -156,8 +166,11 @@ describe('(c) the phone’s landing re-judges the destination it was admitted at
     expect(flip).toBeGreaterThan(lock);
     expect(inside).toContain("detail: 'batch_not_unloading'");
     expect(inside).toContain('if (fresh.destWarehouseId !== (expected ?? batch.destWarehouseId))');
-    expect(inside).toContain('reroutedAck(tx, input, fresh.destWarehouseId)');
-    expect(body(UNLOAD, 'reroutedAck')).toContain("detail: 'batch_rerouted'");
+    expect(inside).toContain('reroutedAck(tx, input, fresh.destWarehouseId, batch.code)');
+    const ack = body(UNLOAD, 'reroutedAck');
+    expect(ack).toContain("detail: 'batch_rerouted'");
+    // The truck names itself: the outbox is one queue for every truck.
+    expect(ack).toContain('batchCode,');
   });
 });
 
@@ -166,6 +179,14 @@ describe('(d) the phone’s sync', () => {
     const sync = read(SYNC);
     expect(sync).toContain('ingestUnloadScans(unloads, ctx, NO_DOOR, { expectDest })');
     expect(sync).toContain('expectDest.set(truck.id, truck.destWarehouseId);');
+    // Judged at SCAN time (the reroute review): a row scanned against another
+    // destination's snapshot never reaches the admitted list, whoever sent it.
+    const stale = sync.indexOf('if ((scan.expectDestId ?? truck.destWarehouseId) !== truck.destWarehouseId) {');
+    const admit = sync.indexOf('unloads.push(scan);');
+    expect(stale).toBeGreaterThan(0);
+    expect(admit).toBeGreaterThan(stale);
+    expect(sync).toContain('const rerouted: SyncItem[] = [...staleUnloads];');
+    expect(sync).toContain('expectDestId: z.string().uuid().optional(),');
     // Per truck — the whole-body refusal lives nowhere in the body now.
     expect(sync).not.toMatch(/\bauthorize\(/);
     expect(read('src/app/api/scan/sync/route.ts')).toContain(
@@ -177,13 +198,19 @@ describe('(d) the phone’s sync', () => {
 describe('(e) the office doors', () => {
   it('«Hammasini qabul qilish» refuses before it writes its audit row', () => {
     const text = body(UNLOAD, 'unloadRemaining');
-    const upFront = text.indexOf("if (opts.expectDestId && batch.destWarehouseId !== opts.expectDestId) throw new ScanError('batch_rerouted');");
-    const afterAcks = text.indexOf("if (rerouted > 0 && landed.length === 0) throw new ScanError('batch_rerouted');");
+    const upFront = text.indexOf('if (opts.expectDestId && batch.destWarehouseId !== opts.expectDestId) {');
+    const upFrontThrow = text.indexOf('throw await reroutedError(db, batch.destWarehouseId);');
+    const afterAcks = text.indexOf('if (rerouted > 0 && landed.length === 0) {');
+    const afterThrow = text.indexOf("throw new ScanError('batch_rerouted', { to: reroutedAcks[0]?.rerouteTo });");
     const audit = text.indexOf('writeAudit(');
     expect(upFront).toBeGreaterThan(0);
-    expect(afterAcks).toBeGreaterThan(upFront);
-    expect(audit).toBeGreaterThan(afterAcks);
+    expect(upFrontThrow).toBeGreaterThan(upFront);
+    expect(afterAcks).toBeGreaterThan(upFrontThrow);
+    expect(afterThrow).toBeGreaterThan(afterAcks);
+    expect(audit).toBeGreaterThan(afterThrow);
     expect(text).toContain('{ expectDest: new Map([[batchId, opts.expectDestId ?? batch.destWarehouseId]]) }');
+    // The refusal says WHERE (the reroute review).
+    expect(body(UNLOAD, 'reroutedError')).toContain("new ScanError('batch_rerouted', { to:");
   });
 
   it('«Tushirish tugadi» compares on the LOCKED row', () => {
@@ -192,7 +219,7 @@ describe('(e) the office doors', () => {
     const compare = text.indexOf('if (opts.expectDestId && batch.destWarehouseId !== opts.expectDestId)');
     expect(lock).toBeGreaterThan(0);
     expect(compare).toBeGreaterThan(lock);
-    expect(text.indexOf("throw new ScanError('batch_rerouted')")).toBeGreaterThan(compare);
+    expect(text.indexOf('throw await reroutedError(tx, batch.destWarehouseId);')).toBeGreaterThan(compare);
     expect(text.indexOf('.update(boxes)')).toBeGreaterThan(compare);
   });
 
@@ -217,7 +244,13 @@ describe('(f) every refusal reaches the person in words', () => {
   it('the office buttons name it; the phone screen hears it before the count-only refusals', () => {
     const buttons = read('src/app/(protected)/batches/[id]/unload-actions.tsx');
     expect(buttons).toContain("case 'batch_rerouted':");
-    expect(buttons).toContain("t('errors.batch_rerouted')");
+    expect(buttons).toContain("t('errors.batch_rerouted', { to: rerouteTo ?? '—' })");
+    // …and the sentence STAYS (the reroute review): the refresh re-asks the
+    // card's door, which is closed for the old warehouse's staff — the page
+    // became «Sahifa topilmadi» and took the sentence with it.
+    const run = buttons.slice(buttons.indexOf('async function run('));
+    expect(run).toContain("if (res.error !== 'batch_rerouted') router.refresh();");
+    expect(run.slice(0, run.indexOf('router.refresh()'))).not.toMatch(/\n\s*router\.refresh\(\);/);
     const screen = read('src/app/(protected)/batches/[id]/unload/unload-screen.tsx');
     const branch = screen.indexOf("if (ack.detail === 'batch_rerouted') {");
     expect(branch).toBeGreaterThan(0);
@@ -227,10 +260,34 @@ describe('(f) every refusal reaches the person in words', () => {
     expect(screen).toContain('localStorage.removeItem(cacheKey);');
   });
 
+  it('a screen latches only ITS truck’s reroute, and lets go when the destination comes back', () => {
+    // The outbox is one queue for every truck (the reroute review): truck A's
+    // rerouted rows came back on truck B's screen, which then refused every
+    // scan of B. Only the verdict for THIS truck latches; the ack is tagged
+    // with its row's truck by the flush, never trusted from anywhere else.
+    const screen = read('src/app/(protected)/batches/[id]/unload/unload-screen.tsx');
+    expect(screen).toContain('const reroute = rerouteVerdict(acks, batchId);');
+    expect(screen).toContain('setReroutedTo(reroute.own);');
+    expect(screen.match(/setReroutedTo\(/g) ?? []).toHaveLength(4);
+    expect(screen).toContain('setReroutedTo(snapshotRerouted(baseDest.current, data.batch));');
+    const loading = read('src/app/(protected)/batches/[id]/load/loading-screen.tsx');
+    expect(loading).toContain('rerouteVerdict(acks, batchId).elsewhere');
+    expect(read('src/offline/scan-outbox.ts')).toContain(
+      'out.acks.push(...body.acks.map((ack) => ({ ...ack, batchId: truckOf.get(ack.clientEventUuid) })));',
+    );
+  });
+
+  it('the phone carries the destination it scanned for, from the snapshot it was drawn from', () => {
+    const screen = read('src/app/(protected)/batches/[id]/unload/unload-screen.tsx');
+    expect(screen).toContain('...(baseDest.current ? { expectDestId: baseDest.current } : {}),');
+    const planned = read('src/app/api/batches/[id]/planned/route.ts');
+    expect(planned).toContain('destWarehouseId: batch.destWarehouseId,');
+  });
+
   it('every reroute refusal has its sentence in all four bundles', () => {
     for (const [name, bundle] of Object.entries({ en, ru, uz, zh })) {
       const errors = (bundle as { batches: { reroute: { errors: Record<string, string> } } }).batches.reroute.errors;
-      for (const code of [...REROUTE_REFUSALS, 'busy_retry', 'validation', 'offline']) {
+      for (const code of [...REROUTE_REFUSALS, 'busy_retry', 'validation', 'offline', 'unauthenticated']) {
         expect(typeof errors[code], `${name}: batches.reroute.errors.${code}`).toBe('string');
       }
     }
@@ -249,7 +306,9 @@ describe('(h) the Mashina tab draws the form for the reroute’s own door', () =
   it('only under mayRerouteTruck, with the options the service admits', () => {
     const page = read('src/app/(protected)/batches/[id]/mashina/page.tsx');
     expect(page).toContain('const mayReroute = mayRerouteTruck(actor, batch);');
-    expect(page).toContain('const rerouteOptions = mayReroute ? await rerouteTargets(batch, head, actor) : [];');
+    expect(page).toContain(
+      'const rerouteOptions = mayReroute ? await rerouteTargets(batch, head, actor) : { options: [], hiddenByScope: 0 };',
+    );
     expect(page).toMatch(/\{mayReroute && \(\s*<RerouteForm/);
     // The form imports the refusal TYPE only (#276).
     const form = read('src/app/(protected)/batches/[id]/mashina/reroute-form.tsx');

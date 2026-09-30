@@ -37,6 +37,15 @@ import { tashkentDay } from '@/modules/platform/time/tashkent';
 import type { CheckpointActionState } from '@/modules/wms/tracking/checkpoint';
 
 /**
+ * Where a rerouted truck goes now, from the service's refusal — the office
+ * buttons print the phone's own sentence («endi {to} ga boradi») instead of
+ * «refresh the page» (the reroute review).
+ */
+function reroutedTo(err: ScanError): { to?: string } {
+  return err.code === 'batch_rerouted' && err.detail?.to ? { to: err.detail.to } : {};
+}
+
+/**
  * Accept the whole remaining manifest at the destination without scanning.
  *
  * Built because finishing was once the only one-tap action and that one
@@ -58,7 +67,7 @@ import type { CheckpointActionState } from '@/modules/wms/tracking/checkpoint';
 export async function unloadRemainingAction(
   batchId: string,
   seenDestWarehouseId?: string,
-): Promise<{ ok: boolean; accepted?: number; skippedCounted?: number; error?: string }> {
+): Promise<{ ok: boolean; accepted?: number; skippedCounted?: number; error?: string; to?: string }> {
   const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
   if (!batch) return { ok: false, error: 'batch_not_found' };
   const at = isUuidShaped(seenDestWarehouseId) ? seenDestWarehouseId : batch.destWarehouseId;
@@ -76,7 +85,7 @@ export async function unloadRemainingAction(
     revalidatePath(`/batches/${batchId}`);
     return { ok: true, accepted: result.accepted, skippedCounted: result.skippedCounted };
   } catch (err) {
-    if (err instanceof ScanError) return { ok: false, error: err.code };
+    if (err instanceof ScanError) return { ok: false, error: err.code, ...reroutedTo(err) };
     throw err;
   }
 }
@@ -133,7 +142,7 @@ export async function countAcceptCrateAction(
   input: unknown,
 ): Promise<
   | { ok: true; landed: number; notArrived: string[]; replay: boolean }
-  | { ok: false; error: CountAcceptRefusal | 'validation' }
+  | { ok: false; error: CountAcceptRefusal | 'validation'; detail?: Record<string, number | string> }
 > {
   const parsed = countAcceptCrateSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: 'validation' };
@@ -157,7 +166,8 @@ export async function countAcceptCrateAction(
     revalidatePath(`/batches/${batch.id}`);
     return { ok: true, landed: res.landed, notArrived: res.notArrived, replay: res.replay };
   } catch (err) {
-    if (err instanceof CountError) return { ok: false, error: err.code };
+    // The detail carries WHERE on a reroute (`to`), as on the lot press.
+    if (err instanceof CountError) return { ok: false, error: err.code, detail: err.detail };
     if (isBusyError(err)) return { ok: false, error: 'busy_retry' };
     throw err;
   }
@@ -219,7 +229,7 @@ export async function resolveMissingLotAction(
 export async function finishUnloadAction(
   batchId: string,
   seenDestWarehouseId?: string,
-): Promise<{ ok: boolean; missing?: string[]; error?: string }> {
+): Promise<{ ok: boolean; missing?: string[]; error?: string; to?: string }> {
   const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
   if (!batch) return { ok: false, error: 'batch_not_found' };
   const at = isUuidShaped(seenDestWarehouseId) ? seenDestWarehouseId : batch.destWarehouseId;
@@ -240,7 +250,7 @@ export async function finishUnloadAction(
     revalidatePath(`/batches/${batchId}`);
     return { ok: true, missing: result.missing };
   } catch (err) {
-    if (err instanceof ScanError) return { ok: false, error: err.code };
+    if (err instanceof ScanError) return { ok: false, error: err.code, ...reroutedTo(err) };
     throw err;
   }
 }
@@ -516,7 +526,7 @@ const rerouteSchema = z.object({
 
 export type RerouteActionResult =
   | { ok: true; toCode: string; pinOffRoute: boolean; noSchedule: boolean }
-  | { ok: false; error: RerouteErrorCode | 'busy_retry' | 'validation' };
+  | { ok: false; error: RerouteErrorCode | 'busy_retry' | 'validation' | 'unauthenticated' };
 
 /**
  * «Yo'nalishni o'zgartirish» — a truck on the road gets another receiving
@@ -536,8 +546,20 @@ export async function rerouteBatchAction(input: unknown): Promise<RerouteActionR
     door = await authorizeOnBatch('plans.manage', batchId);
   } catch (err) {
     if (err instanceof AuthError) {
+      // An expired session is not «only an admin or a logist» (the reroute
+      // review): it has its own sentence, «sign in again».
+      if (err.code === 'unauthenticated') return { ok: false, error: 'unauthenticated' };
       const actor = await getActor();
-      return { ok: false, error: actor?.permissions.has('plans.manage') ? 'out_of_scope' : 'forbidden' };
+      if (!actor?.permissions.has('plans.manage')) return { ok: false, error: 'forbidden' };
+      // A planner scoped to the old destination on a stale tab: the card's
+      // door closed because somebody just moved the truck away from their
+      // warehouse — «somebody changed it», not «not assigned to you».
+      const [live] = await db
+        .select({ dest: batches.destWarehouseId })
+        .from(batches)
+        .where(eq(batches.id, batchId));
+      if (live && live.dest !== parsed.data.seenDestWarehouseId) return { ok: false, error: 'dest_changed' };
+      return { ok: false, error: 'out_of_scope' };
     }
     throw err;
   }

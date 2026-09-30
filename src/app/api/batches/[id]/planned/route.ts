@@ -8,6 +8,7 @@ import {
   loadPlans,
   receiptLots,
   receipts,
+  warehouses,
 } from '@/modules/platform/db/schema';
 import { AuthError, authorize, getActor } from '@/modules/platform/rbac/authorize';
 import { json } from '@/modules/platform/http/json';
@@ -230,8 +231,23 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   // Compressed, and with an ETag: the phone re-reads this every 15 seconds
   // and Next does not compress a Route Handler's own response (round 110 —
   // measured 28,506 bytes on the wire against 975 gzipped).
+  // The destination this snapshot was drawn for (the reroute review): the
+  // unload screen stamps it on every scan it queues, and the sync judges a
+  // row by it — so a scan made at the old gate is never landed at the new one
+  // by a person who may act at both, and the screen can see the change on its
+  // tick for every viewer, not only for one whose snapshot answers 409.
+  const [dest] = await db
+    .select({ code: warehouses.code })
+    .from(warehouses)
+    .where(eq(warehouses.id, batch.destWarehouseId));
   return json(request, {
-    batch: { id: batch.id, code: batch.code, status: batch.status },
+    batch: {
+      id: batch.id,
+      code: batch.code,
+      status: batch.status,
+      destWarehouseId: batch.destWarehouseId,
+      destCode: dest?.code ?? null,
+    },
     quick: !hasPlan,
     boxes: memberBoxes,
     available,

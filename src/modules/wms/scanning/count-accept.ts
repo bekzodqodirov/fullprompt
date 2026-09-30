@@ -144,6 +144,28 @@ async function reroutedOrForbidden(
 }
 
 /**
+ * The refusal of a door minted at a warehouse the truck no longer goes to,
+ * carrying WHERE it goes now (the reroute review) — the panel prints the
+ * phone's own sentence, «endi {to} ga boradi», never «refresh the page»:
+ * for the old warehouse's own staff a refresh is a 404. `q` is the pool on
+ * the pre-check and the transaction under the lock.
+ */
+async function reroutedCountError(q: Pick<Tx, 'select'>, liveDestId: string): Promise<CountError> {
+  const [dest] = await q.select({ code: warehouses.code }).from(warehouses).where(eq(warehouses.id, liveDestId));
+  return new CountError('batch_rerouted', { to: dest?.code ?? '—' });
+}
+
+/** The pre-check's refusal: «rerouted» with where, or the plain door refusal. */
+async function preCheckRefusal(
+  door: CountDoor | null | undefined,
+  actorId: string,
+  batch: { id: string; destWarehouseId: string },
+): Promise<CountError> {
+  const code = await reroutedOrForbidden(door, actorId, batch.id);
+  return code === 'batch_rerouted' ? reroutedCountError(db, batch.destWarehouseId) : new CountError(code);
+}
+
+/**
  * Cartons per transaction. A press of up to this many is atomic; a bigger
  * one commits in chunks, each re-checking the lot (`count_stale`) — a crash
  * between two leaves a partial count the refreshed panel shows and a second
@@ -385,7 +407,7 @@ export async function countAcceptLot(
   // destination moved since the panel was drawn — said as the reroute, not
   // as «Ruxsat yo'q» (the reroute round).
   if (!doorOpens(doors.dest, pre.destWarehouseId, actorId)) {
-    throw new CountError(await reroutedOrForbidden(doors.dest, actorId, pre.id));
+    throw await preCheckRefusal(doors.dest, actorId, pre);
   }
   if (!['in_transit', 'arrived'].includes(pre.status)) throw new CountError('batch_not_unloading');
   // Decision 16: a count onto a truck still «on the road» declares it
@@ -654,7 +676,9 @@ async function countChunk(
   // Asked again on the LOCKED row: the reroute takes the same lock, so a
   // destination moved between the pre-check and here is seen now (the
   // reroute round).
-  if (!doorOpens(a.doors.dest, batch.destWarehouseId, actorId)) throw new CountError('batch_rerouted');
+  if (!doorOpens(a.doors.dest, batch.destWarehouseId, actorId)) {
+    throw await reroutedCountError(tx, batch.destWarehouseId);
+  }
   const wasInTransit = batch.status === 'in_transit';
   if (wasInTransit && !input.confirmArrival) throw new CountError('confirm_arrival_required');
   await tx.select({ id: receiptLots.id }).from(receiptLots).where(eq(receiptLots.id, L)).for('update');
@@ -1037,7 +1061,7 @@ export async function countAcceptCrate(
   const pre = await db.query.batches.findFirst({ where: eq(batches.id, input.batchId) });
   if (!pre) throw new CountError('batch_not_found');
   if (!doorOpens(doors.dest, pre.destWarehouseId, actorId)) {
-    throw new CountError(await reroutedOrForbidden(doors.dest, actorId, pre.id));
+    throw await preCheckRefusal(doors.dest, actorId, pre);
   }
   if (!['in_transit', 'arrived'].includes(pre.status)) throw new CountError('batch_not_unloading');
   if (pre.status === 'in_transit' && !input.confirmArrival) throw new CountError('confirm_arrival_required');
@@ -1052,7 +1076,9 @@ export async function countAcceptCrate(
       if (!batch || !['in_transit', 'arrived'].includes(batch.status)) {
         throw new CountError('batch_not_unloading');
       }
-      if (!doorOpens(doors.dest, batch.destWarehouseId, actorId)) throw new CountError('batch_rerouted');
+      if (!doorOpens(doors.dest, batch.destWarehouseId, actorId)) {
+        throw await reroutedCountError(tx, batch.destWarehouseId);
+      }
       const [crate] = await tx.select().from(crates).where(eq(crates.id, input.crateId));
       if (!crate) throw new CountError('crate_not_on_batch');
       await tx.select({ id: boxes.id }).from(boxes).where(eq(boxes.crateId, crate.id)).orderBy(asc(boxes.id)).for('update');

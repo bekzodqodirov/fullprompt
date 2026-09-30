@@ -157,8 +157,10 @@ function useRefusalText() {
         return t('errors.busy_retry');
       case 'crate_not_on_batch':
         return t('errors.crate_not_on_batch');
+      // Where the truck goes now — the phone's own sentence, never «refresh»:
+      // for the old warehouse's staff a refresh is a 404 (the reroute review).
       case 'batch_rerouted':
-        return t('errors.batch_rerouted');
+        return t('errors.batch_rerouted', { to: String(detail.to ?? '—') });
       case 'validation':
         return t('errors.validation');
     }
@@ -411,7 +413,7 @@ function CrateRow({
         seenDestWarehouseId: destWarehouseId,
       });
       if (!res.ok) {
-        setNote({ ok: false, text: refusal(res.error) });
+        setNote({ ok: false, text: refusal(res.error, res.detail) });
         return;
       }
       setNote({
