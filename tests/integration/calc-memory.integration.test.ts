@@ -268,14 +268,16 @@ describe('what the company sealed is what the machine reads first', () => {
      * a colour added to the same jacket still scores 0.783 and is taken. This
      * test is that sentence, against the real query.
      */
-    // A SHORT run token, and that is part of the measurement: trigram
-    // similarity is over the whole string, so a long shared suffix swamps the
-    // one word that differs — «erkaklar kurtkasi <6 chars>» against
-    // «ayollar kurtkasi <same 6>» scores exactly 0.600 and squeaks over the
-    // threshold, while at three characters it is 0.556 and the rule shows.
-    // Production names carry no run token at all; the fixture is what has to
-    // stay out of the way.
-    const token = Math.random().toString(36).slice(2, 5);
+    // A SHORT run token of DIGITS, and both are part of the measurement:
+    // trigram similarity is over the whole string, so a longer shared suffix
+    // swamps the one word that differs, while three digits score 0.536 for
+    // every one of the thousand and the rule shows. Digits because they share
+    // no trigram with the words beside them: a random base-36 token scored
+    // exactly 0.600 — over the threshold — for two of its 46,656 values («erk»
+    // and «ayo» repeat the first trigrams of «erkaklar» and «ayollar»), and CI
+    // drew one on 2026-09-30 (DECISIONS #1250). Production names carry no run
+    // token at all; the fixture is what has to stay out of the way.
+    const token = SUFFIX.slice(-3);
     const jacket = `erkaklar kurtkasi ${token}`;
     await sealOne(jacket, 8);
     madeNames.push(`${jacket} qora`, jacket.replace('erkaklar', 'ayollar'));

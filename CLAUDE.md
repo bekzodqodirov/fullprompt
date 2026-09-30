@@ -2238,7 +2238,8 @@ carton. Found on the way: `unclaimedNumbers` filtered `status <> 'void'` (the
 BOX's word; a receipt is `'voided'`). 8 red proofs by string edit; the guard's
 fence first stayed GREEN under `false && ` and now pins the condition
 verbatim. STATED to him: a KNOWN client's cargo has no field for a factory's
-text.
+text — he answered «2 yo'q» (2026-09-30): none wanted, the marking stays the
+unclaimed cargo's.
 
 **Round — the deploy that could not reach npm (2026-09-29; DECISIONS #1228;
 NO migration).** Deploying #104, his `docker compose build migrate` died at
@@ -2302,6 +2303,36 @@ it (→ full `window.location.assign`), and an action whose revalidated content
 streams into a `<Suspense>` can stay pending for ever (upstream #87529/#98303
 → no boundary around action buttons; no `router.refresh()` after an action
 that already revalidates).
+
+**Round — the strip that multiplied (2026-09-30; DECISIONS #1247-#1250 —
+numbered PAST the other session's open PR #106, which holds #1243-#1246; NO
+migration, ledger 121).** His «1 2 joyni bosgandan keyin u kopayib bir birini
+ustiga chiqib ketyabti» + a screenshot of «Hisobotlar → Yuk»: three «Yuk ▾»
+pickers and two «Yana ▾» in one row. Reproduced in a browser BEFORE any change
+— 1 → 2 → 3 → 4 pickers in three clicks, ☆ 1 → 2 → 3 in Yo'l, the truck card's
+six tabs clean. `WorkspaceTabs` keyed three SIBLINGS to reset them on a
+navigation: picker and ☆ on `placement.href` (always equal), ⚙ on `pathname`
+(equal to the ☆ on every list page). When a key changes React files a parent's
+old children in ONE map by key; the duplicate is overwritten out of it and
+never deleted, and production React says nothing. Keys are `groups:` /
+`star:` / `settings:` now, and `tests/unit/sibling-keys.test.ts` fences all of
+`src` with TypeScript's parser (two or more keyed positions under one parent
+must each open with their own literal text, none the start of another's) — on
+the old tree it named exactly this one place. Verifying it found two more in
+`TabRow`'s fold, same 09-26 round (#1248): a hidden report group measured every
+tab at 0 px, so a group picked later drew all its tabs clipped with no «Yana ▾»
+(«Moliya» 5 of 8 at 1280 px, 3 of 8 at 880), and the row the layout REUSES across
+a sidebar crossing applied the previous workspace's count (Sklad → Yo'l cut
+«Kutilayotgan yuk» off the edge). Count and widths are tagged with the tab
+list they were made for, and nothing is read while the row has no width. THE
+LESSON (#1249): every strip test arrived by `page.goto`, and a fresh document
+always draws a clean strip — `m9zz-ish-joylari.desktop` now walks by CLICKS (a
+`window` marker proves one document throughout) and compares each strip with a
+fresh load of the same address; a whole-chrome census of 24 click-walked pages
+found no other orphan in the layout. CI then caught a flake that predates the
+round (#1250): `calc-memory`'s random base-36 token scores exactly the 0.6
+threshold for «erk»/«ayo» (2 of 46,656) — reproduced by pinning it, fixed with
+three digits (all 1,000 score 0.536), and still red under `word_similarity`.
 
 **Latest migration: 0120** (`no_login_staff`, `when` …099; ledger must reach **121**). Before
 it: 0119 (`price_icons`), 0118 (`border_queue`), 0117 (`staff_pay`) — `when` …096-…098. Before them:
@@ -2431,11 +2462,14 @@ are `docs/ADS.md` §3 and DECISIONS #659.
 length — **121** since 0120 (120 since 0119, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
-so the next deploy applies 0120 — COUNT FIRST, because 120 was never quoted
-(if it reads 113, that deploy did not land and the next one applies 0113-0120
-and must recreate EVERY container once: `--profile https --profile telegram
-up -d --build`, compose gained `init`, a healthcheck, log caps and a postgres
-flag); a code-only round after it is checked by `/api/version`, not the count.
+and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read
+2026-09-30 04:30 UTC, built after #103 merged, so 0120's code runs) — the count
+was asked for and NOT quoted, so COUNT FIRST on the next deploy: it must read
+**121** (anything less means a migration did not land — read the `migrate`
+container's own output; from 113 the whole 0113-0120 set applies and EVERY
+container must be recreated once: `--profile https --profile telegram up -d
+--build`, compose gained `init`, a healthcheck, log caps and a postgres flag);
+a code-only round after it is checked by `/api/version`, not the count.
 Never carry this number over from a previous session: read it
 (`ls src/modules/platform/db/migrations/*.sql | wc -l`) before writing the
 owner a step list, because the count is the only check that separates «the
