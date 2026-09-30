@@ -229,6 +229,7 @@ export default async function BatchesPage({
           <Link
             key={batch.id}
             href={`/batches/${batch.id}`}
+            data-testid="batch-archive-row"
             className="flex flex-wrap items-baseline gap-2 border-b border-line py-2 text-sm last:border-0 hover:bg-surface-sunken"
           >
             <span className="font-mono font-extrabold text-brand-700">{batch.code}</span>
