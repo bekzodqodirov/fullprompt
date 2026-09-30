@@ -56,16 +56,21 @@ export async function codeEverWorn(
   code: string,
   exceptBatchId: string | null,
 ): Promise<boolean> {
+  const rows = (await tx.execute(codeEverWornSql(code, exceptBatchId))) as unknown as unknown[];
+  return rows.length > 0;
+}
+
+/** `codeEverWorn`'s one statement — exported so a test can EXPLAIN exactly it. */
+export function codeEverWornSql(code: string, exceptBatchId: string | null): SQL {
   const notCurrent = exceptBatchId ? sql` AND b.id <> ${exceptBatchId}` : sql``;
   const notFormer = exceptBatchId ? sql` AND a.entity_id <> ${exceptBatchId}` : sql``;
-  const rows = (await tx.execute(sql`
+  return sql`
     SELECT 1 FROM batches b WHERE upper(b.code) = upper(${code}::text)${notCurrent}
     UNION ALL
     SELECT 1 FROM audit_log a JOIN batches b ON b.id = a.entity_id
      WHERE ${PRED_A} AND ${KEY_A} = upper(${code}::text)${notFormer}
     LIMIT 1
-  `)) as unknown as unknown[];
-  return rows.length > 0;
+  `;
 }
 
 /** Was THIS truck ever called this? (A name may come back as another rename.) */
