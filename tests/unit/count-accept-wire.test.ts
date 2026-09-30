@@ -38,12 +38,42 @@ describe('the count-accept door', () => {
   it('both actions ask the destination’s count door, answer forbidden in words, and hand the door to the service', () => {
     for (const fn of ['countAcceptLotAction', 'countAcceptCrateAction', 'resolveMissingLotAction']) {
       const text = body(ACTIONS, fn);
-      expect(text, fn).toContain("authorize('plans.manage', { warehouseId: batch.destWarehouseId })");
       expect(text, fn).toMatch(/catch \(err\) \{\s*if \(err instanceof AuthError\) return \{ ok: false, error: 'forbidden' \}/);
-      expect(text, fn).toContain('countDoorFor(actor, batch.destWarehouseId)');
     }
+    // The two count presses ask at the destination the PANEL was drawn for
+    // (the reroute round, amended deliberately): minted from a fresh read,
+    // an unscoped logist's stale press landed the count at the warehouse the
+    // truck was rerouted to. The service refuses `batch_rerouted` when the
+    // door's warehouse is no longer the truck's; absent, it is the live one.
+    for (const fn of ['countAcceptLotAction', 'countAcceptCrateAction']) {
+      const text = body(ACTIONS, fn);
+      expect(text, fn).toContain('const at = parsed.data.seenDestWarehouseId ?? batch.destWarehouseId;');
+      expect(text, fn).toContain("authorize('plans.manage', { warehouseId: at })");
+      expect(text, fn).toContain('countDoorFor(actor, at)');
+    }
+    const missing = body(ACTIONS, 'resolveMissingLotAction');
+    expect(missing).toContain("authorize('plans.manage', { warehouseId: batch.destWarehouseId })");
+    expect(missing).toContain('countDoorFor(actor, batch.destWarehouseId)');
     // Cartons beyond the truck come off the ORIGIN's books: its own door.
     expect(body(ACTIONS, 'countAcceptLotAction')).toContain('countDoorFor(actor, batch.originWarehouseId)');
+  });
+
+  it('a door minted for this person at another warehouse is the reroute, asked before and after the lock', () => {
+    for (const fn of ['countAcceptLot', 'countAcceptCrate']) {
+      const text = body(ACCEPT, fn);
+      expect(text, fn).toContain(
+        'if (!doorOpens(doors.dest, pre.destWarehouseId, actorId)) throw new CountError(reroutedOrForbidden(doors.dest, actorId));',
+      );
+    }
+    // …and on the LOCKED truck row, which the reroute takes too.
+    const chunk = body(ACCEPT, 'countChunk');
+    const lock = chunk.indexOf(".from(batches).where(eq(batches.id, T)).for('no key update')");
+    const recheck = chunk.indexOf("if (!doorOpens(a.doors.dest, batch.destWarehouseId, actorId)) throw new CountError('batch_rerouted');");
+    expect(lock).toBeGreaterThan(0);
+    expect(recheck).toBeGreaterThan(lock);
+    const crate = body(ACCEPT, 'countAcceptCrate');
+    expect(crate.indexOf("if (!doorOpens(doors.dest, batch.destWarehouseId, actorId)) throw new CountError('batch_rerouted');"))
+      .toBeGreaterThan(crate.indexOf(".for('no key update')"));
   });
 
   it('the service refuses a door that does not open BEFORE any transaction, and the doors are required', () => {
