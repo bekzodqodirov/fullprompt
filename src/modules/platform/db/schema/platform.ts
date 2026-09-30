@@ -401,6 +401,10 @@ export const auditLog = pgTable(
     index('audit_entity_idx').on(t.entityType, t.entityId, t.createdAt),
     index('audit_actor_idx').on(t.actorId, t.createdAt),
     index('audit_warehouse_idx').on(t.warehouseId, t.createdAt),
+    // `audit_batch_former_code_idx` (0121, a truck's former names) is created
+    // in SQL: a partial expression index whose predicate must equal
+    // `FORMER_CODE_PREDICATE('')` in wms/batches/former-codes.ts character for
+    // character, like 0119's `receipt_lots_product_key_idx`.
   ],
 );
 

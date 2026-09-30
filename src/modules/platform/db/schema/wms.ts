@@ -735,6 +735,8 @@ export const batches = pgTable(
     ),
     check('batches_route_check', sql`${t.originWarehouseId} <> ${t.destWarehouseId}`),
     index('batches_origin_status_idx').on(t.originWarehouseId, t.status),
+    // «Ever worn» inside every counter walk and the bot's lookup (0121).
+    index('batches_code_upper_idx').on(sql`upper(${t.code})`),
   ],
 );
 

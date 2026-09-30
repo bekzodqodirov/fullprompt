@@ -11,6 +11,8 @@ import { createQuickBatchAction } from './batch-actions-server';
 import { PageHeader } from '@/components/ui/page';
 import { warehouseScopeEither } from '@/modules/platform/rbac/scope';
 import { qrlessUncountedByTruck } from '@/modules/wms/scanning/service';
+import { batchTextMatchSql, formerCodeHitSql } from '@/modules/wms/batches/former-codes';
+import { likeNeedle } from '@/modules/wms/search/query';
 
 const COLUMNS = ['forming', 'loading', 'in_transit', 'arrived'] as const;
 /** Finished work: off the board, but the owner still needs to find it. */
@@ -84,6 +86,9 @@ export default async function BatchesPage({
               WHERE b2.id = bm.box_id AND b2.current_batch_id = ${batches.id}
             )
         )`,
+        // Which old name matched — the archive is where a name printed on
+        // old papers is looked up (the owner's 1a: a truck renamed on the road).
+        formerCode: search ? formerCodeHitSql(likeNeedle(search)) : sql<string | null>`NULL`,
       })
       .from(batches)
       .innerJoin(warehouses, eq(batches.originWarehouseId, warehouses.id))
@@ -92,9 +97,11 @@ export default async function BatchesPage({
         and(
           scope,
           inArray(batches.status, [...statuses]),
-          search
-            ? sql`(${batches.code} ILIKE ${'%' + search + '%'} OR ${batches.vehiclePlate} ILIKE ${'%' + search + '%'} OR ${batches.driverName} ILIKE ${'%' + search + '%'})`
-            : undefined,
+          // ⌘K's own match (`batchTextMatchSql`): code, plate, driver, and any
+          // name the truck used to wear — one bracketed fragment, so the
+          // warehouse fence above binds to every alternative. The needle is
+          // escaped too, which the archive never did (a «%» matched all).
+          search ? batchTextMatchSql(likeNeedle(search)) : undefined,
         ),
       )
       .orderBy(desc(batches.createdAt))
@@ -218,13 +225,19 @@ export default async function BatchesPage({
         {archiveOpen && archived.length === 0 && (
           <p className="text-sm text-ink-500">{t('archiveEmpty')}</p>
         )}
-        {archived.map(({ batch, originCode, destCode, boxCount }) => (
+        {archived.map(({ batch, originCode, destCode, boxCount, formerCode }) => (
           <Link
             key={batch.id}
             href={`/batches/${batch.id}`}
+            data-testid="batch-archive-row"
             className="flex flex-wrap items-baseline gap-2 border-b border-line py-2 text-sm last:border-0 hover:bg-surface-sunken"
           >
             <span className="font-mono font-extrabold text-brand-700">{batch.code}</span>
+            {formerCode && (
+              <span className="text-xs text-ink-500" data-testid="batch-archive-former">
+                {t('rename.formerHit', { code: formerCode })}
+              </span>
+            )}
             <span className="font-mono">
               {originCode} → {destCode}
             </span>

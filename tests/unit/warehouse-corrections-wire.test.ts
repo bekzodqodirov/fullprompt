@@ -133,9 +133,17 @@ describe('round two — the bin, the shortcuts, the one message', () => {
   it('BOTH unload shortcuts are manager acts, and the service refuses too', () => {
     const actions = read('src/app/(protected)/batches/batch-actions-server.ts');
     const accept = actions.slice(actions.indexOf('export async function unloadRemainingAction'));
-    expect(accept.slice(0, accept.indexOf('\n}'))).toContain(
-      "authorize('receipts.void', { warehouseId: batch.destWarehouseId })",
+    const acceptBody = accept.slice(0, accept.indexOf('\n}'));
+    // Still `receipts.void` at the destination — the destination the PAGE was
+    // drawn for since the reroute round, falling back to the live one, and
+    // the same warehouse handed to the service as the one it must still be
+    // (amended deliberately, the reroute round: a stale page's press is
+    // refused `batch_rerouted` in words instead of landing cargo there).
+    expect(acceptBody).toContain(
+      'const at = isUuidShaped(seenDestWarehouseId) ? seenDestWarehouseId : batch.destWarehouseId;',
     );
+    expect(acceptBody).toContain("authorize('receipts.void', { warehouseId: at })");
+    expect(acceptBody).toContain('{ expectDestId: at }');
     const finish = actions.slice(actions.indexOf('export async function finishUnloadAction'));
     expect(finish.slice(0, finish.indexOf('\n}'))).toContain('mayCloseWithMissing');
     // #531: a hidden button is not a rule.

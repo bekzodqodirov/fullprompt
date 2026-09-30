@@ -8,6 +8,7 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { balancesForClients, batchCharges, batchTripCoverage } from '@/modules/wms/finance/service';
 import {
+  batchCarriageOf,
   batchClientCostBreakdown,
   batchCostEntryCount,
   batchLandedCostByLot,
@@ -18,7 +19,7 @@ import {
 import { batchLots, type BatchLot } from '@/modules/wms/batches/lots';
 import { mayOpenBatchCard, mayOpenBatchPricing } from '@/modules/wms/batches/card-door';
 import { loadBatchHead } from '@/modules/wms/batches/card-head';
-import { tripKind } from '@/modules/wms/reports/dashboard-math';
+import { isContinuationTrip, tripKind } from '@/modules/wms/reports/dashboard-math';
 import { canWriteDeal } from '@/modules/wms/deals/service';
 import { pricingChargesOf, pricingSight, pricingView, tripPriced, tripPricedCount } from '@/modules/wms/finance/pricing-view';
 import { offTruckPrices, pricedElsewhereFor, type OffTruckPrice } from '@/modules/wms/finance/off-truck';
@@ -128,14 +129,39 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
   const clientIds = view.clients.map((group) => group.clientId);
   // «Narx qo'yilgan» (1a): a price here, or cargo the unpriced rule calls
   // covered elsewhere — the China truck, the deal — the card header's count.
-  const [balances, offHere, offElsewhere, coverage] = await Promise.all([
+  // «Davomi» (owner, 2026-09-30): cargo whose price and whole road sit on an
+  // earlier truck — the page says so, and a price typed here for it asks
+  // first (his 4a). No money in it, so both sights read it.
+  const [balances, offHere, offElsewhere, coverage, carriage] = await Promise.all([
     balancesForClients([...clientIds, ...view.orphans.map((row) => row.clientId)]),
     internal ? Promise.resolve([] as OffTruckPrice[]) : offTruckPrices(db, { batchIds: [id] }),
     internal || clientIds.length === 0
       ? Promise.resolve([] as OffTruckPrice[])
       : offTruckPrices(db, { clientIds }).then((rows) => pricedElsewhereFor(rows, id)),
     internal ? Promise.resolve({ unpriced: new Set<string>(), covered: new Set<string>() }) : batchTripCoverage(id),
+    internal ? Promise.resolve(null) : batchCarriageOf(id),
   ]);
+  const continuation = !internal && isContinuationTrip(carriage ?? undefined);
+  // Per client: how many of their cartons aboard follow an earlier truck, and
+  // which truck carries them.
+  const followsOf = (group: { lots: BatchLot[] }) => {
+    let n = 0;
+    let riders = 0;
+    let given = 0;
+    const codes = new Set<string>();
+    for (const lot of group.lots) {
+      const row = carriage?.byLot.get(lot.lotId);
+      if (!row) continue;
+      riders += row.riders;
+      given += row.givenBack;
+      if (row.follows === 0) continue;
+      n += row.follows;
+      for (const code of row.carriers) codes.add(code);
+    }
+    // `allGiven`: every carton of theirs aboard handed its money to the
+    // earlier truck — a $0 tannarx here is the rule, not a missing bill.
+    return n > 0 ? { n, total: riders, allGiven: riders > 0 && given === riders, codes: [...codes].sort().join(', ') } : null;
+  };
   // The price the seller SOLD at (his item 7): the deal's quote, and — for
   // the owner and the accountant only (law 4: the VED who computed the floor
   // never reads a client price) — the floor and the upsale. Fetched only for
@@ -246,6 +272,9 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
   const costOf = (lot: BatchLot) => lotCost.get(lot.lotId);
   const money = (value: number) => `$${value.toFixed(2)}`;
   const { totals } = view;
+  // A truck nobody has priced has no margin: −tannarx in red read as a trip
+  // that LOST money; a «davomi» has nothing to price at all.
+  const marginKind = tripKind({ internal, continuation, revenueUsd: totals.chargedUsd, profitUsd: totals.marginUsd });
   const dealLinks = canWriteDeal(actor.permissions);
   const today = tashkentDay();
   const currencyCodes = currencyRows.map((c) => c.code);
@@ -268,7 +297,7 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
         const cost = costOf(lot);
         const id = codeIdentity(lot.marking, lot.clientCode);
         const photo = lot.goodsPhotoId ?? lot.boxPhotoId;
-        const prev = cost ? Math.round((cost.totalUsd - cost.batchUsd) * 100) / 100 : 0;
+        const prev = cost ? Math.round((cost.totalUsd - cost.batchUsd - cost.laterUsd) * 100) / 100 : 0;
         const dealCalc = lot.dealId ? sheets.get(lot.dealId) : undefined;
         const hasCalc = Boolean(dealCalc && (dealCalc.sheets.length > 0 || dealCalc.answers.length > 0));
         const anchor = `calc-${lot.clientId ?? 'u'}-${lot.dealId ?? ''}`;
@@ -322,6 +351,11 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                 📦 {lot.onBatch}
                 {lot.onBatch < lot.lotBoxCount && `/${lot.lotBoxCount}`} · {lot.kg} kg · {lot.m3} m³
               </p>
+              {(carriage?.byLot.get(lot.lotId)?.follows ?? 0) > 0 && (
+                <p className="text-xs font-semibold text-ink-700" data-testid="lot-follows">
+                  ↪ {tbc('tileContinuationLine', { codes: carriage!.byLot.get(lot.lotId)!.carriers.join(', ') })}
+                </p>
+              )}
               {(lot.lostCount > 0 || lot.missingCount > 0 || lot.leftBehindCount > 0) && (
                 <p className="text-xs font-semibold text-warn" data-testid="lot-fate">
                   ⚠{' '}
@@ -349,6 +383,11 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                 {prev > 0.009 && (
                   <p className="num text-xs text-ink-500" title={t('prevLegs')}>
                     ↩ {money(prev)}
+                  </p>
+                )}
+                {cost && cost.laterUsd > 0.009 && (
+                  <p className="num text-xs text-ink-500" title={t('laterLegs')} data-testid="lot-later">
+                    ↪ {money(cost.laterUsd)}
                   </p>
                 )}
               </div>
@@ -488,7 +527,17 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                   {/* A truck nobody has priced has no margin: −tannarx in red
                       read as a trip that LOST money (the dashboard's
                       `tripKind`, and the card's header tile, say the same). */}
-                  {tripKind({ internal, revenueUsd: totals.chargedUsd, profitUsd: totals.marginUsd }) === 'unpriced' ? (
+                  {marginKind === 'continuation' ? (
+                    // One long word in a third of a phone («продолжение» is
+                    // ~130 px in this weight): smaller, and it may break —
+                    // measured, it widened the page to 379 px at 360.
+                    <p
+                      className="text-sm font-extrabold text-ink-500 [overflow-wrap:anywhere]"
+                      data-testid="pricing-total-margin"
+                    >
+                      {tbc('tileContinuation')}
+                    </p>
+                  ) : marginKind === 'unpriced' ? (
                     <p className="text-lg font-extrabold text-ink-500" data-testid="pricing-total-margin">
                       {tbc('tileNoPrice')}
                     </p>
@@ -514,7 +563,25 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                 {t('prevLegs')}: {money(totals.prevUsd)}
               </span>
             )}
+            {full && totals.laterUsd > 0.009 && (
+              <span className="num" title={t('laterLegsHint')} data-testid="pricing-later">
+                {' · '}
+                {t('laterLegs')}: {money(totals.laterUsd)}
+              </span>
+            )}
           </p>
+          {continuation && carriage && (
+            <p className={`${full ? 'col-span-3' : ''} text-xs font-semibold text-ink-700`} data-testid="pricing-continuation">
+              ↪ {t('continuationTrip', { codes: carriage.carriers.map((row) => row.code).join(', ') })}
+            </p>
+          )}
+          {/* His 2a: the figure grows when the next leg's bill arrives, and
+              the page says so while the cargo is not all handed over. */}
+          {full && !internal && !continuation && batch.departedAt && carriage && carriage.open > 0 && (
+            <p className={`${full ? 'col-span-3' : ''} text-xs text-ink-500`} data-testid="pricing-open-cargo">
+              {t('openCargo', { n: carriage.open })}
+            </p>
+          )}
           {internal && batch.departedAt && ownCosts === 0 && (
             <p className="col-span-3 text-xs font-semibold text-warn" data-testid="pricing-internal-no-costs">
               ⚠️ {t('internalNoCosts')}
@@ -598,6 +665,11 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                     {t('prevLegs')}: {money(prevUsd)}
                   </p>
                 )}
+                {group.laterUsd > 0.009 && (
+                  <p className="num text-xs text-ink-500" title={t('laterLegsHint')} data-testid="client-later">
+                    {t('laterLegs')}: {money(group.laterUsd)}
+                  </p>
+                )}
                 {/* «Nimalar o'tirganini ko'rsam» — the tannarx opened up:
                     every source and type that landed on this client's boxes.
                     A press, not a hover — phones have no hover. */}
@@ -610,6 +682,7 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                       {parts.map((part, index) => (
                         <li key={index} className="flex justify-between gap-2">
                           <span className="min-w-0 truncate text-ink-700">
+                            {part.later ? '↪ ' : ''}
                             {part.source} · {part.typeName}
                           </span>
                           <span className="num shrink-0">${part.usd.toFixed(2)}</span>
@@ -656,7 +729,12 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                 </>
               )}
             </div>
-            {full && costUsd === 0 && <p className="text-xs text-warn">⚠️ {t('noCostsYet')}</p>}
+            {/* Not when the $0 IS the rule: cargo whose money went to the
+                truck that bears its price (a false «no costs» sent the
+                accountant to type the bill a second time — review). */}
+            {full && costUsd === 0 && !followsOf(group)?.allGiven && (
+              <p className="text-xs text-warn">⚠️ {t('noCostsYet')}</p>
+            )}
 
             {/* 0104: cartons left THIS truck after its price — short-loaded,
                 or scanned aboard and found back at the origin (Q2), or taken
@@ -826,10 +904,19 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                 </div>
               );
             })()}
+            {!internal && followsOf(group) && (
+              <p className="text-xs font-semibold text-ink-700" data-testid="pricing-client-continuation">
+                ↪ {t('continuationClient', { n: followsOf(group)!.n, total: followsOf(group)!.total, codes: followsOf(group)!.codes })}
+              </p>
+            )}
             {!internal && (
               <PricingForm
                 clientId={group.clientId}
                 batchId={id}
+                secondBill={(() => {
+                  const follows = followsOf(group);
+                  return follows ? { n: follows.n, codes: follows.codes } : null;
+                })()}
                 currencies={currencyCodes}
                 today={today}
                 expectedUsd={(() => {

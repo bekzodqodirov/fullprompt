@@ -1,5 +1,115 @@
 # CHANGELOG
 
+## Partiya nomi va yo'nalish: 11 savolga «hammasi standart» — 2026-09-30
+
+Migratsiya yo'q, dastur ishlashi o'zgarmadi.
+
+- 11 savolning hammasiga «standart» deb javob berdingiz. Har bir standart kodda aynan shunday ishlashi alohida tekshirildi: 11 tadan 11 tasi to'g'ri.
+- Endi bular qat'iy qoida:
+  - Partiya nomi o'zgarganda Telegramga xabar ketmaydi.
+  - Jo'nashdan oldin nom erkin: kirillcha harf bo'lsa, faqat ogohlantiradi va saqlaydi.
+  - Faqat yo'lda ishlatilgan nom band qoladi.
+  - Nomi o'zgargandan keyin yuklangan hujjatlar yangi nom bilan chiqadi.
+  - Yo'nalish o'zgarganda xabar faqat uch guruhga boradi: yangi sklad xodimlari, logistlar va oldin «sizga keladi» deyilgan sklad. Rejadagi birinchi skladga, adminlarga va VEDga xabar bormaydi.
+  - «Agentga yuborildi» belgisi o'zgarmaydi.
+  - Boshqa davlat skladi ro'yxatda chiqmaydi va rad etiladi.
+- Shulardan to'rttasini oldin hech qaysi test tekshirmas edi. Endi test tekshiradi: nom o'zgarganda xabar ketmasligi, jo'nashdan oldin kirillcha nom saqlanishi, VED va eski skladga bog'langan logistga xabar bormasligi, boshqa davlat skladi ro'yxatda yo'qligi.
+
+## Partiya nomi yo'lda ham o'zgaradi, yo'ldagi mashinaning qabul skladi o'zgaradi — 2026-09-30
+
+**Migratsiya 0121** (faqat ikkita indeks, yangi ustun yo'q). Yangilangandan keyin ledger
+**122** bo'lishi kerak.
+
+Sizning javoblaringiz: **1a · 2a · 3a · 4a**; 5-savolga javob bo'lmadi — tavsiya qilingan
+variant qurildi: sklad faqat **bitta davlat ichida** almashtiriladi.
+
+### Partiya nomi
+
+- **Yo'lda ham o'zgaradi** — mashina jo'nagandan keyin, tushirish tugaguncha. Faqat admin va
+  logist (rollar sahifasida `plans.manage` belgisi). Yo'lda o'zgartirganda **sabab yozish
+  majburiy** (kamida 3 belgi).
+- **Qachon o'zgartirib bo'lmaydi:** «Tushirish tugadi» bosilgandan keyin; hamma karobka
+  tushirib olingan bo'lsa (tugma bosilmagan bo'lsa ham); partiya yopilgan yoki bekor
+  qilingan bo'lsa.
+- **Yo'ldagi nom:** lotin harflari, raqam va «-», 3–20 belgi, kamida bitta harf va bitta
+  raqam (masalan KA-77, 01A777BA). Kirillcha harf yozilsa (К, А lotinchaga o'xshaydi) —
+  tizim darhol aytadi.
+- **Chalkashtiradigan nom rad etiladi** (jo'nashdan oldin ham): mijoz kodiga (GS500), lotga
+  (GS777-A), karobka yoki yashik kodiga o'xshagan nom.
+- **Eski nom yo'qolmaydi:** ⌘K qidiruvida, «Partiyalar» arxivida, hodimlar botida
+  («↩️ YW-105 — bu partiyaning oldingi nomi. Hozirgi nomi: KA-77») va kartada «Oldingi
+  nomi». Kim va nega o'zgartirgani faqat mashinalar bilan ishlaydiganlarga ko'rinadi.
+- **Yo'lda ishlatilgan nom boshqa mashinaga berilmaydi.** Jo'nashdan oldin yozilib,
+  keyin o'zgartirilgan nom esa darhol bo'shaydi.
+- **Hujjatlar:** o'zgartirilgandan keyin yuklangan invoys, manifest, packing list yangi nom
+  bilan (invoys raqami ham o'zgaradi). Agentga oldin yuborilgan hujjatlarda va Telegram
+  xabarlarida eski nom qoladi — panel buni ogohlantiradi.
+- Ikki hodim bir vaqtda o'zgartirsa, keyingisi «shu orada o'zgardi» degan xabarni ko'radi.
+
+### Yo'ldagi mashinaning qabul skladini o'zgartirish
+
+- **Mashina kartasi → «Mashina» bo'limi → «Yo'nalishni o'zgartirish».** Faqat mashina
+  yo'lda bo'lsa (birinchi karobka tushirilgunicha), faqat admin va logist, **sabab
+  majburiy**, faqat **bitta davlat ichida** (Qashqar → Horgos, Andijon → Toshkent).
+- **Telegram (4a):** yangi skladning xodimlariga «endi sizga keladi» (karobka, kub, kg,
+  mashina raqami bilan) va logistlarga. Oldin «sizga keladi» deyilgan skladga «endi
+  sizga kelmaydi» xabari boradi.
+- **Kartada** «Rejada: KA → yo'nalish o'zgartirildi: HOR» yoziladi, «Mashina» bo'limida kim,
+  qachon va nega o'zgartirgani.
+- **Eski sklad telefonlari:** shu mashina uchun olingan skanlar «↪ endi HOR ga boradi — yuk
+  bu yerga tushmaydi» deb rad etiladi va navbatdan chiqadi; **boshqa mashinalarning
+  skanlarini to'xtatib qo'ymaydi**. Logist yoki admin eski darvozada skanerlagan karobka
+  yangi skladga «keldi» deb yozilib qolmaydi.
+- **Pul o'zgarmaydi:** tannarx, narx, «keyingi yo'l» faqat davlatga bog'liq, davlat esa
+  o'zgarmaydi.
+- Agentga oldin yuborilgan hujjatlarda eski sklad qoladi; keyin yuklanganlari yangi sklad
+  bilan. Reja va karobka tarixida jo'nagan kundagi sklad saqlanadi.
+
+## Keyingi yo'l: narx qo'yilgan mashinada butun yo'l tannarxi — 2026-09-30
+
+Migratsiya yo'q (ledger **121** qoladi). Yangilanganini `/api/version` dagi sana
+bilan tekshiring.
+
+Sizning javoblaringiz: **1a · 2a · 3b · 4a · 5a · 6b**
+
+1. **Xitoy yukining narxi chegaradan o'tgan mashinada turadi, shu mashina butun
+   yo'lni ko'taradi.** Andijon → Toshkent (va undan keyingi O'zbekiston ichidagi
+   har bir mashina — 5a) shu yuk uchun qilgan xarajat narx qo'yilgan mashinaning
+   tannarxiga **«keyingi yo'l»** bo'lib qo'shiladi:
+   **tannarx = bu reys + shu reysgacha + keyingi yo'l.**
+   Misol: prixod $5, Yiwu → Qashqar $30, Qashqar → Andijon $100, Andijon → Toshkent
+   $40, narx $300 → Qashqar → Andijon: tannarx **$175**, foyda **$125**.
+2. **Andijon → Toshkent mashinasi bu yuk uchun «davomi»** — $0, «narx yo'q» emas.
+   Endi dashboard «Diqqat» ro'yxatida, kechki 20:00 xulosada va «Partiya
+   foydasi»da noto'g'ri «narx qo'yilmagan reys» bo'lib chiqmaydi. Sahifasida
+   yukning narxi qaysi mashinada ekani yoziladi.
+3. **Andijonda qabul qilingan yuk** — Andijon → Toshkent o'z narxi va o'z xarajati
+   bilan qoladi (avvalgidek).
+4. **Mashina hali jo'namagan bo'lsa** hech narsa ko'chmaydi (karobka yuklanmay
+   qolishi mumkin). Jo'nagandan keyin ko'chadi.
+5. **Tannarx keyin o'sishi mumkin (2a):** Toshkent xarajati narx qo'yilgandan keyin
+   yozilganda, narx qo'yilgan mashinaning foydasi kamayadi — oy o'tgan bo'lsa ham.
+   Yuk to'liq topshirilmaguncha «Partiya moliyasi»da **«⏳ N karobka hali
+   topshirilmagan — tannarx o'sishi mumkin»** yozuvi turadi.
+6. **Ogohlantirish (4a):** Andijon → Toshkent sahifasida Xitoy yukiga narx
+   yozmoqchi bo'lsangiz, tizim avval so'raydi: «narx B-xxx mashinasida — bu yerga
+   yozilgan narx mijozga ikkinchi hisob bo'ladi». Baribir yozish mumkin.
+7. **Hisobotlar buzilmaydi:** foyda-zarar, pul oqimi, balans, «Mijoz foydasi», KPI,
+   upsale — o'zgarmaydi. Faqat mashina bo'yicha qatorlarda pul bir mashinadan
+   ikkinchisiga o'tadi, hech narsa ikki marta sanalmaydi. Andijon → Toshkent
+   «Partiya» deb belgilanmagan bo'lsa ham, uning xarajati endi belgilangan
+   chegara mashinasi orqali «Partiya foydasi» jamiga kiradi. Excel faylida yangi
+   ustun: «shundan keyingi yo'l $».
+8. Deploydan keyin eski mashinalar ham shu qoida bo'yicha ko'rinadi (6b — oldindan
+   ro'yxat so'ralmadi).
+9. **Qayta tekshiruvdan keyin tuzatildi:** katta bazada «Partiya foydasi» 10 soniyaga
+   sekinlashib qolgan edi — endi avvalgidek (3 haftalik: 0,3–0,6 s). 12 oylik dashboard
+   o'qishi 2,9 s → 3,7 s (qoida har bir karobkaning barcha reyslarini ko'radi). Yana:
+   «davomi» mashinada Xitoy yuki uchun «xarajat kiritilmagan» noto'g'ri ogohlantirishi
+   olib tashlandi; ikkinchi hisob tasdiqlash tugmasini ikki marta bosib bo'lmaydi;
+   aralash mijozda (Xitoy yuki + Andijon yuki) nechta karobka boshqa mashinada
+   narxlangani yoziladi.
+
 ## Sahifa tepasidagi bo'limlar qatori ko'payib ketmaydi — 2026-09-30
 
 Migratsiya yo'q, ledger **121** bo'lib qoladi. Yangilanganini `/api/version` dagi vaqt

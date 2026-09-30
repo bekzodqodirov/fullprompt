@@ -3,7 +3,7 @@ import type { db } from '../../platform/db/client';
 import { getSetting } from '../../platform/settings/service';
 import { parseDayOrInstant, tashkentDayStart } from '../../platform/time/tashkent';
 import { FOUND_BACK_SQL, RIDE_CAUSES, leftBehindSql, rideMovementSql, riderRowsSql } from '../batches/riders';
-import { sameCountryLegSql } from '../batches/internal';
+import { crossesBorderSql, receivedInUzSql } from '../batches/internal';
 import { ISSUABLE_STATUSES } from '../issue/parties';
 
 /**
@@ -250,7 +250,7 @@ export function uncoveredCtes(boxScope: SQL, opts: { landedOnly: boolean }): SQL
   return sql`
     u_box AS (
       SELECT b.id AS box_id, b.status, b.current_warehouse_id, rl.receipt_id, r.client_id, r.deal_id,
-             (upper(trim(rw.country)) = 'UZ') AS received_in_uz,
+             ${receivedInUzSql('rw')} AS received_in_uz,
              rl.total_volume_m3 / rl.box_count AS m3, rl.total_weight_kg / rl.box_count AS kg,
              min(lm.created_at) AS landed_at,
              -- A ROAD landing: never the receipt itself, and never a desk's
@@ -299,7 +299,7 @@ export function uncoveredCtes(boxScope: SQL, opts: { landedOnly: boolean }): SQL
              -- An empty country is an unknown border, and an unknown border
              -- is treated as crossed (batches/internal.ts's own rule).
              CASE WHEN ct.batch_id IS NULL THEN NULL
-                  ELSE coalesce(NOT ${sameCountryLegSql('co', 'cd')}, true) END AS crosses
+                  ELSE ${crossesBorderSql('co', 'cd')} END AS crosses
         FROM client_transactions ct
         LEFT JOIN batches cb ON cb.id = ct.batch_id
         LEFT JOIN warehouses co ON co.id = cb.origin_warehouse_id

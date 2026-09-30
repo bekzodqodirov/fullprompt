@@ -19,7 +19,11 @@ import { batchLoadProgress, loadBatchHead, type BatchHead } from '@/modules/wms/
 import { batchDocsPending } from '@/modules/wms/batches/docs-pending';
 import { batchLots } from '@/modules/wms/batches/lots';
 import { mayReadBatches } from '@/modules/wms/batches/read-door';
+import { formerCodesOf, formerNames, type FormerCodeRow } from '@/modules/wms/batches/former-codes';
+import { mayRenameBatch, renameDoorOpens, renameStageOf } from '@/modules/wms/batches/rename-door';
+import { departureDestination, rerouteHistory } from '@/modules/wms/batches/reroute';
 import {
+  batchCarriageOf,
   batchCostEntryCount,
   batchCostSheet,
   batchLandedCostByLot,
@@ -34,7 +38,7 @@ import {
   type PricingView,
 } from '@/modules/wms/finance/pricing-view';
 import { batchCharges, batchTripCoverage } from '@/modules/wms/finance/service';
-import { tripKind } from '@/modules/wms/reports/dashboard-math';
+import { isContinuationTrip, tripKind } from '@/modules/wms/reports/dashboard-math';
 import { countAcceptPanel } from '@/modules/wms/scanning/count-accept';
 import { countDoorFor, mayCountMove } from '@/modules/wms/scanning/count-door';
 import { countedOnTruck } from '@/modules/wms/scanning/count-load';
@@ -225,6 +229,16 @@ export async function BatchCard({
   const pairCode = devices.find((device) => device.pairCode)?.pairCode ?? null;
   const road = unloadingNow ? await soft('road', () => truckOnRoadRow(id)) : null;
   const roadWords = road ? await truckRoadWords() : null;
+  // «Rejada: X → yo'nalish o'zgartirildi: Y» (the reroute round) on every
+  // tab: one indexed read per departed card, one more only on a rerouted one.
+  // «Rejada» is the departure movements' warehouse — written once, never
+  // rewritten — so it cannot lie; a reroute back to it hides the line and the
+  // Mashina tab keeps the story.
+  const reroutes = departed ? ((await soft('reroutes', () => rerouteHistory(id))) ?? []) : [];
+  const plannedCode =
+    reroutes.length > 0
+      ? ((await soft('planned', () => departureDestination(id)))?.code ?? reroutes[0]!.fromCode)
+      : null;
 
   // Money, each figure behind its own tab's door.
   const costDoor = mayOpenBatchCosts(actor.permissions);
@@ -232,18 +246,25 @@ export async function BatchCard({
   const ownCostCount = costDoor && departed ? await soft('cost count', () => batchCostEntryCount(id)) : null;
   const sight = pricingSight(actor.permissions, head.internal);
   const full = sight === 'full';
-  const pricing: { view: PricingView; priced: number } | null =
+  const pricing: { view: PricingView; priced: number; continuation: boolean; carriers: string } | null =
     sight !== 'none' && !head.internal
       ? await soft('pricing', async () => {
-          const [charges, lotCost, coverage] = await Promise.all([
+          const [charges, lotCost, coverage, carriage] = await Promise.all([
             batchCharges(id),
             full ? batchLandedCostByLot(id) : Promise.resolve(new Map<string, LotLandedCost>()),
             batchTripCoverage(id),
+            batchCarriageOf(id),
           ]);
           const view = pricingView(lots, lotCost, pricingChargesOf(charges));
           // The pricing page's own count (1a): a client priced on the China
           // truck or the deal counts, as the handover gate lets them out.
-          return { view, priced: tripPricedCount(view.clients, coverage) };
+          return {
+            view,
+            priced: tripPricedCount(view.clients, coverage),
+            // «Davomi» — the pricing page's own word (2026-09-30).
+            continuation: isContinuationTrip(carriage),
+            carriers: carriage.carriers.map((row) => row.code).join(', '),
+          };
         })
       : null;
 
@@ -294,6 +315,20 @@ export async function BatchCard({
   const badge = (tab: BatchTab) => todos.filter((todo) => todo.tab === tab).length;
   const tabHref = (tab: BatchTab, hash = 'tabs') => `${batchTabHref(id, tab)}#${hash}`;
 
+  // The ✏️ on the code: the SAME predicate the service obeys (rename-door.ts),
+  // so a drawn pencil never bounces. The aboard count is the unload screen's
+  // own (cached, the todo list reads it) and is read only for a person whose
+  // door is open at all.
+  const renameStage = renameDoorOpens(actor, batch)
+    ? renameStageOf(batch.status, unloadingNow ? (await remainingToUnload(id)).length : 0)
+    : 'closed';
+  const renameMode = renameStage !== 'closed' && mayRenameBatch(actor, batch, renameStage) ? renameStage : 'off';
+  // «Oldingi nomi» — every name the truck wore ON THE ROAD (a name changed
+  // before departure frees, former-codes.ts), for everyone who may open the
+  // card (the papers keep them); the who/why log only for the truck's readers.
+  const renames: FormerCodeRow[] = (await soft('former', () => formerCodesOf(id))) ?? [];
+  const former = formerNames(renames, batch.code);
+
   // The stage buttons this person can press — and only those.
   const inOrigin = inScope(actor, batch.originWarehouseId);
   const canLoad = actor.permissions.has('scan.load') && loadingNow;
@@ -324,7 +359,12 @@ export async function BatchCard({
   const m3Total = lots.reduce((a, lot) => a + lot.m3, 0);
   const margin = pricing && full ? pricing.view.totals : null;
   const marginKind = margin
-    ? tripKind({ internal: false, revenueUsd: margin.chargedUsd, profitUsd: margin.marginUsd })
+    ? tripKind({
+        internal: false,
+        continuation: pricing?.continuation ?? false,
+        revenueUsd: margin.chargedUsd,
+        profitUsd: margin.marginUsd,
+      })
     : null;
 
   return (
@@ -339,8 +379,11 @@ export async function BatchCard({
           <BatchCodeForm
             batchId={batch.id}
             code={batch.code}
-            // `renameBatchAction`'s own door: plans.manage at the ORIGIN.
-            editable={actor.permissions.has('plans.manage') && loadingNow && inOrigin}
+            mode={renameMode}
+            ownFormer={former}
+            // A VED fact: sent only to a screen that draws the road panel
+            // (the one place it is printed), never in every card's payload.
+            sentToAgentAt={renameMode === 'road' ? (batch.sentToAgentAt ?? null) : null}
           />
           <span className="font-mono text-sm font-bold">
             {head.originCode} → {head.destCode}
@@ -361,6 +404,35 @@ export async function BatchCard({
             {format.dateTime(batch.createdAt, { dateStyle: 'short' })}
           </span>
         </div>
+
+        {former.length > 0 && (
+          <div className="space-y-1">
+            <p
+              className="w-full text-xs text-ink-500 [overflow-wrap:anywhere]"
+              data-testid="batch-former-codes"
+            >
+              {t('rename.former', { codes: former.join(' → ') })}
+            </p>
+            {mayReadBatches(actor.permissions) && (
+              <details className="text-xs" data-testid="batch-rename-log">
+                <summary className="cursor-pointer text-ink-500">{t('rename.log')}</summary>
+                <ol className="mt-1 space-y-1">
+                  {renames.map((row, i) => (
+                    <li key={i} className="[overflow-wrap:anywhere]">
+                      {t('rename.logRow', {
+                        date: format.dateTime(row.at, { dateStyle: 'short', timeStyle: 'short' }),
+                        who: row.by ?? '—',
+                        from: row.from,
+                        to: row.to,
+                      })}
+                      <span className="block text-ink-500">{row.reason}</span>
+                    </li>
+                  ))}
+                </ol>
+              </details>
+            )}
+          </div>
+        )}
 
         {!cancelled && now >= 0 && (
           <ol aria-label={tc('ladderAria')} className="flex gap-1" data-testid="batch-ladder">
@@ -412,6 +484,11 @@ export async function BatchCard({
         {departed && (
           <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-700" data-testid="batch-facts">
             <span>🚀 {format.dateTime(batch.departedAt!, { dateStyle: 'short', timeStyle: 'short' })}</span>
+            {plannedCode && plannedCode !== head.destCode && (
+              <span data-testid="batch-rerouted" className="rounded bg-warn/10 px-2 py-0.5 font-semibold text-warn">
+                ↪ {t('reroute.plannedLine', { planned: plannedCode, now: head.destCode })}
+              </span>
+            )}
             {head.crossesBorder && (
               <span data-testid="batch-customs-fact">
                 · {t('customs')}:{' '}
@@ -522,13 +599,24 @@ export async function BatchCard({
           <Tile
             href={active === 'narx' ? null : tabHref('narx')}
             label={tf('marginLabel')}
-            value={marginKind === 'unpriced' ? tc('tileNoPrice') : compactUsd(margin.marginUsd)}
-            exact={marginKind === 'unpriced' ? undefined : String(margin.marginUsd)}
-            tone={marginKind === 'unpriced' ? 'muted' : marginKind === 'loss' ? 'bad' : 'good'}
-            lines={[
-              `${tf('priceLabel')} ${compactUsd(margin.chargedUsd)} · ${tf('costLabel')} ${compactUsd(margin.costUsd)}`,
-              margin.prevUsd > 0.009 ? `${tf('prevLegs')}: ${compactUsd(margin.prevUsd)}` : null,
-            ]}
+            value={
+              marginKind === 'unpriced'
+                ? tc('tileNoPrice')
+                : marginKind === 'continuation'
+                  ? tc('tileContinuation')
+                  : compactUsd(margin.marginUsd)
+            }
+            exact={marginKind === 'unpriced' || marginKind === 'continuation' ? undefined : String(margin.marginUsd)}
+            tone={marginKind === 'unpriced' || marginKind === 'continuation' ? 'muted' : marginKind === 'loss' ? 'bad' : 'good'}
+            lines={
+              marginKind === 'continuation'
+                ? [tc('tileContinuationLine', { codes: pricing?.carriers ?? '' })]
+                : [
+                    `${tf('priceLabel')} ${compactUsd(margin.chargedUsd)} · ${tf('costLabel')} ${compactUsd(margin.costUsd)}`,
+                    margin.prevUsd > 0.009 ? `${tf('prevLegs')}: ${compactUsd(margin.prevUsd)}` : null,
+                    margin.laterUsd > 0.009 ? `${tf('laterLegs')}: ${compactUsd(margin.laterUsd)}` : null,
+                  ]
+            }
             testid="batch-tile-margin"
           />
         )}

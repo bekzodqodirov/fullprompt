@@ -397,26 +397,31 @@ describe('one truck, one profit (R2a)', () => {
     expect(row.revenueUsd).toBe(totals.chargedUsd);
     expect(row.prevUsd).toBe(totals.prevUsd);
     // And the figures themselves: the internal leg's 30 + the receipt's 5 +
-    // its own 100 on the client's goods, the unclaimed cargo's 3; NOT the
-    // later leg's 7 and NOT the 11 nobody could allocate.
+    // its own 100 on the client's goods, the unclaimed cargo's 3, AND the
+    // Uzbek leg's 7 as «keyingi yo'l» (owner, 2026-09-30: one price for the
+    // whole road — the truck that crosses carries it); NOT the 11 nobody
+    // could allocate.
     expect(row).toMatchObject({
       internal: false,
-      costUsd: 138,
+      costUsd: 145,
       prevUsd: 38,
+      laterUsd: 7,
       revenueUsd: 210,
-      profitUsd: 72,
+      profitUsd: 65,
       unallocatedUsd: 11,
     });
   });
 
-  it('the Uzbek leg carries its own road only — the earlier legs are the export truck’s (U16)', async () => {
+  it('the Uzbek leg carries none of this China cargo’s road — the export truck does (U16, 2026-09-30)', async () => {
     const rows = await profitByBatch(iso(-20), iso(0));
     const row = rows.find((entry) => entry.batchId === uzLeg)!;
     expect(row.costUsd).toBe((await header(uzLeg)).costUsd);
-    // Its own $7, and NOT the receipt's 5, the internal 30 and the export's
-    // 100 again: the export truck is the box's previous PRICED truck, so
-    // everything before it stops there.
-    expect(row).toMatchObject({ internal: false, revenueUsd: 7, costUsd: 7, prevUsd: 0, profitUsd: 0 });
+    // Not the receipt's 5, the internal 30 or the export's 100 again, and
+    // since 2026-09-30 not even its own 7: the cargo came from China, the
+    // truck that crossed bears its price and so its whole road. The $7 price
+    // the U1b block typed here stays a price (charge-blind: a price never
+    // moves cost between trucks).
+    expect(row).toMatchObject({ internal: false, continuation: true, revenueUsd: 7, costUsd: 0, prevUsd: 0, profitUsd: 7 });
     const across = rows.find((entry) => entry.batchId === exportBatch)!;
     // The priced rows are disjoint: together they are every allocated dollar
     // once — 5 + 30 + 100 + 7 on the client's box, 3 on the unclaimed one.

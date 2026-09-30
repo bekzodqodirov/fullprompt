@@ -26,6 +26,11 @@ import { deviationOf, needsConfirmation } from '@/modules/wms/finance/deal-price
  * price more than 5 % away from it stops the press once and asks, and the
  * second press saves (his «confirmation sorasin va tasdiqlatib narx
  * qoyaversin»). A warning, never a refusal — the price is still his to set.
+ *
+ * `secondBill` names the client's cartons aboard whose price already sits on
+ * an earlier truck — one price for the whole road (owner, 2026-09-30, 1a/4a:
+ * «ogohlantirish bilan qolsin»). A price here is then a second bill, so the
+ * press asks first, in any currency; one confirmation covers both questions.
  */
 export function PricingForm({
   clientId,
@@ -33,12 +38,14 @@ export function PricingForm({
   currencies,
   today,
   expectedUsd = null,
+  secondBill = null,
 }: {
   clientId: string;
   batchId: string;
   currencies: string[];
   today: string;
   expectedUsd?: number | null;
+  secondBill?: { n: number; codes: string } | null;
 }) {
   const t = useTranslations('finance');
   const tc = useTranslations('common');
@@ -48,7 +55,7 @@ export function PricingForm({
   const [currency, setCurrency] = useState(currencies.includes('USD') ? 'USD' : (currencies[0] ?? ''));
   const [txDate, setTxDate] = useState(today);
   // The price the person was asked about; changing it asks again.
-  const [asked, setAsked] = useState<{ amount: string; pct: number } | null>(null);
+  const [asked, setAsked] = useState<{ amount: string; pct: number | null } | null>(null);
   const confirmed = useRef(false);
   const formRef = useRef<HTMLFormElement>(null);
   const [state, formAction, pending] = useActionState<TxFormState, FormData>(
@@ -71,11 +78,12 @@ export function PricingForm({
       // onSubmit runs before the action; preventing it keeps the action from
       // running at all, which is the whole confirmation.
       onSubmit={(event) => {
-        if (confirmed.current || currency !== 'USD') return;
+        if (confirmed.current) return;
         const typed = parseTypedMoney(amount);
-        if (typed === null || !needsConfirmation(typed, expectedUsd)) return;
+        const deviates = currency === 'USD' && typed !== null && needsConfirmation(typed, expectedUsd);
+        if (!secondBill && !deviates) return;
         event.preventDefault();
-        setAsked({ amount, pct: Math.round((deviationOf(typed, expectedUsd!) ?? 0) * 100) });
+        setAsked({ amount, pct: deviates ? Math.round((deviationOf(typed!, expectedUsd!) ?? 0) * 100) : null });
       }}
       className="flex flex-wrap items-center gap-2"
       data-testid="pricing-form"
@@ -122,17 +130,28 @@ export function PricingForm({
       </button>
       {asked && asked.amount === amount && (
         <div role="alert" className="w-full space-y-2 rounded-lg border border-warn bg-warn/10 p-2 text-sm" data-testid="pricing-deviation">
-          <p className="font-semibold text-warn">
-            ⚠{' '}
-            {t(asked.pct > 0 ? 'priceAboveDeal' : 'priceBelowDeal', {
-              pct: Math.abs(asked.pct),
-              usd: `$${expectedUsd!.toFixed(2)}`,
-            })}
-          </p>
+          {secondBill && (
+            <p className="font-semibold text-warn" data-testid="pricing-second-bill">
+              ⚠ {t('secondBillWarn', { n: secondBill.n, codes: secondBill.codes })}
+            </p>
+          )}
+          {asked.pct !== null && (
+            <p className="font-semibold text-warn">
+              ⚠{' '}
+              {t(asked.pct > 0 ? 'priceAboveDeal' : 'priceBelowDeal', {
+                pct: Math.abs(asked.pct),
+                usd: `$${expectedUsd!.toFixed(2)}`,
+              })}
+            </p>
+          )}
           <div className="flex flex-wrap gap-2">
+            {/* Disabled while the save runs: the alert stays up until the
+                answer, and a second tap here would post a second charge
+                (review — every price for a davomi client comes through here). */}
             <button
               type="button"
-              className="btn-primary px-3"
+              disabled={pending}
+              className="btn-primary px-3 disabled:opacity-60"
               data-testid="pricing-deviation-confirm"
               onClick={() => {
                 confirmed.current = true;

@@ -51,7 +51,8 @@
     "photoOnly": "这不是图片 — 请选择照片（文件请用 📎）",
     "scanSnapshotServer": "服务器返回错误（代码 {n}）。网络正常——请将此代码告知主管。",
     "futureDate": "日期不能晚于明天。",
-    "amountTooLarge": "金额过大——单行无法容纳。"
+    "amountTooLarge": "金额过大——单行无法容纳。",
+    "scanWithheld": "{n} 条扫描未发送——它们属于未分配给您的车辆，已保存在手机上。"
   },
   "login": {
     "title": "登录系统",
@@ -834,7 +835,8 @@
       "widthCm": "宽 cm",
       "cargoStampedTo": "货物归属于",
       "receipts": "入库单",
-      "loginEnabled": "登录系统"
+      "loginEnabled": "登录系统",
+      "destination": "收货仓库"
     }
   },
   "profile": {
@@ -1090,7 +1092,8 @@
       "box": "箱子",
       "receipt": "入库",
       "lot": "货物"
-    }
+    },
+    "formerCode": "原名称：{code}"
   },
   "crates": {
     "title": "木箱",
@@ -1312,7 +1315,9 @@
     "profitChipOn": "计入利润",
     "profitChipSet": "计入利润报表",
     "todoNoCosts": "未录入费用",
-    "todoTnved": "无海关编码"
+    "todoTnved": "无海关编码",
+    "tileContinuation": "续运",
+    "tileContinuationLine": "价格在 {codes}"
   },
   "batches": {
     "title": "车次",
@@ -1377,7 +1382,6 @@
     "archive": "归档 — 已完成批次",
     "archiveSearch": "批次代码、车牌或司机",
     "archiveEmpty": "未找到",
-    "codeTaken": "该代码已被占用",
     "vehicleTitle": "车辆与司机",
     "pairCodeLabel": "司机应用代码",
     "cancelBatch": "取消批次",
@@ -1408,6 +1412,79 @@
       "not_in_transit": "车辆不在途中——只能给在途车辆打点",
       "unknown_key": "没有这个位置标记",
       "not_on_route": "该车不经过此处——请选择其路线上的标记"
+    },
+    "rename": {
+      "codeLabel": "新名称",
+      "codeHintRoad": "拉丁字母、数字和「-」，3–20 个字符；至少一个字母和一个数字（例如 KA-77、01A777BA）",
+      "reasonLabel": "原因（必填，至少 3 个字符）",
+      "reasonHint": "为什么修改？例如：代理的单据上是另一个号码",
+      "docsHint": "发票、舱单和装箱单今后将以新名称下载。已发出的单据、Telegram 消息和司机手机里仍是旧名称——搜索、「批次」归档和机器人仍可用旧名称找到它。",
+      "agentSent": "单据已于 {date} 发给代理——请告诉代理新名称。",
+      "confirm": "{from} → {to}：确定重命名该批次？",
+      "save": "重命名",
+      "former": "原名称：{codes}",
+      "formerHit": "原名称：{code}",
+      "log": "谁重命名、为什么",
+      "logRow": "{date} · {who}：{from} → {to}",
+      "errors": {
+        "bad_code": "名称须为 2 至 40 个字符",
+        "code_cyrillic": "名称中有西里尔字母（К、А、Е、Т…）——屏幕上看起来一样，但机器人和搜索找不到。请切换到拉丁键盘重新输入",
+        "code_chars": "在途车辆名称只能使用拉丁字母、数字和「-」（不能有空格、句点或「/」）",
+        "code_length": "在途车辆名称须为 3 至 20 个字符",
+        "code_needs_letter": "名称中至少需要一个拉丁字母",
+        "code_needs_digit": "名称中至少需要一个数字（例如 KA-77）——机器人靠此识别",
+        "shape_lot": "「GS777-A」形式的名称会与货物（批号）混淆——搜索找不到该批次",
+        "shape_client": "该名称像客户代码（例如 GS500）——在机器人中会与客户混淆。请加「-」：KA-77",
+        "shape_box": "该名称像箱号（例如 YW26-000123）——在机器人中会混淆",
+        "shape_crate": "以「CR-」开头的名称会与木箱代码混淆",
+        "shadows_client": "已有该代码的客户——在机器人中会混淆。请换一个名称",
+        "shadows_box": "已有该代码的箱子——在机器人中会混淆。请换一个名称",
+        "shadows_crate": "已有该代码的木箱——在机器人中会混淆。请换一个名称",
+        "code_taken": "该名称已被占用，或其他批次在途中曾使用过",
+        "reason_required": "请填写原因（至少 3 个字符）",
+        "batch_changed": "批次在此期间已变化（已发车或同事已重命名）——页面已刷新，请再检查",
+        "rename_closed": "卸货已完成（或批次已关闭/取消）——不能再重命名",
+        "forbidden": "只有管理员或物流员可以重命名批次",
+        "not_found": "未找到批次",
+        "busy": "该批次正在进行其他操作——请再按一次"
+      }
+    },
+    "reroute": {
+      "title": "更改目的地（收货仓库）",
+      "badgeRerouted": "↪ {now} · 原计划 {planned}",
+      "target": "新的收货仓库",
+      "targetPick": "— 选择仓库 —",
+      "reason": "原因（必填，至少 3 个字）",
+      "hint": "仅限同一国家内的仓库。第一箱卸货后无法更改。Telegram 通知：新仓库员工和物流员；此前被告知“发往贵仓”的仓库也会收到通知。",
+      "pinOff": "📍 车辆位置标记在新路线上不显示（不会删除——改回后会再次显示）",
+      "noSchedule": "新路线没有预计日期——地图上只显示司机手机的位置",
+      "submit": "↪ 更改目的地",
+      "confirm": "{code}：收货仓库由 {from} 改为 {to}？",
+      "done": "✅ 目的地已更改：现为 {to}",
+      "noTargets": "该国家没有其他可用仓库",
+      "plannedLine": "原计划：{planned} → 已改为：{now}",
+      "history": "更改记录",
+      "historyRow": "{when} · {who} · {to}（原为 {from}）· 原因：{reason}",
+      "errors": {
+        "forbidden": "只有管理员或物流员可以更改目的地",
+        "out_of_scope": "该仓库未分配给您",
+        "batch_not_found": "未找到该车辆",
+        "not_in_transit": "车辆不在途中——只能更改已发车且尚未卸货的车辆的目的地",
+        "dest_changed": "刚刚有人更改了目的地——已显示最新状态，请再检查一遍",
+        "reason_required": "请填写原因（至少 3 个字）",
+        "reason_too_long": "原因太长（最多 500 个字符）",
+        "bad_target": "请从列表中选择仓库",
+        "same_destination": "车辆已经发往该仓库",
+        "destination_is_origin": "不能把发车仓库设为收货仓库",
+        "target_inactive": "该仓库已停用",
+        "country_unknown": "无法确定仓库所在国家",
+        "other_country": "不能改到其他国家的仓库——只能在同一国家内更改",
+        "busy_retry": "车辆正忙（可能正在开始卸货）——请稍后再点一次",
+        "validation": "数据有误——请刷新页面",
+        "offline": "服务器没有响应——请检查网络后再按一次。已选的仓库和原因已保留。",
+        "unauthenticated": "登录已过期——请重新登录"
+      },
+      "noTargetsInScope": "该国家的其他仓库未分配给您"
     }
   },
   "loading": {
@@ -1483,8 +1560,11 @@
       "finish_unload_first": "请先完成卸货。",
       "batch_not_unloading": "车辆不在卸货中。",
       "not_found": "未找到——请刷新页面。",
-      "failed": "保存失败——请重试。"
-    }
+      "failed": "保存失败——请重试。",
+      "batch_rerouted": "↪ 车辆的收货仓库已更改——现发往 {to}。货物不在此处卸货，未作任何记录；如有错误请告知物流员。"
+    },
+    "batchRerouted": "↪ 该车辆的收货仓库已更改——现发往 {to}。货物不在此处卸货；如有错误请告知物流员。",
+    "otherTruckRerouted": "↪ {code}：收货仓库已更改——现发往 {to}。该车的 {n} 条扫描未记录。"
   },
   "transit": {
     "title": "在途货物",
@@ -1788,7 +1868,13 @@
     "calcPrevVersion": "上一版：V{n}",
     "calcRecalcOpen": "重新计算中——旧价格仍有效",
     "calcMore": "另有 {n} 个计算",
-    "calcSeeAbove": "见上方：{code} 的计算"
+    "calcSeeAbove": "见上方：{code} 的计算",
+    "laterLegs": "后续路段",
+    "laterLegsHint": "本车之后乌兹别克斯坦境内车辆（如安集延 → 塔什干）的费用。价格在本车上，所以全程成本计在这里。",
+    "continuationTrip": "续运：本车货物的价格和全程费用在 {codes} 车上。这里无需定价。",
+    "continuationClient": "该客户 {total} 箱中有 {n} 箱的价格和运费在 {codes} 车上（全程一个价格）。其余的在这里定价。",
+    "secondBillWarn": "该客户有 {n} 箱的价格在 {codes} 车上——全程一个价格。在这里定价会对这些货重复收费。仍要定价吗？",
+    "openCargo": "⏳ 未交付箱数：{n}——如再加入后续路段费用，成本可能增加。"
   },
   "map": {
     "title": "地图",
@@ -4520,7 +4606,8 @@
       "count_conflict": "与其他更改冲突——请刷新页面后再按。",
       "busy_retry": "另一项更改正在进行——请再按一次。",
       "crate_not_on_batch": "该木箱不在此车上。",
-      "validation": "请输入整数（1 或以上）。"
+      "validation": "请输入整数（1 或以上）。",
+      "batch_rerouted": "↪ 车辆的收货仓库已更改——现发往 {to}。计数未记录；如有错误请告知物流员。"
     }
   },
   "qrsiz": {

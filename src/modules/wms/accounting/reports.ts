@@ -19,6 +19,7 @@ import { uzsRate } from './period';
 // Every cash box converts through the generic rate lookup, not a per-currency
 // branch — the branch is how a CNY till came to be worth nothing.
 import {
+  batchCarriage,
   batchLandedCostTotals,
   oldInsideEveryCountSql,
   rateFor,
@@ -54,7 +55,7 @@ import { kindList, ledgerAlias, revenueUsdSql } from '../finance/ledger-sql';
 import { marginPct } from './margin';
 import { rideMovementSql, riderLoad } from '../batches/riders';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
-import { weeksBetween } from '../reports/dashboard-math';
+import { isContinuationTrip, weeksBetween } from '../reports/dashboard-math';
 
 /**
  * Management reports (Phase 2.4).
@@ -1344,8 +1345,12 @@ export async function profitByBatch(from: string, to: string) {
     .orderBy(sql`${batches.departedAt} DESC`);
 
   const ids = rows.map((row) => row.batchId);
-  const [landed, loads, perClient] = await Promise.all([
+  // The carriage is its own statement, run beside the landed cost: measured
+  // on the 120k-carton copy, one statement with both (the shared CTEs then
+  // materialised) was slower in wall time, 4.2-4.9 s against 3.6-3.8 s.
+  const [landed, carriage, loads, perClient] = await Promise.all([
     batchLandedCostTotals(ids),
+    batchCarriage(ids),
     riderLoad(ids),
     // Revenue per (truck, client) — ONE grouped read (#432) — so the part of
     // it owed by clients whose cargo did not ride (0104, Q21) can be named.
@@ -1374,9 +1379,15 @@ export async function profitByBatch(from: string, to: string) {
     // the two screens could part by a cent on a truck of many lots.
     const lots = [...(landed.get(row.batchId)?.values() ?? [])];
     const cost = money(lots.reduce((sum, lot) => sum + lot.totalUsd, 0));
-    const prev = money(lots.reduce((sum, lot) => sum + (lot.totalUsd - lot.batchUsd), 0));
+    const later = money(lots.reduce((sum, lot) => sum + lot.laterUsd, 0));
+    const prev = money(lots.reduce((sum, lot) => sum + (lot.totalUsd - lot.batchUsd - lot.laterUsd), 0));
     const internal = Boolean(row.internal);
+    const carried = carriage.get(row.batchId);
     const profit = internal ? null : money(revenue - cost);
+    const continuation = !internal && isContinuationTrip(carried);
+    // A «davomi» nobody priced has a $0 row and no result: no margin and no
+    // per-kilo, never a «0» that reads as a trip that broke even.
+    const noResult = profit === null || (continuation && !(Math.abs(revenue) > 0.009));
     const load = loads.get(row.batchId);
     const kg = Math.round((load?.kg ?? 0) * 10) / 10;
     const m3 = Math.round((load?.m3 ?? 0) * 1000) / 1000;
@@ -1409,11 +1420,23 @@ export async function profitByBatch(from: string, to: string) {
       costUsd: cost,
       /** The part of `costUsd` the cargo brought with it — «shu reysgacha». */
       prevUsd: prev,
+      /**
+       * The part of `costUsd` the Uzbek legs AFTER this truck added — «keyingi
+       * yo'l» (owner, 2026-09-30: one price for the whole road).
+       */
+      laterUsd: later,
+      /**
+       * A «davomi» truck: all its cargo's price and road sit on an earlier
+       * truck (`isContinuationTrip`), so its row is $0 and never «narx yo'q».
+       */
+      continuation,
+      /** Those trucks, by code — where this truck's cargo is priced. */
+      carriers: carried?.carriers ?? [],
       unallocatedUsd: money(row.unallocatedUsd),
       profitUsd: profit,
-      marginPct: profit === null ? null : marginPct(profit, revenue),
-      profitPerKg: profit === null ? null : kg ? Math.round((profit / kg) * 100) / 100 : 0,
-      profitPerM3: profit === null ? null : m3 ? Math.round((profit / m3) * 100) / 100 : 0,
+      marginPct: noResult ? null : marginPct(profit, revenue),
+      profitPerKg: noResult ? null : kg ? Math.round((profit / kg) * 100) / 100 : 0,
+      profitPerM3: noResult ? null : m3 ? Math.round((profit / m3) * 100) / 100 : 0,
     };
   });
 }
@@ -1731,6 +1754,8 @@ export async function profitByRoute(
     {
       route: string;
       internal: boolean;
+      /** Every truck of the corridor is a «davomi» — see `profitByBatch`. */
+      continuation: boolean;
       batches: number;
       boxCount: number;
       kg: number;
@@ -1745,6 +1770,7 @@ export async function profitByRoute(
       byRoute.get(row.route) ?? {
         route: row.route,
         internal: row.internal,
+        continuation: true,
         batches: 0,
         boxCount: 0,
         kg: 0,
@@ -1753,6 +1779,7 @@ export async function profitByRoute(
         costUsd: 0,
       };
     entry.batches += 1;
+    entry.continuation = entry.continuation && row.continuation;
     entry.boxCount += row.boxCount;
     entry.kg = Math.round((entry.kg + row.kg) * 10) / 10;
     entry.revenueUsd = money(entry.revenueUsd + row.revenueUsd);

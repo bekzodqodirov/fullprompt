@@ -2,7 +2,7 @@ import { cache } from 'react';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { v4 as uuidv4, v5 as uuidv5 } from 'uuid';
 import { z } from 'zod';
-import { db, type Tx } from '../../platform/db/client';
+import { db, type Db, type Tx } from '../../platform/db/client';
 import {
   batches,
   boxes,
@@ -73,6 +73,32 @@ export interface UnloadAck {
    * while all 150 cartons are recorded as missing in transit.
    */
   scannedCode?: string;
+  /**
+   * `batch_rerouted` only: the warehouse the truck goes to NOW, by code — the
+   * old destination's phone says «endi {to} ga boradi» instead of a bare
+   * refusal (the reroute round).
+   */
+  rerouteTo?: string;
+  /**
+   * `batch_rerouted` only: the truck's own code. The phone's outbox is ONE
+   * queue for every truck, so a screen can receive another truck's refusal —
+   * it names that truck in its toast instead of taking the refusal as its own
+   * (the reroute review: truck B's screen read «this truck goes to HOR» and
+   * refused every scan because truck A's queued rows came back rerouted).
+   */
+  batchCode?: string;
+}
+
+/**
+ * What an unload door was authorized AT, per truck — never a door's power, so
+ * it rides beside `DoorOpts` and not in it (the phone's path still passes
+ * NO_DOOR). A truck whose destination is no longer the one named here was
+ * rerouted after the door opened, and its input is refused `batch_rerouted`
+ * instead of landing cartons at a warehouse the person was never authorized
+ * at (the reroute round, objections 2 and 8).
+ */
+export interface UnloadGuard {
+  expectDest?: ReadonlyMap<string, string>;
 }
 
 /**
@@ -87,6 +113,7 @@ export async function ingestUnloadScans(
   inputs: UnloadScanInput[],
   ctx: AuditContext,
   opts: DoorOpts = {},
+  guard: UnloadGuard = {},
 ): Promise<UnloadAck[]> {
   // Trucks a carton came off WITHOUT a load scan: that carton is their cargo
   // for money now (U25), so their costs re-split once the scans are in.
@@ -96,7 +123,7 @@ export async function ingestUnloadScans(
   // and the phone re-sends the batch — but the rogue landing before it has
   // already committed, and the retry answers that one as a replay.
   try {
-    return await landUnloadScans(inputs, ctx, rogueTrucks, opts);
+    return await landUnloadScans(inputs, ctx, rogueTrucks, opts, guard);
   } finally {
     // After every commit, never inside one (#714), and never failing the
     // scan. QUEUED, not run: the re-split covers every bill and grid cell on
@@ -120,13 +147,14 @@ async function landUnloadScans(
   ctx: AuditContext,
   rogueTrucks: Set<string>,
   opts: DoorOpts,
+  guard: UnloadGuard,
 ): Promise<UnloadAck[]> {
   if (!ctx.actorId) throw new ScanError('unauthenticated');
   const actorId = ctx.actorId;
   const acks: UnloadAck[] = [];
 
   for (const input of inputs) {
-    const ack = await db.transaction((tx) => landUnloadInput(tx, input, actorId, rogueTrucks, opts));
+    const ack = await db.transaction((tx) => landUnloadInput(tx, input, actorId, rogueTrucks, opts, guard));
     acks.push(ack);
   }
   return acks;
@@ -137,8 +165,9 @@ async function landUnloadScans(
  * sync, «Hammasini qabul qilish» and the office's count door (0112) share, so
  * a counted carton lands exactly as a scanned one: movement, scan event,
  * crate, the client's arrival claim, rider money. `opts` is the door's; the
- * phone passes `{}`. A carton that landed as a rogue is noted in
- * `rogueTrucks` for the caller's re-split.
+ * phone passes NO_DOOR. `guard` names the destination each truck's door was
+ * authorized at. A carton that landed as a rogue is noted in `rogueTrucks`
+ * for the caller's re-split.
  */
 export async function landUnloadInput(
   tx: Tx,
@@ -146,6 +175,7 @@ export async function landUnloadInput(
   actorId: string,
   rogueTrucks: Set<string>,
   opts: DoorOpts,
+  guard: UnloadGuard = {},
 ): Promise<UnloadAck> {
   // A server door's reason on a scan that did not come through a server
   // door is a forgery (0112) — refused before the replay check and before
@@ -192,14 +222,51 @@ export async function landUnloadInput(
     return { clientEventUuid: input.clientEventUuid, result: 'ok', detail: 'replay' };
   }
 
+  // The destination the door was authorized at (the reroute round). Asked of
+  // EVERY read, an arrived truck included: a truck that has arrived cannot
+  // be rerouted any more, but the door was opened before — a phone at the
+  // old destination authorized its body, the truck was rerouted, and a phone
+  // at the NEW destination flipped it to arrived before this input ran. Read
+  // as arrived, it would land here under a person never authorized here.
+  // No lock is needed for the compare: a reroute requires in_transit, and
+  // arrival is one-way.
+  const expected = guard.expectDest?.get(input.batchId);
+  if (expected && batch.destWarehouseId !== expected) {
+    return reroutedAck(tx, input, batch.destWarehouseId, batch.code);
+  }
+
   // First scan marks arrival — conditional in the WHERE, not on the status
   // read at the top: a truck finished meanwhile must not be put back to
   // «arrived» by a phone's late scan (review of the fixes, lock-rv2-2).
   if (batch.status === 'in_transit') {
-    await tx
-      .update(batches)
-      .set({ status: 'arrived', arrivedAt: new Date() })
-      .where(and(eq(batches.id, input.batchId), eq(batches.status, 'in_transit')));
+    // The truck row under the lock the flip's UPDATE took at this point
+    // anyway (the order stays truck → lot → cartons, decision 23), and read
+    // AGAIN: a reroute takes the same lock, so what it wrote between the read
+    // above and here is seen now instead of landing cartons at the warehouse
+    // the truck no longer goes to. A finish or an annul in between is seen
+    // too, and refused as it would have been at the top.
+    const [fresh] = await tx
+      .select({ status: batches.status, destWarehouseId: batches.destWarehouseId })
+      .from(batches)
+      .where(eq(batches.id, input.batchId))
+      .for('no key update');
+    if (!fresh || !['in_transit', 'arrived'].includes(fresh.status)) {
+      return {
+        clientEventUuid: input.clientEventUuid,
+        result: 'rejected',
+        detail: 'batch_not_unloading',
+        scannedCode: input.code,
+      };
+    }
+    if (fresh.destWarehouseId !== (expected ?? batch.destWarehouseId)) {
+      return reroutedAck(tx, input, fresh.destWarehouseId, batch.code);
+    }
+    if (fresh.status === 'in_transit') {
+      await tx
+        .update(batches)
+        .set({ status: 'arrived', arrivedAt: new Date() })
+        .where(and(eq(batches.id, input.batchId), eq(batches.status, 'in_transit')));
+    }
   }
 
   const isCrate = /^CR-/i.test(input.code);
@@ -484,6 +551,45 @@ export async function landUnloadInput(
   };
 }
 
+/**
+ * «This truck goes to {to} now» — the refusal of an input whose door was
+ * authorized at a destination the truck no longer has. Nothing is written;
+ * the live destination's code is read on this path only, so the phone can say
+ * where the truck went instead of «not your warehouse».
+ */
+async function reroutedAck(
+  tx: Tx,
+  input: UnloadScanInput,
+  liveDestId: string,
+  batchCode: string,
+): Promise<UnloadAck> {
+  const to = await destCodeOf(tx, liveDestId);
+  return {
+    clientEventUuid: input.clientEventUuid,
+    result: 'rejected',
+    detail: 'batch_rerouted',
+    scannedCode: input.code,
+    batchCode,
+    ...(to ? { rerouteTo: to } : {}),
+  };
+}
+
+/** A warehouse's code, read on a refusal path only (`tx` or the pool, by the caller). */
+async function destCodeOf(q: Pick<Tx, 'select'>, warehouseId: string): Promise<string | null> {
+  const [dest] = await q.select({ code: warehouses.code }).from(warehouses).where(eq(warehouses.id, warehouseId));
+  return dest?.code ?? null;
+}
+
+/**
+ * The office doors' «this truck goes to {to} now» (the reroute review): the
+ * refusal carries WHERE, so «Tushirish tugadi» and «Hammasini qabul qilish»
+ * on a stale page say it in the phone's own words instead of «refresh the
+ * page» — a refresh that, for the old warehouse's own staff, lands on a 404.
+ */
+async function reroutedError(q: Pick<Tx, 'select'>, liveDestId: string): Promise<ScanError> {
+  return new ScanError('batch_rerouted', { to: (await destCodeOf(q, liveDestId)) ?? undefined });
+}
+
 async function lettersFor(
   tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
   members: (typeof boxes.$inferSelect)[],
@@ -557,10 +663,27 @@ export function aboardFilter(batchId: string) {
  * the question «what is left to scan off», and landing clears exactly the
  * pointer this reads. One fragment for the unload screen's counter and the
  * dashboard's per-truck count, so «N karobka tushirilmagan» on the owner's
- * screen is the number the operator's screen is counting down (#513).
+ * screen is the number the operator's screen is counting down (#513). The
+ * reroute's Telegram reads it too: on a truck still on the road it is the
+ * whole cargo, and «how much is coming to you» is this number.
  */
-function awaitingUnloadWhere(batchIds: string[]) {
+export function awaitingUnloadWhere(batchIds: string[]) {
   return and(inArray(boxes.currentBatchId, batchIds), eq(boxes.status, 'in_transit'));
+}
+
+/**
+ * The same count for ONE truck on the caller's handle — the rename's stage
+ * (`batches/rename-door.ts`): a truck with nothing left to scan off is
+ * finished whether or not anybody pressed «Tushirish tugadi», and the rename
+ * must count exactly what this screen counts down (#513). On the
+ * transaction, so it reads under the truck's row lock.
+ */
+export async function awaitingUnloadCount(tx: Db | Tx, batchId: string): Promise<number> {
+  const [row] = await tx
+    .select({ n: sql<number>`count(*)` })
+    .from(boxes)
+    .where(awaitingUnloadWhere([batchId]));
+  return Number(row?.n ?? 0);
 }
 
 /**
@@ -620,12 +743,24 @@ export async function awaitingUnloadCounts(batchIds: string[]): Promise<Map<stri
  * Runs each box through the normal unload ingest, so movements, scan events,
  * the ready-for-pickup client notice and the audit trail are identical to a
  * scanned unload — only the method is recorded as a manual bulk accept.
+ *
+ * `expectDestId` is the destination the page rendered and the action
+ * authorized at (the reroute round): a truck rerouted since is refused
+ * `batch_rerouted` up front, and again per input under the truck's lock —
+ * the manager at the old warehouse never lands the new warehouse's cargo.
  */
-export async function unloadRemaining(batchId: string, ctx: AuditContext) {
+export async function unloadRemaining(
+  batchId: string,
+  ctx: AuditContext,
+  opts: { expectDestId?: string } = {},
+) {
   if (!ctx.actorId) throw new ScanError('unauthenticated');
   const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
   if (!batch) throw new ScanError('batch_not_found');
   if (!['in_transit', 'arrived'].includes(batch.status)) throw new ScanError('batch_not_unloading');
+  if (opts.expectDestId && batch.destWarehouseId !== opts.expectDestId) {
+    throw await reroutedError(db, batch.destWarehouseId);
+  }
 
   // A lot the office counted HERE is the count's (0112, decision 21): its
   // loose cartons still aboard are the count's declared shortfall, not
@@ -660,18 +795,31 @@ export async function unloadRemaining(batchId: string, ctx: AuditContext) {
     ctx,
     // A server door (0112): only through one may a scan carry a server reason.
     { door: BULK_ACCEPT_REASON },
+    // …and the destination it was authorized at, asked per input under the
+    // truck's lock (the reroute round).
+    { expectDest: new Map([[batchId, opts.expectDestId ?? batch.destWarehouseId]]) },
   );
   // What actually landed, not what was asked for: a lot the office counted
   // between the read above and its input is refused by the body, and the
   // record must say so rather than list it as accepted.
   const landed = remaining.filter((_, i) => ['ok', 'auto_transfer'].includes(acks[i]?.result ?? ''));
   skippedCounted += acks.filter((a) => a.result === 'rejected' && a.detail === 'lot_counted').length;
+  // A reroute between the read above and the first input: nothing landed,
+  // and the manager is told so in words — never a silent «0 accepted» with
+  // an audit row saying `bulkUnload: 0`. The mixed case cannot happen (the
+  // first landing flips the truck, and a flipped truck cannot be rerouted);
+  // if it ever did, the row says how many were refused.
+  const reroutedAcks = acks.filter((a) => a.result === 'rejected' && a.detail === 'batch_rerouted');
+  const rerouted = reroutedAcks.length;
+  if (rerouted > 0 && landed.length === 0) {
+    throw new ScanError('batch_rerouted', { to: reroutedAcks[0]?.rerouteTo });
+  }
   const accepted = landed.length;
   await writeAudit(db, { ...ctx, warehouseId: batch.destWarehouseId }, {
     entityType: 'batch',
     entityId: batchId,
     action: 'update',
-    after: { bulkUnload: accepted, shortCodes: landed, skippedCounted },
+    after: { bulkUnload: accepted, shortCodes: landed, skippedCounted, ...(rerouted > 0 ? { rerouted } : {}) },
   });
   return { accepted, skippedCounted };
 }
@@ -683,7 +831,7 @@ export async function unloadRemaining(batchId: string, ctx: AuditContext) {
 export async function finishUnload(
   batchId: string,
   ctx: AuditContext,
-  opts: { mayCloseWithMissing?: boolean } = {},
+  opts: { mayCloseWithMissing?: boolean; expectDestId?: string } = {},
 ) {
   if (!ctx.actorId) throw new ScanError('unauthenticated');
   const actorId = ctx.actorId;
@@ -694,6 +842,13 @@ export async function finishUnload(
     const [batch] = await tx.select().from(batches).where(eq(batches.id, batchId)).for('no key update');
     if (!batch) throw new ScanError('batch_not_found');
     if (!['in_transit', 'arrived'].includes(batch.status)) throw new ScanError('batch_not_unloading');
+    // The destination the page rendered and the action authorized at, asked
+    // on the LOCKED row (the reroute takes the same lock): the old
+    // warehouse's «Tushirish tugadi» must never declare the new warehouse's
+    // cargo lost.
+    if (opts.expectDestId && batch.destWarehouseId !== opts.expectDestId) {
+      throw await reroutedError(tx, batch.destWarehouseId);
+    }
 
     const missing = await tx
       .select()
