@@ -2326,10 +2326,32 @@ Pinned by truck-riders (U16 re-anchored + «keyingi yo'l» block), internal-leg
 R2a, `later-legs-wire.test.ts`. PROCESS: a red-proof helper restoring an EMPTY
 strip wrote the line between every character of a file, and `open(p,'w')`
 before `read()` emptied another — both recovered, the WIP was committed first
-(#1246). The same evening he asked two more (rename a departed truck; change a
+(#1246). Reviewed as shipped (#1251 — renumbered from #1247 on the merge): the
+fence had been measured only on the small copies, and on `gsr_card_perf` three
+weeks of «Partiya foydasi» took 10.8 s — rewritten with NO join between CTEs
+(windows over the carton's own rides), 0.3-0.6 s; the year read is 3.6-3.8 s
+vs 2.7-3.1 s, stated. The same evening he asked two more (rename a departed truck; change a
 truck's destination on the road) — researched, answered with questions, not built.
 
-**Latest migration: 0120** (`no_login_staff`, `when` …099; ledger must reach **121**). Before
+**Round — partiya nomi yo'lda + yo'nalishni o'zgartirish (2026-09-30; DECISIONS
+#1252-#1255 — renumbered from #1248-#1251 on the merge, the TWENTIETH collision: the other session's strip round took #1247-#1250 first; migration 0121 `batch_rename` — ledger must reach 122).** His 1a/2a/3a/4a
+(5 unanswered → same country only). Designed + judged, then BUILT in two worktrees and
+reviewed again, merged. RENAME (reverses #122): `rename-door.ts` `renameStageOf`
+(loading / road = in_transit|arrived with cartons aboard / closed), door = plans.manage +
+the card's two ends, branded `RenameDoor` bound to the actor, lock order name → loading
+lock → row, compare-and-set `seenCode/seenStage`; road names = the bot's
+`isCodeCandidate`; shape fences at both stages; only a ROAD name is «ever worn»
+(`former-codes.ts`, audit rows + 0121's partial index); old names found by ⌘K, the
+archive (one bracketed `batchTextMatchSql`) and the bot (last). REROUTE: one writer
+`reroute.ts` `rerouteBatch` (in_transit only, same country, FOR NO KEY UPDATE,
+`dest_changed` CAS, reason, `BatchRerouted` → Telegram to the new warehouse + logists +
+a warehouse an earlier reroute told «keladi»); phone sync is per truck
+(`scanning/sync.ts` — a rerouted truck no longer jams the outbox), every unload row carries
+`expectDestId` and is judged at scan time, office doors post `seenDestWarehouseId`.
+Money untouched by construction (countries). Questions for him in the round's reply.
+
+**Latest migration: 0121** (`batch_rename`, `when` …100; ledger must reach **122**). Before
+it: 0120 (`no_login_staff`, `when` …099). Before
 it: 0119 (`price_icons`), 0118 (`border_queue`), 0117 (`staff_pay`) — `when` …096-…098. Before them:
 **0116** (`cargo_wait_alerts`; ledger 117). Before it: 0115 (`system_watch`), 0114 (`debt_control`), 0113
 (`inbound_contact`) — `when` …092-…095, assigned in that order before the

@@ -1,5 +1,55 @@
 # CHANGELOG
 
+## Partiya nomi yo'lda ham o'zgaradi, yo'ldagi mashinaning qabul skladi o'zgaradi — 2026-09-30
+
+**Migratsiya 0121** (faqat ikkita indeks, yangi ustun yo'q). Yangilangandan keyin ledger
+**122** bo'lishi kerak.
+
+Sizning javoblaringiz: **1a · 2a · 3a · 4a**; 5-savolga javob bo'lmadi — tavsiya qilingan
+variant qurildi: sklad faqat **bitta davlat ichida** almashtiriladi.
+
+### Partiya nomi
+
+- **Yo'lda ham o'zgaradi** — mashina jo'nagandan keyin, tushirish tugaguncha. Faqat admin va
+  logist (rollar sahifasida `plans.manage` belgisi). Yo'lda o'zgartirganda **sabab yozish
+  majburiy** (kamida 3 belgi).
+- **Qachon o'zgartirib bo'lmaydi:** «Tushirish tugadi» bosilgandan keyin; hamma karobka
+  tushirib olingan bo'lsa (tugma bosilmagan bo'lsa ham); partiya yopilgan yoki bekor
+  qilingan bo'lsa.
+- **Yo'ldagi nom:** lotin harflari, raqam va «-», 3–20 belgi, kamida bitta harf va bitta
+  raqam (masalan KA-77, 01A777BA). Kirillcha harf yozilsa (К, А lotinchaga o'xshaydi) —
+  tizim darhol aytadi.
+- **Chalkashtiradigan nom rad etiladi** (jo'nashdan oldin ham): mijoz kodiga (GS500), lotga
+  (GS777-A), karobka yoki yashik kodiga o'xshagan nom.
+- **Eski nom yo'qolmaydi:** ⌘K qidiruvida, «Partiyalar» arxivida, hodimlar botida
+  («↩️ YW-105 — bu partiyaning oldingi nomi. Hozirgi nomi: KA-77») va kartada «Oldingi
+  nomi». Kim va nega o'zgartirgani faqat mashinalar bilan ishlaydiganlarga ko'rinadi.
+- **Yo'lda ishlatilgan nom boshqa mashinaga berilmaydi.** Jo'nashdan oldin yozilib,
+  keyin o'zgartirilgan nom esa darhol bo'shaydi.
+- **Hujjatlar:** o'zgartirilgandan keyin yuklangan invoys, manifest, packing list yangi nom
+  bilan (invoys raqami ham o'zgaradi). Agentga oldin yuborilgan hujjatlarda va Telegram
+  xabarlarida eski nom qoladi — panel buni ogohlantiradi.
+- Ikki hodim bir vaqtda o'zgartirsa, keyingisi «shu orada o'zgardi» degan xabarni ko'radi.
+
+### Yo'ldagi mashinaning qabul skladini o'zgartirish
+
+- **Mashina kartasi → «Mashina» bo'limi → «Yo'nalishni o'zgartirish».** Faqat mashina
+  yo'lda bo'lsa (birinchi karobka tushirilgunicha), faqat admin va logist, **sabab
+  majburiy**, faqat **bitta davlat ichida** (Qashqar → Horgos, Andijon → Toshkent).
+- **Telegram (4a):** yangi skladning xodimlariga «endi sizga keladi» (karobka, kub, kg,
+  mashina raqami bilan) va logistlarga. Oldin «sizga keladi» deyilgan skladga «endi
+  sizga kelmaydi» xabari boradi.
+- **Kartada** «Rejada: KA → yo'nalish o'zgartirildi: HOR» yoziladi, «Mashina» bo'limida kim,
+  qachon va nega o'zgartirgani.
+- **Eski sklad telefonlari:** shu mashina uchun olingan skanlar «↪ endi HOR ga boradi — yuk
+  bu yerga tushmaydi» deb rad etiladi va navbatdan chiqadi; **boshqa mashinalarning
+  skanlarini to'xtatib qo'ymaydi**. Logist yoki admin eski darvozada skanerlagan karobka
+  yangi skladga «keldi» deb yozilib qolmaydi.
+- **Pul o'zgarmaydi:** tannarx, narx, «keyingi yo'l» faqat davlatga bog'liq, davlat esa
+  o'zgarmaydi.
+- Agentga oldin yuborilgan hujjatlarda eski sklad qoladi; keyin yuklanganlari yangi sklad
+  bilan. Reja va karobka tarixida jo'nagan kundagi sklad saqlanadi.
+
 ## Keyingi yo'l: narx qo'yilgan mashinada butun yo'l tannarxi — 2026-09-30
 
 Migratsiya yo'q (ledger **121** qoladi). Yangilanganini `/api/version` dagi sana
