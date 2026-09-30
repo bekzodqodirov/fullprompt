@@ -515,9 +515,19 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                   {/* A truck nobody has priced has no margin: −tannarx in red
                       read as a trip that LOST money (the dashboard's
                       `tripKind`, and the card's header tile, say the same). */}
-                  {marginKind === 'unpriced' || marginKind === 'continuation' ? (
+                  {marginKind === 'continuation' ? (
+                    // One long word in a third of a phone («продолжение» is
+                    // ~130 px in this weight): smaller, and it may break —
+                    // measured, it widened the page to 379 px at 360.
+                    <p
+                      className="text-sm font-extrabold text-ink-500 [overflow-wrap:anywhere]"
+                      data-testid="pricing-total-margin"
+                    >
+                      {tbc('tileContinuation')}
+                    </p>
+                  ) : marginKind === 'unpriced' ? (
                     <p className="text-lg font-extrabold text-ink-500" data-testid="pricing-total-margin">
-                      {marginKind === 'continuation' ? tbc('tileContinuation') : tbc('tileNoPrice')}
+                      {tbc('tileNoPrice')}
                     </p>
                   ) : (
                     <p
