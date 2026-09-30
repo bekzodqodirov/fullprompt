@@ -37,6 +37,7 @@ export default async function ProfitPage({
   if (!actor.permissions.has('finance.reports')) redirect('/accounting');
   const t = await getTranslations('accounting');
   const tf = await getTranslations('finance');
+  const tbc = await getTranslations('batchCard');
   const params = await searchParams;
   const { from, to } = resolvePeriod(params);
   const view: View = params.view === 'client' || params.view === 'route' ? params.view : 'batch';
@@ -203,6 +204,11 @@ export default async function ProfitPage({
                         ↩ {usd(row.prevUsd)}
                       </span>
                     )}
+                    {'laterUsd' in row && row.laterUsd > 0.009 && (
+                      <span className="block text-xs text-ink-500" title={tf('laterLegs')} data-testid="profit-later">
+                        ↪ {usd(row.laterUsd)}
+                      </span>
+                    )}
                     {'unallocatedUsd' in row && row.unallocatedUsd > 0.009 && (
                       <span className="block text-xs font-semibold text-warn">
                         ⚠ {usd(row.unallocatedUsd)}
@@ -212,6 +218,15 @@ export default async function ProfitPage({
                   {row.profitUsd === null ? (
                     <td className="p-2 text-right text-ink-500" data-testid="profit-internal">
                       —
+                    </td>
+                  ) : 'continuation' in row && row.continuation && row.revenueUsd < 0.01 ? (
+                    // «Davomi» (2026-09-30): its cost is the priced truck's
+                    // «keyingi yo'l» — a $0 here, not a result.
+                    <td className="p-2 text-right text-xs text-ink-500" data-testid="profit-continuation">
+                      ↪{' '}
+                      {'carriers' in row
+                        ? tbc('tileContinuationLine', { codes: row.carriers.map((carrier) => carrier.code).join(', ') })
+                        : tbc('tileContinuation')}
                     </td>
                   ) : (
                     <td className={`p-2 text-right font-mono font-bold ${profitClass(row.profitUsd)}`}>

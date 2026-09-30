@@ -60,6 +60,34 @@ export function sameCountryLegSql(origin: SQL | string, dest: SQL | string): SQL
   return sql`(nullif(upper(trim(${o}.country)), '') = upper(trim(${d}.country)))`;
 }
 
+/**
+ * A truck CROSSES a border — the money rule's other half, and the unpriced
+ * rule's clause 3 (`finance/unpriced.ts`). An empty country is an unknown
+ * border, and an unknown border is treated as crossed (the note above).
+ */
+export function crossesBorderSql(origin: SQL | string, dest: SQL | string): SQL {
+  return sql`coalesce(NOT ${sameCountryLegSql(origin, dest)}, true)`;
+}
+
+/** A prixod (its warehouse, by alias) was received in Uzbekistan. */
+export function receivedInUzSql(receiptWarehouse: SQL | string): SQL {
+  const w = typeof receiptWarehouse === 'string' ? sql.raw(receiptWarehouse) : receiptWarehouse;
+  return sql`(upper(trim(${w}.country)) = 'UZ')`;
+}
+
+/**
+ * The truck that may carry a carton's PRICE — ONE rule for the handover gate
+ * (clause 3: «a local leg's price never covers China-received cargo») and for
+ * the tannarx (owner, 2026-09-30, answers 1a/2a/5a: «bitta narx butun yo'lga»).
+ * Not an internal leg, and either it crosses a border or the carton's prixod
+ * was received in Uzbekistan. Andijan → Tashkent bears the price of a walk-in
+ * received in Andijan and never of cargo that came from China — that cargo's
+ * price, and so its whole road, sits on the truck that crossed.
+ */
+export function bearsPriceSql(origin: SQL | string, dest: SQL | string, receiptWarehouse: SQL | string): SQL {
+  return sql`(NOT ${internalLegSql(origin, dest)} AND (${crossesBorderSql(origin, dest)} OR ${receivedInUzSql(receiptWarehouse)}))`;
+}
+
 export interface BatchRoute {
   originCountry: string;
   destCountry: string;

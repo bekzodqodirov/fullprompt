@@ -30,7 +30,7 @@ import { latestTxDate } from '../finance/dates';
 import { exceedsRowUsd, nativeAmount } from '../finance/money-bounds';
 import { allocateEntry, toUsd, type AllocBox, type AllocationBasis } from './engine';
 import { declaredFilter, riderCtesSql, riderFilter, riderLoad, riderWithoutShareSql } from '../batches/riders';
-import { internalLegSql } from '../batches/internal';
+import { bearsPriceSql, internalLegSql } from '../batches/internal';
 import { CUSTOMS_CODES_SETTING, parseCustomsCodes } from '../calc/customs-codes';
 import type { CostSight } from './cost-sight';
 
@@ -1446,6 +1446,8 @@ export interface ClientLandedCost {
   totalUsd: number;
   /** The part that came from THIS batch's own cost entries. */
   batchUsd: number;
+  /** The Uzbek legs after it («keyingi yo'l») — `LotLandedCost.laterUsd`. */
+  laterUsd: number;
 }
 
 /**
@@ -1468,13 +1470,14 @@ export async function batchLandedCostByClient(batchId: string): Promise<Map<stri
     WITH ${landed.with}
     SELECT rc.client_id,
            coalesce(sum(ca.amount_usd), 0) AS total_usd,
-           coalesce(sum(ca.amount_usd) FILTER (WHERE ce.batch_id = m.batch_id), 0) AS batch_usd
+           coalesce(sum(ca.amount_usd) FILTER (WHERE ce.batch_id = m.batch_id), 0) AS batch_usd,
+           coalesce(sum(ca.amount_usd) FILTER (WHERE cr.upto IS NOT NULL AND eb.departed_at > c.at), 0) AS later_usd
       ${landed.joins}
       JOIN receipt_lots rl ON rl.id = bx.lot_id
       JOIN receipts rc ON rc.id = rl.receipt_id
      WHERE ${landed.where}
      GROUP BY rc.client_id
-  `)) as unknown as { client_id: string | null; total_usd: string; batch_usd: string }[];
+  `)) as unknown as { client_id: string | null; total_usd: string; batch_usd: string; later_usd: string }[];
 
   const out = new Map<string, ClientLandedCost>();
   for (const row of rows) {
@@ -1483,6 +1486,7 @@ export async function batchLandedCostByClient(batchId: string): Promise<Map<stri
       clientId: row.client_id,
       totalUsd: Math.round(Number(row.total_usd) * 100) / 100,
       batchUsd: Math.round(Number(row.batch_usd) * 100) / 100,
+      laterUsd: Math.round(Number(row.later_usd) * 100) / 100,
     });
   }
   return out;
@@ -1500,31 +1504,40 @@ export async function batchLandedCostByClient(batchId: string): Promise<Map<stri
  * boxes ride every truck and it scans the allocations table whole (#152).
  * An annulled box is not cargo (the annul round).
  *
- * Which of a member box's allocations the truck carries — «shu reysgacha»:
- * - its own entries, always;
- * - never a LATER leg's: an entry stamped with a truck that departed after
- *   this one (or at all, while this one is still forming) is the future
- *   (#532e — re-opening an internal leg after the export had left printed
- *   the export's customs as «before this trip»);
- * - and each allocation on exactly ONE priced truck (audit U16). Since U1b a
- *   truck inside Uzbekistan is priced, and the old fence let every later
- *   priced leg count again everything an earlier one had carried — the
- *   cross-border freight, the prixod's own money, the Chinese legs — so
- *   Andijan → Tashkent printed the whole journey against a price for one
- *   road, and the page's Jami counted the first truck's cost twice. The rule
- *   is per BOX, because it is «what this carton brought with it since the
- *   last truck that was priced»: a truckless entry (receipt, crate, pickup)
- *   counts only while the box has no earlier priced truck, and another
- *   truck's entry only when that truck departed after the box's previous
- *   priced one (in practice a Chinese internal leg in between). The rows are
- *   then disjoint, so the priced rows add up to the distinct allocations —
- *   the P&L's direct cost for a fully priced, fully allocated set of trucks.
- *   The answer does not depend on whether the later truck IS priced (the
- *   owner's pending A/B): the money is counted once either way.
+ * Which of a member box's allocations the truck carries:
+ * - its own entries, always — unless the truck GIVES the carton back (below);
+ * - «shu reysgacha»: each allocation on exactly ONE non-internal truck (audit
+ *   U16). A truckless entry (receipt, crate, pickup) counts only while the
+ *   box has no earlier non-internal truck, and another truck's entry only
+ *   when that truck departed after the box's previous non-internal one and
+ *   not after this one (in practice a Chinese internal leg in between) —
+ *   never a LATER leg's by this clause (#532e);
+ * - «keyingi yo'l» (owner, 2026-09-30, answers 1a/2a/5a: «tovar 3 mashinada
+ *   keladi … narx qo'yilgan partiyada hamma mashinalardagi rasxodlar
+ *   tannarxga qo'shilsin»): a carton's price sits on the truck that may carry
+ *   it (`bearsPriceSql` — the handover gate's clause 3, one rule), and one
+ *   price is the WHOLE road. So a DEPARTED truck that does not bear the
+ *   carton's price — Andijan → Tashkent for cargo that came from China, and
+ *   every Uzbek leg after it — hands everything it would have carried for
+ *   that carton to the carton's previous price-bearing truck, and that truck
+ *   carries it as a third figure. It is a MOVE inside this one fence: the
+ *   giving truck drops exactly what the bearing truck gains, so the
+ *   non-internal rows stay disjoint and every sum over them (`tripTotals`,
+ *   the corridors, the «belgilanmagan» note) is the money once, as before.
+ *   Charge-blind on purpose: a price someone types on the Uzbek leg never
+ *   moves cost between trucks (and the gate says that price covers nothing).
+ *   A walk-in received in Andijan: that leg bears its price and keeps its
+ *   cost. A truck still forming keeps its own entries — a planned carton can
+ *   still be short-loaded (Q21). A carton with no earlier price-bearing truck
+ *   keeps the old answer, so no money is ever lost.
  *
- * An INTERNAL truck (both ends in China) looks for no previous priced truck —
- * it keeps the plain fence, as #1010 has it: a cost row, shown and left out
- * of every total.
+ * The bearing truck's figure therefore GROWS after its price is typed, when
+ * the next leg's bill arrives — his answer 2a, said on the pricing page while
+ * its cargo is not all handed over.
+ *
+ * An INTERNAL truck (both ends in China) looks for no previous truck — it
+ * keeps the plain fence, as #1010 has it: a cost row, shown and left out of
+ * every total. It never bears a price and never gives anything back.
  *
  * Stated, not refined: truckless money spent in Uzbekistan between two legs
  * (a crate built in Andijan, a receipt cost typed later) lands on the FIRST
@@ -1533,25 +1546,13 @@ export async function batchLandedCostByClient(batchId: string): Promise<Map<stri
 function landedAllocationsSql(list: SQL): { with: SQL; joins: SQL; where: SQL } {
   return {
     with: sql`
-      ${riderCtesSql(list)},
-      clock AS (
-        SELECT t.id AS batch_id, coalesce(t.departed_at, now()) AS at,
-               ${internalLegSql('tow', 'tdw')} AS internal
-          FROM batches t
-          JOIN warehouses tow ON tow.id = t.origin_warehouse_id
-          JOIN warehouses tdw ON tdw.id = t.dest_warehouse_id
-         WHERE t.id IN (${list})
-      ),
+      ${carriageCtesSql(list)},
       prev_priced AS (
-        SELECT m.batch_id, m.box_id, max(pb.departed_at) AS prev_at
+        SELECT m.batch_id, m.box_id, max(p.departed_at) AS prev_at
           FROM members m
           JOIN clock c ON c.batch_id = m.batch_id AND NOT c.internal
-          JOIN box_rides r ON r.box_id = m.box_id AND r.batch_id <> m.batch_id
-          JOIN batches pb ON pb.id = r.batch_id
-          JOIN warehouses po ON po.id = pb.origin_warehouse_id
-          JOIN warehouses pd ON pd.id = pb.dest_warehouse_id
-         WHERE pb.departed_at IS NOT NULL AND pb.departed_at < c.at
-           AND NOT ${internalLegSql('po', 'pd')}
+          JOIN rides p ON p.box_id = m.box_id AND p.batch_id <> m.batch_id
+         WHERE p.departed_at IS NOT NULL AND p.departed_at < c.at AND NOT p.internal
          GROUP BY m.batch_id, m.box_id
       )`,
     joins: sql`
@@ -1561,24 +1562,204 @@ function landedAllocationsSql(list: SQL): { with: SQL; joins: SQL; where: SQL } 
       JOIN cost_allocations ca ON ca.box_id = m.box_id
       JOIN cost_entries ce ON ce.id = ca.cost_entry_id
       LEFT JOIN batches eb ON eb.id = ce.batch_id
-      LEFT JOIN prev_priced pp ON pp.batch_id = m.batch_id AND pp.box_id = m.box_id`,
+      LEFT JOIN prev_priced pp ON pp.batch_id = m.batch_id AND pp.box_id = m.box_id
+      LEFT JOIN given_back gb ON gb.batch_id = m.batch_id AND gb.box_id = m.box_id
+      LEFT JOIN carried cr ON cr.batch_id = m.batch_id AND cr.box_id = m.box_id`,
     where: sql`ce.voided_at IS NULL
+       AND gb.box_id IS NULL
        AND (
          ce.batch_id = m.batch_id
          OR (ce.batch_id IS NULL AND pp.prev_at IS NULL)
          OR (eb.departed_at IS NOT NULL AND eb.departed_at <= c.at
              AND (pp.prev_at IS NULL OR eb.departed_at > pp.prev_at))
+         OR (cr.upto IS NOT NULL AND eb.departed_at > c.at AND eb.departed_at <= cr.upto)
        )`,
   };
 }
+
+/**
+ * The CTEs that decide, per (truck, carton), which truck carries the
+ * carton's road — shared by the fence and by `batchCarriage`, which names it
+ * on the screens, so the two can never disagree (#513).
+ *
+ * - `clock` — each listed truck at coalesce(departed_at, now()), and whether
+ *   it is an internal leg.
+ * - `rides` — every ride of the member boxes, with its departure, whether it
+ *   is internal, and whether it bears THAT carton's price (`bearsPriceSql`,
+ *   by the carton's prixod warehouse).
+ * - `follows` — a member pair whose truck does not bear the carton's price
+ *   while an earlier truck that does already carried it: the price and the
+ *   road are that truck's. `given_back` is the part that has DEPARTED — the
+ *   money moves only then.
+ * - `carried` — a departed price-bearing member pair and how far forward it
+ *   carries: the last departed non-bearing ride of the carton before its next
+ *   price-bearing truck (answer 5a: every Uzbek leg after Andijan).
+ */
+function carriageCtesSql(list: SQL): SQL {
+  return sql`
+    ${riderCtesSql(list)},
+    clock AS (
+      SELECT t.id AS batch_id, coalesce(t.departed_at, now()) AS at,
+             ${internalLegSql('tow', 'tdw')} AS internal
+        FROM batches t
+        JOIN warehouses tow ON tow.id = t.origin_warehouse_id
+        JOIN warehouses tdw ON tdw.id = t.dest_warehouse_id
+       WHERE t.id IN (${list})
+    ),
+    rides AS (
+      SELECT r.batch_id, r.box_id, rb.departed_at,
+             ${internalLegSql('ro', 'rd')} AS internal,
+             ${bearsPriceSql('ro', 'rd', 'rw')} AS bears
+        FROM box_rides r
+        JOIN (SELECT DISTINCT box_id FROM members) mb ON mb.box_id = r.box_id
+        JOIN batches rb ON rb.id = r.batch_id
+        JOIN warehouses ro ON ro.id = rb.origin_warehouse_id
+        JOIN warehouses rd ON rd.id = rb.dest_warehouse_id
+        JOIN boxes hb ON hb.id = r.box_id
+        JOIN receipt_lots hl ON hl.id = hb.lot_id
+        JOIN receipts hr ON hr.id = hl.receipt_id
+        JOIN warehouses rw ON rw.id = hr.warehouse_id
+    ),
+    follows AS (
+      SELECT t.batch_id, t.box_id, t.departed_at,
+             (SELECT p.batch_id FROM rides p
+               WHERE p.box_id = t.box_id AND p.bears AND p.departed_at IS NOT NULL
+                 AND p.departed_at < coalesce(t.departed_at, now())
+               ORDER BY p.departed_at DESC LIMIT 1) AS carrier_id
+        FROM rides t
+        JOIN members m ON m.batch_id = t.batch_id AND m.box_id = t.box_id
+       WHERE NOT t.internal AND NOT t.bears
+    ),
+    given_back AS (
+      SELECT batch_id, box_id FROM follows WHERE carrier_id IS NOT NULL AND departed_at IS NOT NULL
+    ),
+    carried AS (
+      SELECT t.batch_id, t.box_id, max(h.departed_at) AS upto
+        FROM rides t
+        JOIN members m ON m.batch_id = t.batch_id AND m.box_id = t.box_id
+        JOIN rides h ON h.box_id = t.box_id AND NOT h.internal AND NOT h.bears
+                    AND h.departed_at > t.departed_at
+       WHERE t.bears AND t.departed_at IS NOT NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM rides n
+            WHERE n.box_id = t.box_id AND n.bears
+              AND n.departed_at > t.departed_at AND n.departed_at < h.departed_at
+         )
+       GROUP BY t.batch_id, t.box_id
+    )`;
+}
+
+/** Who carries a truck's cargo's road — `batchCarriage`. */
+export interface BatchCarriage {
+  /** Rider cartons of the truck. */
+  riders: number;
+  /**
+   * Cartons whose price and road sit on an earlier truck («davomi»): the
+   * truck does not bear their price and an earlier one did. Counted whether
+   * or not this truck has left — the price door warns before departure too.
+   */
+  follows: number;
+  /** The part of `follows` whose money has moved (this truck departed). */
+  givenBack: number;
+  /**
+   * Cartons this truck carries whose road may still grow — not yet handed
+   * over, lost or annulled (answer 2a: «tannarx o'sishi mumkin»).
+   */
+  open: number;
+  /** The trucks the followers' price sits on, by code. */
+  carriers: { batchId: string; code: string }[];
+  /** The same per lot. */
+  byLot: Map<string, { follows: number; givenBack: number; carriers: string[] }>;
+}
+
+/**
+ * «Davomi» — which trucks carry this truck's cargo's price and road, from the
+ * fence's own CTEs (`carriageCtesSql`), so the screens say exactly what the
+ * tannarx did. One grouped read for many trucks («Partiya foydasi», #432).
+ */
+export async function batchCarriage(batchIds: string[]): Promise<Map<string, BatchCarriage>> {
+  const out = new Map<string, BatchCarriage>();
+  const ids = [...new Set(batchIds)];
+  if (ids.length === 0) return out;
+  const list = sql.join(
+    ids.map((id) => sql`${id}::uuid`),
+    sql`, `,
+  );
+  const rows = (await db.execute(sql`
+    WITH ${carriageCtesSql(list)}
+    SELECT m.batch_id, bx.lot_id,
+           count(*) AS riders,
+           count(*) FILTER (WHERE f.carrier_id IS NOT NULL) AS follows,
+           count(*) FILTER (WHERE f.carrier_id IS NOT NULL AND f.departed_at IS NOT NULL) AS given_back,
+           count(*) FILTER (WHERE f.carrier_id IS NULL AND bx.status NOT IN ('issued', 'lost', 'void')) AS open,
+           coalesce(
+             json_agg(DISTINCT jsonb_build_object('id', cb.id, 'code', cb.code)) FILTER (WHERE cb.id IS NOT NULL),
+             '[]'
+           ) AS carriers
+      FROM members m
+      JOIN boxes bx ON bx.id = m.box_id
+      LEFT JOIN follows f ON f.batch_id = m.batch_id AND f.box_id = m.box_id
+      LEFT JOIN batches cb ON cb.id = f.carrier_id
+     GROUP BY m.batch_id, bx.lot_id
+  `)) as unknown as {
+    batch_id: string;
+    lot_id: string;
+    riders: string;
+    follows: string;
+    given_back: string;
+    open: string;
+    carriers: { id: string; code: string }[];
+  }[];
+  for (const row of rows) {
+    const fresh: BatchCarriage = { riders: 0, follows: 0, givenBack: 0, open: 0, carriers: [], byLot: new Map() };
+    const entry = out.get(row.batch_id) ?? fresh;
+    entry.riders += Number(row.riders);
+    entry.follows += Number(row.follows);
+    entry.givenBack += Number(row.given_back);
+    entry.open += Number(row.open);
+    for (const carrier of row.carriers) {
+      if (!entry.carriers.some((known) => known.batchId === carrier.id)) {
+        entry.carriers.push({ batchId: carrier.id, code: carrier.code });
+      }
+    }
+    entry.byLot.set(row.lot_id, {
+      follows: Number(row.follows),
+      givenBack: Number(row.given_back),
+      carriers: row.carriers.map((carrier) => carrier.code).sort(),
+    });
+    out.set(row.batch_id, entry);
+  }
+  for (const entry of out.values()) entry.carriers.sort((a, b) => a.code.localeCompare(b.code));
+  return out;
+}
+
+/** One truck's `batchCarriage`, memoised per request (the card and its tabs). */
+export const batchCarriageOf = cache(async function batchCarriageOf(batchId: string): Promise<BatchCarriage> {
+  return (
+    (await batchCarriage([batchId])).get(batchId) ?? {
+      riders: 0,
+      follows: 0,
+      givenBack: 0,
+      open: 0,
+      carriers: [],
+      byLot: new Map(),
+    }
+  );
+});
 
 /** One lot's share of what the cargo cost us, as it stands on one truck. */
 export interface LotLandedCost {
   lotId: string;
   /** End to end: this trip plus everything the cargo brought with it. */
   totalUsd: number;
-  /** What THIS trip added. `totalUsd − batchUsd` is «shu reysgacha». */
+  /** What THIS trip added. */
   batchUsd: number;
+  /**
+   * What the Uzbek legs AFTER this truck added — «keyingi yo'l» (owner,
+   * 2026-09-30): this truck bears the carton's price, so it carries its whole
+   * road. `totalUsd − batchUsd − laterUsd` is «shu reysgacha».
+   */
+  laterUsd: number;
 }
 
 /**
@@ -1617,17 +1798,19 @@ export async function batchLandedCostTotals(
     WITH ${landed.with}
     SELECT m.batch_id, bx.lot_id,
            coalesce(sum(ca.amount_usd), 0) AS total_usd,
-           coalesce(sum(ca.amount_usd) FILTER (WHERE ce.batch_id = m.batch_id), 0) AS batch_usd
+           coalesce(sum(ca.amount_usd) FILTER (WHERE ce.batch_id = m.batch_id), 0) AS batch_usd,
+           coalesce(sum(ca.amount_usd) FILTER (WHERE cr.upto IS NOT NULL AND eb.departed_at > c.at), 0) AS later_usd
       ${landed.joins}
      WHERE ${landed.where}
      GROUP BY m.batch_id, bx.lot_id
-  `)) as unknown as { batch_id: string; lot_id: string; total_usd: string; batch_usd: string }[];
+  `)) as unknown as { batch_id: string; lot_id: string; total_usd: string; batch_usd: string; later_usd: string }[];
   for (const row of rows) {
     const byLot = out.get(row.batch_id) ?? new Map<string, LotLandedCost>();
     byLot.set(row.lot_id, {
       lotId: row.lot_id,
       totalUsd: Math.round(Number(row.total_usd) * 100) / 100,
       batchUsd: Math.round(Number(row.batch_usd) * 100) / 100,
+      laterUsd: Math.round(Number(row.later_usd) * 100) / 100,
     });
     out.set(row.batch_id, byLot);
   }
@@ -2069,6 +2252,8 @@ export interface ClientCostPart {
   /** Where the money was written: a batch code, a prixod number, a crate. */
   source: string;
   typeName: string;
+  /** An Uzbek leg AFTER this truck («keyingi yo'l»), carried here. */
+  later: boolean;
   usd: number;
 }
 
@@ -2089,15 +2274,16 @@ export async function batchClientCostBreakdown(
   const rows = (await db.execute(sql`
     WITH ${landed.with}
     SELECT ca.client_id, ct.name AS type_name, eb.code AS batch_code,
-           er.number AS receipt_number, cr.code AS crate_code, pk.code AS pickup_code,
+           er.number AS receipt_number, crt.code AS crate_code, pk.code AS pickup_code,
+           (cr.upto IS NOT NULL AND eb.departed_at > c.at) AS later,
            sum(ca.amount_usd) AS usd
       ${landed.joins}
       JOIN cost_types ct ON ct.id = ce.cost_type_id
       LEFT JOIN receipts er ON er.id = ce.receipt_id
-      LEFT JOIN crates cr ON cr.id = ce.crate_id
+      LEFT JOIN crates crt ON crt.id = ce.crate_id
       LEFT JOIN pickups pk ON pk.id = ce.pickup_id
      WHERE ${landed.where} AND ca.client_id IS NOT NULL
-     GROUP BY ca.client_id, ct.name, eb.code, er.number, cr.code, pk.code
+     GROUP BY ca.client_id, ct.name, eb.code, er.number, crt.code, pk.code, later
   `)) as unknown as {
     client_id: string;
     type_name: string;
@@ -2105,6 +2291,7 @@ export async function batchClientCostBreakdown(
     receipt_number: string | null;
     crate_code: string | null;
     pickup_code: string | null;
+    later: boolean;
     usd: string;
   }[];
   const out = new Map<string, ClientCostPart[]>();
@@ -2113,6 +2300,7 @@ export async function batchClientCostBreakdown(
     list.push({
       source: row.batch_code ?? row.receipt_number ?? row.crate_code ?? row.pickup_code ?? '—',
       typeName: row.type_name,
+      later: Boolean(row.later),
       usd: Math.round(Number(row.usd) * 100) / 100,
     });
     out.set(row.client_id, list);

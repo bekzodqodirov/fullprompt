@@ -162,7 +162,9 @@ export async function MoneySection({
   const partiya = trips.filter((row) => row.tracked);
   const totals = tripTotals(partiya);
   const recent = [...partiya]
-    .filter((row) => !row.internal)
+    // A «davomi» truck has no profit of its own: its cost is inside the
+    // truck that bears the price (owner, 2026-09-30), so it takes no bar.
+    .filter((row) => !row.internal && !row.continuation)
     .sort((a, b) => new Date(b.departedAt ?? 0).getTime() - new Date(a.departedAt ?? 0).getTime())
     .slice(0, 12);
   const tripRows = recent.map((row) => {

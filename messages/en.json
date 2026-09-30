@@ -1312,7 +1312,9 @@
     "profitChipOn": "In the profit report",
     "profitChipSet": "Add to the profit report",
     "todoNoCosts": "No costs entered",
-    "todoTnved": "No HS code"
+    "todoTnved": "No HS code",
+    "tileContinuation": "continuation",
+    "tileContinuationLine": "priced on {codes}"
   },
   "batches": {
     "title": "Batches",
@@ -1788,7 +1790,13 @@
     "calcPrevVersion": "Previous: V{n}",
     "calcRecalcOpen": "being recalculated — the old price stands",
     "calcMore": "{n} more calculations",
-    "calcSeeAbove": "above: the {code} calculation"
+    "calcSeeAbove": "above: the {code} calculation",
+    "laterLegs": "onward legs",
+    "laterLegsHint": "Costs of the trucks inside Uzbekistan after this one (e.g. Andijan → Tashkent). The price is on this truck, so the whole road’s cost is here.",
+    "continuationTrip": "Continuation: the price and the whole road’s cost of this truck’s cargo are on {codes}. No price is needed here.",
+    "continuationClient": "This cargo’s price and road cost are on {codes} (one price for the whole road).",
+    "secondBillWarn": "{n} cartons of this client are priced on {codes} — one price for the whole road. A price here bills the client a second time. Set it anyway?",
+    "openCargo": "⏳ {n} cartons not handed over yet — the cost may still grow when onward legs are billed."
   },
   "map": {
     "title": "Map",

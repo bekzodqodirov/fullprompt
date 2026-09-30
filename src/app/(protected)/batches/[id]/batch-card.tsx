@@ -20,6 +20,7 @@ import { batchDocsPending } from '@/modules/wms/batches/docs-pending';
 import { batchLots } from '@/modules/wms/batches/lots';
 import { mayReadBatches } from '@/modules/wms/batches/read-door';
 import {
+  batchCarriageOf,
   batchCostEntryCount,
   batchCostSheet,
   batchLandedCostByLot,
@@ -34,7 +35,7 @@ import {
   type PricingView,
 } from '@/modules/wms/finance/pricing-view';
 import { batchCharges, batchTripCoverage } from '@/modules/wms/finance/service';
-import { tripKind } from '@/modules/wms/reports/dashboard-math';
+import { isContinuationTrip, tripKind } from '@/modules/wms/reports/dashboard-math';
 import { countAcceptPanel } from '@/modules/wms/scanning/count-accept';
 import { countDoorFor, mayCountMove } from '@/modules/wms/scanning/count-door';
 import { countedOnTruck } from '@/modules/wms/scanning/count-load';
@@ -232,18 +233,25 @@ export async function BatchCard({
   const ownCostCount = costDoor && departed ? await soft('cost count', () => batchCostEntryCount(id)) : null;
   const sight = pricingSight(actor.permissions, head.internal);
   const full = sight === 'full';
-  const pricing: { view: PricingView; priced: number } | null =
+  const pricing: { view: PricingView; priced: number; continuation: boolean; carriers: string } | null =
     sight !== 'none' && !head.internal
       ? await soft('pricing', async () => {
-          const [charges, lotCost, coverage] = await Promise.all([
+          const [charges, lotCost, coverage, carriage] = await Promise.all([
             batchCharges(id),
             full ? batchLandedCostByLot(id) : Promise.resolve(new Map<string, LotLandedCost>()),
             batchTripCoverage(id),
+            batchCarriageOf(id),
           ]);
           const view = pricingView(lots, lotCost, pricingChargesOf(charges));
           // The pricing page's own count (1a): a client priced on the China
           // truck or the deal counts, as the handover gate lets them out.
-          return { view, priced: tripPricedCount(view.clients, coverage) };
+          return {
+            view,
+            priced: tripPricedCount(view.clients, coverage),
+            // «Davomi» — the pricing page's own word (2026-09-30).
+            continuation: isContinuationTrip(carriage),
+            carriers: carriage.carriers.map((row) => row.code).join(', '),
+          };
         })
       : null;
 
@@ -324,7 +332,12 @@ export async function BatchCard({
   const m3Total = lots.reduce((a, lot) => a + lot.m3, 0);
   const margin = pricing && full ? pricing.view.totals : null;
   const marginKind = margin
-    ? tripKind({ internal: false, revenueUsd: margin.chargedUsd, profitUsd: margin.marginUsd })
+    ? tripKind({
+        internal: false,
+        continuation: pricing?.continuation ?? false,
+        revenueUsd: margin.chargedUsd,
+        profitUsd: margin.marginUsd,
+      })
     : null;
 
   return (
@@ -522,13 +535,24 @@ export async function BatchCard({
           <Tile
             href={active === 'narx' ? null : tabHref('narx')}
             label={tf('marginLabel')}
-            value={marginKind === 'unpriced' ? tc('tileNoPrice') : compactUsd(margin.marginUsd)}
-            exact={marginKind === 'unpriced' ? undefined : String(margin.marginUsd)}
-            tone={marginKind === 'unpriced' ? 'muted' : marginKind === 'loss' ? 'bad' : 'good'}
-            lines={[
-              `${tf('priceLabel')} ${compactUsd(margin.chargedUsd)} · ${tf('costLabel')} ${compactUsd(margin.costUsd)}`,
-              margin.prevUsd > 0.009 ? `${tf('prevLegs')}: ${compactUsd(margin.prevUsd)}` : null,
-            ]}
+            value={
+              marginKind === 'unpriced'
+                ? tc('tileNoPrice')
+                : marginKind === 'continuation'
+                  ? tc('tileContinuation')
+                  : compactUsd(margin.marginUsd)
+            }
+            exact={marginKind === 'unpriced' || marginKind === 'continuation' ? undefined : String(margin.marginUsd)}
+            tone={marginKind === 'unpriced' || marginKind === 'continuation' ? 'muted' : marginKind === 'loss' ? 'bad' : 'good'}
+            lines={
+              marginKind === 'continuation'
+                ? [tc('tileContinuationLine', { codes: pricing?.carriers ?? '' })]
+                : [
+                    `${tf('priceLabel')} ${compactUsd(margin.chargedUsd)} · ${tf('costLabel')} ${compactUsd(margin.costUsd)}`,
+                    margin.prevUsd > 0.009 ? `${tf('prevLegs')}: ${compactUsd(margin.prevUsd)}` : null,
+                    margin.laterUsd > 0.009 ? `${tf('laterLegs')}: ${compactUsd(margin.laterUsd)}` : null,
+                  ]
+            }
             testid="batch-tile-margin"
           />
         )}

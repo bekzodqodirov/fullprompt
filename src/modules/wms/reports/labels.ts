@@ -173,6 +173,12 @@ const DICT = {
     'zh-CN': '其中本车次之前 $',
     en: 'of which before this trip $',
   },
+  laterLegs: {
+    ru: 'из них дальнейший путь $',
+    uz: 'shundan keyingi yo‘l $',
+    'zh-CN': '其中后续路段 $',
+    en: 'of which onward legs $',
+  },
   unallocated: {
     ru: '⚠ не распределено $',
     uz: '⚠ taqsimlanmagan $',

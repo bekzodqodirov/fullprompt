@@ -350,13 +350,13 @@ export async function buildProfitXlsx(
     }
     const head = sheet.addRow([
       L.batch, L.route, L.departed, L.boxes, L.kg, L.m3,
-      `${L.revenue} $`, L.noCargoCol, `${L.cost} $`, L.prevLegs, L.unallocated, L.internalCost,
+      `${L.revenue} $`, L.noCargoCol, `${L.cost} $`, L.prevLegs, L.laterLegs, L.unallocated, L.internalCost,
       `${L.profit} $`, L.margin, L.usdPerKg,
     ]);
     head.font = { bold: true };
     sheet.columns = [
       { width: 14 }, { width: 14 }, { width: 12 }, { width: 10 }, { width: 10 }, { width: 10 },
-      { width: 14 }, { width: 16 }, { width: 14 }, { width: 16 }, { width: 16 }, { width: 16 },
+      { width: 14 }, { width: 16 }, { width: 14 }, { width: 16 }, { width: 16 }, { width: 16 }, { width: 16 },
       { width: 14 }, { width: 10 }, { width: 10 },
     ];
     // An internal leg is a cost row (R2a): «—» where a profit would stand,
@@ -372,6 +372,8 @@ export async function buildProfitXlsx(
         row.noCargoChargeUsd > 0.009 ? row.noCargoChargeUsd : '',
         row.internal ? '—' : row.costUsd,
         row.internal ? '' : row.prevUsd,
+        // «Keyingi yo'l» (2026-09-30): a PART of «Xarajat $», like the one before.
+        row.laterUsd > 0.009 ? row.laterUsd : '',
         row.unallocatedUsd > 0.009 ? row.unallocatedUsd : '',
         row.internal ? row.costUsd : '',
         row.profitUsd ?? '—', row.marginPct ?? '—', row.profitPerKg ?? '—',
@@ -382,7 +384,7 @@ export async function buildProfitXlsx(
       bold(
         sheet.addRow([
           L.total, '', '', '', '', '', totals.revenue, totals.noCargo > 0.009 ? totals.noCargo : '',
-          totals.cost, '', '', '', totals.profit, margin(totals), '',
+          totals.cost, '', '', '', '', totals.profit, margin(totals), '',
         ]),
       );
     }

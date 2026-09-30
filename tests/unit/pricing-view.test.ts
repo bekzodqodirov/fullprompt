@@ -48,10 +48,12 @@ const LOTS = [
   lot({ lotId: 'u1', clientId: null, clientCode: null, clientName: null, marking: 'MK1' }),
 ];
 const COST = new Map([
-  ['a1', { lotId: 'a1', totalUsd: 100, batchUsd: 80 }],
-  ['a2', { lotId: 'a2', totalUsd: 50, batchUsd: 50 }],
-  ['b1', { lotId: 'b1', totalUsd: 30, batchUsd: 30 }],
-  ['u1', { lotId: 'u1', totalUsd: 7, batchUsd: 7 }],
+  // a1: 80 on this truck, 15 brought with it, 5 the Uzbek leg after it
+  // added («keyingi yo'l», 2026-09-30) — the three parts of one tannarx.
+  ['a1', { lotId: 'a1', totalUsd: 100, batchUsd: 80, laterUsd: 5 }],
+  ['a2', { lotId: 'a2', totalUsd: 50, batchUsd: 50, laterUsd: 0 }],
+  ['b1', { lotId: 'b1', totalUsd: 30, batchUsd: 30, laterUsd: 0 }],
+  ['u1', { lotId: 'u1', totalUsd: 7, batchUsd: 7, laterUsd: 0 }],
 ]);
 const CHARGES = [
   { clientId: 'C1', clientCode: 'GS1', clientName: 'Bir', type: 'charge', amountUsd: 200 },
@@ -67,7 +69,7 @@ describe('pricingView', () => {
   it('keeps the price on the client and opens the client into its goods', () => {
     const c1 = view.clients.find((group) => group.clientId === 'C1')!;
     expect(c1.lots.map((row) => row.lotId)).toEqual(['a1', 'a2']);
-    expect(c1).toMatchObject({ costUsd: 150, prevUsd: 20, chargedUsd: 200, marginUsd: 50, boxes: 8, kg: 80 });
+    expect(c1).toMatchObject({ costUsd: 150, prevUsd: 15, laterUsd: 5, chargedUsd: 200, marginUsd: 50, boxes: 8, kg: 80 });
   });
 
   it('prints no margin for a client without a price', () => {
@@ -82,7 +84,7 @@ describe('pricingView', () => {
 
   it('counts every charge on the truck and names the ones with no cargo under them', () => {
     expect(view.orphans).toEqual([{ clientId: 'C9', code: 'GS9', name: 'Toqqiz', chargedUsd: 40 }]);
-    expect(view.totals).toMatchObject({ chargedUsd: 240, marginUsd: 53, prevUsd: 20 });
+    expect(view.totals).toMatchObject({ chargedUsd: 240, marginUsd: 53, prevUsd: 15, laterUsd: 5 });
     // 0104 under his (a): the orphan's $40 is named as a PART of «Narx» —
     // still inside the 240 and the margin, printed beside them.
     expect(view.totals.noCargoUsd).toBe(40);

@@ -58,6 +58,8 @@ export interface PricingClientGroup {
   costUsd: number;
   /** The part of `costUsd` the cargo brought with it — «shu reysgacha». */
   prevUsd: number;
+  /** The part the Uzbek legs after this truck added — «keyingi yo'l». */
+  laterUsd: number;
   chargedUsd: number;
   /** Null until a price exists: before that every client reads as a loss. */
   marginUsd: number | null;
@@ -84,6 +86,7 @@ export interface PricingView {
   totals: {
     costUsd: number;
     prevUsd: number;
+    laterUsd: number;
     chargedUsd: number;
     noCargoUsd: number;
     marginUsd: number;
@@ -167,13 +170,15 @@ export function pricingView(
 
   const costOf = (lot: BatchLot) => lotCost.get(lot.lotId);
   const sumCost = (list: BatchLot[]) => cents(list.reduce((a, l) => a + (costOf(l)?.totalUsd ?? 0), 0));
+  // tannarx = bu reys + shu reysgacha + keyingi yo'l, on every surface.
   const sumPrev = (list: BatchLot[]) =>
     cents(
       list.reduce((a, l) => {
         const cost = costOf(l);
-        return a + (cost ? cost.totalUsd - cost.batchUsd : 0);
+        return a + (cost ? cost.totalUsd - cost.batchUsd - cost.laterUsd : 0);
       }, 0),
     );
+  const sumLater = (list: BatchLot[]) => cents(list.reduce((a, l) => a + (costOf(l)?.laterUsd ?? 0), 0));
 
   const byClient = new Map<string, { code: string; name: string; lots: BatchLot[] }>();
   const unclaimedLots: BatchLot[] = [];
@@ -206,6 +211,7 @@ export function pricingView(
       fate: fateOf(group.lots),
       costUsd,
       prevUsd: sumPrev(group.lots),
+      laterUsd: sumLater(group.lots),
       chargedUsd,
       marginUsd: chargedUsd > 0 ? cents(chargedUsd - costUsd) : null,
       dealId,
@@ -230,6 +236,7 @@ export function pricingView(
     totals: {
       costUsd,
       prevUsd: sumPrev(lots),
+      laterUsd: sumLater(lots),
       chargedUsd,
       noCargoUsd: cents(orphans.reduce((a, row) => a + row.chargedUsd, 0)),
       marginUsd: cents(chargedUsd - costUsd),

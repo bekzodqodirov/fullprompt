@@ -1312,7 +1312,9 @@
     "profitChipOn": "Foyda hisobida",
     "profitChipSet": "Foyda hisobiga olish",
     "todoNoCosts": "Xarajat yozilmagan",
-    "todoTnved": "TNVED kodsiz"
+    "todoTnved": "TNVED kodsiz",
+    "tileContinuation": "davomi",
+    "tileContinuationLine": "narx {codes} da"
   },
   "batches": {
     "title": "Partiyalar",
@@ -1788,7 +1790,13 @@
     "calcPrevVersion": "Oldingi: V{n}",
     "calcRecalcOpen": "qayta hisoblanmoqda — eski narx turibdi",
     "calcMore": "yana {n} ta hisob",
-    "calcSeeAbove": "yuqorida: {code} hisobi"
+    "calcSeeAbove": "yuqorida: {code} hisobi",
+    "laterLegs": "keyingi yo‘l",
+    "laterLegsHint": "Bu mashinadan keyingi O‘zbekiston ichidagi mashinalar (masalan Andijon → Toshkent) xarajati. Narx shu mashinada — shuning uchun butun yo‘l tannarxi shu yerda.",
+    "continuationTrip": "Davomi: bu mashinadagi yukning narxi va butun yo‘l xarajati {codes} mashinasida. Bu yerda narx qo‘yish shart emas.",
+    "continuationClient": "Bu yukning narxi va yo‘l xarajati {codes} mashinasida (butun yo‘l uchun bitta narx).",
+    "secondBillWarn": "Bu mijozning {n} karobkasi narxi {codes} mashinasida — butun yo‘l uchun bitta narx. Bu yerga yozilgan narx mijozga ikkinchi hisob bo‘ladi. Baribir yozasizmi?",
+    "openCargo": "⏳ {n} karobka hali topshirilmagan — keyingi yo‘l xarajati qo‘shilsa, tannarx o‘sishi mumkin."
   },
   "map": {
     "title": "Xarita",
