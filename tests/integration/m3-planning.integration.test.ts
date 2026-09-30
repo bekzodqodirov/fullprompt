@@ -29,7 +29,7 @@ import {
   submitPlan,
 } from '@/modules/wms/planning/service';
 import { renameBatch } from '@/modules/wms/batches/rename';
-import type { RenameDoorActor } from '@/modules/wms/batches/rename-door';
+import { renameDoorFor } from '@/modules/wms/batches/rename-door';
 import {
   ScanError,
   departBatch,
@@ -610,12 +610,13 @@ describe('renaming a batch', () => {
   }
 
   /** The planner's door, minted for the SAME person the audit context names. */
-  const planner = (): RenameDoorActor => ({
-    id: actorId,
-    permissions: new Set(['plans.manage']),
-    warehouseScoped: false,
-    warehouseIds: [],
-  });
+  const planner = () =>
+    renameDoorFor({
+      id: actorId,
+      permissions: new Set(['plans.manage']),
+      warehouseScoped: false,
+      warehouseIds: [],
+    });
 
   function rename(
     batchId: string,
@@ -683,7 +684,22 @@ describe('renaming a batch', () => {
     expect(done.batch.code).toBe(onRoad);
     expect(done.stage).toBe('road');
 
-    await finishUnload(batch.id, ctx(), { mayCloseWithMissing: true });
+    // The carton is scanned off before «Tushirish tugadi», so the truck
+    // closes clean — a close over an unscanned carton would declare it LOST
+    // and leave a road loss in the shared database for every later spec.
+    await ingestUnloadScans(
+      [
+        {
+          clientEventUuid: uuidv4(),
+          batchId: batch.id,
+          code: lot.shortCodes[0]!,
+          method: 'qr' as const,
+          scannedAt: new Date().toISOString(),
+        },
+      ],
+      ctx(),
+    );
+    await finishUnload(batch.id, ctx());
     await expect(
       rename(batch.id, `${onRoad}-2`, { code: onRoad, stage: 'road' }, 'kech qoldi'),
     ).rejects.toThrow('rename_closed');

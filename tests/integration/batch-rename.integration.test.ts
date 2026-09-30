@@ -20,11 +20,12 @@ import {
 import { warehouseScopeEither } from '@/modules/platform/rbac/scope';
 import { nextBatchCode, nextBoxCodes } from '@/modules/wms/codes';
 import { RenameError, renameBatch } from '@/modules/wms/batches/rename';
-import type { RenameDoorActor } from '@/modules/wms/batches/rename-door';
+import { renameDoorFor, type RenameDoorActor } from '@/modules/wms/batches/rename-door';
 import {
   batchTextMatchSql,
   codeEverWornSql,
   formerCodeHitSql,
+  formerCodesFor,
 } from '@/modules/wms/batches/former-codes';
 import { cancelBatch, finishUnload, ingestUnloadScans } from '@/modules/wms/scanning/unload';
 import { annulReceipt } from '@/modules/wms/receipts/annul';
@@ -76,9 +77,17 @@ const planner = (): RenameDoorActor => ({
 
 type Seen = { code: string; stage: 'loading' | 'road' };
 
+/** The service demands a MINTED door (`renameDoorFor`); a refused mint is null, which it refuses. */
 function rename(batchId: string, code: string, seen: Seen, reason?: string, door = planner()) {
-  return renameBatch({ batchId, code, reason, seen }, door, ctx());
+  return renameBatch({ batchId, code, reason, seen }, renameDoorFor(door), ctx());
 }
+
+const logistSearch = (): SearchActor => ({
+  id: actorId,
+  permissions: new Set(['plans.manage']),
+  warehouseScoped: false,
+  warehouseIds: [],
+});
 
 /** The refusal's code (and detail), or 'ok' — never a thrown test. */
 async function outcome(p: Promise<unknown>): Promise<string> {
@@ -233,7 +242,11 @@ async function someoneWaits(): Promise<boolean> {
 beforeAll(async () => {
   async function ensureWarehouse(code: string, country: string, type: string, timezone: string) {
     const existing = await db.query.warehouses.findFirst({ where: eq(warehouses.code, code) });
-    if (existing) return existing.id;
+    if (existing) {
+      // The previous run left it RETIRED (below); every run starts from the same state.
+      if (!existing.active) await db.update(warehouses).set({ active: true }).where(eq(warehouses.id, existing.id));
+      return existing.id;
+    }
     const [wh] = await db
       .insert(warehouses)
       .values({ code, name: `Rename ${code}`, country, type, timezone, batchPrefix: code })
@@ -270,6 +283,10 @@ afterAll(async () => {
     for (const key of counterKeys) {
       await db.execute(sql`DELETE FROM counters WHERE kind = 'batch_seq' AND scope_key = ${key}`);
     }
+    // An audited warehouse can only be retired, never deleted (audit_log FK);
+    // left active, three «Rename …» warehouses sit in every picker and list
+    // of every later spec (#183 — configuration left behind).
+    await db.update(warehouses).set({ active: false }).where(inArray(warehouses.code, [WH_O, WH_D, WH_X]));
   } finally {
     await pgClient.end();
   }
@@ -392,15 +409,52 @@ describe('(d) when renaming stops', () => {
   });
 });
 
-describe('a name a truck ever wore is never another truck’s', () => {
-  it('(e) B may not take A’s former name; A may take its own back', async () => {
-    const a = await mintTruck({ status: 'forming', cartons: 0, code: `EWX-${tag()}` });
-    const b = await mintTruck({ status: 'forming', cartons: 0 });
+describe('a name a truck wore on the road is never another truck’s', () => {
+  it('(e) B may not take A’s road-worn name — nor may a forming truck; A may take its own back', async () => {
+    const a = await mintTruck({ status: 'in_transit', cartons: 1, code: `EWX-${tag()}` });
+    const b = await mintTruck({ status: 'in_transit', cartons: 1 });
+    const forming = await mintTruck({ status: 'forming', cartons: 0 });
     const y = `EWY-${tag()}`;
-    expect(await outcome(rename(a.id, y, { code: a.code, stage: 'loading' }))).toBe('ok');
-    expect(await outcome(rename(b.id, a.code, { code: b.code, stage: 'loading' }))).toBe('code_taken');
-    expect(await outcome(rename(a.id, a.code, { code: y, stage: 'loading' }))).toBe('ok');
+    expect(await outcome(rename(a.id, y, { code: a.code, stage: 'road' }, 'agent raqami'))).toBe('ok');
+    expect(await outcome(rename(b.id, a.code, { code: b.code, stage: 'road' }, 'hujjat'))).toBe('code_taken');
+    expect(await outcome(rename(forming.id, a.code, { code: forming.code, stage: 'loading' }))).toBe(
+      'code_taken',
+    );
+    expect(await outcome(rename(a.id, a.code, { code: y, stage: 'road' }, 'eski nom qaytdi'))).toBe('ok');
     expect(await codeOf(a.id)).toBe(a.code);
+  });
+
+  it('(e3) a name changed BEFORE departure frees at once — the right truck may take it, and nothing calls it «former»', async () => {
+    // The reviewer's case: the partner's plate typed on the wrong forming
+    // truck, put back, then typed on the right one. It never reached a
+    // paper, the bot or the agent, so it burns nothing.
+    const wrong = await mintTruck({ status: 'forming', cartons: 0 });
+    const right = await mintTruck({ status: 'forming', cartons: 0 });
+    const plate = `01A${tag()}BA`;
+    expect(await outcome(rename(wrong.id, plate, { code: wrong.code, stage: 'loading' }))).toBe('ok');
+    expect(await outcome(rename(wrong.id, wrong.code, { code: plate, stage: 'loading' }))).toBe('ok');
+    expect(await outcome(rename(right.id, plate, { code: right.code, stage: 'loading' }))).toBe('ok');
+    expect(await codeOf(right.id)).toBe(plate);
+
+    // The wrong truck's card carries no «Oldingi nomi» for a typo…
+    expect(await formerCodesFor(wrong.id)).toEqual([]);
+    // …⌘K finds the plate on the truck that wears it, and only there…
+    const hits = (await globalSearch(logistSearch(), plate)).filter((hit) => hit.kind === 'batch');
+    expect(hits.map((hit) => hit.id)).toEqual([right.id]);
+    expect('formerCode' in hits[0]!).toBe(false);
+    // …and once the right truck too is renamed away before it leaves, the
+    // bot sends nobody to either truck by the typo.
+    const later = `KA-${tag()}`;
+    expect(await outcome(rename(right.id, later, { code: plate, stage: 'loading' }))).toBe('ok');
+    const boss: BotActor = { id: actorId, permissions: new Set(['plans.manage']), warehouseScoped: false, warehouseIds: [] };
+    expect((await botLookupAnswer(boss, plate))?.text ?? '').not.toContain('oldingi nomi');
+
+    // The counter re-mints a pre-departure name, as it always did.
+    const prefix = `RV${tag()}`;
+    counterKeys.push(prefix);
+    const auto = await mintTruck({ status: 'forming', cartons: 0, code: `${prefix}-001` });
+    expect(await outcome(rename(auto.id, `RVX-${tag()}`, { code: auto.code, stage: 'loading' }))).toBe('ok');
+    expect(await nextBatchCode(db, { code: WH_O, batchPrefix: prefix })).toBe(`${prefix}-001`);
   });
 
   it('(e2) a free pre-departure name may come back on the road — its SHAPE is still judged', async () => {
@@ -418,14 +472,14 @@ describe('a name a truck ever wore is never another truck’s', () => {
     expect(await outcome(rename(t.id, free, { code: road, stage: 'road' }, 'eski nom qaytdi'))).toBe('ok');
     expect(await codeOf(t.id)).toBe(free);
 
-    // Pre-rule history: a former name the shape rule would refuse today.
+    // Road history: a former name the shape rule would refuse today.
     const old = `ZQ${tag()}`;
     await db.insert(auditLog).values({
       entityType: 'batch',
       entityId: t.id,
       action: 'update',
       before: { code: old },
-      after: { code: `${old}-X` },
+      after: { code: `${old}-X`, reason: 'yo‘lda' },
     });
     expect(await outcome(rename(t.id, old, { code: free, stage: 'road' }, 'hujjat'))).toBe('code_shape/client');
   });
@@ -438,11 +492,25 @@ describe('a name a truck ever wore is never another truck’s', () => {
     expect((await renameRows(t.id)).length).toBe(before);
   });
 
-  it('(f) the counter walks past a name a truck used to wear', async () => {
+  it('(h2) the same rename posted twice is answered «already so», not «changed under you»', async () => {
+    const t = await mintTruck({ status: 'in_transit', cartons: 1 });
+    const to = `KA-${tag()}`;
+    const seen = { code: t.code, stage: 'road' as const };
+    expect((await rename(t.id, to, seen, 'hujjat')).changed).toBe(true);
+    // A double press: the form still says it saw the old name.
+    const again = await rename(t.id, to, seen, 'hujjat');
+    expect(again.changed).toBe(false);
+    expect(again.batch.code).toBe(to);
+    expect(await renameRows(t.id)).toHaveLength(1);
+    // A DIFFERENT name from the same stale screen is still refused.
+    expect(await outcome(rename(t.id, `KB-${tag()}`, seen, 'hujjat'))).toBe('batch_changed');
+  });
+
+  it('(f) the counter walks past a name a truck wore on the road', async () => {
     const prefix = `RP${tag()}`;
     counterKeys.push(prefix);
-    const t = await mintTruck({ status: 'forming', cartons: 0, code: `${prefix}-001` });
-    expect(await outcome(rename(t.id, `RPX-${tag()}`, { code: t.code, stage: 'loading' }))).toBe('ok');
+    const t = await mintTruck({ status: 'in_transit', cartons: 1, code: `${prefix}-001` });
+    expect(await outcome(rename(t.id, `RPX-${tag()}`, { code: t.code, stage: 'road' }, 'hujjat'))).toBe('ok');
     expect(await nextBatchCode(db, { code: WH_O, batchPrefix: prefix })).toBe(`${prefix}-002`);
   });
 
@@ -562,6 +630,52 @@ describe('races — each made deterministic by a held transaction', () => {
     );
   });
 
+  it('(q) a rename waits for a loading change in flight (departure holds the truck’s loading lock)', async () => {
+    const t = await mintTruck({ status: 'forming', cartons: 1 });
+    let result = '';
+    await withHolder(async (held) => {
+      // departBatch's own order: the loading lock first, the row last.
+      await held`BEGIN`;
+      await held`SELECT pg_advisory_xact_lock(hashtext('truck-load'), hashtext(${t.id}::text))`;
+      const ours = outcome(rename(t.id, `GSR KASHGAR ${tag()}`, { code: t.code, stage: 'loading' })).then(
+        (r) => (result = r),
+      );
+      expect(await someoneWaits(), 'the rename never waited for the departure').toBe(true);
+      await held`UPDATE boxes SET status = 'in_transit', current_warehouse_id = NULL WHERE current_batch_id = ${t.id}`;
+      await held`UPDATE batches SET status = 'in_transit', departed_at = now() WHERE id = ${t.id}`;
+      await held`COMMIT`;
+      await ours;
+    });
+    // It judged the departed truck, not the forming one the form showed.
+    expect(result).toBe('batch_changed');
+    expect(await codeOf(t.id)).toBe(t.code);
+  });
+
+  it('(q2) the NAME is locked before the truck row — never waited for while holding a truck', async () => {
+    const t = await mintTruck({ status: 'in_transit', cartons: 1 });
+    const x = `KQ-${tag()}`;
+    let result = '';
+    let nameFree: boolean | null = null;
+    await withHolder(async (held) => {
+      await held`BEGIN`;
+      await held`SELECT id FROM batches WHERE id = ${t.id} FOR NO KEY UPDATE`;
+      const ours = outcome(rename(t.id, x, { code: t.code, stage: 'road' }, 'hujjat')).then((r) => (result = r));
+      expect(await someoneWaits(), 'the rename never waited for the truck row').toBe(true);
+      // While it waits for the row, the name must already be its own.
+      nameFree = await db.transaction(async (tx) => {
+        const rows = await tx.execute<{ got: boolean }>(
+          sql`SELECT pg_try_advisory_xact_lock(hashtext('batch-code'), hashtext(upper(${x}::text))) AS got`,
+        );
+        return Boolean(rows[0]?.got);
+      });
+      await held`COMMIT`;
+      await ours;
+    });
+    expect(nameFree, 'the name was free while the rename waited for the row').toBe(false);
+    expect(result).toBe('ok');
+    expect(await codeOf(t.id)).toBe(x);
+  });
+
   it('(p) a rename to a name another truck is wearing-and-leaving in an open transaction waits, then is refused', async () => {
     const a = await mintTruck({ status: 'forming', cartons: 0 });
     const b = await mintTruck({ status: 'forming', cartons: 0 });
@@ -573,10 +687,10 @@ describe('races — each made deterministic by a held transaction', () => {
       await held`SELECT pg_advisory_xact_lock(hashtext('batch-code'), hashtext(upper(${x}::text)))`;
       await held`UPDATE batches SET code = ${x} WHERE id = ${b.id}`;
       await held`INSERT INTO audit_log (entity_type, entity_id, action, before, after)
-                 VALUES ('batch', ${b.id}, 'update', jsonb_build_object('code', ${b.code}::text), jsonb_build_object('code', ${x}::text))`;
+                 VALUES ('batch', ${b.id}, 'update', jsonb_build_object('code', ${b.code}::text), jsonb_build_object('code', ${x}::text, 'reason', 'yolda'))`;
       await held`UPDATE batches SET code = ${w} WHERE id = ${b.id}`;
       await held`INSERT INTO audit_log (entity_type, entity_id, action, before, after)
-                 VALUES ('batch', ${b.id}, 'update', jsonb_build_object('code', ${x}::text), jsonb_build_object('code', ${w}::text))`;
+                 VALUES ('batch', ${b.id}, 'update', jsonb_build_object('code', ${x}::text), jsonb_build_object('code', ${w}::text, 'reason', 'yolda'))`;
       const ours = outcome(rename(a.id, x, { code: a.code, stage: 'loading' })).then((r) => (result = r));
       expect(await someoneWaits(), 'the rename never waited for the name lock').toBe(true);
       await held`COMMIT`;
@@ -600,12 +714,7 @@ describe('the old name stays findable', () => {
     await rename(t.id, newCode, { code: t.code, stage: 'road' }, 'agent raqami');
   });
 
-  const logist = (): SearchActor => ({
-    id: actorId,
-    permissions: new Set(['plans.manage']),
-    warehouseScoped: false,
-    warehouseIds: [],
-  });
+  const logist = logistSearch;
 
   it('(l) ⌘K finds the truck by its old name, labelled; by its own name with no «formerCode» key at all', async () => {
     const byOld = (await globalSearch(logist(), oldCode)).filter((hit) => hit.kind === 'batch');
@@ -655,10 +764,10 @@ describe('the old name stays findable', () => {
   });
 
   it('(m) a client later minted with a truck’s OLD name is the one the bot answers', async () => {
-    const t = await mintTruck({ status: 'forming', cartons: 0 });
+    const t = await mintTruck({ status: 'in_transit', cartons: 1 });
     const old = `B2C${tag()}D`;
-    expect(await outcome(rename(t.id, old, { code: t.code, stage: 'loading' }))).toBe('ok');
-    expect(await outcome(rename(t.id, `KA-${tag()}`, { code: old, stage: 'loading' }))).toBe('ok');
+    expect(await outcome(rename(t.id, old, { code: t.code, stage: 'road' }, 'hujjat'))).toBe('ok');
+    expect(await outcome(rename(t.id, `KA-${tag()}`, { code: old, stage: 'road' }, 'hujjat'))).toBe('ok');
     const [c] = await db.insert(clients).values({ clientCode: old, name: `Mijoz ${old}` }).returning();
     clientIds.push(c!.id);
     const boss: BotActor = { id: actorId, permissions: new Set(['plans.manage']), warehouseScoped: false, warehouseIds: [] };
@@ -678,6 +787,17 @@ describe('(n) the reads are the indexes’, even as a generic plan', () => {
     const plans: string[] = [];
     await db
       .transaction(async (tx) => {
+        // The oracle is whether the 0121 indexes are USABLE for these reads —
+        // generic plan included — not whether the planner happens to prefer
+        // them today. On a freshly seeded database audit_log holds a few
+        // dozen rows and has never been analysed, and `audit_entity_idx`
+        // (entity_type, …) prices the same as the partial index, so the first
+        // choice rode on the statistics and the file went red on its own on
+        // every fresh database. Inside this rolled-back transaction the
+        // competitor is gone and sequential scans are off: the partial index
+        // is used if its predicate is provable, and a Seq Scan appears if it
+        // is not — whatever the table's size or its statistics.
+        await tx.execute(sql`DROP INDEX audit_entity_idx`);
         await tx.execute(sql`SET LOCAL enable_seqscan = off`);
         const worn = codeEverWornSql('ZZ-NOPE-1', null);
         const text: SQL = sql`SELECT "batches"."id" FROM batches WHERE ${batchTextMatchSql('%ZZ-NOPE%')}`;

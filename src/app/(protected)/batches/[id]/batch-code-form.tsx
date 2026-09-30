@@ -11,9 +11,9 @@ import {
   normalizeBatchCode,
   roadCodeProblem,
 } from '@/modules/wms/batches/batch-code';
+import { freshAnswer, shownRefusal, type Refusal } from './rename-state';
 
 type Mode = 'off' | 'loading' | 'road';
-type Refusal = { error: string; detail?: string };
 
 /**
  * The truck's code, with a ✏️ for whoever may rename it — before departure
@@ -30,7 +30,9 @@ type Refusal = { error: string; detail?: string };
  * goes). Both inputs are CONTROLLED: React resets an uncontrolled form after
  * an action, and a refusal must never eat what was typed (#377/#463/#1207).
  * Not keyed on `mode`, so the typed name survives a refresh that moves it
- * from loading to road.
+ * from loading to road. The server's last answer is shown only until the
+ * person moves past it — opening the form or typing dismisses it
+ * (`rename-state.ts`), or «bu nom band» would sit under a free name.
  */
 export function BatchCodeForm({
   batchId,
@@ -53,6 +55,8 @@ export function BatchCodeForm({
   const [value, setValue] = useState(code);
   const [reason, setReason] = useState('');
   const [local, setLocal] = useState<Refusal | null>(null);
+  // The server answer the person has moved past (see rename-state.ts).
+  const [dismissed, setDismissed] = useState<BatchCodeFormState | null>(null);
   const [state, formAction, pending] = useActionState<BatchCodeFormState, FormData>(
     renameBatchAction,
     {},
@@ -145,8 +149,13 @@ export function BatchCodeForm({
   }
 
   // A Cyrillic look-alike is said WHILE typing: on screen «КА-77» is KA-77.
-  const live: Refusal | null = mode === 'road' && open && hasCyrillic(value) ? { error: 'code_cyrillic' } : null;
-  const shown = local ?? live ?? (state.error ? { error: state.error, detail: state.detail } : null);
+  // On the road it is a refusal; before departure the free rule stands (the
+  // owner's Q2 default), so it is only a WARNING — but said, because the name
+  // rides onto the road with the truck and the bot and ⌘K will not find it.
+  const cyrillicTyped = open && mode !== 'off' && hasCyrillic(value);
+  const live: Refusal | null = mode === 'road' && cyrillicTyped ? { error: 'code_cyrillic' } : null;
+  const shown = shownRefusal(local, state, dismissed, live);
+  const fresh = freshAnswer(state, dismissed);
   const error = shown && (
     <p data-testid="batch-rename-error" className="w-full text-xs font-semibold text-bad">
       {refusalText(shown)}
@@ -163,7 +172,13 @@ export function BatchCodeForm({
     setValue(code);
     setReason('');
     setLocal(null);
+    setDismissed(state);
     setOpen(true);
+  };
+  /** Typing moves past every answer that stood — the browser's and the server's. */
+  const moveOn = () => {
+    setLocal(null);
+    setDismissed(state);
   };
 
   const heading = <h1 className="font-mono text-xl font-extrabold text-brand-700">{code}</h1>;
@@ -183,7 +198,7 @@ export function BatchCodeForm({
             ✏️
           </button>
         )}
-        {state.ok && state.changed && (
+        {fresh?.ok && fresh.changed && (
           <span className="text-xs font-semibold text-good">✅ {tc('saved')}</span>
         )}
         {mode === 'off' && error}
@@ -198,7 +213,10 @@ export function BatchCodeForm({
         <input
           name="code"
           value={value}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => {
+            setValue(e.target.value);
+            moveOn();
+          }}
           autoFocus
           maxLength={40}
           data-testid="batch-code-input"
@@ -215,6 +233,11 @@ export function BatchCodeForm({
           {tc('cancel')}
         </button>
         {error}
+        {cyrillicTyped && !shown && (
+          <p data-testid="batch-rename-warning" className="w-full text-xs font-semibold text-warn">
+            {t('rename.errors.code_cyrillic')}
+          </p>
+        )}
       </form>
     );
   }
@@ -238,7 +261,7 @@ export function BatchCodeForm({
             value={value}
             onChange={(e) => {
               setValue(e.target.value);
-              setLocal(null);
+              moveOn();
             }}
             autoFocus
             maxLength={40}
@@ -255,12 +278,18 @@ export function BatchCodeForm({
           <input
             name="reason"
             value={reason}
-            onChange={(e) => setReason(e.target.value)}
+            onChange={(e) => {
+              setReason(e.target.value);
+              moveOn();
+            }}
             maxLength={300}
-            placeholder={t('rename.reasonHint')}
             data-testid="batch-rename-reason"
             className="input"
           />
+          {/* A hint line and not a placeholder: it wraps at 360 px, and it
+              stays visible while typing. The label says «at least 3», which
+              is why Save stays grey below that. */}
+          <span className="block text-xs text-ink-500">{t('rename.reasonHint')}</span>
         </label>
         {error}
         <p className="text-xs text-ink-500">{t('rename.docsHint')}</p>

@@ -1414,7 +1414,7 @@
     "rename": {
       "codeLabel": "Yangi nom",
       "codeHintRoad": "Lotin harflari, raqamlar va «-», 3–20 belgi; kamida bitta harf va bitta raqam (masalan KA-77, 01A777BA)",
-      "reasonLabel": "Sabab (majburiy)",
+      "reasonLabel": "Sabab (majburiy, kamida 3 belgi)",
       "reasonHint": "Nega o‘zgartiryapsiz? Masalan: agent hujjatlarida boshqa raqam",
       "docsHint": "Invoys, manifest va packing list endi yangi nom bilan yuklanadi. Oldin yuborilgan hujjatlarda, Telegram xabarlarida va haydovchi telefonida eski nom qoladi — eski nom qidiruvda, «Partiyalar» arxivida va botda topiladi.",
       "agentSent": "Hujjatlar {date} kuni agentga yuborilgan — agentga yangi nomni ayting.",
@@ -1424,7 +1424,6 @@
       "formerHit": "oldingi nomi: {code}",
       "log": "Kim va nega o‘zgartirdi",
       "logRow": "{date} · {who}: {from} → {to}",
-      "noReason": "sabab yozilmagan (jo‘nashdan oldin)",
       "errors": {
         "bad_code": "Nom 2 dan 40 belgigacha bo‘lsin",
         "code_cyrillic": "Nomda kirillcha harf bor (К, А, Е, Т…) — ekranda bir xil ko‘rinadi, lekin bot va qidiruv topmaydi. Klaviaturani lotinchaga o‘tkazib qayta yozing",
@@ -1439,7 +1438,7 @@
         "shadows_client": "Bunday kodli mijoz bor — botda adashadi. Boshqa nom tanlang",
         "shadows_box": "Bunday kodli karobka bor — botda adashadi. Boshqa nom tanlang",
         "shadows_crate": "Bunday kodli yashik bor — botda adashadi. Boshqa nom tanlang",
-        "code_taken": "Bu nom band yoki avval boshqa partiyada ishlatilgan",
+        "code_taken": "Bu nom band yoki boshqa partiya yo‘lda shu nom bilan yurgan",
         "reason_required": "Sababni yozing (kamida 3 belgi)",
         "batch_changed": "Partiya shu orada o‘zgardi (jo‘nab ketdi yoki boshqa hodim nomini o‘zgartirdi) — sahifa yangilandi, qaytadan tekshiring",
         "rename_closed": "Tushirish tugagan (yoki partiya yopilgan / bekor qilingan) — nomini endi o‘zgartirib bo‘lmaydi",

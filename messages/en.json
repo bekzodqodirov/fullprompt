@@ -1414,7 +1414,7 @@
     "rename": {
       "codeLabel": "New name",
       "codeHintRoad": "Latin letters, digits and «-», 3–20 characters; at least one letter and one digit (e.g. KA-77, 01A777BA)",
-      "reasonLabel": "Reason (required)",
+      "reasonLabel": "Reason (required, at least 3 characters)",
       "reasonHint": "Why the change? E.g. the agent’s papers carry a different number",
       "docsHint": "The invoice, manifest and packing list now download with the new name. Papers already sent, Telegram messages and the driver’s phone keep the old one — search, the «Batches» archive and the bot still find the truck by it.",
       "agentSent": "Papers were sent to the agent on {date} — tell the agent the new name.",
@@ -1424,7 +1424,6 @@
       "formerHit": "former name: {code}",
       "log": "Who renamed it and why",
       "logRow": "{date} · {who}: {from} → {to}",
-      "noReason": "no reason given (before departure)",
       "errors": {
         "bad_code": "The name must be 2 to 40 characters",
         "code_cyrillic": "The name contains Cyrillic letters (К, А, Е, Т…) — they look the same on screen, but the bot and search cannot find them. Switch the keyboard to Latin and type it again",
@@ -1439,7 +1438,7 @@
         "shadows_client": "A client has this code — the bot would mistake it. Choose another name",
         "shadows_box": "A box has this code — the bot would mistake it. Choose another name",
         "shadows_crate": "A crate has this code — the bot would mistake it. Choose another name",
-        "code_taken": "This name is taken or was used by another batch before",
+        "code_taken": "This name is taken, or another truck already travelled under it",
         "reason_required": "Write the reason (at least 3 characters)",
         "batch_changed": "The batch changed meanwhile (it departed or a colleague renamed it) — the page was refreshed, check again",
         "rename_closed": "Unloading has finished (or the batch is closed / cancelled) — it can no longer be renamed",

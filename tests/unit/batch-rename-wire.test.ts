@@ -64,6 +64,8 @@ describe('the action and the screen ask the service’s door', () => {
     const door = fn.indexOf("authorizeOnBatch('plans.manage'");
     expect(door).toBeGreaterThan(-1);
     expect(fn.indexOf('renameBatch(')).toBeGreaterThan(door);
+    // The service takes only a MINTED door, minted from the actor the door authorised.
+    expect(fn).toContain('renameDoorFor(door.actor)');
     expect(fn).toMatch(/seen:\s*\{\s*code:\s*seenCode,\s*stage:\s*seenStage\s*\}/);
     expect(fn).toContain("formData.get('seenCode')");
     expect(fn).toContain("formData.get('seenStage')");
@@ -90,17 +92,21 @@ describe('the action and the screen ask the service’s door', () => {
 });
 
 describe('the service checks in the one order that is safe', () => {
-  it('door identity < row lock < door < aboard < seen < road charset < shape < name lock < ever worn < write', () => {
+  it('door identity < name lock < loading lock < row lock < door < aboard < seen < road charset < shape < ever worn < write', () => {
     const fn = body(read('src/modules/wms/batches/rename.ts'), 'export async function renameBatch(');
+    // The three locks first and in this order: the NAME before any truck lock
+    // (a name's holder may wait on something waiting on a truck row), the
+    // truck's LOADING lock before its row (departBatch's own order).
     const order = [
       'door.id !== ctx.actorId',
+      'lockBatchCode(',
+      'lockTruckLoading(',
       ".for('update')",
       'renameDoorOpens(',
       'awaitingUnloadCount(',
       'seen.stage',
       'roadCodeProblem(',
       'codeShapeProblem(',
-      'lockBatchCode(',
       'codeEverWorn(',
       '.update(batches)',
     ];

@@ -64,14 +64,15 @@ export async function nextBatchCode(
   // block. Concurrent minters serialize on the counter row's lock, and the
   // unique index stays the final arbiter.
   //
-  // «Taken» means EVERY name a truck has worn, not only the codes standing
-  // today (the owner's 1a, 2026-09-30): a rename away does not free a name —
-  // the old papers, the bot and ⌘K still answer to it — so the walk skips a
-  // former name exactly as it skips a current one (`codeEverWorn`). The
-  // per-candidate lock makes a mint WAIT for an in-flight rename to that
-  // same number and then see it, instead of meeting it as a 23505 inside
-  // approvePlan or a quick batch. A rename takes the truck row first and this
-  // lock second; the walk never takes a truck row, so there is no cycle.
+  // «Taken» means every name a truck wore ON THE ROAD, not only the codes
+  // standing today (the owner's 1a, 2026-09-30): a road rename away does not
+  // free a name — the old papers, the bot and ⌘K still answer to it — so the
+  // walk skips such a former name exactly as it skips a current one
+  // (`codeEverWorn`; a name changed before departure frees, as it always
+  // did). The per-candidate lock makes a mint WAIT for an in-flight rename to
+  // that same number and then see it, instead of meeting it as a 23505 inside
+  // approvePlan or a quick batch. A rename takes this lock FIRST, before any
+  // truck lock, and the walk never takes a truck row, so there is no cycle.
   for (;;) {
     const seq = await bumpCounter(tx, 'batch_seq', prefix);
     const code = `${prefix}-${String(seq).padStart(3, '0')}`;

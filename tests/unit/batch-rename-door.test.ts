@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ROLE_MATRIX, WAREHOUSE_SCOPED_ROLES, type RoleCode } from '@/modules/platform/rbac/catalog';
 import {
   mayRenameBatch,
+  renameDoorFor,
   renameDoorOpens,
   renameStageOf,
   type RenameStage,
@@ -98,5 +99,27 @@ describe('an invented scoped role holding plans.manage', () => {
     expect(
       renameDoorOpens({ permissions: new Set(['batches.depart_close']), warehouseScoped: false, warehouseIds: [] }, TRUCK),
     ).toBe(false);
+  });
+});
+
+describe('renameDoorFor — the only way to hand the service a door', () => {
+  const base = { id: '00000000-0000-4000-8000-0000000000a1', warehouseScoped: false, warehouseIds: [] as string[] };
+
+  it('is minted only for a person who holds plans.manage, with an identity', () => {
+    expect(renameDoorFor({ ...base, permissions: new Set(['batches.depart_close']) })).toBeNull();
+    expect(renameDoorFor({ ...base, id: '', permissions: new Set(['plans.manage']) })).toBeNull();
+    expect(renameDoorFor({ ...base, permissions: new Set(['plans.manage']) })).not.toBeNull();
+  });
+
+  it('is a frozen snapshot: changing the actor afterwards changes nothing the service reads', () => {
+    const grants = new Set(['plans.manage']);
+    const scope = [ORIGIN];
+    const door = renameDoorFor({ ...base, permissions: grants, warehouseScoped: true, warehouseIds: scope })!;
+    grants.delete('plans.manage');
+    grants.add('admin.everything');
+    scope.push(THIRD);
+    expect(Object.isFrozen(door)).toBe(true);
+    expect(door.permissions.has('plans.manage')).toBe(true);
+    expect(door.warehouseIds).toEqual([ORIGIN]);
   });
 });

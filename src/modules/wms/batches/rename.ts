@@ -4,6 +4,7 @@ import { batches } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { isUniqueViolation } from '../../platform/db/errors';
 import { getSetting } from '../../platform/settings/service';
+import { lockTruckLoading } from '../scanning/count-rules';
 import { awaitingUnloadCount } from '../scanning/unload';
 import {
   codeShapeProblem,
@@ -14,7 +15,7 @@ import {
   type RoadCodeProblem,
 } from './batch-code';
 import { codeEverWorn, codeShadows, isOwnFormerCode, lockBatchCode } from './former-codes';
-import { mayRenameBatch, renameDoorOpens, renameStageOf, type RenameDoorActor } from './rename-door';
+import { mayRenameBatch, renameDoorOpens, renameStageOf, type RenameDoor } from './rename-door';
 
 export type Batch = typeof batches.$inferSelect;
 
@@ -56,15 +57,29 @@ export const RENAME_REASON_MAX = 300;
  * heads. So the lock moved from «left» to «finished», and the cost of the
  * change is stated where it is paid: a reason is required on the road, the
  * old name stays findable (⌘K, the archive, the bot, the card), and a name
- * a truck ever wore is never given to another truck.
+ * a truck wore ON THE ROAD is never given to another truck. A name changed
+ * before departure frees at once, as it always did (`former-codes.ts`).
  *
  * `door` and `seen` are REQUIRED (#790: an optional door fails open, and
- * required made every caller a compile error that named itself). The door
- * carries the identity and must be the audit context's actor; `seen` is what
- * the presser's screen showed, and a truck that changed under the open form
- * — departed, renamed by a colleague, finished — is refused `batch_changed`
- * BEFORE any stage-specific rule, so a stale loading form never meets the
- * road's charset and a colleague's rename is never silently overwritten.
+ * required made every caller a compile error that named itself). The door is
+ * branded (`renameDoorFor`), carries the identity and must be the audit
+ * context's actor; `seen` is what the presser's screen showed, and a truck
+ * that changed under the open form — departed, renamed by a colleague,
+ * finished — is refused `batch_changed` BEFORE any stage-specific rule, so a
+ * stale loading form never meets the road's charset and a colleague's rename
+ * is never silently overwritten. The one exception is a truck that already
+ * wears the name asked for — a double press, or a colleague who typed the
+ * same thing: the requested state is true, so it answers `changed: false`.
+ *
+ * LOCKS, all taken first and always in this order: the target NAME, the
+ * truck's LOADING lock, then its ROW. The name first, because a counter walk
+ * or another rename may hold it while waiting on something that waits on a
+ * truck row — taken after the row it closes a three-party cycle. The loading
+ * lock before the row, because departure, «yuklash tugadi», a removal, a
+ * cancel and the office count all take it first and read the truck's code
+ * inside it: a rename between their read and their commit would leave their
+ * events carrying the old name, and taken after the row it would invert
+ * departBatch's own order.
  */
 export async function renameBatch(
   input: {
@@ -73,12 +88,12 @@ export async function renameBatch(
     reason?: string | null;
     seen: { code: string; stage: 'loading' | 'road' };
   },
-  door: RenameDoorActor,
+  door: RenameDoor | null,
   ctx: AuditContext,
 ): Promise<{ batch: Batch; from: string; stage: 'loading' | 'road'; changed: boolean }> {
   if (!ctx.actorId) throw new RenameError('unauthenticated');
-  // A door minted for somebody else opens nothing.
-  if (door.id !== ctx.actorId) throw new RenameError('forbidden');
+  // No door, or a door minted for somebody else, opens nothing.
+  if (!door || door.id !== ctx.actorId) throw new RenameError('forbidden');
 
   const code = normalizeBatchCode(input.code);
   const why = (input.reason ?? '').trim().replace(/\s+/g, ' ');
@@ -88,10 +103,12 @@ export async function renameBatch(
 
   try {
     return await db.transaction(async (tx) => {
+      // The name, then the truck's loading lock, then the row (see above).
+      await lockBatchCode(tx, code);
+      await lockTruckLoading(tx, input.batchId);
       // FOR UPDATE, not NO KEY: `code` sits under a unique index, so the
       // UPDATE needs this lock anyway — taking it first avoids an upgrade
-      // against finishUnload's and departBatch's own row locks, and
-      // serialises the rename with both.
+      // against finishUnload's and departBatch's own row locks.
       const [batch] = await tx.select().from(batches).where(eq(batches.id, input.batchId)).for('update');
       if (!batch) throw new RenameError('not_found');
       // The door FIRST, so a refused caller learns nothing about the truck.
@@ -106,13 +123,16 @@ export async function renameBatch(
       if (stage === 'closed') throw new RenameError('rename_closed');
       if (!mayRenameBatch(door, batch, stage)) throw new RenameError('forbidden');
 
+      // Already so — its own name saved again, a double press, or a colleague
+      // who typed the very same name: nothing to do, no audit row (#502).
+      if (code === batch.code && stage === input.seen.stage) {
+        return { batch, from: batch.code, stage, changed: false };
+      }
+
       // The compare-and-set: what the presser SAW (count-accept's shape).
       if (stage !== input.seen.stage || batch.code !== input.seen.code) {
         throw new RenameError('batch_changed', stage);
       }
-
-      // Saving its own name again is nothing — no audit row, nothing written (#502).
-      if (code === batch.code) return { batch, from: batch.code, stage, changed: false };
 
       if (stage === 'loading') {
         const problem = loadingCodeProblem(code);
@@ -134,8 +154,9 @@ export async function renameBatch(
       if (shape) throw new RenameError('code_shape', shape);
       if (shadow) throw new RenameError('code_shadows', shadow);
 
-      // One name at a time, then «ever worn» from the committed truth.
-      await lockBatchCode(tx, code);
+      // «Ever worn» from the committed truth — the name's lock is ours since
+      // the first statement, so no rename to it and no counter walk reaching
+      // it can land between this read and our write.
       if (await codeEverWorn(tx, code, batch.id)) throw new RenameError('code_taken');
 
       const [updated] = await tx

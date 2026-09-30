@@ -312,7 +312,8 @@ export async function BatchCard({
     ? renameStageOf(batch.status, unloadingNow ? (await remainingToUnload(id)).length : 0)
     : 'closed';
   const renameMode = renameStage !== 'closed' && mayRenameBatch(actor, batch, renameStage) ? renameStage : 'off';
-  // «Oldingi nomi» — every name the truck wore, for everyone who may open the
+  // «Oldingi nomi» — every name the truck wore ON THE ROAD (a name changed
+  // before departure frees, former-codes.ts), for everyone who may open the
   // card (the papers keep them); the who/why log only for the truck's readers.
   const renames: FormerCodeRow[] = (await soft('former', () => formerCodesOf(id))) ?? [];
   const former = formerNames(renames, batch.code);
@@ -369,7 +370,9 @@ export async function BatchCard({
             code={batch.code}
             mode={renameMode}
             ownFormer={former}
-            sentToAgentAt={batch.sentToAgentAt ?? null}
+            // A VED fact: sent only to a screen that draws the road panel
+            // (the one place it is printed), never in every card's payload.
+            sentToAgentAt={renameMode === 'road' ? (batch.sentToAgentAt ?? null) : null}
           />
           <span className="font-mono text-sm font-bold">
             {head.originCode} → {head.destCode}
@@ -411,7 +414,7 @@ export async function BatchCard({
                         from: row.from,
                         to: row.to,
                       })}
-                      <span className="block text-ink-500">{row.reason ?? t('rename.noReason')}</span>
+                      <span className="block text-ink-500">{row.reason}</span>
                     </li>
                   ))}
                 </ol>

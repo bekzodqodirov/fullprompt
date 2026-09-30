@@ -4,20 +4,31 @@ import { db, type Db, type Tx } from '../../platform/db/client';
 import { auditLog, users } from '../../platform/db/schema';
 
 /**
- * The names a truck has WORN — the only home of `before->>'code'` in the
- * system (a fence in tests/unit/batch-rename-wire.test.ts says so).
+ * The names a truck WORE ON THE ROAD — the only home of `before->>'code'` in
+ * the system (a fence in tests/unit/batch-rename-wire.test.ts says so).
  *
  * There is no table for it: every rename writes one immutable `audit_log` row
  * (`batches/rename.ts`, protected from DELETE and UPDATE by 0001's trigger),
  * and that row already says who, when, from what, to what and why. A second
  * copy could only ever disagree with it.
  *
+ * ONLY a rename made on the road counts, and the row says so itself: it is
+ * the one that carries a `reason` (the road asks for one, the forming screen
+ * never did). A name that reached the road is on the invoice, the manifest,
+ * what the customs agent holds, what the bot and ⌘K answered — so it stays
+ * findable and is never given to another truck. A name typed and changed
+ * again BEFORE departure reached none of that: a typo, or the partner's plate
+ * put on the wrong forming truck, frees at once exactly as it did before
+ * #122 was reversed, so it can go to the right truck and never sends ⌘K or
+ * the bot to the wrong one.
+ *
  * What makes the audit trail safe to READ as data is that the predicate is
  * SELF-DESCRIBING: an `update` on a batch whose before AND after both carry a
- * code, and the two differ. A future batch audit that snapshots a whole row
- * cannot enter the set unless the code really changed — which is a rename.
- * The fence pins the other half: every batch `writeAudit` in `src/` passes
- * `before` as an object literal, and only rename.ts puts a `code` in one.
+ * code, the two differ, and the after carries a reason. A future batch audit
+ * that snapshots a whole row cannot enter the set unless the code really
+ * changed on the road — which is a road rename. The fence pins the other
+ * half: every batch `writeAudit` in `src/` passes `before` as an object
+ * literal, and only rename.ts puts a `code` in one.
  *
  * The literals are INLINED (`sql.raw` of a constant — no user input ever
  * reaches it), so even a generic prepared plan can prove the partial index's
@@ -25,7 +36,7 @@ import { auditLog, users } from '../../platform/db/schema';
  * `FORMER_CODE_KEY('')` character for character (fenced).
  */
 export const FORMER_CODE_PREDICATE = (p: string): string =>
-  `${p}entity_type = 'batch' AND ${p}action = 'update' AND (${p}before->>'code') IS NOT NULL AND (${p}after->>'code') IS NOT NULL AND (${p}before->>'code') <> (${p}after->>'code')`;
+  `${p}entity_type = 'batch' AND ${p}action = 'update' AND (${p}before->>'code') IS NOT NULL AND (${p}after->>'code') IS NOT NULL AND (${p}before->>'code') <> (${p}after->>'code') AND (${p}after->>'reason') IS NOT NULL`;
 
 export const FORMER_CODE_KEY = (p: string): string => `upper(${p}before->>'code')`;
 
@@ -47,7 +58,7 @@ export async function lockBatchCode(tx: Db | Tx, code: string): Promise<void> {
 
 /**
  * Has any truck — `exceptBatchId` aside — ever been called this? Its current
- * code, or any name it wore before a rename. ONE statement, so both halves
+ * code, or any name it wore on the road before a rename. ONE statement, so both halves
  * answer from one snapshot. The JOIN to `batches` ignores rows orphaned by
  * tests that delete trucks; production never deletes a batch.
  */
@@ -73,7 +84,7 @@ export function codeEverWornSql(code: string, exceptBatchId: string | null): SQL
   `;
 }
 
-/** Was THIS truck ever called this? (A name may come back as another rename.) */
+/** Did THIS truck wear this name on the road? (It may come back as another rename.) */
 export async function isOwnFormerCode(tx: Db | Tx, batchId: string, code: string): Promise<boolean> {
   const rows = (await tx.execute(sql`
     SELECT 1 FROM audit_log a
@@ -105,22 +116,22 @@ export async function batchByFormerCode(
 export interface FormerCodeRow {
   from: string;
   to: string;
-  /** Null on a rename made before departure — no reason was ever asked. */
-  reason: string | null;
+  /** Always there: only a road rename is a former name, and the road asks why. */
+  reason: string;
   at: Date;
   by: string | null;
 }
 
 /**
- * Every rename of one truck, oldest first. The drizzle builder and not
+ * Every road rename of one truck, oldest first. The drizzle builder and not
  * `db.execute`, because raw timestamps come back as TEXT (#923).
  */
 export async function formerCodesFor(batchId: string): Promise<FormerCodeRow[]> {
-  const rows = await db
+  return db
     .select({
       from: sql<string>`${auditLog.before}->>'code'`,
       to: sql<string>`${auditLog.after}->>'code'`,
-      reason: sql<string | null>`${auditLog.after}->>'reason'`,
+      reason: sql<string>`${auditLog.after}->>'reason'`,
       at: auditLog.createdAt,
       by: users.fullName,
     })
@@ -134,7 +145,6 @@ export async function formerCodesFor(batchId: string): Promise<FormerCodeRow[]> 
       ),
     )
     .orderBy(asc(auditLog.id));
-  return rows.map((row) => ({ ...row, reason: row.reason?.trim() ? row.reason : null }));
 }
 
 /** The card's copy, memoised per request (every tab renders the header). */

@@ -33,15 +33,34 @@ export function renameStageOf(status: string, stillAboard: number): RenameStage 
   }
 }
 
-/**
- * The person asking, WITH their identity. The service refuses a door whose
- * `id` is not the audit context's actor, so a door built for somebody else —
- * or a literal «planner, unscoped» object handed in beside another person's
- * id — opens nothing (the count door's rule, `count-door.ts` `doorOpens`).
- */
+/** The person asking, WITH their identity and their grants. */
 export interface RenameDoorActor extends ScopedActor {
   id: string;
   permissions: ReadonlySet<string>;
+}
+
+/**
+ * What `renameBatch` demands, and the only way to get one is `renameDoorFor`
+ * — the count door's shape (`count-door.ts` `CountDoor`): branded, so a
+ * service handed a hand-built «planner, unscoped» object refuses at COMPILE
+ * time, and minted only for a person who holds the grant at all. It is a
+ * frozen snapshot of the actor the ACTION authorised; the service still
+ * judges the truck's ends and stage from it on the row it locks, and refuses
+ * a door whose `id` is not the audit context's actor, so a door minted for
+ * somebody else opens nothing either. `null` — nobody asked, or the answer
+ * was no — is refused by the service like any other closed door (#790).
+ */
+declare const RENAME_DOOR: unique symbol;
+export type RenameDoor = Readonly<RenameDoorActor> & { readonly [RENAME_DOOR]: true };
+
+export function renameDoorFor(a: RenameDoorActor): RenameDoor | null {
+  if (!a.id || !a.permissions.has('plans.manage')) return null;
+  return Object.freeze({
+    id: a.id,
+    permissions: new Set(a.permissions),
+    warehouseScoped: a.warehouseScoped,
+    warehouseIds: [...a.warehouseIds],
+  }) as unknown as RenameDoor;
 }
 
 /**

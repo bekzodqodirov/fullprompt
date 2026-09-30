@@ -21,6 +21,7 @@ import { mayCountMove } from '@/modules/wms/scanning/count-door';
 import { authorizeOnBatch } from '@/modules/wms/batches/batch-authorize';
 import { BATCH_TABS, batchTabHref } from '@/modules/wms/batches/card-door';
 import { RenameError, renameBatch } from '@/modules/wms/batches/rename';
+import { renameDoorFor } from '@/modules/wms/batches/rename-door';
 import { isBusyError } from '@/modules/platform/db/errors';
 import { z } from 'zod';
 
@@ -224,7 +225,7 @@ export async function renameBatchAction(
   try {
     const result = await renameBatch(
       { batchId, code, reason, seen: { code: seenCode, stage: seenStage } },
-      door.actor,
+      renameDoorFor(door.actor),
       { actorId: door.actor.id, ...meta },
     );
     // Every tab of the card carries the header, and four lists print the code.
