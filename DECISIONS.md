@@ -2387,3 +2387,10 @@ His message: «sen ohirgi qilgan ui ozgartirishingda pagelarni tepasida bolimlar
    - **Red proofs, by string edit.**
      - Keys unprefixed with the row fix kept: the fence names `ws-tabs.tsx`, and the walk fails at the first click (`groups: 2`, 46 tabs against a fresh 1 and 23), while the group test stays green.
      - Row measuring reverted with the keys kept: the group test finds «Moliya»'s last three reports ✂, and the walk finds `/bitimlar` reached from Pul with `/crm/people ✂` and nothing folded, against a fresh load's three in the fold.
+
+1250. **A random run token in a similarity fixture is a random result.** CI went red on this round's PR in `calc-memory.integration.test.ts`, a file the round never touched: «women's jackets must not inherit men's price: expected 1 to be +0».
+   - **The cause.** The fixture's token was `Math.random().toString(36).slice(2, 5)`, and trigram similarity counts the token's own trigrams. Brute-forced over all 46,656 three-character base-36 tokens, «ayollar kurtkasi <t>» against «erkaklar kurtkasi <t>» stays under the 0.6 threshold for all but two. «erk» and «ayo» repeat the first trigrams of the two words and score exactly 0.600.
+   - **Reproduced** by pinning the token to «erk»: the CI message, verbatim.
+   - **Not the database.** With no cache, CI orders the files by size, so the files that ran before this one were main's, and main's runs were green.
+   - **Fix.** The token is three DIGITS of the run's suffix. Digits share no trigram with the words, and all 1,000 score 0.536.
+   - **Red proof.** The test still goes red when the memory query is switched to `word_similarity`, the rule it pins.

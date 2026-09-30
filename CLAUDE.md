@@ -2304,7 +2304,7 @@ streams into a `<Suspense>` can stay pending for ever (upstream #87529/#98303
 → no boundary around action buttons; no `router.refresh()` after an action
 that already revalidates).
 
-**Round — the strip that multiplied (2026-09-30; DECISIONS #1247-#1249 —
+**Round — the strip that multiplied (2026-09-30; DECISIONS #1247-#1250 —
 numbered PAST the other session's open PR #106, which holds #1243-#1246; NO
 migration, ledger 121).** His «1 2 joyni bosgandan keyin u kopayib bir birini
 ustiga chiqib ketyabti» + a screenshot of «Hisobotlar → Yuk»: three «Yuk ▾»
@@ -2329,7 +2329,10 @@ LESSON (#1249): every strip test arrived by `page.goto`, and a fresh document
 always draws a clean strip — `m9zz-ish-joylari.desktop` now walks by CLICKS (a
 `window` marker proves one document throughout) and compares each strip with a
 fresh load of the same address; a whole-chrome census of 24 click-walked pages
-found no other orphan in the layout.
+found no other orphan in the layout. CI then caught a flake that predates the
+round (#1250): `calc-memory`'s random base-36 token scores exactly the 0.6
+threshold for «erk»/«ayo» (2 of 46,656) — reproduced by pinning it, fixed with
+three digits (all 1,000 score 0.536), and still red under `word_similarity`.
 
 **Latest migration: 0120** (`no_login_staff`, `when` …099; ledger must reach **121**). Before
 it: 0119 (`price_icons`), 0118 (`border_queue`), 0117 (`staff_pay`) — `when` …096-…098. Before them:
