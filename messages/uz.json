@@ -51,7 +51,8 @@
     "photoOnly": "Bu rasm emas — surat tanlang (hujjat uchun 📎 bor)",
     "scanSnapshotServer": "Server xato bilan javob berdi (kod {n}). Internet ishlayapti — bu kodni boshliqqa ko'rsating.",
     "futureDate": "Sana ertadan keyin bo‘lishi mumkin emas.",
-    "amountTooLarge": "Summa juda katta — bitta qatorga sig‘maydi."
+    "amountTooLarge": "Summa juda katta — bitta qatorga sig‘maydi.",
+    "scanWithheld": "{n} ta skan yuborilmadi — ular sizga biriktirilmagan mashinaga tegishli va telefonda saqlanib turibdi."
   },
   "login": {
     "title": "Tizimga kirish",
@@ -834,7 +835,8 @@
       "widthCm": "Eni, sm",
       "cargoStampedTo": "Yuk menejerga o‘tkazildi",
       "receipts": "Prixodlar",
-      "loginEnabled": "Tizimga kirish"
+      "loginEnabled": "Tizimga kirish",
+      "destination": "Qabul skladi"
     }
   },
   "profile": {
@@ -1446,6 +1448,43 @@
         "not_found": "Partiya topilmadi",
         "busy": "Shu partiyada boshqa ish ketayotgan edi — qaytadan bosing"
       }
+    },
+    "reroute": {
+      "title": "Yo‘nalishni o‘zgartirish (qabul skladi)",
+      "badgeRerouted": "↪ {now} · rejada {planned}",
+      "target": "Yangi qabul skladi",
+      "targetPick": "— skladni tanlang —",
+      "reason": "Sabab (majburiy, kamida 3 harf)",
+      "hint": "Faqat shu davlat ichidagi skladga. Birinchi karobka tushirilgach o‘zgartirib bo‘lmaydi. Telegram: yangi sklad xodimlari va logistlarga; oldin «sizga keladi» degan sklad ham ogohlantiriladi.",
+      "pinOff": "📍 Mashina belgisi yangi yo‘lda ko‘rinmaydi (o‘chirilmaydi — qaytarsangiz yana ko‘rinadi)",
+      "noSchedule": "Yangi yo‘l uchun taxminiy sana yo‘q — xaritada faqat haydovchi telefoni joylashuvi ko‘rinadi",
+      "submit": "↪ Yo‘nalishni o‘zgartirish",
+      "confirm": "{code}: qabul skladi {from} o‘rniga {to} bo‘lsinmi?",
+      "done": "✅ Yo‘nalish o‘zgartirildi: endi {to}",
+      "noTargets": "Shu davlatda boshqa faol sklad yo‘q",
+      "plannedLine": "Rejada: {planned} → yo‘nalish o‘zgartirildi: {now}",
+      "history": "O‘zgartirishlar",
+      "historyRow": "{when} · {who} · {to} ({from} o‘rniga) · Sabab: {reason}",
+      "errors": {
+        "forbidden": "Yo‘nalishni faqat admin yoki logist o‘zgartira oladi",
+        "out_of_scope": "Bu sklad sizga biriktirilmagan",
+        "batch_not_found": "Mashina topilmadi",
+        "not_in_transit": "Mashina yo‘lda emas — yo‘nalish faqat jo‘nagan va hali tushirilmagan mashinada o‘zgaradi",
+        "dest_changed": "Yo‘nalishni kimdir hozirgina o‘zgartirdi — yangi holat ko‘rsatildi, qayta tekshiring",
+        "reason_required": "Sababni yozing (kamida 3 harf)",
+        "reason_too_long": "Sabab juda uzun (500 belgigacha)",
+        "bad_target": "Skladni ro‘yxatdan tanlang",
+        "same_destination": "Mashina allaqachon shu skladga boryapti",
+        "destination_is_origin": "Mashina chiqqan skladni qabul skladi qilib bo‘lmaydi",
+        "target_inactive": "Bu sklad o‘chirilgan",
+        "country_unknown": "Skladning davlati aniqlanmadi",
+        "other_country": "Boshqa davlatdagi skladga o‘zgartirib bo‘lmaydi — faqat shu davlat ichida",
+        "busy_retry": "Mashina hozir band (tushirish boshlanayotgan bo‘lishi mumkin) — birozdan keyin qayta bosing",
+        "validation": "Ma’lumot noto‘g‘ri — sahifani yangilang",
+        "offline": "Server javob bermadi — internetni tekshirib, qayta bosing. Tanlov va sabab saqlandi.",
+        "unauthenticated": "Sessiya tugagan — qayta kiring"
+      },
+      "noTargetsInScope": "Shu davlatdagi boshqa skladlar sizga biriktirilmagan"
     }
   },
   "loading": {
@@ -1521,8 +1560,11 @@
       "finish_unload_first": "Avval razgruzkani yakunlang.",
       "batch_not_unloading": "Mashina razgruzkada emas.",
       "not_found": "Topilmadi — sahifani yangilang.",
-      "failed": "Saqlanmadi — qaytadan urinib ko‘ring."
-    }
+      "failed": "Saqlanmadi — qaytadan urinib ko‘ring.",
+      "batch_rerouted": "↪ Mashinaning qabul skladi o‘zgartirildi — endi {to} ga boradi. Yuk bu yerga tushmaydi, hech narsa yozilmadi; xato bo‘lsa logistga ayting."
+    },
+    "batchRerouted": "↪ Bu mashinaning qabul skladi o‘zgartirildi — endi {to} ga boradi. Yuk bu yerga tushmaydi; xato bo‘lsa logistga ayting.",
+    "otherTruckRerouted": "↪ {code}: qabul skladi o‘zgartirildi — endi {to} ga boradi. Uning {n} ta skani yozilmadi."
   },
   "transit": {
     "title": "Yo‘ldagi yuklar",
@@ -4564,7 +4606,8 @@
       "count_conflict": "Boshqa o‘zgarish bilan to‘qnashdi — sahifani yangilab qaytadan bosing.",
       "busy_retry": "Boshqa o‘zgarish ketayotgan edi — qaytadan bosing.",
       "crate_not_on_batch": "Bu yashik bu mashinada yo‘q.",
-      "validation": "Butun son yozing (1 yoki ko‘p)."
+      "validation": "Butun son yozing (1 yoki ko‘p).",
+      "batch_rerouted": "↪ Mashinaning qabul skladi o‘zgartirildi — endi {to} ga boradi. Sanoq yozilmadi; xato bo‘lsa logistga ayting."
     }
   },
   "qrsiz": {

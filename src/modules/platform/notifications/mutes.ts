@@ -166,6 +166,12 @@ export const MUTE_GROUPS = {
     // alarms: a deviation worth shouting about already has its own alert.
     'LoadFinished',
     'UnloadFinished',
+    // A truck on the road now goes to another receiving warehouse (the
+    // reroute round) — work news for the gate that will receive it and the
+    // planners, beside the load and unload summaries; not an alarm. A
+    // newcomer, so never in FOUNDERS: whoever muted «ish jarayoni» before
+    // stays muted.
+    'BatchRerouted',
     // A colleague wrote on a card you are involved in.
     'InternalNote',
     // The personal half of the same message: a colleague named YOU with @.

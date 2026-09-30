@@ -4,6 +4,7 @@ import { db } from '../db/client';
 import { permissions, rolePermissions, roles, userRoles, userWarehouses } from '../db/schema';
 import { getSessionUser, type SessionUser } from '../auth/session';
 import type { PermissionCode, RoleCode } from './catalog';
+import { inScope } from './scope';
 
 export class AuthError extends Error {
   constructor(
@@ -123,7 +124,9 @@ export async function authorize(
   if (!actor.permissions.has(permission)) {
     throw new AuthError(`Missing permission ${permission}`, 'forbidden');
   }
-  if (opts.warehouseId && actor.warehouseScoped && !actor.warehouseIds.includes(opts.warehouseId)) {
+  // `inScope` — the pure predicate `mayAt` asks too, so the gate and the
+  // per-warehouse decision the phone's sync makes cannot drift apart.
+  if (opts.warehouseId && !inScope(actor, opts.warehouseId)) {
     throw new AuthError('Warehouse out of scope', 'forbidden');
   }
   return actor;

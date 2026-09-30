@@ -1,0 +1,361 @@
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { dirname, join, relative } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { FOUNDERS, MUTE_GROUPS } from '@/modules/platform/notifications/mutes';
+import { RULE_EVENTS } from '@/modules/platform/automation/service';
+import { REROUTE_REFUSALS } from '@/modules/wms/batches/reroute-rules';
+import en from '../../messages/en.json';
+import ru from '../../messages/ru.json';
+import uz from '../../messages/uz.json';
+import zh from '../../messages/zh-CN.json';
+
+/*
+ * «Yo'nalishni o'zgartirish» — the wiring (the reroute round). Source-shape on
+ * purpose: every half here WORKS on its own — the fence is about who writes
+ * the destination, which door carries which warehouse, and in what order
+ * (#531: a behavioural test proves only the doors it happens to call). The
+ * behaviour is `tests/integration/batch-reroute.integration.test.ts`.
+ *
+ * DERIVED where it can be, and anchored on names it MUST find, so a parse
+ * that silently finds nothing cannot pass (#720).
+ */
+
+/** Comments out, strings kept — batch-door-wire's stripper (#725: a fence must not match its own sentence). */
+function stripComments(source: string): string {
+  let out = '';
+  let quote: string | null = null;
+  for (let i = 0; i < source.length; i += 1) {
+    const ch = source[i]!;
+    const next = source[i + 1];
+    if (quote) {
+      out += ch;
+      if (ch === '\\') {
+        out += next ?? '';
+        i += 1;
+      } else if (ch === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (ch === "'" || ch === '"' || ch === '`') {
+      quote = ch;
+      out += ch;
+    } else if (ch === '/' && next === '/') {
+      while (i < source.length && source[i] !== '\n') i += 1;
+      out += '\n';
+    } else if (ch === '/' && next === '*') {
+      i += 2;
+      while (i < source.length && !(source[i] === '*' && source[i + 1] === '/')) i += 1;
+      i += 1;
+    } else {
+      out += ch;
+    }
+  }
+  return out;
+}
+
+const read = (path: string) => stripComments(readFileSync(path, 'utf8'));
+
+function walk(dir: string): string[] {
+  return readdirSync(dir).flatMap((name) => {
+    const path = join(dir, name);
+    if (statSync(path).isDirectory()) return walk(path);
+    return /\.tsx?$/.test(name) ? [path] : [];
+  });
+}
+
+/** The argument text of every call to `name(` — balanced. */
+function callArgs(text: string, name: string): string[] {
+  const out: string[] = [];
+  for (const match of text.matchAll(new RegExp(`\\b${name}\\(`, 'g'))) {
+    const open = match.index! + match[0].length - 1;
+    let depth = 0;
+    for (let i = open; i < text.length; i += 1) {
+      if (text[i] === '(') depth += 1;
+      else if (text[i] === ')') {
+        depth -= 1;
+        if (depth === 0) {
+          out.push(text.slice(open + 1, i));
+          break;
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/** A top-level function's text, from its declaration to the next top-level one. */
+function body(path: string, fn: string): string {
+  const src = read(path);
+  const start = src.search(new RegExp(`(export\\s+)?(async\\s+)?function ${fn}\\(`));
+  expect(start, `${fn} in ${path}`).toBeGreaterThanOrEqual(0);
+  const rest = src.slice(start + 1);
+  const next = rest.search(/\n(export |async function |function |const |interface |type )/);
+  return next === -1 ? src.slice(start) : src.slice(start, start + 1 + next);
+}
+
+const REROUTE = 'src/modules/wms/batches/reroute.ts';
+const RULES = 'src/modules/wms/batches/reroute-rules.ts';
+const UNLOAD = 'src/modules/wms/scanning/unload.ts';
+const SYNC = 'src/modules/wms/scanning/sync.ts';
+const ACTIONS = 'src/app/(protected)/batches/batch-actions-server.ts';
+
+describe('(a) the one writer of a truck’s destination', () => {
+  const files = walk('src').map((path) => ({ path: relative('.', path), text: read(path) }));
+
+  it('exactly one — drizzle or raw SQL — and it is the reroute service', () => {
+    const hits: string[] = [];
+    let updates = 0;
+    for (const { path, text } of files) {
+      for (const match of text.matchAll(/\.update\(batches\)/g)) {
+        updates += 1;
+        const after = text.slice(match.index!);
+        const set = callArgs(after, 'set')[0] ?? '';
+        // `.set(` must belong to THIS update: nothing but whitespace between.
+        if (/^\.update\(batches\)\s*\.set\(/.test(after) && /\bdestWarehouseId\b/.test(set)) hits.push(path);
+      }
+      const raw = text.match(/UPDATE\s+batches\s+SET\b((?:(?!\bWHERE\b)[^`])*?)\bdest_warehouse_id\s*=/gi) ?? [];
+      for (let i = 0; i < raw.length; i += 1) hits.push(`${path} (raw)`);
+    }
+    // The parse found the codebase's truck writers at all (finish, depart,
+    // the pin, the flags…) — a scan that sees none proves nothing.
+    expect(updates).toBeGreaterThanOrEqual(10);
+    expect(hits).toEqual([REROUTE]);
+  });
+});
+
+describe('(b) the action’s door', () => {
+  it('rerouteBatchAction asks the card’s door with the reroute’s own power', () => {
+    const text = body(ACTIONS, 'rerouteBatchAction');
+    expect(callArgs(text, 'authorizeOnBatch')).toEqual(["'plans.manage', batchId"]);
+    expect(callArgs(text, 'authorize')).toEqual([]);
+    expect(text).toContain("if (!door) return { ok: false, error: 'batch_not_found' };");
+    // Every AuthError is its own sentence (the reroute review): an expired
+    // session is not «only an admin or a logist», a scope refusal is not
+    // either, and a planner at the OLD destination on a stale tab is told
+    // somebody just moved the truck — decided in that order.
+    const unauth = text.indexOf("if (err.code === 'unauthenticated') return { ok: false, error: 'unauthenticated' };");
+    const forbidden = text.indexOf("if (!actor?.permissions.has('plans.manage')) return { ok: false, error: 'forbidden' };");
+    const changed = text.indexOf("if (live && live.dest !== parsed.data.seenDestWarehouseId) return { ok: false, error: 'dest_changed' };");
+    const scope = text.indexOf("return { ok: false, error: 'out_of_scope' };");
+    expect(unauth).toBeGreaterThan(0);
+    expect(forbidden).toBeGreaterThan(unauth);
+    expect(changed).toBeGreaterThan(forbidden);
+    expect(scope).toBeGreaterThan(changed);
+  });
+});
+
+describe('(c) the phone’s landing re-judges the destination it was admitted at', () => {
+  const text = body(UNLOAD, 'landUnloadInput');
+  const replay = text.indexOf("detail: 'replay'");
+  const compare = text.indexOf('if (expected && batch.destWarehouseId !== expected)');
+  const branch = text.indexOf("if (batch.status === 'in_transit') {");
+
+  it('the compare runs on EVERY read — after the replay check, before the in-transit branch', () => {
+    expect(replay).toBeGreaterThan(0);
+    expect(text).toContain('const expected = guard.expectDest?.get(input.batchId);');
+    expect(compare).toBeGreaterThan(replay);
+    expect(branch).toBeGreaterThan(compare);
+  });
+
+  it('inside the branch: the row lock, then the re-read, then the flip', () => {
+    const inside = text.slice(branch, text.indexOf('const isCrate', branch));
+    const lock = inside.indexOf(".for('no key update')");
+    const flip = inside.indexOf('.update(batches)');
+    expect(lock).toBeGreaterThan(0);
+    expect(flip).toBeGreaterThan(lock);
+    expect(inside).toContain("detail: 'batch_not_unloading'");
+    expect(inside).toContain('if (fresh.destWarehouseId !== (expected ?? batch.destWarehouseId))');
+    expect(inside).toContain('reroutedAck(tx, input, fresh.destWarehouseId, batch.code)');
+    const ack = body(UNLOAD, 'reroutedAck');
+    expect(ack).toContain("detail: 'batch_rerouted'");
+    // The truck names itself: the outbox is one queue for every truck.
+    expect(ack).toContain('batchCode,');
+  });
+});
+
+describe('(d) the phone’s sync', () => {
+  it('passes NO_DOOR and the destination each truck was admitted at', () => {
+    const sync = read(SYNC);
+    expect(sync).toContain('ingestUnloadScans(unloads, ctx, NO_DOOR, { expectDest })');
+    expect(sync).toContain('expectDest.set(truck.id, truck.destWarehouseId);');
+    // Judged at SCAN time (the reroute review): a row scanned against another
+    // destination's snapshot never reaches the admitted list, whoever sent it.
+    const stale = sync.indexOf('if ((scan.expectDestId ?? truck.destWarehouseId) !== truck.destWarehouseId) {');
+    const admit = sync.indexOf('unloads.push(scan);');
+    expect(stale).toBeGreaterThan(0);
+    expect(admit).toBeGreaterThan(stale);
+    expect(sync).toContain('const rerouted: SyncItem[] = [...staleUnloads];');
+    expect(sync).toContain('expectDestId: z.string().uuid().optional(),');
+    // Per truck — the whole-body refusal lives nowhere in the body now.
+    expect(sync).not.toMatch(/\bauthorize\(/);
+    expect(read('src/app/api/scan/sync/route.ts')).toContain(
+      'if (result.acks.length === 0 && result.withheld.length > 0)',
+    );
+  });
+});
+
+describe('(e) the office doors', () => {
+  it('«Hammasini qabul qilish» refuses before it writes its audit row', () => {
+    const text = body(UNLOAD, 'unloadRemaining');
+    const upFront = text.indexOf('if (opts.expectDestId && batch.destWarehouseId !== opts.expectDestId) {');
+    const upFrontThrow = text.indexOf('throw await reroutedError(db, batch.destWarehouseId);');
+    const afterAcks = text.indexOf('if (rerouted > 0 && landed.length === 0) {');
+    const afterThrow = text.indexOf("throw new ScanError('batch_rerouted', { to: reroutedAcks[0]?.rerouteTo });");
+    const audit = text.indexOf('writeAudit(');
+    expect(upFront).toBeGreaterThan(0);
+    expect(upFrontThrow).toBeGreaterThan(upFront);
+    expect(afterAcks).toBeGreaterThan(upFrontThrow);
+    expect(afterThrow).toBeGreaterThan(afterAcks);
+    expect(audit).toBeGreaterThan(afterThrow);
+    expect(text).toContain('{ expectDest: new Map([[batchId, opts.expectDestId ?? batch.destWarehouseId]]) }');
+    // The refusal says WHERE (the reroute review).
+    expect(body(UNLOAD, 'reroutedError')).toContain("new ScanError('batch_rerouted', { to:");
+  });
+
+  it('«Tushirish tugadi» compares on the LOCKED row', () => {
+    const text = body(UNLOAD, 'finishUnload');
+    const lock = text.indexOf(".for('no key update')");
+    const compare = text.indexOf('if (opts.expectDestId && batch.destWarehouseId !== opts.expectDestId)');
+    expect(lock).toBeGreaterThan(0);
+    expect(compare).toBeGreaterThan(lock);
+    expect(text.indexOf('throw await reroutedError(tx, batch.destWarehouseId);')).toBeGreaterThan(compare);
+    expect(text.indexOf('.update(boxes)')).toBeGreaterThan(compare);
+  });
+
+  it('both actions post the destination the page was drawn for', () => {
+    for (const fn of ['unloadRemainingAction', 'finishUnloadAction']) {
+      const text = body(ACTIONS, fn);
+      expect(text, fn).toContain('const at = isUuidShaped(seenDestWarehouseId) ? seenDestWarehouseId : batch.destWarehouseId;');
+      expect(text, fn).toMatch(/authorize\('(receipts\.void|scan\.unload)', \{ warehouseId: at \}\)/);
+      expect(text, fn).toContain('expectDestId: at');
+    }
+    const buttons = read('src/app/(protected)/batches/[id]/unload-actions.tsx');
+    expect(buttons).toContain('unloadRemainingAction(batchId, destWarehouseId)');
+    expect(buttons).toContain('finishUnloadAction(batchId, destWarehouseId)');
+    const panel = read('src/app/(protected)/batches/[id]/count-accept-panel.tsx');
+    expect(panel.match(/seenDestWarehouseId: destWarehouseId/g) ?? []).toHaveLength(2);
+    const page = read('src/app/(protected)/batches/[id]/yuklash/page.tsx');
+    expect(page.match(/destWarehouseId=\{batch\.destWarehouseId\}/g) ?? []).toHaveLength(2);
+  });
+});
+
+describe('(f) every refusal reaches the person in words', () => {
+  it('the office buttons name it; the phone screen hears it before the count-only refusals', () => {
+    const buttons = read('src/app/(protected)/batches/[id]/unload-actions.tsx');
+    expect(buttons).toContain("case 'batch_rerouted':");
+    expect(buttons).toContain("t('errors.batch_rerouted', { to: rerouteTo ?? '—' })");
+    // …and the sentence STAYS (the reroute review): the refresh re-asks the
+    // card's door, which is closed for the old warehouse's staff — the page
+    // became «Sahifa topilmadi» and took the sentence with it.
+    const run = buttons.slice(buttons.indexOf('async function run('));
+    expect(run).toContain("if (res.error !== 'batch_rerouted') router.refresh();");
+    expect(run.slice(0, run.indexOf('router.refresh()'))).not.toMatch(/\n\s*router\.refresh\(\);/);
+    const screen = read('src/app/(protected)/batches/[id]/unload/unload-screen.tsx');
+    const branch = screen.indexOf("if (ack.detail === 'batch_rerouted') {");
+    expect(branch).toBeGreaterThan(0);
+    expect(branch).toBeLessThan(screen.indexOf('isScanRefusal(ack.detail)'));
+    expect(screen).toContain('data-testid="unload-rerouted"');
+    // A 409 drops the cached snapshot instead of applying it.
+    expect(screen).toContain('localStorage.removeItem(cacheKey);');
+  });
+
+  it('a screen latches only ITS truck’s reroute, and lets go when the destination comes back', () => {
+    // The outbox is one queue for every truck (the reroute review): truck A's
+    // rerouted rows came back on truck B's screen, which then refused every
+    // scan of B. Only the verdict for THIS truck latches; the ack is tagged
+    // with its row's truck by the flush, never trusted from anywhere else.
+    const screen = read('src/app/(protected)/batches/[id]/unload/unload-screen.tsx');
+    expect(screen).toContain('const reroute = rerouteVerdict(acks, batchId);');
+    expect(screen).toContain('setReroutedTo(reroute.own);');
+    expect(screen.match(/setReroutedTo\(/g) ?? []).toHaveLength(4);
+    expect(screen).toContain('setReroutedTo(snapshotRerouted(baseDest.current, data.batch));');
+    const loading = read('src/app/(protected)/batches/[id]/load/loading-screen.tsx');
+    expect(loading).toContain('rerouteVerdict(acks, batchId).elsewhere');
+    expect(read('src/offline/scan-outbox.ts')).toContain(
+      'out.acks.push(...body.acks.map((ack) => ({ ...ack, batchId: truckOf.get(ack.clientEventUuid) })));',
+    );
+  });
+
+  it('the phone carries the destination it scanned for, from the snapshot it was drawn from', () => {
+    const screen = read('src/app/(protected)/batches/[id]/unload/unload-screen.tsx');
+    expect(screen).toContain('...(baseDest.current ? { expectDestId: baseDest.current } : {}),');
+    const planned = read('src/app/api/batches/[id]/planned/route.ts');
+    expect(planned).toContain('destWarehouseId: batch.destWarehouseId,');
+  });
+
+  it('every reroute refusal has its sentence in all four bundles', () => {
+    for (const [name, bundle] of Object.entries({ en, ru, uz, zh })) {
+      const errors = (bundle as { batches: { reroute: { errors: Record<string, string> } } }).batches.reroute.errors;
+      for (const code of [...REROUTE_REFUSALS, 'busy_retry', 'validation', 'offline', 'unauthenticated']) {
+        expect(typeof errors[code], `${name}: batches.reroute.errors.${code}`).toBe('string');
+      }
+    }
+  });
+});
+
+describe('(g) the Telegram can be muted, as work news', () => {
+  it('is in «ish jarayoni», a newcomer, and no automation trigger', () => {
+    expect(MUTE_GROUPS.operations).toContain('BatchRerouted');
+    for (const founders of Object.values(FOUNDERS)) expect(founders).not.toContain('BatchRerouted');
+    expect(RULE_EVENTS as readonly string[]).not.toContain('BatchRerouted');
+  });
+});
+
+describe('(h) the Mashina tab draws the form for the reroute’s own door', () => {
+  it('only under mayRerouteTruck, with the options the service admits', () => {
+    const page = read('src/app/(protected)/batches/[id]/mashina/page.tsx');
+    expect(page).toContain('const mayReroute = mayRerouteTruck(actor, batch);');
+    expect(page).toContain(
+      'const rerouteOptions = mayReroute ? await rerouteTargets(batch, head, actor) : { options: [], hiddenByScope: 0 };',
+    );
+    expect(page).toMatch(/\{mayReroute && \(\s*<RerouteForm/);
+    // The form imports the refusal TYPE only (#276).
+    const form = read('src/app/(protected)/batches/[id]/mashina/reroute-form.tsx');
+    expect(form).toContain("import type { RerouteErrorCode } from '@/modules/wms/batches/reroute-rules';");
+    expect(form).not.toMatch(/import \{[^}]*\} from '@\/modules\/wms\/batches\/reroute/);
+  });
+});
+
+describe('(i) answer 5a holds the customer’s journey', () => {
+  it('journey.ts keys on the departure’s COUNTRY and the rule still refuses another country', () => {
+    const journey = read('src/modules/wms/client-cabinet/journey.ts');
+    expect(journey).toContain("if (e.cause === 'batch_departed') {");
+    expect(journey).toContain("if (e.toCountry === 'CN') claim('toHub', e.at);");
+    // Widening answer 5 turns THIS red, at the reader that must change first.
+    expect(read(RULES)).toContain("if (from !== to) return 'other_country';");
+  });
+});
+
+describe('(j) the pure rules stay pure', () => {
+  it('nothing reroute-rules.ts imports reaches the database client, however far', () => {
+    const seen = new Set<string>();
+    const resolve = (from: string, spec: string): string | null => {
+      let base: string;
+      if (spec.startsWith('@/')) base = join('src', spec.slice(2));
+      else if (spec.startsWith('.')) base = join(dirname(from), spec);
+      else return null; // a package
+      for (const candidate of [`${base}.ts`, `${base}.tsx`, join(base, 'index.ts')]) {
+        if (existsSync(candidate)) return candidate;
+      }
+      return null;
+    };
+    const visit = (path: string) => {
+      if (seen.has(path)) return;
+      seen.add(path);
+      const src = read(path);
+      for (const m of src.matchAll(/(?:from\s+|import\()\s*'([^']+)'/g)) {
+        // A type-only import ships nothing to the browser.
+        const line = src.slice(src.lastIndexOf('\n', m.index!) + 1, m.index!);
+        if (/^\s*import\s+type\b/.test(line)) continue;
+        const next = resolve(path, m[1]!);
+        if (next) visit(next);
+      }
+    };
+    visit(RULES);
+    // Anchored: the walk found what it must.
+    expect([...seen]).toContain('src/modules/wms/batches/country-key.ts');
+    expect([...seen]).toContain('src/modules/platform/rbac/scope.ts');
+    expect([...seen].filter((p) => p.includes('platform/db/'))).toEqual([]);
+  });
+});

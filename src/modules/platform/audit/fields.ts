@@ -78,6 +78,8 @@ export const AUDIT_FIELD_LABELS: Record<string, string> = {
   warehouseId: 'warehouse',
   warehouse: 'warehouse',
   warehouses: 'warehouses',
+  // A truck's receiving warehouse, changed on the road (the reroute round).
+  destWarehouseId: 'destination',
   typeId: 'type',
   deal: 'deal',
   dealId: 'deal',
@@ -157,6 +159,7 @@ export const AUDIT_FIELD_REFS: Record<string, AuditRefKind> = {
   client: 'client',
   warehouseId: 'warehouse',
   warehouse: 'warehouse',
+  destWarehouseId: 'warehouse',
   sourceId: 'source',
   source: 'source',
   deal: 'deal',

@@ -301,6 +301,33 @@ const DICT = {
     en: 'the date has passed',
   },
   deal: { ru: 'Сделка', uz: 'Bitim', 'zh-CN': '交易', en: 'Deal' },
+  // The reroute round: a truck on the road now goes to another receiving
+  // warehouse. Worded per READER (the new warehouse, the one it no longer
+  // comes to, the logists), and never with an arrow between the two
+  // warehouses — this app's «A → B» is origin → destination everywhere, and
+  // «TAS1 → AND» read at AND as «a truck FROM Tashkent».
+  rerouteComingToYou: {
+    ru: 'теперь едет к вам',
+    uz: 'endi sizga keladi',
+    'zh-CN': '现改为发往贵仓',
+    en: 'is now coming to you',
+  },
+  rerouteNotComing: {
+    ru: 'к вам больше не едет',
+    uz: 'endi sizga kelmaydi',
+    'zh-CN': '不再发往贵仓',
+    en: 'is no longer coming to you',
+  },
+  rerouteChanged: {
+    ru: 'изменён склад назначения',
+    uz: 'qabul skladi o‘zgartirildi',
+    'zh-CN': '目的仓库已更改',
+    en: 'destination warehouse changed',
+  },
+  rerouteNow: { ru: 'Теперь', uz: 'Endi', 'zh-CN': '现为', en: 'Now' },
+  rerouteBefore: { ru: 'Было', uz: 'Avval', 'zh-CN': '原为', en: 'Was' },
+  route: { ru: 'Маршрут', uz: 'Yo‘l', 'zh-CN': '路线', en: 'Route' },
+  changedBy: { ru: 'Изменил', uz: 'O‘zgartirdi', 'zh-CN': '修改人', en: 'Changed by' },
   // Round C: a list of box codes is capped where a message would otherwise
   // run past Telegram's 4096 and be refused WHOLE — the tail is counted, not
   // dropped in silence. `{n}` is filled by `fillCount`.

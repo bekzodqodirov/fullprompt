@@ -166,6 +166,10 @@ describe('«a void box is not cargo» — the closed set', () => {
       // Which costs touch a lot (U20/U39): ids, deliberately including the
       // boxes about to be voided — the question is what their void orphans.
       'src/modules/wms/costing/void-guard.ts',
+      // «Rejada» (the reroute round): the WAREHOUSE the departure movements
+      // name, one row, never a figure — its cargo line reads the live
+      // pointer (`awaitingUnloadWhere`), where a void carton cannot stand.
+      'src/modules/wms/batches/reroute.ts',
     ];
     const found: string[] = [];
     const walk = (dir: string) => {
