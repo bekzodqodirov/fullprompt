@@ -309,7 +309,12 @@ export function BatchCodeForm({
           >
             {pending ? tc('loading') : t('rename.save')}
           </button>
-          <button type="button" className="btn-secondary" onClick={() => setOpen(false)}>
+          <button
+            type="button"
+            data-testid="batch-rename-cancel"
+            className="btn-secondary"
+            onClick={() => setOpen(false)}
+          >
             {tc('cancel')}
           </button>
         </div>
