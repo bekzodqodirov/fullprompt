@@ -731,6 +731,32 @@ describe('7 — who hears it (the owner’s 4a)', () => {
     }
     expect(renderTelegramText('BatchRerouted', { ...payload, audience: 'from' }, 'uz')).toContain('endi sizga kelmaydi');
   });
+
+  it('the planned warehouse told «coming to you» by a reroute BACK is told «not any more» when it goes again', async () => {
+    // RRA (planned) → RRB → RRA → RRC: the second reroute promised RRA the
+    // truck in words, so the third must withdraw it — «is it the planned
+    // warehouse» is the wrong question, «did a reroute tell it» the right one.
+    const t = await truckOnRoad(1);
+    await reroute(P.logistA, t.id, W.a.id, W.b.id);
+    await reroute(P.logistA, t.id, W.b.id, W.a.id);
+    await reroute(P.logistA, t.id, W.a.id, W.c.id);
+    await processPendingEvents();
+    expect((await notified(t.id, 0)).has(P.opA.id)).toBe(false);
+    const back = await notified(t.id, 1);
+    expect(back.get(P.opA.id)).toBe('to');
+    expect(back.get(P.opB.id)).toBe('from');
+    const third = await notified(t.id, 2);
+    expect(third.get(P.opA.id)).toBe('from');
+    expect(third.get(P.opC.id)).toBe('to');
+    // RRB was withdrawn on the way back; it is not told a second time.
+    expect(third.has(P.opB.id)).toBe(false);
+    const flags = await db
+      .select({ told: sql<boolean>`(${events.payload}->>'fromWasTold')::boolean` })
+      .from(events)
+      .where(and(eq(events.type, 'BatchRerouted'), eq(events.entityId, t.id)))
+      .orderBy(asc(events.id));
+    expect(flags.map((f) => f.told)).toEqual([false, true, true]);
+  });
 });
 
 describe('8 — the history and «Rejada»', () => {

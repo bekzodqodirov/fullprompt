@@ -140,34 +140,20 @@ export async function rerouteBatch(
     if (refusal) throw new RerouteError(refusal);
     if (!inScope(actor, target!.id)) throw new RerouteError('out_of_scope');
 
-    // «Rejada» — where the truck was sent on departure day. The departure
-    // movements name it and are never rewritten; a truck that departed empty
-    // has none, and then the first reroute's «before» is that warehouse.
-    const [departure] = await tx
-      .select({ to: boxMovements.toWarehouseId })
-      .from(boxMovements)
-      .where(
-        and(
-          eq(boxMovements.refType, 'batch'),
-          eq(boxMovements.refId, batchId),
-          eq(boxMovements.cause, 'batch_departed'),
-        ),
-      )
-      .limit(1);
-    let plannedId = departure?.to ?? null;
-    if (!plannedId) {
-      const [first] = await tx
-        .select({ before: sql<string | null>`${auditLog.before}->>'destWarehouseId'` })
-        .from(auditLog)
-        .where(rerouteRowsOf([batchId]))
-        .orderBy(asc(auditLog.id))
-        .limit(1);
-      plannedId = first?.before ?? null;
-    }
     // The warehouse we are leaving was itself told «coming to you» by an
     // earlier reroute — it is told «not any more» (the design's objection:
-    // a withdrawn promise must be withdrawn in words).
-    const fromWasTold = plannedId !== null && plannedId !== batch.destWarehouseId;
+    // a withdrawn promise must be withdrawn in words). Decided by the
+    // RECORD, never by «it is not the planned warehouse»: that stand-in is
+    // false exactly when the truck was sent BACK to the planned warehouse
+    // (A → B → A → C), where the second reroute told A «endi sizga keladi»
+    // and the third then left A with that promise standing. Read on `tx`
+    // under the truck's lock, so every earlier reroute has committed.
+    const [told] = await tx
+      .select({ id: auditLog.id })
+      .from(auditLog)
+      .where(and(rerouteRowsOf([batchId]), sql`${auditLog.after}->>'destWarehouseId' = ${batch.destWarehouseId}`))
+      .limit(1);
+    const fromWasTold = told !== undefined;
 
     // What is coming, for the Telegram: the cargo still aboard, which on a
     // truck on the road is the whole cargo — `awaitingUnloadWhere` is the
