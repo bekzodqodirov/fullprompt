@@ -140,7 +140,9 @@ export async function renameBatch(
         // A reason posted from a stale road form is simply ignored here.
       } else {
         // The truck's OWN former names are exempt from the road charset only
-        // — a free pre-departure name («GSR KASHGAR 1») may come back.
+        // — the free name it LEFT with («GSR KASHGAR 1») may come back. A
+        // free name changed again before departure is not a former name
+        // (former-codes.ts) and meets the charset like any other.
         const problem = roadCodeProblem(code);
         if (problem && !(await isOwnFormerCode(tx, batch.id, code))) throw new RenameError(problem);
         if (why.length < RENAME_REASON_MIN || why.length > RENAME_REASON_MAX) {
