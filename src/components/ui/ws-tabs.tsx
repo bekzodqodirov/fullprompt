@@ -75,15 +75,28 @@ export function WorkspaceTabs({
       aria-label={`${ws.label} — ${labels.tabs}`}
       className={`${onPhone ? '' : 'hidden md:block'} relative -mx-4 -mt-4 mb-3 border-b border-line bg-surface-raised`}
     >
+      {/* The keys reset each part on a navigation, and each carries its own
+          prefix because siblings share ONE key space: unprefixed, the picker
+          and the ☆ were the same string always and the ⚙ equalled the ☆ on
+          every list page. When a key changes React files the old children in
+          one map by key, two equal keys are one entry, and the loser is never
+          removed — every click left the previous strip standing in the row
+          (the owner's screenshot, 2026-09-30; DECISIONS #1247). */}
       <div className="flex h-11 items-center gap-1 px-2 md:px-3">
         {ws.groups ? (
-          <GroupedTabs key={placement.href} ws={ws} active={active} litAs={litAs} more={labels.more} />
+          <GroupedTabs
+            key={`groups:${placement.href}`}
+            ws={ws}
+            active={active}
+            litAs={litAs}
+            more={labels.more}
+          />
         ) : (
           <TabRow tabs={ws.tabs} active={active} litAs={litAs} more={labels.more} />
         )}
         {placement.tab && (
           <StarButton
-            key={placement.href}
+            key={`star:${placement.href}`}
             href={placement.href}
             entry={ws.href === placement.href}
             on={starred.includes(placement.href)}
@@ -92,7 +105,7 @@ export function WorkspaceTabs({
         )}
         {ws.settings.length > 0 && (
           <SettingsMenu
-            key={pathname}
+            key={`settings:${pathname}`}
             settings={ws.settings}
             active={placement.settings ? placement.href : null}
             litAs={litAs}
@@ -126,32 +139,50 @@ function TabRow({
 }) {
   const row = useRef<HTMLDivElement>(null);
   // How many tabs fit from `md` up; null = all of them (a phone, or not yet
-  // measured). Widths are read ONCE from the full render — a tab's width does
-  // not change with the window — and a resize only re-divides them.
-  const [fit, setFit] = useState<number | null>(null);
-  const widths = useRef<number[]>([]);
+  // measured). Widths are read ONCE per list of tabs, from a render showing
+  // all of them — a tab's width does not change with the window — and a
+  // resize only re-divides them. Both are TAGGED with the list they belong
+  // to: the layout reuses this row when the person crosses to another
+  // workspace, and a count worked out for Sklad's tabs applied to Yo'l's
+  // left «Kutilayotgan yuk» clipped off the row's end with no «Yana ▾»
+  // (DECISIONS #1248). A count for another list is no count: all are drawn,
+  // and that full render is the one the widths are read from.
   const signature = tabs.map((tab) => `${tab.href}:${tab.label}`).join('|');
+  const [fitted, setFitted] = useState<{ signature: string; count: number } | null>(null);
+  const fit = fitted?.signature === signature ? fitted.count : null;
+  const widths = useRef<{ signature: string; list: number[] } | null>(null);
 
   useEffect(() => {
     const el = row.current;
     if (!el) return;
-    widths.current = Array.from(el.querySelectorAll<HTMLElement>('[data-ws-tab]')).map(
-      (link) => link.offsetWidth + 4,
-    );
     const measure = () => {
-      if (!window.matchMedia('(min-width: 768px)').matches) return setFit(null);
+      // A row that is not drawn — a report group other than the picked one —
+      // has no room to divide, and every link in it measures 0 px: read then,
+      // its widths said everything fits, and the group picked later showed
+      // its tabs clipped off the edge. Nothing is read or decided until the
+      // row gets a size; the observer fires when it does.
+      if (el.clientWidth === 0) return;
+      if (!window.matchMedia('(min-width: 768px)').matches) return setFitted(null);
+      if (widths.current?.signature !== signature) {
+        const links = el.querySelectorAll<HTMLElement>('[data-ws-tab]');
+        widths.current = { signature, list: Array.from(links, (link) => link.offsetWidth + 4) };
+      }
+      const list = widths.current.list;
       const room = el.clientWidth;
-      const total = widths.current.reduce((sum, width) => sum + width, 0);
-      if (total <= room) return setFit(null);
+      const total = list.reduce((sum, width) => sum + width, 0);
+      if (total <= room) return setFitted(null);
       // Leave room for «Yana ▾» itself.
       let used = 88;
       let count = 0;
-      for (const width of widths.current) {
+      for (const width of list) {
         if (used + width > room) break;
         used += width;
         count += 1;
       }
-      setFit(Math.max(1, count));
+      const next = Math.max(1, count);
+      setFitted((prev) =>
+        prev?.signature === signature && prev.count === next ? prev : { signature, count: next },
+      );
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -179,7 +210,11 @@ function TabRow({
   }
 
   return (
-    <div ref={row} className="no-scrollbar flex min-w-0 flex-1 items-center gap-1 overflow-x-auto md:overflow-hidden">
+    <div
+      ref={row}
+      data-testid="ws-row"
+      className="no-scrollbar flex min-w-0 flex-1 items-center gap-1 overflow-x-auto md:overflow-hidden"
+    >
       {shown.map((tab) => {
         const lit = tab.href === active;
         return (

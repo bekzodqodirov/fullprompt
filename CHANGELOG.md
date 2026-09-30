@@ -1,5 +1,39 @@
 # CHANGELOG
 
+## Sahifa tepasidagi bo'limlar qatori ko'payib ketmaydi — 2026-09-30
+
+Migratsiya yo'q, ledger **121** bo'lib qoladi. Yangilanganini `/api/version` dagi vaqt
+ko'rsatadi.
+
+Sizning xabaringiz: «1 2 joyni bosgandan keyin u kopayib bir birini ustiga chiqib
+ketyabti» + rasm.
+
+1. **Nima bo'lardi.** Sahifa tepasidagi bo'limlar qatorida bosganingizda eski qator
+   o'chmay qolardi, yonida yangisi chiqardi. «Hisobotlar»da uch marta bossangiz,
+   to'rtta «Yuk ▾» va bir nechta «Yana ▾» bir-birining ustiga chiqardi. «Yo'l va
+   partiyalar» bo'limida (Partiyalar, Planlar, Mashinalar…) esa ☆ yulduzcha
+   ko'payardi. Sahifani yangilasangiz (F5) tuzalib qolardi. Shuning uchun har doim
+   ham ko'rinmagan.
+2. **Nega.** Qatorning uch qismi — guruh tanlagichi, ☆ va ⚙ — bir xil «nom» bilan
+   belgilangan edi. Nom bir xil bo'lgani uchun ilova eskisini o'chirishni «unutardi».
+3. **Endi.** Har qismning o'z nomi bor. Brauzerda siz kabi bosib tekshirildi: necha
+   marta bossangiz ham qator bitta, tanlagich bitta, ☆ bitta.
+4. **Yo'l-yo'lakay topildi va tuzatildi — shu qatorning o'zida, ikki xato:**
+   - «Hisobotlar»da guruhni almashtirsangiz (masalan «Moliya»), sig'magan hisobotlar
+     «Yana ▾» ichiga yig'ilmasdi, qator chetidan kesilib ko'rinmay qolardi. Katta
+     ekranda «Moliya»ning 8 ta hisobotidan 5 tasi, kichikroq ekranda 3 tasi ko'rinardi.
+     Endi sig'maganlar «Yana ▾» ichida turadi.
+   - Chap menyudan bir bo'limdan boshqasiga o'tganda (masalan «Sklad» → «Yo'l va
+     partiyalar») oxirgi sahifa — «Kutilayotgan yuk» — chetidan kesilib qolardi. Endi
+     qator har safar yangi sahifadagidek chiqadi.
+5. Partiya kartasining olti bo'limi (Ichidagilar, Yuklash, Xarajatlar, Narx, Bojxona,
+   Mashina) bu xatodan xoli edi — alohida tekshirildi.
+6. Tekshirish kuchaytirildi:
+   - Butun tizimda shu turdagi xatoni qidiradigan tekshiruv qo'shildi: boshqa joyda
+     topilmadi, kelajakda yozilsa test to'xtatadi.
+   - Brauzer testlari endi sahifalarni odam kabi bosib yuradi. Oldin har sahifani
+     yangidan ochardi — shuning uchun bu xato ko'rinmagan.
+
 ## Sizning 12 javobingiz: login'siz hodimga oylik, upsale eng eski qarzdan, foyda yuk kelgan kundagi sotuvchiga — 2026-09-29
 
 Migratsiya **0120**. Yangilangandan keyin ledger **121** bo'lishi kerak. Bugungi
