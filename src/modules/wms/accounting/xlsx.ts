@@ -27,7 +27,7 @@ import {
   type PnlGaps,
   type ReconLineKey,
 } from './reports';
-import { tripTotals } from '../reports/dashboard-math';
+import { tripKind, tripTotals } from '../reports/dashboard-math';
 import { lossesInPeriod } from '../reports/business';
 
 /**
@@ -376,7 +376,12 @@ export async function buildProfitXlsx(
         row.laterUsd > 0.009 ? row.laterUsd : '',
         row.unallocatedUsd > 0.009 ? row.unallocatedUsd : '',
         row.internal ? row.costUsd : '',
-        row.profitUsd ?? '—', row.marginPct ?? '—', row.profitPerKg ?? '—',
+        // A «davomi» nobody priced: words, never a «0» a SUM would read as a
+        // trip that broke even (its cost is the named truck's «keyingi yo'l»).
+        tripKind(row) === 'continuation'
+          ? `${L.continuation}${row.carriers.map((carrier) => carrier.code).join(', ')}`
+          : (row.profitUsd ?? '—'),
+        row.marginPct ?? '—', row.profitPerKg ?? '—',
       ]);
     }
     if (rows.length > 0) {

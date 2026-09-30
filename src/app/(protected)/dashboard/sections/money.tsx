@@ -163,8 +163,13 @@ export async function MoneySection({
   const totals = tripTotals(partiya);
   const recent = [...partiya]
     // A «davomi» truck has no profit of its own: its cost is inside the
-    // truck that bears the price (owner, 2026-09-30), so it takes no bar.
-    .filter((row) => !row.internal && !row.continuation)
+    // truck that bears the price (owner, 2026-09-30), so it takes no bar —
+    // asked through `tripKind`, the rule `tripTotals` counts by, so a davomi
+    // somebody priced anyway is drawn exactly as the strip counts it.
+    .filter((row) => {
+      const kind = tripKind(row);
+      return kind !== 'internal' && kind !== 'continuation';
+    })
     .sort((a, b) => new Date(b.departedAt ?? 0).getTime() - new Date(a.departedAt ?? 0).getTime())
     .slice(0, 12);
   const tripRows = recent.map((row) => {

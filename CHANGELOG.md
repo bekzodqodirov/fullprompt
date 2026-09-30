@@ -37,6 +37,13 @@ Sizning javoblaringiz: **1a · 2a · 3b · 4a · 5a · 6b**
    ustun: «shundan keyingi yo'l $».
 8. Deploydan keyin eski mashinalar ham shu qoida bo'yicha ko'rinadi (6b — oldindan
    ro'yxat so'ralmadi).
+9. **Qayta tekshiruvdan keyin tuzatildi:** katta bazada «Partiya foydasi» 10 soniyaga
+   sekinlashib qolgan edi — endi avvalgidek (3 haftalik: 0,3–0,6 s). 12 oylik dashboard
+   o'qishi 2,9 s → 3,7 s (qoida har bir karobkaning barcha reyslarini ko'radi). Yana:
+   «davomi» mashinada Xitoy yuki uchun «xarajat kiritilmagan» noto'g'ri ogohlantirishi
+   olib tashlandi; ikkinchi hisob tasdiqlash tugmasini ikki marta bosib bo'lmaydi;
+   aralash mijozda (Xitoy yuki + Andijon yuki) nechta karobka boshqa mashinada
+   narxlangani yoziladi.
 
 ## Sizning 12 javobingiz: login'siz hodimga oylik, upsale eng eski qarzdan, foyda yuk kelgan kundagi sotuvchiga — 2026-09-29
 

@@ -1794,9 +1794,9 @@
     "laterLegs": "后续路段",
     "laterLegsHint": "本车之后乌兹别克斯坦境内车辆（如安集延 → 塔什干）的费用。价格在本车上，所以全程成本计在这里。",
     "continuationTrip": "续运：本车货物的价格和全程费用在 {codes} 车上。这里无需定价。",
-    "continuationClient": "该货物的价格和运费在 {codes} 车上（全程一个价格）。",
-    "secondBillWarn": "该客户 {n} 箱的价格在 {codes} 车上——全程一个价格。在这里定价会向客户重复收费。仍要定价吗？",
-    "openCargo": "⏳ 还有 {n} 箱未交付——如再加入后续路段费用，成本可能增加。"
+    "continuationClient": "该客户 {total} 箱中有 {n} 箱的价格和运费在 {codes} 车上（全程一个价格）。其余的在这里定价。",
+    "secondBillWarn": "该客户有 {n} 箱的价格在 {codes} 车上——全程一个价格。在这里定价会对这些货重复收费。仍要定价吗？",
+    "openCargo": "⏳ 未交付箱数：{n}——如再加入后续路段费用，成本可能增加。"
   },
   "map": {
     "title": "地图",

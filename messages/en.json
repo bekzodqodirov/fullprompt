@@ -1794,9 +1794,9 @@
     "laterLegs": "onward legs",
     "laterLegsHint": "Costs of the trucks inside Uzbekistan after this one (e.g. Andijan → Tashkent). The price is on this truck, so the whole road’s cost is here.",
     "continuationTrip": "Continuation: the price and the whole road’s cost of this truck’s cargo are on {codes}. No price is needed here.",
-    "continuationClient": "This cargo’s price and road cost are on {codes} (one price for the whole road).",
-    "secondBillWarn": "{n} cartons of this client are priced on {codes} — one price for the whole road. A price here bills the client a second time. Set it anyway?",
-    "openCargo": "⏳ {n} cartons not handed over yet — the cost may still grow when onward legs are billed."
+    "continuationClient": "{n} of this client’s {total} cartons are priced, road included, on {codes} (one price for the whole road). The rest are priced here.",
+    "secondBillWarn": "Part of this client’s cargo (cartons: {n}) is priced on {codes} — one price for the whole road. A price here bills that cargo a second time. Set it anyway?",
+    "openCargo": "⏳ Cartons not handed over yet: {n} — the cost may still grow when onward legs are billed."
   },
   "map": {
     "title": "Map",

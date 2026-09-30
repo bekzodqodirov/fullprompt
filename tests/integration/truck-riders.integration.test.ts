@@ -78,7 +78,7 @@ let costTypeId: string;
 /** 'customs' — the seeded code `calc_customs_cost_type_codes` names by default. */
 let customsTypeId: string;
 let formingId: string | null = null;
-const W: Record<'yw' | 'ka' | 'and' | 'tas' | 'tas2', string> = { yw: '', ka: '', and: '', tas: '', tas2: '' };
+const W: Record<'yw' | 'ka' | 'and' | 'tas' | 'tas2' | 'kg' | 'kg2', string> = { yw: '', ka: '', and: '', tas: '', tas2: '', kg: '', kg2: '' };
 const madeClients: string[] = [];
 const madeTrucks: string[] = [];
 const today = tashkentDay();
@@ -262,6 +262,9 @@ beforeAll(async () => {
   W.and = await mintWarehouse(`RA${S}`, 'UZ', 'hub');
   W.tas = await mintWarehouse(`RT${S}`, 'UZ', 'distribution');
   W.tas2 = await mintWarehouse(`RS${S}`, 'UZ', 'distribution');
+  // A transit country after Uzbekistan: a second truck that bears the price.
+  W.kg = await mintWarehouse(`RG${S}`, 'KG', 'hub');
+  W.kg2 = await mintWarehouse(`RH${S}`, 'KG', 'distribution');
 });
 
 afterAll(async () => {
@@ -412,13 +415,53 @@ describe('«keyingi yo‘l» — a carton’s whole road on the truck that bears
     expect(rows.get(t1.id)).toMatchObject({ costUsd: 150, laterUsd: 50, profitUsd: 150 });
     expect(rows.get(t3.id)).toMatchObject({ continuation: true, costUsd: 0 });
 
-    // One truck per dollar: the three rows are the month's direct cost.
+    // One truck per dollar: the three rows are these days' direct cost.
     expect(cents(rows.get(t1.id)!.costUsd + rows.get(t2.id)!.costUsd + rows.get(t3.id)!.costUsd)).toBe(
-      await directTotal('1637-01-01', '1637-01-31'),
+      await directTotal('1637-01-10', '1637-01-13'),
     );
+    // The screens' names for it, per lot: the China lot follows the first
+    // truck on both Uzbek legs, the walk-in follows nobody, and the first
+    // truck still carries a carton that may grow (answer 2a).
+    const onT2 = (await batchCarriage([t2.id])).get(t2.id)!;
+    expect(onT2.byLot.get(c.lotId)).toMatchObject({ riders: 1, follows: 1, givenBack: 1, carriers: [t1.code] });
+    expect(onT2.byLot.get(i.lotId)).toMatchObject({ riders: 1, follows: 0, givenBack: 0, carriers: [] });
+    expect((await batchCarriage([t1.id])).get(t1.id)).toMatchObject({ riders: 1, follows: 0, open: 1 });
     // …and so is the report's JAMI, with the davomi counted apart.
     const totals = tripTotals([rows.get(t1.id)!, rows.get(t2.id)!, rows.get(t3.id)!]);
     expect(totals).toMatchObject({ cost: 180, trips: 2, unpriced: 1, continuation: 1 });
+  });
+
+  it('two trucks that bear the price on one road: each carries only its own stretch, and the latest one before a leg is its carrier', async () => {
+    // China → Andijan (bears) → Tashkent (follows) → Kyrgyzstan (crosses:
+    // bears again) → inside Kyrgyzstan (follows the SECOND). Review of the
+    // round: with only one bearing truck per road, a carry with no upper
+    // bound, or the FIRST bearing truck as the carrier, passed every test.
+    const k = await mkClient('K');
+    const lot = await mkLot(k, 1, 10, W.yw);
+    const t1 = await truck([{ lotId: lot.lotId, take: 1 }], lot.codes, W.yw, W.and);
+    await cost({ scope: 'batch', batchId: t1.id, amount: 100, day: '1637-01-20' });
+    await unload(t1.id, lot.codes);
+    await finishUnload(t1.id, ctx());
+    const t2 = await truck([{ lotId: lot.lotId, take: 1 }], lot.codes, W.and, W.tas);
+    await cost({ scope: 'batch', batchId: t2.id, amount: 20, day: '1637-01-21' });
+    await unload(t2.id, lot.codes);
+    await finishUnload(t2.id, ctx());
+    const t3 = await truck([{ lotId: lot.lotId, take: 1 }], lot.codes, W.tas, W.kg);
+    await cost({ scope: 'batch', batchId: t3.id, amount: 300, day: '1637-01-22' });
+    await unload(t3.id, lot.codes);
+    await finishUnload(t3.id, ctx());
+    const t4 = await truck([{ lotId: lot.lotId, take: 1 }], lot.codes, W.kg, W.kg2);
+    await cost({ scope: 'batch', batchId: t4.id, amount: 7, day: '1637-01-23' });
+
+    const rows = await truckRows();
+    expect(rows.get(t1.id)).toMatchObject({ costUsd: 120, laterUsd: 20, continuation: false });
+    expect(rows.get(t2.id)).toMatchObject({ costUsd: 0, continuation: true });
+    expect(rows.get(t3.id)).toMatchObject({ costUsd: 307, laterUsd: 7, prevUsd: 0, continuation: false });
+    expect(rows.get(t4.id)).toMatchObject({ costUsd: 0, continuation: true });
+    expect(rows.get(t4.id)!.carriers.map((row) => row.code)).toEqual([t3.code]);
+    expect(rows.get(t2.id)!.carriers.map((row) => row.code)).toEqual([t1.code]);
+    const sum = cents([t1, t2, t3, t4].reduce((acc, t) => acc + rows.get(t.id)!.costUsd, 0));
+    expect(sum).toBe(await directTotal('1637-01-20', '1637-01-23'));
   });
 });
 

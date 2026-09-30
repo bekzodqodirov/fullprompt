@@ -1345,6 +1345,9 @@ export async function profitByBatch(from: string, to: string) {
     .orderBy(sql`${batches.departedAt} DESC`);
 
   const ids = rows.map((row) => row.batchId);
+  // The carriage is its own statement, run beside the landed cost: measured
+  // on the 120k-carton copy, one statement with both (the shared CTEs then
+  // materialised) was slower in wall time, 4.2-4.9 s against 3.6-3.8 s.
   const [landed, carriage, loads, perClient] = await Promise.all([
     batchLandedCostTotals(ids),
     batchCarriage(ids),
@@ -1381,6 +1384,10 @@ export async function profitByBatch(from: string, to: string) {
     const internal = Boolean(row.internal);
     const carried = carriage.get(row.batchId);
     const profit = internal ? null : money(revenue - cost);
+    const continuation = !internal && isContinuationTrip(carried);
+    // A «davomi» nobody priced has a $0 row and no result: no margin and no
+    // per-kilo, never a «0» that reads as a trip that broke even.
+    const noResult = profit === null || (continuation && !(Math.abs(revenue) > 0.009));
     const load = loads.get(row.batchId);
     const kg = Math.round((load?.kg ?? 0) * 10) / 10;
     const m3 = Math.round((load?.m3 ?? 0) * 1000) / 1000;
@@ -1422,14 +1429,14 @@ export async function profitByBatch(from: string, to: string) {
        * A «davomi» truck: all its cargo's price and road sit on an earlier
        * truck (`isContinuationTrip`), so its row is $0 and never «narx yo'q».
        */
-      continuation: !internal && isContinuationTrip(carried),
+      continuation,
       /** Those trucks, by code — where this truck's cargo is priced. */
       carriers: carried?.carriers ?? [],
       unallocatedUsd: money(row.unallocatedUsd),
       profitUsd: profit,
-      marginPct: profit === null ? null : marginPct(profit, revenue),
-      profitPerKg: profit === null ? null : kg ? Math.round((profit / kg) * 100) / 100 : 0,
-      profitPerM3: profit === null ? null : m3 ? Math.round((profit / m3) * 100) / 100 : 0,
+      marginPct: noResult ? null : marginPct(profit, revenue),
+      profitPerKg: noResult ? null : kg ? Math.round((profit / kg) * 100) / 100 : 0,
+      profitPerM3: noResult ? null : m3 ? Math.round((profit / m3) * 100) / 100 : 0,
     };
   });
 }

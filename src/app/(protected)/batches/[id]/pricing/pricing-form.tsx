@@ -145,9 +145,13 @@ export function PricingForm({
             </p>
           )}
           <div className="flex flex-wrap gap-2">
+            {/* Disabled while the save runs: the alert stays up until the
+                answer, and a second tap here would post a second charge
+                (review — every price for a davomi client comes through here). */}
             <button
               type="button"
-              className="btn-primary px-3"
+              disabled={pending}
+              className="btn-primary px-3 disabled:opacity-60"
               data-testid="pricing-deviation-confirm"
               onClick={() => {
                 confirmed.current = true;

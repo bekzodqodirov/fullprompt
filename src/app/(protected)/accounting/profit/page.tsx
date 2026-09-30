@@ -13,7 +13,7 @@ import {
   unbatchedMoney,
 } from '@/modules/wms/accounting/reports';
 import { resolvePeriod } from '@/modules/wms/accounting/period';
-import { tripTotals } from '@/modules/wms/reports/dashboard-math';
+import { tripKind, tripTotals } from '@/modules/wms/reports/dashboard-math';
 import { PeriodForm } from '../period-form';
 import { PnlGapsNote } from '../pnl-gaps';
 
@@ -219,7 +219,9 @@ export default async function ProfitPage({
                     <td className="p-2 text-right text-ink-500" data-testid="profit-internal">
                       —
                     </td>
-                  ) : 'continuation' in row && row.continuation && row.revenueUsd < 0.01 ? (
+                  ) : 'continuation' in row &&
+                    tripKind({ internal: row.internal, continuation: row.continuation, revenueUsd: row.revenueUsd, profitUsd: row.profitUsd }) ===
+                      'continuation' ? (
                     // «Davomi» (2026-09-30): its cost is the priced truck's
                     // «keyingi yo'l» — a $0 here, not a result.
                     <td className="p-2 text-right text-xs text-ink-500" data-testid="profit-continuation">

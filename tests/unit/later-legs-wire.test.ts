@@ -42,7 +42,36 @@ describe('one «bears the price» rule for the gate and the tannarx', () => {
     expect(ctes).toContain("${bearsPriceSql('ro', 'rd', 'rw')} AS bears");
     // The move is dropped on the giving truck in the same fence that adds it.
     const fence = costing.slice(costing.indexOf('function landedAllocationsSql'), costing.indexOf('function carriageCtesSql'));
-    expect(fence).toContain('AND gb.box_id IS NULL');
-    expect(fence).toContain('cr.upto IS NOT NULL AND eb.departed_at > c.at AND eb.departed_at <= cr.upto');
+    expect(fence).toContain('AND NOT m.given');
+    expect(fence).toContain('m.upto IS NOT NULL AND eb.departed_at > m.at AND eb.departed_at <= m.upto');
+  });
+});
+
+/**
+ * The screens' halves of «keyingi yo'l» (review of the round). Source-shape:
+ * each is a line in a server page or a client form no integration test can
+ * press, and each shipped wrong once.
+ */
+describe('the screens ask the rule, not a copy of it', () => {
+  const pricing = read('src/app/(protected)/batches/[id]/pricing/page.tsx');
+  const form = read('src/app/(protected)/batches/[id]/pricing/pricing-form.tsx');
+  const money = read('src/app/(protected)/dashboard/sections/money.tsx');
+  const profit = read('src/app/(protected)/accounting/profit/page.tsx');
+
+  it('a price for a client whose cargo follows an earlier truck asks first (4a), and the confirm cannot post twice', () => {
+    expect(pricing).toMatch(/secondBill=\{/);
+    expect(form).toContain('if (!secondBill && !deviates) return;');
+    const confirm = form.slice(form.indexOf('data-testid="pricing-deviation-confirm"') - 200, form.indexOf('data-testid="pricing-deviation-confirm"'));
+    expect(confirm).toContain('disabled={pending}');
+  });
+
+  it('a $0 tannarx that IS the rule does not say «no costs entered»', () => {
+    expect(pricing).toMatch(/costUsd === 0 && !followsOf\(group\)\?\.allGiven/);
+  });
+
+  it('the dashboard bars and the profit page decide «davomi» by tripKind, as the totals do', () => {
+    expect(money).toContain("kind !== 'internal' && kind !== 'continuation'");
+    expect(money).not.toContain('!row.continuation');
+    expect(profit).toMatch(/tripKind\(\{[^}]*continuation: row\.continuation[^}]*\}\) ===\s*'continuation'/);
   });
 });

@@ -146,14 +146,21 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
   // which truck carries them.
   const followsOf = (group: { lots: BatchLot[] }) => {
     let n = 0;
+    let riders = 0;
+    let given = 0;
     const codes = new Set<string>();
     for (const lot of group.lots) {
       const row = carriage?.byLot.get(lot.lotId);
-      if (!row || row.follows === 0) continue;
+      if (!row) continue;
+      riders += row.riders;
+      given += row.givenBack;
+      if (row.follows === 0) continue;
       n += row.follows;
       for (const code of row.carriers) codes.add(code);
     }
-    return n > 0 ? { n, codes: [...codes].sort().join(', ') } : null;
+    // `allGiven`: every carton of theirs aboard handed its money to the
+    // earlier truck — a $0 tannarx here is the rule, not a missing bill.
+    return n > 0 ? { n, total: riders, allGiven: riders > 0 && given === riders, codes: [...codes].sort().join(', ') } : null;
   };
   // The price the seller SOLD at (his item 7): the deal's quote, and — for
   // the owner and the accountant only (law 4: the VED who computed the floor
@@ -344,6 +351,11 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                 📦 {lot.onBatch}
                 {lot.onBatch < lot.lotBoxCount && `/${lot.lotBoxCount}`} · {lot.kg} kg · {lot.m3} m³
               </p>
+              {(carriage?.byLot.get(lot.lotId)?.follows ?? 0) > 0 && (
+                <p className="text-xs font-semibold text-ink-700" data-testid="lot-follows">
+                  ↪ {tbc('tileContinuationLine', { codes: carriage!.byLot.get(lot.lotId)!.carriers.join(', ') })}
+                </p>
+              )}
               {(lot.lostCount > 0 || lot.missingCount > 0 || lot.leftBehindCount > 0) && (
                 <p className="text-xs font-semibold text-warn" data-testid="lot-fate">
                   ⚠{' '}
@@ -717,7 +729,12 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                 </>
               )}
             </div>
-            {full && costUsd === 0 && <p className="text-xs text-warn">⚠️ {t('noCostsYet')}</p>}
+            {/* Not when the $0 IS the rule: cargo whose money went to the
+                truck that bears its price (a false «no costs» sent the
+                accountant to type the bill a second time — review). */}
+            {full && costUsd === 0 && !followsOf(group)?.allGiven && (
+              <p className="text-xs text-warn">⚠️ {t('noCostsYet')}</p>
+            )}
 
             {/* 0104: cartons left THIS truck after its price — short-loaded,
                 or scanned aboard and found back at the origin (Q2), or taken
@@ -889,14 +906,17 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
             })()}
             {!internal && followsOf(group) && (
               <p className="text-xs font-semibold text-ink-700" data-testid="pricing-client-continuation">
-                ↪ {t('continuationClient', { codes: followsOf(group)!.codes })}
+                ↪ {t('continuationClient', { n: followsOf(group)!.n, total: followsOf(group)!.total, codes: followsOf(group)!.codes })}
               </p>
             )}
             {!internal && (
               <PricingForm
                 clientId={group.clientId}
                 batchId={id}
-                secondBill={followsOf(group)}
+                secondBill={(() => {
+                  const follows = followsOf(group);
+                  return follows ? { n: follows.n, codes: follows.codes } : null;
+                })()}
                 currencies={currencyCodes}
                 today={today}
                 expectedUsd={(() => {

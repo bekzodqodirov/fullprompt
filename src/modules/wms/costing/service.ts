@@ -1471,7 +1471,7 @@ export async function batchLandedCostByClient(batchId: string): Promise<Map<stri
     SELECT rc.client_id,
            coalesce(sum(ca.amount_usd), 0) AS total_usd,
            coalesce(sum(ca.amount_usd) FILTER (WHERE ce.batch_id = m.batch_id), 0) AS batch_usd,
-           coalesce(sum(ca.amount_usd) FILTER (WHERE cr.upto IS NOT NULL AND eb.departed_at > c.at), 0) AS later_usd
+           coalesce(sum(ca.amount_usd) FILTER (WHERE m.upto IS NOT NULL AND eb.departed_at > m.at), 0) AS later_usd
       ${landed.joins}
       JOIN receipt_lots rl ON rl.id = bx.lot_id
       JOIN receipts rc ON rc.id = rl.receipt_id
@@ -1545,33 +1545,26 @@ export async function batchLandedCostByClient(batchId: string): Promise<Map<stri
  */
 function landedAllocationsSql(list: SQL): { with: SQL; joins: SQL; where: SQL } {
   return {
-    with: sql`
-      ${carriageCtesSql(list)},
-      prev_priced AS (
-        SELECT t.batch_id, t.box_id, t.prev_nonint_at AS prev_at
-          FROM rides t
-          JOIN members m ON m.batch_id = t.batch_id AND m.box_id = t.box_id
-          JOIN clock c ON c.batch_id = t.batch_id AND NOT c.internal
-         WHERE t.prev_nonint_at IS NOT NULL
-      )`,
+    with: carriageCtesSql(list),
+    // ONE row per (truck, carton) — `mx` — joined to the allocations, and no
+    // CTE joined to another here: joined as three LEFT JOINs of CTE scans the
+    // planner guessed one row each and nested loops over every allocation of
+    // every listed truck (measured on the 120k-carton copy: 120 trucks 0.3 s
+    // → 8.5 s, the profit page 10-15 s; review of the round).
     joins: sql`
-      FROM members m
-      JOIN clock c ON c.batch_id = m.batch_id
+      FROM mx m
       JOIN boxes bx ON bx.id = m.box_id
       JOIN cost_allocations ca ON ca.box_id = m.box_id
       JOIN cost_entries ce ON ce.id = ca.cost_entry_id
-      LEFT JOIN batches eb ON eb.id = ce.batch_id
-      LEFT JOIN prev_priced pp ON pp.batch_id = m.batch_id AND pp.box_id = m.box_id
-      LEFT JOIN given_back gb ON gb.batch_id = m.batch_id AND gb.box_id = m.box_id
-      LEFT JOIN carried cr ON cr.batch_id = m.batch_id AND cr.box_id = m.box_id`,
+      LEFT JOIN batches eb ON eb.id = ce.batch_id`,
     where: sql`ce.voided_at IS NULL
-       AND gb.box_id IS NULL
+       AND NOT m.given
        AND (
          ce.batch_id = m.batch_id
-         OR (ce.batch_id IS NULL AND pp.prev_at IS NULL)
-         OR (eb.departed_at IS NOT NULL AND eb.departed_at <= c.at
-             AND (pp.prev_at IS NULL OR eb.departed_at > pp.prev_at))
-         OR (cr.upto IS NOT NULL AND eb.departed_at > c.at AND eb.departed_at <= cr.upto)
+         OR (ce.batch_id IS NULL AND m.prev_at IS NULL)
+         OR (eb.departed_at IS NOT NULL AND eb.departed_at <= m.at
+             AND (m.prev_at IS NULL OR eb.departed_at > m.prev_at))
+         OR (m.upto IS NOT NULL AND eb.departed_at > m.at AND eb.departed_at <= m.upto)
        )`,
   };
 }
@@ -1581,29 +1574,39 @@ function landedAllocationsSql(list: SQL): { with: SQL; joins: SQL; where: SQL } 
  * carton's road — shared by the fence and by `batchCarriage`, which names it
  * on the screens, so the two can never disagree (#513).
  *
- * - `clock` — each listed truck at coalesce(departed_at, now()), and whether
- *   it is an internal leg.
- * - `rides` — every ride of the member boxes, with its departure, whether it
- *   is internal, and whether it bears THAT carton's price (`bearsPriceSql`,
- *   by the carton's prixod warehouse).
- * - `follows` — a member pair whose truck does not bear the carton's price
- *   while an earlier truck that does already carried it: the price and the
- *   road are that truck's. `given_back` is the part that has DEPARTED — the
- *   money moves only then.
- * - `carried` — a departed price-bearing member pair and how far forward it
- *   carries: the last departed non-bearing ride of the carton before its next
- *   price-bearing truck (answer 5a: every Uzbek leg after Andijan).
+ * - `rides` — every ride of the member boxes (all their trucks, listed or
+ *   not), with its departure, whether it is internal, whether it bears THAT
+ *   carton's price (`bearsPriceSql`, by the carton's prixod warehouse), and,
+ *   by windows over the box's own rides, the previous non-internal departure
+ *   and the previous price-bearing trucks.
+ * - `legs`/`segs` — the carton's road cut into SEGMENTS, one per
+ *   price-bearing truck: the bearing ride and the non-bearing rides after it,
+ *   up to the next bearing one; `seg_upto` is the segment's last departed
+ *   non-bearing ride.
+ * - `mx` — one row per listed (truck, carton): `follows` (this truck does
+ *   not bear the price and an earlier truck did — the price and the road are
+ *   that `carrier_id`'s), `given` (the part that has DEPARTED — the money
+ *   moves only then), `upto` (how far forward a departed bearing truck
+ *   carries), `prev_at` and `at` for «shu reysgacha».
+ *
+ * Windows and no joins between CTEs, on purpose: every CTE-on-CTE join was
+ * estimated at one row and nested over the allocations (#1246's review).
  */
 function carriageCtesSql(list: SQL): SQL {
   return sql`
     ${riderCtesSql(list)},
-    clock AS (
-      SELECT t.id AS batch_id, coalesce(t.departed_at, now()) AS at,
-             ${internalLegSql('tow', 'tdw')} AS internal
-        FROM batches t
-        JOIN warehouses tow ON tow.id = t.origin_warehouse_id
-        JOIN warehouses tdw ON tdw.id = t.dest_warehouse_id
-       WHERE t.id IN (${list})
+    -- Where each carton's prixod was received — the one per-carton fact the
+    -- price rule needs. From the candidate list (its estimate is sane) and
+    -- not per ride: joined per ride the planner guessed 200 rows and walked
+    -- boxes → lots → receipts by index 120k times (measured, ~0.9 s a year).
+    -- Every box_rides box is a candidate, so nothing is lost.
+    box_home AS (
+      SELECT hb.id AS box_id, hw.country
+        FROM boxes hb
+        JOIN receipt_lots hl ON hl.id = hb.lot_id
+        JOIN receipts hr ON hr.id = hl.receipt_id
+        JOIN warehouses hw ON hw.id = hr.warehouse_id
+       WHERE hb.id IN (SELECT box_id FROM rider_cand)
     ),
     rides AS (
       SELECT r.batch_id, r.box_id, rb.departed_at,
@@ -1611,46 +1614,55 @@ function carriageCtesSql(list: SQL): SQL {
              ${bearsPriceSql('ro', 'rd', 'rw')} AS bears,
              -- Windows over the box's own rides, strictly before this one
              -- (EXCLUDE GROUP drops the ride and its same-instant peers; a
-             -- forming ride sorts last and sees every departure). One pass,
-             -- not a correlated probe per ride: measured 5× slower that way.
+             -- forming ride sorts last and sees every departure). A window
+             -- aggregate reads its frame in the window's ORDER BY, so the
+             -- array's last element is the LATEST price-bearing truck before.
              max(rb.departed_at) FILTER (WHERE NOT ${internalLegSql('ro', 'rd')}) OVER w AS prev_nonint_at,
-             max(rb.departed_at) FILTER (WHERE ${bearsPriceSql('ro', 'rd', 'rw')}) OVER w AS prev_bear_at
+             array_agg(r.batch_id) FILTER (WHERE ${bearsPriceSql('ro', 'rd', 'rw')}) OVER w AS prev_bear_ids
         FROM box_rides r
-        JOIN (SELECT DISTINCT box_id FROM members) mb ON mb.box_id = r.box_id
+        JOIN box_home rw ON rw.box_id = r.box_id
         JOIN batches rb ON rb.id = r.batch_id
         JOIN warehouses ro ON ro.id = rb.origin_warehouse_id
         JOIN warehouses rd ON rd.id = rb.dest_warehouse_id
-        JOIN boxes hb ON hb.id = r.box_id
-        JOIN receipt_lots hl ON hl.id = hb.lot_id
-        JOIN receipts hr ON hr.id = hl.receipt_id
-        JOIN warehouses rw ON rw.id = hr.warehouse_id
       WINDOW w AS (PARTITION BY r.box_id ORDER BY rb.departed_at
                    RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW EXCLUDE GROUP)
     ),
-    -- Every non-bearing ride of a member box (on ANY truck, listed or not)
-    -- and the price-bearing truck before it — one row per (truck, box).
-    chain AS (
-      SELECT DISTINCT ON (h.batch_id, h.box_id) h.batch_id, h.box_id, h.departed_at, p.batch_id AS carrier_id
-        FROM rides h
-        JOIN rides p ON p.box_id = h.box_id AND p.bears AND p.departed_at = h.prev_bear_at
-       WHERE NOT h.internal AND NOT h.bears
-       ORDER BY h.batch_id, h.box_id, p.batch_id
+    -- Each ride's SEGMENT of the carton's road: a price-bearing ride starts
+    -- one (itself), a non-bearing ride belongs to the bearing truck before it
+    -- (its carrier), an internal leg to none.
+    legs AS (
+      SELECT rides.*,
+             CASE WHEN bears THEN batch_id
+                  WHEN NOT internal THEN prev_bear_ids[cardinality(prev_bear_ids)]
+             END AS seg
+        FROM rides
     ),
-    follows AS (
-      SELECT f.batch_id, f.box_id, f.departed_at, f.carrier_id
-        FROM chain f
-        JOIN members m ON m.batch_id = f.batch_id AND m.box_id = f.box_id
+    -- How far forward each segment runs: its last departed non-bearing ride
+    -- (answer 5a: every Uzbek leg after, until the next price-bearing truck).
+    segs AS (
+      SELECT legs.*,
+             max(departed_at) FILTER (WHERE NOT bears AND NOT internal AND departed_at IS NOT NULL)
+               OVER (PARTITION BY box_id, seg) AS seg_upto
+        FROM legs
     ),
-    given_back AS (
-      SELECT batch_id, box_id FROM follows WHERE departed_at IS NOT NULL
-    ),
-    -- How far forward a price-bearing truck carries each carton: the last
-    -- departed ride whose carrier it is (answer 5a: every Uzbek leg after).
-    carried AS (
-      SELECT carrier_id AS batch_id, box_id, max(departed_at) AS upto
-        FROM chain
-       WHERE departed_at IS NOT NULL
-       GROUP BY carrier_id, box_id
+    -- Everything the fence asks about one LISTED (truck, carton) pair, on one
+    -- row with no join between CTEs (joined, the planner guessed one row per
+    -- CTE scan and nested loops over every allocation — measured 0.3 s → 10 s
+    -- on the 120k-carton copy): the truck's clock; the carton's previous
+    -- non-internal truck (none for an internal leg — the plain fence); whether
+    -- this truck follows an earlier price-bearing one, and which; whether the
+    -- money has moved (it departed); how far forward a bearing truck carries.
+    mx AS (
+      SELECT batch_id, box_id,
+             coalesce(departed_at, now()) AS at,
+             internal,
+             CASE WHEN internal THEN NULL ELSE prev_nonint_at END AS prev_at,
+             (NOT internal AND NOT bears AND seg IS NOT NULL) AS follows,
+             (NOT internal AND NOT bears AND seg IS NOT NULL AND departed_at IS NOT NULL) AS given,
+             CASE WHEN NOT internal AND NOT bears THEN seg END AS carrier_id,
+             CASE WHEN bears AND departed_at IS NOT NULL THEN seg_upto END AS upto
+        FROM segs
+       WHERE batch_id IN (${list})
     )`;
 }
 
@@ -1674,7 +1686,7 @@ export interface BatchCarriage {
   /** The trucks the followers' price sits on, by code. */
   carriers: { batchId: string; code: string }[];
   /** The same per lot. */
-  byLot: Map<string, { follows: number; givenBack: number; carriers: string[] }>;
+  byLot: Map<string, { riders: number; follows: number; givenBack: number; carriers: string[] }>;
 }
 
 /**
@@ -1683,38 +1695,47 @@ export interface BatchCarriage {
  * tannarx did. One grouped read for many trucks («Partiya foydasi», #432).
  */
 export async function batchCarriage(batchIds: string[]): Promise<Map<string, BatchCarriage>> {
-  const out = new Map<string, BatchCarriage>();
   const ids = [...new Set(batchIds)];
-  if (ids.length === 0) return out;
-  const list = sql.join(
-    ids.map((id) => sql`${id}::uuid`),
-    sql`, `,
-  );
+  if (ids.length === 0) return new Map();
+  const list = uuidList(ids);
   const rows = (await db.execute(sql`
     WITH ${carriageCtesSql(list)}
+    ${carriageSelectSql()}
+  `)) as unknown as CarriageRow[];
+  return carriageFrom(rows);
+}
+
+/** One row of `carriageSelectSql`: a (truck, lot) of the listed trucks. */
+interface CarriageRow {
+  batch_id: string;
+  lot_id: string;
+  riders: string;
+  follows: string;
+  given_back: string;
+  open: string;
+  carriers: { id: string; code: string }[];
+}
+
+/** The per-(truck, lot) counts over `mx` — shared by the two readers. */
+function carriageSelectSql(): SQL {
+  return sql`
     SELECT m.batch_id, bx.lot_id,
            count(*) AS riders,
-           count(*) FILTER (WHERE f.carrier_id IS NOT NULL) AS follows,
-           count(*) FILTER (WHERE f.carrier_id IS NOT NULL AND f.departed_at IS NOT NULL) AS given_back,
-           count(*) FILTER (WHERE f.carrier_id IS NULL AND bx.status NOT IN ('issued', 'lost', 'void')) AS open,
+           count(*) FILTER (WHERE m.follows) AS follows,
+           count(*) FILTER (WHERE m.given) AS given_back,
+           count(*) FILTER (WHERE NOT m.follows AND bx.status NOT IN ('issued', 'lost', 'void')) AS open,
            coalesce(
              json_agg(DISTINCT jsonb_build_object('id', cb.id, 'code', cb.code)) FILTER (WHERE cb.id IS NOT NULL),
              '[]'
            ) AS carriers
-      FROM members m
+      FROM mx m
       JOIN boxes bx ON bx.id = m.box_id
-      LEFT JOIN follows f ON f.batch_id = m.batch_id AND f.box_id = m.box_id
-      LEFT JOIN batches cb ON cb.id = f.carrier_id
-     GROUP BY m.batch_id, bx.lot_id
-  `)) as unknown as {
-    batch_id: string;
-    lot_id: string;
-    riders: string;
-    follows: string;
-    given_back: string;
-    open: string;
-    carriers: { id: string; code: string }[];
-  }[];
+      LEFT JOIN batches cb ON cb.id = m.carrier_id
+     GROUP BY m.batch_id, bx.lot_id`;
+}
+
+function carriageFrom(rows: CarriageRow[]): Map<string, BatchCarriage> {
+  const out = new Map<string, BatchCarriage>();
   for (const row of rows) {
     const fresh: BatchCarriage = { riders: 0, follows: 0, givenBack: 0, open: 0, carriers: [], byLot: new Map() };
     const entry = out.get(row.batch_id) ?? fresh;
@@ -1728,6 +1749,7 @@ export async function batchCarriage(batchIds: string[]): Promise<Map<string, Bat
       }
     }
     entry.byLot.set(row.lot_id, {
+      riders: Number(row.riders),
       follows: Number(row.follows),
       givenBack: Number(row.given_back),
       carriers: row.carriers.map((carrier) => carrier.code).sort(),
@@ -1737,6 +1759,12 @@ export async function batchCarriage(batchIds: string[]): Promise<Map<string, Bat
   for (const entry of out.values()) entry.carriers.sort((a, b) => a.code.localeCompare(b.code));
   return out;
 }
+
+const uuidList = (ids: string[]) =>
+  sql.join(
+    ids.map((id) => sql`${id}::uuid`),
+    sql`, `,
+  );
 
 /** One truck's `batchCarriage`, memoised per request (the card and its tabs). */
 export const batchCarriageOf = cache(async function batchCarriageOf(batchId: string): Promise<BatchCarriage> {
@@ -1791,24 +1819,38 @@ export const batchLandedCostByLot = cache(async function batchLandedCostByLot(ba
 export async function batchLandedCostTotals(
   batchIds: string[],
 ): Promise<Map<string, Map<string, LotLandedCost>>> {
-  const out = new Map<string, Map<string, LotLandedCost>>();
   const ids = [...new Set(batchIds)];
-  if (ids.length === 0) return out;
-  const list = sql.join(
-    ids.map((id) => sql`${id}::uuid`),
-    sql`, `,
-  );
-  const landed = landedAllocationsSql(list);
+  if (ids.length === 0) return new Map();
+  const landed = landedAllocationsSql(uuidList(ids));
   const rows = (await db.execute(sql`
     WITH ${landed.with}
+    ${landedSelectSql(landed)}
+  `)) as unknown as LandedRow[];
+  return landedFrom(rows);
+}
+
+/** One row of `landedSelectSql`: a (truck, lot) of the listed trucks. */
+interface LandedRow {
+  batch_id: string;
+  lot_id: string;
+  total_usd: string;
+  batch_usd: string;
+  later_usd: string;
+}
+
+function landedSelectSql(landed: { joins: SQL; where: SQL }): SQL {
+  return sql`
     SELECT m.batch_id, bx.lot_id,
            coalesce(sum(ca.amount_usd), 0) AS total_usd,
            coalesce(sum(ca.amount_usd) FILTER (WHERE ce.batch_id = m.batch_id), 0) AS batch_usd,
-           coalesce(sum(ca.amount_usd) FILTER (WHERE cr.upto IS NOT NULL AND eb.departed_at > c.at), 0) AS later_usd
+           coalesce(sum(ca.amount_usd) FILTER (WHERE m.upto IS NOT NULL AND eb.departed_at > m.at), 0) AS later_usd
       ${landed.joins}
      WHERE ${landed.where}
-     GROUP BY m.batch_id, bx.lot_id
-  `)) as unknown as { batch_id: string; lot_id: string; total_usd: string; batch_usd: string; later_usd: string }[];
+     GROUP BY m.batch_id, bx.lot_id`;
+}
+
+function landedFrom(rows: LandedRow[]): Map<string, Map<string, LotLandedCost>> {
+  const out = new Map<string, Map<string, LotLandedCost>>();
   for (const row of rows) {
     const byLot = out.get(row.batch_id) ?? new Map<string, LotLandedCost>();
     byLot.set(row.lot_id, {
@@ -2280,7 +2322,7 @@ export async function batchClientCostBreakdown(
     WITH ${landed.with}
     SELECT ca.client_id, ct.name AS type_name, eb.code AS batch_code,
            er.number AS receipt_number, crt.code AS crate_code, pk.code AS pickup_code,
-           (cr.upto IS NOT NULL AND eb.departed_at > c.at) AS later,
+           (m.upto IS NOT NULL AND eb.departed_at > m.at) AS later,
            sum(ca.amount_usd) AS usd
       ${landed.joins}
       JOIN cost_types ct ON ct.id = ce.cost_type_id
