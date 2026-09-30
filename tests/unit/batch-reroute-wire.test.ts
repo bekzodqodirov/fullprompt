@@ -114,9 +114,8 @@ describe('(a) the one writer of a truck’s destination', () => {
         // `.set(` must belong to THIS update: nothing but whitespace between.
         if (/^\.update\(batches\)\s*\.set\(/.test(after) && /\bdestWarehouseId\b/.test(set)) hits.push(path);
       }
-      for (const _ of text.matchAll(/UPDATE\s+batches\s+SET\b((?:(?!\bWHERE\b)[^`])*?)\bdest_warehouse_id\s*=/gi)) {
-        hits.push(`${path} (raw)`);
-      }
+      const raw = text.match(/UPDATE\s+batches\s+SET\b((?:(?!\bWHERE\b)[^`])*?)\bdest_warehouse_id\s*=/gi) ?? [];
+      for (let i = 0; i < raw.length; i += 1) hits.push(`${path} (raw)`);
     }
     // The parse found the codebase's truck writers at all (finish, depart,
     // the pin, the flags…) — a scan that sees none proves nothing.
