@@ -2379,7 +2379,9 @@ archive (one bracketed `batchTextMatchSql`) and the bot (last). REROUTE: one wri
 a warehouse an earlier reroute told «keladi»); phone sync is per truck
 (`scanning/sync.ts` — a rerouted truck no longer jams the outbox), every unload row carries
 `expectDestId` and is judged at scan time, office doors post `seenDestWarehouseId`.
-Money untouched by construction (countries). Questions for him in the round's reply.
+Money untouched by construction (countries). His answer to the round's eleven
+questions: «Hammasi standard» (#1256) — every ⭐ checked against the shipped code
+first (11/11), the four that only reading proved now pinned by tests.
 
 **Latest migration: 0121** (`batch_rename`, `when` …100; ledger must reach **122**). Before
 it: 0120 (`no_login_staff`, `when` …099). Before

@@ -11,6 +11,7 @@ import {
   boxes,
   boxMovements,
   clients,
+  events,
   receiptLots,
   receipts,
   scanEvents,
@@ -327,6 +328,42 @@ describe('on the road: a reason, and a name the bot recognises', () => {
     const plate = `01A${tag()}BA`;
     expect(await outcome(rename(t.id, plate, seen, why))).toBe('ok');
     expect(await codeOf(t.id)).toBe(plate);
+  });
+});
+
+describe('his «hammasi standart» (2026-09-30) — the defaults he accepted, pinned', () => {
+  it('(s1) a rename at either stage tells nobody — no event is written, so the drain has nothing to send', async () => {
+    const forming = await mintTruck({ status: 'forming', cartons: 1 });
+    const road = await mintTruck({ status: 'in_transit', cartons: 1 });
+    // Every event about these trucks, named by the row or anywhere in the
+    // payload: a rename message would carry the truck in one or the other.
+    const aboutThem = async () => {
+      const [row] = await db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(events)
+        .where(
+          sql`${events.entityId} IN (${forming.id}::uuid, ${road.id}::uuid)
+              OR ${events.payload}::text LIKE ${`%${forming.id}%`}
+              OR ${events.payload}::text LIKE ${`%${road.id}%`}`,
+        );
+      return row!.n;
+    };
+    const before = await aboutThem();
+    expect(await outcome(rename(forming.id, `GSR ${tag()}`, { code: forming.code, stage: 'loading' }))).toBe('ok');
+    expect(await outcome(rename(road.id, `KA-${tag()}`, { code: road.code, stage: 'road' }, 'hujjat'))).toBe('ok');
+    expect(await aboutThem()).toBe(before);
+  });
+
+  it('(s4) before departure a Cyrillic look-alike is SAVED (the form only warns); on the road it is refused', async () => {
+    const forming = await mintTruck({ status: 'forming', cartons: 1 });
+    // «КА» here is Cyrillic: on screen it reads as KA, to the bot and ⌘K it does not.
+    const cyrillic = `\u041a\u0410-${tag()}`;
+    expect(await outcome(rename(forming.id, cyrillic, { code: forming.code, stage: 'loading' }))).toBe('ok');
+    expect(await codeOf(forming.id)).toBe(cyrillic);
+    const road = await mintTruck({ status: 'in_transit', cartons: 1 });
+    expect(await outcome(rename(road.id, `\u041a\u0410-${tag()}`, { code: road.code, stage: 'road' }, 'hujjat'))).toBe(
+      'code_cyrillic',
+    );
   });
 });
 

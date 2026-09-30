@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## Partiya nomi va yo'nalish: 11 savolga «hammasi standart» — 2026-09-30
+
+Migratsiya yo'q, dastur ishlashi o'zgarmadi.
+
+- 11 savolning hammasiga «standart» deb javob berdingiz. Har bir standart kodda aynan shunday ishlashi alohida tekshirildi: 11 tadan 11 tasi to'g'ri.
+- Endi bular qat'iy qoida:
+  - Partiya nomi o'zgarganda Telegramga xabar ketmaydi.
+  - Jo'nashdan oldin nom erkin: kirillcha harf bo'lsa, faqat ogohlantiradi va saqlaydi.
+  - Faqat yo'lda ishlatilgan nom band qoladi.
+  - Nomi o'zgargandan keyin yuklangan hujjatlar yangi nom bilan chiqadi.
+  - Yo'nalish o'zgarganda xabar faqat uch guruhga boradi: yangi sklad xodimlari, logistlar va oldin «sizga keladi» deyilgan sklad. Rejadagi birinchi skladga, adminlarga va VEDga xabar bormaydi.
+  - «Agentga yuborildi» belgisi o'zgarmaydi.
+  - Boshqa davlat skladi ro'yxatda chiqmaydi va rad etiladi.
+- Shulardan to'rttasini oldin hech qaysi test tekshirmas edi. Endi test tekshiradi: nom o'zgarganda xabar ketmasligi, jo'nashdan oldin kirillcha nom saqlanishi, VED va eski skladga bog'langan logistga xabar bormasligi, boshqa davlat skladi ro'yxatda yo'qligi.
+
 ## Partiya nomi yo'lda ham o'zgaradi, yo'ldagi mashinaning qabul skladi o'zgaradi — 2026-09-30
 
 **Migratsiya 0121** (faqat ikkita indeks, yangi ustun yo'q). Yangilangandan keyin ledger

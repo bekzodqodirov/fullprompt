@@ -94,7 +94,7 @@ const W: Record<'org' | 'a' | 'b' | 'c' | 'cn' | 'off' | 'odd', { id: string; co
 const demo: Record<'KA' | 'TAS1' | 'TAS2', string> = { KA: '', TAS1: '', TAS2: '' };
 type Person = RerouteActor;
 const P = {} as Record<
-  'logistA' | 'logistB' | 'logistFar' | 'plannerAtA' | 'plannerAtB' | 'opA' | 'opB' | 'opC' | 'admin',
+  'logistA' | 'logistB' | 'logistFar' | 'plannerAtA' | 'plannerAtB' | 'opA' | 'opB' | 'opC' | 'admin' | 'ved',
   Person
 >;
 const madeUsers: string[] = [];
@@ -280,6 +280,8 @@ beforeAll(async () => {
   P.opB = await mintPerson('op B', ['warehouse_operator'], [W.b.id]);
   P.opC = await mintPerson('op C', ['warehouse_operator'], [W.c.id]);
   P.admin = await mintPerson('admin', ['admin']);
+  // The VED: his «hammasi standart» answered 10d — no message, nothing reopened.
+  P.ved = await mintPerson('ved', ['ved_manager']);
 
   const [client] = await db
     .insert(clients)
@@ -746,7 +748,10 @@ describe('7 — who hears it (the owner’s 4a)', () => {
     const first = await notified(t.id, 0);
     expect(first.get(P.opB.id)).toBe('to');
     expect(first.get(P.logistB.id)).toBe('logist');
-    for (const nobody of [P.opA.id, P.admin.id, P.logistA.id, P.logistFar.id, P.opC.id]) {
+    // His «hammasi standart» (2026-09-30), pinned: the planned warehouse (6b),
+    // a logist scoped only to it (8b), the admins (9b) and the VED (10d) —
+    // none of them is told on a first reroute.
+    for (const nobody of [P.opA.id, P.admin.id, P.logistA.id, P.logistFar.id, P.opC.id, P.plannerAtA.id, P.ved.id]) {
       expect(first.has(nobody), nobody).toBe(false);
     }
 
@@ -759,6 +764,9 @@ describe('7 — who hears it (the owner’s 4a)', () => {
     // The originally planned warehouse is not told (a question to the owner).
     expect(second.has(P.opA.id)).toBe(false);
     expect(second.has(P.logistB.id)).toBe(false);
+    expect(second.has(P.plannerAtA.id)).toBe(false);
+    expect(second.has(P.admin.id)).toBe(false);
+    expect(second.has(P.ved.id)).toBe(false);
 
     const [event] = await db
       .select({ payload: events.payload })
@@ -899,6 +907,8 @@ describe('10 — the doors as the buttons press them', () => {
     const all = await rerouteTargets(truck, head, P.logistA);
     expect(all.hiddenByScope).toBe(0);
     expect(all.options.map((o) => o.id)).toEqual(expect.arrayContaining([W.b.id, W.c.id]));
+    // 11a: another country is never offered, not merely refused on the press.
+    expect(all.options.map((o) => o.id)).not.toContain(W.cn.id);
   });
 
   it('a page drawn for RRA before the reroute: every office button says «rerouted», none lands anything', async () => {
