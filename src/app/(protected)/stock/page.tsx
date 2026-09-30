@@ -1,6 +1,6 @@
 import Link from 'next/link';
-import { and, asc, eq, inArray, sql, type SQL } from 'drizzle-orm';
-import { redirect } from 'next/navigation';
+import { and, asc, eq, sql, type SQL } from 'drizzle-orm';
+import { notFound, redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import {
@@ -23,20 +23,17 @@ import { ViewBar } from '@/components/list/view-bar';
 import { ColumnPicker } from '@/components/list/column-picker';
 import { STOCK_COLUMNS } from '@/modules/wms/inventory/columns';
 import { arrivalCodesForPairs } from '@/modules/wms/documents/arrivals';
-import {
-  SHELF_STATUSES,
-  crateStock,
-  stockWarehouseOptions,
-  transitTrucks,
-} from '@/modules/wms/inventory/service';
+import { stockWarehouseOptions, transitTrucks } from '@/modules/wms/inventory/service';
 import { codeIdentity } from '@/modules/wms/labels/code-identity';
-import { CrateRows } from '@/components/crate-rows';
 import { isUuidShaped } from '@/modules/platform/audit/fields';
 import { qrlessBoxSql, qrlessJoinedSql } from '@/modules/wms/labels/qrless-sql';
 import { qrlessCountsAt } from '@/modules/wms/labels/qrless';
 import { QrlessChip } from '@/components/qrless-chip';
-import { stockTextWhere } from '@/modules/wms/inventory/stock-filter';
+import { stockBoxFilter, stockTextWhere } from '@/modules/wms/inventory/stock-filter';
+import { crateCodesForLot, crateContents, stockCrates } from '@/modules/wms/inventory/stock-crates';
+import { rowKey, seqRanges } from '@/modules/wms/inventory/crate-grouping';
 import { palletDoorsFor } from '@/modules/wms/crates/service';
+import { RowCratesFold } from './row-crates';
 
 /** Owner's request: order the stock table by any column, filters kept. */
 const SORTABLE = STOCK_COLUMNS.map((column) => column.key);
@@ -61,6 +58,7 @@ export default async function StockPage({
     wh?: string;
     client?: string;
     lot?: string;
+    crate?: string;
     q?: string;
     sort?: string;
     dir?: string;
@@ -89,13 +87,105 @@ export default async function StockPage({
   // reserved for a plan, mid-loading, or unloaded at a customs/distribution
   // warehouse as ready_for_pickup (owner's report: "13 boxes at TAS1 but the
   // stock page shows nothing"). Each box row still shows its exact status.
-  // A `?wh=` that is not an id is dropped, not bound: postgres refuses to
+  // An id param that is not an id is dropped, not bound: postgres refuses to
   // compare a uuid column with «YW», and that refusal is a white page (#514).
-  if (params.wh && !isUuidShaped(params.wh)) params.wh = undefined;
-  const scopeFilter: SQL[] = [inArray(boxes.status, [...SHELF_STATUSES])];
+  // `lot` and `client` had never learned it — `?lot=5` was a 500.
+  for (const key of ['wh', 'lot', 'client', 'crate'] as const) {
+    if (params[key] && !isUuidShaped(params[key])) params[key] = undefined;
+  }
+  const scopeFilter: SQL[] = stockBoxFilter(actor, { wh: params.wh });
   const boxScope = warehouseScope(actor, boxes.currentWarehouseId);
-  if (boxScope) scopeFilter.push(boxScope);
-  if (params.wh) scopeFilter.push(eq(boxes.currentWarehouseId, params.wh));
+
+  // One crate opened (his 2a, the second tap: «shu yashikning har bir
+  // karobkasi alohida»): its cartons grouped by the goods they are, each a
+  // door to the carton, like the lot drill-down below. Open to whoever reads
+  // this screen (his 4a: sellers and the accountant see the same table); the
+  // crate CARD, with its note and its buttons, stays the warehouse's.
+  if (params.crate) {
+    const crate = await crateContents(actor, params.crate);
+    if (!crate) notFound();
+    const tc = await getTranslations('crates');
+    const tp = await getTranslations('ofis');
+    const kind = crate.kind === 'karkas' ? tc('karkas') : crate.kind === 'palet' ? tp('palet') : null;
+    const present = crate.lots.reduce((sum, lot) => sum + lot.cartons.length, 0);
+    return (
+      <div className="space-y-3">
+        <h1 className="text-xl font-bold">
+          🧰 <span className="font-mono">{crate.code}</span>
+          {kind && <span className="ml-2 text-sm font-semibold text-ink-500">{kind}</span>}
+        </h1>
+        <div className="space-y-0.5 text-sm" data-testid="crate-summary">
+          <p>
+            <span className="font-mono font-semibold">{crate.clientCode}</span> · {crate.warehouseCode}{' '}
+            · {t('crateInside')}: {present} 📦 · {crate.m3} m³ · {crate.kg} kg
+          </p>
+          {/* The size the crate was MEASURED at — what a loader plans and a
+              forwarder charges for — beside what is inside it. Unmeasured is
+              «—», never a zero somebody would plan against. */}
+          <p className="text-ink-500">
+            {t('crateMeasured')}: {crate.statedM3 !== null ? `${crate.statedM3} m³` : '—'} ·{' '}
+            {crate.statedKg !== null ? `${crate.statedKg} kg` : '—'}
+            {crate.over && (
+              <span className="chip-warn ml-2" data-testid="crate-over">
+                ⚠ {t('crateOver')}
+              </span>
+            )}
+          </p>
+        </div>
+        {actor.permissions.has('crates.manage') && (
+          <Link
+            href={`/crates/${crate.id}`}
+            className="btn-secondary !min-h-9 px-3"
+            data-testid="crate-card-link"
+          >
+            {t('crateCard')}
+          </Link>
+        )}
+        {crate.status !== 'active' ? (
+          <p className="text-sm text-warn">{tc('dissolved')}</p>
+        ) : (
+          present === 0 && <p className="text-sm text-ink-500">{t('crateNothingHere')}</p>
+        )}
+        {crate.lots.map((lot) => (
+          <section key={lot.lotId} className="space-y-1" data-testid="crate-lot">
+            <Link href={`/stock?lot=${lot.lotId}`} className="flex items-baseline gap-2 text-sm">
+              <span className="shrink-0 font-mono font-extrabold text-brand-700">{lot.lotCode}</span>
+              <span className="min-w-0 truncate">
+                {lot.productNameZh}
+                {lot.productNameRu && <span className="text-ink-500"> ({lot.productNameRu})</span>}
+              </span>
+              <span className="ml-auto shrink-0 whitespace-nowrap font-semibold">
+                {lot.cartons.length} 📦 · №{seqRanges(lot.cartons.map((box) => box.seqInLot))}
+              </span>
+            </Link>
+            <div className="space-y-1">
+              {lot.cartons.map((box) => (
+                <Link
+                  key={box.id}
+                  href={`/boxes/${box.id}`}
+                  className="card flex items-baseline gap-2 !p-3 hover:bg-surface-sunken"
+                  data-testid="crate-carton"
+                >
+                  <span className="font-mono font-bold">{box.shortCode}</span>
+                  <span className="text-sm text-ink-500">
+                    {box.seqInLot}/{lot.boxTotal}
+                  </span>
+                  <span className="ml-auto rounded bg-surface-sunken px-2 py-0.5 text-xs font-semibold">
+                    {t(`statuses.${box.status}`)}
+                  </span>
+                </Link>
+              ))}
+            </div>
+          </section>
+        ))}
+        {crate.away > 0 && (
+          <p className="text-sm text-ink-500" data-testid="crate-away">
+            {t('crateAway', { n: crate.away })}
+          </p>
+        )}
+      </div>
+    );
+  }
 
   // Lot drill-down: box list
   if (params.lot) {
@@ -120,6 +210,9 @@ export default async function StockPage({
         : [],
     );
     const tqLot = await getTranslations('qrsiz');
+    // Which crate each carton stands in — plain text on the carton's own link,
+    // the answer to «qaysi yashikda?» when somebody walks to the shelf.
+    const crateOf = await crateCodesForLot(params.lot);
     // Pallet doors (0112, Q10 d): one per warehouse holding loose cartons of
     // this lot on the shelf, for whoever builds crates there — a pallet is
     // one client's, so an unclaimed lot gets none.
@@ -149,13 +242,20 @@ export default async function StockPage({
             <Link
               key={box.id}
               href={`/boxes/${box.id}`}
-              className="card flex items-baseline gap-2 !p-3 hover:bg-surface-sunken"
+              // Wraps: with a crate chip beside the code a phone line is full,
+              // and a row wider than the viewport rescales the whole page (#400).
+              className="card flex flex-wrap items-baseline gap-x-2 gap-y-1 !p-3 hover:bg-surface-sunken"
             >
               <span className="font-mono font-bold">{box.shortCode}</span>
               <span className="text-sm text-ink-500">
                 {box.seqInLot}/{lot?.boxCount}
               </span>
               <QrlessChip n={qrlessIds.has(box.id) ? 1 : 0} total={1} label={tqLot('chip')} />
+              {crateOf.get(box.id) && (
+                <span className="chip-neutral whitespace-nowrap font-mono" data-testid="box-crate">
+                  🧰 {crateOf.get(box.id)}
+                </span>
+              )}
               <span className="ml-auto rounded bg-surface-sunken px-2 py-0.5 text-xs font-semibold">
                 {t(`statuses.${box.status}`)}
               </span>
@@ -173,6 +273,7 @@ export default async function StockPage({
       .select({
         lot: receiptLots,
         receiptNumber: receipts.number,
+        whId: warehouses.id,
         whCode: warehouses.code,
         inStock: sql<number>`count(*)`,
       })
@@ -181,35 +282,50 @@ export default async function StockPage({
       .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
       .innerJoin(warehouses, eq(boxes.currentWarehouseId, warehouses.id))
       .where(and(...scopeFilter, eq(receipts.clientId, params.client)))
-      .groupBy(receiptLots.id, receipts.number, warehouses.code)
+      .groupBy(receiptLots.id, receipts.number, warehouses.id, warehouses.code)
       .orderBy(asc(receipts.number));
+    // The same crates the table's rows carry, for the same filter (#513).
+    const clientCrates = await stockCrates([...scopeFilter, eq(receipts.clientId, params.client)], {
+      narrowed: false,
+    });
     return (
       <div className="space-y-3">
         <h1 className="text-xl font-bold">
           <span className="font-mono text-brand-700">{client?.clientCode}</span> — {client?.name}
         </h1>
         <div className="space-y-1">
-          {lotRows.map(({ lot, receiptNumber, whCode, inStock }) => (
-            <Link
-              // Same reason as the table below: grouped by lot AND warehouse.
-              key={`${lot.id}-${whCode}`}
-              href={`/stock?lot=${lot.id}`}
-              className="card block !p-3 hover:bg-surface-sunken"
-            >
-              <div className="flex items-baseline gap-2">
-                <span className="font-mono text-lg font-extrabold text-brand-700">{lot.letter}</span>
-                <span>
-                  {lot.productNameZh} {lot.productNameRu && `(${lot.productNameRu})`}
-                </span>
-                <span className="ml-auto text-sm font-semibold">
-                  {inStock} {t('boxes')}
-                </span>
-              </div>
-              <p className="text-xs text-ink-500">
-                {whCode} · {receiptNumber} · {lot.totalWeightKg} kg · {lot.totalVolumeM3} m³
-              </p>
-            </Link>
-          ))}
+          {lotRows.map(({ lot, receiptNumber, whId, whCode, inStock }) => {
+            const inCrates = clientCrates.byRow.get(rowKey(lot.id, whId));
+            return (
+              <Link
+                // Same reason as the table below: grouped by lot AND warehouse.
+                key={`${lot.id}-${whCode}`}
+                href={`/stock?lot=${lot.id}`}
+                className="card block !p-3 hover:bg-surface-sunken"
+              >
+                <div className="flex items-baseline gap-2">
+                  <span className="font-mono text-lg font-extrabold text-brand-700">{lot.letter}</span>
+                  <span>
+                    {lot.productNameZh} {lot.productNameRu && `(${lot.productNameRu})`}
+                  </span>
+                  <span className="ml-auto text-sm font-semibold">
+                    {inStock} {t('boxes')}
+                  </span>
+                </div>
+                <p className="text-xs text-ink-500">
+                  {whCode} · {receiptNumber} · {lot.totalWeightKg} kg · {lot.totalVolumeM3} m³
+                </p>
+                {inCrates && (
+                  <p className="text-xs font-semibold text-ink-700" data-testid="client-lot-crates">
+                    {crateSummary(
+                      t('inCrates', { n: inCrates.crates.length }),
+                      Number(inStock) - inCrates.crated,
+                    )}
+                  </p>
+                )}
+              </Link>
+            );
+          })}
         </div>
       </div>
     );
@@ -224,14 +340,14 @@ export default async function StockPage({
   // own scope: `scopeFilter` is built on `currentWarehouseId`, which is NULL
   // for every in-transit box — reusing it would answer zero for ever.
   const onRoad = await transitTrucks(actor, params.wh);
-  // The yashik layer (round 107, item 6). Gated on `crates.manage` — every
-  // crate surface is (list, card, print, even attachments), and /stock's own
-  // gate is a bare login: sellers and accountants read the shelf here, but
-  // the crate layer is the warehouse's, and a link they cannot open is a
-  // teleport to the home page.
-  const crateStrip = actor.permissions.has('crates.manage')
-    ? await crateStock(actor, params.wh)
-    : null;
+  // The crates the rows stand in (owner, 2026-09-30, his «B»). Round 107/109
+  // drew them as a separate list above the table, and a warehouse that crates
+  // everything got a second, longer list of the same cargo; now each row says
+  // «🧰 N yashik» and opens to its crates. Same filter as the rows, the Σ and
+  // the XLSX, search included (#513) — and open to every reader of the
+  // table (his 4a), since it only regroups cartons they already see; the
+  // crate CARD behind it stays `crates.manage`.
+  const inCrates = await stockCrates(scopeFilter, { narrowed: Boolean(params.q) });
   const lines = await db
     .select({
       lot: receiptLots,
@@ -353,6 +469,7 @@ export default async function StockPage({
       whCode: line.whCode,
       partiya: (arrivalCodes.get(`${line.lot.id}|${line.whId}`) ?? []).join(', '),
       receivedAt: line.receivedAt,
+      crates: inCrates.byRow.get(rowKey(line.lot.id, line.whId)),
     };
   });
   const sorted = sortRows(rows, params.sort, params.dir, SORTABLE);
@@ -390,6 +507,19 @@ export default async function StockPage({
   if (params.dir) exportQuery.set('dir', params.dir);
 
   const sumBoxes = Number(totals?.boxes ?? 0);
+  // Pieces on the shelf, a crate being one (his answer 3: the skladchi counts
+  // «1 yashikni 1 dona»): loose cartons plus crates. Whole-filter, like the
+  // cartons beside it — never the sum of the fetched rows.
+  const sumPlaces = sumBoxes - inCrates.crated + inCrates.crates.length;
+  const overCrates = inCrates.crates.filter((crate) => crate.over);
+  const tc = await getTranslations('crates');
+  const tp = await getTranslations('ofis');
+  const crateLabels = {
+    over: t('crateOver'),
+    also: (list: string) => t('crateAlso', { list }),
+    countedAt: (code: string) => t('crateCountedAt', { code }),
+    kind: (kind: string) => (kind === 'karkas' ? tc('karkas') : kind === 'palet' ? tp('palet') : null),
+  };
   const sumKg = Number(totals?.kg ?? 0);
   const sumM3 = Number(totals?.m3 ?? 0);
   const totalLines = Number(totals?.lines ?? rows.length);
@@ -457,6 +587,9 @@ export default async function StockPage({
 
       <p className="text-sm font-semibold text-ink-700">
         Σ {sumBoxes} {t('boxes')} · {Math.round(sumKg)} kg · {Math.round(sumM3 * 100) / 100} m³
+        {inCrates.crates.length > 0 && (
+          <span data-testid="stock-places"> · {t('placesTotal', { n: sumPlaces })}</span>
+        )}
         {/* The Σ is the warehouse; beyond the fetch cap the TABLE is not.
             Said out loud — a silently short table reads as missing cargo. */}
         {truncated && (
@@ -481,23 +614,25 @@ export default async function StockPage({
         </div>
       )}
 
-      {/* The yashik layer (round 107 item 6, re-shaped in round 109 to what
-          he actually asked for: a LIST of places, not a chip strip, and the
-          over-capacity ones at the top). Unlike the on-road strip this is a
-          RE-GROUPING of cargo the Σ and the table already count, nothing
-          additive; it deliberately ignores `q` the way it sits outside the
-          sort, the views and the XLSX. Screen-only («faqat ekranda»). */}
-      {crateStrip && (
-        <CrateRows
-          rows={crateStrip.rows}
-          more={crateStrip.more}
-          labels={{
-            title: t('cratesTitle'),
-            inside: t('crateInside'),
-            over: t('crateOver'),
-            place: t('cratePlace'),
-          }}
-        />
+      {/* An overfull crate stays on top (round 109, his «ogohlantirish
+          spiskaning tepasida tursa»): the rows keep their own order, so the
+          crates whose goods outgrew their measured size are named here, each
+          a door to what is inside it. */}
+      {overCrates.length > 0 && (
+        <p
+          className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm text-warn"
+          data-testid="stock-crates-over"
+        >
+          <span className="font-semibold">
+            ⚠ {t('cratesTitle')} — {t('crateOver')}:
+          </span>
+          {overCrates.slice(0, OVER_SHOWN).map((crate) => (
+            <Link key={crate.id} href={`/stock?crate=${crate.id}`} className="font-mono font-bold underline">
+              {crate.code}
+            </Link>
+          ))}
+          {overCrates.length > OVER_SHOWN && <span>+{overCrates.length - OVER_SHOWN}</span>}
+        </p>
       )}
 
       {/* What is ON THE ROAD to or from these warehouses (round 100, 5A).
@@ -589,26 +724,42 @@ export default async function StockPage({
                         )}
                       </div>
                     ) : column.key === 'code' ? (
-                      <Link
-                        href={`/stock?lot=${row.line.lot.id}`}
-                        className="font-mono font-extrabold text-brand-700"
-                      >
-                        {/* The MARKING is the box's printed code (round 98):
-                            it wins, and the claimed client's code sits small
-                            beneath it — `GS500MANIKEN-AL` over `gs500`. */}
-                        {codeIdentity(row.line.marking, row.line.clientCode).main}-
-                        {row.line.lot.letter}
-                        {codeIdentity(row.line.marking, row.line.clientCode).sub && (
-                          <span className="block font-sans text-2xs font-normal text-ink-500">
-                            {codeIdentity(row.line.marking, row.line.clientCode).sub}
-                          </span>
+                      <>
+                        <Link
+                          href={`/stock?lot=${row.line.lot.id}`}
+                          className="font-mono font-extrabold text-brand-700"
+                        >
+                          {/* The MARKING is the box's printed code (round 98):
+                              it wins, and the claimed client's code sits small
+                              beneath it — `GS500MANIKEN-AL` over `gs500`. */}
+                          {codeIdentity(row.line.marking, row.line.clientCode).main}-
+                          {row.line.lot.letter}
+                          {codeIdentity(row.line.marking, row.line.clientCode).sub && (
+                            <span className="block font-sans text-2xs font-normal text-ink-500">
+                              {codeIdentity(row.line.marking, row.line.clientCode).sub}
+                            </span>
+                          )}
+                          {Number(row.line.qrless) > 0 && (
+                            <span className="block">
+                              <QrlessChip n={Number(row.line.qrless)} total={row.boxes} label={tq('chip')} />
+                            </span>
+                          )}
+                        </Link>
+                        {row.crates && (
+                          <RowCratesFold
+                            crates={row.crates}
+                            loose={row.boxes - row.crates.crated}
+                            labels={{
+                              ...crateLabels,
+                              summary: crateSummary(
+                                t('inCrates', { n: row.crates.crates.length }),
+                                row.boxes - row.crates.crated,
+                              ),
+                              loose: t('looseBoxes', { n: row.boxes - row.crates.crated }),
+                            }}
+                          />
                         )}
-                        {Number(row.line.qrless) > 0 && (
-                          <span className="block">
-                            <QrlessChip n={Number(row.line.qrless)} total={row.boxes} label={tq('chip')} />
-                          </span>
-                        )}
-                      </Link>
+                      </>
                     ) : column.key === 'product' ? (
                       <Link href={`/receipts/${row.line.receiptId}`} className="block truncate">
                         {row.line.lot.productNameZh}
@@ -680,6 +831,17 @@ export default async function StockPage({
       )}
     </div>
   );
+}
+
+/** How many overfull crates the line above the table names before «+N». */
+const OVER_SHOWN = 20;
+
+/**
+ * «🧰 7 yashik + 30 📦» — the row's crates, then whatever of it stands loose.
+ * One spelling for the table's fold and the client drill-down.
+ */
+function crateSummary(crates: string, loose: number): string {
+  return loose > 0 ? `🧰 ${crates} + ${loose} 📦` : `🧰 ${crates}`;
 }
 
 /**

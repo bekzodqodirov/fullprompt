@@ -2333,6 +2333,38 @@ found no other orphan in the layout. CI then caught a flake that predates the
 round (#1250): `calc-memory`'s random base-36 token scores exactly the 0.6
 threshold for «erk»/«ayo» (2 of 46,656) — reproduced by pinning it, fixed with
 three digits (all 1,000 score 0.536), and still red under `word_similarity`.
+He deployed #107 the same day and CONFIRMED **121** («deploy qildim 121 chiqdi»,
+2026-09-30) — the first quoted count since 113.
+
+**Round — the crates go into the stock rows, his «B» (2026-09-30; DECISIONS
+#1256-#1261 — numbered PAST the other session's open PR #106, whose branch
+holds five entries; NO migration, ledger 121).** His «yashiklar kop bolib ketma
+ket … 100 karobka … 10 yashik … spiskada 100 emas 10 turibti tagida … ochish
+imkoniyati bilan», answers **B · 2a · 3 · 4a**. The strip above /stock
+(`crateStock` + the page's `CrateRows`, rounds 107/109) is DELETED: it drew the
+same cargo twice. The row stays lot × warehouse (Σ, sort, paging, views, XLSX
+untouched) and grows a native `<details>` BESIDE the code's link —
+«🧰 7 yashik + 30 📦» → one line per crate «CR-… 10 📦 №1–10»
+(`stock/row-crates.tsx`) → `?crate=<id>` lists that crate's cartons by lot.
+ONE membership `crateHereOn()` (stock-filter.ts: active + crate's warehouse =
+carton's — round 31's short-loaded member is LOOSE where it stands); ONE base
+filter `stockBoxFilter(actor, {wh})` for page AND export (the export had a
+literal status list and an unchecked `wh`); `stockCrates(filters, {narrowed})`
+(stock-crates.ts) over the SAME filter list as the rows, search included, and
+the CR- code is searchable (EXISTS through `crateHereOn`). THE PLACE (his 3:
+«1 yashikni 1 dona»): the pure half is `crate-grouping.ts` — a mixed crate is
+owned by ONE row (most cartons → letter → lot id, `invoicePlaces`' rule) over
+the FILTERED set, `placesOf` = loose + owned, Σ «N mesta», ⚠ judged on the
+WHOLE crate, «n/total» only when a search hid part (`unseen`). Open to every
+table reader (4a); the crate CARD link only for `crates.manage`. XLSX: «Mesta
+(yashik = 1)» + «Yashiklar (ichida)», only when some row is crated, row height
+= lines × 15 pt (`crates` REQUIRED in `buildStockXlsx`). `?lot=/?client=/?crate=`
+non-ids dropped (`?lot=5` was a 500). The screenshots found two (#1261): the lot
+page's carton card at 386 px once it carried the crate chip, and each crate
+breaking over two lines in the fold. 9 red proofs by string edit. STATED: the
+truck card keeps `CrateRows` for its own round; `dissolveCrateAction` lets
+`CrateError('box_not_in_stock')` escape to the error page (a crate landed
+`ready_for_pickup` cannot be dissolved nor told why) — asked, not changed.
 
 **Latest migration: 0120** (`no_login_staff`, `when` …099; ledger must reach **121**). Before
 it: 0119 (`price_icons`), 0118 (`border_queue`), 0117 (`staff_pay`) — `when` …096-…098. Before them:
@@ -2459,17 +2491,13 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **121** since 0120 (120 since 0119, 117 since 0116). His server CONFIRMED **113** («deploy qildim
-113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
-0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
-and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read
-2026-09-30 04:30 UTC, built after #103 merged, so 0120's code runs) — the count
-was asked for and NOT quoted, so COUNT FIRST on the next deploy: it must read
-**121** (anything less means a migration did not land — read the `migrate`
-container's own output; from 113 the whole 0113-0120 set applies and EVERY
-container must be recreated once: `--profile https --profile telegram up -d
---build`, compose gained `init`, a healthcheck, log caps and a postgres flag);
-a code-only round after it is checked by `/api/version`, not the count.
+length — **121** since 0120 (120 since 0119, 117 since 0116). His server CONFIRMED **121**
+(«deploy qildim 121 chiqdi», 2026-09-30, after PR #107 — the strip round), the
+whole 0113-0120 set landed. Before that: **113** («deploy qildim 113 chiqdi»,
+2026-09-28, after PR #98), then 0113-0119 on 2026-09-29 («Ishladi yahwi
+hammasi», count not quoted) and PRs #103-#105 on 2026-09-30. The rounds after
+it are code-only until a new migration appears: check them by `/api/version`,
+not the count.
 Never carry this number over from a previous session: read it
 (`ls src/modules/platform/db/migrations/*.sql | wc -l`) before writing the
 owner a step list, because the count is the only check that separates «the

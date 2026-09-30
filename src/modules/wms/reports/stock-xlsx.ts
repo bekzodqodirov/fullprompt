@@ -6,6 +6,7 @@ import { getStorage } from '../../platform/files/storage';
 import { runPooled } from '../../../components/pooled';
 import { parseCols, visibleColumns } from '../../platform/lists/columns';
 import { STOCK_COLUMNS } from '../inventory/columns';
+import { placesOf, rowKey, seqRanges, type RowCrates } from '../inventory/crate-grouping';
 import { reportLabels } from './labels';
 import { dayIn, OFFICE_TZ } from '@/modules/platform/time/tashkent';
 
@@ -69,6 +70,14 @@ export interface StockSheetLine {
 export async function buildStockXlsx(input: {
   lines: StockSheetLine[];
   arrivalCodes: Map<string, string[]>;
+  /**
+   * The crates the rows' cartons stand in, keyed by `rowKey(lotId, whId)` —
+   * `stockCrates` over the SAME filter as `lines`, so a searched sheet counts
+   * the crates the searched screen shows. Required: a caller that forgot it
+   * would print every crated lot as its loose cartons, the exact miscount the
+   * two columns exist to prevent.
+   */
+  crates: Map<string, RowCrates>;
   cols: string | undefined;
   locale: string | null | undefined;
   can: (permission: string) => boolean;
@@ -97,6 +106,14 @@ export async function buildStockXlsx(input: {
     { key: 'code', column: { header: L.code, key: 'code', width: 14 } },
     { key: 'product', column: { header: L.product, key: 'product', width: 40 } },
     { key: 'boxes', column: { header: L.boxes, key: 'boxCount', width: 10 } },
+    /**
+     * The pieces on the shelf, a crate being one (owner, 2026-09-30, his
+     * answer 3: the skladchi prints this sheet and walks the shelf counting,
+     * «1 yashikni 1 dona deb hisoblaydi»). EXPORT-ONLY beside the cartons it
+     * corrects — and only on a sheet where some row stands in a crate at all:
+     * anywhere else it would repeat the carton count, column for column.
+     */
+    { key: 'places', column: { header: L.places, key: 'places', width: 12 }, always: true },
     { key: 'perBoxKg', column: { header: L.kgPerBox, key: 'perBoxKg', width: 10 } },
     { key: 'stockKg', column: { header: L.sumKg, key: 'totalKg', width: 10 } },
     { key: 'stockM3', column: { header: L.m3, key: 'totalM3', width: 10 } },
@@ -116,7 +133,20 @@ export async function buildStockXlsx(input: {
     { key: 'note', column: { header: L.note, key: 'note', width: 30 } },
     { key: 'partiya', column: { header: L.batch, key: 'batch', width: 12 } },
     { key: 'receivedAt', column: { header: L.date, key: 'date', width: 12 } },
+    /**
+     * What is inside each crate (his answer 3: «yashik ichidagi narsalar
+     * ko'rsatilgani yaxshiroq»), one line per crate — the row's cartons in it
+     * by their label numbers, the other lots packed with them, and which row
+     * counts a shared crate — then the cartons standing loose. The row is
+     * given the height of its lines: Excel does not grow a row for wrapped
+     * text it did not write itself, and a clipped list reads as a short one.
+     */
+    { key: 'crates', column: { header: L.crates, key: 'crates', width: 40 }, always: true },
   ];
+  // Both crate columns appear only when some row of THIS sheet stands in a
+  // crate (#74's idiom — said when it bites): a warehouse that never crates
+  // keeps the sheet it has always printed.
+  const anyCrated = lines.some((line) => input.crates.has(rowKey(line.lot.id, line.whId)));
 
   /**
    * EVERY photograph of that prixod line, not one (owner, 2026-09-19: «usha
@@ -361,9 +391,11 @@ export async function buildStockXlsx(input: {
    * saying the same word; the block is expanded here, after the filter.
    */
   const dataColumns = [
-    ...SHEET_COLUMNS.filter((entry) => entry.always || visible.has(entry.key)).map(
-      (entry) => entry.column,
-    ),
+    ...SHEET_COLUMNS.filter(
+      (entry) =>
+        (entry.key === 'places' || entry.key === 'crates' ? anyCrated : entry.always) ||
+        visible.has(entry.key),
+    ).map((entry) => entry.column),
     { header: L.days, key: 'aging', width: 8 },
   ];
   sheet.columns = [
@@ -440,12 +472,16 @@ export async function buildStockXlsx(input: {
      */
     const { boxLengthCm: x, boxWidthCm: y, boxHeightCm: z } = line.lot;
     const xyz = x && y && z ? `${x}×${y}×${z}` : '';
+    const inCrates = input.crates.get(rowKey(line.lot.id, line.whId));
+    const crateLines = inCrates ? crateCellLines(inCrates, Number(line.inStock), L) : [];
     const row = sheet.addRow({
       xyz,
       wh: line.whCode,
       code: `${line.clientCode ?? line.marking ?? '?'}-${line.lot.letter ?? ''}`,
       product: `${line.lot.productNameZh}${line.lot.productNameRu ? ` (${line.lot.productNameRu})` : ''}`,
       boxCount: Number(line.inStock),
+      places: placesOf(Number(line.inStock), inCrates),
+      crates: crateLines.join('\n'),
       perBoxKg: Math.round(perBoxKg * 10) / 10,
       totalKg: Math.round(stockKg * 10) / 10,
       totalM3: Math.round(stockM3 * 1000) / 1000,
@@ -456,11 +492,16 @@ export async function buildStockXlsx(input: {
       date: dayIn(line.receivedAt, OFFICE_TZ),
     });
 
+    if (crateLines.length > 0) {
+      row.getCell('crates').alignment = { wrapText: true, vertical: 'top' };
+      if (crateLines.length > 1) row.height = CRATE_LINE_PT * crateLines.length;
+    }
     const ids = (photosByRow.get(rowIndex) ?? []).filter((id) => thumbs.has(id));
     if (ids.length > 0 && photoCol >= 0) {
       // Only a row that HAS a picture grows: a 450-row sheet where every row
       // is 60pt tall is four screens of white space on the rows that do not.
-      row.height = 60;
+      // A long crate list keeps its own, taller height.
+      row.height = Math.max(60, row.height ?? 0);
       ids.forEach((attId, i) => {
         if (i >= photoCols) return;
         placements.push({ attId, col: photoCol + i, row: row.number - 1 });
@@ -498,4 +539,30 @@ export async function buildStockXlsx(input: {
     photos: placements.length,
     photosSkipped,
   };
+}
+
+/** One line of Calibri 11 — the height a wrapped crate list is given per line. */
+const CRATE_LINE_PT = 15;
+
+/**
+ * The «Yashiklar» cell, line by line: a crate, the row's cartons in it by
+ * label number, its other contents, which row counts it when that is another
+ * one; then the cartons standing loose. Words, not the screen's 📦 — a
+ * printed sheet is read on paper, where the glyph is whatever the printer
+ * made of it.
+ */
+function crateCellLines(
+  row: RowCrates,
+  inStock: number,
+  L: ReturnType<typeof reportLabels>,
+): string[] {
+  const lines = row.crates.map((crate) => {
+    const count = `${crate.n}${crate.unseen > 0 ? `/${crate.total}` : ''} ${L.boxUnit}`;
+    const others = crate.others.map((other) => ` + ${other.code}: ${other.n} ${L.boxUnit}`).join('');
+    const countedAt = !crate.owned && crate.ownerCode ? ` → ${L.crateCountedUnder} ${crate.ownerCode}` : '';
+    return `${crate.over ? '⚠ ' : ''}${crate.code} — ${count} (№${seqRanges(crate.seqs)})${others}${countedAt}`;
+  });
+  const loose = inStock - row.crated;
+  if (loose > 0) lines.push(`${loose} ${L.boxUnit} ${L.crateLoose}`);
+  return lines;
 }

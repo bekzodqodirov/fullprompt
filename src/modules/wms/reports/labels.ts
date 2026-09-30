@@ -81,6 +81,21 @@ const DICT = {
    */
   xyzCm: { ru: 'XYZ (см)', uz: 'XYZ (sm)', 'zh-CN': 'XYZ (厘米)', en: 'XYZ (cm)' },
   /**
+   * The Ostatka's pieces (owner, 2026-09-30, his answer 3: the skladchi prints
+   * the sheet and counts the shelf, «1 yashikni 1 dona deb hisoblaydi»). The
+   * rule is IN the header so a printed page explains itself.
+   */
+  places: { ru: 'Мест (ящик = 1)', uz: 'Mesta (yashik = 1)', 'zh-CN': '件数（木箱=1）', en: 'Places (crate = 1)' },
+  crates: { ru: 'Ящики (что внутри)', uz: 'Yashiklar (ichida)', 'zh-CN': '木箱（箱内）', en: 'Crates (inside)' },
+  boxUnit: { ru: 'кор.', uz: 'kor.', 'zh-CN': '箱', en: 'bx' },
+  crateLoose: { ru: 'без ящика', uz: 'yashiksiz', 'zh-CN': '未装木箱', en: 'not in a crate' },
+  crateCountedUnder: {
+    ru: 'место в строке',
+    uz: 'mesta qatori',
+    'zh-CN': '计入',
+    en: 'place counted under',
+  },
+  /**
    * The note on a capped 📷 header. Said only when the cap bites, so it
    * carries the count and not a standing warning. It counts PHOTOGRAPHS now
    * and not rows — a row can carry several and lose only its later ones.
