@@ -1,5 +1,43 @@
 # CHANGELOG
 
+## Keyingi yo'l: narx qo'yilgan mashinada butun yo'l tannarxi — 2026-09-30
+
+Migratsiya yo'q (ledger **121** qoladi). Yangilanganini `/api/version` dagi sana
+bilan tekshiring.
+
+Sizning javoblaringiz: **1a · 2a · 3b · 4a · 5a · 6b**
+
+1. **Xitoy yukining narxi chegaradan o'tgan mashinada turadi, shu mashina butun
+   yo'lni ko'taradi.** Andijon → Toshkent (va undan keyingi O'zbekiston ichidagi
+   har bir mashina — 5a) shu yuk uchun qilgan xarajat narx qo'yilgan mashinaning
+   tannarxiga **«keyingi yo'l»** bo'lib qo'shiladi:
+   **tannarx = bu reys + shu reysgacha + keyingi yo'l.**
+   Misol: prixod $5, Yiwu → Qashqar $30, Qashqar → Andijon $100, Andijon → Toshkent
+   $40, narx $300 → Qashqar → Andijon: tannarx **$175**, foyda **$125**.
+2. **Andijon → Toshkent mashinasi bu yuk uchun «davomi»** — $0, «narx yo'q» emas.
+   Endi dashboard «Diqqat» ro'yxatida, kechki 20:00 xulosada va «Partiya
+   foydasi»da noto'g'ri «narx qo'yilmagan reys» bo'lib chiqmaydi. Sahifasida
+   yukning narxi qaysi mashinada ekani yoziladi.
+3. **Andijonda qabul qilingan yuk** — Andijon → Toshkent o'z narxi va o'z xarajati
+   bilan qoladi (avvalgidek).
+4. **Mashina hali jo'namagan bo'lsa** hech narsa ko'chmaydi (karobka yuklanmay
+   qolishi mumkin). Jo'nagandan keyin ko'chadi.
+5. **Tannarx keyin o'sishi mumkin (2a):** Toshkent xarajati narx qo'yilgandan keyin
+   yozilganda, narx qo'yilgan mashinaning foydasi kamayadi — oy o'tgan bo'lsa ham.
+   Yuk to'liq topshirilmaguncha «Partiya moliyasi»da **«⏳ N karobka hali
+   topshirilmagan — tannarx o'sishi mumkin»** yozuvi turadi.
+6. **Ogohlantirish (4a):** Andijon → Toshkent sahifasida Xitoy yukiga narx
+   yozmoqchi bo'lsangiz, tizim avval so'raydi: «narx B-xxx mashinasida — bu yerga
+   yozilgan narx mijozga ikkinchi hisob bo'ladi». Baribir yozish mumkin.
+7. **Hisobotlar buzilmaydi:** foyda-zarar, pul oqimi, balans, «Mijoz foydasi», KPI,
+   upsale — o'zgarmaydi. Faqat mashina bo'yicha qatorlarda pul bir mashinadan
+   ikkinchisiga o'tadi, hech narsa ikki marta sanalmaydi. Andijon → Toshkent
+   «Partiya» deb belgilanmagan bo'lsa ham, uning xarajati endi belgilangan
+   chegara mashinasi orqali «Partiya foydasi» jamiga kiradi. Excel faylida yangi
+   ustun: «shundan keyingi yo'l $».
+8. Deploydan keyin eski mashinalar ham shu qoida bo'yicha ko'rinadi (6b — oldindan
+   ro'yxat so'ralmadi).
+
 ## Sizning 12 javobingiz: login'siz hodimga oylik, upsale eng eski qarzdan, foyda yuk kelgan kundagi sotuvchiga — 2026-09-29
 
 Migratsiya **0120**. Yangilangandan keyin ledger **121** bo'lishi kerak. Bugungi
