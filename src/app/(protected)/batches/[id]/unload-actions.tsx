@@ -24,6 +24,7 @@ interface MissingBox {
 /** Destination-side controls: finish unload, resolve missing boxes, close. */
 export function UnloadActions({
   batchId,
+  destWarehouseId,
   status,
   missing,
   remaining,
@@ -34,6 +35,12 @@ export function UnloadActions({
   canClose,
 }: {
   batchId: string;
+  /**
+   * The destination this page was drawn for, posted with «Hammasini qabul
+   * qilish» and «Tushirish tugadi» (the reroute round): a truck rerouted since
+   * is refused in words, never finished or accepted at the old warehouse.
+   */
+  destWarehouseId: string;
   status: string;
   missing: MissingBox[];
   /** Manifest boxes still waiting to be accepted at the destination. */
@@ -83,6 +90,11 @@ export function UnloadActions({
         return t('errors.finish_unload_first');
       case 'batch_not_unloading':
         return t('errors.batch_not_unloading');
+      // The truck was rerouted after this page was drawn: «refresh», never
+      // the generic «failed — press again», whose retry would only answer
+      // «no permission» at the new warehouse.
+      case 'batch_rerouted':
+        return t('errors.batch_rerouted');
       case 'batch_not_found':
       case 'box_not_found':
         return t('errors.not_found');
@@ -125,7 +137,7 @@ export function UnloadActions({
           disabled={pending}
           onClick={async () => {
             if (!window.confirm(t('acceptAllConfirm', { n: acceptable }))) return;
-            const res = (await run(() => unloadRemainingAction(batchId))) as {
+            const res = (await run(() => unloadRemainingAction(batchId, destWarehouseId))) as {
               ok: boolean;
               accepted?: number;
               skippedCounted?: number;
@@ -166,7 +178,7 @@ export function UnloadActions({
             // Finishing with boxes left over marks them lost — never let that
             // happen on a tap the operator read as "accept everything".
             if (remaining > 0 && !window.confirm(t('finishConfirm', { n: remaining }))) return;
-            const res = (await run(() => finishUnloadAction(batchId))) as {
+            const res = (await run(() => finishUnloadAction(batchId, destWarehouseId))) as {
               ok: boolean;
               missing?: string[];
             };

@@ -295,7 +295,7 @@ export function LoadingScreen({
   const flush = useCallback(
     async ({ sync = false }: { sync?: boolean } = {}) => {
       try {
-        const { acks, discarded, refusedForbidden } = await flushScans();
+        const { acks, discarded, refusedForbidden, withheld } = await flushScans();
         handleAcks(acks);
         if (discarded.length > 0) {
           setToast(`❌ ${t('serverRefused', { n: discarded.length })}`);
@@ -305,7 +305,10 @@ export function LoadingScreen({
             return next;
           });
         }
-        if (refusedForbidden) setToast(`🚫 ${t('notYourTruck')}`);
+        // A truck this person may not touch keeps its rows on the phone and
+        // no longer stops the others (the reroute round) — said as that.
+        if (withheld > 0) setToast(`🚫 ${tc('scanWithheld', { n: withheld })}`);
+        else if (refusedForbidden) setToast(`🚫 ${t('notYourTruck')}`);
         setOnline(true);
         if (sync) {
           try {
@@ -335,7 +338,7 @@ export function LoadingScreen({
       }
       await refreshPending();
     },
-    [handleAcks, refreshPending, batchId, cacheKey, t],
+    [handleAcks, refreshPending, batchId, cacheKey, t, tc],
   );
 
   /**

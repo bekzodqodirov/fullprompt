@@ -9,8 +9,9 @@ import {
   receiptLots,
   receipts,
 } from '@/modules/platform/db/schema';
-import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
+import { AuthError, authorize, getActor } from '@/modules/platform/rbac/authorize';
 import { json } from '@/modules/platform/http/json';
+import { reroutedAwayFor } from '@/modules/wms/batches/reroute';
 import { batchMemberFilter } from '@/modules/wms/scanning/unload';
 import { countOnlyLotsOnTruck } from '@/modules/wms/scanning/count-rules';
 import { codeIdentity } from '@/modules/wms/labels/code-identity';
@@ -33,7 +34,17 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       authorize('scan.unload', { warehouseId: batch.destWarehouseId }),
     );
   } catch (err) {
-    if (err instanceof AuthError) return Response.json({ error: 'forbidden' }, { status: 403 });
+    if (err instanceof AuthError) {
+      // An unloader the truck was taken from (the reroute round): 409 and
+      // where it goes now, so the screen drops its cached snapshot and says
+      // «endi {to} ga boradi» — a 403 read «not your warehouse OR session
+      // expired, sign in again», a re-login loop for a person whose session
+      // is fine.
+      const actor = await getActor();
+      const away = actor ? await reroutedAwayFor(actor, 'scan.unload', batch) : null;
+      if (away) return Response.json({ error: 'batch_rerouted', to: away.toCode }, { status: 409 });
+      return Response.json({ error: 'forbidden' }, { status: 403 });
+    }
     throw err;
   }
 

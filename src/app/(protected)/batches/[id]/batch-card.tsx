@@ -19,6 +19,7 @@ import { batchLoadProgress, loadBatchHead, type BatchHead } from '@/modules/wms/
 import { batchDocsPending } from '@/modules/wms/batches/docs-pending';
 import { batchLots } from '@/modules/wms/batches/lots';
 import { mayReadBatches } from '@/modules/wms/batches/read-door';
+import { departureDestination, rerouteHistory } from '@/modules/wms/batches/reroute';
 import {
   batchCarriageOf,
   batchCostEntryCount,
@@ -226,6 +227,16 @@ export async function BatchCard({
   const pairCode = devices.find((device) => device.pairCode)?.pairCode ?? null;
   const road = unloadingNow ? await soft('road', () => truckOnRoadRow(id)) : null;
   const roadWords = road ? await truckRoadWords() : null;
+  // «Rejada: X → yo'nalish o'zgartirildi: Y» (the reroute round) on every
+  // tab: one indexed read per departed card, one more only on a rerouted one.
+  // «Rejada» is the departure movements' warehouse — written once, never
+  // rewritten — so it cannot lie; a reroute back to it hides the line and the
+  // Mashina tab keeps the story.
+  const reroutes = departed ? ((await soft('reroutes', () => rerouteHistory(id))) ?? []) : [];
+  const plannedCode =
+    reroutes.length > 0
+      ? ((await soft('planned', () => departureDestination(id)))?.code ?? reroutes[0]!.fromCode)
+      : null;
 
   // Money, each figure behind its own tab's door.
   const costDoor = mayOpenBatchCosts(actor.permissions);
@@ -425,6 +436,11 @@ export async function BatchCard({
         {departed && (
           <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-700" data-testid="batch-facts">
             <span>🚀 {format.dateTime(batch.departedAt!, { dateStyle: 'short', timeStyle: 'short' })}</span>
+            {plannedCode && plannedCode !== head.destCode && (
+              <span data-testid="batch-rerouted" className="rounded bg-warn/10 px-2 py-0.5 font-semibold text-warn">
+                ↪ {t('reroute.plannedLine', { planned: plannedCode, now: head.destCode })}
+              </span>
+            )}
             {head.crossesBorder && (
               <span data-testid="batch-customs-fact">
                 · {t('customs')}:{' '}

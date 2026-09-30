@@ -56,3 +56,20 @@ export function inScope(actor: ScopedActor, warehouseId: string | null | undefin
   if (!actor.warehouseScoped) return true;
   return Boolean(warehouseId) && actor.warehouseIds.includes(warehouseId!);
 }
+
+/**
+ * May this person do THIS at THAT warehouse — `authorize(permission,
+ * { warehouseId })` as a pure predicate, for a caller that must decide per
+ * warehouse without throwing: the phone's sync judges every truck in one body
+ * on its own (a truck the person lost must not stop the others' scans), and
+ * the reroute's «a warehouse the truck left» asks it of every former
+ * destination. `authorize` asks `inScope` for its scope line, so the gate and
+ * this are one rule.
+ */
+export function mayAt(
+  actor: ScopedActor & { permissions: ReadonlySet<string> },
+  permission: string,
+  warehouseId: string | null | undefined,
+): boolean {
+  return actor.permissions.has(permission) && inScope(actor, warehouseId);
+}

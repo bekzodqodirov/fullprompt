@@ -20,7 +20,7 @@ import { buttonsFor } from '../telegram/staff-bot';
 import { approvalVerdictLine, fillCount, notificationLabels } from './labels';
 import { isTelegramMuted } from './mutes';
 import { sendsSilently } from './night';
-import { h } from '../telegram/format';
+import { groupDigits, h } from '../telegram/format';
 import {
   botCall,
   editText,
@@ -82,6 +82,60 @@ export async function usersWithPermission(code: string): Promise<string[]> {
     // notification belongs to a person who still works here.
     .innerJoin(users, eq(userRoles.userId, users.id))
     .where(and(eq(permissions.code, code), canLogInSql()));
+  return [...new Set(rows.map((r) => r.userId))];
+}
+
+/**
+ * The warehouse-SCOPED holders of a permission AT one warehouse — the people
+ * whose gate a truck is coming to (the reroute round, the owner's 4a: «yangi
+ * sklad xodimlari»). Scoped means any warehouse-scoped role, `actorGrants`'
+ * own rule («any scoped role scopes the user»), plus a `user_warehouses` row
+ * for this warehouse. The unscoped — the owner, the admins, the logists — are
+ * NOT here: they hear by role, and «everyone who could unload anywhere» is
+ * not «the staff of this warehouse».
+ */
+export async function warehouseStaffWithPermission(code: string, warehouseId: string): Promise<string[]> {
+  const rows = await db
+    .select({ userId: userRoles.userId })
+    .from(userRoles)
+    .innerJoin(rolePermissions, eq(userRoles.roleId, rolePermissions.roleId))
+    .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
+    .innerJoin(users, eq(userRoles.userId, users.id))
+    .where(
+      and(
+        eq(permissions.code, code),
+        canLogInSql(),
+        sql`EXISTS (SELECT 1 FROM user_roles wsr JOIN roles wsro ON wsro.id = wsr.role_id
+                     WHERE wsr.user_id = ${users.id} AND wsro.warehouse_scoped)`,
+        sql`EXISTS (SELECT 1 FROM user_warehouses wsw
+                     WHERE wsw.user_id = ${users.id} AND wsw.warehouse_id = ${warehouseId}::uuid)`,
+      ),
+    );
+  return [...new Set(rows.map((r) => r.userId))];
+}
+
+/**
+ * The logists — by ROLE, the owner's word — who can OPEN the truck the
+ * message links to: unscoped, or scoped at one of its two ends. A logist
+ * scoped to an unrelated warehouse would be handed a link that 404s.
+ */
+export async function logistsForTruck(originWarehouseId: string, toWarehouseId: string): Promise<string[]> {
+  const rows = await db
+    .select({ userId: userRoles.userId })
+    .from(userRoles)
+    .innerJoin(roles, eq(userRoles.roleId, roles.id))
+    .innerJoin(users, eq(userRoles.userId, users.id))
+    .where(
+      and(
+        eq(roles.code, 'logist'),
+        canLogInSql(),
+        sql`(NOT EXISTS (SELECT 1 FROM user_roles lsr JOIN roles lsro ON lsro.id = lsr.role_id
+                          WHERE lsr.user_id = ${users.id} AND lsro.warehouse_scoped)
+             OR EXISTS (SELECT 1 FROM user_warehouses lsw
+                         WHERE lsw.user_id = ${users.id}
+                           AND lsw.warehouse_id IN (${originWarehouseId}::uuid, ${toWarehouseId}::uuid)))`,
+      ),
+    );
   return [...new Set(rows.map((r) => r.userId))];
 }
 
@@ -367,6 +421,37 @@ async function buildRecipients(event: {
       if (!requestedBy) return [];
       return [{ userId: requestedBy, type: event.type, payload: event.payload }];
     }
+    // The reroute round (the owner's 4a): the NEW warehouse's own staff
+    // («endi sizga keladi», with what is coming), the logists by role (who can
+    // open the card), and — when an earlier reroute had told a warehouse «it
+    // is coming to you» — that warehouse's staff, «endi sizga kelmaydi». One
+    // row per person, worded for their part (`audience`, precedence to > from
+    // > logist); never the person who pressed. The originally planned
+    // warehouse is NOT told (a question to the owner), and neither is anyone
+    // outside these three.
+    case 'BatchRerouted': {
+      const p = event.payload;
+      const toId = typeof p.toWarehouseId === 'string' ? p.toWarehouseId : null;
+      const fromId = typeof p.fromWarehouseId === 'string' ? p.fromWarehouseId : null;
+      const originId = typeof p.originWarehouseId === 'string' ? p.originWarehouseId : null;
+      if (!toId || !originId) return [];
+      const [to, from, logist] = await Promise.all([
+        warehouseStaffWithPermission('scan.unload', toId),
+        p.fromWasTold === true && fromId
+          ? warehouseStaffWithPermission('scan.unload', fromId)
+          : Promise.resolve([] as string[]),
+        logistsForTruck(originId, toId),
+      ]);
+      const audience = new Map<string, 'to' | 'from' | 'logist'>();
+      for (const id of logist) audience.set(id, 'logist');
+      for (const id of from) audience.set(id, 'from');
+      for (const id of to) audience.set(id, 'to');
+      return withoutPresser([...audience.keys()], p).map((userId) => ({
+        userId,
+        type: event.type,
+        payload: { ...p, audience: audience.get(userId) },
+      }));
+    }
     default:
       return [];
   }
@@ -630,6 +715,36 @@ export function renderTelegramText(
         ? `⛔ ${L.expenseRejected}\n${payload.amount} ${payload.currency} — ${payload.note}\n` +
             `${L.comment}: ${payload.rejectReason}`
         : `✅ ${L.expenseEntered}\n${payload.amount} ${payload.currency} — ${payload.note}`;
+    // The reroute round. Per reader, and never with an arrow BETWEEN the two
+    // warehouses: «A → B» is origin → destination everywhere in this app, so
+    // «TAS1 → AND» read at AND said «a truck from Tashkent». The receiving
+    // gate is told what it needs to act without opening anything: how much,
+    // from where, which plate. The withdrawn warehouse gets no link — the
+    // card is no longer theirs to open.
+    case 'BatchRerouted': {
+      const num = (v: unknown) => groupDigits(Number(v ?? 0));
+      const head = `${payload.batchCode}`;
+      const route = `${L.route}: ${payload.originCode} → ${payload.toCode}`;
+      const cargo = `📦 ${num(payload.cartons)} ${L.boxesShort} · ${num(payload.m3)} ${L.m3} · ${num(payload.kg)} ${L.kg}`;
+      const plate = payload.plate ? `\n🚛 ${payload.plate}` : '';
+      const why = payload.reason ? `\n${L.reason}: ${payload.reason}` : '';
+      const who = payload.presserName ? `\n${L.changedBy}: ${payload.presserName}` : '';
+      const cardLink = `\n${appUrl}/batches/${payload.batchId}`;
+      if (payload.audience === 'from') {
+        return `↩️ ${head}: ${L.rerouteNotComing} — ${L.rerouteNow}: ${payload.toCode}${why}${who}`;
+      }
+      if (payload.audience === 'to') {
+        return (
+          `↪️ ${head}: ${L.rerouteComingToYou} (${payload.toCode})\n` +
+          `${L.rerouteBefore}: ${payload.fromCode}\n${route}\n${cargo}${plate}${why}${who}${cardLink}`
+        );
+      }
+      return (
+        `↪️ ${head}: ${L.rerouteChanged}\n` +
+        `${L.rerouteNow}: ${payload.toCode} · ${L.rerouteBefore}: ${payload.fromCode}\n` +
+        `${route}\n${cargo}${plate}${why}${who}${cardLink}`
+      );
+    }
     case 'RestoreTestFailed':
       return `🆘 ${L.restoreFailed}\n${payload.error}\n${L.restoreCheck}`;
     // Without this case the most important alert in the system fell to the

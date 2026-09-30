@@ -6,6 +6,8 @@ import { inScope } from '@/modules/platform/rbac/scope';
 import { mayOpenBatchCard } from '@/modules/wms/batches/card-door';
 import { loadBatchHead } from '@/modules/wms/batches/card-head';
 import { mayReadBatches } from '@/modules/wms/batches/read-door';
+import { departureDestination, rerouteHistory, rerouteTargets } from '@/modules/wms/batches/reroute';
+import { mayRerouteTruck } from '@/modules/wms/batches/reroute-rules';
 import { devicesForBatch } from '@/modules/wms/tracking/devices';
 import { checkpointsFor } from '@/modules/wms/tracking/eta';
 import { CHECKPOINT_KEYS, CHECKPOINT_LABEL, type CheckpointKey } from '@/modules/wms/tracking/map-data';
@@ -14,6 +16,7 @@ import { createDriverDeviceAction, revokeDriverDeviceAction } from '../../batch-
 import { BatchCard, batchTabMetadata } from '../batch-card';
 import { VehicleForm } from '../vehicle-form';
 import { CheckpointButtons } from './checkpoint-buttons';
+import { RerouteForm } from './reroute-form';
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   return batchTabMetadata((await params).id, 'mashina');
@@ -56,6 +59,15 @@ export default async function BatchTruckTabPage({ params }: { params: Promise<{ 
   // the rule can still be pressed off.
   const pinOptions: CheckpointKey[] = checkpointsFor(head.originCode, head.destCode, head.destCountry);
   if (checkpointKey && !pinOptions.includes(checkpointKey)) pinOptions.push(checkpointKey);
+
+  // «Yo'nalishni o'zgartirish» (the reroute round): the history for every
+  // card reader; the form only under the reroute's own predicate, with the
+  // options the service admits (#531: the service asks again).
+  const reroutes = await rerouteHistory(id);
+  const mayReroute = mayRerouteTruck(actor, batch);
+  const rerouteOptions = mayReroute ? await rerouteTargets(batch, head, actor) : [];
+  const plannedCode =
+    reroutes.length > 0 ? ((await departureDestination(id))?.code ?? reroutes[0]!.fromCode) : null;
 
   return (
     <BatchCard head={head} actor={actor} active="mashina">
@@ -167,6 +179,50 @@ export default async function BatchTruckTabPage({ params }: { params: Promise<{ 
                 label: `${CHECKPOINT_LABEL[key].icon} ${t(CHECKPOINT_LABEL[key].label)}`,
               }))}
             />
+          </Panel>
+        )}
+
+        {/* The owner's own word on the fold. Opened when there is a story to
+            read; closed otherwise, because opening it is the first deliberate
+            step of a rare act with consequences. */}
+        {(reroutes.length > 0 || mayReroute) && (
+          <Panel
+            title={`🧭 ${t('reroute.title')}`}
+            badge={
+              plannedCode && plannedCode !== head.destCode
+                ? t('reroute.badgeRerouted', { now: head.destCode, planned: plannedCode })
+                : head.destCode
+            }
+            testId="batch-reroute-panel"
+            open={reroutes.length > 0}
+          >
+            {reroutes.length > 0 && (
+              <div className="space-y-1">
+                <p className="section-title">{t('reroute.history')}</p>
+                <ol data-testid="reroute-history" className="space-y-1 text-sm">
+                  {reroutes.map((row) => (
+                    <li key={row.id} className="break-words">
+                      {t('reroute.historyRow', {
+                        when: format.dateTime(row.at, { dateStyle: 'short', timeStyle: 'short' }),
+                        who: row.who ?? '—',
+                        from: row.fromCode ?? '—',
+                        to: row.toCode ?? '—',
+                        reason: row.reason ?? '—',
+                      })}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
+            {mayReroute && (
+              <RerouteForm
+                batchId={batch.id}
+                batchCode={batch.code}
+                fromId={batch.destWarehouseId}
+                fromCode={head.destCode}
+                targets={rerouteOptions}
+              />
+            )}
           </Panel>
         )}
 

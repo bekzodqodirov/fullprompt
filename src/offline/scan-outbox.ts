@@ -40,6 +40,11 @@ export interface SyncAck {
    * manifest and the customs invoice never heard of (#221).
    */
   unplanned?: string[];
+  /**
+   * `batch_rerouted` only: where the truck goes NOW (a warehouse code) — the
+   * old destination's screen says «endi {to} ga boradi» (the reroute round).
+   */
+  rerouteTo?: string;
 }
 
 /**
@@ -155,11 +160,29 @@ export interface FlushResult {
    */
   discarded: OutboxScan[];
   /**
-   * The server said no to the person, not to the data (403 / session gone).
-   * These stay queued: logging in again makes them sendable, and dropping a
-   * real scan because a session expired would lose cargo.
+   * The server said no to the person, not to the data — a whole body with
+   * nothing of theirs in it (403), or no session at all (401). These stay
+   * queued: logging in again makes them sendable, and dropping a real scan
+   * because a session expired would lose cargo.
    */
   refusedForbidden: boolean;
+  /**
+   * Rows of trucks this person may not touch, left on the phone — never
+   * dropped, and since the reroute round never blocking the other trucks'
+   * rows either (the server answers per truck).
+   */
+  withheld: number;
+}
+
+/**
+ * What the flush needs from the world: the queue and the network. Injected so
+ * the LOOP — which slice stops it and which does not — can be pressed by a
+ * test with no IndexedDB and no server (#166).
+ */
+export interface FlushDeps {
+  pending: () => Promise<OutboxScan[]>;
+  remove: (uuids: string[]) => Promise<void>;
+  post: (scans: OutboxScan[]) => Promise<Response>;
 }
 
 async function postSlice(scans: OutboxScan[]): Promise<Response> {
@@ -170,6 +193,21 @@ async function postSlice(scans: OutboxScan[]): Promise<Response> {
   });
 }
 
+type SliceVerdict = 'ok' | 'forbidden' | 'unauthenticated';
+
+interface FlushOut {
+  acks: SyncAck[];
+  discarded: OutboxScan[];
+  withheld: number;
+}
+
+/** The rows of `slice` whose truck the server withheld — they stay queued. */
+function countWithheld(slice: OutboxScan[], withheld: unknown): number {
+  if (!Array.isArray(withheld) || withheld.length === 0) return 0;
+  const held = new Set(withheld.filter((id): id is string => typeof id === 'string'));
+  return slice.filter((row) => held.has(row.batchId)).length;
+}
+
 /**
  * Send one slice, splitting it until the rows the server refuses are alone.
  *
@@ -178,27 +216,34 @@ async function postSlice(scans: OutboxScan[]): Promise<Response> {
  * bisection costs at most a handful of extra requests on a slice of 200 and
  * only happens when something is actually wrong.
  */
-async function sendSlice(
-  slice: OutboxScan[],
-  out: { acks: SyncAck[]; discarded: OutboxScan[] },
-): Promise<'ok' | 'forbidden'> {
-  const res = await postSlice(slice);
+async function sendSlice(slice: OutboxScan[], out: FlushOut, deps: FlushDeps): Promise<SliceVerdict> {
+  const res = await deps.post(slice);
   if (res.ok) {
-    const { acks } = (await res.json()) as { acks: SyncAck[] };
-    out.acks.push(...acks);
-    await removeScans(acks.map((a) => a.clientEventUuid));
+    const body = (await res.json()) as { acks: SyncAck[]; withheld?: unknown };
+    out.acks.push(...body.acks);
+    // Only what the server answered leaves the queue; a withheld truck's
+    // rows stay, counted, for the day the person may send them.
+    await deps.remove(body.acks.map((a) => a.clientEventUuid));
+    out.withheld += countWithheld(slice, body.withheld);
     return 'ok';
   }
-  if (res.status === 401 || res.status === 403) return 'forbidden';
+  if (res.status === 401) return 'unauthenticated';
+  if (res.status === 403) {
+    const body = (await res.json().catch(() => null)) as { withheld?: unknown } | null;
+    out.withheld += countWithheld(slice, body?.withheld);
+    return 'forbidden';
+  }
   if (res.status === 400) {
     if (slice.length === 1) {
       out.discarded.push(slice[0]!);
-      await removeScans([slice[0]!.clientEventUuid]);
+      await deps.remove([slice[0]!.clientEventUuid]);
       return 'ok';
     }
     const half = Math.ceil(slice.length / 2);
-    const a = await sendSlice(slice.slice(0, half), out);
-    const b = await sendSlice(slice.slice(half), out);
+    const a = await sendSlice(slice.slice(0, half), out, deps);
+    if (a === 'unauthenticated') return a;
+    const b = await sendSlice(slice.slice(half), out, deps);
+    if (b === 'unauthenticated') return b;
     return a === 'forbidden' || b === 'forbidden' ? 'forbidden' : 'ok';
   }
   // 5xx and anything else: the server is having a bad minute, not a bad
@@ -210,20 +255,32 @@ async function sendSlice(
  * Flush the queue. Every acked item leaves the outbox (the server made its
  * decision); acks are returned so the UI can react (rollback local marks on
  * rejects, etc.). Throws only on network failure — items stay queued.
+ *
+ * Only a missing SESSION stops the loop (401): nothing after it can go
+ * either. A 403 is one slice with nothing of this person's in it, and the
+ * slices after it are sent — the reroute round's blocker was one queued row
+ * of a truck the phone had lost stopping every scan behind it, on every
+ * truck, for good.
  */
-export async function flushScans(): Promise<FlushResult> {
-  const scans = await pendingScans();
-  const out: { acks: SyncAck[]; discarded: OutboxScan[] } = { acks: [], discarded: [] };
+export async function flushScansWith(deps: FlushDeps): Promise<FlushResult> {
+  const scans = await deps.pending();
+  const out: FlushOut = { acks: [], discarded: [], withheld: 0 };
   if (scans.length === 0) return { ...out, refusedForbidden: false };
   let forbidden = false;
   for (let i = 0; i < scans.length; i += MAX_PER_SYNC) {
-    const verdict = await sendSlice(scans.slice(i, i + MAX_PER_SYNC), out);
-    if (verdict === 'forbidden') {
+    const verdict = await sendSlice(scans.slice(i, i + MAX_PER_SYNC), out, deps);
+    if (verdict === 'unauthenticated') {
       forbidden = true;
       break;
     }
+    if (verdict === 'forbidden') forbidden = true;
   }
   return { ...out, refusedForbidden: forbidden };
+}
+
+/** The phone's own flush: IndexedDB and `/api/scan/sync`. */
+export async function flushScans(): Promise<FlushResult> {
+  return flushScansWith({ pending: pendingScans, remove: removeScans, post: postSlice });
 }
 
 /**

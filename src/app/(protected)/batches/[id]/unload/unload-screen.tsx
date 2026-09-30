@@ -73,8 +73,14 @@ export function UnloadScreen({ batchId, countHref }: { batchId: string; countHre
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   /** Why there is no snapshot yet — `null` while it is simply still loading. */
   const [snapError, setSnapError] = useState<
-    { kind: 'forbidden' | 'offline' | 'server'; status?: number } | null
+    { kind: 'forbidden' | 'offline' | 'server' | 'rerouted'; status?: number; to?: string } | null
   >(null);
+  /**
+   * The truck was rerouted away from this warehouse (the reroute round) — by
+   * the server's 409 on the snapshot or a scan's `batch_rerouted` ack. While
+   * set, a red line says where it goes now and nothing more is queued.
+   */
+  const [reroutedTo, setReroutedTo] = useState<string | null>(null);
   const [done, setDone] = useState<Set<string>>(new Set());
   const [extra, setExtra] = useState<string[]>([]);
   const [pending, setPending] = useState(0);
@@ -114,6 +120,18 @@ export function UnloadScreen({ batchId, countHref }: { batchId: string; countHre
           localStorage.setItem(cacheKey, JSON.stringify(data));
           applySnapshot(data);
           setSnapError(null);
+          return;
+        }
+        // Rerouted away from this warehouse (the reroute round): the cached
+        // snapshot is DROPPED, never applied — it is a manifest for a truck
+        // that is not coming here, and scanning against it would queue rows
+        // the server can only refuse.
+        if (res.status === 409) {
+          const body = (await res.json().catch(() => null)) as { to?: unknown } | null;
+          const to = typeof body?.to === 'string' ? body.to : '—';
+          localStorage.removeItem(cacheKey);
+          setReroutedTo(to);
+          setSnapError({ kind: 'rerouted', to });
           return;
         }
         // A refusal is not a bad connection, and the screen used to say
@@ -162,6 +180,7 @@ export function UnloadScreen({ batchId, countHref }: { batchId: string; countHre
        * toast (a single slot, overwritten by the next) was the whole of the
        * telling.
        */
+      let rerouted: SyncAck | null = null;
       for (const ack of acks) {
         if (ack.result === 'auto_transfer') {
           setToast({
@@ -170,7 +189,11 @@ export function UnloadScreen({ batchId, countHref }: { batchId: string; countHre
         } else if (ack.result === 'unknown_code') {
           setToast({ text: `❓ ${t('unknownCode')}`, intake: true });
         } else if (ack.result === 'rejected') {
-          if (isScanRefusal(ack.detail)) {
+          // BEFORE the count-only refusals: a truck rerouted away is not a
+          // lot the office counts, and its lot label means nothing here.
+          if (ack.detail === 'batch_rerouted') {
+            rerouted = ack;
+          } else if (isScanRefusal(ack.detail)) {
             // A lot the office counts: said by NAME, the server's words and
             // the phone's own being the same sentence (0112).
             const snap = snapRef.current;
@@ -196,11 +219,21 @@ export function UnloadScreen({ batchId, countHref }: { batchId: string; countHre
         // a count-only lot's refusal is already a sentence naming the lot,
         // and a bare «N refused» over it would hide what to do.
         const plain = acks.filter(
-          (a) => (a.result === 'rejected' || a.result === 'unknown_code') && !isScanRefusal(a.detail),
+          (a) =>
+            (a.result === 'rejected' || a.result === 'unknown_code') &&
+            !isScanRefusal(a.detail) &&
+            a.detail !== 'batch_rerouted',
         ).length;
         if (plain > 0 || refused.length > 1) {
           setToast({ text: `❌ ${t('serverRefused', { n: refused.length })}` });
         }
+      }
+      // LAST, so no count toast writes over it: the marks are back off, and
+      // the one thing to know is where the truck went.
+      if (rerouted) {
+        const to = rerouted.rerouteTo ?? '—';
+        setReroutedTo(to);
+        setToast({ text: t('batchRerouted', { to }) });
       }
     },
     [t, refusalText],
@@ -218,7 +251,7 @@ export function UnloadScreen({ batchId, countHref }: { batchId: string; countHre
   const flush = useCallback(
     async ({ sync }: { sync?: boolean } = {}) => {
       try {
-        const { acks, discarded, refusedForbidden } = await flushScans();
+        const { acks, discarded, refusedForbidden, withheld } = await flushScans();
         handleAcks(acks);
         // A body the server threw out is not a network problem, and saying
         // «offline» about it is how a jammed queue looked like bad wifi.
@@ -230,7 +263,11 @@ export function UnloadScreen({ batchId, countHref }: { batchId: string; countHre
             return next;
           });
         }
-        if (refusedForbidden) setToast({ text: `🚫 ${t('notYourTruck')}` });
+        // Rows of a truck this person may not touch stay on the phone — and
+        // since the reroute round they no longer stop the others: said as
+        // exactly that, not as «session expired».
+        if (withheld > 0) setToast({ text: `🚫 ${tc('scanWithheld', { n: withheld })}` });
+        else if (refusedForbidden) setToast({ text: `🚫 ${t('notYourTruck')}` });
         setOnline(true);
         // Live counter across phones: merge the server's unloaded set in.
         if (sync) {
@@ -238,6 +275,12 @@ export function UnloadScreen({ batchId, countHref }: { batchId: string; countHre
             const res = await fetch(`/api/batches/${batchId}/planned`, {
               headers: snapEtag.current ? { 'If-None-Match': snapEtag.current } : undefined,
             });
+            // Rerouted away while the screen was open (the reroute round).
+            if (res.status === 409) {
+              const body = (await res.json().catch(() => null)) as { to?: unknown } | null;
+              localStorage.removeItem(cacheKey);
+              setReroutedTo(typeof body?.to === 'string' ? body.to : '—');
+            }
             // 304 = nobody has scanned anything since the last tick: no body on
             // the wire, nothing to parse, nothing to re-render.
             if (res.ok) {
@@ -261,7 +304,7 @@ export function UnloadScreen({ batchId, countHref }: { batchId: string; countHre
       }
       await refreshPending();
     },
-    [handleAcks, refreshPending, batchId, cacheKey, t],
+    [handleAcks, refreshPending, batchId, cacheKey, t, tc],
   );
 
   /**
@@ -340,6 +383,14 @@ export function UnloadScreen({ batchId, countHref }: { batchId: string; countHre
     codes: string[],
     scan: { code: string; method: 'qr' | 'manual'; manualReason?: string },
   ) {
+    // Rerouted away: nothing more is queued — every row would only come back
+    // refused, and a green mark that is taken back a minute later is worse
+    // than a red one now.
+    if (reroutedTo) {
+      feedback('bad');
+      setToast({ text: t('batchRerouted', { to: reroutedTo }) });
+      return;
+    }
     setDone((prev) => {
       const next = new Set(prev);
       for (const c of codes) next.add(c);
@@ -414,6 +465,19 @@ export function UnloadScreen({ batchId, countHref }: { batchId: string; countHre
 
   if (!snapshot) {
     if (!snapError) return <p className="p-4 text-ink-500">{tc('loading')}</p>;
+    // Not «retry»: pressing again answers the same — the truck goes elsewhere.
+    if (snapError.kind === 'rerouted') {
+      return (
+        <div className="card space-y-3 !p-4 text-center" data-testid="snapshot-error">
+          <p role="alert" className="font-semibold text-bad" data-testid="unload-rerouted">
+            {t('batchRerouted', { to: snapError.to ?? '—' })}
+          </p>
+          <Link href="/" className="btn-secondary w-full">
+            {tc('back')}
+          </Link>
+        </div>
+      );
+    }
     return (
       <div className="card space-y-3 !p-4 text-center" data-testid="snapshot-error">
         <p className="font-semibold text-bad">
@@ -484,6 +548,19 @@ export function UnloadScreen({ batchId, countHref }: { batchId: string; countHre
             : `✅ ${t('online')}`
           : `📴 ${t('offline', { n: pending })}`}
       </div>
+
+      {/* Rerouted away while this screen was open (the reroute round): said
+          above the scanner, where the eye is, and held there — a toast is one
+          slot the next scan writes over. */}
+      {reroutedTo && (
+        <p
+          role="alert"
+          data-testid="unload-rerouted"
+          className="sticky top-16 z-10 rounded-lg bg-bad/15 p-3 text-center text-sm font-semibold text-bad"
+        >
+          {t('batchRerouted', { to: reroutedTo })}
+        </p>
+      )}
 
       <Scanner active onCode={(code) => onCode(code)} />
 

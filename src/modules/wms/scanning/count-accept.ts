@@ -71,6 +71,13 @@ export const countAcceptSchema = z.object({
   pressId: z.string().uuid(),
   overReason: z.string().trim().max(500).optional().or(z.literal('')),
   confirmArrival: z.boolean().default(false),
+  /**
+   * The destination the panel was rendered for (the reroute round): the
+   * action authorizes and mints its door THERE, so a stale page's press on a
+   * truck rerouted since is refused `batch_rerouted` in words — never landed
+   * at the new warehouse by an unscoped logist, never «Ruxsat yo'q».
+   */
+  seenDestWarehouseId: z.string().uuid().optional(),
 });
 export type CountAcceptInput = z.infer<typeof countAcceptSchema>;
 
@@ -79,6 +86,8 @@ export const countAcceptCrateSchema = z.object({
   crateId: z.string().uuid(),
   pressId: z.string().uuid(),
   confirmArrival: z.boolean().default(false),
+  /** As on the lot press. */
+  seenDestWarehouseId: z.string().uuid().optional(),
 });
 export type CountAcceptCrateInput = z.infer<typeof countAcceptCrateSchema>;
 
@@ -101,7 +110,9 @@ export type CountAcceptRefusal =
   | 'grow_refused'
   | 'count_conflict'
   | 'busy_retry'
-  | 'crate_not_on_batch';
+  | 'crate_not_on_batch'
+  // The destination moved after the panel was drawn (the reroute round).
+  | 'batch_rerouted';
 
 export class CountError extends Error {
   constructor(
@@ -110,6 +121,16 @@ export class CountError extends Error {
   ) {
     super(code);
   }
+}
+
+/**
+ * A destination door that does not open for the truck as it stands: minted
+ * for THIS person, it was minted at the warehouse the panel was drawn for, so
+ * the truck was rerouted since — the person is told so. Any other door (none,
+ * another person's) is a plain refusal, as it always was (#790).
+ */
+function reroutedOrForbidden(door: CountDoor | null | undefined, actorId: string): CountAcceptRefusal {
+  return door && door.actorId === actorId ? 'batch_rerouted' : 'forbidden';
 }
 
 /**
@@ -350,7 +371,10 @@ export async function countAcceptLot(
   if (!pre) throw new CountError('batch_not_found');
   // The door is the FIRST refusal, before anything is read about the cargo
   // (#790: an absent answer fails closed; #531: the service says it too).
-  if (!doorOpens(doors.dest, pre.destWarehouseId, actorId)) throw new CountError('forbidden');
+  // A door minted for THIS person at another warehouse means only that the
+  // destination moved since the panel was drawn — said as the reroute, not
+  // as «Ruxsat yo'q» (the reroute round).
+  if (!doorOpens(doors.dest, pre.destWarehouseId, actorId)) throw new CountError(reroutedOrForbidden(doors.dest, actorId));
   if (!['in_transit', 'arrived'].includes(pre.status)) throw new CountError('batch_not_unloading');
   // Decision 16: a count onto a truck still «on the road» declares it
   // arrived and may tell its clients so. The screen asks in words; the
@@ -615,6 +639,10 @@ async function countChunk(
   if (!batch || !['in_transit', 'arrived'].includes(batch.status)) {
     throw new CountError('batch_not_unloading');
   }
+  // Asked again on the LOCKED row: the reroute takes the same lock, so a
+  // destination moved between the pre-check and here is seen now (the
+  // reroute round).
+  if (!doorOpens(a.doors.dest, batch.destWarehouseId, actorId)) throw new CountError('batch_rerouted');
   const wasInTransit = batch.status === 'in_transit';
   if (wasInTransit && !input.confirmArrival) throw new CountError('confirm_arrival_required');
   await tx.select({ id: receiptLots.id }).from(receiptLots).where(eq(receiptLots.id, L)).for('update');
@@ -996,7 +1024,7 @@ export async function countAcceptCrate(
   const actorId = ctx.actorId;
   const pre = await db.query.batches.findFirst({ where: eq(batches.id, input.batchId) });
   if (!pre) throw new CountError('batch_not_found');
-  if (!doorOpens(doors.dest, pre.destWarehouseId, actorId)) throw new CountError('forbidden');
+  if (!doorOpens(doors.dest, pre.destWarehouseId, actorId)) throw new CountError(reroutedOrForbidden(doors.dest, actorId));
   if (!['in_transit', 'arrived'].includes(pre.status)) throw new CountError('batch_not_unloading');
   if (pre.status === 'in_transit' && !input.confirmArrival) throw new CountError('confirm_arrival_required');
   try {
@@ -1010,6 +1038,7 @@ export async function countAcceptCrate(
       if (!batch || !['in_transit', 'arrived'].includes(batch.status)) {
         throw new CountError('batch_not_unloading');
       }
+      if (!doorOpens(doors.dest, batch.destWarehouseId, actorId)) throw new CountError('batch_rerouted');
       const [crate] = await tx.select().from(crates).where(eq(crates.id, input.crateId));
       if (!crate) throw new CountError('crate_not_on_batch');
       await tx.select({ id: boxes.id }).from(boxes).where(eq(boxes.crateId, crate.id)).orderBy(asc(boxes.id)).for('update');

@@ -51,7 +51,8 @@
     "photoOnly": "That is not a photograph — choose an image (📎 takes documents)",
     "scanSnapshotServer": "The server answered with an error (code {n}). The internet works — show this code to a manager.",
     "futureDate": "The date cannot be later than tomorrow.",
-    "amountTooLarge": "The amount is too large for one row."
+    "amountTooLarge": "The amount is too large for one row.",
+    "scanWithheld": "{n} scan(s) not sent — this truck is not your warehouse’s. The other scans were sent."
   },
   "login": {
     "title": "Sign in",
@@ -834,7 +835,8 @@
       "widthCm": "Width, cm",
       "cargoStampedTo": "Cargo attributed to",
       "receipts": "Receipts",
-      "loginEnabled": "Login"
+      "loginEnabled": "Login",
+      "destination": "Receiving warehouse"
     }
   },
   "profile": {
@@ -1410,6 +1412,41 @@
       "not_in_transit": "The truck is not on the road — pins are for trucks in transit",
       "unknown_key": "No such pin",
       "not_on_route": "This truck does not pass there — choose a pin on its own road"
+    },
+    "reroute": {
+      "title": "Change destination (receiving warehouse)",
+      "badgeRerouted": "↪ {now} · planned {planned}",
+      "target": "New receiving warehouse",
+      "targetPick": "— choose a warehouse —",
+      "reason": "Reason (required)",
+      "hint": "Only to a warehouse in the same country. It cannot be changed once the first carton is unloaded. Telegram: the new warehouse’s staff and the logists; a warehouse told earlier «coming to you» is warned too.",
+      "pinOff": "📍 The truck’s position pin is not shown on the new road (it is kept — change back and it shows again)",
+      "noSchedule": "No estimated date for the new road — the map shows only the driver phone’s position",
+      "submit": "↪ Change destination",
+      "confirm": "{code}: receiving warehouse {to} instead of {from}?",
+      "done": "✅ Destination changed: now {to}",
+      "noTargets": "No other active warehouse in this country",
+      "plannedLine": "Planned: {planned} → destination changed: {now}",
+      "history": "Changes",
+      "historyRow": "{when} · {who} · {to} (instead of {from}) · Reason: {reason}",
+      "errors": {
+        "forbidden": "Only an admin or a logist can change the destination",
+        "out_of_scope": "This warehouse is not assigned to you",
+        "batch_not_found": "Truck not found",
+        "not_in_transit": "The truck is not on the road — the destination changes only on a truck that has left and is not yet being unloaded",
+        "dest_changed": "Someone has just changed the destination — refresh the page and check again",
+        "reason_required": "Write the reason (at least 3 letters)",
+        "reason_too_long": "The reason is too long (up to 500 characters)",
+        "bad_target": "Choose a warehouse from the list",
+        "same_destination": "The truck is already going to this warehouse",
+        "destination_is_origin": "The warehouse the truck left cannot be its receiving warehouse",
+        "target_inactive": "This warehouse is deactivated",
+        "country_unknown": "The warehouse’s country is not set",
+        "other_country": "Cannot change to a warehouse in another country — only within the same country",
+        "busy_retry": "The truck is busy right now (unloading may be starting) — press again in a moment",
+        "validation": "Invalid data — refresh the page",
+        "offline": "The server did not answer — check the connection and press again. The choice and the reason are kept."
+      }
     }
   },
   "loading": {
@@ -1485,8 +1522,10 @@
       "finish_unload_first": "Finish the unload first.",
       "batch_not_unloading": "The truck is not being unloaded.",
       "not_found": "Not found — reload the page.",
-      "failed": "Could not save — try again."
-    }
+      "failed": "Could not save — try again.",
+      "batch_rerouted": "The truck’s receiving warehouse was changed — refresh the page."
+    },
+    "batchRerouted": "↪ This truck’s receiving warehouse was changed — it now goes to {to}. The cargo is not unloaded here; if this is a mistake, tell the logist."
   },
   "transit": {
     "title": "Cargo in transit",
@@ -4528,7 +4567,8 @@
       "count_conflict": "It clashed with another change — refresh and press again.",
       "busy_retry": "Another change was in progress — press again.",
       "crate_not_on_batch": "This crate is not on this truck.",
-      "validation": "Enter a whole number (1 or more)."
+      "validation": "Enter a whole number (1 or more).",
+      "batch_rerouted": "The truck’s receiving warehouse was changed — refresh the page."
     }
   },
   "qrsiz": {

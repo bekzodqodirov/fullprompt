@@ -1,6 +1,7 @@
 import { aliasedTable, eq, sql, type SQL } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { batches, warehouses } from '../../platform/db/schema';
+import { countryKey } from './country-key';
 
 /**
  * An INTERNAL leg — a truck inside CHINA, which is never billed (owner,
@@ -34,9 +35,7 @@ export function isInternalLeg(
   originCountry: string | null | undefined,
   destCountry: string | null | undefined,
 ): boolean {
-  const a = (originCountry ?? '').trim().toUpperCase();
-  const b = (destCountry ?? '').trim().toUpperCase();
-  return a === 'CN' && b === 'CN';
+  return countryKey(originCountry) === 'CN' && countryKey(destCountry) === 'CN';
 }
 
 /**
