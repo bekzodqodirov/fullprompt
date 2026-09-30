@@ -169,8 +169,14 @@ export function SearchPalette({ children }: { children: React.ReactNode }) {
                           be told from the row above it. The label gives way
                           instead. */}
                       <span className="shrink-0 whitespace-nowrap font-semibold">{hit.code}</span>
-                      {hit.label && (
-                        <span className="truncate text-sm text-ink-500">{hit.label}</span>
+                      {(hit.label || hit.formerCode) && (
+                        <span className="truncate text-sm text-ink-500">
+                          {/* A truck found by an OLD name says so, or the row
+                              reads as a wrong answer to what was typed. */}
+                          {[hit.formerCode ? t('formerCode', { code: hit.formerCode }) : '', hit.label ?? '']
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </span>
                       )}
                     </button>
                   </li>

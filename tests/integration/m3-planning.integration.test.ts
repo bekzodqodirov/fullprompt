@@ -26,16 +26,17 @@ import {
   PlanError,
   cancelPlan,
   recordVerdict,
-  renameBatch,
   submitPlan,
 } from '@/modules/wms/planning/service';
+import { renameBatch } from '@/modules/wms/batches/rename';
+import type { RenameDoorActor } from '@/modules/wms/batches/rename-door';
 import {
   ScanError,
   departBatch,
   finishLoading,
   ingestLoadScans,
 } from '@/modules/wms/scanning/service';
-import { cancelBatch, ingestUnloadScans } from '@/modules/wms/scanning/unload';
+import { cancelBatch, finishUnload, ingestUnloadScans } from '@/modules/wms/scanning/unload';
 import { batchRegister } from '@/modules/wms/reports/queries';
 import { devicesForBatch } from '@/modules/wms/tracking/devices';
 
@@ -608,32 +609,85 @@ describe('renaming a batch', () => {
     return { lot, batch: batch! };
   }
 
+  /** The planner's door, minted for the SAME person the audit context names. */
+  const planner = (): RenameDoorActor => ({
+    id: actorId,
+    permissions: new Set(['plans.manage']),
+    warehouseScoped: false,
+    warehouseIds: [],
+  });
+
+  function rename(
+    batchId: string,
+    code: string,
+    seen: { code: string; stage: 'loading' | 'road' },
+    reason?: string,
+  ) {
+    return renameBatch({ batchId, code, reason, seen }, planner(), ctx());
+  }
+
+  async function codeOf(batchId: string) {
+    return (await db.query.batches.findFirst({ where: eq(batches.id, batchId) }))!.code;
+  }
+
   it('accepts a manual code before departure and refuses one that is taken', async () => {
     const { batch } = await newBatch(2);
     const wanted = `GSR-KASHGAR ${String(Date.now()).slice(-6)}`;
 
     // Trimmed, inner spaces collapsed, uppercased — so a near-duplicate
-    // cannot hide behind whitespace or case.
-    const renamed = await renameBatch(batch.id, `  ${wanted.toLowerCase()}  `, ctx());
-    expect(renamed.code).toBe(wanted);
+    // cannot hide behind whitespace or case. Spaces stay legal before
+    // departure, exactly as before the road rule existed.
+    const renamed = await rename(batch.id, `  ${wanted.toLowerCase()}  `, {
+      code: batch.code,
+      stage: 'loading',
+    });
+    expect(renamed.batch.code).toBe(wanted);
+    expect(renamed.changed).toBe(true);
 
     const other = await newBatch(1);
-    await expect(renameBatch(other.batch.id, wanted.toLowerCase(), ctx())).rejects.toThrow(
-      'code_taken',
-    );
+    await expect(
+      rename(other.batch.id, wanted.toLowerCase(), { code: other.batch.code, stage: 'loading' }),
+    ).rejects.toThrow('code_taken');
     // Saving its own code again is a no-op, not a clash with itself.
-    expect((await renameBatch(batch.id, wanted, ctx())).code).toBe(wanted);
+    const again = await rename(batch.id, wanted, { code: wanted, stage: 'loading' });
+    expect(again.batch.code).toBe(wanted);
+    expect(again.changed).toBe(false);
 
-    await expect(renameBatch(batch.id, 'X', ctx())).rejects.toThrow('bad_code');
+    await expect(rename(batch.id, 'X', { code: wanted, stage: 'loading' })).rejects.toThrow(
+      'bad_code',
+    );
   });
 
-  it('locks the code once the truck has left', async () => {
+  /**
+   * #122 reversed by the owner's 1a (2026-09-30): a departed truck may be
+   * renamed — with a reason — until unloading finishes, and not after.
+   */
+  it('a departed truck is renamed only with a reason, and the name locks when unloading finishes', async () => {
     const { lot, batch } = await newBatch(1);
     for (const code of lot.shortCodes) {
       await ingestLoadScans([{ ...scan(batch.id, code), addedOnSpot: false }], ctx());
     }
     await departBatch(batch.id, ctx());
-    await expect(renameBatch(batch.id, 'TOO-LATE', ctx())).rejects.toThrow('batch_departed');
+    const onRoad = `KA-${String(Date.now()).slice(-6)}`;
+    await expect(rename(batch.id, onRoad, { code: batch.code, stage: 'road' })).rejects.toThrow(
+      'reason_required',
+    );
+    expect(await codeOf(batch.id)).toBe(batch.code);
+
+    const done = await rename(
+      batch.id,
+      onRoad,
+      { code: batch.code, stage: 'road' },
+      'agent hujjatlarida boshqa raqam',
+    );
+    expect(done.batch.code).toBe(onRoad);
+    expect(done.stage).toBe('road');
+
+    await finishUnload(batch.id, ctx(), { mayCloseWithMissing: true });
+    await expect(
+      rename(batch.id, `${onRoad}-2`, { code: onRoad, stage: 'road' }, 'kech qoldi'),
+    ).rejects.toThrow('rename_closed');
+    expect(await codeOf(batch.id)).toBe(onRoad);
   });
 });
 

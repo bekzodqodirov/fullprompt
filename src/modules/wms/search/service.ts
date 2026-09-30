@@ -18,6 +18,7 @@ import { inScope, warehouseScope, warehouseScopeEither } from '../../platform/rb
 import { canWriteDeal } from '../deals/service';
 import { likeNeedle, parseQuery } from './query';
 import { mayReadBatches } from '../batches/read-door';
+import { batchTextMatchSql, formerCodeHitSql } from '../batches/former-codes';
 import { maySeeStaffMoney, staffPartnerSql } from '../partners/staff';
 import { roadLossBatchSql, roadLossInScope } from '../boxes/road-loss';
 
@@ -54,6 +55,13 @@ export interface SearchHit {
   /** The quiet part: a name, a product, a status. */
   label?: string;
   href: string;
+  /**
+   * A truck found by a name it USED to wear (renamed on the road, the
+   * owner's 1a): the old name, so the row can say why a different code
+   * matched. A name, never money — and absent, not null, when the current
+   * code matched.
+   */
+  formerCode?: string;
 }
 
 export interface SearchActor {
@@ -239,20 +247,19 @@ async function searchBatches(actor: SearchActor, like: string): Promise<SearchHi
   // list (wms/batches/read-door.ts).
   if (!mayReadBatches(actor.permissions)) return [];
   const scope = warehouseScopeEither(actor, batches.originWarehouseId, batches.destWarehouseId);
+  // The match is ONE bracketed fragment shared with the /batches archive
+  // (`batchTextMatchSql`), so the warehouse fence binds to every alternative
+  // — a former name included — and never to the last one only.
   const rows = await db
     .select({
       id: batches.id,
       code: batches.code,
       plate: batches.vehiclePlate,
       status: batches.status,
+      formerCode: formerCodeHitSql(like),
     })
     .from(batches)
-    .where(
-      and(
-        sql`(${batches.code} ILIKE ${like} OR ${batches.vehiclePlate} ILIKE ${like} OR ${batches.driverName} ILIKE ${like})`,
-        ...scopeOf(scope),
-      ),
-    )
+    .where(and(batchTextMatchSql(like), ...scopeOf(scope)))
     .orderBy(desc(batches.createdAt))
     .limit(PER_GROUP);
   return rows.map((row) => ({
@@ -261,6 +268,7 @@ async function searchBatches(actor: SearchActor, like: string): Promise<SearchHi
     code: row.code,
     label: [row.plate, row.status].filter(Boolean).join(' · '),
     href: `/batches/${row.id}`,
+    ...(row.formerCode ? { formerCode: row.formerCode } : {}),
   }));
 }
 

@@ -63,7 +63,13 @@ export default async function SearchPage({
               <span className="shrink-0 whitespace-nowrap font-mono font-extrabold text-brand-700">
                 {hit.code}
               </span>
-              {hit.label && <span className="truncate text-ink-700">{hit.label}</span>}
+              {(hit.label || hit.formerCode) && (
+                <span className="truncate text-ink-700">
+                  {[hit.formerCode ? t('formerCode', { code: hit.formerCode }) : '', hit.label ?? '']
+                    .filter(Boolean)
+                    .join(' · ')}
+                </span>
+              )}
             </Link>
           ))}
         </section>

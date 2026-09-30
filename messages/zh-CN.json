@@ -1090,7 +1090,8 @@
       "box": "箱子",
       "receipt": "入库",
       "lot": "货物"
-    }
+    },
+    "formerCode": "原名称：{code}"
   },
   "crates": {
     "title": "木箱",
@@ -1379,7 +1380,6 @@
     "archive": "归档 — 已完成批次",
     "archiveSearch": "批次代码、车牌或司机",
     "archiveEmpty": "未找到",
-    "codeTaken": "该代码已被占用",
     "vehicleTitle": "车辆与司机",
     "pairCodeLabel": "司机应用代码",
     "cancelBatch": "取消批次",
@@ -1410,6 +1410,43 @@
       "not_in_transit": "车辆不在途中——只能给在途车辆打点",
       "unknown_key": "没有这个位置标记",
       "not_on_route": "该车不经过此处——请选择其路线上的标记"
+    },
+    "rename": {
+      "codeLabel": "新名称",
+      "codeHintRoad": "拉丁字母、数字和「-」，3–20 个字符；至少一个字母和一个数字（例如 KA-77、01A777BA）",
+      "reasonLabel": "原因（必填）",
+      "reasonHint": "为什么修改？例如：代理的单据上是另一个号码",
+      "docsHint": "发票、舱单和装箱单今后将以新名称下载。已发出的单据、Telegram 消息和司机手机里仍是旧名称——搜索、「批次」归档和机器人仍可用旧名称找到它。",
+      "agentSent": "单据已于 {date} 发给代理——请告诉代理新名称。",
+      "confirm": "{from} → {to}：确定重命名该批次？",
+      "save": "重命名",
+      "former": "原名称：{codes}",
+      "formerHit": "原名称：{code}",
+      "log": "谁重命名、为什么",
+      "logRow": "{date} · {who}：{from} → {to}",
+      "noReason": "未填写原因（发车前）",
+      "errors": {
+        "bad_code": "名称须为 2 至 40 个字符",
+        "code_cyrillic": "名称中有西里尔字母（К、А、Е、Т…）——屏幕上看起来一样，但机器人和搜索找不到。请切换到拉丁键盘重新输入",
+        "code_chars": "在途车辆名称只能使用拉丁字母、数字和「-」（不能有空格、句点或「/」）",
+        "code_length": "在途车辆名称须为 3 至 20 个字符",
+        "code_needs_letter": "名称中至少需要一个拉丁字母",
+        "code_needs_digit": "名称中至少需要一个数字（例如 KA-77）——机器人靠此识别",
+        "shape_lot": "「GS777-A」形式的名称会与货物（批号）混淆——搜索找不到该批次",
+        "shape_client": "该名称像客户代码（例如 GS500）——在机器人中会与客户混淆。请加「-」：KA-77",
+        "shape_box": "该名称像箱号（例如 YW26-000123）——在机器人中会混淆",
+        "shape_crate": "以「CR-」开头的名称会与木箱代码混淆",
+        "shadows_client": "已有该代码的客户——在机器人中会混淆。请换一个名称",
+        "shadows_box": "已有该代码的箱子——在机器人中会混淆。请换一个名称",
+        "shadows_crate": "已有该代码的木箱——在机器人中会混淆。请换一个名称",
+        "code_taken": "该名称已被占用或曾被其他批次使用",
+        "reason_required": "请填写原因（至少 3 个字符）",
+        "batch_changed": "批次在此期间已变化（已发车或同事已重命名）——页面已刷新，请再检查",
+        "rename_closed": "卸货已完成（或批次已关闭/取消）——不能再重命名",
+        "forbidden": "只有管理员或物流员可以重命名批次",
+        "not_found": "未找到批次",
+        "busy": "该批次正在进行其他操作——请再按一次"
+      }
     }
   },
   "loading": {

@@ -1090,7 +1090,8 @@
       "box": "Karobkalar",
       "receipt": "Prixodlar",
       "lot": "Tovarlar"
-    }
+    },
+    "formerCode": "oldingi nomi: {code}"
   },
   "crates": {
     "title": "Yashiklar",
@@ -1379,7 +1380,6 @@
     "archive": "Arxiv — yakunlangan partiyalar",
     "archiveSearch": "Partiya kodi, mashina raqami yoki haydovchi",
     "archiveEmpty": "Topilmadi",
-    "codeTaken": "Bunday kod band",
     "vehicleTitle": "Mashina va haydovchi",
     "pairCodeLabel": "Haydovchi ilovasi uchun kod",
     "cancelBatch": "Partiyani bekor qilish",
@@ -1410,6 +1410,43 @@
       "not_in_transit": "Mashina yo‘lda emas — belgi faqat yo‘ldagi mashinaga qo‘yiladi",
       "unknown_key": "Bunday belgi yo‘q",
       "not_on_route": "Bu mashina u yerdan o‘tmaydi — o‘z yo‘lining belgisini tanlang"
+    },
+    "rename": {
+      "codeLabel": "Yangi nom",
+      "codeHintRoad": "Lotin harflari, raqamlar va «-», 3–20 belgi; kamida bitta harf va bitta raqam (masalan KA-77, 01A777BA)",
+      "reasonLabel": "Sabab (majburiy)",
+      "reasonHint": "Nega o‘zgartiryapsiz? Masalan: agent hujjatlarida boshqa raqam",
+      "docsHint": "Invoys, manifest va packing list endi yangi nom bilan yuklanadi. Oldin yuborilgan hujjatlarda, Telegram xabarlarida va haydovchi telefonida eski nom qoladi — eski nom qidiruvda, «Partiyalar» arxivida va botda topiladi.",
+      "agentSent": "Hujjatlar {date} kuni agentga yuborilgan — agentga yangi nomni ayting.",
+      "confirm": "{from} → {to}: partiya nomini o‘zgartiramizmi?",
+      "save": "Nomini o‘zgartirish",
+      "former": "Oldingi nomi: {codes}",
+      "formerHit": "oldingi nomi: {code}",
+      "log": "Kim va nega o‘zgartirdi",
+      "logRow": "{date} · {who}: {from} → {to}",
+      "noReason": "sabab yozilmagan (jo‘nashdan oldin)",
+      "errors": {
+        "bad_code": "Nom 2 dan 40 belgigacha bo‘lsin",
+        "code_cyrillic": "Nomda kirillcha harf bor (К, А, Е, Т…) — ekranda bir xil ko‘rinadi, lekin bot va qidiruv topmaydi. Klaviaturani lotinchaga o‘tkazib qayta yozing",
+        "code_chars": "Yo‘ldagi mashina nomida faqat lotin harflari, raqamlar va «-» bo‘lsin (bo‘sh joy, nuqta, «/» emas)",
+        "code_length": "Yo‘ldagi mashina nomi 3 dan 20 belgigacha bo‘lsin",
+        "code_needs_letter": "Nomda kamida bitta lotin harfi bo‘lsin",
+        "code_needs_digit": "Nomda kamida bitta raqam bo‘lsin (masalan KA-77) — bot nomni shunda taniydi",
+        "shape_lot": "«GS777-A» ko‘rinishidagi nom tovar (lot) bilan adashadi — qidiruv uni partiya deb topmaydi",
+        "shape_client": "Bu nom mijoz kodiga o‘xshaydi (masalan GS500) — botda mijoz bilan adashadi. «-» qo‘shing: KA-77",
+        "shape_box": "Bu nom karobka kodiga o‘xshaydi (masalan YW26-000123) — botda adashadi",
+        "shape_crate": "«CR-» bilan boshlangan nom yashik kodi bilan adashadi",
+        "shadows_client": "Bunday kodli mijoz bor — botda adashadi. Boshqa nom tanlang",
+        "shadows_box": "Bunday kodli karobka bor — botda adashadi. Boshqa nom tanlang",
+        "shadows_crate": "Bunday kodli yashik bor — botda adashadi. Boshqa nom tanlang",
+        "code_taken": "Bu nom band yoki avval boshqa partiyada ishlatilgan",
+        "reason_required": "Sababni yozing (kamida 3 belgi)",
+        "batch_changed": "Partiya shu orada o‘zgardi (jo‘nab ketdi yoki boshqa hodim nomini o‘zgartirdi) — sahifa yangilandi, qaytadan tekshiring",
+        "rename_closed": "Tushirish tugagan (yoki partiya yopilgan / bekor qilingan) — nomini endi o‘zgartirib bo‘lmaydi",
+        "forbidden": "Partiya nomini faqat admin yoki logist o‘zgartira oladi",
+        "not_found": "Partiya topilmadi",
+        "busy": "Shu partiyada boshqa ish ketayotgan edi — qaytadan bosing"
+      }
     }
   },
   "loading": {

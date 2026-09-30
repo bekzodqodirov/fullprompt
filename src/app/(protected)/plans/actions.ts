@@ -11,7 +11,6 @@ import {
   PlanError,
   cancelPlan,
   recordVerdict,
-  renameBatch,
   submitPlan,
   submitPlanSchema,
   verdictSchema,
@@ -19,6 +18,10 @@ import {
 import { departBatch, finishLoading, ScanError } from '@/modules/wms/scanning/service';
 import { cancelBatch } from '@/modules/wms/scanning/unload';
 import { mayCountMove } from '@/modules/wms/scanning/count-door';
+import { authorizeOnBatch } from '@/modules/wms/batches/batch-authorize';
+import { BATCH_TABS, batchTabHref } from '@/modules/wms/batches/card-door';
+import { RenameError, renameBatch } from '@/modules/wms/batches/rename';
+import { isBusyError } from '@/modules/platform/db/errors';
 import { z } from 'zod';
 
 export async function submitPlanAction(
@@ -180,13 +183,22 @@ export async function departBatchAction(
 export interface BatchCodeFormState {
   ok?: boolean;
   error?: string;
+  detail?: string;
   code?: string;
+  changed?: boolean;
 }
 
 /**
- * Rename a batch before it departs (owner's request). Guarded by the same
- * permission that creates batches from a plan, not the vehicle-info one — the
- * code is the batch's identity on every document it appears in.
+ * Rename a truck — before departure and, since the owner's 1a (2026-09-30),
+ * on the road until unloading finishes (`wms/batches/rename.ts`, which
+ * reverses #122).
+ *
+ * The door is asked here AND again by the service on the row it locks:
+ * `authorizeOnBatch` is the permission first and then the truck card's own
+ * two-ends door, and the service re-asks the stage's rule (origin before
+ * departure, either end on the road, nobody once finished). `seen` is what
+ * the presser's screen showed; a page rendered before this deploy posts none
+ * and is answered `batch_changed`, which refreshes it — never a guess.
  */
 export async function renameBatchAction(
   _prev: BatchCodeFormState,
@@ -194,23 +206,37 @@ export async function renameBatchAction(
 ): Promise<BatchCodeFormState> {
   const batchId = String(formData.get('batchId') ?? '');
   const code = String(formData.get('code') ?? '');
-  if (!/^[0-9a-f-]{36}$/i.test(batchId)) return { error: 'validation' };
-  const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
-  if (!batch) return { error: 'not_found' };
-  let actor;
+  const reason = String(formData.get('reason') ?? '');
+  const seenCode = formData.get('seenCode');
+  const seenStage = formData.get('seenStage');
+  if (typeof seenCode !== 'string' || (seenStage !== 'loading' && seenStage !== 'road')) {
+    return { error: 'batch_changed' };
+  }
+  let door;
   try {
-    actor = await authorize('plans.manage', { warehouseId: batch.originWarehouseId });
+    door = await authorizeOnBatch('plans.manage', batchId);
   } catch (err) {
     if (err instanceof AuthError) return { error: 'forbidden' };
     throw err;
   }
+  if (!door) return { error: 'not_found' };
   const meta = await requestMeta();
   try {
-    const updated = await renameBatch(batchId, code, { actorId: actor.id, ...meta });
-    revalidatePath(`/batches/${batchId}`);
-    return { ok: true, code: updated.code };
+    const result = await renameBatch(
+      { batchId, code, reason, seen: { code: seenCode, stage: seenStage } },
+      door.actor,
+      { actorId: door.actor.id, ...meta },
+    );
+    // Every tab of the card carries the header, and four lists print the code.
+    for (const tab of BATCH_TABS) revalidatePath(batchTabHref(batchId, tab));
+    revalidatePath('/batches');
+    revalidatePath('/transit');
+    revalidatePath('/trucks');
+    revalidatePath('/map');
+    return { ok: true, code: result.batch.code, changed: result.changed };
   } catch (err) {
-    if (err instanceof PlanError) return { error: err.code };
+    if (err instanceof RenameError) return { error: err.code, detail: err.detail };
+    if (isBusyError(err)) return { error: 'busy' };
     throw err;
   }
 }

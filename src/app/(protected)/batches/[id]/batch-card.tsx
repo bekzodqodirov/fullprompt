@@ -19,6 +19,8 @@ import { batchLoadProgress, loadBatchHead, type BatchHead } from '@/modules/wms/
 import { batchDocsPending } from '@/modules/wms/batches/docs-pending';
 import { batchLots } from '@/modules/wms/batches/lots';
 import { mayReadBatches } from '@/modules/wms/batches/read-door';
+import { formerCodesOf, formerNames, type FormerCodeRow } from '@/modules/wms/batches/former-codes';
+import { mayRenameBatch, renameDoorOpens, renameStageOf } from '@/modules/wms/batches/rename-door';
 import {
   batchCarriageOf,
   batchCostEntryCount,
@@ -302,6 +304,19 @@ export async function BatchCard({
   const badge = (tab: BatchTab) => todos.filter((todo) => todo.tab === tab).length;
   const tabHref = (tab: BatchTab, hash = 'tabs') => `${batchTabHref(id, tab)}#${hash}`;
 
+  // The ✏️ on the code: the SAME predicate the service obeys (rename-door.ts),
+  // so a drawn pencil never bounces. The aboard count is the unload screen's
+  // own (cached, the todo list reads it) and is read only for a person whose
+  // door is open at all.
+  const renameStage = renameDoorOpens(actor, batch)
+    ? renameStageOf(batch.status, unloadingNow ? (await remainingToUnload(id)).length : 0)
+    : 'closed';
+  const renameMode = renameStage !== 'closed' && mayRenameBatch(actor, batch, renameStage) ? renameStage : 'off';
+  // «Oldingi nomi» — every name the truck wore, for everyone who may open the
+  // card (the papers keep them); the who/why log only for the truck's readers.
+  const renames: FormerCodeRow[] = (await soft('former', () => formerCodesOf(id))) ?? [];
+  const former = formerNames(renames, batch.code);
+
   // The stage buttons this person can press — and only those.
   const inOrigin = inScope(actor, batch.originWarehouseId);
   const canLoad = actor.permissions.has('scan.load') && loadingNow;
@@ -352,8 +367,9 @@ export async function BatchCard({
           <BatchCodeForm
             batchId={batch.id}
             code={batch.code}
-            // `renameBatchAction`'s own door: plans.manage at the ORIGIN.
-            editable={actor.permissions.has('plans.manage') && loadingNow && inOrigin}
+            mode={renameMode}
+            ownFormer={former}
+            sentToAgentAt={batch.sentToAgentAt ?? null}
           />
           <span className="font-mono text-sm font-bold">
             {head.originCode} → {head.destCode}
@@ -374,6 +390,35 @@ export async function BatchCard({
             {format.dateTime(batch.createdAt, { dateStyle: 'short' })}
           </span>
         </div>
+
+        {former.length > 0 && (
+          <div className="space-y-1">
+            <p
+              className="w-full text-xs text-ink-500 [overflow-wrap:anywhere]"
+              data-testid="batch-former-codes"
+            >
+              {t('rename.former', { codes: former.join(' → ') })}
+            </p>
+            {mayReadBatches(actor.permissions) && (
+              <details className="text-xs" data-testid="batch-rename-log">
+                <summary className="cursor-pointer text-ink-500">{t('rename.log')}</summary>
+                <ol className="mt-1 space-y-1">
+                  {renames.map((row, i) => (
+                    <li key={i} className="[overflow-wrap:anywhere]">
+                      {t('rename.logRow', {
+                        date: format.dateTime(row.at, { dateStyle: 'short', timeStyle: 'short' }),
+                        who: row.by ?? '—',
+                        from: row.from,
+                        to: row.to,
+                      })}
+                      <span className="block text-ink-500">{row.reason ?? t('rename.noReason')}</span>
+                    </li>
+                  ))}
+                </ol>
+              </details>
+            )}
+          </div>
+        )}
 
         {!cancelled && now >= 0 && (
           <ol aria-label={tc('ladderAria')} className="flex gap-1" data-testid="batch-ladder">
