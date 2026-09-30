@@ -56,7 +56,7 @@ export interface SyncResult {
 }
 
 export async function syncScans(
-  actor: Actor,
+  actor: Pick<Actor, 'id' | 'permissions' | 'warehouseScoped' | 'warehouseIds'>,
   scans: SyncItem[],
   meta: { ip: string | null; userAgent: string | null },
 ): Promise<SyncResult> {
