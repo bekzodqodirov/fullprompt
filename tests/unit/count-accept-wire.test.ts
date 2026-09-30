@@ -62,9 +62,14 @@ describe('the count-accept door', () => {
     for (const fn of ['countAcceptLot', 'countAcceptCrate']) {
       const text = body(ACCEPT, fn);
       expect(text, fn).toContain(
-        'if (!doorOpens(doors.dest, pre.destWarehouseId, actorId)) throw new CountError(reroutedOrForbidden(doors.dest, actorId));',
+        'throw new CountError(await reroutedOrForbidden(doors.dest, actorId, pre.id));',
       );
     }
+    // «Rerouted» only about a warehouse the truck really was sent away from:
+    // the answer reads the reroute's own history, never the door alone.
+    const helper = body(ACCEPT, 'reroutedOrForbidden');
+    expect(helper).toContain('formerDestinationsFor([batchId])');
+    expect(helper).toContain("former.includes(door.warehouseId) ? 'batch_rerouted' : 'forbidden'");
     // …and on the LOCKED truck row, which the reroute takes too.
     const chunk = body(ACCEPT, 'countChunk');
     const lock = chunk.indexOf(".from(batches).where(eq(batches.id, T)).for('no key update')");

@@ -35,6 +35,7 @@ import {
 } from './count-rules';
 import { doorOpens, type CountDoor } from './count-door';
 import { notifyPricedCargoGrew, notifyPricedCargoTakenBack } from '../finance/off-truck';
+import { formerDestinationsFor } from '../batches/reroute';
 
 /*
  * «Sanab qabul» — the office's count at unloading (0112, the owner's Q1-Q7).
@@ -124,13 +125,22 @@ export class CountError extends Error {
 }
 
 /**
- * A destination door that does not open for the truck as it stands: minted
- * for THIS person, it was minted at the warehouse the panel was drawn for, so
- * the truck was rerouted since — the person is told so. Any other door (none,
- * another person's) is a plain refusal, as it always was (#790).
+ * A destination door that does not open for the truck as it stands. It says
+ * «rerouted» only when it is THIS person's door AND its warehouse is one the
+ * truck was actually sent away from (the reroute's own audit rows): a door
+ * minted for a warehouse the truck never went to is a forged or mistaken
+ * post, and stays the plain refusal it always was (#790) — T9 found the
+ * first version answering «rerouted» about a truck nobody had touched. Read
+ * on the pool, and only on the refusal path, before any transaction (#714).
  */
-function reroutedOrForbidden(door: CountDoor | null | undefined, actorId: string): CountAcceptRefusal {
-  return door && door.actorId === actorId ? 'batch_rerouted' : 'forbidden';
+async function reroutedOrForbidden(
+  door: CountDoor | null | undefined,
+  actorId: string,
+  batchId: string,
+): Promise<CountAcceptRefusal> {
+  if (!door || door.actorId !== actorId) return 'forbidden';
+  const former = (await formerDestinationsFor([batchId])).get(batchId) ?? [];
+  return former.includes(door.warehouseId) ? 'batch_rerouted' : 'forbidden';
 }
 
 /**
@@ -374,7 +384,9 @@ export async function countAcceptLot(
   // A door minted for THIS person at another warehouse means only that the
   // destination moved since the panel was drawn — said as the reroute, not
   // as «Ruxsat yo'q» (the reroute round).
-  if (!doorOpens(doors.dest, pre.destWarehouseId, actorId)) throw new CountError(reroutedOrForbidden(doors.dest, actorId));
+  if (!doorOpens(doors.dest, pre.destWarehouseId, actorId)) {
+    throw new CountError(await reroutedOrForbidden(doors.dest, actorId, pre.id));
+  }
   if (!['in_transit', 'arrived'].includes(pre.status)) throw new CountError('batch_not_unloading');
   // Decision 16: a count onto a truck still «on the road» declares it
   // arrived and may tell its clients so. The screen asks in words; the
@@ -1024,7 +1036,9 @@ export async function countAcceptCrate(
   const actorId = ctx.actorId;
   const pre = await db.query.batches.findFirst({ where: eq(batches.id, input.batchId) });
   if (!pre) throw new CountError('batch_not_found');
-  if (!doorOpens(doors.dest, pre.destWarehouseId, actorId)) throw new CountError(reroutedOrForbidden(doors.dest, actorId));
+  if (!doorOpens(doors.dest, pre.destWarehouseId, actorId)) {
+    throw new CountError(await reroutedOrForbidden(doors.dest, actorId, pre.id));
+  }
   if (!['in_transit', 'arrived'].includes(pre.status)) throw new CountError('batch_not_unloading');
   if (pre.status === 'in_transit' && !input.confirmArrival) throw new CountError('confirm_arrival_required');
   try {
