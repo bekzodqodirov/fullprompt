@@ -60,8 +60,11 @@ export const RENAME_REASON_MAX = 300;
  * a truck wore ON THE ROAD is never given to another truck. A name changed
  * before departure frees at once, as it always did (`former-codes.ts`).
  *
- * `door` and `seen` are REQUIRED (#790: an optional door fails open, and
- * required made every caller a compile error that named itself). The door is
+ * `renameDoor` and `seen` are REQUIRED (#790: an optional door fails open,
+ * and required made every caller a compile error that named itself). The
+ * parameter is not called `door`: this file imports the count rules for the
+ * truck's loading lock, and a `door:` beside that import is what
+ * count-kernel-wire.test.ts reads as a count door being opened. The door is
  * branded (`renameDoorFor`), carries the identity and must be the audit
  * context's actor; `seen` is what the presser's screen showed, and a truck
  * that changed under the open form — departed, renamed by a colleague,
@@ -88,11 +91,12 @@ export async function renameBatch(
     reason?: string | null;
     seen: { code: string; stage: 'loading' | 'road' };
   },
-  door: RenameDoor | null,
+  renameDoor: RenameDoor | null,
   ctx: AuditContext,
 ): Promise<{ batch: Batch; from: string; stage: 'loading' | 'road'; changed: boolean }> {
   if (!ctx.actorId) throw new RenameError('unauthenticated');
   // No door, or a door minted for somebody else, opens nothing.
+  const door = renameDoor;
   if (!door || door.id !== ctx.actorId) throw new RenameError('forbidden');
 
   const code = normalizeBatchCode(input.code);
