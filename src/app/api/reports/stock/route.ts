@@ -1,14 +1,15 @@
-import { and, asc, eq, inArray, sql, type SQL } from 'drizzle-orm';
+import { and, asc, eq, sql, type SQL } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
 import { boxes, clients, receiptLots, receipts, warehouses } from '@/modules/platform/db/schema';
 import { AuthError, requireActor } from '@/modules/platform/rbac/authorize';
 import { writeAudit } from '@/modules/platform/audit/service';
 import { requestMeta } from '@/modules/platform/auth/session';
-import { warehouseScope } from '@/modules/platform/rbac/scope';
+import { isUuidShaped } from '@/modules/platform/audit/fields';
 import { arrivalCodesForPairs } from '@/modules/wms/documents/arrivals';
 import { buildStockXlsx } from '@/modules/wms/reports/stock-xlsx';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
-import { stockTextWhere } from '@/modules/wms/inventory/stock-filter';
+import { stockBoxFilter, stockTextWhere } from '@/modules/wms/inventory/stock-filter';
+import { stockCrates } from '@/modules/wms/inventory/stock-crates';
 
 /**
  * Stock report XLSX (spec §9/§13 report 1) with the current stock-browser
@@ -43,18 +44,16 @@ export async function GET(request: Request) {
   }
 
   const url = new URL(request.url);
-  const wh = url.searchParams.get('wh') ?? '';
+  // A `wh` that is not an id is dropped, as the screen drops it — it used to
+  // be bound as-is, and `?wh=YW` was a 22P02 error instead of a file (#514).
+  const rawWh = url.searchParams.get('wh') ?? '';
+  const wh = isUuidShaped(rawWh) ? rawWh : '';
   const q = url.searchParams.get('q') ?? '';
 
-  // Match the stock browser: everything physically in the warehouse,
-  // including planned/loading reservations and ready_for_pickup boxes.
-  const filters: SQL[] = [
-    inArray(boxes.status, ['in_stock', 'planned', 'loading', 'ready_for_pickup']),
-  ];
-  const scope = warehouseScope(actor, boxes.currentWarehouseId);
-  if (scope) filters.push(scope);
-  if (wh) filters.push(eq(boxes.currentWarehouseId, wh));
-  // The screen's own predicate (#513).
+  // The stock browser's own base filter — the shelf statuses, the scope, the
+  // warehouse — from its one home, so the sheet and the screen cannot come
+  // to count different cartons; then the screen's own search (#513).
+  const filters: SQL[] = stockBoxFilter(actor, { wh });
   if (q) filters.push(stockTextWhere(q));
 
   const lines = await db
@@ -88,6 +87,8 @@ export async function GET(request: Request) {
   const arrivalCodes = await arrivalCodesForPairs(
     lines.map((line) => ({ lotId: line.lot.id, warehouseId: line.whId })),
   );
+  // The crates the rows stand in, for the same filter (owner, 2026-09-30).
+  const inCrates = await stockCrates(filters, { narrowed: Boolean(q) });
 
   // The screen's own column set, resolved by the shared helper. `whCode` is
   // written first here whatever the screen's order: a stock sheet is read
@@ -95,6 +96,7 @@ export async function GET(request: Request) {
   const { buffer, visible, photos, photosSkipped } = await buildStockXlsx({
     lines,
     arrivalCodes,
+    crates: inCrates.byRow,
     cols: url.searchParams.get('cols') ?? undefined,
     locale: actor.locale,
     can: (permission) => actor.permissions.has(permission),

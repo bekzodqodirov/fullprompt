@@ -7,10 +7,14 @@ import type { CrateStockRow } from '@/modules/wms/inventory/service';
  * tahta yashikni mestasi kubi kg si korinsin, tegida ichidagi narsalarni
  * soni umumiy kub kilosi kichkina korinib tursa»).
  *
- * One list, both screens, because they answer the same question and must
- * never answer it differently. A row is «1 mesta» plus the size the crate
- * was MEASURED at — that is what a loader plans and a forwarder is charged
- * for — and beneath it, small, what is inside.
+ * The truck card's list now. /stock drew it too until 2026-09-30, when his
+ * «B» moved the crates INTO the stock rows («🧰 N yashik» under each lot,
+ * opening to its crates — `stock/row-crates.tsx`): a warehouse that crates
+ * everything had been reading the same cargo twice, the second list longer.
+ * The truck card keeps this until its own round. A row is «1 mesta» plus the
+ * size the crate was MEASURED at — that is what a loader plans and a
+ * forwarder is charged for — and beneath it, small, what is inside; the
+ * overflow rule is `crateMeasure`, shared with the stock rows.
  *
  * Deliberately NOT added into the screens' Σ: the boxes inside are already
  * counted by the table above, and a crate row that joined the total would

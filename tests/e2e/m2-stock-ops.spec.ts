@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
+import ExcelJS from 'exceljs';
 import sharp from 'sharp';
+import { openFold } from './fold';
 
 /**
  * M2 e2e (logist): build a crate from GS777 boxes → label PDF → dissolve;
@@ -51,7 +53,39 @@ test('crate lifecycle: build from GS777 boxes, label, dissolve', async ({ page }
   expect(labelRes.headers()['content-type']).toContain('application/pdf');
   expect((await labelRes.body()).subarray(0, 4).toString()).toBe('%PDF');
 
+  // The Ostatka (owner, 2026-09-30, his «B»): the lot's row stays one row and
+  // says what stands in a crate; the crate opens to its cartons; the sheet
+  // the skladchi prints counts the crate as ONE place.
+  const crateCode = (await page.getByText(/CR-YW\d{2}-\d{5}/).first().textContent())!.match(
+    /CR-YW\d{2}-\d{5}/,
+  )![0];
+  await page.goto(`/stock?q=${crateCode}`);
+  const fold = page.getByTestId('stock-crates').first();
+  await expect(fold).toBeVisible();
+  // BESIDE the code's link, never inside it: a tap inside an anchor navigates.
+  await expect(page.locator('a [data-testid="stock-crates"]')).toHaveCount(0);
+  await expect(page.getByTestId('stock-places')).toContainText('1');
+  await openFold(fold);
+  await expect(fold.getByTestId('stock-crate-link')).toHaveText(crateCode);
+  await fold.getByTestId('stock-crate-link').click();
+  await expect(page).toHaveURL(new RegExp(`/stock\\?crate=${crateId}`));
+  await expect(page.getByTestId('crate-carton').first()).toBeVisible();
+  await expect(page.getByTestId('crate-card-link')).toBeVisible();
+
+  const sheetRes = await page.request.get(`/api/reports/stock?q=${encodeURIComponent(crateCode)}`);
+  expect(sheetRes.status()).toBe(200);
+  const book = new ExcelJS.Workbook();
+  await book.xlsx.load((await sheetRes.body()) as unknown as ArrayBuffer);
+  const sheet = book.getWorksheet('Stock')!;
+  const head = sheet.getRow(1).values as unknown[];
+  const placesAt = head.findIndex((value) => typeof value === 'string' && /=\s?1/.test(value));
+  expect(placesAt, 'the places column is missing').toBeGreaterThan(0);
+  expect(sheet.getRow(2).getCell(placesAt).value).toBe(1);
+  const rowText = (sheet.getRow(2).values as unknown[]).map(String).join(' ');
+  expect(rowText).toContain(crateCode);
+
   // Dissolve → back to the list
+  await page.goto(`/crates/${crateId}`);
   await page.getByRole('button', { name: /⛏/ }).click();
   await expect(page).toHaveURL(/\/crates$/, { timeout: 15_000 });
 });

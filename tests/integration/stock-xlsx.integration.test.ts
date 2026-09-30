@@ -9,6 +9,7 @@ import {
   buildStockXlsx,
   type StockSheetLine,
 } from '@/modules/wms/reports/stock-xlsx';
+import { groupCrates, type CratePart } from '@/modules/wms/inventory/crate-grouping';
 
 /**
  * The Ostatka sheet says what the warehouse measured — and shows it.
@@ -66,6 +67,7 @@ async function build(lines: StockSheetLine[]) {
   const { buffer } = await buildStockXlsx({
     lines,
     arrivalCodes: new Map(),
+    crates: new Map(),
     cols: undefined,
     locale: 'uz',
     can: () => true,
@@ -117,6 +119,134 @@ describe('the stock XLSX', () => {
     const at = headers(sheet).get('XYZ (sm)')!;
     const value = sheet.getRow(2).getCell(at).value;
     expect(value === null || value === undefined || value === '').toBe(true);
+  });
+});
+
+/**
+ * The crates on the Ostatka (owner, 2026-09-30, his answer 3: the skladchi
+ * prints this sheet and counts the shelf, «1 yashikni 1 dona deb hisoblaydi»
+ * — so the sheet must give the places, and what is inside the crates).
+ */
+describe('the stock XLSX counts a crate as one place', () => {
+  const WH = '00000000-0000-0000-0000-0000000000aa';
+  const PLACES = 'Mesta (yashik = 1)';
+  const CRATES = 'Yashiklar (ichida)';
+
+  function part(over: Partial<CratePart> & Pick<CratePart, 'crateId' | 'lotId' | 'n'>): CratePart {
+    return {
+      code: `CR-${over.crateId}`,
+      kind: 'yashik',
+      warehouseId: WH,
+      letter: 'A',
+      lotCode: 'GS500-A',
+      seqs: Array.from({ length: over.n }, (_, i) => i + 1),
+      kg: over.n * 20,
+      m3: over.n * 0.5,
+      dims: { lengthCm: null, widthCm: null, heightCm: null, weightKg: null },
+      ...over,
+    };
+  }
+
+  async function sheetOf(lines: StockSheetLine[], parts: CratePart[]) {
+    const { buffer } = await buildStockXlsx({
+      lines,
+      arrivalCodes: new Map(),
+      crates: groupCrates(parts).byRow,
+      cols: undefined,
+      locale: 'uz',
+      can: () => true,
+    });
+    const book = new ExcelJS.Workbook();
+    await book.xlsx.load(buffer as unknown as ArrayBuffer);
+    return book.getWorksheet('Stock')!;
+  }
+
+  it('a sheet with nothing crated keeps the sheet it always printed', async () => {
+    const sheet = await sheetOf([line({ id: MEASURED })], []);
+    const head = [...headers(sheet).keys()];
+    expect(head).not.toContain(PLACES);
+    expect(head).not.toContain(CRATES);
+  });
+
+  it('his example: 100 cartons packed ten to a crate are ten places', async () => {
+    const lot = { ...line({ id: MEASURED, boxCount: 100 }), inStock: 100 };
+    const parts = Array.from({ length: 10 }, (_, i) =>
+      part({
+        crateId: `${i}`,
+        code: `CR-00${i}`,
+        lotId: MEASURED,
+        n: 10,
+        seqs: Array.from({ length: 10 }, (_, k) => i * 10 + k + 1),
+      }),
+    );
+    const sheet = await sheetOf([lot], parts);
+    const head = headers(sheet);
+    // Beside the cartons it corrects.
+    expect(head.get(PLACES)).toBe(head.get('Karobka')! + 1);
+    expect(sheet.getRow(2).getCell(head.get('Karobka')!).value).toBe(100);
+    expect(sheet.getRow(2).getCell(head.get(PLACES)!).value).toBe(10);
+    const lines = String(sheet.getRow(2).getCell(head.get(CRATES)!).value).split('\n');
+    expect(lines).toHaveLength(10);
+    expect(lines[0]).toBe('CR-000 — 10 kor. (№1–10)');
+    expect(lines[9]).toBe('CR-009 — 10 kor. (№91–100)');
+    // A clipped list reads as a short one: the row is as tall as its lines.
+    expect(sheet.getRow(2).height).toBe(150);
+  });
+
+  it('seven crates and thirty loose cartons: 37 places, the loose ones said', async () => {
+    const lot = { ...line({ id: MEASURED, boxCount: 100 }), inStock: 100 };
+    const parts = Array.from({ length: 7 }, (_, i) =>
+      part({ crateId: `${i}`, code: `CR-00${i}`, lotId: MEASURED, n: 10 }),
+    );
+    const sheet = await sheetOf([lot, line({ id: UNMEASURED, letter: 'B' })], parts);
+    const head = headers(sheet);
+    expect(sheet.getRow(2).getCell(head.get(PLACES)!).value).toBe(37);
+    const lines = String(sheet.getRow(2).getCell(head.get(CRATES)!).value).split('\n');
+    expect(lines.at(-1)).toBe('30 kor. yashiksiz');
+    // The row with no crate: every carton is a place, and the cell is empty.
+    expect(sheet.getRow(3).getCell(head.get(PLACES)!).value).toBe(10);
+    const empty = sheet.getRow(3).getCell(head.get(CRATES)!).value;
+    expect(empty === null || empty === undefined || empty === '').toBe(true);
+  });
+
+  it('a crate shared by two lots is ONE place, counted on one row and named on both', async () => {
+    const a = { ...line({ id: MEASURED, letter: 'A' }), inStock: 3 };
+    const b = { ...line({ id: LOT_B, letter: 'B' }), inStock: 5 };
+    const parts = [
+      part({ crateId: 'm', code: 'CR-777', lotId: MEASURED, letter: 'A', lotCode: 'GS500-A', n: 1 }),
+      part({ crateId: 'm', code: 'CR-777', lotId: LOT_B, letter: 'B', lotCode: 'GS500-B', n: 4 }),
+    ];
+    const sheet = await sheetOf([a, b], parts);
+    const head = headers(sheet);
+    const places = [2, 3].map((r) => Number(sheet.getRow(r).getCell(head.get(PLACES)!).value));
+    // A: 2 loose + 0 (B counts the crate) = 2; B: 1 loose + the crate = 2.
+    expect(places).toEqual([2, 2]);
+    expect(places[0]! + places[1]!).toBe(3 + 5 - 5 + 1);
+    const cellA = String(sheet.getRow(2).getCell(head.get(CRATES)!).value);
+    expect(cellA.split('\n')).toEqual([
+      'CR-777 — 1 kor. (№1) + GS500-B: 4 kor. → mesta qatori GS500-B',
+      '2 kor. yashiksiz',
+    ]);
+  });
+
+  it('a search that showed part of a crate says how much of it is hidden', async () => {
+    const a = { ...line({ id: MEASURED, letter: 'A' }), inStock: 1 };
+    const { buffer } = await buildStockXlsx({
+      lines: [a],
+      arrivalCodes: new Map(),
+      crates: groupCrates(
+        [part({ crateId: 'm', code: 'CR-777', lotId: MEASURED, n: 1, seqs: [7] })],
+        new Map([['m', { total: 5, kg: 100, m3: 2.5 }]]),
+      ).byRow,
+      cols: undefined,
+      locale: 'uz',
+      can: () => true,
+    });
+    const book = new ExcelJS.Workbook();
+    await book.xlsx.load(buffer as unknown as ArrayBuffer);
+    const sheet = book.getWorksheet('Stock')!;
+    const cell = String(sheet.getRow(2).getCell(headers(sheet).get(CRATES)!).value);
+    expect(cell).toBe('CR-777 — 1/5 kor. (№7)');
   });
 });
 
@@ -258,6 +388,7 @@ describe('the stock XLSX carries the photographs', () => {
     const { buffer, photos } = await buildStockXlsx({
       lines: FOUR(),
       arrivalCodes: new Map(),
+      crates: new Map(),
       cols: undefined,
       locale: 'uz',
       can: () => true,
@@ -293,6 +424,7 @@ describe('the stock XLSX carries the photographs', () => {
     const { buffer } = await buildStockXlsx({
       lines: FOUR(),
       arrivalCodes: new Map(),
+      crates: new Map(),
       cols: undefined,
       locale: 'uz',
       can: () => true,
@@ -335,6 +467,7 @@ describe('the stock XLSX carries the photographs', () => {
     const { buffer, photos, visible } = await buildStockXlsx({
       lines: FOUR(),
       arrivalCodes: new Map(),
+      crates: new Map(),
       // A saved view that names every column a person reads and not the 📷.
       cols: 'code,product,boxes,perBoxKg,stockKg,stockM3,whCode',
       locale: 'uz',
@@ -357,6 +490,7 @@ describe('the stock XLSX carries the photographs', () => {
       // A lot of a prixod nobody photographed.
       lines: [line({ id: UNMEASURED, receiptId: '00000000-0000-0000-0000-0000000000dd' })],
       arrivalCodes: new Map(),
+      crates: new Map(),
       cols: undefined,
       locale: 'uz',
       can: () => true,
@@ -374,6 +508,7 @@ describe('the stock XLSX carries the photographs', () => {
     const { buffer } = await buildStockXlsx({
       lines: FOUR(),
       arrivalCodes: new Map(),
+      crates: new Map(),
       cols: undefined,
       locale: 'uz',
       can: () => true,
@@ -400,6 +535,7 @@ describe('the stock XLSX carries the photographs', () => {
     const { buffer, photos, photosSkipped } = await buildStockXlsx({
       lines: FOUR(),
       arrivalCodes: new Map(),
+      crates: new Map(),
       cols: undefined,
       locale: 'uz',
       can: () => true,
@@ -453,6 +589,7 @@ describe('the stock XLSX carries the photographs', () => {
     const shipped = await buildStockXlsx({
       lines: FOUR(),
       arrivalCodes: new Map(),
+      crates: new Map(),
       cols: undefined,
       locale: 'uz',
       can: () => true,
@@ -475,6 +612,7 @@ describe('the stock XLSX carries the photographs', () => {
     const starved = await buildStockXlsx({
       lines: FOUR(),
       arrivalCodes: new Map(),
+      crates: new Map(),
       cols: undefined,
       locale: 'uz',
       can: () => true,
@@ -489,6 +627,7 @@ describe('the stock XLSX carries the photographs', () => {
     const { buffer } = await buildStockXlsx({
       lines: FOUR(),
       arrivalCodes: new Map(),
+      crates: new Map(),
       // A view naming NONE of the three.
       cols: 'code,product,boxes,stockKg,stockM3,whCode',
       locale: 'uz',

@@ -1,5 +1,54 @@
 # CHANGELOG
 
+## Ostatkada yashiklar tovar qatorining ichida — 2026-09-30
+
+Migratsiya yo'q, ledger **121** bo'lib qoladi. Yangilanganini `/api/version` dagi vaqt
+ko'rsatadi.
+
+Sizning xabaringiz: «yashiklar kop bolib ketma ket bolib turibti … qabulda 100karobka keldi
+10 tadan 10 yashik qilindi va spiskada 100ta karobka turibti emas 10 turibti tagida 100 ta
+karobka ochish imkoniyati bilan». Javoblaringiz: **B · 2a · 3 · 4a**.
+
+1. **Alohida yashiklar ro'yxati olib tashlandi.** Ostatkada jadval ustidagi uzun «Yashiklar»
+   ro'yxati endi yo'q — o'sha yuk jadvalda ikki marta turardi.
+2. **Yashik endi tovar qatorining ichida (B).** Qator o'sha-o'sha: bitta tovar, bitta sklad.
+   Kod tagida yozuv chiqadi:
+   - «🧰 10 yashik» — hamma karobka yashikda;
+   - «🧰 7 yashik + 30 📦» — bir qismi yashikda, qolgani ochiq turibdi.
+   Bosilsa, yashiklar ochiladi: har yashik bitta qatorda — «CR-YW26-01001 10 📦 №1–10»
+   (qaysi karobkalar ekani yorliqdagi raqami bilan).
+3. **Yashikni bossangiz — ichidagi har bir karobka (2a).** Karobkalar tovar bo'yicha
+   guruhlangan, har biri o'z kartasiga olib boradi. Yashikning o'lchangan hajmi va kg si
+   ichidagi yuk bilan yonma-yon turadi.
+4. **Jami qatorda «N mesta».** Yashik — 1 mesta, ochiq karobka — 1 mesta. Masalan: 100
+   karobka, 10 tadan 10 yashik → «Σ 100 karobka · … · 10 mesta».
+5. **Excel (3).** Skladchi chiqarib sanaydigan faylga ikki ustun qo'shildi:
+   - **«Mesta (yashik = 1)»** — karobka soni yonida; 100 karobka 10 yashikda bo'lsa — 10;
+   - **«Yashiklar (ichida)»** — har yashik alohida qatorda: kodi, ichidagi karobkalar
+     soni va raqamlari, oxirida «30 kor. yashiksiz».
+   Yashik umuman yo'q skladda fayl avvalgidek chiqadi — bu ustunlar faqat yashik bor
+   bo'lsa paydo bo'ladi.
+6. **Bir yashikda ikki xil tovar bo'lsa** — yashik baribir 1 mesta, u karobkasi ko'p
+   bo'lgan tovar qatorida sanaladi. Ikkinchi qatorda «… qatorida 1 mesta deb
+   hisoblangan» deb yoziladi. Qog'ozda ham, polkada ham bitta bo'lib chiqadi.
+7. **Hajmidan oshib ketgan yashik (⚠)** jadval tepasida alohida qatorda nomlanadi va
+   o'z qatorining yashiklari ichida birinchi turadi.
+8. **Qidiruvda yashik kodi ham topiladi.** «CR-…» deb yozsangiz, o'sha yashikdagi
+   karobkalar chiqadi.
+9. **Kim ko'radi (4a).** Jadvalni ko'radigan har kim (sotuvchi, buxgalter) yashiklarni
+   ham ko'radi. Yashik kartasi (izohi, tugmalari) faqat sklad xodimlari uchun.
+10. Yo'l-yo'lakay tuzatildi:
+    - noto'g'ri manzil bilan ochilgan Ostatka (masalan `?lot=5`) xato sahifa berardi —
+      endi bermaydi;
+    - Excel yuklab olishda sklad noto'g'ri berilsa xato chiqardi — endi ekran kabi
+      e'tiborsiz qoldiriladi.
+
+**Hali qilinmadi, ma'lum:**
+- Partiya kartasining «Ichidagilar»ida yashiklar hozircha alohida ro'yxat — keyingi qadam,
+  aytganimdek.
+- O'zbekistondagi skladga kelgan yashikni «rasformirovka» qilib bo'lmaydi va tugma xato
+  sahifa ko'rsatadi (bu avvaldan shunday). Sizdan so'raladi.
+
 ## Sahifa tepasidagi bo'limlar qatori ko'payib ketmaydi — 2026-09-30
 
 Migratsiya yo'q, ledger **121** bo'lib qoladi. Yangilanganini `/api/version` dagi vaqt

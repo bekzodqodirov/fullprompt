@@ -11,7 +11,7 @@ import {
   receipts,
   warehouses,
 } from '../../platform/db/schema';
-import { warehouseScope, warehouseScopeEither } from '../../platform/rbac/scope';
+import { warehouseScopeEither } from '../../platform/rbac/scope';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { emitEvent } from '../../platform/events/service';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
@@ -23,6 +23,7 @@ import { isUuidShaped } from '../../platform/audit/fields';
 import { PRESENT_STATUSES } from './present';
 import { qrlessBoxSql, qrlessJoinedSql } from '../labels/qrless-sql';
 import { lastScanIsCountSql } from '../scanning/count-rules';
+import { crateMeasure } from './crate-grouping';
 
 export class InventoryError extends Error {
   constructor(public readonly code: string) {
@@ -580,55 +581,7 @@ export async function binCandidate(input: {
   };
 }
 
-/**
- * The trucks on the road, for the stock screen's «Yo'lda» strip (round 100,
- * owner's 5A: «mashinalar korinib tursa qaysi mashinada qanchayuk borligi va
- * … ochib korish imkoni»).
- *
- * Membership is the LIVE pointer, `in_transit` only, and that is deliberate:
- * while a truck is genuinely on the road `current_batch_id` is exact, and the
- * moment it lands the unload screen and the batch card take over — an
- * `arrived` batch counted here through the live pointer would shrink towards
- * «Σ 0» exactly as boxes are scanned off it (#440's trap, refused here rather
- * than repeated). Weight and volume are a SHARE of the lot, as everywhere.
- *
- * Scope is the batch's TWO ends (`warehouseScopeEither`) — a truck belongs to
- * its origin until it arrives, and both warehouses have a reason to see it.
- * The `wh` filter matches EITHER end for the same reason: on the origin's
- * screen it is «what left us», on the destination's «what is coming».
- *
- * Deliberately NOT part of the Σ line, the table, the sort, the views or the
- * XLSX — those agree with each other about what is ON THE SHELF, and a truck
- * is not.
- */
-/**
- * The yashik layer of the stock screen (round 107, owner: «sklad ostatkada
- * yashiklar soni hajmi og'irligi tursa va uni tagida karobkalar soni,
- * karobkalarning umumiy hajmi kg-mi tursa»).
- *
- * One row per ACTIVE crate with members physically present: `boxes.crate_id`
- * + the stock page's own four statuses + `current_warehouse_id =
- * crates.warehouse_id` — round 31's short-loaded member keeps its crateId at
- * the ORIGIN while the crate itself follows the landed boxes, so the bare
- * pointer would count a carton standing in Yiwu into a Tashkent row. The
- * INNER JOIN makes an empty crate produce no row structurally.
- *
- * Unlike the on-road strip this is a RE-GROUPING of cargo the Σ and the
- * table already count — nothing here is additive. Scope and the `wh` filter
- * live INSIDE, so no caller can forget them (#514); `q` deliberately does
- * not reach it — the strip sits outside the sort, the views and the XLSX,
- * and outside the search for the same reason (stated divergence: a product
- * search narrows the table, never the yashik list).
- *
- * The overflow flag compares the values AS PRINTED (kg to the integer, m³ to
- * two decimals) — numeric arrives as a STRING and `'300' > '1000.000'` is
- * true lexicographically (#663's shape), and a raw-float compare can flag ⚠
- * between two numbers that print identically. Screen-only by the owner's
- * word («faqat ekranda») — no Telegram, no export.
- */
-const CRATE_STRIP_CAP = 50;
-const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
+/** One crate as a PLACE on the truck card (round 109) — `CrateRows`' row. */
 export interface CrateStockRow {
   id: string;
   code: string;
@@ -643,53 +596,6 @@ export interface CrateStockRow {
   over: boolean;
 }
 
-export async function crateStock(
-  actor: Parameters<typeof warehouseScope>[0],
-  wh?: string,
-): Promise<{ rows: CrateStockRow[]; more: boolean }> {
-  const rows = await db
-    .select({
-      id: crates.id,
-      code: crates.code,
-      clientCode: clients.clientCode,
-      whCode: warehouses.code,
-      lengthCm: crates.lengthCm,
-      widthCm: crates.widthCm,
-      heightCm: crates.heightCm,
-      weightKg: crates.weightKg,
-      boxCount: sql<string>`count(*)`,
-      kg: sql<string>`sum(${receiptLots.totalWeightKg} / ${receiptLots.boxCount})`,
-      m3: sql<string>`sum(${receiptLots.totalVolumeM3} / ${receiptLots.boxCount})`,
-    })
-    .from(crates)
-    .innerJoin(clients, eq(crates.clientId, clients.id))
-    .innerJoin(warehouses, eq(crates.warehouseId, warehouses.id))
-    .innerJoin(
-      boxes,
-      and(
-        eq(boxes.crateId, crates.id),
-        inArray(boxes.status, [...SHELF_STATUSES]),
-        eq(boxes.currentWarehouseId, crates.warehouseId),
-      ),
-    )
-    .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
-    .where(
-      and(
-        eq(crates.status, 'active'),
-        warehouseScope(actor, crates.warehouseId),
-        // A malformed wh would be a 22P02 error page; treated as absent, the
-        // same answer the strip gives about a filter it does not understand.
-        wh && UUID_SHAPE.test(wh) ? eq(crates.warehouseId, wh) : undefined,
-      ),
-    )
-    .groupBy(crates.id, clients.clientCode, warehouses.code)
-    .orderBy(asc(crates.code))
-    // One extra row = the honest «50+» without a second count query.
-    .limit(CRATE_STRIP_CAP + 1);
-
-  return { rows: mapCrateRows(rows.slice(0, CRATE_STRIP_CAP)), more: rows.length > CRATE_STRIP_CAP };
-}
-
 /**
  * The raw crate aggregate → the row a screen draws, in the order it should be
  * read: **the over-capacity ones first** (owner, round 109: «agar
@@ -699,28 +605,19 @@ export async function crateStock(
  */
 function mapCrateRows(rows: CrateAggregate[]): CrateStockRow[] {
   const mapped = rows.map((row) => {
-    const kg = Math.round(Number(row.kg));
-    const m3 = Math.round(Number(row.m3) * 100) / 100;
-    // A dimension typed as 0 is storable (the crate EDIT path has no min) —
-    // a non-positive measure is «unmeasured», never a permanent ⚠ against a
-    // 0 m³ box.
-    const statedM3 =
-      row.lengthCm && row.widthCm && row.heightCm && row.lengthCm > 0 && row.widthCm > 0 && row.heightCm > 0
-        ? Math.round(((row.lengthCm * row.widthCm * row.heightCm) / 1e6) * 100) / 100
-        : null;
-    const measuredKg = row.weightKg === null ? null : Number(row.weightKg);
-    const statedKg = measuredKg !== null && measuredKg > 0 ? Math.round(measuredKg) : null;
+    // The measure-and-⚠ rule has one home, shared with the stock rows.
+    const measure = crateMeasure(row, Number(row.kg), Number(row.m3));
     return {
       id: row.id,
       code: row.code,
       clientCode: row.clientCode,
       whCode: row.whCode,
       boxCount: Number(row.boxCount),
-      kg,
-      m3,
-      statedM3,
-      statedKg,
-      over: (statedM3 !== null && m3 > statedM3) || (statedKg !== null && kg > statedKg),
+      kg: measure.kg,
+      m3: measure.m3,
+      statedM3: measure.statedM3,
+      statedKg: measure.statedKg,
+      over: measure.over,
     };
   });
   return [...mapped].sort((a, b) => Number(b.over) - Number(a.over) || a.code.localeCompare(b.code));
@@ -778,6 +675,27 @@ export async function batchCrates(batchId: string): Promise<CrateStockRow[]> {
   return mapCrateRows(rows);
 }
 
+/**
+ * The trucks on the road, for the stock screen's «Yo'lda» strip (round 100,
+ * owner's 5A: «mashinalar korinib tursa qaysi mashinada qanchayuk borligi va
+ * … ochib korish imkoni»).
+ *
+ * Membership is the LIVE pointer, `in_transit` only, and that is deliberate:
+ * while a truck is genuinely on the road `current_batch_id` is exact, and the
+ * moment it lands the unload screen and the batch card take over — an
+ * `arrived` batch counted here through the live pointer would shrink towards
+ * «Σ 0» exactly as boxes are scanned off it (#440's trap, refused here rather
+ * than repeated). Weight and volume are a SHARE of the lot, as everywhere.
+ *
+ * Scope is the batch's TWO ends (`warehouseScopeEither`) — a truck belongs to
+ * its origin until it arrives, and both warehouses have a reason to see it.
+ * The `wh` filter matches EITHER end for the same reason: on the origin's
+ * screen it is «what left us», on the destination's «what is coming».
+ *
+ * Deliberately NOT part of the Σ line, the table, the sort, the views or the
+ * XLSX — those agree with each other about what is ON THE SHELF, and a truck
+ * is not.
+ */
 export async function transitTrucks(
   actor: Parameters<typeof warehouseScopeEither>[0],
   wh?: string,
