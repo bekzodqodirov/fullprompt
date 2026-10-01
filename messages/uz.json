@@ -1665,6 +1665,7 @@
     "aiFailed": "AI javob berolmadi — keyinroq urinib ko'ring yoki qo'lda kiriting",
     "fromMemory": "xotiradan (avval tasdiqlangan)",
     "hint": "AI taklifi — qoralama: yakuniy qarorni siz berasiz. Saqlangan kod xotirada qoladi va shu tovar keyingi partiyalarda (va invoysda) avtomatik to'ldiriladi.",
+    "hintLines": "Lot tarkibi qatorlarining kodi faqat shu lot uchun saqlanadi va xotiraga yozilmaydi — boshqa mijozlarning yukiga tegmaydi.",
     "confidence": {
       "high": "ishonch yuqori",
       "medium": "ishonch o'rtacha",

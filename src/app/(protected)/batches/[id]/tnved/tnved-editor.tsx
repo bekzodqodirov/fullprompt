@@ -370,6 +370,9 @@ export function TnvedEditor({ batchId, rows: initial }: { batchId: string; rows:
         })}
       </div>
       <p className="text-xs text-ink-400">{t('hint')}</p>
+      {/* A line's code is the lot's own and never reaches the memory the
+          sentence above describes — say so wherever a line is drawn. */}
+      {rows.some((r) => r.line) && <p className="text-xs text-ink-400">{t('hintLines')}</p>}
     </div>
   );
 }

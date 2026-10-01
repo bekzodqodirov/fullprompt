@@ -1,5 +1,33 @@
 # CHANGELOG
 
+## Lot tarkibi: bitta lotda bir necha tovar — 2026-10-01
+
+**Migratsiya 0122.** O'rnatgandan keyin migratsiyalar soni **123** bo'lishi kerak.
+
+Sizning javoblaringiz: **1c · 2c · 3b · 4c · 5a · 6 · 7a · 8a** va «lot o'zgarmaydi, stiker o'zgarmaydi, faqat tarkibi degan joy qo'shiladi».
+
+### Nima o'zgardi
+
+- **Prixod kartasida har lotda «Tarkibi» bo'limi.** VED yoki logist mijoz hujjatini (packing list, invoys) prixodga biriktiradi va har tovar uchun qator yozadi: nomi, jami dona, karobka soni, kg, kub, TNVED.
+  - Karobka sonini yozish ixtiyoriy: hamma qatorda yozilsa, «alohida karobkalar» bo'ladi va yig'indisi lot karobkalariga teng bo'lishi kerak. Hech qaysisida yozilmasa — «aralash karobkalar» (har karobkada ikkalasi ham bor).
+  - Qatorlarning kg va kubi lotning umumiy kg va kubiga **teng** bo'lishi shart. Ekranda «qoldi» ko'rinib turadi; «Karobka soniga qarab taqsimlash» va «Sklad o'lchoviga moslashtirish» tugmalari yordam beradi. Tizim o'zi hech qachon bo'lib qo'ymaydi.
+  - Hujjat biriktirilmasa saqlanmaydi. Qabul paytidagi karobka rasmi hujjat hisoblanmaydi.
+- **Lot, stiker, karobka o'zgarmaydi.** Skaner, reja, ostatka, mijoz kabineti, Telegram xabarlari, bot va topshirish akti lot nomida qoladi — qaysi karobka mishka ekanini hech kim bilmaydi.
+- **Invoys va ikkala packing list** tarkibli lotni har tovarga alohida qator qilib chiqaradi. Dona yozilgan bo'lsa miqdor «шт» da, bo'lmasa kg da. Agent fayliga ham tarkib yoziladi.
+- **Lot bir necha mashinaga bo'lingan bo'lsa,** har mashinadagi qatorlar ulush bo'yicha hisoblanadi va invoysda «taxminiy» deb belgilanadi (sariq rang + izoh). Karobka va dona soni hamma mashinalar bo'yicha jamlanganda siz yozgan tarkibga teng chiqadi; kg va kub esa har mashinaning o'z tarozi og'irligidan bo'linadi.
+- **TNVED oynasida** «100 klaviatura» o'rniga «50 klaviatura» va «50 mishka» chiqadi, har birining o'z kodi bilan. Bu kod faqat shu lotda saqlanadi — boshqa mijozlarning klaviaturasiga tegmaydi.
+- **TNVED oynasida prixodlarning hujjatlari** ham ko'rinadi — VED mijoz faylini o'sha yerda ko'radi.
+- **«Hujjat yuborildi» belgisi** qo'yilganda shu mashinaning tarkibi muzlatib saqlanadi: yuborilgan invoys o'zgarmaydi. Keyin tarkib o'zgartirilsa, faqat hujjati hali yuborilmagan mashinalarga o'tadi. Belgini olib tashlasangiz, yangi tarkib o'sha mashinaga ham o'tadi (tarixda yoziladi).
+- **«📈 Oldingi narx»** tarkibli lotni «aralash» deb biladi — ikki tovarning birga qo'yilgan narxi keyinchalik toza klaviatura narxi deb ko'rsatilmaydi.
+- **Narx o'zgarmadi:** mashinada mijozga bitta umumiy narx (5a). Bojxona to'lovini VED hisoblash oynasida TNVED bo'yicha alohida hisoblaydi — avvalgidek.
+
+### Bilib qo'ying
+
+- Butun lot boshqa tovar bo'lsa (100 ta mishka «klaviatura» deb yozilgan), tarkib kerak emas — logist lot nomini o'zgartiradi. VED buni qila olmaydi.
+- Tarkib qatorlari nomi VED yozgan so'z bilan chiqadi (xitoycha nomi yo'q) — agent fayli ham shunday.
+- Mijoz kabinetda va Telegramda hali ham lot nomini ko'radi.
+- Yangilashdan oldin «hujjat yuborildi» belgisi qo'yilgan mashinalar ham muzlatildi — ularning hujjati o'zgarmaydi.
+
 ## Partiya nomi va yo'nalish: 11 savolga «hammasi standart» — 2026-09-30
 
 Migratsiya yo'q, dastur ishlashi o'zgarmadi.

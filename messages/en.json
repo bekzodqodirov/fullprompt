@@ -1665,6 +1665,7 @@
     "aiFailed": "AI did not answer — try later or enter the code by hand",
     "fromMemory": "from memory (confirmed earlier)",
     "hint": "The AI suggestion is a draft: the final decision is yours. A saved code stays in memory and fills in automatically on the next batches (and on the invoice).",
+    "hintLines": "Codes on a lot's composition lines are kept for that lot only and never enter the memory — no other client's cargo picks them up.",
     "confidence": {
       "high": "high confidence",
       "medium": "medium confidence",
