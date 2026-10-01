@@ -177,24 +177,24 @@ test('the Bojxona tab: two line rows, the mouse’s code never lands on the keyb
   expect(minted).not.toBeNull();
   await login(page, VED);
   await page.goto(tnvedPath());
-  const rows = page.getByTestId('tnved-line-row');
+  const rows = page.getByTestId('tnved-tarkib-row');
   await expect(rows).toHaveCount(2);
   await expect(page.getByTestId('tnved-row').filter({ hasText: run.lotName })).toHaveCount(0);
   const keyboard = rows.filter({ hasText: 'Клавиатура' });
   const mouse = rows.filter({ hasText: 'Мышь' });
-  await mouse.getByTestId('tnved-line-code').fill('8471607000');
+  await mouse.getByTestId('tnved-tarkib-code').fill('8471607000');
   // R1, the blocker: per-row state keyed by the lot wrote this into BOTH.
-  await expect(keyboard.getByTestId('tnved-line-code')).toHaveValue('');
+  await expect(keyboard.getByTestId('tnved-tarkib-code')).toHaveValue('');
   await page.screenshot({ path: `${SHOTS}/lot-tnved-tab-360.png`, fullPage: true });
   expect((await widths(page)).scroll).toBeLessThanOrEqual(360);
   await page.getByTestId('tnved-save').click();
   // The ✅ outlives the editor's re-seed (its key carries the revisions).
   await expect(page.getByTestId('tnved-saved')).toBeVisible();
   await page.reload();
-  await expect(page.getByTestId('tnved-line-row').filter({ hasText: 'Мышь' }).getByTestId('tnved-line-code')).toHaveValue(
+  await expect(page.getByTestId('tnved-tarkib-row').filter({ hasText: 'Мышь' }).getByTestId('tnved-tarkib-code')).toHaveValue(
     '8471607000',
   );
-  await expect(page.getByTestId('tnved-line-row').filter({ hasText: 'Клавиатура' }).getByTestId('tnved-line-code')).toHaveValue('');
+  await expect(page.getByTestId('tnved-tarkib-row').filter({ hasText: 'Клавиатура' }).getByTestId('tnved-tarkib-code')).toHaveValue('');
 
   // The prixod's own papers, folded, on the truck's tab.
   await page.getByTestId('receipt-docs').click();
@@ -275,7 +275,7 @@ test('a 768 tablet and a 1280 desktop: the editor fits, the screenshots are take
     expect(dw.scroll).toBeLessThanOrEqual(1280);
     await d.screenshot({ path: `${SHOTS}/lot-receipt-editor-1280.png`, fullPage: true });
     await d.goto(tnvedPath());
-    await expect(d.getByTestId('tnved-line-row')).toHaveCount(2);
+    await expect(d.getByTestId('tnved-tarkib-row')).toHaveCount(2);
     expect((await widths(d)).scroll).toBeLessThanOrEqual(1280);
     await d.screenshot({ path: `${SHOTS}/lot-tnved-tab-1280.png`, fullPage: true });
   } finally {

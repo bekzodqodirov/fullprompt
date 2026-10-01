@@ -249,8 +249,10 @@ export function TnvedEditor({ batchId, rows: initial }: { batchId: string; rows:
         {rows.map((row) => {
           const key = rowKey(row);
           const line = row.line;
+          // `tarkib`, not `line`, in the testids: tokens.test.ts reads any
+          // `<x>-line-<y>` in src/ as a colour class of the `line` family.
           return (
-            <div key={key} className="card space-y-2 !p-3" data-testid={line ? 'tnved-line-row' : 'tnved-row'}>
+            <div key={key} className="card space-y-2 !p-3" data-testid={line ? 'tnved-tarkib-row' : 'tnved-row'}>
               <div className="flex items-center gap-3">
                 {row.photoId && (!line || line.firstOfLot) ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -324,7 +326,7 @@ export function TnvedEditor({ batchId, rows: initial }: { batchId: string; rows:
                   className="input flex-1 font-mono"
                   placeholder="8471300000"
                   inputMode="numeric"
-                  data-testid={line ? 'tnved-line-code' : 'tnved-code'}
+                  data-testid={line ? 'tnved-tarkib-code' : 'tnved-code'}
                   value={row.code}
                   readOnly={line?.frozen === true}
                   onChange={(e) => setCode(key, e.target.value.replace(/\D/g, ''), 'manual')}
@@ -345,7 +347,7 @@ export function TnvedEditor({ batchId, rows: initial }: { batchId: string; rows:
                 <button
                   type="button"
                   className="chip !min-h-9"
-                  data-testid="tnved-line-hint"
+                  data-testid="tnved-tarkib-hint"
                   onClick={() => setCode(key, line.hint!.code, 'manual')}
                 >
                   💡{' '}
