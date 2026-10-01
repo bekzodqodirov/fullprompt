@@ -110,6 +110,10 @@ export const AUDIT_FIELD_LABELS: Record<string, string> = {
   // cargo moved to them — `stampUnattributedCargo`'s one audit line.
   cargoStampedTo: 'cargoStampedTo',
   receipts: 'receipts',
+  // Lot tarkibi (0122): the paper composition a VED or logist stated against
+  // a document, and the per-line TNVED codes typed on the Bojxona tab.
+  lotComposition: 'lotComposition',
+  lotCompositionCodes: 'lotCompositionCodes',
 
   // Housekeeping
   note: 'note',

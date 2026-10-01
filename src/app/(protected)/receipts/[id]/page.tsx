@@ -26,6 +26,14 @@ import { AnnulReceiptForm } from './annul-form';
 import { annulPreview, mayAnnul } from '@/modules/wms/receipts/annul';
 import { AssignClient } from './assign-client';
 import { LotEditForm } from './lot-edit-form';
+import { CompositionPanel } from './composition-panel';
+import {
+  compositionsFor,
+  isPaperDocument,
+  lotTrucksFor,
+  mayWriteComposition,
+} from '@/modules/wms/receipts/lot-composition';
+import { isStale } from '@/modules/wms/receipts/composition-math';
 import { MarkLostForm, type LostBoxOption } from './mark-lost-form';
 import { DealLink } from './deal-link';
 import { receiptHasCompensation } from '@/modules/wms/finance/compensation-follow';
@@ -58,10 +66,17 @@ import { palletDoorsFor } from '@/modules/wms/crates/service';
 import { ReceivedEditForm } from './received-edit-form';
 import { canLogInSql } from '@/modules/platform/users/login';
 
-export default async function ReceiptDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ReceiptDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ tarkib?: string; from?: string }>;
+}) {
   const actor = await getActor();
   if (!actor) redirect('/login');
   const { id } = await params;
+  const { tarkib: tarkibLot, from: fromBatch } = await searchParams;
 
   const receipt = await db.query.receipts.findFirst({ where: eq(receipts.id, id) });
   if (!receipt) notFound();
@@ -138,15 +153,38 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
       }
     : null;
 
-  const receiptFiles = await db
+  const receiptFileRows = await db
     .select({
       id: attachments.id,
       fileName: attachments.fileName,
       contentType: attachments.contentType,
       kind: attachments.kind,
+      createdAt: attachments.createdAt,
+      uploadedBy: attachments.uploadedBy,
     })
     .from(attachments)
     .where(and(eq(attachments.entityType, 'receipt'), eq(attachments.entityId, id)));
+  const receiptFiles = receiptFileRows.map(({ id: fileId, fileName, contentType, kind }) => ({
+    id: fileId,
+    fileName,
+    contentType,
+    kind,
+  }));
+
+  // Lot tarkibi (docs/LOT-TARKIBI.md §8): the paper compositions, the trucks
+  // whose papers already went, and who may state one. The page has already
+  // passed `mayReadReceipt`; the writer is the Bojxona tab's audience.
+  const compositions = await compositionsFor(lotIds);
+  const lotTrucks = await lotTrucksFor(db, lotIds);
+  const mayCompose = mayWriteComposition(actor.permissions);
+  const citedDocs = new Set([...compositions.values()].map((c) => c.attachment.id));
+  const paperDocs = receiptFileRows
+    .filter((f) => isPaperDocument(f, receipt))
+    .map((f) => ({ id: f.id, fileName: f.fileName, removable: f.uploadedBy === actor.id && !citedDocs.has(f.id) }));
+  const fromTruck =
+    fromBatch && tarkibLot
+      ? ((lotTrucks.get(tarkibLot) ?? []).find((truck) => truck.batchId === fromBatch) ?? null)
+      : null;
 
   // Who settled a cost is asked HERE too (owner: «skladchilar rasxodni
   // kiritganda kim tomondan berilgani yozilmayabti»). The warehouse enters
@@ -442,7 +480,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
 
       <section className="space-y-3">
         {lots.map((lot) => (
-          <div key={lot.id} className="card !p-3">
+          <div key={lot.id} id={`lot-${lot.id}`} className="card scroll-mt-20 !p-3">
             <div className="flex items-baseline gap-2">
               <span className="font-mono text-2xl font-extrabold text-brand-700">{lot.letter}</span>
               <span className="font-semibold">
@@ -517,9 +555,45 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
             <div className="mt-2">
               <PhotoGallery photos={photosByLot.get(lot.id) ?? []} deletable={canEdit} />
             </div>
+            <CompositionPanel
+              lot={{
+                id: lot.id,
+                label: `${client?.clientCode ?? receipt.unclaimedMarking ?? '?'}-${lot.letter ?? ''}`,
+                boxCount: lot.boxCount,
+                kg: lot.totalWeightKg,
+                m3: lot.totalVolumeM3,
+              }}
+              receiptId={id}
+              composition={(() => {
+                const c = compositions.get(lot.id);
+                return c
+                  ? {
+                      rev: c.rev,
+                      seenBoxCount: c.seenBoxCount,
+                      lines: c.lines,
+                      attachment: c.attachment,
+                      savedBy: c.savedBy,
+                      savedAt: c.savedAt.toISOString(),
+                    }
+                  : null;
+              })()}
+              stale={(() => {
+                const c = compositions.get(lot.id);
+                return c
+                  ? isStale(c, { boxCount: lot.boxCount, kg: lot.totalWeightKg, m3: lot.totalVolumeM3 })
+                  : false;
+              })()}
+              canWrite={mayCompose && receipt.status === 'confirmed'}
+              canClearOnly={mayCompose && receipt.status !== 'confirmed'}
+              documents={paperDocs}
+              frozenTrucks={(lotTrucks.get(lot.id) ?? []).filter((truck) => truck.sentAt !== null).map((truck) => truck.code)}
+              openOnLoad={tarkibLot === lot.id}
+              from={fromTruck && tarkibLot === lot.id ? { batchId: fromTruck.batchId, code: fromTruck.code } : null}
+            />
             {canEdit && (
               <div className="mt-2">
                 <LotEditForm
+                  hasComposition={compositions.has(lot.id)}
                   lot={{
                     lotId: lot.id,
                     dimsMode: lot.dimsMode,
@@ -557,7 +631,10 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
       <section className="card space-y-3">
         <div>
           <h2 className="mb-2 text-lg font-bold">{t('attachments')}</h2>
+          {/* Keyed on its files: a document uploaded from the lot tarkibi
+              editor refreshes the page, and the panel re-seeds with it. */}
           <AttachmentsPanel
+            key={receiptFiles.map((f) => f.id).join(',')}
             entityType="receipt"
             entityId={id}
             initial={receiptFiles}
