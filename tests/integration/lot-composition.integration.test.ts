@@ -930,12 +930,17 @@ describe('lot tarkibi — the freeze (7a)', () => {
   });
 
   it('12d. the freeze holds the POSITIONS: a sibling forming, departing or dialled after the tick never moves the sent paper', async () => {
-    // EARLY, created before CROSS2, takes 10 of the 67: the lot's order is
-    // CROSS [0,33) · EARLY [33,43) · CROSS2 [43,100) — the review's case,
-    // CROSS2 ticked while EARLY still forms.
+    // EARLY, created before CROSS2, takes 11 of the 67 and one carton waits
+    // on the shelf: the lot's order is CROSS [0,33) · EARLY [33,44) · CROSS2
+    // [44,99) — the review's case, CROSS2 ticked while EARLY still forms. The
+    // odd 11 and 55 are the point: on a 50/50 lot a run's lines depend only
+    // on the parity of its start and length, and [44,99) prints 28/27 where
+    // [33,88) prints 27/28 (with 10 and 57 both runs print 28/29 — #166).
     await mintTruck('EARLY', wh.CN2, wh.UZ, { status: 'loading', createdAt: ago(13) });
-    const early = boxesOf.A!.slice(33, 43);
+    const early = boxesOf.A!.slice(33, 44);
+    const shelf = boxesOf.A!.slice(99);
     await db.update(boxes).set({ currentBatchId: truck.EARLY! }).where(inArray(boxes.id, early));
+    await db.update(boxes).set({ currentBatchId: null, status: 'in_stock' }).where(inArray(boxes.id, shelf));
     signInVed();
     const lines = async () => ofLines(await invoiceRows('CROSS2'));
     const tabRows = async () =>
@@ -952,16 +957,16 @@ describe('lot tarkibi — the freeze (7a)', () => {
 
     const sent = await lines();
     const sentTab = await tabRows();
-    expect(sent.map((r) => r.places)).toEqual([28, 29]);
+    expect(sent.map((r) => r.places)).toEqual([28, 27]);
     expect(await tick('CROSS2', { want: 'sent', paperStamp: await paperStampFor(truck.CROSS2!) })).toBe('ok');
     const frozen = await db
       .select({ segments: batchSentCompositions.segments })
       .from(batchSentCompositions)
       .where(and(eq(batchSentCompositions.batchId, truck.CROSS2!), eq(batchSentCompositions.lotId, lot.A)));
-    expect(frozen[0]!.segments).toEqual([[43, 100]]);
+    expect(frozen[0]!.segments).toEqual([[44, 99]]);
 
     // CROSS2 leaves Kashgar while EARLY still forms: the departed-first
-    // order would put it straight after CROSS — [33,90), 29/28.
+    // order would put it straight after CROSS — [33,88), 27/28.
     await db.update(batches).set({ status: 'in_transit', departedAt: new Date() }).where(eq(batches.id, truck.CROSS2!));
     expect(await lines()).toEqual(sent);
     expect(await tabRows()).toEqual(sentTab);
@@ -972,14 +977,14 @@ describe('lot tarkibi — the freeze (7a)', () => {
     expect(await lines()).toEqual(sent);
     // …and EARLY takes the positions the sent truck left free.
     const population = (await lotTrucksFor(db, [lot.A])).get(lot.A)!;
-    expect(population.find((t) => t.batchId === truck.CROSS2)).toMatchObject({ frozen: true, frozenSegments: [[43, 100]] });
+    expect(population.find((t) => t.batchId === truck.CROSS2)).toMatchObject({ frozen: true, frozenSegments: [[44, 99]] });
     expect(population.find((t) => t.batchId === truck.EARLY)).toMatchObject({ frozen: false, frozenSegments: null });
 
     // Back as the file found it: CROSS2 forming and unsent with its 67.
     expect(await tick('CROSS2', { want: 'unsent' })).toBe('ok');
     await db.update(batches).set({ status: 'loading', departedAt: null }).where(eq(batches.id, truck.CROSS2!));
     await db.update(batches).set({ status: 'cancelled', departedAt: null }).where(eq(batches.id, truck.EARLY!));
-    await db.update(boxes).set({ currentBatchId: truck.CROSS2!, status: 'loading' }).where(inArray(boxes.id, early));
+    await db.update(boxes).set({ currentBatchId: truck.CROSS2!, status: 'loading' }).where(inArray(boxes.id, [...early, ...shelf]));
     expect((await lotTrucksFor(db, [lot.A])).get(lot.A)!.find((t) => t.batchId === truck.CROSS2)).toMatchObject({ n: 67 });
   });
 
@@ -1058,13 +1063,17 @@ describe('lot tarkibi — the freeze (7a)', () => {
   it('12g. a half-applied deploy: the tick is the plain toggle it was, both ways — never the error page', async () => {
     signInVed();
     behind.on = true;
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
       expect(await tick('BARE', { want: 'sent', paperStamp: '' })).toBe('ok');
       expect(await sentAt('BARE')).not.toBeNull();
       expect(await tick('BARE', { want: 'unsent' })).toBe('ok');
       expect(await sentAt('BARE')).toBeNull();
+      // …and says so where an operator reads it.
+      expect(warn.mock.calls.filter(([line]) => String(line).startsWith('[tick] server behind'))).toHaveLength(2);
     } finally {
       behind.on = false;
+      warn.mockRestore();
     }
     expect(await db.select().from(batchSentCompositions).where(eq(batchSentCompositions.batchId, truck.BARE!))).toHaveLength(0);
   });
