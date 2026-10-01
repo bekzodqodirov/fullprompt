@@ -13,6 +13,9 @@ import {
 } from '../../platform/db/schema';
 import { getStorage } from '../../platform/files/storage';
 import { aboardFilter } from '../scanning/unload';
+import { cartonsBefore, compositionMode, paperLines } from '../receipts/composition-math';
+import { lotTrucksFor, paperCompositionsFor } from '../receipts/lot-composition';
+import { ESTIMATE_FILL, estimateNote, packingBoxesCell, packingProductCell } from './composition-cells';
 
 /**
  * Packing list WITH photos (owner's request, feedback round 8): after loading,
@@ -111,23 +114,69 @@ export async function buildPackingPhotosXlsx(batchId: string): Promise<Buffer | 
     }
   }
 
+  // Lot tarkibi: a composed lot prints one row per line on this truck —
+  // frozen while the truck is ticked «hujjat yuborildi».
+  const [compositions, lotTrucks] = await Promise.all([
+    paperCompositionsFor(batchId, lotIds),
+    lotTrucksFor(db, lotIds),
+  ]);
+
   const PHOTO_START_COL = 6; // zero-based: right after the date column
   let rowNo = 3;
   for (const { lot, clientCode, marking, receivedAt, loaded } of rows) {
     const kg = (Number(lot.totalWeightKg) / lot.boxCount) * Number(loaded);
     const m3 = (Number(lot.totalVolumeM3) / lot.boxCount) * Number(loaded);
     const d = receivedAt;
-    sheet.getRow(rowNo).values = {
-      code: `${clientCode ?? marking ?? '?'}-${lot.letter ?? ''}`,
-      product: `${lot.productNameZh}${lot.productNameRu ? ` (${lot.productNameRu})` : ''}`,
-      boxCount: Number(loaded),
-      kg: Number(kg.toFixed(1)),
-      m3: Number(m3.toFixed(3)),
-      // The document leaves the company (DOC's rule) — dd.mm.yyyy reads the
-      // same at the border and in the office, no locale to guess.
-      date: docDate(d),
-    };
-    sheet.getRow(rowNo).height = 60;
+    const code = `${clientCode ?? marking ?? '?'}-${lot.letter ?? ''}`;
+    const comp = compositions.get(lot.id);
+    const photoRow = rowNo;
+    if (comp) {
+      // The values the uncomposed row prints today, passed on — never
+      // recomputed — so the lines sum to exactly that figure.
+      const view = paperLines(
+        comp,
+        { boxCount: lot.boxCount, kg: lot.totalWeightKg, m3: lot.totalVolumeM3 },
+        {
+          before: cartonsBefore(lotTrucks.get(lot.id) ?? [], batchId),
+          cartons: Number(loaded),
+          kg: Number(kg.toFixed(1)),
+          m3: Number(m3.toFixed(3)),
+        },
+      );
+      const mode = compositionMode(comp.lines) === 'separate' ? 'separate' : 'mixed';
+      view.lines.forEach((line, i) => {
+        const row = sheet.getRow(rowNo);
+        row.values = {
+          code,
+          product: packingProductCell(line),
+          boxCount: packingBoxesCell(line, mode, i === 0, Number(loaded)),
+          kg: line.kg,
+          m3: line.m3 ?? '',
+          date: docDate(d),
+        };
+        row.height = 60;
+        if (view.estimate) {
+          row.getCell(2).note = estimateNote(view, Number(loaded), lot.boxCount);
+          row.getCell(2).fill = ESTIMATE_FILL;
+        }
+        rowNo += 1;
+      });
+    } else {
+      sheet.getRow(rowNo).values = {
+        code,
+        product: `${lot.productNameZh}${lot.productNameRu ? ` (${lot.productNameRu})` : ''}`,
+        boxCount: Number(loaded),
+        kg: Number(kg.toFixed(1)),
+        m3: Number(m3.toFixed(3)),
+        // The document leaves the company (DOC's rule) — dd.mm.yyyy reads the
+        // same at the border and in the office, no locale to guess.
+        date: docDate(d),
+      };
+      sheet.getRow(rowNo).height = 60;
+      rowNo += 1;
+    }
+    // The lot's photographs on its FIRST row only — the photo is a carton of
+    // the lot, not of any one line.
     const photoIds = photosByLot.get(lot.id) ?? [];
     photoIds.forEach((photoId, i) => {
       const thumb = thumbs.get(photoId);
@@ -137,11 +186,10 @@ export async function buildPackingPhotosXlsx(batchId: string): Promise<Buffer | 
         extension: 'jpeg',
       });
       sheet.addImage(imageId, {
-        tl: { col: PHOTO_START_COL + i + 0.1, row: rowNo - 1 + 0.1 },
+        tl: { col: PHOTO_START_COL + i + 0.1, row: photoRow - 1 + 0.1 },
         ext: { width: 78, height: 72 },
       });
     });
-    rowNo += 1;
   }
 
   return Buffer.from(await workbook.xlsx.writeBuffer());

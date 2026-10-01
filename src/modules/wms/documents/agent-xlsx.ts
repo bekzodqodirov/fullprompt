@@ -14,6 +14,9 @@ import {
   warehouses,
 } from '../../platform/db/schema';
 import { getStorage } from '../../platform/files/storage';
+import { cartonsBefore, paperLines, type PaperView, type StoredLine } from '../receipts/composition-math';
+import { compositionsFor, lotTrucksFor, paperCompositionsFor } from '../receipts/lot-composition';
+import { agentContentsText, ESTIMATE_FILL, estimateNote } from './composition-cells';
 
 /**
  * Agent approval Excel (W3, spec 6.3): one row per planned line with an
@@ -126,6 +129,16 @@ export async function buildAgentXlsx(planId: string, versionNo: number): Promise
     }
   }
 
+  // Lot tarkibi: the contents are computed ONCE PER LOT, over the version's
+  // lines of that lot summed — `load_plan_lines_version_lot_unique` is
+  // (version, lot, crate), so a lot planned «81 loose + 19 in CR-12» has two
+  // lines, and a per-line portion called a fully planned lot an estimate
+  // twice. The plan's truck reads its frozen copy once its papers are sent;
+  // a plan with no truck yet reads the live compositions and comes after
+  // every truck the lot already crossed on.
+  const contents = await planContents(plan, lines, lotIds, origin?.country ?? '', dest?.country ?? '');
+  const contentsDone = new Set<string>();
+
   const PHOTO_START_COL = 8; // zero-based: right after the arrival columns
   // Every date on this sheet is the warehouse's own day, not the server's.
   const zone = origin?.timezone ?? 'UTC';
@@ -175,6 +188,21 @@ export async function buildAgentXlsx(planId: string, versionNo: number): Promise
         arrivedAt: arrival ? docDate(arrival.arrivedAt, zone) : '',
       };
       sheet.getRow(rowNo).height = 60;
+      const lotContents = contents.get(lot.id);
+      if (lotContents && !contentsDone.has(lot.id)) {
+        // The lot's FIRST row carries its whole planned contents under the
+        // Chinese name.
+        contentsDone.add(lot.id);
+        const { view, cartons } = lotContents;
+        const cell = sheet.getRow(rowNo).getCell('product');
+        cell.value = `${cell.value as string}\n${agentContentsText(view.lines, view.estimate)}`;
+        cell.alignment = { wrapText: true, vertical: 'top' };
+        if (view.estimate) {
+          cell.note = estimateNote(view, cartons, lot.boxCount);
+          cell.fill = ESTIMATE_FILL;
+        }
+        sheet.getRow(rowNo).height = Math.max(60, 15 * (2 + view.lines.length));
+      }
       const photoIds = photosByLot.get(lot.id) ?? [];
       photoIds.forEach((photoId, i) => {
         const thumb = thumbs.get(photoId);
@@ -190,4 +218,60 @@ export async function buildAgentXlsx(planId: string, versionNo: number): Promise
   }
 
   return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
+/** «Crosses a border», `crossesBorderSql` restated for a plan with no truck yet. */
+function planCrossesBorder(originCountry: string, destCountry: string): boolean {
+  const o = originCountry.trim().toUpperCase();
+  return !(o !== '' && o === destCountry.trim().toUpperCase());
+}
+
+/** Each composed lot's paper view for this plan, by lot id. */
+async function planContents(
+  plan: { batchId: string | null },
+  lines: readonly {
+    line: { plannedBoxCount: number; plannedKg: string; plannedM3: string };
+    lot: { id: string; boxCount: number; totalWeightKg: string; totalVolumeM3: string };
+  }[],
+  lotIds: string[],
+  originCountry: string,
+  destCountry: string,
+): Promise<Map<string, { view: PaperView; cartons: number }>> {
+  const out = new Map<string, { view: PaperView; cartons: number }>();
+  if (lotIds.length === 0) return out;
+  const comps: Map<string, { seenBoxCount: number; lines: StoredLine[] }> = plan.batchId
+    ? await paperCompositionsFor(plan.batchId, lotIds)
+    : await compositionsFor(lotIds);
+  if (comps.size === 0) return out;
+  const trucks = await lotTrucksFor(db, [...comps.keys()]);
+  const crosses = planCrossesBorder(originCountry, destCountry);
+  const sums = new Map<string, { lot: (typeof lines)[number]['lot']; cartons: number; kg: number; m3: number }>();
+  for (const { line, lot } of lines) {
+    if (!comps.has(lot.id)) continue;
+    const agg = sums.get(lot.id) ?? { lot, cartons: 0, kg: 0, m3: 0 };
+    agg.cartons += line.plannedBoxCount;
+    agg.kg += Number(line.plannedKg);
+    agg.m3 += Number(line.plannedM3);
+    sums.set(lot.id, agg);
+  }
+  for (const [lotId, agg] of sums) {
+    const ofLot = trucks.get(lotId) ?? [];
+    const before = plan.batchId
+      ? cartonsBefore(ofLot, plan.batchId)
+      : crosses
+        ? ofLot.filter((t) => t.crosses).reduce((s, t) => s + t.n, 0)
+        : 0;
+    const view = paperLines(
+      comps.get(lotId)!,
+      { boxCount: agg.lot.boxCount, kg: agg.lot.totalWeightKg, m3: agg.lot.totalVolumeM3 },
+      {
+        before,
+        cartons: agg.cartons,
+        kg: Math.round(agg.kg * 10) / 10,
+        m3: Math.round(agg.m3 * 1000) / 1000,
+      },
+    );
+    out.set(lotId, { view, cartons: agg.cartons });
+  }
+  return out;
 }

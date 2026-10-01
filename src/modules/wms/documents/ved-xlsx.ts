@@ -15,6 +15,15 @@ import {
 import { getSetting } from '../../platform/settings/service';
 import { productKey, tnvedFor } from '../tnved/service';
 import { batchMemberFilter } from '../scanning/unload';
+import { cartonsBefore, compositionMode, paperLines } from '../receipts/composition-math';
+import { lotTrucksFor, paperCompositionsFor } from '../receipts/lot-composition';
+import {
+  ESTIMATE_FILL,
+  estimateNote,
+  invoiceRowCells,
+  packingBoxesCell,
+  packingProductCell,
+} from './composition-cells';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 async function batchLines(batchId: string) {
@@ -86,7 +95,47 @@ async function batchLines(batchId: string) {
  * of the invoice, so it goes to the lot holding most of its cartons, a tie
  * to the earlier letter. So the column sums to «loose cartons + one per
  * pallet» — the count the customs officer makes at the truck.
+ *
+ * The PARTS are the core (lot tarkibi, §4): a composed lot splits its loose
+ * cartons and its pallets between its lines differently, so it needs them
+ * apart; `invoicePlaces` is their sum and nothing else (one home).
  */
+export function invoicePlaceParts(
+  rows: readonly {
+    lotId: string;
+    letter: string | null;
+    crateId: string | null;
+    crateKind: string | null;
+  }[],
+): Map<string, { loose: number; pallets: number }> {
+  const parts = new Map<string, { loose: number; pallets: number }>();
+  const pallets = new Map<string, Map<string, { letter: string; n: number }>>();
+  const partOf = (lotId: string) => {
+    const p = parts.get(lotId) ?? { loose: 0, pallets: 0 };
+    parts.set(lotId, p);
+    return p;
+  };
+  for (const row of rows) {
+    if (row.crateId && row.crateKind === 'palet') {
+      const byLot = pallets.get(row.crateId) ?? new Map<string, { letter: string; n: number }>();
+      const entry = byLot.get(row.lotId) ?? { letter: row.letter ?? '', n: 0 };
+      entry.n += 1;
+      byLot.set(row.lotId, entry);
+      pallets.set(row.crateId, byLot);
+      partOf(row.lotId);
+    } else {
+      partOf(row.lotId).loose += 1;
+    }
+  }
+  for (const byLot of pallets.values()) {
+    const [owner] = [...byLot.entries()].sort(
+      ([, a], [, b]) => b.n - a.n || a.letter.localeCompare(b.letter),
+    );
+    if (owner) partOf(owner[0]).pallets += 1;
+  }
+  return parts;
+}
+
 export function invoicePlaces(
   rows: readonly {
     lotId: string;
@@ -96,27 +145,31 @@ export function invoicePlaces(
   }[],
 ): Map<string, number> {
   const places = new Map<string, number>();
-  const pallets = new Map<string, Map<string, { letter: string; n: number }>>();
-  for (const row of rows) {
-    if (row.crateId && row.crateKind === 'palet') {
-      const byLot = pallets.get(row.crateId) ?? new Map<string, { letter: string; n: number }>();
-      const entry = byLot.get(row.lotId) ?? { letter: row.letter ?? '', n: 0 };
-      entry.n += 1;
-      byLot.set(row.lotId, entry);
-      pallets.set(row.crateId, byLot);
-      places.set(row.lotId, places.get(row.lotId) ?? 0);
-    } else {
-      places.set(row.lotId, (places.get(row.lotId) ?? 0) + 1);
-    }
-  }
-  for (const byLot of pallets.values()) {
-    const [owner] = [...byLot.entries()].sort(
-      ([, a], [, b]) => b.n - a.n || a.letter.localeCompare(b.letter),
-    );
-    if (owner) places.set(owner[0], (places.get(owner[0]) ?? 0) + 1);
-  }
+  for (const [lotId, p] of invoicePlaceParts(rows)) places.set(lotId, p.loose + p.pallets);
   return places;
 }
+
+/**
+ * What every paper of THIS truck reads about its composed lots: the
+ * composition (frozen while the truck is ticked «hujjat yuborildi») and the
+ * cumulative offset of each lot's cartons on its earlier crossing trucks.
+ */
+async function paperContext(batchId: string, lotIds: string[]) {
+  const [compositions, trucks] = await Promise.all([
+    paperCompositionsFor(batchId, lotIds),
+    lotTrucksFor(db, lotIds),
+  ]);
+  return {
+    compositions,
+    before: (lotId: string) => cartonsBefore(trucks.get(lotId) ?? [], batchId),
+  };
+}
+
+const lotTotalsOf = (lot: typeof receiptLots.$inferSelect) => ({
+  boxCount: lot.boxCount,
+  kg: lot.totalWeightKg,
+  m3: lot.totalVolumeM3,
+});
 
 async function header(sheet: ExcelJS.Worksheet, batchId: string, title: string) {
   const batch = (await db.query.batches.findFirst({ where: eq(batches.id, batchId) }))!;
@@ -213,12 +266,16 @@ export async function buildInvoiceXlsx(batchId: string): Promise<Buffer | null> 
   head.alignment = { wrapText: true, vertical: 'middle' };
 
   const rows = await batchLines(batchId);
-  const places = invoicePlaces(
-    rows.map(({ lot, crateId, crateKind }) => ({ lotId: lot.id, letter: lot.letter, crateId, crateKind })),
-  );
-  const byLot = new Map<string, { product: string; nameZh: string; boxCount: number; kg: number }>();
+  const placeRows = rows.map(({ lot, crateId, crateKind }) => ({ lotId: lot.id, letter: lot.letter, crateId, crateKind }));
+  const places = invoicePlaces(placeRows);
+  const placeParts = invoicePlaceParts(placeRows);
+  const byLot = new Map<
+    string,
+    { lot: typeof receiptLots.$inferSelect; product: string; nameZh: string; boxCount: number; kg: number }
+  >();
   for (const { lot } of rows) {
     const agg = byLot.get(lot.id) ?? {
+      lot,
       product: lot.productNameRu?.trim() || lot.productNameZh,
       nameZh: lot.productNameZh,
       boxCount: 0,
@@ -230,13 +287,40 @@ export async function buildInvoiceXlsx(batchId: string): Promise<Buffer | null> 
   }
   // ТНВЭД memory (Phase 1.5): known products prefill; unknown stay blank.
   const tnved = await tnvedFor([...byLot.values()].map((a) => a.nameZh));
+  // Lot tarkibi: a composed lot prints one row per line on this truck.
+  const papers = await paperContext(batchId, [...byLot.keys()]);
 
   let n = 0;
   let rowNo = head.number;
   for (const [lotId, agg] of byLot) {
+    const kg = Math.round(agg.kg * 10) / 10;
+    const comp = papers.compositions.get(lotId);
+    if (comp) {
+      // The composed lot's rows: the line's own name and code (never the
+      // memory's — a line has no memory key), netto = brutto = the line's
+      // kg, which sum to exactly the single figure the lot printed before.
+      const view = paperLines(comp, lotTotalsOf(agg.lot), {
+        before: papers.before(lotId),
+        cartons: agg.boxCount,
+        kg,
+        places: placeParts.get(lotId) ?? { loose: agg.boxCount, pallets: 0 },
+      });
+      for (const line of view.lines) {
+        n += 1;
+        rowNo += 1;
+        const cells = invoiceRowCells(line);
+        const row = sheet.getRow(rowNo);
+        row.values = [n, cells.product, cells.code, cells.unit, cells.quantity, cells.places, cells.kg, cells.kg, '', ''];
+        row.getCell(10).value = { formula: `I${rowNo}*E${rowNo}` };
+        if (view.estimate) {
+          row.getCell(2).note = estimateNote(view, agg.boxCount, agg.lot.boxCount);
+          row.getCell(2).fill = ESTIMATE_FILL;
+        }
+      }
+      continue;
+    }
     n += 1;
     rowNo += 1;
-    const kg = Math.round(agg.kg * 10) / 10;
     const row = sheet.getRow(rowNo);
     // ТНВЭД prefills from memory (still editable in Excel); price stays for
     // the VED manager; measured weight goes into both netto and brutto —
@@ -275,10 +359,14 @@ export async function buildPackingXlsx(batchId: string): Promise<Buffer | null> 
   ];
 
   const rows = await batchLines(batchId);
-  const byKey = new Map<string, { code: string; product: string; pack: string; boxCount: number; kg: number; m3: number }>();
+  type Group = { lotId: string; code: string; product: string; pack: string; boxCount: number; kg: number; m3: number };
+  const byKey = new Map<string, Group>();
+  const lotsById = new Map<string, typeof receiptLots.$inferSelect>();
   for (const { lot, clientCode, marking, crateCode } of rows) {
+    lotsById.set(lot.id, lot);
     const key = `${lot.id}:${crateCode ?? ''}`;
     const agg = byKey.get(key) ?? {
+      lotId: lot.id,
       code: `${clientCode ?? marking ?? '?'}-${lot.letter ?? ''}`,
       product: `${lot.productNameZh}${lot.productNameRu ? ` / ${lot.productNameRu}` : ''}`,
       pack: crateCode ?? 'короб',
@@ -291,15 +379,54 @@ export async function buildPackingXlsx(batchId: string): Promise<Buffer | null> 
     agg.m3 += Number(lot.totalVolumeM3) / lot.boxCount;
     byKey.set(key, agg);
   }
+  // Lot tarkibi: a composed lot collapses ALL its (lot, crate) groups into
+  // one block of line rows — per-crate line rows would print a second, finer
+  // estimate (deviation D5).
+  const papers = await paperContext(batchId, [...lotsById.keys()]);
+  const groupsOfLot = new Map<string, Group[]>();
+  for (const agg of byKey.values()) groupsOfLot.set(agg.lotId, [...(groupsOfLot.get(agg.lotId) ?? []), agg]);
+  const printedLots = new Set<string>();
   let n = 0;
   let totalKg = 0;
   let totalM3 = 0;
   let totalBoxes = 0;
   for (const agg of byKey.values()) {
-    n += 1;
+    // The footer keeps accumulating the RAW per-group figures as it always
+    // has, so a composed row's rounding can never move it.
     totalKg += agg.kg;
     totalM3 += agg.m3;
     totalBoxes += agg.boxCount;
+    const comp = papers.compositions.get(agg.lotId);
+    if (comp) {
+      if (printedLots.has(agg.lotId)) continue;
+      printedLots.add(agg.lotId);
+      const groups = groupsOfLot.get(agg.lotId) ?? [agg];
+      const lot = lotsById.get(agg.lotId)!;
+      const cartons = groups.reduce((s, g) => s + g.boxCount, 0);
+      const rawKg = groups.reduce((s, g) => s + g.kg, 0);
+      const rawM3 = groups.reduce((s, g) => s + g.m3, 0);
+      const view = paperLines(comp, lotTotalsOf(lot), {
+        before: papers.before(agg.lotId),
+        cartons,
+        kg: Math.round(rawKg * 10) / 10,
+        m3: Math.round(rawM3 * 1000) / 1000,
+      });
+      const mode = compositionMode(comp.lines) === 'separate' ? 'separate' : 'mixed';
+      const pack = groups.map((g) => `${g.pack} ×${g.boxCount}`).join('; ');
+      view.lines.forEach((line, i) => {
+        n += 1;
+        const row = sheet.addRow([
+          n, agg.code, packingProductCell(line), pack, packingBoxesCell(line, mode, i === 0, cartons),
+          line.kg, line.m3 ?? '',
+        ]);
+        if (view.estimate) {
+          row.getCell(3).note = estimateNote(view, cartons, lot.boxCount);
+          row.getCell(3).fill = ESTIMATE_FILL;
+        }
+      });
+      continue;
+    }
+    n += 1;
     sheet.addRow([
       n, agg.code, agg.product, agg.pack, agg.boxCount,
       Math.round(agg.kg * 10) / 10, Math.round(agg.m3 * 1000) / 1000,
