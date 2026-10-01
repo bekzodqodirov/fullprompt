@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## Lot tarkibi: 3 savolga «shunday qolsin» — 2026-10-01
+
+Migratsiya yo'q, dastur ishlashi o'zgarmadi.
+
+- **1a** — butun lot boshqa tovar bo'lsa, tarkib emas, lot nomi o'zgartiriladi. Buni logist, adminlar, sklad mudiri va prixodni qilgan skladchi (o'sha kuni) qila oladi; VED qila olmaydi.
+- **2a** — tarkib qatorlarida xitoycha nom yo'q. Agent faylida lotning xitoycha nomi turadi, tarkib uning ostida yoziladi; invoys va packing listda faqat tarkib nomlari chiqadi.
+- **3a** — dona yozilgan tovar shu mashinada kamida 1 dona to'g'ri kelsa «шт» da, aks holda «кг» da chiqadi. Narx ustuniga «шт» qatorda bir dona, «кг» qatorda bir kg narxi yoziladi.
+- Bularning hammasi dasturda aynan shunday ishlayotgani tekshirildi va endi testlar bilan mustahkamlandi — kelajakda tasodifan o'zgarib qolmaydi.
+
 ## Lot tarkibi: bitta lotda bir necha tovar — 2026-10-01
 
 **Migratsiya 0122.** O'rnatgandan keyin migratsiyalar soni **123** bo'lishi kerak.

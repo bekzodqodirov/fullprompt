@@ -2404,9 +2404,11 @@ nothing tied the sent papers to a revision): the «hujjat yuborildi» tick copie
 contents AND carton positions into `batch_sent_compositions`, the stamp refuses
 `paper_moved`, pre-0122 ticks are backfilled by 0122 itself. CI caught the
 tick importing `count-rules` (`count-kernel-wire`) — the lock lives in the
-service. 📈 kinds count lines by name in their own CTE (#432). OWED to him as
-questions: a whole-lot-other-good fix for the VED, Chinese names on lines for
-the agent file, «шт» beside «кг» on one invoice.
+service. 📈 kinds count lines by name in their own CTE (#432). ASKED of him:
+a whole-lot-other-good fix for the VED, Chinese names on lines for
+the agent file, «шт» beside «кг» on one invoice. His answer «1a 2a 3a» (#1263):
+keep all three as shipped — checked against the code first, the reading-only
+parts now pinned by tests (24 red proofs).
 
 **Latest migration: 0122** (`lot_composition`, `when` …101; ledger must reach **123**). Before
 it: 0121 (`batch_rename`, `when` …100). Before
