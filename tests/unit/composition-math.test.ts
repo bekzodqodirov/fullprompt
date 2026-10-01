@@ -90,6 +90,13 @@ describe('largestRemainder', () => {
     const out = largestRemainder(99_999_999, w);
     expect(out.reduce((s, v) => s + v, 0)).toBe(99_999_999);
     expect(out).toEqual([50_000_000, 49_999_999, 0]);
+    // A deliberate tie (two lines with one residue against W = T·20000): the
+    // integers break it to the lower index; floats misorder the two
+    // remainders at this magnitude and give the unit to the wrong line
+    // (found by search, measured: [24999999, 49999999, 25000001]).
+    expect(largestRemainder(99_999_999, [499_999_986_642n, 999_999_986_679n, 500_000_006_679n])).toEqual([
+      24_999_999, 50_000_000, 25_000_000,
+    ]);
   });
 });
 
