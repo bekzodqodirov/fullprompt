@@ -15,7 +15,7 @@ import {
 import { getSetting } from '../../platform/settings/service';
 import { productKey, tnvedFor } from '../tnved/service';
 import { batchMemberFilter } from '../scanning/unload';
-import { cartonsBefore, compositionMode, paperLines } from '../receipts/composition-math';
+import { compositionMode, paperLines, truckSegments } from '../receipts/composition-math';
 import { lotTrucksFor, paperCompositionsFor } from '../receipts/lot-composition';
 import {
   ESTIMATE_FILL,
@@ -107,11 +107,11 @@ export function invoicePlaceParts(
     crateId: string | null;
     crateKind: string | null;
   }[],
-): Map<string, { loose: number; pallets: number }> {
-  const parts = new Map<string, { loose: number; pallets: number }>();
+): Map<string, { loose: number; pallets: number; onPallets: number }> {
+  const parts = new Map<string, { loose: number; pallets: number; onPallets: number }>();
   const pallets = new Map<string, Map<string, { letter: string; n: number }>>();
   const partOf = (lotId: string) => {
-    const p = parts.get(lotId) ?? { loose: 0, pallets: 0 };
+    const p = parts.get(lotId) ?? { loose: 0, pallets: 0, onPallets: 0 };
     parts.set(lotId, p);
     return p;
   };
@@ -122,7 +122,7 @@ export function invoicePlaceParts(
       entry.n += 1;
       byLot.set(row.lotId, entry);
       pallets.set(row.crateId, byLot);
-      partOf(row.lotId);
+      partOf(row.lotId).onPallets += 1;
     } else {
       partOf(row.lotId).loose += 1;
     }
@@ -151,8 +151,9 @@ export function invoicePlaces(
 
 /**
  * What every paper of THIS truck reads about its composed lots: the
- * composition (frozen while the truck is ticked «hujjat yuborildi») and the
- * cumulative offset of each lot's cartons on its earlier crossing trucks.
+ * composition (frozen while the truck is ticked «hujjat yuborildi») and
+ * where each lot's cartons on this truck sit in the lot's order — after its
+ * earlier crossing trucks, or, on a sent truck, where they sat at the tick.
  */
 async function paperContext(batchId: string, lotIds: string[]) {
   const [compositions, trucks] = await Promise.all([
@@ -161,7 +162,7 @@ async function paperContext(batchId: string, lotIds: string[]) {
   ]);
   return {
     compositions,
-    before: (lotId: string) => cartonsBefore(trucks.get(lotId) ?? [], batchId),
+    segments: (lotId: string) => truckSegments(trucks.get(lotId) ?? [], batchId),
   };
 }
 
@@ -300,10 +301,10 @@ export async function buildInvoiceXlsx(batchId: string): Promise<Buffer | null> 
       // memory's — a line has no memory key), netto = brutto = the line's
       // kg, which sum to exactly the single figure the lot printed before.
       const view = paperLines(comp, lotTotalsOf(agg.lot), {
-        before: papers.before(lotId),
+        segments: papers.segments(lotId),
         cartons: agg.boxCount,
         kg,
-        places: placeParts.get(lotId) ?? { loose: agg.boxCount, pallets: 0 },
+        places: placeParts.get(lotId) ?? { loose: agg.boxCount, pallets: 0, onPallets: 0 },
       });
       for (const line of view.lines) {
         n += 1;
@@ -406,7 +407,7 @@ export async function buildPackingXlsx(batchId: string): Promise<Buffer | null> 
       const rawKg = groups.reduce((s, g) => s + g.kg, 0);
       const rawM3 = groups.reduce((s, g) => s + g.m3, 0);
       const view = paperLines(comp, lotTotalsOf(lot), {
-        before: papers.before(agg.lotId),
+        segments: papers.segments(agg.lotId),
         cartons,
         kg: Math.round(rawKg * 10) / 10,
         m3: Math.round(rawM3 * 1000) / 1000,

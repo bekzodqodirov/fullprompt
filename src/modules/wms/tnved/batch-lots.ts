@@ -3,7 +3,7 @@ import { eq, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { boxes, clients, receiptLots, receipts } from '../../platform/db/schema';
 import { aboardFilter } from '../scanning/unload';
-import { cartonsBefore, isStale, paperLines } from '../receipts/composition-math';
+import { isStale, paperLines, truckSegments } from '../receipts/composition-math';
 import { lotTrucksFor, paperCompositionsFor } from '../receipts/lot-composition';
 import { productKey, tnvedFor, tnvedHintsFor } from './service';
 
@@ -110,7 +110,7 @@ export const batchTnvedProducts = cache(async function batchTnvedProducts(
       const totals = { boxCount: lot.boxCount, kg: lot.totalWeightKg, m3: lot.totalVolumeM3 };
       const cartons = Number(n);
       const view = paperLines(comp, totals, {
-        before: cartonsBefore(trucks.get(lot.id) ?? [], batchId),
+        segments: truckSegments(trucks.get(lot.id) ?? [], batchId),
         cartons,
         kg: Math.round(((Number(lot.totalWeightKg) / lot.boxCount) * cartons) * 10) / 10,
       });

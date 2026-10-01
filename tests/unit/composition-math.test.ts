@@ -1,15 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import {
-  cartonsBefore,
   checkSums,
   compositionMode,
   fillRest,
+  fitSegments,
   fromUnits,
   isStale,
   largestRemainder,
+  lotSegments,
   nameKey,
   paperLines,
   parseDraft,
+  planSegments,
   prefillByCartons,
   remainderOf,
   roundHalfUp,
@@ -17,9 +19,12 @@ import {
   seatsPrefix,
   toCount,
   toUnits,
+  truckSegments,
   type DraftLine,
+  type LotTruck,
   type LotTotals,
   type PaperPortion,
+  type Segment,
   type StoredLine,
 } from '@/modules/wms/receipts/composition-math';
 import { productKey } from '@/modules/wms/tnved/service';
@@ -339,7 +344,7 @@ describe('the editor’s helpers', () => {
     expect(isStale(SEP, { ...LOT, m3: '2.5001' })).toBe(true);
   });
 
-  it('cartonsBefore: departed by time, then forming by creation; internal → 0; own n never counted', () => {
+  it('truckSegments: departed by time, then forming by creation; internal → from 0; own n never counted', () => {
     const trucks = [
       { batchId: 'c', departedAt: null, createdAt: '2026-09-01T00:00:00Z', crosses: true, n: 7 },
       { batchId: 'b', departedAt: '2026-09-10T00:00:00Z', crosses: true, n: 20 },
@@ -347,12 +352,125 @@ describe('the editor’s helpers', () => {
       { batchId: 'i', departedAt: '2026-09-01T00:00:00Z', crosses: false, n: 100 },
       { batchId: 'd', departedAt: null, createdAt: '2026-09-20T00:00:00Z', crosses: true, n: 40 },
     ].map((t) => ({ createdAt: '2026-08-01T00:00:00Z', ...t }));
-    expect(cartonsBefore(trucks, 'a')).toBe(0);
-    expect(cartonsBefore(trucks, 'b')).toBe(33);
-    expect(cartonsBefore(trucks, 'c')).toBe(53);
-    expect(cartonsBefore(trucks, 'd')).toBe(60);
-    expect(cartonsBefore(trucks, 'i')).toBe(0);
-    expect(cartonsBefore(trucks, 'zz')).toBe(0);
+    expect(truckSegments(trucks, 'a')).toEqual([[0, 33]]);
+    expect(truckSegments(trucks, 'b')).toEqual([[33, 53]]);
+    expect(truckSegments(trucks, 'c')).toEqual([[53, 60]]);
+    expect(truckSegments(trucks, 'd')).toEqual([[60, 100]]);
+    expect(truckSegments(trucks, 'i')).toEqual([]);
+    expect(truckSegments(trucks, 'zz')).toEqual([]);
+    // The truckless plan of the agent file: after every crossing truck.
+    expect(planSegments(trucks, 5, true)).toEqual([[100, 105]]);
+    expect(planSegments(trucks, 5, false)).toEqual([]);
+  });
+
+  it('fitSegments: trimmed to the document, extended past the end, the old clamp past the lot', () => {
+    expect(fitSegments([[0, 33], [66, 83]], 40, 100)).toEqual({ segs: [[0, 33], [66, 73]], clamped: false });
+    expect(fitSegments([[10, 20]], 12, 100)).toEqual({ segs: [[10, 22]], clamped: false });
+    expect(fitSegments([], 30, 100, 40)).toEqual({ segs: [[40, 70]], clamped: false });
+    expect(fitSegments([], 40, 100, 80)).toEqual({ segs: [[60, 100]], clamped: true });
+  });
+});
+
+/**
+ * The review of the freeze (7a): the tick copied the LINES and not the
+ * offset, so a sent truck's paper still moved with its siblings. The owner's
+ * numbers: lot 100 = 50 keyboards / 600 kg / 500 pcs + 50 mice / 400 kg /
+ * 1000 pcs; truck B created first and forming with 33 cartons; truck T
+ * created later with 33 and ticked.
+ */
+describe('the freeze holds a sent truck’s positions', () => {
+  const B0: LotTruck = { batchId: 'B', departedAt: null, createdAt: '2026-09-28T08:00:00Z', crosses: true, n: 33 };
+  const T0: LotTruck = { batchId: 'T', departedAt: null, createdAt: '2026-09-28T09:00:00Z', crosses: true, n: 33 };
+  const print = (segments: readonly Segment[]) =>
+    rows(paperLines(SEP, LOT, { segments, cartons: 33, kg: 330, places: { loose: 33, pallets: 0 } }));
+
+  it('T departs while B still forms: T prints what it sent', () => {
+    const atTick = truckSegments([B0, T0], 'T');
+    expect(atTick).toEqual([[33, 66]]);
+    const sent = print(atTick);
+    expect(sent).toEqual([
+      ['Клавиатура', 16, 193.2, 160, 16],
+      ['Мышь', 17, 136.8, 340, 17],
+    ]);
+    const T1 = { ...T0, departedAt: '2026-09-29T10:00:00Z', frozenSegments: atTick };
+    expect(truckSegments([B0, T1], 'T')).toEqual([[33, 66]]);
+    expect(print(truckSegments([B0, T1], 'T'))).toEqual(sent);
+    // …and B, which now departs after it, takes the positions T left free.
+    expect(truckSegments([B0, T1], 'B')).toEqual([[0, 33]]);
+  });
+
+  it('a later-created truck departing first, or B dialled down, never moves the sent truck', () => {
+    const T1 = { ...T0, frozenSegments: [[33, 66]] as Segment[] };
+    const C: LotTruck = { batchId: 'C', departedAt: '2026-09-29T07:00:00Z', createdAt: '2026-09-28T10:00:00Z', crosses: true, n: 34 };
+    expect(truckSegments([B0, T1, C], 'T')).toEqual([[33, 66]]);
+    expect(truckSegments([{ ...B0, n: 20 }, T1], 'T')).toEqual([[33, 66]]);
+    // C, departed first, fills what is free around the sent truck: two runs.
+    expect(truckSegments([B0, T1, C], 'C')).toEqual([[0, 33], [66, 67]]);
+    expect(truckSegments([B0, T1, C], 'B')).toEqual([[67, 100]]);
+  });
+
+  it('every order of ticks and departures: a sent truck never moves, a departed one never moves, the lot adds up', () => {
+    const typed = [3, 2, 2];
+    const comp = {
+      seenBoxCount: 7,
+      lines: typed.map((cartons, i) => ({
+        seq: i + 1,
+        name: `L${i}`,
+        pieces: [31, 17, 5][i]!,
+        cartons,
+        kg: `${cartons * 10}.000`,
+        m3: `0.${cartons}000`,
+        tnvedCode: null,
+      })),
+    };
+    const lot: LotTotals = { boxCount: 7, kg: '70.000', m3: '0.7000' };
+    const sizes = [3, 2, 2];
+    const events = sizes.flatMap((_, i) => [`tick${i}`, `depart${i}`]);
+    const random = rng(7);
+    for (let run = 0; run < 400; run += 1) {
+      const order = [...events].sort(() => random() - 0.5);
+      const trucks: LotTruck[] = sizes.map((n, i) => ({
+        batchId: `t${i}`,
+        departedAt: null,
+        createdAt: `2026-09-2${i}T00:00:00Z`,
+        crosses: true,
+        n,
+      }));
+      const pinned = new Map<string, Segment[]>();
+      let clock = 0;
+      for (const event of order) {
+        const i = Number(event.slice(-1));
+        const t = trucks[i]!;
+        clock += 1;
+        if (event.startsWith('tick') && !t.frozenSegments) t.frozenSegments = truckSegments(trucks, t.batchId);
+        if (event.startsWith('depart') && t.departedAt === null) {
+          t.departedAt = `2026-10-01T00:00:${String(clock).padStart(2, '0')}Z`;
+        }
+        const all = lotSegments(trucks);
+        for (const x of trucks) {
+          const now = all.get(x.batchId)!;
+          if (x.frozenSegments || x.departedAt !== null) {
+            const was = pinned.get(x.batchId);
+            if (was) expect(now, `${order} — ${x.batchId}`).toEqual(was);
+            else pinned.set(x.batchId, now);
+          }
+        }
+        // The positions tile the lot: nothing counted twice, nothing dropped.
+        const covered = [...all.values()].flat().flatMap(([s, e]) => Array.from({ length: e - s }, (_, k) => s + k));
+        expect(covered.sort((a, b) => a - b), `${order}`).toEqual([0, 1, 2, 3, 4, 5, 6]);
+        const cartons = [0, 0, 0];
+        const pieces = [0, 0, 0];
+        for (const x of trucks) {
+          const v = paperLines(comp, lot, { segments: all.get(x.batchId)!, cartons: x.n, kg: x.n * 10 });
+          for (const l of v.lines) {
+            cartons[l.seq - 1]! += l.cartons!;
+            pieces[l.seq - 1]! += l.pieces!;
+          }
+        }
+        expect(cartons, `${order}`).toEqual(typed);
+        expect(pieces, `${order}`).toEqual([31, 17, 5]);
+      }
+    }
   });
 });
 
@@ -412,6 +530,12 @@ describe('paperLines — the worked example of §2', () => {
     const u6 = paperLines(SEP, LOT, { ...whole, places: { loose: 0, pallets: 4 } });
     expect(u6.lines.map((l) => l.places)).toEqual([2, 2]);
     expect(u6.estimate).toBe(true);
+  });
+
+  it('a lot on ANOTHER lot’s pallet: places split by cartons, flagged (it owns no pallet)', () => {
+    const v = paperLines(SEP, LOT, { ...whole, places: { loose: 90, pallets: 0, onPallets: 10 } });
+    expect(v.lines.map((l) => l.places)).toEqual([45, 45]);
+    expect(v.reasons).toEqual(['pallet']);
   });
 
   it('U7: aralash — all places on the first line, the rest «part»', () => {

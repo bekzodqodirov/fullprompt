@@ -14,7 +14,7 @@ import {
   warehouses,
 } from '../../platform/db/schema';
 import { getStorage } from '../../platform/files/storage';
-import { cartonsBefore, paperLines, type PaperView, type StoredLine } from '../receipts/composition-math';
+import { paperLines, planSegments, truckSegments, type PaperView, type StoredLine } from '../receipts/composition-math';
 import { compositionsFor, lotTrucksFor, paperCompositionsFor } from '../receipts/lot-composition';
 import { agentContentsText, ESTIMATE_FILL, estimateNote } from './composition-cells';
 
@@ -256,16 +256,14 @@ async function planContents(
   }
   for (const [lotId, agg] of sums) {
     const ofLot = trucks.get(lotId) ?? [];
-    const before = plan.batchId
-      ? cartonsBefore(ofLot, plan.batchId)
-      : crosses
-        ? ofLot.filter((t) => t.crosses).reduce((s, t) => s + t.n, 0)
-        : 0;
+    const segments = plan.batchId
+      ? truckSegments(ofLot, plan.batchId)
+      : planSegments(ofLot, agg.cartons, crosses);
     const view = paperLines(
       comps.get(lotId)!,
       { boxCount: agg.lot.boxCount, kg: agg.lot.totalWeightKg, m3: agg.lot.totalVolumeM3 },
       {
-        before,
+        segments,
         cartons: agg.cartons,
         kg: Math.round(agg.kg * 10) / 10,
         m3: Math.round(agg.m3 * 1000) / 1000,

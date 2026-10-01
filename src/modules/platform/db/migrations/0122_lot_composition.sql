@@ -55,19 +55,48 @@ CREATE UNIQUE INDEX "lot_composition_lines_lot_seq_unique" ON "lot_composition_l
 -- every lot on the truck — `lines` NULL = the lot had no composition then, so
 -- a composition stated later never rewrites a sent truck's invoice — and
 -- deleted by the un-tick. `lines` is a copy, not a reference: the live lines
--- are replaced on every save.
+-- are replaced on every save. `segments` = the POSITIONS the truck's cartons
+-- of the lot held in the lot's order at the tick ([[start, end), …]): a
+-- split lot's lines are allocated cumulatively over its trucks, so without
+-- them another truck of the lot departing first moved a sent truck's paper.
 CREATE TABLE "batch_sent_compositions" (
   "batch_id" uuid NOT NULL REFERENCES "batches"("id") ON DELETE CASCADE,
   "lot_id" uuid NOT NULL REFERENCES "receipt_lots"("id") ON DELETE CASCADE,
   "rev" bigint,
   "seen_box_count" integer,
   "lines" jsonb,
+  "segments" jsonb,
   "frozen_at" timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT "batch_sent_compositions_pk" PRIMARY KEY ("batch_id", "lot_id"),
   CONSTRAINT "batch_sent_compositions_shape_check" CHECK (
     ("rev" IS NULL) = ("lines" IS NULL) AND ("rev" IS NULL) = ("seen_box_count" IS NULL)
     AND ("lines" IS NULL OR jsonb_typeof("lines") = 'array')
+  ),
+  CONSTRAINT "batch_sent_compositions_segments_check" CHECK (
+    "segments" IS NULL OR jsonb_typeof("segments") = 'array'
   )
 );
 --> statement-breakpoint
 CREATE INDEX "batch_sent_compositions_lot_idx" ON "batch_sent_compositions" ("lot_id");
+--> statement-breakpoint
+-- The trucks already ticked «hujjat yuborildi» when this deploys: their
+-- papers went to the agent with every lot as ONE row, so they are frozen as
+-- exactly that — a row per lot with `lines` NULL — or the first composition
+-- saved after the deploy would rewrite a sent truck's invoice while the
+-- receipt card said it stays as sent (the review of the freeze). The tick is
+-- routinely pressed on the road (the VED's queue is in_transit/arrived trucks
+-- with no tick), which is his 3b's moment exactly. Membership is
+-- `batchMemberFilter`'s two halves, as the tick's own copy reads it; no
+-- positions (NULL), so these trucks keep their place in the order.
+INSERT INTO "batch_sent_compositions" ("batch_id", "lot_id")
+SELECT DISTINCT t.id, b.lot_id
+  FROM "batches" t
+  JOIN "boxes" b ON b.current_batch_id = t.id
+ WHERE t.sent_to_agent_at IS NOT NULL AND t.status <> 'cancelled'
+UNION
+SELECT DISTINCT t.id, b.lot_id
+  FROM "batches" t
+  JOIN "box_movements" m ON m.ref_type = 'batch' AND m.cause = 'batch_departed' AND m.ref_id = t.id
+  JOIN "boxes" b ON b.id = m.box_id
+ WHERE t.sent_to_agent_at IS NOT NULL AND t.status <> 'cancelled'
+ON CONFLICT DO NOTHING;

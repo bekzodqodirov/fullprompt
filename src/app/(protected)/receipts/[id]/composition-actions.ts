@@ -2,7 +2,7 @@
 
 import { eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
-import { ZodError } from 'zod';
+import { z, ZodError } from 'zod';
 import { db } from '@/modules/platform/db/client';
 import { receiptLots } from '@/modules/platform/db/schema';
 import { requestMeta } from '@/modules/platform/auth/session';
@@ -56,8 +56,10 @@ function refusalOf(err: unknown): CompositionActionResult {
 
 /**
  * Revalidates the prixod and every truck the lot rides (its Bojxona tab and
- * the card's «TNVED kodsiz»); answers the codes of the trucks whose papers
- * already went, so ✅ can say they stay as sent.
+ * the card's «TNVED kodsiz»); answers the codes of the trucks that hold a
+ * frozen copy of THIS lot, so ✅ can say they stay as sent. The copy and not
+ * `sent_to_agent_at`: a lot that boarded after the tick reads live on that
+ * truck, and «stays as sent» would be a false promise there.
  */
 async function afterWrite(lotId: string): Promise<string[]> {
   const lot = await db.query.receiptLots.findFirst({
@@ -70,7 +72,7 @@ async function afterWrite(lotId: string): Promise<string[]> {
     revalidatePath(`/batches/${truck.batchId}/tnved`);
     revalidatePath(`/batches/${truck.batchId}`);
   }
-  return trucks.filter((truck) => truck.sentAt !== null).map((truck) => truck.code);
+  return trucks.filter((truck) => truck.frozen).map((truck) => truck.code);
 }
 
 export async function saveLotCompositionAction(payload: unknown): Promise<CompositionActionResult> {
@@ -85,13 +87,17 @@ export async function saveLotCompositionAction(payload: unknown): Promise<Compos
   }
 }
 
-export async function clearLotCompositionAction(input: {
+/** The clear's post, parsed like the save's — a forged `null` is a refusal, not a TypeError. */
+const clearInputSchema = z.object({ lotId: z.string().uuid(), seenRev: z.number().int().min(0) });
+
+export async function clearLotCompositionAction(payload: {
   lotId: string;
   seenRev: number;
 }): Promise<CompositionActionResult> {
   try {
     const actor = await requireActor();
     const meta = await requestMeta();
+    const input = clearInputSchema.parse(payload);
     await clearComposition(input, actor, { actorId: actor.id, ...meta });
     return { ok: true, rev: 0, frozen: await afterWrite(input.lotId) };
   } catch (err) {

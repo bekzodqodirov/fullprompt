@@ -32,7 +32,8 @@ import {
   type CountAcceptResult,
 } from '@/modules/wms/scanning/count-accept';
 import { countDoorFor } from '@/modules/wms/scanning/count-door';
-import { isBusyError } from '@/modules/platform/db/errors';
+import { lockTruckLoading, setCountLockTimeout } from '@/modules/wms/scanning/count-rules';
+import { isBusyError, isServerBehind } from '@/modules/platform/db/errors';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import type { CheckpointActionState } from '@/modules/wms/tracking/checkpoint';
 import {
@@ -385,15 +386,25 @@ export async function createQuickBatchAction(
  * way»).
  *
  * Lot tarkibi (7a, the judge's FREEZE): ticking copies, in ONE statement, the
- * composition of every lot on the truck into `batch_sent_compositions`, and
- * while the truck is ticked its papers print that copy — a composition saved
- * later reaches only trucks whose papers have not gone. The copy is taken
- * BEFORE the truck row, so a count press (lot → truck) and the tick (lots
- * key-shared → truck) take the truck last on both sides. The page posts
- * `paperStamp`, the stamp of the compositions it was drawn with: a colleague's
- * save between the download and the tick refuses the tick (`paper_moved`) and
- * nothing is frozen. Un-ticking drops the copy. `want` is what the page
- * showed («sent» / «unsent»); a bare post toggles, as it always has.
+ * composition of every lot on the truck into `batch_sent_compositions` —
+ * with the POSITIONS its cartons hold in each lot's order, so another truck
+ * of a split lot departing first cannot move a sent paper — and while the
+ * truck is ticked its papers print that copy; a composition saved later
+ * reaches only trucks whose papers have not gone. Lock order, the truck
+ * doors' own: count-load's advisory lock (`lockTruckLoading`), then the truck
+ * row FOR NO KEY UPDATE, then the copy (whose FK checks key-share the lot
+ * rows). count-load takes advisory → lot → truck and the unload doors truck
+ * → lot, so the tick waits for both instead of closing a cycle with either
+ * (the review's deadlock: the copy key-shared the lot BEFORE the truck, and a
+ * count-accept holding the truck and wanting the lot made a 40P01 the VED
+ * met as an error page). A wait that runs out is a sentence (`?tarkib=band`).
+ * The page posts `paperStamp`, the stamp of the compositions and positions it
+ * was drawn with: a colleague's save — or another truck's departure — between
+ * the download and the tick refuses the tick (`paper_moved`) and nothing is
+ * frozen. Un-ticking drops the copy. `want` is what the page showed («sent» /
+ * «unsent»); a bare post toggles, as it always has. On a half-applied deploy
+ * (no `batch_sent_compositions` yet) the tick is the plain toggle it was —
+ * no composition can exist without the table — and says so in the log.
  */
 export async function setSentToAgentAction(formData: FormData): Promise<void> {
   const batchId = String(formData.get('batchId') ?? '');
@@ -406,18 +417,21 @@ export async function setSentToAgentAction(formData: FormData): Promise<void> {
   const postedStamp = String(formData.get('paperStamp') ?? '');
   const { writeAudit } = await import('@/modules/platform/audit/service');
   const ctx = { actorId: actor.id, ...meta, warehouseId: batch.originWarehouseId };
-  let moved = false;
+  let answer: 'paper_moved' | 'busy' | null = null;
   try {
     await db.transaction(async (tx) => {
+      await setCountLockTimeout(tx);
+      await lockTruckLoading(tx, batchId);
+      const [row] = await tx
+        .select({ sentToAgentAt: batches.sentToAgentAt })
+        .from(batches)
+        .where(eq(batches.id, batchId))
+        .for('no key update');
+      if (!row || (row.sentToAgentAt !== null) === sending) throw new TickRefused('no_op');
       if (sending) {
         const frozen = await freezeCompositionsInTx(tx, batchId);
         if (paperStamp(frozen) !== postedStamp) throw new TickRefused('paper_moved');
-        const done = await tx
-          .update(batches)
-          .set({ sentToAgentAt: tashkentDay() })
-          .where(and(eq(batches.id, batchId), isNull(batches.sentToAgentAt)))
-          .returning({ id: batches.id });
-        if (done.length === 0) throw new TickRefused('no_op');
+        await tx.update(batches).set({ sentToAgentAt: tashkentDay() }).where(eq(batches.id, batchId));
         await writeAudit(tx, ctx, {
           entityType: 'batch',
           entityId: batchId,
@@ -425,12 +439,7 @@ export async function setSentToAgentAction(formData: FormData): Promise<void> {
           after: { sentToAgent: true, frozenLots: frozen.filter((f) => f.rev !== null).length },
         });
       } else {
-        const done = await tx
-          .update(batches)
-          .set({ sentToAgentAt: null })
-          .where(and(eq(batches.id, batchId), isNotNull(batches.sentToAgentAt)))
-          .returning({ id: batches.id });
-        if (done.length === 0) throw new TickRefused('no_op');
+        await tx.update(batches).set({ sentToAgentAt: null }).where(eq(batches.id, batchId));
         const thawed = await thawCompositionsInTx(tx, batchId);
         await writeAudit(tx, ctx, {
           entityType: 'batch',
@@ -441,15 +450,31 @@ export async function setSentToAgentAction(formData: FormData): Promise<void> {
       }
     });
   } catch (err) {
-    if (!(err instanceof TickRefused)) throw err;
-    // Somebody ticked (or un-ticked) first: the page re-renders with their answer.
-    moved = err.code === 'paper_moved';
+    if (err instanceof TickRefused) {
+      // Somebody ticked (or un-ticked) first: the page re-renders with their answer.
+      if (err.code === 'paper_moved') answer = 'paper_moved';
+    } else if (isBusyError(err)) {
+      answer = 'busy';
+    } else if (isServerBehind(err)) {
+      console.warn('[tick] server behind — the plain toggle, nothing frozen', err);
+      await db.transaction(async (tx) => {
+        const done = await tx
+          .update(batches)
+          .set({ sentToAgentAt: sending ? tashkentDay() : null })
+          .where(and(eq(batches.id, batchId), sending ? isNull(batches.sentToAgentAt) : isNotNull(batches.sentToAgentAt)))
+          .returning({ id: batches.id });
+        if (done.length === 0) return;
+        await writeAudit(tx, ctx, { entityType: 'batch', entityId: batchId, action: 'update', after: { sentToAgent: sending } });
+      });
+    } else {
+      throw err;
+    }
   }
   revalidatePath(`/batches/${batchId}`);
   revalidatePath(`/batches/${batchId}/tnved`);
-  if (moved) {
+  if (answer) {
     const { redirect } = await import('next/navigation');
-    redirect(`/batches/${batchId}/tnved?tarkib=yangilandi#hujjatlar`);
+    redirect(`/batches/${batchId}/tnved?tarkib=${answer === 'paper_moved' ? 'yangilandi' : 'band'}#hujjatlar`);
   }
 }
 

@@ -17,6 +17,7 @@ import {
 } from '@/modules/wms/tnved/service';
 import { batchTnvedProducts } from '@/modules/wms/tnved/batch-lots';
 import { isBusyError, isServerBehind } from '@/modules/platform/db/errors';
+import { isUuidShaped } from '@/modules/platform/audit/fields';
 import {
   CompositionError,
   mayWriteComposition,
@@ -47,6 +48,8 @@ export async function suggestTnvedForLotAction(
 ): Promise<{ ok: boolean; suggestion?: TnvedSuggestion; error?: string }> {
   const actor = await vedActor();
   if (!actor) return { ok: false, error: 'forbidden' };
+  // A malformed id is a forged post: «forbidden», never a 22P02 error page.
+  if (!isUuidShaped(batchId) || !isUuidShaped(lotId)) return { ok: false, error: 'forbidden' };
   const batch = await db.query.batches.findFirst({
     where: eq(batches.id, batchId),
     columns: { originWarehouseId: true, destWarehouseId: true },
@@ -127,6 +130,7 @@ export async function saveTnvedAction(
 ): Promise<{ ok: boolean; saved?: number; error?: string }> {
   const actor = await vedActor();
   if (!actor) return { ok: false, error: 'forbidden' };
+  if (!isUuidShaped(batchId)) return { ok: false, error: 'forbidden' };
   const batch = await db.query.batches.findFirst({
     where: eq(batches.id, batchId),
     columns: { originWarehouseId: true, destWarehouseId: true, departedAt: true },
@@ -170,6 +174,11 @@ export async function saveLineCodesAction(
   const revs: Record<string, number> = {};
   const actor = await vedActor();
   if (!actor || !mayWriteComposition(actor.permissions)) return { ok: false, revs, error: 'forbidden' };
+  // Every id is bound into a uuid comparison below: a malformed one is a
+  // forged post and answers «forbidden», never a 22P02 error page.
+  if (!isUuidShaped(batchId) || entries.some((e) => !isUuidShaped(e.lotId) || !isUuidShaped(e.lineId))) {
+    return { ok: false, revs, error: 'forbidden' };
+  }
   const batch = await db.query.batches.findFirst({
     where: eq(batches.id, batchId),
     columns: { originWarehouseId: true, destWarehouseId: true },

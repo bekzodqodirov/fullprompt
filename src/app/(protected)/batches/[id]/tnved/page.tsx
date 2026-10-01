@@ -207,6 +207,11 @@ export default async function BatchTnvedPage({
             ⚠ {tk('paperMoved')}
           </p>
         )}
+        {tarkib === 'band' && (
+          <p className="rounded-lg bg-warn/10 p-2 text-sm font-semibold text-warn" data-testid="tnved-tick-busy">
+            ⚠ {tk('errors.busy')}
+          </p>
+        )}
         {actor.permissions.has('ved.docs') && (
           <form action={setSentToAgentAction}>
             <input type="hidden" name="batchId" value={batch.id} />

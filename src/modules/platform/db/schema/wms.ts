@@ -321,7 +321,10 @@ export const lotCompositionLines = pgTable(
  * The papers a truck SENT (7a): one row per lot on the truck at the «hujjat
  * yuborildi» tick, `lines` NULL when the lot had no composition then. The
  * element shape is `StoredLine` of `wms/receipts/composition-math.ts`
- * (restated here: platform never imports wms).
+ * (restated here: platform never imports wms). `segments` = the positions
+ * the truck's cartons of the lot held in the lot's order at the tick
+ * (`Segment[]` there) — NULL on a truck that does not cross the border and
+ * on the rows 0122 backfilled for trucks ticked before it.
  */
 export const batchSentCompositions = pgTable(
   'batch_sent_compositions',
@@ -346,6 +349,7 @@ export const batchSentCompositions = pgTable(
         }[]
       | null
     >(),
+    segments: jsonb('segments').$type<[number, number][] | null>(),
     frozenAt: timestamp('frozen_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
@@ -353,6 +357,10 @@ export const batchSentCompositions = pgTable(
     check(
       'batch_sent_compositions_shape_check',
       sql`(${t.rev} IS NULL) = (${t.lines} IS NULL) AND (${t.rev} IS NULL) = (${t.seenBoxCount} IS NULL) AND (${t.lines} IS NULL OR jsonb_typeof(${t.lines}) = 'array')`,
+    ),
+    check(
+      'batch_sent_compositions_segments_check',
+      sql`${t.segments} IS NULL OR jsonb_typeof(${t.segments}) = 'array'`,
     ),
     index('batch_sent_compositions_lot_idx').on(t.lotId),
   ],

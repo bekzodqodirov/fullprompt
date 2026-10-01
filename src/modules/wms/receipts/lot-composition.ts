@@ -18,8 +18,10 @@ import {
   MIN_LINES,
   parseDraft,
   storedUnits,
+  truckSegments,
   type DraftLine,
   type MeasureField,
+  type Segment,
   type StoredLine,
 } from './composition-math';
 import { lockReceiptShareNoWait } from './grow-lot';
@@ -633,9 +635,31 @@ export interface LotTruckRow {
   code: string;
   departedAt: string | null;
   createdAt: string;
-  sentAt: string | null;
   crosses: boolean;
   n: number;
+  /**
+   * The truck holds a frozen copy for THIS lot (a «hujjat yuborildi» tick,
+   * or the pre-0122 backfill): its papers print the lot as they were sent,
+   * whatever is saved now. Not `batches.sent_to_agent_at` — a lot that
+   * boarded after the tick has no copy and reads live on that truck too.
+   */
+  frozen: boolean;
+  /** The positions frozen with the copy (§2); null when none were stored. */
+  frozenSegments: Segment[] | null;
+}
+
+/** A stored positions array (jsonb) → runs; anything else → null. */
+function segmentsOf(raw: unknown): Segment[] | null {
+  const value = typeof raw === 'string' ? (JSON.parse(raw) as unknown) : raw;
+  if (!Array.isArray(value)) return null;
+  const out: Segment[] = [];
+  for (const run of value) {
+    if (!Array.isArray(run) || run.length !== 2) return null;
+    const [s, e] = run.map(Number);
+    if (!Number.isInteger(s) || !Number.isInteger(e) || s! < 0 || e! < s!) return null;
+    out.push([s!, e!]);
+  }
+  return out;
 }
 
 /**
@@ -644,45 +668,61 @@ export interface LotTruckRow {
  * that carries or carried a carton of it (the live pointer UNION the
  * departure movement — `batchMemberFilter`'s two halves restated per LOT, as
  * CTEs, never `x.id IN (SELECT …)` in a join predicate, #152), with its
- * carton count. `exec` REQUIRED. Empty `lotIds` → empty map, no query.
+ * carton count and its frozen copy of THIS lot, if any. `exec` REQUIRED.
+ * Empty `lotIds` → empty map, no query. A missing table (the deploy
+ * morning, before `migrate`) → empty map on the POOL, as every other reader
+ * here; inside a transaction it is rethrown, because the failed statement
+ * has aborted the caller's transaction and an empty answer would only move
+ * the error to the caller's next statement (the tick falls back on it).
  */
 export async function lotTrucksFor(exec: Db | Tx, lotIds: string[]): Promise<Map<string, LotTruckRow[]>> {
   const out = new Map<string, LotTruckRow[]>();
   const ids = [...new Set(lotIds)].filter((id) => UUID.test(id));
   if (ids.length === 0) return out;
   const list = uuidList(ids);
-  const rows = (await exec.execute(sql`
-    WITH member AS (
-      SELECT b.lot_id, b.id AS box_id, b.current_batch_id AS batch_id
-        FROM boxes b
-       WHERE b.lot_id IN (${list}) AND b.current_batch_id IS NOT NULL
-      UNION
-      SELECT b.lot_id, b.id, m.ref_id
-        FROM box_movements m
-        JOIN boxes b ON b.id = m.box_id
-       WHERE b.lot_id IN (${list}) AND m.ref_type = 'batch' AND m.cause = 'batch_departed'
-    )
-    SELECT mb.lot_id, t.id AS batch_id, t.code,
-           to_char(t.departed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS departed_at,
-           to_char(t.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS created_at,
-           t.sent_to_agent_at::text AS sent_at,
-           ${crossesBorderSql('o', 'd')} AS crosses,
-           count(DISTINCT mb.box_id)::int AS n
-      FROM member mb
-      JOIN batches t ON t.id = mb.batch_id AND t.status <> 'cancelled'
-      JOIN warehouses o ON o.id = t.origin_warehouse_id
-      JOIN warehouses d ON d.id = t.dest_warehouse_id
-     GROUP BY mb.lot_id, t.id, o.country, d.country
-  `)) as unknown as {
+  let rows: {
     lot_id: string;
     batch_id: string;
     code: string;
     departed_at: string | null;
     created_at: string;
-    sent_at: string | null;
     crosses: boolean;
     n: number;
+    frozen: boolean;
+    segments: unknown;
   }[];
+  try {
+    rows = (await exec.execute(sql`
+      WITH member AS (
+        SELECT b.lot_id, b.id AS box_id, b.current_batch_id AS batch_id
+          FROM boxes b
+         WHERE b.lot_id IN (${list}) AND b.current_batch_id IS NOT NULL
+        UNION
+        SELECT b.lot_id, b.id, m.ref_id
+          FROM box_movements m
+          JOIN boxes b ON b.id = m.box_id
+         WHERE b.lot_id IN (${list}) AND m.ref_type = 'batch' AND m.cause = 'batch_departed'
+      )
+      SELECT mb.lot_id, t.id AS batch_id, t.code,
+             to_char(t.departed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS departed_at,
+             to_char(t.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS created_at,
+             ${crossesBorderSql('o', 'd')} AS crosses,
+             count(DISTINCT mb.box_id)::int AS n,
+             (s.batch_id IS NOT NULL) AS frozen, s.segments
+        FROM member mb
+        JOIN batches t ON t.id = mb.batch_id AND t.status <> 'cancelled'
+        JOIN warehouses o ON o.id = t.origin_warehouse_id
+        JOIN warehouses d ON d.id = t.dest_warehouse_id
+        LEFT JOIN batch_sent_compositions s ON s.batch_id = t.id AND s.lot_id = mb.lot_id
+       GROUP BY mb.lot_id, t.id, o.country, d.country, s.batch_id, s.segments
+    `)) as unknown as typeof rows;
+  } catch (err) {
+    if (isServerBehind(err) && exec === db) {
+      console.warn('[lot-composition] server behind', err);
+      return out;
+    }
+    throw err;
+  }
   for (const r of rows) {
     const list2 = out.get(r.lot_id) ?? [];
     list2.push({
@@ -690,9 +730,10 @@ export async function lotTrucksFor(exec: Db | Tx, lotIds: string[]): Promise<Map
       code: r.code,
       departedAt: r.departed_at,
       createdAt: r.created_at,
-      sentAt: r.sent_at,
       crosses: r.crosses === true,
       n: Number(r.n),
+      frozen: r.frozen === true,
+      frozenSegments: r.frozen === true ? segmentsOf(r.segments) : null,
     });
     out.set(r.lot_id, list2);
   }
@@ -700,17 +741,38 @@ export async function lotTrucksFor(exec: Db | Tx, lotIds: string[]): Promise<Map
 }
 
 /**
- * The tick's stamp: the (lot, rev) pairs of a truck's composed lots,
+ * The tick's stamp: the (lot, rev, positions) of a truck's composed lots,
  * sorted, hashed (sha256 hex); '' when none. The Bojxona page posts it; the
- * freeze recomputes it from what it froze, in the same statement.
+ * freeze recomputes it from what it froze, in the same statement. The
+ * POSITIONS are in it because a paper moves when they do (another truck of
+ * the lot departing first) even while every composition stands still.
  */
-export function paperStamp(pairs: readonly { lotId: string; rev: number | null }[]): string {
+export function paperStamp(
+  pairs: readonly { lotId: string; rev: number | null; segments?: readonly Segment[] | null }[],
+): string {
   const composed = pairs
     .filter((p) => p.rev !== null)
-    .map((p) => `${p.lotId}:${p.rev}`)
+    .map((p) => `${p.lotId}:${p.rev}:${JSON.stringify(p.segments ?? null)}`)
     .sort();
   if (composed.length === 0) return '';
   return createHash('sha256').update(composed.join('\n')).digest('hex');
+}
+
+/**
+ * Where this truck's cartons of each of its lots sit (§2) — the positions a
+ * tick freezes and the stamp hashes; null for a lot on a truck that does not
+ * cross the border (it has no place in the order). `lotIds` = the lots on
+ * the truck.
+ */
+async function truckPositions(exec: Db | Tx, batchId: string, lotIds: string[]): Promise<Map<string, Segment[] | null>> {
+  const out = new Map<string, Segment[] | null>();
+  const trucks = await lotTrucksFor(exec, lotIds);
+  for (const lotId of lotIds) {
+    const ofLot = trucks.get(lotId) ?? [];
+    const self = ofLot.find((t) => t.batchId === batchId);
+    out.set(lotId, self?.crosses ? truckSegments(ofLot, batchId) : null);
+  }
+  return out;
 }
 
 /** The stamp of a truck's papers as they would print NOW — the page posts it with the tick. */
@@ -723,7 +785,11 @@ export async function paperStampFor(batchId: string): Promise<string> {
         JOIN lot_compositions lc ON lc.lot_id = ml.lot_id
        WHERE (SELECT count(*) FROM lot_composition_lines g WHERE g.lot_id = lc.lot_id) >= ${MIN_LINES}
     `)) as unknown as { lot_id: string; rev: string | number }[];
-    return paperStamp(rows.map((r) => ({ lotId: r.lot_id, rev: Number(r.rev) })));
+    if (rows.length === 0) return '';
+    const positions = await truckPositions(db, batchId, rows.map((r) => r.lot_id));
+    return paperStamp(
+      rows.map((r) => ({ lotId: r.lot_id, rev: Number(r.rev), segments: positions.get(r.lot_id) ?? null })),
+    );
   } catch (err) {
     if (isServerBehind(err)) return '';
     throw err;
@@ -731,24 +797,51 @@ export async function paperStampFor(batchId: string): Promise<string> {
 }
 
 /**
- * The «hujjat yuborildi» tick's copy (7a): ONE `INSERT … SELECT …
- * RETURNING` over every lot on the truck (`batchMemberFilter` — the
- * invoice's population), composed or not — so the copy and the stamp the
- * tick compares read the same instant. A lot with no composition gets a row
- * with `lines` NULL: a composition stated later must not rewrite this
- * truck's invoice. Returns the frozen (lot, rev) pairs.
+ * The «hujjat yuborildi» tick's copy (7a): the positions of every lot on the
+ * truck read first (`truckPositions`, beside it in the same transaction),
+ * then ONE `INSERT … SELECT … RETURNING` over every lot on the truck
+ * (`batchMemberFilter` — the invoice's population), composed or not — so the
+ * copy and the stamp the tick compares read the same instant. A lot with no
+ * composition gets a row with `lines` NULL: a composition stated later must
+ * not rewrite this truck's invoice. The POSITIONS are frozen with every row,
+ * composed or not: the cumulative rule's offset is part of what the papers
+ * printed, and without it a truck of the same lot departing first moved a
+ * sent truck's lines (the review of the freeze). Returns the frozen (lot,
+ * rev, positions).
  */
 export async function freezeCompositionsInTx(
   tx: Tx,
   batchId: string,
-): Promise<{ lotId: string; rev: number | null }[]> {
+): Promise<{ lotId: string; rev: number | null; segments: Segment[] | null }[]> {
+  const onTruck = (await tx.execute(sql`
+    SELECT DISTINCT boxes.lot_id FROM boxes WHERE ${batchMemberFilter(batchId)}
+  `)) as unknown as { lot_id: string }[];
+  const positions = await truckPositions(tx, batchId, onTruck.map((r) => r.lot_id));
+  return copyCompositionsInTx(tx, batchId, positions);
+}
+
+/** The copy itself — ONE statement (fence rule 7). */
+async function copyCompositionsInTx(
+  tx: Tx,
+  batchId: string,
+  positions: Map<string, Segment[] | null>,
+): Promise<{ lotId: string; rev: number | null; segments: Segment[] | null }[]> {
+  const pos =
+    positions.size > 0
+      ? sql`(VALUES ${sql.join(
+          [...positions].map(([lotId, segs]) => sql`(${lotId}::uuid, ${segs === null ? null : JSON.stringify(segs)}::jsonb)`),
+          sql`, `,
+        )}) AS pos(lot_id, segments)`
+      : sql`(SELECT NULL::uuid AS lot_id, NULL::jsonb AS segments WHERE false) AS pos`;
   const rows = (await tx.execute(sql`
-    INSERT INTO batch_sent_compositions (batch_id, lot_id, rev, seen_box_count, lines)
+    INSERT INTO batch_sent_compositions (batch_id, lot_id, rev, seen_box_count, lines, segments)
     SELECT ${batchId}::uuid, ml.lot_id,
            CASE WHEN json_array_length(ln.lines) >= ${MIN_LINES} THEN lc.rev END,
            CASE WHEN json_array_length(ln.lines) >= ${MIN_LINES} THEN lc.seen_box_count END,
-           CASE WHEN json_array_length(ln.lines) >= ${MIN_LINES} THEN ln.lines::jsonb END
+           CASE WHEN json_array_length(ln.lines) >= ${MIN_LINES} THEN ln.lines::jsonb END,
+           pos.segments
       FROM (SELECT DISTINCT boxes.lot_id FROM boxes WHERE ${batchMemberFilter(batchId)}) ml
+      LEFT JOIN ${pos} ON pos.lot_id = ml.lot_id
       LEFT JOIN lot_compositions lc ON lc.lot_id = ml.lot_id
       LEFT JOIN LATERAL (
         SELECT json_agg(json_build_object(
@@ -759,16 +852,24 @@ export async function freezeCompositionsInTx(
       ) ln ON lc.lot_id IS NOT NULL
     ON CONFLICT (batch_id, lot_id) DO UPDATE SET
       rev = EXCLUDED.rev, seen_box_count = EXCLUDED.seen_box_count,
-      lines = EXCLUDED.lines, frozen_at = now()
-    RETURNING lot_id, rev
-  `)) as unknown as { lot_id: string; rev: string | number | null }[];
-  return rows.map((r) => ({ lotId: r.lot_id, rev: r.rev === null ? null : Number(r.rev) }));
+      lines = EXCLUDED.lines, segments = EXCLUDED.segments, frozen_at = now()
+    RETURNING lot_id, rev, segments
+  `)) as unknown as { lot_id: string; rev: string | number | null; segments: unknown }[];
+  return rows.map((r) => ({
+    lotId: r.lot_id,
+    rev: r.rev === null ? null : Number(r.rev),
+    segments: segmentsOf(r.segments),
+  }));
 }
 
-/** The un-tick: the truck's papers read the live compositions again. */
+/**
+ * The un-tick: the truck's papers read the live compositions again. Answers
+ * the COMPOSED lots it thawed — what the tick's audit counted (the review's
+ * nit: every deleted row made one truck audit 1 on send and 10 on unsend).
+ */
 export async function thawCompositionsInTx(tx: Tx, batchId: string): Promise<number> {
   const rows = (await tx.execute(sql`
-    DELETE FROM batch_sent_compositions WHERE batch_id = ${batchId}::uuid RETURNING lot_id
-  `)) as unknown as { lot_id: string }[];
-  return rows.length;
+    DELETE FROM batch_sent_compositions WHERE batch_id = ${batchId}::uuid RETURNING rev
+  `)) as unknown as { rev: string | number | null }[];
+  return rows.filter((r) => r.rev !== null).length;
 }

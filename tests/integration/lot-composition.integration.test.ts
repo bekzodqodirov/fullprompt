@@ -1,7 +1,8 @@
 import 'dotenv/config';
 import { randomUUID } from 'node:crypto';
 import ExcelJS from 'exceljs';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { readFileSync } from 'node:fs';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import postgres from 'postgres';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -42,6 +43,27 @@ vi.mock('next/cache', async (original) => ({
   ...(await original<typeof import('next/cache')>()),
   revalidatePath: () => {},
 }));
+/**
+ * A half-applied deploy (0122 not migrated yet) for test 12g: the copy's
+ * table is missing, so the freeze and the thaw fail as postgres would.
+ * Everything else is the real module.
+ */
+const behind = vi.hoisted(() => ({ on: false }));
+vi.mock('@/modules/wms/receipts/lot-composition', async (original) => {
+  const real = await original<typeof import('@/modules/wms/receipts/lot-composition')>();
+  const missing = () => Object.assign(new Error('relation "batch_sent_compositions" does not exist'), { code: '42P01' });
+  return {
+    ...real,
+    freezeCompositionsInTx: async (...args: Parameters<typeof real.freezeCompositionsInTx>) => {
+      if (behind.on) throw missing();
+      return real.freezeCompositionsInTx(...args);
+    },
+    thawCompositionsInTx: async (...args: Parameters<typeof real.thawCompositionsInTx>) => {
+      if (behind.on) throw missing();
+      return real.thawCompositionsInTx(...args);
+    },
+  };
+});
 vi.mock('@/modules/platform/rbac/authorize', async (original) => {
   const real = await original<typeof import('@/modules/platform/rbac/authorize')>();
   return {
@@ -75,6 +97,7 @@ import {
 import { AttachmentDeleteError, deleteAttachment } from '@/modules/platform/files/service';
 import { setSentToAgentAction } from '@/app/(protected)/batches/batch-actions-server';
 import { saveLineCodesAction, saveTnvedAction } from '@/app/(protected)/batches/[id]/tnved/actions';
+import { clearLotCompositionAction, saveLotCompositionAction } from '@/app/(protected)/receipts/[id]/composition-actions';
 import { buildAgentXlsx } from '@/modules/wms/documents/agent-xlsx';
 import { buildPackingPhotosXlsx } from '@/modules/wms/documents/packing-photos-xlsx';
 import { buildInvoiceXlsx, buildPackingXlsx } from '@/modules/wms/documents/ved-xlsx';
@@ -792,6 +815,21 @@ describe('lot tarkibi — the Bojxona tab', () => {
 
     // The action door: a line's name is not a product row of the truck.
     override.actor = { ...ved(), fullName: 'VED', phone: null, username: null, locale: 'uz', active: true, sessionId: randomUUID() };
+    // A forged id is a refusal in words, never a 22P02 error page; a forged
+    // clear is «validation», never a TypeError (the review's nits).
+    expect(await saveLineCodesAction('not-a-uuid', [{ lotId: lot.A, lineId: mouse.lineId!, rev: mouse.rev, code: '1234' }])).toMatchObject({
+      ok: false,
+      error: 'forbidden',
+    });
+    expect(await saveLineCodesAction(truck.CROSS!, [{ lotId: 'x', lineId: mouse.lineId!, rev: mouse.rev, code: '1234' }])).toMatchObject({
+      ok: false,
+      error: 'forbidden',
+    });
+    expect(await saveTnvedAction('not-a-uuid', [{ nameZh: NAME_A, nameRu: null, code: '8471607000', source: 'manual' }])).toMatchObject({
+      ok: false,
+      error: 'forbidden',
+    });
+    expect(await clearLotCompositionAction(null as never)).toMatchObject({ ok: false, error: 'validation' });
     expect(
       await saveTnvedAction(truck.CROSS!, [{ nameZh: 'Мышь', nameRu: null, code: '8471607000', source: 'manual' }]),
     ).toMatchObject({ ok: false, error: 'not_on_truck' });
@@ -855,6 +893,18 @@ describe('lot tarkibi — the freeze (7a)', () => {
     // The un-tick: the truck's papers read the live compositions again.
     expect(await tick('CROSS', { want: 'unsent' })).toBe('ok');
     expect(await sentAt('CROSS')).toBeNull();
+    // The audit counts the COMPOSED lots both ways: A only — B was frozen
+    // uncomposed (the review's nit: the un-tick counted every row, 2).
+    const ticks = await db
+      .select({ after: auditLog.after })
+      .from(auditLog)
+      .where(and(eq(auditLog.entityType, 'batch'), eq(auditLog.entityId, truck.CROSS!)))
+      .orderBy(desc(auditLog.createdAt))
+      .limit(2);
+    expect(ticks.map((r) => r.after)).toEqual([
+      { sentToAgent: false, frozenLots: 1 },
+      { sentToAgent: true, frozenLots: 1 },
+    ]);
     expect(await db.select().from(batchSentCompositions).where(eq(batchSentCompositions.batchId, truck.CROSS!))).toHaveLength(0);
     const live = await invoiceRows('CROSS');
     expect(ofLines(live)).toHaveLength(2);
@@ -878,6 +928,146 @@ describe('lot tarkibi — the freeze (7a)', () => {
     expect(await tick('BARE', {})).toBe('ok');
     expect(await sentAt('BARE')).toBeNull();
   });
+
+  it('12d. the freeze holds the POSITIONS: a sibling forming, departing or dialled after the tick never moves the sent paper', async () => {
+    // EARLY, created before CROSS2, takes 10 of the 67: the lot's order is
+    // CROSS [0,33) · EARLY [33,43) · CROSS2 [43,100) — the review's case,
+    // CROSS2 ticked while EARLY still forms.
+    await mintTruck('EARLY', wh.CN2, wh.UZ, { status: 'loading', createdAt: ago(13) });
+    const early = boxesOf.A!.slice(33, 43);
+    await db.update(boxes).set({ currentBatchId: truck.EARLY! }).where(inArray(boxes.id, early));
+    signInVed();
+    const lines = async () => ofLines(await invoiceRows('CROSS2'));
+    const tabRows = async () =>
+      (await batchTnvedProducts(truck.CROSS2!, (await db.query.batches.findFirst({ where: eq(batches.id, truck.CROSS2!) }))!.departedAt !== null))
+        .filter((r) => r.line)
+        .map((r) => [r.nameZh, r.line!.cartons, r.line!.pieces, r.line!.kg]);
+
+    // A stamp drawn before a sibling moved refuses the tick: the positions are in it.
+    const stale = await paperStampFor(truck.CROSS2!);
+    await db.update(boxes).set({ currentBatchId: null, status: 'in_stock' }).where(inArray(boxes.id, early.slice(0, 2)));
+    expect(await tick('CROSS2', { want: 'sent', paperStamp: stale })).toContain('tarkib=yangilandi');
+    expect(await sentAt('CROSS2')).toBeNull();
+    await db.update(boxes).set({ currentBatchId: truck.EARLY!, status: 'loading' }).where(inArray(boxes.id, early.slice(0, 2)));
+
+    const sent = await lines();
+    const sentTab = await tabRows();
+    expect(sent.map((r) => r.places)).toEqual([28, 29]);
+    expect(await tick('CROSS2', { want: 'sent', paperStamp: await paperStampFor(truck.CROSS2!) })).toBe('ok');
+    const frozen = await db
+      .select({ segments: batchSentCompositions.segments })
+      .from(batchSentCompositions)
+      .where(and(eq(batchSentCompositions.batchId, truck.CROSS2!), eq(batchSentCompositions.lotId, lot.A)));
+    expect(frozen[0]!.segments).toEqual([[43, 100]]);
+
+    // CROSS2 leaves Kashgar while EARLY still forms: the departed-first
+    // order would put it straight after CROSS — [33,90), 29/28.
+    await db.update(batches).set({ status: 'in_transit', departedAt: new Date() }).where(eq(batches.id, truck.CROSS2!));
+    expect(await lines()).toEqual(sent);
+    expect(await tabRows()).toEqual(sentTab);
+    // EARLY dialled down, then EARLY departing too: still the sent paper.
+    await db.update(boxes).set({ currentBatchId: null, status: 'in_stock' }).where(inArray(boxes.id, early.slice(0, 5)));
+    expect(await lines()).toEqual(sent);
+    await db.update(batches).set({ status: 'in_transit', departedAt: new Date() }).where(eq(batches.id, truck.EARLY!));
+    expect(await lines()).toEqual(sent);
+    // …and EARLY takes the positions the sent truck left free.
+    const population = (await lotTrucksFor(db, [lot.A])).get(lot.A)!;
+    expect(population.find((t) => t.batchId === truck.CROSS2)).toMatchObject({ frozen: true, frozenSegments: [[43, 100]] });
+    expect(population.find((t) => t.batchId === truck.EARLY)).toMatchObject({ frozen: false, frozenSegments: null });
+
+    // Back as the file found it: CROSS2 forming and unsent with its 67.
+    expect(await tick('CROSS2', { want: 'unsent' })).toBe('ok');
+    await db.update(batches).set({ status: 'loading', departedAt: null }).where(eq(batches.id, truck.CROSS2!));
+    await db.update(batches).set({ status: 'cancelled', departedAt: null }).where(eq(batches.id, truck.EARLY!));
+    await db.update(boxes).set({ currentBatchId: truck.CROSS2!, status: 'loading' }).where(inArray(boxes.id, early));
+    expect((await lotTrucksFor(db, [lot.A])).get(lot.A)!.find((t) => t.batchId === truck.CROSS2)).toMatchObject({ n: 67 });
+  });
+
+  it('12e. a truck ticked before 0122: the backfill freezes it as sent, and a later save says so honestly', async () => {
+    // The state on deploy morning: no composition existed when CROSS's
+    // papers went, and the tick left no copy.
+    const current = (await compositionsFor([lot.A])).get(lot.A)!;
+    await clearComposition({ lotId: lot.A, seenRev: current.rev }, ved(), ctx(vedId));
+    await db.update(batches).set({ sentToAgentAt: '2026-09-30' }).where(inArray(batches.id, [truck.CROSS!, truck.CROSS2!]));
+    expect((await invoiceRows('CROSS')).filter((r) => r.product === NAME_A)).toHaveLength(1);
+
+    // The migration's OWN backfill statement, scoped to CROSS: CROSS2 stands
+    // for a truck the lot boarded after its tick — no copy, reads live.
+    const migration = readFileSync('src/modules/platform/db/migrations/0122_lot_composition.sql', 'utf8');
+    const backfill = migration.split('--> statement-breakpoint').at(-1)!;
+    expect(backfill).toContain('INSERT INTO "batch_sent_compositions"');
+    const scope = `WHERE t.sent_to_agent_at IS NOT NULL AND t.status <> 'cancelled'`;
+    expect(backfill.split(scope)).toHaveLength(3);
+    await db.execute(sql.raw(backfill.split(scope).join(`${scope} AND t.id = '${truck.CROSS!}'`)));
+    const rows = await db.select().from(batchSentCompositions).where(eq(batchSentCompositions.batchId, truck.CROSS!));
+    expect(rows.map((r) => [r.lotId, r.lines, r.rev, r.segments]).sort()).toEqual(
+      [
+        [lot.A, null, null, null],
+        [lot.B, null, null, null],
+      ].sort(),
+    );
+    // As sent: every lot ONE row — B, composed after the tick, included.
+    const asSent = await invoiceRows('CROSS');
+    expect(asSent.filter((r) => r.product === NAME_A || r.product.startsWith('其他'))).toHaveLength(2);
+
+    // A composition saved now: the sent truck keeps its one row, and ✅ names
+    // only the truck whose papers hold a copy of THIS lot.
+    override.actor = { ...ved(), fullName: 'VED', phone: null, username: null, locale: 'uz', active: true, sessionId: randomUUID() };
+    const totals = await totalsOf('A');
+    const answer = await saveLotCompositionAction({
+      lotId: lot.A,
+      seenRev: 0,
+      seenBoxCount: totals.boxCount,
+      seenKg: totals.kg,
+      seenM3: totals.m3,
+      attachmentId: doc.DOC_C,
+      lines: OWNER_CASE(),
+    });
+    override.actor = null;
+    expect(answer).toMatchObject({ ok: true, frozen: [`LTTCROSS-${SFX}`] });
+    expect(await invoiceRows('CROSS')).toEqual(asSent);
+    expect((await batchTnvedProducts(truck.CROSS!, true)).some((r) => r.line)).toBe(false);
+    const population = (await lotTrucksFor(db, [lot.A])).get(lot.A)!;
+    expect(population.filter((t) => t.frozen).map((t) => t.batchId)).toEqual([truck.CROSS]);
+    expect(ofLines(await invoiceRows('CROSS2'))).toHaveLength(2);
+
+    signInVed();
+    expect(await tick('CROSS', { want: 'unsent' })).toBe('ok');
+    await db.update(batches).set({ sentToAgentAt: null }).where(eq(batches.id, truck.CROSS2!));
+    expect(await db.select().from(batchSentCompositions).where(eq(batchSentCompositions.batchId, truck.CROSS!))).toHaveLength(0);
+  });
+
+  it('12f. the tick against an unload press holding the truck (truck, then lot): both commit — no deadlock', async () => {
+    signInVed();
+    const stamp = await paperStampFor(truck.CROSS!);
+    await withHolder(async (held) => {
+      await held`BEGIN`;
+      // count-accept's order: the truck row, then the lot row.
+      await held`SELECT id FROM batches WHERE id = ${truck.CROSS!} FOR NO KEY UPDATE`;
+      const ticking = tick('CROSS', { want: 'sent', paperStamp: stamp });
+      expect(await waitForLock('%batches%')).toBe(true);
+      await held`SELECT id FROM receipt_lots WHERE id = ${lot.A} FOR UPDATE`;
+      await held`COMMIT`;
+      expect(await ticking).toBe('ok');
+    });
+    expect(await sentAt('CROSS')).not.toBeNull();
+    expect(await tick('CROSS', { want: 'unsent' })).toBe('ok');
+    expect(await sentAt('CROSS')).toBeNull();
+  });
+
+  it('12g. a half-applied deploy: the tick is the plain toggle it was, both ways — never the error page', async () => {
+    signInVed();
+    behind.on = true;
+    try {
+      expect(await tick('BARE', { want: 'sent', paperStamp: '' })).toBe('ok');
+      expect(await sentAt('BARE')).not.toBeNull();
+      expect(await tick('BARE', { want: 'unsent' })).toBe('ok');
+      expect(await sentAt('BARE')).toBeNull();
+    } finally {
+      behind.on = false;
+    }
+    expect(await db.select().from(batchSentCompositions).where(eq(batchSentCompositions.batchId, truck.BARE!))).toHaveLength(0);
+  });
 });
 
 describe('lot tarkibi — the price history and the stale lot', () => {
@@ -886,6 +1076,12 @@ describe('lot tarkibi — the price history and the stale lot', () => {
     expect(now.kg).toBe(baselinePrice!.kg);
     expect(now.kinds).toBe(4); // A's two lines + B's two lines
     expect(now.kinds).toBeGreaterThan(baselinePrice!.kinds);
+    // B stated with A's own two goods: two kinds, not four (counted by line
+    // ID they read «aralash · 4 xil» — the review's nit).
+    await save('B', [line('Клавиатура', '2', '20', '0.02'), line('Мышь', '1', '10', '0.01')], { docKey: 'DOC_B' });
+    expect((await pricePair()).kinds).toBe(2);
+    // B back to its own goods: test 11 reads CROSS's «Клавиатура» rows as A's.
+    await save('B', [line(`Наушники${SFX}`, '2', '20', '0.02'), line(`Кабель${SFX}`, '1', '10', '0.01')], { docKey: 'DOC_B' });
   });
 
   it('11. stale: the lot grows → ⚠ and «taxminiy» papers summing to the new figure; a count change alone is stale too', async () => {

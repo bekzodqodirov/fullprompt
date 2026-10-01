@@ -433,12 +433,27 @@ export function isStale(
   return m3 !== storedUnits(lot.m3, M3_SCALE);
 }
 
+/**
+ * A run of the lot's carton POSITIONS, [start, end) — position 0 is the
+ * lot's first carton in the order of its crossing trucks (§2). Positions are
+ * not cartons: nobody knows which carton is which (2c); a position says only
+ * «the k-th carton of the lot to cross», which is what the cumulative rule
+ * allocates.
+ */
+export type Segment = readonly [number, number];
+
 export interface LotTruck {
   batchId: string;
   departedAt: string | null;
   createdAt: string;
   crosses: boolean;
   n: number;
+  /**
+   * The positions this truck HELD when its papers were sent (the tick's
+   * frozen copy, 7a); null when it is not ticked, or when it was ticked
+   * before positions were stored (the pre-0122 backfill).
+   */
+  frozenSegments?: readonly Segment[] | null;
 }
 
 const instant = (s: string | null): number => (s === null ? Number.NaN : Date.parse(s));
@@ -454,28 +469,144 @@ function truckOrder(a: LotTruck, b: LotTruck): number {
   return a.batchId < b.batchId ? -1 : a.batchId > b.batchId ? 1 : 0;
 }
 
-/**
- * The lot's cartons on its cross-border trucks ordered BEFORE this one — the
- * cumulative offset of §2's rule. `trucks` = `lotTrucksFor` rows of ONE lot.
- * A truck that does not cross the border → 0 (its papers do not go to
- * customs), and so does a truck the list does not name.
- */
-export function cartonsBefore(trucks: readonly LotTruck[], batchId: string): number {
-  const self = trucks.find((t) => t.batchId === batchId);
-  if (!self || !self.crosses) return 0;
-  const crossing = trucks.filter((t) => t.crosses).slice().sort(truckOrder);
-  let before = 0;
-  for (const t of crossing) {
-    if (t.batchId === batchId) break;
-    before += t.n;
+/** Whole, non-negative, non-empty runs, sorted and merged. */
+function cleanSegments(segs: readonly Segment[]): Segment[] {
+  const runs = segs
+    .map(([s, e]) => [Math.max(0, Math.trunc(s)), Math.max(0, Math.trunc(e))] as const)
+    .filter(([s, e]) => e > s)
+    .sort((a, b) => a[0] - b[0]);
+  const out: [number, number][] = [];
+  for (const [s, e] of runs) {
+    const last = out.at(-1);
+    if (last && s <= last[1]) last[1] = Math.max(last[1], e);
+    else out.push([s, e]);
   }
-  return before;
+  return out;
+}
+
+/** The planned-but-truckless agent file's key — a batch id is a uuid, never this. */
+const PLAN = 'plan';
+
+/**
+ * Every crossing truck's positions in the lot (§2) — the cumulative offset,
+ * generalised so a truck whose papers WENT keeps its place. A ticked truck
+ * holds the positions frozen at its tick; every other crossing truck takes
+ * the next FREE positions in the order (departed first by departure, then
+ * not departed by creation). With nothing ticked this is exactly the old
+ * prefix — truck k starts where truck k−1 ended — and with a tick in the
+ * middle nobody else can take a sent truck's positions: the departure of a
+ * truck created after it, or a cancelled or re-counted truck before it,
+ * moves the OTHER trucks, never the sent one (the review of the freeze). A
+ * truck's positions may then come in two runs. `plan` is the agent file of a
+ * plan with no truck yet, ordered after every truck.
+ */
+export function lotSegments(trucks: readonly LotTruck[], plan?: { n: number }): Map<string, Segment[]> {
+  const out = new Map<string, Segment[]>();
+  const crossing = trucks.filter((t) => t.crosses);
+  const held: Segment[] = [];
+  for (const t of crossing) {
+    if (!t.frozenSegments) continue;
+    const segs = cleanSegments(t.frozenSegments);
+    out.set(t.batchId, segs);
+    held.push(...segs);
+  }
+  const taken = cleanSegments(held);
+  let cursor = 0;
+  let h = 0;
+  const take = (count: number): Segment[] => {
+    const got: [number, number][] = [];
+    let left = Math.max(0, Math.trunc(count));
+    while (left > 0) {
+      while (h < taken.length && taken[h]![1] <= cursor) h += 1;
+      if (h < taken.length && taken[h]![0] <= cursor) {
+        cursor = taken[h]![1];
+        continue;
+      }
+      const limit = h < taken.length ? taken[h]![0] : Number.POSITIVE_INFINITY;
+      const step = Math.min(left, limit - cursor);
+      const last = got.at(-1);
+      if (last && last[1] === cursor) last[1] += step;
+      else got.push([cursor, cursor + step]);
+      cursor += step;
+      left -= step;
+    }
+    return got;
+  };
+  for (const t of crossing.filter((x) => !x.frozenSegments).sort(truckOrder)) out.set(t.batchId, take(t.n));
+  if (plan) out.set(PLAN, take(plan.n));
+  return out;
+}
+
+/**
+ * Where THIS truck's cartons of a lot sit — what a paper passes as
+ * `segments`. `trucks` = `lotTrucksFor` rows of ONE lot. A truck that does
+ * not cross the border, or that the list does not name, starts at 0 (its
+ * papers do not go to customs): an empty list, which `paperLines` reads as
+ * «from position 0».
+ */
+export function truckSegments(trucks: readonly LotTruck[], batchId: string): Segment[] {
+  const self = trucks.find((t) => t.batchId === batchId);
+  if (!self || !self.crosses) return [];
+  return lotSegments(trucks).get(batchId) ?? [];
+}
+
+/**
+ * A plan with no truck yet (the agent file): after every truck the lot
+ * already rode across the border, or from 0 when the plan does not cross.
+ */
+export function planSegments(trucks: readonly LotTruck[], n: number, crosses: boolean): Segment[] {
+  if (!crosses) return [];
+  return lotSegments(trucks, { n }).get(PLAN) ?? [];
+}
+
+/**
+ * THIS document's positions: the truck's runs trimmed — or, past their end,
+ * extended — to the document's own carton count `n` (a document's
+ * population is the truck's or smaller: the photo packing list leaves out
+ * cartons still only planned). Positions past the lot's end mean a carton
+ * counted on two crossing trucks (a return, a re-send): the old clamp, the
+ * lot's last `n` positions, flagged.
+ */
+export function fitSegments(
+  segs: readonly Segment[],
+  n: number,
+  B: number,
+  start = 0,
+): { segs: Segment[]; clamped: boolean } {
+  const out: [number, number][] = [];
+  let left = Math.max(0, Math.trunc(n));
+  const runs = cleanSegments(segs);
+  for (const [s, e] of runs) {
+    if (left <= 0) break;
+    const step = Math.min(e - s, left);
+    out.push([s, s + step]);
+    left -= step;
+  }
+  if (left > 0) {
+    const last = out.at(-1);
+    if (last) last[1] += left;
+    else {
+      const from = runs[0]?.[0] ?? Math.max(0, Math.trunc(start));
+      out.push([from, from + left]);
+    }
+  }
+  if ((out.at(-1)?.[1] ?? 0) > B) {
+    const from = Math.max(0, B - Math.max(0, Math.trunc(n)));
+    return { segs: [[from, from + Math.max(0, Math.trunc(n))]], clamped: true };
+  }
+  return { segs: out, clamped: false };
 }
 
 /** What ONE document prints for a composed lot. */
 export interface PaperPortion {
-  /** `cartonsBefore` for this lot and this document's truck. */
-  before: number;
+  /**
+   * Where this document's cartons sit in the lot's order — `truckSegments`
+   * (or the frozen positions of a sent truck). Absent: one run starting at
+   * `before` (0 when that is absent too).
+   */
+  segments?: readonly Segment[];
+  /** The start of a single run — the unit tests' shorthand for `segments`. */
+  before?: number;
   /** The lot's cartons in THIS document's population (n). */
   cartons: number;
   /**
@@ -485,8 +616,12 @@ export interface PaperPortion {
    */
   kg: number;
   m3?: number;
-  /** Invoice only: `invoicePlaceParts` for this lot. */
-  places?: { loose: number; pallets: number };
+  /**
+   * Invoice only: `invoicePlaceParts` for this lot. `onPallets` = the lot's
+   * cartons standing on ANY pallet of this truck, its own or another lot's
+   * (absent: read as `pallets`).
+   */
+  places?: { loose: number; pallets: number; onPallets?: number };
 }
 export interface PaperLine {
   seq: number;
@@ -529,11 +664,9 @@ export function paperLines(
   const B = lot.boxCount;
   const S = comp.seenBoxCount;
   const n = Math.max(0, Math.trunc(portion.cartons));
-  let b = Math.max(0, Math.trunc(portion.before));
-  if (b + n > B) {
-    b = Math.max(0, B - n);
-    reasons.add('clamped');
-  }
+  const at = fitSegments(portion.segments ?? [], n, B, portion.before ?? 0);
+  if (at.clamped) reasons.add('clamped');
+  const runs = at.segs;
   const lines = comp.lines;
   let mode = compositionMode(lines);
   if (mode === 'invalid') {
@@ -555,10 +688,11 @@ export function paperLines(
   let piecesOn: (number | null)[];
 
   if (mode === 'separate') {
+    // Each run [s, e) adds seats(e) − seats(s): over a lot's trucks the runs
+    // tile the positions, so the cartons and pieces still sum to the typed.
     const typed = lines.map((l) => l.cartons ?? 0);
-    const before = seatsPrefix(b, typed);
-    const upto = seatsPrefix(b + n, typed);
-    cOn = upto.map((s, i) => s - before[i]!);
+    const seats = runs.map(([s, e]) => ({ from: seatsPrefix(s, typed), to: seatsPrefix(e, typed) }));
+    cOn = typed.map((_, i) => seats.reduce((sum, r) => sum + (r.to[i]! - r.from[i]!), 0));
     printed = cOn.map((c, i) => (c >= 1 ? i : -1)).filter((i) => i >= 0);
     // wᵢ = cᵢ·unitsᵢ/cartonsᵢ, exact over the common denominator Π cartonsⱼ.
     const denom = printed.reduce((d, i) => d * BigInt(typed[i]!), 1n);
@@ -569,7 +703,7 @@ export function paperLines(
     piecesOn = lines.map((l, i) => {
       if (l.pieces === null) return null;
       const P = (x: number) => roundHalfUp(BigInt(l.pieces!) * BigInt(x), BigInt(typed[i]!));
-      return P(upto[i]!) - P(before[i]!);
+      return seats.reduce((sum, r) => sum + (P(r.to[i]!) - P(r.from[i]!)), 0);
     });
   } else {
     printed = lines.map((_, i) => i);
@@ -578,7 +712,7 @@ export function paperLines(
     piecesOn = lines.map((l) => {
       if (l.pieces === null) return null;
       const P = (x: number) => roundHalfUp(BigInt(l.pieces!) * BigInt(x), BigInt(Math.max(1, S)));
-      return P(b + n) - P(b);
+      return runs.reduce((sum, [s, e]) => sum + (P(e) - P(s)), 0);
     });
   }
 
@@ -594,7 +728,10 @@ export function paperLines(
         printed.map((i) => BigInt(cOn[i]!)),
       );
       places = split.map((p) => (p === 0 ? 'part' : p));
-      if (portion.places.pallets > 0 && printed.length > 1) reasons.add('pallet');
+      // Which line's cartons stand on a pallet is unknown — the lot's own
+      // pallet or ANOTHER lot's (Papers-4; the review's nit: keyed on the
+      // OWNED pallets, a lot riding on its neighbour's pallet read as exact).
+      if ((portion.places.onPallets ?? portion.places.pallets) > 0 && printed.length > 1) reasons.add('pallet');
     } else {
       places = printed.map((_, j) => (j === 0 ? P : 'part'));
     }

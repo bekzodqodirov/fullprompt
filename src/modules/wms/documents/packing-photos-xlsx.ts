@@ -13,7 +13,7 @@ import {
 } from '../../platform/db/schema';
 import { getStorage } from '../../platform/files/storage';
 import { aboardFilter } from '../scanning/unload';
-import { cartonsBefore, compositionMode, paperLines } from '../receipts/composition-math';
+import { compositionMode, paperLines, truckSegments } from '../receipts/composition-math';
 import { lotTrucksFor, paperCompositionsFor } from '../receipts/lot-composition';
 import { ESTIMATE_FILL, estimateNote, packingBoxesCell, packingProductCell } from './composition-cells';
 
@@ -137,7 +137,7 @@ export async function buildPackingPhotosXlsx(batchId: string): Promise<Buffer | 
         comp,
         { boxCount: lot.boxCount, kg: lot.totalWeightKg, m3: lot.totalVolumeM3 },
         {
-          before: cartonsBefore(lotTrucks.get(lot.id) ?? [], batchId),
+          segments: truckSegments(lotTrucks.get(lot.id) ?? [], batchId),
           cartons: Number(loaded),
           kg: Number(kg.toFixed(1)),
           m3: Number(m3.toFixed(3)),

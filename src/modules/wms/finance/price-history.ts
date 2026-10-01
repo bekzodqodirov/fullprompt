@@ -247,8 +247,12 @@ type PairRow = {
  * in dollars, and whether the cargo left the truck after the price.
  *
  * Lot tarkibi (docs/LOT-TARKIBI.md §6): a composed lot counts as its LINES —
- * a line is its own kind (its id), so a lot of two lines makes the pair
- * mixed and its blended price is never served as a clean precedent. The
+ * a line is a kind by its NAME (`productKeySql`, under a `line:` prefix so a
+ * line never merges with a Chinese product key), so a lot of two lines makes
+ * the pair mixed and its blended price is never served as a clean precedent,
+ * and two lots of one client stated as the same «Клавиатура» + «Мышь» are
+ * two kinds, not four (the review's nit: counted by line ID they read
+ * «aralash · 4 xil»). The
  * kinds have their own CTE and the lines stay OUT of `load`: `load` only
  * collects each pair's DISTINCT lot ids, and `kinds` joins the lines to
  * those — so the join multiplies lots, never cartons. A join in `load` would
@@ -296,7 +300,7 @@ export async function pricePairs(
     ),
     kinds AS (
       SELECT l.batch_id, l.client_id,
-             count(DISTINCT coalesce(g.id::text, ${productKeySql(sql`lk.product_name_zh`)}))::int AS kinds
+             count(DISTINCT coalesce('line:' || ${productKeySql(sql`g.name`)}, ${productKeySql(sql`lk.product_name_zh`)}))::int AS kinds
         FROM load l
         CROSS JOIN LATERAL unnest(l.lot_ids) AS u(lot_id)
         JOIN receipt_lots lk ON lk.id = u.lot_id

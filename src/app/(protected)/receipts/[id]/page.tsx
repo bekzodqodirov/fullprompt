@@ -573,7 +573,7 @@ export default async function ReceiptDetailPage({
                       lines: c.lines,
                       attachment: c.attachment,
                       savedBy: c.savedBy,
-                      savedAt: c.savedAt.toISOString(),
+                      savedDay: tashkentDay(c.savedAt),
                     }
                   : null;
               })()}
@@ -586,7 +586,7 @@ export default async function ReceiptDetailPage({
               canWrite={mayCompose && receipt.status === 'confirmed'}
               canClearOnly={mayCompose && receipt.status !== 'confirmed'}
               documents={paperDocs}
-              frozenTrucks={(lotTrucks.get(lot.id) ?? []).filter((truck) => truck.sentAt !== null).map((truck) => truck.code)}
+              frozenTrucks={(lotTrucks.get(lot.id) ?? []).filter((truck) => truck.frozen).map((truck) => truck.code)}
               openOnLoad={tarkibLot === lot.id}
               from={fromTruck && tarkibLot === lot.id ? { batchId: fromTruck.batchId, code: fromTruck.code } : null}
             />

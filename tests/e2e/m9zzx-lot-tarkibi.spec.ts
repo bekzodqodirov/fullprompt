@@ -28,7 +28,8 @@ const PASSWORD = 'demo1234';
 const VED = '+998900000004';
 const LOGIST = '+998900000003';
 const YW_OPERATOR = '+998900000006';
-const SHOTS = '/tmp/claude-0/-home-user-fullprompt/f6205c47-a24e-567e-8606-f1e8732e6cc0/scratchpad';
+/** Where every spec here leaves its screenshots (the CI artifact). */
+const SHOTS = 'test-results';
 const run = newRun();
 let minted: Minted | null = null;
 let memoryAtMint: string[] = [];
@@ -262,7 +263,7 @@ test('a 768 tablet and a 1280 desktop: the editor fits, the screenshots are take
     viewport: { width: 1280, height: 900 },
     isMobile: false,
     hasTouch: false,
-    baseURL: 'http://localhost:3000',
+    baseURL: process.env.APP_URL ?? 'http://localhost:3000',
   });
   const d = await desktop.newPage();
   try {

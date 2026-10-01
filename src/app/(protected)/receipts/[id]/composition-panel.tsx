@@ -58,7 +58,8 @@ export interface PanelComposition {
   lines: PanelLine[];
   attachment: { id: string; fileName: string };
   savedBy: string | null;
-  savedAt: string;
+  /** The Tashkent day of the save (`tashkentDay`), never an ISO instant's UTC date. */
+  savedDay: string;
 }
 
 export interface PanelDocument {
@@ -96,6 +97,75 @@ function refusalOfDraft(r: DraftRefusal): Refusal {
   }
 }
 
+/**
+ * Every refusal of the panel and the editor in words — ONE map, so a
+ * refusal outside the editor (the voided prixod's clear, a document's ✕) is
+ * a sentence too, never nothing on screen (the review's nit).
+ */
+function useRefusalText(): (r: Refusal) => string {
+  const t = useTranslations('tarkib');
+  const tr = useTranslations('receipts');
+  return (r: Refusal): string => {
+    const seq = r.seq ?? 0;
+    switch (r.error) {
+      case 'uploading':
+        return t('uploading');
+      case 'upload_failed':
+        return tr('attachFailed');
+      case 'in_use':
+        return tr('attachInUse');
+      case 'remove_failed':
+        return tr('attachFailed');
+      case 'forbidden':
+        return t('errors.forbidden');
+      case 'receipt_not_confirmed':
+        return t('errors.receipt_not_confirmed');
+      case 'lines_count':
+        return t('errors.lines_count');
+      case 'bad_line':
+        return t('errors.bad_line', { seq });
+      case 'bad_number':
+        return r.field === 'kg'
+          ? t('errors.bad_number_kg', { seq })
+          : r.field === 'm3'
+            ? t('errors.bad_number_m3', { seq })
+            : r.field === 'pieces'
+              ? t('errors.bad_number_pieces', { seq })
+              : t('errors.bad_number_cartons', { seq });
+      case 'bad_tnved':
+        return t('errors.bad_tnved', { seq });
+      case 'duplicate_name':
+        return t('errors.duplicate_name', { seq });
+      case 'cartons_partial':
+        return t('errors.cartons_partial');
+      case 'cartons_sum':
+        return t('errors.cartons_sum', { sum: r.sums?.sum ?? '', lot: r.sums?.lot ?? '' });
+      case 'kg_sum':
+        return t('errors.kg_sum', { sum: r.sums?.sum ?? '', lot: r.sums?.lot ?? '' });
+      case 'm3_sum':
+        return t('errors.m3_sum', { sum: r.sums?.sum ?? '', lot: r.sums?.lot ?? '' });
+      case 'document_required':
+        return t('errors.document_required');
+      case 'document_not_on_receipt':
+        return t('errors.document_not_on_receipt');
+      case 'document_is_photo':
+        return t('errors.document_is_photo');
+      case 'lot_changed':
+        return t('errors.lot_changed');
+      case 'composition_changed':
+        return t('errors.composition_changed');
+      case 'composition_changed_self':
+        return t('errors.composition_changed_self');
+      case 'busy':
+        return t('errors.busy');
+      case 'server_behind':
+        return t('errors.server_behind');
+      default:
+        return t('errors.validation');
+    }
+  };
+}
+
 export function CompositionPanel({
   lot,
   receiptId,
@@ -124,8 +194,10 @@ export function CompositionPanel({
   canClearOnly?: boolean;
 }) {
   const t = useTranslations('tarkib');
+  const errorText = useRefusalText();
   const [open, setOpen] = useState(openOnLoad && canWrite);
   const [clearing, setClearing] = useState(false);
+  const [clearRefusal, setClearRefusal] = useState<Refusal | null>(null);
   const [saved, setSaved] = useState<{ cleared: boolean; frozen: string[] } | null>(null);
 
   if (!composition && !canWrite) return null;
@@ -172,7 +244,7 @@ export function CompositionPanel({
             >
               {composition.attachment.fileName}
             </a>{' '}
-            · {t('savedBy', { name: composition.savedBy ?? '—', date: composition.savedAt.slice(0, 10) })}
+            · {t('savedBy', { name: composition.savedBy ?? '—', date: composition.savedDay })}
           </p>
         </details>
       )}
@@ -226,9 +298,11 @@ export function CompositionPanel({
           onClick={async () => {
             if (!window.confirm(t('clearConfirm'))) return;
             setClearing(true);
+            setClearRefusal(null);
             try {
               const res = await clearLotCompositionAction({ lotId: lot.id, seenRev: composition.rev });
               if (res.ok) setSaved({ cleared: true, frozen: res.frozen });
+              else setClearRefusal(res);
             } finally {
               setClearing(false);
             }
@@ -236,6 +310,11 @@ export function CompositionPanel({
         >
           {t('clear')}
         </button>
+      )}
+      {canClearOnly && clearRefusal && (
+        <p className="rounded-lg bg-bad/10 p-2 text-sm font-semibold text-bad" data-testid="tarkib-error">
+          {errorText(clearRefusal)}
+        </p>
       )}
       {canWrite && open && (
         <CompositionEditor
@@ -275,7 +354,6 @@ function CompositionEditor({
 }) {
   const t = useTranslations('tarkib');
   const tc = useTranslations('common');
-  const tr = useTranslations('receipts');
   const router = useRouter();
   const rev = composition?.rev ?? 0;
   const oneCarton = totals.boxCount === 1;
@@ -390,12 +468,23 @@ function CompositionEditor({
   }
 
   async function removeDocument(id: string) {
+    setRefusal(null);
     const res = await fetch(`/api/attachments/${id}`, { method: 'DELETE' });
     if (res.ok || res.status === 404) {
       setRemoved((prev) => [...prev, id]);
       if (doc === id) setDoc(null);
       router.refresh();
+      return;
     }
+    // A refusal in words, as the card's own «Hujjatlar» panel says it — a
+    // document a colleague's composition cites just stayed put, silently.
+    let code: string | undefined;
+    try {
+      code = ((await res.json()) as { error?: string }).error;
+    } catch {
+      /* non-JSON reply — the generic sentence */
+    }
+    setRefusal({ error: code === 'in_use' ? 'in_use' : 'remove_failed' });
   }
 
   async function save() {
@@ -462,61 +551,7 @@ function CompositionEditor({
   const ringed = (index: number, field: string) =>
     refusal?.seq === index + 1 && refusedField(refusal) === field ? ' ring-2 ring-bad' : '';
 
-  const errorText = (r: Refusal): string => {
-    const seq = r.seq ?? 0;
-    switch (r.error) {
-      case 'uploading':
-        return t('uploading');
-      case 'upload_failed':
-        return tr('attachFailed');
-      case 'forbidden':
-        return t('errors.forbidden');
-      case 'receipt_not_confirmed':
-        return t('errors.receipt_not_confirmed');
-      case 'lines_count':
-        return t('errors.lines_count');
-      case 'bad_line':
-        return t('errors.bad_line', { seq });
-      case 'bad_number':
-        return r.field === 'kg'
-          ? t('errors.bad_number_kg', { seq })
-          : r.field === 'm3'
-            ? t('errors.bad_number_m3', { seq })
-            : r.field === 'pieces'
-              ? t('errors.bad_number_pieces', { seq })
-              : t('errors.bad_number_cartons', { seq });
-      case 'bad_tnved':
-        return t('errors.bad_tnved', { seq });
-      case 'duplicate_name':
-        return t('errors.duplicate_name', { seq });
-      case 'cartons_partial':
-        return t('errors.cartons_partial');
-      case 'cartons_sum':
-        return t('errors.cartons_sum', { sum: r.sums?.sum ?? '', lot: r.sums?.lot ?? '' });
-      case 'kg_sum':
-        return t('errors.kg_sum', { sum: r.sums?.sum ?? '', lot: r.sums?.lot ?? '' });
-      case 'm3_sum':
-        return t('errors.m3_sum', { sum: r.sums?.sum ?? '', lot: r.sums?.lot ?? '' });
-      case 'document_required':
-        return t('errors.document_required');
-      case 'document_not_on_receipt':
-        return t('errors.document_not_on_receipt');
-      case 'document_is_photo':
-        return t('errors.document_is_photo');
-      case 'lot_changed':
-        return t('errors.lot_changed');
-      case 'composition_changed':
-        return t('errors.composition_changed');
-      case 'composition_changed_self':
-        return t('errors.composition_changed_self');
-      case 'busy':
-        return t('errors.busy');
-      case 'server_behind':
-        return t('errors.server_behind');
-      default:
-        return t('errors.validation');
-    }
-  };
+  const errorText = useRefusalText();
 
   const measure = (label: string, units: number | null, scale: number) => {
     if (units === null) return null;

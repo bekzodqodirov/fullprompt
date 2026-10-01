@@ -145,16 +145,49 @@ describe('the rules the shape can hold', () => {
     expect(src).toMatch(/!r\.line/);
   });
 
-  it('7. the freeze is ONE INSERT … SELECT … RETURNING, taken BEFORE the tick touches the truck row', () => {
-    const service = fn(read('src/modules/wms/receipts/lot-composition.ts'), 'freezeCompositionsInTx');
-    expect(service.match(/\.execute\(/g) ?? []).toHaveLength(1);
-    expect(service).toMatch(/INSERT INTO batch_sent_compositions[\s\S]*SELECT[\s\S]*RETURNING/);
+  it('7. the copy is ONE INSERT … SELECT … RETURNING with the positions; the tick takes the truck doors’ lock order first', () => {
+    const service = read('src/modules/wms/receipts/lot-composition.ts');
+    const copy = fn(service, 'copyCompositionsInTx');
+    expect(copy.match(/\.execute\(/g) ?? []).toHaveLength(1);
+    expect(copy).toMatch(/INSERT INTO batch_sent_compositions[\s\S]*segments[\s\S]*SELECT[\s\S]*RETURNING lot_id, rev, segments/);
+    const freeze = fn(service, 'freezeCompositionsInTx');
+    expect(freeze.indexOf('truckPositions(')).toBeGreaterThan(-1);
+    expect(freeze.indexOf('copyCompositionsInTx(')).toBeGreaterThan(freeze.indexOf('truckPositions('));
+    // The review's deadlock: count-load's advisory lock, then the truck row,
+    // and only then the copy (whose FK checks key-share the lots) — the order
+    // count-load (advisory → lot → truck) and the unload doors (truck → lot)
+    // both meet as a wait, never as a cycle.
     const action = fn(read('src/app/(protected)/batches/batch-actions-server.ts'), 'setSentToAgentAction');
-    const freeze = action.indexOf('freezeCompositionsInTx(');
+    const advisory = action.indexOf('lockTruckLoading(tx, batchId)');
+    const truckRow = action.indexOf(".for('no key update')");
+    const copied = action.indexOf('freezeCompositionsInTx(');
     const update = action.indexOf('.update(batches)');
-    expect(freeze).toBeGreaterThan(-1);
-    expect(update).toBeGreaterThan(freeze);
+    expect(advisory).toBeGreaterThan(-1);
+    expect(truckRow).toBeGreaterThan(advisory);
+    expect(copied).toBeGreaterThan(truckRow);
+    expect(update).toBeGreaterThan(copied);
     expect(action).toContain('paperStamp(frozen) !== postedStamp');
+    // A wait that runs out and a half-applied deploy are sentences, not the error page.
+    expect(action).toContain('isBusyError(err)');
+    expect(action).toContain('isServerBehind(err)');
+  });
+
+  it('7b. the frozen-truck lists read the copy, never `sent_to_agent_at`', () => {
+    for (const path of ['src/app/(protected)/receipts/[id]/page.tsx', 'src/app/(protected)/receipts/[id]/composition-actions.ts']) {
+      const src = read(path);
+      expect(src, path).toContain('truck.frozen');
+      expect(src, path).not.toMatch(/sentAt/);
+    }
+  });
+
+  it('9. the save day is Tashkent’s, and the panel’s two quiet refusals speak', () => {
+    const page = read('src/app/(protected)/receipts/[id]/page.tsx');
+    expect(page).toContain('savedDay: tashkentDay(c.savedAt)');
+    const panel = read('src/app/(protected)/receipts/[id]/composition-panel.tsx');
+    expect(panel).not.toMatch(/savedAt\.slice\(/);
+    // The voided prixod's clear and a document's ✕ set a refusal on a failed answer.
+    expect(panel).toContain('else setClearRefusal(res)');
+    expect(fn(panel, 'removeDocument')).toContain("setRefusal({ error: code === 'in_use' ? 'in_use' : 'remove_failed' })");
   });
 
   it('8. compositionsFor defaults its handle to db (the tx-pool fence’s seed shape) and issues ONE statement', () => {
