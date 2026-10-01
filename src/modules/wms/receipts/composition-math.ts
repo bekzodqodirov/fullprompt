@@ -78,7 +78,7 @@ function unitsOf(raw: string, scale: number): number | null {
 }
 
 /** A stored numeric string («1000.000») → units; a missing value reads 0. */
-function storedUnits(raw: string | number | null | undefined, scale: number): number {
+export function storedUnits(raw: string | number | null | undefined, scale: number): number {
   if (raw === null || raw === undefined) return 0;
   return unitsOf(String(raw), scale) ?? 0;
 }

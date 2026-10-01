@@ -30,8 +30,13 @@ import { computeLotTotals } from './math';
  * (`recomputeForLot`, #714).
  */
 
-/** FOR SHARE NOWAIT on the prixod row — 55P03 at once instead of a wait (lock-rv2-3). */
-async function lockReceiptShareNoWait(tx: Tx, receiptId: string): Promise<void> {
+/**
+ * FOR SHARE NOWAIT on the prixod row — 55P03 at once instead of a wait
+ * (lock-rv2-3). Exported for the lot tarkibi save (`lot-composition.ts`),
+ * which must hold the prixod's status still against a void or an annul for
+ * the same reason the growth does.
+ */
+export async function lockReceiptShareNoWait(tx: Tx, receiptId: string): Promise<void> {
   await tx.execute(sql`SELECT 1 FROM receipts WHERE id = ${receiptId}::uuid FOR SHARE NOWAIT`);
 }
 
