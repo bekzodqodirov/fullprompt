@@ -214,7 +214,11 @@ export default async function BatchTnvedPage({
                 the tick freezes exactly these or refuses (lot tarkibi, 7a). */}
             <input type="hidden" name="want" value={batch.sentToAgentAt ? 'unsent' : 'sent'} />
             <input type="hidden" name="paperStamp" value={stamp} />
-            <button type="submit" className={`w-full rounded-lg border-2 border-dashed p-2.5 text-sm font-semibold ${batch.sentToAgentAt ? 'border-green-500 bg-good/10 text-good' : 'border-line-strong text-ink-700'}`}>
+            <button
+              type="submit"
+              data-testid="tnved-sent-toggle"
+              className={`w-full rounded-lg border-2 border-dashed p-2.5 text-sm font-semibold ${batch.sentToAgentAt ? 'border-green-500 bg-good/10 text-good' : 'border-line-strong text-ink-700'}`}
+            >
               {batch.sentToAgentAt
                 ? `✅ ${t('sentToAgent')}: ${format.dateTime(new Date(batch.sentToAgentAt), { dateStyle: 'short' })}`
                 : `📤 ${t('markSentToAgent')}`}

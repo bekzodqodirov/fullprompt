@@ -33,6 +33,14 @@ export function rowKey(row: Pick<TnvedRow, 'lotId' | 'line'>): string {
 }
 
 /**
+ * The ✅ of the last save, per truck, for the editor that REPLACES this one:
+ * the page keys the editor on the line revisions, so a saved line code
+ * remounts it on the refresh — and the sentence would vanish with the
+ * instance that said it.
+ */
+const lastSaved = new Map<string, string>();
+
+/**
  * ТНВЭД editor (Phase 1.5): per-product code entry with an AI suggestion
  * button. Confirmed codes land in the shared memory, so a product is only
  * ever classified once — next batches pre-fill automatically.
@@ -55,7 +63,11 @@ export function TnvedEditor({ batchId, rows: initial }: { batchId: string; rows:
   const [reasonings, setReasonings] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(() => {
+    const said = lastSaved.get(batchId) ?? null;
+    lastSaved.delete(batchId);
+    return said;
+  });
   const [error, setError] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
 
@@ -183,7 +195,9 @@ export function TnvedEditor({ batchId, rows: initial }: { batchId: string; rows:
         }
         said.push(t('lineSaved', { n: res.saved ?? 0 }));
       }
-      setMessage(`✅ ${said.length > 0 ? said.join(' · ') : t('saved', { n: 0 })}`);
+      const done = `✅ ${said.length > 0 ? said.join(' · ') : t('saved', { n: 0 })}`;
+      setMessage(done);
+      lastSaved.set(batchId, done);
       router.refresh();
     } finally {
       setSaving(false);
@@ -215,7 +229,11 @@ export function TnvedEditor({ batchId, rows: initial }: { batchId: string; rows:
           💾 {saving ? tc('loading') : changedProducts.length > 0 ? t('saveAll') : t('saveLines')}
         </button>
       </div>
-      {message && <p className="rounded-lg bg-good/10 p-2 text-sm font-semibold text-good">{message}</p>}
+      {message && (
+        <p className="rounded-lg bg-good/10 p-2 text-sm font-semibold text-good" data-testid="tnved-saved">
+          {message}
+        </p>
+      )}
       {error && (
         <div className="rounded-lg bg-bad/10 p-2 text-sm font-semibold text-bad">
           <p>{error}</p>

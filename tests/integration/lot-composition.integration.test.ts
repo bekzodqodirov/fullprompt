@@ -658,6 +658,13 @@ describe('lot tarkibi — concurrency, deterministic', () => {
 
 describe('lot tarkibi — the papers', () => {
   it('7. the invoice: cumulative cartons and pieces, the single figure kept, the old rows untouched', async () => {
+    // The population: every truck that carries or carried a carton of the
+    // lot, the internal leg named as not crossing.
+    const population = (await lotTrucksFor(db, [lot.A])).get(lot.A)!;
+    const byId = new Map(population.map((t) => [t.batchId, t]));
+    expect(byId.get(truck.INTERNAL!)).toMatchObject({ crosses: false, n: 100 });
+    expect(byId.get(truck.CROSS!)).toMatchObject({ crosses: true, n: 33 });
+    expect(byId.get(truck.CROSS2!)).toMatchObject({ crosses: true, n: 67, departedAt: null });
     await save('C', [line(`Принтер${SFX}`, '6', '60', '0.3', '6'), line(`Сканер${SFX}`, '4', '40', '0.2', '4')], { docKey: 'DOC2' });
     await save('D', [line('Клавиатура', '50', '600', '1.5'), line('Мышь', '50', '400', '1.0')], { docKey: 'DOC2' });
     const cross = await invoiceRows('CROSS');
