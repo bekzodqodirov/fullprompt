@@ -20,9 +20,10 @@ export interface LotEditValues {
 }
 
 /** Inline lot editor on the receipt detail (spec 4.4 — audited edits). */
-export function LotEditForm({ lot }: { lot: LotEditValues }) {
+export function LotEditForm({ lot, hasComposition = false }: { lot: LotEditValues; hasComposition?: boolean }) {
   const t = useTranslations('receipts');
   const tc = useTranslations('common');
+  const tk = useTranslations('tarkib');
   const [open, setOpen] = useState(false);
   const [state, formAction, pending] = useActionState<EditLotState, FormData>(editLotAction, {});
 
@@ -57,6 +58,14 @@ export function LotEditForm({ lot }: { lot: LotEditValues }) {
   return (
     <form action={formAction} className="mt-2 space-y-2 rounded-lg bg-surface-sunken p-3">
       <input type="hidden" name="lotId" value={lot.lotId} />
+      {/* Lot tarkibi: the composition was stated against THESE totals — a
+          change here leaves it stale (⚠ on the panel, «taxminiy» on the
+          papers) until somebody states it again. */}
+      {hasComposition && (
+        <p className="text-xs font-semibold text-warn" data-testid="lot-edit-tarkib-warning">
+          ⚠ {tk('staleOnLotForm')}
+        </p>
+      )}
       <input
         name="productNameZh"
         className="input"

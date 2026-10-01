@@ -1,6 +1,6 @@
 'use server';
 
-import { eq } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { db } from '@/modules/platform/db/client';
@@ -32,9 +32,15 @@ import {
   type CountAcceptResult,
 } from '@/modules/wms/scanning/count-accept';
 import { countDoorFor } from '@/modules/wms/scanning/count-door';
-import { isBusyError } from '@/modules/platform/db/errors';
+import { isBusyError, isServerBehind } from '@/modules/platform/db/errors';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import type { CheckpointActionState } from '@/modules/wms/tracking/checkpoint';
+import {
+  freezeCompositionsInTx,
+  lockTruckForTickInTx,
+  paperStamp,
+  thawCompositionsInTx,
+} from '@/modules/wms/receipts/lot-composition';
 
 /**
  * Where a rerouted truck goes now, from the service's refusal — the office
@@ -378,6 +384,28 @@ export async function createQuickBatchAction(
  * which checks no warehouse at all, so a scoped holder of the permission could
  * press it on any truck in the company (docs/CARD-TABS.md, «Holes found on the
  * way»).
+ *
+ * Lot tarkibi (7a, the judge's FREEZE): ticking copies, in ONE statement, the
+ * composition of every lot on the truck into `batch_sent_compositions` —
+ * with the POSITIONS its cartons hold in each lot's order, so another truck
+ * of a split lot departing first cannot move a sent paper — and while the
+ * truck is ticked its papers print that copy; a composition saved later
+ * reaches only trucks whose papers have not gone. Lock order, the truck
+ * doors' own (`lockTruckForTickInTx`): count-load's advisory lock, then the
+ * truck row FOR NO KEY UPDATE, then the copy (whose FK checks key-share the
+ * lot rows). count-load takes advisory → lot → truck and the unload doors
+ * truck → lot, so the tick waits for both instead of closing a cycle with
+ * either (the review's deadlock: the copy key-shared the lot BEFORE the
+ * truck, and a count-accept holding the truck and wanting the lot made a
+ * 40P01 the VED met as an error page). A wait that runs out is a sentence
+ * (`?tarkib=band`).
+ * The page posts `paperStamp`, the stamp of the compositions and positions it
+ * was drawn with: a colleague's save — or another truck's departure — between
+ * the download and the tick refuses the tick (`paper_moved`) and nothing is
+ * frozen. Un-ticking drops the copy. `want` is what the page showed («sent» /
+ * «unsent»); a bare post toggles, as it always has. On a half-applied deploy
+ * (no `batch_sent_compositions` yet) the tick is the plain toggle it was —
+ * no composition can exist without the table — and says so in the log.
  */
 export async function setSentToAgentAction(formData: FormData): Promise<void> {
   const batchId = String(formData.get('batchId') ?? '');
@@ -385,18 +413,71 @@ export async function setSentToAgentAction(formData: FormData): Promise<void> {
   if (!door) return;
   const { actor, batch } = door;
   const meta = await requestMeta();
-  await db
-    .update(batches)
-    .set({ sentToAgentAt: batch.sentToAgentAt ? null : tashkentDay() })
-    .where(eq(batches.id, batchId));
+  const want = formData.get('want');
+  const sending = want === 'sent' ? true : want === 'unsent' ? false : !batch.sentToAgentAt;
+  const postedStamp = String(formData.get('paperStamp') ?? '');
   const { writeAudit } = await import('@/modules/platform/audit/service');
-  await writeAudit(db, { actorId: actor.id, ...meta, warehouseId: batch.originWarehouseId }, {
-    entityType: 'batch',
-    entityId: batchId,
-    action: 'update',
-    after: { sentToAgent: !batch.sentToAgentAt },
-  });
+  const ctx = { actorId: actor.id, ...meta, warehouseId: batch.originWarehouseId };
+  let answer: 'paper_moved' | 'busy' | null = null;
+  try {
+    await db.transaction(async (tx) => {
+      const row = await lockTruckForTickInTx(tx, batchId);
+      if (!row || (row.sentToAgentAt !== null) === sending) throw new TickRefused('no_op');
+      if (sending) {
+        const frozen = await freezeCompositionsInTx(tx, batchId);
+        if (paperStamp(frozen) !== postedStamp) throw new TickRefused('paper_moved');
+        await tx.update(batches).set({ sentToAgentAt: tashkentDay() }).where(eq(batches.id, batchId));
+        await writeAudit(tx, ctx, {
+          entityType: 'batch',
+          entityId: batchId,
+          action: 'update',
+          after: { sentToAgent: true, frozenLots: frozen.filter((f) => f.rev !== null).length },
+        });
+      } else {
+        await tx.update(batches).set({ sentToAgentAt: null }).where(eq(batches.id, batchId));
+        const thawed = await thawCompositionsInTx(tx, batchId);
+        await writeAudit(tx, ctx, {
+          entityType: 'batch',
+          entityId: batchId,
+          action: 'update',
+          after: { sentToAgent: false, frozenLots: thawed },
+        });
+      }
+    });
+  } catch (err) {
+    if (err instanceof TickRefused) {
+      // Somebody ticked (or un-ticked) first: the page re-renders with their answer.
+      if (err.code === 'paper_moved') answer = 'paper_moved';
+    } else if (isBusyError(err)) {
+      answer = 'busy';
+    } else if (isServerBehind(err)) {
+      console.warn('[tick] server behind — the plain toggle, nothing frozen', err);
+      await db.transaction(async (tx) => {
+        const done = await tx
+          .update(batches)
+          .set({ sentToAgentAt: sending ? tashkentDay() : null })
+          .where(and(eq(batches.id, batchId), sending ? isNull(batches.sentToAgentAt) : isNotNull(batches.sentToAgentAt)))
+          .returning({ id: batches.id });
+        if (done.length === 0) return;
+        await writeAudit(tx, ctx, { entityType: 'batch', entityId: batchId, action: 'update', after: { sentToAgent: sending } });
+      });
+    } else {
+      throw err;
+    }
+  }
   revalidatePath(`/batches/${batchId}`);
+  revalidatePath(`/batches/${batchId}/tnved`);
+  if (answer) {
+    const { redirect } = await import('next/navigation');
+    redirect(`/batches/${batchId}/tnved?tarkib=${answer === 'paper_moved' ? 'yangilandi' : 'band'}#hujjatlar`);
+  }
+}
+
+/** The tick rolled back on purpose: the papers moved, or the row already says it. */
+class TickRefused extends Error {
+  constructor(public readonly code: 'paper_moved' | 'no_op') {
+    super(code);
+  }
 }
 
 /**

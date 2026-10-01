@@ -149,6 +149,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | The Frappe study / UX programme | `docs/CRM-UX.md` — agreed 2026-08-04; batches 1-4 COMPLETE; 5 in progress |
 | Website visitor → least-busy manager (the site's contract) | `docs/SAYT-TAQSIMOT.md` — round 113, give the contract to the site's session verbatim |
 | The truck card's six tabs and the client's «Pul» tab | `docs/CARD-TABS.md` — agreed 2026-09-28 (his 3a/4a), SHIPPED |
+| A lot that holds several goods — the paper «tarkibi» | `docs/LOT-TARKIBI.md` — agreed 2026-10-01 (his 1c 2c 3b 4c 5a 6 7a 8a), SHIPPED |
 
 ## State — 2026-08-23
 
@@ -2383,7 +2384,32 @@ Money untouched by construction (countries). His answer to the round's eleven
 questions: «Hammasi standard» (#1256) — every ⭐ checked against the shipped code
 first (11/11), the four that only reading proved now pinned by tests.
 
-**Latest migration: 0121** (`batch_rename`, `when` …100; ledger must reach **122**). Before
+**Round — lot tarkibi (2026-10-01; DECISIONS #1257-#1262; migration 0122
+`lot_composition` — ledger must reach 123; spec `docs/LOT-TARKIBI.md`).** His case:
+100 cartons received «klaviatura» after one was opened, really 50 mice + 50
+keyboards, found while the VED made the invoice; answers 1c 2c 3b 4c 5a 6 7a 8a.
+The lot keeps its BODY (cartons, letter, stickers, scans, plans, stock, cabinet,
+pushes, bot, act, manifest, costs, price — fenced by `lot-composition-fence.test.ts`)
+and gains a paper composition: `lot_compositions` + `lot_composition_lines` (2-20
+lines; Σ kg/m³ EXACTLY the lot's, cartons all-or-none = «alohida»/«aralash»;
+a document on that prixod mandatory), written by `ved.docs` ∨ `plans.manage`
+through ONE module `receipts/lot-composition.ts`. The pure arithmetic is
+`receipts/composition-math.ts` (`paperLines`; cumulative Sainte-Laguë over the
+lot's crossing trucks, largest remainder in BigInt, «taxminiy» when a truck
+carries part of the lot); invoice, both packing lists and the agent file print
+a row per line. A line's TNVED never writes `tnved_assignments`;
+`saveTnvedAction` now takes the truck and refuses a name not on it. The lead's
+LOCK became a FREEZE (the judge: deadlock with count-load, split lots trapped,
+nothing tied the sent papers to a revision): the «hujjat yuborildi» tick copies
+contents AND carton positions into `batch_sent_compositions`, the stamp refuses
+`paper_moved`, pre-0122 ticks are backfilled by 0122 itself. CI caught the
+tick importing `count-rules` (`count-kernel-wire`) — the lock lives in the
+service. 📈 kinds count lines by name in their own CTE (#432). OWED to him as
+questions: a whole-lot-other-good fix for the VED, Chinese names on lines for
+the agent file, «шт» beside «кг» on one invoice.
+
+**Latest migration: 0122** (`lot_composition`, `when` …101; ledger must reach **123**). Before
+it: 0121 (`batch_rename`, `when` …100). Before
 it: 0120 (`no_login_staff`, `when` …099). Before
 it: 0119 (`price_icons`), 0118 (`border_queue`), 0117 (`staff_pay`) — `when` …096-…098. Before them:
 **0116** (`cargo_wait_alerts`; ledger 117). Before it: 0115 (`system_watch`), 0114 (`debt_control`), 0113
@@ -2509,13 +2535,14 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **121** since 0120 (120 since 0119, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **123** since 0122 (122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
 and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read
 2026-09-30 04:30 UTC, built after #103 merged, so 0120's code runs) — the count
-was asked for and NOT quoted, so COUNT FIRST on the next deploy: it must read
-**121** (anything less means a migration did not land — read the `migrate`
+was asked for and NOT quoted; PR #106 (0121) deployed 2026-09-30 evening («Hozir sistema
+yaxshi ishlayabti», count not quoted either), so COUNT FIRST on the next deploy: it must read
+**123** (anything less means a migration did not land — read the `migrate`
 container's own output; from 113 the whole 0113-0120 set applies and EVERY
 container must be recreated once: `--profile https --profile telegram up -d
 --build`, compose gained `init`, a healthcheck, log caps and a postgres flag);
