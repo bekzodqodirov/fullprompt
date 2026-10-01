@@ -1,6 +1,6 @@
 'use server';
 
-import { eq } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { db } from '@/modules/platform/db/client';
@@ -35,6 +35,11 @@ import { countDoorFor } from '@/modules/wms/scanning/count-door';
 import { isBusyError } from '@/modules/platform/db/errors';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import type { CheckpointActionState } from '@/modules/wms/tracking/checkpoint';
+import {
+  freezeCompositionsInTx,
+  paperStamp,
+  thawCompositionsInTx,
+} from '@/modules/wms/receipts/lot-composition';
 
 /**
  * Where a rerouted truck goes now, from the service's refusal — the office
@@ -378,6 +383,17 @@ export async function createQuickBatchAction(
  * which checks no warehouse at all, so a scoped holder of the permission could
  * press it on any truck in the company (docs/CARD-TABS.md, «Holes found on the
  * way»).
+ *
+ * Lot tarkibi (7a, the judge's FREEZE): ticking copies, in ONE statement, the
+ * composition of every lot on the truck into `batch_sent_compositions`, and
+ * while the truck is ticked its papers print that copy — a composition saved
+ * later reaches only trucks whose papers have not gone. The copy is taken
+ * BEFORE the truck row, so a count press (lot → truck) and the tick (lots
+ * key-shared → truck) take the truck last on both sides. The page posts
+ * `paperStamp`, the stamp of the compositions it was drawn with: a colleague's
+ * save between the download and the tick refuses the tick (`paper_moved`) and
+ * nothing is frozen. Un-ticking drops the copy. `want` is what the page
+ * showed («sent» / «unsent»); a bare post toggles, as it always has.
  */
 export async function setSentToAgentAction(formData: FormData): Promise<void> {
   const batchId = String(formData.get('batchId') ?? '');
@@ -385,18 +401,63 @@ export async function setSentToAgentAction(formData: FormData): Promise<void> {
   if (!door) return;
   const { actor, batch } = door;
   const meta = await requestMeta();
-  await db
-    .update(batches)
-    .set({ sentToAgentAt: batch.sentToAgentAt ? null : tashkentDay() })
-    .where(eq(batches.id, batchId));
+  const want = formData.get('want');
+  const sending = want === 'sent' ? true : want === 'unsent' ? false : !batch.sentToAgentAt;
+  const postedStamp = String(formData.get('paperStamp') ?? '');
   const { writeAudit } = await import('@/modules/platform/audit/service');
-  await writeAudit(db, { actorId: actor.id, ...meta, warehouseId: batch.originWarehouseId }, {
-    entityType: 'batch',
-    entityId: batchId,
-    action: 'update',
-    after: { sentToAgent: !batch.sentToAgentAt },
-  });
+  const ctx = { actorId: actor.id, ...meta, warehouseId: batch.originWarehouseId };
+  let moved = false;
+  try {
+    await db.transaction(async (tx) => {
+      if (sending) {
+        const frozen = await freezeCompositionsInTx(tx, batchId);
+        if (paperStamp(frozen) !== postedStamp) throw new TickRefused('paper_moved');
+        const done = await tx
+          .update(batches)
+          .set({ sentToAgentAt: tashkentDay() })
+          .where(and(eq(batches.id, batchId), isNull(batches.sentToAgentAt)))
+          .returning({ id: batches.id });
+        if (done.length === 0) throw new TickRefused('no_op');
+        await writeAudit(tx, ctx, {
+          entityType: 'batch',
+          entityId: batchId,
+          action: 'update',
+          after: { sentToAgent: true, frozenLots: frozen.filter((f) => f.rev !== null).length },
+        });
+      } else {
+        const done = await tx
+          .update(batches)
+          .set({ sentToAgentAt: null })
+          .where(and(eq(batches.id, batchId), isNotNull(batches.sentToAgentAt)))
+          .returning({ id: batches.id });
+        if (done.length === 0) throw new TickRefused('no_op');
+        const thawed = await thawCompositionsInTx(tx, batchId);
+        await writeAudit(tx, ctx, {
+          entityType: 'batch',
+          entityId: batchId,
+          action: 'update',
+          after: { sentToAgent: false, frozenLots: thawed },
+        });
+      }
+    });
+  } catch (err) {
+    if (!(err instanceof TickRefused)) throw err;
+    // Somebody ticked (or un-ticked) first: the page re-renders with their answer.
+    moved = err.code === 'paper_moved';
+  }
   revalidatePath(`/batches/${batchId}`);
+  revalidatePath(`/batches/${batchId}/tnved`);
+  if (moved) {
+    const { redirect } = await import('next/navigation');
+    redirect(`/batches/${batchId}/tnved?tarkib=yangilandi#hujjatlar`);
+  }
+}
+
+/** The tick rolled back on purpose: the papers moved, or the row already says it. */
+class TickRefused extends Error {
+  constructor(public readonly code: 'paper_moved' | 'no_op') {
+    super(code);
+  }
 }
 
 /**

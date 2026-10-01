@@ -1,8 +1,9 @@
+import Link from 'next/link';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
-import { attachments } from '@/modules/platform/db/schema';
+import { attachments, receipts } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { mayOpenBatchCard, mayOpenBatchVed } from '@/modules/wms/batches/card-door';
 import { loadBatchHead } from '@/modules/wms/batches/card-head';
@@ -10,6 +11,8 @@ import { batchCustomsRows } from '@/modules/wms/partners/customs';
 import { listPartners } from '@/modules/wms/partners/service';
 import { maySeeStaffMoney } from '@/modules/wms/partners/staff';
 import { batchTnvedProducts } from '@/modules/wms/tnved/batch-lots';
+import { paperStampFor } from '@/modules/wms/receipts/lot-composition';
+import { receiptsReadableBy } from '@/modules/wms/receipts/read-door';
 import { AttachmentsPanel } from '@/components/attachments-panel';
 import { Panel } from '@/components/panel';
 import { setSentToAgentAction } from '../../batch-actions-server';
@@ -34,8 +37,15 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
  * which this page never asked: a scoped holder could open any truck's codes
  * by typing its address.
  */
-export default async function BatchTnvedPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function BatchTnvedPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ tarkib?: string }>;
+}) {
   const { id } = await params;
+  const { tarkib } = await searchParams;
   const actor = await getActor();
   if (!actor) redirect('/login');
   if (!mayOpenBatchVed(actor.permissions)) redirect('/');
@@ -108,10 +118,61 @@ export default async function BatchTnvedPage({ params }: { params: Promise<{ id:
         .groupBy(attachments.entityId)
     : [];
   const photoByLot = new Map(photoRows.map((r) => [r.entityId, r.photoId]));
-  const rows = products.map(({ lotIds: ofProduct, ...row }) => ({
-    ...row,
-    photoId: ofProduct.map((lotId) => photoByLot.get(lotId)).find(Boolean) ?? null,
-  }));
+  // Lot tarkibi: the prixods behind the rows, FILTERED by the receipt read
+  // door first — a scoped reader of this tab outlives `cargoNearActor` once
+  // the cartons move on, and a client's invoice file NAME often carries the
+  // client and an amount. A link to a prixod the person cannot open is not
+  // drawn (#1023: a link that bounces is worse than no link).
+  const receiptIds = [...new Set(products.flatMap((row) => row.lots.map((chip) => chip.receiptId)))];
+  const receiptRows = receiptIds.length
+    ? await db
+        .select({ id: receipts.id, warehouseId: receipts.warehouseId, number: receipts.number })
+        .from(receipts)
+        .where(inArray(receipts.id, receiptIds))
+    : [];
+  const readable = await receiptsReadableBy(actor, receiptRows);
+  const firstLine = new Set<string>();
+  const rows = products.map(({ lotIds: ofProduct, ...row }) => {
+    const firstOfLot = row.line ? !firstLine.has(row.line.lotId) : false;
+    if (row.line) firstLine.add(row.line.lotId);
+    return {
+      ...row,
+      photoId: ofProduct.map((lotId) => photoByLot.get(lotId)).find(Boolean) ?? null,
+      lots: row.lots.map((chip) => ({ ...chip, readable: readable.has(chip.receiptId) })),
+      line: row.line ? { ...row.line, readable: readable.has(row.line.receiptId), firstOfLot } : undefined,
+    };
+  });
+  // A save elsewhere (the receipt card) replaces every line id and bumps the
+  // revision: the key re-seeds the editor instead of leaving it posting dead
+  // ids for ever.
+  const editorKey = rows.map((row) => (row.line ? `${row.line.rowKey}@${row.line.rev}` : row.lotId)).join('|');
+  const readableReceipts = receiptRows.filter((r) => readable.has(r.id));
+  const receiptDocs = readableReceipts.length
+    ? await db
+        .select({
+          id: attachments.id,
+          fileName: attachments.fileName,
+          contentType: attachments.contentType,
+          kind: attachments.kind,
+          receiptId: attachments.entityId,
+        })
+        .from(attachments)
+        .where(
+          and(
+            eq(attachments.entityType, 'receipt'),
+            inArray(
+              attachments.entityId,
+              readableReceipts.map((r) => r.id),
+            ),
+          ),
+        )
+    : [];
+  const docsByReceipt = readableReceipts
+    .map((r) => ({ ...r, files: receiptDocs.filter((d) => d.receiptId === r.id) }))
+    .filter((r) => r.files.length > 0);
+  const labelOfReceipt = new Map(products.flatMap((row) => row.lots.map((chip) => [chip.receiptId, chip.label.split('-')[0]] as const)));
+  const tk = await getTranslations('tarkib');
+  const stamp = !batch.sentToAgentAt ? await paperStampFor(batch.id) : '';
   const loaded = batch.departedAt !== null || batch.status === 'loading';
 
   return (
@@ -141,15 +202,44 @@ export default async function BatchTnvedPage({ params }: { params: Promise<{ id:
             editable={actor.permissions.has('ved.docs') || canVehicle}
           />
         </div>
+        {tarkib === 'yangilandi' && !batch.sentToAgentAt && (
+          <p className="rounded-lg bg-warn/10 p-2 text-sm font-semibold text-warn" data-testid="tnved-paper-moved">
+            ⚠ {tk('paperMoved')}
+          </p>
+        )}
         {actor.permissions.has('ved.docs') && (
           <form action={setSentToAgentAction}>
             <input type="hidden" name="batchId" value={batch.id} />
+            {/* What the page showed and the compositions it was drawn with —
+                the tick freezes exactly these or refuses (lot tarkibi, 7a). */}
+            <input type="hidden" name="want" value={batch.sentToAgentAt ? 'unsent' : 'sent'} />
+            <input type="hidden" name="paperStamp" value={stamp} />
             <button type="submit" className={`w-full rounded-lg border-2 border-dashed p-2.5 text-sm font-semibold ${batch.sentToAgentAt ? 'border-green-500 bg-good/10 text-good' : 'border-line-strong text-ink-700'}`}>
               {batch.sentToAgentAt
                 ? `✅ ${t('sentToAgent')}: ${format.dateTime(new Date(batch.sentToAgentAt), { dateStyle: 'short' })}`
                 : `📤 ${t('markSentToAgent')}`}
             </button>
           </form>
+        )}
+        {docsByReceipt.length > 0 && (
+          <div className="border-t border-line pt-2">
+            <Panel
+              title={`📎 ${tk('receiptDocs')}`}
+              badge={tk('receiptDocsCount', { n: docsByReceipt.reduce((sum, r) => sum + r.files.length, 0) })}
+              testId="receipt-docs"
+            >
+              <div className="space-y-2 px-3 pb-3">
+                {docsByReceipt.map((r) => (
+                  <div key={r.id}>
+                    <Link href={`/receipts/${r.id}`} className="text-sm font-semibold text-brand-700 underline">
+                      {labelOfReceipt.get(r.id) ?? '?'} · {r.number}
+                    </Link>
+                    <AttachmentsPanel entityType="receipt" entityId={r.id} initial={r.files} editable={false} />
+                  </div>
+                ))}
+              </div>
+            </Panel>
+          </div>
         )}
       </section>
 
@@ -193,7 +283,7 @@ export default async function BatchTnvedPage({ params }: { params: Promise<{ id:
           took 32 px off a 360 px phone the editor's buttons needed. */}
       <section className="space-y-2">
         <h2 className="text-lg font-bold">🏷 {ttn('title')}</h2>
-        {rows.length === 0 ? <p className="text-sm text-ink-500">{ttn('empty')}</p> : <TnvedEditor batchId={id} rows={rows} />}
+        {rows.length === 0 ? <p className="text-sm text-ink-500">{ttn('empty')}</p> : <TnvedEditor key={editorKey} batchId={id} rows={rows} />}
       </section>
     </BatchCard>
   );
