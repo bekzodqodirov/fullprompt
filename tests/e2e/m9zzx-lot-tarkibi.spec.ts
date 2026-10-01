@@ -95,6 +95,11 @@ test('the VED composes on the phone: the document first, the remainder per measu
   expect(minted).not.toBeNull();
   await login(page, VED);
   await page.goto(receiptPath());
+  // The owner's 1a: the VED states a composition and never renames the lot —
+  // the lot form (`receipts.edit`, the logist's ✏️ below) is not drawn for him.
+  const lotCard = page.locator(`#lot-${minted!.lotId}`);
+  await expect(lotCard).toBeVisible();
+  await expect(lotCard.getByRole('button', { name: /✏️/ })).toHaveCount(0);
   const panel = page.getByTestId('lot-tarkib');
   await panel.getByTestId('lot-tarkib-open').click();
   await expect(page.getByTestId('tarkib-editor')).toBeVisible();

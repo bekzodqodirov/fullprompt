@@ -57,6 +57,42 @@ describe('invoiceRowCells', () => {
   });
 });
 
+/**
+ * The owner's 3a (2026-10-01, «keep it as it is»): on one invoice a composed
+ * line prints «шт» when the pieces it states land ≥ 1 on THIS truck, else «кг»
+ * with its kg. Driven end to end — `paperLines` decides how many pieces land,
+ * `invoiceRowCells` decides the unit — over an «aralash» lot whose light line
+ * states ONE piece: its cumulative piece is roundHalfUp(1·x/100), 0 for the
+ * first 49 positions and 1 from the 50th, so a 40 / 60 split puts it on the
+ * second truck and nowhere else.
+ */
+describe('the «шт» boundary through paperLines (owner 3a)', () => {
+  const LOT_3A = { boxCount: 100, kg: '1000.000', m3: '2.5000' };
+  const HEAVY: StoredLine = { seq: 1, name: 'Клавиатура', pieces: 2000, cartons: null, kg: '999.000', m3: '2.4000', tnvedCode: null };
+  const LIGHT: StoredLine = { seq: 2, name: 'Принтер', pieces: 1, cartons: null, kg: '1.000', m3: '0.1000', tnvedCode: null };
+  const MIXED = { seenBoxCount: 100, lines: [HEAVY, LIGHT] };
+  const printer = (portion: { before: number; cartons: number; kg: number; m3: number }) => {
+    const view = paperLines(MIXED, LOT_3A, portion);
+    const row = view.lines.find((l) => l.name === 'Принтер');
+    expect(row, 'an aralash lot prints every line').toBeDefined();
+    return invoiceRowCells(row!);
+  };
+
+  it('a line whose stated pieces land exactly 1 on this truck prints «шт» 1; on the truck where they land 0, «кг» and its kg', () => {
+    const first = printer({ before: 0, cartons: 40, kg: 400, m3: 1 });
+    const second = printer({ before: 40, cartons: 60, kg: 600, m3: 1.5 });
+    expect([first.unit, first.quantity]).toEqual(['кг', 0.4]);
+    expect([second.unit, second.quantity]).toEqual(['шт', 1]);
+    // The one stated piece lands once over the lot's two trucks.
+    expect([first, second].filter((c) => c.unit === 'шт').reduce((s, c) => s + c.quantity, 0)).toBe(1);
+  });
+
+  it('pinned as decided (3a): the aralash light line on a 1-carton truck stays on the paper as «кг» with quantity 0', () => {
+    const one = printer({ before: 0, cartons: 1, kg: 10, m3: 0.025 });
+    expect(one).toMatchObject({ product: 'Принтер', unit: 'кг', quantity: 0, kg: 0 });
+  });
+});
+
 describe('the packing lists', () => {
   it('the product cell names the pieces', () => {
     expect(packingProductCell(pl({ name: 'Мышь', pieces: 1000 }))).toBe('Мышь — 1000 шт');

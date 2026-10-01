@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { randomUUID } from 'node:crypto';
 import ExcelJS from 'exceljs';
 import { readFileSync } from 'node:fs';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import postgres from 'postgres';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -140,6 +140,7 @@ const boxesOf: Record<string, string[]> = {};
 let memorySnapshot: string[] = [];
 
 const NAME_A = `键盘${SFX}`;
+const NAME_G = `计划${SFX}`;
 const LINE_NAMES = ['Клавиатура', 'Мышь', `Принтер${SFX}`, `Сканер${SFX}`, `Наушники${SFX}`, `Кабель${SFX}`];
 
 /** The VED, unscoped (the seeded ved_manager's shape). */
@@ -345,6 +346,26 @@ async function invoiceRows(batchKey: string) {
   return out;
 }
 
+/**
+ * Every invoice row's amount cell (J) as the sheet stores it: the price the
+ * VED types (I) times the row's quantity (E), live — so a composed line's
+ * «шт» or «кг» is what the amount multiplies, never a figure written in.
+ */
+async function invoiceAmounts(batchKey: string) {
+  const buf = await buildInvoiceXlsx(truck[batchKey]!);
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(buf! as unknown as ExcelJS.Buffer);
+  const sheet = wb.worksheets[0]!;
+  const out: { row: number; formula: string | null }[] = [];
+  for (let r = 21; r < 400; r += 1) {
+    const row = sheet.getRow(r);
+    if (typeof row.getCell(1).value !== 'number') break;
+    const value = row.getCell(10).value;
+    out.push({ row: r, formula: value && typeof value === 'object' && 'formula' in value ? String(value.formula) : null });
+  }
+  return out;
+}
+
 const sum1 = (values: number[]) => Math.round(values.reduce((s, v) => s + v, 0) * 10) / 10;
 const ofLines = <T extends { product: string }>(rows: T[]) => rows.filter((r) => ['Клавиатура', 'Мышь'].includes(r.product));
 
@@ -384,7 +405,7 @@ beforeAll(async () => {
   await mintLot('C', 'R2', 1, `打印${SFX}`, 10, '100.000', '0.5000');
   await mintLot('D', 'R2', 2, `托盘${SFX}`, 100, '1000.000', '2.5000');
   await mintLot('F', 'R2', 3, `单箱${SFX}`, 10, '100.000', '0.5000');
-  await mintLot('G', 'R2', 4, `计划${SFX}`, 10, '100.000', '0.5000');
+  await mintLot('G', 'R2', 4, NAME_G, 10, '100.000', '0.5000');
   await mintLot('H', 'R2', 5, `混合${SFX}`, 10, '100.000', '0.5000');
   await mintLot('K', 'R3', 1, `作废${SFX}`, 2, '20.000', '0.1000');
   await mintLot('L', 'R3', 2, `光${SFX}`, 1, '10.000', '0.0500');
@@ -725,11 +746,25 @@ describe('lot tarkibi — the papers', () => {
     const pal = await invoiceRows('PAL');
     expect(pal.map((r) => r.places)).toEqual([2, 2]);
     expect(pal.every((r) => r.note?.includes('поддоне'))).toBe(true);
+    // The owner's 3a: lot D states no pieces, so each line prints «кг» and
+    // its quantity IS its kg — as an uncomposed lot always has.
+    expect(pal.map((r) => [r.product, r.unit, r.quantity, r.kg])).toEqual([
+      ['Клавиатура', 'кг', 600, 600],
+      ['Мышь', 'кг', 400, 400],
+    ]);
     // A one-carton truck of a separate lot: the one line it carries.
     const one = await invoiceRows('ONE');
     expect(one).toHaveLength(1);
     expect(one[0]!.product).toBe('Клавиатура');
     expect(one[0]!.kg).toBe(baseline.ONE![0]!.kg);
+    // …and its stated pieces (10 over 5 cartons) land 2 on that one carton: «шт».
+    expect([one[0]!.unit, one[0]!.quantity]).toEqual(['шт', 2]);
+    // Every row's amount stays the live I×E, on composed and plain rows alike.
+    for (const key of ['CROSS', 'CROSS2', 'NOC', 'PAL', 'ONE']) {
+      const amounts = await invoiceAmounts(key);
+      expect(amounts.length, key).toBeGreaterThan(0);
+      expect(amounts.map((a) => a.formula), key).toEqual(amounts.map((a) => `I${a.row}*E${a.row}`));
+    }
   });
 
   it('8. both packing lists: line rows summing to what the same builder printed before, the draft footer unchanged', async () => {
@@ -780,6 +815,21 @@ describe('lot tarkibi — the papers', () => {
       { lotKey: 'G', crateId: null, n: 5, kg: '50.000', m3: '0.2500' },
       { lotKey: 'G', crateId: crate!.id, n: 5, kg: '50.000', m3: '0.2500' },
     ]);
+    const fullPlanId = planIds.at(-1)!;
+    // The owner's 2a: the lot's OWN Chinese name stays in front, the contents
+    // follow on the next line; the lot's other (crated) row is the bare name.
+    // The sheet keeps the plan lines' order (uuidv7 ids, the loose line first).
+    const gRows = full.filter((c) => c.value.startsWith(NAME_G));
+    expect(gRows).toHaveLength(2);
+    expect(gRows[0]!.value.startsWith(`${NAME_G}\nСостав лота (весь план) / Lot contents (whole plan): `)).toBe(true);
+    expect(gRows[1]!.value).toBe(NAME_G);
+    const gLines = await db
+      .select({ crateId: loadPlanLines.crateId })
+      .from(loadPlanLines)
+      .innerJoin(loadPlanVersions, eq(loadPlanLines.versionId, loadPlanVersions.id))
+      .where(and(eq(loadPlanVersions.planId, fullPlanId), eq(loadPlanLines.lotId, lot.G)))
+      .orderBy(asc(loadPlanLines.id));
+    expect(gLines.map((l) => l.crateId)).toEqual([null, crate!.id]);
     const withContents = full.filter((c) => c.value.includes('Lot contents'));
     expect(withContents).toHaveLength(1);
     expect(withContents[0]!.value).toContain('Клавиатура — 5 кор. · 60.0 кг · 0.300 м³ · 50 шт');

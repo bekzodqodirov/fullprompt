@@ -1,5 +1,7 @@
 import { globSync, readFileSync } from 'node:fs';
+import { getTableColumns } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
+import { lotCompositionLines } from '@/modules/platform/db/schema';
 
 /**
  * Lot tarkibi's readers, as a shape (docs/LOT-TARKIBI.md §9, §11.1).
@@ -196,5 +198,53 @@ describe('the rules the shape can hold', () => {
     const body = fn(read('src/modules/wms/receipts/lot-composition.ts'), 'compositionsFor');
     expect(body).toMatch(/exec: Db \| Tx = db/);
     expect(body.match(/\.execute\(/g) ?? []).toHaveLength(1);
+  });
+});
+
+/**
+ * The owner's answers of 2026-10-01 — «1a 2a 3a», i.e. «keep it as it is».
+ * What the round shipped is now what he chose, so the parts nothing else held
+ * are pinned here (the invoice's «шт»/«кг» rule is pinned in
+ * composition-cells.test.ts and through the real builders in
+ * lot-composition.integration.test.ts).
+ */
+describe('the owner’s answers of 2026-10-01 (1a 2a 3a)', () => {
+  it('1a. a one-good lot is the logist’s rename: the refusal says so in all four bundles, and the panel prints that sentence', () => {
+    const word: Record<string, RegExp> = { uz: /logist/, ru: /логист/, en: /logist/i, 'zh-CN': /物流员/ };
+    for (const [locale, who] of Object.entries(word)) {
+      const bundle = JSON.parse(readFileSync(`messages/${locale}.json`, 'utf8')) as {
+        tarkib: { errors: { lines_count: string } };
+      };
+      expect(bundle.tarkib.errors.lines_count, locale).toMatch(who);
+    }
+    const panel = read('src/app/(protected)/receipts/[id]/composition-panel.tsx');
+    expect(panel).toContain("useTranslations('tarkib')");
+    expect(panel).toMatch(/case 'lines_count':\s*return t\('errors\.lines_count'\);/);
+  });
+
+  it('1a. the lot form’s door is `receipts.edit` AT the prixod’s warehouse, asked BEFORE editLot — the VED holds neither', () => {
+    const action = fn(read('src/app/(protected)/receipts/[id]/edit-actions.ts'), 'editLotAction');
+    const door = action.indexOf("authorize('receipts.edit', { warehouseId: receipt.warehouseId })");
+    const write = action.indexOf('await editLot(');
+    expect(door).toBeGreaterThan(-1);
+    expect(write).toBeGreaterThan(door);
+    // One door only: no second `authorize(` that could widen it.
+    expect(action.match(/\bauthorize\(/g) ?? []).toHaveLength(1);
+  });
+
+  it('2a. a composition line is the VED’s own words — no Chinese-name column on lot_composition_lines', () => {
+    const columns = getTableColumns(lotCompositionLines);
+    expect(Object.keys(columns)).toEqual(['id', 'lotId', 'seq', 'name', 'pieces', 'cartons', 'weightKg', 'volumeM3', 'tnvedCode']);
+    expect(Object.values(columns).map((c) => c.name)).toEqual([
+      'id',
+      'lot_id',
+      'seq',
+      'name',
+      'pieces',
+      'cartons',
+      'weight_kg',
+      'volume_m3',
+      'tnved_code',
+    ]);
   });
 });
