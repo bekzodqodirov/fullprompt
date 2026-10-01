@@ -5002,7 +5002,7 @@
     "staleShort": "批次已变化 — 请核对组成",
     "staleOnLotForm": "此批次有组成 — 公斤/箱数变化后需重新核对组成",
     "frozenInfo": "🔒 {trucks} 的单据已发送 — 该车保持已发送状态；新组成只影响尚未发送的车辆。如需修改该车：报关员取消“已发送”，重新下载单据并发给代理",
-    "paperMoved": "组成已变化 — 请重新下载单据后再标记",
+    "paperMoved": "单据已变化（组成或该批货的另一辆车）— 请重新下载后再标记",
     "savedBy": "{name} · {date}",
     "estimate": "估算",
     "mixedCartons": "混装",

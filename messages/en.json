@@ -5002,7 +5002,7 @@
     "staleShort": "The lot changed — check the contents",
     "staleOnLotForm": "This lot has contents — if kg or cartons change, check the contents again",
     "frozenInfo": "🔒 The papers of {trucks} were sent — that truck stays as sent; new contents reach only trucks not yet sent. To change it too: the VED un-ticks «sent», downloads the papers again and re-sends them to the agent",
-    "paperMoved": "The contents changed — download the papers again, then tick",
+    "paperMoved": "The papers changed (the contents, or another truck of the lot) — download them again, then tick",
     "savedBy": "{name} · {date}",
     "estimate": "estimate",
     "mixedCartons": "mixed",

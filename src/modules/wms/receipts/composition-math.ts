@@ -503,10 +503,12 @@ const PLAN = 'plan';
 export function lotSegments(trucks: readonly LotTruck[], plan?: { n: number }): Map<string, Segment[]> {
   const out = new Map<string, Segment[]>();
   const crossing = trucks.filter((t) => t.crosses);
+  // A copy with no positions holds no place — it takes its turn like any truck.
+  const pinned = (t: LotTruck) => cleanSegments(t.frozenSegments ?? []).length > 0;
   const held: Segment[] = [];
   for (const t of crossing) {
-    if (!t.frozenSegments) continue;
-    const segs = cleanSegments(t.frozenSegments);
+    if (!pinned(t)) continue;
+    const segs = cleanSegments(t.frozenSegments!);
     out.set(t.batchId, segs);
     held.push(...segs);
   }
@@ -532,7 +534,7 @@ export function lotSegments(trucks: readonly LotTruck[], plan?: { n: number }): 
     }
     return got;
   };
-  for (const t of crossing.filter((x) => !x.frozenSegments).sort(truckOrder)) out.set(t.batchId, take(t.n));
+  for (const t of crossing.filter((x) => !pinned(x)).sort(truckOrder)) out.set(t.batchId, take(t.n));
   if (plan) out.set(PLAN, take(plan.n));
   return out;
 }

@@ -167,6 +167,9 @@ export function TnvedEditor({ batchId, rows: initial }: { batchId: string; rows:
                   ? tc('forbidden')
                   : (res.error ?? 'error'),
           );
+          // «Sahifani yangilang» with the button that does it — a colleague
+          // composed the lot and its product row is gone (the review's nit).
+          setStale(res.error === 'not_on_truck');
           return;
         }
         said.push(t('saved', { n: res.saved ?? 0 }));

@@ -407,6 +407,9 @@ describe('the freeze holds a sent truck’s positions', () => {
     // C, departed first, fills what is free around the sent truck: two runs.
     expect(truckSegments([B0, T1, C], 'C')).toEqual([[0, 33], [66, 67]]);
     expect(truckSegments([B0, T1, C], 'B')).toEqual([[67, 100]]);
+    // A copy with no positions (the pre-0122 backfill) holds no place.
+    expect(truckSegments([B0, { ...T0, frozenSegments: [] }], 'T')).toEqual([[33, 66]]);
+    expect(truckSegments([B0, { ...T0, frozenSegments: null }], 'B')).toEqual([[0, 33]]);
   });
 
   it('every order of ticks and departures: a sent truck never moves, a departed one never moves, the lot adds up', () => {
