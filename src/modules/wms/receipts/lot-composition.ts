@@ -8,6 +8,7 @@ import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import type { ScopedActor } from '../../platform/rbac/scope';
 import { mayOpenBatchVed } from '../batches/card-door';
 import { crossesBorderSql } from '../batches/internal';
+import { lockTruckLoading, setCountLockTimeout } from '../scanning/count-rules';
 import { batchMemberFilter } from '../scanning/unload';
 import {
   checkSums,
@@ -794,6 +795,27 @@ export async function paperStampFor(batchId: string): Promise<string> {
     if (isServerBehind(err)) return '';
     throw err;
   }
+}
+
+/**
+ * The tick's first locks, in the truck doors' own order: count-load's
+ * advisory lock (`lockTruckLoading`), then the truck row FOR NO KEY UPDATE —
+ * BEFORE the copy, whose FK checks key-share the lot rows. count-load takes
+ * advisory → lot → truck and the unload doors truck → lot, so the tick meets
+ * both as a wait and never closes a cycle (the review's 40P01: the copy took
+ * the lots before the truck). A wait past `lock_timeout` is a 55P03 the
+ * action says as «band». Answers the row's `sent_to_agent_at` as LOCKED,
+ * undefined when the truck is gone. Lives here and not in the action: the
+ * count rules are imported only where a count door may be opened
+ * (`count-kernel-wire.test.ts`).
+ */
+export async function lockTruckForTickInTx(tx: Tx, batchId: string): Promise<{ sentToAgentAt: string | null } | undefined> {
+  await setCountLockTimeout(tx);
+  await lockTruckLoading(tx, batchId);
+  const [row] = (await tx.execute(sql`
+    SELECT sent_to_agent_at::text AS sent_at FROM batches WHERE id = ${batchId}::uuid FOR NO KEY UPDATE
+  `)) as unknown as { sent_at: string | null }[];
+  return row ? { sentToAgentAt: row.sent_at } : undefined;
 }
 
 /**

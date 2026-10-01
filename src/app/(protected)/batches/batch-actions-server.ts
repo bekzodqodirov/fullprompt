@@ -32,12 +32,12 @@ import {
   type CountAcceptResult,
 } from '@/modules/wms/scanning/count-accept';
 import { countDoorFor } from '@/modules/wms/scanning/count-door';
-import { lockTruckLoading, setCountLockTimeout } from '@/modules/wms/scanning/count-rules';
 import { isBusyError, isServerBehind } from '@/modules/platform/db/errors';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import type { CheckpointActionState } from '@/modules/wms/tracking/checkpoint';
 import {
   freezeCompositionsInTx,
+  lockTruckForTickInTx,
   paperStamp,
   thawCompositionsInTx,
 } from '@/modules/wms/receipts/lot-composition';
@@ -391,13 +391,14 @@ export async function createQuickBatchAction(
  * of a split lot departing first cannot move a sent paper — and while the
  * truck is ticked its papers print that copy; a composition saved later
  * reaches only trucks whose papers have not gone. Lock order, the truck
- * doors' own: count-load's advisory lock (`lockTruckLoading`), then the truck
- * row FOR NO KEY UPDATE, then the copy (whose FK checks key-share the lot
- * rows). count-load takes advisory → lot → truck and the unload doors truck
- * → lot, so the tick waits for both instead of closing a cycle with either
- * (the review's deadlock: the copy key-shared the lot BEFORE the truck, and a
- * count-accept holding the truck and wanting the lot made a 40P01 the VED
- * met as an error page). A wait that runs out is a sentence (`?tarkib=band`).
+ * doors' own (`lockTruckForTickInTx`): count-load's advisory lock, then the
+ * truck row FOR NO KEY UPDATE, then the copy (whose FK checks key-share the
+ * lot rows). count-load takes advisory → lot → truck and the unload doors
+ * truck → lot, so the tick waits for both instead of closing a cycle with
+ * either (the review's deadlock: the copy key-shared the lot BEFORE the
+ * truck, and a count-accept holding the truck and wanting the lot made a
+ * 40P01 the VED met as an error page). A wait that runs out is a sentence
+ * (`?tarkib=band`).
  * The page posts `paperStamp`, the stamp of the compositions and positions it
  * was drawn with: a colleague's save — or another truck's departure — between
  * the download and the tick refuses the tick (`paper_moved`) and nothing is
@@ -420,13 +421,7 @@ export async function setSentToAgentAction(formData: FormData): Promise<void> {
   let answer: 'paper_moved' | 'busy' | null = null;
   try {
     await db.transaction(async (tx) => {
-      await setCountLockTimeout(tx);
-      await lockTruckLoading(tx, batchId);
-      const [row] = await tx
-        .select({ sentToAgentAt: batches.sentToAgentAt })
-        .from(batches)
-        .where(eq(batches.id, batchId))
-        .for('no key update');
+      const row = await lockTruckForTickInTx(tx, batchId);
       if (!row || (row.sentToAgentAt !== null) === sending) throw new TickRefused('no_op');
       if (sending) {
         const frozen = await freezeCompositionsInTx(tx, batchId);

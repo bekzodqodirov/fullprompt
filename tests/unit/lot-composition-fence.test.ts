@@ -157,13 +157,15 @@ describe('the rules the shape can hold', () => {
     // and only then the copy (whose FK checks key-share the lots) — the order
     // count-load (advisory → lot → truck) and the unload doors (truck → lot)
     // both meet as a wait, never as a cycle.
+    const locks = fn(service, 'lockTruckForTickInTx');
+    const advisory = locks.indexOf('lockTruckLoading(tx, batchId)');
+    expect(advisory).toBeGreaterThan(-1);
+    expect(locks.indexOf('FOR NO KEY UPDATE')).toBeGreaterThan(advisory);
     const action = fn(read('src/app/(protected)/batches/batch-actions-server.ts'), 'setSentToAgentAction');
-    const advisory = action.indexOf('lockTruckLoading(tx, batchId)');
-    const truckRow = action.indexOf(".for('no key update')");
+    const truckRow = action.indexOf('lockTruckForTickInTx(tx, batchId)');
     const copied = action.indexOf('freezeCompositionsInTx(');
     const update = action.indexOf('.update(batches)');
-    expect(advisory).toBeGreaterThan(-1);
-    expect(truckRow).toBeGreaterThan(advisory);
+    expect(truckRow).toBeGreaterThan(-1);
     expect(copied).toBeGreaterThan(truckRow);
     expect(update).toBeGreaterThan(copied);
     expect(action).toContain('paperStamp(frozen) !== postedStamp');
