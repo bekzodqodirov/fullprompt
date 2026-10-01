@@ -253,6 +253,112 @@ export const receiptLots = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// Lot tarkibi (0122) — the paper composition of a lot. The lot, its cartons
+// and stickers never change (nobody knows which carton is which); only the
+// customs papers and the agent file read these rows — `wms/receipts/
+// lot-composition.ts` is their one writer and reader.
+// ---------------------------------------------------------------------------
+
+export const lotCompositions = pgTable(
+  'lot_compositions',
+  {
+    lotId: uuid('lot_id')
+      .primaryKey()
+      .references(() => receiptLots.id, { onDelete: 'cascade' }),
+    /** The client's document on THIS prixod (NO ACTION: a cited file is `in_use`). */
+    attachmentId: uuid('attachment_id')
+      .notNull()
+      .references(() => attachments.id),
+    /** The lot's box_count the composition was stated against (stale check). */
+    seenBoxCount: integer('seen_box_count').notNull(),
+    /** A TOKEN drawn from `lot_composition_rev_seq` on every write, never a counter (ABA). */
+    rev: bigint('rev', { mode: 'number' })
+      .notNull()
+      .default(sql`nextval('lot_composition_rev_seq')`),
+    savedBy: uuid('saved_by')
+      .notNull()
+      .references(() => users.id),
+    savedAt: timestamp('saved_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    check('lot_compositions_seen_box_count_check', sql`${t.seenBoxCount} > 0`),
+    index('lot_compositions_attachment_idx').on(t.attachmentId),
+  ],
+);
+
+export const lotCompositionLines = pgTable(
+  'lot_composition_lines',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    lotId: uuid('lot_id')
+      .notNull()
+      .references(() => lotCompositions.lotId, { onDelete: 'cascade' }),
+    seq: integer('seq').notNull(),
+    name: text('name').notNull(),
+    pieces: integer('pieces'),
+    cartons: integer('cartons'),
+    weightKg: numeric('weight_kg', { precision: 12, scale: 3 }).notNull(),
+    volumeM3: numeric('volume_m3', { precision: 12, scale: 4 }).notNull(),
+    tnvedCode: text('tnved_code'),
+  },
+  (t) => [
+    check('lot_composition_lines_seq_check', sql`${t.seq} BETWEEN 1 AND 20`),
+    check('lot_composition_lines_name_check', sql`char_length(btrim(${t.name})) BETWEEN 2 AND 200`),
+    check('lot_composition_lines_pieces_check', sql`${t.pieces} IS NULL OR ${t.pieces} > 0`),
+    check('lot_composition_lines_cartons_check', sql`${t.cartons} IS NULL OR ${t.cartons} > 0`),
+    check('lot_composition_lines_kg_check', sql`${t.weightKg} > 0 AND ${t.weightKg} <> 'NaN'::numeric`),
+    check('lot_composition_lines_m3_check', sql`${t.volumeM3} > 0 AND ${t.volumeM3} <> 'NaN'::numeric`),
+    check(
+      'lot_composition_lines_tnved_check',
+      sql`${t.tnvedCode} IS NULL OR ${t.tnvedCode} ~ '^[0-9]{4,10}$'`,
+    ),
+    uniqueIndex('lot_composition_lines_lot_seq_unique').on(t.lotId, t.seq),
+  ],
+);
+
+/**
+ * The papers a truck SENT (7a): one row per lot on the truck at the «hujjat
+ * yuborildi» tick, `lines` NULL when the lot had no composition then. The
+ * element shape is `StoredLine` of `wms/receipts/composition-math.ts`
+ * (restated here: platform never imports wms).
+ */
+export const batchSentCompositions = pgTable(
+  'batch_sent_compositions',
+  {
+    batchId: uuid('batch_id')
+      .notNull()
+      .references(() => batches.id, { onDelete: 'cascade' }),
+    lotId: uuid('lot_id')
+      .notNull()
+      .references(() => receiptLots.id, { onDelete: 'cascade' }),
+    rev: bigint('rev', { mode: 'number' }),
+    seenBoxCount: integer('seen_box_count'),
+    lines: jsonb('lines').$type<
+      | {
+          seq: number;
+          name: string;
+          pieces: number | null;
+          cartons: number | null;
+          kg: string;
+          m3: string;
+          tnvedCode: string | null;
+        }[]
+      | null
+    >(),
+    frozenAt: timestamp('frozen_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ name: 'batch_sent_compositions_pk', columns: [t.batchId, t.lotId] }),
+    check(
+      'batch_sent_compositions_shape_check',
+      sql`(${t.rev} IS NULL) = (${t.lines} IS NULL) AND (${t.rev} IS NULL) = (${t.seenBoxCount} IS NULL) AND (${t.lines} IS NULL OR jsonb_typeof(${t.lines}) = 'array')`,
+    ),
+    index('batch_sent_compositions_lot_idx').on(t.lotId),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // Boxes — the atomic tracked unit — and their movement history
 // ---------------------------------------------------------------------------
 
