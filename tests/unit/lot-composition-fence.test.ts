@@ -58,6 +58,12 @@ const ALLOWED = new Set([
   ...MUST,
   'src/app/(protected)/receipts/[id]/lot-edit-form.tsx',
   'src/app/(protected)/batches/[id]/tnved/tnved-editor.tsx',
+  // «Yuk ma'lumoti tekshirildi» (0123, the owner's 3a): a lot tarkibi that
+  // still STANDS counts as ✅ «hujjat bo'yicha». The sentence reads only the
+  // composition's totals (whether it stands — `isStale`'s three terms), never
+  // a line's name, pieces or code, so the stock and plan screens that ask it
+  // still learn nothing about the contents (docs/YUK-TEKSHIRUV.md §8).
+  'src/modules/wms/receipts/lot-check-sql.ts',
 ]);
 
 /** The readers deliberately NOT taught — redundant with ALLOWED, but a failure here names the rule. */

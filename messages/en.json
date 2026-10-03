@@ -838,7 +838,9 @@
       "loginEnabled": "Login",
       "destination": "Receiving warehouse",
       "lotComposition": "Lot contents",
-      "lotCompositionCodes": "Contents HS codes"
+      "lotCompositionCodes": "Contents HS codes",
+      "lotCheck": "Cargo info checked",
+      "lotCheckNote": "Check note"
     }
   },
   "profile": {
@@ -5037,6 +5039,45 @@
       "busy": "It was busy — press again",
       "server_behind": "The server is updating — try shortly",
       "validation": "The data is incomplete"
+    }
+  },
+  "lotCheck": {
+    "chipChecked": "checked",
+    "chipStale": "changed",
+    "chipNone": "not checked",
+    "filterAll": "All",
+    "filterChecked": "Checked",
+    "filterUnchecked": "Not checked",
+    "prixodCount": "{n} receipts",
+    "hiddenPicked": "{n} selected rows are hidden by this filter — they stay in the plan",
+    "noMatch": "No cargo matches this filter",
+    "homeRow": "❓ Unchecked cargo (China)",
+    "byDocument": "Checked against the contents document",
+    "byClient": "Client confirmed",
+    "stalePerson": "Changed after the check: {what} — ask again",
+    "staleWas": "Confirmed earlier by: {by} · {day}",
+    "staleDocument": "The lot changed after the contents document — ask again",
+    "none": "Information not checked",
+    "unclaimed": "Owner unknown — assign the client first",
+    "movedName": "goods name",
+    "movedCount": "carton count",
+    "movedClient": "client",
+    "telegram": "Write in Telegram",
+    "notePlaceholder": "Note (optional): what the client said",
+    "confirm": "Correct — client confirmed",
+    "undo": "Remove the check",
+    "undoConfirm": "Remove the check mark?",
+    "otherAnswers": "If the client says «other goods» — fix the name with ✏️ below; if «mixed» — fill in the 🧩 lot contents with their document.",
+    "done": "✅ Saved",
+    "errors": {
+      "forbidden": "You may not mark this receipt",
+      "receipt_not_confirmed": "The receipt is not confirmed",
+      "no_client": "Assign the client first",
+      "lot_changed": "The lot changed while you were looking — refresh and check again",
+      "busy": "The receipt is busy — press again in a moment",
+      "server_behind": "The server is not updated yet — tell the administrator",
+      "validation": "The note is too long (up to 500 characters)",
+      "other": "Not saved — try again"
     }
   }
 }

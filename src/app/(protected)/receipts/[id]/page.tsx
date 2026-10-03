@@ -65,18 +65,21 @@ import { isBackdated, receivedDayBounds } from '@/modules/wms/receipts/received-
 import { palletDoorsFor } from '@/modules/wms/crates/service';
 import { ReceivedEditForm } from './received-edit-form';
 import { canLogInSql } from '@/modules/platform/users/login';
+import { lotCheckViewsFor, mayCheckLot, type LotCheckView } from '@/modules/wms/receipts/lot-check';
+import { telegramPhoneUrl } from '@/modules/platform/telegram/map-link';
+import { LotCheckPanel } from './lot-check-panel';
 
 export default async function ReceiptDetailPage({
   params,
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ tarkib?: string; from?: string }>;
+  searchParams: Promise<{ tarkib?: string; from?: string; qaytish?: string }>;
 }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
   const { id } = await params;
-  const { tarkib: tarkibLot, from: fromBatch } = await searchParams;
+  const { tarkib: tarkibLot, from: fromBatch, qaytish } = await searchParams;
 
   const receipt = await db.query.receipts.findFirst({ where: eq(receipts.id, id) });
   if (!receipt) notFound();
@@ -97,6 +100,7 @@ export default async function ReceiptDetailPage({
   if (!(await mayReadReceipt(actor, { id, warehouseId: receipt.warehouseId }))) notFound();
 
   const t = await getTranslations('receipts');
+  const tAny = await getTranslations();
   const tc = await getTranslations('common');
   const ta = await getTranslations('annul');
   const ts = await getTranslations('stock.statuses');
@@ -181,6 +185,28 @@ export default async function ReceiptDetailPage({
   const paperDocs = receiptFileRows
     .filter((f) => isPaperDocument(f, receipt))
     .map((f) => ({ id: f.id, fileName: f.fileName, removable: f.uploadedBy === actor.id && !citedDocs.has(f.id) }));
+  // «Yuk ma'lumoti tekshirildi» (docs/YUK-TEKSHIRUV.md §6): every lot's
+  // face from the lists' own sentence, and who may tick. Caught: the table
+  // is minted this release (#472) — a card without its faces beats an error
+  // page on a half-applied deploy.
+  const lotChecks = await lotCheckViewsFor(lotIds).catch((err) => {
+    console.warn('[lot-check] views unavailable', err instanceof Error ? err.message : err);
+    return new Map<string, LotCheckView>();
+  });
+  const mayCheck = mayCheckLot(actor.permissions) && receipt.status === 'confirmed';
+  // The client's phones, for the person who rings: this reader has passed
+  // `mayReadReceipt`, which is the staff bot's own «cargo in reach» rule for
+  // showing a phone (bot/lookup.ts `maySeePhones`).
+  const checkPhones =
+    mayCheck && client
+      ? (Array.isArray(client.phones) ? (client.phones as unknown[]) : [])
+          .filter((phone): phone is string => typeof phone === 'string' && phone.trim() !== '')
+          .map((phone) => ({ tel: phone.trim(), telegram: telegramPhoneUrl(phone) }))
+      : [];
+  // «← Ostatka»: a worklist row on /stock opens this card carrying the way
+  // back, so the next unchecked prixod is one tap away — an installed app on
+  // an iPhone has no browser back button. Only a /stock address is honoured.
+  const backHref = qaytish && /^\/stock(\?|$)/.test(qaytish) ? qaytish : null;
   const fromTruck =
     fromBatch && tarkibLot
       ? ((lotTrucks.get(tarkibLot) ?? []).find((truck) => truck.batchId === fromBatch) ?? null)
@@ -328,7 +354,11 @@ export default async function ReceiptDetailPage({
 
   return (
     <div className="space-y-6">
-      <BackLink href="/receipts" label={t('title')} />
+      {backHref ? (
+        <BackLink href={backHref} label={tAny('stock.title')} />
+      ) : (
+        <BackLink href="/receipts" label={t('title')} />
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-xl font-bold">
           <span className="font-mono">{receipt.number}</span>
@@ -504,6 +534,36 @@ export default async function ReceiptDetailPage({
               {lot.dimsMode === 'uniform' &&
                 ` · ${lot.boxLengthCm}×${lot.boxWidthCm}×${lot.boxHeightCm} cm`}
             </p>
+            {lotChecks.has(lot.id) && (
+              <LotCheckPanel
+                lotId={lot.id}
+                face={(() => {
+                  const view = lotChecks.get(lot.id)!;
+                  return {
+                    state: view.state,
+                    byDocument: view.byDocument,
+                    documentStale: view.documentStale,
+                    person: view.person
+                      ? {
+                          by: view.person.by,
+                          day: dayIn(view.person.at, warehouse.timezone),
+                          note: view.person.note,
+                          holds: view.person.holds,
+                          moved: view.person.moved,
+                        }
+                      : null,
+                  };
+                })()}
+                seen={{
+                  nameZh: lot.productNameZh,
+                  nameRu: lot.productNameRu ?? '',
+                  boxCount: lot.boxCount,
+                  clientId: receipt.clientId,
+                }}
+                canWrite={mayCheck}
+                phones={checkPhones}
+              />
+            )}
             {lot.note && <p className="mt-1 text-sm italic text-ink-500">📝 {lot.note}</p>}
             {lot.qrSkippedAt && (
               <p className="mt-1 text-sm font-semibold text-warn" data-testid="lot-qrless">

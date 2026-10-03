@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
-import { boxes, clients, receiptLots, receipts, warehouses } from '@/modules/platform/db/schema';
+import { boxes, clients, lotChecks, receiptLots, receipts, warehouses } from '@/modules/platform/db/schema';
 import { AuthError, requireActor } from '@/modules/platform/rbac/authorize';
 import { writeAudit } from '@/modules/platform/audit/service';
 import { requestMeta } from '@/modules/platform/auth/session';
@@ -9,6 +9,15 @@ import { arrivalCodesForPairs } from '@/modules/wms/documents/arrivals';
 import { buildStockXlsx } from '@/modules/wms/reports/stock-xlsx';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { stockTextWhere } from '@/modules/wms/inventory/stock-filter';
+import {
+  askableSql,
+  checkFilterSql,
+  lotCheckStateSql,
+  lotTarkibJoinSql,
+  lotTarkibOnSql,
+  readCheckFilter,
+  type LotCheckState,
+} from '@/modules/wms/receipts/lot-check-sql';
 
 /**
  * Stock report XLSX (spec §9/§13 report 1) with the current stock-browser
@@ -45,6 +54,8 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const wh = url.searchParams.get('wh') ?? '';
   const q = url.searchParams.get('q') ?? '';
+  // The screen's check filter, read by the same rule (#514): anything else is dropped.
+  const tek = readCheckFilter(url.searchParams.get('tek'));
 
   // Match the stock browser: everything physically in the warehouse,
   // including planned/loading reservations and ready_for_pickup boxes.
@@ -56,6 +67,14 @@ export async function GET(request: Request) {
   if (wh) filters.push(eq(boxes.currentWarehouseId, wh));
   // The screen's own predicate (#513).
   if (q) filters.push(stockTextWhere(q));
+  // …and the check's one sentence (lot-check-sql.ts), so the file is the screen.
+  const checkState = lotCheckStateSql({
+    lot: sql`${receiptLots}`,
+    receipt: sql`${receipts}`,
+    check: sql`${lotChecks}`,
+  });
+  const askable = askableSql(sql`${warehouses}`);
+  if (tek) filters.push(checkFilterSql(tek, checkState, askable));
 
   const lines = await db
     .select({
@@ -66,12 +85,18 @@ export async function GET(request: Request) {
       whId: warehouses.id,
       clientCode: clients.clientCode,
       inStock: sql<number>`count(*)`,
+      // Aggregates, so the GROUP BY stays as it was: one lot, one prixod and
+      // one warehouse per group answer one state.
+      check: sql<LotCheckState>`min(${checkState})`,
+      askable: sql<boolean>`bool_and(${askable})`,
     })
     .from(boxes)
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
     .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
     .innerJoin(warehouses, eq(boxes.currentWarehouseId, warehouses.id))
     .leftJoin(clients, eq(receipts.clientId, clients.id))
+    .leftJoin(lotChecks, eq(lotChecks.lotId, receiptLots.id))
+    .leftJoin(lotTarkibJoinSql(), lotTarkibOnSql(sql`${receiptLots}`))
     .where(and(...filters))
     .groupBy(
       receiptLots.id,
@@ -109,6 +134,7 @@ export async function GET(request: Request) {
       report: 'stock_xlsx',
       wh: wh || null,
       q: q || null,
+      tek,
       rows: lines.length,
       cols: [...visible].join(','),
       // How big the file actually was. `cols` says «photo» whether the sheet

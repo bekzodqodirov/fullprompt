@@ -8,6 +8,8 @@ import { DensityBadge } from '@/components/density-badge';
 import { submitPlanAction } from '../actions';
 import { codeIdentity } from '@/modules/wms/labels/code-identity';
 import { QrlessChip } from '@/components/qrless-chip';
+import { LotCheckChip } from '@/components/lot-check-chip';
+import { chipFace, inCheckFilter, type CheckFilter, type LotCheckState } from '@/modules/wms/receipts/lot-check-face';
 
 interface WarehouseOption {
   id: string;
@@ -35,6 +37,12 @@ interface StockLot {
   arrival: string;
   /** Of `available`, the QR-siz cartons (0112); absent in a snapshot cached before it. */
   qrless?: number;
+  /**
+   * «Yuk ma'lumoti tekshirildi» (0123). Optional: a snapshot the service
+   * worker cached before it lacks it, and absent draws no chip — never ❓.
+   */
+  check?: LotCheckState;
+  receiptId?: string;
 }
 interface StockCrate {
   crateId: string;
@@ -46,6 +54,18 @@ interface StockCrate {
   m3: number;
   daysInStock: number;
   arrival: string;
+  /** Its member lots and how many are checked / asked (0123); absent = no badge. */
+  lotsTotal?: number;
+  lotsChecked?: number;
+  lotsAsked?: number;
+}
+
+/** A crate is ✅ only when every lot inside is; ❓ when one is asked here. */
+function crateCheck(crate: StockCrate, askable: boolean): LotCheckState | undefined {
+  if (crate.lotsTotal === undefined || crate.lotsChecked === undefined) return undefined;
+  if (crate.lotsTotal > 0 && crate.lotsChecked === crate.lotsTotal) return 'checked';
+  if (askable && (crate.lotsAsked ?? 0) > 0) return 'none';
+  return undefined;
 }
 
 /**
@@ -79,6 +99,8 @@ export function PlanEditor({
   const t = useTranslations('plans');
   const tc = useTranslations('common');
   const tq = useTranslations('qrsiz');
+  const tlc = useTranslations('lotCheck');
+  const chipLabels = { checked: tlc('chipChecked'), stale: tlc('chipStale'), none: tlc('chipNone') };
   const router = useRouter();
   const [originId, setOriginId] = useState(resubmit?.originWarehouseId ?? warehouses[0]?.id ?? '');
   const [destId, setDestId] = useState(
@@ -89,6 +111,15 @@ export function PlanEditor({
   const [presetId, setPresetId] = useState(resubmit?.truckPresetId ?? presets[0]?.id ?? '');
   const [lots, setLots] = useState<StockLot[]>([]);
   const [stockCrates, setStockCrates] = useState<StockCrate[]>([]);
+  /** The ❓ is asked at this origin (a Chinese warehouse). */
+  const [askable, setAskable] = useState(false);
+  /**
+   * The check filter (docs/YUK-TEKSHIRUV.md §6) — RENDER-ONLY: it narrows
+   * what the table and the crate list draw, never `lots`, the selection or
+   * the Σ, so a ticked row that the filter hides is still counted and still
+   * sent.
+   */
+  const [tek, setTek] = useState<CheckFilter | 'all'>('all');
   const [selection, setSelection] = useState<Map<string, number>>(
     () => new Map(resubmit?.lines.map((l) => [l.lotId, l.boxCount]) ?? []),
   );
@@ -105,6 +136,7 @@ export function PlanEditor({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLots([]);
     setStockCrates([]);
+    setAskable(false);
     const controller = new AbortController();
     void (async () => {
       try {
@@ -112,9 +144,10 @@ export function PlanEditor({
           signal: controller.signal,
         });
         if (res.ok) {
-          const data = (await res.json()) as { lots: StockLot[]; crates?: StockCrate[] };
+          const data = (await res.json()) as { lots: StockLot[]; crates?: StockCrate[]; askable?: boolean };
           setLots(data.lots);
           setStockCrates(data.crates ?? []);
+          setAskable(Boolean(data.askable));
         }
       } catch {
         /* aborted */
@@ -124,6 +157,18 @@ export function PlanEditor({
   }, [originId]);
 
   const preset = presets.find((p) => p.id === presetId);
+  const shownLots = tek === 'all' ? lots : lots.filter((lot) => inCheckFilter(tek, lot.check, askable));
+  const shownCrates =
+    tek === 'all' ? stockCrates : stockCrates.filter((crate) => inCheckFilter(tek, crateCheck(crate, askable), askable));
+  const checkCount = (value: CheckFilter) =>
+    lots.filter((lot) => inCheckFilter(value, lot.check, askable)).length +
+    stockCrates.filter((crate) => inCheckFilter(value, crateCheck(crate, askable), askable)).length;
+  /** Ticked rows the filter is hiding — said, so nobody plans them twice. */
+  const hiddenPicked =
+    tek === 'all'
+      ? 0
+      : lots.filter((lot) => (selection.get(lot.lotId) ?? 0) > 0 && !shownLots.includes(lot)).length +
+        stockCrates.filter((crate) => selectedCrates.has(crate.crateId) && !shownCrates.includes(crate)).length;
   const totals = useMemo(() => {
     let boxes = 0;
     let kg = 0;
@@ -265,13 +310,51 @@ export function PlanEditor({
         </a>
       </div>
 
-      {stockCrates.length > 0 && (
+      {/* «Yuk ma'lumoti tekshirildi»: three filters, each naming how many
+          rows it would show, on a line that wraps. Shown only when there is
+          anything to choose between. */}
+      {lots.length + stockCrates.length > 0 && (
+        <div className="space-y-1" data-testid="plan-check-filter">
+          <div className="flex flex-wrap gap-2 text-sm">
+            {(
+              [
+                { value: 'all' as const, testid: 'plan-check-filter-all', text: `${tlc('filterAll')} · ${lots.length + stockCrates.length}` },
+                { value: 'ha' as const, testid: 'plan-check-filter-yes', text: `✅ ${tlc('filterChecked')} · ${checkCount('ha')}` },
+                { value: 'yoq' as const, testid: 'plan-check-filter-no', text: `❓ ${tlc('filterUnchecked')} · ${checkCount('yoq')}` },
+              ] as const
+            ).map((door) => (
+              <button
+                key={door.value}
+                type="button"
+                data-testid={door.testid}
+                aria-pressed={tek === door.value}
+                onClick={() => setTek(door.value)}
+                className={`rounded-lg border px-3 py-1.5 ${
+                  tek === door.value
+                    ? 'border-brand-500 bg-brand-50 font-semibold text-brand-700'
+                    : 'border-line text-ink-700'
+                }`}
+              >
+                {door.text}
+              </button>
+            ))}
+          </div>
+          {hiddenPicked > 0 && (
+            <p className="text-xs font-semibold text-warn" data-testid="plan-check-hidden">
+              ⚠ {tlc('hiddenPicked', { n: hiddenPicked })}
+            </p>
+          )}
+        </div>
+      )}
+
+      {shownCrates.length > 0 && (
         <div className="card space-y-1 !p-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
             🧰 {t('cratesOnePlace')}
           </p>
-          {stockCrates.map((crate) => {
+          {shownCrates.map((crate) => {
             const on = selectedCrates.has(crate.crateId);
+            const crateState = crateCheck(crate, askable);
             return (
               <button
                 key={crate.crateId}
@@ -300,6 +383,17 @@ export function PlanEditor({
                 </span>
                 <span className="font-mono font-bold">{crate.clientCode ?? '?'}</span>
                 <span className="text-ink-700">{crate.boxCount} 📦</span>
+                {/* Plain text, never a link: the row is a <button>. */}
+                {crateState === 'checked' && (
+                  <span className="chip-good whitespace-nowrap" data-testid="crate-check" data-state="checked">
+                    ✅
+                  </span>
+                )}
+                {crateState === 'none' && (
+                  <span className="chip-neutral whitespace-nowrap" data-testid="crate-check" data-state="none">
+                    ❓ {crate.lotsAsked}/{crate.lotsTotal}
+                  </span>
+                )}
                 <span className="ml-auto whitespace-nowrap font-mono text-xs">
                   {crate.kg}kg {crate.m3}m³
                 </span>
@@ -334,7 +428,7 @@ export function PlanEditor({
               </tr>
             </thead>
             <tbody>
-              {lots.map((lot) => {
+              {shownLots.map((lot) => {
                 const count = selection.get(lot.lotId) ?? 0;
                 // Once boxes are ticked the row shows what you are TAKING,
                 // not what is on the shelf: on a partial take the shelf
@@ -374,6 +468,23 @@ export function PlanEditor({
                       {(lot.qrless ?? 0) > 0 && (
                         <span className="block">
                           <QrlessChip n={lot.qrless!} total={lot.available} label={tq('chip')} />
+                        </span>
+                      )}
+                      {/* AFTER the code (the specs read the cell's first
+                          token). A ❓ / ⚠ opens the lot's card in a NEW tab:
+                          the ticks of this plan live only in this page. */}
+                      {chipFace(lot.check, askable) && (
+                        <span className="block">
+                          <LotCheckChip
+                            face={chipFace(lot.check, askable)}
+                            labels={chipLabels}
+                            href={
+                              chipFace(lot.check, askable) !== 'checked' && lot.receiptId
+                                ? `/receipts/${lot.receiptId}#lot-${lot.lotId}`
+                                : undefined
+                            }
+                            newTab
+                          />
                         </span>
                       )}
                     </td>
@@ -440,6 +551,12 @@ export function PlanEditor({
           </table>
         </div>
         {lots.length === 0 && <p className="p-4 text-sm text-ink-500">{t('noStock')}</p>}
+        {/* An empty FILTER is not an empty warehouse — said in its own words. */}
+        {lots.length > 0 && shownLots.length === 0 && (
+          <p className="p-4 text-sm text-ink-500" data-testid="plan-check-nomatch">
+            {tlc('noMatch')}
+          </p>
+        )}
       </div>
 
       {error && (

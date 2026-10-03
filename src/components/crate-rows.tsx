@@ -15,7 +15,15 @@ import type { CrateStockRow } from '@/modules/wms/inventory/service';
  * Deliberately NOT added into the screens' Σ: the boxes inside are already
  * counted by the table above, and a crate row that joined the total would
  * double every crated cube — the tannarx reads those same numbers.
+ *
+ * It FOLDS (owner, 2026-10-03: «ostatkada yashiklar kop bolsa uzun yashiklar
+ * korinib qolyabti colapsable bolsin»): a native `<details>`, open when there
+ * are at most `FOLD_ABOVE` crates and closed above that. The summary carries
+ * the count AND the over-capacity count, so the warning he asked to have on
+ * top (round 109) is still on top while the list is folded.
  */
+export const FOLD_ABOVE = 5;
+
 export function CrateRows({
   rows,
   more,
@@ -27,11 +35,25 @@ export function CrateRows({
   labels: { title: string; inside: string; over: string; place: string };
 }) {
   if (rows.length === 0) return null;
+  const overCount = rows.filter((crate) => crate.over).length;
   return (
-    <div className="space-y-1" data-testid="crate-rows">
-      <p className="text-xs font-semibold text-ink-500">
-        🧰 {labels.title} ({more ? `${rows.length}+` : rows.length})
-      </p>
+    <details className="group space-y-1" data-testid="crate-rows" open={rows.length <= FOLD_ABOVE}>
+      <summary
+        className="flex min-h-9 cursor-pointer list-none items-center gap-2 text-xs font-semibold text-ink-500 [&::-webkit-details-marker]:hidden"
+        data-testid="crate-rows-summary"
+      >
+        <span aria-hidden className="inline-block transition-transform group-open:rotate-90">
+          ▸
+        </span>
+        <span>
+          🧰 {labels.title} ({more ? `${rows.length}+` : rows.length})
+        </span>
+        {overCount > 0 && (
+          <span className="chip-warn" data-testid="crate-rows-over">
+            ⚠ {labels.over} · {overCount}
+          </span>
+        )}
+      </summary>
       <div className="divide-y divide-line rounded-xl border border-line">
         {rows.map((crate) => (
           <Link
@@ -70,6 +92,6 @@ export function CrateRows({
           </Link>
         ))}
       </div>
-    </div>
+    </details>
   );
 }

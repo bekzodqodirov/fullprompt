@@ -838,7 +838,9 @@
       "loginEnabled": "Tizimga kirish",
       "destination": "Qabul skladi",
       "lotComposition": "Lot tarkibi",
-      "lotCompositionCodes": "Tarkib TNVED kodlari"
+      "lotCompositionCodes": "Tarkib TNVED kodlari",
+      "lotCheck": "Yuk ma'lumoti tekshirildi",
+      "lotCheckNote": "Tekshiruv izohi"
     }
   },
   "profile": {
@@ -5037,6 +5039,45 @@
       "busy": "Band edi — qaytadan bosing",
       "server_behind": "Server yangilanmoqda — birozdan keyin",
       "validation": "Ma'lumot to'liq emas"
+    }
+  },
+  "lotCheck": {
+    "chipChecked": "tekshirilgan",
+    "chipStale": "o'zgardi",
+    "chipNone": "tekshirilmagan",
+    "filterAll": "Hammasi",
+    "filterChecked": "Tekshirilgan",
+    "filterUnchecked": "Tekshirilmagan",
+    "prixodCount": "{n} prixod",
+    "hiddenPicked": "{n} ta tanlangan yuk bu filtrda ko'rinmayapti — rejada qoladi",
+    "noMatch": "Bu filtrga mos yuk yo'q",
+    "homeRow": "❓ Tekshirilmagan yuk (Xitoy)",
+    "byDocument": "Tarkib hujjati bo'yicha tekshirilgan",
+    "byClient": "Mijoz tasdiqladi",
+    "stalePerson": "Tekshirilgandan keyin o'zgardi: {what} — qayta so'rang",
+    "staleWas": "Avval tasdiqlagan: {by} · {day}",
+    "staleDocument": "Tarkib hujjatidan keyin lot o'zgardi — qayta so'rang",
+    "none": "Ma'lumot tekshirilmagan",
+    "unclaimed": "Egasi aniqlanmagan — avval mijozni biriktiring",
+    "movedName": "tovar nomi",
+    "movedCount": "karobka soni",
+    "movedClient": "mijoz",
+    "telegram": "Telegramda yozish",
+    "notePlaceholder": "Izoh (ixtiyoriy): mijoz nima dedi",
+    "confirm": "To'g'ri — mijoz tasdiqladi",
+    "undo": "Belgini bekor qilish",
+    "undoConfirm": "Tekshiruv belgisi olib tashlansinmi?",
+    "otherAnswers": "Mijoz «boshqa tovar» desa — pastdagi ✏️ orqali nomini o'zgartiring; «aralash» desa — hujjati bilan 🧩 lot tarkibini yozing.",
+    "done": "✅ Saqlandi",
+    "errors": {
+      "forbidden": "Bu prixodga belgi qo'yishga ruxsatingiz yo'q",
+      "receipt_not_confirmed": "Prixod tasdiqlanmagan",
+      "no_client": "Avval mijozni biriktiring",
+      "lot_changed": "Siz qarab turganingizda lot o'zgardi — sahifani yangilab, qayta qarang",
+      "busy": "Prixod hozir band — bir ozdan keyin qayta bosing",
+      "server_behind": "Server hali yangilanmagan — administratorga ayting",
+      "validation": "Izoh juda uzun (500 belgigacha)",
+      "other": "Saqlanmadi — qayta urinib ko'ring"
     }
   }
 }

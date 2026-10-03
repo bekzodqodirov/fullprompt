@@ -1,9 +1,16 @@
 import { and, asc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
-import { boxes, clients, crates, receiptLots, receipts } from '../../platform/db/schema';
+import { boxes, clients, crates, lotChecks, receiptLots, receipts, warehouses } from '../../platform/db/schema';
 import { PLANNABLE_STATUSES } from '../boxes/shelf';
 import { arrivalsForLots } from '../documents/arrivals';
 import { qrlessJoinedSql } from '../labels/qrless-sql';
+import {
+  askableSql,
+  lotCheckStateSql,
+  lotTarkibJoinSql,
+  lotTarkibOnSql,
+  type LotCheckState,
+} from '../receipts/lot-check-sql';
 
 /**
  * Plannable stock at a warehouse — what the plan editor offers: LOOSE lots
@@ -20,6 +27,20 @@ import { qrlessJoinedSql } from '../labels/qrless-sql';
  * (#166); the route keeps the door.
  */
 export async function plannableStock(warehouseId: string) {
+  // «Yuk ma'lumoti tekshirildi» (docs/YUK-TEKSHIRUV.md §6): the check's one
+  // sentence over the two joins every reader makes, and whether THIS origin
+  // is one where the ❓ is asked (a Chinese warehouse — his 4a).
+  const checkState = lotCheckStateSql({
+    lot: sql`${receiptLots}`,
+    receipt: sql`${receipts}`,
+    check: sql`${lotChecks}`,
+  });
+  const [origin] = await db
+    .select({ askable: sql<boolean>`${askableSql(sql`${warehouses}`)}` })
+    .from(warehouses)
+    .where(eq(warehouses.id, warehouseId));
+  const askable = Boolean(origin?.askable);
+
   const rows = await db
     .select({
       lotId: receiptLots.id,
@@ -36,6 +57,9 @@ export async function plannableStock(warehouseId: string) {
       // Of those, the cartons no phone will scan (0112): the planner sees it
       // before the truck, not the loader after.
       qrless: sql<number>`count(*) FILTER (WHERE ${qrlessJoinedSql()})`,
+      // An aggregate, so the GROUP BY stays as it was (one lot per group).
+      check: sql<LotCheckState>`min(${checkState})`,
+      receiptId: sql<string>`min(${receipts.id}::text)`,
       photoId: sql<string | null>`(
         SELECT a.id FROM attachments a
         WHERE a.entity_type = 'receipt_lot' AND a.entity_id = ${receiptLots.id} AND a.kind = 'photo'
@@ -46,6 +70,8 @@ export async function plannableStock(warehouseId: string) {
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
     .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
     .leftJoin(clients, eq(receipts.clientId, clients.id))
+    .leftJoin(lotChecks, eq(lotChecks.lotId, receiptLots.id))
+    .leftJoin(lotTarkibJoinSql(), lotTarkibOnSql(sql`${receiptLots}`))
     .where(
       and(
         inArray(boxes.status, [...PLANNABLE_STATUSES]),
@@ -68,12 +94,18 @@ export async function plannableStock(warehouseId: string) {
       m3: sql<string>`sum(${receiptLots.totalVolumeM3} / ${receiptLots.boxCount})`,
       oldestReceivedAt: sql<string>`min(${receipts.receivedAt})`,
       lotIds: sql<string[]>`array_agg(distinct ${receiptLots.id})`,
+      // A crate is ✅ only when EVERY lot inside is (a crate of an old lot and
+      // a checked one vouches for nothing about the first).
+      lotsChecked: sql<number>`count(DISTINCT ${receiptLots.id}) FILTER (WHERE ${checkState} = 'checked')`,
+      lotsAsked: sql<number>`count(DISTINCT ${receiptLots.id}) FILTER (WHERE ${checkState} IN ('none', 'stale'))`,
     })
     .from(boxes)
     .innerJoin(crates, eq(boxes.crateId, crates.id))
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
     .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
     .leftJoin(clients, eq(crates.clientId, clients.id))
+    .leftJoin(lotChecks, eq(lotChecks.lotId, receiptLots.id))
+    .leftJoin(lotTarkibJoinSql(), lotTarkibOnSql(sql`${receiptLots}`))
     .where(
       and(
         inArray(boxes.status, [...PLANNABLE_STATUSES]),
@@ -97,6 +129,8 @@ export async function plannableStock(warehouseId: string) {
     [...new Set(lotIds.flatMap((lotId) => arrivals.get(lotId)?.codes ?? []))].join(', ');
 
   return {
+    /** The ❓ is asked here (a Chinese origin); ✅ shows wherever. */
+    askable,
     lots: rows.map((r) => ({
       ...r,
       available: Number(r.available),
@@ -116,6 +150,9 @@ export async function plannableStock(warehouseId: string) {
       m3: Math.round(Number(c.m3) * 1000) / 1000,
       daysInStock: Math.floor((Date.now() - new Date(c.oldestReceivedAt).getTime()) / 86_400_000),
       arrival: crateArrival(c.lotIds),
+      lotsTotal: c.lotIds.length,
+      lotsChecked: Number(c.lotsChecked),
+      lotsAsked: Number(c.lotsAsked),
     })),
   };
 }

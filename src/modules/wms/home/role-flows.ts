@@ -1,4 +1,5 @@
 import { aliasedTable, and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { uncheckedPrixodCount } from '../inventory/lot-check-count';
 import { linkSuggestionCount } from '../calc/actuals';
 import { calcControlScopeFor } from '../calc/control-scope';
 import { withoutJit } from '../../platform/db/no-jit';
@@ -158,6 +159,13 @@ export interface LogistFlowCounts {
    * Null when the read missed its budget — the row is then a plain link.
    */
   uncollected: number | null;
+  /**
+   * «❓ Tekshirilmagan yuk» (0123, docs/YUK-TEKSHIRUV.md): prixods standing in
+   * a Chinese warehouse whose information nobody has confirmed — the number
+   * `/stock?tek=yoq` prints. Null when the read failed (a half-applied
+   * deploy, #472): the row is then a plain link.
+   */
+  unchecked: number | null;
 }
 
 export async function logistFlowCounts(
@@ -173,7 +181,7 @@ export async function logistFlowCounts(
 ): Promise<LogistFlowCounts> {
   const { warn } = await waitThresholds();
   const book = opts.uncollected ?? { seesAll: true, ownerId: undefined, warehouseIds: undefined };
-  const [plans, warehouse, costMissing, pickups, uncollected] = await Promise.all([
+  const [plans, warehouse, costMissing, pickups, uncollected, unchecked] = await Promise.all([
     db
       .select({ n: sql<number>`count(*)` })
       .from(loadPlans)
@@ -198,6 +206,10 @@ export async function logistFlowCounts(
       console.warn('[home] uncollected count missed its budget', err instanceof Error ? err.message : err);
       return null;
     }),
+    uncheckedPrixodCount(actor).catch((err) => {
+      console.warn('[home] unchecked count failed', err instanceof Error ? err.message : err);
+      return null;
+    }),
   ]);
   return {
     plansPending: Number(plans[0]?.n ?? 0),
@@ -205,6 +217,7 @@ export async function logistFlowCounts(
     costMissing,
     pickups,
     uncollected,
+    unchecked,
   };
 }
 
@@ -291,9 +304,11 @@ export interface VedFlowCounts {
    * is the READER's own (their seals), and the signature stays argument-free.
    */
   calcLinksPending: number;
+  /** «❓ Tekshirilmagan yuk» — the logist's count, for the VED too (his 1a). Null on a failed read. */
+  unchecked: number | null;
 }
 
-export async function vedFlowCounts(): Promise<Omit<VedFlowCounts, 'calcLinksPending'>> {
+export async function vedFlowCounts(): Promise<Omit<VedFlowCounts, 'calcLinksPending' | 'unchecked'>> {
   const originWh = aliasedTable(warehouses, 'origin_wh');
   const destWh = aliasedTable(warehouses, 'dest_wh');
   const [calc, docs, tnved] = await Promise.all([
@@ -392,7 +407,12 @@ export async function buildHomeFlow(
       counts: await Promise.all([
         vedFlowCounts(),
         linkSuggestionCount({ scope: calcControlScopeFor(actor), actorId: actor.id }),
-      ]).then(([base, calcLinksPending]) => ({ ...base, calcLinksPending })),
+        // The reader's own warehouse scope, like the screen the row opens.
+        uncheckedPrixodCount(actor).catch((err) => {
+          console.warn('[home] unchecked count failed', err instanceof Error ? err.message : err);
+          return null;
+        }),
+      ]).then(([base, calcLinksPending, unchecked]) => ({ ...base, calcLinksPending, unchecked })),
     };
   }
   if (actor.roles.includes('accountant')) {

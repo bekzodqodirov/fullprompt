@@ -80,6 +80,11 @@ const DICT = {
    * because the wizard derives the volume FROM them.
    */
   xyzCm: { ru: 'XYZ (см)', uz: 'XYZ (sm)', 'zh-CN': 'XYZ (厘米)', en: 'XYZ (cm)' },
+  // «Yuk ma'lumoti tekshirildi» (0123) — the Ostatka sheet's export-always column.
+  lotCheck: { ru: 'Проверка', uz: 'Tekshiruv', 'zh-CN': '核对', en: 'Checked' },
+  lotCheckChecked: { ru: '✅ проверено', uz: '✅ tekshirilgan', 'zh-CN': '✅ 已核对', en: '✅ checked' },
+  lotCheckStale: { ru: '⚠️ изменено', uz: '⚠️ o‘zgargan', 'zh-CN': '⚠️ 已变更', en: '⚠️ changed' },
+  lotCheckNone: { ru: '❓ не проверено', uz: '❓ tekshirilmagan', 'zh-CN': '❓ 未核对', en: '❓ not checked' },
   /**
    * The note on a capped 📷 header. Said only when the cap bites, so it
    * carries the count and not a standing warning. It counts PHOTOGRAPHS now

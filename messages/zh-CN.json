@@ -838,7 +838,9 @@
       "loginEnabled": "登录系统",
       "destination": "收货仓库",
       "lotComposition": "批次组成",
-      "lotCompositionCodes": "组成海关编码"
+      "lotCompositionCodes": "组成海关编码",
+      "lotCheck": "货物信息已核对",
+      "lotCheckNote": "核对备注"
     }
   },
   "profile": {
@@ -5037,6 +5039,45 @@
       "busy": "系统繁忙 — 请再按一次",
       "server_behind": "服务器更新中 — 请稍后",
       "validation": "数据不完整"
+    }
+  },
+  "lotCheck": {
+    "chipChecked": "已核对",
+    "chipStale": "已变更",
+    "chipNone": "未核对",
+    "filterAll": "全部",
+    "filterChecked": "已核对",
+    "filterUnchecked": "未核对",
+    "prixodCount": "{n} 个入库单",
+    "hiddenPicked": "{n} 个已选行被此筛选隐藏 — 仍在计划中",
+    "noMatch": "没有符合此筛选的货物",
+    "homeRow": "❓ 未核对的货物（中国）",
+    "byDocument": "已按组成文件核对",
+    "byClient": "客户已确认",
+    "stalePerson": "核对后已变更：{what} — 请再次询问",
+    "staleWas": "之前确认：{by} · {day}",
+    "staleDocument": "组成文件之后批次已变更 — 请再次询问",
+    "none": "信息未核对",
+    "unclaimed": "货主未确定 — 请先指定客户",
+    "movedName": "货物名称",
+    "movedCount": "箱数",
+    "movedClient": "客户",
+    "telegram": "在 Telegram 中联系",
+    "notePlaceholder": "备注（可选）：客户怎么说",
+    "confirm": "正确 — 客户已确认",
+    "undo": "取消核对标记",
+    "undoConfirm": "取消核对标记？",
+    "otherAnswers": "客户说「其他货物」— 用下方 ✏️ 修改名称；说「混装」— 用其文件填写 🧩 批次组成。",
+    "done": "✅ 已保存",
+    "errors": {
+      "forbidden": "您无权标记此入库单",
+      "receipt_not_confirmed": "入库单未确认",
+      "no_client": "请先指定客户",
+      "lot_changed": "您查看时批次已变更 — 请刷新后再核对",
+      "busy": "入库单正忙 — 请稍后再按",
+      "server_behind": "服务器尚未更新 — 请告知管理员",
+      "validation": "备注太长（最多 500 个字符）",
+      "other": "未保存 — 请重试"
     }
   }
 }

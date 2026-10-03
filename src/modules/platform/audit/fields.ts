@@ -114,6 +114,10 @@ export const AUDIT_FIELD_LABELS: Record<string, string> = {
   // a document, and the per-line TNVED codes typed on the Bojxona tab.
   lotComposition: 'lotComposition',
   lotCompositionCodes: 'lotCompositionCodes',
+  // «Yuk ma'lumoti tekshirildi» (0123): what a person confirmed with the
+  // client, and the note they left.
+  lotCheck: 'lotCheck',
+  lotCheckNote: 'lotCheckNote',
 
   // Housekeeping
   note: 'note',
