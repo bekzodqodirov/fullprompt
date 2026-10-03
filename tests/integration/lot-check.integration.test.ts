@@ -38,7 +38,7 @@ vi.mock('@/modules/platform/rbac/authorize', async (original) => {
   };
 });
 
-import { db } from '@/modules/platform/db/client';
+import { db, pgClient } from '@/modules/platform/db/client';
 import {
   attachments,
   auditLog,
@@ -621,6 +621,15 @@ describe('the History says which lot (the review\'s shared key)', () => {
 describe('a server whose migration has not landed (#472)', () => {
   it('22. the plan editor\'s list, the home count and the card read as before, with no chip and no error', async () => {
     ready.on = false;
+    // Every statement sent while the server is «behind»: none may name a
+    // table 0122/0123 created — on a real ledger-123 database that is the
+    // 42P01 this branch exists to avoid.
+    const sent: string[] = [];
+    const unsafe = pgClient.unsafe.bind(pgClient);
+    const spy = vi.spyOn(pgClient, 'unsafe').mockImplementation(((query: string, ...rest: unknown[]) => {
+      sent.push(query);
+      return (unsafe as (...a: unknown[]) => unknown)(query, ...rest);
+    }) as typeof pgClient.unsafe);
     try {
       const plan = await plannableStock(wh.CN);
       expect(plan.askable).toBe(false);
@@ -629,7 +638,10 @@ describe('a server whose migration has not landed (#472)', () => {
       expect(crate.lotsTotal).toBeUndefined();
       expect(await uncheckedPrixodCount(logist())).toBeNull();
       expect((await lotCheckViewsFor([lot.K])).size).toBe(0);
+      expect(sent.length).toBeGreaterThan(0);
+      expect(sent.filter((q) => /lot_checks|lot_composition/.test(q))).toEqual([]);
     } finally {
+      spy.mockRestore();
       ready.on = true;
     }
   });
