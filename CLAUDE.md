@@ -2411,7 +2411,7 @@ the agent file, «шт» beside «кг» on one invoice. His answer «1a 2a 3a»
 keep all three as shipped — checked against the code first, the reading-only
 parts now pinned by tests (24 red proofs).
 
-**Round — yuk ma'lumoti tekshiruvi (2026-10-03; DECISIONS #1264-#1266;
+**Round — yuk ma'lumoti tekshiruvi (2026-10-03; DECISIONS #1264-#1267;
 migration 0123 `lot_check` — ledger must reach 124; spec `docs/YUK-TEKSHIRUV.md`).**
 His «yuk malumoti toldirildi degan znacok … sklad ostatkani korganda va plan
 berganda korinib turishi kerak … filterlash imkoni», answers 1a 2b 3a 4a 5b.
@@ -2432,9 +2432,13 @@ VED home rows. `lotChecksReady()` probe → every list runs its pre-0123 shape o
 a half-applied deploy (measured on a ledger-123 copy). Audit keys are PER LOT
 (`lotCheck:A`, `auditFieldLabel`) — a shared key let `groupHistory` net three
 lots into one line. Reviewed as built by 5 lenses + skeptics: 18 of 20
-confirmed and fixed (#1265). Also his «yashiklar … colapsable»: `CrateRows`
-is a `<details>`, open ≤5 (#1266). 5b (the client's own ✅/❌ in Telegram) is
-owed as a later round.
+confirmed and fixed (#1265); then the FIXES were reviewed (#1267): 13 more
+confirmed and fixed — the card's road arm needs the truck ON the road (an
+unload's missing carton keeps its truck), no /stock link is ever bare, the plan
+editor prunes picks a re-read finds gone and never says «empty» while loading,
+undo lives where confirm does. 16 red proofs. Also his «yashiklar …
+colapsable»: `CrateRows` is a `<details>`, open ≤5 (#1266). 5b (the client's
+own ✅/❌ in Telegram) is owed as a later round.
 
 **Latest migration: 0123** (`lot_check`, `when` …102; ledger must reach **124**). Before
 it: 0122 (`lot_composition`, `when` …101). Before

@@ -35,6 +35,8 @@ Sizning javoblaringiz: **1a · 2b · 3a · 4a · 5b**.
 
 - Birinchi kuni Xitoy skladlaridagi hamma yuk «❓ Tekshirilmagan» bo'ladi — ro'yxat shundan boshlanadi.
 - Ikki kishi bitta lotni bir vaqtda belgilasa, ikkinchisiga «boshqa hodim hozirgina belgiladi» deb chiqadi — birovning belgisi bilmasdan o'chib ketmaydi.
+- «Mijoz tasdig'ini bekor qilish» faqat yuk hali Xitoyda turganda chiqadi — O'zbekistonga kelgan yukda belgini qayta qo'yib bo'lmaydi, shuning uchun bekor ham qilinmaydi.
+- Plan berishda: siz boshqa oynada turganingizda yukni boshqa reja olib qo'ysa, rejaga qaytganingizda u tanlovdan o'zi chiqadi va «N ta tanlangan yuk endi bu skladda yo'q — rejadan olib tashlandi» deb yoziladi. Ro'yxat yuklanmasa, «bo'sh sklad» emas, «Yuk ro'yxati yuklanmadi» deb chiqadi.
 - Telegramda mijozning o'zidan «✅ Ha / ❌ Yo'q» deb so'rash (5b) keyingi bosqichga qoldi.
 
 ## Lot tarkibi: 3 savolga «shunday qolsin» — 2026-10-01
