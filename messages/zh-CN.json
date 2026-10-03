@@ -1178,7 +1178,8 @@
       "plan_not_cancellable": "此计划无法取消",
       "reason_required": "请填写原因"
     },
-    "cancelPlan": "取消计划"
+    "cancelPlan": "取消计划",
+    "stockFailed": "货物列表未加载 — 请刷新页面；如果重复出现，请告知管理员"
   },
   "costing": {
     "fxTitle": "汇率",

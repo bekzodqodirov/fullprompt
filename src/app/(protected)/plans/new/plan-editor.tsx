@@ -120,6 +120,8 @@ export function PlanEditor({
    * sent.
    */
   const [tek, setTek] = useState<CheckFilter | 'all'>('all');
+  /** The list did not load — said, never drawn as an empty warehouse. */
+  const [stockFailed, setStockFailed] = useState(false);
   const [selection, setSelection] = useState<Map<string, number>>(
     () => new Map(resubmit?.lines.map((l) => [l.lotId, l.boxCount]) ?? []),
   );
@@ -137,6 +139,7 @@ export function PlanEditor({
     setLots([]);
     setStockCrates([]);
     setAskable(false);
+    setStockFailed(false);
     const controller = new AbortController();
     void (async () => {
       try {
@@ -148,6 +151,8 @@ export function PlanEditor({
           setLots(data.lots);
           setStockCrates(data.crates ?? []);
           setAskable(Boolean(data.askable));
+        } else {
+          setStockFailed(true);
         }
       } catch {
         /* aborted */
@@ -550,7 +555,13 @@ export function PlanEditor({
             </tbody>
           </table>
         </div>
-        {lots.length === 0 && <p className="p-4 text-sm text-ink-500">{t('noStock')}</p>}
+        {stockFailed ? (
+          <p role="alert" className="p-4 text-sm font-semibold text-bad" data-testid="plan-stock-failed">
+            {t('stockFailed')}
+          </p>
+        ) : (
+          lots.length === 0 && <p className="p-4 text-sm text-ink-500">{t('noStock')}</p>
+        )}
         {/* An empty FILTER is not an empty warehouse — said in its own words. */}
         {lots.length > 0 && shownLots.length === 0 && (
           <p className="p-4 text-sm text-ink-500" data-testid="plan-check-nomatch">

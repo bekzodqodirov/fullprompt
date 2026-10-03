@@ -1178,7 +1178,8 @@
       "plan_not_cancellable": "Bu planni bekor qilib bo‘lmaydi",
       "reason_required": "Sababni yozing"
     },
-    "cancelPlan": "Planni bekor qilish"
+    "cancelPlan": "Planni bekor qilish",
+    "stockFailed": "Yuk ro'yxati yuklanmadi — sahifani yangilang; takrorlansa administratorga ayting"
   },
   "costing": {
     "fxTitle": "Valyuta kurslari",

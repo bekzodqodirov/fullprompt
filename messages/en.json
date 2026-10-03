@@ -1178,7 +1178,8 @@
       "plan_not_cancellable": "This plan cannot be cancelled",
       "reason_required": "Give a reason"
     },
-    "cancelPlan": "Cancel plan"
+    "cancelPlan": "Cancel plan",
+    "stockFailed": "The cargo list did not load — refresh the page; if it repeats, tell the administrator"
   },
   "costing": {
     "fxTitle": "Exchange rates",
