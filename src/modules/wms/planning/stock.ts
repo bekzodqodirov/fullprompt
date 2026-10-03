@@ -6,11 +6,11 @@ import { arrivalsForLots } from '../documents/arrivals';
 import { qrlessJoinedSql } from '../labels/qrless-sql';
 import {
   askableSql,
-  lotCheckStateSql,
-  lotTarkibJoinSql,
-  lotTarkibOnSql,
+  lotCheckStateOrNullSql,
+  withLotCheckJoins,
   type LotCheckState,
 } from '../receipts/lot-check-sql';
+import { lotChecksReady } from '../receipts/lot-check-ready';
 
 /**
  * Plannable stock at a warehouse — what the plan editor offers: LOOSE lots
@@ -29,8 +29,11 @@ import {
 export async function plannableStock(warehouseId: string) {
   // «Yuk ma'lumoti tekshirildi» (docs/YUK-TEKSHIRUV.md §6): the check's one
   // sentence over the two joins every reader makes, and whether THIS origin
-  // is one where the ❓ is asked (a Chinese warehouse — his 4a).
-  const checkState = lotCheckStateSql({
+  // is one where the ❓ is asked (a Chinese warehouse — his 4a). A server
+  // whose migration has not landed (#472) plans exactly as before, with no
+  // chips: a check never blocks a plan (§8).
+  const checksOn = await lotChecksReady();
+  const checkState = lotCheckStateOrNullSql(checksOn, {
     lot: sql`${receiptLots}`,
     receipt: sql`${receipts}`,
     check: sql`${lotChecks}`,
@@ -39,9 +42,9 @@ export async function plannableStock(warehouseId: string) {
     .select({ askable: sql<boolean>`${askableSql(sql`${warehouses}`)}` })
     .from(warehouses)
     .where(eq(warehouses.id, warehouseId));
-  const askable = Boolean(origin?.askable);
+  const askable = checksOn && Boolean(origin?.askable);
 
-  const rows = await db
+  const loose = db
     .select({
       lotId: receiptLots.id,
       letter: receiptLots.letter,
@@ -70,8 +73,8 @@ export async function plannableStock(warehouseId: string) {
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
     .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
     .leftJoin(clients, eq(receipts.clientId, clients.id))
-    .leftJoin(lotChecks, eq(lotChecks.lotId, receiptLots.id))
-    .leftJoin(lotTarkibJoinSql(), lotTarkibOnSql(sql`${receiptLots}`))
+    .$dynamic();
+  const rows = await withLotCheckJoins(loose, checksOn)
     .where(
       and(
         inArray(boxes.status, [...PLANNABLE_STATUSES]),
@@ -83,7 +86,7 @@ export async function plannableStock(warehouseId: string) {
     // FIFO default (spec 6.3): oldest stock first.
     .orderBy(asc(receipts.receivedAt), asc(receiptLots.letter));
 
-  const crateRows = await db
+  const crated = db
     .select({
       crateId: crates.id,
       code: crates.code,
@@ -104,8 +107,8 @@ export async function plannableStock(warehouseId: string) {
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
     .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
     .leftJoin(clients, eq(crates.clientId, clients.id))
-    .leftJoin(lotChecks, eq(lotChecks.lotId, receiptLots.id))
-    .leftJoin(lotTarkibJoinSql(), lotTarkibOnSql(sql`${receiptLots}`))
+    .$dynamic();
+  const crateRows = await withLotCheckJoins(crated, checksOn)
     .where(
       and(
         inArray(boxes.status, [...PLANNABLE_STATUSES]),
@@ -150,9 +153,10 @@ export async function plannableStock(warehouseId: string) {
       m3: Math.round(Number(c.m3) * 1000) / 1000,
       daysInStock: Math.floor((Date.now() - new Date(c.oldestReceivedAt).getTime()) / 86_400_000),
       arrival: crateArrival(c.lotIds),
-      lotsTotal: c.lotIds.length,
-      lotsChecked: Number(c.lotsChecked),
-      lotsAsked: Number(c.lotsAsked),
+      // Absent when the check is not on this server: the editor then draws no badge.
+      ...(checksOn
+        ? { lotsTotal: c.lotIds.length, lotsChecked: Number(c.lotsChecked), lotsAsked: Number(c.lotsAsked) }
+        : {}),
     })),
   };
 }

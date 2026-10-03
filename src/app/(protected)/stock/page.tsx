@@ -42,12 +42,12 @@ import {
   askableSql,
   checkFilterSql,
   chipFace,
-  lotCheckStateSql,
-  lotTarkibJoinSql,
-  lotTarkibOnSql,
+  lotCheckStateOrNullSql,
   readCheckFilter,
+  withLotCheckJoins,
   type LotCheckState,
 } from '@/modules/wms/receipts/lot-check-sql';
+import { lotChecksReady } from '@/modules/wms/receipts/lot-check-ready';
 import { LotCheckChip } from '@/components/lot-check-chip';
 
 /** Owner's request: order the stock table by any column, filters kept. */
@@ -238,10 +238,15 @@ export default async function StockPage({
   // One predicate with the XLSX (#513).
   if (params.q) scopeFilter.push(stockTextWhere(params.q));
   // The check's ONE sentence (lot-check-sql.ts), over the two joins every
-  // reader makes. The table's rows take the filter in their WHERE; the Σ
-  // below takes it as a FILTER over the same groups, so it can also count
-  // both chips' prixods in the same statement (#513).
-  const checkState = lotCheckStateSql({
+  // reader makes. The table's rows take the filter AFTER grouping (HAVING —
+  // the planner misjudged it as a WHERE and walked every lot ever received);
+  // the Σ below takes it as a FILTER over the same groups, so it can also
+  // count both chips' prixods in the same statement (#513). On a server whose
+  // migration has not landed (#472) the screen is the pre-0123 one: no
+  // joins, no chips, no filter row, `tek` ignored.
+  const checksOn = await lotChecksReady();
+  const checkTek = checksOn ? tek : null;
+  const checkState = lotCheckStateOrNullSql(checksOn, {
     lot: sql`${receiptLots}`,
     receipt: sql`${receipts}`,
     check: sql`${lotChecks}`,
@@ -259,7 +264,7 @@ export default async function StockPage({
   const crateStrip = actor.permissions.has('crates.manage')
     ? await crateStock(actor, params.wh)
     : null;
-  const lines = await db
+  const linesQuery = db
     .select({
       lot: receiptLots,
       receiptId: receipts.id,
@@ -292,9 +297,9 @@ export default async function StockPage({
     .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
     .innerJoin(warehouses, eq(boxes.currentWarehouseId, warehouses.id))
     .leftJoin(clients, eq(receipts.clientId, clients.id))
-    .leftJoin(lotChecks, eq(lotChecks.lotId, receiptLots.id))
-    .leftJoin(lotTarkibJoinSql(), lotTarkibOnSql(sql`${receiptLots}`))
-    .where(and(...scopeFilter, ...(tek ? [checkFilterSql(tek, checkState, askable)] : [])))
+    .$dynamic();
+  const lines = await withLotCheckJoins(linesQuery, checksOn)
+    .where(and(...scopeFilter))
     .groupBy(
       receiptLots.id,
       receipts.id,
@@ -305,6 +310,7 @@ export default async function StockPage({
       clients.id,
       clients.clientCode,
     )
+    .having(checkTek ? checkFilterSql(checkTek, sql`min(${checkState})`, sql`bool_and(${askable})`) : undefined)
     .orderBy(asc(warehouses.code), asc(receipts.receivedAt))
     .limit(STOCK_FETCH_CAP);
 
@@ -322,7 +328,7 @@ export default async function StockPage({
   // loaded, and the XLSX (a 10,000 cap) printed a different number for the
   // same filter. One grouped aggregate, the SAME predicate, so the two can
   // never disagree again.
-  const groupFilter = tek ? checkFilterSql(tek, sql`g.state`, sql`g.askable`) : sql`true`;
+  const groupFilter = checkTek ? checkFilterSql(checkTek, sql`g.state`, sql`g.askable`) : sql`true`;
   const [totals] = await db
     .select({
       lines: sql<number>`count(*) FILTER (WHERE ${groupFilter})`,
@@ -335,26 +341,28 @@ export default async function StockPage({
       askedPrixod: sql<number>`count(DISTINCT g.receipt_id) FILTER (WHERE ${checkFilterSql('yoq', sql`g.state`, sql`g.askable`)})`,
     })
     .from(
-      db
-        .select({
-          inStock: sql<number>`count(*)`.as('in_stock'),
+      withLotCheckJoins(
+        db
+          .select({
+            inStock: sql<number>`count(*)`.as('in_stock'),
           receiptId: sql<string>`${receipts.id}`.as('receipt_id'),
-          state: sql<LotCheckState>`min(${checkState})`.as('state'),
-          askable: sql<boolean>`bool_and(${askable})`.as('askable'),
-          weightPerBox: sql<number>`${receiptLots.totalWeightKg} / ${receiptLots.boxCount}`.as(
-            'weight_per_box',
-          ),
-          volumePerBox: sql<number>`${receiptLots.totalVolumeM3} / ${receiptLots.boxCount}`.as(
-            'volume_per_box',
-          ),
-        })
-        .from(boxes)
-        .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
-        .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
-        .innerJoin(warehouses, eq(boxes.currentWarehouseId, warehouses.id))
-        .leftJoin(clients, eq(receipts.clientId, clients.id))
-        .leftJoin(lotChecks, eq(lotChecks.lotId, receiptLots.id))
-        .leftJoin(lotTarkibJoinSql(), lotTarkibOnSql(sql`${receiptLots}`))
+            state: sql<LotCheckState>`min(${checkState})`.as('state'),
+            askable: sql<boolean>`bool_and(${askable})`.as('askable'),
+            weightPerBox: sql<number>`${receiptLots.totalWeightKg} / ${receiptLots.boxCount}`.as(
+              'weight_per_box',
+            ),
+            volumePerBox: sql<number>`${receiptLots.totalVolumeM3} / ${receiptLots.boxCount}`.as(
+              'volume_per_box',
+            ),
+          })
+          .from(boxes)
+          .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+          .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
+          .innerJoin(warehouses, eq(boxes.currentWarehouseId, warehouses.id))
+          .leftJoin(clients, eq(receipts.clientId, clients.id))
+          .$dynamic(),
+        checksOn,
+      )
         .where(and(...scopeFilter))
         .groupBy(receiptLots.id, receipts.id, warehouses.code)
         .as('g'),
@@ -441,7 +449,10 @@ export default async function StockPage({
     }
     if (value) search.set('tek', value);
     const qs = search.toString();
-    return qs ? `/stock?${qs}` : '/stock';
+    // Never a bare /stock: a bare visit redirects to the person's saved
+    // default view, and a ❓ worklist saved as the default would make
+    // «Hammasi» unreachable. `tek=` reads as «all» (readCheckFilter('')).
+    return qs ? `/stock?${qs}` : '/stock?tek=';
   };
   const tlc = await getTranslations('lotCheck');
   const chipLabels = { checked: tlc('chipChecked'), stale: tlc('chipStale'), none: tlc('chipNone') };
@@ -520,37 +531,39 @@ export default async function StockPage({
           prixods it would show. A row of its own that WRAPS — the search
           row above is full at 360 px (#419), and a row that cannot wrap
           rescales the whole page (#400). */}
-      <div className="flex flex-wrap gap-2 text-sm" data-testid="stock-check-filter">
-        {(
-          [
-            { value: null, testid: 'stock-check-all', text: tlc('filterAll') },
-            {
-              value: 'ha' as const,
-              testid: 'stock-check-yes',
-              text: `✅ ${tlc('filterChecked')} · ${tlc('prixodCount', { n: Number(totals?.checkedPrixod ?? 0) })}`,
-            },
-            {
-              value: 'yoq' as const,
-              testid: 'stock-check-no',
-              text: `❓ ${tlc('filterUnchecked')} · ${tlc('prixodCount', { n: Number(totals?.askedPrixod ?? 0) })}`,
-            },
-          ] as const
-        ).map((door) => (
-          <Link
-            key={door.testid}
-            href={tekHref(door.value)}
-            data-testid={door.testid}
-            aria-current={tek === door.value ? 'true' : undefined}
-            className={`rounded-lg border px-3 py-1.5 ${
-              tek === door.value
-                ? 'border-brand-500 bg-brand-50 font-semibold text-brand-700'
-                : 'border-line text-ink-700 hover:bg-surface-sunken'
-            }`}
-          >
-            {door.text}
-          </Link>
-        ))}
-      </div>
+      {checksOn && (
+        <div className="flex flex-wrap gap-2 text-sm" data-testid="stock-check-filter">
+          {(
+            [
+              { value: null, testid: 'stock-check-all', text: tlc('filterAll') },
+              {
+                value: 'ha' as const,
+                testid: 'stock-check-yes',
+                text: `✅ ${tlc('filterChecked')} · ${tlc('prixodCount', { n: Number(totals?.checkedPrixod ?? 0) })}`,
+              },
+              {
+                value: 'yoq' as const,
+                testid: 'stock-check-no',
+                text: `❓ ${tlc('filterUnchecked')} · ${tlc('prixodCount', { n: Number(totals?.askedPrixod ?? 0) })}`,
+              },
+            ] as const
+          ).map((door) => (
+            <Link
+              key={door.testid}
+              href={tekHref(door.value)}
+              data-testid={door.testid}
+              aria-current={checkTek === door.value ? 'true' : undefined}
+              className={`rounded-lg border px-3 py-1.5 ${
+                checkTek === door.value
+                  ? 'border-brand-500 bg-brand-50 font-semibold text-brand-700'
+                  : 'border-line text-ink-700 hover:bg-surface-sunken'
+              }`}
+            >
+              {door.text}
+            </Link>
+          ))}
+        </div>
+      )}
 
       <p className="text-sm font-semibold text-ink-700">
         Σ {sumBoxes} {t('boxes')} · {Math.round(sumKg)} kg · {Math.round(sumM3 * 100) / 100} m³

@@ -53,12 +53,21 @@ describe('one writer, one sentence', () => {
   it('every list reader asks the sentence over the two LEFT JOINs, never a correlated subquery', () => {
     for (const path of [STOCK_PAGE, STOCK_ROUTE, PLAN_STOCK, HOME_COUNT]) {
       const src = read(path);
-      expect(src, path).toContain('lotCheckStateSql(');
-      expect(src, path).toMatch(/\.leftJoin\(lotChecks, eq\(lotChecks\.lotId, receiptLots\.id\)\)/);
-      expect(src, path).toContain('.leftJoin(lotTarkibJoinSql(), lotTarkibOnSql(');
+      expect(src, path).toMatch(/lotCheckState(OrNull)?Sql\(/);
+      expect(src, path).toContain('withLotCheckJoins(');
       // The measured 3.3 s shape (docs/YUK-TEKSHIRUV.md §4).
       expect(src, path).not.toMatch(/FROM\s+lot_checks/i);
     }
+  });
+
+  it('every reader of the 0123 tables asks lotChecksReady first (#472) — and no list joins them by hand', () => {
+    const joining = files.filter((path) => /withLotCheckJoins\(|lotCheckState(OrNull)?Sql\(/.test(read(path)));
+    for (const path of joining) {
+      if (path === SENTENCE) continue;
+      expect(read(path), path).toContain('lotChecksReady(');
+    }
+    const byHand = files.filter((path) => path !== SENTENCE && /\.leftJoin\(lotChecks\b/.test(read(path)));
+    expect(byHand).toEqual([]);
   });
 
   it('the plan editor imports the PURE half only — drizzle never reaches the browser', () => {
@@ -83,9 +92,16 @@ describe('/stock carries `tek` through every door (#514, #171)', () => {
     expect(read(STOCK_ROUTE)).toContain("readCheckFilter(url.searchParams.get('tek'))");
   });
 
-  it('the rows take the filter in their WHERE and the Σ as a FILTER over the same groups', () => {
-    expect(page).toMatch(/\.where\(and\(\.\.\.scopeFilter, \.\.\.\(tek \? \[checkFilterSql\(tek, checkState, askable\)\] : \[\]\)\)\)/);
-    expect(page).toMatch(/const groupFilter = tek \? checkFilterSql\(tek, sql`g\.state`, sql`g\.askable`\)/);
+  it('the rows take the filter after grouping (HAVING) and the Σ as a FILTER over the same groups', () => {
+    expect(page).toMatch(/\.having\(checkTek \? checkFilterSql\(checkTek, sql`min\(\$\{checkState\}\)`, sql`bool_and\(\$\{askable\}\)`\) : undefined\)/);
+    expect(page).toMatch(/const groupFilter = checkTek \? checkFilterSql\(checkTek, sql`g\.state`, sql`g\.askable`\)/);
+    // The screen without the migration has no filter row and binds no `tek`.
+    expect(page).toContain('const checkTek = checksOn ? tek : null;');
+    expect(page).toContain('{checksOn && (');
+  });
+
+  it('«Hammasi» is never a bare /stock (a bare visit redirects to a saved default view)', () => {
+    expect(page).toContain("return qs ? `/stock?${qs}` : '/stock?tek=';");
   });
 
   it('the chip is a SIBLING of the code cell\'s link, never inside it', () => {

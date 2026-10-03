@@ -12,12 +12,12 @@ import { stockTextWhere } from '@/modules/wms/inventory/stock-filter';
 import {
   askableSql,
   checkFilterSql,
-  lotCheckStateSql,
-  lotTarkibJoinSql,
-  lotTarkibOnSql,
+  lotCheckStateOrNullSql,
   readCheckFilter,
+  withLotCheckJoins,
   type LotCheckState,
 } from '@/modules/wms/receipts/lot-check-sql';
+import { lotChecksReady } from '@/modules/wms/receipts/lot-check-ready';
 
 /**
  * Stock report XLSX (spec §9/§13 report 1) with the current stock-browser
@@ -67,16 +67,19 @@ export async function GET(request: Request) {
   if (wh) filters.push(eq(boxes.currentWarehouseId, wh));
   // The screen's own predicate (#513).
   if (q) filters.push(stockTextWhere(q));
-  // …and the check's one sentence (lot-check-sql.ts), so the file is the screen.
-  const checkState = lotCheckStateSql({
+  // …and the check's one sentence (lot-check-sql.ts), so the file is the
+  // screen: the same joins, the same filter after grouping, and the same
+  // pre-0123 shape when the migration has not landed (#472).
+  const checksOn = await lotChecksReady();
+  const checkTek = checksOn ? tek : null;
+  const checkState = lotCheckStateOrNullSql(checksOn, {
     lot: sql`${receiptLots}`,
     receipt: sql`${receipts}`,
     check: sql`${lotChecks}`,
   });
   const askable = askableSql(sql`${warehouses}`);
-  if (tek) filters.push(checkFilterSql(tek, checkState, askable));
 
-  const lines = await db
+  const linesQuery = db
     .select({
       lot: receiptLots,
       receivedAt: receipts.receivedAt,
@@ -95,8 +98,8 @@ export async function GET(request: Request) {
     .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
     .innerJoin(warehouses, eq(boxes.currentWarehouseId, warehouses.id))
     .leftJoin(clients, eq(receipts.clientId, clients.id))
-    .leftJoin(lotChecks, eq(lotChecks.lotId, receiptLots.id))
-    .leftJoin(lotTarkibJoinSql(), lotTarkibOnSql(sql`${receiptLots}`))
+    .$dynamic();
+  const lines = await withLotCheckJoins(linesQuery, checksOn)
     .where(and(...filters))
     .groupBy(
       receiptLots.id,
@@ -106,6 +109,7 @@ export async function GET(request: Request) {
       warehouses.code,
       clients.clientCode,
     )
+    .having(checkTek ? checkFilterSql(checkTek, sql`min(${checkState})`, sql`bool_and(${askable})`) : undefined)
     .orderBy(asc(warehouses.code), asc(receipts.receivedAt))
     .limit(10_000);
 
@@ -134,7 +138,7 @@ export async function GET(request: Request) {
       report: 'stock_xlsx',
       wh: wh || null,
       q: q || null,
-      tek,
+      tek: checkTek,
       rows: lines.length,
       cols: [...visible].join(','),
       // How big the file actually was. `cols` says «photo» whether the sheet

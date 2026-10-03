@@ -2,7 +2,7 @@
 
 import { eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
-import { z, ZodError } from 'zod';
+import { ZodError } from 'zod';
 import { db } from '@/modules/platform/db/client';
 import { receiptLots } from '@/modules/platform/db/schema';
 import { requestMeta } from '@/modules/platform/auth/session';
@@ -55,15 +55,12 @@ export async function checkLotAction(payload: unknown): Promise<LotCheckActionRe
   }
 }
 
-const uncheckInputSchema = z.object({ lotId: z.string().uuid() });
-
-export async function uncheckLotAction(payload: { lotId: string }): Promise<LotCheckActionResult> {
+export async function uncheckLotAction(payload: unknown): Promise<LotCheckActionResult> {
   try {
     const actor = await requireActor();
     const meta = await requestMeta();
-    const input = uncheckInputSchema.parse(payload);
-    const { changed } = await uncheckLot(input, actor, { actorId: actor.id, ...meta });
-    await afterWrite(input.lotId);
+    const { changed } = await uncheckLot(payload, actor, { actorId: actor.id, ...meta });
+    await afterWrite((payload as { lotId: string }).lotId);
     return { ok: true, changed };
   } catch (err) {
     return refusalOf(err);

@@ -18,7 +18,7 @@ colapsable bolsin» (§9).
 | 1 | Who ticks | **a** — logist + admin, AND the VED | `mayCheckLot` = the lot tarkibi door `ved.docs ∨ plans.manage` (`mayOpenBatchVed`), plus `mayReadReceipt`. No new permission code (#170). |
 | 2 | What ✅ vouches for | **b** — goods name + carton count + client | The tick SNAPSHOTS `product_name_zh`, `product_name_ru`, `box_count`, `receipts.client_id`; any of them moving reads ⚠ «o'zgardi — qayta so'rang». kg/m³ re-weighs do NOT un-tick. |
 | 3 | Tarkib with the client's document | **a** — counts as ✅ «hujjat bo'yicha» | DERIVED, never written: a lot whose composition stands (not `isStale`) is checked. Clearing the composition takes it away by itself. |
-| 4 | Which cargo is on the ❓ list | **a** — only cargo standing in a CHINESE warehouse | «Askable» = the row's warehouse `country = 'CN'`. Cargo in Uzbekistan shows ✅ when checked and nothing otherwise. |
+| 4 | Which cargo is on the ❓ list | **a** — only cargo standing in a CHINESE warehouse | «Askable» = the row's warehouse `country = 'CN'`. Cargo in Uzbekistan shows ✅ when checked and nothing otherwise — on every surface, the prixod card included (there «askable» = any live carton still in China: on a Chinese shelf, or on a truck out of China that has not unloaded, `lotAskableSql`). |
 | 5 | Telegram ✅/❌ on the client's «yukingiz keldi» | **b** — later | Not built. Owed to him as a later round. |
 
 ## 2. Grain: the LOT, spoken as the PRIXOD
@@ -66,10 +66,19 @@ asks one CASE:
 3. `stale` — a row or a composition exists and nothing matches;
 4. `none`.
 
-`CHECK_FILTER`: `ha` = `checked`; `yoq` = `none|stale` AND the row stands in
-a CN warehouse. Absent = everything. The rows, the Σ, the chip counts and the
-XLSX read the same fragments (#513). A JOIN, never a correlated subquery in a
-WHERE: the design review measured that shape at 3.3 s against 41 ms.
+`checkFilterSql`: `ha` = `checked`; `yoq` = `none|stale` AND the row stands
+in a CN warehouse. Absent = everything. The rows, the Σ, the chip counts and
+the XLSX read the same fragments (#513). A JOIN, never a correlated subquery
+in a WHERE (the design review measured that shape at 3.3 s against 41 ms),
+and the filter applies AFTER grouping (HAVING) — as a WHERE the planner
+misjudged it at ≈1 % and walked every lot ever received (the build review).
+
+**A server whose migration has not landed (#472)** runs every list in its
+pre-0123 shape: `lotChecksReady()` (one catalog probe, remembered once true)
+says the tables are missing, `withLotCheckJoins` makes no joins, the state is
+NULL (no chip, never ❓), `tek` is ignored and the filter row is not drawn.
+Planning, Ostatka and its XLSX keep working — measured on a copy whose
+ledger is 123.
 
 ## 5. The writer — `receipts/lot-check.ts`
 
@@ -80,33 +89,51 @@ transaction: the lot `FOR NO KEY UPDATE` (the composition's prefix, so no
 cycle with `editLot` and the count doors) → the prixod `FOR SHARE NOWAIT`
 (raw, #1174) → re-read status + client → compare the posted snapshot with the
 LOCKED values (`lot_changed` — a person cannot confirm a name they did not
-see; '' and NULL are one value) → identical row and note = no write, no audit
-→ upsert → one audit row on the prixod (`lotCheck` / `lotCheckNote`, value =
-`A: 键盘 (Клавиатура) × 100 · GS777`, so a re-check after a rename differs
-in the History).
+see; '' and NULL are one value) → the check row `FOR UPDATE`, compared with
+the one the panel DREW (`seenCheckedAt` = `checked_at::text`; `check_changed`
+— a colleague confirmed or undid meanwhile, so a press never replaces or
+erases a confirmation it did not see; the same person's same press is a
+no-op, never a refusal) → upsert → one audit row on the prixod, keyed PER
+LOT (`lotCheck:A` / `lotCheckNote:A` — the History nets a sitting per key,
+and a shared key turned «ticked A, B, C» into one line about C), value
+`A: 键盘 (Клавиатура) × 100 · GS777` so a re-check after a rename differs.
+`uncheckLot` takes the same token and refuses a non-confirmed prixod (a
+voided one is off every shelf; its row stays as history).
 
 ## 6. Surfaces
 
 - **Prixod card** — per lot, under «N 📦 · kg · m³», for everyone who opens
   it: the face (✅ mijoz tasdiqladi · who · day · note / ✅ hujjat bo'yicha /
-  ⚠ what moved / ❓ / egasi aniqlanmagan). For `mayCheckLot` on a confirmed
-  prixod with a client: the client's phones (📞 + 💬 Telegram — the reader
-  passed `mayReadReceipt`, which is the bot's «cargo in reach» rule), «✅
-  To'g'ri — mijoz tasdiqladi» with an optional note, «Bekor qilish», and one
-  line saying where the two other answers go (rename → ✏️ below, mixed → 🧩
-  tarkib). `?qaytish=/stock?…` makes the back link return to the filtered list.
+  ⚠ what moved / ❓ / egasi aniqlanmagan). ✅ wherever the lot stands; ⚠ «qayta
+  so'rang», ❓ and the button only while a carton is still in China (4a); a
+  basis that went stale while the OTHER holds is a muted history line, never
+  «ask again» about a lot every list calls ✅. For `mayCheckLot` on a
+  confirmed prixod with a client: the client's phones (📞 + 💬 Telegram — the
+  reader passed `mayReadReceipt`, which is the bot's «cargo in reach» rule),
+  «✅ To'g'ri — mijoz tasdiqladi» with an optional note, «Bekor qilish», and
+  one line saying where the two other answers go (rename → the ✏️ below for
+  `receipts.edit` holders, «logistga ayting» for the VED, whose card draws no
+  ✏️; mixed → 🧩 tarkib). `?qaytish=/stock?…` makes the back link return to
+  the filtered list.
 - **/stock** — the chip as a SIBLING after the code cell's link (never an
   `<a>` inside an `<a>`), linking to the lot on the prixod card with the way
   back; a filter row of links «Hammasi · ✅ N prixod · ❓ M prixod» on its own
   wrapping line; `tek` survives 🔍, sort, paging, views and the export.
 - **Ostatka XLSX** — export-always «Tekshiruv» column, honours `tek`.
 - **Plan editor** — the chip in the code cell (a new-tab link for ❓/⚠, so the
-  plan in progress survives); crates «✅» only when every member lot is
-  checked, else «❓ n/m» on a CN origin; a render-only filter (the selection
-  and the Σ are never filtered), «k ta tanlangan yashirin», «mos yuk yo'q».
+  plan in progress survives; coming back to the tab re-reads the list in
+  place, so the tick made there shows without losing the plan); crates «✅»
+  only when every member lot is checked, else «❓ n/m» on a CN origin; a
+  render-only filter (the selection and the Σ are never filtered), «k ta
+  tanlangan yashirin», «mos yuk yo'q» (crates counted); a list that did not
+  load is said, never drawn as an empty warehouse.
 - **Client card «Yuklar»** — the chip on the China rows (one call covers all
   of a client's cargo).
-- **Logist and VED homes** — «❓ Tekshirilmagan yuk: N prixod» → `/stock?tek=yoq`.
+- **Logist and VED homes** — «❓ Tekshirilmagan yuk (Xitoy)», N with «N prixod»
+  under it → `/stock?tek=yoq` (the same number the screen's chip prints).
+- **/stock «Hammasi»** is `/stock?tek=`, never a bare `/stock` — a bare visit
+  redirects to the person's saved default view, and a ❓ worklist saved as
+  the default would make «Hammasi» unreachable.
 
 Not in v1, stated: the truck card's tabs (Bojxona tab chip), the staff bot,
 the client cabinet, the /receipts list.
@@ -130,6 +157,7 @@ shelf screen; the row stays as history.
 ## 9. The crate list on /stock folds
 
 `CrateRows` is a native `<details>`: open when there are at most five crates,
-closed above that, its summary carrying the count and «⚠ N sig'imdan oshgan» —
-so the warning he asked to have on top is still on top while folded. One
-component, both screens (the truck card reads the same list).
+closed above that, its summary carrying the count and «⚠ sig'magan · N» (with
+«+» when the list is capped) — so the warning he asked to have on top is
+still on top while folded. One component, both screens (the truck card reads
+the same list).

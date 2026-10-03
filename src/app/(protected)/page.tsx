@@ -364,7 +364,7 @@ async function LogistFlow({ flow }: { flow: LogistFlowCounts }) {
           label={tlc('homeRow')}
           count={flow.unchecked ?? 0}
           warn={(flow.unchecked ?? 0) > 0}
-          sub={null}
+          sub={flow.unchecked ? tlc('prixodCount', { n: flow.unchecked }) : null}
         />
       </div>
     </Section>
@@ -504,7 +504,7 @@ async function VedFlow({ flow }: { flow: VedFlowCounts }) {
           label={tlc('homeRow')}
           count={flow.unchecked ?? 0}
           warn={(flow.unchecked ?? 0) > 0}
-          sub={null}
+          sub={flow.unchecked ? tlc('prixodCount', { n: flow.unchecked }) : null}
         />
         {/* «Tasdiqlash kerak» (0119): the guesses on this person's seals,
             drawn only when there are some — the control screen has its own

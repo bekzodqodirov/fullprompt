@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { randomUUID } from 'node:crypto';
 import ExcelJS from 'exceljs';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 /**
@@ -27,6 +27,9 @@ vi.mock('next/cache', async (original) => ({
   ...(await original<typeof import('next/cache')>()),
   revalidatePath: () => {},
 }));
+/** A server whose migration has not landed (#472) — test 18 alone turns it off. */
+const ready = vi.hoisted(() => ({ on: true }));
+vi.mock('@/modules/wms/receipts/lot-check-ready', () => ({ lotChecksReady: async () => ready.on }));
 vi.mock('@/modules/platform/rbac/authorize', async (original) => {
   const real = await original<typeof import('@/modules/platform/rbac/authorize')>();
   return {
@@ -53,7 +56,8 @@ import { GET as stockXlsx } from '@/app/api/reports/stock/route';
 import { checkLotAction, uncheckLotAction } from '@/app/(protected)/receipts/[id]/lot-check-actions';
 import { isStale } from '@/modules/wms/receipts/composition-math';
 import { clearComposition, compositionsFor, saveComposition } from '@/modules/wms/receipts/lot-composition';
-import { checkLot, LotCheckError, lotCheckViewsFor, uncheckLot, type LotCheckActor } from '@/modules/wms/receipts/lot-check';
+import { checkLot, LotCheckError, lotCheckViewsFor, uncheckLot as uncheckRaw, type LotCheckActor } from '@/modules/wms/receipts/lot-check';
+import { groupHistory } from '@/modules/platform/audit/history';
 import {
   checkFilterSql,
   inCheckFilter,
@@ -78,6 +82,7 @@ type LotKey = (typeof LOTS)[number];
 const lot = Object.fromEntries(LOTS.map((k) => [k, ''])) as Record<LotKey, string>;
 let docId = '';
 let crateId = '';
+let truckId = '';
 
 const NAME_K = `键盘${SFX}`;
 
@@ -163,6 +168,27 @@ async function seenOf(key: LotKey) {
   return { nameZh: row.productNameZh, nameRu: row.productNameRu ?? '', boxCount: row.boxCount, clientId: r.clientId ?? '' };
 }
 
+/** The person's check as a panel would draw it now — the token a press posts back. */
+async function tokenOf(key: LotKey): Promise<string | null> {
+  const rows = (await db.execute(
+    sql`SELECT checked_at::text AS at FROM lot_checks WHERE lot_id = ${lot[key]}::uuid`,
+  )) as unknown as { at: string }[];
+  return rows[0]?.at ?? null;
+}
+
+/** A press drawn from the card as it stands now (the panel's own post). */
+async function press(key: LotKey, actor: LotCheckActor, opts: { note?: string; seen?: Awaited<ReturnType<typeof seenOf>> } = {}) {
+  return checkLot(
+    { lotId: lot[key], seen: opts.seen ?? (await seenOf(key)), note: opts.note, seenCheckedAt: await tokenOf(key) },
+    actor,
+    ctx(actor.id),
+  );
+}
+async function uncheckLot(input: { lotId: string }, actor: LotCheckActor, c: ReturnType<typeof ctx>) {
+  const key = (Object.keys(lot) as LotKey[]).find((k) => lot[k] === input.lotId)!;
+  return uncheckRaw({ lotId: input.lotId, seenCheckedAt: await tokenOf(key) }, actor, c);
+}
+
 async function stateOf(key: LotKey) {
   return (await lotCheckViewsFor([lot[key]])).get(lot[key])!;
 }
@@ -182,7 +208,9 @@ async function checkAudits(receiptKey: keyof typeof rc) {
     .select({ after: auditLog.after })
     .from(auditLog)
     .where(and(eq(auditLog.entityType, 'receipt'), eq(auditLog.entityId, rc[receiptKey])));
-  return rows.filter((row) => row.after && typeof row.after === 'object' && 'lotCheck' in (row.after as object));
+  return rows.filter(
+    (row) => row.after && typeof row.after === 'object' && Object.keys(row.after as object).some((k) => k.startsWith('lotCheck:')),
+  );
 }
 
 beforeAll(async () => {
@@ -237,8 +265,8 @@ beforeAll(async () => {
 describe('the person\'s check (his 2b: name + count + client)', () => {
   it('1. a lot nobody asked about reads «none»; the logist ticks it and every reader says «checked»', async () => {
     expect((await stateOf('K')).state).toBe('none');
-    const before = await uncheckedPrixodCount(logist());
-    const { changed } = await checkLot({ lotId: lot.K, seen: await seenOf('K'), note: 'mijoz: ha' }, logist(), ctx(logistId));
+    const before = (await uncheckedPrixodCount(logist()))!;
+    const { changed } = await press('K', logist(), { note: 'mijoz: ha' });
     expect(changed).toBe(true);
     const view = await stateOf('K');
     expect(view.state).toBe('checked');
@@ -251,7 +279,7 @@ describe('the person\'s check (his 2b: name + count + client)', () => {
     // R1 still has lot M unchecked, so the prixod stays on the list — the
     // count moves only when its LAST lot is confirmed.
     expect(await uncheckedPrixodCount(logist())).toBe(before);
-    await checkLot({ lotId: lot.M, seen: await seenOf('M') }, logist(), ctx(logistId));
+    await press('M', logist());
     expect(await uncheckedPrixodCount(logist())).toBe(before - 1);
   });
 
@@ -260,7 +288,7 @@ describe('the person\'s check (his 2b: name + count + client)', () => {
     const view = await stateOf('K');
     expect(view.state).toBe('stale');
     expect(view.person?.moved).toEqual({ name: true, count: false, client: false });
-    await checkLot({ lotId: lot.K, seen: await seenOf('K') }, logist(), ctx(logistId));
+    await press('K', logist());
     expect((await stateOf('K')).state).toBe('checked');
   });
 
@@ -292,33 +320,37 @@ describe('the person\'s check (his 2b: name + count + client)', () => {
     const stale = await seenOf('M');
     await db.update(receiptLots).set({ productNameZh: `鼠标改${SFX}` }).where(eq(receiptLots.id, lot.M));
     const rowBefore = await db.query.lotChecks.findFirst({ where: eq(lotChecks.lotId, lot.M) });
-    expect(await refusal(checkLot({ lotId: lot.M, seen: stale }, logist(), ctx(logistId)))).toBe('lot_changed');
+    expect(await refusal(press('M', logist(), { seen: stale }))).toBe('lot_changed');
     const rowAfter = await db.query.lotChecks.findFirst({ where: eq(lotChecks.lotId, lot.M) });
     expect(rowAfter?.seenNameZh).toBe(rowBefore?.seenNameZh);
     // The posted «''» for an absent Russian name is the same value as NULL.
-    await checkLot({ lotId: lot.M, seen: { ...(await seenOf('M')), nameRu: '' } }, logist(), ctx(logistId));
+    await press('M', logist(), { seen: { ...(await seenOf('M')), nameRu: '' } });
     expect((await stateOf('M')).state).toBe('checked');
   });
 
   it('7. the door: the VED may tick (his 1a); a person without either grant, unclaimed cargo, a voided prixod may not', async () => {
-    await checkLot({ lotId: lot.N, seen: await seenOf('N') }, ved(), ctx(vedId));
+    await press('N', ved());
     expect((await stateOf('N')).state).toBe('checked');
     const outsider: LotCheckActor = { id: vedId, permissions: new Set(['receipts.edit']), warehouseScoped: false, warehouseIds: [] };
-    expect(await refusal(checkLot({ lotId: lot.K, seen: await seenOf('K') }, outsider, ctx(vedId)))).toBe('forbidden');
+    expect(await refusal(press('K', outsider))).toBe('forbidden');
     const elsewhere: LotCheckActor = { ...logist(), warehouseScoped: true, warehouseIds: [wh.UZ] };
-    expect(await refusal(checkLot({ lotId: lot.K, seen: await seenOf('K') }, elsewhere, ctx(logistId)))).toBe('forbidden');
-    expect(await refusal(checkLot({ lotId: lot.U, seen: await seenOf('U') }, logist(), ctx(logistId)))).toBe('no_client');
+    expect(await refusal(press('K', elsewhere))).toBe('forbidden');
+    expect(await refusal(press('U', logist()))).toBe('no_client');
     expect((await stateOf('U')).state).toBe('unclaimed');
     await db.update(receipts).set({ status: 'voided' }).where(eq(receipts.id, rc.R4));
-    expect(await refusal(checkLot({ lotId: lot.N, seen: await seenOf('N') }, logist(), ctx(logistId)))).toBe('receipt_not_confirmed');
+    expect(await refusal(press('N', logist()))).toBe('receipt_not_confirmed');
+    expect(await refusal(uncheckLot({ lotId: lot.N }, logist(), ctx(logistId)))).toBe('receipt_not_confirmed');
     await db.update(receipts).set({ status: 'confirmed' }).where(eq(receipts.id, rc.R4));
   });
 
   it('8. the same press twice writes ONE audit row; a new note is a second', async () => {
     const before = (await checkAudits('R1')).length;
     const seen = await seenOf('K');
-    const first = await checkLot({ lotId: lot.K, seen, note: 'ikkinchi' }, logist(), ctx(logistId));
-    const again = await checkLot({ lotId: lot.K, seen, note: 'ikkinchi' }, logist(), ctx(logistId));
+    // A double tap posts the token the page drew BEFORE the first landed —
+    // the same person's same press is a no-op, never «check_changed».
+    const drawn = await tokenOf('K');
+    const first = await checkLot({ lotId: lot.K, seen, note: 'ikkinchi', seenCheckedAt: drawn }, logist(), ctx(logistId));
+    const again = await checkLot({ lotId: lot.K, seen, note: 'ikkinchi', seenCheckedAt: drawn }, logist(), ctx(logistId));
     expect(first.changed).toBe(true);
     expect(again.changed).toBe(false);
     const rows = await checkAudits('R1');
@@ -335,12 +367,17 @@ describe('the person\'s check (his 2b: name + count + client)', () => {
   it('10. the actions answer codes, never throw at the person', async () => {
     override.actor = { ...logist(), roles: [], fullName: 'Logist', locale: 'uz' };
     try {
-      const ok = await checkLotAction({ lotId: lot.N, seen: await seenOf('N') });
+      const ok = await checkLotAction({ lotId: lot.N, seen: await seenOf('N'), seenCheckedAt: await tokenOf('N') });
       expect(ok).toEqual({ ok: true, changed: true });
-      const bad = await checkLotAction({ lotId: lot.N, seen: { ...(await seenOf('N')), boxCount: 999 } });
+      const bad = await checkLotAction({
+        lotId: lot.N,
+        seen: { ...(await seenOf('N')), boxCount: 999 },
+        seenCheckedAt: await tokenOf('N'),
+      });
       expect(bad).toEqual({ ok: false, error: 'lot_changed' });
       expect(await checkLotAction({ lotId: 'nope' })).toEqual({ ok: false, error: 'validation' });
-      expect(await uncheckLotAction({ lotId: lot.N })).toEqual({ ok: true, changed: true });
+      expect(await uncheckLotAction({ lotId: lot.N, seenCheckedAt: 'not-the-row' })).toEqual({ ok: false, error: 'check_changed' });
+      expect(await uncheckLotAction({ lotId: lot.N, seenCheckedAt: await tokenOf('N') })).toEqual({ ok: true, changed: true });
     } finally {
       override.actor = null;
     }
@@ -445,12 +482,12 @@ describe('the worklist (his 4a: only cargo standing in China)', () => {
   });
 
   it('15. a crate is ✅ only when EVERY lot inside is; one unasked lot is counted', async () => {
-    const before = (await plannableStock(wh.CN)).crates.find((c) => c.crateId === crateId)!;
-    expect(before).toMatchObject({ lotsTotal: 2, lotsChecked: 0, lotsAsked: 2 });
-    await checkLot({ lotId: lot.C1, seen: await seenOf('C1') }, logist(), ctx(logistId));
+    const atStart = (await plannableStock(wh.CN)).crates.find((c) => c.crateId === crateId)!;
+    expect(atStart).toMatchObject({ lotsTotal: 2, lotsChecked: 0, lotsAsked: 2 });
+    await press('C1', logist());
     const half = (await plannableStock(wh.CN)).crates.find((c) => c.crateId === crateId)!;
     expect(half).toMatchObject({ lotsTotal: 2, lotsChecked: 1, lotsAsked: 1 });
-    await checkLot({ lotId: lot.C2, seen: await seenOf('C2') }, logist(), ctx(logistId));
+    await press('C2', logist());
     const all = (await plannableStock(wh.CN)).crates.find((c) => c.crateId === crateId)!;
     expect(all).toMatchObject({ lotsTotal: 2, lotsChecked: 2, lotsAsked: 0 });
     // The plan editor's Uzbek origin asks nothing.
@@ -495,6 +532,109 @@ describe('the worklist (his 4a: only cargo standing in China)', () => {
   });
 });
 
+describe('two people, one lot (the review\'s check_changed)', () => {
+  it('19. a press against a check the panel did not draw is refused — undo and re-tick alike', async () => {
+    // The logist's card drew K's check; the VED re-confirms meanwhile.
+    const drawnByLogist = await tokenOf('K');
+    await db.update(receiptLots).set({ productNameRu: 'Клавиатура USB' }).where(eq(receiptLots.id, lot.K));
+    await press('K', ved(), { note: 'VED: mijoz tasdiqladi' });
+    expect((await stateOf('K')).state).toBe('checked');
+    // The logist's undo, posted from the old card, does not erase it.
+    expect(await refusal(uncheckRaw({ lotId: lot.K, seenCheckedAt: drawnByLogist }, logist(), ctx(logistId)))).toBe(
+      'check_changed',
+    );
+    expect((await stateOf('K')).person?.note).toBe('VED: mijoz tasdiqladi');
+    // …nor does a re-tick drawn from it overwrite the VED's note.
+    expect(
+      await refusal(
+        checkLot({ lotId: lot.K, seen: await seenOf('K'), note: 'logist', seenCheckedAt: drawnByLogist }, logist(), ctx(logistId)),
+      ),
+    ).toBe('check_changed');
+    expect((await stateOf('K')).person?.note).toBe('VED: mijoz tasdiqladi');
+  });
+});
+
+describe('the card follows 4a too', () => {
+  it('20. a lot is askable while a carton is in China — on a shelf, or on a truck out of China — and not once it is in Uzbekistan', async () => {
+    expect((await stateOf('K')).askable).toBe(true);
+    expect((await stateOf('N')).askable).toBe(false);
+    // M's cartons leave YW on a truck to Uzbekistan: still askable on the road.
+    const [b] = (await db.execute(sql`
+      INSERT INTO batches (id, code, origin_warehouse_id, dest_warehouse_id, status, departed_at, created_by)
+      VALUES (gen_random_uuid(), ${`LCT-${SFX}`}, ${wh.CN}::uuid, ${wh.UZ}::uuid, 'in_transit', now(), ${logistId}::uuid) RETURNING id
+    `)) as unknown as { id: string }[];
+    truckId = b!.id;
+    await db
+      .update(boxes)
+      .set({ status: 'in_transit', currentWarehouseId: null, currentBatchId: truckId })
+      .where(eq(boxes.lotId, lot.M));
+    expect((await stateOf('M')).askable).toBe(true);
+    // Unloaded in Uzbekistan: no longer asked about.
+    await db
+      .update(boxes)
+      .set({ status: 'ready_for_pickup', currentWarehouseId: wh.UZ, currentBatchId: null })
+      .where(eq(boxes.lotId, lot.M));
+    expect((await stateOf('M')).askable).toBe(false);
+    await db
+      .update(boxes)
+      .set({ status: 'in_stock', currentWarehouseId: wh.CN, currentBatchId: null })
+      .where(eq(boxes.lotId, lot.M));
+  });
+});
+
+describe('the History says which lot (the review\'s shared key)', () => {
+  it('21. two lots ticked in one call read as two changes, each with its own letter, the note kept', async () => {
+    await uncheckLot({ lotId: lot.C1 }, logist(), ctx(logistId));
+    await uncheckLot({ lotId: lot.C2 }, logist(), ctx(logistId));
+    const since = new Date(Date.now() - 1000);
+    await press('C1', logist());
+    await press('C2', logist(), { note: 'mijoz: ikkalasi ham' });
+    const rows = await db
+      .select({ id: auditLog.id, actorId: auditLog.actorId, action: auditLog.action, before: auditLog.before, after: auditLog.after, createdAt: auditLog.createdAt })
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.entityType, 'receipt'),
+          eq(auditLog.entityId, rc.R2),
+          sql`${auditLog.createdAt} >= ${since.toISOString()}::timestamptz`,
+        ),
+      )
+      .orderBy(desc(auditLog.createdAt));
+    const groups = groupHistory(
+      rows.map((r) => ({
+        id: String(r.id),
+        actorId: r.actorId,
+        actorName: null,
+        action: r.action,
+        before: (r.before ?? null) as Record<string, unknown> | null,
+        after: (r.after ?? null) as Record<string, unknown> | null,
+        createdAt: r.createdAt,
+      })),
+    );
+    // ONE sitting (same person, seconds apart), and still two lots in it.
+    expect(groups).toHaveLength(1);
+    const keys = groups.flatMap((g) => g.changes.map((c) => c.key));
+    expect(keys).toEqual(expect.arrayContaining(['lotCheck:B', 'lotCheck:C', 'lotCheckNote:C']));
+  });
+});
+
+describe('a server whose migration has not landed (#472)', () => {
+  it('22. the plan editor\'s list, the home count and the card read as before, with no chip and no error', async () => {
+    ready.on = false;
+    try {
+      const plan = await plannableStock(wh.CN);
+      expect(plan.askable).toBe(false);
+      expect(plan.lots.find((l) => l.lotId === lot.K)?.check ?? null).toBeNull();
+      const crate = plan.crates.find((c) => c.crateId === crateId)!;
+      expect(crate.lotsTotal).toBeUndefined();
+      expect(await uncheckedPrixodCount(logist())).toBeNull();
+      expect((await lotCheckViewsFor([lot.K])).size).toBe(0);
+    } finally {
+      ready.on = true;
+    }
+  });
+});
+
 describe('yuk tekshiruvi — cleanup', () => {
   it('17. leaves nothing of this file behind', async () => {
     const lotIds = Object.values(lot);
@@ -503,6 +643,7 @@ describe('yuk tekshiruvi — cleanup', () => {
     await db.delete(attachments).where(inArray(attachments.entityId, Object.values(rc)));
     await db.delete(boxes).where(inArray(boxes.lotId, lotIds));
     await db.delete(crates).where(eq(crates.id, crateId));
+    if (truckId) await db.execute(sql`DELETE FROM batches WHERE id = ${truckId}::uuid`);
     await db.delete(receiptLots).where(inArray(receiptLots.id, lotIds));
     await db.delete(receipts).where(inArray(receipts.id, Object.values(rc)));
     await db.delete(clients).where(inArray(clients.id, Object.values(cl)));

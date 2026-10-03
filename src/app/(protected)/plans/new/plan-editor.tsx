@@ -141,7 +141,14 @@ export function PlanEditor({
     setAskable(false);
     setStockFailed(false);
     const controller = new AbortController();
-    void (async () => {
+    /**
+     * One read of this origin's list. `quiet` is the re-read when the tab
+     * comes back into view (the ❓ chip opens the lot's card in a NEW tab,
+     * so the tick happens elsewhere): the rows are replaced in place — the
+     * selection is keyed by lot and stays — and a failed quiet read keeps
+     * what is on screen rather than calling it a failure.
+     */
+    const load = async (quiet: boolean) => {
       try {
         const res = await fetch(`/api/plans/stock?warehouseId=${originId}`, {
           signal: controller.signal,
@@ -151,14 +158,26 @@ export function PlanEditor({
           setLots(data.lots);
           setStockCrates(data.crates ?? []);
           setAskable(Boolean(data.askable));
-        } else {
+          setStockFailed(false);
+        } else if (!quiet) {
           setStockFailed(true);
         }
       } catch {
-        /* aborted */
+        // An abort is the origin changing; anything else (offline, a body
+        // that did not parse) is a list that did not load — said, never
+        // drawn as an empty warehouse.
+        if (!controller.signal.aborted && !quiet) setStockFailed(true);
       }
-    })();
-    return () => controller.abort();
+    };
+    void load(false);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void load(true);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      controller.abort();
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [originId]);
 
   const preset = presets.find((p) => p.id === presetId);
@@ -365,7 +384,7 @@ export function PlanEditor({
                 key={crate.crateId}
                 type="button"
                 data-testid={`crate-${crate.code}`}
-                className={`flex w-full items-baseline gap-2 rounded-lg border-2 p-2 text-left text-sm ${
+                className={`flex w-full flex-wrap items-baseline gap-2 rounded-lg border-2 p-2 text-left text-sm ${
                   on ? 'border-brand-500 bg-brand-50' : 'border-line'
                 }`}
                 onClick={() =>
@@ -559,14 +578,15 @@ export function PlanEditor({
           <p role="alert" className="p-4 text-sm font-semibold text-bad" data-testid="plan-stock-failed">
             {t('stockFailed')}
           </p>
-        ) : (
-          lots.length === 0 && <p className="p-4 text-sm text-ink-500">{t('noStock')}</p>
-        )}
-        {/* An empty FILTER is not an empty warehouse — said in its own words. */}
-        {lots.length > 0 && shownLots.length === 0 && (
+        ) : lots.length + stockCrates.length > 0 && shownLots.length + shownCrates.length === 0 ? (
+          // An empty FILTER is not an empty warehouse — said in its own
+          // words, counting the crates as well as the loose lots.
           <p className="p-4 text-sm text-ink-500" data-testid="plan-check-nomatch">
             {tlc('noMatch')}
           </p>
+        ) : (
+          lots.length === 0 &&
+          (tek === 'all' || stockCrates.length === 0) && <p className="p-4 text-sm text-ink-500">{t('noStock')}</p>
         )}
       </div>
 

@@ -150,6 +150,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | Website visitor → least-busy manager (the site's contract) | `docs/SAYT-TAQSIMOT.md` — round 113, give the contract to the site's session verbatim |
 | The truck card's six tabs and the client's «Pul» tab | `docs/CARD-TABS.md` — agreed 2026-09-28 (his 3a/4a), SHIPPED |
 | A lot that holds several goods — the paper «tarkibi» | `docs/LOT-TARKIBI.md` — agreed 2026-10-01 (his 1c 2c 3b 4c 5a 6 7a 8a), SHIPPED |
+| «Yuk ma'lumoti tekshirildi» — the ✅/❓ on a lot, the worklist | `docs/YUK-TEKSHIRUV.md` — agreed 2026-10-03 (his 1a 2b 3a 4a 5b), SHIPPED |
 
 ## State — 2026-08-23
 
@@ -2410,7 +2411,33 @@ the agent file, «шт» beside «кг» on one invoice. His answer «1a 2a 3a»
 keep all three as shipped — checked against the code first, the reading-only
 parts now pinned by tests (24 red proofs).
 
-**Latest migration: 0122** (`lot_composition`, `when` …101; ledger must reach **123**). Before
+**Round — yuk ma'lumoti tekshiruvi (2026-10-03; DECISIONS #1264-#1266;
+migration 0123 `lot_check` — ledger must reach 124; spec `docs/YUK-TEKSHIRUV.md`).**
+His «yuk malumoti toldirildi degan znacok … sklad ostatkani korganda va plan
+berganda korinib turishi kerak … filterlash imkoni», answers 1a 2b 3a 4a 5b.
+`lot_checks` = one row per lot SNAPSHOTTING what a person vouched for (name
+zh+ru, box_count, client — 2b); every reader COMPARES, so no writer of those
+facts clears anything (a QR-siz take-back heals by itself). A standing lot
+tarkibi is ✅ «hujjat bo'yicha» by DERIVATION (3a, `isStale`'s terms in SQL,
+pinned against it). The ❓ worklist is cargo in a CN warehouse (4a); the card's
+own askable = a live carton on a CN shelf or on a truck out of China. ONE
+sentence `receipts/lot-check-sql.ts` (+ pure `lot-check-face.ts` for the plan
+editor), ONE writer `receipts/lot-check.ts` (door = `mayOpenBatchVed` +
+`mayReadReceipt`; lot NO KEY UPDATE → prixod SHARE NOWAIT → check row FOR
+UPDATE; two CAS: `lot_changed`, `check_changed`). Readers: /stock (chip as a
+SIBLING of the code link, filter row, Σ + prixod chip counts in one statement,
+filter in HAVING), Ostatka XLSX (export-always «Tekshiruv»), plan editor
+(render-only filter, re-read on tab return), prixod card, «Yuklar», logist +
+VED home rows. `lotChecksReady()` probe → every list runs its pre-0123 shape on
+a half-applied deploy (measured on a ledger-123 copy). Audit keys are PER LOT
+(`lotCheck:A`, `auditFieldLabel`) — a shared key let `groupHistory` net three
+lots into one line. Reviewed as built by 5 lenses + skeptics: 18 of 20
+confirmed and fixed (#1265). Also his «yashiklar … colapsable»: `CrateRows`
+is a `<details>`, open ≤5 (#1266). 5b (the client's own ✅/❌ in Telegram) is
+owed as a later round.
+
+**Latest migration: 0123** (`lot_check`, `when` …102; ledger must reach **124**). Before
+it: 0122 (`lot_composition`, `when` …101). Before
 it: 0121 (`batch_rename`, `when` …100). Before
 it: 0120 (`no_login_staff`, `when` …099). Before
 it: 0119 (`price_icons`), 0118 (`border_queue`), 0117 (`staff_pay`) — `when` …096-…098. Before them:
@@ -2537,14 +2564,15 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **123** since 0122 (122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **124** since 0123 (123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
 and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read
 2026-09-30 04:30 UTC, built after #103 merged, so 0120's code runs) — the count
 was asked for and NOT quoted; PR #106 (0121) deployed 2026-09-30 evening («Hozir sistema
-yaxshi ishlayabti», count not quoted either), so COUNT FIRST on the next deploy: it must read
-**123** (anything less means a migration did not land — read the `migrate`
+yaxshi ishlayabti», count not quoted either); PR #109 (0122) was asked about and NOT
+answered, so COUNT FIRST on the next deploy: it must read
+**124** (anything less means a migration did not land — read the `migrate`
 container's own output; from 113 the whole 0113-0120 set applies and EVERY
 container must be recreated once: `--profile https --profile telegram up -d
 --build`, compose gained `init`, a healthcheck, log caps and a postgres flag);

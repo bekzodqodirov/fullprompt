@@ -541,12 +541,14 @@ export default async function ReceiptDetailPage({
                   const view = lotChecks.get(lot.id)!;
                   return {
                     state: view.state,
+                    askable: view.askable,
                     byDocument: view.byDocument,
                     documentStale: view.documentStale,
                     person: view.person
                       ? {
                           by: view.person.by,
                           day: dayIn(view.person.at, warehouse.timezone),
+                          token: view.person.token,
                           note: view.person.note,
                           holds: view.person.holds,
                           moved: view.person.moved,
@@ -561,6 +563,7 @@ export default async function ReceiptDetailPage({
                   clientId: receipt.clientId,
                 }}
                 canWrite={mayCheck}
+                canRename={canEdit}
                 phones={checkPhones}
               />
             )}

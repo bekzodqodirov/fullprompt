@@ -8,11 +8,13 @@ import { mayOpenBatchVed } from '../batches/card-door';
 import { lockReceiptShareNoWait } from './grow-lot';
 import {
   checkTermsSql,
+  lotAskableSql,
   lotCheckStateSql,
   lotTarkibJoinSql,
   tarkibStandsSql,
   type LotCheckState,
 } from './lot-check-sql';
+import { lotChecksReady } from './lot-check-ready';
 import { mayReadReceipt } from './read-door';
 
 /**
@@ -24,7 +26,7 @@ import { mayReadReceipt } from './read-door';
  * `lot-check-sql.ts`, so no writer of those facts ever clears it.
  */
 
-export type LotCheckRefusal = 'forbidden' | 'receipt_not_confirmed' | 'no_client' | 'lot_changed';
+export type LotCheckRefusal = 'forbidden' | 'receipt_not_confirmed' | 'no_client' | 'lot_changed' | 'check_changed';
 
 export class LotCheckError extends Error {
   constructor(public readonly code: LotCheckRefusal) {
@@ -59,8 +61,19 @@ export const lotCheckInputSchema = z.object({
     clientId: z.union([z.string().uuid(), z.literal('')]),
   }),
   note: z.string().max(500).optional(),
+  /**
+   * The person's check as the panel DREW it (`checked_at::text`, null = none)
+   * — compared under the lock, so a press never replaces or removes a
+   * colleague's confirmation it did not see (`check_changed`).
+   */
+  seenCheckedAt: z.string().max(64).nullable(),
 });
 export type LotCheckInput = z.infer<typeof lotCheckInputSchema>;
+
+export const lotUncheckInputSchema = z.object({
+  lotId: z.string().uuid(),
+  seenCheckedAt: z.string().max(64).nullable(),
+});
 
 /** '' and NULL are one value — the lot column stores an absent name as NULL. */
 const orNull = (value: string | null | undefined): string | null => {
@@ -110,6 +123,17 @@ async function lockLot(tx: Tx, lotId: string): Promise<LockedLot> {
   return { ...lot, box_count: Number(lot.box_count) };
 }
 
+/**
+ * The History's keys carry the LOT (`lotCheck:A`): the tab nets a run of
+ * one person's edits per KEY, so a shared `lotCheck` turned «ticked A, B and
+ * C in one call» into one line about C, and «undo A, tick B» into what reads
+ * as A renamed to B. `AUDIT_FIELD_LABELS` resolves the prefix.
+ */
+export function lotCheckAuditKeys(letter: string | null): { check: string; note: string } {
+  const item = letter ?? '?';
+  return { check: `lotCheck:${item}`, note: `lotCheckNote:${item}` };
+}
+
 /** The History's value: «A: 键盘 (Клавиатура) × 100 · GS777» — a re-check after a rename reads different. */
 function summary(
   letter: string | null,
@@ -136,11 +160,13 @@ async function clientCodesOf(tx: Tx, ids: string[]): Promise<Map<string, string>
 /**
  * «✅ To'g'ri — mijoz tasdiqladi». On the pool: the door, a confirmed prixod
  * with a client. In ONE transaction, in this lock order — lot (NO KEY UPDATE)
- * → prixod (SHARE NOWAIT, raw — #1174) — the posted snapshot is compared with
- * the LOCKED lot and prixod: a person cannot confirm a name they did not see
- * («the lot changed while you were on the phone — look again»). The row is
- * written FROM the locked values, never from the post. The same snapshot and
- * note again is no write and no audit (an explicit value, never a toggle).
+ * → prixod (SHARE NOWAIT, raw — #1174) → the check row (FOR UPDATE) — two
+ * compare-and-sets: the posted snapshot against the LOCKED lot and prixod (a
+ * person cannot confirm a name they did not see: `lot_changed`), and the
+ * check the panel drew against the row (`check_changed`: a colleague
+ * confirmed meanwhile). The row is written FROM the locked values, never from
+ * the post. The same press again by the same person is no write and no audit
+ * (a double tap, never a refusal).
  */
 export async function checkLot(
   input: unknown,
@@ -160,8 +186,7 @@ export async function checkLot(
     const [current] = (await tx.execute(sql`
       SELECT status, client_id FROM receipts WHERE id = ${lot.receipt_id}::uuid
     `)) as unknown as { status: string; client_id: string | null }[];
-    if (!current || current.status !== 'confirmed')
-      throw new LotCheckError('receipt_not_confirmed');
+    if (!current || current.status !== 'confirmed') throw new LotCheckError('receipt_not_confirmed');
     if (!current.client_id) throw new LotCheckError('no_client');
     if (
       parsed.seen.nameZh.trim() !== lot.name_zh.trim() ||
@@ -172,26 +197,15 @@ export async function checkLot(
       throw new LotCheckError('lot_changed');
     }
 
-    const [prev] = (await tx.execute(sql`
-      SELECT seen_name_zh, seen_name_ru, seen_box_count, seen_client_id, note
-        FROM lot_checks WHERE lot_id = ${lot.id}::uuid FOR UPDATE
-    `)) as unknown as {
-      seen_name_zh: string;
-      seen_name_ru: string | null;
-      seen_box_count: number;
-      seen_client_id: string;
-      note: string | null;
-    }[];
-    if (
-      prev &&
+    const prev = await lockCheckRow(tx, lot.id);
+    const holdsNow =
+      prev !== null &&
       prev.seen_name_zh === lot.name_zh &&
       prev.seen_name_ru === lot.name_ru &&
       Number(prev.seen_box_count) === lot.box_count &&
-      prev.seen_client_id === current.client_id &&
-      prev.note === note
-    ) {
-      return { changed: false };
-    }
+      prev.seen_client_id === current.client_id;
+    if (holdsNow && prev.note === note && prev.checked_by === actor.id) return { changed: false };
+    if ((prev?.checked_at ?? null) !== parsed.seenCheckedAt) throw new LotCheckError('check_changed');
 
     await tx.execute(sql`
       INSERT INTO lot_checks (lot_id, seen_name_zh, seen_name_ru, seen_box_count, seen_client_id, note, checked_by)
@@ -206,91 +220,79 @@ export async function checkLot(
         checked_at = now()
     `);
 
-    const codes = await clientCodesOf(tx, [
-      current.client_id,
-      ...(prev ? [prev.seen_client_id] : []),
-    ]);
-    await writeAudit(
-      tx,
-      { ...ctx, warehouseId: receipt.warehouseId },
-      {
-        entityType: 'receipt',
-        entityId: receipt.id,
-        action: 'update',
-        before: {
-          lotCheck: prev
-            ? summary(
-                lot.letter,
-                prev.seen_name_zh,
-                prev.seen_name_ru,
-                Number(prev.seen_box_count),
-                codes.get(prev.seen_client_id) ?? null,
-              )
-            : null,
-          lotCheckNote: prev?.note ?? null,
-        },
-        after: {
-          lotCheck: summary(
-            lot.letter,
-            lot.name_zh,
-            lot.name_ru,
-            lot.box_count,
-            codes.get(current.client_id) ?? null,
-          ),
-          lotCheckNote: note,
-        },
+    const codes = await clientCodesOf(tx, [current.client_id, ...(prev ? [prev.seen_client_id] : [])]);
+    const keys = lotCheckAuditKeys(lot.letter);
+    await writeAudit(tx, { ...ctx, warehouseId: receipt.warehouseId }, {
+      entityType: 'receipt',
+      entityId: receipt.id,
+      action: 'update',
+      before: {
+        [keys.check]: prev
+          ? summary(lot.letter, prev.seen_name_zh, prev.seen_name_ru, Number(prev.seen_box_count), codes.get(prev.seen_client_id) ?? null)
+          : null,
+        [keys.note]: prev?.note ?? null,
       },
-    );
+      after: {
+        [keys.check]: summary(lot.letter, lot.name_zh, lot.name_ru, lot.box_count, codes.get(current.client_id) ?? null),
+        [keys.note]: note,
+      },
+    });
     return { changed: true };
   });
 }
 
+interface CheckRow {
+  seen_name_zh: string;
+  seen_name_ru: string | null;
+  seen_box_count: number;
+  seen_client_id: string;
+  note: string | null;
+  checked_by: string;
+  checked_at: string;
+}
+
+/** The person's check, FOR UPDATE, with `checked_at` as TEXT — the token the panel posts back. */
+async function lockCheckRow(tx: Tx, lotId: string): Promise<CheckRow | null> {
+  const rows = (await tx.execute(sql`
+    SELECT seen_name_zh, seen_name_ru, seen_box_count, seen_client_id, note, checked_by, checked_at::text AS checked_at
+      FROM lot_checks WHERE lot_id = ${lotId}::uuid FOR UPDATE
+  `)) as unknown as CheckRow[];
+  return rows[0] ?? null;
+}
+
 /**
- * «Bekor qilish» — the person's confirmation taken back. A composition's ✅
- * is not touched (it is undone by clearing the composition). Allowed on a
- * voided prixod: a wrong confirmation must stay removable.
+ * «Bekor qilish» — the person's confirmation taken back, only the one the
+ * panel drew (`check_changed` otherwise), on a confirmed prixod (a voided one
+ * is off every shelf; its row stays as history). A composition's ✅ is not
+ * touched — it is undone by clearing the composition.
  */
 export async function uncheckLot(
-  input: { lotId: string },
+  input: unknown,
   actor: LotCheckActor,
   ctx: AuditContext,
 ): Promise<{ changed: boolean }> {
-  const { receipt } = await lotCheckDoor(actor, String(input.lotId ?? ''));
+  const parsed = lotUncheckInputSchema.parse(input);
+  const { receipt } = await lotCheckDoor(actor, parsed.lotId);
+  if (receipt.status !== 'confirmed') throw new LotCheckError('receipt_not_confirmed');
   return db.transaction(async (tx) => {
     await tx.execute(sql`SET LOCAL lock_timeout = '5s'`);
-    const lot = await lockLot(tx, String(input.lotId));
-    const [gone] = (await tx.execute(sql`
-      DELETE FROM lot_checks WHERE lot_id = ${lot.id}::uuid
-      RETURNING seen_name_zh, seen_name_ru, seen_box_count, seen_client_id, note
-    `)) as unknown as {
-      seen_name_zh: string;
-      seen_name_ru: string | null;
-      seen_box_count: number;
-      seen_client_id: string;
-      note: string | null;
-    }[];
-    if (!gone) return { changed: false };
-    const codes = await clientCodesOf(tx, [gone.seen_client_id]);
-    await writeAudit(
-      tx,
-      { ...ctx, warehouseId: receipt.warehouseId },
-      {
-        entityType: 'receipt',
-        entityId: receipt.id,
-        action: 'update',
-        before: {
-          lotCheck: summary(
-            lot.letter,
-            gone.seen_name_zh,
-            gone.seen_name_ru,
-            Number(gone.seen_box_count),
-            codes.get(gone.seen_client_id) ?? null,
-          ),
-          lotCheckNote: gone.note,
-        },
-        after: { lotCheck: null, lotCheckNote: null },
+    const lot = await lockLot(tx, parsed.lotId);
+    const row = await lockCheckRow(tx, lot.id);
+    if (!row) return { changed: false };
+    if (row.checked_at !== parsed.seenCheckedAt) throw new LotCheckError('check_changed');
+    await tx.execute(sql`DELETE FROM lot_checks WHERE lot_id = ${lot.id}::uuid`);
+    const codes = await clientCodesOf(tx, [row.seen_client_id]);
+    const keys = lotCheckAuditKeys(lot.letter);
+    await writeAudit(tx, { ...ctx, warehouseId: receipt.warehouseId }, {
+      entityType: 'receipt',
+      entityId: receipt.id,
+      action: 'update',
+      before: {
+        [keys.check]: summary(lot.letter, row.seen_name_zh, row.seen_name_ru, Number(row.seen_box_count), codes.get(row.seen_client_id) ?? null),
+        [keys.note]: row.note,
       },
-    );
+      after: { [keys.check]: null, [keys.note]: null },
+    });
     return { changed: true };
   });
 }
@@ -298,6 +300,11 @@ export async function uncheckLot(
 /** What the prixod card and the client card draw for one lot. */
 export interface LotCheckView {
   state: LotCheckState;
+  /**
+   * Any live carton still in China (`lotAskableSql`, his 4a): only then does
+   * the card ask ❓ / ⚠ and offer the button — elsewhere it shows ✅ or nothing.
+   */
+  askable: boolean;
   /** The composition stands — «✅ hujjat bo'yicha». */
   byDocument: boolean;
   /** A composition exists that no longer matches the lot. */
@@ -306,6 +313,8 @@ export interface LotCheckView {
   person: {
     by: string | null;
     at: Date;
+    /** `checked_at::text` — the token the panel posts back (`seenCheckedAt`). */
+    token: string;
     note: string | null;
     holds: boolean;
     moved: { name: boolean; count: boolean; client: boolean };
@@ -315,20 +324,19 @@ export interface LotCheckView {
 /**
  * Every lot's view in ONE statement, over the same sentence the lists ask
  * (`lotCheckStateSql`, its terms, `tarkibStandsSql`) — the card cannot say ✅
- * about a lot the stock table calls ❓. Defaults its handle to the pool (the
- * tx-pool fence's seed shape).
+ * about a lot the stock table calls ❓. Empty on a server whose migration has
+ * not landed (#472). Defaults its handle to the pool (the tx-pool fence's
+ * seed shape).
  */
-export async function lotCheckViewsFor(
-  lotIds: string[],
-  exec: Db | Tx = db,
-): Promise<Map<string, LotCheckView>> {
+export async function lotCheckViewsFor(lotIds: string[], exec: Db | Tx = db): Promise<Map<string, LotCheckView>> {
   const ids = [...new Set(lotIds)].filter((id) => UUID.test(id));
-  if (ids.length === 0) return new Map();
+  if (ids.length === 0 || !(await lotChecksReady())) return new Map();
   const refs = { lot: sql`l`, receipt: sql`r`, check: sql`lc` };
   const terms = checkTermsSql(refs);
   const rows = (await exec.execute(sql`
     SELECT l.id AS lot_id,
            ${lotCheckStateSql(refs)} AS state,
+           ${lotAskableSql(sql`l`)} AS askable,
            ${tarkibStandsSql(sql`l`)} AS by_document,
            (lot_tarkib.lot_id IS NOT NULL) AS has_document,
            lc.lot_id IS NOT NULL AS has_person,
@@ -348,6 +356,7 @@ export async function lotCheckViewsFor(
   `)) as unknown as {
     lot_id: string;
     state: LotCheckState;
+    askable: boolean;
     by_document: boolean;
     has_document: boolean;
     has_person: boolean;
@@ -360,21 +369,19 @@ export async function lotCheckViewsFor(
   }[];
   return new Map(
     rows.map((row) => {
-      const moved = {
-        name: row.name_ok !== true,
-        count: row.count_ok !== true,
-        client: row.client_ok !== true,
-      };
+      const moved = { name: row.name_ok !== true, count: row.count_ok !== true, client: row.client_ok !== true };
       return [
         row.lot_id,
         {
           state: row.state,
+          askable: row.askable === true,
           byDocument: row.by_document === true,
           documentStale: row.has_document && row.by_document !== true,
           person: row.has_person
             ? {
                 by: row.checked_by,
                 at: new Date(row.checked_at!),
+                token: row.checked_at!,
                 note: row.note,
                 holds: !moved.name && !moved.count && !moved.client,
                 moved,

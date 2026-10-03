@@ -64,6 +64,9 @@ const ALLOWED = new Set([
   // a line's name, pieces or code, so the stock and plan screens that ask it
   // still learn nothing about the contents (docs/YUK-TEKSHIRUV.md §8).
   'src/modules/wms/receipts/lot-check-sql.ts',
+  // …and its readiness probe asks only whether the tables EXIST (#472), so a
+  // server without 0122/0123 runs the lists in their old shape.
+  'src/modules/wms/receipts/lot-check-ready.ts',
 ]);
 
 /** The readers deliberately NOT taught — redundant with ALLOWED, but a failure here names the rule. */

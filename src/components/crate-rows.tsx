@@ -50,7 +50,11 @@ export function CrateRows({
         </span>
         {overCount > 0 && (
           <span className="chip-warn" data-testid="crate-rows-over">
+            {/* «+» beside a capped list: an over-capacity crate past the cap is
+                neither listed nor counted, and folded the summary is all that
+                shows. */}
             ⚠ {labels.over} · {overCount}
+            {more ? '+' : ''}
           </span>
         )}
       </summary>

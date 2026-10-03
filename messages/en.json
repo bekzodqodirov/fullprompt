@@ -5077,8 +5077,12 @@
       "lot_changed": "The lot changed while you were looking — refresh and check again",
       "busy": "The receipt is busy — press again in a moment",
       "server_behind": "The server is not updated yet — tell the administrator",
-      "validation": "The note is too long (up to 500 characters)",
-      "other": "Not saved — try again"
-    }
+      "validation": "Invalid data — refresh the page and try again",
+      "other": "Not saved — try again",
+      "check_changed": "A colleague has just checked or unchecked it — refresh the page and look again"
+    },
+    "personOld": "Earlier confirmed by the client: {by} · {day} — changed since: {what}",
+    "documentOld": "The contents document no longer matches the lot — check the contents",
+    "otherAnswersAskLogist": "If the client says «other goods» — tell the logist, who changes the name; if «mixed» — fill in the 🧩 lot contents with their document."
   }
 }

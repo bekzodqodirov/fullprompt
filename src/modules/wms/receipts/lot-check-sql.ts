@@ -1,4 +1,6 @@
-import { sql, type SQL } from 'drizzle-orm';
+import { eq, sql, type SQL } from 'drizzle-orm';
+import type { PgSelect } from 'drizzle-orm/pg-core';
+import { lotChecks, receiptLots } from '../../platform/db/schema';
 import type { CheckFilter } from './lot-check-face';
 
 export {
@@ -123,6 +125,29 @@ export function askableSql(warehouse: SQL): SQL {
 }
 
 /**
+ * «Askable» for ONE lot — the prixod card's question, which has no row's
+ * warehouse to ask (a lot can stand in two places): is any of its live
+ * cartons still in China — on a Chinese shelf, or on a truck that left a
+ * Chinese warehouse and has not unloaded yet? The invoice is made before the
+ * border and the mismatch is usually found after loading (his lot tarkibi
+ * 3b), so a carton on the road out of China is still worth asking about.
+ * Once every carton stands in Uzbekistan (or is handed over), the card shows
+ * ✅ when it was checked and nothing otherwise — the lists' rule (his 4a).
+ * Read per lot for the card's few lots; never a list's WHERE (§4).
+ */
+export function lotAskableSql(lot: SQL): SQL {
+  return sql`EXISTS (
+    SELECT 1 FROM boxes ab
+      LEFT JOIN warehouses aw ON aw.id = ab.current_warehouse_id
+      LEFT JOIN batches abt ON abt.id = ab.current_batch_id
+      LEFT JOIN warehouses ao ON ao.id = abt.origin_warehouse_id
+     WHERE ab.lot_id = ${lot}.id
+       AND ab.status NOT IN ('issued', 'lost', 'void')
+       AND (aw.country = 'CN' OR (ab.current_warehouse_id IS NULL AND ao.country = 'CN'))
+  )`;
+}
+
+/**
  * The filter over a state and an «askable» — ONE function for the row level
  * (`lotCheckStateSql`, `askableSql`) and the grouped level (`g.state`,
  * `g.askable`), so the table and its Σ cannot answer two different questions.
@@ -131,4 +156,21 @@ export function checkFilterSql(tek: CheckFilter, state: SQL, askable: SQL): SQL 
   return tek === 'ha'
     ? sql`(${state} = 'checked')`
     : sql`(${state} IN ('none', 'stale') AND ${askable})`;
+}
+
+/**
+ * The two joins every list reader makes, on a `$dynamic()` query — or none
+ * when `on` is false (`lotChecksReady()` said the tables are not there yet,
+ * #472): the reader then runs its pre-0123 shape and draws no chip.
+ */
+export function withLotCheckJoins<T extends PgSelect>(qb: T, on: boolean): T {
+  if (!on) return qb;
+  return qb
+    .leftJoin(lotChecks, eq(lotChecks.lotId, receiptLots.id))
+    .leftJoin(lotTarkibJoinSql(), lotTarkibOnSql(sql`${receiptLots}`)) as unknown as T;
+}
+
+/** The state where the joins were made, NULL where they were not (no chip, never ❓). */
+export function lotCheckStateOrNullSql(on: boolean, refs: LotCheckRefs): SQL {
+  return on ? lotCheckStateSql(refs) : sql`NULL::text`;
 }
