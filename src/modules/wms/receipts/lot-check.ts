@@ -134,15 +134,12 @@ export function lotCheckAuditKeys(letter: string | null): { check: string; note:
   return { check: `lotCheck:${item}`, note: `lotCheckNote:${item}` };
 }
 
-/** The History's value: «A: 键盘 (Клавиатура) × 100 · GS777» — a re-check after a rename reads different. */
-function summary(
-  letter: string | null,
-  zh: string,
-  ru: string | null,
-  count: number,
-  code: string | null,
-): string {
-  return `${letter ?? ''}: ${zh}${ru ? ` (${ru})` : ''} × ${count} · ${code ?? '?'}`;
+/**
+ * The History's value: «键盘 (Клавиатура) × 100 · GS777» — a re-check after a
+ * rename reads different. The lot's letter is in the KEY (`lotCheck:A`).
+ */
+function summary(zh: string, ru: string | null, count: number, code: string | null): string {
+  return `${zh}${ru ? ` (${ru})` : ''} × ${count} · ${code ?? '?'}`;
 }
 
 async function clientCodesOf(tx: Tx, ids: string[]): Promise<Map<string, string>> {
@@ -228,12 +225,12 @@ export async function checkLot(
       action: 'update',
       before: {
         [keys.check]: prev
-          ? summary(lot.letter, prev.seen_name_zh, prev.seen_name_ru, Number(prev.seen_box_count), codes.get(prev.seen_client_id) ?? null)
+          ? summary(prev.seen_name_zh, prev.seen_name_ru, Number(prev.seen_box_count), codes.get(prev.seen_client_id) ?? null)
           : null,
         [keys.note]: prev?.note ?? null,
       },
       after: {
-        [keys.check]: summary(lot.letter, lot.name_zh, lot.name_ru, lot.box_count, codes.get(current.client_id) ?? null),
+        [keys.check]: summary(lot.name_zh, lot.name_ru, lot.box_count, codes.get(current.client_id) ?? null),
         [keys.note]: note,
       },
     });
@@ -277,6 +274,13 @@ export async function uncheckLot(
   return db.transaction(async (tx) => {
     await tx.execute(sql`SET LOCAL lock_timeout = '5s'`);
     const lot = await lockLot(tx, parsed.lotId);
+    // The prixod under the same lock order as checkLot: a void in flight
+    // answers «busy», one that landed a moment ago is seen.
+    await lockReceiptShareNoWait(tx, lot.receipt_id);
+    const [current] = (await tx.execute(sql`
+      SELECT status FROM receipts WHERE id = ${lot.receipt_id}::uuid
+    `)) as unknown as { status: string }[];
+    if (!current || current.status !== 'confirmed') throw new LotCheckError('receipt_not_confirmed');
     const row = await lockCheckRow(tx, lot.id);
     if (!row) return { changed: false };
     if (row.checked_at !== parsed.seenCheckedAt) throw new LotCheckError('check_changed');
@@ -288,7 +292,7 @@ export async function uncheckLot(
       entityId: receipt.id,
       action: 'update',
       before: {
-        [keys.check]: summary(lot.letter, row.seen_name_zh, row.seen_name_ru, Number(row.seen_box_count), codes.get(row.seen_client_id) ?? null),
+        [keys.check]: summary(row.seen_name_zh, row.seen_name_ru, Number(row.seen_box_count), codes.get(row.seen_client_id) ?? null),
         [keys.note]: row.note,
       },
       after: { [keys.check]: null, [keys.note]: null },

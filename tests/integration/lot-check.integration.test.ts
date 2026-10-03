@@ -569,6 +569,11 @@ describe('the card follows 4a too', () => {
       .set({ status: 'in_transit', currentWarehouseId: null, currentBatchId: truckId })
       .where(eq(boxes.lotId, lot.M));
     expect((await stateOf('M')).askable).toBe(true);
+    // The truck unloaded with these cartons declared missing (they keep the
+    // truck and no warehouse): an unloaded truck carries nothing out of China.
+    await db.execute(sql`UPDATE batches SET status = 'unloaded' WHERE id = ${truckId}::uuid`);
+    expect((await stateOf('M')).askable).toBe(false);
+    await db.execute(sql`UPDATE batches SET status = 'in_transit' WHERE id = ${truckId}::uuid`);
     // Unloaded in Uzbekistan: no longer asked about.
     await db
       .update(boxes)

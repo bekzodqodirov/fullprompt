@@ -73,7 +73,9 @@ export function LotCheckPanel({
     : '';
   const mayAct = canWrite && face.state !== 'unclaimed' && Boolean(seen.clientId);
   const offerConfirm = mayAct && asking;
-  const offerUndo = canWrite && person !== null;
+  // Undo only where the tick can be given again: on cargo already in
+  // Uzbekistan the person's row stays as history (4a asks nothing there).
+  const offerUndo = canWrite && person !== null && face.askable;
 
   async function confirm() {
     setBusy(true);

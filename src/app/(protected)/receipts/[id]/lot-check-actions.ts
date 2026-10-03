@@ -43,6 +43,20 @@ async function afterWrite(lotId: string): Promise<void> {
   revalidatePath('/');
 }
 
+/**
+ * A refusal that means «the card is out of date» re-renders the card too, so
+ * the person sees the current face and the next press carries the current
+ * token — without it every later press is refused the same way.
+ */
+async function refused(err: unknown, payload: unknown): Promise<LotCheckActionResult> {
+  const result = refusalOf(err);
+  if (!result.ok && (result.error === 'check_changed' || result.error === 'lot_changed')) {
+    const lotId = (payload as { lotId?: unknown } | null)?.lotId;
+    if (typeof lotId === 'string') await afterWrite(lotId).catch(() => undefined);
+  }
+  return result;
+}
+
 export async function checkLotAction(payload: unknown): Promise<LotCheckActionResult> {
   try {
     const actor = await requireActor();
@@ -51,7 +65,7 @@ export async function checkLotAction(payload: unknown): Promise<LotCheckActionRe
     await afterWrite((payload as { lotId: string }).lotId);
     return { ok: true, changed };
   } catch (err) {
-    return refusalOf(err);
+    return refused(err, payload);
   }
 }
 
@@ -63,6 +77,6 @@ export async function uncheckLotAction(payload: unknown): Promise<LotCheckAction
     await afterWrite((payload as { lotId: string }).lotId);
     return { ok: true, changed };
   } catch (err) {
-    return refusalOf(err);
+    return refused(err, payload);
   }
 }

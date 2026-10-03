@@ -96,7 +96,7 @@ erases a confirmation it did not see; the same person's same press is a
 no-op, never a refusal) → upsert → one audit row on the prixod, keyed PER
 LOT (`lotCheck:A` / `lotCheckNote:A` — the History nets a sitting per key,
 and a shared key turned «ticked A, B, C» into one line about C), value
-`A: 键盘 (Клавиатура) × 100 · GS777` so a re-check after a rename differs.
+`键盘 (Клавиатура) × 100 · GS777` (the letter is in the key) so a re-check after a rename differs.
 `uncheckLot` takes the same token and refuses a non-confirmed prixod (a
 voided one is off every shelf; its row stays as history).
 

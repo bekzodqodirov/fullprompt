@@ -100,8 +100,11 @@ describe('/stock carries `tek` through every door (#514, #171)', () => {
     expect(page).toContain('{checksOn && (');
   });
 
-  it('«Hammasi» is never a bare /stock (a bare visit redirects to a saved default view)', () => {
-    expect(page).toContain("return qs ? `/stock?${qs}` : '/stock?tek=';");
+  it('no link this page builds is a bare /stock (a bare visit redirects to a saved default view)', () => {
+    // «Hammasi», the pager and the card's «← Ostatka» (built from pageHref).
+    expect(page.match(/return qs \? `\/stock\?\$\{qs\}` : '\/stock\?tek=';/g) ?? []).toHaveLength(2);
+    expect(page).not.toMatch(/: '\/stock';/);
+    expect(page).toContain('const backHere = encodeURIComponent(pageHref(page));');
   });
 
   it('the chip is a SIBLING of the code cell\'s link, never inside it', () => {

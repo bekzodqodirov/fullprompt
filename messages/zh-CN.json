@@ -5066,7 +5066,7 @@
     "telegram": "在 Telegram 中联系",
     "notePlaceholder": "备注（可选）：客户怎么说",
     "confirm": "正确 — 客户已确认",
-    "undo": "取消核对标记",
+    "undo": "取消客户确认",
     "undoConfirm": "取消核对标记？",
     "otherAnswers": "客户说「其他货物」— 用下方 ✏️ 修改名称；说「混装」— 用其文件填写 🧩 批次组成。",
     "done": "✅ 已保存",
@@ -5074,15 +5074,16 @@
       "forbidden": "您无权标记此入库单",
       "receipt_not_confirmed": "入库单未确认",
       "no_client": "请先指定客户",
-      "lot_changed": "您查看时批次已变更 — 请刷新后再核对",
+      "lot_changed": "您查看时批次已变更 — 已显示当前状态，请再次查看",
       "busy": "入库单正忙 — 请稍后再按",
       "server_behind": "服务器尚未更新 — 请告知管理员",
       "validation": "数据有误 — 请刷新页面后重试",
       "other": "未保存 — 请重试",
-      "check_changed": "其他员工刚刚标记或取消了标记 — 请刷新页面后再查看"
+      "check_changed": "标记在您查看后已变更 — 已显示当前状态，请再次查看"
     },
     "personOld": "之前客户已确认：{by} · {day} — 之后已变更：{what}",
     "documentOld": "组成文件已与批次不符 — 请检查组成",
-    "otherAnswersAskLogist": "客户说「其他货物」— 请告知物流员，由他修改名称；说「混装」— 用其文件填写 🧩 批次组成。"
+    "otherAnswersAskLogist": "客户说「其他货物」— 请告知物流员，由他修改名称；说「混装」— 用其文件填写 🧩 批次组成。",
+    "pruned": "{n} 个已选行已不在此仓库 — 已从计划中移除"
   }
 }

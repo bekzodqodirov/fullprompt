@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { LightboxImg } from '@/components/lightbox-img';
@@ -122,12 +122,24 @@ export function PlanEditor({
   const [tek, setTek] = useState<CheckFilter | 'all'>('all');
   /** The list did not load — said, never drawn as an empty warehouse. */
   const [stockFailed, setStockFailed] = useState(false);
+  /** The first answer for this origin has arrived (ok or failed) — before it, «loading», never «empty». */
+  const [loaded, setLoaded] = useState(false);
+  /** The check is on this server (0123 landed); its filter is drawn only then. */
+  const [checksOn, setChecksOn] = useState(false);
+  /** Picks a re-read found gone from the warehouse and took out — said once. */
+  const [pruned, setPruned] = useState(0);
   const [selection, setSelection] = useState<Map<string, number>>(
     () => new Map(resubmit?.lines.map((l) => [l.lotId, l.boxCount]) ?? []),
   );
   const [selectedCrates, setSelectedCrates] = useState<Set<string>>(
     () => new Set(resubmit?.crateIds ?? []),
   );
+  // The picks as they stand NOW, for the re-read that fires from an event
+  // listener (its closure holds the picks of the render that attached it).
+  const picksRef = useRef({ selection, selectedCrates });
+  useEffect(() => {
+    picksRef.current = { selection, selectedCrates };
+  }, [selection, selectedCrates]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -140,6 +152,8 @@ export function PlanEditor({
     setStockCrates([]);
     setAskable(false);
     setStockFailed(false);
+    setLoaded(false);
+    setPruned(0);
     const controller = new AbortController();
     /**
      * One read of this origin's list. `quiet` is the re-read when the tab
@@ -149,24 +163,71 @@ export function PlanEditor({
      * what is on screen rather than calling it a failure.
      */
     const load = async (quiet: boolean) => {
+      // A deadline on the first read: a request that hangs (a Chinese
+      // warehouse's network) is a list that did not load, said in words.
+      // A plain timer and a per-call controller, not `AbortSignal.any` —
+      // older iPhones have no such function and would never load the list.
+      const call = new AbortController();
+      const follow = () => call.abort();
+      controller.signal.addEventListener('abort', follow);
+      const timer = quiet ? null : setTimeout(() => call.abort(), 20_000);
       try {
         const res = await fetch(`/api/plans/stock?warehouseId=${originId}`, {
-          signal: controller.signal,
+          signal: call.signal,
+          // The re-read on return must not answer from before the tick.
+          ...(quiet ? { cache: 'no-store' as const } : {}),
         });
         if (res.ok) {
-          const data = (await res.json()) as { lots: StockLot[]; crates?: StockCrate[]; askable?: boolean };
+          const data = (await res.json()) as {
+            lots: StockLot[];
+            crates?: StockCrate[];
+            askable?: boolean;
+            checks?: boolean;
+          };
           setLots(data.lots);
           setStockCrates(data.crates ?? []);
           setAskable(Boolean(data.askable));
+          setChecksOn(Boolean(data.checks));
           setStockFailed(false);
+          if (quiet) {
+            // A pick the warehouse no longer has (another plan reserved it,
+            // it went into a crate) would be invisible, uncountable and
+            // refused at submit — take it out and say so.
+            const available = new Map(data.lots.map((lot) => [lot.lotId, lot.available]));
+            const crateIds = new Set((data.crates ?? []).map((crate) => crate.crateId));
+            const picks = picksRef.current;
+            let gone = 0;
+            let clamped = false;
+            const nextSelection = new Map<string, number>();
+            for (const [lotId, count] of picks.selection) {
+              const max = available.get(lotId) ?? 0;
+              if (max <= 0) gone += 1;
+              else {
+                if (count > max) clamped = true;
+                nextSelection.set(lotId, Math.min(count, max));
+              }
+            }
+            const nextCrates = new Set<string>();
+            for (const crateId of picks.selectedCrates) {
+              if (crateIds.has(crateId)) nextCrates.add(crateId);
+              else gone += 1;
+            }
+            if (gone > 0 || clamped) setSelection(nextSelection);
+            if (nextCrates.size !== picks.selectedCrates.size) setSelectedCrates(nextCrates);
+            if (gone > 0) setPruned((n) => n + gone);
+          }
         } else if (!quiet) {
           setStockFailed(true);
         }
       } catch {
         // An abort is the origin changing; anything else (offline, a body
-        // that did not parse) is a list that did not load — said, never
-        // drawn as an empty warehouse.
+        // that did not parse, the deadline) is a list that did not load —
+        // said, never drawn as an empty warehouse.
         if (!controller.signal.aborted && !quiet) setStockFailed(true);
+      } finally {
+        if (timer) clearTimeout(timer);
+        controller.signal.removeEventListener('abort', follow);
+        if (!quiet && !controller.signal.aborted) setLoaded(true);
       }
     };
     void load(false);
@@ -337,7 +398,13 @@ export function PlanEditor({
       {/* «Yuk ma'lumoti tekshirildi»: three filters, each naming how many
           rows it would show, on a line that wraps. Shown only when there is
           anything to choose between. */}
-      {lots.length + stockCrates.length > 0 && (
+      {pruned > 0 && (
+        <p role="status" className="text-xs font-semibold text-warn" data-testid="plan-picks-pruned">
+          ⚠ {tlc('pruned', { n: pruned })}
+        </p>
+      )}
+
+      {checksOn && lots.length + stockCrates.length > 0 && (
         <div className="space-y-1" data-testid="plan-check-filter">
           <div className="flex flex-wrap gap-2 text-sm">
             {(
@@ -578,6 +645,10 @@ export function PlanEditor({
           <p role="alert" className="p-4 text-sm font-semibold text-bad" data-testid="plan-stock-failed">
             {t('stockFailed')}
           </p>
+        ) : !loaded ? (
+          <p className="p-4 text-sm text-ink-500" data-testid="plan-stock-loading">
+            {tc('loading')}
+          </p>
         ) : lots.length + stockCrates.length > 0 && shownLots.length + shownCrates.length === 0 ? (
           // An empty FILTER is not an empty warehouse — said in its own
           // words, counting the crates as well as the loose lots.
@@ -585,8 +656,9 @@ export function PlanEditor({
             {tlc('noMatch')}
           </p>
         ) : (
+          // An empty warehouse is one with neither loose lots nor crates.
           lots.length === 0 &&
-          (tek === 'all' || stockCrates.length === 0) && <p className="p-4 text-sm text-ink-500">{t('noStock')}</p>
+          stockCrates.length === 0 && <p className="p-4 text-sm text-ink-500">{t('noStock')}</p>
         )}
       </div>
 

@@ -5066,7 +5066,7 @@
     "telegram": "Write in Telegram",
     "notePlaceholder": "Note (optional): what the client said",
     "confirm": "Correct — client confirmed",
-    "undo": "Remove the check",
+    "undo": "Remove the client's confirmation",
     "undoConfirm": "Remove the check mark?",
     "otherAnswers": "If the client says «other goods» — fix the name with ✏️ below; if «mixed» — fill in the 🧩 lot contents with their document.",
     "done": "✅ Saved",
@@ -5074,15 +5074,16 @@
       "forbidden": "You may not mark this receipt",
       "receipt_not_confirmed": "The receipt is not confirmed",
       "no_client": "Assign the client first",
-      "lot_changed": "The lot changed while you were looking — refresh and check again",
+      "lot_changed": "The lot changed while you were looking — the current state is shown, look again",
       "busy": "The receipt is busy — press again in a moment",
       "server_behind": "The server is not updated yet — tell the administrator",
       "validation": "Invalid data — refresh the page and try again",
       "other": "Not saved — try again",
-      "check_changed": "A colleague has just checked or unchecked it — refresh the page and look again"
+      "check_changed": "The check changed after you saw it — the current state is shown, look again"
     },
     "personOld": "Earlier confirmed by the client: {by} · {day} — changed since: {what}",
     "documentOld": "The contents document no longer matches the lot — check the contents",
-    "otherAnswersAskLogist": "If the client says «other goods» — tell the logist, who changes the name; if «mixed» — fill in the 🧩 lot contents with their document."
+    "otherAnswersAskLogist": "If the client says «other goods» — tell the logist, who changes the name; if «mixed» — fill in the 🧩 lot contents with their document.",
+    "pruned": "{n} selected rows are no longer at this warehouse — removed from the plan"
   }
 }

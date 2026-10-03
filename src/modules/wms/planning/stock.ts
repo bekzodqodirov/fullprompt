@@ -132,6 +132,8 @@ export async function plannableStock(warehouseId: string) {
     [...new Set(lotIds.flatMap((lotId) => arrivals.get(lotId)?.codes ?? []))].join(', ');
 
   return {
+    /** The check is on this server (0123 landed) — the editor draws its filter only then. */
+    checks: checksOn,
     /** The ❓ is asked here (a Chinese origin); ✅ shows wherever. */
     askable,
     lots: rows.map((r) => ({

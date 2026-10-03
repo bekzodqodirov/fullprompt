@@ -133,6 +133,9 @@ export function askableSql(warehouse: SQL): SQL {
  * 3b), so a carton on the road out of China is still worth asking about.
  * Once every carton stands in Uzbekistan (or is handed over), the card shows
  * ✅ when it was checked and nothing otherwise — the lists' rule (his 4a).
+ * «On the road» is the truck's own status: a carton an unload declared
+ * missing keeps its truck and no warehouse, and an UNLOADED truck is not
+ * carrying anything out of China any more (the fix review).
  * Read per lot for the card's few lots; never a list's WHERE (§4).
  */
 export function lotAskableSql(lot: SQL): SQL {
@@ -143,7 +146,8 @@ export function lotAskableSql(lot: SQL): SQL {
       LEFT JOIN warehouses ao ON ao.id = abt.origin_warehouse_id
      WHERE ab.lot_id = ${lot}.id
        AND ab.status NOT IN ('issued', 'lost', 'void')
-       AND (aw.country = 'CN' OR (ab.current_warehouse_id IS NULL AND ao.country = 'CN'))
+       AND (aw.country = 'CN'
+            OR (ab.current_warehouse_id IS NULL AND ao.country = 'CN' AND abt.status IN ('loading', 'in_transit', 'arrived')))
   )`;
 }
 

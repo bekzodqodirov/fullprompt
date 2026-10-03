@@ -423,7 +423,9 @@ export default async function StockPage({
     }
     if (target > 1) search.set('page', String(target));
     const qs = search.toString();
-    return qs ? `/stock?${qs}` : '/stock';
+    // Never a bare /stock (a bare visit redirects to the saved default view):
+    // the pager's page one and the card's «← Ostatka» are built from here.
+    return qs ? `/stock?${qs}` : '/stock?tek=';
   };
   const chosen = parseCols(params.cols);
   const columns = visibleColumns(STOCK_COLUMNS, chosen, (permission) =>

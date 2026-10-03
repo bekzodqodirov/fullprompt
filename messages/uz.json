@@ -5066,7 +5066,7 @@
     "telegram": "Telegramda yozish",
     "notePlaceholder": "Izoh (ixtiyoriy): mijoz nima dedi",
     "confirm": "To'g'ri — mijoz tasdiqladi",
-    "undo": "Belgini bekor qilish",
+    "undo": "Mijoz tasdig'ini bekor qilish",
     "undoConfirm": "Tekshiruv belgisi olib tashlansinmi?",
     "otherAnswers": "Mijoz «boshqa tovar» desa — pastdagi ✏️ orqali nomini o'zgartiring; «aralash» desa — hujjati bilan 🧩 lot tarkibini yozing.",
     "done": "✅ Saqlandi",
@@ -5074,15 +5074,16 @@
       "forbidden": "Bu prixodga belgi qo'yishga ruxsatingiz yo'q",
       "receipt_not_confirmed": "Prixod tasdiqlanmagan",
       "no_client": "Avval mijozni biriktiring",
-      "lot_changed": "Siz qarab turganingizda lot o'zgardi — sahifani yangilab, qayta qarang",
+      "lot_changed": "Siz qarab turganingizda lot o'zgardi — hozirgi holat ko'rsatildi, qayta qarang",
       "busy": "Prixod hozir band — bir ozdan keyin qayta bosing",
       "server_behind": "Server hali yangilanmagan — administratorga ayting",
       "validation": "Ma'lumot noto'g'ri — sahifani yangilab, qayta urinib ko'ring",
       "other": "Saqlanmadi — qayta urinib ko'ring",
-      "check_changed": "Boshqa hodim hozirgina belgiladi yoki bekor qildi — sahifani yangilab, qayta qarang"
+      "check_changed": "Belgi siz ko'rgan holatdan keyin o'zgargan — hozirgi holat ko'rsatildi, qayta qarang"
     },
     "personOld": "Avval mijoz tasdiqlagan: {by} · {day} — keyin o'zgargan: {what}",
     "documentOld": "Tarkib hujjati endi lotga mos emas — tarkibni tekshiring",
-    "otherAnswersAskLogist": "Mijoz «boshqa tovar» desa — logistga ayting, nomini u o'zgartiradi; «aralash» desa — hujjati bilan 🧩 lot tarkibini yozing."
+    "otherAnswersAskLogist": "Mijoz «boshqa tovar» desa — logistga ayting, nomini u o'zgartiradi; «aralash» desa — hujjati bilan 🧩 lot tarkibini yozing.",
+    "pruned": "{n} ta tanlangan yuk endi bu skladda yo'q — rejadan olib tashlandi"
   }
 }
