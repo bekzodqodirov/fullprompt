@@ -1,5 +1,44 @@
 # CHANGELOG
 
+## Yuk ma'lumoti tekshiruvi (✅ / ❓) va yig'iladigan yashiklar ro'yxati — 2026-10-03
+
+**Migratsiya 0123.** O'rnatgandan keyin migratsiyalar soni **124** bo'lishi kerak.
+
+Sizning javoblaringiz: **1a · 2b · 3a · 4a · 5b**.
+
+### Nima o'zgardi
+
+- **Prixod kartasida har lotda «yuk ma'lumoti» belgisi.** Logist yoki VED mijozdan so'raydi («100 karobkangiz keldi, klaviatura ekan, to'g'rimi?»). Javob «ha» bo'lsa, **«✅ To'g'ri — mijoz tasdiqladi»** tugmasini bosadi, xohlasa izoh yozadi.
+  - Kartada mijozning telefoni (📞) va Telegram havolasi (💬) turadi.
+  - Belgi kim va qachon qo'yganini ko'rsatadi.
+  - Mijoz «boshqa tovar» desa, lot nomi o'zgartiriladi. VED buni logistga aytadi.
+  - Mijoz «aralash» desa, hujjati bilan lot tarkibi yoziladi.
+- **Tekshirilgandan keyin tovar nomi, karobka soni yoki mijoz o'zgarsa,** belgi o'zi **«⚠️ o'zgardi — qayta so'rang»** bo'ladi. Kg/kub qayta o'lchansa, belgi turaveradi.
+- **Lot tarkibi mijoz hujjati bilan yozilgan bo'lsa,** lot o'zi **«✅ hujjat bo'yicha tekshirilgan»** hisoblanadi. Tarkib o'chirilsa, bu belgi ham ketadi.
+- **Ostatkada** har qatorda belgi turadi.
+  - Tepada filtr bor: **Hammasi · ✅ Tekshirilgan (N prixod) · ❓ Tekshirilmagan (M prixod)**.
+  - ❓ belgisini bossangiz, o'sha lotning kartasi ochiladi. Belgini qo'ygach «← Ostatka» tugmasi xuddi shu ro'yxatga qaytaradi.
+  - Filtrni saqlangan ko'rinishga qo'shsa bo'ladi.
+  - Excelda «Tekshiruv» ustuni chiqadi va fayl ham shu filtr bo'yicha yuklanadi.
+- **Plan berishda** har qatorda va yashikda belgi turadi, filtr ham bor.
+  - Yashik faqat ichidagi **hamma** lot tekshirilgan bo'lsa ✅ bo'ladi.
+  - Filtr bilan yashirilgan tanlangan yuk rejadan tushib qolmaydi.
+  - ❓ belgisi kartani yangi oynada ochadi; rejaga qaytganingizda yangi belgi ko'rinadi va tanlaganlaringiz saqlanib qoladi.
+- **Mijoz kartasining «Yuklar» bo'limida** ham belgilar ko'rinadi: bitta qo'ng'iroqda mijozning hamma yuki bir joyda.
+- **Logist va VED bosh sahifasida** «❓ Tekshirilmagan yuk (Xitoy) — N prixod» qatori bor. Bosilsa, Ostatka shu filtr bilan ochiladi.
+- **❓ ro'yxatiga faqat Xitoy skladlaridagi yuk tushadi** (4a). O'zbekistonga kelgan yukda belgi faqat ✅ bo'lsa ko'rinadi, ❓ chiqmaydi.
+- **Egasi aniqlanmagan yuk** bu ro'yxatga tushmaydi — u «Egasiz yuklar» ro'yxatida bor.
+- **Belgi hech narsani to'xtatmaydi:** tekshirilmagan yukni ham rejaga qo'yib, yuklab yuborsa bo'ladi.
+- **Ostatkada yashiklar ro'yxati yig'iladi:** 5 tagacha yashik ochiq turadi, ko'p bo'lsa yig'ilgan holda turadi. Ustida yashiklar soni va nechtasi sig'maganligi ko'rinadi. Mashina kartasidagi yashiklar ro'yxati ham shunday.
+
+### Bilib qo'ying
+
+- Birinchi kuni Xitoy skladlaridagi hamma yuk «❓ Tekshirilmagan» bo'ladi — ro'yxat shundan boshlanadi.
+- Ikki kishi bitta lotni bir vaqtda belgilasa, ikkinchisiga «boshqa hodim hozirgina belgiladi» deb chiqadi — birovning belgisi bilmasdan o'chib ketmaydi.
+- «Mijoz tasdig'ini bekor qilish» faqat yuk hali Xitoyda turganda chiqadi — O'zbekistonga kelgan yukda belgini qayta qo'yib bo'lmaydi, shuning uchun bekor ham qilinmaydi.
+- Plan berishda: siz boshqa oynada turganingizda yukni boshqa reja olib qo'ysa, rejaga qaytganingizda u tanlovdan o'zi chiqadi va «N ta tanlangan yuk endi bu skladda yo'q — rejadan olib tashlandi» deb yoziladi. Ro'yxat yuklanmasa, «bo'sh sklad» emas, «Yuk ro'yxati yuklanmadi» deb chiqadi.
+- Telegramda mijozning o'zidan «✅ Ha / ❌ Yo'q» deb so'rash (5b) keyingi bosqichga qoldi.
+
 ## Lot tarkibi: 3 savolga «shunday qolsin» — 2026-10-01
 
 Migratsiya yo'q, dastur ishlashi o'zgarmadi.

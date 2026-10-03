@@ -862,6 +862,13 @@
       "when": 1785190000101,
       "tag": "0122_lot_composition",
       "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "7",
+      "when": 1785190000102,
+      "tag": "0123_lot_check",
+      "breakpoints": true
     }
   ]
 }

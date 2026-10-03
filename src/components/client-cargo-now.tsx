@@ -7,6 +7,8 @@ import type { NowSibling, NowTruck } from '@/modules/wms/client-card/yuklar-view
 import type { TruckRow } from '@/modules/wms/tracking/on-road-state';
 import { LightboxImg } from './lightbox-img';
 import { truckRoadWords } from './truck-road';
+import { LotCheckChip } from './lot-check-chip';
+import { chipFace, type LotCheckState } from '@/modules/wms/receipts/lot-check-face';
 
 /** In-page anchors — the Uzbek words, so a shared link reads as what it opens. */
 export const SECTION_ANCHOR: Record<NowSection, string> = {
@@ -36,6 +38,8 @@ export async function ClientCargoNow({
   siblings,
   full,
   fullHref,
+  checks,
+  askableWarehouses,
 }: {
   now: CargoNow;
   trucks: ReadonlyMap<string, NowTruck>;
@@ -46,8 +50,14 @@ export async function ClientCargoNow({
   siblings: readonly NowSibling[];
   full: boolean;
   fullHref: string;
+  /** Every drawn lot's check (docs/YUK-TEKSHIRUV.md); absent = no chips. */
+  checks?: ReadonlyMap<string, LotCheckState>;
+  /** Where the ❓ is asked: the Chinese warehouses among the rows (his 4a). */
+  askableWarehouses?: ReadonlySet<string>;
 }) {
   const t = await getTranslations('yuklar');
+  const tlc = await getTranslations('lotCheck');
+  const chipLabels = { checked: tlc('chipChecked'), stale: tlc('chipStale'), none: tlc('chipNone') };
   const { word, sentence } = await truckRoadWords({ counts: false });
   const label: Record<NowSection, string> = {
     china: t('sections.china'),
@@ -266,6 +276,19 @@ export async function ClientCargoNow({
                         {row.letter && <span className="font-mono">{row.letter} · </span>}
                         {row.name}
                       </p>
+                      {/* ✅ wherever the lot is; ⚠ / ❓ only on a row standing
+                          in a Chinese warehouse (his 4a). The chip is the
+                          door to the lot's card when this reader may open
+                          the prixod. */}
+                      {chipFace(checks?.get(row.lotId), Boolean(row.warehouseId && askableWarehouses?.has(row.warehouseId))) && (
+                        <p>
+                          <LotCheckChip
+                            face={chipFace(checks?.get(row.lotId), Boolean(row.warehouseId && askableWarehouses?.has(row.warehouseId)))}
+                            labels={chipLabels}
+                            href={receiptsOpen.has(row.receiptId) ? `/receipts/${row.receiptId}#lot-${row.lotId}` : undefined}
+                          />
+                        </p>
+                      )}
                       {row.marking && (
                         <p className="text-xs text-ink-500 [overflow-wrap:anywhere]">
                           {t('marking')}: <span className="font-mono">{row.marking}</span>

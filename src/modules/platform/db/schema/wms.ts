@@ -366,6 +366,39 @@ export const batchSentCompositions = pgTable(
   ],
 );
 
+/**
+ * Yuk ma'lumoti tekshiruvi (0123, docs/YUK-TEKSHIRUV.md): a person confirmed
+ * with the client that the lot is what the warehouse wrote. The row holds
+ * WHAT was vouched for (the owner's 2b: name, count, client); every reader
+ * compares it with the lot through `wms/receipts/lot-check-sql.ts`, so no
+ * writer of those facts ever has to clear it. `wms/receipts/lot-check.ts` is
+ * its one writer.
+ */
+export const lotChecks = pgTable(
+  'lot_checks',
+  {
+    lotId: uuid('lot_id')
+      .primaryKey()
+      .references(() => receiptLots.id, { onDelete: 'cascade' }),
+    seenNameZh: text('seen_name_zh').notNull(),
+    /** NULL, never '' — the lot column's own idiom. */
+    seenNameRu: text('seen_name_ru'),
+    seenBoxCount: integer('seen_box_count').notNull(),
+    /** A remembered value compared with `receipts.client_id` — deliberately no FK. */
+    seenClientId: uuid('seen_client_id').notNull(),
+    note: text('note'),
+    checkedBy: uuid('checked_by')
+      .notNull()
+      .references(() => users.id),
+    checkedAt: timestamp('checked_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check('lot_checks_seen_box_count_check', sql`${t.seenBoxCount} > 0`),
+    check('lot_checks_seen_name_ru_check', sql`${t.seenNameRu} IS NULL OR ${t.seenNameRu} <> ''`),
+    check('lot_checks_note_check', sql`${t.note} IS NULL OR char_length(${t.note}) BETWEEN 1 AND 500`),
+  ],
+);
+
 // ---------------------------------------------------------------------------
 // Boxes — the atomic tracked unit — and their movement history
 // ---------------------------------------------------------------------------

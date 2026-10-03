@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { LightboxImg } from '@/components/lightbox-img';
@@ -8,6 +8,8 @@ import { DensityBadge } from '@/components/density-badge';
 import { submitPlanAction } from '../actions';
 import { codeIdentity } from '@/modules/wms/labels/code-identity';
 import { QrlessChip } from '@/components/qrless-chip';
+import { LotCheckChip } from '@/components/lot-check-chip';
+import { chipFace, inCheckFilter, type CheckFilter, type LotCheckState } from '@/modules/wms/receipts/lot-check-face';
 
 interface WarehouseOption {
   id: string;
@@ -35,6 +37,12 @@ interface StockLot {
   arrival: string;
   /** Of `available`, the QR-siz cartons (0112); absent in a snapshot cached before it. */
   qrless?: number;
+  /**
+   * «Yuk ma'lumoti tekshirildi» (0123). Optional: a snapshot the service
+   * worker cached before it lacks it, and absent draws no chip — never ❓.
+   */
+  check?: LotCheckState;
+  receiptId?: string;
 }
 interface StockCrate {
   crateId: string;
@@ -46,6 +54,18 @@ interface StockCrate {
   m3: number;
   daysInStock: number;
   arrival: string;
+  /** Its member lots and how many are checked / asked (0123); absent = no badge. */
+  lotsTotal?: number;
+  lotsChecked?: number;
+  lotsAsked?: number;
+}
+
+/** A crate is ✅ only when every lot inside is; ❓ when one is asked here. */
+function crateCheck(crate: StockCrate, askable: boolean): LotCheckState | undefined {
+  if (crate.lotsTotal === undefined || crate.lotsChecked === undefined) return undefined;
+  if (crate.lotsTotal > 0 && crate.lotsChecked === crate.lotsTotal) return 'checked';
+  if (askable && (crate.lotsAsked ?? 0) > 0) return 'none';
+  return undefined;
 }
 
 /**
@@ -79,6 +99,8 @@ export function PlanEditor({
   const t = useTranslations('plans');
   const tc = useTranslations('common');
   const tq = useTranslations('qrsiz');
+  const tlc = useTranslations('lotCheck');
+  const chipLabels = { checked: tlc('chipChecked'), stale: tlc('chipStale'), none: tlc('chipNone') };
   const router = useRouter();
   const [originId, setOriginId] = useState(resubmit?.originWarehouseId ?? warehouses[0]?.id ?? '');
   const [destId, setDestId] = useState(
@@ -89,12 +111,35 @@ export function PlanEditor({
   const [presetId, setPresetId] = useState(resubmit?.truckPresetId ?? presets[0]?.id ?? '');
   const [lots, setLots] = useState<StockLot[]>([]);
   const [stockCrates, setStockCrates] = useState<StockCrate[]>([]);
+  /** The ❓ is asked at this origin (a Chinese warehouse). */
+  const [askable, setAskable] = useState(false);
+  /**
+   * The check filter (docs/YUK-TEKSHIRUV.md §6) — RENDER-ONLY: it narrows
+   * what the table and the crate list draw, never `lots`, the selection or
+   * the Σ, so a ticked row that the filter hides is still counted and still
+   * sent.
+   */
+  const [tek, setTek] = useState<CheckFilter | 'all'>('all');
+  /** The list did not load — said, never drawn as an empty warehouse. */
+  const [stockFailed, setStockFailed] = useState(false);
+  /** The first answer for this origin has arrived (ok or failed) — before it, «loading», never «empty». */
+  const [loaded, setLoaded] = useState(false);
+  /** The check is on this server (0123 landed); its filter is drawn only then. */
+  const [checksOn, setChecksOn] = useState(false);
+  /** Picks a re-read found gone from the warehouse and took out — said once. */
+  const [pruned, setPruned] = useState(0);
   const [selection, setSelection] = useState<Map<string, number>>(
     () => new Map(resubmit?.lines.map((l) => [l.lotId, l.boxCount]) ?? []),
   );
   const [selectedCrates, setSelectedCrates] = useState<Set<string>>(
     () => new Set(resubmit?.crateIds ?? []),
   );
+  // The picks as they stand NOW, for the re-read that fires from an event
+  // listener (its closure holds the picks of the render that attached it).
+  const picksRef = useRef({ selection, selectedCrates });
+  useEffect(() => {
+    picksRef.current = { selection, selectedCrates };
+  }, [selection, selectedCrates]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -105,25 +150,110 @@ export function PlanEditor({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLots([]);
     setStockCrates([]);
+    setAskable(false);
+    setStockFailed(false);
+    setLoaded(false);
+    setPruned(0);
     const controller = new AbortController();
-    void (async () => {
+    /**
+     * One read of this origin's list. `quiet` is the re-read when the tab
+     * comes back into view (the ❓ chip opens the lot's card in a NEW tab,
+     * so the tick happens elsewhere): the rows are replaced in place — the
+     * selection is keyed by lot and stays — and a failed quiet read keeps
+     * what is on screen rather than calling it a failure.
+     */
+    const load = async (quiet: boolean) => {
+      // A deadline on the first read: a request that hangs (a Chinese
+      // warehouse's network) is a list that did not load, said in words.
+      // A plain timer and a per-call controller, not `AbortSignal.any` —
+      // older iPhones have no such function and would never load the list.
+      const call = new AbortController();
+      const follow = () => call.abort();
+      controller.signal.addEventListener('abort', follow);
+      const timer = quiet ? null : setTimeout(() => call.abort(), 20_000);
       try {
         const res = await fetch(`/api/plans/stock?warehouseId=${originId}`, {
-          signal: controller.signal,
+          signal: call.signal,
+          // The re-read on return must not answer from before the tick.
+          ...(quiet ? { cache: 'no-store' as const } : {}),
         });
         if (res.ok) {
-          const data = (await res.json()) as { lots: StockLot[]; crates?: StockCrate[] };
+          const data = (await res.json()) as {
+            lots: StockLot[];
+            crates?: StockCrate[];
+            askable?: boolean;
+            checks?: boolean;
+          };
           setLots(data.lots);
           setStockCrates(data.crates ?? []);
+          setAskable(Boolean(data.askable));
+          setChecksOn(Boolean(data.checks));
+          setStockFailed(false);
+          if (quiet) {
+            // A pick the warehouse no longer has (another plan reserved it,
+            // it went into a crate) would be invisible, uncountable and
+            // refused at submit — take it out and say so.
+            const available = new Map(data.lots.map((lot) => [lot.lotId, lot.available]));
+            const crateIds = new Set((data.crates ?? []).map((crate) => crate.crateId));
+            const picks = picksRef.current;
+            let gone = 0;
+            let clamped = false;
+            const nextSelection = new Map<string, number>();
+            for (const [lotId, count] of picks.selection) {
+              const max = available.get(lotId) ?? 0;
+              if (max <= 0) gone += 1;
+              else {
+                if (count > max) clamped = true;
+                nextSelection.set(lotId, Math.min(count, max));
+              }
+            }
+            const nextCrates = new Set<string>();
+            for (const crateId of picks.selectedCrates) {
+              if (crateIds.has(crateId)) nextCrates.add(crateId);
+              else gone += 1;
+            }
+            if (gone > 0 || clamped) setSelection(nextSelection);
+            if (nextCrates.size !== picks.selectedCrates.size) setSelectedCrates(nextCrates);
+            if (gone > 0) setPruned((n) => n + gone);
+          }
+        } else if (!quiet) {
+          setStockFailed(true);
         }
       } catch {
-        /* aborted */
+        // An abort is the origin changing; anything else (offline, a body
+        // that did not parse, the deadline) is a list that did not load —
+        // said, never drawn as an empty warehouse.
+        if (!controller.signal.aborted && !quiet) setStockFailed(true);
+      } finally {
+        if (timer) clearTimeout(timer);
+        controller.signal.removeEventListener('abort', follow);
+        if (!quiet && !controller.signal.aborted) setLoaded(true);
       }
-    })();
-    return () => controller.abort();
+    };
+    void load(false);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void load(true);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      controller.abort();
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [originId]);
 
   const preset = presets.find((p) => p.id === presetId);
+  const shownLots = tek === 'all' ? lots : lots.filter((lot) => inCheckFilter(tek, lot.check, askable));
+  const shownCrates =
+    tek === 'all' ? stockCrates : stockCrates.filter((crate) => inCheckFilter(tek, crateCheck(crate, askable), askable));
+  const checkCount = (value: CheckFilter) =>
+    lots.filter((lot) => inCheckFilter(value, lot.check, askable)).length +
+    stockCrates.filter((crate) => inCheckFilter(value, crateCheck(crate, askable), askable)).length;
+  /** Ticked rows the filter is hiding — said, so nobody plans them twice. */
+  const hiddenPicked =
+    tek === 'all'
+      ? 0
+      : lots.filter((lot) => (selection.get(lot.lotId) ?? 0) > 0 && !shownLots.includes(lot)).length +
+        stockCrates.filter((crate) => selectedCrates.has(crate.crateId) && !shownCrates.includes(crate)).length;
   const totals = useMemo(() => {
     let boxes = 0;
     let kg = 0;
@@ -265,19 +395,63 @@ export function PlanEditor({
         </a>
       </div>
 
-      {stockCrates.length > 0 && (
+      {/* «Yuk ma'lumoti tekshirildi»: three filters, each naming how many
+          rows it would show, on a line that wraps. Shown only when there is
+          anything to choose between. */}
+      {pruned > 0 && (
+        <p role="status" className="text-xs font-semibold text-warn" data-testid="plan-picks-pruned">
+          ⚠ {tlc('pruned', { n: pruned })}
+        </p>
+      )}
+
+      {checksOn && lots.length + stockCrates.length > 0 && (
+        <div className="space-y-1" data-testid="plan-check-filter">
+          <div className="flex flex-wrap gap-2 text-sm">
+            {(
+              [
+                { value: 'all' as const, testid: 'plan-check-filter-all', text: `${tlc('filterAll')} · ${lots.length + stockCrates.length}` },
+                { value: 'ha' as const, testid: 'plan-check-filter-yes', text: `✅ ${tlc('filterChecked')} · ${checkCount('ha')}` },
+                { value: 'yoq' as const, testid: 'plan-check-filter-no', text: `❓ ${tlc('filterUnchecked')} · ${checkCount('yoq')}` },
+              ] as const
+            ).map((door) => (
+              <button
+                key={door.value}
+                type="button"
+                data-testid={door.testid}
+                aria-pressed={tek === door.value}
+                onClick={() => setTek(door.value)}
+                className={`rounded-lg border px-3 py-1.5 ${
+                  tek === door.value
+                    ? 'border-brand-500 bg-brand-50 font-semibold text-brand-700'
+                    : 'border-line text-ink-700'
+                }`}
+              >
+                {door.text}
+              </button>
+            ))}
+          </div>
+          {hiddenPicked > 0 && (
+            <p className="text-xs font-semibold text-warn" data-testid="plan-check-hidden">
+              ⚠ {tlc('hiddenPicked', { n: hiddenPicked })}
+            </p>
+          )}
+        </div>
+      )}
+
+      {shownCrates.length > 0 && (
         <div className="card space-y-1 !p-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
             🧰 {t('cratesOnePlace')}
           </p>
-          {stockCrates.map((crate) => {
+          {shownCrates.map((crate) => {
             const on = selectedCrates.has(crate.crateId);
+            const crateState = crateCheck(crate, askable);
             return (
               <button
                 key={crate.crateId}
                 type="button"
                 data-testid={`crate-${crate.code}`}
-                className={`flex w-full items-baseline gap-2 rounded-lg border-2 p-2 text-left text-sm ${
+                className={`flex w-full flex-wrap items-baseline gap-2 rounded-lg border-2 p-2 text-left text-sm ${
                   on ? 'border-brand-500 bg-brand-50' : 'border-line'
                 }`}
                 onClick={() =>
@@ -300,6 +474,17 @@ export function PlanEditor({
                 </span>
                 <span className="font-mono font-bold">{crate.clientCode ?? '?'}</span>
                 <span className="text-ink-700">{crate.boxCount} 📦</span>
+                {/* Plain text, never a link: the row is a <button>. */}
+                {crateState === 'checked' && (
+                  <span className="chip-good whitespace-nowrap" data-testid="crate-check" data-state="checked">
+                    ✅
+                  </span>
+                )}
+                {crateState === 'none' && (
+                  <span className="chip-neutral whitespace-nowrap" data-testid="crate-check" data-state="none">
+                    ❓ {crate.lotsAsked}/{crate.lotsTotal}
+                  </span>
+                )}
                 <span className="ml-auto whitespace-nowrap font-mono text-xs">
                   {crate.kg}kg {crate.m3}m³
                 </span>
@@ -334,7 +519,7 @@ export function PlanEditor({
               </tr>
             </thead>
             <tbody>
-              {lots.map((lot) => {
+              {shownLots.map((lot) => {
                 const count = selection.get(lot.lotId) ?? 0;
                 // Once boxes are ticked the row shows what you are TAKING,
                 // not what is on the shelf: on a partial take the shelf
@@ -374,6 +559,23 @@ export function PlanEditor({
                       {(lot.qrless ?? 0) > 0 && (
                         <span className="block">
                           <QrlessChip n={lot.qrless!} total={lot.available} label={tq('chip')} />
+                        </span>
+                      )}
+                      {/* AFTER the code (the specs read the cell's first
+                          token). A ❓ / ⚠ opens the lot's card in a NEW tab:
+                          the ticks of this plan live only in this page. */}
+                      {chipFace(lot.check, askable) && (
+                        <span className="block">
+                          <LotCheckChip
+                            face={chipFace(lot.check, askable)}
+                            labels={chipLabels}
+                            href={
+                              chipFace(lot.check, askable) !== 'checked' && lot.receiptId
+                                ? `/receipts/${lot.receiptId}#lot-${lot.lotId}`
+                                : undefined
+                            }
+                            newTab
+                          />
                         </span>
                       )}
                     </td>
@@ -439,7 +641,25 @@ export function PlanEditor({
             </tbody>
           </table>
         </div>
-        {lots.length === 0 && <p className="p-4 text-sm text-ink-500">{t('noStock')}</p>}
+        {stockFailed ? (
+          <p role="alert" className="p-4 text-sm font-semibold text-bad" data-testid="plan-stock-failed">
+            {t('stockFailed')}
+          </p>
+        ) : !loaded ? (
+          <p className="p-4 text-sm text-ink-500" data-testid="plan-stock-loading">
+            {tc('loading')}
+          </p>
+        ) : lots.length + stockCrates.length > 0 && shownLots.length + shownCrates.length === 0 ? (
+          // An empty FILTER is not an empty warehouse — said in its own
+          // words, counting the crates as well as the loose lots.
+          <p className="p-4 text-sm text-ink-500" data-testid="plan-check-nomatch">
+            {tlc('noMatch')}
+          </p>
+        ) : (
+          // An empty warehouse is one with neither loose lots nor crates.
+          lots.length === 0 &&
+          stockCrates.length === 0 && <p className="p-4 text-sm text-ink-500">{t('noStock')}</p>
+        )}
       </div>
 
       {error && (

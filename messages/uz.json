@@ -838,7 +838,9 @@
       "loginEnabled": "Tizimga kirish",
       "destination": "Qabul skladi",
       "lotComposition": "Lot tarkibi",
-      "lotCompositionCodes": "Tarkib TNVED kodlari"
+      "lotCompositionCodes": "Tarkib TNVED kodlari",
+      "lotCheck": "Yuk ma'lumoti tekshirildi",
+      "lotCheckNote": "Tekshiruv izohi"
     }
   },
   "profile": {
@@ -1176,7 +1178,8 @@
       "plan_not_cancellable": "Bu planni bekor qilib bo‘lmaydi",
       "reason_required": "Sababni yozing"
     },
-    "cancelPlan": "Planni bekor qilish"
+    "cancelPlan": "Planni bekor qilish",
+    "stockFailed": "Yuk ro'yxati yuklanmadi — sahifani yangilang; takrorlansa administratorga ayting"
   },
   "costing": {
     "fxTitle": "Valyuta kurslari",
@@ -5038,5 +5041,49 @@
       "server_behind": "Server yangilanmoqda — birozdan keyin",
       "validation": "Ma'lumot to'liq emas"
     }
+  },
+  "lotCheck": {
+    "chipChecked": "tekshirilgan",
+    "chipStale": "o'zgardi",
+    "chipNone": "tekshirilmagan",
+    "filterAll": "Hammasi",
+    "filterChecked": "Tekshirilgan",
+    "filterUnchecked": "Tekshirilmagan",
+    "prixodCount": "{n} prixod",
+    "hiddenPicked": "{n} ta tanlangan yuk bu filtrda ko'rinmayapti — rejada qoladi",
+    "noMatch": "Bu filtrga mos yuk yo'q",
+    "homeRow": "❓ Tekshirilmagan yuk (Xitoy)",
+    "byDocument": "Tarkib hujjati bo'yicha tekshirilgan",
+    "byClient": "Mijoz tasdiqladi",
+    "stalePerson": "Tekshirilgandan keyin o'zgardi: {what} — qayta so'rang",
+    "staleWas": "Avval tasdiqlagan: {by} · {day}",
+    "staleDocument": "Tarkib hujjatidan keyin lot o'zgardi — qayta so'rang",
+    "none": "Ma'lumot tekshirilmagan",
+    "unclaimed": "Egasi aniqlanmagan — avval mijozni biriktiring",
+    "movedName": "tovar nomi",
+    "movedCount": "karobka soni",
+    "movedClient": "mijoz",
+    "telegram": "Telegramda yozish",
+    "notePlaceholder": "Izoh (ixtiyoriy): mijoz nima dedi",
+    "confirm": "To'g'ri — mijoz tasdiqladi",
+    "undo": "Mijoz tasdig'ini bekor qilish",
+    "undoConfirm": "Tekshiruv belgisi olib tashlansinmi?",
+    "otherAnswers": "Mijoz «boshqa tovar» desa — pastdagi ✏️ orqali nomini o'zgartiring; «aralash» desa — hujjati bilan 🧩 lot tarkibini yozing.",
+    "done": "✅ Saqlandi",
+    "errors": {
+      "forbidden": "Bu prixodga belgi qo'yishga ruxsatingiz yo'q",
+      "receipt_not_confirmed": "Prixod tasdiqlanmagan",
+      "no_client": "Avval mijozni biriktiring",
+      "lot_changed": "Siz qarab turganingizda lot o'zgardi — hozirgi holat ko'rsatildi, qayta qarang",
+      "busy": "Prixod hozir band — bir ozdan keyin qayta bosing",
+      "server_behind": "Server hali yangilanmagan — administratorga ayting",
+      "validation": "Ma'lumot noto'g'ri — sahifani yangilab, qayta urinib ko'ring",
+      "other": "Saqlanmadi — qayta urinib ko'ring",
+      "check_changed": "Belgi siz ko'rgan holatdan keyin o'zgargan — hozirgi holat ko'rsatildi, qayta qarang"
+    },
+    "personOld": "Avval mijoz tasdiqlagan: {by} · {day} — keyin o'zgargan: {what}",
+    "documentOld": "Tarkib hujjati endi lotga mos emas — tarkibni tekshiring",
+    "otherAnswersAskLogist": "Mijoz «boshqa tovar» desa — logistga ayting, nomini u o'zgartiradi; «aralash» desa — hujjati bilan 🧩 lot tarkibini yozing.",
+    "pruned": "{n} ta tanlangan yuk endi bu skladda yo'q — rejadan olib tashlandi"
   }
 }

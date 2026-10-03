@@ -114,6 +114,10 @@ export const AUDIT_FIELD_LABELS: Record<string, string> = {
   // a document, and the per-line TNVED codes typed on the Bojxona tab.
   lotComposition: 'lotComposition',
   lotCompositionCodes: 'lotCompositionCodes',
+  // «Yuk ma'lumoti tekshirildi» (0123): what a person confirmed with the
+  // client, and the note they left.
+  lotCheck: 'lotCheck',
+  lotCheckNote: 'lotCheckNote',
 
   // Housekeeping
   note: 'note',
@@ -139,6 +143,23 @@ export type AuditRefKind =
   | 'source'
   | 'deal'
   | 'partner';
+
+/**
+ * A recorded key's label and, for a per-item key, its item: `lotCheck:A` is
+ * the `lotCheck` label for lot A (0123). A writer that records one change per
+ * ITEM under one entity must carry the item in the key — the History tab nets
+ * a run of edits per key, so a shared key collapsed «ticked A, B, C» into one
+ * line about C. Only a base the map knows is split, so an unknown key with a
+ * colon still prints as itself.
+ */
+export function auditFieldLabel(key: string): { label: string | null; item: string | null } {
+  if (AUDIT_FIELD_LABELS[key]) return { label: AUDIT_FIELD_LABELS[key]!, item: null };
+  const at = key.indexOf(':');
+  if (at > 0 && AUDIT_FIELD_LABELS[key.slice(0, at)]) {
+    return { label: AUDIT_FIELD_LABELS[key.slice(0, at)]!, item: key.slice(at + 1) };
+  }
+  return { label: null, item: null };
+}
 
 /**
  * Which recorded columns hold a REFERENCE rather than a value.

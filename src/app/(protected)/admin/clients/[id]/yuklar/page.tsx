@@ -80,6 +80,8 @@ export default async function ClientCargoTabPage({
           siblings={view.siblings}
           full={full}
           fullHref={href({ toliq: true })}
+          checks={view.checks}
+          askableWarehouses={view.askableWarehouses}
         />
         <ClientCargoHistory
           rows={view.history.rows}

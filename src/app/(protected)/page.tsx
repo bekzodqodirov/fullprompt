@@ -257,6 +257,7 @@ async function LogistFlow({ flow }: { flow: LogistFlowCounts }) {
   const tb = await getTranslations('batches');
   const td = await getTranslations('dashboard');
   const tz = await getTranslations('pickups');
+  const tlc = await getTranslations('lotCheck');
   const tu = await getTranslations('uncollected');
 
   const wh = flow.warehouse;
@@ -353,6 +354,18 @@ async function LogistFlow({ flow }: { flow: LogistFlowCounts }) {
           warn={(flow.uncollected ?? 0) > 0}
           sub={flow.uncollected ? tu('homeSub', { n: flow.uncollected }) : null}
         />
+        {/* «Yuk ma'lumoti tekshirildi» (0123): the worklist his request is
+            about — prixods in a Chinese warehouse nobody has confirmed with
+            the client — opening on exactly that filter. */}
+        <FlowRow
+          href="/stock?tek=yoq"
+          icon="check"
+          testid="logist-flow-unchecked"
+          label={tlc('homeRow')}
+          count={flow.unchecked ?? 0}
+          warn={(flow.unchecked ?? 0) > 0}
+          sub={flow.unchecked ? tlc('prixodCount', { n: flow.unchecked }) : null}
+        />
       </div>
     </Section>
   );
@@ -444,6 +457,7 @@ async function SalesFlow({ flow }: { flow: SalesFlowCounts }) {
  */
 async function VedFlow({ flow }: { flow: VedFlowCounts }) {
   const t = await getTranslations('home');
+  const tlc = await getTranslations('lotCheck');
   return (
     <Section title={t('flowTitle')}>
       <div className="space-y-2">
@@ -480,6 +494,17 @@ async function VedFlow({ flow }: { flow: VedFlowCounts }) {
           label={t('flowTnvedMissing')}
           count={flow.tnvedMissing}
           sub={null}
+        />
+        {/* The logist's worklist row, for the VED too (his 1a) — the VED is
+            the one who finds the mismatch while making the invoice. */}
+        <FlowRow
+          href="/stock?tek=yoq"
+          icon="check"
+          testid="ved-flow-unchecked"
+          label={tlc('homeRow')}
+          count={flow.unchecked ?? 0}
+          warn={(flow.unchecked ?? 0) > 0}
+          sub={flow.unchecked ? tlc('prixodCount', { n: flow.unchecked }) : null}
         />
         {/* «Tasdiqlash kerak» (0119): the guesses on this person's seals,
             drawn only when there are some — the control screen has its own
