@@ -79,6 +79,15 @@ export const LINGER_MS = 60_000;
 /** The draft's own caps: forwards Telegram can carry in one call, and Bot API getFile's limit. */
 export const MAX_DRAFT_SOURCES = 10;
 export const MAX_DRAFT_FILE_BYTES = 20 * 1024 * 1024;
+
+/**
+ * The author's sentence for the files the web will not get (3a promises the
+ * files on the site; Telegram hands a bot nothing past 20 MB) — said once,
+ * naming them, and nothing at all when every file fits (tests-completeness-25).
+ */
+export function tooBigLine(names: string[]): string | null {
+  return names.length > 0 ? `⚠ Saytga yuklanmadi — 20 MB dan katta; Telegramda yuborildi: ${names.join(', ')}` : null;
+}
 /** A title is the first typed line cut here, on a word. */
 export const TITLE_MAX = 120;
 export const NOTE_MAX = 4000;

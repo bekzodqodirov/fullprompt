@@ -53,6 +53,7 @@ import {
   parseTypedDue,
   postponeDue,
   startDraft,
+  tooBigLine,
   updateDraft,
   withPart,
   type DraftDue,
@@ -301,11 +302,9 @@ async function finishDraft(say: Say, chatId: bigint, draft: TaskDraft, due: Draf
     if (line) lines.push(line);
   }
   // 3a promises the files on the site; Telegram hands a bot nothing past
-  // 20 MB, so the author is told which ones only travel in Telegram
-  // (tests-completeness-25).
-  if (draft.tooBig.length > 0) {
-    lines.push(`⚠ Saytga yuklanmadi — 20 MB dan katta; Telegramda yuborildi: ${draft.tooBig.join(', ')}`);
-  }
+  // 20 MB, so the author is told which ones only travel in Telegram.
+  const tooBig = tooBigLine(draft.tooBig);
+  if (tooBig) lines.push(tooBig);
   await say(lines.join('\n'), { inline_keyboard: [[{ text: '🗑 Bekor qilish', callback_data: `tc:${made.taskId}` }]] });
   noteLinger(chatId, made.taskId, made.assigneeId, Object.keys(draft.albums));
 }

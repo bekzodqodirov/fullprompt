@@ -5,23 +5,30 @@ import {
   buttonsFor,
   dayButtons,
   DRAFT_STEPS,
+  dropTaskPending,
   dueKeyboard,
   forwardKeyboard,
   givenButtons,
   givenListText,
+  noteTaskPending,
   parseCallback,
   peopleKeyboard,
   postponeKeyboard,
   TASK_ANSWERS,
+  takeTaskPending,
+  takeTaskPendingFor,
   type BotButton,
 } from '@/modules/platform/telegram/staff-bot';
+import { tooBigLine } from '@/modules/platform/telegram/task-draft';
 import {
   ASSIGNED_NOTE_CAP,
   assignedNoteLine,
+  authorHearsPresses,
   cutOnWord,
   NOTE_MORE,
   TASK_ERROR_CODES,
   taskButtonPayload,
+  taskLinkFor,
 } from '@/modules/platform/tasks/service';
 import { withoutButton } from '@/modules/platform/notifications/staff-html';
 import { reachLine } from '@/modules/platform/notifications/staff';
@@ -313,5 +320,66 @@ describe('«📤 Men bergan» (his 5a)', () => {
     expect(text).toContain('⏳ Siroj · muddatsiz · Kutmoqda');
     expect(text).toContain('… va yana 20 ta');
     expect(givenListText({ total: 0, rows: [] }, now)).toBe('📤 Siz bergan ochiq vazifa yo‘q.');
+  });
+});
+
+describe('the calc task’s one link, and who hears a press (telegram-mechanics-8/20)', () => {
+  const REQ = '11111111-2222-4333-8444-555555555555';
+  it('a bound calc task links to the JOB’s own screen; every other task to its card', () => {
+    const saved = process.env.APP_URL;
+    process.env.APP_URL = 'https://gsrwms.uz';
+    try {
+      expect(taskLinkFor({ origin: 'calc', boundId: REQ, entityType: 'lead', entityId: UUID })).toBe(
+        `https://gsrwms.uz/hisoblash/${REQ}`,
+      );
+      // A release ghost has no job to open: its card, like any task.
+      expect(taskLinkFor({ origin: 'calc', boundId: null, entityType: 'lead', entityId: UUID })).toBe(
+        `https://gsrwms.uz/crm/leads/${UUID}`,
+      );
+      expect(taskLinkFor({ origin: 'hand', boundId: null, entityType: null, entityId: null })).toBe(
+        'https://gsrwms.uz/bugun',
+      );
+    } finally {
+      if (saved === undefined) delete process.env.APP_URL;
+      else process.env.APP_URL = saved;
+    }
+  });
+
+  it('a rule’s author hears no press — they never gave this task', () => {
+    expect(authorHearsPresses('automation')).toBe(false);
+    for (const origin of ['hand', null, 'calc', 'calc_return', 'promise']) {
+      expect(authorHearsPresses(origin), String(origin)).toBe(true);
+    }
+  });
+});
+
+describe('the one-text waits (telegram-mechanics-13/14)', () => {
+  const CHAT = 990_101n;
+  const OTHER = '22222222-2222-4333-8444-555555555555';
+
+  it('«✅ Natijasiz» takes the wait only for ITS task — a later «GS777» is a lookup again', () => {
+    noteTaskPending(CHAT, UUID, null);
+    // A press on another task's prompt leaves this wait alone.
+    expect(takeTaskPendingFor(CHAT, OTHER)).toBeNull();
+    expect(takeTaskPendingFor(CHAT, UUID)).toMatchObject({ taskId: UUID, kind: 'result' });
+    // …and once taken, the ladder's door finds nothing: the next text is not a result.
+    expect(takeTaskPending(CHAT)).toBeNull();
+  });
+
+  it('a reschedule wait is a KIND of the one map, and starting a draft drops any wait', () => {
+    noteTaskPending(CHAT, UUID, null, 'reschedule');
+    expect(takeTaskPending(CHAT)).toMatchObject({ taskId: UUID, kind: 'reschedule' });
+    noteTaskPending(CHAT, UUID, null, 'question');
+    dropTaskPending(CHAT);
+    expect(takeTaskPending(CHAT)).toBeNull();
+  });
+});
+
+describe('the 20 MB sentence (tests-completeness-25)', () => {
+  it('names the files the web will not get, and says nothing when all fit', () => {
+    expect(tooBigLine(['sklad.mp4', '🎬 Video'])).toBe(
+      '⚠ Saytga yuklanmadi — 20 MB dan katta; Telegramda yuborildi: sklad.mp4, 🎬 Video',
+    );
+    expect(tooBigLine([])).toBeNull();
   });
 });

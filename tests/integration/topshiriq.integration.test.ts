@@ -326,6 +326,17 @@ describe('the doors are compare-and-set (telegram-mechanics-16, access-money-13)
     expect((await taskRow(id)).acceptedAt).toBeNull();
   });
 
+  it('a RULE’s task tells nobody about a ⏰ — its author wrote a rule, not this task (telegram-mechanics-20)', async () => {
+    const ruleAuthor = await mintStaff();
+    const doer = await mintStaff();
+    const id = await mintTask(ruleAuthor, doer, { origin: 'automation', dueAt: new Date('2027-01-04T18:59:59Z') });
+    await rescheduleTask(id, { dueAt: new Date('2027-01-05T18:59:59Z'), allDay: true }, ctxOf(doer));
+    await completeTask(id, '', ctxOf(doer));
+    expect(await queued(ruleAuthor.id, 'TaskRescheduled')).toHaveLength(0);
+    // ✅ still tells: «done» is the one press a rule's author asked to hear.
+    expect(await queued(ruleAuthor.id, 'TaskDone')).toHaveLength(1);
+  });
+
   it('two ✅ at once close the task ONCE and tell the author once', async () => {
     const author = await mintStaff();
     const doer = await mintStaff();
