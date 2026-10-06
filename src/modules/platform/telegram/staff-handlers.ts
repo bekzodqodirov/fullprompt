@@ -906,7 +906,7 @@ export function registerStaffBot(bot: Bot): void {
         // a list, loses that one row). Off the poller: an edit is a network
         // call and the answer above is what the person is waiting for.
         if (outcome === 'done' || outcome === 'already_closed') {
-          void closeTaskMessage(chatId, pendingTask, outcome === 'done' ? result : '').catch(
+          void closeTaskMessage(chatId, pendingTask, outcome === 'done' ? result : '', outcome).catch(
             (err: unknown) => logger.warn({ err }, 'task message not closed'),
           );
         }

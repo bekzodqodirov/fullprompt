@@ -866,20 +866,33 @@ function pendingOf(entry: PendingTask): PendingTask {
  * row, so the next press on it is the next task. Both are edits, and both are
  * best-effort — Telegram will not edit a message older than 48 hours, and a
  * button that outlives its task only answers «allaqachon yopilgan».
+ *
+ * The markup and text are a SNAPSHOT from the press, up to ten minutes old,
+ * and the after-commit retire is told to skip this message so the two edits
+ * do not race (review tasks-3). So a list is redrawn from what STANDS — every
+ * other `tb:` row whose task closed or moved in those minutes goes too, or
+ * the snapshot brings back a ✅ the retire had just taken off — and a task's
+ * own message that another door closed first is left alone: that door's
+ * retire already wrote the real outcome on it, and «✅ Yopildi» over a
+ * «🗑 Bekor qilindi» is a lie.
  */
 export async function closeTaskMessage(
   chatId: bigint,
   pending: Pick<PendingTask, 'taskId' | 'pressed'>,
   result: string,
+  outcome: 'done' | 'already_closed',
 ): Promise<void> {
   const pressed = pending.pressed;
   if (!pressed) return;
+  if (pressed.kind !== 'list' && outcome === 'already_closed') return;
   const res =
     pressed.kind === 'list'
       ? await editMarkup({
           chatId,
           messageId: pressed.messageId,
-          replyMarkup: keyboardOf(withoutCallback(pressed.markup, `tb:${pending.taskId}`)),
+          replyMarkup: keyboardOf(
+            await listRowsStanding(chatId, withoutCallback(pressed.markup, `tb:${pending.taskId}`)),
+          ),
         })
       : await editText({
           chatId,
@@ -892,6 +905,37 @@ export async function closeTaskMessage(
         });
   if (!res.ok) logger.warn({ description: res.description }, 'task message not updated');
 }
+
+/**
+ * A day list's rows as they stand NOW: a `tb:` row stays while its task is
+ * open and still this chat's person's (the digest is their own list — the
+ * retire's rule, review tasks-4); every other row (a link, the 🧮 to a job)
+ * is kept as it was. ONE query over the ids the markup names.
+ */
+async function listRowsStanding(chatId: bigint, rows: InlineRows): Promise<InlineRows> {
+  const idOf = (row: InlineRows[number]) => {
+    for (const button of row) {
+      const m = typeof button.callback_data === 'string' ? /^tb:([0-9a-f-]{36})$/.exec(button.callback_data) : null;
+      if (m) return m[1]!;
+    }
+    return null;
+  };
+  const ids = [...new Set(rows.map(idOf).filter((id): id is string => id !== null))];
+  if (ids.length === 0) return rows;
+  const staff = await staffForChat(chatId);
+  if (!staff) return rows.filter((row) => idOf(row) === null);
+  const open = (await db.execute(sql`
+    SELECT id FROM tasks
+     WHERE id IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})
+       AND status = 'open' AND assignee_id = ${staff.id}`)) as unknown as { id: string }[];
+  const standing = new Set(open.map((row) => row.id));
+  return rows.filter((row) => {
+    const id = idOf(row);
+    return id === null || standing.has(id);
+  });
+}
+
+type InlineRows = ReturnType<typeof withoutCallback>;
 
 /**
  * Settle the advert-lead push a «📞 Bog'landim» was pressed on (0113): the

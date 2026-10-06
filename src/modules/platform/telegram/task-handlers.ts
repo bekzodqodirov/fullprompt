@@ -707,7 +707,7 @@ export async function handleTaskPress(ctx: Context, chatId: bigint, press: TaskP
     if (prompt) void editMarkup({ chatId, messageId: prompt.message_id }).catch(() => {});
     if (result === 'done' || result === 'already_closed') {
       if (pending) {
-        void closeTaskMessage(chatId, pending, '').catch((err: unknown) =>
+        void closeTaskMessage(chatId, pending, '', result).catch((err: unknown) =>
           logger.warn({ err }, 'task message not closed'),
         );
       }
