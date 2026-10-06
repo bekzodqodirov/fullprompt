@@ -92,7 +92,11 @@ export function CalcLink({
           {pending ? tc('loading') : tc('save')}
         </button>
       </div>
-      {error && <p className="text-sm font-semibold text-bad">{tc('error')}</p>}
+      {error && (
+        <p className="text-sm font-semibold text-bad" role="alert">
+          {t.has(`linkErrors.${error}`) ? t(`linkErrors.${error}` as 'linkErrors.not_mine') : tc('error')}
+        </p>
+      )}
     </div>
   );
 }

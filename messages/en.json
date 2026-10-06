@@ -3676,7 +3676,18 @@
     "endReturned": "↩️ Handed back",
     "endUnpricedLines": "Closed with no price (lines)",
     "endUnpricedTask": "Closed with no price (task)",
-    "recentClosedTitle": "Recently finished"
+    "recentClosedTitle": "Recently finished",
+    "linkMine": "Mine ({n})",
+    "linkColleagues": "Colleagues' ({n}) — view only; the sealer confirms",
+    "linkErrors": {
+      "not_mine": "This link measures a colleague's calculation — the person who sealed it confirms it",
+      "receipt_not_found": "Receipt not found",
+      "request_not_found": "Calculation not found",
+      "request_foreign": "This calculation belongs to another deal",
+      "no_deal": "The receipt is not on a deal — attach it to one first",
+      "forbidden": "Not allowed",
+      "server_behind": "The server is updating — try again shortly"
+    }
   },
   "partners": {
     "title": "Counterparties",

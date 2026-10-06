@@ -3676,7 +3676,18 @@
     "endReturned": "↩️ 已退回",
     "endUnpricedLines": "无价格关闭（明细）",
     "endUnpricedTask": "无价格关闭（任务）",
-    "recentClosedTitle": "最近完成"
+    "recentClosedTitle": "最近完成",
+    "linkMine": "我的（{n}）",
+    "linkColleagues": "同事的（{n}）——仅查看，由封存人确认",
+    "linkErrors": {
+      "not_mine": "此关联衡量的是同事的计算——由封存人确认",
+      "receipt_not_found": "未找到入库单",
+      "request_not_found": "未找到计算",
+      "request_foreign": "此计算属于另一笔交易",
+      "no_deal": "入库单未关联交易——请先关联",
+      "forbidden": "无权限",
+      "server_behind": "服务器正在更新——请稍后再试"
+    }
   },
   "partners": {
     "title": "合作方",

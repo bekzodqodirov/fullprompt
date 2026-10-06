@@ -3676,7 +3676,18 @@
     "endReturned": "↩️ Qaytarildi",
     "endUnpricedLines": "Narxsiz yopildi (pozitsiyalar)",
     "endUnpricedTask": "Narxsiz yopildi (vazifa)",
-    "recentClosedTitle": "Oxirgi yakunlanganlar"
+    "recentClosedTitle": "Oxirgi yakunlanganlar",
+    "linkMine": "Meniki ({n})",
+    "linkColleagues": "Hamkasblarniki ({n}) — faqat ko‘rish, tasdiqni muhrlagan odam beradi",
+    "linkErrors": {
+      "not_mine": "Bu bog‘lanish hamkasbingizning hisobini o‘lchaydi — uni muhrlagan odam tasdiqlaydi",
+      "receipt_not_found": "Prixod topilmadi",
+      "request_not_found": "Hisob topilmadi",
+      "request_foreign": "Bu hisob boshqa bitimga tegishli",
+      "no_deal": "Prixod bitimga biriktirilmagan — avval bitimga biriktiring",
+      "forbidden": "Ruxsat yo‘q",
+      "server_behind": "Server yangilanmoqda — birozdan keyin urinib ko‘ring"
+    }
   },
   "partners": {
     "title": "Kontragentlar",
