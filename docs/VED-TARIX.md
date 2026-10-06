@@ -197,7 +197,9 @@ offers the answer, not the dead seal.
   assertions move to the write scope).
 - **Per-VED totals** — a block on top of `/hisoblash/tarix`, «Kim qancha
   hisobladi — oktyabr»: one row per credit holder — muhrlangan N · umumiy narx
-  M · o'rtacha vaqt · o'z vaqtida %; Tashkent month (`tashkentDay()`),
+  M · o'rtacha vaqt (his 13b names exactly these; an «o'z vaqtida %» column
+  was drafted here and CUT, review ved-money-5 — he never asked for it);
+  Tashkent month (`tashkentDay()`),
   `?oy=YYYY-MM` validated, default this month. Counts only, never a money sum
   (answers are in three currencies). The queue's «tezlik» block is rebuilt on
   the same function — `calcSpeed` stops crediting the holder and stops
