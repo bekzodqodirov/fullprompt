@@ -413,6 +413,24 @@ describe('the price history', () => {
     expect(rows[0]!.clientPriceUsd).toBe(9999);
   });
 
+  it('names a lead row’s owner for calcCardHref, and none on a deal row (review access-7)', async () => {
+    // The narxlar link asks the one calc-surface rule, which needs the owner:
+    // the CRM card admits him, the karta the VED it bounces.
+    await db.update(leads).set({ ownerId: actorId }).where(eq(leads.id, leadId));
+    try {
+      const code = `9405${SUFFIX}`;
+      await sealed({ code, onLead: true });
+      await sealed({ code });
+      const rows = await quoteHistoryFor(code, { scope: 'all' });
+      expect(rows.map((r) => [r.entityType, r.leadOwnerId])).toEqual([
+        ['deal', null],
+        ['lead', actorId],
+      ]);
+    } finally {
+      await db.update(leads).set({ ownerId: null }).where(eq(leads.id, leadId));
+    }
+  });
+
   it('answers about a code nobody has priced with nothing, never with somebody else’s quote', async () => {
     expect(await quoteHistoryFor(`0000${SUFFIX}`, { scope: 'all' })).toEqual([]);
     expect(await quoteHistoryFor('   ', { scope: 'all' })).toEqual([]);

@@ -130,6 +130,13 @@ describe('every consumer of the ONE door asks it', () => {
     expect(page).toMatch(/<ClientFeed[\s\S]*?noteOn=\{\{ entityType: 'lead', entityId: lead\.id \}\}[\s\S]*?\/>/);
   });
 
+  it('the price history links a card through calcCardHref, never by hand (review access-7)', () => {
+    // `/crm/leads/<id>` bounced the VED and the accountant both.
+    const page = src('src/app/(protected)/hisoblash/narxlar/page.tsx');
+    expect(page).toContain('calcCardHref(actor, row)');
+    expect(page).not.toMatch(/`\/(crm\/leads|bitimlar)\/\$\{row\./);
+  });
+
   it('the note action asks the door itself, never on a client entity, and refuses a file id', () => {
     const action = src('src/modules/wms/crm/reply-actions.ts');
     const body = action.slice(action.indexOf('export async function addFeedNoteAction'));
