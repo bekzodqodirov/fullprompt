@@ -81,6 +81,10 @@ export const TASK_ERROR_CODES = [
   'not_remindable',
   'not_askable',
   'empty_text',
+  // «📤 Manbani yangi odamga yuborish» with nobody to send to — the task came
+  // back to its author, or it carries no messages (review bot-13): said, never
+  // a «📤 Yuborildi» about nothing.
+  'nothing_to_send',
 ] as const;
 export type TaskErrorCode = (typeof TASK_ERROR_CODES)[number];
 
@@ -999,11 +1003,46 @@ export function sourcesOf(value: unknown): SourceMessage[] {
 }
 
 /**
+ * The author's own messages, sent to whoever holds the task NOW: the forwards
+ * and one line with the link — and NO task buttons (review bot-13). The
+ * holder's own TaskAssigned carries those; a second full assignment was a
+ * second 👀 ✅ ⏰ 💬 under the same work. Its own type so the drain's send-time
+ * check mutes it once the task closed or moved (an assignee copy,
+ * `taskCopyLive`) and queue order puts it after the assignment it belongs to.
+ * One sender for the author's «📤» press and a late album part (bot-11).
+ */
+export async function queueTaskSources(
+  task: {
+    id: string;
+    title: string;
+    assigneeId: string;
+    origin: string | null;
+    boundId: string | null;
+    entityType: string | null;
+    entityId: string | null;
+  },
+  sources: SourceMessage[],
+  headline: string,
+): Promise<void> {
+  if (sources.length === 0) return;
+  await notifyStaffTelegram({
+    userIds: [task.assigneeId],
+    type: 'TaskSources',
+    text: `${headline}: ${task.title}` + (await linkLine(task, task.assigneeId)),
+    extra: { taskId: task.id, forwards: sources },
+  });
+}
+
+/**
  * «📤 Manbani yangi odamga yuborish» — the author's own press under a
  * `TaskReassigned` (access-money-12): their messages go to whoever holds the
- * task NOW, and only because they asked.
+ * task NOW, and only because they asked. Answers whether that person will
+ * hear it; refuses in words when there is nobody to send to (review bot-13).
  */
-export async function forwardSourcesAgain(id: string, ctx: TaskContext): Promise<void> {
+export async function forwardSourcesAgain(
+  id: string,
+  ctx: TaskContext,
+): Promise<{ reach: Reach; name: string | null }> {
   if (!ctx.actorId) throw new TaskError('unauthenticated');
   const task = await byId(id);
   if (!task) throw new TaskError('not_found');
@@ -1011,8 +1050,10 @@ export async function forwardSourcesAgain(id: string, ctx: TaskContext): Promise
   if (task.status !== 'open') throw new TaskError('already_closed');
   const row = await db.query.tasks.findFirst({ where: eq(tasks.id, id), columns: { sourceMessages: true } });
   const sources = sourcesOf(row?.sourceMessages);
-  if (sources.length === 0 || task.assigneeId === ctx.actorId) return;
-  await notifyAssigned(task, ctx.actorId, { headline: '📎 Topshiriq manbalari', forwards: sources });
+  if (sources.length === 0 || task.assigneeId === ctx.actorId) throw new TaskError('nothing_to_send');
+  await queueTaskSources(task, sources, '📎 Topshiriq manbalari');
+  const reach = (await reachOf([task.assigneeId], 'TaskSources')).get(task.assigneeId) ?? 'no_chat';
+  return { reach, name: task.assigneeName };
 }
 
 export async function updateTask(

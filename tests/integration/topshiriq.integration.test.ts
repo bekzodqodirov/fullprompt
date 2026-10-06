@@ -44,11 +44,13 @@ import { decideAttachmentRead } from '@/modules/wms/attachments/access';
 import { __setTelegramTransport } from '@/modules/platform/telegram/send';
 import {
   appendLatePart,
+  buttonsFor,
   completeTaskFromBot,
   createTaskFromDraft,
   givenFromBot,
   pressRefusalText,
   remindTaskFromBot,
+  sourcesFromBot,
   TASK_ANSWERS,
   taskPressCheck,
 } from '@/modules/platform/telegram/staff-bot';
@@ -1046,22 +1048,58 @@ describe('the bot doors (telegram-mechanics-1/4/13/14)', () => {
     ).toEqual({ ok: false, result: 'not_linked' });
   });
 
-  it('a late album part joins the AUTHOR’s open task and is forwarded to its holder (telegram-mechanics-17)', async () => {
+  it('a late album part joins the AUTHOR’s open task and reaches its CURRENT holder through the drain (telegram-mechanics-17, review bot-11)', async () => {
     const author = await mintStaff({ chat: true });
     const doer = await mintStaff({ chat: true });
+    const next = await mintStaff({ chat: true });
     const stranger = await mintStaff({ chat: true });
     const first = { chatId: Number(author.chat), messageId: 20 };
     const id = await mintTask(author, doer, { sourceMessages: [first] });
-    expect(await appendLatePart(author.chat!, { taskId: id, assigneeId: doer.id }, { messageId: 21, file: null })).toBe(true);
+    expect(await appendLatePart(author.chat!, { taskId: id }, { messageId: 21, file: null })).toBe('added');
     expect((await taskRow(id)).sourceMessages).toEqual([first, { chatId: Number(author.chat), messageId: 21 }]);
-    expect(method('forwardMessage').map((c) => c.body)).toEqual([
-      { chat_id: Number(doer.chat), from_chat_id: Number(author.chat), message_id: 21 },
-    ]);
+    // Queued behind the assignment, never forwarded straight past it.
+    expect(method('forwardMessage')).toHaveLength(0);
+    const [copy] = await queued(doer.id, 'TaskSources');
+    expect(copy!.payload).toMatchObject({ taskId: id, forwards: [{ chatId: Number(author.chat), messageId: 21 }] });
+    // Handed on since: the next part goes to whoever holds the task NOW.
+    await reassignTask(id, next.id, ctxOf(author));
+    expect(await appendLatePart(author.chat!, { taskId: id }, { messageId: 22, file: null })).toBe('added');
+    expect(await queued(next.id, 'TaskSources')).toHaveLength(1);
+    expect(await queued(doer.id, 'TaskSources')).toHaveLength(1);
     // Somebody else's chat cannot grow the author's task, and a closed task takes nothing.
-    expect(await appendLatePart(stranger.chat!, { taskId: id, assigneeId: doer.id }, { messageId: 22, file: null })).toBe(false);
+    expect(await appendLatePart(stranger.chat!, { taskId: id }, { messageId: 23, file: null })).toBe('closed');
     await db.update(tasks).set({ status: 'done', doneAt: new Date() }).where(eq(tasks.id, id));
-    expect(await appendLatePart(author.chat!, { taskId: id, assigneeId: doer.id }, { messageId: 23, file: null })).toBe(false);
-    expect((await taskRow(id)).sourceMessages).toHaveLength(2);
+    expect(await appendLatePart(author.chat!, { taskId: id }, { messageId: 24, file: null })).toBe('closed');
+    expect((await taskRow(id)).sourceMessages).toHaveLength(3);
+  });
+
+  it('a late part past the source cap is refused as «cap», so the author can be told (review bot-11)', async () => {
+    const author = await mintStaff({ chat: true });
+    const doer = await mintStaff();
+    const full = Array.from({ length: 10 }, (_, i) => ({ chatId: Number(author.chat), messageId: 100 + i }));
+    const id = await mintTask(author, doer, { sourceMessages: full });
+    expect(await appendLatePart(author.chat!, { taskId: id }, { messageId: 200, file: null })).toBe('cap');
+    expect((await taskRow(id)).sourceMessages).toHaveLength(10);
+  });
+
+  it('«📤 Manbani yangi odamga yuborish» sends the sources ONLY — no second assignment — and refuses when there is nobody to send to (review bot-13)', async () => {
+    const author = await mintStaff({ chat: true });
+    const first = await mintStaff({ chat: true });
+    const second = await mintStaff();
+    const viewer = await mintStaff();
+    const sources = [{ chatId: Number(author.chat), messageId: 31 }];
+    const id = await mintTask(author, first, { sourceMessages: sources });
+    await reassignTask(id, second.id, ctxOf(viewer, 'crm.leads.view_all'));
+    const assignedBefore = (await queued(second.id, 'TaskAssigned')).length;
+    expect(await sourcesFromBot(author.chat!, id)).toEqual({ result: 'done', reach: 'no_chat', name: second.name });
+    const [copy] = await queued(second.id, 'TaskSources');
+    expect(copy!.payload).toMatchObject({ taskId: id, forwards: sources });
+    // No buttons ride on it, and no second TaskAssigned was queued.
+    expect(buttonsFor('TaskSources', copy!.payload as Record<string, unknown>)).toBeNull();
+    expect(await queued(second.id, 'TaskAssigned')).toHaveLength(assignedBefore);
+    // Handed back to the author: there is nobody to send to — said, never «📤 Yuborildi».
+    await reassignTask(id, author.id, ctxOf(viewer, 'crm.leads.view_all'));
+    expect(await sourcesFromBot(author.chat!, id)).toEqual({ result: 'nothing_to_send' });
   });
 
   it('«📤 Men bergan» from the bot, and a 🔔 that says who will not hear it', async () => {

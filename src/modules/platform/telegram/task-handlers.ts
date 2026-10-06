@@ -1,7 +1,7 @@
 import type { Context } from 'grammy';
 import { logger } from '../logger';
 import { reachLine } from '../notifications/staff';
-import { appendLine, keyboardOf, staffTextHtml, withoutButton } from '../notifications/staff-html';
+import { appendLine, keyboardOf, staffTextHtml, urlRowsOf, withoutButton } from '../notifications/staff-html';
 import { parseDue } from '../tasks/service';
 import { activeIntake } from './calc-intake';
 import { activeCapture } from './note-capture';
@@ -42,6 +42,7 @@ import {
   ALBUM_SETTLE_MS,
   albumSettled,
   draftNote,
+  MAX_DRAFT_SOURCES,
   draftTitle,
   dueFromButton,
   endDraft,
@@ -306,7 +307,7 @@ async function finishDraft(say: Say, chatId: bigint, draft: TaskDraft, due: Draf
   const tooBig = tooBigLine(draft.tooBig);
   if (tooBig) lines.push(tooBig);
   await say(lines.join('\n'), { inline_keyboard: [[{ text: '🗑 Bekor qilish', callback_data: `tc:${made.taskId}` }]] });
-  noteLinger(chatId, made.taskId, made.assigneeId, Object.keys(draft.albums));
+  noteLinger(chatId, made.taskId, Object.keys(draft.albums));
 }
 
 /** The draft's text branch in the ladder — a name, a line of the task, or a typed date. */
@@ -335,6 +336,12 @@ export async function draftText(ctx: Context, chatId: bigint, draft: TaskDraft):
 /** A part of what the author sent, taken into the draft — then the next question. */
 export async function addToDraft(ctx: Context, chatId: bigint, draft: TaskDraft, part: DraftPart): Promise<void> {
   const next = updateDraft(chatId, { ...withPart(draft, part, Number(chatId)) })!;
+  if (next.dropped > 0 && draft.dropped === 0) {
+    // The first part past the cap, said ONCE (review bot-11): one
+    // forwardMessages call carries ten, and the rest were going nowhere in
+    // silence.
+    await ctx.reply(`⚠ Bitta topshiriqqa ko‘pi bilan ${MAX_DRAFT_SOURCES} ta xabar qo‘shiladi — qolganlari hodimga yuborilmaydi.`);
+  }
   if (next.stage === 'who') {
     // Sent before the person was picked: kept, and the question stands.
     await ctx.reply('📎 Qabul qilindi. Endi kimga ekanini tanlang.');
@@ -456,8 +463,17 @@ export async function draftMedia(ctx: Context, chatId: bigint): Promise<boolean>
       messageId: part.messageId,
       file: part.file && part.kind && part.kind !== 'contact' && part.kind !== 'location' ? { ...part.file, kind: part.kind } : null,
     });
-    if (added && part.mediaGroupId && lateAckDue(linger, part.mediaGroupId)) {
+    // Said once per album either way — a part the task could not take is
+    // told, never swallowed (review bot-11).
+    const group = part.mediaGroupId!;
+    if (added === 'added' && lateAckDue(linger, group)) {
       await ctx.reply('📎 Albomning qolgan qismi topshiriqqa qo‘shildi.');
+    } else if (added !== 'added' && lateAckDue(linger, `${group}:refused`)) {
+      await ctx.reply(
+        added === 'cap'
+          ? `⚠ Albomning qolgan qismi qo‘shilmadi — bitta topshiriqqa ko‘pi bilan ${MAX_DRAFT_SOURCES} ta xabar.`
+          : '⚠ Albomning qolgan qismi qo‘shilmadi — topshiriq endi ochiq emas.',
+      );
     }
     return true;
   }
@@ -558,6 +574,7 @@ function startDraftSeed(): TaskDraft {
     sources: [],
     files: [],
     tooBig: [],
+    dropped: 0,
     albums: {},
     promptMessageId: null,
     pendingDue: null,
@@ -738,17 +755,26 @@ export async function handleTaskPress(ctx: Context, chatId: bigint, press: TaskP
     return;
   }
 
-  // task_sources
-  const result = await sourcesFromBot(chatId, press.taskId);
-  await ctx.answerCallbackQuery({ text: result === 'done' ? '📤 Yuborildi' : TASK_ANSWERS[result] });
+  // task_sources — «📤 Yuborildi» only when something WAS queued, and the
+  // author told when the holder will not hear it (review bot-13).
+  const out = await sourcesFromBot(chatId, press.taskId);
+  await ctx.answerCallbackQuery({ text: out.result === 'done' ? '📤 Yuborildi' : TASK_ANSWERS[out.result] });
   const pressed = pressedOf(ctx);
-  if (result === 'done' && pressed) {
+  if (out.result !== 'done') {
+    await ctx.reply(TASK_ANSWERS[out.result]);
+    return;
+  }
+  if (pressed) {
     void editText({
       chatId,
       messageId: pressed.messageId,
       html: appendLine(staffTextHtml(pressed.text, 'TaskReassigned'), '📤 Manba yangi odamga yuborildi'),
+      // The pressed button goes; the «↗️ Ochish» link stays.
+      replyMarkup: keyboardOf(urlRowsOf(pressed.markup)),
     }).catch(() => {});
   }
+  const line = out.reach ? reachLine(out.name ?? 'Hodim', out.reach) : null;
+  if (line) await ctx.reply(line);
 }
 
 /** A refusal said under the press as well as on its toast — a toast is gone in a second. */

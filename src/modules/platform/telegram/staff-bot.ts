@@ -17,6 +17,7 @@ import {
   forwardSourcesAgain,
   givenTasks,
   MAX_TASK_SOURCES,
+  queueTaskSources,
   remindTask,
   rescheduleTask,
   TaskError,
@@ -40,7 +41,7 @@ import {
 } from '../notifications/staff-html';
 import { allLabelVariants } from './client-labels';
 import { buttonLabel } from './limits';
-import { botCall, editMarkup, editText } from './send';
+import { editMarkup, editText } from './send';
 
 import { canLogInSql, staffPhonesMatch } from '../users/login';
 
@@ -1148,6 +1149,7 @@ export const TASK_ANSWERS: Record<BotTaskResult, string> = {
   not_remindable: 'Bu vazifaga eslatma yuborib bo‘lmaydi.',
   not_askable: 'Bu vazifa bo‘yicha savol yuborib bo‘lmaydi.',
   empty_text: 'Bo‘sh xabar.',
+  nothing_to_send: 'Yuboradigan narsa yo‘q — vazifa hozir sizda yoki unda xabar yo‘q.',
 };
 
 /** The chat's honest actor, as the task service wants it — never a synthetic admin. */
@@ -1212,8 +1214,10 @@ export async function cancelTaskFromBot(
     .result;
 }
 
-export async function sourcesFromBot(chatId: bigint, taskId: string): Promise<BotTaskResult> {
-  return (await asChat(chatId, (ctx) => forwardSourcesAgain(taskId, ctx))).result;
+/** «📤 Manbani yangi odamga yuborish» — and whether the holder will hear it (review bot-13). */
+export async function sourcesFromBot(chatId: bigint, taskId: string): Promise<ReachedResult> {
+  const out = await asChat(chatId, (ctx) => forwardSourcesAgain(taskId, ctx));
+  return out.result === 'done' ? { result: 'done', ...out.value } : { result: out.result };
 }
 
 /** A door that also says whether the other side will hear it, and who that is. */
@@ -1561,47 +1565,70 @@ async function queueTaskFiles(taskId: string, uploadedBy: string, files: DraftFi
   });
 }
 
+/** What became of a late album part: taken, refused at the source cap, or the task is no longer open. */
+export type LatePart = 'added' | 'cap' | 'closed';
+
 /**
  * A late album part, after the task was made (telegram-mechanics-17): it
  * joins the task's sources (so a reassign by the author forwards it too), is
- * queued for the web, and is forwarded to the assignee now — the drain's
- * `forwards` carried only the parts that had arrived. Only the AUTHOR's own
- * open task, and never past the source cap.
+ * queued for the web, and goes to the task's holder — the drain's `forwards`
+ * carried only the parts that had arrived. Only the AUTHOR's own open task,
+ * and never past the source cap; a refusal is answered by its reason so the
+ * author can be told (review bot-11).
+ *
+ * THROUGH THE DRAIN, as a `TaskSources` row to the holder the UPDATE itself
+ * returns (review bot-11): a direct forward could reach the assignee before
+ * the assignment's own text, which is often still queued, and went to the
+ * holder the task had when it was MADE — after a reassign, the wrong person.
  */
 export async function appendLatePart(
   chatId: bigint,
-  linger: { taskId: string; assigneeId: string },
+  linger: { taskId: string },
   part: { messageId: number; file: DraftFile | null },
-): Promise<boolean> {
+): Promise<LatePart> {
   const staff = await staffForChat(chatId);
-  if (!staff) return false;
+  if (!staff) return 'closed';
+  const source = { chatId: Number(chatId), messageId: part.messageId };
   const appended = (await db.execute(sql`
     UPDATE tasks
-       SET source_messages = coalesce(source_messages, '[]'::jsonb)
-             || ${JSON.stringify([{ chatId: Number(chatId), messageId: part.messageId }])}::jsonb,
+       SET source_messages = coalesce(source_messages, '[]'::jsonb) || ${JSON.stringify([source])}::jsonb,
            updated_at = now()
      WHERE id = ${linger.taskId} AND created_by = ${staff.id} AND status = 'open'
        AND jsonb_array_length(coalesce(source_messages, '[]'::jsonb)) < ${MAX_TASK_SOURCES}
-    RETURNING id`)) as unknown as { id: string }[];
-  if (appended.length === 0) return false;
-  if (part.file) await queueTaskFiles(linger.taskId, staff.id, [part.file]);
-  if (linger.assigneeId !== staff.id) {
-    const reach = (await reachOf([linger.assigneeId], 'TaskAssigned')).get(linger.assigneeId);
-    const [link] = await db
-      .select({ chat: telegramLinks.telegramChatId })
-      .from(telegramLinks)
-      .where(and(eq(telegramLinks.userId, linger.assigneeId), eq(telegramLinks.status, 'linked')))
-      .limit(1);
-    if (reach === 'ok' && link?.chat) {
-      const answer = await botCall('forwardMessage', {
-        chat_id: Number(link.chat),
-        from_chat_id: Number(chatId),
-        message_id: part.messageId,
-      });
-      if (!answer.ok) logger.warn({ description: answer.description }, '[tasks] late album part not forwarded');
-    }
+    RETURNING id, title, assignee_id, origin, bound_id, entity_type, entity_id`)) as unknown as {
+    id: string;
+    title: string;
+    assignee_id: string;
+    origin: string | null;
+    bound_id: string | null;
+    entity_type: string | null;
+    entity_id: string | null;
+  }[];
+  const task = appended[0];
+  if (!task) {
+    const [row] = (await db.execute(sql`
+      SELECT (status = 'open' AND created_by = ${staff.id}
+              AND jsonb_array_length(coalesce(source_messages, '[]'::jsonb)) >= ${MAX_TASK_SOURCES}) AS full
+        FROM tasks WHERE id = ${linger.taskId}`)) as unknown as { full: boolean }[];
+    return row?.full ? 'cap' : 'closed';
   }
-  return true;
+  if (part.file) await queueTaskFiles(linger.taskId, staff.id, [part.file]);
+  if (task.assignee_id !== staff.id) {
+    await queueTaskSources(
+      {
+        id: task.id,
+        title: task.title,
+        assigneeId: task.assignee_id,
+        origin: task.origin,
+        boundId: task.bound_id,
+        entityType: task.entity_type,
+        entityId: task.entity_id,
+      },
+      [source],
+      '📎 Albomning qolgan qismi',
+    );
+  }
+  return 'added';
 }
 
 /** How many «🔔» buttons «📤 Men bergan» carries — the rest are on the web. */

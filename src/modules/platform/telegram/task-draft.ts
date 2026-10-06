@@ -60,6 +60,8 @@ export interface TaskDraft {
   files: DraftFile[];
   /** Files the web will not get — over Telegram's download limit, told in words. */
   tooBig: string[];
+  /** Parts that came past the source cap and travel to nobody — told once (review bot-11). */
+  dropped: number;
   /** media_group_id → when its last part arrived (ms) — the album settle. */
   albums: Record<string, number>;
   /** The bot message whose keyboard the draft edits. */
@@ -109,6 +111,7 @@ export function startDraft(
     sources: (seed.sources ?? []).slice(0, MAX_DRAFT_SOURCES),
     files: seed.files ?? [],
     tooBig: [],
+    dropped: 0,
     albums: {},
     promptMessageId: null,
     pendingDue: null,
@@ -166,10 +169,8 @@ export interface DraftPart {
 export function withPart(draft: TaskDraft, part: DraftPart, chatId: number, now = Date.now()): TaskDraft {
   const texts = part.text?.trim() && !part.forwarded ? [...draft.texts, part.text.trim()] : draft.texts;
   const isSource = part.forwarded || Boolean(part.kind);
-  const sources =
-    isSource && draft.sources.length < MAX_DRAFT_SOURCES
-      ? [...draft.sources, { chatId, messageId: part.messageId }]
-      : draft.sources;
+  const fits = draft.sources.length < MAX_DRAFT_SOURCES;
+  const sources = isSource && fits ? [...draft.sources, { chatId, messageId: part.messageId }] : draft.sources;
   let files = draft.files;
   let tooBig = draft.tooBig;
   if (part.file && part.kind && part.kind !== 'contact' && part.kind !== 'location') {
@@ -186,6 +187,7 @@ export function withPart(draft: TaskDraft, part: DraftPart, chatId: number, now 
     sources,
     files,
     tooBig,
+    dropped: isSource && !fits ? draft.dropped + 1 : draft.dropped,
     // What the FIRST source was names the task when nothing was typed.
     firstKind: draft.sources.length === 0 && isSource ? (part.kind ?? null) : draft.firstKind,
     firstForwarded: draft.sources.length === 0 && isSource ? part.forwarded : draft.firstForwarded,
@@ -342,7 +344,6 @@ function dotted(day: string): string {
 
 interface Linger {
   taskId: string;
-  assigneeId: string;
   albums: Set<string>;
   /** Albums whose late parts were already acknowledged — once per album, never per photo. */
   acked: Set<string>;
@@ -352,11 +353,12 @@ interface Linger {
 const lingers = new Map<string, Linger>();
 
 /** The draft just became a task: its albums linger for a minute (telegram-mechanics-17). */
-export function noteLinger(chatId: bigint, taskId: string, assigneeId: string, albums: string[]): void {
+export function noteLinger(chatId: bigint, taskId: string, albums: string[]): void {
   if (albums.length === 0) return;
   lingers.set(String(chatId), {
     taskId,
-    assigneeId,
+    // Not the holder: a late part goes to whoever holds the task WHEN it
+    // arrives, read by the append's own UPDATE (review bot-11).
     albums: new Set(albums),
     acked: new Set(),
     until: Date.now() + LINGER_MS,

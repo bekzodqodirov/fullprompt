@@ -91,6 +91,8 @@ describe('what a part does to the draft', () => {
       draft = withPart(draft, { messageId: i + 1, forwarded: true }, 4242);
     }
     expect(draft.sources).toHaveLength(MAX_DRAFT_SOURCES);
+    // …and the three that went nowhere are COUNTED, so the author can be told once (review bot-11).
+    expect(draft.dropped).toBe(3);
   });
 
   it('the draft lives per chat and ends', () => {
@@ -194,7 +196,7 @@ describe('an album settles before the due is honoured (telegram-mechanics-17)', 
   });
 
   it('a late part lingers onto the made task for its own album only, acknowledged once', () => {
-    noteLinger(CHAT, 'task-1', 'user-1', ['G1']);
+    noteLinger(CHAT, 'task-1', ['G1']);
     const linger = lingerFor(CHAT, 'G1')!;
     expect(linger.taskId).toBe('task-1');
     expect(lingerFor(CHAT, 'G2')).toBeNull();

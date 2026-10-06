@@ -1226,8 +1226,12 @@ async function forwardSources(
   return null;
 }
 
-/** A task's copies the ASSIGNEE holds — the ones a handover makes stale too. */
-const ASSIGNEE_TASK_COPIES = new Set(['TaskAssigned', 'TaskReminder', 'TaskAnswer']);
+/**
+ * A task's copies the ASSIGNEE holds — the ones a handover makes stale too.
+ * `TaskSources` carries no buttons, but it forwards the author's messages,
+ * which must never reach a person who no longer has the task.
+ */
+const ASSIGNEE_TASK_COPIES = new Set(['TaskAssigned', 'TaskReminder', 'TaskAnswer', 'TaskSources']);
 /** …and the author's: their question copy, «boshqaga o‘tdi». */
 const AUTHOR_TASK_COPIES = new Set(['TaskQuestion', 'TaskReassigned']);
 
