@@ -265,6 +265,18 @@ describe('the queue hands the work out and takes it back', () => {
     expect((await openCalcFor('deal', dealId)).some((row) => row.id === id)).toBe(true);
   });
 
+  it('a release cancels the holder\'s task — no ghost left on their /bugun', async () => {
+    const { id } = await open();
+    const held = await db.query.calcRequests.findFirst({ where: eq(calcRequests.id, id) });
+    expect(held!.taskId, 'the open request carries its holder\'s task').toBeTruthy();
+    await releaseCalcRequest(id, ctx());
+    const task = await db.query.tasks.findFirst({ where: eq(tasks.id, held!.taskId!) });
+    // PostgreSQL 16's RETURNING is the NEW row: reading the task id back from
+    // the UPDATE that NULLs it found nothing, and the task stayed open for ever.
+    expect(task!.status).toBe('cancelled');
+    expect(task!.result).toBe('Navbatga qaytarildi');
+  });
+
   it('exactly one taker wins a race, and the loser is told which', async () => {
     const { id } = await open();
     await releaseCalcRequest(id, ctx());

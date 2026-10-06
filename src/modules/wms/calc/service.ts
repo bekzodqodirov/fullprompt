@@ -492,29 +492,37 @@ export async function takeCalcRequest(id: string, ctx: AuditContext): Promise<vo
  */
 export async function releaseCalcRequest(id: string, ctx: AuditContext): Promise<void> {
   if (!ctx.actorId) throw new CalcError('unauthenticated');
-  const rows = await db
-    .update(calcRequests)
-    .set({ assigneeId: null, taskId: null, takenAt: null, updatedAt: new Date() })
-    .where(and(eq(calcRequests.id, id), openRequests))
-    .returning({
-      entityType: calcRequests.entityType,
-      entityId: calcRequests.entityId,
-      // The PREVIOUS holder's task — `returning` on an UPDATE hands back the
-      // new row, so this is read before the set in the same statement.
-      taskId: calcRequests.taskId,
-    });
-  const row = rows[0];
+  // The PREVIOUS holder's task is read under the row lock, in the same
+  // transaction as the release. It used to come back from the UPDATE's own
+  // `RETURNING`, under a comment saying that read the row «before the set» —
+  // but PostgreSQL 16's RETURNING is the NEW row (OLD in RETURNING arrived in
+  // 18), so the task id read back as the NULL just written and every
+  // «Bo'shatish» ever pressed left an open priority-1 «Hisoblash: …» on the
+  // old holder's /bugun and in the 08:00 digest, pointing at a request that no
+  // longer names it.
+  const row = await db.transaction(async (tx) => {
+    const [held] = await tx
+      .select({ entityType: calcRequests.entityType, entityId: calcRequests.entityId, taskId: calcRequests.taskId })
+      .from(calcRequests)
+      .where(and(eq(calcRequests.id, id), openRequests))
+      .for('update');
+    if (!held) return null;
+    await tx
+      .update(calcRequests)
+      .set({ assigneeId: null, taskId: null, takenAt: null, updatedAt: new Date() })
+      .where(eq(calcRequests.id, id));
+    // The task goes with the work. Leaving it open would put a timed job on
+    // somebody's /bugun for a calculation they no longer hold — the ghost the
+    // take path is careful not to create, arriving through the other door.
+    if (held.taskId) {
+      await tx
+        .update(tasks)
+        .set({ status: 'cancelled', result: 'Navbatga qaytarildi', updatedAt: new Date() })
+        .where(and(eq(tasks.id, held.taskId), eq(tasks.status, 'open')));
+    }
+    return held;
+  });
   if (!row) throw new CalcError('already_closed');
-  // The task goes with the work. Leaving it open would put a timed job on
-  // somebody's /bugun for a calculation they no longer hold, pointing at a
-  // request that no longer names it — the ghost the take path is careful not
-  // to create, arriving through the other door.
-  if (row.taskId) {
-    await db
-      .update(tasks)
-      .set({ status: 'cancelled', result: 'Navbatga qaytarildi', updatedAt: new Date() })
-      .where(and(eq(tasks.id, row.taskId), eq(tasks.status, 'open')));
-  }
   await writeAudit(db, ctx, {
     entityType: row.entityType,
     entityId: row.entityId,
