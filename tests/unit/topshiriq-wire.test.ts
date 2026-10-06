@@ -379,8 +379,14 @@ describe('the surfaces that draw a task branch on the calc job (tests-completene
   it('the task list, the dock and the bot each know an open calc job', () => {
     expect(read('src/components/task-list.tsx')).toContain('task.calc ? (');
     expect(read('src/components/dock.tsx')).toContain('task.calc ? (');
-    expect(read('src/app/api/dock/tasks/route.ts')).toContain("binding?.kind === 'calc' && binding.open");
+    // ONE reader rule for the list and the dock (review access-3): the route
+    // spreads it, and the dock's title reads the route's answer — a card
+    // guessed in the browser from the pointer is the lead link a VED bounces off.
+    expect(read('src/app/api/dock/tasks/route.ts')).toContain('...readerTaskLinks(row, bindings.get(row.id), actor),');
     expect(read('src/modules/platform/tasks/view.ts')).toContain("binding?.kind === 'calc' && binding.open");
+    const dock = read('src/components/dock.tsx');
+    expect(dock).toContain('const href = task.aboutHref;');
+    expect(dock).not.toMatch(/entityHref\(/);
     expect(handlers).toContain("taskPressCheck(chatId, parsed.taskId, 'act')");
   });
 

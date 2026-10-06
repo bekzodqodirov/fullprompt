@@ -10,7 +10,6 @@ import { autogrow, sendOnEnter, useCoarsePointer } from '@/components/composer';
 import { ReplyTemplates, type ReplyTemplate } from '@/components/reply-templates';
 import { OutboxBubble } from '@/components/outbox-bubble';
 import { TelegramBubble } from '@/components/telegram-bubble';
-import { entityHref } from '@/modules/platform/notifications/links';
 import { sendReplyAction } from '@/modules/wms/crm/reply-actions';
 import { completeTaskAction } from '@/modules/platform/tasks/actions';
 // A TYPE from the pure module the route builds its answer with: the JSON
@@ -42,8 +41,8 @@ interface DockTask {
   id: string;
   title: string;
   dueAt: string | null;
-  entityType: string | null;
-  entityId: string | null;
+  /** Where the title goes FOR THIS READER — the route's `readerTaskLinks`, never a card guessed here. */
+  aboutHref: string | null;
   /** An open calc job (VED-TARIX §8): no ✓ — «🧮» to its screen for a VED, a chip for anybody else. */
   calc: { href: string; mayOpen: boolean } | null;
 }
@@ -677,7 +676,7 @@ function TaskGroup({
     <div className="space-y-1.5">
       <p className="section-title">{title}</p>
       {rows.map((task) => {
-        const href = entityHref(task.entityType, task.entityId);
+        const href = task.aboutHref;
         return (
           <div key={task.id} data-testid="dock-task" className="flex items-center gap-2 rounded-xl bg-surface-sunken p-2.5">
             <span className="min-w-0 flex-1">
