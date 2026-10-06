@@ -3348,7 +3348,11 @@
       "future_date": "The date cannot be later than tomorrow.",
       "non_cash_category": "The chosen expense kind moves no money — a payout cannot be written into it.",
       "amount_too_large": "The amount is too large for one row.",
-      "upsale_not_computed": "Ran out of time checking the cargo payment — press again in a moment"
+      "upsale_not_computed": "Ran out of time checking the cargo payment — press again in a moment",
+      "answer_amount_required": "Enter the price",
+      "answer_amount_unreadable": "The price could not be read — type a number only (e.g. 1 200 or 1200.50)",
+      "answer_positive": "The price must be above zero",
+      "internal_note_required": "The internal note is required — write how you worked it out"
     },
     "openCard": "Card",
     "freight": "Freight",
@@ -3629,7 +3633,9 @@
     "feeOverride": "Declaration fee (manual)",
     "feeAuto": "auto",
     "linksShownOf": "Showing {shown} of {total}",
-    "sheetTitle": "What the price is made of"
+    "sheetTitle": "What the price is made of",
+    "answerSellerNoteLabel": "Note for the seller (optional)",
+    "answerInternalNoteLabel": "Internal note — how I worked it out (required, the seller does not see it)"
   },
   "partners": {
     "title": "Counterparties",

@@ -18,10 +18,12 @@ import { usersWithPermission, usersWithRoles } from '@/modules/platform/notifica
 import { canLogInSql } from '@/modules/platform/users/login';
 import { cardLink } from '@/modules/platform/notifications/links';
 import { logger } from '@/modules/platform/logger';
+import { retireTaskCopiesSoon } from '@/modules/platform/notifications/retire-tasks';
 import { addActivity } from '../crm/service';
 import { productKey, tnvedFor } from '../tnved/service';
 import { NO_REQUEST, itemNameNorm, sealedMemoryFor } from './memory';
 import { isComplete, missingFields, type CalcFacts, type CalcSection } from './intake';
+import { parseTypedMoney } from './money-input';
 
 /**
  * The VED queue (docs/VED.md, phase A).
@@ -446,6 +448,8 @@ export async function takeCalcRequest(id: string, ctx: AuditContext): Promise<vo
       .update(tasks)
       .set({ assigneeId: ctx.actorId, updatedAt: new Date() })
       .where(and(eq(tasks.id, won.taskId), eq(tasks.status, 'open')));
+    // The previous holder's copies say it moved on; the taker's own survive.
+    retireTaskCopiesSoon({ taskIds: [won.taskId], outcome: 'reassigned', exceptUserIds: [ctx.actorId] });
   } else {
     const label = await requestLabel(won.entityType, won.entityId);
     try {
@@ -527,6 +531,9 @@ export async function releaseCalcRequest(id: string, ctx: AuditContext): Promise
     return held;
   });
   if (!row) throw new CalcError('already_closed');
+  // The cancelled task's Telegram copies stop offering its button (after the
+  // commit, #714).
+  if (row.taskId) retireTaskCopiesSoon({ taskIds: [row.taskId], outcome: 'cancelled' });
   await writeAudit(db, ctx, {
     entityType: row.entityType,
     entityId: row.entityId,
@@ -549,6 +556,7 @@ async function endRequest(
     answerAmount?: number | null;
     answerCurrency?: string | null;
     answerNote?: string | null;
+    answerInternalNote?: string | null;
   },
 ): Promise<{
   entityType: string;
@@ -567,6 +575,7 @@ async function endRequest(
       answerAmount: num(patch.answerAmount ?? null),
       answerCurrency: patch.answerCurrency ?? null,
       answerNote: patch.answerNote ?? null,
+      answerInternalNote: patch.answerInternalNote ?? null,
       updatedAt: now,
     })
     .where(and(eq(calcRequests.id, id), openRequests))
@@ -591,6 +600,9 @@ async function endRequest(
         updatedAt: now,
       })
       .where(and(eq(tasks.id, row.taskId), eq(tasks.status, 'open')));
+    // The job's Telegram copies stop offering a button for a task that is no
+    // longer open — after the write, never inside a transaction (#714).
+    retireTaskCopiesSoon({ taskIds: [row.taskId], outcome: 'done' });
   }
   return row;
 }
@@ -675,13 +687,50 @@ export async function returnCalcRequest(
   }
 }
 
-/** Done — with the figure the seller is waiting for. */
+/** The currencies the fold offers — the answer is typed as the VED read it. */
+const ANSWER_CURRENCIES = new Set(['USD', 'UZS', 'CNY']);
+
+/** The column is numeric(14,2): a figure with more integer digits is a 22003. */
+const ANSWER_AMOUNT_MAX = 1e12;
+
+/**
+ * Done — with the figure the seller is waiting for, and the VED's own note on
+ * how it was reached (the owner's 9a).
+ *
+ * The amount arrives as TEXT and is read HERE (review ved-correctness-13,
+ * tests-completeness-2). The fold used to parse it in the browser and post
+ * `number | null`, so an empty box and «1200$» both arrived as null — and the
+ * job CLOSED with no price and no error, a live defect. Only a server that
+ * sees the typing can tell «nothing written» from «written, unreadable».
+ *
+ * The refusal ORDER is part of the rule (review §13, tests-completeness-1):
+ * a closed job says so first; a job that could be SEALED says «Muhrlang»
+ * before anything is asked of the amount — the fold on a sealable job must
+ * not read «summa majburiy»; then the amount; then the note.
+ *
+ * The internal note never leaves the calc side: it is written to its own
+ * column, audited under the REQUEST (`entity_type = 'calc_request'`, a row no
+ * seller's History tab reads), and is absent from the card's audit row, the
+ * seller's Telegram and every offer surface — a fence test reads those
+ * expressions for it.
+ */
 export async function finishCalcRequest(
   id: string,
-  answer: { amount?: number | null; currency?: string | null; note?: string | null },
+  answer: {
+    amountText: string;
+    currency?: string | null;
+    note?: string | null;
+    internalNote: string;
+  },
   ctx: AuditContext,
 ): Promise<void> {
   if (!ctx.actorId) throw new CalcError('unauthenticated');
+  const current = await db.query.calcRequests.findFirst({
+    where: eq(calcRequests.id, id),
+    columns: { id: true, completedAt: true },
+  });
+  if (!current) throw new CalcError('not_found');
+  if (current.completedAt) throw new CalcError('already_closed');
   // Round 112: a job the VED could SEAL is not closed with a typed number. The
   // typed answer is phase A's fallback for a workspace that cannot price
   // (#775); on one that can, it was a way past the seal — no version on the
@@ -692,42 +741,59 @@ export async function finishCalcRequest(
   const { loadWorkspace, canSeal } = await import('./workspace');
   const workspace = await loadWorkspace(id);
   if (workspace && canSeal(workspace)) throw new CalcError('seal_instead');
+
   /**
-   * «1 000» IS NOT A NUMBER (audit A3).
+   * «1 000» IS NOT A NUMBER (audit A3), and «1200$» is not one either.
    *
-   * `Number('1 000')` is NaN, and NaN passes every guard made of
-   * comparisons: `answer.amount != null` was TRUE, so the request closed
-   * with `answer_currency = 'USD'` and `answer_amount` NULL — a currency with
-   * no amount — and the seller's Telegram read «💵 NaN USD». The form parses
-   * spaces now, and this is the fence behind it (#531: a screen guard alone
-   * leaves the action accepting it).
+   * `parseTypedMoney` reads the office's typing (spaces, NBSP, «1,5»,
+   * «1,000») and answers null for anything else — never NaN travelling on as
+   * a figure. Three refusals, three sentences: nothing written, written but
+   * unreadable, and not a price at all (0 or below — 0093's CHECK would
+   * refuse it as a 23514 white page).
    */
-  if (answer.amount !== undefined && answer.amount !== null && !Number.isFinite(answer.amount)) {
-    throw new CalcError('bad_number');
-  }
+  const typed = (answer.amountText ?? '').trim();
+  if (!typed) throw new CalcError('answer_amount_required');
+  const amount = parseTypedMoney(typed);
+  if (amount === null) throw new CalcError('answer_amount_unreadable');
+  if (!(amount > 0)) throw new CalcError('answer_positive');
+  if (amount >= ANSWER_AMOUNT_MAX) throw new CalcError('amount_range');
+  const internalNote = (answer.internalNote ?? '').trim().slice(0, 2000);
+  if (!internalNote) throw new CalcError('internal_note_required');
+  const currency = (answer.currency ?? '').trim().toUpperCase() || 'USD';
+  if (!ANSWER_CURRENCIES.has(currency)) throw new CalcError('validation');
+  const sellerNote = answer.note?.trim().slice(0, 2000) || null;
+
   const row = await endRequest(id, {
     via: 'task',
     actorId: ctx.actorId,
-    answerAmount: answer.amount ?? null,
-    answerCurrency: answer.amount != null ? answer.currency || 'USD' : null,
-    answerNote: answer.note?.trim().slice(0, 2000) || null,
+    answerAmount: amount,
+    answerCurrency: currency,
+    answerNote: sellerNote,
+    answerInternalNote: internalNote,
   });
   if (!row) throw new CalcError('already_closed');
   const label = await requestLabel(row.entityType, row.entityId);
-  const money =
-    answer.amount != null ? `\n💵 ${answer.amount} ${answer.currency || 'USD'}` : '';
+  // The CARD's row: the seller reads the card's History tab, so this one
+  // carries the figure and nothing of the VED's reasoning.
   await writeAudit(db, ctx, {
     entityType: row.entityType,
     entityId: row.entityId,
     action: 'update',
-    after: { calcDone: id, amount: answer.amount ?? null },
+    after: { calcDone: id, amount },
+  });
+  // The REQUEST's own row: where the internal note is on the record.
+  await writeAudit(db, ctx, {
+    entityType: 'calc_request',
+    entityId: id,
+    action: 'update',
+    after: { calcDone: id, amount, currency, calcInternalNote: internalNote },
   });
   await notifyStaffTelegram({
     userIds: [row.requestedBy],
     type: 'CalcDone',
     text:
-      `✅ Hisoblash tayyor: ${label}${money}` +
-      `${answer.note ? `\n📝 ${answer.note.slice(0, 300)}` : ''}` +
+      `✅ Hisoblash tayyor: ${label}\n💵 ${amount} ${currency}` +
+      `${sellerNote ? `\n📝 ${sellerNote.slice(0, 300)}` : ''}` +
       linkLine(row.entityType, row.entityId),
     exceptUserId: ctx.actorId,
   }).catch((err) => logger.error({ err, id }, '[calc] done notify failed'));

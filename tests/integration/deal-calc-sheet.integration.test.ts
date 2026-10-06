@@ -127,7 +127,7 @@ async function open(dealId: string, section: 'rastamojka' | 'podklyuch' | 'yolki
 async function answered(dealId: string, amount: number, currency = 'USD') {
   const id = await open(dealId, 'rastamojka');
   await takeCalcRequest(id, ctx());
-  await finishCalcRequest(id, { amount, currency, note: 'gotovo' }, ctx());
+  await finishCalcRequest(id, { amountText: String(amount), currency, note: 'gotovo', internalNote: 'ichki: gotovo' }, ctx());
   return id;
 }
 

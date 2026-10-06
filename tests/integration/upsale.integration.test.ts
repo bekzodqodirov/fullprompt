@@ -382,7 +382,7 @@ async function answered(onDeal: string, answer = 1000, price = 1300): Promise<st
   );
   madeRequests.push(opened.id);
   await takeCalcRequest(opened.id, ctx());
-  await finishCalcRequest(opened.id, { amount: answer, currency: 'USD', note: 'fifo' }, ctx());
+  await finishCalcRequest(opened.id, { amountText: String(answer), currency: 'USD', note: 'fifo', internalNote: 'ichki: fifo' }, ctx());
   const offer = await recordOffer({ requestId: opened.id }, { clientPriceUsd: price, locale: 'uz' }, sellerCtx());
   return offer.id;
 }
@@ -619,7 +619,7 @@ describe('one sale, one commission', () => {
     );
     madeRequests.push(opened.id);
     await takeCalcRequest(opened.id, ctx());
-    await finishCalcRequest(opened.id, { amount: 1000, currency: 'USD', note: 'gotovo' }, ctx());
+    await finishCalcRequest(opened.id, { amountText: '1000', currency: 'USD', note: 'gotovo', internalNote: 'ichki: gotovo' }, ctx());
     const onAnswer = await recordOffer({ requestId: opened.id }, { clientPriceUsd: 1300, locale: 'uz' }, sellerCtx());
     await invoiceAndCollect(d!.id, 1300);
     const paid = await payUpsale([onAnswer.id], { accountId, currency: 'USD', expenseDate: today() }, ctx());

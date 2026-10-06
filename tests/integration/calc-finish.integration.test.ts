@@ -105,7 +105,7 @@ describe('a typed «Готово» on a job that could be sealed', () => {
     const id = await request('yolkira');
     await setFreightZone(id, 'cn', ctx());
     await expect(
-      finishCalcRequest(id, { amount: 480, currency: 'USD', note: 'typed' }, ctx()),
+      finishCalcRequest(id, { amountText: '480', currency: 'USD', note: 'typed', internalNote: 'ichki: qo‘lda' }, ctx()),
     ).rejects.toMatchObject({ code: 'seal_instead' });
     const row = await db.query.calcRequests.findFirst({ where: eq(calcRequests.id, id) });
     expect(row!.completedAt).toBeNull();
@@ -116,7 +116,7 @@ describe('a typed «Готово» on a job that could be sealed', () => {
     // A rastamojka job with no group and no baza has blockers: nothing can be
     // sealed, so the phase-A answer is the only door and must stay open.
     const id = await request('rastamojka');
-    await finishCalcRequest(id, { amount: 480, currency: 'USD', note: 'typed' }, ctx());
+    await finishCalcRequest(id, { amountText: '480', currency: 'USD', note: 'typed', internalNote: 'ichki: qo‘lda' }, ctx());
     const row = await db.query.calcRequests.findFirst({ where: eq(calcRequests.id, id) });
     expect(row!.completedAt).not.toBeNull();
     expect(Number(row!.answerAmount)).toBe(480);

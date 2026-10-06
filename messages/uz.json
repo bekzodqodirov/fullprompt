@@ -3348,7 +3348,11 @@
       "future_date": "Sana ertadan keyin bo‘lishi mumkin emas.",
       "non_cash_category": "Tanlangan xarajat turi pulsiz — to‘lovni unga yozib bo‘lmaydi.",
       "amount_too_large": "Summa juda katta — bitta qatorga sig‘maydi.",
-      "upsale_not_computed": "Yukning to‘langanini tekshirishga vaqt yetmadi — birozdan so‘ng qayta bosing"
+      "upsale_not_computed": "Yukning to‘langanini tekshirishga vaqt yetmadi — birozdan so‘ng qayta bosing",
+      "answer_amount_required": "Narxni yozing",
+      "answer_amount_unreadable": "Narx o‘qilmadi — faqat raqam yozing (masalan 1 200 yoki 1200,50)",
+      "answer_positive": "Narx noldan katta bo‘lishi kerak",
+      "internal_note_required": "Ichki izoh majburiy — qanday hisoblaganingizni yozing"
     },
     "openCard": "Karta",
     "freight": "Yo‘lkira",
@@ -3629,7 +3633,9 @@
     "feeOverride": "Deklaratsiya yig'imi (qo'lda)",
     "feeAuto": "avto",
     "linksShownOf": "{total} tadan {shown} tasi ko‘rsatilgan",
-    "sheetTitle": "Hisob tafsiloti"
+    "sheetTitle": "Hisob tafsiloti",
+    "answerSellerNoteLabel": "Sotuvchiga izoh (ixtiyoriy)",
+    "answerInternalNoteLabel": "Ichki izoh — qanday hisobladim (majburiy, sotuvchi ko‘rmaydi)"
   },
   "partners": {
     "title": "Kontragentlar",

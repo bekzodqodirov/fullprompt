@@ -3348,7 +3348,11 @@
       "future_date": "日期不能晚于明天。",
       "non_cash_category": "所选费用类型不涉及现金——不能将付款记入其中。",
       "amount_too_large": "金额过大——单行无法容纳。",
-      "upsale_not_computed": "核对货物付款超时——请稍后再按一次"
+      "upsale_not_computed": "核对货物付款超时——请稍后再按一次",
+      "answer_amount_required": "请填写价格",
+      "answer_amount_unreadable": "无法识别价格——只填写数字（例如 1 200 或 1200,50）",
+      "answer_positive": "价格必须大于零",
+      "internal_note_required": "内部备注必填——请写明如何计算的"
     },
     "openCard": "卡片",
     "freight": "运费",
@@ -3629,7 +3633,9 @@
     "feeOverride": "报关费（手动）",
     "feeAuto": "自动",
     "linksShownOf": "显示 {shown} / {total}",
-    "sheetTitle": "计算明细"
+    "sheetTitle": "计算明细",
+    "answerSellerNoteLabel": "给销售的备注（可选）",
+    "answerInternalNoteLabel": "内部备注——如何计算的（必填，销售看不到）"
   },
   "partners": {
     "title": "合作方",
