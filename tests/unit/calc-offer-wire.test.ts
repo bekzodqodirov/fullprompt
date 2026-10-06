@@ -153,11 +153,14 @@ describe('the panel that hosts it', () => {
   });
 
   it('16a: the seller\'s full offer rows only for who may offer; a PROJECTION for who may only read', () => {
-    expect(PANEL_CODE).toContain('const sight = offerSightFor(actor);');
-    expect(PANEL_CODE).toContain('if (priced && sight.mayOffer) offers = await offersFor(entityType, entityId);');
-    expect(PANEL_CODE).toContain(
-      'else if (priced && sight.seesOfferPrices) prices = await offerPricesFor(entityType, entityId);',
-    );
+    // Rewritten deliberately (review access-1 / ved-money-2): this test used
+    // to pin `else if (… seesOfferPrices)`, i.e. the both-hats defect as the
+    // intended shape (#974). The reads are decided by `offerReadsFor`, whose
+    // role matrix is calc-control-scope.test.ts; here only the wiring.
+    expect(PANEL_CODE).toContain('const reads = offerReadsFor(actor);');
+    expect(PANEL_CODE).toContain('if (priced && reads.full) offers = await offersFor(entityType, entityId);');
+    expect(PANEL_CODE).toContain('if (priced && reads.prices) {');
+    expect(PANEL_CODE).not.toMatch(/else if \(priced && [a-z.]*[Pp]rices\)/);
   });
 
   it('the projection list draws NO PDF link and no below-floor reason', () => {

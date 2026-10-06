@@ -9,7 +9,7 @@ import {
   mayReadCalcRegistry,
   type CalcControlScope,
 } from '@/modules/wms/calc/control-scope';
-import { offerSightFor, upsaleScopeFor } from '@/modules/wms/calc/upsale-scope';
+import { offerReadsFor, offerSightFor, upsaleScopeFor } from '@/modules/wms/calc/upsale-scope';
 
 /**
  * Phase E1's audience, enumerated over the SEEDED ROLES.
@@ -222,6 +222,19 @@ describe('the seller price as a sight of its own (16a)', () => {
     const bothHats = { id: 'x', permissions: { has: (c: string) => codes.has(c) } };
     expect(upsaleScopeFor(bothHats)).toBe('own');
     expect(offerSightFor(bothHats)).toEqual({ mayOffer: true, seesOfferPrices: true });
+  });
+
+  it('…and the panel makes BOTH reads for them (review access-1 / ved-money-2)', () => {
+    // Their own rows as a seller (PDF, reprint), every other offer's price as
+    // a calculator. The panel used to read the prices only in the `else` of
+    // mayOffer, so this person saw their own offers and nobody else's.
+    const codes = new Set(['crm.leads', 'ved.docs']);
+    const bothHats = { id: 'x', permissions: { has: (c: string) => codes.has(c) } };
+    expect(offerReadsFor(bothHats)).toEqual({ full: true, ownOnly: true, prices: true });
+    expect(offerReadsFor(actorFor('ved_manager'))).toEqual({ full: false, ownOnly: true, prices: true });
+    expect(offerReadsFor(actorFor('sales_manager'))).toEqual({ full: true, ownOnly: true, prices: false });
+    // `all` already lists every offer in full — no second read.
+    expect(offerReadsFor(actorFor('admin'))).toEqual({ full: true, ownOnly: false, prices: false });
   });
 });
 
