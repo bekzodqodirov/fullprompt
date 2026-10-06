@@ -124,6 +124,19 @@ export function startDraft(
   return state;
 }
 
+/**
+ * Does a refused task keep the person it was for? Not when the refusal is
+ * ABOUT that person — they left, they never sign in, they are gone — and the
+ * draft must ask «Kimga?» again; any other refusal keeps the pick and asks
+ * for the due again (review bot-5: the draft came back with the pick dropped
+ * and asked nothing, so the next typed line was read as a name search).
+ */
+const PICK_REFUSALS: ReadonlySet<string> = new Set(['no_assignee', 'assignee_inactive', 'assignee_no_login']);
+
+export function refusalKeepsPick(result: string): boolean {
+  return !PICK_REFUSALS.has(result);
+}
+
 export function activeDraft(chatId: bigint): TaskDraft | null {
   const key = String(chatId);
   const state = drafts.get(key);

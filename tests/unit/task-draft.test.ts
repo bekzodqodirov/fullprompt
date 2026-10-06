@@ -17,6 +17,7 @@ import {
   noteLinger,
   parseTypedDue,
   postponeDue,
+  refusalKeepsPick,
   startDraft,
   withPart,
 } from '@/modules/platform/telegram/task-draft';
@@ -226,5 +227,12 @@ describe('Door B remembers an album (telegram-mechanics-18)', () => {
   it('after a deploy the map is empty — null, so the caller SAYS only one part came', () => {
     expect(forwardAlbumOf(CHAT, 'never-seen')).toBeNull();
     expect(forwardAlbumOf(CHAT, null)).toBeNull();
+  });
+});
+
+describe('a refused task keeps what it can (review bot-5)', () => {
+  it('the pick goes only when the refusal is about the person picked', () => {
+    for (const code of ['no_assignee', 'assignee_inactive', 'assignee_no_login']) expect(refusalKeepsPick(code), code).toBe(false);
+    for (const code of ['not_created', 'bad_due_date', 'validation']) expect(refusalKeepsPick(code), code).toBe(true);
   });
 });

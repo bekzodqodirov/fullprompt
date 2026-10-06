@@ -54,6 +54,7 @@ import {
   noteLinger,
   parseTypedDue,
   postponeDue,
+  refusalKeepsPick,
   startDraft,
   tooBigLine,
   updateDraft,
@@ -292,7 +293,11 @@ async function finishDraft(say: Say, chatId: bigint, draft: TaskDraft, due: Draf
     due,
   );
   if (!made.ok) {
-    // The words are not lost to a refusal: the draft comes back, asking again.
+    // The words are not lost to a refusal: the draft comes back — its files'
+    // «20 MB» note included — and ASKS again (review bot-5): the due, with the
+    // pick kept, or «Kimga?» when the refusal was about the person picked.
+    // Restarted at «Kimga?» with nothing asked, the next typed line was read
+    // as a name search.
     startDraft(chatId, {
       texts: draft.texts,
       facts: draft.facts,
@@ -300,8 +305,14 @@ async function finishDraft(say: Say, chatId: bigint, draft: TaskDraft, due: Draf
       files: draft.files,
       firstKind: draft.firstKind,
       firstForwarded: draft.firstForwarded,
+      tooBig: draft.tooBig,
     });
+    const back = refusalKeepsPick(made.result)
+      ? updateDraft(chatId, { assigneeId: draft.assigneeId, assigneeName: draft.assigneeName, stage: 'when', dropped: draft.dropped })!
+      : updateDraft(chatId, { dropped: draft.dropped })!;
     await say(`⚠ ${TASK_ANSWERS[made.result]}`);
+    const staff = await staffForChat(chatId);
+    if (staff) await promptFor(say, chatId, back, staff.id);
     return;
   }
   const lines = [

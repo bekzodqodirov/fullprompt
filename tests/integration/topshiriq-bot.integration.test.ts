@@ -310,3 +310,21 @@ describe('Door B takes what was forwarded WHOLE (review bot-4, bot-7)', () => {
     expect(due.said.replies.at(-1)!.text).toContain('⚠ Saytga yuklanmadi — 20 MB dan katta; Telegramda yuborildi: sklad.mp4');
   });
 });
+
+describe('a refused task comes back ASKING (review bot-5)', () => {
+  it('the person left between the pick and the press: told why, «Kimga?» asked again, every line kept', async () => {
+    const author = await mintStaff();
+    const doer = await mintStaff();
+    await readyDraft(author, doer, 'Ertaga GS777 ni yukla');
+    await db.update(users).set({ active: false }).where(eq(users.id, doer.id));
+    const due = ctxFor(author.chat);
+    await handleDraftCallback(due.ctx, author.chat, 'due_e');
+    const replies = due.said.replies.map((r) => r.text);
+    expect(replies[0]).toBe('⚠ Bu hodim ishdan ketgan.');
+    // …and the question is asked, with the people to pick from.
+    expect(replies[1]).toMatch(/^👤 Kimga\?/);
+    expect(due.said.replies[1]!.extra).toHaveProperty('reply_markup.inline_keyboard');
+    expect(activeDraft(author.chat)).toMatchObject({ stage: 'who', assigneeId: null, texts: ['Ertaga GS777 ni yukla'] });
+    expect(await tasksBy(author)).toHaveLength(0);
+  });
+});
