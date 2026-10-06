@@ -43,6 +43,27 @@ export function isAnswerSql(alias = 'r'): SQL {
   );
 }
 
+/**
+ * WHO a price credits and WHEN — the one spelling, for a sealed version
+ * (`calc_versions`, or a CTE carrying its columns) and for an answer
+ * (`calc_requests`).
+ *
+ * `creditsSql` below and the history's registry (`chain.ts`) both read these,
+ * so «Kim» on the history and the per-VED totals cannot name two different
+ * people for one price (the first red proof of the round found the registry
+ * spelling `completed_by` on its own — #513 inside the module that exists to
+ * end it).
+ */
+export function sealCreditSql(alias: string): { person: SQL; at: SQL } {
+  if (!/^[a-z_][a-z0-9_]*$/i.test(alias)) throw new Error(`sealCreditSql: bad alias ${alias}`);
+  return { person: sql.raw(`${alias}.sealed_by`), at: sql.raw(`${alias}.sealed_at`) };
+}
+
+export function answerCreditSql(alias: string): { person: SQL; at: SQL } {
+  if (!/^[a-z_][a-z0-9_]*$/i.test(alias)) throw new Error(`answerCreditSql: bad alias ${alias}`);
+  return { person: sql.raw(`${alias}.completed_by`), at: sql.raw(`${alias}.completed_at`) };
+}
+
 /** The same sentence over a row already in hand — the card's «Javob berildi» line. */
 export function isAnswer(row: {
   completedAt: Date | string | null;
@@ -67,8 +88,8 @@ export function creditsSql(): SQL {
   return sql`
     SELECT 'sealed'::text AS kind,
            v.request_id,
-           v.sealed_by     AS person_id,
-           v.sealed_at     AS at,
+           ${sealCreditSql('v').person} AS person_id,
+           ${sealCreditSql('v').at}     AS at,
            r.requested_at,
            r.due_at
       FROM calc_versions v
@@ -76,12 +97,12 @@ export function creditsSql(): SQL {
     UNION ALL
     SELECT 'answer'::text AS kind,
            r.id            AS request_id,
-           r.completed_by  AS person_id,
-           r.completed_at  AS at,
+           ${answerCreditSql('r').person} AS person_id,
+           ${answerCreditSql('r').at}     AS at,
            r.requested_at,
            r.due_at
       FROM calc_requests r
-     WHERE ${isAnswerSql('r')} AND r.completed_by IS NOT NULL`;
+     WHERE ${isAnswerSql('r')} AND ${answerCreditSql('r').person} IS NOT NULL`;
 }
 
 export interface CreditTotalsRow {

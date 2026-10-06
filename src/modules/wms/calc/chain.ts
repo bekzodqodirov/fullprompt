@@ -2,7 +2,7 @@ import { sql, type SQL } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { likeNeedle } from '../search/query';
 import type { InternalNoteSight } from './control-scope';
-import { creditsSql, isAnswerSql } from './credit';
+import { answerCreditSql, creditsSql, isAnswerSql, sealCreditSql } from './credit';
 import { itemNameNorm } from './memory';
 import type { CalcSectionName } from './pricing';
 
@@ -397,8 +397,8 @@ function registryCte(noteSight: InternalNoteSight | null): SQL {
              rk.version_id::text AS row_id,
              rk.request_id,
              rk.root_id,
-             rk.sealed_at        AS at,
-             rk.sealed_by        AS person_id,
+             ${sealCreditSql('rk').at}     AS at,
+             ${sealCreditSql('rk').person} AS person_id,
              rk.valid_until,
              rk.section,
              rk.total_usd,
@@ -421,8 +421,8 @@ function registryCte(noteSight: InternalNoteSight | null): SQL {
              a.id::text,
              a.id,
              t.root_id,
-             a.completed_at,
-             a.completed_by,
+             ${answerCreditSql('a').at},
+             ${answerCreditSql('a').person},
              NULL::timestamptz,
              a.section,
              NULL::numeric, NULL::numeric, NULL::numeric, NULL::numeric, NULL::numeric,

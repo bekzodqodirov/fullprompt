@@ -1,0 +1,359 @@
+import 'dotenv/config';
+import { and, eq, inArray, or } from 'drizzle-orm';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { db, pgClient } from '@/modules/platform/db/client';
+import {
+  calcExtras,
+  calcGroups,
+  calcRequestItems,
+  calcRequests,
+  calcVersions,
+  clients,
+  dealStages,
+  deals,
+  events,
+  leads,
+  notifications,
+  roles,
+  tasks,
+  userRoles,
+  users,
+} from '@/modules/platform/db/schema';
+import { calcSpeed, finishCalcRequest, returnCalcRequest, vedRotaPool } from '@/modules/wms/calc/service';
+import { recalcFromSealed, sealCalc, setFreightZone, standingAnchorsFor } from '@/modules/wms/calc/workspace';
+import { registryCounts, registryRows, type RegistryAnswerRow } from '@/modules/wms/calc/chain';
+import { creditTotals } from '@/modules/wms/calc/credit';
+import { internalNoteSight } from '@/modules/wms/calc/control-scope';
+import { itemNameNorm } from '@/modules/wms/calc/memory';
+import { quoteLockedFor } from '@/modules/wms/crm/service';
+
+/**
+ * The owner's 7a 8a 9a 10a 12a 13c in the database (docs/VED-TARIX.md §2-§7):
+ * a Готово answer is a row of the history beside the seals, credited to the
+ * person who PRICED it and never to whoever held it; its internal note opens
+ * only behind its own sight; a correction from an answer keeps the seller and
+ * stops the old price standing; the typed amount is refused in words.
+ *
+ * Requests are inserted directly, assigned to this file's own VEDs — the rota
+ * would hand a job to a SEEDED colleague and leave a task and a push on him
+ * for the e2e run on the same database to inherit (#154).
+ */
+const SUFFIX = String(Date.now()).slice(-6);
+const TOKEN = `zqv${SUFFIX}`;
+const NO_DISCOUNT = { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null };
+let seq = 0;
+const phone = () => `+99895${SUFFIX}${(seq += 1)}`;
+
+let sellerId = '';
+let vedAId = '';
+let vedBId = '';
+let vedAName = '';
+let adminVedId = '';
+let clientId = '';
+let dealId = '';
+let deal2Id = '';
+let leadId = '';
+let leadName = '';
+const madeUsers: string[] = [];
+const madeRequests: string[] = [];
+const madeDeals: string[] = [];
+const ctx = (actorId: string) => ({ actorId });
+
+async function userWithRole(role: string, name: string): Promise<string> {
+  const [u] = await db
+    .insert(users)
+    .values({ phone: phone(), fullName: name, passwordHash: 'x' })
+    .returning({ id: users.id });
+  const r = await db.query.roles.findFirst({ where: eq(roles.code, role) });
+  await db.insert(userRoles).values({ userId: u!.id, roleId: r!.id });
+  madeUsers.push(u!.id);
+  return u!.id;
+}
+
+async function job(opts: {
+  section: 'yolkira' | 'rastamojka';
+  entityType?: 'deal' | 'lead';
+  entityId?: string;
+  holder: string;
+  goods: string;
+  tnvedCode?: string;
+}): Promise<string> {
+  const [r] = await db
+    .insert(calcRequests)
+    .values({
+      entityType: opts.entityType ?? 'deal',
+      entityId: opts.entityId ?? dealId,
+      requestedBy: sellerId,
+      assigneeId: opts.holder,
+      itemCount: 1,
+      section: opts.section,
+      fromCity: 'Yiwu',
+      toCity: 'Toshkent',
+      weightKg: '1500',
+      volumeM3: '30',
+      dueAt: new Date(Date.now() + 3_600_000),
+    })
+    .returning({ id: calcRequests.id });
+  await db.insert(calcRequestItems).values({
+    requestId: r!.id,
+    seq: 1,
+    name: opts.goods,
+    nameNorm: itemNameNorm(opts.goods),
+    quantity: '10',
+    tnvedCode: opts.tnvedCode ?? null,
+  });
+  madeRequests.push(r!.id);
+  return r!.id;
+}
+
+const vedSight = () => internalNoteSight({ permissions: { has: (c: string) => c === 'ved.docs' } })!;
+
+beforeAll(async () => {
+  sellerId = await userWithRole('sales_manager', `Tarix Sotuvchi ${SUFFIX}`);
+  vedAName = `Tarix VedA ${SUFFIX}`;
+  vedAId = await userWithRole('ved_manager', vedAName);
+  vedBId = await userWithRole('ved_manager', `Tarix VedB ${SUFFIX}`);
+  adminVedId = await userWithRole('admin', `Tarix Admin ${SUFFIX}`);
+
+  const [c] = await db
+    .insert(clients)
+    .values({ clientCode: `VT${SUFFIX}`, name: `Tarix client ${SUFFIX}`, phones: [] })
+    .returning({ id: clients.id });
+  clientId = c!.id;
+  const stage = await db.query.dealStages.findFirst({ where: eq(dealStages.kind, 'open') });
+  for (const tag of ['A', 'B']) {
+    const [d] = await db
+      .insert(deals)
+      .values({ code: `VT-${tag}-${SUFFIX}`, clientId, stageId: stage!.id, title: `Tarix ${tag}`, createdBy: sellerId, ownerId: sellerId })
+      .returning({ id: deals.id });
+    madeDeals.push(d!.id);
+  }
+  [dealId, deal2Id] = madeDeals as [string, string];
+  const leadStage = await db.execute<{ id: string }>(
+    `SELECT id FROM lead_stages WHERE kind = 'open' ORDER BY sort_order LIMIT 1`,
+  );
+  leadName = `Tarixlid${SUFFIX}`;
+  const [l] = await db
+    .insert(leads)
+    .values({ name: leadName, stageId: leadStage[0]!.id, createdBy: sellerId, ownerId: sellerId })
+    .returning({ id: leads.id });
+  leadId = l!.id;
+});
+
+afterAll(async () => {
+  // Every request this file's people touched — the corrections included.
+  const all = await db
+    .select({ id: calcRequests.id, taskId: calcRequests.taskId })
+    .from(calcRequests)
+    .where(
+      or(
+        inArray(calcRequests.entityId, [...madeDeals, leadId]),
+        inArray(calcRequests.id, madeRequests.length ? madeRequests : ['00000000-0000-0000-0000-000000000000']),
+      ),
+    );
+  const ids = all.map((r) => r.id);
+  if (ids.length > 0) {
+    const bound = await db.select({ id: tasks.id }).from(tasks).where(inArray(tasks.boundId, ids));
+    const taskIds = [...new Set([...bound.map((t) => t.id), ...(all.map((r) => r.taskId).filter(Boolean) as string[])])];
+    await db.delete(calcVersions).where(inArray(calcVersions.requestId, ids));
+    await db.delete(calcExtras).where(inArray(calcExtras.requestId, ids));
+    await db.delete(calcRequestItems).where(inArray(calcRequestItems.requestId, ids));
+    await db.delete(calcGroups).where(inArray(calcGroups.requestId, ids));
+    await db.update(calcRequests).set({ taskId: null }).where(inArray(calcRequests.id, ids));
+    await db.delete(calcRequests).where(inArray(calcRequests.id, ids));
+    if (taskIds.length > 0) {
+      await db.delete(events).where(inArray(events.entityId, taskIds));
+      await db.delete(tasks).where(inArray(tasks.id, taskIds));
+    }
+  }
+  await db.delete(notifications).where(inArray(notifications.userId, madeUsers));
+  await db.delete(events).where(inArray(events.entityId, [...madeDeals, leadId]));
+  await db.delete(deals).where(inArray(deals.id, madeDeals));
+  await db.delete(leads).where(eq(leads.id, leadId));
+  await db.delete(clients).where(eq(clients.id, clientId));
+  await db.delete(userRoles).where(inArray(userRoles.userId, madeUsers));
+  // DEACTIVATED, not deleted — audit_log points at them (round 107's rule).
+  await db.update(users).set({ active: false }).where(inArray(users.id, madeUsers));
+  await pgClient.end();
+});
+
+describe('«Готово» refuses in words, in the agreed order (9a)', () => {
+  it('reads the amount as typed and names what is wrong', async () => {
+    const id = await job({ section: 'rastamojka', holder: vedAId, goods: `refusal ${TOKEN}` });
+    const answer = (amountText: string, internalNote = 'ichki') =>
+      finishCalcRequest(id, { amountText, currency: 'USD', note: '', internalNote }, ctx(vedAId));
+    await expect(answer('')).rejects.toMatchObject({ code: 'answer_amount_required' });
+    await expect(answer('1200$')).rejects.toMatchObject({ code: 'answer_amount_unreadable' });
+    await expect(answer('0')).rejects.toMatchObject({ code: 'answer_positive' });
+    await expect(answer('480', '   ')).rejects.toMatchObject({ code: 'internal_note_required' });
+    await expect(
+      finishCalcRequest(id, { amountText: '480', currency: 'EUR', note: '', internalNote: 'x' }, ctx(vedAId)),
+    ).rejects.toMatchObject({ code: 'validation' });
+    const still = await db.query.calcRequests.findFirst({ where: eq(calcRequests.id, id) });
+    expect(still!.completedAt, 'a refusal closes nothing').toBeNull();
+    // The office's spelling is the server's to read: a space between thousands.
+    await answer('1 200');
+    const done = await db.query.calcRequests.findFirst({ where: eq(calcRequests.id, id) });
+    expect(Number(done!.answerAmount)).toBe(1200);
+    // A closed job answers «closed» before it reads the amount.
+    await expect(answer('')).rejects.toMatchObject({ code: 'already_closed' });
+  });
+
+  it('a sealable job says «Muhrlang» before it asks for the note', async () => {
+    const id = await job({ section: 'yolkira', holder: vedAId, goods: `sealable ${TOKEN}`, entityId: deal2Id });
+    await setFreightZone(id, 'cn', ctx(vedAId));
+    await expect(
+      finishCalcRequest(id, { amountText: '480', currency: 'USD', note: '', internalNote: '' }, ctx(vedAId)),
+    ).rejects.toMatchObject({ code: 'seal_instead' });
+    // Leave nothing open on deal2 for the lock test below.
+    await db.delete(calcRequestItems).where(eq(calcRequestItems.requestId, id));
+    await db.delete(calcRequests).where(eq(calcRequests.id, id));
+  });
+});
+
+describe('the history holds answers beside seals (7a 8a 12a)', () => {
+  let answeredId = '';
+  let sealedId = '';
+
+  beforeAll(async () => {
+    // HELD by B, ANSWERED by A — the credit rule's whole question.
+    answeredId = await job({ section: 'rastamojka', holder: vedBId, goods: `Kurtka ${TOKEN}`, tnvedCode: '6201409000' });
+    await finishCalcRequest(
+      answeredId,
+      { amountText: '900', currency: 'USD', note: 'sotuvchiga', internalNote: `ichki sir ${TOKEN}` },
+      ctx(vedAId),
+    );
+    // Held by A, SEALED by B.
+    sealedId = await job({ section: 'yolkira', holder: vedAId, goods: `Monitor ${TOKEN}` });
+    await setFreightZone(sealedId, 'cn', ctx(vedBId));
+    await sealCalc(sealedId, NO_DISCOUNT, ctx(vedBId));
+  });
+
+  it('both kinds come back, and an answer carries no V number and no customs sum', async () => {
+    const rows = await registryRows({ q: TOKEN, leadNamesReadable: true }, { noteSight: null });
+    const answer = rows.find((r) => r.kind === 'answer' && r.requestId === answeredId) as RegistryAnswerRow;
+    expect(answer).toBeTruthy();
+    expect(answer.amount).toBe(900);
+    expect(answer.answeredByName).toBe(vedAName);
+    expect(answer.sellerNote).toBe('sotuvchiga');
+    expect(answer).not.toHaveProperty('quoteNo');
+    expect(answer).not.toHaveProperty('totalUsd');
+    expect(rows.some((r) => r.kind === 'sealed' && r.requestId === sealedId)).toBe(true);
+  });
+
+  it('the internal note is null without the sight and the VED’s words with it', async () => {
+    const without = await registryRows({ q: TOKEN, kind: 'answer', leadNamesReadable: true }, { noteSight: null });
+    const withSight = await registryRows({ q: TOKEN, kind: 'answer', leadNamesReadable: true }, { noteSight: vedSight() });
+    const find = (rows: typeof without) => rows.find((r) => r.kind === 'answer' && r.requestId === answeredId) as RegistryAnswerRow;
+    expect(find(without).internalNote).toBeNull();
+    expect(find(withSight).internalNote).toBe(`ichki sir ${TOKEN}`);
+  });
+
+  it('«Turi» and «Kim» filter by kind and by the CREDIT, never by the holder', async () => {
+    const answersOnly = await registryRows({ q: TOKEN, kind: 'answer', leadNamesReadable: true }, { noteSight: null });
+    expect(answersOnly.every((r) => r.kind === 'answer')).toBe(true);
+    const sealsOnly = await registryRows({ q: TOKEN, kind: 'sealed', leadNamesReadable: true }, { noteSight: null });
+    expect(sealsOnly.every((r) => r.kind === 'sealed')).toBe(true);
+    expect(sealsOnly.some((r) => r.requestId === sealedId)).toBe(true);
+
+    const byA = await registryRows({ q: TOKEN, personId: vedAId, leadNamesReadable: true }, { noteSight: null });
+    expect(byA.map((r) => r.requestId)).toContain(answeredId);
+    expect(byA.map((r) => r.requestId), 'A held the sealed job and did not seal it').not.toContain(sealedId);
+    const byB = await registryRows({ q: TOKEN, personId: vedBId, leadNamesReadable: true }, { noteSight: null });
+    expect(byB.map((r) => r.requestId)).toContain(sealedId);
+    expect(byB.map((r) => r.requestId), 'B held the answered job and did not answer it').not.toContain(answeredId);
+  });
+
+  it('the counts name versions, answers and jobs', async () => {
+    const counts = await registryCounts({ q: `Kurtka ${TOKEN}`, leadNamesReadable: true });
+    expect(counts).toEqual({ versions: 0, answers: 1, jobs: 1 });
+    const both = await registryCounts({ q: TOKEN, leadNamesReadable: true });
+    expect(both.versions).toBeGreaterThanOrEqual(1);
+    expect(both.answers).toBeGreaterThanOrEqual(2);
+  });
+
+  it('finds a job by its goods name and by a TNVED prefix of four digits and up', async () => {
+    const byName = await registryRows({ q: `kurtka ${TOKEN}`, leadNamesReadable: true }, { noteSight: null });
+    expect(byName.map((r) => r.requestId)).toContain(answeredId);
+    const byCode = await registryRows({ q: '620140', personId: vedAId, leadNamesReadable: true }, { noteSight: null });
+    expect(byCode.map((r) => r.requestId)).toContain(answeredId);
+    const byHeading = await registryRows({ q: '6201', personId: vedAId, leadNamesReadable: true }, { noteSight: null });
+    expect(byHeading.map((r) => r.requestId)).toContain(answeredId);
+  });
+
+  it('credits the pricer in the totals and in the speed table, never the holder', async () => {
+    const from = new Date(Date.now() - 3_600_000);
+    const to = new Date(Date.now() + 3_600_000);
+    const totals = await creditTotals({ from, to });
+    const a = totals.find((t) => t.personId === vedAId);
+    const b = totals.find((t) => t.personId === vedBId);
+    // A answered the refusal job ('1 200') and the Kurtka job; B sealed one.
+    expect(a).toMatchObject({ sealed: 0, answered: 2 });
+    expect(b).toMatchObject({ sealed: 1, answered: 0 });
+    const speed = await calcSpeed(from);
+    expect(speed.find((s) => s.assigneeId === vedAId)?.done).toBe(2);
+    expect(speed.find((s) => s.assigneeId === vedBId)?.done).toBe(1);
+  });
+});
+
+describe('a lead’s name on the history (§10, access-money-14)', () => {
+  it('is searchable and printed for the VED, «Lid» and unsearchable for the accountant', async () => {
+    const id = await job({ section: 'rastamojka', entityType: 'lead', entityId: leadId, holder: vedAId, goods: `lid tovar ${SUFFIX}` });
+    await finishCalcRequest(id, { amountText: '100', currency: 'USD', note: '', internalNote: 'x' }, ctx(vedAId));
+    const ved = await registryRows({ q: leadName, leadNamesReadable: true }, { noteSight: null });
+    const row = ved.find((r) => r.requestId === id);
+    expect(row?.cardLabel).toBe(leadName);
+    const accountant = await registryRows({ q: leadName, leadNamesReadable: false }, { noteSight: null });
+    expect(accountant.map((r) => r.requestId)).not.toContain(id);
+    const byGoods = await registryRows({ q: `lid tovar ${SUFFIX}`, leadNamesReadable: false }, { noteSight: null });
+    expect(byGoods.find((r) => r.requestId === id)?.cardLabel).toBeNull();
+  });
+});
+
+describe('a correction from an answer (10a)', () => {
+  it('keeps the root seller, goes to the VED who priced it, and stops the old price standing', async () => {
+    const answered = await job({ section: 'rastamojka', holder: vedBId, goods: `recalc ${TOKEN}` });
+    await finishCalcRequest(answered, { amountText: '700', currency: 'USD', note: '', internalNote: 'x' }, ctx(vedAId));
+    expect((await standingAnchorsFor('deal', dealId)).answers.map((a) => a.requestId)).toContain(answered);
+
+    // The VED re-opens it (the presser is never told what they just did).
+    const child = await recalcFromSealed(answered, ctx(vedAId));
+    madeRequests.push(child);
+    const row = await db.query.calcRequests.findFirst({ where: eq(calcRequests.id, child) });
+    expect(row!.supersedesRequestId).toBe(answered);
+    expect(row!.requestedBy).toBe(sellerId);
+    // The pricer, not the holder and not the rota's next.
+    expect(row!.assigneeId).toBe(vedAId);
+    const task = await db.query.tasks.findFirst({ where: eq(tasks.boundId, child) });
+    expect(task).toMatchObject({ origin: 'calc', assigneeId: vedAId, status: 'open' });
+    const pushed = await db
+      .select({ id: notifications.id })
+      .from(notifications)
+      .where(and(eq(notifications.userId, sellerId), eq(notifications.type, 'CalcRecalc')));
+    expect(pushed.length).toBeGreaterThan(0);
+    // The old answer is no floor any more — the correction replaced it.
+    expect((await standingAnchorsFor('deal', dealId)).answers.map((a) => a.requestId)).not.toContain(answered);
+    await expect(recalcFromSealed(answered, ctx(sellerId))).rejects.toMatchObject({ code: 'recalc_open' });
+
+    // Handed back: the only way on is a new request from the card.
+    await returnCalcRequest(child, 'material yetmaydi', ctx(vedAId));
+    await expect(recalcFromSealed(answered, ctx(sellerId))).rejects.toMatchObject({ code: 'recalc_returned' });
+  });
+
+  it('the rota a correction falls to never holds an admin or the owner', async () => {
+    const pool = await vedRotaPool();
+    expect(pool).toContain(vedAId);
+    // An admin holds every grant, ved.docs included — and is not a calculator.
+    expect(pool).not.toContain(adminVedId);
+  });
+
+  it('the quote lock follows what STANDS: a seal locks, its correction releases', async () => {
+    const sealed = await job({ section: 'yolkira', entityId: deal2Id, holder: vedBId, goods: `lock ${TOKEN}` });
+    await setFreightZone(sealed, 'cn', ctx(vedBId));
+    const { totalUsd } = await sealCalc(sealed, NO_DISCOUNT, ctx(vedBId));
+    expect(await quoteLockedFor('deal', deal2Id)).toBe(totalUsd);
+    const child = await recalcFromSealed(sealed, ctx(sellerId));
+    madeRequests.push(child);
+    expect(await quoteLockedFor('deal', deal2Id), 'nothing stands, nothing is locked').toBeNull();
+  });
+});
