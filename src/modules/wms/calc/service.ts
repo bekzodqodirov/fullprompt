@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
 import {
   calcGroups,
@@ -825,11 +825,30 @@ export async function finishCalcRequest(
  * is not a calculation.
  */
 export async function completeCalcForDeal(dealId: string, actorId: string): Promise<void> {
+  /**
+   * A QUEUE JOB IS NOT ENDED BY THE SELLER'S «POZITSIYALAR» (docs/VED-TARIX.md
+   * §8, review ved-correctness-9 — the fourth door).
+   *
+   * Every request that carries a SECTION came in through the VED queue
+   * (0085's job), and the owner's 9a makes its ending a PRICE with an
+   * internal note — or a seal, or a hand-back. A seller saving the deal's
+   * lines closed such a job with no price and no note, exactly as the three
+   * task ✅ doors did, and #531 says a guard on one door leaves the others
+   * open. So the 'lines' ending is kept only for a request with no section —
+   * the phase-A/round-28 shape it was written for, where the lines WERE the
+   * calculation. Stated: such an old row, closed this way, reads «Narxsiz
+   * yopildi (pozitsiyalar)» on the closed page.
+   *
+   * In the QUERY, not after it: a deal carrying an old sectionless request
+   * beside a newer queue job still has the old one ended by its lines, and
+   * the queue job is not even looked at.
+   */
   const open = await db.query.calcRequests.findFirst({
     where: and(
       eq(calcRequests.entityType, 'deal'),
       eq(calcRequests.entityId, dealId),
       openRequests,
+      isNull(calcRequests.section),
     ),
     orderBy: asc(calcRequests.requestedAt),
   });
