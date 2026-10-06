@@ -21,10 +21,10 @@ import {
 } from '@/modules/platform/db/schema';
 import { calcSpeed, finishCalcRequest, returnCalcRequest, vedRotaPool } from '@/modules/wms/calc/service';
 import { recalcFromSealed, sealCalc, setFreightZone, standingAnchorsFor } from '@/modules/wms/calc/workspace';
-import { registryCounts, registryRows, type RegistryAnswerRow } from '@/modules/wms/calc/chain';
+import { isRegistryRequest, registryCounts, registryRows, type RegistryAnswerRow } from '@/modules/wms/calc/chain';
 import { creditTotals } from '@/modules/wms/calc/credit';
 import { calcRegistrySight, internalNoteSight } from '@/modules/wms/calc/control-scope';
-import { dealCalcSheets } from '@/modules/wms/calc/sheet';
+import { dealCalcSheets, requestGoodsSheet } from '@/modules/wms/calc/sheet';
 import { itemNameNorm } from '@/modules/wms/calc/memory';
 import { quoteLockedFor } from '@/modules/wms/crm/service';
 
@@ -281,6 +281,19 @@ describe('the history holds answers beside seals (7a 8a 12a)', () => {
     expect(byCode.map((r) => r.requestId)).toContain(answeredId);
     const byHeading = await registryRows({ q: '6201', personId: vedAId, leadNamesReadable: true }, { noteSight: null });
     expect(byHeading.map((r) => r.requestId)).toContain(answeredId);
+  });
+
+  it('the goods fold opens only a registry row, and an answer’s goods carry no customs sum (7a)', async () => {
+    // Review access-money-21: the route serves the registry, nothing wider —
+    // an open job is no row of the history, so the accountant's door stays shut.
+    const open = await job({ section: 'rastamojka', holder: vedAId, goods: `open ${TOKEN}` });
+    expect(await isRegistryRequest(open)).toBe(false);
+    expect(await isRegistryRequest(answeredId)).toBe(true);
+    expect(await isRegistryRequest(sealedId)).toBe(true);
+    const goods = await requestGoodsSheet(answeredId, calcRegistrySight(registryReader)!);
+    const items = [...goods.groups.flatMap((g) => g.items), ...goods.ungrouped];
+    expect(items.map((i) => [i.name, i.tnvedCode])).toEqual([[`Kurtka ${TOKEN}`, '6201409000']]);
+    expect(JSON.stringify(goods)).not.toMatch(/customs|valueUsd/i);
   });
 
   it('credits the pricer in the totals and in the speed table, never the holder', async () => {
