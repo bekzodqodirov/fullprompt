@@ -25,6 +25,7 @@ import {
   peopleKeyboard,
   postponeKeyboard,
   pressRefusalText,
+  refusalFor,
   remindTaskFromBot,
   rescheduleTaskFromBot,
   sourcesFromBot,
@@ -638,7 +639,7 @@ export async function handleTaskPress(ctx: Context, chatId: bigint, press: TaskP
         replyMarkup: keyboardOf(withoutButton(pressed.markup, data)),
       }).catch((err: unknown) => logger.warn({ err }, '[topshiriq] accept not settled'));
     } else if (result !== 'done') {
-      await ctx.reply(pressRefusalLine(result));
+      await ctx.reply(await refusalFor(press.taskId, result));
     }
     return;
   }
@@ -690,7 +691,7 @@ export async function handleTaskPress(ctx: Context, chatId: bigint, press: TaskP
         html: appendLine(staffTextHtml(pressed.text), `✅ Muddat: ${due.label}`),
       }).catch(() => {});
     } else if (result !== 'done') {
-      await ctx.reply(pressRefusalLine(result));
+      await ctx.reply(await refusalFor(press.taskId, result));
     }
     return;
   }
@@ -729,7 +730,7 @@ export async function handleTaskPress(ctx: Context, chatId: bigint, press: TaskP
         );
       }
     } else {
-      await ctx.reply(pressRefusalLine(result));
+      await ctx.reply(await refusalFor(press.taskId, result));
     }
     return;
   }
@@ -751,6 +752,10 @@ export async function handleTaskPress(ctx: Context, chatId: bigint, press: TaskP
         messageId: pressed.messageId,
         html: appendLine(staffTextHtml(pressed.text), result === 'done' ? '🗑 Bekor qilindi' : TASK_ANSWERS.already_closed),
       }).catch(() => {});
+    } else if (result !== 'done' && result !== 'already_closed') {
+      // An open calc job's task cannot be cancelled (review tasks-2): the
+      // author is told where the job IS handled, not just a toast.
+      await ctx.reply(await refusalFor(press.taskId, result));
     }
     return;
   }
@@ -761,7 +766,7 @@ export async function handleTaskPress(ctx: Context, chatId: bigint, press: TaskP
   await ctx.answerCallbackQuery({ text: out.result === 'done' ? '📤 Yuborildi' : TASK_ANSWERS[out.result] });
   const pressed = pressedOf(ctx);
   if (out.result !== 'done') {
-    await ctx.reply(TASK_ANSWERS[out.result]);
+    await ctx.reply(await refusalFor(press.taskId, out.result));
     return;
   }
   if (pressed) {
@@ -775,11 +780,6 @@ export async function handleTaskPress(ctx: Context, chatId: bigint, press: TaskP
   }
   const line = out.reach ? reachLine(out.name ?? 'Hodim', out.reach) : null;
   if (line) await ctx.reply(line);
-}
-
-/** A refusal said under the press as well as on its toast — a toast is gone in a second. */
-function pressRefusalLine(result: keyof typeof TASK_ANSWERS): string {
-  return TASK_ANSWERS[result];
 }
 
 /**
@@ -819,7 +819,7 @@ export async function answerPendingText(
     return true;
   }
   const result = await rescheduleTaskFromBot(chatId, pending.taskId, { dueAt: parsed.dueAt, allDay: parsed.allDay });
-  await ctx.reply(result === 'done' ? `⏰ Muddat: ${due.label}` : TASK_ANSWERS[result]);
+  await ctx.reply(result === 'done' ? `⏰ Muddat: ${due.label}` : await refusalFor(pending.taskId, result));
   return true;
 }
 

@@ -1294,6 +1294,25 @@ export function pressRefusalText(check: Extract<PressCheck, { ok: false }>, appU
 }
 
 /**
+ * A task door's refusal as the sentence under the press or the typed answer —
+ * with the job's own page when the refusal is an open calc job (review
+ * bot-12): «hisoblash sahifasida yakunlang» without the page is half an
+ * answer, and only the ✅ press used to carry it. The binding is read ONLY on
+ * that refusal; a read that fails still says the words.
+ */
+export async function refusalFor(taskId: string, result: Exclude<BotTaskResult, 'done'>): Promise<string> {
+  if (result !== 'calc_use_screen') return TASK_ANSWERS[result];
+  try {
+    const task = await taskById(taskId);
+    const binding = task ? (await bindingsOf([task])).get(task.id) : undefined;
+    return pressRefusalText({ ok: false, result, requestId: binding?.kind === 'calc' ? binding.recordId : undefined });
+  } catch (err) {
+    logger.warn({ err, taskId }, '[staff-bot] calc job of a refusal not read');
+    return TASK_ANSWERS[result];
+  }
+}
+
+/**
  * How a request stands, in the words its deciders read — for the button that
  * was pressed on it. Null while it is still pending (or not found).
  */

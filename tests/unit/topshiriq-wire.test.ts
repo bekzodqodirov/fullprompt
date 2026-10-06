@@ -129,7 +129,10 @@ describe('a task press is decided before anything waits (telegram-mechanics-1)',
 
   it('the typed result answers every code in words — no rethrow into bot.catch', () => {
     const result = handlers.slice(handlers.indexOf('const pendingTask = takeTaskPending(chatId);'));
-    expect(result.slice(0, 2000)).toContain("await ctx.reply(outcome === 'done' ? '✅ Vazifa yopildi.' : TASK_ANSWERS[outcome]);");
+    // …with the job's page on an open calc job's refusal (review bot-12).
+    expect(result.slice(0, 2000)).toContain(
+      "await ctx.reply(outcome === 'done' ? '✅ Vazifa yopildi.' : await refusalFor(pendingTask.taskId, outcome));",
+    );
     const bot = read('src/modules/platform/telegram/staff-bot.ts');
     expect(bot).toContain('export const TASK_ANSWERS: Record<BotTaskResult, string>');
     expect(bot).toContain("if (err instanceof TaskError) return { result: err.code };");
