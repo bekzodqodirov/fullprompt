@@ -20,7 +20,7 @@ vi.mock('@/modules/platform/jobs/boss', async (original) => ({
 import { db, pgClient } from '@/modules/platform/db/client';
 import { calcRequests, leads, leadStages, notifications, tasks, telegramLinks, users } from '@/modules/platform/db/schema';
 import { __setTelegramTransport } from '@/modules/platform/telegram/send';
-import { __resetDrafts, activeDraft } from '@/modules/platform/telegram/task-draft';
+import { __resetDrafts, activeDraft, noteLinger } from '@/modules/platform/telegram/task-draft';
 import {
   answerPendingText,
   BUSY_DRAFT,
@@ -358,5 +358,25 @@ describe('a typed ⏰ date already gone (review bot-10)', () => {
     expect(said.replies.map((r) => r.text)).toEqual(['Bu vaqt o‘tib ketgan — muddat o‘zgarmadi. Kerak bo‘lsa, «⏰» ni qayta bosing.']);
     const [row] = await db.select({ dueAt: tasks.dueAt }).from(tasks).where(eq(tasks.id, task!.id));
     expect(row!.dueAt!.toISOString()).toBe('2030-01-01T23:59:59.999Z');
+  });
+});
+
+describe('a late album part the task can no longer take (review bot-11)', () => {
+  it('is told once per album, never swallowed', async () => {
+    const author = await mintStaff();
+    const doer = await mintStaff();
+    const [task] = await db
+      .insert(tasks)
+      .values({ title: `Yopiq ${STAMP}`, assigneeId: doer.id, createdBy: author.id, origin: 'hand', status: 'cancelled' })
+      .returning({ id: tasks.id });
+    const group = `late-${STAMP}`;
+    noteLinger(author.chat, task!.id, [group]);
+    const replies: string[] = [];
+    for (let i = 0; i < 2; i++) {
+      const { ctx, said } = ctxFor(author.chat, { message: message(author.chat, (messageSeq += 1), { media_group_id: group, photo: photo(40 + i) }) });
+      expect(await draftMedia(ctx, author.chat)).toBe(true);
+      replies.push(...said.replies.map((r) => r.text));
+    }
+    expect(replies).toEqual(['⚠ Albomning qolgan qismi qo‘shilmadi — topshiriq endi ochiq emas.']);
   });
 });
