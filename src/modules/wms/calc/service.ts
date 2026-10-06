@@ -19,6 +19,7 @@ import { canLogInSql } from '@/modules/platform/users/login';
 import { cardLink } from '@/modules/platform/notifications/links';
 import { logger } from '@/modules/platform/logger';
 import { retireTaskCopiesSoon } from '@/modules/platform/notifications/retire-tasks';
+import { clipText } from '@/modules/platform/telegram/format';
 import { addActivity } from '../crm/service';
 import { productKey, tnvedFor } from '../tnved/service';
 import { NO_REQUEST, itemNameNorm, sealedMemoryFor } from './memory';
@@ -770,15 +771,25 @@ export async function finishCalcRequest(
    */
   const typed = (answer.amountText ?? '').trim();
   if (!typed) throw new CalcError('answer_amount_required');
-  const amount = parseTypedMoney(typed);
-  if (amount === null) throw new CalcError('answer_amount_unreadable');
+  const parsed = parseTypedMoney(typed);
+  if (parsed === null) throw new CalcError('answer_amount_unreadable');
+  // Guard the STORED value, not the typed one (#918, review ved-money-3): the
+  // column is numeric(14,2), so «0,004» passes `> 0` in JS and lands as 0.00
+  // — 0093's CHECK then refuses it as a raw 23514 white page — and the
+  // seller's push and the audit would carry 1200.456 while 1200.46 is stored.
+  // Rounded once here, this one figure is what every write below carries.
+  const amount = Math.round(parsed * 100) / 100;
   if (!(amount > 0)) throw new CalcError('answer_positive');
   if (amount >= ANSWER_AMOUNT_MAX) throw new CalcError('amount_range');
-  const internalNote = (answer.internalNote ?? '').trim().slice(0, 2000);
+  // By CODE POINTS (review ved-money-4, Round C's clipText): `slice` can cut
+  // an emoji's surrogate pair in half, and the request's audit row carries
+  // this text in jsonb, which refuses the lone half (22P02) — after the job
+  // is already closed.
+  const internalNote = clipText((answer.internalNote ?? '').trim(), 2000);
   if (!internalNote) throw new CalcError('internal_note_required');
   const currency = (answer.currency ?? '').trim().toUpperCase() || 'USD';
   if (!ANSWER_CURRENCIES.has(currency)) throw new CalcError('validation');
-  const sellerNote = answer.note?.trim().slice(0, 2000) || null;
+  const sellerNote = clipText(answer.note?.trim() ?? '', 2000) || null;
 
   const row = await endRequest(id, {
     via: 'task',
@@ -790,6 +801,19 @@ export async function finishCalcRequest(
   });
   if (!row) throw new CalcError('already_closed');
   const label = await requestLabel(row.entityType, row.entityId);
+  // The seller's push goes BEFORE the bookkeeping (review ved-money-4): the
+  // job is already closed with its price, so an audit write that throws
+  // below must not also swallow the one message that tells the seller — a
+  // second press reads «already closed» and nobody would ever send it.
+  await notifyStaffTelegram({
+    userIds: [row.requestedBy],
+    type: 'CalcDone',
+    text:
+      `✅ Hisoblash tayyor: ${label}\n💵 ${amount} ${currency}` +
+      `${sellerNote ? `\n📝 ${clipText(sellerNote, 300)}` : ''}` +
+      linkLine(row.entityType, row.entityId),
+    exceptUserId: ctx.actorId,
+  }).catch((err) => logger.error({ err, id }, '[calc] done notify failed'));
   // The CARD's row: the seller reads the card's History tab, so this one
   // carries the figure and nothing of the VED's reasoning.
   await writeAudit(db, ctx, {
@@ -805,15 +829,6 @@ export async function finishCalcRequest(
     action: 'update',
     after: { calcDone: id, amount, currency, calcInternalNote: internalNote },
   });
-  await notifyStaffTelegram({
-    userIds: [row.requestedBy],
-    type: 'CalcDone',
-    text:
-      `✅ Hisoblash tayyor: ${label}\n💵 ${amount} ${currency}` +
-      `${sellerNote ? `\n📝 ${sellerNote.slice(0, 300)}` : ''}` +
-      linkLine(row.entityType, row.entityId),
-    exceptUserId: ctx.actorId,
-  }).catch((err) => logger.error({ err, id }, '[calc] done notify failed'));
 }
 
 /**

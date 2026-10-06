@@ -206,6 +206,45 @@ describe('«Готово» refuses in words, in the agreed order (9a)', () => {
     await expect(answer('')).rejects.toMatchObject({ code: 'already_closed' });
   });
 
+  it('guards the STORED figure, numeric(14,2), and says it in words (ved-money-3)', async () => {
+    // Held and answered by the admin: the credit totals below count A and B.
+    const id = await job({ section: 'rastamojka', holder: adminVedId, goods: `scale ${TOKEN}` });
+    const answer = (amountText: string) =>
+      finishCalcRequest(id, { amountText, currency: 'USD', note: '', internalNote: 'x' }, ctx(adminVedId));
+    // 0.004 is > 0 in JS and 0.00 in the column — 0093's CHECK would answer
+    // with a raw 23514; and .995 on twelve nines rounds past the column.
+    await expect(answer('0,004')).rejects.toMatchObject({ code: 'answer_positive' });
+    await expect(answer('999 999 999 999,995')).rejects.toMatchObject({ code: 'amount_range' });
+    await answer('1200,456');
+    const done = await db.query.calcRequests.findFirst({ where: eq(calcRequests.id, id) });
+    expect(done!.answerAmount).toBe('1200.46');
+    // The seller is told the number that was STORED, not the one typed.
+    const pushed = await db
+      .select({ payload: notifications.payload })
+      .from(notifications)
+      .where(and(eq(notifications.userId, sellerId), eq(notifications.type, 'CalcDone')));
+    const texts = pushed.map((p) => String((p.payload as { text?: string }).text ?? ''));
+    expect(texts.some((t) => t.includes('💵 1200.46 USD'))).toBe(true);
+    expect(texts.some((t) => t.includes('1200.456'))).toBe(false);
+  });
+
+  it('a long internal note is clipped by code point, and the seller is still told (ved-money-4)', async () => {
+    const id = await job({ section: 'rastamojka', holder: adminVedId, goods: `emoji ${TOKEN}` });
+    // 1999 letters and an emoji: `slice(0, 2000)` keeps the emoji's first
+    // UTF-16 half alone, and jsonb refuses that in the audit row.
+    const internalNote = `${'a'.repeat(1999)}😀 qolgani ${TOKEN}`;
+    await finishCalcRequest(id, { amountText: '321', currency: 'USD', note: '', internalNote }, ctx(adminVedId));
+    const done = await db.query.calcRequests.findFirst({ where: eq(calcRequests.id, id) });
+    expect(done!.completedAt).not.toBeNull();
+    expect(Array.from(done!.answerInternalNote ?? '')).toHaveLength(2000);
+    expect(done!.answerInternalNote).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+    const pushed = await db
+      .select({ payload: notifications.payload })
+      .from(notifications)
+      .where(and(eq(notifications.userId, sellerId), eq(notifications.type, 'CalcDone')));
+    expect(pushed.some((p) => String((p.payload as { text?: string }).text ?? '').includes('💵 321 USD'))).toBe(true);
+  });
+
   it('a sealable job says «Muhrlang» before it asks for the note', async () => {
     const id = await job({ section: 'yolkira', holder: vedAId, goods: `sealable ${TOKEN}`, entityId: deal2Id });
     await setFreightZone(id, 'cn', ctx(vedAId));
