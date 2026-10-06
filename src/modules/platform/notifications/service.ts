@@ -1236,7 +1236,8 @@ const AUTHOR_TASK_COPIES = new Set(['TaskQuestion', 'TaskReassigned']);
  * Mutes a single-task copy whose task is no longer open, or — for the
  * assignee's copies — no longer this person's. Re-reads `accepted` so a 👀
  * pressed on an earlier copy is not drawn again. Filters a `TasksDue`'s
- * buttons to the tasks still open (its TEXT is the morning's and stays).
+ * buttons to the tasks still open and still the reader's (its TEXT is the
+ * morning's and stays).
  * A task id that names no row sends as it always did (the approval rule):
  * a malformed payload is the renderer's problem, not this check's.
  */
@@ -1250,10 +1251,12 @@ async function taskCopyLive(
       .map((entry) => entry?.id)
       .filter((id): id is string => typeof id === 'string' && UUID_RE.test(id));
     if (ids.length === 0) return {};
+    // Open AND still this reader's: a task handed on keeps its status, and
+    // the old holder's ✅ would close the new holder's task (review tasks-4).
     const open = await db
       .select({ id: tasks.id })
       .from(tasks)
-      .where(and(inArray(tasks.id, ids), eq(tasks.status, 'open')));
+      .where(and(inArray(tasks.id, ids), eq(tasks.status, 'open'), eq(tasks.assigneeId, userId)));
     const still = new Set(open.map((row) => row.id));
     return {
       payload: {

@@ -675,6 +675,27 @@ describe('retiring a task’s Telegram copies (telegram-mechanics-2/5/6)', () =>
     expect(edits.map((e) => e.body.message_id)).toEqual([1]);
     expect(String(edits[0]!.body.text)).toMatch(/👤 Boshqaga berildi$/);
   });
+
+  it('a reassign takes the moved task’s row off the OLD holder’s digest — open is not enough, it must be theirs (review tasks-4)', async () => {
+    const author = await mintStaff();
+    const oldHolder = await mintStaff();
+    const newHolder = await mintStaff();
+    const moved = await mintTask(author, oldHolder);
+    const kept = await mintTask(author, oldHolder);
+    const tg = { chatId: 990004, messageId: 44 };
+    await sentCopy(oldHolder.id, 'TasksDue', {
+      text: '✅ Sizning vazifalaringiz',
+      tasks: [
+        { id: moved, title: 'M' },
+        { id: kept, title: 'O' },
+      ],
+    }, tg);
+    await reassignTask(moved, newHolder.id, ctxOf(author));
+    const marks = () => method('editMessageReplyMarkup').filter((call) => call.body.message_id === tg.messageId);
+    await vi.waitFor(() => expect(marks()).toHaveLength(1), { timeout: 5_000 });
+    // The moved task is still OPEN — but it is not this reader's to close any more.
+    expect(marks()[0]!.body.reply_markup).toEqual({ inline_keyboard: [[{ text: '✅ O', callback_data: `tb:${kept}` }]] });
+  });
 });
 
 describe('the drain re-checks a task copy at SEND time (telegram-mechanics-5)', () => {
@@ -728,6 +749,25 @@ describe('the drain re-checks a task copy at SEND time (telegram-mechanics-5)', 
     await drainOnly([row]);
     expect(method('sendMessage')[0]!.body.reply_markup).toEqual({
       inline_keyboard: [[{ text: '✅ Ochiq', callback_data: `tb:${open}` }]],
+    });
+  });
+
+  it('a queued digest of a task handed on meanwhile goes without that task’s ✅ (review tasks-4)', async () => {
+    const author = await mintStaff();
+    const was = await mintStaff({ chat: true });
+    const now = await mintStaff();
+    const handed = await mintTask(author, now);
+    const mine = await mintTask(author, was);
+    const row = await pendingCopy(was.id, 'TasksDue', {
+      text: '✅ Sizning vazifalaringiz',
+      tasks: [
+        { id: handed, title: 'Berilgan' },
+        { id: mine, title: 'Meniki' },
+      ],
+    });
+    await drainOnly([row]);
+    expect(method('sendMessage')[0]!.body.reply_markup).toEqual({
+      inline_keyboard: [[{ text: '✅ Meniki', callback_data: `tb:${mine}` }]],
     });
   });
 

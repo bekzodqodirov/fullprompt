@@ -144,7 +144,13 @@ export async function retireTaskCopies(input: RetireTaskCopiesInput): Promise<nu
   if (!process.env.TELEGRAM_BOT_TOKEN) return 0;
   const windowStart = new Date(Math.max(input.since?.getTime() ?? 0, Date.now() - EDIT_WINDOW_MS));
   const rows = await db
-    .select({ id: notifications.id, type: notifications.type, payload: notifications.payload, locale: users.locale })
+    .select({
+      id: notifications.id,
+      userId: notifications.userId,
+      type: notifications.type,
+      payload: notifications.payload,
+      locale: users.locale,
+    })
     .from(notifications)
     .innerJoin(users, eq(users.id, notifications.userId))
     .where(
@@ -169,19 +175,23 @@ export async function retireTaskCopies(input: RetireTaskCopiesInput): Promise<nu
   const { editMarkup, editText } = await import('../telegram/send');
   const { dayButtons } = await import('../telegram/staff-bot');
 
-  // The digests' other tasks, in ONE status query.
+  // The digests' other tasks, in ONE query: still open, and WHOSE. A digest
+  // is its reader's own list, so a row stays only while the task is open AND
+  // still theirs — a reassign keeps the task open, and the old holder's ✅
+  // kept closing the new holder's task for anybody whose grants reach it
+  // (review tasks-4).
   const listed = new Set<string>();
   for (const row of rows) {
     if (row.type !== TASK_LIST_TYPE) continue;
     for (const entry of listEntries(row.payload)) listed.add(entry.id);
   }
-  const stillOpen = new Set<string>();
+  const openHolder = new Map<string, string>();
   if (listed.size > 0) {
     const open = await db
-      .select({ id: tasks.id })
+      .select({ id: tasks.id, assigneeId: tasks.assigneeId })
       .from(tasks)
       .where(and(inArray(tasks.id, [...listed]), eq(tasks.status, 'open')));
-    for (const row of open) stillOpen.add(row.id);
+    for (const row of open) openHolder.set(row.id, row.assigneeId);
   }
 
   const skip = new Set((input.exceptMessages ?? []).map((m) => `${m.chatId}:${m.messageId}`));
@@ -205,7 +215,7 @@ export async function retireTaskCopies(input: RetireTaskCopiesInput): Promise<nu
             // Nothing left open: no markup at all, which Telegram reads as
             // «remove the keyboard» (an empty one it refuses).
             replyMarkup: keyboardOf([
-              ...(dayButtons(listEntries(payload).filter((entry) => stillOpen.has(entry.id))) ?? []),
+              ...(dayButtons(listEntries(payload).filter((entry) => openHolder.get(entry.id) === row.userId)) ?? []),
               ...linkRow,
             ]),
           })
