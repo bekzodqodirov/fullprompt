@@ -12,7 +12,9 @@ import {
   notifications,
   paymentPromises,
   tasks,
+  roles,
   telegramLinks,
+  userRoles,
   users,
 } from '@/modules/platform/db/schema';
 import {
@@ -297,6 +299,7 @@ afterAll(async () => {
   if (clientIds.length) await db.delete(clients).where(inArray(clients.id, clientIds));
   if (leadIds.length) await db.delete(leads).where(inArray(leads.id, leadIds));
   if (people.length) {
+    await db.delete(userRoles).where(inArray(userRoles.userId, people));
     await db.delete(telegramLinks).where(inArray(telegramLinks.userId, people));
     // Audited actors stay (audit_log FK) — they leave the company instead.
     await db.update(users).set({ active: false }).where(inArray(users.id, people));
@@ -904,6 +907,77 @@ describe('the drain re-checks a task copy at SEND time (telegram-mechanics-5)', 
     const marks = () => method('editMessageReplyMarkup').filter((c) => c.body.message_id === messageId);
     await vi.waitFor(() => expect(marks()).toHaveLength(1), { timeout: 5_000 });
     expect(marks()[0]!.body.reply_markup).toEqual({ inline_keyboard: [[{ text: '✅ B', callback_data: `tb:${b}` }]] });
+  });
+});
+
+describe('a task message links each recipient to a door THEY can open (review access-5, integration-2/6)', () => {
+  async function grant(person: Person, role: string): Promise<void> {
+    const [row] = await db.select({ id: roles.id }).from(roles).where(eq(roles.code, role));
+    await db.insert(userRoles).values({ userId: person.id, roleId: row!.id });
+  }
+  async function sellersLead(owner: Person): Promise<{ lead: string; request: string }> {
+    const [lead] = await db
+      .insert(leads)
+      .values({ name: `Hisob lid ${STAMP}-${leadIds.length}`, stageId, createdBy: owner.id, ownerId: owner.id })
+      .returning({ id: leads.id });
+    leadIds.push(lead!.id);
+    const [request] = await db
+      .insert(calcRequests)
+      .values({
+        entityType: 'lead',
+        entityId: lead!.id,
+        requestedBy: owner.id,
+        itemCount: 1,
+        dueAt: new Date(Date.now() + 3_600_000),
+        completedAt: new Date(),
+        completedBy: owner.id,
+        completedVia: 'task',
+      })
+      .returning({ id: calcRequests.id });
+    requests.push(request!.id);
+    return { lead: lead!.id, request: request!.id };
+  }
+  const lastText = async (userId: string, type: string) => {
+    const rows = await queued(userId, type);
+    return String((rows.at(-1)!.payload as { text: string }).text);
+  };
+
+  it('the SELLER who asked for a calculation is linked to his lead card, never to /hisoblash he cannot open', async () => {
+    const seller = await mintStaff();
+    const ved = await mintStaff();
+    await grant(seller, 'sales_manager');
+    await grant(ved, 'ved_manager');
+    const { lead, request } = await sellersLead(seller);
+    // The old pile: a calc task whose request has closed keeps its ✅.
+    const id = await mintTask(seller, ved, { origin: 'calc', boundId: request, entityType: 'lead', entityId: lead });
+    await completeTask(id, 'hisoblandi', ctxOf(ved, 'ved.docs'));
+    const done = await lastText(seller.id, 'TaskDone');
+    expect(done).not.toContain('/hisoblash/');
+    expect(done).toContain(`🔗 ${APP}/crm/leads/${lead}`);
+  });
+
+  it('the VED author of a hand-back is linked to the karta, never to the lead card the CRM bounces him from', async () => {
+    const seller = await mintStaff();
+    const ved = await mintStaff();
+    await grant(seller, 'sales_manager');
+    await grant(ved, 'ved_manager');
+    const { lead, request } = await sellersLead(seller);
+    const id = await mintTask(ved, seller, { origin: 'calc_return', entityType: 'lead', entityId: lead });
+    await acceptTask(id, ctxOf(seller, 'crm.leads'));
+    const accepted = await lastText(ved.id, 'TaskAccepted');
+    expect(accepted).not.toContain('/crm/leads/');
+    expect(accepted).toContain(`🔗 ${APP}/hisoblash/${request}/karta?lid=${lead}`);
+  });
+
+  it('somebody NO door admits gets no 🔗 line at all — never a link that bounces home', async () => {
+    const seller = await mintStaff();
+    const stranger = await mintStaff();
+    await grant(seller, 'sales_manager');
+    const { lead } = await sellersLead(seller);
+    // A plain worker given a task about somebody else's lead.
+    const id = await mintTask(seller, stranger, { entityType: 'lead', entityId: lead });
+    await remindTask(id, ctxOf(seller));
+    expect(await lastText(stranger.id, 'TaskReminder')).not.toContain('🔗');
   });
 });
 
