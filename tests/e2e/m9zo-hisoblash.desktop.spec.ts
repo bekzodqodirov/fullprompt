@@ -129,7 +129,9 @@ test('the job’s task on the card is a door to the job, never a ✅ (VED-TARIX 
   // it holds open work). Every task door used to close the job with no price;
   // now the row offers the job's own screen to a `ved.docs` reader — which
   // this login is, the CalcPanel's own link above proves it — and no ✅.
-  const panel = page.getByTestId('tasks-panel');
+  // `tasks-panel` is the Panel's SUMMARY (panel.tsx); the rows live in its
+  // <details>, the summary's parent.
+  const panel = page.getByTestId('tasks-panel').locator('..');
   const job = panel.locator('[data-testid^="calc-job-"]');
   await expect(job).toHaveCount(1, { timeout: 15_000 });
   await expect(job).toHaveAttribute('href', requestUrl);
