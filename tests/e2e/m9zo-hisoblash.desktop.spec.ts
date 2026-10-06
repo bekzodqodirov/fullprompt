@@ -132,6 +132,8 @@ test('take it, then finish it with the figure the seller is waiting for', async 
   await page.getByTestId('calc-finish-open').click();
   await page.getByTestId('calc-answer-amount').fill('480');
   await page.getByTestId('calc-answer-note').fill('e2e');
+  // 9a: the VED's internal note is required — never shown to the seller.
+  await page.getByTestId('calc-answer-internal').fill('ichki izoh e2e');
   await page.getByTestId('calc-finish').click();
 
   // Closed: the answer is on the record, and the actions are gone.
