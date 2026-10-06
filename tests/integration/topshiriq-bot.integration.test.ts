@@ -272,3 +272,41 @@ describe('an album sent while «Kimga?» stands (review bot-3)', () => {
     expect(activeDraft(author.chat)).toBeNull();
   });
 });
+
+describe('Door B takes what was forwarded WHOLE (review bot-4, bot-7)', () => {
+  it('a forwarded four-photo album becomes a task with four sources AND four files for the web', async () => {
+    const author = await mintStaff();
+    const group = `fwd-${STAMP}`;
+    const parts: Record<string, unknown>[] = [];
+    const offers: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      const part = message(author.chat, (messageSeq += 1), { ...forwarded, media_group_id: group, photo: photo(20 + i) });
+      parts.push(part);
+      const { ctx, said } = ctxFor(author.chat, { message: part });
+      expect(await draftMedia(ctx, author.chat)).toBe(true);
+      offers.push(...said.replies.map((r) => r.text));
+    }
+    expect(offers).toEqual(['📌 Topshiriq qilamizmi?']);
+    const said = await pressDoorB(author, parts[0]!);
+    const draft = activeDraft(author.chat)!;
+    expect(draft.sources).toHaveLength(4);
+    expect(draft.files.map((f) => f.fileId).sort()).toEqual([20, 21, 22, 23].map((n) => `AgACphoto${STAMP}${n}`).sort());
+    // Nothing to tell: every part's file is in hand.
+    expect(said.replies.map((r) => r.text).join('\n')).not.toContain('⚠');
+  });
+
+  it('a forwarded video over 20 MB is told at the end — «Telegramda yuborildi», not silence', async () => {
+    const author = await mintStaff();
+    const doer = await mintStaff();
+    const video = message(author.chat, (messageSeq += 1), {
+      ...forwarded,
+      video: { file_id: `BAAvideo${STAMP}`, file_unique_id: 'v', width: 1, height: 1, duration: 1, file_name: 'sklad.mp4', file_size: 50 * 1024 * 1024 },
+    });
+    await pressDoorB(author, video);
+    expect(activeDraft(author.chat)).toMatchObject({ files: [], tooBig: ['sklad.mp4'] });
+    await pickAssignee(ctxFor(author.chat).ctx, author.chat, doer.id);
+    const due = ctxFor(author.chat);
+    await handleDraftCallback(due.ctx, author.chat, 'due_n');
+    expect(due.said.replies.at(-1)!.text).toContain('⚠ Saytga yuklanmadi — 20 MB dan katta; Telegramda yuborildi: sklad.mp4');
+  });
+});

@@ -115,17 +115,17 @@ export async function startTaskDraft(
   ctx: Context,
   chatId: bigint,
   seed: Parameters<typeof startDraft>[1] = {},
-): Promise<void> {
+): Promise<boolean> {
   if (activeIntake(chatId)) {
     await ctx.reply('Hozir hisoblatish davom etyapti. Avval uni tugating yoki bekor qiling.');
-    return;
+    return false;
   }
   if (activeCapture(chatId)) {
     await ctx.reply('Hozir yangi zametka yozilyapti. Avval uni saqlang yoki bekor qiling.');
-    return;
+    return false;
   }
   const staff = await staffForChat(chatId);
-  if (!staff) return;
+  if (!staff) return false;
   const live = activeDraft(chatId);
   if (live) {
     // A second «➕» is not a reason to lose the first one's words — and
@@ -133,11 +133,12 @@ export async function startTaskDraft(
     // draft is live overwrote the pick and every typed line (review bot-2).
     await ctx.reply('Sizda tugallanmagan topshiriq bor — davom eting yoki bekor qiling.');
     await promptFor(sayIn(ctx), chatId, live, staff.id);
-    return;
+    return false;
   }
   dropTaskPending(chatId);
   const draft = startDraft(chatId, seed);
   await promptFor(sayIn(ctx), chatId, draft, staff.id);
+  return true;
 }
 
 /** Whatever the draft is waiting for, asked again — one function, so the wording cannot drift. */
@@ -510,7 +511,12 @@ export async function draftMedia(ctx: Context, chatId: bigint): Promise<boolean>
  */
 export async function offerForwardTask(ctx: Context, chatId: bigint, mediaGroupId: string | null): Promise<void> {
   const message = ctx.message!;
-  if (mediaGroupId && !noteForwardPart(chatId, mediaGroupId, message.message_id).offer) return;
+  if (mediaGroupId) {
+    const part = partOf(message);
+    if (!noteForwardPart(chatId, mediaGroupId, { messageId: part.messageId, kind: part.kind ?? null, file: part.file ?? null }).offer) {
+      return;
+    }
+  }
   await ctx.reply('📌 Topshiriq qilamizmi?', {
     reply_markup: { inline_keyboard: forwardKeyboard() },
     reply_parameters: { message_id: message.message_id, allow_sending_without_reply: true },
@@ -558,27 +564,38 @@ export async function handleForwardCallback(
     return;
   }
   const part = partOf(original as NonNullable<Context['message']>);
-  const albumIds = forwardAlbumOf(chatId, original.media_group_id);
+  const album = forwardAlbumOf(chatId, original.media_group_id);
   let seed = withPart(startDraftSeed(), part, Number(chatId));
-  if (albumIds) {
-    // The album's other parts: their pointers travel; the web gets the one
-    // file the press carried (the rest were never handed to us as files).
-    for (const id of albumIds) {
-      if (id === original.message_id) continue;
-      seed = withPart(seed, { messageId: id, forwarded: true, kind: part.kind ?? null }, Number(chatId));
+  let withoutFile = 0;
+  if (album) {
+    // The album's other parts, each with the file it arrived with — the web
+    // gets the whole album, and an oversized one lands in `tooBig` to be
+    // told (review bot-4).
+    for (const other of album) {
+      if (other.messageId === original.message_id) continue;
+      if (!other.file) withoutFile += 1;
+      seed = withPart(
+        seed,
+        { messageId: other.messageId, forwarded: true, kind: other.kind ?? part.kind ?? null, file: other.file },
+        Number(chatId),
+      );
     }
   }
-  await startTaskDraft(ctx, chatId, {
+  const started = await startTaskDraft(ctx, chatId, {
     sources: seed.sources,
     files: seed.files,
     texts: seed.texts,
     facts: seed.facts,
     firstKind: seed.firstKind,
     firstForwarded: seed.firstForwarded,
+    tooBig: seed.tooBig,
   });
-  if (original.media_group_id && !albumIds) {
+  if (!started) return;
+  if (original.media_group_id && !album) {
     // The map is memory and a deploy took it: SAY so, never drop parts in silence.
     await ctx.reply('⚠ Albomning faqat 1 ta qismi qo‘shildi — qolganlarini qaytadan yo‘naltiring.');
+  } else if (withoutFile > 0) {
+    await ctx.reply(`⚠ Albomning ${withoutFile} ta qismi saytga yuklanmaydi — faqat Telegramda yuboriladi.`);
   }
 }
 

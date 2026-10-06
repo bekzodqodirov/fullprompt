@@ -207,11 +207,20 @@ describe('an album settles before the due is honoured (telegram-mechanics-17)', 
 });
 
 describe('Door B remembers an album (telegram-mechanics-18)', () => {
-  it('offers once per album and hands every part back on the press, in order', () => {
-    expect(noteForwardPart(CHAT, 'A1', 12).offer).toBe(true);
-    expect(noteForwardPart(CHAT, 'A1', 11).offer).toBe(false);
-    expect(noteForwardPart(CHAT, 'A1', 13).offer).toBe(false);
-    expect(forwardAlbumOf(CHAT, 'A1')).toEqual([11, 12, 13]);
+  it('offers once per album and hands every part back on the press, in order — each WITH its file (review bot-4)', () => {
+    const part = (messageId: number) => ({
+      messageId,
+      kind: 'photo' as const,
+      file: { fileId: `p${messageId}`, name: null, mime: 'image/jpeg', size: 1 },
+    });
+    expect(noteForwardPart(CHAT, 'A1', part(12)).offer).toBe(true);
+    expect(noteForwardPart(CHAT, 'A1', part(11)).offer).toBe(false);
+    expect(noteForwardPart(CHAT, 'A1', part(13)).offer).toBe(false);
+    expect(forwardAlbumOf(CHAT, 'A1')).toEqual([part(11), part(12), part(13)]);
+  });
+
+  it('a seed’s oversized files are still told — the draft does not forget them (review bot-7)', () => {
+    expect(startDraft(CHAT, { tooBig: ['sklad.mp4'] }).tooBig).toEqual(['sklad.mp4']);
   });
 
   it('after a deploy the map is empty — null, so the caller SAYS only one part came', () => {
