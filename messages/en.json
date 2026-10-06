@@ -3658,7 +3658,7 @@
     "sellerNoteShort": "To the seller",
     "internalNoteShort": "Internal note",
     "internalNoteOld": "no internal note (older entry)",
-    "registryGoodsSummary": "{n, plural, one {# item} other {# items}}: {names}",
+    "registryGoodsSummary": "Goods ({n}): {names}",
     "registryGoodsNone": "No goods list",
     "registryGoodsFailed": "Could not open the goods — try again later",
     "registryAnswerNoGroupSum": "Overall price — there is no customs sum per group",
