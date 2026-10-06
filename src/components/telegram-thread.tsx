@@ -64,6 +64,7 @@ export async function TelegramThread({
   hodim,
   hrefFor,
   calcTarget,
+  readOnly = false,
 }: {
   clientId: string | null;
   /**
@@ -93,6 +94,13 @@ export async function TelegramThread({
    * Re-proved server-side — a posted entity is a forged post (#514).
    */
   calcTarget?: { kind: 'deal'; id: string };
+  /**
+   * The VED's karta (docs/VED-TARIX.md §10, review access-money-2): the
+   * thread is READ there. No «Hisoblatishga yuborish» (`ThreadCalc` on a
+   * client thread would open a new deal OWNED BY THE VED) and no reply box —
+   * the karta writes nothing but a text note on the lenta.
+   */
+  readOnly?: boolean;
 }) {
   const actor = await getActor();
   // The CRM grants, or the supervision view (round 33: vedchi and admin read
@@ -169,7 +177,7 @@ export async function TelegramThread({
         </div>
         {/* The third calc door (owner, 2026-08-25) — OUTSIDE the scroll box,
             or the bar scrolls away with the history. */}
-        <ThreadCalc entity={{ kind: 'lead', id: leadId }} />
+        {!readOnly && <ThreadCalc entity={{ kind: 'lead', id: leadId }} />}
       </section>
     );
   }
@@ -270,11 +278,11 @@ export async function TelegramThread({
 
       {/* The third calc door (owner, 2026-08-25) — a sibling of the scroll
           box, never inside it. */}
-      <ThreadCalc entity={calcTarget ?? { kind: 'client', id: clientId }} />
+      {!readOnly && <ThreadCalc entity={calcTarget ?? { kind: 'client', id: clientId }} />}
 
       {/* Owner: the send box must be here too, not only on «Suhbatlar» —
           replying onto the code that actually HOLDS the chat. */}
-      <TelegramReply clientId={threadClientId} compact />
+      {!readOnly && <TelegramReply clientId={threadClientId} compact />}
     </section>
   );
 }

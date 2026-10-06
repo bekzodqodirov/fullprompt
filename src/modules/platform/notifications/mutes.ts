@@ -69,6 +69,10 @@ export const MUTE_GROUPS = {
     'TaskReminder',
     'TaskCancelled',
     'TaskReassigned',
+    // «GS777: narx qayta hisoblanmoqda — eski narx endi amal qilmaydi»
+    // (docs/VED-TARIX.md §6) — the seller's own job, re-opened. A newcomer:
+    // never in FOUNDERS.
+    'CalcRecalc',
   ],
   // "Something is wrong, act now." The three price-control messages belong
   // here rather than in `operations`: cargo that arrived is routine, cargo

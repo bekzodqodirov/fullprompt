@@ -1,7 +1,8 @@
 import { sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
-import { chainVersionsFor, type ChainVersion } from './chain';
+import { chainVersionsFor, childStateSql, type ChainVersion, type ChildState } from './chain';
 import type { CalcRegistrySight } from './control-scope';
+import { isAnswerSql } from './credit';
 import { dutyText } from './duty-text';
 import type { CalcSectionName, DutyMode } from './pricing';
 
@@ -27,6 +28,9 @@ export type CalcSheetStatus = 'stands' | 'recalc_open' | 'superseded';
 
 export interface CalcSheetItem {
   name: string;
+  /** 7a's «qty»: the item's count and the unit it was counted in, as sealed. */
+  quantity: number | null;
+  unit: string | null;
   bazaUsd: number | null;
   basis: string | null;
   kg: number | null;
@@ -42,6 +46,8 @@ export interface CalcSheetGroup {
   dutyText: string;
   vatPct: number | null;
   excisePct: number | null;
+  /** The customs VALUE the duty was taken on, as sealed — «—» on an old snapshot. */
+  valueUsd: number | null;
   customsUsd: number | null;
   items: CalcSheetItem[];
 }
@@ -56,6 +62,8 @@ export interface CalcSheet {
   validUntil: Date;
   expired: boolean;
   status: CalcSheetStatus;
+  /** How the correction ended, for the chip's words (chain.ts `ChildState`). */
+  childState: ChildState | null;
   groups: CalcSheetGroup[];
   feeUsd: number | null;
   freight: {
@@ -85,6 +93,51 @@ export interface CalcAnswer {
   note: string | null;
   completedAt: Date;
   byName: string | null;
+  /** A correction off this answer, and how it ended — the same words the
+   * seller's push and the chain chip use (review ved-correctness-2). */
+  childState: ChildState | null;
+}
+
+/** One item of a request's goods, read from its own row — its baza lives on the ITEM. */
+export interface CalcGoodsItem {
+  name: string;
+  tnvedCode: string | null;
+  quantity: number | null;
+  unit: string | null;
+  kg: number | null;
+  m3: number | null;
+  bazaUsd: number | null;
+  basis: string | null;
+  measureUnit: string | null;
+  measureQty: number | null;
+}
+
+/** A group of a request's goods — the code and the law, NEVER a customs sum. */
+export interface CalcGoodsGroup {
+  code: string | null;
+  label: string;
+  dutyText: string;
+  vatPct: number | null;
+  items: CalcGoodsItem[];
+}
+
+/**
+ * The goods of a request that has no SEALED snapshot — a Готово answer (7a,
+ * 8a) or a hand-back (10a's closed page) — read back from the request's own
+ * rows, which every writer froze at the ending (`already_closed`).
+ *
+ * Deliberately NO per-group rastamojka (review ved-correctness-14): an answer
+ * is one typed figure, and a group's sum recomputed today would be a draft
+ * nobody sealed or gave, printed as if it were part of the answer. (Only the
+ * per-declaration fee would need today's FX and `bhm_uzs`; the groups' own
+ * arithmetic would not — which is exactly why it would look authoritative.)
+ * Ungrouped or uncoded items — every Готово job has a blocker by #880's
+ * construction — list with «—».
+ */
+export interface CalcGoodsSheet {
+  requestId: string;
+  groups: CalcGoodsGroup[];
+  ungrouped: CalcGoodsItem[];
 }
 
 /** The sealed version's own row, as `calcSheetOf` reads it — raw, tolerant. */
@@ -148,9 +201,14 @@ export function calcSheetOf(
         : '—',
       vatPct: num(g.vatPct),
       excisePct: num(g.excisePct),
+      valueUsd: customs ? num(customs.valueUsd) : null,
       customsUsd: customs ? num(customs.customsUsd) : null,
       items: rawItems.map((i) => ({
         name: text(i.label) ?? '—',
+        quantity: num(i.quantity),
+        // The breakdown names the unit on the GROUP (one code, one unit) and
+        // an item's own measure pair when it has one.
+        unit: text(i.unit) ?? text(g.unit),
         bazaUsd: num(i.bazaUsd),
         basis: text(i.bazaBasis),
         kg: num(i.weightKg),
@@ -173,6 +231,7 @@ export function calcSheetOf(
     validUntil: version.validUntil,
     expired: version.validUntil.getTime() < now.getTime(),
     status: mine?.recalcOpen ? 'recalc_open' : mine?.superseded ? 'superseded' : 'stands',
+    childState: mine?.childState ?? null,
     groups,
     feeUsd: fee ? num(fee.feeUsd) : null,
     freight: hasFreight
@@ -309,10 +368,14 @@ export async function dealCalcSheets(
     answer_currency: string | null;
     answer_note: string | null;
     by_name: string | null;
+    is_answer: boolean;
+    child_state: ChildState | null;
     replaced: boolean;
   }>(sql`
     SELECT r.id::text AS id, r.entity_id::text AS deal_id, r.section, r.completed_at, r.completed_via,
            r.answer_amount, r.answer_currency, r.answer_note, u.full_name AS by_name,
+           ${isAnswerSql('r')} AS is_answer,
+           ${childStateSql(sql.raw('r.id'))} AS child_state,
            EXISTS (
              SELECT 1 FROM calc_requests c JOIN calc_versions cv ON cv.request_id = c.id
               WHERE c.supersedes_request_id = r.id
@@ -356,9 +419,11 @@ export async function dealCalcSheets(
   }
 
   for (const r of requests) {
-    // A handed-back request is not an answer, whatever it carries.
-    if (!r.completed_at || r.completed_via === 'sealed' || r.completed_via === 'returned') continue;
-    if (r.answer_amount === null || r.replaced) continue;
+    // THE answer predicate (credit.ts), plus the sheet's own display clause:
+    // an answer prints until a SEALED correction replaces its request. An
+    // open, answered or returned correction keeps it on the sheet with the
+    // chip saying so — the same words the seller's push used.
+    if (!r.is_answer || r.replaced || !r.completed_at) continue;
     out.get(r.deal_id)!.answers.push({
       requestId: r.id,
       section: (r.section as CalcSectionName | null) ?? null,
@@ -367,6 +432,7 @@ export async function dealCalcSheets(
       note: r.answer_note,
       completedAt: new Date(r.completed_at),
       byName: r.by_name,
+      childState: r.child_state ?? null,
     });
   }
   for (const entry of out.values()) {
@@ -392,4 +458,85 @@ export async function calcSheetsForRequest(
   const version = versions.get(newestOwn.versionId);
   if (!version) return null;
   return calcSheetOf(version, goods.get(requestId) ?? [], chain);
+}
+
+type GoodsItemRow = {
+  item_name: string;
+  item_code: string | null;
+  quantity: string | null;
+  unit: string | null;
+  weight_kg: string | null;
+  volume_m3: string | null;
+  baza_usd: string | null;
+  baza_basis: string | null;
+  measure_unit: string | null;
+  measure_qty: string | null;
+  group_id: string | null;
+  group_label: string | null;
+  group_code: string | null;
+  duty_pct: string | null;
+  duty_mode: string | null;
+  duty_specific: string | null;
+  duty_unit: string | null;
+  vat_pct: string | null;
+};
+
+/**
+ * One request's goods as a sheet (`CalcGoodsSheet`), in one query: each item
+ * with its own baza, under its group's code and law, groups in their order.
+ * The caller decides WHICH requests may be read this way — the goods route
+ * answers only for a registry row, the closed page only for `ved.docs`.
+ */
+export async function requestGoodsSheet(
+  requestId: string,
+  _sight: CalcRegistrySight,
+): Promise<CalcGoodsSheet> {
+  const rows = await db.execute<GoodsItemRow>(sql`
+    SELECT i.name AS item_name, i.tnved_code AS item_code, i.quantity, i.unit, i.weight_kg, i.volume_m3,
+           i.baza_usd, i.baza_basis, i.measure_unit, i.measure_qty,
+           g.id::text AS group_id, g.label AS group_label, g.tnved_code AS group_code,
+           g.duty_pct, g.duty_mode, g.duty_specific, g.duty_unit, g.vat_pct
+      FROM calc_request_items i
+      LEFT JOIN calc_groups g ON g.id = i.group_id
+     WHERE i.request_id = ${requestId}::uuid
+     ORDER BY g.seq NULLS LAST, i.seq
+  `);
+  const groups = new Map<string, CalcGoodsGroup>();
+  const ungrouped: CalcGoodsItem[] = [];
+  for (const r of rows) {
+    const item: CalcGoodsItem = {
+      name: r.item_name,
+      tnvedCode: text(r.item_code) ?? text(r.group_code),
+      quantity: num(r.quantity),
+      unit: text(r.unit),
+      kg: num(r.weight_kg),
+      m3: num(r.volume_m3),
+      bazaUsd: num(r.baza_usd),
+      basis: text(r.baza_basis),
+      measureUnit: text(r.measure_unit),
+      measureQty: num(r.measure_qty),
+    };
+    if (!r.group_id) {
+      ungrouped.push(item);
+      continue;
+    }
+    let group = groups.get(r.group_id);
+    if (!group) {
+      const dutyPct = num(r.duty_pct);
+      const mode = DUTY_MODES.includes(r.duty_mode as DutyMode) ? (r.duty_mode as DutyMode) : 'advalor';
+      const hasLaw = dutyPct !== null || num(r.duty_specific) !== null;
+      group = {
+        code: text(r.group_code),
+        label: text(r.group_label) ?? '—',
+        dutyText: hasLaw
+          ? dutyText({ dutyPct, dutyMode: mode, dutySpecific: num(r.duty_specific), dutyUnit: text(r.duty_unit) })
+          : '—',
+        vatPct: num(r.vat_pct),
+        items: [],
+      };
+      groups.set(r.group_id, group);
+    }
+    group.items.push(item);
+  }
+  return { requestId, groups: [...groups.values()], ungrouped };
 }

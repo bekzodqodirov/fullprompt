@@ -372,7 +372,7 @@ describe('the endings', () => {
 
   it('finishing records the ANSWER, not just the fact that it ended', async () => {
     const { id } = await open();
-    await finishCalcRequest(id, { amount: 480, currency: 'USD', note: '3 guruh' }, ctx());
+    await finishCalcRequest(id, { amountText: '480', currency: 'USD', note: '3 guruh', internalNote: 'ichki: 3 guruh' }, ctx());
     const row = await calcRequestDetail(id);
     expect(row!.completedVia).toBe('task');
     expect(row!.answerAmount).toBe(480);
@@ -382,9 +382,9 @@ describe('the endings', () => {
 
   it('a closed request cannot be closed twice', async () => {
     const { id } = await open();
-    await finishCalcRequest(id, { amount: 100, currency: 'USD', note: '' }, ctx());
+    await finishCalcRequest(id, { amountText: '100', currency: 'USD', note: '', internalNote: 'ichki' }, ctx());
     await expect(
-      finishCalcRequest(id, { amount: 200, currency: 'USD', note: '' }, ctx()),
+      finishCalcRequest(id, { amountText: '200', currency: 'USD', note: '', internalNote: 'ichki' }, ctx()),
     ).rejects.toThrow('already_closed');
   });
 });

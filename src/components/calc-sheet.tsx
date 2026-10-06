@@ -1,7 +1,12 @@
 import { getTranslations } from 'next-intl/server';
 import type { CalcRegistrySight } from '@/modules/wms/calc/control-scope';
 import { SECTION_LABELS } from '@/modules/wms/calc/labels';
-import type { CalcAnswer, CalcSheet as CalcSheetData } from '@/modules/wms/calc/sheet';
+import type {
+  CalcAnswer,
+  CalcGoodsItem,
+  CalcGoodsSheet,
+  CalcSheet as CalcSheetData,
+} from '@/modules/wms/calc/sheet';
 
 /**
  * «🧮 Bitim hisobi» drawn — the sealed calculation, block by block (owner's
@@ -38,7 +43,17 @@ export async function CalcSheet({ data, sight: _sight }: { data: CalcSheetData; 
             {tf('calcRecalcOpen')}
           </span>
         ) : data.status === 'superseded' ? (
-          <span className="chip chip-neutral">{tc('supersededPlain')}</span>
+          // The child's ending in the chain chip's own words (#513): a dead
+          // seal says WHAT replaced it, not merely that something did.
+          <span className="chip chip-neutral" data-testid="calc-sheet-superseded">
+            {data.childState === 'answered'
+              ? tc('chainAnswered')
+              : data.childState === 'returned'
+                ? tc('chainReturned')
+                : data.childState === 'unpriced'
+                  ? tc('chainUnpriced')
+                  : tc('supersededPlain')}
+          </span>
         ) : null}
         {data.expired ? <span className="chip chip-warn">{t('expired')}</span> : null}
       </p>
@@ -59,6 +74,7 @@ export async function CalcSheet({ data, sight: _sight }: { data: CalcSheetData; 
             {' · '}
             {t('vat')}: {g.vatPct === null ? '—' : `${g.vatPct}%`}
             {g.excisePct !== null && g.excisePct > 0 ? ` · ${t('excise')}: ${g.excisePct}%` : ''}
+            {g.valueUsd !== null ? ` · ${tc('regGoodsValue')}: ${usd(g.valueUsd)}` : ''}
             {' · '}
             <span className="font-mono tabular-nums">{usd(g.customsUsd)}</span>
           </p>
@@ -71,6 +87,7 @@ export async function CalcSheet({ data, sight: _sight }: { data: CalcSheetData; 
                   {t('baza')}: {item.bazaUsd === null ? '—' : `$${item.bazaUsd}`}
                   {item.basis ? `/${item.basis}` : ''}
                   {[
+                    qty(item.quantity, item.unit ?? ''),
                     qty(item.kg, 'kg'),
                     qty(item.m3, 'm³'),
                     item.measureUnit && item.measureQty !== null ? `${item.measureQty} ${item.measureUnit}` : null,
@@ -187,6 +204,18 @@ export async function CalcAnswers({ answers, sight: _sight }: { answers: CalcAns
         <li key={a.requestId} className="break-words rounded border border-dashed border-line p-2" data-testid="calc-answer">
           <span className="chip chip-warn">{tf('calcUnsealed')}</span>{' '}
           {a.section ? <span className="chip chip-brand">{tc(SECTION_LABELS[a.section] as 'sections.podklyuch')}</span> : null}{' '}
+          {/* A correction off this answer, in the chain chip's words: the
+              seller's push said «eski narx endi amal qilmaydi» at the press,
+              and the sheet must not print the answer as if it stood. */}
+          {a.childState === 'open' ? (
+            <span className="chip chip-warn" data-testid="calc-answer-recalc">{tf('calcRecalcOpen')}</span>
+          ) : a.childState === 'answered' ? (
+            <span className="chip chip-neutral">{tc('chainAnswered')}</span>
+          ) : a.childState === 'returned' ? (
+            <span className="chip chip-warn">{tc('chainReturned')}</span>
+          ) : a.childState === 'unpriced' ? (
+            <span className="chip chip-warn">{tc('chainUnpriced')}</span>
+          ) : null}{' '}
           <b className="font-mono tabular-nums">
             {a.amount.toFixed(2)} {a.currency ?? ''}
           </b>
@@ -198,5 +227,77 @@ export async function CalcAnswers({ answers, sight: _sight }: { answers: CalcAns
         </li>
       ))}
     </ul>
+  );
+}
+
+/**
+ * The goods of a closed job that has no sealed snapshot — a Готово answer or
+ * a hand-back (10a's closed page) — frozen as the VED left them: each group's
+ * code and law, each item's own baza. NO per-group rastamojka (review
+ * ved-correctness-14): that would be a draft figure nobody sealed or gave,
+ * and the sheet says so in words.
+ */
+export async function CalcGoodsSheetView({
+  data,
+  sight: _sight,
+}: {
+  data: CalcGoodsSheet;
+  sight: CalcRegistrySight;
+}) {
+  const t = await getTranslations('calcSheet');
+  const tc = await getTranslations('calc');
+  const line = (item: CalcGoodsItem) =>
+    [
+      item.tnvedCode ?? '—',
+      qty(item.quantity, item.unit ?? ''),
+      qty(item.kg, 'kg'),
+      qty(item.m3, 'm³'),
+      item.measureUnit && item.measureQty !== null ? `${item.measureQty} ${item.measureUnit}` : null,
+      `${t('baza')}: ${item.bazaUsd === null ? '—' : `$${item.bazaUsd}`}${item.basis ? `/${item.basis}` : ''}`,
+    ]
+      .filter(Boolean)
+      .map((part) => ` · ${part}`)
+      .join('');
+  return (
+    <div className="space-y-2 text-xs" data-testid="calc-goods-sheet">
+      <p className="text-ink-500">{tc('registryAnswerNoGroupSum')}</p>
+      {data.groups.map((g, index) => (
+        <div key={index} className="space-y-1 rounded border border-dashed border-line p-2" data-testid="calc-goods-group">
+          <p className="break-words">
+            <span className="text-ink-500">{t('group')}:</span> <b>{g.label}</b>
+            {g.code ? (
+              <>
+                {' · '}
+                <span className="text-ink-500">{t('code')}</span> <span className="font-mono">{g.code}</span>
+              </>
+            ) : null}
+          </p>
+          <p className="text-ink-600">
+            {t('duty')}: {g.dutyText} · {t('vat')}: {g.vatPct === null ? '—' : `${g.vatPct}%`}
+          </p>
+          <ul className="space-y-0.5 text-ink-600">
+            {g.items.map((item, i) => (
+              <li key={i} className="break-words">
+                {item.name}
+                {line(item)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+      {data.ungrouped.length > 0 ? (
+        <div className="space-y-1 rounded border border-dashed border-line p-2" data-testid="calc-goods-ungrouped">
+          <p className="text-ink-500">{tc('regGoodsUngrouped')}</p>
+          <ul className="space-y-0.5 text-ink-600">
+            {data.ungrouped.map((item, i) => (
+              <li key={i} className="break-words">
+                {item.name}
+                {line(item)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
   );
 }

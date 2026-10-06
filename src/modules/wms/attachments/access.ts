@@ -25,6 +25,7 @@ import { inScope, type ScopedActor } from '../../platform/rbac/scope';
 import { cargoNearActor } from '../inventory/near';
 import { handoverActRefusal } from '../issue/act-door';
 import { seesAllTg } from '../crm/conversations';
+import { calcCardExists, isCalcCardClient } from '../calc/card-door';
 import { seesAllMoney } from '../finance/scope';
 import { mayReadPickup } from '../pickups/service';
 import { isStaffPartner, maySeeStaffMoney } from '../partners/staff';
@@ -169,7 +170,7 @@ async function decide(
     case 'crm_activity': {
       const row = await db.query.crmActivities.findFirst({
         where: eq(crmActivities.id, attachment.entityId),
-        columns: { entityType: true },
+        columns: { entityType: true, entityId: true },
       });
       if (!row) return { allow: false, rule: 'orphan' };
       if (row.entityType === 'deal') {
@@ -186,6 +187,17 @@ async function decide(
           columns: { id: true },
         });
         if (submitted) return { allow: true, rule: 'crm-activity-calc' };
+        // The lenta of a calc card (docs/VED-TARIX.md §10, «Lenta files»):
+        // the seller's photos on a note open for the VED reading that note —
+        // a lead carrying a calculation (the card door itself), or the stored
+        // client of one, whose notes the two calc lentas draw.
+        if (
+          (row.entityType === 'lead' &&
+            (await calcCardExists({ entityType: 'lead', entityId: row.entityId }))) ||
+          (row.entityType === 'client' && (await isCalcCardClient(row.entityId)))
+        ) {
+          return { allow: true, rule: 'crm-activity-calc-card' };
+        }
       }
       return { allow: false, rule: 'crm-no-permission' };
     }

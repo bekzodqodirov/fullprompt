@@ -2,6 +2,7 @@ import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { clientFeed, type FeedItem, type FeedKind } from '@/modules/wms/crm/feed';
 import { mentionablePeople } from '@/modules/wms/crm/internal-chat';
+import { mayOpenCalcCard } from '@/modules/wms/calc/card-door';
 import { FeedNoteBox } from './client-feed-note';
 import { LightboxImg } from './lightbox-img';
 
@@ -122,9 +123,18 @@ export async function ClientFeed({
   // renders nothing did not ship in any sense that matters.
   if (!clientId && !leadId && !dealId) return null;
   const actor = await getActor();
-  if (!actor?.permissions.has('crm.leads') && !actor?.permissions.has('clients.manage')) {
-    return null;
-  }
+  if (!actor) return null;
+  const crm = actor.permissions.has('crm.leads') || actor.permissions.has('clients.manage');
+  // The VED on a calc card (docs/VED-TARIX.md §10, 15a): «ved hodimi
+  // hsoblashdan kartaga otib aniqlashtirib oladi» — he reads the lenta of a
+  // lead or deal that carries a calculation, through the ONE card door.
+  const calcCard = dealId
+    ? { entityType: 'deal' as const, entityId: dealId }
+    : leadId
+      ? { entityType: 'lead' as const, entityId: leadId }
+      : null;
+  const viaCalc = !crm && calcCard !== null && (await mayOpenCalcCard(actor, calcCard));
+  if (!crm && !viaCalc) return null;
 
   const t = await getTranslations('crm');
   const items = await clientFeed(clientId, { money: showMoney, limit, leadId, dealId });
@@ -157,8 +167,16 @@ export async function ClientFeed({
           // On a deal card the note belongs to THIS job: two deals with one
           // client are two conversations, and a price argument about one must
           // not surface on the other. Elsewhere: the client, then the lead.
-          entityType={dealId ? 'deal' : clientId ? 'client' : 'lead'}
-          entityId={dealId ?? clientId ?? leadId!}
+          //
+          // A calculator's note goes on the CARD — the lead or the deal —
+          // never on the client (review access-money-4/-5): the client entity
+          // would make him a participant of every later note on that client
+          // from any card, and the action admits him only on a calc card.
+          entityType={viaCalc ? calcCard!.entityType : dealId ? 'deal' : clientId ? 'client' : 'lead'}
+          entityId={viaCalc ? calcCard!.entityId : (dealId ?? clientId ?? leadId!)}
+          // Text only for the VED in v1 (§10): the upload route is not
+          // widened, and the action refuses a pre-bound file id from him.
+          files={!viaCalc}
           people={await mentionablePeople()}
           labels={{
             placeholder: t('feedNotePlaceholder'),

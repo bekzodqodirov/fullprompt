@@ -70,3 +70,33 @@ export async function approverIds(): Promise<string[]> {
   const { usersWithPermission } = await import('@/modules/platform/notifications/service');
   return usersWithPermission('finance.reports');
 }
+
+/**
+ * The seller's PRICE as a sight of its own (the owner's 16a, «sotuvchi
+ * bergan narxni ham koraversin») — which reverses law 4 for the client price
+ * and for nothing else.
+ *
+ * Two independent facts, never one ranked value (review access-money-15): a
+ * person holding `crm.leads` AND `ved.docs` without `finance.reports` is
+ * `'own'` by `upsaleScopeFor`, and a ranked «own beats price» would have shown
+ * them only the offers they made themselves — 16a lost on exactly the
+ * both-hats accounts the owner runs.
+ *   - `mayOffer` — may quote a customer (the offer form, the PDF, the own list);
+ *   - `seesOfferPrices` — may READ every offer's price on a calc card, through
+ *     the `offerPricesFor` projection (no payout, no below-floor reason, no
+ *     PDF). The owner, the accountant and the VED.
+ * `upsaleScopeFor(ved)` stays `'none'`, pinned by `upsale-scope.test.ts`, so
+ * /upsale, every payout and the offer PDF stay shut to the VED.
+ */
+export interface OfferSight {
+  mayOffer: boolean;
+  seesOfferPrices: boolean;
+}
+
+export function offerSightFor(actor: { permissions: { has(code: string): boolean } }): OfferSight {
+  const scope = upsaleScopeFor(actor);
+  return {
+    mayOffer: scope !== 'none',
+    seesOfferPrices: scope === 'all' || actor.permissions.has('ved.docs'),
+  };
+}

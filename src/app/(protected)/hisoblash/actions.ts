@@ -132,9 +132,14 @@ export async function returnCalcAction(
   return run('ved.docs', (ctx) => returnCalcRequest(id, reason, ctx), revalidate);
 }
 
+/**
+ * «Готово» — the figure travels as the TEXT the VED typed (review
+ * ved-correctness-13): the service parses it, because only it can tell an
+ * empty box from «1200$». Both notes travel as typed too; the service trims.
+ */
 export async function finishCalcAction(
   id: string,
-  answer: { amount: number | null; currency: string; note: string },
+  answer: { amountText: string; currency: string; note: string; internalNote: string },
   revalidate: string,
 ): Promise<CalcFormState> {
   return run(
@@ -142,7 +147,12 @@ export async function finishCalcAction(
     (ctx) =>
       finishCalcRequest(
         id,
-        { amount: answer.amount, currency: answer.currency, note: answer.note },
+        {
+          amountText: String(answer.amountText ?? ''),
+          currency: answer.currency,
+          note: answer.note,
+          internalNote: String(answer.internalNote ?? ''),
+        },
         ctx,
       ),
     revalidate,

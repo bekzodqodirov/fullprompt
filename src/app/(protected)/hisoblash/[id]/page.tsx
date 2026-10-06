@@ -5,22 +5,31 @@ import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import { attachments, crmActivities } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { calcRequestDetail } from '@/modules/wms/calc/service';
+import { calcInternalNoteFor, calcRequestDetail, endingOf, type CalcEnding } from '@/modules/wms/calc/service';
 import { linkedReceipts } from '@/modules/wms/calc/link';
-import { chainOf, type ChainVersion } from '@/modules/wms/calc/chain';
+import { chainLinksOf, chainOf, type ChainLink, type ChainVersion } from '@/modules/wms/calc/chain';
+import { calcCardHref } from '@/modules/wms/calc/card-door';
 import { FIELD_LABELS, SECTION_LABELS } from '@/modules/wms/calc/labels';
 import type { CalcField, CalcSection } from '@/modules/wms/calc/intake';
 import { PageHeader, Section } from '@/components/ui/page';
 import { LightboxImg } from '@/components/lightbox-img';
-import { canSeal, loadWorkspace } from '@/modules/wms/calc/workspace';
+import { canSeal, loadWorkspace, offerPricesFor, type OfferPrice } from '@/modules/wms/calc/workspace';
 import { sectionParts } from '@/modules/wms/calc/pricing';
 import { isServerBehind } from '@/modules/platform/db/errors';
 import { logger } from '@/modules/platform/logger';
 import { CalcActions } from './calc-actions';
 import { CalcWorkspace } from './calc-workspace';
-import { calcRegistrySight } from '@/modules/wms/calc/control-scope';
-import { calcSheetsForRequest, type CalcSheet as CalcSheetData } from '@/modules/wms/calc/sheet';
-import { CalcSheet } from '@/components/calc-sheet';
+import { calcRegistrySight, internalNoteSight } from '@/modules/wms/calc/control-scope';
+import {
+  calcSheetsForRequest,
+  requestGoodsSheet,
+  type CalcGoodsSheet,
+  type CalcSheet as CalcSheetData,
+} from '@/modules/wms/calc/sheet';
+import { CalcGoodsSheetView, CalcSheet } from '@/components/calc-sheet';
+import { OfferPriceList } from '@/components/calc-panel';
+import { RecalcButton } from './recalc-button';
+import { offerSightFor } from '@/modules/wms/calc/upsale-scope';
 import { CargoFactsForm } from './cargo-facts';
 import { LastQuotes } from './last-quotes';
 
@@ -70,11 +79,21 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
         .where(eq(attachments.entityId, row.noteId))
     : [];
 
-  const canOpenCard = row.entityType === 'deal' || actor.permissions.has('crm.leads');
-  const cardHref =
-    row.entityType === 'deal' ? `/bitimlar/${row.entityId}` : `/crm/leads/${row.entityId}`;
+  // «Kartaga o'tish» — the ONE link rule (card-door.ts): the real card when
+  // it admits this reader, the VED's read-only karta when only the calc door
+  // does (14a, 15a), never a link the destination bounces.
+  const cardHref = calcCardHref(actor, {
+    entityType: row.entityType,
+    entityId: row.entityId,
+    requestId: row.id,
+    leadOwnerId: row.leadOwnerId,
+  });
   const closed = Boolean(row.completedAt);
+  const ending: CalcEnding | null = endingOf(row);
   const canRecalc = actor.permissions.has('admin.settings.manage');
+  // The VED's own note (9a) — this page is `ved.docs`'s, so the sight is
+  // always granted here; minted anyway, so the reader keeps its fence.
+  const noteSight = internalNoteSight(actor);
 
   let workspace: Awaited<ReturnType<typeof loadWorkspace>> = null;
   // Phase E1: the cargo this quote turned out to be about. On the same catch
@@ -88,6 +107,15 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
   // any colleague's calculation, as the registry already lets them.
   const sheetSight = calcRegistrySight(actor);
   let sheet: CalcSheetData | null = null;
+  // A closed job with no seal — answered, handed back, closed price-less —
+  // shows the goods as the VED left them (10a, review ved-correctness-20):
+  // its groups, their law and each item's baza had vanished from view.
+  let goodsSheet: CalcGoodsSheet | null = null;
+  // Both kinds of price in the chain, for a closed page (ved-correctness-7).
+  let links: ChainLink[] = [];
+  let internalNote: string | null = null;
+  // 16a — «Sotuvchi mijozga aytgan narx», from the projection only.
+  let prices: OfferPrice[] = [];
   try {
     [workspace, linked, chain, sheet] = await Promise.all([
       loadWorkspace(id),
@@ -95,20 +123,44 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
       chainOf(id),
       sheetSight ? calcSheetsForRequest(id, sheetSight) : Promise.resolve(null),
     ]);
+    // The seller's price is read on an open job too — the VED is pricing the
+    // card the seller already quoted on (16a).
+    if (offerSightFor(actor).seesOfferPrices) {
+      prices = await offerPricesFor(row.entityType as 'deal' | 'lead', row.entityId);
+    }
+    if (closed) {
+      [links, internalNote, goodsSheet] = await Promise.all([
+        chainLinksOf(id),
+        noteSight && ending === 'answered' ? calcInternalNoteFor(id, noteSight) : Promise.resolve(null),
+        sheetSight && !sheet ? requestGoodsSheet(id, sheetSight) : Promise.resolve(null),
+      ]);
+    }
   } catch (err) {
     if (!isServerBehind(err)) throw err;
     logger.error({ err, id }, '[calc] workspace: server behind');
   }
+  const endingLabel = (e: CalcEnding) =>
+    e === 'sealed'
+      ? t('endSealed')
+      : e === 'answered'
+        ? t('endAnswered')
+        : e === 'returned'
+          ? t('endReturned')
+          : e === 'unpriced_lines'
+            ? t('endUnpricedLines')
+            : t('endUnpricedTask');
 
   return (
     <div className="mx-auto max-w-6xl space-y-4">
       <PageHeader
         icon="report"
-        title={row.entityType === 'deal' ? row.label : t('title')}
+        // Every calc page is a calc card by construction, and this one is
+        // `ved.docs`'s: the lead's name is the job's name (§10).
+        title={row.label}
         subtitle={`${row.itemCount} ${t('items')} · ${t('requester')}: ${row.requesterName}`}
         back={{ href: '/hisoblash', label: t('queueTitle') }}
         actions={
-          canOpenCard ? (
+          cardHref ? (
             <Link href={cardHref} className="btn-secondary" data-testid="calc-card-link">
               {t('openCard')}
             </Link>
@@ -125,9 +177,11 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
             </span>
           ) : null}
           {row.late && !closed ? <span className="chip chip-warn">{t('late')}</span> : null}
-          {closed ? (
-            <span className="chip chip-neutral" data-testid="calc-closed">
-              {row.completedVia === 'returned' ? t('returned') : t('finish')}
+          {closed && ending ? (
+            // The ending NAMED (10a): five ways, with who and when.
+            <span className="chip chip-neutral" data-testid="calc-closed" data-ending={ending}>
+              {endingLabel(ending)} · {row.completedByName ?? '—'} ·{' '}
+              {row.completedAt ? format.dateTime(row.completedAt, { dateStyle: 'short', timeStyle: 'short' }) : ''}
             </span>
           ) : row.assigneeId ? (
             <span className="text-xs text-ink-600">
@@ -247,7 +301,52 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
           everywhere else (server behind, yolkira, closed) this read-only
           fallback answers under the SAME testid — one element in the DOM
           either way, because getByTestId is strict-mode. */}
-      {!(workspace && workspace.parts.customs && !workspace.completedAt) ? (
+      {goodsSheet && sheetSight && (goodsSheet.groups.length > 0 || goodsSheet.ungrouped.length > 0) ? (
+        <Section title={`${t('goods')} · ${row.itemCount}`}>
+          <div className="card !p-3">
+            <CalcGoodsSheetView data={goodsSheet} sight={sheetSight} />
+          </div>
+        </Section>
+      ) : null}
+
+      {/* The chain, BOTH kinds (review ved-correctness-7): seals with their V
+          number, answers as «✍️ umumiy narx». The sealed panel above keeps its
+          own V-only list; this is the closed page's whole story. */}
+      {closed && links.length > 1 ? (
+        <section className="card !p-3" data-testid="calc-chain-links">
+          <p className="text-2xs font-semibold text-ink-600">{t('chainTitle')}</p>
+          <ul className="mt-1 space-y-1">
+            {links.map((link) => (
+              <li
+                key={`${link.kind}:${link.requestId}:${link.at.getTime()}`}
+                className="flex flex-wrap items-center gap-2 text-2xs"
+                data-testid="calc-chain-link"
+                data-current={link.requestId === id ? '1' : undefined}
+              >
+                {link.kind === 'sealed' ? (
+                  <span className="chip chip-neutral">V{link.quoteNo}</span>
+                ) : (
+                  <span className="chip chip-warn">{t('answerChip')}</span>
+                )}
+                {link.requestId === id ? (
+                  <span className="font-mono font-semibold tabular-nums">
+                    {link.amount.toFixed(2)} {link.currency}
+                  </span>
+                ) : (
+                  <Link href={`/hisoblash/${link.requestId}`} className="font-mono font-semibold tabular-nums text-brand-700">
+                    {link.amount.toFixed(2)} {link.currency}
+                  </Link>
+                )}
+                <span className="text-ink-500">
+                  {format.dateTime(link.at, { dateStyle: 'short' })} · {link.byName ?? '—'}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {!(workspace && workspace.parts.customs && !workspace.completedAt) && !goodsSheet ? (
         <Section title={`${t('goods')} · ${row.itemCount}`}>
           <div className="card !p-0 overflow-x-auto">
             {row.items.length === 0 ? (
@@ -326,22 +425,42 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
 
         <div>
           {closed ? (
-            <section className="card !p-3" data-testid="calc-answer">
-              {row.completedVia === 'returned' ? (
+            <section className="card !p-3 space-y-1" data-testid="calc-answer">
+              <p className="text-sm font-semibold" data-testid="calc-ending">
+                {ending ? endingLabel(ending) : null}
+                <span className="font-normal text-ink-500">
+                  {' · '}
+                  {row.completedByName ?? '—'}
+                  {row.completedAt
+                    ? ` · ${format.dateTime(row.completedAt, { dateStyle: 'short', timeStyle: 'short' })}`
+                    : ''}
+                </span>
+              </p>
+              {ending === 'returned' ? (
                 <p className="text-sm">
                   <span className="text-ink-500">{t('returned')}:</span> {row.returnReason ?? '—'}
                 </p>
-              ) : row.answerAmount ? (
+              ) : ending === 'answered' ? (
                 <>
                   <p className="text-sm">
                     <span className="text-ink-500">{t('answered')}:</span>{' '}
-                    <span className="num font-semibold">
+                    <span className="num font-semibold" data-testid="calc-answer-amount-shown">
                       {row.answerAmount} {row.answerCurrency ?? ''}
                     </span>
                   </p>
                   {row.answerNote ? (
-                    <p className="mt-1 whitespace-pre-wrap text-sm">{row.answerNote}</p>
+                    <p className="whitespace-pre-wrap text-sm" data-testid="calc-answer-seller-note">
+                      <span className="text-ink-500">{t('sellerNoteShort')}:</span> {row.answerNote}
+                    </p>
                   ) : null}
+                  {noteSight ? (
+                    <p className="whitespace-pre-wrap text-sm" data-testid="calc-answer-internal-note">
+                      <span className="text-ink-500">{t('internalNoteShort')}:</span>{' '}
+                      {internalNote ?? t('internalNoteOld')}
+                    </p>
+                  ) : null}
+                  {/* 10a: an answered job is corrected the way a sealed one is. */}
+                  {canRecalc ? <RecalcButton id={row.id} /> : null}
                 </>
               ) : null}
             </section>
@@ -355,6 +474,12 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
               />
             </section>
           )}
+          {/* 16a — what the seller told the customer, on the calc page too. */}
+          {prices.length > 0 ? (
+            <section className="card !p-3 mt-3">
+              <OfferPriceList prices={prices} />
+            </section>
+          ) : null}
         </div>
       </div>
     </div>

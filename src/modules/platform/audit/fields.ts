@@ -118,6 +118,20 @@ export const AUDIT_FIELD_LABELS: Record<string, string> = {
   // client, and the note they left.
   lotCheck: 'lotCheck',
   lotCheckNote: 'lotCheckNote',
+  // The VED queue's lines on the CARD (lead or deal): a request opened, taken,
+  // released, handed back, answered with a price, re-opened for a correction
+  // (docs/VED-TARIX.md). Each value is the request's id — printed raw, which
+  // is honest; the taker is a person and is named. The internal note is
+  // never among them: it is the request's own audit row, not the card's.
+  calcRequested: 'calcRequested',
+  calcRequest: 'calcRequest',
+  calcTakenBy: 'calcTakenBy',
+  calcReleased: 'calcReleased',
+  calcReturned: 'calcReturned',
+  calcDone: 'calcDone',
+  calcRecalc: 'calcRecalc',
+  section: 'calcSection',
+  items: 'itemCount',
 
   // Housekeeping
   note: 'note',
@@ -192,6 +206,8 @@ export const AUDIT_FIELD_REFS: Record<string, AuditRefKind> = {
   partnerId: 'partner',
   receivedByUserId: 'user',
   cargoStampedTo: 'user',
+  // Who took a calculation off the queue — a person, so named.
+  calcTakenBy: 'user',
 };
 
 /** Only a uuid is looked up; codes and names in the same columns pass through. */

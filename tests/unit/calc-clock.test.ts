@@ -91,6 +91,11 @@ const EXEMPT: Record<string, string> = {
   // `already_closed` here by design (recordOffer re-derives every admission
   // instead).
   lastAnswerAnchorFor: 'reader',
+  // docs/VED-TARIX.md §6/§10: what STANDS on a card (the panel, the quote
+  // lock and the answer line read it) and the 16a price projection — both
+  // read closed records and offers, never the open workspace.
+  standingAnchorsFor: 'reader',
+  offerPricesFor: 'reader',
 };
 
 describe('every workspace mutator moves the revision clock', () => {

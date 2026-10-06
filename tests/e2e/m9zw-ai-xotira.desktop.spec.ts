@@ -65,6 +65,7 @@ async function openJob(page: import('@playwright/test').Page, label: string) {
 
 let firstLead = '';
 let secondLead = '';
+let secondUrl = '';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -96,6 +97,7 @@ test('the NEXT job about the same product fills itself, and says where from', as
   await login(page);
   const job = await openJob(page, 'AI xotira 2');
   secondLead = job.name;
+  secondUrl = job.url;
 
   // The code arrives from the exact-key book the seal just taught, so the
   // row is already coded — and TWO writers race to place it, by design: the
@@ -119,6 +121,21 @@ test('the NEXT job about the same product fills itself, and says where from', as
 
 test('both leads are closed (cleanup as a test)', async ({ page }) => {
   await login(page);
+  if (secondUrl) {
+    await page.goto(secondUrl);
+    // The job itself is answered (review tests-completeness-20): an open
+    // request — and its timed task — would otherwise outlive this spec on
+    // whichever seeded VED the rota picked, for every later spec to inherit.
+    {
+      const take = page.getByTestId('calc-take');
+      if (await take.count()) await take.click();
+      await page.getByTestId('calc-finish-open').click();
+      await page.getByTestId('calc-answer-amount').fill('100');
+      await page.getByTestId('calc-answer-internal').fill('e2e tozalash');
+      await page.getByTestId('calc-finish').click();
+      await expect(page.getByTestId('calc-answer')).toBeVisible({ timeout: 15_000 });
+    }
+  }
   for (const name of [firstLead, secondLead].filter(Boolean)) {
     await page.goto('/crm?scope=all');
     const card = page

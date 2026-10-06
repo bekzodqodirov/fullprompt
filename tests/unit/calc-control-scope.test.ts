@@ -1,11 +1,15 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ROLE_MATRIX, type RoleCode } from '@/modules/platform/rbac/catalog';
 import {
+  calcControlReadScopeFor,
   calcControlScopeFor,
+  internalNoteSight,
+  mayReadCalcInternalNote,
   mayReadCalcRegistry,
   type CalcControlScope,
 } from '@/modules/wms/calc/control-scope';
-import { upsaleScopeFor } from '@/modules/wms/calc/upsale-scope';
+import { offerSightFor, upsaleScopeFor } from '@/modules/wms/calc/upsale-scope';
 
 /**
  * Phase E1's audience, enumerated over the SEEDED ROLES.
@@ -104,5 +108,145 @@ describe('who may read the registry of sealed calculations', () => {
         calcControlScopeFor(actorFor(role)) !== 'none',
       );
     }
+  });
+});
+
+/*
+ * DELIBERATE EDIT (docs/VED-TARIX.md §7, review access-money-6,
+ * ved-correctness-3, tests-completeness-5): the owner's 12a widens the
+ * nazorat page's READS to every VED. `calcControlScopeFor` above keeps its
+ * name and its value — it is the WRITE scope for all six of its callers (the
+ * link ✅/❌, `assertMine`, the home count, the bot's link ask, the prixod
+ * card picker, the pricing page) — so its `'own'` assertions stand, now read
+ * as «the VED confirms only what scores himself». The reads are a second
+ * predicate, enumerated the same way.
+ */
+const READ: Record<RoleCode, 'all' | 'none'> = {
+  super_admin: 'all',
+  admin: 'all',
+  accountant: 'all',
+  // 12a: «ved hodimlari bir birini … ishini korish imkoniyati bolishi kerak».
+  ved_manager: 'all',
+  sales_manager: 'none',
+  logist: 'none',
+  warehouse_manager: 'none',
+  warehouse_operator: 'none',
+  viewer: 'none',
+};
+
+describe('who may READ the nazorat lists (12a)', () => {
+  it('answers for every seeded role', () => {
+    for (const role of Object.keys(READ) as RoleCode[]) {
+      expect(calcControlReadScopeFor(actorFor(role)), role).toBe(READ[role]);
+    }
+  });
+
+  it('covers every role the catalogue has', () => {
+    expect(Object.keys(READ).sort()).toEqual(Object.keys(ROLE_MATRIX).sort());
+  });
+
+  it('reads wider than it writes only for the VED — the person a link scores', () => {
+    for (const role of Object.keys(ROLE_MATRIX) as RoleCode[]) {
+      const write = calcControlScopeFor(actorFor(role));
+      const read = calcControlReadScopeFor(actorFor(role));
+      if (role === 'ved_manager') {
+        expect([read, write]).toEqual(['all', 'own']);
+      } else {
+        expect(read === 'all', role).toBe(write === 'all');
+      }
+    }
+  });
+});
+
+/*
+ * The internal note's audience (9a, review access-money-10): NARROWER than
+ * the registry's — the accountant reads the history and must NOT see the
+ * note. Over every seeded role, so the day the owner ticks `ved.docs` for
+ * somebody this file says so in his vocabulary.
+ */
+const NOTE: Record<RoleCode, boolean> = {
+  super_admin: true,
+  admin: true,
+  ved_manager: true,
+  accountant: false,
+  sales_manager: false,
+  logist: false,
+  warehouse_manager: false,
+  warehouse_operator: false,
+  viewer: false,
+};
+
+describe('who may read the VED internal note', () => {
+  it('answers for every seeded role — the accountant reads the history and not the note', () => {
+    for (const role of Object.keys(NOTE) as RoleCode[]) {
+      expect(mayReadCalcInternalNote(actorFor(role)), role).toBe(NOTE[role]);
+      expect(internalNoteSight(actorFor(role)) !== null, role).toBe(NOTE[role]);
+    }
+    expect(mayReadCalcRegistry(actorFor('accountant'))).toBe(true);
+    expect(mayReadCalcInternalNote(actorFor('accountant'))).toBe(false);
+  });
+
+  it('covers every role the catalogue has', () => {
+    expect(Object.keys(NOTE).sort()).toEqual(Object.keys(ROLE_MATRIX).sort());
+  });
+});
+
+/*
+ * 16a's two facts (review access-money-15), over the seeded roles AND an
+ * invented both-hats role — `crm.leads` + `ved.docs`, no view_all, no
+ * finance.reports — which a ranked «own beats price» would have left reading
+ * only their own offers.
+ */
+describe('the seller price as a sight of its own (16a)', () => {
+  const SIGHT: Record<RoleCode, { mayOffer: boolean; seesOfferPrices: boolean }> = {
+    super_admin: { mayOffer: true, seesOfferPrices: true },
+    admin: { mayOffer: true, seesOfferPrices: true },
+    accountant: { mayOffer: true, seesOfferPrices: true },
+    ved_manager: { mayOffer: false, seesOfferPrices: true },
+    sales_manager: { mayOffer: true, seesOfferPrices: false },
+    logist: { mayOffer: true, seesOfferPrices: false },
+    warehouse_manager: { mayOffer: false, seesOfferPrices: false },
+    warehouse_operator: { mayOffer: false, seesOfferPrices: false },
+    viewer: { mayOffer: false, seesOfferPrices: false },
+  };
+
+  it('answers for every seeded role, and the VED still sees no upsale', () => {
+    for (const role of Object.keys(SIGHT) as RoleCode[]) {
+      expect(offerSightFor(actorFor(role)), role).toEqual(SIGHT[role]);
+    }
+    expect(upsaleScopeFor(actorFor('ved_manager'))).toBe('none');
+  });
+
+  it('a both-hats person keeps BOTH facts', () => {
+    const codes = new Set(['crm.leads', 'ved.docs']);
+    const bothHats = { id: 'x', permissions: { has: (c: string) => codes.has(c) } };
+    expect(upsaleScopeFor(bothHats)).toBe('own');
+    expect(offerSightFor(bothHats)).toEqual({ mayOffer: true, seesOfferPrices: true });
+  });
+});
+
+/**
+ * The control screen's two lists (the owner's 12a, review ved-correctness-3 /
+ * access-money-6): «Meniki» is the WRITE scope's list — its buttons, and the
+ * N the home tile prints — and «Hamkasblarniki» is read-only, so no colleague
+ * row draws a ✅/❌ the write scope would refuse as `not_mine`. Source-shape:
+ * both lists render perfectly; the defect would be a button in the wrong one.
+ */
+describe('the nazorat page reads everybody and writes only its own', () => {
+  const strip = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+  const PAGE = strip(readFileSync('src/app/(protected)/hisoblash/nazorat/page.tsx', 'utf8'));
+
+  it('«Meniki» is the write scope’s list and count', () => {
+    expect(PAGE).toContain('linkSuggestions(writer)');
+    expect(PAGE).toContain('linkSuggestionCount(writer)');
+  });
+
+  it('«Hamkasblarniki» draws no link buttons', () => {
+    const start = PAGE.indexOf('data-testid="link-colleagues"');
+    expect(start).toBeGreaterThan(-1);
+    const section = PAGE.slice(start, PAGE.indexOf('</ul>', start));
+    expect(section).toContain('link-row-colleague');
+    expect(section).not.toContain('CalcLinkRow');
+    expect(section).not.toMatch(/Action\b/);
   });
 });

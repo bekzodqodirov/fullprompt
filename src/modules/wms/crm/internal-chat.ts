@@ -1,7 +1,7 @@
 import { and, asc, eq } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { clients, crmActivities, deals, leads, users } from '../../platform/db/schema';
-import { cardLink } from '../../platform/notifications/links';
+import { noteLinksFor } from '../calc/card-door';
 import { notifyStaffTelegram, userName } from '../../platform/notifications/staff';
 import { extractMentions, type MentionPerson } from './mentions';
 import { canLogInSql } from '../../platform/users/login';
@@ -104,17 +104,38 @@ export async function announceMentions(input: NoteInput): Promise<string[]> {
     cardLabel(input.entityType, input.entityId),
     userName(input.authorId),
   ]);
-  const link = cardLink(input.entityType, input.entityId);
-  await notifyStaffTelegram({
-    userIds: mentioned,
-    exceptUserId: input.authorId,
+  await notifyByLink(input, mentioned, (link) => ({
     type: 'MentionedInNote',
     text:
       `📣 ${author} · ${label}\n` +
       `${input.note.slice(0, 400)}${input.note.length > 400 ? '…' : ''}` +
       (link ? `\n🔗 ${link}` : ''),
-  });
+  }));
   return mentioned;
+}
+
+/**
+ * One message per LINK, not one for everybody (docs/VED-TARIX.md §10, review
+ * access-money-4): the card link for whoever the card admits, the karta for a
+ * calculator it does not, none for anybody else — `noteLinksFor` decides.
+ */
+async function notifyByLink(
+  input: NoteInput,
+  userIds: readonly string[],
+  build: (link: string | null) => { type: string; text: string },
+): Promise<void> {
+  const ids = userIds.filter((id) => id !== input.authorId);
+  if (ids.length === 0) return;
+  const links = await noteLinksFor({ entityType: input.entityType, entityId: input.entityId }, ids);
+  const groups = new Map<string | null, string[]>();
+  for (const id of ids) {
+    const link = links.get(id) ?? null;
+    groups.set(link, [...(groups.get(link) ?? []), id]);
+  }
+  for (const [link, group] of groups) {
+    const { type, text } = build(link);
+    await notifyStaffTelegram({ userIds: group, exceptUserId: input.authorId, type, text });
+  }
 }
 
 /**
@@ -134,15 +155,16 @@ export async function announceNote(input: NoteInput): Promise<void> {
     cardLabel(input.entityType, input.entityId),
     userName(input.authorId),
   ]);
-  const link = cardLink(input.entityType, input.entityId);
-  await notifyStaffTelegram({
-    userIds: recipients.filter((id) => !mentioned.includes(id)),
-    exceptUserId: input.authorId,
-    type: 'InternalNote',
-    text:
-      `📝 ${author} · ${label}\n` +
-      // Enough to answer from the phone; the card has the rest.
-      `${input.note.slice(0, 400)}${input.note.length > 400 ? '…' : ''}` +
-      (link ? `\n🔗 ${link}` : ''),
-  });
+  await notifyByLink(
+    input,
+    recipients.filter((id) => !mentioned.includes(id)),
+    (link) => ({
+      type: 'InternalNote',
+      text:
+        `📝 ${author} · ${label}\n` +
+        // Enough to answer from the phone; the card has the rest.
+        `${input.note.slice(0, 400)}${input.note.length > 400 ? '…' : ''}` +
+        (link ? `\n🔗 ${link}` : ''),
+    }),
+  );
 }
