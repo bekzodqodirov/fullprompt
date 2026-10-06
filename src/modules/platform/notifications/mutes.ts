@@ -56,6 +56,19 @@ export const MUTE_GROUPS = {
     // with buttons. A newcomer, so never in FOUNDERS: a list that muted the
     // group before it existed must not start muting it by growing.
     'CalcLinkAsk',
+    // The topshiriq round (docs/TELEGRAM-TOPSHIRIQ.md §7): what the people on
+    // the two ends of a task tell each other through the bot — 👀 seen, ⏰
+    // moved, 💬 a question and its answer, 🔔 a nudge, and «it was cancelled /
+    // handed on». All newcomers, so NONE is a founder: somebody who muted
+    // «vazifalar» before this round stays muted, and nobody's tick is read as
+    // unticked because the group grew (round C).
+    'TaskAccepted',
+    'TaskRescheduled',
+    'TaskQuestion',
+    'TaskAnswer',
+    'TaskReminder',
+    'TaskCancelled',
+    'TaskReassigned',
   ],
   // "Something is wrong, act now." The three price-control messages belong
   // here rather than in `operations`: cargo that arrived is routine, cargo

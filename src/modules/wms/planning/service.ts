@@ -15,6 +15,7 @@ import {
 } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { cancelTasksFor } from '../../platform/tasks/service';
+import { retireTaskCopiesSoon } from '../../platform/notifications/retire-tasks';
 import { emitEvent } from '../../platform/events/service';
 import { PLANNABLE_STATUSES } from '../boxes/shelf';
 import { nextBatchCode } from '../codes';
@@ -454,7 +455,8 @@ export async function cancelPlan(planId: string, reason: string, ctx: AuditConte
   const why = reason.trim();
   if (why.length < 3) throw new PlanError('reason_required');
 
-  return db.transaction(async (tx) => {
+  let cancelledTasks: string[] = [];
+  const out = await db.transaction(async (tx) => {
     const plan = await tx.query.loadPlans.findFirst({ where: eq(loadPlans.id, planId) });
     if (!plan) throw new PlanError('plan_not_found');
     if (plan.batchId) throw new PlanError('plan_has_batch');
@@ -466,7 +468,7 @@ export async function cancelPlan(planId: string, reason: string, ctx: AuditConte
     // 'plan' here, not 'load_plan': the tasks and custom-field registry spells
     // it one way and the audit log the other, and only one of them addresses
     // the rows this has to close.
-    await cancelTasksFor(tx, 'plan', [planId]);
+    cancelledTasks = await cancelTasksFor(tx, 'plan', [planId]);
     const [updated] = await tx
       .update(loadPlans)
       .set({ status: 'cancelled' })
@@ -481,4 +483,8 @@ export async function cancelPlan(planId: string, reason: string, ctx: AuditConte
     });
     return updated!;
   });
+  // After the commit, never inside it (#714): the tasks' Telegram copies
+  // stop offering buttons for a plan that no longer exists.
+  retireTaskCopiesSoon({ taskIds: cancelledTasks, outcome: 'cancelled' });
+  return out;
 }
