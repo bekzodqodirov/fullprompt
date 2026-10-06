@@ -3670,7 +3670,13 @@
     "chainAnswered": "o‘rniga umumiy narx",
     "chainReturned": "tuzatish qaytarildi",
     "chainUnpriced": "tuzatish narxsiz yopildi",
-    "sellerPriceTitle": "Sotuvchi mijozga aytgan narx"
+    "sellerPriceTitle": "Sotuvchi mijozga aytgan narx",
+    "endSealed": "Muhrlangan",
+    "endAnswered": "✍️ Javob berildi",
+    "endReturned": "↩️ Qaytarildi",
+    "endUnpricedLines": "Narxsiz yopildi (pozitsiyalar)",
+    "endUnpricedTask": "Narxsiz yopildi (vazifa)",
+    "recentClosedTitle": "Oxirgi yakunlanganlar"
   },
   "partners": {
     "title": "Kontragentlar",

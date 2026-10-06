@@ -3670,7 +3670,13 @@
     "chainAnswered": "replaced by an overall price",
     "chainReturned": "correction handed back",
     "chainUnpriced": "correction closed with no price",
-    "sellerPriceTitle": "The price the seller told the client"
+    "sellerPriceTitle": "The price the seller told the client",
+    "endSealed": "Sealed",
+    "endAnswered": "✍️ Answered",
+    "endReturned": "↩️ Handed back",
+    "endUnpricedLines": "Closed with no price (lines)",
+    "endUnpricedTask": "Closed with no price (task)",
+    "recentClosedTitle": "Recently finished"
   },
   "partners": {
     "title": "Counterparties",

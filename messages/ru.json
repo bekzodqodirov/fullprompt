@@ -3670,7 +3670,13 @@
     "chainAnswered": "заменено общей ценой",
     "chainReturned": "исправление возвращено",
     "chainUnpriced": "исправление закрыто без цены",
-    "sellerPriceTitle": "Цена, которую продавец назвал клиенту"
+    "sellerPriceTitle": "Цена, которую продавец назвал клиенту",
+    "endSealed": "Запечатан",
+    "endAnswered": "✍️ Дан ответ",
+    "endReturned": "↩️ Возвращён",
+    "endUnpricedLines": "Закрыт без цены (позиции)",
+    "endUnpricedTask": "Закрыт без цены (задача)",
+    "recentClosedTitle": "Последние завершённые"
   },
   "partners": {
     "title": "Контрагенты",

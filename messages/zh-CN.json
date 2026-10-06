@@ -3670,7 +3670,13 @@
     "chainAnswered": "已由总价替代",
     "chainReturned": "修正已退回",
     "chainUnpriced": "修正无价格关闭",
-    "sellerPriceTitle": "销售报给客户的价格"
+    "sellerPriceTitle": "销售报给客户的价格",
+    "endSealed": "已封存",
+    "endAnswered": "✍️ 已给出答复",
+    "endReturned": "↩️ 已退回",
+    "endUnpricedLines": "无价格关闭（明细）",
+    "endUnpricedTask": "无价格关闭（任务）",
+    "recentClosedTitle": "最近完成"
   },
   "partners": {
     "title": "合作方",

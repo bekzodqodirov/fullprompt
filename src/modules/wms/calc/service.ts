@@ -25,7 +25,8 @@ import { NO_REQUEST, itemNameNorm, sealedMemoryFor } from './memory';
 import { isComplete, missingFields, type CalcFacts, type CalcSection } from './intake';
 import { parseTypedMoney } from './money-input';
 import { childStateSql, type ChildState } from './chain';
-import { creditsSql, isAnswerSql } from './credit';
+import { creditsSql, isAnswer, isAnswerSql } from './credit';
+import type { InternalNoteSight } from './control-scope';
 
 /**
  * The VED queue (docs/VED.md, phase A).
@@ -1064,6 +1065,8 @@ export interface CalcQueueRow {
   requesterName: string;
   assigneeId: string | null;
   assigneeName: string | null;
+  /** The lead's owner — what `calcCardHref` asks `mayOpenLead` with. */
+  leadOwnerId: string | null;
   missing: string[];
   late: boolean;
 }
@@ -1091,12 +1094,14 @@ export async function calcQueue(now = new Date()): Promise<CalcQueueRow[]> {
     assignee_id: string | null;
     assignee_name: string | null;
     label: string | null;
+    lead_owner_id: string | null;
   }>(sql`
     SELECT r.id, r.entity_type, r.entity_id, r.section, r.from_city, r.to_city,
            r.weight_kg, r.volume_m3, r.item_count, r.requested_at, r.due_at,
            requester.full_name AS requester_name,
            r.assignee_id, assignee.full_name AS assignee_name,
-           coalesce(d.code, l.name) AS label
+           coalesce(d.code, l.name) AS label,
+           l.owner_id::text AS lead_owner_id
     FROM calc_requests r
     -- Every join onto a person is LEFT: a request nobody has taken is
     -- exactly the row this screen exists for, and an inner join drops it.
@@ -1130,6 +1135,7 @@ export async function calcQueue(now = new Date()): Promise<CalcQueueRow[]> {
     requesterName: row.requester_name ?? '—',
     assigneeId: row.assignee_id,
     assigneeName: row.assignee_name,
+    leadOwnerId: row.lead_owner_id,
     missing: missingFor(row.section, {
       fromCity: row.from_city,
       toCity: row.to_city,
@@ -1157,6 +1163,88 @@ export async function calcQueueCounts(
     .from(calcRequests)
     .where(openRequests);
   return { open: Number(row?.open ?? 0), late: Number(row?.late ?? 0) };
+}
+
+/**
+ * How a calculation job ENDED — five ways, not three (review
+ * ved-correctness-20): a seal, a Готово answer, a hand-back, and a close with
+ * NO price at all, which the table holds in two shapes — the seller's
+ * «Позиции» save (`lines`, before this round's fourth-door fix) and a task ✅
+ * pressed with no figure (`task` without an amount, before 9a). The old
+ * closed page printed «Готово» for both price-less ones.
+ */
+export type CalcEnding = 'sealed' | 'answered' | 'returned' | 'unpriced_lines' | 'unpriced_task';
+
+export function endingOf(row: {
+  completedAt: Date | string | null;
+  completedVia: string | null;
+  answerAmount: number | string | null;
+}): CalcEnding | null {
+  if (!row.completedAt) return null;
+  if (row.completedVia === 'sealed') return 'sealed';
+  if (row.completedVia === 'returned') return 'returned';
+  if (isAnswer(row)) return 'answered';
+  return row.completedVia === 'lines' ? 'unpriced_lines' : 'unpriced_task';
+}
+
+export interface RecentClosedRow {
+  id: string;
+  entityType: string;
+  entityId: string;
+  label: string;
+  leadOwnerId: string | null;
+  section: string | null;
+  ending: CalcEnding;
+  completedAt: Date;
+  completedByName: string | null;
+}
+
+/**
+ * «Oxirgi yakunlanganlar» on the queue (10a's door back in): the last N
+ * closed jobs, every ending, newest first — who, when, how, each a link. A
+ * VED who answered a job with Готово had no way back to it before the history
+ * learned answers; this is the short way.
+ */
+export async function recentlyClosed(limit = 20): Promise<RecentClosedRow[]> {
+  const rows = await db.execute<{
+    id: string;
+    entity_type: string;
+    entity_id: string;
+    label: string | null;
+    lead_owner_id: string | null;
+    section: string | null;
+    completed_at: string;
+    completed_via: string | null;
+    answer_amount: string | null;
+    by_name: string | null;
+  }>(sql`
+    SELECT r.id::text AS id, r.entity_type, r.entity_id::text AS entity_id,
+           coalesce(d.code, l.name) AS label, l.owner_id::text AS lead_owner_id,
+           r.section, r.completed_at, r.completed_via, r.answer_amount,
+           u.full_name AS by_name
+      FROM calc_requests r
+      LEFT JOIN users u ON u.id = r.completed_by
+      LEFT JOIN deals d ON r.entity_type = 'deal' AND d.id = r.entity_id
+      LEFT JOIN leads l ON r.entity_type = 'lead' AND l.id = r.entity_id
+     WHERE r.completed_at IS NOT NULL
+     ORDER BY r.completed_at DESC
+     LIMIT ${limit}
+  `);
+  return rows.map((row) => {
+    // Raw-execute timestamps are TEXT (#923).
+    const completedAt = new Date(row.completed_at);
+    return {
+      id: row.id,
+      entityType: row.entity_type,
+      entityId: row.entity_id,
+      label: row.label ?? '—',
+      leadOwnerId: row.lead_owner_id,
+      section: row.section,
+      ending: endingOf({ completedAt, completedVia: row.completed_via, answerAmount: row.answer_amount })!,
+      completedAt,
+      completedByName: row.by_name,
+    };
+  });
 }
 
 /**
@@ -1224,6 +1312,8 @@ export interface CalcRequestDetail extends CalcQueueRow {
   source: string | null;
   completedAt: Date | null;
   completedVia: string | null;
+  /** Who ENDED it — the sealer, the answerer, the person who handed it back. */
+  completedByName: string | null;
   returnReason: string | null;
   answerAmount: number | null;
   answerCurrency: string | null;
@@ -1266,13 +1356,19 @@ export async function calcRequestDetail(
     tnvedCode: item.tnvedCode,
     note: item.note,
   }));
-  const [requester, assignee] = await Promise.all([
+  const [requester, assignee, completer, lead] = await Promise.all([
     db.query.users.findFirst({ where: eq(users.id, row.requestedBy), columns: { fullName: true } }),
     row.assigneeId
       ? db.query.users.findFirst({
           where: eq(users.id, row.assigneeId),
           columns: { fullName: true },
         })
+      : Promise.resolve(null),
+    row.completedBy
+      ? db.query.users.findFirst({ where: eq(users.id, row.completedBy), columns: { fullName: true } })
+      : Promise.resolve(null),
+    row.entityType === 'lead'
+      ? db.query.leads.findFirst({ where: eq(leads.id, row.entityId), columns: { ownerId: true } })
       : Promise.resolve(null),
   ]);
   return {
@@ -1291,6 +1387,7 @@ export async function calcRequestDetail(
     requesterName: requester?.fullName ?? '—',
     assigneeId: row.assigneeId,
     assigneeName: assignee?.fullName ?? null,
+    leadOwnerId: lead?.ownerId ?? null,
     missing: missingFor(row.section, {
       fromCity: row.fromCity,
       toCity: row.toCity,
@@ -1312,12 +1409,31 @@ export async function calcRequestDetail(
     source: row.source,
     completedAt: row.completedAt,
     completedVia: row.completedVia,
+    completedByName: completer?.fullName ?? null,
     returnReason: row.returnReason,
     answerAmount: toNum(row.answerAmount),
     answerCurrency: row.answerCurrency,
     answerNote: row.answerNote,
     items,
   };
+}
+
+/**
+ * The VED's INTERNAL note on a Готово answer (9a) — its own reader with a
+ * REQUIRED sight, so no surface can fetch it without having asked
+ * `mayReadCalcInternalNote` (review access-money-10, tests-completeness-12).
+ * Null when the request has none (an old answer, a seal, a hand-back).
+ */
+export async function calcInternalNoteFor(
+  requestId: string,
+  _sight: InternalNoteSight,
+): Promise<string | null> {
+  const [row] = await db
+    .select({ note: calcRequests.answerInternalNote })
+    .from(calcRequests)
+    .where(eq(calcRequests.id, requestId))
+    .limit(1);
+  return row?.note ?? null;
 }
 
 /** The open request(s) on one card — what the seller's panel shows. */
@@ -1368,6 +1484,7 @@ export async function openCalcFor(
     requesterName: '',
     assigneeId: row.assigneeId,
     assigneeName: row.assigneeName,
+    leadOwnerId: null,
     missing: [],
     late: row.dueAt.getTime() < now.getTime(),
   }));
