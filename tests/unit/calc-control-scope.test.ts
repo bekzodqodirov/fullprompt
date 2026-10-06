@@ -254,6 +254,17 @@ describe('the nazorat page reads everybody and writes only its own', () => {
     expect(PAGE).toContain('linkSuggestionCount(writer)');
   });
 
+  it('«Meniki» is printed only for a writer scoped to their own (review ved-money-6)', () => {
+    // For scope 'all' the list under it is the company's, and so is N.
+    const mine = PAGE.indexOf('data-testid="link-mine-title"');
+    expect(mine).toBeGreaterThan(-1);
+    const before = PAGE.slice(0, mine);
+    const gate = before.lastIndexOf('{scope === \'own\' ? (');
+    expect(gate, 'the «Meniki» heading must sit under scope === own').toBeGreaterThan(-1);
+    expect(before.slice(gate)).not.toMatch(/\)\s*:\s*\(/);
+    expect(PAGE).toContain("t('linkAll', { n: queueTotal })");
+  });
+
   it('«Hamkasblarniki» draws no link buttons', () => {
     const start = PAGE.indexOf('data-testid="link-colleagues"');
     expect(start).toBeGreaterThan(-1);

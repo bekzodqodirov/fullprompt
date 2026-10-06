@@ -3704,6 +3704,7 @@
     "endUnpricedTask": "Closed with no price (task)",
     "recentClosedTitle": "Recently finished",
     "linkMine": "Mine ({n})",
+    "linkAll": "All ({n})",
     "linkColleagues": "Colleagues' ({n}) — view only; the sealer confirms",
     "linkErrors": {
       "not_mine": "This link measures a colleague's calculation — the person who sealed it confirms it",
