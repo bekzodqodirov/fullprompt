@@ -38,7 +38,17 @@ export async function CalcSheet({ data, sight: _sight }: { data: CalcSheetData; 
             {tf('calcRecalcOpen')}
           </span>
         ) : data.status === 'superseded' ? (
-          <span className="chip chip-neutral">{tc('supersededPlain')}</span>
+          // The child's ending in the chain chip's own words (#513): a dead
+          // seal says WHAT replaced it, not merely that something did.
+          <span className="chip chip-neutral" data-testid="calc-sheet-superseded">
+            {data.childState === 'answered'
+              ? tc('chainAnswered')
+              : data.childState === 'returned'
+                ? tc('chainReturned')
+                : data.childState === 'unpriced'
+                  ? tc('chainUnpriced')
+                  : tc('supersededPlain')}
+          </span>
         ) : null}
         {data.expired ? <span className="chip chip-warn">{t('expired')}</span> : null}
       </p>
@@ -59,6 +69,7 @@ export async function CalcSheet({ data, sight: _sight }: { data: CalcSheetData; 
             {' · '}
             {t('vat')}: {g.vatPct === null ? '—' : `${g.vatPct}%`}
             {g.excisePct !== null && g.excisePct > 0 ? ` · ${t('excise')}: ${g.excisePct}%` : ''}
+            {g.valueUsd !== null ? ` · ${tc('regGoodsValue')}: ${usd(g.valueUsd)}` : ''}
             {' · '}
             <span className="font-mono tabular-nums">{usd(g.customsUsd)}</span>
           </p>
@@ -71,6 +82,7 @@ export async function CalcSheet({ data, sight: _sight }: { data: CalcSheetData; 
                   {t('baza')}: {item.bazaUsd === null ? '—' : `$${item.bazaUsd}`}
                   {item.basis ? `/${item.basis}` : ''}
                   {[
+                    qty(item.quantity, item.unit ?? ''),
                     qty(item.kg, 'kg'),
                     qty(item.m3, 'm³'),
                     item.measureUnit && item.measureQty !== null ? `${item.measureQty} ${item.measureUnit}` : null,
@@ -187,6 +199,18 @@ export async function CalcAnswers({ answers, sight: _sight }: { answers: CalcAns
         <li key={a.requestId} className="break-words rounded border border-dashed border-line p-2" data-testid="calc-answer">
           <span className="chip chip-warn">{tf('calcUnsealed')}</span>{' '}
           {a.section ? <span className="chip chip-brand">{tc(SECTION_LABELS[a.section] as 'sections.podklyuch')}</span> : null}{' '}
+          {/* A correction off this answer, in the chain chip's words: the
+              seller's push said «eski narx endi amal qilmaydi» at the press,
+              and the sheet must not print the answer as if it stood. */}
+          {a.childState === 'open' ? (
+            <span className="chip chip-warn" data-testid="calc-answer-recalc">{tf('calcRecalcOpen')}</span>
+          ) : a.childState === 'answered' ? (
+            <span className="chip chip-neutral">{tc('chainAnswered')}</span>
+          ) : a.childState === 'returned' ? (
+            <span className="chip chip-warn">{tc('chainReturned')}</span>
+          ) : a.childState === 'unpriced' ? (
+            <span className="chip chip-warn">{tc('chainUnpriced')}</span>
+          ) : null}{' '}
           <b className="font-mono tabular-nums">
             {a.amount.toFixed(2)} {a.currency ?? ''}
           </b>

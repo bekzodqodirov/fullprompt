@@ -24,6 +24,8 @@ import { productKey, tnvedFor } from '../tnved/service';
 import { NO_REQUEST, itemNameNorm, sealedMemoryFor } from './memory';
 import { isComplete, missingFields, type CalcFacts, type CalcSection } from './intake';
 import { parseTypedMoney } from './money-input';
+import { childStateSql, type ChildState } from './chain';
+import { creditsSql, isAnswerSql } from './credit';
 
 /**
  * The VED queue (docs/VED.md, phase A).
@@ -1357,25 +1359,65 @@ export async function openCalcFor(
   }));
 }
 
-/** The last answer this card was given — the seller's «what did we quote?». */
+/**
+ * The card's newest Готово ANSWER — the seller's «what did we quote?» line.
+ *
+ * Through THE answer predicate (credit.ts): it took `completed_via = 'task'`
+ * alone, so a price-less task close read as «Javob: —» on the card (review
+ * tests-completeness-3). An explicit projection, never the row: the internal
+ * note lives on the same row and this line is drawn on a SELLER's card, so a
+ * `select()` of the whole row would carry it into the render (review
+ * access-money-22). The keys are pinned by `calc-internal-note-fence.test.ts`.
+ *
+ * `childState` is the correction off this answer, if any — the line speaks
+ * the chain's own words, because the seller's push said «eski narx endi amal
+ * qilmaydi» the moment a recalc was pressed.
+ */
+export interface LastCalcAnswer {
+  requestId: string;
+  amount: number;
+  currency: string | null;
+  note: string | null;
+  at: Date;
+  byName: string | null;
+  childState: ChildState | null;
+}
+
 export async function lastCalcAnswerFor(
   entityType: 'deal' | 'lead',
   entityId: string,
-): Promise<{ amount: number | null; currency: string | null; note: string | null; at: Date } | null> {
-  const row = await db.query.calcRequests.findFirst({
-    where: and(
-      eq(calcRequests.entityType, entityType),
-      eq(calcRequests.entityId, entityId),
-      eq(calcRequests.completedVia, 'task'),
-    ),
-    orderBy: desc(calcRequests.completedAt),
-  });
-  if (!row?.completedAt) return null;
+): Promise<LastCalcAnswer | null> {
+  const rows = await db.execute<{
+    id: string;
+    answer_amount: string;
+    answer_currency: string | null;
+    answer_note: string | null;
+    completed_at: string;
+    by_name: string | null;
+    child_state: ChildState | null;
+  }>(sql`
+    SELECT r.id::text AS id, r.answer_amount, r.answer_currency, r.answer_note, r.completed_at,
+           u.full_name AS by_name,
+           ${childStateSql(sql.raw('r.id'))} AS child_state
+      FROM calc_requests r
+      LEFT JOIN users u ON u.id = r.completed_by
+     WHERE r.entity_type = ${entityType}
+       AND r.entity_id = ${entityId}::uuid
+       AND ${isAnswerSql('r')}
+     ORDER BY r.completed_at DESC
+     LIMIT 1
+  `);
+  const row = rows[0];
+  if (!row) return null;
   return {
-    amount: toNum(row.answerAmount),
-    currency: row.answerCurrency,
-    note: row.answerNote,
-    at: row.completedAt,
+    requestId: row.id,
+    amount: Number(row.answer_amount),
+    currency: row.answer_currency,
+    note: row.answer_note,
+    // Raw-execute timestamps are TEXT (#923).
+    at: new Date(row.completed_at),
+    byName: row.by_name,
+    childState: row.child_state ?? null,
   };
 }
 
@@ -1389,38 +1431,58 @@ export interface CalcSpeedRow {
 }
 
 /**
- * How fast the answers come, per person.
+ * How fast the answers come, per person — on the CREDIT rule (credit.ts).
  *
- * `completed_via <> 'returned'` is not an optimisation: a bounce-back takes
- * ninety seconds, and counting it as an answer would make the person who
- * bounces everything the fastest calculator in the company.
+ * It credited the HOLDER and counted any ending but a hand-back as «done», so
+ * a price-less close was an answer and a job the owner sealed himself was
+ * the holder's (measured: «VED Demo» four jobs the owner sealed, #513). Now
+ * «done» is a PRICE — a seal for its sealer, a Готово answer for its
+ * answerer — at the price moment, and a hand-back, a «lines» ending or a
+ * price-less close credits nobody. Only «ochiq» stays per HOLDER: that is
+ * what open means.
  */
 export async function calcSpeed(since: Date): Promise<CalcSpeedRow[]> {
   const rows = await db.execute<{
-    assignee_id: string | null;
-    assignee_name: string | null;
+    person_id: string | null;
+    person_name: string | null;
     done: number;
     avg_minutes: number | null;
     on_time: number;
     open: number;
   }>(sql`
-    SELECT r.assignee_id,
-           u.full_name AS assignee_name,
-           count(*) FILTER (WHERE r.completed_at IS NOT NULL AND r.completed_via <> 'returned')::int AS done,
-           avg(extract(epoch FROM (r.completed_at - r.requested_at)) / 60)
-             FILTER (WHERE r.completed_at IS NOT NULL AND r.completed_via <> 'returned') AS avg_minutes,
-           count(*) FILTER (WHERE r.completed_at IS NOT NULL AND r.completed_via <> 'returned'
-                              AND r.completed_at <= r.due_at)::int AS on_time,
-           count(*) FILTER (WHERE r.completed_at IS NULL)::int AS open
-    FROM calc_requests r
-    LEFT JOIN users u ON u.id = r.assignee_id
-    WHERE r.requested_at >= ${since.toISOString()}::timestamptz OR r.completed_at IS NULL
-    GROUP BY r.assignee_id, u.full_name
-    ORDER BY count(*) FILTER (WHERE r.completed_at IS NOT NULL) DESC
+    WITH credits AS (${creditsSql()}),
+    done AS (
+      SELECT person_id,
+             count(*)::int AS n,
+             avg(extract(epoch FROM (at - requested_at)) / 60) AS avg_minutes,
+             count(*) FILTER (WHERE at <= due_at)::int AS on_time
+        FROM credits
+       WHERE at >= ${since.toISOString()}::timestamptz
+       GROUP BY person_id
+    ),
+    held AS (
+      SELECT assignee_id AS person_id, count(*)::int AS n
+        FROM calc_requests
+       WHERE completed_at IS NULL
+       GROUP BY assignee_id
+    )
+    -- A FULL join: a person with only open work and a person with only
+    -- prices this month are both rows. The unassigned pile (NULL) matches no
+    -- credit — a credit always names somebody — and stands alone.
+    SELECT coalesce(d.person_id, h.person_id)::text AS person_id,
+           u.full_name AS person_name,
+           coalesce(d.n, 0)::int AS done,
+           d.avg_minutes,
+           coalesce(d.on_time, 0)::int AS on_time,
+           coalesce(h.n, 0)::int AS open
+      FROM done d
+      FULL JOIN held h ON h.person_id = d.person_id
+      LEFT JOIN users u ON u.id = coalesce(d.person_id, h.person_id)
+     ORDER BY coalesce(d.n, 0) DESC, u.full_name
   `);
   return rows.map((row) => ({
-    assigneeId: row.assignee_id,
-    assigneeName: row.assignee_name ?? '—',
+    assigneeId: row.person_id,
+    assigneeName: row.person_name ?? '—',
     done: Number(row.done),
     avgMinutes: row.avg_minutes === null ? null : Math.round(Number(row.avg_minutes)),
     onTime: Number(row.on_time),

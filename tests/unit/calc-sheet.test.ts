@@ -45,6 +45,7 @@ const chainLink = (patch: Partial<ChainVersion>): ChainVersion => ({
   superseded: false,
   supersededByNo: null,
   recalcOpen: false,
+  childState: null,
   expired: false,
   ...patch,
 });
@@ -81,8 +82,11 @@ describe('calcSheetOf reads every age of snapshot', () => {
     expect(group.dutyText).toBe('—');
     expect(group.vatPct).toBeNull();
     expect(group.customsUsd).toBeNull();
+    expect(group.valueUsd).toBeNull();
     expect(group.items[0]).toEqual({
       name: 'Krossovka',
+      quantity: null,
+      unit: null,
       bazaUsd: 4,
       basis: null,
       kg: null,
@@ -162,9 +166,57 @@ describe('calcSheetOf reads every age of snapshot', () => {
     ]);
   });
 
-  it('a correction being written keeps the old price standing and says so', () => {
-    const sheet = calcSheetOf(version({}), [], [chainLink({ recalcOpen: true, superseded: true })]);
+  it('a correction being written is «recalc_open», and its ending names the state', () => {
+    const sheet = calcSheetOf(
+      version({}),
+      [],
+      [chainLink({ recalcOpen: true, superseded: true, childState: 'open' })],
+    );
     expect(sheet.status).toBe('recalc_open');
+    expect(sheet.childState).toBe('open');
+    // A correction that ended in a Готово answer or a hand-back is not
+    // «being recalculated» for ever (the old `recalc_open` was «a child with
+    // no version»): the seal is superseded, and the words come from the child.
+    const answered = calcSheetOf(
+      version({}),
+      [],
+      [chainLink({ recalcOpen: false, superseded: true, childState: 'answered' })],
+    );
+    expect(answered.status).toBe('superseded');
+    expect(answered.childState).toBe('answered');
+  });
+
+  it('7a: each item carries its count and unit, each group its customs VALUE, as sealed', () => {
+    const sheet = calcSheetOf(
+      version({
+        breakdown: {
+          groups: [
+            {
+              tnvedCode: '8471600000',
+              label: 'Klaviaturalar',
+              dutyPct: 0,
+              vatPct: 12,
+              unit: 'dona',
+              customs: { valueUsd: 1250.5, customsUsd: 290.06 },
+              items: [
+                { label: 'Klaviatura', quantity: 100, weightKg: 80, bazaUsd: 12.5, bazaBasis: 'unit' },
+                { label: 'Sichqoncha', quantity: '50', unit: 'juft', bazaUsd: 0.01 },
+              ],
+            },
+          ],
+        },
+      }),
+      [],
+      [chainLink({})],
+    );
+    const group = sheet.groups[0]!;
+    expect(group.valueUsd).toBe(1250.5);
+    expect(group.customsUsd).toBe(290.06);
+    expect(group.items.map((i) => [i.name, i.quantity, i.unit])).toEqual([
+      ['Klaviatura', 100, 'dona'],
+      // An item's own unit wins over its group's.
+      ['Sichqoncha', 50, 'juft'],
+    ]);
   });
 
   it('an expired quote is marked, against the clock it was given', () => {
@@ -194,6 +246,7 @@ describe('the sheet cannot carry a client price (law 4)', () => {
   it('CalcSheet declares exactly these fields', () => {
     expect(declaredFields(source, 'CalcSheet').sort()).toEqual(
       [
+        'childState',
         'discountUsd',
         'expired',
         'extrasUsd',
@@ -218,12 +271,29 @@ describe('the sheet cannot carry a client price (law 4)', () => {
 
   it('CalcAnswer declares exactly these fields', () => {
     expect(declaredFields(source, 'CalcAnswer').sort()).toEqual(
-      ['amount', 'byName', 'completedAt', 'currency', 'note', 'requestId', 'section'].sort(),
+      ['amount', 'byName', 'childState', 'completedAt', 'currency', 'note', 'requestId', 'section'].sort(),
     );
   });
 
+  it('the goods sheet of an answer declares exactly these fields — and no customs sum (ved-correctness-14)', () => {
+    expect(declaredFields(source, 'CalcGoodsSheet').sort()).toEqual(['groups', 'requestId', 'ungrouped'].sort());
+    expect(declaredFields(source, 'CalcGoodsGroup').sort()).toEqual(
+      ['code', 'dutyText', 'items', 'label', 'vatPct'].sort(),
+    );
+    expect(declaredFields(source, 'CalcGoodsItem').sort()).toEqual(
+      ['basis', 'bazaUsd', 'kg', 'm3', 'measureQty', 'measureUnit', 'name', 'quantity', 'tnvedCode', 'unit'].sort(),
+    );
+  });
+
+  it('no sheet type carries the VED\'s internal note (9a — the accountant reads these sheets)', () => {
+    for (const name of ['CalcSheet', 'CalcSheetGroup', 'CalcSheetItem', 'CalcAnswer', 'CalcGoodsSheet', 'CalcGoodsGroup', 'CalcGoodsItem']) {
+      for (const field of declaredFields(source, name)) expect(field, `${name}.${field}`).not.toMatch(/internal/i);
+    }
+    expect(source).not.toMatch(/answer_internal_note|answerInternalNote/);
+  });
+
   it('no declared field of any sheet type names a price, offer, upsale, quote, client or floor', () => {
-    for (const name of ['CalcSheet', 'CalcSheetGroup', 'CalcSheetItem', 'CalcAnswer']) {
+    for (const name of ['CalcSheet', 'CalcSheetGroup', 'CalcSheetItem', 'CalcAnswer', 'CalcGoodsSheet', 'CalcGoodsGroup', 'CalcGoodsItem']) {
       for (const field of declaredFields(source, name)) expect(field, `${name}.${field}`).not.toMatch(FORBIDDEN);
     }
   });
