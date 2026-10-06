@@ -765,7 +765,9 @@
       "login": "登录了系统",
       "logout": "退出了系统",
       "seed": "初始数据",
-      "delete": "删除了"
+      "delete": "删除了",
+      "share": "分享了",
+      "comment": "留言了"
     },
     "field": "字段",
     "before": "原值",
@@ -2952,7 +2954,20 @@
       "bad_due_date": "截止时间无效",
       "not_created": "创建失败",
       "repeat_needs_due": "重复任务必须有截止日期",
-      "assignee_no_login": "该员工不登录系统——看不到任务"
+      "assignee_no_login": "该员工不登录系统——看不到任务",
+      "not_yours": "这不是您的任务",
+      "bad_bound": "任务关联有误",
+      "calc_use_screen": "这是报价计算任务——请在计算页面完成",
+      "bound_check_failed": "无法核对——请稍后再试",
+      "bound_clock": "该任务的期限是客户的付款承诺，不能推迟",
+      "repeat_series": "重复任务的期限请在表单中修改——整个系列都会移动",
+      "not_assignee": "该任务已不归您",
+      "already_accepted": "已经接受",
+      "not_author": "这不是您布置的任务",
+      "remind_too_soon": "刚提醒过——30 分钟后可再次提醒",
+      "not_remindable": "无法对该任务发送提醒",
+      "not_askable": "无法就该任务提问",
+      "empty_text": "消息为空"
     },
     "repeat": "重复",
     "repeatNever": "不重复",
@@ -2960,7 +2975,9 @@
     "repeatWeek": "每周",
     "repeatMonth": "每月",
     "showRoad": "日历显示车辆",
-    "dueTime": "时间"
+    "dueTime": "时间",
+    "calcOpen": "打开计算",
+    "calcLocked": "报关员计算中"
   },
   "deals": {
     "title": "交易",

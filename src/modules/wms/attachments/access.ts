@@ -15,9 +15,11 @@ import {
   receiptLots,
   receipts,
   staffNotes,
+  tasks,
   tgMessages,
   tgOutbox,
 } from '../../platform/db/schema';
+import { canActOnTask } from '../../platform/tasks/service';
 import { resolveEntity } from '../../platform/entities/service';
 import { inScope, type ScopedActor } from '../../platform/rbac/scope';
 import { cargoNearActor } from '../inventory/near';
@@ -340,6 +342,27 @@ async function decide(
       return mayReadPickup(actor, row.dest)
         ? { allow: true, rule: 'pickup-door' }
         : { allow: false, rule: 'pickup-no-door' };
+    }
+    // A task's file — what the staff bot was given the task WITH (the
+    // topshiriq round, his 3a): a voice note, a photo, a forwarded document.
+    // Read by the people the task is between and by whoever may act on
+    // colleagues' tasks (`canActOnTask`, the /kalendar audience). That
+    // audience includes the viewer, the accountant, every VED and the logist,
+    // so forwarded CUSTOMER media in a task reaches people the chat screens
+    // keep out — stated to him, not narrowed (review access-money-13).
+    //
+    // `task` is NOT in the upload route's ATTACHABLE (any task id would be a
+    // bare-login upload target), so the allowlist fence cannot see it; its
+    // own fence reads every type the bot and the jobs write.
+    case 'task': {
+      const task = await db.query.tasks.findFirst({
+        where: eq(tasks.id, attachment.entityId),
+        columns: { assigneeId: true, createdBy: true },
+      });
+      if (!task) return { allow: false, rule: 'orphan' };
+      return canActOnTask(task, actor)
+        ? { allow: true, rule: 'task-people' }
+        : { allow: false, rule: 'task-not-yours' };
     }
     // A file the office sent (or is about to send) to its clients through the
     // bot (0109). Its reader is the one who may broadcast — the super admin;
