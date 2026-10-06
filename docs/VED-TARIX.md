@@ -345,3 +345,56 @@ Asked by the VED card route, `ClientFeed`, `addFeedNoteAction`, the
 - The VED never sees an upsale amount or a payout; never edits a lead.
 - No per-item money column (#780).
 - No new permission code (#170).
+
+## 13. The review before code, and what went back to him
+
+`docs/TOPSHIRIQ-VED-REVIEW.md` holds the five-lens review of this spec and
+TELEGRAM-TOPSHIRIQ (115 objections, 88 confirmed, 25 partial, 2 refuted).
+Its fixes are BINDING: where a fix there and the text above disagree, the fix
+wins. The ones that change the shape of this round:
+
+- **14a on the DEAL card** (access-money-1, a blocker). §10 kept every
+  deal-card write the VED has today (`DEAL_WRITE_PERMISSIONS` carries
+  `ved.docs`), which contradicts his own «may NOT edit stage, phone, price»;
+  and DEALS.md answer 2 (2026-07) says «both the seller and the VED re-price».
+  The two answers disagree, so the choice went BACK to him before the build
+  (question 17); nothing on the deal card's write side is built until he
+  answers.
+- **The calc task doors** are keyed on `origin = 'calc' AND bound_id IS NOT
+  NULL AND the request is OPEN` (a pointed NULL-origin row counts as bound) —
+  an unbound ghost or a task bound to a closed request keeps its ordinary ✅;
+  the pre-check sits BEFORE the UPDATE and fails CLOSED; `reassignTask`,
+  `rescheduleTask` and `updateTask`'s due change obey it too; the rendering
+  depends on the READER (a `ved.docs` reader gets «🧮 Hisobni ochish», everyone
+  else keeps the card link and a «VED hisoblamoqda» chip); the fourth door —
+  `saveLines` ending an untouched request as 'lines' — no longer ends a
+  request that carries a section.
+- **Recalc** assigns like the rota (never the owner or an admin), keeps the
+  ROOT request's seller, refuses `recalc_returned` in words, and every
+  display surface speaks one «stands» vocabulary (`calcRecalcOpen` ×4 stops
+  saying «eski narx turibdi»; `ranked0` gains `child_state`;
+  `standingAnchorsFor(entity)` feeds the panel, `quoteLockedFor` and the
+  «Javob berildi» line).
+- **Nazorat**: `calcControlScopeFor` stays the WRITE scope for all six of its
+  callers; a new `calcControlReadScopeFor` serves the page's reads; the queue
+  splits «Meniki (N)» — N = the home count — from «Hamkasblarniki», read-only.
+- **The internal note** has its own sight (`mayReadCalcInternalNote` =
+  `ved.docs`, a branded value): the accountant reads the history and never the
+  note; the fence works on EXPRESSIONS, not files.
+- **Item 5**: `CalcPanel` and `TelegramThread` (read-only, no ThreadCalc) and
+  the lead chat pulse join the card door; one `calcCardHref(actor, row)` names
+  every link; the VED's note is forced onto the lead/deal entity and is text
+  only (the action refuses a pre-bound file id); note and mention pings link a
+  recipient to the karta when that is the door they have; the 16a reader is a
+  PROJECTION (`offerPricesFor`) that cannot carry a payout; the sight is two
+  facts, `{mayOffer, seesOfferPrices}`, never one ranked value.
+- **Answers** are `completed_via = 'task' AND answer_amount > 0 AND
+  answer_amount <> 'NaN'` (0093's own body); the amount travels as TEXT to
+  the server so `answer_amount_unreadable` can exist; the refusal order is
+  `already_closed`, `seal_instead`, then the amount, then the note.
+
+Stated to him rather than built: the gross upsale is never PRINTED to the
+VED, but client price minus his own floor is one subtraction away; after a
+lead is won its lenta (the VED's question and the seller's answer) stays on
+the lead, where the VED's door no longer reaches; task files are readable by
+everyone who reads colleagues' tasks on /kalendar.

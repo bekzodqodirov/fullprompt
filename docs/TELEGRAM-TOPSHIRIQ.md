@@ -267,3 +267,29 @@ index (VED-TARIX §9). `when` 1785190000103; the ledger must reach **125**.
 - No new permission: the gate stays «signed in»; `canLogIn` decides who can
   receive.
 - A calc task never carries a button that changes the task.
+
+## 11. The review before code
+
+`docs/TOPSHIRIQ-VED-REVIEW.md` holds the five-lens review of this spec and
+VED-TARIX; its fixes are BINDING where they and the text above disagree. The
+two blockers: an old `t:` ✅ on a calc task asked for a typed result and then
+answered with silence (the press now loads the task first and refuses at
+once, and the bot's answer map names every TaskError code); and retiring a
+copy edited the 08:00 digest to «✅ Bajarildi», wiping the buttons of up to
+seven OTHER open tasks (a TasksDue copy keeps its text and only its keyboard is
+redrawn from the tasks still open). Also binding: the task-button payload
+contract `{taskId, origin, bound, accepted}`; the per-origin press → author
+table (no 👀 / 💬 / pushes to an automation rule's author); `takeTaskPendingFor`
+as the named second door for «✅ Natijasiz»; the per-button remover for 👀; the
+assignee check in every CAS; reassign clearing `accepted_at`/`reminded_at`
+and forwarding sources only when the AUTHOR reassigns; no ⏰ on a repeating
+task; `retireTaskCopies({taskIds, outcome, since, exceptUserIds})`, void-
+dispatched, after commit, with `RETURNING id` added to the three bulk closers
+and pending copies muted at send time; the full list of accepted message
+kinds and the staff media handler registered before the cabinet; the album
+settle timer and the 60-second linger after creation; Door B's album map; the
+ladder slots fenced in order; the closed callback vocabularies; file downloads
+as a pg-boss job; the task-file delete rule (the author only); «📵» only for
+«no linked chat»; `/topshiriq` in the command menu and a deploy note that
+every staff member sends /start once; the mute-group fence for every new type;
+and `PressedMessage` replacing staff-bot's own `TaskOrigin`.
