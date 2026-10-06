@@ -567,7 +567,7 @@ const PENDING_TTL_MS = 10 * 60_000;
  * closed until the result is typed, and a message that said «Yopildi» while
  * the prompt was still waiting would be the lie this replaces.
  */
-export interface TaskOrigin {
+export interface PressedMessage {
   messageId: number;
   /** The message's plain text as Telegram holds it (callbackQuery.message). */
   text: string;
@@ -578,15 +578,20 @@ export interface TaskOrigin {
 
 export interface PendingTask {
   taskId: string;
-  origin: TaskOrigin | null;
+  /**
+   * Was `origin` until 0124 gave a TASK an origin of its own (tasks/service.ts:
+   * where the task came from). This is the MESSAGE the button was pressed on,
+   * and two meanings under one name in one file read as one thing.
+   */
+  pressed: PressedMessage | null;
 }
 
 const pendingResults = new Map<string, PendingTask & { expires: number }>();
 /** Chats that pressed «Hodim» and were asked for their phone. */
 const staffEntryIntents = new Map<string, number>();
 
-export function noteTaskPending(chatId: bigint, taskId: string, origin: TaskOrigin | null = null): void {
-  pendingResults.set(String(chatId), { taskId, origin, expires: Date.now() + PENDING_TTL_MS });
+export function noteTaskPending(chatId: bigint, taskId: string, pressed: PressedMessage | null = null): void {
+  pendingResults.set(String(chatId), { taskId, pressed, expires: Date.now() + PENDING_TTL_MS });
 }
 
 export function takeTaskPending(chatId: bigint): PendingTask | null {
@@ -594,7 +599,7 @@ export function takeTaskPending(chatId: bigint): PendingTask | null {
   const entry = pendingResults.get(key);
   if (!entry) return null;
   pendingResults.delete(key);
-  return entry.expires > Date.now() ? { taskId: entry.taskId, origin: entry.origin } : null;
+  return entry.expires > Date.now() ? { taskId: entry.taskId, pressed: entry.pressed } : null;
 }
 
 /**
@@ -612,23 +617,23 @@ export async function closeTaskMessage(
   pending: PendingTask,
   result: string,
 ): Promise<void> {
-  const origin = pending.origin;
-  if (!origin) return;
+  const pressed = pending.pressed;
+  if (!pressed) return;
   const res =
-    origin.kind === 'list'
+    pressed.kind === 'list'
       ? await editMarkup({
           chatId,
-          messageId: origin.messageId,
-          replyMarkup: keyboardOf(withoutCallback(origin.markup, `tb:${pending.taskId}`)),
+          messageId: pressed.messageId,
+          replyMarkup: keyboardOf(withoutCallback(pressed.markup, `tb:${pending.taskId}`)),
         })
       : await editText({
           chatId,
-          messageId: origin.messageId,
+          messageId: pressed.messageId,
           html: appendLine(
-            staffTextHtml(origin.text, 'TaskAssigned'),
+            staffTextHtml(pressed.text, 'TaskAssigned'),
             result ? `✅ Yopildi — ${result}` : '✅ Yopildi',
           ),
-          replyMarkup: keyboardOf(urlRowsOf(origin.markup)),
+          replyMarkup: keyboardOf(urlRowsOf(pressed.markup)),
         });
   if (!res.ok) logger.warn({ description: res.description }, 'task message not updated');
 }
