@@ -99,7 +99,7 @@ describe('the unit words', () => {
 });
 
 describe('which of the file’s units may price a row', () => {
-  const both = { hasWeight: true, hasQuantity: true };
+  const both = { chosen: null, hasWeight: true, hasQuantity: true, hasVolume: false };
 
   it('a law that PINS a unit admits that one and nothing else', () => {
     // A per-kg price landing on a per-m² row is off by the weight of the
@@ -115,8 +115,8 @@ describe('which of the file’s units may price a row', () => {
     // unit at all — asking per-dona alone would have refused three quarters
     // of every quarter's file.
     expect(unitsForRow({ dutyUnit: null, ...both })).toEqual(['kg', 'dona']);
-    expect(unitsForRow({ dutyUnit: null, hasWeight: true, hasQuantity: false })).toEqual(['kg']);
-    expect(unitsForRow({ dutyUnit: null, hasWeight: false, hasQuantity: true })).toEqual(['dona']);
+    expect(unitsForRow({ dutyUnit: null, chosen: null, hasWeight: true, hasQuantity: false, hasVolume: false })).toEqual(['kg']);
+    expect(unitsForRow({ dutyUnit: null, chosen: null, hasWeight: false, hasQuantity: true, hasVolume: false })).toEqual(['dona']);
   });
 
   it('a law that COUNTS pieces takes pieces first, and still allows kilograms', () => {
@@ -127,7 +127,7 @@ describe('which of the file’s units may price a row', () => {
   });
 
   it('a row stating neither a weight nor a count gets no suggestion at all', () => {
-    expect(unitsForRow({ dutyUnit: null, hasWeight: false, hasQuantity: false })).toEqual([]);
+    expect(unitsForRow({ dutyUnit: null, chosen: null, hasWeight: false, hasQuantity: false, hasVolume: false })).toEqual([]);
   });
 });
 

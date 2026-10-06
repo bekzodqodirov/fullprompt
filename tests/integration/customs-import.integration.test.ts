@@ -264,7 +264,7 @@ describe('which price the file offers', () => {
       .where(eq(customsImportRows.batchId, batchId));
     const kgRow = rows.find((r) => r.unit === 'kg')!;
     const sug = await suggestImportBaza(
-      { tnvedCode: kgRow.tnvedCode, name: kgRow.name, unit: 'kg' },
+      { tnvedCode: kgRow.tnvedCode, name: kgRow.name, units: ['kg'] },
       { batchId },
     );
     expect(sug.candidates.length).toBeGreaterThan(0);
@@ -288,7 +288,7 @@ describe('which price the file offers', () => {
     const kg = onlyKg.find((r) => r.unit === 'kg') ?? kgRow!;
     // Ask for the SAME row, but as if our cargo were priced per piece.
     const sug = await suggestImportBaza(
-      { tnvedCode: kg.tnvedCode, name: kg.name, unit: 'dona' },
+      { tnvedCode: kg.tnvedCode, name: kg.name, units: ['dona'] },
       { batchId },
     );
     expect(sug.auto).toBeNull();
@@ -312,7 +312,7 @@ describe('which price the file offers', () => {
     // The first six words of the declaration, as a person would type them.
     const typed = long!.name.replace(/^\s*\d+\s*[.)]\s*/, '').split(/\s+/).slice(0, 5).join(' ');
     const sug = await suggestImportBaza(
-      { tnvedCode: long!.tnvedCode, name: typed, unit: long!.unit as ImportUnit },
+      { tnvedCode: long!.tnvedCode, name: typed, units: [long!.unit as ImportUnit] },
       { batchId },
     );
     expect(sug.auto).not.toBeNull();
@@ -326,7 +326,7 @@ describe('which price the file offers', () => {
       .where(eq(customsImportRows.batchId, batchId));
     // At three characters «оси» matches inside almost any paragraph.
     const sug = await suggestImportBaza(
-      { tnvedCode: row!.tnvedCode, name: 'ма', unit: row!.unit as ImportUnit },
+      { tnvedCode: row!.tnvedCode, name: 'ма', units: [row!.unit as ImportUnit] },
       { batchId },
     );
     expect(sug.auto).toBeNull();
@@ -345,7 +345,7 @@ describe('which price the file offers', () => {
       .from(customsImportRows)
       .where(eq(customsImportRows.batchId, batchId));
     const kgRow = rows.find((r) => r.unit === 'kg')!;
-    const short = { tnvedCode: kgRow.tnvedCode, name: 'Лак', unit: 'kg' as ImportUnit };
+    const short = { tnvedCode: kgRow.tnvedCode, name: 'Лак', units: ['kg' as ImportUnit] };
     const auto = await suggestImportBaza(short, { batchId });
     expect(auto.candidates).toHaveLength(0);
     const picker = await suggestImportBaza(short, { batchId, picker: true });
@@ -365,7 +365,7 @@ describe('which price the file offers', () => {
       .from(customsImportRows)
       .where(eq(customsImportRows.batchId, batchId));
     const sug = await suggestImportBaza(
-      { tnvedCode: row!.tnvedCode, name: 'qwertyuiop asdfghjkl', unit: row!.unit as ImportUnit },
+      { tnvedCode: row!.tnvedCode, name: 'qwertyuiop asdfghjkl', units: [row!.unit as ImportUnit] },
       { batchId },
     );
     expect(sug.auto).toBeNull();

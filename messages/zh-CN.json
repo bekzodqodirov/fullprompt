@@ -3536,7 +3536,8 @@
       "aiRateTaken": "AI 的税率进入了报价",
       "rateNoted": "词典税率附有说明",
       "bazaFromImport": "基价来自海关导入（估算）",
-      "bazaFromMemory": "基价来自已封存的核算"
+      "bazaFromMemory": "基价来自已封存的核算",
+      "basisNotLaw": "基价单位与法规不同"
     },
     "refusal": {
       "customsByClient": "客户自行清关",
@@ -3608,13 +3609,17 @@
       "measureCleared": "计量已清除（单位已变），行",
       "measureDropped": "计量已移除（编码不需要），行",
       "measureFor": "计量（{unit}）：",
-      "measureGhost": "计量（若编码需要 juft/litr/m²/sm³）：",
+      "measureGhost": "计量（若编码或单位需要 m²/juft/litr/sm³）：",
       "sm3Hint": "总 cm³ = 件数 × 排量",
       "rateNoted": "法规附有说明",
       "savedFigures": "已保存数字",
       "basisSuspect": "请检查基价单位（法律按其他单位计价）— 行",
       "importFilled": "已从导入填充 {count} 行基价（估算），行号",
-      "memoryFilled": "来自已封存核算的基价：{count} 项，行"
+      "memoryFilled": "来自已封存核算的基价：{count} 项，行",
+      "basisAuto": "自动",
+      "basisConflict": "单位与法规冲突（每行只有一个计量）— 行",
+      "alreadySaved": "此前已保存：{count} 行",
+      "basisNotLaw": "法规按 {unit} 计 — 基价为其他单位"
     },
     "editCargoFacts": "修改货物信息",
     "importGuess": "来自导入（估算）",
@@ -3719,7 +3724,8 @@
     "kartaHint": "销售的卡片——只读。请把问题写在动态里，销售会在那里回复。",
     "kartaBack": "返回计算",
     "kartaWonDeal": "线索已转为交易——计算在交易中：",
-    "sellerGuess": "销售填写的估价"
+    "sellerGuess": "销售填写的估价",
+    "importConflict": "不可用 {unit}：法规按 {law} 计"
   },
   "partners": {
     "title": "合作方",

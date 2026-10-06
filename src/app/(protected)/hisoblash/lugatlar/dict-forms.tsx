@@ -10,6 +10,8 @@ import {
   type CalcFormState,
 } from '../actions';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
+import { BAZA_BASES, isBazaBasis, type BazaBasis } from '@/modules/wms/calc/pricing';
+import { basisLabel } from '@/modules/wms/calc/basis';
 
 /**
  * Adding a row to either VED dictionary.
@@ -36,7 +38,7 @@ export function BazaForm() {
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
   const [amount, setAmount] = useState('');
-  const [basis, setBasis] = useState<'unit' | 'kg' | 'juft' | 'litr' | 'm2'>('unit');
+  const [basis, setBasis] = useState<BazaBasis>('unit');
   const [date, setDate] = useState(today());
 
   return (
@@ -74,15 +76,17 @@ export function BazaForm() {
             className="input input-sm !w-20"
             aria-label={t('basis')}
             value={basis}
-            onChange={(e) => setBasis(e.target.value as 'unit' | 'kg' | 'juft' | 'litr' | 'm2')}
+            onChange={(e) => {
+              if (isBazaBasis(e.target.value)) setBasis(e.target.value);
+            }}
           >
-            {/* The law's units minus sm3 — nothing is VALUED per cm³ of
-                displacement (a vehicle's baza is per dona). */}
-            <option value="unit">{t('perUnit')}</option>
-            <option value="kg">kg</option>
-            <option value="juft">juft</option>
-            <option value="litr">litr</option>
-            <option value="m2">m²</option>
+            {/* The ONE vocabulary (m³ since 0125), never sm3 — nothing is
+                VALUED per cm³ of displacement (a vehicle's baza is per dona). */}
+            {BAZA_BASES.map((b) => (
+              <option key={b} value={b}>
+                {basisLabel(b, t('perUnit'))}
+              </option>
+            ))}
           </select>
         </label>
         <label className="text-2xs">

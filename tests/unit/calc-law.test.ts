@@ -43,6 +43,7 @@ const item = (over: Partial<PricedItem> = {}): PricedItem => ({
   label: 'tovar',
   quantity: 1,
   weightKg: 1,
+  volumeM3: null,
   bazaUsd: 1,
   bazaBasis: 'unit',
   measureUnit: null,

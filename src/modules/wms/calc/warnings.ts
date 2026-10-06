@@ -38,7 +38,15 @@ export type CalcWarningKind =
    * of the machine's three sources — a VED person confirmed that number and
    * sealed it — but it is still a NAME match against an older job, so the ✅
    * records that the person looked at a price they did not state today. */
-  | 'baza_from_memory';
+  | 'baza_from_memory'
+  /** The code's law COUNTS in a unit (kg / m² / juft / litr) and at least one
+   * row's baza is priced per another (0125, the owner's A1). Allowed — the
+   * baza is the row's own question since his 18a — but «$8» meant per juft
+   * and saved per kg is +59 % customs on a measured case, a number that is
+   * right and a unit that is wrong. The ✅ records that a person looked.
+   * SILENT on an advalor code and on a per-dona law: those pin no baza unit,
+   * so an override there is free and this list does not watch it. */
+  | 'basis_not_law';
 
 export interface WarningGroupFacts {
   /** What the rates dictionary answers for this group's code today, if anything. */
@@ -51,16 +59,32 @@ export interface WarningGroupFacts {
   aiProposed: boolean;
   aiConfidence: 'high' | 'medium' | 'low' | null;
   aiDutyPct: number | null;
+  /** The group's law unit (its `duty_unit`) — null on an advalor code.
+   * REQUIRED: `basis_not_law` cannot be judged without it (0125). */
+  dutyUnit: string | null;
   /** One entry per ITEM: what the baza dictionary answers, and what stands.
    * The basis union is RESTATED here (this file is zero-import on purpose) —
-   * it must match pricing.ts's BazaBasis by hand. */
+   * `tests/unit/basis-vocabulary.test.ts` holds it to pricing.ts's
+   * `BAZA_BASES`. */
   items: {
     hasDictionaryBaza: boolean;
     bazaSource: 'dictionary' | 'typed' | 'import' | 'memory' | null;
     bazaUsd: number | null;
-    bazaBasis: 'unit' | 'kg' | 'juft' | 'litr' | 'm2' | null;
-    dictionaryBaza: { bazaUsd: number; basis: 'unit' | 'kg' | 'juft' | 'litr' | 'm2' } | null;
+    bazaBasis: 'unit' | 'kg' | 'm3' | 'm2' | 'juft' | 'litr' | null;
+    dictionaryBaza: { bazaUsd: number; basis: 'unit' | 'kg' | 'm3' | 'm2' | 'juft' | 'litr' } | null;
   }[];
+}
+
+/**
+ * The baza unit a law PINS — restated from `defaultBasisFor` (basis.ts) for
+ * the zero-import rule, and held to it by `tests/unit/calc-warnings.test.ts`
+ * over every DutyUnit: kg and the three pair units pin their own; dona,
+ * 1000_dona, sm³ and advalor pin none.
+ */
+export function lawPinnedBasis(dutyUnit: string | null): 'kg' | 'm2' | 'juft' | 'litr' | null {
+  return dutyUnit === 'kg' || dutyUnit === 'm2' || dutyUnit === 'juft' || dutyUnit === 'litr'
+    ? dutyUnit
+    : null;
 }
 
 /**
@@ -137,6 +161,17 @@ export function warningsForGroup(facts: WarningGroupFacts): CalcWarningKind[] {
   // carry the fact (phase 3, the clauseCut vehicle rows).
   if (facts.rateSource === 'dictionary' && facts.dictionaryNote !== null) {
     out.push('rate_noted');
+  }
+  // A1 (0125): a PRICED row whose baza is per another unit than the one the
+  // law counts in. An unpriced row's chosen unit prices nothing yet, so it is
+  // not «a number confirmed in the wrong unit» — the row will say so the day
+  // it carries a price.
+  const pinned = lawPinnedBasis(facts.dutyUnit);
+  if (
+    pinned !== null &&
+    facts.items.some((i) => i.bazaUsd !== null && i.bazaBasis !== null && i.bazaBasis !== pinned)
+  ) {
+    out.push('basis_not_law');
   }
 
   return out;

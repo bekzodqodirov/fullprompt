@@ -9,6 +9,7 @@ import {
   listTariff,
 } from '@/modules/wms/calc/dictionaries';
 import { isServerBehind } from '@/modules/platform/db/errors';
+import { basisLabel } from '@/modules/wms/calc/basis';
 import { logger } from '@/modules/platform/logger';
 import { PageHeader, Section } from '@/components/ui/page';
 import { BazaForm, PriceBookForm, RatesForm } from './dict-forms';
@@ -113,7 +114,7 @@ export default async function CalcDictionariesPage(props: {
                     </td>
                     <td className="p-2 font-mono tabular-nums">{row.tnvedCode ?? '—'}</td>
                     <td className="p-2 text-right font-mono tabular-nums">${row.bazaUsd}</td>
-                    <td className="p-2">{row.basis === 'unit' ? t('perUnit') : row.basis === 'm2' ? 'm²' : row.basis}</td>
+                    <td className="p-2">{basisLabel(row.basis, t('perUnit'))}</td>
                     <td className="p-2 font-mono tabular-nums">{row.effectiveDate}</td>
                   </tr>
                 ))}

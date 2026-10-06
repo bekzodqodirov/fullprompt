@@ -48,6 +48,7 @@ export const WARNING_LABELS: Record<string, string> = {
   rate_noted: 'warnings.rateNoted',
   baza_from_import: 'warnings.bazaFromImport',
   baza_from_memory: 'warnings.bazaFromMemory',
+  basis_not_law: 'warnings.basisNotLaw',
 };
 
 export const REFUSAL_LABELS: Record<string, string> = {

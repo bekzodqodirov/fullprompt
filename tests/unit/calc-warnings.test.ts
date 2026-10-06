@@ -16,6 +16,7 @@ const base: WarningGroupFacts = {
   aiProposed: false,
   aiConfidence: null,
   aiDutyPct: null,
+  dutyUnit: null,
   items: [],
 };
 

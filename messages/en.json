@@ -3536,7 +3536,8 @@
       "aiRateTaken": "The model's rate reached the price",
       "rateNoted": "dictionary rate carries a note",
       "bazaFromImport": "baza filled from the customs import",
-      "bazaFromMemory": "baza taken from a sealed calculation"
+      "bazaFromMemory": "baza taken from a sealed calculation",
+      "basisNotLaw": "baza not in the law’s unit"
     },
     "refusal": {
       "customsByClient": "The client cleared it themselves",
@@ -3608,13 +3609,17 @@
       "measureCleared": "Measure cleared (unit changed), row",
       "measureDropped": "Measure dropped (code needs none), row",
       "measureFor": "Measure ({unit}):",
-      "measureGhost": "Measure (if the code needs juft/litr/m²/sm³):",
+      "measureGhost": "Measure (if the code or the unit needs m²/juft/litr/sm³):",
       "sm3Hint": "total cm³ = pcs × engine volume",
       "rateNoted": "the law carries a note",
       "savedFigures": "saved figures",
       "basisSuspect": "check the baza unit (the law prices in another) — row",
       "importFilled": "{count} baza(s) filled from the import (estimate), rows",
-      "memoryFilled": "baza filled from a sealed calculation: {count}, rows"
+      "memoryFilled": "baza filled from a sealed calculation: {count}, rows",
+      "basisAuto": "auto",
+      "basisConflict": "a unit the law cannot hold (one measure per row) — row",
+      "alreadySaved": "already saved earlier: {count}",
+      "basisNotLaw": "the law counts in {unit} — the baza is per another unit"
     },
     "editCargoFacts": "Edit the cargo facts",
     "importGuess": "from the import (estimate)",
@@ -3719,7 +3724,8 @@
     "kartaHint": "The seller's card — read only. Write your question on the timeline; the seller answers there.",
     "kartaBack": "Back to the calculation",
     "kartaWonDeal": "The lead became a deal — the calculation is on the deal:",
-    "sellerGuess": "Seller's own estimate"
+    "sellerGuess": "Seller's own estimate",
+    "importConflict": "{unit} not allowed: the law counts in {law}"
   },
   "partners": {
     "title": "Counterparties",

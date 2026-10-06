@@ -48,7 +48,7 @@ import type { SealBlocker } from './workspace';
  */
 const CUSTOMS_REASON: Record<CustomsRefusal, string> = {
   baza_missing: 'baza yo‘q',
-  measure_missing: 'o‘lchov (dona/m²/juft/litr) yo‘q',
+  measure_missing: 'o‘lchov (dona/kg/kub/m²/juft/litr) yo‘q',
   rates_missing: 'bu kodga stavka topilmadi',
   group_empty: 'guruh bo‘sh',
   not_a_number: 'raqam noto‘g‘ri',

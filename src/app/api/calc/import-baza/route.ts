@@ -4,18 +4,22 @@ import { calcGroups, calcRequestItems } from '@/modules/platform/db/schema';
 import { authorize, AuthError } from '@/modules/platform/rbac/authorize';
 import { isServerBehind } from '@/modules/platform/db/errors';
 import { logger } from '@/modules/platform/logger';
-import { defaultBasisFor } from '@/modules/wms/calc/basis';
+import { basisConflicts } from '@/modules/wms/calc/basis';
+import { isBazaBasis, type BazaBasis } from '@/modules/wms/calc/pricing';
 import { customsImportBatches } from '@/modules/platform/db/schema';
-import { suggestImportBaza, UNIT_FOR_BASIS } from '@/modules/wms/customs/import-baza';
+import { BASIS_FOR_UNIT, suggestImportBaza, unitsForRow } from '@/modules/wms/customs/import-baza';
 
 /**
  * «Bu kod uchun importda nima bor?» — the picker behind the 📥 chip.
  *
- * It takes an ITEM id and nothing else. The name, the code, the count and
- * the weight are read HERE, off the row itself: a browser that could pass
- * its own search terms would be a free text search over the whole customs
- * dump behind a calc-screen door, and the suggestion the VED sees must be
- * the one `saveTable` would have made.
+ * It takes an ITEM id and, since 0125, at most one more word: the basis the
+ * VED has CHOSEN on the screen (drafted, not yet saved). The name, the code,
+ * the count, the weight and the volume are still read HERE, off the row
+ * itself: a browser that could pass its own search terms would be a free
+ * text search over the whole customs dump behind a calc-screen door. The
+ * basis is a validated enum and can only REORDER and LABEL what this row's
+ * code already holds — the price a pick lands with is re-read from the file
+ * by `saveTable`, never taken from here.
  *
  * The door is the workspace's own grant (`ved.docs`); this app has no
  * middleware, so every /api route states it (#721-726).
@@ -28,8 +32,12 @@ export async function GET(request: Request) {
     throw err;
   }
 
-  const itemId = new URL(request.url).searchParams.get('item') ?? '';
+  const params = new URL(request.url).searchParams;
+  const itemId = params.get('item') ?? '';
   if (!/^[0-9a-f-]{36}$/i.test(itemId)) return Response.json({ error: 'bad_item' }, { status: 400 });
+  // Anything off the list is simply not a choice — the row's own answers.
+  const drafted = params.get('basis');
+  const draftedBasis: BazaBasis | null = isBazaBasis(drafted) ? drafted : null;
 
   try {
     const [item] = await db
@@ -38,6 +46,8 @@ export async function GET(request: Request) {
         tnvedCode: calcRequestItems.tnvedCode,
         quantity: calcRequestItems.quantity,
         weightKg: calcRequestItems.weightKg,
+        volumeM3: calcRequestItems.volumeM3,
+        bazaBasis: calcRequestItems.bazaBasis,
         dutyUnit: calcGroups.dutyUnit,
       })
       .from(calcRequestItems)
@@ -54,17 +64,31 @@ export async function GET(request: Request) {
     // exactly what he cannot do until the migration has run.
     if (!code) return Response.json({ state: 'no_code', candidates: [], batchId: null, total: 0 });
 
-    const basis = defaultBasisFor({ dutyUnit: item.dutyUnit });
     const qty = item.quantity === null ? null : Number(item.quantity);
     const kg = item.weightKg === null ? null : Number(item.weightKg);
+    const m3 = item.volumeM3 === null ? null : Number(item.volumeM3);
+    // The unit the row is priced in: what the VED just picked, else what is
+    // stored — `saveTable`'s own fill asks the same question.
+    const chosen = draftedBasis ?? (isBazaBasis(item.bazaBasis) ? item.bazaBasis : null);
+    // EVERY unit the row accepts ranks first, not only the first of them
+    // (0125): ranking by `[0]` dropped the per-piece weight re-rank — his
+    // «donada har bir tovarni og'irligiga qaraymiz» — on every advalor row
+    // that states a weight, because kilograms come first there.
+    const units = unitsForRow({
+      dutyUnit: item.dutyUnit,
+      chosen,
+      hasWeight: kg !== null && kg > 0,
+      hasQuantity: qty !== null && qty > 0,
+      hasVolume: m3 !== null && m3 > 0,
+    });
     const perPiece =
-      basis === 'unit' && qty !== null && qty > 0 && kg !== null && kg > 0 ? kg / qty : null;
+      units.includes('dona') && qty !== null && qty > 0 && kg !== null && kg > 0 ? kg / qty : null;
 
     const sug = await suggestImportBaza(
       {
         tnvedCode: code,
         name: item.name,
-        unit: UNIT_FOR_BASIS[basis],
+        units,
         weightPerUnitKg: perPiece,
       },
       // The picker lists more than the auto-fill ranks, and answers even
@@ -88,12 +112,21 @@ export async function GET(request: Request) {
     return Response.json(
       {
         state: 'ok',
-        candidates: sug.candidates,
+        // A declaration in a unit this code's law cannot hold (a pair unit on
+        // a juft/litr/m² code) is LISTED — the VED should see the file has it
+        // — but cannot be picked: it would land the row in a conflict.
+        candidates: sug.candidates.map((c) => ({
+          ...c,
+          pickable: !basisConflicts(item.dutyUnit, BASIS_FOR_UNIT[c.unit]),
+        })),
         batchId: sug.batchId,
         total: sug.total,
         itemName: item.name,
         tnvedCode: code,
-        basis,
+        lawUnit: item.dutyUnit,
+        // What the row is looking for, in the basis vocabulary — the dialog
+        // names it as an expectation, never as a fact about the row.
+        wants: units.map((u) => BASIS_FOR_UNIT[u]),
         source:
           batch?.periodFrom && batch?.periodTo
             ? `${batch.periodFrom} … ${batch.periodTo}`

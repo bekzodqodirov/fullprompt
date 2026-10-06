@@ -4,7 +4,7 @@ import { calcBazas, calcFreightTariffs, calcPriceBook, calcRates } from '@/modul
 import { writeAudit, type AuditContext } from '@/modules/platform/audit/service';
 import { productKey } from '../tnved/service';
 import { CalcError } from './service';
-import { isNumber } from './pricing';
+import { isBazaBasis, isNumber } from './pricing';
 import type { BazaBasis, DutyMode, DutyUnit, FreightBand } from './pricing';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 
@@ -163,9 +163,10 @@ export async function saveBaza(
   if (!key) throw new CalcError('product_required');
   mustBeNumber(input.bazaUsd);
   if (!(input.bazaUsd > 0)) throw new CalcError('baza_positive');
-  // The widened vocabulary minus sm3 (nothing is VALUED per cm³) — checked
-  // here so a forged post is a coded refusal, not the CHECK's white page.
-  if (!(['unit', 'kg', 'juft', 'litr', 'm2'] as BazaBasis[]).includes(input.basis)) {
+  // The ONE vocabulary (pricing.ts's BAZA_BASES — m³ since 0125, never sm³:
+  // nothing is VALUED per cm³) — checked here so a forged post is a coded
+  // refusal, not the CHECK's white page.
+  if (!isBazaBasis(input.basis)) {
     throw new CalcError('bad_basis');
   }
 
