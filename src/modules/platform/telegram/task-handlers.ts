@@ -760,31 +760,41 @@ function pressRefusalLine(result: keyof typeof TASK_ANSWERS): string {
  * A waiting answer that is NOT a result — a question, an answer, a typed
  * date. The result itself stays in staff-handlers' ladder, beside the
  * message it closes.
+ *
+ * Answers whether the text was CONSUMED. A typed date that is not a date is
+ * not: the wait is dropped (the read already took it) and the words go on to
+ * the staff tail as anything else typed would. Re-arming it instead swallowed
+ * every lookup — «GS777» answered «Tushunmadim» for as long as the person
+ * kept typing, with no button out (review tasks-5 / bot-1).
  */
-export async function answerPendingText(ctx: Context, chatId: bigint, pending: PendingTask, text: string): Promise<void> {
+export async function answerPendingText(
+  ctx: Context,
+  chatId: bigint,
+  pending: PendingTask,
+  text: string,
+): Promise<boolean> {
   if (pending.kind === 'question') {
     await ctx.reply(reachedText('✅ Savol yuborildi.', await askFromBot(chatId, pending.taskId, text)));
-    return;
+    return true;
   }
   if (pending.kind === 'answer') {
     await ctx.reply(reachedText('✅ Javob yuborildi.', await answerFromBot(chatId, pending.taskId, text)));
-    return;
+    return true;
   }
   // reschedule
   const due = parseTypedDue(text);
   if (!due) {
-    // Asked again — the wait was taken by the read.
-    noteTaskPending(chatId, pending.taskId, null, 'reschedule');
-    await ctx.reply('Tushunmadim. 12.10, 12.10 15:00 yoki 15:00 ko‘rinishida yozing.');
-    return;
+    await ctx.reply('Bu sana emas — muddat o‘zgarmadi. Kerak bo‘lsa, «⏰» ni qayta bosing.');
+    return false;
   }
   const parsed = parseDue(due.dueAt, due.tzOffsetMin);
   if (!parsed.dueAt) {
     await ctx.reply(TASK_ANSWERS.bad_due_date);
-    return;
+    return true;
   }
   const result = await rescheduleTaskFromBot(chatId, pending.taskId, { dueAt: parsed.dueAt, allDay: parsed.allDay });
   await ctx.reply(result === 'done' ? `⏰ Muddat: ${due.label}` : TASK_ANSWERS[result]);
+  return true;
 }
 
 /** «📤 Men bergan», /berganlarim. */

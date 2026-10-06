@@ -889,10 +889,9 @@ export function registerStaffBot(bot: Bot): void {
       const pendingTask = takeTaskPending(chatId);
       if (pendingTask && pendingTask.kind !== 'result') {
         // A question, an answer, or a typed date after ⏰ — the same one wait.
-        await answerPendingText(ctx, chatId, pendingTask, ctx.message.text);
-        return;
-      }
-      if (pendingTask) {
+        // A «date» that is not one is not consumed: it falls to the tail.
+        if (await answerPendingText(ctx, chatId, pendingTask, ctx.message.text)) return;
+      } else if (pendingTask) {
         const result = ctx.message.text.trim() === '-' ? '' : ctx.message.text.trim();
         const outcome = await completeTaskFromBot(chatId, pendingTask.taskId, result, pendingTask.pressed);
         // Every code the service can refuse with has its words (a Record over

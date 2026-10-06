@@ -1032,3 +1032,21 @@ describe('a task’s files (his 3a; access-money-11, telegram-mechanics-26)', ()
     await expect(downloadTaskFiles({ taskId: id, uploadedBy: author.id, files: [fresh] })).rejects.toThrow(/not downloaded yet/);
   });
 });
+
+describe('a typed date that is not a date (review tasks-5 / bot-1)', () => {
+  it('is not consumed: the wait ends and the words go on to the lookup', async () => {
+    const { answerPendingText } = await import('@/modules/platform/telegram/task-handlers');
+    const replies: string[] = [];
+    const ctx = { reply: async (text: string) => (replies.push(text), { message_id: 1 }) };
+    const consumed = await answerPendingText(
+      ctx as unknown as Parameters<typeof answerPendingText>[0],
+      1n,
+      { kind: 'reschedule', taskId: '00000000-0000-4000-8000-000000000001', pressed: null },
+      'GS777',
+    );
+    // Re-arming here answered «Tushunmadim» to every lookup for as long as
+    // the person kept typing, with no button out.
+    expect(consumed).toBe(false);
+    expect(replies).toEqual(['Bu sana emas — muddat o‘zgarmadi. Kerak bo‘lsa, «⏰» ni qayta bosing.']);
+  });
+});
