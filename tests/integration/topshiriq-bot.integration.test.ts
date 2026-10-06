@@ -328,3 +328,19 @@ describe('a refused task comes back ASKING (review bot-5)', () => {
     expect(await tasksBy(author)).toHaveLength(0);
   });
 });
+
+describe('parts the task cannot take are said, never swallowed (review bot-11)', () => {
+  it('past the ten-source cap the author is told ONCE', async () => {
+    const author = await mintStaff();
+    const doer = await mintStaff();
+    await readyDraft(author, doer);
+    const replies: string[] = [];
+    for (let i = 0; i < 12; i++) {
+      const { ctx, said } = ctxFor(author.chat, { message: message(author.chat, (messageSeq += 1), { ...forwarded, text: `xabar ${i}` }) });
+      await draftText(ctx, author.chat, activeDraft(author.chat)!);
+      replies.push(...said.replies.map((r) => r.text));
+    }
+    expect(replies.filter((text) => text.startsWith('⚠ Bitta topshiriqqa ko‘pi bilan 10 ta xabar'))).toHaveLength(1);
+    expect(activeDraft(author.chat)!.sources).toHaveLength(10);
+  });
+});
