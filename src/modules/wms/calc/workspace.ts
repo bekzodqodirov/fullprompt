@@ -85,6 +85,7 @@ import {
 import { childStateSql } from './chain';
 import { isAnswer, isAnswerSql } from './credit';
 import { createTask } from '@/modules/platform/tasks/service';
+import { retireTaskCopiesSoon } from '@/modules/platform/notifications/retire-tasks';
 import { forgetUpsaleLiability } from './liability-memo';
 import {
   sealCounters,
@@ -1749,8 +1750,22 @@ export async function sealCalc(
         .where(eq(deals.id, row.entityId));
     }
 
-    return { versionNo: row.versionNo, requestedBy: row.requestedBy, entityType: row.entityType, entityId: row.entityId };
+    return {
+      versionNo: row.versionNo,
+      requestedBy: row.requestedBy,
+      entityType: row.entityType,
+      entityId: row.entityId,
+      taskId: row.taskId,
+    };
   });
+
+  // The task the seal just closed stops offering its «✅ Bajarildi» in
+  // Telegram (review integration-5) — `endRequest`, the release and the take
+  // all retire their task's copies, and the seal closed its task with its own
+  // UPDATE and retired nothing, so the VED's chat kept a live button for a job
+  // that was already sealed. After the commit, never inside it (#714), and
+  // off the request (the void form, #706).
+  if (result.taskId) retireTaskCopiesSoon({ taskIds: [result.taskId], outcome: 'done' });
 
   await writeAudit(db, ctx, {
     entityType: 'calc_request',

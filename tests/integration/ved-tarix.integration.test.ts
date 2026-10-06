@@ -546,3 +546,52 @@ describe('a 36-character id that is not a uuid is no card, never a 500 (access-6
     });
   }
 });
+
+/**
+ * Review integration-5: the seal closes the VED's task with its own UPDATE,
+ * and — unlike `endRequest`, the release and the take — never retired the
+ * task's Telegram copies, so a queued «✅ Bajarildi» still went out for a job
+ * that was already sealed.
+ */
+describe('the seal retires its task’s Telegram copies (integration-5)', () => {
+  it('a queued copy of the sealed job’s task is muted, not sent', async () => {
+    const stage = await db.execute<{ id: string }>(
+      `SELECT id FROM lead_stages WHERE kind = 'open' ORDER BY sort_order LIMIT 1`,
+    );
+    const [l] = await db
+      .insert(leads)
+      .values({ name: `Muhr vazifa ${SUFFIX}`, stageId: stage[0]!.id, createdBy: sellerId, ownerId: sellerId })
+      .returning({ id: leads.id });
+    madeLeads.push(l!.id);
+    const first = await job({ section: 'yolkira', entityType: 'lead', entityId: l!.id, holder: vedAId, goods: `muhr ${TOKEN}` });
+    await setFreightZone(first, 'cn', ctx(vedAId));
+    await sealCalc(first, NO_DISCOUNT, ctx(vedAId));
+    // A correction is the cheap way to a request with a real task bound to it.
+    const child = await recalcFromSealed(first, ctx(vedAId));
+    madeRequests.push(child);
+    const task = await db.query.tasks.findFirst({ where: eq(tasks.boundId, child) });
+    expect(task?.status).toBe('open');
+    // The copy still waiting in the drain's queue.
+    const [copy] = await db
+      .insert(notifications)
+      .values({
+        userId: task!.assigneeId,
+        channel: 'telegram',
+        type: 'TaskAssigned',
+        status: 'pending',
+        payload: { taskId: task!.id, text: `vazifa ${TOKEN}` },
+      })
+      .returning({ id: notifications.id });
+
+    await setFreightZone(child, 'cn', ctx(vedAId));
+    await sealCalc(child, NO_DISCOUNT, ctx(vedAId));
+    expect((await db.query.tasks.findFirst({ where: eq(tasks.id, task!.id) }))?.status).toBe('done');
+    // The retire is the void form, off the request: wait for it, briefly.
+    let status = 'pending';
+    for (let i = 0; i < 40 && status === 'pending'; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      status = (await db.query.notifications.findFirst({ where: eq(notifications.id, copy!.id) }))!.status;
+    }
+    expect(status).toBe('muted');
+  });
+});

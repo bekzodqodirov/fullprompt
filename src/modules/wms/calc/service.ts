@@ -619,8 +619,10 @@ async function endRequest(
       })
       .where(and(eq(tasks.id, row.taskId), eq(tasks.status, 'open')));
     // The job's Telegram copies stop offering a button for a task that is no
-    // longer open — after the write, never inside a transaction (#714).
-    retireTaskCopiesSoon({ taskIds: [row.taskId], outcome: 'done' });
+    // longer open — after the write, never inside a transaction (#714). A
+    // hand-back is not «✅ Bajarildi»: the task's own result reads
+    // «Qaytarildi», and nothing was calculated (review integration-5).
+    retireTaskCopiesSoon({ taskIds: [row.taskId], outcome: patch.via === 'returned' ? 'cancelled' : 'done' });
   }
   return row;
 }
