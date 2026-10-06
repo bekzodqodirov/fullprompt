@@ -359,11 +359,33 @@ describe('the doors are compare-and-set (telegram-mechanics-16, access-money-13)
     const author = await mintStaff();
     const doer = await mintStaff();
     const id = await mintTask(author, doer);
+    // The assignment reached them — what makes «it was cancelled» news (review bot-8).
+    await sentCopy(doer.id, 'TaskAssigned', { taskId: id, text: '🆕 Yangi vazifa: X' }, { chatId: 990010, messageId: 1 });
     await cancelTask(id, 'xato yozdim', ctxOf(author));
     expect(await refusal(cancelTask(id, '', ctxOf(author)))).toBe('already_closed');
     const told = await queued(doer.id, 'TaskCancelled');
     expect(told).toHaveLength(1);
     expect((told[0]!.payload as { text: string }).text).toContain('🗑 Vazifa bekor qilindi');
+  });
+
+  it('a cancel BEFORE the assignment went out tells the assignee nothing — they never got it (review bot-8)', async () => {
+    const author = await mintStaff({ chat: true });
+    const doer = await mintStaff({ chat: true });
+    const made = await createTaskFromDraft(
+      author.chat!,
+      { assigneeId: doer.id, title: `Xato ${STAMP}`, note: '', sources: [], files: [] },
+      { dueAt: '', tzOffsetMin: null },
+    );
+    if (!made.ok) throw new Error(made.result);
+    taskIds.push(made.taskId);
+    await cancelTask(made.taskId, '', ctxOf(author));
+    // The queued copy is muted by the retire…
+    await vi.waitFor(async () => {
+      const [copy] = await queued(doer.id, 'TaskAssigned');
+      expect(copy).toMatchObject({ status: 'muted', error: 'closed before it was sent' });
+    }, { timeout: 5_000 });
+    // …and no «🗑 bekor qilindi» follows about a task they never received.
+    expect(await queued(doer.id, 'TaskCancelled')).toHaveLength(0);
   });
 });
 

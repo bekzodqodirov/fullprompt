@@ -2,7 +2,7 @@ import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, ne, sql, type SQL } 
 import { z } from 'zod';
 import { v7 as uuidv7 } from 'uuid';
 import { db, type Db, type Tx } from '../db/client';
-import { taskTypes, tasks, users } from '../db/schema';
+import { notifications, taskTypes, tasks, users } from '../db/schema';
 import { writeAudit, type AuditContext } from '../audit/service';
 import { entitySpec } from '../fields/registry';
 import { recordNames, resolveEntity } from '../entities/service';
@@ -818,8 +818,11 @@ export async function cancelTask(
 
   // The assignee is told the work went away (spec §4) — the most common case
   // is the author's own «🗑 Bekor qilish» on a typo seconds after creating it,
-  // and the copy those seconds delivered must not stay a live job.
-  if (before.assigneeId !== ctx.actorId) {
+  // and the copy those seconds delivered must not stay a live job. But only
+  // when a copy DID reach them: one still queued was just muted by the retire
+  // above, and «🗑 bekor qilindi» about a task they never got is news about
+  // nothing (review bot-8).
+  if (before.assigneeId !== ctx.actorId && (await assigneeWasReached(id, before.assigneeId))) {
     await notifyStaffTelegram({
       userIds: [before.assigneeId],
       type: 'TaskCancelled',
@@ -830,6 +833,32 @@ export async function cancelTask(
         `\n🔗 ${taskLinkFor(before)}`,
     }).catch(() => {});
   }
+}
+
+/**
+ * Did a copy of this task reach the assignee's Telegram — or is one on its
+ * way out this moment? 'sending' counts: the drain is past its send-time
+ * check, the copy will land, and the after-send retire stamps it (review
+ * tasks-1), so the person must hear why. The digest counts too: a morning
+ * list that named the task is how many people first meet it.
+ */
+async function assigneeWasReached(taskId: string, userId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: notifications.id })
+    .from(notifications)
+    .where(
+      and(
+        eq(notifications.userId, userId),
+        eq(notifications.channel, 'telegram'),
+        inArray(notifications.status, ['sent', 'sending']),
+        sql`((${notifications.type} IN ('TaskAssigned', 'TaskReminder', 'TaskAnswer')
+                AND ${notifications.payload}->>'taskId' = ${taskId})
+              OR (${notifications.type} = 'TasksDue'
+                AND ${notifications.payload}->'tasks' @> ${JSON.stringify([{ id: taskId }])}::jsonb))`,
+      ),
+    )
+    .limit(1);
+  return Boolean(row);
 }
 
 /** Hand a task to somebody else — the everyday move in a small company. */
