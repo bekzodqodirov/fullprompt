@@ -161,10 +161,36 @@ describe('every notification type the code sends is mutable (tests-completeness-
       sent.add(type[1] ?? consts.get(type[2]!) ?? `?${type[2]}`);
     }
   }
+  // A sender that hands notifyStaffTelegram a SHORTHAND `type` — a helper that
+  // builds `{ type, text }` and passes it on, as internal-chat's notifyByLink
+  // does — leaves no literal in the call's window, so the window above is
+  // blind to it (review integration-8). So every type-shaped literal in ANY
+  // file that calls notifyStaffTelegram counts too, minus the ones that file
+  // hands to `emitEvent` (domain events: buildRecipients fans those out, and
+  // the mutes tripwire reads it).
+  const emitted = new Set<string>();
+  for (const f of SRC) {
+    for (const m of f.text.matchAll(/emitEvent\(\s*\w+\s*,\s*\{\s*type:\s*'([A-Za-z]+)'/g)) emitted.add(m[1]!);
+  }
+  const fileWide = new Map<string, string>();
+  for (const f of SRC) {
+    if (!f.text.includes('notifyStaffTelegram(')) continue;
+    for (const m of f.text.matchAll(/type:\s*'([A-Z][A-Za-z]+)'/g)) {
+      if (!emitted.has(m[1]!)) fileWide.set(m[1]!, f.path);
+    }
+  }
 
   it('found the senders', () => {
     expect(sent.size, 're-anchor: no notifyStaffTelegram types found').toBeGreaterThanOrEqual(30);
     for (const type of ['TaskAccepted', 'TaskQuestion', 'TaskReminder', 'TaskReassigned']) expect(sent).toContain(type);
+    // …and the shorthand senders the window cannot see.
+    for (const type of ['MentionedInNote', 'InternalNote']) expect([...fileWide.keys()]).toContain(type);
+    expect(emitted.size, 're-anchor: no emitEvent types found').toBeGreaterThanOrEqual(5);
+  });
+
+  it('every type-shaped literal in a file that sends is in a mute group — a shorthand `type` included', () => {
+    const loose = [...fileWide].filter(([type]) => !grouped.has(type)).map(([type, path]) => `${type} (${path})`);
+    expect(loose, `unmutable: ${loose.join(', ')}`).toEqual([]);
   });
 
   it('every type sent through notifyStaffTelegram is in a mute group', () => {
