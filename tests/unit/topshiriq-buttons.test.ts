@@ -321,6 +321,21 @@ describe('«📤 Men bergan» (his 5a)', () => {
     expect(text).toContain('… va yana 20 ta');
     expect(givenListText({ total: 0, rows: [] }, now)).toBe('📤 Siz bergan ochiq vazifa yo‘q.');
   });
+
+  it('twenty long web titles still fit ONE Telegram message (review bot-9)', () => {
+    const rows = Array.from({ length: 20 }, () => ({
+      id: UUID,
+      title: `${'Ш'.repeat(60)} ${'ж'.repeat(139)}`,
+      assigneeName: 'Abdurahmonov Sirojiddin',
+      dueAt: new Date('2026-10-20T10:00:00Z'),
+      allDay: true,
+      accepted: false,
+    }));
+    const text = givenListText({ total: 25, rows }, now);
+    expect(text.length).toBeLessThanOrEqual(4096);
+    // Each line keeps a readable head of its title, marked as cut.
+    expect(text).toContain(`⏳ Abdurahmonov Sirojiddin · 20.10 · ${'Ш'.repeat(60)} …`);
+  });
 });
 
 describe('the calc task’s one link, and who hears a press (telegram-mechanics-8/20)', () => {

@@ -14,6 +14,7 @@ import {
   cancelTask,
   completeTask,
   createTask,
+  cutOnWord,
   forwardSourcesAgain,
   givenTasks,
   MAX_TASK_SOURCES,
@@ -34,6 +35,7 @@ import { logger } from '../logger';
 import { approvalVerdictLine } from '../notifications/labels';
 import {
   appendLine,
+  capStaffText,
   keyboardOf,
   staffTextHtml,
   urlRowsOf,
@@ -1664,14 +1666,21 @@ export function givenListText(list: { rows: GivenTask[]; total: number }, now: D
     const late = row.dueAt !== null && row.dueAt.getTime() < now.getTime();
     const mark = late ? '🔴' : row.accepted ? '👀' : '⏳';
     const due = row.dueAt ? telegramDue(row.dueAt, row.allDay, now) : 'muddatsiz';
-    return `${mark} ${row.assigneeName ?? '—'} · ${due} · ${row.title}`;
+    // A web title may be 200 characters, and twenty of them passed Telegram's
+    // 4 096: the reply threw into bot.catch and the person heard silence
+    // (review bot-9). A list line is a reminder, the title is on the site.
+    return `${mark} ${row.assigneeName ?? '—'} · ${due} · ${cutOnWord(row.title, GIVEN_TITLE_MAX, '…')}`;
   });
   const more = list.total > list.rows.length ? `\n… va yana ${list.total - list.rows.length} ta (saytda)` : '';
-  return (
+  // …and the whole is capped too: a long name per row must not undo the cut.
+  return capStaffText(
     `📤 Siz bergan ochiq vazifalar (${list.total})\n\n${lines.join('\n')}${more}\n\n` +
-    '🔴 kechikkan · 👀 qabul qilingan · ⏳ hali ko‘rilmagan'
+      '🔴 kechikkan · 👀 qabul qilingan · ⏳ hali ko‘rilmagan',
   );
 }
+
+/** How much of a title one «📤 Men bergan» line carries. */
+export const GIVEN_TITLE_MAX = 80;
 
 export function givenButtons(rows: GivenTask[]): CallbackButton[][] | null {
   const out = rows
