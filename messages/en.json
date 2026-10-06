@@ -3687,7 +3687,11 @@
       "no_deal": "The receipt is not on a deal — attach it to one first",
       "forbidden": "Not allowed",
       "server_behind": "The server is updating — try again shortly"
-    }
+    },
+    "kartaHint": "The seller's card — read only. Write your question on the timeline; the seller answers there.",
+    "kartaBack": "Back to the calculation",
+    "kartaWonDeal": "The lead became a deal — the calculation is on the deal:",
+    "sellerGuess": "Seller's own estimate"
   },
   "partners": {
     "title": "Counterparties",

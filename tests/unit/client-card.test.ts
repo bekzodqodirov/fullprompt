@@ -379,12 +379,15 @@ describe('no lenta without a money answer', () => {
       const source = read(file);
       for (const element of sites(source, /<ClientFeed\b/g, '<', '>')) elements.push([file, element]);
     }
-    // The three cards — the fence has something to hold.
+    // The three cards — the fence has something to hold — and the VED's karta
+    // (docs/VED-TARIX.md §10, a deliberate addition: the lead's lenta, read by
+    // the calculator, asks the same ledger door for the lead's stored client).
     expect(elements.map(([file]) => file).sort()).toEqual(
       [
         'src/app/(protected)/admin/clients/[id]/page.tsx',
         'src/app/(protected)/bitimlar/[id]/page.tsx',
         'src/app/(protected)/crm/leads/[id]/page.tsx',
+        'src/app/(protected)/hisoblash/[id]/karta/page.tsx',
       ].sort(),
     );
     for (const [file, element] of elements) {

@@ -3687,7 +3687,11 @@
       "no_deal": "入库单未关联交易——请先关联",
       "forbidden": "无权限",
       "server_behind": "服务器正在更新——请稍后再试"
-    }
+    },
+    "kartaHint": "销售的卡片——只读。请把问题写在动态里，销售会在那里回复。",
+    "kartaBack": "返回计算",
+    "kartaWonDeal": "线索已转为交易——计算在交易中：",
+    "sellerGuess": "销售填写的估价"
   },
   "partners": {
     "title": "合作方",

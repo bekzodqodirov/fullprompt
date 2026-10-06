@@ -30,6 +30,7 @@ export function FeedNoteBox({
   entityId,
   labels,
   people = [],
+  files: allowFiles = true,
 }: {
   /** Where the note lands: the deal on a deal card, else the client, else the lead. */
   entityType: 'client' | 'lead' | 'deal';
@@ -37,6 +38,8 @@ export function FeedNoteBox({
   labels: { placeholder: string; save: string; saving: string; attach: string };
   /** Colleagues an @ can name (phase 4). */
   people?: MentionPerson[];
+  /** False on a calculator's box (docs/VED-TARIX.md §10): no 📎, text only. */
+  files?: boolean;
 }) {
   const [state, submit, pending] = useActionState<ReplyState, FormData>(addFeedNoteAction, {});
   const formRef = useRef<HTMLFormElement>(null);
@@ -113,24 +116,28 @@ export function FeedNoteBox({
         testid="feed-note-body"
       />
       <div className="flex items-center gap-1">
-        <input
-          ref={fileRef}
-          type="file"
-          multiple
-          hidden
-          onChange={(event) => void attach(event.target.files)}
-        />
-        <button
-          type="button"
-          aria-label={labels.attach}
-          title={labels.attach}
-          disabled={uploading}
-          onClick={() => fileRef.current?.click()}
-          className="btn-ghost btn-icon !min-h-9 shrink-0 disabled:opacity-50"
-          data-testid="feed-note-attach"
-        >
-          {uploading ? '…' : '📎'}
-        </button>
+        {allowFiles && (
+          <>
+            <input
+              ref={fileRef}
+              type="file"
+              multiple
+              hidden
+              onChange={(event) => void attach(event.target.files)}
+            />
+            <button
+              type="button"
+              aria-label={labels.attach}
+              title={labels.attach}
+              disabled={uploading}
+              onClick={() => fileRef.current?.click()}
+              className="btn-ghost btn-icon !min-h-9 shrink-0 disabled:opacity-50"
+              data-testid="feed-note-attach"
+            >
+              {uploading ? '…' : '📎'}
+            </button>
+          </>
+        )}
         {state.error && <p className="min-w-0 flex-1 truncate text-sm font-semibold text-bad">{state.error}</p>}
         <button
           type="submit"

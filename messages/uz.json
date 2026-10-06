@@ -3687,7 +3687,11 @@
       "no_deal": "Prixod bitimga biriktirilmagan — avval bitimga biriktiring",
       "forbidden": "Ruxsat yo‘q",
       "server_behind": "Server yangilanmoqda — birozdan keyin urinib ko‘ring"
-    }
+    },
+    "kartaHint": "Sotuvchining kartasi — faqat o‘qish uchun. Savolni lentaga yozing, sotuvchi shu yerda javob beradi.",
+    "kartaBack": "Hisob-kitobga qaytish",
+    "kartaWonDeal": "Lid bitimga aylangan — hisob-kitob bitimda:",
+    "sellerGuess": "Sotuvchi yozgan taxmin"
   },
   "partners": {
     "title": "Kontragentlar",
