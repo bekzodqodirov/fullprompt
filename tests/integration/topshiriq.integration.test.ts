@@ -1031,6 +1031,34 @@ describe('a task’s files (his 3a; access-money-11, telegram-mechanics-26)', ()
     const fresh = { ...voice, fileId: 'AwACAgIAAxkBAAIBnext' };
     await expect(downloadTaskFiles({ taskId: id, uploadedBy: author.id, files: [fresh] })).rejects.toThrow(/not downloaded yet/);
   });
+
+  it('two different files with ONE name are two files — the fence is the file, never its name (review tasks-6 / bot-6)', async () => {
+    const author = await mintStaff();
+    const doer = await mintStaff();
+    const id = await mintTask(author, doer);
+    // Two suppliers' invoices, forwarded into one task: the same name, two files.
+    const first = { fileId: 'BQACAgIAAxkBAAIBinvoiceA', name: 'Invoice.pdf', mime: 'application/pdf', size: 3, kind: 'document' as const };
+    const second = { ...first, fileId: 'BQACAgIAAxkBAAIBinvoiceB' };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(Buffer.from('pdf'), { status: 200 })),
+    );
+    answers = [
+      { status: 200, json: { ok: true, result: { file_path: 'documents/file_1.pdf' } } },
+      { status: 200, json: { ok: true, result: { file_path: 'documents/file_2.pdf' } } },
+    ];
+    expect(await downloadTaskFiles({ taskId: id, uploadedBy: author.id, files: [first, second] })).toEqual({ stored: 2, skipped: 0 });
+    expect(method('getFile').map((c) => c.body.file_id)).toEqual([first.fileId, second.fileId]);
+    const stored = await db
+      .select()
+      .from(attachments)
+      .where(and(eq(attachments.entityType, TASK_ENTITY_TYPE), eq(attachments.entityId, id)));
+    expect(stored.map((r) => r.fileName)).toEqual(['Invoice.pdf', 'Invoice.pdf']);
+    // A re-delivered job still lands nothing twice — and asks Telegram for nothing.
+    calls = [];
+    expect(await downloadTaskFiles({ taskId: id, uploadedBy: author.id, files: [first, second] })).toEqual({ stored: 0, skipped: 2 });
+    expect(method('getFile')).toHaveLength(0);
+  });
 });
 
 describe('a typed date that is not a date (review tasks-5 / bot-1)', () => {
