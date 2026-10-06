@@ -30,6 +30,7 @@ async function login(page: import('@playwright/test').Page, phone: string) {
 }
 
 let leadName = '';
+let leadUrl = '';
 let requestUrl = '';
 
 test.describe.configure({ mode: 'serial' });
@@ -58,6 +59,7 @@ test('a seller sends a calculation from a lead card', async ({ page }) => {
   expect(href, 'the quick-create toast must link to the lead').toBeTruthy();
   await page.goto(href!);
   await expect(page).toHaveURL(/\/crm\/leads\//, { timeout: 15_000 });
+  leadUrl = href!;
 
   // The panel is a fold on the rail; the form inside it is the desk half.
   await page.getByTestId('calc-panel').click();
@@ -115,6 +117,24 @@ test('the VED types the cargo facts the bot could not read', async ({ page }) =>
   await expect(page.getByTestId('calc-checklist')).not.toContainText('⚠');
   // Filled, the form folds away rather than sitting open over the facts.
   await expect(page.getByTestId('calc-facts-edit')).toBeVisible();
+});
+
+test('the job’s task on the card is a door to the job, never a ✅ (VED-TARIX §8)', async ({ page }) => {
+  expect(leadUrl, 'the send test must have captured its lead').not.toBe('');
+  expect(requestUrl, 'the send test must have captured its request').not.toBe('');
+  await login(page, ADMIN);
+  await page.goto(leadUrl);
+
+  // The task the request opened sits in the card's tasks panel (open, because
+  // it holds open work). Every task door used to close the job with no price;
+  // now the row offers the job's own screen to a `ved.docs` reader — which
+  // this login is, the CalcPanel's own link above proves it — and no ✅.
+  const panel = page.getByTestId('tasks-panel');
+  const job = panel.locator('[data-testid^="calc-job-"]');
+  await expect(job).toHaveCount(1, { timeout: 15_000 });
+  await expect(job).toHaveAttribute('href', requestUrl);
+  await expect(panel.locator('[data-testid^="close-"]')).toHaveCount(0);
+  await expect(panel.locator('[data-testid^="reassign-"]')).toHaveCount(0);
 });
 
 test('take it, then finish it with the figure the seller is waiting for', async ({ page }) => {

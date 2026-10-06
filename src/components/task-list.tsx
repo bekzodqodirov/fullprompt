@@ -205,17 +205,20 @@ function TaskCard({
             <>
               {task.calc ? (
                 // An open calc job ends on its own screen (VED-TARIX §8) — the
-                // VED is taken there; anybody else reads who is on it.
+                // VED is taken there; anybody else reads who is on it. Its
+                // testid is `calc-job-…`, never `calc-open-…`: the card's
+                // CalcPanel owns `calc-open-link`, and a prefix must not catch
+                // both.
                 task.calc.mayOpen ? (
                   <Link
                     href={task.calc.href}
-                    data-testid={`calc-open-${task.id}`}
+                    data-testid={`calc-job-${task.id}`}
                     className="btn-primary !min-h-9 flex-1 px-3"
                   >
                     🧮 {t('calcOpen')}
                   </Link>
                 ) : (
-                  <span data-testid={`calc-locked-${task.id}`} className="chip flex-1 justify-center">
+                  <span data-testid={`calc-job-locked-${task.id}`} className="chip flex-1 justify-center">
                     🧮 {t('calcLocked')}
                   </span>
                 )
@@ -297,7 +300,9 @@ function TaskCard({
                 {tc('cancel')}
               </button>
               {state.error && (
-                <p role="alert" data-testid={`close-error-${task.id}`} className="w-full text-xs font-semibold text-bad">
+                // `refused-close-…`, never `close-error-…`: m9f finds the ✅ by the
+                // PREFIX `close-`, and two matches is a strict-mode refusal.
+                <p role="alert" data-testid={`refused-close-${task.id}`} className="w-full text-xs font-semibold text-bad">
                   {errorText(state.error)}
                 </p>
               )}

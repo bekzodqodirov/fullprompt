@@ -186,7 +186,7 @@ describe('the assignee’s buttons, by where the task came from (spec §2, mecha
 
   it('an unparseable id draws nothing rather than a button nobody answers', () => {
     expect(buttonsFor('TaskAssigned', { taskId: 'not-a-uuid', text: 'x' })).toBeNull();
-    expect(assigneeButtons(UUID, {})[0]!.map(dataOf)).toEqual([`tk:${UUID}`, `t:${UUID}`]);
+    expect(assigneeButtons(UUID, {})![0]!.map(dataOf)).toEqual([`tk:${UUID}`, `t:${UUID}`]);
   });
 });
 
