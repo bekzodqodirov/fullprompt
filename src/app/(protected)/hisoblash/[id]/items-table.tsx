@@ -931,9 +931,10 @@ export function ItemsTable({
                 <col className="w-20" />
                 <col className="w-20" />
                 <col className="w-32" />
-                {/* The baza column: a 56px amount, a 56px unit select and the
-                    gap, inside the cell's own padding. */}
-                <col className="w-32" />
+                {/* The baza column: a 56px amount, the 64px unit select
+                    (BasisSelect, measured) and the gap, inside the cell's
+                    own padding. */}
+                <col className="w-36" />
                 <col className="w-9" />
               </colgroup>
               <thead>
@@ -1978,9 +1979,10 @@ function NewRowCells({
  * ⚠ — a select that cannot render the stored value silently rewrites it on
  * the next submit (#171), and a conflict must be SEEN to be fixed.
  *
- * Measured at 1280 and 768 with «dona», «litr», «m³», «avto» and «шт»: the
- * 56px box carries the longest word whole beside the 56px amount inside the
- * 128px baza column (a 48px one clipped «litr» to «lit»).
+ * Measured in a browser at 1280 and 768: the widest word any locale puts in
+ * it is ru «авто» at 34px of text, and the old 48px box left 26px — a 56px
+ * one still cut the last letter off. 64px leaves 42px for the text beside
+ * the arrow, and the baza column grew to hold it with the 56px amount.
  */
 function BasisSelect({
   value,
@@ -2003,7 +2005,7 @@ function BasisSelect({
   const options = value === null || offered.includes(value) ? offered : [...offered, value];
   return (
     <select
-      className={`input-cell !w-14 !px-0.5${drafted ? ' border-brand-500' : ''}`}
+      className={`input-cell !w-16 !px-0.5${drafted ? ' border-brand-500' : ''}`}
       aria-label={label}
       data-testid={testId}
       value={value ?? ''}

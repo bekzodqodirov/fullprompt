@@ -71,10 +71,21 @@ test('a m² code asks for its measure, prices live, and seals the same number', 
   await expect(page.getByTestId('calc-measure')).toHaveCount(1);
   const basis = page.getByTestId('calc-basis').last();
   await expect(basis).toHaveValue('m2');
-  // …and the codeless row's select still offers nothing beyond unit/kg.
-  await expect(
-    page.getByTestId('calc-basis').first().locator('option[value="m2"]'),
-  ).toHaveCount(0);
+  // 0125 (his 18a/19a): the units on offer are the LAW's list. A codeless
+  // row is under no law and may be priced per any of the six; the m² code
+  // owns the row's one measure pair, so it offers dona, kg, m³ and its own
+  // unit — never another pair unit.
+  const values = (select: import('@playwright/test').Locator) =>
+    select.locator('option').evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value));
+  expect(await values(page.getByTestId('calc-basis').first())).toEqual([
+    'unit',
+    'kg',
+    'm3',
+    'm2',
+    'juft',
+    'litr',
+  ]);
+  expect(await values(basis)).toEqual(['unit', 'kg', 'm3', 'm2']);
 
   // 200 m² at $1/m²: value 200; advalor 15 % = 30; specific 200 × $1 = 200
   // → MAX 200; VAT 12 % of 400 = 48 → the block's own figure is $248 —
@@ -95,29 +106,86 @@ test('a m² code asks for its measure, prices live, and seals the same number', 
   await expect(page.getByTestId('calc-group-baza')).toContainText('m²');
 });
 
+test('a unit picked on an UNPRICED row survives Saqlash and the reload', async ({ page }) => {
+  expect(requestUrl).not.toBe('');
+  await login(page);
+  await page.goto(requestUrl);
+  await expect(page.getByTestId('calc-table')).toBeVisible({ timeout: 15_000 });
+
+  // The codeless row (vaza) renders FIRST and carries no price yet. The pick
+  // used to draft a coherent pair and then post nothing — the save sent a
+  // unit only beside a price — so the select snapped back on Saqlash: the
+  // owner's «edinitsa izmereniyani o'zgartirib bo'lmayabti» in a second
+  // costume, on exactly the row a VED meets first.
+  const basis = page.getByTestId('calc-basis').first();
+  await expect(basis).toHaveValue('unit');
+  await basis.selectOption('kg');
+  await expect(page.getByTestId('calc-unsaved')).toBeVisible();
+  await page.getByTestId('calc-save-table').click();
+  await expect(page.getByTestId('calc-unsaved')).toHaveCount(0, { timeout: 15_000 });
+  await page.reload();
+  await expect(page.getByTestId('calc-basis').first()).toHaveValue('kg', { timeout: 15_000 });
+});
+
 test('a unit changed on its own sticks — the select is not a no-op', async ({ page }) => {
   expect(requestUrl).not.toBe('');
   await login(page);
   await page.goto(requestUrl);
   await expect(page.getByTestId('calc-table')).toBeVisible({ timeout: 15_000 });
 
-  // The codeless row (vaza) renders FIRST. A baza per dona, saved…
+  // The codeless row (vaza) renders FIRST. A baza typed with the select
+  // untouched keeps the unit the VED chose above — never the default over it.
   await page.getByTestId('calc-baza').first().fill('5');
   await page.getByTestId('calc-save-table').click();
   await expect(page.getByTestId('calc-unsaved')).toHaveCount(0, { timeout: 15_000 });
   const basis = page.getByTestId('calc-basis').first();
-  await expect(basis).toHaveValue('unit');
+  await expect(basis).toHaveValue('kg');
 
   // …then ONLY the unit. The grid drafted a pick as two updates that each
   // cleaned themselves away, so the select snapped back to «dona» on every
   // row (the owner, 2026-10-06: «ved hodimi o'zi o'zgartira olmayabti»).
-  await basis.selectOption('kg');
-  await expect(basis).toHaveValue('kg');
+  await basis.selectOption('unit');
+  await expect(basis).toHaveValue('unit');
   await expect(page.getByTestId('calc-unsaved')).toBeVisible();
   await page.getByTestId('calc-save-table').click();
   await expect(page.getByTestId('calc-unsaved')).toHaveCount(0, { timeout: 15_000 });
   await page.reload();
-  await expect(page.getByTestId('calc-basis').first()).toHaveValue('kg', { timeout: 15_000 });
+  await expect(page.getByTestId('calc-basis').first()).toHaveValue('unit', { timeout: 15_000 });
+});
+
+test('an m³ baza reads the row’s kub, LIVE and saved — then the block goes back to m²', async ({ page }) => {
+  expect(requestUrl).not.toBe('');
+  await login(page);
+  await page.goto(requestUrl);
+  await expect(page.getByTestId('calc-table')).toBeVisible({ timeout: 15_000 });
+
+  // The plitka row (6907, priced $1/m² over 200 m²) renders LAST, row 1.
+  const customs = page.getByTestId('calc-group-customs');
+  await expect(customs).toContainText('248');
+  const basis = page.getByTestId('calc-basis').last();
+  await basis.selectOption('m3');
+  // Per m³ the VALUE reads the kub, and the row has none yet — the block
+  // refuses in words, never a $0.
+  await expect(customs).toContainText('⚠');
+  // 2 m³ × $1 = $2 value; advalor 15 % = 0.30; the law's floor still counts
+  // its m² (200 × $1 = 200) → MAX 200; VAT 12 % of 202 = 24.24 → $224.24.
+  await page.locator('[data-cell="volumeM3"][data-row="1"]').fill('2');
+  await expect(customs).toContainText('224.24');
+  await page.getByTestId('calc-save-table').click();
+  await expect(page.getByTestId('calc-unsaved')).toHaveCount(0, { timeout: 15_000 });
+  await page.reload();
+  await expect(page.getByTestId('calc-basis').last()).toHaveValue('m3', { timeout: 15_000 });
+  await expect(page.getByTestId('calc-group-customs')).toContainText('224.24');
+  // A1: the law counts in m² and the baza is per m³ — allowed, and SAID.
+  await expect(page.getByTestId('calc-basis-not-law')).toBeVisible();
+
+  // Back to the block the seal below expects: per m², no kub.
+  await page.getByTestId('calc-basis').last().selectOption('m2');
+  await page.locator('[data-cell="volumeM3"][data-row="1"]').fill('');
+  await page.getByTestId('calc-save-table').click();
+  await expect(page.getByTestId('calc-unsaved')).toHaveCount(0, { timeout: 15_000 });
+  await expect(page.getByTestId('calc-group-row').first()).toContainText('248', { timeout: 15_000 });
+  await expect(page.getByTestId('calc-basis-not-law')).toHaveCount(0);
 });
 
 test('deleting a row with an unsaved draft releases the gate — never a wedge', async ({ page }) => {
