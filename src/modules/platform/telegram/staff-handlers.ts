@@ -42,6 +42,7 @@ import {
   takeTaskPending,
   notePendingPrompt,
   pressRefusalText,
+  refusalFor,
   taskPressCheck,
   type CalcStep,
   type NoteStep,
@@ -889,16 +890,16 @@ export function registerStaffBot(bot: Bot): void {
       const pendingTask = takeTaskPending(chatId);
       if (pendingTask && pendingTask.kind !== 'result') {
         // A question, an answer, or a typed date after ⏰ — the same one wait.
-        await answerPendingText(ctx, chatId, pendingTask, ctx.message.text);
-        return;
-      }
-      if (pendingTask) {
+        // A «date» that is not one is not consumed: it falls to the tail.
+        if (await answerPendingText(ctx, chatId, pendingTask, ctx.message.text)) return;
+      } else if (pendingTask) {
         const result = ctx.message.text.trim() === '-' ? '' : ctx.message.text.trim();
         const outcome = await completeTaskFromBot(chatId, pendingTask.taskId, result, pendingTask.pressed);
         // Every code the service can refuse with has its words (a Record over
         // the closed union) — a refusal is a sentence, never a throw into
         // bot.catch after the person typed their result.
-        await ctx.reply(outcome === 'done' ? '✅ Vazifa yopildi.' : TASK_ANSWERS[outcome]);
+        // …and an open calc job's refusal carries the job's page (review bot-12).
+        await ctx.reply(outcome === 'done' ? '✅ Vazifa yopildi.' : await refusalFor(pendingTask.taskId, outcome));
         // The «✅ Natijasiz» on the prompt is spent either way.
         if (pendingTask.promptMessageId) {
           void editMarkup({ chatId, messageId: pendingTask.promptMessageId }).catch(() => {});
@@ -907,7 +908,7 @@ export function registerStaffBot(bot: Bot): void {
         // a list, loses that one row). Off the poller: an edit is a network
         // call and the answer above is what the person is waiting for.
         if (outcome === 'done' || outcome === 'already_closed') {
-          void closeTaskMessage(chatId, pendingTask, outcome === 'done' ? result : '').catch(
+          void closeTaskMessage(chatId, pendingTask, outcome === 'done' ? result : '', outcome).catch(
             (err: unknown) => logger.warn({ err }, 'task message not closed'),
           );
         }

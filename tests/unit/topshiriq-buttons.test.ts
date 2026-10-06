@@ -321,23 +321,40 @@ describe('«📤 Men bergan» (his 5a)', () => {
     expect(text).toContain('… va yana 20 ta');
     expect(givenListText({ total: 0, rows: [] }, now)).toBe('📤 Siz bergan ochiq vazifa yo‘q.');
   });
+
+  it('twenty long web titles still fit ONE Telegram message (review bot-9)', () => {
+    const rows = Array.from({ length: 20 }, () => ({
+      id: UUID,
+      title: `${'Ш'.repeat(60)} ${'ж'.repeat(139)}`,
+      assigneeName: 'Abdurahmonov Sirojiddin',
+      dueAt: new Date('2026-10-20T10:00:00Z'),
+      allDay: true,
+      accepted: false,
+    }));
+    const text = givenListText({ total: 25, rows }, now);
+    expect(text.length).toBeLessThanOrEqual(4096);
+    // Each line keeps a readable head of its title, marked as cut.
+    expect(text).toContain(`⏳ Abdurahmonov Sirojiddin · 20.10 · ${'Ш'.repeat(60)} …`);
+  });
 });
 
 describe('the calc task’s one link, and who hears a press (telegram-mechanics-8/20)', () => {
   const REQ = '11111111-2222-4333-8444-555555555555';
-  it('a bound calc task links to the JOB’s own screen; every other task to its card', () => {
+  it('a bound calc task links a VED to the JOB’s own screen; a task about nothing to «Mening kunim», about a client to its card', async () => {
     const saved = process.env.APP_URL;
     process.env.APP_URL = 'https://gsrwms.uz';
+    const ved = { id: UUID, permissions: new Set(['ved.docs']) };
     try {
-      expect(taskLinkFor({ origin: 'calc', boundId: REQ, entityType: 'lead', entityId: UUID })).toBe(
+      expect(await taskLinkFor({ origin: 'calc', boundId: REQ, entityType: 'lead', entityId: UUID }, ved)).toBe(
         `https://gsrwms.uz/hisoblash/${REQ}`,
       );
-      // A release ghost has no job to open: its card, like any task.
-      expect(taskLinkFor({ origin: 'calc', boundId: null, entityType: 'lead', entityId: UUID })).toBe(
-        `https://gsrwms.uz/crm/leads/${UUID}`,
-      );
-      expect(taskLinkFor({ origin: 'hand', boundId: null, entityType: null, entityId: null })).toBe(
+      // The per-recipient lead/deal rule is a query (card-door) — the
+      // integration file asks it (review access-5, integration-2/6).
+      expect(await taskLinkFor({ origin: 'hand', boundId: null, entityType: null, entityId: null }, ved)).toBe(
         'https://gsrwms.uz/bugun',
+      );
+      expect(await taskLinkFor({ origin: 'hand', boundId: null, entityType: 'client', entityId: UUID }, ved)).toBe(
+        `https://gsrwms.uz/admin/clients/${UUID}`,
       );
     } finally {
       if (saved === undefined) delete process.env.APP_URL;

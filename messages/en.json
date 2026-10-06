@@ -2976,7 +2976,8 @@
       "remind_too_soon": "Reminded recently — again in 30 minutes",
       "not_remindable": "A reminder cannot be sent for this task",
       "not_askable": "A question cannot be sent for this task",
-      "empty_text": "Empty message"
+      "empty_text": "Empty message",
+      "nothing_to_send": "Nothing to send — the task is with you now, or it carries no messages"
     },
     "repeat": "Repeat",
     "repeatNever": "no repeat",

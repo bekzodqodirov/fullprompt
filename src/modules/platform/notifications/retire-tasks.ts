@@ -18,8 +18,13 @@ import { logger } from '../logger';
  *     keeps its TEXT, and only its keyboard is redrawn from the tasks it
  *     listed that are still open. Stamping it «✅ Bajarildi» would wipe the
  *     buttons of seven other open tasks (the review's blocker).
- * The drain re-checks at send time too (`taskCopyStillLive`): a copy it held
- * in «sending» at this moment is never seen here.
+ * A copy the drain holds in «sending» at this moment is never seen here, so
+ * the drain asks twice: before the send (`taskCopyLive` mutes a copy whose
+ * task closed or moved) and again AFTER it has written 'sent' and the
+ * message id (`retireIfClosedInFlight`), retiring that one row itself when
+ * the task closed while its forwards and text were going out (review
+ * tasks-1). A close that commits after that second read finds the row here,
+ * because 'sent' was written first.
  *
  * Callers run it AFTER their transaction commits (#714), never inside one,
  * and off the request or the poller (`retireTaskCopiesSoon`, #706).
@@ -42,6 +47,12 @@ export interface RetireTaskCopiesInput {
   until?: Date;
   /** The message a press is editing itself — two edits must not race on it. */
   exceptMessages?: { chatId: number; messageId: number }[];
+  /**
+   * Only these rows — the drain's own after-send check, retiring the ONE copy
+   * that was in flight while the door's retire ran (review tasks-1). Every
+   * other copy was the door's to settle, and the door saw them.
+   */
+  onlyNotificationIds?: string[];
 }
 
 /**
@@ -125,6 +136,7 @@ export async function retireTaskCopies(input: RetireTaskCopiesInput): Promise<nu
       except.length > 0 ? notInArray(notifications.userId, except) : undefined,
       gte(notifications.createdAt, from),
       input.until ? lt(notifications.createdAt, input.until) : undefined,
+      input.onlyNotificationIds ? inArray(notifications.id, input.onlyNotificationIds) : undefined,
     );
 
   // 1. Not sent yet: muted, terminal, not a delivery problem.
@@ -144,7 +156,13 @@ export async function retireTaskCopies(input: RetireTaskCopiesInput): Promise<nu
   if (!process.env.TELEGRAM_BOT_TOKEN) return 0;
   const windowStart = new Date(Math.max(input.since?.getTime() ?? 0, Date.now() - EDIT_WINDOW_MS));
   const rows = await db
-    .select({ id: notifications.id, type: notifications.type, payload: notifications.payload, locale: users.locale })
+    .select({
+      id: notifications.id,
+      userId: notifications.userId,
+      type: notifications.type,
+      payload: notifications.payload,
+      locale: users.locale,
+    })
     .from(notifications)
     .innerJoin(users, eq(users.id, notifications.userId))
     .where(
@@ -169,19 +187,23 @@ export async function retireTaskCopies(input: RetireTaskCopiesInput): Promise<nu
   const { editMarkup, editText } = await import('../telegram/send');
   const { dayButtons } = await import('../telegram/staff-bot');
 
-  // The digests' other tasks, in ONE status query.
+  // The digests' other tasks, in ONE query: still open, and WHOSE. A digest
+  // is its reader's own list, so a row stays only while the task is open AND
+  // still theirs — a reassign keeps the task open, and the old holder's ✅
+  // kept closing the new holder's task for anybody whose grants reach it
+  // (review tasks-4).
   const listed = new Set<string>();
   for (const row of rows) {
     if (row.type !== TASK_LIST_TYPE) continue;
     for (const entry of listEntries(row.payload)) listed.add(entry.id);
   }
-  const stillOpen = new Set<string>();
+  const openHolder = new Map<string, string>();
   if (listed.size > 0) {
     const open = await db
-      .select({ id: tasks.id })
+      .select({ id: tasks.id, assigneeId: tasks.assigneeId })
       .from(tasks)
       .where(and(inArray(tasks.id, [...listed]), eq(tasks.status, 'open')));
-    for (const row of open) stillOpen.add(row.id);
+    for (const row of open) openHolder.set(row.id, row.assigneeId);
   }
 
   const skip = new Set((input.exceptMessages ?? []).map((m) => `${m.chatId}:${m.messageId}`));
@@ -205,7 +227,7 @@ export async function retireTaskCopies(input: RetireTaskCopiesInput): Promise<nu
             // Nothing left open: no markup at all, which Telegram reads as
             // «remove the keyboard» (an empty one it refuses).
             replyMarkup: keyboardOf([
-              ...(dayButtons(listEntries(payload).filter((entry) => stillOpen.has(entry.id))) ?? []),
+              ...(dayButtons(listEntries(payload).filter((entry) => openHolder.get(entry.id) === row.userId)) ?? []),
               ...linkRow,
             ]),
           })

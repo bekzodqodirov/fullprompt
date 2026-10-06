@@ -12,7 +12,9 @@ import {
   notifications,
   paymentPromises,
   tasks,
+  roles,
   telegramLinks,
+  userRoles,
   users,
 } from '@/modules/platform/db/schema';
 import {
@@ -42,11 +44,13 @@ import { decideAttachmentRead } from '@/modules/wms/attachments/access';
 import { __setTelegramTransport } from '@/modules/platform/telegram/send';
 import {
   appendLatePart,
+  buttonsFor,
   completeTaskFromBot,
   createTaskFromDraft,
   givenFromBot,
   pressRefusalText,
   remindTaskFromBot,
+  sourcesFromBot,
   TASK_ANSWERS,
   taskPressCheck,
 } from '@/modules/platform/telegram/staff-bot';
@@ -297,6 +301,7 @@ afterAll(async () => {
   if (clientIds.length) await db.delete(clients).where(inArray(clients.id, clientIds));
   if (leadIds.length) await db.delete(leads).where(inArray(leads.id, leadIds));
   if (people.length) {
+    await db.delete(userRoles).where(inArray(userRoles.userId, people));
     await db.delete(telegramLinks).where(inArray(telegramLinks.userId, people));
     // Audited actors stay (audit_log FK) — they leave the company instead.
     await db.update(users).set({ active: false }).where(inArray(users.id, people));
@@ -359,11 +364,33 @@ describe('the doors are compare-and-set (telegram-mechanics-16, access-money-13)
     const author = await mintStaff();
     const doer = await mintStaff();
     const id = await mintTask(author, doer);
+    // The assignment reached them — what makes «it was cancelled» news (review bot-8).
+    await sentCopy(doer.id, 'TaskAssigned', { taskId: id, text: '🆕 Yangi vazifa: X' }, { chatId: 990010, messageId: 1 });
     await cancelTask(id, 'xato yozdim', ctxOf(author));
     expect(await refusal(cancelTask(id, '', ctxOf(author)))).toBe('already_closed');
     const told = await queued(doer.id, 'TaskCancelled');
     expect(told).toHaveLength(1);
     expect((told[0]!.payload as { text: string }).text).toContain('🗑 Vazifa bekor qilindi');
+  });
+
+  it('a cancel BEFORE the assignment went out tells the assignee nothing — they never got it (review bot-8)', async () => {
+    const author = await mintStaff({ chat: true });
+    const doer = await mintStaff({ chat: true });
+    const made = await createTaskFromDraft(
+      author.chat!,
+      { assigneeId: doer.id, title: `Xato ${STAMP}`, note: '', sources: [], files: [] },
+      { dueAt: '', tzOffsetMin: null },
+    );
+    if (!made.ok) throw new Error(made.result);
+    taskIds.push(made.taskId);
+    await cancelTask(made.taskId, '', ctxOf(author));
+    // The queued copy is muted by the retire…
+    await vi.waitFor(async () => {
+      const [copy] = await queued(doer.id, 'TaskAssigned');
+      expect(copy).toMatchObject({ status: 'muted', error: 'closed before it was sent' });
+    }, { timeout: 5_000 });
+    // …and no «🗑 bekor qilindi» follows about a task they never received.
+    expect(await queued(doer.id, 'TaskCancelled')).toHaveLength(0);
   });
 });
 
@@ -463,6 +490,9 @@ describe('the bound gate on every door (VED-TARIX §8, ved-correctness-11, teleg
     expect(await refusal(reassignTask(id, other.id, ctx))).toBe('calc_use_screen');
     expect(await refusal(rescheduleTask(id, { dueAt: new Date('2027-02-01T00:00:00Z'), allDay: true }, ctx))).toBe('calc_use_screen');
     expect(await refusal(askAboutTask(id, 'qachon?', ctx))).toBe('calc_use_screen');
+    // ✖ too: cancelling the task released the job to the queue, so the seller
+    // who asked for it could take the VED's claim (review tasks-2).
+    expect(await refusal(cancelTask(id, '', ctxOf(author)))).toBe('calc_use_screen');
     expect(
       await refusal(updateTask(id, { title: 'x', note: '', typeId: null, dueAt: '2027-03-01', priority: 2, tzOffsetMin: null }, ctx)),
     ).toBe('calc_use_screen');
@@ -672,6 +702,27 @@ describe('retiring a task’s Telegram copies (telegram-mechanics-2/5/6)', () =>
     expect(edits.map((e) => e.body.message_id)).toEqual([1]);
     expect(String(edits[0]!.body.text)).toMatch(/👤 Boshqaga berildi$/);
   });
+
+  it('a reassign takes the moved task’s row off the OLD holder’s digest — open is not enough, it must be theirs (review tasks-4)', async () => {
+    const author = await mintStaff();
+    const oldHolder = await mintStaff();
+    const newHolder = await mintStaff();
+    const moved = await mintTask(author, oldHolder);
+    const kept = await mintTask(author, oldHolder);
+    const tg = { chatId: 990004, messageId: 44 };
+    await sentCopy(oldHolder.id, 'TasksDue', {
+      text: '✅ Sizning vazifalaringiz',
+      tasks: [
+        { id: moved, title: 'M' },
+        { id: kept, title: 'O' },
+      ],
+    }, tg);
+    await reassignTask(moved, newHolder.id, ctxOf(author));
+    const marks = () => method('editMessageReplyMarkup').filter((call) => call.body.message_id === tg.messageId);
+    await vi.waitFor(() => expect(marks()).toHaveLength(1), { timeout: 5_000 });
+    // The moved task is still OPEN — but it is not this reader's to close any more.
+    expect(marks()[0]!.body.reply_markup).toEqual({ inline_keyboard: [[{ text: '✅ O', callback_data: `tb:${kept}` }]] });
+  });
 });
 
 describe('the drain re-checks a task copy at SEND time (telegram-mechanics-5)', () => {
@@ -728,6 +779,25 @@ describe('the drain re-checks a task copy at SEND time (telegram-mechanics-5)', 
     });
   });
 
+  it('a queued digest of a task handed on meanwhile goes without that task’s ✅ (review tasks-4)', async () => {
+    const author = await mintStaff();
+    const was = await mintStaff({ chat: true });
+    const now = await mintStaff();
+    const handed = await mintTask(author, now);
+    const mine = await mintTask(author, was);
+    const row = await pendingCopy(was.id, 'TasksDue', {
+      text: '✅ Sizning vazifalaringiz',
+      tasks: [
+        { id: handed, title: 'Berilgan' },
+        { id: mine, title: 'Meniki' },
+      ],
+    });
+    await drainOnly([row]);
+    expect(method('sendMessage')[0]!.body.reply_markup).toEqual({
+      inline_keyboard: [[{ text: '✅ Meniki', callback_data: `tb:${mine}` }]],
+    });
+  });
+
   it('the author’s messages are forwarded BEFORE the text, in order, once — a moment’s refusal sends nothing', async () => {
     const author = await mintStaff();
     const doer = await mintStaff({ chat: true });
@@ -772,6 +842,144 @@ describe('the drain re-checks a task copy at SEND time (telegram-mechanics-5)', 
     await drainOnly([row]);
     expect(calls.map((c) => c.method)).toEqual(['forwardMessages', 'sendMessage']);
     expect(await notificationRow(row)).toMatchObject({ status: 'sent', payload: expect.objectContaining({ forwarded: true }) });
+  });
+
+  /**
+   * The task closes while its copy is IN FLIGHT (review tasks-1): the close
+   * commits and the door's retire runs to completion during the forwards —
+   * while the row reads «sending», which that retire cannot see. Done here by
+   * hand, inside the transport, so the order is the defect's and not a race.
+   */
+  function closeDuring(methodName: string, close: () => Promise<void>): void {
+    let fired = false;
+    __setTelegramTransport(async (url, init) => {
+      const name = url.slice(url.lastIndexOf('/') + 1);
+      calls.push({ method: name, body: JSON.parse(String(init.body)) as Record<string, unknown> });
+      if (name === methodName && !fired) {
+        fired = true;
+        await close();
+      }
+      return new Response(JSON.stringify({ ok: true, result: { message_id: (nextMessageId += 1) } }), { status: 200 });
+    });
+  }
+
+  it('a copy whose task is cancelled DURING its forwards is retired by the drain itself once sent (review tasks-1)', async () => {
+    const author = await mintStaff();
+    const doer = await mintStaff({ chat: true });
+    const id = await mintTask(author, doer);
+    const row = await pendingCopy(doer.id, 'TaskAssigned', {
+      taskId: id,
+      origin: 'hand',
+      forwards: [{ chatId: 4242, messageId: 30 }],
+      text: `🆕 Yangi vazifa: Xato\n🔗 ${APP}/bugun`,
+    });
+    closeDuring('forwardMessages', async () => {
+      await db.update(tasks).set({ status: 'cancelled' }).where(eq(tasks.id, id));
+      // The door's own retire, finishing while the row is still «sending».
+      await retireTaskCopies({ taskIds: [id], outcome: 'cancelled' });
+    });
+    await drainOnly([row]);
+    const sent = await notificationRow(row);
+    expect(sent.status).toBe('sent');
+    const messageId = (sent.payload as { tg: { messageId: number } }).tg.messageId;
+    const edits = () => method('editMessageText').filter((c) => c.body.message_id === messageId);
+    await vi.waitFor(() => expect(edits()).toHaveLength(1), { timeout: 5_000 });
+    expect(String(edits()[0]!.body.text)).toMatch(/🗑 Bekor qilindi$/);
+    // The live keyboard is gone; only the link stays.
+    expect(edits()[0]!.body.reply_markup).toEqual({ inline_keyboard: [[{ text: '↗️ Ochish', url: `${APP}/bugun` }]] });
+  });
+
+  it('a digest whose task closes during the send loses that row once sent (review tasks-1)', async () => {
+    const author = await mintStaff();
+    const doer = await mintStaff({ chat: true });
+    const [a, b] = [await mintTask(author, doer), await mintTask(author, doer)];
+    const row = await pendingCopy(doer.id, 'TasksDue', {
+      text: '✅ Sizning vazifalaringiz',
+      tasks: [
+        { id: a, title: 'A' },
+        { id: b, title: 'B' },
+      ],
+    });
+    closeDuring('sendMessage', async () => {
+      await db.update(tasks).set({ status: 'done', doneAt: new Date() }).where(eq(tasks.id, a));
+      await retireTaskCopies({ taskIds: [a], outcome: 'done' });
+    });
+    await drainOnly([row]);
+    const messageId = ((await notificationRow(row)).payload as { tg: { messageId: number } }).tg.messageId;
+    const marks = () => method('editMessageReplyMarkup').filter((c) => c.body.message_id === messageId);
+    await vi.waitFor(() => expect(marks()).toHaveLength(1), { timeout: 5_000 });
+    expect(marks()[0]!.body.reply_markup).toEqual({ inline_keyboard: [[{ text: '✅ B', callback_data: `tb:${b}` }]] });
+  });
+});
+
+describe('a task message links each recipient to a door THEY can open (review access-5, integration-2/6)', () => {
+  async function grant(person: Person, role: string): Promise<void> {
+    const [row] = await db.select({ id: roles.id }).from(roles).where(eq(roles.code, role));
+    await db.insert(userRoles).values({ userId: person.id, roleId: row!.id });
+  }
+  async function sellersLead(owner: Person): Promise<{ lead: string; request: string }> {
+    const [lead] = await db
+      .insert(leads)
+      .values({ name: `Hisob lid ${STAMP}-${leadIds.length}`, stageId, createdBy: owner.id, ownerId: owner.id })
+      .returning({ id: leads.id });
+    leadIds.push(lead!.id);
+    const [request] = await db
+      .insert(calcRequests)
+      .values({
+        entityType: 'lead',
+        entityId: lead!.id,
+        requestedBy: owner.id,
+        itemCount: 1,
+        dueAt: new Date(Date.now() + 3_600_000),
+        completedAt: new Date(),
+        completedBy: owner.id,
+        completedVia: 'task',
+      })
+      .returning({ id: calcRequests.id });
+    requests.push(request!.id);
+    return { lead: lead!.id, request: request!.id };
+  }
+  const lastText = async (userId: string, type: string) => {
+    const rows = await queued(userId, type);
+    return String((rows.at(-1)!.payload as { text: string }).text);
+  };
+
+  it('the SELLER who asked for a calculation is linked to his lead card, never to /hisoblash he cannot open', async () => {
+    const seller = await mintStaff();
+    const ved = await mintStaff();
+    await grant(seller, 'sales_manager');
+    await grant(ved, 'ved_manager');
+    const { lead, request } = await sellersLead(seller);
+    // The old pile: a calc task whose request has closed keeps its ✅.
+    const id = await mintTask(seller, ved, { origin: 'calc', boundId: request, entityType: 'lead', entityId: lead });
+    await completeTask(id, 'hisoblandi', ctxOf(ved, 'ved.docs'));
+    const done = await lastText(seller.id, 'TaskDone');
+    expect(done).not.toContain('/hisoblash/');
+    expect(done).toContain(`🔗 ${APP}/crm/leads/${lead}`);
+  });
+
+  it('the VED author of a hand-back is linked to the karta, never to the lead card the CRM bounces him from', async () => {
+    const seller = await mintStaff();
+    const ved = await mintStaff();
+    await grant(seller, 'sales_manager');
+    await grant(ved, 'ved_manager');
+    const { lead, request } = await sellersLead(seller);
+    const id = await mintTask(ved, seller, { origin: 'calc_return', entityType: 'lead', entityId: lead });
+    await acceptTask(id, ctxOf(seller, 'crm.leads'));
+    const accepted = await lastText(ved.id, 'TaskAccepted');
+    expect(accepted).not.toContain('/crm/leads/');
+    expect(accepted).toContain(`🔗 ${APP}/hisoblash/${request}/karta?lid=${lead}`);
+  });
+
+  it('somebody NO door admits gets no 🔗 line at all — never a link that bounces home', async () => {
+    const seller = await mintStaff();
+    const stranger = await mintStaff();
+    await grant(seller, 'sales_manager');
+    const { lead } = await sellersLead(seller);
+    // A plain worker given a task about somebody else's lead.
+    const id = await mintTask(seller, stranger, { entityType: 'lead', entityId: lead });
+    await remindTask(id, ctxOf(seller));
+    expect(await lastText(stranger.id, 'TaskReminder')).not.toContain('🔗');
   });
 });
 
@@ -840,22 +1048,58 @@ describe('the bot doors (telegram-mechanics-1/4/13/14)', () => {
     ).toEqual({ ok: false, result: 'not_linked' });
   });
 
-  it('a late album part joins the AUTHOR’s open task and is forwarded to its holder (telegram-mechanics-17)', async () => {
+  it('a late album part joins the AUTHOR’s open task and reaches its CURRENT holder through the drain (telegram-mechanics-17, review bot-11)', async () => {
     const author = await mintStaff({ chat: true });
     const doer = await mintStaff({ chat: true });
+    const next = await mintStaff({ chat: true });
     const stranger = await mintStaff({ chat: true });
     const first = { chatId: Number(author.chat), messageId: 20 };
     const id = await mintTask(author, doer, { sourceMessages: [first] });
-    expect(await appendLatePart(author.chat!, { taskId: id, assigneeId: doer.id }, { messageId: 21, file: null })).toBe(true);
+    expect(await appendLatePart(author.chat!, { taskId: id }, { messageId: 21, file: null })).toBe('added');
     expect((await taskRow(id)).sourceMessages).toEqual([first, { chatId: Number(author.chat), messageId: 21 }]);
-    expect(method('forwardMessage').map((c) => c.body)).toEqual([
-      { chat_id: Number(doer.chat), from_chat_id: Number(author.chat), message_id: 21 },
-    ]);
+    // Queued behind the assignment, never forwarded straight past it.
+    expect(method('forwardMessage')).toHaveLength(0);
+    const [copy] = await queued(doer.id, 'TaskSources');
+    expect(copy!.payload).toMatchObject({ taskId: id, forwards: [{ chatId: Number(author.chat), messageId: 21 }] });
+    // Handed on since: the next part goes to whoever holds the task NOW.
+    await reassignTask(id, next.id, ctxOf(author));
+    expect(await appendLatePart(author.chat!, { taskId: id }, { messageId: 22, file: null })).toBe('added');
+    expect(await queued(next.id, 'TaskSources')).toHaveLength(1);
+    expect(await queued(doer.id, 'TaskSources')).toHaveLength(1);
     // Somebody else's chat cannot grow the author's task, and a closed task takes nothing.
-    expect(await appendLatePart(stranger.chat!, { taskId: id, assigneeId: doer.id }, { messageId: 22, file: null })).toBe(false);
+    expect(await appendLatePart(stranger.chat!, { taskId: id }, { messageId: 23, file: null })).toBe('closed');
     await db.update(tasks).set({ status: 'done', doneAt: new Date() }).where(eq(tasks.id, id));
-    expect(await appendLatePart(author.chat!, { taskId: id, assigneeId: doer.id }, { messageId: 23, file: null })).toBe(false);
-    expect((await taskRow(id)).sourceMessages).toHaveLength(2);
+    expect(await appendLatePart(author.chat!, { taskId: id }, { messageId: 24, file: null })).toBe('closed');
+    expect((await taskRow(id)).sourceMessages).toHaveLength(3);
+  });
+
+  it('a late part past the source cap is refused as «cap», so the author can be told (review bot-11)', async () => {
+    const author = await mintStaff({ chat: true });
+    const doer = await mintStaff();
+    const full = Array.from({ length: 10 }, (_, i) => ({ chatId: Number(author.chat), messageId: 100 + i }));
+    const id = await mintTask(author, doer, { sourceMessages: full });
+    expect(await appendLatePart(author.chat!, { taskId: id }, { messageId: 200, file: null })).toBe('cap');
+    expect((await taskRow(id)).sourceMessages).toHaveLength(10);
+  });
+
+  it('«📤 Manbani yangi odamga yuborish» sends the sources ONLY — no second assignment — and refuses when there is nobody to send to (review bot-13)', async () => {
+    const author = await mintStaff({ chat: true });
+    const first = await mintStaff({ chat: true });
+    const second = await mintStaff();
+    const viewer = await mintStaff();
+    const sources = [{ chatId: Number(author.chat), messageId: 31 }];
+    const id = await mintTask(author, first, { sourceMessages: sources });
+    await reassignTask(id, second.id, ctxOf(viewer, 'crm.leads.view_all'));
+    const assignedBefore = (await queued(second.id, 'TaskAssigned')).length;
+    expect(await sourcesFromBot(author.chat!, id)).toEqual({ result: 'done', reach: 'no_chat', name: second.name });
+    const [copy] = await queued(second.id, 'TaskSources');
+    expect(copy!.payload).toMatchObject({ taskId: id, forwards: sources });
+    // No buttons ride on it, and no second TaskAssigned was queued.
+    expect(buttonsFor('TaskSources', copy!.payload as Record<string, unknown>)).toBeNull();
+    expect(await queued(second.id, 'TaskAssigned')).toHaveLength(assignedBefore);
+    // Handed back to the author: there is nobody to send to — said, never «📤 Yuborildi».
+    await reassignTask(id, author.id, ctxOf(viewer, 'crm.leads.view_all'));
+    expect(await sourcesFromBot(author.chat!, id)).toEqual({ result: 'nothing_to_send' });
   });
 
   it('«📤 Men bergan» from the bot, and a 🔔 that says who will not hear it', async () => {
@@ -1027,5 +1271,51 @@ describe('a task’s files (his 3a; access-money-11, telegram-mechanics-26)', ()
     answers = [{ status: 502, json: { ok: false, description: 'Bad Gateway' } }];
     const fresh = { ...voice, fileId: 'AwACAgIAAxkBAAIBnext' };
     await expect(downloadTaskFiles({ taskId: id, uploadedBy: author.id, files: [fresh] })).rejects.toThrow(/not downloaded yet/);
+  });
+
+  it('two different files with ONE name are two files — the fence is the file, never its name (review tasks-6 / bot-6)', async () => {
+    const author = await mintStaff();
+    const doer = await mintStaff();
+    const id = await mintTask(author, doer);
+    // Two suppliers' invoices, forwarded into one task: the same name, two files.
+    const first = { fileId: 'BQACAgIAAxkBAAIBinvoiceA', name: 'Invoice.pdf', mime: 'application/pdf', size: 3, kind: 'document' as const };
+    const second = { ...first, fileId: 'BQACAgIAAxkBAAIBinvoiceB' };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(Buffer.from('pdf'), { status: 200 })),
+    );
+    answers = [
+      { status: 200, json: { ok: true, result: { file_path: 'documents/file_1.pdf' } } },
+      { status: 200, json: { ok: true, result: { file_path: 'documents/file_2.pdf' } } },
+    ];
+    expect(await downloadTaskFiles({ taskId: id, uploadedBy: author.id, files: [first, second] })).toEqual({ stored: 2, skipped: 0 });
+    expect(method('getFile').map((c) => c.body.file_id)).toEqual([first.fileId, second.fileId]);
+    const stored = await db
+      .select()
+      .from(attachments)
+      .where(and(eq(attachments.entityType, TASK_ENTITY_TYPE), eq(attachments.entityId, id)));
+    expect(stored.map((r) => r.fileName)).toEqual(['Invoice.pdf', 'Invoice.pdf']);
+    // A re-delivered job still lands nothing twice — and asks Telegram for nothing.
+    calls = [];
+    expect(await downloadTaskFiles({ taskId: id, uploadedBy: author.id, files: [first, second] })).toEqual({ stored: 0, skipped: 2 });
+    expect(method('getFile')).toHaveLength(0);
+  });
+});
+
+describe('a typed date that is not a date (review tasks-5 / bot-1)', () => {
+  it('is not consumed: the wait ends and the words go on to the lookup', async () => {
+    const { answerPendingText } = await import('@/modules/platform/telegram/task-handlers');
+    const replies: string[] = [];
+    const ctx = { reply: async (text: string) => (replies.push(text), { message_id: 1 }) };
+    const consumed = await answerPendingText(
+      ctx as unknown as Parameters<typeof answerPendingText>[0],
+      1n,
+      { kind: 'reschedule', taskId: '00000000-0000-4000-8000-000000000001', pressed: null },
+      'GS777',
+    );
+    // Re-arming here answered «Tushunmadim» to every lookup for as long as
+    // the person kept typing, with no button out.
+    expect(consumed).toBe(false);
+    expect(replies).toEqual(['Bu sana emas — muddat o‘zgarmadi. Kerak bo‘lsa, «⏰» ni qayta bosing.']);
   });
 });

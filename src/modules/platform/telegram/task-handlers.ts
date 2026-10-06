@@ -1,7 +1,7 @@
 import type { Context } from 'grammy';
 import { logger } from '../logger';
 import { reachLine } from '../notifications/staff';
-import { appendLine, keyboardOf, staffTextHtml, withoutButton } from '../notifications/staff-html';
+import { appendLine, keyboardOf, staffTextHtml, urlRowsOf, withoutButton } from '../notifications/staff-html';
 import { parseDue } from '../tasks/service';
 import { activeIntake } from './calc-intake';
 import { activeCapture } from './note-capture';
@@ -25,6 +25,7 @@ import {
   peopleKeyboard,
   postponeKeyboard,
   pressRefusalText,
+  refusalFor,
   remindTaskFromBot,
   rescheduleTaskFromBot,
   sourcesFromBot,
@@ -42,6 +43,7 @@ import {
   ALBUM_SETTLE_MS,
   albumSettled,
   draftNote,
+  MAX_DRAFT_SOURCES,
   draftTitle,
   dueFromButton,
   endDraft,
@@ -52,6 +54,8 @@ import {
   noteLinger,
   parseTypedDue,
   postponeDue,
+  typedDuePast,
+  refusalKeepsPick,
   startDraft,
   tooBigLine,
   updateDraft,
@@ -113,27 +117,30 @@ export async function startTaskDraft(
   ctx: Context,
   chatId: bigint,
   seed: Parameters<typeof startDraft>[1] = {},
-): Promise<void> {
+): Promise<boolean> {
   if (activeIntake(chatId)) {
     await ctx.reply('Hozir hisoblatish davom etyapti. Avval uni tugating yoki bekor qiling.');
-    return;
+    return false;
   }
   if (activeCapture(chatId)) {
     await ctx.reply('Hozir yangi zametka yozilyapti. Avval uni saqlang yoki bekor qiling.');
-    return;
+    return false;
   }
   const staff = await staffForChat(chatId);
-  if (!staff) return;
+  if (!staff) return false;
   const live = activeDraft(chatId);
-  if (live && !seed.sources?.length) {
-    // A second «➕» is not a reason to lose the first one's words.
+  if (live) {
+    // A second «➕» is not a reason to lose the first one's words — and
+    // neither is a SEEDED start: an old «📌 Topshiriq qilish» pressed while a
+    // draft is live overwrote the pick and every typed line (review bot-2).
     await ctx.reply('Sizda tugallanmagan topshiriq bor — davom eting yoki bekor qiling.');
     await promptFor(sayIn(ctx), chatId, live, staff.id);
-    return;
+    return false;
   }
   dropTaskPending(chatId);
   const draft = startDraft(chatId, seed);
   await promptFor(sayIn(ctx), chatId, draft, staff.id);
+  return true;
 }
 
 /** Whatever the draft is waiting for, asked again — one function, so the wording cannot drift. */
@@ -203,6 +210,9 @@ export async function pickAssignee(ctx: Context, chatId: bigint, userId: string 
     if (line) lines.push(line);
   }
   await ctx.reply(lines.join('\n'));
+  // An album still arriving: the due keyboard is its settle timer's to show
+  // (review bot-3) — shown now, a press would race the album's last photos.
+  if (next.stage === 'when' && !albumSettled(next)) return;
   await promptFor(sayIn(ctx), chatId, next, staff.id);
 }
 
@@ -259,6 +269,9 @@ async function createOrWait(say: Say, chatId: bigint, due: DraftDue): Promise<vo
   if (!draft) return;
   if (!albumSettled(draft)) {
     updateDraft(chatId, { pendingDue: due });
+    // The press is completed by a settle timer — armed HERE too, so a held
+    // press never waits on a timer nobody set (review bot-3).
+    for (const group of Object.keys(draft.albums)) armAlbumTimer(chatId, group);
     await say('⏳ Albom hali yuklanmoqda — tugashi bilan topshiriq beriladi.');
     return;
   }
@@ -281,7 +294,11 @@ async function finishDraft(say: Say, chatId: bigint, draft: TaskDraft, due: Draf
     due,
   );
   if (!made.ok) {
-    // The words are not lost to a refusal: the draft comes back, asking again.
+    // The words are not lost to a refusal: the draft comes back — its files'
+    // «20 MB» note included — and ASKS again (review bot-5): the due, with the
+    // pick kept, or «Kimga?» when the refusal was about the person picked.
+    // Restarted at «Kimga?» with nothing asked, the next typed line was read
+    // as a name search.
     startDraft(chatId, {
       texts: draft.texts,
       facts: draft.facts,
@@ -289,8 +306,14 @@ async function finishDraft(say: Say, chatId: bigint, draft: TaskDraft, due: Draf
       files: draft.files,
       firstKind: draft.firstKind,
       firstForwarded: draft.firstForwarded,
+      tooBig: draft.tooBig,
     });
+    const back = refusalKeepsPick(made.result)
+      ? updateDraft(chatId, { assigneeId: draft.assigneeId, assigneeName: draft.assigneeName, stage: 'when', dropped: draft.dropped })!
+      : updateDraft(chatId, { dropped: draft.dropped })!;
     await say(`⚠ ${TASK_ANSWERS[made.result]}`);
+    const staff = await staffForChat(chatId);
+    if (staff) await promptFor(say, chatId, back, staff.id);
     return;
   }
   const lines = [
@@ -306,7 +329,7 @@ async function finishDraft(say: Say, chatId: bigint, draft: TaskDraft, due: Draf
   const tooBig = tooBigLine(draft.tooBig);
   if (tooBig) lines.push(tooBig);
   await say(lines.join('\n'), { inline_keyboard: [[{ text: '🗑 Bekor qilish', callback_data: `tc:${made.taskId}` }]] });
-  noteLinger(chatId, made.taskId, made.assigneeId, Object.keys(draft.albums));
+  noteLinger(chatId, made.taskId, Object.keys(draft.albums));
 }
 
 /** The draft's text branch in the ladder — a name, a line of the task, or a typed date. */
@@ -323,7 +346,11 @@ export async function draftText(ctx: Context, chatId: bigint, draft: TaskDraft):
   if (draft.stage === 'date' && !forwarded) {
     const due = parseTypedDue(text);
     if (!due) {
-      await ctx.reply('Tushunmadim. 12.10, 12.10 15:00 yoki 15:00 ko‘rinishida yozing.');
+      await ctx.reply(
+        typedDuePast(text)
+          ? 'Bu vaqt o‘tib ketgan — keyingi sanani yozing: 12.10, 12.10 15:00 yoki 15:00.'
+          : 'Tushunmadim. 12.10, 12.10 15:00 yoki 15:00 ko‘rinishida yozing.',
+      );
       return;
     }
     await createOrWait(sayIn(ctx), chatId, due);
@@ -334,17 +361,26 @@ export async function draftText(ctx: Context, chatId: bigint, draft: TaskDraft):
 
 /** A part of what the author sent, taken into the draft — then the next question. */
 export async function addToDraft(ctx: Context, chatId: bigint, draft: TaskDraft, part: DraftPart): Promise<void> {
+  const firstOfAlbum = Boolean(part.mediaGroupId) && !Object.hasOwn(draft.albums, part.mediaGroupId!);
   const next = updateDraft(chatId, { ...withPart(draft, part, Number(chatId)) })!;
+  if (next.dropped > 0 && draft.dropped === 0) {
+    // The first part past the cap, said ONCE (review bot-11): one
+    // forwardMessages call carries ten, and the rest were going nowhere in
+    // silence.
+    await ctx.reply(`⚠ Bitta topshiriqqa ko‘pi bilan ${MAX_DRAFT_SOURCES} ta xabar qo‘shiladi — qolganlari hodimga yuborilmaydi.`);
+  }
+  // An album is N updates: its settle timer is armed at EVERY stage. Armed
+  // only after the pick, an album sent while «Kimga?» stood had none, so a
+  // due pressed inside the settle window was held for ever (review bot-3).
+  if (part.mediaGroupId) armAlbumTimer(chatId, part.mediaGroupId);
   if (next.stage === 'who') {
-    // Sent before the person was picked: kept, and the question stands.
-    await ctx.reply('📎 Qabul qilindi. Endi kimga ekanini tanlang.');
+    // Sent before the person was picked: kept, and the question stands —
+    // said once per album, never once per photo.
+    if (!part.mediaGroupId || firstOfAlbum) await ctx.reply('📎 Qabul qilindi. Endi kimga ekanini tanlang.');
     return;
   }
-  if (part.mediaGroupId) {
-    // An album is N updates: the due keyboard waits until it has settled.
-    armAlbumTimer(chatId, part.mediaGroupId);
-    return;
-  }
+  // The due keyboard waits until the album has settled; the timer shows it.
+  if (part.mediaGroupId) return;
   await showDue(sayIn(ctx), chatId, next);
 }
 
@@ -456,8 +492,17 @@ export async function draftMedia(ctx: Context, chatId: bigint): Promise<boolean>
       messageId: part.messageId,
       file: part.file && part.kind && part.kind !== 'contact' && part.kind !== 'location' ? { ...part.file, kind: part.kind } : null,
     });
-    if (added && part.mediaGroupId && lateAckDue(linger, part.mediaGroupId)) {
+    // Said once per album either way — a part the task could not take is
+    // told, never swallowed (review bot-11).
+    const group = part.mediaGroupId!;
+    if (added === 'added' && lateAckDue(linger, group)) {
       await ctx.reply('📎 Albomning qolgan qismi topshiriqqa qo‘shildi.');
+    } else if (added !== 'added' && lateAckDue(linger, `${group}:refused`)) {
+      await ctx.reply(
+        added === 'cap'
+          ? `⚠ Albomning qolgan qismi qo‘shilmadi — bitta topshiriqqa ko‘pi bilan ${MAX_DRAFT_SOURCES} ta xabar.`
+          : '⚠ Albomning qolgan qismi qo‘shilmadi — topshiriq endi ochiq emas.',
+      );
     }
     return true;
   }
@@ -482,7 +527,12 @@ export async function draftMedia(ctx: Context, chatId: bigint): Promise<boolean>
  */
 export async function offerForwardTask(ctx: Context, chatId: bigint, mediaGroupId: string | null): Promise<void> {
   const message = ctx.message!;
-  if (mediaGroupId && !noteForwardPart(chatId, mediaGroupId, message.message_id).offer) return;
+  if (mediaGroupId) {
+    const part = partOf(message);
+    if (!noteForwardPart(chatId, mediaGroupId, { messageId: part.messageId, kind: part.kind ?? null, file: part.file ?? null }).offer) {
+      return;
+    }
+  }
   await ctx.reply('📌 Topshiriq qilamizmi?', {
     reply_markup: { inline_keyboard: forwardKeyboard() },
     reply_parameters: { message_id: message.message_id, allow_sending_without_reply: true },
@@ -509,6 +559,15 @@ export async function handleForwardCallback(
     await ctx.reply('Asl xabar topilmadi — uni qaytadan yo‘naltiring.');
     return;
   }
+  // One collector at a time (spec §3): an offer stays pressable after a
+  // draft started, and pressing it then replaced the draft in silence
+  // (review bot-2). Refused BEFORE the offer's keyboard goes, so the same
+  // press still works once the draft is finished; «🔍 Qidirish» is only a
+  // lookup and touches no draft.
+  if (step === 'task' && draftLive(chatId)) {
+    await ctx.reply(BUSY_DRAFT);
+    return;
+  }
   // The question goes: it has been answered.
   if (asked) void editMarkup({ chatId, messageId: asked.message_id }).catch(() => {});
   if (step === 'search') {
@@ -521,27 +580,38 @@ export async function handleForwardCallback(
     return;
   }
   const part = partOf(original as NonNullable<Context['message']>);
-  const albumIds = forwardAlbumOf(chatId, original.media_group_id);
+  const album = forwardAlbumOf(chatId, original.media_group_id);
   let seed = withPart(startDraftSeed(), part, Number(chatId));
-  if (albumIds) {
-    // The album's other parts: their pointers travel; the web gets the one
-    // file the press carried (the rest were never handed to us as files).
-    for (const id of albumIds) {
-      if (id === original.message_id) continue;
-      seed = withPart(seed, { messageId: id, forwarded: true, kind: part.kind ?? null }, Number(chatId));
+  let withoutFile = 0;
+  if (album) {
+    // The album's other parts, each with the file it arrived with — the web
+    // gets the whole album, and an oversized one lands in `tooBig` to be
+    // told (review bot-4).
+    for (const other of album) {
+      if (other.messageId === original.message_id) continue;
+      if (!other.file) withoutFile += 1;
+      seed = withPart(
+        seed,
+        { messageId: other.messageId, forwarded: true, kind: other.kind ?? part.kind ?? null, file: other.file },
+        Number(chatId),
+      );
     }
   }
-  await startTaskDraft(ctx, chatId, {
+  const started = await startTaskDraft(ctx, chatId, {
     sources: seed.sources,
     files: seed.files,
     texts: seed.texts,
     facts: seed.facts,
     firstKind: seed.firstKind,
     firstForwarded: seed.firstForwarded,
+    tooBig: seed.tooBig,
   });
-  if (original.media_group_id && !albumIds) {
+  if (!started) return;
+  if (original.media_group_id && !album) {
     // The map is memory and a deploy took it: SAY so, never drop parts in silence.
     await ctx.reply('⚠ Albomning faqat 1 ta qismi qo‘shildi — qolganlarini qaytadan yo‘naltiring.');
+  } else if (withoutFile > 0) {
+    await ctx.reply(`⚠ Albomning ${withoutFile} ta qismi saytga yuklanmaydi — faqat Telegramda yuboriladi.`);
   }
 }
 
@@ -558,6 +628,7 @@ function startDraftSeed(): TaskDraft {
     sources: [],
     files: [],
     tooBig: [],
+    dropped: 0,
     albums: {},
     promptMessageId: null,
     pendingDue: null,
@@ -621,7 +692,7 @@ export async function handleTaskPress(ctx: Context, chatId: bigint, press: TaskP
         replyMarkup: keyboardOf(withoutButton(pressed.markup, data)),
       }).catch((err: unknown) => logger.warn({ err }, '[topshiriq] accept not settled'));
     } else if (result !== 'done') {
-      await ctx.reply(pressRefusalLine(result));
+      await ctx.reply(await refusalFor(press.taskId, result));
     }
     return;
   }
@@ -673,7 +744,7 @@ export async function handleTaskPress(ctx: Context, chatId: bigint, press: TaskP
         html: appendLine(staffTextHtml(pressed.text), `✅ Muddat: ${due.label}`),
       }).catch(() => {});
     } else if (result !== 'done') {
-      await ctx.reply(pressRefusalLine(result));
+      await ctx.reply(await refusalFor(press.taskId, result));
     }
     return;
   }
@@ -707,12 +778,12 @@ export async function handleTaskPress(ctx: Context, chatId: bigint, press: TaskP
     if (prompt) void editMarkup({ chatId, messageId: prompt.message_id }).catch(() => {});
     if (result === 'done' || result === 'already_closed') {
       if (pending) {
-        void closeTaskMessage(chatId, pending, '').catch((err: unknown) =>
+        void closeTaskMessage(chatId, pending, '', result).catch((err: unknown) =>
           logger.warn({ err }, 'task message not closed'),
         );
       }
     } else {
-      await ctx.reply(pressRefusalLine(result));
+      await ctx.reply(await refusalFor(press.taskId, result));
     }
     return;
   }
@@ -734,57 +805,80 @@ export async function handleTaskPress(ctx: Context, chatId: bigint, press: TaskP
         messageId: pressed.messageId,
         html: appendLine(staffTextHtml(pressed.text), result === 'done' ? '🗑 Bekor qilindi' : TASK_ANSWERS.already_closed),
       }).catch(() => {});
+    } else if (result !== 'done' && result !== 'already_closed') {
+      // An open calc job's task cannot be cancelled (review tasks-2): the
+      // author is told where the job IS handled, not just a toast.
+      await ctx.reply(await refusalFor(press.taskId, result));
     }
     return;
   }
 
-  // task_sources
-  const result = await sourcesFromBot(chatId, press.taskId);
-  await ctx.answerCallbackQuery({ text: result === 'done' ? '📤 Yuborildi' : TASK_ANSWERS[result] });
+  // task_sources — «📤 Yuborildi» only when something WAS queued, and the
+  // author told when the holder will not hear it (review bot-13).
+  const out = await sourcesFromBot(chatId, press.taskId);
+  await ctx.answerCallbackQuery({ text: out.result === 'done' ? '📤 Yuborildi' : TASK_ANSWERS[out.result] });
   const pressed = pressedOf(ctx);
-  if (result === 'done' && pressed) {
+  if (out.result !== 'done') {
+    await ctx.reply(await refusalFor(press.taskId, out.result));
+    return;
+  }
+  if (pressed) {
     void editText({
       chatId,
       messageId: pressed.messageId,
       html: appendLine(staffTextHtml(pressed.text, 'TaskReassigned'), '📤 Manba yangi odamga yuborildi'),
+      // The pressed button goes; the «↗️ Ochish» link stays.
+      replyMarkup: keyboardOf(urlRowsOf(pressed.markup)),
     }).catch(() => {});
   }
-}
-
-/** A refusal said under the press as well as on its toast — a toast is gone in a second. */
-function pressRefusalLine(result: keyof typeof TASK_ANSWERS): string {
-  return TASK_ANSWERS[result];
+  const line = out.reach ? reachLine(out.name ?? 'Hodim', out.reach) : null;
+  if (line) await ctx.reply(line);
 }
 
 /**
  * A waiting answer that is NOT a result — a question, an answer, a typed
  * date. The result itself stays in staff-handlers' ladder, beside the
  * message it closes.
+ *
+ * Answers whether the text was CONSUMED. A typed date that is not a date is
+ * not: the wait is dropped (the read already took it) and the words go on to
+ * the staff tail as anything else typed would. Re-arming it instead swallowed
+ * every lookup — «GS777» answered «Tushunmadim» for as long as the person
+ * kept typing, with no button out (review tasks-5 / bot-1).
  */
-export async function answerPendingText(ctx: Context, chatId: bigint, pending: PendingTask, text: string): Promise<void> {
+export async function answerPendingText(
+  ctx: Context,
+  chatId: bigint,
+  pending: PendingTask,
+  text: string,
+): Promise<boolean> {
   if (pending.kind === 'question') {
     await ctx.reply(reachedText('✅ Savol yuborildi.', await askFromBot(chatId, pending.taskId, text)));
-    return;
+    return true;
   }
   if (pending.kind === 'answer') {
     await ctx.reply(reachedText('✅ Javob yuborildi.', await answerFromBot(chatId, pending.taskId, text)));
-    return;
+    return true;
   }
   // reschedule
   const due = parseTypedDue(text);
+  if (!due && typedDuePast(text)) {
+    // A date, only one already gone (review bot-10): consumed, and said.
+    await ctx.reply('Bu vaqt o‘tib ketgan — muddat o‘zgarmadi. Kerak bo‘lsa, «⏰» ni qayta bosing.');
+    return true;
+  }
   if (!due) {
-    // Asked again — the wait was taken by the read.
-    noteTaskPending(chatId, pending.taskId, null, 'reschedule');
-    await ctx.reply('Tushunmadim. 12.10, 12.10 15:00 yoki 15:00 ko‘rinishida yozing.');
-    return;
+    await ctx.reply('Bu sana emas — muddat o‘zgarmadi. Kerak bo‘lsa, «⏰» ni qayta bosing.');
+    return false;
   }
   const parsed = parseDue(due.dueAt, due.tzOffsetMin);
   if (!parsed.dueAt) {
     await ctx.reply(TASK_ANSWERS.bad_due_date);
-    return;
+    return true;
   }
   const result = await rescheduleTaskFromBot(chatId, pending.taskId, { dueAt: parsed.dueAt, allDay: parsed.allDay });
-  await ctx.reply(result === 'done' ? `⏰ Muddat: ${due.label}` : TASK_ANSWERS[result]);
+  await ctx.reply(result === 'done' ? `⏰ Muddat: ${due.label}` : await refusalFor(pending.taskId, result));
+  return true;
 }
 
 /** «📤 Men bergan», /berganlarim. */

@@ -2976,7 +2976,8 @@
       "remind_too_soon": "Yaqinda eslatilgan — 30 daqiqadan keyin yana mumkin",
       "not_remindable": "Bu vazifaga eslatma yuborib bo‘lmaydi",
       "not_askable": "Bu vazifa bo‘yicha savol yuborib bo‘lmaydi",
-      "empty_text": "Bo‘sh xabar"
+      "empty_text": "Bo‘sh xabar",
+      "nothing_to_send": "Yuboradigan narsa yo‘q — vazifa hozir sizda yoki unda xabar yo‘q"
     },
     "repeat": "Takror",
     "repeatNever": "takrorlanmaydi",

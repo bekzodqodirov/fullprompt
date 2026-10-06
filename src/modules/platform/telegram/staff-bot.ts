@@ -14,9 +14,11 @@ import {
   cancelTask,
   completeTask,
   createTask,
+  cutOnWord,
   forwardSourcesAgain,
   givenTasks,
   MAX_TASK_SOURCES,
+  queueTaskSources,
   remindTask,
   rescheduleTask,
   TaskError,
@@ -33,6 +35,7 @@ import { logger } from '../logger';
 import { approvalVerdictLine } from '../notifications/labels';
 import {
   appendLine,
+  capStaffText,
   keyboardOf,
   staffTextHtml,
   urlRowsOf,
@@ -40,7 +43,7 @@ import {
 } from '../notifications/staff-html';
 import { allLabelVariants } from './client-labels';
 import { buttonLabel } from './limits';
-import { botCall, editMarkup, editText } from './send';
+import { editMarkup, editText } from './send';
 
 import { canLogInSql, staffPhonesMatch } from '../users/login';
 
@@ -866,20 +869,33 @@ function pendingOf(entry: PendingTask): PendingTask {
  * row, so the next press on it is the next task. Both are edits, and both are
  * best-effort — Telegram will not edit a message older than 48 hours, and a
  * button that outlives its task only answers «allaqachon yopilgan».
+ *
+ * The markup and text are a SNAPSHOT from the press, up to ten minutes old,
+ * and the after-commit retire is told to skip this message so the two edits
+ * do not race (review tasks-3). So a list is redrawn from what STANDS — every
+ * other `tb:` row whose task closed or moved in those minutes goes too, or
+ * the snapshot brings back a ✅ the retire had just taken off — and a task's
+ * own message that another door closed first is left alone: that door's
+ * retire already wrote the real outcome on it, and «✅ Yopildi» over a
+ * «🗑 Bekor qilindi» is a lie.
  */
 export async function closeTaskMessage(
   chatId: bigint,
   pending: Pick<PendingTask, 'taskId' | 'pressed'>,
   result: string,
+  outcome: 'done' | 'already_closed',
 ): Promise<void> {
   const pressed = pending.pressed;
   if (!pressed) return;
+  if (pressed.kind !== 'list' && outcome === 'already_closed') return;
   const res =
     pressed.kind === 'list'
       ? await editMarkup({
           chatId,
           messageId: pressed.messageId,
-          replyMarkup: keyboardOf(withoutCallback(pressed.markup, `tb:${pending.taskId}`)),
+          replyMarkup: keyboardOf(
+            await listRowsStanding(chatId, withoutCallback(pressed.markup, `tb:${pending.taskId}`)),
+          ),
         })
       : await editText({
           chatId,
@@ -892,6 +908,37 @@ export async function closeTaskMessage(
         });
   if (!res.ok) logger.warn({ description: res.description }, 'task message not updated');
 }
+
+/**
+ * A day list's rows as they stand NOW: a `tb:` row stays while its task is
+ * open and still this chat's person's (the digest is their own list — the
+ * retire's rule, review tasks-4); every other row (a link, the 🧮 to a job)
+ * is kept as it was. ONE query over the ids the markup names.
+ */
+async function listRowsStanding(chatId: bigint, rows: InlineRows): Promise<InlineRows> {
+  const idOf = (row: InlineRows[number]) => {
+    for (const button of row) {
+      const m = typeof button.callback_data === 'string' ? /^tb:([0-9a-f-]{36})$/.exec(button.callback_data) : null;
+      if (m) return m[1]!;
+    }
+    return null;
+  };
+  const ids = [...new Set(rows.map(idOf).filter((id): id is string => id !== null))];
+  if (ids.length === 0) return rows;
+  const staff = await staffForChat(chatId);
+  if (!staff) return rows.filter((row) => idOf(row) === null);
+  const open = (await db.execute(sql`
+    SELECT id FROM tasks
+     WHERE id IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})
+       AND status = 'open' AND assignee_id = ${staff.id}`)) as unknown as { id: string }[];
+  const standing = new Set(open.map((row) => row.id));
+  return rows.filter((row) => {
+    const id = idOf(row);
+    return id === null || standing.has(id);
+  });
+}
+
+type InlineRows = ReturnType<typeof withoutCallback>;
 
 /**
  * Settle the advert-lead push a «📞 Bog'landim» was pressed on (0113): the
@@ -1104,6 +1151,7 @@ export const TASK_ANSWERS: Record<BotTaskResult, string> = {
   not_remindable: 'Bu vazifaga eslatma yuborib bo‘lmaydi.',
   not_askable: 'Bu vazifa bo‘yicha savol yuborib bo‘lmaydi.',
   empty_text: 'Bo‘sh xabar.',
+  nothing_to_send: 'Yuboradigan narsa yo‘q — vazifa hozir sizda yoki unda xabar yo‘q.',
 };
 
 /** The chat's honest actor, as the task service wants it — never a synthetic admin. */
@@ -1168,8 +1216,10 @@ export async function cancelTaskFromBot(
     .result;
 }
 
-export async function sourcesFromBot(chatId: bigint, taskId: string): Promise<BotTaskResult> {
-  return (await asChat(chatId, (ctx) => forwardSourcesAgain(taskId, ctx))).result;
+/** «📤 Manbani yangi odamga yuborish» — and whether the holder will hear it (review bot-13). */
+export async function sourcesFromBot(chatId: bigint, taskId: string): Promise<ReachedResult> {
+  const out = await asChat(chatId, (ctx) => forwardSourcesAgain(taskId, ctx));
+  return out.result === 'done' ? { result: 'done', ...out.value } : { result: out.result };
 }
 
 /** A door that also says whether the other side will hear it, and who that is. */
@@ -1243,6 +1293,25 @@ export function pressRefusalText(check: Extract<PressCheck, { ok: false }>, appU
     return `${words}\n${base}/hisoblash/${check.requestId}`;
   }
   return words;
+}
+
+/**
+ * A task door's refusal as the sentence under the press or the typed answer —
+ * with the job's own page when the refusal is an open calc job (review
+ * bot-12): «hisoblash sahifasida yakunlang» without the page is half an
+ * answer, and only the ✅ press used to carry it. The binding is read ONLY on
+ * that refusal; a read that fails still says the words.
+ */
+export async function refusalFor(taskId: string, result: Exclude<BotTaskResult, 'done'>): Promise<string> {
+  if (result !== 'calc_use_screen') return TASK_ANSWERS[result];
+  try {
+    const task = await taskById(taskId);
+    const binding = task ? (await bindingsOf([task])).get(task.id) : undefined;
+    return pressRefusalText({ ok: false, result, requestId: binding?.kind === 'calc' ? binding.recordId : undefined });
+  } catch (err) {
+    logger.warn({ err, taskId }, '[staff-bot] calc job of a refusal not read');
+    return TASK_ANSWERS[result];
+  }
 }
 
 /**
@@ -1517,47 +1586,70 @@ async function queueTaskFiles(taskId: string, uploadedBy: string, files: DraftFi
   });
 }
 
+/** What became of a late album part: taken, refused at the source cap, or the task is no longer open. */
+export type LatePart = 'added' | 'cap' | 'closed';
+
 /**
  * A late album part, after the task was made (telegram-mechanics-17): it
  * joins the task's sources (so a reassign by the author forwards it too), is
- * queued for the web, and is forwarded to the assignee now — the drain's
- * `forwards` carried only the parts that had arrived. Only the AUTHOR's own
- * open task, and never past the source cap.
+ * queued for the web, and goes to the task's holder — the drain's `forwards`
+ * carried only the parts that had arrived. Only the AUTHOR's own open task,
+ * and never past the source cap; a refusal is answered by its reason so the
+ * author can be told (review bot-11).
+ *
+ * THROUGH THE DRAIN, as a `TaskSources` row to the holder the UPDATE itself
+ * returns (review bot-11): a direct forward could reach the assignee before
+ * the assignment's own text, which is often still queued, and went to the
+ * holder the task had when it was MADE — after a reassign, the wrong person.
  */
 export async function appendLatePart(
   chatId: bigint,
-  linger: { taskId: string; assigneeId: string },
+  linger: { taskId: string },
   part: { messageId: number; file: DraftFile | null },
-): Promise<boolean> {
+): Promise<LatePart> {
   const staff = await staffForChat(chatId);
-  if (!staff) return false;
+  if (!staff) return 'closed';
+  const source = { chatId: Number(chatId), messageId: part.messageId };
   const appended = (await db.execute(sql`
     UPDATE tasks
-       SET source_messages = coalesce(source_messages, '[]'::jsonb)
-             || ${JSON.stringify([{ chatId: Number(chatId), messageId: part.messageId }])}::jsonb,
+       SET source_messages = coalesce(source_messages, '[]'::jsonb) || ${JSON.stringify([source])}::jsonb,
            updated_at = now()
      WHERE id = ${linger.taskId} AND created_by = ${staff.id} AND status = 'open'
        AND jsonb_array_length(coalesce(source_messages, '[]'::jsonb)) < ${MAX_TASK_SOURCES}
-    RETURNING id`)) as unknown as { id: string }[];
-  if (appended.length === 0) return false;
-  if (part.file) await queueTaskFiles(linger.taskId, staff.id, [part.file]);
-  if (linger.assigneeId !== staff.id) {
-    const reach = (await reachOf([linger.assigneeId], 'TaskAssigned')).get(linger.assigneeId);
-    const [link] = await db
-      .select({ chat: telegramLinks.telegramChatId })
-      .from(telegramLinks)
-      .where(and(eq(telegramLinks.userId, linger.assigneeId), eq(telegramLinks.status, 'linked')))
-      .limit(1);
-    if (reach === 'ok' && link?.chat) {
-      const answer = await botCall('forwardMessage', {
-        chat_id: Number(link.chat),
-        from_chat_id: Number(chatId),
-        message_id: part.messageId,
-      });
-      if (!answer.ok) logger.warn({ description: answer.description }, '[tasks] late album part not forwarded');
-    }
+    RETURNING id, title, assignee_id, origin, bound_id, entity_type, entity_id`)) as unknown as {
+    id: string;
+    title: string;
+    assignee_id: string;
+    origin: string | null;
+    bound_id: string | null;
+    entity_type: string | null;
+    entity_id: string | null;
+  }[];
+  const task = appended[0];
+  if (!task) {
+    const [row] = (await db.execute(sql`
+      SELECT (status = 'open' AND created_by = ${staff.id}
+              AND jsonb_array_length(coalesce(source_messages, '[]'::jsonb)) >= ${MAX_TASK_SOURCES}) AS full
+        FROM tasks WHERE id = ${linger.taskId}`)) as unknown as { full: boolean }[];
+    return row?.full ? 'cap' : 'closed';
   }
-  return true;
+  if (part.file) await queueTaskFiles(linger.taskId, staff.id, [part.file]);
+  if (task.assignee_id !== staff.id) {
+    await queueTaskSources(
+      {
+        id: task.id,
+        title: task.title,
+        assigneeId: task.assignee_id,
+        origin: task.origin,
+        boundId: task.bound_id,
+        entityType: task.entity_type,
+        entityId: task.entity_id,
+      },
+      [source],
+      '📎 Albomning qolgan qismi',
+    );
+  }
+  return 'added';
 }
 
 /** How many «🔔» buttons «📤 Men bergan» carries — the rest are on the web. */
@@ -1574,14 +1666,21 @@ export function givenListText(list: { rows: GivenTask[]; total: number }, now: D
     const late = row.dueAt !== null && row.dueAt.getTime() < now.getTime();
     const mark = late ? '🔴' : row.accepted ? '👀' : '⏳';
     const due = row.dueAt ? telegramDue(row.dueAt, row.allDay, now) : 'muddatsiz';
-    return `${mark} ${row.assigneeName ?? '—'} · ${due} · ${row.title}`;
+    // A web title may be 200 characters, and twenty of them passed Telegram's
+    // 4 096: the reply threw into bot.catch and the person heard silence
+    // (review bot-9). A list line is a reminder, the title is on the site.
+    return `${mark} ${row.assigneeName ?? '—'} · ${due} · ${cutOnWord(row.title, GIVEN_TITLE_MAX, '…')}`;
   });
   const more = list.total > list.rows.length ? `\n… va yana ${list.total - list.rows.length} ta (saytda)` : '';
-  return (
+  // …and the whole is capped too: a long name per row must not undo the cut.
+  return capStaffText(
     `📤 Siz bergan ochiq vazifalar (${list.total})\n\n${lines.join('\n')}${more}\n\n` +
-    '🔴 kechikkan · 👀 qabul qilingan · ⏳ hali ko‘rilmagan'
+      '🔴 kechikkan · 👀 qabul qilingan · ⏳ hali ko‘rilmagan',
   );
 }
+
+/** How much of a title one «📤 Men bergan» line carries. */
+export const GIVEN_TITLE_MAX = 80;
 
 export function givenButtons(rows: GivenTask[]): CallbackButton[][] | null {
   const out = rows

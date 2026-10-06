@@ -1,5 +1,6 @@
+import { createHash } from 'node:crypto';
 import type PgBoss from 'pg-boss';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { db } from '../db/client';
 import { attachments } from '../db/schema';
 import { logger } from '../logger';
@@ -56,10 +57,10 @@ const KIND_EXT: Record<DraftFile['kind'], string> = {
 };
 
 /**
- * The name a file is stored under — the document's own name, or one made from
- * the kind and the file id's tail. DETERMINISTIC, because it is also the retry
- * fence: pg-boss re-delivers a job whose last file failed, and the files that
- * already landed must not land twice.
+ * The name a file is SHOWN under on the web — the document's own name, or one
+ * made from the kind and the file id's tail. Only a label: two suppliers'
+ * «Invoice.pdf» are two files with one name, so the retry fence is
+ * `taskFileKey`, never this.
  */
 export function taskFileName(file: DraftFile): string {
   if (file.name && file.name.trim()) return file.name.trim().slice(0, 200);
@@ -68,10 +69,23 @@ export function taskFileName(file: DraftFile): string {
 }
 
 /**
+ * Where one Telegram file is stored for one task — and the retry fence:
+ * pg-boss re-delivers a job whose last file failed, and the files that
+ * already landed must not land twice. Keyed on the FILE and not its name: the
+ * name fence stored the first of two «Invoice.pdf» and skipped the second as
+ * «already here», with nothing in the log (review tasks-6 / bot-6). A hash of
+ * the whole file_id, because the id is ~80 characters and the tails of one
+ * chat's photos look alike.
+ */
+export function taskFileKey(file: Pick<DraftFile, 'fileId'>): string {
+  return `tg-${createHash('sha256').update(file.fileId).digest('hex').slice(0, 32)}`;
+}
+
+/**
  * Download every file of one job. A file Telegram or storage refuses for good
  * (too big, a type the store does not keep) is LOGGED and skipped; a file that
  * failed for a moment throws at the end so pg-boss tries the job again, and
- * the ones already stored are skipped by their name.
+ * the ones already stored are skipped by their FILE (`taskFileKey`).
  */
 export async function downloadTaskFiles(job: TaskFilesJob): Promise<{ stored: number; skipped: number }> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -82,18 +96,14 @@ export async function downloadTaskFiles(job: TaskFilesJob): Promise<{ stored: nu
   let transient = 0;
   for (const file of job.files) {
     const fileName = taskFileName(file);
+    const keyName = taskFileKey(file);
     const [already] = await db
       .select({ id: attachments.id })
       .from(attachments)
-      .where(
-        and(
-          eq(attachments.entityType, TASK_ENTITY_TYPE),
-          eq(attachments.entityId, job.taskId),
-          eq(attachments.fileName, fileName),
-        ),
-      )
+      .where(eq(attachments.storageKey, `${TASK_ENTITY_TYPE}/${job.taskId}/${keyName}`))
       .limit(1);
     if (already) {
+      logger.info({ taskId: job.taskId, fileName }, '[task-files] already stored — skipped');
       skipped += 1;
       continue;
     }
@@ -131,7 +141,7 @@ export async function downloadTaskFiles(job: TaskFilesJob): Promise<{ stored: nu
           body,
           uploadedBy: job.uploadedBy,
         },
-        { thumbnails: 'enqueue' },
+        { thumbnails: 'enqueue', keyName },
       );
       stored += 1;
     } catch (err) {

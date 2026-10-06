@@ -79,6 +79,29 @@ export async function taskFiles(taskIds: string[]): Promise<Map<string, TaskFile
 }
 
 /**
+ * Where a task's title takes its READER, and the calc job's own door — ONE
+ * rule for every surface that lists tasks: the task list here and the dock's
+ * route (review access-3: the dock linked an open calc job's title to the
+ * LEAD card, and the CRM layout sends a VED without `crm.leads` home from it
+ * — the dead door this rule exists to remove, surviving on the third
+ * surface). A `ved.docs` reader of an open calc job gets the job's screen as
+ * both the action and the about-link; anybody else keeps the card link and
+ * reads the job as a chip.
+ */
+export function readerTaskLinks(
+  row: { entityType: string | null; entityId: string | null; status: string },
+  binding: TaskBinding | undefined,
+  viewer: { permissions: { has(code: string): boolean } },
+): { aboutHref: string | null; calc: { href: string; mayOpen: boolean } | null } {
+  const calcOpen = binding?.kind === 'calc' && binding.open && row.status === 'open';
+  const about = aboutHref(row.entityType, row.entityId);
+  if (!calcOpen) return { aboutHref: about, calc: null };
+  const calcHref = `/hisoblash/${binding.recordId}`;
+  const mayOpen = viewer.permissions.has('ved.docs');
+  return { aboutHref: mayOpen ? calcHref : about, calc: { href: calcHref, mayOpen } };
+}
+
+/**
  * Turn service rows into something a client component can hold.
  *
  * Dates become ISO strings — a `Date` cannot cross the server/client boundary —
@@ -104,13 +127,9 @@ export async function toTaskViews(rows: TaskRow[], viewer: TaskViewer): Promise<
     }),
     taskFiles(rows.map((row) => row.id)),
   ]);
-  const vedReader = viewer.permissions.has('ved.docs');
   return rows.map((row) => {
     const key = row.entityType && row.entityId ? `${row.entityType}:${row.entityId}` : null;
-    const binding = bindings.get(row.id);
-    const calcOpen = binding?.kind === 'calc' && binding.open && row.status === 'open';
-    const calcHref = calcOpen ? `/hisoblash/${binding!.recordId}` : null;
-    const about = aboutHref(row.entityType, row.entityId);
+    const links = readerTaskLinks(row, bindings.get(row.id), viewer);
 
     return {
       id: row.id,
@@ -127,12 +146,12 @@ export async function toTaskViews(rows: TaskRow[], viewer: TaskViewer): Promise<
       result: row.result,
       priority: row.priority,
       repeatUnit: row.repeatUnit,
-      aboutHref: calcOpen && vedReader ? calcHref : about,
+      aboutHref: links.aboutHref,
       aboutLabel: key ? (labels.get(key) ?? null) : null,
-      calc: calcOpen ? { href: calcHref!, mayOpen: vedReader } : null,
+      calc: links.calc,
       // The holder of an open calc job moves through the queue's «Olaman /
       // Bo'shatish», never a task's select (telegram-mechanics-12).
-      canReassign: !calcOpen,
+      canReassign: links.calc === null,
       files: files.get(row.id) ?? [],
     };
   });

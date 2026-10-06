@@ -69,6 +69,10 @@ export const MUTE_GROUPS = {
     'TaskReminder',
     'TaskCancelled',
     'TaskReassigned',
+    // The author's own messages, sent on to whoever holds the task now — the
+    // «📤» press and a late album part (review bot-11/13). The same story as
+    // «work was assigned»; a newcomer, never in FOUNDERS.
+    'TaskSources',
     // «GS777: narx qayta hisoblanmoqda — eski narx endi amal qilmaydi»
     // (docs/VED-TARIX.md §6) — the seller's own job, re-opened. A newcomer:
     // never in FOUNDERS.

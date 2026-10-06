@@ -134,8 +134,20 @@ export async function saveAttachment(
      * thumbnails inline.
      */
     thumbnails?: 'enqueue' | 'skip';
+    /**
+     * The object's name under its entity's prefix, when the CALLER must find
+     * it again — a job's retry fence that keys on the source file and not on
+     * its display name (tasks/files-job.ts). Deterministic, so a retry after a
+     * put whose row never landed overwrites that object instead of orphaning
+     * it. Default: a fresh uuid, as every upload has always had.
+     */
+    keyName?: string;
   } = {},
 ): Promise<{ id: string }> {
+  if (opts.keyName !== undefined && !/^[A-Za-z0-9_-]{1,80}$/.test(opts.keyName)) {
+    // Never a path: a slash would let a caller write under another entity's prefix.
+    throw new Error(`bad attachment key name: ${opts.keyName}`);
+  }
   const contentType = resolveContentType(input.fileName, input.contentType);
   const isPhoto = PHOTO_TYPES.has(contentType);
   if (
@@ -155,7 +167,7 @@ export async function saveAttachment(
     throw new FileValidationError('File too large', 'too_large');
   }
 
-  const storageKey = `${input.entityType}/${input.entityId}/${randomUUID()}`;
+  const storageKey = `${input.entityType}/${input.entityId}/${opts.keyName ?? randomUUID()}`;
 
   await getStorage().put(storageKey, input.body, contentType);
 

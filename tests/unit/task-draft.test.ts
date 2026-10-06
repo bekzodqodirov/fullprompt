@@ -17,7 +17,9 @@ import {
   noteLinger,
   parseTypedDue,
   postponeDue,
+  refusalKeepsPick,
   startDraft,
+  typedDuePast,
   withPart,
 } from '@/modules/platform/telegram/task-draft';
 import { parseDue } from '@/modules/platform/tasks/service';
@@ -91,6 +93,8 @@ describe('what a part does to the draft', () => {
       draft = withPart(draft, { messageId: i + 1, forwarded: true }, 4242);
     }
     expect(draft.sources).toHaveLength(MAX_DRAFT_SOURCES);
+    // …and the three that went nowhere are COUNTED, so the author can be told once (review bot-11).
+    expect(draft.dropped).toBe(3);
   });
 
   it('the draft lives per chat and ends', () => {
@@ -170,6 +174,26 @@ describe('the due, on the Tashkent calendar', () => {
     expect(parseTypedDue('06.10', now)!.dueAt).toBe('2026-10-06');
   });
 
+  it('a moment the person NAMED that is already gone is refused, and said to be gone (review bot-10)', () => {
+    // 10:00 in Tashkent on 06.10.
+    const now = new Date('2026-10-06T05:00:00Z');
+    for (const past of ['06.10 08:00', '01.10.2026', '05.10.26 12:00']) {
+      expect(parseTypedDue(past, now), past).toBeNull();
+      expect(typedDuePast(past, now), past).toBe(true);
+    }
+    // Today later on, and today as a whole day, still stand.
+    expect(parseTypedDue('06.10 12:00', now)!.dueAt).toBe('2026-10-06T12:00');
+    expect(parseTypedDue('06.10', now)!.dueAt).toBe('2026-10-06');
+    expect(typedDuePast('ertaga', now)).toBe(false);
+  });
+
+  it('the label carries the year whenever it is not this one — typed or rolled (review bot-10)', () => {
+    const now = new Date('2026-10-06T05:00:00Z');
+    expect(parseTypedDue('12.01.2027', now)!.label).toBe('12.01.2027');
+    expect(parseTypedDue('01.03', now)!.label).toBe('01.03.2027');
+    expect(parseTypedDue('12.10.2026 15:00', now)!.label).toBe('12.10 15:00');
+  });
+
   it('refuses what is not a real moment instead of rolling it into another day', () => {
     const now = new Date('2026-10-06T06:00:00Z');
     for (const bad of ['31.11', '30.02', '12.13', '25:00', '12:60', '12.10 24:00', 'ertaga', '', '1210']) {
@@ -194,7 +218,7 @@ describe('an album settles before the due is honoured (telegram-mechanics-17)', 
   });
 
   it('a late part lingers onto the made task for its own album only, acknowledged once', () => {
-    noteLinger(CHAT, 'task-1', 'user-1', ['G1']);
+    noteLinger(CHAT, 'task-1', ['G1']);
     const linger = lingerFor(CHAT, 'G1')!;
     expect(linger.taskId).toBe('task-1');
     expect(lingerFor(CHAT, 'G2')).toBeNull();
@@ -205,15 +229,31 @@ describe('an album settles before the due is honoured (telegram-mechanics-17)', 
 });
 
 describe('Door B remembers an album (telegram-mechanics-18)', () => {
-  it('offers once per album and hands every part back on the press, in order', () => {
-    expect(noteForwardPart(CHAT, 'A1', 12).offer).toBe(true);
-    expect(noteForwardPart(CHAT, 'A1', 11).offer).toBe(false);
-    expect(noteForwardPart(CHAT, 'A1', 13).offer).toBe(false);
-    expect(forwardAlbumOf(CHAT, 'A1')).toEqual([11, 12, 13]);
+  it('offers once per album and hands every part back on the press, in order — each WITH its file (review bot-4)', () => {
+    const part = (messageId: number) => ({
+      messageId,
+      kind: 'photo' as const,
+      file: { fileId: `p${messageId}`, name: null, mime: 'image/jpeg', size: 1 },
+    });
+    expect(noteForwardPart(CHAT, 'A1', part(12)).offer).toBe(true);
+    expect(noteForwardPart(CHAT, 'A1', part(11)).offer).toBe(false);
+    expect(noteForwardPart(CHAT, 'A1', part(13)).offer).toBe(false);
+    expect(forwardAlbumOf(CHAT, 'A1')).toEqual([part(11), part(12), part(13)]);
+  });
+
+  it('a seed’s oversized files are still told — the draft does not forget them (review bot-7)', () => {
+    expect(startDraft(CHAT, { tooBig: ['sklad.mp4'] }).tooBig).toEqual(['sklad.mp4']);
   });
 
   it('after a deploy the map is empty — null, so the caller SAYS only one part came', () => {
     expect(forwardAlbumOf(CHAT, 'never-seen')).toBeNull();
     expect(forwardAlbumOf(CHAT, null)).toBeNull();
+  });
+});
+
+describe('a refused task keeps what it can (review bot-5)', () => {
+  it('the pick goes only when the refusal is about the person picked', () => {
+    for (const code of ['no_assignee', 'assignee_inactive', 'assignee_no_login']) expect(refusalKeepsPick(code), code).toBe(false);
+    for (const code of ['not_created', 'bad_due_date', 'validation']) expect(refusalKeepsPick(code), code).toBe(true);
   });
 });

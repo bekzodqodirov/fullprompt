@@ -257,7 +257,10 @@ function TaskCard({
                     ))}
                 </select>
               )}
-              {canManage && (
+              {/* No ✖ on an open calc job either: the server refuses it
+                  (calc_use_screen), and a button that can only refuse is a
+                  door drawn for nobody. */}
+              {canManage && !task.calc && (
                 <button
                   type="button"
                   disabled={pending}

@@ -60,6 +60,8 @@ export interface TaskDraft {
   files: DraftFile[];
   /** Files the web will not get — over Telegram's download limit, told in words. */
   tooBig: string[];
+  /** Parts that came past the source cap and travel to nobody — told once (review bot-11). */
+  dropped: number;
   /** media_group_id → when its last part arrived (ms) — the album settle. */
   albums: Record<string, number>;
   /** The bot message whose keyboard the draft edits. */
@@ -96,7 +98,7 @@ const drafts = new Map<string, TaskDraft>();
 
 export function startDraft(
   chatId: bigint,
-  seed: Partial<Pick<TaskDraft, 'sources' | 'files' | 'firstKind' | 'firstForwarded' | 'texts' | 'facts'>> = {},
+  seed: Partial<Pick<TaskDraft, 'sources' | 'files' | 'firstKind' | 'firstForwarded' | 'texts' | 'facts' | 'tooBig'>> = {},
 ): TaskDraft {
   const state: TaskDraft = {
     stage: 'who',
@@ -108,7 +110,10 @@ export function startDraft(
     firstForwarded: seed.firstForwarded ?? false,
     sources: (seed.sources ?? []).slice(0, MAX_DRAFT_SOURCES),
     files: seed.files ?? [],
-    tooBig: [],
+    // A seed's oversized files are still told at the end (review bot-7): a
+    // hard [] here dropped Door B's «20 MB dan katta» sentence.
+    tooBig: seed.tooBig ?? [],
+    dropped: 0,
     albums: {},
     promptMessageId: null,
     pendingDue: null,
@@ -117,6 +122,19 @@ export function startDraft(
   };
   drafts.set(String(chatId), state);
   return state;
+}
+
+/**
+ * Does a refused task keep the person it was for? Not when the refusal is
+ * ABOUT that person — they left, they never sign in, they are gone — and the
+ * draft must ask «Kimga?» again; any other refusal keeps the pick and asks
+ * for the due again (review bot-5: the draft came back with the pick dropped
+ * and asked nothing, so the next typed line was read as a name search).
+ */
+const PICK_REFUSALS: ReadonlySet<string> = new Set(['no_assignee', 'assignee_inactive', 'assignee_no_login']);
+
+export function refusalKeepsPick(result: string): boolean {
+  return !PICK_REFUSALS.has(result);
 }
 
 export function activeDraft(chatId: bigint): TaskDraft | null {
@@ -166,10 +184,8 @@ export interface DraftPart {
 export function withPart(draft: TaskDraft, part: DraftPart, chatId: number, now = Date.now()): TaskDraft {
   const texts = part.text?.trim() && !part.forwarded ? [...draft.texts, part.text.trim()] : draft.texts;
   const isSource = part.forwarded || Boolean(part.kind);
-  const sources =
-    isSource && draft.sources.length < MAX_DRAFT_SOURCES
-      ? [...draft.sources, { chatId, messageId: part.messageId }]
-      : draft.sources;
+  const fits = draft.sources.length < MAX_DRAFT_SOURCES;
+  const sources = isSource && fits ? [...draft.sources, { chatId, messageId: part.messageId }] : draft.sources;
   let files = draft.files;
   let tooBig = draft.tooBig;
   if (part.file && part.kind && part.kind !== 'contact' && part.kind !== 'location') {
@@ -186,6 +202,7 @@ export function withPart(draft: TaskDraft, part: DraftPart, chatId: number, now 
     sources,
     files,
     tooBig,
+    dropped: isSource && !fits ? draft.dropped + 1 : draft.dropped,
     // What the FIRST source was names the task when nothing was typed.
     firstKind: draft.sources.length === 0 && isSource ? (part.kind ?? null) : draft.firstKind,
     firstForwarded: draft.sources.length === 0 && isSource ? part.forwarded : draft.firstForwarded,
@@ -273,8 +290,24 @@ const TASHKENT_OFFSET_MIN = -300;
  * year that is already behind us is NEXT year's: nobody gives a task due in
  * the past. Anything else — a 31st of a 30-day month, 25:00 — is null and
  * asked again, never rolled into a different day by the calendar.
+ *
+ * …and so is a moment the person NAMED that is already gone — today at an
+ * hour that passed, a year typed in the past (review bot-10): it used to make
+ * the task overdue on the minute it was given. `typedDuePast` says which of
+ * the two a null was, so the bot can say «o'tib ketgan» and not «tushunmadim».
+ * The label prints the year whenever it is not this one, typed or rolled.
  */
 export function parseTypedDue(raw: string, now = new Date()): DraftDue | null {
+  const read = readTypedDue(raw, now);
+  return read && !read.past ? read.due : null;
+}
+
+/** Was `raw` a real moment, only one already behind us? */
+export function typedDuePast(raw: string, now = new Date()): boolean {
+  return readTypedDue(raw, now)?.past ?? false;
+}
+
+function readTypedDue(raw: string, now: Date): { due: DraftDue; past: boolean } | null {
   const text = raw.trim();
   const today = tashkentDay(now);
   const y = Number(today.slice(0, 4));
@@ -287,9 +320,8 @@ export function parseTypedDue(raw: string, now = new Date()): DraftDue | null {
     const at = instantOf(today, clock);
     const day = at.getTime() <= now.getTime() ? addDays(today, 1) : today;
     return {
-      dueAt: `${day}T${clock}`,
-      tzOffsetMin: TASHKENT_OFFSET_MIN,
-      label: day === today ? `bugun ${clock}` : `ertaga ${clock}`,
+      due: { dueAt: `${day}T${clock}`, tzOffsetMin: TASHKENT_OFFSET_MIN, label: day === today ? `bugun ${clock}` : `ertaga ${clock}` },
+      past: false,
     };
   }
   const date = /^(\d{1,2})[./](\d{1,2})(?:[./](\d{2}|\d{4}))?(?:\s+(\d{1,2}):(\d{2}))?$/.exec(text);
@@ -304,14 +336,18 @@ export function parseTypedDue(raw: string, now = new Date()): DraftDue | null {
     if (!realDate(year, mo, dd)) return null;
     day = `${year}-${pad(mo)}-${pad(dd)}`;
   }
+  const shown = year === y ? dotted(day) : `${dotted(day)}.${year}`;
   if (date[4] !== undefined) {
     const hh = Number(date[4]);
     const mm = Number(date[5]);
     if (hh > 23 || mm > 59) return null;
     const clock = `${pad(hh)}:${pad(mm)}`;
-    return { dueAt: `${day}T${clock}`, tzOffsetMin: TASHKENT_OFFSET_MIN, label: `${dotted(day)} ${clock}` };
+    return {
+      due: { dueAt: `${day}T${clock}`, tzOffsetMin: TASHKENT_OFFSET_MIN, label: `${shown} ${clock}` },
+      past: instantOf(day, clock).getTime() <= now.getTime(),
+    };
   }
-  return { dueAt: day, tzOffsetMin: null, label: dotted(day) };
+  return { due: { dueAt: day, tzOffsetMin: null, label: shown }, past: day < today };
 }
 
 function realDate(year: number, month: number, day: number): boolean {
@@ -342,7 +378,6 @@ function dotted(day: string): string {
 
 interface Linger {
   taskId: string;
-  assigneeId: string;
   albums: Set<string>;
   /** Albums whose late parts were already acknowledged — once per album, never per photo. */
   acked: Set<string>;
@@ -352,11 +387,12 @@ interface Linger {
 const lingers = new Map<string, Linger>();
 
 /** The draft just became a task: its albums linger for a minute (telegram-mechanics-17). */
-export function noteLinger(chatId: bigint, taskId: string, assigneeId: string, albums: string[]): void {
+export function noteLinger(chatId: bigint, taskId: string, albums: string[]): void {
   if (albums.length === 0) return;
   lingers.set(String(chatId), {
     taskId,
-    assigneeId,
+    // Not the holder: a late part goes to whoever holds the task WHEN it
+    // arrives, read by the append's own UPDATE (review bot-11).
     albums: new Set(albums),
     acked: new Set(),
     until: Date.now() + LINGER_MS,
@@ -385,27 +421,41 @@ export function lateAckDue(linger: Linger, mediaGroupId: string): boolean {
 // Door B — a forwarded message with no collector live.
 // ---------------------------------------------------------------------------
 
+/** One part of a forwarded album, as the press needs it: its pointer AND its file. */
+export interface ForwardPart {
+  messageId: number;
+  kind: PartKind | null;
+  file: DraftPart['file'];
+}
+
 interface ForwardAlbum {
-  messageIds: number[];
+  parts: ForwardPart[];
   offered: boolean;
   expires: number;
 }
 
-/** chat → media_group_id → the album's own message ids (telegram-mechanics-18). */
+/** chat → media_group_id → the album's own parts (telegram-mechanics-18). */
 const forwardAlbums = new Map<string, Map<string, ForwardAlbum>>();
 const ALBUM_TTL_MS = 30 * 60_000;
 
 /**
- * Remember one forwarded album part. Answers whether the «📌 Topshiriq
- * qilamizmi?» is still owed — once per album, never once per photo.
+ * Remember one forwarded album part — its pointer AND its file: every part
+ * was handed to us as a file when it arrived, and keeping only the pointer
+ * meant a four-photo album reached the web as one photo with nothing said
+ * (review bot-4). Answers whether the «📌 Topshiriq qilamizmi?» is still owed
+ * — once per album, never once per photo.
  */
-export function noteForwardPart(chatId: bigint, mediaGroupId: string, messageId: number): { offer: boolean } {
+export function noteForwardPart(
+  chatId: bigint,
+  mediaGroupId: string,
+  part: ForwardPart,
+): { offer: boolean } {
   const key = String(chatId);
   const now = Date.now();
   const byGroup = forwardAlbums.get(key) ?? new Map<string, ForwardAlbum>();
   for (const [id, album] of byGroup) if (album.expires <= now) byGroup.delete(id);
-  const album = byGroup.get(mediaGroupId) ?? { messageIds: [], offered: false, expires: now + ALBUM_TTL_MS };
-  if (!album.messageIds.includes(messageId)) album.messageIds.push(messageId);
+  const album = byGroup.get(mediaGroupId) ?? { parts: [], offered: false, expires: now + ALBUM_TTL_MS };
+  if (!album.parts.some((p) => p.messageId === part.messageId)) album.parts.push(part);
   const offer = !album.offered;
   album.offered = true;
   byGroup.set(mediaGroupId, album);
@@ -414,15 +464,15 @@ export function noteForwardPart(chatId: bigint, mediaGroupId: string, messageId:
 }
 
 /**
- * The album a pressed «Topshiriq qilish» was offered under — null after a
- * deploy (the map is memory), and the caller SAYS that only one part was
- * taken rather than dropping the rest in silence.
+ * The album a pressed «Topshiriq qilish» was offered under, its parts in
+ * order — null after a deploy (the map is memory), and the caller SAYS that
+ * only one part was taken rather than dropping the rest in silence.
  */
-export function forwardAlbumOf(chatId: bigint, mediaGroupId: string | null | undefined): number[] | null {
+export function forwardAlbumOf(chatId: bigint, mediaGroupId: string | null | undefined): ForwardPart[] | null {
   if (!mediaGroupId) return null;
   const album = forwardAlbums.get(String(chatId))?.get(mediaGroupId);
   if (!album || album.expires <= Date.now()) return null;
-  return [...album.messageIds].sort((a, b) => a - b);
+  return [...album.parts].sort((a, b) => a.messageId - b.messageId);
 }
 
 /** Tests only: a clean slate between cases. */

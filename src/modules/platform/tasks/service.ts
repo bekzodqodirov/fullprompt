@@ -2,7 +2,7 @@ import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, ne, sql, type SQL } 
 import { z } from 'zod';
 import { v7 as uuidv7 } from 'uuid';
 import { db, type Db, type Tx } from '../db/client';
-import { taskTypes, tasks, users } from '../db/schema';
+import { notifications, taskTypes, tasks, users } from '../db/schema';
 import { writeAudit, type AuditContext } from '../audit/service';
 import { entitySpec } from '../fields/registry';
 import { recordNames, resolveEntity } from '../entities/service';
@@ -11,6 +11,7 @@ import { notifyStaffTelegram, reachOf, userName, type Reach } from '../notificat
 import { retireTaskCopiesSoon } from '../notifications/retire-tasks';
 import { logger } from '../logger';
 import { canLogIn } from '../users/login';
+import { userPermissions } from '../rbac/authorize';
 
 /**
  * Work one person gives another (owner: "tasklar calendarlar").
@@ -80,6 +81,10 @@ export const TASK_ERROR_CODES = [
   'not_remindable',
   'not_askable',
   'empty_text',
+  // «📤 Manbani yangi odamga yuborish» with nobody to send to — the task came
+  // back to its author, or it carries no messages (review bot-13): said, never
+  // a «📤 Yuborildi» about nothing.
+  'nothing_to_send',
 ] as const;
 export type TaskErrorCode = (typeof TASK_ERROR_CODES)[number];
 
@@ -262,19 +267,58 @@ export function taskButtonPayload(
 }
 
 /**
- * Where a task's message links. A calc job's task links to its OWN screen
- * (`/hisoblash/<request>`): the lead card the old link named sends a VED
- * without `crm.leads` home (VED-TARIX §8), and the drain lifts this line into
- * the message's one URL button (telegram-mechanics-8).
+ * Where a task's message links ONE recipient — chosen per person, because a
+ * link that bounces its reader home is a dead door (review access-5,
+ * integration-2/6):
+ *  - a calc job's own screen, `/hisoblash/<request>`, for a `ved.docs` holder
+ *    only (VED-TARIX §8: the lead card sends a VED without `crm.leads` home,
+ *    and the drain lifts this line into the message's one URL button,
+ *    telegram-mechanics-8) — the SELLER who asked for the calculation cannot
+ *    open that screen;
+ *  - a lead or a deal: the card for whoever the card admits, the karta for a
+ *    calculator it does not — the VED author of a hand-back — and NO link for
+ *    anybody else: `noteLinksFor`'s rule, ONE home, reached by dynamic import
+ *    because platform never imports wms statically;
+ *  - anything else: its card, or «Mening kunim».
+ * Null means no 🔗 line at all; a lookup that fails answers null too — a link
+ * nobody could check is not sent.
  */
-export function taskLinkFor(task: {
-  origin: string | null;
-  boundId: string | null;
-  entityType: string | null;
-  entityId: string | null;
-}): string {
-  if (task.origin === 'calc' && task.boundId) return calcLink(task.boundId);
+export async function taskLinkFor(
+  task: {
+    origin: string | null;
+    boundId: string | null;
+    entityType: string | null;
+    entityId: string | null;
+  },
+  recipient: { id: string; permissions: { has(code: string): boolean } },
+): Promise<string | null> {
+  if (task.origin === 'calc' && task.boundId && recipient.permissions.has('ved.docs')) {
+    return calcLink(task.boundId);
+  }
+  if ((task.entityType === 'lead' || task.entityType === 'deal') && task.entityId) {
+    try {
+      const { noteLinksFor } = await import('../../wms/calc/card-door');
+      const links = await noteLinksFor({ entityType: task.entityType, entityId: task.entityId }, [recipient.id]);
+      return links.get(recipient.id) ?? null;
+    } catch (err) {
+      logger.warn({ err, recipient: recipient.id }, '[tasks] link for the card not resolved — sent without one');
+      return null;
+    }
+  }
   return taskLink(task.entityType, task.entityId);
+}
+
+/** A task message's 🔗 line for one person — nothing when there is no door to give them. */
+async function linkLine(task: Parameters<typeof taskLinkFor>[0], userId: string): Promise<string> {
+  // Built inside the message's own arguments, AFTER the door's write: a read
+  // that fails here must cost the line, never fail a door that already closed.
+  try {
+    const link = await taskLinkFor(task, { id: userId, permissions: await userPermissions(userId) });
+    return link ? `\n🔗 ${link}` : '';
+  } catch (err) {
+    logger.warn({ err, userId }, '[tasks] message link not resolved — sent without one');
+    return '';
+  }
 }
 
 /**
@@ -622,7 +666,7 @@ async function notifyAssigned(
       (label ? `\n📌 ${label}` : '') +
       assignedNoteLine(task.note, task.origin) +
       `\n👤 ${await userName(fromUserId)}` +
-      `\n🔗 ${taskLinkFor(task)}`,
+      (await linkLine(task, task.assigneeId)),
     // The contract the send worker draws the buttons from (staff bot).
     extra: {
       ...taskButtonPayload(task, opts.binding ?? null),
@@ -714,7 +758,7 @@ export async function completeTask(
         `✅ Bajarildi: ${before.title}` +
         (result.trim() ? `\n${result.trim().slice(0, 300)}` : '') +
         `\n👤 ${await userName(ctx.actorId)}` +
-        `\n🔗 ${taskLinkFor(before)}`,
+        (await linkLine(before, before.createdBy)),
     }).catch(() => {});
   }
 
@@ -780,6 +824,12 @@ export async function cancelTask(
   if (!before) throw new TaskError('not_found');
   if (!canActOnTask(before, ctx.actor)) throw new TaskError('not_yours');
   if (before.status !== 'open') throw new TaskError('already_closed');
+  // An OPEN calc job's task is not anybody's to drop: cancelling it released
+  // the job back to the queue (below), so the requesting seller, a viewer or
+  // the accountant could take the VED's claim without the queue's own
+  // `ved.docs` «Bo'shatish» (review tasks-2 / access-2). The holder moves
+  // through «Olaman / Bo'shatish», like every other door on the job.
+  await refuseOpenCalc(before);
   const cancelled = await db
     .update(tasks)
     .set({ status: 'cancelled', result: reason.trim() || null, updatedAt: new Date() })
@@ -812,8 +862,11 @@ export async function cancelTask(
 
   // The assignee is told the work went away (spec §4) — the most common case
   // is the author's own «🗑 Bekor qilish» on a typo seconds after creating it,
-  // and the copy those seconds delivered must not stay a live job.
-  if (before.assigneeId !== ctx.actorId) {
+  // and the copy those seconds delivered must not stay a live job. But only
+  // when a copy DID reach them: one still queued was just muted by the retire
+  // above, and «🗑 bekor qilindi» about a task they never got is news about
+  // nothing (review bot-8).
+  if (before.assigneeId !== ctx.actorId && (await assigneeWasReached(id, before.assigneeId))) {
     await notifyStaffTelegram({
       userIds: [before.assigneeId],
       type: 'TaskCancelled',
@@ -821,9 +874,35 @@ export async function cancelTask(
         `🗑 Vazifa bekor qilindi: ${before.title}` +
         (reason.trim() ? `\n${reason.trim().slice(0, 300)}` : '') +
         `\n👤 ${await userName(ctx.actorId)}` +
-        `\n🔗 ${taskLinkFor(before)}`,
+        (await linkLine(before, before.assigneeId)),
     }).catch(() => {});
   }
+}
+
+/**
+ * Did a copy of this task reach the assignee's Telegram — or is one on its
+ * way out this moment? 'sending' counts: the drain is past its send-time
+ * check, the copy will land, and the after-send retire stamps it (review
+ * tasks-1), so the person must hear why. The digest counts too: a morning
+ * list that named the task is how many people first meet it.
+ */
+async function assigneeWasReached(taskId: string, userId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: notifications.id })
+    .from(notifications)
+    .where(
+      and(
+        eq(notifications.userId, userId),
+        eq(notifications.channel, 'telegram'),
+        inArray(notifications.status, ['sent', 'sending']),
+        sql`((${notifications.type} IN ('TaskAssigned', 'TaskReminder', 'TaskAnswer')
+                AND ${notifications.payload}->>'taskId' = ${taskId})
+              OR (${notifications.type} = 'TasksDue'
+                AND ${notifications.payload}->'tasks' @> ${JSON.stringify([{ id: taskId }])}::jsonb))`,
+      ),
+    )
+    .limit(1);
+  return Boolean(row);
 }
 
 /** Hand a task to somebody else — the everyday move in a small company. */
@@ -902,7 +981,7 @@ export async function reassignTask(
         `\n${await userName(before.assigneeId)} → ${person.fullName}` +
         `\n👤 ${await userName(ctx.actorId)}` +
         (offer ? '\n📎 Xabarlaringiz yangi odamga yuborilmadi.' : '') +
-        `\n🔗 ${taskLinkFor(before)}`,
+        (await linkLine(before, before.createdBy)),
       extra: { taskId: id, offerSources: offer },
     }).catch(() => {});
   }
@@ -924,11 +1003,46 @@ export function sourcesOf(value: unknown): SourceMessage[] {
 }
 
 /**
+ * The author's own messages, sent to whoever holds the task NOW: the forwards
+ * and one line with the link — and NO task buttons (review bot-13). The
+ * holder's own TaskAssigned carries those; a second full assignment was a
+ * second 👀 ✅ ⏰ 💬 under the same work. Its own type so the drain's send-time
+ * check mutes it once the task closed or moved (an assignee copy,
+ * `taskCopyLive`) and queue order puts it after the assignment it belongs to.
+ * One sender for the author's «📤» press and a late album part (bot-11).
+ */
+export async function queueTaskSources(
+  task: {
+    id: string;
+    title: string;
+    assigneeId: string;
+    origin: string | null;
+    boundId: string | null;
+    entityType: string | null;
+    entityId: string | null;
+  },
+  sources: SourceMessage[],
+  headline: string,
+): Promise<void> {
+  if (sources.length === 0) return;
+  await notifyStaffTelegram({
+    userIds: [task.assigneeId],
+    type: 'TaskSources',
+    text: `${headline}: ${task.title}` + (await linkLine(task, task.assigneeId)),
+    extra: { taskId: task.id, forwards: sources },
+  });
+}
+
+/**
  * «📤 Manbani yangi odamga yuborish» — the author's own press under a
  * `TaskReassigned` (access-money-12): their messages go to whoever holds the
- * task NOW, and only because they asked.
+ * task NOW, and only because they asked. Answers whether that person will
+ * hear it; refuses in words when there is nobody to send to (review bot-13).
  */
-export async function forwardSourcesAgain(id: string, ctx: TaskContext): Promise<void> {
+export async function forwardSourcesAgain(
+  id: string,
+  ctx: TaskContext,
+): Promise<{ reach: Reach; name: string | null }> {
   if (!ctx.actorId) throw new TaskError('unauthenticated');
   const task = await byId(id);
   if (!task) throw new TaskError('not_found');
@@ -936,8 +1050,10 @@ export async function forwardSourcesAgain(id: string, ctx: TaskContext): Promise
   if (task.status !== 'open') throw new TaskError('already_closed');
   const row = await db.query.tasks.findFirst({ where: eq(tasks.id, id), columns: { sourceMessages: true } });
   const sources = sourcesOf(row?.sourceMessages);
-  if (sources.length === 0 || task.assigneeId === ctx.actorId) return;
-  await notifyAssigned(task, ctx.actorId, { headline: '📎 Topshiriq manbalari', forwards: sources });
+  if (sources.length === 0 || task.assigneeId === ctx.actorId) throw new TaskError('nothing_to_send');
+  await queueTaskSources(task, sources, '📎 Topshiriq manbalari');
+  const reach = (await reachOf([task.assigneeId], 'TaskSources')).get(task.assigneeId) ?? 'no_chat';
+  return { reach, name: task.assigneeName };
 }
 
 export async function updateTask(
@@ -1023,7 +1139,7 @@ export async function acceptTask(id: string, ctx: TaskContext): Promise<void> {
     await notifyStaffTelegram({
       userIds: [before.createdBy],
       type: 'TaskAccepted',
-      text: `👀 Qabul qilindi: ${before.title}\n👤 ${await userName(ctx.actorId)}\n🔗 ${taskLinkFor(before)}`,
+      text: `👀 Qabul qilindi: ${before.title}\n👤 ${await userName(ctx.actorId)}` + (await linkLine(before, before.createdBy)),
       extra: { taskId: id },
     }).catch(() => {});
   }
@@ -1070,7 +1186,7 @@ export async function rescheduleTask(
         `⏰ Muddat surildi: ${before.title}` +
         `\n📅 ${before.dueAt ? telegramDue(before.dueAt, before.allDay) : '—'} → ${telegramDue(due.dueAt, due.allDay)}` +
         `\n👤 ${await userName(ctx.actorId)}` +
-        `\n🔗 ${taskLinkFor(before)}`,
+        (await linkLine(before, before.createdBy)),
       extra: { taskId: id },
     }).catch(() => {});
   }
@@ -1167,7 +1283,7 @@ export async function remindTask(id: string, ctx: TaskContext): Promise<{ reach:
       `🔔 Eslatma: ${task.title}` +
       (task.dueAt ? `\n📅 ${telegramDue(task.dueAt, task.allDay)}` : '') +
       `\n👤 ${await userName(ctx.actorId)}` +
-      `\n🔗 ${taskLinkFor(task)}`,
+      (await linkLine(task, task.assigneeId)),
     extra: { ...taskButtonPayload(task) },
   });
   return {
@@ -1211,7 +1327,7 @@ export async function askAboutTask(
   await notifyStaffTelegram({
     userIds: [task.createdBy],
     type: 'TaskQuestion',
-    text: `❓ Savol: ${task.title}\n${body}\n👤 ${await userName(ctx.actorId)}\n🔗 ${taskLinkFor(task)}`,
+    text: `❓ Savol: ${task.title}\n${body}\n👤 ${await userName(ctx.actorId)}` + (await linkLine(task, task.createdBy)),
     extra: { taskId: id },
   });
   return {
@@ -1247,7 +1363,7 @@ export async function answerAboutTask(
   await notifyStaffTelegram({
     userIds: [task.assigneeId],
     type: 'TaskAnswer',
-    text: `💬 Javob: ${task.title}\n${body}\n👤 ${await userName(ctx.actorId)}\n🔗 ${taskLinkFor(task)}`,
+    text: `💬 Javob: ${task.title}\n${body}\n👤 ${await userName(ctx.actorId)}` + (await linkLine(task, task.assigneeId)),
     extra: { ...taskButtonPayload(task) },
   });
   return {
