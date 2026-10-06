@@ -19,6 +19,7 @@ import {
   postponeDue,
   refusalKeepsPick,
   startDraft,
+  typedDuePast,
   withPart,
 } from '@/modules/platform/telegram/task-draft';
 import { parseDue } from '@/modules/platform/tasks/service';
@@ -171,6 +172,26 @@ describe('the due, on the Tashkent calendar', () => {
     const now = new Date('2026-10-06T06:00:00Z');
     expect(parseTypedDue('01.03', now)!.dueAt).toBe('2027-03-01');
     expect(parseTypedDue('06.10', now)!.dueAt).toBe('2026-10-06');
+  });
+
+  it('a moment the person NAMED that is already gone is refused, and said to be gone (review bot-10)', () => {
+    // 10:00 in Tashkent on 06.10.
+    const now = new Date('2026-10-06T05:00:00Z');
+    for (const past of ['06.10 08:00', '01.10.2026', '05.10.26 12:00']) {
+      expect(parseTypedDue(past, now), past).toBeNull();
+      expect(typedDuePast(past, now), past).toBe(true);
+    }
+    // Today later on, and today as a whole day, still stand.
+    expect(parseTypedDue('06.10 12:00', now)!.dueAt).toBe('2026-10-06T12:00');
+    expect(parseTypedDue('06.10', now)!.dueAt).toBe('2026-10-06');
+    expect(typedDuePast('ertaga', now)).toBe(false);
+  });
+
+  it('the label carries the year whenever it is not this one — typed or rolled (review bot-10)', () => {
+    const now = new Date('2026-10-06T05:00:00Z');
+    expect(parseTypedDue('12.01.2027', now)!.label).toBe('12.01.2027');
+    expect(parseTypedDue('01.03', now)!.label).toBe('01.03.2027');
+    expect(parseTypedDue('12.10.2026 15:00', now)!.label).toBe('12.10 15:00');
   });
 
   it('refuses what is not a real moment instead of rolling it into another day', () => {

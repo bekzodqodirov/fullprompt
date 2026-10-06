@@ -344,3 +344,19 @@ describe('parts the task cannot take are said, never swallowed (review bot-11)',
     expect(activeDraft(author.chat)!.sources).toHaveLength(10);
   });
 });
+
+describe('a typed ⏰ date already gone (review bot-10)', () => {
+  it('is said to be gone and consumed — never a deadline in the past, never «not a date»', async () => {
+    const author = await mintStaff();
+    const doer = await mintStaff();
+    const [task] = await db
+      .insert(tasks)
+      .values({ title: `Surish ${STAMP}`, assigneeId: doer.id, createdBy: author.id, origin: 'hand', dueAt: new Date('2030-01-01T23:59:59.999Z') })
+      .returning({ id: tasks.id });
+    const { ctx, said } = ctxFor(doer.chat);
+    expect(await answerPendingText(ctx, doer.chat, { kind: 'reschedule', taskId: task!.id, pressed: null }, '01.10.2025')).toBe(true);
+    expect(said.replies.map((r) => r.text)).toEqual(['Bu vaqt o‘tib ketgan — muddat o‘zgarmadi. Kerak bo‘lsa, «⏰» ni qayta bosing.']);
+    const [row] = await db.select({ dueAt: tasks.dueAt }).from(tasks).where(eq(tasks.id, task!.id));
+    expect(row!.dueAt!.toISOString()).toBe('2030-01-01T23:59:59.999Z');
+  });
+});

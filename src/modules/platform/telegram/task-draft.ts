@@ -290,8 +290,24 @@ const TASHKENT_OFFSET_MIN = -300;
  * year that is already behind us is NEXT year's: nobody gives a task due in
  * the past. Anything else — a 31st of a 30-day month, 25:00 — is null and
  * asked again, never rolled into a different day by the calendar.
+ *
+ * …and so is a moment the person NAMED that is already gone — today at an
+ * hour that passed, a year typed in the past (review bot-10): it used to make
+ * the task overdue on the minute it was given. `typedDuePast` says which of
+ * the two a null was, so the bot can say «o'tib ketgan» and not «tushunmadim».
+ * The label prints the year whenever it is not this one, typed or rolled.
  */
 export function parseTypedDue(raw: string, now = new Date()): DraftDue | null {
+  const read = readTypedDue(raw, now);
+  return read && !read.past ? read.due : null;
+}
+
+/** Was `raw` a real moment, only one already behind us? */
+export function typedDuePast(raw: string, now = new Date()): boolean {
+  return readTypedDue(raw, now)?.past ?? false;
+}
+
+function readTypedDue(raw: string, now: Date): { due: DraftDue; past: boolean } | null {
   const text = raw.trim();
   const today = tashkentDay(now);
   const y = Number(today.slice(0, 4));
@@ -304,9 +320,8 @@ export function parseTypedDue(raw: string, now = new Date()): DraftDue | null {
     const at = instantOf(today, clock);
     const day = at.getTime() <= now.getTime() ? addDays(today, 1) : today;
     return {
-      dueAt: `${day}T${clock}`,
-      tzOffsetMin: TASHKENT_OFFSET_MIN,
-      label: day === today ? `bugun ${clock}` : `ertaga ${clock}`,
+      due: { dueAt: `${day}T${clock}`, tzOffsetMin: TASHKENT_OFFSET_MIN, label: day === today ? `bugun ${clock}` : `ertaga ${clock}` },
+      past: false,
     };
   }
   const date = /^(\d{1,2})[./](\d{1,2})(?:[./](\d{2}|\d{4}))?(?:\s+(\d{1,2}):(\d{2}))?$/.exec(text);
@@ -321,14 +336,18 @@ export function parseTypedDue(raw: string, now = new Date()): DraftDue | null {
     if (!realDate(year, mo, dd)) return null;
     day = `${year}-${pad(mo)}-${pad(dd)}`;
   }
+  const shown = year === y ? dotted(day) : `${dotted(day)}.${year}`;
   if (date[4] !== undefined) {
     const hh = Number(date[4]);
     const mm = Number(date[5]);
     if (hh > 23 || mm > 59) return null;
     const clock = `${pad(hh)}:${pad(mm)}`;
-    return { dueAt: `${day}T${clock}`, tzOffsetMin: TASHKENT_OFFSET_MIN, label: `${dotted(day)} ${clock}` };
+    return {
+      due: { dueAt: `${day}T${clock}`, tzOffsetMin: TASHKENT_OFFSET_MIN, label: `${shown} ${clock}` },
+      past: instantOf(day, clock).getTime() <= now.getTime(),
+    };
   }
-  return { dueAt: day, tzOffsetMin: null, label: dotted(day) };
+  return { due: { dueAt: day, tzOffsetMin: null, label: shown }, past: day < today };
 }
 
 function realDate(year: number, month: number, day: number): boolean {

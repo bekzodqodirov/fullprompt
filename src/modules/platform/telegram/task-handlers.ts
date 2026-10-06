@@ -54,6 +54,7 @@ import {
   noteLinger,
   parseTypedDue,
   postponeDue,
+  typedDuePast,
   refusalKeepsPick,
   startDraft,
   tooBigLine,
@@ -345,7 +346,11 @@ export async function draftText(ctx: Context, chatId: bigint, draft: TaskDraft):
   if (draft.stage === 'date' && !forwarded) {
     const due = parseTypedDue(text);
     if (!due) {
-      await ctx.reply('Tushunmadim. 12.10, 12.10 15:00 yoki 15:00 ko‘rinishida yozing.');
+      await ctx.reply(
+        typedDuePast(text)
+          ? 'Bu vaqt o‘tib ketgan — keyingi sanani yozing: 12.10, 12.10 15:00 yoki 15:00.'
+          : 'Tushunmadim. 12.10, 12.10 15:00 yoki 15:00 ko‘rinishida yozing.',
+      );
       return;
     }
     await createOrWait(sayIn(ctx), chatId, due);
@@ -857,6 +862,11 @@ export async function answerPendingText(
   }
   // reschedule
   const due = parseTypedDue(text);
+  if (!due && typedDuePast(text)) {
+    // A date, only one already gone (review bot-10): consumed, and said.
+    await ctx.reply('Bu vaqt o‘tib ketgan — muddat o‘zgarmadi. Kerak bo‘lsa, «⏰» ni qayta bosing.');
+    return true;
+  }
   if (!due) {
     await ctx.reply('Bu sana emas — muddat o‘zgarmadi. Kerak bo‘lsa, «⏰» ni qayta bosing.');
     return false;
