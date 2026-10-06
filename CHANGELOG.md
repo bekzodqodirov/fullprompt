@@ -92,6 +92,37 @@ Sizning javoblaringiz: **1b 2a 3a 4a 5a 6b** (topshiriq) va **7a 8a 9a 10a 11a 1
 - **Topshiriq fayllari** (forward qilingan mijoz rasmlari ham) hamkasblarning vazifalarini ko'ra oladigan har bir kishiga ochiq: buxgalter, logist, VED, kuzatuvchi. Bu /kalendar bilan bir xil.
 - **Lid yutilganda** VEDning lid lentasidagi savoli o'sha lidda qoladi. Bitim kartasida u ko'rinmaydi.
 
+### O'rnatish (deploy)
+
+Odatdagi tartib — `docs/UPDATE.md` (avval zaxira nusxa, keyin `git pull`, keyin qurish). Shu raunddan keyin qo'shimcha:
+
+1. **Migratsiyalar soni 125 bo'lishi shart.** Kam chiqsa, `migrate` konteynerining chiqishini o'qing (UPDATE.md §4). Ilova yangisi qurilmaguncha eski versiyada ishlab turadi.
+2. **`/api/version`** — yangi kod ishlayotganini tasdiqlaydi.
+3. **Har bir xodim botga bir marta /start yuborsin** — «➕ Topshiriq» va «📤 Men bergan» tugmalari shundan keyin chiqadi.
+4. **Eski «Hisoblash: …» qoldiqlari** (VED «Bo'shatish» bosganda qolib ketgan vazifalar). Avval faqat ro'yxat — hech narsa o'zgarmaydi:
+   ```bash
+   docker compose run --rm migrate pnpm close-stale-calc-tasks --ghosts
+   ```
+   Chiqqan ro'yxatni menga yuboring. Tozalash (`--ghosts --apply`) faqat siz ko'rib «ha» deganingizdan keyin.
+5. **Faqat o'qiydigan to'rt tekshiruv** (hech narsani o'zgartirmaydi; natijasini menga yuboring):
+   ```bash
+   docker compose exec -T postgres psql -U gsr -d gsr -c "
+   select 'eslatma_kerak' as k, count(*) from tasks t where t.origin is null
+     and (exists (select 1 from calc_requests r where r.task_id = t.id)
+       or exists (select 1 from payment_promises p where p.task_id = t.id))
+   union all
+   select 'nol_javob', count(*) from calc_requests
+     where answer_amount is not null and not (answer_amount > 0 and answer_amount <> 'NaN')
+   union all
+   select 'ikki_hisob_bitta_vazifa', count(*) from (select task_id from calc_requests
+     where task_id is not null group by 1 having count(*) > 1) x
+   union all
+   select 'eski_tuzatish_vazifasiz', count(*) from calc_requests
+     where supersedes_request_id is not null and completed_at is null
+       and assignee_id is not null and task_id is null;"
+   ```
+   Birinchi uchtasi **0** bo'lishi kerak. To'rtinchisi — 0124 dan oldin ochilgan, hali yopilmagan tuzatishlar: ular eski holicha qoladi (vazifasiz, so'ragan admin nomida). 0 bo'lmasa, nima qilishni alohida kelishamiz.
+
 ## Yuk ma'lumoti tekshiruvi (✅ / ❓) va yig'iladigan yashiklar ro'yxati — 2026-10-03
 
 **Migratsiya 0123.** O'rnatgandan keyin migratsiyalar soni **124** bo'lishi kerak.

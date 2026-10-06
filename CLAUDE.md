@@ -151,6 +151,9 @@ pnpm build && pnpm e2e  # 44 e2e
 | The truck card's six tabs and the client's «Pul» tab | `docs/CARD-TABS.md` — agreed 2026-09-28 (his 3a/4a), SHIPPED |
 | A lot that holds several goods — the paper «tarkibi» | `docs/LOT-TARKIBI.md` — agreed 2026-10-01 (his 1c 2c 3b 4c 5a 6 7a 8a), SHIPPED |
 | «Yuk ma'lumoti tekshirildi» — the ✅/❓ on a lot, the worklist | `docs/YUK-TEKSHIRUV.md` — agreed 2026-10-03 (his 1a 2b 3a 4a 5b), SHIPPED |
+| «➕ Topshiriq» in the staff bot — draft, forward door, assignee buttons, «📤 Men bergan» | `docs/TELEGRAM-TOPSHIRIQ.md` — agreed 2026-10-06 (his 1b 2a 3a 4a 5a 6b), SHIPPED |
+| VED tarix, «Готово» answers + internal note, recalc from an answer, the VED on the seller's card | `docs/VED-TARIX.md` — agreed 2026-10-06 (his 7a-12a 13c, 14a 15a 16a), SHIPPED |
+| The five-lens review of both before code — 115 objections and their BINDING fixes | `docs/TOPSHIRIQ-VED-REVIEW.md` |
 
 ## State — 2026-08-23
 
@@ -2440,7 +2443,47 @@ undo lives where confirm does. 16 red proofs. Also his «yashiklar …
 colapsable»: `CrateRows` is a `<details>`, open ≤5 (#1266). 5b (the client's
 own ✅/❌ in Telegram) is owed as a later round.
 
-**Latest migration: 0123** (`lot_check`, `when` …102; ledger must reach **124**). Before
+**Round — Telegramdan topshiriq + VED tarix (2026-10-06; DECISIONS
+#1268-; migration 0124 `task_origin_calc_note` — ledger must reach 125; specs
+`docs/TELEGRAM-TOPSHIRIQ.md`, `docs/VED-TARIX.md`, review
+`docs/TOPSHIRIQ-VED-REVIEW.md`).** Two rounds designed as two specs, judged
+as ONE by five lenses before code (115 objections, 88 confirmed + 25 partial,
+every survivor a BINDING fix), the shared half written by the lead first, then
+two worktree packages merged with no conflict. **0124**: `tasks.origin`
+(hand/calc/calc_return/promise/automation) said by the CREATING door —
+`createTask(input, ctx, making)` takes it as a REQUIRED argument, never from a
+form — plus `bound_id` (calc/promise only, CHECK spells `origin IS NOT NULL`),
+`accepted_at`, `reminded_at`, `source_messages`, and
+`calc_requests.answer_internal_note`; backfill = pointers first, then the
+whole machine title shape, proven by running 0124's own UPDATEs in a
+rolled-back tx. **An open bound task has no ✅ anywhere** — every task door
+asks `wms/calc/task-gate.ts` (dynamic import) first and fails CLOSED
+(`calc_use_screen` / `bound_check_failed`); the READER decides how a calc job
+draws (`toTaskViews(rows, viewer)`: «🧮 Hisobni ochish» for `ved.docs`, a chip
+for everyone else). `retireTaskCopies` (platform/notifications) takes a
+task's buttons off its Telegram copies after commit — the 08:00 digest keeps
+its text and only its keyboard is redrawn. BOT: «➕ Topshiriq» / forward door
+into ONE pure draft (`telegram/task-draft.ts`), customer messages kept as
+POINTERS and forwarded by the drain, 👀/⏰/💬 by origin, «📤 Men bergan» with a
+CAS 🔔; every staff member sends /start once for the new rows. VED:
+`calc/credit.ts` is the one «who priced it» (13c); «Готово» parses typed text
+and requires an internal note that reaches its column and the request's audit
+row and nothing else (fenced); answers sit in /hisoblash/tarix beside seals
+(one UNION, goods fold, TNVED-prefix search); recalc from an answer
+(`vedRotaPool`, root seller as requester, `recalc_returned`);
+`standingAnchorsFor` is the one list the panel, the quote lock and «Javob
+berildi» read; nazorat reads all and confirms own; the VED reaches a seller's
+card through `/hisoblash/[id]/karta` (`mayOpenCalcCard`, his 15a) with a text
+note and the client price, never the upsale (16a). Found on the way:
+«Bo'shatish» had never cancelled the holder's task (PG16 RETURNING is the NEW
+row, #1271) — the ghosts are `pnpm close-stale-calc-tasks --ghosts`, dry run
+first; and his «edinitsa izmereniyani o'zgartirib bo'lmayabti» was the baza
+PAIR drafting as two updates that each cleaned the other away
+(`calc/baza-draft.ts` `editBazaPair`, #1272). STILL OWED to him: Q17 (VED
+writes on the deal card) and Q18-21 (which units a row may offer).
+
+**Latest migration: 0124** (`task_origin_calc_note`, `when` …103; ledger must reach **125**). Before
+it: 0123 (`lot_check`, `when` …102). Before
 it: 0122 (`lot_composition`, `when` …101). Before
 it: 0121 (`batch_rename`, `when` …100). Before
 it: 0120 (`no_login_staff`, `when` …099). Before
@@ -2568,7 +2611,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **124** since 0123 (123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **125** since 0124 (124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
 and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read
@@ -2576,7 +2619,7 @@ and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read
 was asked for and NOT quoted; PR #106 (0121) deployed 2026-09-30 evening («Hozir sistema
 yaxshi ishlayabti», count not quoted either); PR #109 (0122) was asked about and NOT
 answered, so COUNT FIRST on the next deploy: it must read
-**124** (anything less means a migration did not land — read the `migrate`
+**125** (anything less means a migration did not land — read the `migrate`
 container's own output; from 113 the whole 0113-0120 set applies and EVERY
 container must be recreated once: `--profile https --profile telegram up -d
 --build`, compose gained `init`, a healthcheck, log caps and a postgres flag);
