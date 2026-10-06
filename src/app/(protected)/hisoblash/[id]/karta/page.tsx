@@ -130,7 +130,16 @@ export default async function CalcKartaPage({
       <CardCols
         main={
           <>
-            <ClientFeed clientId={clientId} money={feedMoney} leadId={lead.id} limit={60} tall />
+            {/* A note written here is about THIS card, for every reader
+                (review access-4) — never the client's thread. */}
+            <ClientFeed
+              clientId={clientId}
+              money={feedMoney}
+              leadId={lead.id}
+              noteOn={{ entityType: 'lead', entityId: lead.id }}
+              limit={60}
+              tall
+            />
             <TelegramThread
               clientId={threadSource.kind === 'client' ? threadSource.clientId : null}
               leadId={lead.id}
