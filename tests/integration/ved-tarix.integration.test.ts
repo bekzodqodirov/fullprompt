@@ -5,6 +5,7 @@ import { db, pgClient } from '@/modules/platform/db/client';
 import {
   calcExtras,
   calcGroups,
+  calcOffers,
   calcRequestItems,
   calcRequests,
   calcVersions,
@@ -20,13 +21,13 @@ import {
   users,
 } from '@/modules/platform/db/schema';
 import { calcSpeed, finishCalcRequest, returnCalcRequest, vedRotaPool } from '@/modules/wms/calc/service';
-import { recalcFromSealed, sealCalc, setFreightZone, standingAnchorsFor } from '@/modules/wms/calc/workspace';
+import { recalcFromSealed, recordOffer, sealCalc, setFreightZone, standingAnchorsFor } from '@/modules/wms/calc/workspace';
 import { isRegistryRequest, registryCounts, registryRows, type RegistryAnswerRow } from '@/modules/wms/calc/chain';
 import { creditTotals } from '@/modules/wms/calc/credit';
 import { calcRegistrySight, internalNoteSight } from '@/modules/wms/calc/control-scope';
 import { dealCalcSheets, requestGoodsSheet } from '@/modules/wms/calc/sheet';
 import { itemNameNorm } from '@/modules/wms/calc/memory';
-import { quoteLockedFor } from '@/modules/wms/crm/service';
+import { quoteLockedFor, updateLead } from '@/modules/wms/crm/service';
 
 /**
  * The owner's 7a 8a 9a 10a 12a 13c in the database (docs/VED-TARIX.md §2-§7):
@@ -58,6 +59,7 @@ let leadName = '';
 const madeUsers: string[] = [];
 const madeRequests: string[] = [];
 const madeDeals: string[] = [];
+const madeLeads: string[] = [];
 const ctx = (actorId: string) => ({ actorId });
 
 async function userWithRole(role: string, name: string): Promise<string> {
@@ -78,6 +80,7 @@ async function job(opts: {
   holder: string;
   goods: string;
   tnvedCode?: string;
+  volumeM3?: string;
 }): Promise<string> {
   const [r] = await db
     .insert(calcRequests)
@@ -91,7 +94,7 @@ async function job(opts: {
       fromCity: 'Yiwu',
       toCity: 'Toshkent',
       weightKg: '1500',
-      volumeM3: '30',
+      volumeM3: opts.volumeM3 ?? '30',
       dueAt: new Date(Date.now() + 3_600_000),
     })
     .returning({ id: calcRequests.id });
@@ -149,11 +152,13 @@ afterAll(async () => {
     .from(calcRequests)
     .where(
       or(
-        inArray(calcRequests.entityId, [...madeDeals, leadId]),
+        inArray(calcRequests.entityId, [...madeDeals, leadId, ...madeLeads]),
         inArray(calcRequests.id, madeRequests.length ? madeRequests : ['00000000-0000-0000-0000-000000000000']),
       ),
     );
   const ids = all.map((r) => r.id);
+  // Offers point at a version or a request, so they go first.
+  await db.delete(calcOffers).where(inArray(calcOffers.entityId, [...madeDeals, leadId, ...madeLeads]));
   if (ids.length > 0) {
     const bound = await db.select({ id: tasks.id }).from(tasks).where(inArray(tasks.boundId, ids));
     const taskIds = [...new Set([...bound.map((t) => t.id), ...(all.map((r) => r.taskId).filter(Boolean) as string[])])];
@@ -169,9 +174,9 @@ afterAll(async () => {
     }
   }
   await db.delete(notifications).where(inArray(notifications.userId, madeUsers));
-  await db.delete(events).where(inArray(events.entityId, [...madeDeals, leadId]));
+  await db.delete(events).where(inArray(events.entityId, [...madeDeals, leadId, ...madeLeads]));
   await db.delete(deals).where(inArray(deals.id, madeDeals));
-  await db.delete(leads).where(eq(leads.id, leadId));
+  await db.delete(leads).where(inArray(leads.id, [leadId, ...madeLeads]));
   await db.delete(clients).where(eq(clients.id, clientId));
   await db.delete(userRoles).where(inArray(userRoles.userId, madeUsers));
   // DEACTIVATED, not deleted — audit_log points at them (round 107's rule).
@@ -377,5 +382,102 @@ describe('a correction from an answer (10a)', () => {
     const child = await recalcFromSealed(sealed, ctx(sellerId));
     madeRequests.push(child);
     expect(await quoteLockedFor('deal', deal2Id), 'nothing stands, nothing is locked').toBeNull();
+  });
+});
+
+/**
+ * Review ved-money-1: the lock holds the number the CARD carries, which is
+ * whatever wrote `quoted_amount` last — a seal (sealCalc) or a released offer
+ * (applyOfferToCard) — and only while that writer stands. A card carries
+ * several jobs (0085), so «the newest standing seal» is a different job's
+ * floor the moment the job that wrote the card is recalculated: the ✏️ form
+ * re-posts what the card shows (#171) and every save came back quote_sealed,
+ * for ever if the correction ended as an answer or a hand-back (neither one
+ * rewrites the card).
+ */
+describe('the quote lock follows the card’s LAST WRITER (ved-money-1)', () => {
+  async function freshLead(tag: string): Promise<string> {
+    const stage = await db.execute<{ id: string }>(
+      `SELECT id FROM lead_stages WHERE kind = 'open' ORDER BY sort_order LIMIT 1`,
+    );
+    const [l] = await db
+      .insert(leads)
+      .values({ name: `Qulf ${tag} ${SUFFIX}`, stageId: stage[0]!.id, createdBy: sellerId, ownerId: sellerId })
+      .returning({ id: leads.id });
+    madeLeads.push(l!.id);
+    return l!.id;
+  }
+
+  /** The ✏️ form's save: what the card shows re-posted, only the phone corrected. */
+  async function saveShownQuote(id: string, newPhone: string) {
+    const card = await db.query.leads.findFirst({ where: eq(leads.id, id) });
+    await updateLead(
+      id,
+      {
+        name: card!.name,
+        phone: newPhone,
+        stageId: card!.stageId,
+        ownerId: sellerId,
+        quotedAmount: card!.quotedAmount === null ? null : Number(card!.quotedAmount),
+        quotedCurrency: 'USD',
+        quotedVolumeM3: card!.quotedVolumeM3 === null ? null : Number(card!.quotedVolumeM3),
+        quotedWeightKg: card!.quotedWeightKg === null ? null : Number(card!.quotedWeightKg),
+      },
+      ctx(sellerId),
+    );
+    return db.query.leads.findFirst({ where: eq(leads.id, id) });
+  }
+
+  async function sealedYolkira(entityId: string, volumeM3: string, goods: string) {
+    const id = await job({ section: 'yolkira', entityType: 'lead', entityId, holder: vedAId, goods, volumeM3 });
+    await setFreightZone(id, 'cn', ctx(vedAId));
+    const { totalUsd } = await sealCalc(id, NO_DISCOUNT, ctx(vedAId));
+    return { id, totalUsd };
+  }
+
+  it('two sealed jobs, the newer one recalculated: the card is unlocked, not held on the other floor', async () => {
+    const lead = await freshLead('ikki');
+    const a = await sealedYolkira(lead, '30', `qulf A ${TOKEN}`);
+    const b = await sealedYolkira(lead, '10', `qulf B ${TOKEN}`);
+    expect(a.totalUsd, 'the fixture needs two different floors').not.toBe(b.totalUsd);
+    const card = await db.query.leads.findFirst({ where: eq(leads.id, lead) });
+    expect(Number(card!.quotedAmount)).toBe(b.totalUsd);
+    expect(await quoteLockedFor('lead', lead)).toBe(b.totalUsd);
+
+    madeRequests.push(await recalcFromSealed(b.id, ctx(vedAId)));
+    // B wrote the card and B no longer stands; A stands but is not on the card.
+    expect(await quoteLockedFor('lead', lead)).toBeNull();
+    const saved = await saveShownQuote(lead, '+998901112233');
+    expect(saved!.phone).toBe('+998901112233');
+    expect(Number(saved!.quotedAmount)).toBe(b.totalUsd);
+  });
+
+  it('a sealed job and an answered job with a released offer, the answer recalculated', async () => {
+    const lead = await freshLead('javob');
+    const a = await sealedYolkira(lead, '30', `qulf C ${TOKEN}`);
+    const answered = await job({ section: 'rastamojka', entityType: 'lead', entityId: lead, holder: vedAId, goods: `qulf D ${TOKEN}` });
+    await finishCalcRequest(answered, { amountText: '500', currency: 'USD', note: '', internalNote: 'x' }, ctx(vedAId));
+    await recordOffer({ requestId: answered }, { clientPriceUsd: 650, locale: 'uz' }, ctx(sellerId));
+    const card = await db.query.leads.findFirst({ where: eq(leads.id, lead) });
+    expect(Number(card!.quotedAmount)).toBe(650);
+    expect(await quoteLockedFor('lead', lead)).toBe(650);
+
+    madeRequests.push(await recalcFromSealed(answered, ctx(vedAId)));
+    expect(await quoteLockedFor('lead', lead), `not A's ${a.totalUsd}: A is not on the card`).toBeNull();
+    const saved = await saveShownQuote(lead, '+998901114455');
+    expect(saved!.phone).toBe('+998901114455');
+    expect(Number(saved!.quotedAmount)).toBe(650);
+  });
+
+  it('a standing writer still locks: a different number is refused', async () => {
+    const lead = await freshLead('turibdi');
+    await sealedYolkira(lead, '30', `qulf E ${TOKEN}`);
+    const b = await sealedYolkira(lead, '10', `qulf F ${TOKEN}`);
+    const card = await db.query.leads.findFirst({ where: eq(leads.id, lead) });
+    await expect(
+      updateLead(lead, { name: card!.name, stageId: card!.stageId, ownerId: sellerId, quotedAmount: b.totalUsd + 1 }, ctx(sellerId)),
+    ).rejects.toMatchObject({ code: 'quote_sealed' });
+    // …and re-posting the card's own figure is an ordinary save.
+    expect((await saveShownQuote(lead, '+998901116677'))!.phone).toBe('+998901116677');
   });
 });

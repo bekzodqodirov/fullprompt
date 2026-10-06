@@ -4233,7 +4233,7 @@ export function releasedOfferWhere() {
  * The offer's quote still STANDS — its version is the request's newest seal
  * and no correction has superseded the request.
  *
- * The whole-module audit's second confirmed defect: `releasedPriceFor` was
+ * The whole-module audit's second confirmed defect: the card-price reader was
  * entity-keyed with no supersession clause, so after a correction sealed on a
  * card that carried a released offer the LOCK answered the old client price
  * while the card carried the new floor — and `updateLead`, which compares the
@@ -4269,28 +4269,33 @@ export function offerStandsSql() {
 }
 
 /**
- * The client price this card is currently quoted at, if one has been released.
+ * The newest RELEASED offer on this card, in the order the card column was
+ * written, and whether its quote still STANDS.
  *
- * The newest RELEASED offer whose quote still STANDS — a pending below-floor
- * promise is not a price the customer has been told, and a promise a
- * correction replaced is not this card's price any more either.
+ * A pending below-floor promise is not a price the customer has been told,
+ * so it never reached the card and is not considered at all. A promise a
+ * correction replaced DID reach the card — the number is still printed there
+ * — so it is returned with `stands: false` rather than skipped: the quote
+ * lock asks «who wrote the number the card shows, and does it still stand»,
+ * and skipping the dead writer hands it an older one that is not on the card
+ * (review ved-money-1).
  *
  * `at` is the moment the price reached the CARD — `approved_at` for a
  * below-floor promise (applyOfferToCard runs at release), `offered_at`
- * otherwise. The lock needs it because a deal carries many jobs and the card
- * column is last-writer-wins between offers and seals: the lock must
- * reconstruct the same order or it refuses saves against a number the card
- * does not carry.
+ * otherwise — and the order is by that moment, not by `offered_at`: a
+ * promise approved after a newer one was offered wrote the card LAST.
  */
-export async function releasedPriceFor(
+export async function lastReleasedOfferFor(
   entityType: 'deal' | 'lead',
   entityId: string,
-): Promise<{ price: number; at: Date } | null> {
+): Promise<{ id: string; price: number; at: Date; stands: boolean } | null> {
   const [row] = await db
     .select({
+      id: calcOffers.id,
       price: calcOffers.clientPriceUsd,
       offeredAt: calcOffers.offeredAt,
       approvedAt: calcOffers.approvedAt,
+      stands: sql<boolean>`${offerStandsSql()}`,
     })
     .from(calcOffers)
     .where(
@@ -4298,12 +4303,13 @@ export async function releasedPriceFor(
         eq(calcOffers.entityType, entityType),
         eq(calcOffers.entityId, entityId),
         releasedOfferWhere(),
-        offerStandsSql(),
       ),
     )
-    .orderBy(desc(calcOffers.offeredAt))
+    .orderBy(desc(sql`coalesce(${calcOffers.approvedAt}, ${calcOffers.offeredAt})`))
     .limit(1);
-  return row ? { price: Number(row.price), at: row.approvedAt ?? row.offeredAt } : null;
+  return row
+    ? { id: row.id, price: Number(row.price), at: row.approvedAt ?? row.offeredAt, stands: Boolean(row.stands) }
+    : null;
 }
 
 /**

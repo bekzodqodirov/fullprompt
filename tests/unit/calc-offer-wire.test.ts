@@ -214,7 +214,7 @@ describe('the PDF route serves RELEASED offers only (law 4, the promise lock)', 
     // slice to the function's closing line, not the first '}' — the template
     // literal's own interpolations close braces before the body does.
     expect(fn.slice(0, fn.indexOf('\n}'))).toContain('approvedAt} IS NOT NULL');
-    const priceFn = service.slice(service.indexOf('export async function releasedPriceFor'));
+    const priceFn = service.slice(service.indexOf('export async function lastReleasedOfferFor'));
     expect(priceFn.slice(0, priceFn.indexOf('orderBy'))).toContain('releasedOfferWhere()');
   });
 });

@@ -861,7 +861,7 @@ export async function bothFiguresForDeals(
     )
     .orderBy(calcOffers.offeredAt);
   // Ordered ascending and overwritten, so the NEWEST standing offer per deal
-  // wins — the same answer releasedPriceFor gives one deal at a time.
+  // wins — one pair per deal, never a promise a correction replaced.
   for (const r of rows) {
     out.set(r.dealId, { floorUsd: money(r.floorUsd), clientPriceUsd: money(r.clientPriceUsd) });
   }
