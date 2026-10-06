@@ -53,13 +53,22 @@ function valueImporters(): string[] {
 describe('the calculation sheet is read only behind calcRegistrySight', () => {
   const importers = valueImporters();
 
-  it('finds the two readers the design names (a fence that finds nothing proves nothing)', () => {
+  it('finds the readers the design names (a fence that finds nothing proves nothing)', () => {
     expect(importers).toEqual(
       expect.arrayContaining([
         'src/app/(protected)/batches/[id]/pricing/page.tsx',
         'src/app/(protected)/hisoblash/[id]/page.tsx',
+        // The history row's goods fold (docs/VED-TARIX.md §3) — a ROUTE, so
+        // the door is the route's own, minted per request (review
+        // tests-completeness: the goods route named in this fence).
+        'src/app/api/calc/registry/[requestId]/goods/route.ts',
       ]),
     );
+  });
+
+  it('the goods loader REQUIRES the sight too', () => {
+    const sheet = strip(readFileSync(join(SRC, 'modules/wms/calc/sheet.ts'), 'utf8'));
+    expect(sheet).toMatch(/export async function requestGoodsSheet\([^)]*_sight: CalcRegistrySight,?\s*\)/);
   });
 
   it('every file importing its values mints the sight itself', () => {
