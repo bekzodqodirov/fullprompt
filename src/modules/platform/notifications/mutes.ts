@@ -56,6 +56,10 @@ export const MUTE_GROUPS = {
     // with buttons. A newcomer, so never in FOUNDERS: a list that muted the
     // group before it existed must not start muting it by growing.
     'CalcLinkAsk',
+    // «GS777: narx qayta hisoblanmoqda — eski narx endi amal qilmaydi»
+    // (docs/VED-TARIX.md §6) — the seller's own job, re-opened. A newcomer:
+    // never in FOUNDERS.
+    'CalcRecalc',
   ],
   // "Something is wrong, act now." The three price-control messages belong
   // here rather than in `operations`: cargo that arrived is routine, cargo

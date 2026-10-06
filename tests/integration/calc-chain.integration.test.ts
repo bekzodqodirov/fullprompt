@@ -279,11 +279,25 @@ describe('a correction starts from the chain\'s newest link', () => {
     expect((await chainOf(third)).map((v) => v.quoteNo)).toEqual([1, 2]);
   });
 
-  it('refuses a request closed WITHOUT a price — its name promises a sealed parent', async () => {
+  // Deliberate edit (review tests-completeness-5): the parent may now be a
+  // Готово ANSWER as well as a seal (10a), so the price-less refusal is named
+  // for what it checks — `not_priced` — and each parent kind has its own code.
+  it('refuses a request closed WITHOUT a price — `not_priced`', async () => {
     const request = await open();
-    // What `endRequest({via:'returned'})` leaves behind: closed, no version.
+    // Closed with no version and no answer — what a «lines» ending leaves.
     await db.update(calcRequests).set({ completedAt: new Date() }).where(eq(calcRequests.id, request.id));
-    await expect(recalcFromSealed(request.id, ctx())).rejects.toMatchObject({ code: 'not_sealed' });
+    await expect(recalcFromSealed(request.id, ctx())).rejects.toMatchObject({ code: 'not_priced' });
+  });
+
+  it('refuses an OPEN parent (`not_closed`) and a HANDED-BACK one (`parent_returned`)', async () => {
+    const live = await open();
+    await expect(recalcFromSealed(live.id, ctx())).rejects.toMatchObject({ code: 'not_closed' });
+    const back = await open();
+    await db
+      .update(calcRequests)
+      .set({ completedAt: new Date(), completedVia: 'returned', returnReason: 'kam' })
+      .where(eq(calcRequests.id, back.id));
+    await expect(recalcFromSealed(back.id, ctx())).rejects.toMatchObject({ code: 'parent_returned' });
   });
 });
 

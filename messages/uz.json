@@ -3352,7 +3352,10 @@
       "answer_amount_required": "Narxni yozing",
       "answer_amount_unreadable": "Narx o‘qilmadi — faqat raqam yozing (masalan 1 200 yoki 1200,50)",
       "answer_positive": "Narx noldan katta bo‘lishi kerak",
-      "internal_note_required": "Ichki izoh majburiy — qanday hisoblaganingizni yozing"
+      "internal_note_required": "Ichki izoh majburiy — qanday hisoblaganingizni yozing",
+      "not_priced": "Bu hisobda narx yo‘q — na muhr, na umumiy narx; qayta hisoblaydigan narsa yo‘q",
+      "parent_returned": "Bu hisob qaytarilgan, narxi yo‘q — kartadan yangi hisoblatish yuboring",
+      "recalc_returned": "Tuzatish qaytarilgan (narxsiz yopilgan) — kartadan yangi hisoblatish yuboring"
     },
     "openCard": "Karta",
     "freight": "Yo‘lkira",
@@ -3666,7 +3669,8 @@
     "totalsNext": "keyingi oy →",
     "chainAnswered": "o‘rniga umumiy narx",
     "chainReturned": "tuzatish qaytarildi",
-    "chainUnpriced": "tuzatish narxsiz yopildi"
+    "chainUnpriced": "tuzatish narxsiz yopildi",
+    "sellerPriceTitle": "Sotuvchi mijozga aytgan narx"
   },
   "partners": {
     "title": "Kontragentlar",

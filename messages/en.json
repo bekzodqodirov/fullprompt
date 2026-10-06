@@ -3352,7 +3352,10 @@
       "answer_amount_required": "Enter the price",
       "answer_amount_unreadable": "The price could not be read — type a number only (e.g. 1 200 or 1200.50)",
       "answer_positive": "The price must be above zero",
-      "internal_note_required": "The internal note is required — write how you worked it out"
+      "internal_note_required": "The internal note is required — write how you worked it out",
+      "not_priced": "This job has no price — neither a seal nor an overall price; there is nothing to recalculate",
+      "parent_returned": "This job was handed back and has no price — send a new request from the card",
+      "recalc_returned": "The correction was handed back (closed with no price) — send a new request from the card"
     },
     "openCard": "Card",
     "freight": "Freight",
@@ -3666,7 +3669,8 @@
     "totalsNext": "next month →",
     "chainAnswered": "replaced by an overall price",
     "chainReturned": "correction handed back",
-    "chainUnpriced": "correction closed with no price"
+    "chainUnpriced": "correction closed with no price",
+    "sellerPriceTitle": "The price the seller told the client"
   },
   "partners": {
     "title": "Counterparties",

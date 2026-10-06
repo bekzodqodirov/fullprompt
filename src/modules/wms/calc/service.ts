@@ -98,31 +98,45 @@ export function calcDueMinutes(itemCount: number, hasMaterials = false): number 
 export const openRequests = isNull(calcRequests.completedAt);
 
 /**
+ * Who may be HANDED a calculation by the machine — the queue's rota and the
+ * correction's «back to whoever priced it» (review ved-correctness-1) ask
+ * this ONE predicate: holds `ved.docs`, can still sign in, and is not an
+ * admin or the owner.
+ *
+ * THE OWNER AND THE ADMINS ARE NOT IN THE ROTA (his «1.1», audit A13).
+ * `ved.docs` is held by every admin role as well as by the VED, and the rota
+ * puts «never had one» FIRST — so every fresh bot or card request was
+ * auto-assigned to the OWNER, minting a timed priority-1 task on him and
+ * making the queue read «Взял: Bekzod» on work he was never going to do.
+ * Measured on his own data. A correction routed «to whoever priced the
+ * parent» would bring that back for every job he sealed himself, so it asks
+ * the same subtraction. They keep the manual «Olaman» door.
+ */
+export async function vedRotaPool(): Promise<string[]> {
+  const adminIds = new Set(await usersWithRoles(['super_admin', 'admin']));
+  const pool = (await usersWithPermission('ved.docs')).filter((id) => !adminIds.has(id));
+  if (pool.length === 0) return [];
+  const rows = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(and(canLogInSql(), inArray(users.id, pool)));
+  return rows.map((row) => row.id);
+}
+
+/**
  * Whose turn it is to calculate: fewest OPEN requests, longest-since breaks a
- * tie, never-had-one sorts FIRST.
+ * tie, never-had-one sorts FIRST — over `vedRotaPool`.
  *
  * The counting rule is the taqsimot rota's (`crm/routing.ts` — round 96) and
  * the comment there explains why it is worth restating rather than sharing:
  * that one answers «whose lead is this», this one «whose calculation is
  * this», and a shared query would have to take a table name as an argument.
+ * When the pool is empty — a company whose only `ved.docs` holders are
+ * admins — the request is stored UNASSIGNED, which is an honest state the
+ * queue already draws and the overdue sweep already announces to the pool.
  */
 export async function nextVedAssignee(): Promise<string | null> {
-  /**
-   * THE OWNER AND THE ADMINS ARE NOT IN THE ROTA (his «1.1», audit A13).
-   *
-   * `ved.docs` is held by every admin role as well as by the VED, and the
-   * ordering below puts «never had one» FIRST — so every fresh bot or card
-   * request was auto-assigned to the OWNER, minting a timed priority-1 task
-   * on him and making the queue screen read «Взял: Bekzod» on work he was
-   * never going to do. Measured on his own data.
-   *
-   * They keep the manual «Olaman» door. When the subtraction empties the
-   * pool — a company whose only `ved.docs` holders are admins — the request
-   * is stored UNASSIGNED, which is an honest state the queue already draws
-   * and the overdue sweep already announces to the whole pool.
-   */
-  const adminIds = new Set(await usersWithRoles(['super_admin', 'admin']));
-  const pool = (await usersWithPermission('ved.docs')).filter((id) => !adminIds.has(id));
+  const pool = await vedRotaPool();
   if (pool.length === 0) return null;
   const rows = await db
     .select({
@@ -132,7 +146,7 @@ export async function nextVedAssignee(): Promise<string | null> {
     })
     .from(users)
     .leftJoin(calcRequests, and(eq(calcRequests.assigneeId, users.id), openRequests))
-    .where(and(canLogInSql(), inArray(users.id, pool)))
+    .where(inArray(users.id, pool))
     .groupBy(users.id)
     .orderBy(
       sql`count(${calcRequests.id}) asc, max(${calcRequests.requestedAt}) asc nulls first`,
@@ -930,12 +944,12 @@ export async function rekeyLeadCalcRequests(leadId: string, dealId: string): Pro
  * lives is already answered in one place, and a third copy is the thing #381
  * records (remembered in one place, forgotten in the other).
  */
-function linkLine(entityType: string, entityId: string): string {
+export function linkLine(entityType: string, entityId: string): string {
   const href = cardLink(entityType, entityId);
   return href ? `\n${href}` : '';
 }
 
-async function requestLabel(entityType: string, entityId: string): Promise<string> {
+export async function requestLabel(entityType: string, entityId: string): Promise<string> {
   if (entityType === 'deal') {
     const deal = await db.query.deals.findFirst({ where: eq(deals.id, entityId) });
     return deal?.code ?? '—';

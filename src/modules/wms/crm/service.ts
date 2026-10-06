@@ -360,9 +360,16 @@ export async function quoteLockedFor(
   entityId: string,
 ): Promise<number | null> {
   try {
-    const { currentSealFor, releasedPriceFor } = await import('../calc/workspace');
-    const seal = await currentSealFor(entityType, entityId);
-    if (!seal) return null;
+    const { standingAnchorsFor, releasedPriceFor } = await import('../calc/workspace');
+    // The lock follows what STANDS (review ved-correctness-4), the same list
+    // the 🧮 panel draws: «any seal» held a dead seal's floor after a
+    // correction, while the card showed a different number — and every ✏️
+    // save re-posting what the card shows was refused for ever. Nothing
+    // standing on the card means nothing locked.
+    const anchors = await standingAnchorsFor(entityType, entityId);
+    const seal = anchors.seals[0] ?? null;
+    const standingOffer = await releasedPriceFor(entityType, entityId);
+    if (!seal) return standingOffer ? standingOffer.price : null;
     // What is LOCKED is what is on the card, which is not always the floor.
     //
     // Phase D writes the released CLIENT price onto `quoted_amount`, because
@@ -373,7 +380,7 @@ export async function quoteLockedFor(
     // card that has been quoted, for ever. Found by reading the lock, not by
     // a test: the card and the lock have to agree about which number is the
     // one nobody may change.
-    const offered = await releasedPriceFor(entityType, entityId);
+    const offered = standingOffer;
     // LATER WRITER WINS, by the clock, because that is exactly how the card
     // column was written: sealCalc stamps the floor at seal time, an offer
     // stamps the client price when it is made or released. A deal carries
