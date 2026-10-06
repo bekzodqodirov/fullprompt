@@ -1,7 +1,8 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
+import { AuthError, authorize, getActor } from '@/modules/platform/rbac/authorize';
+import { mayOpenCalcCard } from '@/modules/wms/calc/card-door';
 import { requestMeta } from '@/modules/platform/auth/session';
 import {
   cancelQueued,
@@ -195,26 +196,38 @@ export async function excludeChatAction(_prev: ReplyState, form: FormData): Prom
  * old contact-history panel and one left here are the same note.
  */
 export async function addFeedNoteAction(_prev: ReplyState, form: FormData): Promise<ReplyState> {
-  let who;
-  try {
-    who = await authorize('crm.leads');
-  } catch (err) {
-    if (err instanceof AuthError) return { error: 'forbidden' };
-    throw err;
-  }
+  const who = await getActor();
+  if (!who) return { error: 'forbidden' };
   const entityType = String(form.get('entityType') ?? 'client');
   const entityId = String(form.get('entityId') ?? '');
   const note = String(form.get('note') ?? '').trim();
-  if (!note) return { error: 'empty' };
   // Only the places a timeline lives. Anything else posted here is a forged
   // form, and the answer to a forged form is a refusal.
   if (entityType !== 'client' && entityType !== 'lead' && entityType !== 'deal') {
     return { error: 'forbidden' };
   }
+  /**
+   * Two doors (docs/VED-TARIX.md §10, 14a): the CRM grant as always, or the
+   * VED's calc-card door — and that one only on a LEAD or a DEAL that carries
+   * a calculation, never on a posted client entity (review access-money-5:
+   * «is this client some calc card's client» has three readers with three
+   * answers). The action asks the door itself; the box drawing it is not a
+   * guard (#531).
+   */
+  const viaCrm = who.permissions.has('crm.leads');
+  const viaCalc =
+    !viaCrm &&
+    (entityType === 'lead' || entityType === 'deal') &&
+    (await mayOpenCalcCard(who, { entityType, entityId }));
+  if (!viaCrm && !viaCalc) return { error: 'forbidden' };
+  if (!note) return { error: 'empty' };
   // Set when the box uploaded files first: the note takes THAT id, so the
   // attachments pre-bound to it become the note's own (owner: "zametkaga
   // fayllar qo'shish").
   const rawActivityId = String(form.get('activityId') ?? '');
+  // Text only for the calculator in v1 (review access-money-19): his box
+  // draws no 📎, and a posted file id is a forged post, refused in words.
+  if (viaCalc && rawActivityId) return { error: 'text_only' };
   const activityId = /^[0-9a-f-]{36}$/i.test(rawActivityId) ? rawActivityId : undefined;
 
   await addActivity(
@@ -230,5 +243,8 @@ export async function addFeedNoteAction(_prev: ReplyState, form: FormData): Prom
   revalidatePath(`/bitimlar/${entityId}`);
   revalidatePath('/bitimlar', 'layout');
   revalidatePath('/crm', 'layout');
+  // The karta (`/hisoblash/<request>/karta`) — keyed by the request, which
+  // this action does not hold, so the section.
+  if (viaCalc) revalidatePath('/hisoblash', 'layout');
   return { ok: true };
 }

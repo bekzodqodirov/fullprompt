@@ -2,6 +2,11 @@
 
 Machine-rendered from six code readers + one completeness critic + the audit's findings on this path (2026-09-05). Companion to `docs/AI-VED-RASTAMOJKA.md`, which is the spec and the build plan. Paths are repo-relative unless absolute. Where a reader and the code disagree, the code wins — re-read before relying on a line number.
 
+> **2026-10-06:** `releasedPriceFor` is now `lastReleasedOfferFor` (it returns
+> a dead writer with `stands: false` instead of skipping it), and
+> `lastAnswerAnchorFor` was deleted — it had no caller. `quoteLockedFor` holds the
+> number the card shows while its writer stands (DECISIONS #1281).
+
 > **STALE AS OF 2026-09-05 EVENING.** This map describes the tree BEFORE the
 > round it was written for. What it says is still true of everything the round
 > did not touch, but the AI-VED work has since moved: `IntakeStage` gained

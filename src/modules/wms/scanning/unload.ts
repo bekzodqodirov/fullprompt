@@ -20,6 +20,7 @@ import {
 } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { cancelTasksFor } from '../../platform/tasks/service';
+import { retireTaskCopiesSoon } from '../../platform/notifications/retire-tasks';
 import { emitEvent } from '../../platform/events/service';
 import { claimArrivalNotice, releaseArrivalNotices } from '../notices/arrival';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
@@ -1471,7 +1472,8 @@ export async function cancelBatch(batchId: string, reason: string, ctx: AuditCon
   // only question anyone asks about a cancelled batch is why.
   if (why.length < 3) throw new ScanError('reason_required');
 
-  return db.transaction(async (tx) => {
+  let cancelledTasks: string[] = [];
+  const out = await db.transaction(async (tx) => {
     // One loading change at a time per truck (0112): a count press must not
     // re-reserve cartons onto a truck this cancel is giving back to stock.
     await lockTruckLoading(tx, batchId);
@@ -1560,7 +1562,7 @@ export async function cancelBatch(batchId: string, reason: string, ctx: AuditCon
     // Note the spelling: tasks and custom fields use 'batch', while the audit
     // log and the event stream use the same word but plans differ ('plan' vs
     // 'load_plan'), so a cleanup that knows one spelling misses half the rows.
-    await cancelTasksFor(tx, 'batch', [batchId]);
+    cancelledTasks = await cancelTasksFor(tx, 'batch', [batchId]);
 
     const [updated] = await tx
       .update(batches)
@@ -1576,4 +1578,8 @@ export async function cancelBatch(batchId: string, reason: string, ctx: AuditCon
     });
     return { batch: updated!, boxesReleased: memberBoxes.length };
   });
+  // After the commit (#714): the cancelled tasks' Telegram copies stop
+  // offering a «✅» on a trip that is over.
+  retireTaskCopiesSoon({ taskIds: cancelledTasks, outcome: 'cancelled' });
+  return out;
 }

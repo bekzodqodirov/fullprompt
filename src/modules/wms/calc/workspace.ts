@@ -73,7 +73,19 @@ import {
   type MeasureUnit,
   type PricedItem,
 } from './pricing';
-import { CalcError, MAX_CALC_ITEMS } from './service';
+import {
+  CalcError,
+  MAX_CALC_ITEMS,
+  calcDueMinutes,
+  linkLine,
+  nextVedAssignee,
+  requestLabel,
+  vedRotaPool,
+} from './service';
+import { childStateSql } from './chain';
+import { isAnswer, isAnswerSql } from './credit';
+import { createTask } from '@/modules/platform/tasks/service';
+import { retireTaskCopiesSoon } from '@/modules/platform/notifications/retire-tasks';
 import { forgetUpsaleLiability } from './liability-memo';
 import {
   sealCounters,
@@ -1738,8 +1750,22 @@ export async function sealCalc(
         .where(eq(deals.id, row.entityId));
     }
 
-    return { versionNo: row.versionNo, requestedBy: row.requestedBy, entityType: row.entityType, entityId: row.entityId };
+    return {
+      versionNo: row.versionNo,
+      requestedBy: row.requestedBy,
+      entityType: row.entityType,
+      entityId: row.entityId,
+      taskId: row.taskId,
+    };
   });
+
+  // The task the seal just closed stops offering its «✅ Bajarildi» in
+  // Telegram (review integration-5) — `endRequest`, the release and the take
+  // all retire their task's copies, and the seal closed its task with its own
+  // UPDATE and retired nothing, so the VED's chat kept a live button for a job
+  // that was already sealed. After the commit, never inside it (#714), and
+  // off the request (the void form, #706).
+  if (result.taskId) retireTaskCopiesSoon({ taskIds: [result.taskId], outcome: 'done' });
 
   await writeAudit(db, ctx, {
     entityType: 'calc_request',
@@ -1942,37 +1968,90 @@ export async function currentSealFor(
 }
 
 /**
- * «Qayta hisoblash»: a correction is a NEW request seeded from the sealed one.
+ * «Qayta hisoblash»: a correction is a NEW request seeded from a PRICED one —
+ * a sealed version, or since 2026-10-06 a Готово answer (his 10a, «muhrlanganlar
+ * bilan bir xil qoida»).
  *
  * Re-opening the old one by clearing `completed_at` would re-arm the overdue
  * sweep, the clock and the manual «Bajarildi» against a request that already
- * has a locked price behind it. This is also exactly what an EXPIRED quote
- * needs, so there is one path and not two.
+ * has a price behind it. This is also exactly what an EXPIRED quote needs, so
+ * there is one path and not two.
+ *
+ * The parent must have a price, and the words say which it lacks (review
+ * tests-completeness-5): an open parent `not_closed`, a handed-back one
+ * `parent_returned`, a price-less one `not_priced`. A parent with a child is
+ * refused by how the child ended: open → `recalc_open` («finish that one»),
+ * returned or closed price-less → `recalc_returned` (the chain has no way on
+ * from here; the door is a NEW request from the card — review
+ * ved-correctness-5, which decides tests-completeness-22's exit this way and
+ * states it), priced → `recalc_superseded` («recalc from the newest»).
+ *
+ * The correction lands in the queue like any request (review
+ * ved-correctness-1, -19, data-migration-15):
+ *   - `requested_by` is the ROOT request's seller, never the admin who
+ *     pressed — the correction's CalcSealed / CalcDone must reach the person
+ *     who will quote it (one walk up `supersedes_request_id`, which also
+ *     repairs chains corrected before this fix);
+ *   - it is assigned to whoever PRICED the parent when the rota would hand
+ *     them work at all (`vedRotaPool` — never the owner or an admin), else
+ *     to the rota, else unassigned (the admin keeps «Olaman»);
+ *   - its task opens through `createTask` bound to the request, so the clock
+ *     and the holder are the queue's;
+ *   - the seller is told the old price no longer stands, which is true by
+ *     the money rules as they are: the edge supersedes at the press
+ *     (`answerFloorStandsSql`, `payableOffersSql`, unchanged).
+ * Corrections made before this round keep their requester and have no task
+ * (stated; no backfill here).
  */
 export async function recalcFromSealed(
   requestId: string,
   ctx: AuditContext,
 ): Promise<string> {
+  if (!ctx.actorId) throw new CalcError('unauthenticated');
   const old = await db.query.calcRequests.findFirst({ where: eq(calcRequests.id, requestId) });
   if (!old) throw new CalcError('not_found');
   if (!old.completedAt) throw new CalcError('not_closed');
-  // Its own name promises a SEALED parent, and `completed_at` alone does not
-  // say so: `endRequest({via:'returned'})` stamps it too, so a handed-back
-  // request was a legal parent by URL and the «correction» started from a
-  // job that never had a price.
-  const sealed = await db
-    .select({ id: calcVersions.id })
+  if (old.completedVia === 'returned') throw new CalcError('parent_returned');
+  // Its name promises a PRICED parent, and `completed_at` alone does not say
+  // so: a «lines» ending or a price-less task close stamps it too.
+  const [sealed] = await db
+    .select({ id: calcVersions.id, sealedBy: calcVersions.sealedBy })
     .from(calcVersions)
     .where(eq(calcVersions.requestId, requestId))
+    .orderBy(desc(calcVersions.versionNo))
     .limit(1);
-  if (sealed.length === 0) throw new CalcError('not_sealed');
+  const answered = isAnswer(old);
+  if (!sealed && !answered) throw new CalcError('not_priced');
+  // Whoever PRICED it: the sealer of a seal, the answerer of an answer.
+  const pricer = sealed ? sealed.sealedBy : old.completedBy;
+
+  // The ROOT's seller — the person every correction in the chain is for.
+  const root = await db.execute<{ requested_by: string }>(sql`
+    WITH RECURSIVE up AS (
+      SELECT id, supersedes_request_id, requested_by, 0 AS depth
+        FROM calc_requests WHERE id = ${requestId}::uuid
+      UNION ALL
+      SELECT r.id, r.supersedes_request_id, r.requested_by, u.depth + 1
+        FROM calc_requests r JOIN up u ON r.id = u.supersedes_request_id
+       WHERE u.depth < 64
+    )
+    SELECT requested_by::text AS requested_by FROM up
+     WHERE supersedes_request_id IS NULL
+     LIMIT 1
+  `);
+  const seller = root[0]?.requested_by ?? old.requestedBy;
+
+  // Pooled, so BEFORE the transaction (#714).
+  const pool = await vedRotaPool();
+  const assigneeId = pricer && pool.includes(pricer) ? pricer : await nextVedAssignee();
+  const dueAt = new Date(Date.now() + calcDueMinutes(old.itemCount, Boolean(old.noteId)) * 60_000);
+
   // A correction starts from the chain's NEWEST link, never from one that
   // already has a child. This is a MONEY fence before it is a numbering one:
   // two children off one parent both stand (`notSupersededSql` sees no child
   // on either), so `payableOffersSql` pays the seller's commission on BOTH,
   // and the cargo link (`stampCalcLink`, «exactly one sealed request») can
-  // no longer choose. An open child says «finish that one»; a sealed child
-  // says «recalc from it».
+  // no longer choose.
   let newId: string;
   try {
     newId = await db.transaction(async (tx) => {
@@ -1994,20 +2073,22 @@ export async function recalcFromSealed(
        * white page.
        */
       await tx.execute(sql`SELECT id FROM calc_requests WHERE id = ${requestId}::uuid FOR UPDATE`);
-      const child = await tx
-        .select({ id: calcRequests.id, completedAt: calcRequests.completedAt })
-        .from(calcRequests)
-        .where(eq(calcRequests.supersedesRequestId, requestId))
-        .limit(1);
-      if (child[0]) throw new CalcError(child[0].completedAt ? 'recalc_superseded' : 'recalc_open');
+      const [child] = await tx.execute<{ state: string | null }>(sql`
+        SELECT ${childStateSql(sql`${requestId}::uuid`)} AS state
+      `);
+      if (child?.state === 'open') throw new CalcError('recalc_open');
+      if (child?.state === 'returned' || child?.state === 'unpriced') {
+        throw new CalcError('recalc_returned');
+      }
+      if (child?.state) throw new CalcError('recalc_superseded');
 
       const [fresh] = await tx
         .insert(calcRequests)
         .values({
           entityType: old.entityType,
           entityId: old.entityId,
-          requestedBy: ctx.actorId ?? old.requestedBy,
-          assigneeId: old.assigneeId,
+          requestedBy: seller,
+          assigneeId,
           itemCount: old.itemCount,
           section: old.section,
           fromCity: old.fromCity,
@@ -2022,7 +2103,8 @@ export async function recalcFromSealed(
           hasCertificate: old.hasCertificate,
           feeOverrideUsd: old.feeOverrideUsd,
           supersedesRequestId: old.id,
-          dueAt: new Date(Date.now() + 2 * 3_600_000),
+          takenAt: assigneeId ? new Date() : null,
+          dueAt,
         })
         .returning({ id: calcRequests.id });
 
@@ -2136,6 +2218,55 @@ export async function recalcFromSealed(
     action: 'create',
     after: { supersedes: requestId },
   });
+  // The CARD's own row too, in the same vocabulary as every other calc
+  // ending, so the seller's History tab says the price was reopened.
+  await writeAudit(db, ctx, {
+    entityType: old.entityType,
+    entityId: old.entityId,
+    action: 'update',
+    after: { calcRecalc: newId, calcRequest: requestId },
+  });
+
+  const label = await requestLabel(old.entityType, old.entityId);
+  // The task: what puts the correction on the holder's /bugun and phone,
+  // bound to the request so no task door can move its clock or close it
+  // (docs/VED-TARIX.md §8). After the commit, never inside it (#714); a
+  // failure leaves a request «Olaman» can still give a task — a task with no
+  // request would be the ghost.
+  if (assigneeId) {
+    try {
+      const task = await createTask(
+        {
+          title: `Hisoblash: ${label} (${old.itemCount})`,
+          note: '',
+          typeId: null,
+          assigneeId,
+          dueAt: dueAt.toISOString(),
+          priority: 1,
+          entityType: old.entityType,
+          entityId: old.entityId,
+          repeatUnit: null,
+          repeatEvery: 1,
+        },
+        ctx,
+        { origin: 'calc', boundId: newId },
+      );
+      await db
+        .update(calcRequests)
+        .set({ taskId: task.id, updatedAt: new Date() })
+        .where(eq(calcRequests.id, newId));
+    } catch (err) {
+      logger.error({ err, newId }, '[calc] correction task creation failed');
+    }
+  }
+  await notifyStaffTelegram({
+    userIds: [seller],
+    type: 'CalcRecalc',
+    text:
+      `🔄 ${label}: narx qayta hisoblanmoqda — eski narx endi amal qilmaydi` +
+      linkLine(old.entityType, old.entityId),
+    exceptUserId: ctx.actorId,
+  }).catch((err) => logger.error({ err, newId }, '[calc] recalc notify failed'));
   return newId;
 }
 
@@ -4117,7 +4248,7 @@ export function releasedOfferWhere() {
  * The offer's quote still STANDS — its version is the request's newest seal
  * and no correction has superseded the request.
  *
- * The whole-module audit's second confirmed defect: `releasedPriceFor` was
+ * The whole-module audit's second confirmed defect: the card-price reader was
  * entity-keyed with no supersession clause, so after a correction sealed on a
  * card that carried a released offer the LOCK answered the old client price
  * while the card carried the new floor — and `updateLead`, which compares the
@@ -4153,28 +4284,33 @@ export function offerStandsSql() {
 }
 
 /**
- * The client price this card is currently quoted at, if one has been released.
+ * The newest RELEASED offer on this card, in the order the card column was
+ * written, and whether its quote still STANDS.
  *
- * The newest RELEASED offer whose quote still STANDS — a pending below-floor
- * promise is not a price the customer has been told, and a promise a
- * correction replaced is not this card's price any more either.
+ * A pending below-floor promise is not a price the customer has been told,
+ * so it never reached the card and is not considered at all. A promise a
+ * correction replaced DID reach the card — the number is still printed there
+ * — so it is returned with `stands: false` rather than skipped: the quote
+ * lock asks «who wrote the number the card shows, and does it still stand»,
+ * and skipping the dead writer hands it an older one that is not on the card
+ * (review ved-money-1).
  *
  * `at` is the moment the price reached the CARD — `approved_at` for a
  * below-floor promise (applyOfferToCard runs at release), `offered_at`
- * otherwise. The lock needs it because a deal carries many jobs and the card
- * column is last-writer-wins between offers and seals: the lock must
- * reconstruct the same order or it refuses saves against a number the card
- * does not carry.
+ * otherwise — and the order is by that moment, not by `offered_at`: a
+ * promise approved after a newer one was offered wrote the card LAST.
  */
-export async function releasedPriceFor(
+export async function lastReleasedOfferFor(
   entityType: 'deal' | 'lead',
   entityId: string,
-): Promise<{ price: number; at: Date } | null> {
+): Promise<{ id: string; price: number; at: Date; stands: boolean } | null> {
   const [row] = await db
     .select({
+      id: calcOffers.id,
       price: calcOffers.clientPriceUsd,
       offeredAt: calcOffers.offeredAt,
       approvedAt: calcOffers.approvedAt,
+      stands: sql<boolean>`${offerStandsSql()}`,
     })
     .from(calcOffers)
     .where(
@@ -4182,64 +4318,164 @@ export async function releasedPriceFor(
         eq(calcOffers.entityType, entityType),
         eq(calcOffers.entityId, entityId),
         releasedOfferWhere(),
-        offerStandsSql(),
       ),
     )
-    .orderBy(desc(calcOffers.offeredAt))
+    .orderBy(desc(sql`coalesce(${calcOffers.approvedAt}, ${calcOffers.offeredAt})`))
     .limit(1);
-  return row ? { price: Number(row.price), at: row.approvedAt ?? row.offeredAt } : null;
+  return row
+    ? { id: row.id, price: Number(row.price), at: row.approvedAt ?? row.offeredAt, stands: Boolean(row.stands) }
+    : null;
+}
+
+// ---------------------------------------------------------------------------
+// What stands on a card — one list for the panel, the lock and the answer line
+// ---------------------------------------------------------------------------
+
+/** A Готово answer that stands as a floor on its card. */
+export interface StandingAnswer {
+  requestId: string;
+  section: CalcSectionName | null;
+  amountUsd: number;
+  completedAt: Date;
+  byName: string | null;
+  /** The door's own clock (`quote_valid_days`) — the answer still stands. */
+  expired: boolean;
+}
+
+export interface StandingAnchors {
+  /** Every current, NOT superseded seal on the card, newest first. */
+  seals: SealedVersion[];
+  /** Every answer passing `answerFloorStandsSql`, newest first (USD only). */
+  answers: StandingAnswer[];
+  /** The card's newest seal when it does NOT stand — history, never a door. */
+  deadSeal: SealedVersion | null;
 }
 
 /**
- * The card's newest Готово answer, as an OFFER ANCHOR (phase 4).
+ * Every price that STANDS on a card (review ved-correctness-4/-6), by the
+ * money rules' own clauses: a seal stands when it is its request's current
+ * version and nobody superseded the request (`currentVersionSql`,
+ * `notSupersededSql`); an answer stands by `answerFloorStandsSql`.
  *
- * The panel decides three things from this one read: whether the offer door
- * opens (a standing, unexpired USD answer — and only when the card has no
- * seal at all: ANY seal, expired included, outranks the answer, because an
- * expired seal's own sentence is «recalc», not «quote the older figure»),
- * which sentence to print instead when it cannot (non-USD, expired), and
- * which requestId the form posts. Everything here is advisory — `recordOffer`
- * re-derives every admission server-side, so a stale panel can only be
- * refused, never believed.
+ * A deal carries several jobs (0085), so a standing seal and a standing
+ * answer can live on one card — a yo'lkira sealed, a rastamojka answered. The
+ * panel draws one door per anchor, each labelled with its section; there is
+ * no precedence to state because the money rules already exclude the overlap
+ * that matters: an answer older than any seal on the card does not stand
+ * (`answerFloorStandsSql`'s last clause), so «any seal outranks the answer»
+ * (phase 4) is the same rule, said once. An EXPIRED seal still stands by the
+ * edge — its door is the «qayta hisoblating» sentence, not a hidden answer.
+ *
+ * The panel, `quoteLockedFor` and the card's «Javob berildi» line read this
+ * one list, so the card cannot show one price while the lock holds another.
  */
-export async function lastAnswerAnchorFor(
+export async function standingAnchorsFor(
   entityType: 'deal' | 'lead',
   entityId: string,
-): Promise<{
-  requestId: string;
-  amountUsd: number | null;
-  currency: string | null;
-  completedAt: Date;
-  stands: boolean;
-  expired: boolean;
-} | null> {
-  const rows = await db.execute<{
-    id: string;
-    answer_amount: string | null;
-    answer_currency: string | null;
-    completed_at: Date;
-    stands: boolean;
-  }>(sql`
-    SELECT r.id, r.answer_amount, r.answer_currency, r.completed_at,
-           (${answerFloorStandsSql()}) AS stands
-      FROM calc_requests r
+): Promise<StandingAnchors> {
+  const standingIds = await db.execute<{ id: string }>(sql`
+    SELECT v.id::text AS id
+      FROM calc_versions v
+      JOIN calc_requests r ON r.id = v.request_id
      WHERE r.entity_type = ${entityType}
        AND r.entity_id = ${entityId}::uuid
-       AND r.completed_at IS NOT NULL
-       AND r.answer_amount IS NOT NULL
-     ORDER BY r.completed_at DESC
-     LIMIT 1
+       AND ${currentVersionSql()}
+       AND ${notSupersededSql()}
   `);
-  const row = rows[0];
-  if (!row) return null;
-  const validDays = Number((await getSetting('quote_valid_days')) ?? QUOTE_VALID_DAYS_DEFAULT);
-  const completedAt = new Date(row.completed_at);
+  const ids = standingIds.map((row) => row.id);
+  const sealRows = ids.length
+    ? await db
+        .select()
+        .from(calcVersions)
+        .where(inArray(calcVersions.id, ids))
+        .orderBy(desc(calcVersions.sealedAt))
+    : [];
+  const answerRows = await db.execute<{
+    id: string;
+    section: string | null;
+    answer_amount: string;
+    completed_at: string;
+    by_name: string | null;
+  }>(sql`
+    SELECT r.id::text AS id, r.section, r.answer_amount, r.completed_at, u.full_name AS by_name
+      FROM calc_requests r
+      LEFT JOIN users u ON u.id = r.completed_by
+     WHERE r.entity_type = ${entityType}
+       AND r.entity_id = ${entityId}::uuid
+       AND ${isAnswerSql('r')}
+       AND ${answerFloorStandsSql()}
+     ORDER BY r.completed_at DESC
+  `);
+  const newest = await currentSealFor(entityType, entityId);
+  const names = await namesOf(sealRows.map((row) => row.sealedBy));
+  const validDays = answerRows.length
+    ? Number((await getSetting('quote_valid_days')) ?? QUOTE_VALID_DAYS_DEFAULT)
+    : QUOTE_VALID_DAYS_DEFAULT;
   return {
-    requestId: row.id,
-    amountUsd: row.answer_amount === null ? null : Number(row.answer_amount),
-    currency: row.answer_currency,
-    completedAt,
-    stands: Boolean(row.stands),
-    expired: completedAt.getTime() + validDays * 86_400_000 < Date.now(),
+    seals: sealRows.map((row) => toVersion(row, names.get(row.sealedBy) ?? null)),
+    answers: answerRows.map((row) => {
+      // Raw-execute timestamps are TEXT (#923).
+      const completedAt = new Date(row.completed_at);
+      return {
+        requestId: row.id,
+        section: (row.section as CalcSectionName | null) ?? null,
+        amountUsd: Number(row.answer_amount),
+        completedAt,
+        byName: row.by_name,
+        expired: completedAt.getTime() + validDays * 86_400_000 < Date.now(),
+      };
+    }),
+    deadSeal: newest && !ids.includes(newest.id) ? newest : null,
   };
+}
+
+/**
+ * The seller's price as the VED may read it (the owner's 16a — «sotuvchi
+ * bergan narxni ham koraversin») — a PROJECTION, never the offer row
+ * (review access-money-8).
+ *
+ * `calc_offers` carries `payout_usd` (the commission actually paid), the
+ * below-floor reason and the forwarded text; the house rule for law-4 data is
+ * «not fetched at all, not merely not drawn», so this reader selects exactly
+ * the six facts 16a names and nothing a client component could serialise to
+ * the VED's browser beyond them. The keys are pinned by
+ * `calc-offer-wire.test.ts`. No upsale figure is PRINTED from it — but client
+ * price minus his own floor is one subtraction away, stated to the owner.
+ */
+export interface OfferPrice {
+  id: string;
+  clientPriceUsd: number;
+  currency: 'USD';
+  offeredAt: Date;
+  offeredByName: string | null;
+  /** A below-floor promise nobody has allowed yet — «tasdiq kutilmoqda». */
+  pendingApproval: boolean;
+}
+
+export async function offerPricesFor(
+  entityType: 'deal' | 'lead',
+  entityId: string,
+): Promise<OfferPrice[]> {
+  const rows = await db
+    .select({
+      id: calcOffers.id,
+      clientPriceUsd: calcOffers.clientPriceUsd,
+      offeredAt: calcOffers.offeredAt,
+      offeredByName: users.fullName,
+      belowFloor: calcOffers.belowFloor,
+      approvedAt: calcOffers.approvedAt,
+    })
+    .from(calcOffers)
+    .leftJoin(users, eq(users.id, calcOffers.offeredBy))
+    .where(and(eq(calcOffers.entityType, entityType), eq(calcOffers.entityId, entityId)))
+    .orderBy(desc(calcOffers.offeredAt))
+    .limit(10);
+  return rows.map((row) => ({
+    id: row.id,
+    clientPriceUsd: Number(row.clientPriceUsd),
+    currency: 'USD',
+    offeredAt: row.offeredAt,
+    offeredByName: row.offeredByName ?? null,
+    pendingApproval: row.belowFloor && row.approvedAt === null,
+  }));
 }

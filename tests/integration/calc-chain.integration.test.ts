@@ -14,11 +14,20 @@ import {
   deals,
   events,
   leads,
+  notifications,
+  roles,
   tasks,
+  userRoles,
   users,
 } from '@/modules/platform/db/schema';
 import { openCalcRequest } from '@/modules/wms/calc/service';
-import { chainOf, quoteNoFor, registryCounts, registryRows } from '@/modules/wms/calc/chain';
+import {
+  chainOf,
+  quoteNoFor,
+  registryCounts,
+  registryRows,
+  type RegistrySealedRow,
+} from '@/modules/wms/calc/chain';
 import {
   confirmAllGroups,
   createGroup,
@@ -68,6 +77,14 @@ beforeAll(async () => {
     })
     .returning();
   actorId = fixtureActor!.id;
+  // A VED (review tests-completeness-20): a correction now lands in the queue
+  // with a task, assigned to whoever priced the parent when they hold
+  // `ved.docs` — so this file's corrections come back to its own actor
+  // instead of becoming open tasks and Telegram rows on a SEEDED colleague,
+  // which the e2e run on the same database would inherit (#154). A bare
+  // fixture would fall to the rota.
+  const ved = await db.query.roles.findFirst({ where: eq(roles.code, 'ved_manager') });
+  await db.insert(userRoles).values({ userId: actorId, roleId: ved!.id }).onConflictDoNothing();
 
   clientCode = `VC${SUFFIX}`;
   const [client] = await db
@@ -120,6 +137,9 @@ afterAll(async () => {
       await db.delete(tasks).where(inArray(tasks.id, taskIds));
     }
   }
+  // The pushes a correction now sends (TaskAssigned, CalcRecalc) — this
+  // file's actor's own, never anybody else's.
+  await db.delete(notifications).where(eq(notifications.userId, actorId));
   await db.delete(crmActivities).where(eq(crmActivities.entityId, leadId));
   await db.delete(crmActivities).where(eq(crmActivities.entityId, dealId));
   await db.delete(leads).where(eq(leads.id, leadId));
@@ -259,17 +279,35 @@ describe('a correction starts from the chain\'s newest link', () => {
     expect((await chainOf(third)).map((v) => v.quoteNo)).toEqual([1, 2]);
   });
 
-  it('refuses a request closed WITHOUT a price — its name promises a sealed parent', async () => {
+  // Deliberate edit (review tests-completeness-5): the parent may now be a
+  // Готово ANSWER as well as a seal (10a), so the price-less refusal is named
+  // for what it checks — `not_priced` — and each parent kind has its own code.
+  it('refuses a request closed WITHOUT a price — `not_priced`', async () => {
     const request = await open();
-    // What `endRequest({via:'returned'})` leaves behind: closed, no version.
+    // Closed with no version and no answer — what a «lines» ending leaves.
     await db.update(calcRequests).set({ completedAt: new Date() }).where(eq(calcRequests.id, request.id));
-    await expect(recalcFromSealed(request.id, ctx())).rejects.toMatchObject({ code: 'not_sealed' });
+    await expect(recalcFromSealed(request.id, ctx())).rejects.toMatchObject({ code: 'not_priced' });
+  });
+
+  it('refuses an OPEN parent (`not_closed`) and a HANDED-BACK one (`parent_returned`)', async () => {
+    const live = await open();
+    await expect(recalcFromSealed(live.id, ctx())).rejects.toMatchObject({ code: 'not_closed' });
+    const back = await open();
+    await db
+      .update(calcRequests)
+      .set({ completedAt: new Date(), completedVia: 'returned', returnReason: 'kam' })
+      .where(eq(calcRequests.id, back.id));
+    await expect(recalcFromSealed(back.id, ctx())).rejects.toMatchObject({ code: 'parent_returned' });
   });
 });
 
 describe('the registry', () => {
-  const mine = (extra: Partial<Parameters<typeof registryRows>[0]> = {}) =>
-    registryRows({ sealerId: actorId, leadsReadable: true, ...extra });
+  // Sealed rows only: these tests are about the V-ranked list, and the
+  // registry now carries answers beside them (8a — their own file).
+  const mine = async (extra: Partial<Parameters<typeof registryRows>[0]> = {}) =>
+    (
+      await registryRows({ personId: actorId, leadNamesReadable: true, ...extra }, { noteSight: null })
+    ).filter((r): r is RegistrySealedRow => r.kind === 'sealed');
 
   it('lists one row per SEALED version, newest first, and counts jobs apart from versions', async () => {
     const first = await sealed();
@@ -285,7 +323,7 @@ describe('the registry', () => {
 
     // The counts run over the SAME predicate as the rows — a chain is two
     // versions and ONE job.
-    const counts = await registryCounts({ sealerId: actorId, leadsReadable: true, q: clientCode });
+    const counts = await registryCounts({ personId: actorId, leadNamesReadable: true, q: clientCode });
     const plain = await db
       .select({ id: calcVersions.id })
       .from(calcVersions)
@@ -304,10 +342,10 @@ describe('the registry', () => {
 
     // The row is still LISTED (it is a sealed price the company gave), but
     // it carries no name — and the name finds nothing (#514).
-    const blind = (await mine({ leadsReadable: false })).filter((r) => r.requestId === onLead);
+    const blind = (await mine({ leadNamesReadable: false })).filter((r) => r.requestId === onLead);
     expect(blind).toHaveLength(1);
     expect(blind[0]!.cardLabel).toBeNull();
-    expect((await mine({ leadsReadable: false, q: leadName })).some((r) => r.requestId === onLead)).toBe(false);
+    expect((await mine({ leadNamesReadable: false, q: leadName })).some((r) => r.requestId === onLead)).toBe(false);
   });
 
   it('section and date filters run in SQL', async () => {

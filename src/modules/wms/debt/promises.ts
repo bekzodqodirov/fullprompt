@@ -4,6 +4,7 @@ import { clients, paymentPromises, tasks, users } from '../../platform/db/schema
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { logger } from '../../platform/logger';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
+import { retireTaskCopiesSoon } from '../../platform/notifications/retire-tasks';
 import { usersWithPermission, usersWithRoles } from '../../platform/notifications/service';
 import { createTask } from '../../platform/tasks/service';
 import { canLogIn, canLogInSql } from '../../platform/users/login';
@@ -202,6 +203,8 @@ async function openPromiseTask(
         repeatEvery: 1,
       },
       ctx,
+      // Bound: the due date IS the client's promise, which the sweep judges.
+      { origin: 'promise', boundId: promiseId },
     );
     await db.update(paymentPromises).set({ taskId: task.id }).where(eq(paymentPromises.id, promiseId));
   } catch (err) {
@@ -211,17 +214,27 @@ async function openPromiseTask(
   }
 }
 
-/** Close the promise's call task, if it is still open — never a person's other work. */
+/**
+ * Close the promise's call task, if it is still open — never a person's other
+ * work — and then retire its Telegram copies: the seller's «✅ Bajarildi» on
+ * a call the sweep already closed would answer «yopilgan» to a person who
+ * still meant to ring. Only the rows THIS statement closed are retired
+ * (`RETURNING id`), so a task a person closed a moment earlier keeps the
+ * words their own close wrote. Not inside a transaction here — every caller
+ * runs it on the pool after its claim — and the retire is dispatched off it.
+ */
 async function closePromiseTasks(taskIds: string[], outcome: 'done' | 'cancelled', result: string, now: Date) {
   if (taskIds.length === 0) return;
-  await db
+  const closed = await db
     .update(tasks)
     .set(
       outcome === 'done'
         ? { status: 'done', doneAt: now, result, updatedAt: now }
         : { status: 'cancelled', result, updatedAt: now },
     )
-    .where(and(inArray(tasks.id, taskIds), eq(tasks.status, 'open')));
+    .where(and(inArray(tasks.id, taskIds), eq(tasks.status, 'open')))
+    .returning({ id: tasks.id });
+  retireTaskCopiesSoon({ taskIds: closed.map((row) => row.id), outcome });
 }
 
 /**

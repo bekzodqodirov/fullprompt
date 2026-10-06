@@ -306,7 +306,7 @@ describe('a closed task rewrites the message its «✅» sat on', () => {
       904n,
       {
         taskId: TASK,
-        origin: {
+        pressed: {
           messageId: 44,
           kind: 'single',
           text: '🆕 Yangi vazifa: <a href="https://evil.example">bos</a>\n📅 30.09',
@@ -319,6 +319,7 @@ describe('a closed task rewrites the message its «✅» sat on', () => {
         },
       },
       'qildim <b>tayyor</b>',
+      'done',
     );
     const [edit] = edits();
     expect(edit!.body).toMatchObject({ chat_id: 904, message_id: 44, parse_mode: 'HTML' });
@@ -329,36 +330,77 @@ describe('a closed task rewrites the message its «✅» sat on', () => {
     expect(edit!.body.reply_markup).toEqual({ inline_keyboard: [[{ text: '↗️ Ochish', url: `${APP}/bugun` }]] });
   });
 
-  it('a list keeps its text and loses exactly that task\'s row', async () => {
-    const other = '99999999-2222-4333-8444-555555555555';
+  it('a list keeps its text and loses that task\'s row — and every row whose task closed or moved since the press (review tasks-3)', async () => {
+    const chat = Number(`95${STAMP}`);
+    const me = await mintStaff({ chat });
+    const someoneElse = await mintStaff();
+    const mint = async (over: Partial<typeof tasks.$inferInsert> = {}) => {
+      const [row] = await db
+        .insert(tasks)
+        .values({ title: `Ro'yxat ${STAMP}`, assigneeId: me.id, createdBy: someoneElse.id, origin: 'hand', ...over })
+        .returning({ id: tasks.id });
+      taskIds.push(row!.id);
+      return row!.id;
+    };
+    const pressedTask = await mint();
+    const other = await mint();
+    // In the minutes the result was being typed: one closed on the web, one handed on.
+    const closedMeanwhile = await mint({ status: 'done', doneAt: new Date() });
+    const movedAway = await mint({ assigneeId: someoneElse.id });
     await closeTaskMessage(
-      905n,
+      BigInt(chat),
       {
-        taskId: TASK,
-        origin: {
+        taskId: pressedTask,
+        pressed: {
           messageId: 55,
           kind: 'list',
           text: '✅ Sizning vazifalaringiz',
+          // The snapshot taken at the press — older than what stands now.
           markup: {
             inline_keyboard: [
-              [{ text: '✅ A', callback_data: `tb:${TASK}` }],
+              [{ text: '✅ A', callback_data: `tb:${pressedTask}` }],
+              [{ text: '✅ Y', callback_data: `tb:${closedMeanwhile}` }],
               [{ text: '✅ B', callback_data: `tb:${other}` }],
+              [{ text: '✅ M', callback_data: `tb:${movedAway}` }],
+              [{ text: '↗️ Ochish', url: `${APP}/bugun` }],
             ],
           },
         },
       },
       '',
+      'done',
     );
     expect(calls.map((c) => c.method)).toEqual(['editMessageReplyMarkup']);
     expect(calls[0]!.body).toEqual({
-      chat_id: 905,
+      chat_id: chat,
       message_id: 55,
-      reply_markup: { inline_keyboard: [[{ text: '✅ B', callback_data: `tb:${other}` }]] },
+      reply_markup: {
+        inline_keyboard: [[{ text: '✅ B', callback_data: `tb:${other}` }], [{ text: '↗️ Ochish', url: `${APP}/bugun` }]],
+      },
     });
   });
 
+  it('a task\'s own message another door closed first is left as that door\'s retire wrote it (review tasks-3)', async () => {
+    await closeTaskMessage(
+      907n,
+      {
+        taskId: TASK,
+        pressed: {
+          messageId: 77,
+          kind: 'single',
+          text: '🆕 Yangi vazifa: X',
+          markup: { inline_keyboard: [[{ text: '✅ Bajarildi', callback_data: `t:${TASK}` }]] },
+        },
+      },
+      '',
+      'already_closed',
+    );
+    // «✅ Yopildi» over a «🗑 Bekor qilindi» would be a lie.
+    expect(calls).toHaveLength(0);
+  });
+
   it('a press with no message to go back to (an old client) changes nothing', async () => {
-    await closeTaskMessage(906n, { taskId: TASK, origin: null }, 'x');
+    await closeTaskMessage(906n, { taskId: TASK, pressed: null }, 'x', 'done');
     expect(calls).toHaveLength(0);
   });
 });
@@ -381,6 +423,7 @@ describe('the tasks behind the buttons', () => {
         repeatEvery: 1,
       },
       { actorId: author.id },
+      { origin: 'hand' },
     );
     taskIds.push(task.id);
     await reassignTask(task.id, next.id, {
@@ -414,6 +457,7 @@ describe('the tasks behind the buttons', () => {
           repeatEvery: 1,
         },
         { actorId: me.id },
+        { origin: 'hand' },
       );
       taskIds.push(t.id);
       return t.id;

@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
-import { calcGroups, calcOffers, calcRequests, calcVersions } from '@/modules/platform/db/schema';
+import { calcGroups, calcOffers, calcRequests, calcVersions, leads } from '@/modules/platform/db/schema';
 import type { CalcSectionName } from './pricing';
 import type { UpsaleScope } from './upsale-scope';
 
@@ -49,6 +49,12 @@ export interface QuoteHistoryRow {
   belowFloor: boolean;
   /** False for a seller: the card behind it prints the sealed floor. */
   cardReadable: boolean;
+  /**
+   * The lead's owner, for `calcCardHref` (review access-7): the CRM card
+   * admits its owner and the funnel's readers, the karta everyone else with
+   * `ved.docs`. Null on a deal row.
+   */
+  leadOwnerId: string | null;
 }
 
 interface BreakdownGroup {
@@ -121,9 +127,12 @@ export async function quoteHistoryFor(
       version: calcVersions,
       entityType: calcRequests.entityType,
       entityId: calcRequests.entityId,
+      leadOwnerId: leads.ownerId,
     })
     .from(calcVersions)
     .innerJoin(calcRequests, eq(calcRequests.id, calcVersions.requestId))
+    // At most one row: a request names one card, and only a lead has an owner.
+    .leftJoin(leads, and(eq(calcRequests.entityType, 'lead'), eq(leads.id, calcRequests.entityId)))
     .where(and(...where))
     .orderBy(desc(calcVersions.sealedAt))
     .limit(limit);
@@ -171,6 +180,7 @@ export async function quoteHistoryFor(
       belowFloor: hidePrice ? false : (offer?.belowFloor ?? false),
       /** A card link is a door to the floor: `/bitimlar/<id>` prints it. */
       cardReadable: !hideCost,
+      leadOwnerId: r.leadOwnerId ?? null,
     };
   });
 }

@@ -196,10 +196,22 @@ describe('callback data', () => {
     expect(parseCallback('t:short')).toBeNull();
   });
 
-  it('a task lands with its button, a debtor request with both, the rest with none', () => {
+  it('a task lands with its buttons, a debtor request with both, the rest with none', () => {
     const id = '01234567-89ab-cdef-0123-456789abcdef';
+    // DELIBERATE EDIT (the topshiriq round, review telegram-mechanics-22):
+    // this pinned the single «✅ Bajarildi». A payload with no origin — every
+    // row queued before the round — reads as a HAND task and now carries his
+    // 4a's four buttons; ✅ keeps its byte-identical `t:` so old messages
+    // still parse. The per-origin shapes are pinned in topshiriq-buttons.test.ts.
     expect(buttonsFor('TaskAssigned', { taskId: id, text: 'x' })).toEqual([
-      [{ text: '✅ Bajarildi', callback_data: `t:${id}` }],
+      [
+        { text: '👀 Qabul qildim', callback_data: `tk:${id}` },
+        { text: '✅ Bajarildi', callback_data: `t:${id}` },
+      ],
+      [
+        { text: '⏰ Muddatni surish', callback_data: `tw:${id}` },
+        { text: '💬 Savol', callback_data: `tq:${id}` },
+      ],
     ]);
     expect(buttonsFor('DebtApprovalRequested', { approvalId: id })).toHaveLength(1);
     expect(buttonsFor('TaskAssigned', { text: 'no id' })).toBeNull();
@@ -225,6 +237,7 @@ describe('closing a task from the button', () => {
         repeatEvery: 1,
       },
       { actorId },
+      { origin: 'hand' },
     );
 
     expect(await completeTaskFromBot(chat, task.id, 'qilindi')).toBe('done');
@@ -249,6 +262,7 @@ describe('closing a task from the button', () => {
         repeatEvery: 1,
       },
       { actorId },
+      { origin: 'hand' },
     );
     expect(await completeTaskFromBot(chat, other.id, 'x')).toBe('not_yours');
 

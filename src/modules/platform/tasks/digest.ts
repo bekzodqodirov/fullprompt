@@ -4,7 +4,7 @@ import { db } from '../db/client';
 import { notifications, users } from '../db/schema';
 import { logger } from '../logger';
 import { isTelegramMuted } from '../notifications/mutes';
-import { aboutLabels, myDay, overdueByAssignee, telegramDue } from './service';
+import { aboutLabels, bindingsOf, myDay, overdueByAssignee, telegramDue } from './service';
 import { canLogInSql } from '../users/login';
 
 export const JOB_TASKS_MORNING = 'tasks.morning';
@@ -23,7 +23,7 @@ export const JOB_TASKS_MORNING = 'tasks.morning';
 async function deliver(
   userId: string,
   text: string,
-  tasks: { id: string; title: string }[] = [],
+  tasks: MyDayMessage['tasks'] = [],
 ): Promise<void> {
   const user = await db.query.users.findFirst({ where: eq(users.id, userId) });
   const muted = isTelegramMuted(user?.mutedNotificationTypes, 'TasksDue');
@@ -73,8 +73,22 @@ export const DAY_BUTTONS = 8;
 
 export interface MyDayMessage {
   text: string;
-  /** Overdue first, then today's — the ones a «✅» button is drawn for. */
-  tasks: { id: string; title: string }[];
+  /**
+   * Overdue first, then today's — the ones a «✅» button is drawn for. `calc`
+   * names the OPEN calc request a task carries the clock of: its row is a
+   * link to the job's screen and never a «✅» (review telegram-mechanics-3).
+   */
+  tasks: { id: string; title: string; calc?: string | null }[];
+}
+
+/** The line that keeps «Muddatsiz» work from vanishing off the day message (spec §7). */
+export function undatedLine(count: number): string {
+  return count > 0 ? `\n\n+ ${count} ta muddatsiz` : '';
+}
+
+/** «📋 Bugun» with nothing due today: said, with the undated pile counted. */
+export function emptyDayText(undated: number): string {
+  return `✅ Bugunga ochiq vazifa yo‘q.${undatedLine(undated)}`;
 }
 
 /**
@@ -99,6 +113,13 @@ export async function composeMyDay(userId: string, now = new Date()): Promise<My
   if (late.length + today.length === 0) return null;
 
   const labels = await aboutLabels([...late, ...today]);
+  const listed = [...late.slice(0, 15), ...today.slice(0, 15)].slice(0, DAY_BUTTONS);
+  // An unanswerable «is it a calc job?» draws the ordinary row: the press is
+  // re-checked and refused in words, and the digest must still go out.
+  const bindings = await bindingsOf(listed).catch((err: unknown) => {
+    logger.warn({ err }, '[tasks] day list bindings unreadable — drawing plain rows');
+    return new Map<string, { kind: string; recordId: string; open: boolean }>();
+  });
   const about = (task: (typeof late)[number]) => {
     const key = task.entityType && task.entityId ? `${task.entityType}:${task.entityId}` : null;
     const label = key ? labels.get(key) : null;
@@ -122,11 +143,31 @@ export async function composeMyDay(userId: string, now = new Date()): Promise<My
     );
   }
   return {
-    text: `✅ Sizning vazifalaringiz\n\n${parts.join('\n\n')}`,
-    tasks: [...late.slice(0, 15), ...today.slice(0, 15)]
-      .slice(0, DAY_BUTTONS)
-      .map((task) => ({ id: task.id, title: task.title })),
+    // A person whose deadlines are all «Muddatsiz» used to be told «nothing
+    // open» — the count says where the rest of their work is (spec §7).
+    text: `✅ Sizning vazifalaringiz\n\n${parts.join('\n\n')}${undatedLine(day.counts.undated)}`,
+    tasks: listed.map((task) => {
+      const binding = bindings.get(task.id);
+      return binding?.kind === 'calc' && binding.open
+        ? { id: task.id, title: task.title, calc: binding.recordId }
+        : { id: task.id, title: task.title };
+    }),
   };
+}
+
+/**
+ * «📋 Bugun»'s whole reply — the digest's words when there is anything due,
+ * otherwise the empty sentence with the undated pile counted. The digest
+ * itself stays SILENT on such a day (an empty daily message trains people to
+ * swipe it away); a person who ASKED is answered.
+ */
+export async function bugunReply(userId: string, now = new Date()): Promise<MyDayMessage> {
+  const day = await composeMyDay(userId, now);
+  if (day) return day;
+  const endOfToday = new Date(now);
+  endOfToday.setUTCHours(23, 59, 59, 999);
+  const counts = (await myDay(userId, endOfToday)).counts;
+  return { text: emptyDayText(counts.undated), tasks: [] };
 }
 
 /** The day as text alone — for the readers that draw no buttons (the AI tool). */

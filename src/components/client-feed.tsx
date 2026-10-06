@@ -2,7 +2,9 @@ import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { clientFeed, type FeedItem, type FeedKind } from '@/modules/wms/crm/feed';
 import { mentionablePeople } from '@/modules/wms/crm/internal-chat';
+import { mayOpenCalcCard } from '@/modules/wms/calc/card-door';
 import { FeedNoteBox } from './client-feed-note';
+import { feedNoteTarget } from './feed-note-target';
 import { LightboxImg } from './lightbox-img';
 
 /**
@@ -93,6 +95,7 @@ export async function ClientFeed({
   money: showMoney,
   leadId = null,
   dealId = null,
+  noteOn = null,
   limit = 60,
   /** On a card the box is short; on a dedicated screen it fills the height. */
   tall = false,
@@ -112,6 +115,14 @@ export async function ClientFeed({
   /** Set on a deal card: notes written here belong to THIS job, and the deal's
       own chat shows alongside the client's history. */
   dealId?: string | null;
+  /**
+   * Where a note written in this box lands, whatever the reader's grants —
+   * the karta passes its lead (review access-4). The karta is the CALC card:
+   * a both-hats reader reaches it because the CRM card bounces him, and the
+   * CRM default («the client, then the lead») would post his note on the
+   * client's whole thread from a screen that is about this one job.
+   */
+  noteOn?: { entityType: 'lead' | 'deal'; entityId: string } | null;
   limit?: number;
   tall?: boolean;
 }) {
@@ -122,9 +133,18 @@ export async function ClientFeed({
   // renders nothing did not ship in any sense that matters.
   if (!clientId && !leadId && !dealId) return null;
   const actor = await getActor();
-  if (!actor?.permissions.has('crm.leads') && !actor?.permissions.has('clients.manage')) {
-    return null;
-  }
+  if (!actor) return null;
+  const crm = actor.permissions.has('crm.leads') || actor.permissions.has('clients.manage');
+  // The VED on a calc card (docs/VED-TARIX.md §10, 15a): «ved hodimi
+  // hsoblashdan kartaga otib aniqlashtirib oladi» — he reads the lenta of a
+  // lead or deal that carries a calculation, through the ONE card door.
+  const calcCard = dealId
+    ? { entityType: 'deal' as const, entityId: dealId }
+    : leadId
+      ? { entityType: 'lead' as const, entityId: leadId }
+      : null;
+  const viaCalc = !crm && calcCard !== null && (await mayOpenCalcCard(actor, calcCard));
+  if (!crm && !viaCalc) return null;
 
   const t = await getTranslations('crm');
   const items = await clientFeed(clientId, { money: showMoney, limit, leadId, dealId });
@@ -154,11 +174,11 @@ export async function ClientFeed({
           (owner, round 21: «lenta va chatlar alohida tursin»). */}
       <div className="space-y-2 border-t border-line pt-2">
         <FeedNoteBox
-          // On a deal card the note belongs to THIS job: two deals with one
-          // client are two conversations, and a price argument about one must
-          // not surface on the other. Elsewhere: the client, then the lead.
-          entityType={dealId ? 'deal' : clientId ? 'client' : 'lead'}
-          entityId={dealId ?? clientId ?? leadId!}
+          // `feedNoteTarget` says where, and why.
+          {...feedNoteTarget({ viaCalc, calcCard, noteOn, dealId, clientId, leadId })}
+          // Text only for the VED in v1 (§10): the upload route is not
+          // widened, and the action refuses a pre-bound file id from him.
+          files={!viaCalc}
           people={await mentionablePeople()}
           labels={{
             placeholder: t('feedNotePlaceholder'),

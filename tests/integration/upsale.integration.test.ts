@@ -382,7 +382,7 @@ async function answered(onDeal: string, answer = 1000, price = 1300): Promise<st
   );
   madeRequests.push(opened.id);
   await takeCalcRequest(opened.id, ctx());
-  await finishCalcRequest(opened.id, { amount: answer, currency: 'USD', note: 'fifo' }, ctx());
+  await finishCalcRequest(opened.id, { amountText: String(answer), currency: 'USD', note: 'fifo', internalNote: 'ichki: fifo' }, ctx());
   const offer = await recordOffer({ requestId: opened.id }, { clientPriceUsd: price, locale: 'uz' }, sellerCtx());
   return offer.id;
 }
@@ -619,7 +619,7 @@ describe('one sale, one commission', () => {
     );
     madeRequests.push(opened.id);
     await takeCalcRequest(opened.id, ctx());
-    await finishCalcRequest(opened.id, { amount: 1000, currency: 'USD', note: 'gotovo' }, ctx());
+    await finishCalcRequest(opened.id, { amountText: '1000', currency: 'USD', note: 'gotovo', internalNote: 'ichki: gotovo' }, ctx());
     const onAnswer = await recordOffer({ requestId: opened.id }, { clientPriceUsd: 1300, locale: 'uz' }, sellerCtx());
     await invoiceAndCollect(d!.id, 1300);
     const paid = await payUpsale([onAnswer.id], { accountId, currency: 'USD', expenseDate: today() }, ctx());
@@ -980,8 +980,8 @@ describe('a correction retires the released offer', () => {
   it('the lock follows the card onto the new floor, so later saves still work', async () => {
     const job = await sealedJob();
     await recordOffer({ versionId: job.versionId }, { clientPriceUsd: job.floor + 500, locale: 'uz' }, sellerCtx());
-    const { releasedPriceFor } = await import('@/modules/wms/calc/workspace');
-    expect((await releasedPriceFor('deal', dealId))?.price).toBe(job.floor + 500);
+    const { lastReleasedOfferFor } = await import('@/modules/wms/calc/workspace');
+    expect(await lastReleasedOfferFor('deal', dealId)).toMatchObject({ price: job.floor + 500, stands: true });
 
     const next = await corrected(job.requestId);
 
@@ -991,7 +991,8 @@ describe('a correction retires the released offer', () => {
     // is exactly why the lock below decides by the clock, not by kind.)
     const card = await db.query.deals.findFirst({ where: eq(deals.id, dealId) });
     expect(Number(card!.quotedAmount)).toBe(next.floor);
-    expect((await releasedPriceFor('deal', dealId))?.price).not.toBe(job.floor + 500);
+    // It is still the card's newest RELEASED promise — and it no longer stands.
+    expect(await lastReleasedOfferFor('deal', dealId)).toMatchObject({ price: job.floor + 500, stands: false });
 
     // The accountant's both-figures strip follows the same standing rule:
     // the superseded promise is not one of the ledger's pairs either.

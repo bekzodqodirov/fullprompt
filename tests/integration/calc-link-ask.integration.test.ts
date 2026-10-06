@@ -526,3 +526,32 @@ describe('«Tasdiqlash kerak: N» is the control screen’s list, counted', () =
     expect(await linkSuggestionCount({ scope: 'none', actorId: sealerId })).toBe(0);
   });
 });
+
+/**
+ * «Hamkasblarniki» (the owner's 12a, docs/VED-TARIX.md §7, review
+ * access-money-6): the control screen READS everybody's links and WRITES only
+ * one's own. The read is a second list beside «Meniki» — whose N stays the
+ * home count — and the write scope never widened, so a colleague's link is
+ * shown and refused.
+ */
+describe('a colleague’s link: listed to read, refused to decide', () => {
+  it('appears under «Hamkasblarniki» with its sealer, never under «Meniki», and «own» cannot decide it', async () => {
+    const dealId = await newDeal();
+    const requestId = await openJob(dealId);
+    const id = await receiptOn(dealId, later());
+    await sealCalc(requestId, SEAL, { actorId: colleagueId });
+
+    const mine = { scope: 'own' as const, actorId: sealerId };
+    const mineList = await linkSuggestions(mine, 100_000);
+    expect(mineList.map((r) => r.receiptId)).not.toContain(id);
+    expect(await linkSuggestionCount(mine)).toBe(mineList.length);
+
+    const colleagues = await linkSuggestions({ scope: 'all', actorId: sealerId }, 100_000, { notSealedBy: sealerId });
+    const row = colleagues.find((r) => r.receiptId === id);
+    expect(row?.sealedBy).toBe(colleagueId);
+    expect(colleagues.every((r) => r.sealedBy !== sealerId)).toBe(true);
+
+    expect(await answerLinkAsk(id, prefix(requestId), 'confirm', 'own', ctx())).toBe('not_mine');
+    expect((await read(id))!.calcLinkConfirmedAt).toBeNull();
+  });
+});

@@ -558,13 +558,36 @@ describe('the materials a seller hands to the VED queue', () => {
     });
   });
 
-  it('…and the seller’s OTHER lead notes stay shut to them', async () => {
-    const file = att('crm_activity', plainNoteId);
-    expect(await decideAttachmentRead(actor(['ved.docs']), file)).toEqual({
-      allow: false,
-      rule: 'crm-no-permission',
-      enforce: true,
+  /**
+   * DELIBERATE EDIT (docs/VED-TARIX.md §10, the owner's 15a): this used to
+   * assert the seller's other notes on the SAME lead stay shut. 15a gives the
+   * VED that lead's lenta — «hsoblashdan kartaga otib aniqlashtirib oladi» —
+   * so a photo on a note he can read must open. The narrowness moved one level
+   * up: a lead that carries NO calculation keeps every note shut.
+   */
+  it('…the seller’s other notes on a CALC card open too (15a), and a lead with no calculation stays shut', async () => {
+    expect(await decideAttachmentRead(actor(['ved.docs']), att('crm_activity', plainNoteId))).toEqual({
+      allow: true,
+      rule: 'crm-activity-calc-card',
     });
+    const [bare] = await db
+      .insert(leads)
+      .values({ name: `VED authz bare ${Date.now()}`, stageId: leadStageId, createdBy: uploaderId })
+      .returning();
+    const [note] = await db
+      .insert(crmActivities)
+      .values({ entityType: 'lead', entityId: bare!.id, kind: 'note', note: 'boshqa lid', createdBy: uploaderId })
+      .returning();
+    try {
+      expect(await decideAttachmentRead(actor(['ved.docs']), att('crm_activity', note!.id))).toEqual({
+        allow: false,
+        rule: 'crm-no-permission',
+        enforce: true,
+      });
+    } finally {
+      await db.delete(crmActivities).where(eq(crmActivities.id, note!.id));
+      await db.delete(leads).where(eq(leads.id, bare!.id));
+    }
   });
 
   it('the funnel’s own people are unaffected, both ways', async () => {

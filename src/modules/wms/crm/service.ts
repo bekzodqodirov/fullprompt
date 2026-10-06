@@ -360,29 +360,38 @@ export async function quoteLockedFor(
   entityId: string,
 ): Promise<number | null> {
   try {
-    const { currentSealFor, releasedPriceFor } = await import('../calc/workspace');
-    const seal = await currentSealFor(entityType, entityId);
-    if (!seal) return null;
-    // What is LOCKED is what is on the card, which is not always the floor.
+    const { standingAnchorsFor, lastReleasedOfferFor } = await import('../calc/workspace');
+    // What is LOCKED is the number on the CARD, and only while whatever wrote
+    // it still stands (review ved-money-1).
     //
-    // Phase D writes the released CLIENT price onto `quoted_amount`, because
-    // law 4 says the client pays the VED price plus the upsale and every
-    // revenue surface reads that column. The lock compares the form's posted
-    // value against this number, and the locked form re-posts what it renders
-    // (#171) — so returning the floor here would refuse EVERY later save on a
-    // card that has been quoted, for ever. Found by reading the lock, not by
-    // a test: the card and the lock have to agree about which number is the
-    // one nobody may change.
-    const offered = await releasedPriceFor(entityType, entityId);
-    // LATER WRITER WINS, by the clock, because that is exactly how the card
-    // column was written: sealCalc stamps the floor at seal time, an offer
-    // stamps the client price when it is made or released. A deal carries
-    // many jobs (0085 dropped one-open-per-card), so «offer beats seal»
-    // unconditionally would hold the lock on job A's released price after
-    // job B's newer seal rewrote the card — and every later ✏️ save would be
-    // refused against a number the card no longer shows.
-    if (offered && offered.at >= seal.sealedAt) return offered.price;
-    return seal.totalUsd;
+    // Two writers put a price on `quoted_amount`: sealCalc stamps the floor at
+    // seal time, and an offer stamps the CLIENT price when it is made or
+    // released (phase D — law 4 says the client pays the VED price plus the
+    // upsale, and every revenue surface reads that column). The ✏️ form
+    // re-posts what the card renders (#171), so the lock must hold exactly that
+    // number: returning the floor beside a released offer refused every later
+    // save on a quoted card, for ever.
+    //
+    // LATER WRITER WINS, by the clock, because that is how the column was
+    // written. A card carries several jobs (0085 dropped one-open-per-card),
+    // so the writer is the newest seal of ANY job against the newest released
+    // offer of any job — and when that writer no longer stands (a correction
+    // replaced its job) nothing is locked, even if an OLDER job's seal still
+    // stands: that job's floor is not the number the card shows, and holding
+    // it refused every ✏️ save for as long as the correction stayed open, and
+    // for ever when it ended as an answer or a hand-back (neither rewrites the
+    // card). «What stands» is the 🧮 panel's own list (ved-correctness-4).
+    const anchors = await standingAnchorsFor(entityType, entityId);
+    // The card's newest seal, standing or not: `deadSeal` IS currentSealFor
+    // when it no longer stands, and otherwise the newest is the head of the
+    // standing list (newest first).
+    const seal = anchors.deadSeal ?? anchors.seals[0] ?? null;
+    const offered = await lastReleasedOfferFor(entityType, entityId);
+    if (offered && (!seal || offered.at >= seal.sealedAt)) {
+      return offered.stands ? offered.price : null;
+    }
+    if (!seal) return null;
+    return anchors.deadSeal ? null : seal.totalUsd;
   } catch (err) {
     // Deploy morning: this module works without 0086, and the lock is a
     // safeguard rather than a gate — its absence must not take the card down.

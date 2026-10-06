@@ -85,12 +85,12 @@ const EXEMPT: Record<string, string> = {
   releaseOffer: 'offers, not the workspace',
   releasedOfferWhere: 'pure sql fragment',
   offerStandsSql: 'pure sql fragment',
-  releasedPriceFor: 'reader',
-  // Phase 4: the answer anchor is read off a COMPLETED request — the rev
-  // clock guards the open workspace, and lockRequestInTx would refuse
-  // `already_closed` here by design (recordOffer re-derives every admission
-  // instead).
-  lastAnswerAnchorFor: 'reader',
+  lastReleasedOfferFor: 'reader',
+  // docs/VED-TARIX.md §6/§10: what STANDS on a card (the panel, the quote
+  // lock and the answer line read it) and the 16a price projection — both
+  // read closed records and offers, never the open workspace.
+  standingAnchorsFor: 'reader',
+  offerPricesFor: 'reader',
 };
 
 describe('every workspace mutator moves the revision clock', () => {

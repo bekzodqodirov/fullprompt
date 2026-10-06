@@ -10,7 +10,6 @@ import { autogrow, sendOnEnter, useCoarsePointer } from '@/components/composer';
 import { ReplyTemplates, type ReplyTemplate } from '@/components/reply-templates';
 import { OutboxBubble } from '@/components/outbox-bubble';
 import { TelegramBubble } from '@/components/telegram-bubble';
-import { entityHref } from '@/modules/platform/notifications/links';
 import { sendReplyAction } from '@/modules/wms/crm/reply-actions';
 import { completeTaskAction } from '@/modules/platform/tasks/actions';
 // A TYPE from the pure module the route builds its answer with: the JSON
@@ -42,8 +41,10 @@ interface DockTask {
   id: string;
   title: string;
   dueAt: string | null;
-  entityType: string | null;
-  entityId: string | null;
+  /** Where the title goes FOR THIS READER — the route's `readerTaskLinks`, never a card guessed here. */
+  aboutHref: string | null;
+  /** An open calc job (VED-TARIX §8): no ✓ — «🧮» to its screen for a VED, a chip for anybody else. */
+  calc: { href: string; mayOpen: boolean } | null;
 }
 interface DockThread {
   client: { id: string; code: string; name: string };
@@ -86,6 +87,7 @@ export function Dock({ canChat }: { canChat: boolean }) {
 
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<'chat' | 'tasks'>(canChat ? 'chat' : 'tasks');
+  const [taskError, setTaskError] = useState<string | null>(null);
   const [tasks, setTasks] = useState<{
     overdue: DockTask[];
     today: DockTask[];
@@ -258,7 +260,15 @@ export function Dock({ canChat }: { canChat: boolean }) {
   }
 
   async function finishTask(id: string) {
-    await completeTaskAction(id, pathname, {}, new FormData());
+    // The refusal is SHOWN (tests-completeness-7): the dock used to ignore
+    // the action's answer, so a refused ✓ simply did nothing.
+    const res = await completeTaskAction(id, pathname, {}, new FormData());
+    if (res.error) {
+      const key = `errors.${res.error}`;
+      setTaskError(tt.has(key as 'errors.validation') ? tt(key as 'errors.validation') : tc('error'));
+    } else {
+      setTaskError(null);
+    }
     void loadTasks();
   }
 
@@ -605,6 +615,11 @@ export function Dock({ canChat }: { canChat: boolean }) {
                 {tasks && due === 0 && tasks.undated.length === 0 && (
                   <p className="text-center text-sm text-ink-500">{tt('allClear')}</p>
                 )}
+                {taskError && (
+                  <p role="alert" data-testid="dock-task-error" className="text-sm font-semibold text-bad">
+                    {taskError}
+                  </p>
+                )}
                 {tasks && tasks.overdue.length > 0 && (
                   <TaskGroup
                     title={`🔴 ${tt('overdue')}`}
@@ -656,11 +671,12 @@ function TaskGroup({
   finishLabel: string;
   onFinish: (id: string) => void;
 }) {
+  const tt = useTranslations('tasks');
   return (
     <div className="space-y-1.5">
       <p className="section-title">{title}</p>
       {rows.map((task) => {
-        const href = entityHref(task.entityType, task.entityId);
+        const href = task.aboutHref;
         return (
           <div key={task.id} data-testid="dock-task" className="flex items-center gap-2 rounded-xl bg-surface-sunken p-2.5">
             <span className="min-w-0 flex-1">
@@ -673,13 +689,29 @@ function TaskGroup({
               )}
               {task.dueAt && <span className="num text-xs text-ink-500">{task.dueAt}</span>}
             </span>
-            <button
-              type="button"
-              onClick={() => onFinish(task.id)}
-              className="btn-secondary !min-h-9 shrink-0 px-2 text-sm"
-            >
-              ✓ {finishLabel}
-            </button>
+            {task.calc ? (
+              task.calc.mayOpen ? (
+                <Link
+                  href={task.calc.href}
+                  data-testid="dock-task-calc"
+                  className="btn-secondary !min-h-9 shrink-0 px-2 text-sm"
+                >
+                  🧮 {tt('calcOpen')}
+                </Link>
+              ) : (
+                <span data-testid="dock-task-calc-locked" className="chip shrink-0">
+                  🧮 {tt('calcLocked')}
+                </span>
+              )
+            ) : (
+              <button
+                type="button"
+                onClick={() => onFinish(task.id)}
+                className="btn-secondary !min-h-9 shrink-0 px-2 text-sm"
+              >
+                ✓ {finishLabel}
+              </button>
+            )}
           </div>
         );
       })}

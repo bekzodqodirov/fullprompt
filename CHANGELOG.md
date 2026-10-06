@@ -1,5 +1,142 @@
 # CHANGELOG
 
+## Telegramdan topshiriq, VED tarixi va «Готово», VED sotuvchi kartasida — 2026-10-06
+
+**Migratsiya 0124.** O'rnatgandan keyin migratsiyalar soni **125** bo'lishi kerak.
+
+Sizning javoblaringiz: **1b 2a 3a 4a 5a 6b** (topshiriq) va **7a 8a 9a 10a 11a 12a 13c · 14a 15a 16a** (VED).
+
+### 1. Telegramdan topshiriq berish
+
+- **Botda «➕ Topshiriq» tugmasi** (yoki /topshiriq). Ketma-ketlik:
+  - kimga (oxirgi topshiriq berganlaringiz tepada, «🙋 O'zimga» ham bor);
+  - nima qilish kerak (matn, ovoz, rasm, video, fayl yoki forward qilingan xabar);
+  - muddat: Bugun / Ertaga / Indinga / Muddatsiz / «📅 Sana yozish».
+  - Muddat bosilishi bilan topshiriq yaratiladi. Kamida 4 marta bosish kifoya.
+- **Istalgan xabarni (mijoznikini ham) botga forward qilsangiz,** bot «📌 Topshiriq qilamizmi?» deb so'raydi va ikki tugma beradi: «📌 Topshiriq qilish» yoki «🔍 Qidirish» (avvalgidek qidiruv).
+- **Ovoz, rasm va fayllar** bajaruvchiga topshiriq bilan birga Telegramda boradi va saytda vazifa ostida ham ko'rinadi. 20 MB dan katta fayl saytga tushmaydi, bot buni beruvchiga aytadi.
+- **Bajaruvchida 4 tugma:** «👀 Qabul qildim», «✅ Bajarildi» (natijani yozib yoki «Natijasiz»), «⏰ Muddatni surish», «💬 Savol».
+  - Har bir bosish haqida beruvchiga xabar boradi.
+  - Savolga beruvchi «💬 Javob berish» bilan javob qaytaradi.
+- **«📤 Men bergan»** (yoki /berganlarim): siz bergan va hali bajarilmagan topshiriqlar.
+  - Muddati o'tgani 🔴, qabul qilingani 👀, hali ko'rilmagani ⏳ bilan belgilanadi.
+  - «🔔» tugmasi bilan bajaruvchiga eslatma yuboriladi, bitta topshiriqqa yarim soatda bir marta.
+- **Bajaruvchi Telegramga ulanmagan bo'lsa yoki topshiriq xabarlarini o'chirgan bo'lsa,** bot beruvchiga shu zahoti aytadi.
+- **Topshiriq yopilsa yoki bekor qilinsa,** Telegramdagi eski xabarning tugmalari o'zi o'chadi. Ertalabki ro'yxatda faqat yopilgan vazifaning qatori ketadi, qolganlari turadi.
+- **Matndagi GS777 yoki partiya kodi kartaga avtomatik bog'lanmaydi** (6b).
+
+### 2. Hisoblash vazifasi Telegramda va saytda
+
+- **Hisoblash vazifasida endi bitta tugma bor: «🧮 Ochish».** U hisob sahifasini ochadi.
+  - Avval hisoblash ishini ✅ bilan narxsiz yopib qo'yish mumkin edi.
+  - Sotuvchi yoki boshqa xodim ✖ bilan VEDning ishini tortib olishi ham mumkin edi.
+  - Endi ochiq hisoblash ishi faqat hisob sahifasida, narx va ichki izoh bilan yopiladi.
+- **Saytda VED hisoblash vazifasida «🧮 Hisobni ochish» tugmasini ko'radi.** Boshqalar «VED hisoblamoqda» yozuvini ko'radi.
+- **Tuzatilgan eski xato:** VED «Bo'shatish» bosganda uning /bugun ro'yxatida va ertalabki xabarida yopilmagan «Hisoblash: …» vazifasi qolib ketardi. Endi qolmaydi.
+  - Avval qolib ketgan bunday vazifalarni tozalash uchun alohida buyruq bor. U avval faqat ro'yxatni ko'rsatadi; ro'yxatni ko'rib chiqib, siz aytsangiz tozalanadi.
+
+### 3. VED tarixi (7a, 8a)
+
+- **«Hisoblar tarixi»da har qatorda tovarlar:** «3 tovar: klaviatura, sichqoncha, …».
+  - «Tovarlar ▾» bosilsa, muhrlangan paytdagi to'liq ro'yxat ochiladi: nomi, TNVED, soni/kg, baza, boj %, guruh bo'yicha rastamojka.
+  - Qidiruv tovar nomi va TNVED kodi bo'yicha ham ishlaydi.
+- **«Готово» bilan berilgan umumiy narxlar ham shu tarixga tushadi** («✍️ umumiy narx» belgisi bilan): kim, qachon, qancha, ichki izoh.
+  - Filtr: Hammasi / Muhrlangan / Umumiy narx, «Kim» bo'yicha ham.
+  - Bu sizning 4-sentabrdagi «faqat muhrlangan» (1A) javobingizni o'zgartiradi — siz shuni so'radingiz.
+- **Tepada «Kim qancha hisobladi»:** shu oyda har VED nechta hisobni muhrlagani, nechtasiga umumiy narx bergani va o'rtacha qancha vaqtda bergani.
+
+### 4. «Готово» (9a, 10a, 11a)
+
+- **«Готово»da ikki maydon:**
+  - «Sotuvchiga izoh» — ixtiyoriy, hozirgidek;
+  - «Ichki izoh» — **majburiy**. Uni faqat VED va rahbar ko'radi: sotuvchi ham, buxgalter ham ko'rmaydi.
+- **Summa majburiy.**
+  - «1200$» kabi o'qib bo'lmaydigan summa rad etiladi. Avval bunday summa bilan ish narxsiz yopilib ketardi.
+  - 0 yoki manfiy summa ham so'z bilan rad etiladi.
+- **Umumiy narx berilgan ishni endi ochib ko'rsa bo'ladi.** Kim, qachon, qancha bergani, ikkala izoh va tovarlar ko'rinadi.
+- **Hisoblash navbati sahifasida «Oxirgi yakunlanganlar» ro'yxati paydo bo'ldi.** U yakunlangan ishga qaytish yo'li.
+- **«Qayta hisoblash» umumiy narx berilgan ishda ham bor** — muhrlanganlar bilan bir xil qoida:
+  - yangi hisob ochiladi, eskisi tarixda qoladi;
+  - yangi hisob navbatga tushadi: eski hisobni kim bergan bo'lsa, o'sha VEDga beriladi (siz va adminlarga hech qachon avtomatik tushmaydi);
+  - sotuvchiga «narx qayta hisoblanmoqda — eski narx endi amal qilmaydi» deb boradi;
+  - bu tugmani avvalgidek admin bosadi.
+- **Hisobni muhrlash mumkin bo'lsa, «Готово» taqiqlangan** — hozirgidek (11a).
+
+### 5. VEDlar bir-birini ko'radi (12a, 13c)
+
+- **Navbat va tarix hamma VEDga ochiq.**
+- **«Nazorat» sahifasini hamma VED ko'radi.** Ro'yxat ikkiga bo'lingan:
+  - «Meniki (N)» — har kim faqat o'z hisobini «bu prixod shu hisobga tegishli» deb tasdiqlaydi;
+  - «Hamkasblarniki» — faqat o'qish uchun.
+
+### 6. VED sotuvchi kartasida (14a, 15a, 16a)
+
+- **Hisoblash so'ralgan lid kartasini VED ochadi.** Ochish joylari: hisob sahifasi, navbat va tarixdagi «Kartaga o'tish».
+  - VED ko'radi: lid ma'lumotlari, lenta, Telegram suhbati, qo'ng'iroqlar.
+  - Lentaga savol yoki izoh yoza oladi (faqat matn). @ bilan sotuvchini belgilasa, sotuvchiga xabar boradi.
+  - Kartani tahrirlay olmaydi: etap, telefon, narx o'zgarmaydi.
+- **Sotuvchi mijozga aytgan narxni (taklif narxi va sanasi) VED kartada va hisob sahifasida ko'radi.**
+  - Upsale summasi va to'lovlarni ko'rmaydi.
+  - Lekin bilib qo'ying: mijoz narxi minus o'zi hisoblagan narx — oddiy ayirish.
+- **Bitim kartasida VED bugun hamma narsani o'zgartira oladi.** Bu qism 17-savolga javobingizgacha o'zgartirilmadi.
+
+### 7. O'lchov birligi
+
+- **Tuzatildi:** VED jadvalda birlikni (dona, kg, m², juft) yolg'iz o'zgartirsa, tizim uni darhol eskisiga qaytarib qo'yardi. Birlik faqat baza narxi ham o'zgartirilgandagina saqlanardi. Endi birlik o'zi saqlanadi.
+- **Birlik tanlovini kengaytirish** (har qanday kodda dona/kg/m³/m²/juft) 18–21-savollarga javobingizdan keyin quriladi.
+
+### Bilib qo'ying
+
+- **Botdagi yangi tugmalar** («➕ Topshiriq», «📤 Men bergan») har bir xodimda bir marta /start yuborgandan keyin chiqadi.
+- **Deploydan oldin qilingan avtomatik qoida vazifalari** (lead_stale va boshqalar) qoidani yozgan odamning «Men bergan» ro'yxatida, yopilguncha ko'rinadi.
+- **Topshiriq fayllari** (forward qilingan mijoz rasmlari ham) hamkasblarning vazifalarini ko'ra oladigan har bir kishiga ochiq: buxgalter, logist, VED, kuzatuvchi. Bu /kalendar bilan bir xil.
+- **Lid yutilganda** VEDning lid lentasidagi savoli o'sha lidda qoladi. Bitim kartasida u ko'rinmaydi.
+
+### Tayyor kod yana bir bor tekshirildi
+
+Ikkala qism birlashtirilgandan keyin besh tomondan mustaqil tekshirildi: 41 ta topilma, hammasi tuzatildi. Sizga ko'rinadiganlari:
+
+- **Sotuvchi VEDning ochiq hisoblash ishini ✖ bilan bekor qila olardi** — ish navbatga egasiz qaytardi. Endi bo'lmaydi.
+- **Havolalar.** Topshiriq xabaridagi havola endi uni o'qiydigan odamga qarab tanlanadi. Avval sotuvchiga VED sahifasi, VEDga esa sotuvchi kartasi borardi — ikkalasi ham ochilmasdi. Kim ocha olmasa, unga havola umuman yuborilmaydi.
+- **Kartadagi narx qulfi** endi kartada turgan raqamni ushlaydi. Bitta lidda bir nechta hisob bo'lganda ✏️ forma bekordan-bekorga rad etilmaydi.
+- **Botda:**
+  - noto'g'ri sana yozilsa, kutish to'xtaydi — qidiruv yana ishlaydi;
+  - albom (bir nechta rasm) yuborilganda topshiriq endi yo'qolmaydi va hamma rasm saytga tushadi;
+  - o'tib ketgan vaqt yozilsa, bot «o'tib ketgan» deydi;
+  - topshiriq bekor qilinsa, bajaruvchiga xabar faqat topshiriq unga yetib borgan bo'lsa boradi.
+- **«Готово»da** «0,004» kabi summa endi so'z bilan rad etiladi, emoji ichki izohni buzmaydi.
+
+### O'rnatish (deploy)
+
+Odatdagi tartib — `docs/UPDATE.md` (avval zaxira nusxa, keyin `git pull`, keyin qurish). Shu raunddan keyin qo'shimcha:
+
+1. **Migratsiyalar soni 125 bo'lishi shart.** Kam chiqsa, `migrate` konteynerining chiqishini o'qing (UPDATE.md §4). Ilova yangisi qurilmaguncha eski versiyada ishlab turadi.
+2. **`/api/version`** — yangi kod ishlayotganini tasdiqlaydi.
+3. **Har bir xodim botga bir marta /start yuborsin** — «➕ Topshiriq» va «📤 Men bergan» tugmalari shundan keyin chiqadi.
+4. **Eski «Hisoblash: …» qoldiqlari** (VED «Bo'shatish» bosganda qolib ketgan vazifalar). Avval faqat ro'yxat — hech narsa o'zgarmaydi:
+   ```bash
+   docker compose run --rm migrate pnpm close-stale-calc-tasks --ghosts
+   ```
+   Chiqqan ro'yxatni menga yuboring. Tozalash (`--ghosts --apply`) faqat siz ko'rib «ha» deganingizdan keyin.
+5. **Faqat o'qiydigan to'rt tekshiruv** (hech narsani o'zgartirmaydi; natijasini menga yuboring):
+   ```bash
+   docker compose exec -T postgres psql -U gsr -d gsr -c "
+   select 'eslatma_kerak' as k, count(*) from tasks t where t.origin is null
+     and (exists (select 1 from calc_requests r where r.task_id = t.id)
+       or exists (select 1 from payment_promises p where p.task_id = t.id))
+   union all
+   select 'nol_javob', count(*) from calc_requests
+     where answer_amount is not null and not (answer_amount > 0 and answer_amount <> 'NaN')
+   union all
+   select 'ikki_hisob_bitta_vazifa', count(*) from (select task_id from calc_requests
+     where task_id is not null group by 1 having count(*) > 1) x
+   union all
+   select 'eski_tuzatish_vazifasiz', count(*) from calc_requests
+     where supersedes_request_id is not null and completed_at is null
+       and assignee_id is not null and task_id is null;"
+   ```
+   Birinchi uchtasi **0** bo'lishi kerak. To'rtinchisi — 0124 dan oldin ochilgan, hali yopilmagan tuzatishlar: ular eski holicha qoladi (vazifasiz, so'ragan admin nomida). 0 bo'lmasa, nima qilishni alohida kelishamiz.
+
 ## Yuk ma'lumoti tekshiruvi (✅ / ❓) va yig'iladigan yashiklar ro'yxati — 2026-10-03
 
 **Migratsiya 0123.** O'rnatgandan keyin migratsiyalar soni **124** bo'lishi kerak.

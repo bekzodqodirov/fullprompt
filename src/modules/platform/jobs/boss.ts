@@ -72,6 +72,8 @@ export const WORKER_REGISTRATIONS: [string, (boss: PgBoss) => Promise<void>][] =
   ['restore-test', async (b) => (await import('./restore-test')).registerRestoreTestWorker(b)],
   ['crm', async (b) => (await import('../../wms/crm/digest')).registerCrmWorkers(b)],
   ['tasks', async (b) => (await import('../tasks/digest')).registerTaskWorkers(b)],
+  // A task's files, fetched from Telegram onto the web (the topshiriq round).
+  ['task-files', async (b) => (await import('../tasks/files-job')).registerTaskFilesWorker(b)],
   ['deals', async (b) => (await import('../../wms/deals/jobs')).registerDealWorkers(b)],
   ['unanswered', async (b) => (await import('../../wms/crm/unanswered-jobs')).registerUnansweredWorker(b)],
   ['silent-trucks', async (b) => (await import('../../wms/tracking/silent-jobs')).registerSilentTrucksWorker(b)],

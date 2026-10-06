@@ -869,6 +869,13 @@
       "when": 1785190000102,
       "tag": "0123_lot_check",
       "breakpoints": true
+    },
+    {
+      "idx": 124,
+      "version": "7",
+      "when": 1785190000103,
+      "tag": "0124_task_origin_calc_note",
+      "breakpoints": true
     }
   ]
 }

@@ -95,6 +95,31 @@ test('a m² code asks for its measure, prices live, and seals the same number', 
   await expect(page.getByTestId('calc-group-baza')).toContainText('m²');
 });
 
+test('a unit changed on its own sticks — the select is not a no-op', async ({ page }) => {
+  expect(requestUrl).not.toBe('');
+  await login(page);
+  await page.goto(requestUrl);
+  await expect(page.getByTestId('calc-table')).toBeVisible({ timeout: 15_000 });
+
+  // The codeless row (vaza) renders FIRST. A baza per dona, saved…
+  await page.getByTestId('calc-baza').first().fill('5');
+  await page.getByTestId('calc-save-table').click();
+  await expect(page.getByTestId('calc-unsaved')).toHaveCount(0, { timeout: 15_000 });
+  const basis = page.getByTestId('calc-basis').first();
+  await expect(basis).toHaveValue('unit');
+
+  // …then ONLY the unit. The grid drafted a pick as two updates that each
+  // cleaned themselves away, so the select snapped back to «dona» on every
+  // row (the owner, 2026-10-06: «ved hodimi o'zi o'zgartira olmayabti»).
+  await basis.selectOption('kg');
+  await expect(basis).toHaveValue('kg');
+  await expect(page.getByTestId('calc-unsaved')).toBeVisible();
+  await page.getByTestId('calc-save-table').click();
+  await expect(page.getByTestId('calc-unsaved')).toHaveCount(0, { timeout: 15_000 });
+  await page.reload();
+  await expect(page.getByTestId('calc-basis').first()).toHaveValue('kg', { timeout: 15_000 });
+});
+
 test('deleting a row with an unsaved draft releases the gate — never a wedge', async ({ page }) => {
   expect(requestUrl).not.toBe('');
   await login(page);

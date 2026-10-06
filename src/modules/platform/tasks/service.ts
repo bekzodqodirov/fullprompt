@@ -2,14 +2,16 @@ import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, ne, sql, type SQL } 
 import { z } from 'zod';
 import { v7 as uuidv7 } from 'uuid';
 import { db, type Db, type Tx } from '../db/client';
-import { taskTypes, tasks, users } from '../db/schema';
+import { notifications, taskTypes, tasks, users } from '../db/schema';
 import { writeAudit, type AuditContext } from '../audit/service';
 import { entitySpec } from '../fields/registry';
 import { recordNames, resolveEntity } from '../entities/service';
-import { taskLink } from '../notifications/links';
-import { notifyStaffTelegram, userName } from '../notifications/staff';
+import { calcLink, taskLink } from '../notifications/links';
+import { notifyStaffTelegram, reachOf, userName, type Reach } from '../notifications/staff';
+import { retireTaskCopiesSoon } from '../notifications/retire-tasks';
 import { logger } from '../logger';
 import { canLogIn } from '../users/login';
+import { userPermissions } from '../rbac/authorize';
 
 /**
  * Work one person gives another (owner: "tasklar calendarlar").
@@ -35,8 +37,59 @@ export type TaskContext = AuditContext & {
   actor: { id: string; permissions: Set<string> };
 };
 
+/**
+ * Every refusal a task door can give, by name — a CLOSED list.
+ *
+ * It was `code: string`, and two readers paid for it: the staff bot's answer
+ * map named three codes and rethrew every other one into `bot.catch`, so a
+ * person who typed a result heard silence (review telegram-mechanics-1); and
+ * the web form printed `tasks.errors.<code>` with two codes in no bundle at
+ * all (tests-completeness-7). Now a code nobody listed is a compile error at
+ * the `throw`, the bot's map is a `Record` over this union, and the i18n
+ * fence reads this array.
+ */
+export const TASK_ERROR_CODES = [
+  'unauthenticated',
+  'validation',
+  'bad_bound',
+  'unknown_entity',
+  'half_pointer',
+  'no_assignee',
+  'assignee_no_login',
+  'assignee_inactive',
+  'repeat_needs_due',
+  'not_created',
+  'bad_due_date',
+  'not_found',
+  'not_yours',
+  'already_closed',
+  // The task carries an OPEN calc job's clock (VED-TARIX §8): every task
+  // door refuses, and the hisoblash screen is where the job ends.
+  'calc_use_screen',
+  // …and the question «is it bound?» could not be answered: refused rather
+  // than guessed (the pre-check fails CLOSED).
+  'bound_check_failed',
+  // A payment promise's call while the promise stands: its date IS the
+  // client's promise, which the sweep judges.
+  'bound_clock',
+  // ⏰ on one occurrence would move the whole series (telegram-mechanics-15).
+  'repeat_series',
+  'not_assignee',
+  'already_accepted',
+  'not_author',
+  'remind_too_soon',
+  'not_remindable',
+  'not_askable',
+  'empty_text',
+  // «📤 Manbani yangi odamga yuborish» with nobody to send to — the task came
+  // back to its author, or it carries no messages (review bot-13): said, never
+  // a «📤 Yuborildi» about nothing.
+  'nothing_to_send',
+] as const;
+export type TaskErrorCode = (typeof TASK_ERROR_CODES)[number];
+
 export class TaskError extends Error {
-  constructor(public readonly code: string) {
+  constructor(public readonly code: TaskErrorCode) {
     super(code);
   }
 }
@@ -65,6 +118,250 @@ export const taskSchema = z.object({
   repeatEvery: z.number().int().min(1).max(365).default(1),
 });
 export type TaskInput = z.infer<typeof taskSchema>;
+
+/**
+ * Where a task came from (0124). NOT part of `taskSchema`: the form posts
+ * what a person typed, and an origin is a fact about which door made the row —
+ * a forged `calc` would strip a hand-given task of its buttons, a forged
+ * `hand` would put a calc job in somebody's «📤 Men bergan». So it is an
+ * argument every caller must name: a required option turns each one into a
+ * compile error that names itself (#790's trick), and NULL is left for the
+ * rows made before 0124.
+ */
+export const TASK_ORIGINS = ['hand', 'calc', 'calc_return', 'promise', 'automation'] as const;
+export type TaskOrigin = (typeof TASK_ORIGINS)[number];
+
+export interface TaskMaking {
+  origin: TaskOrigin;
+  /** The record whose clock the task carries — the calc request ('calc') or
+   * the payment promise ('promise'); refused on any other origin. */
+  boundId?: string | null;
+  /**
+   * The author's own Telegram messages the task was given with — the staff
+   * bot's draft (docs/TELEGRAM-TOPSHIRIQ.md §3). Forwarded to the assignee
+   * before the task's text, and kept on the row so a reassign BY THE AUTHOR
+   * can forward them again (access-money-12).
+   */
+  sourceMessages?: SourceMessage[] | null;
+  /** Which door wrote it, recorded in the audit row — the bot says 'telegram'. */
+  via?: 'telegram';
+}
+
+/** One of the author's messages, by the chat it sits in. */
+export interface SourceMessage {
+  chatId: number;
+  messageId: number;
+}
+
+/** At most this many messages travel with one task (the draft's own cap). */
+export const MAX_TASK_SOURCES = 10;
+
+/**
+ * Whose clock a task carries, as the wms gate answers it (calc/task-gate.ts).
+ * `open` is that record's own state; a bound task whose record has closed is
+ * an ordinary task again — that is the stale-task path.
+ */
+export interface TaskBinding {
+  kind: 'calc' | 'promise';
+  recordId: string;
+  open: boolean;
+}
+
+export interface TaskBindingInput {
+  id: string;
+  origin: string | null;
+  boundId: string | null;
+}
+
+/**
+ * The bindings of a list of tasks — ONE call, its queries in wms (platform
+ * never imports wms statically; the `completeCalcForTask` crossing). A list
+ * of hand tasks costs nothing: only a NULL origin (a pointer may name it) or
+ * a calc/promise row with a `bound_id` is asked about.
+ */
+export async function bindingsOf(rows: TaskBindingInput[]): Promise<Map<string, TaskBinding>> {
+  const relevant = rows.filter(
+    (row) => row.origin === null || ((row.origin === 'calc' || row.origin === 'promise') && row.boundId),
+  );
+  if (relevant.length === 0) return new Map();
+  const { taskBindings } = await import('../../wms/calc/task-gate');
+  return taskBindings(relevant);
+}
+
+/**
+ * The bound pre-check every task door asks BEFORE its UPDATE — and it fails
+ * CLOSED (docs/VED-TARIX.md §13): a gate that threw is not a gate that said
+ * «not bound», so the door refuses in words instead of closing a calc job
+ * with no price because the database blinked.
+ */
+async function bindingOrRefuse(task: TaskBindingInput): Promise<TaskBinding | null> {
+  try {
+    return (await bindingsOf([task])).get(task.id) ?? null;
+  } catch (err) {
+    logger.error({ err, taskId: task.id }, '[tasks] bound pre-check failed — refusing');
+    throw new TaskError('bound_check_failed');
+  }
+}
+
+/** Refused: an OPEN calc job ends on its own screen, never through a task door. */
+async function refuseOpenCalc(task: TaskBindingInput): Promise<TaskBinding | null> {
+  const binding = await bindingOrRefuse(task);
+  if (binding?.kind === 'calc' && binding.open) throw new TaskError('calc_use_screen');
+  return binding;
+}
+
+/**
+ * Refused: the DATE belongs to another record while that record stands — a
+ * calc job's SLA (`calc_requests.due_at` is what the overdue sweep reads:
+ * «the two clocks cannot drift», round 28) or a client's payment promise
+ * (its date IS what he promised; the sweep judges the promise by it).
+ */
+async function refuseBoundClock(task: TaskBindingInput): Promise<TaskBinding | null> {
+  const binding = await refuseOpenCalc(task);
+  if (binding?.kind === 'promise' && binding.open) throw new TaskError('bound_clock');
+  return binding;
+}
+
+/**
+ * The task-button payload contract (review telegram-mechanics-21).
+ *
+ * `buttonsFor` is pure and sees only (type, payload), so everything it
+ * decides by travels in the payload: which buttons the ORIGIN draws (spec
+ * §2), whether the task carries an open job's clock (`bound` — a calc task
+ * then gets only its link), whether 👀 was already pressed, and whether ⏰
+ * would move a whole series (`repeats`, the one field beyond the review's
+ * four: `buttonsFor` cannot read `repeat_unit` either). A payload with no
+ * origin (queued before this round) reads as a hand task, and every press
+ * re-checks on the server anyway.
+ */
+export interface TaskButtonPayload {
+  taskId: string;
+  origin: TaskOrigin | null;
+  bound: boolean;
+  accepted: boolean;
+  repeats: boolean;
+}
+
+export function taskButtonPayload(
+  task: {
+    id: string;
+    origin: string | null;
+    boundId: string | null;
+    acceptedAt: Date | null;
+    repeatUnit: string | null;
+  },
+  binding: TaskBinding | null = null,
+): TaskButtonPayload {
+  // A pointed pre-0124 row reads as its pointer's kind (data-migration-3).
+  const origin = ((task.origin as TaskOrigin | null) ?? binding?.kind ?? null) as TaskOrigin | null;
+  return {
+    taskId: task.id,
+    origin,
+    // What the writer KNOWS: a fresh calc task's request is open; a calc
+    // task that reaches a reassign is unbound or its request closed (an open
+    // one is refused there), and that one keeps the ordinary ✅.
+    bound: binding ? binding.kind === 'calc' && binding.open : origin === 'calc' && Boolean(task.boundId),
+    accepted: task.acceptedAt !== null,
+    repeats: task.repeatUnit !== null,
+  };
+}
+
+/**
+ * Where a task's message links ONE recipient — chosen per person, because a
+ * link that bounces its reader home is a dead door (review access-5,
+ * integration-2/6):
+ *  - a calc job's own screen, `/hisoblash/<request>`, for a `ved.docs` holder
+ *    only (VED-TARIX §8: the lead card sends a VED without `crm.leads` home,
+ *    and the drain lifts this line into the message's one URL button,
+ *    telegram-mechanics-8) — the SELLER who asked for the calculation cannot
+ *    open that screen;
+ *  - a lead or a deal: the card for whoever the card admits, the karta for a
+ *    calculator it does not — the VED author of a hand-back — and NO link for
+ *    anybody else: `noteLinksFor`'s rule, ONE home, reached by dynamic import
+ *    because platform never imports wms statically;
+ *  - anything else: its card, or «Mening kunim».
+ * Null means no 🔗 line at all; a lookup that fails answers null too — a link
+ * nobody could check is not sent.
+ */
+export async function taskLinkFor(
+  task: {
+    origin: string | null;
+    boundId: string | null;
+    entityType: string | null;
+    entityId: string | null;
+  },
+  recipient: { id: string; permissions: { has(code: string): boolean } },
+): Promise<string | null> {
+  if (task.origin === 'calc' && task.boundId && recipient.permissions.has('ved.docs')) {
+    return calcLink(task.boundId);
+  }
+  if ((task.entityType === 'lead' || task.entityType === 'deal') && task.entityId) {
+    try {
+      const { noteLinksFor } = await import('../../wms/calc/card-door');
+      const links = await noteLinksFor({ entityType: task.entityType, entityId: task.entityId }, [recipient.id]);
+      return links.get(recipient.id) ?? null;
+    } catch (err) {
+      logger.warn({ err, recipient: recipient.id }, '[tasks] link for the card not resolved — sent without one');
+      return null;
+    }
+  }
+  return taskLink(task.entityType, task.entityId);
+}
+
+/** A task message's 🔗 line for one person — nothing when there is no door to give them. */
+async function linkLine(task: Parameters<typeof taskLinkFor>[0], userId: string): Promise<string> {
+  // Built inside the message's own arguments, AFTER the door's write: a read
+  // that fails here must cost the line, never fail a door that already closed.
+  try {
+    const link = await taskLinkFor(task, { id: userId, permissions: await userPermissions(userId) });
+    return link ? `\n🔗 ${link}` : '';
+  } catch (err) {
+    logger.warn({ err, userId }, '[tasks] message link not resolved — sent without one');
+    return '';
+  }
+}
+
+/**
+ * The note under a fresh assignment — the words the person was given the
+ * task WITH (his 3a), for a hand task only: a hand-back's reason is already
+ * the message `CalcReturned` printed, and the machine's tasks have none worth
+ * repeating. Capped, because four buttons under a 4 000-character wall read
+ * badly and `closeTaskMessage` rebuilds the whole text on every close.
+ */
+export const ASSIGNED_NOTE_CAP = 600;
+export const NOTE_MORE = '… saytda';
+
+export function assignedNoteLine(note: string | null | undefined, origin: string | null): string {
+  if (origin !== null && origin !== 'hand') return '';
+  const text = (note ?? '').trim();
+  if (!text) return '';
+  return `\n📝 ${cutOnWord(text, ASSIGNED_NOTE_CAP, NOTE_MORE)}`;
+}
+
+/**
+ * Cut on a word, never through one nor through half an emoji (code points,
+ * not UTF-16 units), and say so. The staff bot's title rule (≤ 120) asks it
+ * with no mark.
+ */
+export function cutOnWord(text: string, max: number, mark = ''): string {
+  const chars = Array.from(text);
+  if (chars.length <= max) return text;
+  let cut = chars.slice(0, max).join('');
+  const space = cut.lastIndexOf(' ');
+  // A word longer than half the room is cut where it stands.
+  if (space > cut.length / 2) cut = cut.slice(0, space);
+  return mark ? `${cut.trimEnd()} ${mark}` : cut.trimEnd();
+}
+
+/**
+ * Does the AUTHOR hear the assignee's presses? Not when the author is a
+ * rule's (review telegram-mechanics-20): `created_by` on an automation task
+ * is whoever WROTE the rule, maybe months ago, who never gave this task and
+ * knows nothing about it — every 👀 and ⏰ would be noise in an admin's chat.
+ */
+export function authorHearsPresses(origin: string | null): boolean {
+  return origin !== 'automation';
+}
 
 /**
  * Turn what a form typed into a moment, and say whether it named a time.
@@ -210,6 +507,11 @@ export interface TaskRow {
   repeatUnit: string | null;
   repeatEvery: number;
   seriesId: string | null;
+  /** 0124 — see `TaskOrigin`; NULL = made before it. */
+  origin: string | null;
+  boundId: string | null;
+  acceptedAt: Date | null;
+  remindedAt: Date | null;
   createdAt: Date;
 }
 
@@ -238,6 +540,10 @@ function selection() {
     repeatUnit: tasks.repeatUnit,
     repeatEvery: tasks.repeatEvery,
     seriesId: tasks.seriesId,
+    origin: tasks.origin,
+    boundId: tasks.boundId,
+    acceptedAt: tasks.acceptedAt,
+    remindedAt: tasks.remindedAt,
     createdAt: tasks.createdAt,
   };
 }
@@ -250,8 +556,16 @@ function base() {
     .leftJoin(assignee, eq(tasks.assigneeId, assignee.id));
 }
 
-export async function createTask(input: TaskInput, ctx: AuditContext): Promise<TaskRow> {
+export async function createTask(
+  input: TaskInput,
+  ctx: AuditContext,
+  making: TaskMaking,
+): Promise<TaskRow> {
   if (!ctx.actorId) throw new TaskError('unauthenticated');
+  // The database says so too (tasks_bound_check); a caller deserves a code.
+  if (making.boundId && making.origin !== 'calc' && making.origin !== 'promise') {
+    throw new TaskError('bad_bound');
+  }
   // Registry object or an owner-invented one — one resolver (#186).
   if (input.entityType && !(await resolveEntity(input.entityType))) {
     throw new TaskError('unknown_entity');
@@ -270,6 +584,7 @@ export async function createTask(input: TaskInput, ctx: AuditContext): Promise<T
   const { dueAt, allDay } = parseDue(input.dueAt, input.tzOffsetMin);
   // "Every week" starting when? A rule needs something to repeat from.
   if (input.repeatUnit && !dueAt) throw new TaskError('repeat_needs_due');
+  const sources = (making.sourceMessages ?? []).slice(0, MAX_TASK_SOURCES);
 
   const [row] = await db
     .insert(tasks)
@@ -287,6 +602,9 @@ export async function createTask(input: TaskInput, ctx: AuditContext): Promise<T
       repeatUnit: input.repeatUnit,
       repeatEvery: input.repeatEvery,
       seriesId: input.repeatUnit ? uuidv7() : null,
+      origin: making.origin,
+      boundId: making.boundId ?? null,
+      sourceMessages: sources.length > 0 ? sources : null,
     })
     .returning();
   if (!row) throw new TaskError('not_created');
@@ -300,6 +618,8 @@ export async function createTask(input: TaskInput, ctx: AuditContext): Promise<T
       assigneeId: input.assigneeId,
       dueAt: dueAt?.toISOString() ?? null,
       about: input.entityType ? `${input.entityType}:${input.entityId}` : null,
+      origin: making.origin,
+      ...(making.via ? { via: making.via } : {}),
     },
   });
 
@@ -311,24 +631,48 @@ export async function createTask(input: TaskInput, ctx: AuditContext): Promise<T
   // just typed is not news.
   if (input.assigneeId !== ctx.actorId) {
     const created = (await byId(row.id))!;
-    const label = created.entityType
-      ? ((await aboutLabels([created])).get(`${created.entityType}:${created.entityId}`) ?? null)
-      : null;
-    await notifyStaffTelegram({
-      userIds: [input.assigneeId],
-      type: 'TaskAssigned',
-      text:
-        `🆕 Yangi vazifa: ${input.title}` +
-        (dueAt ? `\n📅 ${telegramDue(dueAt, allDay)}` : '') +
-        (label ? `\n📌 ${label}` : '') +
-        `\n👤 ${await userName(ctx.actorId)}` +
-        `\n🔗 ${taskLink(created.entityType, created.entityId)}`,
-      // Lets the send worker attach the «Bajarildi» button (staff bot).
-      extra: { taskId: created.id },
-    }).catch(() => {});
+    await notifyAssigned(created, ctx.actorId, {
+      headline: '🆕 Yangi vazifa',
+      forwards: sources,
+    });
     return created;
   }
   return (await byId(row.id))!;
+}
+
+/**
+ * The assignee's «you have work» message — ONE builder for a fresh task and
+ * a handed-on one, so the two cannot disagree about the buttons, the note or
+ * the link (round C found the handed-on one shipped with no button at all).
+ *
+ * `forwards` are the author's own messages, forwarded BEFORE this text by the
+ * drain (`payload.forwards`, one `forwardMessages` call). Never awaited into a
+ * failure: the task is written, and the morning digest still carries it.
+ */
+async function notifyAssigned(
+  task: TaskRow,
+  fromUserId: string,
+  opts: { headline: string; forwards?: SourceMessage[]; binding?: TaskBinding | null },
+): Promise<void> {
+  const label = task.entityType
+    ? ((await aboutLabels([task])).get(`${task.entityType}:${task.entityId}`) ?? null)
+    : null;
+  await notifyStaffTelegram({
+    userIds: [task.assigneeId],
+    type: 'TaskAssigned',
+    text:
+      `${opts.headline}: ${task.title}` +
+      (task.dueAt ? `\n📅 ${telegramDue(task.dueAt, task.allDay)}` : '') +
+      (label ? `\n📌 ${label}` : '') +
+      assignedNoteLine(task.note, task.origin) +
+      `\n👤 ${await userName(fromUserId)}` +
+      (await linkLine(task, task.assigneeId)),
+    // The contract the send worker draws the buttons from (staff bot).
+    extra: {
+      ...taskButtonPayload(task, opts.binding ?? null),
+      ...(opts.forwards && opts.forwards.length > 0 ? { forwards: opts.forwards } : {}),
+    },
+  }).catch(() => {});
 }
 
 export async function byId(id: string): Promise<TaskRow | null> {
@@ -336,20 +680,38 @@ export async function byId(id: string): Promise<TaskRow | null> {
   return row ?? null;
 }
 
+/**
+ * Where a door was pressed from, when it was the bot: the message the press
+ * edits itself, which the after-commit retire must leave alone or the two
+ * edits race over one message.
+ */
+export interface DoorOpts {
+  pressed?: { chatId: number; messageId: number } | null;
+}
+
 /** Close a task with what actually happened. */
 export async function completeTask(
   id: string,
   result: string,
   ctx: TaskContext,
+  opts: DoorOpts = {},
 ): Promise<void> {
   if (!ctx.actorId) throw new TaskError('unauthenticated');
   const before = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
   if (!before) throw new TaskError('not_found');
   if (!canActOnTask(before, ctx.actor)) throw new TaskError('not_yours');
   if (before.status !== 'open') throw new TaskError('already_closed');
+  // BEFORE the UPDATE (VED-TARIX §8): every task door used to close an open
+  // calc job with no price — the web ✅, the dock, the card's panel and the
+  // Telegram ✅ — and after a takeover the PREVIOUS holder's old button closed
+  // the colleague's job in the previous holder's name.
+  await refuseOpenCalc(before);
 
   const now = new Date();
-  await db
+  // A compare-and-set, not check-then-write: «✅ Natijasiz» is ONE tap, which
+  // removed the natural debounce the typed result was, and two presses (or a
+  // press and the web ✅) must close the task once and tell the author once.
+  const closed = await db
     .update(tasks)
     .set({
       status: 'done',
@@ -358,13 +720,21 @@ export async function completeTask(
       result: result.trim() || null,
       updatedAt: now,
     })
-    .where(eq(tasks.id, id));
+    .where(and(eq(tasks.id, id), eq(tasks.status, 'open')))
+    .returning({ id: tasks.id });
+  if (closed.length === 0) throw new TaskError('already_closed');
   await writeAudit(db, ctx, {
     entityType: 'task',
     entityId: id,
     action: 'status_change',
     before: { status: before.status },
     after: { status: 'done', result: result.trim() || null },
+  });
+  retireTaskCopiesSoon({
+    taskIds: [id],
+    outcome: 'done',
+    since: before.createdAt,
+    exceptMessages: opts.pressed ? [opts.pressed] : [],
   });
 
   // A hisoblash task closed by hand is the other end of the calc clock: the
@@ -388,7 +758,7 @@ export async function completeTask(
         `✅ Bajarildi: ${before.title}` +
         (result.trim() ? `\n${result.trim().slice(0, 300)}` : '') +
         `\n👤 ${await userName(ctx.actorId)}` +
-        `\n🔗 ${taskLink(before.entityType, before.entityId)}`,
+        (await linkLine(before, before.createdBy)),
     }).catch(() => {});
   }
 
@@ -417,6 +787,9 @@ export async function completeTask(
         repeatUnit: before.repeatUnit,
         repeatEvery: before.repeatEvery,
         seriesId: before.seriesId ?? id,
+        // The next occurrence is the same kind of work as the last one.
+        origin: before.origin,
+        boundId: before.boundId,
       })
       .returning();
     if (spawned) {
@@ -440,22 +813,41 @@ export async function completeTask(
  * series on, cancelling ends it. That needs no extra button and the meaning
  * matches the words — "I am not doing this one" versus "we are done with this".
  */
-export async function cancelTask(id: string, reason: string, ctx: TaskContext): Promise<void> {
+export async function cancelTask(
+  id: string,
+  reason: string,
+  ctx: TaskContext,
+  opts: DoorOpts = {},
+): Promise<void> {
   if (!ctx.actorId) throw new TaskError('unauthenticated');
   const before = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
   if (!before) throw new TaskError('not_found');
   if (!canActOnTask(before, ctx.actor)) throw new TaskError('not_yours');
   if (before.status !== 'open') throw new TaskError('already_closed');
-  await db
+  // An OPEN calc job's task is not anybody's to drop: cancelling it released
+  // the job back to the queue (below), so the requesting seller, a viewer or
+  // the accountant could take the VED's claim without the queue's own
+  // `ved.docs` «Bo'shatish» (review tasks-2 / access-2). The holder moves
+  // through «Olaman / Bo'shatish», like every other door on the job.
+  await refuseOpenCalc(before);
+  const cancelled = await db
     .update(tasks)
     .set({ status: 'cancelled', result: reason.trim() || null, updatedAt: new Date() })
-    .where(eq(tasks.id, id));
+    .where(and(eq(tasks.id, id), eq(tasks.status, 'open')))
+    .returning({ id: tasks.id });
+  if (cancelled.length === 0) throw new TaskError('already_closed');
   await writeAudit(db, ctx, {
     entityType: 'task',
     entityId: id,
     action: 'status_change',
     before: { status: 'open' },
     after: { status: 'cancelled', reason: reason.trim() || null },
+  });
+  retireTaskCopiesSoon({
+    taskIds: [id],
+    outcome: 'cancelled',
+    since: before.createdAt,
+    exceptMessages: opts.pressed ? [opts.pressed] : [],
   });
 
   // Cancelling the task does not cancel the WORK: the calculation goes back
@@ -467,6 +859,50 @@ export async function cancelTask(id: string, reason: string, ctx: TaskContext): 
   } catch (err) {
     logger.error({ err, taskId: id }, '[calc] release on task cancel failed');
   }
+
+  // The assignee is told the work went away (spec §4) — the most common case
+  // is the author's own «🗑 Bekor qilish» on a typo seconds after creating it,
+  // and the copy those seconds delivered must not stay a live job. But only
+  // when a copy DID reach them: one still queued was just muted by the retire
+  // above, and «🗑 bekor qilindi» about a task they never got is news about
+  // nothing (review bot-8).
+  if (before.assigneeId !== ctx.actorId && (await assigneeWasReached(id, before.assigneeId))) {
+    await notifyStaffTelegram({
+      userIds: [before.assigneeId],
+      type: 'TaskCancelled',
+      text:
+        `🗑 Vazifa bekor qilindi: ${before.title}` +
+        (reason.trim() ? `\n${reason.trim().slice(0, 300)}` : '') +
+        `\n👤 ${await userName(ctx.actorId)}` +
+        (await linkLine(before, before.assigneeId)),
+    }).catch(() => {});
+  }
+}
+
+/**
+ * Did a copy of this task reach the assignee's Telegram — or is one on its
+ * way out this moment? 'sending' counts: the drain is past its send-time
+ * check, the copy will land, and the after-send retire stamps it (review
+ * tasks-1), so the person must hear why. The digest counts too: a morning
+ * list that named the task is how many people first meet it.
+ */
+async function assigneeWasReached(taskId: string, userId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: notifications.id })
+    .from(notifications)
+    .where(
+      and(
+        eq(notifications.userId, userId),
+        eq(notifications.channel, 'telegram'),
+        inArray(notifications.status, ['sent', 'sending']),
+        sql`((${notifications.type} IN ('TaskAssigned', 'TaskReminder', 'TaskAnswer')
+                AND ${notifications.payload}->>'taskId' = ${taskId})
+              OR (${notifications.type} = 'TasksDue'
+                AND ${notifications.payload}->'tasks' @> ${JSON.stringify([{ id: taskId }])}::jsonb))`,
+      ),
+    )
+    .limit(1);
+  return Boolean(row);
 }
 
 /** Hand a task to somebody else — the everyday move in a small company. */
@@ -480,11 +916,25 @@ export async function reassignTask(
   if (!before) throw new TaskError('not_found');
   if (!canActOnTask(before, ctx.actor)) throw new TaskError('not_yours');
   if (before.status !== 'open') throw new TaskError('already_closed');
+  // An open calc job is HELD through the queue («Olaman» / «Bo'shatish»):
+  // this door moved `tasks.assignee_id` and nothing else, so the queue went
+  // on naming the old VED while the new one's day showed the job (#531's
+  // shape, review telegram-mechanics-12).
+  const binding = await refuseOpenCalc(before);
   const person = await db.query.users.findFirst({ where: eq(users.id, assigneeId) });
   if (!person) throw new TaskError('assignee_inactive');
   if (!canLogIn(person)) throw new TaskError(person.active ? 'assignee_no_login' : 'assignee_inactive');
 
-  await db.update(tasks).set({ assigneeId, updatedAt: new Date() }).where(eq(tasks.id, id));
+  const at = new Date();
+  // `accepted_at` and `reminded_at` describe the CURRENT assignee: the new
+  // one has not pressed 👀, and the old one's half-hour must not shut the
+  // author's first «🔔» to the new one (data-migration-8).
+  const moved = await db
+    .update(tasks)
+    .set({ assigneeId, acceptedAt: null, remindedAt: null, updatedAt: at })
+    .where(and(eq(tasks.id, id), eq(tasks.status, 'open')))
+    .returning({ id: tasks.id });
+  if (moved.length === 0) throw new TaskError('already_closed');
   await writeAudit(db, ctx, {
     entityType: 'task',
     entityId: id,
@@ -492,24 +942,118 @@ export async function reassignTask(
     before: { assigneeId: before.assigneeId },
     after: { assigneeId },
   });
+  // The previous holder's copies say where the task went — but not the NEW
+  // holder's, and not anything queued from here on (A→B→A must not stamp A's
+  // fresh copy «given to someone else»).
+  retireTaskCopiesSoon({
+    taskIds: [id],
+    outcome: 'reassigned',
+    since: before.createdAt,
+    until: at,
+    exceptUserIds: [assigneeId],
+  });
 
+  const sources = sourcesOf(before.sourceMessages);
+  const byAuthor = ctx.actorId === before.createdBy;
   // Handed to somebody new: they find out the same way a fresh assignment
-  // lands, not tomorrow morning.
+  // lands, not tomorrow morning — with the author's own messages ONLY when
+  // the AUTHOR handed it on (access-money-12): `canActOnTask` admits every
+  // viewer, accountant, VED and logist, and none of them may make the bot
+  // push the author's voice notes and forwarded customer chats to anybody.
   if (assigneeId !== ctx.actorId) {
+    const after = (await byId(id))!;
+    await notifyAssigned(after, ctx.actorId, {
+      headline: '🆕 Sizga vazifa o‘tkazildi',
+      forwards: byAuthor ? sources : [],
+      binding,
+    });
+  }
+  // …and the author learns who has it now (spec §4) — offered the sources
+  // as one button when somebody else moved it, so forwarding them stays the
+  // author's own act.
+  if (!byAuthor && authorHearsPresses(before.origin) && before.createdBy !== assigneeId) {
+    const offer = sources.length > 0;
     await notifyStaffTelegram({
-      userIds: [assigneeId],
-      type: 'TaskAssigned',
+      userIds: [before.createdBy],
+      type: 'TaskReassigned',
       text:
-        `🆕 Sizga vazifa o'tkazildi: ${before.title}` +
-        (before.dueAt ? `\n📅 ${telegramDue(before.dueAt, before.allDay)}` : '') +
+        `👤 Siz bergan vazifa boshqaga o‘tdi: ${before.title}` +
+        `\n${await userName(before.assigneeId)} → ${person.fullName}` +
         `\n👤 ${await userName(ctx.actorId)}` +
-        `\n🔗 ${taskLink(before.entityType, before.entityId)}`,
-      // The same «✅ Bajarildi» a fresh assignment carries (round C) — a
-      // handed-on task arrived with no button at all, so the new owner could
-      // close every task from the chat except the ones given to them second.
-      extra: { taskId: id },
+        (offer ? '\n📎 Xabarlaringiz yangi odamga yuborilmadi.' : '') +
+        (await linkLine(before, before.createdBy)),
+      extra: { taskId: id, offerSources: offer },
     }).catch(() => {});
   }
+}
+
+/** The stored source pointers, read defensively — jsonb has no type. */
+export function sourcesOf(value: unknown): SourceMessage[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter(
+      (s): s is SourceMessage =>
+        typeof s === 'object' &&
+        s !== null &&
+        Number.isFinite(Number((s as SourceMessage).chatId)) &&
+        Number.isInteger(Number((s as SourceMessage).messageId)),
+    )
+    .map((s) => ({ chatId: Number(s.chatId), messageId: Number(s.messageId) }))
+    .slice(0, MAX_TASK_SOURCES);
+}
+
+/**
+ * The author's own messages, sent to whoever holds the task NOW: the forwards
+ * and one line with the link — and NO task buttons (review bot-13). The
+ * holder's own TaskAssigned carries those; a second full assignment was a
+ * second 👀 ✅ ⏰ 💬 under the same work. Its own type so the drain's send-time
+ * check mutes it once the task closed or moved (an assignee copy,
+ * `taskCopyLive`) and queue order puts it after the assignment it belongs to.
+ * One sender for the author's «📤» press and a late album part (bot-11).
+ */
+export async function queueTaskSources(
+  task: {
+    id: string;
+    title: string;
+    assigneeId: string;
+    origin: string | null;
+    boundId: string | null;
+    entityType: string | null;
+    entityId: string | null;
+  },
+  sources: SourceMessage[],
+  headline: string,
+): Promise<void> {
+  if (sources.length === 0) return;
+  await notifyStaffTelegram({
+    userIds: [task.assigneeId],
+    type: 'TaskSources',
+    text: `${headline}: ${task.title}` + (await linkLine(task, task.assigneeId)),
+    extra: { taskId: task.id, forwards: sources },
+  });
+}
+
+/**
+ * «📤 Manbani yangi odamga yuborish» — the author's own press under a
+ * `TaskReassigned` (access-money-12): their messages go to whoever holds the
+ * task NOW, and only because they asked. Answers whether that person will
+ * hear it; refuses in words when there is nobody to send to (review bot-13).
+ */
+export async function forwardSourcesAgain(
+  id: string,
+  ctx: TaskContext,
+): Promise<{ reach: Reach; name: string | null }> {
+  if (!ctx.actorId) throw new TaskError('unauthenticated');
+  const task = await byId(id);
+  if (!task) throw new TaskError('not_found');
+  if (task.createdBy !== ctx.actorId) throw new TaskError('not_author');
+  if (task.status !== 'open') throw new TaskError('already_closed');
+  const row = await db.query.tasks.findFirst({ where: eq(tasks.id, id), columns: { sourceMessages: true } });
+  const sources = sourcesOf(row?.sourceMessages);
+  if (sources.length === 0 || task.assigneeId === ctx.actorId) throw new TaskError('nothing_to_send');
+  await queueTaskSources(task, sources, '📎 Topshiriq manbalari');
+  const reach = (await reachOf([task.assigneeId], 'TaskSources')).get(task.assigneeId) ?? 'no_chat';
+  return { reach, name: task.assigneeName };
 }
 
 export async function updateTask(
@@ -523,7 +1067,11 @@ export async function updateTask(
   if (!canActOnTask(before, ctx.actor)) throw new TaskError('not_yours');
   if (before.status !== 'open') throw new TaskError('already_closed');
   const { dueAt, allDay } = parseDue(input.dueAt, input.tzOffsetMin);
-  await db
+  // The ✏️ form is the OTHER writer of `due_at` (data-migration-9): a title
+  // fix on a bound task is fine, its date is another record's clock.
+  const dueMoved = (dueAt?.getTime() ?? null) !== (before.dueAt?.getTime() ?? null) || allDay !== before.allDay;
+  if (dueMoved) await refuseBoundClock(before);
+  const changed = await db
     .update(tasks)
     .set({
       title: input.title,
@@ -534,7 +1082,9 @@ export async function updateTask(
       priority: input.priority,
       updatedAt: new Date(),
     })
-    .where(eq(tasks.id, id));
+    .where(and(eq(tasks.id, id), eq(tasks.status, 'open')))
+    .returning({ id: tasks.id });
+  if (changed.length === 0) throw new TaskError('already_closed');
   await writeAudit(db, ctx, {
     entityType: 'task',
     entityId: id,
@@ -542,6 +1092,284 @@ export async function updateTask(
     before: { title: before.title, dueAt: before.dueAt?.toISOString() ?? null },
     after: { title: input.title, dueAt: dueAt?.toISOString() ?? null },
   });
+}
+
+/**
+ * «👀 Qabul qildim» — the assignee says they have seen it (his 4a).
+ *
+ * A compare-and-set that names the PRESSER: a previous assignee's copy that
+ * was never retired (an edit Telegram refused, a copy still in the queue)
+ * must not accept on the new owner's behalf and tell the author the wrong
+ * name (telegram-mechanics-16).
+ */
+export async function acceptTask(id: string, ctx: TaskContext): Promise<void> {
+  if (!ctx.actorId) throw new TaskError('unauthenticated');
+  const before = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
+  if (!before) throw new TaskError('not_found');
+  if (before.status !== 'open') throw new TaskError('already_closed');
+  if (before.assigneeId !== ctx.actorId) throw new TaskError('not_assignee');
+  // 👀 duplicates «Olaman» on a calc job; an old button is refused in words.
+  await refuseOpenCalc(before);
+  const at = new Date();
+  const won = await db
+    .update(tasks)
+    .set({ acceptedAt: at, updatedAt: at })
+    .where(
+      and(
+        eq(tasks.id, id),
+        isNull(tasks.acceptedAt),
+        eq(tasks.status, 'open'),
+        eq(tasks.assigneeId, ctx.actorId),
+      ),
+    )
+    .returning({ id: tasks.id });
+  if (won.length === 0) {
+    const now = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
+    if (!now || now.status !== 'open') throw new TaskError('already_closed');
+    if (now.assigneeId !== ctx.actorId) throw new TaskError('not_assignee');
+    throw new TaskError('already_accepted');
+  }
+  await writeAudit(db, ctx, {
+    entityType: 'task',
+    entityId: id,
+    action: 'update',
+    after: { acceptedAt: at.toISOString() },
+  });
+  if (before.createdBy !== ctx.actorId && authorHearsPresses(before.origin)) {
+    await notifyStaffTelegram({
+      userIds: [before.createdBy],
+      type: 'TaskAccepted',
+      text: `👀 Qabul qilindi: ${before.title}\n👤 ${await userName(ctx.actorId)}` + (await linkLine(before, before.createdBy)),
+      extra: { taskId: id },
+    }).catch(() => {});
+  }
+}
+
+/**
+ * «⏰ Muddatni surish» — a NARROW writer: the date and nothing else, never
+ * `updateTask`'s full replace (a press must not rewrite the title the author
+ * typed). Refused on a repeating task — the next occurrence is computed from
+ * the CURRENT due, so «Ertaga» on a weekly Monday report would make every
+ * later one a Tuesday; the web ✏️ form moves a series, stated
+ * (telegram-mechanics-15) — and on a task whose date is another record's.
+ */
+export async function rescheduleTask(
+  id: string,
+  due: { dueAt: Date; allDay: boolean },
+  ctx: TaskContext,
+): Promise<void> {
+  if (!ctx.actorId) throw new TaskError('unauthenticated');
+  const before = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
+  if (!before) throw new TaskError('not_found');
+  if (!canActOnTask(before, ctx.actor)) throw new TaskError('not_yours');
+  if (before.status !== 'open') throw new TaskError('already_closed');
+  if (before.repeatUnit) throw new TaskError('repeat_series');
+  await refuseBoundClock(before);
+  const moved = await db
+    .update(tasks)
+    .set({ dueAt: due.dueAt, allDay: due.allDay, updatedAt: new Date() })
+    .where(and(eq(tasks.id, id), eq(tasks.status, 'open')))
+    .returning({ id: tasks.id });
+  if (moved.length === 0) throw new TaskError('already_closed');
+  await writeAudit(db, ctx, {
+    entityType: 'task',
+    entityId: id,
+    action: 'update',
+    before: { dueAt: before.dueAt?.toISOString() ?? null },
+    after: { dueAt: due.dueAt.toISOString(), via: 'telegram' },
+  });
+  if (before.createdBy !== ctx.actorId && authorHearsPresses(before.origin)) {
+    await notifyStaffTelegram({
+      userIds: [before.createdBy],
+      type: 'TaskRescheduled',
+      text:
+        `⏰ Muddat surildi: ${before.title}` +
+        `\n📅 ${before.dueAt ? telegramDue(before.dueAt, before.allDay) : '—'} → ${telegramDue(due.dueAt, due.allDay)}` +
+        `\n👤 ${await userName(ctx.actorId)}` +
+        (await linkLine(before, before.createdBy)),
+      extra: { taskId: id },
+    }).catch(() => {});
+  }
+}
+
+/** At most one «🔔» per task per this long (his 5a's own sentence). */
+export const REMIND_GAP_MS = 30 * 60_000;
+
+/**
+ * The tasks a person GAVE by hand and still waits on — «📤 Men bergan».
+ *
+ * The listing and the 🔔 door ask ONE predicate, so a reminder can be sent
+ * exactly about what the list shows: open, given to SOMEBODY ELSE, and made
+ * by a person — `hand`, or a NULL origin that no calc request and no payment
+ * promise points at (a pointed pre-0124 row is its pointer's kind,
+ * data-migration-3). Pre-0124 RULE tasks also read NULL and are listed until
+ * they close — stated to him, not guessed away (data-migration-4).
+ */
+function givenByHandSql(authorId: string): SQL {
+  return sql`t.status = 'open' AND t.created_by = ${authorId} AND t.assignee_id <> ${authorId}
+    AND (t.origin = 'hand' OR (t.origin IS NULL
+      AND NOT EXISTS (SELECT 1 FROM calc_requests r WHERE r.task_id = t.id)
+      AND NOT EXISTS (SELECT 1 FROM payment_promises p WHERE p.task_id = t.id)))`;
+}
+
+export interface GivenTask {
+  id: string;
+  title: string;
+  assigneeName: string | null;
+  dueAt: Date | null;
+  allDay: boolean;
+  accepted: boolean;
+}
+
+export const GIVEN_SHOWN = 20;
+
+export async function givenTasks(authorId: string): Promise<{ rows: GivenTask[]; total: number }> {
+  const rows = (await db.execute(sql`
+    SELECT t.id, t.title, u.full_name AS assignee_name, t.due_at, t.all_day,
+           t.accepted_at IS NOT NULL AS accepted, count(*) OVER () AS total
+      FROM tasks t
+      LEFT JOIN users u ON u.id = t.assignee_id
+     WHERE ${givenByHandSql(authorId)}
+     ORDER BY t.created_at DESC
+     LIMIT ${GIVEN_SHOWN}`)) as unknown as {
+    id: string;
+    title: string;
+    assignee_name: string | null;
+    due_at: Date | string | null;
+    all_day: boolean;
+    accepted: boolean;
+    total: string | number;
+  }[];
+  return {
+    total: Number(rows[0]?.total ?? 0),
+    rows: rows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      assigneeName: row.assignee_name,
+      // Raw `db.execute` timestamps arrive as TEXT (#923's lesson).
+      dueAt: row.due_at === null ? null : new Date(row.due_at),
+      allDay: row.all_day,
+      accepted: row.accepted,
+    })),
+  };
+}
+
+/**
+ * «🔔 Eslatish» — the author nudges the assignee, at most once per half hour
+ * per task. The CAS IS the throttle: two taps in one second, or two phones,
+ * send one reminder.
+ */
+export async function remindTask(id: string, ctx: TaskContext): Promise<{ reach: Reach; name: string | null }> {
+  if (!ctx.actorId) throw new TaskError('unauthenticated');
+  const before = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
+  if (!before) throw new TaskError('not_found');
+  if (before.createdBy !== ctx.actorId) throw new TaskError('not_author');
+  if (before.status !== 'open') throw new TaskError('already_closed');
+  const since = new Date(Date.now() - REMIND_GAP_MS).toISOString();
+  const won = (await db.execute(sql`
+    UPDATE tasks t SET reminded_at = now()
+     WHERE t.id = ${id} AND ${givenByHandSql(ctx.actorId)}
+       AND (t.reminded_at IS NULL OR t.reminded_at < ${since}::timestamptz)
+    RETURNING t.id`)) as unknown as { id: string }[];
+  if (won.length === 0) {
+    const listed = (await db.execute(sql`SELECT 1 FROM tasks t WHERE t.id = ${id} AND ${givenByHandSql(ctx.actorId)}`)) as unknown as unknown[];
+    throw new TaskError(listed.length > 0 ? 'remind_too_soon' : 'not_remindable');
+  }
+  const task = (await byId(id))!;
+  await notifyStaffTelegram({
+    userIds: [task.assigneeId],
+    type: 'TaskReminder',
+    text:
+      `🔔 Eslatma: ${task.title}` +
+      (task.dueAt ? `\n📅 ${telegramDue(task.dueAt, task.allDay)}` : '') +
+      `\n👤 ${await userName(ctx.actorId)}` +
+      (await linkLine(task, task.assigneeId)),
+    extra: { ...taskButtonPayload(task) },
+  });
+  return {
+    reach: (await reachOf([task.assigneeId], 'TaskReminder')).get(task.assigneeId) ?? 'no_chat',
+    name: task.assigneeName,
+  };
+}
+
+/** A question or an answer is at most this long — a message, not a document. */
+export const COMMENT_MAX = 1000;
+
+/**
+ * «💬 Savol» — the assignee asks the author, through the bot (his 4a). An
+ * audit row on the task (action `comment`), so the conversation is on the
+ * task's own history and not only in two phones; the author's copy carries
+ * «💬 Javob berish».
+ *
+ * Not on an automation task (the author wrote a rule, not this task) and not
+ * on a job whose author is the presser.
+ */
+export async function askAboutTask(
+  id: string,
+  text: string,
+  ctx: TaskContext,
+): Promise<{ reach: Reach; name: string | null }> {
+  if (!ctx.actorId) throw new TaskError('unauthenticated');
+  const body = text.trim().slice(0, COMMENT_MAX);
+  if (!body) throw new TaskError('empty_text');
+  const task = await byId(id);
+  if (!task) throw new TaskError('not_found');
+  if (task.status !== 'open') throw new TaskError('already_closed');
+  if (task.assigneeId !== ctx.actorId) throw new TaskError('not_assignee');
+  if (!authorHearsPresses(task.origin) || task.createdBy === ctx.actorId) throw new TaskError('not_askable');
+  await refuseOpenCalc(task);
+  await writeAudit(db, ctx, {
+    entityType: 'task',
+    entityId: id,
+    action: 'comment',
+    after: { kind: 'question', text: body, via: 'telegram' },
+  });
+  await notifyStaffTelegram({
+    userIds: [task.createdBy],
+    type: 'TaskQuestion',
+    text: `❓ Savol: ${task.title}\n${body}\n👤 ${await userName(ctx.actorId)}` + (await linkLine(task, task.createdBy)),
+    extra: { taskId: id },
+  });
+  return {
+    reach: (await reachOf([task.createdBy], 'TaskQuestion')).get(task.createdBy) ?? 'no_chat',
+    name: task.authorName,
+  };
+}
+
+/**
+ * «💬 Javob berish» — the author's answer, back to the assignee with the
+ * task's own buttons again. Re-checked OPEN at the moment it is written
+ * (telegram-mechanics-6): a closed task's «Javob berish» must not send a
+ * message carrying live buttons for work that is over.
+ */
+export async function answerAboutTask(
+  id: string,
+  text: string,
+  ctx: TaskContext,
+): Promise<{ reach: Reach; name: string | null }> {
+  if (!ctx.actorId) throw new TaskError('unauthenticated');
+  const body = text.trim().slice(0, COMMENT_MAX);
+  if (!body) throw new TaskError('empty_text');
+  const task = await byId(id);
+  if (!task) throw new TaskError('not_found');
+  if (task.status !== 'open') throw new TaskError('already_closed');
+  if (task.createdBy !== ctx.actorId) throw new TaskError('not_author');
+  await writeAudit(db, ctx, {
+    entityType: 'task',
+    entityId: id,
+    action: 'comment',
+    after: { kind: 'answer', text: body, via: 'telegram' },
+  });
+  await notifyStaffTelegram({
+    userIds: [task.assigneeId],
+    type: 'TaskAnswer',
+    text: `💬 Javob: ${task.title}\n${body}\n👤 ${await userName(ctx.actorId)}` + (await linkLine(task, task.assigneeId)),
+    extra: { ...taskButtonPayload(task) },
+  });
+  return {
+    reach: (await reachOf([task.assigneeId], 'TaskAnswer')).get(task.assigneeId) ?? 'no_chat',
+    name: task.assigneeName,
+  };
 }
 
 /** Everything outstanding on one record — the panel on a card. */
@@ -756,14 +1584,21 @@ export async function aboutLabels(rows: TaskRow[]): Promise<Map<string, string>>
   return out;
 }
 
-/** Cancel every open task on a record — for when the record itself goes. */
+/**
+ * Cancel every open task on a record — for when the record itself goes.
+ *
+ * Returns WHICH it cancelled. Every caller runs this inside its own
+ * transaction, so it cannot retire the tasks' Telegram copies itself — a
+ * pool-plus-network call in there is #714's freeze — and the caller retires
+ * them after its commit (`retireTaskCopiesSoon`, review telegram-mechanics-7).
+ */
 export async function cancelTasksFor(
   dbOrTx: Db | Tx,
   entityType: string,
   entityIds: string[],
-): Promise<void> {
-  if (entityIds.length === 0) return;
-  await dbOrTx
+): Promise<string[]> {
+  if (entityIds.length === 0) return [];
+  const rows = await dbOrTx
     .update(tasks)
     .set({ status: 'cancelled', updatedAt: new Date() })
     .where(
@@ -772,5 +1607,7 @@ export async function cancelTasksFor(
         inArray(tasks.entityId, entityIds),
         eq(tasks.status, 'open'),
       ),
-    );
+    )
+    .returning({ id: tasks.id });
+  return rows.map((row) => row.id);
 }

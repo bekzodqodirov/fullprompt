@@ -32,7 +32,7 @@ export async function TasksPanel({
     assignablePeople(),
     taskTypeOptions(),
   ]);
-  const tasks = await toTaskViews(rows);
+  const tasks = await toTaskViews(rows, actor);
   const open = tasks.filter((task) => task.status === 'open');
   const t = await getTranslations('tasks');
 
