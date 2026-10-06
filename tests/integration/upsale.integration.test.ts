@@ -980,8 +980,8 @@ describe('a correction retires the released offer', () => {
   it('the lock follows the card onto the new floor, so later saves still work', async () => {
     const job = await sealedJob();
     await recordOffer({ versionId: job.versionId }, { clientPriceUsd: job.floor + 500, locale: 'uz' }, sellerCtx());
-    const { releasedPriceFor } = await import('@/modules/wms/calc/workspace');
-    expect((await releasedPriceFor('deal', dealId))?.price).toBe(job.floor + 500);
+    const { lastReleasedOfferFor } = await import('@/modules/wms/calc/workspace');
+    expect(await lastReleasedOfferFor('deal', dealId)).toMatchObject({ price: job.floor + 500, stands: true });
 
     const next = await corrected(job.requestId);
 
@@ -991,7 +991,8 @@ describe('a correction retires the released offer', () => {
     // is exactly why the lock below decides by the clock, not by kind.)
     const card = await db.query.deals.findFirst({ where: eq(deals.id, dealId) });
     expect(Number(card!.quotedAmount)).toBe(next.floor);
-    expect((await releasedPriceFor('deal', dealId))?.price).not.toBe(job.floor + 500);
+    // It is still the card's newest RELEASED promise — and it no longer stands.
+    expect(await lastReleasedOfferFor('deal', dealId)).toMatchObject({ price: job.floor + 500, stands: false });
 
     // The accountant's both-figures strip follows the same standing rule:
     // the superseded promise is not one of the ledger's pairs either.

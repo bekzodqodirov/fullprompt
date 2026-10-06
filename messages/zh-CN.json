@@ -3704,6 +3704,7 @@
     "endUnpricedTask": "无价格关闭（任务）",
     "recentClosedTitle": "最近完成",
     "linkMine": "我的（{n}）",
+    "linkAll": "全部（{n}）",
     "linkColleagues": "同事的（{n}）——仅查看，由封存人确认",
     "linkErrors": {
       "not_mine": "此关联衡量的是同事的计算——由封存人确认",

@@ -100,3 +100,29 @@ export function offerSightFor(actor: { permissions: { has(code: string): boolean
     seesOfferPrices: scope === 'all' || actor.permissions.has('ved.docs'),
   };
 }
+
+/**
+ * Which offer reads a card's 🧮 panel makes for this reader — the two facts
+ * turned into reads, pure so the both-hats case is a test and not a pattern
+ * in a component (review access-1 / ved-money-2: the panel read the
+ * projection only in the `else` of `mayOffer`, so a person with both hats —
+ * `'own'` by `upsaleScopeFor` — saw only the offers they made, and 16a was
+ * lost on exactly the accounts the owner runs with two roles).
+ *   - `full` — the seller's own rows (offer form's list, PDF links), filtered
+ *     to their own unless the scope is `'all'`;
+ *   - `prices` — the 16a projection for every OTHER offer on the card, read
+ *     whenever the person sees prices and `full` does not already list all.
+ */
+export function offerReadsFor(actor: { permissions: { has(code: string): boolean } }): {
+  full: boolean;
+  ownOnly: boolean;
+  prices: boolean;
+} {
+  const scope = upsaleScopeFor(actor);
+  const sight = offerSightFor(actor);
+  return {
+    full: sight.mayOffer,
+    ownOnly: scope !== 'all',
+    prices: sight.seesOfferPrices && scope !== 'all',
+  };
+}

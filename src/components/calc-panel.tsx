@@ -17,7 +17,7 @@ import { ChainStateChip } from './calc-chain-chip';
 import { offerLocaleFor } from '@/modules/wms/calc/offer';
 import {
   mayApproveBelowFloor,
-  offerSightFor,
+  offerReadsFor,
   upsaleScopeFor,
 } from '@/modules/wms/calc/upsale-scope';
 import { SECTION_LABELS } from '@/modules/wms/calc/labels';
@@ -85,7 +85,7 @@ export async function CalcPanel({
   // Law 4 splits this panel; 16a adds the seller's price as a sight of its
   // own — two facts, never one ranked value (review access-money-15).
   const scope = upsaleScopeFor(actor);
-  const sight = offerSightFor(actor);
+  const reads = offerReadsFor(actor);
 
   let open: Awaited<ReturnType<typeof openCalcFor>> = [];
   let last: Awaited<ReturnType<typeof lastCalcAnswerFor>> = null;
@@ -104,8 +104,13 @@ export async function CalcPanel({
     // read is paid by the cards that use it and by nobody else. The seller's
     // own list keeps its PDF links; a 16a reader gets the projection, which
     // cannot carry a payout or the below-floor reason (access-money-8).
-    if (priced && sight.mayOffer) offers = await offersFor(entityType, entityId);
-    else if (priced && sight.seesOfferPrices) prices = await offerPricesFor(entityType, entityId);
+    // A both-hats reader gets BOTH reads: their own rows as a seller, and the
+    // other offers' prices as a calculator (offerReadsFor, review access-1).
+    if (priced && reads.full) offers = await offersFor(entityType, entityId);
+    if (priced && reads.prices) {
+      const own = new Set(offers.filter((o) => o.offeredBy === actor.id).map((o) => o.id));
+      prices = (await offerPricesFor(entityType, entityId)).filter((p) => !own.has(p.id));
+    }
     // Every printed seal's chain, in ONE query (#432): what «V2» counts.
     const sealIds = [...anchors.seals, ...(anchors.deadSeal ? [anchors.deadSeal] : [])].map((s) => s.requestId);
     if (sealIds.length > 0) chains = await chainVersionsFor(sealIds);
@@ -337,7 +342,7 @@ export async function CalcPanel({
         <ul className="space-y-0.5 text-2xs text-ink-600" data-testid="calc-offers">
           {offers
             // A seller reprints their own promise, never a colleague's.
-            .filter((o) => scope === 'all' || o.offeredBy === actor.id)
+            .filter((o) => !reads.ownOnly || o.offeredBy === actor.id)
             .map((o) => (
               <li key={o.id} className="flex flex-wrap items-center gap-1">
                 <span className="font-mono tabular-nums">${Number(o.clientPriceUsd).toFixed(2)}</span>

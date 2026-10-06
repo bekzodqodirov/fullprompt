@@ -48,9 +48,10 @@ const ALLOWED: Record<string, string> = {
   // newer answer or seal) — a narrower question than «is it an answer», and
   // the one money reads (phase 4, #883).
   'src/modules/wms/calc/version-set.ts': 'answerFloorStandsSql — the floor, not the credit',
-  // lastAnswerAnchorFor's candidate scan: it asks the floor above whether
-  // the newest amount stands; the scan itself credits nobody.
-  'src/modules/wms/calc/workspace.ts': 'lastAnswerAnchorFor — the anchor scan under answerFloorStandsSql',
+  // NOT workspace.ts: its answer reads go through isAnswerSql /
+  // answerFloorStandsSql, and the module that holds the recalc and the offer
+  // anchors is exactly where a restatement must turn this fence red (review
+  // ved-money-7 — a dead reader's exemption covered the whole file).
   // The schema's partial index over answered rows (the migration's own
   // shape) — an index definition, not a reader.
   'src/modules/platform/db/schema/wms.ts': 'the answered-rows partial index definition',

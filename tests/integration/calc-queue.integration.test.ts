@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
@@ -11,6 +11,7 @@ import {
   deals,
   events,
   leads,
+  notifications,
   tasks,
   users,
 } from '@/modules/platform/db/schema';
@@ -132,6 +133,32 @@ afterAll(async () => {
       await db.delete(events).where(inArray(events.entityId, taskIds));
       await db.delete(tasks).where(inArray(tasks.id, taskIds));
     }
+  }
+  // Every task this file's jobs made, not only the one a request still names
+  // (review integration-7): a release or a re-take leaves the earlier calc
+  // task behind, and the hand-back's «↩️ Ma'lumot to'ldiring» is the seller's
+  // own to-do with no bound_id at all — each run left them OPEN on a real
+  // person's day. By the card, the request, or this file's own requester.
+  const loose = await db
+    .select({ id: tasks.id })
+    .from(tasks)
+    .where(
+      or(
+        inArray(tasks.entityId, [dealId, leadId]),
+        madeRequests.length > 0 ? inArray(tasks.boundId, madeRequests) : undefined,
+        eq(tasks.createdBy, actorId),
+        eq(tasks.assigneeId, actorId),
+      ),
+    );
+  if (loose.length > 0) {
+    const looseIds = loose.map((t) => t.id);
+    // A copy can sit on a SEEDED colleague's queue (the rota assigns real
+    // VEDs), so by the task it names, never by person.
+    await db
+      .delete(notifications)
+      .where(sql`${notifications.payload}->>'taskId' IN (${sql.join(looseIds.map((id) => sql`${id}`), sql`, `)})`);
+    await db.delete(events).where(inArray(events.entityId, looseIds));
+    await db.delete(tasks).where(inArray(tasks.id, looseIds));
   }
   if (madeNotes.length > 0) {
     await db.delete(crmActivities).where(inArray(crmActivities.id, madeNotes));

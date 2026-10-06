@@ -85,6 +85,7 @@ import {
 import { childStateSql } from './chain';
 import { isAnswer, isAnswerSql } from './credit';
 import { createTask } from '@/modules/platform/tasks/service';
+import { retireTaskCopiesSoon } from '@/modules/platform/notifications/retire-tasks';
 import { forgetUpsaleLiability } from './liability-memo';
 import {
   sealCounters,
@@ -1749,8 +1750,22 @@ export async function sealCalc(
         .where(eq(deals.id, row.entityId));
     }
 
-    return { versionNo: row.versionNo, requestedBy: row.requestedBy, entityType: row.entityType, entityId: row.entityId };
+    return {
+      versionNo: row.versionNo,
+      requestedBy: row.requestedBy,
+      entityType: row.entityType,
+      entityId: row.entityId,
+      taskId: row.taskId,
+    };
   });
+
+  // The task the seal just closed stops offering its «✅ Bajarildi» in
+  // Telegram (review integration-5) — `endRequest`, the release and the take
+  // all retire their task's copies, and the seal closed its task with its own
+  // UPDATE and retired nothing, so the VED's chat kept a live button for a job
+  // that was already sealed. After the commit, never inside it (#714), and
+  // off the request (the void form, #706).
+  if (result.taskId) retireTaskCopiesSoon({ taskIds: [result.taskId], outcome: 'done' });
 
   await writeAudit(db, ctx, {
     entityType: 'calc_request',
@@ -4233,7 +4248,7 @@ export function releasedOfferWhere() {
  * The offer's quote still STANDS — its version is the request's newest seal
  * and no correction has superseded the request.
  *
- * The whole-module audit's second confirmed defect: `releasedPriceFor` was
+ * The whole-module audit's second confirmed defect: the card-price reader was
  * entity-keyed with no supersession clause, so after a correction sealed on a
  * card that carried a released offer the LOCK answered the old client price
  * while the card carried the new floor — and `updateLead`, which compares the
@@ -4269,28 +4284,33 @@ export function offerStandsSql() {
 }
 
 /**
- * The client price this card is currently quoted at, if one has been released.
+ * The newest RELEASED offer on this card, in the order the card column was
+ * written, and whether its quote still STANDS.
  *
- * The newest RELEASED offer whose quote still STANDS — a pending below-floor
- * promise is not a price the customer has been told, and a promise a
- * correction replaced is not this card's price any more either.
+ * A pending below-floor promise is not a price the customer has been told,
+ * so it never reached the card and is not considered at all. A promise a
+ * correction replaced DID reach the card — the number is still printed there
+ * — so it is returned with `stands: false` rather than skipped: the quote
+ * lock asks «who wrote the number the card shows, and does it still stand»,
+ * and skipping the dead writer hands it an older one that is not on the card
+ * (review ved-money-1).
  *
  * `at` is the moment the price reached the CARD — `approved_at` for a
  * below-floor promise (applyOfferToCard runs at release), `offered_at`
- * otherwise. The lock needs it because a deal carries many jobs and the card
- * column is last-writer-wins between offers and seals: the lock must
- * reconstruct the same order or it refuses saves against a number the card
- * does not carry.
+ * otherwise — and the order is by that moment, not by `offered_at`: a
+ * promise approved after a newer one was offered wrote the card LAST.
  */
-export async function releasedPriceFor(
+export async function lastReleasedOfferFor(
   entityType: 'deal' | 'lead',
   entityId: string,
-): Promise<{ price: number; at: Date } | null> {
+): Promise<{ id: string; price: number; at: Date; stands: boolean } | null> {
   const [row] = await db
     .select({
+      id: calcOffers.id,
       price: calcOffers.clientPriceUsd,
       offeredAt: calcOffers.offeredAt,
       approvedAt: calcOffers.approvedAt,
+      stands: sql<boolean>`${offerStandsSql()}`,
     })
     .from(calcOffers)
     .where(
@@ -4298,66 +4318,13 @@ export async function releasedPriceFor(
         eq(calcOffers.entityType, entityType),
         eq(calcOffers.entityId, entityId),
         releasedOfferWhere(),
-        offerStandsSql(),
       ),
     )
-    .orderBy(desc(calcOffers.offeredAt))
+    .orderBy(desc(sql`coalesce(${calcOffers.approvedAt}, ${calcOffers.offeredAt})`))
     .limit(1);
-  return row ? { price: Number(row.price), at: row.approvedAt ?? row.offeredAt } : null;
-}
-
-/**
- * The card's newest Готово answer, as an OFFER ANCHOR (phase 4).
- *
- * The panel decides three things from this one read: whether the offer door
- * opens (a standing, unexpired USD answer — and only when the card has no
- * seal at all: ANY seal, expired included, outranks the answer, because an
- * expired seal's own sentence is «recalc», not «quote the older figure»),
- * which sentence to print instead when it cannot (non-USD, expired), and
- * which requestId the form posts. Everything here is advisory — `recordOffer`
- * re-derives every admission server-side, so a stale panel can only be
- * refused, never believed.
- */
-export async function lastAnswerAnchorFor(
-  entityType: 'deal' | 'lead',
-  entityId: string,
-): Promise<{
-  requestId: string;
-  amountUsd: number | null;
-  currency: string | null;
-  completedAt: Date;
-  stands: boolean;
-  expired: boolean;
-} | null> {
-  const rows = await db.execute<{
-    id: string;
-    answer_amount: string | null;
-    answer_currency: string | null;
-    completed_at: Date;
-    stands: boolean;
-  }>(sql`
-    SELECT r.id, r.answer_amount, r.answer_currency, r.completed_at,
-           (${answerFloorStandsSql()}) AS stands
-      FROM calc_requests r
-     WHERE r.entity_type = ${entityType}
-       AND r.entity_id = ${entityId}::uuid
-       AND r.completed_at IS NOT NULL
-       AND r.answer_amount IS NOT NULL
-     ORDER BY r.completed_at DESC
-     LIMIT 1
-  `);
-  const row = rows[0];
-  if (!row) return null;
-  const validDays = Number((await getSetting('quote_valid_days')) ?? QUOTE_VALID_DAYS_DEFAULT);
-  const completedAt = new Date(row.completed_at);
-  return {
-    requestId: row.id,
-    amountUsd: row.answer_amount === null ? null : Number(row.answer_amount),
-    currency: row.answer_currency,
-    completedAt,
-    stands: Boolean(row.stands),
-    expired: completedAt.getTime() + validDays * 86_400_000 < Date.now(),
-  };
+  return row
+    ? { id: row.id, price: Number(row.price), at: row.approvedAt ?? row.offeredAt, stands: Boolean(row.stands) }
+    : null;
 }
 
 // ---------------------------------------------------------------------------

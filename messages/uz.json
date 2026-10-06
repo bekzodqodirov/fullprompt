@@ -3704,6 +3704,7 @@
     "endUnpricedTask": "Narxsiz yopildi (vazifa)",
     "recentClosedTitle": "Oxirgi yakunlanganlar",
     "linkMine": "Meniki ({n})",
+    "linkAll": "Hammasi ({n})",
     "linkColleagues": "Hamkasblarniki ({n}) — faqat ko‘rish, tasdiqni muhrlagan odam beradi",
     "linkErrors": {
       "not_mine": "Bu bog‘lanish hamkasbingizning hisobini o‘lchaydi — uni muhrlagan odam tasdiqlaydi",

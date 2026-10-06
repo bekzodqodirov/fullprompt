@@ -26,6 +26,14 @@ import { canWriteDeal } from '../deals/service';
  * itself, and the deal card's own writes are untouched this round (his
  * question 17 is open).
  */
+/**
+ * The STRICT uuid shape (review access-6). Every id below is cast `::uuid`,
+ * and the loose «36 hex digits and dashes» admits strings postgres refuses
+ * with 22P02 — a hand-typed karta URL was an error page instead of «no such
+ * card» (#514). The tarix page and the chat routes already used this one.
+ */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export interface CalcCardReader {
   id: string;
   permissions: { has(code: string): boolean };
@@ -49,7 +57,7 @@ export interface CalcCardEntity {
  */
 export async function calcCardExists(entity: CalcCardEntity): Promise<boolean> {
   if (entity.entityType !== 'lead' && entity.entityType !== 'deal') return false;
-  if (!/^[0-9a-f-]{36}$/i.test(entity.entityId)) return false;
+  if (!UUID.test(entity.entityId)) return false;
   const rows = await db.execute<{ ok: boolean }>(sql`
     SELECT (
       EXISTS (
@@ -77,7 +85,7 @@ export async function calcCardExists(entity: CalcCardEntity): Promise<boolean> {
  * is the two card pages passing exactly these columns.
  */
 export async function isCalcCardClient(clientId: string): Promise<boolean> {
-  if (!/^[0-9a-f-]{36}$/i.test(clientId)) return false;
+  if (!UUID.test(clientId)) return false;
   const rows = await db.execute<{ ok: boolean }>(sql`
     SELECT EXISTS (
       SELECT 1 FROM calc_requests r
@@ -99,7 +107,7 @@ export async function isCalcCardClient(clientId: string): Promise<boolean> {
  * «stands»: a superseded or expired seal wrote the column just the same.
  */
 export async function leadEverPriced(leadId: string): Promise<boolean> {
-  if (!/^[0-9a-f-]{36}$/i.test(leadId)) return false;
+  if (!UUID.test(leadId)) return false;
   const rows = await db.execute<{ ok: boolean }>(sql`
     SELECT EXISTS (
       SELECT 1 FROM calc_requests r
@@ -127,7 +135,7 @@ export async function mayOpenCalcCard(
 
 /** The newest request on a card — where a ping to the karta points. */
 export async function newestRequestOn(entity: CalcCardEntity): Promise<string | null> {
-  if (!/^[0-9a-f-]{36}$/i.test(entity.entityId)) return null;
+  if (!UUID.test(entity.entityId)) return null;
   const rows = await db.execute<{ id: string }>(sql`
     SELECT r.id::text AS id
       FROM calc_requests r
@@ -204,7 +212,7 @@ export async function kartaCardFor(
   requestId: string,
   leadParam?: string | null,
 ): Promise<KartaCard | null> {
-  if (!/^[0-9a-f-]{36}$/i.test(requestId)) return null;
+  if (!UUID.test(requestId)) return null;
   const rows = await db.execute<{ entity_type: string; entity_id: string; note_lead: string | null }>(sql`
     SELECT r.entity_type, r.entity_id::text AS entity_id, a.entity_id::text AS note_lead
       FROM calc_requests r
@@ -213,7 +221,7 @@ export async function kartaCardFor(
   `);
   const row = rows[0];
   if (!row) return null;
-  const lid = leadParam && /^[0-9a-f-]{36}$/i.test(leadParam) ? leadParam.toLowerCase() : null;
+  const lid = leadParam && UUID.test(leadParam) ? leadParam.toLowerCase() : null;
   if (lid && ((row.entity_type === 'lead' && row.entity_id === lid) || row.note_lead === lid)) {
     const wonDealId = row.entity_type === 'deal' ? row.entity_id : null;
     return { kind: 'lead', leadId: lid, requestId, wonDealId };

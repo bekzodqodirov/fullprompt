@@ -4,6 +4,7 @@ import { clientFeed, type FeedItem, type FeedKind } from '@/modules/wms/crm/feed
 import { mentionablePeople } from '@/modules/wms/crm/internal-chat';
 import { mayOpenCalcCard } from '@/modules/wms/calc/card-door';
 import { FeedNoteBox } from './client-feed-note';
+import { feedNoteTarget } from './feed-note-target';
 import { LightboxImg } from './lightbox-img';
 
 /**
@@ -94,6 +95,7 @@ export async function ClientFeed({
   money: showMoney,
   leadId = null,
   dealId = null,
+  noteOn = null,
   limit = 60,
   /** On a card the box is short; on a dedicated screen it fills the height. */
   tall = false,
@@ -113,6 +115,14 @@ export async function ClientFeed({
   /** Set on a deal card: notes written here belong to THIS job, and the deal's
       own chat shows alongside the client's history. */
   dealId?: string | null;
+  /**
+   * Where a note written in this box lands, whatever the reader's grants —
+   * the karta passes its lead (review access-4). The karta is the CALC card:
+   * a both-hats reader reaches it because the CRM card bounces him, and the
+   * CRM default («the client, then the lead») would post his note on the
+   * client's whole thread from a screen that is about this one job.
+   */
+  noteOn?: { entityType: 'lead' | 'deal'; entityId: string } | null;
   limit?: number;
   tall?: boolean;
 }) {
@@ -164,16 +174,8 @@ export async function ClientFeed({
           (owner, round 21: «lenta va chatlar alohida tursin»). */}
       <div className="space-y-2 border-t border-line pt-2">
         <FeedNoteBox
-          // On a deal card the note belongs to THIS job: two deals with one
-          // client are two conversations, and a price argument about one must
-          // not surface on the other. Elsewhere: the client, then the lead.
-          //
-          // A calculator's note goes on the CARD — the lead or the deal —
-          // never on the client (review access-money-4/-5): the client entity
-          // would make him a participant of every later note on that client
-          // from any card, and the action admits him only on a calc card.
-          entityType={viaCalc ? calcCard!.entityType : dealId ? 'deal' : clientId ? 'client' : 'lead'}
-          entityId={viaCalc ? calcCard!.entityId : (dealId ?? clientId ?? leadId!)}
+          // `feedNoteTarget` says where, and why.
+          {...feedNoteTarget({ viaCalc, calcCard, noteOn, dealId, clientId, leadId })}
           // Text only for the VED in v1 (§10): the upload route is not
           // widened, and the action refuses a pre-bound file id from him.
           files={!viaCalc}

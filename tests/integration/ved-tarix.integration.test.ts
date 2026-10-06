@@ -1,10 +1,11 @@
 import 'dotenv/config';
-import { and, eq, inArray, or } from 'drizzle-orm';
+import { and, eq, inArray, or, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
   calcExtras,
   calcGroups,
+  calcOffers,
   calcRequestItems,
   calcRequests,
   calcVersions,
@@ -20,13 +21,20 @@ import {
   users,
 } from '@/modules/platform/db/schema';
 import { calcSpeed, finishCalcRequest, returnCalcRequest, vedRotaPool } from '@/modules/wms/calc/service';
-import { recalcFromSealed, sealCalc, setFreightZone, standingAnchorsFor } from '@/modules/wms/calc/workspace';
+import { recalcFromSealed, recordOffer, sealCalc, setFreightZone, standingAnchorsFor } from '@/modules/wms/calc/workspace';
 import { isRegistryRequest, registryCounts, registryRows, type RegistryAnswerRow } from '@/modules/wms/calc/chain';
+import {
+  calcCardExists,
+  isCalcCardClient,
+  kartaCardFor,
+  leadEverPriced,
+  newestRequestOn,
+} from '@/modules/wms/calc/card-door';
 import { creditTotals } from '@/modules/wms/calc/credit';
 import { calcRegistrySight, internalNoteSight } from '@/modules/wms/calc/control-scope';
 import { dealCalcSheets, requestGoodsSheet } from '@/modules/wms/calc/sheet';
 import { itemNameNorm } from '@/modules/wms/calc/memory';
-import { quoteLockedFor } from '@/modules/wms/crm/service';
+import { quoteLockedFor, updateLead } from '@/modules/wms/crm/service';
 
 /**
  * The owner's 7a 8a 9a 10a 12a 13c in the database (docs/VED-TARIX.md §2-§7):
@@ -58,6 +66,7 @@ let leadName = '';
 const madeUsers: string[] = [];
 const madeRequests: string[] = [];
 const madeDeals: string[] = [];
+const madeLeads: string[] = [];
 const ctx = (actorId: string) => ({ actorId });
 
 async function userWithRole(role: string, name: string): Promise<string> {
@@ -78,6 +87,7 @@ async function job(opts: {
   holder: string;
   goods: string;
   tnvedCode?: string;
+  volumeM3?: string;
 }): Promise<string> {
   const [r] = await db
     .insert(calcRequests)
@@ -91,7 +101,7 @@ async function job(opts: {
       fromCity: 'Yiwu',
       toCity: 'Toshkent',
       weightKg: '1500',
-      volumeM3: '30',
+      volumeM3: opts.volumeM3 ?? '30',
       dueAt: new Date(Date.now() + 3_600_000),
     })
     .returning({ id: calcRequests.id });
@@ -149,11 +159,13 @@ afterAll(async () => {
     .from(calcRequests)
     .where(
       or(
-        inArray(calcRequests.entityId, [...madeDeals, leadId]),
+        inArray(calcRequests.entityId, [...madeDeals, leadId, ...madeLeads]),
         inArray(calcRequests.id, madeRequests.length ? madeRequests : ['00000000-0000-0000-0000-000000000000']),
       ),
     );
   const ids = all.map((r) => r.id);
+  // Offers point at a version or a request, so they go first.
+  await db.delete(calcOffers).where(inArray(calcOffers.entityId, [...madeDeals, leadId, ...madeLeads]));
   if (ids.length > 0) {
     const bound = await db.select({ id: tasks.id }).from(tasks).where(inArray(tasks.boundId, ids));
     const taskIds = [...new Set([...bound.map((t) => t.id), ...(all.map((r) => r.taskId).filter(Boolean) as string[])])];
@@ -168,10 +180,30 @@ afterAll(async () => {
       await db.delete(tasks).where(inArray(tasks.id, taskIds));
     }
   }
+  // The hand-back's «↩️ Ma'lumot to'ldiring» is the SELLER's own to-do: no
+  // bound_id and on no request's task_id, so both reads above miss it and
+  // every run left one OPEN on the seller's day (review integration-7). By
+  // the card it points at, or by this file's own people.
+  const loose = await db
+    .select({ id: tasks.id })
+    .from(tasks)
+    .where(
+      or(
+        inArray(tasks.entityId, [...madeDeals, leadId, ...madeLeads]),
+        inArray(tasks.createdBy, madeUsers),
+        inArray(tasks.assigneeId, madeUsers),
+      ),
+    );
+  if (loose.length > 0) {
+    const looseIds = loose.map((t) => t.id);
+    await db.delete(notifications).where(sql`${notifications.payload}->>'taskId' IN (${sql.join(looseIds.map((id) => sql`${id}`), sql`, `)})`);
+    await db.delete(events).where(inArray(events.entityId, looseIds));
+    await db.delete(tasks).where(inArray(tasks.id, looseIds));
+  }
   await db.delete(notifications).where(inArray(notifications.userId, madeUsers));
-  await db.delete(events).where(inArray(events.entityId, [...madeDeals, leadId]));
+  await db.delete(events).where(inArray(events.entityId, [...madeDeals, leadId, ...madeLeads]));
   await db.delete(deals).where(inArray(deals.id, madeDeals));
-  await db.delete(leads).where(eq(leads.id, leadId));
+  await db.delete(leads).where(inArray(leads.id, [leadId, ...madeLeads]));
   await db.delete(clients).where(eq(clients.id, clientId));
   await db.delete(userRoles).where(inArray(userRoles.userId, madeUsers));
   // DEACTIVATED, not deleted — audit_log points at them (round 107's rule).
@@ -199,6 +231,45 @@ describe('«Готово» refuses in words, in the agreed order (9a)', () => {
     expect(Number(done!.answerAmount)).toBe(1200);
     // A closed job answers «closed» before it reads the amount.
     await expect(answer('')).rejects.toMatchObject({ code: 'already_closed' });
+  });
+
+  it('guards the STORED figure, numeric(14,2), and says it in words (ved-money-3)', async () => {
+    // Held and answered by the admin: the credit totals below count A and B.
+    const id = await job({ section: 'rastamojka', holder: adminVedId, goods: `scale ${TOKEN}` });
+    const answer = (amountText: string) =>
+      finishCalcRequest(id, { amountText, currency: 'USD', note: '', internalNote: 'x' }, ctx(adminVedId));
+    // 0.004 is > 0 in JS and 0.00 in the column — 0093's CHECK would answer
+    // with a raw 23514; and .995 on twelve nines rounds past the column.
+    await expect(answer('0,004')).rejects.toMatchObject({ code: 'answer_positive' });
+    await expect(answer('999 999 999 999,995')).rejects.toMatchObject({ code: 'amount_range' });
+    await answer('1200,456');
+    const done = await db.query.calcRequests.findFirst({ where: eq(calcRequests.id, id) });
+    expect(done!.answerAmount).toBe('1200.46');
+    // The seller is told the number that was STORED, not the one typed.
+    const pushed = await db
+      .select({ payload: notifications.payload })
+      .from(notifications)
+      .where(and(eq(notifications.userId, sellerId), eq(notifications.type, 'CalcDone')));
+    const texts = pushed.map((p) => String((p.payload as { text?: string }).text ?? ''));
+    expect(texts.some((t) => t.includes('💵 1200.46 USD'))).toBe(true);
+    expect(texts.some((t) => t.includes('1200.456'))).toBe(false);
+  });
+
+  it('a long internal note is clipped by code point, and the seller is still told (ved-money-4)', async () => {
+    const id = await job({ section: 'rastamojka', holder: adminVedId, goods: `emoji ${TOKEN}` });
+    // 1999 letters and an emoji: `slice(0, 2000)` keeps the emoji's first
+    // UTF-16 half alone, and jsonb refuses that in the audit row.
+    const internalNote = `${'a'.repeat(1999)}😀 qolgani ${TOKEN}`;
+    await finishCalcRequest(id, { amountText: '321', currency: 'USD', note: '', internalNote }, ctx(adminVedId));
+    const done = await db.query.calcRequests.findFirst({ where: eq(calcRequests.id, id) });
+    expect(done!.completedAt).not.toBeNull();
+    expect(Array.from(done!.answerInternalNote ?? '')).toHaveLength(2000);
+    expect(done!.answerInternalNote).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+    const pushed = await db
+      .select({ payload: notifications.payload })
+      .from(notifications)
+      .where(and(eq(notifications.userId, sellerId), eq(notifications.type, 'CalcDone')));
+    expect(pushed.some((p) => String((p.payload as { text?: string }).text ?? '').includes('💵 321 USD'))).toBe(true);
   });
 
   it('a sealable job says «Muhrlang» before it asks for the note', async () => {
@@ -377,5 +448,170 @@ describe('a correction from an answer (10a)', () => {
     const child = await recalcFromSealed(sealed, ctx(sellerId));
     madeRequests.push(child);
     expect(await quoteLockedFor('deal', deal2Id), 'nothing stands, nothing is locked').toBeNull();
+  });
+});
+
+/**
+ * Review ved-money-1: the lock holds the number the CARD carries, which is
+ * whatever wrote `quoted_amount` last — a seal (sealCalc) or a released offer
+ * (applyOfferToCard) — and only while that writer stands. A card carries
+ * several jobs (0085), so «the newest standing seal» is a different job's
+ * floor the moment the job that wrote the card is recalculated: the ✏️ form
+ * re-posts what the card shows (#171) and every save came back quote_sealed,
+ * for ever if the correction ended as an answer or a hand-back (neither one
+ * rewrites the card).
+ */
+describe('the quote lock follows the card’s LAST WRITER (ved-money-1)', () => {
+  async function freshLead(tag: string): Promise<string> {
+    const stage = await db.execute<{ id: string }>(
+      `SELECT id FROM lead_stages WHERE kind = 'open' ORDER BY sort_order LIMIT 1`,
+    );
+    const [l] = await db
+      .insert(leads)
+      .values({ name: `Qulf ${tag} ${SUFFIX}`, stageId: stage[0]!.id, createdBy: sellerId, ownerId: sellerId })
+      .returning({ id: leads.id });
+    madeLeads.push(l!.id);
+    return l!.id;
+  }
+
+  /** The ✏️ form's save: what the card shows re-posted, only the phone corrected. */
+  async function saveShownQuote(id: string, newPhone: string) {
+    const card = await db.query.leads.findFirst({ where: eq(leads.id, id) });
+    await updateLead(
+      id,
+      {
+        name: card!.name,
+        phone: newPhone,
+        stageId: card!.stageId,
+        ownerId: sellerId,
+        quotedAmount: card!.quotedAmount === null ? null : Number(card!.quotedAmount),
+        quotedCurrency: 'USD',
+        quotedVolumeM3: card!.quotedVolumeM3 === null ? null : Number(card!.quotedVolumeM3),
+        quotedWeightKg: card!.quotedWeightKg === null ? null : Number(card!.quotedWeightKg),
+      },
+      ctx(sellerId),
+    );
+    return db.query.leads.findFirst({ where: eq(leads.id, id) });
+  }
+
+  async function sealedYolkira(entityId: string, volumeM3: string, goods: string) {
+    const id = await job({ section: 'yolkira', entityType: 'lead', entityId, holder: vedAId, goods, volumeM3 });
+    await setFreightZone(id, 'cn', ctx(vedAId));
+    const { totalUsd } = await sealCalc(id, NO_DISCOUNT, ctx(vedAId));
+    return { id, totalUsd };
+  }
+
+  it('two sealed jobs, the newer one recalculated: the card is unlocked, not held on the other floor', async () => {
+    const lead = await freshLead('ikki');
+    const a = await sealedYolkira(lead, '30', `qulf A ${TOKEN}`);
+    const b = await sealedYolkira(lead, '10', `qulf B ${TOKEN}`);
+    expect(a.totalUsd, 'the fixture needs two different floors').not.toBe(b.totalUsd);
+    const card = await db.query.leads.findFirst({ where: eq(leads.id, lead) });
+    expect(Number(card!.quotedAmount)).toBe(b.totalUsd);
+    expect(await quoteLockedFor('lead', lead)).toBe(b.totalUsd);
+
+    madeRequests.push(await recalcFromSealed(b.id, ctx(vedAId)));
+    // B wrote the card and B no longer stands; A stands but is not on the card.
+    expect(await quoteLockedFor('lead', lead)).toBeNull();
+    const saved = await saveShownQuote(lead, '+998901112233');
+    expect(saved!.phone).toBe('+998901112233');
+    expect(Number(saved!.quotedAmount)).toBe(b.totalUsd);
+  });
+
+  it('a sealed job and an answered job with a released offer, the answer recalculated', async () => {
+    const lead = await freshLead('javob');
+    const a = await sealedYolkira(lead, '30', `qulf C ${TOKEN}`);
+    const answered = await job({ section: 'rastamojka', entityType: 'lead', entityId: lead, holder: vedAId, goods: `qulf D ${TOKEN}` });
+    await finishCalcRequest(answered, { amountText: '500', currency: 'USD', note: '', internalNote: 'x' }, ctx(vedAId));
+    await recordOffer({ requestId: answered }, { clientPriceUsd: 650, locale: 'uz' }, ctx(sellerId));
+    const card = await db.query.leads.findFirst({ where: eq(leads.id, lead) });
+    expect(Number(card!.quotedAmount)).toBe(650);
+    expect(await quoteLockedFor('lead', lead)).toBe(650);
+
+    madeRequests.push(await recalcFromSealed(answered, ctx(vedAId)));
+    expect(await quoteLockedFor('lead', lead), `not A's ${a.totalUsd}: A is not on the card`).toBeNull();
+    const saved = await saveShownQuote(lead, '+998901114455');
+    expect(saved!.phone).toBe('+998901114455');
+    expect(Number(saved!.quotedAmount)).toBe(650);
+  });
+
+  it('a standing writer still locks: a different number is refused', async () => {
+    const lead = await freshLead('turibdi');
+    await sealedYolkira(lead, '30', `qulf E ${TOKEN}`);
+    const b = await sealedYolkira(lead, '10', `qulf F ${TOKEN}`);
+    const card = await db.query.leads.findFirst({ where: eq(leads.id, lead) });
+    await expect(
+      updateLead(lead, { name: card!.name, stageId: card!.stageId, ownerId: sellerId, quotedAmount: b.totalUsd + 1 }, ctx(sellerId)),
+    ).rejects.toMatchObject({ code: 'quote_sealed' });
+    // …and re-posting the card's own figure is an ordinary save.
+    expect((await saveShownQuote(lead, '+998901116677'))!.phone).toBe('+998901116677');
+  });
+});
+
+/**
+ * Review access-6: a hand-typed URL of 36 hex digits and dashes passed the
+ * doors' loose shape check and reached postgres as `::uuid`, which raises
+ * 22P02 — an error page where the answer is «no such card» (#514).
+ */
+describe('a 36-character id that is not a uuid is no card, never a 500 (access-6)', () => {
+  for (const id of ['a'.repeat(36), '-'.repeat(36)]) {
+    it(`answers «none» for ${id.slice(0, 6)}…`, async () => {
+      expect(await kartaCardFor(id)).toBeNull();
+      expect(await kartaCardFor(madeRequests[0]!, id)).not.toBeNull();
+      expect(await calcCardExists({ entityType: 'lead', entityId: id })).toBe(false);
+      expect(await isCalcCardClient(id)).toBe(false);
+      expect(await leadEverPriced(id)).toBe(false);
+      expect(await newestRequestOn({ entityType: 'deal', entityId: id })).toBeNull();
+      expect(await isRegistryRequest(id)).toBe(false);
+    });
+  }
+});
+
+/**
+ * Review integration-5: the seal closes the VED's task with its own UPDATE,
+ * and — unlike `endRequest`, the release and the take — never retired the
+ * task's Telegram copies, so a queued «✅ Bajarildi» still went out for a job
+ * that was already sealed.
+ */
+describe('the seal retires its task’s Telegram copies (integration-5)', () => {
+  it('a queued copy of the sealed job’s task is muted, not sent', async () => {
+    const stage = await db.execute<{ id: string }>(
+      `SELECT id FROM lead_stages WHERE kind = 'open' ORDER BY sort_order LIMIT 1`,
+    );
+    const [l] = await db
+      .insert(leads)
+      .values({ name: `Muhr vazifa ${SUFFIX}`, stageId: stage[0]!.id, createdBy: sellerId, ownerId: sellerId })
+      .returning({ id: leads.id });
+    madeLeads.push(l!.id);
+    const first = await job({ section: 'yolkira', entityType: 'lead', entityId: l!.id, holder: vedAId, goods: `muhr ${TOKEN}` });
+    await setFreightZone(first, 'cn', ctx(vedAId));
+    await sealCalc(first, NO_DISCOUNT, ctx(vedAId));
+    // A correction is the cheap way to a request with a real task bound to it.
+    const child = await recalcFromSealed(first, ctx(vedAId));
+    madeRequests.push(child);
+    const task = await db.query.tasks.findFirst({ where: eq(tasks.boundId, child) });
+    expect(task?.status).toBe('open');
+    // The copy still waiting in the drain's queue.
+    const [copy] = await db
+      .insert(notifications)
+      .values({
+        userId: task!.assigneeId,
+        channel: 'telegram',
+        type: 'TaskAssigned',
+        status: 'pending',
+        payload: { taskId: task!.id, text: `vazifa ${TOKEN}` },
+      })
+      .returning({ id: notifications.id });
+
+    await setFreightZone(child, 'cn', ctx(vedAId));
+    await sealCalc(child, NO_DISCOUNT, ctx(vedAId));
+    expect((await db.query.tasks.findFirst({ where: eq(tasks.id, task!.id) }))?.status).toBe('done');
+    // The retire is the void form, off the request: wait for it, briefly.
+    let status = 'pending';
+    for (let i = 0; i < 40 && status === 'pending'; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      status = (await db.query.notifications.findFirst({ where: eq(notifications.id, copy!.id) }))!.status;
+    }
+    expect(status).toBe('muted');
   });
 });

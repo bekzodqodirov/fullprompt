@@ -137,10 +137,20 @@ export default async function CalcControlPage() {
         <h2 className="section-title">{t('linkQueue')}</h2>
         <p className="text-2xs text-ink-500">{t('linkQueueHint')}</p>
         {/* «Meniki (N)» — N is the VED home's «Tasdiqlash kerak: N», the same
-            predicate (#513), so the home number is one this screen prints. */}
-        <h3 className="text-xs font-semibold" data-testid="link-mine-title">
-          {t('linkMine', { n: queueTotal })}
-        </h3>
+            predicate (#513), so the home number is one this screen prints.
+            Only for a writer scoped to their OWN (review ved-money-6): for the
+            accountant, the admins and the owner the write scope is 'all', the
+            list is the whole company's and N the company's count — «Mine»
+            above it would be a false word. */}
+        {scope === 'own' ? (
+          <h3 className="text-xs font-semibold" data-testid="link-mine-title">
+            {t('linkMine', { n: queueTotal })}
+          </h3>
+        ) : (
+          <h3 className="text-xs font-semibold" data-testid="link-all-title">
+            {t('linkAll', { n: queueTotal })}
+          </h3>
+        )}
         {queue.length === 0 ? (
           <p className="text-sm text-ink-500" data-testid="link-none">{t('linkNone')}</p>
         ) : (

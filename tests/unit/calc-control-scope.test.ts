@@ -9,7 +9,7 @@ import {
   mayReadCalcRegistry,
   type CalcControlScope,
 } from '@/modules/wms/calc/control-scope';
-import { offerSightFor, upsaleScopeFor } from '@/modules/wms/calc/upsale-scope';
+import { offerReadsFor, offerSightFor, upsaleScopeFor } from '@/modules/wms/calc/upsale-scope';
 
 /**
  * Phase E1's audience, enumerated over the SEEDED ROLES.
@@ -223,6 +223,19 @@ describe('the seller price as a sight of its own (16a)', () => {
     expect(upsaleScopeFor(bothHats)).toBe('own');
     expect(offerSightFor(bothHats)).toEqual({ mayOffer: true, seesOfferPrices: true });
   });
+
+  it('…and the panel makes BOTH reads for them (review access-1 / ved-money-2)', () => {
+    // Their own rows as a seller (PDF, reprint), every other offer's price as
+    // a calculator. The panel used to read the prices only in the `else` of
+    // mayOffer, so this person saw their own offers and nobody else's.
+    const codes = new Set(['crm.leads', 'ved.docs']);
+    const bothHats = { id: 'x', permissions: { has: (c: string) => codes.has(c) } };
+    expect(offerReadsFor(bothHats)).toEqual({ full: true, ownOnly: true, prices: true });
+    expect(offerReadsFor(actorFor('ved_manager'))).toEqual({ full: false, ownOnly: true, prices: true });
+    expect(offerReadsFor(actorFor('sales_manager'))).toEqual({ full: true, ownOnly: true, prices: false });
+    // `all` already lists every offer in full — no second read.
+    expect(offerReadsFor(actorFor('admin'))).toEqual({ full: true, ownOnly: false, prices: false });
+  });
 });
 
 /**
@@ -239,6 +252,17 @@ describe('the nazorat page reads everybody and writes only its own', () => {
   it('«Meniki» is the write scope’s list and count', () => {
     expect(PAGE).toContain('linkSuggestions(writer)');
     expect(PAGE).toContain('linkSuggestionCount(writer)');
+  });
+
+  it('«Meniki» is printed only for a writer scoped to their own (review ved-money-6)', () => {
+    // For scope 'all' the list under it is the company's, and so is N.
+    const mine = PAGE.indexOf('data-testid="link-mine-title"');
+    expect(mine).toBeGreaterThan(-1);
+    const before = PAGE.slice(0, mine);
+    const gate = before.lastIndexOf('{scope === \'own\' ? (');
+    expect(gate, 'the «Meniki» heading must sit under scope === own').toBeGreaterThan(-1);
+    expect(before.slice(gate)).not.toMatch(/\)\s*:\s*\(/);
+    expect(PAGE).toContain("t('linkAll', { n: queueTotal })");
   });
 
   it('«Hamkasblarniki» draws no link buttons', () => {

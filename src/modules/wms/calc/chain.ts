@@ -656,6 +656,8 @@ export async function registryGoods(requestIds: string[]): Promise<Map<string, R
   return out;
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * Is this request a REGISTRY row — a sealed version or a Готово answer?
  *
@@ -665,6 +667,9 @@ export async function registryGoods(requestIds: string[]): Promise<Map<string, R
  * goods and bazas no list of his shows.
  */
 export async function isRegistryRequest(requestId: string): Promise<boolean> {
+  // The goods route hands this a URL segment: a non-uuid is «not a registry
+  // row», never a 22P02 from the cast below (review access-6).
+  if (!UUID.test(requestId)) return false;
   const rows = await db.execute<{ ok: boolean }>(sql`
     SELECT (
       EXISTS (SELECT 1 FROM calc_versions v WHERE v.request_id = r.id)

@@ -4,6 +4,7 @@ import { getFormatter, getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { upsaleScopeFor } from '@/modules/wms/calc/upsale-scope';
 import { mayReadCalcRegistry } from '@/modules/wms/calc/control-scope';
+import { calcCardHref } from '@/modules/wms/calc/card-door';
 import { quoteHistoryFor } from '@/modules/wms/calc/history';
 import { priceBookAt } from '@/modules/wms/calc/dictionaries';
 import { SECTION_LABELS } from '@/modules/wms/calc/labels';
@@ -154,15 +155,15 @@ export default async function PriceHistoryPage({
                   </span>
                   {/* The card behind this link prints the sealed floor with no
                       ownership gate of its own, so for a seller the link is a
-                      door to the number the row above deliberately hides. */}
-                  {row.cardReadable ? (
+                      door to the number the row above deliberately hides.
+                      Where it goes is the ONE calc-surface rule (review
+                      access-7): the karta for the VED, whom the CRM card
+                      bounces, and nothing for the accountant, whom both
+                      cards bounce. */}
+                  {row.cardReadable && calcCardHref(actor, row) ? (
                     <Link
                       className="text-2xs text-brand-700"
-                      href={
-                        row.entityType === 'deal'
-                          ? `/bitimlar/${row.entityId}`
-                          : `/crm/leads/${row.entityId}`
-                      }
+                      href={calcCardHref(actor, row)!}
                       data-testid="history-card-link"
                     >
                       {t('openCard')} →

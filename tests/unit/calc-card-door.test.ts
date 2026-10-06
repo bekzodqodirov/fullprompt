@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ROLE_MATRIX, type RoleCode } from '@/modules/platform/rbac/catalog';
 import { calcCardHref, leadNameReadable } from '@/modules/wms/calc/card-door';
+import { feedNoteTarget } from '@/components/feed-note-target';
 
 /**
  * The VED on the seller's card (the owner's 14a 15a 16a, docs/VED-TARIX.md
@@ -110,7 +111,30 @@ describe('every consumer of the ONE door asks it', () => {
     const feed = src('src/components/client-feed.tsx');
     expect(feed).toContain('mayOpenCalcCard(actor, calcCard)');
     expect(feed).toContain('files={!viaCalc}');
-    expect(feed).toContain('viaCalc ? calcCard!.entityType');
+    expect(feed).toContain('feedNoteTarget({ viaCalc, calcCard, noteOn, dealId, clientId, leadId })');
+  });
+
+  it('a note written on the karta lands on the lead for EVERY reader, the both-hats one too (access-4)', () => {
+    const lead = { entityType: 'lead' as const, entityId: 'L' };
+    const karta = { calcCard: lead, noteOn: lead, dealId: null, clientId: 'C', leadId: 'L' };
+    // The calculator (no crm grant) and the both-hats reader (crm.leads, so
+    // `viaCalc` is false) write on the same card — the lead, not its client.
+    expect(feedNoteTarget({ ...karta, viaCalc: true })).toEqual(lead);
+    expect(feedNoteTarget({ ...karta, viaCalc: false })).toEqual(lead);
+    // The CRM card keeps its own rule: the lead's client, then the lead.
+    const crmCard = { viaCalc: false, calcCard: lead, noteOn: null, dealId: null, leadId: 'L' };
+    expect(feedNoteTarget({ ...crmCard, clientId: 'C' })).toEqual({ entityType: 'client', entityId: 'C' });
+    expect(feedNoteTarget({ ...crmCard, clientId: null })).toEqual(lead);
+    // And the karta is the caller that says so.
+    const page = src('src/app/(protected)/hisoblash/[id]/karta/page.tsx');
+    expect(page).toMatch(/<ClientFeed[\s\S]*?noteOn=\{\{ entityType: 'lead', entityId: lead\.id \}\}[\s\S]*?\/>/);
+  });
+
+  it('the price history links a card through calcCardHref, never by hand (review access-7)', () => {
+    // `/crm/leads/<id>` bounced the VED and the accountant both.
+    const page = src('src/app/(protected)/hisoblash/narxlar/page.tsx');
+    expect(page).toContain('calcCardHref(actor, row)');
+    expect(page).not.toMatch(/`\/(crm\/leads|bitimlar)\/\$\{row\./);
   });
 
   it('the note action asks the door itself, never on a client entity, and refuses a file id', () => {
