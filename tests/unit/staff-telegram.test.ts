@@ -443,7 +443,9 @@ describe('a «today» task due on ANOTHER Tashkent day says which (STAFF-TODAY-T
 describe('one payload no renderer can read fails ITS row, never the run (round C review)', () => {
   it('the per-row render sits inside the send’s try', () => {
     const drain = read('src/modules/platform/notifications/service.ts');
-    const at = drain.indexOf('const buttons = buttonsFor(notification.type, payload);');
+    // `sendPayload` since the topshiriq round: the stored payload with the
+    // task's live «accepted» and a digest's still-open rows (taskCopyLive).
+    const at = drain.indexOf('const buttons = buttonsFor(notification.type, sendPayload);');
     expect(at, 're-anchor: the drain’s render moved').toBeGreaterThan(-1);
     const tryAt = drain.lastIndexOf('try {', at);
     const catchAt = drain.indexOf('} catch (err) {', tryAt);

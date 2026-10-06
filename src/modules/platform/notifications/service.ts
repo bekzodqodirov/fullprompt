@@ -1361,7 +1361,12 @@ export async function sendPendingTelegram(now: Date = new Date()): Promise<void>
     // queued before the task closed — or before it was handed to somebody
     // else — never goes out with live buttons, and never forwards the
     // author's messages to a person who no longer has the task.
-    const live = await taskCopyLive(notification.type, payload, notification.userId);
+    // A read that fails sends the copy as it always went — every press is
+    // re-checked on the server, and one blip must not throw the whole run.
+    const live = await taskCopyLive(notification.type, payload, notification.userId).catch((err: unknown) => {
+      logger.warn({ err, notificationId: notification.id }, 'task copy check failed — sent as queued');
+      return {} as Awaited<ReturnType<typeof taskCopyLive>>;
+    });
     if (live.mute) {
       await db
         .update(notifications)
