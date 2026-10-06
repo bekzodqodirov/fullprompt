@@ -41,6 +41,7 @@ import { AttachmentDeleteError, deleteAttachment } from '@/modules/platform/file
 import { decideAttachmentRead } from '@/modules/wms/attachments/access';
 import { __setTelegramTransport } from '@/modules/platform/telegram/send';
 import {
+  appendLatePart,
   completeTaskFromBot,
   createTaskFromDraft,
   givenFromBot,
@@ -837,6 +838,24 @@ describe('the bot doors (telegram-mechanics-1/4/13/14)', () => {
     expect(
       await createTaskFromDraft(123n, { assigneeId: author.id, title: 'x', note: '', sources: [], files: [] }, { dueAt: '', tzOffsetMin: null }),
     ).toEqual({ ok: false, result: 'not_linked' });
+  });
+
+  it('a late album part joins the AUTHOR’s open task and is forwarded to its holder (telegram-mechanics-17)', async () => {
+    const author = await mintStaff({ chat: true });
+    const doer = await mintStaff({ chat: true });
+    const stranger = await mintStaff({ chat: true });
+    const first = { chatId: Number(author.chat), messageId: 20 };
+    const id = await mintTask(author, doer, { sourceMessages: [first] });
+    expect(await appendLatePart(author.chat!, { taskId: id, assigneeId: doer.id }, { messageId: 21, file: null })).toBe(true);
+    expect((await taskRow(id)).sourceMessages).toEqual([first, { chatId: Number(author.chat), messageId: 21 }]);
+    expect(method('forwardMessage').map((c) => c.body)).toEqual([
+      { chat_id: Number(doer.chat), from_chat_id: Number(author.chat), message_id: 21 },
+    ]);
+    // Somebody else's chat cannot grow the author's task, and a closed task takes nothing.
+    expect(await appendLatePart(stranger.chat!, { taskId: id, assigneeId: doer.id }, { messageId: 22, file: null })).toBe(false);
+    await db.update(tasks).set({ status: 'done', doneAt: new Date() }).where(eq(tasks.id, id));
+    expect(await appendLatePart(author.chat!, { taskId: id, assigneeId: doer.id }, { messageId: 23, file: null })).toBe(false);
+    expect((await taskRow(id)).sourceMessages).toHaveLength(2);
   });
 
   it('«📤 Men bergan» from the bot, and a 🔔 that says who will not hear it', async () => {
