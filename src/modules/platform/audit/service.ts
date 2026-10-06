@@ -17,6 +17,10 @@ export type AuditAction =
   // leaving: what is written down here is WHO was shown WHAT, and the two
   // read differently to anybody auditing later.
   | 'share'
+  // A question or an answer about a task, typed in the staff bot
+  // (docs/TELEGRAM-TOPSHIRIQ.md §4): its own verb, because the history reads
+  // it as words between two people and not as a change to the task.
+  | 'comment'
   | 'seed';
 
 export interface AuditContext {
