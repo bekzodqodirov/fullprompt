@@ -127,8 +127,10 @@ export async function startTaskDraft(
   const staff = await staffForChat(chatId);
   if (!staff) return;
   const live = activeDraft(chatId);
-  if (live && !seed.sources?.length) {
-    // A second «➕» is not a reason to lose the first one's words.
+  if (live) {
+    // A second «➕» is not a reason to lose the first one's words — and
+    // neither is a SEEDED start: an old «📌 Topshiriq qilish» pressed while a
+    // draft is live overwrote the pick and every typed line (review bot-2).
     await ctx.reply('Sizda tugallanmagan topshiriq bor — davom eting yoki bekor qiling.');
     await promptFor(sayIn(ctx), chatId, live, staff.id);
     return;
@@ -205,6 +207,9 @@ export async function pickAssignee(ctx: Context, chatId: bigint, userId: string 
     if (line) lines.push(line);
   }
   await ctx.reply(lines.join('\n'));
+  // An album still arriving: the due keyboard is its settle timer's to show
+  // (review bot-3) — shown now, a press would race the album's last photos.
+  if (next.stage === 'when' && !albumSettled(next)) return;
   await promptFor(sayIn(ctx), chatId, next, staff.id);
 }
 
@@ -261,6 +266,9 @@ async function createOrWait(say: Say, chatId: bigint, due: DraftDue): Promise<vo
   if (!draft) return;
   if (!albumSettled(draft)) {
     updateDraft(chatId, { pendingDue: due });
+    // The press is completed by a settle timer — armed HERE too, so a held
+    // press never waits on a timer nobody set (review bot-3).
+    for (const group of Object.keys(draft.albums)) armAlbumTimer(chatId, group);
     await say('⏳ Albom hali yuklanmoqda — tugashi bilan topshiriq beriladi.');
     return;
   }
@@ -336,6 +344,7 @@ export async function draftText(ctx: Context, chatId: bigint, draft: TaskDraft):
 
 /** A part of what the author sent, taken into the draft — then the next question. */
 export async function addToDraft(ctx: Context, chatId: bigint, draft: TaskDraft, part: DraftPart): Promise<void> {
+  const firstOfAlbum = Boolean(part.mediaGroupId) && !Object.hasOwn(draft.albums, part.mediaGroupId!);
   const next = updateDraft(chatId, { ...withPart(draft, part, Number(chatId)) })!;
   if (next.dropped > 0 && draft.dropped === 0) {
     // The first part past the cap, said ONCE (review bot-11): one
@@ -343,16 +352,18 @@ export async function addToDraft(ctx: Context, chatId: bigint, draft: TaskDraft,
     // silence.
     await ctx.reply(`⚠ Bitta topshiriqqa ko‘pi bilan ${MAX_DRAFT_SOURCES} ta xabar qo‘shiladi — qolganlari hodimga yuborilmaydi.`);
   }
+  // An album is N updates: its settle timer is armed at EVERY stage. Armed
+  // only after the pick, an album sent while «Kimga?» stood had none, so a
+  // due pressed inside the settle window was held for ever (review bot-3).
+  if (part.mediaGroupId) armAlbumTimer(chatId, part.mediaGroupId);
   if (next.stage === 'who') {
-    // Sent before the person was picked: kept, and the question stands.
-    await ctx.reply('📎 Qabul qilindi. Endi kimga ekanini tanlang.');
+    // Sent before the person was picked: kept, and the question stands —
+    // said once per album, never once per photo.
+    if (!part.mediaGroupId || firstOfAlbum) await ctx.reply('📎 Qabul qilindi. Endi kimga ekanini tanlang.');
     return;
   }
-  if (part.mediaGroupId) {
-    // An album is N updates: the due keyboard waits until it has settled.
-    armAlbumTimer(chatId, part.mediaGroupId);
-    return;
-  }
+  // The due keyboard waits until the album has settled; the timer shows it.
+  if (part.mediaGroupId) return;
   await showDue(sayIn(ctx), chatId, next);
 }
 
@@ -524,6 +535,15 @@ export async function handleForwardCallback(
   const original = asked && 'reply_to_message' in asked ? asked.reply_to_message : undefined;
   if (!original) {
     await ctx.reply('Asl xabar topilmadi — uni qaytadan yo‘naltiring.');
+    return;
+  }
+  // One collector at a time (spec §3): an offer stays pressable after a
+  // draft started, and pressing it then replaced the draft in silence
+  // (review bot-2). Refused BEFORE the offer's keyboard goes, so the same
+  // press still works once the draft is finished; «🔍 Qidirish» is only a
+  // lookup and touches no draft.
+  if (step === 'task' && draftLive(chatId)) {
+    await ctx.reply(BUSY_DRAFT);
     return;
   }
   // The question goes: it has been answered.

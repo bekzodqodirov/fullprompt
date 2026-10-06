@@ -20,8 +20,18 @@ vi.mock('@/modules/platform/jobs/boss', async (original) => ({
 import { db, pgClient } from '@/modules/platform/db/client';
 import { calcRequests, leads, leadStages, notifications, tasks, telegramLinks, users } from '@/modules/platform/db/schema';
 import { __setTelegramTransport } from '@/modules/platform/telegram/send';
-import { __resetDrafts } from '@/modules/platform/telegram/task-draft';
-import { answerPendingText, handleTaskPress } from '@/modules/platform/telegram/task-handlers';
+import { __resetDrafts, activeDraft } from '@/modules/platform/telegram/task-draft';
+import {
+  answerPendingText,
+  BUSY_DRAFT,
+  draftMedia,
+  draftText,
+  handleDraftCallback,
+  handleForwardCallback,
+  handleTaskPress,
+  pickAssignee,
+  startTaskDraft,
+} from '@/modules/platform/telegram/task-handlers';
 import { parseCallback } from '@/modules/platform/telegram/staff-bot';
 
 const APP = 'https://test.gsrwms.uz';
@@ -77,6 +87,27 @@ function ctxFor(chat: bigint, extra: Record<string, unknown> = {}): { ctx: never
     ...extra,
   };
   return { ctx: ctx as never, said };
+}
+
+const message = (chat: bigint, id: number, extra: Record<string, unknown>) => ({
+  message_id: id,
+  date: 0,
+  chat: { id: Number(chat), type: 'private' },
+  ...extra,
+});
+const forwarded = { forward_origin: { type: 'hidden_user', sender_user_name: 'Mijoz', date: 0 } };
+const photo = (n: number, size = 10) => [{ file_id: `AgACphoto${STAMP}${n}`, file_unique_id: `u${n}`, width: 1, height: 1, file_size: size }];
+
+async function tasksBy(author: Person) {
+  return db.select().from(tasks).where(eq(tasks.createdBy, author.id));
+}
+
+/** A draft with a picked colleague and one typed line, ready for a due. */
+async function readyDraft(author: Person, doer: Person, line = `GS777 ni yukla ${STAMP}`): Promise<void> {
+  await startTaskDraft(ctxFor(author.chat).ctx, author.chat);
+  await pickAssignee(ctxFor(author.chat).ctx, author.chat, doer.id);
+  const { ctx } = ctxFor(author.chat, { message: message(author.chat, (messageSeq += 1), { text: line }) });
+  await draftText(ctx, author.chat, activeDraft(author.chat)!);
 }
 
 beforeAll(async () => {
@@ -169,3 +200,75 @@ describe('an open calc job’s refusal names the job’s page on every door (rev
   });
 });
 
+
+/** A press on Door B's «📌 Topshiriq qilish», under the forwarded message it replied to. */
+async function pressDoorB(person: Person, original: Record<string, unknown>, step: 'task' | 'search' = 'task') {
+  const { ctx, said } = ctxFor(person.chat, {
+    callbackQuery: { data: `fb:${step}`, message: { message_id: (messageSeq += 1), reply_to_message: original } },
+  });
+  await handleForwardCallback(ctx, person.chat, step, async () => {});
+  return said;
+}
+
+describe('Door B never replaces a live draft (review bot-2)', () => {
+  it('an old «📌 Topshiriq qilish» pressed mid-draft is refused in words; the pick and the lines stand', async () => {
+    const author = await mintStaff();
+    const doer = await mintStaff();
+    await readyDraft(author, doer, 'Ertaga GS777 ni yukla, 40 karobka');
+    const before = activeDraft(author.chat)!;
+    const offer = message(author.chat, (messageSeq += 1), { ...forwarded, text: 'mijozning gapi' });
+    const said = await pressDoorB(author, offer);
+    expect(said.replies.map((r) => r.text)).toEqual([BUSY_DRAFT]);
+    const after = activeDraft(author.chat)!;
+    expect(after).toMatchObject({ assigneeId: doer.id, stage: before.stage, texts: ['Ertaga GS777 ni yukla, 40 karobka'] });
+    expect(after.sources).toEqual(before.sources);
+    // The offer's keyboard was left alone, so the same press works once this draft is done.
+    expect(sent.filter((c) => c.method === 'editMessageReplyMarkup')).toHaveLength(0);
+  });
+
+  it('a SEEDED start over a live draft is refused too — no door into startTaskDraft may overwrite one', async () => {
+    const author = await mintStaff();
+    const doer = await mintStaff();
+    await readyDraft(author, doer, 'Birinchi topshiriq');
+    const { ctx, said } = ctxFor(author.chat);
+    await startTaskDraft(ctx, author.chat, { sources: [{ chatId: Number(author.chat), messageId: 1 }], firstForwarded: true });
+    expect(said.replies[0]!.text).toBe('Sizda tugallanmagan topshiriq bor — davom eting yoki bekor qiling.');
+    expect(activeDraft(author.chat)).toMatchObject({ assigneeId: doer.id, texts: ['Birinchi topshiriq'], sources: [] });
+  });
+});
+
+describe('an album sent while «Kimga?» stands (review bot-3)', () => {
+  const albumPart = async (person: Person, group: string, n: number) => {
+    const { ctx, said } = ctxFor(person.chat, {
+      message: message(person.chat, (messageSeq += 1), { media_group_id: group, photo: photo(n) }),
+    });
+    await draftMedia(ctx, person.chat);
+    return said.replies.map((r) => r.text);
+  };
+
+  it('is acknowledged ONCE, not once per photo', async () => {
+    const author = await mintStaff();
+    await startTaskDraft(ctxFor(author.chat).ctx, author.chat);
+    const replies: string[] = [];
+    for (let i = 0; i < 5; i++) replies.push(...(await albumPart(author, `who-${STAMP}`, i)));
+    expect(replies).toEqual(['📎 Qabul qilindi. Endi kimga ekanini tanlang.']);
+  });
+
+  it('a due pressed before it settles is HELD — and the settle timer then makes the task with every photo', async () => {
+    const author = await mintStaff();
+    const doer = await mintStaff();
+    await startTaskDraft(ctxFor(author.chat).ctx, author.chat);
+    for (let i = 0; i < 3; i++) await albumPart(author, `held-${STAMP}`, 10 + i);
+    const pick = ctxFor(author.chat);
+    await pickAssignee(pick.ctx, author.chat, doer.id);
+    // No due keyboard while the album is still arriving — the timer shows it.
+    expect(pick.said.replies.map((r) => r.text).join('\n')).not.toContain('Muddat?');
+    const due = ctxFor(author.chat);
+    await handleDraftCallback(due.ctx, author.chat, 'due_e');
+    expect(due.said.replies.map((r) => r.text)).toEqual(['⏳ Albom hali yuklanmoqda — tugashi bilan topshiriq beriladi.']);
+    await vi.waitFor(async () => expect(await tasksBy(author)).toHaveLength(1), { timeout: 5_000, interval: 200 });
+    const [task] = await tasksBy(author);
+    expect(task!.sourceMessages).toHaveLength(3);
+    expect(activeDraft(author.chat)).toBeNull();
+  });
+});
