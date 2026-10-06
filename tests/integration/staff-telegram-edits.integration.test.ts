@@ -306,7 +306,7 @@ describe('a closed task rewrites the message its «✅» sat on', () => {
       904n,
       {
         taskId: TASK,
-        origin: {
+        pressed: {
           messageId: 44,
           kind: 'single',
           text: '🆕 Yangi vazifa: <a href="https://evil.example">bos</a>\n📅 30.09',
@@ -335,7 +335,7 @@ describe('a closed task rewrites the message its «✅» sat on', () => {
       905n,
       {
         taskId: TASK,
-        origin: {
+        pressed: {
           messageId: 55,
           kind: 'list',
           text: '✅ Sizning vazifalaringiz',
@@ -358,7 +358,7 @@ describe('a closed task rewrites the message its «✅» sat on', () => {
   });
 
   it('a press with no message to go back to (an old client) changes nothing', async () => {
-    await closeTaskMessage(906n, { taskId: TASK, origin: null }, 'x');
+    await closeTaskMessage(906n, { taskId: TASK, pressed: null }, 'x');
     expect(calls).toHaveLength(0);
   });
 });

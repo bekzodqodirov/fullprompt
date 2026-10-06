@@ -1,10 +1,33 @@
 import { randomBytes } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db/client';
 import { telegramLinks, users } from '../db/schema';
 import { writeAudit } from '../audit/service';
 import { actorGrants, userPermissions } from '../rbac/authorize';
-import { completeTask, TaskError } from '../tasks/service';
+import {
+  acceptTask,
+  answerAboutTask,
+  askAboutTask,
+  bindingsOf,
+  byId as taskById,
+  canActOnTask,
+  cancelTask,
+  completeTask,
+  createTask,
+  forwardSourcesAgain,
+  givenTasks,
+  MAX_TASK_SOURCES,
+  remindTask,
+  rescheduleTask,
+  TaskError,
+  type TaskContext,
+  type GivenTask,
+  type TaskErrorCode,
+  type TaskRow,
+  telegramDue,
+} from '../tasks/service';
+import { reachOf, type Reach } from '../notifications/staff';
+import type { DraftFile } from './task-draft';
 import { DAY_BUTTONS } from '../tasks/digest';
 import { logger } from '../logger';
 import { approvalVerdictLine } from '../notifications/labels';
@@ -17,7 +40,7 @@ import {
 } from '../notifications/staff-html';
 import { allLabelVariants } from './client-labels';
 import { buttonLabel } from './limits';
-import { editMarkup, editText } from './send';
+import { botCall, editMarkup, editText } from './send';
 
 import { canLogInSql, staffPhonesMatch } from '../users/login';
 
@@ -196,6 +219,13 @@ export const LEAD_CONTACTED_BUTTON = '📞 Bog‘landim';
  * drawn for.
  */
 export const HOLAT = '📊 Holat';
+/**
+ * «hodimlar biriga ish buyura olishi kerak telegram orqali» (2026-10-06, his
+ * 1b): the draft's own door. A LABEL is a router — never renamed, only moved.
+ */
+export const TOPSHIRIQ = '➕ Topshiriq';
+/** His 5a: the open tasks this person gave by hand, with «🔔 Eslatish». */
+export const MEN_BERGAN = '📤 Men bergan';
 
 /** The two labels that open a collection — one list, so every reader agrees. */
 export const CALC_ENTRY_LABELS = [HISOBLATISH, AI_RASTAMOJKA];
@@ -221,6 +251,10 @@ export function escapesIntake(text: string): boolean {
     t === '/zametka' ||
     t === HOLAT ||
     t === '/holat' ||
+    t === TOPSHIRIQ ||
+    t === '/topshiriq' ||
+    t === MEN_BERGAN ||
+    t === '/berganlarim' ||
     // A chat that is both staff and client pressing «📦 Yuklarim» in the middle
     // of a collection had it filed as intake material (round C's scouts).
     isCabinetText(t)
@@ -281,7 +315,63 @@ export type BotCallback =
    * the request the message named (`linkAskTag`), so a press can never land
    * on a calculation the message did not show.
    */
-  | { kind: 'calc_link'; receiptId: string; requestTag: string; verdict: 'confirm' | 'drop' };
+  | { kind: 'calc_link'; receiptId: string; requestTag: string; verdict: 'confirm' | 'drop' }
+  /*
+   * The topshiriq round (docs/TELEGRAM-TOPSHIRIQ.md §4). Every kind carrying
+   * a task id is anchored on its uuid like `t:`/`tb:` — an unanchored prefix
+   * swallows look-alikes (review telegram-mechanics-25).
+   */
+  /** «👀 Qabul qildim» — `tk:<task>`. */
+  | { kind: 'task_accept'; taskId: string }
+  /** «⏰ Muddatni surish» — `tw:<task>`, which offers the choices below. */
+  | { kind: 'task_wait'; taskId: string }
+  /** A choice under ⏰ — `tp:<e|i|w|s>:<task>`: ertaga, indinga, 1 hafta, sana. */
+  | { kind: 'task_postpone'; taskId: string; to: PostponeStep }
+  /** «💬 Savol» — `tq:<task>`. */
+  | { kind: 'task_question'; taskId: string }
+  /** «💬 Javob berish», on the author's copy of a question — `tr:<task>`. */
+  | { kind: 'task_reply'; taskId: string }
+  /** «✅ Natijasiz», on the «write the result» prompt — `tn:<task>`. */
+  | { kind: 'task_noresult'; taskId: string }
+  /** «🔔 Eslatish», under «📤 Men bergan» — `te:<task>`. */
+  | { kind: 'task_remind'; taskId: string }
+  /** «🗑 Bekor qilish», under a task the author just made — `tc:<task>`. */
+  | { kind: 'task_cancel'; taskId: string }
+  /** «📤 Manbani yangi odamga yuborish», the author's after a reassign — `tf:<task>`. */
+  | { kind: 'task_sources'; taskId: string }
+  /** The draft's own controls — a CLOSED vocabulary, `d:<step>`. */
+  | { kind: 'draft'; step: DraftStep }
+  /** A colleague picked in «Kimga?» — `dk:<user>`. */
+  | { kind: 'draft_pick'; userId: string }
+  /** «📌 Topshiriq qilamizmi?» under a forwarded message — `fb:<task|search>`. */
+  | { kind: 'forward'; step: ForwardStep };
+
+/** ⏰'s four answers. */
+export const POSTPONE_STEPS = ['e', 'i', 'w', 's'] as const;
+export type PostponeStep = (typeof POSTPONE_STEPS)[number];
+
+/**
+ * The draft's controls: the five due buttons (Bugun, Ertaga, Indinga,
+ * Muddatsiz, Sana yozish), «🙋 O'zimga» and «🗑 Bekor qilish». Closed and
+ * checked after the regex, like CALC_STEPS.
+ */
+export const DRAFT_STEPS = ['due_b', 'due_e', 'due_i', 'due_n', 'due_s', 'self', 'cancel'] as const;
+export type DraftStep = (typeof DRAFT_STEPS)[number];
+
+export const FORWARD_STEPS = ['task', 'search'] as const;
+export type ForwardStep = (typeof FORWARD_STEPS)[number];
+
+/** The uuid-bearing task callbacks: prefix → kind. One table, read by the parser. */
+const TASK_PREFIXES = {
+  tk: 'task_accept',
+  tw: 'task_wait',
+  tq: 'task_question',
+  tr: 'task_reply',
+  tn: 'task_noresult',
+  te: 'task_remind',
+  tc: 'task_cancel',
+  tf: 'task_sources',
+} as const;
 
 /**
  * The zametka buttons. `send` is a note id; the rest are the capture's own
@@ -405,6 +495,26 @@ export function parseCallback(data: string): BotCallback | null {
   // Round C: the same «Bajarildi», pressed on a list of the day's tasks.
   const listed = /^tb:([0-9a-f-]{36})$/.exec(data);
   if (listed) return { kind: 'task_done', taskId: listed[1]!, list: true };
+  // The topshiriq round's task buttons — two letters and the task's uuid.
+  const taskButton = /^(t[a-z]):([0-9a-f-]{36})$/.exec(data);
+  if (taskButton && Object.hasOwn(TASK_PREFIXES, taskButton[1]!)) {
+    const kind = TASK_PREFIXES[taskButton[1] as keyof typeof TASK_PREFIXES];
+    return { kind, taskId: taskButton[2]! };
+  }
+  const postpone = /^tp:([a-z]):([0-9a-f-]{36})$/.exec(data);
+  if (postpone && (POSTPONE_STEPS as readonly string[]).includes(postpone[1]!)) {
+    return { kind: 'task_postpone', to: postpone[1] as PostponeStep, taskId: postpone[2]! };
+  }
+  const draft = /^d:(\w+)$/.exec(data);
+  if (draft && (DRAFT_STEPS as readonly string[]).includes(draft[1]!)) {
+    return { kind: 'draft', step: draft[1] as DraftStep };
+  }
+  const pick = /^dk:([0-9a-f-]{36})$/.exec(data);
+  if (pick) return { kind: 'draft_pick', userId: pick[1]! };
+  const forward = /^fb:(\w+)$/.exec(data);
+  if (forward && (FORWARD_STEPS as readonly string[]).includes(forward[1]!)) {
+    return { kind: 'forward', step: forward[1] as ForwardStep };
+  }
   // 0113: the seller says they reached the advert lead. `lc:` collides with
   // none of the cabinet's own three (`lang:`, `ph:`, `mg`).
   const contacted = /^lc:([0-9a-f-]{36})$/.exec(data);
@@ -436,12 +546,21 @@ export function parseCallback(data: string): BotCallback | null {
  * at SEND time so the notification rows stay plain data and a bot-less
  * deployment (no token) changes nothing.
  */
-export function buttonsFor(
-  type: string,
-  payload: Record<string, unknown>,
-): { text: string; callback_data: string }[][] | null {
-  if (type === 'TaskAssigned' && typeof payload.taskId === 'string') {
-    return [[{ text: '✅ Bajarildi', callback_data: `t:${payload.taskId}` }]];
+export function buttonsFor(type: string, payload: Record<string, unknown>): BotButton[][] | null {
+  const taskId = typeof payload.taskId === 'string' && UUID.test(payload.taskId) ? payload.taskId : null;
+  // The assignee's own copies: a fresh or handed-on task, a reminder, an
+  // answer to their question — one set of buttons, chosen by ORIGIN.
+  if ((type === 'TaskAssigned' || type === 'TaskReminder' || type === 'TaskAnswer') && taskId) {
+    return assigneeButtons(taskId, payload);
+  }
+  // The author's copy of a question carries the one way to answer it.
+  if (type === 'TaskQuestion' && taskId) {
+    return [[{ text: '💬 Javob berish', callback_data: `tr:${taskId}` }]];
+  }
+  // A colleague moved the author's task: the sources go on only if the AUTHOR
+  // says so (access-money-12).
+  if (type === 'TaskReassigned' && taskId && payload.offerSources === true) {
+    return [[{ text: '📤 Manbani yangi odamga yuborish', callback_data: `tf:${taskId}` }]];
   }
   if (type === 'DebtApprovalRequested' && typeof payload.approvalId === 'string') {
     return [
@@ -484,6 +603,64 @@ export function buttonsFor(
     return rows.length > 0 ? rows : null;
   }
   return null;
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export type CallbackButton = { text: string; callback_data: string };
+export type UrlButton = { text: string; url: string };
+export type BotButton = CallbackButton | UrlButton;
+
+/**
+ * The assignee's buttons, by where the task came from (spec §2, review
+ * telegram-mechanics-20/21) — read off the payload contract
+ * (`taskButtonPayload`), because this function is pure and cannot ask the
+ * row:
+ *
+ *   hand / NULL     [👀 Qabul qildim] [✅ Bajarildi] / [⏰ Muddatni surish] [💬 Savol]
+ *   calc, bound     none — the message's one URL button is its 🔗 line, lifted
+ *                   by the drain to /hisoblash/<request> (telegram-mechanics-8)
+ *   calc, unbound   [✅ Bajarildi] — a release ghost or a closed job closes normally
+ *   calc_return     [👀] [✅] / [💬]
+ *   promise         [👀] [✅] / [💬] — no ⏰: the date IS the client's promise
+ *   automation      [✅] [⏰] — the author wrote a rule, not this task: no 👀,
+ *                   no 💬 to somebody who knows nothing about it
+ *
+ * 👀 is gone once accepted, ⏰ on a repeating task (it would move the
+ * series). Every press is re-checked on the server: a payload queued before
+ * this round has no origin and reads as hand.
+ */
+export function assigneeButtons(taskId: string, payload: Record<string, unknown>): BotButton[][] | null {
+  const origin = typeof payload.origin === 'string' ? payload.origin : null;
+  if (origin === 'calc') {
+    return payload.bound === true ? null : [[{ text: '✅ Bajarildi', callback_data: `t:${taskId}` }]];
+  }
+  const accept = payload.accepted !== true && origin !== 'automation';
+  const wait = payload.repeats !== true && origin !== 'promise' && origin !== 'calc_return';
+  const ask = origin !== 'automation';
+  const first: BotButton[] = [
+    ...(accept ? [{ text: '👀 Qabul qildim', callback_data: `tk:${taskId}` }] : []),
+    { text: '✅ Bajarildi', callback_data: `t:${taskId}` },
+  ];
+  const second: BotButton[] = [
+    ...(wait ? [{ text: '⏰ Muddatni surish', callback_data: `tw:${taskId}` }] : []),
+    ...(ask ? [{ text: '💬 Savol', callback_data: `tq:${taskId}` }] : []),
+  ];
+  return second.length > 0 ? [first, second] : [first];
+}
+
+/** ⏰'s choices, as the reply under the press. */
+export function postponeKeyboard(taskId: string): CallbackButton[][] {
+  return [
+    [
+      { text: 'Ertaga', callback_data: `tp:e:${taskId}` },
+      { text: 'Indinga', callback_data: `tp:i:${taskId}` },
+    ],
+    [
+      { text: '1 haftaga', callback_data: `tp:w:${taskId}` },
+      { text: '📅 Sana yozish', callback_data: `tp:s:${taskId}` },
+    ],
+  ];
 }
 
 /** How many prixods one «Bu prixodlar hisobingizga tegishlimi?» carries buttons for. */
@@ -529,6 +706,13 @@ export async function settleLinkAskRow(
 export interface DayTask {
   id: string;
   title: string;
+  /**
+   * The OPEN calc request this task carries the clock of, when it does
+   * (telegram-mechanics-3): such a row is a link to the job's screen, never a
+   * «✅» — a VED's calc jobs are priority 1 and timed, so they head the list,
+   * and every press on them was a refusal.
+   */
+  calc?: string | null;
 }
 
 /** How many «✅» buttons a day list carries — one number, the digest's. */
@@ -543,13 +727,26 @@ export { DAY_BUTTONS };
  * itself. Null when there is nothing to offer, so the caller sends no empty
  * keyboard (Telegram refuses one).
  */
-export function dayButtons(tasks: DayTask[]): { text: string; callback_data: string }[][] | null {
-  const rows = tasks
-    .filter((task) => typeof task?.id === 'string' && /^[0-9a-f-]{36}$/.test(task.id))
-    .slice(0, DAY_BUTTONS)
-    .map((task) => [
-      { text: `✅ ${buttonLabel(String(task.title ?? ''), 'Vazifa')}`, callback_data: `tb:${task.id}` },
-    ]);
+export function dayButtons(
+  tasks: DayTask[],
+  appUrl: string | null | undefined = process.env.APP_URL,
+): BotButton[][] | null {
+  // A URL button only to an https origin: Telegram refuses anything else, and
+  // a refused keyboard takes the whole message with it (staff-html's rule).
+  const base = /^https:\/\//.test((appUrl ?? '').trim()) ? appUrl!.trim().replace(/\/$/, '') : null;
+  const rows: BotButton[][] = [];
+  for (const task of tasks) {
+    if (rows.length >= DAY_BUTTONS) break;
+    if (typeof task?.id !== 'string' || !/^[0-9a-f-]{36}$/.test(task.id)) continue;
+    const label = buttonLabel(String(task.title ?? ''), 'Vazifa');
+    if (typeof task.calc === 'string' && task.calc) {
+      if (base && /^[0-9a-f-]{36}$/.test(task.calc)) {
+        rows.push([{ text: `🧮 ${label}`, url: `${base}/hisoblash/${task.calc}` }]);
+      }
+      continue;
+    }
+    rows.push([{ text: `✅ ${label}`, callback_data: `tb:${task.id}` }]);
+  }
   return rows.length > 0 ? rows : null;
 }
 
@@ -567,7 +764,7 @@ const PENDING_TTL_MS = 10 * 60_000;
  * closed until the result is typed, and a message that said «Yopildi» while
  * the prompt was still waiting would be the lie this replaces.
  */
-export interface TaskOrigin {
+export interface PressedMessage {
   messageId: number;
   /** The message's plain text as Telegram holds it (callbackQuery.message). */
   text: string;
@@ -576,25 +773,88 @@ export interface TaskOrigin {
   kind: 'single' | 'list';
 }
 
+/**
+ * What the next typed text IS, for a chat that pressed a task button
+ * (docs/TELEGRAM-TOPSHIRIQ.md §4): the result of «✅ Bajarildi», the
+ * assignee's «💬 Savol», the author's «💬 Javob berish», or a date typed
+ * after «⏰ → 📅 Sana yozish» (telegram-mechanics-14). ONE map behind ONE
+ * reader (`takeTaskPending`) — a second map for any of them would either
+ * collide with the single-capture fence or sit below it and have the typed
+ * date eaten as a result.
+ */
+export type PendingKind = 'result' | 'question' | 'answer' | 'reschedule';
+
 export interface PendingTask {
   taskId: string;
-  origin: TaskOrigin | null;
+  kind: PendingKind;
+  /**
+   * Was `origin` until 0124 gave a TASK an origin of its own (tasks/service.ts:
+   * where the task came from). This is the MESSAGE the button was pressed on,
+   * and two meanings under one name in one file read as one thing.
+   */
+  pressed: PressedMessage | null;
+  /** The «write the result» prompt itself, whose «✅ Natijasiz» goes once used. */
+  promptMessageId?: number | null;
 }
 
 const pendingResults = new Map<string, PendingTask & { expires: number }>();
 /** Chats that pressed «Hodim» and were asked for their phone. */
 const staffEntryIntents = new Map<string, number>();
 
-export function noteTaskPending(chatId: bigint, taskId: string, origin: TaskOrigin | null = null): void {
-  pendingResults.set(String(chatId), { taskId, origin, expires: Date.now() + PENDING_TTL_MS });
+export function noteTaskPending(
+  chatId: bigint,
+  taskId: string,
+  pressed: PressedMessage | null = null,
+  kind: PendingKind = 'result',
+): void {
+  pendingResults.set(String(chatId), { taskId, kind, pressed, expires: Date.now() + PENDING_TTL_MS });
 }
 
+/** The prompt was sent — remember where its «✅ Natijasiz» sits. */
+export function notePendingPrompt(chatId: bigint, taskId: string, promptMessageId: number): void {
+  const entry = pendingResults.get(String(chatId));
+  if (entry && entry.taskId === taskId) entry.promptMessageId = promptMessageId;
+}
+
+/**
+ * The text ladder's ONE door to a waiting answer. Deletes on read — which is
+ * exactly why every keyboard label and every collector sits ABOVE its caller.
+ */
 export function takeTaskPending(chatId: bigint): PendingTask | null {
   const key = String(chatId);
   const entry = pendingResults.get(key);
   if (!entry) return null;
   pendingResults.delete(key);
-  return entry.expires > Date.now() ? { taskId: entry.taskId, origin: entry.origin } : null;
+  return entry.expires > Date.now() ? pendingOf(entry) : null;
+}
+
+/**
+ * «✅ Natijasiz»'s door, NAMED and second on purpose (telegram-mechanics-13):
+ * the press is on the PROMPT, but what it closes is the ORIGINAL message,
+ * whose id, text and markup only the wait holds. It takes the wait only when
+ * the wait is for THAT task — so a later «GS777» is a lookup again and not
+ * the result of a task that is already closed.
+ */
+export function takeTaskPendingFor(chatId: bigint, taskId: string): PendingTask | null {
+  const key = String(chatId);
+  const entry = pendingResults.get(key);
+  if (!entry || entry.taskId !== taskId) return null;
+  pendingResults.delete(key);
+  return entry.expires > Date.now() ? pendingOf(entry) : null;
+}
+
+/** Starting a task draft discards a waiting answer (spec §3): a draft's text is never a result. */
+export function dropTaskPending(chatId: bigint): void {
+  pendingResults.delete(String(chatId));
+}
+
+function pendingOf(entry: PendingTask): PendingTask {
+  return {
+    taskId: entry.taskId,
+    kind: entry.kind,
+    pressed: entry.pressed,
+    promptMessageId: entry.promptMessageId ?? null,
+  };
 }
 
 /**
@@ -609,26 +869,26 @@ export function takeTaskPending(chatId: bigint): PendingTask | null {
  */
 export async function closeTaskMessage(
   chatId: bigint,
-  pending: PendingTask,
+  pending: Pick<PendingTask, 'taskId' | 'pressed'>,
   result: string,
 ): Promise<void> {
-  const origin = pending.origin;
-  if (!origin) return;
+  const pressed = pending.pressed;
+  if (!pressed) return;
   const res =
-    origin.kind === 'list'
+    pressed.kind === 'list'
       ? await editMarkup({
           chatId,
-          messageId: origin.messageId,
-          replyMarkup: keyboardOf(withoutCallback(origin.markup, `tb:${pending.taskId}`)),
+          messageId: pressed.messageId,
+          replyMarkup: keyboardOf(withoutCallback(pressed.markup, `tb:${pending.taskId}`)),
         })
       : await editText({
           chatId,
-          messageId: origin.messageId,
+          messageId: pressed.messageId,
           html: appendLine(
-            staffTextHtml(origin.text, 'TaskAssigned'),
+            staffTextHtml(pressed.text, 'TaskAssigned'),
             result ? `✅ Yopildi — ${result}` : '✅ Yopildi',
           ),
-          replyMarkup: keyboardOf(urlRowsOf(origin.markup)),
+          replyMarkup: keyboardOf(urlRowsOf(pressed.markup)),
         });
   if (!res.ok) logger.warn({ description: res.description }, 'task message not updated');
 }
@@ -808,7 +1068,69 @@ export async function landCollectedIntake(
   });
 }
 
-export type BotTaskResult = 'done' | 'not_linked' | 'not_yours' | 'already_closed' | 'not_found';
+/**
+ * Every answer a task door can give the bot, in words — a `Record` over the
+ * service's closed list, so a code nobody wrote a sentence for is a compile
+ * error HERE and never a throw into `bot.catch` after a person typed their
+ * result (the review's blocker, telegram-mechanics-1).
+ */
+export type BotTaskResult = 'done' | 'not_linked' | TaskErrorCode;
+
+export const TASK_ANSWERS: Record<BotTaskResult, string> = {
+  done: '✅ Bajarildi.',
+  not_linked: 'Ulanmagan.',
+  unauthenticated: 'Ulanmagan.',
+  validation: 'Ma’lumot to‘g‘ri emas.',
+  bad_bound: 'Vazifa noto‘g‘ri bog‘langan.',
+  unknown_entity: 'Vazifa noma’lum yozuvga bog‘langan.',
+  half_pointer: 'Vazifa yozuvga to‘liq bog‘lanmagan.',
+  no_assignee: 'Bunday hodim topilmadi.',
+  assignee_no_login: 'Bu hodim tizimga kirmaydi — unga vazifa berib bo‘lmaydi.',
+  assignee_inactive: 'Bu hodim ishdan ketgan.',
+  repeat_needs_due: 'Takrorlanadigan vazifaga muddat kerak.',
+  not_created: 'Vazifa yaratilmadi — qaytadan urinib ko‘ring.',
+  bad_due_date: 'Sanani tushunmadim.',
+  not_found: 'Vazifa topilmadi.',
+  not_yours: 'Bu vazifa sizniki emas.',
+  already_closed: 'Bu vazifa yopilgan.',
+  calc_use_screen: 'Bu hisoblash ishi — hisoblash sahifasida yakunlang.',
+  bound_check_failed: 'Tekshirib bo‘lmadi — birozdan keyin qaytadan urinib ko‘ring.',
+  bound_clock: 'Bu muddat mijozning to‘lov va’dasi — uni surib bo‘lmaydi.',
+  repeat_series: 'Takrorlanadigan vazifa muddatini saytda o‘zgartiring — butun qator suriladi.',
+  not_assignee: 'Bu vazifa endi sizda emas.',
+  already_accepted: 'Allaqachon qabul qilingan.',
+  not_author: 'Bu vazifani siz bermagansiz.',
+  remind_too_soon: 'Yaqinda eslatilgan — 30 daqiqadan keyin qayta urinib ko‘ring.',
+  not_remindable: 'Bu vazifaga eslatma yuborib bo‘lmaydi.',
+  not_askable: 'Bu vazifa bo‘yicha savol yuborib bo‘lmaydi.',
+  empty_text: 'Bo‘sh xabar.',
+};
+
+/** The chat's honest actor, as the task service wants it — never a synthetic admin. */
+async function taskCtxFor(chatId: bigint): Promise<TaskContext | null> {
+  const staff = await staffForChat(chatId);
+  if (!staff) return null;
+  return { actorId: staff.id, actor: { id: staff.id, permissions: await permissionsOf(staff.id) } };
+}
+
+/** One door, run as the chat's person; every refusal comes back as its code. */
+async function asChat<T>(chatId: bigint, door: (ctx: TaskContext) => Promise<T>): Promise<
+  { result: 'done'; value: T } | { result: Exclude<BotTaskResult, 'done'>; value?: undefined }
+> {
+  const ctx = await taskCtxFor(chatId);
+  if (!ctx) return { result: 'not_linked' };
+  try {
+    return { result: 'done', value: await door(ctx) };
+  } catch (err) {
+    if (err instanceof TaskError) return { result: err.code };
+    throw err;
+  }
+}
+
+/** The pressed message, as the after-commit retire must skip it. */
+function pressedRef(chatId: bigint, pressed: { messageId: number } | null | undefined) {
+  return pressed ? { chatId: Number(chatId), messageId: pressed.messageId } : null;
+}
 
 /**
  * Close a task from the bot, as the person the CHAT belongs to. The service
@@ -819,23 +1141,108 @@ export async function completeTaskFromBot(
   chatId: bigint,
   taskId: string,
   result: string,
+  pressed?: { messageId: number } | null,
 ): Promise<BotTaskResult> {
-  const staff = await staffForChat(chatId);
-  if (!staff) return 'not_linked';
+  return (await asChat(chatId, (ctx) => completeTask(taskId, result, ctx, { pressed: pressedRef(chatId, pressed) })))
+    .result;
+}
+
+export async function acceptTaskFromBot(chatId: bigint, taskId: string): Promise<BotTaskResult> {
+  return (await asChat(chatId, (ctx) => acceptTask(taskId, ctx))).result;
+}
+
+export async function rescheduleTaskFromBot(
+  chatId: bigint,
+  taskId: string,
+  due: { dueAt: Date; allDay: boolean },
+): Promise<BotTaskResult> {
+  return (await asChat(chatId, (ctx) => rescheduleTask(taskId, due, ctx))).result;
+}
+
+export async function cancelTaskFromBot(
+  chatId: bigint,
+  taskId: string,
+  pressed?: { messageId: number } | null,
+): Promise<BotTaskResult> {
+  return (await asChat(chatId, (ctx) => cancelTask(taskId, '', ctx, { pressed: pressedRef(chatId, pressed) })))
+    .result;
+}
+
+export async function sourcesFromBot(chatId: bigint, taskId: string): Promise<BotTaskResult> {
+  return (await asChat(chatId, (ctx) => forwardSourcesAgain(taskId, ctx))).result;
+}
+
+/** A door that also says whether the other side will hear it, and who that is. */
+export interface ReachedResult {
+  result: BotTaskResult;
+  reach?: Reach;
+  name?: string | null;
+}
+
+export async function remindTaskFromBot(chatId: bigint, taskId: string): Promise<ReachedResult> {
+  const out = await asChat(chatId, (ctx) => remindTask(taskId, ctx));
+  return out.result === 'done' ? { result: 'done', ...out.value } : { result: out.result };
+}
+
+export async function askFromBot(chatId: bigint, taskId: string, text: string): Promise<ReachedResult> {
+  const out = await asChat(chatId, (ctx) => askAboutTask(taskId, text, ctx));
+  return out.result === 'done' ? { result: 'done', ...out.value } : { result: out.result };
+}
+
+export async function answerFromBot(chatId: bigint, taskId: string, text: string): Promise<ReachedResult> {
+  const out = await asChat(chatId, (ctx) => answerAboutTask(taskId, text, ctx));
+  return out.result === 'done' ? { result: 'done', ...out.value } : { result: out.result };
+}
+
+/**
+ * The checks a task button's PRESS makes before anything waits for typing
+ * (the review's blocker, telegram-mechanics-1): the old `t:` ✅ on a calc
+ * job asked for a result, the person typed one, and only then did the
+ * service refuse — into a rethrow, so they heard silence. Now the press loads
+ * the task and refuses at once, in words, with the job's link when it is an
+ * open calc request.
+ *
+ * `who` is the press's own question: anybody who may act on the task (✅),
+ * its assignee (💬 Savol), or its author (💬 Javob berish).
+ */
+export type PressCheck =
+  | { ok: true; task: TaskRow }
+  | { ok: false; result: Exclude<BotTaskResult, 'done'>; requestId?: string };
+
+export async function taskPressCheck(
+  chatId: bigint,
+  taskId: string,
+  who: 'act' | 'assignee' | 'author',
+): Promise<PressCheck> {
+  const ctx = await taskCtxFor(chatId);
+  if (!ctx) return { ok: false, result: 'not_linked' };
+  const task = await taskById(taskId);
+  if (!task) return { ok: false, result: 'not_found' };
+  if (task.status !== 'open') return { ok: false, result: 'already_closed' };
+  if (who === 'act' && !canActOnTask(task, ctx.actor)) return { ok: false, result: 'not_yours' };
+  if (who === 'assignee' && task.assigneeId !== ctx.actorId) return { ok: false, result: 'not_assignee' };
+  if (who === 'author' && task.createdBy !== ctx.actorId) return { ok: false, result: 'not_author' };
+  let binding;
   try {
-    await completeTask(taskId, result, {
-      actorId: staff.id,
-      actor: { id: staff.id, permissions: await permissionsOf(staff.id) },
-    });
-    return 'done';
+    binding = (await bindingsOf([task])).get(task.id) ?? null;
   } catch (err) {
-    if (err instanceof TaskError) {
-      if (err.code === 'not_yours') return 'not_yours';
-      if (err.code === 'already_closed') return 'already_closed';
-      if (err.code === 'not_found') return 'not_found';
-    }
-    throw err;
+    logger.warn({ err, taskId }, '[staff-bot] bound check at press failed — refusing');
+    return { ok: false, result: 'bound_check_failed' };
   }
+  if (binding?.kind === 'calc' && binding.open) {
+    return { ok: false, result: 'calc_use_screen', requestId: binding.recordId };
+  }
+  return { ok: true, task };
+}
+
+/** The refusal of a press, as the sentence under the button — with the job's door when there is one. */
+export function pressRefusalText(check: Extract<PressCheck, { ok: false }>, appUrl = process.env.APP_URL): string {
+  const words = TASK_ANSWERS[check.result];
+  if (check.result === 'calc_use_screen' && check.requestId) {
+    const base = (appUrl ?? '').replace(/\/$/, '');
+    return `${words}\n${base}/hisoblash/${check.requestId}`;
+  }
+  return words;
 }
 
 /**
@@ -919,4 +1326,275 @@ export async function decideApprovalFromBot(
     }
     throw err;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Topshiriq — the draft's decisions (docs/TELEGRAM-TOPSHIRIQ.md §3-6). The
+// collection itself is task-draft.ts (pure, in memory); what it READS and
+// WRITES is here, where an integration test reaches it.
+// ---------------------------------------------------------------------------
+
+/** One colleague in «Kimga?». */
+export interface DraftPerson {
+  id: string;
+  name: string;
+  /** Given a task by this author by hand in the last 90 days — sorted first. */
+  recent: boolean;
+  /**
+   * «📵»: the bot cannot reach them at all (no linked chat). ONLY that: a
+   * person's MUTE is their own setting, and this list is read by every
+   * colleague (review access-money-24) — a mute is told to the author after
+   * the pick, in the ⚠ line, and nowhere else.
+   */
+  noChat: boolean;
+}
+
+/** How many colleagues «Kimga?» draws before a typed name has to narrow it. */
+export const PEOPLE_SHOWN = 40;
+
+/**
+ * «Kimga?» — every colleague who can sign in (`canLogIn`, his 2a: everybody
+ * to everybody; a person who never signs in cannot be given work, as on the
+ * web), the author's recent assignees first, then alphabetically, the author
+ * themself left to «🙋 O'zimga». A typed name in this stage narrows it.
+ */
+export async function draftPeople(authorId: string, filter: string | null = null): Promise<DraftPerson[]> {
+  const rows = (await db.execute(sql`
+    SELECT u.id, u.full_name AS name,
+           (SELECT max(t.created_at) FROM tasks t
+             WHERE t.created_by = ${authorId} AND t.assignee_id = u.id
+               AND t.origin = 'hand' AND t.created_at > now() - interval '90 days') AS last_given,
+           EXISTS (SELECT 1 FROM telegram_links l
+                    WHERE l.user_id = u.id AND l.status = 'linked' AND l.telegram_chat_id IS NOT NULL) AS linked
+      FROM users u
+     WHERE ${canLogInSql('u')} AND u.id <> ${authorId}
+     ORDER BY last_given DESC NULLS LAST, u.full_name`)) as unknown as {
+    id: string;
+    name: string;
+    last_given: string | Date | null;
+    linked: boolean;
+  }[];
+  const needle = (filter ?? '').trim().toLocaleLowerCase();
+  return rows
+    .filter((row) => !needle || row.name.toLocaleLowerCase().includes(needle))
+    .slice(0, PEOPLE_SHOWN)
+    .map((row) => ({ id: row.id, name: row.name, recent: row.last_given !== null, noChat: !row.linked }));
+}
+
+/** «Kimga?», as buttons: two per row, «🙋 O‘zimga» and «🗑 Bekor qilish» last. */
+export function peopleKeyboard(people: DraftPerson[]): CallbackButton[][] {
+  const rows: CallbackButton[][] = [];
+  for (let i = 0; i < people.length; i += 2) {
+    rows.push(
+      people.slice(i, i + 2).map((person) => ({
+        text: buttonLabel(`${person.noChat ? '📵 ' : ''}${person.name}`, 'Hodim'),
+        callback_data: `dk:${person.id}`,
+      })),
+    );
+  }
+  rows.push([{ text: '🙋 O‘zimga', callback_data: 'd:self' }]);
+  rows.push([{ text: '🗑 Bekor qilish', callback_data: 'd:cancel' }]);
+  return rows;
+}
+
+/** The due buttons (spec §3) — pressing one CREATES the task, no extra confirm. */
+export function dueKeyboard(): CallbackButton[][] {
+  return [
+    [
+      { text: 'Bugun', callback_data: 'd:due_b' },
+      { text: 'Ertaga', callback_data: 'd:due_e' },
+    ],
+    [
+      { text: 'Indinga', callback_data: 'd:due_i' },
+      { text: 'Muddatsiz', callback_data: 'd:due_n' },
+    ],
+    [{ text: '📅 Sana yozish', callback_data: 'd:due_s' }],
+    [{ text: '🗑 Bekor qilish', callback_data: 'd:cancel' }],
+  ];
+}
+
+/** Door B's question under a forwarded message (spec §3). */
+export function forwardKeyboard(): CallbackButton[][] {
+  return [
+    [
+      { text: '📌 Topshiriq qilish', callback_data: 'fb:task' },
+      { text: '🔍 Qidirish', callback_data: 'fb:search' },
+    ],
+  ];
+}
+
+/** The pick, checked: a colleague who can sign in — never a stranger's id from a forged press. */
+export async function draftAssignee(userId: string): Promise<{ id: string; name: string } | null> {
+  const [row] = await db
+    .select({ id: users.id, name: users.fullName, live: canLogInSql() })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  return row && row.live ? { id: row.id, name: row.name } : null;
+}
+
+export type DraftCreated =
+  | {
+      ok: true;
+      taskId: string;
+      title: string;
+      assigneeId: string;
+      assigneeName: string;
+      reach: Reach;
+      self: boolean;
+    }
+  | { ok: false; result: Exclude<BotTaskResult, 'done'> };
+
+/**
+ * The draft becomes a task — through the ONE writer, `createTask`, under the
+ * chat's honest actor, `origin: 'hand'` (spec §4): title and note from what
+ * was typed, the author's own messages as the sources, no entity pointer
+ * (his 6b: a GS777 in the text is text, nothing is guessed), and the audit
+ * row says it came through Telegram. The files are queued for the web AFTER
+ * the task exists, as a job (telegram-mechanics-26), so a deploy mid-download
+ * leaves a retry and not a task whose voice note never arrived.
+ */
+export async function createTaskFromDraft(
+  chatId: bigint,
+  draft: {
+    assigneeId: string;
+    title: string;
+    note: string;
+    sources: { chatId: number; messageId: number }[];
+    files: DraftFile[];
+  },
+  due: { dueAt: string; tzOffsetMin: number | null },
+): Promise<DraftCreated> {
+  const ctx = await taskCtxFor(chatId);
+  if (!ctx) return { ok: false, result: 'not_linked' };
+  let task: TaskRow;
+  try {
+    task = await createTask(
+      {
+        title: draft.title,
+        note: draft.note,
+        typeId: null,
+        assigneeId: draft.assigneeId,
+        dueAt: due.dueAt,
+        tzOffsetMin: due.tzOffsetMin,
+        priority: 2,
+        entityType: null,
+        entityId: null,
+        repeatUnit: null,
+        repeatEvery: 1,
+      },
+      { actorId: ctx.actorId },
+      { origin: 'hand', sourceMessages: draft.sources, via: 'telegram' },
+    );
+  } catch (err) {
+    if (err instanceof TaskError) return { ok: false, result: err.code };
+    throw err;
+  }
+  if (draft.files.length > 0) await queueTaskFiles(task.id, ctx.actorId!, draft.files);
+  const self = task.assigneeId === ctx.actorId;
+  const reach: Reach = self
+    ? 'ok'
+    : ((await reachOf([task.assigneeId], 'TaskAssigned')).get(task.assigneeId) ?? 'no_chat');
+  return {
+    ok: true,
+    taskId: task.id,
+    title: task.title,
+    assigneeId: task.assigneeId,
+    assigneeName: task.assigneeName ?? '—',
+    reach,
+    self,
+  };
+}
+
+/** A task's files, handed to the download worker (tasks/files-job.ts). */
+async function queueTaskFiles(taskId: string, uploadedBy: string, files: DraftFile[]): Promise<void> {
+  const { enqueue } = await import('../jobs/boss');
+  const { JOB_TASK_FILES } = await import('../tasks/files-job');
+  await enqueue(JOB_TASK_FILES, { taskId, uploadedBy, files }).catch((err: unknown) => {
+    // The task stands and its Telegram copy carries the forwards; only the
+    // web copy of the bytes is missing, and the log says which.
+    logger.error({ err, taskId, files: files.length }, '[tasks] file download not queued');
+  });
+}
+
+/**
+ * A late album part, after the task was made (telegram-mechanics-17): it
+ * joins the task's sources (so a reassign by the author forwards it too), is
+ * queued for the web, and is forwarded to the assignee now — the drain's
+ * `forwards` carried only the parts that had arrived. Only the AUTHOR's own
+ * open task, and never past the source cap.
+ */
+export async function appendLatePart(
+  chatId: bigint,
+  linger: { taskId: string; assigneeId: string },
+  part: { messageId: number; file: DraftFile | null },
+): Promise<boolean> {
+  const staff = await staffForChat(chatId);
+  if (!staff) return false;
+  const appended = (await db.execute(sql`
+    UPDATE tasks
+       SET source_messages = coalesce(source_messages, '[]'::jsonb)
+             || ${JSON.stringify([{ chatId: Number(chatId), messageId: part.messageId }])}::jsonb,
+           updated_at = now()
+     WHERE id = ${linger.taskId} AND created_by = ${staff.id} AND status = 'open'
+       AND jsonb_array_length(coalesce(source_messages, '[]'::jsonb)) < ${MAX_TASK_SOURCES}
+    RETURNING id`)) as unknown as { id: string }[];
+  if (appended.length === 0) return false;
+  if (part.file) await queueTaskFiles(linger.taskId, staff.id, [part.file]);
+  if (linger.assigneeId !== staff.id) {
+    const reach = (await reachOf([linger.assigneeId], 'TaskAssigned')).get(linger.assigneeId);
+    const [link] = await db
+      .select({ chat: telegramLinks.telegramChatId })
+      .from(telegramLinks)
+      .where(and(eq(telegramLinks.userId, linger.assigneeId), eq(telegramLinks.status, 'linked')))
+      .limit(1);
+    if (reach === 'ok' && link?.chat) {
+      const answer = await botCall('forwardMessage', {
+        chat_id: Number(link.chat),
+        from_chat_id: Number(chatId),
+        message_id: part.messageId,
+      });
+      if (!answer.ok) logger.warn({ description: answer.description }, '[tasks] late album part not forwarded');
+    }
+  }
+  return true;
+}
+
+/** How many «🔔» buttons «📤 Men bergan» carries — the rest are on the web. */
+export const GIVEN_BUTTONS = 8;
+
+/**
+ * «📤 Men bergan» (his 5a): the open tasks this person gave by hand,
+ * newest first, «🔴» late, «👀» accepted, «⏳» not yet seen — on deploy day
+ * every one reads «⏳», which is true: nobody has pressed 👀 yet.
+ */
+export function givenListText(list: { rows: GivenTask[]; total: number }, now: Date = new Date()): string {
+  if (list.total === 0) return '📤 Siz bergan ochiq vazifa yo‘q.';
+  const lines = list.rows.map((row) => {
+    const late = row.dueAt !== null && row.dueAt.getTime() < now.getTime();
+    const mark = late ? '🔴' : row.accepted ? '👀' : '⏳';
+    const due = row.dueAt ? telegramDue(row.dueAt, row.allDay, now) : 'muddatsiz';
+    return `${mark} ${row.assigneeName ?? '—'} · ${due} · ${row.title}`;
+  });
+  const more = list.total > list.rows.length ? `\n… va yana ${list.total - list.rows.length} ta (saytda)` : '';
+  return (
+    `📤 Siz bergan ochiq vazifalar (${list.total})\n\n${lines.join('\n')}${more}\n\n` +
+    '🔴 kechikkan · 👀 qabul qilingan · ⏳ hali ko‘rilmagan'
+  );
+}
+
+export function givenButtons(rows: GivenTask[]): CallbackButton[][] | null {
+  const out = rows
+    .slice(0, GIVEN_BUTTONS)
+    .map((row) => [{ text: `🔔 ${buttonLabel(row.title, 'Vazifa')}`, callback_data: `te:${row.id}` }]);
+  return out.length > 0 ? out : null;
+}
+
+export async function givenFromBot(
+  chatId: bigint,
+): Promise<{ text: string; buttons: CallbackButton[][] | null } | null> {
+  const staff = await staffForChat(chatId);
+  if (!staff) return null;
+  const list = await givenTasks(staff.id);
+  return { text: givenListText(list), buttons: givenButtons(list.rows) };
 }

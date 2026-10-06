@@ -1,10 +1,10 @@
 import type { Bot } from 'grammy';
-import { composeMyDay } from '../tasks/digest';
+import { bugunReply } from '../tasks/digest';
 import { logger } from '../logger';
 import { keyboardOf, staffTextHtml } from '../notifications/staff-html';
 import { sendStaffMessage } from '../notifications/service';
 import { offerStaffCommands } from './commands';
-import { editText, sendText, sendTyping } from './send';
+import { editMarkup, editText, sendText, sendTyping } from './send';
 import { clientAnswerKeyboard } from './map-link';
 import {
   AI_RASTAMOJKA,
@@ -13,6 +13,9 @@ import {
   botActorFor,
   HISOBLATISH,
   HOLAT,
+  MEN_BERGAN,
+  TOPSHIRIQ,
+  TASK_ANSWERS,
   holatFor,
   ownerSummaryFromBot,
   ZAMETKALAR,
@@ -37,6 +40,9 @@ import {
   staffForChat,
   takeStaffEntry,
   takeTaskPending,
+  notePendingPrompt,
+  pressRefusalText,
+  taskPressCheck,
   type CalcStep,
   type NoteStep,
   AI_ZONE_ROUTES,
@@ -70,6 +76,21 @@ import {
 } from './note-capture';
 import { sendNote } from './note-send';
 import { buttonLabel, splitMessage } from './limits';
+import { activeDraft } from './task-draft';
+import {
+  answerGiven,
+  answerPendingText,
+  BUSY_DRAFT,
+  draftLive,
+  draftMedia,
+  draftText,
+  handleDraftCallback,
+  handleForwardCallback,
+  handleTaskPress,
+  offerForwardTask,
+  pickAssignee,
+  startTaskDraft,
+} from './task-handlers';
 
 /**
  * The grammy shell of the staff bot — thin on purpose: every decision lives
@@ -104,10 +125,15 @@ export interface StaffKeyboardOptions {
   holat: boolean;
 }
 
-/** The staff rows — one list for both keyboards, so they cannot drift. */
+/**
+ * The staff rows — one list for both keyboards, so they cannot drift. The
+ * topshiriq round's two labels join the top (spec §6); positions move,
+ * labels never — a label is a router.
+ */
 function staffRows(opts: StaffKeyboardOptions) {
   return [
-    [{ text: BUGUN }, { text: HISOBLATISH }],
+    [{ text: BUGUN }, { text: TOPSHIRIQ }],
+    [{ text: MEN_BERGAN }, { text: HISOBLATISH }],
     [{ text: AI_RASTAMOJKA }, { text: ZAMETKALAR }],
     ...(opts.holat ? [[{ text: HOLAT }]] : []),
   ];
@@ -306,6 +332,22 @@ export function registerStaffBot(bot: Bot): void {
         await ctx.answerCallbackQuery({ text: 'Ulanmagan' });
         return;
       }
+      // A draft is live: its text must never become this task's result.
+      if (activeDraft(chatId)) {
+        await ctx.answerCallbackQuery({ text: BUSY_DRAFT });
+        await ctx.reply(BUSY_DRAFT);
+        return;
+      }
+      // The task is LOADED before anything waits for typing, and refused at
+      // once in words (the review's blocker, telegram-mechanics-1): an old
+      // ✅ on a calc job used to ask for a result, and the person typed one
+      // into silence. Closed, not theirs, or an open calc job (with its link).
+      const check = await taskPressCheck(chatId, parsed.taskId, 'act');
+      if (!check.ok) {
+        await ctx.answerCallbackQuery({ text: TASK_ANSWERS[check.result] });
+        await ctx.reply(pressRefusalText(check));
+        return;
+      }
       // The pressed message is REMEMBERED and left exactly as it is (round
       // C): nothing is closed until the result is typed, so a message that
       // changed now would be announcing a close that may never happen. The
@@ -328,14 +370,55 @@ export function registerStaffBot(bot: Bot): void {
       // On a LIST the prompt names the task — «which one did I just press?»
       // is not a question the person should have to scroll back to answer.
       const label = parsed.list ? pressedButtonText(pressed, ctx.callbackQuery.data) : null;
-      await ctx.reply(
+      // «✅ Natijasiz» so nobody has to type a dash (spec §4); the dash still works.
+      const prompt = await ctx.reply(
         (label ? `${label}\n` : '') + 'Natijani yozib yuboring (natijasiz yopish uchun «-» yuboring):',
+        { reply_markup: { inline_keyboard: [[{ text: '✅ Natijasiz', callback_data: `tn:${parsed.taskId}` }]] } },
       );
+      notePendingPrompt(chatId, parsed.taskId, prompt.message_id);
       return;
     }
 
     if (parsed.kind === 'note') {
       await handleNoteCallback(ctx, chatId, parsed.step, parsed.noteId, parsed.page);
+      return;
+    }
+
+    // The topshiriq round's buttons (docs/TELEGRAM-TOPSHIRIQ.md §3-6). ABOVE
+    // the approval guard below, which returns on every kind it does not name —
+    // a button nobody answers spins for fifteen seconds (#939).
+    if (
+      parsed.kind === 'task_accept' ||
+      parsed.kind === 'task_wait' ||
+      parsed.kind === 'task_postpone' ||
+      parsed.kind === 'task_question' ||
+      parsed.kind === 'task_reply' ||
+      parsed.kind === 'task_noresult' ||
+      parsed.kind === 'task_remind' ||
+      parsed.kind === 'task_cancel' ||
+      parsed.kind === 'task_sources'
+    ) {
+      await handleTaskPress(ctx, chatId, parsed);
+      return;
+    }
+    if (parsed.kind === 'draft') {
+      await handleDraftCallback(ctx, chatId, parsed.step);
+      return;
+    }
+    if (parsed.kind === 'draft_pick') {
+      await ctx.answerCallbackQuery();
+      await pickAssignee(ctx, chatId, parsed.userId);
+      return;
+    }
+    if (parsed.kind === 'forward') {
+      const staff = await staffForChat(chatId);
+      if (!staff) {
+        await ctx.answerCallbackQuery({ text: 'Ulanmagan' });
+        return;
+      }
+      await handleForwardCallback(ctx, chatId, parsed.step, (text) =>
+        answerStaffText(ctx as unknown as StaffTailCtx, chatId, staff.id, text),
+      );
       return;
     }
 
@@ -470,7 +553,15 @@ export function registerStaffBot(bot: Bot): void {
   // customer's shared contact falls through to the cabinet flow untouched.
   bot.on('message:contact', async (ctx, next) => {
     const chatId = BigInt(ctx.chat.id);
-    if (!takeStaffEntry(chatId)) return next();
+    if (!takeStaffEntry(chatId)) {
+      // A contact card in a STAFF chat is «call this person» — the obvious
+      // task. The draft or Door B takes it BEFORE the cabinet, whose contact
+      // handler answers «send your OWN number» with a one-time keyboard that
+      // takes the staff keyboard off the phone (telegram-mechanics-19). The
+      // sender's own number still falls through to the cabinet's linking.
+      if (!activeIntake(chatId) && !activeCapture(chatId) && (await draftMedia(ctx, chatId))) return;
+      return next();
+    }
     const contact = ctx.message.contact;
     // The cabinet's spoof-proof rule: only the sender's OWN number counts.
     // Every refusal below RESTORES the keyboard. The contact request is a
@@ -525,7 +616,13 @@ export function registerStaffBot(bot: Bot): void {
       // intake is asked FIRST and wins — one collector at a time, and that one
       // is minutes of a seller's forwarding.
       const capture = activeCapture(chatId);
-      if (!capture) return next();
+      if (!capture) {
+        // Third: a task draft takes it, or Door B offers to make one of a
+        // forward (docs/TELEGRAM-TOPSHIRIQ.md §3); anything else is the
+        // cabinet's.
+        if (await draftMedia(ctx, chatId)) return;
+        return next();
+      }
       const owner = await staffForChat(chatId);
       if (!owner) return next();
       await capturePart(ctx, chatId, capture, owner.id);
@@ -592,6 +689,22 @@ export function registerStaffBot(bot: Bot): void {
     await showIntakePrompt(ctx, chatId, updated ?? state);
   });
 
+  // Voice, audio, video, a round video, a place, a sticker — the kinds the
+  // staff bot never took before this round (telegram-mechanics-19). Inside
+  // `registerStaffBot`, which bot.ts registers BEFORE the cabinet: the draft
+  // first, then Door B, otherwise next() — so a customer's voice note still
+  // reaches the cabinet's forward to their manager untouched. A live calc
+  // intake or zametka capture keeps today's behaviour for these.
+  bot.on(
+    ['message:voice', 'message:audio', 'message:video', 'message:video_note', 'message:location', 'message:sticker'],
+    async (ctx, next) => {
+      const chatId = BigInt(ctx.chat.id);
+      if (activeIntake(chatId) || activeCapture(chatId)) return next();
+      if (await draftMedia(ctx, chatId)) return;
+      return next();
+    },
+  );
+
   bot.on('message:text', async (ctx, next) => {
     const chatId = BigInt(ctx.chat.id);
 
@@ -640,6 +753,7 @@ export function registerStaffBot(bot: Bot): void {
     if (ctx.message.text === HISOBLATISH || ctx.message.text === '/hisoblatish') {
       if (!(await mayCollect(chatId))) return next();
       if (await refuseWhileCapturing(ctx, chatId)) return;
+      if (await refuseWhileDrafting(ctx, chatId)) return;
       await ctx.reply('Nimani hisoblatamiz?', { reply_markup: sectionKeyboard() });
       return;
     }
@@ -648,6 +762,7 @@ export function registerStaffBot(bot: Bot): void {
     if (ctx.message.text === AI_RASTAMOJKA || ctx.message.text === '/ai') {
       if (!(await mayCollect(chatId))) return next();
       if (await refuseWhileCapturing(ctx, chatId)) return;
+      if (await refuseWhileDrafting(ctx, chatId)) return;
       await ctx.reply('🤖 Nimani hisoblaymiz?', { reply_markup: aiSectionKeyboard() });
       return;
     }
@@ -693,22 +808,40 @@ export function registerStaffBot(bot: Bot): void {
     if (ctx.message.text === BUGUN || ctx.message.text === '/bugun') {
       const staff = await staffForChat(chatId);
       if (!staff) return next();
-      const day = await composeMyDay(staff.id).catch((err) => {
+      const day = await bugunReply(staff.id).catch((err) => {
         logger.warn({ err }, 'bugun compose failed');
         return null;
       });
       if (!day) {
-        await ctx.reply('✅ Bugunga ochiq vazifa yo‘q.');
+        await ctx.reply('Vazifalarni o‘qib bo‘lmadi — birozdan keyin urinib ko‘ring.');
         return;
       }
       // The same words and the same «✅» rows as the 08:00 digest, so a task
-      // is closed from the list it is read on.
+      // is closed from the list it is read on — and «+ N ta muddatsiz» when
+      // the rest of the person's work has no date (spec §7).
       const sent = await sendText({
         chatId,
         html: staffTextHtml(day.text, 'TasksDue'),
         replyMarkup: keyboardOf(dayButtons(day.tasks)),
       });
       if (!sent.ok) logger.warn({ description: sent.description }, 'bugun reply not sent');
+      return;
+    }
+
+    // «➕ Topshiriq» and «📤 Men bergan» (docs/TELEGRAM-TOPSHIRIQ.md §3, §6)
+    // in the labels' slot, for the labels' reasons: ABOVE the note capture —
+    // a «Men bergan» filed into a zametka being written is a lost press — and
+    // above the one-text wait, which deletes on read (telegram-mechanics-24).
+    if (ctx.message.text === TOPSHIRIQ || ctx.message.text === '/topshiriq') {
+      const staff = await staffForChat(chatId);
+      if (!staff) return next();
+      await startTaskDraft(ctx, chatId);
+      return;
+    }
+    if (ctx.message.text === MEN_BERGAN || ctx.message.text === '/berganlarim') {
+      const staff = await staffForChat(chatId);
+      if (!staff) return next();
+      await answerGiven(ctx, chatId);
       return;
     }
 
@@ -723,22 +856,53 @@ export function registerStaffBot(bot: Bot): void {
       return;
     }
 
+    // A task draft swallows what follows, the same way: a name while it asks
+    // «Kimga?», a date after «📅 Sana yozish», otherwise a line of the task.
+    // BELOW the capture (one collector at a time — they refuse each other at
+    // the door) and ABOVE the one-text wait, so a draft's line is never
+    // anybody's result.
+    const draft = activeDraft(chatId);
+    if (draft) {
+      const staff = await staffForChat(chatId);
+      if (!staff) return next();
+      await draftText(ctx, chatId, draft);
+      return;
+    }
+
+    // Door B: a forwarded TEXT with no collector live is offered as a task
+    // («📌 Topshiriq qilamizmi?») — with «🔍 Qidirish» beside it for what a
+    // forward did until today. ABOVE the one-text wait: a forward is never
+    // the answer somebody was asked to type (spec §3). Its own staff check,
+    // because it sits above the staff fence.
+    if (ctx.message.forward_origin) {
+      const staff = await staffForChat(chatId);
+      if (staff) {
+        await offerForwardTask(ctx, chatId, null);
+        return;
+      }
+    }
+
     // Step 2 of «Bajarildi»: this text IS the result — unless it is one of the
     // keyboard's own buttons, which is never anybody's result (every branch
     // above answers them; this is the fence for the next button to join).
     if (!escapesIntake(ctx.message.text)) {
       const pendingTask = takeTaskPending(chatId);
+      if (pendingTask && pendingTask.kind !== 'result') {
+        // A question, an answer, or a typed date after ⏰ — the same one wait.
+        await answerPendingText(ctx, chatId, pendingTask, ctx.message.text);
+        return;
+      }
       if (pendingTask) {
         const result = ctx.message.text.trim() === '-' ? '' : ctx.message.text.trim();
-        const outcome = await completeTaskFromBot(chatId, pendingTask.taskId, result);
-        const answers: Record<string, string> = {
-          done: '✅ Vazifa yopildi.',
-          not_linked: 'Ulanmagan.',
-          not_yours: 'Bu vazifa sizniki emas.',
-          already_closed: 'Bu vazifa allaqachon yopilgan.',
-          not_found: 'Vazifa topilmadi.',
-        };
-        await ctx.reply(answers[outcome] ?? outcome);
+        const outcome = await completeTaskFromBot(chatId, pendingTask.taskId, result, pendingTask.pressed);
+        // Every code the service can refuse with has its words (a Record over
+        // the closed union) — a refusal is a sentence, never a throw into
+        // bot.catch after the person typed their result.
+        await ctx.reply(outcome === 'done' ? '✅ Vazifa yopildi.' : TASK_ANSWERS[outcome]);
+        // The «✅ Natijasiz» on the prompt is spent either way.
+        if (pendingTask.promptMessageId) {
+          void editMarkup({ chatId, messageId: pendingTask.promptMessageId }).catch(() => {});
+        }
         // The message the «✅» sat on becomes the record of the close (or, on
         // a list, loses that one row). Off the poller: an edit is a network
         // call and the answer above is what the person is waiting for.
@@ -758,50 +922,77 @@ export function registerStaffBot(bot: Bot): void {
     // question ledger.
     const staff = await staffForChat(chatId);
     if (!staff) return next();
-    const text = ctx.message.text;
-    const freeLookup = async (query: string) =>
-      lookupFromBot(chatId, query).catch((err) => {
-        logger.warn({ err }, 'bot lookup failed');
-        return null;
-      });
-    // Free first, and free again: the whole text as a code (today's exact
-    // behaviour), then any code-shaped word inside a sentence — «GS777
-    // qayerda» is answered for nothing before the paid model is considered.
-    let answer = await freeLookup(text);
-    if (!answer) {
-      for (const candidate of codeCandidates(text)) {
-        answer = await freeLookup(candidate);
-        if (answer) break;
-      }
-    }
-    if (answer) {
-      const buttons = clientAnswerKeyboard(process.env.APP_URL, answer);
-      await ctx.reply(answer.text, buttons ? { reply_markup: buttons } : undefined);
-      return;
-    }
-    // «ushani soraganda berishi kerak» — his own word. Somebody typing the
-    // note's name gets the note, for one indexed query, instead of falling
-    // into the paid model, which cannot see this table and would answer
-    // «topilmadi» having spent one of the day's forty questions.
-    if (await answerFromNotes(ctx, chatId, staff.id, text)) return;
-    if (!aiConfigured()) {
-      // No key = exactly the day before the AI shipped.
-      await ctx.reply(
-        'Topilmadi. Mijoz kodi (GS777), karobka kodi (YW26-000123), yashik (CR-…) yoki partiya kodini yozing.',
-      );
-      return;
-    }
-    const thinking = await ctx.reply('🤖 O‘ylayapman…');
-    // NOT awaited, and that is the whole point: grammy's built-in poller is
-    // SEQUENTIAL — it handles one update at a time — so awaiting a model
-    // loop here would hold the CUSTOMER bot for as long as the answer takes.
-    // One admin asking «bu oy qancha pul kirdi» would freeze every cabinet
-    // tap, every /start and every arrival flow for tens of seconds, and the
-    // owner's own words are that 95 % of customer contact is this channel.
-    // The answer is delivered by chat id when it lands, exactly as the
-    // notification path already sends unsolicited messages.
-    void answerWithAssistant(chatId, text, thinking.message_id);
+    await answerStaffText(ctx as unknown as StaffTailCtx, chatId, staff.id, ctx.message.text);
   });
+}
+
+/** What the staff tail needs from grammy's context. */
+type StaffTailCtx = {
+  reply: (text: string, extra?: Record<string, unknown>) => Promise<{ message_id: number }>;
+  api: import('grammy').Api;
+};
+
+/**
+ * The staff tail — what a member of staff's words become when nothing above
+ * claimed them: the free lookup, then any code-shaped word inside them, then
+ * a typed zametka name, then (paid, last) the AI. ONE function, asked by the
+ * ladder and by Door B's «🔍 Qidirish», so a forwarded text replays exactly
+ * what it did before the topshiriq round.
+ */
+async function answerStaffText(ctx: StaffTailCtx, chatId: bigint, staffId: string, text: string): Promise<void> {
+  const freeLookup = async (query: string) =>
+    lookupFromBot(chatId, query).catch((err) => {
+      logger.warn({ err }, 'bot lookup failed');
+      return null;
+    });
+  // Free first, and free again: the whole text as a code (today's exact
+  // behaviour), then any code-shaped word inside a sentence — «GS777
+  // qayerda» is answered for nothing before the paid model is considered.
+  let answer = await freeLookup(text);
+  if (!answer) {
+    for (const candidate of codeCandidates(text)) {
+      answer = await freeLookup(candidate);
+      if (answer) break;
+    }
+  }
+  if (answer) {
+    const buttons = clientAnswerKeyboard(process.env.APP_URL, answer);
+    await ctx.reply(answer.text, buttons ? { reply_markup: buttons } : undefined);
+    return;
+  }
+  // «ushani soraganda berishi kerak» — his own word. Somebody typing the
+  // note's name gets the note, for one indexed query, instead of falling
+  // into the paid model, which cannot see this table and would answer
+  // «topilmadi» having spent one of the day's forty questions.
+  if (await answerFromNotes(ctx, chatId, staffId, text)) return;
+  if (!aiConfigured()) {
+    // No key = exactly the day before the AI shipped.
+    await ctx.reply(
+      'Topilmadi. Mijoz kodi (GS777), karobka kodi (YW26-000123), yashik (CR-…) yoki partiya kodini yozing.',
+    );
+    return;
+  }
+  const thinking = await ctx.reply('🤖 O‘ylayapman…');
+  // NOT awaited, and that is the whole point: grammy's built-in poller is
+  // SEQUENTIAL — it handles one update at a time — so awaiting a model
+  // loop here would hold the CUSTOMER bot for as long as the answer takes.
+  // One admin asking «bu oy qancha pul kirdi» would freeze every cabinet
+  // tap, every /start and every arrival flow for tens of seconds, and the
+  // owner's own words are that 95 % of customer contact is this channel.
+  // The answer is delivered by chat id when it lands, exactly as the
+  // notification path already sends unsolicited messages.
+  void answerWithAssistant(chatId, text, thinking.message_id);
+}
+
+/**
+ * One collector at a time, the third one (spec §3): a calc collection or a
+ * zametka is refused IN WORDS while a task draft is live, as the draft is
+ * refused while they are.
+ */
+async function refuseWhileDrafting(ctx: NoteReplyCtx, chatId: bigint): Promise<boolean> {
+  if (!draftLive(chatId)) return false;
+  await ctx.reply(`Hozir topshiriq yozilyapti. ${BUSY_DRAFT}`);
+  return true;
 }
 
 /** Chats whose «📊 Holat» is being computed right now. */
@@ -1349,6 +1540,11 @@ async function handleCalcCallback(
       await ctx.reply('Ulanmagan.');
       return;
     }
+    // One collector at a time: a task draft is somebody's half-written task.
+    if (draftLive(chatId)) {
+      await ctx.reply(`Hozir topshiriq yozilyapti. ${BUSY_DRAFT}`);
+      return;
+    }
     // A live collection is minutes of somebody's attention. Replacing it in
     // silence is what this used to do; now it asks — unless the answer has
     // already arrived (`go_`).
@@ -1677,6 +1873,10 @@ async function handleNoteCallback(
     }
     if (activeCapture(chatId)) {
       await ctx.reply('Yangi zametka allaqachon yozilyapti — nomini yuboring.');
+      return;
+    }
+    if (draftLive(chatId)) {
+      await ctx.reply(`Hozir topshiriq yozilyapti. ${BUSY_DRAFT}`);
       return;
     }
     const { v4: uuidv4 } = await import('uuid');

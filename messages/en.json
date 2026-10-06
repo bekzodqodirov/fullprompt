@@ -765,7 +765,9 @@
       "login": "signed in",
       "logout": "signed out",
       "seed": "seed data",
-      "delete": "deleted"
+      "delete": "deleted",
+      "share": "shared",
+      "comment": "wrote on"
     },
     "field": "Field",
     "before": "Before",
@@ -2952,7 +2954,20 @@
       "bad_due_date": "Bad deadline",
       "not_created": "Could not create",
       "repeat_needs_due": "A repeating task needs a deadline",
-      "assignee_no_login": "This person has no login — they would never see the task"
+      "assignee_no_login": "This person has no login — they would never see the task",
+      "not_yours": "This task is not yours",
+      "bad_bound": "The task is bound wrongly",
+      "calc_use_screen": "This is a calculation job — finish it on the calculation screen",
+      "bound_check_failed": "Could not check — try again in a moment",
+      "bound_clock": "This task's date is the client's payment promise — it cannot be moved",
+      "repeat_series": "A repeating task's date is changed in the form — the whole series moves",
+      "not_assignee": "This task is no longer yours",
+      "already_accepted": "Already accepted",
+      "not_author": "You did not give this task",
+      "remind_too_soon": "Reminded recently — again in 30 minutes",
+      "not_remindable": "A reminder cannot be sent for this task",
+      "not_askable": "A question cannot be sent for this task",
+      "empty_text": "Empty message"
     },
     "repeat": "Repeat",
     "repeatNever": "no repeat",
@@ -2960,7 +2975,9 @@
     "repeatWeek": "every week",
     "repeatMonth": "every month",
     "showRoad": "Trucks on the calendar",
-    "dueTime": "Time"
+    "dueTime": "Time",
+    "calcOpen": "Open the calculation",
+    "calcLocked": "The VED is calculating"
   },
   "deals": {
     "title": "Deals",

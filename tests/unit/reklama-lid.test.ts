@@ -231,7 +231,14 @@ describe('«📞 Bog‘landim»', () => {
     const rows = buttonsFor('InboundLeadArrived', { text: 'x', leadId: LEAD })!;
     expect(rows).toEqual([[{ text: LEAD_CONTACTED_BUTTON, callback_data: `lc:${LEAD}` }]]);
     for (const row of rows) {
-      for (const button of row) expect(parseCallback(button.callback_data)).toEqual({ kind: 'lead_contacted', leadId: LEAD });
+      // `buttonsFor` may draw a URL row since the topshiriq round; this push
+      // draws none, so a URL here reads '' and fails the parse — on purpose.
+      for (const button of row) {
+        expect(parseCallback('callback_data' in button ? button.callback_data : '')).toEqual({
+          kind: 'lead_contacted',
+          leadId: LEAD,
+        });
+      }
     }
     for (const junk of ['lc:', 'lc:x', `lcx:${LEAD}`, `lc:${LEAD}:1`]) expect(parseCallback(junk), junk).toBeNull();
     expect(Buffer.byteLength(`lc:${LEAD}`)).toBeLessThanOrEqual(64);

@@ -8,6 +8,7 @@ import {
   permissions,
   rolePermissions,
   roles,
+  tasks,
   telegramLinks,
   userRoles,
   users,
@@ -16,7 +17,7 @@ import { logger } from '../logger';
 import { canLogInSql } from '../users/login';
 import { runAutomationRules } from '../automation/service';
 import { botRefused } from '../diagnostics/signals';
-import { buttonsFor } from '../telegram/staff-bot';
+import { buttonsFor, type BotButton } from '../telegram/staff-bot';
 import { approvalVerdictLine, fillCount, notificationLabels } from './labels';
 import { isTelegramMuted } from './mutes';
 import { sendsSilently } from './night';
@@ -1078,7 +1079,7 @@ const BUTTON_REFUSAL = /button|keyboard|reply.?markup/i;
 async function deliverStaffMessage(
   chatId: bigint,
   message: StaffMessage,
-  buttons: { text: string; callback_data: string }[][] | null,
+  buttons: BotButton[][] | null,
   // Carried into ALL THREE sends, the hand-made one included: a night-silent
   // push whose card link became a button used to ring, because that attempt
   // never went through `sendText` (0113, the design judge's finding 1).
@@ -1167,6 +1168,116 @@ async function forwardOriginal(
 }
 
 /**
+ * The author's own messages a task was given with (docs/TELEGRAM-TOPSHIRIQ.md
+ * §4), forwarded BEFORE the task's text — ONE `forwardMessages` call per chat
+ * they sit in (in practice one: the draft lives in the author's chat), so an
+ * album stays an album and a source Telegram will not forward is skipped by
+ * Telegram itself.
+ *
+ * `forwarded` is written only AFTER the call returns, never before and never
+ * per message (the review): `forwardOriginal` extended to a list would have
+ * re-sent everything on a retry after a partial failure. A moment's failure
+ * hands the row back like `forwardOriginal` does — the author's voice note
+ * exists nowhere a colleague can open — and a refusal for good lets the text
+ * go on alone.
+ */
+async function forwardSources(
+  notificationId: string,
+  staffChatId: bigint,
+  payload: Record<string, unknown>,
+): Promise<SendResult | null> {
+  if (payload.forwarded === true || !Array.isArray(payload.forwards)) return null;
+  const byChat = new Map<number, number[]>();
+  for (const source of payload.forwards as { chatId?: unknown; messageId?: unknown }[]) {
+    const chat = Number(source?.chatId);
+    const message = Number(source?.messageId);
+    if (!Number.isFinite(chat) || !Number.isInteger(message)) continue;
+    byChat.set(chat, [...(byChat.get(chat) ?? []), message]);
+  }
+  if (byChat.size === 0) return null;
+  for (const [fromChat, ids] of byChat) {
+    const answer = await botCall('forwardMessages', {
+      chat_id: Number(staffChatId),
+      from_chat_id: fromChat,
+      // Telegram wants them strictly increasing, which is also their order.
+      message_ids: [...new Set(ids)].sort((a, b) => a - b),
+    });
+    if (!answer.ok && !isPermanentFailure(answer.status)) {
+      logger.warn({ notificationId, status: answer.status, description: answer.description }, 'task sources not forwarded yet — retrying');
+      return {
+        ok: false,
+        status: answer.status,
+        description: answer.description,
+        messageId: null,
+        retryAfter: answer.retryAfter,
+        permanent: false,
+        botDown: isBotFailure(answer.status),
+        usedFallback: false,
+      };
+    }
+    if (!answer.ok) {
+      logger.warn({ notificationId, description: answer.description }, 'task sources cannot be forwarded — the text still goes');
+    }
+  }
+  await db.execute(sql`
+    UPDATE notifications SET payload = payload || '{"forwarded": true}'::jsonb
+    WHERE id = ${notificationId}`);
+  return null;
+}
+
+/** A task's copies the ASSIGNEE holds — the ones a handover makes stale too. */
+const ASSIGNEE_TASK_COPIES = new Set(['TaskAssigned', 'TaskReminder', 'TaskAnswer']);
+/** …and the author's: their question copy, «boshqaga o‘tdi». */
+const AUTHOR_TASK_COPIES = new Set(['TaskQuestion', 'TaskReassigned']);
+
+/**
+ * Is this task copy still worth sending, and with what buttons?
+ *
+ * Mutes a single-task copy whose task is no longer open, or — for the
+ * assignee's copies — no longer this person's. Re-reads `accepted` so a 👀
+ * pressed on an earlier copy is not drawn again. Filters a `TasksDue`'s
+ * buttons to the tasks still open (its TEXT is the morning's and stays).
+ * A task id that names no row sends as it always did (the approval rule):
+ * a malformed payload is the renderer's problem, not this check's.
+ */
+async function taskCopyLive(
+  type: string,
+  payload: Record<string, unknown>,
+  userId: string,
+): Promise<{ mute?: string; payload?: Record<string, unknown> }> {
+  if (type === 'TasksDue' && Array.isArray(payload.tasks)) {
+    const ids = (payload.tasks as { id?: unknown }[])
+      .map((entry) => entry?.id)
+      .filter((id): id is string => typeof id === 'string' && UUID_RE.test(id));
+    if (ids.length === 0) return {};
+    const open = await db
+      .select({ id: tasks.id })
+      .from(tasks)
+      .where(and(inArray(tasks.id, ids), eq(tasks.status, 'open')));
+    const still = new Set(open.map((row) => row.id));
+    return {
+      payload: {
+        ...payload,
+        tasks: (payload.tasks as { id?: unknown }[]).filter((entry) => typeof entry?.id === 'string' && still.has(entry.id)),
+      },
+    };
+  }
+  if (!ASSIGNEE_TASK_COPIES.has(type) && !AUTHOR_TASK_COPIES.has(type)) return {};
+  const taskId = payload.taskId;
+  if (typeof taskId !== 'string' || !UUID_RE.test(taskId)) return {};
+  const [task] = await db
+    .select({ status: tasks.status, assigneeId: tasks.assigneeId, acceptedAt: tasks.acceptedAt })
+    .from(tasks)
+    .where(eq(tasks.id, taskId));
+  if (!task) return {};
+  if (task.status !== 'open') return { mute: 'closed before it was sent' };
+  if (ASSIGNEE_TASK_COPIES.has(type) && task.assigneeId !== userId) {
+    return { mute: 'handed on before it was sent' };
+  }
+  return { payload: { ...payload, accepted: task.acceptedAt !== null } };
+}
+
+/**
  * Hand the rest of a run back to the queue exactly as it was: pending, no
  * claim, no attempt counted. ONE statement, so a pause can never leave half a
  * run parked in 'sending' for the ten-minute reclaim to charge an attempt for.
@@ -1246,18 +1357,38 @@ export async function sendPendingTelegram(now: Date = new Date()): Promise<void>
       settled.add(notification.id);
       continue;
     }
+    // The same rule for a task's copies (review telegram-mechanics-5): a copy
+    // queued before the task closed — or before it was handed to somebody
+    // else — never goes out with live buttons, and never forwards the
+    // author's messages to a person who no longer has the task.
+    // A read that fails sends the copy as it always went — every press is
+    // re-checked on the server, and one blip must not throw the whole run.
+    const live = await taskCopyLive(notification.type, payload, notification.userId).catch((err: unknown) => {
+      logger.warn({ err, notificationId: notification.id }, 'task copy check failed — sent as queued');
+      return {} as Awaited<ReturnType<typeof taskCopyLive>>;
+    });
+    if (live.mute) {
+      await db
+        .update(notifications)
+        .set({ status: 'muted', error: live.mute })
+        .where(eq(notifications.id, notification.id));
+      settled.add(notification.id);
+      continue;
+    }
+    const sendPayload = live.payload ?? payload;
 
     let res: SendResult;
     try {
       // Inline buttons ride on the send, by type (staff bot, round 35): a
-      // task lands with «Bajarildi», a debtor request with «Ruxsat / Yo‘q».
+      // task lands with its buttons, a debtor request with «Ruxsat / Yo‘q».
       // INSIDE the try (round C review): a payload a renderer chokes on fails
       // its own row, where outside it threw the whole run and parked every
       // claimed row behind it in «sending» until the reclaim charged them.
-      const buttons = buttonsFor(notification.type, payload);
+      const buttons = buttonsFor(notification.type, sendPayload);
       const message = composeStaffMessage(notification.type, payload, recipient.locale);
       res =
         (await forwardOriginal(notification.id, link.telegramChatId, payload)) ??
+        (await forwardSources(notification.id, link.telegramChatId, payload)) ??
         (await deliverStaffMessage(
           link.telegramChatId,
           message,

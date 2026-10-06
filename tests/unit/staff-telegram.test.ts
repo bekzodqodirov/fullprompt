@@ -10,6 +10,7 @@ import {
   LINK_ASK_BUTTONS,
   parseCallback,
   pressedLinkAskLabel,
+  type BotButton,
 } from '@/modules/platform/telegram/staff-bot';
 import { telegramDue } from '@/modules/platform/tasks/service';
 import { dailyDigestText, DIGEST_UNCLAIMED_SHOWN } from '@/modules/wms/reports/daily-digest';
@@ -27,6 +28,14 @@ const read = (p: string) =>
     .replace(/^\s*\/\/.*$/gm, '');
 
 const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+
+/**
+ * A drawn button's callback — '' for a URL button, which no parser accepts.
+ * `buttonsFor` may draw a URL row since the topshiriq round (a calc job's
+ * row in the digest); the rows these tests read must all be callbacks, so a
+ * URL among them fails the parse instead of being skipped.
+ */
+const dataOf = (button: BotButton) => ('callback_data' in button ? button.callback_data : '');
 
 /*
  * Lists exactly as the profile WROTE them on real days — the group's members
@@ -130,7 +139,7 @@ describe('the day list closes tasks from its own buttons', () => {
     const rows = dayButtons([{ id: 'not-a-uuid', title: 'x' }, ...tasks])!;
     expect(rows).toHaveLength(DAY_BUTTONS);
     expect(rows[0]).toEqual([{ text: '✅ Vazifa 0', callback_data: `tb:${uuid(0)}` }]);
-    for (const row of rows) expect(parseCallback(row[0]!.callback_data)).not.toBeNull();
+    for (const row of rows) expect(parseCallback(dataOf(row[0]!))).not.toBeNull();
     expect(dayButtons([])).toBeNull();
   });
 
@@ -206,8 +215,8 @@ describe('«Bu prixodlar hisobingizga tegishlimi?» — the VED answers a guess 
     ]);
     for (const row of rows) {
       for (const button of row) {
-        expect(parseCallback(button.callback_data), button.callback_data).not.toBeNull();
-        expect(Buffer.byteLength(button.callback_data)).toBeLessThanOrEqual(64);
+        expect(parseCallback(dataOf(button)), dataOf(button)).not.toBeNull();
+        expect(Buffer.byteLength(dataOf(button))).toBeLessThanOrEqual(64);
       }
     }
     // A payload with nothing drawable sends as plain text rather than an empty keyboard.
@@ -434,7 +443,9 @@ describe('a «today» task due on ANOTHER Tashkent day says which (STAFF-TODAY-T
 describe('one payload no renderer can read fails ITS row, never the run (round C review)', () => {
   it('the per-row render sits inside the send’s try', () => {
     const drain = read('src/modules/platform/notifications/service.ts');
-    const at = drain.indexOf('const buttons = buttonsFor(notification.type, payload);');
+    // `sendPayload` since the topshiriq round: the stored payload with the
+    // task's live «accepted» and a digest's still-open rows (taskCopyLive).
+    const at = drain.indexOf('const buttons = buttonsFor(notification.type, sendPayload);');
     expect(at, 're-anchor: the drain’s render moved').toBeGreaterThan(-1);
     const tryAt = drain.lastIndexOf('try {', at);
     const catchAt = drain.indexOf('} catch (err) {', tryAt);

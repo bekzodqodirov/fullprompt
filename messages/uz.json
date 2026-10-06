@@ -765,7 +765,9 @@
       "login": "tizimga kirdi",
       "logout": "tizimdan chiqdi",
       "seed": "boshlang'ich ma'lumotlar",
-      "delete": "o‘chirdi"
+      "delete": "o‘chirdi",
+      "share": "ulashdi",
+      "comment": "yozdi"
     },
     "field": "Maydon",
     "before": "Oldin",
@@ -2952,7 +2954,20 @@
       "bad_due_date": "Muddat noto‘g‘ri",
       "not_created": "Yaratib bo‘lmadi",
       "repeat_needs_due": "Takrorlanuvchi vazifada muddat bo‘lishi shart",
-      "assignee_no_login": "Bu hodim tizimga kirmaydi — vazifani ko‘ra olmaydi"
+      "assignee_no_login": "Bu hodim tizimga kirmaydi — vazifani ko‘ra olmaydi",
+      "not_yours": "Bu vazifa sizniki emas",
+      "bad_bound": "Vazifa noto‘g‘ri bog‘langan",
+      "calc_use_screen": "Bu hisoblash ishi — hisoblash sahifasida yakunlang",
+      "bound_check_failed": "Tekshirib bo‘lmadi — birozdan keyin urinib ko‘ring",
+      "bound_clock": "Bu vazifa muddati — mijozning to‘lov va’dasi, uni surib bo‘lmaydi",
+      "repeat_series": "Takrorlanuvchi vazifa muddati formada o‘zgaradi — butun qator suriladi",
+      "not_assignee": "Bu vazifa endi sizda emas",
+      "already_accepted": "Allaqachon qabul qilingan",
+      "not_author": "Bu vazifani siz bermagansiz",
+      "remind_too_soon": "Yaqinda eslatilgan — 30 daqiqadan keyin yana mumkin",
+      "not_remindable": "Bu vazifaga eslatma yuborib bo‘lmaydi",
+      "not_askable": "Bu vazifa bo‘yicha savol yuborib bo‘lmaydi",
+      "empty_text": "Bo‘sh xabar"
     },
     "repeat": "Takror",
     "repeatNever": "takrorlanmaydi",
@@ -2960,7 +2975,9 @@
     "repeatWeek": "har hafta",
     "repeatMonth": "har oy",
     "showRoad": "Kalendarda mashinalar",
-    "dueTime": "Soat"
+    "dueTime": "Soat",
+    "calcOpen": "Hisobni ochish",
+    "calcLocked": "VED hisoblamoqda"
   },
   "deals": {
     "title": "Bitimlar",

@@ -46,7 +46,7 @@ export default async function CalendarPage({
   const last = new Date(Date.UTC(year!, mon!, 0));
 
   const rows = await calendarTasks(first, last, assignee);
-  const tasks = await toTaskViews(rows);
+  const tasks = await toTaskViews(rows, actor);
   const people = await assignablePeople();
 
   // Trucks and promised cargo, derived from the batches themselves so the

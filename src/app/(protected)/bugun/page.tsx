@@ -68,9 +68,9 @@ export default async function TodayPage({
     : null;
 
   const [overdue, today, undated] = await Promise.all([
-    toTaskViews(day.overdue),
-    toTaskViews(day.today),
-    toTaskViews(day.undated),
+    toTaskViews(day.overdue, actor),
+    toTaskViews(day.today, actor),
+    toTaskViews(day.undated, actor),
   ]);
 
   const myCalls = (calls?.mine.length ?? 0) + (calls?.stale.length ?? 0);

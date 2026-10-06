@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { db } from '../db/client';
-import { attachments } from '../db/schema';
+import { attachments, tasks } from '../db/schema';
 import { writeAudit } from '../audit/service';
 import { enqueue, JOB_THUMBNAILS } from '../jobs/boss';
 import { logger } from '../logger';
@@ -225,9 +225,34 @@ export class AttachmentDeleteError extends Error {
 }
 
 /**
+ * Who may delete through the shared route, per entity type the system writes
+ * WITHOUT the upload route (the staff bot, the listener, the calls phone).
+ *
+ * The shared rule — the uploader, or anyone who can edit receipts — is a
+ * receipt-era rule, and it is wrong for two of them (review access-money-11,
+ * the zametka round's own finding one type over):
+ *  - `task`: the author's voice note or photo is the RECORD of what was asked,
+ *    and a logist who sees it on /kalendar holds `receipts.edit` — so only the
+ *    task's AUTHOR deletes it;
+ *  - `staff_note`: a note's parts are the notes screen's to remove
+ *    (`purgeAttachment` after its own question), never this route's.
+ * The others keep the shared rule, which is a decision too: a fence
+ * (topshiriq-wire.test.ts) demands every bot-written type be named here
+ * AND have a read case, so a new one cannot fall to a default nobody chose.
+ */
+export const DELETE_RULES = {
+  task: 'task_author',
+  staff_note: 'own_screen',
+  crm_activity: 'shared',
+  tg_message: 'shared',
+  call_log: 'shared',
+} as const satisfies Record<string, 'task_author' | 'own_screen' | 'shared'>;
+
+/**
  * Remove a wrongly-added photo/file (owner's request). Allowed for the
- * uploader themselves and for anyone who can edit receipts; bytes and
- * thumbnails are removed best-effort after the row is gone.
+ * uploader themselves and for anyone who can edit receipts — except where
+ * `DELETE_RULES` says otherwise; bytes and thumbnails are removed best-effort
+ * after the row is gone.
  */
 export async function deleteAttachment(
   id: string,
@@ -235,7 +260,18 @@ export async function deleteAttachment(
 ): Promise<void> {
   const attachment = await db.query.attachments.findFirst({ where: eq(attachments.id, id) });
   if (!attachment) throw new AttachmentDeleteError('not_found');
-  if (attachment.uploadedBy !== actor.id && !actor.permissions.has('receipts.edit')) {
+  const rule = (DELETE_RULES as Record<string, string>)[attachment.entityType] ?? 'shared';
+  if (rule === 'own_screen') throw new AttachmentDeleteError('forbidden');
+  if (rule === 'task_author') {
+    // Asked BEFORE the generic rule, and instead of it: the uploader IS the
+    // author for a bot-written task file, but `receipts.edit` is not.
+    const [task] = await db
+      .select({ createdBy: tasks.createdBy })
+      .from(tasks)
+      .where(eq(tasks.id, attachment.entityId))
+      .limit(1);
+    if (!task || task.createdBy !== actor.id) throw new AttachmentDeleteError('forbidden');
+  } else if (attachment.uploadedBy !== actor.id && !actor.permissions.has('receipts.edit')) {
     throw new AttachmentDeleteError('forbidden');
   }
 
