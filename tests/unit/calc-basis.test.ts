@@ -1,6 +1,107 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { defaultBasisFor, uniformBazaOf } from '@/modules/wms/calc/basis';
+import {
+  basesFor,
+  basisConflicts,
+  basisLabel,
+  basisOnScreen,
+  defaultBasisFor,
+  isBehindOnBasisCheck,
+  pairUnitFor,
+  uniformBazaOf,
+} from '@/modules/wms/calc/basis';
+import { BAZA_BASES, type BazaBasis, type DutyUnit } from '@/modules/wms/calc/pricing';
+
+/**
+ * 0125 (his 18a/19a): what a row may be priced PER, what its one measure
+ * pair must hold, and the one combination it cannot hold — over EVERY law
+ * unit × EVERY basis, so a unit added to either vocabulary is a row of this
+ * matrix that has to be decided, never a gap.
+ */
+const LAWS: (DutyUnit | null)[] = [null, 'kg', 'dona', '1000_dona', 'sm3', 'm2', 'juft', 'litr'];
+const PAIR_LAWS = new Set<DutyUnit | null>(['m2', 'juft', 'litr', 'sm3']);
+const PAIR_BASES = new Set<BazaBasis>(['m2', 'juft', 'litr']);
+
+describe('basesFor × pairUnitFor × basisConflicts — the whole matrix', () => {
+  it('a law with no pair unit offers all six; a pair law offers dona, kg, m³ and its own', () => {
+    for (const law of LAWS) {
+      const offered = basesFor(law);
+      if (law === 'm2' || law === 'juft' || law === 'litr') {
+        expect(offered, String(law)).toEqual(['unit', 'kg', 'm3', law]);
+      } else if (law === 'sm3') {
+        // A vehicle's duty owns the pair; its baza is per dona (#868).
+        expect(offered).toEqual(['unit', 'kg', 'm3']);
+      } else {
+        expect(offered, String(law)).toEqual([...BAZA_BASES]);
+      }
+    }
+  });
+
+  for (const law of LAWS) {
+    for (const basis of BAZA_BASES) {
+      it(`${law ?? 'advalor'} × ${basis}`, () => {
+        const pair = pairUnitFor(law, basis);
+        // The law's pair unit wins; otherwise a pair BASIS asks its own; dona,
+        // kg and m³ each have a column and never touch the pair.
+        if (PAIR_LAWS.has(law)) expect(pair).toBe(law);
+        else if (PAIR_BASES.has(basis)) expect(pair).toBe(basis);
+        else expect(pair).toBeNull();
+        // The ONE refusal: a pair law with ANOTHER pair basis — one pair
+        // cannot hold two quantities.
+        const conflict = PAIR_LAWS.has(law) && PAIR_BASES.has(basis) && basis !== law;
+        expect(basisConflicts(law, basis)).toBe(conflict);
+        expect(basesFor(law).includes(basis)).toBe(!conflict);
+      });
+    }
+  }
+
+  it('a missing basis asks nothing of its own and conflicts with nothing', () => {
+    expect(pairUnitFor(null, null)).toBeNull();
+    expect(pairUnitFor('juft', null)).toBe('juft');
+    expect(basisConflicts('juft', null)).toBe(false);
+  });
+
+  it('m³ is a baza unit and never a pair unit — it reads volume_m3', () => {
+    for (const law of LAWS) {
+      if (!PAIR_LAWS.has(law)) expect(pairUnitFor(law, 'm3')).toBeNull();
+      expect(basisConflicts(law, 'm3')).toBe(false);
+    }
+  });
+});
+
+describe('basisOnScreen — draft, else stored, else the law', () => {
+  it('a draft wins, a stored unit stands, and the law decides only when neither speaks', () => {
+    expect(basisOnScreen('m3', 'kg', { dutyUnit: 'juft' })).toBe('m3');
+    expect(basisOnScreen(undefined, 'kg', { dutyUnit: 'juft' })).toBe('kg');
+    expect(basisOnScreen(undefined, null, { dutyUnit: 'juft' })).toBe('juft');
+    expect(basisOnScreen(undefined, null, null)).toBe('unit');
+  });
+});
+
+describe('basisLabel — the storage spelling is nobody’s word', () => {
+  it('dona is the caller’s word; m² and m³ are symbols; the rest as written', () => {
+    expect(basisLabel('unit', 'шт')).toBe('шт');
+    expect(basisLabel('m2', 'шт')).toBe('m²');
+    expect(basisLabel('m3', 'шт')).toBe('m³');
+    expect(basisLabel('kg', 'шт')).toBe('kg');
+    expect(basisLabel('juft', 'шт')).toBe('juft');
+  });
+});
+
+describe('a 23514 is «server behind» only on the two CHECKs 0125 widened', () => {
+  const pg = (code: string, constraint_name?: string) => ({ code, constraint_name });
+  it('matches by NAME, through a drizzle wrapper too', () => {
+    expect(isBehindOnBasisCheck(pg('23514', 'calc_items_baza_basis_check'))).toBe(true);
+    expect(isBehindOnBasisCheck(pg('23514', 'calc_bazas_basis_check'))).toBe(true);
+    expect(isBehindOnBasisCheck({ cause: pg('23514', 'calc_items_baza_basis_check') })).toBe(true);
+  });
+  it('never a blanket 23514 — a broken pair CHECK is a real fault', () => {
+    expect(isBehindOnBasisCheck(pg('23514', 'calc_items_measure_pair_check'))).toBe(false);
+    expect(isBehindOnBasisCheck(pg('23514'))).toBe(false);
+    expect(isBehindOnBasisCheck(pg('23505', 'calc_items_baza_basis_check'))).toBe(false);
+    expect(isBehindOnBasisCheck(null)).toBe(false);
+  });
+});
 
 /**
  * Phase 4, items 1+3 — the law-unit default and the block's one baza, plus
