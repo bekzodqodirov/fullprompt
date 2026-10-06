@@ -237,7 +237,7 @@ export class AttachmentDeleteError extends Error {
  *  - `staff_note`: a note's parts are the notes screen's to remove
  *    (`purgeAttachment` after its own question), never this route's.
  * The others keep the shared rule, which is a decision too: a fence
- * (attachment-bot-types.test.ts) demands every bot-written type be named here
+ * (topshiriq-wire.test.ts) demands every bot-written type be named here
  * AND have a read case, so a new one cannot fall to a default nobody chose.
  */
 export const DELETE_RULES = {

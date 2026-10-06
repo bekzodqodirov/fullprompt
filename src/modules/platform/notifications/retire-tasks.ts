@@ -46,7 +46,7 @@ export interface RetireTaskCopiesInput {
 
 /**
  * Every type whose message carries ONE task's buttons. Fenced against the
- * types `buttonsFor` draws a task callback for (retire-tasks.test.ts): a
+ * types `buttonsFor` draws a task callback for (topshiriq-wire.test.ts): a
  * fifth that carries buttons and is missing here keeps them for ever.
  */
 export const TASK_COPY_TYPES = [

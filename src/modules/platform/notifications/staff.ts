@@ -89,8 +89,11 @@ export async function reachOf(userIds: string[], type: string): Promise<Map<stri
       id: users.id,
       muted: users.mutedNotificationTypes,
       live: canLogInSql(),
+      // `${users}.id`, never `${users.id}`: a single-table select renders the
+      // column bare, and a bare "id" inside this subquery is the LINK's own id
+      // — every colleague read «📵 not linked» (#128, caught by its test).
       linked: sql<boolean>`EXISTS (SELECT 1 FROM telegram_links l
-        WHERE l.user_id = ${users.id} AND l.status = 'linked' AND l.telegram_chat_id IS NOT NULL)`,
+        WHERE l.user_id = ${users}.id AND l.status = 'linked' AND l.telegram_chat_id IS NOT NULL)`,
     })
     .from(users)
     .where(inArray(users.id, ids));
