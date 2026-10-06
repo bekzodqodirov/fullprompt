@@ -23,6 +23,13 @@ import {
 import { calcSpeed, finishCalcRequest, returnCalcRequest, vedRotaPool } from '@/modules/wms/calc/service';
 import { recalcFromSealed, recordOffer, sealCalc, setFreightZone, standingAnchorsFor } from '@/modules/wms/calc/workspace';
 import { isRegistryRequest, registryCounts, registryRows, type RegistryAnswerRow } from '@/modules/wms/calc/chain';
+import {
+  calcCardExists,
+  isCalcCardClient,
+  kartaCardFor,
+  leadEverPriced,
+  newestRequestOn,
+} from '@/modules/wms/calc/card-door';
 import { creditTotals } from '@/modules/wms/calc/credit';
 import { calcRegistrySight, internalNoteSight } from '@/modules/wms/calc/control-scope';
 import { dealCalcSheets, requestGoodsSheet } from '@/modules/wms/calc/sheet';
@@ -519,4 +526,23 @@ describe('the quote lock follows the card’s LAST WRITER (ved-money-1)', () => 
     // …and re-posting the card's own figure is an ordinary save.
     expect((await saveShownQuote(lead, '+998901116677'))!.phone).toBe('+998901116677');
   });
+});
+
+/**
+ * Review access-6: a hand-typed URL of 36 hex digits and dashes passed the
+ * doors' loose shape check and reached postgres as `::uuid`, which raises
+ * 22P02 — an error page where the answer is «no such card» (#514).
+ */
+describe('a 36-character id that is not a uuid is no card, never a 500 (access-6)', () => {
+  for (const id of ['a'.repeat(36), '-'.repeat(36)]) {
+    it(`answers «none» for ${id.slice(0, 6)}…`, async () => {
+      expect(await kartaCardFor(id)).toBeNull();
+      expect(await kartaCardFor(madeRequests[0]!, id)).not.toBeNull();
+      expect(await calcCardExists({ entityType: 'lead', entityId: id })).toBe(false);
+      expect(await isCalcCardClient(id)).toBe(false);
+      expect(await leadEverPriced(id)).toBe(false);
+      expect(await newestRequestOn({ entityType: 'deal', entityId: id })).toBeNull();
+      expect(await isRegistryRequest(id)).toBe(false);
+    });
+  }
 });

@@ -37,7 +37,11 @@ export async function GET(
   if (!sight) return Response.json({ error: 'forbidden' }, { status: 403 });
 
   const { requestId } = await params;
-  if (!/^[0-9a-f-]{36}$/i.test(requestId)) return Response.json({ error: 'not_found' }, { status: 404 });
+  // The STRICT shape (review access-6): the loose one let a 36-character
+  // non-uuid reach `::uuid` and come back a 500 instead of this 404.
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestId)) {
+    return Response.json({ error: 'not_found' }, { status: 404 });
+  }
 
   const headers = { 'Cache-Control': 'private, no-store' };
   try {
