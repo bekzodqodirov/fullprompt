@@ -18,8 +18,13 @@ import { logger } from '../logger';
  *     keeps its TEXT, and only its keyboard is redrawn from the tasks it
  *     listed that are still open. Stamping it «✅ Bajarildi» would wipe the
  *     buttons of seven other open tasks (the review's blocker).
- * The drain re-checks at send time too (`taskCopyStillLive`): a copy it held
- * in «sending» at this moment is never seen here.
+ * A copy the drain holds in «sending» at this moment is never seen here, so
+ * the drain asks twice: before the send (`taskCopyLive` mutes a copy whose
+ * task closed or moved) and again AFTER it has written 'sent' and the
+ * message id (`retireIfClosedInFlight`), retiring that one row itself when
+ * the task closed while its forwards and text were going out (review
+ * tasks-1). A close that commits after that second read finds the row here,
+ * because 'sent' was written first.
  *
  * Callers run it AFTER their transaction commits (#714), never inside one,
  * and off the request or the poller (`retireTaskCopiesSoon`, #706).
@@ -42,6 +47,12 @@ export interface RetireTaskCopiesInput {
   until?: Date;
   /** The message a press is editing itself — two edits must not race on it. */
   exceptMessages?: { chatId: number; messageId: number }[];
+  /**
+   * Only these rows — the drain's own after-send check, retiring the ONE copy
+   * that was in flight while the door's retire ran (review tasks-1). Every
+   * other copy was the door's to settle, and the door saw them.
+   */
+  onlyNotificationIds?: string[];
 }
 
 /**
@@ -125,6 +136,7 @@ export async function retireTaskCopies(input: RetireTaskCopiesInput): Promise<nu
       except.length > 0 ? notInArray(notifications.userId, except) : undefined,
       gte(notifications.createdAt, from),
       input.until ? lt(notifications.createdAt, input.until) : undefined,
+      input.onlyNotificationIds ? inArray(notifications.id, input.onlyNotificationIds) : undefined,
     );
 
   // 1. Not sent yet: muted, terminal, not a delivery problem.

@@ -816,6 +816,73 @@ describe('the drain re-checks a task copy at SEND time (telegram-mechanics-5)', 
     expect(calls.map((c) => c.method)).toEqual(['forwardMessages', 'sendMessage']);
     expect(await notificationRow(row)).toMatchObject({ status: 'sent', payload: expect.objectContaining({ forwarded: true }) });
   });
+
+  /**
+   * The task closes while its copy is IN FLIGHT (review tasks-1): the close
+   * commits and the door's retire runs to completion during the forwards —
+   * while the row reads «sending», which that retire cannot see. Done here by
+   * hand, inside the transport, so the order is the defect's and not a race.
+   */
+  function closeDuring(methodName: string, close: () => Promise<void>): void {
+    let fired = false;
+    __setTelegramTransport(async (url, init) => {
+      const name = url.slice(url.lastIndexOf('/') + 1);
+      calls.push({ method: name, body: JSON.parse(String(init.body)) as Record<string, unknown> });
+      if (name === methodName && !fired) {
+        fired = true;
+        await close();
+      }
+      return new Response(JSON.stringify({ ok: true, result: { message_id: (nextMessageId += 1) } }), { status: 200 });
+    });
+  }
+
+  it('a copy whose task is cancelled DURING its forwards is retired by the drain itself once sent (review tasks-1)', async () => {
+    const author = await mintStaff();
+    const doer = await mintStaff({ chat: true });
+    const id = await mintTask(author, doer);
+    const row = await pendingCopy(doer.id, 'TaskAssigned', {
+      taskId: id,
+      origin: 'hand',
+      forwards: [{ chatId: 4242, messageId: 30 }],
+      text: `🆕 Yangi vazifa: Xato\n🔗 ${APP}/bugun`,
+    });
+    closeDuring('forwardMessages', async () => {
+      await db.update(tasks).set({ status: 'cancelled' }).where(eq(tasks.id, id));
+      // The door's own retire, finishing while the row is still «sending».
+      await retireTaskCopies({ taskIds: [id], outcome: 'cancelled' });
+    });
+    await drainOnly([row]);
+    const sent = await notificationRow(row);
+    expect(sent.status).toBe('sent');
+    const messageId = (sent.payload as { tg: { messageId: number } }).tg.messageId;
+    const edits = () => method('editMessageText').filter((c) => c.body.message_id === messageId);
+    await vi.waitFor(() => expect(edits()).toHaveLength(1), { timeout: 5_000 });
+    expect(String(edits()[0]!.body.text)).toMatch(/🗑 Bekor qilindi$/);
+    // The live keyboard is gone; only the link stays.
+    expect(edits()[0]!.body.reply_markup).toEqual({ inline_keyboard: [[{ text: '↗️ Ochish', url: `${APP}/bugun` }]] });
+  });
+
+  it('a digest whose task closes during the send loses that row once sent (review tasks-1)', async () => {
+    const author = await mintStaff();
+    const doer = await mintStaff({ chat: true });
+    const [a, b] = [await mintTask(author, doer), await mintTask(author, doer)];
+    const row = await pendingCopy(doer.id, 'TasksDue', {
+      text: '✅ Sizning vazifalaringiz',
+      tasks: [
+        { id: a, title: 'A' },
+        { id: b, title: 'B' },
+      ],
+    });
+    closeDuring('sendMessage', async () => {
+      await db.update(tasks).set({ status: 'done', doneAt: new Date() }).where(eq(tasks.id, a));
+      await retireTaskCopies({ taskIds: [a], outcome: 'done' });
+    });
+    await drainOnly([row]);
+    const messageId = ((await notificationRow(row)).payload as { tg: { messageId: number } }).tg.messageId;
+    const marks = () => method('editMessageReplyMarkup').filter((c) => c.body.message_id === messageId);
+    await vi.waitFor(() => expect(marks()).toHaveLength(1), { timeout: 5_000 });
+    expect(marks()[0]!.body.reply_markup).toEqual({ inline_keyboard: [[{ text: '✅ B', callback_data: `tb:${b}` }]] });
+  });
 });
 
 describe('the bot doors (telegram-mechanics-1/4/13/14)', () => {

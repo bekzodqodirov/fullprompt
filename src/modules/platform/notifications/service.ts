@@ -31,6 +31,7 @@ import {
   type SendResult,
 } from '../telegram/send';
 import { appendLine, composeStaffHtml, keyboardOf, type StaffMessage } from './staff-html';
+import { retireTaskCopiesSoon, TASK_COPY_TYPES, TASK_LIST_TYPE, type TaskCopyOutcome } from './retire-tasks';
 
 /**
  * Event → recipient rules (spec §11). Each event fans out to notification
@@ -1281,6 +1282,57 @@ async function taskCopyLive(
 }
 
 /**
+ * The second half of the send-time check, asked AFTER the row reads 'sent'
+ * with its message id (review tasks-1). A door that closed or moved the task
+ * while this copy was in flight — the author's «🗑 Bekor qilish» seconds after
+ * a draft, landing during the forwards — ran its retire against a row in
+ * «sending», which the retire cannot see; this copy would keep live buttons
+ * for ever. So the drain retires that one row itself. The order is the whole
+ * argument: 'sent' is written first, so a close that commits after this read
+ * finds the row through its own retire.
+ */
+async function retireIfClosedInFlight(
+  notificationId: string,
+  type: string,
+  payload: Record<string, unknown>,
+  userId: string,
+): Promise<void> {
+  if (type === TASK_LIST_TYPE) {
+    // The rows that went out (the payload already filtered at send time).
+    const ids = (Array.isArray(payload.tasks) ? (payload.tasks as { id?: unknown }[]) : [])
+      .map((entry) => entry?.id)
+      .filter((id): id is string => typeof id === 'string' && UUID_RE.test(id));
+    if (ids.length === 0) return;
+    const live = await db
+      .select({ id: tasks.id })
+      .from(tasks)
+      .where(and(inArray(tasks.id, ids), eq(tasks.status, 'open'), eq(tasks.assigneeId, userId)));
+    const still = new Set(live.map((row) => row.id));
+    const gone = ids.filter((id) => !still.has(id));
+    // A list is redrawn from what stands, so its outcome word is never read.
+    if (gone.length > 0) retireTaskCopiesSoon({ taskIds: gone, outcome: 'done', onlyNotificationIds: [notificationId] });
+    return;
+  }
+  if (!(TASK_COPY_TYPES as readonly string[]).includes(type)) return;
+  const taskId = payload.taskId;
+  if (typeof taskId !== 'string' || !UUID_RE.test(taskId)) return;
+  const [task] = await db
+    .select({ status: tasks.status, assigneeId: tasks.assigneeId })
+    .from(tasks)
+    .where(eq(tasks.id, taskId));
+  if (!task) return;
+  const outcome: TaskCopyOutcome | null =
+    task.status === 'done'
+      ? 'done'
+      : task.status !== 'open'
+        ? 'cancelled'
+        : ASSIGNEE_TASK_COPIES.has(type) && task.assigneeId !== userId
+          ? 'reassigned'
+          : null;
+  if (outcome) retireTaskCopiesSoon({ taskIds: [taskId], outcome, onlyNotificationIds: [notificationId] });
+}
+
+/**
  * Hand the rest of a run back to the queue exactly as it was: pending, no
  * claim, no attempt counted. ONE statement, so a pause can never leave half a
  * run parked in 'sending' for the ten-minute reclaim to charge an attempt for.
@@ -1433,6 +1485,13 @@ export async function sendPendingTelegram(now: Date = new Date()): Promise<void>
         })
         .where(eq(notifications.id, notification.id));
       settled.add(notification.id);
+      // The task may have closed while this copy was in flight (review
+      // tasks-1) — asked only now, after 'sent' and the message id are written.
+      if (tg) {
+        await retireIfClosedInFlight(notification.id, notification.type, sendPayload, notification.userId).catch(
+          (err: unknown) => logger.warn({ err, notificationId: notification.id }, 'task copy after-send check failed'),
+        );
+      }
       continue;
     }
 
