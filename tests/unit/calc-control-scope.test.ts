@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ROLE_MATRIX, type RoleCode } from '@/modules/platform/rbac/catalog';
 import {
@@ -221,5 +222,31 @@ describe('the seller price as a sight of its own (16a)', () => {
     const bothHats = { id: 'x', permissions: { has: (c: string) => codes.has(c) } };
     expect(upsaleScopeFor(bothHats)).toBe('own');
     expect(offerSightFor(bothHats)).toEqual({ mayOffer: true, seesOfferPrices: true });
+  });
+});
+
+/**
+ * The control screen's two lists (the owner's 12a, review ved-correctness-3 /
+ * access-money-6): «Meniki» is the WRITE scope's list — its buttons, and the
+ * N the home tile prints — and «Hamkasblarniki» is read-only, so no colleague
+ * row draws a ✅/❌ the write scope would refuse as `not_mine`. Source-shape:
+ * both lists render perfectly; the defect would be a button in the wrong one.
+ */
+describe('the nazorat page reads everybody and writes only its own', () => {
+  const strip = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+  const PAGE = strip(readFileSync('src/app/(protected)/hisoblash/nazorat/page.tsx', 'utf8'));
+
+  it('«Meniki» is the write scope’s list and count', () => {
+    expect(PAGE).toContain('linkSuggestions(writer)');
+    expect(PAGE).toContain('linkSuggestionCount(writer)');
+  });
+
+  it('«Hamkasblarniki» draws no link buttons', () => {
+    const start = PAGE.indexOf('data-testid="link-colleagues"');
+    expect(start).toBeGreaterThan(-1);
+    const section = PAGE.slice(start, PAGE.indexOf('</ul>', start));
+    expect(section).toContain('link-row-colleague');
+    expect(section).not.toContain('CalcLinkRow');
+    expect(section).not.toMatch(/Action\b/);
   });
 });

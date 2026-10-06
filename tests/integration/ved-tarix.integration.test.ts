@@ -23,7 +23,8 @@ import { calcSpeed, finishCalcRequest, returnCalcRequest, vedRotaPool } from '@/
 import { recalcFromSealed, sealCalc, setFreightZone, standingAnchorsFor } from '@/modules/wms/calc/workspace';
 import { registryCounts, registryRows, type RegistryAnswerRow } from '@/modules/wms/calc/chain';
 import { creditTotals } from '@/modules/wms/calc/credit';
-import { internalNoteSight } from '@/modules/wms/calc/control-scope';
+import { calcRegistrySight, internalNoteSight } from '@/modules/wms/calc/control-scope';
+import { dealCalcSheets } from '@/modules/wms/calc/sheet';
 import { itemNameNorm } from '@/modules/wms/calc/memory';
 import { quoteLockedFor } from '@/modules/wms/crm/service';
 
@@ -106,6 +107,7 @@ async function job(opts: {
   return r!.id;
 }
 
+const registryReader = { permissions: { has: (c: string) => c === 'ved.docs' } };
 const vedSight = () => internalNoteSight({ permissions: { has: (c: string) => c === 'ved.docs' } })!;
 
 beforeAll(async () => {
@@ -331,8 +333,15 @@ describe('a correction from an answer (10a)', () => {
       .from(notifications)
       .where(and(eq(notifications.userId, sellerId), eq(notifications.type, 'CalcRecalc')));
     expect(pushed.length).toBeGreaterThan(0);
-    // The old answer is no floor any more — the correction replaced it.
+    // The old answer is no floor any more — the correction replaced it — and
+    // every surface says so in the chain's one vocabulary (ved-correctness-2):
+    // the panel's standing list, the registry row and the deal sheet.
     expect((await standingAnchorsFor('deal', dealId)).answers.map((a) => a.requestId)).not.toContain(answered);
+    const reg = (await registryRows({ q: `recalc ${TOKEN}`, kind: 'answer', leadNamesReadable: true }, { noteSight: null }))
+      .find((r) => r.requestId === answered) as RegistryAnswerRow;
+    expect(reg).toMatchObject({ superseded: true, recalcOpen: true, childState: 'open' });
+    const sheet = (await dealCalcSheets([dealId], calcRegistrySight(registryReader)!)).get(dealId)!;
+    expect(sheet.answers.find((a) => a.requestId === answered)?.childState).toBe('open');
     await expect(recalcFromSealed(answered, ctx(sellerId))).rejects.toMatchObject({ code: 'recalc_open' });
 
     // Handed back: the only way on is a new request from the card.
