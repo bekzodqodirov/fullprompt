@@ -18,8 +18,10 @@ ALTER TABLE "tasks" ADD COLUMN "bound_id" uuid;
 ALTER TABLE "tasks" ADD CONSTRAINT "tasks_origin_check"
   CHECK ("origin" IS NULL OR "origin" IN ('hand', 'calc', 'calc_return', 'promise', 'automation'));
 --> statement-breakpoint
+-- `origin IS NOT NULL` is spelled out: with a NULL origin the IN is NULL, and
+-- a CHECK passes on NULL — a bound record with no origin would slip through.
 ALTER TABLE "tasks" ADD CONSTRAINT "tasks_bound_check"
-  CHECK ("bound_id" IS NULL OR "origin" IN ('calc', 'promise'));
+  CHECK ("bound_id" IS NULL OR ("origin" IS NOT NULL AND "origin" IN ('calc', 'promise')));
 --> statement-breakpoint
 -- The assignee's «👀 Qabul qildim», and the author's «🔔 Eslatish» clock
 -- (at most one reminder per task per half hour, by a CAS on this column).
@@ -50,8 +52,13 @@ UPDATE "tasks" SET "origin" = 'promise', "bound_id" = p."id"
 -- pointer reaches: the open «Hisoblash: …» a release left behind (the dead
 -- cancel fixed the same day) and the VED's hand-backs. No `bound_id`: there is
 -- nothing left to point at, and a calc task without one carries no button.
+-- The calc rule is the WHOLE machine shape — `Hisoblash: <label> (<n>)`,
+-- priority 1, timed, on a lead or a deal — because a person may type a title
+-- that starts «Hisoblash: » too, and labelling their task 'calc' would take
+-- its buttons away. The emoji prefixes below only ever come from the code.
 UPDATE "tasks" SET "origin" = 'calc'
-  WHERE "origin" IS NULL AND "title" LIKE 'Hisoblash: %';
+  WHERE "origin" IS NULL AND "title" ~ '^Hisoblash: .* \(\d+\)$'
+    AND "priority" = 1 AND "all_day" = false AND "entity_type" IN ('lead', 'deal');
 --> statement-breakpoint
 UPDATE "tasks" SET "origin" = 'calc_return'
   WHERE "origin" IS NULL AND "title" LIKE '↩️ Ma''lumot to''ldiring: %';
@@ -69,7 +76,7 @@ UPDATE "tasks" SET "origin" = 'promise'
 ALTER TABLE "calc_requests" ADD COLUMN "answer_internal_note" text;
 --> statement-breakpoint
 ALTER TABLE "calc_requests" ADD CONSTRAINT "calc_requests_internal_note_check"
-  CHECK ("answer_internal_note" IS NULL OR btrim("answer_internal_note") <> '');
+  CHECK ("answer_internal_note" IS NULL OR "answer_internal_note" ~ '\S');
 --> statement-breakpoint
 -- The history's answer rows (his 8a), newest first.
 CREATE INDEX "calc_requests_answer_idx" ON "calc_requests" ("completed_at" DESC)

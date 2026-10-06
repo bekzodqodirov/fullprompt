@@ -832,7 +832,10 @@ export const tasks = pgTable(
       'tasks_origin_check',
       sql`${t.origin} IS NULL OR ${t.origin} IN ('hand', 'calc', 'calc_return', 'promise', 'automation')`,
     ),
-    check('tasks_bound_check', sql`${t.boundId} IS NULL OR ${t.origin} IN ('calc', 'promise')`),
+    check(
+      'tasks_bound_check',
+      sql`${t.boundId} IS NULL OR (${t.origin} IS NOT NULL AND ${t.origin} IN ('calc', 'promise'))`,
+    ),
     check(
       'tasks_source_messages_check',
       sql`${t.sourceMessages} IS NULL OR jsonb_typeof(${t.sourceMessages}) = 'array'`,

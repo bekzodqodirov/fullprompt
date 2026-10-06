@@ -2597,7 +2597,7 @@ export const calcRequests = pgTable(
     check('calc_requests_entity_check', sql`${t.entityType} IN ('deal', 'lead')`),
     check(
       'calc_requests_internal_note_check',
-      sql`${t.answerInternalNote} IS NULL OR btrim(${t.answerInternalNote}) <> ''`,
+      sql`${t.answerInternalNote} IS NULL OR ${t.answerInternalNote} ~ '\\S'`,
     ),
     check('calc_requests_items_check', sql`${t.itemCount} BETWEEN 0 AND 1000`),
     check(
