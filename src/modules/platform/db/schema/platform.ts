@@ -806,10 +806,37 @@ export const tasks = pgTable(
     repeatEvery: integer('repeat_every').notNull().default(1),
     /** Shared by every occurrence of one rule. */
     seriesId: uuid('series_id'),
+    /**
+     * Where the task came from (0124): 'hand' (the web form, the staff bot),
+     * 'calc' (a calculation job), 'calc_return' (the VED's hand-back),
+     * 'promise' (a payment promise's call), 'automation' (a rule). NULL = made
+     * before 0124 and read as given by hand. Never taken from a form post — a
+     * forged 'calc' would strip a hand task of its buttons.
+     */
+    origin: text('origin'),
+    /** The record whose clock the task carries: the calc request ('calc') or
+     * the payment promise ('promise'). No FK — the task is history. */
+    boundId: uuid('bound_id'),
+    /** «👀 Qabul qildim» (docs/TELEGRAM-TOPSHIRIQ.md), once. */
+    acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+    /** The author's last «🔔 Eslatish»; at most one per half hour. */
+    remindedAt: timestamp('reminded_at', { withTimezone: true }),
+    /** The author's own Telegram messages the task was given with:
+     * `{chatId, messageId}[]`, forwarded to the assignee before the text. */
+    sourceMessages: jsonb('source_messages'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
+    check(
+      'tasks_origin_check',
+      sql`${t.origin} IS NULL OR ${t.origin} IN ('hand', 'calc', 'calc_return', 'promise', 'automation')`,
+    ),
+    check('tasks_bound_check', sql`${t.boundId} IS NULL OR ${t.origin} IN ('calc', 'promise')`),
+    check(
+      'tasks_source_messages_check',
+      sql`${t.sourceMessages} IS NULL OR jsonb_typeof(${t.sourceMessages}) = 'array'`,
+    ),
     check('tasks_status_check', sql`${t.status} IN ('open', 'done', 'cancelled')`),
     check('tasks_priority_check', sql`${t.priority} BETWEEN 1 AND 3`),
     check('tasks_entity_check', sql`(${t.entityType} IS NULL) = (${t.entityId} IS NULL)`),
@@ -824,6 +851,8 @@ export const tasks = pgTable(
     check('tasks_repeat_needs_due', sql`${t.repeatUnit} IS NULL OR ${t.dueAt} IS NOT NULL`),
     index('tasks_assignee_idx').on(t.assigneeId, t.status, t.dueAt),
     index('tasks_entity_idx').on(t.entityType, t.entityId),
+    // «📤 Men bergan»: a person's open given tasks (0124).
+    index('tasks_author_idx').on(t.createdBy, t.status),
   ],
 );
 

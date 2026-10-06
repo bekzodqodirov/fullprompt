@@ -371,6 +371,9 @@ export async function openCalcRequest(
           repeatEvery: 1,
         },
         ctx,
+        // Bound to the request: the task carries the queue's deadline, and
+        // no task door may move it or close the job (docs/VED-TARIX.md §8).
+        { origin: 'calc', boundId: requestId },
       );
       await db
         .update(calcRequests)
@@ -460,6 +463,7 @@ export async function takeCalcRequest(id: string, ctx: AuditContext): Promise<vo
           repeatEvery: 1,
         },
         ctx,
+        { origin: 'calc', boundId: id },
       );
       await db
         .update(calcRequests)
@@ -662,6 +666,9 @@ export async function returnCalcRequest(
         repeatEvery: 1,
       },
       ctx,
+      // The seller's own to-do from the VED's reason — not a hand-given task
+      // the VED tracks in «📤 Men bergan», and not bound to the calc clock.
+      { origin: 'calc_return' },
     );
   } catch (err) {
     logger.error({ err, id }, '[calc] return task creation failed');

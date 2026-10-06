@@ -61,6 +61,7 @@ async function task(over: Record<string, unknown> = {}) {
       ...over,
     } as Parameters<typeof createTask>[0],
     ctx(),
+    { origin: 'hand' },
   );
   made.push(row.id);
   return row;
@@ -391,8 +392,51 @@ describe('a task is not something anybody can close', () => {
       // createTask takes the plain audit context — creation is deliberately
       // open, so it never needs the actor's permissions.
       { actorId: other },
+      { origin: 'hand' },
     );
     made.push(row.id);
     expect(row.assigneeId).toBe(owner);
+  });
+});
+
+describe('a task says where it came from (0124)', () => {
+  const input = (title: string, over: Record<string, unknown> = {}) =>
+    ({
+      title: `${title} ${SUFFIX}`,
+      note: '',
+      typeId: null,
+      assigneeId: other,
+      dueAt: '2030-01-07',
+      priority: 2,
+      entityType: null,
+      entityId: null,
+      repeatUnit: null,
+      repeatEvery: 1,
+      ...over,
+    }) as Parameters<typeof createTask>[0];
+
+  it('stamps the origin and the bound record the CALLER names', async () => {
+    const bound = '00000000-0000-4000-8000-000000000124';
+    const row = await createTask(input('Hisob'), ctx(), { origin: 'calc', boundId: bound });
+    made.push(row.id);
+    const stored = await db.query.tasks.findFirst({ where: eq(tasks.id, row.id) });
+    expect(stored!.origin).toBe('calc');
+    expect(stored!.boundId).toBe(bound);
+  });
+
+  it('refuses a bound record on a task no clock owns', async () => {
+    await expect(
+      createTask(input('Qo‘lda'), ctx(), { origin: 'hand', boundId: '00000000-0000-4000-8000-000000000124' }),
+    ).rejects.toMatchObject({ code: 'bad_bound' });
+  });
+
+  it('the next occurrence of a repeat is the same kind of work', async () => {
+    const row = await createTask(input('Har hafta', { repeatUnit: 'week' }), ctx(), { origin: 'automation' });
+    made.push(row.id);
+    await completeTask(row.id, '', { ...ctx(), actor: { id: owner, permissions: ownerPerms } });
+    const series = await db.query.tasks.findMany({ where: eq(tasks.seriesId, row.seriesId!) });
+    const next = series.find((t) => t.id !== row.id)!;
+    made.push(next.id);
+    expect(next.origin).toBe('automation');
   });
 });

@@ -202,6 +202,8 @@ async function openPromiseTask(
         repeatEvery: 1,
       },
       ctx,
+      // Bound: the due date IS the client's promise, which the sweep judges.
+      { origin: 'promise', boundId: promiseId },
     );
     await db.update(paymentPromises).set({ taskId: task.id }).where(eq(paymentPromises.id, promiseId));
   } catch (err) {

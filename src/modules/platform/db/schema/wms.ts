@@ -2548,6 +2548,10 @@ export const calcRequests = pgTable(
     answerAmount: numeric('answer_amount', { precision: 14, scale: 2 }),
     answerCurrency: text('answer_currency'),
     answerNote: text('answer_note'),
+    /** The VED's own note on a «Готово» answer (0124, his 9a): how the figure
+     * was reached, for the VED and leadership — NEVER the seller, who reads
+     * `answer_note` in Telegram and on the card. */
+    answerInternalNote: text('answer_internal_note'),
     /** Stamped by the sweep so a late calculation is announced exactly once. */
     overdueNotifiedAt: timestamp('overdue_notified_at', { withTimezone: true }),
     /** How many prices this request has sealed (phase B). 0 = none yet. */
@@ -2591,6 +2595,10 @@ export const calcRequests = pgTable(
       sql`${t.feeOverrideUsd} IS NULL OR (${t.feeOverrideUsd} >= 0 AND ${t.feeOverrideUsd} <> 'NaN'::numeric)`,
     ),
     check('calc_requests_entity_check', sql`${t.entityType} IN ('deal', 'lead')`),
+    check(
+      'calc_requests_internal_note_check',
+      sql`${t.answerInternalNote} IS NULL OR btrim(${t.answerInternalNote}) <> ''`,
+    ),
     check('calc_requests_items_check', sql`${t.itemCount} BETWEEN 0 AND 1000`),
     check(
       'calc_requests_via_check',
@@ -2609,6 +2617,10 @@ export const calcRequests = pgTable(
     index('calc_requests_assignee_idx').on(t.assigneeId, t.requestedAt),
     // Read by `stampCalcLink` inside createReceipt's transaction (phase E1).
     index('calc_requests_entity_idx').on(t.entityType, t.entityId),
+    // The history's answer rows (0124, his 8a).
+    index('calc_requests_answer_idx')
+      .on(t.completedAt.desc())
+      .where(sql`${t.completedVia} = 'task' AND ${t.answerAmount} IS NOT NULL`),
   ],
 );
 

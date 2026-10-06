@@ -381,6 +381,7 @@ describe('the tasks behind the buttons', () => {
         repeatEvery: 1,
       },
       { actorId: author.id },
+      { origin: 'hand' },
     );
     taskIds.push(task.id);
     await reassignTask(task.id, next.id, {
@@ -414,6 +415,7 @@ describe('the tasks behind the buttons', () => {
           repeatEvery: 1,
         },
         { actorId: me.id },
+        { origin: 'hand' },
       );
       taskIds.push(t.id);
       return t.id;

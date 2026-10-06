@@ -304,6 +304,8 @@ export async function applyRuleAction(rule: RuleRow, target: RuleTarget): Promis
       // The rule acts with its author's authority: the task's "created by" is
       // the person who WROTE the rule, and the audit trail says so.
       { actorId: rule.createdBy, ip: null, userAgent: null },
+      // Not a person's request to a colleague: kept out of «📤 Men bergan».
+      { origin: 'automation' },
     );
     return true;
   }

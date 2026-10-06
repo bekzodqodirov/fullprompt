@@ -225,6 +225,7 @@ describe('closing a task from the button', () => {
         repeatEvery: 1,
       },
       { actorId },
+      { origin: 'hand' },
     );
 
     expect(await completeTaskFromBot(chat, task.id, 'qilindi')).toBe('done');
@@ -249,6 +250,7 @@ describe('closing a task from the button', () => {
         repeatEvery: 1,
       },
       { actorId },
+      { origin: 'hand' },
     );
     expect(await completeTaskFromBot(chat, other.id, 'x')).toBe('not_yours');
 

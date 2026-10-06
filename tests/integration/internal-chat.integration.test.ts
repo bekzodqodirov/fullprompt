@@ -237,6 +237,7 @@ describe('a task reaches its assignee in Telegram, with the link', () => {
         repeatEvery: 1,
       },
       { actorId: author, ip: null, userAgent: null },
+      { origin: 'hand' },
     );
     const rows = await db
       .select()
@@ -274,6 +275,7 @@ describe('a task reaches its assignee in Telegram, with the link', () => {
         repeatEvery: 1,
       },
       { actorId: author, ip: null, userAgent: null },
+      { origin: 'hand' },
     );
     const rows = await db
       .select()

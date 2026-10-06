@@ -67,6 +67,25 @@ export const taskSchema = z.object({
 export type TaskInput = z.infer<typeof taskSchema>;
 
 /**
+ * Where a task came from (0124). NOT part of `taskSchema`: the form posts
+ * what a person typed, and an origin is a fact about which door made the row —
+ * a forged `calc` would strip a hand-given task of its buttons, a forged
+ * `hand` would put a calc job in somebody's «📤 Men bergan». So it is an
+ * argument every caller must name: a required option turns each one into a
+ * compile error that names itself (#790's trick), and NULL is left for the
+ * rows made before 0124.
+ */
+export const TASK_ORIGINS = ['hand', 'calc', 'calc_return', 'promise', 'automation'] as const;
+export type TaskOrigin = (typeof TASK_ORIGINS)[number];
+
+export interface TaskMaking {
+  origin: TaskOrigin;
+  /** The record whose clock the task carries — the calc request ('calc') or
+   * the payment promise ('promise'); refused on any other origin. */
+  boundId?: string | null;
+}
+
+/**
  * Turn what a form typed into a moment, and say whether it named a time.
  *
  * A date alone means the whole day, which matters twice: the calendar must not
@@ -210,6 +229,10 @@ export interface TaskRow {
   repeatUnit: string | null;
   repeatEvery: number;
   seriesId: string | null;
+  /** 0124 — see `TaskOrigin`; NULL = made before it. */
+  origin: string | null;
+  boundId: string | null;
+  acceptedAt: Date | null;
   createdAt: Date;
 }
 
@@ -238,6 +261,9 @@ function selection() {
     repeatUnit: tasks.repeatUnit,
     repeatEvery: tasks.repeatEvery,
     seriesId: tasks.seriesId,
+    origin: tasks.origin,
+    boundId: tasks.boundId,
+    acceptedAt: tasks.acceptedAt,
     createdAt: tasks.createdAt,
   };
 }
@@ -250,8 +276,16 @@ function base() {
     .leftJoin(assignee, eq(tasks.assigneeId, assignee.id));
 }
 
-export async function createTask(input: TaskInput, ctx: AuditContext): Promise<TaskRow> {
+export async function createTask(
+  input: TaskInput,
+  ctx: AuditContext,
+  making: TaskMaking,
+): Promise<TaskRow> {
   if (!ctx.actorId) throw new TaskError('unauthenticated');
+  // The database says so too (tasks_bound_check); a caller deserves a code.
+  if (making.boundId && making.origin !== 'calc' && making.origin !== 'promise') {
+    throw new TaskError('bad_bound');
+  }
   // Registry object or an owner-invented one — one resolver (#186).
   if (input.entityType && !(await resolveEntity(input.entityType))) {
     throw new TaskError('unknown_entity');
@@ -287,6 +321,8 @@ export async function createTask(input: TaskInput, ctx: AuditContext): Promise<T
       repeatUnit: input.repeatUnit,
       repeatEvery: input.repeatEvery,
       seriesId: input.repeatUnit ? uuidv7() : null,
+      origin: making.origin,
+      boundId: making.boundId ?? null,
     })
     .returning();
   if (!row) throw new TaskError('not_created');
@@ -300,6 +336,7 @@ export async function createTask(input: TaskInput, ctx: AuditContext): Promise<T
       assigneeId: input.assigneeId,
       dueAt: dueAt?.toISOString() ?? null,
       about: input.entityType ? `${input.entityType}:${input.entityId}` : null,
+      origin: making.origin,
     },
   });
 
@@ -417,6 +454,9 @@ export async function completeTask(
         repeatUnit: before.repeatUnit,
         repeatEvery: before.repeatEvery,
         seriesId: before.seriesId ?? id,
+        // The next occurrence is the same kind of work as the last one.
+        origin: before.origin,
+        boundId: before.boundId,
       })
       .returning();
     if (spawned) {
