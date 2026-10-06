@@ -840,7 +840,16 @@
       "lotComposition": "Lot contents",
       "lotCompositionCodes": "Contents HS codes",
       "lotCheck": "Cargo info checked",
-      "lotCheckNote": "Check note"
+      "lotCheckNote": "Check note",
+      "calcRequested": "Sent for calculation",
+      "calcRequest": "Calculation",
+      "calcTakenBy": "Calculation taken by",
+      "calcReleased": "Released to the queue",
+      "calcReturned": "Handed back to the seller",
+      "calcDone": "Price given",
+      "calcRecalc": "Sent for recalculation",
+      "calcSection": "Section",
+      "itemCount": "Goods lines"
     }
   },
   "profile": {

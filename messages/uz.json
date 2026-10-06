@@ -840,7 +840,16 @@
       "lotComposition": "Lot tarkibi",
       "lotCompositionCodes": "Tarkib TNVED kodlari",
       "lotCheck": "Yuk ma'lumoti tekshirildi",
-      "lotCheckNote": "Tekshiruv izohi"
+      "lotCheckNote": "Tekshiruv izohi",
+      "calcRequested": "Hisoblatishga yuborildi",
+      "calcRequest": "Hisob-kitob",
+      "calcTakenBy": "Hisoblashni oldi",
+      "calcReleased": "Navbatga qaytarildi",
+      "calcReturned": "Sotuvchiga qaytarildi",
+      "calcDone": "Narx berildi",
+      "calcRecalc": "Qayta hisoblashga yuborildi",
+      "calcSection": "Bo‘lim",
+      "itemCount": "Tovar qatorlari"
     }
   },
   "profile": {

@@ -840,7 +840,16 @@
       "lotComposition": "批次组成",
       "lotCompositionCodes": "组成海关编码",
       "lotCheck": "货物信息已核对",
-      "lotCheckNote": "核对备注"
+      "lotCheckNote": "核对备注",
+      "calcRequested": "已提交计算",
+      "calcRequest": "计算",
+      "calcTakenBy": "接手计算",
+      "calcReleased": "退回队列",
+      "calcReturned": "退回销售",
+      "calcDone": "已给出价格",
+      "calcRecalc": "已提交重新计算",
+      "calcSection": "类别",
+      "itemCount": "商品行数"
     }
   },
   "profile": {

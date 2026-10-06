@@ -840,7 +840,16 @@
       "lotComposition": "Состав лота",
       "lotCompositionCodes": "Коды ТНВЭД состава",
       "lotCheck": "Данные груза проверены",
-      "lotCheckNote": "Комментарий проверки"
+      "lotCheckNote": "Комментарий проверки",
+      "calcRequested": "Отправлено на расчёт",
+      "calcRequest": "Расчёт",
+      "calcTakenBy": "Взял расчёт",
+      "calcReleased": "Возвращено в очередь",
+      "calcReturned": "Возвращено продавцу",
+      "calcDone": "Цена дана",
+      "calcRecalc": "Отправлено на перерасчёт",
+      "calcSection": "Раздел",
+      "itemCount": "Строк товара"
     }
   },
   "profile": {
