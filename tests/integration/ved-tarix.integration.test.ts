@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { and, eq, inArray, or } from 'drizzle-orm';
+import { and, eq, inArray, or, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
@@ -179,6 +179,26 @@ afterAll(async () => {
       await db.delete(events).where(inArray(events.entityId, taskIds));
       await db.delete(tasks).where(inArray(tasks.id, taskIds));
     }
+  }
+  // The hand-back's «↩️ Ma'lumot to'ldiring» is the SELLER's own to-do: no
+  // bound_id and on no request's task_id, so both reads above miss it and
+  // every run left one OPEN on the seller's day (review integration-7). By
+  // the card it points at, or by this file's own people.
+  const loose = await db
+    .select({ id: tasks.id })
+    .from(tasks)
+    .where(
+      or(
+        inArray(tasks.entityId, [...madeDeals, leadId, ...madeLeads]),
+        inArray(tasks.createdBy, madeUsers),
+        inArray(tasks.assigneeId, madeUsers),
+      ),
+    );
+  if (loose.length > 0) {
+    const looseIds = loose.map((t) => t.id);
+    await db.delete(notifications).where(sql`${notifications.payload}->>'taskId' IN (${sql.join(looseIds.map((id) => sql`${id}`), sql`, `)})`);
+    await db.delete(events).where(inArray(events.entityId, looseIds));
+    await db.delete(tasks).where(inArray(tasks.id, looseIds));
   }
   await db.delete(notifications).where(inArray(notifications.userId, madeUsers));
   await db.delete(events).where(inArray(events.entityId, [...madeDeals, leadId, ...madeLeads]));
