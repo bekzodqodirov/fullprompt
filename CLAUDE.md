@@ -2444,7 +2444,7 @@ colapsable»: `CrateRows` is a `<details>`, open ≤5 (#1266). 5b (the client's
 own ✅/❌ in Telegram) is owed as a later round.
 
 **Round — Telegramdan topshiriq + VED tarix (2026-10-06; DECISIONS
-#1268-; migration 0124 `task_origin_calc_note` — ledger must reach 125; specs
+#1268-#1281; migration 0124 `task_origin_calc_note` — ledger must reach 125; specs
 `docs/TELEGRAM-TOPSHIRIQ.md`, `docs/VED-TARIX.md`, review
 `docs/TOPSHIRIQ-VED-REVIEW.md`).** Two rounds designed as two specs, judged
 as ONE by five lenses before code (115 objections, 88 confirmed + 25 partial,
@@ -2479,8 +2479,12 @@ note and the client price, never the upsale (16a). Found on the way:
 row, #1271) — the ghosts are `pnpm close-stale-calc-tasks --ghosts`, dry run
 first; and his «edinitsa izmereniyani o'zgartirib bo'lmayabti» was the baza
 PAIR drafting as two updates that each cleaned the other away
-(`calc/baza-draft.ts` `editBazaPair`, #1272). STILL OWED to him: Q17 (VED
-writes on the deal card) and Q18-21 (which units a row may offer).
+(`calc/baza-draft.ts` `editBazaPair`, #1272). Then the MERGED code was reviewed (#1281: 41 candidates, 36 confirmed + 5
+partial, all fixed): cancel had no bound gate; task links are chosen per
+RECIPIENT (`taskLinkFor(task, recipient)` — no 🔗 rather than a dead one);
+the quote lock holds the number the card shows while its writer stands;
+`TaskSources` carries late parts and re-sent sources. STILL OWED to him: Q17
+(VED writes on the deal card) and Q18-21 (which units a row may offer).
 
 **Latest migration: 0124** (`task_origin_calc_note`, `when` …103; ledger must reach **125**). Before
 it: 0123 (`lot_check`, `when` …102). Before

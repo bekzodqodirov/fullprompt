@@ -92,6 +92,20 @@ Sizning javoblaringiz: **1b 2a 3a 4a 5a 6b** (topshiriq) va **7a 8a 9a 10a 11a 1
 - **Topshiriq fayllari** (forward qilingan mijoz rasmlari ham) hamkasblarning vazifalarini ko'ra oladigan har bir kishiga ochiq: buxgalter, logist, VED, kuzatuvchi. Bu /kalendar bilan bir xil.
 - **Lid yutilganda** VEDning lid lentasidagi savoli o'sha lidda qoladi. Bitim kartasida u ko'rinmaydi.
 
+### Tayyor kod yana bir bor tekshirildi
+
+Ikkala qism birlashtirilgandan keyin besh tomondan mustaqil tekshirildi: 41 ta topilma, hammasi tuzatildi. Sizga ko'rinadiganlari:
+
+- **Sotuvchi VEDning ochiq hisoblash ishini ✖ bilan bekor qila olardi** — ish navbatga egasiz qaytardi. Endi bo'lmaydi.
+- **Havolalar.** Topshiriq xabaridagi havola endi uni o'qiydigan odamga qarab tanlanadi. Avval sotuvchiga VED sahifasi, VEDga esa sotuvchi kartasi borardi — ikkalasi ham ochilmasdi. Kim ocha olmasa, unga havola umuman yuborilmaydi.
+- **Kartadagi narx qulfi** endi kartada turgan raqamni ushlaydi. Bitta lidda bir nechta hisob bo'lganda ✏️ forma bekordan-bekorga rad etilmaydi.
+- **Botda:**
+  - noto'g'ri sana yozilsa, kutish to'xtaydi — qidiruv yana ishlaydi;
+  - albom (bir nechta rasm) yuborilganda topshiriq endi yo'qolmaydi va hamma rasm saytga tushadi;
+  - o'tib ketgan vaqt yozilsa, bot «o'tib ketgan» deydi;
+  - topshiriq bekor qilinsa, bajaruvchiga xabar faqat topshiriq unga yetib borgan bo'lsa boradi.
+- **«Готово»da** «0,004» kabi summa endi so'z bilan rad etiladi, emoji ichki izohni buzmaydi.
+
 ### O'rnatish (deploy)
 
 Odatdagi tartib — `docs/UPDATE.md` (avval zaxira nusxa, keyin `git pull`, keyin qurish). Shu raunddan keyin qo'shimcha:
