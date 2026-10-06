@@ -780,6 +780,12 @@ export async function cancelTask(
   if (!before) throw new TaskError('not_found');
   if (!canActOnTask(before, ctx.actor)) throw new TaskError('not_yours');
   if (before.status !== 'open') throw new TaskError('already_closed');
+  // An OPEN calc job's task is not anybody's to drop: cancelling it released
+  // the job back to the queue (below), so the requesting seller, a viewer or
+  // the accountant could take the VED's claim without the queue's own
+  // `ved.docs` «Bo'shatish» (review tasks-2 / access-2). The holder moves
+  // through «Olaman / Bo'shatish», like every other door on the job.
+  await refuseOpenCalc(before);
   const cancelled = await db
     .update(tasks)
     .set({ status: 'cancelled', result: reason.trim() || null, updatedAt: new Date() })

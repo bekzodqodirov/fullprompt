@@ -463,6 +463,9 @@ describe('the bound gate on every door (VED-TARIX §8, ved-correctness-11, teleg
     expect(await refusal(reassignTask(id, other.id, ctx))).toBe('calc_use_screen');
     expect(await refusal(rescheduleTask(id, { dueAt: new Date('2027-02-01T00:00:00Z'), allDay: true }, ctx))).toBe('calc_use_screen');
     expect(await refusal(askAboutTask(id, 'qachon?', ctx))).toBe('calc_use_screen');
+    // ✖ too: cancelling the task released the job to the queue, so the seller
+    // who asked for it could take the VED's claim (review tasks-2).
+    expect(await refusal(cancelTask(id, '', ctxOf(author)))).toBe('calc_use_screen');
     expect(
       await refusal(updateTask(id, { title: 'x', note: '', typeId: null, dueAt: '2027-03-01', priority: 2, tzOffsetMin: null }, ctx)),
     ).toBe('calc_use_screen');
