@@ -4312,60 +4312,6 @@ export async function lastReleasedOfferFor(
     : null;
 }
 
-/**
- * The card's newest Готово answer, as an OFFER ANCHOR (phase 4).
- *
- * The panel decides three things from this one read: whether the offer door
- * opens (a standing, unexpired USD answer — and only when the card has no
- * seal at all: ANY seal, expired included, outranks the answer, because an
- * expired seal's own sentence is «recalc», not «quote the older figure»),
- * which sentence to print instead when it cannot (non-USD, expired), and
- * which requestId the form posts. Everything here is advisory — `recordOffer`
- * re-derives every admission server-side, so a stale panel can only be
- * refused, never believed.
- */
-export async function lastAnswerAnchorFor(
-  entityType: 'deal' | 'lead',
-  entityId: string,
-): Promise<{
-  requestId: string;
-  amountUsd: number | null;
-  currency: string | null;
-  completedAt: Date;
-  stands: boolean;
-  expired: boolean;
-} | null> {
-  const rows = await db.execute<{
-    id: string;
-    answer_amount: string | null;
-    answer_currency: string | null;
-    completed_at: Date;
-    stands: boolean;
-  }>(sql`
-    SELECT r.id, r.answer_amount, r.answer_currency, r.completed_at,
-           (${answerFloorStandsSql()}) AS stands
-      FROM calc_requests r
-     WHERE r.entity_type = ${entityType}
-       AND r.entity_id = ${entityId}::uuid
-       AND r.completed_at IS NOT NULL
-       AND r.answer_amount IS NOT NULL
-     ORDER BY r.completed_at DESC
-     LIMIT 1
-  `);
-  const row = rows[0];
-  if (!row) return null;
-  const validDays = Number((await getSetting('quote_valid_days')) ?? QUOTE_VALID_DAYS_DEFAULT);
-  const completedAt = new Date(row.completed_at);
-  return {
-    requestId: row.id,
-    amountUsd: row.answer_amount === null ? null : Number(row.answer_amount),
-    currency: row.answer_currency,
-    completedAt,
-    stands: Boolean(row.stands),
-    expired: completedAt.getTime() + validDays * 86_400_000 < Date.now(),
-  };
-}
-
 // ---------------------------------------------------------------------------
 // What stands on a card — one list for the panel, the lock and the answer line
 // ---------------------------------------------------------------------------
