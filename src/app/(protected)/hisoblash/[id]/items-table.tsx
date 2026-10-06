@@ -16,6 +16,7 @@ import {
   type PricedItem,
 } from '@/modules/wms/calc/pricing';
 import { defaultBasisFor, uniformBazaOf } from '@/modules/wms/calc/basis';
+import { editBazaPair } from '@/modules/wms/calc/baza-draft';
 import { parseGoods, type Cell } from '@/modules/wms/deals/goods-import';
 import {
   confirmAllAction,
@@ -235,26 +236,34 @@ export function ItemsTable({
     setDrafts((prev) => {
       const item = itemById.get(itemId);
       if (!item) return prev;
-      const next = { ...prev, [itemId]: { ...prev[itemId], [field]: raw } };
-      // A number the VED types is theirs, not the file's (0094).
-      if (field === 'bazaValue' || field === 'bazaBasis') delete next[itemId]!.importRowId;
-      // A draft equal to the server value is not a draft — the dirty count
-      // must mean «cells the save will send». The baza pair self-cleans only
-      // when BOTH halves match (a basis is part of the price).
-      const cleanable =
-        field === 'bazaValue' || field === 'bazaBasis'
-          ? next[itemId]!.bazaValue === undefined ||
-            (next[itemId]!.bazaValue === serverValueOf(item, 'bazaValue') &&
-              (next[itemId]!.bazaBasis ?? serverValueOf(item, 'bazaBasis')) ===
-                serverValueOf(item, 'bazaBasis'))
-          : raw === serverValueOf(item, field);
-      if (cleanable) {
-        const rest: ItemDraft = { ...next[itemId] };
-        delete rest[field];
-        if (field === 'bazaValue') delete rest.bazaBasis;
-        if (Object.keys(rest).length === 0) delete next[itemId];
-        else next[itemId] = rest;
+      const current: ItemDraft = { ...prev[itemId] };
+      let rest: ItemDraft;
+      if (field === 'bazaValue' || field === 'bazaBasis') {
+        // The pair is ONE edit (baza-draft.ts): drafting its halves as two
+        // updates made a unit picked on its own clean itself away.
+        const halves = editBazaPair(
+          { bazaValue: current.bazaValue, bazaBasis: current.bazaBasis },
+          field,
+          raw,
+          {
+            bazaValue: serverValueOf(item, 'bazaValue'),
+            bazaBasis: serverValueOf(item, 'bazaBasis') as BazaBasis,
+          },
+        );
+        delete current.bazaValue;
+        delete current.bazaBasis;
+        // A number the VED types is theirs, not the file's (0094).
+        delete current.importRowId;
+        rest = { ...current, ...halves };
+      } else {
+        // A draft equal to the server value is not a draft — the dirty count
+        // must mean «cells the save will send».
+        rest = { ...current, [field]: raw };
+        if (raw === serverValueOf(item, field)) delete rest[field];
       }
+      const next = { ...prev };
+      if (Object.keys(rest).length === 0) delete next[itemId];
+      else next[itemId] = rest;
       return next;
     });
   };
@@ -1197,12 +1206,9 @@ const ItemRowBlock = memo(function ItemRowBlock({
               data-testid="calc-basis"
               value={basisValue}
               disabled={busy}
-              onChange={(e) => {
-                // The pair travels together: touching the basis drafts the
-                // amount too, so the save always posts a coherent pair.
-                if (drafts?.bazaValue === undefined) setDraft(item.id, 'bazaValue', bazaValue);
-                setDraft(item.id, 'bazaBasis', e.target.value);
-              }}
+              // ONE edit: the pair rule drafts the amount as it stands beside
+              // the unit, so the save posts a coherent pair (baza-draft.ts).
+              onChange={(e) => setDraft(item.id, 'bazaBasis', e.target.value)}
             >
               {basisOptions.map((b) => (
                 <option key={b} value={b}>
