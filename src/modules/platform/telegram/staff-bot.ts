@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db/client';
 import { telegramLinks, users } from '../db/schema';
 import { writeAudit } from '../audit/service';
@@ -13,15 +13,21 @@ import {
   canActOnTask,
   cancelTask,
   completeTask,
+  createTask,
   forwardSourcesAgain,
+  givenTasks,
+  MAX_TASK_SOURCES,
   remindTask,
   rescheduleTask,
   TaskError,
   type TaskContext,
+  type GivenTask,
   type TaskErrorCode,
   type TaskRow,
+  telegramDue,
 } from '../tasks/service';
-import type { Reach } from '../notifications/staff';
+import { reachOf, type Reach } from '../notifications/staff';
+import type { DraftFile } from './task-draft';
 import { DAY_BUTTONS } from '../tasks/digest';
 import { logger } from '../logger';
 import { approvalVerdictLine } from '../notifications/labels';
@@ -34,7 +40,7 @@ import {
 } from '../notifications/staff-html';
 import { allLabelVariants } from './client-labels';
 import { buttonLabel } from './limits';
-import { editMarkup, editText } from './send';
+import { botCall, editMarkup, editText } from './send';
 
 import { canLogInSql, staffPhonesMatch } from '../users/login';
 
@@ -1320,4 +1326,275 @@ export async function decideApprovalFromBot(
     }
     throw err;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Topshiriq — the draft's decisions (docs/TELEGRAM-TOPSHIRIQ.md §3-6). The
+// collection itself is task-draft.ts (pure, in memory); what it READS and
+// WRITES is here, where an integration test reaches it.
+// ---------------------------------------------------------------------------
+
+/** One colleague in «Kimga?». */
+export interface DraftPerson {
+  id: string;
+  name: string;
+  /** Given a task by this author by hand in the last 90 days — sorted first. */
+  recent: boolean;
+  /**
+   * «📵»: the bot cannot reach them at all (no linked chat). ONLY that: a
+   * person's MUTE is their own setting, and this list is read by every
+   * colleague (review access-money-24) — a mute is told to the author after
+   * the pick, in the ⚠ line, and nowhere else.
+   */
+  noChat: boolean;
+}
+
+/** How many colleagues «Kimga?» draws before a typed name has to narrow it. */
+export const PEOPLE_SHOWN = 40;
+
+/**
+ * «Kimga?» — every colleague who can sign in (`canLogIn`, his 2a: everybody
+ * to everybody; a person who never signs in cannot be given work, as on the
+ * web), the author's recent assignees first, then alphabetically, the author
+ * themself left to «🙋 O'zimga». A typed name in this stage narrows it.
+ */
+export async function draftPeople(authorId: string, filter: string | null = null): Promise<DraftPerson[]> {
+  const rows = (await db.execute(sql`
+    SELECT u.id, u.full_name AS name,
+           (SELECT max(t.created_at) FROM tasks t
+             WHERE t.created_by = ${authorId} AND t.assignee_id = u.id
+               AND t.origin = 'hand' AND t.created_at > now() - interval '90 days') AS last_given,
+           EXISTS (SELECT 1 FROM telegram_links l
+                    WHERE l.user_id = u.id AND l.status = 'linked' AND l.telegram_chat_id IS NOT NULL) AS linked
+      FROM users u
+     WHERE ${canLogInSql('u')} AND u.id <> ${authorId}
+     ORDER BY last_given DESC NULLS LAST, u.full_name`)) as unknown as {
+    id: string;
+    name: string;
+    last_given: string | Date | null;
+    linked: boolean;
+  }[];
+  const needle = (filter ?? '').trim().toLocaleLowerCase();
+  return rows
+    .filter((row) => !needle || row.name.toLocaleLowerCase().includes(needle))
+    .slice(0, PEOPLE_SHOWN)
+    .map((row) => ({ id: row.id, name: row.name, recent: row.last_given !== null, noChat: !row.linked }));
+}
+
+/** «Kimga?», as buttons: two per row, «🙋 O‘zimga» and «🗑 Bekor qilish» last. */
+export function peopleKeyboard(people: DraftPerson[]): CallbackButton[][] {
+  const rows: CallbackButton[][] = [];
+  for (let i = 0; i < people.length; i += 2) {
+    rows.push(
+      people.slice(i, i + 2).map((person) => ({
+        text: buttonLabel(`${person.noChat ? '📵 ' : ''}${person.name}`, 'Hodim'),
+        callback_data: `dk:${person.id}`,
+      })),
+    );
+  }
+  rows.push([{ text: '🙋 O‘zimga', callback_data: 'd:self' }]);
+  rows.push([{ text: '🗑 Bekor qilish', callback_data: 'd:cancel' }]);
+  return rows;
+}
+
+/** The due buttons (spec §3) — pressing one CREATES the task, no extra confirm. */
+export function dueKeyboard(): CallbackButton[][] {
+  return [
+    [
+      { text: 'Bugun', callback_data: 'd:due_b' },
+      { text: 'Ertaga', callback_data: 'd:due_e' },
+    ],
+    [
+      { text: 'Indinga', callback_data: 'd:due_i' },
+      { text: 'Muddatsiz', callback_data: 'd:due_n' },
+    ],
+    [{ text: '📅 Sana yozish', callback_data: 'd:due_s' }],
+    [{ text: '🗑 Bekor qilish', callback_data: 'd:cancel' }],
+  ];
+}
+
+/** Door B's question under a forwarded message (spec §3). */
+export function forwardKeyboard(): CallbackButton[][] {
+  return [
+    [
+      { text: '📌 Topshiriq qilish', callback_data: 'fb:task' },
+      { text: '🔍 Qidirish', callback_data: 'fb:search' },
+    ],
+  ];
+}
+
+/** The pick, checked: a colleague who can sign in — never a stranger's id from a forged press. */
+export async function draftAssignee(userId: string): Promise<{ id: string; name: string } | null> {
+  const [row] = await db
+    .select({ id: users.id, name: users.fullName, live: canLogInSql() })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  return row && row.live ? { id: row.id, name: row.name } : null;
+}
+
+export type DraftCreated =
+  | {
+      ok: true;
+      taskId: string;
+      title: string;
+      assigneeId: string;
+      assigneeName: string;
+      reach: Reach;
+      self: boolean;
+    }
+  | { ok: false; result: Exclude<BotTaskResult, 'done'> };
+
+/**
+ * The draft becomes a task — through the ONE writer, `createTask`, under the
+ * chat's honest actor, `origin: 'hand'` (spec §4): title and note from what
+ * was typed, the author's own messages as the sources, no entity pointer
+ * (his 6b: a GS777 in the text is text, nothing is guessed), and the audit
+ * row says it came through Telegram. The files are queued for the web AFTER
+ * the task exists, as a job (telegram-mechanics-26), so a deploy mid-download
+ * leaves a retry and not a task whose voice note never arrived.
+ */
+export async function createTaskFromDraft(
+  chatId: bigint,
+  draft: {
+    assigneeId: string;
+    title: string;
+    note: string;
+    sources: { chatId: number; messageId: number }[];
+    files: DraftFile[];
+  },
+  due: { dueAt: string; tzOffsetMin: number | null },
+): Promise<DraftCreated> {
+  const ctx = await taskCtxFor(chatId);
+  if (!ctx) return { ok: false, result: 'not_linked' };
+  let task: TaskRow;
+  try {
+    task = await createTask(
+      {
+        title: draft.title,
+        note: draft.note,
+        typeId: null,
+        assigneeId: draft.assigneeId,
+        dueAt: due.dueAt,
+        tzOffsetMin: due.tzOffsetMin,
+        priority: 2,
+        entityType: null,
+        entityId: null,
+        repeatUnit: null,
+        repeatEvery: 1,
+      },
+      { actorId: ctx.actorId },
+      { origin: 'hand', sourceMessages: draft.sources, via: 'telegram' },
+    );
+  } catch (err) {
+    if (err instanceof TaskError) return { ok: false, result: err.code };
+    throw err;
+  }
+  if (draft.files.length > 0) await queueTaskFiles(task.id, ctx.actorId!, draft.files);
+  const self = task.assigneeId === ctx.actorId;
+  const reach: Reach = self
+    ? 'ok'
+    : ((await reachOf([task.assigneeId], 'TaskAssigned')).get(task.assigneeId) ?? 'no_chat');
+  return {
+    ok: true,
+    taskId: task.id,
+    title: task.title,
+    assigneeId: task.assigneeId,
+    assigneeName: task.assigneeName ?? '—',
+    reach,
+    self,
+  };
+}
+
+/** A task's files, handed to the download worker (tasks/files-job.ts). */
+async function queueTaskFiles(taskId: string, uploadedBy: string, files: DraftFile[]): Promise<void> {
+  const { enqueue } = await import('../jobs/boss');
+  const { JOB_TASK_FILES } = await import('../tasks/files-job');
+  await enqueue(JOB_TASK_FILES, { taskId, uploadedBy, files }).catch((err: unknown) => {
+    // The task stands and its Telegram copy carries the forwards; only the
+    // web copy of the bytes is missing, and the log says which.
+    logger.error({ err, taskId, files: files.length }, '[tasks] file download not queued');
+  });
+}
+
+/**
+ * A late album part, after the task was made (telegram-mechanics-17): it
+ * joins the task's sources (so a reassign by the author forwards it too), is
+ * queued for the web, and is forwarded to the assignee now — the drain's
+ * `forwards` carried only the parts that had arrived. Only the AUTHOR's own
+ * open task, and never past the source cap.
+ */
+export async function appendLatePart(
+  chatId: bigint,
+  linger: { taskId: string; assigneeId: string },
+  part: { messageId: number; file: DraftFile | null },
+): Promise<boolean> {
+  const staff = await staffForChat(chatId);
+  if (!staff) return false;
+  const appended = (await db.execute(sql`
+    UPDATE tasks
+       SET source_messages = coalesce(source_messages, '[]'::jsonb)
+             || ${JSON.stringify([{ chatId: Number(chatId), messageId: part.messageId }])}::jsonb,
+           updated_at = now()
+     WHERE id = ${linger.taskId} AND created_by = ${staff.id} AND status = 'open'
+       AND jsonb_array_length(coalesce(source_messages, '[]'::jsonb)) < ${MAX_TASK_SOURCES}
+    RETURNING id`)) as unknown as { id: string }[];
+  if (appended.length === 0) return false;
+  if (part.file) await queueTaskFiles(linger.taskId, staff.id, [part.file]);
+  if (linger.assigneeId !== staff.id) {
+    const reach = (await reachOf([linger.assigneeId], 'TaskAssigned')).get(linger.assigneeId);
+    const [link] = await db
+      .select({ chat: telegramLinks.telegramChatId })
+      .from(telegramLinks)
+      .where(and(eq(telegramLinks.userId, linger.assigneeId), eq(telegramLinks.status, 'linked')))
+      .limit(1);
+    if (reach === 'ok' && link?.chat) {
+      const answer = await botCall('forwardMessage', {
+        chat_id: Number(link.chat),
+        from_chat_id: Number(chatId),
+        message_id: part.messageId,
+      });
+      if (!answer.ok) logger.warn({ description: answer.description }, '[tasks] late album part not forwarded');
+    }
+  }
+  return true;
+}
+
+/** How many «🔔» buttons «📤 Men bergan» carries — the rest are on the web. */
+export const GIVEN_BUTTONS = 8;
+
+/**
+ * «📤 Men bergan» (his 5a): the open tasks this person gave by hand,
+ * newest first, «🔴» late, «👀» accepted, «⏳» not yet seen — on deploy day
+ * every one reads «⏳», which is true: nobody has pressed 👀 yet.
+ */
+export function givenListText(list: { rows: GivenTask[]; total: number }, now: Date = new Date()): string {
+  if (list.total === 0) return '📤 Siz bergan ochiq vazifa yo‘q.';
+  const lines = list.rows.map((row) => {
+    const late = row.dueAt !== null && row.dueAt.getTime() < now.getTime();
+    const mark = late ? '🔴' : row.accepted ? '👀' : '⏳';
+    const due = row.dueAt ? telegramDue(row.dueAt, row.allDay, now) : 'muddatsiz';
+    return `${mark} ${row.assigneeName ?? '—'} · ${due} · ${row.title}`;
+  });
+  const more = list.total > list.rows.length ? `\n… va yana ${list.total - list.rows.length} ta (saytda)` : '';
+  return (
+    `📤 Siz bergan ochiq vazifalar (${list.total})\n\n${lines.join('\n')}${more}\n\n` +
+    '🔴 kechikkan · 👀 qabul qilingan · ⏳ hali ko‘rilmagan'
+  );
+}
+
+export function givenButtons(rows: GivenTask[]): CallbackButton[][] | null {
+  const out = rows
+    .slice(0, GIVEN_BUTTONS)
+    .map((row) => [{ text: `🔔 ${buttonLabel(row.title, 'Vazifa')}`, callback_data: `te:${row.id}` }]);
+  return out.length > 0 ? out : null;
+}
+
+export async function givenFromBot(
+  chatId: bigint,
+): Promise<{ text: string; buttons: CallbackButton[][] | null } | null> {
+  const staff = await staffForChat(chatId);
+  if (!staff) return null;
+  const list = await givenTasks(staff.id);
+  return { text: givenListText(list), buttons: givenButtons(list.rows) };
 }
