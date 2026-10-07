@@ -47,6 +47,10 @@ export interface StoredDrafts {
   rows: Record<string, { draft: ItemDraft; base: RowBase }>;
   /** Dirty ghosts only, WITH their client id and note. */
   ghosts: NewRow[];
+  /** The «not restored: changed meanwhile» news was already shown once for
+   * this entry — it is KEPT (see `mountDecision`) but must not greet every
+   * open for 72 hours (review PHONE-6). */
+  newsShown?: true;
 }
 
 export interface LiveDrafts {
@@ -202,7 +206,7 @@ export function parseStoredDrafts(raw: string | null, now: number): StoredDrafts
     .map(parseGhost)
     .filter((g): g is NewRow => g !== null && ghostDirty(g));
   if (Object.keys(rows).length === 0 && ghosts.length === 0) return null;
-  return { v: 1, savedAt: data.savedAt, rows, ghosts };
+  return { v: 1, savedAt: data.savedAt, rows, ghosts, ...(data.newsShown === true ? { newsShown: true as const } : {}) };
 }
 
 /**
@@ -228,6 +232,7 @@ export function mergeForStorage(
       ...stored.ghosts.filter((g) => g.clientId === null || !liveIds.has(g.clientId)),
       ...live.ghosts,
     ],
+    ...(stored.newsShown ? { newsShown: true as const } : {}),
   };
 }
 
@@ -315,6 +320,32 @@ export interface RestorePlan {
 
 export const restorableCount = (plan: RestorePlan | null) =>
   plan ? Object.keys(plan.rows).length + plan.ghosts.length : 0;
+
+/**
+ * What the screen does with a stored entry when it opens (B5 a).
+ *   prompt — something can come back: ask, keep the entry while asking.
+ *   kept   — nothing can come back NOW, but rows were skipped as «changed
+ *            meanwhile»: that verdict was judged against THIS page, and a
+ *            phone reopened offline is served yesterday's page by the service
+ *            worker's NetworkFirst cache — a draft typed over our own landed
+ *            save reads «moved» against the stale figure. Deleting it would
+ *            make a wrong skip irrevocable (the review's check of PHONE-6), so
+ *            the entry stays, merged with new typing like `prompt`, and the
+ *            news is shown only the first time.
+ *   live   — the entry holds nothing worth keeping (at most «already saved»,
+ *            which the server has): replace it with the live state.
+ */
+export function mountDecision(
+  parsed: StoredDrafts | null,
+  plan: RestorePlan | null,
+): { phase: 'prompt' | 'kept' | 'live'; show: boolean; keep: StoredDrafts | null } {
+  if (!parsed || !plan) return { phase: 'live', show: false, keep: null };
+  if (restorableCount(plan) > 0) return { phase: 'prompt', show: true, keep: parsed };
+  if (plan.skipped.length > 0) {
+    return { phase: 'kept', show: parsed.newsShown !== true, keep: { ...parsed, newsShown: true } };
+  }
+  return { phase: 'live', show: plan.alreadySaved > 0, keep: null };
+}
 
 /** Restore needs the screen's unit for a row — the caller's `screenRowOf`. */
 export type ScreenBasisOf<I extends DraftItem = DraftItem> = (item: I) => BazaBasis | null;

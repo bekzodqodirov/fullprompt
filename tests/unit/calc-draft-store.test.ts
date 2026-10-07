@@ -3,6 +3,7 @@ import {
   DRAFT_TTL_MS,
   draftStorageKey,
   mergeForStorage,
+  mountDecision,
   parseStoredDrafts,
   planRestore,
   readStored,
@@ -230,5 +231,47 @@ describe('storage that refuses', () => {
     expect(readStored(throwing, 'k')).toBeNull();
     expect(writeStored(throwing, 'k', entry({}))).toBe(false);
     expect(writeStored(null, 'k', entry({}))).toBe(false);
+  });
+});
+
+describe('mountDecision — a skip judged against a stale page is never made irrevocable (check of PHONE-6)', () => {
+  // He saved 40 → 42 (landed), typed 45 over 42 and lost the tab. A phone
+  // reopened OFFLINE is served yesterday's page (40): the row reads «moved».
+  const stored = entry({ rows: { A: { draft: { quantity: '45' }, base: { quantity: 42 } } } });
+  const stale = new Map([['A', item({ id: 'A', quantity: 40 })]]);
+  const fresh = new Map([['A', item({ id: 'A', quantity: 42 })]]);
+
+  it('a news-only plan with a skip KEEPS the entry and shows the news once', () => {
+    const plan = planRestore(stored, stale, basis);
+    expect(plan.skipped.length).toBe(1);
+    const first = mountDecision(stored, plan);
+    expect(first).toMatchObject({ phase: 'kept', show: true });
+    expect(first.keep?.rows.A?.draft).toEqual({ quantity: '45' });
+    expect(first.keep?.newsShown).toBe(true);
+    // The next open, still stale: kept again, and silent.
+    const again = mountDecision(first.keep, planRestore(first.keep!, stale, basis));
+    expect(again).toMatchObject({ phase: 'kept', show: false });
+  });
+
+  it('the kept entry is offered back by a fresh page', () => {
+    const kept = mountDecision(stored, planRestore(stored, stale, basis)).keep!;
+    const plan = planRestore(kept, fresh, basis);
+    expect(mountDecision(kept, plan)).toMatchObject({ phase: 'prompt', show: true });
+    expect(plan.rows.A?.draft).toEqual({ quantity: '45' });
+  });
+
+  it('«already saved» alone is the server’s — the entry is replaced, the news shown', () => {
+    const landed = new Map([['A', item({ id: 'A', quantity: 45 })]]);
+    const plan = planRestore(stored, landed, basis);
+    expect(mountDecision(stored, plan)).toEqual({ phase: 'live', show: true, keep: null });
+    expect(mountDecision(null, null)).toEqual({ phase: 'live', show: false, keep: null });
+  });
+
+  it('the «shown» mark survives the round trip through storage and the merge', () => {
+    const marked = { ...stored, newsShown: true as const };
+    expect(parseStoredDrafts(JSON.stringify(marked), NOW)?.newsShown).toBe(true);
+    expect(parseStoredDrafts(JSON.stringify(stored), NOW)?.newsShown).toBeUndefined();
+    const live = entry({ rows: { B: { draft: { note: 'x' }, base: { note: null } } } });
+    expect(mergeForStorage(marked, live)?.newsShown).toBe(true);
   });
 });

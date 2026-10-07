@@ -54,6 +54,7 @@ import {
   parseStoredDrafts,
   planRestore,
   readStored,
+  mountDecision,
   restorableCount,
   serializeDrafts,
   writeStored,
@@ -344,7 +345,7 @@ export function ItemsTable({
 
   /* ---- the restore (B5 a) ---- */
   const [restore, setRestore] = useState<RestorePlan | null>(null);
-  const storagePhase = useRef<'init' | 'prompt' | 'live'>('init');
+  const storagePhase = useRef<'init' | 'prompt' | 'kept' | 'live'>('init');
   const storedEntry = useRef<StoredDrafts | null>(null);
   const storageOk = useRef<boolean | null>(null);
   const storageKey = draftStorageKey(viewerId, id);
@@ -742,18 +743,13 @@ export function ItemsTable({
       parsed && now
         ? planRestore(parsed, now.itemById, (item) => screenRowOf(item, undefined, now.groupById, now.groupsByCode).basis)
         : null;
-    if (parsed && plan && restorableCount(plan) > 0) {
-      storedEntry.current = parsed;
-      storagePhase.current = 'prompt';
-      setRestore(plan);
-    } else {
-      // Nothing to bring back — at most news («already saved», «not
-      // restored: changed meanwhile»), shown ONCE (review PHONE-6): the
-      // write effect in this same flush replaces the entry with the live
-      // state, so it does not greet every open for 72 hours.
-      storagePhase.current = 'live';
-      if (parsed && plan && (plan.skipped.length > 0 || plan.alreadySaved > 0)) setRestore(plan);
-    }
+    // Ask, keep a skipped entry (a stale cached page must not make its skip
+    // irrevocable), or replace it with the live state — `mountDecision`
+    // decides; news is shown ONCE (review PHONE-6).
+    const decision = mountDecision(parsed, plan);
+    storedEntry.current = decision.keep;
+    storagePhase.current = decision.phase;
+    if (decision.show && plan) setRestore(plan);
   }, [storageKey]);
 
   useEffect(() => {
@@ -761,7 +757,7 @@ export function ItemsTable({
     const live = serializeDrafts({ drafts, bases, newRows }, new Date());
     // While the question stands, the stored rows a live draft has not
     // replaced are KEPT — new typing is saved even if he never answers.
-    const value = storagePhase.current === 'prompt' ? mergeForStorage(storedEntry.current, live) : live;
+    const value = storagePhase.current === 'live' ? live : mergeForStorage(storedEntry.current, live);
     storageOk.current = writeStored(browserStorage(), storageKey, value);
   }, [drafts, bases, newRows, storageKey]);
 
@@ -796,6 +792,12 @@ export function ItemsTable({
   };
 
   const dropRestore = () => {
+    // «Tushunarli» on news-only closes the notice and nothing else: the kept
+    // entry is what a later, fresh page may still offer back.
+    if (storagePhase.current === 'kept') {
+      setRestore(null);
+      return;
+    }
     storagePhase.current = 'live';
     storedEntry.current = null;
     setRestore(null);

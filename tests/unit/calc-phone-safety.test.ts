@@ -230,8 +230,10 @@ describe('B5 a: the stored drafts are read before anything writes over them', ()
       writeAt,
       TABLE.indexOf('}, [drafts, bases, newRows, storageKey]);', writeAt),
     );
+    // While the question stands (prompt) or a skipped entry is kept (kept),
+    // the stored entry is merged in; only `live` writes the live state alone.
     expect(write).toContain(
-      "storagePhase.current === 'prompt' ? mergeForStorage(storedEntry.current, live) : live",
+      "storagePhase.current === 'live' ? live : mergeForStorage(storedEntry.current, live)",
     );
   });
 });
@@ -323,10 +325,22 @@ describe('review PHONE-5: the phone sweep is drawn on what it places', () => {
 });
 
 describe('review PHONE-6: a restore with nothing to restore is news shown once', () => {
-  it('only a restorable plan holds the stored entry; the lone button then only dismisses', () => {
-    expect(TABLE).toContain('if (parsed && plan && restorableCount(plan) > 0) {');
+  it('the mount asks the pure decision, and a kept entry is merged like a standing question', () => {
+    // mountDecision is proven in calc-draft-store.test.ts; here: the screen asks it and obeys it.
+    expect(TABLE).toContain('const decision = mountDecision(parsed, plan);');
+    expect(TABLE).toContain('storedEntry.current = decision.keep;');
+    expect(TABLE).toContain('storagePhase.current = decision.phase;');
+    expect(TABLE).toContain(
+      "const value = storagePhase.current === 'live' ? live : mergeForStorage(storedEntry.current, live);",
+    );
     const RESTORE = read('src/app/(protected)/hisoblash/[id]/draft-restore.tsx');
     expect(RESTORE).toContain("count > 0 ? t('restore.no') : t('restore.dismiss')");
+  });
+
+  it('«Tushunarli» on news closes the notice and keeps the entry a fresh page may still offer back', () => {
+    const body = constBody('dropRestore');
+    expect(body).toMatch(/if \(storagePhase\.current === 'kept'\) \{\s*setRestore\(null\);\s*return;\s*\}/);
+    expect(body.indexOf("storagePhase.current === 'kept'")).toBeLessThan(body.indexOf('writeStored('));
   });
 });
 
