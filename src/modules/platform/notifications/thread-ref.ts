@@ -74,6 +74,29 @@ export function isThreadRef(value: unknown): value is ThreadRef {
 }
 
 /**
+ * A read mark as the browser posts it: the thread, and the moment of the
+ * newest message the screen DREW (`markThreadRead`'s «as of»). An instant
+ * that does not parse is no mark at all.
+ */
+export type ThreadReadMark = ThreadRef & { asOf: string };
+
+/**
+ * The instant's ONE spelling — UTC, to the MICROSECOND, as postgres stores it
+ * (`thread.ts`'s `instantSql`). A JS `Date` holds milliseconds, and a mark
+ * truncated to the millisecond is BEFORE the very note it was taken from, so
+ * that note stays ● for ever; the instant therefore travels as this string
+ * and is never parsed into a Date on the way. Strict, because it is cast
+ * `::timestamptz` and a loose one is a 22007, not «no mark».
+ */
+export const THREAD_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$/;
+
+export function isThreadReadMark(value: unknown): value is ThreadReadMark {
+  if (!isThreadRef(value)) return false;
+  const asOf = (value as { asOf?: unknown }).asOf;
+  return typeof asOf === 'string' && THREAD_INSTANT.test(asOf);
+}
+
+/**
  * A ping's `payload.thread`, validated — or null. Written by the announce
  * (`extra.thread`), read by the reply door and the dock; a payload written
  * before 0127 has none, and a malformed one is nobody's thread.

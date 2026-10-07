@@ -35,7 +35,7 @@ import { LastQuotes } from './last-quotes';
 import { CalcThread } from '@/components/calc-thread';
 import { ThreadSeen } from '@/components/thread-seen';
 import { ThreadPulse } from '@/components/thread-pulse';
-import { calcThreadSummary, threadToken } from '@/modules/wms/crm/thread';
+import { asOfOfToken, calcThreadSummary, threadToken } from '@/modules/wms/crm/thread';
 import { mayWriteThread } from '@/modules/wms/crm/thread-door';
 
 /**
@@ -528,7 +528,11 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
           </section>
         </div>
       </div>
-      <ThreadSeen refs={[threadRef]} />
+      {/* The mark is «as of» the token the page read BEFORE drawing the
+          list — the same token the pulse compares, so a pulse refresh brings
+          a new one and the mark follows what is now on screen (a refresh
+          re-renders ThreadSeen, it does not remount it). */}
+      <ThreadSeen refs={[{ ...threadRef, asOf: threadBaseline !== null ? asOfOfToken(threadBaseline) : null }]} />
       {threadBaseline !== null ? <ThreadPulse kind="calc" id={row.id} initial={threadBaseline} /> : null}
     </div>
   );

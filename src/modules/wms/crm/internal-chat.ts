@@ -10,6 +10,7 @@ import { extractMentions, type MentionPerson } from './mentions';
 import { canLogInSql } from '../../platform/users/login';
 import { threadDoorWith, threadFacts } from './thread-door';
 import { calcThreadAuthors } from './thread';
+import { involvedWith, plainSeller } from './thread-involvement';
 
 /**
  * The internal conversation, carried by Telegram — and, since the owner's E
@@ -137,40 +138,6 @@ async function candidatesOf(
   return { owner, arms: owner ? [owner] : [], requester: null, past: authors.map((a) => a.id) };
 }
 
-/**
- * E9 on DEAL and CLIENT threads (§3.4 filter 2): their doors have no
- * ownership, so a past participant whose only standing is plain `crm.leads`
- * stays only while still INVOLVED with that client — its seller, the deal's
- * owner, or the owner of an open lead or open deal of that client. One
- * grouped statement for the client; the carriers never pass through here.
- */
-async function involvedWith(thread: { kind: 'deal' | 'client'; id: string }): Promise<Set<string>> {
-  const rows = await db.execute<{ id: string | null }>(sql`
-    WITH k AS (
-      SELECT ${thread.kind === 'client' ? sql`${thread.id}::uuid` : sql`(SELECT client_id FROM deals WHERE id = ${thread.id}::uuid)`} AS client_id
-    )
-    SELECT c.sales_manager_id::text AS id FROM clients c, k WHERE c.id = k.client_id
-    UNION
-    SELECT l.owner_id::text FROM leads l JOIN lead_stages s ON s.id = l.stage_id, k
-     WHERE l.client_id = k.client_id AND s.kind = 'open'
-    UNION
-    SELECT d.owner_id::text FROM deals d JOIN deal_stages s ON s.id = d.stage_id, k
-     WHERE d.client_id = k.client_id AND s.kind = 'open'
-    ${thread.kind === 'deal' ? sql`UNION SELECT owner_id::text FROM deals WHERE id = ${thread.id}::uuid` : sql``}
-  `);
-  return new Set(rows.map((r) => r.id).filter((id): id is string => id !== null));
-}
-
-/** Plain `crm.leads` and nothing that reads every card — the filter-2 standing. */
-function plainSeller(grants: Set<string>): boolean {
-  return (
-    grants.has('crm.leads') &&
-    !grants.has('crm.leads.view_all') &&
-    !grants.has('clients.manage') &&
-    !grants.has('ved.docs')
-  );
-}
-
 /** What the audience of one note IS — who hears it with the card, who only by standing. */
 export interface ThreadAudience {
   /** Admitted by the door: they get the ping WITH their link. */
@@ -228,7 +195,11 @@ export async function threadAudience(
       if (standing) standingOnly.push(id);
       continue;
     }
-    if (filterOn && !cand.arms.includes(id) && plainSeller(mine)) {
+    // Filter 2 judges PAST AUTHORS only (§3.4): the calc job's requester is
+    // not a participant who drifted in — he asked for this calculation, and a
+    // seller whose request joined somebody else's (or nobody's) open deal
+    // through `dealFor` is still the person waiting for its answer.
+    if (filterOn && !cand.arms.includes(id) && id !== cand.requester && plainSeller(mine)) {
       involved ??= await involvedWith(filterOn);
       if (!involved.has(id)) continue;
     }

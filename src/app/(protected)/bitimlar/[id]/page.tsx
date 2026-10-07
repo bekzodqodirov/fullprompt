@@ -37,6 +37,7 @@ import { LinkReceipt } from '../link-receipt';
 import { DeferForm } from '../defer-form';
 import { DiscountForm } from '../discount-form';
 import { ThreadSeen } from '@/components/thread-seen';
+import { threadReadMarks } from '@/modules/wms/crm/thread';
 
 /**
  * The deal card: the quote and the reality, side by side.
@@ -117,6 +118,9 @@ export default async function DealPage({
           : deviation.worstPct! > 0
             ? { text: t('overQuote'), tone: 'text-bad' }
             : { text: t('underQuote'), tone: 'text-bad' };
+  // The lenta's read marks, «as of» the newest message BEFORE the lenta is
+  // drawn (a note landing after it stays ● — never read for the person).
+  const readMarks = await threadReadMarks([{ kind: 'deal' as const, id: row.deal.id }]);
 
   return (
     <div className="space-y-4">
@@ -172,7 +176,7 @@ export default async function DealPage({
               limit={60}
               tall
             />
-            <ThreadSeen refs={[{ kind: 'deal', id: row.deal.id }]} />
+            <ThreadSeen refs={readMarks} />
             {/* The chat stands BESIDE the lenta, never inside it (round 21). */}
             <TelegramThread
               clientId={row.deal.clientId}

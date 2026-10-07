@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { THREAD_PING_TYPES } from '@/modules/platform/notifications/thread-ref';
 import { CALC_THREAD_ERRORS, UNREACHABLE_REASONS } from '@/modules/wms/crm/thread';
+import { readMarkKey } from '@/components/thread-seen';
 
 /**
  * The staff threads' WIRING (0127), source-shape — comments stripped first
@@ -136,7 +137,7 @@ describe('the doors', () => {
 
   it('5. the calc action and the three routes ask the door; the routes name the half-applied deploy', () => {
     expect(src('src/app/(protected)/hisoblash/[id]/thread-actions.ts')).toContain('mayWriteThread(who, ref)');
-    expect(src('src/app/api/threads/read/route.ts')).toContain('mayReadThread(actor, ref)');
+    expect(src('src/app/api/threads/read/route.ts')).toContain('mayReadThread(actor, thread)');
     expect(src('src/app/api/threads/pulse/route.ts')).toContain('mayReadThread(actor, ref)');
     const dock = src('src/app/api/dock/threads/route.ts');
     expect(dock).toContain('myThreads(actor)');
@@ -252,6 +253,60 @@ describe('one clock on one card', () => {
     // read 19:08 in one and 14:08 in the other (found in the round's screenshot).
     expect(src('src/components/client-feed.tsx')).toMatch(/item\.at\.toLocaleString\('ru-RU', \{[^}]*timeZone: OFFICE_TZ/);
     expect(src('src/components/dock.tsx')).toMatch(/new Date\(row\.at\)\.toLocaleString\('ru-RU', \{[^}]*timeZone: OFFICE_TZ/);
+  });
+});
+
+describe('the read mark follows what is on screen', () => {
+  it('14. the mark carries the drawn «as of», and a refresh that brings a newer one marks again', () => {
+    const seen = src('src/components/thread-seen.tsx');
+    // The effect's key is built from the refs AND their instant — a
+    // router.refresh() re-renders with new props and never remounts.
+    const ref = { kind: 'calc' as const, id: '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b' };
+    const before = readMarkKey([{ ...ref, asOf: '2026-10-07T10:00:00.000001Z' }]);
+    const after = readMarkKey([{ ...ref, asOf: '2026-10-07T10:00:05.000001Z' }]);
+    expect(before).not.toBe(after);
+    expect(readMarkKey([{ ...ref, asOf: null }])).toBe('');
+    expect(seen).toContain('const key = readMarkKey(refs);');
+    expect(seen).toMatch(/useEffect\(\(\) => \{[\s\S]*?\}, \[key\]\)/);
+    const fold = src('src/components/thread-fold.tsx');
+    expect(fold).toMatch(/markThreadsRead\(\[\{ kind: 'calc', id: requestId, asOf \}\]\)/);
+    expect(fold).toContain('}, [open, requestId, asOf]);');
+    // The calc page's instant is the pulse's own token, so the pulse's refresh moves it.
+    expect(src('src/app/(protected)/hisoblash/[id]/page.tsx')).toContain(
+      '<ThreadSeen refs={[{ ...threadRef, asOf: threadBaseline !== null ? asOfOfToken(threadBaseline) : null }]} />',
+    );
+    // The route never stamps the server's clock for a browser's mark.
+    expect(src('src/app/api/threads/read/route.ts')).toContain('markThreadRead(actor.id, thread, ref.asOf)');
+  });
+
+  it('15. every screen that draws a thread marks it from the page’s own read — the karta included', () => {
+    const pages = [
+      'src/app/(protected)/crm/leads/[id]/page.tsx',
+      'src/app/(protected)/bitimlar/[id]/page.tsx',
+      'src/app/(protected)/admin/clients/[id]/page.tsx',
+      'src/app/(protected)/hisoblash/[id]/karta/page.tsx',
+    ];
+    for (const page of pages) {
+      const text = src(page);
+      expect(text, page).toContain('<ThreadSeen refs={readMarks} />');
+      expect(text, page).toMatch(/const readMarks = await threadReadMarks\(\[/);
+    }
+    // The karta marks the LEAD (the one thread its reader's door admits).
+    expect(between(src('src/app/(protected)/hisoblash/[id]/karta/page.tsx'), 'await threadReadMarks([', ']);')).toContain(
+      "kind: 'lead' as const, id: lead.id",
+    );
+  });
+
+  it('16. a same-page link to a fold opens it: Next fires no hashchange, so the click is caught in the capture phase', () => {
+    const open = src('src/components/thread-hash-open.tsx');
+    expect(open).toContain("document.addEventListener('click', onClick, true)");
+    expect(open).toContain('url.pathname !== window.location.pathname');
+  });
+
+  it('17. a dock with fewer than three tabs keeps every word', () => {
+    const dock = src('src/components/dock.tsx');
+    expect(dock).toContain('const tabCount = 1 + Number(canChat) + Number(canThreads);');
+    expect(between(dock, 'const tabWord = (active: boolean) =>', ';')).toMatch(/tabCount < 3\s*\? 'ml-1'/);
   });
 });
 

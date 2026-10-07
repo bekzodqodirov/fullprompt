@@ -36,6 +36,7 @@ import { leadThreadSource } from '@/modules/wms/crm/conversation-row';
 import { mayOpenLead } from '@/modules/wms/crm/lead-door';
 import { mayOpenClientLedger } from '@/modules/wms/finance/scope';
 import { ThreadSeen } from '@/components/thread-seen';
+import { threadReadMarks } from '@/modules/wms/crm/thread';
 
 /** One lead: where it stands, what was said, and the button that ends it. */
 export default async function LeadPage({
@@ -117,6 +118,12 @@ export default async function LeadPage({
     ownLeadRows: canReadTg(actor) ? await leadOwnChatRows(lead.id, tgViewerFor(actor)) : 0,
     resolvedClientId: dockClientId,
   });
+  // The lenta's read marks, «as of» the newest message BEFORE the lenta is
+  // drawn (a note landing after it stays ● — never read for the person).
+  const readMarks = await threadReadMarks([
+    { kind: 'lead' as const, id: lead.id },
+    ...(dockClientId ? [{ kind: 'client' as const, id: dockClientId }] : []),
+  ]);
 
   return (
     // Wide like the funnel it came from: the amoCRM card shape (owner,
@@ -160,9 +167,7 @@ export default async function LeadPage({
              does not render. */
           <>
             <ClientFeed clientId={dockClientId} money={feedMoney} leadId={lead.id} limit={60} tall />
-            <ThreadSeen
-              refs={[{ kind: 'lead', id: lead.id }, ...(dockClientId ? [{ kind: 'client' as const, id: dockClientId }] : [])]}
-            />
+            <ThreadSeen refs={readMarks} />
             {/* The chat stands BESIDE the lenta, never inside it (round 21). */}
             <TelegramThread
               clientId={threadSource.kind === 'client' ? threadSource.clientId : null}

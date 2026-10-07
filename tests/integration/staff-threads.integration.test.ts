@@ -52,10 +52,12 @@ import { announceNote, noteRecipients } from '@/modules/wms/crm/internal-chat';
 import {
   addThreadMessage,
   calcThreadMessages,
+  calcThreadSummary,
   markThreadRead,
   myThreads,
   openCalcThreadOn,
   threadHrefsFor,
+  threadReadMarks,
 } from '@/modules/wms/crm/thread';
 import { mayWriteThread, threadStanding } from '@/modules/wms/crm/thread-door';
 import { landThreadReply } from '@/modules/wms/crm/thread-reply';
@@ -339,6 +341,32 @@ describe('who hears a note — decided at send time', () => {
     expect(await noteRecipients('lead', LS, RS)).not.toContain(P.S);
   });
 
+  it('6b. the seller who ASKED is never judged by involvement: his request on an ownerless deal of a seller-less client still reaches him', async () => {
+    // `dealFor` sends a repeat client's request to its newest OPEN deal —
+    // which may be nobody's. S owns nothing of K and is not its seller; he
+    // asked, and the VED's question is FOR him (§3.4: filter 2 judges past
+    // authors, not the requester).
+    const K = await client(null);
+    const D = await deal(null, K);
+    const R = await request('deal', D, P.S, P.V);
+    expect(await noteRecipients('deal', D, R)).toContain(P.S);
+    const q = await addThreadMessage({ ref: { kind: 'calc', id: R }, body: `deal savol ${SFX}` }, ctx(P.V));
+    const said = await announceNote({
+      entityType: q.entityType,
+      entityId: q.entityId,
+      note: 'deal savol',
+      authorId: P.V,
+      activityId: q.activityId,
+      calcRequestId: q.calcRequestId,
+    });
+    expect(said.heard).toContain(P.S);
+    // …and his dock lists it, by the same exemption (the list agrees with the ping).
+    expect((await myThreads(await actorOf(P.S))).find((r) => r.kind === 'calc' && r.id === R)?.unread).toBe(true);
+    // A plain seller who merely WROTE there and is not involved is still dropped.
+    await addThreadMessage({ ref: { kind: 'calc', id: R }, body: 'begona izoh' }, ctx(P.B));
+    expect(await noteRecipients('deal', D, R)).not.toContain(P.B);
+  });
+
   it('18. the write gap: a seller may not write on a colleague’s lead he cannot open', async () => {
     const L = await lead(P.S);
     expect(await mayWriteThread(await actorOf(P.B), { kind: 'lead', id: L })).toBe(false);
@@ -434,7 +462,7 @@ describe('17. the dock — the threads I am in', () => {
     expect(mine?.href).toBe(`/crm/leads/${Lmine}#ichki`);
     expect(pinged?.unread).toBe(true);
     expect(pinged?.href).toBe(`/crm/leads/${Lpinged}#calc-thread-${R}`);
-    await markThreadRead(P.S, { kind: 'calc', id: R });
+    await markThreadRead(P.S, { kind: 'calc', id: R }, new Date().toISOString());
     rows = await myThreads(seller);
     expect(rows.find((r) => r.kind === 'calc' && r.id === R)?.unread).toBe(false);
     // Handed away: gone from his list (E9 a), still on the new owner's door.
@@ -458,6 +486,52 @@ describe('17. the dock — the threads I am in', () => {
     const ved = await actorOf(P.V);
     expect((await threadHrefsFor(ved, [{ kind: 'client', id: K }])).get(`client:${K}`)).toBe(`/admin/clients/${K}#ichki`);
     expect((await myThreads(ved)).find((r) => r.kind === 'client' && r.id === K)).toBeUndefined();
+  });
+});
+
+describe('17b. the read mark is AS OF what was drawn', () => {
+  it('a note that lands between the render and the mark stays new; a future instant is capped at now', async () => {
+    const L = await lead(P.S);
+    const R = await request('lead', L, P.S, P.V);
+    const ref = { kind: 'calc' as const, id: R };
+    await addThreadMessage({ ref, body: 'birinchi savol' }, ctx(P.V));
+    // The seller's page reads its marks BEFORE drawing the list…
+    const [drawn] = await threadReadMarks([ref]);
+    expect(drawn?.asOf).toEqual(expect.any(String));
+    // …the VED writes again before the browser's POST arrives…
+    await addThreadMessage({ ref, body: 'ikkinchi savol' }, ctx(P.V));
+    await markThreadRead(P.S, ref, drawn!.asOf!);
+    // …and the second question was never on his screen: it is still new.
+    expect((await calcThreadSummary(R, P.S)).unread).toBe(true);
+    // The render that SHOWS it reads it.
+    const [again] = await threadReadMarks([ref]);
+    await markThreadRead(P.S, ref, again!.asOf!);
+    expect((await calcThreadSummary(R, P.S)).unread).toBe(false);
+    // A forged instant in the future reads nothing in advance.
+    await markThreadRead(P.S, ref, '2999-01-01T00:00:00.000Z');
+    await addThreadMessage({ ref, body: 'uchinchi savol' }, ctx(P.V));
+    expect((await calcThreadSummary(R, P.S)).unread).toBe(true);
+  });
+});
+
+describe('17c. E9 on a client thread — from the dock', () => {
+  it('a plain seller whose lead of the client went to a colleague stops seeing the client thread in his dock', async () => {
+    const K = await client(null);
+    const LK = await lead(P.S, K);
+    await addThreadMessage({ ref: { kind: 'client', id: K }, body: `mijoz yozuvi ${SFX}` }, ctx(P.S));
+    const listed = async (who: string) =>
+      (await myThreads(await actorOf(who))).some((r) => r.kind === 'client' && r.id === K);
+    expect(await listed(P.S)).toBe(true);
+    // The lead goes to B, who writes: S is no longer involved — he hears
+    // nothing (filter 2), and his dock must not keep a ● for it either.
+    await db.update(leads).set({ ownerId: P.B }).where(eq(leads.id, LK));
+    await addThreadMessage({ ref: { kind: 'client', id: K }, body: 'B yozdi' }, ctx(P.B));
+    expect(await noteRecipients('client', K, null)).not.toContain(P.S);
+    expect(await listed(P.S)).toBe(false);
+    expect(await listed(P.B)).toBe(true);
+    // A logist past author is not a plain seller: never judged.
+    await addThreadMessage({ ref: { kind: 'client', id: K }, body: 'logist' }, ctx(P.C2));
+    expect(await listed(P.C2)).toBe(true);
   });
 });
 

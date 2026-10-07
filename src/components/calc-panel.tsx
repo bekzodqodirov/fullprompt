@@ -297,6 +297,7 @@ export async function CalcPanel({
               key={row.requestId}
               requestId={row.requestId}
               initialOpen={row.open || row.unread}
+              asOf={row.lastAt}
               summary={
                 <>
                   {tth('calcTitle')}

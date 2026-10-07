@@ -16,16 +16,22 @@ import { markThreadsRead } from './thread-seen';
  * mismatch.
  *
  * It marks the thread read only while it is OPEN — on mount when it starts
- * open, and on every toggle to open; a closed fold has not been read.
+ * open, and on every toggle to open; a closed fold has not been read — and
+ * only UP TO `asOf`, the newest message the card's list read before drawing
+ * these children: a fold toggled open minutes after the render shows the
+ * render's messages, and a note that landed since is not among them. A
+ * refresh that brings a newer `asOf` re-marks an open fold.
  */
 export function ThreadFold({
   requestId,
   initialOpen,
+  asOf,
   summary,
   children,
 }: {
   requestId: string;
   initialOpen: boolean;
+  asOf: string | null;
   summary: ReactNode;
   children: ReactNode;
 }) {
@@ -33,8 +39,8 @@ export function ThreadFold({
   const [open, setOpen] = useState(initialOpen);
 
   useEffect(() => {
-    if (open) markThreadsRead([{ kind: 'calc', id: requestId }]);
-  }, [open, requestId]);
+    if (open && asOf) markThreadsRead([{ kind: 'calc', id: requestId, asOf }]);
+  }, [open, requestId, asOf]);
 
   return (
     <details

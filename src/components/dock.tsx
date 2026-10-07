@@ -349,8 +349,18 @@ export function Dock({
   // ACTIVE tab carries its word.
   const tabClass = (active: boolean) =>
     `shrink-0 rounded-xl px-3 py-2 text-sm font-bold ${active ? 'bg-brand-50 text-brand-800' : 'text-ink-500'}`;
+  //
+  // Only THREE tabs pay for it: with one or two (a warehouse person has the
+  // day alone, a seller without threads the chat and the day) both words
+  // always fitted — the row before the third tab — and an icon with no word
+  // is a puzzle on the one tab a person has.
+  const tabCount = 1 + Number(canChat) + Number(canThreads);
   const tabWord = (active: boolean) =>
-    active ? 'sr-only sm:not-sr-only sm:ml-1' : 'sr-only sm:not-sr-only sm:ml-1 md:sr-only';
+    tabCount < 3
+      ? 'ml-1'
+      : active
+        ? 'sr-only sm:not-sr-only sm:ml-1'
+        : 'sr-only sm:not-sr-only sm:ml-1 md:sr-only';
 
   return (
     <>

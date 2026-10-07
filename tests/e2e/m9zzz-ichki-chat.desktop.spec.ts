@@ -27,6 +27,10 @@ test.describe.configure({ mode: 'serial' });
 
 const ADMIN = '+998900000001';
 const VED = '+998900000004';
+// A warehouse operator: no chat, no threads — the dock's day alone (CHAT-7).
+const OPERATOR = '+998900000006';
+// A plain seller: on HER card the lenta's chip names a fold on the SAME page.
+const SELLER = '+998900000009';
 const PASSWORD = 'demo1234';
 const SHOTS = process.env.CHAT_SHOTS ?? 'test-results';
 
@@ -41,6 +45,7 @@ const ANSWER = `12 kub, ichki javob ${STAMP}`;
 let cardUrl = '';
 let requestId = '';
 let vedLocale: string | null = null;
+let leadOwner: string | null | undefined;
 let restored = false;
 
 function database() {
@@ -269,10 +274,64 @@ test('a link that names the fold opens it — closed without its hash once the j
   await expect(fold(page)).toContainText(ANSWER);
 });
 
+test('on the seller’s own card the lenta’s chip opens the closed fold — a same-page link fires no hashchange', async ({ page }) => {
+  // The card goes to a plain seller, so the chip's address is THIS card's fold
+  // (threadHrefsFor) — a Next <Link> to the page you are on, which pushes a
+  // hash and fires nothing (the owner is put back in the cleanup test).
+  const sql = database();
+  try {
+    const leadId = cardUrl.split('/').pop()!;
+    const [row] = await sql<{ owner: string | null }[]>`SELECT owner_id::text AS owner FROM leads WHERE id = ${leadId}`;
+    leadOwner = row!.owner;
+    await sql`UPDATE leads SET owner_id = (SELECT id FROM users WHERE phone = ${SELLER}) WHERE id = ${leadId}`;
+  } finally {
+    await sql.end();
+  }
+  await login(page, SELLER);
+  // Her first visit: the admin's answer is new to her, so the fold draws open
+  // and marks the thread read — wait for that, then it draws closed.
+  const read = page.waitForResponse((r) => r.url().includes('/api/threads/read') && r.status() === 204);
+  await page.goto(cardUrl);
+  await expect(fold(page)).toHaveAttribute('open', '', { timeout: 15_000 });
+  await read;
+  await page.reload();
+  await expect(fold(page)).toBeVisible({ timeout: 15_000 });
+  await expect(fold(page)).not.toHaveAttribute('open', '');
+  const chip = page.getByTestId('client-feed').getByTestId('feed-calc-thread').first();
+  await expect(chip).toHaveAttribute('href', `${cardUrl}#calc-thread-${requestId}`);
+  await chip.click();
+  await expect(page).toHaveURL(new RegExp(`#calc-thread-${requestId}$`));
+  await expect(fold(page)).toHaveAttribute('open', '', { timeout: 5_000 });
+  await expect(fold(page)).toContainText(ANSWER);
+});
+
+test('a dock with one tab keeps its word on a phone (the warehouse operator’s «Mening kunim»)', async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 800 });
+  await login(page, OPERATOR);
+  await page.getByTestId('dock-button').click();
+  await expect(page.getByTestId('dock-panel')).toBeVisible();
+  await expect(page.getByTestId('dock-tab-chat')).toHaveCount(0);
+  await expect(page.getByTestId('dock-tab-threads')).toHaveCount(0);
+  // The word is the tab's second span; `sr-only` would make it a 1 px box.
+  const word = page.getByTestId('dock-tab-tasks').locator('span').nth(1);
+  await expect(word).toBeVisible();
+  expect((await word.boundingBox())!.width).toBeGreaterThan(20);
+  await widthFits(page, 360);
+  await page.screenshot({ path: `${SHOTS}/ichki-dock-operator-360.png` });
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await expect(word).toBeVisible();
+  expect((await word.boundingBox())!.width).toBeGreaterThan(20);
+  await widthFits(page, 1280);
+  await page.screenshot({ path: `${SHOTS}/ichki-dock-operator-1280.png` });
+});
+
 test('the lead it created is closed and the VED’s language is his again (cleanup as a test)', async ({ page }) => {
   await restoreLocale();
   const sql = database();
   try {
+    if (leadOwner !== undefined) {
+      await sql`UPDATE leads SET owner_id = ${leadOwner} WHERE id = ${cardUrl.split('/').pop()!}`;
+    }
     const [row] = await sql<{ locale: string }[]>`SELECT locale FROM users WHERE phone = ${VED}`;
     expect(row!.locale).toBe(vedLocale);
     const [open] = await sql<{ n: number }[]>`

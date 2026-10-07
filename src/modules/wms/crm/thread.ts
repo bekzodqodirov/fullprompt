@@ -3,7 +3,9 @@ import { v7 as uuidv7 } from 'uuid';
 import { db } from '../../platform/db/client';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { logger } from '../../platform/logger';
+import { isServerBehind } from '../../platform/db/errors';
 import {
+  THREAD_INSTANT,
   THREAD_PING_TYPES,
   THREAD_TEXT_MAX,
   THREAD_UUID,
@@ -16,6 +18,7 @@ import { kartaHref, newestRequestOn } from '../calc/card-door';
 import { canWriteDeal } from '../deals/door';
 import { mayOpenLead } from './lead-door';
 import { threadDoorsFor } from './thread-door';
+import { involvedInDeal, involvementOf, plainSeller } from './thread-involvement';
 
 /**
  * The staff thread's writer and its reads (the owner's E answers,
@@ -79,6 +82,15 @@ export interface ThreadMessage {
 
 type CardKind = 'lead' | 'deal' | 'client';
 
+/**
+ * A timestamp as the read mark's instant (thread-ref.ts `THREAD_INSTANT`):
+ * UTC to the microsecond, spelled by postgres itself — never through a JS
+ * Date, which would drop the microseconds and put the mark BEFORE its note.
+ */
+function instantSql(expr: SqlFragment): SqlFragment {
+  return sql`to_char(${expr} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
+}
+
 /** A raw timestamp is TEXT through `db.execute` (history.ts's lesson) — a Date here, always. */
 function asDate(value: unknown): Date {
   return value instanceof Date ? value : new Date(String(value));
@@ -138,14 +150,14 @@ export async function addThreadMessage(
     if (!target) throw new ThreadError('not_found');
     // The id is the schema's own (`id()` mints a uuidv7 in the application —
     // the column has NO database default, so a raw INSERT must bring one).
-    const inserted = await tx.execute<{ id: string }>(sql`
+    const inserted = await tx.execute<{ id: string; created_at: string }>(sql`
       INSERT INTO crm_activities
         (id, entity_type, entity_id, kind, note, happened_at, created_by, calc_request_id, tg_chat_id, tg_message_id)
       VALUES
         (${uuidv7()}::uuid, ${target.entityType}, ${target.entityId}::uuid, 'note', ${body}, now(), ${ctx.actorId}::uuid,
          ${target.calcRequestId}::uuid, ${tgChat}::bigint, ${tgMessage}::bigint)
       ON CONFLICT (tg_chat_id, tg_message_id) WHERE tg_message_id IS NOT NULL DO NOTHING
-      RETURNING id::text AS id
+      RETURNING id::text AS id, ${instantSql(sql`created_at`)} AS created_at
     `);
     const id = inserted[0]?.id;
     if (!id) {
@@ -154,7 +166,7 @@ export async function addThreadMessage(
         SELECT id::text AS id FROM crm_activities
          WHERE tg_chat_id = ${tgChat}::bigint AND tg_message_id = ${tgMessage}::bigint
       `);
-      return { ...target, activityId: existing[0]?.id ?? '', duplicate: true };
+      return { ...target, activityId: existing[0]?.id ?? '', duplicate: true, createdAt: null };
     }
     await writeAudit(tx, ctx, {
       entityType: `crm_${target.entityType}_activity`,
@@ -167,30 +179,75 @@ export async function addThreadMessage(
         ...(input.tg ? { viaTelegram: true } : {}),
       },
     });
-    return { ...target, activityId: id, duplicate: false };
+    return { ...target, activityId: id, duplicate: false, createdAt: inserted[0]!.created_at };
   });
 
-  // Your own message is read — after the commit, and never failing the write.
-  if (!out.duplicate && ctx.actorId) {
-    await markThreadRead(ctx.actorId, input.ref).catch((err: unknown) =>
+  // Your own message is read — up to ITSELF, after the commit, and never
+  // failing the write.
+  const { createdAt, ...result } = out;
+  if (createdAt && ctx.actorId) {
+    await markThreadRead(ctx.actorId, input.ref, createdAt).catch((err: unknown) =>
       logger.warn({ err, activityId: out.activityId }, '[thread] own read mark failed'),
     );
+  }
+  return result;
+}
+
+/**
+ * Mark a thread read for one person — UP TO WHAT WAS DRAWN. `asOf` is the
+ * moment of the newest message the screen rendered (`threadReadMarks`), never
+ * the moment the mark arrives: the POST lands seconds after the render (a
+ * fold toggled open, minutes), and a note committed in between was never on
+ * the screen — stamping `now()` read it for the person, and its ● never
+ * appeared anywhere. REQUIRED: a mark with no «as of» is exactly that defect.
+ * `LEAST(now(), …)`: the instant comes from a browser and a future one would
+ * read tomorrow's notes in advance. `GREATEST` (tg_chat_reads' shape, 0071):
+ * an out-of-order write — two tabs, a slow request — never moves it back.
+ */
+export async function markThreadRead(userId: string, ref: ThreadRef, asOf: string): Promise<void> {
+  if (!THREAD_UUID.test(userId) || !THREAD_UUID.test(ref.id) || !THREAD_INSTANT.test(asOf)) return;
+  await db.execute(sql`
+    INSERT INTO thread_reads (user_id, thread_kind, thread_id, read_at)
+    VALUES (${userId}::uuid, ${ref.kind}, ${ref.id}::uuid, LEAST(now(), ${asOf}::timestamptz))
+    ON CONFLICT (user_id, thread_kind, thread_id)
+    DO UPDATE SET read_at = GREATEST(thread_reads.read_at, EXCLUDED.read_at)
+  `);
+}
+
+/**
+ * The «as of» each thread's read mark carries (`markThreadRead`): the newest
+ * message of the thread at the moment the PAGE asked — awaited by the page
+ * BEFORE it renders the list, so whatever the list draws is at least this new
+ * and a note that lands later stays ● until a render that shows it. Null for
+ * a thread with no message (nothing to mark). A database one migration behind
+ * answers an empty list: the mark is a convenience, never a reason for an
+ * error on the card (#472).
+ */
+export async function threadReadMarks<R extends ThreadRef>(refs: readonly R[]): Promise<(R & { asOf: string | null })[]> {
+  const out: (R & { asOf: string | null })[] = [];
+  try {
+    for (const ref of refs) {
+      if (!THREAD_UUID.test(ref.id)) continue;
+      const where =
+        ref.kind === 'calc'
+          ? sql`a.calc_request_id = ${ref.id}::uuid`
+          : sql`a.entity_type = ${ref.kind} AND a.entity_id = ${ref.id}::uuid AND a.calc_request_id IS NULL`;
+      const rows = await db.execute<{ at: string | null }>(sql`
+        SELECT ${instantSql(sql`max(a.created_at)`)} AS at FROM crm_activities a WHERE ${where} AND a.kind = 'note'
+      `);
+      out.push({ ...ref, asOf: rows[0]?.at ?? null });
+    }
+  } catch (err) {
+    if (!isServerBehind(err)) throw err;
+    return [];
   }
   return out;
 }
 
-/**
- * Mark a thread read for one person. `GREATEST` (tg_chat_reads' shape, 0071):
- * an out-of-order write — two tabs, a slow request — never moves it back.
- */
-export async function markThreadRead(userId: string, ref: ThreadRef): Promise<void> {
-  if (!THREAD_UUID.test(userId) || !THREAD_UUID.test(ref.id)) return;
-  await db.execute(sql`
-    INSERT INTO thread_reads (user_id, thread_kind, thread_id, read_at)
-    VALUES (${userId}::uuid, ${ref.kind}, ${ref.id}::uuid, now())
-    ON CONFLICT (user_id, thread_kind, thread_id)
-    DO UPDATE SET read_at = GREATEST(thread_reads.read_at, EXCLUDED.read_at)
-  `);
+/** The read mark's «as of» out of a pulse token (`threadToken`, `n:<iso>`) — null when the thread is empty. */
+export function asOfOfToken(token: string): string | null {
+  const at = token.slice(token.indexOf(':') + 1);
+  return at ? at : null;
 }
 
 /** One calculation's Q&A, in reading order — E5 a: ONLY that calculation's notes. */
@@ -257,6 +314,8 @@ export interface CardCalcThread {
   open: boolean;
   count: number;
   unread: boolean;
+  /** The newest message's moment as this list read it — the fold's read-mark «as of». */
+  lastAt: string | null;
 }
 
 /**
@@ -275,12 +334,13 @@ export async function calcThreadsOnCard(
     open: boolean;
     count: number | string;
     unread: boolean;
+    last_at: string | null;
   }>(sql`
-    SELECT r.id::text AS id, r.section, (r.completed_at IS NULL) AS open, s.count,
+    SELECT r.id::text AS id, r.section, (r.completed_at IS NULL) AS open, s.count, ${instantSql(sql`s.last_at`)} AS last_at,
            ${unreadSql(viewerId, 'calc', sql`r.id`, sql`last.created_by`, sql`last.created_at`)} AS unread
       FROM calc_requests r
       CROSS JOIN LATERAL (
-        SELECT count(*)::int AS count FROM crm_activities a
+        SELECT count(*)::int AS count, max(a.created_at) AS last_at FROM crm_activities a
          WHERE a.calc_request_id = r.id AND a.kind = 'note'
       ) s
       LEFT JOIN LATERAL (
@@ -300,6 +360,7 @@ export async function calcThreadsOnCard(
     open: Boolean(row.open),
     count: Number(row.count),
     unread: Boolean(row.unread),
+    lastAt: row.last_at ?? null,
   }));
 }
 
@@ -353,11 +414,14 @@ export async function threadToken(ref: ThreadRef): Promise<string> {
     ref.kind === 'calc'
       ? sql`a.calc_request_id = ${ref.id}::uuid`
       : sql`a.entity_type = ${ref.kind} AND a.entity_id = ${ref.id}::uuid AND a.calc_request_id IS NULL`;
-  const rows = await db.execute<{ n: number | string; at: string | Date | null }>(sql`
-    SELECT count(*)::int AS n, max(a.created_at) AS at FROM crm_activities a WHERE ${where} AND a.kind = 'note'
+  const rows = await db.execute<{ n: number | string; at: string | null }>(sql`
+    SELECT count(*)::int AS n, ${instantSql(sql`max(a.created_at)`)} AS at
+      FROM crm_activities a WHERE ${where} AND a.kind = 'note'
   `);
   const row = rows[0];
-  return `${Number(row?.n ?? 0)}:${row?.at ? asDate(row.at).toISOString() : ''}`;
+  // The newest moment to the microsecond: the calc page's read mark is taken
+  // out of this token (`asOfOfToken`), and a millisecond one sits before its note.
+  return `${Number(row?.n ?? 0)}:${row?.at ?? ''}`;
 }
 
 /** What a viewer the href rule needs: who, and the grants. */
@@ -562,9 +626,13 @@ export async function myThreads(viewer: Viewer, limit = 30): Promise<DockThreadR
   `);
 
   const refs = rows.map((row) => ({ kind: row.kind, id: row.id }));
-  const [admitted, hrefs] = await Promise.all([threadDoorsFor(viewer, refs), threadHrefsFor(viewer, refs)]);
+  const [admitted, hrefs, involved] = await Promise.all([
+    threadDoorsFor(viewer, refs),
+    threadHrefsFor(viewer, refs),
+    stillInvolved(viewer, refs),
+  ]);
   const visible = rows
-    .filter((row) => admitted.has(threadKey(row)) && hrefs.get(threadKey(row)))
+    .filter((row) => admitted.has(threadKey(row)) && hrefs.get(threadKey(row)) && involved(row))
     .slice(0, limit);
   const labels = await threadLabels(visible.map((row) => ({ kind: row.kind, id: row.id })));
   return visible.map((row) => ({
@@ -578,6 +646,58 @@ export async function myThreads(viewer: Viewer, limit = 30): Promise<DockThreadR
     unread: Boolean(row.unread),
     href: hrefs.get(threadKey(row))!,
   }));
+}
+
+/**
+ * E9 on deal and client threads, from the DOCK's side (§3.4 filter 2): their
+ * doors have no ownership, so a plain seller who once wrote on a client whose
+ * lead went to a colleague is still admitted by the door — and the audience
+ * has stopped pinging him. The list must agree with the ping, or his dock
+ * goes on showing a ● on every message of a conversation he left. The SAME
+ * relation the audience asks (`thread-involvement.ts`), and the same
+ * exemptions: only a plain seller is judged, never a lead thread (the door
+ * does E9 there), and a calculation's requester is never judged (he asked).
+ */
+async function stillInvolved(
+  viewer: Viewer,
+  refs: readonly ThreadRef[],
+): Promise<(ref: ThreadRef) => boolean> {
+  if (!plainSeller(viewer.permissions)) return () => true;
+  const dealIds = [...new Set(refs.filter((r) => r.kind === 'deal').map((r) => r.id.toLowerCase()))];
+  const calcIds = [...new Set(refs.filter((r) => r.kind === 'calc').map((r) => r.id.toLowerCase()))];
+  if (!refs.some((r) => r.kind === 'client') && dealIds.length === 0 && calcIds.length === 0) return () => true;
+  const ids = (list: string[]) => sql.join(list.map((id) => sql`${id}::uuid`), sql`, `);
+  const [mine, dealRows, calcRows] = await Promise.all([
+    involvementOf(viewer.id),
+    dealIds.length
+      ? db.execute<{ id: string; client_id: string | null }>(sql`
+          SELECT id::text AS id, client_id::text AS client_id FROM deals WHERE id IN (${ids(dealIds)})
+        `)
+      : Promise.resolve([] as { id: string; client_id: string | null }[]),
+    calcIds.length
+      ? db.execute<{ id: string; requested_by: string | null; deal_id: string | null; client_id: string | null }>(sql`
+          SELECT r.id::text AS id, r.requested_by::text AS requested_by,
+                 d.id::text AS deal_id, d.client_id::text AS client_id
+            FROM calc_requests r
+            LEFT JOIN deals d ON r.entity_type = 'deal' AND d.id = r.entity_id
+           WHERE r.id IN (${ids(calcIds)})
+        `)
+      : Promise.resolve([] as { id: string; requested_by: string | null; deal_id: string | null; client_id: string | null }[]),
+  ]);
+  const dealClient = new Map(dealRows.map((r) => [r.id, r.client_id] as const));
+  const calcs = new Map(calcRows.map((r) => [r.id, r] as const));
+  return (ref) => {
+    const id = ref.id.toLowerCase();
+    if (ref.kind === 'client') return mine.clients.has(id);
+    if (ref.kind === 'deal') return involvedInDeal(mine, { id, clientId: dealClient.get(id) ?? null });
+    if (ref.kind === 'calc') {
+      const calc = calcs.get(id);
+      // A calculation on a LEAD is the lead's door's; one he asked for is his.
+      if (!calc?.deal_id || calc.requested_by === viewer.id) return true;
+      return involvedInDeal(mine, { id: calc.deal_id, clientId: calc.client_id });
+    }
+    return true;
+  };
 }
 
 /** What to call each thread on a list — one query per kind present. */

@@ -18,6 +18,8 @@ import { CalcPanel } from '@/components/calc-panel';
 import { ClientFeed } from '@/components/client-feed';
 import { TelegramThread } from '@/components/telegram-thread';
 import { CallsPanel } from '@/components/calls-panel';
+import { ThreadSeen } from '@/components/thread-seen';
+import { threadReadMarks } from '@/modules/wms/crm/thread';
 
 /**
  * The VED on the seller's LEAD (the owner's 14a 15a 16a, docs/VED-TARIX.md
@@ -107,6 +109,11 @@ export default async function CalcKartaPage({
           .filter(Boolean)
           .join(' · ')
       : '';
+  // The karta is where a calculator READS the lead's thread — and the only
+  // place he can — so it marks it read as the CRM card does (the dock's row
+  // otherwise stays ● until the window drops it). The LEAD only: the client
+  // thread's door (`crm.leads || clients.manage`) does not admit this reader.
+  const readMarks = await threadReadMarks([{ kind: 'lead' as const, id: lead.id }]);
 
   return (
     <div className="mx-auto max-w-lg space-y-3 md:max-w-none" data-testid="calc-karta">
@@ -140,6 +147,7 @@ export default async function CalcKartaPage({
               limit={60}
               tall
             />
+            <ThreadSeen refs={readMarks} />
             <TelegramThread
               clientId={threadSource.kind === 'client' ? threadSource.clientId : null}
               leadId={lead.id}
