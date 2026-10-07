@@ -123,6 +123,24 @@ describe('settleDrafts — a save settles what it posted', () => {
     expect(out.drafts).toBe(input.drafts);
   });
 
+  it('a refresh that brings OUR rev and a colleague’s after it still settles what we posted', () => {
+    // The probe can see a colleague's save land a moment after ours, so the
+    // one refresh the screen gets is already past our rev. «Landed» is
+    // `>=`, or our posted draft would sit unsaved-looking for ever.
+    const posted: ItemDraft = { quantity: '40' };
+    const out = settleDrafts(
+      base({
+        drafts: { A: posted },
+        bases: { A: { quantity: 10 } },
+        items,
+        workspaceRev: 7,
+        pending: [entry({ rev: 6, drafts: new Map([['A', posted]]) })],
+      }),
+    );
+    expect(out.drafts).toEqual({});
+    expect(out.pending).toEqual([]);
+  });
+
   it('a posted ghost still the object posted is removed', () => {
     const g = ghost({ key: 3, clientId: 'C', name: 'kosa' });
     const out = settleDrafts(
