@@ -22,6 +22,7 @@ import { unplacedPaymentSql } from '../finance/service';
 import { moneySnapshot, type MoneySnapshot } from '../reports/overview';
 import { costMissingCount } from '../reports/queries';
 import { docsPendingWhere } from '../batches/docs-pending';
+import { dealMissingTnvedSql } from '../deals/ved-work';
 import { warehouseFlowCounts, type WarehouseFlowCounts } from './flow';
 import { unplacedCostTotals } from '../costing/service';
 import { recurringDueCount } from '../accounting/recurring';
@@ -296,7 +297,13 @@ export interface VedFlowCounts {
   calcLate: number;
   /** Departed export paperwork not yet sent to the agent. */
   docsPending: number;
-  /** Goods lines on OPEN deals with no TNVED code — the classification queue. */
+  /**
+   * OPEN deals with a position lacking TNVED — the classification queue,
+   * counted in DEALS by the very sentence the VED's board draws (G3 a,
+   * `deals/ved-work.ts`): the row links that board, and its cards carry the
+   * `deal-tnved-missing` chip. It used to count LINES, so «3» opened a board
+   * holding one deal (#513).
+   */
   tnvedMissing: number;
   /**
    * Calc↔prixod guesses waiting for this person's ✅ (0119) — asked beside
@@ -328,11 +335,7 @@ export async function vedFlowCounts(): Promise<Omit<VedFlowCounts, 'calcLinksPen
       // one truck (`batchDocsPending`), so the two cannot disagree (#513).
       .where(docsPendingWhere(sql`${originWh}`, sql`${destWh}`)),
     db.execute<{ n: number }>(sql`
-      SELECT count(*)::int AS n
-      FROM deal_lines dl
-      JOIN deals d ON d.id = dl.deal_id
-      JOIN deal_stages s ON s.id = d.stage_id
-      WHERE s.kind = 'open' AND (dl.tnved_code IS NULL OR btrim(dl.tnved_code) = '')
+      SELECT count(*)::int AS n FROM deals d WHERE ${dealMissingTnvedSql(sql`d`)}
     `),
   ]);
   return {

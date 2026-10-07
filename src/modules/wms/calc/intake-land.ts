@@ -1,6 +1,9 @@
 import { and, desc, eq } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
-import { clients, dealStages, deals, leadStages, leads } from '../../platform/db/schema';
+import { clients, dealStages, deals, leadStages, leads, users } from '../../platform/db/schema';
+import { userPermissions } from '../../platform/rbac/authorize';
+import { canLogInSql } from '../../platform/users/login';
+import { mayEditDealTerms } from '../deals/door';
 import { addActivity, createLead } from '../crm/service';
 import { activeClientsByPhone } from '../client-cabinet/service';
 import { logger } from '../../platform/logger';
@@ -73,15 +76,49 @@ export async function resolveIntakeClient(hint: {
   return null;
 }
 
+/** The client's seller, if that person can log in (`canLogInSql`); else null. */
+export async function clientSellerFor(clientId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ id: clients.salesManagerId })
+    .from(clients)
+    .innerJoin(users, eq(users.id, clients.salesManagerId))
+    .where(and(eq(clients.id, clientId), canLogInSql()))
+    .limit(1);
+  return row?.id ?? null;
+}
+
+/**
+ * Whose deal a calc request mints (G2 a, 2026-10-07). His question was about
+ * the VED sending: a sender who cannot work a deal's terms (the VED, warehouse
+ * staff in the bot) hands the deal to the client's seller — or to nobody, and
+ * the admin distributes it from the «Hammasi» board. A sender who can (seller,
+ * logist, admin) keeps it, as today.
+ *
+ * ONE rule for both minting doors — the bot (`landIntake`) and the chat door
+ * (`threadCalcSend`) — so they cannot disagree (#513). Both reads run on the
+ * POOL and BEFORE `createDeal`'s transaction (#714); neither caller holds one.
+ * The request itself stays the SENDER's (`requestedBy`), so the answer, the
+ * hand-back task and «Javob berildi» still reach whoever asked.
+ */
+export async function calcDealOwnerFor(senderId: string, clientId: string): Promise<string | null> {
+  const perms = await userPermissions(senderId);
+  return mayEditDealTerms(perms) ? senderId : clientSellerFor(clientId);
+}
+
 /**
  * The deal a coded client's request joins: their newest OPEN one, or a new
  * one on the funnel's first open stage. Never a won or lost deal — those are
  * finished stories, and a new quote request is not part of them.
+ *
+ * `ownerId` is REQUIRED (no default — the compiler names every caller, #790)
+ * and written AS GIVEN, null included: it is `calcDealOwnerFor`'s answer. A
+ * client's existing open deal is reused with its owner untouched.
  */
 export async function dealFor(
   client: { id: string; clientCode: string; name: string },
   section: CalcSection,
   actorId: string,
+  ownerId: string | null,
 ): Promise<IntakeTarget> {
   const [open] = await db
     .select({ id: deals.id, code: deals.code })
@@ -97,9 +134,10 @@ export async function dealFor(
     {
       clientId: client.id,
       title: `Hisoblatish — ${section}`,
-      ownerId: actorId,
+      ownerId,
     },
     { actorId },
+    { ownerAsGiven: true },
   );
   const [fresh] = await db
     .select({ code: deals.code })
@@ -171,7 +209,14 @@ export async function landIntake(input: {
   usage?: { model: string; inputTokens: number; outputTokens: number } | null;
 }): Promise<IntakeTarget> {
   const target = input.client
-    ? await dealFor(input.client, input.section, input.collectedBy)
+    ? await dealFor(
+        input.client,
+        input.section,
+        input.collectedBy,
+        // Computed before `dealFor` knows whether it will reuse an open deal;
+        // two small pool reads are the price of ONE owner rule (G2 a).
+        await calcDealOwnerFor(input.collectedBy, input.client.id),
+      )
     : await (async (): Promise<IntakeTarget> => {
         // A prospect who asked before already has a card; a second request
         // belongs on it rather than beside it.

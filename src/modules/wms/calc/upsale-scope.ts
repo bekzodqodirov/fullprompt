@@ -1,3 +1,5 @@
+import { mayEditDealTerms } from '../deals/door';
+
 /**
  * Who may see what a customer was actually charged (docs/VED.md laws 4 and 10).
  *
@@ -36,9 +38,10 @@ export type UpsaleScope =
 
 export function upsaleScopeFor(actor: { permissions: { has(code: string): boolean } }): UpsaleScope {
   if (actor.permissions.has('finance.reports')) return 'all';
-  // The people who can make an offer at all — `makeOfferAction` gates on the
-  // deal-write list, minus `ved.docs`, which is this whole file's subject.
-  if (actor.permissions.has('crm.leads') || actor.permissions.has('clients.manage')) return 'own';
+  // The people who may quote a customer are the people who may work a deal's
+  // terms (17a) — one home in deals/door.ts, so the offer form and the deal
+  // card's terms can never disagree about who the seller is.
+  if (mayEditDealTerms(actor.permissions)) return 'own';
   return 'none';
 }
 

@@ -20,13 +20,13 @@ import { CardFieldsMenu } from '@/components/list/card-fields-menu';
 import { DEAL_CARD_FIELDS, readCardFields } from '@/modules/platform/lists/card-fields';
 import { salesManagerOptions } from '@/modules/platform/rbac/queries';
 import {
-  canWriteDeal,
   closedDealCounts,
   dealsNeedingAttention,
   listDeals,
   listStages,
   openDealCounts,
 } from '@/modules/wms/deals/service';
+import { dealBoardShape } from '@/modules/wms/deals/door';
 import { activeLostReasonLabels } from '@/modules/wms/crm/service';
 import { DealBoard, type BoardDeal } from './board';
 
@@ -38,6 +38,13 @@ import { DealBoard, type BoardDeal } from './board';
  * again, a funnel filled with the same names stops being a funnel, which is
  * why this board exists beside the lead board rather than instead of it
  * (docs/DEALS.md, "The board").
+ *
+ * Two shapes (`dealBoardShape`, deals/door.ts). The seller's is the funnel.
+ * The VED's (G3 a, 2026-10-07) is his work set, READ-ONLY: deals carrying a
+ * calc request and open deals with a position lacking TNVED — the very
+ * sentence his home row counts and his ⌘K finds (`deals/ved-work.ts`). No
+ * drag, no move buttons, no ticks, no «+», no attention fold: he moves no
+ * stage and opens no deal (17a, G4 a); the card is where he works.
  */
 /** See the note on the lead board's constant of the same name. */
 const CLOSED_ON_BOARD = 20;
@@ -49,7 +56,9 @@ export default async function DealsPage({
 }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
-  if (!canWriteDeal(actor.permissions)) redirect('/');
+  const shape = dealBoardShape(actor.permissions);
+  if (shape === 'none') redirect('/');
+  const ved = shape === 'ved';
   const t = await getTranslations('deals');
   const tc = await getTranslations('crm');
   const tcommon = await getTranslations('common');
@@ -91,8 +100,11 @@ export default async function DealsPage({
     ...filters.raw,
   };
   // What listDeals and closedDealCounts BOTH hear — one question (#513).
+  // The VED's board is his work set in place of an owner filter: «mine» would
+  // show him only the deals he owns, which is usually none (G3 a).
   const boardFilters = {
-    ownerId: scope,
+    ownerId: ved ? undefined : scope,
+    vedWork: ved,
     q,
     createdFrom: filters.createdFrom,
     createdTo: filters.createdTo,
@@ -120,7 +132,9 @@ export default async function DealsPage({
     openDealCounts(boardFilters),
     // The SAME filters as the rows, or the «+N · show all» footer lies.
     closedDealCounts(boardFilters),
-    dealsNeedingAttention(scope, q),
+    // A seller's money alarms (unpriced, ±% deviation), filtered by OWNER —
+    // folded onto the VED's slice it would contradict the slice it sits on.
+    ved ? Promise.resolve([]) : dealsNeedingAttention(scope, q),
     // The picker's options. Offered only to somebody who may see everybody's
     // work — and never derived from the loaded rows, which once filtered to
     // one person would collapse to that person with no way back.
@@ -171,6 +185,7 @@ export default async function DealsPage({
       flag: (flag?.reason as 'deviation' | 'unpriced' | undefined) ?? null,
       flagPct: flag?.pct ?? null,
       chat: badges.clients.get(row.clientId) ?? null,
+      tnvedMissing: row.tnvedMissing,
     };
   });
 
@@ -212,7 +227,10 @@ export default async function DealsPage({
           so the board's own name rendered «Ворон…». Two pixels a gap buys
           it back without shrinking the type or dropping a control. */}
       <PopoverRow className="relative flex items-center gap-1 sm:gap-1.5">
-        <h1 className="min-w-0 flex-1 truncate text-base sm:text-lg">{t('title')}</h1>
+        {/* The VED's slice announces itself — it is not the funnel. */}
+        <h1 className="min-w-0 flex-1 truncate text-base sm:text-lg">
+          {ved ? t('vedBoardTitle') : t('title')}
+        </h1>
         <InlineSearch
           q={q}
           label={tcommon('search')}
@@ -284,10 +302,13 @@ export default async function DealsPage({
             }}
           />
         </BoardMenu>
-        <Link href="/bitimlar/new" className="btn-primary" data-testid="new-deal" aria-label={t('newDeal')}>
-          <Icon name="plus" className="h-4 w-4" />
-          <span className="hidden sm:inline">{t('newDeal')}</span>
-        </Link>
+        {/* Opening a deal is the seller's (G4 a). */}
+        {shape === 'full' && (
+          <Link href="/bitimlar/new" className="btn-primary" data-testid="new-deal" aria-label={t('newDeal')}>
+            <Icon name="plus" className="h-4 w-4" />
+            <span className="hidden sm:inline">{t('newDeal')}</span>
+          </Link>
+        )}
       </PopoverRow>
 
       <BoardChips
@@ -339,6 +360,7 @@ export default async function DealsPage({
         lostReasons={lostReasonList}
         hidden={hidden}
         archiveHref={`/bitimlar${hrefWith(carried, { arxiv: '1' })}`}
+        readOnly={ved}
       />
     </div>
   );

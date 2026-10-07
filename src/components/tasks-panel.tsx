@@ -18,10 +18,19 @@ export async function TasksPanel({
   entityType,
   entityId,
   revalidate,
+  readOnly = false,
 }: {
   entityType: string;
   entityId: string;
   revalidate: string;
+  /**
+   * The list without the ADD form — the VED on a deal card (17a): he reads
+   * the card and does not raise work about its terms. The list's own ✅
+   * still follows `canActOnTask`, and a bound calc task has none by design.
+   * Hidden, not removed: the task ACTION has no per-entity gate by design
+   * («everyone has tasks», platform/tasks/actions.ts).
+   */
+  readOnly?: boolean;
 }) {
   if (!(await resolveEntity(entityType))) return null;
   const actor = await getActor();
@@ -43,15 +52,20 @@ export async function TasksPanel({
       testId="tasks-panel"
       open={open.length > 0}
     >
-      <NewTaskForm
-        people={people}
-        types={types}
-        revalidate={revalidate}
-        defaultAssignee={actor.id}
-        entityType={entityType}
-        entityId={entityId}
-      />
-      <div className="border-t border-line pt-2">
+      {!readOnly && (
+        <NewTaskForm
+          people={people}
+          types={types}
+          revalidate={revalidate}
+          defaultAssignee={actor.id}
+          entityType={entityType}
+          entityId={entityId}
+        />
+      )}
+      {/* The divider separates the form from the list; with no form above it
+          it would be a rule over nothing. Both strings literal (Tailwind
+          only compiles what it can see). */}
+      <div className={readOnly ? '' : 'border-t border-line pt-2'}>
         <TaskList tasks={tasks} people={people} revalidate={revalidate} empty={t('none')} />
       </div>
     </Panel>
