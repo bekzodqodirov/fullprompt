@@ -1,6 +1,8 @@
 import { sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { getSetting } from '../../platform/settings/service';
+import type { BazaBasis } from '../calc/pricing';
+import { basisConflicts } from '../calc/basis';
 import { normalizeName, type ImportUnit } from './import-parse';
 import { newestReadyBatchId } from './import-service';
 
@@ -20,9 +22,10 @@ import { newestReadyBatchId } from './import-service';
  */
 
 /** The baza basis each file unit fills. sm³ cannot appear — see #868. */
-export const BASIS_FOR_UNIT: Record<ImportUnit, 'kg' | 'unit' | 'm2' | 'juft' | 'litr'> = {
+export const BASIS_FOR_UNIT: Record<ImportUnit, BazaBasis> = {
   kg: 'kg',
   dona: 'unit',
+  m3: 'm3',
   m2: 'm2',
   juft: 'juft',
   litr: 'litr',
@@ -35,9 +38,10 @@ export const BASIS_FOR_UNIT: Record<ImportUnit, 'kg' | 'unit' | 'm2' | 'juft' | 
  * asks the law once and this maps it into the file's vocabulary; keeping a
  * second law→unit chain beside it would be #513 in a lookup table.
  */
-export const UNIT_FOR_BASIS: Record<'kg' | 'unit' | 'm2' | 'juft' | 'litr', ImportUnit> = {
+export const UNIT_FOR_BASIS: Record<BazaBasis, ImportUnit> = {
   kg: 'kg',
   unit: 'dona',
+  m3: 'm3',
   m2: 'm2',
   juft: 'juft',
   litr: 'litr',
@@ -56,27 +60,50 @@ export const UNIT_FOR_BASIS: Record<'kg' | 'unit' | 'm2' | 'juft' | 'litr', Impo
  * only answer — a price in another unit is off by the weight of the goods.
  * When it does not, the row itself decides: whatever it states a figure for,
  * with kilograms first because that is what the file and the trade use, and
- * pieces first where the law is counting pieces. A row stating neither a
- * weight nor a count cannot be valued at all, and gets no suggestion.
+ * pieces first where the law is counting pieces, and cubic metres LAST (a
+ * line's kub is usually a packing-list volume with the packaging in it, and
+ * his file holds m³ declarations at the edges only). A row stating no figure
+ * at all cannot be valued, and gets no suggestion.
+ *
+ * And above all of it, the VED's own CHOICE (0125, his 18a): a row whose
+ * basis a person picked is answered in that unit and in no other — a fill
+ * that quietly re-priced a chosen «$/kg» row per dona would undo the one
+ * thing he asked the select to do. A chosen unit the law cannot hold (a pair
+ * unit on a juft/litr/m² code) answers NOTHING: the row is already named as
+ * a conflict, and a fill must not put a price on it.
+ *
+ * Every parameter is REQUIRED so the compiler names every caller: an optional
+ * `chosen` fails OPEN, and the fills run AFTER the save's measure pass —
+ * which is safe only because this function never offers an extended unit
+ * (m²/juft/litr) the measure pass did not already ask the row for: one the
+ * law pins, or one the VED chose (`tests/unit/customs-import-parse.test.ts`).
  */
 export function unitsForRow(input: {
   dutyUnit: string | null | undefined;
+  chosen: BazaBasis | null;
   hasWeight: boolean;
   hasQuantity: boolean;
+  hasVolume: boolean;
 }): ImportUnit[] {
   const u = input.dutyUnit;
+  if (input.chosen !== null) {
+    return basisConflicts(u, input.chosen) ? [] : [UNIT_FOR_BASIS[input.chosen]];
+  }
   if (u === 'm2' || u === 'juft' || u === 'litr') return [u];
   if (u === 'kg') return ['kg'];
   const kg: ImportUnit[] = input.hasWeight ? ['kg'] : [];
   const dona: ImportUnit[] = input.hasQuantity ? ['dona'] : [];
-  return u === 'dona' || u === '1000_dona' || u === 'sm3' ? [...dona, ...kg] : [...kg, ...dona];
+  const m3: ImportUnit[] = input.hasVolume ? ['m3'] : [];
+  return u === 'dona' || u === '1000_dona' || u === 'sm3'
+    ? [...dona, ...kg, ...m3]
+    : [...kg, ...dona, ...m3];
 }
 
 export interface ImportBazaRow {
   id: string;
   name: string;
   unit: ImportUnit;
-  basis: 'kg' | 'unit' | 'm2' | 'juft' | 'litr';
+  basis: BazaBasis;
   pricePerUnitUsd: number;
   weightPerUnitKg: number | null;
   declaredAt: string | null;
@@ -85,7 +112,7 @@ export interface ImportBazaRow {
   nameSim: number;
   /** The rank the ordering used: nameSim, or the weight-blended score. */
   score: number;
-  /** Does this row's unit match the row being priced? Only a match may auto-fill. */
+  /** Is this row's unit one the row being priced accepts? Only a match may auto-fill. */
   unitMatches: boolean;
 }
 
@@ -122,8 +149,16 @@ const MIN_NEEDLE = 4;
 interface SuggestInput {
   tnvedCode: string;
   name: string;
-  /** The unit the ROW is priced in — from the code's law, or per-dona. */
-  unit: ImportUnit;
+  /**
+   * The units the ROW accepts — `unitsForRow`'s answer, every member and not
+   * only the first (0125). A candidate in any of them ranks first and counts
+   * as a match; the per-piece weight re-rank (his «donada har bir tovarni
+   * og'irligiga qaraymiz») applies whenever dona is among them, which a
+   * first-only ranking would have dropped on every advalor row that states a
+   * weight. The auto-fill asks one unit at a time, because there the ORDER is
+   * the preference.
+   */
+  units: ImportUnit[];
   /** kg per piece, when the request row states both a weight and a count. */
   weightPerUnitKg?: number | null;
 }
@@ -195,7 +230,7 @@ async function queryCandidates(
   limit: number,
 ): Promise<{ rows: ImportBazaRow[]; total: number }> {
   const wantWeight =
-    input.unit === 'dona' &&
+    input.units.includes('dona') &&
     input.weightPerUnitKg !== null &&
     input.weightPerUnitKg !== undefined &&
     Number.isFinite(input.weightPerUnitKg) &&
@@ -206,6 +241,15 @@ async function queryCandidates(
   // knowable without a name, and every row still carries `nameSim` 0 so the
   // AUTO-fill's threshold can never be met by accident.
   const sim = needle === null ? sql`0::real` : sql`word_similarity(${needle}, r.name_norm)`;
+  // The row's accepted units, as a postgres list — a JS array bound into a
+  // raw fragment is not one. An empty list matches nothing, honestly.
+  const accepts =
+    input.units.length === 0
+      ? sql`false`
+      : sql`r.unit IN (${sql.join(
+          input.units.map((u) => sql`${u}`),
+          sql`, `,
+        )})`;
 
   const rows = await db.execute<{
     id: string;
@@ -228,7 +272,7 @@ async function queryCandidates(
            r.sender,
            ${sim} AS name_sim,
            CASE
-             WHEN ${wantWeight} AND r.weight_per_unit_kg IS NOT NULL
+             WHEN ${wantWeight} AND r.unit = 'dona' AND r.weight_per_unit_kg IS NOT NULL
                THEN 0.7 * ${sim}
                   + 0.3 * (1 - LEAST(1, abs(${w}::numeric - r.weight_per_unit_kg)
                                         / GREATEST(${w}::numeric, 0.01)))
@@ -241,7 +285,7 @@ async function queryCandidates(
       FROM customs_import_rows r
      WHERE r.batch_id = ${batchId}::uuid
        AND r.tnved_code = ${input.tnvedCode}
-     ORDER BY (r.unit = ${input.unit}) DESC, score DESC, r.declared_at DESC NULLS LAST
+     ORDER BY (${accepts}) DESC, score DESC, r.declared_at DESC NULLS LAST
      LIMIT ${limit}
   `);
 
@@ -257,7 +301,7 @@ async function queryCandidates(
     sender: r.sender,
     nameSim: Number(r.name_sim),
     score: Number(r.score),
-    unitMatches: r.unit === input.unit,
+    unitMatches: input.units.includes(r.unit),
   }));
   return { rows: mapped, total };
 }

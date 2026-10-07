@@ -1,6 +1,7 @@
 import { getTranslations } from 'next-intl/server';
 import type { CalcRegistrySight } from '@/modules/wms/calc/control-scope';
 import { SECTION_LABELS } from '@/modules/wms/calc/labels';
+import { basisLabel } from '@/modules/wms/calc/basis';
 import type {
   CalcAnswer,
   CalcGoodsItem,
@@ -23,6 +24,17 @@ import type {
  */
 const usd = (n: number | null) => (n === null ? '—' : `$${n.toFixed(2)}`);
 const qty = (n: number | null, unit: string) => (n === null ? null : `${Math.round(n * 1000) / 1000} ${unit}`);
+
+/**
+ * A baza as the sheet prints it. An UNPRICED row prints «—» and no unit —
+ * since 0125 a unit can stand without a price (the VED's choice), and
+ * «—/kg» reads as a price that happens to be blank. The unit word is the
+ * screen's own (`basisLabel`), never the stored spelling «/unit».
+ */
+function bazaText(bazaUsd: number | null, basis: string | null, perUnit: string): string {
+  if (bazaUsd === null) return '—';
+  return basis ? `$${bazaUsd}/${basisLabel(basis, perUnit)}` : `$${bazaUsd}`;
+}
 const ddmmyyyy = (d: Date) =>
   d.toLocaleDateString('ru-RU', { timeZone: 'Asia/Tashkent', day: '2-digit', month: '2-digit', year: 'numeric' });
 
@@ -84,8 +96,7 @@ export async function CalcSheet({ data, sight: _sight }: { data: CalcSheetData; 
                 <li key={i} className="break-words">
                   {item.name}
                   {' · '}
-                  {t('baza')}: {item.bazaUsd === null ? '—' : `$${item.bazaUsd}`}
-                  {item.basis ? `/${item.basis}` : ''}
+                  {t('baza')}: {bazaText(item.bazaUsd, item.basis, tc('perUnit'))}
                   {[
                     qty(item.quantity, item.unit ?? ''),
                     qty(item.kg, 'kg'),
@@ -253,7 +264,7 @@ export async function CalcGoodsSheetView({
       qty(item.kg, 'kg'),
       qty(item.m3, 'm³'),
       item.measureUnit && item.measureQty !== null ? `${item.measureQty} ${item.measureUnit}` : null,
-      `${t('baza')}: ${item.bazaUsd === null ? '—' : `$${item.bazaUsd}`}${item.basis ? `/${item.basis}` : ''}`,
+      `${t('baza')}: ${bazaText(item.bazaUsd, item.basis, tc('perUnit'))}`,
     ]
       .filter(Boolean)
       .map((part) => ` · ${part}`)

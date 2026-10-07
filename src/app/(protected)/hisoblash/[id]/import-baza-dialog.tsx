@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Overlay } from '@/components/ui/overlay';
 import type { BazaBasis } from '@/modules/wms/calc/pricing';
+import { basisLabel } from '@/modules/wms/calc/basis';
 
 /**
  * «Qaysi deklaratsiya bu tovarni narxlaydi?» — the customs file's own rows,
@@ -36,6 +37,10 @@ export interface ImportCandidate {
   declaredAt: string | null;
   sender: string | null;
   unitMatches: boolean;
+  /** False for a declaration in a unit this code's law cannot hold (a pair
+   * unit on a juft/litr/m² code) — listed, never pickable (0125). Absent on
+   * an answer from an older server: pickable, as before. */
+  pickable?: boolean;
 }
 
 interface PickerAnswer {
@@ -43,13 +48,19 @@ interface PickerAnswer {
   candidates: ImportCandidate[];
   total: number;
   source: string | null;
-  basis: BazaBasis | null;
+  /** The bases the row is looking for — named as an expectation. */
+  wants: BazaBasis[];
+  /** The code's law unit, for the «why not» sentence on a refused row. */
+  lawUnit: string | null;
 }
 
 export interface PickerTarget {
   itemId: string;
   name: string;
   tnvedCode: string;
+  /** A unit the VED picked and has not saved yet — the server ranks by it
+   * (and only ranks: the price still comes from the file at save). */
+  basis?: BazaBasis | null;
 }
 
 /** Fold a declaration paragraph into what a person scans, without hiding it. */
@@ -119,18 +130,19 @@ function PickerBody({
   const asked = useRef(0);
 
   const itemId = target.itemId;
+  const drafted = target.basis ?? null;
   useEffect(() => {
     const ticket = ++asked.current;
+    const failed: PickerAnswer = { state: 'behind', candidates: [], total: 0, source: null, wants: [], lawUnit: null };
     void (async () => {
       try {
-        const res = await fetch(`/api/calc/import-baza?item=${itemId}`);
+        const url = `/api/calc/import-baza?item=${itemId}${drafted ? `&basis=${drafted}` : ''}`;
+        const res = await fetch(url);
         // `fetch` does not throw on 4xx: a 403 body has no candidates, and
         // reading that as «nothing imported» would send him to upload a file
         // he is not allowed to upload.
         if (!res.ok) {
-          if (ticket === asked.current) {
-            setAnswer({ state: 'behind', candidates: [], total: 0, source: null, basis: null });
-          }
+          if (ticket === asked.current) setAnswer(failed);
           return;
         }
         const data = (await res.json()) as Partial<PickerAnswer>;
@@ -140,17 +152,16 @@ function PickerBody({
           candidates: data.candidates ?? [],
           total: data.total ?? 0,
           source: data.source ?? null,
-          basis: data.basis ?? null,
+          wants: data.wants ?? [],
+          lawUnit: data.lawUnit ?? null,
         });
       } catch {
-        if (ticket === asked.current) {
-          setAnswer({ state: 'behind', candidates: [], total: 0, source: null, basis: null });
-        }
+        if (ticket === asked.current) setAnswer(failed);
       } finally {
         if (ticket === asked.current) setLoading(false);
       }
     })();
-  }, [itemId]);
+  }, [itemId, drafted]);
 
   const needle = q.trim().toLowerCase();
   const shown = (answer?.candidates ?? []).filter(
@@ -170,9 +181,12 @@ function PickerBody({
               candidate's «unit does not match: the file says kg» — a bare
               «$/шт» beside a row currently priced per kg reads as a claim
               about the row and is not one. */}
-          {answer?.basis ? (
+          {answer && answer.wants.length > 0 ? (
             <span className="shrink-0">
-              · {t('importWants', { basis: answer.basis === 'unit' ? t('perUnit') : answer.basis })}
+              ·{' '}
+              {t('importWants', {
+                basis: answer.wants.map((b) => basisLabel(b, t('perUnit'))).join(', $/'),
+              })}
             </span>
           ) : null}
           {answer?.source ? <span className="shrink-0">· {answer.source}</span> : null}
@@ -220,8 +234,11 @@ function PickerBody({
             <div key={c.id} className="rounded-xl border border-line">
               <button
                 type="button"
-                className="block min-h-12 w-full p-2 text-left hover:bg-surface-sunken"
+                className="block min-h-12 w-full p-2 text-left hover:bg-surface-sunken disabled:cursor-not-allowed disabled:opacity-60"
                 data-testid="calc-import-candidate"
+                // Listed so the VED sees what the file holds, but a unit the
+                // law cannot hold would land the row in a conflict (0125).
+                disabled={c.pickable === false}
                 onClick={() => {
                   onPick(target.itemId, {
                     id: c.id,
@@ -233,11 +250,18 @@ function PickerBody({
               >
                 <span className="flex flex-wrap items-center gap-1">
                   <span className="font-mono text-sm tabular-nums">
-                    ${c.pricePerUnitUsd} / {c.basis === 'unit' ? t('perUnit') : c.basis}
+                    ${c.pricePerUnitUsd} / {basisLabel(c.basis, t('perUnit'))}
                   </span>
                   {/* A bare ⚠ said nothing. The mismatch is the one thing on
                       this row that can be off by the weight of the goods. */}
-                  {!c.unitMatches ? (
+                  {c.pickable === false ? (
+                    <span className="chip chip-warn" data-testid="calc-import-conflict">
+                      {t('importConflict', {
+                        unit: basisLabel(c.basis, t('perUnit')),
+                        law: basisLabel(answer.lawUnit ?? '', t('perUnit')),
+                      })}
+                    </span>
+                  ) : !c.unitMatches ? (
                     <span className="chip chip-warn" data-testid="calc-import-unitwarn">
                       {t('importUnitMismatch', { unit: c.unit })}
                     </span>

@@ -7,6 +7,7 @@ import type { Workspace, WorkspaceGroup, WorkspaceItem } from '@/modules/wms/cal
 import type { TableItemEdit, TableNewItem } from '@/modules/wms/calc/workspace';
 import {
   customsFor,
+  isBazaBasis,
   pricedGroupOf,
   requestCustomsFor,
   totalsFor,
@@ -15,8 +16,16 @@ import {
   type MeasureUnit,
   type PricedItem,
 } from '@/modules/wms/calc/pricing';
-import { defaultBasisFor, uniformBazaOf } from '@/modules/wms/calc/basis';
+import {
+  basesFor,
+  basisLabel,
+  defaultBasisFor,
+  uniformBazaOf,
+} from '@/modules/wms/calc/basis';
 import { editBazaPair } from '@/modules/wms/calc/baza-draft';
+import { pasteIdsFor } from '@/modules/wms/calc/paste-ids';
+import { basisNotLaw } from '@/modules/wms/calc/warnings';
+import { screenRowOf, groupsByCodeOf, postedBasis } from '@/modules/wms/calc/screen-row';
 import { parseGoods, type Cell } from '@/modules/wms/deals/goods-import';
 import {
   confirmAllAction,
@@ -76,6 +85,10 @@ interface ItemDraft {
 
 interface NewRow {
   key: number;
+  /** The id this row will carry in the database, minted HERE (phase 0): a
+   * save whose answer was lost can be pressed again and the server knows
+   * the row it already wrote. Null only where the browser cannot mint one. */
+  clientId: string | null;
   name: string;
   quantity: string;
   unit: string;
@@ -84,12 +97,22 @@ interface NewRow {
   tnvedCode: string;
   measure: string;
   bazaValue: string;
-  bazaBasis: BazaBasis;
+  /** null = «avto» — the VED has not touched the select, so nothing is
+   * posted and the server stamps the law's default once the code's block
+   * exists (18a). A code keystroke never overwrites a touched pick. */
+  bazaBasis: BazaBasis | null;
 }
 
 const CODE_SHAPE = /^\d{4,10}$/;
 const NUM_COLS = ['quantity', 'weightKg', 'volumeM3'] as const;
-const EXT_UNITS: readonly MeasureUnit[] = ['juft', 'litr', 'm2', 'sm3'];
+
+/** A new row's own id. `randomUUID` exists on every secure origin, which is
+ * every origin this app is served from; without it the row simply posts no
+ * id and behaves as it did before phase 0. */
+const mintClientId = (): string | null =>
+  typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : null;
 
 const parseCell = (raw: string): number | null => {
   const v = raw.trim().replace(/\s/g, '').replace(',', '.');
@@ -102,6 +125,7 @@ const q4 = (v: number) => Math.round(v * 10000) / 10000;
 
 const emptyRow = (key: number): NewRow => ({
   key,
+  clientId: mintClientId(),
   name: '',
   quantity: '',
   unit: '',
@@ -110,14 +134,8 @@ const emptyRow = (key: number): NewRow => ({
   tnvedCode: '',
   measure: '',
   bazaValue: '',
-  bazaBasis: 'unit',
+  bazaBasis: null,
 });
-
-/** Which extended unit the group's law asks for — null for advalor/kg/dona. */
-const requiredUnitOf = (group: WorkspaceGroup | null): MeasureUnit | null =>
-  group && group.dutyUnit && (EXT_UNITS as readonly string[]).includes(group.dutyUnit)
-    ? (group.dutyUnit as MeasureUnit)
-    : null;
 
 export function ItemsTable({
   workspace,
@@ -146,6 +164,8 @@ export function ItemsTable({
     measuresCleared: number[];
     measuresDropped: number[];
     basisSuspect: number[];
+    basisConflict: number[];
+    alreadySaved: number;
     importFilled: number[];
     memoryFilled: number[];
   } | null>(null);
@@ -155,6 +175,12 @@ export function ItemsTable({
   const [clearAfterRev, setClearAfterRev] = useState<number | null>(null);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState('');
+  /** The ids a pasted list's rows carry (phase 0) — kept per LINE across
+   * presses, so a second press after a lost answer posts the same ids and
+   * the server treats the rows it already wrote as edits instead of doubling
+   * five hundred goods — even when the VED fixed a typo in between, which
+   * per-TEXT ids turned into a whole second copy (review units-2). */
+  const pasteIds = useRef<{ keys: string[]; ids: (string | null)[] }>({ keys: [], ids: [] });
   const newKey = useRef(1);
 
   const allItems = useMemo(
@@ -163,6 +189,7 @@ export function ItemsTable({
   );
   const itemById = useMemo(() => new Map(allItems.map((i) => [i.id, i])), [allItems]);
   const groupById = useMemo(() => new Map(workspace.groups.map((g) => [g.id, g])), [workspace.groups]);
+  const groupsByCode = useMemo(() => groupsByCodeOf(workspace.groups), [workspace.groups]);
 
   // Render-time adjustment, not an effect: the frame that brings the moved
   // rev must not paint once with the stale drafts before an effect clears
@@ -207,10 +234,11 @@ export function ItemsTable({
     return () => window.removeEventListener('beforeunload', guard);
   }, [dirtyCount]);
 
-  const groupOfItem = (item: WorkspaceItem): WorkspaceGroup | null =>
-    item.groupId ? (groupById.get(item.groupId) ?? null) : null;
-
-  const serverValueOf = (item: WorkspaceItem, field: keyof ItemDraft): string => {
+  /** What the cell SHOWS when nothing is drafted — the self-clean compares
+   * against this, never a bare default (#171). `draft` is the row's current
+   * draft, because the unit and the measure the screen shows depend on a
+   * drafted CODE (the law it lands under). */
+  const serverValueOf = (item: WorkspaceItem, field: keyof ItemDraft, draft?: ItemDraft): string => {
     switch (field) {
       case 'name':
         return item.label;
@@ -218,14 +246,19 @@ export function ItemsTable({
         return item.tnvedCode ?? '';
       case 'note':
         return item.note ?? '';
-      case 'measure':
-        return item.measureQty === null ? '' : String(item.measureQty);
+      case 'measure': {
+        const { pair } = screenRowOf(item, draft, groupById, groupsByCode);
+        return pair !== null && (pair === 'any' || item.measureUnit === pair) && item.measureQty !== null
+          ? String(item.measureQty)
+          : '';
+      }
       case 'bazaValue':
         return item.bazaUsd === null ? '' : String(item.bazaUsd);
-      case 'bazaBasis':
-        // The same default the select renders — the self-clean must compare
-        // against what the screen shows, not a bare 'unit' (#171).
-        return item.bazaBasis ?? defaultBasisFor(groupOfItem(item));
+      case 'bazaBasis': {
+        // The unit as it stands without a basis draft — '' while «avto».
+        const shown = screenRowOf(item, { ...draft, bazaBasis: undefined }, groupById, groupsByCode).basis;
+        return shown ?? '';
+      }
       default:
         return String(item[field] ?? '');
     }
@@ -241,25 +274,25 @@ export function ItemsTable({
       if (field === 'bazaValue' || field === 'bazaBasis') {
         // The pair is ONE edit (baza-draft.ts): drafting its halves as two
         // updates made a unit picked on its own clean itself away.
-        const halves = editBazaPair(
+        const halves = editBazaPair<string>(
           { bazaValue: current.bazaValue, bazaBasis: current.bazaBasis },
           field,
           raw,
           {
-            bazaValue: serverValueOf(item, 'bazaValue'),
-            bazaBasis: serverValueOf(item, 'bazaBasis') as BazaBasis,
+            bazaValue: serverValueOf(item, 'bazaValue', current),
+            bazaBasis: serverValueOf(item, 'bazaBasis', current),
           },
         );
         delete current.bazaValue;
         delete current.bazaBasis;
         // A number the VED types is theirs, not the file's (0094).
         delete current.importRowId;
-        rest = { ...current, ...halves };
+        rest = { ...current, ...(halves as Pick<ItemDraft, 'bazaValue' | 'bazaBasis'>) };
       } else {
         // A draft equal to the server value is not a draft — the dirty count
         // must mean «cells the save will send».
         rest = { ...current, [field]: raw };
-        if (raw === serverValueOf(item, field)) delete rest[field];
+        if (raw === serverValueOf(item, field, rest)) delete rest[field];
       }
       const next = { ...prev };
       if (Object.keys(rest).length === 0) delete next[itemId];
@@ -316,37 +349,33 @@ export function ItemsTable({
 
   /** An item with its drafts merged, quantized to the column scales so the
    * live figure and the saved figure agree to the cent. */
-  const liveItem = (
-    item: WorkspaceItem,
-    required: MeasureUnit | null,
-    group: WorkspaceGroup | null,
-  ): PricedItem => {
+  const liveItem = (item: WorkspaceItem): PricedItem => {
     const d = drafts[item.id];
     const numOf = (raw: string | undefined, server: number | null, scale: (v: number) => number) => {
       if (raw === undefined) return server;
       const v = parseCell(raw);
       return v === null || !Number.isFinite(v) ? null : scale(v);
     };
+    // The unit and the pair the SCREEN shows (screenRowOf) — never a chain of
+    // its own, or the live figure prices a unit the select is not showing.
+    const row = screenRowOf(item, d, groupById, groupsByCode);
     const bazaUsd = numOf(d?.bazaValue, item.bazaUsd, q4);
-    const bazaBasis =
-      d?.bazaValue !== undefined
-        ? bazaUsd === null
-          ? null
-          : (d.bazaBasis ?? item.bazaBasis ?? defaultBasisFor(group))
-        : item.bazaBasis;
+    const bazaBasis = bazaUsd === null ? null : (row.basis ?? defaultBasisFor(null));
     // The measure mirrors the server's stamp rule: a draft prices in the
-    // REQUIRED unit; a stored pair whose unit the code stopped asking for is
-    // no measure at all (the save will clear it).
+    // pair unit the row asks; a stored pair in another unit is no measure at
+    // all (the save will clear it). The generic box of an unknown law prices
+    // nothing until the save says what unit it is.
+    const pair = row.pair === 'any' ? null : row.pair;
     let measureUnit: MeasureUnit | null = null;
     let measureQty: number | null = null;
-    if (required !== null) {
+    if (pair !== null) {
       if (d?.measure !== undefined) {
         const v = parseCell(d.measure);
         if (v !== null && Number.isFinite(v)) {
-          measureUnit = required;
+          measureUnit = pair;
           measureQty = q4(v);
         }
-      } else if (item.measureUnit === required) {
+      } else if (item.measureUnit === pair) {
         measureUnit = item.measureUnit;
         measureQty = item.measureQty;
       }
@@ -356,6 +385,9 @@ export function ItemsTable({
       label: item.label,
       quantity: numOf(d?.quantity, item.quantity, q3),
       weightKg: numOf(d?.weightKg, item.weightKg, q3),
+      // An m³ baza prices from the drafted kub too (0125) — at the column's
+      // own scale, or the live figure and the saved one part by a rounding.
+      volumeM3: numOf(d?.volumeM3, item.volumeM3, q3),
       bazaUsd,
       bazaBasis,
       measureUnit,
@@ -366,14 +398,7 @@ export function ItemsTable({
   const liveCustomsByGroup = useMemo(() => {
     const out = new Map<string, CustomsResult>();
     for (const g of workspace.groups) {
-      const required = requiredUnitOf(g);
-      out.set(
-        g.id,
-        customsFor(
-          pricedGroupOf(g),
-          g.items.map((i) => liveItem(i, required, g)),
-        ),
-      );
+      out.set(g.id, customsFor(pricedGroupOf(g), g.items.map((i) => liveItem(i))));
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -385,8 +410,19 @@ export function ItemsTable({
   const liveBazaByGroup = useMemo(() => {
     const out = new Map<string, { bazaUsd: number; bazaBasis: BazaBasis } | null>();
     for (const g of workspace.groups) {
-      const required = requiredUnitOf(g);
-      out.set(g.id, uniformBazaOf(g.items.map((i) => liveItem(i, required, g))));
+      out.set(g.id, uniformBazaOf(g.items.map((i) => liveItem(i))));
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspace, drafts]);
+
+  /** A1's chip over the same LIVE rows the footer's baza reads — the
+   * server's verdict is about the stored rows, a moment the footer no
+   * longer shows while anything is drafted (review units-r2-2). */
+  const liveBasisNotLawByGroup = useMemo(() => {
+    const out = new Map<string, boolean>();
+    for (const g of workspace.groups) {
+      out.set(g.id, basisNotLaw(g.dutyUnit, g.items.map((i) => liveItem(i))));
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -447,11 +483,11 @@ export function ItemsTable({
         edit[field] = value;
       }
       if (d.measure !== undefined) {
-        // The cell applies only while the row's code asks an extended unit —
-        // a recode strands the draft and the save drops it client-side
+        // The cell applies only while the row asks a pair unit — the SAME
+        // rule that draws the box (screenRowOf): a recode or a new unit that
+        // stops asking strands the draft, and the save drops it client-side
         // rather than wedging on a box the screen no longer renders.
-        const required = requiredUnitOf(item.groupId ? (groupById.get(item.groupId) ?? null) : null);
-        if (required !== null) {
+        if (screenRowOf(item, d, groupById, groupsByCode).pair !== null) {
           const v = parseCell(d.measure);
           if (v !== null && !Number.isFinite(v)) {
             setTableError({ code: 'bad_number', seq: item.seq });
@@ -460,17 +496,19 @@ export function ItemsTable({
           edit.measureQty = v;
         }
       }
-      if (d.bazaValue !== undefined) {
-        const v = parseCell(d.bazaValue);
+      if (d.bazaValue !== undefined || d.bazaBasis !== undefined) {
+        const v = parseCell(d.bazaValue ?? serverValueOf(item, 'bazaValue', d));
         if (v !== null && !Number.isFinite(v)) {
           setTableError({ code: 'bad_number', seq: item.seq });
           return;
         }
         edit.bazaUsd = v;
-        // The SAME chain the select renders (#171): a baza typed on an m²
-        // row must save per m², not per the bare fallback.
-        edit.bazaBasis =
-          v === null ? null : (d.bazaBasis ?? item.bazaBasis ?? defaultBasisFor(groupOfItem(item)));
+        // 0125's four states (workspace.ts TableItemEdit). A unit the VED
+        // TOUCHED is posted with or without a price — on an unpriced row it
+        // used to evaporate on Saqlash. An untouched one posts what is
+        // stored (it stands), or null = «avto», which the server stamps from
+        // the block the row ENDS in. Clearing the price: `postedBasis`.
+        edit.bazaBasis = postedBasis(d.bazaBasis, v === null, item);
         // The picked row's id — the server re-reads it and takes the PRICE
         // from the file, so a browser that lies about the number is answered
         // by the declaration itself.
@@ -496,8 +534,8 @@ export function ItemsTable({
         const v = parseCell(raw);
         return v !== null && Number.isFinite(v) ? v : null;
       };
-      const bazaUsd = num(row.bazaValue);
       adds.push({
+        clientId: row.clientId,
         name: row.name,
         quantity: num(row.quantity),
         unit: row.unit.trim() || null,
@@ -505,8 +543,10 @@ export function ItemsTable({
         volumeM3: num(row.volumeM3),
         tnvedCode: code || null,
         measureQty: num(row.measure),
-        bazaUsd,
-        bazaBasis: bazaUsd === null ? null : row.bazaBasis,
+        bazaUsd: num(row.bazaValue),
+        // Null while untouched — «avto», stamped by the server from the block
+        // the new code lands in; a touched unit stands with or without a price.
+        bazaBasis: row.bazaBasis,
       });
     }
 
@@ -524,6 +564,8 @@ export function ItemsTable({
         measuresCleared: result.measuresCleared ?? [],
         measuresDropped: result.measuresDropped ?? [],
         basisSuspect: result.basisSuspect ?? [],
+        basisConflict: result.basisConflict ?? [],
+        alreadySaved: result.alreadySaved ?? 0,
         importFilled: result.importFilled ?? [],
         memoryFilled: result.memoryFilled ?? [],
       });
@@ -606,10 +648,19 @@ export function ItemsTable({
   const applyPaste = () =>
     act(async () => {
       const rows = parsedPaste.filter((r) => r.name).slice(0, 500);
-      const result = await saveTableAction(id, { items: [], adds: rows });
+      // An unchanged line keeps its id; a changed line takes an id the last
+      // press used and this one no longer matches (the typo fix becomes an
+      // edit of the row that landed); only a line beyond those mints one.
+      const ids = pasteIdsFor(pasteIds.current, rows.map((r) => JSON.stringify(r)), mintClientId);
+      pasteIds.current = { keys: rows.map((r) => JSON.stringify(r)), ids };
+      const result = await saveTableAction(id, {
+        items: [],
+        adds: rows.map((r, i) => ({ ...r, clientId: ids[i] ?? null })),
+      });
       if (!result.error) {
         setPasteText('');
         setPasteOpen(false);
+        pasteIds.current = { keys: [], ids: [] };
         setLastSave({
           minted: result.minted ?? [],
           swept: result.swept ?? 0,
@@ -617,6 +668,8 @@ export function ItemsTable({
           measuresCleared: [],
           measuresDropped: [],
           basisSuspect: [],
+          basisConflict: [],
+          alreadySaved: result.alreadySaved ?? 0,
           importFilled: result.importFilled ?? [],
           memoryFilled: result.memoryFilled ?? [],
         });
@@ -769,6 +822,8 @@ export function ItemsTable({
         lastSave.measuresCleared.length > 0 ||
         lastSave.measuresDropped.length > 0 ||
         lastSave.basisSuspect.length > 0 ||
+        lastSave.basisConflict.length > 0 ||
+        lastSave.alreadySaved > 0 ||
         lastSave.importFilled.length > 0 ||
         lastSave.memoryFilled.length > 0) ? (
         <p className="text-2xs text-ink-600" data-testid="calc-save-note">
@@ -786,6 +841,12 @@ export function ItemsTable({
               : '',
             lastSave.basisSuspect.length > 0
               ? `⚠ ${t('table.basisSuspect')}: ${lastSave.basisSuspect.join(', ')}`
+              : '',
+            lastSave.basisConflict.length > 0
+              ? `⚠ ${t('table.basisConflict')}: ${lastSave.basisConflict.join(', ')}`
+              : '',
+            lastSave.alreadySaved > 0
+              ? t('table.alreadySaved', { count: lastSave.alreadySaved })
               : '',
             lastSave.importFilled.length > 0
               ? `📥 ${t('table.importFilled', { count: lastSave.importFilled.length })}: ${lastSave.importFilled.join(', ')}`
@@ -811,7 +872,10 @@ export function ItemsTable({
                 <col className="w-20" />
                 <col className="w-20" />
                 <col className="w-32" />
-                <col className="w-28" />
+                {/* The baza column: a 56px amount, the 64px unit select
+                    (BasisSelect, measured) and the gap, inside the cell's
+                    own padding. */}
+                <col className="w-36" />
                 <col className="w-9" />
               </colgroup>
               <thead>
@@ -847,7 +911,10 @@ export function ItemsTable({
                     }
                     liveCustoms={row.group ? (liveCustomsByGroup.get(row.group.id) ?? null) : null}
                     liveBaza={row.group ? (liveBazaByGroup.get(row.group.id) ?? null) : null}
+                    liveBasisNotLaw={row.group ? (liveBasisNotLawByGroup.get(row.group.id) ?? false) : false}
                     drafts={drafts[row.item.id]}
+                    groupById={groupById}
+                    groupsByCode={groupsByCode}
                     busy={busy}
                     dirty={dirtyCount > 0}
                     act={act}
@@ -864,25 +931,17 @@ export function ItemsTable({
                     row={row}
                     index={orderedRows.length + i}
                     lastIndex={lastIndex}
+                    // The block a typed code would join, if this request
+                    // already has one — it says which units the row may take.
+                    lawGroup={groupsByCode.get(row.tnvedCode.trim()) ?? null}
                     onChange={(patch) => {
                       setLastSave(null);
-                      // Typing a code states the row's law: the basis select
-                      // follows the matched group's default (a brand-new code
-                      // has no group yet and stays per-dona until the mint —
-                      // the save's own basisSuspect warning names it then).
-                      const withBasis =
-                        patch.tnvedCode !== undefined
-                          ? {
-                              ...patch,
-                              bazaBasis: defaultBasisFor(
-                                workspace.groups.find(
-                                  (g) => (g.tnvedCode ?? '') === patch.tnvedCode!.trim(),
-                                ) ?? null,
-                              ),
-                            }
-                          : patch;
+                      // A code keystroke no longer writes the unit at all: an
+                      // untouched select stays «avto» and the server stamps the
+                      // law's default from the block the row lands in (18a);
+                      // a touched one is the VED's and no keystroke undoes it.
                       setNewRows((rows) =>
-                        rows.map((r) => (r.key === row.key ? { ...r, ...withBasis } : r)),
+                        rows.map((r) => (r.key === row.key ? { ...r, ...patch } : r)),
                       );
                     }}
                     onRemove={() => setNewRows((rows) => rows.filter((r) => r.key !== row.key))}
@@ -987,13 +1046,20 @@ export function ItemsTable({
                 const ub = uniformBazaOf(group.items);
                 return ub ? (
                   <span className="text-2xs text-ink-600">
-                    {t('baza')}{ub.bazaUsd}/
-                    {ub.bazaBasis === 'unit' ? t('perUnit') : ub.bazaBasis === 'm2' ? 'm²' : ub.bazaBasis}
+                    {t('baza')}{ub.bazaUsd}/{basisLabel(ub.bazaBasis, t('perUnit'))}
                   </span>
                 ) : null;
               })()}
               {group.confirmedAt ? (
                 <span className="text-2xs text-good">✅</span>
+              ) : dirtyCount > 0 ? (
+                // The desktop's dirty law on the phone too: both shapes share
+                // ONE set of drafts, and a ✅ pressed over unsaved cells would
+                // record `confirmed_warnings` about numbers the server never
+                // saw (phase 0 of the phone round).
+                <span className="text-2xs text-warn" data-testid="calc-phone-save-first">
+                  {t('table.saveFirst', { count: dirtyCount })}
+                </span>
               ) : (
                 <button
                   type="button"
@@ -1028,6 +1094,9 @@ export function ItemsTable({
                 : ''}
               {group.rateSource === 'dictionary' && group.dictionaryRates?.note
                 ? ` · ⚠ ${t('table.rateNoted')}`
+                : ''}
+              {group.warnings.includes('basis_not_law') && group.dutyUnit
+                ? ` · ⚠ ${t('table.basisNotLaw', { unit: basisLabel(defaultBasisFor(group), t('perUnit')) })}`
                 : ''}
             </p>
             {/* And WHY it could not be priced, in the office's words rather
@@ -1094,7 +1163,10 @@ const ItemRowBlock = memo(function ItemRowBlock({
   endsGroup,
   liveCustoms,
   liveBaza,
+  liveBasisNotLaw,
   drafts,
+  groupById,
+  groupsByCode,
   busy,
   dirty,
   act,
@@ -1111,7 +1183,10 @@ const ItemRowBlock = memo(function ItemRowBlock({
   endsGroup: boolean;
   liveCustoms: CustomsResult | null;
   liveBaza: { bazaUsd: number; bazaBasis: BazaBasis } | null;
+  liveBasisNotLaw: boolean;
   drafts: ItemDraft | undefined;
+  groupById: Map<string, WorkspaceGroup>;
+  groupsByCode: Map<string, WorkspaceGroup>;
   busy: boolean;
   dirty: boolean;
   act: (work: () => Promise<CalcFormState>) => void;
@@ -1123,7 +1198,9 @@ const ItemRowBlock = memo(function ItemRowBlock({
 }) {
   const t = useTranslations('calc');
   const item = row.item;
-  const required = requiredUnitOf(row.group);
+  // The ONE answer the select, the O'lchov line, the live figure and the
+  // save all read (screenRowOf) — the drafted code's law, the unit on screen.
+  const screen = screenRowOf(item, drafts, groupById, groupsByCode);
   // Per-row and LOCAL. Lifting «only one fold open» above a memo'd row is
   // round 70's board freeze in a grid's clothes, and two open folds harm
   // nothing — the ⚙ has allowed exactly that since the workspace shipped.
@@ -1154,22 +1231,17 @@ const ItemRowBlock = memo(function ItemRowBlock({
     );
   };
 
-  // The stored basis ALWAYS renders as an option, marked when the code's law
-  // no longer offers it — a select that cannot render the stored value
-  // silently rewrites it on the next submit (#171).
-  const storedBasis = item.bazaBasis;
-  const draftBasis = drafts?.bazaBasis;
-  // Item 3: the law's own unit is the default — the VED only types the
-  // number. The save and the live figure use the SAME chain (#171).
-  const basisValue: BazaBasis = draftBasis ?? storedBasis ?? defaultBasisFor(row.group);
-  const offered: BazaBasis[] = ['unit', 'kg'];
-  if (required && required !== 'sm3') offered.push(required);
-  const basisOptions = offered.includes(basisValue) ? offered : [...offered, basisValue];
   const bazaValue = drafts?.bazaValue ?? (item.bazaUsd === null ? '' : String(item.bazaUsd));
-  // The measure sub-line: only when the code prices per juft/litr/m²/sm³.
-  // A stored pair in the WRONG unit renders as an EMPTY box (the old number
-  // under a new suffix would price something nobody measured).
-  const measureServer = item.measureUnit === required && item.measureQty !== null ? String(item.measureQty) : '';
+  // The measure sub-line: when the law counts in a pair unit, when the BASIS
+  // is one (an m² baza on an advalor code — 0125), or the generic box while a
+  // drafted code's law is unknown. A stored pair in the WRONG unit renders as
+  // an EMPTY box (the old number under a new suffix would price something
+  // nobody measured).
+  const pair = screen.pair;
+  const measureServer =
+    pair !== null && (pair === 'any' || item.measureUnit === pair) && item.measureQty !== null
+      ? String(item.measureQty)
+      : '';
   const measureValue = drafts?.measure ?? measureServer;
 
   return (
@@ -1181,7 +1253,21 @@ const ItemRowBlock = memo(function ItemRowBlock({
       >
         <td className="p-1.5 text-center font-mono text-2xs text-ink-500">{item.seq}</td>
         <td className="p-1.5">{cell('name')}</td>
-        <td className="p-1.5">{cell('quantity', 'text-center')}</td>
+        <td className="p-1.5">
+          {cell('quantity', 'text-center')}
+          {/* His 20a: the SELLER's own word («шт», «кг», «компл») beside the
+              count, muted and DISPLAY ONLY — nothing posts it and the engine
+              never reads it. What the baza is per is the select's question. */}
+          {item.unit ? (
+            <span
+              className="mt-0.5 block truncate text-center text-2xs text-ink-500"
+              data-testid="calc-item-unit"
+              title={item.unit}
+            >
+              {item.unit}
+            </span>
+          ) : null}
+        </td>
         <td className="p-1.5">{cell('weightKg', 'text-right font-mono tabular-nums')}</td>
         <td className="p-1.5">{cell('volumeM3', 'text-right font-mono tabular-nums')}</td>
         <td className="p-1.5">{cell('tnvedCode', 'font-mono tabular-nums')}</td>
@@ -1200,23 +1286,17 @@ const ItemRowBlock = memo(function ItemRowBlock({
               onKeyDown={(e) => onCellKey(e, 'bazaValue', index, lastIndex)}
               onPaste={onCellPaste}
             />
-            <select
-              className="input-cell !w-12 !px-0.5"
-              aria-label={`${t('basis')} ${item.seq}`}
-              data-testid="calc-basis"
-              value={basisValue}
+            <BasisSelect
+              value={screen.basis}
+              offered={screen.offered}
+              label={`${t('basis')} ${item.seq}`}
+              testId="calc-basis"
+              drafted={drafts?.bazaBasis !== undefined}
               disabled={busy}
               // ONE edit: the pair rule drafts the amount as it stands beside
               // the unit, so the save posts a coherent pair (baza-draft.ts).
-              onChange={(e) => setDraft(item.id, 'bazaBasis', e.target.value)}
-            >
-              {basisOptions.map((b) => (
-                <option key={b} value={b}>
-                  {b === 'unit' ? t('perUnit') : b === 'm2' ? 'm²' : b}
-                  {offered.includes(b) ? '' : ' ⚠'}
-                </option>
-              ))}
-            </select>
+              onPick={(b) => setDraft(item.id, 'bazaBasis', b)}
+            />
           </span>
           {/* 0094: the price came out of the customs dump and nobody has
               retyped it. A draft on the amount hides the chip — the number on
@@ -1260,8 +1340,7 @@ const ItemRowBlock = memo(function ItemRowBlock({
           ) : null}
           {item.dictionaryBaza ? (
             <span className="mt-0.5 block truncate text-2xs text-ink-500" title={item.dictionaryBaza.effectiveDate}>
-              ≈ ${item.dictionaryBaza.bazaUsd}/
-              {item.dictionaryBaza.basis === 'unit' ? t('perUnit') : item.dictionaryBaza.basis}
+              ≈ ${item.dictionaryBaza.bazaUsd}/{basisLabel(item.dictionaryBaza.basis, t('perUnit'))}
               {item.dictionaryBaza.stale ? (
                 <span className="ml-1 text-warn" data-testid="calc-baza-stale">
                   ⚠ {t('stale')}
@@ -1295,15 +1374,20 @@ const ItemRowBlock = memo(function ItemRowBlock({
           clearDraft={clearDraft}
           onPickBaza={onPickBaza}
           noteDraft={drafts?.note}
+          draftBasis={drafts?.bazaBasis}
           onDone={() => setMenuOpen(false)}
         />
       ) : null}
-      {required ? (
+      {pair !== null ? (
         <tr className="border-b border-line/60 text-2xs">
           <td />
           <td className="px-1.5 pb-1.5" colSpan={7}>
             <span className="flex items-center gap-1 text-ink-600">
-              <span>{t('table.measureFor', { unit: required === 'm2' ? 'm²' : required })}</span>
+              <span>
+                {pair === 'any'
+                  ? t('table.measureGhost')
+                  : t('table.measureFor', { unit: basisLabel(pair, t('perUnit')) })}
+              </span>
               <input
                 className={`input-cell !w-24 text-right font-mono tabular-nums${drafts?.measure !== undefined ? ' border-brand-500' : ''}`}
                 aria-label={`measure ${item.seq}`}
@@ -1316,10 +1400,10 @@ const ItemRowBlock = memo(function ItemRowBlock({
                 onChange={(e) => setDraft(item.id, 'measure', e.target.value)}
                 onKeyDown={(e) => onCellKey(e, 'measure', index, lastIndex)}
               />
-              <span>{required === 'm2' ? 'm²' : required}</span>
+              {pair !== 'any' ? <span>{basisLabel(pair, t('perUnit'))}</span> : null}
               {/* The sm³ convention outlives the placeholder — a filled cell
                   must still say what its number means. */}
-              {required === 'sm3' ? <span className="text-ink-500">· {t('table.sm3Hint')}</span> : null}
+              {pair === 'sm3' ? <span className="text-ink-500">· {t('table.sm3Hint')}</span> : null}
             </span>
           </td>
         </tr>
@@ -1330,6 +1414,7 @@ const ItemRowBlock = memo(function ItemRowBlock({
           group={row.group}
           liveCustoms={liveCustoms}
           liveBaza={liveBaza}
+          liveBasisNotLaw={liveBasisNotLaw}
           busy={busy}
           dirty={dirty}
           act={act}
@@ -1352,6 +1437,7 @@ function BlockFooter({
   group,
   liveCustoms,
   liveBaza,
+  liveBasisNotLaw,
   busy,
   dirty,
   act,
@@ -1360,6 +1446,7 @@ function BlockFooter({
   group: WorkspaceGroup;
   liveCustoms: CustomsResult | null;
   liveBaza: { bazaUsd: number; bazaBasis: BazaBasis } | null;
+  liveBasisNotLaw: boolean;
   busy: boolean;
   dirty: boolean;
   act: (work: () => Promise<CalcFormState>) => void;
@@ -1417,8 +1504,16 @@ function BlockFooter({
               have no one number, so the value stands alone there. */}
           {liveBaza ? (
             <span className="ml-2 text-2xs text-ink-700" data-testid="calc-group-baza">
-              {t('baza')}{liveBaza.bazaUsd}/
-              {liveBaza.bazaBasis === 'unit' ? t('perUnit') : liveBaza.bazaBasis === 'm2' ? 'm²' : liveBaza.bazaBasis}
+              {t('baza')}{liveBaza.bazaUsd}/{basisLabel(liveBaza.bazaBasis, t('perUnit'))}
+            </span>
+          ) : null}
+          {/* A1 (0125): a priced row in this block is per another unit than
+              the one the law counts in. Allowed — the baza is the row's own
+              question — but VISIBLE, and the ✅ records it; silent on an
+              advalor code, which pins no unit at all. */}
+          {liveBasisNotLaw && group.dutyUnit ? (
+            <span className="ml-1 chip chip-warn" data-testid="calc-basis-not-law">
+              ⚠ {t('table.basisNotLaw', { unit: basisLabel(defaultBasisFor(group), t('perUnit')) })}
             </span>
           ) : null}
           {customs.ok ? (
@@ -1640,6 +1735,7 @@ function ItemFold({
   clearDraft,
   onPickBaza,
   noteDraft,
+  draftBasis,
   onDone,
 }: {
   id: string;
@@ -1650,6 +1746,8 @@ function ItemFold({
   clearDraft: (itemId: string) => void;
   onPickBaza: (target: PickerTarget) => void;
   noteDraft: string | undefined;
+  /** A unit picked and not yet saved — the picker ranks by it (0125). */
+  draftBasis: BazaBasis | undefined;
   onDone: () => void;
 }) {
   const t = useTranslations('calc');
@@ -1688,7 +1786,12 @@ function ItemFold({
               className="btn-secondary !min-h-8"
               data-testid="calc-import-pick"
               onClick={() =>
-                onPickBaza({ itemId: item.id, name: item.label, tnvedCode: item.tnvedCode! })
+                onPickBaza({
+                  itemId: item.id,
+                  name: item.label,
+                  tnvedCode: item.tnvedCode!,
+                  basis: draftBasis ?? null,
+                })
               }
             >
               📥 {t('importPick')}
@@ -1717,6 +1820,7 @@ function NewRowCells({
   row,
   index,
   lastIndex,
+  lawGroup,
   onChange,
   onRemove,
   onCellKey,
@@ -1725,6 +1829,9 @@ function NewRowCells({
   row: NewRow;
   index: number;
   lastIndex: number;
+  /** The block the typed code would join — null for a code this request
+   * has no block for, whose law is unknown until the save mints it. */
+  lawGroup: WorkspaceGroup | null;
   onChange: (patch: Partial<NewRow>) => void;
   onRemove: () => void;
   onCellKey: (e: React.KeyboardEvent<HTMLInputElement>, col: string, rowIndex: number, lastIndex: number) => void;
@@ -1766,18 +1873,19 @@ function NewRowCells({
               onChange={(e) => onChange({ bazaValue: e.target.value })}
               onKeyDown={(e) => onCellKey(e, 'bazaValue', index, lastIndex)}
             />
-            <select
-              className="input-cell !w-12 !px-0.5"
-              aria-label={`new basis ${row.key}`}
+            {/* «avto» until TOUCHED (18a): nothing is posted, and the server
+                stamps the law's default once the code's block exists. The
+                units on offer are the matched block's law's (basesFor) — all
+                six for a code this request has never seen. */}
+            <BasisSelect
               value={row.bazaBasis}
-              onChange={(e) => onChange({ bazaBasis: e.target.value as BazaBasis })}
-            >
-              {(['unit', 'kg', 'juft', 'litr', 'm2'] as const).map((b) => (
-                <option key={b} value={b}>
-                  {b === 'unit' ? t('perUnit') : b === 'm2' ? 'm²' : b}
-                </option>
-              ))}
-            </select>
+              offered={basesFor(lawGroup?.dutyUnit ?? null)}
+              label={`new basis ${row.key}`}
+              testId="calc-new-basis"
+              drafted={row.bazaBasis !== null}
+              disabled={false}
+              onPick={(b) => onChange({ bazaBasis: b })}
+            />
           </span>
         </td>
         <td className="p-1.5 text-center">
@@ -1805,6 +1913,62 @@ function NewRowCells({
         </td>
       </tr>
     </>
+  );
+}
+
+/**
+ * The row's unit select — ONE component for the saved rows and the ghost
+ * rows (it used to be two hand-written lists, and the ghost's offered m² on
+ * any code while the saved row's did not).
+ *
+ * `value` null renders «avto»: an untouched choice the server decides. A
+ * stored value the law no longer offers ALWAYS renders as an option, marked
+ * ⚠ — a select that cannot render the stored value silently rewrites it on
+ * the next submit (#171), and a conflict must be SEEN to be fixed.
+ *
+ * Measured in a browser at 1280 and 768: the widest word any locale puts in
+ * it is ru «авто» at 34px of text, and the old 48px box left 26px — a 56px
+ * one still cut the last letter off. 64px leaves 42px for the text beside
+ * the arrow, and the baza column grew to hold it with the 56px amount.
+ */
+function BasisSelect({
+  value,
+  offered,
+  label,
+  testId,
+  drafted,
+  disabled,
+  onPick,
+}: {
+  value: BazaBasis | null;
+  offered: BazaBasis[];
+  label: string;
+  testId: string;
+  drafted: boolean;
+  disabled: boolean;
+  onPick: (basis: BazaBasis) => void;
+}) {
+  const t = useTranslations('calc');
+  const options = value === null || offered.includes(value) ? offered : [...offered, value];
+  return (
+    <select
+      className={`input-cell !w-16 !px-0.5${drafted ? ' border-brand-500' : ''}`}
+      aria-label={label}
+      data-testid={testId}
+      value={value ?? ''}
+      disabled={disabled}
+      onChange={(e) => {
+        if (isBazaBasis(e.target.value)) onPick(e.target.value);
+      }}
+    >
+      {value === null ? <option value="">{t('table.basisAuto')}</option> : null}
+      {options.map((b) => (
+        <option key={b} value={b}>
+          {basisLabel(b, t('perUnit'))}
+          {offered.includes(b) ? '' : ' ⚠'}
+        </option>
+      ))}
+    </select>
   );
 }
 

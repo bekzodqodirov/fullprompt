@@ -4,6 +4,7 @@ import {
   customsFeeFor,
   customsFor,
   FEE_TIERS,
+  itemMeasure,
   type PricedGroup,
   type PricedItem,
 } from '@/modules/wms/calc/pricing';
@@ -43,6 +44,7 @@ const item = (over: Partial<PricedItem> = {}): PricedItem => ({
   label: 'tovar',
   quantity: 1,
   weightKg: 1,
+  volumeM3: null,
   bazaUsd: 1,
   bazaBasis: 'unit',
   measureUnit: null,
@@ -214,6 +216,54 @@ describe('the four duty modes', () => {
     );
     // value 800; advalor 160; specific 300 → MAX 300.
     expect(r).toMatchObject({ ok: true, valueUsd: 800, dutyUsd: 300 });
+  });
+
+  it('0125: itemMeasure answers m³ from the volume, and nothing else does', () => {
+    const it3 = item({ quantity: 7, weightKg: 9, volumeM3: 1.25, measureUnit: 'm2', measureQty: 30 });
+    expect(itemMeasure(it3, 'm3')).toBe(1.25);
+    expect(itemMeasure(it3, 'unit')).toBe(7);
+    expect(itemMeasure(it3, 'kg')).toBe(9);
+    expect(itemMeasure(it3, 'm2')).toBe(30);
+    expect(itemMeasure(item({ volumeM3: null }), 'm3')).toBeNull();
+  });
+
+  it('0125: the baza is the ROW’s question — 6403 priced per kg keeps its per-juft duty', () => {
+    // 100 juft weighing 172 kg. The specific half counts the law's juft
+    // whatever the baza is per; only the VALUE reads the chosen unit.
+    const law = group({ tnvedCode: '6403', dutyPct: 20, dutyMode: 'max', dutySpecific: 3, dutyUnit: 'juft' });
+    const perJuft = customsFor(law, [
+      item({ bazaUsd: 8, bazaBasis: 'juft', weightKg: 172, measureUnit: 'juft', measureQty: 100 }),
+    ]);
+    const perKg = customsFor(law, [
+      item({ bazaUsd: 8, bazaBasis: 'kg', weightKg: 172, measureUnit: 'juft', measureQty: 100 }),
+    ]);
+    // per juft: value 800, advalor 160, specific 300 → 300.
+    expect(perJuft).toMatchObject({ ok: true, valueUsd: 800, dutyUsd: 300 });
+    // per kg: value 1 376 (the earlier research's +59 % case), advalor
+    // 275.20, specific STILL 100 juft × $3 = 300 → 300.
+    expect(perKg).toMatchObject({ ok: true, valueUsd: 1376, dutyUsd: 300 });
+  });
+
+  it('0125: an m³ baza values from the row’s own volume, and refuses without one', () => {
+    const law = group({ dutyPct: 10 });
+    expect(
+      customsFor(law, [item({ bazaUsd: 40, bazaBasis: 'm3', volumeM3: 12.5 })]),
+    ).toMatchObject({ ok: true, valueUsd: 500, dutyUsd: 50 });
+    // No kub on the row: the engine names it — never a $0 value.
+    expect(
+      customsFor(law, [item({ bazaUsd: 40, bazaBasis: 'm3', volumeM3: null, label: 'gilam' })]),
+    ).toMatchObject({ ok: false, reason: 'measure_missing', itemLabel: 'gilam' });
+  });
+
+  it('0125: a kg-law code priced per m³ keeps BOTH measures — two fields, no collision', () => {
+    // 5701 (gilam): max 30 % / min $0.7 per KG. Priced per m³ the value reads
+    // the kub and the floor still reads the kilos.
+    const r = customsFor(
+      group({ tnvedCode: '5701', dutyPct: 30, dutyMode: 'max', dutySpecific: 0.7, dutyUnit: 'kg' }),
+      [item({ bazaUsd: 100, bazaBasis: 'm3', volumeM3: 2, weightKg: 1000 })],
+    );
+    // value 200; advalor 60; specific 1 000 kg × 0.7 = 700 → MAX 700.
+    expect(r).toMatchObject({ ok: true, valueUsd: 200, dutyUsd: 700 });
   });
 
   it('sm³ prices with the baza per DONA — value and duty measure independent', () => {

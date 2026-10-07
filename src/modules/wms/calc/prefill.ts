@@ -16,8 +16,16 @@ import type { AuditContext } from '../../platform/audit/service';
 import {
   newestReadyBatchId,
 } from '../customs/import-service';
-import { suggestImportBaza, unitsForRow, BASIS_FOR_UNIT } from '../customs/import-baza';
-import { sectionParts, type CalcSectionName, type FreightResult } from './pricing';
+import { suggestImportBaza, unitsForRow } from '../customs/import-baza';
+import {
+  isBazaBasis,
+  itemMeasure,
+  sectionParts,
+  type BazaBasis,
+  type CalcSectionName,
+  type FreightResult,
+} from './pricing';
+import { basisLabel } from './basis';
 import {
   loadWorkspace,
   proposeGroups,
@@ -430,10 +438,12 @@ function replyLines(ws: Workspace): AiVedLine[] {
     const bazas = [...new Set(g.items.map((i) => `${i.bazaUsd}|${i.bazaBasis}`))];
     const first = g.items[0];
     // The shorthand «100 dona × $20/dona» is printed only where it is TRUE
-    // of the whole group; the figure beside it is exact either way.
+    // of the whole group; the figure beside it is exact either way. The
+    // measure is the one the BASIS reads (0125) — «12 m³ × $40/m³», never
+    // the dona count beside a per-kg price.
     const measureText =
       bazas.length === 1 && first && first.bazaUsd !== null && first.bazaBasis !== null
-        ? `${measureOf(g)} × $${first.bazaUsd}/${first.bazaBasis === 'unit' ? 'dona' : first.bazaBasis}`
+        ? `${measureOf(g, first.bazaBasis)} × $${first.bazaUsd}/${basisLabel(first.bazaBasis, 'dona')}`
         : null;
     return {
       label: g.items.map((i) => i.label).join(', ') || g.label,
@@ -459,15 +469,21 @@ function replyLines(ws: Workspace): AiVedLine[] {
   });
 }
 
-/** What the group is measured in, as the seller stated it. */
-function measureOf(g: Workspace['groups'][number]): string {
-  const qty = g.items.reduce((sum, i) => sum + (i.quantity ?? 0), 0);
-  if (qty > 0) return `${round3(qty)} dona`;
-  const kg = g.items.reduce((sum, i) => sum + (i.weightKg ?? 0), 0);
-  if (kg > 0) return `${round3(kg)} kg`;
-  const measure = g.items.reduce((sum, i) => sum + (i.measureQty ?? 0), 0);
-  const unit = g.items.find((i) => i.measureUnit)?.measureUnit;
-  return measure > 0 && unit ? `${round3(measure)} ${unit}` : '—';
+/**
+ * How much of the group the baza is per — through the engine's own resolver
+ * (`itemMeasure`), so the reply states the very quantity the value was
+ * multiplied by. It used to print the dona count first whatever the basis:
+ * «100 dona × $2/kg». A member that cannot answer in that unit is the
+ * engine's own refusal, so the shorthand gives up rather than summing a part.
+ */
+function measureOf(g: Workspace['groups'][number], basis: BazaBasis): string {
+  let sum = 0;
+  for (const item of g.items) {
+    const m = itemMeasure(item, basis);
+    if (m === null || !(m > 0)) return '—';
+    sum += m;
+  }
+  return `${round3(sum)} ${basisLabel(basis, 'dona')}`;
 }
 
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
@@ -544,7 +560,9 @@ async function pickBazas(
       tnvedCode: calcRequestItems.tnvedCode,
       quantity: calcRequestItems.quantity,
       weightKg: calcRequestItems.weightKg,
+      volumeM3: calcRequestItems.volumeM3,
       bazaUsd: calcRequestItems.bazaUsd,
+      bazaBasis: calcRequestItems.bazaBasis,
       groupId: calcRequestItems.groupId,
     })
     .from(calcRequestItems)
@@ -559,24 +577,30 @@ async function pickBazas(
   const dutyUnitOf = new Map(groups.map((g) => [g.id, g.dutyUnit]));
 
   const asking: PickRequest[] = [];
-  const unitOfSeq = new Map<number, ReturnType<typeof unitsForRow>[number]>();
+  const unitsOfSeq = new Map<number, ReturnType<typeof unitsForRow>>();
   for (const r of empty.slice(0, MAX_PICK_ROWS)) {
     const qty = r.quantity === null ? null : Number(r.quantity);
     const kg = r.weightKg === null ? null : Number(r.weightKg);
+    const m3 = r.volumeM3 === null ? null : Number(r.volumeM3);
+    // The row's whole accepted set — and a unit the VED already CHOSE on this
+    // still-unpriced row narrows it to that one (0125): the model chooses a
+    // declaration, never a unit.
     const units = unitsForRow({
       dutyUnit: r.groupId ? (dutyUnitOf.get(r.groupId) ?? null) : null,
+      chosen: isBazaBasis(r.bazaBasis) ? r.bazaBasis : null,
       hasWeight: kg !== null && kg > 0,
       hasQuantity: qty !== null && qty > 0,
+      hasVolume: m3 !== null && m3 > 0,
     });
-    const unit = units[0];
-    if (!unit) continue;
-    const perPiece = qty !== null && qty > 0 && kg !== null && kg > 0 ? kg / qty : null;
+    if (units.length === 0) continue;
+    const perPiece =
+      units.includes('dona') && qty !== null && qty > 0 && kg !== null && kg > 0 ? kg / qty : null;
     const sug = await suggestImportBaza(
-      { tnvedCode: r.tnvedCode!.trim(), name: r.name, unit, weightPerUnitKg: perPiece },
+      { tnvedCode: r.tnvedCode!.trim(), name: r.name, units, weightPerUnitKg: perPiece },
       { batchId },
     );
     if (sug.candidates.length === 0) continue;
-    unitOfSeq.set(r.seq, unit);
+    unitsOfSeq.set(r.seq, units);
     asking.push({
       seq: r.seq,
       name: r.name,
@@ -618,11 +642,12 @@ async function pickBazas(
     if (!row || !asked) continue;
     const chosen = asked.candidates[a.candidate];
     if (!chosen) continue;
-    const unit = unitOfSeq.get(a.seq);
-    // The unit the row was ASKED about is the only one it may be answered
+    const units = unitsOfSeq.get(a.seq);
+    // The units the row was ASKED about are the only ones it may be answered
     // in: a per-kg declaration on a per-dona row is off by the weight of the
-    // goods, and the model is choosing a row, not a basis.
-    if (!unit || BASIS_FOR_UNIT[chosen.unit] !== BASIS_FOR_UNIT[unit]) {
+    // goods, and the model is choosing a row, not a basis. A chosen unit
+    // narrowed this to one (0125).
+    if (!units || !units.includes(chosen.unit)) {
       refused += 1;
       continue;
     }

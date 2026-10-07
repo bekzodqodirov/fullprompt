@@ -37,6 +37,7 @@ import {
   type RatesRow,
 } from './dictionaries';
 import { answerFloorStandsSql, currentVersionSql, notSupersededSql } from './version-set';
+import { basisConflicts, defaultBasisFor, pairUnitFor } from './basis';
 import {
   BASIS_FOR_UNIT,
   importRowForCode,
@@ -56,6 +57,7 @@ import {
 import {
   customsFor,
   freightFor,
+  isBazaBasis,
   isNumber,
   pricedGroupOf,
   requestCustomsFor,
@@ -134,8 +136,9 @@ export interface WorkspaceItem extends PricedItem {
   /** The immutable address (phase 3): seqs are re-minted after a delete, so
    * drafts and edits key on the id or a stranded draft lands on new cargo. */
   id: string;
+  /** The SELLER's own unit word («шт», «кг», «компл») — display only (his
+   * 20a). The engine never reads it: what a baza is per is `bazaBasis`. */
   unit: string | null;
-  volumeM3: number | null;
   tnvedCode: string | null;
   note: string | null;
   groupId: string | null;
@@ -496,6 +499,7 @@ export async function loadWorkspace(
         aiProposed: g.aiProposed,
         aiConfidence: (g.aiConfidence as 'high' | 'medium' | 'low' | null) ?? null,
         aiDutyPct: toNum(g.aiDutyPct),
+        dutyUnit: priced.dutyUnit,
         items: mine.map((i) => ({
           hasDictionaryBaza: i.dictionaryBaza !== null,
           bazaSource: i.bazaSource,
@@ -1000,12 +1004,28 @@ export async function setItemBaza(
 ) {
   mustBeNumber(input.bazaUsd);
   if (input.bazaUsd !== null && !(input.bazaUsd > 0)) throw new CalcError('baza_positive');
+  if (input.basis !== null && !isBazaBasis(input.basis)) throw new CalcError('bad_basis');
   await mutateRequest(requestId, async (tx) => {
+    // saveTable's own basis rule (0125), restated for the one door that is
+    // not the table: a basis without a price is a CHOICE and stands; a price
+    // without a basis is «auto» and takes the law's default from the row's
+    // group as it is NOW; null with null clears the whole pair. This door
+    // runs no measure pass — like `setGroupRates`, the stored pair
+    // reconciles on the next Saqlash.
+    let basis = input.basis;
+    if (input.bazaUsd !== null && basis === null) {
+      const [law] = await tx
+        .select({ dutyUnit: calcGroups.dutyUnit })
+        .from(calcRequestItems)
+        .leftJoin(calcGroups, eq(calcGroups.id, calcRequestItems.groupId))
+        .where(and(eq(calcRequestItems.requestId, requestId), eq(calcRequestItems.seq, itemSeq)));
+      basis = defaultBasisFor({ dutyUnit: law?.dutyUnit ?? null });
+    }
     const [changed] = await tx
       .update(calcRequestItems)
       .set({
         bazaUsd: input.bazaUsd === null ? null : input.bazaUsd.toFixed(4),
-        bazaBasis: input.bazaUsd === null ? null : input.basis,
+        bazaBasis: basis,
         bazaSource: input.bazaUsd === null ? null : input.source,
         // The whole provenance moves together (0094, widened by 0096):
         // whatever this writes, the number is no longer the import's and no
@@ -1125,11 +1145,12 @@ export async function setFeeOverride(
 /**
  * Fill every item that has no baza from the dictionary, in one pass.
  *
- * A hit is applied only when its basis is RESOLVABLE on that row: unit/kg
- * always, an extended basis (juft/litr/m²) only when the item's group prices
- * per exactly that unit. A «plitka» row stored per m² stamped onto a per-dona
- * item would strand a basis the row cannot measure and the select cannot
- * render — the skip is counted and reported instead.
+ * A hit is applied only when its basis is RESOLVABLE on that row — see the
+ * rule in the loop (0125). Since the m² box follows the BASIS (`pairUnitFor`)
+ * a «plitka» row stored per m² is no longer stranded on an advalor item: the
+ * row grows its O'lchov line and refuses «o'lchov yo'q» until the VED types
+ * the count. Like `setGroupRates`, this door runs no measure pass — the
+ * stored pair reconciles on the next Saqlash.
  */
 export async function pullBazasFromDictionary(
   requestId: string,
@@ -1155,10 +1176,14 @@ export async function pullBazasFromDictionary(
   for (const item of items) {
     const hit = bazas.get(normalise(item.name));
     if (!hit) continue;
-    const resolvable =
-      hit.basis === 'unit' ||
-      hit.basis === 'kg' ||
-      (item.groupId !== null && unitByGroup.get(item.groupId) === hit.basis);
+    // 0125: a row's own basis is free (his 18a), so the book's unit lands on
+    // any row — EXCEPT a row whose unit the VED already chose (an unpriced
+    // row's stored basis is always a choice, never a stamp) when the book
+    // prices it per something else, and a unit the row's law cannot hold
+    // (a pair unit on a juft/litr/m² code). Both are counted and reported.
+    const chosen = (item.bazaBasis as BazaBasis | null) ?? null;
+    const law = item.groupId !== null ? (unitByGroup.get(item.groupId) ?? null) : null;
+    const resolvable = (chosen === null || hit.basis === chosen) && !basisConflicts(law, hit.basis);
     if (!resolvable) {
       skipped += 1;
       continue;
@@ -1545,11 +1570,11 @@ export async function sealCalc(
         label: i.label,
         quantity: i.quantity,
         weightKg: i.weightKg,
-        // Added in phase C. The map was written from `PricedItem`, which has
-        // no volume because the customs arithmetic does not need one — so the
-        // snapshot the migration calls «the whole snapshot … so phase E can
-        // compare» could not answer «how many m³ of this item». Every reader
-        // must tolerate an OLD breakdown that lacks it.
+        // Added in phase C, when `PricedItem` had no volume — so the snapshot
+        // the migration calls «the whole snapshot … so phase E can compare»
+        // could not answer «how many m³ of this item». Since 0125 an m³ baza
+        // PRICES from it. Every reader must still tolerate an OLD breakdown
+        // that lacks it.
         volumeM3: i.volumeM3,
         bazaUsd: i.bazaUsd,
         bazaBasis: i.bazaBasis,
@@ -2633,12 +2658,23 @@ export interface TableItemEdit {
   volumeM3?: number | null;
   tnvedCode?: string | null;
   note?: string | null;
-  /** The amount in the code's own extended unit (juft/litr/m²/sm³). The UNIT
-   * is never posted — the server stamps it from the law (the group's
-   * dutyUnit); a posted unit could disagree with the code it rides. */
+  /** The amount in the row's pair unit (juft/litr/m²/sm³). The UNIT is never
+   * posted — the server stamps it by `pairUnitFor`: the law's pair unit when
+   * the code has one, else the row's own pair BASIS (an m² baza on an advalor
+   * code); a posted unit could disagree with the code it rides. */
   measureQty?: number | null;
-  /** The row's baza — null clears amount, basis and source TOGETHER (a basis
-   * without a price describes nothing). */
+  /**
+   * The row's baza (0125's four states — `bazaUsd` undefined leaves it alone):
+   * - an amount + a basis — priced per that unit, the VED's word;
+   * - an amount + NULL basis — «avto»: the stored basis stands, and a row
+   *   with none takes the law's default from its FINAL group (18a), stamped
+   *   inside the measure pass — never from the pre-tx dictionary read, since
+   *   a typed code can join a group whose law a person typed;
+   * - NULL amount + a basis — no price yet, but the unit is CHOSEN and stands
+   *   (the snap-back the owner reported had a second costume here: a unit
+   *   picked on an unpriced row posted nothing and vanished on Saqlash);
+   * - NULL + NULL — clears amount, basis and source together.
+   */
   bazaUsd?: number | null;
   bazaBasis?: BazaBasis | null;
   /** A row PICKED out of the customs import. The id is a claim: the server
@@ -2678,10 +2714,21 @@ export interface TableSaveResult {
    * unit. Never a whole-save refusal: the box was on the screen in good
    * faith (a new row's law shape is unknowable before the save). */
   measuresDropped: number[];
-  /** Rows priced per-dona inside a block whose law prices per m²/juft/litr —
-   * the one-save-new-code case, where the default could not know the law
-   * yet. Advisory and NAMED, never a silent rewrite (#171 inverted). */
+  /** PRICED rows recoded or added in THIS save whose basis is not the one
+   * the new law counts in (0125's A2: a priced row keeps the unit its price
+   * was typed in — a number typed «per dona» does not silently become «per
+   * juft»). Advisory and NAMED, never a silent rewrite (#171 inverted); an
+   * unpriced row simply follows the new code. */
   basisSuspect: number[];
+  /** Rows whose basis the law cannot hold (a pair unit on a juft/litr/m²
+   * code, after a recode or a file pick): the law's own pair stands, the
+   * engine refuses `measure_missing` naming the row, and the select shows
+   * ⚠ until a person picks a unit that fits. Never rewritten silently. */
+  basisConflict: number[];
+  /** New rows whose client id this request ALREADY holds — a retried save
+   * whose first answer was lost. Skipped, so a goods line is never written
+   * twice (phase 0 of the phone round). */
+  alreadySaved: number;
   /** Rows whose EMPTY baza this save filled from the customs import (0094).
    * Named, never silent — his own rule is that a suggestion the VED cannot
    * see is a price nobody stated: «agar to'g'ri bo'lmasa baza yo'q deb VED
@@ -2694,8 +2741,8 @@ export interface TableSaveResult {
 }
 
 const CODE_SHAPE = /^\d{4,10}$/;
-const BAZA_BASES: readonly BazaBasis[] = ['unit', 'kg', 'juft', 'litr', 'm2'];
-const EXT_UNITS: readonly MeasureUnit[] = ['juft', 'litr', 'm2', 'sm3'];
+/** A client-minted row id (phase 0): the same shape the database mints. */
+const CLIENT_ID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Parse a table code cell: '' → null, digits 4-10 → trimmed, else refused. */
 function tableCode(raw: string | null | undefined, seq: number): string | null {
@@ -3023,7 +3070,9 @@ async function suggestImportFills(input: {
     tnvedCode: string | null;
     quantity: string | null;
     weightKg: string | null;
+    volumeM3: string | null;
     bazaUsd: string | null;
+    bazaBasis: string | null;
   }[];
   itemEdits: {
     id: string;
@@ -3031,14 +3080,18 @@ async function suggestImportFills(input: {
     tnvedCode?: string | null;
     quantity?: number | null;
     weightKg?: number | null;
+    volumeM3?: number | null;
     bazaUsd?: number | null;
+    bazaBasis?: BazaBasis | null;
   }[];
   withCodes: {
     name: string;
     tnvedCode: string | null;
     quantity: number | null;
     weightKg: number | null;
+    volumeM3: number | null;
     bazaUsd: number | null;
+    bazaBasis: BazaBasis | null;
   }[];
   rates: Map<string, RatesRow>;
 }): Promise<ImportFillPlan> {
@@ -3048,6 +3101,10 @@ async function suggestImportFills(input: {
     name: string;
     quantity: number | null;
     weightKg: number | null;
+    volumeM3: number | null;
+    /** The unit the VED CHOSE for this still-unpriced row (0125) — a stored
+     * basis on a baza-less row is always a choice, never a stamp. */
+    chosen: BazaBasis | null;
   };
   const num = (v: string | null) => (v === null ? null : Number(v));
   const wants: Want[] = [];
@@ -3058,12 +3115,15 @@ async function suggestImportFills(input: {
     const code = e && e.tnvedCode !== undefined ? e.tnvedCode : s.tnvedCode;
     const baza = e && e.bazaUsd !== undefined ? e.bazaUsd : num(s.bazaUsd);
     if (!code || baza !== null) continue;
+    const storedBasis = isBazaBasis(s.bazaBasis) ? s.bazaBasis : null;
     wants.push({
       key: { kind: 'item', id: s.id },
       code,
       name: e && e.name !== undefined ? e.name : s.name,
       quantity: e && e.quantity !== undefined ? e.quantity : num(s.quantity),
       weightKg: e && e.weightKg !== undefined ? e.weightKg : num(s.weightKg),
+      volumeM3: e && e.volumeM3 !== undefined ? e.volumeM3 : num(s.volumeM3),
+      chosen: e && e.bazaUsd !== undefined ? (e.bazaBasis ?? null) : storedBasis,
     });
   }
   input.withCodes.forEach((r, index) => {
@@ -3074,6 +3134,8 @@ async function suggestImportFills(input: {
       name: r.name,
       quantity: r.quantity,
       weightKg: r.weightKg,
+      volumeM3: r.volumeM3,
+      chosen: r.bazaBasis,
     });
   });
   if (wants.length === 0) return EMPTY_FILL_PLAN;
@@ -3094,8 +3156,10 @@ async function suggestImportFills(input: {
   for (const w of wants) {
     const units = unitsForRow({
       dutyUnit: input.rates.get(w.code)?.dutyUnit ?? null,
+      chosen: w.chosen,
       hasWeight: w.weightKg !== null && w.weightKg > 0,
       hasQuantity: w.quantity !== null && w.quantity > 0,
+      hasVolume: w.volumeM3 !== null && w.volumeM3 > 0,
     });
     // His rule for piece goods: «har bir tovarni ogirligiga qaraymiz». Only
     // meaningful when the row states BOTH a count and a weight.
@@ -3110,7 +3174,7 @@ async function suggestImportFills(input: {
       // First unit that answers wins; the order IS the preference.
       for (const unit of units) {
         const sug = await suggestImportBaza(
-          { tnvedCode: w.code, name: w.name, unit, weightPerUnitKg: perPiece },
+          { tnvedCode: w.code, name: w.name, units: [unit], weightPerUnitKg: perPiece },
           { batchId, minSim: Number.isFinite(minSim) ? minSim : undefined },
         );
         if (!sug.auto) continue;
@@ -3166,7 +3230,12 @@ export async function saveTable(
     const name = r.name.trim().slice(0, 300);
     if (!name) throw new CalcError('name_required', seq);
     checkBazaPair(r, seq);
+    // A client id is a CLAIM like any other id off a form: it must at least
+    // look like one, or a crafted string reaches the uuid column as a 22P02.
+    const clientId = r.clientId ?? null;
+    if (clientId !== null && !CLIENT_ID_SHAPE.test(clientId)) throw new CalcError('not_found', seq);
     return {
+      clientId: clientId === null ? null : clientId.toLowerCase(),
       name,
       quantity: tableMeasure(r.quantity ?? null, seq),
       unit: r.unit?.trim().slice(0, 20) || null,
@@ -3194,7 +3263,9 @@ export async function saveTable(
       groupId: calcRequestItems.groupId,
       quantity: calcRequestItems.quantity,
       weightKg: calcRequestItems.weightKg,
+      volumeM3: calcRequestItems.volumeM3,
       bazaUsd: calcRequestItems.bazaUsd,
+      bazaBasis: calcRequestItems.bazaBasis,
     })
     .from(calcRequestItems)
     .where(eq(calcRequestItems.requestId, requestId));
@@ -3264,6 +3335,8 @@ export async function saveTable(
     measuresCleared: [],
     measuresDropped: [],
     basisSuspect: [],
+    basisConflict: [],
+    alreadySaved: 0,
     importFilled: [],
     memoryFilled: [],
   };
@@ -3283,7 +3356,85 @@ export async function saveTable(
     const byId = new Map(items.map((i) => [i.id, i]));
     const itemGroupBySeq = new Map(items.map((i) => [i.seq, i.groupId]));
 
-    if (items.length + withCodes.length > MAX_CALC_ITEMS) throw new CalcError('too_many_items');
+    /**
+     * Phase 0 of the phone round: a NEW row carries the id its screen minted,
+     * so a save whose answer was lost — a phone connection, a second press
+     * while the refresh is still on its way — can be pressed again without
+     * writing the goods twice. Decided UNDER the request lock, so two presses
+     * cannot both find the id absent. An id this request already holds is
+     * that same row, saved: skipped, and the retry reads as a save. An id
+     * another request holds is not this screen's row at all — refused, like
+     * every other foreign id (#864's teleport family).
+     */
+    const claimed = withCodes.map((r) => r.clientId).filter((v): v is string => v !== null);
+    let alreadySaved = 0;
+    const skipAdd = new Set<number>();
+    /** Rows this request already holds under the posted client id → the add. */
+    const retried = new Map<string, (typeof withCodes)[number]>();
+    if (claimed.length > 0) {
+      const foreign = await tx
+        .select({ id: calcRequestItems.id, requestId: calcRequestItems.requestId })
+        .from(calcRequestItems)
+        .where(inArray(calcRequestItems.id, claimed));
+      const ownerOf = new Map(foreign.map((f) => [f.id, f.requestId]));
+      const seen = new Set<string>();
+      withCodes.forEach((r, index) => {
+        if (r.clientId === null) return;
+        // The same id twice in ONE post is one row — the primary key would
+        // otherwise refuse the second as a 23505 «save_failed».
+        if (seen.has(r.clientId)) {
+          skipAdd.add(index);
+          alreadySaved += 1;
+          return;
+        }
+        seen.add(r.clientId);
+        const owner = ownerOf.get(r.clientId);
+        if (owner === undefined) return;
+        if (owner !== requestId) throw new CalcError('not_found', -(index + 1));
+        skipAdd.add(index);
+        retried.set(r.clientId, r);
+      });
+    }
+    // A retried row is not inserted again — but it is not simply SKIPPED
+    // either: between the lost answer and the second press the VED may have
+    // corrected a cell, and skipping the row whole dropped that correction
+    // under a bar that read «avval saqlangan» (review units-1). It becomes an
+    // ordinary edit of the stored row, posting only the cells that DIFFER,
+    // so an unchanged retry is still a no-op that writes nothing and clears
+    // no ✅, and a changed cell goes through every rule an edit obeys.
+    for (const [rowId, r] of retried) {
+      const stored = byId.get(rowId)!;
+      const num = (v: string | null) => (v === null ? null : Number(v));
+      const storedBasis = (stored.bazaBasis as BazaBasis | null) ?? null;
+      const basisMoved = r.bazaBasis !== null && r.bazaBasis !== storedBasis;
+      // An add's empty price means «nothing typed», not «clear»: the first
+      // save may have filled the row from the memory or the file, and an
+      // unchanged retry must not wipe that. Only a price a PERSON typed is
+      // taken back by an emptied cell.
+      const priceMoved =
+        r.bazaUsd === null
+          ? (stored.bazaUsd !== null && stored.bazaSource === 'typed') || basisMoved
+          : r.bazaUsd !== num(stored.bazaUsd) || basisMoved;
+      itemEdits.push({
+        id: rowId,
+        seq: stored.seq,
+        name: r.name !== stored.name ? r.name : undefined,
+        quantity: r.quantity !== num(stored.quantity) ? r.quantity : undefined,
+        weightKg: r.weightKg !== num(stored.weightKg) ? r.weightKg : undefined,
+        volumeM3: r.volumeM3 !== num(stored.volumeM3) ? r.volumeM3 : undefined,
+        tnvedCode: r.tnvedCode !== (stored.tnvedCode ?? null) ? r.tnvedCode : undefined,
+        note: r.note !== (stored.note ?? null) ? r.note : undefined,
+        measureQty: r.measureQty !== num(stored.measureQty) ? r.measureQty : undefined,
+        bazaUsd: priceMoved ? r.bazaUsd : undefined,
+        bazaBasis: priceMoved ? r.bazaBasis : undefined,
+        importRowId: null,
+        bazaReason: null,
+      });
+    }
+
+    if (items.length + withCodes.length - skipAdd.size > MAX_CALC_ITEMS) {
+      throw new CalcError('too_many_items');
+    }
 
     // 1. Field edits, addressed by the immutable id (measures and bazas
     //    unconfirm — the ✅ was about those numbers; a name or note is words).
@@ -3291,6 +3442,9 @@ export async function saveTable(
     const touched = new Set<string>();
     /** item id → posted extended-unit qty (undefined = the cell was not sent). */
     const postedMeasure = new Map<string, number | null>();
+    /** Rows whose LAW this save may change — recoded, added, or swept into a
+     * group — the only rows A2's «birlikni tekshiring» looks at. */
+    const relawed = new Set<string>();
     for (const e of itemEdits) {
       const item = byId.get(e.id);
       if (!item || item.requestId !== requestId) throw new CalcError('not_found', e.seq);
@@ -3330,19 +3484,23 @@ export async function saveTable(
       if (e.tnvedCode !== undefined && e.tnvedCode !== (item.tnvedCode ?? null)) {
         put('tnvedCode', item.tnvedCode, e.tnvedCode);
         patch.tnvedCode = e.tnvedCode;
+        relawed.add(item.id);
       }
-      // The row's baza — an atomic triple. Null clears amount, basis and
-      // source together (the old setItemBaza rule, restated here because the
-      // schema has no pair CHECK to enforce it); an unchanged pair diffs to
-      // nothing, so a re-save re-stamps neither 'typed' nor the ✅-clear.
+      // The row's baza — the four states `TableItemEdit` documents (0125).
+      // The schema has no pair CHECK, so this writer is the rule; an unchanged
+      // pair diffs to nothing, so a re-save re-stamps neither 'typed' nor the
+      // ✅-clear.
       if (e.bazaUsd !== undefined) {
         const before = num(item.bazaUsd);
         const beforeBasis = (item.bazaBasis as BazaBasis | null) ?? null;
         if (e.bazaUsd === null) {
-          if (before !== null || beforeBasis !== null) {
-            put('baza', { bazaUsd: before, basis: beforeBasis }, null);
+          // No price. A posted basis is the VED's CHOICE and stands without
+          // one; none clears the whole pair.
+          const chosen = e.bazaBasis ?? null;
+          if (before !== null || beforeBasis !== chosen) {
+            put('baza', { bazaUsd: before, basis: beforeBasis }, chosen === null ? null : { bazaUsd: null, basis: chosen });
             patch.bazaUsd = null;
-            patch.bazaBasis = null;
+            patch.bazaBasis = chosen;
             patch.bazaSource = null;
             // The provenance goes with the price it explained — both of them,
             // or a cleared row keeps a 🧠 chip pointing at a price that is no
@@ -3354,14 +3512,18 @@ export async function saveTable(
           }
         } else if (
           before !== e.bazaUsd ||
-          beforeBasis !== (e.bazaBasis ?? null) ||
+          // A null basis is «avto»: the stored one stands (a priced row keeps
+          // the unit its price was typed in — his A2), and a row with none is
+          // stamped from its FINAL group in the measure pass below.
+          beforeBasis !== (e.bazaBasis ?? beforeBasis) ||
           // A re-pick of the SAME price off a different declaration still
           // moves the provenance — the chip names a row, not a number.
           (e.importRowId !== null && String(item.importRowId ?? '') !== e.importRowId)
         ) {
-          put('baza', { bazaUsd: before, basis: beforeBasis }, { bazaUsd: e.bazaUsd, basis: e.bazaBasis });
+          const basis = e.bazaBasis ?? beforeBasis;
+          put('baza', { bazaUsd: before, basis: beforeBasis }, { bazaUsd: e.bazaUsd, basis });
           patch.bazaUsd = e.bazaUsd.toFixed(4);
-          patch.bazaBasis = e.bazaBasis;
+          patch.bazaBasis = basis;
           patch.bazaSource = e.importRowId ? 'import' : 'typed';
           patch.importRowId = e.importRowId ? BigInt(e.importRowId) : null;
           patch.memoryItemId = null;
@@ -3377,6 +3539,13 @@ export async function saveTable(
       if (measuresMoved && item.groupId) touched.add(item.groupId);
     }
 
+    // A retry counts as «already saved» only when it changed nothing; one
+    // that carried a correction is an edit like any other (review units-1).
+    const changedSeqs = new Set(changedCells.map((c) => c.seq));
+    for (const rowId of retried.keys()) {
+      if (!changedSeqs.has(byId.get(rowId)!.seq)) alreadySaved += 1;
+    }
+
     // 2. Insert the ghost rows — in the SAME tx, so a new row born with
     //    code + baza + measure prices on its first save (the two-tx seam
     //    the audit measured dies here).
@@ -3385,12 +3554,20 @@ export async function saveTable(
     /** The fill plans re-keyed onto item ids — a ghost row gets its id here. */
     const fillByItem = new Map(importAuto.byItemId);
     const memoryByItem = new Map(memoryAuto.byItemId);
-    if (withCodes.length > 0) {
-      const minted = withCodes.map((r) => ({ ...r, seq: nextSeqNo++ }));
+    // A row already saved under its client id is not inserted again; the fill
+    // plans stay keyed by the ORIGINAL add index, so each kept row carries it.
+    const toInsert = withCodes
+      .map((r, index) => ({ ...r, index }))
+      .filter((r) => !skipAdd.has(r.index));
+    if (toInsert.length > 0) {
+      const minted = toInsert.map((r) => ({ ...r, seq: nextSeqNo++ }));
       const inserted = await tx
         .insert(calcRequestItems)
         .values(
           minted.map((r) => ({
+            // The screen's own id when it sent one (phase 0) — the database
+            // mints one otherwise.
+            ...(r.clientId !== null ? { id: r.clientId } : {}),
             requestId,
             seq: r.seq,
             name: r.name,
@@ -3401,21 +3578,25 @@ export async function saveTable(
             tnvedCode: r.tnvedCode,
             note: r.note,
             bazaUsd: r.bazaUsd === null ? null : r.bazaUsd.toFixed(4),
-            bazaBasis: r.bazaUsd === null ? null : r.bazaBasis,
+            // A chosen basis stands without a price (0125); a priced row with
+            // none is «avto» and is stamped from its final group below.
+            bazaBasis: r.bazaBasis,
             bazaSource: r.bazaUsd === null ? null : ('typed' as const),
             nameNorm: itemNameNorm(r.name),
           })),
         )
         .returning({ id: calcRequestItems.id, seq: calcRequestItems.seq, tnvedCode: calcRequestItems.tnvedCode });
-      for (let i = 0; i < inserted.length; i++) {
-        const row = inserted[i]!;
+      // Matched back by the seq this save minted, never by position.
+      const mintedBySeq = new Map(minted.map((m) => [m.seq, m]));
+      for (const row of inserted) {
+        const add = mintedBySeq.get(row.seq)!;
         insertedRows.push(row);
+        relawed.add(row.id);
         itemGroupBySeq.set(row.seq, null);
-        const qty = minted[i]!.measureQty;
-        if (qty !== null) postedMeasure.set(row.id, qty);
-        const fill = importAuto.byAddIndex.get(i);
+        if (add.measureQty !== null) postedMeasure.set(row.id, add.measureQty);
+        const fill = importAuto.byAddIndex.get(add.index);
         if (fill) fillByItem.set(row.id, fill);
-        const remembered = memoryAuto.byAddIndex.get(i);
+        const remembered = memoryAuto.byAddIndex.get(add.index);
         if (remembered) memoryByItem.set(row.id, remembered);
       }
     }
@@ -3439,6 +3620,7 @@ export async function saveTable(
       if (code && i.groupId === null) {
         moves.set(i.seq, code);
         swept += 1;
+        relawed.add(i.id);
       }
     }
     const grouped = await autoGroupInTx(tx, requestId, { groups, moves, itemGroupBySeq, rates });
@@ -3486,22 +3668,18 @@ export async function saveTable(
       }
     }
 
-    // 6. The measure pass — the ONE writer of the pair, after the regroup
-    //    and the merge so every item's group (and thus its REQUIRED unit) is
-    //    final. Written and cleared only TOGETHER, in one UPDATE per item —
-    //    the pair CHECK is immediate and a lone half 23514s the whole save.
+    // 6. The measure pass — the ONE writer of the pair and of the «avto»
+    //    basis, after the regroup and the merge so every item's group (and
+    //    thus its law) is FINAL. Written and cleared only TOGETHER, in one
+    //    UPDATE per item — the pair CHECK is immediate and a lone half
+    //    23514s the whole save.
     const groupsFinal = await tx
       .select({ id: calcGroups.id, dutyUnit: calcGroups.dutyUnit })
       .from(calcGroups)
       .where(eq(calcGroups.requestId, requestId));
-    const requiredByGroup = new Map(
-      groupsFinal.map((g) => [
-        g.id,
-        g.dutyUnit && (EXT_UNITS as readonly string[]).includes(g.dutyUnit)
-          ? (g.dutyUnit as MeasureUnit)
-          : null,
-      ]),
-    );
+    const dutyUnitByGroup = new Map(groupsFinal.map((g) => [g.id, g.dutyUnit]));
+    const lawOf = (groupId: string | null) =>
+      groupId ? (dutyUnitByGroup.get(groupId) ?? null) : null;
     const itemsNow = await tx
       .select({
         id: calcRequestItems.id,
@@ -3510,6 +3688,7 @@ export async function saveTable(
         tnvedCode: calcRequestItems.tnvedCode,
         quantity: calcRequestItems.quantity,
         weightKg: calcRequestItems.weightKg,
+        volumeM3: calcRequestItems.volumeM3,
         measureUnit: calcRequestItems.measureUnit,
         measureQty: calcRequestItems.measureQty,
         bazaUsd: calcRequestItems.bazaUsd,
@@ -3519,17 +3698,39 @@ export async function saveTable(
       .where(eq(calcRequestItems.requestId, requestId));
     const measuresCleared: number[] = [];
     const measuresDropped: number[] = [];
+    const basisConflict: number[] = [];
+    const basisStamped: { seq: number; basis: BazaBasis }[] = [];
     for (const item of itemsNow) {
-      const required = item.groupId ? (requiredByGroup.get(item.groupId) ?? null) : null;
+      const law = lawOf(item.groupId);
+      const set: Record<string, unknown> = {};
+      // 18a: a price with no basis is «avto» — the law's default, read off
+      // the group the row ENDED in. Never off the pre-tx dictionary map: a
+      // typed code can join a group whose law a person typed over the book.
+      let basis = (item.bazaBasis as BazaBasis | null) ?? null;
+      if (item.bazaUsd !== null && basis === null) {
+        basis = defaultBasisFor({ dutyUnit: law });
+        set.bazaBasis = basis;
+        // Kept in step for the fills and the A2 check below, which read
+        // this same snapshot.
+        item.bazaBasis = basis;
+        basisStamped.push({ seq: item.seq, basis });
+      }
+      // A unit the law cannot hold — named, never rewritten. The law's own
+      // pair stands (pairUnitFor answers the law first).
+      if (basisConflicts(law, basis)) basisConflict.push(item.seq);
+      // Per ITEM now, ungrouped rows included: an m² baza on an advalor code
+      // needs its m² count as much as an m² law does.
+      const required = pairUnitFor(law, basis);
       const storedUnit = (item.measureUnit as MeasureUnit | null) ?? null;
       const storedQty = item.measureQty === null ? null : Number(item.measureQty);
       const posted = postedMeasure.get(item.id);
       let write: { unit: MeasureUnit; qty: number } | null | undefined;
       if (required === null) {
-        // The code needs no extended unit. A posted qty is DROPPED with a
-        // named note (never a whole-save refusal — the box was offered in
-        // good faith); a standing pair is cleared and named: keeping «200»
-        // under a law that stopped asking for m² is a number nobody stated.
+        // Neither the law nor the basis needs an extended unit. A posted qty
+        // is DROPPED with a named note (never a whole-save refusal — the box
+        // was offered in good faith); a standing pair is cleared and named:
+        // keeping «200» under a law (or a basis) that stopped asking for m²
+        // is a number nobody stated.
         if (posted !== undefined && posted !== null) measuresDropped.push(item.seq);
         if (storedUnit !== null) {
           write = null;
@@ -3542,22 +3743,24 @@ export async function saveTable(
           write = { unit: required, qty: posted };
         }
       } else if (storedUnit !== null && storedUnit !== required) {
-        // A recode changed the required unit under a standing pair — the
-        // quantity was a statement in the OLD unit. Clear and name it;
-        // re-stamping «200 m²» as «200 litr» would price a number nobody
-        // measured.
+        // A recode (or a new basis) changed the required unit under a
+        // standing pair — the quantity was a statement in the OLD unit. Clear
+        // and name it; re-stamping «200 m²» as «200 litr» would price a
+        // number nobody measured.
         write = null;
         measuresCleared.push(item.seq);
       }
       if (write !== undefined) {
-        await tx
-          .update(calcRequestItems)
-          .set(
-            write === null
-              ? { measureUnit: null, measureQty: null }
-              : { measureUnit: write.unit, measureQty: write.qty.toFixed(4) },
-          )
-          .where(eq(calcRequestItems.id, item.id));
+        if (write === null) {
+          set.measureUnit = null;
+          set.measureQty = null;
+        } else {
+          set.measureUnit = write.unit;
+          set.measureQty = write.qty.toFixed(4);
+        }
+      }
+      if (Object.keys(set).length > 0) {
+        await tx.update(calcRequestItems).set(set).where(eq(calcRequestItems.id, item.id));
         if (item.groupId) touched.add(item.groupId);
       }
     }
@@ -3569,7 +3772,21 @@ export async function saveTable(
     //    group's own law still wants this basis (a typed dutyUnit override on
     //    a legacy group can disagree with today's dictionary). Anything else
     //    is left EMPTY for the VED, which is his own rule.
-    const dutyUnitByGroup = new Map(groupsFinal.map((g) => [g.id, g.dutyUnit]));
+    //
+    //    The fills run AFTER the measure pass, which is safe only because
+    //    `unitsForRow` never offers an extended unit the pass did not already
+    //    ask the row for (one the law pins, or one the VED chose) — pinned by
+    //    tests/unit/customs-import-parse.test.ts.
+    /** What may price this still-unpriced row: its law, its CHOSEN unit (a
+     * baza-less row's stored basis is always a choice), its own figures. */
+    const allowedFor = (item: (typeof itemsNow)[number]) =>
+      unitsForRow({
+        dutyUnit: lawOf(item.groupId),
+        chosen: isBazaBasis(item.bazaBasis) ? item.bazaBasis : null,
+        hasWeight: item.weightKg !== null && Number(item.weightKg) > 0,
+        hasQuantity: item.quantity !== null && Number(item.quantity) > 0,
+        hasVolume: item.volumeM3 !== null && Number(item.volumeM3) > 0,
+      });
     /**
      * THE SEALED MEMORY GOES FIRST (0096, the owner's own order).
      *
@@ -3584,12 +3801,7 @@ export async function saveTable(
       const fill = memoryByItem.get(item.id);
       if (!fill) continue;
       if (item.bazaUsd !== null) continue;
-      const allowed = unitsForRow({
-        dutyUnit: item.groupId ? (dutyUnitByGroup.get(item.groupId) ?? null) : null,
-        hasWeight: item.weightKg !== null && Number(item.weightKg) > 0,
-        hasQuantity: item.quantity !== null && Number(item.quantity) > 0,
-      });
-      if (!allowed.some((u) => BASIS_FOR_UNIT[u] === fill.basis)) continue;
+      if (!allowedFor(item).some((u) => BASIS_FOR_UNIT[u] === fill.basis)) continue;
       await tx
         .update(calcRequestItems)
         .set({
@@ -3618,12 +3830,7 @@ export async function saveTable(
       // The suggestion was made against the dictionary's law; the GROUP is
       // what actually prices, and a legacy group can carry a typed dutyUnit
       // the dictionary no longer agrees with.
-      const allowed = unitsForRow({
-        dutyUnit: item.groupId ? (dutyUnitByGroup.get(item.groupId) ?? null) : null,
-        hasWeight: item.weightKg !== null && Number(item.weightKg) > 0,
-        hasQuantity: item.quantity !== null && Number(item.quantity) > 0,
-      });
-      if (!allowed.some((u) => BASIS_FOR_UNIT[u] === fill.basis)) continue;
+      if (!allowedFor(item).some((u) => BASIS_FOR_UNIT[u] === fill.basis)) continue;
       await tx
         .update(calcRequestItems)
         .set({
@@ -3639,21 +3846,23 @@ export async function saveTable(
       if (item.groupId) touched.add(item.groupId);
     }
 
-    // Item 3's loud half (judge F13): a NEW code typed with a baza in ONE
-    // save posts basis 'unit' before its group exists to say otherwise —
-    // never silently rewritten (#171 inverted), NAMED instead, so the VED
-    // checks the unit the law actually prices in.
+    // A2 (0125): a PRICED row whose law this save changed keeps the unit its
+    // price was typed in — never silently rewritten (#171 inverted), NAMED,
+    // so the VED checks it against the unit the new law counts in. Only rows
+    // this save re-lawed: a deliberate override on a row nobody touched is
+    // not news on every later press. An unpriced row has nothing to check —
+    // it follows the new code by itself (its auto basis is stamped at its
+    // first price) — and a conflict is already named more loudly above.
     const basisSuspect: number[] = [];
     for (const item of itemsNow) {
-      const lawUnit = item.groupId ? (requiredByGroup.get(item.groupId) ?? null) : null;
-      if (
-        lawUnit !== null &&
-        lawUnit !== 'sm3' &&
-        item.bazaUsd !== null &&
-        item.bazaBasis === 'unit'
-      ) {
-        basisSuspect.push(item.seq);
-      }
+      if (!relawed.has(item.id) || item.bazaUsd === null) continue;
+      if (basisConflict.includes(item.seq)) continue;
+      const law = lawOf(item.groupId);
+      const lawBasis = defaultBasisFor({ dutyUnit: law });
+      // «The law pins a unit»: kg or a pair unit. dona / 1000_dona / sm³ /
+      // advalor default to 'unit' and pin none of the baza.
+      if (lawBasis === 'unit') continue;
+      if (item.bazaBasis !== lawBasis) basisSuspect.push(item.seq);
     }
 
     await unconfirmInTx(tx, touched);
@@ -3674,6 +3883,11 @@ export async function saveTable(
         measuresCleared,
         measuresDropped,
         basisSuspect,
+        basisConflict,
+        // The «avto» units this save decided — the audit's cell list shows
+        // the posted null, so the stamped answer is recorded here.
+        basisStamped,
+        alreadySaved,
         importFilled,
         memoryFilled,
       },
@@ -3686,6 +3900,8 @@ export async function saveTable(
       measuresCleared,
       measuresDropped,
       basisSuspect,
+      basisConflict,
+      alreadySaved,
       importFilled,
       memoryFilled,
     };
@@ -3712,20 +3928,28 @@ function sameGroupRates(
   );
 }
 
-/** A baza posts as an atomic pair: an amount needs its basis, and a basis
- * from off the widened list is a forged post. */
+/** A baza posts as a pair of halves, each checked on its own (0125): an
+ * amount is a positive finite number; a basis, whenever one is posted, is on
+ * the list — off it is a forged post. A null basis beside an amount is
+ * «avto», and a basis beside no amount is a choice; neither is refused. */
 function checkBazaPair(
   e: { bazaUsd?: number | null; bazaBasis?: BazaBasis | null },
   seq: number,
 ): void {
+  if (e.bazaBasis !== undefined && e.bazaBasis !== null && !isBazaBasis(e.bazaBasis)) {
+    throw new CalcError('bad_basis', seq);
+  }
   if (e.bazaUsd === undefined || e.bazaUsd === null) return;
   if (!isNumber(e.bazaUsd)) throw new CalcError('bad_number', seq);
   if (!(e.bazaUsd > 0)) throw new CalcError('baza_positive', seq);
   if (e.bazaUsd >= 1e9) throw new CalcError('bad_number', seq);
-  if (!e.bazaBasis || !BAZA_BASES.includes(e.bazaBasis)) throw new CalcError('bad_basis', seq);
 }
 
 export interface TableNewItem {
+  /** The id the SCREEN minted for this row (phase 0) — a retried save
+   * carrying it again is the same row, already written, and is skipped.
+   * Optional: a tab opened on an older build still posts without one. */
+  clientId?: string | null;
   name: string;
   quantity?: number | null;
   unit?: string | null;

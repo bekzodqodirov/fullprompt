@@ -30,6 +30,26 @@ export function isServerBehind(err: unknown): boolean {
   return err.code === '42P01' || err.code === '42703';
 }
 
+/**
+ * The CHECK constraint a statement broke (23514), by NAME — or null.
+ *
+ * A release that WIDENS a CHECK has the same deploy-morning hole as one that
+ * adds a column: the app accepts a value the old constraint still refuses,
+ * and the refusal reaches the person as a white page or a «save failed».
+ * The name is what tells «the server is behind» apart from a real fault on
+ * the SAME table (a broken pair CHECK is a bug, not a late migration), so a
+ * caller matches the constraints its own release widened and nothing else —
+ * never a blanket 23514. drizzle may wrap the driver's error; its `cause` is
+ * asked too (the users service's idiom).
+ */
+export function violatedCheck(err: unknown): string | null {
+  type PgError = { code?: string; constraint_name?: string };
+  const pg = err as (PgError & { cause?: PgError }) | null;
+  const code = pg?.code ?? pg?.cause?.code;
+  if (code !== '23514') return null;
+  return pg?.constraint_name ?? pg?.cause?.constraint_name ?? null;
+}
+
 const BUSY = new Set(['40P01', '40001', '55P03']);
 /**
  * A deadlock, a serialisation failure or a lock timeout: «boshqa o'zgarish

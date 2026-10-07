@@ -1,5 +1,61 @@
 # CHANGELOG
 
+## VED: bazaning o'lchov birligi — avtomatik, o'zgartiriladi, m³ ham bor — 2026-10-07
+
+**Migratsiya 0125.** O'rnatgandan keyin migratsiyalar soni **126** bo'lishi kerak.
+
+Sizning javoblaringiz: **17a 18a 19a 20a 21b**. Bu raundda 18a, 19a va 20a qurildi. 21b (telefonda birlikni o'zgartirish) telefonda hisoblash bilan birga keladi. 17a esa G-savollarga javobingizdan keyin quriladi.
+
+### 1. Birlik koddan o'zi qo'yiladi (18a)
+
+- **Bazaning birligi TNVED kodga qarab o'zi tanlanadi** — kg, dona, m², juft yoki litr. Jadvalda u «avto» deb ko'rinadi.
+- **VED birlikni o'zi o'zgartira oladi.** Tanlangan birlik endi saqlanadi, qatorda narx hali yozilmagan bo'lsa ham.
+  - Avval narxsiz qatorda tanlangan birlik «Saqlash»dan keyin yo'qolib, yana «avto»ga qaytardi. Siz aytgan «o'zgartirib bo'lmayabti»ning ikkinchi sababi shu edi.
+- **Narx yozilgan qatorning kodi o'zgarsa,** narx qaysi birlikda yozilgan bo'lsa, o'sha birlik qoladi (A2). Tizim «birlikni tekshiring» deb shu qatorni ko'rsatadi. Narxi yo'q qatorning birligi yangi kodga o'zi o'tadi.
+- **Qonun juft, litr yoki m² bo'yicha bo'lgan kodda** baza faqat dona, kg, m³ yoki qonunning o'z birligida bo'lishi mumkin. Boshqasi tanlansa, jadval ⚠ ko'rsatadi va qator nomi bilan aytiladi. Qator o'zi o'zgartirilmaydi.
+- **Qonun kg, juft, litr yoki m² bo'yicha bo'lib, baza boshqa birlikda yozilsa,** blok ostida ogohlantirish chiqadi (A1). ✅ bosilganda u yozib qo'yiladi, muhrlashni to'xtatmaydi.
+  - Bilib qo'ying: qonunda faqat foiz (advalor), dona yoki sm³ bo'lgan kodlarda bunday ogohlantirish chiqmaydi. Ular bazaning birligini belgilamaydi — PP-3818 dagi 1 489 kodning 1 250 tasi shunday.
+
+### 2. Baza m³ (kub) bo'yicha (19a)
+
+- **Bazani «$ / m³» qilib yozish mumkin.** Rastamojka qatorning kubiga qarab hisoblanadi. Kubni VED qatorga o'zi yozadi: so'rovdagi umumiy kub avtomatik olinmaydi (A3).
+- **Boj o'zgarmaydi:** PP-3818 da kub bo'yicha boj yo'q. Kub faqat bazani (tovar qiymatini) hisoblaydi.
+- **Bojxona faylidagi «м3» deklaratsiyalar endi o'qiladi** va 📥 tanlashda chiqadi. «куб см» va «см3» esa avvalgidek o'qilmaydi — ular kubometr emas.
+  - Allaqachon yuklangan choraklarda «м3» qatorlari tushmagan. Ular faqat **yangi chorak fayli** yuklanganda keladi. Faylingizda kg va donadan boshqa birliklar taxminan 1 %, shuning uchun bunday takliflar kam bo'ladi.
+
+### 3. Sotuvchi yozgan birlik (20a)
+
+- **Sotuvchi so'rovda yozgan «шт / кг» so'zi** VED jadvalida karobka soni ostida kulrang bo'lib turadi. U faqat ko'rinadi, hech qaysi hisobga kirmaydi.
+
+### 4. 📥 Fayldan baza tanlash
+
+- **Ro'yxat qatorning birligiga qarab tartiblanadi.** Dona tovarda og'irligi yaqin deklaratsiyalar yuqorida (sizning qoidangiz).
+- **Bu qatorga to'g'ri kelmaydigan birlikdagi deklaratsiya** ro'yxatda ko'rinadi, lekin tanlab bo'lmaydi va nima uchunligi yoziladi.
+
+### 5. Telefonda xavfsizlik
+
+- **Internet uzilib «Saqlash» ikki marta ketsa,** yangi tovar ikki marta yozilmaydi — tizim uni taniydi.
+- **Server javob bermasa,** xato sahifasi o'rniga «saqlanmadi» degan yozuv chiqadi.
+- **Telefonda saqlanmagan o'zgarish bor paytda** ✅ bosilmaydi («Avval saqlang»), kompyuterdagidek.
+
+### 6. Tayyor kod ikki marta tekshirildi
+
+Besh tomondan tekshiruv, keyin eski ma'lumotlar bilan solishtirish va haqiqiy brauzerda yurib chiqish. Beshta kamchilik topildi va tuzatildi:
+
+- **Kodi yozilgan, lekin hali guruhga tushmagan qator** (bot orqali kelgan so'rovlarning ko'pi shunday) «шт» ko'rsatardi. «Saqlash»dan keyin esa birlik jimgina kodning birligiga (kg yoki m²) almashardi. Endi jadval o'sha kodning birligini ko'rsatadi; kod hali yangi bo'lsa — «avto».
+- **Internet uzilib qayta saqlanganda** oradagi o'zgartirish (masalan, bazani 10 dan 12 ga tuzatish) yo'qolardi. Endi qo'llanadi.
+- **Ro'yxat qo'yilib, matni tuzatilib qayta bosilsa,** tovarlar ikki marta tushardi. Endi tushmaydi.
+- **Narx o'chirilsa, birlik «avto»ga qaytadi.** Avval eski qatorning birligi «VED tanlagan» bo'lib qolib, fayldan to'ldirish o'sha birlikdan boshqasini taklif qilmay qo'yardi. Narx yozilmagan qatorda VED tanlagan birlik esa saqlanib qoladi.
+- **Blok ostidagi «birlik qonundagidan boshqa» ogohlantirishi** endi saqlashdan oldin ham yozilayotgan qiymatga qarab chiqadi.
+
+### O'rnatish (deploy)
+
+Odatdagi tartib — `docs/UPDATE.md` (avval zaxira nusxa, keyin `git pull`, keyin qurish). Shu raunddan keyin qo'shimcha:
+
+1. **Migratsiyalar soni 126 bo'lishi shart.** Kam chiqsa, `migrate` konteynerining chiqishini o'qing (UPDATE.md §4).
+   - Migratsiya bojxona qatorlarini bir marta tekshirib chiqadi: 2 million qatorda 2,4 soniya ketdi.
+2. **`/api/version`** — yangi kod ishlayotganini tasdiqlaydi.
+
 ## Telegramdan topshiriq, VED tarixi va «Готово», VED sotuvchi kartasida — 2026-10-06
 
 **Migratsiya 0124.** O'rnatgandan keyin migratsiyalar soni **125** bo'lishi kerak.

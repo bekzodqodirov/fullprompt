@@ -14,12 +14,28 @@
 
 export type CalcSectionName = 'yolkira' | 'rastamojka' | 'podklyuch';
 /**
- * What a baza is PER. 'unit' keeps meaning dona — live rows and sealed
- * breakdowns store that spelling forever, and a second spelling of one
- * meaning is a trap. sm3 is deliberately absent: nothing is VALUED per cm³
- * of displacement — a vehicle's baza is its invoice price per dona (0092).
+ * What a baza is PER — the ONE list (0125). 'unit' keeps meaning dona: live
+ * rows and sealed breakdowns store that spelling forever, and a second
+ * spelling of one meaning is a trap. sm3 is deliberately absent: nothing is
+ * VALUED per cm³ of displacement — a vehicle's baza is its invoice price per
+ * dona (0092).
+ *
+ * 'm3' joined in 0125 (his 19a): it reads the row's own `volume_m3`. It is a
+ * BAZA unit and never a DUTY one — PP-3818 writes no duty per m³ — so
+ * `DutyUnit` below does not grow it, and the specific half of a duty keeps
+ * counting in the law's own unit whatever the baza is per.
+ *
+ * Every other copy of this vocabulary (the schema CHECKs, the zero-import
+ * warnings file, the customs file's units) is held to this array by
+ * `tests/unit/basis-vocabulary.test.ts`.
  */
-export type BazaBasis = 'unit' | 'kg' | 'juft' | 'litr' | 'm2';
+export const BAZA_BASES = ['unit', 'kg', 'm3', 'm2', 'juft', 'litr'] as const;
+export type BazaBasis = (typeof BAZA_BASES)[number];
+
+/** A basis string off a form, a URL or the database. */
+export function isBazaBasis(value: unknown): value is BazaBasis {
+  return typeof value === 'string' && (BAZA_BASES as readonly string[]).includes(value);
+}
 
 /**
  * Where a baza came from. 'import' joined the pair in 0094 — the quarterly
@@ -62,6 +78,12 @@ export interface PricedItem {
   label: string;
   quantity: number | null;
   weightKg: number | null;
+  /**
+   * The row's own cubic metres — what an m³ baza reads (0125). Required-
+   * nullable like the pair below (#790): every constructor must answer, so
+   * one that forgets is a compile error and not a silent «o'lchov yo'q».
+   */
+  volumeM3: number | null;
   bazaUsd: number | null;
   bazaBasis: BazaBasis | null;
   /**
@@ -81,11 +103,13 @@ export type MeasureUnit = 'juft' | 'litr' | 'm2' | 'sm3';
  * ONE resolver for «how much of this item, in that unit» — the value loop
  * and the specific-duty half both ask it, so a tile's $1/m² baza and its
  * min-$1/m² duty floor can never disagree about what 200 m² means.
- * 'unit' (the baza spelling) and 'dona' (the law's) are one measure.
+ * 'unit' (the baza spelling) and 'dona' (the law's) are one measure; 'm3'
+ * is the row's own volume and can only ever be a BAZA's question.
  */
 export function itemMeasure(item: PricedItem, unit: BazaBasis | DutyUnit): number | null {
   if (unit === 'kg') return item.weightKg;
   if (unit === 'unit' || unit === 'dona' || unit === '1000_dona') return item.quantity;
+  if (unit === 'm3') return item.volumeM3;
   return item.measureUnit === unit ? item.measureQty : null;
 }
 

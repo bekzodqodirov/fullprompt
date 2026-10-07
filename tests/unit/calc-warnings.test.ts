@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   aiRateTaken,
+  lawPinnedBasis,
   sealCounters,
   unchangedFromProposal,
   warningsForGroup,
   type WarningGroupFacts,
 } from '@/modules/wms/calc/warnings';
+import { defaultBasisFor } from '@/modules/wms/calc/basis';
 
 const base: WarningGroupFacts = {
   dictionaryRates: null,
@@ -16,6 +18,7 @@ const base: WarningGroupFacts = {
   aiProposed: false,
   aiConfidence: null,
   aiDutyPct: null,
+  dutyUnit: null,
   items: [],
 };
 
@@ -273,5 +276,51 @@ describe('the three counters a seal carries away', () => {
       aiBlindGroups: 0,
       aiRateTakenGroups: 0,
     });
+  });
+});
+
+describe('0125 A1: basis_not_law — a priced row per another unit than the law counts in', () => {
+  const priced = (
+    bazaBasis: WarningGroupFacts['items'][number]['bazaBasis'],
+    bazaUsd: number | null = 8,
+  ) => ({
+    hasDictionaryBaza: false,
+    bazaSource: 'typed' as const,
+    bazaUsd,
+    bazaBasis,
+    dictionaryBaza: null,
+  });
+
+  it('fires when the law PINS a unit and a priced row is per another', () => {
+    expect(warningsForGroup({ ...base, dutyUnit: 'juft', items: [priced('kg')] })).toContain('basis_not_law');
+    expect(warningsForGroup({ ...base, dutyUnit: 'kg', items: [priced('m3')] })).toContain('basis_not_law');
+    expect(warningsForGroup({ ...base, dutyUnit: 'm2', items: [priced('unit')] })).toContain('basis_not_law');
+  });
+
+  it('is silent when the row is per the law’s own unit, or carries no price yet', () => {
+    expect(warningsForGroup({ ...base, dutyUnit: 'juft', items: [priced('juft')] })).not.toContain(
+      'basis_not_law',
+    );
+    // An unpriced row's chosen unit prices nothing — not a confirmed number.
+    expect(warningsForGroup({ ...base, dutyUnit: 'juft', items: [priced('kg', null)] })).not.toContain(
+      'basis_not_law',
+    );
+  });
+
+  it('is SILENT on an advalor code and on a per-dona law — they pin no baza unit', () => {
+    // Stated to him: on these (1,250 of 1,489 rows) an override is free and
+    // this list does not watch it.
+    for (const dutyUnit of [null, 'dona', '1000_dona', 'sm3']) {
+      expect(
+        warningsForGroup({ ...base, dutyUnit, items: [priced('kg'), priced('m3')] }),
+      ).not.toContain('basis_not_law');
+    }
+  });
+
+  it('the restated pin agrees with defaultBasisFor over every law unit (the zero-import rule)', () => {
+    for (const dutyUnit of [null, 'kg', 'dona', '1000_dona', 'sm3', 'm2', 'juft', 'litr']) {
+      const law = defaultBasisFor({ dutyUnit });
+      expect(lawPinnedBasis(dutyUnit), String(dutyUnit)).toBe(law === 'unit' ? null : law);
+    }
   });
 });

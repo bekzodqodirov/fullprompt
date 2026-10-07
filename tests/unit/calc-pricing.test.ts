@@ -64,6 +64,7 @@ const item = (over: Partial<PricedItem> = {}): PricedItem => ({
   label: 'monitor 24"',
   quantity: 100,
   weightKg: 500,
+  volumeM3: null,
   bazaUsd: 20,
   bazaBasis: 'unit',
   measureUnit: null,

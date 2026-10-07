@@ -4,6 +4,8 @@ import { revalidatePath } from 'next/cache';
 import { authorize, AuthError, getActor } from '@/modules/platform/rbac/authorize';
 import { requestMeta } from '@/modules/platform/auth/session';
 import { isServerBehind } from '@/modules/platform/db/errors';
+import { isBehindOnBasisCheck } from '@/modules/wms/calc/basis';
+import type { BazaBasis } from '@/modules/wms/calc/pricing';
 import { logger } from '@/modules/platform/logger';
 import {
   CalcError,
@@ -67,6 +69,10 @@ export interface TableFormState {
   measuresCleared?: number[];
   measuresDropped?: number[];
   basisSuspect?: number[];
+  /** Rows whose unit the law cannot hold (0125) — named, never rewritten. */
+  basisConflict?: number[];
+  /** New rows a retry carried again and the server already held (phase 0). */
+  alreadySaved?: number;
   /** Rows the customs import filled — the bar says «📥 N qator». */
   importFilled?: number[];
   /** Rows a SEALED calculation answered — the bar says «🧠 N qator». Kept
@@ -107,6 +113,12 @@ async function run(
     // this module's columns landed in 0085 (#472's rule).
     if (isServerBehind(err)) {
       logger.error({ err }, '[calc] server behind — migration 0085 not applied');
+      return { error: 'server_behind' };
+    }
+    // …and 0125's widened basis CHECKs (the dictionary's m³ baza comes
+    // through here): by constraint NAME, never a blanket 23514.
+    if (isBehindOnBasisCheck(err)) {
+      logger.error({ err }, '[calc] server behind — migration 0125 not applied');
       return { error: 'server_behind' };
     }
     throw err;
@@ -301,6 +313,10 @@ async function runTable(
       logger.error({ err }, '[calc] server behind — migration 0085 not applied');
       return { error: 'server_behind' };
     }
+    if (isBehindOnBasisCheck(err)) {
+      logger.error({ err }, '[calc] server behind — migration 0125 not applied');
+      return { error: 'server_behind' };
+    }
     throw err;
   }
   revalidatePath(revalidate);
@@ -314,6 +330,8 @@ async function runTable(
     measuresCleared: result.measuresCleared,
     measuresDropped: result.measuresDropped,
     basisSuspect: result.basisSuspect,
+    basisConflict: result.basisConflict,
+    alreadySaved: result.alreadySaved,
     importFilled: result.importFilled,
     memoryFilled: result.memoryFilled,
   };
@@ -339,6 +357,8 @@ export async function deleteItemAction(id: string, itemId: string): Promise<Tabl
       measuresCleared: [],
       measuresDropped: [],
       basisSuspect: [],
+      basisConflict: [],
+      alreadySaved: 0,
       importFilled: [],
       memoryFilled: [],
     };
@@ -522,7 +542,7 @@ export async function saveBazaAction(input: {
   label: string;
   tnvedCode: string;
   bazaUsd: number;
-  basis: 'unit' | 'kg' | 'juft' | 'litr' | 'm2';
+  basis: BazaBasis;
   effectiveDate: string;
 }): Promise<CalcFormState> {
   return run(

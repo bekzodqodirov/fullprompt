@@ -69,7 +69,19 @@ export function CalcWorkspace({
     setError(result.error ?? null);
     if (!result.error) router.refresh();
   };
-  const act = (work: () => Promise<CalcFormState>) => startTransition(async () => settle(await work()));
+  // A THROWN action — the network gone mid-press on a phone, a server that
+  // died between two answers — is a sentence, never the error page: inside
+  // an async transition React 19 hands an uncaught rejection to the nearest
+  // error boundary, and every ✅, the certificate, the zone, the extras and
+  // the seal ride this one function (phase 0 of the phone round).
+  const act = (work: () => Promise<CalcFormState>) =>
+    startTransition(async () => {
+      try {
+        settle(await work());
+      } catch {
+        setError('save_failed');
+      }
+    });
 
   return (
     <div className="space-y-3" data-testid="calc-workspace">

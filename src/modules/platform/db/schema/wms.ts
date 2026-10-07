@@ -2722,7 +2722,8 @@ export const calcRequestItems = pgTable(
     index('calc_request_items_group_idx').on(t.groupId),
     check(
       'calc_items_baza_basis_check',
-      sql`${t.bazaBasis} IS NULL OR ${t.bazaBasis} IN ('unit', 'kg', 'juft', 'litr', 'm2')`,
+      // 'm3' since 0125 (his 19a): an m³ baza reads the row's own volume_m3.
+      sql`${t.bazaBasis} IS NULL OR ${t.bazaBasis} IN ('unit', 'kg', 'm3', 'm2', 'juft', 'litr')`,
     ),
     check(
       'calc_items_baza_source_check',
@@ -2775,7 +2776,7 @@ export const calcBazas = pgTable(
   (t) => [
     // No sm3 on purpose: nothing is VALUED per cm³ of displacement — a
     // vehicle's baza is its invoice price per dona (0092).
-    check('calc_bazas_basis_check', sql`${t.basis} IN ('unit', 'kg', 'juft', 'litr', 'm2')`),
+    check('calc_bazas_basis_check', sql`${t.basis} IN ('unit', 'kg', 'm3', 'm2', 'juft', 'litr')`),
     check('calc_bazas_value_check', sql`${t.bazaUsd} > 0`),
     uniqueIndex('calc_bazas_key_date_unique').on(t.productKey, t.effectiveDate),
   ],
@@ -3524,7 +3525,7 @@ export const customsImportRows = pgTable(
   (t) => [
     index('customs_import_rows_batch_idx').on(t.batchId),
     index('customs_import_rows_code_idx').on(t.batchId, t.tnvedCode),
-    check('customs_import_rows_unit_check', sql`${t.unit} IN ('kg', 'dona', 'm2', 'juft', 'litr')`),
+    check('customs_import_rows_unit_check', sql`${t.unit} IN ('kg', 'dona', 'm3', 'm2', 'juft', 'litr')`),
     check(
       'customs_import_rows_price_check',
       sql`${t.pricePerUnitUsd} > 0 AND ${t.pricePerUnitUsd} <> 'NaN'::numeric`,

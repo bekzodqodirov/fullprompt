@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import type { CalcGoodsItem, CalcGoodsSheet, CalcSheet } from '@/modules/wms/calc/sheet';
+import { basisLabel } from '@/modules/wms/calc/basis';
 
 /**
  * «Tovarlar ▾» on a history row (the owner's 7a): the full goods list, frozen
@@ -23,6 +24,10 @@ type Loaded =
 const usd = (n: number | null) => (n === null ? '—' : `$${n.toFixed(2)}`);
 const qty = (n: number | null, unit: string | null) =>
   n === null ? null : `${Math.round(n * 1000) / 1000}${unit ? ` ${unit}` : ''}`;
+/** «$40/m³», with the screen's own unit word; an unpriced row is «—» and no
+ * unit at all (a unit can stand without a price since 0125). */
+const bazaText = (bazaUsd: number | null, basis: string | null, perUnit: string) =>
+  bazaUsd === null ? '—' : basis ? `$${bazaUsd}/${basisLabel(basis, perUnit)}` : `$${bazaUsd}`;
 
 export function RegistryGoods({ requestId, summary }: { requestId: string; summary: string }) {
   const t = useTranslations('calc');
@@ -94,9 +99,10 @@ export function RegistryGoods({ requestId, summary }: { requestId: string; summa
                       {[
                         qty(item.quantity, item.unit),
                         qty(item.kg, 'kg'),
-                        item.bazaUsd === null
-                          ? `${t('regGoodsBaza')}: —`
-                          : `${t('regGoodsBaza')}: $${item.bazaUsd}${item.basis ? `/${item.basis}` : ''}`,
+                        // The kub beside an m³ price — a «$40/m³» with no
+                        // volume next to it cannot be checked by anyone.
+                        qty(item.m3, 'm³'),
+                        `${t('regGoodsBaza')}: ${bazaText(item.bazaUsd, item.basis, t('perUnit'))}`,
                       ]
                         .filter(Boolean)
                         .map((part) => ` · ${part}`)
@@ -149,9 +155,8 @@ function GoodsItems({ items }: { items: CalcGoodsItem[] }) {
             item.tnvedCode ?? '—',
             qty(item.quantity, item.unit),
             qty(item.kg, 'kg'),
-            item.bazaUsd === null
-              ? `${t('regGoodsBaza')}: —`
-              : `${t('regGoodsBaza')}: $${item.bazaUsd}${item.basis ? `/${item.basis}` : ''}`,
+            qty(item.m3, 'm³'),
+            `${t('regGoodsBaza')}: ${bazaText(item.bazaUsd, item.basis, t('perUnit'))}`,
           ]
             .filter(Boolean)
             .map((part) => ` · ${part}`)

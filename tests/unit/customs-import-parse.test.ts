@@ -99,7 +99,7 @@ describe('the unit words', () => {
 });
 
 describe('which of the file’s units may price a row', () => {
-  const both = { hasWeight: true, hasQuantity: true };
+  const both = { chosen: null, hasWeight: true, hasQuantity: true, hasVolume: false };
 
   it('a law that PINS a unit admits that one and nothing else', () => {
     // A per-kg price landing on a per-m² row is off by the weight of the
@@ -115,8 +115,8 @@ describe('which of the file’s units may price a row', () => {
     // unit at all — asking per-dona alone would have refused three quarters
     // of every quarter's file.
     expect(unitsForRow({ dutyUnit: null, ...both })).toEqual(['kg', 'dona']);
-    expect(unitsForRow({ dutyUnit: null, hasWeight: true, hasQuantity: false })).toEqual(['kg']);
-    expect(unitsForRow({ dutyUnit: null, hasWeight: false, hasQuantity: true })).toEqual(['dona']);
+    expect(unitsForRow({ dutyUnit: null, chosen: null, hasWeight: true, hasQuantity: false, hasVolume: false })).toEqual(['kg']);
+    expect(unitsForRow({ dutyUnit: null, chosen: null, hasWeight: false, hasQuantity: true, hasVolume: false })).toEqual(['dona']);
   });
 
   it('a law that COUNTS pieces takes pieces first, and still allows kilograms', () => {
@@ -127,7 +127,86 @@ describe('which of the file’s units may price a row', () => {
   });
 
   it('a row stating neither a weight nor a count gets no suggestion at all', () => {
-    expect(unitsForRow({ dutyUnit: null, hasWeight: false, hasQuantity: false })).toEqual([]);
+    expect(unitsForRow({ dutyUnit: null, chosen: null, hasWeight: false, hasQuantity: false, hasVolume: false })).toEqual([]);
+  });
+
+  it('0125: cubic metres come LAST, and only when the row states a kub', () => {
+    const all = { chosen: null, hasWeight: true, hasQuantity: true, hasVolume: true };
+    expect(unitsForRow({ dutyUnit: null, ...all })).toEqual(['kg', 'dona', 'm3']);
+    expect(unitsForRow({ dutyUnit: 'dona', ...all })).toEqual(['dona', 'kg', 'm3']);
+    // A line stating ONLY its volume is priceable per m³ — it used to get
+    // no suggestion at all.
+    expect(
+      unitsForRow({ dutyUnit: null, chosen: null, hasWeight: false, hasQuantity: false, hasVolume: true }),
+    ).toEqual(['m3']);
+    // A pinning law still admits its own unit and nothing else.
+    expect(unitsForRow({ dutyUnit: 'kg', ...all })).toEqual(['kg']);
+  });
+
+  it('0125: the VED’s CHOICE is the only answer — and a choice the law cannot hold gets none', () => {
+    const all = { hasWeight: true, hasQuantity: true, hasVolume: true };
+    expect(unitsForRow({ dutyUnit: null, chosen: 'kg', ...all })).toEqual(['kg']);
+    expect(unitsForRow({ dutyUnit: null, chosen: 'm3', ...all })).toEqual(['m3']);
+    // A chosen dona on a per-KG law: the choice wins over the law's pin.
+    expect(unitsForRow({ dutyUnit: 'kg', chosen: 'unit', ...all })).toEqual(['dona']);
+    expect(unitsForRow({ dutyUnit: null, chosen: 'm2', ...all })).toEqual(['m2']);
+    // m² on a juft code is the one combination a row cannot hold.
+    expect(unitsForRow({ dutyUnit: 'juft', chosen: 'm2', ...all })).toEqual([]);
+  });
+
+  /**
+   * THE invariant the save's order rests on: the memory and import fills
+   * run AFTER the measure pass, so a fill landing an m² basis the pass did
+   * not already ask for would strand an m² baza with no m² count — in the
+   * very save that dropped it. Safe only while no extended unit is ever
+   * offered unless the law pins it or the VED chose it.
+   */
+  it('0125: an extended unit is offered only when the law pins it or the VED chose it', () => {
+    const laws = [null, 'kg', 'dona', '1000_dona', 'sm3', 'm2', 'juft', 'litr'] as const;
+    const figures = [true, false];
+    const extended = new Set(['m2', 'juft', 'litr']);
+    for (const dutyUnit of laws) {
+      for (const hasWeight of figures) {
+        for (const hasQuantity of figures) {
+          for (const hasVolume of figures) {
+            const units = unitsForRow({ dutyUnit, chosen: null, hasWeight, hasQuantity, hasVolume });
+            for (const u of units) {
+              if (extended.has(u)) expect(u, `${dutyUnit} offered ${u} unasked`).toBe(dutyUnit);
+            }
+          }
+        }
+      }
+    }
+  });
+});
+
+describe('0125: the file’s cubic metres', () => {
+  it('maps every spelling of a cubic metre his file can write', () => {
+    expect(mapUnit('м3')).toBe('m3');
+    expect(mapUnit('М3')).toBe('m3');
+    expect(mapUnit('м³')).toBe('m3');
+    expect(mapUnit('m3')).toBe('m3');
+    expect(mapUnit('M³')).toBe('m3');
+    expect(mapUnit('куб.м')).toBe('m3');
+    expect(mapUnit('куб. м.')).toBe('m3');
+    expect(mapUnit('Кубометр')).toBe('m3');
+  });
+
+  it('cubic CENTIMETRES stay out — a displacement read as m³ is off by a million', () => {
+    expect(mapUnit('куб см')).toBeNull();
+    expect(mapUnit('куб.см')).toBeNull();
+    expect(mapUnit('см3')).toBeNull();
+    expect(mapUnit('см³')).toBeNull();
+    expect(mapUnit('куб')).toBeNull();
+  });
+
+  it('the unit ↔ basis maps cover every basis — m³ both ways', () => {
+    expect(BASIS_FOR_UNIT.m3).toBe('m3');
+    expect(UNIT_FOR_BASIS.m3).toBe('m3');
+    expect(Object.keys(UNIT_FOR_BASIS).sort()).toEqual(['juft', 'kg', 'litr', 'm2', 'm3', 'unit']);
+    for (const [basis, unit] of Object.entries(UNIT_FOR_BASIS)) {
+      expect(BASIS_FOR_UNIT[unit]).toBe(basis);
+    }
   });
 });
 

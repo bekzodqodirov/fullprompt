@@ -2484,9 +2484,39 @@ partial, all fixed): cancel had no bound gate; task links are chosen per
 RECIPIENT (`taskLinkFor(task, recipient)` — no 🔗 rather than a dead one);
 the quote lock holds the number the card shows while its writer stands;
 `TaskSources` carries late parts and re-sent sources. STILL OWED to him: Q17
-(VED writes on the deal card) and Q18-21 (which units a row may offer).
+(VED writes on the deal card) and Q18-21 (which units a row may offer) — he
+answered them 17a 18a 19a 20a 21b, see the next round.
 
-**Latest migration: 0124** (`task_origin_calc_note`, `when` …103; ledger must reach **125**). Before
+**Round — the baza unit: «avto», chosen, m³ (2026-10-07; DECISIONS
+#1283-#1290; migration 0125 `calc_basis_m3` — ledger must reach 126).** His
+18a 19a 20a (21b, the phone's unit picker, ships with the phone-calc round;
+17a waits on the G questions sent the same evening, together with the phone
+calc, baza statistics, debt release with a comment, staff chat and the price
+channel — the A-G list, ⭐ defaults). m³ is a BAZA unit only (`BAZA_BASES`,
+reads `volume_m3`; PP-3818 has no per-m³ duty, so DutyUnit/the pair/the
+duty_unit CHECKs are untouched); 0125 widens three CHECKs (2.4 s at 2M import
+rows) and a 23514 on the two calc ones is `server_behind` BY NAME. The pair
+follows the law, then the basis (`pairUnitFor`); the one refusal is a second
+pair unit on a juft/litr/m²/sm³ law (`basisConflicts`, named, never
+rewritten). «avto» = a null basis stamped from the FINAL group in the measure
+pass; a priced row keeps its unit (A2, `basisSuspect` names re-lawed priced
+rows); a unit chosen without a price stands; `unitsForRow` takes `chosen` and
+`hasVolume` as REQUIRED and never offers an extended unit unless the law pins
+it or the VED chose it; `basis_not_law` (A1) is recorded by ✅ and silent on
+1,250 of 1,489 laws. One `screenRowOf` (calc/screen-row.ts) for the select,
+the O'lchov line, the live figure, the save and the self-clean; one
+`postedBasis` for what a baza edit posts; one `basisNotLaw` for the server and
+the live footer. Phone phase 0: a screen-minted row id makes a retry an EDIT
+of the stored row (never a second row, never a dropped correction), a paste
+keeps its ids per line (`calc/paste-ids.ts`), `act()` catches, the phone ✅
+waits on unsaved drafts. Reviewed twice before the merge (#1290): five lenses,
+then a DIFFERENTIAL run of the old engine against the new on the old CHECK's
+data shapes, a spec critic and a real browser walk — five defects, all
+red-proven; the differential found the one the readers could not
+(«differs from today's default» read as «chosen» on a cleared price).
+
+**Latest migration: 0125** (`calc_basis_m3`, `when` …104; ledger must reach **126**). Before
+it: 0124 (`task_origin_calc_note`, `when` …103). Before
 it: 0123 (`lot_check`, `when` …102). Before
 it: 0122 (`lot_composition`, `when` …101). Before
 it: 0121 (`batch_rename`, `when` …100). Before
@@ -2615,7 +2645,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **125** since 0124 (124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **126** since 0125 (125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
 and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read
@@ -2623,7 +2653,7 @@ and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read
 was asked for and NOT quoted; PR #106 (0121) deployed 2026-09-30 evening («Hozir sistema
 yaxshi ishlayabti», count not quoted either); PR #109 (0122) was asked about and NOT
 answered, so COUNT FIRST on the next deploy: it must read
-**125** (anything less means a migration did not land — read the `migrate`
+**126** (anything less means a migration did not land — read the `migrate`
 container's own output; from 113 the whole 0113-0120 set applies and EVERY
 container must be recreated once: `--profile https --profile telegram up -d
 --build`, compose gained `init`, a healthcheck, log caps and a postgres flag);

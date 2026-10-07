@@ -12,16 +12,26 @@
  * from a unit test with no database, no storage and no Excel.
  */
 
-/** The five units this system can price. The file's own words map onto them. */
-export type ImportUnit = 'kg' | 'dona' | 'm2' | 'juft' | 'litr';
+/**
+ * The six units this system can price. The file's own words map onto them.
+ * One per baza basis (dona is the file's word for the basis 'unit'), held to
+ * `BAZA_BASES` by `tests/unit/basis-vocabulary.test.ts` — this file stays
+ * zero-import, so the union is restated rather than imported.
+ */
+export type ImportUnit = 'kg' | 'dona' | 'm3' | 'm2' | 'juft' | 'litr';
 
 /**
  * The file's unit words → ours. Measured on his sample: кг 74 %, шт 25 %,
- * м2 / пар / л under half a percent between them.
+ * м2 / пар / л under half a percent between them — and every other unit, м3
+ * included, at most about 1 % (docs/VED-IMPORT-AI.md). m³ joined in 0125
+ * (his 19a); quarters uploaded before it skipped those lines as
+ * `unknown_unit` and only a NEW upload brings them in.
  *
  * Anything else is SKIPPED and counted, never guessed: «компл» could be a
  * set of four or of four hundred, and a wrong unit prices the whole line
- * wrong while looking perfectly filled in.
+ * wrong while looking perfectly filled in. CUBIC CENTIMETRES stay out on
+ * purpose — «куб см», «см3» — because nothing is valued per cm³ (#868), and
+ * a vehicle's displacement read as cubic metres is off by a million.
  */
 const UNIT_WORDS: Record<string, ImportUnit> = {
   кг: 'kg',
@@ -35,6 +45,13 @@ const UNIT_WORDS: Record<string, ImportUnit> = {
   'м²': 'm2',
   m2: 'm2',
   'кв м': 'm2',
+  // «куб.м» normalises to «куб м» (dots and spaces fold to one space).
+  м3: 'm3',
+  'м³': 'm3',
+  m3: 'm3',
+  'm³': 'm3',
+  'куб м': 'm3',
+  кубометр: 'm3',
   пар: 'juft',
   пара: 'juft',
   juft: 'juft',

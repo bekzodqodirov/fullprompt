@@ -3536,7 +3536,8 @@
       "aiRateTaken": "AI stavkasi narxga ketdi",
       "rateNoted": "lug'at stavkasi izoh bilan",
       "bazaFromImport": "Baza importdan (taxmin)",
-      "bazaFromMemory": "Baza muhrlangan hisobdan"
+      "bazaFromMemory": "Baza muhrlangan hisobdan",
+      "basisNotLaw": "Baza qonun birligida emas"
     },
     "refusal": {
       "customsByClient": "Mijoz o'zi rastamojka qildi",
@@ -3608,13 +3609,17 @@
       "measureCleared": "O'lchov tozalandi (birlik o'zgardi), qator",
       "measureDropped": "O'lchov olib tashlandi (kod talab qilmaydi), qator",
       "measureFor": "O'lchov ({unit}):",
-      "measureGhost": "O'lchov (kod juft/litr/m²/sm³ talab qilsa):",
+      "measureGhost": "O'lchov (kod yoki birlik m²/juft/litr/sm³ talab qilsa):",
       "sm3Hint": "jami sm³ = dona × motor hajmi",
       "rateNoted": "qonunda izoh bor",
       "savedFigures": "saqlangan raqamlar",
       "basisSuspect": "birligini tekshiring (qonun boshqa birlikda o‘lchaydi) — qator",
       "importFilled": "importdan to‘ldirilgan baza: {count} ta, qator",
-      "memoryFilled": "muhrlangan hisobdan to‘ldirilgan baza: {count} ta, qator"
+      "memoryFilled": "muhrlangan hisobdan to‘ldirilgan baza: {count} ta, qator",
+      "basisAuto": "avto",
+      "basisConflict": "birlik qonunga mos emas (qatorda bitta o‘lchov bo‘ladi) — qator",
+      "alreadySaved": "avval saqlangan edi: {count} qator",
+      "basisNotLaw": "qonun {unit} bo‘yicha o‘lchaydi — baza boshqa birlikda"
     },
     "editCargoFacts": "Yuk ma’lumotlarini o‘zgartirish",
     "importGuess": "importdan (taxmin)",
@@ -3719,7 +3724,8 @@
     "kartaHint": "Sotuvchining kartasi — faqat o‘qish uchun. Savolni lentaga yozing, sotuvchi shu yerda javob beradi.",
     "kartaBack": "Hisob-kitobga qaytish",
     "kartaWonDeal": "Lid bitimga aylangan — hisob-kitob bitimda:",
-    "sellerGuess": "Sotuvchi yozgan taxmin"
+    "sellerGuess": "Sotuvchi yozgan taxmin",
+    "importConflict": "{unit} bo‘lmaydi: qonun {law} bo‘yicha"
   },
   "partners": {
     "title": "Kontragentlar",
