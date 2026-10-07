@@ -995,16 +995,16 @@ describe('I13 — the panel and the broom (review fixes)', () => {
 
   it('removals that fail for ever in dead channels never crowd a leaver of the LIVE channel out of the sweep', async () => {
     const dead = Array.from({ length: 50 }, (_, i) => BigInt(`-10077${SUFFIX}${String(i).padStart(3, '0')}`));
-    await db.insert(priceChannelMembers).values(
-      dead.map((chatId) => ({ chatId, tgUserId: BigInt(TG.colleague3), userId: colleague3Id, approvedAt: sql`now() - interval '1 day'` })),
-    );
-    await db
-      .insert(priceChannelMembers)
-      .values({ chatId: BigInt(CHAT), tgUserId: BigInt(TG.colleague3), userId: colleague3Id })
-      .onConflictDoUpdate({
-        target: [priceChannelMembers.chatId, priceChannelMembers.tgUserId],
-        set: { removedAt: null, removeReason: null, approvedAt: new Date() },
-      });
+    // The live row goes in LAST, physically: VACUUM FULL leaves no free slot to
+    // reuse and one statement appends in order, so a sweep with no ORDER BY
+    // (the defect) deterministically fills its batch with the dead fifty
+    // (#525 — a nondeterministic bug must be made to fail on demand).
+    await db.delete(priceChannelMembers).where(eq(priceChannelMembers.userId, colleague3Id));
+    await db.execute(sql`VACUUM FULL price_channel_members`);
+    await db.insert(priceChannelMembers).values([
+      ...dead.map((chatId) => ({ chatId, tgUserId: BigInt(TG.colleague3), userId: colleague3Id, approvedAt: sql`now() - interval '1 day'` })),
+      { chatId: BigInt(CHAT), tgUserId: BigInt(TG.colleague3), userId: colleague3Id },
+    ]);
     await db.update(users).set({ active: false }).where(eq(users.id, colleague3Id));
     override = (method, body) =>
       method === 'banChatMember' && String(body.chat_id) !== CHAT
