@@ -19,9 +19,7 @@ import {
 import {
   basesFor,
   basisLabel,
-  basisOnScreen,
   defaultBasisFor,
-  pairUnitFor,
   uniformBazaOf,
 } from '@/modules/wms/calc/basis';
 import { editBazaPair } from '@/modules/wms/calc/baza-draft';
