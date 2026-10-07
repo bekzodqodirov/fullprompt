@@ -41,7 +41,8 @@
       "reasonRequired": "需要填写原因",
       "stageNotFound": "阶段已删除 — 请刷新页面",
       "reasonNotListed": "原因必须从列表中选择",
-      "convertRequired": "“已成交”只能通过对话框：客户编号和交易"
+      "convertRequired": "“已成交”只能通过对话框：客户编号和交易",
+      "dealTermsOnly": "此操作由销售或管理员完成：开交易、阶段、价格、负责人和折扣。您填写货物明细、HS 编码和入库单。"
     },
     "moreActions": "更多操作",
     "notFilled": "未填写",
@@ -100,7 +101,7 @@
     "flowUnassignedPayments": "未指定账户的收款",
     "flowRecurringDue": "固定费用：已到付款日",
     "flowDocsPending": "未发单证给代理的车次",
-    "flowTnvedMissing": "无 HS 编码的商品",
+    "flowTnvedMissing": "缺少 HS 编码的交易",
     "flowCalcOpen": "待核算",
     "flowCalcLate": "逾期",
     "flowUnplacedCosts": "未指定账户的费用",
@@ -3049,6 +3050,10 @@
     "prevStage": "上一阶段",
     "nextStage": "下一阶段",
     "dragHint": "用鼠标拖动卡片 — 可更改阶段和顺序",
+    "boardReadOnly": "仅供查看：卡片由销售或管理员移动。",
+    "vedBoardTitle": "报关交易",
+    "tnvedMissingChip": "HS ❓",
+    "termsReadOnly": "阶段、价格、负责人和折扣由销售或管理员修改。",
     "mine": "我的",
     "all": "全部",
     "errors": {
@@ -3062,6 +3067,7 @@
       "reason_required": "请填写原因",
       "end_required": "请指明期限",
       "forbidden": "无权限",
+      "deal_terms_only": "此操作由销售或管理员完成：开交易、阶段、价格、负责人和折扣。您填写货物明细、HS 编码和入库单。",
       "validation": "请检查字段",
       "fx_missing": "该货币没有汇率",
       "discount_reason_required": "折扣需要填写原因",
@@ -3304,6 +3310,7 @@
     "errors": {
       "validation": "请检查字段",
       "forbidden": "无权限",
+      "deal_terms_only": "申请计算由销售发起。机器人里的「🧮 Hisoblatish」对所有员工开放。",
       "not_found": "未找到",
       "unauthenticated": "请重新登录",
       "too_many_items": "货物过多",
@@ -3580,6 +3587,7 @@
       "not_yours": "部分消息不属于此会话",
       "bad_section": "请选择类别",
       "forbidden": "无权限",
+      "deal_terms_only": "申请计算由销售发起。机器人里的「🧮 Hisoblatish」对所有员工开放。",
       "not_found": "未找到卡片",
       "note_taken": "已发送 — 请刷新页面",
       "server_behind": "服务器更新中，请稍后再试",

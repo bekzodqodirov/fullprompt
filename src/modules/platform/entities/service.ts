@@ -39,6 +39,12 @@ export interface ResolvedEntity {
   label: string | null;
   /** ANY-of; empty = any signed-in member of staff. */
   writePermissions: string[];
+  /**
+   * Who may READ the object's custom-field files — ANY-of, empty = everyone.
+   * A registry spec's own `readPermissions`, else its write list; an
+   * owner-born row has one list, so the two are the same.
+   */
+  readPermissions: string[];
   custom: boolean;
 }
 
@@ -51,6 +57,7 @@ export async function resolveEntity(code: string): Promise<ResolvedEntity | unde
       labelKey: spec.labelKey,
       label: null,
       writePermissions: spec.writePermissions,
+      readPermissions: spec.readPermissions ?? spec.writePermissions,
       custom: false,
     };
   }
@@ -58,13 +65,15 @@ export async function resolveEntity(code: string): Promise<ResolvedEntity | unde
     where: and(eq(customEntities.code, code), eq(customEntities.active, true)),
   });
   if (!row || !row.isCustom) return undefined;
+  const writePermissions = Array.isArray(row.writePermissions)
+    ? (row.writePermissions as string[])
+    : [];
   return {
     code: row.code,
     labelKey: null,
     label: row.label ?? row.code,
-    writePermissions: Array.isArray(row.writePermissions)
-      ? (row.writePermissions as string[])
-      : [],
+    writePermissions,
+    readPermissions: writePermissions,
     custom: true,
   };
 }

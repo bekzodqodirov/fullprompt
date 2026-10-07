@@ -41,7 +41,8 @@
       "reasonRequired": "Sababini yozish kerak",
       "stageNotFound": "Etap o'chirilgan — sahifani yangilang",
       "reasonNotListed": "Sabab ro'yxatdan tanlanishi kerak",
-      "convertRequired": "«Yutildi» — faqat oyna orqali: mijoz kodi va bitim"
+      "convertRequired": "«Yutildi» — faqat oyna orqali: mijoz kodi va bitim",
+      "dealTermsOnly": "Bu sotuvchi yoki adminning ishi: bitim ochish, etap, narx, egasi va chegirma. Siz pozitsiyalar, TNVED va prixodni yozasiz."
     },
     "moreActions": "Boshqa amallar",
     "notFilled": "To‘ldirilmagan",
@@ -100,7 +101,7 @@
     "flowUnassignedPayments": "Kassaga joylanmagan to‘lovlar",
     "flowRecurringDue": "Doimiy xarajat: to‘lash kuni keldi",
     "flowDocsPending": "Agentga hujjati ketmagan partiyalar",
-    "flowTnvedMissing": "TNVED kodsiz tovarlar",
+    "flowTnvedMissing": "TNVED kodsiz bitimlar",
     "flowCalcOpen": "Navbatdagi hisoblashlar",
     "flowCalcLate": "kechikkan",
     "flowUnplacedCosts": "Kassasi ko‘rsatilmagan xarajatlar",
@@ -3049,6 +3050,10 @@
     "prevStage": "Oldingi bosqich",
     "nextStage": "Keyingi bosqich",
     "dragHint": "Kartochkani sichqoncha bilan torting — etapni ham, tartibni ham o‘zgartiradi",
+    "boardReadOnly": "Faqat ko‘rish uchun: kartani sotuvchi yoki admin suradi.",
+    "vedBoardTitle": "VED bitimlari",
+    "tnvedMissingChip": "TNVED ❓",
+    "termsReadOnly": "Etap, narx, egasi va chegirmani sotuvchi yoki admin o‘zgartiradi.",
     "mine": "Meniki",
     "all": "Hammasi",
     "errors": {
@@ -3062,6 +3067,7 @@
       "reason_required": "Sababini yozing",
       "end_required": "Qachongacha ekanini ko‘rsating",
       "forbidden": "Ruxsat yo‘q",
+      "deal_terms_only": "Bu sotuvchi yoki adminning ishi: bitim ochish, etap, narx, egasi va chegirma. Siz pozitsiyalar, TNVED va prixodni yozasiz.",
       "validation": "Maydonlarni tekshiring",
       "fx_missing": "Bu valyutaga kurs yo‘q",
       "discount_reason_required": "Chegirma uchun sabab kerak",
@@ -3304,6 +3310,7 @@
     "errors": {
       "validation": "Maydonlarni tekshiring",
       "forbidden": "Ruxsat yo‘q",
+      "deal_terms_only": "Hisob so‘rash — sotuvchining ishi. Botdagi «🧮 Hisoblatish» hamma xodimga ochiq.",
       "not_found": "Topilmadi",
       "unauthenticated": "Qaytadan kiring",
       "too_many_items": "Tovar juda ko‘p",
@@ -3580,6 +3587,7 @@
       "not_yours": "Ba’zi xabarlar bu suhbatdan emas",
       "bad_section": "Bo‘limni tanlang",
       "forbidden": "Ruxsat yo‘q",
+      "deal_terms_only": "Hisob so‘rash — sotuvchining ishi. Botdagi «🧮 Hisoblatish» hamma xodimga ochiq.",
       "not_found": "Karta topilmadi",
       "note_taken": "Allaqachon yuborilgan — sahifani yangilang",
       "server_behind": "Server yangilanmoqda, keyinroq urinib ko‘ring",

@@ -41,7 +41,8 @@
       "reasonRequired": "A reason is required",
       "stageNotFound": "Stage deleted — reload the page",
       "reasonNotListed": "The reason must be chosen from the list",
-      "convertRequired": "Won goes through the dialog: client code and deal"
+      "convertRequired": "Won goes through the dialog: client code and deal",
+      "dealTermsOnly": "A seller or an admin does this: opening a deal, its stage, price, owner and discount. You fill in the positions, TNVED codes and receipts."
     },
     "moreActions": "More actions",
     "notFilled": "Not filled",
@@ -100,7 +101,7 @@
     "flowUnassignedPayments": "Payments without a cash box",
     "flowRecurringDue": "Fixed costs due for payment",
     "flowDocsPending": "Batches without agent docs",
-    "flowTnvedMissing": "Goods without TNVED code",
+    "flowTnvedMissing": "Deals without a TNVED code",
     "flowCalcOpen": "Calculations waiting",
     "flowCalcLate": "late",
     "flowUnplacedCosts": "Costs with no cash box",
@@ -3049,6 +3050,10 @@
     "prevStage": "Previous stage",
     "nextStage": "Next stage",
     "dragHint": "Drag a card with the mouse — changes both the stage and the order",
+    "boardReadOnly": "View only: a seller or an admin moves the cards.",
+    "vedBoardTitle": "VED deals",
+    "tnvedMissingChip": "TNVED ❓",
+    "termsReadOnly": "The stage, price, owner and discount are changed by a seller or an admin.",
     "mine": "Mine",
     "all": "All",
     "errors": {
@@ -3062,6 +3067,7 @@
       "reason_required": "Write the reason",
       "end_required": "Say until when",
       "forbidden": "No access",
+      "deal_terms_only": "A seller or an admin does this: opening a deal, its stage, price, owner and discount. You fill in the positions, TNVED codes and receipts.",
       "validation": "Check the fields",
       "fx_missing": "No exchange rate for that currency",
       "discount_reason_required": "A discount needs a reason",
@@ -3304,6 +3310,7 @@
     "errors": {
       "validation": "Check the fields",
       "forbidden": "No access",
+      "deal_terms_only": "Asking for a calculation is the seller’s move. «🧮 Hisoblatish» in the bot stays open to all staff.",
       "not_found": "Not found",
       "unauthenticated": "Sign in again",
       "too_many_items": "Too many goods",
@@ -3580,6 +3587,7 @@
       "not_yours": "Some messages are not from this conversation",
       "bad_section": "Pick a section",
       "forbidden": "No permission",
+      "deal_terms_only": "Asking for a calculation is the seller’s move. «🧮 Hisoblatish» in the bot stays open to all staff.",
       "not_found": "Card not found",
       "note_taken": "Already sent — refresh the page",
       "server_behind": "The server is updating, try again shortly",

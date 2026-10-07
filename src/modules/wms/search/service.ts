@@ -15,7 +15,8 @@ import {
   receipts,
 } from '../../platform/db/schema';
 import { inScope, warehouseScope, warehouseScopeEither } from '../../platform/rbac/scope';
-import { canWriteDeal } from '../deals/service';
+import { dealBoardShape } from '../deals/door';
+import { vedWorkSql } from '../deals/ved-work';
 import { likeNeedle, parseQuery } from './query';
 import { mayReadBatches } from '../batches/read-door';
 import { batchTextMatchSql, formerCodeHitSql } from '../batches/former-codes';
@@ -210,9 +211,24 @@ async function searchLeads(
   }));
 }
 
+/**
+ * Deals by the BOARD's own shape (`dealBoardShape`), so ⌘K, every
+ * `/api/search` picker and the board can never disagree about which deals
+ * this person has (#513). The seller's arm is the funnel's rule verbatim:
+ * everybody's under `crm.leads.view_all`, else their own. The VED's arm (G3 a)
+ * is his work set — `vedWorkSql`, exactly the slice his board lists — which
+ * widens nothing beyond the board: an owner filter would have found him only
+ * the deals he owns, usually none.
+ */
 async function searchDeals(actor: SearchActor, like: string): Promise<SearchHit[]> {
-  if (!canWriteDeal(actor.permissions)) return [];
-  const own = actor.permissions.has('crm.leads.view_all') ? [] : [eq(deals.ownerId, actor.id)];
+  const shape = dealBoardShape(actor.permissions);
+  if (shape === 'none') return [];
+  const own =
+    shape === 'ved'
+      ? [vedWorkSql(sql`${deals}`)]
+      : actor.permissions.has('crm.leads.view_all')
+        ? []
+        : [eq(deals.ownerId, actor.id)];
   const rows = await db
     .select({
       id: deals.id,

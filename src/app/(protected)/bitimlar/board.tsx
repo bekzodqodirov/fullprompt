@@ -33,6 +33,8 @@ export interface BoardDeal {
   flagPct: number | null;
   /** The viewer holds a Telegram chat with this client; 'waiting' = client spoke last. */
   chat: 'waiting' | 'yes' | null;
+  /** An open deal with a position lacking TNVED — set on the VED's board only (G3 a). */
+  tnvedMissing: boolean;
 }
 
 /**
@@ -51,6 +53,7 @@ export function DealBoard({
   archiveHref,
   fields,
   lostReasons,
+  readOnly = false,
 }: {
   stages: KanbanStage[];
   deals: BoardDeal[];
@@ -61,6 +64,13 @@ export function DealBoard({
   lostReasons?: string[];
   /** Which switchable lines this browser wants; code + title are never in it. */
   fields: Set<string>;
+  /**
+   * The VED's board (G3 a): no drag, no move buttons, no ticks, no bulk bar —
+   * read-only by the ABSENCE of `onMove` (the board's own rule), and the hint
+   * line says why. The actions refuse him anyway (`run('terms')`); this only
+   * stops drawing doors that would bounce.
+   */
+  readOnly?: boolean;
 }) {
   // No bulk «assign», deliberately: a deal's owner is who is carrying the job
   // right now and changing it is a conversation, not a sweep. Stage moves are
@@ -83,17 +93,22 @@ export function DealBoard({
         lostReasons={lostReasons}
         items={deals}
         cardTestId="deal-card"
-        selection={{ store: selection, label: tl('select') }}
+        selection={readOnly ? undefined : { store: selection, label: tl('select') }}
         hrefOf={(deal) => `/bitimlar/${deal.id}`}
-        onMove={async (id, stageId, reason, beforeId) => {
-          const result = await moveDealAction(id, stageId, reason, beforeId);
-          return { ok: Boolean(result.ok), error: result.error };
-        }}
+        onMove={
+          readOnly
+            ? undefined
+            : async (id, stageId, reason, beforeId) => {
+                const result = await moveDealAction(id, stageId, reason, beforeId);
+                return { ok: Boolean(result.ok), error: result.error };
+              }
+        }
         labels={{
           lostReason: t('lostReason'),
           moveTo: t('moveTo'),
           cancelMove: t('cancelMove'),
           dragHint: t('dragHint'),
+          readOnlyHint: t('boardReadOnly'),
           empty: t('empty'),
           error: tc('error'),
           moveErrors,
@@ -188,16 +203,30 @@ export function DealBoard({
             {fields.has('alarms') && deal.deferred && (
               <div className="mt-1 text-[11px] font-semibold text-warn">⏳ {t('deferred')}</div>
             )}
+            {/* Which cards the VED's home row «TNVED kodsiz bitimlar» counted —
+                the same fragment, on his board only. */}
+            {readOnly && deal.tnvedMissing && (
+              <div className="mt-1">
+                <span
+                  className="rounded border border-line px-1 text-[11px] font-semibold text-ink-500"
+                  data-testid="deal-tnved-missing"
+                >
+                  {t('tnvedMissingChip')}
+                </span>
+              </div>
+            )}
           </>
         )}
       />
 
-      <BulkBar
-        selection={selection}
-        lostReasons={lostReasons}
-        stages={stages}
-        onMove={(ids, stageId, reason) => bulkMoveDealsAction(ids, stageId, reason)}
-      />
+      {!readOnly && (
+        <BulkBar
+          selection={selection}
+          lostReasons={lostReasons}
+          stages={stages}
+          onMove={(ids, stageId, reason) => bulkMoveDealsAction(ids, stageId, reason)}
+        />
+      )}
     </>
   );
 }

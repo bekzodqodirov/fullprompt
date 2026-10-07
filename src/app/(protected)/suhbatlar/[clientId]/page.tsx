@@ -24,6 +24,7 @@ import { ThreadCalc } from '@/components/thread-calc';
 import { ThreadManagers } from '@/components/thread-managers';
 import { TelegramShare } from '@/components/telegram-share';
 import { shareTargets } from '@/modules/wms/crm/share';
+import { mayEditDealTerms } from '@/modules/wms/deals/door';
 
 /**
  * One client's conversation, read the way it happened — and opened where it
@@ -184,8 +185,13 @@ export default async function ConversationPage({
       {/* Shows the box, or says why it cannot. Same component as on the cards,
           so the two can never drift apart on who may speak. */}
       {/* The third calc door (owner, 2026-08-25) — the same island the card
-          panel mounts; this screen is where a conversation is READ. */}
-      <ThreadCalc entity={{ kind: 'client', id: clientId }} />
+          panel mounts; this screen is where a conversation is READ. A client
+          chat's landing may MINT a deal, so the door is the seller's (17a,
+          G4 a — `threadCalcGate` refuses the VED too); the VED's door is the
+          bot's «🧮 Hisoblatish». */}
+      {mayEditDealTerms(actor.permissions) && (
+        <ThreadCalc entity={{ kind: 'client', id: clientId }} />
+      )}
 
       <TelegramReply clientId={clientId} />
 
