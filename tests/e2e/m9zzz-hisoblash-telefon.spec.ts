@@ -410,6 +410,95 @@ test('T6 — a colleague’s change under a drafted cell is a warning, never a l
   await sheet(page).getByTestId('calc-phone-close').click();
 });
 
+test('T6b — a number nothing reads is named under its box; a press is bound to its row (review PHONE-4, PHONE-3)', async ({
+  page,
+}) => {
+  expect(requestUrl).not.toBe('');
+  await login(page, ADMIN);
+  await page.goto(requestUrl);
+
+  // PHONE-4: «1.2.3» is refused UNDER the kg box, the box itself marked —
+  // five number boxes and one sentence at the top named none of them.
+  await openRow(page, 'kafel oq');
+  await sheet(page).getByTestId('calc-phone-kg').fill('1.2.3');
+  await sheet(page).getByTestId('calc-phone-save').click();
+  const bad = sheet(page).getByTestId('calc-phone-bad');
+  await expect(bad).toBeVisible();
+  await expect(sheet(page).getByTestId('calc-phone-kg')).toHaveClass(/border-warn/);
+  await expect(sheet(page).getByTestId('calc-phone-error')).toHaveCount(0);
+  await page.screenshot({ path: `${SHOTS}/phone-sheet-bad-number-360.png` });
+  await sheet(page).getByTestId('calc-phone-kg').fill('');
+  await expect(bad).toHaveCount(0);
+  await sheet(page).getByTestId('calc-phone-close').click();
+
+  // PHONE-3: closing the sheet — and opening ANOTHER drafted row — while the
+  // press looks first neither cancels the press nor turns it onto that row.
+  await openRow(page, 'sopol kosa');
+  await sheet(page).getByTestId('calc-phone-note').fill('boshqa qator');
+  await sheet(page).getByTestId('calc-phone-close').click();
+  await expect(row(page, 'sopol kosa')).toHaveAttribute('data-drafted', '1');
+
+  // The look is held 2.5 s at the CONTEXT (the service worker's fetch is not
+  // the page's), long enough to close and open by hand.
+  let slow = true;
+  const slowProbe = async (route: Route) => {
+    if (slow) await new Promise((resolve) => setTimeout(resolve, 2_500));
+    await route.fallback();
+  };
+  await page.context().route('**/api/calc/rev/**', slowProbe);
+  try {
+    await openRow(page, 'kafel oq');
+    await sheet(page).getByTestId('calc-phone-note').fill('bog‘langan');
+    await sheet(page).getByTestId('calc-phone-save').click();
+    await sheet(page).getByTestId('calc-phone-close').click();
+    await expect(sheet(page)).toHaveCount(0);
+    await openRow(page, 'sopol kosa');
+    // The press saved ITS row…
+    await expect(row(page, 'kafel oq')).not.toHaveAttribute('data-drafted', '1', { timeout: 15_000 });
+    // …and left the open one alone: still drafted, its sheet still open.
+    await expect(row(page, 'sopol kosa')).toHaveAttribute('data-drafted', '1');
+    await expect(sheet(page)).toBeVisible();
+    await expect(sheet(page).getByTestId('calc-phone-note')).toHaveValue('boshqa qator');
+  } finally {
+    slow = false;
+    await page.context().unroute('**/api/calc/rev/**', slowProbe);
+  }
+  await sheet(page).getByTestId('calc-phone-discard').click();
+  await sheet(page).getByTestId('calc-phone-close').click();
+  await settled(page);
+  await page.reload();
+  await openRow(page, 'kafel oq');
+  await expect(sheet(page).getByTestId('calc-phone-note')).toHaveValue('bog‘langan');
+  await sheet(page).getByTestId('calc-phone-close').click();
+});
+
+test('T6c — a restore with nothing to restore is said ONCE (review PHONE-6)', async ({ page, browser }) => {
+  expect(requestUrl).not.toBe('');
+  await login(page, ADMIN);
+  await page.goto(requestUrl);
+  await openRow(page, 'sopol kosa');
+  await sheet(page).getByTestId('calc-phone-qty').fill('45');
+  await sheet(page).getByTestId('calc-phone-close').click();
+  await expect(row(page, 'sopol kosa')).toHaveAttribute('data-drafted', '1');
+  // A colleague changes the very cell while this tab is gone.
+  await colleagueSetsQty(browser, '46');
+
+  await page.reload();
+  const restore = page.getByTestId('calc-restore');
+  await expect(restore).toHaveCount(1, { timeout: 15_000 });
+  await expect(page.getByTestId('calc-restore-skipped')).toContainText('46');
+  // Nothing to bring back: no «Tiklash», and the one button only dismisses.
+  await expect(page.getByTestId('calc-restore-yes')).toHaveCount(0);
+  await expect(page.getByTestId('calc-restore-no')).toHaveText(/Tushunarli|Понятно|Got it|知道了/);
+  await expect(page.getByTestId('calc-unsaved')).toHaveCount(0);
+  await page.screenshot({ path: `${SHOTS}/phone-restore-news-360.png` });
+
+  // Unanswered, it does not come back on the next open.
+  await page.reload();
+  await expect(page.getByTestId('calc-phone-hint')).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('calc-restore')).toHaveCount(0);
+});
+
 test('T7 — cleanup: the job is answered and the lead lost (as a test)', async ({ page }) => {
   expect(requestUrl).not.toBe('');
   await login(page, ADMIN);
