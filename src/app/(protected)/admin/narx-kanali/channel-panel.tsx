@@ -15,7 +15,8 @@ import {
  * The panel's buttons — client only for their pending state and the refusal
  * sentence (a refused press must SAY why, never sit silent, #472). Every
  * refusal code is a key under `priceChannel.error.*`, anchored on
- * `CHANNEL_ERRORS` by price-channel-i18n.test.ts.
+ * `CHANNEL_ERRORS` by price-channel-i18n.test.ts; a pause is the drain's own
+ * sentence under `priceChannel.paused.*` (anchored on `PAUSE_REASONS`).
  */
 export function ChannelButton({
   kind,
@@ -60,6 +61,7 @@ export function ChannelButton({
         res = { ok: false, error: 'telegram' };
       }
       if (res.ok) setDone(true);
+      else if ('paused' in res) setError(t(`paused.${res.paused}`));
       else {
         setError(
           res.error === 'telegram'

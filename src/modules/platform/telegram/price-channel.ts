@@ -131,6 +131,12 @@ export async function vetChannel(chatId: string, now = Date.now()): Promise<VetR
   const list = (Array.isArray(admins.result) ? admins.result : []) as TgChatMember[];
   const me = botUserId();
   const bot = list.find((a) => String(a.user.id) === me) ?? null;
+  // The bot's standing as the admin list states it NOW — written back, so a
+  // `my_chat_member` update the bot missed (a restart, polling off) cannot
+  // leave a stale «bot_removed» that only another update could lift: the
+  // press of «Qayta tekshirish» heals it. Not on the list while getChat
+  // answered = a plain member (the CHECK's word for «not an admin»).
+  const botStatus = bot?.status === 'creator' || bot?.status === 'administrator' ? bot.status : 'member';
   const rights: Record<string, boolean> = {};
   for (const key of RIGHT_KEYS) rights[key] = bot?.status === 'creator' || bot?.[key] === true;
   const humanAdmins = list.filter((a) => !a.user.is_bot).map((a) => fullName(a.user));
@@ -161,6 +167,7 @@ export async function vetChannel(chatId: string, now = Date.now()): Promise<VetR
   await db
     .update(priceChannelChats)
     .set({
+      status: botStatus,
       title: info?.title ?? undefined,
       username: info?.username ?? null,
       rights,
@@ -230,6 +237,20 @@ export function staticPause(o: {
   if (o.row.status !== 'administrator' && o.row.status !== 'creator') return 'bot_removed';
   if (!o.row.connectedByUserId || !o.settingsAdminIds.includes(o.row.connectedByUserId)) return 'connector_gone';
   return null;
+}
+
+/**
+ * `staticPause` with its inputs read the way the DRAIN reads them — the one
+ * place both the drain and «Qayta tekshirish» ask, so the panel can never say
+ * «prices post again» while the drain is still stopped (#513).
+ */
+export async function drainPause(row: Pick<ConnectedChannel, 'status' | 'connectedByUserId'>): Promise<PauseReason | null> {
+  const hasToken = !!process.env.TELEGRAM_BOT_TOKEN;
+  return staticPause({
+    hasToken,
+    row,
+    settingsAdminIds: hasToken ? await usersWithPermission('admin.settings.manage') : [],
+  });
 }
 
 /**
@@ -346,13 +367,19 @@ export async function connectChannel(
 
 /**
  * «Qayta tekshirish» — the connected channel vetted now, on a person's press,
- * instead of at the drain's next ten-minute re-vet. The answer is the vet's
- * own, and it is the drain's memo from here on (`vetChannel`).
+ * instead of at the drain's next ten-minute re-vet. The vet's answer is the
+ * drain's memo from here on (`vetChannel`). A PASSING vet is not yet «prices
+ * post again»: the drain stops before its vet on `drainPause`, so that rule is
+ * asked too, over the row the vet just rewrote (its status included), and a
+ * pause that still stands is the answer.
  */
-export async function recheckChannel(): Promise<VetResult | null> {
+export async function recheckChannel(): Promise<{ vet: VetResult; pause: PauseReason | null } | null> {
   const chatId = await channelChatId();
   if (!chatId) return null;
-  return vetChannel(chatId);
+  const vet = await vetChannel(chatId);
+  if (!vet.ok) return { vet, pause: null };
+  const row = await connectedChannel();
+  return { vet, pause: row ? await drainPause(row) : 'bot_removed' };
 }
 
 /** «Uzish» — no channel; new prices are skipped `no_channel` until one is connected again. */

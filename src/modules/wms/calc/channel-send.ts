@@ -2,7 +2,6 @@ import { sql, type SQL } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
 import { logger } from '@/modules/platform/logger';
 import { getStorage } from '@/modules/platform/files/storage';
-import { usersWithPermission } from '@/modules/platform/notifications/service';
 import {
   editCaption,
   editText,
@@ -13,9 +12,9 @@ import {
 } from '@/modules/platform/telegram/send';
 import {
   connectedChannel,
+  drainPause,
   pauseForVet,
   rowSaysClean,
-  staticPause,
   vetForDrain,
 } from '@/modules/platform/telegram/price-channel';
 import type { PauseReason } from '@/modules/platform/telegram/price-channel-rules';
@@ -230,11 +229,7 @@ export async function drainPriceChannel(
   const channel = await connectedChannel();
   if (!channel) return result;
   const chatId = channel.chatId.toString();
-  const pause = staticPause({
-    hasToken: !!process.env.TELEGRAM_BOT_TOKEN,
-    row: channel,
-    settingsAdminIds: process.env.TELEGRAM_BOT_TOKEN ? await usersWithPermission('admin.settings.manage') : [],
-  });
+  const pause = await drainPause(channel);
   if (pause) return { ...result, paused: pause };
   const vet = await vetForDrain(chatId, now.getTime(), rowSaysClean(channel));
   if (!vet.ok) return { ...result, paused: pauseForVet(vet.verdict) };

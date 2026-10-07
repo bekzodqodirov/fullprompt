@@ -14,6 +14,7 @@ import {
   disconnectChannel,
   recheckChannel,
 } from '@/modules/platform/telegram/price-channel';
+import type { PauseReason } from '@/modules/platform/telegram/price-channel-rules';
 import { kickPriceChannel } from '@/modules/wms/calc/channel-queue';
 import { retryPriceChannelPost } from '@/modules/wms/calc/channel-send';
 import { CHANNEL_ERRORS, type ChannelError } from './errors';
@@ -22,9 +23,13 @@ import { CHANNEL_ERRORS, type ChannelError } from './errors';
  * The price channel panel's five doors (his F, 2026-10-07). Each asks
  * `admin.settings.manage` itself (the page's gate is not the action's), each
  * is audited, and each answers a CODE the panel turns into words — never a
- * white page (#472).
+ * white page (#472). «Qayta tekshirish» may also answer a PAUSE — a clean vet
+ * whose drain is still stopped — and the panel says that pause's own sentence.
  */
-export type ChannelActionResult = { ok: true } | { ok: false; error: ChannelError; detail?: string };
+export type ChannelActionResult =
+  | { ok: true }
+  | { ok: false; error: ChannelError; detail?: string }
+  | { ok: false; paused: PauseReason };
 
 function refused(error: ChannelError, detail?: string): ChannelActionResult {
   return { ok: false, error: CHANNEL_ERRORS.includes(error) ? error : 'telegram', ...(detail ? { detail } : {}) };
@@ -98,15 +103,18 @@ export async function retryPostAction(postId: string): Promise<ChannelActionResu
  * «Qayta tekshirish» — the connected channel vetted on the press, so the
  * person who just fixed it (made it private, unlinked the discussion group,
  * removed a stranger) hears the answer now instead of at the drain's next
- * ten-minute re-vet. Audited like the other configuration doors.
+ * ten-minute re-vet. Audited like the other configuration doors. «ok» means
+ * the DRAIN will post: a clean vet over a channel the drain still pauses
+ * (`connector_gone`, a `bot_removed` the vet could not heal) answers the pause.
  */
 export async function recheckChannelAction(): Promise<ChannelActionResult> {
   const actor = await authorize('admin.settings.manage');
   if (!process.env.TELEGRAM_BOT_TOKEN) return refused('no_bot');
   const meta = await requestMeta();
   try {
-    const vet = await recheckChannel();
-    if (!vet) return refused('not_found');
+    const done = await recheckChannel();
+    if (!done) return refused('not_found');
+    const { vet, pause } = done;
     await writeAudit(
       db,
       { actorId: actor.id, ...meta },
@@ -114,12 +122,13 @@ export async function recheckChannelAction(): Promise<ChannelActionResult> {
         entityType: 'settings',
         entityId: SETTINGS_AUDIT_ID,
         action: 'update',
-        after: { priceChannelVet: vet.ok ? 'ok' : vet.verdict },
+        after: { priceChannelVet: vet.ok ? (pause ?? 'ok') : vet.verdict },
       },
     );
-    if (vet.ok) kickPriceChannel();
+    if (vet.ok && !pause) kickPriceChannel();
     revalidatePath('/admin/narx-kanali');
-    return vet.ok ? { ok: true } : refused(vet.verdict, vet.detail);
+    if (!vet.ok) return refused(vet.verdict, vet.detail);
+    return pause ? { ok: false, paused: pause } : { ok: true };
   } catch (err) {
     logger.error({ err }, '[price-channel] recheck failed');
     return refused('telegram');

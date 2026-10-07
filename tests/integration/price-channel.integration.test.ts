@@ -48,6 +48,26 @@ import {
 import { queueMissedPrices, queuePriceChannelPost } from '@/modules/wms/calc/channel-queue';
 import { drainPriceChannel, reconcilePriceChannelMarks, retryPriceChannelPost } from '@/modules/wms/calc/channel-send';
 import { channelPanel } from '@/modules/wms/calc/channel-panel';
+import { recheckChannelAction } from '@/app/(protected)/admin/narx-kanali/actions';
+
+/**
+ * The panel's «Qayta tekshirish» is pressed as a SERVER ACTION (I14): its
+ * gate answers the fixture admin, and the request/cache seams it touches
+ * outside a request are stubbed. Nothing else in this file calls them.
+ */
+const press = vi.hoisted(() => ({ actorId: '' }));
+vi.mock('@/modules/platform/rbac/authorize', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/modules/platform/rbac/authorize')>()),
+  authorize: async () => ({ id: press.actorId, permissions: new Set(['admin.settings.manage']) }),
+}));
+vi.mock('@/modules/platform/auth/session', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/modules/platform/auth/session')>()),
+  requestMeta: async () => ({ ip: null, userAgent: 'price-channel.integration' }),
+}));
+vi.mock('next/cache', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('next/cache')>()),
+  revalidatePath: () => {},
+}));
 
 /**
  * One seam: a post build that throws (a database blip between the claim and
@@ -203,6 +223,7 @@ beforeAll(async () => {
   });
 
   adminId = await makeUser(`Kanal Admin ${SUFFIX}`, 'admin', TG.admin, '01');
+  press.actorId = adminId;
   sellerId = await makeUser(`Sotuvchi Bekmurod ${SUFFIX}`, 'sales_manager', TG.seller, '02');
   colleagueId = await makeUser(`Hamkasb Dilnoza ${SUFFIX}`, 'sales_manager', TG.colleague, '03');
   colleague2Id = await makeUser(`Hamkasb Jasur ${SUFFIX}`, 'sales_manager', TG.colleague2, '04');
@@ -1039,6 +1060,54 @@ describe('I13 — the panel and the broom (review fixes)', () => {
     } finally {
       override = () => undefined;
       await db.delete(priceChannelMembers).where(eq(priceChannelMembers.userId, colleague3Id));
+    }
+  });
+});
+
+describe('I14 — «Qayta tekshirish» says what the DRAIN will do (review fixes)', () => {
+  const chatRow = () => db.query.priceChannelChats.findFirst({ where: eq(priceChannelChats.chatId, BigInt(CHAT)) });
+
+  it('a clean vet over a channel whose connector is no longer an admin answers the pause, not «prices post again»', async () => {
+    await setConnected(true);
+    await db.update(users).set({ active: false }).where(eq(users.id, adminId));
+    try {
+      expect((await drain()).paused).toBe('connector_gone');
+      expect(await recheckChannelAction()).toEqual({ ok: false, paused: 'connector_gone' });
+    } finally {
+      await db.update(users).set({ active: true }).where(eq(users.id, adminId));
+    }
+    expect(await recheckChannelAction()).toEqual({ ok: true });
+  });
+
+  it('a missed «bot is admin again» update is healed by the press: the vet writes the status the admin list states', async () => {
+    await setConnected(true);
+    // The bot was removed, then made admin again while nothing was listening:
+    // the row still says «left», and the drain stops before it ever vets.
+    await db.update(priceChannelChats).set({ status: 'left' }).where(eq(priceChannelChats.chatId, BigInt(CHAT)));
+    try {
+      expect((await drain()).paused).toBe('bot_removed');
+      expect(await recheckChannelAction()).toEqual({ ok: true });
+      expect((await chatRow())!.status).toBe('administrator');
+      expect((await drain()).paused).toBeNull();
+      // …and a vet that finds the bot OFF the admin list writes that down too.
+      __resetVetMemo();
+      override = (method) =>
+        method === 'getChatAdministrators'
+          ? { status: 200, json: { ok: true, result: [{ status: 'creator', user: { id: TG.admin, is_bot: false, first_name: 'Owner' } }] } }
+          : method === 'getChatMemberCount'
+            ? { status: 200, json: { ok: true, result: 1 } }
+            : undefined;
+      expect(await recheckChannelAction()).toEqual({ ok: false, error: 'bot_not_admin' });
+      expect((await chatRow())!.status).toBe('member');
+      override = () => undefined;
+      expect((await drain()).paused).toBe('bot_removed');
+    } finally {
+      override = () => undefined;
+      await db
+        .update(priceChannelChats)
+        .set({ status: 'administrator', lastError: null })
+        .where(eq(priceChannelChats.chatId, BigInt(CHAT)));
+      await setConnected(true);
     }
   });
 });
