@@ -451,16 +451,18 @@ describe('«newest» by the dates inside (C6)', () => {
     madeBatches.push(backfilled);
 
     const out = await runCustomsImport({ batchId: backfilled, storageKey: key, fileName: 'backfill.xlsx' });
-    // The declaration is kept — its price is still a price; only its date is
-    // kept out of what the FILE claims to describe.
-    expect(out.rowCount).toBe(3);
-    expect(out.futureDated).toBe(1);
+    // The order first — the fact the fix exists for — then the period behind
+    // it, then the bookkeeping.
+    expect(await orderOf([newer, backfilled])).toEqual([newer, backfilled]);
     const [settled] = await db
       .select({ from: customsImportBatches.periodFrom, to: customsImportBatches.periodTo })
       .from(customsImportBatches)
       .where(eq(customsImportBatches.id, backfilled));
     expect(settled).toEqual({ from: day(-120), to: day(-100) });
-    expect(await orderOf([newer, backfilled])).toEqual([newer, backfilled]);
+    // The declaration is kept — its price is still a price; only its date is
+    // kept out of what the FILE claims to describe.
+    expect(out.rowCount).toBe(3);
+    expect(out.futureDated).toBe(1);
     await drop([newer, backfilled]);
   });
 
