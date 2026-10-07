@@ -116,9 +116,15 @@ test('the period moves the flows and leaves what stands now alone; garbage reads
   const monthHref = await page.getByTestId('tile-revenue').locator('a').first().getAttribute('href');
   const cash = await page.getByTestId('tile-cash').locator('[data-value]').first().getAttribute('data-value');
 
-  await page.getByTestId('dash-period-7').click();
-  await expect(page).toHaveURL(/davr=7/);
-  await expect(page.getByTestId('dash-period-7')).toHaveAttribute('aria-current', 'page');
+  // On the 7th of a month the last seven days ARE the month so far (01-07),
+  // so «7» moves nothing and the assertion below is about the calendar, not
+  // the code — CI ran on 2026-10-07 and went red. The other period is picked
+  // on the app's own clock (Tashkent), never coinciding with the month.
+  const dayOfMonth = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Tashkent', day: 'numeric' }).format(new Date()));
+  const other = dayOfMonth === 7 ? '30' : '7';
+  await page.getByTestId(`dash-period-${other}`).click();
+  await expect(page).toHaveURL(new RegExp(`davr=${other}`));
+  await expect(page.getByTestId(`dash-period-${other}`)).toHaveAttribute('aria-current', 'page');
   await expect(page.getByTestId('dash-hero-label')).not.toHaveText(monthLabel!);
   expect(await page.getByTestId('tile-revenue').locator('a').first().getAttribute('href')).not.toBe(monthHref);
   // The kassa is a balance NOW — no period moves it.
