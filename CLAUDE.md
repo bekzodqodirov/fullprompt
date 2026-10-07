@@ -2548,6 +2548,28 @@ the owner only with super_admin + `finance.reports`. OWED to him as questions: a
 release excused only by a deal «muddat» sends no D6; the future-dated count is
 logged, not shown on /admin/bojxona-import.
 
+**Round — wave 2 of his 2026-10-07 answers: the calculation on the phone +
+the VED on the deal card (DECISIONS #1302-#1312; NO migration, ledger 127).**
+Same method as wave 1 (spec judged → worktree build → review as built → fix →
+independent check). PHONE (his B1 a-B6 a, 21b): per-item cards and ONE bottom
+sheet (`row-sheet.tsx`) holding the whole row; one row per press
+(`buildEdit`/`buildAdd`/`send`, drafts settled by identity at the committed rev,
+`settleDrafts`); `readNumberCell` asks «1.125 dollarmi yoki 1125 dollarmi?» at
+EVERY width (desktop too — stated); drafts in localStorage per viewer+request,
+per-field bases, `mountDecision` = prompt | kept | live (a skip judged against
+a stale cached page is KEPT); B6 = a warning (`/api/calc/rev/[id]`, NetworkOnly)
+plus a commit-time compare-and-set (`TableItemEdit.expect` under
+`lockRequestInTx`); `reloadFresh()` after a deploy; 16 px inputs. DEAL (17a,
+G1-G4): `deals/door.ts` (pure) + `run(gate: 'terms' | 'work')` REQUIRED on every
+deal action (fenced); read-only board = no `onMove`; the VED's work set is ONE
+sentence (`deals/ved-work.ts`) for rows, totals, chip, home row (counts DEALS),
+⌘K and the calc door; the bot mints a coded client's deal in the client's
+seller's name or ownerless (`calcDealOwnerFor`, `createDeal({ownerAsGiven})`);
+custom fields split read/write. On the way: id filters ask `isUuidShaped`
+(derived fence), and /crm asks «all» once. OWED to him as questions: desktop B6,
+the comma question on discount/rates/paste, one-shape mounting (keystroke
+59-70 ms at 4× throttle), deal17 Q1-Q5.
+
 **Latest migration: 0126** (`debt_release_note`, `when` …105; ledger must reach **127**). Before
 it: 0125 (`calc_basis_m3`, `when` …104). Before
 it: 0124 (`task_origin_calc_note`, `when` …103). Before
