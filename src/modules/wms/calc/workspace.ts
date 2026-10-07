@@ -2815,7 +2815,6 @@ export function movedUnder(
       }
       case 'measureUnit':
       case 'bazaBasis':
-        if (value !== null && typeof value !== 'string') return true;
         if ((value ?? null) !== (stored[key] ?? null)) return true;
         break;
       default:
