@@ -43,20 +43,14 @@ function threadOf(entityType: 'client' | 'lead' | 'deal', entityId: string, calc
   return calcRequestId ? { kind: 'calc', id: calcRequestId } : { kind: entityType, id: entityId };
 }
 
-/** The carrier of a card: the lead's or deal's owner, a client's seller. */
-async function carrierOf(entityType: 'client' | 'lead' | 'deal', entityId: string): Promise<string | null> {
+/** The person carrying a lead or a deal — its CURRENT owner. */
+async function ownerOf(entityType: 'lead' | 'deal', entityId: string): Promise<string | null> {
   if (entityType === 'lead') {
     const row = await db.query.leads.findFirst({ columns: { ownerId: true }, where: eq(leads.id, entityId) });
     return row?.ownerId ?? null;
   }
-  if (entityType === 'deal') {
-    const row = await db.query.deals.findFirst({ columns: { ownerId: true }, where: eq(deals.id, entityId) });
-    return row?.ownerId ?? null;
-  }
-  // E6 c — the logist's question on the client card reaches the client's
-  // seller; until now a client thread had no owner arm at all.
-  const row = await db.query.clients.findFirst({ columns: { salesManagerId: true }, where: eq(clients.id, entityId) });
-  return row?.salesManagerId ?? null;
+  const row = await db.query.deals.findFirst({ columns: { ownerId: true }, where: eq(deals.id, entityId) });
+  return row?.ownerId ?? null;
 }
 
 /**
@@ -93,21 +87,31 @@ async function calcRoles(requestId: string): Promise<{
 }
 
 /**
- * The thread's candidates — before any door is asked. `involved` are the
- * carrier arms (never filtered by involvement — they ARE it); `past` are the
- * participants and the requester, whose standing the filters judge.
+ * The thread's candidates — before any door is asked. `arms` carry the work
+ * and are never judged by involvement (they ARE it); `owner` is the record's
+ * current carrier, who stands on the thread even past its door (§3.4);
+ * `past` are the participants and `requester` the calc job's asker, whom the
+ * filters judge.
  */
+interface Candidates {
+  owner: string | null;
+  arms: string[];
+  requester: string | null;
+  past: string[];
+}
+
 async function candidatesOf(
   entityType: 'client' | 'lead' | 'deal',
   entityId: string,
   calcRequestId: string | null,
-): Promise<{ carrier: string | null; assignee: string | null; requester: string | null; past: string[] }> {
+): Promise<Candidates> {
   if (calcRequestId) {
     const roles = await calcRoles(calcRequestId);
-    const carrier = roles ? await carrierOf(roles.entityType, roles.entityId) : null;
+    // The request's CURRENT card — a won lead's request stands on the deal now.
+    const owner = roles ? await ownerOf(roles.entityType, roles.entityId) : null;
     return {
-      carrier,
-      assignee: roles?.assigneeId ?? null,
+      owner,
+      arms: [owner, roles?.assigneeId ?? null].filter((id): id is string => id !== null),
       requester: roles?.requestedBy ?? null,
       past: await calcThreadAuthors(calcRequestId),
     };
@@ -122,12 +126,15 @@ async function candidatesOf(
        AND a.created_by IS NOT NULL
        AND (to_jsonb(a) ->> 'calc_request_id') IS NULL
   `);
-  return {
-    carrier: await carrierOf(entityType, entityId),
-    assignee: null,
-    requester: null,
-    past: authors.map((a) => a.id),
-  };
+  if (entityType === 'client') {
+    // E6 c — the logist's question on the client card reaches whoever is
+    // working that client: its seller, and the owner of an open lead or deal
+    // of it (a lead card's note lands on its client's thread, so the lead's
+    // seller hears it there, §8). A client thread had no owner arm at all.
+    return { owner: null, arms: [...(await involvedWith({ kind: 'client', id: entityId }))], requester: null, past: authors.map((a) => a.id) };
+  }
+  const owner = await ownerOf(entityType, entityId);
+  return { owner, arms: owner ? [owner] : [], requester: null, past: authors.map((a) => a.id) };
 }
 
 /**
@@ -194,7 +201,7 @@ export async function threadAudience(
   ]);
   const ids = [
     ...new Set(
-      [cand.carrier, cand.assignee, cand.requester, ...cand.past].filter(
+      [...cand.arms, cand.requester, ...cand.past].filter(
         (id): id is string => id !== null && id !== authorId,
       ),
     ),
@@ -216,13 +223,12 @@ export async function threadAudience(
     const mine = grants.get(id)!;
     const door = threadDoorWith({ id, permissions: mine }, facts);
     const standing =
-      id === cand.carrier || (calcRequestId !== null && id === cand.requester && !mine.has('crm.leads'));
+      id === cand.owner || (calcRequestId !== null && id === cand.requester && !mine.has('crm.leads'));
     if (!door) {
       if (standing) standingOnly.push(id);
       continue;
     }
-    const carrierArm = id === cand.carrier || id === cand.assignee;
-    if (filterOn && !carrierArm && plainSeller(mine)) {
+    if (filterOn && !cand.arms.includes(id) && plainSeller(mine)) {
       involved ??= await involvedWith(filterOn);
       if (!involved.has(id)) continue;
     }

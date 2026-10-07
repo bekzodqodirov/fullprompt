@@ -46,6 +46,23 @@ CREATE UNIQUE INDEX "crm_activities_tg_unique" ON "crm_activities" ("tg_chat_id"
 CREATE INDEX "crm_activities_author_idx" ON "crm_activities" ("created_by", "happened_at")
   WHERE "kind" = 'note';
 --> statement-breakpoint
+-- The Telegram reply door resolves a replied-to message to the person's OWN
+-- sent ping by the message id the drain stored (payload.tg), with no age
+-- window. Measured on a production-shaped table (680 000 rows, one seller
+-- holding 50 000): 23 ms through notifications_user_idx and a payload filter
+-- on every one of his rows, 0.1 ms through this; built in 0.5 s.
+CREATE INDEX "notifications_tg_reply_idx" ON "notifications" ("user_id", (("payload" -> 'tg' ->> 'messageId')))
+  WHERE "channel" = 'telegram' AND "status" = 'sent';
+--> statement-breakpoint
+-- The dock's «threads I was pinged about»: the newest thread pings of ONE person. Measured
+-- on the same table: the statement read all 50 000 of the seller's rows through
+-- notifications_user_idx (110 ms at one ping in ten, 230 ms at three in five); bounded
+-- and through this, 9.4 ms and 6.6 ms. Built in 0.15-0.2 s.
+-- The list is the code's THREAD_PING_TYPES (thread.ts writes it as literals so a
+-- prepared statement's generic plan can still prove this predicate).
+CREATE INDEX "notifications_thread_idx" ON "notifications" ("user_id", "created_at")
+  WHERE "type" IN ('InternalNote', 'MentionedInNote', 'CalcThread');
+--> statement-breakpoint
 CREATE TABLE "thread_reads" (
   -- Per-viewer state with no history value: a user row deleted (fixtures do) takes its marks with it.
   -- Production deactivates people and never deletes them, so this costs nothing there.

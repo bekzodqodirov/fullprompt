@@ -1,4 +1,5 @@
 import { sql } from 'drizzle-orm';
+import { v7 as uuidv7 } from 'uuid';
 import { db } from '../../platform/db/client';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { logger } from '../../platform/logger';
@@ -135,11 +136,13 @@ export async function addThreadMessage(
   const out = await db.transaction(async (tx) => {
     const target = await targetOf(tx, input.ref);
     if (!target) throw new ThreadError('not_found');
+    // The id is the schema's own (`id()` mints a uuidv7 in the application —
+    // the column has NO database default, so a raw INSERT must bring one).
     const inserted = await tx.execute<{ id: string }>(sql`
       INSERT INTO crm_activities
-        (entity_type, entity_id, kind, note, happened_at, created_by, calc_request_id, tg_chat_id, tg_message_id)
+        (id, entity_type, entity_id, kind, note, happened_at, created_by, calc_request_id, tg_chat_id, tg_message_id)
       VALUES
-        (${target.entityType}, ${target.entityId}::uuid, 'note', ${body}, now(), ${ctx.actorId}::uuid,
+        (${uuidv7()}::uuid, ${target.entityType}, ${target.entityId}::uuid, 'note', ${body}, now(), ${ctx.actorId}::uuid,
          ${target.calcRequestId}::uuid, ${tgChat}::bigint, ${tgMessage}::bigint)
       ON CONFLICT (tg_chat_id, tg_message_id) WHERE tg_message_id IS NOT NULL DO NOTHING
       RETURNING id::text AS id
@@ -447,10 +450,26 @@ export interface DockThreadRow {
   href: string;
 }
 
-const THREAD_PING_LIST = sql.join(
-  THREAD_PING_TYPES.map((type) => sql`${type}`),
-  sql`, `,
-);
+/**
+ * The ping types as LITERALS, not parameters: `notifications_thread_idx` is
+ * partial on exactly this list, and the planner can prove a partial index's
+ * predicate only from constants — postgres.js prepares its statements, and a
+ * generic plan over `type IN ($2, $3, $4)` would walk every notification the
+ * person has ever had. The values are this module's own constants, never
+ * input; thread-wire.test pins the index's list to `THREAD_PING_TYPES`.
+ */
+const THREAD_PING_LIST = sql.raw(THREAD_PING_TYPES.map((type) => `'${type}'`).join(', '));
+
+/**
+ * How many of the newest rows of EACH source the dock reads before grouping
+ * them into threads. Measured (680 000 notifications, one seller holding
+ * 50 000 of them, 5 000 notes he wrote): unbounded, the statement read every
+ * one of his rows — 110 ms when one in ten is a ping, 230 ms at three in five;
+ * bounded through the two partial indexes, 9.4 ms and 6.6 ms. The cost,
+ * stated: a thread whose only touches lie behind a thousand newer ones falls
+ * off the dock — it is still on its card.
+ */
+const DOCK_SCAN_ROWS = 1000;
 
 /**
  * «👥 Ichki» — the threads I am in (§3.7): those I WROTE in and those I was
@@ -478,27 +497,33 @@ export async function myThreads(viewer: Viewer, limit = 30): Promise<DockThreadR
     unread: boolean;
   }>(sql`
     WITH mine AS (
-      SELECT CASE WHEN a.calc_request_id IS NOT NULL THEN 'calc' ELSE a.entity_type END AS kind,
-             COALESCE(a.calc_request_id, a.entity_id) AS id,
-             max(a.created_at) AS touched
-        FROM crm_activities a
-       WHERE a.created_by = ${viewer.id}::uuid
-         AND a.kind = 'note'
-         AND a.happened_at >= now() - make_interval(days => ${THREAD_WINDOW_DAYS})
-       GROUP BY 1, 2
+      SELECT kind, id, max(touched) AS touched FROM (
+        SELECT CASE WHEN a.calc_request_id IS NOT NULL THEN 'calc' ELSE a.entity_type END AS kind,
+               COALESCE(a.calc_request_id, a.entity_id) AS id,
+               a.created_at AS touched
+          FROM crm_activities a
+         WHERE a.created_by = ${viewer.id}::uuid
+           AND a.kind = 'note'
+           AND a.happened_at >= now() - make_interval(days => ${THREAD_WINDOW_DAYS})
+         ORDER BY a.happened_at DESC
+         LIMIT ${DOCK_SCAN_ROWS}
+      ) m GROUP BY 1, 2
     ), pinged AS (
-      SELECT n.payload -> 'thread' ->> 'kind' AS kind,
-             (n.payload -> 'thread' ->> 'id')::uuid AS id,
-             max(n.created_at) AS touched
-        FROM notifications n
-       WHERE n.user_id = ${viewer.id}::uuid
-         AND n.type IN (${THREAD_PING_LIST})
-         AND n.created_at >= now() - make_interval(days => ${THREAD_WINDOW_DAYS})
-         AND n.payload ? 'thread'
-         AND n.payload -> 'thread' ->> 'kind' IN ('lead', 'deal', 'client', 'calc')
-         -- Checked before the cast: one malformed payload must not 22P02 the whole dock.
-         AND n.payload -> 'thread' ->> 'id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-       GROUP BY 1, 2
+      SELECT kind, id::uuid AS id, max(touched) AS touched FROM (
+        SELECT n.payload -> 'thread' ->> 'kind' AS kind,
+               n.payload -> 'thread' ->> 'id' AS id,
+               n.created_at AS touched
+          FROM notifications n
+         WHERE n.user_id = ${viewer.id}::uuid
+           AND n.type IN (${THREAD_PING_LIST})
+           AND n.created_at >= now() - make_interval(days => ${THREAD_WINDOW_DAYS})
+           AND n.payload ? 'thread'
+           AND n.payload -> 'thread' ->> 'kind' IN ('lead', 'deal', 'client', 'calc')
+           -- Checked inside, before the outer cast: one malformed payload must not 22P02 the dock.
+           AND n.payload -> 'thread' ->> 'id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+         ORDER BY n.created_at DESC
+         LIMIT ${DOCK_SCAN_ROWS}
+      ) p GROUP BY 1, 2
     ), cand AS (
       SELECT kind, id, max(touched) AS touched
         FROM (SELECT * FROM mine UNION ALL SELECT * FROM pinged) x
