@@ -15,6 +15,7 @@ import { completeTaskAction } from '@/modules/platform/tasks/actions';
 // A TYPE from the pure module the route builds its answer with: the JSON
 // crossing has one shape on both ends (the design judge's eighth finding).
 import type { DockConversation } from '@/modules/wms/crm/conversation-row';
+import { OFFICE_TZ } from '@/modules/platform/time/tashkent';
 
 /**
  * The dock — chat and tasks, reachable from ANY page (owner, items 5+7:
@@ -739,7 +740,7 @@ export function Dock({
                       </span>
                       {row.at && (
                         <span className="shrink-0 text-2xs text-ink-500">
-                          {new Date(row.at).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })}
+                          {new Date(row.at).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short', timeZone: OFFICE_TZ })}
                         </span>
                       )}
                     </Link>

@@ -4,6 +4,7 @@ import { clientFeed, type FeedItem, type FeedKind } from '@/modules/wms/crm/feed
 import { mentionablePeople } from '@/modules/wms/crm/internal-chat';
 import { lentaAdmission } from '@/modules/wms/crm/thread-door';
 import { threadHrefsFor } from '@/modules/wms/crm/thread';
+import { OFFICE_TZ } from '@/modules/platform/time/tashkent';
 import Link from 'next/link';
 import { FeedNoteBox } from './client-feed-note';
 import { feedNoteTarget } from './feed-note-target';
@@ -298,7 +299,10 @@ function FeedRow({
           ) : null}
         </span>
         <span className="whitespace-nowrap">
-          {item.at.toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })}
+          {/* The office's clock, never the server's (a container runs in UTC):
+              the same message sits in the calc fold beside this lenta, printed
+              by next-intl in Asia/Tashkent, and the two read 5 hours apart. */}
+          {item.at.toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short', timeZone: OFFICE_TZ })}
           {item.actor ? ` · ${item.actor}` : ''}
         </span>
       </div>

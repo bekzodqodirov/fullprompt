@@ -159,7 +159,9 @@ test('the seller’s card: the fold is open, the lenta names it, and it stays op
   await expect(fold(page)).toContainText(`Necha kub? ichki e2e ${STAMP}`);
   const chip = page.getByTestId('client-feed').getByTestId('feed-calc-thread');
   await expect(chip.first()).toBeVisible();
-  await expect(chip.first()).toHaveAttribute('href', `#calc-thread-${requestId}`);
+  // Where the chip leads is the reader's own address for the thread — the
+  // admin holds `ved.docs`, so his is the calc page (threadHrefsFor).
+  await expect(chip.first()).toHaveAttribute('href', new RegExp(requestId));
 
   await fold(page).getByTestId('calc-thread-input').fill(ANSWER);
   await fold(page).getByTestId('calc-thread-send').click();

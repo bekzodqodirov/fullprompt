@@ -245,6 +245,16 @@ describe('the dock reads a bounded window through its own index', () => {
   });
 });
 
+describe('one clock on one card', () => {
+  it('13. the lenta and the dock print the office’s time, as the thread (next-intl) does', () => {
+    // The fold prints a calc message in Asia/Tashkent; the lenta beside it
+    // printed the SERVER's clock — UTC in the container — so the same message
+    // read 19:08 in one and 14:08 in the other (found in the round's screenshot).
+    expect(src('src/components/client-feed.tsx')).toMatch(/item\.at\.toLocaleString\('ru-RU', \{[^}]*timeZone: OFFICE_TZ/);
+    expect(src('src/components/dock.tsx')).toMatch(/new Date\(row\.at\)\.toLocaleString\('ru-RU', \{[^}]*timeZone: OFFICE_TZ/);
+  });
+});
+
 describe('the words (#163 — anchored on the code, never bundle-vs-bundle)', () => {
   const bundles = ['uz', 'ru', 'en', 'zh-CN'].map((locale) => ({
     locale,
