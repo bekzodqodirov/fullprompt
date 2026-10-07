@@ -413,8 +413,9 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
     debtTickShown && ((debtOk && debtNote.trim() === '') || (!debtOk && !pressCovered));
   // Each line the bar grows by is paid for below the last lot, so the page's
   // end never hides under it: measured at 1280×900, the refusal AND the hint
-  // together outgrow `pb-40` by 11 px. Literal classes — Tailwind compiles
-  // only what it can read.
+  // together put the bar's top 17 px below where `pb-40` ends the last lot.
+  // Literal classes — Tailwind compiles only what it can read. The hint's
+  // `py-1` is its thumb's 24 px, not decoration.
   const barLines = (error !== null ? 1 : 0) + (barHintShown ? 1 : 0);
   const barPad = barLines === 2 ? 'pb-52' : barLines === 1 ? 'pb-40' : 'pb-28';
   function goToDebt() {
@@ -890,7 +891,7 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
               <button
                 type="button"
                 data-testid="issue-debt-hint"
-                className="block w-full text-left text-xs font-semibold text-bad"
+                className="block w-full py-1 text-left text-xs font-semibold text-bad"
                 onClick={goToDebt}
               >
                 {tq('barHint')}
