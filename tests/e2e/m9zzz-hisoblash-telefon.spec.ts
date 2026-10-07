@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page, type Route } from '@playwright/test';
+import { expect, test, type Browser, type Locator, type Page, type Route } from '@playwright/test';
 import postgres from 'postgres';
 
 /**
@@ -334,16 +334,9 @@ test('T5 — a lost answer is pressed again into the SAME row; a dead action aft
   await expect(page.getByTestId('calc-unsaved')).toHaveCount(0);
 });
 
-test('T6 — a colleague’s change under a drafted cell is a warning, never a lock (B6 a)', async ({
-  page,
-  browser,
-}) => {
-  expect(requestUrl).not.toBe('');
-  await login(page, ADMIN);
-  await page.goto(requestUrl);
-  await openRow(page, 'sopol kosa');
-  await sheet(page).getByTestId('calc-phone-qty').fill('41');
-
+/** A colleague (the demo VED, in a phone of their own) sets «sopol kosa»'s
+ * count and saves it. */
+async function colleagueSetsQty(browser: Browser, qty: string) {
   const ctx = await browser.newContext({
     viewport: { width: 360, height: 800 },
     isMobile: true,
@@ -356,12 +349,24 @@ test('T6 — a colleague’s change under a drafted cell is a warning, never a l
     await login(other, VED);
     await other.goto(requestUrl);
     await openRow(other, 'sopol kosa');
-    await sheet(other).getByTestId('calc-phone-qty').fill('42');
+    await sheet(other).getByTestId('calc-phone-qty').fill(qty);
     await saveSheet(other);
     await settled(other);
   } finally {
     await ctx.close();
   }
+}
+
+test('T6 — a colleague’s change under a drafted cell is a warning, never a lock (B6 a)', async ({
+  page,
+  browser,
+}) => {
+  expect(requestUrl).not.toBe('');
+  await login(page, ADMIN);
+  await page.goto(requestUrl);
+  await openRow(page, 'sopol kosa');
+  await sheet(page).getByTestId('calc-phone-qty').fill('41');
+  await colleagueSetsQty(browser, '42');
 
   // Without a press: the 15 s probe brings the change in, and the ROW says so.
   const changed = sheet(page).getByTestId('calc-phone-changed');
@@ -375,6 +380,34 @@ test('T6 — a colleague’s change under a drafted cell is a warning, never a l
   await page.reload();
   await openRow(page, 'sopol kosa');
   await expect(sheet(page).getByTestId('calc-phone-qty')).toHaveValue('41');
+
+  // The press's OWN look — the race B6 a is about: the colleague saves and he
+  // presses before any poll has told the screen. The poll's probe is held (a
+  // failed probe refreshes nothing; at the CONTEXT, because the service
+  // worker's fetch is not the page's), so the only look is the press's.
+  let hold = true;
+  const holdProbe = (route: Route) => (hold ? route.abort() : route.fallback());
+  await page.context().route('**/api/calc/rev/**', holdProbe);
+  try {
+    await sheet(page).getByTestId('calc-phone-qty').fill('43');
+    await colleagueSetsQty(browser, '44');
+    await expect(changed).toHaveCount(0);
+    hold = false;
+    await sheet(page).getByTestId('calc-phone-save').click();
+    // The press refreshed, found 41 → 44 under his draft, and did NOT save.
+    await expect(changed).toBeVisible({ timeout: 15_000 });
+    await expect(changed).toContainText('41');
+    await expect(changed).toContainText('44');
+    await expect(sheet(page)).toBeVisible();
+  } finally {
+    await page.context().unroute('**/api/calc/rev/**', holdProbe);
+  }
+  await saveSheet(page);
+  await settled(page);
+  await page.reload();
+  await openRow(page, 'sopol kosa');
+  await expect(sheet(page).getByTestId('calc-phone-qty')).toHaveValue('43');
+  await sheet(page).getByTestId('calc-phone-close').click();
 });
 
 test('T7 — cleanup: the job is answered and the lead lost (as a test)', async ({ page }) => {
