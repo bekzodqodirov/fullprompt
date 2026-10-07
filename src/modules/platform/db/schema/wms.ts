@@ -526,6 +526,14 @@ export const handovers = pgTable(
     deferredUsd: numeric('deferred_usd', { precision: 14, scale: 2 }),
     deferrals: jsonb('deferrals').$type<{ dealId: string; code: string; by: string | null; usd: number }[]>(),
     note: text('note'),
+    /**
+     * 0126 (the owner's D4a): WHY the debt tick let this cargo go — typed by
+     * whoever ticked, mandatory when the tick was USED over a real debt, NULL
+     * otherwise. NEVER on the act (`note` above prints there and a driver
+     * often signs it): read only by the register, the lenta's money door and
+     * the owner's Telegram, through `debtReleaseReasonSql`.
+     */
+    debtNote: text('debt_note'),
     createdBy: uuid('created_by')
       .notNull()
       .references(() => users.id),
@@ -533,6 +541,10 @@ export const handovers = pgTable(
   },
   (t) => [
     check('handovers_kind_check', sql`${t.kind} IN ('returned_to_sender', 'issued_to_client')`),
+    check(
+      'handovers_debt_note_check',
+      sql`${t.debtNote} IS NULL OR (${t.debtOk} AND btrim(${t.debtNote}) <> '' AND char_length(${t.debtNote}) <= 500)`,
+    ),
     check(
       'handovers_target_check',
       sql`(${t.kind} = 'returned_to_sender' AND ${t.receiptId} IS NOT NULL) OR (${t.kind} = 'issued_to_client' AND ${t.clientId} IS NOT NULL)`,

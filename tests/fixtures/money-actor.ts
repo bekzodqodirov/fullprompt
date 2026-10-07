@@ -1,4 +1,4 @@
-import type { MoneyActor } from '@/modules/wms/finance/scope';
+import type { DebtReleaser } from '@/modules/wms/finance/scope';
 
 /**
  * The person behind a fixture's handover, decision or deferral (0114): the
@@ -9,8 +9,17 @@ import type { MoneyActor } from '@/modules/wms/finance/scope';
  * whole-ledger reader — so a fixture that ticked «ruxsat» before the rule
  * keeps meaning exactly what it meant. A test ABOUT the rule builds its own
  * seller or warehouse manager instead.
+ *
+ * Since D2 (2026-10-07) the counter also asks WHERE the releaser stands and
+ * which role he holds (`counterDebtRelease`): an unscoped reader with no role
+ * the rule keys on, so the whole-ledger answer is still the only one he
+ * gets. A `DebtReleaser` is a `MoneyActor`, so the deferral and decision
+ * doors take the same value.
  */
-export const wholeLedger = (id: string): MoneyActor => ({
+export const wholeLedger = (id: string): DebtReleaser => ({
   id,
   permissions: new Set(['finance.debt_override', 'finance.view', 'finance.manage']),
+  roles: [],
+  warehouseScoped: false,
+  warehouseIds: [],
 });

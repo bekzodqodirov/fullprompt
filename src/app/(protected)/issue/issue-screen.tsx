@@ -74,6 +74,8 @@ interface ApprovalState {
 export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
   const t = useTranslations('issue');
   const tc = useTranslations('common');
+  /** The release-on-debt comment's words (0126, the owner's D4a/D5a). */
+  const tq = useTranslations('qarzIzoh');
   const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? '');
   const [clientQuery, setClientQuery] = useState('');
   const [clientHits, setClientHits] = useState<ClientHit[]>([]);
@@ -91,6 +93,13 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
   const [personName, setPersonName] = useState('');
   const [personPhone, setPersonPhone] = useState('');
   const [debtOk, setDebtOk] = useState(false);
+  /**
+   * WHY the debt tick lets this cargo go (D4a) — mandatory for whoever ticks,
+   * and never printed on the act. Controlled: a refusal keeps it (#463).
+   */
+  const [debtNote, setDebtNote] = useState('');
+  /** The «Ruxsat so'rash» reason (D5a) — the decider reads it in Telegram. */
+  const [askNote, setAskNote] = useState('');
   /** The price half of the holder's tick (0104) — its own box, its own words. */
   const [priceOk, setPriceOk] = useState(false);
   const [unpriced, setUnpriced] = useState<UnpricedHere[]>([]);
@@ -199,6 +208,8 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setSelected(new Set());
     setDebtOk(false);
+    setDebtNote('');
+    setAskNote('');
     setPriceOk(false);
     setError(null);
   }, [client?.id, warehouseId]);
@@ -254,15 +265,18 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
   async function askApproval() {
     if (!client || asking) return;
     setAsking(true);
-    const result = await requestIssueApprovalAction({ clientId: client.id, warehouseId });
+    const result = await requestIssueApprovalAction({ clientId: client.id, warehouseId, note: askNote });
     setAsking(false);
+    if (result.ok) setAskNote('');
     if (!result.ok && result.error !== 'already_requested') {
       setError(
         result.error === 'nothing_to_approve'
           ? t('nothingToApprove')
           : result.error === 'already_approved'
             ? t('alreadyApproved')
-            : tc('error'),
+            : result.error === 'note_required'
+              ? tq('askNoteRequired')
+              : tc('error'),
       );
     }
     setRefreshTick((n) => n + 1);
@@ -305,7 +319,10 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
         boxIds: [...selected],
         personName,
         personPhone,
-        debtOk,
+        // Only a tick the screen still DRAWS is posted: a re-read that took
+        // the right away leaves `debtOk` true in state with no box to untick.
+        debtOk: debtTicked,
+        debtNote,
         priceOk,
       });
       if (res.ok) {
@@ -313,6 +330,7 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
         setPersonName('');
         setPersonPhone('');
         setDebtOk(false);
+        setDebtNote('');
         setPriceOk(false);
       } else {
         // Every refusal is a sentence (#472): a raw code at a counter is a
@@ -324,6 +342,8 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
           price_elsewhere: t('priceElsewhereBlocked'),
           debt_price_block: t('debtPriceBlocked'),
           price_override_forbidden: t('priceNeedsManager'),
+          debt_note_required: tq('debtNoteRequired'),
+          server_behind: tq('serverBehind'),
         };
         setError(words[res.error ?? ''] ?? tc('error'));
         // The permission on screen may be stale — re-read it, keeping the scan.
@@ -344,7 +364,15 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
   const gatedCount = gatedReceipts.reduce((sum, row) => sum + row.gatedHere, 0);
   const oldReceipts = unpriced.filter((row) => row.gatedHere === 0 && !row.walkIn);
   const walkIns = unpriced.filter((row) => row.gatedHere === 0 && row.walkIn);
-  const needDebt = blockingDebt > 0.009 && !debtOk;
+  // The debt tick is drawn only where the server will honour it (the list
+  // route asks `counterDebtRelease`), and a tick counts only while it is
+  // drawn — the judge's #12: if a post-refusal re-read takes the right away,
+  // the box vanishes, and the screen must neither post a stale `true` nor
+  // freeze the confirm on a note nobody can type. `needDebt` then reads «not
+  // ticked» and the strip offers «Ruxsat so'rash».
+  const debtTickShown = canOverrideDebt && blockingDebt > 0.009;
+  const debtTicked = debtTickShown && debtOk;
+  const needDebt = blockingDebt > 0.009 && !debtTicked;
   const needPrice = selectedGated.length > 0 && !priceOk;
   const covers = (question: { debtUsd: number | null; boxIds: string[] }) =>
     approval !== null && approvalCovers(approval, question);
@@ -370,7 +398,9 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
     at
       ? new Date(at).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
       : '—';
-  const barTall = error !== null || (canOverrideDebt && blockingDebt > 0.009);
+  // The debt tick left the fixed bar for the page flow (D4a's comment and its
+  // hint would not fit under it at 360 px), so only a refusal grows the bar.
+  const barTall = error !== null;
 
   return (
     <div className={`space-y-3 ${barTall ? 'pb-40' : 'pb-28'}`}>
@@ -569,6 +599,39 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
               ⏳ {t('debtDeferred', { amount: deferredUsd.toFixed(2) })}
             </p>
           )}
+          {/* The debt tick lives HERE, in the page flow, beside the debt it
+              lets through — the twin price tick's rule below: the words that
+              explain it sit beside it, and a 360 px screen never hides them
+              under the fixed bar. Ticking asks WHY (the owner's D4a, for
+              everybody who ticks); the reason goes to the owner and the
+              accountant and NEVER onto the act a driver signs. */}
+          {debtTickShown && (
+            <>
+              <label className="mt-2 flex items-center gap-2 font-semibold text-bad">
+                <input
+                  type="checkbox"
+                  className="h-5 w-5"
+                  data-testid="issue-debt-ok"
+                  checked={debtOk}
+                  onChange={(e) => setDebtOk(e.target.checked)}
+                />
+                {t('debtOk')}
+              </label>
+              {debtOk && (
+                <>
+                  <input
+                    data-testid="issue-debt-note"
+                    className="input mt-2"
+                    maxLength={500}
+                    placeholder={tq('debtNotePlaceholder')}
+                    value={debtNote}
+                    onChange={(e) => setDebtNote(e.target.value)}
+                  />
+                  <p className="mt-1 text-xs text-ink-700">{tq('debtNoteHint')}</p>
+                </>
+              )}
+            </>
+          )}
         </div>
       )}
 
@@ -671,11 +734,21 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
                     ? t('debtNeedsManager')
                     : t('priceNeedsManager')}
               </p>
+              {/* D5a: the request says WHY — the decider reads it in Telegram
+                  and on /approvals before answering. */}
+              <input
+                data-testid="ask-approval-note"
+                className="input mt-2"
+                maxLength={500}
+                placeholder={tq('askNotePlaceholder')}
+                value={askNote}
+                onChange={(e) => setAskNote(e.target.value)}
+              />
               <button
                 type="button"
                 data-testid="ask-approval"
                 onClick={() => void askApproval()}
-                disabled={asking}
+                disabled={asking || askNote.trim() === ''}
                 className="btn-secondary mt-2 w-full disabled:opacity-50"
               >
                 {asking ? tc('loading') : `🔐 ${t('debtAskApproval')}`}
@@ -787,12 +860,6 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
                 onChange={(e) => setPersonPhone(e.target.value)}
               />
             </div>
-            {blockingDebt > 0.009 && canOverrideDebt && (
-              <label className="flex items-center gap-2 text-sm font-semibold text-bad">
-                <input type="checkbox" className="h-5 w-5" checked={debtOk} onChange={(e) => setDebtOk(e.target.checked)} />
-                {t('debtOk')}
-              </label>
-            )}
             <button
               type="button"
               data-testid="confirm-issue"
@@ -804,7 +871,10 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
                 personPhone.trim().length < 5 ||
                 // A recorded approval that COVERS the press opens both gates
                 // without the ticks; the server re-checks and CONSUMES it.
-                ((needDebt || needPrice) && !pressCovered)
+                ((needDebt || needPrice) && !pressCovered) ||
+                // A USED tick says why (D4a) — the server refuses a blank one
+                // as `debt_note_required` anyway; the button waits for it.
+                (debtTickShown && debtOk && debtNote.trim() === '')
               }
               onClick={submit}
             >

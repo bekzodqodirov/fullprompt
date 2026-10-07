@@ -38,6 +38,7 @@ export default async function ApprovalsPage() {
 
   const decidesNothing = debtGrantScope(actor) === 'none';
   const tq = await getTranslations('qarz');
+  const tqi = await getTranslations('qarzIzoh');
   const rows = await pendingApprovals(actor);
   const unpriced = await approvalUnpricedDetail(rows);
   const pricingLinks = mayOpenPricing(actor.permissions);
@@ -103,8 +104,19 @@ export default async function ApprovalsPage() {
           <p className="text-xs text-ink-500">
             {row.warehouseCode} · {row.requestedByName} ·{' '}
             {format.dateTime(row.requestedAt, { dateStyle: 'short', timeStyle: 'short' })}
-            {row.requestNote && <span className="block">{row.requestNote}</span>}
           </p>
+          {/* WHY the counter asks (the owner's D5a — mandatory since
+              2026-10-07, so every new request carries one; an older row may
+              not). Its own wrapping line: a pasted unbroken token must not
+              widen the card past the phone (#400). */}
+          {row.requestNote && (
+            <p
+              className="whitespace-pre-wrap break-words text-sm font-semibold text-ink-700"
+              data-testid="approval-request-note"
+            >
+              💬 {tqi('approvalReason')}: {row.requestNote}
+            </p>
+          )}
           <form action={decideIssueApprovalAction} className="space-y-2">
             <input type="hidden" name="approvalId" value={row.id} />
             <input

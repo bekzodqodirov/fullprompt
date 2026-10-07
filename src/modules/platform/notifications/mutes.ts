@@ -226,6 +226,15 @@ export const MUTE_GROUPS = {
   // warehouse svodka is not silencing the company's day, and neither is a
   // reason to lose the other.
   owner: ['OwnerSummary'],
+  // «🔓 Qarzga yuk berildi» (the owner's D6a, 2026-10-07) — to the owner and
+  // the accountant, for every release on debt: the control that replaced the
+  // request he took away from the warehouse manager (D2). A group of its OWN:
+  // NOT `alerts`, which is muted for anybody holding its founders — the file
+  // above says admins silenced that group's noise long ago, so this would be
+  // born MUTED for exactly the owner; NOT `owner`, because muting the evening
+  // summary must not silence debt releases (that is the accident). Its own box
+  // means muting it is a deliberate tick; «all» still mutes.
+  debt: ['DebtReleased'],
 } as const;
 
 export type MuteGroup = keyof typeof MUTE_GROUPS;
@@ -273,6 +282,8 @@ export const FOUNDERS: Readonly<Record<MuteGroup, readonly string[]>> = {
   system: ['TelegramListenerQuiet', 'TelegramListenerBack', 'DiskFilling'],
   // Born 2026-09-28 with its one member — its birth list, not an addition.
   owner: ['OwnerSummary'],
+  // Born whole on 2026-10-07 with its one member (0126).
+  debt: ['DebtReleased'],
 };
 
 /**
