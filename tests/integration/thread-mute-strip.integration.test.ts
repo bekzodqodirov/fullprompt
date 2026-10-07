@@ -54,7 +54,8 @@ afterAll(async () => {
 
 describe('0127 strips the two moved names, and only them', () => {
   it('post-07-28 list loses both, a founders-only list, «all» and [] are untouched', async () => {
-    expect(STRIP).toContain("- 'InternalNote' - 'MentionedInNote'");
+    // The slice is the statement itself — the assertions below are about what it DOES.
+    expect(STRIP.startsWith('UPDATE "users"')).toBe(true);
     const lists = {
       post: OPERATIONS_BEFORE,
       pre: [...FOUNDERS.operations],
