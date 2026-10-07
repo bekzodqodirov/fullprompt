@@ -172,6 +172,49 @@ export function PriceSpread({
   );
 }
 
+/** The monospace advance of `text-2xs` (11 px): MEASURED, 6.6 px a cell —
+ * «$0.2001» is 46.2 px and «медиана $0.2676» 99.1 px, semibold included. */
+const AXIS_CELL_PX = 6.6;
+/** The narrowest plot the strip is drawn in: MEASURED 302 px in the 360 px
+ * phone's sheet. Wider plots only make room, so this is the safe bound. */
+const AXIS_PLOT_MIN_PX = 302;
+/** Clear space a label keeps from its neighbour. */
+const AXIS_GAP_PX = 4;
+
+/** Monospace cells a label takes: a CJK glyph (中位数) spans two. */
+function cells(text: string): number {
+  let n = 0;
+  for (const ch of text) n += (ch.codePointAt(0) ?? 0) >= 0x2e80 ? 2 : 1;
+  return n;
+}
+
+/**
+ * Does the median label clear both end labels on the narrowest plot?
+ *
+ * The median label is placed at `left: p %` and shifted back by `p %` of its
+ * own width, so its left edge is `p/100 · (W − its width)`. The fixed 22-78 %
+ * guard assumed short labels: MEASURED on a phone, four-decimal prices put a
+ * median at 22.5 % 0.6 px INTO «$0.2001» — the end and the median read as
+ * one word. Width is counted in cells because the labels are monospace; the
+ * plot is taken at its narrowest, so a desktop may hide a label it had room
+ * for, and never draws one over an end.
+ */
+export function medianLabelFits(
+  pct: number,
+  lo: string,
+  mid: string,
+  hi: string | null,
+  plotPx = AXIS_PLOT_MIN_PX,
+): boolean {
+  const midPx = cells(mid) * AXIS_CELL_PX;
+  const room = plotPx - midPx;
+  if (room <= 0) return false;
+  const left = (pct / 100) * room;
+  if (left < cells(lo) * AXIS_CELL_PX + AXIS_GAP_PX) return false;
+  if (hi !== null && left + midPx > plotPx - cells(hi) * AXIS_CELL_PX - AXIS_GAP_PX) return false;
+  return true;
+}
+
 /** Ends and the median under the plot. The ends are ANCHORED to the plot's
  * edges and the median label shifts by its own position, so no label can
  * hang outside the card; a median too near an end leaves the end to speak.
@@ -180,27 +223,37 @@ export function PriceSpread({
  * too, and on a phone (~300 px of plot) that made the end label long enough
  * for the median label — whose 22-78 % guard assumes a bare price — to print
  * over it, so neither could be read. The clipped tails are said once, in
- * words, under the strip (baza-stats.tsx, `clippedSide`). */
+ * words, under the strip (baza-stats.tsx, `clippedSide`), and the median
+ * label is drawn only where it measurably fits (`medianLabelFits`) — its
+ * tick, its chip and the table still carry the value when it does not. */
 function Axis({ domain, median, medianLabel }: { domain: Domain; median: number | null; medianLabel: string }) {
   const mid = median === null ? null : position(median, domain);
-  const showMid = mid !== null && mid.clamped === null && mid.pct >= 22 && mid.pct <= 78;
+  const loText = unitPrice(domain.lo);
+  const hiText = domain.hi !== domain.lo ? unitPrice(domain.hi) : null;
+  const midText = median === null ? '' : `${medianLabel} ${unitPrice(median)}`;
+  const showMid =
+    mid !== null &&
+    mid.clamped === null &&
+    mid.pct >= 22 &&
+    mid.pct <= 78 &&
+    medianLabelFits(mid.pct, loText, midText, hiText);
   return (
     <div className="relative mt-1 h-4 text-2xs leading-none text-ink-500" aria-hidden>
       <span className="absolute left-0 top-0 whitespace-nowrap font-mono tabular-nums" data-axis="lo">
-        {unitPrice(domain.lo)}
+        {loText}
       </span>
-      {showMid && median !== null ? (
+      {showMid ? (
         <span
           className="absolute top-0 whitespace-nowrap font-mono font-semibold tabular-nums text-ink-900"
           data-axis="mid"
           style={{ left: `${mid.pct}%`, transform: `translateX(-${mid.pct}%)` }}
         >
-          {medianLabel} {unitPrice(median)}
+          {midText}
         </span>
       ) : null}
-      {domain.hi !== domain.lo ? (
+      {hiText !== null ? (
         <span className="absolute right-0 top-0 whitespace-nowrap font-mono tabular-nums" data-axis="hi">
-          {unitPrice(domain.hi)}
+          {hiText}
         </span>
       ) : null}
     </div>
