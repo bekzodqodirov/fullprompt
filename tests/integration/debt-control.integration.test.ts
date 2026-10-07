@@ -29,6 +29,7 @@ import {
   warehouses,
 } from '@/modules/platform/db/schema';
 import { ROLE_MATRIX } from '@/modules/platform/rbac/catalog';
+import { actorGrants, userRoleGrants } from '@/modules/platform/rbac/authorize';
 import { addDays, tashkentDay } from '@/modules/platform/time/tashkent';
 import { decideApprovalFromBot, linkStaffChat } from '@/modules/platform/telegram/staff-bot';
 import { confirmReceipt } from '@/modules/wms/receipts/service';
@@ -78,8 +79,11 @@ const people: string[] = [];
 const clientIds: string[] = [];
 const chats: bigint[] = [];
 
-/** Whose money he reads and which ROLE he holds — what `counterDebtRelease` asks besides where. */
-type Releaser = MoneyActor & { roles: readonly string[] };
+/**
+ * Whose money he reads, which ROLE he holds and what that role itself was
+ * given — what `counterDebtRelease` asks besides where.
+ */
+type Releaser = MoneyActor & { roles: readonly string[]; roleGrants: ReadonlyMap<string, ReadonlySet<string>> };
 interface Person {
   id: string;
   name: string;
@@ -124,7 +128,17 @@ async function mkUser(role: string, label: string): Promise<Person> {
   people.push(user!.id);
   const [r] = await db.select({ id: roles.id }).from(roles).where(eq(roles.code, role));
   await db.insert(userRoles).values({ userId: user!.id, roleId: r!.id });
-  return { id: user!.id, name, actor: { id: user!.id, permissions: await grantsOf(user!.id), roles: [role] } };
+  return {
+    id: user!.id,
+    name,
+    actor: {
+      id: user!.id,
+      permissions: await grantsOf(user!.id),
+      roles: [role],
+      // The platform's own join, role by role — what `actorGrants` hands a session.
+      roleGrants: await userRoleGrants(user!.id),
+    },
+  };
 }
 
 /** The person at THIS counter, scoped like the session `Actor` (and the `user_warehouses` row agrees). */
@@ -393,12 +407,15 @@ describe('who may let a debt slide — one predicate, every door', () => {
   it('the logist: without the grant (the owner’s 2a default) his tick is refused; with it re-ticked on /admin/roles he releases for everybody', async () => {
     const c = await mkClient(S2.id);
     await ledger(c.id, 'charge', 40);
-    const logist = { id: A.id, permissions: new Set<string>(ROLE_MATRIX.logist), roles: ['logist'] };
+    const logistOwn = new Set<string>(ROLE_MATRIX.logist);
+    const logist = { id: A.id, permissions: logistOwn, roles: ['logist'], roleGrants: new Map([['logist', logistOwn]]) };
     await expect(issue(c.id, logist, { debtOk: true, debtNote: 'izoh' })).rejects.toThrow('debt_override_forbidden');
+    const retickedOwn = new Set<string>([...ROLE_MATRIX.logist, 'finance.debt_override']);
     const reticked = {
       id: A.id,
-      permissions: new Set<string>([...ROLE_MATRIX.logist, 'finance.debt_override']),
+      permissions: retickedOwn,
       roles: ['logist'],
+      roleGrants: new Map([['logist', retickedOwn]]),
     };
     expect((await issue(c.id, reticked, { debtOk: true, debtNote: 'debt-control izoh' })).kind).toBe('issued_to_client');
   });
@@ -478,6 +495,46 @@ describe('D2-D7 (2026-10-07): the warehouse manager releases at HIS counter, and
     // An operator the owner gave the grant (it is how the price tick reaches him) — not «sklad mudiri».
     const operator = { ...at(OP, whId), permissions: new Set<string>([...OP.actor.permissions, 'finance.debt_override']) };
     await expect(issue(c.id, operator, tick)).rejects.toThrow('debt_override_forbidden');
+  });
+
+  it('I2b: the session actor carries each role’s OWN grants — the counter’s off switch is read from the warehouse manager’s, never the union (DEBT-1)', async () => {
+    // A manager who is also a seller, standing at whId — the person the
+    // review named. Both shipped roles carry `finance.debt_override`; the
+    // owner's untick is a row in role_permissions, so the counter must be
+    // able to tell WHICH role gave it, and `actorGrants` must say so in the
+    // one query it already makes.
+    const both = await mkUser('warehouse_manager', 'Mudir-sotuvchi');
+    const [seller] = await db.select({ id: roles.id }).from(roles).where(eq(roles.code, 'sales_manager'));
+    await db.insert(userRoles).values({ userId: both.id, roleId: seller!.id });
+    await db.insert(userWarehouses).values({ userId: both.id, warehouseId: whId });
+    const roleOwn = async (code: string) =>
+      new Set(
+        (
+          await db
+            .select({ code: permissions.code })
+            .from(rolePermissions)
+            .innerJoin(roles, eq(rolePermissions.roleId, roles.id))
+            .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
+            .where(eq(roles.code, code))
+        ).map((row) => row.code),
+      );
+    const actor = { id: both.id, ...(await actorGrants(both.id)) };
+    const manager = await roleOwn('warehouse_manager');
+    const sales = await roleOwn('sales_manager');
+    expect(actor.roleGrants.get('warehouse_manager')).toEqual(manager);
+    expect(actor.roleGrants.get('sales_manager')).toEqual(sales);
+    expect(actor.permissions).toEqual(new Set([...manager, ...sales]));
+    // With the shipped grants he releases a colleague's client at his own
+    // counter — the role's own grant answers, and it holds today.
+    expect(manager.has('finance.debt_override')).toBe(true);
+    const c = await mkClient(S1.id);
+    await ledger(c.id, 'charge', 40);
+    const done = await issue(c.id, actor, { debtOk: true, debtNote: 'mudir-sotuvchi izohi' });
+    const [audit] = await db
+      .select({ after: auditLog.after })
+      .from(auditLog)
+      .where(and(eq(auditLog.entityType, 'handover'), eq(auditLog.entityId, done.id)));
+    expect(audit!.after).toMatchObject({ debtRight: 'warehouse' });
   });
 
   it('I3: the comment is mandatory for EVERYONE who ticks (D4a)', async () => {

@@ -102,6 +102,7 @@ const tryIssue = (boxId: string) =>
       id: operatorId,
       permissions: new Set(['scan.issue']),
       roles: ['warehouse_operator'],
+      roleGrants: new Map([['warehouse_operator', new Set(['scan.issue'])]]),
       warehouseScoped: false,
       warehouseIds: [],
     },

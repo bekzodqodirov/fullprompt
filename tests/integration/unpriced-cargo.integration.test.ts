@@ -742,6 +742,7 @@ describe('one approval, two questions', () => {
       id: actorId,
       permissions: new Set<string>(ROLE_MATRIX.warehouse_manager),
       roles: ['warehouse_manager'],
+      roleGrants: new Map([['warehouse_manager', new Set<string>(ROLE_MATRIX.warehouse_manager)]]),
       warehouseScoped: false,
       warehouseIds: [],
     };
@@ -749,6 +750,7 @@ describe('one approval, two questions', () => {
       id: actorId,
       permissions: new Set<string>(ROLE_MATRIX.warehouse_operator),
       roles: ['warehouse_operator'],
+      roleGrants: new Map([['warehouse_operator', new Set<string>(ROLE_MATRIX.warehouse_operator)]]),
       warehouseScoped: false,
       warehouseIds: [],
     };

@@ -11,15 +11,17 @@ import type { DebtReleaser } from '@/modules/wms/finance/scope';
  * seller or warehouse manager instead.
  *
  * Since D2 (2026-10-07) the counter also asks WHERE the releaser stands and
- * which role he holds (`counterDebtRelease`): an unscoped reader with no role
- * the rule keys on, so the whole-ledger answer is still the only one he
- * gets. A `DebtReleaser` is a `MoneyActor`, so the deferral and decision
- * doors take the same value.
+ * which role he holds, and what that role was given (`counterDebtRelease`):
+ * an unscoped reader with no role the rule keys on — so no role's own grants
+ * either — and the whole-ledger answer is still the only one he gets. A
+ * `DebtReleaser` is a `MoneyActor`, so the deferral and decision doors take
+ * the same value.
  */
 export const wholeLedger = (id: string): DebtReleaser => ({
   id,
   permissions: new Set(['finance.debt_override', 'finance.view', 'finance.manage']),
   roles: [],
+  roleGrants: new Map(),
   warehouseScoped: false,
   warehouseIds: [],
 });

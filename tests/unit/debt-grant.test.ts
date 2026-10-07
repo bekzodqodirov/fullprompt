@@ -110,17 +110,33 @@ describe('mayGrantDebt over every shipped role', () => {
  */
 const WH_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const WH_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+/**
+ * A person built the way `actorGrants` builds one: each role's OWN grants
+ * (the shipped matrix, edited ROLE BY ROLE the way /admin/roles edits it —
+ * `add`/`drop` name the role whose checkbox moved), and `permissions` the
+ * union of them, never a list typed beside it.
+ */
 const releaserOf = (
   roles: string[],
-  opts: { add?: string[]; drop?: string[]; scoped?: boolean; warehouseIds?: string[] } = {},
+  opts: {
+    add?: Record<string, string[]>;
+    drop?: Record<string, string[]>;
+    scoped?: boolean;
+    warehouseIds?: string[];
+  } = {},
 ): DebtReleaser => {
-  const grants = new Set<string>(roles.flatMap((role) => (ROLE_MATRIX as Record<string, readonly string[]>)[role] ?? []));
-  for (const code of opts.add ?? []) grants.add(code);
-  for (const code of opts.drop ?? []) grants.delete(code);
+  const roleGrants = new Map<string, Set<string>>();
+  for (const role of roles) {
+    const own = new Set<string>((ROLE_MATRIX as Record<string, readonly string[]>)[role] ?? []);
+    for (const code of opts.add?.[role] ?? []) own.add(code);
+    for (const code of opts.drop?.[role] ?? []) own.delete(code);
+    if (own.size > 0) roleGrants.set(role, own);
+  }
   return {
     id: ME,
-    permissions: grants,
+    permissions: new Set([...roleGrants.values()].flatMap((codes) => [...codes])),
     roles,
+    roleGrants,
     warehouseScoped: opts.scoped ?? isWarehouseScoped(roles),
     warehouseIds: opts.warehouseIds ?? [WH_A],
   };
@@ -160,7 +176,7 @@ describe('counterDebtRelease over every shipped role (D2)', () => {
   }
 
   it('an operator the owner gave the grant clears a PRICE and still releases no debt — the role is the rule, not the grant', () => {
-    const operator = releaserOf(['warehouse_operator'], { add: ['finance.debt_override'] });
+    const operator = releaserOf(['warehouse_operator'], { add: { warehouse_operator: ['finance.debt_override'] } });
     expect(cellsOf(operator)).toEqual([null, null, null, null]);
     expect(mayOverridePrice(operator)).toBe(true);
   });
@@ -174,12 +190,25 @@ describe('counterDebtRelease over every shipped role (D2)', () => {
   });
 
   it('the owner’s OFF switch: a manager whose role lost `finance.debt_override` releases nothing', () => {
-    expect(cellsOf(releaserOf(['warehouse_manager'], { drop: ['finance.debt_override'] }))).toEqual([
-      null,
-      null,
-      null,
-      null,
-    ]);
+    expect(
+      cellsOf(releaserOf(['warehouse_manager'], { drop: { warehouse_manager: ['finance.debt_override'] } })),
+    ).toEqual([null, null, null, null]);
+  });
+
+  it('the OFF switch is the warehouse manager ROLE’s own grant — a manager who is also a seller loses D2 too (DEBT-1)', () => {
+    // The untick on the warehouse manager's role; the seller's role still
+    // carries the same grant, so the person's UNION still holds it. The
+    // counter must read the role's own answer, or the untick does nothing
+    // for a both-hats manager.
+    const both = releaserOf(['warehouse_manager', 'sales_manager'], {
+      drop: { warehouse_manager: ['finance.debt_override'] },
+    });
+    expect(both.permissions.has('finance.debt_override')).toBe(true);
+    expect(counterDebtRelease(both, colleagues, WH_A)).toBe(null);
+    expect(counterDebtRelease(both, unowned, WH_A)).toBe(null);
+    // His own book is the SELLER's rule (`mayGrantDebt`, the union) — untouched.
+    expect(counterDebtRelease(both, own, WH_A)).toBe('ledger');
+    expect(cellsOf(both)).toEqual(['ledger', null, null, null]);
   });
 
   it('fails CLOSED for a manager whose role scope was unticked — `inScope` would say yes to everywhere', () => {

@@ -185,7 +185,10 @@ describe('one home per rule (review 5, #513)', () => {
     expect(bot).toContain('const permissionsOf = userPermissions;');
     const authorize = strip(read('src/modules/platform/rbac/authorize.ts'));
     expect(authorize.match(/innerJoin\(rolePermissions/g)).toHaveLength(1);
-    expect(authorize).toContain('const granted = await userPermissions(userId);');
+    // Since DEBT-1 the one join is read role by role (`userRoleGrants`), and
+    // both the union the bot reads and the session's grants come from it.
+    expect(authorize).toContain('return grantsUnion(await userRoleGrants(userId));');
+    expect(authorize).toContain('const granted = await userRoleGrants(userId);');
   });
 });
 

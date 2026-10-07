@@ -151,12 +151,19 @@ export function mayGrantDebt(actor: MoneyActor, client: { salesManagerId: string
 }
 
 /**
- * The counter's releaser: whose money he reads, where he stands, and which
- * ROLE he holds. Every field REQUIRED (#790) — an optional one fails open.
- * The session `Actor` (rbac/authorize.ts) carries all of it, so the issue
- * action and the list route pass the actor they already hold.
+ * The counter's releaser: whose money he reads, where he stands, which ROLE
+ * he holds, and what THAT role was given (`roleGrants` — each role's own
+ * editable grants, read in the same query as the union). Every field
+ * REQUIRED (#790) — an optional one fails open, and a missing `roleGrants`
+ * would quietly fall back to nothing. The session `Actor`
+ * (rbac/authorize.ts) carries all of it, so the issue action and the list
+ * route pass the actor they already hold.
  */
-export type DebtReleaser = MoneyActor & ScopedActor & { roles: readonly string[] };
+export type DebtReleaser = MoneyActor &
+  ScopedActor & {
+    roles: readonly string[];
+    roleGrants: ReadonlyMap<string, ReadonlySet<string>>;
+  };
 
 /**
  * Why the counter's debt tick is this person's: `'ledger'` — he may grant
@@ -188,9 +195,18 @@ export const COUNTER_RELEASE_ROLE = 'warehouse_manager';
  *  - the ROLE (above) — never «holds the grant and reads no ledger», which
  *    would also have taken D2 away from a manager who is also a seller (he
  *    reads `finance.view`) for every client but his own book;
- *  - the grant `finance.debt_override` — the owner's OFF switch: an untick on
- *    /admin/roles withdraws D2 (and, stated, his price tick with it). No new
- *    permission code (#170/#179/#208 — the seed skips a customised role);
+ *  - the WAREHOUSE MANAGER ROLE'S OWN grant of `finance.debt_override` — the
+ *    owner's OFF switch: unticking it on that role on /admin/roles withdraws
+ *    D2 from every warehouse manager, a manager who is also a seller
+ *    included. Asked of `roleGrants`, NEVER of the union in `permissions`:
+ *    the seller's role carries the same grant, so the union would keep D2
+ *    for a both-hats manager after the untick (the review's DEBT-1). His own
+ *    clients he still releases — that is `mayGrantDebt` above, the seller's
+ *    rule, which rightly reads the union. The price tick
+ *    (`mayOverridePrice`) is the union's too, so the same untick takes it
+ *    only from a manager who holds the grant through no other role (stated).
+ *    No new permission code (#170/#179/#208 — the seed skips a customised
+ *    role);
  *  - `warehouseScoped` — `inScope` answers TRUE for an unscoped actor
  *    (rbac/scope.ts), so a manager whose role scope was unticked would
  *    otherwise release at every counter in the company. Fail closed;
@@ -211,7 +227,7 @@ export function counterDebtRelease(
   if (mayGrantDebt(actor, client)) return 'ledger';
   if (
     actor.roles.includes(COUNTER_RELEASE_ROLE) &&
-    actor.permissions.has('finance.debt_override') &&
+    actor.roleGrants.get(COUNTER_RELEASE_ROLE)?.has('finance.debt_override') === true &&
     actor.warehouseScoped &&
     inScope(actor, warehouseId)
   ) {
