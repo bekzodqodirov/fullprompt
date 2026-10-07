@@ -77,7 +77,7 @@ export interface PickerTarget {
    * optional one fails open into «pick». 'view' is the phone's look-only door
    * (the phone card has no save, and a phone draft only wedges «Avval
    * saqlang»): every number, no «Tanlash», a list that cannot be pressed
-   * (#TBD-c). Wave 2 (his B1 a) gives the phone its own sheet and flips
+   * (#1299). Wave 2 (his B1 a) gives the phone its own sheet and flips
    * this there.
    */
   mode: 'pick' | 'view';

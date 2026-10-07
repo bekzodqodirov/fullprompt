@@ -612,7 +612,7 @@ function uploadDaySql(t: SQL): SQL {
 
 /**
  * The last day a batch's declarations describe, CLAMPED to its upload day
- * (his C6, #TBD-d).
+ * (his C6, #1300).
  *
  * «Newest» is the newest by the dates INSIDE the file, not by upload order —
  * and the clamp is what keeps that safe. `parseDate` accepts any year, and

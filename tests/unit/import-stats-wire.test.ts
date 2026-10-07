@@ -46,7 +46,7 @@ describe('1. the stats route reads the item and the basis, and nothing else', ()
   });
 });
 
-describe('2. disc percentiles only — no interpolation and no mean (#TBD-a)', () => {
+describe('2. disc percentiles only — no interpolation and no mean (#1297)', () => {
   it('the statistics speak percentile_disc and never _cont, avg or sum', () => {
     for (const source of [STATS, STATS_SQL]) {
       expect(source).toContain('percentile_disc');

@@ -26,7 +26,7 @@ export type { PriceExemplar, SeriesStats } from './import-stats-math';
  *
  * What it says and what it refuses to say, each a decision:
  * - the 25/50/75 % of the declarations are `percentile_disc` — a price some
- *   declaration carries — and there is NO mean anywhere (#TBD-a). C4: one
+ *   declaration carries — and there is NO mean anywhere (#1297). C4: one
  *   vote per declaration; a 1 kg sample and a 20 t line count the same.
  * - units are never pooled: one distribution per file unit, and every count
  *   on screen is the active unit's (D2).

@@ -68,7 +68,7 @@ describe('ONE chain for the unit on screen (#886, #171)', () => {
     expect(save).toContain('edit.bazaBasis = postedBasis(d.bazaBasis, v === null, item);');
   });
 
-  it('the 📥 statistics marker asks the same chain on both shapes (his C, #TBD-e)', () => {
+  it('the 📥 statistics marker asks the same chain on both shapes (his C, #1299)', () => {
     // Desktop: the ⋯ fold is handed the row's ONE answer, never `draft ??
     // stored` — null on an untouched «avto» row whose select shows the law's.
     expect(TABLE).toContain('screenBasis={screen.basis}');

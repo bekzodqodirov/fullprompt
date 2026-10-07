@@ -2515,7 +2515,41 @@ data shapes, a spec critic and a real browser walk — five defects, all
 red-proven; the differential found the one the readers could not
 («differs from today's default» read as «chosen» on a cleared price).
 
-**Latest migration: 0125** (`calc_basis_m3`, `when` …104; ledger must reach **126**). Before
+**Round — wave 1 of his 2026-10-07 answers: debt release with a reason + the
+baza statistics (DECISIONS #1291-#1301; migration 0126 `debt_release_note` —
+ledger must reach 127).** His «Hammasi yulduzcha, faqat D1 a / D2 sklad mudiri
+so'ramasdan beraversin / E6 c / F9 b» (binding A-G list in the session
+scratchpad; B+G = wave 2, E+F = wave 3, both specs written and judged). Two
+packages, each spec judged by five lenses before code, built in worktrees,
+reviewed as MERGED by five lenses with refuters (12 survived), fixed and
+re-verified by an independent checker. DEBT: `counterDebtRelease`
+(finance/scope.ts) = 'ledger' | 'warehouse' | null, asked ONLY by the issue
+service and `/api/issue/list`; 'warehouse' = the warehouse_manager ROLE's own
+grant of `finance.debt_override` (`actor.roleGrants`, the per-role map built in
+the same single join as the union — `userRoleGrants`, platform/rbac/authorize.ts)
++ warehouseScoped + inScope; `mayGrantDebt` untouched (D3a). A used tick over a
+real debt needs `handovers.debt_note` (`debt_note_required`, never `note` — the
+act prints `note`); a stale tick stores none; `debtOpenedBy` is the pure «who
+opened the gate». `requestIssueApproval` requires `note`. D6 «🔓 Qarzga yuk
+berildi» → `receivesDebtReleased` (super_admin/accountant ROLE + companyMoneySight),
+own mute group `debt`. Readers: `debtReleaseReasonSql` (debt/releases.ts) via
+`to_jsonb(alias)->>'debt_note'`. The tick lives in the debt banner; the fixed bar
+carries `issue-debt-hint` asking the DEBT question alone. i18n namespace
+`qarzIzoh`. STATS: the 📥 dialog's «Narxlar statistikasi» — `percentile_disc`
+only, one vote per declaration, China by `chinaOriginSql`, the ±25 %
+weight-per-piece series (`bandBounds` cut to 12 significant figures), exemplar
+per quartile chip, «Tanlash» the only writer; «newest» = `batchRecencySql` for
+the picker, the auto-fill AND the AI prefill, and a future-dated row no longer
+moves a batch's period at settle; the phone opens it view-only
+(`PickerTarget.mode` REQUIRED — wave 2 flips it). Deploy: ledger 127, and on
+/admin/roles «Sklad mudiri» must still hold `finance.debt_override` and be
+warehouse-scoped, each manager with his warehouse on /admin/users; D6 reaches
+the owner only with super_admin + `finance.reports`. OWED to him as questions: a
+release excused only by a deal «muddat» sends no D6; the future-dated count is
+logged, not shown on /admin/bojxona-import.
+
+**Latest migration: 0126** (`debt_release_note`, `when` …105; ledger must reach **127**). Before
+it: 0125 (`calc_basis_m3`, `when` …104). Before
 it: 0124 (`task_origin_calc_note`, `when` …103). Before
 it: 0123 (`lot_check`, `when` …102). Before
 it: 0122 (`lot_composition`, `when` …101). Before
@@ -2645,7 +2679,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **126** since 0125 (125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **127** since 0126 (126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
 and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read
@@ -2653,7 +2687,7 @@ and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read
 was asked for and NOT quoted; PR #106 (0121) deployed 2026-09-30 evening («Hozir sistema
 yaxshi ishlayabti», count not quoted either); PR #109 (0122) was asked about and NOT
 answered, so COUNT FIRST on the next deploy: it must read
-**126** (anything less means a migration did not land — read the `migrate`
+**127** (anything less means a migration did not land — read the `migrate`
 container's own output; from 113 the whole 0113-0120 set applies and EVERY
 container must be recreated once: `--profile https --profile telegram up -d
 --build`, compose gained `init`, a healthcheck, log caps and a postgres flag);

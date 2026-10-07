@@ -7,7 +7,7 @@
  * server into a phone's download.
  *
  * Every figure the screen prints is a price some declaration actually
- * carries (`percentile_disc`, never `_cont`, and never a mean — #TBD-a): a
+ * carries (`percentile_disc`, never `_cont`, and never a mean — #1297): a
  * single 20-tonne typo moves an average, and an interpolated quartile is a
  * price nobody declared, which «Tanlash» could then not name.
  */

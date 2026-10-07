@@ -14,7 +14,7 @@ import type { SuggestInput } from './import-baza';
 
 /**
  * «Xitoydan» — the ONE predicate for which declarations are China's (C2,
- * #TBD-b). `col` must be a non-null text column; the caller decides what a
+ * #1298). `col` must be a non-null text column; the caller decides what a
  * NULL origin means.
  *
  * A value that STARTS WITH DIGITS is decided by the numeric customs code
