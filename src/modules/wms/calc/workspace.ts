@@ -3369,6 +3369,8 @@ export async function saveTable(
     const claimed = withCodes.map((r) => r.clientId).filter((v): v is string => v !== null);
     let alreadySaved = 0;
     const skipAdd = new Set<number>();
+    /** Rows this request already holds under the posted client id → the add. */
+    const retried = new Map<string, (typeof withCodes)[number]>();
     if (claimed.length > 0) {
       const foreign = await tx
         .select({ id: calcRequestItems.id, requestId: calcRequestItems.requestId })
@@ -3390,7 +3392,43 @@ export async function saveTable(
         if (owner === undefined) return;
         if (owner !== requestId) throw new CalcError('not_found', -(index + 1));
         skipAdd.add(index);
-        alreadySaved += 1;
+        retried.set(r.clientId, r);
+      });
+    }
+    // A retried row is not inserted again — but it is not simply SKIPPED
+    // either: between the lost answer and the second press the VED may have
+    // corrected a cell, and skipping the row whole dropped that correction
+    // under a bar that read «avval saqlangan» (review units-1). It becomes an
+    // ordinary edit of the stored row, posting only the cells that DIFFER,
+    // so an unchanged retry is still a no-op that writes nothing and clears
+    // no ✅, and a changed cell goes through every rule an edit obeys.
+    for (const [rowId, r] of retried) {
+      const stored = byId.get(rowId)!;
+      const num = (v: string | null) => (v === null ? null : Number(v));
+      const storedBasis = (stored.bazaBasis as BazaBasis | null) ?? null;
+      const basisMoved = r.bazaBasis !== null && r.bazaBasis !== storedBasis;
+      // An add's empty price means «nothing typed», not «clear»: the first
+      // save may have filled the row from the memory or the file, and an
+      // unchanged retry must not wipe that. Only a price a PERSON typed is
+      // taken back by an emptied cell.
+      const priceMoved =
+        r.bazaUsd === null
+          ? (stored.bazaUsd !== null && stored.bazaSource === 'typed') || basisMoved
+          : r.bazaUsd !== num(stored.bazaUsd) || basisMoved;
+      itemEdits.push({
+        id: rowId,
+        seq: stored.seq,
+        name: r.name !== stored.name ? r.name : undefined,
+        quantity: r.quantity !== num(stored.quantity) ? r.quantity : undefined,
+        weightKg: r.weightKg !== num(stored.weightKg) ? r.weightKg : undefined,
+        volumeM3: r.volumeM3 !== num(stored.volumeM3) ? r.volumeM3 : undefined,
+        tnvedCode: r.tnvedCode !== (stored.tnvedCode ?? null) ? r.tnvedCode : undefined,
+        note: r.note !== (stored.note ?? null) ? r.note : undefined,
+        measureQty: r.measureQty !== num(stored.measureQty) ? r.measureQty : undefined,
+        bazaUsd: priceMoved ? r.bazaUsd : undefined,
+        bazaBasis: priceMoved ? r.bazaBasis : undefined,
+        importRowId: null,
+        bazaReason: null,
       });
     }
 
@@ -3499,6 +3537,13 @@ export async function saveTable(
         await tx.update(calcRequestItems).set(patch).where(eq(calcRequestItems.id, item.id));
       }
       if (measuresMoved && item.groupId) touched.add(item.groupId);
+    }
+
+    // A retry counts as «already saved» only when it changed nothing; one
+    // that carried a correction is an edit like any other (review units-1).
+    const changedSeqs = new Set(changedCells.map((c) => c.seq));
+    for (const rowId of retried.keys()) {
+      if (!changedSeqs.has(byId.get(rowId)!.seq)) alreadySaved += 1;
     }
 
     // 2. Insert the ghost rows — in the SAME tx, so a new row born with

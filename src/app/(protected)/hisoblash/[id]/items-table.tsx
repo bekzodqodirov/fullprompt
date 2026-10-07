@@ -25,6 +25,8 @@ import {
   uniformBazaOf,
 } from '@/modules/wms/calc/basis';
 import { editBazaPair } from '@/modules/wms/calc/baza-draft';
+import { pasteIdsFor } from '@/modules/wms/calc/paste-ids';
+import { screenRowOf, groupsByCodeOf } from '@/modules/wms/calc/screen-row';
 import { parseGoods, type Cell } from '@/modules/wms/deals/goods-import';
 import {
   confirmAllAction,
@@ -136,69 +138,6 @@ const emptyRow = (key: number): NewRow => ({
   bazaBasis: null,
 });
 
-/**
- * What ONE existing row looks like on the screen right now — the law it is
- * under, the unit its select shows, the units it offers and the measure its
- * O'lchov line asks for (0125).
- *
- * ONE function for the four sites that must agree (#886's live-equals-saved):
- * the rendered row, the live engine item, the save, and the draft
- * self-clean. Split, the select shows one unit while the save posts another
- * (#171) — which is exactly how the owner's snap-back reached production.
- *
- * The law is the drafted code's block when the code is drafted and this
- * request already carries that code; a drafted code no block carries has an
- * UNKNOWN law until the save mints it — the select then reads «avto» and the
- * O'lchov box is the generic one, because promising «m²» about a law nobody
- * has looked up yet is how a count gets stored in the wrong unit.
- */
-interface ScreenRow {
-  lawGroup: WorkspaceGroup | null;
-  lawUnknown: boolean;
-  /** null = «avto»: untouched, nothing stored, and the law not yet known. */
-  basis: BazaBasis | null;
-  offered: BazaBasis[];
-  /** The pair unit the row asks for; 'any' = the generic box (unknown law). */
-  pair: MeasureUnit | 'any' | null;
-}
-
-function screenRow(
-  item: WorkspaceItem,
-  draft: ItemDraft | undefined,
-  groupById: Map<string, WorkspaceGroup>,
-  groupsByCode: Map<string, WorkspaceGroup>,
-): ScreenRow {
-  let lawGroup = item.groupId ? (groupById.get(item.groupId) ?? null) : null;
-  let lawUnknown = false;
-  if (draft?.tnvedCode !== undefined) {
-    const code = draft.tnvedCode.trim();
-    lawGroup = code ? (groupsByCode.get(code) ?? null) : null;
-    lawUnknown = code !== '' && lawGroup === null;
-  }
-  const lawUnit = lawGroup?.dutyUnit ?? null;
-  const basis =
-    lawUnknown && draft?.bazaBasis === undefined && item.bazaBasis === null
-      ? null
-      : basisOnScreen(draft?.bazaBasis, item.bazaBasis, lawGroup);
-  return {
-    lawGroup,
-    lawUnknown,
-    basis,
-    offered: basesFor(lawUnknown ? null : lawUnit),
-    pair: lawUnknown ? 'any' : pairUnitFor(lawUnit, basis),
-  };
-}
-
-/** The first group per code, by seq — the regroup's own «first by seq wins». */
-function groupsByCodeOf(groups: WorkspaceGroup[]): Map<string, WorkspaceGroup> {
-  const out = new Map<string, WorkspaceGroup>();
-  for (const g of groups) {
-    const code = (g.tnvedCode ?? '').trim();
-    if (code && !out.has(code)) out.set(code, g);
-  }
-  return out;
-}
-
 export function ItemsTable({
   workspace,
   pending,
@@ -237,10 +176,12 @@ export function ItemsTable({
   const [clearAfterRev, setClearAfterRev] = useState<number | null>(null);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState('');
-  /** The ids a pasted list's rows carry (phase 0) — kept per TEXT, so a
-   * second press after a lost answer posts the same ids and the server skips
-   * the rows it already wrote instead of doubling five hundred goods. */
-  const pasteIds = useRef<{ text: string; ids: (string | null)[] }>({ text: '', ids: [] });
+  /** The ids a pasted list's rows carry (phase 0) — kept per LINE across
+   * presses, so a second press after a lost answer posts the same ids and
+   * the server treats the rows it already wrote as edits instead of doubling
+   * five hundred goods — even when the VED fixed a typo in between, which
+   * per-TEXT ids turned into a whole second copy (review units-2). */
+  const pasteIds = useRef<{ keys: string[]; ids: (string | null)[] }>({ keys: [], ids: [] });
   const newKey = useRef(1);
 
   const allItems = useMemo(
@@ -310,7 +251,7 @@ export function ItemsTable({
       case 'note':
         return item.note ?? '';
       case 'measure': {
-        const { pair } = screenRow(item, draft, groupById, groupsByCode);
+        const { pair } = screenRowOf(item, draft, groupById, groupsByCode);
         return pair !== null && (pair === 'any' || item.measureUnit === pair) && item.measureQty !== null
           ? String(item.measureQty)
           : '';
@@ -319,7 +260,7 @@ export function ItemsTable({
         return item.bazaUsd === null ? '' : String(item.bazaUsd);
       case 'bazaBasis': {
         // The unit as it stands without a basis draft — '' while «avto».
-        const shown = screenRow(item, { ...draft, bazaBasis: undefined }, groupById, groupsByCode).basis;
+        const shown = screenRowOf(item, { ...draft, bazaBasis: undefined }, groupById, groupsByCode).basis;
         return shown ?? '';
       }
       default:
@@ -419,9 +360,9 @@ export function ItemsTable({
       const v = parseCell(raw);
       return v === null || !Number.isFinite(v) ? null : scale(v);
     };
-    // The unit and the pair the SCREEN shows (screenRow) — never a chain of
+    // The unit and the pair the SCREEN shows (screenRowOf) — never a chain of
     // its own, or the live figure prices a unit the select is not showing.
-    const row = screenRow(item, d, groupById, groupsByCode);
+    const row = screenRowOf(item, d, groupById, groupsByCode);
     const bazaUsd = numOf(d?.bazaValue, item.bazaUsd, q4);
     const bazaBasis = bazaUsd === null ? null : (row.basis ?? defaultBasisFor(null));
     // The measure mirrors the server's stamp rule: a draft prices in the
@@ -535,10 +476,10 @@ export function ItemsTable({
       }
       if (d.measure !== undefined) {
         // The cell applies only while the row asks a pair unit — the SAME
-        // rule that draws the box (screenRow): a recode or a new unit that
+        // rule that draws the box (screenRowOf): a recode or a new unit that
         // stops asking strands the draft, and the save drops it client-side
         // rather than wedging on a box the screen no longer renders.
-        if (screenRow(item, d, groupById, groupsByCode).pair !== null) {
+        if (screenRowOf(item, d, groupById, groupsByCode).pair !== null) {
           const v = parseCell(d.measure);
           if (v !== null && !Number.isFinite(v)) {
             setTableError({ code: 'bad_number', seq: item.seq });
@@ -706,12 +647,11 @@ export function ItemsTable({
   const applyPaste = () =>
     act(async () => {
       const rows = parsedPaste.filter((r) => r.name).slice(0, 500);
-      // The same text keeps the same ids, so a press repeated after a lost
-      // answer is answered «already saved» row by row (phase 0).
-      if (pasteIds.current.text !== pasteText || pasteIds.current.ids.length !== rows.length) {
-        pasteIds.current = { text: pasteText, ids: rows.map(() => mintClientId()) };
-      }
-      const ids = pasteIds.current.ids;
+      // An unchanged line keeps its id; a changed line takes an id the last
+      // press used and this one no longer matches (the typo fix becomes an
+      // edit of the row that landed); only a line beyond those mints one.
+      const ids = pasteIdsFor(pasteIds.current, rows.map((r) => JSON.stringify(r)), mintClientId);
+      pasteIds.current = { keys: rows.map((r) => JSON.stringify(r)), ids };
       const result = await saveTableAction(id, {
         items: [],
         adds: rows.map((r, i) => ({ ...r, clientId: ids[i] ?? null })),
@@ -719,7 +659,7 @@ export function ItemsTable({
       if (!result.error) {
         setPasteText('');
         setPasteOpen(false);
-        pasteIds.current = { text: '', ids: [] };
+        pasteIds.current = { keys: [], ids: [] };
         setLastSave({
           minted: result.minted ?? [],
           swept: result.swept ?? 0,
@@ -1255,8 +1195,8 @@ const ItemRowBlock = memo(function ItemRowBlock({
   const t = useTranslations('calc');
   const item = row.item;
   // The ONE answer the select, the O'lchov line, the live figure and the
-  // save all read (screenRow) — the drafted code's law, the unit on screen.
-  const screen = screenRow(item, drafts, groupById, groupsByCode);
+  // save all read (screenRowOf) — the drafted code's law, the unit on screen.
+  const screen = screenRowOf(item, drafts, groupById, groupsByCode);
   // Per-row and LOCAL. Lifting «only one fold open» above a memo'd row is
   // round 70's board freeze in a grid's clothes, and two open folds harm
   // nothing — the ⚙ has allowed exactly that since the workspace shipped.

@@ -466,6 +466,39 @@ describe('phase 0: a retried save never writes a goods line twice', () => {
     expect(await itemRows(id)).toHaveLength(3);
   });
 
+  it('a retry carrying a CORRECTION applies it; an empty price on a retry means «nothing typed» (review units-1)', async () => {
+    // ONE request, closed at the end: this file opens up to the requester's
+    // open-request cap, and a test that leaves one more open breaks the last.
+    const id = await open([{ name: `bor ${tag()}` }]);
+    const clientId = crypto.randomUUID();
+    const add: TableNewItem = { clientId, name: `kurtka ${tag()}`, quantity: 4, bazaUsd: 10, bazaBasis: 'kg' };
+    await save(id, { adds: [add] });
+    // The answer was lost; the VED fixes the price before pressing again —
+    // the row is EDITED, never skipped with the correction dropped.
+    const retry = await save(id, { adds: [{ ...add, bazaUsd: 12 }] });
+    expect(retry).toMatchObject({ added: 0, alreadySaved: 0 });
+    expect(await itemRows(id)).toHaveLength(2);
+    expect(await rowOf(id, 2)).toMatchObject({ id: clientId, bazaUsd: '12.0000', bazaBasis: 'kg', bazaSource: 'typed' });
+    // An unchanged retry still writes nothing and reads as a save.
+    expect(await save(id, { adds: [{ ...add, bazaUsd: 12 }] })).toMatchObject({ added: 0, alreadySaved: 1 });
+
+    // A machine-filled price (the first save's memory fill) is not wiped by
+    // a retry whose cell was simply never typed in.
+    const filled = crypto.randomUUID();
+    const plain: TableNewItem = { clientId: filled, name: `xotira ${tag()}`, quantity: 3 };
+    await save(id, { adds: [plain] });
+    await db
+      .update(calcRequestItems)
+      .set({ bazaUsd: '7.5000', bazaBasis: 'unit', bazaSource: 'memory' })
+      .where(eq(calcRequestItems.id, filled));
+    expect(await save(id, { adds: [plain] })).toMatchObject({ added: 0, alreadySaved: 1 });
+    expect(await rowOf(id, 3)).toMatchObject({ bazaUsd: '7.5000', bazaBasis: 'unit', bazaSource: 'memory' });
+    // …while a price the PERSON typed and emptied before the retry goes.
+    await save(id, { adds: [{ ...add, bazaUsd: null, bazaBasis: null }] });
+    expect(await rowOf(id, 2)).toMatchObject({ bazaUsd: null, bazaBasis: null });
+    await db.update(calcRequests).set({ completedAt: new Date() }).where(eq(calcRequests.id, id));
+  });
+
   it('another request’s row id is refused, and so is a string that is no id at all', async () => {
     const mine = await open([{ name: `meniki ${tag()}` }]);
     const theirs = await open([{ name: `boshqaniki ${tag()}` }]);
