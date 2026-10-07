@@ -292,6 +292,7 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
         <CalcWorkspace
           workspace={workspace}
           canRecalc={canRecalc}
+          viewerId={actor.id}
           chain={chain}
           sealedSheet={sheet && sheetSight ? <CalcSheet data={sheet} sight={sheetSight} /> : null}
         />

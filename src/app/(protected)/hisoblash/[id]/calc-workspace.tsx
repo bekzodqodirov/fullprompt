@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, useTransition, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { sectionParts } from '@/modules/wms/calc/pricing';
@@ -8,6 +8,8 @@ import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 import type { Workspace } from '@/modules/wms/calc/workspace';
 import type { ChainVersion } from '@/modules/wms/calc/chain';
 import { ChainStateChip } from '@/components/calc-chain-chip';
+import { isBuildStale, reloadFresh } from '@/components/build-check';
+import { draftStorageKey, forgetStored } from '@/modules/wms/calc/draft-store';
 import { refusalWord, type CalcT } from './words';
 import {
   deleteExtraAction,
@@ -40,9 +42,12 @@ export function CalcWorkspace({
   canRecalc,
   chain = [],
   sealedSheet = null,
+  viewerId,
 }: {
   workspace: Workspace;
   canRecalc: boolean;
+  /** Whose unsaved drafts the table keeps in this browser (B5 a). */
+  viewerId: string;
   /** The sealed version's correction chain (chain.ts), oldest first. */
   chain?: ChainVersion[];
   /**
@@ -65,29 +70,55 @@ export function CalcWorkspace({
   const sealed = workspace.sealedVersion;
   const locked = Boolean(workspace.completedAt);
 
-  const settle = (result: CalcFormState) => {
-    setError(result.error ?? null);
-    if (!result.error) router.refresh();
-  };
   // A THROWN action — the network gone mid-press on a phone, a server that
   // died between two answers — is a sentence, never the error page: inside
   // an async transition React 19 hands an uncaught rejection to the nearest
   // error boundary, and every ✅, the certificate, the zone, the extras and
-  // the seal ride this one function (phase 0 of the phone round).
-  const act = (work: () => Promise<CalcFormState>) =>
-    startTransition(async () => {
-      try {
-        settle(await work());
-      } catch {
-        setError('save_failed');
-      }
-    });
+  // the seal ride this one function (phase 0 of the phone round). After a
+  // deploy the tab's action ids are gone, and the RIGHT sentence is «reload»
+  // (D9). Stable, so the table's memo'd rows and cards hold.
+  const act = useCallback(
+    (work: () => Promise<CalcFormState>) =>
+      startTransition(async () => {
+        try {
+          const result = await work();
+          setError(result.error ?? null);
+          if (!result.error) router.refresh();
+        } catch {
+          setError('save_failed');
+          if (await isBuildStale()) setError('stale_build');
+        }
+      }),
+    [router],
+  );
+
+  // The sealed or answered page leaves nothing of the drafts behind.
+  useEffect(() => {
+    if (!locked) return;
+    let storage: Storage | null = null;
+    try {
+      storage = window.localStorage;
+    } catch {
+      /* a private window — nothing was stored */
+    }
+    forgetStored(storage, draftStorageKey(viewerId, id));
+  }, [locked, viewerId, id]);
 
   return (
     <div className="space-y-3" data-testid="calc-workspace">
       {error ? (
         <p className="chip chip-warn" data-testid="calc-ws-error">
           {t.has(`errors.${error}`) ? t(`errors.${error}` as 'errors.not_ready') : error}
+          {error === 'stale_build' ? (
+            <button
+              type="button"
+              className="btn-primary ml-2 !min-h-8"
+              data-testid="calc-reload"
+              onClick={() => void reloadFresh()}
+            >
+              {t('reloadPage')}
+            </button>
+          ) : null}
         </p>
       ) : null}
 
@@ -98,7 +129,7 @@ export function CalcWorkspace({
       {!locked ? (
         <>
           {workspace.parts.customs ? (
-            <ItemsTable workspace={workspace} pending={pending} act={act} onDirty={setDirty} />
+            <ItemsTable workspace={workspace} pending={pending} act={act} onDirty={setDirty} viewerId={viewerId} />
           ) : null}
 
           <FreightPanel workspace={workspace} pending={pending} act={act} />
@@ -247,7 +278,7 @@ function ExtrasPanel({
         {/* Pointed at the EXISTING cost-type dictionary, so phase E's
             calc-vs-actual compares like with like. */}
         <select
-          className="input input-sm !w-40"
+          className="input input-sm !w-40 max-md:!text-base"
           aria-label={t('costType')}
           data-testid="calc-extra-type"
           value={costTypeId}
@@ -265,7 +296,7 @@ function ExtrasPanel({
           ))}
         </select>
         <input
-          className="input input-sm !w-40"
+          className="input input-sm !w-40 max-md:!text-base"
           placeholder={t('extraLabel')}
           aria-label={t('extraLabel')}
           data-testid="calc-extra-label"
@@ -273,7 +304,7 @@ function ExtrasPanel({
           onChange={(e) => setLabel(e.target.value)}
         />
         <input
-          className="input input-sm !w-24 font-mono tabular-nums"
+          className="input input-sm !w-24 font-mono tabular-nums max-md:!text-base"
           placeholder="$"
           aria-label={t('amount')}
           data-testid="calc-extra-amount"
@@ -451,7 +482,7 @@ function SealPanel({
             <label className="text-2xs">
               <span className="label">{t('bandOverride')} kg/m³</span>
               <input
-                className="input input-sm !w-24 font-mono tabular-nums"
+                className="input input-sm !w-24 font-mono tabular-nums max-md:!text-base"
                 data-testid="calc-band-override"
                 value={override}
                 onChange={(e) => setOverride(e.target.value)}
@@ -460,7 +491,7 @@ function SealPanel({
             <label className="grow text-2xs">
               <span className="label">{t('reason')}</span>
               <input
-                className="input input-sm"
+                className="input input-sm max-md:!text-base"
                 data-testid="calc-band-reason"
                 value={overrideReason}
                 onChange={(e) => setOverrideReason(e.target.value)}
@@ -471,7 +502,7 @@ function SealPanel({
             <label className="text-2xs">
               <span className="label">{t('discount')} $</span>
               <input
-                className="input input-sm !w-24 font-mono tabular-nums"
+                className="input input-sm !w-24 font-mono tabular-nums max-md:!text-base"
                 data-testid="calc-discount"
                 value={discount}
                 onChange={(e) => setDiscount(e.target.value)}
@@ -480,7 +511,7 @@ function SealPanel({
             <label className="grow text-2xs">
               <span className="label">{t('reason')}</span>
               <input
-                className="input input-sm"
+                className="input input-sm max-md:!text-base"
                 data-testid="calc-discount-reason"
                 value={discountReason}
                 onChange={(e) => setDiscountReason(e.target.value)}
@@ -719,7 +750,7 @@ function FeeOverride({
   return (
     <span className="flex flex-wrap items-center gap-1">
       <input
-        className="input input-sm !w-24"
+        className="input input-sm !w-24 max-md:!text-base"
         inputMode="decimal"
         placeholder={t('feeAuto')}
         aria-label={t('feeOverride')}
