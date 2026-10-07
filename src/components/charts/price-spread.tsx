@@ -88,7 +88,8 @@ export function PriceSpread({
       <div className="md:grid md:grid-cols-[9.5rem_1fr] md:gap-2">
         <div className="hidden md:block" />
         <div className="min-w-0">
-          <div className="relative h-[72px] pt-5 md:h-[96px]">
+          {/* The bars get 72 / 96 px; the 20 px above them is the «siz» marker's. */}
+          <div className="relative h-[92px] pt-5 md:h-[116px]">
             <div className="relative h-full">
               {/* The middle half of the declarations, as a wash behind the bars. */}
               {p25 && p75 && !single ? (
