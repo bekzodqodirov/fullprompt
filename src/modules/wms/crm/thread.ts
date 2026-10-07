@@ -559,9 +559,10 @@ export async function myThreads(viewer: Viewer, limit = 30): Promise<DockThreadR
     last_by: string | null;
     author: string | null;
     unread: boolean;
+    mentioned: boolean;
   }>(sql`
     WITH mine AS (
-      SELECT kind, id, max(touched) AS touched FROM (
+      SELECT kind, id, max(touched) AS touched, false AS mentioned FROM (
         SELECT CASE WHEN a.calc_request_id IS NOT NULL THEN 'calc' ELSE a.entity_type END AS kind,
                COALESCE(a.calc_request_id, a.entity_id) AS id,
                a.created_at AS touched
@@ -573,10 +574,11 @@ export async function myThreads(viewer: Viewer, limit = 30): Promise<DockThreadR
          LIMIT ${DOCK_SCAN_ROWS}
       ) m GROUP BY 1, 2
     ), pinged AS (
-      SELECT kind, id::uuid AS id, max(touched) AS touched FROM (
+      SELECT kind, id::uuid AS id, max(touched) AS touched, bool_or(named) AS mentioned FROM (
         SELECT n.payload -> 'thread' ->> 'kind' AS kind,
                n.payload -> 'thread' ->> 'id' AS id,
-               n.created_at AS touched
+               n.created_at AS touched,
+               n.type = 'MentionedInNote' AS named
           FROM notifications n
          WHERE n.user_id = ${viewer.id}::uuid
            AND n.type IN (${THREAD_PING_LIST})
@@ -589,13 +591,13 @@ export async function myThreads(viewer: Viewer, limit = 30): Promise<DockThreadR
          LIMIT ${DOCK_SCAN_ROWS}
       ) p GROUP BY 1, 2
     ), cand AS (
-      SELECT kind, id, max(touched) AS touched
+      SELECT kind, id, max(touched) AS touched, bool_or(mentioned) AS mentioned
         FROM (SELECT * FROM mine UNION ALL SELECT * FROM pinged) x
        GROUP BY 1, 2
        ORDER BY 3 DESC
        LIMIT 60
     )
-    SELECT c.kind, c.id::text AS id,
+    SELECT c.kind, c.id::text AS id, c.mentioned,
            COALESCE(card.note, calc.note) AS last_note,
            COALESCE(card.created_at, calc.created_at) AS last_at,
            COALESCE(card.created_by, calc.created_by)::text AS last_by,
@@ -631,8 +633,12 @@ export async function myThreads(viewer: Viewer, limit = 30): Promise<DockThreadR
     threadHrefsFor(viewer, refs),
     stillInvolved(viewer, refs),
   ]);
+  // A thread I was @-NAMED in stays, involved or not: `announceMentions`
+  // pings a mentioned person with no involvement filter (E2 a — he may
+  // reply), so dropping it here would ping him about a thread his own dock
+  // hides (#513). The door still decides (`admitted`); only involvement yields.
   const visible = rows
-    .filter((row) => admitted.has(threadKey(row)) && hrefs.get(threadKey(row)) && involved(row))
+    .filter((row) => admitted.has(threadKey(row)) && hrefs.get(threadKey(row)) && (row.mentioned || involved(row)))
     .slice(0, limit);
   const labels = await threadLabels(visible.map((row) => ({ kind: row.kind, id: row.id })));
   return visible.map((row) => ({
@@ -657,6 +663,8 @@ export async function myThreads(viewer: Viewer, limit = 30): Promise<DockThreadR
  * relation the audience asks (`thread-involvement.ts`), and the same
  * exemptions: only a plain seller is judged, never a lead thread (the door
  * does E9 there), and a calculation's requester is never judged (he asked).
+ * A thread he was @-mentioned in is never judged either — the caller keeps it,
+ * because the mention ping reaches him whatever this says.
  */
 async function stillInvolved(
   viewer: Viewer,

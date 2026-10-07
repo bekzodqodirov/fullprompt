@@ -535,6 +535,37 @@ describe('17c. E9 on a client thread — from the dock', () => {
   });
 });
 
+describe('17d. a mention outranks involvement — the dock and the ping agree', () => {
+  it('a plain seller no longer involved with the client, then @-named there, is pinged AND finds the thread in his dock', async () => {
+    const K = await client(null);
+    const LK = await lead(P.S, K);
+    await addThreadMessage({ ref: { kind: 'client', id: K }, body: `oldingi yozuv ${SFX}` }, ctx(P.S));
+    const listed = async (who: string) =>
+      (await myThreads(await actorOf(who))).some((r) => r.kind === 'client' && r.id === K);
+    // Handed to B: S is out of the thread (17c) …
+    await db.update(leads).set({ ownerId: P.B }).where(eq(leads.id, LK));
+    expect(await listed(P.S)).toBe(false);
+    // … until B names him. The mention reaches him with no involvement filter (E2 a) …
+    const body = `@Ichki Sotuvchi ${SFX} bu mijozni bilasizmi?`;
+    const named = await addThreadMessage({ ref: { kind: 'client', id: K }, body }, ctx(P.B));
+    await announceNote({
+      entityType: 'client',
+      entityId: K,
+      note: body,
+      authorId: P.B,
+      activityId: named.activityId,
+      calcRequestId: null,
+    });
+    const pings = await pingsOf(named.activityId);
+    expect(pings.filter((p) => p.userId === P.S).map((p) => p.type)).toEqual(['MentionedInNote']);
+    expect(await noteRecipients('client', K, null)).not.toContain(P.S);
+    // … so the thread he was called into is in his «👥 Ichki» — new until read.
+    const row = (await myThreads(await actorOf(P.S))).find((r) => r.kind === 'client' && r.id === K);
+    expect(row?.unread).toBe(true);
+    expect(row?.href).toBe(`/admin/clients/${K}#ichki`);
+  });
+});
+
 describe('19. the lenta’s hint', () => {
   it('points the seller to the calc thread while an open calculation has a question — and only then', async () => {
     const L = await lead(P.S);
