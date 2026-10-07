@@ -5302,6 +5302,10 @@
     "intro": "The bot posts every sealed price and «Готово» answer into the staff's private channel. No client data, forwarding is blocked, discounted calculations are not posted.",
     "notConnected": "No channel connected",
     "connected": "Connected: {title}",
+    "setup1": "Create a NEW private channel in Telegram — with no members.",
+    "setup2": "Make the bot a channel administrator with: post, edit, invite via link, remove members. A system admin linked to the bot must do this.",
+    "setup3": "Refresh this page — the channel connects itself and a link appears. If not, remove the bot from the admins and add it again.",
+    "setup4": "Send the link to the staff: the bot admits only an active colleague linked to the bot.",
     "rights": "Bot rights",
     "right": {
       "post": "post",

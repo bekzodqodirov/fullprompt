@@ -5302,6 +5302,10 @@
     "intro": "Bot har bir muhrlangan hisob va «Готово» narxini xodimlarning yopiq kanaliga joylaydi. Mijoz ma’lumoti chiqmaydi, forward taqiqlangan, chegirmali hisob chiqmaydi.",
     "notConnected": "Kanal ulanmagan",
     "connected": "Ulangan: {title}",
+    "setup1": "Telegram’da YANGI yopiq (private) kanal oching — hech kim a’zo bo‘lmagan.",
+    "setup2": "Botni kanalga administrator qiling: xabar joylash, tahrirlash, havola orqali taklif, a’zolarni chiqarish huquqlari bilan. Buni tizimda admin bo‘lgan va botga ulangan odam qilsin.",
+    "setup3": "Shu sahifani yangilang — kanal o‘zi ulanadi va havola paydo bo‘ladi. Ko‘rinmasa, botni adminlikdan olib qayta qo‘shing.",
+    "setup4": "Havolani xodimlarga yuboring: bot faqat tizimda faol va botga ulangan xodimni qabul qiladi.",
     "rights": "Bot huquqlari",
     "right": {
       "post": "xabar joylash",
