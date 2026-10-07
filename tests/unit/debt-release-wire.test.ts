@@ -34,7 +34,25 @@ describe('the counter screen asks why and posts it', () => {
     expect(bar).toBeGreaterThan(0);
     expect(screen.indexOf('data-testid="issue-debt-ok"')).toBeLessThan(bar);
     expect(screen.indexOf('data-testid="issue-debt-note"')).toBeLessThan(bar);
-    expect(screen).toContain('const barTall = error !== null;');
+  });
+
+  it('the fixed bar says when it is the DEBT that keeps «Topshirish» grey, and pays for the line below the last lot (DEBT-2)', () => {
+    const screen = read(SCREEN);
+    const bar = screen.indexOf('pb-safe fixed inset-x-0 bottom-0');
+    const hint = screen.indexOf('data-testid="issue-debt-hint"');
+    // In the bar, directly above the button it explains — and a BUTTON that takes the person there.
+    expect(hint).toBeGreaterThan(bar);
+    expect(hint).toBeLessThan(screen.indexOf('data-testid="confirm-issue"'));
+    expect(between(screen, '{barHintShown && (', 'data-testid="issue-debt-hint"')).toContain('type="button"');
+    expect(screen).toContain('onClick={goToDebt}');
+    // Unticked with nothing recorded to answer the press, or ticked with no reason yet.
+    expect(screen).toContain(
+      "debtTickShown && ((debtOk && debtNote.trim() === '') || (!debtOk && !pressCovered));",
+    );
+    // Every line the bar grows by is paid for: the refusal, the hint, or both.
+    expect(screen).toContain('const barLines = (error !== null ? 1 : 0) + (barHintShown ? 1 : 0);');
+    expect(screen).toContain("const barPad = barLines === 2 ? 'pb-52' : barLines === 1 ? 'pb-40' : 'pb-28';");
+    expect(screen).toContain('className={`space-y-3 ${barPad}`}');
   });
 
   it('the tick is drawn exactly where the server honours it, and a USED tick waits for its reason', () => {

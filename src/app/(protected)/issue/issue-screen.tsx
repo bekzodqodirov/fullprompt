@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { v4 as uuidv4 } from 'uuid';
 import { Scanner } from '@/components/scan/scanner';
@@ -98,6 +98,9 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
    * and never printed on the act. Controlled: a refusal keeps it (#463).
    */
   const [debtNote, setDebtNote] = useState('');
+  /** Where the bar's debt hint takes the person (DEBT-2): the tick, then its reason. */
+  const debtTickRef = useRef<HTMLInputElement>(null);
+  const debtNoteRef = useRef<HTMLInputElement>(null);
   /** The «Ruxsat so'rash» reason (D5a) — the decider reads it in Telegram. */
   const [askNote, setAskNote] = useState('');
   /** The price half of the holder's tick (0104) — its own box, its own words. */
@@ -399,11 +402,30 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
       ? new Date(at).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
       : '—';
   // The debt tick left the fixed bar for the page flow (D4a's comment and its
-  // hint would not fit under it at 360 px), so only a refusal grows the bar.
-  const barTall = error !== null;
+  // hint would not fit under it at 360 px) — so the bar says, in one line
+  // above «Topshirish», when it is the DEBT that keeps the button grey (the
+  // review's DEBT-2): a tick holder who has scrolled past the banner sees a
+  // grey button and a reason beside it, not a grey button alone. Shown when
+  // the drawn tick is unticked and no recorded approval answers the press,
+  // or ticked with no reason yet (the button waits for one whatever an
+  // approval covers).
+  const barHintShown =
+    debtTickShown && ((debtOk && debtNote.trim() === '') || (!debtOk && !pressCovered));
+  // Each line the bar grows by is paid for below the last lot, so the page's
+  // end never hides under it: measured at 1280×900, the refusal AND the hint
+  // together outgrow `pb-40` by 11 px. Literal classes — Tailwind compiles
+  // only what it can read.
+  const barLines = (error !== null ? 1 : 0) + (barHintShown ? 1 : 0);
+  const barPad = barLines === 2 ? 'pb-52' : barLines === 1 ? 'pb-40' : 'pb-28';
+  function goToDebt() {
+    const target = debtOk ? debtNoteRef.current : debtTickRef.current;
+    if (!target) return;
+    target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    target.focus({ preventScroll: true });
+  }
 
   return (
-    <div className={`space-y-3 ${barTall ? 'pb-40' : 'pb-28'}`}>
+    <div className={`space-y-3 ${barPad}`}>
       <div className="card space-y-2 !p-3">
         <div className="flex gap-2">
           <select
@@ -609,6 +631,7 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
             <>
               <label className="mt-2 flex items-center gap-2 font-semibold text-bad">
                 <input
+                  ref={debtTickRef}
                   type="checkbox"
                   className="h-5 w-5"
                   data-testid="issue-debt-ok"
@@ -620,6 +643,7 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
               {debtOk && (
                 <>
                   <input
+                    ref={debtNoteRef}
                     data-testid="issue-debt-note"
                     className="input mt-2"
                     maxLength={500}
@@ -860,6 +884,18 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
                 onChange={(e) => setPersonPhone(e.target.value)}
               />
             </div>
+            {/* Why «Topshirish» is grey, when it is the debt (DEBT-2) — a press
+                takes the person to the tick, or to its reason once ticked. */}
+            {barHintShown && (
+              <button
+                type="button"
+                data-testid="issue-debt-hint"
+                className="block w-full text-left text-xs font-semibold text-bad"
+                onClick={goToDebt}
+              >
+                {tq('barHint')}
+              </button>
+            )}
             <button
               type="button"
               data-testid="confirm-issue"

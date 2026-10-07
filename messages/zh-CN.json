@@ -5232,6 +5232,7 @@
     "debtNotePlaceholder": "为什么赊账放行？（例如：明天付款）",
     "debtNoteHint": "不会打印在交接单上——将发送给老板和会计",
     "debtNoteRequired": "赊账放行须填写原因——原因将发送给老板和会计",
+    "barHint": "⬆ 欠款：请勾选并填写原因",
     "askNotePlaceholder": "原因（必填）：为什么需要放行？",
     "askNoteRequired": "请填写申请原因",
     "approvalReason": "原因",

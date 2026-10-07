@@ -5232,6 +5232,7 @@
     "debtNotePlaceholder": "Nega qarzga berilyapti? (masalan: ertaga to‘laydi)",
     "debtNoteHint": "Aktda chiqmaydi — egasi va buxgalterga boradi",
     "debtNoteRequired": "Qarzga berish uchun sababini yozing — u egasi va buxgalterga boradi",
+    "barHint": "⬆ Qarz: belgini qo‘ying va sababini yozing",
     "askNotePlaceholder": "Sababi (majburiy): nega berish kerak?",
     "askNoteRequired": "So‘rov sababini yozing",
     "approvalReason": "Sabab",

@@ -5232,6 +5232,7 @@
     "debtNotePlaceholder": "Why on debt? (e.g. pays tomorrow)",
     "debtNoteHint": "Not printed on the act — sent to the owner and the accountant",
     "debtNoteRequired": "Write the reason to release on debt — it goes to the owner and the accountant",
+    "barHint": "⬆ Debt: tick the box and write the reason",
     "askNotePlaceholder": "Reason (required): why should it go out?",
     "askNoteRequired": "Write the reason for the request",
     "approvalReason": "Reason",

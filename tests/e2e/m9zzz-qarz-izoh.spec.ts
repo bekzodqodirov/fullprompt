@@ -9,7 +9,9 @@ import { cleanupAll, database, mint, newRun, PASSWORD } from './qarz-izoh-fixtur
  *
  *  1. the spec's own TAS1 warehouse manager opens /issue: the debt banner
  *     carries the tick INSIDE it (the page flow) and no «Ruxsat so'rash»; the
- *     tick asks WHY, «Topshirish» waits for a non-blank reason, a 60-character
+ *     fixed bar says why «Topshirish» is grey until the tick has its reason,
+ *     and the line takes him to the tick (DEBT-2);
+ *     the tick asks WHY, «Topshirish» waits for a non-blank reason, a 60-character
  *     unbroken token does not widen the phone, and the act downloads (that the
  *     act does NOT carry the reason is the source fence's job — the act draws
  *     CJK glyph ids, so a byte search would be vacuous);
@@ -53,14 +55,25 @@ async function fitsThePhone(page: Page) {
   expect(scroll).toBeLessThanOrEqual(client);
 }
 
-/** The newest run that reached the counter — what steps 2 and 3 are about. */
+/**
+ * THIS run's released client — what steps 2 and 3 are about (the review's
+ * DEBT-5). Released by a still-ACTIVE «QI manager» (step 1 deactivates every
+ * earlier run's manager before it mints its own, and the cleanup test is
+ * last), with this spec's exact reason, minted in the last half hour: an
+ * earlier run's leftover on a long-lived database cannot answer for this
+ * one. Resolved from the database, never from a variable — a worker that
+ * died in step 1 is gone (#523).
+ */
 async function releasedRun(): Promise<{ clientId: string; code: string }> {
   const sql = database();
   try {
     const [row] = await sql<{ id: string; client_code: string }[]>`
       SELECT c.id, c.client_code FROM clients c
        WHERE c.client_code ~ '^QI[0-9]{6}$' AND c.name = 'Qarz izoh ' || c.client_code
-         AND EXISTS (SELECT 1 FROM handovers h WHERE h.client_id = c.id AND h.debt_note IS NOT NULL)
+         AND c.created_at > now() - interval '30 minutes'
+         AND EXISTS (SELECT 1 FROM handovers h JOIN users u ON u.id = h.created_by
+                      WHERE h.client_id = c.id AND h.debt_note = ${NOTE}
+                        AND u.full_name LIKE 'QI manager %' AND u.active)
        ORDER BY c.created_at DESC LIMIT 1`;
     expect(row, 'step 1 released a QI client on debt').toBeDefined();
     return { clientId: row!.id, code: row!.client_code };
@@ -101,15 +114,37 @@ test('the warehouse manager releases a debtor’s cargo at his own counter — w
   const confirm = page.getByTestId('confirm-issue');
   await expect(confirm).toBeDisabled();
 
+  // DEBT-2: the bar says WHY «Topshirish» is grey — beside the button, after
+  // the person has scrolled past the banner — and the line takes him back.
+  const hint = page.getByTestId('issue-debt-hint');
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await expect(hint).toBeVisible();
+  const hintBox = (await hint.boundingBox())!;
+  const barWithHint = (await page.locator('.pb-safe.fixed').boundingBox())!;
+  const confirmWithHint = (await confirm.boundingBox())!;
+  expect(hintBox.y).toBeGreaterThanOrEqual(barWithHint.y);
+  expect(hintBox.y + hintBox.height).toBeLessThanOrEqual(confirmWithHint.y);
+  // The line the bar grew by is paid for: the last lot still ends above it.
+  const lotsWithHint = (await page.locator('#issuable-boxes').boundingBox())!;
+  expect(lotsWithHint.y + lotsWithHint.height).toBeLessThanOrEqual(barWithHint.y);
+  await fitsThePhone(page);
+  await hint.click();
+  await expect(tick).toBeFocused();
+  await expect(tick).toBeInViewport();
+
   await tick.check();
   const note = page.getByTestId('issue-debt-note');
   await expect(note).toBeVisible();
-  // A USED tick waits for its reason — a blank one is no reason.
+  // A USED tick waits for its reason — a blank one is no reason, and the
+  // bar keeps saying so.
   await expect(confirm).toBeDisabled();
+  await expect(hint).toBeVisible();
   await note.fill('   ');
   await expect(confirm).toBeDisabled();
+  await expect(hint).toBeVisible();
   await note.fill(NOTE);
   await expect(confirm).toBeEnabled();
+  await expect(hint).toHaveCount(0);
 
   await fitsThePhone(page);
   // «Topshirish» is inside the viewport, and nothing in the page flow hides
@@ -128,6 +163,16 @@ test('the warehouse manager releases a debtor’s cargo at his own counter — w
 
   await confirm.click();
   await expect(page.getByTestId('act-link')).toBeVisible({ timeout: 15_000 });
+  // THIS run's handover carries THIS reason, whole (DEBT-5) — what steps 2
+  // and 3 then find on the register and the lenta.
+  const db = database();
+  try {
+    const stored = await db<{ debt_note: string | null }[]>`
+      SELECT h.debt_note FROM handovers h JOIN clients c ON c.id = h.client_id WHERE c.client_code = ${run.marker}`;
+    expect(stored.map((row) => row.debt_note)).toEqual([NOTE]);
+  } finally {
+    await db.end();
+  }
   const actHref = await page.getByTestId('act-link').getAttribute('href');
   const act = await page.request.get(actHref!);
   expect(act.status()).toBe(200);
