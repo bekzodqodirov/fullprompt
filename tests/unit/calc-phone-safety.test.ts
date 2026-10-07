@@ -155,7 +155,13 @@ describe('the phone renders the SAME state — never the desktop grid’s markup
     (_name, source) => {
       expect(source).not.toContain('data-cell=');
       expect(source).not.toContain('data-row=');
-      const testids = [...source.matchAll(/(?:data-testid|testId)="([^"]+)"/g)].map((m) => m[1]!);
+      // An attribute, a `testId=` prop, AND a quoted `calc-…` literal — the
+      // sheet maps its fields to their testids in an object, which an
+      // attribute-only read would never see.
+      const testids = [
+        ...[...source.matchAll(/(?:data-testid|testId)="([^"]+)"/g)].map((m) => m[1]!),
+        ...[...source.matchAll(/'(calc-[a-z0-9-]+)'/g)].map((m) => m[1]!),
+      ];
       expect(testids.length).toBeGreaterThan(3);
       for (const id of testids) {
         expect(FORBIDDEN_TESTIDS, id).not.toContain(id);
