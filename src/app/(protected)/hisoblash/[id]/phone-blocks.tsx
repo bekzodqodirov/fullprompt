@@ -79,7 +79,9 @@ export function PhoneBlocks({
           type="button"
           className="btn-secondary !min-h-11 w-full"
           data-testid="calc-phone-next-draft"
-          onClick={() => (nextDraft.kind === 'item' ? onOpenItem(nextDraft.id) : onOpenGhost(nextDraft.key))}
+          onClick={() =>
+            nextDraft.kind === 'item' ? onOpenItem(nextDraft.id) : onOpenGhost(nextDraft.key)
+          }
         >
           {t('phone.nextDraft')}
         </button>
@@ -160,10 +162,17 @@ export function PhoneBlocks({
                   {t('confirm')}
                 </button>
               )}
-              <span className="ml-auto font-mono tabular-nums" data-testid="calc-phone-block-customs">
-                {customs.ok ? `$${customs.customsUsd.toFixed(2)}` : `⚠ ${refusalWord(t, customs.reason)}`}
+              <span
+                className="ml-auto font-mono tabular-nums"
+                data-testid="calc-phone-block-customs"
+              >
+                {customs.ok
+                  ? `$${customs.customsUsd.toFixed(2)}`
+                  : `⚠ ${refusalWord(t, customs.reason)}`}
                 {drafted ? (
-                  <span className="ml-1 align-middle text-2xs font-normal text-brand-700">{t('table.live')}</span>
+                  <span className="ml-1 align-middle text-2xs font-normal text-brand-700">
+                    {t('table.live')}
+                  </span>
                 ) : null}
               </span>
             </div>
@@ -174,8 +183,12 @@ export function PhoneBlocks({
             >
               {group.dutyFree ? t('dutyFree') : dutyText(group)} ·{' '}
               {group.vatFree ? t('vatFree') : `${t('vat')} ${group.vatPct ?? '—'}%`}
-              {group.aiProposed && group.confirmedAt === null ? ` · ✨ ${group.aiConfidence ?? '—'}` : ''}
-              {group.rateSource === 'dictionary' && group.dictionaryRates?.note ? ` · ⚠ ${t('table.rateNoted')}` : ''}
+              {group.aiProposed && group.confirmedAt === null
+                ? ` · ✨ ${group.aiConfidence ?? '—'}`
+                : ''}
+              {group.rateSource === 'dictionary' && group.dictionaryRates?.note
+                ? ` · ⚠ ${t('table.rateNoted')}`
+                : ''}
               {group.warnings.includes('basis_not_law') && group.dutyUnit
                 ? ` · ⚠ ${t('table.basisNotLaw', { unit: basisLabel(defaultBasisFor(group), t('perUnit')) })}`
                 : ''}
@@ -248,23 +261,45 @@ export const PhoneItemCard = memo(function PhoneItemCard({
   const screen = screenRowOf(item, draft, groupById, groupsByCode);
   const name = draft?.name ?? item.label;
   const code = (draft?.tnvedCode ?? item.tnvedCode ?? '').trim();
-  const qty = draft?.quantity !== undefined ? typed(draft.quantity) : item.quantity === null ? '' : String(item.quantity);
-  const kg = draft?.weightKg !== undefined ? typed(draft.weightKg) : item.weightKg === null ? '' : String(item.weightKg);
-  const m3 = draft?.volumeM3 !== undefined ? typed(draft.volumeM3) : item.volumeM3 === null ? '' : String(item.volumeM3);
+  const qty =
+    draft?.quantity !== undefined
+      ? typed(draft.quantity)
+      : item.quantity === null
+        ? ''
+        : String(item.quantity);
+  const kg =
+    draft?.weightKg !== undefined
+      ? typed(draft.weightKg)
+      : item.weightKg === null
+        ? ''
+        : String(item.weightKg);
+  const m3 =
+    draft?.volumeM3 !== undefined
+      ? typed(draft.volumeM3)
+      : item.volumeM3 === null
+        ? ''
+        : String(item.volumeM3);
   const pair = screen.pair;
   const storedMeasure =
     pair !== null && (pair === 'any' || item.measureUnit === pair) && item.measureQty !== null
       ? String(item.measureQty)
       : '';
-  const measure = pair === null ? '' : draft?.measure !== undefined ? typed(draft.measure) : storedMeasure;
+  const measure =
+    pair === null ? '' : draft?.measure !== undefined ? typed(draft.measure) : storedMeasure;
   const baza =
-    draft?.bazaValue !== undefined ? typed(draft.bazaValue) : item.bazaUsd === null ? '' : String(item.bazaUsd);
+    draft?.bazaValue !== undefined
+      ? typed(draft.bazaValue)
+      : item.bazaUsd === null
+        ? ''
+        : String(item.bazaUsd);
   const missing = code === '' || baza === '' || (pair !== null && pair !== 'any' && measure === '');
   const counts = [
     qty ? `${qty}${item.unit ? ` ${item.unit}` : ''}` : '',
     kg ? `${kg} kg` : '',
     m3 ? `${m3} m³` : '',
-    measure && pair !== null && pair !== 'any' ? `${measure} ${basisLabel(pair, t('perUnit'))}` : '',
+    measure && pair !== null && pair !== 'any'
+      ? `${measure} ${basisLabel(pair, t('perUnit'))}`
+      : '',
   ].filter(Boolean);
 
   return (
@@ -339,7 +374,9 @@ export const PhoneGhostCard = memo(function PhoneGhostCard({
         ＋ {row.name.trim() || t('phone.newItem')}
       </span>
       <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-2xs text-ink-600">
-        {row.tnvedCode.trim() ? <span className="font-mono tabular-nums">{row.tnvedCode.trim()}</span> : null}
+        {row.tnvedCode.trim() ? (
+          <span className="font-mono tabular-nums">{row.tnvedCode.trim()}</span>
+        ) : null}
         {counts.length > 0 ? <span>{counts.join(' · ')}</span> : null}
         <span className="chip chip-warn" data-testid="calc-phone-drafted">
           {t('phone.drafted')}

@@ -13,7 +13,10 @@ import { describe, expect, it } from 'vitest';
  * explaining it is a rule that gets deleted.
  */
 const strip = (text: string) =>
-  text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').replace(/\{\/\*[\s\S]*?\*\/\}/g, '');
+  text
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '')
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, '');
 const read = (path: string) => strip(readFileSync(path, 'utf8'));
 const WS = read('src/app/(protected)/hisoblash/[id]/calc-workspace.tsx');
 const TABLE = read('src/app/(protected)/hisoblash/[id]/items-table.tsx');
@@ -62,7 +65,9 @@ describe('the phone ✅ waits on unsaved cells, as the desktop one does', () => 
   });
 
   it('the gate counts the restorable rows too, and feeds the seal', () => {
-    expect(TABLE).toMatch(/const gateCount = dirtyCount \+ \(restore \? restorableCount\(restore\) : 0\);/);
+    expect(TABLE).toMatch(
+      /const gateCount = dirtyCount \+ \(restore \? restorableCount\(restore\) : 0\);/,
+    );
     expect(TABLE).toContain('useEffect(() => onDirty(gateCount), [gateCount, onDirty]);');
   });
 });
@@ -90,7 +95,10 @@ describe('ONE chain for the unit on screen (#886, #171)', () => {
     const uses = TABLE.match(/screenRowOf\(item, /g) ?? [];
     // serverValueOf (measure + basis), liveItem, buildEdit, ItemRowBlock.
     expect(uses.length).toBeGreaterThanOrEqual(5);
-    const live = TABLE.slice(TABLE.indexOf('const liveItem'), TABLE.indexOf('const liveCustomsByGroup'));
+    const live = TABLE.slice(
+      TABLE.indexOf('const liveItem'),
+      TABLE.indexOf('const liveCustomsByGroup'),
+    );
     expect(live).toContain('screenRowOf(item');
     expect(live).toContain('volumeM3: numOf(d?.volumeM3');
     const build = constBody('buildEdit');
@@ -117,7 +125,10 @@ describe('ONE chain for the unit on screen (#886, #171)', () => {
   });
 
   it('the desktop footer’s A1 chip reads the LIVE rows its baza reads (review units-r2-2)', () => {
-    const memo = TABLE.slice(TABLE.indexOf('const liveBasisNotLawByGroup'), TABLE.indexOf('const liveTotals'));
+    const memo = TABLE.slice(
+      TABLE.indexOf('const liveBasisNotLawByGroup'),
+      TABLE.indexOf('const liveTotals'),
+    );
     expect(memo).toContain('basisNotLaw(g.dutyUnit, g.items.map((i) => liveItem(i)))');
     const footer = TABLE.slice(TABLE.indexOf('function BlockFooter'));
     expect(footer).toContain('{liveBasisNotLaw && group.dutyUnit ? (');
@@ -126,25 +137,35 @@ describe('ONE chain for the unit on screen (#886, #171)', () => {
 });
 
 describe('the phone renders the SAME state — never the desktop grid’s markup (m9zp reads it strictly)', () => {
-  const FORBIDDEN_TESTIDS = ['calc-row', 'calc-baza', 'calc-basis', 'calc-measure', 'calc-save-table', 'calc-add-row'];
+  const FORBIDDEN_TESTIDS = [
+    'calc-row',
+    'calc-baza',
+    'calc-basis',
+    'calc-measure',
+    'calc-save-table',
+    'calc-add-row',
+  ];
   const FORBIDDEN_PREFIXES = ['calc-group-', 'calc-item-', 'calc-new-'];
 
   it.each([
     ['row-sheet.tsx', SHEET],
     ['phone-blocks.tsx', PHONE],
-  ])('%s carries no grid cell, no grid testid, no 14 px input and no AI or bulk door', (_name, source) => {
-    expect(source).not.toContain('data-cell=');
-    expect(source).not.toContain('data-row=');
-    const testids = [...source.matchAll(/(?:data-testid|testId)="([^"]+)"/g)].map((m) => m[1]!);
-    expect(testids.length).toBeGreaterThan(3);
-    for (const id of testids) {
-      expect(FORBIDDEN_TESTIDS, id).not.toContain(id);
-      for (const prefix of FORBIDDEN_PREFIXES) expect(id.startsWith(prefix), id).toBe(false);
-    }
-    expect(source).not.toMatch(/\binput-cell\b|\binput-sm\b/);
-    // His B1/B3: rates are phase 2, no ✨, no mass pull on the phone.
-    expect(source).not.toMatch(/proposeAction|pullBazasAction|setRatesAction/);
-  });
+  ])(
+    '%s carries no grid cell, no grid testid, no 14 px input and no AI or bulk door',
+    (_name, source) => {
+      expect(source).not.toContain('data-cell=');
+      expect(source).not.toContain('data-row=');
+      const testids = [...source.matchAll(/(?:data-testid|testId)="([^"]+)"/g)].map((m) => m[1]!);
+      expect(testids.length).toBeGreaterThan(3);
+      for (const id of testids) {
+        expect(FORBIDDEN_TESTIDS, id).not.toContain(id);
+        for (const prefix of FORBIDDEN_PREFIXES) expect(id.startsWith(prefix), id).toBe(false);
+      }
+      expect(source).not.toMatch(/\binput-cell\b|\binput-sm\b/);
+      // His B1/B3: rates are phase 2, no ✨, no mass pull on the phone.
+      expect(source).not.toMatch(/proposeAction|pullBazasAction|setRatesAction/);
+    },
+  );
 
   it('ONE sheet, mounted once and toggled (#684)', () => {
     expect(SHEET.match(/<Overlay\b/g) ?? []).toHaveLength(1);
@@ -197,8 +218,13 @@ describe('B5 a: the stored drafts are read before anything writes over them', ()
     const writeAt = TABLE.indexOf("storagePhase.current === 'init') return;");
     expect(readAt).toBeGreaterThan(-1);
     expect(writeAt).toBeGreaterThan(readAt);
-    const write = TABLE.slice(writeAt, TABLE.indexOf('}, [drafts, bases, newRows, storageKey]);', writeAt));
-    expect(write).toContain("storagePhase.current === 'prompt' ? mergeForStorage(storedEntry.current, live) : live");
+    const write = TABLE.slice(
+      writeAt,
+      TABLE.indexOf('}, [drafts, bases, newRows, storageKey]);', writeAt),
+    );
+    expect(write).toContain(
+      "storagePhase.current === 'prompt' ? mergeForStorage(storedEntry.current, live) : live",
+    );
   });
 });
 

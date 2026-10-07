@@ -51,7 +51,9 @@ describe('the key and the blob', () => {
   });
 
   it('a 72-hour-old entry is nothing; a fresh one reads back', () => {
-    const fresh = JSON.stringify(entry({ rows: { A: { draft: { quantity: '4' }, base: { quantity: 1 } } } }));
+    const fresh = JSON.stringify(
+      entry({ rows: { A: { draft: { quantity: '4' }, base: { quantity: 1 } } } }),
+    );
     expect(parseStoredDrafts(fresh, NOW)?.rows.A?.draft).toEqual({ quantity: '4' });
     expect(parseStoredDrafts(fresh, NOW + DRAFT_TTL_MS + 1)).toBeNull();
   });
@@ -59,15 +61,26 @@ describe('the key and the blob', () => {
   it('a corrupt or wrong-version blob is nothing, never a throw', () => {
     expect(parseStoredDrafts('{not json', NOW)).toBeNull();
     expect(parseStoredDrafts(JSON.stringify({ ...entry({}), v: 2 }), NOW)).toBeNull();
-    expect(parseStoredDrafts(JSON.stringify({ v: 1, savedAt: 'x', rows: {}, ghosts: [] }), NOW)).toBeNull();
+    expect(
+      parseStoredDrafts(JSON.stringify({ v: 1, savedAt: 'x', rows: {}, ghosts: [] }), NOW),
+    ).toBeNull();
     // A draft field with no base to judge it by is dropped.
     expect(
-      parseStoredDrafts(JSON.stringify(entry({ rows: { A: { draft: { quantity: '4' }, base: {} } } })), NOW),
+      parseStoredDrafts(
+        JSON.stringify(entry({ rows: { A: { draft: { quantity: '4' }, base: {} } } })),
+        NOW,
+      ),
     ).toBeNull();
     // A forged unit is dropped.
     expect(
       parseStoredDrafts(
-        JSON.stringify(entry({ rows: { A: { draft: { bazaBasis: 'ton' as never }, base: { bazaUsd: null, bazaBasis: null } } } })),
+        JSON.stringify(
+          entry({
+            rows: {
+              A: { draft: { bazaBasis: 'ton' as never }, base: { bazaUsd: null, bazaBasis: null } },
+            },
+          }),
+        ),
         NOW,
       ),
     ).toBeNull();
@@ -75,15 +88,22 @@ describe('the key and the blob', () => {
 
   it('serialize keeps dirty ghosts with their id and note, and nothing when nothing is drafted', () => {
     const g = ghost({ clientId: 'C1', name: 'likopcha', note: 'telefon' });
-    const out = serializeDrafts({ drafts: {}, bases: {}, newRows: [g, ghost({ key: 2 })] }, new Date(NOW));
+    const out = serializeDrafts(
+      { drafts: {}, bases: {}, newRows: [g, ghost({ key: 2 })] },
+      new Date(NOW),
+    );
     expect(out?.ghosts).toEqual([g]);
-    expect(serializeDrafts({ drafts: {}, bases: {}, newRows: [ghost({ key: 3 })] }, new Date(NOW))).toBeNull();
+    expect(
+      serializeDrafts({ drafts: {}, bases: {}, newRows: [ghost({ key: 3 })] }, new Date(NOW)),
+    ).toBeNull();
   });
 });
 
 describe('planRestore — offered, skipped, or already saved', () => {
   it('a base that still stands → restorable, carrying only what the server lacks', () => {
-    const stored = entry({ rows: { A: { draft: { quantity: '40', note: 'x' }, base: { quantity: 10, note: null } } } });
+    const stored = entry({
+      rows: { A: { draft: { quantity: '40', note: 'x' }, base: { quantity: 10, note: null } } },
+    });
     const plan = planRestore(stored, new Map([['A', item({ id: 'A', note: 'x' })]]), basis);
     expect(plan.rows.A).toEqual({ draft: { quantity: '40' }, base: { quantity: 10 } });
     expect(plan.skipped).toEqual([]);
@@ -100,7 +120,11 @@ describe('planRestore — offered, skipped, or already saved', () => {
     const stored = entry({
       rows: { A: { draft: { bazaValue: '1.125' }, base: { bazaUsd: null, bazaBasis: null } } },
     });
-    const plan = planRestore(stored, new Map([['A', item({ id: 'A', bazaUsd: 1.125, bazaBasis: 'kg' })]]), basis);
+    const plan = planRestore(
+      stored,
+      new Map([['A', item({ id: 'A', bazaUsd: 1.125, bazaBasis: 'kg' })]]),
+      basis,
+    );
     expect(plan.alreadySaved).toBe(1);
     expect(plan.skipped).toEqual([]);
     expect(plan.rows).toEqual({});
@@ -113,14 +137,22 @@ describe('planRestore — offered, skipped, or already saved', () => {
 
   it('a ghost whose id is a row with nothing later → already saved', () => {
     const stored = entry({ ghosts: [ghost({ clientId: 'C', name: 'likopcha', quantity: '5' })] });
-    const plan = planRestore(stored, new Map([['C', item({ id: 'C', label: 'likopcha', quantity: 5 })]]), basis);
+    const plan = planRestore(
+      stored,
+      new Map([['C', item({ id: 'C', label: 'likopcha', quantity: 5 })]]),
+      basis,
+    );
     expect(plan.alreadySaved).toBe(1);
     expect(plan.ghosts).toEqual([]);
   });
 
   it('…with a later correction → restorable as that row’s draft carrying the correction', () => {
     const stored = entry({ ghosts: [ghost({ clientId: 'C', name: 'likopcha', quantity: '6' })] });
-    const plan = planRestore(stored, new Map([['C', item({ id: 'C', label: 'likopcha', quantity: 5 })]]), basis);
+    const plan = planRestore(
+      stored,
+      new Map([['C', item({ id: 'C', label: 'likopcha', quantity: 5 })]]),
+      basis,
+    );
     expect(plan.rows.C).toEqual({ draft: { quantity: '6' }, base: { quantity: 5 } });
     expect(plan.alreadySaved).toBe(0);
   });
@@ -136,7 +168,9 @@ describe('mergeForStorage — the write while the question stands', () => {
   const b = { draft: { note: 'x' }, base: { note: null } };
   it('a live draft on A replaces stored A; untouched stored B is kept; a new live C is added', () => {
     const stored = entry({ rows: { A: a, B: b } });
-    const live = entry({ rows: { A: { draft: { quantity: '41' }, base: { quantity: 10 } }, C: a } });
+    const live = entry({
+      rows: { A: { draft: { quantity: '41' }, base: { quantity: 10 } }, C: a },
+    });
     const out = mergeForStorage(stored, live)!;
     expect(out.rows.A!.draft).toEqual({ quantity: '41' });
     expect(out.rows.B).toEqual(b);

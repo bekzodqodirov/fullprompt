@@ -23,7 +23,10 @@ export const dynamic = 'force-dynamic';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export async function GET(_request: Request, { params }: { params: Promise<{ requestId: string }> }) {
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ requestId: string }> },
+) {
   const headers = { 'Cache-Control': 'private, no-store' };
   const { requestId } = await params;
   // The strict shape first: a 36-character non-uuid must not reach `::uuid`.
@@ -31,7 +34,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ req
   try {
     await authorize('ved.docs');
   } catch (err) {
-    if (err instanceof AuthError) return Response.json({ error: 'forbidden' }, { status: 403, headers });
+    if (err instanceof AuthError)
+      return Response.json({ error: 'forbidden' }, { status: 403, headers });
     throw err;
   }
   try {

@@ -114,9 +114,12 @@ afterAll(async () => {
     }
   }
   if (madeNames.length > 0) {
-    await db
-      .delete(tnvedAssignments)
-      .where(inArray(tnvedAssignments.productKey, madeNames.map((n) => itemNameNorm(n))));
+    await db.delete(tnvedAssignments).where(
+      inArray(
+        tnvedAssignments.productKey,
+        madeNames.map((n) => itemNameNorm(n)),
+      ),
+    );
   }
   await db.delete(deals).where(eq(deals.id, dealId));
   await db.update(clients).set({ active: false }).where(eq(clients.id, clientId));
@@ -124,7 +127,9 @@ afterAll(async () => {
   await pgClient.end();
 });
 
-async function open(items: { name: string; quantity?: number | null; tnvedCode?: string | null }[]) {
+async function open(
+  items: { name: string; quantity?: number | null; tnvedCode?: string | null }[],
+) {
   for (const i of items) madeNames.push(i.name);
   const result = await openCalcRequest(
     {
@@ -145,9 +150,18 @@ async function open(items: { name: string; quantity?: number | null; tnvedCode?:
 }
 
 const itemRows = (requestId: string) =>
-  db.select().from(calcRequestItems).where(eq(calcRequestItems.requestId, requestId)).orderBy(calcRequestItems.seq);
+  db
+    .select()
+    .from(calcRequestItems)
+    .where(eq(calcRequestItems.requestId, requestId))
+    .orderBy(calcRequestItems.seq);
 const revOf = async (requestId: string) =>
-  (await db.select({ rev: calcRequests.rev }).from(calcRequests).where(eq(calcRequests.id, requestId)))[0]!.rev;
+  (
+    await db
+      .select({ rev: calcRequests.rev })
+      .from(calcRequests)
+      .where(eq(calcRequests.id, requestId))
+  )[0]!.rev;
 const save = (requestId: string, input: { items?: TableItemEdit[]; adds?: TableNewItem[] }) =>
   saveTable(requestId, { items: input.items ?? [], adds: input.adds ?? [] }, ctx());
 async function editOf(requestId: string, seqNo: number, patch: Omit<TableItemEdit, 'id' | 'seq'>) {

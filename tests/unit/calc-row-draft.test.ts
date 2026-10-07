@@ -159,7 +159,9 @@ describe('settleDrafts — a save settles what it posted', () => {
   it('a ghost whose id appeared with no pending entry (a lost answer) → a stored-mode draft of what differs', () => {
     const g = ghost({ key: 4, clientId: 'C', name: 'likopcha', quantity: '6' });
     const c = item({ id: 'C', label: 'likopcha', quantity: 5 });
-    const out = settleDrafts(base({ newRows: [g], items: new Map([...items, ['C', c]]), workspaceRev: 9 }));
+    const out = settleDrafts(
+      base({ newRows: [g], items: new Map([...items, ['C', c]]), workspaceRev: 9 }),
+    );
     expect(out.newRows).toEqual([]);
     expect(out.drafts).toEqual({ C: { quantity: '6' } });
   });
@@ -167,7 +169,9 @@ describe('settleDrafts — a save settles what it posted', () => {
   it('…or is simply removed when nothing differs', () => {
     const g = ghost({ key: 4, clientId: 'C', name: 'likopcha', quantity: '5' });
     const c = item({ id: 'C', label: 'likopcha', quantity: 5 });
-    const out = settleDrafts(base({ newRows: [g], items: new Map([...items, ['C', c]]), workspaceRev: 9 }));
+    const out = settleDrafts(
+      base({ newRows: [g], items: new Map([...items, ['C', c]]), workspaceRev: 9 }),
+    );
     expect(out.newRows).toEqual([]);
     expect(out.drafts).toEqual({});
     expect(out.converted).toBe(1);
@@ -218,7 +222,12 @@ describe('settleDrafts — a save settles what it posted', () => {
           ['B', { ...bMoved, quantity: 11 }],
         ]),
         workspaceRev: 6,
-        pending: [entry({ drafts: new Map([['A', posted]]), atPress: { B: { quantity: 10, bazaUsd: null } } })],
+        pending: [
+          entry({
+            drafts: new Map([['A', posted]]),
+            atPress: { B: { quantity: 10, bazaUsd: null } },
+          }),
+        ],
       }),
     );
     expect(out.bases.B).toEqual({ quantity: 11, bazaUsd: 3 });
@@ -289,7 +298,9 @@ describe('changedUnder — what moved under the drafted fields', () => {
   const stored = item({ id: 'A', quantity: 42, bazaUsd: 2 });
 
   it('a drafted field that moved is listed with its old and new value', () => {
-    expect(changedUnder({ quantity: 40 }, stored)).toEqual([{ field: 'qty', before: '40', after: '42' }]);
+    expect(changedUnder({ quantity: 40 }, stored)).toEqual([
+      { field: 'qty', before: '40', after: '42' },
+    ]);
   });
 
   it('a field that is not drafted is not listed, whatever moved under it', () => {
@@ -324,7 +335,9 @@ describe('ghostToItemDraft — stored mode never invents a difference', () => {
   });
 
   it('an untouched «avto» unit beside a stamped one is no difference', () => {
-    expect(ghostToItemDraft(ghost({ name: 'kosa', bazaValue: '3', bazaBasis: null }), stored, 'stored')).toEqual({});
+    expect(
+      ghostToItemDraft(ghost({ name: 'kosa', bazaValue: '3', bazaBasis: null }), stored, 'stored'),
+    ).toEqual({});
   });
 
   it('«1.125» beside a stored 1.125 is no difference', () => {
@@ -334,7 +347,9 @@ describe('ghostToItemDraft — stored mode never invents a difference', () => {
 
   it('posted mode takes an emptied cell as a clear', () => {
     const posted = ghost({ name: 'kosa', quantity: '5' });
-    expect(ghostToItemDraft({ ...posted, quantity: '' }, stored, 'posted', posted)).toEqual({ quantity: '' });
+    expect(ghostToItemDraft({ ...posted, quantity: '' }, stored, 'posted', posted)).toEqual({
+      quantity: '',
+    });
   });
 });
 
@@ -360,10 +375,14 @@ describe('refreshWait — a refresh that never lands is not a lock', () => {
   it('idle → awaiting → landed on the rev', () => {
     expect(started).toEqual({ state: 'awaiting', rev: 7, since: 1000 });
     expect(refreshWait(started, { type: 'tick', workspaceRev: 6, now: 2000 })).toBe(started);
-    expect(refreshWait(started, { type: 'tick', workspaceRev: 7, now: 2000 })).toEqual({ state: 'landed' });
+    expect(refreshWait(started, { type: 'tick', workspaceRev: 7, now: 2000 })).toEqual({
+      state: 'landed',
+    });
   });
   it('awaiting → timedOut after eight seconds', () => {
-    expect(refreshWait(started, { type: 'tick', workspaceRev: 6, now: 1000 + REFRESH_WAIT_MS })).toEqual({
+    expect(
+      refreshWait(started, { type: 'tick', workspaceRev: 6, now: 1000 + REFRESH_WAIT_MS }),
+    ).toEqual({
       state: 'timedOut',
     });
   });

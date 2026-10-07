@@ -31,7 +31,9 @@ export function DraftRestore({
       {plan.skipped.length > 0 ? (
         <p className="text-2xs text-warn" data-testid="calc-restore-skipped">
           {t('restore.skipped', {
-            rows: plan.skipped.map((s) => `${s.seq}: ${word(s.field)} ${s.before} → ${s.after}`).join('; '),
+            rows: plan.skipped
+              .map((s) => `${s.seq}: ${word(s.field)} ${s.before} → ${s.after}`)
+              .join('; '),
           })}
         </p>
       ) : null}
@@ -42,11 +44,21 @@ export function DraftRestore({
       ) : null}
       <div className="flex flex-wrap gap-2">
         {count > 0 ? (
-          <button type="button" className="btn-primary !min-h-11" data-testid="calc-restore-yes" onClick={onRestore}>
+          <button
+            type="button"
+            className="btn-primary !min-h-11"
+            data-testid="calc-restore-yes"
+            onClick={onRestore}
+          >
             {t('restore.yes')}
           </button>
         ) : null}
-        <button type="button" className="btn-secondary !min-h-11" data-testid="calc-restore-no" onClick={onDiscard}>
+        <button
+          type="button"
+          className="btn-secondary !min-h-11"
+          data-testid="calc-restore-no"
+          onClick={onDiscard}
+        >
           {t('restore.no')}
         </button>
       </div>

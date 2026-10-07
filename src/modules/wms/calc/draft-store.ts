@@ -90,7 +90,8 @@ const GHOST_STRING_KEYS = [
   'note',
 ] as const;
 
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
 
 function parseDraft(raw: unknown): ItemDraft | null {
   if (!isRecord(raw)) return null;
@@ -129,7 +130,11 @@ function parseGhost(raw: unknown): NewRow | null {
   if (raw.clientId !== null && typeof raw.clientId !== 'string') return null;
   const basis = raw.bazaBasis;
   if (basis !== null && (typeof basis !== 'string' || !isBazaBasis(basis))) return null;
-  const row = { key: raw.key, clientId: raw.clientId as string | null, bazaBasis: basis as BazaBasis | null } as NewRow;
+  const row = {
+    key: raw.key,
+    clientId: raw.clientId as string | null,
+    bazaBasis: basis as BazaBasis | null,
+  } as NewRow;
   for (const k of GHOST_STRING_KEYS) {
     const v = raw[k] ?? '';
     if (typeof v !== 'string') return null;
@@ -155,7 +160,8 @@ export function parseStoredDrafts(raw: string | null, now: number): StoredDrafts
   }
   if (!isRecord(data) || data.v !== 1 || typeof data.savedAt !== 'string') return null;
   const savedAt = Date.parse(data.savedAt);
-  if (!Number.isFinite(savedAt) || now - savedAt > DRAFT_TTL_MS || savedAt - now > DRAFT_TTL_MS) return null;
+  if (!Number.isFinite(savedAt) || now - savedAt > DRAFT_TTL_MS || savedAt - now > DRAFT_TTL_MS)
+    return null;
   if (!isRecord(data.rows) || !Array.isArray(data.ghosts)) return null;
   const rows: StoredDrafts['rows'] = {};
   for (const [id, entry] of Object.entries(data.rows)) {
@@ -167,7 +173,9 @@ export function parseStoredDrafts(raw: string | null, now: number): StoredDrafts
     if (needed.some((f) => !(f in base))) continue;
     rows[id] = { draft, base };
   }
-  const ghosts = data.ghosts.map(parseGhost).filter((g): g is NewRow => g !== null && ghostDirty(g));
+  const ghosts = data.ghosts
+    .map(parseGhost)
+    .filter((g): g is NewRow => g !== null && ghostDirty(g));
   if (Object.keys(rows).length === 0 && ghosts.length === 0) return null;
   return { v: 1, savedAt: data.savedAt, rows, ghosts };
 }
@@ -178,15 +186,23 @@ export function parseStoredDrafts(raw: string | null, now: number): StoredDrafts
  * is kept even if he never answers. A live draft on a row replaces the stored
  * one for that row; a live ghost replaces a stored ghost with its client id.
  */
-export function mergeForStorage(stored: StoredDrafts | null, live: StoredDrafts | null): StoredDrafts | null {
+export function mergeForStorage(
+  stored: StoredDrafts | null,
+  live: StoredDrafts | null,
+): StoredDrafts | null {
   if (!stored) return live;
   if (!live) return stored;
-  const liveIds = new Set(live.ghosts.map((g) => g.clientId).filter((v): v is string => v !== null));
+  const liveIds = new Set(
+    live.ghosts.map((g) => g.clientId).filter((v): v is string => v !== null),
+  );
   return {
     v: 1,
     savedAt: live.savedAt,
     rows: { ...stored.rows, ...live.rows },
-    ghosts: [...stored.ghosts.filter((g) => g.clientId === null || !liveIds.has(g.clientId)), ...live.ghosts],
+    ghosts: [
+      ...stored.ghosts.filter((g) => g.clientId === null || !liveIds.has(g.clientId)),
+      ...live.ghosts,
+    ],
   };
 }
 
@@ -202,7 +218,11 @@ export function readStored(storage: StorageLike | null, key: string): string | n
 }
 
 /** Writes the entry (null removes it); true only when the storage took it. */
-export function writeStored(storage: StorageLike | null, key: string, value: StoredDrafts | null): boolean {
+export function writeStored(
+  storage: StorageLike | null,
+  key: string,
+  value: StoredDrafts | null,
+): boolean {
   try {
     if (!storage) return false;
     if (value === null) storage.removeItem(key);
@@ -226,7 +246,8 @@ export function forgetStored(storage: StorageLike | null, key: string): void {
 /* ------------------------------------------------------------------ */
 
 /** The draft field groups a restore judges as one thing each. */
-type Group = 'name' | 'tnvedCode' | 'quantity' | 'weightKg' | 'volumeM3' | 'note' | 'measure' | 'baza';
+type Group =
+  'name' | 'tnvedCode' | 'quantity' | 'weightKg' | 'volumeM3' | 'note' | 'measure' | 'baza';
 const GROUP_KEYS: Record<Group, (keyof ItemDraft)[]> = {
   name: ['name'],
   tnvedCode: ['tnvedCode'],
@@ -276,11 +297,18 @@ export type ScreenBasisOf<I extends DraftItem = DraftItem> = (item: I) => BazaBa
 const showValue = (v: unknown) => (v === null || v === undefined || v === '' ? '—' : String(v));
 
 function groupsOf(draft: ItemDraft): Group[] {
-  return (Object.keys(GROUP_KEYS) as Group[]).filter((g) => GROUP_KEYS[g].some((k) => draft[k] !== undefined));
+  return (Object.keys(GROUP_KEYS) as Group[]).filter((g) =>
+    GROUP_KEYS[g].some((k) => draft[k] !== undefined),
+  );
 }
 
 /** Does the server hold what this group of the draft says? */
-function draftHeld<I extends DraftItem>(group: Group, draft: ItemDraft, item: I, screenBasis: ScreenBasisOf<I>): boolean {
+function draftHeld<I extends DraftItem>(
+  group: Group,
+  draft: ItemDraft,
+  item: I,
+  screenBasis: ScreenBasisOf<I>,
+): boolean {
   switch (group) {
     case 'name':
       return draft.name!.trim() === item.label.trim();
@@ -308,7 +336,8 @@ function baseMoved(group: Group, base: RowBase, item: DraftItem): boolean {
   return [...new Set(fields)].some((f: BaseField) => {
     const a = (base as Record<string, unknown>)[f] ?? null;
     const b = item[f] ?? null;
-    if (typeof a === 'string' || typeof b === 'string') return String(a ?? '').trim() !== String(b ?? '').trim();
+    if (typeof a === 'string' || typeof b === 'string')
+      return String(a ?? '').trim() !== String(b ?? '').trim();
     return a !== b;
   });
 }
@@ -379,18 +408,25 @@ export function planRestore<I extends DraftItem>(
     const moved = groups.filter((g) => !held.includes(g) && baseMoved(g, base, item));
     if (moved.length > 0) {
       for (const g of moved) {
-        plan.skipped.push({ seq: item.seq, field: GROUP_FIELD[g], before: baseText(g, base), after: serverText(g, item) });
+        plan.skipped.push({
+          seq: item.seq,
+          field: GROUP_FIELD[g],
+          before: baseText(g, base),
+          after: serverText(g, item),
+        });
       }
       continue;
     }
     const kept: ItemDraft = {};
     for (const g of groups) {
       if (held.includes(g)) continue;
-      for (const k of GROUP_KEYS[g]) if (draft[k] !== undefined) (kept as Record<string, unknown>)[k] = draft[k];
+      for (const k of GROUP_KEYS[g])
+        if (draft[k] !== undefined) (kept as Record<string, unknown>)[k] = draft[k];
     }
     const keptBase: RowBase = {};
     for (const k of Object.keys(kept) as (keyof ItemDraft)[]) {
-      for (const f of baseFieldsFor(k)) (keptBase as Record<string, unknown>)[f] = (base as Record<string, unknown>)[f];
+      for (const f of baseFieldsFor(k))
+        (keptBase as Record<string, unknown>)[f] = (base as Record<string, unknown>)[f];
     }
     plan.rows[id] = { draft: kept, base: keptBase };
   }

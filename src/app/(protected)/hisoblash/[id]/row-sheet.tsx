@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef } from 'react';
 import { useTranslations } from 'next-intl';
 import { Overlay } from '@/components/ui/overlay';
 import { reloadFresh } from '@/components/build-check';
@@ -31,7 +31,8 @@ import { refusalWord } from './words';
  * buries the field it is about).
  */
 
-export type SheetFigure = { state: 'no_code' } | { state: 'unknown_law' } | { state: 'ok'; customs: CustomsResult };
+export type SheetFigure =
+  { state: 'no_code' } | { state: 'unknown_law' } | { state: 'ok'; customs: CustomsResult };
 
 export type SheetNumField = 'quantity' | 'weightKg' | 'volumeM3' | 'measure' | 'bazaValue';
 export type SheetField = 'name' | 'tnvedCode' | 'note' | SheetNumField;
@@ -181,10 +182,15 @@ function SheetBody({
   }, [messageKey]);
 
   const v = model.values;
-  const field = (name: SheetField, extra: ReactNode = null) => {
+  /** The reading of a numeric cell when it is the B4 a shape. */
+  const ambiguityOf = (name: SheetField) => {
+    if (name === 'name' || name === 'tnvedCode' || name === 'note') return null;
+    const cell = readNumberCell(v[name]);
+    return cell.state === 'ambiguous' ? cell : null;
+  };
+  const field = (name: SheetField) => {
     const numeric = name !== 'name' && name !== 'tnvedCode' && name !== 'note';
-    const cell = numeric ? readNumberCell(v[name]) : null;
-    const ambiguous = cell?.state === 'ambiguous' ? cell : null;
+    const ambiguous = ambiguityOf(name);
     const testId = {
       name: 'calc-phone-name',
       tnvedCode: 'calc-phone-code',
@@ -219,39 +225,45 @@ function SheetBody({
           }}
         />
       );
+    return input;
+  };
+
+  /** «1.125 dollarmi yoki 1125 dollarmi?» — under its ROW at the full width
+   * of the sheet (a half-width column left the two answers below the fold),
+   * shown on blur and on a press, gone with the keystroke that settles it. */
+  const question = (name: SheetNumField) => {
+    const ambiguous = ambiguityOf(name);
+    if (!ambiguous || !asked.includes(name)) return null;
     return (
-      <>
-        {input}
-        {extra}
-        {ambiguous && asked.includes(name as SheetNumField) ? (
-          <div className="mt-1 rounded-xl border border-warn/40 bg-warn/10 p-2 text-sm" data-testid="calc-phone-ambiguous">
-            <p className="font-semibold text-warn">
-              {name === 'bazaValue'
-                ? t('ambiguous.baza', { a: ambiguous.decimalText, b: ambiguous.thousandsText })
-                : t('ambiguous.number', { a: ambiguous.decimalText, b: ambiguous.thousandsText })}
-            </p>
-            <p className="mt-0.5 text-2xs text-ink-600">{t('ambiguous.hint')}</p>
-            <div className="mt-1 flex flex-wrap gap-2">
-              <button
-                type="button"
-                className="btn-secondary !min-h-11 font-mono"
-                data-testid="calc-phone-ambiguous-decimal"
-                onClick={() => onField(name, ambiguous.decimalText)}
-              >
-                {ambiguous.decimalText}
-              </button>
-              <button
-                type="button"
-                className="btn-secondary !min-h-11 font-mono"
-                data-testid="calc-phone-ambiguous-thousands"
-                onClick={() => onField(name, ambiguous.thousandsText)}
-              >
-                {ambiguous.thousandsText}
-              </button>
-            </div>
-          </div>
-        ) : null}
-      </>
+      <div
+        className="mt-1 rounded-xl border border-warn/40 bg-warn/10 p-2 text-sm"
+        data-testid="calc-phone-ambiguous"
+      >
+        <p className="font-semibold text-warn">
+          {name === 'bazaValue'
+            ? t('ambiguous.baza', { a: ambiguous.decimalText, b: ambiguous.thousandsText })
+            : t('ambiguous.number', { a: ambiguous.decimalText, b: ambiguous.thousandsText })}
+        </p>
+        <p className="mt-0.5 text-2xs text-ink-600">{t('ambiguous.hint')}</p>
+        <div className="mt-1 flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="btn-secondary !min-h-11 font-mono"
+            data-testid="calc-phone-ambiguous-decimal"
+            onClick={() => onField(name, ambiguous.decimalText)}
+          >
+            {ambiguous.decimalText}
+          </button>
+          <button
+            type="button"
+            className="btn-secondary !min-h-11 font-mono"
+            data-testid="calc-phone-ambiguous-thousands"
+            onClick={() => onField(name, ambiguous.thousandsText)}
+          >
+            {ambiguous.thousandsText}
+          </button>
+        </div>
+      </div>
     );
   };
 
@@ -261,7 +273,9 @@ function SheetBody({
     <div className="min-h-0 flex-1 overflow-y-auto" data-testid="calc-phone-body">
       <div ref={top} className="space-y-1">
         <h2 className="text-sm font-semibold">
-          {model.kind === 'item' && model.seq !== null ? t('phone.rowTitle', { seq: model.seq }) : t('phone.newItem')}
+          {model.kind === 'item' && model.seq !== null
+            ? t('phone.rowTitle', { seq: model.seq })
+            : t('phone.newItem')}
         </h2>
         {error ? (
           <p className="chip chip-warn" data-testid="calc-phone-error">
@@ -289,7 +303,10 @@ function SheetBody({
           </p>
         ) : null}
         {changes.length > 0 ? (
-          <div className="rounded-xl border border-warn/40 bg-warn/10 p-2 text-sm" data-testid="calc-phone-changed">
+          <div
+            className="rounded-xl border border-warn/40 bg-warn/10 p-2 text-sm"
+            data-testid="calc-phone-changed"
+          >
             <p className="font-semibold text-warn">
               {t('phone.changed', {
                 fields: changes.map((c) => `${word(c.field)}: ${c.before} → ${c.after}`).join('; '),
@@ -327,8 +344,13 @@ function SheetBody({
             {field('volumeM3')}
           </label>
         </div>
+        {question('quantity')}
+        {question('weightKg')}
+        {question('volumeM3')}
         {model.sellerUnit ? (
-          <p className="text-2xs text-ink-500">{t('phone.sellerUnit', { unit: model.sellerUnit })}</p>
+          <p className="text-2xs text-ink-500">
+            {t('phone.sellerUnit', { unit: model.sellerUnit })}
+          </p>
         ) : null}
         {model.measure ? (
           <label className="block">
@@ -337,6 +359,7 @@ function SheetBody({
               {model.measure.sm3 ? ` · ${t('table.sm3Hint')}` : ''}
             </span>
             {field('measure')}
+            {question('measure')}
           </label>
         ) : null}
         <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
@@ -358,10 +381,15 @@ function SheetBody({
             />
           </label>
         </div>
+        {question('bazaValue')}
         {model.chips.memory || model.chips.import || model.chips.reason || model.dictionaryBaza ? (
           <div className="space-y-0.5 text-2xs text-ink-500">
-            {model.chips.memory ? <p data-testid="calc-phone-chip-memory">🧠 {t('memoryGuess')}</p> : null}
-            {model.chips.import ? <p data-testid="calc-phone-chip-import">📥 {t('importGuess')}</p> : null}
+            {model.chips.memory ? (
+              <p data-testid="calc-phone-chip-memory">🧠 {t('memoryGuess')}</p>
+            ) : null}
+            {model.chips.import ? (
+              <p data-testid="calc-phone-chip-import">📥 {t('importGuess')}</p>
+            ) : null}
             {model.chips.reason ? (
               <p className="break-words" data-testid="calc-phone-chip-reason">
                 🤖 {model.chips.reason}
@@ -369,8 +397,11 @@ function SheetBody({
             ) : null}
             {model.dictionaryBaza ? (
               <p>
-                ≈ ${model.dictionaryBaza.bazaUsd}/{basisLabel(model.dictionaryBaza.basis, t('perUnit'))}
-                {model.dictionaryBaza.stale ? <span className="ml-1 text-warn">⚠ {t('stale')}</span> : null}
+                ≈ ${model.dictionaryBaza.bazaUsd}/
+                {basisLabel(model.dictionaryBaza.basis, t('perUnit'))}
+                {model.dictionaryBaza.stale ? (
+                  <span className="ml-1 text-warn">⚠ {t('stale')}</span>
+                ) : null}
               </p>
             ) : null}
           </div>
@@ -454,14 +485,19 @@ function SheetBody({
         <div className="flex gap-2">
           <button
             type="button"
-            className="btn-primary !min-h-11 grow"
+            className="btn-primary !min-h-11 min-w-0 grow !px-3"
             disabled={saveDisabled}
             data-testid="calc-phone-save"
             onClick={onSave}
           >
             {saveAnyway ? t('phone.saveAnyway') : tc('save')}
           </button>
-          <button type="button" className="btn-secondary !min-h-11" data-testid="calc-phone-close" onClick={onClose}>
+          <button
+            type="button"
+            className="btn-secondary !min-h-11 shrink-0 !px-3"
+            data-testid="calc-phone-close"
+            onClick={onClose}
+          >
             {t('phone.close')}
           </button>
         </div>

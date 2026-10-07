@@ -362,23 +362,23 @@ function PickerBody({
             return (
               <div key={c.id} className="rounded-xl border border-line">
                 <button
-                    type="button"
-                    className="block min-h-12 w-full p-2 text-left hover:bg-surface-sunken disabled:cursor-not-allowed disabled:opacity-60"
-                    data-testid="calc-import-candidate"
-                    // Listed so the VED sees what the file holds, but a unit the
-                    // law cannot hold would land the row in a conflict (0125).
-                    disabled={c.pickable === false}
-                    onClick={() => {
-                      onPick(target.itemId, {
-                        id: c.id,
-                        pricePerUnitUsd: c.pricePerUnitUsd,
-                        basis: c.basis,
-                      });
-                      onClose();
-                    }}
-                  >
-                    {body}
-                  </button>
+                  type="button"
+                  className="block min-h-12 w-full p-2 text-left hover:bg-surface-sunken disabled:cursor-not-allowed disabled:opacity-60"
+                  data-testid="calc-import-candidate"
+                  // Listed so the VED sees what the file holds, but a unit the
+                  // law cannot hold would land the row in a conflict (0125).
+                  disabled={c.pickable === false}
+                  onClick={() => {
+                    onPick(target.itemId, {
+                      id: c.id,
+                      pricePerUnitUsd: c.pricePerUnitUsd,
+                      basis: c.basis,
+                    });
+                    onClose();
+                  }}
+                >
+                  {body}
+                </button>
                 {/* His last and most specific ask was «nomlari yaxshiroq
                     korinsin». Three clamped lines is ~250 characters of a name
                     his file writes 500 of, and a hover title is the affordance

@@ -61,7 +61,9 @@ export interface NewRow {
  * every origin this app is served from; without it the row simply posts no
  * id and behaves as it did before phase 0. */
 export const mintClientId = (): string | null =>
-  typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : null;
+  typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : null;
 
 export const emptyRow = (key: number): NewRow => ({
   key,
@@ -82,13 +84,13 @@ export const emptyRow = (key: number): NewRow => ({
 export const ghostDirty = (r: NewRow): boolean =>
   Boolean(
     r.name.trim() ||
-      r.tnvedCode.trim() ||
-      r.quantity.trim() ||
-      r.weightKg.trim() ||
-      r.volumeM3.trim() ||
-      r.measure.trim() ||
-      r.bazaValue.trim() ||
-      r.note.trim(),
+    r.tnvedCode.trim() ||
+    r.quantity.trim() ||
+    r.weightKg.trim() ||
+    r.volumeM3.trim() ||
+    r.measure.trim() ||
+    r.bazaValue.trim() ||
+    r.note.trim(),
   );
 
 /** The slice of a STORED row these rules read — WorkspaceItem satisfies it. */
@@ -199,14 +201,19 @@ function neededBaseFields(draft: ItemDraft | undefined): Set<BaseField> {
  * Returns the SAME object when nothing moved, so a memo'd card does not
  * re-render for a neighbour's keystroke.
  */
-export function syncBase(base: RowBase | undefined, draft: ItemDraft | undefined, item: DraftItem): RowBase | undefined {
+export function syncBase(
+  base: RowBase | undefined,
+  draft: ItemDraft | undefined,
+  item: DraftItem,
+): RowBase | undefined {
   const needed = neededBaseFields(draft);
   if (needed.size === 0) return undefined;
   const current = base ?? {};
   let moved = Object.keys(current).some((k) => !needed.has(k as BaseField));
   const next: RowBase = {};
   for (const f of needed) {
-    if (f in current) (next as Record<string, unknown>)[f] = (current as Record<string, unknown>)[f];
+    if (f in current)
+      (next as Record<string, unknown>)[f] = (current as Record<string, unknown>)[f];
     else {
       (next as Record<string, unknown>)[f] = item[f];
       moved = true;
@@ -216,7 +223,8 @@ export function syncBase(base: RowBase | undefined, draft: ItemDraft | undefined
 }
 
 /** The word a change is listed under — the sheet maps it to a literal key. */
-export type ChangeField = 'name' | 'code' | 'qty' | 'kg' | 'm3' | 'note' | 'measure' | 'baza' | 'basis';
+export type ChangeField =
+  'name' | 'code' | 'qty' | 'kg' | 'm3' | 'note' | 'measure' | 'baza' | 'basis';
 
 export interface FieldChange {
   field: ChangeField;
@@ -225,7 +233,8 @@ export interface FieldChange {
 }
 
 const show = (v: unknown): string => (v === null || v === undefined || v === '' ? '—' : String(v));
-const sameText = (a: unknown, b: unknown) => (a ?? '').toString().trim() === (b ?? '').toString().trim();
+const sameText = (a: unknown, b: unknown) =>
+  (a ?? '').toString().trim() === (b ?? '').toString().trim();
 
 /**
  * What changed on the server UNDER the fields this row has drafted (B6 a):
@@ -243,7 +252,8 @@ export function changedUnder(
   const has = (f: BaseField) => f in bases && (!fields || fields.includes(f));
   const out: FieldChange[] = [];
   const text = (f: BaseField, field: ChangeField) => {
-    if (has(f) && !sameText(bases[f], item[f])) out.push({ field, before: show(bases[f]), after: show(item[f]) });
+    if (has(f) && !sameText(bases[f], item[f]))
+      out.push({ field, before: show(bases[f]), after: show(item[f]) });
   };
   const num = (f: 'quantity' | 'weightKg' | 'volumeM3' | 'bazaUsd', field: ChangeField) => {
     if (has(f) && (bases[f] ?? null) !== (item[f] ?? null)) {
@@ -286,7 +296,11 @@ export const q4 = (v: number) => Math.round(v * 10000) / 10000;
 
 /** Does a typed number mean the stored one? Empty means null; an ambiguous
  * or bad cell means nothing stored can equal it. */
-export function sameNumber(raw: string, stored: number | null, scale: (v: number) => number): boolean {
+export function sameNumber(
+  raw: string,
+  stored: number | null,
+  scale: (v: number) => number,
+): boolean {
   const cell = readNumberCell(raw);
   if (cell.state === 'empty') return stored === null;
   if (cell.state !== 'ok') return false;
@@ -324,14 +338,19 @@ export function ghostToItemDraft(
 ): ItemDraft {
   const out: ItemDraft = {};
   const differs = (field: keyof NewRow) =>
-    mode === 'posted' ? posted !== undefined && ghost[field] !== posted[field] : ghost[field] !== '';
+    mode === 'posted'
+      ? posted !== undefined && ghost[field] !== posted[field]
+      : ghost[field] !== '';
 
-  if (differs('name') && ghost.name.trim() !== '' && ghost.name.trim() !== item.label.trim()) out.name = ghost.name;
-  if (differs('tnvedCode') && ghost.tnvedCode.trim() !== (item.tnvedCode ?? '')) out.tnvedCode = ghost.tnvedCode;
+  if (differs('name') && ghost.name.trim() !== '' && ghost.name.trim() !== item.label.trim())
+    out.name = ghost.name;
+  if (differs('tnvedCode') && ghost.tnvedCode.trim() !== (item.tnvedCode ?? ''))
+    out.tnvedCode = ghost.tnvedCode;
   for (const f of ['quantity', 'weightKg', 'volumeM3'] as const) {
     if (differs(f) && !sameNumber(ghost[f], item[f], q3)) out[f] = ghost[f];
   }
-  if (differs('measure') && !sameNumber(ghost.measure, item.measureQty, q4)) out.measure = ghost.measure;
+  if (differs('measure') && !sameNumber(ghost.measure, item.measureQty, q4))
+    out.measure = ghost.measure;
   if (differs('note') && ghost.note.trim() !== (item.note ?? '')) out.note = ghost.note;
 
   // The baza pair drafts together (baza-draft.ts): an amount always rides
@@ -474,7 +493,8 @@ export function settleDrafts(input: SettleInput): SettleOutput {
 
   // 1. Landed saves.
   const settling = input.pending.filter((p) => workspaceRev >= p.rev);
-  const pending = settling.length === 0 ? input.pending : input.pending.filter((p) => workspaceRev < p.rev);
+  const pending =
+    settling.length === 0 ? input.pending : input.pending.filter((p) => workspaceRev < p.rev);
   if (settling.length > 0) changed = true;
   for (const entry of settling) {
     // saveTable bumps the clock exactly once, so any rev past ours — before
@@ -499,7 +519,8 @@ export function settleDrafts(input: SettleInput): SettleOutput {
         if ((pair as readonly string[]).includes(key)) continue;
         if (current[key] === posted[key]) delete kept[key];
       }
-      if (pairSame && pair.some((k) => posted[k] !== undefined)) for (const k of pair) delete kept[k];
+      if (pairSame && pair.some((k) => posted[k] !== undefined))
+        for (const k of pair) delete kept[k];
       let base = syncBase(bases[id], kept, item);
       // A cell posted and then typed over again stands on OUR save now: with
       // nothing foreign in between, its base is what the server holds, or
@@ -601,7 +622,9 @@ export function settleDrafts(input: SettleInput): SettleOutput {
  * ONE helper, asked by the desktop ⋯ fold and the phone sheet.
  */
 export function rowDirtyForPicker(draft: ItemDraft | undefined): boolean {
-  return (['tnvedCode', 'quantity', 'weightKg', 'volumeM3'] as const).some((k) => draft?.[k] !== undefined);
+  return (['tnvedCode', 'quantity', 'weightKg', 'volumeM3'] as const).some(
+    (k) => draft?.[k] !== undefined,
+  );
 }
 
 /** What the clock probe answers (`/api/calc/rev/[id]`). */
