@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { isUuidShaped } from '@/modules/platform/audit/fields';
 import { calendarDay } from '@/modules/platform/time/tashkent';
 
 /**
@@ -68,7 +69,9 @@ export function readBoardFilters(params: Record<string, string | string[] | unde
   return {
     /** What the chips and the carried links echo back — only what was set. */
     raw,
-    sourceId: /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(get('manba')) ? get('manba') : undefined,
+    // STRICT shape: the loose one admitted 'aaaaaaaa-aaaa…' and postgres
+    // refused it as 22P02 — a 500 on a hand-typed link, not a dropped filter.
+    sourceId: isUuidShaped(get('manba')) ? get('manba') : undefined,
     createdFrom: date('dan'),
     createdTo: date('gacha'),
     amountMin: num('narx_min'),

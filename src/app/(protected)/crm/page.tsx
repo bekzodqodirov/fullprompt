@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { isUuidShaped } from '@/modules/platform/audit/fields';
 import { salesManagerOptions } from '@/modules/platform/rbac/queries';
 import { chatBadges, tgViewerFor } from '@/modules/wms/crm/conversations';
 import {
@@ -90,7 +91,7 @@ export default async function LeadsPage({
   // `eq(leads.ownerId, …)`, and a hand-typed non-uuid was a 22P02 500
   // for a view_all holder rather than a dropped filter (#514).
   const hodim =
-    seesAll && /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(params.hodim ?? '') ? params.hodim! : '';
+    seesAll && isUuidShaped(params.hodim) ? params.hodim! : '';
   const scope = hodim || (mine ? actor.id : undefined);
   const q = (params.q ?? '').trim();
   // What every link on this screen has to carry, or the first tap on «all» or
