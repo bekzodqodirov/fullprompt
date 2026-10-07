@@ -1119,6 +1119,35 @@ export function ItemsTable({
                   {item.bazaSource === 'memory' ? ' 🧠' : ''}
                   {item.bazaSource === 'import' ? ' 📥' : ''}
                   {item.bazaReason ? ' 🤖' : ''}
+                  {/* His C «telefonda ham kompyuterda ham»: the same dialog,
+                      LOOK-ONLY — the card has no save and a phone draft only
+                      wedges «Avval saqlang», so every number and no «Tanlash».
+                      Wave 2 (his B1 a) replaces mode 'view' with its own
+                      sheet's pick. */}
+                  {item.tnvedCode ? (
+                    <button
+                      type="button"
+                      className="btn-ghost ml-1 !min-h-11 !px-2 !text-xs"
+                      data-testid="calc-phone-stats"
+                      onClick={() => {
+                        const basis = screenRowOf(item, undefined, groupById, groupsByCode).basis;
+                        const v = item.bazaUsd;
+                        setPicker({
+                          itemId: item.id,
+                          name: item.label,
+                          tnvedCode: item.tnvedCode!,
+                          basis: null,
+                          mode: 'view',
+                          current:
+                            basis !== null && v !== null && Number.isFinite(v) && v > 0
+                              ? { usd: v, basis }
+                              : null,
+                        });
+                      }}
+                    >
+                      {t('statsOpen')}
+                    </button>
+                  ) : null}
                 </li>
               ))}
             </ul>
@@ -1375,6 +1404,11 @@ const ItemRowBlock = memo(function ItemRowBlock({
           onPickBaza={onPickBaza}
           noteDraft={drafts?.note}
           draftBasis={drafts?.bazaBasis}
+          draftBazaValue={drafts?.bazaValue}
+          rowDirty={(['tnvedCode', 'quantity', 'weightKg', 'volumeM3'] as const).some(
+            (k) => drafts?.[k] !== undefined,
+          )}
+          screenBasis={screen.basis}
           onDone={() => setMenuOpen(false)}
         />
       ) : null}
@@ -1736,6 +1770,9 @@ function ItemFold({
   onPickBaza,
   noteDraft,
   draftBasis,
+  draftBazaValue,
+  rowDirty,
+  screenBasis,
   onDone,
 }: {
   id: string;
@@ -1748,6 +1785,20 @@ function ItemFold({
   noteDraft: string | undefined;
   /** A unit picked and not yet saved — the picker ranks by it (0125). */
   draftBasis: BazaBasis | undefined;
+  /** The baza amount as typed and not yet saved — the «siz» marker's value. */
+  draftBazaValue: string | undefined;
+  /**
+   * The code, count, weight or volume is drafted (a draft equal to the
+   * saved value deletes itself, so «present» means «differs»). Both routes
+   * read those off the SAVED row, so the list, the unit tabs, `matches`,
+   * `pickable` and the ±25 % band would all describe the old row — and a pick
+   * against a new code fails at save with `import_row_missing`.
+   */
+  rowDirty: boolean;
+  /** The unit the select SHOWS — `screenRowOf`'s answer (0125's one chain),
+   * never `draft ?? stored`, which is null on an untouched «avto» row whose
+   * select shows the law's unit. */
+  screenBasis: BazaBasis | null;
   onDone: () => void;
 }) {
   const t = useTranslations('calc');
@@ -1785,16 +1836,26 @@ function ItemFold({
               type="button"
               className="btn-secondary !min-h-8"
               data-testid="calc-import-pick"
-              onClick={() =>
+              disabled={rowDirty}
+              onClick={() => {
+                const v = draftBazaValue !== undefined ? parseCell(draftBazaValue) : item.bazaUsd;
                 onPickBaza({
                   itemId: item.id,
                   name: item.label,
                   tnvedCode: item.tnvedCode!,
                   basis: draftBasis ?? null,
-                })
-              }
+                  mode: 'pick',
+                  // `parseCell` is `Number()`, NaN for «abc»: a marker at
+                  // `left: NaN%` must never be drawn.
+                  current:
+                    screenBasis !== null && v !== null && Number.isFinite(v) && v > 0
+                      ? { usd: v, basis: screenBasis }
+                      : null,
+                });
+              }}
             >
               📥 {t('importPick')}
+              {rowDirty ? <span className="text-2xs font-normal text-warn">· {t('statsRowDirty')}</span> : null}
             </button>
           ) : null}
           <label className="w-full max-w-[22rem]">

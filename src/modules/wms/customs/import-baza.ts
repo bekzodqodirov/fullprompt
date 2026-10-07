@@ -5,6 +5,17 @@ import type { BazaBasis } from '../calc/pricing';
 import { basisConflicts } from '../calc/basis';
 import { normalizeName, type ImportUnit } from './import-parse';
 import { newestReadyBatchId } from './import-service';
+import { candidateStatement } from './import-stats-sql';
+import {
+  FEW,
+  QUARTILE_INDEX,
+  jsonRows,
+  seriesFromRaw,
+  type ExemplarKey,
+  type PriceExemplar,
+  type RawSeries,
+  type SeriesStats,
+} from './import-stats-math';
 
 /**
  * «Bazani tanlashda yordam bersin» — the customs dump answering the VED's
@@ -108,6 +119,9 @@ export interface ImportBazaRow {
   weightPerUnitKg: number | null;
   declaredAt: string | null;
   sender: string | null;
+  /** The declaration's country as the file writes it («156-КИТАЙ») —
+   * display only: the list and the auto-fill read every origin (§9). */
+  originCountry: string | null;
   /** 0..1 — how close the file's name is to the one the VED typed. */
   nameSim: number;
   /** The rank the ordering used: nameSim, or the weight-blended score. */
@@ -127,6 +141,19 @@ export interface ImportBazaSuggestion {
    * so the screen can say «200 ta · eng mos 50 tasi» rather than implying
    * that fifty is all there is. */
   total: number;
+  /**
+   * C1's second series — the name-matched declarations (China only, D3),
+   * per file unit — computed only for the 📥 dialog (`named: true`), riding
+   * the same similarity scan as the list. Absent in every other mode: the
+   * auto-fill must not pay for an aggregate it never reads.
+   */
+  named?: Partial<Record<ImportUnit, SeriesStats>>;
+  /** 'short_name': the typed name is under MIN_NEEDLE, so «what this name
+   * finds» is not a question the file can answer (its list is just the
+   * newest rows). */
+  namedState?: 'ok' | 'short_name';
+  /** The threshold the named series and the auto-fill both used — ONE read. */
+  minSim?: number;
 }
 
 /** How many rows the AUTO-fill path ranks. Ten is what it needs to pick one. */
@@ -146,7 +173,7 @@ const MIN_SIM_DEFAULT = 0.45;
 /** Shorter than this and «name similarity» stops meaning anything. */
 const MIN_NEEDLE = 4;
 
-interface SuggestInput {
+export interface SuggestInput {
   tnvedCode: string;
   name: string;
   /**
@@ -169,7 +196,7 @@ interface SuggestInput {
  */
 export async function suggestImportBaza(
   input: SuggestInput,
-  opts: { batchId?: string | null; minSim?: number; picker?: boolean } = {},
+  opts: { batchId?: string | null; minSim?: number; picker?: boolean; named?: true } = {},
 ): Promise<ImportBazaSuggestion> {
   const batchId = opts.batchId !== undefined ? opts.batchId : await newestReadyBatchId();
   if (!batchId) return { auto: null, candidates: [], batchId: null, total: 0 };
@@ -191,17 +218,37 @@ export async function suggestImportBaza(
   if (!usable && !opts.picker) return { auto: null, candidates: [], batchId, total: 0 };
 
   const limit = opts.picker ? PICKER_LIMIT : CANDIDATE_LIMIT;
-  const { rows, total } = await queryCandidates(batchId, input, usable ? needle : null, limit);
-  const candidates = rows.slice(0, limit);
-  if (!usable) return { auto: null, candidates, batchId, total };
-
-  const minSim =
+  // The named series exists only in the dialog, and only for a name that
+  // can score (D4) — a short name's fifty «candidates» are the newest rows,
+  // and plotting them as «what this name finds» would lie.
+  const dialog = opts.picker === true && opts.named === true;
+  const named = dialog && usable;
+  const readMinSim = async () =>
     opts.minSim ?? Number((await getSetting('import_baza_min_sim')) ?? MIN_SIM_DEFAULT);
+  // Read BEFORE the query in that mode — on the pool, never inside a tx
+  // (#714) — so the series and the auto threshold are ONE number.
+  const earlyMinSim = named ? await readMinSim() : undefined;
+  const { rows, total, namedSeries } = await queryCandidates(
+    batchId,
+    input,
+    usable ? needle : null,
+    limit,
+    earlyMinSim !== undefined ? { minSim: earlyMinSim } : undefined,
+  );
+  const candidates = rows.slice(0, limit);
+  const namedPart: Pick<ImportBazaSuggestion, 'named' | 'namedState'> = dialog
+    ? usable
+      ? { named: namedSeries ?? {}, namedState: 'ok' }
+      : { namedState: 'short_name' }
+    : {};
+  if (!usable) return { auto: null, candidates, batchId, total, ...namedPart };
+
+  const minSim = earlyMinSim ?? (await readMinSim());
   const best = candidates[0];
   // Auto-fill needs BOTH: a name we believe, and the right unit. A per-kg
   // price landing on a per-dona row is off by the weight of the goods.
   const auto = best && best.unitMatches && best.nameSim >= minSim ? best : null;
-  return { auto, candidates, batchId, total };
+  return { auto, candidates, batchId, total, ...namedPart, ...(named ? { minSim } : {}) };
 }
 
 /**
@@ -228,29 +275,12 @@ async function queryCandidates(
   /** null when the typed name is too short to score — see the caller. */
   needle: string | null,
   limit: number,
-): Promise<{ rows: ImportBazaRow[]; total: number }> {
-  const wantWeight =
-    input.units.includes('dona') &&
-    input.weightPerUnitKg !== null &&
-    input.weightPerUnitKg !== undefined &&
-    Number.isFinite(input.weightPerUnitKg) &&
-    input.weightPerUnitKg > 0;
-  const w = wantWeight ? Number(input.weightPerUnitKg) : 0;
-
-  // A needle of null scores nothing — the ordering falls back to what is
-  // knowable without a name, and every row still carries `nameSim` 0 so the
-  // AUTO-fill's threshold can never be met by accident.
-  const sim = needle === null ? sql`0::real` : sql`word_similarity(${needle}, r.name_norm)`;
-  // The row's accepted units, as a postgres list — a JS array bound into a
-  // raw fragment is not one. An empty list matches nothing, honestly.
-  const accepts =
-    input.units.length === 0
-      ? sql`false`
-      : sql`r.unit IN (${sql.join(
-          input.units.map((u) => sql`${u}`),
-          sql`, `,
-        )})`;
-
+  /** The dialog's name-matched series, riding the same scan (D4). */
+  named?: { minSim: number },
+): Promise<{ rows: ImportBazaRow[]; total: number; namedSeries?: Partial<Record<ImportUnit, SeriesStats>> }> {
+  // The statement is built by a PURE function (import-stats-sql.ts) so a
+  // unit test can read what each mode pays — the auto-fill's statement must
+  // carry no aggregate at all.
   const rows = await db.execute<{
     id: string;
     name: string;
@@ -259,35 +289,13 @@ async function queryCandidates(
     weight_per_unit_kg: string | null;
     declared_at: string | null;
     sender: string | null;
+    origin_country: string | null;
     name_sim: number;
     score: number;
     total: number;
-  }>(sql`
-    SELECT r.id::text AS id,
-           r.name,
-           r.unit,
-           r.price_per_unit_usd,
-           r.weight_per_unit_kg,
-           r.declared_at::text AS declared_at,
-           r.sender,
-           ${sim} AS name_sim,
-           CASE
-             WHEN ${wantWeight} AND r.unit = 'dona' AND r.weight_per_unit_kg IS NOT NULL
-               THEN 0.7 * ${sim}
-                  + 0.3 * (1 - LEAST(1, abs(${w}::numeric - r.weight_per_unit_kg)
-                                        / GREATEST(${w}::numeric, 0.01)))
-             ELSE ${sim}
-           END AS score,
-           -- The count rides the same scan: the screen must be able to say
-           -- «200 declarations · the 50 closest» rather than imply that the
-           -- page it shows is the whole file.
-           count(*) OVER () ::int AS total
-      FROM customs_import_rows r
-     WHERE r.batch_id = ${batchId}::uuid
-       AND r.tnved_code = ${input.tnvedCode}
-     ORDER BY (${accepts}) DESC, score DESC, r.declared_at DESC NULLS LAST
-     LIMIT ${limit}
-  `);
+    named_q?: unknown;
+    named_ex?: unknown;
+  }>(candidateStatement(batchId, input, needle, limit, named));
 
   const total = Number(rows[0]?.total ?? 0);
   const mapped = rows.map((r) => ({
@@ -299,11 +307,63 @@ async function queryCandidates(
     weightPerUnitKg: r.weight_per_unit_kg === null ? null : Number(r.weight_per_unit_kg),
     declaredAt: r.declared_at,
     sender: r.sender,
+    originCountry: r.origin_country ?? null,
     nameSim: Number(r.name_sim),
     score: Number(r.score),
     unitMatches: input.units.includes(r.unit),
   }));
-  return { rows: mapped, total };
+  if (!named) return { rows: mapped, total };
+  return {
+    rows: mapped,
+    total,
+    namedSeries: namedSeriesOf(
+      jsonRows<RawSeries & { unit: ImportUnit }>(rows[0]?.named_q),
+      jsonRows<NamedExemplarRow>(rows[0]?.named_ex),
+    ),
+  };
+}
+
+/** One declaration at a named quartile, as the candidate statement's
+ * `named_ex` subquery hands it back. */
+interface NamedExemplarRow {
+  unit: ImportUnit;
+  price: string;
+  id: string;
+  name: string;
+  declared_at: string | null;
+  sender: string | null;
+  origin_country: string | null;
+  w: string | null;
+}
+
+/** The named series per unit, each quartile matched to its real row. */
+function namedSeriesOf(
+  series: (RawSeries & { unit: ImportUnit })[],
+  exemplars: NamedExemplarRow[],
+): Partial<Record<ImportUnit, SeriesStats>> {
+  const out: Partial<Record<ImportUnit, SeriesStats>> = {};
+  for (const raw of series) {
+    const ex: Partial<Record<ExemplarKey, PriceExemplar | null>> = {};
+    const ladder = raw.ladder ?? [];
+    for (const key of ['p25', 'p50', 'p75'] as const) {
+      const price = ladder[QUARTILE_INDEX[key]];
+      if (price === undefined || raw.n < FEW) continue;
+      const hit = exemplars.find((e) => e.unit === raw.unit && Number(e.price) === Number(price));
+      ex[key] = hit
+        ? {
+            id: hit.id,
+            name: hit.name,
+            declaredAt: hit.declared_at,
+            sender: hit.sender,
+            originCountry: hit.origin_country,
+            weightPerUnitKg: hit.w === null ? null : Number(hit.w),
+            pricePerUnitUsd: Number(hit.price),
+          }
+        : null;
+    }
+    out[raw.unit] = seriesFromRaw(raw, ex);
+  }
+  return out;
 }
 
 /**
@@ -326,9 +386,11 @@ export async function importRowForCode(
     weight_per_unit_kg: string | null;
     declared_at: string | null;
     sender: string | null;
+    origin_country: string | null;
   }>(sql`
     SELECT r.id::text AS id, r.name, r.unit, r.price_per_unit_usd,
-           r.weight_per_unit_kg, r.declared_at::text AS declared_at, r.sender
+           r.weight_per_unit_kg, r.declared_at::text AS declared_at, r.sender,
+           r.origin_country
       FROM customs_import_rows r
       JOIN customs_import_batches b ON b.id = r.batch_id
      WHERE r.id = ${rowId}::bigint
@@ -347,6 +409,7 @@ export async function importRowForCode(
     weightPerUnitKg: r.weight_per_unit_kg === null ? null : Number(r.weight_per_unit_kg),
     declaredAt: r.declared_at,
     sender: r.sender,
+    originCountry: r.origin_country,
     nameSim: 1,
     score: 1,
     unitMatches: true,
