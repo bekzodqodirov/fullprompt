@@ -68,6 +68,18 @@ describe('ONE chain for the unit on screen (#886, #171)', () => {
     expect(save).toContain('edit.bazaBasis = postedBasis(d.bazaBasis, v === null, item);');
   });
 
+  it('the 📥 statistics marker asks the same chain on both shapes (his C, #TBD-e)', () => {
+    // Desktop: the ⋯ fold is handed the row's ONE answer, never `draft ??
+    // stored` — null on an untouched «avto» row whose select shows the law's.
+    expect(TABLE).toContain('screenBasis={screen.basis}');
+    // Phone: the look-only door builds its marker from the same resolver.
+    const at = TABLE.indexOf('data-testid="calc-phone-stats"');
+    expect(at).toBeGreaterThan(-1);
+    const handler = TABLE.slice(at, TABLE.indexOf('</button>', at));
+    expect(handler).toContain('screenRowOf(item, undefined,');
+    expect(handler).toContain("mode: 'view'");
+  });
+
   it('the desktop footer’s A1 chip reads the LIVE rows its baza reads (review units-r2-2)', () => {
     const memo = TABLE.slice(TABLE.indexOf('const liveBasisNotLawByGroup'), TABLE.indexOf('const liveTotals'));
     expect(memo).toContain('basisNotLaw(g.dutyUnit, g.items.map((i) => liveItem(i)))');

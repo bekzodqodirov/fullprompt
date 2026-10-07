@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { listImportBatches } from '@/modules/wms/customs/import-service';
+import { listImportBatches, newestReadyBatchId } from '@/modules/wms/customs/import-service';
 import { isServerBehind } from '@/modules/platform/db/errors';
 import { logger } from '@/modules/platform/logger';
 import { AutoRefresh } from '@/components/auto-refresh';
@@ -19,8 +19,13 @@ import { DeleteBatchButton } from './delete-button';
  *
  * Imports ACCUMULATE (his answer 2b): suggestions read the newest READY
  * batch and the older quarters stay for «bu kod avvalgi chorakda qancha
- * edi». A batch can be removed while no calculation has taken a price from
- * it — after that it is that price's provenance and stays.
+ * edi». «Newest» is by the dates INSIDE the file, clamped to the upload day
+ * (his C6) — no longer the top row of this upload-ordered log — so the row
+ * that answers now wears ★ (`import-answering`). A neutral chip on purpose:
+ * on this page brand means «processing» and green means «ready», and each
+ * chip colour keeps one meaning. A batch can be removed while no
+ * calculation has taken a price from it — after that it is that price's
+ * provenance and stays.
  */
 export default async function CustomsImportPage() {
   const actor = await getActor();
@@ -30,8 +35,10 @@ export default async function CustomsImportPage() {
   const format = await getFormatter();
 
   let batches: Awaited<ReturnType<typeof listImportBatches>> = [];
+  let answering: string | null = null;
   try {
     batches = await listImportBatches();
+    answering = await newestReadyBatchId();
   } catch (err) {
     // Deploy morning: 0094's tables may not exist yet (#472).
     if (!isServerBehind(err)) throw err;
@@ -82,8 +89,15 @@ export default async function CustomsImportPage() {
                   </td>
                   <td className="p-2">
                     {b.status === 'ready' ? (
-                      <span className="chip chip-good" data-testid="import-ready">
-                        {t('ready')}
+                      <span className="inline-flex flex-wrap gap-1">
+                        <span className="chip chip-good" data-testid="import-ready">
+                          {t('ready')}
+                        </span>
+                        {b.id === answering ? (
+                          <span className="chip chip-neutral" data-testid="import-answering">
+                            ★ {t('answering')}
+                          </span>
+                        ) : null}
                       </span>
                     ) : b.status === 'processing' ? (
                       <>
