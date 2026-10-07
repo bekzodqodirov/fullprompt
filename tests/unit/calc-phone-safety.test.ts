@@ -243,6 +243,49 @@ describe('his 2b (2026-10-07): «boshqa kishi hozirgina o‘zgartirdi» is the P
     expect(at).toBeGreaterThan(-1);
     const press = TABLE.slice(at, TABLE.indexOf("🗑 {tc('delete')}", at));
     expect(press).not.toMatch(/lookFirst\(|probeClock\(/);
+    // `save` hands its edits to `send`, the ONE sender the sheet shares: a
+    // look or an expectation added THERE would reach the grid's save while
+    // `save` itself stayed clean — so the sender posts exactly what it is
+    // given, and the sheet adds its own beside the built edit before calling it.
+    const sender = constBody('send');
+    expect(sender).not.toMatch(/expect:|expectFor\(|lookFirst\(|probeClock\(/);
+    expect(sender).toContain('saveTableAction(id, { items, adds })');
+  });
+
+  it('every way into the sheet is one of four, and only the phone cards are handed an opener', () => {
+    // The sheet is a portalled Overlay — a desktop path that opened it would
+    // draw the phone's warning at 1280 too. So the openers are referenced
+    // only inside their own definitions and inside the <PhoneBlocks> element…
+    const mount = TABLE.indexOf('<PhoneBlocks');
+    const end = TABLE.indexOf('\n      />', mount);
+    expect(mount).toBeGreaterThan(-1);
+    expect(TABLE.slice(mount, end)).toContain('onOpenItem={openItemSheet}');
+    const openers = ['openItemSheet', 'openGhostSheet', 'addGhostAndOpen'];
+    const bodies = openers.map((name) => {
+      const at = TABLE.indexOf(`\n  const ${name} =`);
+      expect(at, name).toBeGreaterThan(-1);
+      return [at, TABLE.indexOf('\n  const ', at + 10)] as const;
+    });
+    for (const name of openers) {
+      for (const m of TABLE.matchAll(new RegExp(`\\b${name}\\b`, 'g'))) {
+        const at = m.index!;
+        const inOpener = bodies.some(([from, to]) => at > from && at < to);
+        const onPhone = at > mount && at < end;
+        expect(inOpener || onPhone, `${name} used outside the phone cards: …${TABLE.slice(at - 60, at + 40)}…`).toBe(true);
+      }
+    }
+    // …and every setSheet that opens something is one of the four known
+    // shapes: the two openers, a ghost sheet's row becoming a stored row, and
+    // the 📥 picker handing back the sheet it stepped aside from.
+    const opened = [...TABLE.matchAll(/setSheet\(([^)]*)\)/g)]
+      .map((m) => m[1]!.trim())
+      .filter((arg) => arg !== 'null')
+      .sort();
+    expect(opened).toEqual(
+      ["back", "{ kind: 'ghost', key }", "{ kind: 'item', id: itemId }", "{ kind: 'item', id: retarget.toId }"].sort(),
+    );
+    expect(TABLE.split('pickerReturn.current = sheet').length - 1).toBe(1);
+    expect(constBody('openPickerFromSheet')).toContain('pickerReturn.current = sheet');
   });
 
   it('the 15-second probe runs only while a sheet is open or an AI pass holds the request', () => {
@@ -301,6 +344,28 @@ describe('his 3b (2026-10-07): «1,125 — qaysi biri?» is asked by the goods c
     const press = WS.slice(at, WS.indexOf('bandOverrideReason', at));
     expect(press).toContain('parseTypedMoney(discount)');
     expect(press).toContain("Number(override.replace(',', '.'))");
+  });
+
+  it('the paste never asks: TSV rows are the deals importer’s, and a line’s unclear count lands empty', () => {
+    // The paste is the fourth of the places he left as they were (with the
+    // discount, the band override and the rates). items-table imports the
+    // reader for its cells, so the closed set above cannot see a paste that
+    // starts asking — the paste's own body is read here.
+    const at = TABLE.indexOf('const parsedPaste = useMemo(');
+    expect(at).toBeGreaterThan(-1);
+    const paste = TABLE.slice(at, TABLE.indexOf('}, [pasteText]);', at));
+    expect(paste).not.toMatch(/readCell\(|ambiguous_number|setTableError\(|setAsked\(/);
+    // A TSV row's figures are the importer's, as it read them…
+    const tsvAt = paste.indexOf("lines.some((l) => l.includes('\\t'))");
+    const lineAt = paste.indexOf('return lines.map(', tsvAt);
+    expect(tsvAt).toBeGreaterThan(-1);
+    expect(lineAt).toBeGreaterThan(tsvAt);
+    const tsv = paste.slice(tsvAt, lineAt);
+    expect(tsv).toContain('parseGoods(cells)');
+    expect(tsv).toContain('quantity: g.quantity,');
+    expect(tsv).not.toContain('readNumberCell');
+    // …and «name, 1,125, dona» lands with an EMPTY count, never a guess and never a question.
+    expect(paste.slice(lineAt)).toContain("quantity: cell?.state === 'ok' ? cell.value : null,");
   });
 });
 
