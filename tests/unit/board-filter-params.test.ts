@@ -78,3 +78,12 @@ describe('the loose uuid shape is gone from src', () => {
   });
 });
 
+describe('the lead board asks «all» once', () => {
+  it('every echo of the scope reads scopeAll, which needs view_all', () => {
+    const page = readFileSync('src/app/(protected)/crm/page.tsx', 'utf8');
+    expect(page).toContain("const scopeAll = seesAll && params.scope === 'all';");
+    // The definition is the only place the raw param is compared.
+    expect(page.split("params.scope === 'all'").length - 1).toBe(1);
+  });
+});
+
