@@ -62,8 +62,13 @@ export function dealBoardShape(permissions: { has(code: string): boolean }): Dea
  *
  * `hodim` is format-checked, not just permission-checked: it lands in
  * `eq(deals.ownerId, …)`, and a hand-typed non-uuid was a 22P02 500 for a
- * view_all holder rather than a dropped filter.
+ * view_all holder rather than a dropped filter. The STRICT shape (`UUID`
+ * below, `calc/card-door.ts`'s): the loose «8 hex, a dash, 27 of hex-or-dash»
+ * the page used admits `aaaaaaaa-aaaaaaaaaaaaaaaaaaaaaaaaaaa`, which postgres
+ * refuses with exactly that 22P02.
  */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export interface DealBoardWhose {
   /** May pick whose work — the radios and the colleague picker are drawn. */
   seesAll: boolean;
@@ -81,6 +86,6 @@ export function dealBoardWhose(
   return {
     seesAll,
     all: seesAll && asked.scope === 'all',
-    hodim: seesAll && /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(asked.hodim ?? '') ? asked.hodim! : '',
+    hodim: seesAll && UUID.test(asked.hodim ?? '') ? asked.hodim! : '',
   };
 }

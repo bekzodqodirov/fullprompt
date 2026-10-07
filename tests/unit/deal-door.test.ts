@@ -186,5 +186,10 @@ describe('whose work the board draws (the review’s DEAL17-2)', () => {
       all: false,
       hodim: '',
     });
+    // uuid-SHAPED is not a uuid: 36 characters of hex and dashes that postgres
+    // refuses with 22P02 — the board's 500, not a dropped filter.
+    expect(dealBoardWhose(admin, { hodim: 'aaaaaaaa-aaaaaaaaaaaaaaaaaaaaaaaaaaa' }).hodim).toBe('');
+    // A real one, in either case, is honoured.
+    expect(dealBoardWhose(admin, { hodim: COLLEAGUE.toUpperCase() }).hodim).toBe(COLLEAGUE.toUpperCase());
   });
 });
