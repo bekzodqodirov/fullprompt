@@ -2092,10 +2092,12 @@ export function ItemsTable({
 /* ------------------------------------------------------------------ */
 
 /** A typed comma the reader cannot decide (B4 a) is marked on the cell
- * itself — the question is in the error line above the grid. */
+ * itself — the question is in the error line above the grid. `!` because
+ * `.input-cell` is declared after the utilities and its border colour wins
+ * over a plain `border-warn` (#419's cascade). */
 const cellBorder = (raw: string | undefined, drafted: boolean) =>
   raw !== undefined && readNumberCell(raw).state === 'ambiguous'
-    ? ' border-warn'
+    ? ' !border-warn'
     : drafted
       ? ' border-brand-500'
       : '';

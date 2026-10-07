@@ -424,7 +424,14 @@ test('T6b — a number nothing reads is named under its box; a press is bound to
   await sheet(page).getByTestId('calc-phone-save').click();
   const bad = sheet(page).getByTestId('calc-phone-bad');
   await expect(bad).toBeVisible();
-  await expect(sheet(page).getByTestId('calc-phone-kg')).toHaveClass(/border-warn/);
+  // Marked where it SHOWS — a class in the list is not a colour on the
+  // screen (`.input` outranks a plain utility): the bad box's border is not
+  // its neighbour's.
+  const borderOf = (testId: string) =>
+    sheet(page)
+      .getByTestId(testId)
+      .evaluate((el) => getComputedStyle(el).borderTopColor);
+  expect(await borderOf('calc-phone-kg')).not.toBe(await borderOf('calc-phone-m3'));
   await expect(sheet(page).getByTestId('calc-phone-error')).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/phone-sheet-bad-number-360.png` });
   await sheet(page).getByTestId('calc-phone-kg').fill('');

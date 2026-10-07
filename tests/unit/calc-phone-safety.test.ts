@@ -329,3 +329,18 @@ describe('review PHONE-6: a restore with nothing to restore is news shown once',
     expect(RESTORE).toContain("count > 0 ? t('restore.no') : t('restore.dismiss')");
   });
 });
+
+describe('review PHONE-4: a marked box is marked on the SCREEN', () => {
+  it('a warn border on an `.input` / `.input-cell` is `!border-warn` — the plain utility loses to the class', () => {
+    for (const source of [SHEET, TABLE]) expect(source).not.toContain("' border-warn'");
+    expect(SHEET).toContain("' !border-warn'");
+    expect(TABLE).toContain("' !border-warn'");
+  });
+
+  it('a bad number is asked under its own box, as the ambiguity question is', () => {
+    expect(SHEET).toContain('data-testid="calc-phone-bad"');
+    expect(constBody('showRefusal')).toContain(
+      "(refusal.code === 'ambiguous_number' || refusal.code === 'bad_number') && refusal.field",
+    );
+  });
+});

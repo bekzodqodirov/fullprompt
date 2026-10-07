@@ -219,7 +219,10 @@ function SheetBody({
       measure: 'calc-phone-measure',
       bazaValue: 'calc-phone-baza',
     }[name];
-    const warn = ambiguous || badHere(name) ? ' border-warn' : model.drafted[name] ? ' border-brand-500' : '';
+    // `!`: `.input` is declared after the utilities and its own border
+    // colour wins over a plain `border-warn` (#419's cascade) — measured, the
+    // mark was in the class list and nowhere on the screen.
+    const warn = ambiguous || badHere(name) ? ' !border-warn' : model.drafted[name] ? ' border-brand-500' : '';
     const input =
       name === 'name' || name === 'note' ? (
         <textarea
