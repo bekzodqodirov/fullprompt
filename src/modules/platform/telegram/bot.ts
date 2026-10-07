@@ -1,4 +1,4 @@
-import { Bot } from 'grammy';
+import { API_CONSTANTS, Bot } from 'grammy';
 import { eq } from 'drizzle-orm';
 import { db } from '../db/client';
 import { telegramLinks, users } from '../db/schema';
@@ -21,6 +21,7 @@ import { askStaffPhone, entryKeyboard, registerStaffBot } from './staff-handlers
 import { replyKeyboardFor } from './keyboards';
 import { ensureBotProfile, offerStaffCommands } from './commands';
 import { botCall, noteBotAnswer } from './send';
+import { registerPriceChannel } from './price-channel-handlers';
 
 /**
  * Staff-linking bot (spec 4.5): handles `/start <one-time-code>` from the
@@ -104,6 +105,10 @@ export function startTelegramBot(): void {
 
   const bot = new Bot(token);
   globalForBot.telegramBot = bot;
+
+  // Channel updates first: a command in a channel post would otherwise reach
+  // /start and /hodim, whose replies land IN the price channel (his F).
+  registerPriceChannel(bot);
 
   bot.command('start', async (ctx) => {
     const code = ctx.match?.trim();
@@ -308,22 +313,30 @@ export function startTelegramBot(): void {
     // `onStart` runs once grammy's getMe has answered — the token WORKS, which
     // clears a «bot ishlamayapti» left by a revoked one even when nothing is
     // queued to prove it (B9); `noteRefusedToken` records the opposite.
-    void bot.start({ drop_pending_updates: true, onStart: () => noteBotAnswer(200, '', true) }).catch((err: unknown) => {
-      noteRefusedToken(err);
-      const is409 =
-        typeof err === 'object' && err !== null && 'error_code' in err && err.error_code === 409;
-      if (is409) {
-        // Another instance holds the getUpdates lock (e.g. a dev machine and
-        // a server sharing one token). Keep retrying — when the other side
-        // stops, this instance takes over. Never crashes anything.
-        logger.warn(
-          `telegram: another bot instance is polling this token; retrying in ${retryMs / 1000}s`,
-        );
-      } else {
-        logger.error({ err }, 'telegram bot polling failed; retrying');
-      }
-      setTimeout(() => startPolling(Math.min(retryMs * 2, 300_000)), retryMs);
-    });
+    // chat_member is off by default; the price channel's membership (his F8 a)
+    // needs it. Adding it changes nothing else — no other handler listens for it.
+    void bot
+      .start({
+        drop_pending_updates: true,
+        allowed_updates: [...API_CONSTANTS.DEFAULT_UPDATE_TYPES, 'chat_member'],
+        onStart: () => noteBotAnswer(200, '', true),
+      })
+      .catch((err: unknown) => {
+        noteRefusedToken(err);
+        const is409 =
+          typeof err === 'object' && err !== null && 'error_code' in err && err.error_code === 409;
+        if (is409) {
+          // Another instance holds the getUpdates lock (e.g. a dev machine and
+          // a server sharing one token). Keep retrying — when the other side
+          // stops, this instance takes over. Never crashes anything.
+          logger.warn(
+            `telegram: another bot instance is polling this token; retrying in ${retryMs / 1000}s`,
+          );
+        } else {
+          logger.error({ err }, 'telegram bot polling failed; retrying');
+        }
+        setTimeout(() => startPolling(Math.min(retryMs * 2, 300_000)), retryMs);
+      });
   };
   startPolling(30_000);
   logger.info('telegram bot polling started');

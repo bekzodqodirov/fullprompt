@@ -34,7 +34,10 @@ export default async function PriceHistoryPage({
   const actor = await getActor();
   if (!actor) redirect('/login');
   // Two audiences on one screen (laws 4 and 10): the VED reads the cost side
-  // and never a client price, the seller reads the prices and never the floor.
+  // and never a client price; a seller reads only the client prices HE gave
+  // (his F1 a, 2026-10-07) and not the cost breakdown. The sealed total itself
+  // is no secret since F1 a (the price channel posts it); this screen still
+  // leaves it out for a seller — not widened, recorded.
   const scope = upsaleScopeFor(actor);
   // The door is the SCOPE, and the VED's own grant beside it.
   //
@@ -56,7 +59,7 @@ export default async function PriceHistoryPage({
   if (code) {
     try {
       [rows, book] = await Promise.all([
-        quoteHistoryFor(code, { scope, limit: 10 }),
+        quoteHistoryFor(code, { scope, viewerId: actor.id, limit: 10 }),
         priceBookAt(code, tashkentDay()),
       ]);
     } catch (err) {

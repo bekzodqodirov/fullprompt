@@ -3,6 +3,7 @@ import { db, type Tx } from '../db/client';
 import { roles, userRoles, users, userWarehouses } from '../db/schema';
 import { diffFields, writeAudit, type AuditContext } from '../audit/service';
 import { canLogInSql, noLoginPhone, staffPhonesMatch } from './login';
+import { kickPriceChannelMembers } from '../telegram/price-channel';
 
 /**
  * THE writer of a person (0120, the owner's 2b).
@@ -226,6 +227,11 @@ export async function toggleUserActive(id: string, actorId: string, ctx: AuditCo
     if (id === actorId) return;
     await flipActive(tx, id, row.active, !row.active, ctx);
   });
+  // A deactivated colleague leaves the price channel (his F8 a) — the sweep
+  // asks the one eligibility rule, so a REactivation (this is a toggle) simply
+  // finds nobody to remove. Not in `setNoLoginPersonActive`: a no-login row
+  // cannot hold a staff link (`canLogIn` is false), so it is never a member.
+  kickPriceChannelMembers();
 }
 
 /** The one flip of `users.active`. Private: nothing outside this file can flip a person. */
