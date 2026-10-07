@@ -46,6 +46,7 @@ import { buttonLabel } from './limits';
 import { editMarkup, editText } from './send';
 
 import { canLogInSql, staffPhonesMatch } from '../users/login';
+import { THREAD_PING_TYPES, threadOfPayload } from '../notifications/thread-ref';
 
 /**
  * The cabinet's phone rule (digits only, the last 9) lives in users/login.ts
@@ -215,6 +216,11 @@ export const AI_RASTAMOJKA = '🤖 AI rastamojka';
 export const ZAMETKALAR = '📌 Zametkalar';
 /** The advert lead's one button (0113) — named once, for the push and its tests. */
 export const LEAD_CONTACTED_BUTTON = '📞 Bog‘landim';
+
+/** The thread ping's one button (0127) — arms a one-text reply wait. */
+export const THREAD_REPLY_BUTTON = '💬 Javob yozish';
+/** The VED's bound «Hisoblash: …» task copy: a question to the seller, under that calculation (E3 a). */
+export const ASK_SELLER_BUTTON = '❓ Sotuvchidan so‘rash';
 /**
  * The owner's evening summary, on demand (his 7a: «har kuni 20:00 faqat
  * sizga»). Drawn only for the person the summary is for — `holatFor` — and
@@ -347,7 +353,15 @@ export type BotCallback =
   /** A colleague picked in «Kimga?» — `dk:<user>`. */
   | { kind: 'draft_pick'; userId: string }
   /** «📌 Topshiriq qilamizmi?» under a forwarded message — `fb:<task|search>`. */
-  | { kind: 'forward'; step: ForwardStep };
+  | { kind: 'forward'; step: ForwardStep }
+  /**
+   * «💬 Javob yozish» under a thread ping, «❓ Sotuvchidan so‘rash» under the
+   * VED's bound calc task (the owner's E answers) — `jy`, carrying NO id: the
+   * press resolves its OWN pressed message through the reply door, the same
+   * resolver a swipe-reply uses, so nothing can be forged and a deploy between
+   * the send and the press loses nothing.
+   */
+  | { kind: 'thread_reply' };
 
 /** ⏰'s four answers. */
 export const POSTPONE_STEPS = ['e', 'i', 'w', 's'] as const;
@@ -482,6 +496,8 @@ export function zonePressAnswer(
 
 export function parseCallback(data: string): BotCallback | null {
   if (data === 'e:s') return { kind: 'entry', who: 'staff' };
+  // The thread reply (0127). Collides with none: `mg` stays the cabinet's.
+  if (data === 'jy') return { kind: 'thread_reply' };
   if (data === 'e:c') return { kind: 'entry', who: 'client' };
   const calc = /^c:(\w+)$/.exec(data);
   if (calc && (CALC_STEPS as readonly string[]).includes(calc[1]!)) {
@@ -556,6 +572,13 @@ export function buttonsFor(type: string, payload: Record<string, unknown>): BotB
   if ((type === 'TaskAssigned' || type === 'TaskReminder' || type === 'TaskAnswer') && taskId) {
     return assigneeButtons(taskId, payload);
   }
+  // A staff thread's ping (the owner's E answers): one button that arms a
+  // one-text wait — the same answer a swipe-reply gives, for whoever prefers
+  // a button. Only a ping that names its thread: one sent before 0127 has no
+  // `payload.thread` and could not be landed anywhere.
+  if ((THREAD_PING_TYPES as readonly string[]).includes(type) && threadOfPayload(payload)) {
+    return [[{ text: THREAD_REPLY_BUTTON, callback_data: 'jy' }]];
+  }
   // The author's copy of a question carries the one way to answer it.
   if (type === 'TaskQuestion' && taskId) {
     return [[{ text: '💬 Javob berish', callback_data: `tr:${taskId}` }]];
@@ -621,8 +644,9 @@ export type BotButton = CallbackButton | UrlButton;
  * row:
  *
  *   hand / NULL     [👀 Qabul qildim] [✅ Bajarildi] / [⏰ Muddatni surish] [💬 Savol]
- *   calc, bound     none — the message's one URL button is its 🔗 line, lifted
- *                   by the drain to /hisoblash/<request> (telegram-mechanics-8)
+ *   calc, bound     [❓ Sotuvchidan so‘rash] — a question to the seller under
+ *                   that calculation (E3 a), never a task action; the URL row
+ *                   the drain lifts off the 🔗 line stays beside it
  *   calc, unbound   [✅ Bajarildi] — a release ghost or a closed job closes normally
  *   calc_return     [👀] [✅] / [💬]
  *   promise         [👀] [✅] / [💬] — no ⏰: the date IS the client's promise
@@ -636,7 +660,9 @@ export type BotButton = CallbackButton | UrlButton;
 export function assigneeButtons(taskId: string, payload: Record<string, unknown>): BotButton[][] | null {
   const origin = typeof payload.origin === 'string' ? payload.origin : null;
   if (origin === 'calc') {
-    return payload.bound === true ? null : [[{ text: '✅ Bajarildi', callback_data: `t:${taskId}` }]];
+    return payload.bound === true
+      ? [[{ text: ASK_SELLER_BUTTON, callback_data: 'jy' }]]
+      : [[{ text: '✅ Bajarildi', callback_data: `t:${taskId}` }]];
   }
   const accept = payload.accepted !== true && origin !== 'automation';
   const wait = payload.repeats !== true && origin !== 'promise' && origin !== 'calc_return';
@@ -785,7 +811,7 @@ export interface PressedMessage {
  * collide with the single-capture fence or sit below it and have the typed
  * date eaten as a result.
  */
-export type PendingKind = 'result' | 'question' | 'answer' | 'reschedule';
+export type PendingKind = 'result' | 'question' | 'answer' | 'reschedule' | 'reply';
 
 export interface PendingTask {
   taskId: string;
@@ -798,6 +824,12 @@ export interface PendingTask {
   pressed: PressedMessage | null;
   /** The «write the result» prompt itself, whose «✅ Natijasiz» goes once used. */
   promptMessageId?: number | null;
+  /**
+   * A `'reply'` wait (the thread's «💬 Javob yozish»): the bot message the
+   * press was on — the thread the next text lands in. `taskId` is then ''
+   * (no task uuid is empty, so `takeTaskPendingFor` can never match it).
+   */
+  replyToMessageId?: number | null;
 }
 
 const pendingResults = new Map<string, PendingTask & { expires: number }>();
@@ -811,6 +843,33 @@ export function noteTaskPending(
   kind: PendingKind = 'result',
 ): void {
   pendingResults.set(String(chatId), { taskId, kind, pressed, expires: Date.now() + PENDING_TTL_MS });
+}
+
+/**
+ * «💬 Javob yozish» pressed: the next text is a reply to `replyToMessageId`.
+ * In the SAME map as every other wait — the one-map law: a second map would
+ * collide with the single-capture fence — so it replaces whatever was armed,
+ * exactly as `tq:` does.
+ */
+export function noteReplyPending(chatId: bigint, replyToMessageId: number): void {
+  pendingResults.set(String(chatId), {
+    taskId: '',
+    kind: 'reply',
+    pressed: null,
+    replyToMessageId,
+    expires: Date.now() + PENDING_TTL_MS,
+  });
+}
+
+/**
+ * A PEEK at the armed wait — the reply door's question «is this reply the one
+ * a wait was armed for?». Never deletes: only `takeTaskPending`,
+ * `takeTaskPendingFor` and `dropTaskPending` change the map.
+ */
+export function peekTaskPending(chatId: bigint): PendingTask | null {
+  const entry = pendingResults.get(String(chatId));
+  if (!entry || entry.expires <= Date.now()) return null;
+  return pendingOf(entry);
 }
 
 /** The prompt was sent — remember where its «✅ Natijasiz» sits. */
@@ -857,6 +916,8 @@ function pendingOf(entry: PendingTask): PendingTask {
     kind: entry.kind,
     pressed: entry.pressed,
     promptMessageId: entry.promptMessageId ?? null,
+    // Rebuilt field by field — a field not copied here arrives as nothing.
+    replyToMessageId: entry.replyToMessageId ?? null,
   };
 }
 

@@ -1769,6 +1769,22 @@ export const leads = pgTable(
  * One log for both sides of the funnel. The call that won a lead and the call
  * about a late payment a year later belong on the same timeline; two tables
  * would have split a single person's history in half.
+ *
+ * 0127 (the staff threads) added three columns that are deliberately NOT
+ * declared here this release: `calc_request_id` (the calculation a note is a
+ * question or answer about), and `tg_chat_id` + `tg_message_id` (the
+ * Telegram message a reply landed from — provenance and idempotency key).
+ * Drizzle names EVERY declared column in every INSERT (an absent value is
+ * rendered `default`), in a bare `.returning()` and in every whole-row
+ * select — and those statements are every note writer in the app
+ * (`addActivity`) and two reads, one of them the VED's calc page outside any
+ * catch. Declared, they would turn every note save into a 42703 on a
+ * database one migration behind (#472). So they live in raw SQL only: written
+ * by `wms/crm/thread.ts` `addThreadMessage`, read bare only in `thread.ts` and
+ * `thread-reply.ts`, and through `to_jsonb(row)` everywhere else (NULL, not
+ * 42703, on an old schema). A LATER release, once 0127 is everywhere, may
+ * declare them — after checking that no whole-row statement remains. Fenced
+ * by tests/unit/thread-wire.test.ts.
  */
 export const crmActivities = pgTable(
   'crm_activities',
@@ -1787,6 +1803,32 @@ export const crmActivities = pgTable(
     check('crm_activities_entity_check', sql`${t.entityType} IN ('lead', 'client', 'deal')`),
     check('crm_activities_kind_check', sql`${t.kind} IN ('call', 'meeting', 'message', 'note')`),
     index('crm_activities_entity_idx').on(t.entityType, t.entityId, t.happenedAt),
+  ],
+);
+
+/**
+ * How far a person has read one staff thread (0127) — a card's notes or a
+ * calculation's Q&A. «Unread» is DERIVED from this and the notes (the newest
+ * note is somebody else's and later than `read_at`), never stored as a
+ * counter: a counter would be a second writer of a fact the notes already
+ * hold. Written with GREATEST (tg_chat_reads' shape), so an out-of-order mark
+ * never moves it back. A new TABLE is safe to declare: only its own
+ * statements name it, and each sits behind a catch.
+ */
+export const threadReads = pgTable(
+  'thread_reads',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    threadKind: text('thread_kind').notNull(),
+    threadId: uuid('thread_id').notNull(),
+    readAt: timestamp('read_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ name: 'thread_reads_pk', columns: [t.userId, t.threadKind, t.threadId] }),
+    // Round 2 widens this with 'receipt','batch' (a CHECK widening, like 0125).
+    check('thread_reads_kind_check', sql`${t.threadKind} IN ('lead', 'deal', 'client', 'calc')`),
   ],
 );
 

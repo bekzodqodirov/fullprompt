@@ -5296,5 +5296,39 @@
     "serverBehind": "服务器正在更新——请一分钟后重试",
     "decisionNote": "决定备注：{note}",
     "notifMuteDebt": "赊账放行（谁、给谁、多少、原因）"
+  },
+  "threads": {
+    "dockTab": "内部",
+    "dockEmpty": "暂无内部沟通。卡片上的提问（您发出的和发给您的）会显示在这里。",
+    "dockLoading": "加载中…",
+    "dockFailed": "无法加载列表，请重新打开。",
+    "unread": "新",
+    "calcTitle": "❓ 问答",
+    "calcJump": "❓ 问答 · {n}",
+    "calcHint": "向销售提问——问题会发到其 Telegram，回答显示在这里。请勿写成本或已封存价格：销售也能看到。",
+    "cardHint": "与报关员就此计算的问答。",
+    "empty": "此计算暂无提问。",
+    "placeholder": "提问或回答…",
+    "send": "发送",
+    "sending": "发送中…",
+    "viaTelegram": "📱 来自 Telegram",
+    "noAudience": "⚠ 目前没有人会收到此消息——计算尚未分配，接手的人会看到。",
+    "feedCalcThread": "🧮 计算问答 · ↩️ 回复",
+    "feedViaTelegram": "📱 来自 Telegram",
+    "feedCalcHint": "此消息不会发给报关员——请在「❓ 问答」中回答计算问题。",
+    "notifMuteChat": "内部沟通（卡片问答、@提及）",
+    "unreachable": {
+      "no_door": "⚠ {name} 无法打开卡片——只能在 Telegram 中回复。",
+      "no_chat": "⚠ {name} 未绑定 Telegram——只能在网站上看到。",
+      "muted": "⚠ {name} 已静音此类消息——只能在网站上看到。"
+    },
+    "errors": {
+      "forbidden": "您无权在此沟通中发言。",
+      "empty": "消息为空。",
+      "too_long": "太长——最多 4000 个字符。",
+      "not_found": "未找到该计算。",
+      "server_behind": "系统正在更新——请稍后再发送。",
+      "save_failed": "未发送——请重试。"
+    }
   }
 }

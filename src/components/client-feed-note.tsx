@@ -31,6 +31,8 @@ export function FeedNoteBox({
   labels,
   people = [],
   files: allowFiles = true,
+  hintOn = null,
+  hintText = '',
 }: {
   /** Where the note lands: the deal on a deal card, else the client, else the lead. */
   entityType: 'client' | 'lead' | 'deal';
@@ -40,6 +42,14 @@ export function FeedNoteBox({
   people?: MentionPerson[];
   /** False on a calculator's box (docs/VED-TARIX.md §10): no 📎, text only. */
   files?: boolean;
+  /**
+   * `lead:<id>` / `deal:<id>` — the card this box sits on, posted so the
+   * action can say «this does not reach the VED» when an open calculation
+   * here has a question waiting (0127). Null on a client-only lenta.
+   */
+  hintOn?: string | null;
+  /** The words of that hint (`threads.feedCalcHint`). */
+  hintText?: string;
 }) {
   const [state, submit, pending] = useActionState<ReplyState, FormData>(addFeedNoteAction, {});
   const formRef = useRef<HTMLFormElement>(null);
@@ -90,6 +100,7 @@ export function FeedNoteBox({
     >
       <input type="hidden" name="entityType" value={entityType} />
       <input type="hidden" name="entityId" value={entityId} />
+      {hintOn ? <input type="hidden" name="hintOn" value={hintOn} /> : null}
       {files.length > 0 && <input type="hidden" name="activityId" value={activityId} />}
 
       {files.length > 0 && (
@@ -149,6 +160,13 @@ export function FeedNoteBox({
           {pending ? labels.saving : labels.save}
         </button>
       </div>
+      {/* The note saved — and an open calculation on this card has a VED
+          question waiting, which a lenta note never reaches (§3.5 c). */}
+      {state.ok && state.hint === 'calc_thread' && hintText ? (
+        <p className="px-1 pt-1 text-xs text-ink-500" data-testid="feed-calc-hint">
+          {hintText}
+        </p>
+      ) : null}
     </form>
   );
 }

@@ -5296,5 +5296,39 @@
     "serverBehind": "Server yangilanmoqda — bir daqiqadan keyin urinib ko‘ring",
     "decisionNote": "Qaror izohi: {note}",
     "notifMuteDebt": "Qarzga yuk berish (kim, kimga, qancha, sabab)"
+  },
+  "threads": {
+    "dockTab": "Ichki",
+    "dockEmpty": "Hozircha ichki yozishma yo‘q. Kartada savol yozsangiz yoki sizga yozishsa, shu yerda chiqadi.",
+    "dockLoading": "Yuklanmoqda…",
+    "dockFailed": "Ro‘yxatni o‘qib bo‘lmadi — qaytadan oching.",
+    "unread": "yangi",
+    "calcTitle": "❓ Savol-javob",
+    "calcJump": "❓ Savol-javob · {n}",
+    "calcHint": "Sotuvchidan so‘rang — savol uning Telegramiga boradi, javob shu yerda chiqadi. Tannarx yoki muhrlangan narxni yozmang: buni sotuvchi ham o‘qiydi.",
+    "cardHint": "Shu hisob bo‘yicha VED bilan savol-javob.",
+    "empty": "Bu hisob bo‘yicha hali savol yo‘q.",
+    "placeholder": "Savol yoki javob…",
+    "send": "Yuborish",
+    "sending": "Yuborilmoqda…",
+    "viaTelegram": "📱 Telegramdan",
+    "noAudience": "⚠ Bu xabarni hozir hech kim olmaydi — hisob hali hech kimga biriktirilmagan. Kim olsa, o‘sha ko‘radi.",
+    "feedCalcThread": "🧮 Hisob savoli · ↩️ javob",
+    "feedViaTelegram": "📱 Telegramdan",
+    "feedCalcHint": "Bu VED ga bormaydi — hisob savoliga «❓ Savol-javob»da javob bering.",
+    "notifMuteChat": "Ichki yozishmalar (kartadagi savol-javob, @ bilan chaqirish)",
+    "unreachable": {
+      "no_door": "⚠ {name}: kartani ocha olmaydi — faqat Telegramdan javob bera oladi.",
+      "no_chat": "⚠ {name}: Telegramga ulanmagan — faqat saytda ko‘radi.",
+      "muted": "⚠ {name}: bu xabarlarni o‘chirgan — faqat saytda ko‘radi."
+    },
+    "errors": {
+      "forbidden": "Bu yozishmaga yozish huquqingiz yo‘q.",
+      "empty": "Bo‘sh xabar.",
+      "too_long": "Juda uzun — 4000 belgigacha yozing.",
+      "not_found": "Hisob topilmadi.",
+      "server_behind": "Tizim yangilanmoqda — birozdan keyin qaytadan yuboring.",
+      "save_failed": "Yuborilmadi — qaytadan urinib ko‘ring."
+    }
   }
 }

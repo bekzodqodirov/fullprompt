@@ -157,8 +157,15 @@ describe('the assignee’s buttons, by where the task came from (spec §2, mecha
     expect(flat(buttonsFor('TaskAssigned', p({ origin: 'hand', repeats: true })))).not.toContain('⏰ Muddatni surish');
   });
 
-  it('a calc job bound to its request carries NO callback — its one button is the lifted link', () => {
-    expect(buttonsFor('TaskAssigned', p({ origin: 'calc', bound: true }))).toBeNull();
+  it('a calc job bound to its request carries no TASK action — its one button asks the seller (E3 a)', () => {
+    // Rewritten on purpose (0127, the owner's E3 a): the bound copy used to
+    // carry no callback at all. It now carries «❓ Sotuvchidan so‘rash» — a
+    // question under that calculation, never a task action (no ✅, no ⏰, no
+    // 💬 Savol, which `askAboutTask` refuses on an open calc job) — and the
+    // lifted link row stays beside it.
+    expect(buttonsFor('TaskAssigned', p({ origin: 'calc', bound: true }))).toEqual([
+      [{ text: '❓ Sotuvchidan so‘rash', callback_data: 'jy' }],
+    ]);
     // A release ghost, or a job whose request has closed, closes normally.
     expect(flat(buttonsFor('TaskAssigned', p({ origin: 'calc', bound: false })))).toEqual(['✅ Bajarildi']);
   });

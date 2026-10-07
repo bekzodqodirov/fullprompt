@@ -5296,5 +5296,39 @@
     "serverBehind": "The server is updating — try again in a minute",
     "decisionNote": "Decision note: {note}",
     "notifMuteDebt": "Cargo released on debt (who, to whom, how much, why)"
+  },
+  "threads": {
+    "dockTab": "Internal",
+    "dockEmpty": "No internal threads yet. Questions on cards — yours and those addressed to you — appear here.",
+    "dockLoading": "Loading…",
+    "dockFailed": "Could not load the list — open it again.",
+    "unread": "new",
+    "calcTitle": "❓ Questions",
+    "calcJump": "❓ Questions · {n}",
+    "calcHint": "Ask the seller — the question goes to their Telegram and the answer appears here. Do not type the cost floor or the sealed price: the seller reads this too.",
+    "cardHint": "Questions with the VED about this calculation.",
+    "empty": "No questions on this calculation yet.",
+    "placeholder": "Question or answer…",
+    "send": "Send",
+    "sending": "Sending…",
+    "viaTelegram": "📱 from Telegram",
+    "noAudience": "⚠ Nobody receives this right now — the calculation is not assigned yet. Whoever takes it will see it.",
+    "feedCalcThread": "🧮 Calculation question · ↩️ reply",
+    "feedViaTelegram": "📱 from Telegram",
+    "feedCalcHint": "This does not reach the VED — answer the calculation question in «❓ Questions».",
+    "notifMuteChat": "Internal threads (questions on cards, @-mentions)",
+    "unreachable": {
+      "no_door": "⚠ {name} cannot open the card — can only reply from Telegram.",
+      "no_chat": "⚠ {name} has no linked Telegram — will see it only on the site.",
+      "muted": "⚠ {name} muted these messages — will see it only on the site."
+    },
+    "errors": {
+      "forbidden": "You cannot write in this thread.",
+      "empty": "The message is empty.",
+      "too_long": "Too long — up to 4000 characters.",
+      "not_found": "Calculation not found.",
+      "server_behind": "The system is updating — send again in a moment.",
+      "save_failed": "Not sent — try again."
+    }
   }
 }

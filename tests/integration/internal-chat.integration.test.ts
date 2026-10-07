@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { and, desc, eq, inArray } from 'drizzle-orm';
+import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
@@ -8,6 +9,8 @@ import {
   dealStages,
   deals,
   notifications,
+  roles,
+  userRoles,
   users,
 } from '@/modules/platform/db/schema';
 import {
@@ -27,6 +30,27 @@ import { createTask, listTaskTypes } from '@/modules/platform/tasks/service';
  */
 
 const STAMP = Date.now();
+let seq = 0;
+const phone = () => `+99894${String(STAMP).slice(-6)}${(seq += 1)}`;
+const minted: string[] = [];
+
+/**
+ * The fixture's people carry SEEDED roles (0127): who a note pings is now
+ * decided by each person's door at send time, and «the first two active
+ * users of whatever database this is» is not a person with a known door.
+ */
+async function person(name: string, role: string | null): Promise<string> {
+  const [u] = await db
+    .insert(users)
+    .values({ phone: phone(), fullName: name, passwordHash: 'x', active: true })
+    .returning({ id: users.id });
+  if (role) {
+    const r = await db.query.roles.findFirst({ where: eq(roles.code, role) });
+    await db.insert(userRoles).values({ userId: u!.id, roleId: r!.id });
+  }
+  minted.push(u!.id);
+  return u!.id;
+}
 
 let author: string;
 let colleague: string;
@@ -36,21 +60,12 @@ let dealId: string;
 
 beforeAll(async () => {
   process.env.APP_URL = 'https://test.gsrwms.uz';
-  const staff = await db.select().from(users).where(eq(users.active, true)).limit(2);
-  author = staff[0]!.id;
-  colleague = (staff[1] ?? staff[0])!.id;
-
+  // The author reads every card (the logist); the colleague is the seller
+  // who carries the deal.
+  author = await person(`Ichki Logist ${STAMP}`, 'logist');
+  colleague = await person(`Ichki Sotuvchi ${STAMP}`, 'sales_manager');
   // Somebody OUTSIDE the thread — the person a mention exists to reach.
-  const [extra] = await db
-    .insert(users)
-    .values({
-      phone: `+99894${String(STAMP).slice(-7)}`,
-      fullName: `Chetdagi Hamkasb ${STAMP}`,
-      passwordHash: 'x',
-      active: true,
-    })
-    .returning({ id: users.id });
-  bystander = extra!.id;
+  bystander = await person(`Chetdagi Hamkasb ${STAMP}`, null);
 
   const [c] = await db
     .insert(clients)
@@ -78,16 +93,17 @@ afterAll(async () => {
     .where(
       inArray(notifications.type, ['InternalNote', 'MentionedInNote', 'TaskAssigned', 'TaskDone']),
     );
-  await db.delete(users).where(eq(users.id, bystander));
   await db.delete(crmActivities).where(eq(crmActivities.entityId, dealId));
   await db.delete(deals).where(eq(deals.id, dealId));
   await db.delete(clients).where(eq(clients.id, clientId));
+  // Deactivated, never deleted: the tasks below wrote audit rows naming them.
+  await db.update(users).set({ active: false }).where(inArray(users.id, minted));
   await pgClient.end();
 });
 
 describe('who a note pings', () => {
   it('starts with the record owner, even before anybody has written', async () => {
-    expect(await noteRecipients('deal', dealId)).toEqual([colleague]);
+    expect(await noteRecipients('deal', dealId, null)).toEqual([colleague]);
   });
 
   it('grows to the thread participants — you join by speaking', async () => {
@@ -98,7 +114,7 @@ describe('who a note pings', () => {
       note: 'birinchi izoh',
       createdBy: author,
     });
-    const who = await noteRecipients('deal', dealId);
+    const who = await noteRecipients('deal', dealId, null);
     expect(new Set(who)).toEqual(new Set([author, colleague]));
   });
 
@@ -114,6 +130,8 @@ describe('what lands in Telegram', () => {
       entityId: dealId,
       note: 'narxni qayta ko‘ramiz',
       authorId: author,
+      activityId: uuidv4(),
+      calcRequestId: null,
     });
     const rows = await db
       .select()
@@ -128,6 +146,16 @@ describe('what lands in Telegram', () => {
     expect(mine.map((r) => r.userId)).toEqual([colleague]);
     const text = (mine[0]!.payload as { text: string }).text;
     expect(text).toContain(`https://test.gsrwms.uz/bitimlar/${dealId}`);
+    // 0127: the ping says it can be answered by a reply — ABOVE the link,
+    // which must stay the LAST line or the drain cannot lift it.
+    const lines = text.split('\n');
+    expect(lines.at(-2)).toBe('↩️ Javob uchun shu xabarga reply qiling');
+    expect(lines.at(-1)).toBe(`🔗 https://test.gsrwms.uz/bitimlar/${dealId}`);
+    // …and it names its thread, so the reply finds its way back.
+    expect((mine[0]!.payload as { thread?: { kind: string; id: string } }).thread).toMatchObject({
+      kind: 'deal',
+      id: dealId,
+    });
   });
 });
 
@@ -138,6 +166,8 @@ describe('a mention reaches the person named — phase 4', () => {
       entityId: dealId,
       note: `@Chetdagi Hamkasb ${STAMP} shu narxni ko‘rib bering`,
       authorId: author,
+      activityId: uuidv4(),
+      calcRequestId: null,
     });
     const mentionRows = await db
       .select()
@@ -165,6 +195,8 @@ describe('a mention reaches the person named — phase 4', () => {
       // colleague is the deal owner (a thread participant) AND mentioned.
       note: `@${(await db.select().from(users).where(eq(users.id, colleague)))[0]!.fullName} bir qarang`,
       authorId: author,
+      activityId: uuidv4(),
+      calcRequestId: null,
     });
     const all = await db
       .select()
@@ -182,6 +214,8 @@ describe('a mention reaches the person named — phase 4', () => {
       entityId: dealId,
       note: `@${me} o‘zimga eslatma`,
       authorId: author,
+      activityId: uuidv4(),
+      calcRequestId: null,
     });
     const rows = await db
       .select()
@@ -198,6 +232,8 @@ describe('a mention reaches the person named — phase 4', () => {
       entityId: clientId,
       note: `@Chetdagi Hamkasb ${STAMP} qo‘ng‘iroq qiling`,
       authorId: author,
+      activityId: uuidv4(),
+      calcRequestId: null,
     });
     const mentioned = await db
       .select()
