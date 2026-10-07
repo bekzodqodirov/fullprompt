@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { moveReceipt } from '@/modules/wms/receipts/move';
 import { and, eq, gte, inArray, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
   attachments,
@@ -50,7 +50,10 @@ import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { approvalCounts } from '@/modules/wms/reports/dashboard-math';
 import { withoutJit } from '@/modules/platform/db/no-jit';
 import { wholeLedger } from '../fixtures/money-actor';
-import type { MoneyActor } from '@/modules/wms/finance/scope';
+import { deleteDebtReleasedFor } from '../fixtures/debt-released';
+import { companyMoneySight, type DebtReleaser } from '@/modules/wms/finance/scope';
+import { debtReleases } from '@/modules/wms/debt/releases';
+import { clientFeed } from '@/modules/wms/crm/feed';
 import { ROLE_MATRIX } from '@/modules/platform/rbac/catalog';
 
 /**
@@ -228,7 +231,7 @@ async function issue(
   clientId: string,
   warehouseId: string,
   boxIds: string[],
-  opts: { priceOk?: boolean; debtOk?: boolean; handoverId?: string; as?: MoneyActor } = {},
+  opts: { priceOk?: boolean; debtOk?: boolean; debtNote?: string; handoverId?: string; as?: DebtReleaser } = {},
 ): Promise<string> {
   try {
     await issueBoxes(
@@ -240,6 +243,9 @@ async function issue(
         personName: 'Oluvchi',
         personPhone: '+998901112233',
         debtOk: opts.debtOk ?? true,
+        // The tick this file uses by default says why (0126, D4a) — the
+        // debt question stays answered and the PRICE one is asked alone.
+        debtNote: opts.debtNote ?? 'narxsiz izoh',
         priceOk: opts.priceOk ?? false,
       },
       ctx(),
@@ -285,6 +291,9 @@ afterAll(async () => {
     // and its queue is capped (arrival-staff and client-notices read the
     // first 200). Data this file made, gone with it.
     await db.delete(clientNotices).where(inArray(clientNotices.clientId, madeClients));
+    // A release on debt tells the DEMO owner and accountant (0126, D6a):
+    // rows no other cleanup here reaches.
+    await deleteDebtReleasedFor(madeClients);
     await db
       .update(issueApprovals)
       .set({ status: 'refused', expiresAt: null, decidedBy: actorId, decidedAt: new Date() })
@@ -682,7 +691,7 @@ describe('one approval, two questions', () => {
     // Two of the three land; the third is still ours to land later — take it
     // out of the counter by moving it before the question is asked.
     await db.update(boxes).set({ currentWarehouseId: W.yw, status: 'in_stock' }).where(eq(boxes.id, p.boxIds[2]!));
-    const { id } = await requestIssueApproval({ clientId: c, warehouseId: W.tas }, ctx());
+    const { id } = await requestIssueApproval({ clientId: c, warehouseId: W.tas, note: 'narxsiz so‘rov' }, ctx());
     const [row] = await db.select().from(issueApprovals).where(eq(issueApprovals.id, id));
     expect(row!.unpricedBoxIds.sort()).toEqual(p.boxIds.slice(0, 2).sort());
     expect(Number(row!.blockingDebtUsd)).toBe(0);
@@ -707,9 +716,9 @@ describe('one approval, two questions', () => {
 
   it('a stale approval does not lock the operator out, and the screen still sees it', async () => {
     const { c, p } = await landed('Q', 1);
-    const first = await requestIssueApproval({ clientId: c, warehouseId: W.tas }, ctx());
+    const first = await requestIssueApproval({ clientId: c, warehouseId: W.tas, note: 'narxsiz so‘rov' }, ctx());
     await approve(first.id);
-    expect(await requestIssueApproval({ clientId: c, warehouseId: W.tas }, ctx()).catch((e: ApprovalError) => e.code)).toBe(
+    expect(await requestIssueApproval({ clientId: c, warehouseId: W.tas, note: 'narxsiz so‘rov' }, ctx()).catch((e: ApprovalError) => e.code)).toBe(
       'already_approved',
     );
     // A debt appears after the approval: the old row no longer covers.
@@ -717,16 +726,34 @@ describe('one approval, two questions', () => {
     const state = await approvalStateFor(c, W.tas);
     expect(state).toMatchObject({ id: first.id, status: 'approved', unpricedBoxIds: p.boxIds });
     expect(approvalCovers(state!, { debtUsd: 40, boxIds: p.boxIds })).toBe(false);
-    const second = await requestIssueApproval({ clientId: c, warehouseId: W.tas }, ctx());
+    const second = await requestIssueApproval({ clientId: c, warehouseId: W.tas, note: 'narxsiz so‘rov' }, ctx());
     expect(second.id).not.toBe(first.id);
   });
 
-  it('the price tick keeps its own rule after 0114: the warehouse manager clears a price and still may not wave a debt', async () => {
+  it('the price tick keeps its own rule after 0114: the warehouse manager clears a price; the debt only at HIS warehouse (D2)', async () => {
     // The grant, no ledger — the shipped warehouse manager. 0114 took the
     // DEBT tick from him (the owner's 2a); the price tick is `mayOverridePrice`,
     // the grant alone, as it was (the qarz judge's #12, left open for him).
-    const manager = { id: actorId, permissions: new Set<string>(ROLE_MATRIX.warehouse_manager) };
-    const operator = { id: actorId, permissions: new Set<string>(ROLE_MATRIX.warehouse_operator) };
+    // D2 (2026-10-07, «sklad mudiri so'ramasdan beraversin») gave the debt
+    // tick back at his OWN warehouse only — so the UNSCOPED manager below
+    // still may not wave a debt, and his scoped twin at this counter may,
+    // with a comment.
+    const manager: DebtReleaser = {
+      id: actorId,
+      permissions: new Set<string>(ROLE_MATRIX.warehouse_manager),
+      roles: ['warehouse_manager'],
+      roleGrants: new Map([['warehouse_manager', new Set<string>(ROLE_MATRIX.warehouse_manager)]]),
+      warehouseScoped: false,
+      warehouseIds: [],
+    };
+    const operator: DebtReleaser = {
+      id: actorId,
+      permissions: new Set<string>(ROLE_MATRIX.warehouse_operator),
+      roles: ['warehouse_operator'],
+      roleGrants: new Map([['warehouse_operator', new Set<string>(ROLE_MATRIX.warehouse_operator)]]),
+      warehouseScoped: false,
+      warehouseIds: [],
+    };
     const { c, p } = await landed('WM', 2);
     expect(await issue(c, W.tas, [p.boxIds[0]!], { priceOk: true, as: operator })).toBe('price_override_forbidden');
     expect(await issue(c, W.tas, [p.boxIds[0]!], { priceOk: true, as: manager })).toBe('ok');
@@ -736,6 +763,10 @@ describe('one approval, two questions', () => {
     expect(await issue(owing.c, W.tas, owing.p.boxIds, { priceOk: true, debtOk: true, as: manager })).toBe(
       'debt_override_forbidden',
     );
+    const atHisCounter: DebtReleaser = { ...manager, warehouseScoped: true, warehouseIds: [W.tas] };
+    expect(
+      await issue(owing.c, W.tas, owing.p.boxIds, { priceOk: true, debtOk: true, debtNote: 'ertaga', as: atHisCounter }),
+    ).toBe('ok');
   });
 
   it('debt + price compose: each tick answers its own question, one approval answers both', async () => {
@@ -745,7 +776,7 @@ describe('one approval, two questions', () => {
     expect(await issue(c, W.tas, p.boxIds, { debtOk: false, priceOk: true })).toBe('debt_block');
     expect(await issue(c, W.tas, p.boxIds, { debtOk: false })).toBe('debt_price_block');
 
-    const { id } = await requestIssueApproval({ clientId: c, warehouseId: W.tas }, ctx());
+    const { id } = await requestIssueApproval({ clientId: c, warehouseId: W.tas, note: 'narxsiz so‘rov' }, ctx());
     await approve(id);
     const handoverId = uuidv4();
     expect(await issue(c, W.tas, p.boxIds, { debtOk: false, handoverId })).toBe('ok');
@@ -757,9 +788,57 @@ describe('one approval, two questions', () => {
     expect(audit.after).toMatchObject({ approvalId: id, unpriced: { receiptIds: [p.receiptId], boxes: 1 } });
   });
 
+  it('ONE reason rule: an approval asked over a debt, spent for its PRICE after the client paid, carries no debt reason anywhere (I8)', async () => {
+    // The judge's #3: the register lists a release by the gate's stored
+    // figure, and the lenta used to pick its reason by «an approval was
+    // consumed» — so they split exactly here. Both now read
+    // `debtReleaseReasonSql`, keyed on the same rule as the row's kind.
+    const { c, p } = await landed('I8', 1);
+    await charge(c, 100);
+    const { id } = await requestIssueApproval({ clientId: c, warehouseId: W.tas, note: 'narx keyin' }, ctx());
+    const [asked] = await db.select().from(issueApprovals).where(eq(issueApprovals.id, id));
+    expect(Number(asked!.blockingDebtUsd)).toBe(100);
+    expect(asked!.unpricedBoxIds).toEqual(p.boxIds);
+    await approve(id);
+    // The client pays the debt: only the price question is left at the counter.
+    await addTransaction(
+      { clientId: c, type: 'payment', amount: 100, currency: 'USD', method: 'cash', txDate: DAY },
+      ctx(),
+    );
+    const handoverId = uuidv4();
+    // «Told nobody» asked of the DECISION as well as the rows (DEBT-3): an
+    // approval spent for a price alone must not reach the D6 message at all —
+    // a wrongly opened gate would hand the text builder $0, which throws into
+    // the logged catch and writes no row, so only the log line tells.
+    const errors = vi.spyOn(console, 'error');
+    try {
+      expect(await issue(c, W.tas, p.boxIds, { debtOk: false, handoverId })).toBe('ok');
+      expect(errors.mock.calls.some((call) => call[0] === '[debt-released]')).toBe(false);
+    } finally {
+      errors.mockRestore();
+    }
+    const [spent] = await db.select().from(issueApprovals).where(eq(issueApprovals.id, id));
+    expect(spent).toMatchObject({ status: 'consumed', consumedHandoverId: handoverId });
+    const [h] = await db.select().from(handovers).where(eq(handovers.id, handoverId));
+    expect(h).toMatchObject({ blockingUsd: '0.00', debtOk: false, debtNote: null });
+
+    const sight = companyMoneySight({ id: 'x', permissions: new Set(['finance.manage', 'finance.reports']) })!;
+    const listedRows = (await debtReleases(sight, { from: null, to: null, approverId: null, includeReturned: true })).rows;
+    expect(listedRows.filter((row) => row.handoverId === handoverId)).toEqual([]);
+    const item = (await clientFeed(c, { money: true })).find((row) => row.id === `hv-${handoverId}`);
+    expect(item).toBeDefined();
+    expect(item!.meta.debtOverride).toBe(false);
+    expect(item!.meta.debtNote ?? null).toBeNull();
+    const told = await db
+      .select({ id: notifications.id })
+      .from(notifications)
+      .where(and(eq(notifications.type, 'DebtReleased'), sql`${notifications.payload}->>'handoverId' = ${handoverId}`));
+    expect(told).toEqual([]);
+  });
+
   it('nothing to ask → nothing_to_approve; a price-only ask by a client in advance stores 0, not the advance', async () => {
     const n = await mkClient('S');
-    await expect(requestIssueApproval({ clientId: n, warehouseId: W.tas }, ctx())).rejects.toMatchObject({
+    await expect(requestIssueApproval({ clientId: n, warehouseId: W.tas, note: 'narxsiz so‘rov' }, ctx())).rejects.toMatchObject({
       code: 'nothing_to_approve',
     });
 
@@ -769,7 +848,7 @@ describe('one approval, two questions', () => {
       ctx(),
     );
     const before = approvalCounts(await pendingApprovals(wholeLedger(actorId)));
-    const { id } = await requestIssueApproval({ clientId: c, warehouseId: W.tas }, ctx());
+    const { id } = await requestIssueApproval({ clientId: c, warehouseId: W.tas, note: 'narxsiz so‘rov' }, ctx());
     const [row] = await db.select().from(issueApprovals).where(eq(issueApprovals.id, id));
     expect(Number(row!.blockingDebtUsd)).toBe(0);
     const after = approvalCounts(await pendingApprovals(wholeLedger(actorId)));

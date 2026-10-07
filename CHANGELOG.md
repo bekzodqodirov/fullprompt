@@ -1,5 +1,50 @@
 # CHANGELOG
 
+## Qarzdor mijozga izoh bilan yuk berish va bazaning narx statistikasi — 2026-10-07
+
+**Migratsiya 0126.** O'rnatgandan keyin migratsiyalar soni **127** bo'lishi kerak.
+
+Sizning javoblaringiz: «Hammasi yulduzcha, faqat D1 a / D2 sklad mudiri so'ramasdan beraversin / E6 c / F9 b». Bu raundda **D** (qarzga yuk berish) va **C** (baza statistikasi) qurildi. B va G (telefonda hisoblash, bitim kartasida VED) — keyingi raund; E va F (xodimlar chati, narx kanali) — undan keyingi.
+
+### 1. Qarzdor mijozga yuk berish — endi har doim sababi bilan (D)
+
+- **Sklad mudiri o'z skladida qarzdor mijozga yukni hech kimdan so'ramasdan beradi (D2).** «Qarzga ruxsat» belgisini qo'yadi va sababini yozadi — shu yetarli.
+  - Bu kuch faqat **o'z skladidan** yuk berishda (D3). Boshqalarning «Ruxsat so'rash» so'rovlarini u hal qilmaydi, bitim muddatini bermaydi, boshqa hech narsa o'zgarmaydi.
+  - Bu kuch «Sklad mudiri» rolining «qarzga ruxsat» huquqiga bog'langan. /admin/roles da shu rol uchun belgini olib tashlasangiz, kuch yo'qoladi — mudir bir vaqtda sotuvchi ham bo'lsa ham.
+- **Belgini qo'ygan har bir kishi sabab yozadi (D4)** — sotuvchi, buxgalter, admin ham. Sabab yozilmaguncha «Topshirish» bosilmaydi.
+  - Qarz bo'lmasa (yoki to'langan bo'lsa) belgi ham, sabab ham kerak emas — eskirgan belgi topshirishni to'xtatmaydi.
+  - Ekranda belgi va sabab qarz haqidagi qizil yozuv ichida turadi. Pastdagi kulrang «Topshirish» tugmasi ustida endi «⬆ Qarz: belgini qo'ying va sababini yozing» degan qator chiqadi, bossangiz o'sha joyga olib boradi.
+- **Omborchi «🔐 Ruxsat so'rash» bosganda ham sabab yozadi (D1, D5).** Qaror qiluvchi uni Telegramda va /approvals da ko'radi.
+- **Har bir qarzga berilgan yuk haqida sizga va buxgalterga Telegram keladi (D6):** «🔓 Qarzga yuk berildi» — kim berdi, qaysi mijoz, qancha qarz, sabab.
+  - Bu xabar o'z guruhida: profilda alohida o'chirib qo'yish mumkin, boshqa ogohlantirishlarga bog'liq emas.
+  - Xabar faqat «egasi» (super_admin) yoki «buxgalter» roli bor va kompaniya pulini ko'radigan odamga boradi.
+- **Sabab yuk berish aktida HECH QACHON chiqmaydi** (aktni ko'pincha haydovchi imzolaydi). U «Qarzga berilgan yuklar» ro'yxatida, mijoz kartasining lentasida va tarixda turadi.
+- Sabab oddiy matn (D7) — to'lov va'dasi shakli yo'q.
+
+### 2. 📥 Bazani fayldan tanlashda narx statistikasi (C)
+
+- **📥 oynasida «Narxlar statistikasi» bloki:** kodning shu birlikdagi barcha deklaratsiyalari bo'yicha **25 %, mediana (50 %) va 75 %**. O'rtacha (arifmetik) narx yo'q — har bir raqam haqiqiy deklaratsiyadagi narx.
+- **Ikki qator (C1):** kodning barcha deklaratsiyalari va nomi o'xshashlari (soni bilan).
+- **Faqat Xitoydan kelganlar (C2).** Boshqa davlatlardan nechta deklaratsiya borligi bitta qatorda aytiladi. Faylda davlat umuman yozilmagan bo'lsa, filtr qo'yilmaydi va shu aytiladi.
+- **Dona tovar uchun alohida qator:** bitta donasining og'irligi sizning qatoringizdagidan ±25 % ichida bo'lgan deklaratsiyalar (sizning qoidangiz).
+- **25/50/75 % ni bossangiz, shu narxdagi haqiqiy deklaratsiya chiqadi (C3)** — nomi, sanasi, kimdan, qayerdan. Bazani faqat «Tanlash» to'ldiradi.
+- **Har bir deklaratsiya bitta ovoz (C4):** 1 kg namuna va 20 tonna bir xil hisoblanadi.
+- **«Oldingi chorakda mediana $X»** qatori. Oldingi chorakda bu kod bo'lmasa, «oldingi chorakda deklaratsiya yo'q» deyiladi.
+- **«Eng yangi chorak» = fayl ichidagi sanalar bo'yicha eng yangisi (C6),** yuklangan tartib bo'yicha emas. Eski chorakni keyinroq yuklasangiz, u yangi chorakni almashtirmaydi. Admin sahifasida hozir javob berayotgan fayl ★ bilan belgilangan.
+  - Faylda bitta qator kelajak sanasi bilan yozilgan bo'lsa (xato), u chorak oxirini surib yubormaydi.
+- **Diapazondan tashqari ogohlantirish hozircha yo'q (C5).**
+- **Telefonda ham ko'rinadi** — hozircha faqat ko'rish uchun. Telefonda tanlash keyingi raundda (B1 a) keladi.
+- Qatorda kod, soni, og'irligi yoki kubi saqlanmagan bo'lsa, 📥 tugmasi «Avval saqlang» deydi — statistika saqlangan qatorga qarab hisoblanadi.
+
+### O'rnatish (deploy)
+
+1. Zaxira oling (0 bayt emasligini tekshiring).
+2. `git pull`, keyin `docker compose build migrate`, keyin `docker compose --profile https --profile telegram up -d --build`.
+3. **Migratsiyalar sonini sanang: 127 bo'lishi kerak.** Kamroq bo'lsa, `docker compose run --rm migrate` ning o'z chiqishini o'qing.
+4. `curl -s https://gsrwms.uz/api/version` — yangi sana chiqishi kerak.
+5. **/admin/roles da tekshiring:** «Sklad mudiri» roli hali ham «qarzga ruxsat» (`finance.debt_override`) huquqiga ega va «faqat o'z skladi» belgisi qo'yilgan bo'lsin. /admin/users da har bir sklad mudirining o'z skladi biriktirilgan bo'lsin. Aks holda mudir belgini umuman ko'rmaydi.
+6. «🔓 Qarzga yuk berildi» xabari sizga kelishi uchun hisobingizda super_admin roli va hisobotlarni ko'rish huquqi (`finance.reports`) bo'lishi kerak.
+
 ## VED: bazaning o'lchov birligi — avtomatik, o'zgartiriladi, m³ ham bor — 2026-10-07
 
 **Migratsiya 0125.** O'rnatgandan keyin migratsiyalar soni **126** bo'lishi kerak.

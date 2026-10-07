@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { cleanupEarlier, database } from './baza-stats-fixture';
 
 /**
  * The quarterly customs dump, in a browser (docs/VED-IMPORT-AI.md §2).
@@ -36,6 +37,17 @@ let leadName = '';
 let requestUrl = '';
 
 test.describe.configure({ mode: 'serial' });
+
+// A crashed m9zzz leaves batches dated TODAY, which under C6 outrank this
+// spec's fixture (dated in its own past) for ever — swept first.
+test.beforeAll(async () => {
+  const sql = database();
+  try {
+    await cleanupEarlier(sql);
+  } finally {
+    await sql.end();
+  }
+});
 
 test('the admin uploads the quarter and the parse settles it READY', async ({ page }) => {
   await login(page);

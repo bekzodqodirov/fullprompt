@@ -5,7 +5,7 @@ import { boxes, clients, receiptLots, receipts } from '@/modules/platform/db/sch
 import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
 import { clientBalanceUsd, deferredBalanceUsd } from '@/modules/wms/finance/service';
 import { approvalStateFor } from '@/modules/wms/issue/approvals';
-import { mayGrantDebt, mayOverridePrice } from '@/modules/wms/finance/scope';
+import { counterDebtRelease, mayOverridePrice } from '@/modules/wms/finance/scope';
 import { ISSUABLE_STATUSES } from '@/modules/wms/issue/parties';
 import { gatedAt, uncoveredBoxesOn, unpricedGate, unpricedReceiptsOn } from '@/modules/wms/finance/unpriced';
 import { compensatedReceiptsAmong } from '@/modules/wms/finance/compensation';
@@ -31,13 +31,16 @@ export async function GET(request: Request) {
     throw err;
   }
   // The tick is drawn exactly where the service will honour it (0114): the
-  // same predicate, about THIS client — a seller sees it on his own clients
-  // only, the warehouse manager never (he asks «Ruxsat so'rash»).
+  // same predicate, about THIS client at THIS counter — a seller sees it on
+  // his own clients only, and since D2 (2026-10-07, «sklad mudiri so'ramasdan
+  // beraversin») the warehouse manager at his own warehouse too; everybody
+  // else asks «Ruxsat so'rash».
   const owner = await db.query.clients.findFirst({
     where: eq(clients.id, query.data.clientId),
     columns: { salesManagerId: true },
   });
-  const canOverrideDebt = mayGrantDebt(actor, { salesManagerId: owner?.salesManagerId ?? null });
+  const canOverrideDebt =
+    counterDebtRelease(actor, { salesManagerId: owner?.salesManagerId ?? null }, query.data.warehouseId) !== null;
   // The price tick keeps its own, older rule (`mayOverridePrice`).
   const canOverridePrice = mayOverridePrice(actor);
 

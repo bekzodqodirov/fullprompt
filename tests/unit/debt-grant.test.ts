@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { ROLE_CODES, ROLE_MATRIX } from '@/modules/platform/rbac/catalog';
+import { isWarehouseScoped, ROLE_CODES, ROLE_MATRIX } from '@/modules/platform/rbac/catalog';
 import {
+  counterDebtRelease,
   DEBT_GRANT_CODES,
   debtGrantScope,
   mayGrantDebt,
   mayOpenClientLedger,
+  mayOverridePrice,
+  type CounterDebtRelease,
+  type DebtReleaser,
   type MoneyActor,
 } from '@/modules/wms/finance/scope';
+import { receivesDebtReleased } from '@/modules/wms/issue/debt-release';
 
 /**
  * Who may let a client's cargo go on debt (0114, the owner's 2a: «sotuvchi
@@ -94,5 +99,164 @@ describe('mayGrantDebt over every shipped role', () => {
         expect(mayGrantDebt(narrowed, client), role).toBe(mayGrantDebt(full, client));
       }
     }
+  });
+});
+
+/**
+ * D2 (the owner, 2026-10-07): «sklad mudiri so'ramasdan beraversin» — the
+ * counter's tick is `counterDebtRelease`, a superset of `mayGrantDebt` for the
+ * warehouse manager at his own warehouse (D3a). Literal expectations, role by
+ * role (#166), and the cells the design judge named (objection 1).
+ */
+const WH_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const WH_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+/**
+ * A person built the way `actorGrants` builds one: each role's OWN grants
+ * (the shipped matrix, edited ROLE BY ROLE the way /admin/roles edits it —
+ * `add`/`drop` name the role whose checkbox moved), and `permissions` the
+ * union of them, never a list typed beside it.
+ */
+const releaserOf = (
+  roles: string[],
+  opts: {
+    add?: Record<string, string[]>;
+    drop?: Record<string, string[]>;
+    scoped?: boolean;
+    warehouseIds?: string[];
+  } = {},
+): DebtReleaser => {
+  const roleGrants = new Map<string, Set<string>>();
+  for (const role of roles) {
+    const own = new Set<string>((ROLE_MATRIX as Record<string, readonly string[]>)[role] ?? []);
+    for (const code of opts.add?.[role] ?? []) own.add(code);
+    for (const code of opts.drop?.[role] ?? []) own.delete(code);
+    if (own.size > 0) roleGrants.set(role, own);
+  }
+  return {
+    id: ME,
+    permissions: new Set([...roleGrants.values()].flatMap((codes) => [...codes])),
+    roles,
+    roleGrants,
+    warehouseScoped: opts.scoped ?? isWarehouseScoped(roles),
+    warehouseIds: opts.warehouseIds ?? [WH_A],
+  };
+};
+
+/** [own client @A, a colleague's @A, unowned @A, unowned @B] — always at a counter in A or B. */
+type Cells = [CounterDebtRelease, CounterDebtRelease, CounterDebtRelease, CounterDebtRelease];
+const cellsOf = (actor: DebtReleaser): Cells => [
+  counterDebtRelease(actor, own, WH_A),
+  counterDebtRelease(actor, colleagues, WH_A),
+  counterDebtRelease(actor, unowned, WH_A),
+  counterDebtRelease(actor, unowned, WH_B),
+];
+
+const COUNTER: Record<string, Cells> = {
+  super_admin: ['ledger', 'ledger', 'ledger', 'ledger'],
+  admin: ['ledger', 'ledger', 'ledger', 'ledger'],
+  accountant: ['ledger', 'ledger', 'ledger', 'ledger'],
+  sales_manager: ['ledger', null, null, null],
+  // D2: his own warehouse, whoever the client — and nowhere else (D3a).
+  warehouse_manager: ['warehouse', 'warehouse', 'warehouse', null],
+  warehouse_operator: [null, null, null, null],
+  logist: [null, null, null, null],
+  ved_manager: [null, null, null, null],
+  viewer: [null, null, null, null],
+};
+
+describe('counterDebtRelease over every shipped role (D2)', () => {
+  it('names every role', () => {
+    expect(Object.keys(COUNTER).sort()).toEqual([...ROLE_CODES].sort());
+  });
+
+  for (const [role, expected] of Object.entries(COUNTER)) {
+    it(`${role}: ${expected.join(' / ')}`, () => {
+      expect(cellsOf(releaserOf([role]))).toEqual(expected);
+    });
+  }
+
+  it('an operator the owner gave the grant clears a PRICE and still releases no debt — the role is the rule, not the grant', () => {
+    const operator = releaserOf(['warehouse_operator'], { add: { warehouse_operator: ['finance.debt_override'] } });
+    expect(cellsOf(operator)).toEqual([null, null, null, null]);
+    expect(mayOverridePrice(operator)).toBe(true);
+  });
+
+  it('a manager who is also a seller: his book everywhere, everybody else’s at his own warehouse only', () => {
+    const both = releaserOf(['warehouse_manager', 'sales_manager']);
+    expect(cellsOf(both)).toEqual(['ledger', 'warehouse', 'warehouse', null]);
+    expect(counterDebtRelease(both, colleagues, WH_B)).toBe(null);
+    // His own client at ANY counter he could stand at — the ledger answers first.
+    expect(counterDebtRelease(both, own, WH_B)).toBe('ledger');
+  });
+
+  it('the owner’s OFF switch: a manager whose role lost `finance.debt_override` releases nothing', () => {
+    expect(
+      cellsOf(releaserOf(['warehouse_manager'], { drop: { warehouse_manager: ['finance.debt_override'] } })),
+    ).toEqual([null, null, null, null]);
+  });
+
+  it('the OFF switch is the warehouse manager ROLE’s own grant — a manager who is also a seller loses D2 too (DEBT-1)', () => {
+    // The untick on the warehouse manager's role; the seller's role still
+    // carries the same grant, so the person's UNION still holds it. The
+    // counter must read the role's own answer, or the untick does nothing
+    // for a both-hats manager.
+    const both = releaserOf(['warehouse_manager', 'sales_manager'], {
+      drop: { warehouse_manager: ['finance.debt_override'] },
+    });
+    expect(both.permissions.has('finance.debt_override')).toBe(true);
+    expect(counterDebtRelease(both, colleagues, WH_A)).toBe(null);
+    expect(counterDebtRelease(both, unowned, WH_A)).toBe(null);
+    // His own book is the SELLER's rule (`mayGrantDebt`, the union) — untouched.
+    expect(counterDebtRelease(both, own, WH_A)).toBe('ledger');
+    expect(cellsOf(both)).toEqual(['ledger', null, null, null]);
+  });
+
+  it('fails CLOSED for a manager whose role scope was unticked — `inScope` would say yes to everywhere', () => {
+    expect(cellsOf(releaserOf(['warehouse_manager'], { scoped: false }))).toEqual([null, null, null, null]);
+  });
+
+  it('a scoped manager with NO warehouse assigned releases nowhere', () => {
+    expect(cellsOf(releaserOf(['warehouse_manager'], { warehouseIds: [] }))).toEqual([null, null, null, null]);
+  });
+
+  it('a seller who also packs at a warehouse gains nothing for a colleague’s client', () => {
+    const packer = releaserOf(['sales_manager', 'warehouse_operator']);
+    expect(counterDebtRelease(packer, colleagues, WH_A)).toBe(null);
+    expect(counterDebtRelease(packer, own, WH_A)).toBe('ledger');
+  });
+
+  it('by construction: whoever `mayGrantDebt` admits, the counter admits as «ledger» — a superset', () => {
+    for (const role of ROLE_CODES) {
+      const actor = releaserOf([role]);
+      for (const client of [own, colleagues, unowned]) {
+        for (const wh of [WH_A, WH_B]) {
+          if (mayGrantDebt(actor, client)) expect(counterDebtRelease(actor, client, wh), role).toBe('ledger');
+        }
+      }
+    }
+  });
+});
+
+describe('receivesDebtReleased — the owner and the accountant, with the company’s money sight (D6a)', () => {
+  const person = (roles: string[], drop: string[] = []): MoneyActor & { roles: string[] } => {
+    const permissions = new Set<string>(roles.flatMap((role) => (ROLE_MATRIX as Record<string, readonly string[]>)[role] ?? []));
+    for (const code of drop) permissions.delete(code);
+    return { id: ME, permissions, roles };
+  };
+
+  it('the two roles he named hear it', () => {
+    expect(receivesDebtReleased(person(['super_admin']))).toBe(true);
+    expect(receivesDebtReleased(person(['accountant']))).toBe(true);
+  });
+
+  it('a role holder whose grants lost the register’s door hears nothing — the bot must not read him what the screen refuses', () => {
+    expect(receivesDebtReleased(person(['accountant'], ['finance.reports']))).toBe(false);
+    expect(receivesDebtReleased(person(['super_admin'], ['finance.reports']))).toBe(false);
+  });
+
+  it('the admin (every grant, not named) and a seller hear nothing', () => {
+    expect(receivesDebtReleased(person(['admin']))).toBe(false);
+    expect(receivesDebtReleased(person(['sales_manager']))).toBe(false);
+    expect(receivesDebtReleased(person(['warehouse_manager']))).toBe(false);
   });
 });

@@ -105,7 +105,12 @@ test('a tile and the report it opens print the same figure over the same days (#
   await page.goto((await total.getAttribute('href'))!);
   const header = await page.getByTestId('journal-totals').textContent();
   const printed = Number((/·\s*([\d,.]+)\s*m³/.exec(header ?? '')?.[1] ?? '').replace(/,/g, ''));
-  expect(printed).toBeCloseTo(m3, 2);
+  // The journal prints two places and the tile carries the exact sum, so they
+  // agree when the print is within HALF a hundredth — inclusive. A sum ending
+  // in an exact 5 (142.605 → «142.61») sits on that edge, and toBeCloseTo's
+  // strict «< 0.005» refused it by a floating-point hair once the suite's own
+  // receipts happened to add up to one (2026-10-07).
+  expect(Math.abs(printed - m3)).toBeLessThanOrEqual(0.005 + 1e-9);
 });
 
 test('the period moves the flows and leaves what stands now alone; garbage reads as «this month»', async ({ page }) => {

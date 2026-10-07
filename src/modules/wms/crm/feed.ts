@@ -2,7 +2,7 @@ import { sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { FEED_KINDS } from '../finance/ledger-kinds';
 import { kindList } from '../finance/ledger-sql';
-import { wentOutOnDebtSql } from '../debt/releases';
+import { debtReleaseReasonSql, wentOutOnDebtSql } from '../debt/releases';
 
 /**
  * One client, everything that happened, in order — the «lenta».
@@ -247,12 +247,15 @@ export async function clientFeed(clientId: string | null, opts: FeedOptions): Pr
       -- missed every approval release, every «muddat» release and marked a
       -- tick over nothing. It says the client OWED, so it is money and rides
       -- the ledger's door like the amounts do (4a) — for anyone else the
-      -- handover is drawn without it.
+      -- handover is drawn without it. WHY it went out on debt (0126) rides
+      -- the same door, by the register's own rule (debtReleaseReasonSql):
+      -- it names the client's debt as surely as the mark does.
       SELECT
         'hv-' || h.id::text, 'handover', h.created_at, u.full_name, h.note,
         jsonb_build_object(
           'person', h.person_name, 'phone', h.person_phone,
-          'warehouse', w.code, 'debtOverride', ${opts.money ? wentOutOnDebtSql('h') : sql`false`}
+          'warehouse', w.code, 'debtOverride', ${opts.money ? wentOutOnDebtSql('h') : sql`false`},
+          'debtNote', ${opts.money ? debtReleaseReasonSql('h') : sql`NULL`}
         )
       FROM handovers h
       JOIN warehouses w ON w.id = h.warehouse_id

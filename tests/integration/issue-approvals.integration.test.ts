@@ -20,6 +20,7 @@ import {
   requestIssueApproval,
 } from '@/modules/wms/issue/approvals';
 import { wholeLedger } from '../fixtures/money-actor';
+import { deleteDebtReleasedFor } from '../fixtures/debt-released';
 
 /**
  * Phase 6 against a real database: the recorded permission opens the gate
@@ -97,7 +98,14 @@ const tryIssue = (boxId: string) =>
       note: '',
     },
     ctx(operatorId),
-    { id: operatorId, permissions: new Set(['scan.issue']) },
+    {
+      id: operatorId,
+      permissions: new Set(['scan.issue']),
+      roles: ['warehouse_operator'],
+      roleGrants: new Map([['warehouse_operator', new Set(['scan.issue'])]]),
+      warehouseScoped: false,
+      warehouseIds: [],
+    },
   );
 
 beforeAll(async () => {
@@ -129,6 +137,9 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // An approval release now tells the owner and the accountant (D6a) — the
+  // demo people's rows, by this file's handovers.
+  await deleteDebtReleasedFor([clientId]);
   await db.delete(issueApprovals).where(eq(issueApprovals.clientId, clientId));
   await db.delete(clientTransactions).where(eq(clientTransactions.clientId, clientId));
   // Boxes/receipts stay (issued/in_stock rows are ordinary history for a
@@ -182,7 +193,7 @@ describe('the recorded permission opens the gate', () => {
 
   it('an expired approval is no approval', async () => {
     const boxId = await issuableBox();
-    const { id } = await requestIssueApproval({ clientId, warehouseId: whId }, ctx(operatorId));
+    const { id } = await requestIssueApproval({ clientId, warehouseId: whId, note: 'ia test' }, ctx(operatorId));
     await decideIssueApproval({ approvalId: id, verdict: 'approved' }, ctx(deciderId), wholeLedger(deciderId));
     await db
       .update(issueApprovals)
@@ -194,7 +205,7 @@ describe('the recorded permission opens the gate', () => {
 
   it('a debt that GREW past the approved snapshot is a different debt', async () => {
     const boxId = await issuableBox();
-    const { id } = await requestIssueApproval({ clientId, warehouseId: whId }, ctx(operatorId));
+    const { id } = await requestIssueApproval({ clientId, warehouseId: whId, note: 'ia test' }, ctx(operatorId));
     await decideIssueApproval({ approvalId: id, verdict: 'approved' }, ctx(deciderId), wholeLedger(deciderId));
     // A new charge after the approval: the decider never saw this figure.
     await charge('50');
@@ -207,7 +218,7 @@ describe('the recorded permission opens the gate', () => {
 
   it('a refusal blocks, and a decision is single-shot', async () => {
     const boxId = await issuableBox();
-    const { id } = await requestIssueApproval({ clientId, warehouseId: whId }, ctx(operatorId));
+    const { id } = await requestIssueApproval({ clientId, warehouseId: whId, note: 'ia test' }, ctx(operatorId));
     await decideIssueApproval({ approvalId: id, verdict: 'refused' }, ctx(deciderId), wholeLedger(deciderId));
     await expect(tryIssue(boxId)).rejects.toThrow('debt_block');
     // The second decider learns the question is closed.
@@ -217,9 +228,9 @@ describe('the recorded permission opens the gate', () => {
   });
 
   it('one live request per pair — a duplicate ask is refused, not stacked', async () => {
-    const { id } = await requestIssueApproval({ clientId, warehouseId: whId }, ctx(operatorId));
+    const { id } = await requestIssueApproval({ clientId, warehouseId: whId, note: 'ia test' }, ctx(operatorId));
     await expect(
-      requestIssueApproval({ clientId, warehouseId: whId }, ctx(operatorId)),
+      requestIssueApproval({ clientId, warehouseId: whId, note: 'ia test' }, ctx(operatorId)),
     ).rejects.toThrow('already_requested');
     await decideIssueApproval({ approvalId: id, verdict: 'refused' }, ctx(deciderId), wholeLedger(deciderId));
   });
@@ -233,7 +244,7 @@ describe('the recorded permission opens the gate', () => {
       .values({ clientCode: `IB${STAMP}`.slice(0, 12), name: `No debt ${STAMP}` })
       .returning();
     await expect(
-      requestIssueApproval({ clientId: clean!.id, warehouseId: whId }, ctx(operatorId)),
+      requestIssueApproval({ clientId: clean!.id, warehouseId: whId, note: 'ia test' }, ctx(operatorId)),
     ).rejects.toThrow('nothing_to_approve');
     await db.delete(clients).where(eq(clients.id, clean!.id));
   });

@@ -289,6 +289,14 @@ function FeedRow({
           {item.meta.debtOverride === true && ` · ⚠ ${t('feedDebtOverride')}`}
         </p>
       )}
+      {/* WHY it went out on debt (0126) — sent only to a reader of this
+          client's money, like the mark above. Wraps and breaks like the body
+          line below: a pasted unbroken token must not widen the card (#400). */}
+      {item.kind === 'handover' && typeof item.meta.debtNote === 'string' && item.meta.debtNote.trim() !== '' && (
+        <p className="whitespace-pre-wrap break-words text-xs" data-testid="feed-debt-note">
+          💬 {item.meta.debtNote}
+        </p>
+      )}
       {(item.kind === 'charge' || item.kind === 'payment' || item.kind === 'refund' || item.kind === 'compensation') && (
         <p className="font-semibold">{money(item.meta)}</p>
       )}

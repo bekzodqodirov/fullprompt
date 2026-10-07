@@ -17,7 +17,20 @@ export class AuthError extends Error {
 
 export interface Actor extends SessionUser {
   roles: RoleCode[];
+  /** The UNION of the roles' editable grants — what nearly every door asks. */
   permissions: Set<string>;
+  /**
+   * Each role's OWN editable grants, by role code — `permissions` is their
+   * union. For the rare rule that keys on what ONE role was given rather than
+   * on what the person holds through any of them: the counter's debt tick
+   * (wms/finance/scope.ts `counterDebtRelease`) asks whether the WAREHOUSE
+   * MANAGER role carries `finance.debt_override`, because that untick on
+   * /admin/roles is the owner's off switch, and a manager who is also a
+   * seller holds the same grant through the seller's role. A role with no
+   * grants has no entry. REQUIRED, so the compiler names every place that
+   * builds an actor by hand.
+   */
+  roleGrants: ReadonlyMap<string, ReadonlySet<string>>;
   warehouseIds: string[];
   /** True when ANY role the user has is warehouse-scoped (spec 4.2). */
   warehouseScoped: boolean;
@@ -50,23 +63,44 @@ export async function loadUserRoles(
 }
 
 /**
- * One user's permission codes — the union of their roles' EDITABLE grants.
- * The one home of that join: `actorGrants` reads it, and so do the staff
- * bot's two grant-only doors («Bajarildi», the debtor «Ruxsat»), which need
- * the grants and none of the scope.
+ * One user's EDITABLE grants, role by role — the one home of the join from a
+ * person to what each of their roles was given. ONE query: the role's code
+ * rides the same rows as its permission codes, so the per-role answer costs
+ * no second round trip. `userPermissions` (the union) and `actorGrants` (the
+ * union AND the per-role map) both read it.
  */
-export async function userPermissions(userId: string): Promise<Set<string>> {
+export async function userRoleGrants(userId: string): Promise<ReadonlyMap<string, ReadonlySet<string>>> {
   const rows = await db
-    .select({ code: permissions.code })
+    .select({ role: roles.code, code: permissions.code })
     .from(userRoles)
+    .innerJoin(roles, eq(userRoles.roleId, roles.id))
     .innerJoin(rolePermissions, eq(userRoles.roleId, rolePermissions.roleId))
     .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
     .where(eq(userRoles.userId, userId));
-  return new Set(rows.map((p) => p.code));
+  const byRole = new Map<string, Set<string>>();
+  for (const row of rows) byRole.set(row.role, (byRole.get(row.role) ?? new Set()).add(row.code));
+  return byRole;
+}
+
+/** Every code any of the roles carries — permissions union (widest wins, #199). */
+export function grantsUnion(byRole: ReadonlyMap<string, ReadonlySet<string>>): Set<string> {
+  const union = new Set<string>();
+  for (const codes of byRole.values()) for (const code of codes) union.add(code);
+  return union;
+}
+
+/**
+ * One user's permission codes — the union of their roles' EDITABLE grants,
+ * from the one join above. The staff bot's two grant-only doors
+ * («Bajarildi», the debtor «Ruxsat») read it: they need the grants and none
+ * of the scope.
+ */
+export async function userPermissions(userId: string): Promise<Set<string>> {
+  return grantsUnion(await userRoleGrants(userId));
 }
 
 /** Everything an actor is besides who they are: the grants and the scope. */
-export type ActorGrants = Pick<Actor, 'roles' | 'permissions' | 'warehouseIds' | 'warehouseScoped'>;
+export type ActorGrants = Pick<Actor, 'roles' | 'permissions' | 'roleGrants' | 'warehouseIds' | 'warehouseScoped'>;
 
 /**
  * One user's roles, permissions (from the EDITABLE grants) and warehouse
@@ -81,7 +115,9 @@ export async function actorGrants(userId: string): Promise<ActorGrants> {
   const roleRows = await loadUserRoles(userId);
   const roleCodes = roleRows.map((r) => r.code as RoleCode);
 
-  const granted = await userPermissions(userId);
+  // ONE read of the grants, role by role; the union is computed from it, so
+  // `permissions` and `roleGrants` can never describe two different days.
+  const granted = await userRoleGrants(userId);
 
   const whRows = await db
     .select({ warehouseId: userWarehouses.warehouseId })
@@ -96,7 +132,8 @@ export async function actorGrants(userId: string): Promise<ActorGrants> {
 
   return {
     roles: roleCodes,
-    permissions: granted,
+    permissions: grantsUnion(granted),
+    roleGrants: granted,
     warehouseIds: whRows.map((w) => w.warehouseId),
     warehouseScoped,
   };
