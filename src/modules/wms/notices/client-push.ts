@@ -138,9 +138,10 @@ export interface PhotoBreaker {
   stalled: boolean;
 }
 
-class ReadTimeout extends Error {}
+export class ReadTimeout extends Error {}
 
-function readWithin(read: Promise<Buffer>, ms: number): Promise<Buffer> {
+/** A storage read bounded by a deadline — the price channel's drain reads its photos through this too. */
+export function readWithin(read: Promise<Buffer>, ms: number): Promise<Buffer> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new ReadTimeout(`storage read took longer than ${ms} ms`)), ms);

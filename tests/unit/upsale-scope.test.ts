@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ROLE_MATRIX, type RoleCode } from '@/modules/platform/rbac/catalog';
-import { mayOffer, upsaleScopeFor, type UpsaleScope } from '@/modules/wms/calc/upsale-scope';
+import { mayOffer, seesOfferPriceOf, upsaleScopeFor, type UpsaleScope } from '@/modules/wms/calc/upsale-scope';
 import { DEAL_WRITE_PERMISSIONS } from '@/modules/wms/deals/service';
 import { mayEditDealTerms } from '@/modules/wms/deals/door';
 
@@ -103,5 +103,33 @@ describe('«tannarx korinmasin sotuvchiga» (owner, 2026-08-25)', () => {
     }
     expect(found).toBe(2);
     expect(rest).not.toContain('money(r.floorUsd)');
+  });
+});
+
+describe('his F1 a (2026-10-07): a seller sees only the client prices HE gave', () => {
+  // Over every seeded role, because who is a «seller» is a property of the
+  // matrix he edits. The price channel names the seller and carries the floor,
+  // so a colleague's client price beside it is one subtraction from that
+  // colleague's upsale (law 4).
+  const SEES: Record<RoleCode, 'both' | 'own' | 'neither'> = {
+    super_admin: 'both',
+    admin: 'both',
+    accountant: 'both',
+    sales_manager: 'own',
+    logist: 'own',
+    ved_manager: 'neither',
+    warehouse_manager: 'neither',
+    warehouse_operator: 'neither',
+    viewer: 'neither',
+  };
+  it('answers for every seeded role', () => {
+    for (const role of Object.keys(SEES) as RoleCode[]) {
+      const actor = actorFor(role);
+      const scope = upsaleScopeFor(actor);
+      const own = seesOfferPriceOf(scope, actor.id, actor.id);
+      const theirs = seesOfferPriceOf(scope, 'y', actor.id);
+      const got = own && theirs ? 'both' : own ? 'own' : theirs ? 'theirs' : 'neither';
+      expect(got, role).toBe(SEES[role]);
+    }
   });
 });

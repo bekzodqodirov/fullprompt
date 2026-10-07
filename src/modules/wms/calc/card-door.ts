@@ -271,6 +271,12 @@ export function kartaHref(requestId: string, leadId?: string | null): string {
 export async function noteLinksFor(
   entity: { entityType: 'client' | 'lead' | 'deal'; entityId: string },
   userIds: readonly string[],
+  /**
+   * Each person's grants, when the caller already loaded them (the thread
+   * announce asks the door, the involvement filter and this link from ONE
+   * load per recipient). Absent: read here, as always.
+   */
+  grants?: ReadonlyMap<string, Set<string>>,
 ): Promise<Map<string, string | null>> {
   const out = new Map<string, string | null>();
   const card = cardLink(entity.entityType, entity.entityId);
@@ -289,7 +295,7 @@ export async function noteLinksFor(
   // The karta link is the same for every calculator — read once, lazily.
   let karta: string | null | undefined;
   for (const id of userIds) {
-    const permissions = await userPermissions(id);
+    const permissions = grants?.get(id) ?? (await userPermissions(id));
     const cardAdmits =
       entity.entityType === 'lead'
         ? mayOpenLead({ id, permissions }, { ownerId: owner })

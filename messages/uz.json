@@ -5296,5 +5296,135 @@
     "serverBehind": "Server yangilanmoqda — bir daqiqadan keyin urinib ko‘ring",
     "decisionNote": "Qaror izohi: {note}",
     "notifMuteDebt": "Qarzga yuk berish (kim, kimga, qancha, sabab)"
+  },
+  "threads": {
+    "dockTab": "Ichki",
+    "dockEmpty": "Hozircha ichki yozishma yo‘q. Kartada savol yozsangiz yoki sizga yozishsa, shu yerda chiqadi.",
+    "dockLoading": "Yuklanmoqda…",
+    "dockFailed": "Ro‘yxatni o‘qib bo‘lmadi — qaytadan oching.",
+    "unread": "yangi",
+    "calcTitle": "❓ Savol-javob",
+    "calcJump": "❓ Savol-javob · {n}",
+    "calcHint": "Sotuvchidan so‘rang — savol uning Telegramiga boradi, javob shu yerda chiqadi. Tannarx yoki muhrlangan narxni yozmang: buni sotuvchi ham o‘qiydi.",
+    "cardHint": "Shu hisob bo‘yicha VED bilan savol-javob.",
+    "empty": "Bu hisob bo‘yicha hali savol yo‘q.",
+    "placeholder": "Savol yoki javob…",
+    "send": "Yuborish",
+    "sending": "Yuborilmoqda…",
+    "viaTelegram": "📱 Telegramdan",
+    "noAudience": "⚠ Bu xabarni hozir hech kim olmaydi — hisob hali hech kimga biriktirilmagan. Kim olsa, o‘sha ko‘radi.",
+    "feedCalcThread": "🧮 Hisob savoli · ↩️ javob",
+    "feedViaTelegram": "📱 Telegramdan",
+    "feedCalcHint": "Bu VED ga bormaydi — hisob savoliga «❓ Savol-javob»da javob bering.",
+    "notifMuteChat": "Ichki yozishmalar (kartadagi savol-javob, @ bilan chaqirish)",
+    "unreachable": {
+      "no_door": "⚠ {name}: kartani ocha olmaydi — faqat Telegramdan javob bera oladi.",
+      "no_chat": "⚠ {name}: Telegramga ulanmagan — faqat saytda ko‘radi.",
+      "muted": "⚠ {name}: bu xabarlarni o‘chirgan — faqat saytda ko‘radi."
+    },
+    "errors": {
+      "forbidden": "Bu yozishmaga yozish huquqingiz yo‘q.",
+      "empty": "Bo‘sh xabar.",
+      "too_long": "Juda uzun — 4000 belgigacha yozing.",
+      "not_found": "Hisob topilmadi.",
+      "server_behind": "Tizim yangilanmoqda — birozdan keyin qaytadan yuboring.",
+      "save_failed": "Yuborilmadi — qaytadan urinib ko‘ring."
+    }
+  },
+  "priceChannel": {
+    "title": "Narx kanali",
+    "intro": "Bot har bir muhrlangan hisob va «Готово» narxini xodimlarning yopiq kanaliga joylaydi. Mijoz ma’lumoti chiqmaydi, forward taqiqlangan, chegirmali hisob chiqmaydi.",
+    "notConnected": "Kanal ulanmagan",
+    "connected": "Ulangan: {title}",
+    "setup1": "Telegram’da YANGI yopiq (private) kanal oching — hech kim a’zo bo‘lmagan.",
+    "setup2": "Botni kanalga administrator qiling: xabar joylash, tahrirlash, havola orqali taklif, a’zolarni chiqarish huquqlari bilan. Buni tizimda admin bo‘lgan va botga ulangan odam qilsin.",
+    "setup3": "Shu sahifani yangilang — kanal o‘zi ulanadi va havola paydo bo‘ladi. Ko‘rinmasa, botni adminlikdan olib qayta qo‘shing.",
+    "setup4": "Havolani xodimlarga yuboring: bot faqat tizimda faol va botga ulangan xodimni qabul qiladi.",
+    "rights": "Bot huquqlari",
+    "right": {
+      "post": "xabar joylash",
+      "edit": "tahrirlash",
+      "invite": "havola orqali taklif",
+      "restrict": "a’zolarni chiqarish"
+    },
+    "rightsMissing": "Botda huquq yetmaydi: {list}. Kanal sozlamalarida bering.",
+    "admins": "Kanal adminlari (bot ularni chiqarmaydi): {names}",
+    "vet": {
+      "public": "Kanal OCHIQ (@username bor) — narxlar joylanmaydi. Kanalni yopiq qiling yoki yangi yopiq kanal oching.",
+      "has_members": "Kanalda {count} ta a’zo bor — bot ular kimligini bilmaydi. Yangi yopiq kanal oching.",
+      "bot_not_admin": "Bot bu kanalda xabar joylay oladigan admin emas.",
+      "vet_failed": "Kanalni tekshirib bo‘lmadi: {error}",
+      "has_discussion": "Kanalga muhokama guruhi ulangan — har bir post o‘sha guruhga ham ko‘chadi, bot u yerdagilarni tekshira olmaydi. Kanal sozlamalarida muhokama guruhini uzing."
+    },
+    "paused": {
+      "no_bot": "To‘xtatilgan: bot tokeni yo‘q — kanalga hech narsa ketmaydi.",
+      "not_vetted": "To‘xtatilgan: kanal oxirgi tekshiruvdan o‘tmadi (sababi yuqorida). Sababni tuzating — bot har 10 daqiqada o‘zi qayta tekshiradi, yoki «Qayta tekshirish»ni bosing.",
+      "public": "To‘xtatilgan: kanal ochiq bo‘lib qolgan. Kanalni yopiq qiling — bot har 10 daqiqada o‘zi qayta tekshiradi, yoki «Qayta tekshirish»ni bosing.",
+      "channel_refused": "To‘xtatilgan: Telegram kanalga yozishga ruxsat bermadi.",
+      "connector_gone": "To‘xtatilgan: kanalni ulagan kishi endi admin emas — qayta ulang.",
+      "bot_removed": "To‘xtatilgan: bot kanaldan chiqarilgan yoki endi admin emas — botni kanalga qayta admin qiling (huquqlari bilan)."
+    },
+    "noPolling": "Bu serverda bot so‘rovlarni qabul qilmaydi (TELEGRAM_POLLING=0) — a’zolik so‘rovlari javobsiz qoladi.",
+    "lastError": "Telegram javobi: {error}",
+    "inviteLink": "Kirish havolasi (so‘rov orqali)",
+    "onlyThisLink": "Faqat shu havolani yuboring — kanalning asosiy havolasi bekor qilindi.",
+    "noLink": "Havola hali yo‘q",
+    "newLink": "Yangi havola",
+    "otherChats": "Bot admin bo‘lgan boshqa kanallar",
+    "connect": "Shu kanalni ulash",
+    "disconnect": "Uzish",
+    "disconnectConfirm": "Kanal uziladi: yangi narxlar joylanmaydi. Davom etasizmi?",
+    "queue": "Oxirgi xabarlar",
+    "status": {
+      "pending": "navbatda",
+      "sending": "yuborilmoqda",
+      "sent": "joylandi",
+      "failed": "joylanmadi",
+      "skipped": "o‘tkazildi"
+    },
+    "skip": {
+      "no_channel": "kanal ulanmagan edi",
+      "discount": "chegirma berilgan",
+      "band_override": "tarif bandi o‘zgartirilgan",
+      "channel_changed": "kanal almashtirilgan",
+      "stale": "eskirgan (kutib qolgan yoki narx endi amal qilmaydi)"
+    },
+    "staleCount": "{count} ta eskirgan narx joylanmadi",
+    "fail": {
+      "stuck_sending": "yuborilgan bo‘lishi mumkin — kanalni tekshirib, keyin qayta yuboring",
+      "ambiguous_send": "yuborilgan bo‘lishi mumkin — kanalni tekshirib, keyin qayta yuboring"
+    },
+    "retry": "Qayta yuborish",
+    "kind": {
+      "seal": "muhr",
+      "answer": "qo‘lda berilgan"
+    },
+    "unmarked": "{count} ta eski xabar belgilanmadi (o‘chirilgan bo‘lishi mumkin)",
+    "members": "Bot qabul qilgan a’zolar: {count}",
+    "membersNote": "Bot xodim bo‘lmagan har bir yangi a’zoni chiqaradi; kanal adminlarini chiqarmaydi. Server qayta ishga tushgan paytda kelgan so‘rov javobsiz qolishi mumkin — uni kanalning «A’zolik so‘rovlari» bo‘limida qo‘lda qabul qiling (faqat xodimni).",
+    "removed": {
+      "inactive": "ishdan ketgan",
+      "unlinked": "botdan uzilgan",
+      "relinked": "boshqa Telegram’ga ko‘chgan",
+      "left": "o‘zi chiqib ketgan"
+    },
+    "error": {
+      "not_found": "Bu kanal ro‘yxatda yo‘q — botni unga admin qiling.",
+      "bot_not_admin": "Bot bu kanalda admin emas.",
+      "no_invite_right": "Botda havola yaratish huquqi yo‘q.",
+      "not_failed": "Bu xabar «joylanmadi» holatida emas.",
+      "no_bot": "Bot tokeni yo‘q.",
+      "telegram": "Telegram rad etdi: {error}",
+      "public": "Kanal ochiq — ulab bo‘lmaydi.",
+      "has_members": "Kanalda begona a’zolar bor — yangi yopiq kanal oching.",
+      "vet_failed": "Kanalni tekshirib bo‘lmadi, keyinroq urinib ko‘ring.",
+      "already_connected": "Bu kanal allaqachon ulangan.",
+      "has_discussion": "Kanalga muhokama guruhi ulangan — avval uni uzing."
+    },
+    "serverBehind": "Server yangilanmagan (0128 migratsiyasi yo‘q).",
+    "linkTitle": "Havola",
+    "linkNote": "Faqat shu havolani yuboring — kanalning asosiy havolasi bekor qilindi.",
+    "recheck": "Qayta tekshirish",
+    "recheckOk": "Tekshiruvdan o‘tdi — narxlar yana joylanadi."
   }
 }

@@ -485,6 +485,74 @@ export const telegramLinks = pgTable(
 );
 
 /**
+ * The price channel (0128, the owner's F, 2026-10-07): every channel a
+ * SETTINGS ADMIN made the bot an administrator of. The ONE row with
+ * `connected_at` set is THE channel — there is deliberately no setting, because
+ * /admin/settings renders every key as an editable input and would be a door
+ * around the vetting. Written only by `telegram/price-channel.ts`.
+ */
+export const priceChannelChats = pgTable(
+  'price_channel_chats',
+  {
+    chatId: bigint('chat_id', { mode: 'bigint' }).primaryKey(),
+    title: text('title').notNull().default(''),
+    username: text('username'),
+    status: text('status').notNull(),
+    rights: jsonb('rights').notNull().default({}),
+    admins: jsonb('admins').notNull().default([]),
+    memberCount: integer('member_count'),
+    addedByUserId: uuid('added_by_user_id')
+      .notNull()
+      .references(() => users.id),
+    connectedAt: timestamp('connected_at', { withTimezone: true }),
+    connectedByUserId: uuid('connected_by_user_id').references(() => users.id),
+    vettedAt: timestamp('vetted_at', { withTimezone: true }),
+    inviteLink: text('invite_link'),
+    lastError: text('last_error'),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check(
+      'price_channel_chats_status_check',
+      sql`${t.status} IN ('creator','administrator','member','restricted','left','kicked')`,
+    ),
+    check(
+      'price_channel_chats_connected_check',
+      sql`(${t.connectedAt} IS NULL) = (${t.connectedByUserId} IS NULL)`,
+    ),
+    uniqueIndex('price_channel_chats_one_connected')
+      .on(sql`(true)`)
+      .where(sql`${t.connectedAt} IS NOT NULL`),
+  ],
+);
+
+/** Who the BOT admitted to a price channel, per channel (0128). */
+export const priceChannelMembers = pgTable(
+  'price_channel_members',
+  {
+    chatId: bigint('chat_id', { mode: 'bigint' }).notNull(),
+    tgUserId: bigint('tg_user_id', { mode: 'bigint' }).notNull(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id),
+    approvedAt: timestamp('approved_at', { withTimezone: true }).notNull().defaultNow(),
+    removedAt: timestamp('removed_at', { withTimezone: true }),
+    removeReason: text('remove_reason'),
+    lastError: text('last_error'),
+  },
+  (t) => [
+    primaryKey({ name: 'price_channel_members_pk', columns: [t.chatId, t.tgUserId] }),
+    check(
+      'price_channel_members_reason_check',
+      sql`(${t.removedAt} IS NULL) = (${t.removeReason} IS NULL) AND (${t.removeReason} IS NULL OR ${t.removeReason} IN ('inactive','unlinked','relinked','left'))`,
+    ),
+    index('price_channel_members_live_idx')
+      .on(t.userId)
+      .where(sql`${t.removedAt} IS NULL`),
+  ],
+);
+
+/**
  * What is wrong with the system right now (0115) — one row per standing
  * fault, deleted when it clears. `since` is written once; a repeat moves
  * only `detail`/`updatedAt`. Written by platform/diagnostics/signals.ts and

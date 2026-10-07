@@ -12,6 +12,7 @@ import {
   numeric,
   pgTable,
   primaryKey,
+  smallint,
   text,
   timestamp,
   unique,
@@ -1769,6 +1770,22 @@ export const leads = pgTable(
  * One log for both sides of the funnel. The call that won a lead and the call
  * about a late payment a year later belong on the same timeline; two tables
  * would have split a single person's history in half.
+ *
+ * 0127 (the staff threads) added three columns that are deliberately NOT
+ * declared here this release: `calc_request_id` (the calculation a note is a
+ * question or answer about), and `tg_chat_id` + `tg_message_id` (the
+ * Telegram message a reply landed from — provenance and idempotency key).
+ * Drizzle names EVERY declared column in every INSERT (an absent value is
+ * rendered `default`), in a bare `.returning()` and in every whole-row
+ * select — and those statements are every note writer in the app
+ * (`addActivity`) and two reads, one of them the VED's calc page outside any
+ * catch. Declared, they would turn every note save into a 42703 on a
+ * database one migration behind (#472). So they live in raw SQL only: written
+ * by `wms/crm/thread.ts` `addThreadMessage`, read bare only in `thread.ts` and
+ * `thread-reply.ts`, and through `to_jsonb(row)` everywhere else (NULL, not
+ * 42703, on an old schema). A LATER release, once 0127 is everywhere, may
+ * declare them — after checking that no whole-row statement remains. Fenced
+ * by tests/unit/thread-wire.test.ts.
  */
 export const crmActivities = pgTable(
   'crm_activities',
@@ -1787,6 +1804,32 @@ export const crmActivities = pgTable(
     check('crm_activities_entity_check', sql`${t.entityType} IN ('lead', 'client', 'deal')`),
     check('crm_activities_kind_check', sql`${t.kind} IN ('call', 'meeting', 'message', 'note')`),
     index('crm_activities_entity_idx').on(t.entityType, t.entityId, t.happenedAt),
+  ],
+);
+
+/**
+ * How far a person has read one staff thread (0127) — a card's notes or a
+ * calculation's Q&A. «Unread» is DERIVED from this and the notes (the newest
+ * note is somebody else's and later than `read_at`), never stored as a
+ * counter: a counter would be a second writer of a fact the notes already
+ * hold. Written with GREATEST (tg_chat_reads' shape), so an out-of-order mark
+ * never moves it back. A new TABLE is safe to declare: only its own
+ * statements name it, and each sits behind a catch.
+ */
+export const threadReads = pgTable(
+  'thread_reads',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    threadKind: text('thread_kind').notNull(),
+    threadId: uuid('thread_id').notNull(),
+    readAt: timestamp('read_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ name: 'thread_reads_pk', columns: [t.userId, t.threadKind, t.threadId] }),
+    // Round 2 widens this with 'receipt','batch' (a CHECK widening, like 0125).
+    check('thread_reads_kind_check', sql`${t.threadKind} IN ('lead', 'deal', 'client', 'calc')`),
   ],
 );
 
@@ -3238,6 +3281,75 @@ export const calcVersions = pgTable(
     check('calc_versions_discount_check', sql`${t.discountUsd} >= 0`),
     uniqueIndex('calc_versions_request_no_unique').on(t.requestId, t.versionNo),
     index('calc_versions_sealed_idx').on(t.sealedAt),
+  ],
+);
+
+/**
+ * ONE row per given price for the staff's price channel (0128, the owner's F).
+ * The claim is the write: `dedupe_key` is CHECKed to be `seal:<version>` or
+ * `answer:<request>`, so a retried hook, the drain's net, a double Готово and
+ * two drains post once. `view` is the post's projection (calc/channel-post.ts
+ * `ChannelPostView`) — it cannot hold a client, a floor breakdown or a note.
+ */
+export const priceChannelPosts = pgTable(
+  'price_channel_posts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    kind: text('kind').notNull(),
+    requestId: uuid('request_id')
+      .notNull()
+      .references(() => calcRequests.id, { onDelete: 'cascade' }),
+    versionId: uuid('version_id').references(() => calcVersions.id, { onDelete: 'cascade' }),
+    dedupeKey: text('dedupe_key').notNull(),
+    chatId: bigint('chat_id', { mode: 'bigint' }),
+    status: text('status').notNull(),
+    skipReason: text('skip_reason'),
+    view: jsonb('view'),
+    carrier: text('carrier'),
+    messageId: integer('message_id'),
+    replyToMessageId: integer('reply_to_message_id'),
+    photoCount: smallint('photo_count').notNull().default(0),
+    markedState: text('marked_state'),
+    markedAt: timestamp('marked_at', { withTimezone: true }),
+    markClaimedAt: timestamp('mark_claimed_at', { withTimezone: true }),
+    markError: text('mark_error'),
+    attempts: integer('attempts').notNull().default(0),
+    notBefore: timestamp('not_before', { withTimezone: true }),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }),
+    lastError: text('last_error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    sentAt: timestamp('sent_at', { withTimezone: true }),
+  },
+  (t) => [
+    unique('price_channel_posts_dedupe_unique').on(t.dedupeKey),
+    check(
+      'price_channel_posts_kind_check',
+      sql`(${t.kind} = 'seal' AND ${t.versionId} IS NOT NULL AND ${t.dedupeKey} = 'seal:' || ${t.versionId}::text) OR (${t.kind} = 'answer' AND ${t.versionId} IS NULL AND ${t.dedupeKey} = 'answer:' || ${t.requestId}::text)`,
+    ),
+    check(
+      'price_channel_posts_status_check',
+      sql`${t.status} IN ('pending','sending','sent','failed','skipped')`,
+    ),
+    check(
+      'price_channel_posts_skip_check',
+      sql`(${t.status} = 'skipped') = (${t.skipReason} IS NOT NULL) AND (${t.skipReason} IS NULL OR ${t.skipReason} IN ('no_channel','discount','band_override','channel_changed','stale'))`,
+    ),
+    check(
+      'price_channel_posts_sent_check',
+      sql`${t.status} <> 'sent' OR (${t.messageId} IS NOT NULL AND ${t.carrier} IS NOT NULL AND ${t.view} IS NOT NULL AND ${t.chatId} IS NOT NULL)`,
+    ),
+    check('price_channel_posts_carrier_check', sql`${t.carrier} IS NULL OR ${t.carrier} IN ('text','caption')`),
+    check(
+      'price_channel_posts_mark_check',
+      sql`${t.markedState} IS NULL OR ${t.markedState} IN ('open','sealed','answered','returned','unpriced')`,
+    ),
+    index('price_channel_posts_pending_idx')
+      .on(t.createdAt)
+      .where(sql`${t.status} IN ('pending','sending')`),
+    index('price_channel_posts_unsettled_idx')
+      .on(t.requestId)
+      .where(sql`${t.status} = 'sent' AND (${t.markedState} IS NULL OR ${t.markedState} = 'open')`),
+    index('price_channel_posts_request_idx').on(t.requestId, t.createdAt),
   ],
 );
 

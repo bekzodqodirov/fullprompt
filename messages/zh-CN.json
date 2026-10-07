@@ -5296,5 +5296,135 @@
     "serverBehind": "服务器正在更新——请一分钟后重试",
     "decisionNote": "决定备注：{note}",
     "notifMuteDebt": "赊账放行（谁、给谁、多少、原因）"
+  },
+  "threads": {
+    "dockTab": "内部",
+    "dockEmpty": "暂无内部沟通。卡片上的提问（您发出的和发给您的）会显示在这里。",
+    "dockLoading": "加载中…",
+    "dockFailed": "无法加载列表，请重新打开。",
+    "unread": "新",
+    "calcTitle": "❓ 问答",
+    "calcJump": "❓ 问答 · {n}",
+    "calcHint": "向销售提问——问题会发到其 Telegram，回答显示在这里。请勿写成本或已封存价格：销售也能看到。",
+    "cardHint": "与报关员就此计算的问答。",
+    "empty": "此计算暂无提问。",
+    "placeholder": "提问或回答…",
+    "send": "发送",
+    "sending": "发送中…",
+    "viaTelegram": "📱 来自 Telegram",
+    "noAudience": "⚠ 目前没有人会收到此消息——计算尚未分配，接手的人会看到。",
+    "feedCalcThread": "🧮 计算问答 · ↩️ 回复",
+    "feedViaTelegram": "📱 来自 Telegram",
+    "feedCalcHint": "此消息不会发给报关员——请在「❓ 问答」中回答计算问题。",
+    "notifMuteChat": "内部沟通（卡片问答、@提及）",
+    "unreachable": {
+      "no_door": "⚠ {name} 无法打开卡片——只能在 Telegram 中回复。",
+      "no_chat": "⚠ {name} 未绑定 Telegram——只能在网站上看到。",
+      "muted": "⚠ {name} 已静音此类消息——只能在网站上看到。"
+    },
+    "errors": {
+      "forbidden": "您无权在此沟通中发言。",
+      "empty": "消息为空。",
+      "too_long": "太长——最多 4000 个字符。",
+      "not_found": "未找到该计算。",
+      "server_behind": "系统正在更新——请稍后再发送。",
+      "save_failed": "未发送——请重试。"
+    }
+  },
+  "priceChannel": {
+    "title": "价格频道",
+    "intro": "机器人把每个已封存的价格和「Готово」答复发布到员工私密频道。不含客户信息，禁止转发，有折扣的计算不发布。",
+    "notConnected": "尚未连接频道",
+    "connected": "已连接：{title}",
+    "setup1": "在 Telegram 新建一个私密频道——不要有任何成员。",
+    "setup2": "将机器人设为频道管理员，并授予：发布、编辑、通过链接邀请、移除成员的权限。须由已绑定机器人的系统管理员操作。",
+    "setup3": "刷新本页——频道会自动连接并出现链接。若没有，请把机器人从管理员中移除后重新添加。",
+    "setup4": "把链接发给员工：机器人只接受系统中在职且已绑定机器人的员工。",
+    "rights": "机器人权限",
+    "right": {
+      "post": "发布",
+      "edit": "编辑",
+      "invite": "链接邀请",
+      "restrict": "移除成员"
+    },
+    "rightsMissing": "机器人缺少权限：{list}。请在频道设置中授予。",
+    "admins": "频道管理员（机器人不会移除）：{names}",
+    "vet": {
+      "public": "频道是公开的（有 @用户名）——不会发布价格。请改为私密或新建私密频道。",
+      "has_members": "频道已有 {count} 名成员——机器人无法确认身份。请新建私密频道。",
+      "bot_not_admin": "机器人不是该频道可发布消息的管理员。",
+      "vet_failed": "无法检查频道：{error}",
+      "has_discussion": "频道已关联讨论组——每条帖子也会转到该组，机器人无法核查其成员。请在频道设置中取消关联讨论组。"
+    },
+    "paused": {
+      "no_bot": "已暂停：没有机器人令牌——不会向频道发送任何内容。",
+      "not_vetted": "已暂停：频道未通过最近一次检查（原因见上）。请排除原因——机器人每 10 分钟会自动重新检查，或点击「重新检查」。",
+      "public": "已暂停：频道已变为公开。请改为私密——机器人每 10 分钟会自动重新检查，或点击「重新检查」。",
+      "channel_refused": "已暂停：Telegram 拒绝向频道发布。",
+      "connector_gone": "已暂停：连接频道的人已不是管理员——请重新连接。",
+      "bot_removed": "已暂停：机器人已被移出频道或不再是管理员——请重新把机器人设为频道管理员（含权限）。"
+    },
+    "noPolling": "本服务器的机器人不接收更新（TELEGRAM_POLLING=0）——入群申请将无人处理。",
+    "lastError": "Telegram 返回：{error}",
+    "inviteLink": "加入链接（需申请）",
+    "onlyThisLink": "只分享这个链接——频道的主链接已作废。",
+    "noLink": "暂无链接",
+    "newLink": "新链接",
+    "otherChats": "机器人担任管理员的其他频道",
+    "connect": "连接此频道",
+    "disconnect": "断开",
+    "disconnectConfirm": "将断开频道：新价格将不再发布。继续吗？",
+    "queue": "最近发布",
+    "status": {
+      "pending": "排队中",
+      "sending": "发送中",
+      "sent": "已发布",
+      "failed": "未发布",
+      "skipped": "已跳过"
+    },
+    "skip": {
+      "no_channel": "当时未连接频道",
+      "discount": "给了折扣",
+      "band_override": "改了运价区间",
+      "channel_changed": "频道已更换",
+      "stale": "已过期（等待过久或价格已失效）"
+    },
+    "staleCount": "{count} 条过期价格未发布",
+    "fail": {
+      "stuck_sending": "可能已发布——请先检查频道再重发",
+      "ambiguous_send": "可能已发布——请先检查频道再重发"
+    },
+    "retry": "重新发送",
+    "kind": {
+      "seal": "封存",
+      "answer": "手动给出"
+    },
+    "unmarked": "{count} 条旧消息未能标记（可能已删除）",
+    "members": "机器人已接纳：{count}",
+    "membersNote": "机器人会移除每个非员工的新成员；不会移除频道管理员。服务器重启期间的申请可能无人处理——请在频道「入群申请」中手动批准（仅限员工）。",
+    "removed": {
+      "inactive": "已离职",
+      "unlinked": "已解绑机器人",
+      "relinked": "已换绑其他 Telegram",
+      "left": "自行退出"
+    },
+    "error": {
+      "not_found": "列表中没有该频道——请把机器人设为其管理员。",
+      "bot_not_admin": "机器人不是该频道的管理员。",
+      "no_invite_right": "机器人没有创建邀请链接的权限。",
+      "not_failed": "该消息不处于「未发布」状态。",
+      "no_bot": "没有机器人令牌。",
+      "telegram": "Telegram 拒绝：{error}",
+      "public": "频道是公开的——无法连接。",
+      "has_members": "频道已有其他成员——请新建私密频道。",
+      "vet_failed": "无法检查频道，请稍后再试。",
+      "already_connected": "该频道已连接。",
+      "has_discussion": "频道已关联讨论组——请先取消关联。"
+    },
+    "serverBehind": "服务器未更新（缺少 0128 迁移）。",
+    "linkTitle": "邀请链接",
+    "linkNote": "只发送此链接——频道原有的主链接已作废。",
+    "recheck": "重新检查",
+    "recheckOk": "检查通过——价格将重新发布。"
   }
 }

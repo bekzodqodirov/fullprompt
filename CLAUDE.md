@@ -2570,7 +2570,40 @@ custom fields split read/write. On the way: id filters ask `isUuidShaped`
 the comma question on discount/rates/paste, one-shape mounting (keystroke
 59-70 ms at 4× throttle), deal17 Q1-Q5.
 
-**Latest migration: 0126** (`debt_release_note`, `when` …105; ledger must reach **127**). Before
+**Round — wave 3 of his 2026-10-07 answers: staff threads round 1 + the
+price channel (DECISIONS #1313-#1323; migrations 0127 `staff_threads` + 0128
+`price_channel` — ledger must reach 129).** Built in parallel worktrees on a
+`wave3-base` commit that RESERVED both journal slots as `SELECT 1;`
+placeholders (each package replaced only its own file, so neither journal had
+a hole) — a placeholder must never reach main. CHAT (E): a thread = a card's
+notes, a calc thread = the `calc_request_id` TAG; the three new
+`crm_activities` columns are SQL-only this release (raw writer `thread.ts`,
+readers via `to_jsonb`) or every note writer throws 42703 one migration
+behind; ONE door `mayReadThread` (thread-door.ts, the lenta's gate moved in);
+audience decided at SEND time (E9 door, involvement relation shared with the
+dock, client's seller E6 c, G4 reply-only, mentions exempt and kept in the
+dock); `reply-door.ts` resolves a swipe-reply from the person's OWN
+notification row by `payload.tg`, armed «Bajarildi» first, E3 into the calc
+thread, E4 to the giver, text only; own mute group «Ichki yozishmalar»; not
+lead contact (E11); dock «👥 Ichki» through a literal-typed partial index;
+read mark = the page's `asOf` as postgres's microsecond string. CHANNEL (F):
+the channel is a ROW (`connected_at`), never a setting; `vetChannel` refuses
+public / subscribers / no-post / linked discussion; `drainPause` is the one
+pause rule (drain AND «Qayta tekshirish»), the vet writes the bot status back;
+claim = INSERT … ON CONFLICT on `dedupe_key`, first statement after the seal's
+tx, a derived 24 h net, ambiguous sends NEVER auto-retried, a fenced claim;
+`ChannelPostView` 16 fields, `scrubIdentity`, seller named (F9 b), protect
+content, marks derived from the chain; narxlar shows a seller his OWN offers
+(F1 a). Deploy: ledger 129, rebuild the bot (it now takes `chat_member`), then
+his private channel + bot admin + /admin/narx-kanali (CHANGELOG steps). OWED
+as questions: free-text money in a calc thread, replying to CalcDone pings,
+the muted «Ish jarayoni» people, round 2's warehouse = where the cargo STANDS,
+`drop_pending_updates`; pre-connect prices, the logist matching posts to
+deals, «own» = offered_by, sealed total on narxlar for sellers.
+
+**Latest migration: 0128** (`price_channel`, `when` …107; ledger must reach **129**). Before
+it: 0127 (`staff_threads`, `when` …106). Before
+it: 0126 (`debt_release_note`, `when` …105). Before
 it: 0125 (`calc_basis_m3`, `when` …104). Before
 it: 0124 (`task_origin_calc_note`, `when` …103). Before
 it: 0123 (`lot_check`, `when` …102). Before
@@ -2701,7 +2734,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **127** since 0126 (126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **129** since 0128 (128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
 and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read
@@ -2709,7 +2742,7 @@ and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read
 was asked for and NOT quoted; PR #106 (0121) deployed 2026-09-30 evening («Hozir sistema
 yaxshi ishlayabti», count not quoted either); PR #109 (0122) was asked about and NOT
 answered, so COUNT FIRST on the next deploy: it must read
-**127** (anything less means a migration did not land — read the `migrate`
+**129** (anything less means a migration did not land — read the `migrate`
 container's own output; from 113 the whole 0113-0120 set applies and EVERY
 container must be recreated once: `--profile https --profile telegram up -d
 --build`, compose gained `init`, a healthcheck, log caps and a postgres flag);

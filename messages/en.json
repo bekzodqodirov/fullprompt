@@ -5296,5 +5296,135 @@
     "serverBehind": "The server is updating — try again in a minute",
     "decisionNote": "Decision note: {note}",
     "notifMuteDebt": "Cargo released on debt (who, to whom, how much, why)"
+  },
+  "threads": {
+    "dockTab": "Internal",
+    "dockEmpty": "No internal threads yet. Questions on cards — yours and those addressed to you — appear here.",
+    "dockLoading": "Loading…",
+    "dockFailed": "Could not load the list — open it again.",
+    "unread": "new",
+    "calcTitle": "❓ Questions",
+    "calcJump": "❓ Questions · {n}",
+    "calcHint": "Ask the seller — the question goes to their Telegram and the answer appears here. Do not type the cost floor or the sealed price: the seller reads this too.",
+    "cardHint": "Questions with the VED about this calculation.",
+    "empty": "No questions on this calculation yet.",
+    "placeholder": "Question or answer…",
+    "send": "Send",
+    "sending": "Sending…",
+    "viaTelegram": "📱 from Telegram",
+    "noAudience": "⚠ Nobody receives this right now — the calculation is not assigned yet. Whoever takes it will see it.",
+    "feedCalcThread": "🧮 Calculation question · ↩️ reply",
+    "feedViaTelegram": "📱 from Telegram",
+    "feedCalcHint": "This does not reach the VED — answer the calculation question in «❓ Questions».",
+    "notifMuteChat": "Internal threads (questions on cards, @-mentions)",
+    "unreachable": {
+      "no_door": "⚠ {name} cannot open the card — can only reply from Telegram.",
+      "no_chat": "⚠ {name} has no linked Telegram — will see it only on the site.",
+      "muted": "⚠ {name} muted these messages — will see it only on the site."
+    },
+    "errors": {
+      "forbidden": "You cannot write in this thread.",
+      "empty": "The message is empty.",
+      "too_long": "Too long — up to 4000 characters.",
+      "not_found": "Calculation not found.",
+      "server_behind": "The system is updating — send again in a moment.",
+      "save_failed": "Not sent — try again."
+    }
+  },
+  "priceChannel": {
+    "title": "Price channel",
+    "intro": "The bot posts every sealed price and «Готово» answer into the staff's private channel. No client data, forwarding is blocked, discounted calculations are not posted.",
+    "notConnected": "No channel connected",
+    "connected": "Connected: {title}",
+    "setup1": "Create a NEW private channel in Telegram — with no members.",
+    "setup2": "Make the bot a channel administrator with: post, edit, invite via link, remove members. A system admin linked to the bot must do this.",
+    "setup3": "Refresh this page — the channel connects itself and a link appears. If not, remove the bot from the admins and add it again.",
+    "setup4": "Send the link to the staff: the bot admits only an active colleague linked to the bot.",
+    "rights": "Bot rights",
+    "right": {
+      "post": "post",
+      "edit": "edit",
+      "invite": "invite via link",
+      "restrict": "remove members"
+    },
+    "rightsMissing": "The bot lacks: {list}. Grant it in the channel settings.",
+    "admins": "Channel admins (the bot never removes them): {names}",
+    "vet": {
+      "public": "The channel is PUBLIC (has an @username) — no prices are posted. Make it private or create a new private one.",
+      "has_members": "The channel has {count} members — the bot cannot tell who they are. Create a new private channel.",
+      "bot_not_admin": "The bot is not an admin that may post in this channel.",
+      "vet_failed": "Could not check the channel: {error}",
+      "has_discussion": "A discussion group is linked to the channel — every post is copied there too, and the bot cannot check its members. Unlink the group in the channel's settings."
+    },
+    "paused": {
+      "no_bot": "Paused: no bot token — nothing reaches the channel.",
+      "not_vetted": "Paused: the channel failed its last check (the reason is above). Fix the cause — the bot re-checks by itself every 10 minutes, or press «Check again».",
+      "public": "Paused: the channel became public. Make it private — the bot re-checks by itself every 10 minutes, or press «Check again».",
+      "channel_refused": "Paused: Telegram refused to post to the channel.",
+      "connector_gone": "Paused: the person who connected the channel is no longer an admin — connect it again.",
+      "bot_removed": "Paused: the bot was removed from the channel or is no longer an admin — make the bot an admin of the channel again (with its rights)."
+    },
+    "noPolling": "This server's bot receives no updates (TELEGRAM_POLLING=0) — join requests stay unanswered.",
+    "lastError": "Telegram said: {error}",
+    "inviteLink": "Join link (by request)",
+    "onlyThisLink": "Share only this link — the channel's primary link was revoked.",
+    "noLink": "No link yet",
+    "newLink": "New link",
+    "otherChats": "Other channels the bot administers",
+    "connect": "Connect this channel",
+    "disconnect": "Disconnect",
+    "disconnectConfirm": "The channel will be disconnected: new prices will not be posted. Continue?",
+    "queue": "Latest posts",
+    "status": {
+      "pending": "queued",
+      "sending": "sending",
+      "sent": "posted",
+      "failed": "not posted",
+      "skipped": "skipped"
+    },
+    "skip": {
+      "no_channel": "no channel was connected",
+      "discount": "a discount was given",
+      "band_override": "the tariff band was overridden",
+      "channel_changed": "the channel changed",
+      "stale": "stale (waited too long or the price no longer stands)"
+    },
+    "staleCount": "{count} stale prices were not posted",
+    "fail": {
+      "stuck_sending": "may have been posted — check the channel, then resend",
+      "ambiguous_send": "may have been posted — check the channel, then resend"
+    },
+    "retry": "Resend",
+    "kind": {
+      "seal": "seal",
+      "answer": "given by hand"
+    },
+    "unmarked": "{count} old posts could not be marked (possibly deleted)",
+    "members": "Admitted by the bot: {count}",
+    "membersNote": "The bot removes every new member who is not staff; it leaves channel admins alone. A request that arrived while the server restarted may stay unanswered — approve it by hand in the channel's «Join requests» (staff only).",
+    "removed": {
+      "inactive": "left the company",
+      "unlinked": "unlinked from the bot",
+      "relinked": "moved to another Telegram",
+      "left": "left by themselves"
+    },
+    "error": {
+      "not_found": "This channel is not listed — make the bot its admin.",
+      "bot_not_admin": "The bot is not an admin of this channel.",
+      "no_invite_right": "The bot may not create invite links.",
+      "not_failed": "This post is not in the «not posted» state.",
+      "no_bot": "No bot token.",
+      "telegram": "Telegram refused: {error}",
+      "public": "The channel is public — cannot connect.",
+      "has_members": "The channel already has members — create a new private channel.",
+      "vet_failed": "Could not check the channel, try again later.",
+      "already_connected": "This channel is already connected.",
+      "has_discussion": "A discussion group is linked to the channel — unlink it first."
+    },
+    "serverBehind": "The server is behind (migration 0128 missing).",
+    "linkTitle": "Invite link",
+    "linkNote": "Share only this link — the channel’s primary link was revoked.",
+    "recheck": "Check again",
+    "recheckOk": "The check passed — prices are posted again."
   }
 }

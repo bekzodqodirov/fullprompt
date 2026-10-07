@@ -37,6 +37,7 @@ describe('notification mutes (spec §11 per-user mute)', () => {
       system: false,
       owner: false,
       debt: false,
+      chat: false,
     });
     expect(list).toEqual([...MUTE_GROUPS.digest, ...MUTE_GROUPS.operations]);
     const back = groupsFromList(list);
@@ -51,6 +52,7 @@ describe('notification mutes (spec §11 per-user mute)', () => {
       system: false,
       owner: false,
       debt: false,
+      chat: false,
     });
   });
 
@@ -68,6 +70,7 @@ describe('notification mutes (spec §11 per-user mute)', () => {
       system: true,
       owner: false,
       debt: false,
+      chat: false,
     });
     expect(isTelegramMuted(everythingElse, 'OwnerSummary')).toBe(false);
     const own = listFromGroups(false, {
@@ -80,6 +83,7 @@ describe('notification mutes (spec §11 per-user mute)', () => {
       system: false,
       owner: true,
       debt: false,
+      chat: false,
     });
     expect(own).toEqual(['OwnerSummary']);
     expect(isTelegramMuted(own, 'OwnerSummary')).toBe(true);
@@ -98,6 +102,7 @@ describe('notification mutes (spec §11 per-user mute)', () => {
       system: false,
       owner: false,
       debt: false,
+      chat: false,
     });
     expect(list).toEqual(['all']);
     const back = groupsFromList(list);
@@ -112,6 +117,7 @@ describe('notification mutes (spec §11 per-user mute)', () => {
       system: true,
       owner: true,
       debt: true,
+      chat: true,
     });
   });
 
@@ -155,6 +161,7 @@ describe('0126 — «qarzga yuk berildi» has its own switch (the owner’s D6a)
     system: false,
     owner: false,
     debt: false,
+    chat: false,
   };
 
   it('a list muting every OTHER group does not mute it — the control he asked for is never born silent', () => {
@@ -174,6 +181,7 @@ describe('0126 — «qarzga yuk berildi» has its own switch (the owner’s D6a)
       system: true,
       owner: true,
       debt: false,
+      chat: false,
     });
     expect(isTelegramMuted(everythingElse, 'DebtReleased')).toBe(false);
     expect(groupsFromList(everythingElse).groups.debt).toBe(false);

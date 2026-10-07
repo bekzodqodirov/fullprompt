@@ -193,14 +193,10 @@ export const MUTE_GROUPS = {
     // newcomer, so never in FOUNDERS: whoever muted «ish jarayoni» before
     // stays muted.
     'BatchRerouted',
-    // A colleague wrote on a card you are involved in.
-    'InternalNote',
-    // The personal half of the same message: a colleague named YOU with @.
-    'MentionedInNote',
-    // A colleague showed you one message a client sent (2026-08-11). It sits
-    // beside the note and the mention because it is the same act — somebody
-    // deciding you need to see something — and not an alarm: nothing is on
-    // fire, a person is asking.
+    // A colleague showed you one message a client sent (2026-08-11) — a
+    // person deciding you need to see something, not an alarm. It STAYS here
+    // when the note and the mention left for `chat` (E8 a): a shown customer
+    // message is not a thread and cannot be replied to (wms/crm/share.ts).
     'ChatMessageShared',
     // Phase 7: a rule somebody wrote pinged you — mutable like any other
     // routine workflow message; the rule's author is not above your mutes.
@@ -235,6 +231,14 @@ export const MUTE_GROUPS = {
   // summary must not silence debt releases (that is the accident). Its own box
   // means muting it is a deliberate tick; «all» still mutes.
   debt: ['DebtReleased'],
+  // «Ichki yozishmalar» (the owner's E8 a, 2026-10-07): colleagues' thread
+  // messages — a note on a card you are in, a colleague naming YOU with @, a
+  // question under a calculation — are a group of their OWN, so muting «ish
+  // jarayoni» (the warehouse's routine news) no longer silences a colleague
+  // who is waiting for an answer. Born whole; 0127 strips the two moved names
+  // from lists that held them by name, or those would stay muted under a box
+  // that reads unticked.
+  chat: ['InternalNote', 'MentionedInNote', 'CalcThread'],
 } as const;
 
 export type MuteGroup = keyof typeof MUTE_GROUPS;
@@ -284,6 +288,9 @@ export const FOUNDERS: Readonly<Record<MuteGroup, readonly string[]>> = {
   owner: ['OwnerSummary'],
   // Born whole on 2026-10-07 with its one member (0126).
   debt: ['DebtReleased'],
+  // Born whole on 2026-10-07 (0127, E8 a): every list that ticks it from now
+  // on holds all three.
+  chat: ['InternalNote', 'MentionedInNote', 'CalcThread'],
 };
 
 /**

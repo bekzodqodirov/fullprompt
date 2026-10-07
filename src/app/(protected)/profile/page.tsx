@@ -72,6 +72,7 @@ export default async function ProfilePage() {
   // cannot disagree.
   const debtReader = actor ? receivesDebtReleased(actor) : false;
   const tqi = await getTranslations('qarzIzoh');
+  const tth = await getTranslations('threads');
   // The rasxod xabari for people who belong to no warehouse (owner M1a) and
   // the person's own account with the company (A2a). Both keyed on the
   // SESSION's user and nothing from the URL (#514); both panels, so a
@@ -283,6 +284,18 @@ export default async function ProfilePage() {
             <label className="flex min-h-10 items-center gap-3">
               <input type="checkbox" name="mute_operations" defaultChecked={mutes.groups.operations} className="h-5 w-5" />
               📥 {t('notifMuteOps')}
+            </label>
+            {/* E8 a: colleagues' thread messages are their own switch — for
+                everybody, since any colleague can be named with @. */}
+            <label className="flex min-h-10 items-center gap-3">
+              <input
+                type="checkbox"
+                name="mute_chat"
+                defaultChecked={mutes.groups.chat}
+                className="h-5 w-5"
+                data-testid="profile-mute-chat"
+              />
+              💬 {tth('notifMuteChat')}
             </label>
             <label className="flex min-h-10 items-center gap-3">
               <input type="checkbox" name="mute_system" defaultChecked={mutes.groups.system} className="h-5 w-5" />

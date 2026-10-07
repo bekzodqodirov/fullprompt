@@ -6,6 +6,7 @@ import { parseDue } from '../tasks/service';
 import { activeIntake } from './calc-intake';
 import { activeCapture } from './note-capture';
 import { editMarkup, editText, sendText } from './send';
+import { REPLY_SENTENCES, threadReplyFromBot } from './reply-door';
 import {
   acceptTaskFromBot,
   answerFromBot,
@@ -852,15 +853,46 @@ export async function answerPendingText(
   pending: PendingTask,
   text: string,
 ): Promise<boolean> {
-  if (pending.kind === 'question') {
-    await ctx.reply(reachedText('✅ Savol yuborildi.', await askFromBot(chatId, pending.taskId, text)));
-    return true;
+  // EXHAUSTIVE over the one wait's kinds (the judge's 11): the tail used to
+  // treat everything that was not a question or an answer as a typed date,
+  // so a fifth kind would have been silently rescheduled.
+  switch (pending.kind) {
+    case 'question':
+      await ctx.reply(reachedText('✅ Savol yuborildi.', await askFromBot(chatId, pending.taskId, text)));
+      return true;
+    case 'answer':
+      await ctx.reply(reachedText('✅ Javob yuborildi.', await answerFromBot(chatId, pending.taskId, text)));
+      return true;
+    case 'reply': {
+      // «💬 Javob yozish» was pressed: this text lands in the pressed ping's
+      // thread — through the SAME door a swipe-reply goes through, which
+      // never falls through when it is served from the wait (`fromWait`).
+      const out = await threadReplyFromBot(chatId, {
+        replyToMessageId: pending.replyToMessageId ?? 0,
+        replyToForwarded: false,
+        text,
+        incomingMessageId: ctx.message?.message_id ?? 0,
+        fromWait: true,
+      });
+      await ctx.reply(out?.text ?? REPLY_SENTENCES.waitNoTarget);
+      return true;
+    }
+    case 'reschedule':
+      return answerReschedule(ctx, chatId, pending, text);
+    case 'result':
+      // The ladder serves a result itself (`completeTaskFromBot`) and never
+      // hands one here; not consumed if it ever does.
+      return false;
+    default: {
+      const never: never = pending.kind;
+      logger.warn({ kind: never }, '[topshiriq] unknown wait kind');
+      return false;
+    }
   }
-  if (pending.kind === 'answer') {
-    await ctx.reply(reachedText('✅ Javob yuborildi.', await answerFromBot(chatId, pending.taskId, text)));
-    return true;
-  }
-  // reschedule
+}
+
+/** A date typed after «⏰ → 📅 Sana yozish». */
+async function answerReschedule(ctx: Context, chatId: bigint, pending: PendingTask, text: string): Promise<boolean> {
   const due = parseTypedDue(text);
   if (!due && typedDuePast(text)) {
     // A date, only one already gone (review bot-10): consumed, and said.

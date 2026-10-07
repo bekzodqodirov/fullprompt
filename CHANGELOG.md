@@ -1,5 +1,54 @@
 # CHANGELOG
 
+## Xodimlar ichki savol-javobi va narx kanali — 2026-10-07
+
+**Migratsiyalar 0127 va 0128.** O'rnatgandan keyin migratsiyalar soni **129** bo'lishi kerak.
+
+Bu sizning **E** (xodimlar chati, 1-raund) va **F** (narx kanali) javoblaringiz. Prixod va mashina kartasidagi savol-javob (E6 c ning ombor qismi, E7 b) — 2-raundda.
+
+### 1. Ishning o'z kartasida savol-javob (E)
+
+- **Savol ishning o'zida turadi:** lead, bitim, mijoz kartasida yoki bitta hisob-kitobning sahifasida. Alohida «shaxsiy chat» va umumiy xona yo'q (E1 a) — umumiy savollar Telegramda va «➕ Topshiriq»da qoladi.
+- **Telegramda xabarga javob yozsangiz (swipe-reply), javob o'sha kartaga qaytib tushadi.** Xabar ostida «💬 Javob yozish» tugmasi ham bor.
+  - VED o'zining «Hisoblash: …» topshirig'iga javob yozsa — bu sotuvchiga savol bo'lib, o'sha hisob-kitob ostida chiqadi, topshiriq ochiq qoladi (E3 a). VED topshirig'ida «❓ Sotuvchidan so'rash» tugmasi ham bor.
+  - Oddiy topshiriq xabariga javob — topshiriq bergan kishiga savol, topshiriq ochiq qoladi (E4 a).
+  - Hozircha faqat matn — rasm va fayl keyingi raundda (E10 a).
+- **Hisob-kitob sahifasida faqat shu hisob-kitobning savol-javobi** (E5 a). Lead va bitim kartasida «❓ Savol-javob» yig'ma bo'limi — o'qilmagan bo'lsa o'zi ochiladi.
+- **Kim eshitadi — xabar yuborilgan paytda hal bo'ladi:**
+  - Lead boshqa sotuvchiga o'tsa, eski sotuvchi endi eshitmaydi (E9 a).
+  - Mijoz kartasidagi savolni mijozning sotuvchisi eshitadi (E6 c — sotuvchi qismi).
+  - @ bilan chaqirilgan kishi kartani ocholmasa ham Telegramdan javob bera oladi (E2 a), va bu suhbat uning «👥 Ichki» ro'yxatida turadi.
+  - Hisob-kitobni so'ragan sotuvchi doim eshitadi.
+- **Pastki panelda yangi «👥 Ichki» bo'limi** — siz qatnashgan barcha suhbatlar, o'qilmaganlari belgilangan.
+- **«Ichki yozishmalar» — profilda alohida o'chiriladigan guruh** (E8 a). Diqqat: avval «Ish jarayoni»ni o'chirib qo'ygan xodimlar endi hamkasblarining savollarini yana eshitadi — xohlasa, /profile da yangi «Ichki yozishmalar» belgisini olib tashlaydi.
+- **Ichki javob reklama lidi uchun «mijoz bilan bog'lanish» hisoblanmaydi** (E11 a).
+- Bilib qo'ying: matnni tizim tekshira olmaydi. VED savol-javobga tannarx yoki muhrlangan narxni yozsa, sotuvchilar uni o'qiydi — buning uchun maydon ostida ogohlantirish bor.
+
+### 2. Narx kanali (F)
+
+- **Har bir berilgan narx xodimlarning yopiq Telegram kanaliga tushadi** — muhrlangan hisob ham, «Готово» javobi ham (F6 a, «qo'lda berilgan» deb belgilanadi).
+- **Postda:** umumiy narx, tovar nomlari, kg/kub, bitta $/kg yoki $/kub (F2 a), so'rovni bergan sotuvchining ismi (F9 b) va hisoblagan VED. Sotuvchining tovar rasmlari (10 tagacha, F5 a).
+- **Postda mijoz hech qachon ko'rinmaydi** (F4 a): kodi, ismi, telefoni, GS-kodlar, havolalar va uzun raqamlar matndan olib tashlanadi. Rasmdagi yozuvni tizim ko'ra olmaydi — bu xavfni F5 a da tanlagansiz.
+- **Chegirma yoki tarif o'zgartirilgan hisob kanalga tushmaydi** (F3 a).
+- **Postni boshqa joyga uzatib (forward) bo'lmaydi** (F7 a).
+- **Kanalga faqat bot qabul qiladi** (F8 a): faol, botga ulangan xodim. Ishdan bo'shagan xodimni bot o'zi chiqaradi.
+- **Qayta hisoblansa,** eski post «🔄 qayta hisoblanmoqda — bu narx amal qilmaydi» bo'ladi, yangi narx unga javob bo'lib tushadi.
+- **Bitta narx ikki marta joylanmaydi.** Internet uzilib, post ketdimi-ketmadimi noma'lum bo'lsa, tizim o'zi qayta yubormaydi — panelda «yuborilgan bo'lishi mumkin» deydi va «Qayta yuborish» tugmasini beradi.
+- **Kanal ulanishidan oldingi narxlar joylanmaydi.**
+- **«Narxlar tarixi» sahifasida sotuvchi endi faqat O'Z mijozlariga bergan narxlarni ko'radi** (F1 a) — hamkasbning mijozga aytgan narxi uning upsale'i.
+- **Hisob-kitobdagi oldingi narx sanasi** endi o'sha hisob-kitobni yangi oynada ochadi (F10 a) — jadvaldagi saqlanmagan o'zgarishlar yo'qolmaydi.
+
+### O'rnatish (deploy)
+
+1. Zaxira oling (0 bayt emasligini tekshiring).
+2. `git pull`, keyin `docker compose build migrate`, keyin `docker compose --profile https --profile telegram up -d --build` (bot qayta ishga tushishi kerak — u endi kanal xabarlarini ham tinglaydi).
+3. **Migratsiyalar sonini sanang: 129 bo'lishi kerak.**
+4. `curl -s https://gsrwms.uz/api/version` — bugungi sana.
+5. **Telegramda YANGI YOPIQ kanal oching** (hech kim a'zo bo'lmasin, ochiq havola va muhokama guruhi bo'lmasin). Botni kanalga administrator qiling (xabar joylash, tahrirlash, havola orqali taklif, a'zolarni chiqarish huquqlari bilan). Buni o'zingiz qiling — siz botga ulangansiz va tizimda adminsiz.
+6. **Boshqaruv → «Narx kanali»** sahifasini oching: kanal ulangan va taklif havolasi chiqqan bo'lishi kerak. Bo'lmasa — «Qayta tekshirish»ni bosing yoki botni adminlikdan olib qayta qo'shing.
+7. **Faqat shu sahifadagi havolani** xodimlarga yuboring (kanalning eski havolasi bekor qilinadi). Har bir xodim avval botga ulangan bo'lishi kerak (/hodim).
+8. Keyingi muhrlangan hisob yoki «Готово» narxi kanalga tushadi — birinchisini o'zingiz ko'rib tekshiring.
+
 ## Telefonda rastamojka hisoblash va bitim kartasida VED — 2026-10-07
 
 **Migratsiya yo'q.** Migratsiyalar soni **127** bo'lib qoladi — bu safar o'rnatishni sanash emas, `/api/version` dagi sana tasdiqlaydi.

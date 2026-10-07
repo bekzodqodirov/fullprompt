@@ -20,6 +20,7 @@ import { cardLink } from '@/modules/platform/notifications/links';
 import { logger } from '@/modules/platform/logger';
 import { retireTaskCopiesSoon } from '@/modules/platform/notifications/retire-tasks';
 import { clipText } from '@/modules/platform/telegram/format';
+import { kickPriceChannel, queuePriceChannelPost } from './channel-queue';
 import { addActivity } from '../crm/service';
 import { productKey, tnvedFor } from '../tnved/service';
 import { NO_REQUEST, itemNameNorm, sealedMemoryFor } from './memory';
@@ -624,6 +625,11 @@ async function endRequest(
     // «Qaytarildi», and nothing was calculated (review integration-5).
     retireTaskCopiesSoon({ taskIds: [row.taskId], outcome: patch.via === 'returned' ? 'cancelled' : 'done' });
   }
+  // ONE line for the four doors that end a request (Готово, hand-back,
+  // «lines», a task close): when the request is a CORRECTION, its parent's
+  // channel post changes what it says, and the drain's reconcile derives how
+  // (his F; #531 — a guard on one door leaves the others open).
+  kickPriceChannel();
   return row;
 }
 
@@ -802,6 +808,12 @@ export async function finishCalcRequest(
     answerInternalNote: internalNote,
   });
   if (!row) throw new CalcError('already_closed');
+  // The price channel's claim (his F6 a: «Готово» answers too) — right after
+  // the job closed, before anything that can throw; its own catch, and the
+  // drain's net picks up a row this misses.
+  await queuePriceChannelPost({ kind: 'answer', requestId: id }).catch((err) =>
+    logger.error({ err, id }, '[price-channel] not queued'),
+  );
   const label = await requestLabel(row.entityType, row.entityId);
   // The seller's push goes BEFORE the bookkeeping (review ved-money-4): the
   // job is already closed with its price, so an audit write that throws

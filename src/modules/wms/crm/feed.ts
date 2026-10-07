@@ -178,6 +178,13 @@ export async function clientFeed(clientId: string | null, opts: FeedOptions): Pr
           -- answer «is this mine». NULL for a machine's note, which is
           -- nobody's and stays on the left.
           'authorId', a.created_by,
+          -- A staff thread's two marks (0127): the calculation this note is a
+          -- question or an answer about, and «it landed from Telegram». Read
+          -- through the row's json, never bare — the columns are not drizzle's
+          -- this release, and on a database one migration behind this reads
+          -- NULL where a bare name would take down the lenta of every card.
+          'calcRequestId', to_jsonb(a) ->> 'calc_request_id',
+          'viaTelegram', (to_jsonb(a) ->> 'tg_message_id') IS NOT NULL,
           'files', (
             SELECT coalesce(jsonb_agg(jsonb_build_object(
               'id', att.id, 'name', att.file_name, 'image', att.content_type LIKE 'image/%'

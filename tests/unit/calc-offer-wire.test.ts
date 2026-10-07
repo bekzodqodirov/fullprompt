@@ -127,7 +127,9 @@ describe('the panel that hosts it', () => {
   it('shows the price without a fold — it is what the card is opened for', () => {
     // `forceOpen` (2026-09-26) only ever ADDS an opening — «+ Yangi →
     // Hisoblatish» landing on the form — so the price's rule still reads here.
-    expect(PANEL).toContain('open={forceOpen || open.length > 0 || hasPrice || Boolean(last)}');
+    // …and an unanswered calc question (0127) does too: a handed-back job's
+    // fold must not hide inside a closed panel.
+    expect(PANEL).toContain('open={forceOpen || open.length > 0 || hasPrice || Boolean(last) || threadsUnread}');
   });
 
   it('gives an EXPIRED price words instead of a price box', () => {
