@@ -192,6 +192,7 @@ function Axis({ domain, median, medianLabel }: { domain: Domain; median: number 
       {showMid && median !== null ? (
         <span
           className="absolute top-0 whitespace-nowrap font-mono font-semibold tabular-nums text-ink-900"
+          data-axis="mid"
           style={{ left: `${mid.pct}%`, transform: `translateX(-${mid.pct}%)` }}
         >
           {medianLabel} {unitPrice(median)}
