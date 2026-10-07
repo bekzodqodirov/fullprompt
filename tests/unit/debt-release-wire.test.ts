@@ -45,9 +45,11 @@ describe('the counter screen asks why and posts it', () => {
     expect(hint).toBeLessThan(screen.indexOf('data-testid="confirm-issue"'));
     expect(between(screen, '{barHintShown && (', 'data-testid="issue-debt-hint"')).toContain('type="button"');
     expect(screen).toContain('onClick={goToDebt}');
-    // Unticked with nothing recorded to answer the press, or ticked with no reason yet.
+    // Unticked with nothing recorded to answer the DEBT (never the whole press —
+    // a price-only grey must not ask for a debt release), or ticked with no reason yet.
+    expect(screen).toContain('const debtCovered = covers({ debtUsd: blockingDebt, boxIds: [] });');
     expect(screen).toContain(
-      "debtTickShown && ((debtOk && debtNote.trim() === '') || (!debtOk && !pressCovered));",
+      "debtTickShown && ((debtOk && debtNote.trim() === '') || (!debtOk && !debtCovered));",
     );
     // Every line the bar grows by is paid for: the refusal, the hint, or both.
     expect(screen).toContain('const barLines = (error !== null ? 1 : 0) + (barHintShown ? 1 : 0);');

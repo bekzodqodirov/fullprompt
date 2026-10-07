@@ -406,11 +406,16 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
   // above «Topshirish», when it is the DEBT that keeps the button grey (the
   // review's DEBT-2): a tick holder who has scrolled past the banner sees a
   // grey button and a reason beside it, not a grey button alone. Shown when
-  // the drawn tick is unticked and no recorded approval answers the press,
-  // or ticked with no reason yet (the button waits for one whatever an
-  // approval covers).
+  // the drawn tick is unticked and no recorded approval answers the DEBT, or
+  // ticked with no reason yet (the button waits for one whatever an approval
+  // covers). The debt question alone, never the whole press: when an
+  // approval answers the debt and a newly gated carton is what keeps the
+  // button grey, a hint saying «tick the debt» would talk the person into a
+  // needless release (a stored reason and a «🔓» message) and leave the
+  // approval unspent — it is the PRICE they must answer (the review's verify).
+  const debtCovered = covers({ debtUsd: blockingDebt, boxIds: [] });
   const barHintShown =
-    debtTickShown && ((debtOk && debtNote.trim() === '') || (!debtOk && !pressCovered));
+    debtTickShown && ((debtOk && debtNote.trim() === '') || (!debtOk && !debtCovered));
   // Each line the bar grows by is paid for below the last lot, so the page's
   // end never hides under it: measured at 1280×900, the refusal AND the hint
   // together put the bar's top 17 px below where `pb-40` ends the last lot.
