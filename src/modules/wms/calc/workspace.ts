@@ -2806,7 +2806,9 @@ export function movedUnder(
       case 'volumeM3':
       case 'measureQty':
       case 'bazaUsd': {
-        if (value !== null && (typeof value !== 'number' || !Number.isFinite(value))) return true;
+        // A number off the wire, never a numeric string read as one (a NaN or
+        // an Infinity can equal no stored figure, so it reads as moved anyway).
+        if (value !== null && typeof value !== 'number') return true;
         const places = key === 'measureQty' || key === 'bazaUsd' ? 4 : 3;
         if (scaled(value, places) !== scaled(stored[key], places)) return true;
         break;

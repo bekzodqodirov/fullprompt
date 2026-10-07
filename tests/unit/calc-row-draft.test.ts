@@ -577,6 +577,7 @@ describe('movedUnder — the commit’s compare-and-set (review PHONE-2)', () =>
   });
   it('a crafted expectation refuses — it never waves a write through', () => {
     expect(movedUnder({ quantity: 'forty' as never }, stored)).toBe(true);
+    expect(movedUnder({ quantity: '40' as never }, stored)).toBe(true);
     expect(movedUnder({ quantity: Number.NaN }, stored)).toBe(true);
     expect(movedUnder({ owner: 'x' } as never, stored)).toBe(true);
   });
