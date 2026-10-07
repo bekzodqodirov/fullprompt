@@ -127,10 +127,10 @@ test('the quarter that answers is marked, the strip names the real declaration, 
 
   // C3: a tap NAMES the declaration and drafts nothing.
   await all.getByTestId('calc-import-pct-50').click();
+  await expect(page.getByTestId('calc-unsaved')).toHaveCount(0);
   const exemplar = page.getByTestId('calc-import-exemplar');
   await expect(exemplar).toContainText('Прочие изделия из пластмасс');
   await expect(exemplar).toContainText(/\d{4}-\d{2}-\d{2}/);
-  await expect(page.getByTestId('calc-unsaved')).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/baza-stats-1280.png` });
 
   // Only «Tanlash» does — through the list's own door.
