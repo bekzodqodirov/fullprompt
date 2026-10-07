@@ -1,4 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { createTranslator } from 'next-intl';
+import en from '../../messages/en.json';
+import ru from '../../messages/ru.json';
+import uz from '../../messages/uz.json';
+import zh from '../../messages/zh-CN.json';
 import {
   LADDER_LITERAL,
   LADDER_STEPS,
@@ -163,5 +168,21 @@ describe('the clipped tails, said in words', () => {
     // The big sample's own domain, with a min equal to p5: only the top end.
     expect(clippedSide(domainOf(big))).toBe('both');
     expect(clippedSide(domainOf({ ...big, min: bigLadder[4]! }))).toBe('high');
+  });
+});
+
+describe('the one-sided clip sentence renders in every language', () => {
+  // An ICU select that does not parse is a FORMATTING_ERROR at render time —
+  // existence of the key (i18n-keys.test.ts) cannot see it (#520's lesson).
+  it('says which end, and never the other one', () => {
+    for (const [locale, messages] of [['uz', uz], ['ru', ru], ['en', en], ['zh-CN', zh]] as const) {
+      const t = createTranslator({ locale, messages, namespace: 'calc' });
+      const low = t('statsClippedSide', { side: 'low' });
+      const high = t('statsClippedSide', { side: 'high' });
+      expect(low, locale).toContain('5 %');
+      expect(high, locale).toContain('5 %');
+      expect(low, locale).not.toBe(high);
+      expect(low, locale).not.toContain('{');
+    }
   });
 });
