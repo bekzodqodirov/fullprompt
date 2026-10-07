@@ -5,8 +5,10 @@ import {
   DEAL_WRITE_PERMISSIONS,
   canWriteDeal,
   dealBoardShape,
+  dealBoardWhose,
   mayEditDealTerms,
   type DealBoardShape,
+  type DealBoardWhose,
 } from '@/modules/wms/deals/door';
 import { mayOffer } from '@/modules/wms/calc/upsale-scope';
 import { entitySpec } from '@/modules/platform/fields/registry';
@@ -132,5 +134,57 @@ describe('the invariants', () => {
     // this pins them as SETS to the one home in deals/door.ts.
     expect(new Set(deal.writePermissions)).toEqual(new Set(DEAL_TERMS_PERMISSIONS));
     expect(new Set(deal.readPermissions)).toEqual(new Set(DEAL_WRITE_PERMISSIONS));
+  });
+});
+
+describe('whose work the board draws (the review’s DEAL17-2)', () => {
+  // A URL asking for everything at once: «Hammasi» AND a colleague.
+  const COLLEAGUE = '0f6b1d2e-3c4a-4b5c-8d6e-7f8091a2b3c4';
+  const asked = { scope: 'all', hodim: COLLEAGUE };
+  const OFF: DealBoardWhose = { seesAll: false, all: false, hodim: '' };
+  const ON: DealBoardWhose = { seesAll: true, all: true, hodim: COLLEAGUE };
+
+  const WHOSE: Record<RoleCode, DealBoardWhose> = {
+    // His slice is the work set: no «whose» to pick, nothing honoured.
+    ved_manager: OFF,
+    // A seller sees his own; a pasted «Hammasi» is ignored like `hodim`.
+    sales_manager: OFF,
+    logist: ON,
+    admin: ON,
+    super_admin: ON,
+    accountant: OFF,
+    warehouse_manager: OFF,
+    warehouse_operator: OFF,
+    viewer: OFF,
+  };
+
+  it('answers for every seeded role', () => {
+    for (const role of Object.keys(WHOSE) as RoleCode[]) {
+      expect(dealBoardWhose(actorFor(role).permissions, asked), role).toEqual(WHOSE[role]);
+    }
+    expect(Object.keys(WHOSE).sort()).toEqual(Object.keys(ROLE_MATRIX).sort());
+  });
+
+  it('the VED hat with view_all and no seller grant still gets his slice, not a picker', () => {
+    // Two roles, or one checkbox on /admin/roles: the board is the VED's
+    // (`dealBoardShape` says so) and view_all widens the FUNNEL only.
+    const both = grants(['ved.docs', 'crm.leads.view_all']);
+    expect(dealBoardShape(both.permissions)).toBe('ved');
+    expect(dealBoardWhose(both.permissions, asked)).toEqual(OFF);
+    const withBook = grants(['ved.docs', 'clients.view_own', 'crm.leads.view_all']);
+    expect(dealBoardWhose(withBook.permissions, asked)).toEqual(OFF);
+    // The moment he is a seller too, the funnel and its «whose» are his.
+    const seller = grants(['ved.docs', 'crm.leads', 'crm.leads.view_all']);
+    expect(dealBoardWhose(seller.permissions, asked)).toEqual(ON);
+  });
+
+  it('a view_all holder starts on his own, and a malformed colleague is dropped', () => {
+    const admin = actorFor('admin').permissions;
+    expect(dealBoardWhose(admin, {})).toEqual({ seesAll: true, all: false, hodim: '' });
+    expect(dealBoardWhose(admin, { scope: 'mine', hodim: 'not-a-uuid' })).toEqual({
+      seesAll: true,
+      all: false,
+      hodim: '',
+    });
   });
 });

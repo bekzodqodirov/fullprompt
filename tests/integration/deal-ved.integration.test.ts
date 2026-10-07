@@ -311,6 +311,57 @@ describe('G3 — the VED board is ONE sentence (#513)', () => {
   });
 });
 
+describe('the lenta filter on his board asks only the lentas he reads (15a, DEAL17-1)', () => {
+  const ids = {} as Record<'calc' | 'hidden' | 'own', string>;
+  const needle = `VL${S}`;
+  // One word in three places: a calc deal's lenta (his to read), a
+  // TNVED-less deal's lenta (not his — no calc request, so ClientFeed
+  // refuses him), and a TNVED-less deal's OWN note (the card prints it).
+  const word = `yashirin${S}`;
+
+  beforeAll(async () => {
+    const client = await mintClient('LF', P.s.id);
+    ids.calc = await mintDeal(client.id, `${needle}-K`, openStageId, ['8471600000']);
+    await mintClosedRequest(ids.calc);
+    ids.hidden = await mintDeal(client.id, `${needle}-H`, openStageId, [null]);
+    ids.own = await mintDeal(client.id, `${needle}-O`, openStageId, [null]);
+    await db.update(deals).set({ note: `bitim izohi ${word}` }).where(eq(deals.id, ids.own));
+    for (const id of [ids.calc, ids.hidden]) {
+      await db.insert(crmActivities).values({
+        entityType: 'deal',
+        entityId: id,
+        kind: 'note',
+        note: `lenta izohi ${word}`,
+        createdBy: P.s.id,
+      });
+    }
+  });
+
+  it('all three are on his board; the word finds only what his cards print', async () => {
+    // The premise: the hidden deal IS in his slice, and its lenta is not his.
+    const slice = await listDeals({ q: needle, vedWork: true, openOnly: true });
+    expect(new Set(slice.map((r) => r.id))).toEqual(new Set([ids.calc, ids.hidden, ids.own]));
+    expect(await mayOpenCalcCard(P.ved, { entityType: 'deal', entityId: ids.hidden })).toBe(false);
+    expect(await mayOpenCalcCard(P.ved, { entityType: 'deal', entityId: ids.calc })).toBe(true);
+
+    const filters = { q: needle, vedWork: true, lenta: word };
+    const rows = [
+      ...(await listDeals({ ...filters, openOnly: true })),
+      ...(await listDeals({ ...filters, closedOnly: true })),
+    ];
+    expect(new Set(rows.map((r) => r.id))).toEqual(new Set([ids.calc, ids.own]));
+    // The column totals are the same question — a count is the oracle.
+    expect(await openDealCounts(filters)).toEqual({ [openStageId]: 2 });
+    expect(await closedDealCounts(filters)).toEqual({});
+  });
+
+  it('a seller’s board, which reads every lenta, still finds all three', async () => {
+    const rows = await listDeals({ q: needle, lenta: word, openOnly: true });
+    expect(new Set(rows.map((r) => r.id))).toEqual(new Set([ids.calc, ids.hidden, ids.own]));
+    expect(await openDealCounts({ q: needle, lenta: word })).toEqual({ [openStageId]: 3 });
+  });
+});
+
 describe('the home row counts DEALS on the same sentence', () => {
   it('a deal with two uncoded positions adds ONE', async () => {
     const before = (await vedFlowCounts()).tnvedMissing;

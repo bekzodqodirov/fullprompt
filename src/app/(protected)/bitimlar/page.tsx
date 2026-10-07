@@ -26,7 +26,7 @@ import {
   listStages,
   openDealCounts,
 } from '@/modules/wms/deals/service';
-import { dealBoardShape } from '@/modules/wms/deals/door';
+import { dealBoardShape, dealBoardWhose } from '@/modules/wms/deals/door';
 import { activeLostReasonLabels } from '@/modules/wms/crm/service';
 import { DealBoard, type BoardDeal } from './board';
 
@@ -80,21 +80,22 @@ export default async function DealsPage({
   // already right and nothing rearranges itself after hydration.
   const cardFields = await readCardFields('deal');
 
-  const seesAll = actor.permissions.has('crm.leads.view_all');
+  // Whose work, asked ONCE (`dealBoardWhose`): the query below, the panel's
+  // whose-work block and the chips all read this answer, so a chip cannot
+  // name a filter the query dropped. The VED's board has no «whose» — his
+  // slice is the work set — and a `scope` / `hodim` from somebody who may not
+  // see everybody's jobs is ignored, not obeyed, the same rule the funnel,
+  // the search and the bot all ask.
+  const whose = dealBoardWhose(actor.permissions, params);
+  const { seesAll, hodim } = whose;
+  const scopeAll = whose.all;
   // Somebody who may see everything still starts on their own jobs; "all" is
   // one tap away and is what the owner uses.
-  const mine = !seesAll || params.scope !== 'all';
-  // A `hodim` from somebody who may not see everybody's jobs is ignored, not
-  // obeyed — the same rule the funnel, the search and the bot all ask.
-  // Format-checked, not just permission-checked: this lands in
-  // `eq(leads.ownerId, …)`, and a hand-typed non-uuid was a 22P02 500
-  // for a view_all holder rather than a dropped filter (#514).
-  const hodim =
-    seesAll && /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(params.hodim ?? '') ? params.hodim! : '';
+  const mine = !scopeAll;
   const scope = hodim || (mine ? actor.id : undefined);
   const q = (params.q ?? '').trim();
   const carried = {
-    ...(params.scope === 'all' ? { scope: 'all' } : {}),
+    ...(scopeAll ? { scope: 'all' } : {}),
     ...(q ? { q } : {}),
     ...(hodim ? { hodim } : {}),
     ...filters.raw,
@@ -204,7 +205,7 @@ export default async function DealsPage({
   // Every chip counts — the scope chip too, or the row renders unpaid and
   // eats 28px off the board's bottom (the geometry fence caught exactly this).
   const chipsOn =
-    params.scope === 'all' || Boolean(q) || Boolean(hodim) || Object.keys(filters.raw).length > 0;
+    scopeAll || Boolean(q) || Boolean(hodim) || Object.keys(filters.raw).length > 0;
 
   return (
     // The board's height is a viewport calculation, so anything added ABOVE it
@@ -235,7 +236,7 @@ export default async function DealsPage({
           q={q}
           label={tcommon('search')}
           carried={{
-            ...(params.scope === 'all' ? { scope: 'all' } : {}),
+            ...(scopeAll ? { scope: 'all' } : {}),
             ...(hodim ? { hodim } : {}),
             ...(archive ? { arxiv: '1' } : {}),
             ...filters.raw,
@@ -255,7 +256,7 @@ export default async function DealsPage({
         )}
         <BoardFilter
           q={q}
-          scope={params.scope === 'all' ? 'all' : ''}
+          scope={scopeAll ? 'all' : ''}
           hodim={hodim}
           people={managers.map((row) => ({ id: row.id, fullName: row.fullName }))}
           // The form REPLACES the URL (#171); arxiv is the one param that
@@ -313,7 +314,7 @@ export default async function DealsPage({
 
       <BoardChips
         q={q}
-        scope={params.scope === 'all' ? 'all' : ''}
+        scope={scopeAll ? 'all' : ''}
         hodim={hodim}
         hodimName={managers.find((row) => row.id === hodim)?.fullName ?? null}
         values={filters.raw}

@@ -23,7 +23,7 @@ import { logger } from '@/modules/platform/logger';
 import { bumpCounter } from '../codes';
 import { likeNeedle } from '../search/query';
 import { dealCargoLabel, type DealCargo } from './cargo-label';
-import { dealMissingTnvedSql, vedWorkSql } from './ved-work';
+import { dealCarriesCalcSql, dealMissingTnvedSql, vedWorkSql } from './ved-work';
 import { stampCalcLink } from '../calc/link';
 import { followCompensationDealTx } from '../finance/compensation-follow';
 import { revenueUsdSql } from '../finance/ledger-sql';
@@ -1375,13 +1375,21 @@ export function dealBoardWhere(filters: DealBoardFilters) {
   const lenta = filters.lenta?.trim();
   if (lenta) {
     const like = likeNeedle(lenta);
+    // On the VED's board the lenta half asks only the lentas he can READ: a
+    // calc deal's (15a — the calc card door's deal arm, `dealCarriesCalcSql`,
+    // is exactly what `ClientFeed` lets him open). His slice also holds open
+    // deals that merely lack a TNVED code, whose lenta is not his, and a
+    // filter over it would answer «does a hidden note contain this word» by
+    // the column's count. The deal's own note stays in for every deal: the
+    // card prints it to him (`DealFacts`).
+    const readable = filters.vedWork ? sql` AND ${dealCarriesCalcSql(sql`${deals}`)}` : sql``;
     // EXISTS, never a join — a card with three matching notes is one card.
     // Telegram messages stay out on purpose: they are per-manager (#383).
     conditions.push(
-      sql`(${deals.note} ILIKE ${like} OR EXISTS (
+      sql`(${deals.note} ILIKE ${like} OR (EXISTS (
         SELECT 1 FROM crm_activities a
         WHERE a.entity_type = 'deal' AND a.entity_id = ${deals.id} AND a.note ILIKE ${like}
-      ))`,
+      )${readable}))`,
     );
   }
   return conditions;

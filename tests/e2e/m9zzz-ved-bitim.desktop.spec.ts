@@ -1,5 +1,14 @@
 import { expect, test, type Page } from '@playwright/test';
-import { cleanup, cleanupEarlier, database, mint, newRun, type Minted } from './ved-bitim-fixture';
+import {
+  VIEW_ALL_PASSWORD,
+  cleanup,
+  cleanupEarlier,
+  database,
+  mint,
+  newRun,
+  viewAllPhone,
+  type Minted,
+} from './ved-bitim-fixture';
 
 /**
  * The VED's desktop board (G3 a, 2026-10-07): read-only by the ABSENCE of
@@ -22,11 +31,11 @@ const SHOTS = process.env.VED_BITIM_SHOTS ?? 'test-results';
 const run = newRun();
 let minted: Minted | null = null;
 
-async function login(page: Page, phone: string) {
+async function login(page: Page, phone: string, password = PASSWORD) {
   await page.context().clearCookies();
   await page.goto('/login');
   await page.locator('input[name="identifier"]').fill(phone);
-  await page.locator('input[name="password"]').fill(PASSWORD);
+  await page.locator('input[name="password"]').fill(password);
   await page.locator('main form button[type="submit"]').first().click();
   await expect(page).toHaveURL('/');
 }
@@ -83,6 +92,29 @@ test('the board draws no move door and says why, on one line', async ({ page }) 
   await page.goto(`/bitimlar?q=${run.marker}`);
   await expect(desktopBoard(page).getByTestId('deal-card').first()).toBeVisible();
   expect(Math.abs((await boardBottom(page)) - vedBottom)).toBeLessThanOrEqual(2);
+});
+
+test('the VED hat with view_all: the panel offers no «whose», no chip claims one', async ({ page }) => {
+  // DEAL17-2 at 1280 — the panel anchors under the toolbar here, so open it
+  // and look: search, dates and ranges, and no Meniki/Hammasi, no picker.
+  await login(page, viewAllPhone(run.marker), VIEW_ALL_PASSWORD);
+  await page.goto(`/bitimlar?q=${run.marker}&scope=all&hodim=${minted!.sellerId}`);
+  await expect(desktopBoard(page).getByTestId('deal-card')).toHaveCount(2);
+  await expect(page.getByTestId('bf-chip-q')).toBeVisible();
+  for (const id of ['bf-chip-scope', 'bf-chip-hodim', 'board-hodim']) {
+    await expect(page.getByTestId(id), id).toHaveCount(0);
+  }
+  await page.getByTestId('board-filters-toggle').click();
+  await expect(page.getByTestId('board-filters-panel')).toBeVisible();
+  await expect(page.getByTestId('bf-lenta')).toBeVisible();
+  await expect(page.locator('input[name="scope"]')).toHaveCount(0);
+  const width = await page.evaluate(() => ({
+    client: document.documentElement.clientWidth,
+    scroll: document.documentElement.scrollWidth,
+  }));
+  expect(width.client).toBe(1280);
+  expect(width.scroll).toBeLessThanOrEqual(width.client);
+  await page.screenshot({ path: `${SHOTS}/ved-bitim-whose-1280.png` });
 });
 
 test('a real mouse drag moves nothing and asks the server nothing', async ({ page }) => {

@@ -1,4 +1,5 @@
 import postgres from 'postgres';
+import { hashPassword } from '@/modules/platform/auth/password';
 
 /**
  * What «m9zzz-ved-bitim» mints and gives back, in one place so the mint and
@@ -14,7 +15,24 @@ import postgres from 'postgres';
  * plus a confirmed prixod `VB…-R` at YW for the client, on no deal, so the
  * card offers it to link (G1). Never the demo GS777: a deal or a link on it
  * would be configuration every later spec reads (#183).
+ *
+ * And, for the review's DEAL17-1/2 (2026-10-07):
+ *   - a lenta note on B carrying `hiddenWord` — B has no calc request, so its
+ *     lenta is not the VED's to read and his board's lenta filter must not
+ *     answer for it;
+ *   - a person of the spec's own, `VB viewall <marker>`: the demo VED's role
+ *     PLUS a run-scoped role holding `crm.leads.view_all` alone — the VED hat
+ *     with view_all and no seller grant, which no seeded role is. The role is
+ *     CONFIGURATION while it exists (#183), so the cleanup deletes it (m9d's
+ *     precedent) and DEACTIVATES the person (his login is audited); a later
+ *     run with the same digits re-uses the row by phone.
  */
+
+/** The run-scoped person's own password — not the demo one. */
+export const VIEW_ALL_PASSWORD = 'vedviewall1234';
+export const viewAllPhone = (marker: string) => `+998938${marker.slice(2)}`;
+export const viewAllRole = (marker: string) => `vb_viewall_${marker.slice(2)}`;
+export const hiddenWord = (marker: string) => `yashirin${marker.slice(2)}`;
 
 export function database() {
   const url = process.env.DATABASE_URL;
@@ -33,6 +51,8 @@ export interface Minted {
   dealC: string;
   receiptId: string;
   lineB: string;
+  /** The demo seller — the colleague a forged `hodim` names. */
+  sellerId: string;
 }
 
 export function newRun(): Run {
@@ -40,6 +60,7 @@ export function newRun(): Run {
 }
 
 export async function mint(sql: postgres.Sql, run: Run): Promise<Minted> {
+  const passwordHash = await hashPassword(VIEW_ALL_PASSWORD);
   return sql.begin(async (tx) => {
     const [owner] = await tx<{ id: string }[]>`SELECT id FROM users WHERE phone = '+998900000001'`;
     const [seller] = await tx<{ id: string }[]>`SELECT id FROM users WHERE phone = '+998900000009'`;
@@ -72,6 +93,25 @@ export async function mint(sql: postgres.Sql, run: Run): Promise<Minted> {
     await line(dealA, `Sichqoncha ${run.marker}`, '8471607000');
     const lineB = await line(dealB, `Klaviatura ${run.marker}`, null);
     await line(dealC, `Kabel ${run.marker}`, '8544429007');
+    await tx`
+      INSERT INTO crm_activities (id, entity_type, entity_id, kind, note, created_by)
+      VALUES (gen_random_uuid(), 'deal', ${dealB}, 'note', ${`lenta izohi ${hiddenWord(run.marker)}`}, ${seller.id})`;
+    const [ved] = await tx<{ id: string }[]>`SELECT id FROM roles WHERE code = 'ved_manager'`;
+    const [viewAll] = await tx<{ id: string }[]>`SELECT id FROM permissions WHERE code = 'crm.leads.view_all'`;
+    if (!ved || !viewAll) throw new Error('the demo has no ved_manager role or no crm.leads.view_all');
+    const [role] = await tx<{ id: string }[]>`
+      INSERT INTO roles (id, code, name, is_system, grants_customised)
+      VALUES (gen_random_uuid(), ${viewAllRole(run.marker)}, ${`VB viewall ${run.marker}`}, false, true)
+      RETURNING id`;
+    await tx`INSERT INTO role_permissions (role_id, permission_id, source) VALUES (${role!.id}, ${viewAll.id}, 'admin')`;
+    const [person] = await tx<{ id: string }[]>`
+      INSERT INTO users (id, phone, full_name, password_hash, locale, active)
+      VALUES (gen_random_uuid(), ${viewAllPhone(run.marker)}, ${`VB viewall ${run.marker}`}, ${passwordHash}, 'uz', true)
+      ON CONFLICT (phone) DO UPDATE
+        SET active = true, password_hash = EXCLUDED.password_hash, full_name = EXCLUDED.full_name
+      RETURNING id`;
+    await tx`DELETE FROM user_roles WHERE user_id = ${person!.id}`;
+    await tx`INSERT INTO user_roles (user_id, role_id) VALUES (${person!.id}, ${ved.id}), (${person!.id}, ${role!.id})`;
     // Finished, so it never sits in the company queue or on a VED's day.
     await tx`
       INSERT INTO calc_requests (id, entity_type, entity_id, requested_by, item_count, due_at, completed_at, completed_via)
@@ -90,7 +130,7 @@ export async function mint(sql: postgres.Sql, run: Run): Promise<Minted> {
       INSERT INTO boxes (id, lot_id, short_code, seq_in_lot, status, current_warehouse_id)
       SELECT gen_random_uuid(), ${lot!.id}, ${run.marker} || '-' || n, n, 'in_stock', ${yw.id}
         FROM generate_series(1, 2) AS n`;
-    return { clientId: client!.id, dealA, dealB, dealC, receiptId: receipt!.id, lineB };
+    return { clientId: client!.id, dealA, dealB, dealC, receiptId: receipt!.id, lineB, sellerId: seller.id };
   });
 }
 
@@ -99,6 +139,10 @@ export async function cleanupEarlier(sql: postgres.Sql): Promise<void> {
   const earlier = await sql<{ client_code: string }[]>`
     SELECT client_code FROM clients WHERE name ~ '^VED bitim VB[0-9]{6}$' AND client_code ~ '^VB[0-9]{6}$'`;
   for (const row of earlier) await cleanup(sql, { marker: row.client_code });
+  // A run-scoped role that outlived its client (a run that died between the
+  // two) is configuration on /admin/roles for every later spec.
+  await sql`DELETE FROM roles WHERE code ~ '^vb_viewall_[0-9]{6}$' AND NOT is_system`;
+  await sql`UPDATE users SET active = false WHERE full_name ~ '^VB viewall VB[0-9]{6}$' AND active`;
 }
 
 /**
@@ -142,11 +186,16 @@ export async function cleanup(sql: postgres.Sql, run: Run): Promise<number> {
       await tx`DELETE FROM deals WHERE id IN ${tx(dealIds)}`;
     }
     await tx`DELETE FROM clients WHERE client_code = ${run.marker}`;
+    // The role's grants and memberships go with it (ON DELETE CASCADE).
+    await tx`DELETE FROM roles WHERE code = ${viewAllRole(run.marker)} AND NOT is_system`;
+    await tx`UPDATE users SET active = false WHERE phone = ${viewAllPhone(run.marker)}`;
   });
   const [left] = await sql<{ n: number }[]>`
     SELECT (SELECT count(*)::int FROM receipts WHERE source_note = ${run.marker})
          + (SELECT count(*)::int FROM clients WHERE client_code = ${run.marker})
          + (SELECT count(*)::int FROM deals WHERE code LIKE ${`${run.marker}-%`})
-         + (SELECT count(*)::int FROM boxes WHERE short_code LIKE ${`${run.marker}-%`}) AS n`;
+         + (SELECT count(*)::int FROM boxes WHERE short_code LIKE ${`${run.marker}-%`})
+         + (SELECT count(*)::int FROM roles WHERE code = ${viewAllRole(run.marker)})
+         + (SELECT count(*)::int FROM users WHERE phone = ${viewAllPhone(run.marker)} AND active) AS n`;
   return left!.n;
 }

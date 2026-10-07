@@ -21,6 +21,7 @@ const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[
 const ACTIONS = code(read('src/app/(protected)/bitimlar/actions.ts'));
 const CALC_ACTIONS = code(read('src/app/(protected)/hisoblash/actions.ts'));
 const PAGE_PATH = 'src/app/(protected)/bitimlar/[id]/page.tsx';
+const BOARD_PAGE_PATH = 'src/app/(protected)/bitimlar/page.tsx';
 
 /** The body of `function name(` up to the next top-level closing brace. */
 function bodyOf(src: string, name: string): string {
@@ -146,6 +147,38 @@ describe('the read-only board', () => {
     const kanban = code(read('src/components/kanban.tsx'));
     expect(kanban).toMatch(/onMove\?: \(/);
     expect(kanban).toContain('const ticks = onMove ? selection : undefined');
+  });
+
+  it('whose work the board draws is asked once, and the panel and the chips read that answer', () => {
+    // DEAL17-2: a VED holding view_all was drawn a picker and a «👤 X» chip
+    // over a slice that ignores both. The rule is behavioural in
+    // deal-door.test.ts; this pins that the page ASKS it — and asks nothing
+    // of the URL or the grant on its own beside it.
+    const board = code(read(BOARD_PAGE_PATH));
+    expect(board).toContain('dealBoardWhose(actor.permissions, params)');
+    expect(board).not.toContain('params.scope');
+    expect(board).not.toContain('params.hodim');
+    expect(board).not.toContain('crm.leads.view_all');
+    const parsed = ts.createSourceFile(
+      BOARD_PAGE_PATH,
+      read(BOARD_PAGE_PATH),
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX,
+    );
+    const scopes: string[] = [];
+    const walk = (node: ts.Node) => {
+      const name = tagName(node);
+      if (name === 'BoardFilter' || name === 'BoardChips') {
+        scopes.push(`${name} ${attr(node, 'scope')?.initializer?.getText() ?? '∅'}`);
+      }
+      ts.forEachChild(node, walk);
+    };
+    walk(parsed);
+    expect(scopes.sort()).toEqual([
+      "BoardChips {scopeAll ? 'all' : ''}",
+      "BoardFilter {scopeAll ? 'all' : ''}",
+    ]);
   });
 });
 

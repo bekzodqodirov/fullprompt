@@ -1,5 +1,15 @@
 import { expect, test, type Page } from '@playwright/test';
-import { cleanup, cleanupEarlier, database, mint, newRun, type Minted } from './ved-bitim-fixture';
+import {
+  VIEW_ALL_PASSWORD,
+  cleanup,
+  cleanupEarlier,
+  database,
+  hiddenWord,
+  mint,
+  newRun,
+  viewAllPhone,
+  type Minted,
+} from './ved-bitim-fixture';
 
 /**
  * The VED on the deal card, in a real browser — the owner's 17a with G1-G4 a
@@ -25,11 +35,11 @@ const SHOTS = process.env.VED_BITIM_SHOTS ?? 'test-results';
 const run = newRun();
 let minted: Minted | null = null;
 
-async function login(page: Page, phone: string) {
+async function login(page: Page, phone: string, password = PASSWORD) {
   await page.context().clearCookies();
   await page.goto('/login');
   await page.locator('input[name="identifier"]').fill(phone);
-  await page.locator('input[name="password"]').fill(PASSWORD);
+  await page.locator('input[name="password"]').fill(password);
   await page.locator('main form button[type="submit"]').first().click();
   await expect(page).toHaveURL('/');
 }
@@ -73,6 +83,49 @@ test('the VED’s board is his work set, read-only (G3 a)', async ({ page }) => 
   const scroll = await page.evaluate(() => document.documentElement.scrollWidth);
   expect(scroll).toBeLessThanOrEqual(360);
   await page.screenshot({ path: `${SHOTS}/ved-bitim-board-360.png`, fullPage: true });
+});
+
+test('his slice has no «whose», and its lenta filter reads only lentas he can open', async ({ page }) => {
+  // DEAL17-2: the VED hat with view_all and no seller grant (the fixture's
+  // own person). A URL asking for «Hammasi» AND a colleague is a forged post
+  // on his board: the slice ignores both, so nothing may claim them.
+  await login(page, viewAllPhone(run.marker), VIEW_ALL_PASSWORD);
+  await page.goto(`/bitimlar?q=${run.marker}&scope=all&hodim=${minted!.sellerId}`);
+  const board = phoneBoard(page);
+  await expect(board.getByTestId('deal-card')).toHaveCount(2);
+  // The chips row IS drawn — the search chip — so the absences are not vacuous.
+  await expect(page.getByTestId('bf-chip-q')).toBeVisible();
+  for (const id of ['bf-chip-scope', 'bf-chip-hodim', 'board-hodim']) {
+    await expect(page.getByTestId(id), id).toHaveCount(0);
+  }
+  // Nor the Meniki/Hammasi radios (they sit in the closed panel's DOM).
+  await expect(page.locator('input[name="scope"]')).toHaveCount(0);
+  const { client, scroll } = await page.evaluate(() => ({
+    client: document.documentElement.clientWidth,
+    scroll: document.documentElement.scrollWidth,
+  }));
+  expect(client).toBe(360);
+  expect(scroll).toBeLessThanOrEqual(client);
+  await page.screenshot({ path: `${SHOTS}/ved-bitim-whose-360.png`, fullPage: true });
+  // The sheet itself: search, dates, ranges, lenta — and no «whose» block.
+  await page.getByTestId('board-filters-toggle').click();
+  await expect(page.getByTestId('bf-apply')).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/ved-bitim-whose-sheet-360.png` });
+
+  // DEAL17-1: B's lenta carries the word, and B has no calc request — its
+  // lenta is not his (15a), so his board's lenta filter answers nothing.
+  const sql = database();
+  try {
+    const [premise] = await sql<{ n: number }[]>`
+      SELECT count(*)::int AS n FROM crm_activities
+       WHERE entity_type = 'deal' AND entity_id = ${minted!.dealB} AND note LIKE ${`%${hiddenWord(run.marker)}%`}`;
+    expect(premise!.n).toBe(1);
+  } finally {
+    await sql.end();
+  }
+  await page.goto(`/bitimlar?q=${run.marker}&lenta=${hiddenWord(run.marker)}`);
+  await expect(page.getByTestId('bf-chip-lenta')).toBeVisible();
+  await expect(board.getByTestId('deal-card')).toHaveCount(0);
 });
 
 test('⌘K finds the same slice his board draws — before he codes B off it', async ({ page }) => {
@@ -188,6 +241,11 @@ test('a coded B leaves his board — the slice is the work, not a list of names'
   await login(page, VED);
   await page.goto(`/bitimlar?q=${run.marker}`);
   const board = phoneBoard(page);
+  await expect(board.getByTestId('deal-card')).toHaveCount(1);
+  await expect(board.getByTestId('deal-card').filter({ hasText: `${run.marker}-A` })).toHaveCount(1);
+  // The lenta filter still works where the lenta IS his: A is a calc deal and
+  // carries the note he wrote on it a test ago.
+  await page.goto(`/bitimlar?q=${run.marker}&lenta=${encodeURIComponent(`VED savoli ${run.marker}`)}`);
   await expect(board.getByTestId('deal-card')).toHaveCount(1);
   await expect(board.getByTestId('deal-card').filter({ hasText: `${run.marker}-A` })).toHaveCount(1);
 });
