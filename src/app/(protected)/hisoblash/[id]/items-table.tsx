@@ -1664,22 +1664,26 @@ export function ItemsTable({
                   : t('ambiguous.number', { a: tableError.decimalText ?? '', b: tableError.thousandsText ?? '' })}
               </span>
               <span className="text-2xs text-ink-600">{t('ambiguous.hint')}</span>
-              <button
-                type="button"
-                className="btn-secondary !min-h-8 font-mono"
-                data-testid="calc-ambiguous-decimal"
-                onClick={() => resolveAmbiguous(tableError, tableError.decimalText ?? '')}
-              >
-                {tableError.decimalText}
-              </button>
-              <button
-                type="button"
-                className="btn-secondary !min-h-8 font-mono"
-                data-testid="calc-ambiguous-thousands"
-                onClick={() => resolveAmbiguous(tableError, tableError.thousandsText ?? '')}
-              >
-                {tableError.thousandsText}
-              </button>
+              {/* The two answers wrap TOGETHER: one alone on a line reads as
+                  a third thing on the strip rather than the other choice. */}
+              <span className="flex gap-2">
+                <button
+                  type="button"
+                  className="btn-secondary !min-h-8 font-mono"
+                  data-testid="calc-ambiguous-decimal"
+                  onClick={() => resolveAmbiguous(tableError, tableError.decimalText ?? '')}
+                >
+                  {tableError.decimalText}
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary !min-h-8 font-mono"
+                  data-testid="calc-ambiguous-thousands"
+                  onClick={() => resolveAmbiguous(tableError, tableError.thousandsText ?? '')}
+                >
+                  {tableError.thousandsText}
+                </button>
+              </span>
             </div>
           </div>
         ) : (
