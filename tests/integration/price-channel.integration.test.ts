@@ -53,13 +53,16 @@ import { channelPanel } from '@/modules/wms/calc/channel-panel';
  * One seam: a post build that throws (a database blip between the claim and
  * the send), switched on by a test. Everything else is the real module.
  */
-const seam = vi.hoisted(() => ({ buildThrows: false }));
+const seam = vi.hoisted(() => ({ buildThrows: false, beforeThrow: null as null | (() => Promise<void>) }));
 vi.mock('@/modules/wms/calc/channel-queue', async (importOriginal) => {
   const real = await importOriginal<typeof import('@/modules/wms/calc/channel-queue')>();
   return {
     ...real,
     buildChannelPostView: async (...args: Parameters<typeof real.buildChannelPostView>) => {
-      if (seam.buildThrows) throw new Error('Connection terminated unexpectedly');
+      if (seam.buildThrows) {
+        if (seam.beforeThrow) await seam.beforeThrow();
+        throw new Error('Connection terminated unexpectedly');
+      }
       return real.buildChannelPostView(...args);
     },
   };
@@ -257,6 +260,7 @@ beforeAll(async () => {
 afterEach(async () => {
   override = () => undefined;
   seam.buildThrows = false;
+  seam.beforeThrow = null;
   calls = [];
   // Nothing this file queued may wait for the NEXT test's drain.
   if (madeRequests.length > 0) {
@@ -942,6 +946,21 @@ describe('I12 — the drain never posts what it no longer holds (review fixes)',
     await drain();
     row = await postFor(a.requestId);
     expect(row).toMatchObject({ status: 'failed', lastError: 'prepare_failed' });
+  });
+
+  it('a run that lost the row before its throw releases nothing — a «may have been sent» is never turned back into a retry', async () => {
+    const a = await sealedRequest();
+    seam.buildThrows = true;
+    // Meanwhile the stuck step (or another run) took the row away from this one.
+    seam.beforeThrow = async () => {
+      await db
+        .update(priceChannelPosts)
+        .set({ status: 'failed', lastError: 'stuck_sending' })
+        .where(eq(priceChannelPosts.requestId, a.requestId));
+    };
+    await drain();
+    expect(await postFor(a.requestId)).toMatchObject({ status: 'failed', lastError: 'stuck_sending' });
+    expect(channelSends()).toHaveLength(0);
   });
 
   it('«Qayta yuborish» on a failure older than a day posts it — the clock restarts at the press', async () => {
