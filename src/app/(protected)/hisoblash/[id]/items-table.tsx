@@ -24,7 +24,8 @@ import {
 } from '@/modules/wms/calc/basis';
 import { editBazaPair } from '@/modules/wms/calc/baza-draft';
 import { pasteIdsFor } from '@/modules/wms/calc/paste-ids';
-import { screenRowOf, groupsByCodeOf } from '@/modules/wms/calc/screen-row';
+import { basisNotLaw } from '@/modules/wms/calc/warnings';
+import { screenRowOf, groupsByCodeOf, postedBasis } from '@/modules/wms/calc/screen-row';
 import { parseGoods, type Cell } from '@/modules/wms/deals/goods-import';
 import {
   confirmAllAction,
@@ -233,9 +234,6 @@ export function ItemsTable({
     return () => window.removeEventListener('beforeunload', guard);
   }, [dirtyCount]);
 
-  const groupOfItem = (item: WorkspaceItem): WorkspaceGroup | null =>
-    item.groupId ? (groupById.get(item.groupId) ?? null) : null;
-
   /** What the cell SHOWS when nothing is drafted — the self-clean compares
    * against this, never a bare default (#171). `draft` is the row's current
    * draft, because the unit and the measure the screen shows depend on a
@@ -418,6 +416,18 @@ export function ItemsTable({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspace, drafts]);
 
+  /** A1's chip over the same LIVE rows the footer's baza reads — the
+   * server's verdict is about the stored rows, a moment the footer no
+   * longer shows while anything is drafted (review units-r2-2). */
+  const liveBasisNotLawByGroup = useMemo(() => {
+    const out = new Map<string, boolean>();
+    for (const g of workspace.groups) {
+      out.set(g.id, basisNotLaw(g.dutyUnit, g.items.map((i) => liveItem(i))));
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspace, drafts]);
+
   /** The bar's total — the SAME request-grain assembly the server runs, over
    * the live blocks. No partial sums: while any block or the fee refuses,
    * the bar shows the blocked state, never a smaller number. */
@@ -497,15 +507,8 @@ export function ItemsTable({
         // TOUCHED is posted with or without a price — on an unpriced row it
         // used to evaporate on Saqlash. An untouched one posts what is
         // stored (it stands), or null = «avto», which the server stamps from
-        // the block the row ENDS in. Clearing the price keeps the stored unit
-        // only when it was a choice — it differs from its block's default —
-        // so an auto default never turns into a sticky «choice» that a later
-        // recode would no longer follow.
-        if (d.bazaBasis !== undefined) edit.bazaBasis = d.bazaBasis;
-        else if (v === null) {
-          const stored = item.bazaBasis;
-          edit.bazaBasis = stored !== null && stored !== defaultBasisFor(groupOfItem(item)) ? stored : null;
-        } else edit.bazaBasis = item.bazaBasis;
+        // the block the row ENDS in. Clearing the price: `postedBasis`.
+        edit.bazaBasis = postedBasis(d.bazaBasis, v === null, item);
         // The picked row's id — the server re-reads it and takes the PRICE
         // from the file, so a browser that lies about the number is answered
         // by the declaration itself.
@@ -908,6 +911,7 @@ export function ItemsTable({
                     }
                     liveCustoms={row.group ? (liveCustomsByGroup.get(row.group.id) ?? null) : null}
                     liveBaza={row.group ? (liveBazaByGroup.get(row.group.id) ?? null) : null}
+                    liveBasisNotLaw={row.group ? (liveBasisNotLawByGroup.get(row.group.id) ?? false) : false}
                     drafts={drafts[row.item.id]}
                     groupById={groupById}
                     groupsByCode={groupsByCode}
@@ -1159,6 +1163,7 @@ const ItemRowBlock = memo(function ItemRowBlock({
   endsGroup,
   liveCustoms,
   liveBaza,
+  liveBasisNotLaw,
   drafts,
   groupById,
   groupsByCode,
@@ -1178,6 +1183,7 @@ const ItemRowBlock = memo(function ItemRowBlock({
   endsGroup: boolean;
   liveCustoms: CustomsResult | null;
   liveBaza: { bazaUsd: number; bazaBasis: BazaBasis } | null;
+  liveBasisNotLaw: boolean;
   drafts: ItemDraft | undefined;
   groupById: Map<string, WorkspaceGroup>;
   groupsByCode: Map<string, WorkspaceGroup>;
@@ -1408,6 +1414,7 @@ const ItemRowBlock = memo(function ItemRowBlock({
           group={row.group}
           liveCustoms={liveCustoms}
           liveBaza={liveBaza}
+          liveBasisNotLaw={liveBasisNotLaw}
           busy={busy}
           dirty={dirty}
           act={act}
@@ -1430,6 +1437,7 @@ function BlockFooter({
   group,
   liveCustoms,
   liveBaza,
+  liveBasisNotLaw,
   busy,
   dirty,
   act,
@@ -1438,6 +1446,7 @@ function BlockFooter({
   group: WorkspaceGroup;
   liveCustoms: CustomsResult | null;
   liveBaza: { bazaUsd: number; bazaBasis: BazaBasis } | null;
+  liveBasisNotLaw: boolean;
   busy: boolean;
   dirty: boolean;
   act: (work: () => Promise<CalcFormState>) => void;
@@ -1502,7 +1511,7 @@ function BlockFooter({
               the one the law counts in. Allowed — the baza is the row's own
               question — but VISIBLE, and the ✅ records it; silent on an
               advalor code, which pins no unit at all. */}
-          {group.warnings.includes('basis_not_law') && group.dutyUnit ? (
+          {liveBasisNotLaw && group.dutyUnit ? (
             <span className="ml-1 chip chip-warn" data-testid="calc-basis-not-law">
               ⚠ {t('table.basisNotLaw', { unit: basisLabel(defaultBasisFor(group), t('perUnit')) })}
             </span>

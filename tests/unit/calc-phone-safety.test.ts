@@ -54,16 +54,25 @@ describe('ONE chain for the unit on screen (#886, #171)', () => {
     expect(TABLE).not.toMatch(/\['unit', 'kg'/);
   });
 
-  it('the row, the live engine item, the save and the self-clean all ask screenRow', () => {
-    const uses = TABLE.match(/screenRow\(item, /g) ?? [];
+  it('the row, the live engine item, the save and the self-clean all ask screenRowOf', () => {
+    const uses = TABLE.match(/screenRowOf\(item, /g) ?? [];
     // serverValueOf (measure + basis), liveItem, save(), ItemRowBlock.
     expect(uses.length).toBeGreaterThanOrEqual(5);
     const live = TABLE.slice(TABLE.indexOf('const liveItem'), TABLE.indexOf('const liveCustomsByGroup'));
-    expect(live).toContain('screenRow(item');
+    expect(live).toContain('screenRowOf(item');
     expect(live).toContain('volumeM3: numOf(d?.volumeM3');
     const save = TABLE.slice(TABLE.indexOf('const save = async'), TABLE.indexOf('const onCellKey'));
-    expect(save).toContain('screenRow(item, d,');
-    // An untouched unit posts what is stored, or null = «avto».
-    expect(save).toContain('if (d.bazaBasis !== undefined) edit.bazaBasis = d.bazaBasis;');
+    expect(save).toContain('screenRowOf(item, d,');
+    // The unit a baza edit posts is ONE rule (screen-row.ts), unit-tested in
+    // calc-screen-row.test.ts — a touched unit, a cleared price, a stored one.
+    expect(save).toContain('edit.bazaBasis = postedBasis(d.bazaBasis, v === null, item);');
+  });
+
+  it('the desktop footer’s A1 chip reads the LIVE rows its baza reads (review units-r2-2)', () => {
+    const memo = TABLE.slice(TABLE.indexOf('const liveBasisNotLawByGroup'), TABLE.indexOf('const liveTotals'));
+    expect(memo).toContain('basisNotLaw(g.dutyUnit, g.items.map((i) => liveItem(i)))');
+    const footer = TABLE.slice(TABLE.indexOf('function BlockFooter'));
+    expect(footer).toContain('{liveBasisNotLaw && group.dutyUnit ? (');
+    expect(footer).not.toContain("group.warnings.includes('basis_not_law')");
   });
 });

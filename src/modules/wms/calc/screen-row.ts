@@ -84,3 +84,26 @@ export function groupsByCodeOf<G extends ScreenGroup>(groups: G[]): Map<string, 
   }
   return out;
 }
+
+/**
+ * The unit a baza edit POSTS (0125's four states, workspace.ts
+ * `TableItemEdit`). A unit the VED touched is posted with or without a price;
+ * an untouched one posts what is stored — it stands, or null = «avto», which
+ * the server stamps from the block the row ENDS in.
+ *
+ * Clearing the price keeps the stored unit only when it is KNOWN to be a
+ * choice: on a row with no price, a stored unit was always picked by a
+ * person. A priced row's unit may be the server's stamp, a fill's, or a
+ * pre-0125 «шт» on a juft code — «differs from today's default» is not
+ * «chosen», and posting it made every fill and the 📥 picker narrow to a unit
+ * nobody picked (review units-r2-1). It goes back to «avto» with the price.
+ */
+export function postedBasis(
+  draft: BazaBasis | undefined,
+  priceCleared: boolean,
+  stored: { bazaUsd: number | null; bazaBasis: BazaBasis | null },
+): BazaBasis | null {
+  if (draft !== undefined) return draft;
+  if (priceCleared) return stored.bazaUsd === null ? stored.bazaBasis : null;
+  return stored.bazaBasis;
+}

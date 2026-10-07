@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { groupsByCodeOf, screenRowOf } from '@/modules/wms/calc/screen-row';
+import { groupsByCodeOf, postedBasis, screenRowOf } from '@/modules/wms/calc/screen-row';
+import { basisNotLaw } from '@/modules/wms/calc/warnings';
 import { pasteIdsFor } from '@/modules/wms/calc/paste-ids';
 
 /**
@@ -72,5 +73,37 @@ describe('pasteIdsFor — a retried paste posts the ids its first press used (re
     const fresh = pasteIdsFor({ keys: [], ids: [] }, ['p', 'q'], mint);
     expect(new Set(fresh).size).toBe(2);
     expect(fresh.every((v) => typeof v === 'string' && v.startsWith('new-'))).toBe(true);
+  });
+});
+
+describe('postedBasis — clearing a price never invents a choice (review units-r2-1)', () => {
+  it('a priced row cleared with the select untouched goes back to «avto» — whatever its unit was', () => {
+    // A pre-0125 «шт» on a juft code, and a kg fill on an advalor code: both
+    // differ from today's default and neither was picked by anyone.
+    expect(postedBasis(undefined, true, { bazaUsd: 3, bazaBasis: 'unit' })).toBeNull();
+    expect(postedBasis(undefined, true, { bazaUsd: 2, bazaBasis: 'kg' })).toBeNull();
+  });
+
+  it('a unit chosen on an unpriced row survives a price typed and cleared again', () => {
+    expect(postedBasis(undefined, true, { bazaUsd: null, bazaBasis: 'm3' })).toBe('m3');
+  });
+
+  it('a touched select always wins, and an untouched one keeps what is stored', () => {
+    expect(postedBasis('litr', true, { bazaUsd: 3, bazaBasis: 'unit' })).toBe('litr');
+    expect(postedBasis(undefined, false, { bazaUsd: 3, bazaBasis: 'unit' })).toBe('unit');
+    expect(postedBasis(undefined, false, { bazaUsd: 3, bazaBasis: null })).toBeNull();
+  });
+});
+
+describe('basisNotLaw — the footer asks the server’s own sentence over the LIVE rows (review units-r2-2)', () => {
+  it('a row re-picked to the law’s unit is no longer flagged; one re-picked away from it is', () => {
+    expect(basisNotLaw('litr', [{ bazaUsd: 1, bazaBasis: 'litr' }])).toBe(false);
+    expect(basisNotLaw('juft', [{ bazaUsd: 4, bazaBasis: 'kg' }])).toBe(true);
+  });
+
+  it('an unpriced row and a law that pins no unit are silent', () => {
+    expect(basisNotLaw('juft', [{ bazaUsd: null, bazaBasis: 'kg' }])).toBe(false);
+    expect(basisNotLaw(null, [{ bazaUsd: 4, bazaBasis: 'kg' }])).toBe(false);
+    expect(basisNotLaw('dona', [{ bazaUsd: 4, bazaBasis: 'kg' }])).toBe(false);
   });
 });

@@ -88,6 +88,20 @@ export function lawPinnedBasis(dutyUnit: string | null): 'kg' | 'm2' | 'juft' | 
 }
 
 /**
+ * A1's one sentence, asked by the server's warning list AND by the browser's
+ * block footer over the LIVE rows — the footer drew the server's verdict on
+ * the stored rows beside a baza built from the drafts, and warned about the
+ * very unit it was showing until Saqlash (review units-r2-2).
+ */
+export function basisNotLaw(
+  dutyUnit: string | null,
+  items: readonly { bazaUsd: number | null; bazaBasis: string | null }[],
+): boolean {
+  const pinned = lawPinnedBasis(dutyUnit);
+  return pinned !== null && items.some((i) => i.bazaUsd !== null && i.bazaBasis !== null && i.bazaBasis !== pinned);
+}
+
+/**
  * A warning means «the dictionary HAD an answer and a person typed something
  * else», and BOTH halves of that sentence are load-bearing.
  *
@@ -166,13 +180,7 @@ export function warningsForGroup(facts: WarningGroupFacts): CalcWarningKind[] {
   // law counts in. An unpriced row's chosen unit prices nothing yet, so it is
   // not «a number confirmed in the wrong unit» — the row will say so the day
   // it carries a price.
-  const pinned = lawPinnedBasis(facts.dutyUnit);
-  if (
-    pinned !== null &&
-    facts.items.some((i) => i.bazaUsd !== null && i.bazaBasis !== null && i.bazaBasis !== pinned)
-  ) {
-    out.push('basis_not_law');
-  }
+  if (basisNotLaw(facts.dutyUnit, facts.items)) out.push('basis_not_law');
 
   return out;
 }
