@@ -342,9 +342,15 @@ export function Dock({
   // Three tabs and the 44 px ✕ in one row at 360 px: «💬 Переписки» and
   // «✅ Мой день N» already filled most of the sheet (the judge's 18), so
   // below `sm` each tab is its ICON — the word stays for a screen reader and
-  // as the button's name — and from `sm` up the words return.
+  // as the button's name — and from `sm` up the words return. From `md` the
+  // dock is a 26rem DRAWER, not a full-width sheet, and three words do not fit
+  // it either — measured at 1280: Russian ran 22 px past the drawer and took
+  // the ✕ out of reach, English crushed the ✕ to 20 px — so there only the
+  // ACTIVE tab carries its word.
   const tabClass = (active: boolean) =>
     `shrink-0 rounded-xl px-3 py-2 text-sm font-bold ${active ? 'bg-brand-50 text-brand-800' : 'text-ink-500'}`;
+  const tabWord = (active: boolean) =>
+    active ? 'sr-only sm:not-sr-only sm:ml-1' : 'sr-only sm:not-sr-only sm:ml-1 md:sr-only';
 
   return (
     <>
@@ -391,7 +397,7 @@ export function Dock({
                   className={tabClass(tab === 'chat')}
                 >
                   <span aria-hidden="true">💬</span>
-                  <span className="sr-only sm:not-sr-only sm:ml-1">{t('conversations')}</span>
+                  <span className={tabWord(tab === 'chat')}>{t('conversations')}</span>
                 </button>
               )}
               <button
@@ -402,7 +408,7 @@ export function Dock({
                 className={tabClass(tab === 'tasks')}
               >
                 <span aria-hidden="true">✅</span>
-                <span className="sr-only sm:not-sr-only sm:ml-1">{tn('myDay')}</span>
+                <span className={tabWord(tab === 'tasks')}>{tn('myDay')}</span>
                 {due > 0 && (
                   <span className="num ml-1.5 rounded-full bg-warn/15 px-1.5 text-xs text-warn">
                     {due}
@@ -418,7 +424,7 @@ export function Dock({
                   className={tabClass(tab === 'threads')}
                 >
                   <span aria-hidden="true">👥</span>
-                  <span className="sr-only sm:not-sr-only sm:ml-1">{tth('dockTab')}</span>
+                  <span className={tabWord(tab === 'threads')}>{tth('dockTab')}</span>
                   {threadsUnread > 0 && (
                     <span
                       className="num ml-1.5 rounded-full bg-warn/15 px-1.5 text-xs text-warn"
@@ -433,7 +439,7 @@ export function Dock({
                 type="button"
                 aria-label={tc('back')}
                 onClick={() => setOpen(false)}
-                className="btn-ghost btn-icon ml-auto text-ink-500"
+                className="btn-ghost btn-icon ml-auto shrink-0 text-ink-500"
                 data-testid="dock-close"
               >
                 <Icon name="x" />
