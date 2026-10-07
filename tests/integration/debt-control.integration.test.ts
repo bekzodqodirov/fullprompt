@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import postgres from 'postgres';
 import { v4 as uuidv4 } from 'uuid';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
   attachments,
@@ -558,9 +558,30 @@ describe('D2-D7 (2026-10-07): the warehouse manager releases at HIS counter, and
 
   it('I4: a stale tick over no debt needs no comment, stores none, tells nobody; a replay is never refused', async () => {
     const clean = await mkClient(S1.id);
-    const free = await issue(clean.id, SA.actor, { debtOk: true });
+    // «Tells nobody» is asked of the DECISION too, not only of the rows: a
+    // gate that wrongly opened over no debt hands the text builder $0, which
+    // throws into the logged catch — no row either way, so the rows alone
+    // cannot tell a right gate from a wrong one (DEBT-3). The log line can.
+    const errors = vi.spyOn(console, 'error');
+    // A stale tick that CARRIES a reason (DEBT-4): an empty one could not
+    // tell «stored only when the tick was used» from «stored when given».
+    let free: Awaited<ReturnType<typeof issue>>;
+    try {
+      free = await issue(clean.id, SA.actor, { debtOk: true, debtNote: 'eskirgan izoh' });
+      expect(errors.mock.calls.some((call) => call[0] === '[debt-released]')).toBe(false);
+    } finally {
+      errors.mockRestore();
+    }
     const [stored] = await db.select().from(handovers).where(eq(handovers.id, free.id));
     expect(stored).toMatchObject({ debtOk: true, debtNote: null });
+    // …and the audit row carries neither the reason nor the right.
+    const [audit] = await db
+      .select({ after: auditLog.after })
+      .from(auditLog)
+      .where(and(eq(auditLog.entityType, 'handover'), eq(auditLog.entityId, free.id)));
+    expect(audit!.after).toMatchObject({ debtOk: true });
+    expect(audit!.after).not.toHaveProperty('debtNote');
+    expect(audit!.after).not.toHaveProperty('debtRight');
     expect(await releasedTold(free.id)).toEqual([]);
 
     const owing = await mkClient(S1.id);

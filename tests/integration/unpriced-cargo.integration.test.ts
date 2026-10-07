@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { moveReceipt } from '@/modules/wms/receipts/move';
 import { and, eq, gte, inArray, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
   attachments,
@@ -806,7 +806,17 @@ describe('one approval, two questions', () => {
       ctx(),
     );
     const handoverId = uuidv4();
-    expect(await issue(c, W.tas, p.boxIds, { debtOk: false, handoverId })).toBe('ok');
+    // «Told nobody» asked of the DECISION as well as the rows (DEBT-3): an
+    // approval spent for a price alone must not reach the D6 message at all —
+    // a wrongly opened gate would hand the text builder $0, which throws into
+    // the logged catch and writes no row, so only the log line tells.
+    const errors = vi.spyOn(console, 'error');
+    try {
+      expect(await issue(c, W.tas, p.boxIds, { debtOk: false, handoverId })).toBe('ok');
+      expect(errors.mock.calls.some((call) => call[0] === '[debt-released]')).toBe(false);
+    } finally {
+      errors.mockRestore();
+    }
     const [spent] = await db.select().from(issueApprovals).where(eq(issueApprovals.id, id));
     expect(spent).toMatchObject({ status: 'consumed', consumedHandoverId: handoverId });
     const [h] = await db.select().from(handovers).where(eq(handovers.id, handoverId));

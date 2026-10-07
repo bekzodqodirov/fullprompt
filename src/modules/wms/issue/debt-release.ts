@@ -44,6 +44,34 @@ export function receivesDebtReleased(actor: MoneyActor & { roles: readonly strin
   );
 }
 
+/**
+ * Who opened the DEBT gate at this press, if anybody — the one decision
+ * whether «qarzga yuk berildi» is sent (D6a):
+ *
+ *  - `'tick'` — the counter's tick was USED: ticked over a real debt
+ *    (`debtTickUsed` = `debtBlocks && debtOk`, the service's own value). A
+ *    stale tick over no debt opened nothing and tells nobody;
+ *  - `'approval'` — a recorded approval was spent while the DEBT was the
+ *    question (`needDebt`). An approval spent for a missing PRICE alone let
+ *    no debt through, so it is not a debt release;
+ *  - null — nobody pressed anything about a debt. That includes a release
+ *    excused only by a deal «muddat» (stated: the reason lives on the deal).
+ *
+ * Pure, so the cells are literal unit tests (the review's DEBT-3): the
+ * integration test's «tells nobody» could not tell a reverted gate from a
+ * correct one, because a reverted gate hands the text builder a $0 debt and
+ * the text builder throws into a logged catch that writes no row either way.
+ */
+export function debtOpenedBy(press: {
+  debtTickUsed: boolean;
+  approvalId: string | null;
+  needDebt: boolean;
+}): 'tick' | 'approval' | null {
+  if (press.debtTickUsed) return 'tick';
+  if (press.approvalId && press.needDebt) return 'approval';
+  return null;
+}
+
 export interface DebtReleasedInput {
   clientCode: string;
   clientName: string;

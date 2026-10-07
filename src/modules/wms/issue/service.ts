@@ -23,7 +23,7 @@ import { deferralCover, deferredTotal } from '../debt/rules';
 import { gatedAt, uncoveredBoxesOn, unpricedGate, unpricedReceiptsOn, type UncoveredBox } from '../finance/unpriced';
 import { claimIssuedNotice } from '../notices/client-claims';
 import { lockLiveApproval, markApprovalConsumed } from './approvals';
-import { DEBT_RELEASED_GRANT_CODES, debtReleasedText, receivesDebtReleased } from './debt-release';
+import { DEBT_RELEASED_GRANT_CODES, debtOpenedBy, debtReleasedText, receivesDebtReleased } from './debt-release';
 
 export class IssueError extends Error {
   constructor(public readonly code: string) {
@@ -365,8 +365,9 @@ export async function issueBoxes(request: IssueRequest, ctx: AuditContext, relea
     await claimIssuedNotice(tx, input.clientId, handover!.id);
     // Who opened the DEBT gate at this press, if anybody: the tick, or an
     // approval spent while the debt was the question. A release excused only
-    // by a deal «muddat» is neither — nobody pressed anything (stated).
-    const debtOpened: 'tick' | 'approval' | null = debtTickUsed ? 'tick' : approvalId && needDebt ? 'approval' : null;
+    // by a deal «muddat» is neither — nobody pressed anything (stated). One
+    // pure decision (`debtOpenedBy`), unit-tested cell by cell.
+    const debtOpened = debtOpenedBy({ debtTickUsed, approvalId, needDebt });
     return { handover: handover!, gated, replay: false, approvalId, debtOpened };
   });
   // AFTER the commit — a Telegram row must never be able to roll a handover

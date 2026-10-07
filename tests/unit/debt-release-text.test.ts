@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { debtReleasedText, type DebtReleasedInput } from '@/modules/wms/issue/debt-release';
+import { debtOpenedBy, debtReleasedText, type DebtReleasedInput } from '@/modules/wms/issue/debt-release';
 
 /**
  * «🔓 Qarzga yuk berildi» (0126, the owner's D6a): who, which client, how
@@ -73,5 +73,28 @@ describe('debtReleasedText', () => {
     expect(() => debtReleasedText({ ...tick, blockingUsd: 0 })).toThrow();
     expect(() => debtReleasedText({ ...tick, blockingUsd: Number.NaN })).toThrow();
     expect(() => debtReleasedText({ ...tick, blockingUsd: 0.01 })).not.toThrow();
+  });
+});
+
+describe('debtOpenedBy — who opened the DEBT gate at this press (D6a, the review’s DEBT-3)', () => {
+  // Literal cells: the integration test’s «tells nobody» cannot see this
+  // decision, because a wrongly opened gate throws in the text builder and
+  // writes no row either way.
+  it('a USED tick is the tick’s', () => {
+    expect(debtOpenedBy({ debtTickUsed: true, approvalId: null, needDebt: false })).toBe('tick');
+    // A tick that cleared the debt while an approval answered the PRICE: still the tick’s.
+    expect(debtOpenedBy({ debtTickUsed: true, approvalId: 'a1', needDebt: false })).toBe('tick');
+  });
+
+  it('an approval spent while the DEBT was the question is the approval’s', () => {
+    expect(debtOpenedBy({ debtTickUsed: false, approvalId: 'a1', needDebt: true })).toBe('approval');
+  });
+
+  it('an approval spent for a PRICE alone opened no debt', () => {
+    expect(debtOpenedBy({ debtTickUsed: false, approvalId: 'a1', needDebt: false })).toBe(null);
+  });
+
+  it('nothing pressed — a paid-up client, a stale tick, a release a deal «muddat» excused', () => {
+    expect(debtOpenedBy({ debtTickUsed: false, approvalId: null, needDebt: false })).toBe(null);
   });
 });
