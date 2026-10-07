@@ -3663,6 +3663,7 @@
     "statsMedian": "median",
     "statsRange": "lowest {min} · highest {max}",
     "statsClipped": "The cheapest 5 % and dearest 5 % are off the chart edges",
+    "statsClippedSide": "{side, select, low {The cheapest 5 % are off the edge of the chart} other {The dearest 5 % are off the edge of the chart}}",
     "statsPrev": "Previous quarter ({period}): median {p50} ({n})",
     "statsPrevScope": "The previous quarter's file scopes countries differently — medians not compared",
     "statsPrevNone": "No declarations for this code and unit last quarter",

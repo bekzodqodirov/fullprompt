@@ -3663,6 +3663,7 @@
     "statsMedian": "中位数",
     "statsRange": "最低 {min} · 最高 {max}",
     "statsClipped": "最便宜和最贵的各 5 % 在图表边缘之外",
+    "statsClippedSide": "{side, select, low {最便宜的 5 % 在图表边缘之外} other {最贵的 5 % 在图表边缘之外}}",
     "statsPrev": "上一季度（{period}）中位数 {p50}（{n} 条）",
     "statsPrevScope": "上一季度文件的国家口径不同——中位数不作比较",
     "statsPrevNone": "上一季度此编码和单位无申报",

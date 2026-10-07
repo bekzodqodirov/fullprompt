@@ -174,14 +174,19 @@ export function PriceSpread({
 
 /** Ends and the median under the plot. The ends are ANCHORED to the plot's
  * edges and the median label shifts by its own position, so no label can
- * hang outside the card; a median too near an end leaves the end to speak. */
+ * hang outside the card; a median too near an end leaves the end to speak.
+ *
+ * The ends carry the PRICE and nothing else. They used to carry «‹ 5 % ·»
+ * too, and on a phone (~300 px of plot) that made the end label long enough
+ * for the median label — whose 22-78 % guard assumes a bare price — to print
+ * over it, so neither could be read. The clipped tails are said once, in
+ * words, under the strip (baza-stats.tsx, `clippedSide`). */
 function Axis({ domain, median, medianLabel }: { domain: Domain; median: number | null; medianLabel: string }) {
   const mid = median === null ? null : position(median, domain);
   const showMid = mid !== null && mid.clamped === null && mid.pct >= 22 && mid.pct <= 78;
   return (
     <div className="relative mt-1 h-4 text-2xs leading-none text-ink-500" aria-hidden>
-      <span className="absolute left-0 top-0 whitespace-nowrap font-mono tabular-nums">
-        {domain.clippedLow > 0 ? `‹ ${pct(domain.clippedLow)} · ` : ''}
+      <span className="absolute left-0 top-0 whitespace-nowrap font-mono tabular-nums" data-axis="lo">
         {unitPrice(domain.lo)}
       </span>
       {showMid && median !== null ? (
@@ -193,9 +198,8 @@ function Axis({ domain, median, medianLabel }: { domain: Domain; median: number 
         </span>
       ) : null}
       {domain.hi !== domain.lo ? (
-        <span className="absolute right-0 top-0 whitespace-nowrap font-mono tabular-nums">
+        <span className="absolute right-0 top-0 whitespace-nowrap font-mono tabular-nums" data-axis="hi">
           {unitPrice(domain.hi)}
-          {domain.clippedHigh > 0 ? ` · ${pct(domain.clippedHigh)} ›` : ''}
         </span>
       ) : null}
     </div>

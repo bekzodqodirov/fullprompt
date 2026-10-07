@@ -76,6 +76,21 @@ export function num(value: number, digits = 0): string {
   });
 }
 
+/**
+ * A weight in kilograms that is never «0» for something that weighs
+ * anything — the per-piece weight beside his ±25 % line. `num(v, 3)` labelled
+ * a 0.4 g button «0 kg» and a 0.6 g one «0.001»: two places from a kilo,
+ * four below one, and under a gram the value itself at two significant
+ * figures (the `unitPrice` rule without the dollar).
+ */
+export function kg(value: number): string {
+  const abs = Math.abs(value);
+  if (abs >= 1) return num(value, 2);
+  if (abs >= 0.001) return num(value, 4);
+  if (abs === 0) return '0';
+  return String(Number(value.toPrecision(2)));
+}
+
 /** m³ as a person writes it: one decimal under 100, whole above. */
 export function m3(value: number): string {
   return value < 100 ? num(Math.round(value * 10) / 10, 1) : num(Math.round(value));

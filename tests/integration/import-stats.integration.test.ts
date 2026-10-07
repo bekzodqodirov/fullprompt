@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { randomUUID } from 'node:crypto';
 import { eq, inArray, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -42,12 +43,14 @@ import {
   batchRecencySql,
   newestReadyBatchId,
   previousReadyBatchId,
+  runCustomsImport,
 } from '@/modules/wms/customs/import-service';
+import { getStorage } from '@/modules/platform/files/storage';
 import { importRowForCode, suggestImportBaza } from '@/modules/wms/customs/import-baza';
 import { normalizeName, type ImportUnit } from '@/modules/wms/customs/import-parse';
 import { readImportStats, type ImportStatsAnswer } from '@/modules/wms/customs/import-stats';
 import { readPickerItem } from '@/modules/wms/customs/picker-item';
-import { FEW } from '@/modules/wms/customs/import-stats-math';
+import { FEW, prevLine } from '@/modules/wms/customs/import-stats-math';
 import { underCeiling } from '@/modules/wms/finance/price-history';
 import { openCalcRequest } from '@/modules/wms/calc/service';
 import { saveTable } from '@/modules/wms/calc/workspace';
@@ -69,6 +72,7 @@ let clientId = '';
 let dealId = '';
 const madeBatches: string[] = [];
 const madeRequests: string[] = [];
+const madeKeys: string[] = [];
 const ctx = () => ({ actorId });
 
 /** A Tashkent calendar day relative to today, `YYYY-MM-DD`. */
@@ -213,6 +217,7 @@ afterAll(async () => {
   }
   // Raw, because the service refuses to delete a READY batch on purpose.
   await drop(madeBatches);
+  for (const key of madeKeys) await getStorage().delete(key).catch(() => {});
   await db.update(clients).set({ active: false }).where(eq(clients.id, clientId));
   await db.update(users).set({ active: false }).where(eq(users.id, actorId));
   await pgClient.end();
@@ -284,6 +289,10 @@ describe('the statistics', () => {
       { price: 5, origin: 'CN' },
       { price: 6, origin: 'КНР' },
       { price: 50, origin: '792-ТУРЦИЯ' },
+      // A NEWER declaration at the China median's own price, from Turkey: the
+      // exemplar a 50 % chip names must still be China's (the exemplar
+      // statement's own China clause — nothing else would catch it).
+      { price: 3, origin: '792-ТУРЦИЯ', declaredAt: day(-1) },
       { price: 60, origin: '158-ТАЙВАНЬ (КИТАЙ)' },
       { price: 70, origin: 'ГОНКОНГ (КИТАЙ)' },
       { price: 80, origin: '158-КИТАЙСКАЯ РЕСПУБЛИКА' },
@@ -293,9 +302,10 @@ describe('the statistics', () => {
     const a = await stats({ batchId: b, tnvedCode: c, units: ['kg'] });
     expect(a.filtered).toBe(true);
     const kg = unitOf(a, 'kg')!;
-    expect(kg.origin).toEqual({ china: 6, other: 4, unknown: 1 });
+    expect(kg.origin).toEqual({ china: 6, other: 5, unknown: 1 });
     expect(kg.all.prices).toEqual([1, 2, 3, 4, 5, 6]);
     expect(kg.all.p50).toBe(3);
+    expect(kg.all.exemplars.p50?.originCountry).toBe('Китай');
     // A code-wide count would read china 7 here.
     expect(unitOf(a, 'dona')!.origin).toEqual({ china: 1, other: 0, unknown: 0 });
   });
@@ -341,6 +351,42 @@ describe('the statistics', () => {
     expect(bare.perPieceKg).toBeNull();
     const none = unitOf(await stats({ batchId: b, tnvedCode: c, units: bare.units, perPieceKg: null }), 'dona')!;
     expect(none.weight).toBe('no_row_weight');
+
+    // The case the clause exists for: a row whose units leave dona OUT. 9401's
+    // law pins kilograms («max … kg»), so the row accepts kg alone — and its
+    // dona tab still gets his weight line, because the per-piece weight is the
+    // row's own count and weight, never something the units grant (D5). On
+    // the advalor code above the two readings agree, which is why this row is
+    // here at all.
+    const kgCode = `9401${String((Number(SUFFIX) + 1) % 1_000_000).padStart(6, '0')}`;
+    await addRows(
+      b,
+      kgCode,
+      [0.5, 0.9, 1.0, 1.1, 1.25, 1.3, 2.0].map((w, i) => ({ unit: 'dona' as const, price: i + 1, w })),
+    );
+    const kgRequest = await open([{ name: 'Qonuni kg qator', tnvedCode: kgCode, quantity: 10, weightKg: 10 }]);
+    // The save's sweep groups the coded row and pulls the code's PP-3818 law
+    // — which is where `dutyUnit` comes from.
+    await saveTable(kgRequest, { items: [], adds: [] }, ctx());
+    const [kgRow] = await itemsOf(kgRequest);
+    const kgItem = (await readPickerItem(kgRow!.id, null))!;
+    // The fixture first: dona really is out of this row's units.
+    expect(kgItem.units).toEqual(['kg']);
+    expect(kgItem.perPiece).toBeNull();
+    expect(kgItem.perPieceKg).toBe(1);
+    const kgDona = unitOf(
+      await stats({
+        batchId: b,
+        tnvedCode: kgCode,
+        units: kgItem.units,
+        perPieceKg: kgItem.perPieceKg,
+        dutyUnit: kgItem.dutyUnit,
+      }),
+      'dona',
+    )!;
+    expect(kgDona.matches).toBe(false);
+    expect(kgDona.weight).not.toBe('no_row_weight');
+    expect((kgDona.weight as { n: number }).n).toBe(4);
   });
 });
 
@@ -373,6 +419,51 @@ describe('«newest» by the dates inside (C6)', () => {
     await drop([x, y]);
   });
 
+  it('8b. one mistyped future date in a back-filled quarter does not move its end', async () => {
+    // Through the REAL parse: the period is decided in the settle step, and a
+    // batch minted with its period already written would test nothing. The
+    // newer quarter was uploaded first; the older one is back-filled after it
+    // and carries one declaration typed «2062». Clamped to its upload day,
+    // that row made the older quarter end TODAY — newer than the quarter that
+    // really is — so every suggestion read it until a file dated after today
+    // arrived.
+    const c = code(16);
+    const newer = await mintBatch({ name: 'BS-newer', from: day(-90), to: day(-1), agoSec: 120 });
+    const ExcelJS = (await import('exceljs')).default;
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Sheet1');
+    ws.addRow(['ТИФ ТН КОДИ', 'Товар номи', 'За.ед.из.$', 'Ед.из.', 'С графа']);
+    ws.addRow([c, `Изделия BS${SUFFIX} 1`, '10', 'кг', day(-120)]);
+    ws.addRow([c, `Изделия BS${SUFFIX} 2`, '11', 'кг', '2062-01-01']);
+    ws.addRow([c, `Изделия BS${SUFFIX} 3`, '12', 'кг', day(-100)]);
+    const key = `customs-import/stats-${randomUUID()}.xlsx`;
+    await getStorage().put(
+      key,
+      Buffer.from(await wb.xlsx.writeBuffer()),
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    madeKeys.push(key);
+    const [row] = await db
+      .insert(customsImportBatches)
+      .values({ fileName: `BS-backfill-${SUFFIX}.xlsx`, uploadedBy: actorId, status: 'processing' })
+      .returning({ id: customsImportBatches.id });
+    const backfilled = row!.id;
+    madeBatches.push(backfilled);
+
+    const out = await runCustomsImport({ batchId: backfilled, storageKey: key, fileName: 'backfill.xlsx' });
+    // The declaration is kept — its price is still a price; only its date is
+    // kept out of what the FILE claims to describe.
+    expect(out.rowCount).toBe(3);
+    expect(out.futureDated).toBe(1);
+    const [settled] = await db
+      .select({ from: customsImportBatches.periodFrom, to: customsImportBatches.periodTo })
+      .from(customsImportBatches)
+      .where(eq(customsImportBatches.id, backfilled));
+    expect(settled).toEqual({ from: day(-120), to: day(-100) });
+    expect(await orderOf([newer, backfilled])).toEqual([newer, backfilled]);
+    await drop([newer, backfilled]);
+  });
+
   it('9. a June sample does not bury the full April-June quarter uploaded after it', async () => {
     const sample = await mintBatch({ name: 'BS-S', from: `${lastYear}-06-01`, to: `${lastYear}-06-30`, agoSec: 120 });
     const full = await mintBatch({ name: 'BS-F', from: `${lastYear}-04-01`, to: `${lastYear}-06-30`, agoSec: 60 });
@@ -401,6 +492,27 @@ describe('«newest» by the dates inside (C6)', () => {
     expect(await newestReadyBatchId()).toBe(dup);
     expect(await previousReadyBatchId(dup)).toBe(prev);
     await drop([prev, cur, dup]);
+  });
+
+  it('10b. a previous file with nothing of this code says «none», never «the split differs»', async () => {
+    // The previous quarter names countries — but only on ANOTHER code. Of
+    // this code it holds nothing, so there is no split to differ: the line
+    // must say «no declarations last quarter», and the source must not claim
+    // the previous file «names no country» (its `named_any` for this code is
+    // undecided, not false).
+    const c = code(17);
+    const prev = await mintBatch({ name: 'BS-prev-other', from: day(-200), to: day(-91), agoSec: 120 });
+    const cur = await mintBatch({ name: 'BS-cur-other', from: day(-90), to: day(0), agoSec: 60 });
+    expect(await previousReadyBatchId(cur)).toBe(prev);
+    await addRows(cur, c, [1, 2, 3, 4, 5].map((p) => ({ price: p })));
+    await addRows(prev, code(18), [2, 3, 4].map((p) => ({ price: p, origin: '792-ТУРЦИЯ' })));
+    const a = await stats({ batchId: cur, prevBatchId: prev, tnvedCode: c, units: ['kg'] });
+    expect(a.filtered).toBe(true);
+    const kg = unitOf(a, 'kg')!;
+    expect(kg.prev).toEqual({ n: 0, p50: null, filtered: null });
+    // What the screen prints, decided by the one function it asks.
+    expect(prevLine(kg.prev, a.filtered)).toBe('none');
+    await drop([prev, cur]);
   });
 });
 
@@ -441,9 +553,16 @@ describe('the named series and the two routes', () => {
   });
 
   it('12. the list route and the stats route answer from the SAME batch', async () => {
-    const b = await mintBatch({ name: 'BS-routes', from: day(-30), to: day(0), agoSec: 0 });
+    // Two READY batches that disagree about «newest» under every ordering
+    // but the one: `b` ends LATER and was uploaded EARLIER, `reup` (an older
+    // quarter re-uploaded) ends earlier and was uploaded last. A door that
+    // went back to upload order would answer from `reup`, at 11 — so the
+    // agreement below is only reachable through `newestReadyBatchId` (C6).
+    const b = await mintBatch({ name: 'BS-routes', from: day(-30), to: day(0), agoSec: 60 });
+    const reup = await mintBatch({ name: 'BS-routes-old', from: day(-120), to: day(-31), agoSec: 0 });
     const c = code(12);
     await addRows(b, c, [1, 2, 3, 4, 5, 6].map((p) => ({ price: p, name: `Изделия BS${SUFFIX}` })));
+    await addRows(reup, c, [10, 11, 12].map((p) => ({ price: p, name: `Изделия BS${SUFFIX}` })));
     const requestId = await open([{ name: `Изделия BS${SUFFIX}`, tnvedCode: c, weightKg: 100 }]);
     const [item] = await itemsOf(requestId);
 
@@ -468,7 +587,7 @@ describe('the named series and the two routes', () => {
     } finally {
       gate.allow = true;
     }
-    await drop([b]);
+    await drop([b, reup]);
   });
 
   it('13. every quartile of every series names a real declaration (D1), on the 99-step ladder too', async () => {
@@ -485,6 +604,11 @@ describe('the named series and the two routes', () => {
       c,
       [0.95, 1.0, 1.05, 1.1, 0.9, 1.2, 0.8, 3.0].map((w, i) => ({ unit: 'dona' as const, price: 2 + i, w })),
     );
+    // A piece three times too heavy, at exactly the BAND's median price (the
+    // in-band prices are 2..8, p50 = 5), inserted LAST and dated NEWER — so
+    // only the exemplar statement's own band clause keeps it from being the
+    // declaration the ±25 % line's 50 % chip names.
+    await addRows(b, c, [{ unit: 'dona', price: 5, w: 3.0, declaredAt: day(-1) }]);
     const a = await stats({ batchId: b, tnvedCode: c, units: ['kg', 'dona'], perPieceKg: 1 });
     const kg = unitOf(a, 'kg')!;
     expect(kg.all.n).toBe(70);
@@ -493,6 +617,8 @@ describe('the named series and the two routes', () => {
     const dona = unitOf(a, 'dona')!;
     const weight = dona.weight as Exclude<typeof dona.weight, 'no_row_weight' | null>;
     expect(weight.n).toBe(7);
+    expect(weight.p50).toBe(5);
+    expect(dona.all.n).toBe(9);
     for (const s of [kg.all, dona.all, weight]) {
       expect(s.n).toBeGreaterThanOrEqual(FEW);
       for (const key of ['p25', 'p50', 'p75'] as const) {

@@ -176,8 +176,9 @@ export interface Domain {
 
 /**
  * The x-axis. A big sample is drawn p5..p95 so one 20-tonne typo cannot
- * squash the whole shape into one bar — the extremes line and the «‹ 5 %»
- * ends say that the tails exist. A small sample is drawn whole.
+ * squash the whole shape into one bar — the extremes line and the muted
+ * «chetdagi 5 %» line under the strip (`clippedSide`) say that the tails
+ * exist. A small sample is drawn whole.
  * A spread of four times or more is drawn on a log scale.
  */
 export function domainOf(all: Pick<SeriesStats, 'n' | 'min' | 'max' | 'ladder' | 'prices'>): Domain | null {
@@ -201,6 +202,40 @@ export function domainOf(all: Pick<SeriesStats, 'n' | 'min' | 'max' | 'ladder' |
   }
   if (lo === null || hi === null || !Number.isFinite(lo) || !Number.isFinite(hi) || hi < lo) return null;
   return { lo, hi, log: lo > 0 && hi / lo >= 4, clippedLow, clippedHigh };
+}
+
+/**
+ * Which ends of the chart have declarations beyond them — what the muted
+ * line under the strip says in words (the axis ends print the price alone).
+ * Each end is decided on its own: `domainOf` announces an end only when
+ * something really lies past it, so «both» is not the only case.
+ */
+export function clippedSide(domain: Pick<Domain, 'clippedLow' | 'clippedHigh'> | null): 'both' | 'low' | 'high' | null {
+  if (!domain) return null;
+  const low = domain.clippedLow > 0;
+  const high = domain.clippedHigh > 0;
+  return low && high ? 'both' : low ? 'low' : high ? 'high' : null;
+}
+
+/**
+ * What the «oldingi chorak» line may say (D7), in this order — and the ORDER
+ * is the decision.
+ *
+ * Emptiness is asked BEFORE the country split: a previous file that holds no
+ * declaration of this code in this unit has nothing to compare, so «the
+ * country split differs» about it is a sentence about a population that does
+ * not exist (and on a code the previous file never carried its split is not
+ * even defined — `prev.filtered` is null there). Only two non-empty medians
+ * can disagree about scope, and only like-for-like ones are set side by side.
+ */
+export function prevLine(
+  prev: { n: number; p50: number | null; filtered: boolean | null } | null,
+  filtered: boolean,
+): 'missing' | 'none' | 'scope' | 'median' {
+  if (prev === null) return 'missing';
+  if (prev.n === 0 || prev.p50 === null) return 'none';
+  if (prev.filtered !== filtered) return 'scope';
+  return 'median';
 }
 
 /** The scale's own coordinate of a value — ln on a log axis. */

@@ -4,9 +4,11 @@ import {
   LADDER_STEPS,
   RAW_MAX,
   bandBounds,
+  clippedSide,
   domainOf,
   histogram,
   position,
+  prevLine,
   sampleOf,
   seriesFromRaw,
   type SeriesStats,
@@ -133,5 +135,33 @@ describe('the marker position', () => {
     expect(position(3, d)).toEqual({ pct: 50, clamped: null });
     expect(position(0.2, d)).toEqual({ pct: 0, clamped: 'low' });
     expect(position(9, d)).toEqual({ pct: 100, clamped: 'high' });
+  });
+});
+
+describe('the «oldingi chorak» line (D7)', () => {
+  it('asks emptiness BEFORE the country split', () => {
+    expect(prevLine(null, true)).toBe('missing');
+    // Nothing of this code in the previous file: no split to differ — on
+    // either flag, and on the undecided one the source now sends.
+    expect(prevLine({ n: 0, p50: null, filtered: null }, true)).toBe('none');
+    expect(prevLine({ n: 0, p50: null, filtered: false }, true)).toBe('none');
+    expect(prevLine({ n: 0, p50: null, filtered: true }, false)).toBe('none');
+    // Two real medians: like for like, or no comparison.
+    expect(prevLine({ n: 3, p50: 3, filtered: false }, true)).toBe('scope');
+    expect(prevLine({ n: 3, p50: 3, filtered: true }, true)).toBe('median');
+    expect(prevLine({ n: 3, p50: 3, filtered: false }, false)).toBe('median');
+  });
+});
+
+describe('the clipped tails, said in words', () => {
+  it('names only the end that really has something beyond it', () => {
+    expect(clippedSide(null)).toBeNull();
+    expect(clippedSide({ clippedLow: 0, clippedHigh: 0 })).toBeNull();
+    expect(clippedSide({ clippedLow: 0.05, clippedHigh: 0.05 })).toBe('both');
+    expect(clippedSide({ clippedLow: 0.05, clippedHigh: 0 })).toBe('low');
+    expect(clippedSide({ clippedLow: 0, clippedHigh: 0.05 })).toBe('high');
+    // The big sample's own domain, with a min equal to p5: only the top end.
+    expect(clippedSide(domainOf(big))).toBe('both');
+    expect(clippedSide(domainOf({ ...big, min: bigLadder[4]! }))).toBe('high');
   });
 });

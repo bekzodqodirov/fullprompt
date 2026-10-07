@@ -57,8 +57,10 @@ export interface UnitStats {
   /** The dona tab's ±25 % series; 'no_row_weight' when the row states no
    * count or weight; null on every other tab. */
   weight: SeriesStats | 'no_row_weight' | null;
-  /** null = no previous batch at all. */
-  prev: { n: number; p50: number | null; filtered: boolean } | null;
+  /** null = no previous batch at all. `filtered` is the previous batch's
+   * own `named_any` for this code — null when that file holds no declaration
+   * of the code at all, so it has no country split to compare (`prevLine`). */
+  prev: { n: number; p50: number | null; filtered: boolean | null } | null;
 }
 
 export interface ImportStatsAnswer {
@@ -115,6 +117,11 @@ type ExemplarRow = {
  * The code's rows in ONE batch, scoped to China by D3 — the three CTEs
  * statement 1 and statement 3 both stand on, so the previous quarter is
  * measured by exactly the rule the current one is.
+ *
+ * `named_any` is NULL — not false — when the batch holds no row of the code:
+ * «this file names no country» and «this file has nothing of this code» are
+ * different facts, and only the first is a reason to say the previous
+ * quarter's split differs.
  */
 function scopedCtes(batchId: string, code: string): SQL {
   // `cn` is decided ONCE per row: both the origin counts and the scope ask
@@ -127,7 +134,7 @@ function scopedCtes(batchId: string, code: string): SQL {
         FROM customs_import_rows r
        WHERE r.batch_id = ${batchId}::uuid AND r.tnved_code = ${code}
     ), na AS (
-      SELECT coalesce(bool_or(o IS NOT NULL), false) AS named_any FROM base
+      SELECT bool_or(o IS NOT NULL) AS named_any FROM base
     ), scoped AS (
       SELECT b.* FROM base b CROSS JOIN na
        WHERE NOT na.named_any OR b.cn
@@ -144,7 +151,7 @@ export async function readImportStats(
   // Statement 1, the aggregate. ONE row always — even for a code where China
   // has nothing — so the other-countries line still exists. Origin counts
   // are PER UNIT (D2); `named_any` is code-wide (D3).
-  const [agg] = await tx.execute<{ named_any: boolean; origin_by_unit: unknown; units: unknown }>(sql`
+  const [agg] = await tx.execute<{ named_any: boolean | null; origin_by_unit: unknown; units: unknown }>(sql`
     WITH ${scopedCtes(input.batchId, input.tnvedCode)},
     og AS (
       SELECT unit,
@@ -237,9 +244,9 @@ export async function readImportStats(
   // Statement 3, the previous quarter — the SAME scope over THAT batch's own
   // rows, and its own `named_any`, so a China-only median is never set beside
   // an all-countries one as if they measured one population (D7).
-  let prev: { filtered: boolean; byUnit: Map<ImportUnit, { n: number; p50: number | null }> } | null = null;
+  let prev: { filtered: boolean | null; byUnit: Map<ImportUnit, { n: number; p50: number | null }> } | null = null;
   if (input.prevBatchId) {
-    const [p] = await tx.execute<{ named_any: boolean; units: unknown }>(sql`
+    const [p] = await tx.execute<{ named_any: boolean | null; units: unknown }>(sql`
       WITH ${scopedCtes(input.prevBatchId, input.tnvedCode)}
       SELECT (SELECT named_any FROM na) AS named_any,
              coalesce((
@@ -252,7 +259,7 @@ export async function readImportStats(
              ), '[]'::json) AS units
     `);
     prev = {
-      filtered: p?.named_any === true,
+      filtered: p?.named_any ?? null,
       byUnit: new Map(
         jsonRows<{ unit: ImportUnit; n: number; p50: string | null }>(p?.units).map((x) => [
           x.unit,

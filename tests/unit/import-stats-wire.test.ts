@@ -137,6 +137,17 @@ describe('9. «newest» has ONE order, clamped (his C6)', () => {
     expect(bodyOf(SERVICE, 'export function batchStartSql(')).toContain('LEAST(');
     expect(bodyOf(SERVICE, 'export function batchRecencySql(')).not.toMatch(/period_from/);
   });
+
+  it('both DOORS ask the chooser — the stats route itself, the list route through suggestImportBaza', () => {
+    // A fence on the chooser's body says nothing about whether the routes
+    // call it; integration test 12 makes the two disagree under any other
+    // order, and this names the two calls it depends on.
+    expect(STATS_ROUTE).toContain('batchId = await newestReadyBatchId();');
+    const call = LIST_ROUTE.slice(LIST_ROUTE.indexOf('suggestImportBaza('));
+    const opts = call.slice(0, call.indexOf(');'));
+    expect(opts).toContain('picker: true');
+    expect(opts).not.toContain('batchId');
+  });
 });
 
 describe('10. the auto-fill pays for no aggregate (rendered, not read)', () => {
@@ -163,5 +174,15 @@ describe('11. «Xitoy» names the territories that are NOT China', () => {
     const q = dialect.sqlToQuery(chinaOriginSql(sql`o`));
     const rendered = `${q.sql} ${q.params.join(' ')}`;
     for (const word of ['КНР', 'ГОНКОНГ', 'МАКАО', 'ТАЙВАН', '156']) expect(rendered).toContain(word);
+  });
+});
+
+describe('12. the weight label and the previous-quarter line each have one rule', () => {
+  it('the weight label is `kg`, and the previous-quarter line asks `prevLine`', () => {
+    expect(BAZA_STATS).toContain("t('statsWeight', { kg: kg(answer.perPieceKg) })");
+    expect(BAZA_STATS).not.toMatch(/num\(answer\.perPieceKg/);
+    expect(BAZA_STATS).toContain('prevLine(unit.prev, answer.filtered)');
+    // The table's «oldingi chorak» cell follows the same decision.
+    expect(BAZA_STATS).toContain("prev === 'median' ? cell(");
   });
 });

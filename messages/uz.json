@@ -3663,6 +3663,7 @@
     "statsMedian": "mediana",
     "statsRange": "eng arzon {min} · eng qimmat {max}",
     "statsClipped": "Chetdagi 5 % arzon va 5 % qimmat diagrammadan tashqarida",
+    "statsClippedSide": "{side, select, low {Chetdagi 5 % arzon diagrammadan tashqarida} other {Chetdagi 5 % qimmat diagrammadan tashqarida}}",
     "statsPrev": "Oldingi chorakda ({period}) mediana {p50} ({n} ta)",
     "statsPrevScope": "Oldingi chorak faylida davlat bo'yicha bo'linish boshqacha — medianalar solishtirilmaydi",
     "statsPrevNone": "Oldingi chorakda bu kod va birlikda deklaratsiya yo'q",

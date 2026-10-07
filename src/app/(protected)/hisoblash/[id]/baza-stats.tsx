@@ -4,14 +4,16 @@ import { useState, type ReactNode } from 'react';
 import { useTranslations } from 'next-intl';
 import { PriceSpread, type SpreadRow } from '@/components/charts/price-spread';
 import { TableTwin } from '@/components/charts/table-twin';
-import { num, unitPrice } from '@/components/charts/format';
+import { kg, unitPrice } from '@/components/charts/format';
 import { basisLabel } from '@/modules/wms/calc/basis';
 import type { BazaBasis } from '@/modules/wms/calc/pricing';
 import type { ImportUnit } from '@/modules/wms/customs/import-parse';
 import type { ImportStatsAnswer, UnitStats } from '@/modules/wms/customs/import-stats';
 import {
   FEW,
+  clippedSide,
   domainOf,
+  prevLine,
   type ExemplarKey,
   type PriceExemplar,
   type SeriesStats,
@@ -147,7 +149,8 @@ export function BazaStats({
   ];
   if (namedStats && namedStats.n > 0) series.push({ key: 'named', label: t('statsNamed'), stats: namedStats });
   if (weightStats && weightStats.n > 0 && answer.perPieceKg !== null) {
-    series.push({ key: 'weight', label: t('statsWeight', { kg: num(answer.perPieceKg, 3) }), stats: weightStats });
+    // `kg`, never a fixed three places: a 0.4 g piece would read «(0 kg)».
+    series.push({ key: 'weight', label: t('statsWeight', { kg: kg(answer.perPieceKg) }), stats: weightStats });
   }
 
   // The VED's own number, only on an axis it belongs to: a per-dona baza on
@@ -157,7 +160,13 @@ export function BazaStats({
   // once, on the chips' own line below and in the table.
   const rows: SpreadRow[] = series.map((x) => ({ key: x.key, label: x.label, stats: x.stats }));
   const domain = unit.all.n > 0 ? domainOf(unit.all) : null;
-  const clipped = domain !== null && (domain.clippedLow > 0 || domain.clippedHigh > 0);
+  // The axis ends print the price alone — a «‹ 5 %» beside it ran into the
+  // median label on a phone — so the tails are said here, in words, once,
+  // and only for the end that really has something beyond it.
+  const side = clippedSide(domain);
+  const clippedText =
+    side === 'both' ? t('statsClipped') : side === null ? null : t('statsClippedSide', { side });
+  const prev = prevLine(unit.prev, answer.filtered);
 
   const openSeries = open ? series.find((x) => x.key === open.series) : undefined;
   const openExemplar: PriceExemplar | null = open && openSeries ? (openSeries.stats.exemplars[open.key] ?? null) : null;
@@ -233,6 +242,11 @@ export function BazaStats({
           </div>
           {domain && domain.lo === domain.hi ? (
             <p className="mt-1 text-2xs text-ink-500">{t('statsOneValue')}</p>
+          ) : null}
+          {clippedText !== null ? (
+            <p className="mt-1 text-2xs text-ink-500" data-testid="calc-import-clipped">
+              {clippedText}
+            </p>
           ) : null}
           {current !== null && !sameBasis ? (
             <p className="mt-1 text-2xs text-ink-500" data-testid="calc-import-you-other">
@@ -381,17 +395,19 @@ export function BazaStats({
         </p>
       ) : null}
 
+      {/* `prevLine` asks emptiness before the country split: a previous
+          file with nothing of this code has no split to differ (D7). */}
       <p className="mt-2 text-2xs text-ink-600" data-testid="calc-import-prev">
-        {unit.prev === null
+        {prev === 'missing'
           ? t('statsPrevMissing')
-          : unit.prev.filtered !== answer.filtered
-            ? t('statsPrevScope')
-            : unit.prev.n === 0 || unit.prev.p50 === null
-              ? t('statsPrevNone')
+          : prev === 'none'
+            ? t('statsPrevNone')
+            : prev === 'scope'
+              ? t('statsPrevScope')
               : t('statsPrev', {
                   period: answer.prevPeriod ?? '—',
-                  p50: unitPrice(unit.prev.p50),
-                  n: unit.prev.n,
+                  p50: unitPrice(unit.prev!.p50!),
+                  n: unit.prev!.n,
                 })}
       </p>
 
@@ -404,7 +420,7 @@ export function BazaStats({
       {unit.all.n > 0 ? (
         <TableTwin
           testid="calc-import-table"
-          summary={clipped ? `${t('statsTable')} — ${t('statsClipped')}` : t('statsTable')}
+          summary={clippedText !== null ? `${t('statsTable')} — ${clippedText}` : t('statsTable')}
           head={['', ...series.map((x) => x.label)]}
           rows={[
             [t('statsColN'), ...series.map((x) => String(x.stats.n))],
@@ -416,7 +432,7 @@ export function BazaStats({
             [
               t('statsColPrev'),
               ...series.map((x) =>
-                x.key === 'all' && unit.prev && unit.prev.filtered === answer.filtered ? cell(unit.prev.p50) : '—',
+                x.key === 'all' && prev === 'median' ? cell(unit.prev!.p50) : '—',
               ),
             ],
           ]}

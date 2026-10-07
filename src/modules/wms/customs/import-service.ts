@@ -73,6 +73,9 @@ export interface ImportOutcome {
   skipReasons: Partial<Record<SkipReason, number>>;
   periodFrom: string | null;
   periodTo: string | null;
+  /** Rows dated after the upload day — stored, and kept out of the period
+   * (see `runCustomsImport`). Logged with the outcome; not a skip. */
+  futureDated: number;
 }
 
 /**
@@ -365,6 +368,14 @@ export async function runCustomsImport(input: {
   if (!(await beat(batchId, 0, 0))) {
     throw new BatchGoneError(batchId);
   }
+  // The ceiling of what this file's dates may claim: the Tashkent day it was
+  // UPLOADED — the same `uploadDaySql` the «newest» clamp reads, so the two
+  // can never disagree about which day that is (a retry hours later, past
+  // midnight, still measures against the upload).
+  const [uploaded] = await db.execute<{ day: string }>(sql`
+    SELECT ${uploadDaySql(sql`b`)}::text AS day FROM customs_import_batches b WHERE b.id = ${batchId}::uuid`);
+  if (!uploaded) throw new BatchGoneError(batchId);
+  const uploadDay = uploaded.day;
 
   let header: ReturnType<typeof readHeader>['index'] | null = null;
   let rowCount = 0;
@@ -372,6 +383,7 @@ export async function runCustomsImport(input: {
   const skipReasons: Partial<Record<SkipReason, number>> = {};
   let periodFrom: string | null = null;
   let periodTo: string | null = null;
+  let futureDated = 0;
   let driftChecked = 0;
   let driftSum = 0;
   let pending: ParsedImportRow[] = [];
@@ -459,7 +471,18 @@ export async function runCustomsImport(input: {
       continue;
     }
     const row = parsed.row;
-    if (row.declaredAt) {
+    // A declaration dated after the day the file was uploaded is a typo — a
+    // file cannot describe what had not happened yet — so it does not move
+    // the period. `batchEndSql` clamps an end to the upload day, and that
+    // guard is still right for rows already stored, but on its own ONE
+    // «01.01.2062» in an older quarter back-filled after a newer one lifted
+    // that quarter's end to its upload day: it outranked every correctly
+    // dated quarter ending before that day, and the picker, the auto-fill
+    // and the AI prefill read — and stamped `import_row_id` from — the wrong
+    // quarter. The row itself is kept: its price is still a declaration.
+    if (row.declaredAt && row.declaredAt > uploadDay) {
+      futureDated++;
+    } else if (row.declaredAt) {
       if (!periodFrom || row.declaredAt < periodFrom) periodFrom = row.declaredAt;
       if (!periodTo || row.declaredAt > periodTo) periodTo = row.declaredAt;
     }
@@ -515,7 +538,11 @@ export async function runCustomsImport(input: {
     .returning({ id: customsImportBatches.id });
   if (settled.length === 0) throw new BatchGoneError(batchId);
 
-  return { rowCount, skipped, skipReasons, periodFrom, periodTo };
+  if (futureDated > 0) {
+    logger.warn({ batchId, futureDated, uploadDay }, '[customs-import] rows dated after the upload day — kept out of the period');
+  }
+
+  return { rowCount, skipped, skipReasons, periodFrom, periodTo, futureDated };
 }
 
 /** Mark a batch failed with a sentence the admin can act on. */
