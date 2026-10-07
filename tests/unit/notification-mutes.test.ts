@@ -36,6 +36,7 @@ describe('notification mutes (spec §11 per-user mute)', () => {
       operations: true,
       system: false,
       owner: false,
+      debt: false,
     });
     expect(list).toEqual([...MUTE_GROUPS.digest, ...MUTE_GROUPS.operations]);
     const back = groupsFromList(list);
@@ -49,6 +50,7 @@ describe('notification mutes (spec §11 per-user mute)', () => {
       operations: true,
       system: false,
       owner: false,
+      debt: false,
     });
   });
 
@@ -65,6 +67,7 @@ describe('notification mutes (spec §11 per-user mute)', () => {
       operations: true,
       system: true,
       owner: false,
+      debt: false,
     });
     expect(isTelegramMuted(everythingElse, 'OwnerSummary')).toBe(false);
     const own = listFromGroups(false, {
@@ -76,6 +79,7 @@ describe('notification mutes (spec §11 per-user mute)', () => {
       operations: false,
       system: false,
       owner: true,
+      debt: false,
     });
     expect(own).toEqual(['OwnerSummary']);
     expect(isTelegramMuted(own, 'OwnerSummary')).toBe(true);
@@ -93,6 +97,7 @@ describe('notification mutes (spec §11 per-user mute)', () => {
       operations: false,
       system: false,
       owner: false,
+      debt: false,
     });
     expect(list).toEqual(['all']);
     const back = groupsFromList(list);
@@ -106,6 +111,7 @@ describe('notification mutes (spec §11 per-user mute)', () => {
       operations: true,
       system: true,
       owner: true,
+      debt: true,
     });
   });
 
@@ -135,6 +141,52 @@ describe('notification mutes (spec §11 per-user mute)', () => {
     expect(routed.length).toBeGreaterThan(8);
     const covered = new Set<string>(Object.values(MUTE_GROUPS).flat());
     for (const type of [...routed, ...digests]) expect(covered.has(type), type).toBe(true);
+  });
+});
+
+describe('0126 — «qarzga yuk berildi» has its own switch (the owner’s D6a)', () => {
+  const none = {
+    digest: false,
+    calls: false,
+    leads: false,
+    tasks: false,
+    alerts: false,
+    operations: false,
+    system: false,
+    owner: false,
+    debt: false,
+  };
+
+  it('a list muting every OTHER group does not mute it — the control he asked for is never born silent', () => {
+    // Sent through notifyStaffTelegram (notifyDebtReleased), so the routing
+    // scan above cannot see it — named here. NOT in `alerts`: an owner who
+    // silenced the price-control noise holds that group's founders.
+    expect(MUTE_GROUPS.debt).toEqual(['DebtReleased']);
+    expect(MUTE_GROUPS.alerts).not.toContain('DebtReleased');
+    expect(MUTE_GROUPS.owner).not.toContain('DebtReleased');
+    const everythingElse = listFromGroups(false, {
+      digest: true,
+      calls: true,
+      leads: true,
+      tasks: true,
+      alerts: true,
+      operations: true,
+      system: true,
+      owner: true,
+      debt: false,
+    });
+    expect(isTelegramMuted(everythingElse, 'DebtReleased')).toBe(false);
+    expect(groupsFromList(everythingElse).groups.debt).toBe(false);
+  });
+
+  it('its own box mutes it, and «all» still does', () => {
+    const own = listFromGroups(false, { ...none, debt: true });
+    expect(own).toEqual(['DebtReleased']);
+    expect(isTelegramMuted(own, 'DebtReleased')).toBe(true);
+    expect(groupsFromList(own).groups.debt).toBe(true);
+    expect(isTelegramMuted(['all'], 'DebtReleased')).toBe(true);
+    const sender = readFileSync(resolve(__dirname, '../../src/modules/wms/issue/service.ts'), 'utf8');
+    expect(sender).toContain("type: 'DebtReleased',");
   });
 });
 

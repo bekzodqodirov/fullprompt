@@ -10,6 +10,7 @@ import { createTelegramLinkAction, telegramLinkStatus } from '@/modules/platform
 import { groupsFromList } from '@/modules/platform/notifications/mutes';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { readsOwnerSummary } from '@/modules/wms/reports/owner-summary-door';
+import { receivesDebtReleased } from '@/modules/wms/issue/debt-release';
 import { currentCallsApk } from '@/modules/wms/calls/apk';
 import { callDevicesFor } from '@/modules/wms/calls/service';
 import { setNotificationMutesAction } from './actions';
@@ -66,6 +67,11 @@ export default async function ProfilePage() {
   const actor = await panel(getActor(), null);
   const ownerReader = actor ? readsOwnerSummary(actor) : false;
   const tkx = await getTranslations('kechkiXulosa');
+  // «Qarzga yuk berish» (D6a) — drawn exactly for the people who receive it:
+  // the SAME predicate the recipient list asks, so the box and the list
+  // cannot disagree.
+  const debtReader = actor ? receivesDebtReleased(actor) : false;
+  const tqi = await getTranslations('qarzIzoh');
   // The rasxod xabari for people who belong to no warehouse (owner M1a) and
   // the person's own account with the company (A2a). Both keyed on the
   // SESSION's user and nothing from the URL (#514); both panels, so a
@@ -309,6 +315,21 @@ export default async function ProfilePage() {
               // Not drawn, but a choice already made is re-posted (#171): the
               // form is replace-all, and a box that is absent reads as «off».
               mutes.groups.owner && !mutes.all && <input type="hidden" name="mute_owner" value="on" />
+            )}
+            {debtReader ? (
+              <label className="flex min-h-10 items-center gap-3">
+                <input
+                  type="checkbox"
+                  name="mute_debt"
+                  defaultChecked={mutes.groups.debt}
+                  className="h-5 w-5"
+                  data-testid="profile-mute-debt"
+                />
+                🔓 {tqi('notifMuteDebt')}
+              </label>
+            ) : (
+              // Not drawn, but a choice already made is re-posted (#171).
+              mutes.groups.debt && !mutes.all && <input type="hidden" name="mute_debt" value="on" />
             )}
           </div>
           <button type="submit" className="btn-primary w-full">

@@ -6,11 +6,13 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
   attachments,
+  auditLog,
   boxes,
   clients,
   clientTransactions,
   dealStages,
   deals,
+  events,
   handovers,
   issueApprovals,
   moneyAccounts,
@@ -22,6 +24,7 @@ import {
   tasks,
   telegramLinks,
   userRoles,
+  userWarehouses,
   users,
   warehouses,
 } from '@/modules/platform/db/schema';
@@ -49,6 +52,8 @@ import {
 } from '@/modules/wms/debt/promises';
 import { promiseBrokenAt } from '@/modules/wms/debt/rules';
 import { companyMoneySight, type MoneyActor } from '@/modules/wms/finance/scope';
+import type { ScopedActor } from '@/modules/platform/rbac/scope';
+import { deleteDebtReleasedFor } from '../fixtures/debt-released';
 
 /**
  * Qarz nazorati (0114) against a real database: who may let a debt slide
@@ -66,20 +71,27 @@ let seq = 0;
 const next = () => (seq += 1);
 
 let whId: string;
+/** A second counter the scoped warehouse manager does NOT stand at (D3a). */
+let whB: string;
 let accountId: string;
 const people: string[] = [];
 const clientIds: string[] = [];
 const chats: bigint[] = [];
 
+/** Whose money he reads and which ROLE he holds — what `counterDebtRelease` asks besides where. */
+type Releaser = MoneyActor & { roles: readonly string[] };
 interface Person {
   id: string;
   name: string;
-  actor: MoneyActor;
+  actor: Releaser;
 }
 let S1: Person; // seller who owns C1
 let S2: Person; // another seller
-let W: Person; // warehouse manager (the grant, no ledger)
+let W: Person; // warehouse manager (the grant, no ledger) — UNSCOPED in his actor here
 let A: Person; // accountant
+let SA: Person; // super_admin — the owner, D6a's audience beside the accountant
+let WM: Person; // warehouse manager standing at whId (D2's person)
+let OP: Person; // warehouse operator at whId
 
 const ctx = (actorId: string) => ({ actorId, ip: null, userAgent: null });
 const ALL: DebtReleaseFilter = { from: null, to: null, approverId: null, includeReturned: true };
@@ -112,8 +124,15 @@ async function mkUser(role: string, label: string): Promise<Person> {
   people.push(user!.id);
   const [r] = await db.select({ id: roles.id }).from(roles).where(eq(roles.code, role));
   await db.insert(userRoles).values({ userId: user!.id, roleId: r!.id });
-  return { id: user!.id, name, actor: { id: user!.id, permissions: await grantsOf(user!.id) } };
+  return { id: user!.id, name, actor: { id: user!.id, permissions: await grantsOf(user!.id), roles: [role] } };
 }
+
+/** The person at THIS counter, scoped like the session `Actor` (and the `user_warehouses` row agrees). */
+const at = (person: Person, ...warehouseIds: string[]): Releaser & ScopedActor => ({
+  ...person.actor,
+  warehouseScoped: true,
+  warehouseIds,
+});
 
 async function mkClient(sellerId: string | null): Promise<{ id: string; code: string }> {
   const code = `QZ${STAMP}${next()}`.slice(0, 12);
@@ -151,7 +170,7 @@ async function ledger(
   return row!.id;
 }
 
-async function box(clientId: string): Promise<string> {
+async function box(clientId: string, warehouseId: string = whId): Promise<string> {
   const receiptId = uuidv4();
   const lotId = uuidv4();
   await db.insert(attachments).values({
@@ -167,7 +186,7 @@ async function box(clientId: string): Promise<string> {
   await confirmReceipt(
     {
       receiptId,
-      warehouseId: whId,
+      warehouseId,
       clientId,
       unclaimedMarking: '',
       lots: [
@@ -191,23 +210,35 @@ async function box(clientId: string): Promise<string> {
 
 async function issue(
   clientId: string,
-  by: MoneyActor,
-  opts: { debtOk?: boolean; handoverId?: string; boxId?: string } = {},
+  by: Releaser & Partial<ScopedActor>,
+  opts: { debtOk?: boolean; debtNote?: string; handoverId?: string; boxId?: string; warehouseId?: string } = {},
 ) {
+  const warehouseId = opts.warehouseId ?? whId;
   return issueBoxes(
     {
       handoverId: opts.handoverId ?? uuidv4(),
       clientId,
-      warehouseId: whId,
-      boxIds: [opts.boxId ?? (await box(clientId))],
+      warehouseId,
+      boxIds: [opts.boxId ?? (await box(clientId, warehouseId))],
       personName: 'Qarzdor Vakili',
       personPhone: '+998901234567',
       debtOk: opts.debtOk ?? false,
+      debtNote: opts.debtNote ?? '',
       note: '',
     },
     ctx(by.id),
-    by,
+    // An actor with no scope of its own is the office's — unscoped (the
+    // whole-ledger readers, and the warehouse manager W who is NOT at a counter).
+    { warehouseScoped: false, warehouseIds: [], ...by },
   );
+}
+
+/** «Qarzga yuk berildi» rows about one handover, by recipient (0126, D6a). */
+async function releasedTold(handoverId: string) {
+  return db
+    .select({ userId: notifications.userId, text: sql<string>`${notifications.payload}->>'text'` })
+    .from(notifications)
+    .where(and(eq(notifications.type, 'DebtReleased'), sql`${notifications.payload}->>'handoverId' = ${handoverId}`));
 }
 
 async function mkDeal(clientId: string): Promise<string> {
@@ -227,6 +258,9 @@ beforeAll(async () => {
   S2 = await mkUser('sales_manager', 'S2');
   W = await mkUser('warehouse_manager', 'W');
   A = await mkUser('accountant', 'A');
+  SA = await mkUser('super_admin', 'SA');
+  WM = await mkUser('warehouse_manager', 'WM');
+  OP = await mkUser('warehouse_operator', 'OP');
   const [wh] = await db
     .insert(warehouses)
     .values({
@@ -239,6 +273,23 @@ beforeAll(async () => {
     })
     .returning({ id: warehouses.id });
   whId = wh!.id;
+  const [second] = await db
+    .insert(warehouses)
+    .values({
+      code: `QB${STAMP}`.slice(0, 8),
+      name: `Qarz WH B ${STAMP}`,
+      country: 'UZ',
+      type: 'origin',
+      timezone: 'Asia/Tashkent',
+      batchPrefix: `QB${STAMP}`.slice(0, 8),
+    })
+    .returning({ id: warehouses.id });
+  whB = second!.id;
+  // The scoped people stand at whId — the rows `actorGrants` would read.
+  await db.insert(userWarehouses).values([
+    { userId: WM.id, warehouseId: whId },
+    { userId: OP.id, warehouseId: whId },
+  ]);
   const [till] = await db
     .insert(moneyAccounts)
     .values({ name: `Qarz kassa ${STAMP}`, currency: 'USD' })
@@ -258,10 +309,16 @@ afterAll(async () => {
   await db.delete(notifications).where(
     and(eq(notifications.type, 'PaymentPromiseBroken'), sql`${notifications.payload}->>'text' LIKE ${`%QZ${STAMP}%`}`),
   );
+  // «Qarzga yuk berildi» goes to the owner and the accountant BY ROLE — the
+  // DEMO ones too, whom `people` never reaches (0126, D6a).
+  await deleteDebtReleasedFor(clientIds);
+  await db.delete(notifications).where(
+    and(eq(notifications.type, 'DebtReleased'), sql`${notifications.payload}->>'text' LIKE ${`%QZ${STAMP}%`}`),
+  );
   await db.delete(issueApprovals).where(inArray(issueApprovals.clientId, clientIds));
   if (chats.length) await db.delete(telegramLinks).where(inArray(telegramLinks.telegramChatId, chats));
   await db.update(clients).set({ active: false }).where(inArray(clients.id, clientIds));
-  await db.update(warehouses).set({ active: false }).where(eq(warehouses.id, whId));
+  await db.update(warehouses).set({ active: false }).where(inArray(warehouses.id, [whId, whB]));
   await db.update(moneyAccounts).set({ active: false }).where(eq(moneyAccounts.id, accountId));
   await db.update(users).set({ active: false }).where(inArray(users.id, people));
   await pgClient.end();
@@ -287,7 +344,7 @@ describe('who may let a debt slide — one predicate, every door', () => {
   it('/approvals lists what the viewer may decide; a colleague is refused and the row stays pending', async () => {
     const c1 = await mkClient(S1.id);
     await ledger(c1.id, 'charge', 100);
-    const { id } = await requestIssueApproval({ clientId: c1.id, warehouseId: whId }, ctx(W.id));
+    const { id } = await requestIssueApproval({ clientId: c1.id, warehouseId: whId, note: 'qarz so‘rov' }, ctx(W.id));
 
     expect((await pendingApprovals(S1.actor)).map((r) => r.id)).toContain(id);
     expect((await pendingApprovals(S2.actor)).map((r) => r.id)).not.toContain(id);
@@ -311,15 +368,19 @@ describe('who may let a debt slide — one predicate, every door', () => {
     expect(done!.decidedBy).toBe(S1.id);
   });
 
-  it('the counter: the warehouse manager’s tick is refused, his replay is not; the tick over no debt opens nothing and is not refused', async () => {
+  // REWRITTEN for D2 (2026-10-07, «sklad mudiri so'ramasdan beraversin»):
+  // this used to read «the warehouse manager's tick is refused». W's actor is
+  // UNSCOPED here — not standing at any counter — so it still is; the
+  // manager AT his counter is the D2 describe below.
+  it('the counter: the warehouse manager WITHOUT his warehouse scope gains nothing, the seller’s own tick passes WITH a note, a replay is not refused; the tick over no debt opens nothing', async () => {
     const c1 = await mkClient(S1.id);
     await ledger(c1.id, 'charge', 80);
-    await expect(issue(c1.id, W.actor, { debtOk: true })).rejects.toThrow('debt_override_forbidden');
+    await expect(issue(c1.id, W.actor, { debtOk: true, debtNote: 'izoh' })).rejects.toThrow('debt_override_forbidden');
     // Another seller's tick on this client: refused the same way.
-    await expect(issue(c1.id, S2.actor, { debtOk: true })).rejects.toThrow('debt_override_forbidden');
-    // The seller's own tick passes.
+    await expect(issue(c1.id, S2.actor, { debtOk: true, debtNote: 'izoh' })).rejects.toThrow('debt_override_forbidden');
+    // The seller's own tick passes — with the reason D4a asks of everybody.
     const handoverId = uuidv4();
-    const done = await issue(c1.id, S1.actor, { debtOk: true, handoverId });
+    const done = await issue(c1.id, S1.actor, { debtOk: true, debtNote: 'debt-control izoh', handoverId });
     // A replay is NEVER refused — the phone asking again gets the act back.
     const again = await issue(c1.id, W.actor, { debtOk: true, handoverId, boxId: (await box(c1.id)) });
     expect(again.id).toBe(done.id);
@@ -332,10 +393,14 @@ describe('who may let a debt slide — one predicate, every door', () => {
   it('the logist: without the grant (the owner’s 2a default) his tick is refused; with it re-ticked on /admin/roles he releases for everybody', async () => {
     const c = await mkClient(S2.id);
     await ledger(c.id, 'charge', 40);
-    const logist = { id: A.id, permissions: new Set<string>(ROLE_MATRIX.logist) };
-    await expect(issue(c.id, logist, { debtOk: true })).rejects.toThrow('debt_override_forbidden');
-    const reticked = { id: A.id, permissions: new Set<string>([...ROLE_MATRIX.logist, 'finance.debt_override']) };
-    expect((await issue(c.id, reticked, { debtOk: true })).kind).toBe('issued_to_client');
+    const logist = { id: A.id, permissions: new Set<string>(ROLE_MATRIX.logist), roles: ['logist'] };
+    await expect(issue(c.id, logist, { debtOk: true, debtNote: 'izoh' })).rejects.toThrow('debt_override_forbidden');
+    const reticked = {
+      id: A.id,
+      permissions: new Set<string>([...ROLE_MATRIX.logist, 'finance.debt_override']),
+      roles: ['logist'],
+    };
+    expect((await issue(c.id, reticked, { debtOk: true, debtNote: 'debt-control izoh' })).kind).toBe('issued_to_client');
   });
 
   it('a deal «muddat» is the same decision', async () => {
@@ -350,17 +415,218 @@ describe('who may let a debt slide — one predicate, every door', () => {
   });
 });
 
+describe('D2-D7 (2026-10-07): the warehouse manager releases at HIS counter, and every release says why', () => {
+  it('I1: at his own warehouse with a comment — stored, audited, listed, on the lenta for money readers, told to the owner and the accountant', async () => {
+    const c = await mkClient(S1.id);
+    await ledger(c.id, 'charge', 80);
+    const done = await issue(c.id, at(WM, whId), { debtOk: true, debtNote: 'ertaga to‘laydi' });
+
+    const [stored] = await db.select().from(handovers).where(eq(handovers.id, done.id));
+    expect(stored!.debtNote).toBe('ertaga to‘laydi');
+    // The act's own `note` is untouched — the reason never reaches the paper.
+    expect(stored!.note).toBeNull();
+    const [audit] = await db
+      .select({ after: auditLog.after })
+      .from(auditLog)
+      .where(and(eq(auditLog.entityType, 'handover'), eq(auditLog.entityId, done.id)));
+    expect(audit!.after).toMatchObject({ debtNote: 'ertaga to‘laydi', debtRight: 'warehouse' });
+
+    const [row] = await rowsFor(c.id);
+    expect(row).toMatchObject({ kind: 'tick', approverId: WM.id, reason: 'ertaga to‘laydi', decisionNote: null });
+
+    const noteOn = async (money: boolean) =>
+      (await clientFeed(c.id, { money })).find((item) => item.id === `hv-${done.id}`)?.meta.debtNote;
+    expect(await noteOn(true)).toBe('ertaga to‘laydi');
+    // The reason names the client's debt: it rides the ledger's door (4a).
+    expect(await noteOn(false)).toBeNull();
+
+    // EXACTLY one message each — a silent miss in the logged catch turns this
+    // red here, never in production.
+    const told = await releasedTold(done.id);
+    expect(told.filter((r) => r.userId === SA.id)).toHaveLength(1);
+    expect(told.filter((r) => r.userId === A.id)).toHaveLength(1);
+    const text = told.find((r) => r.userId === SA.id)!.text;
+    expect(text).toContain(c.code);
+    expect(text).toContain('$80.00');
+    expect(text).toContain('Izoh: ertaga to‘laydi');
+    expect(text).toContain(WM.name);
+    expect(text).toContain('o‘z skladi');
+    // The client's seller is outside the audience; the presser hears nothing of his own press.
+    expect(told.some((r) => r.userId === S1.id)).toBe(false);
+    expect(told.some((r) => r.userId === WM.id)).toBe(false);
+  });
+
+  it('I1b: an audience member who ticks is not told about his own press — the other one is', async () => {
+    const c = await mkClient(null);
+    await ledger(c.id, 'charge', 55);
+    const done = await issue(c.id, A.actor, { debtOk: true, debtNote: 'buxgalter izohi' });
+    const told = await releasedTold(done.id);
+    expect(told.filter((r) => r.userId === SA.id)).toHaveLength(1);
+    expect(told.filter((r) => r.userId === A.id)).toHaveLength(0);
+  });
+
+  it('I2: …and nowhere else — another counter, an unscoped manager, an operator holding the grant', async () => {
+    const c = await mkClient(null);
+    await ledger(c.id, 'charge', 60);
+    const tick = { debtOk: true, debtNote: 'izoh' };
+    // Scoped to whB, at whId's counter.
+    await expect(issue(c.id, at(WM, whB), tick)).rejects.toThrow('debt_override_forbidden');
+    // The role scope unticked on /admin/roles: `inScope` would answer true, so the rule fails CLOSED.
+    await expect(issue(c.id, { ...WM.actor, warehouseScoped: false, warehouseIds: [whId] }, tick)).rejects.toThrow(
+      'debt_override_forbidden',
+    );
+    // An operator the owner gave the grant (it is how the price tick reaches him) — not «sklad mudiri».
+    const operator = { ...at(OP, whId), permissions: new Set<string>([...OP.actor.permissions, 'finance.debt_override']) };
+    await expect(issue(c.id, operator, tick)).rejects.toThrow('debt_override_forbidden');
+  });
+
+  it('I3: the comment is mandatory for EVERYONE who ticks (D4a)', async () => {
+    const tickers: [string, Releaser & Partial<ScopedActor>][] = [
+      ['seller (own client)', S1.actor],
+      ['accountant', A.actor],
+      ['super_admin', SA.actor],
+      ['warehouse manager', at(WM, whId)],
+    ];
+    for (const [who, by] of tickers) {
+      const c = await mkClient(S1.id);
+      await ledger(c.id, 'charge', 45);
+      const boxId = await box(c.id);
+      for (const blank of ['', '   ']) {
+        await expect(issue(c.id, by, { debtOk: true, debtNote: blank, boxId }), `${who} «${blank}»`).rejects.toThrow(
+          'debt_note_required',
+        );
+      }
+    }
+  });
+
+  it('I4: a stale tick over no debt needs no comment, stores none, tells nobody; a replay is never refused', async () => {
+    const clean = await mkClient(S1.id);
+    const free = await issue(clean.id, SA.actor, { debtOk: true });
+    const [stored] = await db.select().from(handovers).where(eq(handovers.id, free.id));
+    expect(stored).toMatchObject({ debtOk: true, debtNote: null });
+    expect(await releasedTold(free.id)).toEqual([]);
+
+    const owing = await mkClient(S1.id);
+    await ledger(owing.id, 'charge', 30);
+    const handoverId = uuidv4();
+    const first = await issue(owing.id, S1.actor, { debtOk: true, debtNote: 'izoh', handoverId });
+    const again = await issue(owing.id, S1.actor, { debtOk: true, handoverId, boxId: await box(owing.id) });
+    expect(again.id).toBe(first.id);
+  });
+
+  it('I5: D3a — the counter’s power did not leak: no ping, no list, no decision, no muddat, no promise', async () => {
+    const wm = at(WM, whId);
+    const c = await mkClient(S1.id);
+    await ledger(c.id, 'charge', 100);
+    expect(await approvalRecipients(c.id)).not.toContain(WM.id);
+    const { id } = await requestIssueApproval({ clientId: c.id, warehouseId: whId, note: 'so‘rov' }, ctx(OP.id));
+    expect(await pendingApprovals(wm)).toEqual([]);
+    await expect(decideIssueApproval({ approvalId: id, verdict: 'approved' }, ctx(WM.id), wm)).rejects.toThrow(
+      'not_your_client',
+    );
+    const [still] = await db.select().from(issueApprovals).where(eq(issueApprovals.id, id));
+    expect(still!.status).toBe('pending');
+    const dealId = await mkDeal(c.id);
+    await expect(
+      deferPayment(dealId, { reason: 'kutamiz', untilAllArrived: true }, ctx(WM.id), wm),
+    ).rejects.toThrow('not_your_client');
+    await expect(
+      recordPromise({ clientId: c.id, amountUsd: 50, dueOn: tashkentDay() }, ctx(WM.id), wm),
+    ).rejects.toThrow('not_your_client');
+    await decideIssueApproval({ approvalId: id, verdict: 'refused' }, ctx(S1.id), S1.actor);
+  });
+
+  it('I6: the request needs a reason (D5a); the approval release carries it; the decider is not told about his own decision', async () => {
+    const c = await mkClient(null);
+    await ledger(c.id, 'charge', 90);
+    for (const blank of ['', '  ']) {
+      await expect(
+        requestIssueApproval({ clientId: c.id, warehouseId: whId, note: blank }, ctx(OP.id)),
+      ).rejects.toThrow('note_required');
+    }
+    expect(await db.select().from(issueApprovals).where(eq(issueApprovals.clientId, c.id))).toEqual([]);
+
+    const { id } = await requestIssueApproval({ clientId: c.id, warehouseId: whId, note: 'mijoz kafil' }, ctx(OP.id));
+    const [asked] = await db.select().from(issueApprovals).where(eq(issueApprovals.id, id));
+    expect(asked!.requestNote).toBe('mijoz kafil');
+    const [event] = await db
+      .select({ payload: events.payload })
+      .from(events)
+      .where(and(eq(events.type, 'DebtApprovalRequested'), eq(events.entityId, id)));
+    expect((event!.payload as { note?: string }).note).toBe('mijoz kafil');
+
+    // The ACCOUNTANT decides (an audience member — or the decider filter proves nothing).
+    await decideIssueApproval({ approvalId: id, verdict: 'approved' }, ctx(A.id), A.actor);
+    const done = await issue(c.id, at(OP, whId));
+    const [stored] = await db.select().from(handovers).where(eq(handovers.id, done.id));
+    expect(stored!.debtNote).toBeNull();
+    const [row] = await rowsFor(c.id);
+    expect(row).toMatchObject({ kind: 'approval', approverId: A.id, reason: 'mijoz kafil', decisionNote: null });
+    const item = (await clientFeed(c.id, { money: true })).find((entry) => entry.id === `hv-${done.id}`);
+    expect(item!.meta.debtNote).toBe('mijoz kafil');
+    const told = await releasedTold(done.id);
+    expect(told.filter((r) => r.userId === SA.id)).toHaveLength(1);
+    expect(told.filter((r) => r.userId === A.id)).toHaveLength(0);
+    expect(told.filter((r) => r.userId === OP.id)).toHaveLength(0);
+    expect(told.find((r) => r.userId === SA.id)!.text).toContain('Sabab: mijoz kafil');
+
+    // The bot's one-tap «Ruxsat» (by the owner): its constant is a DECISION
+    // note, never the reason — and now the accountant is told, the owner not.
+    const c2 = await mkClient(null);
+    await ledger(c2.id, 'charge', 40);
+    const asked2 = await requestIssueApproval({ clientId: c2.id, warehouseId: whId, note: 'bot so‘rov' }, ctx(OP.id));
+    const chat = BigInt(Date.now()) * 100n + 72n;
+    chats.push(chat);
+    await linkStaffChat(SA.id, chat);
+    expect(await decideApprovalFromBot(chat, asked2.id, 'approved')).toBe('decided');
+    const done2 = await issue(c2.id, at(OP, whId));
+    const [row2] = await rowsFor(c2.id);
+    expect(row2).toMatchObject({
+      kind: 'approval',
+      approverId: SA.id,
+      reason: 'bot so‘rov',
+      decisionNote: 'Telegram bot orqali',
+    });
+    const told2 = await releasedTold(done2.id);
+    expect(told2.filter((r) => r.userId === A.id)).toHaveLength(1);
+    expect(told2.filter((r) => r.userId === SA.id)).toHaveLength(0);
+    expect(told2.find((r) => r.userId === A.id)!.text).toContain('Qaror izohi: Telegram bot orqali');
+  });
+
+  it('I7: the CHECK — a reason never rides a handover nobody ticked, and is never blank', async () => {
+    const c = await mkClient(null);
+    const insert = (debtOk: boolean, debtNote: string) =>
+      db.insert(handovers).values({
+        clientId: c.id,
+        warehouseId: whId,
+        kind: 'issued_to_client',
+        personName: 'Tekshiruv',
+        personPhone: '+998900000000',
+        debtOk,
+        debtNote,
+        createdBy: A.id,
+      });
+    const broken = { code: '23514', constraint_name: 'handovers_debt_note_check' };
+    await expect(insert(false, 'x')).rejects.toMatchObject(broken);
+    await expect(insert(true, '  ')).rejects.toMatchObject(broken);
+    await expect(insert(true, 'x'.repeat(501))).rejects.toMatchObject(broken);
+  });
+});
+
 describe('«Qarzga berilgan yuklar» — the register', () => {
   it('names who allowed each kind of release, leaves out what opened nothing, and the lenta agrees', async () => {
     // ✋ a tick by the accountant.
     const tickClient = await mkClient(S1.id);
     await ledger(tickClient.id, 'charge', 120);
-    const tick = await issue(tickClient.id, A.actor, { debtOk: true });
+    const tick = await issue(tickClient.id, A.actor, { debtOk: true, debtNote: 'debt-control izoh' });
 
     // ✅ an approval decided by the seller and carried out by the warehouse.
     const apprClient = await mkClient(S1.id);
     await ledger(apprClient.id, 'charge', 70);
-    const { id: approvalId } = await requestIssueApproval({ clientId: apprClient.id, warehouseId: whId }, ctx(W.id));
+    const { id: approvalId } = await requestIssueApproval(
+      { clientId: apprClient.id, warehouseId: whId, note: 'qarz so‘rov' },
+      ctx(W.id),
+    );
     await decideIssueApproval({ approvalId, verdict: 'approved' }, ctx(S1.id), S1.actor);
     const appr = await issue(apprClient.id, W.actor);
 
@@ -423,7 +689,7 @@ describe('«Qarzga berilgan yuklar» — the register', () => {
     const c = await mkClient(S1.id);
     await ledger(c.id, 'charge', 200);
     await ledger(c.id, 'payment', 5, { createdAt: new Date(Date.now() - 3_600_000) }); // before
-    await issue(c.id, A.actor, { debtOk: true });
+    await issue(c.id, A.actor, { debtOk: true, debtNote: 'debt-control izoh' });
     const later = (s: number) => new Date(Date.now() + s * 1000);
     await ledger(c.id, 'payment', 60, { createdAt: later(1) });
     await ledger(c.id, 'payment', 999, { createdAt: later(2), voided: true });
@@ -443,7 +709,7 @@ describe('«Qarzga berilgan yuklar» — the register', () => {
   it('«qaytmagan» never outlives the debt: a charge voided after the release takes it away', async () => {
     const c = await mkClient(S1.id);
     const charge = await ledger(c.id, 'charge', 100);
-    await issue(c.id, A.actor, { debtOk: true });
+    await issue(c.id, A.actor, { debtOk: true, debtNote: 'debt-control izoh' });
     await db
       .update(clientTransactions)
       .set({ voidedAt: new Date(), voidedBy: A.id, voidReason: 'xato narx' })
@@ -458,12 +724,12 @@ describe('«Qarzga berilgan yuklar» — the register', () => {
     const solo = await mkUser('accountant', 'Solo');
     const twice = await mkClient(null);
     await ledger(twice.id, 'charge', 100);
-    await issue(twice.id, solo.actor, { debtOk: true });
+    await issue(twice.id, solo.actor, { debtOk: true, debtNote: 'debt-control izoh' });
     await ledger(twice.id, 'charge', 50);
-    await issue(twice.id, solo.actor, { debtOk: true });
+    await issue(twice.id, solo.actor, { debtOk: true, debtNote: 'debt-control izoh' });
     const once = await mkClient(null);
     await ledger(once.id, 'charge', 30);
-    await issue(once.id, solo.actor, { debtOk: true });
+    await issue(once.id, solo.actor, { debtOk: true, debtNote: 'debt-control izoh' });
 
     const filter = { ...ALL, approverId: solo.id };
     const expected = [
@@ -585,7 +851,7 @@ describe('«Qarzga berilgan yuklar» — the register', () => {
     await ledger(c.id, 'charge', 400);
     await ledger(c.id, 'charge', 600, { dealId });
     await deferPayment(dealId, { reason: 'kutamiz', untilAllArrived: true }, ctx(acc.id), acc.actor);
-    await issue(c.id, acc.actor, { debtOk: true });
+    await issue(c.id, acc.actor, { debtOk: true, debtNote: 'debt-control izoh' });
     await ledger(c.id, 'payment', 500, { createdAt: new Date(Date.now() + 1000) });
 
     const { rows, totals } = await debtReleases(sight, { ...ALL, approverId: acc.id });
@@ -644,7 +910,7 @@ describe('«Qarzga berilgan yuklar» — the register', () => {
     await ledger(c.id, 'charge', 400);
     await ledger(c.id, 'charge', 600, { dealId });
     await deferPayment(dealId, { reason: 'kutamiz', untilAllArrived: true }, ctx(S1.id), S1.actor);
-    await issue(c.id, A.actor, { debtOk: true });
+    await issue(c.id, A.actor, { debtOk: true, debtNote: 'debt-control izoh' });
     await ledger(c.id, 'payment', 500, { createdAt: new Date(Date.now() + 1000) });
     const rows = await rowsFor(c.id);
     const gate = rows.find((row) => row.kind === 'tick')!;

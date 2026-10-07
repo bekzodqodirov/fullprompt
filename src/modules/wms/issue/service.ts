@@ -16,13 +16,14 @@ import {
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { emitEvent } from '../../platform/events/service';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
-import { usersWithPermission } from '../../platform/notifications/service';
+import { usersWithPermission, usersWithRoles } from '../../platform/notifications/service';
 import { blockingDebtOf, clientBalanceUsd, debtBlocks, deferredDealsUsd } from '../finance/service';
-import { mayGrantDebt, mayOverridePrice, type MoneyActor } from '../finance/scope';
+import { counterDebtRelease, mayOverridePrice, type DebtReleaser } from '../finance/scope';
 import { deferralCover, deferredTotal } from '../debt/rules';
 import { gatedAt, uncoveredBoxesOn, unpricedGate, unpricedReceiptsOn, type UncoveredBox } from '../finance/unpriced';
 import { claimIssuedNotice } from '../notices/client-claims';
 import { lockLiveApproval, markApprovalConsumed } from './approvals';
+import { DEBT_RELEASED_GRANT_CODES, debtReleasedText, receivesDebtReleased } from './debt-release';
 
 export class IssueError extends Error {
   constructor(public readonly code: string) {
@@ -48,6 +49,13 @@ export const issueSchema = z.object({
    */
   priceOk: z.boolean().default(false),
   note: z.string().trim().max(500).optional().or(z.literal('')),
+  /**
+   * WHY the debt tick lets this cargo go (0126, the owner's D4a) — mandatory
+   * for EVERYBODY whose tick is used over a real debt, refused as
+   * `debt_note_required` below. Never on the act: `note` above prints there
+   * and a driver often signs it; this one is stored in `handovers.debt_note`.
+   */
+  debtNote: z.string().trim().max(500).optional().or(z.literal('')),
 });
 export type IssueInput = z.infer<typeof issueSchema>;
 /**
@@ -71,16 +79,18 @@ export type IssueRequest = Omit<IssueInput, 'priceOk'> & { priceOk?: boolean };
  * door that writes `issued_to_client` (a wire test pins it), so the ban lives
  * in the service and not on the screen (#531).
  */
-export async function issueBoxes(request: IssueRequest, ctx: AuditContext, releaser: MoneyActor) {
+export async function issueBoxes(request: IssueRequest, ctx: AuditContext, releaser: DebtReleaser) {
   if (!ctx.actorId) throw new IssueError('unauthenticated');
   const input: IssueInput = { ...request, priceOk: request.priceOk ?? false };
   const actorId = ctx.actorId;
   // Debt gate (Phase 2.1, owner's rule): a debtor gets cargo only with a
   // manager's permission — debtOk is that permission. Since 0114 (the owner's
   // 2a) WHOSE permission is the service's question and not the action's: the
-  // releaser must be allowed to grant THIS client's debt (`mayGrantDebt` — a
-  // seller his own clients, the admin and the accountant everybody's), and
-  // `releaser` is REQUIRED because an optional one fails open (#790).
+  // releaser must be allowed to release THIS client's debt HERE
+  // (`counterDebtRelease` — `mayGrantDebt`'s seller-own / admin-and-accountant-
+  // everybody's, plus since D2 (2026-10-07) the warehouse manager at his own
+  // warehouse), and `releaser` is REQUIRED because an optional one fails open
+  // (#790).
   // Money the client agreed to pay LATER, on a job that is still waiting for
   // its last box, is not overdue (docs/DEALS.md answer 4). The client's
   // displayed balance stays honest — only the figure the GATE reads is
@@ -98,7 +108,13 @@ export async function issueBoxes(request: IssueRequest, ctx: AuditContext, relea
   // so the counter screen and this gate cannot drift by a cent.
   const deferred = deferredTotal(deferredDeals);
   const blockingDebt = blockingDebtOf(balance, deferred);
-  const mayGrant = mayGrantDebt(releaser, { salesManagerId: owner?.salesManagerId ?? null });
+  const release = counterDebtRelease(releaser, { salesManagerId: owner?.salesManagerId ?? null }, input.warehouseId);
+  const mayGrant = release !== null;
+  // The tick is USED only over a real debt (the judge's #16): a stale box over
+  // a balance a payment cleared opens nothing — it needs no comment, stores
+  // none, and tells nobody.
+  const debtTickUsed = debtBlocks(balance, deferred) && input.debtOk;
+  const debtNote = (input.debtNote ?? '').trim();
   // Which «muddat» let how much of this balance through, and whose it was.
   const covered = deferralCover(balance, deferredDeals);
   const result = await db.transaction(async (tx) => {
@@ -107,7 +123,15 @@ export async function issueBoxes(request: IssueRequest, ctx: AuditContext, relea
     });
     // A replay is NEVER refused: the handover it names already happened, and
     // the phone asking again must get the act back, whatever changed since.
-    if (existing) return { handover: existing, gated: [] as UncoveredBox[], replay: true, approvalId: null as string | null };
+    if (existing) {
+      return {
+        handover: existing,
+        gated: [] as UncoveredBox[],
+        replay: true,
+        approvalId: null as string | null,
+        debtOpened: null as 'tick' | 'approval' | null,
+      };
+    }
 
     // The box lock and its validation come FIRST (they used to follow the
     // approval lock): the price question is asked about these validated
@@ -142,6 +166,11 @@ export async function issueBoxes(request: IssueRequest, ctx: AuditContext, relea
     // and refusing it would stop a legitimate handover for a stale checkbox.
     // After the replay return — a replay is never refused.
     if (debtBlocks(balance, deferred) && input.debtOk && !mayGrant) throw new IssueError('debt_override_forbidden');
+    // D4a: whoever ticks writes WHY — the seller, the accountant, the admin and
+    // the warehouse manager alike. Asked after the right (a person who may not
+    // tick hears that first, not «write a reason»), refused only when the tick
+    // is USED, like the right above.
+    if (debtTickUsed && !debtNote) throw new IssueError('debt_note_required');
     if (gated.length > 0 && input.priceOk && !mayOverridePrice(releaser)) throw new IssueError('price_override_forbidden');
 
     // Phase 6 + 0104: an operator without the tick may still issue when a
@@ -188,6 +217,9 @@ export async function issueBoxes(request: IssueRequest, ctx: AuditContext, relea
         deferredUsd: deferred.toFixed(2),
         deferrals: covered.length > 0 ? covered : null,
         note: input.note || null,
+        // D4a's comment, only when the tick opened the gate (the CHECK pairs it
+        // with debt_ok); never on the act — that is `note` above.
+        debtNote: debtTickUsed ? debtNote : null,
         createdBy: actorId,
       })
       .returning();
@@ -303,6 +335,8 @@ export async function issueBoxes(request: IssueRequest, ctx: AuditContext, relea
         // Both halves of a debtor issue are in the log: the decision on the
         // approval row, and here WHICH approval this handover spent.
         ...(approvalId ? { approvalId } : {}),
+        // The tick's comment and WHY it was this person's (D2/D4a).
+        ...(debtTickUsed ? { debtNote, debtRight: release } : {}),
       },
     });
     await emitEvent(tx, {
@@ -329,7 +363,11 @@ export async function issueBoxes(request: IssueRequest, ctx: AuditContext, relea
     // drain from the payload above, which stays for the staff side, the deal
     // funnel and the automation rules.
     await claimIssuedNotice(tx, input.clientId, handover!.id);
-    return { handover: handover!, gated, replay: false, approvalId };
+    // Who opened the DEBT gate at this press, if anybody: the tick, or an
+    // approval spent while the debt was the question. A release excused only
+    // by a deal «muddat» is neither — nobody pressed anything (stated).
+    const debtOpened: 'tick' | 'approval' | null = debtTickUsed ? 'tick' : approvalId && needDebt ? 'approval' : null;
+    return { handover: handover!, gated, replay: false, approvalId, debtOpened };
   });
   // AFTER the commit — a Telegram row must never be able to roll a handover
   // back — and only when cargo with no price actually went out, by a tick or
@@ -337,7 +375,111 @@ export async function issueBoxes(request: IssueRequest, ctx: AuditContext, relea
   if (!result.replay && result.gated.length > 0) {
     await notifyUnpricedIssued(result.handover.id, input, result.gated, ctx.actorId, result.approvalId).catch(() => {});
   }
+  // D6a: the owner and the accountant hear every release on debt. NEVER a
+  // silent catch — this message is the control that replaced the request the
+  // owner took away in D2, so a fault in it must leave a line in the logs.
+  // The release itself is committed and stays.
+  if (!result.replay && result.debtOpened) {
+    await notifyDebtReleased({
+      handoverId: result.handover.id,
+      input,
+      how: result.debtOpened,
+      right: release,
+      approvalId: result.approvalId,
+      blockingUsd: blockingDebt,
+      deferredUsd: deferred,
+      actorId,
+    }).catch((err) => console.error('[debt-released]', result.handover.id, err));
+  }
   return result.handover;
+}
+
+/**
+ * Who hears «qarzga yuk berildi» — the audience ROLES with the company's
+ * money sight, `receivesDebtReleased` asked of each candidate with exactly
+ * the grants it reads, rebuilt from the editable grants (the
+ * `approvalRecipients` idiom). Deactivated and no-login people are already
+ * out of both lists.
+ */
+export async function debtReleasedAudience(): Promise<string[]> {
+  const [owners, accountants, ...held] = await Promise.all([
+    usersWithRoles(['super_admin']),
+    usersWithRoles(['accountant']),
+    ...DEBT_RELEASED_GRANT_CODES.map((code) => usersWithPermission(code)),
+  ]);
+  const roles = new Map<string, string[]>();
+  for (const id of owners!) roles.set(id, [...(roles.get(id) ?? []), 'super_admin']);
+  for (const id of accountants!) roles.set(id, [...(roles.get(id) ?? []), 'accountant']);
+  const grants = new Map<string, Set<string>>();
+  DEBT_RELEASED_GRANT_CODES.forEach((code, i) => {
+    for (const id of held[i]!) grants.set(id, (grants.get(id) ?? new Set()).add(code));
+  });
+  return [...roles.entries()]
+    .filter(([id, roleCodes]) =>
+      receivesDebtReleased({ id, permissions: grants.get(id) ?? new Set(), roles: roleCodes }),
+    )
+    .map(([id]) => id);
+}
+
+/**
+ * «🔓 Qarzga yuk berildi» (D6a) — after the commit. The figures are the
+ * gate's own (what was stored on the handover); for an approval the reason is
+ * the REQUEST's (D5a made it mandatory) and the decider is left out of the
+ * list — he made the decision himself; the presser goes as `exceptUserId`.
+ */
+async function notifyDebtReleased(release: {
+  handoverId: string;
+  input: IssueInput;
+  how: 'tick' | 'approval';
+  right: 'ledger' | 'warehouse' | null;
+  approvalId: string | null;
+  blockingUsd: number;
+  deferredUsd: number;
+  actorId: string;
+}): Promise<void> {
+  const [audience, client, wh, actor, approval] = await Promise.all([
+    debtReleasedAudience(),
+    db.query.clients.findFirst({ where: eq(clients.id, release.input.clientId) }),
+    db.query.warehouses.findFirst({ where: eq(warehouses.id, release.input.warehouseId) }),
+    db.query.users.findFirst({ where: eq(users.id, release.actorId) }),
+    release.how === 'approval' && release.approvalId
+      ? db
+          .execute<{
+            request_note: string | null;
+            decision_note: string | null;
+            decided_by: string | null;
+            decider: string | null;
+          }>(sql`
+            SELECT a.request_note, a.decision_note, a.decided_by, u.full_name AS decider
+              FROM issue_approvals a LEFT JOIN users u ON u.id = a.decided_by
+             WHERE a.id = ${release.approvalId}::uuid`)
+          .then((rows) => rows[0] ?? null)
+      : Promise.resolve(null),
+  ]);
+  const userIds = audience.filter((id) => id !== approval?.decided_by);
+  if (userIds.length === 0) return;
+  const text = debtReleasedText({
+    clientCode: client?.clientCode ?? '',
+    clientName: client?.name ?? '',
+    warehouseCode: wh?.code ?? '',
+    boxes: release.input.boxIds.length,
+    blockingUsd: release.blockingUsd,
+    deferredUsd: release.deferredUsd,
+    how: release.how,
+    right: release.how === 'tick' ? release.right : null,
+    actorName: actor?.fullName ?? '—',
+    deciderName: approval?.decider ?? null,
+    note: release.how === 'tick' ? (release.input.debtNote ?? '').trim() || null : (approval?.request_note ?? null),
+    decisionNote: approval?.decision_note ?? null,
+    appUrl: process.env.APP_URL ?? '',
+  });
+  await notifyStaffTelegram({
+    userIds,
+    type: 'DebtReleased',
+    exceptUserId: release.actorId,
+    text,
+    extra: { handoverId: release.handoverId },
+  });
 }
 
 /**

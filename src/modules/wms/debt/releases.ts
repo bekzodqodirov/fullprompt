@@ -69,6 +69,51 @@ export function wentOutOnDebtSql(alias = 'h'): SQL {
   return sql`(${debtGateOpenedSql(alias)} OR ${sql.raw(alias)}.deferrals IS NOT NULL)`;
 }
 
+/**
+ * WHY the DEBT gate was opened at this handover (0126, the owner's D4a/D5a)
+ * — NULL when it was not. ONE rule for the register's list and the client's
+ * lenta (the judge's #3, #513): it answers exactly when `debtGateOpenedSql`
+ * does, and picks the source the way `releasePartsSql` picks the row's KIND
+ * (`debt_ok` → ✋ tick, otherwise ✅ approval), so a reason and a kind cannot
+ * disagree.
+ *
+ *  - a tick: the comment the ticker typed (`handovers.debt_note`);
+ *  - an approval: the REQUEST's reason — the decider was asked WHY, and the
+ *    operator who spent it was asked nothing more.
+ *
+ * Why the gate rule and not «an approval was consumed»: an approval asked
+ * over a $100 debt and then spent for its PRICE half after the client paid
+ * stores `blocking_usd = 0`. Nothing went out on debt there — the register
+ * lists no row — so the lenta must print no debt reason either.
+ *
+ * The column is read as `to_jsonb(h)->>'debt_note'` and never by name: both
+ * callers render on the most-opened cards, and on a database a release
+ * behind (deploy morning, before 0126 lands) that answers NULL where a bare
+ * `h.debt_note` would answer 42703 and white-page the card (#472, round 52).
+ */
+export function debtReleaseReasonSql(alias = 'h'): SQL {
+  if (!/^[a-z_][a-z0-9_]*$/.test(alias)) throw new Error(`bad alias ${alias}`);
+  const h = sql.raw(alias);
+  return sql`(CASE WHEN NOT ${debtGateOpenedSql(alias)} THEN NULL
+    WHEN ${h}.debt_ok THEN to_jsonb(${h})->>'debt_note'
+    ELSE (SELECT rs_ia.request_note FROM issue_approvals rs_ia
+           WHERE rs_ia.consumed_handover_id = ${h}.id ORDER BY rs_ia.consumed_at DESC LIMIT 1) END)`;
+}
+
+/**
+ * The decider's own words on an approval release — optional where the
+ * request's reason is not (the bot's one-tap «Ruxsat» writes «Telegram bot
+ * orqali»), printed as a DECISION note and never as the reason. NULL on a
+ * tick and wherever the gate was not opened (the rule above).
+ */
+export function debtReleaseDecisionNoteSql(alias = 'h'): SQL {
+  if (!/^[a-z_][a-z0-9_]*$/.test(alias)) throw new Error(`bad alias ${alias}`);
+  const h = sql.raw(alias);
+  return sql`(CASE WHEN NOT ${debtGateOpenedSql(alias)} OR ${h}.debt_ok THEN NULL
+    ELSE (SELECT rs_ia.decision_note FROM issue_approvals rs_ia
+           WHERE rs_ia.consumed_handover_id = ${h}.id ORDER BY rs_ia.consumed_at DESC LIMIT 1) END)`;
+}
+
 // The cent as a LITERAL in the statement's text (`INDEX_CENT_LITERAL`): the
 // planner proves «this branch only wants rows the partial index holds» from
 // the text alone.
@@ -108,6 +153,14 @@ export interface DebtReleaseRow {
   deferredUsd: number | null;
   /** On a deferral row: the job's code. */
   dealCode: string | null;
+  /**
+   * WHY the gate was opened (0126): the ticker's comment on a ✋ row, the
+   * request's reason on a ✅ one; null on a ⏳ row (the deal card holds the
+   * muddat's reason) and on an older release that recorded none.
+   */
+  reason: string | null;
+  /** The decider's optional note on a ✅ row. */
+  decisionNote: string | null;
   /** Net money the client paid after this release (payments − refunds). */
   paidSinceUsd: number;
   returnedUsd: number | null;
@@ -272,6 +325,8 @@ type RawRow = {
   legacy: boolean;
   deferred_usd: string | null;
   deal_code: string | null;
+  reason: string | null;
+  decision_note: string | null;
   paid: string;
   returned: string | null;
   left_usd: string | null;
@@ -303,11 +358,17 @@ export async function debtReleases(
              CASE WHEN l.kind = 'approval' THEN ug.full_name END AS gave_by_name,
              l.debt_usd, l.legacy, l.deferred_usd, l.deal_code, l.paid, l.returned, l.left_usd,
              l.current_debt,
+             -- The reason by the ONE rule the lenta reads too; a ⏳ part has
+             -- none here (the deal's current muddat reason is not the one the
+             -- release leaned on — deliberately not joined).
+             CASE WHEN l.kind IN ('tick', 'approval') THEN ${debtReleaseReasonSql('hn')} END AS reason,
+             CASE WHEN l.kind = 'approval' THEN ${debtReleaseDecisionNoteSql('hn')} END AS decision_note,
              pp.status AS promise_status, pp.amount_usd AS promise_amount, pp.due_on::text AS promise_due,
              count(*) OVER () AS total
         FROM listed l
         JOIN clients c ON c.id = l.client_id
         JOIN warehouses w ON w.id = l.warehouse_id
+        LEFT JOIN handovers hn ON hn.id = l.handover_id
         LEFT JOIN users ua ON ua.id = l.approver_id
         LEFT JOIN users ug ON ug.id = l.created_by
         LEFT JOIN LATERAL (
@@ -385,6 +446,8 @@ export async function debtReleases(
       legacy: Boolean(row.legacy),
       deferredUsd: num(row.deferred_usd),
       dealCode: row.deal_code,
+      reason: row.reason ?? null,
+      decisionNote: row.decision_note ?? null,
       paidSinceUsd: num(row.paid) ?? 0,
       returnedUsd: num(row.returned),
       leftUsd: num(row.left_usd),

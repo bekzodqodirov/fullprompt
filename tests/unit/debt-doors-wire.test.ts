@@ -32,9 +32,14 @@ describe('every door asks the one predicate, with the person', () => {
     expect(action).toMatch(/\{ actorId: actor\.id, \.\.\.meta \},\s*actor,\s*\)/);
   });
 
-  it('the list route draws the tick from mayGrantDebt about THIS client', () => {
+  // REWRITTEN for D2 (2026-10-07): the counter's tick is `counterDebtRelease`,
+  // a superset of `mayGrantDebt` for the warehouse manager at his own
+  // warehouse; every other door keeps `mayGrantDebt` (the pins below).
+  it('the list route draws the tick from the counter’s predicate about THIS client at THIS counter', () => {
     const route = read('src/app/api/issue/list/route.ts');
-    expect(route).toContain('const canOverrideDebt = mayGrantDebt(actor, { salesManagerId: owner?.salesManagerId ?? null });');
+    expect(route).toContain(
+      'counterDebtRelease(actor, { salesManagerId: owner?.salesManagerId ?? null }, query.data.warehouseId) !== null',
+    );
     expect(route).not.toContain("has('finance.debt_override')");
   });
 

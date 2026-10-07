@@ -94,10 +94,20 @@ export async function approvalRecipients(clientId: string): Promise<string[]> {
 }
 
 export async function requestIssueApproval(
-  input: { clientId: string; warehouseId: string; note?: string },
+  /**
+   * `note` is the request's REASON and is required (the owner's D5a,
+   * 2026-10-07): the decider reads it in Telegram and on /approvals, and an
+   * approval release carries it to the register, the lenta and the owner's
+   * message. Required in the TYPE so every caller says one, and refused
+   * blank below — the decider's own note stays optional.
+   */
+  input: { clientId: string; warehouseId: string; note: string },
   ctx: AuditContext,
 ): Promise<{ id: string }> {
   if (!ctx.actorId) throw new ApprovalError('unauthenticated');
+  // First thing, before any read: a request without a reason writes nothing.
+  const note = (input.note ?? '').trim();
+  if (!note) throw new ApprovalError('note_required');
   const [debt, gated] = await Promise.all([
     blockingDebtUsd(input.clientId),
     gatedHere(input.clientId, input.warehouseId),
@@ -155,7 +165,7 @@ export async function requestIssueApproval(
       blockingDebtUsd: String(Math.max(debt, 0)),
       unpricedBoxIds: question.boxIds,
       requestedBy: ctx.actorId,
-      requestNote: input.note?.trim() || null,
+      requestNote: note,
     })
     .returning({ id: issueApprovals.id });
 
@@ -166,6 +176,7 @@ export async function requestIssueApproval(
     after: {
       clientId: input.clientId,
       blockingDebtUsd: Math.max(debt, 0),
+      note,
       ...(receiptIds.length ? { unpriced: { receiptIds, boxes: question.boxIds.length } } : {}),
     },
   });
@@ -196,7 +207,7 @@ export async function requestIssueApproval(
       warehouseCode: wh?.code ?? '',
       blockingDebtUsd: Math.max(debt, 0),
       requestedByName: requester?.fullName ?? '',
-      note: input.note?.trim() || null,
+      note,
       // 0104: which question(s) this is, the cartons with no price by prixod,
       // and who is told (the platform reads `recipientIds` when present — it
       // must not import the money rule to compute it itself).

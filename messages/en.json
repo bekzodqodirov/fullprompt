@@ -1594,7 +1594,7 @@
     "noBoxes": "No cargo ready for handover",
     "personName": "Full name of the recipient",
     "personPhone": "Phone",
-    "debtOk": "The manager approved (handover to a debtor)",
+    "debtOk": "Release on debt — I will write why",
     "confirm": "Hand over",
     "issued": "Handed over",
     "act": "Handover act (PDF)",
@@ -5181,5 +5181,16 @@
     "documentOld": "The contents document no longer matches the lot — check the contents",
     "otherAnswersAskLogist": "If the client says «other goods» — tell the logist, who changes the name; if «mixed» — fill in the 🧩 lot contents with their document.",
     "pruned": "{n} selected rows are no longer at this warehouse — removed from the plan"
+  },
+  "qarzIzoh": {
+    "debtNotePlaceholder": "Why on debt? (e.g. pays tomorrow)",
+    "debtNoteHint": "Not printed on the act — sent to the owner and the accountant",
+    "debtNoteRequired": "Write the reason to release on debt — it goes to the owner and the accountant",
+    "askNotePlaceholder": "Reason (required): why should it go out?",
+    "askNoteRequired": "Write the reason for the request",
+    "approvalReason": "Reason",
+    "serverBehind": "The server is updating — try again in a minute",
+    "decisionNote": "Decision note: {note}",
+    "notifMuteDebt": "Cargo released on debt (who, to whom, how much, why)"
   }
 }

@@ -1594,7 +1594,7 @@
     "noBoxes": "Topshirishga tayyor yuk yo‘q",
     "personName": "Oluvchining F.I.O.",
     "personPhone": "Telefon",
-    "debtOk": "Menejer ruxsat berdi (qarzdorga berish)",
+    "debtOk": "Qarzga beraman — sababini yozaman",
     "confirm": "Topshirish",
     "issued": "Topshirildi",
     "act": "Topshirish akti (PDF)",
@@ -5181,5 +5181,16 @@
     "documentOld": "Tarkib hujjati endi lotga mos emas — tarkibni tekshiring",
     "otherAnswersAskLogist": "Mijoz «boshqa tovar» desa — logistga ayting, nomini u o'zgartiradi; «aralash» desa — hujjati bilan 🧩 lot tarkibini yozing.",
     "pruned": "{n} ta tanlangan yuk endi bu skladda yo'q — rejadan olib tashlandi"
+  },
+  "qarzIzoh": {
+    "debtNotePlaceholder": "Nega qarzga berilyapti? (masalan: ertaga to‘laydi)",
+    "debtNoteHint": "Aktda chiqmaydi — egasi va buxgalterga boradi",
+    "debtNoteRequired": "Qarzga berish uchun sababini yozing — u egasi va buxgalterga boradi",
+    "askNotePlaceholder": "Sababi (majburiy): nega berish kerak?",
+    "askNoteRequired": "So‘rov sababini yozing",
+    "approvalReason": "Sabab",
+    "serverBehind": "Server yangilanmoqda — bir daqiqadan keyin urinib ko‘ring",
+    "decisionNote": "Qaror izohi: {note}",
+    "notifMuteDebt": "Qarzga yuk berish (kim, kimga, qancha, sabab)"
   }
 }
