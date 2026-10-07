@@ -16,7 +16,7 @@ import {
 } from './intake';
 import { parseManualFacts } from './intake-manual';
 import { analyzeIntake } from './intake-ai';
-import { dealFor } from './intake-land';
+import { calcDealOwnerFor, dealFor } from './intake-land';
 import { queueCalcPrefill } from './prefill-queue';
 
 /**
@@ -247,7 +247,15 @@ export async function threadCalcSend(
       columns: { id: true, clientCode: true, name: true, active: true },
     });
     if (!client || !client.active) throw new CalcError('not_found');
-    const landed = await dealFor(client, input.section, actor.id);
+    // The bot's own owner rule (G2 a). After 17a only a terms holder reaches
+    // this door (`threadCalcGate`), so it answers `actor.id` — today's
+    // behaviour — but from the SAME rule, so the two doors cannot disagree.
+    const landed = await dealFor(
+      client,
+      input.section,
+      actor.id,
+      await calcDealOwnerFor(actor.id, client.id),
+    );
     target = { kind: landed.kind, id: landed.id };
   }
 

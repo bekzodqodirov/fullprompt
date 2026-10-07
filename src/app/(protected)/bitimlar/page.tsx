@@ -20,13 +20,13 @@ import { CardFieldsMenu } from '@/components/list/card-fields-menu';
 import { DEAL_CARD_FIELDS, readCardFields } from '@/modules/platform/lists/card-fields';
 import { salesManagerOptions } from '@/modules/platform/rbac/queries';
 import {
-  canWriteDeal,
   closedDealCounts,
   dealsNeedingAttention,
   listDeals,
   listStages,
   openDealCounts,
 } from '@/modules/wms/deals/service';
+import { dealBoardShape, dealBoardWhose } from '@/modules/wms/deals/door';
 import { activeLostReasonLabels } from '@/modules/wms/crm/service';
 import { DealBoard, type BoardDeal } from './board';
 
@@ -38,6 +38,13 @@ import { DealBoard, type BoardDeal } from './board';
  * again, a funnel filled with the same names stops being a funnel, which is
  * why this board exists beside the lead board rather than instead of it
  * (docs/DEALS.md, "The board").
+ *
+ * Two shapes (`dealBoardShape`, deals/door.ts). The seller's is the funnel.
+ * The VED's (G3 a, 2026-10-07) is his work set, READ-ONLY: deals carrying a
+ * calc request and open deals with a position lacking TNVED — the very
+ * sentence his home row counts and his ⌘K finds (`deals/ved-work.ts`). No
+ * drag, no move buttons, no ticks, no «+», no attention fold: he moves no
+ * stage and opens no deal (17a, G4 a); the card is where he works.
  */
 /** See the note on the lead board's constant of the same name. */
 const CLOSED_ON_BOARD = 20;
@@ -49,7 +56,9 @@ export default async function DealsPage({
 }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
-  if (!canWriteDeal(actor.permissions)) redirect('/');
+  const shape = dealBoardShape(actor.permissions);
+  if (shape === 'none') redirect('/');
+  const ved = shape === 'ved';
   const t = await getTranslations('deals');
   const tc = await getTranslations('crm');
   const tcommon = await getTranslations('common');
@@ -71,28 +80,32 @@ export default async function DealsPage({
   // already right and nothing rearranges itself after hydration.
   const cardFields = await readCardFields('deal');
 
-  const seesAll = actor.permissions.has('crm.leads.view_all');
+  // Whose work, asked ONCE (`dealBoardWhose`): the query below, the panel's
+  // whose-work block and the chips all read this answer, so a chip cannot
+  // name a filter the query dropped. The VED's board has no «whose» — his
+  // slice is the work set — and a `scope` / `hodim` from somebody who may not
+  // see everybody's jobs is ignored, not obeyed, the same rule the funnel,
+  // the search and the bot all ask.
+  const whose = dealBoardWhose(actor.permissions, params);
+  const { seesAll, hodim } = whose;
+  const scopeAll = whose.all;
   // Somebody who may see everything still starts on their own jobs; "all" is
   // one tap away and is what the owner uses.
-  const mine = !seesAll || params.scope !== 'all';
-  // A `hodim` from somebody who may not see everybody's jobs is ignored, not
-  // obeyed — the same rule the funnel, the search and the bot all ask.
-  // Format-checked, not just permission-checked: this lands in
-  // `eq(leads.ownerId, …)`, and a hand-typed non-uuid was a 22P02 500
-  // for a view_all holder rather than a dropped filter (#514).
-  const hodim =
-    seesAll && /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(params.hodim ?? '') ? params.hodim! : '';
+  const mine = !scopeAll;
   const scope = hodim || (mine ? actor.id : undefined);
   const q = (params.q ?? '').trim();
   const carried = {
-    ...(params.scope === 'all' ? { scope: 'all' } : {}),
+    ...(scopeAll ? { scope: 'all' } : {}),
     ...(q ? { q } : {}),
     ...(hodim ? { hodim } : {}),
     ...filters.raw,
   };
   // What listDeals and closedDealCounts BOTH hear — one question (#513).
+  // The VED's board is his work set in place of an owner filter: «mine» would
+  // show him only the deals he owns, which is usually none (G3 a).
   const boardFilters = {
-    ownerId: scope,
+    ownerId: ved ? undefined : scope,
+    vedWork: ved,
     q,
     createdFrom: filters.createdFrom,
     createdTo: filters.createdTo,
@@ -120,7 +133,9 @@ export default async function DealsPage({
     openDealCounts(boardFilters),
     // The SAME filters as the rows, or the «+N · show all» footer lies.
     closedDealCounts(boardFilters),
-    dealsNeedingAttention(scope, q),
+    // A seller's money alarms (unpriced, ±% deviation), filtered by OWNER —
+    // folded onto the VED's slice it would contradict the slice it sits on.
+    ved ? Promise.resolve([]) : dealsNeedingAttention(scope, q),
     // The picker's options. Offered only to somebody who may see everybody's
     // work — and never derived from the loaded rows, which once filtered to
     // one person would collapse to that person with no way back.
@@ -171,6 +186,7 @@ export default async function DealsPage({
       flag: (flag?.reason as 'deviation' | 'unpriced' | undefined) ?? null,
       flagPct: flag?.pct ?? null,
       chat: badges.clients.get(row.clientId) ?? null,
+      tnvedMissing: row.tnvedMissing,
     };
   });
 
@@ -189,7 +205,7 @@ export default async function DealsPage({
   // Every chip counts — the scope chip too, or the row renders unpaid and
   // eats 28px off the board's bottom (the geometry fence caught exactly this).
   const chipsOn =
-    params.scope === 'all' || Boolean(q) || Boolean(hodim) || Object.keys(filters.raw).length > 0;
+    scopeAll || Boolean(q) || Boolean(hodim) || Object.keys(filters.raw).length > 0;
 
   return (
     // The board's height is a viewport calculation, so anything added ABOVE it
@@ -212,12 +228,15 @@ export default async function DealsPage({
           so the board's own name rendered «Ворон…». Two pixels a gap buys
           it back without shrinking the type or dropping a control. */}
       <PopoverRow className="relative flex items-center gap-1 sm:gap-1.5">
-        <h1 className="min-w-0 flex-1 truncate text-base sm:text-lg">{t('title')}</h1>
+        {/* The VED's slice announces itself — it is not the funnel. */}
+        <h1 className="min-w-0 flex-1 truncate text-base sm:text-lg">
+          {ved ? t('vedBoardTitle') : t('title')}
+        </h1>
         <InlineSearch
           q={q}
           label={tcommon('search')}
           carried={{
-            ...(params.scope === 'all' ? { scope: 'all' } : {}),
+            ...(scopeAll ? { scope: 'all' } : {}),
             ...(hodim ? { hodim } : {}),
             ...(archive ? { arxiv: '1' } : {}),
             ...filters.raw,
@@ -237,7 +256,7 @@ export default async function DealsPage({
         )}
         <BoardFilter
           q={q}
-          scope={params.scope === 'all' ? 'all' : ''}
+          scope={scopeAll ? 'all' : ''}
           hodim={hodim}
           people={managers.map((row) => ({ id: row.id, fullName: row.fullName }))}
           // The form REPLACES the URL (#171); arxiv is the one param that
@@ -284,15 +303,18 @@ export default async function DealsPage({
             }}
           />
         </BoardMenu>
-        <Link href="/bitimlar/new" className="btn-primary" data-testid="new-deal" aria-label={t('newDeal')}>
-          <Icon name="plus" className="h-4 w-4" />
-          <span className="hidden sm:inline">{t('newDeal')}</span>
-        </Link>
+        {/* Opening a deal is the seller's (G4 a). */}
+        {shape === 'full' && (
+          <Link href="/bitimlar/new" className="btn-primary" data-testid="new-deal" aria-label={t('newDeal')}>
+            <Icon name="plus" className="h-4 w-4" />
+            <span className="hidden sm:inline">{t('newDeal')}</span>
+          </Link>
+        )}
       </PopoverRow>
 
       <BoardChips
         q={q}
-        scope={params.scope === 'all' ? 'all' : ''}
+        scope={scopeAll ? 'all' : ''}
         hodim={hodim}
         hodimName={managers.find((row) => row.id === hodim)?.fullName ?? null}
         values={filters.raw}
@@ -339,6 +361,7 @@ export default async function DealsPage({
         lostReasons={lostReasonList}
         hidden={hidden}
         archiveHref={`/bitimlar${hrefWith(carried, { arxiv: '1' })}`}
+        readOnly={ved}
       />
     </div>
   );

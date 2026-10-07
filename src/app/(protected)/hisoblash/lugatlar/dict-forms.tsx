@@ -12,6 +12,7 @@ import {
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { BAZA_BASES, isBazaBasis, type BazaBasis } from '@/modules/wms/calc/pricing';
 import { basisLabel } from '@/modules/wms/calc/basis';
+import { readNumberCell, type NumberCell } from '@/modules/wms/calc/number-cell';
 
 /**
  * Adding a row to either VED dictionary.
@@ -40,6 +41,10 @@ export function BazaForm() {
   const [amount, setAmount] = useState('');
   const [basis, setBasis] = useState<BazaBasis>('unit');
   const [date, setDate] = useState(today());
+  /** «1,125» / «15,000» — asked, never guessed (his B4 a). A dictionary baza
+   * reaches the rows through «bazalarni olish», so a typed baza here is a
+   * typed baza there: the same one reader as the calculation's cells. */
+  const [ambiguous, setAmbiguous] = useState<Extract<NumberCell, { state: 'ambiguous' }> | null>(null);
 
   return (
     <div className="space-y-2">
@@ -67,7 +72,11 @@ export function BazaForm() {
             className="input input-sm !w-24 font-mono tabular-nums"
             data-testid="baza-amount"
             value={amount}
-            onChange={(e) => setAmount(e.target.value)}
+            onChange={(e) => {
+              setAmount(e.target.value);
+              // A keystroke that settles the shape takes the question away.
+              if (readNumberCell(e.target.value).state !== 'ambiguous') setAmbiguous(null);
+            }}
           />
         </label>
         <label className="text-2xs">
@@ -104,13 +113,23 @@ export function BazaForm() {
           className="btn-primary"
           disabled={pending || !name.trim() || amount.trim() === ''}
           data-testid="baza-save"
-          onClick={() =>
+          onClick={() => {
+            const cell = readNumberCell(amount);
+            if (cell.state === 'ambiguous') {
+              setAmbiguous(cell);
+              return;
+            }
+            if (cell.state !== 'ok') {
+              setError('bad_number');
+              return;
+            }
+            setAmbiguous(null);
             startTransition(async () => {
               const result: CalcFormState = await saveBazaAction({
                 name,
                 label: name,
                 tnvedCode: code,
-                bazaUsd: Number(amount.replace(',', '.')),
+                bazaUsd: cell.value,
                 basis,
                 effectiveDate: date,
               });
@@ -121,12 +140,44 @@ export function BazaForm() {
                 setAmount('');
                 router.refresh();
               }
-            })
-          }
+            });
+          }}
         >
           {tc('save')}
         </button>
       </div>
+      {ambiguous ? (
+        <div className="rounded-xl border border-warn/40 bg-warn/10 p-2 text-sm" data-testid="baza-ambiguous">
+          <p className="font-semibold text-warn">
+            {t('ambiguous.baza', { a: ambiguous.decimalText, b: ambiguous.thousandsText })}
+          </p>
+          <p className="mt-0.5 text-2xs text-ink-600">{t('ambiguous.hint')}</p>
+          <div className="mt-1 flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="btn-secondary !min-h-11 font-mono"
+              data-testid="baza-ambiguous-decimal"
+              onClick={() => {
+                setAmount(ambiguous.decimalText);
+                setAmbiguous(null);
+              }}
+            >
+              {ambiguous.decimalText}
+            </button>
+            <button
+              type="button"
+              className="btn-secondary !min-h-11 font-mono"
+              data-testid="baza-ambiguous-thousands"
+              onClick={() => {
+                setAmount(ambiguous.thousandsText);
+                setAmbiguous(null);
+              }}
+            >
+              {ambiguous.thousandsText}
+            </button>
+          </div>
+        </div>
+      ) : null}
       {error ? (
         <p className="chip chip-warn" data-testid="baza-error">
           {t.has(`errors.${error}`) ? t(`errors.${error}` as 'errors.not_found') : error}

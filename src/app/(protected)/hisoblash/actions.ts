@@ -42,6 +42,7 @@ import { saveBaza, savePriceBook, saveRates, saveTariffBand } from '@/modules/wm
 import { loneWeightKg } from '@/modules/wms/calc/intake';
 import { isCalcSection } from '@/modules/wms/calc/labels';
 import { canWriteDeal } from '@/modules/wms/deals/service';
+import { mayEditDealTerms } from '@/modules/wms/deals/door';
 import { canReadTg } from '@/modules/wms/crm/conversations';
 import { mayApproveBelowFloor, mayOffer } from '@/modules/wms/calc/upsale-scope';
 
@@ -57,11 +58,7 @@ export interface CalcFormState {
  * code surfaces as a surprise one-item group; and how many pre-coded items
  * the sweep placed).
  */
-export interface TableFormState {
-  ok?: boolean;
-  error?: string;
-  /** The row the refusal names — NEGATIVE for a ghost (new) row. */
-  seq?: number;
+export interface TableSaveFields {
   minted?: string[];
   swept?: number;
   added?: number;
@@ -81,6 +78,20 @@ export interface TableFormState {
    * other. */
   memoryFilled?: number[];
 }
+
+/**
+ * A UNION, so a success always carries the rev the save committed at — the
+ * screen settles exactly the drafts it posted once a refresh reaches it (the
+ * phone round, D3), and a success with no rev is not a shape that compiles.
+ */
+export type TableFormState =
+  | ({ ok: true; error?: undefined; seq?: undefined; rev: number } & TableSaveFields)
+  | {
+      ok?: undefined;
+      error: string;
+      /** The row the refusal names — NEGATIVE for a ghost (new) row. */
+      seq?: number;
+    };
 
 /**
  * Every door into the queue.
@@ -188,10 +199,12 @@ export interface SubmitCalcInput {
 /**
  * The seller's door — «Hisoblatishga yuborish» on a lead or deal card.
  *
- * Gated as working the card is (`canWriteDeal`), not as the queue is: the
- * people who ask for a price are the people who work cards. A lead is
- * additionally held to the lead card's own rule, so a seller cannot open a
- * request against a colleague's prospect they could not even open.
+ * Asking for a price is the SELLER's move (17a, the karta precedent): on a
+ * deal it asks `mayEditDealTerms` — the deal-write list minus `ved.docs` — and
+ * a lead is held to the lead card's own rule (`crm.leads`), so a seller cannot
+ * open a request against a colleague's prospect they could not even open. The
+ * VED reads the card and works its positions; the bot's «🧮 Hisoblatish» stays
+ * open to all staff (G4) and is not an action.
  *
  * Called with an object rather than a FormData because the files are uploaded
  * separately (a server action's body caps at 1 MB, #291) and the caller keeps
@@ -201,6 +214,9 @@ export async function submitCalcAction(input: SubmitCalcInput): Promise<CalcForm
   const actor = await getActor();
   if (!actor) return { error: 'unauthenticated' };
   if (!canWriteDeal(actor.permissions)) return { error: 'forbidden' };
+  if (input.entityType === 'deal' && !mayEditDealTerms(actor.permissions)) {
+    return { error: 'deal_terms_only' };
+  }
   if (!isCalcSection(input.section)) return { error: 'bad_section' };
   if (input.entityType !== 'deal' && input.entityType !== 'lead') return { error: 'validation' };
   if (input.entityType === 'lead' && !actor.permissions.has('crm.leads')) {
@@ -334,6 +350,7 @@ async function runTable(
     alreadySaved: result.alreadySaved,
     importFilled: result.importFilled,
     memoryFilled: result.memoryFilled,
+    rev: result.rev,
   };
 }
 
@@ -348,7 +365,7 @@ export async function saveTableAction(
 
 export async function deleteItemAction(id: string, itemId: string): Promise<TableFormState> {
   return runTable(async (ctx) => {
-    await deleteItem(id, itemId, ctx);
+    const { rev } = await deleteItem(id, itemId, ctx);
     return {
       minted: [],
       swept: 0,
@@ -361,6 +378,7 @@ export async function deleteItemAction(id: string, itemId: string): Promise<Tabl
       alreadySaved: 0,
       importFilled: [],
       memoryFilled: [],
+      rev,
     };
   }, ws(id));
 }
@@ -727,11 +745,15 @@ export async function savePriceBookAction(input: {
 
 /**
  * The THIRD door — «Hisoblatishga yuborish» from a CRM Telegram thread
- * (owner, 2026-08-25). Same write gate as `submitCalcAction` — working the
- * card is the power that asks for a price — PLUS the tg read fence, because
- * the material is a conversation and `threadMaterial` re-loads it under the
- * viewer's own scope. Two steps: the first press reads, the second lands;
- * the material is rebuilt server-side on BOTH.
+ * (owner, 2026-08-25). Same write gate as `submitCalcAction` — asking for a
+ * price is the seller's move — PLUS the tg read fence, because the material is
+ * a conversation and `threadMaterial` re-loads it under the viewer's own
+ * scope. Two steps: the first press reads, the second lands; the material is
+ * rebuilt server-side on BOTH.
+ *
+ * The deal-terms line closes BOTH non-lead kinds (17a, G4): the deal thread,
+ * and the client chat on /suhbatlar, whose landing may mint a deal — the VED
+ * cannot create deals, and the bot's «🧮 Hisoblatish» is his door.
  */
 function threadCalcGate(
   actor: NonNullable<Awaited<ReturnType<typeof getActor>>>,
@@ -740,6 +762,9 @@ function threadCalcGate(
 ): CalcFormState | null {
   if (!canReadTg(actor)) return { error: 'forbidden' };
   if (!canWriteDeal(actor.permissions)) return { error: 'forbidden' };
+  if (entity.kind !== 'lead' && !mayEditDealTerms(actor.permissions)) {
+    return { error: 'deal_terms_only' };
+  }
   if (!isCalcSection(section)) return { error: 'bad_section' };
   if (entity.kind === 'lead' && !actor.permissions.has('crm.leads')) return { error: 'forbidden' };
   return null;

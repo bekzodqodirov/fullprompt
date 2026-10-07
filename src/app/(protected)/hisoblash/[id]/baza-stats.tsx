@@ -64,7 +64,6 @@ export function BazaStats({
   stats,
   named,
   current,
-  mode,
   onPick,
   collapsed,
   onExpand,
@@ -73,7 +72,6 @@ export function BazaStats({
   named: NamedSeries;
   /** The row's baza on screen — for the marker only. */
   current: { usd: number; basis: BazaBasis } | null;
-  mode: 'pick' | 'view';
   onPick: (row: { id: string; pricePerUnitUsd: number; basis: BazaBasis }) => void;
   collapsed: boolean;
   onExpand: () => void;
@@ -130,7 +128,7 @@ export function BazaStats({
   if (stats.answer.state === 'timeout') {
     return shell(
       <p className="mt-1 text-2xs text-warn" data-testid="calc-import-stats-timeout">
-        {mode === 'view' ? t('statsTimeoutView') : t('statsTimeout')}
+        {t('statsTimeout')}
       </p>,
     );
   }
@@ -259,7 +257,7 @@ export function BazaStats({
           ) : null}
           {unit.all.n < FEW ? (
             <p className="mt-1 text-2xs text-ink-500" data-testid="calc-import-stats-few">
-              {mode === 'view' ? t('statsFewView', { n: unit.all.n }) : t('statsFew', { n: unit.all.n })}
+              {t('statsFew', { n: unit.all.n })}
             </p>
           ) : null}
 
@@ -336,29 +334,23 @@ export function BazaStats({
                       ${openExemplar.pricePerUnitUsd} / {unitName(unit)}
                     </p>
                     <div className="mt-2 flex flex-wrap items-center gap-2">
-                      {mode === 'pick' ? (
-                        <button
-                          type="button"
-                          className="btn-primary !min-h-11"
-                          data-testid="calc-import-exemplar-pick"
-                          disabled={!unit.pickable}
-                          // The ONE place a statistic becomes a draft: a pick of
-                          // this real row, exactly as a list pick (C3).
-                          onClick={() =>
-                            onPick({
-                              id: openExemplar.id,
-                              pricePerUnitUsd: openExemplar.pricePerUnitUsd,
-                              basis: unit.basis,
-                            })
-                          }
-                        >
-                          {t('statsPick')}
-                        </button>
-                      ) : (
-                        <span className="text-2xs text-ink-500" data-testid="calc-import-exemplar-viewonly">
-                          {t('statsPickPhone')}
-                        </span>
-                      )}
+                      <button
+                        type="button"
+                        className="btn-primary !min-h-11"
+                        data-testid="calc-import-exemplar-pick"
+                        disabled={!unit.pickable}
+                        // The ONE place a statistic becomes a draft: a pick of
+                        // this real row, exactly as a list pick (C3).
+                        onClick={() =>
+                          onPick({
+                            id: openExemplar.id,
+                            pricePerUnitUsd: openExemplar.pricePerUnitUsd,
+                            basis: unit.basis,
+                          })
+                        }
+                      >
+                        {t('statsPick')}
+                      </button>
                       <button type="button" className="btn-ghost !min-h-11" onClick={() => setOpen(null)}>
                         {t('importClose')}
                       </button>

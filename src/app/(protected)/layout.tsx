@@ -24,7 +24,7 @@ import {
 import { WorkspaceTabs } from '@/components/ui/ws-tabs';
 import { Dock } from '@/components/dock';
 import { canReadTg } from '@/modules/wms/crm/conversations';
-import { canWriteDeal } from '@/modules/wms/deals/service';
+import { mayEditDealTerms } from '@/modules/wms/deals/door';
 import { primaryItems } from '@/modules/platform/rbac/nav';
 import { REPORT_GROUPS } from '@/modules/platform/rbac/workspaces';
 import { frequentFor, workspacesFor, type FrequentRow } from '@/modules/platform/nav/usage';
@@ -124,13 +124,15 @@ export default async function ProtectedLayout({ children }: { children: React.Re
   const has = (code: string) => actor.permissions.has(code);
   const quickActions: QuickAction[] = [
     ...(offered.has('/receive') ? [{ key: 'receive' as const }] : []),
-    ...(offered.has('/bitimlar') && canWriteDeal(actor.permissions) ? [{ key: 'deal' as const }] : []),
+    // Opening a deal is the seller's (G4 a) — the VED's /bitimlar is a read-only slice.
+    ...(offered.has('/bitimlar') && mayEditDealTerms(actor.permissions) ? [{ key: 'deal' as const }] : []),
     // The ledger's payment form is `finance.manage`'s (finance/[clientId]).
     ...(offered.has('/finance') && has('finance.manage') ? [{ key: 'payment' as const }] : []),
     ...(offered.has('/accounting/expenses') ? [{ key: 'expense' as const }] : []),
     // Asking for a calculation is the SELLER's move; the VED is the one who
-    // answers it, so the door is not offered to `ved.docs` alone.
-    ...((offered.has('/crm') || offered.has('/bitimlar')) && (has('crm.leads') || has('clients.manage'))
+    // answers it, so the door is not offered to `ved.docs` alone — the same
+    // pair as a deal's terms, asked through its one home (17a).
+    ...((offered.has('/crm') || offered.has('/bitimlar')) && mayEditDealTerms(actor.permissions)
       ? [{ key: 'calc' as const }]
       : []),
     ...(offered.has('/bugun') ? [{ key: 'task' as const }] : []),

@@ -1,13 +1,12 @@
 'use client';
 
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import type { Workspace, WorkspaceGroup, WorkspaceItem } from '@/modules/wms/calc/workspace';
 import type { TableItemEdit, TableNewItem } from '@/modules/wms/calc/workspace';
 import {
   customsFor,
-  isBazaBasis,
   pricedGroupOf,
   requestCustomsFor,
   totalsFor,
@@ -16,17 +15,54 @@ import {
   type MeasureUnit,
   type PricedItem,
 } from '@/modules/wms/calc/pricing';
-import {
-  basesFor,
-  basisLabel,
-  defaultBasisFor,
-  uniformBazaOf,
-} from '@/modules/wms/calc/basis';
+import { basisLabel, defaultBasisFor, uniformBazaOf } from '@/modules/wms/calc/basis';
 import { editBazaPair } from '@/modules/wms/calc/baza-draft';
 import { pasteIdsFor } from '@/modules/wms/calc/paste-ids';
 import { basisNotLaw } from '@/modules/wms/calc/warnings';
-import { screenRowOf, groupsByCodeOf, postedBasis } from '@/modules/wms/calc/screen-row';
+import { ghostScreenOf, screenRowOf, groupsByCodeOf, postedBasis } from '@/modules/wms/calc/screen-row';
+import { readNumberCell } from '@/modules/wms/calc/number-cell';
+import {
+  ALL_BASE_FIELDS,
+  baseOf,
+  changedUnder,
+  changeSignature,
+  emptyRow,
+  expectFor,
+  ghostDirty,
+  mintClientId,
+  postedCellsOf,
+  q3,
+  q4,
+  refreshWait,
+  REFRESH_WAIT_MS,
+  rowDirtyForPicker,
+  settleDrafts,
+  shouldRefresh,
+  syncBase,
+  type BaseField,
+  type ClockProbe,
+  type FieldChange,
+  type ItemDraft,
+  type NewRow,
+  type PendingClear,
+  type PostedCells,
+  type RowBase,
+} from '@/modules/wms/calc/row-draft';
+import {
+  draftStorageKey,
+  mergeForStorage,
+  parseStoredDrafts,
+  planRestore,
+  readStored,
+  mountDecision,
+  restorableCount,
+  serializeDrafts,
+  writeStored,
+  type RestorePlan,
+  type StoredDrafts,
+} from '@/modules/wms/calc/draft-store';
 import { parseGoods, type Cell } from '@/modules/wms/deals/goods-import';
+import { isBuildStale, reloadFresh } from '@/components/build-check';
 import {
   confirmAllAction,
   confirmGroupAction,
@@ -39,10 +75,14 @@ import {
   setCertificateAction,
   setRatesAction,
   type CalcFormState,
+  type TableFormState,
 } from '../actions';
 import { dutyText } from '@/modules/wms/calc/duty-text';
-import { refusalWord } from './words';
 import { ImportBazaDialog, type PickerTarget } from './import-baza-dialog';
+import { BasisSelect } from './basis-select';
+import { PhoneBlocks } from './phone-blocks';
+import { RowSheet, type SheetField, type SheetFigure, type SheetModel, type SheetNumField } from './row-sheet';
+import { DraftRestore } from './draft-restore';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
@@ -58,121 +98,219 @@ import { tashkentDay } from '@/modules/platform/time/tashkent';
  * PER ROW (the owner's 1a: differently-priced goods are different rows), and
  * a code that prices per juft/litr/m²/sm³ grows the row an O'lchov line.
  *
- * The dirty law stands: while anything is dirty, every OTHER mutating
- * control (✅, confirm-all, propose, pull-bazas, certificate — and the seal,
- * gated in SealPanel) is off, replaced by «Avval saqlang». Drafts are keyed
- * by the item's immutable ID (a seq is re-minted after a delete), survive
- * until the refreshed workspace actually lands (no snap-back), and die with
- * their row on a delete — the audit's wedge, closed at both ends.
+ * Two RENDERS of one state since the phone round (his B1 a … B6 a): the grid
+ * from `md` up, and below it cards that open one row's SHEET, saved on its
+ * own (B2 a). Both write the same drafts through the same setters and post
+ * through the same builders and the same one sender — the 0125 one-chain law
+ * (screenRowOf / postedBasis, #886's live-equals-saved) holds only while the
+ * phone has no second copy of it.
+ *
+ * The dirty law stands: while anything is unsaved — or waiting to be
+ * restored — every OTHER mutating control (✅, confirm-all, propose,
+ * pull-bazas, certificate — and the seal, gated in SealPanel) is off,
+ * replaced by «Avval saqlang». Drafts are keyed by the item's immutable ID,
+ * settle per POSTED row at the server's own rev (row-draft.ts), survive a
+ * closed tab (draft-store.ts, B5 a), and die with their row on a delete.
  */
-
-interface ItemDraft {
-  name?: string;
-  quantity?: string;
-  weightKg?: string;
-  volumeM3?: string;
-  tnvedCode?: string;
-  note?: string;
-  /** The extended-unit amount — applies only while the row's code asks one. */
-  measure?: string;
-  bazaValue?: string;
-  bazaBasis?: BazaBasis;
-  /** Set only by the import picker — the row the price was taken from. Any
-   * hand edit of the amount clears it, because a retyped number is the VED's
-   * own and must not wear the file's provenance. */
-  importRowId?: string;
-}
-
-interface NewRow {
-  key: number;
-  /** The id this row will carry in the database, minted HERE (phase 0): a
-   * save whose answer was lost can be pressed again and the server knows
-   * the row it already wrote. Null only where the browser cannot mint one. */
-  clientId: string | null;
-  name: string;
-  quantity: string;
-  unit: string;
-  weightKg: string;
-  volumeM3: string;
-  tnvedCode: string;
-  measure: string;
-  bazaValue: string;
-  /** null = «avto» — the VED has not touched the select, so nothing is
-   * posted and the server stamps the law's default once the code's block
-   * exists (18a). A code keystroke never overwrites a touched pick. */
-  bazaBasis: BazaBasis | null;
-}
 
 const CODE_SHAPE = /^\d{4,10}$/;
 const NUM_COLS = ['quantity', 'weightKg', 'volumeM3'] as const;
+/** How often an open sheet asks whether somebody wrote under it (B6 a). */
+const POLL_MS = 15_000;
 
-/** A new row's own id. `randomUUID` exists on every secure origin, which is
- * every origin this app is served from; without it the row simply posts no
- * id and behaves as it did before phase 0. */
-const mintClientId = (): string | null =>
-  typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-    ? crypto.randomUUID()
-    : null;
+/** A refusal before or after the wire, naming the row — and for the
+ * ambiguity question, the cell and its two readings. */
+interface TableRefusal {
+  code: string;
+  seq?: number;
+  field?: SheetNumField;
+  decimalText?: string;
+  thousandsText?: string;
+  itemId?: string;
+  ghostKey?: number;
+}
 
-const parseCell = (raw: string): number | null => {
-  const v = raw.trim().replace(/\s/g, '').replace(',', '.');
-  return v === '' ? null : Number(v);
+interface LastSave {
+  minted: string[];
+  swept: number;
+  merged: string[];
+  measuresCleared: number[];
+  measuresDropped: number[];
+  basisSuspect: number[];
+  basisConflict: number[];
+  alreadySaved: number;
+  importFilled: number[];
+  memoryFilled: number[];
+}
+const EMPTY_SAVE: LastSave = {
+  minted: [],
+  swept: 0,
+  merged: [],
+  measuresCleared: [],
+  measuresDropped: [],
+  basisSuspect: [],
+  basisConflict: [],
+  alreadySaved: 0,
+  importFilled: [],
+  memoryFilled: [],
 };
-/** The live figure must equal the SAVED figure to the cent — postgres rounds
- * to the column scale on write, so the draft merge quantizes the same way. */
-const q3 = (v: number) => Math.round(v * 1000) / 1000;
-const q4 = (v: number) => Math.round(v * 10000) / 10000;
 
-const emptyRow = (key: number): NewRow => ({
-  key,
-  clientId: mintClientId(),
-  name: '',
-  quantity: '',
-  unit: '',
-  weightKg: '',
-  volumeM3: '',
-  tnvedCode: '',
-  measure: '',
-  bazaValue: '',
-  bazaBasis: null,
-});
+type SheetTarget = { kind: 'item'; id: string } | { kind: 'ghost'; key: number };
+const sheetKeyOf = (s: SheetTarget | null) => (s === null ? null : s.kind === 'item' ? `item:${s.id}` : `ghost:${s.key}`);
+
+interface Maps {
+  itemById: Map<string, WorkspaceItem>;
+  groupById: Map<string, WorkspaceGroup>;
+  groupsByCode: Map<string, WorkspaceGroup>;
+}
+
+/** One typed cell, read by the ONE reader (number-cell.ts): a number, an
+ * empty cell, or a refusal naming the row and the cell. */
+function readCell(raw: string, seq: number, field: SheetNumField): { value: number | null } | { refusal: TableRefusal } {
+  const cell = readNumberCell(raw);
+  if (cell.state === 'empty') return { value: null };
+  if (cell.state === 'ok') return { value: cell.value };
+  if (cell.state === 'ambiguous') {
+    return {
+      refusal: {
+        code: 'ambiguous_number',
+        seq,
+        field,
+        decimalText: cell.decimalText,
+        thousandsText: cell.thousandsText,
+      },
+    };
+  }
+  return { refusal: { code: 'bad_number', seq, field } };
+}
+
+/** What the cell SHOWS when nothing is drafted — the self-clean compares
+ * against this, never a bare default (#171). `draft` is the row's current
+ * draft, because the unit and the measure the screen shows depend on a
+ * drafted CODE (the law it lands under). */
+function serverValueOf(
+  item: WorkspaceItem,
+  field: keyof ItemDraft,
+  draft: ItemDraft | undefined,
+  groupById: Map<string, WorkspaceGroup>,
+  groupsByCode: Map<string, WorkspaceGroup>,
+): string {
+  switch (field) {
+    case 'name':
+      return item.label;
+    case 'tnvedCode':
+      return item.tnvedCode ?? '';
+    case 'note':
+      return item.note ?? '';
+    case 'measure': {
+      const { pair } = screenRowOf(item, draft, groupById, groupsByCode);
+      return pair !== null && (pair === 'any' || item.measureUnit === pair) && item.measureQty !== null
+        ? String(item.measureQty)
+        : '';
+    }
+    case 'bazaValue':
+      return item.bazaUsd === null ? '' : String(item.bazaUsd);
+    case 'bazaBasis': {
+      // The unit as it stands without a basis draft — '' while «avto».
+      const shown = screenRowOf(item, { ...draft, bazaBasis: undefined }, groupById, groupsByCode).basis;
+      return shown ?? '';
+    }
+    default:
+      return String(item[field] ?? '');
+  }
+}
+
+/** A ghost row as the engine prices it — what THIS row's save would store:
+ * the basis «avto» resolves to the block's default, and the measure counts
+ * only in a unit the server keeps (the generic box of an unknown law prices
+ * nothing until the save says what unit it is). */
+function liveGhostItem(row: NewRow, lawGroup: WorkspaceGroup | null, groupsByCode: Map<string, WorkspaceGroup>): PricedItem {
+  const num = (raw: string, scale: (v: number) => number) => {
+    const cell = readNumberCell(raw);
+    return cell.state === 'ok' ? scale(cell.value) : null;
+  };
+  const bazaUsd = num(row.bazaValue, q4);
+  const pair = ghostScreenOf(row, groupsByCode).pair;
+  const measureQty = pair !== null && pair !== 'any' ? num(row.measure, q4) : null;
+  return {
+    seq: -1,
+    label: row.name,
+    quantity: num(row.quantity, q3),
+    weightKg: num(row.weightKg, q3),
+    volumeM3: num(row.volumeM3, q3),
+    bazaUsd,
+    bazaBasis: bazaUsd === null ? null : (row.bazaBasis ?? defaultBasisFor(lawGroup)),
+    measureUnit: measureQty === null ? null : (pair as MeasureUnit),
+    measureQty,
+  };
+}
+
+/** The clock probe (`/api/calc/rev/[id]`) — null on any failure, which the
+ * callers read as «go on»: a probe that cannot answer must never become a
+ * lock. */
+async function probeClock(requestId: string): Promise<ClockProbe | null> {
+  try {
+    const res = await fetch(`/api/calc/rev/${requestId}`, { cache: 'no-store' });
+    if (!res.ok) return null;
+    const data = (await res.json()) as Partial<ClockProbe>;
+    if (typeof data.rev !== 'number') return null;
+    return { rev: data.rev, aiRunning: Boolean(data.aiRunning), closed: Boolean(data.closed) };
+  } catch {
+    return null;
+  }
+}
+
+/** localStorage, or null where touching it throws (a private window). */
+function browserStorage(): Storage | null {
+  try {
+    return typeof window === 'undefined' ? null : window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+const numText = (v: number | null) => (v === null ? '' : String(v));
+
+/** The current state, readable after an `await` — the probe's refresh can
+ * convert the very ghost a press began on into a saved row. */
+interface Latest extends Maps {
+  drafts: Record<string, ItemDraft>;
+  bases: Record<string, RowBase>;
+  newRows: NewRow[];
+  sheet: SheetTarget | null;
+  workspaceRev: number;
+  waitState: ReturnType<typeof refreshWait>['state'];
+}
 
 export function ItemsTable({
   workspace,
   pending,
   act,
   onDirty,
+  viewerId,
 }: {
   workspace: Workspace;
   pending: boolean;
   act: (work: () => Promise<CalcFormState>) => void;
   onDirty: (n: number) => void;
+  /** Whose drafts these are — the stored entry is keyed by the viewer. */
+  viewerId: string;
 }) {
   const t = useTranslations('calc');
   const tc = useTranslations('common');
   const router = useRouter();
   const id = workspace.requestId;
 
-  const [drafts, setDrafts] = useState<Record<string, ItemDraft>>({});
+  const [{ drafts, bases }, setDraftState] = useState<{
+    drafts: Record<string, ItemDraft>;
+    bases: Record<string, RowBase>;
+  }>({ drafts: {}, bases: {} });
   const [newRows, setNewRows] = useState<NewRow[]>([]);
+  /** What each successful save POSTED, settled once its rev lands (D3). */
+  const [pendingClears, setPendingClears] = useState<PendingClear[]>([]);
   const [saving, setSaving] = useState(false);
-  const [tableError, setTableError] = useState<{ code: string; seq?: number } | null>(null);
-  const [lastSave, setLastSave] = useState<{
-    minted: string[];
-    swept: number;
-    merged: string[];
-    measuresCleared: number[];
-    measuresDropped: number[];
-    basisSuspect: number[];
-    basisConflict: number[];
-    alreadySaved: number;
-    importFilled: number[];
-    memoryFilled: number[];
-  } | null>(null);
-  /** The rev the save was made against — drafts are held until the refreshed
-   * workspace (a moved rev) lands, so the live figures never snap back to
-   * pre-save numbers for the length of a round trip (#664's lesson). */
-  const [clearAfterRev, setClearAfterRev] = useState<number | null>(null);
+  const [tableError, setTableError] = useState<TableRefusal | null>(null);
+  const [lastSave, setLastSave] = useState<LastSave | null>(null);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState('');
   /** The ids a pasted list's rows carry (phase 0) — kept per LINE across
@@ -183,6 +321,38 @@ export function ItemsTable({
   const pasteIds = useRef<{ keys: string[]; ids: (string | null)[] }>({ keys: [], ids: [] });
   const newKey = useRef(1);
 
+  /* ---- the phone sheet ---- */
+  const [sheet, setSheet] = useState<SheetTarget | null>(null);
+  const [sheetError, setSheetError] = useState<string | null>(null);
+  const [asked, setAsked] = useState<{ key: string | null; fields: SheetNumField[] }>({ key: null, fields: [] });
+  const [wait, dispatchWait] = useReducer(refreshWait, { state: 'idle' });
+  const [pressing, setPressing] = useState(false);
+  /** The rev the sheet was opened at (moved to our own after our save). */
+  const [sheetExpectRev, setSheetExpectRev] = useState<number | null>(null);
+  /** The whole row as it stood when the sheet opened — the delete's look. */
+  const [sheetOpenBase, setSheetOpenBase] = useState<RowBase | null>(null);
+  const [deleteWarn, setDeleteWarn] = useState<FieldChange[] | null>(null);
+  /** Rows WE deleted — a draft pruned with them is not «boshqa kishi». */
+  const [ownDeleted, setOwnDeleted] = useState<ReadonlySet<string>>(() => new Set());
+  const [prunedCount, setPrunedCount] = useState(0);
+  const [rowGone, setRowGone] = useState(false);
+  const pickerReturn = useRef<SheetTarget | null>(null);
+  const inFlight = useRef(false);
+  /** The highest rev this screen knows is not news: the workspace's, and
+   * every rev our own sends and deletes were answered with. */
+  const knownRev = useRef(workspace.rev);
+  const landWaiters = useRef<{ rev: number; resolve: (outcome: 'landed' | 'timedOut') => void }[]>([]);
+
+  /* ---- the restore (B5 a) ---- */
+  const [restore, setRestore] = useState<RestorePlan | null>(null);
+  const storagePhase = useRef<'init' | 'prompt' | 'kept' | 'live'>('init');
+  const storedEntry = useRef<StoredDrafts | null>(null);
+  const storageOk = useRef<boolean | null>(null);
+  const storageKey = draftStorageKey(viewerId, id);
+
+  /** ONE dialog for the whole table, not one per row (#684). */
+  const [picker, setPicker] = useState<PickerTarget | null>(null);
+
   const allItems = useMemo(
     () => [...workspace.ungrouped, ...workspace.groups.flatMap((g) => g.items)].sort((a, b) => a.seq - b.seq),
     [workspace],
@@ -190,27 +360,53 @@ export function ItemsTable({
   const itemById = useMemo(() => new Map(allItems.map((i) => [i.id, i])), [allItems]);
   const groupById = useMemo(() => new Map(workspace.groups.map((g) => [g.id, g])), [workspace.groups]);
   const groupsByCode = useMemo(() => groupsByCodeOf(workspace.groups), [workspace.groups]);
+  const maps = useMemo<Maps>(() => ({ itemById, groupById, groupsByCode }), [itemById, groupById, groupsByCode]);
 
   // Render-time adjustment, not an effect: the frame that brings the moved
   // rev must not paint once with the stale drafts before an effect clears
-  // them. Guarded by the null-reset, so it settles in one re-render.
-  if (clearAfterRev !== null && workspace.rev !== clearAfterRev) {
-    setDrafts({});
-    setNewRows([]);
-    setClearAfterRev(null);
+  // them. `settleDrafts` reports no change over its own answer, so this
+  // settles in one re-render.
+  const settled = settleDrafts({
+    drafts,
+    bases,
+    newRows,
+    pending: pendingClears,
+    items: itemById,
+    workspaceRev: workspace.rev,
+    keepGhostKey: sheet?.kind === 'ghost' ? sheet.key : null,
+    sheetItemId: sheet?.kind === 'item' ? sheet.id : null,
+  });
+  if (settled.changed) {
+    setDraftState({ drafts: settled.drafts, bases: settled.bases });
+    setNewRows(settled.newRows);
+    setPendingClears(settled.pending);
+    const retarget = settled.retarget;
+    if (retarget) {
+      // The goods the open ghost sheet holds are a saved row now.
+      setSheet({ kind: 'item', id: retarget.toId });
+      const saved = itemById.get(retarget.toId);
+      setSheetOpenBase(saved ? baseOf(saved, ALL_BASE_FIELDS) : null);
+    }
+    if (settled.gone !== null) {
+      setSheet(null);
+      if (!ownDeleted.has(settled.gone)) setRowGone(true);
+    }
+    const foreign = settled.prunedIds.filter((rowId) => !ownDeleted.has(rowId)).length;
+    if (foreign > 0) setPrunedCount((n) => n + foreign);
+  } else if (sheet?.kind === 'item' && !itemById.has(sheet.id)) {
+    // The open row is gone with nothing drafted on it — close, never an
+    // undefined body.
+    setSheet(null);
+    if (!ownDeleted.has(sheet.id)) setRowGone(true);
   }
 
-  const ghostDirty = (r: NewRow) =>
-    Boolean(
-      r.name.trim() ||
-        r.tnvedCode.trim() ||
-        r.quantity.trim() ||
-        r.weightKg.trim() ||
-        r.volumeM3.trim() ||
-        r.measure.trim() ||
-        r.bazaValue.trim(),
-    );
-  const dirtyCount = Object.keys(drafts).length + newRows.filter(ghostDirty).length;
+  const dirtyGhosts = newRows.filter(ghostDirty);
+  // Live ids only: a draft whose row a colleague deleted must release the
+  // gate (settleDrafts prunes it on the next render anyway).
+  const dirtyCount = Object.keys(drafts).filter((rowId) => itemById.has(rowId)).length + dirtyGhosts.length;
+  /** The gate counts what is WAITING to be restored too: sealing over edits
+   * the VED believes he made would lock a client price without them. */
+  const gateCount = dirtyCount + (restore ? restorableCount(restore) : 0);
   // Intake prefills codes from the TNVED memory, so the commonest request
   // arrives coded-and-ungrouped with NOTHING dirty — the save's server-side
   // sweep places them; and legacy duplicate same-code groups normalize on the
@@ -223,115 +419,114 @@ export function ItemsTable({
   const duplicateGroups = [...codeCounts.values()].filter((n) => n > 1).length;
   const sweepable = workspace.ungrouped.filter((i) => (i.tnvedCode ?? '').trim()).length;
   const saveable = dirtyCount > 0 || sweepable > 0 || duplicateGroups > 0;
+  const aiRunning = workspace.aiRunningSince !== null;
 
-  useEffect(() => onDirty(dirtyCount), [dirtyCount, onDirty]);
+  useEffect(() => onDirty(gateCount), [gateCount, onDirty]);
 
-  // One hour of typed rows must not die on a mis-tap of the card link.
-  useEffect(() => {
-    if (dirtyCount === 0) return;
-    const guard = (e: BeforeUnloadEvent) => e.preventDefault();
-    window.addEventListener('beforeunload', guard);
-    return () => window.removeEventListener('beforeunload', guard);
-  }, [dirtyCount]);
+  /* ---- drafts: the setters (stable, so memo'd rows and cards hold) ---- */
 
-  /** What the cell SHOWS when nothing is drafted — the self-clean compares
-   * against this, never a bare default (#171). `draft` is the row's current
-   * draft, because the unit and the measure the screen shows depend on a
-   * drafted CODE (the law it lands under). */
-  const serverValueOf = (item: WorkspaceItem, field: keyof ItemDraft, draft?: ItemDraft): string => {
-    switch (field) {
-      case 'name':
-        return item.label;
-      case 'tnvedCode':
-        return item.tnvedCode ?? '';
-      case 'note':
-        return item.note ?? '';
-      case 'measure': {
-        const { pair } = screenRowOf(item, draft, groupById, groupsByCode);
-        return pair !== null && (pair === 'any' || item.measureUnit === pair) && item.measureQty !== null
-          ? String(item.measureQty)
-          : '';
-      }
-      case 'bazaValue':
-        return item.bazaUsd === null ? '' : String(item.bazaUsd);
-      case 'bazaBasis': {
-        // The unit as it stands without a basis draft — '' while «avto».
-        const shown = screenRowOf(item, { ...draft, bazaBasis: undefined }, groupById, groupsByCode).basis;
-        return shown ?? '';
-      }
-      default:
-        return String(item[field] ?? '');
+  /** One row's draft and its per-field bases, moved together. */
+  const withRowDraft = (
+    prev: { drafts: Record<string, ItemDraft>; bases: Record<string, RowBase> },
+    item: WorkspaceItem,
+    rest: ItemDraft,
+  ) => {
+    const nextDrafts = { ...prev.drafts };
+    const nextBases = { ...prev.bases };
+    if (Object.keys(rest).length === 0) {
+      delete nextDrafts[item.id];
+      delete nextBases[item.id];
+    } else {
+      nextDrafts[item.id] = rest;
+      const base = syncBase(prev.bases[item.id], rest, item);
+      if (base) nextBases[item.id] = base;
+      else delete nextBases[item.id];
     }
+    return { drafts: nextDrafts, bases: nextBases };
   };
 
-  const setDraft = (itemId: string, field: keyof ItemDraft, raw: string) => {
-    setLastSave(null);
-    setDrafts((prev) => {
-      const item = itemById.get(itemId);
-      if (!item) return prev;
-      const current: ItemDraft = { ...prev[itemId] };
-      let rest: ItemDraft;
-      if (field === 'bazaValue' || field === 'bazaBasis') {
-        // The pair is ONE edit (baza-draft.ts): drafting its halves as two
-        // updates made a unit picked on its own clean itself away.
-        const halves = editBazaPair<string>(
-          { bazaValue: current.bazaValue, bazaBasis: current.bazaBasis },
-          field,
-          raw,
-          {
-            bazaValue: serverValueOf(item, 'bazaValue', current),
-            bazaBasis: serverValueOf(item, 'bazaBasis', current),
-          },
-        );
-        delete current.bazaValue;
-        delete current.bazaBasis;
-        // A number the VED types is theirs, not the file's (0094).
-        delete current.importRowId;
-        rest = { ...current, ...(halves as Pick<ItemDraft, 'bazaValue' | 'bazaBasis'>) };
-      } else {
-        // A draft equal to the server value is not a draft — the dirty count
-        // must mean «cells the save will send».
-        rest = { ...current, [field]: raw };
-        if (raw === serverValueOf(item, field, rest)) delete rest[field];
-      }
-      const next = { ...prev };
-      if (Object.keys(rest).length === 0) delete next[itemId];
-      else next[itemId] = rest;
-      return next;
-    });
-  };
+  const setDraft = useCallback(
+    (itemId: string, field: keyof ItemDraft, raw: string) => {
+      setLastSave(null);
+      setDraftState((prev) => {
+        const item = itemById.get(itemId);
+        if (!item) return prev;
+        const current: ItemDraft = { ...prev.drafts[itemId] };
+        let rest: ItemDraft;
+        if (field === 'bazaValue' || field === 'bazaBasis') {
+          // The pair is ONE edit (baza-draft.ts): drafting its halves as two
+          // updates made a unit picked on its own clean itself away.
+          const halves = editBazaPair<string>(
+            { bazaValue: current.bazaValue, bazaBasis: current.bazaBasis },
+            field,
+            raw,
+            {
+              bazaValue: serverValueOf(item, 'bazaValue', current, groupById, groupsByCode),
+              bazaBasis: serverValueOf(item, 'bazaBasis', current, groupById, groupsByCode),
+            },
+          );
+          delete current.bazaValue;
+          delete current.bazaBasis;
+          // A number the VED types is theirs, not the file's (0094).
+          delete current.importRowId;
+          rest = { ...current, ...(halves as Pick<ItemDraft, 'bazaValue' | 'bazaBasis'>) };
+        } else {
+          // A draft equal to the server value is not a draft — the dirty count
+          // must mean «cells the save will send».
+          rest = { ...current, [field]: raw };
+          if (raw === serverValueOf(item, field, rest, groupById, groupsByCode)) delete rest[field];
+        }
+        return withRowDraft(prev, item, rest);
+      });
+    },
+    [itemById, groupById, groupsByCode],
+  );
 
   /** The picker's one writer: amount, basis and provenance land TOGETHER —
    * setDraft deliberately drops the provenance, because a hand-typed number
    * is the VED's own. */
-  const pickImport = (itemId: string, row: { id: string; pricePerUnitUsd: number; basis: BazaBasis }) => {
-    setLastSave(null);
-    setDrafts((prev) => ({
-      ...prev,
-      [itemId]: {
-        ...prev[itemId],
-        bazaValue: String(row.pricePerUnitUsd),
-        bazaBasis: row.basis,
-        importRowId: row.id,
-      },
-    }));
-  };
+  const pickImport = useCallback(
+    (itemId: string, row: { id: string; pricePerUnitUsd: number; basis: BazaBasis }) => {
+      setLastSave(null);
+      setDraftState((prev) => {
+        const item = itemById.get(itemId);
+        if (!item) return prev;
+        return withRowDraft(prev, item, {
+          ...prev.drafts[itemId],
+          bazaValue: String(row.pricePerUnitUsd),
+          bazaBasis: row.basis,
+          importRowId: row.id,
+        });
+      });
+    },
+    [itemById],
+  );
 
-  /** ONE dialog for the whole table, not one per row.
-   *
-   * Per-row state meant N fetches in flight and a stale list sitting inside
-   * a closed panel; and a per-row `<Overlay>` would mount already-open, so
-   * its close-on-navigation effect would shut it the frame it appeared
-   * (#684). `key` on the item makes the answer belong to the row it names. */
-  const [picker, setPicker] = useState<PickerTarget | null>(null);
-
-  const clearDraft = (itemId: string) =>
-    setDrafts((prev) => {
-      if (!(itemId in prev)) return prev;
-      const next = { ...prev };
-      delete next[itemId];
-      return next;
+  const clearDraft = useCallback((itemId: string) => {
+    setDraftState((prev) => {
+      if (!(itemId in prev.drafts) && !(itemId in prev.bases)) return prev;
+      const nextDrafts = { ...prev.drafts };
+      const nextBases = { ...prev.bases };
+      delete nextDrafts[itemId];
+      delete nextBases[itemId];
+      return { drafts: nextDrafts, bases: nextBases };
     });
+  }, []);
+
+  const patchGhost = useCallback((key: number, patch: Partial<NewRow>) => {
+    setLastSave(null);
+    // A code keystroke no longer writes the unit at all: an untouched select
+    // stays «avto» and the server stamps the law's default from the block the
+    // row lands in (18a); a touched one is the VED's and no keystroke undoes it.
+    setNewRows((rows) => rows.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+  }, []);
+
+  const removeGhost = useCallback((key: number) => setNewRows((rows) => rows.filter((r) => r.key !== key)), []);
+
+  /** Before our own delete: the draft that dies with the row is ours. */
+  const markOwnDelete = useCallback((itemId: string) => {
+    setOwnDeleted((prev) => new Set(prev).add(itemId));
+  }, []);
 
   const codesInRequest = useMemo(
     () =>
@@ -348,17 +543,20 @@ export function ItemsTable({
   /* ---- the LIVE arithmetic: the browser runs the engine the seal runs ---- */
 
   /** An item with its drafts merged, quantized to the column scales so the
-   * live figure and the saved figure agree to the cent. */
-  const liveItem = (item: WorkspaceItem): PricedItem => {
-    const d = drafts[item.id];
+   * live figure and the saved figure agree to the cent. `d` is the row's own
+   * draft by default; `null` prices the stored row (the sheet's figure merges
+   * only the row it saves, D14). */
+  const liveItem = (item: WorkspaceItem, d: ItemDraft | null | undefined = drafts[item.id]): PricedItem => {
     const numOf = (raw: string | undefined, server: number | null, scale: (v: number) => number) => {
       if (raw === undefined) return server;
-      const v = parseCell(raw);
-      return v === null || !Number.isFinite(v) ? null : scale(v);
+      // An ambiguous or bad cell is no figure: nothing is computed from a
+      // number nobody stated (B4 a).
+      const cell = readNumberCell(raw);
+      return cell.state === 'ok' ? scale(cell.value) : null;
     };
     // The unit and the pair the SCREEN shows (screenRowOf) — never a chain of
     // its own, or the live figure prices a unit the select is not showing.
-    const row = screenRowOf(item, d, groupById, groupsByCode);
+    const row = screenRowOf(item, d ?? undefined, groupById, groupsByCode);
     const bazaUsd = numOf(d?.bazaValue, item.bazaUsd, q4);
     const bazaBasis = bazaUsd === null ? null : (row.basis ?? defaultBasisFor(null));
     // The measure mirrors the server's stamp rule: a draft prices in the
@@ -370,10 +568,10 @@ export function ItemsTable({
     let measureQty: number | null = null;
     if (pair !== null) {
       if (d?.measure !== undefined) {
-        const v = parseCell(d.measure);
-        if (v !== null && Number.isFinite(v)) {
+        const cell = readNumberCell(d.measure);
+        if (cell.state === 'ok') {
           measureUnit = pair;
-          measureQty = q4(v);
+          measureQty = q4(cell.value);
         }
       } else if (item.measureUnit === pair) {
         measureUnit = item.measureUnit;
@@ -451,112 +649,336 @@ export function ItemsTable({
     });
   }, [workspace, liveCustomsByGroup]);
 
-  /** Build + send the ONE save — edits and new rows in one transaction. The
-   * client refuses NaN before the wire; the server stays the authority. */
-  const save = async () => {
-    setTableError(null);
-    const items: TableItemEdit[] = [];
-    for (const [itemId, d] of Object.entries(drafts)) {
-      const item = itemById.get(itemId);
-      // The row is gone (a colleague's delete) — a draft with no row is not
-      // an edit, and posting it would wedge every later save.
-      if (!item) continue;
-      const edit: TableItemEdit = { id: itemId, seq: item.seq };
-      if (d.name !== undefined) edit.name = d.name;
-      if (d.note !== undefined) edit.note = d.note || null;
-      if (d.tnvedCode !== undefined) {
-        const code = d.tnvedCode.trim();
-        if (code && !CODE_SHAPE.test(code)) {
-          setTableError({ code: 'bad_code', seq: item.seq });
-          return;
-        }
-        edit.tnvedCode = code || null;
-      }
-      for (const field of NUM_COLS) {
-        const raw = d[field];
-        if (raw === undefined) continue;
-        const value = parseCell(raw);
-        if (value !== null && !Number.isFinite(value)) {
-          setTableError({ code: 'bad_number', seq: item.seq });
-          return;
-        }
-        edit[field] = value;
-      }
-      if (d.measure !== undefined) {
-        // The cell applies only while the row asks a pair unit — the SAME
-        // rule that draws the box (screenRowOf): a recode or a new unit that
-        // stops asking strands the draft, and the save drops it client-side
-        // rather than wedging on a box the screen no longer renders.
-        if (screenRowOf(item, d, groupById, groupsByCode).pair !== null) {
-          const v = parseCell(d.measure);
-          if (v !== null && !Number.isFinite(v)) {
-            setTableError({ code: 'bad_number', seq: item.seq });
-            return;
-          }
-          edit.measureQty = v;
-        }
-      }
-      if (d.bazaValue !== undefined || d.bazaBasis !== undefined) {
-        const v = parseCell(d.bazaValue ?? serverValueOf(item, 'bazaValue', d));
-        if (v !== null && !Number.isFinite(v)) {
-          setTableError({ code: 'bad_number', seq: item.seq });
-          return;
-        }
-        edit.bazaUsd = v;
-        // 0125's four states (workspace.ts TableItemEdit). A unit the VED
-        // TOUCHED is posted with or without a price — on an unpriced row it
-        // used to evaporate on Saqlash. An untouched one posts what is
-        // stored (it stands), or null = «avto», which the server stamps from
-        // the block the row ENDS in. Clearing the price: `postedBasis`.
-        edit.bazaBasis = postedBasis(d.bazaBasis, v === null, item);
-        // The picked row's id — the server re-reads it and takes the PRICE
-        // from the file, so a browser that lies about the number is answered
-        // by the declaration itself.
-        if (v !== null && d.importRowId) edit.importRowId = d.importRowId;
-      }
-      items.push(edit);
+  /**
+   * The open sheet's figure — what THIS Saqlash would store (#886): the
+   * block the row's drafted code lands in, with ONLY this row's draft merged.
+   * Other rows' drafts are not posted by this press, so merging them (as the
+   * footer does) would print a figure the save cannot store.
+   */
+  const sheetFigure = useMemo((): SheetFigure | null => {
+    if (!sheet) return null;
+    if (sheet.kind === 'item') {
+      const item = itemById.get(sheet.id);
+      if (!item) return null;
+      const d = drafts[item.id];
+      const code = (d?.tnvedCode ?? item.tnvedCode ?? '').trim();
+      if (!code) return { state: 'no_code' };
+      const lawGroup = screenRowOf(item, d, groupById, groupsByCode).lawGroup;
+      if (!lawGroup) return { state: 'unknown_law' };
+      const members = lawGroup.items.map((i) => liveItem(i, i.id === item.id ? (d ?? null) : null));
+      if (!lawGroup.items.some((i) => i.id === item.id)) members.push(liveItem(item, d ?? null));
+      return { state: 'ok', customs: customsFor(pricedGroupOf(lawGroup), members) };
     }
+    const row = newRows.find((r) => r.key === sheet.key);
+    if (!row) return null;
+    const code = row.tnvedCode.trim();
+    if (!code) return { state: 'no_code' };
+    const lawGroup = groupsByCode.get(code) ?? null;
+    if (!lawGroup) return { state: 'unknown_law' };
+    const members = lawGroup.items.map((i) => liveItem(i, null));
+    members.push(liveGhostItem(row, lawGroup, groupsByCode));
+    return { state: 'ok', customs: customsFor(pricedGroupOf(lawGroup), members) };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sheet, drafts, newRows, workspace]);
 
-    const adds: TableNewItem[] = [];
-    for (const [i, row] of newRows.entries()) {
-      if (!ghostDirty(row)) continue;
-      const ghostSeq = -(i + 1);
-      if (!row.name.trim()) {
-        setTableError({ code: 'name_required', seq: ghostSeq });
+  /* ---- the current state, for code that resumes after an await ---- */
+  const latest = useRef<Latest | null>(null);
+  useLayoutEffect(() => {
+    latest.current = {
+      drafts,
+      bases,
+      newRows,
+      sheet,
+      itemById,
+      groupById,
+      groupsByCode,
+      workspaceRev: workspace.rev,
+      waitState: wait.state,
+    };
+  });
+
+  // The rev the screen shows is never news to it.
+  useEffect(() => {
+    knownRev.current = Math.max(knownRev.current, workspace.rev);
+    const ready = landWaiters.current.filter((w) => workspace.rev >= w.rev);
+    if (ready.length === 0) return;
+    landWaiters.current = landWaiters.current.filter((w) => workspace.rev < w.rev);
+    for (const w of ready) w.resolve('landed');
+  }, [workspace.rev]);
+
+  /** Resolve once the screen shows `rev` — or after eight seconds: a refresh
+   * that never lands must not become a lock (row-draft.ts `refreshWait`). */
+  const waitForLanding = (rev: number) =>
+    new Promise<'landed' | 'timedOut'>((resolve) => {
+      if ((latest.current?.workspaceRev ?? workspace.rev) >= rev) {
+        resolve('landed');
         return;
       }
-      const code = row.tnvedCode.trim();
-      if (code && !CODE_SHAPE.test(code)) {
-        setTableError({ code: 'bad_code', seq: ghostSeq });
-        return;
-      }
-      const num = (raw: string) => {
-        const v = parseCell(raw);
-        return v !== null && Number.isFinite(v) ? v : null;
+      const entry = {
+        rev,
+        resolve: (outcome: 'landed' | 'timedOut') => {
+          window.clearTimeout(timer);
+          resolve(outcome);
+        },
       };
-      adds.push({
+      const timer = window.setTimeout(() => {
+        landWaiters.current = landWaiters.current.filter((w) => w !== entry);
+        resolve('timedOut');
+      }, REFRESH_WAIT_MS);
+      landWaiters.current.push(entry);
+    });
+
+  /* ---- B5 a: drafts survive a closed tab ---- */
+
+  // The READ is declared FIRST, and it gates the write through a REF: one
+  // commit's passive effects run together, so a prompt held only in state is
+  // invisible to the write effect in the same flush — the first empty render
+  // would delete the entry before the question was ever asked. The entry
+  // lives in localStorage, which the server render cannot read: it is
+  // offered after mount or the hydration would disagree with the server.
+  useEffect(() => {
+    const parsed = parseStoredDrafts(readStored(browserStorage(), storageKey), Date.now());
+    const now = latest.current;
+    const plan =
+      parsed && now
+        ? planRestore(parsed, now.itemById, (item) => screenRowOf(item, undefined, now.groupById, now.groupsByCode).basis)
+        : null;
+    // Ask, keep a skipped entry (a stale cached page must not make its skip
+    // irrevocable), or replace it with the live state — `mountDecision`
+    // decides; news is shown ONCE (review PHONE-6).
+    const decision = mountDecision(parsed, plan);
+    storedEntry.current = decision.keep;
+    storagePhase.current = decision.phase;
+    if (decision.show && plan) setRestore(plan);
+  }, [storageKey]);
+
+  useEffect(() => {
+    if (storagePhase.current === 'init') return;
+    const live = serializeDrafts({ drafts, bases, newRows }, new Date());
+    // While the question stands, the stored rows a live draft has not
+    // replaced are KEPT — new typing is saved even if he never answers.
+    const value = storagePhase.current === 'live' ? live : mergeForStorage(storedEntry.current, live);
+    storageOk.current = writeStored(browserStorage(), storageKey, value);
+  }, [drafts, bases, newRows, storageKey]);
+
+  const applyRestore = () => {
+    const stored = storedEntry.current;
+    const now = latest.current;
+    if (!stored || !now) return;
+    // Judged again against the workspace as it is NOW, not as it was at mount.
+    const plan = planRestore(stored, now.itemById, (item) =>
+      screenRowOf(item, undefined, now.groupById, now.groupsByCode).basis,
+    );
+    setDraftState((prev) => {
+      const nextDrafts = { ...prev.drafts };
+      const nextBases = { ...prev.bases };
+      for (const [rowId, entry] of Object.entries(plan.rows)) {
+        const item = now.itemById.get(rowId);
+        if (!item) continue;
+        // A cell typed meanwhile wins over the stored one.
+        const merged = { ...entry.draft, ...(prev.drafts[rowId] ?? {}) };
+        nextDrafts[rowId] = merged;
+        const base = syncBase({ ...entry.base, ...(prev.bases[rowId] ?? {}) }, merged, item);
+        if (base) nextBases[rowId] = base;
+      }
+      return { drafts: nextDrafts, bases: nextBases };
+    });
+    if (plan.ghosts.length > 0) {
+      setNewRows((rows) => [...rows, ...plan.ghosts.map((g) => ({ ...g, key: newKey.current++ }))]);
+    }
+    storagePhase.current = 'live';
+    storedEntry.current = null;
+    setRestore(null);
+  };
+
+  const dropRestore = () => {
+    // «Tushunarli» on news-only closes the notice and nothing else: the kept
+    // entry is what a later, fresh page may still offer back.
+    if (storagePhase.current === 'kept') {
+      setRestore(null);
+      return;
+    }
+    storagePhase.current = 'live';
+    storedEntry.current = null;
+    setRestore(null);
+    // What was typed while the question stood is kept; the old entry is not.
+    storageOk.current = writeStored(
+      browserStorage(),
+      storageKey,
+      serializeDrafts({ drafts, bases, newRows }, new Date()),
+    );
+  };
+
+  // One hour of typed rows must not die on a mis-tap — but only where the
+  // drafts are NOT already safe in storage: with storage healthy a reload
+  // loses nothing (B5 a), and Chrome's «Leave site?» over a pull-to-refresh
+  // would contradict «yopsangiz ham yozganingiz qoladi».
+  useEffect(() => {
+    if (dirtyCount === 0) return;
+    const guard = (e: BeforeUnloadEvent) => {
+      if (storageOk.current !== true) e.preventDefault();
+    };
+    window.addEventListener('beforeunload', guard);
+    return () => window.removeEventListener('beforeunload', guard);
+  }, [dirtyCount]);
+
+  /* ---- the writers: builders + ONE sender ---- */
+
+  /** One existing row's edit, built from its draft — or the refusal naming
+   * the row and the cell. Null when the row is gone. The client refuses
+   * NaN and an ambiguous comma before the wire; the server stays the
+   * authority. */
+  const buildEdit = (
+    itemId: string,
+    d: ItemDraft,
+    m: Maps = maps,
+  ): { edit: TableItemEdit } | { refusal: TableRefusal } | null => {
+    const item = m.itemById.get(itemId);
+    // The row is gone (a colleague's delete) — a draft with no row is not
+    // an edit, and posting it would wedge every later save.
+    if (!item) return null;
+    const edit: TableItemEdit = { id: itemId, seq: item.seq };
+    if (d.name !== undefined) edit.name = d.name;
+    if (d.note !== undefined) edit.note = d.note || null;
+    if (d.tnvedCode !== undefined) {
+      const code = d.tnvedCode.trim();
+      if (code && !CODE_SHAPE.test(code)) return { refusal: { code: 'bad_code', seq: item.seq, itemId } };
+      edit.tnvedCode = code || null;
+    }
+    for (const field of NUM_COLS) {
+      const raw = d[field];
+      if (raw === undefined) continue;
+      const read = readCell(raw, item.seq, field);
+      if ('refusal' in read) return { refusal: { ...read.refusal, itemId } };
+      edit[field] = read.value;
+    }
+    if (d.measure !== undefined) {
+      // The cell applies only while the row asks a pair unit — the SAME
+      // rule that draws the box (screenRowOf): a recode or a new unit that
+      // stops asking strands the draft, and the save drops it client-side
+      // rather than wedging on a box the screen no longer renders.
+      if (screenRowOf(item, d, m.groupById, m.groupsByCode).pair !== null) {
+        const read = readCell(d.measure, item.seq, 'measure');
+        if ('refusal' in read) return { refusal: { ...read.refusal, itemId } };
+        edit.measureQty = read.value;
+      }
+    }
+    if (d.bazaValue !== undefined || d.bazaBasis !== undefined) {
+      const read = readCell(
+        d.bazaValue ?? serverValueOf(item, 'bazaValue', d, m.groupById, m.groupsByCode),
+        item.seq,
+        'bazaValue',
+      );
+      if ('refusal' in read) return { refusal: { ...read.refusal, itemId } };
+      const v = read.value;
+      edit.bazaUsd = v;
+      // 0125's four states (workspace.ts TableItemEdit). A unit the VED
+      // TOUCHED is posted with or without a price — on an unpriced row it
+      // used to evaporate on Saqlash. An untouched one posts what is
+      // stored (it stands), or null = «avto», which the server stamps from
+      // the block the row ENDS in. Clearing the price: `postedBasis`.
+      edit.bazaBasis = postedBasis(d.bazaBasis, v === null, item);
+      // The picked row's id — the server re-reads it and takes the PRICE
+      // from the file, so a browser that lies about the number is answered
+      // by the declaration itself.
+      if (v !== null && d.importRowId) edit.importRowId = d.importRowId;
+    }
+    return { edit };
+  };
+
+  /** One NEW row's add. A typo in a number is refused now (it used to post
+   * a silent null) and an ambiguous comma is asked about. */
+  const buildAdd = (row: NewRow, index: number): { add: TableNewItem } | { refusal: TableRefusal } => {
+    const ghostSeq = -(index + 1);
+    if (!row.name.trim()) return { refusal: { code: 'name_required', seq: ghostSeq, ghostKey: row.key } };
+    const code = row.tnvedCode.trim();
+    if (code && !CODE_SHAPE.test(code)) return { refusal: { code: 'bad_code', seq: ghostSeq, ghostKey: row.key } };
+    const nums: Partial<Record<SheetNumField, number | null>> = {};
+    for (const field of ['quantity', 'weightKg', 'volumeM3', 'measure', 'bazaValue'] as const) {
+      const read = readCell(row[field], ghostSeq, field);
+      if ('refusal' in read) return { refusal: { ...read.refusal, ghostKey: row.key } };
+      nums[field] = read.value;
+    }
+    return {
+      add: {
         clientId: row.clientId,
         name: row.name,
-        quantity: num(row.quantity),
+        quantity: nums.quantity ?? null,
         unit: row.unit.trim() || null,
-        weightKg: num(row.weightKg),
-        volumeM3: num(row.volumeM3),
+        weightKg: nums.weightKg ?? null,
+        volumeM3: nums.volumeM3 ?? null,
         tnvedCode: code || null,
-        measureQty: num(row.measure),
-        bazaUsd: num(row.bazaValue),
+        // Posted UNCONDITIONALLY — the ghost's one rule at both widths: the
+        // box is on every ghost (its law is unknowable before the save), and
+        // the server drops and NAMES a measure the law does not take.
+        measureQty: nums.measure ?? null,
+        bazaUsd: nums.bazaValue ?? null,
         // Null while untouched — «avto», stamped by the server from the block
         // the new code lands in; a touched unit stands with or without a price.
         bazaBasis: row.bazaBasis,
-      });
-    }
+        note: row.note.trim() || null,
+      },
+    };
+  };
 
+  /** THE one sender. Returns the answer and writes no error of its own —
+   * the grid's save and the sheet's press each say it where they are. */
+  const send = async (
+    items: TableItemEdit[],
+    adds: TableNewItem[],
+    posted: { drafts: Map<string, ItemDraft>; ghosts: Map<number, NewRow> },
+  ): Promise<TableFormState> => {
+    const now = latest.current;
+    const revAtPress = now?.workspaceRev ?? workspace.rev;
+    // The other drafted rows' stored values at the press — the re-base may
+    // move a base only where nothing foreign already stood under it.
+    const atPress: Record<string, RowBase> = {};
+    for (const [rowId, base] of Object.entries(now?.bases ?? {})) {
+      if (posted.drafts.has(rowId)) continue;
+      const item = now?.itemById.get(rowId);
+      if (item) atPress[rowId] = baseOf(item, Object.keys(base) as BaseField[]);
+    }
+    // Every posted ghost carries what it carried (review PHONE-1), written
+    // with the press so a closed tab keeps it too: if the answer never
+    // comes, a ghost the server turns out to hold is judged against THIS,
+    // never against the stored row a colleague may have corrected since.
+    // The FIRST unanswered post's stamp stands (row-draft.ts NewRow.posted).
+    const stamped = new Map<number, NewRow>();
+    const minted = new Map<number, PostedCells>();
+    for (const [key, row] of posted.ghosts) {
+      if (row.posted !== null) {
+        stamped.set(key, row);
+        continue;
+      }
+      const cells = postedCellsOf(row);
+      minted.set(key, cells);
+      stamped.set(key, { ...row, posted: cells });
+    }
+    if (minted.size > 0) {
+      setNewRows((rows) =>
+        rows.map((r) => (minted.has(r.key) && r === posted.ghosts.get(r.key) ? stamped.get(r.key)! : r)),
+      );
+    }
     setSaving(true);
+    inFlight.current = true;
     try {
       const result = await saveTableAction(id, { items, adds });
-      if (result.error) {
-        setTableError({ code: result.error, seq: result.seq });
-        return;
+      if (!result.ok) {
+        // A REFUSAL wrote nothing (one transaction), so the stamp it minted
+        // would vouch for a save that never happened — put back what stood.
+        if (minted.size > 0) {
+          setNewRows((rows) =>
+            rows.map((r) =>
+              minted.has(r.key) && r.posted === minted.get(r.key) ? { ...r, posted: null } : r,
+            ),
+          );
+        }
+        return result;
       }
+      // A success with no clock is not one the screen can settle on.
+      if (!Number.isFinite(result.rev)) return { error: 'save_failed' };
+      knownRev.current = Math.max(knownRev.current, result.rev);
+      setPrunedCount(0);
       setLastSave({
         minted: result.minted ?? [],
         swept: result.swept ?? 0,
@@ -569,47 +991,576 @@ export function ItemsTable({
         importFilled: result.importFilled ?? [],
         memoryFilled: result.memoryFilled ?? [],
       });
-      // Drafts are HELD until the refreshed workspace lands (the rev moves),
-      // so the live figures never flash back to pre-save numbers.
-      setClearAfterRev(workspace.rev);
+      // Drafts are HELD until the refreshed workspace reaches this rev, so
+      // the live figures never flash back to pre-save numbers — and only
+      // what this press POSTED settles then.
+      setPendingClears((prev) => [
+        ...prev,
+        { rev: result.rev, revAtPress, drafts: posted.drafts, ghosts: stamped, atPress },
+      ]);
       router.refresh();
+      return result;
     } catch {
-      // A thrown action (network, db) must not be a dead button.
-      setTableError({ code: 'save_failed' });
+      // A thrown action is a sentence, never a dead button — and after a
+      // deploy it is the RIGHT sentence: the tab's action ids are gone.
+      return { error: (await isBuildStale()) ? 'stale_build' : 'save_failed' };
     } finally {
+      inFlight.current = false;
       setSaving(false);
     }
   };
 
-  /** Enter walks DOWN the column, Excel's motion; on the last row it grows
-   * the table — the «sometimes 1 piece» trickle must not need the mouse. */
-  const onCellKey = (e: React.KeyboardEvent<HTMLInputElement>, col: string, rowIndex: number, lastIndex: number) => {
-    if (e.key !== 'Enter') return;
-    e.preventDefault();
-    if (rowIndex >= lastIndex) {
-      setNewRows((rows) => [...rows, emptyRow(newKey.current++)]);
-      requestAnimationFrame(() => focusCell(col, rowIndex + 1));
-    } else {
-      focusCell(col, rowIndex + 1);
+  /** The grid's ONE save — every live draft and every dirty ghost in one
+   * transaction (an empty post runs the server's sweep). */
+  const save = async () => {
+    setTableError(null);
+    const items: TableItemEdit[] = [];
+    const postedDrafts = new Map<string, ItemDraft>();
+    for (const [itemId, d] of Object.entries(drafts)) {
+      const built = buildEdit(itemId, d);
+      if (built === null) continue;
+      if ('refusal' in built) {
+        setTableError(built.refusal);
+        return;
+      }
+      items.push(built.edit);
+      postedDrafts.set(itemId, d);
+    }
+    const adds: TableNewItem[] = [];
+    const postedGhosts = new Map<number, NewRow>();
+    for (const [i, row] of newRows.entries()) {
+      if (!ghostDirty(row)) continue;
+      const built = buildAdd(row, i);
+      if ('refusal' in built) {
+        setTableError(built.refusal);
+        return;
+      }
+      adds.push(built.add);
+      postedGhosts.set(row.key, row);
+    }
+    const result = await send(items, adds, { drafts: postedDrafts, ghosts: postedGhosts });
+    if (!result.ok) setTableError({ code: result.error, seq: result.seq });
+  };
+
+  /* ---- the phone sheet: open, close, press ---- */
+
+  const resetSheetState = () => {
+    setSheetError(null);
+    setDeleteWarn(null);
+    dispatchWait({ type: 'reset' });
+  };
+
+  const openItemSheet = useCallback(
+    (itemId: string) => {
+      const item = itemById.get(itemId);
+      if (!item) return;
+      setRowGone(false);
+      setSheetError(null);
+      setDeleteWarn(null);
+      dispatchWait({ type: 'reset' });
+      setSheetExpectRev(workspace.rev);
+      setSheetOpenBase(baseOf(item, ALL_BASE_FIELDS));
+      setSheet({ kind: 'item', id: itemId });
+    },
+    [itemById, workspace.rev],
+  );
+
+  const openGhostSheet = useCallback(
+    (key: number) => {
+      setRowGone(false);
+      setSheetError(null);
+      setDeleteWarn(null);
+      dispatchWait({ type: 'reset' });
+      setSheetExpectRev(workspace.rev);
+      setSheetOpenBase(null);
+      setSheet({ kind: 'ghost', key });
+    },
+    [workspace.rev],
+  );
+
+  const addGhostAndOpen = useCallback(() => {
+    const row = emptyRow(newKey.current++);
+    setNewRows((rows) => [...rows, row]);
+    openGhostSheet(row.key);
+  }, [openGhostSheet]);
+
+  /** Closing ALWAYS closes — the draft lives here and in storage. An empty
+   * new row goes with its sheet. */
+  const closeSheet = () => {
+    const was = latest.current?.sheet ?? sheet;
+    setSheet(null);
+    resetSheetState();
+    if (was?.kind === 'ghost') {
+      setNewRows((rows) => rows.filter((r) => r.key !== was.key || ghostDirty(r)));
     }
   };
-  const focusCell = (col: string, rowIndex: number) => {
-    const el = document.querySelector<HTMLInputElement>(`[data-cell="${col}"][data-row="${rowIndex}"]`);
-    el?.focus();
-    el?.select();
+
+  /** Is the sheet still on this row? Read from the CURRENT state, because a
+   * press outlives the render it began in (review PHONE-3). */
+  const showing = (target: SheetTarget) =>
+    sheetKeyOf(latest.current?.sheet ?? null) === sheetKeyOf(target);
+
+  /**
+   * Say a refusal where the VED is (review PHONE-3): in the sheet while it
+   * still shows the row the press was made on — the ambiguity question and a
+   * bad number UNDER their own field (PHONE-4), anything else at the sheet's
+   * top — else in the table's own line, which shows at every width. A sheet
+   * closed, or another row opened, during the press's look must neither
+   * swallow its answer nor wear it.
+   */
+  const showRefusal = (refusal: TableRefusal, pressed: SheetTarget) => {
+    const key = sheetKeyOf(pressed);
+    if (!showing(pressed)) {
+      // The generic sentence: the two-button question in that line is the
+      // desktop grid's (hidden md:block), and this row's sheet is closed.
+      setTableError({ code: refusal.code, seq: refusal.seq });
+      return;
+    }
+    if ((refusal.code === 'ambiguous_number' || refusal.code === 'bad_number') && refusal.field) {
+      const field = refusal.field;
+      setAsked((prev) => ({
+        key,
+        fields: [...(prev.key === key ? prev.fields : []), field],
+      }));
+      // The question sits under its field — bring it into view.
+      const testId = refusal.code === 'ambiguous_number' ? 'calc-phone-ambiguous' : 'calc-phone-bad';
+      requestAnimationFrame(() =>
+        document.querySelector(`[data-testid="${testId}"]`)?.scrollIntoView({ block: 'nearest' }),
+      );
+      return;
+    }
+    setSheetError(refusal.code);
   };
+
+  /** The open row's build, from a given moment's state. */
+  const buildFor = (now: Latest) => {
+    const target = now.sheet;
+    if (!target) return null;
+    if (target.kind === 'item') {
+      const d = now.drafts[target.id];
+      return d ? buildEdit(target.id, d, now) : null;
+    }
+    const index = now.newRows.findIndex((r) => r.key === target.key);
+    return index === -1 ? null : buildAdd(now.newRows[index]!, index);
+  };
+
+  /** Where the pressed row is NOW — a ghost the refresh turned into its
+   * saved row IS that row (the same goods), so the press goes on with it. */
+  const pressedNow = (now: Latest, pressed: SheetTarget, clientId: string | null): SheetTarget | null => {
+    if (pressed.kind === 'item') return now.itemById.has(pressed.id) ? pressed : null;
+    if (now.newRows.some((r) => r.key === pressed.key)) return pressed;
+    return clientId !== null && now.itemById.has(clientId) ? { kind: 'item', id: clientId } : null;
+  };
+
+  /** The row a table-line refusal names — none when it is gone. */
+  const seqOf = (now: Latest, target: SheetTarget): number | undefined => {
+    if (target.kind === 'item') return now.itemById.get(target.id)?.seq;
+    const index = now.newRows.findIndex((r) => r.key === target.key);
+    return index === -1 ? undefined : -(index + 1);
+  };
+
+  /**
+   * Look before writing (B6 a): a rev past what the screen knows refreshes
+   * first and waits for it, at most eight seconds — `landed`, `timedOut`, or
+   * `none` when there was nothing to bring in. Our OWN last answer counts
+   * too: a press made before the refresh of the previous save has landed
+   * would post over values the screen no longer shows, and the commit's
+   * compare-and-set (PHONE-2) would then blame «boshqa kishi» for our own
+   * save. The wait is drawn only on the pressed row's own sheet.
+   */
+  const lookFirst = async (pressed: SheetTarget): Promise<'none' | 'landed' | 'timedOut'> => {
+    const probe = await probeClock(id);
+    const news = probe !== null && probe.rev > knownRev.current;
+    const want = Math.max(news ? probe.rev : 0, knownRev.current);
+    if ((latest.current?.workspaceRev ?? workspace.rev) >= want) return 'none';
+    if (showing(pressed)) dispatchWait({ type: 'start', rev: want, now: Date.now() });
+    // Asked again even for our own rev: a refresh Next discarded (#1242)
+    // would otherwise leave every later press waiting out the eight seconds.
+    router.refresh();
+    const outcome = await waitForLanding(want);
+    if (showing(pressed)) dispatchWait(outcome === 'timedOut' ? { type: 'rejected' } : { type: 'reset' });
+    return outcome;
+  };
+
+  /**
+   * The sheet's Saqlash (B2 a): ONE row posted through the grid's own
+   * builders and sender. It looks before it writes (B6 a): a rev past what
+   * the screen knows refreshes first, and when what changed is under THIS
+   * row's drafted cells the press stops and shows it — the next press saves.
+   * Anything else (the machine's sweep, our own lost commit) costs nothing.
+   *
+   * The press is BOUND to the row it was made on (review PHONE-3): the sheet
+   * may be closed, or another row opened, while it looks, and neither cancels
+   * it nor retargets it — the CURRENT state is read after every await (the
+   * refresh can turn the very ghost it began on into a saved row), but always
+   * for THIS row. And the look is not left to the probe alone (PHONE-2): the
+   * edit carries what the screen showed under its cells, so a colleague's
+   * save landing between the probe and our commit is refused by the server
+   * (`changed_under`) and brought in, never overwritten unseen.
+   */
+  const saveSheetRow = async () => {
+    const start = latest.current;
+    if (!start?.sheet || inFlight.current) return;
+    const pressed = start.sheet;
+    const pressedClientId =
+      pressed.kind === 'ghost' ? (start.newRows.find((r) => r.key === pressed.key)?.clientId ?? null) : null;
+    setSheetError(null);
+    setTableError(null);
+    const pre = buildFor(start);
+    if (pre && 'refusal' in pre) {
+      showRefusal(pre.refusal, pressed);
+      return;
+    }
+    const startItem = pressed.kind === 'item' ? start.itemById.get(pressed.id) : undefined;
+    const shown = startItem ? changeSignature(changedUnder(start.bases[startItem.id], startItem)) : '';
+    // A wait that already timed out is not asked twice: the label reads
+    // «Baribir saqlash», the VED saw «hisob yangilandi», and this press saves
+    // — a refresh that never lands must not become a lock.
+    const acknowledged = start.waitState === 'timedOut';
+    setPressing(true);
+    try {
+      if (!acknowledged && (await lookFirst(pressed)) === 'timedOut') {
+        // The sheet still on this row says it (and «Baribir saqlash»); a
+        // closed one cannot.
+        if (!showing(pressed)) setTableError({ code: 'refresh_timeout', seq: seqOf(latest.current!, pressed) });
+        return;
+      }
+      const now = latest.current!;
+      const target = pressedNow(now, pressed, pressedClientId);
+      // Discarded or deleted meanwhile — the prune names a colleague's delete.
+      if (!target) return;
+      if (target.kind === 'item') {
+        const item = now.itemById.get(target.id)!;
+        const d = now.drafts[target.id];
+        if (!d) {
+          // The lost add already landed and nothing differs — it IS saved.
+          if (showing(target)) closeSheet();
+          setLastSave({ ...EMPTY_SAVE, alreadySaved: 1 });
+          return;
+        }
+        const changes = changedUnder(now.bases[target.id], item);
+        if (changes.length > 0 && changeSignature(changes) !== shown) {
+          // The row's own warning names it on its sheet; a closed sheet
+          // cannot, so the table line does.
+          if (!showing(target)) setTableError({ code: 'changed_under', seq: item.seq });
+          return;
+        }
+        const built = buildEdit(target.id, d, now);
+        if (built === null) return;
+        if ('refusal' in built) {
+          showRefusal(built.refusal, target);
+          return;
+        }
+        const edit: TableItemEdit = acknowledged ? built.edit : { ...built.edit, expect: expectFor(item, d) };
+        const result = await send([edit], [], { drafts: new Map([[target.id, d]]), ghosts: new Map() });
+        if (!result.ok) {
+          if (result.error === 'changed_under') {
+            // Bring the colleague's save in: the row's own warning then names
+            // it (or «hisob yangilandi» with «Baribir saqlash» when the
+            // refresh is slow), and the next press — with it on the screen —
+            // saves. Only a look that brought nothing in needs the sentence.
+            if (showing(target) && (await lookFirst(target)) !== 'none') return;
+            router.refresh();
+          }
+          showRefusal({ code: result.error, seq: result.seq }, target);
+          return;
+        }
+        if (showing(target)) {
+          setSheetExpectRev(result.rev);
+          closeSheet();
+        }
+      } else {
+        const index = now.newRows.findIndex((r) => r.key === target.key);
+        const row = now.newRows[index];
+        if (!row) return;
+        const built = buildAdd(row, index);
+        if ('refusal' in built) {
+          showRefusal(built.refusal, target);
+          return;
+        }
+        const result = await send([], [built.add], { drafts: new Map(), ghosts: new Map([[row.key, row]]) });
+        if (!result.ok) {
+          showRefusal({ code: result.error, seq: result.seq }, target);
+          return;
+        }
+        if (showing(target)) {
+          setSheetExpectRev(result.rev);
+          closeSheet();
+        }
+      }
+    } finally {
+      setPressing(false);
+    }
+  };
+
+  /** The sheet's 🗑 — the same look first; a row that changed since the
+   * sheet opened takes a second press, a row with figures the desktop's
+   * confirm. Bound to the row it was pressed on, like Saqlash (PHONE-3). */
+  const deleteSheetRow = async () => {
+    const start = latest.current;
+    if (start?.sheet?.kind !== 'item' || inFlight.current) return;
+    const pressed = start.sheet;
+    const rowId = pressed.id;
+    setSheetError(null);
+    setTableError(null);
+    setPressing(true);
+    const say = (code: string, seq: number | undefined) =>
+      showing(pressed) ? setSheetError(code) : setTableError({ code, seq });
+    try {
+      if (deleteWarn === null) {
+        if (start.waitState !== 'timedOut') await lookFirst(pressed);
+        const fresh = latest.current?.itemById.get(rowId);
+        if (!fresh) return;
+        const changes = sheetOpenBase ? changedUnder(sheetOpenBase, fresh) : [];
+        if (changes.length > 0) {
+          if (showing(pressed)) setDeleteWarn(changes);
+          else setTableError({ code: 'changed_under', seq: fresh.seq });
+          return;
+        }
+      }
+      const item = latest.current?.itemById.get(rowId);
+      if (!item) return;
+      const hasData = item.bazaUsd !== null || item.quantity !== null || item.weightKg !== null;
+      if (hasData && !window.confirm(`${tc('delete')}? ${item.label}`)) return;
+      markOwnDelete(rowId);
+      inFlight.current = true;
+      try {
+        const result = await deleteItemAction(id, rowId);
+        // `not_found`: a lost answer whose delete already committed.
+        if (result.ok || result.error === 'not_found') {
+          if (result.ok) knownRev.current = Math.max(knownRev.current, result.rev);
+          clearDraft(rowId);
+          if (showing(pressed)) closeSheet();
+          router.refresh();
+        } else {
+          say(result.error, item.seq);
+        }
+      } catch {
+        say((await isBuildStale()) ? 'stale_build' : 'save_failed', item.seq);
+      } finally {
+        inFlight.current = false;
+      }
+    } finally {
+      setPressing(false);
+    }
+  };
+
+  const discardSheetRow = () => {
+    const target = latest.current?.sheet ?? sheet;
+    if (!target) return;
+    if (target.kind === 'item') {
+      clearDraft(target.id);
+      setDeleteWarn(null);
+    } else {
+      removeGhost(target.key);
+      setSheet(null);
+      resetSheetState();
+    }
+  };
+
+  /** The 📥 from the sheet: never two Overlays open at once (one Escape
+   * would close both) — the sheet steps aside and comes back after. */
+  const openPickerFromSheet = () => {
+    if (sheet?.kind !== 'item') return;
+    const item = itemById.get(sheet.id);
+    if (!item?.tnvedCode) return;
+    const d = drafts[item.id];
+    const screen = screenRowOf(item, d, groupById, groupsByCode);
+    const cell = readNumberCell(d?.bazaValue ?? numText(item.bazaUsd));
+    pickerReturn.current = sheet;
+    setSheet(null);
+    setPicker({
+      itemId: item.id,
+      name: item.label,
+      tnvedCode: item.tnvedCode,
+      basis: d?.bazaBasis ?? null,
+      current:
+        screen.basis !== null && cell.state === 'ok' && cell.value > 0
+          ? { usd: cell.value, basis: screen.basis }
+          : null,
+    });
+  };
+
+  // The probe (B6 a): every 15 s while a sheet is open or an AI pass holds
+  // the request, once on open, and when the phone comes back on — never
+  // while one of our own writes awaits its answer (#1242).
+  const sheetKey = sheetKeyOf(sheet);
+  useEffect(() => {
+    if (sheetKey === null && !aiRunning) return;
+    let alive = true;
+    const tick = async () => {
+      if (document.visibilityState !== 'visible' || inFlight.current) return;
+      const probe = await probeClock(id);
+      // An answer that arrives while we are writing is ignored.
+      if (!alive || inFlight.current) return;
+      if (shouldRefresh(probe, knownRev.current, aiRunning, inFlight.current)) router.refresh();
+    };
+    void tick();
+    const timer = window.setInterval(() => void tick(), POLL_MS);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void tick();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [sheetKey, aiRunning, id, router]);
+
+  /* ---- the sheet's model ---- */
+  const sheetItem = sheet?.kind === 'item' ? (itemById.get(sheet.id) ?? null) : null;
+  const sheetRow = sheet?.kind === 'ghost' ? (newRows.find((r) => r.key === sheet.key) ?? null) : null;
+  /** What moved under THIS row's drafted cells — derived every render,
+   * whichever path brought the refresh (the poll, the press, the open). */
+  const mustConfirm = sheetItem ? changedUnder(bases[sheetItem.id], sheetItem) : [];
+  const shownChanges = deleteWarn ?? mustConfirm;
+  const sheetModel: SheetModel | null = (() => {
+    if (sheetItem) {
+      const d = drafts[sheetItem.id];
+      const screen = screenRowOf(sheetItem, d, groupById, groupsByCode);
+      const pair = screen.pair;
+      return {
+        kind: 'item',
+        key: `item:${sheetItem.id}`,
+        seq: sheetItem.seq,
+        values: {
+          name: d?.name ?? sheetItem.label,
+          tnvedCode: d?.tnvedCode ?? sheetItem.tnvedCode ?? '',
+          note: d?.note ?? sheetItem.note ?? '',
+          quantity: d?.quantity ?? numText(sheetItem.quantity),
+          weightKg: d?.weightKg ?? numText(sheetItem.weightKg),
+          volumeM3: d?.volumeM3 ?? numText(sheetItem.volumeM3),
+          measure: d?.measure ?? serverValueOf(sheetItem, 'measure', d, groupById, groupsByCode),
+          bazaValue: d?.bazaValue ?? numText(sheetItem.bazaUsd),
+        },
+        drafted: Object.fromEntries(Object.keys(d ?? {}).map((k) => [k, true])),
+        sellerUnit: sheetItem.unit,
+        // EXACTLY the condition buildEdit posts the measure on.
+        measure:
+          pair === null
+            ? null
+            : {
+                label:
+                  pair === 'any'
+                    ? t('table.measureGhost')
+                    : t('table.measureFor', { unit: basisLabel(pair, t('perUnit')) }),
+                suffix: pair === 'any' ? null : basisLabel(pair, t('perUnit')),
+                sm3: pair === 'sm3',
+              },
+        basis: { value: screen.basis, offered: screen.offered },
+        chips: {
+          memory: sheetItem.bazaSource === 'memory' && d?.bazaValue === undefined,
+          import: sheetItem.bazaSource === 'import' && d?.bazaValue === undefined,
+          reason: d?.bazaValue === undefined ? sheetItem.bazaReason : null,
+        },
+        dictionaryBaza: sheetItem.dictionaryBaza,
+        importDoor: sheetItem.tnvedCode ? (rowDirtyForPicker(d) ? 'row_dirty' : 'open') : 'needs_code',
+        figure: sheetFigure ?? { state: 'no_code' },
+      };
+    }
+    if (sheetRow) {
+      const screen = ghostScreenOf(sheetRow, groupsByCode);
+      return {
+        kind: 'ghost',
+        key: `ghost:${sheetRow.key}`,
+        seq: null,
+        values: {
+          name: sheetRow.name,
+          tnvedCode: sheetRow.tnvedCode,
+          note: sheetRow.note,
+          quantity: sheetRow.quantity,
+          weightKg: sheetRow.weightKg,
+          volumeM3: sheetRow.volumeM3,
+          measure: sheetRow.measure,
+          bazaValue: sheetRow.bazaValue,
+        },
+        drafted: sheetRow.bazaBasis !== null ? { bazaBasis: true } : {},
+        sellerUnit: null,
+        // ALWAYS on a ghost — the desktop ghost's own rule, and buildAdd
+        // posts it unconditionally: a box on screen is a number that is
+        // posted, and nothing hidden is posted.
+        measure: { label: t('table.measureGhost'), suffix: null, sm3: false },
+        basis: { value: screen.basis, offered: screen.offered },
+        chips: { memory: false, import: false, reason: null },
+        dictionaryBaza: null,
+        importDoor: null,
+        figure: sheetFigure ?? { state: 'no_code' },
+      };
+    }
+    return null;
+  })();
+  const sheetHasPost = sheetItem ? drafts[sheetItem.id] !== undefined : sheetRow ? ghostDirty(sheetRow) : false;
+  const changedElsewhere =
+    sheet !== null &&
+    mustConfirm.length === 0 &&
+    (wait.state === 'timedOut' || (sheetExpectRev !== null && workspace.rev > sheetExpectRev));
+  const askedNow = asked.key === sheetKey ? asked.fields : [];
+
+  const onSheetField = (field: SheetField, raw: string) => {
+    if (!sheet) return;
+    if (sheet.kind === 'item') setDraft(sheet.id, field, raw);
+    else patchGhost(sheet.key, { [field]: raw });
+  };
+  const onSheetBasis = (basis: BazaBasis) => {
+    if (!sheet) return;
+    // ONE edit: the pair rule drafts the amount as it stands beside the
+    // unit, so the save posts a coherent pair (baza-draft.ts).
+    if (sheet.kind === 'item') setDraft(sheet.id, 'bazaBasis', basis);
+    else patchGhost(sheet.key, { bazaBasis: basis });
+  };
+  const onSheetAsk = (field: SheetNumField) =>
+    setAsked((prev) => ({ key: sheetKey, fields: [...(prev.key === sheetKey ? prev.fields : []), field] }));
+
+  /** The first unsaved row to reopen — live ids only, never a pruned one. */
+  const firstDrafted = allItems.find((i) => drafts[i.id] !== undefined);
+  const nextDraft: { kind: 'item'; id: string } | { kind: 'ghost'; key: number } | null = firstDrafted
+    ? { kind: 'item', id: firstDrafted.id }
+    : dirtyGhosts[0]
+      ? { kind: 'ghost', key: dirtyGhosts[0].key }
+      : null;
+
+  /** The desktop's answer to «1,125»: the two readings as buttons that
+   * rewrite exactly that cell. */
+  const resolveAmbiguous = (refusal: TableRefusal, text: string) => {
+    if (!refusal.field) return;
+    if (refusal.itemId) setDraft(refusal.itemId, refusal.field, text);
+    else if (refusal.ghostKey !== undefined) patchGhost(refusal.ghostKey, { [refusal.field]: text });
+    setTableError(null);
+  };
+
+  /** Enter walks DOWN the column, Excel's motion; on the last row it grows
+   * the table — the «sometimes 1 piece» trickle must not need the mouse. */
+  const onCellKey = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>, col: string, rowIndex: number, lastIndex: number) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      const focusCell = (index: number) => {
+        const el = document.querySelector<HTMLInputElement>(`[data-cell="${col}"][data-row="${index}"]`);
+        el?.focus();
+        el?.select();
+      };
+      if (rowIndex >= lastIndex) {
+        setNewRows((rows) => [...rows, emptyRow(newKey.current++)]);
+        requestAnimationFrame(() => focusCell(rowIndex + 1));
+      } else {
+        focusCell(rowIndex + 1);
+      }
+    },
+    [],
+  );
 
   /** Ctrl+V of a copied Excel column into a cell is the user's first
    * instinct — a multiline clipboard opens the paste preview instead of
    * dumping the blob into one input. */
-  const onCellPaste = (e: React.ClipboardEvent) => {
+  const onCellPaste = useCallback((e: React.ClipboardEvent) => {
     const text = e.clipboardData.getData('text');
     if (text.includes('\n') || text.includes('\t')) {
       e.preventDefault();
       setPasteText(text);
       setPasteOpen(true);
     }
-  };
+  }, []);
 
   const parsedPaste = useMemo(() => {
     const lines = pasteText
@@ -631,12 +1582,14 @@ export function ItemsTable({
       }));
     }
     // One product per line: «name, quantity, unit» — calc-send-form's shape.
+    // The quantity is read by the ONE cell reader; an ambiguous one lands
+    // empty rather than as a guess.
     return lines.map((line) => {
       const parts = line.split(/[,;]/).map((p) => p.trim());
-      const quantity = parts.length > 1 ? parseCell(parts[1]!) : null;
+      const cell = parts.length > 1 ? readNumberCell(parts[1]!) : null;
       return {
         name: parts[0]!,
-        quantity: quantity !== null && Number.isFinite(quantity) ? quantity : null,
+        quantity: cell?.state === 'ok' ? cell.value : null,
         unit: parts[2] || null,
         weightKg: null,
         volumeM3: null,
@@ -657,18 +1610,16 @@ export function ItemsTable({
         items: [],
         adds: rows.map((r, i) => ({ ...r, clientId: ids[i] ?? null })),
       });
-      if (!result.error) {
+      if (result.ok) {
         setPasteText('');
         setPasteOpen(false);
         pasteIds.current = { keys: [], ids: [] };
+        knownRev.current = Math.max(knownRev.current, result.rev);
         setLastSave({
+          ...EMPTY_SAVE,
           minted: result.minted ?? [],
           swept: result.swept ?? 0,
           merged: result.merged ?? [],
-          measuresCleared: [],
-          measuresDropped: [],
-          basisSuspect: [],
-          basisConflict: [],
           alreadySaved: result.alreadySaved ?? 0,
           importFilled: result.importFilled ?? [],
           memoryFilled: result.memoryFilled ?? [],
@@ -721,14 +1672,21 @@ export function ItemsTable({
             ) : null}
           </span>
         ) : null}
+        {/* A live AI pass refuses every table write for ten minutes — said
+            BEFORE a press, at every width, never only as a refusal after. */}
+        {aiRunning ? (
+          <span className="chip chip-warn" data-testid="calc-ai-running">
+            {t('phone.aiRunning')}
+          </span>
+        ) : null}
 
         <span className="grow" />
 
         {/* Everything that ACTS on server state waits for the save — a ✅ or
             a seal over unsaved cells blesses numbers the server never saw. */}
-        {dirtyCount > 0 ? (
+        {gateCount > 0 ? (
           <span className="text-2xs text-warn" data-testid="calc-unsaved">
-            {t('table.unsaved', { count: dirtyCount })}
+            {t('table.unsaved', { count: gateCount })}
           </span>
         ) : (
           <>
@@ -747,10 +1705,10 @@ export function ItemsTable({
                 ⚠ {t('certificateMissing')}
               </span>
             ) : null}
-            {/* Desktop-only doors: a phone edits nothing, so an AI regroup
-                or a mass baza pull has no place there. The wrapper span is
-                the hide — `.btn` is defined AFTER the utilities and its
-                display beats a bare `hidden` (#419's cascade family). */}
+            {/* Desktop-only doors (his B3 a: no ✨ on the phone for now): an AI
+                regroup or a mass baza pull has no place in a one-row sheet.
+                The wrapper span is the hide — `.btn` is defined AFTER the
+                utilities and its display beats a bare `hidden` (#419). */}
             <span className="hidden md:contents">
               {/* Not drawn at all on a server with no ANTHROPIC key (audit
                   A25): the press used to answer «ИИ не ответил», which reads
@@ -803,17 +1761,75 @@ export function ItemsTable({
         </span>
       </div>
 
-      {tableError ? (
-        <p className="chip chip-warn" data-testid="calc-table-error">
-          {tableError.seq !== undefined
-            ? tableError.seq < 0
-              ? `${t('table.newRowN', { n: -tableError.seq })}: `
-              : `${tableError.seq}${t('table.rowN')}: `
-            : ''}
-          {t.has(`errors.${tableError.code}`)
-            ? t(`errors.${tableError.code}` as 'errors.not_ready')
-            : tableError.code}
+      {restore ? <DraftRestore plan={restore} onRestore={applyRestore} onDiscard={dropRestore} /> : null}
+
+      {prunedCount > 0 ? (
+        <p className="chip chip-warn" data-testid="calc-phone-pruned">
+          {t('phone.pruned', { count: prunedCount })}
         </p>
+      ) : null}
+
+      {tableError ? (
+        tableError.code === 'ambiguous_number' && tableError.field ? (
+          // The phone asks under its own field (the sheet); this line is the
+          // GRID's question, so it lives where the grid does.
+          <div className="hidden md:block">
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-warn/40 bg-warn/10 px-2 py-1.5 text-sm" data-testid="calc-ambiguous">
+              <span className="font-semibold text-warn">
+                {tableError.seq !== undefined
+                  ? tableError.seq < 0
+                    ? `${t('table.newRowN', { n: -tableError.seq })}: `
+                    : `${tableError.seq}${t('table.rowN')}: `
+                  : ''}
+                {tableError.field === 'bazaValue'
+                  ? t('ambiguous.baza', { a: tableError.decimalText ?? '', b: tableError.thousandsText ?? '' })
+                  : t('ambiguous.number', { a: tableError.decimalText ?? '', b: tableError.thousandsText ?? '' })}
+              </span>
+              <span className="text-2xs text-ink-600">{t('ambiguous.hint')}</span>
+              {/* The two answers wrap TOGETHER: one alone on a line reads as
+                  a third thing on the strip rather than the other choice. */}
+              <span className="flex gap-2">
+                <button
+                  type="button"
+                  className="btn-secondary !min-h-8 font-mono"
+                  data-testid="calc-ambiguous-decimal"
+                  onClick={() => resolveAmbiguous(tableError, tableError.decimalText ?? '')}
+                >
+                  {tableError.decimalText}
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary !min-h-8 font-mono"
+                  data-testid="calc-ambiguous-thousands"
+                  onClick={() => resolveAmbiguous(tableError, tableError.thousandsText ?? '')}
+                >
+                  {tableError.thousandsText}
+                </button>
+              </span>
+            </div>
+          </div>
+        ) : (
+          <p className="chip chip-warn" data-testid="calc-table-error">
+            {tableError.seq !== undefined
+              ? tableError.seq < 0
+                ? `${t('table.newRowN', { n: -tableError.seq })}: `
+                : `${tableError.seq}${t('table.rowN')}: `
+              : ''}
+            {t.has(`errors.${tableError.code}`)
+              ? t(`errors.${tableError.code}` as 'errors.not_ready')
+              : tableError.code}
+            {tableError.code === 'stale_build' ? (
+              <button
+                type="button"
+                className="btn-primary ml-2 !min-h-8"
+                data-testid="calc-reload"
+                onClick={() => void reloadFresh()}
+              >
+                {t('reloadPage')}
+              </button>
+            ) : null}
+          </p>
+        )
       ) : null}
       {lastSave &&
       (lastSave.minted.length > 0 ||
@@ -916,10 +1932,11 @@ export function ItemsTable({
                     groupById={groupById}
                     groupsByCode={groupsByCode}
                     busy={busy}
-                    dirty={dirtyCount > 0}
+                    dirty={gateCount > 0}
                     act={act}
                     setDraft={setDraft}
                     clearDraft={clearDraft}
+                    markOwnDelete={markOwnDelete}
                     onPickBaza={setPicker}
                     onCellKey={onCellKey}
                     onCellPaste={onCellPaste}
@@ -931,20 +1948,9 @@ export function ItemsTable({
                     row={row}
                     index={orderedRows.length + i}
                     lastIndex={lastIndex}
-                    // The block a typed code would join, if this request
-                    // already has one — it says which units the row may take.
-                    lawGroup={groupsByCode.get(row.tnvedCode.trim()) ?? null}
-                    onChange={(patch) => {
-                      setLastSave(null);
-                      // A code keystroke no longer writes the unit at all: an
-                      // untouched select stays «avto» and the server stamps the
-                      // law's default from the block the row lands in (18a);
-                      // a touched one is the VED's and no keystroke undoes it.
-                      setNewRows((rows) =>
-                        rows.map((r) => (r.key === row.key ? { ...r, ...patch } : r)),
-                      );
-                    }}
-                    onRemove={() => setNewRows((rows) => rows.filter((r) => r.key !== row.key))}
+                    groupsByCode={groupsByCode}
+                    onPatch={patchGhost}
+                    onRemove={removeGhost}
                     onCellKey={onCellKey}
                     onCellPaste={onCellPaste}
                   />
@@ -1000,11 +2006,42 @@ export function ItemsTable({
       </div>
 
       {/* ONE dialog for the table, kept mounted and toggled (#684). The key
-          that makes a stale answer impossible lives on its BODY, inside. */}
+          that makes a stale answer impossible lives on its BODY, inside. A
+          pick from the phone sheet sends the VED back to that sheet. */}
       <ImportBazaDialog
         target={picker}
-        onClose={() => setPicker(null)}
+        onClose={() => {
+          setPicker(null);
+          const back = pickerReturn.current;
+          pickerReturn.current = null;
+          if (back) setSheet(back);
+        }}
         onPick={pickImport}
+      />
+      {/* …and ONE row sheet, the same way (#684): mounted once, the body
+          keyed per row inside. */}
+      <RowSheet
+        open={sheet !== null && sheetModel !== null}
+        model={sheetModel}
+        codesListId={`codes-${id}`}
+        busy={busy || pressing}
+        saveDisabled={busy || pressing || aiRunning || wait.state === 'awaiting' || !sheetHasPost}
+        saveAnyway={mustConfirm.length > 0 || wait.state === 'timedOut'}
+        deleteAnyway={deleteWarn !== null}
+        error={sheetError}
+        aiRunning={aiRunning}
+        refreshing={wait.state === 'awaiting'}
+        changes={shownChanges}
+        changedElsewhere={changedElsewhere}
+        asked={askedNow}
+        onField={onSheetField}
+        onBasis={onSheetBasis}
+        onAsk={onSheetAsk}
+        onImport={openPickerFromSheet}
+        onSave={() => void saveSheetRow()}
+        onDelete={() => void deleteSheetRow()}
+        onDiscard={discardSheetRow}
+        onClose={closeSheet}
       />
 
       {/* One datalist feeds every code cell: repeats become 2-3 digits and a
@@ -1015,145 +2052,27 @@ export function ItemsTable({
         ))}
       </datalist>
 
-      {/* ---- phone: read-only, but a decision is still a decision ---- */}
-      <div className="md:hidden space-y-2">
-        <p className="text-2xs text-ink-500">{t('table.editOnDesktop')}</p>
-        {/* NAMED, not counted (audit A32). «⚠ Без группы: 1» told the VED a
-            number and left the product in a table the phone does not render,
-            so they could not tell the seller which line had no code without
-            walking to a computer. */}
-        {workspace.ungrouped.length > 0 ? (
-          <div className="text-sm text-warn" data-testid="calc-phone-ungrouped">
-            <p>
-              ⚠ {t('ungrouped')}: {workspace.ungrouped.length}
-            </p>
-            <ul className="mt-0.5 space-y-0.5 text-2xs">
-              {workspace.ungrouped.map((item) => (
-                <li key={item.id}>
-                  {item.seq}. {item.label}
-                  {item.quantity != null ? ` · ${item.quantity} ${item.unit ?? ''}` : ''}
-                  {item.quantity == null && item.weightKg != null ? ` · ${item.weightKg} kg` : ''}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-        {workspace.groups.map((group) => (
-          <div key={group.id} className="card !p-2 text-sm">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-mono font-semibold tabular-nums">{group.tnvedCode ?? '—'}</span>
-              {(() => {
-                const ub = uniformBazaOf(group.items);
-                return ub ? (
-                  <span className="text-2xs text-ink-600">
-                    {t('baza')}{ub.bazaUsd}/{basisLabel(ub.bazaBasis, t('perUnit'))}
-                  </span>
-                ) : null;
-              })()}
-              {group.confirmedAt ? (
-                <span className="text-2xs text-good">✅</span>
-              ) : dirtyCount > 0 ? (
-                // The desktop's dirty law on the phone too: both shapes share
-                // ONE set of drafts, and a ✅ pressed over unsaved cells would
-                // record `confirmed_warnings` about numbers the server never
-                // saw (phase 0 of the phone round).
-                <span className="text-2xs text-warn" data-testid="calc-phone-save-first">
-                  {t('table.saveFirst', { count: dirtyCount })}
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  // ≥44 px, like every other control a thumb has to hit — the
-                  // chip was 20 px tall (audit A9/A30).
-                  className="btn-secondary !min-h-11"
-                  disabled={busy}
-                  data-testid="calc-phone-confirm"
-                  onClick={() => act(() => confirmGroupAction(id, group.id, 'phone'))}
-                >
-                  {t('confirm')}
-                </button>
-              )}
-              <span className="ml-auto font-mono tabular-nums">
-                {group.customs.ok ? `$${group.customs.customsUsd.toFixed(2)}` : '⚠'}
-              </span>
-            </div>
-            {/* WHAT THE ✅ IS ABOUT (audit A18). The confirm records
-                `confirmed_warnings` — the duty, the VAT, the model's
-                confidence, «differs from the dictionary» — and the phone card
-                showed none of it, so a tick pressed here recorded «I saw the
-                rates» about a screen with no rates on it. Same words as the
-                desktop's BlockFooter, one muted line. */}
-            <p
-              className={`mt-1 text-2xs ${group.rateSource === 'typed' ? 'text-ink-700' : 'text-ink-500'}`}
-              data-testid="calc-phone-rates"
-            >
-              {group.dutyFree ? t('dutyFree') : dutyText(group)} ·{' '}
-              {group.vatFree ? t('vatFree') : `${t('vat')} ${group.vatPct ?? '—'}%`}
-              {group.aiProposed && group.confirmedAt === null
-                ? ` · ✨ ${group.aiConfidence ?? '—'}`
-                : ''}
-              {group.rateSource === 'dictionary' && group.dictionaryRates?.note
-                ? ` · ⚠ ${t('table.rateNoted')}`
-                : ''}
-              {group.warnings.includes('basis_not_law') && group.dutyUnit
-                ? ` · ⚠ ${t('table.basisNotLaw', { unit: basisLabel(defaultBasisFor(group), t('perUnit')) })}`
-                : ''}
-            </p>
-            {/* And WHY it could not be priced, in the office's words rather
-                than a bare ⚠ (audit A31): «нет базы» is something the VED can
-                act on; a triangle is not. */}
-            {!group.customs.ok ? (
-              <p className="mt-0.5 text-2xs text-warn" data-testid="calc-phone-refusal">
-                ⚠ {refusalWord(t, group.customs.reason)}
-              </p>
-            ) : null}
-            <ul className="mt-1 space-y-0.5 text-2xs text-ink-600">
-              {group.items.map((item) => (
-                <li key={item.id}>
-                  {item.seq}. {item.label}
-                  {item.quantity != null ? ` · ${item.quantity} ${item.unit ?? ''}` : ''}
-                  {/* The ✅ on this card is about these numbers, so the card
-                      must print where each price CAME from — the desktop grid
-                      has said so since 0094 and the phone said nothing
-                      (audit A18). */}
-                  {item.bazaSource === 'memory' ? ' 🧠' : ''}
-                  {item.bazaSource === 'import' ? ' 📥' : ''}
-                  {item.bazaReason ? ' 🤖' : ''}
-                  {/* His C «telefonda ham kompyuterda ham»: the same dialog,
-                      LOOK-ONLY — the card has no save and a phone draft only
-                      wedges «Avval saqlang», so every number and no «Tanlash».
-                      Wave 2 (his B1 a) replaces mode 'view' with its own
-                      sheet's pick. */}
-                  {item.tnvedCode ? (
-                    <button
-                      type="button"
-                      className="btn-ghost ml-1 !min-h-11 !px-2 !text-xs"
-                      data-testid="calc-phone-stats"
-                      onClick={() => {
-                        const basis = screenRowOf(item, undefined, groupById, groupsByCode).basis;
-                        const v = item.bazaUsd;
-                        setPicker({
-                          itemId: item.id,
-                          name: item.label,
-                          tnvedCode: item.tnvedCode!,
-                          basis: null,
-                          mode: 'view',
-                          current:
-                            basis !== null && v !== null && Number.isFinite(v) && v > 0
-                              ? { usd: v, basis }
-                              : null,
-                        });
-                      }}
-                    >
-                      {t('statsOpen')}
-                    </button>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
-      </div>
+      {/* ---- phone: the same rows as cards, each opening its own sheet ---- */}
+      <PhoneBlocks
+        workspace={workspace}
+        drafts={drafts}
+        ghosts={dirtyGhosts}
+        liveCustomsByGroup={liveCustomsByGroup}
+        liveBazaByGroup={liveBazaByGroup}
+        groupById={groupById}
+        groupsByCode={groupsByCode}
+        gateCount={gateCount}
+        dirtyCount={dirtyCount}
+        sweepable={sweepable}
+        nextDraft={nextDraft}
+        rowGone={rowGone}
+        busy={busy}
+        act={act}
+        onOpenItem={openItemSheet}
+        onOpenGhost={openGhostSheet}
+        onAdd={addGhostAndOpen}
+        onSweep={() => void save()}
+      />
 
       {workspace.reconcile.mismatch ? (
         <p className="text-2xs text-warn" data-testid="calc-reconcile">
@@ -1173,6 +2092,17 @@ export function ItemsTable({
 /* ------------------------------------------------------------------ */
 /* Rows                                                                */
 /* ------------------------------------------------------------------ */
+
+/** A typed comma the reader cannot decide (B4 a) is marked on the cell
+ * itself — the question is in the error line above the grid. `!` because
+ * `.input-cell` is declared after the utilities and its border colour wins
+ * over a plain `border-warn` (#419's cascade). */
+const cellBorder = (raw: string | undefined, drafted: boolean) =>
+  raw !== undefined && readNumberCell(raw).state === 'ambiguous'
+    ? ' !border-warn'
+    : drafted
+      ? ' border-brand-500'
+      : '';
 
 /**
  * One item row, its O'lchov sub-line when the code asks an extended unit,
@@ -1201,6 +2131,7 @@ const ItemRowBlock = memo(function ItemRowBlock({
   act,
   setDraft,
   clearDraft,
+  markOwnDelete,
   onPickBaza,
   onCellKey,
   onCellPaste,
@@ -1221,6 +2152,7 @@ const ItemRowBlock = memo(function ItemRowBlock({
   act: (work: () => Promise<CalcFormState>) => void;
   setDraft: (itemId: string, field: keyof ItemDraft, raw: string) => void;
   clearDraft: (itemId: string) => void;
+  markOwnDelete: (itemId: string) => void;
   onPickBaza: (target: PickerTarget) => void;
   onCellKey: (e: React.KeyboardEvent<HTMLInputElement>, col: string, rowIndex: number, lastIndex: number) => void;
   onCellPaste: (e: React.ClipboardEvent) => void;
@@ -1245,7 +2177,7 @@ const ItemRowBlock = memo(function ItemRowBlock({
     const value = drafts?.[col] ?? server;
     return (
       <input
-        className={`input-cell ${extra}${drafts?.[col] !== undefined ? ' border-brand-500' : ''}`}
+        className={`input-cell ${extra}${cellBorder(col === 'name' || col === 'tnvedCode' ? undefined : drafts?.[col], drafts?.[col] !== undefined)}`}
         aria-label={`${col} ${item.seq}`}
         data-cell={col}
         data-row={index}
@@ -1303,7 +2235,7 @@ const ItemRowBlock = memo(function ItemRowBlock({
         <td className="p-1.5">
           <span className="flex items-center gap-1">
             <input
-              className={`input-cell !w-14 text-right font-mono tabular-nums${drafts?.bazaValue !== undefined ? ' border-brand-500' : ''}`}
+              className={`input-cell !w-14 text-right font-mono tabular-nums${cellBorder(drafts?.bazaValue, drafts?.bazaValue !== undefined)}`}
               aria-label={`${t('baza')} ${item.seq}`}
               data-cell="bazaValue"
               data-row={index}
@@ -1325,6 +2257,7 @@ const ItemRowBlock = memo(function ItemRowBlock({
               // ONE edit: the pair rule drafts the amount as it stands beside
               // the unit, so the save posts a coherent pair (baza-draft.ts).
               onPick={(b) => setDraft(item.id, 'bazaBasis', b)}
+              size="cell"
             />
           </span>
           {/* 0094: the price came out of the customs dump and nobody has
@@ -1401,13 +2334,12 @@ const ItemRowBlock = memo(function ItemRowBlock({
           act={act}
           setDraft={setDraft}
           clearDraft={clearDraft}
+          markOwnDelete={markOwnDelete}
           onPickBaza={onPickBaza}
           noteDraft={drafts?.note}
           draftBasis={drafts?.bazaBasis}
           draftBazaValue={drafts?.bazaValue}
-          rowDirty={(['tnvedCode', 'quantity', 'weightKg', 'volumeM3'] as const).some(
-            (k) => drafts?.[k] !== undefined,
-          )}
+          rowDirty={rowDirtyForPicker(drafts)}
           screenBasis={screen.basis}
           onDone={() => setMenuOpen(false)}
         />
@@ -1423,7 +2355,7 @@ const ItemRowBlock = memo(function ItemRowBlock({
                   : t('table.measureFor', { unit: basisLabel(pair, t('perUnit')) })}
               </span>
               <input
-                className={`input-cell !w-24 text-right font-mono tabular-nums${drafts?.measure !== undefined ? ' border-brand-500' : ''}`}
+                className={`input-cell !w-24 text-right font-mono tabular-nums${cellBorder(drafts?.measure, drafts?.measure !== undefined)}`}
                 aria-label={`measure ${item.seq}`}
                 data-cell="measure"
                 data-row={index}
@@ -1767,6 +2699,7 @@ function ItemFold({
   act,
   setDraft,
   clearDraft,
+  markOwnDelete,
   onPickBaza,
   noteDraft,
   draftBasis,
@@ -1781,6 +2714,7 @@ function ItemFold({
   act: (work: () => Promise<CalcFormState>) => void;
   setDraft: (itemId: string, field: keyof ItemDraft, raw: string) => void;
   clearDraft: (itemId: string) => void;
+  markOwnDelete: (itemId: string) => void;
   onPickBaza: (target: PickerTarget) => void;
   noteDraft: string | undefined;
   /** A unit picked and not yet saved — the picker ranks by it (0125). */
@@ -1815,6 +2749,9 @@ function ItemFold({
             onClick={() => {
               const hasData = item.bazaUsd !== null || item.quantity !== null || item.weightKg !== null;
               if (hasData && !window.confirm(`${tc('delete')}? ${item.label}`)) return;
+              // The draft that dies with the row is OURS — never counted as
+              // «boshqa kishi o'chirdi».
+              markOwnDelete(item.id);
               act(async () => {
                 const result = await deleteItemAction(id, item.id);
                 if (!result.error) {
@@ -1838,18 +2775,22 @@ function ItemFold({
               data-testid="calc-import-pick"
               disabled={rowDirty}
               onClick={() => {
-                const v = draftBazaValue !== undefined ? parseCell(draftBazaValue) : item.bazaUsd;
+                // The ONE cell reader: «abc» or an ambiguous «1,125» is no
+                // marker — a marker at `left: NaN%` must never be drawn.
+                const cell =
+                  draftBazaValue !== undefined
+                    ? readNumberCell(draftBazaValue)
+                    : item.bazaUsd === null
+                      ? ({ state: 'empty' } as const)
+                      : ({ state: 'ok', value: item.bazaUsd } as const);
                 onPickBaza({
                   itemId: item.id,
                   name: item.label,
                   tnvedCode: item.tnvedCode!,
                   basis: draftBasis ?? null,
-                  mode: 'pick',
-                  // `parseCell` is `Number()`, NaN for «abc»: a marker at
-                  // `left: NaN%` must never be drawn.
                   current:
-                    screenBasis !== null && v !== null && Number.isFinite(v) && v > 0
-                      ? { usd: v, basis: screenBasis }
+                    screenBasis !== null && cell.state === 'ok' && cell.value > 0
+                      ? { usd: cell.value, basis: screenBasis }
                       : null,
                 });
               }}
@@ -1881,8 +2822,8 @@ function NewRowCells({
   row,
   index,
   lastIndex,
-  lawGroup,
-  onChange,
+  groupsByCode,
+  onPatch,
   onRemove,
   onCellKey,
   onCellPaste,
@@ -1890,25 +2831,28 @@ function NewRowCells({
   row: NewRow;
   index: number;
   lastIndex: number;
-  /** The block the typed code would join — null for a code this request
-   * has no block for, whose law is unknown until the save mints it. */
-  lawGroup: WorkspaceGroup | null;
-  onChange: (patch: Partial<NewRow>) => void;
-  onRemove: () => void;
+  /** The request's blocks by code — the one a typed code would join says
+   * which units the row may take (`ghostScreenOf`). */
+  groupsByCode: Map<string, WorkspaceGroup>;
+  onPatch: (key: number, patch: Partial<NewRow>) => void;
+  onRemove: (key: number) => void;
   onCellKey: (e: React.KeyboardEvent<HTMLInputElement>, col: string, rowIndex: number, lastIndex: number) => void;
   onCellPaste: (e: React.ClipboardEvent) => void;
 }) {
   const t = useTranslations('calc');
+  // The basis select and its offered units — the SAME answer the phone
+  // sheet's ghost reads. The O'lchov box below is drawn on every ghost.
+  const screen = ghostScreenOf(row, groupsByCode);
   const cell = (col: 'name' | 'quantity' | 'weightKg' | 'volumeM3' | 'tnvedCode', extra = '') => (
     <input
-      className={`input-cell ${extra}`}
+      className={`input-cell ${extra}${cellBorder(col === 'name' || col === 'tnvedCode' ? undefined : row[col], false)}`}
       aria-label={`new ${col} ${row.key}`}
       data-cell={col}
       data-row={index}
       data-testid="calc-new-cell"
       inputMode={col === 'name' ? undefined : col === 'tnvedCode' ? 'numeric' : 'decimal'}
       value={row[col]}
-      onChange={(e) => onChange({ [col]: e.target.value })}
+      onChange={(e) => onPatch(row.key, { [col]: e.target.value })}
       onKeyDown={(e) => onCellKey(e, col, index, lastIndex)}
       onPaste={onCellPaste}
     />
@@ -1925,13 +2869,13 @@ function NewRowCells({
         <td className="p-1.5">
           <span className="flex items-center gap-1">
             <input
-              className="input-cell !w-14 text-right font-mono tabular-nums"
+              className={`input-cell !w-14 text-right font-mono tabular-nums${cellBorder(row.bazaValue, false)}`}
               aria-label={`new baza ${row.key}`}
               data-cell="bazaValue"
               data-row={index}
               inputMode="decimal"
               value={row.bazaValue}
-              onChange={(e) => onChange({ bazaValue: e.target.value })}
+              onChange={(e) => onPatch(row.key, { bazaValue: e.target.value })}
               onKeyDown={(e) => onCellKey(e, 'bazaValue', index, lastIndex)}
             />
             {/* «avto» until TOUCHED (18a): nothing is posted, and the server
@@ -1939,18 +2883,24 @@ function NewRowCells({
                 units on offer are the matched block's law's (basesFor) — all
                 six for a code this request has never seen. */}
             <BasisSelect
-              value={row.bazaBasis}
-              offered={basesFor(lawGroup?.dutyUnit ?? null)}
+              value={screen.basis}
+              offered={screen.offered}
               label={`new basis ${row.key}`}
               testId="calc-new-basis"
               drafted={row.bazaBasis !== null}
               disabled={false}
-              onPick={(b) => onChange({ bazaBasis: b })}
+              onPick={(b) => onPatch(row.key, { bazaBasis: b })}
+              size="cell"
             />
           </span>
         </td>
         <td className="p-1.5 text-center">
-          <button type="button" className="text-ink-400 hover:text-bad" aria-label={`remove ${row.key}`} onClick={onRemove}>
+          <button
+            type="button"
+            className="text-ink-400 hover:text-bad"
+            aria-label={`remove ${row.key}`}
+            onClick={() => onRemove(row.key)}
+          >
             ✕
           </button>
         </td>
@@ -1961,75 +2911,19 @@ function NewRowCells({
           <span className="flex items-center gap-1 text-ink-600">
             <span>{t('table.measureGhost')}</span>
             <input
-              className="input-cell !w-24 text-right font-mono tabular-nums"
+              className={`input-cell !w-24 text-right font-mono tabular-nums${cellBorder(row.measure, false)}`}
               aria-label={`new measure ${row.key}`}
               data-cell="measure"
               data-row={index}
               value={row.measure}
               inputMode="decimal"
-              onChange={(e) => onChange({ measure: e.target.value })}
+              onChange={(e) => onPatch(row.key, { measure: e.target.value })}
               onKeyDown={(e) => onCellKey(e, 'measure', index, lastIndex)}
             />
           </span>
         </td>
       </tr>
     </>
-  );
-}
-
-/**
- * The row's unit select — ONE component for the saved rows and the ghost
- * rows (it used to be two hand-written lists, and the ghost's offered m² on
- * any code while the saved row's did not).
- *
- * `value` null renders «avto»: an untouched choice the server decides. A
- * stored value the law no longer offers ALWAYS renders as an option, marked
- * ⚠ — a select that cannot render the stored value silently rewrites it on
- * the next submit (#171), and a conflict must be SEEN to be fixed.
- *
- * Measured in a browser at 1280 and 768: the widest word any locale puts in
- * it is ru «авто» at 34px of text, and the old 48px box left 26px — a 56px
- * one still cut the last letter off. 64px leaves 42px for the text beside
- * the arrow, and the baza column grew to hold it with the 56px amount.
- */
-function BasisSelect({
-  value,
-  offered,
-  label,
-  testId,
-  drafted,
-  disabled,
-  onPick,
-}: {
-  value: BazaBasis | null;
-  offered: BazaBasis[];
-  label: string;
-  testId: string;
-  drafted: boolean;
-  disabled: boolean;
-  onPick: (basis: BazaBasis) => void;
-}) {
-  const t = useTranslations('calc');
-  const options = value === null || offered.includes(value) ? offered : [...offered, value];
-  return (
-    <select
-      className={`input-cell !w-16 !px-0.5${drafted ? ' border-brand-500' : ''}`}
-      aria-label={label}
-      data-testid={testId}
-      value={value ?? ''}
-      disabled={disabled}
-      onChange={(e) => {
-        if (isBazaBasis(e.target.value)) onPick(e.target.value);
-      }}
-    >
-      {value === null ? <option value="">{t('table.basisAuto')}</option> : null}
-      {options.map((b) => (
-        <option key={b} value={b}>
-          {basisLabel(b, t('perUnit'))}
-          {offered.includes(b) ? '' : ' ⚠'}
-        </option>
-      ))}
-    </select>
   );
 }
 

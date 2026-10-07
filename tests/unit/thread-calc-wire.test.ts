@@ -61,6 +61,9 @@ describe('the gates and the forged-post fences', () => {
     const body = gate.slice(0, gate.indexOf('\n}'));
     expect(body).toContain('canReadTg(actor)');
     expect(body).toContain('canWriteDeal(actor.permissions)');
+    // 17a / G4 a: a deal thread and a client chat (whose landing may mint a
+    // deal) are the seller's doors — the read fence keeps both halves.
+    expect(body).toContain("entity.kind !== 'lead' && !mayEditDealTerms(actor.permissions)");
     expect(body).toContain("entity.kind === 'lead' && !actor.permissions.has('crm.leads')");
     expect(body).toContain('isCalcSection(section)');
   });

@@ -239,6 +239,14 @@ export interface Workspace {
    * drawn without one: «ИИ не ответил» on a keyless server is an invitation
    * to press again, and the honest word belongs before the press (audit A25). */
   aiConfigured: boolean;
+  /**
+   * When a LIVE AI pass holds the request (`ai_proposal_started_at` inside
+   * the ten-minute window) — every table write is refused `ai_running` until
+   * it lets go, and the screen must say so BEFORE a press rather than answer
+   * one with a refusal nobody can explain (the minutes after a Telegram
+   * «landed» notice are exactly when a phone opens the job). Null otherwise.
+   */
+  aiRunningSince: Date | null;
   /** The fee's raw inputs, shipped so the browser can run the SAME pure
    * assembly the server does (live sums). null = unset / no rate in the book. */
   bhmUzs: number | null;
@@ -644,6 +652,7 @@ export async function loadWorkspace(
     },
     sealedVersion: sealed,
     aiConfigured: aiConfigured(),
+    aiRunningSince: aiClaimLive(request.aiProposalStartedAt) ? request.aiProposalStartedAt : null,
     completedAt: request.completedAt,
   };
 }
@@ -2387,6 +2396,44 @@ export { isUniqueViolation, type FreightBand };
 export const AI_CLAIM_STALE_MS = 10 * 60_000;
 
 /**
+ * Is an AI claim still holding the request? ONE home for the window, asked by
+ * the workspace lock, the screen's chip and the clock probe.
+ *
+ * Takes TEXT as well as a Date on purpose: a raw `tx.execute` hands a
+ * timestamptz back as a string whatever its generic type says (#923), and a
+ * `.getTime()` on that string is a TypeError inside the lock. A value that
+ * does not read as a time is NOT a claim — a garbage stamp must never brick
+ * the table.
+ */
+export function aiClaimLive(startedAt: Date | string | null, now = Date.now()): boolean {
+  if (startedAt === null) return false;
+  const at = new Date(startedAt).getTime();
+  return Number.isFinite(at) && now - at < AI_CLAIM_STALE_MS;
+}
+
+/**
+ * The request's clock as the phone's probe reads it (his B6 a — «boshqa kishi
+ * hozirgina o'zgartirdi»): one indexed pool read, never inside a transaction
+ * (#714), typed by drizzle so the claim arrives as a Date. Null when the
+ * request does not exist.
+ */
+export async function requestClock(
+  requestId: string,
+): Promise<{ rev: number; aiRunning: boolean; closed: boolean } | null> {
+  const [row] = await db
+    .select({
+      rev: calcRequests.rev,
+      completedAt: calcRequests.completedAt,
+      aiProposalStartedAt: calcRequests.aiProposalStartedAt,
+    })
+    .from(calcRequests)
+    .where(eq(calcRequests.id, requestId))
+    .limit(1);
+  if (!row) return null;
+  return { rev: row.rev, aiRunning: aiClaimLive(row.aiProposalStartedAt), closed: row.completedAt !== null };
+}
+
+/**
  * «AI taklif qilsin» — the model groups the goods, and nothing more.
  *
  * What comes back is labels, TNVED codes and a grouping. What does NOT come
@@ -2691,6 +2738,90 @@ export interface TableItemEdit {
    * edits. A typed baza clears it, like every other half of the provenance.
    */
   bazaReason?: string | null;
+  /**
+   * What the screen SHOWED under this edit's cells at the press — the stored
+   * values of exactly the fields the draft stands on (review PHONE-2). The
+   * phone sheet's B6 look is a probe before the post, and a colleague's save
+   * landing between that look and this commit would otherwise be overwritten
+   * unseen; compared under the request lock, a row that moved since is
+   * refused `changed_under` naming it, and the screen brings the change in.
+   * Not a lock: the next press, with the change on the screen, carries what
+   * it then showed. The grid posts none (its silence is by design), and
+   * neither does the machine.
+   */
+  expect?: TableExpect;
+}
+
+/** The stored values an edit was made over — `RowBase` on the screen. */
+export type TableExpect = Partial<{
+  label: string;
+  tnvedCode: string | null;
+  quantity: number | null;
+  weightKg: number | null;
+  volumeM3: number | null;
+  note: string | null;
+  measureUnit: MeasureUnit | null;
+  measureQty: number | null;
+  bazaUsd: number | null;
+  bazaBasis: BazaBasis | null;
+}>;
+
+/**
+ * Did the stored row move under what the screen showed? Only the fields the
+ * expectation names; numbers at the column's own scale, text trimmed (an
+ * empty note is no note). A field that is not a known one, or a value of the
+ * wrong shape, counts as moved — a crafted expectation refuses, it never
+ * waves a write through.
+ */
+export function movedUnder(
+  expect: TableExpect,
+  stored: {
+    name: string;
+    tnvedCode: string | null;
+    quantity: string | null;
+    weightKg: string | null;
+    volumeM3: string | null;
+    note: string | null;
+    measureUnit: string | null;
+    measureQty: string | null;
+    bazaUsd: string | null;
+    bazaBasis: string | null;
+  },
+): boolean {
+  const scaled = (v: number | string | null, places: number) =>
+    v === null ? null : Number(Number(v).toFixed(places));
+  const text = (v: unknown) => (typeof v === 'string' ? v.trim() : v === null ? '' : undefined);
+  for (const [key, value] of Object.entries(expect)) {
+    if (value === undefined) continue;
+    switch (key) {
+      case 'label':
+        if (text(value) !== stored.name.trim()) return true;
+        break;
+      case 'tnvedCode':
+      case 'note':
+        if (text(value) !== (stored[key] ?? '').trim()) return true;
+        break;
+      case 'quantity':
+      case 'weightKg':
+      case 'volumeM3':
+      case 'measureQty':
+      case 'bazaUsd': {
+        // A number off the wire, never a numeric string read as one (a NaN or
+        // an Infinity can equal no stored figure, so it reads as moved anyway).
+        if (value !== null && typeof value !== 'number') return true;
+        const places = key === 'measureQty' || key === 'bazaUsd' ? 4 : 3;
+        if (scaled(value, places) !== scaled(stored[key], places)) return true;
+        break;
+      }
+      case 'measureUnit':
+      case 'bazaBasis':
+        if ((value ?? null) !== (stored[key] ?? null)) return true;
+        break;
+      default:
+        return true;
+    }
+  }
+  return false;
 }
 
 export interface TableSaveResult {
@@ -2738,6 +2869,10 @@ export interface TableSaveResult {
    * confirmed price for this product, which outranks the file. Named the
    * same way, for the same reason. */
   memoryFilled: number[];
+  /** The request's rev AFTER this save, as the save itself wrote it — the
+   * screen settles exactly what it posted once a refresh reaches this rev
+   * (the phone round, D3). Required: every constructor must answer. */
+  rev: number;
 }
 
 const CODE_SHAPE = /^\d{4,10}$/;
@@ -2794,7 +2929,7 @@ async function lockRequestInTx(
   const rows = await tx.execute<{
     id: string;
     completed_at: Date | null;
-    ai_proposal_started_at: Date | null;
+    ai_proposal_started_at: Date | string | null;
     rev: number;
   }>(
     sql`SELECT id, completed_at, ai_proposal_started_at, rev FROM calc_requests WHERE id = ${requestId}::uuid FOR UPDATE`,
@@ -2802,10 +2937,10 @@ async function lockRequestInTx(
   const row = rows[0];
   if (!row) throw new CalcError('not_found');
   if (row.completed_at) throw new CalcError('already_closed');
-  const claimed = row.ai_proposal_started_at ? new Date(row.ai_proposal_started_at).getTime() : null;
   // `ignoreAiClaim` exists for exactly one caller: applyProposal, whose OWN
-  // flow holds the claim it would otherwise refuse on.
-  if (!opts.ignoreAiClaim && claimed !== null && Date.now() - claimed < AI_CLAIM_STALE_MS) {
+  // flow holds the claim it would otherwise refuse on. The raw value is TEXT
+  // here (a raw execute), which aiClaimLive reads as such.
+  if (!opts.ignoreAiClaim && aiClaimLive(row.ai_proposal_started_at)) {
     throw new CalcError('ai_running');
   }
   return { rev: row.rev };
@@ -2939,17 +3074,23 @@ async function pruneEmptyGroupsInTx(
 }
 
 /** count(*) is the arbiter — a cached itemCount under concurrency is how
- * two saves each pass the cap and the label lies (judge #5/#38). */
-async function recountItemsInTx(tx: TxHandle, requestId: string): Promise<number> {
+ * two saves each pass the cap and the label lies (judge #5/#38).
+ *
+ * It also moves the clock — exactly once per table save and per delete, an
+ * empty save included — and answers the rev it wrote, so the screen can
+ * settle the drafts it posted at the server's OWN revision (the phone
+ * round's D3: a refresh can land a colleague's rev first). */
+async function recountItemsInTx(tx: TxHandle, requestId: string): Promise<{ n: number; rev: number }> {
   const rows = await tx.execute<{ n: string }>(
     sql`SELECT count(*) AS n FROM calc_request_items WHERE request_id = ${requestId}::uuid`,
   );
   const n = Number(rows[0]?.n ?? 0);
-  await tx
+  const [bumped] = await tx
     .update(calcRequests)
     .set({ itemCount: n, rev: sql`${calcRequests.rev} + 1`, updatedAt: new Date() })
-    .where(eq(calcRequests.id, requestId));
-  return n;
+    .where(eq(calcRequests.id, requestId))
+    .returning({ rev: calcRequests.rev });
+  return { n, rev: bumped!.rev };
 }
 
 /**
@@ -3327,20 +3468,7 @@ export async function saveTable(
    */
   const memoryAuto = await suggestMemoryFills({ requestId, standing, itemEdits, withCodes });
 
-  let result: TableSaveResult = {
-    minted: [],
-    swept: 0,
-    added: 0,
-    merged: [],
-    measuresCleared: [],
-    measuresDropped: [],
-    basisSuspect: [],
-    basisConflict: [],
-    alreadySaved: 0,
-    importFilled: [],
-    memoryFilled: [],
-  };
-  await db.transaction(async (tx) => {
+  return db.transaction(async (tx): Promise<TableSaveResult> => {
     await lockRequestInTx(tx, requestId);
 
     const items = await tx
@@ -3445,6 +3573,15 @@ export async function saveTable(
     /** Rows whose LAW this save may change — recoded, added, or swept into a
      * group — the only rows A2's «birlikni tekshiring» looks at. */
     const relawed = new Set<string>();
+    // The phone's look-then-write, closed (review PHONE-2): an edit made
+    // over values the row no longer holds is refused whole, BEFORE anything
+    // is written — under the lock, so no save can slip in after the check.
+    for (const e of input.items) {
+      if (!e.expect) continue;
+      const item = byId.get(e.id);
+      if (!item || item.requestId !== requestId) throw new CalcError('not_found', e.seq);
+      if (movedUnder(e.expect, item)) throw new CalcError('changed_under', e.seq);
+    }
     for (const e of itemEdits) {
       const item = byId.get(e.id);
       if (!item || item.requestId !== requestId) throw new CalcError('not_found', e.seq);
@@ -3866,7 +4003,7 @@ export async function saveTable(
     }
 
     await unconfirmInTx(tx, touched);
-    await recountItemsInTx(tx, requestId);
+    const clock = await recountItemsInTx(tx, requestId);
 
     // ONE audit row per save, changed cells only — a row per cell is noise
     // and writeAudit(db, …) inside this tx is #714's deadlock.
@@ -3892,7 +4029,7 @@ export async function saveTable(
         memoryFilled,
       },
     });
-    result = {
+    return {
       minted: grouped.minted.map((m) => m.code),
       swept,
       added: insertedRows.length,
@@ -3904,9 +4041,9 @@ export async function saveTable(
       alreadySaved,
       importFilled,
       memoryFilled,
+      rev: clock.rev,
     };
   });
-  return result;
 }
 
 /** The whole rate column set, compared null-safe — the merge's gate. */
@@ -3962,8 +4099,8 @@ export interface TableNewItem {
   bazaBasis?: BazaBasis | null;
 }
 
-export async function deleteItem(requestId: string, itemId: string, ctx: AuditContext) {
-  await db.transaction(async (tx) => {
+export async function deleteItem(requestId: string, itemId: string, ctx: AuditContext): Promise<{ rev: number }> {
+  return db.transaction(async (tx) => {
     await lockRequestInTx(tx, requestId);
     const [item] = await tx
       .select()
@@ -3977,7 +4114,7 @@ export async function deleteItem(requestId: string, itemId: string, ctx: AuditCo
       await unconfirmInTx(tx, [item.groupId]);
       await pruneEmptyGroupsInTx(tx, requestId, [item.groupId]);
     }
-    await recountItemsInTx(tx, requestId);
+    const clock = await recountItemsInTx(tx, requestId);
     await writeAudit(tx, ctx, {
       entityType: 'calc_request',
       entityId: requestId,
@@ -3985,6 +4122,7 @@ export async function deleteItem(requestId: string, itemId: string, ctx: AuditCo
       before: { itemSeq: item.seq, name: item.name },
       after: { itemDeleted: item.seq },
     });
+    return { rev: clock.rev };
   });
 }
 

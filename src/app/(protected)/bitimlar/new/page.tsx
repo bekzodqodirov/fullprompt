@@ -6,7 +6,8 @@ import { db } from '@/modules/platform/db/client';
 import { clients, leads } from '@/modules/platform/db/schema';
 import { PageHeader } from '@/components/ui/page';
 import { salesManagerOptions } from '@/modules/platform/rbac/queries';
-import { canWriteDeal, listStages } from '@/modules/wms/deals/service';
+import { listStages } from '@/modules/wms/deals/service';
+import { mayEditDealTerms } from '@/modules/wms/deals/door';
 import { formStages } from '@/modules/wms/crm/stage-law';
 import { DealForm } from '../deal-form';
 import { ClientPicker } from './client-picker';
@@ -25,7 +26,10 @@ export default async function NewDealPage({
 }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
-  if (!canWriteDeal(actor.permissions)) redirect('/');
+  // Opening a deal is its TERMS — the seller's (G4 a: the VED cannot create
+  // deals). Back to the BOARD, not home: whoever lands here came from a deal
+  // context, and the board is where the VED's own slice lives.
+  if (!mayEditDealTerms(actor.permissions)) redirect('/bitimlar');
 
   const t = await getTranslations('deals');
   const params = await searchParams;

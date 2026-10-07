@@ -298,6 +298,16 @@ Asked by the VED card route, `ClientFeed`, `addFeedNoteAction`, the
   for the VED and takes his note. The deal card's existing edit powers for
   `ved.docs` (it is in `DEAL_WRITE_PERMISSIONS` on purpose — lines/TNVED,
   receipt linking) are NOT changed this round; stated to him with the list.
+  **Answered 2026-10-07 (his 17a + G1-G4 a):** the VED gets on the deal card
+  what the karta gives him on a lead — he reads it and writes a text note on a
+  calc deal's lenta — and KEEPS its positions/TNVED and all prixod linking.
+  Everything else is the seller's on the page AND in the action
+  (`bitimlar/actions.ts` `run('terms' | 'work')`, `mayEditDealTerms` in
+  `deals/door.ts`): the ✏️ form, the 🏷 discount, the stage moves, opening a
+  deal, the 🧮 «yuborish» and the thread's «Hisoblatishga yuborish». His
+  /bitimlar is a read-only slice (`deals/ved-work.ts`), the same sentence his
+  home row and his ⌘K ask; the custom fields read but no longer write
+  (`readPermissions` on the registry's deal spec).
 - **Lenta note** — `addFeedNoteAction` admits `crm.leads` as now, OR
   `mayOpenCalcCard` on the posted entity (a lead/deal; a `client` entity is
   admitted when the form names the calc request whose card resolves to that
@@ -361,7 +371,10 @@ wins. The ones that change the shape of this round:
   and DEALS.md answer 2 (2026-07) says «both the seller and the VED re-price».
   The two answers disagree, so the choice went BACK to him before the build
   (question 17); nothing on the deal card's write side is built until he
-  answers.
+  answers. **He answered 17a on 2026-10-07**: the karta's rule on the deal card
+  too — read + a text lenta note, with the positions/TNVED and the prixod
+  linking (G1 a) kept as his work; the terms are the seller's (§10 «Deal»,
+  DEALS.md's dated note).
 - **The calc task doors** are keyed on `origin = 'calc' AND bound_id IS NOT
   NULL AND the request is OPEN` (a pointed NULL-origin row counts as bound) —
   an unbound ghost or a task bound to a closed request keeps its ordinary ✅;

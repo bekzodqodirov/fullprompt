@@ -9,6 +9,7 @@ import {
 import { db } from '../../platform/db/client';
 import { deals, dealStages, leadIntakes, leads, leadSources, leadStages, users } from '../../platform/db/schema';
 import { isServerBehind } from '../../platform/db/errors';
+import { isUuidShaped } from '../../platform/audit/fields';
 import { addDays, calendarDay, tashkentDay, tashkentDayStart, tashkentMonthStart } from '@/modules/platform/time/tashkent';
 
 /**
@@ -81,7 +82,8 @@ export function readAnalyticsFilters(params: Record<string, string | string[] | 
   const pick = (key: string) => {
     const value = get(key);
     if (value === 'none') return 'none';
-    return /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(value) ? value : undefined;
+    // STRICT shape — the loose one let a uuid-shaped non-uuid reach `::uuid` (22P02).
+    return isUuidShaped(value) ? value : undefined;
   };
 
   const filters: AnalyticsFilters = {

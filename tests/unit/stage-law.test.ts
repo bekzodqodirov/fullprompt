@@ -83,6 +83,10 @@ describe('readPeriod', () => {
 });
 
 describe('readAnalyticsFilters', () => {
+  it('a uuid-SHAPED non-uuid is dropped from both pickers (22P02 otherwise)', () => {
+    const FAKE = 'aaaaaaaa-aaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    expect(readAnalyticsFilters({ hodim: FAKE, manba: FAKE })).toMatchObject({ owner: undefined, source: undefined });
+  });
   const UUID = '019ff7ca-a06e-77fd-be1e-7024630bc56d';
 
   it('takes a uuid or the literal none, and drops everything else (#514)', () => {

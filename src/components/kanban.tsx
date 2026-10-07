@@ -54,6 +54,12 @@ export interface KanbanLabels {
   moveTo: string;
   cancelMove: string;
   dragHint: string;
+  /**
+   * What the desktop board's hint line says on a READ-ONLY board (no
+   * `onMove`) — why nothing drags. The line keeps its height either way: the
+   * board's viewport height was measured with it present.
+   */
+  readOnlyHint?: string;
   empty: string;
   error: string;
   /**
@@ -104,8 +110,13 @@ interface BoardProps<T extends KanbanItem> {
    * the one-tap button and the ⋯ sheet's stage list say nothing about
    * position, and the service then puts the card at the top of where it
    * arrived, which is what those buttons have always done.
+   *
+   * ABSENT = a read-only board (the VED's deal slice, G3 a): no drag, no move
+   * buttons, no sheet, no ticks — `selection`'s own precedent, «absent means
+   * no checkboxes». The caller's action still refuses on its own; this only
+   * stops drawing doors that would bounce.
    */
-  onMove: (
+  onMove?: (
     id: string,
     stageId: string,
     reason: string,
@@ -226,6 +237,7 @@ export function KanbanBoard<T extends KanbanItem>({
    */
   const commitMove = useCallback(
     async (item: T, stageId: string, reason: string, beforeId?: string | null) => {
+      if (!onMove) return;
       // The number the server is about to compute, computed here from the
       // neighbours already on screen. They are the database's neighbours too:
       // the per-stage cap takes a prefix of this very order.
@@ -279,6 +291,7 @@ export function KanbanBoard<T extends KanbanItem>({
    */
   const move = useCallback(
     async (item: T, stageId: string, beforeId?: string | null) => {
+      if (!onMove) return;
       const stage = stages.find((row) => row.id === stageId);
       if (!stage) return;
       // Without a landing place a same-column move is not a move at all —
@@ -307,7 +320,7 @@ export function KanbanBoard<T extends KanbanItem>({
       }
       return commitMove(item, stageId, '', beforeId);
     },
-    [placement, stages, labels.lostReason, lostReasons, commitMove, onWon],
+    [placement, stages, labels.lostReason, lostReasons, commitMove, onWon, onMove],
   );
 
   const counts = Object.fromEntries(
@@ -316,6 +329,9 @@ export function KanbanBoard<T extends KanbanItem>({
       items.filter((item) => stageOf(item) === stage.id).length + (hidden[stage.id] ?? 0),
     ]),
   );
+  // A read-only board can never draw ticks, even if a caller passes a store:
+  // a selection exists to feed a bulk MOVE.
+  const ticks = onMove ? selection : undefined;
   const view = {
     stages,
     counts,
@@ -324,11 +340,12 @@ export function KanbanBoard<T extends KanbanItem>({
     columnOf,
     stageOf,
     move,
+    onMove,
     labels,
     renderCard,
     hrefOf,
     cardTestId,
-    selection,
+    selection: ticks,
     setSheetFor,
   };
 
@@ -375,7 +392,7 @@ export function KanbanBoard<T extends KanbanItem>({
           phone opens it from a card's ⋯, and so does the desktop board, which
           since the drag became a mouse's alone is the only way a tablet can
           move anything. */}
-      {sheetFor && (
+      {onMove && sheetFor && (
         <div
           className="fixed inset-0 z-50 flex items-end bg-black/40"
           onClick={() => setSheetFor(null)}
@@ -466,6 +483,8 @@ interface ViewProps<T extends KanbanItem> {
   columnOf: (stageId: string) => T[];
   stageOf: (item: T) => string;
   move: (item: T, stageId: string, beforeId?: string | null) => void | Promise<void>;
+  /** Present = the board moves cards; absent = read-only (no move door is drawn). */
+  onMove?: BoardProps<T>['onMove'];
   labels: KanbanLabels;
   renderCard: (item: T) => ReactNode;
   hrefOf: (item: T) => string;
@@ -527,6 +546,7 @@ function StageView<T extends KanbanItem>({
   archiveHref,
   columnOf,
   move,
+  onMove,
   labels,
   renderCard,
   hrefOf,
@@ -663,62 +683,70 @@ function StageView<T extends KanbanItem>({
                     <Link href={hrefOf(item)} className="block">
                       {renderCard(item)}
                     </Link>
-                    <div className="mt-2 flex items-center gap-2 border-t border-line pt-2">
-                      {/* One tap for the move that happens ten times a day;
-                          the sheet for everything else.
+                    {/* The whole footer holds only move doors and the tick, so
+                        a read-only board (no `onMove`) draws none of it — not
+                        an empty bordered strip at the bottom of every card. */}
+                    {onMove && (
+                      <div
+                        className="mt-2 flex items-center gap-2 border-t border-line pt-2"
+                        data-testid="card-actions"
+                      >
+                        {/* One tap for the move that happens ten times a day;
+                            the sheet for everything else.
 
-                          NEVER into a `lost` stage. The next stage is simply
-                          the one after this in sort order, and every seeded
-                          funnel puts LOST straight after WON — so the won
-                          column's cards each carried a big button reading
-                          «Yo'qotildi», which is the sharpest form of the
-                          confusion this card was rebuilt for. It was never a
-                          one-tap action anyway: a lost move demands a typed
-                          reason, so it belongs in the sheet that can ask. */}
-                      {nextStage && nextStage.kind !== 'lost' && (
+                            NEVER into a `lost` stage. The next stage is simply
+                            the one after this in sort order, and every seeded
+                            funnel puts LOST straight after WON — so the won
+                            column's cards each carried a big button reading
+                            «Yo'qotildi», which is the sharpest form of the
+                            confusion this card was rebuilt for. It was never a
+                            one-tap action anyway: a lost move demands a typed
+                            reason, so it belongs in the sheet that can ask. */}
+                        {nextStage && nextStage.kind !== 'lost' && (
+                          <button
+                            type="button"
+                            data-testid="move-next"
+                            aria-label={labels.nextStage}
+                            onClick={() => void move(item, nextStage.id)}
+                            // `!text-xs`: `.btn` sets its own font-size AFTER the
+                            // utilities, so a bare `text-xs` here is dead CSS —
+                            // the fifth costume of #419.
+                            className="btn-secondary min-w-0 flex-1 !justify-start !text-xs"
+                          >
+                            <Icon name="chevronRight" className="h-4 w-4 shrink-0" />
+                            {/* The destination in the stage's OWN colours: a
+                                place to go, drawn the way every other stage on
+                                this screen is drawn, rather than a second
+                                headline competing with the card's name. */}
+                            <span
+                              className={`truncate rounded-md border px-1.5 py-0.5 ${stageClass(
+                                nextStage.color,
+                              )}`}
+                            >
+                              {nextStage.name}
+                            </span>
+                          </button>
+                        )}
                         <button
                           type="button"
-                          data-testid="move-next"
-                          aria-label={labels.nextStage}
-                          onClick={() => void move(item, nextStage.id)}
-                          // `!text-xs`: `.btn` sets its own font-size AFTER the
-                          // utilities, so a bare `text-xs` here is dead CSS —
-                          // the fifth costume of #419.
-                          className="btn-secondary min-w-0 flex-1 !justify-start !text-xs"
+                          data-testid="move-other"
+                          aria-label={labels.moveTo}
+                          onClick={() => setSheetFor(item)}
+                          className="btn-secondary btn-icon shrink-0"
                         >
-                          <Icon name="chevronRight" className="h-4 w-4 shrink-0" />
-                          {/* The destination in the stage's OWN colours: a
-                              place to go, drawn the way every other stage on
-                              this screen is drawn, rather than a second
-                              headline competing with the card's name. */}
-                          <span
-                            className={`truncate rounded-md border px-1.5 py-0.5 ${stageClass(
-                              nextStage.color,
-                            )}`}
-                          >
-                            {nextStage.name}
-                          </span>
+                          ⋯
                         </button>
-                      )}
-                      <button
-                        type="button"
-                        data-testid="move-other"
-                        aria-label={labels.moveTo}
-                        onClick={() => setSheetFor(item)}
-                        className="btn-secondary btn-icon shrink-0"
-                      >
-                        ⋯
-                      </button>
-                      {/* The tick LAST, behind a divider. Beside the move
-                          button its only label was an aria-label, so a bare
-                          checkbox sat against a stage name and read as that
-                          name's caption. */}
-                      {selection && (
-                        <span className="flex shrink-0 items-center border-l border-line pl-2">
-                          <SelectBox id={item.id} selection={selection} />
-                        </span>
-                      )}
-                    </div>
+                        {/* The tick LAST, behind a divider. Beside the move
+                            button its only label was an aria-label, so a bare
+                            checkbox sat against a stage name and read as that
+                            name's caption. */}
+                        {selection && (
+                          <span className="flex shrink-0 items-center border-l border-line pl-2">
+                            <SelectBox id={item.id} selection={selection} />
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))}
                 {inStage.length === 0 && (hidden[stage.id] ?? 0) === 0 && (
@@ -758,6 +786,7 @@ function DragBoard<T extends KanbanItem>({
   columnOf,
   stageOf,
   move,
+  onMove,
   labels,
   renderCard,
   hrefOf,
@@ -889,7 +918,12 @@ function DragBoard<T extends KanbanItem>({
 
   return (
     <>
-      <p className="text-xs text-ink-500">🖱 {labels.dragHint}</p>
+      {/* The hint keeps its HEIGHT on a read-only board — the board's
+          viewport height below was measured with this line present — and
+          says why nothing drags there. */}
+      <p className="text-xs text-ink-500" data-testid="board-hint">
+        {onMove ? `🖱 ${labels.dragHint}` : (labels.readOnlyHint ?? '\u00a0')}
+      </p>
       <div
         ref={boardRef}
         // The board owns the rest of the viewport and the COLUMNS scroll,
@@ -971,10 +1005,11 @@ function DragBoard<T extends KanbanItem>({
                         // moment the card started to move.
                         draggable={false}
                         onDragStart={(event) => event.preventDefault()}
-                        onPointerDown={onPointerDown}
-                        onPointerMove={(event) => onPointerMove(event, item)}
-                        onPointerUp={() => onPointerUp(item)}
-                        onPointerCancel={cleanup}
+                        // A read-only board picks nothing up.
+                        onPointerDown={onMove ? onPointerDown : undefined}
+                        onPointerMove={onMove ? (event) => onPointerMove(event, item) : undefined}
+                        onPointerUp={onMove ? () => onPointerUp(item) : undefined}
+                        onPointerCancel={onMove ? cleanup : undefined}
                         onClick={(event) => {
                           // A drag must not also open the card underneath it.
                           if (dragged.current) event.preventDefault();
@@ -1002,29 +1037,35 @@ function DragBoard<T extends KanbanItem>({
                             decided by width alone, so a tablet lands here — and
                             since the drag became a mouse's alone, without this
                             there would be no way to move anything at all.
-                            Not gated on a pointer query: this file's own comment
-                            says a trackpad can report as touch, and a machine that
+                            Unconditional with respect to POINTER — never gated on
+                            a pointer query: this file's own comment says a
+                            trackpad can report as touch, and a machine that
                             answered «fine» to the query and «not a mouse» to the
-                            event would get a board with neither door. */}
-                          <span className="flex shrink-0 items-center gap-1">
-                            {selection && <SelectBox id={item.id} selection={selection} />}
-                            <button
-                              type="button"
-                              data-testid="move-other"
-                              aria-label={labels.moveTo}
-                              onPointerDown={(event) => event.stopPropagation()}
-                              onClick={(event) => {
-                                // The card IS the anchor and carries the drag —
-                                // SelectBox's lesson, one element over.
-                                event.stopPropagation();
-                                event.preventDefault();
-                                setSheetFor(item);
-                              }}
-                              className="btn-secondary btn-icon !min-h-7 !w-7 shrink-0 !p-0 text-xs"
-                            >
-                              ⋯
-                            </button>
-                          </span>
+                            event would get a board with neither door. Absent ONLY
+                            on a read-only board (no `onMove`), where there is no
+                            move to make and an empty flex child would keep the
+                            row's gap. */}
+                          {onMove && (
+                            <span className="flex shrink-0 items-center gap-1">
+                              {selection && <SelectBox id={item.id} selection={selection} />}
+                              <button
+                                type="button"
+                                data-testid="move-other"
+                                aria-label={labels.moveTo}
+                                onPointerDown={(event) => event.stopPropagation()}
+                                onClick={(event) => {
+                                  // The card IS the anchor and carries the drag —
+                                  // SelectBox's lesson, one element over.
+                                  event.stopPropagation();
+                                  event.preventDefault();
+                                  setSheetFor(item);
+                                }}
+                                className="btn-secondary btn-icon !min-h-7 !w-7 shrink-0 !p-0 text-xs"
+                              >
+                                ⋯
+                              </button>
+                            </span>
+                          )}
                         </div>
                       </Link>
                     </Fragment>

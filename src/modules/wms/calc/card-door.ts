@@ -5,6 +5,7 @@ import { userPermissions } from '../../platform/rbac/authorize';
 import { mayOpenLead } from '../crm/lead-door';
 import { isAnswerSql } from './credit';
 import { canWriteDeal } from '../deals/service';
+import { dealCarriesCalcSql } from '../deals/ved-work';
 
 /**
  * The VED on the seller's card (the owner's 14a 15a 16a, docs/VED-TARIX.md
@@ -22,9 +23,12 @@ import { canWriteDeal } from '../deals/service';
  * request: the VED is not given the funnel.
  *
  * What the door does NOT give is a write: the karta is read-only (no ✏️, no
- * stage, no win, no tasks), the lenta takes a TEXT note on the lead or deal
- * itself, and the deal card's own writes are untouched this round (his
- * question 17 is open).
+ * stage, no win, no tasks) and the lenta takes a TEXT note on the lead or deal
+ * itself. His 17a (2026-10-07) answered question 17 for the deal card the same
+ * way: the card's writes split, and only its positions and prixods are the
+ * VED's — see `deals/door.ts` `mayEditDealTerms`. The deal arm below is
+ * `dealCarriesCalcSql`, the very sentence his deal board, his home row and
+ * his ⌘K ask (`deals/ved-work.ts`, #513).
  */
 /**
  * The STRICT uuid shape (review access-6). Every id below is cast `::uuid`,
@@ -58,6 +62,18 @@ export interface CalcCardEntity {
 export async function calcCardExists(entity: CalcCardEntity): Promise<boolean> {
   if (entity.entityType !== 'lead' && entity.entityType !== 'deal') return false;
   if (!UUID.test(entity.entityId)) return false;
+  if (entity.entityType === 'deal') {
+    // The deal board's own fragment, through the deal ROW: a request naming a
+    // deal that no longer exists stops counting — there is no card to open.
+    const dealRows = await db.execute<{ ok: boolean }>(sql`
+      SELECT EXISTS (
+        SELECT 1 FROM deals d
+         WHERE d.id = ${entity.entityId}::uuid AND ${dealCarriesCalcSql(sql`d`)}
+      ) AS ok
+    `);
+    return Boolean(dealRows[0]?.ok);
+  }
+  // A lead: a request on the lead OR its materials note (below), unchanged.
   const rows = await db.execute<{ ok: boolean }>(sql`
     SELECT (
       EXISTS (

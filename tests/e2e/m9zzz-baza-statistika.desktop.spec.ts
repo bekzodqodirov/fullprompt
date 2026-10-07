@@ -19,7 +19,8 @@ import {
  * that a quartile chip NAMES a declaration without drafting anything (C3),
  * that «Tanlash» drafts exactly that row through the list's own door, that
  * the statistics fold away while the search is used, and that the phone
- * gets every number and no way to pick.
+ * reaches the same dialog from its row's sheet — every number, and since the
+ * phone round (his B1 a) the same «Tanlash».
  *
  * The name sorts after `m9zzy-…`, so it runs LAST in the desktop project —
  * after m9zu's own upload/delete walk. CLEANUP IS A TEST (#183/#508): two
@@ -159,7 +160,7 @@ test('the quarter that answers is marked, the strip names the real declaration, 
   await page.getByTestId('calc-import-cancel').click();
 });
 
-test('the phone sees every number and cannot pick', async ({ browser }) => {
+test('the phone opens the same statistics from its row’s sheet, and may pick', async ({ browser }) => {
   expect(requestUrl).not.toBe('');
   // A bare context inherits no baseURL (round 57's `newPage()` lie).
   const ctx = await browser.newContext({
@@ -172,17 +173,20 @@ test('the phone sees every number and cannot pick', async ({ browser }) => {
     const page = await ctx.newPage();
     await login(page);
     await page.goto(requestUrl);
-    await page.getByTestId('calc-phone-stats').first().click();
+    // The coded row's card → its sheet → the sheet's 📥 (the look-only door
+    // is gone; the sheet steps aside so two Overlays are never open).
+    await page.getByTestId('calc-phone-row').first().click();
+    await expect(page.getByTestId('calc-phone-sheet')).toBeVisible();
+    await page.getByTestId('calc-phone-import').click();
     const dialog = page.getByTestId('calc-import-dialog');
     await expect(dialog.getByTestId('calc-import-stats')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('calc-phone-sheet')).toHaveCount(0);
     await dialog.getByTestId('calc-import-row-all').getByTestId('calc-import-pct-50').click();
     await expect(dialog.getByTestId('calc-import-exemplar')).toBeVisible();
-    await expect(dialog.getByTestId('calc-import-exemplar-pick')).toHaveCount(0);
-    await expect(dialog.getByTestId('calc-import-exemplar-viewonly')).toBeVisible();
-    // The list is shown and cannot be pressed.
+    // «Tanlash» is there — and NOT pressed: the cleanup below expects the
+    // desktop's own pick to be the row's price.
+    await expect(dialog.getByTestId('calc-import-exemplar-pick')).toHaveCount(1);
     await expect(dialog.getByTestId('calc-import-candidate').first()).toBeVisible({ timeout: 15_000 });
-    await expect(page.locator('button[data-testid="calc-import-candidate"]')).toHaveCount(0);
-    await expect(dialog.getByTestId('calc-import-viewonly')).toBeVisible();
 
     expect(await page.evaluate(() => document.documentElement.clientWidth)).toBe(360);
     const box = await dialog.boundingBox();

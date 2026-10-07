@@ -1,5 +1,49 @@
 # CHANGELOG
 
+## Telefonda rastamojka hisoblash va bitim kartasida VED — 2026-10-07
+
+**Migratsiya yo'q.** Migratsiyalar soni **127** bo'lib qoladi — bu safar o'rnatishni sanash emas, `/api/version` dagi sana tasdiqlaydi.
+
+Sizning javoblaringiz: **B1 a … B6 a, 21b** (telefonda hisoblash) va **17a, G1 a … G4 a** (bitim kartasida VED).
+
+### 1. Telefonda rastamojka hisoblash (B)
+
+- **Telefonda har bir tovar — alohida kartochka.** Bossangiz pastdan oyna chiqadi. Unda qatorning hammasi bor: nomi, TNVED kodi, dona / kg / kub, kod so'rasa o'lchov (m², juft, litr, sm³), baza va uning birligi («avto» ham), izoh, 📥 fayldan tanlash va o'chirish (B1 a, 21b).
+  - Oynaning pastida shu blokning rastamojkasi jonli ko'rinib turadi — «Saqlash» aynan shu raqamni yozadi.
+  - Boj va QQS stavkalarini telefonda o'zgartirish keyingi bosqichda. ✨ AI tugmasi telefonda yo'q (B3 a), so'rov kelganda AI o'zi hisoblashi esa avvalgidek ishlaydi.
+- **«Saqlash» faqat shu oynadagi bitta qatorni yozadi (B2 a).** Internet uzilsa, ko'pi bilan bitta tovar qaytadan yoziladi. Qayta bossangiz, o'sha qatorga tushadi — ikkinchi qator paydo bo'lmaydi.
+- **«1,125» yoki «15,000» kabi raqam saqlanmaydi (B4 a).** Ekran «1.125 dollarmi yoki 1125 dollarmi?» deb so'raydi.
+  - **E'tibor bering:** bu qoida endi **kompyuterda ham** ishlaydi — jadvalning beshta raqamli katagida va lug'atdagi baza formasida. Kompyuterda «1,500» kg yozilsa, avval 1,5 kg bo'lib qolardi, endi tizim so'raydi.
+- **Saqlanmagan o'zgarishlar yo'qolmaydi (B5 a).** Telefonni yopsangiz ham yoki sahifa yangilansa ham, qayta ochganingizda «Saqlanmagan o'zgarishlar bor — tiklaymi?» deb so'raydi (3 kungacha saqlanadi).
+  - Bu orada boshqa kishi o'zgartirgan katak tiklashga taklif qilinmaydi — qaysi katak ekani aytiladi.
+- **Boshqa VED ham bir vaqtda o'zgartira oladi (B6 a).** Agar siz yozayotgan katakni boshqa kishi hozirgina o'zgartirsa, qatorda «Boshqa kishi hozirgina o'zgartirdi: Soni 40 → 42» chiqadi va tugma «Baribir saqlash» bo'ladi.
+  - Tizim sezmasdan boshqa kishining bazasi ustidan yozib yuborilmaydi — saqlash paytida yana tekshiriladi.
+- **Yangi versiya o'rnatilgandan keyin** eski sahifada saqlash «Ilova yangilandi — sahifani yangilang» deydi va bitta yangilash tugmasini beradi.
+- **Telefondagi barcha maydonlar 16 px** — iPhone bosganda ekranni kattalashtirib yubormaydi.
+
+### 2. Bitim kartasida VED (17a, G)
+
+- **VED bitim kartasini o'qiydi va lentaga yozadi** (lead kartasidagidek). **Pozitsiyalar, TNVED va prixod biriktirish VEDda qoladi (G1 a):** biriktiradi, ko'chiradi, ajratadi — har biri uning nomi bilan tarixga yoziladi.
+- **Bitimning shartlari sotuvchiniki:** bosqich, egasi, narx, chegirma, bitim ochish, hisoblatishga yuborish. VED ularni o'zgartira olmaydi — kartada buning o'rnida qisqa izoh turadi. Bu ekranda emas, serverda tekshiriladi.
+- **Bot ochgan bitim — mijozning sotuvchisi nomida (G2 a).** Kodli mijoz uchun VED yoki omborchi botdan hisoblatsa, bitim mijozning sotuvchisiga ochiladi. Sotuvchisi yo'q mijozda bitim egasiz ochiladi va admin taqsimlaydi. Sotuvchi o'zi yuborsa, bitim o'zida qoladi.
+- **«Bitimlar» doskasida VED faqat o'z ishini ko'radi, faqat o'qish uchun (G3 a):** hisoblash so'rovi bor bitimlar va TNVED kodi yo'q pozitsiyasi bor ochiq bitimlar. Doska nomi «VED bitimlari», sudrash va ko'chirish tugmalari yo'q. TNVED yo'q bitimda «TNVED yo'q» belgisi turadi.
+  - Bosh sahifadagi «TNVED kodsiz» qatori endi pozitsiyalarni emas, **bitimlarni** sanaydi — bosganingizda ochilgan doskadagi kartochkalar soniga teng.
+- **VED bitim ochmaydi (G4 a).** Botdagi «🧮 Hisoblatish» hammaga ochiq qoladi.
+  - Bilib qo'ying: VED endi /suhbatlar dagi mijoz chatidan «Hisoblatishga yuborish» qila olmaydi — uning yo'li bot.
+
+### Yo'l-yo'lakay tuzatilganlar
+
+- **CRM doskasi va «Tahlil»da** qo'lda yozilgan noto'g'ri havola xato sahifasini chiqarardi — endi filtr shunchaki tashlab yuboriladi.
+- **«Hammasini ko'rish» huquqi bo'lmagan sotuvchi** `?scope=all` havolasini ochsa, o'z leadlari ustida «👥 Hammasi» belgisi chiqardi — olib tashlandi.
+
+### O'rnatish (deploy)
+
+1. Zaxira oling (0 bayt emasligini tekshiring).
+2. `git pull`, keyin `docker compose build migrate`, keyin `docker compose --profile https --profile telegram up -d --build`.
+3. Migratsiyalar soni **127** bo'lishi kerak (bu raundda yangi migratsiya yo'q).
+4. **`curl -s https://gsrwms.uz/api/version`** — bugungi sana chiqishi kerak. Bu raundda o'rnatishni aynan shu tasdiqlaydi.
+5. Avval VED o'zi ochgan bitimlarni VED endi ko'chira olmaydi. Ularni admin ✏️ orqali sotuvchiga beradi.
+
 ## Qarzdor mijozga izoh bilan yuk berish va bazaning narx statistikasi — 2026-10-07
 
 **Migratsiya 0126.** O'rnatgandan keyin migratsiyalar soni **127** bo'lishi kerak.

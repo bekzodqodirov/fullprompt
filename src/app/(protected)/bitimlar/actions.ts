@@ -21,6 +21,7 @@ import {
   setDealDiscount,
   updateDeal,
 } from '@/modules/wms/deals/service';
+import { mayEditDealTerms } from '@/modules/wms/deals/door';
 import { JOB_PROCESS_EVENTS, enqueue } from '@/modules/platform/jobs/boss';
 import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 
@@ -30,20 +31,35 @@ export interface DealFormState {
 }
 
 /**
- * Both sides of the business work a deal — the sales manager who quoted it and
- * the VED manager who recalculated it (DEALS.md answer 2) — so the gate is a
- * LIST of codes rather than one, and it is checked here in the action rather
- * than only in the page. A screen guard decides what renders; an action guard
- * decides what happens.
+ * Which half of a deal an action touches (the owner's 17a, 2026-10-07):
+ *   - `'work'`  — the deal's POSITIONS (TNVED codes) and its PRIXOD links. Both
+ *     sides of the business do this: the seller who quoted it and the VED who
+ *     recalculated it, so it asks the deal-write list (`canWriteDeal`).
+ *   - `'terms'` — opening a deal, its stage, its owner, its quote and its
+ *     discount. That is the seller's, so it also asks `mayEditDealTerms` — the
+ *     deal-write list minus `ved.docs`.
+ *
+ * REQUIRED and with no default, so a new action cannot inherit the wrong half
+ * by silence (`tests/unit/deal-terms-wire.test.ts` classifies every export).
+ * Checked here in the action rather than only in the page: a screen guard
+ * decides what renders; an action guard decides what happens (#531).
  *
  * No new permission code was minted: one would reach existing roles only
  * through the seed, and since DECISIONS #170 the seed skips any role an admin
  * has edited — leaving the feature ungrantable on the owner's own database.
  */
-async function run(work: (ctx: { actorId: string }) => Promise<unknown>): Promise<DealFormState> {
+type DealGate = 'terms' | 'work';
+
+async function run(
+  gate: DealGate,
+  work: (ctx: { actorId: string }) => Promise<unknown>,
+): Promise<DealFormState> {
   const actor = await getActor();
   if (!actor) return { error: 'forbidden' };
   if (!canWriteDeal(actor.permissions)) return { error: 'forbidden' };
+  if (gate === 'terms' && !mayEditDealTerms(actor.permissions)) {
+    return { error: 'deal_terms_only' };
+  }
   const meta = await requestMeta();
   try {
     await work({ actorId: actor.id, ...meta });
@@ -104,7 +120,7 @@ export async function createDealAction(
   const parsed = readDeal(form);
   if (!parsed.success) return { error: 'validation' };
   let id: string | null = null;
-  const state = await run(async (ctx) => {
+  const state = await run('terms', async (ctx) => {
     id = await createDeal(parsed.data, ctx);
   });
   // Straight to the card: a deal that was just created is a deal somebody is
@@ -120,7 +136,7 @@ export async function updateDealAction(
 ): Promise<DealFormState> {
   const parsed = readDeal(form);
   if (!parsed.success) return { error: 'validation' };
-  return run((ctx) => updateDeal(id, parsed.data, ctx));
+  return run('terms', (ctx) => updateDeal(id, parsed.data, ctx));
 }
 
 /**
@@ -139,7 +155,7 @@ export async function bulkMoveDealsAction(
   let done = 0;
   let failed = 0;
   let error: string | undefined;
-  const outcome = await run(async (ctx) => {
+  const outcome = await run('terms', async (ctx) => {
     for (const id of ids) {
       try {
         await moveDeal(id, stageId, ctx, reason);
@@ -161,7 +177,7 @@ export async function moveDealAction(
   reason: string,
   beforeId?: string | null,
 ): Promise<DealFormState> {
-  return run((ctx) =>
+  return run('terms', (ctx) =>
     moveDeal(id, stageId, ctx, reason, beforeId === undefined ? undefined : { beforeId }),
   );
 }
@@ -253,14 +269,16 @@ export async function saveLinesAction(
 
   const parsed = dealLineSchema.array().safeParse(lines);
   if (!parsed.success) return { error: 'validation' };
-  return run((ctx) => saveLines(dealId, parsed.data, ctx));
+  return run('work', (ctx) => saveLines(dealId, parsed.data, ctx));
 }
 
 /**
  * Damage → a discount ON THE DEAL (DEALS.md answer 3), gated like re-pricing
- * rather than like posting money: it changes what this job SHOULD cost, and
- * both sides of the business that set that number (sales, VED) may record it.
- * Actually collecting less still runs through finance and its own gate.
+ * rather than like posting money: it changes what this job SHOULD cost. Since
+ * 17a that number is the deal's TERMS and so the seller's — the VED works the
+ * positions and the prixods, not the price (his own discount door is the
+ * seal's, inside the calc workspace, and is untouched). Actually collecting
+ * less still runs through finance and its own gate.
  */
 export async function setDiscountAction(
   dealId: string,
@@ -272,7 +290,7 @@ export async function setDiscountAction(
   if (amount === undefined || amount === null || !Number.isFinite(amount) || amount < 0) {
     return { error: 'validation' };
   }
-  return run((ctx) =>
+  return run('terms', (ctx) =>
     setDealDiscount(dealId, { amount, reason: String(form.get('reason') ?? '') }, ctx),
   );
 }
@@ -281,7 +299,9 @@ export async function linkReceiptAction(
   receiptId: string,
   dealId: string | null,
 ): Promise<DealFormState> {
-  const state = await run((ctx) => linkReceipt(receiptId, dealId, ctx));
+  // G1 a: the VED keeps ALL prixod linking — link, move, detach — and
+  // `linkReceipt` audits each one under the presser's name.
+  const state = await run('work', (ctx) => linkReceipt(receiptId, dealId, ctx));
   revalidatePath(`/receipts/${receiptId}`);
   return state;
 }
@@ -308,7 +328,7 @@ export async function deferPaymentAction(
   const actor = await getActor();
   if (!actor?.permissions.has('finance.debt_override')) return { error: 'forbidden' };
   const untilAllArrived = form.get('until') === 'all_arrived';
-  return run((ctx) =>
+  return run('work', (ctx) =>
     deferPayment(
       dealId,
       {

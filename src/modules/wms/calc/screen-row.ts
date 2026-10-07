@@ -1,4 +1,4 @@
-import { basesFor, basisOnScreen, pairUnitFor } from './basis';
+import { basesFor, basisOnScreen, defaultBasisFor, pairUnitFor } from './basis';
 import type { BazaBasis, MeasureUnit } from './pricing';
 
 /** The slices of the workspace's row, block and draft that decide a row's
@@ -72,6 +72,34 @@ export function screenRowOf<G extends ScreenGroup>(
     basis,
     offered: basesFor(lawUnknown ? null : lawUnit),
     pair: lawUnknown ? 'any' : pairUnitFor(lawUnit, basis),
+  };
+}
+
+/**
+ * The same answer for a GHOST row (one typed and not yet saved): the law its
+ * typed code would land under when this request already has that code's
+ * block, the unit its select shows — null «avto» until touched (18a) — the
+ * units on offer, and the measure pair the LIVE figure prices in.
+ *
+ * It decides nothing about whether the ghost's O'lchov box is DRAWN: a new
+ * row's law is unknowable before the save (a code no block carries, or an
+ * uncoded row the server's TNVED memory codes on that very save), so the box
+ * is drawn on every ghost and posted, and the server drops and names what the
+ * law does not take (`measuresDropped`).
+ */
+export function ghostScreenOf<G extends ScreenGroup>(
+  row: { tnvedCode: string; bazaBasis: BazaBasis | null },
+  groupsByCode: Map<string, G>,
+): ScreenRow<G> {
+  const code = row.tnvedCode.trim();
+  const lawGroup = code ? (groupsByCode.get(code) ?? null) : null;
+  const lawUnknown = code !== '' && lawGroup === null;
+  return {
+    lawGroup,
+    lawUnknown,
+    basis: row.bazaBasis,
+    offered: basesFor(lawUnknown ? null : (lawGroup?.dutyUnit ?? null)),
+    pair: lawUnknown ? 'any' : pairUnitFor(lawGroup?.dutyUnit, row.bazaBasis ?? defaultBasisFor(lawGroup)),
   };
 }
 

@@ -23,6 +23,7 @@ import { logger } from '@/modules/platform/logger';
 import { bumpCounter } from '../codes';
 import { likeNeedle } from '../search/query';
 import { dealCargoLabel, type DealCargo } from './cargo-label';
+import { dealCarriesCalcSql, dealMissingTnvedSql, vedWorkSql } from './ved-work';
 import { stampCalcLink } from '../calc/link';
 import { followCompensationDealTx } from '../finance/compensation-follow';
 import { revenueUsdSql } from '../finance/ledger-sql';
@@ -58,12 +59,13 @@ export class DealError extends Error {
   }
 }
 
-/** Both sides work a deal: sales quoted it, VED recalculated it (DEALS.md #2). */
-export const DEAL_WRITE_PERMISSIONS = ['crm.leads', 'ved.docs', 'clients.manage'] as const;
-
-export function canWriteDeal(permissions: { has(code: string): boolean }): boolean {
-  return DEAL_WRITE_PERMISSIONS.some((code) => permissions.has(code));
-}
+/**
+ * `canWriteDeal` now means «may open a deal card and work its positions and
+ * prixods» (17a); the terms are `mayEditDealTerms`. Both live in the pure
+ * `./door.ts` and are re-exported here so every existing import path keeps
+ * working — one definition, never a second one beside it.
+ */
+export { DEAL_WRITE_PERMISSIONS, canWriteDeal } from './door';
 
 export const dealSchema = z.object({
   clientId: z.string().uuid(),
@@ -131,8 +133,15 @@ export async function createDeal(
    * asked for: the shell round 111 opens with each client code. It carries no
    * price and no goods, so giving it the top of the first column would push
    * real work off the forty cards the board draws.
+   *
+   * `ownerAsGiven`: the owner is EXACTLY `input.ownerId`, null included — the
+   * presser and the client's seller are NOT fallen back to. Passed only by the
+   * calc doors (`calc/intake-land.ts` `dealFor`), whose owner is the one rule
+   * `calcDealOwnerFor` (G2 a): a request a VED sends for a client with no
+   * seller opens an OWNERLESS deal the admin distributes, and without this the
+   * chain below would have made it the VED's again.
    */
-  options: { atBottom?: boolean } = {},
+  options: { atBottom?: boolean; ownerAsGiven?: boolean } = {},
 ): Promise<string> {
   const client = await db.query.clients.findFirst({ where: eq(clients.id, input.clientId) });
   if (!client) throw new DealError('client_not_found');
@@ -152,8 +161,11 @@ export async function createDeal(
         stageId,
         // Whoever raises it owns it until somebody hands it on; falling back to
         // the client's sales manager keeps ownership true for a deal the
-        // warehouse opens on somebody else's client.
-        ownerId: input.ownerId ?? ctx.actorId ?? client.salesManagerId ?? null,
+        // warehouse opens on somebody else's client. The calc doors pass
+        // their owner as given (G2 a) — see `ownerAsGiven` above.
+        ownerId: options.ownerAsGiven
+          ? (input.ownerId ?? null)
+          : (input.ownerId ?? ctx.actorId ?? client.salesManagerId ?? null),
         title: input.title || null,
         quotedVolumeM3: num(input.quotedVolumeM3),
         quotedWeightKg: num(input.quotedWeightKg),
@@ -1277,6 +1289,13 @@ export interface DealRow {
   createdAt: Date;
   /** Where the owner put it in its column; null = nobody has (0075). */
   boardOrder: number | null;
+  /**
+   * An OPEN deal with a position lacking a TNVED code — the `deal-tnved-missing`
+   * chip on the VED's board (G3 a), from the very fragment his home row counts.
+   * Computed only on the VED's board (`vedWork`); every other board reads false
+   * and pays nothing.
+   */
+  tnvedMissing: boolean;
 }
 
 /**
@@ -1307,9 +1326,15 @@ export function dealTextWhere(q?: string) {
  * Everything the board's filter panel can ask (round 71) — the deal board's
  * twin of `LeadBoardFilters`, consumed by `listDeals` AND `closedDealCounts`
  * so the «+N · show all» footer cannot lie on a filtered board (#513).
+ *
+ * `vedWork` is not a filter anybody types: it is the VED's board itself (G3 a,
+ * `deals/ved-work.ts`), set by the page from `dealBoardShape` — in place of the
+ * owner filter, which would show him only the deals he owns (usually none).
  */
 export interface DealBoardFilters {
   ownerId?: string;
+  /** The VED's slice: deals with a calc request, open deals lacking a TNVED. */
+  vedWork?: boolean;
   clientId?: string;
   stageId?: string;
   /** The board's search box (code, title, client code). */
@@ -1331,6 +1356,7 @@ export function dealBoardWhere(filters: DealBoardFilters) {
   const text = dealTextWhere(filters.q);
   if (text) conditions.push(text);
   if (filters.ownerId) conditions.push(eq(deals.ownerId, filters.ownerId));
+  if (filters.vedWork) conditions.push(vedWorkSql(sql`${deals}`));
   if (filters.clientId) conditions.push(eq(deals.clientId, filters.clientId));
   if (filters.stageId) conditions.push(eq(deals.stageId, filters.stageId));
   // Tashkent's days, inclusive of `createdTo` — `leadBoardWhere`'s bounds (R5).
@@ -1349,13 +1375,21 @@ export function dealBoardWhere(filters: DealBoardFilters) {
   const lenta = filters.lenta?.trim();
   if (lenta) {
     const like = likeNeedle(lenta);
+    // On the VED's board the lenta half asks only the lentas he can READ: a
+    // calc deal's (15a — the calc card door's deal arm, `dealCarriesCalcSql`,
+    // is exactly what `ClientFeed` lets him open). His slice also holds open
+    // deals that merely lack a TNVED code, whose lenta is not his, and a
+    // filter over it would answer «does a hidden note contain this word» by
+    // the column's count. The deal's own note stays in for every deal: the
+    // card prints it to him (`DealFacts`).
+    const readable = filters.vedWork ? sql` AND ${dealCarriesCalcSql(sql`${deals}`)}` : sql``;
     // EXISTS, never a join — a card with three matching notes is one card.
     // Telegram messages stay out on purpose: they are per-manager (#383).
     conditions.push(
-      sql`(${deals.note} ILIKE ${like} OR EXISTS (
+      sql`(${deals.note} ILIKE ${like} OR (EXISTS (
         SELECT 1 FROM crm_activities a
         WHERE a.entity_type = 'deal' AND a.entity_id = ${deals.id} AND a.note ILIKE ${like}
-      ))`,
+      )${readable}))`,
     );
   }
   return conditions;
@@ -1449,6 +1483,10 @@ export async function listDeals(
       deferralEndedAt: deals.deferralEndedAt,
       createdAt: deals.createdAt,
       boardOrder: deals.boardOrder,
+      // The SAME fragment the VED's home row counts — on his board only.
+      tnvedMissing: filters.vedWork
+        ? sql<boolean>`${dealMissingTnvedSql(sql`${deals}`)}`
+        : sql<boolean>`false`,
     })
     .from(deals)
     .innerJoin(clients, eq(deals.clientId, clients.id))
@@ -1496,6 +1534,7 @@ export async function listDeals(
       goods: own?.first ?? row.title ?? null,
       goodsExtra: own?.extra ?? 0,
       deferred: Boolean(deferredAt) && !deferralEndedAt,
+      tnvedMissing: Boolean(row.tnvedMissing),
     };
   });
 }

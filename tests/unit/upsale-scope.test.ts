@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { ROLE_MATRIX, type RoleCode } from '@/modules/platform/rbac/catalog';
 import { mayOffer, upsaleScopeFor, type UpsaleScope } from '@/modules/wms/calc/upsale-scope';
 import { DEAL_WRITE_PERMISSIONS } from '@/modules/wms/deals/service';
+import { mayEditDealTerms } from '@/modules/wms/deals/door';
 
 /**
  * Law 4's four audiences, enumerated over the SEEDED ROLES.
@@ -50,14 +51,15 @@ describe('who sees what a customer was charged', () => {
     expect(Object.keys(EXPECTED).sort()).toEqual(Object.keys(ROLE_MATRIX).sort());
   });
 
-  it('the VED can work a deal and still not quote a customer', () => {
+  it('the VED works a deal’s positions and still cannot quote a customer', () => {
     const ved = actorFor('ved_manager');
     // Both halves matter: `ved.docs` IS in the deal-write list on purpose
-    // (DEALS.md #2 — the VED recalculates jobs), so the offer door cannot be
-    // the card door.
+    // (17a — the VED works a deal's positions and prixods), so the offer door
+    // cannot be the card door. Quoting is a deal's TERMS, the seller's.
     expect(DEAL_WRITE_PERMISSIONS).toContain('ved.docs');
     expect(DEAL_WRITE_PERMISSIONS.some((c) => ved.permissions.has(c))).toBe(true);
     expect(mayOffer(ved)).toBe(false);
+    expect(mayEditDealTerms(ved.permissions)).toBe(false);
   });
 
   it('everyone who may quote may also read back what they quoted', () => {

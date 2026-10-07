@@ -263,9 +263,11 @@ async function decide(
       if (!row) return { allow: false, rule: 'custom_field-unbound' };
       const spec = await resolveEntity(row.entityType);
       if (!spec) return { allow: false, rule: 'custom_field-unknown-entity' };
-      // An owner-born object with an "everyone" write list reads for
-      // everyone too — the file is part of a record any staff may edit.
-      return spec.writePermissions.length === 0 || has(...spec.writePermissions)
+      // The READ list (17a split it from the write list on a deal: the VED
+      // reads the card's files and may not fill in its fields). An owner-born
+      // object with an "everyone" list reads for everyone too — the file is
+      // part of a record any staff may edit.
+      return spec.readPermissions.length === 0 || has(...spec.readPermissions)
         ? { allow: true, rule: 'custom-field' }
         : { allow: false, rule: 'custom_field-no-permission' };
     }

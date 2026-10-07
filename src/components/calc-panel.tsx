@@ -67,7 +67,7 @@ export async function CalcPanel({
   clientLocale?: string | null;
   /** «+ Yangi → Hisoblatish» lands here with the form in view (`?yangi=hisob`). */
   forceOpen?: boolean;
-  /** The VED's karta: reads only — no send form, no offer form (14a). */
+  /** The VED's karta (14a) and his deal card (17a): reads only — no send form, no offer form. */
   readOnly?: boolean;
 }) {
   const actor = await getActor();
@@ -78,8 +78,9 @@ export async function CalcPanel({
     if (!(await mayOpenCalcCard(actor, { entityType, entityId }))) return null;
   }
   // The send form and the offer form are the seller's hands: on a lead they
-  // need `crm.leads`, and the karta never draws them. The deal card's own
-  // writes are untouched this round (his question 17 is open).
+  // need `crm.leads`, and the karta never draws them. On a deal his 17a
+  // answered question 17 the same way — the deal page passes `readOnly` for
+  // whoever lacks `mayEditDealTerms`, and `submitCalcAction` refuses him too.
   const writes = !readOnly && (entityType === 'deal' || sellerOnLead);
 
   // Law 4 splits this panel; 16a adds the seller's price as a sight of its
