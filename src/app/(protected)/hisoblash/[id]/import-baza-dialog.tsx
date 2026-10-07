@@ -72,15 +72,6 @@ export interface PickerTarget {
   /** A unit the VED picked and has not saved yet — the server ranks by it
    * (and only ranks: the price still comes from the file at save). */
   basis?: BazaBasis | null;
-  /**
-   * What the opener came for — REQUIRED, so every door names its intent: an
-   * optional one fails open into «pick». 'view' is the phone's look-only door
-   * (the phone card has no save, and a phone draft only wedges «Avval
-   * saqlang»): every number, no «Tanlash», a list that cannot be pressed
-   * (#1299). Wave 2 (his B1 a) gives the phone its own sheet and flips
-   * this there.
-   */
-  mode: 'pick' | 'view';
   /** The row's baza on screen, for the statistics' «siz» marker only. */
   current: { usd: number; basis: BazaBasis } | null;
 }
@@ -154,7 +145,6 @@ function PickerBody({
   /** Which request the answer on screen belongs to — re-opening the SAME row
    * does not remount, so two answers can be in flight. */
   const asked = useRef(0);
-  const view = target.mode === 'view';
 
   const itemId = target.itemId;
   const drafted = target.basis ?? null;
@@ -268,8 +258,10 @@ function PickerBody({
           ) : null}
           {answer?.source ? <span className="shrink-0">· {answer.source}</span> : null}
         </p>
+        {/* The 16 px `.input`: the phone sheet opens this dialog too, and
+            iPhone Safari zooms the whole page on focus of anything smaller. */}
         <input
-          className="input input-sm mt-2"
+          className="input mt-2"
           data-testid="calc-import-search"
           placeholder={t('importSearch')}
           aria-label={t('importSearch')}
@@ -298,7 +290,6 @@ function PickerBody({
           stats={stats}
           named={named}
           current={target.current}
-          mode={target.mode}
           onPick={(row) => {
             onPick(target.itemId, row);
             onClose();
@@ -306,11 +297,6 @@ function PickerBody({
           collapsed={q.trim() !== '' && !statsForcedOpen}
           onExpand={() => setStatsForcedOpen(true)}
         />
-        {view && answer && answer.state === 'ok' && answer.candidates.length > 0 ? (
-          <p className="px-1 text-2xs text-ink-500" data-testid="calc-import-viewonly">
-            {t('statsPickPhone')}
-          </p>
-        ) : null}
         {loading ? (
           <p className="p-2 text-2xs text-ink-500">{tc('loading')}</p>
         ) : answer === null ? null : answer.state === 'behind' ? (
@@ -375,36 +361,24 @@ function PickerBody({
             );
             return (
               <div key={c.id} className="rounded-xl border border-line">
-                {view ? (
-                  // Look-only (the phone): the same row, not pressable, and NOT
-                  // faded — only a unit the law cannot hold stays faded, so the
-                  // one real conflict is still told apart from «all refused».
-                  <div
-                    className={`block min-h-12 w-full p-2 text-left ${c.pickable === false ? 'opacity-60' : ''}`}
-                    data-testid="calc-import-candidate"
-                  >
-                    {body}
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    className="block min-h-12 w-full p-2 text-left hover:bg-surface-sunken disabled:cursor-not-allowed disabled:opacity-60"
-                    data-testid="calc-import-candidate"
-                    // Listed so the VED sees what the file holds, but a unit the
-                    // law cannot hold would land the row in a conflict (0125).
-                    disabled={c.pickable === false}
-                    onClick={() => {
-                      onPick(target.itemId, {
-                        id: c.id,
-                        pricePerUnitUsd: c.pricePerUnitUsd,
-                        basis: c.basis,
-                      });
-                      onClose();
-                    }}
-                  >
-                    {body}
-                  </button>
-                )}
+                <button
+                  type="button"
+                  className="block min-h-12 w-full p-2 text-left hover:bg-surface-sunken disabled:cursor-not-allowed disabled:opacity-60"
+                  data-testid="calc-import-candidate"
+                  // Listed so the VED sees what the file holds, but a unit the
+                  // law cannot hold would land the row in a conflict (0125).
+                  disabled={c.pickable === false}
+                  onClick={() => {
+                    onPick(target.itemId, {
+                      id: c.id,
+                      pricePerUnitUsd: c.pricePerUnitUsd,
+                      basis: c.basis,
+                    });
+                    onClose();
+                  }}
+                >
+                  {body}
+                </button>
                 {/* His last and most specific ask was «nomlari yaxshiroq
                     korinsin». Three clamped lines is ~250 characters of a name
                     his file writes 500 of, and a hover title is the affordance
@@ -433,7 +407,7 @@ function PickerBody({
         data-testid="calc-import-cancel"
         onClick={onClose}
       >
-        {view ? t('importClose') : t('importOwnBaza')}
+        {t('importOwnBaza')}
       </button>
     </>
   );

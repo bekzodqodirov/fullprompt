@@ -57,11 +57,7 @@ export interface CalcFormState {
  * code surfaces as a surprise one-item group; and how many pre-coded items
  * the sweep placed).
  */
-export interface TableFormState {
-  ok?: boolean;
-  error?: string;
-  /** The row the refusal names — NEGATIVE for a ghost (new) row. */
-  seq?: number;
+export interface TableSaveFields {
   minted?: string[];
   swept?: number;
   added?: number;
@@ -81,6 +77,20 @@ export interface TableFormState {
    * other. */
   memoryFilled?: number[];
 }
+
+/**
+ * A UNION, so a success always carries the rev the save committed at — the
+ * screen settles exactly the drafts it posted once a refresh reaches it (the
+ * phone round, D3), and a success with no rev is not a shape that compiles.
+ */
+export type TableFormState =
+  | ({ ok: true; error?: undefined; seq?: undefined; rev: number } & TableSaveFields)
+  | {
+      ok?: undefined;
+      error: string;
+      /** The row the refusal names — NEGATIVE for a ghost (new) row. */
+      seq?: number;
+    };
 
 /**
  * Every door into the queue.
@@ -334,6 +344,7 @@ async function runTable(
     alreadySaved: result.alreadySaved,
     importFilled: result.importFilled,
     memoryFilled: result.memoryFilled,
+    rev: result.rev,
   };
 }
 
@@ -348,7 +359,7 @@ export async function saveTableAction(
 
 export async function deleteItemAction(id: string, itemId: string): Promise<TableFormState> {
   return runTable(async (ctx) => {
-    await deleteItem(id, itemId, ctx);
+    const { rev } = await deleteItem(id, itemId, ctx);
     return {
       minted: [],
       swept: 0,
@@ -361,6 +372,7 @@ export async function deleteItemAction(id: string, itemId: string): Promise<Tabl
       alreadySaved: 0,
       importFilled: [],
       memoryFilled: [],
+      rev,
     };
   }, ws(id));
 }

@@ -91,6 +91,14 @@ const EXEMPT: Record<string, string> = {
   // read closed records and offers, never the open workspace.
   standingAnchorsFor: 'reader',
   offerPricesFor: 'reader',
+  // The phone round (his B6 a): the probe the sheet polls, and the AI
+  // claim's one window — the first reads the clock, the second reads only
+  // its arguments.
+  requestClock: 'reader — the probe of the clock',
+  aiClaimLive: 'pure',
+  // Review PHONE-2: saveTable's compare-and-set, exported so a unit test
+  // calls the rule itself. Reads its two arguments, writes nothing.
+  movedUnder: 'pure',
 };
 
 describe('every workspace mutator moves the revision clock', () => {

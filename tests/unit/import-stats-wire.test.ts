@@ -98,19 +98,34 @@ describe('6. both routes read the row through ONE function (#513)', () => {
 describe('6b. the 📥 waits on a row whose code, count, weight or volume is drafted', () => {
   it('both routes read those off the SAVED row, so a dirty row cannot open the picker', () => {
     const TABLE = read('src/app/(protected)/hisoblash/[id]/items-table.tsx');
-    expect(TABLE).toContain("rowDirty={(['tnvedCode', 'quantity', 'weightKg', 'volumeM3'] as const).some(");
+    // ONE rule (row-draft.ts), asked by the desktop ⋯ fold and the phone sheet.
+    const ROW_DRAFT = read('src/modules/wms/calc/row-draft.ts');
+    const rule = bodyOf(ROW_DRAFT, 'export function rowDirtyForPicker(');
+    expect(rule).toContain("(['tnvedCode', 'quantity', 'weightKg', 'volumeM3'] as const).some(");
+    expect(TABLE).toContain('rowDirty={rowDirtyForPicker(drafts)}');
     const at = TABLE.indexOf('data-testid="calc-import-pick"');
     expect(at).toBeGreaterThan(-1);
     expect(TABLE.slice(at, TABLE.indexOf('</button>', at))).toContain('disabled={rowDirty}');
+    // The phone sheet's door: the same rule, and a disabled button.
+    expect(TABLE).toContain("rowDirtyForPicker(d) ? 'row_dirty' : 'open'");
+    const SHEET = read('src/app/(protected)/hisoblash/[id]/row-sheet.tsx');
+    const door = SHEET.indexOf('data-testid="calc-phone-import"');
+    expect(door).toBeGreaterThan(-1);
+    expect(SHEET.slice(door, SHEET.indexOf('</button>', door))).toContain("model.importDoor === 'row_dirty'");
   });
 });
 
-describe('7. every opener names its intent', () => {
-  it('PickerTarget.mode is required', () => {
+describe('7. one intent left: every opener PICKS', () => {
+  it('the phone’s look-only door is gone with its branch (the sheet’s 📥 picks, his B1 a)', () => {
+    // A `mode` with a single value is a branch nobody can reach; the view
+    // half went when the phone sheet's 📥 replaced the look-only door.
     const at = DIALOG.indexOf('export interface PickerTarget');
     const iface = DIALOG.slice(at, DIALOG.indexOf('\n}', at));
-    expect(iface).toContain("mode: 'pick' | 'view';");
-    expect(iface).not.toContain('mode?:');
+    expect(iface).not.toMatch(/\bmode\b/);
+    for (const source of [DIALOG, BAZA_STATS]) {
+      expect(source).not.toContain("'view'");
+      expect(source).not.toMatch(/statsPickPhone|statsFewView|statsTimeoutView|viewonly/);
+    }
   });
 });
 
