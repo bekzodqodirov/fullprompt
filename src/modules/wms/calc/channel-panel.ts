@@ -78,7 +78,10 @@ export async function channelPanel(): Promise<ChannelPanelData> {
   const chats = await db.select().from(priceChannelChats).orderBy(priceChannelChats.updatedAt);
   const connectedRow = chats.find((c) => c.connectedAt !== null) ?? null;
   const hasToken = !!process.env.TELEGRAM_BOT_TOKEN;
-  const pause = connectedRow
+  // No token is said even with no channel connected: nothing could be posted.
+  const pause = !hasToken
+    ? 'no_bot'
+    : connectedRow
     ? staticPause({
         hasToken,
         row: connectedRow,
