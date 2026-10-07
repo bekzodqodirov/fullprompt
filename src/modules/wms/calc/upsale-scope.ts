@@ -14,8 +14,9 @@ import { mayEditDealTerms } from '../deals/door';
  *
  * So it is NOT a hierarchy — it is two different views of one row. The VED
  * reads the cost side and never the client price; the seller reads the client
- * prices, which is law 10's whole point (per-client price drift is visible at
- * decision time), and never the floor those prices sit above.
+ * prices — since his F1 a (2026-10-07) only HIS OWN (`seesOfferPriceOf`) — and
+ * not the cost breakdown. The sealed total is posted to the staff's price
+ * channel (F1 a), so it is not what this file protects; the upsale is.
  *
  * `finance.reports` and NOT round 91's `seesAllMoney`: that predicate is
  * `finance.manage || clients.manage`, and **`ved_manager` holds
@@ -128,4 +129,16 @@ export function offerReadsFor(actor: { permissions: { has(code: string): boolean
     ownOnly: scope !== 'all',
     prices: sight.seesOfferPrices && scope !== 'all',
   };
+}
+
+/**
+ * May this reader see THIS offer's client price? (his F1 a, 2026-10-07:
+ * «sotuvchi faqat o‘z mijoziga bergan narxni ko‘radi») — the price channel
+ * names the seller and carries the floor, so a colleague's client price beside
+ * it is one subtraction from that colleague's upsale (law 4). `offered_by` is
+ * the codebase's one «own offer» rule (/upsale, both offer PDFs, the card
+ * panel).
+ */
+export function seesOfferPriceOf(scope: UpsaleScope, offeredBy: string, viewerId: string): boolean {
+  return scope === 'all' || (scope === 'own' && offeredBy === viewerId);
 }

@@ -88,6 +88,7 @@ import { childStateSql } from './chain';
 import { isAnswer, isAnswerSql } from './credit';
 import { createTask } from '@/modules/platform/tasks/service';
 import { retireTaskCopiesSoon } from '@/modules/platform/notifications/retire-tasks';
+import { kickPriceChannel } from './channel-queue';
 import { forgetUpsaleLiability } from './liability-memo';
 import {
   sealCounters,
@@ -1688,7 +1689,7 @@ export async function sealCalc(
         .where(and(eq(tasks.id, row.taskId), eq(tasks.status, 'open')));
     }
 
-    await tx.insert(calcVersions).values({
+    const [inserted] = await tx.insert(calcVersions).values({
       requestId,
       versionNo: row.versionNo,
       sealedBy: ctx.actorId!,
@@ -1718,7 +1719,7 @@ export async function sealCalc(
       aiBlindGroups: counters.aiBlindGroups,
       aiRateTakenGroups: counters.aiRateTakenGroups,
       breakdown,
-    });
+    }).returning({ id: calcVersions.id });
 
     // A correction ADOPTS the cargo the request it supersedes was measuring
     // (phase E1). Re-pointing at `recalcFromSealed` time was refused: that
@@ -1786,12 +1787,22 @@ export async function sealCalc(
 
     return {
       versionNo: row.versionNo,
+      versionId: inserted!.id,
       requestedBy: row.requestedBy,
       entityType: row.entityType,
       entityId: row.entityId,
       taskId: row.taskId,
     };
   });
+
+  // The price channel's claim (his F, 2026-10-07) — FIRST after the commit:
+  // `writeAudit` below is not in a catch and `announceSeal` awaits Telegram,
+  // so a throw or a restart in that window must not cost the row. Its own
+  // catch: a channel that cannot be told must never undo a seal (#472), and
+  // the drain's net picks up a row this misses.
+  await import('./channel-queue')
+    .then((m) => m.queuePriceChannelPost({ kind: 'seal', requestId, versionId: result.versionId }))
+    .catch((err) => logger.error({ err, requestId }, '[price-channel] not queued'));
 
   // The task the seal just closed stops offering its «✅ Bajarildi» in
   // Telegram (review integration-5) — `endRequest`, the release and the take
@@ -2301,6 +2312,10 @@ export async function recalcFromSealed(
       linkLine(old.entityType, old.entityId),
     exceptUserId: ctx.actorId,
   }).catch((err) => logger.error({ err, newId }, '[calc] recalc notify failed'));
+  // The old price's channel post gets its «qayta hisoblanmoqda» mark — derived
+  // by the drain's reconcile from the graph this insert just changed; the
+  // kick only makes it soon (his F).
+  kickPriceChannel();
   return newId;
 }
 

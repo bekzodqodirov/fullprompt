@@ -12,6 +12,7 @@ import {
   numeric,
   pgTable,
   primaryKey,
+  smallint,
   text,
   timestamp,
   unique,
@@ -3280,6 +3281,75 @@ export const calcVersions = pgTable(
     check('calc_versions_discount_check', sql`${t.discountUsd} >= 0`),
     uniqueIndex('calc_versions_request_no_unique').on(t.requestId, t.versionNo),
     index('calc_versions_sealed_idx').on(t.sealedAt),
+  ],
+);
+
+/**
+ * ONE row per given price for the staff's price channel (0128, the owner's F).
+ * The claim is the write: `dedupe_key` is CHECKed to be `seal:<version>` or
+ * `answer:<request>`, so a retried hook, the drain's net, a double Готово and
+ * two drains post once. `view` is the post's projection (calc/channel-post.ts
+ * `ChannelPostView`) — it cannot hold a client, a floor breakdown or a note.
+ */
+export const priceChannelPosts = pgTable(
+  'price_channel_posts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    kind: text('kind').notNull(),
+    requestId: uuid('request_id')
+      .notNull()
+      .references(() => calcRequests.id, { onDelete: 'cascade' }),
+    versionId: uuid('version_id').references(() => calcVersions.id, { onDelete: 'cascade' }),
+    dedupeKey: text('dedupe_key').notNull(),
+    chatId: bigint('chat_id', { mode: 'bigint' }),
+    status: text('status').notNull(),
+    skipReason: text('skip_reason'),
+    view: jsonb('view'),
+    carrier: text('carrier'),
+    messageId: integer('message_id'),
+    replyToMessageId: integer('reply_to_message_id'),
+    photoCount: smallint('photo_count').notNull().default(0),
+    markedState: text('marked_state'),
+    markedAt: timestamp('marked_at', { withTimezone: true }),
+    markClaimedAt: timestamp('mark_claimed_at', { withTimezone: true }),
+    markError: text('mark_error'),
+    attempts: integer('attempts').notNull().default(0),
+    notBefore: timestamp('not_before', { withTimezone: true }),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }),
+    lastError: text('last_error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    sentAt: timestamp('sent_at', { withTimezone: true }),
+  },
+  (t) => [
+    unique('price_channel_posts_dedupe_unique').on(t.dedupeKey),
+    check(
+      'price_channel_posts_kind_check',
+      sql`(${t.kind} = 'seal' AND ${t.versionId} IS NOT NULL AND ${t.dedupeKey} = 'seal:' || ${t.versionId}::text) OR (${t.kind} = 'answer' AND ${t.versionId} IS NULL AND ${t.dedupeKey} = 'answer:' || ${t.requestId}::text)`,
+    ),
+    check(
+      'price_channel_posts_status_check',
+      sql`${t.status} IN ('pending','sending','sent','failed','skipped')`,
+    ),
+    check(
+      'price_channel_posts_skip_check',
+      sql`(${t.status} = 'skipped') = (${t.skipReason} IS NOT NULL) AND (${t.skipReason} IS NULL OR ${t.skipReason} IN ('no_channel','discount','band_override','channel_changed','stale'))`,
+    ),
+    check(
+      'price_channel_posts_sent_check',
+      sql`${t.status} <> 'sent' OR (${t.messageId} IS NOT NULL AND ${t.carrier} IS NOT NULL AND ${t.view} IS NOT NULL AND ${t.chatId} IS NOT NULL)`,
+    ),
+    check('price_channel_posts_carrier_check', sql`${t.carrier} IS NULL OR ${t.carrier} IN ('text','caption')`),
+    check(
+      'price_channel_posts_mark_check',
+      sql`${t.markedState} IS NULL OR ${t.markedState} IN ('open','sealed','answered','returned','unpriced')`,
+    ),
+    index('price_channel_posts_pending_idx')
+      .on(t.createdAt)
+      .where(sql`${t.status} IN ('pending','sending')`),
+    index('price_channel_posts_unsettled_idx')
+      .on(t.requestId)
+      .where(sql`${t.status} = 'sent' AND (${t.markedState} IS NULL OR ${t.markedState} = 'open')`),
+    index('price_channel_posts_request_idx').on(t.requestId, t.createdAt),
   ],
 );
 

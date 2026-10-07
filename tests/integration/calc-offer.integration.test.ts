@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import 'dotenv/config';
 import { and, eq, inArray } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -399,7 +400,7 @@ describe('the price history', () => {
     const code = `7318${SUFFIX}`;
     const first = await sealed({ code });
     const second = await sealed({ code });
-    const rows = await quoteHistoryFor(code, { scope: 'all', limit: 5 });
+    const rows = await quoteHistoryFor(code, { scope: 'all', viewerId: ctx().actorId!, limit: 5 });
     expect(rows.map((r) => r.versionId)).toEqual([second.versionId, first.versionId]);
     expect(rows[0]!.section).toBe('podklyuch');
     expect(rows[0]!.totalUsd).toBeGreaterThan(0);
@@ -409,7 +410,7 @@ describe('the price history', () => {
     const code = `6109${SUFFIX}`;
     const { versionId } = await sealed({ code });
     await recordOffer({ versionId: versionId }, { clientPriceUsd: 9999, locale: 'uz' }, ctx());
-    const rows = await quoteHistoryFor(code, { scope: 'all' });
+    const rows = await quoteHistoryFor(code, { scope: 'all', viewerId: ctx().actorId! });
     expect(rows[0]!.clientPriceUsd).toBe(9999);
   });
 
@@ -421,7 +422,7 @@ describe('the price history', () => {
       const code = `9405${SUFFIX}`;
       await sealed({ code, onLead: true });
       await sealed({ code });
-      const rows = await quoteHistoryFor(code, { scope: 'all' });
+      const rows = await quoteHistoryFor(code, { scope: 'all', viewerId: ctx().actorId! });
       expect(rows.map((r) => [r.entityType, r.leadOwnerId])).toEqual([
         ['deal', null],
         ['lead', actorId],
@@ -432,8 +433,8 @@ describe('the price history', () => {
   });
 
   it('answers about a code nobody has priced with nothing, never with somebody else’s quote', async () => {
-    expect(await quoteHistoryFor(`0000${SUFFIX}`, { scope: 'all' })).toEqual([]);
-    expect(await quoteHistoryFor('   ', { scope: 'all' })).toEqual([]);
+    expect(await quoteHistoryFor(`0000${SUFFIX}`, { scope: 'all', viewerId: ctx().actorId! })).toEqual([]);
+    expect(await quoteHistoryFor('   ', { scope: 'all', viewerId: ctx().actorId! })).toEqual([]);
   });
 
   it('gives EACH code its own newest N — a busy code does not crowd out a quiet one', async () => {
@@ -511,7 +512,7 @@ describe('law 4: the VED never sees what the customer was charged', () => {
 
     // The VED computed the floor themselves. Handing them the client price
     // hands them the upsale by subtraction, which is the whole of law 4.
-    const asVed = await quoteHistoryFor(code, { scope: 'none' });
+    const asVed = await quoteHistoryFor(code, { scope: 'none', viewerId: ctx().actorId! });
     expect(asVed[0]!.clientPriceUsd).toBeNull();
     expect(asVed[0]!.belowFloor).toBe(false);
     // …and law 10 still gives them the cost side, which is their own work.
@@ -524,9 +525,15 @@ describe('law 4: the VED never sees what the customer was charged', () => {
     const { versionId } = await sealed({ code });
     await recordOffer({ versionId: versionId }, { clientPriceUsd: 9100, locale: 'uz' }, ctx());
 
-    const asSeller = await quoteHistoryFor(code, { scope: 'own' });
+    const asSeller = await quoteHistoryFor(code, { scope: 'own', viewerId: ctx().actorId! });
     const row = asSeller[0]!;
     expect(row.clientPriceUsd).toBe(9100);
+    // F1 a (2026-10-07, deliberate): another seller does NOT see this client
+    // price — the price channel carries the floor, so a colleague's price
+    // beside it is one subtraction from their upsale.
+    const asStranger = await quoteHistoryFor(code, { scope: 'own', viewerId: randomUUID() });
+    expect(asStranger[0]!.clientPriceUsd).toBeNull();
+    expect(asStranger[0]!.belowFloor).toBe(false);
     // Nulling the total alone leaves the floor one multiplication away: the
     // row prints per-m³ and per-kg beside the volume and the weight.
     expect(row.totalUsd).toBeNull();
@@ -546,7 +553,7 @@ describe('law 4: the VED never sees what the customer was charged', () => {
     const { versionId } = await sealed({ code });
     await recordOffer({ versionId: versionId }, { clientPriceUsd: 9500, locale: 'uz' }, ctx());
 
-    const row = (await quoteHistoryFor(code, { scope: 'all' }))[0]!;
+    const row = (await quoteHistoryFor(code, { scope: 'all', viewerId: ctx().actorId! }))[0]!;
     expect(row.clientPriceUsd).toBe(9500);
     expect(row.totalUsd).toBeGreaterThan(0);
     expect(row.cardReadable).toBe(true);
