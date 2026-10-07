@@ -319,7 +319,8 @@ export function orderUnits<T extends { unit: ImportUnit; all: { n: number } }>(
   return first ? [first, ...ordered.filter((s) => s !== first)] : ordered;
 }
 
-/** «2026-04-01 … 2026-06-29», else the file name — the list route's rule. */
+/** «2026-04-01 … 2026-06-29», else the file name (the column is NOT NULL)
+ * — one rule for the list's `source` and the statistics' two periods. */
 export function periodText(b: { fileName: string; periodFrom: string | null; periodTo: string | null } | undefined): string | null {
   if (!b) return null;
   return b.periodFrom && b.periodTo ? `${b.periodFrom} … ${b.periodTo}` : b.fileName;

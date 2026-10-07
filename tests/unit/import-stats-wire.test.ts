@@ -95,6 +95,16 @@ describe('6. both routes read the row through ONE function (#513)', () => {
   });
 });
 
+describe('6b. the 📥 waits on a row whose code, count, weight or volume is drafted', () => {
+  it('both routes read those off the SAVED row, so a dirty row cannot open the picker', () => {
+    const TABLE = read('src/app/(protected)/hisoblash/[id]/items-table.tsx');
+    expect(TABLE).toContain("rowDirty={(['tnvedCode', 'quantity', 'weightKg', 'volumeM3'] as const).some(");
+    const at = TABLE.indexOf('data-testid="calc-import-pick"');
+    expect(at).toBeGreaterThan(-1);
+    expect(TABLE.slice(at, TABLE.indexOf('</button>', at))).toContain('disabled={rowDirty}');
+  });
+});
+
 describe('7. every opener names its intent', () => {
   it('PickerTarget.mode is required', () => {
     const at = DIALOG.indexOf('export interface PickerTarget');

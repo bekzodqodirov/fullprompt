@@ -8,6 +8,7 @@ import { isBazaBasis, type BazaBasis } from '@/modules/wms/calc/pricing';
 import { customsImportBatches } from '@/modules/platform/db/schema';
 import { BASIS_FOR_UNIT, suggestImportBaza } from '@/modules/wms/customs/import-baza';
 import { readPickerItem } from '@/modules/wms/customs/picker-item';
+import { periodText } from '@/modules/wms/customs/import-stats';
 
 /**
  * «Bu kod uchun importda nima bor?» — the picker behind the 📥 chip.
@@ -96,10 +97,7 @@ export async function GET(request: Request) {
         // What the row is looking for, in the basis vocabulary — the dialog
         // names it as an expectation, never as a fact about the row.
         wants: item.units.map((u) => BASIS_FOR_UNIT[u]),
-        source:
-          batch?.periodFrom && batch?.periodTo
-            ? `${batch.periodFrom} … ${batch.periodTo}`
-            : (batch?.fileName ?? null),
+        source: periodText(batch),
         // C1's second series. The dialog compares `batchId` with the stats
         // answer's and drops this series when a batch turned READY between
         // the two fetches (statsNamedStale).
