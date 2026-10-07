@@ -55,6 +55,7 @@ import {
   markThreadRead,
   myThreads,
   openCalcThreadOn,
+  threadHrefsFor,
 } from '@/modules/wms/crm/thread';
 import { mayWriteThread, threadStanding } from '@/modules/wms/crm/thread-door';
 import { landThreadReply } from '@/modules/wms/crm/thread-reply';
@@ -440,6 +441,23 @@ describe('17. the dock — the threads I am in', () => {
     await db.update(leads).set({ ownerId: P.B }).where(eq(leads.id, Lmine));
     rows = await myThreads(seller);
     expect(rows.find((r) => r.kind === 'lead' && r.id === Lmine)).toBeUndefined();
+
+    // A mention-only addressee is not shown the card's thread (E2 a): the VED
+    // named in a CLIENT note holds the ping AND an address for the card — it
+    // is the door, not the address, that keeps the thread off his list.
+    const K = await client(P.S);
+    const named = await addThreadMessage({ ref: { kind: 'client', id: K }, body: 'VED nomi bilan' }, ctx(P.S));
+    await db.insert(notifications).values({
+      userId: P.V,
+      channel: 'telegram',
+      type: 'MentionedInNote',
+      status: 'sent',
+      sentAt: new Date(),
+      payload: { text: 'x', thread: { kind: 'client', id: K, activityId: named.activityId } },
+    });
+    const ved = await actorOf(P.V);
+    expect((await threadHrefsFor(ved, [{ kind: 'client', id: K }])).get(`client:${K}`)).toBe(`/admin/clients/${K}#ichki`);
+    expect((await myThreads(ved)).find((r) => r.kind === 'client' && r.id === K)).toBeUndefined();
   });
 });
 

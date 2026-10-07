@@ -284,7 +284,12 @@ describe('13. the armed wait gets its own reply (the judge’s blocker)', () => 
 
   it('c. «✅» on the morning digest, then a reply to the digest itself: the result closes the task', async () => {
     const T = await handTask(P.S, P.C, 'Ro‘yxatdan');
-    const digest = (msgSeq += 1);
+    // The digest as the drain leaves it — a SENT «TasksDue» row with its
+    // message id. By its own row it is «not replyable», so only the armed
+    // wait (step 2) hands this reply back; a digest the resolver cannot find
+    // would fall through either way and prove nothing.
+    const digest = await sentPing(P.S, 'TasksDue', { tasks: [{ id: T }] });
+    expect(await replyVerdictFor(CHAT[P.S]!, digest, P.S)).toEqual({ kind: 'not_replyable' });
     noteTaskPending(CHAT[P.S]!, T, { messageId: digest, text: 'x', markup: undefined, kind: 'list' });
     expect(await reply(P.S, digest, 'bo‘ldi')).toBeNull();
     const pending = takeTaskPending(CHAT[P.S]!);
