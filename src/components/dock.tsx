@@ -433,6 +433,7 @@ export function Dock({
                 aria-label={tc('back')}
                 onClick={() => setOpen(false)}
                 className="btn-ghost btn-icon ml-auto text-ink-500"
+                data-testid="dock-close"
               >
                 <Icon name="x" />
               </button>
