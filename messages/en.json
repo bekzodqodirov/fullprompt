@@ -3384,7 +3384,9 @@
       "internal_note_required": "The internal note is required — write how you worked it out",
       "not_priced": "This job has no price — neither a seal nor an overall price; there is nothing to recalculate",
       "parent_returned": "This job was handed back and has no price — send a new request from the card",
-      "recalc_returned": "The correction was handed back (closed with no price) — send a new request from the card"
+      "recalc_returned": "The correction was handed back (closed with no price) — send a new request from the card",
+      "changed_under": "Not done — someone else changed this row just now. Look at the change and press again.",
+      "refresh_timeout": "Not saved — the screen did not refresh. Open the row and save again."
     },
     "openCard": "Card",
     "freight": "Freight",
@@ -3666,7 +3668,8 @@
       "yes": "Restore",
       "no": "No, discard",
       "skipped": "Not restored — someone else changed them meanwhile: {rows}",
-      "alreadySaved": "{count} rows had already been saved"
+      "alreadySaved": "{count} rows had already been saved",
+      "dismiss": "Got it"
     },
     "reloadPage": "Reload page",
     "editCargoFacts": "Edit the cargo facts",

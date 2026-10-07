@@ -3384,7 +3384,9 @@
       "internal_note_required": "Ichki izoh majburiy — qanday hisoblaganingizni yozing",
       "not_priced": "Bu hisobda narx yo‘q — na muhr, na umumiy narx; qayta hisoblaydigan narsa yo‘q",
       "parent_returned": "Bu hisob qaytarilgan, narxi yo‘q — kartadan yangi hisoblatish yuboring",
-      "recalc_returned": "Tuzatish qaytarilgan (narxsiz yopilgan) — kartadan yangi hisoblatish yuboring"
+      "recalc_returned": "Tuzatish qaytarilgan (narxsiz yopilgan) — kartadan yangi hisoblatish yuboring",
+      "changed_under": "Bajarilmadi — shu paytda bu qatorni boshqa kishi o‘zgartirdi. O‘zgarishni ko‘rib, qayta bosing.",
+      "refresh_timeout": "Saqlanmadi — ekran yangilanmadi. Qatorni ochib, qayta saqlang."
     },
     "openCard": "Karta",
     "freight": "Yo‘lkira",
@@ -3666,7 +3668,8 @@
       "yes": "Tiklash",
       "no": "Yo'q, o'chirish",
       "skipped": "Tiklanmadi — bu orada boshqa kishi o'zgartirgan: {rows}",
-      "alreadySaved": "{count} ta qator avval saqlangan ekan"
+      "alreadySaved": "{count} ta qator avval saqlangan ekan",
+      "dismiss": "Tushunarli"
     },
     "reloadPage": "Sahifani yangilash",
     "editCargoFacts": "Yuk ma’lumotlarini o‘zgartirish",

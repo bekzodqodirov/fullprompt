@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   changedUnder,
   emptyRow,
+  expectFor,
   ghostToItemDraft,
+  postedBase,
+  postedCellsOf,
   refreshWait,
   REFRESH_WAIT_MS,
   rowDirtyForPicker,
@@ -16,7 +19,7 @@ import {
   type RowBase,
   type SettleInput,
 } from '@/modules/wms/calc/row-draft';
-import { aiClaimLive } from '@/modules/wms/calc/workspace';
+import { aiClaimLive, movedUnder } from '@/modules/wms/calc/workspace';
 
 /**
  * The phone round's draft rules (his B2 a, B5 a, B6 a), as pure functions.
@@ -174,14 +177,62 @@ describe('settleDrafts — a save settles what it posted', () => {
     expect(out.retarget).toEqual({ fromKey: 3, toId: 'C', hasDraft: true });
   });
 
-  it('a ghost whose id appeared with no pending entry (a lost answer) → a stored-mode draft of what differs', () => {
-    const g = ghost({ key: 4, clientId: 'C', name: 'likopcha', quantity: '6' });
+  it('a ghost whose id appeared with no pending entry (a lost answer) → a draft of what was typed SINCE its post', () => {
+    const posted = ghost({ key: 4, clientId: 'C', name: 'likopcha', quantity: '5' });
+    const g = { ...posted, quantity: '6', posted: postedCellsOf(posted) };
     const c = item({ id: 'C', label: 'likopcha', quantity: 5 });
     const out = settleDrafts(
       base({ newRows: [g], items: new Map([...items, ['C', c]]), workspaceRev: 9 }),
     );
     expect(out.newRows).toEqual([]);
     expect(out.drafts).toEqual({ C: { quantity: '6' } });
+    expect(out.bases.C).toEqual({ quantity: 5 });
+  });
+
+  it('a lost answer and a colleague’s correction after it → NO draft reverting the correction (review PHONE-1)', () => {
+    // Posted baza 5, the server committed, the answer was lost; a colleague
+    // then corrected the row to 0.5. Nothing was typed since the post.
+    const posted = ghost({ key: 4, clientId: 'C', name: 'likopcha', bazaValue: '5' });
+    const g = { ...posted, posted: postedCellsOf(posted) };
+    const c = item({ id: 'C', label: 'likopcha', quantity: null, bazaUsd: 0.5, bazaBasis: 'kg' });
+    const out = settleDrafts(
+      base({ newRows: [g], items: new Map([...items, ['C', c]]), workspaceRev: 9 }),
+    );
+    expect(out.newRows).toEqual([]);
+    expect(out.drafts).toEqual({});
+    expect(out.converted).toBe(1);
+  });
+
+  it('…and a cell typed since, over a correction → a draft standing on the POST, so B6 names the correction', () => {
+    const posted = ghost({ key: 4, clientId: 'C', name: 'likopcha', bazaValue: '5', bazaBasis: 'kg' });
+    const g = { ...posted, bazaValue: '6', posted: postedCellsOf(posted) };
+    const c = item({ id: 'C', label: 'likopcha', quantity: null, bazaUsd: 0.5, bazaBasis: 'kg' });
+    const out = settleDrafts(
+      base({ newRows: [g], items: new Map([...items, ['C', c]]), workspaceRev: 9, keepGhostKey: 4 }),
+    );
+    expect(out.drafts).toEqual({ C: { bazaValue: '6', bazaBasis: 'kg' } });
+    expect(out.bases.C).toEqual({ bazaUsd: 5, bazaBasis: 'kg' });
+    expect(changedUnder(out.bases.C, c)).toEqual([{ field: 'baza', before: '5', after: '0.5' }]);
+    expect(out.retarget).toEqual({ fromKey: 4, toId: 'C', hasDraft: true });
+  });
+
+  it('a ghost edited in flight whose save landed BEHIND a colleague’s rev stands on the post, not on the colleague', () => {
+    const posted = ghost({ key: 3, clientId: 'C', name: 'likopcha', quantity: '5' });
+    const stamped = { ...posted, posted: postedCellsOf(posted) };
+    const now = { ...stamped, quantity: '6' };
+    // Our save committed at 6; a colleague then wrote 7 into the count.
+    const c = item({ id: 'C', label: 'likopcha', quantity: 7 });
+    const out = settleDrafts(
+      base({
+        newRows: [now],
+        items: new Map([...items, ['C', c]]),
+        workspaceRev: 7,
+        pending: [entry({ ghosts: new Map([[3, stamped]]) })],
+      }),
+    );
+    expect(out.drafts).toEqual({ C: { quantity: '6' } });
+    expect(out.bases.C).toEqual({ quantity: 5 });
+    expect(changedUnder(out.bases.C, c)).toEqual([{ field: 'qty', before: '5', after: '7' }]);
   });
 
   it('…or is simply removed when nothing differs', () => {
@@ -345,28 +396,75 @@ describe('changedUnder — what moved under the drafted fields', () => {
   });
 });
 
-describe('ghostToItemDraft — stored mode never invents a difference', () => {
+describe('ghostToItemDraft — only what was typed since the post (review PHONE-1)', () => {
   const stored = item({ id: 'C', label: 'kosa', quantity: 5, bazaUsd: 3, bazaBasis: 'kg' });
 
+  it('a ghost unchanged since its post is no draft — whatever the stored row holds now', () => {
+    const g = ghost({ name: 'kosa', quantity: '9', bazaValue: '5' });
+    // The stored row disagrees on every cell (a colleague, or the server's
+    // own fill): none of it is the VED's unsaved work.
+    expect(ghostToItemDraft(g, stored, g)).toEqual({});
+  });
+
   it('an empty ghost cell beside a filled stored baza is no difference', () => {
-    expect(ghostToItemDraft(ghost({ name: 'kosa', quantity: '5' }), stored, 'stored')).toEqual({});
+    const g = ghost({ name: 'kosa', quantity: '5' });
+    expect(ghostToItemDraft(g, stored, postedCellsOf(g))).toEqual({});
   });
 
-  it('an untouched «avto» unit beside a stamped one is no difference', () => {
-    expect(
-      ghostToItemDraft(ghost({ name: 'kosa', bazaValue: '3', bazaBasis: null }), stored, 'stored'),
-    ).toEqual({});
+  it('a cell typed since the post that the row already holds is no draft', () => {
+    const posted = ghost({ name: 'kosa', quantity: '4' });
+    expect(ghostToItemDraft({ ...posted, quantity: '5' }, stored, posted)).toEqual({});
   });
 
-  it('«1.125» beside a stored 1.125 is no difference', () => {
-    const s = { ...stored, bazaUsd: 1.125 };
-    expect(ghostToItemDraft(ghost({ name: 'kosa', bazaValue: '1.125' }), s, 'stored')).toEqual({});
+  it('a unit picked since the post rides with the row’s own amount, never a clear nobody typed', () => {
+    const posted = ghost({ name: 'kosa', bazaBasis: null });
+    expect(ghostToItemDraft({ ...posted, bazaBasis: 'unit' }, stored, posted)).toEqual({
+      bazaValue: '3',
+      bazaBasis: 'unit',
+    });
   });
 
-  it('posted mode takes an emptied cell as a clear', () => {
+  it('an emptied cell is a clear', () => {
     const posted = ghost({ name: 'kosa', quantity: '5' });
-    expect(ghostToItemDraft({ ...posted, quantity: '' }, stored, 'posted', posted)).toEqual({
+    expect(ghostToItemDraft({ ...posted, quantity: '' }, stored, posted)).toEqual({
       quantity: '',
+    });
+  });
+});
+
+describe('postedBase — what a converted ghost was typed over', () => {
+  const c = item({
+    id: 'C',
+    label: 'kosa',
+    tnvedCode: '6912000000',
+    quantity: 7,
+    bazaUsd: 3,
+    bazaBasis: 'kg',
+    note: 'x',
+  });
+  it('a carried cell stands on what was carried; an empty baza, code or «avto» on the row (the server fills those)', () => {
+    const posted = ghost({ name: ' kosa ', quantity: '5', tnvedCode: '', bazaValue: '', bazaBasis: null });
+    expect(
+      postedBase(posted, c, ['label', 'quantity', 'tnvedCode', 'bazaUsd', 'bazaBasis', 'note']),
+    ).toEqual({
+      label: 'kosa',
+      quantity: 5,
+      tnvedCode: '6912000000',
+      bazaUsd: 3,
+      bazaBasis: 'kg',
+      // An empty note the server never fills — the colleague's «x» is named.
+      note: null,
+    });
+  });
+});
+
+describe('expectFor — what the screen showed under a draft (review PHONE-2)', () => {
+  it('names exactly the stored fields the drafted cells stand on', () => {
+    const c = item({ id: 'C', quantity: 7, bazaUsd: 3, bazaBasis: 'kg' });
+    expect(expectFor(c, { quantity: '8', bazaValue: '4' })).toEqual({
+      quantity: 7,
+      bazaUsd: 3,
+      bazaBasis: 'kg',
     });
   });
 });
@@ -434,5 +532,52 @@ describe('aiClaimLive — the raw execute hands a timestamptz back as TEXT', () 
     expect(aiClaimLive('garbage', now)).toBe(false);
     expect(aiClaimLive(null, now)).toBe(false);
     expect(aiClaimLive(new Date(now - 60_000), now)).toBe(true);
+  });
+});
+
+describe('movedUnder — the commit’s compare-and-set (review PHONE-2)', () => {
+  const stored = {
+    name: 'kafel',
+    tnvedCode: '6907',
+    quantity: '40.000',
+    weightKg: null,
+    volumeM3: '1.250',
+    note: null,
+    measureUnit: 'm2',
+    measureQty: '12.0000',
+    bazaUsd: '2.5000',
+    bazaBasis: 'kg',
+  };
+  it('what the screen showed still stands → not moved, at the column’s own scale', () => {
+    expect(
+      movedUnder(
+        {
+          label: ' kafel ',
+          tnvedCode: '6907',
+          quantity: 40,
+          weightKg: null,
+          volumeM3: 1.25,
+          note: null,
+          measureUnit: 'm2',
+          measureQty: 12,
+          bazaUsd: 2.5,
+          bazaBasis: 'kg',
+        },
+        stored,
+      ),
+    ).toBe(false);
+    expect(movedUnder({}, stored)).toBe(false);
+  });
+  it('any named field that moved → moved', () => {
+    expect(movedUnder({ quantity: 42 }, stored)).toBe(true);
+    expect(movedUnder({ bazaUsd: 0.5 }, stored)).toBe(true);
+    expect(movedUnder({ bazaBasis: 'unit' }, stored)).toBe(true);
+    expect(movedUnder({ note: 'x' }, stored)).toBe(true);
+    expect(movedUnder({ weightKg: 1 }, stored)).toBe(true);
+  });
+  it('a crafted expectation refuses — it never waves a write through', () => {
+    expect(movedUnder({ quantity: 'forty' as never }, stored)).toBe(true);
+    expect(movedUnder({ quantity: Number.NaN }, stored)).toBe(true);
+    expect(movedUnder({ owner: 'x' } as never, stored)).toBe(true);
   });
 });

@@ -313,3 +313,61 @@ describe('a retried add is an EDIT of the stored row — so the browser must con
     expect(Number(rows.find((i) => i.id === clientRowId)!.quantity)).toBe(5);
   });
 });
+
+describe('the phone’s look-then-write is closed at the commit (review PHONE-2)', () => {
+  it('an edit made over values the row no longer holds is refused whole — nothing written, the clock unmoved', async () => {
+    const id = await open([
+      { name: `kafel ${tag()}`, quantity: 40 },
+      { name: `kosa ${tag()}`, quantity: 2 },
+    ]);
+    await save(id, {});
+    const [a, b] = await itemRows(id);
+    // What the phone's screen showed under its drafted count: 40.
+    const shown = { quantity: 40 };
+    // A colleague's save lands after the phone's probe and before its post.
+    await save(id, { items: [{ id: a!.id, seq: a!.seq, quantity: 42 }] });
+    const revBefore = await revOf(id);
+
+    await expect(
+      save(id, {
+        items: [
+          { id: a!.id, seq: a!.seq, quantity: 41, expect: shown },
+          { id: b!.id, seq: b!.seq, quantity: 3 },
+        ],
+      }),
+    ).rejects.toMatchObject({ code: 'changed_under', seq: a!.seq });
+    const after = await itemRows(id);
+    expect(Number(after.find((i) => i.id === a!.id)!.quantity)).toBe(42);
+    // ONE transaction: the other row's cell did not land either.
+    expect(Number(after.find((i) => i.id === b!.id)!.quantity)).toBe(2);
+    expect(await revOf(id)).toBe(revBefore);
+
+    // With the colleague's 42 on the screen, the next press saves.
+    const saved = await save(id, {
+      items: [{ id: a!.id, seq: a!.seq, quantity: 41, expect: { quantity: 42 } }],
+    });
+    expect(saved.rev).toBe(revBefore + 1);
+    expect(Number((await itemRows(id)).find((i) => i.id === a!.id)!.quantity)).toBe(41);
+  });
+
+  it('the action the sheet presses answers the refusal as a code naming the row', async () => {
+    const id = await open([{ name: `likopcha ${tag()}`, quantity: 5 }]);
+    await signInVed();
+    const [row] = await itemRows(id);
+    const refused = await saveTableAction(id, {
+      items: [
+        {
+          id: row!.id,
+          seq: row!.seq,
+          bazaUsd: 3,
+          bazaBasis: null,
+          // The screen showed a baza that is not the row's.
+          expect: { bazaUsd: 2.5, bazaBasis: 'kg' },
+        },
+      ],
+      adds: [],
+    });
+    expect(refused).toEqual({ error: 'changed_under', seq: row!.seq });
+    expect((await itemRows(id))[0]!.bazaUsd).toBeNull();
+  });
+});

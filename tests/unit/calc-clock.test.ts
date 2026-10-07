@@ -96,6 +96,9 @@ const EXEMPT: Record<string, string> = {
   // its arguments.
   requestClock: 'reader — the probe of the clock',
   aiClaimLive: 'pure',
+  // Review PHONE-2: saveTable's compare-and-set, exported so a unit test
+  // calls the rule itself. Reads its two arguments, writes nothing.
+  movedUnder: 'pure',
 };
 
 describe('every workspace mutator moves the revision clock', () => {

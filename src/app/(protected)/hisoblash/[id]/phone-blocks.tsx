@@ -34,7 +34,6 @@ export function PhoneBlocks({
   gateCount,
   dirtyCount,
   sweepable,
-  duplicateGroups,
   nextDraft,
   rowGone,
   busy,
@@ -55,7 +54,6 @@ export function PhoneBlocks({
   gateCount: number;
   dirtyCount: number;
   sweepable: number;
-  duplicateGroups: number;
   /** The first unsaved row to reopen — a LIVE item id, or a ghost key. */
   nextDraft: { kind: 'item'; id: string } | { kind: 'ghost'; key: number } | null;
   rowGone: boolean;
@@ -94,8 +92,13 @@ export function PhoneBlocks({
       {/* Intake prefills codes, so the commonest request arrives coded and
           ungrouped with nothing dirty — and the seal refuses
           `ungrouped_items` until a save places them. Never drawn while
-          anything is unsaved, so this press can post nothing but the sweep. */}
-      {gateCount === 0 && (sweepable > 0 || duplicateGroups > 0) ? (
+          anything is unsaved, so this press can post nothing but the sweep.
+          Drawn on what it PLACES alone (review PHONE-5): legacy same-code
+          duplicates with equal rates merge on any row's save anyway, ones
+          with differing rates no press can merge (workspace.ts step 5), and
+          neither blocks the seal — a button over them read «(0)» and did
+          nothing, for good. */}
+      {gateCount === 0 && sweepable > 0 ? (
         <button
           type="button"
           className="btn-primary !min-h-11 w-full"

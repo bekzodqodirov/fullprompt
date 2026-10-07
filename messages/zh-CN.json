@@ -3384,7 +3384,9 @@
       "internal_note_required": "内部备注必填——请写明如何计算的",
       "not_priced": "此计算没有价格——既未封存也无总价；无可重新计算",
       "parent_returned": "此计算已退回，没有价格——请从卡片重新发送计算请求",
-      "recalc_returned": "修正已退回（无价格关闭）——请从卡片重新发送计算请求"
+      "recalc_returned": "修正已退回（无价格关闭）——请从卡片重新发送计算请求",
+      "changed_under": "未执行——此时他人修改了这一行。请查看修改后再次点击。",
+      "refresh_timeout": "未保存——页面未能刷新。请打开该行后再次保存。"
     },
     "openCard": "卡片",
     "freight": "运费",
@@ -3666,7 +3668,8 @@
       "yes": "恢复",
       "no": "不，丢弃",
       "skipped": "未恢复——期间已被他人修改：{rows}",
-      "alreadySaved": "{count} 行此前已保存"
+      "alreadySaved": "{count} 行此前已保存",
+      "dismiss": "知道了"
     },
     "reloadPage": "刷新页面",
     "editCargoFacts": "修改货物信息",

@@ -3,6 +3,7 @@ import {
   baseFieldsFor,
   ghostDirty,
   ghostToItemDraft,
+  postedBase,
   q3,
   q4,
   sameNumber,
@@ -11,6 +12,7 @@ import {
   type DraftItem,
   type ItemDraft,
   type NewRow,
+  type PostedCells,
   type RowBase,
 } from './row-draft';
 
@@ -124,16 +126,39 @@ function parseBase(raw: unknown): RowBase | null {
   return out;
 }
 
+const POSTED_STRING_KEYS = GHOST_STRING_KEYS.filter((k) => k !== 'unit');
+
+const isBasisOrNull = (v: unknown): v is BazaBasis | null =>
+  v === null || (typeof v === 'string' && isBazaBasis(v));
+
+/** The stamp of an unanswered save (PHONE-1) — absent reads as none; a
+ * malformed one rejects the ghost, since without it a lost answer's later
+ * edits cannot be told from the stored row's. */
+function parsePosted(raw: unknown): PostedCells | null | undefined {
+  if (raw === undefined || raw === null) return null;
+  if (!isRecord(raw) || !isBasisOrNull(raw.bazaBasis)) return undefined;
+  const out = { bazaBasis: raw.bazaBasis } as PostedCells;
+  for (const k of POSTED_STRING_KEYS) {
+    const v = raw[k];
+    if (typeof v !== 'string') return undefined;
+    (out as unknown as Record<string, string>)[k] = v;
+  }
+  return out;
+}
+
 function parseGhost(raw: unknown): NewRow | null {
   if (!isRecord(raw)) return null;
   if (typeof raw.key !== 'number' || !Number.isFinite(raw.key)) return null;
   if (raw.clientId !== null && typeof raw.clientId !== 'string') return null;
   const basis = raw.bazaBasis;
-  if (basis !== null && (typeof basis !== 'string' || !isBazaBasis(basis))) return null;
+  if (!isBasisOrNull(basis)) return null;
+  const posted = parsePosted(raw.posted);
+  if (posted === undefined) return null;
   const row = {
     key: raw.key,
     clientId: raw.clientId as string | null,
-    bazaBasis: basis as BazaBasis | null,
+    bazaBasis: basis,
+    posted,
   } as NewRow;
   for (const k of GHOST_STRING_KEYS) {
     const v = raw[k] ?? '';
@@ -382,10 +407,15 @@ function serverText(group: Group, item: DraftItem): string {
  *    colleague changed it, and restoring would overwrite them unseen;
  *  - otherwise restorable, carrying only the cells the server still lacks,
  *    with the bases they were typed over.
- * Ghosts: one whose client id is not a row comes back as it was, SAME id —
- * a retry is then still an edit of whatever a lost save wrote; one whose id
- * IS a row becomes that row's draft of what differs (stored mode), or is
- * already saved.
+ * Ghosts: one whose client id is not a row comes back as it was, SAME id and
+ * stamp — a retry is then still an edit of whatever a lost save wrote (a
+ * thrown save does not say whether it committed, so a ghost that is not a row
+ * is never presumed deleted: dropping it would lose the very lost-connection
+ * work B5 a exists for). One whose id IS a row is judged like a stored row
+ * against what its save CARRIED (review PHONE-1): what was typed since the
+ * post is restorable unless the row moved under it since — a colleague's
+ * correction after our commit is then named, never reverted unseen; nothing
+ * typed since is already saved.
  */
 export function planRestore<I extends DraftItem>(
   stored: StoredDrafts,
@@ -436,15 +466,36 @@ export function planRestore<I extends DraftItem>(
       plan.ghosts.push(ghost);
       continue;
     }
-    const draft = ghostToItemDraft(ghost, item, 'stored');
+    // No stamp: the tab died with the press, so the ghost went out as it
+    // stands and nothing was typed since.
+    const stamp = ghost.posted ?? ghost;
+    const draft = ghostToItemDraft(ghost, item, stamp);
     if (Object.keys(draft).length === 0) {
       plan.alreadySaved += 1;
       continue;
     }
+    const fields = (Object.keys(draft) as (keyof ItemDraft)[]).flatMap((k) => baseFieldsFor(k));
+    const base = postedBase(stamp, item, fields);
+    const moved = groupsOf(draft).filter((g) => baseMoved(g, base, item));
+    if (moved.length > 0) {
+      for (const g of moved) {
+        plan.skipped.push({
+          seq: item.seq,
+          field: GROUP_FIELD[g],
+          before: baseText(g, base),
+          after: serverText(g, item),
+        });
+      }
+      continue;
+    }
     const existing = plan.rows[item.id];
     const merged: ItemDraft = { ...draft, ...(existing?.draft ?? {}) };
-    // The new cells stand on what the row holds NOW (D3 rule 2).
-    plan.rows[item.id] = { draft: merged, base: syncBase(existing?.base, merged, item) ?? {} };
+    // What the post carried — the row has not moved under it, so this is
+    // also what it holds now.
+    plan.rows[item.id] = {
+      draft: merged,
+      base: syncBase({ ...base, ...(existing?.base ?? {}) }, merged, item) ?? {},
+    };
   }
   return plan;
 }

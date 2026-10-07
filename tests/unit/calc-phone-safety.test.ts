@@ -189,9 +189,11 @@ describe('the phone renders the SAME state — never the desktop grid’s markup
 describe('B2 a: the sheet posts ONE row', () => {
   it('saveSheetRow sends a single built edit or a single built add, never the whole table', () => {
     const body = constBody('saveSheetRow');
-    expect(body).toContain('send([built.edit], [],');
+    expect(body).toContain('send([edit], [],');
     expect(body).toContain('send([], [built.add],');
     expect(body).not.toMatch(/\bsave\(\)/);
+    // The one edit is the built one, with at most the expectation beside it.
+    expect(body).toMatch(/const edit: TableItemEdit = acknowledged \? built\.edit : \{ \.\.\.built\.edit, expect: expectFor\(item, d\) \};/);
   });
 
   it('the sheet’s figure merges only the row it saves (#886, D14)', () => {
@@ -258,5 +260,72 @@ describe('D9: ONE way to reload a stale tab', () => {
   ])('%s reloads through reloadFresh() and never by hand', (_name, source) => {
     expect(source).toContain('reloadFresh(');
     expect(source).not.toMatch(/location\.assign\(|location\.href\s*=/);
+  });
+});
+
+describe('review PHONE-1: a posted ghost carries what it carried', () => {
+  it('the sender stamps every posted ghost before the wire, settles on the stamped object, and un-stamps a refusal', () => {
+    const send = constBody('send');
+    const stampAt = send.indexOf('stamped.set(key, { ...row, posted: cells });');
+    const wireAt = send.indexOf('await saveTableAction(');
+    expect(stampAt).toBeGreaterThan(-1);
+    expect(wireAt).toBeGreaterThan(stampAt);
+    // The FIRST unanswered post's stamp stands.
+    expect(send).toContain('if (row.posted !== null) {');
+    expect(send).toContain('ghosts: stamped, atPress');
+    // A refusal wrote nothing — the stamp it minted is taken back.
+    const refusal = send.slice(send.indexOf('if (!result.ok) {'), send.indexOf('return result;'));
+    expect(refusal).toContain('{ ...r, posted: null }');
+  });
+});
+
+describe('review PHONE-2: the sheet’s look is closed at the commit', () => {
+  it('a refused compare-and-set brings the change in on the sheet, or says so in the table line', () => {
+    const body = constBody('saveSheetRow');
+    expect(body).toContain("if (result.error === 'changed_under') {");
+    expect(body).toContain("if (showing(target) && (await lookFirst(target)) !== 'none') return;");
+  });
+});
+
+describe('review PHONE-3: a press is bound to the row it was pressed on', () => {
+  it.each(['saveSheetRow', 'deleteSheetRow'])(
+    '%s never retargets to whatever sheet is open now, and closes only its own',
+    (name) => {
+      const body = constBody(name);
+      expect(body).toContain('const pressed = start.sheet;');
+      expect(body).not.toMatch(/\bnow\.sheet\b|latest\.current\??\.sheet/);
+      const closes = [...body.matchAll(/closeSheet\(\)/g)];
+      expect(closes.length).toBeGreaterThan(0);
+      for (const m of closes) {
+        // The nearest guard before it is the row's own, and no block has
+        // closed between the guard and the close.
+        const before = body.slice(0, m.index!);
+        const guard = Math.max(before.lastIndexOf('if (showing(pressed))'), before.lastIndexOf('if (showing(target))'));
+        expect(guard, name).toBeGreaterThan(-1);
+        expect(before.slice(guard), name).not.toContain('}');
+      }
+    },
+  );
+
+  it('the save resolves the pressed row through pressedNow; a refusal goes where the VED is', () => {
+    expect(constBody('saveSheetRow')).toContain('pressedNow(now, pressed, pressedClientId)');
+    const refusal = constBody('showRefusal');
+    expect(refusal).toMatch(/if \(!showing\(pressed\)\) \{[^}]*setTableError\(\{ code: refusal\.code, seq: refusal\.seq \}\)/);
+    expect(constBody('deleteSheetRow')).toMatch(/if \(showing\(pressed\)\) setDeleteWarn\(changes\);/);
+  });
+});
+
+describe('review PHONE-5: the phone sweep is drawn on what it places', () => {
+  it('no «(0)» button over duplicates no press can merge', () => {
+    expect(PHONE).toContain('gateCount === 0 && sweepable > 0 ? (');
+    expect(PHONE).not.toContain('duplicateGroups');
+  });
+});
+
+describe('review PHONE-6: a restore with nothing to restore is news shown once', () => {
+  it('only a restorable plan holds the stored entry; the lone button then only dismisses', () => {
+    expect(TABLE).toContain('if (parsed && plan && restorableCount(plan) > 0) {');
+    const RESTORE = read('src/app/(protected)/hisoblash/[id]/draft-restore.tsx');
+    expect(RESTORE).toContain("count > 0 ? t('restore.no') : t('restore.dismiss')");
   });
 });

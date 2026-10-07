@@ -11,7 +11,9 @@ import { useFieldWord } from './field-words';
  * colleague changed meanwhile is NAMED and not offered (restoring it would
  * overwrite them unseen); what his own save already landed is counted and
  * blamed on nobody. Shown in the bar area at both widths — the drafts are one
- * state behind two renders.
+ * state behind two renders. With nothing restorable it is news shown ONCE:
+ * the stored entry is already gone (ItemsTable), so it never comes back on
+ * the next open.
  */
 export function DraftRestore({
   plan,
@@ -59,7 +61,10 @@ export function DraftRestore({
           data-testid="calc-restore-no"
           onClick={onDiscard}
         >
-          {t('restore.no')}
+          {/* With nothing to bring back there is no question to say «no» to
+              — the lines above are news, and this only puts them away
+              (review PHONE-6). */}
+          {count > 0 ? t('restore.no') : t('restore.dismiss')}
         </button>
       </div>
     </div>

@@ -2738,6 +2738,89 @@ export interface TableItemEdit {
    * edits. A typed baza clears it, like every other half of the provenance.
    */
   bazaReason?: string | null;
+  /**
+   * What the screen SHOWED under this edit's cells at the press — the stored
+   * values of exactly the fields the draft stands on (review PHONE-2). The
+   * phone sheet's B6 look is a probe before the post, and a colleague's save
+   * landing between that look and this commit would otherwise be overwritten
+   * unseen; compared under the request lock, a row that moved since is
+   * refused `changed_under` naming it, and the screen brings the change in.
+   * Not a lock: the next press, with the change on the screen, carries what
+   * it then showed. The grid posts none (its silence is by design), and
+   * neither does the machine.
+   */
+  expect?: TableExpect;
+}
+
+/** The stored values an edit was made over — `RowBase` on the screen. */
+export type TableExpect = Partial<{
+  label: string;
+  tnvedCode: string | null;
+  quantity: number | null;
+  weightKg: number | null;
+  volumeM3: number | null;
+  note: string | null;
+  measureUnit: MeasureUnit | null;
+  measureQty: number | null;
+  bazaUsd: number | null;
+  bazaBasis: BazaBasis | null;
+}>;
+
+/**
+ * Did the stored row move under what the screen showed? Only the fields the
+ * expectation names; numbers at the column's own scale, text trimmed (an
+ * empty note is no note). A field that is not a known one, or a value of the
+ * wrong shape, counts as moved — a crafted expectation refuses, it never
+ * waves a write through.
+ */
+export function movedUnder(
+  expect: TableExpect,
+  stored: {
+    name: string;
+    tnvedCode: string | null;
+    quantity: string | null;
+    weightKg: string | null;
+    volumeM3: string | null;
+    note: string | null;
+    measureUnit: string | null;
+    measureQty: string | null;
+    bazaUsd: string | null;
+    bazaBasis: string | null;
+  },
+): boolean {
+  const scaled = (v: number | string | null, places: number) =>
+    v === null ? null : Number(Number(v).toFixed(places));
+  const text = (v: unknown) => (typeof v === 'string' ? v.trim() : v === null ? '' : undefined);
+  for (const [key, value] of Object.entries(expect)) {
+    if (value === undefined) continue;
+    switch (key) {
+      case 'label':
+        if (text(value) !== stored.name.trim()) return true;
+        break;
+      case 'tnvedCode':
+      case 'note':
+        if (text(value) !== (stored[key] ?? '').trim()) return true;
+        break;
+      case 'quantity':
+      case 'weightKg':
+      case 'volumeM3':
+      case 'measureQty':
+      case 'bazaUsd': {
+        if (value !== null && (typeof value !== 'number' || !Number.isFinite(value))) return true;
+        const places = key === 'measureQty' || key === 'bazaUsd' ? 4 : 3;
+        if (scaled(value, places) !== scaled(stored[key], places)) return true;
+        break;
+      }
+      case 'measureUnit':
+      case 'bazaBasis':
+        if (value !== null && typeof value !== 'string') return true;
+        if ((value ?? null) !== (stored[key] ?? null)) return true;
+        break;
+      default:
+        return true;
+    }
+  }
+  return false;
 }
 
 export interface TableSaveResult {
@@ -3489,6 +3572,15 @@ export async function saveTable(
     /** Rows whose LAW this save may change — recoded, added, or swept into a
      * group — the only rows A2's «birlikni tekshiring» looks at. */
     const relawed = new Set<string>();
+    // The phone's look-then-write, closed (review PHONE-2): an edit made
+    // over values the row no longer holds is refused whole, BEFORE anything
+    // is written — under the lock, so no save can slip in after the check.
+    for (const e of input.items) {
+      if (!e.expect) continue;
+      const item = byId.get(e.id);
+      if (!item || item.requestId !== requestId) throw new CalcError('not_found', e.seq);
+      if (movedUnder(e.expect, item)) throw new CalcError('changed_under', e.seq);
+    }
     for (const e of itemEdits) {
       const item = byId.get(e.id);
       if (!item || item.requestId !== requestId) throw new CalcError('not_found', e.seq);

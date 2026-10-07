@@ -27,8 +27,10 @@ import {
   changedUnder,
   changeSignature,
   emptyRow,
+  expectFor,
   ghostDirty,
   mintClientId,
+  postedCellsOf,
   q3,
   q4,
   refreshWait,
@@ -43,6 +45,7 @@ import {
   type ItemDraft,
   type NewRow,
   type PendingClear,
+  type PostedCells,
   type RowBase,
 } from '@/modules/wms/calc/row-draft';
 import {
@@ -739,12 +742,17 @@ export function ItemsTable({
       parsed && now
         ? planRestore(parsed, now.itemById, (item) => screenRowOf(item, undefined, now.groupById, now.groupsByCode).basis)
         : null;
-    if (parsed && plan && (restorableCount(plan) > 0 || plan.skipped.length > 0 || plan.alreadySaved > 0)) {
+    if (parsed && plan && restorableCount(plan) > 0) {
       storedEntry.current = parsed;
       storagePhase.current = 'prompt';
       setRestore(plan);
     } else {
+      // Nothing to bring back — at most news («already saved», «not
+      // restored: changed meanwhile»), shown ONCE (review PHONE-6): the
+      // write effect in this same flush replaces the entry with the live
+      // state, so it does not greet every open for 72 hours.
       storagePhase.current = 'live';
+      if (parsed && plan && (plan.skipped.length > 0 || plan.alreadySaved > 0)) setRestore(plan);
     }
   }, [storageKey]);
 
@@ -928,11 +936,43 @@ export function ItemsTable({
       const item = now?.itemById.get(rowId);
       if (item) atPress[rowId] = baseOf(item, Object.keys(base) as BaseField[]);
     }
+    // Every posted ghost carries what it carried (review PHONE-1), written
+    // with the press so a closed tab keeps it too: if the answer never
+    // comes, a ghost the server turns out to hold is judged against THIS,
+    // never against the stored row a colleague may have corrected since.
+    // The FIRST unanswered post's stamp stands (row-draft.ts NewRow.posted).
+    const stamped = new Map<number, NewRow>();
+    const minted = new Map<number, PostedCells>();
+    for (const [key, row] of posted.ghosts) {
+      if (row.posted !== null) {
+        stamped.set(key, row);
+        continue;
+      }
+      const cells = postedCellsOf(row);
+      minted.set(key, cells);
+      stamped.set(key, { ...row, posted: cells });
+    }
+    if (minted.size > 0) {
+      setNewRows((rows) =>
+        rows.map((r) => (minted.has(r.key) && r === posted.ghosts.get(r.key) ? stamped.get(r.key)! : r)),
+      );
+    }
     setSaving(true);
     inFlight.current = true;
     try {
       const result = await saveTableAction(id, { items, adds });
-      if (!result.ok) return result;
+      if (!result.ok) {
+        // A REFUSAL wrote nothing (one transaction), so the stamp it minted
+        // would vouch for a save that never happened — put back what stood.
+        if (minted.size > 0) {
+          setNewRows((rows) =>
+            rows.map((r) =>
+              minted.has(r.key) && r.posted === minted.get(r.key) ? { ...r, posted: null } : r,
+            ),
+          );
+        }
+        return result;
+      }
       // A success with no clock is not one the screen can settle on.
       if (!Number.isFinite(result.rev)) return { error: 'save_failed' };
       knownRev.current = Math.max(knownRev.current, result.rev);
@@ -954,7 +994,7 @@ export function ItemsTable({
       // what this press POSTED settles then.
       setPendingClears((prev) => [
         ...prev,
-        { rev: result.rev, revAtPress, drafts: posted.drafts, ghosts: posted.ghosts, atPress },
+        { rev: result.rev, revAtPress, drafts: posted.drafts, ghosts: stamped, atPress },
       ]);
       router.refresh();
       return result;
@@ -1053,17 +1093,37 @@ export function ItemsTable({
     }
   };
 
-  const showRefusal = (refusal: TableRefusal) => {
-    if (refusal.code === 'ambiguous_number' && refusal.field) {
-      const key = sheetKeyOf(latest.current?.sheet ?? sheet);
+  /** Is the sheet still on this row? Read from the CURRENT state, because a
+   * press outlives the render it began in (review PHONE-3). */
+  const showing = (target: SheetTarget) =>
+    sheetKeyOf(latest.current?.sheet ?? null) === sheetKeyOf(target);
+
+  /**
+   * Say a refusal where the VED is (review PHONE-3): in the sheet while it
+   * still shows the row the press was made on — the ambiguity question and a
+   * bad number UNDER their own field (PHONE-4), anything else at the sheet's
+   * top — else in the table's own line, which shows at every width. A sheet
+   * closed, or another row opened, during the press's look must neither
+   * swallow its answer nor wear it.
+   */
+  const showRefusal = (refusal: TableRefusal, pressed: SheetTarget) => {
+    const key = sheetKeyOf(pressed);
+    if (!showing(pressed)) {
+      // The generic sentence: the two-button question in that line is the
+      // desktop grid's (hidden md:block), and this row's sheet is closed.
+      setTableError({ code: refusal.code, seq: refusal.seq });
+      return;
+    }
+    if ((refusal.code === 'ambiguous_number' || refusal.code === 'bad_number') && refusal.field) {
       const field = refusal.field;
       setAsked((prev) => ({
         key,
         fields: [...(prev.key === key ? prev.fields : []), field],
       }));
       // The question sits under its field — bring it into view.
+      const testId = refusal.code === 'ambiguous_number' ? 'calc-phone-ambiguous' : 'calc-phone-bad';
       requestAnimationFrame(() =>
-        document.querySelector('[data-testid="calc-phone-ambiguous"]')?.scrollIntoView({ block: 'nearest' }),
+        document.querySelector(`[data-testid="${testId}"]`)?.scrollIntoView({ block: 'nearest' }),
       );
       return;
     }
@@ -1082,86 +1142,149 @@ export function ItemsTable({
     return index === -1 ? null : buildAdd(now.newRows[index]!, index);
   };
 
+  /** Where the pressed row is NOW — a ghost the refresh turned into its
+   * saved row IS that row (the same goods), so the press goes on with it. */
+  const pressedNow = (now: Latest, pressed: SheetTarget, clientId: string | null): SheetTarget | null => {
+    if (pressed.kind === 'item') return now.itemById.has(pressed.id) ? pressed : null;
+    if (now.newRows.some((r) => r.key === pressed.key)) return pressed;
+    return clientId !== null && now.itemById.has(clientId) ? { kind: 'item', id: clientId } : null;
+  };
+
+  /** The row a table-line refusal names — none when it is gone. */
+  const seqOf = (now: Latest, target: SheetTarget): number | undefined => {
+    if (target.kind === 'item') return now.itemById.get(target.id)?.seq;
+    const index = now.newRows.findIndex((r) => r.key === target.key);
+    return index === -1 ? undefined : -(index + 1);
+  };
+
+  /**
+   * Look before writing (B6 a): a rev past what the screen knows refreshes
+   * first and waits for it, at most eight seconds — `landed`, `timedOut`, or
+   * `none` when there was nothing to bring in. Our OWN last answer counts
+   * too: a press made before the refresh of the previous save has landed
+   * would post over values the screen no longer shows, and the commit's
+   * compare-and-set (PHONE-2) would then blame «boshqa kishi» for our own
+   * save. The wait is drawn only on the pressed row's own sheet.
+   */
+  const lookFirst = async (pressed: SheetTarget): Promise<'none' | 'landed' | 'timedOut'> => {
+    const probe = await probeClock(id);
+    const news = probe !== null && probe.rev > knownRev.current;
+    const want = Math.max(news ? probe.rev : 0, knownRev.current);
+    if ((latest.current?.workspaceRev ?? workspace.rev) >= want) return 'none';
+    if (showing(pressed)) dispatchWait({ type: 'start', rev: want, now: Date.now() });
+    // Asked again even for our own rev: a refresh Next discarded (#1242)
+    // would otherwise leave every later press waiting out the eight seconds.
+    router.refresh();
+    const outcome = await waitForLanding(want);
+    if (showing(pressed)) dispatchWait(outcome === 'timedOut' ? { type: 'rejected' } : { type: 'reset' });
+    return outcome;
+  };
+
   /**
    * The sheet's Saqlash (B2 a): ONE row posted through the grid's own
    * builders and sender. It looks before it writes (B6 a): a rev past what
    * the screen knows refreshes first, and when what changed is under THIS
    * row's drafted cells the press stops and shows it — the next press saves.
    * Anything else (the machine's sweep, our own lost commit) costs nothing.
-   * After every await the CURRENT state is read: the refresh can turn the
-   * very ghost this press began on into a saved row.
+   *
+   * The press is BOUND to the row it was made on (review PHONE-3): the sheet
+   * may be closed, or another row opened, while it looks, and neither cancels
+   * it nor retargets it — the CURRENT state is read after every await (the
+   * refresh can turn the very ghost it began on into a saved row), but always
+   * for THIS row. And the look is not left to the probe alone (PHONE-2): the
+   * edit carries what the screen showed under its cells, so a colleague's
+   * save landing between the probe and our commit is refused by the server
+   * (`changed_under`) and brought in, never overwritten unseen.
    */
   const saveSheetRow = async () => {
     const start = latest.current;
     if (!start?.sheet || inFlight.current) return;
+    const pressed = start.sheet;
+    const pressedClientId =
+      pressed.kind === 'ghost' ? (start.newRows.find((r) => r.key === pressed.key)?.clientId ?? null) : null;
     setSheetError(null);
+    setTableError(null);
     const pre = buildFor(start);
     if (pre && 'refusal' in pre) {
-      showRefusal(pre.refusal);
+      showRefusal(pre.refusal, pressed);
       return;
     }
-    const startItem = start.sheet.kind === 'item' ? start.itemById.get(start.sheet.id) : undefined;
+    const startItem = pressed.kind === 'item' ? start.itemById.get(pressed.id) : undefined;
     const shown = startItem ? changeSignature(changedUnder(start.bases[startItem.id], startItem)) : '';
+    // A wait that already timed out is not asked twice: the label reads
+    // «Baribir saqlash», the VED saw «hisob yangilandi», and this press saves
+    // — a refresh that never lands must not become a lock.
+    const acknowledged = start.waitState === 'timedOut';
     setPressing(true);
     try {
-      // A wait that already timed out is not asked twice: the label reads
-      // «Baribir saqlash» and this press saves.
-      if (start.waitState !== 'timedOut') {
-        const probe = await probeClock(id);
-        if (probe && probe.rev > knownRev.current) {
-          dispatchWait({ type: 'start', rev: probe.rev, now: Date.now() });
-          router.refresh();
-          if ((await waitForLanding(probe.rev)) === 'timedOut') {
-            dispatchWait({ type: 'rejected' });
-            return;
-          }
-          dispatchWait({ type: 'reset' });
-        }
+      if (!acknowledged && (await lookFirst(pressed)) === 'timedOut') {
+        // The sheet still on this row says it (and «Baribir saqlash»); a
+        // closed one cannot.
+        if (!showing(pressed)) setTableError({ code: 'refresh_timeout', seq: seqOf(latest.current!, pressed) });
+        return;
       }
       const now = latest.current!;
-      const target = now.sheet;
+      const target = pressedNow(now, pressed, pressedClientId);
+      // Discarded or deleted meanwhile — the prune names a colleague's delete.
       if (!target) return;
       if (target.kind === 'item') {
-        const item = now.itemById.get(target.id);
-        if (!item) return;
+        const item = now.itemById.get(target.id)!;
         const d = now.drafts[target.id];
         if (!d) {
           // The lost add already landed and nothing differs — it IS saved.
-          closeSheet();
+          if (showing(target)) closeSheet();
           setLastSave({ ...EMPTY_SAVE, alreadySaved: 1 });
           return;
         }
         const changes = changedUnder(now.bases[target.id], item);
-        if (changes.length > 0 && changeSignature(changes) !== shown) return;
+        if (changes.length > 0 && changeSignature(changes) !== shown) {
+          // The row's own warning names it on its sheet; a closed sheet
+          // cannot, so the table line does.
+          if (!showing(target)) setTableError({ code: 'changed_under', seq: item.seq });
+          return;
+        }
         const built = buildEdit(target.id, d, now);
         if (built === null) return;
         if ('refusal' in built) {
-          showRefusal(built.refusal);
+          showRefusal(built.refusal, target);
           return;
         }
-        const result = await send([built.edit], [], { drafts: new Map([[target.id, d]]), ghosts: new Map() });
+        const edit: TableItemEdit = acknowledged ? built.edit : { ...built.edit, expect: expectFor(item, d) };
+        const result = await send([edit], [], { drafts: new Map([[target.id, d]]), ghosts: new Map() });
         if (!result.ok) {
-          setSheetError(result.error);
+          if (result.error === 'changed_under') {
+            // Bring the colleague's save in: the row's own warning then names
+            // it (or «hisob yangilandi» with «Baribir saqlash» when the
+            // refresh is slow), and the next press — with it on the screen —
+            // saves. Only a look that brought nothing in needs the sentence.
+            if (showing(target) && (await lookFirst(target)) !== 'none') return;
+            router.refresh();
+          }
+          showRefusal({ code: result.error, seq: result.seq }, target);
           return;
         }
-        setSheetExpectRev(result.rev);
-        closeSheet();
+        if (showing(target)) {
+          setSheetExpectRev(result.rev);
+          closeSheet();
+        }
       } else {
         const index = now.newRows.findIndex((r) => r.key === target.key);
         const row = now.newRows[index];
         if (!row) return;
         const built = buildAdd(row, index);
         if ('refusal' in built) {
-          showRefusal(built.refusal);
+          showRefusal(built.refusal, target);
           return;
         }
         const result = await send([], [built.add], { drafts: new Map(), ghosts: new Map([[row.key, row]]) });
         if (!result.ok) {
-          setSheetError(result.error);
+          showRefusal({ code: result.error, seq: result.seq }, target);
           return;
         }
-        setSheetExpectRev(result.rev);
-        closeSheet();
+        if (showing(target)) {
+          setSheetExpectRev(result.rev);
+          closeSheet();
+        }
       }
     } finally {
       setPressing(false);
@@ -1170,29 +1293,26 @@ export function ItemsTable({
 
   /** The sheet's 🗑 — the same look first; a row that changed since the
    * sheet opened takes a second press, a row with figures the desktop's
-   * confirm. */
+   * confirm. Bound to the row it was pressed on, like Saqlash (PHONE-3). */
   const deleteSheetRow = async () => {
     const start = latest.current;
     if (start?.sheet?.kind !== 'item' || inFlight.current) return;
-    const rowId = start.sheet.id;
+    const pressed = start.sheet;
+    const rowId = pressed.id;
     setSheetError(null);
+    setTableError(null);
     setPressing(true);
+    const say = (code: string, seq: number | undefined) =>
+      showing(pressed) ? setSheetError(code) : setTableError({ code, seq });
     try {
       if (deleteWarn === null) {
-        if (start.waitState !== 'timedOut') {
-          const probe = await probeClock(id);
-          if (probe && probe.rev > knownRev.current) {
-            dispatchWait({ type: 'start', rev: probe.rev, now: Date.now() });
-            router.refresh();
-            if ((await waitForLanding(probe.rev)) === 'timedOut') dispatchWait({ type: 'rejected' });
-            else dispatchWait({ type: 'reset' });
-          }
-        }
+        if (start.waitState !== 'timedOut') await lookFirst(pressed);
         const fresh = latest.current?.itemById.get(rowId);
         if (!fresh) return;
         const changes = sheetOpenBase ? changedUnder(sheetOpenBase, fresh) : [];
         if (changes.length > 0) {
-          setDeleteWarn(changes);
+          if (showing(pressed)) setDeleteWarn(changes);
+          else setTableError({ code: 'changed_under', seq: fresh.seq });
           return;
         }
       }
@@ -1208,13 +1328,13 @@ export function ItemsTable({
         if (result.ok || result.error === 'not_found') {
           if (result.ok) knownRev.current = Math.max(knownRev.current, result.rev);
           clearDraft(rowId);
-          closeSheet();
+          if (showing(pressed)) closeSheet();
           router.refresh();
         } else {
-          setSheetError(result.error);
+          say(result.error, item.seq);
         }
       } catch {
-        setSheetError((await isBuildStale()) ? 'stale_build' : 'save_failed');
+        say((await isBuildStale()) ? 'stale_build' : 'save_failed', item.seq);
       } finally {
         inFlight.current = false;
       }
@@ -1942,7 +2062,6 @@ export function ItemsTable({
         gateCount={gateCount}
         dirtyCount={dirtyCount}
         sweepable={sweepable}
-        duplicateGroups={duplicateGroups}
         nextDraft={nextDraft}
         rowGone={rowGone}
         busy={busy}

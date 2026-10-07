@@ -7,7 +7,7 @@ import { reloadFresh } from '@/components/build-check';
 import type { BazaBasis, CustomsResult } from '@/modules/wms/calc/pricing';
 import { basisLabel } from '@/modules/wms/calc/basis';
 import { readNumberCell } from '@/modules/wms/calc/number-cell';
-import type { FieldChange } from '@/modules/wms/calc/row-draft';
+import type { ChangeField, FieldChange } from '@/modules/wms/calc/row-draft';
 import type { WorkspaceItem } from '@/modules/wms/calc/workspace';
 import { BasisSelect } from './basis-select';
 import { useFieldWord } from './field-words';
@@ -35,6 +35,15 @@ export type SheetFigure =
   { state: 'no_code' } | { state: 'unknown_law' } | { state: 'ok'; customs: CustomsResult };
 
 export type SheetNumField = 'quantity' | 'weightKg' | 'volumeM3' | 'measure' | 'bazaValue';
+
+/** The word a numeric cell is named by under its box (field-words.ts). */
+const FIELD_WORD: Record<SheetNumField, ChangeField> = {
+  quantity: 'qty',
+  weightKg: 'kg',
+  volumeM3: 'm3',
+  measure: 'measure',
+  bazaValue: 'baza',
+};
 export type SheetField = 'name' | 'tnvedCode' | 'note' | SheetNumField;
 
 export interface SheetModel {
@@ -188,6 +197,15 @@ function SheetBody({
     const cell = readNumberCell(v[name]);
     return cell.state === 'ambiguous' ? cell : null;
   };
+  /** A numeric cell nothing can read, once it was left or pressed (review
+   * PHONE-4) — five number boxes and one sentence at the top named none of
+   * them. Not while typing: «1.» on the way to «1.5» is no mistake yet. */
+  const badHere = (name: SheetField) =>
+    name !== 'name' &&
+    name !== 'tnvedCode' &&
+    name !== 'note' &&
+    asked.includes(name) &&
+    readNumberCell(v[name]).state === 'bad';
   const field = (name: SheetField) => {
     const numeric = name !== 'name' && name !== 'tnvedCode' && name !== 'note';
     const ambiguous = ambiguityOf(name);
@@ -201,7 +219,7 @@ function SheetBody({
       measure: 'calc-phone-measure',
       bazaValue: 'calc-phone-baza',
     }[name];
-    const warn = ambiguous ? ' border-warn' : model.drafted[name] ? ' border-brand-500' : '';
+    const warn = ambiguous || badHere(name) ? ' border-warn' : model.drafted[name] ? ' border-brand-500' : '';
     const input =
       name === 'name' || name === 'note' ? (
         <textarea
@@ -232,6 +250,13 @@ function SheetBody({
    * of the sheet (a half-width column left the two answers below the fold),
    * shown on blur and on a press, gone with the keystroke that settles it. */
   const question = (name: SheetNumField) => {
+    if (badHere(name)) {
+      return (
+        <p className="mt-1 text-sm text-warn" data-testid="calc-phone-bad">
+          ⚠ {word(FIELD_WORD[name])}: {t('errors.bad_number')}
+        </p>
+      );
+    }
     const ambiguous = ambiguityOf(name);
     if (!ambiguous || !asked.includes(name)) return null;
     return (

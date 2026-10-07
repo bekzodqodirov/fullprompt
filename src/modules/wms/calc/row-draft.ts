@@ -55,7 +55,43 @@ export interface NewRow {
   bazaBasis: BazaBasis | null;
   /** B1 a lists the note; the server has always taken one on an add. */
   note: string;
+  /**
+   * The cells as a save POSTED them, while the answer to that save is
+   * unknown — null until a save goes out (review PHONE-1).
+   *
+   * A ghost whose id later turns out to be a stored row (a lost answer, a
+   * closed tab) is turned into a draft of that row, and the only honest
+   * measure of what the VED typed AFTER the save is a comparison with what
+   * the save carried — never with the stored row as it stands now: that row
+   * may hold a colleague's correction made after our commit, and «differs
+   * from the stored row» would read the correction as the VED's own edit and
+   * write the stale cell back over it, unseen.
+   *
+   * The FIRST unanswered save's cells are kept: when a later press throws too,
+   * the server holds either one, and only the first is certain to be older
+   * than everything typed since. A refused save never stamps (the server
+   * wrote nothing); a confirmed one settles the ghost away.
+   */
+  posted: PostedCells | null;
 }
+
+/** The cells of a new row a save carries — what the stamp records. */
+export type PostedCells = Pick<
+  NewRow,
+  'name' | 'tnvedCode' | 'quantity' | 'weightKg' | 'volumeM3' | 'measure' | 'bazaValue' | 'bazaBasis' | 'note'
+>;
+
+export const postedCellsOf = (row: PostedCells): PostedCells => ({
+  name: row.name,
+  tnvedCode: row.tnvedCode,
+  quantity: row.quantity,
+  weightKg: row.weightKg,
+  volumeM3: row.volumeM3,
+  measure: row.measure,
+  bazaValue: row.bazaValue,
+  bazaBasis: row.bazaBasis,
+  note: row.note,
+});
 
 /** A new row's own id. `randomUUID` exists on every secure origin, which is
  * every origin this app is served from; without it the row simply posts no
@@ -78,6 +114,7 @@ export const emptyRow = (key: number): NewRow => ({
   bazaValue: '',
   bazaBasis: null,
   note: '',
+  posted: null,
 });
 
 /** A ghost with anything typed into it — the only kind a save posts. */
@@ -317,59 +354,123 @@ export function sameNumber(
  * cell that differs from the stored row (workspace.ts's retry-as-edit), so a
  * ghost whose values are older than a later correction would write its stale
  * cells back over it. It becomes a draft of that item carrying only what the
- * ghost says that the row does not:
+ * VED typed AFTER the save — a cell that differs from what was POSTED (an
+ * emptied one included: emptying a typed cell is a clear) and from what the
+ * row holds now.
  *
- *  - `posted` mode (our own save landed and the ghost was edited while it was
- *    in flight): every cell that differs from what was POSTED — an emptied one
- *    included, because emptying a typed cell is a clear;
- *  - `stored` mode (an answer that was lost, a refresh landing first, a
- *    restore): every cell that differs from the STORED row — where an EMPTY
- *    ghost cell is never a difference (an add's empty cell means «nothing
- *    typed», the server's own retry rule) and an untouched «avto» unit never
- *    is either.
- *
- * Either way a cell that already equals the stored value is no draft at all.
+ * Measured against the POST and never against the stored row (review
+ * PHONE-1): «differs from the stored row» reads a colleague's correction
+ * made after our commit as the VED's own edit — the ghost's 5 against the
+ * colleague's 0.5 became a draft of 5 standing on 0.5, i.e. a revert with no
+ * warning. A ghost that carries no stamp went out as it stands (the stamp is
+ * written with the press), so `posted` is then the ghost itself and nothing
+ * differs.
  */
-export function ghostToItemDraft(
-  ghost: NewRow,
-  item: DraftItem,
-  mode: 'posted' | 'stored',
-  posted?: NewRow,
-): ItemDraft {
+export function ghostToItemDraft(ghost: NewRow, item: DraftItem, posted: PostedCells): ItemDraft {
   const out: ItemDraft = {};
-  const differs = (field: keyof NewRow) =>
-    mode === 'posted'
-      ? posted !== undefined && ghost[field] !== posted[field]
-      : ghost[field] !== '';
+  const typedSince = (field: keyof PostedCells) => ghost[field] !== posted[field];
 
-  if (differs('name') && ghost.name.trim() !== '' && ghost.name.trim() !== item.label.trim())
+  if (typedSince('name') && ghost.name.trim() !== '' && ghost.name.trim() !== item.label.trim())
     out.name = ghost.name;
-  if (differs('tnvedCode') && ghost.tnvedCode.trim() !== (item.tnvedCode ?? ''))
+  if (typedSince('tnvedCode') && ghost.tnvedCode.trim() !== (item.tnvedCode ?? ''))
     out.tnvedCode = ghost.tnvedCode;
   for (const f of ['quantity', 'weightKg', 'volumeM3'] as const) {
-    if (differs(f) && !sameNumber(ghost[f], item[f], q3)) out[f] = ghost[f];
+    if (typedSince(f) && !sameNumber(ghost[f], item[f], q3)) out[f] = ghost[f];
   }
-  if (differs('measure') && !sameNumber(ghost.measure, item.measureQty, q4))
+  if (typedSince('measure') && !sameNumber(ghost.measure, item.measureQty, q4))
     out.measure = ghost.measure;
-  if (differs('note') && ghost.note.trim() !== (item.note ?? '')) out.note = ghost.note;
+  if (typedSince('note') && ghost.note.trim() !== (item.note ?? '')) out.note = ghost.note;
 
   // The baza pair drafts together (baza-draft.ts): an amount always rides
-  // beside a drafted unit, so the save posts a coherent pair.
-  const valueMoved = differs('bazaValue') && !sameNumber(ghost.bazaValue, item.bazaUsd, q4);
+  // beside a drafted unit, so the save posts a coherent pair. An amount not
+  // retyped since the post is the row's own (the server may have filled an
+  // empty one from the memory or the file) — never a clear nobody typed.
+  const valueMoved = typedSince('bazaValue') && !sameNumber(ghost.bazaValue, item.bazaUsd, q4);
   const basisMoved =
-    ghost.bazaBasis !== null &&
-    (mode === 'posted' ? posted !== undefined && ghost.bazaBasis !== posted.bazaBasis : true) &&
-    ghost.bazaBasis !== item.bazaBasis;
+    ghost.bazaBasis !== null && typedSince('bazaBasis') && ghost.bazaBasis !== item.bazaBasis;
   if (valueMoved || basisMoved) {
-    out.bazaValue =
-      ghost.bazaValue.trim() !== '' || mode === 'posted'
-        ? ghost.bazaValue
-        : item.bazaUsd === null
-          ? ''
-          : String(item.bazaUsd);
+    out.bazaValue = typedSince('bazaValue')
+      ? ghost.bazaValue
+      : item.bazaUsd === null
+        ? ''
+        : String(item.bazaUsd);
     if (ghost.bazaBasis !== null) out.bazaBasis = ghost.bazaBasis;
   }
   return out;
+}
+
+/**
+ * What a converted ghost's cells were typed OVER — the stored value our own
+ * save would have left, per field (review PHONE-1). A cell the save carried
+ * stands on what it carried, so a colleague's later change under it reads as
+ * a change (the B6 line, or «tiklanmadi» on a restore). An EMPTY baza or
+ * code, the «avto» unit and the measure stand on the row as it is: the server
+ * fills those itself (the memory and the file fill an empty baza, the TNVED
+ * memory an empty code, the measure pass stamps the unit and drops a measure
+ * the law does not take) — its own fill is nobody's change. An empty count,
+ * weight, volume or note it never fills, so those stand on the empty the save
+ * carried, and a colleague's figure typed into one is named.
+ */
+export function postedBase(
+  posted: PostedCells,
+  item: DraftItem,
+  fields: Iterable<BaseField>,
+): RowBase {
+  const num = (raw: string, scale: (v: number) => number): number | null => {
+    const cell = readNumberCell(raw);
+    return cell.state === 'ok' ? scale(cell.value) : null;
+  };
+  const out: RowBase = {};
+  const put = <F extends BaseField>(f: F, v: RowBase[F]) => {
+    (out as Record<string, unknown>)[f] = v;
+  };
+  for (const f of fields) {
+    switch (f) {
+      case 'label':
+        put(f, posted.name.trim() || item.label);
+        break;
+      case 'tnvedCode':
+        put(f, posted.tnvedCode.trim() || item.tnvedCode);
+        break;
+      case 'quantity':
+      case 'weightKg':
+      case 'volumeM3':
+        put(f, num(posted[f], q3));
+        break;
+      case 'note':
+        put(f, posted.note.trim() || null);
+        break;
+      case 'measureUnit':
+        put(f, item.measureUnit);
+        break;
+      case 'measureQty':
+        put(
+          f,
+          posted.measure.trim() === '' || item.measureUnit === null
+            ? item.measureQty
+            : num(posted.measure, q4),
+        );
+        break;
+      case 'bazaUsd':
+        put(f, posted.bazaValue.trim() === '' ? item.bazaUsd : num(posted.bazaValue, q4));
+        break;
+      case 'bazaBasis':
+        put(f, posted.bazaBasis ?? item.bazaBasis);
+        break;
+    }
+  }
+  return out;
+}
+
+/**
+ * What the screen SHOWED under a draft's cells at the press — the stored
+ * values of exactly the fields the draft stands on. The phone posts it with
+ * its one row (review PHONE-2), and the server refuses `changed_under` when
+ * the row moved since: the press's own look sees what landed before its
+ * probe, and this closes the round trip after it.
+ */
+export function expectFor(item: DraftItem, draft: ItemDraft): RowBase {
+  return baseOf(item, [...neededBaseFields(draft)]);
 }
 
 /* ------------------------------------------------------------------ */
@@ -435,13 +536,15 @@ const sameBase = (a: unknown, b: unknown) => (a ?? null) === (b ?? null);
  *     posted: a draft that is still the very object posted is gone with its
  *     bases; one typed over during the round trip keeps only the cells that
  *     moved since the post; a posted ghost that is still the object posted
- *     is gone, one edited in flight becomes a draft of its new row (posted
- *     mode). Then the remaining drafts' bases are RE-BASED to the server —
+ *     is gone, one edited in flight becomes a draft of its new row carrying
+ *     what moved since the post. Then the remaining drafts' bases are
+ *     RE-BASED to the server —
  *     only when nothing foreign can have interleaved (`rev === revAtPress+1`
  *     and `workspaceRev === rev`, since saveTable bumps exactly once), and
  *     only where nothing foreign already stood under the base at the press —
  *     so our own save's fills never read as «boshqa kishi o'zgartirdi».
- *  2. A ghost whose client id is a stored row is converted (stored mode).
+ *  2. A ghost whose client id is a stored row is converted: what was typed
+ *     since its first unanswered post, standing on that post (PHONE-1).
  *  3. Drafts whose row is gone are PRUNED — a colleague's delete must
  *     release the dirty gate, never wedge it.
  *  4. When a save settled, empty ghosts go (today's post-save tidy) — except
@@ -480,11 +583,13 @@ export function settleDrafts(input: SettleInput): SettleOutput {
     }
   };
   /** A converted ghost joins any draft its row already has — that one wins
-   * per field — and takes the stored values as the bases of what it adds. */
-  const adopt = (ghost: NewRow, item: DraftItem, from: ItemDraft) => {
+   * per field, bases included — and what it adds stands on `standOn`: what
+   * the save carried, or the stored row when nothing foreign can have
+   * interleaved (review PHONE-1). */
+  const adopt = (ghost: NewRow, item: DraftItem, from: ItemDraft, standOn: RowBase) => {
     const existing = drafts[item.id];
     const merged: ItemDraft = { ...from, ...(existing ?? {}) };
-    putDraft(item.id, merged, syncBase(bases[item.id], merged, item));
+    putDraft(item.id, merged, syncBase({ ...standOn, ...(bases[item.id] ?? {}) }, merged, item));
     converted += 1;
     if (keepGhostKey === ghost.key) {
       retarget = { fromKey: ghost.key, toId: item.id, hasDraft: Object.keys(merged).length > 0 };
@@ -549,7 +654,13 @@ export function settleDrafts(input: SettleInput): SettleOutput {
       if (!item) continue;
       editRows();
       newRows.splice(newRows.indexOf(ghost), 1);
-      adopt(ghost, item, ghostToItemDraft(ghost, item, 'posted', posted));
+      // Edited in flight: what moved since THIS post is the next save's. It
+      // stands on our own commit when nothing foreign can have interleaved,
+      // else on what was posted — a colleague's change after our commit is
+      // then named (B6), never swallowed into the base.
+      const from = ghostToItemDraft(ghost, item, posted);
+      const fields = [...neededBaseFields(from)];
+      adopt(ghost, item, from, rebaseOk ? baseOf(item, fields) : postedBase(posted, item, fields));
     }
     if (rebaseOk) {
       for (const id of Object.keys(drafts)) {
@@ -575,14 +686,17 @@ export function settleDrafts(input: SettleInput): SettleOutput {
     }
   }
 
-  // 2. A ghost the server already holds.
+  // 2. A ghost the server already holds (a lost answer): only what was typed
+  //    since its first unanswered post is a draft, standing on that post.
   for (const ghost of [...newRows]) {
     if (ghost.clientId === null) continue;
     const item = items.get(ghost.clientId);
     if (!item) continue;
     editRows();
     newRows.splice(newRows.indexOf(ghost), 1);
-    adopt(ghost, item, ghostToItemDraft(ghost, item, 'stored'));
+    const stamp = ghost.posted ?? ghost;
+    const from = ghostToItemDraft(ghost, item, stamp);
+    adopt(ghost, item, from, postedBase(stamp, item, neededBaseFields(from)));
   }
 
   // 3. Drafts on rows that are gone.

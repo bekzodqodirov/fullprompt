@@ -10,7 +10,7 @@ import {
   writeStored,
   type StoredDrafts,
 } from '@/modules/wms/calc/draft-store';
-import { emptyRow, type DraftItem, type NewRow } from '@/modules/wms/calc/row-draft';
+import { emptyRow, postedCellsOf, type DraftItem, type NewRow } from '@/modules/wms/calc/row-draft';
 
 /**
  * His B5 a — unsaved edits survive a closed tab and are OFFERED back,
@@ -146,8 +146,9 @@ describe('planRestore — offered, skipped, or already saved', () => {
     expect(plan.ghosts).toEqual([]);
   });
 
-  it('…with a later correction → restorable as that row’s draft carrying the correction', () => {
-    const stored = entry({ ghosts: [ghost({ clientId: 'C', name: 'likopcha', quantity: '6' })] });
+  it('…with a correction typed SINCE its post → restorable as that row’s draft carrying the correction', () => {
+    const sent = ghost({ clientId: 'C', name: 'likopcha', quantity: '5' });
+    const stored = entry({ ghosts: [{ ...sent, quantity: '6', posted: postedCellsOf(sent) }] });
     const plan = planRestore(
       stored,
       new Map([['C', item({ id: 'C', label: 'likopcha', quantity: 5 })]]),
@@ -155,6 +156,37 @@ describe('planRestore — offered, skipped, or already saved', () => {
     );
     expect(plan.rows.C).toEqual({ draft: { quantity: '6' }, base: { quantity: 5 } });
     expect(plan.alreadySaved).toBe(0);
+  });
+
+  it('ghost 5, a colleague’s 0.5 on the row since → never a draft of 5 over it (review PHONE-1)', () => {
+    // His save of 5 landed, the answer was lost, the tab died; a colleague
+    // then corrected the row to 0.5. Nothing he typed is unsaved.
+    const sent = ghost({ clientId: 'C', name: 'likopcha', bazaValue: '5' });
+    const corrected = item({ id: 'C', label: 'likopcha', quantity: null, bazaUsd: 0.5, bazaBasis: 'kg' });
+    for (const g of [sent, { ...sent, posted: postedCellsOf(sent) }]) {
+      const plan = planRestore(entry({ ghosts: [g] }), new Map([['C', corrected]]), basis);
+      expect(plan.rows).toEqual({});
+      expect(plan.ghosts).toEqual([]);
+      expect(plan.alreadySaved).toBe(1);
+    }
+  });
+
+  it('…and a baza typed since over that correction → skipped and NAMED, never restored', () => {
+    const sent = ghost({ clientId: 'C', name: 'likopcha', bazaValue: '5', bazaBasis: 'kg' });
+    const stored = entry({ ghosts: [{ ...sent, bazaValue: '6', posted: postedCellsOf(sent) }] });
+    const corrected = item({ id: 'C', label: 'likopcha', quantity: null, bazaUsd: 0.5, bazaBasis: 'kg' });
+    const plan = planRestore(stored, new Map([['C', corrected]]), basis);
+    expect(plan.rows).toEqual({});
+    expect(plan.skipped).toEqual([{ seq: 1, field: 'baza', before: '5', after: '0.5' }]);
+  });
+
+  it('a stamp survives the blob, and a malformed one drops the ghost', () => {
+    const sent = ghost({ clientId: 'C', name: 'likopcha', quantity: '5' });
+    const g = { ...sent, quantity: '6', posted: postedCellsOf(sent) };
+    expect(parseStoredDrafts(JSON.stringify(entry({ ghosts: [g] })), NOW)?.ghosts).toEqual([g]);
+    expect(
+      parseStoredDrafts(JSON.stringify(entry({ ghosts: [{ ...g, posted: { name: 1 } as never }] })), NOW),
+    ).toBeNull();
   });
 
   it('otherwise a ghost comes back as it was — SAME id and note', () => {
