@@ -14,11 +14,13 @@ import {
 import {
   connectedChannel,
   pauseForVet,
+  rowSaysClean,
   staticPause,
   vetForDrain,
 } from '@/modules/platform/telegram/price-channel';
 import type { PauseReason } from '@/modules/platform/telegram/price-channel-rules';
 import { photoSource } from '../client-cabinet/bot-text';
+import { PHOTO_READ_MS, ReadTimeout, readWithin, type PhotoBreaker } from '../notices/client-push';
 import { childStateSql, type ChildState } from './chain';
 import { buildChannelPostView, postPhotosFor, queueMissedPrices } from './channel-queue';
 import {
@@ -95,6 +97,7 @@ type ClaimedRow = {
   chat_id: string | null;
   attempts: number;
   created_ms: string;
+  claimed_at: string;
 };
 
 async function claimNext(): Promise<ClaimedRow | null> {
@@ -107,12 +110,46 @@ async function claimNext(): Promise<ClaimedRow | null> {
                   FOR UPDATE SKIP LOCKED
                   LIMIT 1)
     RETURNING id::text AS id, kind, request_id::text AS request_id, version_id::text AS version_id,
-              chat_id::text AS chat_id, attempts, (extract(epoch FROM created_at) * 1000)::bigint::text AS created_ms`);
+              chat_id::text AS chat_id, attempts, (extract(epoch FROM created_at) * 1000)::bigint::text AS created_ms,
+              claimed_at::text AS claimed_at`);
   return rows[0] ?? null;
 }
 
 async function setRow(id: string, set: SQL): Promise<void> {
   await db.execute(sql`UPDATE price_channel_posts SET ${set} WHERE id = ${id}::uuid`);
+}
+
+/** This run's hold on a row: the claim time is the token (0082's claim shape). */
+interface Fence {
+  id: string;
+  claimedAt: string;
+}
+
+/**
+ * A write FENCED by the claim — it lands only while this run still holds the
+ * row. A run that lost it (the stuck step turned it `failed`, a person pressed
+ * «Qayta yuborish» and another run took it) must not overwrite what the row
+ * says now. Answers whether it landed.
+ */
+async function setClaimed(fence: Fence, set: SQL): Promise<boolean> {
+  const rows = await db.execute<{ id: string }>(sql`
+    UPDATE price_channel_posts SET ${set}
+     WHERE id = ${fence.id}::uuid AND status = 'sending' AND claimed_at = ${fence.claimedAt}::timestamptz
+    RETURNING id::text AS id`);
+  return rows.length > 0;
+}
+
+/**
+ * Take the claim again, IMMEDIATELY before the network call: the photo reads
+ * before it can be slow, and a run that lost the row meanwhile must not post
+ * it a second time beside whoever holds it now. Null = lost; send nothing.
+ */
+async function reassertClaim(fence: Fence): Promise<Fence | null> {
+  const rows = await db.execute<{ claimed_at: string }>(sql`
+    UPDATE price_channel_posts SET claimed_at = clock_timestamp()
+     WHERE id = ${fence.id}::uuid AND status = 'sending' AND claimed_at = ${fence.claimedAt}::timestamptz
+    RETURNING claimed_at::text AS claimed_at`);
+  return rows[0] ? { id: fence.id, claimedAt: rows[0].claimed_at } : null;
 }
 
 /** The nearest ANCESTOR (up the correction chain, ≤ 64) whose post is sent in this channel — the reply target. */
@@ -141,21 +178,34 @@ async function parentPostStatus(parentRequestId: string): Promise<PostStatus | n
   return rows[0]?.status ?? null;
 }
 
-/** Each photo read in its own try — one missing object costs one photo (client-cabinet.ts's rule). */
-async function readPhotos(requestId: string): Promise<{ bytes: Buffer; filename: string; contentType: string }[]> {
+/**
+ * Each photo read in its own try — one missing object costs one photo
+ * (client-cabinet.ts's rule) — and each under a deadline: the S3 client has
+ * none of its own, and a stalled store would otherwise hold the row in
+ * `sending` past pg-boss's expiry and the stuck step, labelled «may have been
+ * sent» with nothing sent. A store that did not ANSWER trips the run's breaker
+ * and the rest of the run goes as text (the arrival sweep's PhotoBreaker).
+ */
+async function readPhotos(
+  requestId: string,
+  breaker: PhotoBreaker,
+  readMs: number,
+): Promise<{ bytes: Buffer; filename: string; contentType: string }[]> {
   const storage = getStorage();
   const out: { bytes: Buffer; filename: string; contentType: string }[] = [];
   for (const p of await postPhotosFor(requestId)) {
+    if (breaker.stalled) break;
     const source = photoSource(p);
     if (!source) continue;
     try {
       out.push({
-        bytes: await storage.get(source.key),
+        bytes: await readWithin(storage.get(source.key), readMs),
         filename: source.key.split('/').pop() || 'photo.jpg',
         contentType: source.contentType,
       });
     } catch (err) {
       logger.warn({ err, requestId }, '[price-channel] photo unreadable — skipped');
+      if (err instanceof ReadTimeout) breaker.stalled = true;
     }
   }
   return out;
@@ -172,7 +222,10 @@ export interface DrainResult {
  * through here, so the drain re-checks rather than trusting whoever wrote the
  * row), the net, the stuck rows, then up to three posts.
  */
-export async function drainPriceChannel(now: Date = new Date()): Promise<DrainResult> {
+export async function drainPriceChannel(
+  now: Date = new Date(),
+  opts: { photoReadMs?: number } = {},
+): Promise<DrainResult> {
   const result: DrainResult = { paused: null, sent: 0, skipped: 0 };
   const channel = await connectedChannel();
   if (!channel) return result;
@@ -183,7 +236,7 @@ export async function drainPriceChannel(now: Date = new Date()): Promise<DrainRe
     settingsAdminIds: process.env.TELEGRAM_BOT_TOKEN ? await usersWithPermission('admin.settings.manage') : [],
   });
   if (pause) return { ...result, paused: pause };
-  const vet = await vetForDrain(chatId, now.getTime());
+  const vet = await vetForDrain(chatId, now.getTime(), rowSaysClean(channel));
   if (!vet.ok) return { ...result, paused: pauseForVet(vet.verdict) };
 
   await queueMissedPrices();
@@ -194,10 +247,12 @@ export async function drainPriceChannel(now: Date = new Date()): Promise<DrainRe
     UPDATE price_channel_posts SET status = 'failed', last_error = 'stuck_sending'
      WHERE status = 'sending' AND claimed_at < now() - interval '10 minutes'`);
 
+  const breaker: PhotoBreaker = { stalled: false };
+  const readMs = opts.photoReadMs ?? PHOTO_READ_MS;
   for (let i = 0; i < 3; i += 1) {
     const row = await claimNext();
     if (!row) break;
-    const outcome = await sendOne(row, chatId, now);
+    const outcome = await sendOne(row, chatId, now, breaker, readMs);
     if (outcome === 'sent') result.sent += 1;
     if (outcome === 'skipped') result.skipped += 1;
     if (outcome === 'stop') break;
@@ -205,24 +260,43 @@ export async function drainPriceChannel(now: Date = new Date()): Promise<DrainRe
   return result;
 }
 
-async function sendOne(row: ClaimedRow, chatId: string, now: Date): Promise<'sent' | 'skipped' | 'next' | 'stop'> {
-  // A price queued for channel A never lands in B.
-  if (row.chat_id !== chatId) {
-    await setRow(row.id, sql`status = 'skipped', skip_reason = 'channel_changed'`);
-    return 'skipped';
-  }
+type Prepared =
+  | { done: 'sent' | 'skipped' | 'next' | 'stop' }
+  | {
+      done: null;
+      fence: Fence;
+      view: ChannelPostView;
+      replyTo: number | null;
+      photos: { bytes: Buffer; filename: string; contentType: string }[];
+    };
+
+/**
+ * Everything between the claim and the network call — the post built from its
+ * record, the stale test, the reply target, the photos, and the claim taken
+ * again last. Nothing in here can have reached Telegram, which is why a throw
+ * anywhere in it RELEASES the row (`sendOne`) instead of leaving it `sending`
+ * for the stuck step to call «may have been sent».
+ */
+async function prepare(
+  row: ClaimedRow,
+  fence: Fence,
+  chatId: string,
+  now: Date,
+  breaker: PhotoBreaker,
+  readMs: number,
+): Promise<Prepared> {
   const built = await buildChannelPostView({ kind: row.kind, requestId: row.request_id, versionId: row.version_id });
   if (!built) {
-    await setRow(row.id, sql`status = 'failed', last_error = 'not_found'`);
-    return 'next';
+    await setClaimed(fence, sql`status = 'failed', last_error = 'not_found'`);
+    return { done: 'next' };
   }
   // Stale: rows paused for weeks (bot removed, token missing, channel refused)
   // must not flood the channel with expired and superseded prices three a
   // minute when the bot comes back — the same «no backlog» rule as no_channel.
   const age = now.getTime() - Number(row.created_ms);
   if (age > 24 * 3600_000 || !built.standing) {
-    await setRow(row.id, sql`status = 'skipped', skip_reason = 'stale'`);
-    return 'skipped';
+    await setClaimed(fence, sql`status = 'skipped', skip_reason = 'stale'`);
+    return { done: 'skipped' };
   }
 
   let replyTo: number | null = null;
@@ -230,25 +304,73 @@ async function sendOne(row: ClaimedRow, chatId: string, now: Date): Promise<'sen
     const parent = await parentPostStatus(built.parentRequestId);
     if ((parent === 'pending' || parent === 'sending') && age < 30 * 60_000) {
       // The reply must not race ahead of what it answers.
-      await setRow(
-        row.id,
+      await setClaimed(
+        fence,
         sql`status = 'pending', not_before = now() + interval '60 seconds', attempts = attempts - 1`,
       );
-      return 'next';
+      return { done: 'next' };
     }
     replyTo = await replyTargetFor(row.request_id, chatId);
   }
 
-  const html = channelPostHtml(built.view, null);
+  // Photos only on a post that replies to nothing: a correction's photos are
+  // one tap up, and an album of ten counts as ten messages against the rate.
+  const photos = replyTo === null ? await readPhotos(row.request_id, breaker, readMs) : [];
+  const held = await reassertClaim(fence);
+  if (!held) {
+    logger.warn({ id: row.id }, '[price-channel] claim lost before sending — not sent');
+    return { done: 'next' };
+  }
+  return { done: null, fence: held, view: built.view, replyTo, photos };
+}
+
+/** After this many claims a prepare that throws every time stops being retried. */
+const PREPARE_ATTEMPTS = 5;
+
+async function sendOne(
+  row: ClaimedRow,
+  chatId: string,
+  now: Date,
+  breaker: PhotoBreaker,
+  readMs: number,
+): Promise<'sent' | 'skipped' | 'next' | 'stop'> {
+  const claim: Fence = { id: row.id, claimedAt: row.claimed_at };
+  // A price queued for channel A never lands in B.
+  if (row.chat_id !== chatId) {
+    await setClaimed(claim, sql`status = 'skipped', skip_reason = 'channel_changed'`);
+    return 'skipped';
+  }
+
+  let prepared: Prepared;
+  try {
+    prepared = await prepare(row, claim, chatId, now, breaker, readMs);
+  } catch (err) {
+    // Nothing left the machine: back to pending a minute later, attempts NOT
+    // refunded so a throw that happens every time ends `failed` with the
+    // plain error (not «may have been sent»). The rest of the run would most
+    // likely meet the same database fault — stop. A release that itself fails
+    // leaves the row `sending`, and the stuck step's safe answer stands.
+    const message = err instanceof Error ? err.message : String(err);
+    logger.error({ err, id: row.id }, '[price-channel] post not prepared — released');
+    await setClaimed(
+      claim,
+      row.attempts >= PREPARE_ATTEMPTS
+        ? sql`status = 'failed', last_error = 'prepare_failed'`
+        : sql`status = 'pending', not_before = now() + interval '60 seconds',
+                last_error = ${`prepare_failed:${message.slice(0, 200)}`}`,
+    ).catch((releaseErr: unknown) => logger.error({ err: releaseErr, id: row.id }, '[price-channel] release failed'));
+    return 'stop';
+  }
+  if (prepared.done !== null) return prepared.done;
+  const { fence, view, replyTo, photos } = prepared;
+
+  const html = channelPostHtml(view, null);
   const common = {
     chatId,
     protectContent: true,
     silent: quietHour(now),
     ...(replyTo !== null ? { replyToMessageId: replyTo } : {}),
   };
-  // Photos only on a post that replies to nothing: a correction's photos are
-  // one tap up, and an album of ten counts as ten messages against the rate.
-  const photos = replyTo === null ? await readPhotos(row.request_id) : [];
   let sent: SendResult;
   let carrier: 'text' | 'caption' = 'text';
   let photoCount = 0;
@@ -270,21 +392,21 @@ async function sendOne(row: ClaimedRow, chatId: string, now: Date): Promise<'sen
   const verdict = channelVerdict(sent, row.attempts);
   if (verdict.next === 'sent') {
     if (sent.messageId === null) {
-      await setRow(row.id, sql`status = 'failed', last_error = 'ambiguous_send'`);
+      await setClaimed(fence, sql`status = 'failed', last_error = 'ambiguous_send'`);
       return 'next';
     }
-    await recordSent(row.id, {
+    await recordSent(fence, {
       messageId: sent.messageId,
       carrier,
-      view: built.view,
+      view,
       replyTo,
       photoCount,
     });
     return 'sent';
   }
   if (verdict.next === 'retry') {
-    await setRow(
-      row.id,
+    await setClaimed(
+      fence,
       verdict.refund
         ? sql`status = 'pending', not_before = now() + make_interval(secs => ${verdict.notBeforeSec}), attempts = attempts - 1`
         : sql`status = 'pending', not_before = now() + make_interval(secs => ${verdict.notBeforeSec})`,
@@ -292,7 +414,7 @@ async function sendOne(row: ClaimedRow, chatId: string, now: Date): Promise<'sen
     return 'stop';
   }
   if (verdict.next === 'pause') {
-    await setRow(row.id, sql`status = 'pending', attempts = attempts - 1, last_error = ${verdict.lastError}`);
+    await setClaimed(fence, sql`status = 'pending', attempts = attempts - 1, last_error = ${verdict.lastError}`);
     if (verdict.channelRefused) {
       await db.execute(sql`
         UPDATE price_channel_chats SET last_error = ${`channel_refused:${verdict.lastError}`}, updated_at = now()
@@ -300,7 +422,7 @@ async function sendOne(row: ClaimedRow, chatId: string, now: Date): Promise<'sen
     }
     return 'stop';
   }
-  await setRow(row.id, sql`status = 'failed', last_error = ${verdict.lastError}`);
+  await setClaimed(fence, sql`status = 'failed', last_error = ${verdict.lastError}`);
   return 'next';
 }
 
@@ -310,13 +432,14 @@ async function sendOne(row: ClaimedRow, chatId: string, now: Date): Promise<'sen
  * second automatic post.
  */
 async function recordSent(
-  id: string,
+  fence: Fence,
   o: { messageId: number; carrier: 'text' | 'caption'; view: ChannelPostView; replyTo: number | null; photoCount: number },
 ): Promise<void> {
+  const id = fence.id;
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
-      await setRow(
-        id,
+      await setClaimed(
+        fence,
         sql`status = 'sent', message_id = ${o.messageId}, carrier = ${o.carrier}, view = ${JSON.stringify(o.view)}::jsonb,
             marked_state = NULL, reply_to_message_id = ${o.replyTo}, photo_count = ${o.photoCount},
             sent_at = now(), last_error = NULL`,
@@ -326,6 +449,25 @@ async function recordSent(
       logger.error({ err, id, attempt }, '[price-channel] sent but not recorded');
     }
   }
+}
+
+/**
+ * «Qayta yuborish» — a `failed` row back to the queue, on a person's press
+ * after they have looked at the channel (the machine never re-sends an
+ * ambiguous post by itself, #48). The row's CLOCK restarts at the press: the
+ * 24-hour stale horizon and the reply wait count from when somebody asked for
+ * it again, or a failure older than a day would be re-queued only to be
+ * skipped «eskirgan» without one call to Telegram. A price that no longer
+ * stands is still skipped — that test reads the price, not the clock.
+ */
+export async function retryPriceChannelPost(postId: string): Promise<boolean> {
+  const rows = await db.execute<{ id: string }>(sql`
+    UPDATE price_channel_posts
+       SET status = 'pending', attempts = 0, not_before = NULL, last_error = NULL, claimed_at = NULL,
+           created_at = now()
+     WHERE id = ${postId}::uuid AND status = 'failed'
+    RETURNING id::text AS id`);
+  return rows.length > 0;
 }
 
 /**

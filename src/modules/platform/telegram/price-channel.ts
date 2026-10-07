@@ -1,5 +1,5 @@
 import type PgBoss from 'pg-boss';
-import { and, eq, isNotNull, isNull, ne, sql, type SQL } from 'drizzle-orm';
+import { and, count as countRows, eq, isNotNull, isNull, ne, notInArray, sql, type SQL } from 'drizzle-orm';
 import { db } from '../db/client';
 import { priceChannelChats, priceChannelMembers } from '../db/schema';
 import { logger } from '../logger';
@@ -106,11 +106,15 @@ export type VetResult = { ok: true } | { ok: false; verdict: VetVerdict; detail?
  * Is this channel safe to post prices into? Three reads through the one
  * sender, a pure verdict (`decideVet`), and the result written on the chat's
  * row either way so the panel can say it in words. A definitive refusal also
- * clears `vetted_at` — the drain pauses on an unvetted channel; a call that
- * merely failed leaves it, because a network blip is not a fact about the
- * channel.
+ * clears `vetted_at` (the panel's «last check refused»); a call that merely
+ * failed leaves it, because a network blip is not a fact about the channel.
+ *
+ * Every definitive answer — whoever asked (the connect, the bot's update, the
+ * panel's «Qayta tekshirish», the drain) — is also the drain's memo, so a
+ * refusal heard anywhere stops the drain at once instead of waiting out a
+ * ten-minute-old «ok».
  */
-export async function vetChannel(chatId: string): Promise<VetResult> {
+export async function vetChannel(chatId: string, now = Date.now()): Promise<VetResult> {
   const chat = await botCall('getChat', { chat_id: chatId }, 10_000);
   const admins = chat.ok ? await botCall('getChatAdministrators', { chat_id: chatId }, 10_000) : null;
   const count = admins?.ok ? await botCall('getChatMemberCount', { chat_id: chatId }, 10_000) : null;
@@ -123,7 +127,7 @@ export async function vetChannel(chatId: string): Promise<VetResult> {
       .where(eq(priceChannelChats.chatId, BigInt(chatId)));
     return { ok: false, verdict: 'vet_failed', detail };
   }
-  const info = chat.result as { title?: string; username?: string } | null;
+  const info = chat.result as { title?: string; username?: string; linked_chat_id?: number } | null;
   const list = (Array.isArray(admins.result) ? admins.result : []) as TgChatMember[];
   const me = botUserId();
   const bot = list.find((a) => String(a.user.id) === me) ?? null;
@@ -131,11 +135,23 @@ export async function vetChannel(chatId: string): Promise<VetResult> {
   for (const key of RIGHT_KEYS) rights[key] = bot?.status === 'creator' || bot?.[key] === true;
   const humanAdmins = list.filter((a) => !a.user.is_bot).map((a) => fullName(a.user));
   const memberCount = typeof count.result === 'number' ? count.result : 0;
-  const [live] = await db.execute<{ n: number }>(sql`
-    SELECT count(*)::int AS n FROM price_channel_members
-     WHERE chat_id = ${chatId}::bigint AND removed_at IS NULL`);
+  // The subscribers the bot let in — minus anybody now on the ADMIN list: an
+  // admitted colleague later promoted is counted in `adminCount` already, and
+  // counting him twice would let one unchecked subscriber pass unseen.
+  const adminIds = list.map((a) => BigInt(a.user.id));
+  const [live] = await db
+    .select({ n: countRows() })
+    .from(priceChannelMembers)
+    .where(
+      and(
+        eq(priceChannelMembers.chatId, BigInt(chatId)),
+        isNull(priceChannelMembers.removedAt),
+        adminIds.length > 0 ? notInArray(priceChannelMembers.tgUserId, adminIds) : undefined,
+      ),
+    );
   const decision = decideVet({
     username: info?.username ?? null,
+    linkedChatId: typeof info?.linked_chat_id === 'number' ? info.linked_chat_id : null,
     memberCount,
     adminCount: list.length,
     botCanPost: rights.can_post_messages === true,
@@ -155,25 +171,37 @@ export async function vetChannel(chatId: string): Promise<VetResult> {
       updatedAt: new Date(),
     })
     .where(eq(priceChannelChats.chatId, BigInt(chatId)));
-  if (ok) return { ok: true };
-  return {
-    ok: false,
-    verdict: decision.verdict,
-    ...(decision.verdict === 'has_members' ? { detail: String(decision.count) } : {}),
-  };
+  const result: VetResult = ok
+    ? { ok: true }
+    : {
+        ok: false,
+        verdict: decision.verdict,
+        ...(decision.verdict === 'has_members' ? { detail: String(decision.count) } : {}),
+      };
+  vetMemo = { chatId, checkedAt: now, result };
+  return result;
 }
 
 /**
- * The drain's re-vet — at most once per ten minutes per process: a channel
- * switched to public LATER is caught here (no update tells us). A call that
+ * The drain's re-vet — at most once per ten minutes per process, and it is the
+ * ONLY thing that decides whether a channel is clean now: a channel switched
+ * to public, a discussion group linked, a stranger subscribed — none of them
+ * sends an update — are caught here, and so is the day the owner FIXES one of
+ * them (the drain does not pause for ever on the row's last verdict). A refusal
+ * is remembered for the same ten minutes, which is the rate limit on asking
+ * Telegram. An «ok» is trusted only while the row agrees (`rowSaysClean`): a
+ * refusal written by a vet in another process ends it at once. A call that
  * merely failed is not remembered, so the next run asks again.
  */
 let vetMemo: { chatId: string; checkedAt: number; result: VetResult } | null = null;
 
-export async function vetForDrain(chatId: string, now = Date.now()): Promise<VetResult> {
-  if (vetMemo && vetMemo.chatId === chatId && now - vetMemo.checkedAt < 10 * 60_000) return vetMemo.result;
-  const result = await vetChannel(chatId);
-  vetMemo = result.ok || result.verdict !== 'vet_failed' ? { chatId, checkedAt: now, result } : null;
+export const VET_MEMO_MS = 10 * 60_000;
+
+export async function vetForDrain(chatId: string, now = Date.now(), rowSaysClean = true): Promise<VetResult> {
+  const fresh = vetMemo && vetMemo.chatId === chatId && now - vetMemo.checkedAt < VET_MEMO_MS;
+  if (fresh && vetMemo && (!vetMemo.result.ok || rowSaysClean)) return vetMemo.result;
+  const result = await vetChannel(chatId, now);
+  if (!result.ok && result.verdict === 'vet_failed') vetMemo = null;
   return result;
 }
 
@@ -183,21 +211,45 @@ export function __resetVetMemo(): void {
 }
 
 /**
- * Who connected the channel must STILL be a settings admin — every door passes
- * through the drain, so the drain re-checks the authority rather than trusting
- * whoever wrote the row. Pure over the row so the panel says the same thing.
+ * What stops the drain before it asks Telegram anything: no token, a bot that
+ * is no longer the channel's admin (an update tells us), and who connected the
+ * channel no longer being a settings admin — every door passes through the
+ * drain, so the drain re-checks the authority rather than trusting whoever
+ * wrote the row. Pure over the row.
+ *
+ * Deliberately NOT here: the row's last vet (`username`, `vetted_at`). A pause
+ * read from the row would be a pause nothing could lift — the drain would stop
+ * before its re-vet, and the re-vet is what notices the owner fixed it.
  */
 export function staticPause(o: {
   hasToken: boolean;
-  row: Pick<ConnectedChannel, 'status' | 'username' | 'vettedAt' | 'connectedByUserId'>;
+  row: Pick<ConnectedChannel, 'status' | 'connectedByUserId'>;
   settingsAdminIds: string[];
 }): PauseReason | null {
   if (!o.hasToken) return 'no_bot';
-  if (o.row.username) return 'public';
-  if (o.row.status !== 'administrator' && o.row.status !== 'creator') return 'not_vetted';
-  if (!o.row.vettedAt) return 'not_vetted';
+  if (o.row.status !== 'administrator' && o.row.status !== 'creator') return 'bot_removed';
   if (!o.row.connectedByUserId || !o.settingsAdminIds.includes(o.row.connectedByUserId)) return 'connector_gone';
   return null;
+}
+
+/**
+ * The panel's pause — the drain's static rule, then the LAST vet's verdict as
+ * the row recorded it (the panel does no live vet; its sentence says the bot
+ * re-checks by itself).
+ */
+export function panelPause(o: Parameters<typeof staticPause>[0] & {
+  row: Pick<ConnectedChannel, 'username' | 'vettedAt'>;
+}): PauseReason | null {
+  const pause = staticPause(o);
+  if (pause) return pause;
+  if (o.row.username) return 'public';
+  if (!o.row.vettedAt) return 'not_vetted';
+  return null;
+}
+
+/** Whether the row's last vet was clean — the condition under which the drain trusts its «ok» memo. */
+export function rowSaysClean(row: Pick<ConnectedChannel, 'username' | 'vettedAt'>): boolean {
+  return !row.username && row.vettedAt !== null;
 }
 
 /** A vet refusal, as the drain's pause. */
@@ -242,6 +294,7 @@ export type ConnectError =
   | 'no_invite_right'
   | 'telegram'
   | 'public'
+  | 'has_discussion'
   | 'has_members'
   | 'vet_failed'
   | 'already_connected';
@@ -289,6 +342,17 @@ export async function connectChannel(
   await revokePrimaryLink(chatId);
   if (!link.ok) return { ok: false, error: link.error, detail: link.detail };
   return { ok: true };
+}
+
+/**
+ * «Qayta tekshirish» — the connected channel vetted now, on a person's press,
+ * instead of at the drain's next ten-minute re-vet. The answer is the vet's
+ * own, and it is the drain's memo from here on (`vetChannel`).
+ */
+export async function recheckChannel(): Promise<VetResult | null> {
+  const chatId = await channelChatId();
+  if (!chatId) return null;
+  return vetChannel(chatId);
 }
 
 /** «Uzish» — no channel; new prices are skipped `no_channel` until one is connected again. */
@@ -354,6 +418,14 @@ export async function recordChatMembership(update: MyChatMemberUpdate): Promise<
         updatedAt: new Date(),
       })
       .where(eq(priceChannelChats.chatId, BigInt(chatId)));
+    if (row!.status !== status) {
+      // The bot left and came back (or was demoted and re-promoted) — by
+      // anybody, a seller included. Whatever the old vet said is about a
+      // channel the bot could not see in between: forget it, and when the bot
+      // can post again, vet NOW (a refusal is the drain's memo at once).
+      __resetVetMemo();
+      if (status === 'administrator' || status === 'creator') await vetChannel(chatId);
+    }
     return 'updated';
   }
   await db
@@ -498,9 +570,14 @@ export async function sweepPriceChannelMembers(): Promise<{ removed: number; fai
       FROM price_channel_members m
       JOIN users u ON u.id = m.user_id
       LEFT JOIN telegram_links l ON l.user_id = m.user_id
+      LEFT JOIN price_channel_chats c ON c.chat_id = m.chat_id
      WHERE m.removed_at IS NULL
        AND NOT EXISTS (SELECT 1 FROM telegram_links l2 JOIN users u2 ON u2.id = l2.user_id
                         WHERE u2.id = m.user_id AND ${channelEligibleSql('u2', 'l2', sql`m.tg_user_id`)})
+     -- The connected channel first, rows that never failed before rows that
+     -- did: removals that fail for ever (an old channel the bot was kicked
+     -- from) must never fill the batch ahead of a leaver in the live one.
+     ORDER BY (c.connected_at IS NOT NULL) DESC, (m.last_error IS NOT NULL), m.approved_at
      LIMIT 50`);
   let removed = 0;
   let failed = 0;

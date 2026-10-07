@@ -118,12 +118,20 @@ export default async function PriceChannelPage() {
               {t('connected', { title: connected.title || connected.chatId })}
             </p>
             <ChatFacts chat={connected} t={t} />
-            <ChannelButton
-              kind="disconnect"
-              label={t('disconnect')}
-              confirm={t('disconnectConfirm')}
-              testId="price-channel-disconnect"
-            />
+            <div className="flex flex-wrap items-start gap-2">
+              <ChannelButton
+                kind="recheck"
+                label={t('recheck')}
+                okText={t('recheckOk')}
+                testId="price-channel-recheck"
+              />
+              <ChannelButton
+                kind="disconnect"
+                label={t('disconnect')}
+                confirm={t('disconnectConfirm')}
+                testId="price-channel-disconnect"
+              />
+            </div>
           </>
         ) : (
           <>

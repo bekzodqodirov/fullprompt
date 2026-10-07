@@ -6,6 +6,7 @@ import {
   connectChannelAction,
   disconnectChannelAction,
   newInviteLinkAction,
+  recheckChannelAction,
   retryPostAction,
   type ChannelActionResult,
 } from './actions';
@@ -23,20 +24,25 @@ export function ChannelButton({
   confirm,
   testId,
   primary,
+  okText,
 }: {
-  kind: 'connect' | 'disconnect' | 'newLink' | 'retry';
+  kind: 'connect' | 'disconnect' | 'newLink' | 'retry' | 'recheck';
   arg?: string;
   label: string;
   confirm?: string;
   testId: string;
   primary?: boolean;
+  /** Said after a press that worked, for a door whose success shows nowhere else. */
+  okText?: string;
 }) {
   const t = useTranslations('priceChannel');
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
   const run = () => {
     if (confirm && !window.confirm(confirm)) return;
     setError(null);
+    setDone(false);
     start(async () => {
       let res: ChannelActionResult;
       try {
@@ -47,11 +53,14 @@ export function ChannelButton({
               ? await disconnectChannelAction()
               : kind === 'newLink'
                 ? await newInviteLinkAction()
-                : await retryPostAction(arg ?? '');
+                : kind === 'recheck'
+                  ? await recheckChannelAction()
+                  : await retryPostAction(arg ?? '');
       } catch {
         res = { ok: false, error: 'telegram' };
       }
-      if (!res.ok) {
+      if (res.ok) setDone(true);
+      else {
         setError(
           res.error === 'telegram'
             ? t('error.telegram', { error: res.detail ?? '—' })
@@ -71,6 +80,11 @@ export function ChannelButton({
       >
         {label}
       </button>
+      {done && okText ? (
+        <span className="text-xs text-good" role="status" data-testid={`${testId}-ok`}>
+          {okText}
+        </span>
+      ) : null}
       {error ? (
         <span className="text-xs text-bad [overflow-wrap:anywhere]" role="alert" data-testid={`${testId}-error`}>
           {error}

@@ -1,16 +1,16 @@
 import { sql } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
 import { usersWithPermission } from '@/modules/platform/notifications/service';
-import { staticPause, type ConnectedChannel } from '@/modules/platform/telegram/price-channel';
+import { panelPause, type ConnectedChannel } from '@/modules/platform/telegram/price-channel';
 import { missingRights, type ChannelRight, type PauseReason, type RemoveReason } from '@/modules/platform/telegram/price-channel-rules';
 import { priceChannelChats } from '@/modules/platform/db/schema';
 import type { ChannelPostView, PostKind, PostStatus, SkipReason } from './channel-post';
 
 /**
  * What /admin/narx-kanali shows (his F) — every read the panel makes, in one
- * place, each bounded. The pause reason is the drain's OWN static rule
- * (`staticPause`), so the panel and the sender cannot disagree about why
- * nothing is being posted.
+ * place, each bounded. The pause reason is the drain's OWN static rule plus
+ * the last vet's verdict (`panelPause`), so the panel and the sender cannot
+ * disagree about why nothing is being posted.
  */
 
 export interface PanelChat {
@@ -82,7 +82,7 @@ export async function channelPanel(): Promise<ChannelPanelData> {
   const pause = !hasToken
     ? 'no_bot'
     : connectedRow
-    ? staticPause({
+    ? panelPause({
         hasToken,
         row: connectedRow,
         settingsAdminIds: await usersWithPermission('admin.settings.manage'),
@@ -129,7 +129,13 @@ export async function channelPanel(): Promise<ChannelPanelData> {
 
   return {
     connected: connectedRow ? toChat(connectedRow) : null,
-    others: chats.filter((c) => c.connectedAt === null).map(toChat),
+    // Only channels the bot can still post in: one it was removed from would
+    // sit here for ever behind a «Shu kanalni ulash» that always refuses
+    // (connectChannel's own status test). It comes back by itself when the bot
+    // is made admin again.
+    others: chats
+      .filter((c) => c.connectedAt === null && (c.status === 'administrator' || c.status === 'creator'))
+      .map(toChat),
     pause,
     posts: posts.map((p) => ({
       id: p.id,

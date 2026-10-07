@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
   attachments,
@@ -30,6 +30,7 @@ import {
   answerMemberUpdate,
   recordChatMembership,
   sweepPriceChannelMembers,
+  vetChannel,
 } from '@/modules/platform/telegram/price-channel';
 import { SETTINGS_AUDIT_ID } from '@/modules/platform/settings/service';
 import { finishCalcRequest, openCalcRequest, returnCalcRequest } from '@/modules/wms/calc/service';
@@ -45,7 +46,24 @@ import {
   setItemBaza,
 } from '@/modules/wms/calc/workspace';
 import { queueMissedPrices, queuePriceChannelPost } from '@/modules/wms/calc/channel-queue';
-import { drainPriceChannel, reconcilePriceChannelMarks } from '@/modules/wms/calc/channel-send';
+import { drainPriceChannel, reconcilePriceChannelMarks, retryPriceChannelPost } from '@/modules/wms/calc/channel-send';
+import { channelPanel } from '@/modules/wms/calc/channel-panel';
+
+/**
+ * One seam: a post build that throws (a database blip between the claim and
+ * the send), switched on by a test. Everything else is the real module.
+ */
+const seam = vi.hoisted(() => ({ buildThrows: false }));
+vi.mock('@/modules/wms/calc/channel-queue', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/modules/wms/calc/channel-queue')>();
+  return {
+    ...real,
+    buildChannelPostView: async (...args: Parameters<typeof real.buildChannelPostView>) => {
+      if (seam.buildThrows) throw new Error('Connection terminated unexpectedly');
+      return real.buildChannelPostView(...args);
+    },
+  };
+});
 
 /**
  * The price channel end to end against a real database (his F, 2026-10-07),
@@ -65,13 +83,14 @@ const CHAT = '-1001234567890';
 const CHAT_A = '-1001111111111';
 const CHAT_ADOPT = '-1002222222222';
 const tgBase = 6_100_000_000 + Number(SUFFIX) * 10;
-const TG = { admin: tgBase + 1, colleague: tgBase + 2, seller: tgBase + 3, colleague2: tgBase + 4, stranger: tgBase + 9 };
+const TG = { admin: tgBase + 1, colleague: tgBase + 2, seller: tgBase + 3, colleague2: tgBase + 4, colleague3: tgBase + 5, stranger: tgBase + 9 };
 
 let tokenBefore: string | undefined;
 let adminId = '';
 let sellerId = '';
 let colleagueId = '';
 let colleague2Id = '';
+let colleague3Id = '';
 let leadId = '';
 let noteId = '';
 const photoKey = `test/price-channel/${SUFFIX}.jpg`;
@@ -184,6 +203,7 @@ beforeAll(async () => {
   sellerId = await makeUser(`Sotuvchi Bekmurod ${SUFFIX}`, 'sales_manager', TG.seller, '02');
   colleagueId = await makeUser(`Hamkasb Dilnoza ${SUFFIX}`, 'sales_manager', TG.colleague, '03');
   colleague2Id = await makeUser(`Hamkasb Jasur ${SUFFIX}`, 'sales_manager', TG.colleague2, '04');
+  colleague3Id = await makeUser(`Hamkasb Kamola ${SUFFIX}`, 'sales_manager', TG.colleague3, '05');
 
   const leadStage = await db.execute<{ id: string }>(
     sql`SELECT id FROM lead_stages WHERE kind = 'open' ORDER BY sort_order LIMIT 1`,
@@ -236,6 +256,7 @@ beforeAll(async () => {
 
 afterEach(async () => {
   override = () => undefined;
+  seam.buildThrows = false;
   calls = [];
   // Nothing this file queued may wait for the NEXT test's drain.
   if (madeRequests.length > 0) {
@@ -254,7 +275,7 @@ afterAll(async () => {
     await db.delete(priceChannelPosts).where(inArray(priceChannelPosts.requestId, madeRequests));
   }
   await db.delete(priceChannelChats).where(inArray(priceChannelChats.chatId, [BigInt(CHAT), BigInt(CHAT_A), BigInt(CHAT_ADOPT)]));
-  const fixtureUsers = [adminId, sellerId, colleagueId, colleague2Id].filter(Boolean);
+  const fixtureUsers = [adminId, sellerId, colleagueId, colleague2Id, colleague3Id].filter(Boolean);
   await db.delete(priceChannelMembers).where(inArray(priceChannelMembers.userId, fixtureUsers));
   if (madeRequests.length > 0) {
     await db.delete(calcVersions).where(inArray(calcVersions.requestId, madeRequests));
@@ -711,9 +732,12 @@ describe('I9 — adoption, vetting, and the drain’s authority', () => {
 
   it('the drain pauses on a channel that went public, and on a connector who is no longer an admin', async () => {
     const a = await sealedRequest();
-    await db.update(priceChannelChats).set({ username: 'x' }).where(eq(priceChannelChats.chatId, BigInt(CHAT)));
+    // No update says a channel went public: the drain's own re-vet hears it from getChat.
+    override = (method) =>
+      method === 'getChat' ? { status: 200, json: { ok: true, result: { id: Number(CHAT), title: 'GSR narx', type: 'channel', username: 'x' } } } : undefined;
     __resetVetMemo();
     expect((await drain()).paused).toBe('public');
+    override = () => undefined;
     expect(channelSends()).toHaveLength(0);
     await setConnected(true);
 
@@ -743,5 +767,259 @@ describe('I10 — the net under the hooks', () => {
       .where(eq(calcVersions.id, old.versionId));
     await drain();
     expect(await postFor(old.requestId)).toBeUndefined();
+  });
+
+  it('a «Готово» answer whose hook never ran is queued by the net too; one from before the connection is not', async () => {
+    const lost = await openRequest();
+    await finishCalcRequest(lost, { amountText: '1200', currency: 'USD', note: '', internalNote: 'x' }, { actorId: adminId });
+    await db.delete(priceChannelPosts).where(eq(priceChannelPosts.dedupeKey, `answer:${lost}`));
+    await drain();
+    expect(await postFor(lost)).toMatchObject({ kind: 'answer', status: 'sent' });
+
+    const old = await openRequest();
+    await finishCalcRequest(old, { amountText: '900', currency: 'USD', note: '', internalNote: 'x' }, { actorId: adminId });
+    await db.delete(priceChannelPosts).where(eq(priceChannelPosts.dedupeKey, `answer:${old}`));
+    await db
+      .update(calcRequests)
+      .set({ completedAt: sql`now() - interval '2 minutes'` })
+      .where(eq(calcRequests.id, old));
+    await drain();
+    expect(await postFor(old)).toBeUndefined();
+  });
+});
+
+describe('I11 — vetting what the channel became (review fixes)', () => {
+  const chatRow = (chatId = CHAT) => db.query.priceChannelChats.findFirst({ where: eq(priceChannelChats.chatId, BigInt(chatId)) });
+
+  it('a linked discussion group refuses the channel — every post would be copied to people the bot never checked', async () => {
+    override = (method) =>
+      method === 'getChat'
+        ? { status: 200, json: { ok: true, result: { id: Number(CHAT), title: 'GSR narx', type: 'channel', linked_chat_id: -1009876543210 } } }
+        : undefined;
+    try {
+      expect(await vetChannel(CHAT)).toEqual({ ok: false, verdict: 'has_discussion' });
+      expect((await chatRow())!.lastError).toBe('has_discussion');
+      expect((await drain()).paused).toBe('not_vetted');
+      expect(channelSends()).toHaveLength(0);
+    } finally {
+      override = () => undefined;
+      await db.update(priceChannelChats).set({ lastError: null }).where(eq(priceChannelChats.chatId, BigInt(CHAT)));
+      await setConnected(true);
+    }
+  });
+
+  it('an admitted colleague later made admin does not hide one stranger from the count', async () => {
+    await db
+      .insert(priceChannelMembers)
+      .values({ chatId: BigInt(CHAT), tgUserId: BigInt(TG.colleague3), userId: colleague3Id })
+      .onConflictDoUpdate({
+        target: [priceChannelMembers.chatId, priceChannelMembers.tgUserId],
+        set: { removedAt: null, removeReason: null },
+      });
+    const admins = (defaultAnswer('getChatAdministrators').json as { result: unknown[] }).result;
+    override = (method) =>
+      method === 'getChatAdministrators'
+        ? { status: 200, json: { ok: true, result: [...admins, { status: 'administrator', user: { id: TG.colleague3, is_bot: false, first_name: 'Kamola' } }] } }
+        : method === 'getChatMemberCount'
+          ? { status: 200, json: { ok: true, result: 4 } } // owner, bot, the promoted colleague, one stranger
+          : undefined;
+    try {
+      expect(await vetChannel(CHAT)).toEqual({ ok: false, verdict: 'has_members', detail: '1' });
+    } finally {
+      override = () => undefined;
+      await db.delete(priceChannelMembers).where(eq(priceChannelMembers.userId, colleague3Id));
+      await db.update(priceChannelChats).set({ lastError: null }).where(eq(priceChannelChats.chatId, BigInt(CHAT)));
+      await setConnected(true);
+    }
+  });
+
+  it('a channel the drain refused is re-checked by the drain itself, and posts again once fixed', async () => {
+    const a = await sealedRequest();
+    const t0 = Date.now();
+    override = (method) =>
+      method === 'getChat' ? { status: 200, json: { ok: true, result: { id: Number(CHAT), title: 'GSR narx', type: 'channel', username: 'gsr_public' } } } : undefined;
+    try {
+      expect((await drainPriceChannel(new Date(t0))).paused).toBe('public');
+      override = () => undefined; // he made it private again
+      // Inside the ten minutes the refusal stands (the rate limit on asking Telegram)…
+      expect((await drainPriceChannel(new Date(t0 + 60_000))).paused).toBe('public');
+      expect(channelSends()).toHaveLength(0);
+      // …and after them the drain asks again by itself and posts.
+      const run = await drainPriceChannel(new Date(t0 + 11 * 60_000));
+      expect(run.paused).toBeNull();
+      expect(await postFor(a.requestId)).toMatchObject({ status: 'sent' });
+      expect((await chatRow())!.vettedAt).not.toBeNull();
+    } finally {
+      override = () => undefined;
+      await setConnected(true);
+    }
+  });
+
+  it('a bot removed and re-added by ANYBODY is vetted at once — a ten-minute-old «ok» never flushes the queue to new subscribers', async () => {
+    await drain(); // the drain's «ok» memo
+    const b = await sealedRequest();
+    const update = (status: string) => ({
+      chat: { id: Number(CHAT), type: 'channel', title: 'GSR narx' },
+      from: { id: TG.seller },
+      new_chat_member: { status },
+    });
+    try {
+      expect(await recordChatMembership(update('left'))).toBe('updated');
+      override = (method) => (method === 'getChatMemberCount' ? { status: 200, json: { ok: true, result: 7 } } : undefined);
+      expect(await recordChatMembership(update('administrator'))).toBe('updated');
+      calls = [];
+      expect((await drain()).paused).toBe('not_vetted');
+      expect(channelSends()).toHaveLength(0);
+      expect(await postFor(b.requestId)).toMatchObject({ status: 'pending' });
+    } finally {
+      override = () => undefined;
+      await db
+        .update(priceChannelChats)
+        .set({ status: 'administrator', lastError: null })
+        .where(eq(priceChannelChats.chatId, BigInt(CHAT)));
+      await setConnected(true);
+    }
+  });
+});
+
+describe('I12 — the drain never posts what it no longer holds (review fixes)', () => {
+  it('a photo read that never answers costs the photo, not the post', async () => {
+    const a = await sealedRequest();
+    const storage = getStorage();
+    const realGet = storage.get.bind(storage);
+    storage.get = (key: string) => (key === photoKey ? new Promise<Buffer>(() => {}) : realGet(key));
+    try {
+      const run = await drainPriceChannel(new Date(), { photoReadMs: 50 });
+      expect(run.sent).toBe(1);
+    } finally {
+      storage.get = realGet;
+    }
+    const sent = channelSends();
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.method).toBe('sendMessage');
+    expect(await postFor(a.requestId)).toMatchObject({ status: 'sent', carrier: 'text', photoCount: 0 });
+  }, 5_000);
+
+  it('a run that lost its claim during the photo read sends nothing — the price goes out ONCE', async () => {
+    const a = await sealedRequest();
+    const storage = getStorage();
+    const realGet = storage.get.bind(storage);
+    let interfered = false;
+    storage.get = async (key: string) => {
+      if (key === photoKey && !interfered) {
+        interfered = true;
+        // Meanwhile: the stuck step gave up on it, and a person pressed «Qayta yuborish».
+        const [row] = await db
+          .update(priceChannelPosts)
+          .set({ status: 'failed', lastError: 'stuck_sending' })
+          .where(eq(priceChannelPosts.requestId, a.requestId))
+          .returning({ id: priceChannelPosts.id });
+        expect(await retryPriceChannelPost(row!.id)).toBe(true);
+      }
+      return realGet(key);
+    };
+    try {
+      await drain();
+    } finally {
+      storage.get = realGet;
+    }
+    expect(channelSends()).toHaveLength(1);
+    expect(await postFor(a.requestId)).toMatchObject({ status: 'sent' });
+  });
+
+  it('a throw before the send releases the row instead of calling it «may have been sent»', async () => {
+    const a = await sealedRequest();
+    seam.buildThrows = true;
+    await drain();
+    let row = await postFor(a.requestId);
+    expect(row).toMatchObject({ status: 'pending', attempts: 1 });
+    expect(row!.lastError).toMatch(/^prepare_failed:/);
+    expect(row!.notBefore!.getTime()).toBeGreaterThan(Date.now() + 40_000);
+    expect(channelSends()).toHaveLength(0);
+
+    // A throw that happens every time ends `failed` with the plain reason, never stuck_sending.
+    await db.update(priceChannelPosts).set({ attempts: 4, notBefore: null }).where(eq(priceChannelPosts.requestId, a.requestId));
+    await drain();
+    row = await postFor(a.requestId);
+    expect(row).toMatchObject({ status: 'failed', lastError: 'prepare_failed' });
+  });
+
+  it('«Qayta yuborish» on a failure older than a day posts it — the clock restarts at the press', async () => {
+    const a = await sealedRequest();
+    const [row] = await db
+      .update(priceChannelPosts)
+      .set({ status: 'failed', lastError: 'ambiguous_send', createdAt: sql`now() - interval '25 hours'` })
+      .where(eq(priceChannelPosts.requestId, a.requestId))
+      .returning({ id: priceChannelPosts.id });
+    expect(await retryPriceChannelPost(row!.id)).toBe(true);
+    await drain();
+    expect(channelSends()).toHaveLength(1);
+    expect(await postFor(a.requestId)).toMatchObject({ status: 'sent' });
+  });
+
+  it('a price queued for one channel never lands in the channel connected after it', async () => {
+    const a = await sealedRequest();
+    expect(await postFor(a.requestId)).toMatchObject({ status: 'pending', chatId: BigInt(CHAT) });
+    await db
+      .insert(priceChannelChats)
+      .values({ chatId: BigInt(CHAT_ADOPT), title: 'Yangi kanal', status: 'administrator', addedByUserId: adminId })
+      .onConflictDoUpdate({ target: priceChannelChats.chatId, set: { status: 'administrator' } });
+    try {
+      await db.update(priceChannelChats).set({ connectedAt: null, connectedByUserId: null }).where(eq(priceChannelChats.chatId, BigInt(CHAT)));
+      await db
+        .update(priceChannelChats)
+        .set({ connectedAt: new Date(), connectedByUserId: adminId, username: null, vettedAt: new Date() })
+        .where(eq(priceChannelChats.chatId, BigInt(CHAT_ADOPT)));
+      __resetVetMemo();
+      const run = await drain();
+      expect(sends()).toHaveLength(0);
+      expect(run.skipped).toBeGreaterThanOrEqual(1);
+      expect(await postFor(a.requestId)).toMatchObject({ status: 'skipped', skipReason: 'channel_changed' });
+    } finally {
+      await db.update(priceChannelChats).set({ connectedAt: null, connectedByUserId: null }).where(eq(priceChannelChats.chatId, BigInt(CHAT_ADOPT)));
+      await setConnected(true);
+    }
+  });
+});
+
+describe('I13 — the panel and the broom (review fixes)', () => {
+  it('a recorded channel the bot was removed from is no longer offered under «Boshqa kanallar»', async () => {
+    await db
+      .insert(priceChannelChats)
+      .values({ chatId: BigInt(CHAT_ADOPT), title: 'Yangi kanal', status: 'administrator', addedByUserId: adminId })
+      .onConflictDoUpdate({ target: priceChannelChats.chatId, set: { status: 'administrator', connectedAt: null } });
+    expect((await channelPanel()).others.map((c) => c.chatId)).toContain(CHAT_ADOPT);
+    await db.update(priceChannelChats).set({ status: 'left' }).where(eq(priceChannelChats.chatId, BigInt(CHAT_ADOPT)));
+    expect((await channelPanel()).others.map((c) => c.chatId)).not.toContain(CHAT_ADOPT);
+  });
+
+  it('removals that fail for ever in dead channels never crowd a leaver of the LIVE channel out of the sweep', async () => {
+    const dead = Array.from({ length: 50 }, (_, i) => BigInt(`-10077${SUFFIX}${String(i).padStart(3, '0')}`));
+    await db.insert(priceChannelMembers).values(
+      dead.map((chatId) => ({ chatId, tgUserId: BigInt(TG.colleague3), userId: colleague3Id, approvedAt: sql`now() - interval '1 day'` })),
+    );
+    await db
+      .insert(priceChannelMembers)
+      .values({ chatId: BigInt(CHAT), tgUserId: BigInt(TG.colleague3), userId: colleague3Id })
+      .onConflictDoUpdate({
+        target: [priceChannelMembers.chatId, priceChannelMembers.tgUserId],
+        set: { removedAt: null, removeReason: null, approvedAt: new Date() },
+      });
+    await db.update(users).set({ active: false }).where(eq(users.id, colleague3Id));
+    override = (method, body) =>
+      method === 'banChatMember' && String(body.chat_id) !== CHAT
+        ? { status: 400, json: { ok: false, description: 'Bad Request: chat not found' } }
+        : undefined;
+    try {
+      await sweepPriceChannelMembers();
+      expect(calls.some((c) => c.method === 'banChatMember' && String(c.body.chat_id) === CHAT && Number(c.body.user_id) === TG.colleague3)).toBe(true);
+      const live = await db.query.priceChannelMembers.findFirst({
+        where: and(eq(priceChannelMembers.chatId, BigInt(CHAT)), eq(priceChannelMembers.tgUserId, BigInt(TG.colleague3))),
+      });
+      expect(live).toMatchObject({ removeReason: 'inactive' });
+    } finally {
+      override = () => undefined;
+      await db.delete(priceChannelMembers).where(eq(priceChannelMembers.userId, colleague3Id));
+    }
   });
 });

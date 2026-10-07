@@ -11,6 +11,7 @@ export const CHANNEL_ERRORS = [
   'no_bot',
   'telegram',
   'public',
+  'has_discussion',
   'has_members',
   'vet_failed',
   'already_connected',

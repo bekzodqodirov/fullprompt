@@ -6,6 +6,7 @@ import {
   decideVet,
   missingRights,
 } from '@/modules/platform/telegram/price-channel-rules';
+import { panelPause, rowSaysClean, staticPause } from '@/modules/platform/telegram/price-channel';
 import { channelVerdict } from '@/modules/wms/calc/channel-send';
 
 /**
@@ -50,9 +51,12 @@ describe('decideAdoption — only a settings admin makes a channel known', () =>
 
 describe('decideVet — a channel safe to post prices into', () => {
   const vet = (o: Partial<Parameters<typeof decideVet>[0]>) =>
-    decideVet({ username: null, memberCount: 2, adminCount: 2, botCanPost: true, liveMembers: 0, ...o });
+    decideVet({ username: null, linkedChatId: null, memberCount: 2, adminCount: 2, botCanPost: true, liveMembers: 0, ...o });
   it('the table', () => {
     expect(vet({ username: 'x' })).toEqual({ verdict: 'public' });
+    // A linked discussion group gets every post copied to people the bot never checked.
+    expect(vet({ linkedChatId: -1009876543210 })).toEqual({ verdict: 'has_discussion' });
+    expect(vet({ username: 'x', linkedChatId: -1009876543210 })).toEqual({ verdict: 'public' });
     expect(vet({ memberCount: 5, adminCount: 2, liveMembers: 0 })).toEqual({ verdict: 'has_members', count: 3 });
     expect(vet({ memberCount: 5, adminCount: 2, liveMembers: 3 })).toEqual({ verdict: 'ok' });
     expect(vet({})).toEqual({ verdict: 'ok' });
@@ -137,5 +141,36 @@ describe('channelVerdict — never a double post', () => {
       next: 'failed',
       lastError: 'TypeError: fetch failed [ENOTFOUND]',
     });
+  });
+});
+
+describe('staticPause / panelPause — the drain never pauses on the row’s last vet', () => {
+  const row = (o: Partial<{ status: string; username: string | null; vettedAt: Date | null; connectedByUserId: string | null }> = {}) => ({
+    status: 'administrator',
+    username: null,
+    vettedAt: new Date(),
+    connectedByUserId: 'admin',
+    ...o,
+  });
+  const ask = (r = row(), hasToken = true) => ({ hasToken, row: r, settingsAdminIds: ['admin'] });
+  it('the drain stops only for what no re-vet could lift', () => {
+    expect(staticPause(ask(row(), false))).toBe('no_bot');
+    expect(staticPause(ask(row({ status: 'left' })))).toBe('bot_removed');
+    expect(staticPause(ask(row({ connectedByUserId: 'gone' })))).toBe('connector_gone');
+    // The last vet's verdict is the RE-VET's to lift — never a pause read off the row.
+    expect(staticPause(ask(row({ username: 'gsr_public' })))).toBeNull();
+    expect(staticPause(ask(row({ vettedAt: null })))).toBeNull();
+    expect(staticPause(ask())).toBeNull();
+  });
+  it('the panel adds the last vet as the row recorded it', () => {
+    expect(panelPause(ask(row({ username: 'gsr_public' })))).toBe('public');
+    expect(panelPause(ask(row({ vettedAt: null })))).toBe('not_vetted');
+    expect(panelPause(ask(row({ status: 'kicked', vettedAt: null })))).toBe('bot_removed');
+    expect(panelPause(ask())).toBeNull();
+  });
+  it('an «ok» memo is trusted only while the row agrees', () => {
+    expect(rowSaysClean(row())).toBe(true);
+    expect(rowSaysClean(row({ vettedAt: null }))).toBe(false);
+    expect(rowSaysClean(row({ username: 'x' }))).toBe(false);
   });
 });

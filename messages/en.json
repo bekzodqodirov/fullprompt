@@ -5319,14 +5319,16 @@
       "public": "The channel is PUBLIC (has an @username) — no prices are posted. Make it private or create a new private one.",
       "has_members": "The channel has {count} members — the bot cannot tell who they are. Create a new private channel.",
       "bot_not_admin": "The bot is not an admin that may post in this channel.",
-      "vet_failed": "Could not check the channel: {error}"
+      "vet_failed": "Could not check the channel: {error}",
+      "has_discussion": "A discussion group is linked to the channel — every post is copied there too, and the bot cannot check its members. Unlink the group in the channel's settings."
     },
     "paused": {
       "no_bot": "Paused: no bot token — nothing reaches the channel.",
-      "not_vetted": "Paused: the channel is not vetted — press «Connect» again.",
-      "public": "Paused: the channel became public.",
+      "not_vetted": "Paused: the channel failed its last check (the reason is above). Fix the cause — the bot re-checks by itself every 10 minutes, or press «Check again».",
+      "public": "Paused: the channel became public. Make it private — the bot re-checks by itself every 10 minutes, or press «Check again».",
       "channel_refused": "Paused: Telegram refused to post to the channel.",
-      "connector_gone": "Paused: the person who connected the channel is no longer an admin — connect it again."
+      "connector_gone": "Paused: the person who connected the channel is no longer an admin — connect it again.",
+      "bot_removed": "Paused: the bot was removed from the channel or is no longer an admin — make the bot an admin of the channel again (with its rights)."
     },
     "noPolling": "This server's bot receives no updates (TELEGRAM_POLLING=0) — join requests stay unanswered.",
     "lastError": "Telegram said: {error}",
@@ -5382,10 +5384,13 @@
       "public": "The channel is public — cannot connect.",
       "has_members": "The channel already has members — create a new private channel.",
       "vet_failed": "Could not check the channel, try again later.",
-      "already_connected": "This channel is already connected."
+      "already_connected": "This channel is already connected.",
+      "has_discussion": "A discussion group is linked to the channel — unlink it first."
     },
     "serverBehind": "The server is behind (migration 0128 missing).",
     "linkTitle": "Invite link",
-    "linkNote": "Share only this link — the channel’s primary link was revoked."
+    "linkNote": "Share only this link — the channel’s primary link was revoked.",
+    "recheck": "Check again",
+    "recheckOk": "The check passed — prices are posted again."
   }
 }

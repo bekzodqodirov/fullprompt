@@ -57,7 +57,14 @@ describe('the price hooks', () => {
 
   it('a deactivation kicks the member sweep, after the transaction', () => {
     const toggle = body(read('src/modules/platform/users/service.ts'), 'export async function toggleUserActive(');
-    expect(toggle.indexOf('kickPriceChannelMembers()')).toBeGreaterThan(toggle.indexOf('db.transaction('));
+    // After the transaction's END, not its start: a kick inside the callback
+    // lets the sweep race the uncommitted deactivation. No line inside the
+    // callback closes with «});», so the first one after the opening is its close.
+    const txStart = toggle.indexOf('db.transaction(');
+    const txEnd = toggle.indexOf('});', txStart);
+    expect(txStart).toBeGreaterThan(-1);
+    expect(txEnd).toBeGreaterThan(txStart);
+    expect(toggle.indexOf('kickPriceChannelMembers()')).toBeGreaterThan(txEnd);
   });
 });
 

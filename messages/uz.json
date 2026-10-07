@@ -5319,14 +5319,16 @@
       "public": "Kanal OCHIQ (@username bor) — narxlar joylanmaydi. Kanalni yopiq qiling yoki yangi yopiq kanal oching.",
       "has_members": "Kanalda {count} ta a’zo bor — bot ular kimligini bilmaydi. Yangi yopiq kanal oching.",
       "bot_not_admin": "Bot bu kanalda xabar joylay oladigan admin emas.",
-      "vet_failed": "Kanalni tekshirib bo‘lmadi: {error}"
+      "vet_failed": "Kanalni tekshirib bo‘lmadi: {error}",
+      "has_discussion": "Kanalga muhokama guruhi ulangan — har bir post o‘sha guruhga ham ko‘chadi, bot u yerdagilarni tekshira olmaydi. Kanal sozlamalarida muhokama guruhini uzing."
     },
     "paused": {
       "no_bot": "To‘xtatilgan: bot tokeni yo‘q — kanalga hech narsa ketmaydi.",
-      "not_vetted": "To‘xtatilgan: kanal tekshiruvdan o‘tmagan — «Shu kanalni ulash»ni qayta bosing.",
-      "public": "To‘xtatilgan: kanal ochiq bo‘lib qolgan.",
+      "not_vetted": "To‘xtatilgan: kanal oxirgi tekshiruvdan o‘tmadi (sababi yuqorida). Sababni tuzating — bot har 10 daqiqada o‘zi qayta tekshiradi, yoki «Qayta tekshirish»ni bosing.",
+      "public": "To‘xtatilgan: kanal ochiq bo‘lib qolgan. Kanalni yopiq qiling — bot har 10 daqiqada o‘zi qayta tekshiradi, yoki «Qayta tekshirish»ni bosing.",
       "channel_refused": "To‘xtatilgan: Telegram kanalga yozishga ruxsat bermadi.",
-      "connector_gone": "To‘xtatilgan: kanalni ulagan kishi endi admin emas — qayta ulang."
+      "connector_gone": "To‘xtatilgan: kanalni ulagan kishi endi admin emas — qayta ulang.",
+      "bot_removed": "To‘xtatilgan: bot kanaldan chiqarilgan yoki endi admin emas — botni kanalga qayta admin qiling (huquqlari bilan)."
     },
     "noPolling": "Bu serverda bot so‘rovlarni qabul qilmaydi (TELEGRAM_POLLING=0) — a’zolik so‘rovlari javobsiz qoladi.",
     "lastError": "Telegram javobi: {error}",
@@ -5382,10 +5384,13 @@
       "public": "Kanal ochiq — ulab bo‘lmaydi.",
       "has_members": "Kanalda begona a’zolar bor — yangi yopiq kanal oching.",
       "vet_failed": "Kanalni tekshirib bo‘lmadi, keyinroq urinib ko‘ring.",
-      "already_connected": "Bu kanal allaqachon ulangan."
+      "already_connected": "Bu kanal allaqachon ulangan.",
+      "has_discussion": "Kanalga muhokama guruhi ulangan — avval uni uzing."
     },
     "serverBehind": "Server yangilanmagan (0128 migratsiyasi yo‘q).",
     "linkTitle": "Havola",
-    "linkNote": "Faqat shu havolani yuboring — kanalning asosiy havolasi bekor qilindi."
+    "linkNote": "Faqat shu havolani yuboring — kanalning asosiy havolasi bekor qilindi.",
+    "recheck": "Qayta tekshirish",
+    "recheckOk": "Tekshiruvdan o‘tdi — narxlar yana joylanadi."
   }
 }

@@ -21,11 +21,11 @@ export const CHANNEL_RIGHTS = ['post', 'edit', 'invite', 'restrict'] as const;
 export type ChannelRight = (typeof CHANNEL_RIGHTS)[number];
 
 /** A vetting refusal. */
-export const VET_VERDICTS = ['public', 'has_members', 'bot_not_admin', 'vet_failed'] as const;
+export const VET_VERDICTS = ['public', 'has_discussion', 'has_members', 'bot_not_admin', 'vet_failed'] as const;
 export type VetVerdict = (typeof VET_VERDICTS)[number];
 
 /** Why the drain is not sending — printed on the panel in words. */
-export const PAUSE_REASONS = ['no_bot', 'not_vetted', 'public', 'channel_refused', 'connector_gone'] as const;
+export const PAUSE_REASONS = ['no_bot', 'bot_removed', 'not_vetted', 'public', 'channel_refused', 'connector_gone'] as const;
 export type PauseReason = (typeof PAUSE_REASONS)[number];
 
 /** The Bot API flag behind each right. */
@@ -71,6 +71,7 @@ export function decideAdoption(o: {
 export type VetDecision =
   | { verdict: 'ok' }
   | { verdict: 'public' }
+  | { verdict: 'has_discussion' }
   | { verdict: 'has_members'; count: number }
   | { verdict: 'bot_not_admin' };
 
@@ -78,6 +79,10 @@ export type VetDecision =
  * Is this channel safe to post prices into?
  *   - `public` — it has an @username (a public channel ALSO has a -100… id; the
  *     id's shape proves nothing);
+ *   - `has_discussion` — a discussion group is linked: Telegram copies every
+ *     post into it automatically, to members the bot never checked and cannot
+ *     see (the channel's own count does not include them). A group linked
+ *     LATER is caught by the drain's ten-minute re-vet;
  *   - `bot_not_admin` — the bot cannot post there;
  *   - `has_members` — more non-admin subscribers than the bot has admitted. On
  *     a first connect the bot has admitted nobody, so ANY subscriber refuses:
@@ -87,12 +92,14 @@ export type VetDecision =
  */
 export function decideVet(o: {
   username: string | null;
+  linkedChatId: number | null;
   memberCount: number;
   adminCount: number;
   botCanPost: boolean;
   liveMembers: number;
 }): VetDecision {
   if (o.username && o.username.trim() !== '') return { verdict: 'public' };
+  if (o.linkedChatId != null) return { verdict: 'has_discussion' };
   if (!o.botCanPost) return { verdict: 'bot_not_admin' };
   const subscribers = Math.max(0, o.memberCount - o.adminCount);
   if (subscribers > o.liveMembers) return { verdict: 'has_members', count: subscribers };
