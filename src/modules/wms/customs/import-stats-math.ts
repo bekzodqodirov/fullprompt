@@ -139,10 +139,22 @@ export function seriesFromRaw(
   };
 }
 
-/** The ±25 % weight band around the row's own kg per piece, or nothing. */
+/**
+ * The ±25 % weight band around the row's own kg per piece, or nothing.
+ *
+ * Both ends are cut to twelve significant figures. The band is INCLUSIVE and
+ * the stored weights carry four decimals, but `0.4 × 0.75` is
+ * 0.30000000000000004 in floating point (and `0.0004 × 0.75` is
+ * 0.00030000000000000003), so a declaration of exactly 0.3 kg fell outside
+ * the line drawn for a 0.4 kg piece — `weightBandSql` binds the bound as
+ * text and postgres compares it exactly. The cut drops only the arithmetic's
+ * own noise; a per-piece weight read off `kg / qty` (0.7 / 7 =
+ * 0.09999999999999999) loses its noise the same way.
+ */
 export function bandBounds(perPieceKg: number | null): { lo: number; hi: number } | null {
   if (perPieceKg === null || !Number.isFinite(perPieceKg) || perPieceKg <= 0) return null;
-  return { lo: perPieceKg * (1 - WEIGHT_BAND), hi: perPieceKg * (1 + WEIGHT_BAND) };
+  const cut = (v: number) => Number(v.toPrecision(12));
+  return { lo: cut(perPieceKg * (1 - WEIGHT_BAND)), hi: cut(perPieceKg * (1 + WEIGHT_BAND)) };
 }
 
 /**

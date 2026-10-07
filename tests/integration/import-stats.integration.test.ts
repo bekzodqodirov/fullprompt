@@ -347,6 +347,18 @@ describe('the statistics', () => {
     expect(weight).not.toBe('no_row_weight');
     expect((weight as { n: number }).n).toBe(4);
 
+    // Inclusive at a piece weight floating point cannot write: 0.4 × 0.75 is
+    // 0.30000000000000004, and postgres compares the bound exactly — a 0.3 kg
+    // declaration fell outside the line drawn for a 0.4 kg piece.
+    const light = code(19);
+    await addRows(
+      b,
+      light,
+      [0.2999, 0.3, 0.4, 0.5, 0.5001].map((w, i) => ({ unit: 'dona' as const, price: i + 1, w })),
+    );
+    const edge = unitOf(await stats({ batchId: b, tnvedCode: light, units: ['dona'], perPieceKg: 0.4 }), 'dona')!;
+    expect((edge.weight as { n: number }).n).toBe(3);
+
     const bare = (await readPickerItem(noQty!.id, null))!;
     expect(bare.perPieceKg).toBeNull();
     const none = unitOf(await stats({ batchId: b, tnvedCode: c, units: bare.units, perPieceKg: null }), 'dona')!;

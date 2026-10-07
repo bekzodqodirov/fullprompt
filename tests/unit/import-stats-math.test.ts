@@ -127,6 +127,24 @@ describe('his ±25 % weight band', () => {
     expect(bandBounds(Number.NaN)).toBeNull();
     expect(bandBounds(-2)).toBeNull();
   });
+
+  it('keeps its edges inclusive where floating point would shave them', () => {
+    // 0.4 × 0.75 is 0.30000000000000004: a 0.3 kg declaration — four
+    // decimals, compared exactly by postgres — fell outside its own band.
+    expect(bandBounds(0.4)).toEqual({ lo: 0.3, hi: 0.5 });
+    expect(bandBounds(0.0004)).toEqual({ lo: 0.0003, hi: 0.0005 });
+    // A per-piece weight read off kg / qty carries the same noise.
+    expect(bandBounds(0.7 / 7)).toEqual({ lo: 0.075, hi: 0.125 });
+    // A bound that is not a four-decimal number stays where it is: around a
+    // 0.41 g piece the band starts at 0.0003075, so a stored 0.0003 is
+    // still outside it and 0.0004 inside.
+    const odd = bandBounds(0.00041)!;
+    expect(odd.lo).toBeCloseTo(0.0003075, 15);
+    expect(odd.lo > 0.0003 && odd.lo < 0.0004).toBe(true);
+    const third = bandBounds(10 / 3)!;
+    expect(third.lo).toBe(2.5);
+    expect(third.hi > 4.1666 && third.hi < 4.1667).toBe(true);
+  });
 });
 
 describe('the marker position', () => {
