@@ -27,6 +27,11 @@ import { logger } from '@/modules/platform/logger';
 import { Panel } from './panel';
 import { CalcSendForm } from './calc-send-form';
 import { CalcOfferForm } from './calc-offer';
+import { CalcThread } from './calc-thread';
+import { ThreadFold } from './thread-fold';
+import { ThreadHashOpen } from './thread-hash-open';
+import { calcThreadsOnCard, type CardCalcThread } from '@/modules/wms/crm/thread';
+import { threadDoorsFor } from '@/modules/wms/crm/thread-door';
 
 /**
  * «Hisoblatishga yuborish» on a lead or deal card, and what came back.
@@ -120,6 +125,26 @@ export async function CalcPanel({
     logger.error({ err, entityType, entityId }, '[calc] panel: server behind');
     return null;
   }
+
+  // «❓ Savol-javob» — each calculation's Q&A on this card (§3.5 b). Its OWN
+  // catch: the tag is 0127's, and the catch above returns NULL for the whole
+  // panel — a database a release behind must not take the price off the card.
+  let threads: CardCalcThread[] = [];
+  let threadsBehind = false;
+  let threadWriters = new Set<string>();
+  try {
+    threads = await calcThreadsOnCard({ entityType, entityId }, actor.id);
+    threadWriters = await threadDoorsFor(
+      actor,
+      threads.map((row) => ({ kind: 'calc' as const, id: row.requestId })),
+    );
+  } catch (err) {
+    if (!isServerBehind(err)) throw err;
+    logger.error({ err, entityType, entityId }, '[thread] card folds: server behind');
+    threadsBehind = true;
+  }
+  const threadsUnread = threads.some((row) => row.unread);
+  const tth = await getTranslations('threads');
 
   const t = await getTranslations('calc');
   const format = await getFormatter();
@@ -218,7 +243,9 @@ export async function CalcPanel({
       id="hisoblatish"
       // A price on the card is what the seller opens it to read, so it is
       // never behind a fold — the Готово answer's door included (phase 4).
-      open={forceOpen || open.length > 0 || hasPrice || Boolean(last)}
+      // An unanswered question too: a closed or handed-back job with a VED's
+      // question waiting would otherwise hide its fold inside a closed panel.
+      open={forceOpen || open.length > 0 || hasPrice || Boolean(last) || threadsUnread}
     >
       {open.length > 0 ? (
         <ul className="space-y-1" data-testid="calc-open">
@@ -250,6 +277,50 @@ export async function CalcPanel({
             </li>
           ))}
         </ul>
+      ) : null}
+
+      {/* «❓ Savol-javob» — the seller's half of the VED's questions (E3 a,
+          E5 a): one fold per calculation that is open or has a message, its
+          list and its box the calc page's own component. The box is drawn
+          for whoever the calc thread's door admits — on a read-only panel too
+          (the karta, the VED's deal card): a thread reply is a note, which
+          both already allow. */}
+      {threadsBehind ? (
+        <p className="text-2xs text-ink-500" data-testid="calc-panel-threads-behind">
+          {tth('errors.server_behind')}
+        </p>
+      ) : threads.length > 0 ? (
+        <div className="space-y-1.5" data-testid="calc-panel-threads">
+          <ThreadHashOpen />
+          {threads.map((row) => (
+            <ThreadFold
+              key={row.requestId}
+              requestId={row.requestId}
+              initialOpen={row.open || row.unread}
+              summary={
+                <>
+                  {tth('calcTitle')}
+                  {row.section && Object.hasOwn(SECTION_LABELS, row.section)
+                    ? ` · ${t(SECTION_LABELS[row.section as CalcSection] as 'sections.podklyuch')}`
+                    : ''}
+                  {` · ${row.count}`}
+                  {row.unread ? (
+                    <span className="ml-1.5 text-xs font-bold text-warn" data-testid="calc-thread-fold-unread">
+                      ● {tth('unread')}
+                    </span>
+                  ) : null}
+                </>
+              }
+            >
+              <p className="mb-1.5 text-2xs text-ink-500">{tth('cardHint')}</p>
+              <CalcThread
+                requestId={row.requestId}
+                viewerId={actor.id}
+                composer={threadWriters.has(`calc:${row.requestId.toLowerCase()}`)}
+              />
+            </ThreadFold>
+          ))}
+        </div>
       ) : null}
 
       {/* Every STANDING seal — the one fact on this card that is not a draft —

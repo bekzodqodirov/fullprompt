@@ -109,7 +109,10 @@ describe('every consumer of the ONE door asks it', () => {
 
   it('the lenta admits the calc card and draws the VED a text-only box on the card itself', () => {
     const feed = src('src/components/client-feed.tsx');
-    expect(feed).toContain('mayOpenCalcCard(actor, calcCard)');
+    // The gate moved INTO the thread door (0127, #513) — the lenta and the
+    // thread written on it ask one sentence; its calc arm is still the card's.
+    expect(feed).toContain('lentaAdmission(actor, calcCard)');
+    expect(src('src/modules/wms/crm/thread-door.ts')).toContain('await calcCardExists(calcCard)');
     expect(feed).toContain('files={!viaCalc}');
     expect(feed).toContain('feedNoteTarget({ viaCalc, calcCard, noteOn, dealId, clientId, leadId })');
   });
@@ -140,9 +143,10 @@ describe('every consumer of the ONE door asks it', () => {
   it('the note action asks the door itself, never on a client entity, and refuses a file id', () => {
     const action = src('src/modules/wms/crm/reply-actions.ts');
     const body = action.slice(action.indexOf('export async function addFeedNoteAction'));
-    expect(body).toMatch(
-      /\(entityType === 'lead' \|\| entityType === 'deal'\) &&\s*\(await mayOpenCalcCard\(who, \{ entityType, entityId \}\)\)/,
-    );
+    // 0127: the thread's ONE door, whose VED arm is the calc card's and whose
+    // client arm is the CRM grant alone (thread-door.ts `threadDoorOf`).
+    expect(body).toContain('await mayWriteThread(who, { kind: entityType, id: entityId })');
+    expect(body).toContain('(await lentaAdmission(who, calcCard))?.viaCalc === true');
     expect(body).toContain("if (viaCalc && rawActivityId) return { error: 'text_only' }");
   });
 

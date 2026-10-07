@@ -25,6 +25,7 @@ import { TelegramLookback } from '@/components/telegram-lookback';
 import { CallsPanel } from '@/components/calls-panel';
 import { ClientDeals } from '@/components/client-deals';
 import { ClientCard } from '@/components/client-card';
+import { ThreadSeen } from '@/components/thread-seen';
 
 export default async function ClientDetailPage({
   params,
@@ -133,6 +134,7 @@ export default async function ClientDetailPage({
                 the working surface of the card (owner: the amoCRM shape).
                 Its money rows are the ledger's, for the ledger's audience. */}
             <ClientFeed clientId={client.id} money={canSeeMoney} tall />
+            <ThreadSeen refs={[{ kind: 'client', id: client.id }]} />
             <TelegramThread
               clientId={client.id}
               hodim={hodim}

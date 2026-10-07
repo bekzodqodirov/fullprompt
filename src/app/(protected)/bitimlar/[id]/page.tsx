@@ -36,6 +36,7 @@ import { ImportLines } from '../import-lines';
 import { LinkReceipt } from '../link-receipt';
 import { DeferForm } from '../defer-form';
 import { DiscountForm } from '../discount-form';
+import { ThreadSeen } from '@/components/thread-seen';
 
 /**
  * The deal card: the quote and the reality, side by side.
@@ -171,6 +172,7 @@ export default async function DealPage({
               limit={60}
               tall
             />
+            <ThreadSeen refs={[{ kind: 'deal', id: row.deal.id }]} />
             {/* The chat stands BESIDE the lenta, never inside it (round 21). */}
             <TelegramThread
               clientId={row.deal.clientId}

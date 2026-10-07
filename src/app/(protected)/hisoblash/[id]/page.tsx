@@ -32,6 +32,11 @@ import { RecalcButton } from './recalc-button';
 import { offerSightFor } from '@/modules/wms/calc/upsale-scope';
 import { CargoFactsForm } from './cargo-facts';
 import { LastQuotes } from './last-quotes';
+import { CalcThread } from '@/components/calc-thread';
+import { ThreadSeen } from '@/components/thread-seen';
+import { ThreadPulse } from '@/components/thread-pulse';
+import { calcThreadSummary, threadToken } from '@/modules/wms/crm/thread';
+import { mayWriteThread } from '@/modules/wms/crm/thread-door';
 
 /**
  * One calculation request — the VED person's whole screen.
@@ -139,6 +144,26 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
     if (!isServerBehind(err)) throw err;
     logger.error({ err, id }, '[calc] workspace: server behind');
   }
+  // «❓ Savol-javob» (E3 a, E5 a): this calculation's Q&A with the seller —
+  // its count for the jump chip and the pulse's baseline, on its OWN catch
+  // (the tag is 0127's; a database a release behind keeps the page).
+  const tth = await getTranslations('threads');
+  const threadRef = { kind: 'calc' as const, id: row.id };
+  let threadSummary: { count: number; unread: boolean } | null = null;
+  let threadBaseline: string | null = null;
+  // The page's own door is `ved.docs`, which implies the calc thread's —
+  // asked anyway: the box is drawn by the door, never by the page.
+  const threadWriter = await mayWriteThread(actor, threadRef);
+  try {
+    [threadSummary, threadBaseline] = await Promise.all([
+      calcThreadSummary(row.id, actor.id),
+      threadToken(threadRef),
+    ]);
+  } catch (err) {
+    if (!isServerBehind(err)) throw err;
+    logger.error({ err, id }, '[thread] calc page thread: server behind');
+  }
+
   const endingLabel = (e: CalcEnding) =>
     e === 'sealed'
       ? t('endSealed')
@@ -190,6 +215,17 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
           ) : (
             <span className="chip chip-warn">{t('unassigned')}</span>
           )}
+          {threadSummary ? (
+            <a
+              href="#savol"
+              className="chip chip-brand ml-auto"
+              data-testid="calc-thread-jump"
+              data-unread={threadSummary.unread ? '1' : '0'}
+            >
+              {tth('calcJump', { n: threadSummary.count })}
+              {threadSummary.unread ? <span className="ml-1 text-warn">●</span> : null}
+            </a>
+          ) : null}
         </div>
         <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-sm md:grid-cols-4">
           <dt className="text-ink-500">{t('route')}</dt>
@@ -481,8 +517,19 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
               <OfferPriceList prices={prices} />
             </section>
           ) : null}
+          {/* «❓ Savol-javob» — ONLY this calculation's Q&A (E5 a). The VED's
+              question goes to the seller's Telegram; the answer lands here,
+              from the card's fold or as a reply in Telegram. The hint warns
+              him off the floor: every seller on this thread reads what he
+              types (law 4/10, #790), and no screen rule can police text. */}
+          <section id="savol" className="card !p-3 mt-3 scroll-mt-20 space-y-2" data-testid="calc-thread">
+            <h2 className="text-sm font-bold">{tth('calcTitle')}</h2>
+            <CalcThread requestId={row.id} viewerId={actor.id} composer={threadWriter} hint={tth('calcHint')} />
+          </section>
         </div>
       </div>
+      <ThreadSeen refs={[threadRef]} />
+      {threadBaseline !== null ? <ThreadPulse kind="calc" id={row.id} initial={threadBaseline} /> : null}
     </div>
   );
 }

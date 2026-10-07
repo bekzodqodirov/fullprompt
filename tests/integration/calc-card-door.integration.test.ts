@@ -219,7 +219,14 @@ describe('a note ping links each recipient to the door they have', () => {
     await db
       .insert(crmActivities)
       .values({ entityType: 'lead', entityId: leadId, kind: 'note', note: 'Necha kub?', createdBy: vedId });
-    await announceNote({ entityType: 'lead', entityId: leadId, note: '12 kub', authorId: sellerId });
+    await announceNote({
+      entityType: 'lead',
+      entityId: leadId,
+      note: '12 kub',
+      authorId: sellerId,
+      activityId: uuidv4(),
+      calcRequestId: null,
+    });
     const rows = await db
       .select({ payload: notifications.payload })
       .from(notifications)
@@ -230,7 +237,14 @@ describe('a note ping links each recipient to the door they have', () => {
   });
 
   it('a mention of the VED links him to the karta too', async () => {
-    await announceNote({ entityType: 'lead', entityId: leadId, note: `@${vedName} qarab bering`, authorId: sellerId });
+    await announceNote({
+      entityType: 'lead',
+      entityId: leadId,
+      note: `@${vedName} qarab bering`,
+      authorId: sellerId,
+      activityId: uuidv4(),
+      calcRequestId: null,
+    });
     const rows = await db
       .select({ payload: notifications.payload })
       .from(notifications)

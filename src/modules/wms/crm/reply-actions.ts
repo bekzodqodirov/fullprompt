@@ -2,7 +2,8 @@
 
 import { revalidatePath } from 'next/cache';
 import { AuthError, authorize, getActor } from '@/modules/platform/rbac/authorize';
-import { mayOpenCalcCard } from '@/modules/wms/calc/card-door';
+import { isServerBehind } from '@/modules/platform/db/errors';
+import { logger } from '@/modules/platform/logger';
 import { requestMeta } from '@/modules/platform/auth/session';
 import {
   cancelQueued,
@@ -14,6 +15,8 @@ import {
 import { excludeAndPurgeChat } from './chat-rules';
 import { addActivity } from './service';
 import { announceNote } from './internal-chat';
+import { lentaAdmission, mayWriteThread } from './thread-door';
+import { openCalcThreadOn } from './thread';
 
 /**
  * A conversation is shown on FOUR surfaces, and a write must reach all of
@@ -53,7 +56,15 @@ function revalidateChatSurfaces(clientId: string, path?: string | null): void {
 export interface ReplyState {
   ok?: boolean;
   error?: string;
+  /**
+   * The note saved, and an OPEN calculation on this card has a question
+   * waiting (§3.5 c): an untagged lenta note never reaches the VED, so the box
+   * says where to answer. Never a refusal.
+   */
+  hint?: 'calc_thread';
 }
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function sendReplyAction(_prev: ReplyState, form: FormData): Promise<ReplyState> {
   let who;
@@ -207,19 +218,15 @@ export async function addFeedNoteAction(_prev: ReplyState, form: FormData): Prom
     return { error: 'forbidden' };
   }
   /**
-   * Two doors (docs/VED-TARIX.md §10, 14a): the CRM grant as always, or the
-   * VED's calc-card door — and that one only on a LEAD or a DEAL that carries
-   * a calculation, never on a posted client entity (review access-money-5:
-   * «is this client some calc card's client» has three readers with three
-   * answers). The action asks the door itself; the box drawing it is not a
-   * guard (#531).
+   * ONE door (the owner's E answers, thread-door.ts): the thread's own —
+   * `mayWriteThread` — which is the card's (a lead its owner or the whole
+   * funnel, a deal and a client the lenta's gate) plus the VED's calc-card
+   * arm on a LEAD or a DEAL that carries a calculation. It used to admit any
+   * `crm.leads` holder on ANY posted lead id — never asking whether he may
+   * open it — and posting once also subscribed him to every later note. The
+   * action asks the door itself; the box drawing it is not a guard (#531).
    */
-  const viaCrm = who.permissions.has('crm.leads');
-  const viaCalc =
-    !viaCrm &&
-    (entityType === 'lead' || entityType === 'deal') &&
-    (await mayOpenCalcCard(who, { entityType, entityId }));
-  if (!viaCrm && !viaCalc) return { error: 'forbidden' };
+  if (!(await mayWriteThread(who, { kind: entityType, id: entityId }))) return { error: 'forbidden' };
   if (!note) return { error: 'empty' };
   // Set when the box uploaded files first: the note takes THAT id, so the
   // attachments pre-bound to it become the note's own (owner: "zametkaga
@@ -227,17 +234,41 @@ export async function addFeedNoteAction(_prev: ReplyState, form: FormData): Prom
   const rawActivityId = String(form.get('activityId') ?? '');
   // Text only for the calculator in v1 (review access-money-19): his box
   // draws no 📎, and a posted file id is a forged post, refused in words.
+  // «Admitted only through the calc arm» is the lenta's own answer, never a
+  // re-typed permission check.
+  const calcCard: { entityType: 'lead' | 'deal'; entityId: string } | null =
+    entityType === 'lead' || entityType === 'deal' ? { entityType, entityId } : null;
+  const viaCalc = (await lentaAdmission(who, calcCard))?.viaCalc === true;
   if (viaCalc && rawActivityId) return { error: 'text_only' };
   const activityId = /^[0-9a-f-]{36}$/i.test(rawActivityId) ? rawActivityId : undefined;
 
-  await addActivity(
+  const row = await addActivity(
     { id: activityId, entityType, entityId, kind: 'note', note },
     { actorId: who.id, ...(await requestMeta()) },
   );
   // The Telegram half of the internal chat. After the save and never blocking
   // it: a note that saved but did not ping is a small failure, the reverse
-  // would be a large one.
-  await announceNote({ entityType, entityId, note, authorId: who.id }).catch(() => {});
+  // would be a large one — and a failure is LOGGED, never swallowed whole.
+  await announceNote({
+    entityType,
+    entityId,
+    note,
+    authorId: who.id,
+    activityId: row.id,
+    calcRequestId: null,
+  }).catch((err: unknown) => logger.warn({ err, activityId: row.id }, '[thread] announce failed'));
+  // The box's hint: the lead or deal the box sits on (`hintOn`, a hidden
+  // field) has an open calculation with a question in it. A forged value only
+  // changes a hint, and a database a release behind simply gives none.
+  let hint: ReplyState['hint'];
+  const [hintType, hintId] = String(form.get('hintOn') ?? '').split(':');
+  if ((hintType === 'lead' || hintType === 'deal') && hintId && UUID.test(hintId)) {
+    try {
+      if (await openCalcThreadOn({ entityType: hintType, entityId: hintId })) hint = 'calc_thread';
+    } catch (err) {
+      if (!isServerBehind(err)) logger.warn({ err }, '[thread] lenta hint not read');
+    }
+  }
   revalidatePath(`/admin/clients/${entityId}`);
   revalidatePath(`/crm/leads/${entityId}`);
   revalidatePath(`/bitimlar/${entityId}`);
@@ -246,5 +277,5 @@ export async function addFeedNoteAction(_prev: ReplyState, form: FormData): Prom
   // The karta (`/hisoblash/<request>/karta`) — keyed by the request, which
   // this action does not hold, so the section.
   if (viaCalc) revalidatePath('/hisoblash', 'layout');
-  return { ok: true };
+  return hint ? { ok: true, hint } : { ok: true };
 }

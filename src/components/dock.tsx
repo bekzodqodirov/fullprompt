@@ -30,6 +30,10 @@ import type { DockConversation } from '@/modules/wms/crm/conversation-row';
  *    it with a DOM marker (`data-dock-client`), which is how a client
  *    component learns what a server page was about without a second fetch.
  *  - ✅ my day — the same list as /bugun, one tap to finish.
+ *  - 👥 ichki (0127, the owner's E answers) — the staff threads this person
+ *    is in: a card's notes, a calculation's Q&A; new ones marked, each row a
+ *    link to where that thread lives. No composer here — replying is on the
+ *    card or in Telegram, two writers are enough.
  *
  * Everything here is fetched WHEN THE DRAWER OPENS, never on page load: the
  * dock rides on every page in the app, so its cost has to be zero until
@@ -77,16 +81,44 @@ interface DockThread {
   }[];
 }
 
-export function Dock({ canChat }: { canChat: boolean }) {
+/** One «👥 Ichki» row — the route's `myThreads` answer (wms/crm/thread.ts `DockThreadRow`). */
+interface DockThreadRow {
+  kind: 'lead' | 'deal' | 'client' | 'calc';
+  id: string;
+  label: string;
+  section: string | null;
+  author: string | null;
+  excerpt: string;
+  at: string | null;
+  unread: boolean;
+  href: string;
+}
+
+export function Dock({
+  canChat,
+  canThreads,
+}: {
+  canChat: boolean;
+  /**
+   * May this person have a staff thread at all (the CRM grants, the VED's)?
+   * REQUIRED: a warehouse role or the accountant can never have a row, so
+   * the layout says so and the tab is neither drawn nor fetched.
+   */
+  canThreads: boolean;
+}) {
   const pathname = usePathname();
   const t = useTranslations('crm');
   const tl = useTranslations('lidChat');
   const tt = useTranslations('tasks');
   const tn = useTranslations('navShort');
   const tc = useTranslations('common');
+  const tth = useTranslations('threads');
+  const tcalc = useTranslations('calc');
 
   const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState<'chat' | 'tasks'>(canChat ? 'chat' : 'tasks');
+  const [tab, setTab] = useState<'chat' | 'tasks' | 'threads'>(canChat ? 'chat' : 'tasks');
+  const [threads, setThreads] = useState<DockThreadRow[] | null>(null);
+  const [threadsState, setThreadsState] = useState<'ok' | 'failed' | 'behind'>('ok');
   const [taskError, setTaskError] = useState<string | null>(null);
   const [tasks, setTasks] = useState<{
     overdue: DockTask[];
@@ -114,6 +146,23 @@ export function Dock({ canChat }: { canChat: boolean }) {
   const loadTasks = useCallback(async () => {
     const res = await fetch('/api/dock/tasks');
     if (res.ok) setTasks((await res.json()) as typeof tasks);
+  }, []);
+
+  // «👥 Ichki» — one fetch per open, like the tasks. A database a release
+  // behind says so (`behind`), never «you have no threads».
+  const fetchThreadList = useCallback(async () => {
+    try {
+      const res = await fetch('/api/dock/threads', { cache: 'no-store' });
+      if (!res.ok) {
+        setThreadsState('failed');
+        return;
+      }
+      const data = (await res.json()) as { rows: DockThreadRow[]; behind?: boolean };
+      setThreads(data.rows);
+      setThreadsState(data.behind ? 'behind' : 'ok');
+    } catch {
+      setThreadsState('failed');
+    }
   }, []);
 
   const loadConversations = useCallback(async () => {
@@ -196,6 +245,7 @@ export function Dock({ canChat }: { canChat: boolean }) {
   function openDock() {
     setOpen(true);
     void loadTasks();
+    if (canThreads) void fetchThreadList();
     if (!canChat) {
       setTab('tasks');
       return;
@@ -287,6 +337,13 @@ export function Dock({ canChat }: { canChat: boolean }) {
   // The COUNT, not the listed rows: `myDay` caps each bucket at 40, so the
   // badge used to stop climbing at 80 while /bugun printed the real total.
   const due = (tasks?.counts.overdue ?? 0) + (tasks?.counts.today ?? 0);
+  const threadsUnread = threads?.filter((row) => row.unread).length ?? 0;
+  // Three tabs and the 44 px ✕ in one row at 360 px: «💬 Переписки» and
+  // «✅ Мой день N» already filled most of the sheet (the judge's 18), so
+  // below `sm` each tab is its ICON — the word stays for a screen reader and
+  // as the button's name — and from `sm` up the words return.
+  const tabClass = (active: boolean) =>
+    `shrink-0 rounded-xl px-3 py-2 text-sm font-bold ${active ? 'bg-brand-50 text-brand-800' : 'text-ink-500'}`;
 
   return (
     <>
@@ -325,32 +382,52 @@ export function Dock({ canChat }: { canChat: boolean }) {
                 <button
                   type="button"
                   data-testid="dock-tab-chat"
+                  aria-label={t('conversations')}
                   onClick={() => {
                     setTab('chat');
                     if (!threadFor && !conversations) void loadConversations();
                   }}
-                  className={`rounded-xl px-3 py-2 text-sm font-bold ${
-                    tab === 'chat' ? 'bg-brand-50 text-brand-800' : 'text-ink-500'
-                  }`}
+                  className={tabClass(tab === 'chat')}
                 >
-                  💬 {t('conversations')}
+                  <span aria-hidden="true">💬</span>
+                  <span className="sr-only sm:not-sr-only sm:ml-1">{t('conversations')}</span>
                 </button>
               )}
               <button
                 type="button"
                 data-testid="dock-tab-tasks"
+                aria-label={tn('myDay')}
                 onClick={() => setTab('tasks')}
-                className={`rounded-xl px-3 py-2 text-sm font-bold ${
-                  tab === 'tasks' ? 'bg-brand-50 text-brand-800' : 'text-ink-500'
-                }`}
+                className={tabClass(tab === 'tasks')}
               >
-                ✅ {tn('myDay')}
+                <span aria-hidden="true">✅</span>
+                <span className="sr-only sm:not-sr-only sm:ml-1">{tn('myDay')}</span>
                 {due > 0 && (
                   <span className="num ml-1.5 rounded-full bg-warn/15 px-1.5 text-xs text-warn">
                     {due}
                   </span>
                 )}
               </button>
+              {canThreads && (
+                <button
+                  type="button"
+                  data-testid="dock-tab-threads"
+                  aria-label={tth('dockTab')}
+                  onClick={() => setTab('threads')}
+                  className={tabClass(tab === 'threads')}
+                >
+                  <span aria-hidden="true">👥</span>
+                  <span className="sr-only sm:not-sr-only sm:ml-1">{tth('dockTab')}</span>
+                  {threadsUnread > 0 && (
+                    <span
+                      className="num ml-1.5 rounded-full bg-warn/15 px-1.5 text-xs text-warn"
+                      data-testid="dock-threads-unread-count"
+                    >
+                      {threadsUnread}
+                    </span>
+                  )}
+                </button>
+              )}
               <button
                 type="button"
                 aria-label={tc('back')}
@@ -603,6 +680,69 @@ export function Dock({ canChat }: { canChat: boolean }) {
                       );
                     })}
                   </div>
+                )}
+              </div>
+            )}
+
+            {tab === 'threads' && canThreads && (
+              <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2" data-testid="dock-threads">
+                {threadsState === 'failed' ? (
+                  <p className="p-2 text-center text-sm text-bad" data-testid="dock-threads-error">
+                    {tth('dockFailed')}
+                  </p>
+                ) : threadsState === 'behind' ? (
+                  <p className="p-2 text-center text-sm text-ink-500" data-testid="dock-threads-error">
+                    {tth('errors.server_behind')}
+                  </p>
+                ) : threads === null ? (
+                  <p className="p-2 text-center text-sm text-ink-500">{tth('dockLoading')}</p>
+                ) : threads.length === 0 ? (
+                  <p className="p-2 text-center text-sm text-ink-500" data-testid="dock-threads-empty">
+                    {tth('dockEmpty')}
+                  </p>
+                ) : (
+                  threads.map((row) => (
+                    <Link
+                      key={`${row.kind}:${row.id}`}
+                      href={row.href}
+                      // Closed by hand as well: a row on the card already on
+                      // screen changes only the #anchor, and the close-on-
+                      // navigation effect would leave the drawer over it.
+                      onClick={() => setOpen(false)}
+                      data-testid="dock-thread"
+                      data-kind={row.kind}
+                      data-id={row.id}
+                      data-unread={row.unread ? '1' : '0'}
+                      className="flex w-full items-baseline gap-2 rounded-xl p-2.5 text-left hover:bg-surface-sunken"
+                    >
+                      <span className="w-2 shrink-0">
+                        {row.unread ? (
+                          <span
+                            className="inline-block h-2 w-2 rounded-full bg-warn"
+                            data-testid="dock-thread-unread"
+                            aria-label={tth('unread')}
+                          />
+                        ) : null}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-bold">
+                          {row.label}
+                          {row.kind === 'calc' && row.section
+                            ? ` · ${tcalc(`sections.${row.section}`)}`
+                            : ''}
+                        </span>
+                        <span className="block truncate text-xs text-ink-500">
+                          {row.author ? `${row.author}: ` : ''}
+                          {row.excerpt}
+                        </span>
+                      </span>
+                      {row.at && (
+                        <span className="shrink-0 text-2xs text-ink-500">
+                          {new Date(row.at).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })}
+                        </span>
+                      )}
+                    </Link>
+                  ))
                 )}
               </div>
             )}

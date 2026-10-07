@@ -35,6 +35,7 @@ import {
 import { leadThreadSource } from '@/modules/wms/crm/conversation-row';
 import { mayOpenLead } from '@/modules/wms/crm/lead-door';
 import { mayOpenClientLedger } from '@/modules/wms/finance/scope';
+import { ThreadSeen } from '@/components/thread-seen';
 
 /** One lead: where it stands, what was said, and the button that ends it. */
 export default async function LeadPage({
@@ -159,6 +160,9 @@ export default async function LeadPage({
              does not render. */
           <>
             <ClientFeed clientId={dockClientId} money={feedMoney} leadId={lead.id} limit={60} tall />
+            <ThreadSeen
+              refs={[{ kind: 'lead', id: lead.id }, ...(dockClientId ? [{ kind: 'client' as const, id: dockClientId }] : [])]}
+            />
             {/* The chat stands BESIDE the lenta, never inside it (round 21). */}
             <TelegramThread
               clientId={threadSource.kind === 'client' ? threadSource.clientId : null}

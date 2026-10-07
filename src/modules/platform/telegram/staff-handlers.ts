@@ -41,6 +41,7 @@ import {
   takeStaffEntry,
   takeTaskPending,
   notePendingPrompt,
+  noteReplyPending,
   pressRefusalText,
   refusalFor,
   taskPressCheck,
@@ -78,6 +79,14 @@ import {
 import { sendNote } from './note-send';
 import { buttonLabel, splitMessage } from './limits';
 import { activeDraft } from './task-draft';
+import {
+  BUSY_INTAKE,
+  REPLY_SENTENCES,
+  refuseMediaReply,
+  replyVerdictFor,
+  threadReplyFromBot,
+  verdictSentence,
+} from './reply-door';
 import {
   answerGiven,
   answerPendingText,
@@ -503,6 +512,14 @@ export function registerStaffBot(bot: Bot): void {
       return;
     }
 
+    // «💬 Javob yozish» / «❓ Sotuvchidan so‘rash» (0127). BEFORE the approval
+    // guard below, which returns on every kind it does not name (#939) — and
+    // every path answers the press.
+    if (parsed.kind === 'thread_reply') {
+      await handleThreadReplyPress(ctx, chatId);
+      return;
+    }
+
     // approval. Guarded now rather than reached by falling through: the union
     // grew a fifth member and an unguarded tail would have read `approvalId`
     // off a notes callback.
@@ -622,6 +639,9 @@ export function registerStaffBot(bot: Bot): void {
         // forward (docs/TELEGRAM-TOPSHIRIQ.md §3); anything else is the
         // cabinet's.
         if (await draftMedia(ctx, chatId)) return;
+        // A photo or file sent as a REPLY to a thread or task ping — only
+        // after every collector declined it (E10 a, text first).
+        if (await refuseMediaReply(ctx, chatId)) return;
         return next();
       }
       const owner = await staffForChat(chatId);
@@ -702,6 +722,9 @@ export function registerStaffBot(bot: Bot): void {
       const chatId = BigInt(ctx.chat.id);
       if (activeIntake(chatId) || activeCapture(chatId)) return next();
       if (await draftMedia(ctx, chatId)) return;
+      // A voice note as a REPLY to a thread or task ping (E10 a, text first) —
+      // after the draft declined it, so a live draft's part still joins it.
+      if (await refuseMediaReply(ctx, chatId)) return;
       return next();
     },
   );
@@ -868,6 +891,30 @@ export function registerStaffBot(bot: Bot): void {
       if (!staff) return next();
       await draftText(ctx, chatId, draft);
       return;
+    }
+
+    // A REPLY to one of the bot's own messages (the owner's E answers): a
+    // swipe-reply to a thread ping lands on the card, to the VED's «Hisoblash:
+    // …» task copy under that calculation, to a task copy as a question to its
+    // giver. BELOW the labels and every live collector (one collector at a
+    // time — a reply typed while a zametka, a draft or a calc intake is live
+    // is filed by THAT collector); ABOVE Door B (a reply is not a forward) and
+    // ABOVE `takeTaskPending`, which deletes on read — a reply names its own
+    // target and must never be eaten as the result of ANOTHER task, while the
+    // door hands a reply to the very message a wait was armed from back to
+    // that wait (`threadReplyFromBot` step 2). Null = not handled: falls through.
+    const replied = ctx.message.reply_to_message;
+    if (replied && replied.from?.id === ctx.me.id && !escapesIntake(ctx.message.text)) {
+      const out = await threadReplyFromBot(chatId, {
+        replyToMessageId: replied.message_id,
+        replyToForwarded: 'forward_origin' in replied && Boolean(replied.forward_origin),
+        text: ctx.message.text,
+        incomingMessageId: ctx.message.message_id,
+      });
+      if (out) {
+        await ctx.reply(out.text);
+        return;
+      }
     }
 
     // Door B: a forwarded TEXT with no collector live is offered as a task
@@ -1761,6 +1808,66 @@ const NOTES_PER_PAGE = 12;
 type NoteReplyCtx = {
   reply: (text: string, extra?: Record<string, unknown>) => Promise<unknown>;
 };
+
+/**
+ * «💬 Javob yozish» / «❓ Sotuvchidan so‘rash» pressed (0127). The button
+ * carries no id: the press resolves its OWN pressed message through the reply
+ * door — the same resolver a swipe-reply uses — and only then arms the one
+ * text wait. Every path answers the callback (an unanswered press spins for
+ * fifteen seconds with no error anywhere, #939).
+ *
+ * Refused while ANY collector is live: a collector sits above the one-text
+ * wait in the ladder and would eat the next text, leaving the armed wait to
+ * catch a LATER unrelated text (a «GS777») as a reply. No ForceReply — whether
+ * it hides the persistent staff keyboard on a phone is unverified, and
+ * «💬 Savol» already works with a plain wait.
+ */
+async function handleThreadReplyPress(
+  ctx: {
+    answerCallbackQuery: (opts?: { text?: string }) => Promise<unknown>;
+    reply: (text: string, extra?: Record<string, unknown>) => Promise<unknown>;
+    callbackQuery: { message?: { message_id: number } };
+  },
+  chatId: bigint,
+): Promise<void> {
+  const staff = await staffForChat(chatId);
+  if (!staff) {
+    await ctx.answerCallbackQuery({ text: 'Ulanmagan' });
+    return;
+  }
+  if (activeIntake(chatId)) {
+    await ctx.answerCallbackQuery({ text: BUSY_INTAKE });
+    await ctx.reply(BUSY_INTAKE);
+    return;
+  }
+  if (activeCapture(chatId)) {
+    await ctx.answerCallbackQuery({ text: 'Avval zametkani saqlang' });
+    await refuseWhileCapturing(ctx, chatId);
+    return;
+  }
+  if (activeDraft(chatId)) {
+    await ctx.answerCallbackQuery({ text: BUSY_DRAFT });
+    await ctx.reply(BUSY_DRAFT);
+    return;
+  }
+  const messageId = ctx.callbackQuery.message?.message_id;
+  const verdict = messageId
+    ? await replyVerdictFor(chatId, messageId, staff.id).catch((err: unknown) => {
+        logger.warn({ err }, '[thread] press verdict failed');
+        return null;
+      })
+    : null;
+  const refused = verdict ? verdictSentence(verdict) : REPLY_SENTENCES.not_replyable;
+  if (refused || !messageId) {
+    const text = refused ?? REPLY_SENTENCES.not_replyable;
+    await ctx.answerCallbackQuery({ text: text.slice(0, 190) });
+    await ctx.reply(text);
+    return;
+  }
+  noteReplyPending(chatId, messageId);
+  await ctx.answerCallbackQuery();
+  await ctx.reply(REPLY_SENTENCES.pressPrompt);
+}
 
 /**
  * One collector at a time. The calc intake wins because it is minutes of a
