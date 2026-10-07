@@ -592,6 +592,41 @@ describe('D2-D7 (2026-10-07): the warehouse manager releases at HIS counter, and
     expect(again.id).toBe(first.id);
   });
 
+  it('I4b: Q4 b — a release a deal «muddat» excuses WHOLE sends no «🔓»: nothing pressed, or a tick over the covered balance', async () => {
+    // Asked of the rows AND of the decision (DEBT-3): a gate that wrongly
+    // opened over a muddat-covered balance hands the text builder a $0 debt,
+    // which throws into the logged catch and writes no row — so «no row»
+    // alone cannot tell a right gate from a wrong one. The log line can.
+    const errors = vi.spyOn(console, 'error');
+    let quiet: Awaited<ReturnType<typeof issue>>;
+    let ticked: Awaited<ReturnType<typeof issue>>;
+    try {
+      // ⏳ nothing pressed: the seller's muddat covers the whole balance.
+      const c = await mkClient(S1.id);
+      const dealId = await mkDeal(c.id);
+      await ledger(c.id, 'charge', 90, { dealId });
+      await deferPayment(dealId, { reason: 'kutamiz', untilAllArrived: true }, ctx(S1.id), S1.actor);
+      quiet = await issue(c.id, W.actor);
+      // ✋ a tick WITH a reason over the same shape: nothing blocked, so the
+      // tick was not used — it stores no reason and tells nobody either.
+      const t = await mkClient(S1.id);
+      const tDeal = await mkDeal(t.id);
+      await ledger(t.id, 'charge', 75, { dealId: tDeal });
+      await deferPayment(tDeal, { reason: 'kutamiz', untilAllArrived: true }, ctx(S1.id), S1.actor);
+      ticked = await issue(t.id, SA.actor, { debtOk: true, debtNote: 'muddat bor-ku' });
+      expect(errors.mock.calls.some((call) => call[0] === '[debt-released]')).toBe(false);
+    } finally {
+      errors.mockRestore();
+    }
+    // The owner and the accountant are the audience, and neither is told.
+    expect(await releasedTold(quiet.id)).toEqual([]);
+    expect(await releasedTold(ticked.id)).toEqual([]);
+    const [stored] = await db.select().from(handovers).where(eq(handovers.id, quiet.id));
+    expect(stored).toMatchObject({ blockingUsd: '0.00', deferredUsd: '90.00', debtNote: null });
+    const [storedTick] = await db.select().from(handovers).where(eq(handovers.id, ticked.id));
+    expect(storedTick).toMatchObject({ debtOk: true, debtNote: null, blockingUsd: '0.00', deferredUsd: '75.00' });
+  });
+
   it('I5: D3a — the counter’s power did not leak: no ping, no list, no decision, no muddat, no promise', async () => {
     const wm = at(WM, whId);
     const c = await mkClient(S1.id);

@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 /**
@@ -217,6 +218,89 @@ describe('B4 a: ONE number reader on every cell and on the dictionary’s baza',
     const press = DICT.slice(at, next);
     expect(press).toContain('readNumberCell(amount)');
     expect(press).not.toContain("Number(amount.replace(',', '.'))");
+  });
+});
+
+/** Every .ts/.tsx file under `dir`, repo-relative. */
+function sourceFiles(dir: string): string[] {
+  const out: string[] = [];
+  for (const name of readdirSync(dir)) {
+    const rel = join(dir, name);
+    if (statSync(rel).isDirectory()) out.push(...sourceFiles(rel));
+    else if (/\.(ts|tsx)$/.test(name)) out.push(rel);
+  }
+  return out;
+}
+
+describe('his 2b (2026-10-07): «boshqa kishi hozirgina o‘zgartirdi» is the PHONE’s alone', () => {
+  it('the desktop grid’s one save posts no expectation and looks at no clock first', () => {
+    expect(constBody('save')).not.toMatch(/expect:|expectFor\(|lookFirst\(|probeClock\(/);
+    // The edits it posts are buildEdit's, and those carry none either — only
+    // the sheet adds one beside the built edit (B2 a above).
+    expect(constBody('buildEdit')).not.toMatch(/expect:|expectFor\(/);
+    // The desktop row's 🗑 deletes without looking first.
+    const at = TABLE.indexOf('data-testid="calc-item-delete"');
+    expect(at).toBeGreaterThan(-1);
+    const press = TABLE.slice(at, TABLE.indexOf("🗑 {tc('delete')}", at));
+    expect(press).not.toMatch(/lookFirst\(|probeClock\(/);
+  });
+
+  it('the 15-second probe runs only while a sheet is open or an AI pass holds the request', () => {
+    const at = TABLE.indexOf('const sheetKey = sheetKeyOf(sheet);');
+    expect(at).toBeGreaterThan(-1);
+    const effect = TABLE.slice(at, TABLE.indexOf('}, [sheetKey, aiRunning, id, router]);', at));
+    expect(effect).toContain('if (sheetKey === null && !aiRunning) return;');
+    expect(effect).toContain('probeClock(id)');
+  });
+
+  it('a sheet opens only from the phone cards, and only the sheet draws the warning', () => {
+    const opens = TABLE.split('onOpenItem={openItemSheet}').length - 1;
+    expect(opens).toBe(1);
+    const mount = TABLE.indexOf('<PhoneBlocks');
+    expect(mount).toBeGreaterThan(-1);
+    const end = TABLE.indexOf('/>', TABLE.indexOf('onOpenGhost={openGhostSheet}', mount));
+    const opener = TABLE.indexOf('onOpenItem={openItemSheet}');
+    expect(opener).toBeGreaterThan(mount);
+    expect(opener).toBeLessThan(end);
+    expect(PHONE).toContain('md:hidden');
+    const drawers = sourceFiles('src').filter((file) => read(file).includes("'phone.changed'"));
+    expect(drawers).toEqual([join('src', 'app', '(protected)', 'hisoblash', '[id]', 'row-sheet.tsx')]);
+  });
+});
+
+describe('his 3b (2026-10-07): «1,125 — qaysi biri?» is asked by the goods cells and the dictionary baza ONLY', () => {
+  it('the files that import the one reader are a closed set', () => {
+    const importers = sourceFiles('src')
+      .filter((file) => /from ['"][^'"]*\/number-cell['"]/.test(readFileSync(file, 'utf8')))
+      .sort();
+    expect(importers).toEqual(
+      [
+        'src/app/(protected)/hisoblash/[id]/items-table.tsx',
+        'src/app/(protected)/hisoblash/[id]/phone-blocks.tsx',
+        'src/app/(protected)/hisoblash/[id]/row-sheet.tsx',
+        'src/app/(protected)/hisoblash/lugatlar/dict-forms.tsx',
+        'src/modules/wms/calc/row-draft.ts',
+      ].map((rel) => join(...rel.split('/'))),
+    );
+  });
+
+  it('in the dictionary only the baza form asks; the rates and the price book keep their comma swap', () => {
+    const baza = DICT.slice(DICT.indexOf('export function BazaForm'), DICT.indexOf('export function RatesForm'));
+    const rates = DICT.slice(DICT.indexOf('export function RatesForm'), DICT.indexOf('export function PriceBookForm'));
+    const book = DICT.slice(DICT.indexOf('export function PriceBookForm'));
+    expect(baza).toContain('readNumberCell(amount)');
+    for (const form of [rates, book]) expect(form).not.toContain('readNumberCell');
+    expect(rates).toContain("Number(duty.replace(',', '.'))");
+    expect(book).toContain("Number(price.replace(',', '.'))");
+  });
+
+  it('the seal’s discount reads money without asking; the workspace never imports the reader', () => {
+    expect(WS).not.toContain('readNumberCell');
+    const at = WS.indexOf('data-testid="calc-do-seal"');
+    expect(at).toBeGreaterThan(-1);
+    const press = WS.slice(at, WS.indexOf('bandOverrideReason', at));
+    expect(press).toContain('parseTypedMoney(discount)');
+    expect(press).toContain("Number(override.replace(',', '.'))");
   });
 });
 

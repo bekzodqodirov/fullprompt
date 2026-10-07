@@ -33,6 +33,8 @@ import {
   dealStages,
   deals,
   events,
+  leads,
+  notifications,
   receipts,
   roles,
   tasks,
@@ -52,6 +54,8 @@ import { globalSearch } from '@/modules/wms/search/service';
 import { mayOpenCalcCard } from '@/modules/wms/calc/card-door';
 import { vedFlowCounts } from '@/modules/wms/home/role-flows';
 import { landIntake } from '@/modules/wms/calc/intake-land';
+import { processPendingEvents, usersWithRoles } from '@/modules/platform/notifications/service';
+import { getSetting, setSetting } from '@/modules/platform/settings/service';
 import {
   bulkMoveDealsAction,
   createDealAction,
@@ -81,6 +85,7 @@ const FILE_START = new Date();
 let seq = 0;
 const madeUsers: string[] = [];
 const madeClients: string[] = [];
+const madeLeads: string[] = [];
 
 type Person = { id: string; permissions: Set<string>; warehouseScoped: boolean; warehouseIds: string[] };
 const P = {} as Record<'ved' | 's' | 's2' | 's3' | 'x' | 'w' | 'admin', Person>;
@@ -229,6 +234,33 @@ afterAll(async () => {
     await db.delete(receipts).where(inArray(receipts.clientId, madeClients));
     await db.delete(dealLines).where(inArray(dealLines.dealId, dealIds));
     await db.delete(deals).where(inArray(deals.id, dealIds));
+  }
+  if (madeLeads.length) {
+    const requests = await db
+      .select({ id: calcRequests.id, taskId: calcRequests.taskId })
+      .from(calcRequests)
+      .where(and(eq(calcRequests.entityType, 'lead'), inArray(calcRequests.entityId, madeLeads)));
+    const requestIds = requests.map((r) => r.id);
+    const boundTasks = await db
+      .select({ id: tasks.id })
+      .from(tasks)
+      .where(and(eq(tasks.entityType, 'lead'), inArray(tasks.entityId, madeLeads)));
+    const leadTasks = [
+      ...new Set([...requests.map((r) => r.taskId).filter((id): id is string => Boolean(id)), ...boundTasks.map((t) => t.id)]),
+    ];
+    if (requestIds.length) {
+      await db.delete(calcRequestItems).where(inArray(calcRequestItems.requestId, requestIds));
+      await db.delete(calcRequests).where(inArray(calcRequests.id, requestIds));
+    }
+    if (leadTasks.length) {
+      await db.delete(events).where(inArray(events.entityId, leadTasks));
+      await db.delete(tasks).where(inArray(tasks.id, leadTasks));
+    }
+    await db.delete(events).where(inArray(events.entityId, madeLeads));
+    await db
+      .delete(crmActivities)
+      .where(and(eq(crmActivities.entityType, 'lead'), inArray(crmActivities.entityId, madeLeads)));
+    await db.delete(leads).where(inArray(leads.id, madeLeads));
   }
   if (madeClients.length) {
     await db.delete(receipts).where(inArray(receipts.clientId, madeClients));
@@ -441,6 +473,68 @@ describe('G2 — whose deal the bot mints', () => {
     expect((await ownerOf((await land(P.w, withSeller)).id)).ownerId).toBe(P.s.id);
     const without = await mintClient('Q', null);
     expect((await ownerOf((await land(P.w, without)).id)).ownerId).toBeNull();
+  });
+
+  it('(viii) Q7 a — an ownerless bot deal tells no admin, with the calc stage set and the event queue drained', async () => {
+    // The landing's one EVENT is the move into «hisoblatish» (DealStageChanged),
+    // and it fires only when the owner has picked that stage — so the stage is
+    // picked here. CONFIGURATION, put back in `finally` (#183).
+    const prior = await getSetting('deal_calc_stage');
+    const opens = (await db.select().from(dealStages).where(and(eq(dealStages.active, true), eq(dealStages.kind, 'open'))))
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+    const calcStage = opens[1]!;
+    await setSetting('deal_calc_stage', calcStage.id, null);
+    try {
+      const [{ now }] = (await db.execute<{ now: string }>(sql`SELECT now()::text AS now`)) as unknown as [{ now: string }];
+      const client = await mintClient('Y', null);
+      const target = await land(P.ved, client);
+      const deal = await ownerOf(target.id);
+      expect(deal.ownerId).toBeNull();
+      expect(deal.stageId).toBe(calcStage.id);
+      const moved = await db
+        .select({ id: events.id })
+        .from(events)
+        .where(and(eq(events.type, 'DealStageChanged'), sql`${events.payload} ->> 'dealId' = ${target.id}`));
+      expect(moved).toHaveLength(1);
+      // Drain it the way the per-minute sweep would (the queue is mocked here).
+      await processPendingEvents();
+      const admins = await usersWithRoles(['admin', 'super_admin']);
+      expect(admins).toContain(P.admin.id);
+      const told = await db
+        .select({ type: notifications.type, userId: notifications.userId })
+        .from(notifications)
+        .where(
+          and(
+            inArray(notifications.userId, admins),
+            sql`${notifications.createdAt} >= ${now}::timestamptz`,
+            sql`(${notifications.payload}::text LIKE ${`%${target.id}%`} OR ${notifications.payload}::text LIKE ${`%${deal.code}%`})`,
+          ),
+        );
+      expect(told).toEqual([]);
+    } finally {
+      await setSetting('deal_calc_stage', prior, null);
+    }
+  });
+
+  it('(ix) Q5 a — the VED sends for a STRANGER → the lead it opens is the VED’s', async () => {
+    seq += 1;
+    const target = await landIntake({
+      noteId: uuidv4(),
+      section: 'yolkira',
+      facts: { fromCity: 'Yiwu', toCity: 'Toshkent', weightKg: 80, volumeM3: 1, goods: [] },
+      steps: [],
+      fileCount: 0,
+      collectedBy: P.ved.id,
+      collectedByName: 'Bot VED',
+      client: null,
+      leadName: `VED notanish ${S}`,
+      leadPhone: `+99897${String(seq).padStart(2, '0')}${S}`,
+    });
+    madeLeads.push(target.id);
+    expect(target.kind).toBe('lead');
+    const lead = await db.query.leads.findFirst({ where: eq(leads.id, target.id) });
+    expect(lead!.ownerId).toBe(P.ved.id);
+    expect(lead!.createdBy).toBe(P.ved.id);
   });
 
   it('(vii) an existing open deal is reused with its owner untouched', async () => {

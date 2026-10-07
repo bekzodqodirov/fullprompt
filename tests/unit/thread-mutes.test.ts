@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { FOUNDERS, MUTE_GROUPS, isTelegramMuted } from '@/modules/platform/notifications/mutes';
+import { FOUNDERS, MUTE_GROUPS, groupsFromList, isTelegramMuted } from '@/modules/platform/notifications/mutes';
 import { THREAD_PING_TYPES } from '@/modules/platform/notifications/thread-ref';
 import { contactEvidenceSql } from '@/modules/wms/crm/first-contact';
 import { sql } from 'drizzle-orm';
@@ -31,6 +31,36 @@ describe('the chat mute group (E8 a)', () => {
     expect(isTelegramMuted([...MUTE_GROUPS.chat], 'MentionedInNote')).toBe(true);
     expect(isTelegramMuted([...MUTE_GROUPS.chat], 'CalcThread')).toBe(true);
     expect(isTelegramMuted(['all'], 'CalcThread')).toBe(true);
+  });
+
+  it('Q3 a — a former «ish jarayoni» muter, after 0127’s strip, reads «Ichki yozishmalar» unticked and hears it', () => {
+    // The list a post-07-28 save wrote (every member «operations» had the day
+    // before 0127 — the literal the strip's own integration test runs), with
+    // the two names 0127 removes taken out. A STORED list from a real day,
+    // never one computed from today's groups (#1116).
+    const stripped = [
+      'ClientBirthday',
+      'ReceiptConfirmed',
+      'UnknownCargoReceived',
+      'ReadyForPickup',
+      'BoxIssued',
+      'PlanApproved',
+      'PlanChangesRequested',
+      'InventoryCompleted',
+      'LoadFinished',
+      'UnloadFinished',
+      'BatchRerouted',
+      'ChatMessageShared',
+      'AutomationRule',
+      'CalcDictReview',
+      'CalcOffer',
+    ];
+    const read = groupsFromList(stripped);
+    // The profile tells the truth: their old box still ticked, the new one not —
+    // the star is «they mute it themselves on /profile», never pre-muted.
+    expect(read.groups.operations).toBe(true);
+    expect(read.groups.chat).toBe(false);
+    for (const type of MUTE_GROUPS.chat) expect(isTelegramMuted(stripped, type), type).toBe(false);
   });
 
   it('the profile draws its box for everybody', () => {

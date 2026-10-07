@@ -310,6 +310,51 @@ describe('the read mark follows what is on screen', () => {
   });
 });
 
+describe('the VED’s floor warning (Q1 a: the line under the field is the whole guard)', () => {
+  /** Every `<CalcThread …>` element in src — each is a box the VED can type the calc thread into. */
+  function calcThreadMounts(): Array<{ rel: string; element: string }> {
+    const found: Array<{ rel: string; element: string }> = [];
+    const walk = (dir: string) => {
+      for (const name of readdirSync(join(ROOT, dir))) {
+        const rel = `${dir}/${name}`;
+        if (statSync(join(ROOT, rel)).isDirectory()) {
+          walk(rel);
+          continue;
+        }
+        if (!name.endsWith('.tsx')) continue;
+        const text = src(rel);
+        for (const m of text.matchAll(/<CalcThread\b(?!Box)[\s\S]*?\/>/g)) found.push({ rel, element: m[0] });
+      }
+    };
+    walk('src');
+    return found;
+  }
+
+  it('18. the box prints its hint under the input and the send button, and the thread hands it through', () => {
+    const box = src('src/components/calc-thread-box.tsx');
+    const send = box.indexOf('data-testid="calc-thread-send"');
+    expect(send).toBeGreaterThan(0);
+    expect(box.indexOf('{hint ? <p', send), 'the hint is drawn after the send button').toBeGreaterThan(send);
+    expect(src('src/components/calc-thread.tsx')).toMatch(/<CalcThreadBox\b[^>]*\bhint=\{hint\}/);
+  });
+
+  it('19. EVERY web mount of the calc thread carries calcHint for the VED — the calc page and the card fold', () => {
+    const mounts = calcThreadMounts();
+    expect(mounts.map((m) => m.rel).sort()).toEqual([
+      'src/app/(protected)/hisoblash/[id]/page.tsx',
+      'src/components/calc-panel.tsx',
+    ]);
+    for (const { rel, element } of mounts) expect(element, rel).toMatch(/\bhint=\{[^}]*tth\('calcHint'\)/);
+    // The card fold is read by the seller too: the warning is the VED's, so
+    // it is gated on his permission and nobody else's.
+    const panel = mounts.find((m) => m.rel === 'src/components/calc-panel.tsx')!.element;
+    expect(panel).toContain("hint={vedDoor ? tth('calcHint') : null}");
+    expect(src('src/components/calc-panel.tsx')).toContain("const vedDoor = actor.permissions.has('ved.docs');");
+    // The VED reaches that fold on his karta: the panel is mounted there.
+    expect(src('src/app/(protected)/hisoblash/[id]/karta/page.tsx')).toContain('<CalcPanel');
+  });
+});
+
 describe('the words (#163 — anchored on the code, never bundle-vs-bundle)', () => {
   const bundles = ['uz', 'ru', 'en', 'zh-CN'].map((locale) => ({
     locale,

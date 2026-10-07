@@ -25,6 +25,7 @@ import {
   askFromBot,
   takeTaskPending,
   dropTaskPending,
+  buttonsFor,
 } from '@/modules/platform/telegram/staff-bot';
 import { REPLY_SENTENCES, replyVerdictFor, threadReplyFromBot } from '@/modules/platform/telegram/reply-door';
 import { calcThreadMessages } from '@/modules/wms/crm/thread';
@@ -326,4 +327,22 @@ describe('15. what does not land says so — never the paid AI', () => {
     const customer = await sentPing(P.S, 'ClientBotMessage', {});
     expect((await reply(P.S, customer, 'x'))?.text).toBe(REPLY_SENTENCES.customer);
   });
+
+  // Q2 a («hozircha javob qabul qilinmaydi»): the four «Hisob tayyor» pings
+  // are queued with the text alone — no thread, no task — so a swipe-reply
+  // to one is refused in words and writes NOTHING, and the ping carries no
+  // «💬 Javob yozish» button that would promise otherwise. Each payload is
+  // the shape the calc service queues (`notifyStaffTelegram`, text only).
+  it.each(['CalcDone', 'CalcSealed', 'CalcReturned', 'CalcTaken'])(
+    'a reply to a %s ping is «not replyable»: nothing lands, no button offers it',
+    async (type) => {
+      const notesBefore = await db.select({ n: sql<number>`count(*)::int` }).from(crmActivities);
+      const ping = await sentPing(P.S, type, { text: '✅ Hisoblash tayyor' });
+      expect(await replyVerdictFor(CHAT[P.S]!, ping, P.S)).toEqual({ kind: 'not_replyable' });
+      expect((await reply(P.S, ping, `rahmat ${SFX}`))?.text).toBe(REPLY_SENTENCES.not_replyable);
+      const notesAfter = await db.select({ n: sql<number>`count(*)::int` }).from(crmActivities);
+      expect(notesAfter[0]!.n).toBe(notesBefore[0]!.n);
+      expect(buttonsFor(type, { text: '✅ Hisoblash tayyor' })).toBeNull();
+    },
+  );
 });

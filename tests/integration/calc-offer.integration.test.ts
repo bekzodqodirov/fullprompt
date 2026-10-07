@@ -541,6 +541,12 @@ describe('law 4: the VED never sees what the customer was charged', () => {
     expect(row.perKgUsd).toBeNull();
     expect(row.groupCustomsUsd).toBeNull();
     expect(row.groupCustomsPerM3).toBeNull();
+    // Q9 a: the per-piece customs too — and the fixture's every item carries a
+    // quantity, so the owner's view of the same row HAS that figure; a null
+    // here is the scope's doing, never an empty fixture's.
+    expect(row.groupCustomsPerUnit).toBeNull();
+    const asOwner = (await quoteHistoryFor(code, { scope: 'all', viewerId: ctx().actorId! }))[0]!;
+    expect(asOwner.groupCustomsPerUnit).toBeGreaterThan(0);
     // And the card link is a door to the same number.
     expect(row.cardReadable).toBe(false);
     // The consignment stays, or the prices beside it cannot be read at all.
