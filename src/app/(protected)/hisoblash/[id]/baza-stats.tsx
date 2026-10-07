@@ -153,11 +153,9 @@ export function BazaStats({
   // The VED's own number, only on an axis it belongs to: a per-dona baza on
   // a per-kg axis is a false comparison, so it is said in words instead.
   const sameBasis = current !== null && current.basis === unit.basis;
-  const rows: SpreadRow[] = series.map((x) => ({
-    key: x.key,
-    label: `${x.label} · ${t('statsN', { n: x.stats.n })}`,
-    stats: x.stats,
-  }));
+  // The chart names each row by its TEXT (never a colour); the count is said
+  // once, on the chips' own line below and in the table.
+  const rows: SpreadRow[] = series.map((x) => ({ key: x.key, label: x.label, stats: x.stats }));
   const domain = unit.all.n > 0 ? domainOf(unit.all) : null;
   const clipped = domain !== null && (domain.clippedLow > 0 || domain.clippedHigh > 0);
 
@@ -258,7 +256,7 @@ export function BazaStats({
                   <span className="font-semibold">{x.label}</span> · {t('statsN', { n: x.stats.n })}
                 </p>
                 {x.stats.n >= FEW ? (
-                  <div className="mt-1 flex flex-wrap gap-1.5">
+                  <div className="mt-1 flex flex-wrap gap-1">
                     {(['p25', 'p50', 'p75'] as const).map((key) => {
                       const value = x.stats[key];
                       const pressed = open?.series === x.key && open.key === key;
@@ -274,7 +272,7 @@ export function BazaStats({
                             setFullName(false);
                             setOpen(pressed ? null : { series: x.key, key });
                           }}
-                          className={`min-h-11 rounded-lg border px-3 font-mono text-xs tabular-nums disabled:opacity-50 ${
+                          className={`min-h-11 rounded-lg border px-2 text-xs tabular-nums disabled:opacity-50 ${
                             pressed
                               ? 'border-ink-900 bg-surface-sunken font-semibold text-ink-900'
                               : 'border-line text-ink-700'

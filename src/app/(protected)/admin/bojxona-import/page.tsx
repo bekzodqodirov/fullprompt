@@ -89,16 +89,16 @@ export default async function CustomsImportPage() {
                   </td>
                   <td className="p-2">
                     {b.status === 'ready' ? (
-                      <>
+                      <span className="inline-flex flex-wrap gap-1">
                         <span className="chip chip-good" data-testid="import-ready">
                           {t('ready')}
                         </span>
                         {b.id === answering ? (
-                          <span className="chip chip-neutral ml-1" data-testid="import-answering">
+                          <span className="chip chip-neutral" data-testid="import-answering">
                             ★ {t('answering')}
                           </span>
                         ) : null}
-                      </>
+                      </span>
                     ) : b.status === 'processing' ? (
                       <>
                         <span className="chip chip-brand">{t('processing')}</span>

@@ -117,15 +117,20 @@ type ExemplarRow = {
  * measured by exactly the rule the current one is.
  */
 function scopedCtes(batchId: string, code: string): SQL {
+  // `cn` is decided ONCE per row: both the origin counts and the scope ask
+  // the same question, and the country patterns are the costly part of the
+  // read — measured on a synthetic 130k-row code (jit off, work_mem 16MB),
+  // statement 1 took ~450 ms asking it three times per row, ~330 ms once.
   return sql`base AS (
-      SELECT r.unit, r.price_per_unit_usd AS p, r.weight_per_unit_kg AS w, r.origin_country AS o
+      SELECT r.unit, r.price_per_unit_usd AS p, r.weight_per_unit_kg AS w, r.origin_country AS o,
+             (r.origin_country IS NOT NULL AND ${chinaOriginSql(sql`r.origin_country`)}) AS cn
         FROM customs_import_rows r
        WHERE r.batch_id = ${batchId}::uuid AND r.tnved_code = ${code}
     ), na AS (
       SELECT coalesce(bool_or(o IS NOT NULL), false) AS named_any FROM base
     ), scoped AS (
       SELECT b.* FROM base b CROSS JOIN na
-       WHERE NOT na.named_any OR (b.o IS NOT NULL AND ${chinaOriginSql(sql`b.o`)})
+       WHERE NOT na.named_any OR b.cn
     )`;
 }
 
@@ -143,9 +148,9 @@ export async function readImportStats(
     WITH ${scopedCtes(input.batchId, input.tnvedCode)},
     og AS (
       SELECT unit,
-             count(*) FILTER (WHERE o IS NOT NULL AND ${chinaOriginSql(sql`o`)})::int     AS china,
-             count(*) FILTER (WHERE o IS NOT NULL AND NOT ${chinaOriginSql(sql`o`)})::int AS other,
-             count(*) FILTER (WHERE o IS NULL)::int                                       AS unknown,
+             count(*) FILTER (WHERE cn)::int                     AS china,
+             count(*) FILTER (WHERE o IS NOT NULL AND NOT cn)::int AS other,
+             count(*) FILTER (WHERE o IS NULL)::int               AS unknown,
              count(*)::int AS total
         FROM base
        GROUP BY unit

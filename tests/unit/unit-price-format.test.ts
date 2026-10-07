@@ -11,6 +11,8 @@ describe('unitPrice', () => {
     expect(unitPrice(0.1664)).toBe('$0.1664');
     expect(unitPrice(0.0004)).toBe('$0.0004');
     expect(unitPrice(0.17)).toBe('$0.17');
+    expect(unitPrice(0.5)).toBe('$0.50');
+    expect(unitPrice(0.123)).toBe('$0.123');
     expect(unitPrice(1.7548)).toBe('$1.75');
     expect(unitPrice(2.4)).toBe('$2.40');
     expect(unitPrice(235000)).toBe('$235,000');

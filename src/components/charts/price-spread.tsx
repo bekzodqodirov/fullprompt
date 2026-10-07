@@ -85,7 +85,7 @@ export function PriceSpread({
       {/* The plot sits in the box rows' value column on desktop, so every row
           shares ONE x scale (a label column beside a full-width histogram
           would move the axis between them). */}
-      <div className="md:grid md:grid-cols-[8rem_1fr] md:gap-2">
+      <div className="md:grid md:grid-cols-[9.5rem_1fr] md:gap-2">
         <div className="hidden md:block" />
         <div className="min-w-0">
           <div className="relative h-[72px] pt-5 md:h-[96px]">
@@ -210,7 +210,7 @@ function BoxRow({ row, domain }: { row: SpreadRow; domain: Domain }) {
   const p75 = s.p75 === null ? null : position(s.p75, domain);
   const dots = s.n < FEW ? (s.prices ?? []) : [];
   return (
-    <div data-testid={ROW_TESTID[row.key]} className="md:grid md:grid-cols-[8rem_1fr] md:items-center md:gap-2">
+    <div data-testid={ROW_TESTID[row.key]} className="md:grid md:grid-cols-[9.5rem_1fr] md:items-center md:gap-2">
       <span className="block truncate text-2xs text-ink-700 md:text-right" title={row.label}>
         {row.label}
       </span>
