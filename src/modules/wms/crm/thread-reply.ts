@@ -1,6 +1,6 @@
 import { logger } from '../../platform/logger';
 import type { ThreadPingType, ThreadRef } from '../../platform/notifications/thread-ref';
-import { announceNote, cardLabel } from './internal-chat';
+import { announceNote, cardLabel, doorlessLabel } from './internal-chat';
 import { addThreadMessage, isThreadWriteBehind, ThreadError } from './thread';
 import { mayWriteThread, threadStanding, type ThreadReader } from './thread-door';
 
@@ -66,10 +66,10 @@ export async function landThreadReply(
     text: THREAD_REPLY_WORDS[outcome].replace('{label}', label),
   });
   try {
-    const admitted =
-      (await mayWriteThread(actor, input.ref)) ||
-      input.ping === 'MentionedInNote' ||
-      (await threadStanding(actor.id, input.ref));
+    // The door's own answer is kept: the confirmation below names a truck by
+    // its route only for somebody the door admitted.
+    const door = await mayWriteThread(actor, input.ref);
+    const admitted = door || input.ping === 'MentionedInNote' || (await threadStanding(actor.id, input.ref));
     if (!admitted) {
       // A cargo thread refused to a SCOPED person is his cargo having left his
       // warehouse — said as that, with what to do instead.
@@ -110,7 +110,12 @@ export async function landThreadReply(
       logger.warn({ err, activityId: landed.activityId }, '[thread] announce of a telegram reply failed'),
     );
     const label = await cardLabel(landed.entityType, landed.entityId).catch(() => '');
-    return say(landed.calcRequestId ? 'landed_calc' : 'landed_card', label);
+    // Admitted by his mention alone, he is told the card as his ping named it
+    // — a truck by its code, never its route (`doorlessLabel`).
+    return say(
+      landed.calcRequestId ? 'landed_calc' : 'landed_card',
+      door ? label : doorlessLabel(landed.entityType, label),
+    );
   } catch (err) {
     if (err instanceof ThreadError) {
       return say(err.code === 'forbidden' ? 'no_door' : err.code);

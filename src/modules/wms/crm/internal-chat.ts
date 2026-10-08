@@ -386,6 +386,31 @@ export async function cardLabel(entityType: CardKind, entityId: string): Promise
 }
 
 /**
+ * What a door-LESS reader — a @-named colleague the card does not admit — is
+ * told the card is called: its identity, never its facts. A truck's label is
+ * the dock's «🚚 code · origin → dest», and the route is exactly what the
+ * dropped «📍» line withholds from him (§3.8), so the truck goes by its code
+ * alone. Every other card's label already IS its identity (a prixod's number
+ * and the box's marking or code — what round 1 tells a door-less mention too).
+ */
+export function doorlessLabel(entityType: CardKind, label: string): string {
+  switch (entityType) {
+    case 'batch':
+      return label.split(' · ')[0] ?? label;
+    case 'receipt':
+    case 'lead':
+    case 'deal':
+    case 'client':
+      return label;
+    default: {
+      const never: never = entityType;
+      void never;
+      return label;
+    }
+  }
+}
+
+/**
  * Everyone a mention can name. One source of truth for the composer's
  * dropdown and the save-time parser, so what the dropdown offers is exactly
  * what the parser will find.
@@ -628,13 +653,24 @@ export async function announceMentions(
   // Door-less mentions get the text without a link — the same as a standing-only recipient.
   const doorless = mentioned.filter((id) => !doors.has(id));
   const [label, author] = await Promise.all([threadLabel(input), userName(input.authorId)]);
+  // A null link is a door-less group here — `notifyByLink`'s own rule for
+  // dropping the «📍» line (a cargo card has no standing) — and the head line
+  // must not hand him back the route that line withheld.
+  const bare = doorlessLabel(input.entityType, label);
   await notifyByLink(
     input,
     mentioned,
     { standingOnly: doorless, grants },
     (link, frame) => ({
       type: 'MentionedInNote',
-      text: threadPingText({ type: 'MentionedInNote', author, label, note: input.note, link, frame: frame ?? undefined }),
+      text: threadPingText({
+        type: 'MentionedInNote',
+        author,
+        label: link === null ? bare : label,
+        note: input.note,
+        link,
+        frame: frame ?? undefined,
+      }),
     }),
     framing,
   );

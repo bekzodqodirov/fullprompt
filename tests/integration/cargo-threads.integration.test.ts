@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { asc, eq, inArray, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
+import type { Context } from 'grammy';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 /**
@@ -24,12 +25,13 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
  *
  * Mocks, all hoisted (ESM exports cannot be spied): the session's meta, Next's
  * cache, the job queue, `getActor` (the web action's actor), and ONE toggle
- * object read by the thread writer and the role list — each toggle SET inside
+ * object read by the thread writer, the reach check and the role list — each toggle SET inside
  * the one test that needs it and cleared in that test's `finally`.
  */
 const override = vi.hoisted(() => ({
   actor: null as null | Record<string, unknown>,
   addThreadMessage: null as null | unknown,
+  reachOf: null as null | unknown,
   usersWithRoles: null as null | string[],
 }));
 vi.mock('@/modules/platform/auth/session', async (original) => ({
@@ -61,6 +63,16 @@ vi.mock('@/modules/wms/crm/thread', async (original) => {
     },
   };
 });
+vi.mock('@/modules/platform/notifications/staff', async (original) => {
+  const real = await original<typeof import('@/modules/platform/notifications/staff')>();
+  return {
+    ...real,
+    reachOf: async (...args: Parameters<typeof real.reachOf>) => {
+      if (override.reachOf) throw override.reachOf;
+      return real.reachOf(...args);
+    },
+  };
+});
 vi.mock('@/modules/platform/notifications/service', async (original) => {
   const real = await original<typeof import('@/modules/platform/notifications/service')>();
   return {
@@ -89,7 +101,7 @@ import {
 } from '@/modules/platform/db/schema';
 import { logger } from '@/modules/platform/logger';
 import { actorGrants } from '@/modules/platform/rbac/authorize';
-import { threadReplyFromBot } from '@/modules/platform/telegram/reply-door';
+import { REPLY_SENTENCES, refuseMediaReply, threadReplyFromBot } from '@/modules/platform/telegram/reply-door';
 import { decideAttachmentRead } from '@/modules/wms/attachments/access';
 import { mayOpenBatchCard } from '@/modules/wms/batches/card-door';
 import { rerouteBatch } from '@/modules/wms/batches/reroute';
@@ -101,6 +113,7 @@ import {
   isThreadWriteBehind,
   markThreadRead,
   myThreads,
+  threadLabels,
   threadReadMarks,
 } from '@/modules/wms/crm/thread';
 import { mayReadThread, threadDoorsFor, type ThreadReader } from '@/modules/wms/crm/thread-door';
@@ -216,8 +229,11 @@ async function mintPerson(
   return { id: user!.id, fullName, chat, ...(await actorGrants(user!.id)) } as Person;
 }
 
-/** A real confirmed prixod at `warehouseId`: a photo, one lot of `boxCount` cartons. */
-async function makeReceipt(warehouseId: string, boxCount: number) {
+/**
+ * A real confirmed prixod at `warehouseId`: a photo, one lot of `boxCount`
+ * cartons — the spec's client's, or an UNCLAIMED intake under `marking`.
+ */
+async function makeReceipt(warehouseId: string, boxCount: number, opts: { marking?: string } = {}) {
   const receiptId = uuidv4();
   const lotId = uuidv4();
   await db.insert(attachments).values({
@@ -234,8 +250,8 @@ async function makeReceipt(warehouseId: string, boxCount: number) {
     {
       receiptId,
       warehouseId,
-      clientId,
-      unclaimedMarking: '',
+      clientId: opts.marking ? null : clientId,
+      unclaimedMarking: opts.marking ?? '',
       lots: [
         {
           id: lotId,
@@ -296,6 +312,12 @@ async function post(who: Person, ref: { kind: 'receipt' | 'batch'; id: string },
   } finally {
     override.actor = null;
   }
+}
+
+/** A prixod's number, as `confirmReceipt` minted it. */
+async function numberOf(receiptId: string): Promise<string> {
+  const [row] = await db.select({ number: receipts.number }).from(receipts).where(eq(receipts.id, receiptId));
+  return row!.number!;
 }
 
 /** The newest note on a card — what the last press wrote. */
@@ -848,7 +870,8 @@ describe('11. the Telegram landing on a cargo thread', () => {
     const incoming = (msgSeq += 1);
     const reply = () =>
       threadReplyFromBot(P.opW1.chat!, { replyToMessageId: replyTo, replyToForwarded: false, text: 'TAS1 da, 2-qator', incomingMessageId: incoming });
-    expect((await reply())?.text).toMatch(/^✅ Javob kartaga yozildi: 📦 /);
+    const label = `📦 ${await numberOf(r.id)} · SQ${S}`;
+    expect((await reply())?.text).toBe(`✅ Javob kartaga yozildi: ${label}`);
     const [landed] = await db.execute<{ id: string }>(sql`
       SELECT id::text AS id FROM crm_activities
        WHERE entity_id = ${r.id}::uuid AND tg_chat_id = ${P.opW1.chat!.toString()}::bigint AND tg_message_id = ${incoming}`);
@@ -869,7 +892,8 @@ describe('11. the Telegram landing on a cargo thread', () => {
       text: 'Mijoz ertaga oladi',
       incomingMessageId: (msgSeq += 1),
     });
-    expect(sellerReply?.text, 'E2 a: the named person replies').toMatch(/^✅ Javob kartaga yozildi/);
+    // A prixod's label is its identity — the same words for a door-less replier.
+    expect(sellerReply?.text, 'E2 a: the named person replies').toBe(`✅ Javob kartaga yozildi: ${label}`);
     expect((await myThreads(P.seller)).some((row) => row.kind === 'receipt' && row.id === r.id)).toBe(false);
 
     const plainTo = await sentPing(P.seller, 'InternalNote', thread);
@@ -881,6 +905,29 @@ describe('11. the Telegram landing on a cargo thread', () => {
     });
     expect(refused?.text).toBe('Bu kartani endi ocha olmaysiz — javob yozilmadi.');
   }, 60_000);
+
+  it('a photo sent as a reply to a cargo ping is told the cargo sentence; to a client-card ping, the card one', async () => {
+    const r = await makeReceipt(W.w1.id, 1);
+    await post(P.logist, { kind: 'receipt', id: r.id }, 'Karobkaning rasmi kerak');
+    const cargoTo = await sentPing(P.opW1, 'InternalNote', { kind: 'receipt', id: r.id, activityId: await lastNote(r.id) });
+    const cardTo = await sentPing(P.seller, 'InternalNote', { kind: 'client', id: clientId, activityId: uuidv4() });
+    // The bot's own context, reduced to what `refuseMediaReply` reads: a reply
+    // to one of the bot's own messages, and a `reply` that records the words.
+    const media = async (chat: bigint, replyTo: number) => {
+      const said: string[] = [];
+      const bot = { id: 7_000_001 };
+      const ctx = {
+        me: bot,
+        message: { photo: [{ file_id: 'x' }], reply_to_message: { message_id: replyTo, from: bot } },
+        reply: async (text: string) => {
+          said.push(text);
+        },
+      } as unknown as Context;
+      return { handled: await refuseMediaReply(ctx, chat), said };
+    };
+    expect(await media(P.opW1.chat!, cargoTo)).toEqual({ handled: true, said: [REPLY_SENTENCES.mediaCargo] });
+    expect(await media(P.seller.chat!, cardTo)).toEqual({ handled: true, said: [REPLY_SENTENCES.mediaCard] });
+  }, 60_000);
 });
 
 describe('12. the dock', () => {
@@ -890,7 +937,7 @@ describe('12. the dock', () => {
     await post(P.logist, ref, 'Dok uchun savol');
     let row = (await myThreads(P.opW1)).find((x) => x.kind === 'receipt' && x.id === r.id);
     expect(row?.href).toBe(`/receipts/${r.id}#ichki`);
-    expect(row?.label.startsWith('📦 ')).toBe(true);
+    expect(row?.label).toBe(`📦 ${await numberOf(r.id)} · SQ${S}`);
     expect(row?.unread).toBe(true);
     const [mark] = await threadReadMarks([ref]);
     await markThreadRead(P.opW1.id, ref, mark!.asOf!);
@@ -904,6 +951,21 @@ describe('12. the dock', () => {
     const truckRow = (await myThreads(P.logist)).find((x) => x.kind === 'batch' && x.id === truck.id);
     expect(truckRow?.label).toBe(`🚚 ${truck.code} · ${W.w0.code} → ${W.w1.code}`);
     expect(truckRow?.href).toBe(`/batches/${truck.id}#ichki`);
+  }, 60_000);
+
+  it('a prixod is named the way its box says it: the marking big, else the client code — an empty marking is no marking', async () => {
+    const unclaimed = await makeReceipt(W.w1.id, 1, { marking: `MK${S}` });
+    // Claimed later: `assignReceiptClient` KEEPS the marking (round 98), so both stand.
+    const claimed = await makeReceipt(W.w1.id, 1, { marking: `MKC${S}` });
+    await db.update(receipts).set({ clientId }).where(eq(receipts.id, claimed.id));
+    // An empty marking beside a client — an old row's shape; it must not print «📦 R · ».
+    const blank = await makeReceipt(W.w1.id, 1);
+    await db.update(receipts).set({ unclaimedMarking: '  ' }).where(eq(receipts.id, blank.id));
+    const refs = [unclaimed, claimed, blank].map((x) => ({ kind: 'receipt' as const, id: x.id }));
+    const labels = await threadLabels(refs);
+    expect(labels.get(`receipt:${unclaimed.id}`)?.label).toBe(`📦 ${await numberOf(unclaimed.id)} · MK${S}`);
+    expect(labels.get(`receipt:${claimed.id}`)?.label).toBe(`📦 ${await numberOf(claimed.id)} · MKC${S}`);
+    expect(labels.get(`receipt:${blank.id}`)?.label).toBe(`📦 ${await numberOf(blank.id)} · SQ${S}`);
   }, 60_000);
 });
 
@@ -1013,6 +1075,37 @@ describe('16. the mention path judges the scope', () => {
     expect(textOf(w2.payload)).not.toContain('🔗');
     expect(textOf(w2.payload)).not.toContain('📍');
   }, 60_000);
+
+  it('a door-less mention on a truck thread is told the truck by its code — the route goes with the «📍» line', async () => {
+    const lot = await makeReceipt(W.w0.id, 1);
+    const truck = await planTruck(W.w0.id, W.w1.id, lot.lotId, 1);
+    await loadAndDepart(truck.id, lot.codes);
+    const ref = { kind: 'batch' as const, id: truck.id };
+    const route = `🚚 ${truck.code} · ${W.w0.code} → ${W.w1.code}`;
+    await post(P.logist, ref, `@${P.opW2.fullName} bu mashina qachon keladi?`);
+    const asked = await lastNote(truck.id);
+    const pings = await pingsOf(asked);
+    const w2 = pings.find((p) => p.userId === P.opW2.id)!;
+    expect(w2.type).toBe('MentionedInNote');
+    const text = textOf(w2.payload);
+    expect(text.split('\n')[0]).toBe(`📣 ${P.logist.fullName} · 🚚 ${truck.code}`);
+    // (The truck's code carries its origin's batch prefix — that is its name,
+    // not the route; the destination and the arrow are the route.)
+    for (const fact of ['→', W.w1.code, '📍', '🔗']) expect(text, fact).not.toContain(fact);
+    // The staff where the truck stands still read the card's own label.
+    const w1 = pings.find((p) => p.userId === P.opW1.id)!;
+    expect(w1.type).toBe('InternalNote');
+    expect(textOf(w1.payload).split('\n')[0]).toBe(`📝 ${P.logist.fullName} · ${route}`);
+
+    // His answer's confirmation says it the way his ping did; a door-holder's keeps the route.
+    const thread = { kind: 'batch', id: truck.id, activityId: asked };
+    const answer = (who: Person, replyTo: number, text2: string) =>
+      threadReplyFromBot(who.chat!, { replyToMessageId: replyTo, replyToForwarded: false, text: text2, incomingMessageId: (msgSeq += 1) });
+    const mentionTo = await sentPing(P.opW2, 'MentionedInNote', thread);
+    expect((await answer(P.opW2, mentionTo, 'Bilmayman'))?.text).toBe(`✅ Javob kartaga yozildi: 🚚 ${truck.code}`);
+    const plainTo = await sentPing(P.opW1, 'InternalNote', thread);
+    expect((await answer(P.opW1, plainTo, 'Ertaga keladi'))?.text).toBe(`✅ Javob kartaga yozildi: ${route}`);
+  }, 60_000);
 });
 
 describe('17. what the box is told — each line one fact', () => {
@@ -1028,6 +1121,37 @@ describe('17. what the box is told — each line one fact', () => {
     await loadAndDepart(truck.id, lot.codes);
     const road = await post(P.logist, { kind: 'receipt', id: lot.id }, 'Yo‘lda ekanmi?');
     expect(road).toEqual(expect.objectContaining({ ok: true, noStaffAt: [W.w4.code], nobody: false }));
+  }, 60_000);
+
+  it('a mention alone is not «nobody» — the logist @-names the seller on an unstaffed prixod', async () => {
+    const lonely = await makeReceipt(W.w4.id, 1);
+    const out = await post(P.logist, { kind: 'receipt', id: lonely.id }, `@${P.seller.fullName} bu yerda kim bor?`);
+    const pings = await pingsOf(await lastNote(lonely.id));
+    expect(pings.map((p) => [p.userId === P.seller.id, p.type])).toEqual([[true, 'MentionedInNote']]);
+    expect(out).toEqual(expect.objectContaining({ ok: true, noStaffAt: [W.w4.code], nobody: false }));
+  }, 60_000);
+
+  it('a read that fails AFTER the save is never «not sent» — one press, one note, ok', async () => {
+    const r = await makeReceipt(W.w1.id, 1);
+    const warn = vi.spyOn(logger, 'warn');
+    override.reachOf = new Error('connection reset by peer');
+    let out: CargoThreadState;
+    let logged: unknown[] = [];
+    try {
+      out = await post(P.logist, { kind: 'receipt', id: r.id }, 'Saqlangandan keyin uzildi');
+      logged = warn.mock.calls.map((call) => call[1]);
+    } finally {
+      override.reachOf = null;
+      warn.mockRestore();
+    }
+    expect(out).toEqual(
+      expect.objectContaining({ ok: true, unreachable: [], unreachableMore: 0, noStaffAt: [], nobody: false }),
+    );
+    expect(logged).toContain('[thread] cargo reach check failed');
+    const [notes] = await db.execute<{ n: number }>(sql`
+      SELECT count(*)::int AS n FROM crm_activities WHERE entity_type = 'receipt' AND entity_id = ${r.id}::uuid`);
+    expect(notes!.n).toBe(1);
+    expect(pinged(await pingsOf(await lastNote(r.id)), P.opW1), 'the announce ran before the failed read').toBe(true);
   }, 60_000);
 
   it('an unlinked and a muted staffer are named with their reason; seven unlinked → five and «yana 2»', async () => {

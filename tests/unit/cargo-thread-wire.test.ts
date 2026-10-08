@@ -151,29 +151,39 @@ describe('K1 — every branch over a thread kind is exhaustive', () => {
     }
   });
 
-  it('(a) no file compares a `.kind` to a thread-kind literal', () => {
-    const literal = new RegExp(`\\.kind\\s*[!=]==?\\s*'(${KIND_LITERALS})'`);
+  // A kind is reached as `.kind` OR as a bare `entityType`/`kind` local
+  // (internal-chat.ts's five card switches are `switch (entityType)`); the
+  // lookbehind keeps another object's field — `request.entityType` — out.
+  const KIND_EXPR = '(?:\\.kind|(?<![.\\w])(?:entityType|kind))';
+
+  it('(a) no file compares a kind to a thread-kind literal', () => {
+    const literal = new RegExp(`${KIND_EXPR}\\s*[!=]==?\\s*'(${KIND_LITERALS})'`);
     const offenders = files.filter((rel) => literal.test(src(rel)));
     expect(offenders).toEqual([]);
   });
 
-  it('(b) every switch over a `.kind` whose cases name a thread kind ends in a `never` default', () => {
+  it('(b) every switch over a kind whose cases name a thread kind ends in a `never` default', () => {
     const caseLabel = new RegExp(`case\\s+'(${KIND_LITERALS})'\\s*:`);
     const offenders: string[] = [];
+    const perFile = new Map<string, number>();
     let switches = 0;
     for (const rel of files) {
       const text = src(rel);
-      for (const m of text.matchAll(/switch\s*\(([^()]*\.kind)\)\s*\{/g)) {
+      for (const m of text.matchAll(/switch\s*\(([^()]*\.kind|entityType|kind)\)\s*\{/g)) {
         const open = m.index! + m[0].length - 1;
         const close = closingBrace(text, open);
         expect(close, `${rel}: unbalanced switch at ${m.index}`).toBeGreaterThan(open);
         const body = text.slice(open, close);
         if (!caseLabel.test(body)) continue;
         switches += 1;
+        perFile.set(rel, (perFile.get(rel) ?? 0) + 1);
         if (!body.includes('const never: never')) offenders.push(`${rel}: switch (${m[1]})`);
       }
     }
-    expect(switches, 're-anchor: no thread-kind switch found').toBeGreaterThanOrEqual(10);
+    expect(switches, 're-anchor: no thread-kind switch found').toBeGreaterThanOrEqual(18);
+    // The original fall-through sites: ownerOf, candidatesOf, involvementFilterOf,
+    // cardLabel, doorlessLabel, linksFor (by `entityType`/`kind`) and the facts switch.
+    expect(perFile.get('src/modules/wms/crm/internal-chat.ts') ?? 0, 're-anchor: internal-chat.ts').toBeGreaterThanOrEqual(7);
     expect(offenders).toEqual([]);
   });
 
@@ -236,6 +246,18 @@ describe('K5 — every door is asked where it is used (#531)', () => {
     const read = src('src/app/api/threads/read/route.ts');
     expect(read).toContain('isThreadWriteBehind(err)');
     expect(read).not.toMatch(/import\s*\{[^}]*\bisServerBehind\b/);
+  });
+
+  it('a SCOPED person the card admits and the thread does not is told so on both pages — never a silently missing panel', () => {
+    for (const page of ['src/app/(protected)/receipts/[id]/page.tsx', 'src/app/(protected)/batches/[id]/page.tsx']) {
+      const text = src(page);
+      expect(text.split('{cargoThread ? (').length - 1, `${page}: the branch anchor, once`).toBe(1);
+      const branch = between(text, '{cargoThread ? (', '<ThreadSeen');
+      expect(branch, page).toMatch(/\)\s*:\s*actor\.warehouseScoped\s*\?\s*\(/);
+      expect(branch, page).toContain('data-testid="cargo-thread-elsewhere"');
+      expect(branch, page).toContain("tth('cargo.elsewhere')");
+      expect(branch, page).toMatch(/\)\s*:\s*null\s*\}\s*$/);
+    }
   });
 });
 

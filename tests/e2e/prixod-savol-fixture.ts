@@ -18,7 +18,10 @@ import { hashPassword } from '@/modules/platform/auth/password';
  *    audience say «contains my operator», never an exact count;
  *  - a client `PS<digits>` with NO seller;
  *  - a confirmed WALK-IN prixod at TAS1 with ONE lot of TWO cartons standing
- *    there (`in_stock`), so the cargo stands at TAS1 and nowhere else.
+ *    there (`in_stock`), so the cargo stands at TAS1 and nowhere else;
+ *  - a second prixod RECEIVED at YW whose two cartons have since moved on to
+ *    TAS1 — the YW operator still opens its card (the receiving warehouse, for
+ *    ever) and the thread is TAS1's, so he is the «elsewhere» line's reader.
  */
 
 export const PASSWORD = 'prixodsavol1234';
@@ -41,13 +44,17 @@ export function newRun(): Run {
   return { marker, operatorPhone: `+99892${digits}`, operatorName: `PS operator ${marker}` };
 }
 
-export async function mint(sql: postgres.Sql, run: Run): Promise<{ receiptId: string; operatorId: string }> {
+export async function mint(
+  sql: postgres.Sql,
+  run: Run,
+): Promise<{ receiptId: string; operatorId: string; movedReceiptId: string }> {
   const passwordHash = await hashPassword(PASSWORD);
   return sql.begin(async (tx) => {
     const [owner] = await tx<{ id: string }[]>`SELECT id FROM users WHERE phone = '+998900000001'`;
     const [tas] = await tx<{ id: string }[]>`SELECT id FROM warehouses WHERE code = 'TAS1'`;
+    const [yw] = await tx<{ id: string }[]>`SELECT id FROM warehouses WHERE code = 'YW'`;
     const [role] = await tx<{ id: string }[]>`SELECT id FROM roles WHERE code = 'warehouse_operator'`;
-    if (!owner || !tas || !role) throw new Error('the demo has no owner, no TAS1 or no warehouse_operator role');
+    if (!owner || !tas || !yw || !role) throw new Error('the demo has no owner, no TAS1, no YW or no warehouse_operator role');
     const [operator] = await tx<{ id: string }[]>`
       INSERT INTO users (id, phone, full_name, password_hash, locale, active)
       VALUES (gen_random_uuid(), ${run.operatorPhone}, ${run.operatorName}, ${passwordHash}, 'uz', true)
@@ -73,7 +80,22 @@ export async function mint(sql: postgres.Sql, run: Run): Promise<{ receiptId: st
         INSERT INTO boxes (id, lot_id, short_code, seq_in_lot, status, current_warehouse_id)
         VALUES (gen_random_uuid(), ${lot!.id}, ${`${run.marker}-${seq}`}, ${seq}, 'in_stock', ${tas.id})`;
     }
-    return { receiptId: receipt!.id, operatorId: operator!.id };
+    const [moved] = await tx<{ id: string }[]>`
+      INSERT INTO receipts (id, number, warehouse_id, client_id, status, confirmed_at, confirmed_by, source_note, created_by, created_at)
+      VALUES (gen_random_uuid(), ${`${run.marker}-Y`}, ${yw.id}, ${client!.id}, 'confirmed', now() - interval '9 days',
+              ${owner.id}, ${run.marker}, ${owner.id}, now() - interval '9 days')
+      RETURNING id`;
+    const [movedLot] = await tx<{ id: string }[]>`
+      INSERT INTO receipt_lots (id, receipt_id, seq, letter, cycle_no, product_name_zh, product_name_ru, box_count, dims_mode,
+                                total_weight_kg, total_volume_m3)
+      VALUES (gen_random_uuid(), ${moved!.id}, 1, 'A', 1, ${'问答PSY'}, 'Savol yuk Y', 2, 'mixed', 24.000, 0.2000)
+      RETURNING id`;
+    for (const seq of [1, 2]) {
+      await tx`
+        INSERT INTO boxes (id, lot_id, short_code, seq_in_lot, status, current_warehouse_id)
+        VALUES (gen_random_uuid(), ${movedLot!.id}, ${`${run.marker}-Y${seq}`}, ${seq}, 'in_stock', ${tas.id})`;
+    }
+    return { receiptId: receipt!.id, operatorId: operator!.id, movedReceiptId: moved!.id };
   });
 }
 

@@ -157,7 +157,9 @@ describe('the doors', () => {
   });
 
   it('6. the Telegram landing’s door has exactly two exemptions — the mention and the standing', () => {
-    const door = between(src('src/modules/wms/crm/thread-reply.ts'), 'const admitted =', 'if (!admitted)');
+    // From the door's own ask (kept for the confirmation's label, round 2) to the refusal.
+    const door = between(src('src/modules/wms/crm/thread-reply.ts'), 'const door =', 'if (!admitted)');
+    expect(door).toContain('const admitted = door ||');
     expect(door).toContain('await mayWriteThread(actor, input.ref)');
     expect(door).toContain("input.ping === 'MentionedInNote'");
     expect(door).toContain('await threadStanding(actor.id, input.ref)');

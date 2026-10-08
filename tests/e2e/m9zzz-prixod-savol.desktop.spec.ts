@@ -8,6 +8,8 @@ import { PASSWORD as OPERATOR_PASSWORD, cleanupAll, database, mint, newRun } fro
  * the logist's question lands on the card and reaches the operator of the
  * warehouse where the cargo stands; a seller and the VED open the same card
  * and see no thread and no «elsewhere» line (the server is the oracle); the
+ * YW operator opens a prixod received at YW whose cargo has moved on to TAS1
+ * and is told so in one line, not shown a silently missing panel; the
  * operator on a PHONE finds it in «👥 Ichki», the row's `#ichki` lands with the
  * title below the sticky header, the row turns read only after the page
  * reported the read and BEFORE he answers (an answer is marked read for its
@@ -25,6 +27,7 @@ import { PASSWORD as OPERATOR_PASSWORD, cleanupAll, database, mint, newRun } fro
 test.describe.configure({ mode: 'serial' });
 
 const LOGIST = '+998900000003';
+const YW_OPERATOR = '+998900000006';
 const VED = '+998900000004';
 const SELLER = '+998900000009';
 const DEMO_PASSWORD = 'demo1234';
@@ -36,6 +39,7 @@ const TOKEN = `y${'z'.repeat(299)}`;
 const ANSWER = `Ha, ikkalasi ham 3-qatorda ${run.marker}\n${TOKEN}`;
 let receiptId = '';
 let operatorId = '';
+let movedReceiptId = '';
 
 async function login(page: Page, phone: string, password = DEMO_PASSWORD) {
   await page.context().clearCookies();
@@ -71,7 +75,7 @@ test('the fixture stands', async () => {
   const sql = database();
   try {
     await cleanupAll(sql);
-    ({ receiptId, operatorId } = await mint(sql, run));
+    ({ receiptId, operatorId, movedReceiptId } = await mint(sql, run));
   } finally {
     await sql.end();
   }
@@ -116,6 +120,17 @@ test('a seller and the VED open the same card and see no thread at all (E7 b)', 
     await expect(page.getByTestId('cargo-thread'), phone).toHaveCount(0);
     await expect(page.getByTestId('cargo-thread-elsewhere'), phone).toHaveCount(0);
   }
+});
+
+test('the YW operator opens a YW prixod whose cargo moved on to TAS1 — one line says the thread is elsewhere', async ({ page }) => {
+  await login(page, YW_OPERATOR);
+  const response = await page.goto(`/receipts/${movedReceiptId}`);
+  expect(response?.status()).toBe(200);
+  await expect(page.locator('main')).toContainText(`${run.marker}-Y`);
+  await expect(page.getByTestId('cargo-thread')).toHaveCount(0);
+  await expect(page.getByTestId('cargo-thread-elsewhere')).toBeVisible();
+  await expect(page.getByTestId('cargo-thread-elsewhere')).not.toBeEmpty();
+  await widthFits(page, 1280);
 });
 
 test('the operator, on a phone, finds it in «👥 Ichki», reads it, and answers', async ({ browser }) => {

@@ -38,31 +38,50 @@ export async function postCargoThreadAction(_prev: CargoThreadState, form: FormD
   const body = String(form.get('body') ?? '');
   if (!isCargoKind(kind) || !THREAD_UUID.test(id)) return { error: 'not_found' };
   const ref = { kind, id: id.toLowerCase() };
+  // Until `addThreadMessage` returns, a failure is a message NOT saved and the
+  // box keeps the text to press again. After it, the message IS saved and
+  // announced: nothing below may answer «not sent», or a second press writes
+  // the same note twice (a web write carries no idempotency key).
+  let landed: Awaited<ReturnType<typeof addThreadMessage>>;
   try {
     if (!(await mayWriteThread(who, ref))) return { error: who.warehouseScoped ? 'cargo_moved' : 'forbidden' };
-    const landed = await addThreadMessage({ ref, body }, { actorId: who.id, ...(await requestMeta()) });
+    landed = await addThreadMessage({ ref, body }, { actorId: who.id, ...(await requestMeta()) });
+  } catch (err) {
+    if (err instanceof ThreadError) return { error: err.code };
+    // A release ahead of 0129 (or 0127): the morning's expected state, no error line.
+    if (isThreadWriteBehind(err)) return { error: 'server_behind' };
+    logger.error({ err, kind, id }, '[thread] cargo message not saved');
+    return { error: 'save_failed' };
+  }
 
-    let heard: string[] = [];
-    let mentioned: string[] = [];
-    let cargo: CargoReach | null = null;
-    try {
-      ({ heard, mentioned, cargo } = await announceNote({
-        entityType: landed.entityType,
-        entityId: landed.entityId,
-        note: body.trim(),
-        authorId: who.id,
-        activityId: landed.activityId,
-        calcRequestId: landed.calcRequestId,
-      }));
-    } catch (err) {
-      // The message is written; a ping that failed is a small failure, told
-      // in the log and never as a refusal of a message that saved. All three
-      // lists stay empty and `nobody` is true — the truth of a failed announce.
-      logger.warn({ err, activityId: landed.activityId }, '[thread] cargo announce failed');
-    }
+  let heard: string[] = [];
+  let mentioned: string[] = [];
+  let cargo: CargoReach | null = null;
+  try {
+    ({ heard, mentioned, cargo } = await announceNote({
+      entityType: landed.entityType,
+      entityId: landed.entityId,
+      note: body.trim(),
+      authorId: who.id,
+      activityId: landed.activityId,
+      calcRequestId: landed.calcRequestId,
+    }));
+  } catch (err) {
+    // The message is written; a ping that failed is a small failure, told
+    // in the log and never as a refusal of a message that saved. All three
+    // lists stay empty and `nobody` is true — the truth of a failed announce.
+    logger.warn({ err, activityId: landed.activityId }, '[thread] cargo announce failed');
+  }
 
-    // The arm's people the door let through — whom THIS message is for.
-    const expected = (cargo?.armIds ?? []).filter((person) => heard.includes(person));
+  // The arm's people the door let through — whom THIS message is for.
+  const expected = (cargo?.armIds ?? []).filter((person) => heard.includes(person));
+  // Who of them will not hear it, and the standing warehouses with nobody
+  // assigned — three reads AFTER the save. One that fails says nothing about
+  // them (logged) rather than «not sent» about a message that was.
+  let unreachable: { name: string; reason: Exclude<UnreachableReason, 'no_door'> }[] = [];
+  let unreachableMore = 0;
+  let noStaffAt: string[] = [];
+  try {
     const reaches = await reachOf(expected, 'InternalNote');
     const unreachableIds = expected
       .map((person) => {
@@ -80,35 +99,34 @@ export async function postCargoThreadAction(_prev: CargoThreadState, form: FormD
     const nameOf = new Map(names.map((row) => [row.id, row.name] as const));
     const noStaffIds = cargo?.to === 'staff' ? cargo.noStaffAt : [];
     const codes = await warehouseCodes(noStaffIds);
-
-    switch (ref.kind) {
-      case 'receipt':
-        revalidatePath(`/receipts/${ref.id}`);
-        break;
-      case 'batch':
-        revalidatePath(`/batches/${ref.id}`);
-        break;
-      default: {
-        const never: never = ref.kind;
-        void never;
-      }
-    }
-    return {
-      ok: true,
-      unreachable: shown.map((row) => ({ name: nameOf.get(row.id) ?? '—', reason: row.reason })),
-      unreachableMore: Math.max(0, unreachableIds.length - shown.length),
-      noStaffAt: noStaffIds.map((w) => codes.get(w) ?? '—'),
-      noOffice: cargo?.to === 'office' && expected.length === 0,
-      // Everyone the note addressed in Telegram — past authors and @-named
-      // people included; «nobody» is said only when that list is empty.
-      nobody: [...heard, ...mentioned].filter((person) => person !== who.id).length === 0,
-      sent: Date.now(),
-    };
+    unreachable = shown.map((row) => ({ name: nameOf.get(row.id) ?? '—', reason: row.reason }));
+    unreachableMore = Math.max(0, unreachableIds.length - shown.length);
+    noStaffAt = noStaffIds.map((w) => codes.get(w) ?? '—');
   } catch (err) {
-    if (err instanceof ThreadError) return { error: err.code };
-    // A release ahead of 0129 (or 0127): the morning's expected state, no error line.
-    if (isThreadWriteBehind(err)) return { error: 'server_behind' };
-    logger.error({ err, kind, id }, '[thread] cargo message not saved');
-    return { error: 'save_failed' };
+    logger.warn({ err, activityId: landed.activityId }, '[thread] cargo reach check failed');
   }
+
+  switch (ref.kind) {
+    case 'receipt':
+      revalidatePath(`/receipts/${ref.id}`);
+      break;
+    case 'batch':
+      revalidatePath(`/batches/${ref.id}`);
+      break;
+    default: {
+      const never: never = ref.kind;
+      void never;
+    }
+  }
+  return {
+    ok: true,
+    unreachable,
+    unreachableMore,
+    noStaffAt,
+    noOffice: cargo?.to === 'office' && expected.length === 0,
+    // Everyone the note addressed in Telegram — past authors and @-named
+    // people included; «nobody» is said only when that list is empty.
+    nobody: [...heard, ...mentioned].filter((person) => person !== who.id).length === 0,
+    sent: Date.now(),
+  };
 }
