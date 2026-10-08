@@ -152,6 +152,17 @@ test('the operator, on a phone, finds it in «👥 Ichki», reads it, and answer
       expect(title).not.toBeNull();
       expect(title!.y).toBeGreaterThanOrEqual(header!.y + header!.height);
     }).toPass({ timeout: 10_000 });
+    // …and the geometry alone cannot see the margin HERE: the panel sits near
+    // the page's end, so the browser stops at the maximum scroll (measured:
+    // scrollY 671 = max, title at 274 px under a 57 px header) and the title
+    // clears the bar with or without it — dropping `scroll-mt-20` stayed
+    // green. So the margin the browser applies is asserted too: at least the
+    // header's height, or a longer card would land the title under the bar.
+    const margin = await page
+      .getByTestId('cargo-thread')
+      .evaluate((el) => parseFloat(getComputedStyle(el).scrollMarginTop) || 0);
+    const bar = await page.locator('header').first().boundingBox();
+    expect(margin, 'scroll-margin-top clears the sticky header').toBeGreaterThanOrEqual(bar!.height);
     await read;
 
     // Read BEFORE he answers: the logist's question is still the newest message.
