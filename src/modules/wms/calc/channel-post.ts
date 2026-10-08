@@ -335,6 +335,15 @@ interface Text {
  * reads it as a letter, a digit or a space; the end turns it into a space.
  */
 const CUT = '\u0000';
+/**
+ * Where a cut that takes its GLUED run was (a code, a shape, a phone) — the
+ * run is widened only at the END, once every unit has been read (`widenGlued`).
+ * Widened at the cut, a run swallowed the start of the NEXT unit: «GS777/GS
+ * 555» lost «GS», and «555» was no code any more and was posted; a phone
+ * glued to «Ali Bobur» posted «Bobur». A cut that swallows one is glued too.
+ * Cleared from a name on the way in, like the NUL.
+ */
+const GLUED_CUT = '\u0001';
 const SEPARATOR = '[-–—_#№:/|]';
 /** A separator that touches a cut and frames nothing else: «YW-045 / YW26-000123» → «YW-045». */
 const ORPHAN_AT_CUT = new RegExp(
@@ -386,25 +395,96 @@ function glue(shadow: string, start: number, end: number, floor: number): [numbe
   return [s, e];
 }
 
+type Span = [number, number];
+
 /**
- * Every match of `re` on the shadow (that `when` accepts) spliced out of BOTH
- * strings at the same indices — with its glued run when `glued` (codes,
- * shapes and phones; never a person's word or a marking, which keep their
- * plain edges).
+ * `[start, end]` grown over every span of `shared` it overlaps, and over the
+ * spans THOSE overlap, until nothing more joins.
  */
-function cut(text: Text, re: RegExp, opts: { when?: (match: string) => boolean; glued?: boolean } = {}): Text {
+function joinShared(start: number, end: number, shared: readonly Span[]): Span {
+  let s = start;
+  let e = end;
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const [a, b] of shared) {
+      if (a < e && b > s && (a < s || b > e)) {
+        s = Math.min(s, a);
+        e = Math.max(e, b);
+        grew = true;
+      }
+    }
+  }
+  return [s, e];
+}
+
+/** The spans spliced out of BOTH strings at the same indices, each replaced by its one mark. */
+function splice(text: Text, spans: readonly Span[], markOf: (span: Span) => string): Text {
   let out = '';
   let shadow = '';
   let last = 0;
-  for (const m of text.shadow.matchAll(re)) {
-    if (m[0].length === 0 || m.index < last || (opts.when && !opts.when(m[0]))) continue;
-    const widened = opts.glued ? glue(text.shadow, m.index, m.index + m[0].length, last) : [m.index, m.index + m[0].length];
-    const [s, e] = hug(text.shadow, widened[0]!, widened[1]!, last);
-    out += `${text.out.slice(last, s)}${CUT}`;
-    shadow += `${text.shadow.slice(last, s)}${CUT}`;
+  for (const span of spans) {
+    const [s, e] = span;
+    const mark = markOf(span);
+    out += `${text.out.slice(last, s)}${mark}`;
+    shadow += `${text.shadow.slice(last, s)}${mark}`;
     last = e;
   }
   return { out: out + text.out.slice(last), shadow: shadow + text.shadow.slice(last) };
+}
+
+/**
+ * Every match of `re` on the shadow (that `when` accepts) spliced out of BOTH
+ * strings at the same indices. `glued` (codes, shapes and phones; never a
+ * person's word or a marking, which keep their plain edges) marks the cut so
+ * its glued run goes at the end (`widenGlued`). `shared`: units read BEFORE
+ * this cut that a match overlaps go with it whole — a phone that shares
+ * digits with a marking («ZAFAR 2024» + «2024 - +998…») or a spaced receipt
+ * number would otherwise take a piece of it and leave the rest, its person
+ * included, matching nothing. Overlapping removals merge.
+ */
+function cut(
+  text: Text,
+  re: RegExp,
+  opts: { when?: (match: string) => boolean; glued?: boolean; shared?: readonly Span[] } = {},
+): Text {
+  const found: Span[] = [];
+  for (const m of text.shadow.matchAll(re)) {
+    if (m[0].length === 0 || (opts.when && !opts.when(m[0]))) continue;
+    const end = m.index + m[0].length;
+    found.push(opts.shared ? joinShared(m.index, end, opts.shared) : [m.index, end]);
+  }
+  found.sort((x, y) => x[0] - y[0]);
+  const spans: Span[] = [];
+  for (const [s, e] of found) {
+    const prev = spans.at(-1);
+    if (prev && s < prev[1]) prev[1] = Math.max(prev[1], e);
+    else spans.push([s, e]);
+  }
+  for (let i = 0; i < spans.length; i++) {
+    spans[i] = hug(text.shadow, spans[i]![0], spans[i]![1], i ? spans[i - 1]![1] : 0);
+  }
+  // A GLUED_CUT when the cut is glued or swallows one: a run to widen is
+  // never forgotten by the cut that took its mark.
+  return splice(text, spans, ([s, e]) =>
+    opts.glued || text.shadow.slice(s, e).includes(GLUED_CUT) ? GLUED_CUT : CUT,
+  );
+}
+
+/**
+ * Every glued cut widened over its whole run (`glue`) and what framed the
+ * run (`hug` — «kod: Bobur/GS555») — LAST, once every unit has been read, so
+ * a run never takes the start of a unit that goes on past it. The run's own
+ * cut marks are part of it; what is left is one CUT.
+ */
+function widenGlued(text: Text): Text {
+  const spans: Span[] = [];
+  for (let i = text.shadow.indexOf(GLUED_CUT); i !== -1; i = text.shadow.indexOf(GLUED_CUT, i + 1)) {
+    const floor = spans.at(-1)?.[1] ?? 0;
+    if (i < floor) continue;
+    const [s, e] = glue(text.shadow, i, i + 1, floor);
+    spans.push(hug(text.shadow, s, e, floor));
+  }
+  return splice(text, spans, () => CUT);
 }
 
 /**
@@ -432,16 +512,25 @@ function firstRunOf(folded: string): string | null {
  */
 const PHONE = /\+?\d(?:[\s\-+.()\u0000]*\d){6,}/gu;
 
-/** A text as it reads once its phones are cut — the shape a marking that carries one meets in the name. */
+/**
+ * A text as it reads once its phones are cut — the shape a marking that
+ * carries one meets in the name (its run not yet widened, as in the name).
+ */
 function phonesCut(shadow: string): string {
   return cut({ out: shadow, shadow }, PHONE, { glued: true }).shadow;
 }
 
-/** A unit's words as a pattern, a NUL (a phone's cut) spelled as the escape. */
+/**
+ * A unit's words as a pattern. A phone's mark stands for the phone AND its
+ * glued run (`widenGlued` takes the run later), so it matches whatever is
+ * glued to it in the name — «Karim 901234567кGS777» is the marking «Karim
+ * 901234567» with a code glued on, not a marking that ends in «к».
+ */
 function wordsPattern(unit: string): string {
+  const run = `[^\\s${CJK}]*`;
   return unit
     .split(/\s+/u)
-    .map((word) => escapeRegExp(word).replace(/\u0000/gu, '\\u0000'))
+    .map((word) => escapeRegExp(word).replace(/\u0001/gu, `${run}\\u0001${run}`))
     .join('\\s+');
 }
 
@@ -456,7 +545,11 @@ export type Scrubber = (name: string) => string;
  *      no code shape can carve a uuid into debris;
  *   2. a PHONE in any spelling (≥ 7 digits with spaces, dashes, `+`, dots or
  *      brackets between them) — before anything can take a piece of it
- *      (`PHONE`): the card's own phone, a code or a marking inside it;
+ *      (`PHONE`): the card's own phone, a code or a marking inside it — and
+ *      with it, whole, every unit of steps 3-6 it shares digits with, read
+ *      while all of it still stands: the marking «ZAFAR 2024» before «- +998
+ *      90…» or «MARK5 Bobur5» before «+998…» would otherwise lose its digits
+ *      to the phone and post the rest, and so would a spaced receipt number;
  *   3. the MARKINGS (≥ 3), each ONE unit and never split into words, or «Ali
  *      kurtka» would eat «kurtka» from every name — and BEFORE any other piece
  *      of them can be cut: a marking that starts with a code or a person
@@ -479,7 +572,10 @@ export type Scrubber = (name: string) => string;
  * and markings the plain one. A code, a shape or a phone takes its whole GLUED
  * run with it (`RUN_STOP`: anything up to whitespace or CJK, on either side —
  * «GS555/Bobur», «Bobur/GS555», «GS555(Bobur)»), because the person behind a
- * code is the leak; a person's word and a marking take only themselves.
+ * code is the leak; a person's word and a marking take only themselves. The
+ * runs are widened LAST (`GLUED_CUT`), once every unit has been read: widened
+ * at its cut, a run took the start of the next unit — «GS777/GS 555» posted
+ * «555», a phone glued to «Ali Bobur» posted «Bobur».
  * An empty result drops the name.
  *
  * Compiled ONCE per post: a thousand-line invoice against three thousand
@@ -495,12 +591,14 @@ export type Scrubber = (name: string) => string;
  * of Chinese goods whose first character is a counter («444套装», «555双肩包»
  * — read as a quantity and kept: it cannot be told from «500件»), a person a
  * SPACE parts from a code («GS555 - Bobur» — a word, cut only when it is the
- * card's), a marking whose digits make a phone only together with the name's
- * digits beside it, and a deal code spelled with a bare space («B 000099»).
+ * card's), a deal code spelled with a bare space («B 000099»), and a number
+ * in the card's names or company, which is no longer cut on its own (the
+ * words beside it are).
  * STATED, over-scrubbed on purpose (a goods word lost is acceptable, a person
  * posted is not): a glued run goes whole, so with 444 a code «444/500» loses
- * the 500 and «kurtka-GS777» its kurtka; and a number in the card's names or
- * company is no longer cut on its own (the words beside it are).
+ * the 500 and «kurtka-GS777» its kurtka; and a quantity a space parts from a
+ * code's digits can read as one phone with them and go with it («GS777 100
+ * 500», «B-000124 500»).
  */
 export function makeScrubber(ctx: ScrubContext): Scrubber {
   const words = new Set<string>();
@@ -529,7 +627,7 @@ export function makeScrubber(ctx: ScrubContext): Scrubber {
   const markingsByRun = new Map<string, string[]>();
   const runless: string[] = [];
   for (const marking of ctx.markings) {
-    const m = fold(nfkc(marking)).trim();
+    const m = fold(nfkc(marking).replace(/[\u0000\u0001]/gu, ' ')).trim();
     if ([...m].length < 3) continue;
     // The phones are cut before the markings (step 2), so a marking that
     // carries one («Bobur 901234567») meets the name as «Bobur ␀» — matched in
@@ -569,27 +667,35 @@ export function makeScrubber(ctx: ScrubContext): Scrubber {
   }
 
   return (name: string): string => {
-    const normal = nfkc(name).replace(/\u0000/gu, ' ');
+    const normal = nfkc(name).replace(/[\u0000\u0001]/gu, ' ');
     let t: Text = { out: normal, shadow: fold(normal) };
 
     t = cut(t, /\S+/gu, { when: (token) => LINK_TOKEN.some((re) => re.test(token)) });
     // The runs a marking is looked up by, read BEFORE the phones go: a
     // marking whose first run is a phone's digits is still the name's.
     const runs = new Set([...t.shadow.toLowerCase().matchAll(/[\p{L}\p{N}]+/gu)].map((m) => m[0]));
-    // The phones before anything can take a piece of them (step 2).
-    t = cut(t, PHONE, { glued: true });
-    // The markings while every other piece of them still stands (step 3).
-    for (const run of runs) {
-      if (!markingsByRun.has(run)) continue;
-      const re = markingsFor(run);
-      if (re) t = cut(t, re);
+    const markingRes = [...runs].filter((run) => markingsByRun.has(run)).map(markingsFor);
+    // The phones before anything can take a piece of them (step 2) — and
+    // with them, whole, every unit a phone shares digits with, read while
+    // all of it still stands. Only a name that carries a phone pays for it.
+    if (t.shadow.search(PHONE) !== -1) {
+      const shared: Span[] = [];
+      for (const re of [...markingRes, runlessRe, wordsRe, codesRe, ...shapes, prefixRe]) {
+        if (!re) continue;
+        for (const m of t.shadow.matchAll(re)) if (m[0].length > 0) shared.push([m.index, m.index + m[0].length]);
+      }
+      t = cut(t, PHONE, { glued: true, shared });
     }
+    // The markings while every other piece of them still stands (step 3).
+    for (const re of markingRes) if (re) t = cut(t, re);
     if (runlessRe) t = cut(t, runlessRe);
     if (wordsRe) t = cut(t, wordsRe);
     if (codesRe) t = cut(t, codesRe, { glued: true });
 
     for (const re of shapes) t = cut(t, re, { glued: true });
     if (prefixRe) t = cut(t, prefixRe, { glued: true });
+    // Every glued run, now that no unit can lose its start to one.
+    t = widenGlued(t);
 
     // What framed a removed unit and now frames nothing: empty brackets, a
     // separator a cut left standing alone («YW-045 / YW26-000123» → «YW-045»).

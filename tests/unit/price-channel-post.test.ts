@@ -471,6 +471,50 @@ describe('U4 — every code that opens onto a client', () => {
     batchSurvives({ knownCodes: new Set(['444']) });
   });
 
+  it('a glued run never takes the START of the next unit — it is widened once every unit has been read', () => {
+    // Widened at its cut, a run took the next unit's first piece and the rest
+    // matched nothing: «555», «000099», a phone's tail, a marking's person.
+    const gsr = { codePrefix: 'GSR' };
+    expect(scrub('GS777/GS 555 kurtka', { ...gsr, ownCodes: ['GS777'], knownCodes: new Set(['GS555']) })).toBe('kurtka');
+    expect(scrub('shim B-000124(GS 555', { ...gsr, ownCodes: ['B-000124'], knownCodes: new Set(['GS555']) })).toBe('shim');
+    expect(scrub('GS555;B - 000099 kurtka', { ...gsr, knownCodes: new Set(['GS555']) })).toBe('kurtka');
+    expect(scrub('+998901112233,90 111 22 33 kurtka')).toBe('kurtka');
+    expect(scrub('YW26-000123/+998 93 876 54 21 kurtka')).toBe('kurtka');
+    expect(scrub('+998901234567/Ali Bobur kurtka', { markings: ['Ali Bobur'] })).toBe('kurtka');
+    expect(scrub('CR-YW26-00012.Ali Bobur kurtka', { markings: ['Ali Bobur'] })).toBe('kurtka');
+    expect(scrub('YW26-000123:GS500 MANIKEN kurtka', { ...gsr, markings: ['GS500 MANIKEN'] })).toBe('kurtka');
+    expect(scrub('ZAFAR 2024-YW26-000123 kurtka', { markings: ['ZAFAR 2024'] })).toBe('kurtka');
+    // …and what framed the run still goes with it.
+    expect(scrub('kod: Bobur/GS555 kurtka')).toBe('kurtka');
+    batchSurvives({ markings: ['Ali Bobur'] });
+  });
+
+  it('a unit that shares digits with a phone goes with the phone, whole', () => {
+    // The phone is cut first; a marking whose digits it took stopped
+    // matching and posted the rest — the person ⌘K finds the lot by.
+    expect(scrub('ZAFAR 2024 - +998901112233 kurtka', { markings: ['ZAFAR 2024'] })).toBe('kurtka');
+    expect(scrub('Kurtka MARK5 Bobur5 +998 90 105 45 67 shim', { markings: ['MARK5 Bobur5'] })).toBe('Kurtka shim');
+    expect(scrub('MANIKEN 2024 100 500 sht', { markings: ['MANIKEN 2024'] })).toBe('sht');
+    // A receipt number spelled with spaces is a phone to the phone rule.
+    expect(scrub('A55YW - IN - 260101 - 12 kurtka', { knownCodes: new Set(['A55']) })).toBe('kurtka');
+    // The accepted cost: a quantity beside a code's digits reads as one phone.
+    expect(scrub('GS777 100 500 kurtka', { ownCodes: ['GS777'] })).toBe('kurtka');
+    batchSurvives({ markings: ['ZAFAR 2024'] });
+  });
+
+  it('a marking’s phone stands for the phone and whatever is glued to it', () => {
+    // Spelled another way in the name than in the marking — the phone-cut shape.
+    expect(scrub('Bobur 90 123 45 67 sumka', { markings: ['Bobur 901234567'] })).toBe('sumka');
+    // A cut that takes a phone's mark widens its glued run as the phone would —
+    // also where the marking ends short of it, at Chinese text.
+    expect(scrub('Bobur 90 123 45 67/Ali sumka', { markings: ['Bobur 901234567'] })).toBe('sumka');
+    expect(scrub('Karim 90 123 45 67/Ali男士夹克', { markings: ['Karim 901234567'] })).toBe('男士夹克');
+    // A code glued straight onto the marking's phone, letter to digit.
+    expect(scrub('Karim 901234567кGS777 shim', { markings: ['Karim 901234567'] })).toBe('shim');
+    expect(scrub('Karim 901234567;男士夹克', { markings: ['Karim 901234567'] })).toBe('男士夹克');
+    batchSurvives({ markings: ['Bobur 901234567'] });
+  });
+
   it('a link, a uuid, an app path or a bare host', () => {
     expect(scrub(`gsrwms.uz/bitimlar/${UUID} kurtka`)).toBe('kurtka');
     expect(scrub(`/crm/leads/${UUID} kurtka`)).toBe('kurtka');
