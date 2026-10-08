@@ -25,9 +25,9 @@ import { itemNameNorm } from './memory';
 import {
   codeCandidates,
   fitGoods,
-  nfkc,
+  makeScrubber,
+  markingCandidates,
   pickPerUnit,
-  scrubIdentity,
   type ChannelPostView,
   type ChannelSection,
   type PostKind,
@@ -210,6 +210,9 @@ async function forbiddenFor(
   return { forbidden: kept(forbidden), ownCodes: kept(ownCodes) };
 }
 
+/** How many code candidates one read binds — far under postgres's parameter ceiling. */
+const CANDIDATES_PER_READ = 2_000;
+
 /**
  * What OTHER clients these names carry, read from the data — because a code
  * opens onto a client wherever it was minted: a manual `444`, a Kashgar
@@ -218,32 +221,39 @@ async function forbiddenFor(
  *
  * Both reads run on the POOL after the price's commit (this whole builder
  * does), so #714 does not apply. Codes go through `clients_code_unique` with
- * `inArray` — a JS array bound into raw SQL is not a postgres array. The
- * markings are ONE statement over ONE bound haystack: a receipt's marking is
- * a needle inside the names, which no index answers, and «no status filter»
+ * `inArray` — a JS array bound into raw SQL is not a postgres array. A
+ * receipt's marking is a needle inside the names, which no index answers, so
+ * the markings are ONE read of the distinct values; «no status filter»,
  * because ⌘K's lot search by marking has none either.
  */
 async function identitiesIn(names: readonly string[]): Promise<{ knownCodes: Set<string>; markings: string[] }> {
   const candidates = codeCandidates(names);
-  const known =
-    candidates.length === 0
-      ? []
-      : await db.select({ code: clients.clientCode }).from(clients).where(inArray(clients.clientCode, candidates));
-  // The names as typed AND as the scrub reads them (NFKC), so a full-width
-  // spelling finds the marking too; `lower` on BOTH sides in SQL, so the
-  // database's own ctype decides the case once.
-  const haystack = [...names, ...names.map(nfkc)].join('\n');
+  const knownCodes = new Set<string>();
+  // In slices: a thousand-item invoice can name more candidates than one
+  // statement may bind (65 535), and a post that cannot be built is retried
+  // for ever.
+  for (let i = 0; i < candidates.length; i += CANDIDATES_PER_READ) {
+    const slice = candidates.slice(i, i + CANDIDATES_PER_READ);
+    const rows = await db.select({ code: clients.clientCode }).from(clients).where(inArray(clients.clientCode, slice));
+    for (const row of rows) knownCodes.add(row.code);
+  }
+  // The DISTINCT markings, matched against the names here and not in SQL.
+  // MEASURED on a 50k-receipt shaped copy (20 000 markings): one bound
+  // haystack under `strpos` was 21 ms for six names and 14.3 s for the
+  // thousand-line invoice the item cap allows — it is markings × haystack.
+  // This read is 15 ms whatever the names, and `markingCandidates` is
+  // markings + names.
   const rows =
-    haystack.trim() === ''
+    names.length === 0
       ? []
       : await db.execute<{ marking: string }>(sql`
           SELECT DISTINCT r.unclaimed_marking AS marking
             FROM receipts r
            WHERE r.unclaimed_marking IS NOT NULL
-             AND char_length(btrim(r.unclaimed_marking)) >= 3
-             AND strpos(lower(${haystack}), lower(btrim(r.unclaimed_marking))) > 0`);
-  return { knownCodes: new Set(known.map((k) => k.code)), markings: rows.map((r) => r.marking) };
+             AND char_length(btrim(r.unclaimed_marking)) >= 3`);
+  return { knownCodes, markings: markingCandidates(names, rows.map((r) => r.marking)) };
 }
+
 
 /** Up to six scrubbed, distinct goods names in the request's own order, and how many more there were. */
 async function goodsFor(
@@ -257,13 +267,11 @@ async function goodsFor(
     .orderBy(asc(calcRequestItems.seq));
   const codePrefix = String((await getSetting('client_code_prefix')) ?? '').trim();
   const { knownCodes, markings } = await identitiesIn(items.map((i) => i.name));
+  const scrub = makeScrubber({ forbidden: card.forbidden, ownCodes: card.ownCodes, codePrefix, knownCodes, markings });
   const seen = new Set<string>();
   const names: string[] = [];
   for (const item of items) {
-    const clean = clipText(
-      scrubIdentity(item.name, { forbidden: card.forbidden, ownCodes: card.ownCodes, codePrefix, knownCodes, markings }),
-      40,
-    );
+    const clean = clipText(scrub(item.name), 40);
     if (!clean) continue;
     const key = itemNameNorm(clean);
     if (seen.has(key)) continue;

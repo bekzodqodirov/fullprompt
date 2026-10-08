@@ -188,7 +188,7 @@ function fold(s: string): string {
  * rewrites to the two LETTERS «No» and so would weld itself to the code it
  * labels. Stated cost: `m²` reads `m2`.
  */
-export function nfkc(s: string): string {
+function nfkc(s: string): string {
   return s
     .split('№')
     .map((part) => part.normalize('NFKC'))
@@ -301,14 +301,24 @@ function cut(text: Text, re: RegExp, when: (match: string) => boolean = () => tr
   return { out: out + text.out.slice(last), shadow: shadow + text.shadow.slice(last) };
 }
 
-/** Whole units, longest first — so «MANIKEN-AL» goes before a «MANIKEN» it contains. */
-function cutUnits(text: Text, patterns: readonly string[]): Text {
-  let t = text;
-  for (const p of [...new Set(patterns)].sort((a, b) => b.length - a.length)) {
-    t = cut(t, new RegExp(`${EDGE_BEFORE}(?:${p})${EDGE_AFTER}`, 'giu'));
-  }
-  return t;
+/**
+ * Whole units as ONE edge-bounded alternation, longest first — so «MANIKEN-AL»
+ * wins over a «MANIKEN» it contains. Null for none.
+ */
+function unitsRegex(patterns: Iterable<string>): RegExp | null {
+  const list = [...new Set(patterns)].sort((a, b) => b.length - a.length);
+  return list.length === 0 ? null : new RegExp(`${EDGE_BEFORE}(?:${list.join('|')})${EDGE_AFTER}`, 'giu');
 }
+
+/** The first letter/digit run of a folded unit, lower-cased — what a name must carry WHOLE for the unit to stand in it. */
+function firstRunOf(folded: string): string | null {
+  return /[\p{L}\p{N}]+/u.exec(folded.toLowerCase())?.[0] ?? null;
+}
+
+const PHONE = /\+?\d(?:[\s\-+.()]*\d){6,}/gu;
+
+/** One post's scrub, compiled once and run over every goods name. */
+export type Scrubber = (name: string) => string;
 
 /**
  * A goods name with every way to its client taken out (F4 a). Matching runs on
@@ -319,9 +329,9 @@ function cutUnits(text: Text, patterns: readonly string[]): Text {
  *   2. the card's PEOPLE, word by word (≥ 3 code points, whole words only —
  *      «Ali» must not eat «Natalia» or «Alyuminiy»);
  *   3. whole CODES: the card's own (any length), the book's codes the names
- *      carry (≥ 3), each with a seam and the lot suffix; the markings (≥ 3),
- *      each ONE unit and never split into words, or «Ali kurtka» would eat
- *      «kurtka» from every name;
+ *      carry (≥ 3), each with a seam and the lot suffix; then the markings
+ *      (≥ 3), each ONE unit and never split into words, or «Ali kurtka» would
+ *      eat «kurtka» from every name;
  *   4. the system's SHAPES (crate, box, receipt, pickup, deal), then the
  *      client-code prefix or its Cyrillic spelling followed by a digit — so
  *      a code minted under today's prefix goes even when the book was not asked;
@@ -330,60 +340,99 @@ function cutUnits(text: Text, patterns: readonly string[]): Text {
  *   6. remnants: empty brackets, orphan separators, whitespace, edge punctuation.
  * An empty result drops the name.
  *
+ * Compiled ONCE per post: a thousand-line invoice against three thousand
+ * markings was half a minute of regex construction, one per marking per name.
+ * A name is tried only against the markings whose first run it carries whole
+ * (the edges make that exact, `markingCandidates`).
+ *
  * STATED, not caught: a two-character code of another client («A4» reads like
  * a paper size), a code with no digit, and a CJK marking glued to other
  * letters with no edge.
  */
-export function scrubIdentity(name: string, ctx: ScrubContext): string {
-  const normal = nfkc(name);
-  let t: Text = { out: normal, shadow: fold(normal) };
-
-  t = cut(t, /\S+/gu, (token) => LINK_TOKEN.some((re) => re.test(token)));
-
+export function makeScrubber(ctx: ScrubContext): Scrubber {
   const words = new Set<string>();
   for (const f of ctx.forbidden) {
     for (const part of nfkc(f).split(/[\s,;:/()+-]+/u)) {
       if ([...part].length >= 3) words.add(escapeRegExp(fold(part)));
     }
   }
-  t = cutUnits(t, [...words]);
+  const wordsRe = unitsRegex(words);
 
-  const units: string[] = [];
+  const codes: string[] = [];
   for (const code of ctx.ownCodes) {
-    if (code.trim() !== '') units.push(`${codePattern(code.trim())}${LOT}`);
+    if (code.trim() !== '') codes.push(`${codePattern(code.trim())}${LOT}`);
   }
   for (const code of ctx.knownCodes) {
-    if ([...code.trim()].length >= 3) units.push(`${codePattern(code.trim())}${LOT}`);
+    if ([...code.trim()].length >= 3) codes.push(`${codePattern(code.trim())}${LOT}`);
   }
-  t = cutUnits(t, units);
-  const markings: string[] = [];
+  const codesRe = unitsRegex(codes);
+
+  // The markings grouped by their FIRST run: a name is tried only against
+  // the groups whose run it carries whole (the edges make that exact, see
+  // `markingCandidates`), and each group is ONE alternation compiled the
+  // first time a name needs it — a `\p{L}` edge costs ~0.4 ms to compile, and
+  // a regex per marking per name was half a minute on a thousand-line invoice.
+  const markingsByRun = new Map<string, string[]>();
+  const runless: string[] = [];
   for (const marking of ctx.markings) {
     const m = fold(nfkc(marking)).trim();
-    if ([...m].length >= 3) markings.push(m.split(/\s+/u).map(escapeRegExp).join('\\s+'));
+    if ([...m].length < 3) continue;
+    const pattern = m.split(/\s+/u).map(escapeRegExp).join('\\s+');
+    const run = firstRunOf(m);
+    if (run === null) runless.push(pattern);
+    else markingsByRun.set(run, [...(markingsByRun.get(run) ?? []), pattern]);
   }
-  t = cutUnits(t, markings);
+  const runlessRe = unitsRegex(runless);
+  const groupRe = new Map<string, RegExp | null>();
+  const markingsFor = (run: string): RegExp | null => {
+    if (!groupRe.has(run)) groupRe.set(run, unitsRegex(markingsByRun.get(run) ?? []));
+    return groupRe.get(run) ?? null;
+  };
 
-  for (const shape of SYSTEM_SHAPES) {
-    t = cut(t, new RegExp(`${EDGE_BEFORE}${shape}${EDGE_AFTER}`, 'giu'));
-  }
+  const shapes = SYSTEM_SHAPES.map((shape) => new RegExp(`${EDGE_BEFORE}${shape}${EDGE_AFTER}`, 'giu'));
   const prefix = nfkc(ctx.codePrefix).trim().toUpperCase();
+  let prefixRe: RegExp | null = null;
   if (prefix) {
     const cyrillic = [...prefix].map((ch) => CYRILLIC_SPELLING[ch] ?? ch).join('');
     const spellings = [...new Set([fold(prefix), fold(cyrillic)])].map(escapeRegExp).join('|');
-    t = cut(t, new RegExp(`${EDGE_BEFORE}(?:${spellings})${SEAM}\\d[\\p{L}\\p{N}-]*`, 'giu'));
+    prefixRe = new RegExp(`${EDGE_BEFORE}(?:${spellings})${SEAM}\\d[\\p{L}\\p{N}-]*`, 'giu');
   }
 
-  t = cut(t, /\+?\d(?:[\s\-+.()]*\d){6,}/gu);
+  return (name: string): string => {
+    const normal = nfkc(name);
+    let t: Text = { out: normal, shadow: fold(normal) };
 
-  // What framed a removed unit and now frames nothing: empty brackets, a
-  // separator standing alone («YW-045 / YW26-000123» → «YW-045»).
-  return t.out
-    .replace(/[(\[]\s*[)\]]/gu, ' ')
-    .replace(/(^|\s)[-–—_#№:/|]+(?=\s|$)/gu, '$1')
-    .replace(/\s+/gu, ' ')
-    .trim()
-    .replace(/^[\s,;:·\-–—/|]+|[\s,;:·\-–—/|]+$/gu, '')
-    .trim();
+    t = cut(t, /\S+/gu, (token) => LINK_TOKEN.some((re) => re.test(token)));
+    if (wordsRe) t = cut(t, wordsRe);
+    if (codesRe) t = cut(t, codesRe);
+    const runs = new Set([...t.shadow.toLowerCase().matchAll(/[\p{L}\p{N}]+/gu)].map((m) => m[0]));
+    for (const run of runs) {
+      if (!markingsByRun.has(run)) continue;
+      const re = markingsFor(run);
+      if (re) t = cut(t, re);
+    }
+    if (runlessRe) t = cut(t, runlessRe);
+
+    for (const re of shapes) t = cut(t, re);
+    if (prefixRe) t = cut(t, prefixRe);
+
+    t = cut(t, PHONE);
+
+    // What framed a removed unit and now frames nothing: empty brackets, a
+    // separator standing alone («YW-045 / YW26-000123» → «YW-045»).
+    return t.out
+      .replace(/[(\[]\s*[)\]]/gu, ' ')
+      .replace(/(^|\s)[-–—_#№:/|]+(?=\s|$)/gu, '$1')
+      .replace(/\s+/gu, ' ')
+      .trim()
+      .replace(/^[\s,;:·\-–—/|]+|[\s,;:·\-–—/|]+$/gu, '')
+      .trim();
+  };
+}
+
+/** One name — `makeScrubber` for a single use (the tests, and any one-off caller). */
+export function scrubIdentity(name: string, ctx: ScrubContext): string {
+  return makeScrubber(ctx)(name);
 }
 
 /**
@@ -407,6 +456,31 @@ export function codeCandidates(names: readonly string[]): string[] {
         if (candidate(run[0] + next[0])) out.add(run[0] + next[0]);
       }
     });
+  }
+  return [...out];
+}
+
+/** A text's letter/digit runs as the scrub's edges cut them: NFKC, folded, lower-case. */
+function runsOf(text: string): string[] {
+  return [...fold(nfkc(text)).toLowerCase().matchAll(/[\p{L}\p{N}]+/gu)].map((m) => m[0]);
+}
+
+/**
+ * Which of the company's markings these names MIGHT carry — markings + names,
+ * never markings × names. A marking the scrub can remove stands between word
+ * edges, so its FIRST letter/digit run is a whole run of the name; a marking
+ * with no run at all is looked for as plain text. A superset by construction:
+ * the scrub's own edge-bounded match still decides.
+ */
+export function markingCandidates(names: readonly string[], markings: readonly string[]): string[] {
+  const runs = new Set(names.flatMap(runsOf));
+  const text = fold(nfkc(names.join('\n'))).toLowerCase();
+  const out = new Set<string>();
+  for (const marking of markings) {
+    const m = marking.trim();
+    if ([...m].length < 3) continue;
+    const first = runsOf(m)[0];
+    if (first !== undefined ? runs.has(first) : text.includes(fold(nfkc(m)).toLowerCase())) out.add(m);
   }
   return [...out];
 }

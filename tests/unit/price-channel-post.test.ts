@@ -10,6 +10,7 @@ import {
   fitGoods,
   markLine,
   codeCandidates,
+  markingCandidates,
   pickPerUnit,
   scrubIdentity,
   type ChannelPostView,
@@ -230,6 +231,12 @@ describe('U4 — every code that opens onto a client', () => {
   const batchSurvives = (ctx: Partial<ScrubContext> = {}) => expect(scrub('YW-045 kurtka', ctx)).toBe('YW-045 kurtka');
   const UUID = '3f2a9c1e-7b4d-4e8a-9c21-5d6e7f8a9b0c';
 
+  it('a batch code is KEPT — it names no client, and its shape is a product model’s', () => {
+    batchSurvives();
+    expect(scrub('XR-500 model')).toBe('XR-500 model');
+    expect(scrub('LED-100')).toBe('LED-100');
+  });
+
   it('a deal code, in every spelling', () => {
     for (const code of ['B-000099', 'b-000099', 'B000099', 'Б-000099', 'В-000099', 'B\u2011000099']) {
       expect(scrub(`${code} kurtka`), code).toBe('kurtka');
@@ -321,6 +328,19 @@ describe('U4 — every code that opens onto a client', () => {
     batchSurvives();
   });
 
+  it('markingCandidates: a marking whose first run is a whole run of the names — and no other', () => {
+    const all = ['MANIKEN-AL', 'MANIKEN', 'Ali kurtka', 'QQ9', 'kurt', '义乌-张三', '##', '  '];
+    const out = markingCandidates(['ＭＡＮＩＫＥＮ-AL sumka', 'Ali kurtkasi', '义乌-张三 sumka'], all);
+    expect(out).toEqual(expect.arrayContaining(['MANIKEN-AL', 'MANIKEN', 'Ali kurtka', '义乌-张三']));
+    // A run that is only the START of a word, a marking nobody typed, and
+    // anything under three code points never reach the scrub.
+    expect(out).not.toContain('kurt');
+    expect(out).not.toContain('QQ9');
+    expect(out).not.toContain('##');
+    // …and what reaches it is still decided by the scrub's own edges.
+    expect(scrub('Ali kurtkasi', { markings: out })).toBe('Ali kurtkasi');
+  });
+
   it('codeCandidates: the runs that could be a code, joined across a seam, never a word', () => {
     const out = codeCandidates(['kurtka GS 555-A', '444']);
     expect(out).toContain('GS555');
@@ -342,11 +362,14 @@ describe('U5 — the builder hands the scrub the book, the markings and the card
   it('the book is read by `inArray` over the candidates, the markings from receipts', () => {
     const reads = bodyOf('identitiesIn');
     expect(reads).toMatch(/codeCandidates\(names\)/);
-    expect(reads).toMatch(/inArray\(clients\.clientCode, candidates\)/);
+    expect(reads).toMatch(/const slice = candidates\.slice\(/);
+    expect(reads).toMatch(/inArray\(clients\.clientCode, slice\)/);
     expect(reads).toMatch(/unclaimed_marking/);
+    expect(reads).toMatch(/markingCandidates\(names, /);
     const goods = bodyOf('goodsFor');
     expect(goods).toMatch(/await identitiesIn\(/);
-    expect(goods).toMatch(/scrubIdentity\(item\.name, \{[^}]*\bknownCodes\b[^}]*\bmarkings\b[^}]*\}/);
+    expect(goods).toMatch(/const scrub = makeScrubber\(\{[^}]*\bknownCodes\b[^}]*\bmarkings\b[^}]*\}\)/);
+    expect(goods).toMatch(/scrub\(item\.name\)/);
     expect(goods).toMatch(/ownCodes: card\.ownCodes/);
   });
 
