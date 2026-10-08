@@ -1,5 +1,54 @@
 # CHANGELOG
 
+## Prixod va mashina kartasida savol-javob; o'rnatish paytida bot xabarlarni yo'qotmaydi — 2026-10-08
+
+**Migratsiyalar 0129 va 0130.** O'rnatgandan keyin migratsiyalar soni **131** bo'lishi kerak.
+
+Bu sizning «Hammasiga ha» javobingiz: oldingi uch to'lqindagi barcha savollar ⭐ varianti bo'yicha. E (xodimlar chati) ning 2-raundi va 5a (o'rnatish paytidagi xabarlar) qurildi.
+
+### 1. Prixod va mashina kartasida «❓ Savol-javob» (E6 c, E7 b, 4a)
+
+- **Prixod kartasida va mashina kartasining «Ichidagilar» bo'limida** savol-javob qutisi bor. Hozircha faqat matn (E10 a).
+- **Logist yoki admin yozsa**, savol yuk HOZIR turgan skladning hodimlariga Telegramda boradi. Har bir xabar boradi.
+  - Yo'ldagi yuk bo'lsa — jo'natgan va qabul qiladigan ikkala skladga.
+  - Hammasi topshirilgan yoki skladda «yo'qolgan» deb yozilgan prixod — o'sha skladga. Hech narsasi qolmagan prixod — qabul qilgan skladga.
+  - Mashina: yuklanayotganda — jo'natgan sklad; yo'lda — ikkalasi; tushirilgach — qabul qilgan sklad (yo'qolgan karobka hal bo'lguncha jo'natgan sklad ham).
+- **Sklad hodimi yozsa**, xabari har safar barcha logistlarga boradi.
+- **Kim o'qiydi:** logistlar, rahbarlar (admin, super_admin) va yuk turgan skladning hodimlari. Sotuvchi, VED va buxgalter ko'rmaydi. @ bilan chaqirilgan odam faqat Telegramdan javob yoza oladi.
+- **Rahbarlar** hammasini o'qiydi, lekin Telegram xabarini faqat yozishmada qatnashsa yoki @ bilan chaqirilsa oladi.
+- **Yuk boshqa skladga o'tgach**, oldingi sklad hodimi bu yozishmani endi ko'rmaydi. Unga ilgari kelgan havola «topilmadi» ochishi mumkin — bot buni so'z bilan aytadi.
+- **Xitoy sklad hodimlari** xabar ramkasini (📍 yuk qayerda, tugmalar) o'z tilida o'qiydi. Hamkasbning yozgan matni tarjima qilinmaydi.
+- **«👥 Ichki»** pastki panelda endi sklad hodimlarida ham bor.
+- **Skladga hodim biriktirilmagan bo'lsa**, u yerga hech narsa bormaydi va yozgan odamga «⚠ TAS1: biriktirilgan hodim yo'q — u yerga xabar bormadi» deyiladi.
+
+### 2. O'rnatish paytida bot xabarlarni yo'qotmaydi (5a)
+
+- **Bot o'chiq paytida** (yangilash 1-2 daqiqa) yozilgan javob, bosilgan tugma va mijozning xabari endi yo'qolmaydi — bot qaytganda bajariladi.
+- **Bir narsa ikki marta bajarilmaydi.** Tugma 5 marta bosilsa ham bir marta javob beriladi; «⏰ Ertaga», «📤», «🔍 Qidirish» bitta xabarda bir marta bajariladi.
+- **Bot «Natijani yozing» deb so'ramasdan oldin** yozilgan matn javob hisoblanmaydi: bot qaytganda savolini beradi va «⏸ … qaytadan yuboring» deydi. Boshqa narsa uchun yozilgan matn vazifani yopib qo'ymaydi.
+- **Bot tushunmagan, bot o'chiq paytida yozilgan xabar** (forward, fayl) uchun bitta «⏸ Bu xabar bot yangilanayotgan paytda yozilgan…» gapi chiqadi. AI ga savol ketmaydi.
+- **Kech yetgan xabar** (5 daqiqadan ko'p) «🕒 Yozilgan: …» qatori bilan keladi, kartada esa yozilgan vaqtida turadi.
+- **Bosilgan tugma bot qaytgan vaqtda bajariladi.** Masalan, qarzga «✅ Ruxsat» bot qaytganda beriladi va muddati o'shandan hisoblanadi.
+- **Yangilashda bot o'zini to'xtatishi 5 soniyagacha kutadi** (odatda 0,3 soniya) — deploy sekinlashmaydi.
+- **Ishdan bo'shagan hodim** botdagi eski kod bilan endi ulana olmaydi.
+
+### 3. Yo'l-yo'lakay tuzatilganlar
+
+- **Narx kanali posti:** sotuvchi tovar nomiga bitim kodi (B-000124), mijoz kodi, markirovka yoki telefon yozsa, endi hammasi olib tashlanadi. Avval bitim kodi postda qolardi va istalgan sotuvchi bitimni ochib, mijoz kimligini bilib olardi. Partiya kodi (YW-045) qoladi — u mijozni aytmaydi.
+- **VED botdan notanish odam uchun hisoblatsa**, bot javobida endi u ocha oladigan hisob sahifasiga havola beriladi (avval ochilmaydigan lid sahifasiga edi).
+- **VED kartadagi hisob panelida ham** «tannarx yoki muhrlangan narxni yozmang» ogohlantirishini ko'radi (1-savol ⭐).
+- Qolgan ⭐ javoblaringiz kodda allaqachon shunday edi — endi har biri testga mahkamlandi, o'zgarsa test qizil bo'ladi.
+
+### O'rnatish (deploy)
+
+1. Zaxira oling (0 bayt emasligini tekshiring).
+2. `git pull`, keyin `docker compose build migrate`, keyin `docker compose --profile https --profile telegram up -d --build`.
+3. **Migratsiyalar sonini sanang: 131 bo'lishi kerak.** Kamroq bo'lsa, `docker compose run --rm migrate` ning o'z chiqishini o'qing.
+4. `curl -s https://gsrwms.uz/api/version` — bugungi sana.
+5. `docker compose logs app` da eski konteynerdan `telegram bot stopped`, keyin `telegram bot polling started` chiqishi kerak. Birinchi daqiqalarda `[bot] press answered late` qatorlari — o'rnatish paytida bosilgan tugmalar bajarilyapti, bu kutilgan.
+6. **Eski (rollback) serverda `app` o'chiq tursin.** Endi ikkita bot bir tokenda ishlasa, ikkinchisi to'plangan xabarlarni o'z eski kodi bilan bajarib yuboradi.
+7. **Toshkent, Andijon va boshqa skladlar savolni eshitishi uchun:** /admin/users da har bir sklad xodimiga «Skladchi» yoki «Sklad mudiri» roli berilgan va o'z skladi belgilangan bo'lsin. Logistga sklad roli bersangiz, u faqat o'sha skladdagi yukni ko'radigan bo'ladi.
+
 ## Xodimlar ichki savol-javobi va narx kanali — 2026-10-07
 
 **Migratsiyalar 0127 va 0128.** O'rnatgandan keyin migratsiyalar soni **129** bo'lishi kerak.

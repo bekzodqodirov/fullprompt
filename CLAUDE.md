@@ -2601,7 +2601,43 @@ the muted «Ish jarayoni» people, round 2's warehouse = where the cargo STANDS,
 `drop_pending_updates`; pre-connect prices, the logist matching posts to
 deals, «own» = offered_by, sealed total on narxlar for sellers.
 
-**Latest migration: 0128** (`price_channel`, `when` …107; ledger must reach **129**). Before
+**Round — «Hammasiga ha», prixod/truck threads and the kept backlog (2026-10-08;
+DECISIONS #1324-#1339; migrations 0129 `cargo_threads` + 0130 `bot_redelivery` —
+ledger must reach 131).** His «Hammasiga ha» = the ⭐ of every open question,
+each checked against the shipped code first (#1229): ten held and are now
+PINNED (three of those pins first stayed green and were re-anchored), one held
+on one surface only (the VED's money warning on the card fold), and Q5's star
+was a CHANGE — «bot qayta yoqilganda qayta ishlansin». Three packages on a base
+that reserved both slots as `SELECT 1;` placeholders (a U11 fence in
+`migration-journal.test.ts` now refuses a placeholder body), built in worktrees,
+each reviewed as built and fixed. CARGO THREADS (E round 2, E6 c, E7 b, Q4 a):
+the receipt/batch card's untagged notes; `inventory/stands.ts` is the ONE
+«where the cargo stands» (live shelves + both ends of an in-transit carton's
+truck, else issued/written-off, else receiving; a truck by its stage); the door
+= unscoped `plans.manage` OR scoped staff at a standing warehouse, AND the card
+door (`ThreadReader` carries the scope on every path); office writes reach the
+standing warehouses' staff, staff writes reach the logists by role; frames in
+the recipient's locale; files refused; every thread-kind branch an exhaustive
+switch (K1). BACKLOG (Q5 a, reverses #1316): `drop_pending_updates:false`, a
+stop that confirms only what FINISHED (lifecycle.ts), `answerPress` the one
+caller of `answerCallbackQuery`, `telegram_once` claims per MESSAGE identity
+minted only through `readyKey`, durable one-message waits
+(`telegram_chat_waits`), the backlog told apart from the live chat (one
+sentence, never the AI). SMALL: the price-channel scrub finds codes by DATA
+(deal codes were posted verbatim) — its first two rewrites each opened a new
+leak class, found by a 485k-name DIFFERENTIAL against the shipped scrub, not by
+a test: widen glued runs LAST, a phone takes whole every unit it overlaps;
+`calcJobHrefFor` links what the reader can open. PROCESS (#1339): a container
+restart mid-build (resumed IN PLACE, never `checkout -B`); 4 CPUs = two
+workflow agents at a time; `eslint .` lints `.claude/worktrees/*`; the merge's
+one conflict was visible only to `pnpm typecheck`. Deploy: ledger 131; the
+rollback VPS's `app` must stay stopped (a second poller would drain the
+backlog with its own code); warehouse staff need «Skladchi»/«Sklad mudiri» and
+their warehouse on /admin/users to hear anything.
+
+**Latest migration: 0130** (`bot_redelivery`, `when` …109; ledger must reach **131**). Before
+it: 0129 (`cargo_threads`, `when` …108). Before
+it: 0128 (`price_channel`, `when` …107). Before
 it: 0127 (`staff_threads`, `when` …106). Before
 it: 0126 (`debt_release_note`, `when` …105). Before
 it: 0125 (`calc_basis_m3`, `when` …104). Before
@@ -2734,7 +2770,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **129** since 0128 (128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **131** since 0130 (130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
 and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read
@@ -2742,7 +2778,7 @@ and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read
 was asked for and NOT quoted; PR #106 (0121) deployed 2026-09-30 evening («Hozir sistema
 yaxshi ishlayabti», count not quoted either); PR #109 (0122) was asked about and NOT
 answered, so COUNT FIRST on the next deploy: it must read
-**129** (anything less means a migration did not land — read the `migrate`
+**131** (anything less means a migration did not land — read the `migrate`
 container's own output; from 113 the whole 0113-0120 set applies and EVERY
 container must be recreated once: `--profile https --profile telegram up -d
 --build`, compose gained `init`, a healthcheck, log caps and a postgres flag);
