@@ -97,9 +97,12 @@ describe('the bot', () => {
     expect(reg).toBeLessThan(bot.indexOf('registerStaffBot(bot)'));
   });
 
-  it('asks Telegram for chat_member and keeps dropping pending updates', () => {
+  it('asks Telegram for chat_member and STOPS dropping pending updates (his Q5 a)', () => {
     expect(bot).toContain("allowed_updates: [...API_CONSTANTS.DEFAULT_UPDATE_TYPES, 'chat_member']");
-    expect(bot).toContain('drop_pending_updates: true');
+    // The ONE reversal of a pinned behaviour this round: «O'rnatish paytida
+    // botga yozilgan javoblar — bot qayta yoqilganda qayta ishlansin».
+    expect(bot).toContain('drop_pending_updates: false');
+    expect(bot).not.toContain('drop_pending_updates: true');
   });
 
   it('listens for the four updates, and the channel post handler swallows', () => {

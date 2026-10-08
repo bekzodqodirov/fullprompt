@@ -47,6 +47,9 @@ import { editMarkup, editText } from './send';
 
 import { canLogInSql, staffPhonesMatch } from '../users/login';
 import { THREAD_PING_TYPES, threadOfPayload } from '../notifications/thread-ref';
+import { isBacklog } from './lifecycle';
+import type { OnceKey } from './once';
+import { armWait, dropWait, nowSec, readWait, waitVerdict } from './waits';
 
 /**
  * The cabinet's phone rule (digits only, the last 9) lives in users/login.ts
@@ -147,7 +150,13 @@ export async function mintTelegramLinkCode(userId: string): Promise<string> {
 }
 
 export interface StaffLinkResult {
-  outcome: 'linked' | 'chat_taken';
+  /**
+   * `not_colleague` (B8, Q5 a): the person behind the link or the phone can
+   * no longer log in — told so, nothing written. Every caller SWITCHES over
+   * the outcome: an `if (=== 'chat_taken')` lets a third member fall into the
+   * success branch.
+   */
+  outcome: 'linked' | 'chat_taken' | 'not_colleague';
   /**
    * The chat this person was on BEFORE, when the link MOVED.
    *
@@ -164,6 +173,11 @@ export async function linkStaffChat(
   chatId: bigint,
   via: 'phone' | 'link_code' = 'phone',
 ): Promise<StaffLinkResult> {
+  // B8: a colleague NOW (`canLogIn`, the login-person fence's own home).
+  // `/start <code>` never asked it, so a deactivated person was told «✅
+  // Ulandi» and got an audit row and a link row the bot then ignored.
+  const [person] = await db.select({ live: canLogInSql() }).from(users).where(eq(users.id, userId)).limit(1);
+  if (!person?.live) return { outcome: 'not_colleague', previousChatId: null };
   const holder = await db.query.telegramLinks.findFirst({
     where: eq(telegramLinks.telegramChatId, chatId),
   });
@@ -362,6 +376,44 @@ export type BotCallback =
    * the send and the press loses nothing.
    */
   | { kind: 'thread_reply' };
+
+/**
+ * What a REPEAT of each press does (Q5 a, judge T14) — a Record over the
+ * union, so a new callback kind is a compile error until somebody classifies
+ * it. The bot keeps the backlog now, so every press can arrive twice (a crash
+ * redelivery) or many times (taps into a bot that was not there):
+ *   cas    — the service already refuses the second one (closed, accepted,
+ *            decided, consumed);
+ *   keyed  — a `pressKey` claim by the message pressed (fenced: the branch
+ *            must carry one);
+ *   prompt — it only asks (a second prompt, the wait keeps the earlier time);
+ *   read   — it only shows something, once more.
+ * `note` is 'read': a repeated send is one more copy of the note into the
+ * presser's OWN chat, and save/cancel end the capture the first time; `draft`
+ * is 'cas': the draft its due buttons finish is consumed by the first run.
+ */
+export const PRESS_REPEAT: Record<BotCallback['kind'], 'cas' | 'keyed' | 'prompt' | 'read'> = {
+  task_done: 'prompt',
+  approval: 'cas',
+  entry: 'prompt',
+  calc: 'prompt',
+  note: 'read',
+  lead_contacted: 'cas',
+  calc_link: 'cas',
+  task_accept: 'cas',
+  task_wait: 'prompt',
+  task_postpone: 'keyed',
+  task_question: 'prompt',
+  task_reply: 'prompt',
+  task_noresult: 'cas',
+  task_remind: 'cas',
+  task_cancel: 'cas',
+  task_sources: 'keyed',
+  draft: 'cas',
+  draft_pick: 'prompt',
+  forward: 'keyed',
+  thread_reply: 'prompt',
+};
 
 /** ⏰'s four answers. */
 export const POSTPONE_STEPS = ['e', 'i', 'w', 's'] as const;
@@ -832,63 +884,101 @@ export interface PendingTask {
   replyToMessageId?: number | null;
 }
 
-const pendingResults = new Map<string, PendingTask & { expires: number }>();
-/** Chats that pressed «Hodim» and were asked for their phone. */
-const staffEntryIntents = new Map<string, number>();
+/*
+ * The one wait, durable (0130, Q5 a): memory is still the reader, behind
+ * `waits.ts`, which writes every arm and drop through to the table so a
+ * deploy no longer forgets what the person was asked. A wait exists only once
+ * its prompt is on the screen — every arm site sends the prompt FIRST and
+ * passes the prompt's own `date` as `armedAt`.
+ */
+
+/** The text ladder's verdict: a BACKLOG text dated before the prompt is «early» and does not answer it. */
+function textVerdict(entry: { armedAt: number; expiresAt: number }, atSec: number) {
+  return waitVerdict(entry, atSec, isBacklog(atSec));
+}
 
 export function noteTaskPending(
   chatId: bigint,
   taskId: string,
   pressed: PressedMessage | null = null,
   kind: PendingKind = 'result',
+  opts: { promptMessageId?: number | null; armedAt?: number } = {},
 ): void {
-  pendingResults.set(String(chatId), { taskId, kind, pressed, expires: Date.now() + PENDING_TTL_MS });
+  armWait<PendingTask>(
+    chatId,
+    'task',
+    { taskId, kind, pressed, promptMessageId: opts.promptMessageId ?? null, replyToMessageId: null },
+    PENDING_TTL_MS,
+    opts.armedAt ?? nowSec(),
+    // The SAME target re-armed (a press handled twice, a second tap of a
+    // button whose first was handled before the outage) keeps the earliest
+    // prompt's time: the answer to the first prompt is never «early».
+    (prev) => prev.taskId === taskId && prev.kind === kind,
+  );
 }
 
 /**
  * «💬 Javob yozish» pressed: the next text is a reply to `replyToMessageId`.
- * In the SAME map as every other wait — the one-map law: a second map would
+ * In the SAME wait as every other — the one-map law: a second map would
  * collide with the single-capture fence — so it replaces whatever was armed,
  * exactly as `tq:` does.
  */
-export function noteReplyPending(chatId: bigint, replyToMessageId: number): void {
-  pendingResults.set(String(chatId), {
-    taskId: '',
-    kind: 'reply',
-    pressed: null,
-    replyToMessageId,
-    expires: Date.now() + PENDING_TTL_MS,
-  });
+export function noteReplyPending(chatId: bigint, replyToMessageId: number, opts: { armedAt?: number } = {}): void {
+  armWait<PendingTask>(
+    chatId,
+    'task',
+    { taskId: '', kind: 'reply', pressed: null, promptMessageId: null, replyToMessageId },
+    PENDING_TTL_MS,
+    opts.armedAt ?? nowSec(),
+    (prev) => prev.kind === 'reply' && prev.replyToMessageId === replyToMessageId,
+  );
 }
 
 /**
- * A PEEK at the armed wait — the reply door's question «is this reply the one
- * a wait was armed for?». Never deletes: only `takeTaskPending`,
- * `takeTaskPendingFor` and `dropTaskPending` change the map.
+ * A PEEK at the armed wait, when a message dated `atSec` would answer it.
+ * Never deletes: only `takeTaskPending`, `takeTaskPendingFor` and
+ * `dropTaskPending` change the wait.
  */
-export function peekTaskPending(chatId: bigint): PendingTask | null {
-  const entry = pendingResults.get(String(chatId));
-  if (!entry || entry.expires <= Date.now()) return null;
-  return pendingOf(entry);
+export function peekTaskPending(chatId: bigint, atSec: number = nowSec()): PendingTask | null {
+  const entry = readWait<PendingTask>(chatId, 'task');
+  if (!entry || textVerdict(entry, atSec) !== 'answers') return null;
+  return pendingOf(entry.payload);
 }
 
-/** The prompt was sent — remember where its «✅ Natijasiz» sits. */
-export function notePendingPrompt(chatId: bigint, taskId: string, promptMessageId: number): void {
-  const entry = pendingResults.get(String(chatId));
-  if (entry && entry.taskId === taskId) entry.promptMessageId = promptMessageId;
+/**
+ * The reply door's question (judge Q5H-3): the armed wait and how a message
+ * dated `atSec` relates to it. An EARLY wait guards exactly like an armed one
+ * — a backlog swipe-reply to the copy whose ✅ was pressed during the outage
+ * must not become a question to the giver carrying the result text.
+ */
+export function peekTaskPendingAny(
+  chatId: bigint,
+  atSec: number,
+): { pending: PendingTask; verdict: 'answers' | 'early' } | null {
+  const entry = readWait<PendingTask>(chatId, 'task');
+  if (!entry) return null;
+  const verdict = textVerdict(entry, atSec);
+  return verdict === 'expired' ? null : { pending: pendingOf(entry.payload), verdict };
 }
 
 /**
  * The text ladder's ONE door to a waiting answer. Deletes on read — which is
  * exactly why every keyboard label and every collector sits ABOVE its caller.
+ * `atSec` is the MESSAGE's date: «answers» takes it, «expired» drops it, and
+ * «early» (a backlog text written before the prompt existed) leaves the wait
+ * armed — its prompt is on the screen, the real answer is still to come.
  */
-export function takeTaskPending(chatId: bigint): PendingTask | null {
-  const key = String(chatId);
-  const entry = pendingResults.get(key);
+export function takeTaskPending(chatId: bigint, atSec: number = nowSec()): PendingTask | null {
+  const entry = readWait<PendingTask>(chatId, 'task');
   if (!entry) return null;
-  pendingResults.delete(key);
-  return entry.expires > Date.now() ? pendingOf(entry) : null;
+  const verdict = textVerdict(entry, atSec);
+  if (verdict === 'early') return null;
+  dropWait(chatId, 'task');
+  return verdict === 'answers' ? pendingOf(entry.payload) : null;
 }
+
+/** A press on its own task's prompt older than this finds nothing — the hydrate's own bound. */
+const PRESS_WAIT_MAX_S = 86_400;
 
 /**
  * «✅ Natijasiz»'s door, NAMED and second on purpose (telegram-mechanics-13):
@@ -896,25 +986,28 @@ export function takeTaskPending(chatId: bigint): PendingTask | null {
  * whose id, text and markup only the wait holds. It takes the wait only when
  * the wait is for THAT task — so a later «GS777» is a lookup again and not
  * the result of a task that is already closed.
+ *
+ * Neither «early» nor the TTL (judges TG-10/T17): the taskId match is the
+ * proof — attached to its prompt, a press cannot precede it, and a local
+ * clock ahead of Telegram's cannot misread it.
  */
 export function takeTaskPendingFor(chatId: bigint, taskId: string): PendingTask | null {
-  const key = String(chatId);
-  const entry = pendingResults.get(key);
-  if (!entry || entry.taskId !== taskId) return null;
-  pendingResults.delete(key);
-  return entry.expires > Date.now() ? pendingOf(entry) : null;
+  const entry = readWait<PendingTask>(chatId, 'task');
+  if (!entry || entry.payload.taskId !== taskId) return null;
+  dropWait(chatId, 'task');
+  return nowSec() - entry.armedAt > PRESS_WAIT_MAX_S ? null : pendingOf(entry.payload);
 }
 
 /** Starting a task draft discards a waiting answer (spec §3): a draft's text is never a result. */
 export function dropTaskPending(chatId: bigint): void {
-  pendingResults.delete(String(chatId));
+  dropWait(chatId, 'task');
 }
 
 function pendingOf(entry: PendingTask): PendingTask {
   return {
     taskId: entry.taskId,
     kind: entry.kind,
-    pressed: entry.pressed,
+    pressed: entry.pressed ?? null,
     promptMessageId: entry.promptMessageId ?? null,
     // Rebuilt field by field — a field not copied here arrives as nothing.
     replyToMessageId: entry.replyToMessageId ?? null,
@@ -1023,16 +1116,24 @@ export async function closeLeadMessage(
   if (!res.ok) logger.warn({ description: res.description }, 'lead message not updated');
 }
 
-export function noteStaffEntry(chatId: bigint): void {
-  staffEntryIntents.set(String(chatId), Date.now() + PENDING_TTL_MS);
+/**
+ * «Hodim» pressed and the phone asked for — armed AFTER the prompt
+ * (`askStaffPhone`), at the prompt's own date.
+ */
+export function noteStaffEntry(chatId: bigint, armedAt: number = nowSec()): void {
+  armWait(chatId, 'staff_entry', {}, PENDING_TTL_MS, armedAt, () => true);
 }
 
-export function takeStaffEntry(chatId: bigint): boolean {
-  const key = String(chatId);
-  const expires = staffEntryIntents.get(key);
-  if (expires === undefined) return false;
-  staffEntryIntents.delete(key);
-  return expires > Date.now();
+/**
+ * Expiry only (judges TG-3/Q5H-8): a contact is the person's OWN number,
+ * never «an unrelated text», and the one-time «📱» keyboard can be pressed
+ * before the new prompt arrives.
+ */
+export function takeStaffEntry(chatId: bigint, atSec: number = nowSec()): boolean {
+  const entry = readWait(chatId, 'staff_entry');
+  if (!entry) return false;
+  dropWait(chatId, 'staff_entry');
+  return waitVerdict(entry, atSec, false) === 'answers';
 }
 
 /** The grants alone — `userPermissions`, the one home of the join `actorGrants` reads. */
@@ -1213,6 +1314,8 @@ export const TASK_ANSWERS: Record<BotTaskResult, string> = {
   not_askable: 'Bu vazifa bo‘yicha savol yuborib bo‘lmaydi.',
   empty_text: 'Bo‘sh xabar.',
   nothing_to_send: 'Yuboradigan narsa yo‘q — vazifa hozir sizda yoki unda xabar yo‘q.',
+  // Q5 a: this exact message or press already did it (a redelivery, a repeat tap).
+  already_done: 'Bu allaqachon bajarilgan — qayta yuborilmadi.',
 };
 
 /** The chat's honest actor, as the task service wants it — never a synthetic admin. */
@@ -1260,12 +1363,19 @@ export async function acceptTaskFromBot(chatId: bigint, taskId: string): Promise
   return (await asChat(chatId, (ctx) => acceptTask(taskId, ctx))).result;
 }
 
+/**
+ * The four doors whose effect is not already a CAS carry a `once` key
+ * (Q5 a) — REQUIRED, the house idiom: an optional key fails open, and the
+ * compile error named every caller. `null` is the honest answer of a server
+ * one migration behind, and of a test calling the door directly.
+ */
 export async function rescheduleTaskFromBot(
   chatId: bigint,
   taskId: string,
   due: { dueAt: Date; allDay: boolean },
+  once: OnceKey | null,
 ): Promise<BotTaskResult> {
-  return (await asChat(chatId, (ctx) => rescheduleTask(taskId, due, ctx))).result;
+  return (await asChat(chatId, (ctx) => rescheduleTask(taskId, due, ctx, { once }))).result;
 }
 
 export async function cancelTaskFromBot(
@@ -1278,8 +1388,8 @@ export async function cancelTaskFromBot(
 }
 
 /** «📤 Manbani yangi odamga yuborish» — and whether the holder will hear it (review bot-13). */
-export async function sourcesFromBot(chatId: bigint, taskId: string): Promise<ReachedResult> {
-  const out = await asChat(chatId, (ctx) => forwardSourcesAgain(taskId, ctx));
+export async function sourcesFromBot(chatId: bigint, taskId: string, once: OnceKey | null): Promise<ReachedResult> {
+  const out = await asChat(chatId, (ctx) => forwardSourcesAgain(taskId, ctx, { once }));
   return out.result === 'done' ? { result: 'done', ...out.value } : { result: out.result };
 }
 
@@ -1295,13 +1405,26 @@ export async function remindTaskFromBot(chatId: bigint, taskId: string): Promise
   return out.result === 'done' ? { result: 'done', ...out.value } : { result: out.result };
 }
 
-export async function askFromBot(chatId: bigint, taskId: string, text: string): Promise<ReachedResult> {
-  const out = await asChat(chatId, (ctx) => askAboutTask(taskId, text, ctx));
+/** `writtenAt` — when the person WROTE it: a late copy says «🕒 Yozilgan» (§3.8). */
+export async function askFromBot(
+  chatId: bigint,
+  taskId: string,
+  text: string,
+  once: OnceKey | null,
+  writtenAt?: Date | null,
+): Promise<ReachedResult> {
+  const out = await asChat(chatId, (ctx) => askAboutTask(taskId, text, ctx, { once, writtenAt }));
   return out.result === 'done' ? { result: 'done', ...out.value } : { result: out.result };
 }
 
-export async function answerFromBot(chatId: bigint, taskId: string, text: string): Promise<ReachedResult> {
-  const out = await asChat(chatId, (ctx) => answerAboutTask(taskId, text, ctx));
+export async function answerFromBot(
+  chatId: bigint,
+  taskId: string,
+  text: string,
+  once: OnceKey | null,
+  writtenAt?: Date | null,
+): Promise<ReachedResult> {
+  const out = await asChat(chatId, (ctx) => answerAboutTask(taskId, text, ctx, { once, writtenAt }));
   return out.result === 'done' ? { result: 'done', ...out.value } : { result: out.result };
 }
 

@@ -42,11 +42,11 @@ describe('the text ladder’s slots, in order (telegram-mechanics-24)', () => {
       at('if (isCabinetText(ctx.message.text)) return next();'),
       at("if (ctx.message.text === TOPSHIRIQ || ctx.message.text === '/topshiriq')"),
       at("if (ctx.message.text === MEN_BERGAN || ctx.message.text === '/berganlarim')"),
-      at('const capture = activeCapture(chatId);\n    if (capture) {'),
-      at('const draft = activeDraft(chatId);\n    if (draft) {'),
+      at('const capture = activeCapture(chatId);\n    if (capture && !late) {'),
+      at('const draft = activeDraft(chatId);\n    if (draft && !late) {'),
       at('if (ctx.message.forward_origin) {'),
-      at('const pendingTask = takeTaskPending(chatId);'),
-      at('await answerStaffText(ctx as unknown as StaffTailCtx, chatId, staff.id, ctx.message.text);'),
+      at('const pendingTask = takeTaskPending(chatId, ctx.message.date);'),
+      at('await answerStaffText(ctx as unknown as StaffTailCtx, chatId, staff.id, ctx.message.text, {'),
     ];
     for (let i = 1; i < order.length; i++) expect(order[i - 1]!, `slot ${i}`).toBeLessThan(order[i]!);
   });
@@ -63,7 +63,7 @@ describe('the text ladder’s slots, in order (telegram-mechanics-24)', () => {
   });
 
   it('exactly ONE text door takes the wait, and «Natijasiz»’s named second door is used in its branch alone', () => {
-    expect(handlers.split('takeTaskPending(chatId)').length - 1).toBe(1);
+    expect(handlers.split('takeTaskPending(chatId, ctx.message.date)').length - 1).toBe(1);
     const callers = SRC.filter((f) => f.text.includes('takeTaskPendingFor(') && !f.path.endsWith('staff-bot.ts'));
     expect(callers.map((f) => f.path)).toEqual(['src/modules/platform/telegram/task-handlers.ts']);
     const branch = taskHandlers.slice(taskHandlers.indexOf("if (press.kind === 'task_noresult') {"));
@@ -128,7 +128,7 @@ describe('a task press is decided before anything waits (telegram-mechanics-1)',
   });
 
   it('the typed result answers every code in words — no rethrow into bot.catch', () => {
-    const result = handlers.slice(handlers.indexOf('const pendingTask = takeTaskPending(chatId);'));
+    const result = handlers.slice(handlers.indexOf('const pendingTask = takeTaskPending(chatId, ctx.message.date);'));
     // …with the job's page on an open calc job's refusal (review bot-12).
     expect(result.slice(0, 2000)).toContain(
       "await ctx.reply(outcome === 'done' ? '✅ Vazifa yopildi.' : await refusalFor(pendingTask.taskId, outcome));",
@@ -155,9 +155,16 @@ describe('every notification type the code sends is mutable (tests-completeness-
   for (const f of SRC) {
     for (const m of f.text.matchAll(/export const ([A-Z_]+) = '([A-Za-z]+)';/g)) consts.set(m[1]!, m[2]!);
   }
+  // Three senders since Q5 a: the plain one, the keyed one (claim + rows in
+  // one transaction) and the rows-on-a-transaction half both share. The
+  // `type:` is read over the window whichever argument carries the input.
+  const SENDER = /(?:notifyStaffTelegram(?:Once)?|queueStaffTelegram)\(/g;
+  const senderNames = new Map<string, number>();
   const sent = new Set<string>();
   for (const f of SRC) {
-    for (const m of f.text.matchAll(/notifyStaffTelegram\(\{/g)) {
+    for (const m of f.text.matchAll(SENDER)) {
+      const name = m[0].slice(0, -1);
+      senderNames.set(name, (senderNames.get(name) ?? 0) + 1);
       const window = f.text.slice(m.index!, m.index! + 800);
       const type = /type:\s*(?:'([A-Za-z]+)'|([A-Z_]+))/.exec(window);
       if (!type) continue;
@@ -177,13 +184,18 @@ describe('every notification type the code sends is mutable (tests-completeness-
   }
   const fileWide = new Map<string, string>();
   for (const f of SRC) {
-    if (!f.text.includes('notifyStaffTelegram(')) continue;
+    if (!/(?:notifyStaffTelegram(?:Once)?|queueStaffTelegram)\(/.test(f.text)) continue;
     for (const m of f.text.matchAll(/type:\s*'([A-Z][A-Za-z]+)'/g)) {
       if (!emitted.has(m[1]!)) fileWide.set(m[1]!, f.path);
     }
   }
 
   it('found the senders', () => {
+    // Each of the three names is really called somewhere — a fence over a
+    // name nothing uses proves nothing (#720).
+    for (const name of ['notifyStaffTelegram', 'notifyStaffTelegramOnce', 'queueStaffTelegram']) {
+      expect(senderNames.get(name) ?? 0, `re-anchor: ${name} not found`).toBeGreaterThan(0);
+    }
     expect(sent.size, 're-anchor: no notifyStaffTelegram types found').toBeGreaterThanOrEqual(30);
     for (const type of ['TaskAccepted', 'TaskQuestion', 'TaskReminder', 'TaskReassigned']) expect(sent).toContain(type);
     // …and the shorthand senders the window cannot see.

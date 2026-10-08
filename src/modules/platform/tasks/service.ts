@@ -7,7 +7,18 @@ import { writeAudit, type AuditContext } from '../audit/service';
 import { entitySpec } from '../fields/registry';
 import { recordNames, resolveEntity } from '../entities/service';
 import { calcLink, taskLink } from '../notifications/links';
-import { notifyStaffTelegram, reachOf, userName, type Reach } from '../notifications/staff';
+import {
+  kickTelegramDrain,
+  LATE_FORWARD_MS,
+  notifyStaffTelegram,
+  notifyStaffTelegramOnce,
+  queueStaffTelegram,
+  reachOf,
+  userName,
+  type Reach,
+} from '../notifications/staff';
+import { claimOnce, type OnceKey } from '../telegram/once';
+import { tashkentMinute } from '../time/tashkent';
 import { retireTaskCopiesSoon } from '../notifications/retire-tasks';
 import { logger } from '../logger';
 import { canLogIn } from '../users/login';
@@ -85,6 +96,10 @@ export const TASK_ERROR_CODES = [
   // back to its author, or it carries no messages (review bot-13): said, never
   // a «📤 Yuborildi» about nothing.
   'nothing_to_send',
+  // Q5 a: this exact Telegram message or press already did it — a crash
+  // redelivery, or a repeat tap into a bot that was not there. The web never
+  // throws it; the bot says it in words.
+  'already_done',
 ] as const;
 export type TaskErrorCode = (typeof TASK_ERROR_CODES)[number];
 
@@ -1023,14 +1038,18 @@ export async function queueTaskSources(
   },
   sources: SourceMessage[],
   headline: string,
+  opts: { once?: OnceKey | null } = {},
 ): Promise<void> {
   if (sources.length === 0) return;
-  await notifyStaffTelegram({
+  // Keyed by the «📤» message pressed (Q5 a): a redelivered press, or a
+  // second tap into a bot that was not there, forwards the sources ONCE.
+  const sent = await notifyStaffTelegramOnce(opts.once ?? null, {
     userIds: [task.assigneeId],
     type: 'TaskSources',
     text: `${headline}: ${task.title}` + (await linkLine(task, task.assigneeId)),
     extra: { taskId: task.id, forwards: sources },
   });
+  if (sent.duplicate) throw new TaskError('already_done');
 }
 
 /**
@@ -1042,6 +1061,7 @@ export async function queueTaskSources(
 export async function forwardSourcesAgain(
   id: string,
   ctx: TaskContext,
+  opts: { once?: OnceKey | null } = {},
 ): Promise<{ reach: Reach; name: string | null }> {
   if (!ctx.actorId) throw new TaskError('unauthenticated');
   const task = await byId(id);
@@ -1051,7 +1071,7 @@ export async function forwardSourcesAgain(
   const row = await db.query.tasks.findFirst({ where: eq(tasks.id, id), columns: { sourceMessages: true } });
   const sources = sourcesOf(row?.sourceMessages);
   if (sources.length === 0 || task.assigneeId === ctx.actorId) throw new TaskError('nothing_to_send');
-  await queueTaskSources(task, sources, '📎 Topshiriq manbalari');
+  await queueTaskSources(task, sources, '📎 Topshiriq manbalari', { once: opts.once });
   const reach = (await reachOf([task.assigneeId], 'TaskSources')).get(task.assigneeId) ?? 'no_chat';
   return { reach, name: task.assigneeName };
 }
@@ -1157,39 +1177,48 @@ export async function rescheduleTask(
   id: string,
   due: { dueAt: Date; allDay: boolean },
   ctx: TaskContext,
+  opts: { once?: OnceKey | null } = {},
 ): Promise<void> {
   if (!ctx.actorId) throw new TaskError('unauthenticated');
+  const actorId = ctx.actorId;
   const before = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
   if (!before) throw new TaskError('not_found');
   if (!canActOnTask(before, ctx.actor)) throw new TaskError('not_yours');
   if (before.status !== 'open') throw new TaskError('already_closed');
   if (before.repeatUnit) throw new TaskError('repeat_series');
   await refuseBoundClock(before);
-  const moved = await db
-    .update(tasks)
-    .set({ dueAt: due.dueAt, allDay: due.allDay, updatedAt: new Date() })
-    .where(and(eq(tasks.id, id), eq(tasks.status, 'open')))
-    .returning({ id: tasks.id });
-  if (moved.length === 0) throw new TaskError('already_closed');
-  await writeAudit(db, ctx, {
-    entityType: 'task',
-    entityId: id,
-    action: 'update',
-    before: { dueAt: before.dueAt?.toISOString() ?? null },
-    after: { dueAt: due.dueAt.toISOString(), via: 'telegram' },
-  });
-  if (before.createdBy !== ctx.actorId && authorHearsPresses(before.origin)) {
-    await notifyStaffTelegram({
-      userIds: [before.createdBy],
-      type: 'TaskRescheduled',
-      text:
-        `⏰ Muddat surildi: ${before.title}` +
+  // Composed BEFORE the transaction: `userName` and `linkLine` read the pool,
+  // and a pooled read inside a transaction is #714's freeze.
+  const ping =
+    before.createdBy !== actorId && authorHearsPresses(before.origin)
+      ? `⏰ Muddat surildi: ${before.title}` +
         `\n📅 ${before.dueAt ? telegramDue(before.dueAt, before.allDay) : '—'} → ${telegramDue(due.dueAt, due.allDay)}` +
-        `\n👤 ${await userName(ctx.actorId)}` +
-        (await linkLine(before, before.createdBy)),
-      extra: { taskId: id },
-    }).catch(() => {});
-  }
+        `\n👤 ${await userName(actorId)}` +
+        (await linkLine(before, before.createdBy))
+      : null;
+  // ONE fact, one transaction (Q5 a): the claim (a ⏰ message moves its task
+  // once, however many times it is delivered or tapped), the move, its audit
+  // row and the author's ping. Zero rows moved also rolls the claim back.
+  const queued = await db.transaction(async (tx) => {
+    if (opts.once && !(await claimOnce(tx, opts.once))) throw new TaskError('already_done');
+    const moved = await tx
+      .update(tasks)
+      .set({ dueAt: due.dueAt, allDay: due.allDay, updatedAt: new Date() })
+      .where(and(eq(tasks.id, id), eq(tasks.status, 'open')))
+      .returning({ id: tasks.id });
+    if (moved.length === 0) throw new TaskError('already_closed');
+    await writeAudit(tx, ctx, {
+      entityType: 'task',
+      entityId: id,
+      action: 'update',
+      before: { dueAt: before.dueAt?.toISOString() ?? null },
+      after: { dueAt: due.dueAt.toISOString(), via: 'telegram' },
+    });
+    return ping
+      ? queueStaffTelegram(tx, { userIds: [before.createdBy], type: 'TaskRescheduled', text: ping, extra: { taskId: id } })
+      : 0;
+  });
+  if (queued > 0) await kickTelegramDrain();
 }
 
 /** At most one «🔔» per task per this long (his 5a's own sentence). */
@@ -1304,10 +1333,20 @@ export const COMMENT_MAX = 1000;
  * Not on an automation task (the author wrote a rule, not this task) and not
  * on a job whose author is the presser.
  */
+/**
+ * «🕒 Yozilgan: …» under a Telegram text that reaches its reader late (Q5 a):
+ * a 03:00 question replayed after a deploy must not read as new. Empty when
+ * on time or when the moment is unknown.
+ */
+function writtenLine(writtenAt: Date | null | undefined, now = Date.now()): string {
+  return writtenAt && now - writtenAt.getTime() > LATE_FORWARD_MS ? `\n🕒 Yozilgan: ${tashkentMinute(writtenAt)}` : '';
+}
+
 export async function askAboutTask(
   id: string,
   text: string,
   ctx: TaskContext,
+  opts: { once?: OnceKey | null; writtenAt?: Date | null } = {},
 ): Promise<{ reach: Reach; name: string | null }> {
   if (!ctx.actorId) throw new TaskError('unauthenticated');
   const body = text.trim().slice(0, COMMENT_MAX);
@@ -1318,18 +1357,29 @@ export async function askAboutTask(
   if (task.assigneeId !== ctx.actorId) throw new TaskError('not_assignee');
   if (!authorHearsPresses(task.origin) || task.createdBy === ctx.actorId) throw new TaskError('not_askable');
   await refuseOpenCalc(task);
-  await writeAudit(db, ctx, {
-    entityType: 'task',
-    entityId: id,
-    action: 'comment',
-    after: { kind: 'question', text: body, via: 'telegram' },
+  // Composed BEFORE the transaction — `userName` and `linkLine` read the pool.
+  const pingText =
+    `❓ Savol: ${task.title}\n${body}${writtenLine(opts.writtenAt)}\n👤 ${await userName(ctx.actorId)}` +
+    (await linkLine(task, task.createdBy));
+  // The audit row and the ping in ONE transaction — and, with a key, at most
+  // once per incoming message (Q5 a): a redelivered swipe-reply, or the same
+  // text answering the wait twice, asks once.
+  const queued = await db.transaction(async (tx) => {
+    if (opts.once && !(await claimOnce(tx, opts.once))) throw new TaskError('already_done');
+    await writeAudit(tx, ctx, {
+      entityType: 'task',
+      entityId: id,
+      action: 'comment',
+      after: { kind: 'question', text: body, via: 'telegram' },
+    });
+    return queueStaffTelegram(tx, {
+      userIds: [task.createdBy],
+      type: 'TaskQuestion',
+      text: pingText,
+      extra: { taskId: id },
+    });
   });
-  await notifyStaffTelegram({
-    userIds: [task.createdBy],
-    type: 'TaskQuestion',
-    text: `❓ Savol: ${task.title}\n${body}\n👤 ${await userName(ctx.actorId)}` + (await linkLine(task, task.createdBy)),
-    extra: { taskId: id },
-  });
+  if (queued > 0) await kickTelegramDrain();
   return {
     reach: (await reachOf([task.createdBy], 'TaskQuestion')).get(task.createdBy) ?? 'no_chat',
     name: task.authorName,
@@ -1346,6 +1396,7 @@ export async function answerAboutTask(
   id: string,
   text: string,
   ctx: TaskContext,
+  opts: { once?: OnceKey | null; writtenAt?: Date | null } = {},
 ): Promise<{ reach: Reach; name: string | null }> {
   if (!ctx.actorId) throw new TaskError('unauthenticated');
   const body = text.trim().slice(0, COMMENT_MAX);
@@ -1354,18 +1405,25 @@ export async function answerAboutTask(
   if (!task) throw new TaskError('not_found');
   if (task.status !== 'open') throw new TaskError('already_closed');
   if (task.createdBy !== ctx.actorId) throw new TaskError('not_author');
-  await writeAudit(db, ctx, {
-    entityType: 'task',
-    entityId: id,
-    action: 'comment',
-    after: { kind: 'answer', text: body, via: 'telegram' },
+  const pingText =
+    `💬 Javob: ${task.title}\n${body}${writtenLine(opts.writtenAt)}\n👤 ${await userName(ctx.actorId)}` +
+    (await linkLine(task, task.assigneeId));
+  const queued = await db.transaction(async (tx) => {
+    if (opts.once && !(await claimOnce(tx, opts.once))) throw new TaskError('already_done');
+    await writeAudit(tx, ctx, {
+      entityType: 'task',
+      entityId: id,
+      action: 'comment',
+      after: { kind: 'answer', text: body, via: 'telegram' },
+    });
+    return queueStaffTelegram(tx, {
+      userIds: [task.assigneeId],
+      type: 'TaskAnswer',
+      text: pingText,
+      extra: { ...taskButtonPayload(task) },
+    });
   });
-  await notifyStaffTelegram({
-    userIds: [task.assigneeId],
-    type: 'TaskAnswer',
-    text: `💬 Javob: ${task.title}\n${body}\n👤 ${await userName(ctx.actorId)}` + (await linkLine(task, task.assigneeId)),
-    extra: { ...taskButtonPayload(task) },
-  });
+  if (queued > 0) await kickTelegramDrain();
   return {
     reach: (await reachOf([task.assigneeId], 'TaskAnswer')).get(task.assigneeId) ?? 'no_chat',
     name: task.assigneeName,

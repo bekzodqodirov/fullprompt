@@ -130,7 +130,13 @@ async function targetOf(
  * No pooled read inside the transaction (#714): every read goes through `tx`.
  */
 export async function addThreadMessage(
-  input: { ref: ThreadRef; body: string; tg?: { chatId: bigint; messageId: number } },
+  input: {
+    ref: ThreadRef;
+    body: string;
+    tg?: { chatId: bigint; messageId: number };
+    /** A Telegram reply's own moment (ISO, Q5 a) — never later than now. */
+    writtenAt?: string | null;
+  },
   ctx: AuditContext,
 ): Promise<{
   activityId: string;
@@ -154,7 +160,8 @@ export async function addThreadMessage(
       INSERT INTO crm_activities
         (id, entity_type, entity_id, kind, note, happened_at, created_by, calc_request_id, tg_chat_id, tg_message_id)
       VALUES
-        (${uuidv7()}::uuid, ${target.entityType}, ${target.entityId}::uuid, 'note', ${body}, now(), ${ctx.actorId}::uuid,
+        (${uuidv7()}::uuid, ${target.entityType}, ${target.entityId}::uuid, 'note', ${body},
+         LEAST(COALESCE(${input.writtenAt ?? null}::timestamptz, now()), now()), ${ctx.actorId}::uuid,
          ${target.calcRequestId}::uuid, ${tgChat}::bigint, ${tgMessage}::bigint)
       ON CONFLICT (tg_chat_id, tg_message_id) WHERE tg_message_id IS NOT NULL DO NOTHING
       RETURNING id::text AS id, ${instantSql(sql`created_at`)} AS created_at

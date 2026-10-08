@@ -144,6 +144,7 @@ const reply = (who: string, replyTo: number, text: string, extra: { forwarded?: 
     replyToForwarded: extra.forwarded ?? false,
     text,
     incomingMessageId: (msgSeq += 1),
+    messageDate: Math.floor(Date.now() / 1000),
   });
 
 async function questionsAbout(taskId: string) {
@@ -278,7 +279,7 @@ describe('13. the armed wait gets its own reply (the judge’s blocker)', () => 
     expect(await reply(P.S, copy, 'qaysi mijoz?')).toBeNull();
     const pending = takeTaskPending(CHAT[P.S]!);
     expect(pending?.kind).toBe('question');
-    expect((await askFromBot(CHAT[P.S]!, pending!.taskId, 'qaysi mijoz?')).result).toBe('done');
+    expect((await askFromBot(CHAT[P.S]!, pending!.taskId, 'qaysi mijoz?', null)).result).toBe('done');
     expect(await questionsAbout(T)).toHaveLength(1);
     expect(peekTaskPending(CHAT[P.S]!)).toBeNull();
   });

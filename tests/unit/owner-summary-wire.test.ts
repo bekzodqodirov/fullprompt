@@ -103,8 +103,8 @@ describe('the handler sits where a button is safe', () => {
   it('below the cabinet pass-through, ABOVE both captures and the paid model', () => {
     const cabinet = handlers.indexOf('if (isCabinetText(ctx.message.text)) return next();');
     const holat = handlers.indexOf("if (ctx.message.text === HOLAT || ctx.message.text === '/holat')");
-    const capture = handlers.indexOf('const capture = activeCapture(chatId);\n    if (capture) {');
-    const task = handlers.indexOf('const pendingTask = takeTaskPending(chatId);');
+    const capture = handlers.indexOf('const capture = activeCapture(chatId);\n    if (capture && !late) {');
+    const task = handlers.indexOf('const pendingTask = takeTaskPending(chatId, ctx.message.date);');
     const model = handlers.indexOf('void answerWithAssistant(chatId, text, thinking.message_id);');
     for (const [name, at] of Object.entries({ cabinet, holat, capture, task, model })) {
       expect(at, `re-anchor: ${name} moved`).toBeGreaterThan(-1);

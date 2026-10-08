@@ -2978,7 +2978,8 @@
       "not_remindable": "无法对该任务发送提醒",
       "not_askable": "无法就该任务提问",
       "empty_text": "消息为空",
-      "nothing_to_send": "没有可发送的内容 — 任务现在在您这里，或其中没有消息"
+      "nothing_to_send": "没有可发送的内容 — 任务现在在您这里，或其中没有消息",
+      "already_done": "已经完成 — 未重复发送"
     },
     "repeat": "重复",
     "repeatNever": "不重复",

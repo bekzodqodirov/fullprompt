@@ -12,12 +12,13 @@ import {
   type ThreadPingType,
   type ThreadRef,
 } from '../notifications/thread-ref';
+import { onceKey, readyKey } from './once';
 import {
   answerFromBot,
   askFromBot,
   botActorFor,
   dropTaskPending,
-  peekTaskPending,
+  peekTaskPendingAny,
   refusalFor,
   staffForChat,
   type ReachedResult,
@@ -186,6 +187,12 @@ export async function threadReplyFromBot(
     replyToForwarded: boolean;
     text: string;
     incomingMessageId: number;
+    /**
+     * The incoming message's own `date` (unix seconds), REQUIRED (Q5 a): a
+     * backlog reply is judged against the wait by when it was WRITTEN, and
+     * lands on the card at that moment.
+     */
+    messageDate: number;
     /** True when called from the 'reply' wait (the person pressed «💬 Javob yozish»): never fall through. */
     fromWait?: boolean;
   },
@@ -193,24 +200,24 @@ export async function threadReplyFromBot(
   try {
     const staff = await staffForChat(chatId);
     if (!staff) return null;
-    const pending = input.fromWait ? null : peekTaskPending(chatId);
-    const armedForTask =
-      pending !== null && pending.kind !== 'reply'
-        ? pending.pressed?.messageId === input.replyToMessageId ||
-          (pending.promptMessageId ?? null) === input.replyToMessageId
-        : false;
-    if (armedForTask) return null;
-
-    const verdict = await replyVerdictFor(chatId, input.replyToMessageId, staff.id);
+    // Step 2 over the wait AND how this message relates to it (judge Q5H-3):
+    // an EARLY wait — a ✅ pressed during the outage, its prompt sent after
+    // this backlog reply was written — guards exactly like an armed one, so
+    // the reply falls to the wait (which stays) and never becomes an E4
+    // question carrying the result text.
+    const seen = input.fromWait ? null : peekTaskPendingAny(chatId, input.messageDate);
+    const pending = seen?.verdict === 'answers' ? seen.pending : null;
+    const armed = seen && seen.pending.kind !== 'reply' ? seen.pending : null;
     if (
-      pending !== null &&
-      pending.kind !== 'reply' &&
-      verdict !== null &&
-      'taskId' in verdict &&
-      verdict.taskId === pending.taskId
+      armed &&
+      (armed.pressed?.messageId === input.replyToMessageId ||
+        (armed.promptMessageId ?? null) === input.replyToMessageId)
     ) {
       return null;
     }
+
+    const verdict = await replyVerdictFor(chatId, input.replyToMessageId, staff.id);
+    if (armed && verdict !== null && 'taskId' in verdict && verdict.taskId === armed.taskId) return null;
     if (!verdict) {
       if (input.replyToForwarded) return { text: REPLY_SENTENCES.forwarded };
       return input.fromWait ? { text: REPLY_SENTENCES.waitNoTarget } : null;
@@ -231,17 +238,33 @@ export async function threadReplyFromBot(
           ping: verdict.kind === 'thread' ? verdict.ping : 'calc_task',
           text: input.text,
           tg: { chatId, messageId: input.incomingMessageId },
+          writtenAt: new Date(input.messageDate * 1000).toISOString(),
         },
       );
       answer = out.text;
     } else if (verdict.kind === 'task_question') {
       // E4 a: a question to the task's giver — the task stays OPEN. Every
       // refusal has its words (`refusalFor` — an open calc job's carries its page).
-      const out = await askFromBot(chatId, verdict.taskId, input.text);
+      // Keyed by the incoming message (Q5 a): a redelivered reply asks once.
+      // The SAME effect name as the wait's question — one message is one
+      // question whichever door took it.
+      const out = await askFromBot(
+        chatId,
+        verdict.taskId,
+        input.text,
+        input.incomingMessageId ? await readyKey(() => onceKey.message(chatId, input.incomingMessageId, 'ask')) : null,
+        new Date(input.messageDate * 1000),
+      );
       answer =
         out.result === 'done' ? reachedText('✅ Savol yuborildi.', out) : await refusalFor(verdict.taskId, out.result);
     } else if (verdict.kind === 'task_answer') {
-      const out = await answerFromBot(chatId, verdict.taskId, input.text);
+      const out = await answerFromBot(
+        chatId,
+        verdict.taskId,
+        input.text,
+        input.incomingMessageId ? await readyKey(() => onceKey.message(chatId, input.incomingMessageId, 'answer')) : null,
+        new Date(input.messageDate * 1000),
+      );
       answer =
         out.result === 'done' ? reachedText('✅ Javob yuborildi.', out) : await refusalFor(verdict.taskId, out.result);
     } else {

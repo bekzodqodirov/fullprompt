@@ -2978,7 +2978,8 @@
       "not_remindable": "Bu vazifaga eslatma yuborib bo‘lmaydi",
       "not_askable": "Bu vazifa bo‘yicha savol yuborib bo‘lmaydi",
       "empty_text": "Bo‘sh xabar",
-      "nothing_to_send": "Yuboradigan narsa yo‘q — vazifa hozir sizda yoki unda xabar yo‘q"
+      "nothing_to_send": "Yuboradigan narsa yo‘q — vazifa hozir sizda yoki unda xabar yo‘q",
+      "already_done": "Bu allaqachon bajarilgan — qayta yuborilmadi"
     },
     "repeat": "Takror",
     "repeatNever": "takrorlanmaydi",

@@ -24,6 +24,7 @@ import {
 } from '@/modules/platform/db/schema';
 import { getStorage } from '@/modules/platform/files/storage';
 import { __setTelegramTransport } from '@/modules/platform/telegram/send';
+import { nowSec } from '@/modules/platform/telegram/waits';
 import {
   __resetVetMemo,
   answerJoinRequest,
@@ -637,7 +638,7 @@ describe('I7 — a row stuck in «sending» is never re-sent by the machine', ()
 
 describe('I8 — membership (F8 a)', () => {
   it('approves a colleague, declines a stranger and tells them', async () => {
-    expect(await answerJoinRequest({ chat: { id: Number(CHAT) }, from: { id: TG.colleague }, user_chat_id: TG.colleague })).toBe('approved');
+    expect(await answerJoinRequest({ chat: { id: Number(CHAT) }, from: { id: TG.colleague }, user_chat_id: TG.colleague, date: nowSec() })).toBe('approved');
     expect(calls.some((c) => c.method === 'approveChatJoinRequest')).toBe(true);
     const row = await db.query.priceChannelMembers.findFirst({
       where: and(eq(priceChannelMembers.chatId, BigInt(CHAT)), eq(priceChannelMembers.tgUserId, BigInt(TG.colleague))),
@@ -645,7 +646,7 @@ describe('I8 — membership (F8 a)', () => {
     expect(row).toMatchObject({ userId: colleagueId, removedAt: null });
 
     calls = [];
-    expect(await answerJoinRequest({ chat: { id: Number(CHAT) }, from: { id: TG.stranger }, user_chat_id: TG.stranger })).toBe('declined');
+    expect(await answerJoinRequest({ chat: { id: Number(CHAT) }, from: { id: TG.stranger }, user_chat_id: TG.stranger, date: nowSec() })).toBe('declined');
     expect(calls.some((c) => c.method === 'declineChatJoinRequest')).toBe(true);
     expect(calls.some((c) => c.method === 'sendMessage' && String(c.body.chat_id) === String(TG.stranger))).toBe(true);
   });
@@ -674,7 +675,7 @@ describe('I8 — membership (F8 a)', () => {
       .insert(priceChannelMembers)
       .values({ chatId: BigInt(CHAT_A), tgUserId: BigInt(TG.colleague), userId: colleagueId })
       .onConflictDoNothing();
-    await answerJoinRequest({ chat: { id: Number(CHAT) }, from: { id: TG.colleague }, user_chat_id: TG.colleague });
+    await answerJoinRequest({ chat: { id: Number(CHAT) }, from: { id: TG.colleague }, user_chat_id: TG.colleague, date: nowSec() });
     await db.update(users).set({ active: false }).where(eq(users.id, colleagueId));
     calls = [];
     await sweepPriceChannelMembers();
@@ -683,7 +684,7 @@ describe('I8 — membership (F8 a)', () => {
     const rows = await db.select().from(priceChannelMembers).where(eq(priceChannelMembers.userId, colleagueId));
     expect(rows.every((r) => r.removedAt !== null && r.removeReason === 'inactive')).toBe(true);
 
-    await answerJoinRequest({ chat: { id: Number(CHAT) }, from: { id: TG.colleague2 }, user_chat_id: TG.colleague2 });
+    await answerJoinRequest({ chat: { id: Number(CHAT) }, from: { id: TG.colleague2 }, user_chat_id: TG.colleague2, date: nowSec() });
     await db
       .update(telegramLinks)
       .set({ telegramChatId: BigInt(TG.colleague2 + 100) })

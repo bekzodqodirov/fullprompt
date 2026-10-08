@@ -241,6 +241,7 @@ describe('1. the calculation’s Q&A — written on the card of the moment, read
       ping: 'CalcThread',
       text: '12 kub',
       tg: { chatId: await chatOf(P.S), messageId: 501 },
+      writtenAt: new Date().toISOString(),
     });
     expect(answer.outcome).toBe('landed_calc');
     const messages = await calcThreadMessages(R);
@@ -331,6 +332,7 @@ describe('who hears a note — decided at send time', () => {
       ping: 'CalcThread',
       text: '3 kub',
       tg: { chatId: await chatOf(P.W), messageId: 601 },
+      writtenAt: new Date().toISOString(),
     });
     expect(out.outcome).toBe('landed_calc');
     // …and a CRM seller-requester whose lead was handed on has NO standing (E9 a).
@@ -416,8 +418,8 @@ describe('9. a Telegram reply lands once', () => {
     const L = await lead(P.S);
     const R = await request('lead', L, P.S, P.V);
     const tg = { chatId: await chatOf(P.S), messageId: 777 };
-    const first = await landThreadReply(await actorOf(P.S), { ref: { kind: 'calc', id: R }, ping: 'CalcThread', text: 'bir', tg });
-    const second = await landThreadReply(await actorOf(P.S), { ref: { kind: 'calc', id: R }, ping: 'CalcThread', text: 'bir', tg });
+    const first = await landThreadReply(await actorOf(P.S), { ref: { kind: 'calc', id: R }, ping: 'CalcThread', text: 'bir', tg, writtenAt: new Date().toISOString() });
+    const second = await landThreadReply(await actorOf(P.S), { ref: { kind: 'calc', id: R }, ping: 'CalcThread', text: 'bir', tg, writtenAt: new Date().toISOString() });
     expect(first.outcome).toBe('landed_calc');
     expect(second.outcome).toBe('duplicate');
     const notes = await calcThreadMessages(R);
