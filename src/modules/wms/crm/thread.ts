@@ -303,7 +303,17 @@ export async function calcThreadAuthors(requestId: string): Promise<string[]> {
   return rows.map((row) => row.id);
 }
 
-/** «Unread» for one reader, DERIVED: the newest note is somebody else's and later than my mark. */
+/**
+ * «Unread» for one reader, DERIVED: the newest note is somebody else's and
+ * later than my mark.
+ *
+ * «Newest» by when the note LANDED (`created_at`), on every reader that asks
+ * this (Q5-3) — the same clock the read mark and the pulse's token are on. A
+ * late Telegram reply is filed at the moment it was WRITTEN (`happened_at`,
+ * so it reads in its place), and picked by that moment it sat under a note
+ * written after it and never raised the ●. Only the reading list keeps the
+ * written order.
+ */
 function unreadSql(viewerId: string, kind: ThreadKind, threadId: SqlFragment, lastBy: SqlFragment, lastAt: SqlFragment) {
   return sql`(${lastAt} IS NOT NULL
     AND ${lastBy} IS DISTINCT FROM ${viewerId}::uuid
@@ -353,7 +363,7 @@ export async function calcThreadsOnCard(
       LEFT JOIN LATERAL (
         SELECT a.created_by, a.created_at FROM crm_activities a
          WHERE a.calc_request_id = r.id AND a.kind = 'note'
-         ORDER BY a.happened_at DESC, a.created_at DESC
+         ORDER BY a.created_at DESC
          LIMIT 1
       ) last ON true
      WHERE r.entity_type = ${entity.entityType} AND r.entity_id = ${entity.entityId}::uuid
@@ -385,7 +395,7 @@ export async function calcThreadSummary(
       LEFT JOIN LATERAL (
         SELECT a.created_by, a.created_at FROM crm_activities a
          WHERE a.calc_request_id = ${requestId}::uuid AND a.kind = 'note'
-         ORDER BY a.happened_at DESC, a.created_at DESC
+         ORDER BY a.created_at DESC
          LIMIT 1
       ) last ON true
   `);
@@ -621,13 +631,13 @@ export async function myThreads(viewer: Viewer, limit = 30): Promise<DockThreadR
         SELECT a.note, a.created_at, a.created_by FROM crm_activities a
          WHERE c.kind <> 'calc' AND a.entity_type = c.kind AND a.entity_id = c.id
            AND a.calc_request_id IS NULL AND a.kind = 'note'
-         ORDER BY a.happened_at DESC
+         ORDER BY a.created_at DESC
          LIMIT 1
       ) card ON true
       LEFT JOIN LATERAL (
         SELECT a.note, a.created_at, a.created_by FROM crm_activities a
          WHERE c.kind = 'calc' AND a.calc_request_id = c.id AND a.kind = 'note'
-         ORDER BY a.happened_at DESC
+         ORDER BY a.created_at DESC
          LIMIT 1
       ) calc ON true
       LEFT JOIN users u ON u.id = COALESCE(card.created_by, calc.created_by)

@@ -3,8 +3,10 @@ import { __resetLifecycle, markBoot } from '@/modules/platform/telegram/lifecycl
 import {
   __forgetWaitMemory,
   __waitWriteCount,
+  flushWaitWrites,
   nowSec,
   readWait,
+  WAIT_REACH_S,
   waitVerdict,
 } from '@/modules/platform/telegram/waits';
 import {
@@ -99,6 +101,25 @@ describe('the re-arm of the same target keeps the earliest prompt', () => {
     expect(readWait(c, 'task')).toMatchObject({ armedAt: t0, expiresAt: t0 + 30 + 600 });
   });
 
+  it('the first wait ran out by the CLOCK before the re-tap was processed: still the same target, still its time (Q5-2)', () => {
+    const c = next();
+    // A restart between the first prompt and the backlog: the re-tap is
+    // processed after the first wait's expiry, the answer to it is dated inside it.
+    const t0 = nowSec() - 1_200;
+    noteTaskPending(c, 't-9', null, 'result', { armedAt: t0 });
+    const now = nowSec();
+    noteTaskPending(c, 't-9', null, 'result', { armedAt: now });
+    expect(readWait(c, 'task')).toMatchObject({ armedAt: t0, expiresAt: now + 600 });
+  });
+
+  it('…but never past the reach: a merged wait stays pressable for its whole new life', () => {
+    const c = next();
+    noteTaskPending(c, 't-10', null, 'result', { armedAt: nowSec() - WAIT_REACH_S + 60 });
+    const now = nowSec();
+    noteTaskPending(c, 't-10', null, 'result', { armedAt: now });
+    expect(readWait(c, 'task')).toMatchObject({ armedAt: now });
+  });
+
   it('another task is a new wait: its own prompt’s time', () => {
     const c = next();
     const t0 = nowSec();
@@ -109,11 +130,15 @@ describe('the re-arm of the same target keeps the earliest prompt', () => {
 });
 
 describe('durable writes are opt-in', () => {
-  it('a unit test arms and drops and sends nothing to the table', () => {
+  it('a unit test arms and drops and sends nothing to the table', async () => {
     const c = next();
+    // Settled on BOTH sides (Q5-6): the write chain runs after the arm
+    // returns, so a count read at once is 0 whether or not writes are on.
+    await flushWaitWrites();
     const before = __waitWriteCount();
     noteTaskPending(c, 't-8');
     takeTaskPending(c);
+    await flushWaitWrites();
     expect(__waitWriteCount()).toBe(before);
   });
 });

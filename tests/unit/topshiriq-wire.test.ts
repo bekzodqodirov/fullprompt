@@ -63,6 +63,13 @@ describe('the text ladder’s slots, in order (telegram-mechanics-24)', () => {
   });
 
   it('exactly ONE text door takes the wait, and «Natijasiz»’s named second door is used in its branch alone', () => {
+    // Every call, whatever its arguments (Q5-8): `atSec` has a default, so a
+    // second door written `takeTaskPending(chatId)` compiles — and judges a
+    // backlog text by the processing clock.
+    const doors = SRC.flatMap((f) =>
+      f.path.endsWith('/staff-bot.ts') ? [] : [...f.text.matchAll(/\btakeTaskPending\(/g)].map(() => f.path),
+    );
+    expect(doors).toEqual(['src/modules/platform/telegram/staff-handlers.ts']);
     expect(handlers.split('takeTaskPending(chatId, ctx.message.date)').length - 1).toBe(1);
     const callers = SRC.filter((f) => f.text.includes('takeTaskPendingFor(') && !f.path.endsWith('staff-bot.ts'));
     expect(callers.map((f) => f.path)).toEqual(['src/modules/platform/telegram/task-handlers.ts']);

@@ -71,11 +71,23 @@ function queueWrite(op: () => Promise<unknown>): void {
     });
 }
 
+/** How far back Telegram keeps an update — the reach of a hydrate, of a press on its prompt, of a merge. */
+export const WAIT_REACH_S = 86_400;
+
 /**
- * Arm (or re-arm) a wait. `merge(prev)` says whether an UNEXPIRED existing
- * entry is the SAME target; then the new entry keeps the earliest prompt's
- * time and the latest expiry — a second prompt for the same thing never
- * makes an answer to the first one «early» (judge Q5H-1).
+ * Arm (or re-arm) a wait. `merge(prev)` says whether the existing entry is the
+ * SAME target; then the new entry keeps the earliest prompt's time and the
+ * latest expiry — a second prompt for the same thing never makes an answer to
+ * the first one «early» (judge Q5H-1).
+ *
+ * The previous entry need NOT be unexpired by the processing clock (Q5-2): a
+ * re-tap processed after a restart is processed late, and the first prompt's
+ * wait may have run out by the clock while the person's answer to it — dated
+ * inside its window — still sits in the backlog. Bounded instead by the
+ * reach: the merged entry must stay pressable (`takeTaskPendingFor`) for its
+ * whole new life. Stated trade: a backlog text dated between the first
+ * expiry and the re-press now answers, where without the re-tap it would be
+ * judged expired.
  */
 export function armWait<P extends object>(
   chatId: bigint | number,
@@ -88,7 +100,8 @@ export function armWait<P extends object>(
   const key = keyOf(chatId, kind);
   const ttl = Math.max(1, Math.round(ttlMs / 1000));
   const prev = memory.get(key) as WaitEntry<P> | undefined;
-  const same = prev !== undefined && prev.expiresAt > nowSec() && merge !== undefined && merge(prev.payload);
+  const same =
+    prev !== undefined && merge !== undefined && nowSec() + ttl - prev.armedAt <= WAIT_REACH_S && merge(prev.payload);
   const entry: WaitEntry<P> = same
     ? {
         payload,
@@ -154,7 +167,7 @@ export async function hydrateWaits(): Promise<number> {
            extract(epoch FROM armed_at)::bigint AS armed_at,
            extract(epoch FROM expires_at)::bigint AS expires_at
       FROM telegram_chat_waits
-     WHERE expires_at > now() - interval '24 hours'`);
+     WHERE expires_at > now() - make_interval(secs => ${WAIT_REACH_S})`);
   let loaded = 0;
   for (const row of rows) {
     const key = keyOf(row.chat_id, row.kind);

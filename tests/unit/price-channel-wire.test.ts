@@ -112,6 +112,22 @@ describe('the bot', () => {
     const swallow = handlers.slice(handlers.indexOf("bot.on(['channel_post'"), handlers.indexOf("bot.on('my_chat_member'"));
     expect(swallow).not.toContain('next(');
   });
+
+  it('every membership handler queues on the ONE chain, and the stop drains it (Q5-7)', () => {
+    // The helper's order is proven by price-channel-order; this is what makes
+    // the HANDLERS use it — a handler put back to fire-and-forget would run a
+    // person's «joined» and «left» out of order with every test green.
+    for (const name of ['my_chat_member', 'chat_join_request', 'chat_member']) {
+      const start = handlers.indexOf(`bot.on('${name}'`);
+      expect(start, `re-anchor: the ${name} handler moved`).toBeGreaterThan(-1);
+      const rest = handlers.slice(start + 1);
+      const end = rest.indexOf('bot.on(');
+      const body = end === -1 ? rest : rest.slice(0, end);
+      expect(body, name).toContain('serialMembership(');
+      expect(body, name).not.toMatch(/\bvoid\s+(answer|record)\w*\(/);
+    }
+    expect(bot).toContain('drain: membershipSettled');
+  });
 });
 
 describe('membership has ONE rule', () => {

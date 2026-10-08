@@ -2,6 +2,7 @@ import { Bot, InlineKeyboard, Keyboard } from 'grammy';
 import { and, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
 import { db } from '../db/client';
 import { clients, clientTelegramLinks, telegramLinks, users } from '../db/schema';
+import { PHOTO_READ_MS, ReadTimeout, readWithin } from '../files/read-within';
 import { getStorage } from '../files/storage';
 import { logger } from '../logger';
 import { cardLink } from '../notifications/links';
@@ -34,6 +35,7 @@ import { adVisitFor, clearAdVisit } from './ad-intake';
 import { editText, quietHour, sendAlbum, sendPhoto, sendText, sendTextBriefRetry, type ChatId } from './send';
 import { isCabinetText, staffForChat } from './staff-bot';
 import { canLogInSql } from '../users/login';
+import { settleWithin } from './lifecycle';
 import { answerPress } from './press';
 import { claimedAlready, onceKey, readyKey, type OnceKey } from './once';
 import { armWait, dropWait, flushWaitWrites, nowSec, readWait, waitVerdict } from './waits';
@@ -169,17 +171,32 @@ export async function sendInOrder(chatId: ChatId, messages: Outgoing[], what: st
  * and three parallel answers interleave — the cargo list split by the balance.
  * Each chat's answers now run in the order they were asked; different chats
  * still run side by side.
+ *
+ * …and no answer holds the chat for ever (Q5-1). A queue per chat means one
+ * link that never settles silences every LATER tap of that customer until the
+ * process restarts — the 📷's storage read did exactly that before it got its
+ * own deadline. Each link may hold the next one for `CABINET_ANSWER_MS` at
+ * most; past it the queue moves on and the stalled answer, which cannot be
+ * cancelled, finishes (or not) on its own.
  */
 const chains = new Map<string, Promise<void>>();
 
+/** The longest one answer holds its chat's next one — far past an honest album upload. */
+export const CABINET_ANSWER_MS = 120_000;
+
 export function dispatch(what: string, chatId: ChatId, work: () => Promise<unknown>): void {
   const key = String(chatId);
-  const next = (chains.get(key) ?? Promise.resolve())
-    .then(work)
-    .then(
-      () => {},
-      (err: unknown) => logger.error({ err, chatId: key, what }, 'cabinet answer failed'),
-    );
+  const next = (chains.get(key) ?? Promise.resolve()).then(async () => {
+    const run = Promise.resolve()
+      .then(work)
+      .then(
+        () => {},
+        (err: unknown) => logger.error({ err, chatId: key, what }, 'cabinet answer failed'),
+      );
+    if ((await settleWithin(run, CABINET_ANSWER_MS)) === 'timeout') {
+      logger.warn({ chatId: key, what, ms: CABINET_ANSWER_MS }, 'cabinet answer still running — the next one goes ahead');
+    }
+  });
   chains.set(key, next);
   void next.finally(() => {
     if (chains.get(key) === next) chains.delete(key);
@@ -779,13 +796,22 @@ async function sendManagers(chatId: number, linked: LinkedClient[], locale: stri
   );
 }
 
+/** The 📷's read deadline — the pushes' own; a test shortens it. */
+let photoReadMs = PHOTO_READ_MS;
+
+/** Tests: the 📷's read deadline (null = the real one). */
+export function __setCabinetPhotoReadMs(ms: number | null): void {
+  photoReadMs = ms ?? PHOTO_READ_MS;
+}
+
 /**
  * 📷: one lot's photographs, as one album with a caption saying what they are.
  *
  * Ownership is re-proved by `lotPhotoKeys` (a button's data is a stranger's
  * string). Each file is read in its own try — one missing object costs one
- * photo, not the answer. The caption reads the SAME cargo list the button came
- * from, so it says what the list said.
+ * photo, not the answer — and within the pushes' deadline, the first late
+ * read ending the reading (Q5-1). The caption reads the SAME cargo list the
+ * button came from, so it says what the list said.
  */
 async function sendLotPhotos(chatId: number, lotId: string, linked: LinkedClient[], locale: string | null): Promise<void> {
   const t = clientLabels(locale);
@@ -802,11 +828,19 @@ async function sendLotPhotos(chatId: number, lotId: string, linked: LinkedClient
     if (!source) continue;
     try {
       files.push({
-        bytes: await storage.get(source.key),
+        // Bounded (Q5-1): this answer runs on the chat's queue, and an
+        // unbounded read that never answers held every later tap behind it.
+        bytes: await readWithin(storage.get(source.key), photoReadMs),
         filename: source.key.split('/').pop() || 'photo.jpg',
         contentType: source.contentType,
       });
     } catch (err) {
+      // The breaker: a store that did not ANSWER will not answer for the next
+      // key either — send what was read, without waiting the deadline again.
+      if (err instanceof ReadTimeout) {
+        logger.warn({ err, lotId }, 'cabinet photo read timed out — the rest skipped');
+        break;
+      }
       logger.warn({ err, lotId }, 'cabinet photo unreadable — skipped');
     }
   }

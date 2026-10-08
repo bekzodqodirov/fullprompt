@@ -1,6 +1,7 @@
 import { and, asc, eq, inArray, isNotNull } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
 import { attachments, clientNotices, clients, clientTelegramLinks } from '@/modules/platform/db/schema';
+import { PHOTO_READ_MS, ReadTimeout, readWithin } from '@/modules/platform/files/read-within';
 import { getStorage } from '@/modules/platform/files/storage';
 import { logger } from '@/modules/platform/logger';
 import { visibleLength } from '@/modules/platform/telegram/format';
@@ -107,26 +108,6 @@ export async function firstLotPhoto(lotIds: readonly string[]): Promise<PhotoRef
 }
 
 /**
- * The bytes to upload, or null — and null is an ordinary answer (the text
- * goes alone), never an error.
- *
- * The 800 px thumbnail first: it is what a phone screen shows anyway, it is
- * a tenth of the upload from Germany, and it has had its EXIF location
- * stripped by the re-encode. The original only when it is an image Telegram
- * will take as a photo at all (≤ 10 MB) — a thumbnail job that has not run
- * yet leaves a 15 MB original, which `sendPhoto` would refuse. Each read in
- * its own try (judge PHOTO-1): a missing object in storage is not a reason
- * to lose the message.
- */
-/**
- * How long one storage read may take before the push goes without its photo.
- * The S3 client has no deadline of its own, and this sweep is ONE worker for
- * every customer's message: a MinIO that stops answering would otherwise hold
- * all of them behind a photograph (round C review, PA-2).
- */
-export const PHOTO_READ_MS = 15_000;
-
-/**
  * One sweep's memory that storage has stopped answering. Without it a stalled
  * store costs the deadline PER NOTICE (twice: thumbnail, then original), and
  * thirty photo pushes from one unloaded truck outlast pg-boss's 15-minute
@@ -138,19 +119,18 @@ export interface PhotoBreaker {
   stalled: boolean;
 }
 
-export class ReadTimeout extends Error {}
-
-/** A storage read bounded by a deadline — the price channel's drain reads its photos through this too. */
-export function readWithin(read: Promise<Buffer>, ms: number): Promise<Buffer> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const deadline = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new ReadTimeout(`storage read took longer than ${ms} ms`)), ms);
-  });
-  // The read itself cannot be cancelled; its late answer is simply dropped.
-  read.catch(() => undefined);
-  return Promise.race([read, deadline]).finally(() => clearTimeout(timer));
-}
-
+/**
+ * The bytes to upload, or null — and null is an ordinary answer (the text
+ * goes alone), never an error.
+ *
+ * The 800 px thumbnail first: it is what a phone screen shows anyway, it is
+ * a tenth of the upload from Germany, and it has had its EXIF location
+ * stripped by the re-encode. The original only when it is an image Telegram
+ * will take as a photo at all (≤ 10 MB) — a thumbnail job that has not run
+ * yet leaves a 15 MB original, which `sendPhoto` would refuse. Each read in
+ * its own try (judge PHOTO-1): a missing object in storage is not a reason
+ * to lose the message. Each read is bounded (`readWithin`, PA-2).
+ */
 export async function loadPhoto(
   ref: PhotoRef,
   readMs = PHOTO_READ_MS,

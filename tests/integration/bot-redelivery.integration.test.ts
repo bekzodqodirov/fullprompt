@@ -29,6 +29,7 @@ vi.mock('@/modules/platform/jobs/boss', async (original) => ({
 
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
+  attachments,
   auditLog,
   clients,
   clientTelegramLinks,
@@ -37,12 +38,16 @@ import {
   leadStages,
   leads,
   notifications,
+  receiptLots,
+  receipts,
   roles,
   tasks,
   telegramLinks,
   userRoles,
   users,
+  warehouses,
 } from '@/modules/platform/db/schema';
+import { getStorage } from '@/modules/platform/files/storage';
 import { createTask } from '@/modules/platform/tasks/service';
 import { __resetLifecycle, markBoot } from '@/modules/platform/telegram/lifecycle';
 import {
@@ -51,6 +56,7 @@ import {
   flushWaitWrites,
   hydrateWaits,
   nowSec,
+  readWait,
   setDurableWaits,
 } from '@/modules/platform/telegram/waits';
 import { __resetPresses } from '@/modules/platform/telegram/press';
@@ -59,7 +65,7 @@ import { BUGUN, peekTaskPending, TASK_ANSWERS, TOPSHIRIQ } from '@/modules/platf
 import { pruneTelegramRedelivery } from '@/modules/platform/telegram/once';
 import { activeIntake, endIntake } from '@/modules/platform/telegram/calc-intake';
 import { __resetDrafts } from '@/modules/platform/telegram/task-draft';
-import { beginClientLink } from '@/modules/platform/telegram/client-cabinet';
+import { __setCabinetPhotoReadMs, beginClientLink } from '@/modules/platform/telegram/client-cabinet';
 import { clientLabels } from '@/modules/platform/telegram/client-labels';
 import { botHarness, tg, type BotHarness } from '../fixtures/bot-harness';
 
@@ -81,6 +87,7 @@ const madeUsers: string[] = [];
 const madeTasks: string[] = [];
 const madeLeads: string[] = [];
 const madeClients: string[] = [];
+const madeReceipts: string[] = [];
 let openStage = '';
 let savedAiKey: string | undefined;
 let h: BotHarness;
@@ -290,6 +297,11 @@ afterAll(async () => {
   await db.execute(sql`DELETE FROM thread_reads WHERE user_id IN (${sql.join(madeUsers.map((id) => sql`${id}::uuid`), sql`, `)})`);
   if (madeTasks.length) await db.delete(tasks).where(inArray(tasks.id, madeTasks));
   if (allLeads.length) await db.delete(leads).where(inArray(leads.id, allLeads));
+  await db.execute(sql`DELETE FROM attachments WHERE storage_key LIKE ${`q5-stall/${PREFIX}%`}`);
+  if (madeReceipts.length) {
+    await db.delete(receiptLots).where(inArray(receiptLots.receiptId, madeReceipts));
+    await db.delete(receipts).where(inArray(receipts.id, madeReceipts));
+  }
   if (madeClients.length) {
     await db.delete(clientTelegramLinks).where(inArray(clientTelegramLinks.clientId, madeClients));
     await db.delete(clients).where(inArray(clients.id, madeClients));
@@ -589,6 +601,26 @@ describe('LATE — counted and dated by when it was WRITTEN', () => {
     await h.handle(tg.text(s.chat, `tayyor ${STAMP}`, { date: t0 + 10 }));
     expect(await statusOf(T)).toBe('done');
   });
+
+  it('I9d the first wait ran out by the clock before the restart’s re-tap: its answer, dated inside it, still closes the task (Q5-2)', async () => {
+    const { s } = await pair();
+    const a = await person();
+    const T = await handTask(s, a, 'I9d');
+    const now = nowSec();
+    const t0 = now - 1_200; // the first prompt; its wait expired at t0 + 600 = now − 600
+    h.setClock(t0);
+    const press = tg.callback(s.chat, nextMsg(), `t:${T}`);
+    await h.handle(press);
+    await flushWaitWrites();
+    __forgetWaitMemory();
+    await hydrateWaits();
+    markBoot(new Date(now * 1000));
+    h.setClock(now);
+    await h.handle(tg.again(press));
+    await h.handle(tg.text(s.chat, `tayyor ${STAMP}`, { date: t0 + 180 }));
+    await flushWaitWrites();
+    expect(await statusOf(T)).toBe('done');
+  });
 });
 
 describe('B5 and B8 — the link doors', () => {
@@ -648,7 +680,10 @@ describe('B5 and B8 — the link doors', () => {
     const who = await person();
     const c = await client(null, [who.phone]);
     const code = `c-q5b-${STAMP}-${nextMsg()}`;
-    await db.insert(clientTelegramLinks).values({ clientId: c.id, linkCode: code, status: 'pending', createdBy: who.id });
+    const [row] = await db
+      .insert(clientTelegramLinks)
+      .values({ clientId: c.id, linkCode: code, status: 'pending', createdBy: who.id })
+      .returning({ id: clientTelegramLinks.id });
     expect(await beginClientLink(code, who.chat)).toBe('ask_phone');
     await flushWaitWrites();
     __forgetWaitMemory();
@@ -657,11 +692,20 @@ describe('B5 and B8 — the link doors', () => {
     const m = h.mark();
     await h.handle(tg.contact(who.chat, who.phone));
     await h.settle();
-    const [linked] = await db
-      .select({ status: clientTelegramLinks.status })
+    // THE MINTED ROW is the one linked, through the hydrated cabinet_link wait
+    // (Q5-4): the self-service phone door would also leave «a linked row for
+    // this client and chat» — but as a SECOND row, beside the code still pending.
+    const rows = await db
+      .select({
+        id: clientTelegramLinks.id,
+        status: clientTelegramLinks.status,
+        chat: clientTelegramLinks.telegramChatId,
+        code: clientTelegramLinks.linkCode,
+      })
       .from(clientTelegramLinks)
-      .where(and(eq(clientTelegramLinks.clientId, c.id), eq(clientTelegramLinks.telegramChatId, BigInt(who.chat))));
-    expect(linked?.status).toBe('linked');
+      .where(eq(clientTelegramLinks.clientId, c.id));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ id: row!.id, status: 'linked', chat: BigInt(who.chat), code: null });
     expect(h.textsTo(who.chat, m).some((t) => t.startsWith('✅ Ulandi:'))).toBe(false);
   });
 });
@@ -742,6 +786,31 @@ describe('the BACKLOG — what nobody this process asked for', () => {
     expect(await statusOf(T)).toBe('done');
     expect(h.textsTo(s.chat, m)).not.toContain(BACKLOG_SENTENCE);
     expect(await aiQuestions(s)).toBe(0);
+  });
+
+  it('I17c a wait the clock expired during the deploy is hydrated and answered by a backlog text dated inside its window (Q5-5)', async () => {
+    const { a, s } = await pair();
+    const T = await handTask(s, a, 'I17c');
+    const now = nowSec();
+    h.setClock(now - 700); // the prompt at now−700, TTL 600: expired at now−100
+    await h.handle(tg.callback(s.chat, nextMsg(), `t:${T}`));
+    await flushWaitWrites();
+    __forgetWaitMemory();
+    markBoot(new Date(now * 1000));
+    await hydrateWaits();
+    await h.handle(tg.text(s.chat, `tayyor ${STAMP}`, { date: now - 200 }));
+    await flushWaitWrites();
+    expect(await statusOf(T)).toBe('done');
+  });
+
+  it('I17d …and a wait that expired past the reach (a day) is not hydrated at all', async () => {
+    const chat = nextChat();
+    await db.execute(sql`
+      INSERT INTO telegram_chat_waits (chat_id, kind, payload, armed_at, expires_at) VALUES
+        (${String(chat)}::bigint, 'task', '{}'::jsonb, now() - interval '25 hours 10 minutes', now() - interval '25 hours')`);
+    __forgetWaitMemory();
+    await hydrateWaits();
+    expect(readWait(chat, 'task')).toBeNull();
   });
 
   it('I18a two backlog «📋 Bugun» are answered once', async () => {
@@ -852,6 +921,68 @@ describe('the BACKLOG — what nobody this process asked for', () => {
     expect(said).toEqual([BACKLOG_SENTENCE]);
     expect(said.filter((t) => t === '📌 Topshiriq qilamizmi?')).toHaveLength(0);
   });
+});
+
+describe('a stalled photo read — the chat’s queue moves on (Q5-1)', () => {
+  it('I26 a «📷» whose storage never answers costs the photos, once, and the «📦» asked after it is answered', async () => {
+    const c = await customer();
+    const [wh] = await db.select({ id: warehouses.id }).from(warehouses).limit(1);
+    const [receipt] = await db
+      .insert(receipts)
+      .values({
+        warehouseId: wh!.id,
+        clientId: c.clientId,
+        status: 'confirmed',
+        createdBy: c.manager.id,
+        confirmedAt: new Date(),
+        confirmedBy: c.manager.id,
+      })
+      .returning({ id: receipts.id });
+    madeReceipts.push(receipt!.id);
+    const [lot] = await db
+      .insert(receiptLots)
+      .values({ receiptId: receipt!.id, seq: 1, productNameZh: '测试', boxCount: 1, totalWeightKg: '1.000', totalVolumeM3: '0.0100' })
+      .returning({ id: receiptLots.id });
+    // Two photographs: the second must never be waited for once the first was late.
+    const keys = [1, 2].map((i) => `q5-stall/${PREFIX}-${i}.jpg`);
+    await db.insert(attachments).values(
+      keys.map((storageKey) => ({
+        entityType: 'receipt_lot',
+        entityId: lot!.id,
+        kind: 'photo',
+        storageKey,
+        fileName: 'p.jpg',
+        contentType: 'image/jpeg',
+        sizeBytes: 1_000,
+        uploadedBy: c.manager.id,
+      })),
+    );
+    // A MinIO that keeps the connection open and sends nothing.
+    const storage = getStorage();
+    const realGet = storage.get.bind(storage);
+    const asked: string[] = [];
+    storage.get = (key: string) => {
+      if (!keys.includes(key)) return realGet(key);
+      asked.push(key);
+      return new Promise<Buffer>(() => {});
+    };
+    __setCabinetPhotoReadMs(50);
+    try {
+      const t = clientLabels(null);
+      const m = h.mark();
+      await h.handle(tg.callback(c.chat, nextMsg(), `ph:${lot!.id}`));
+      await h.handle(tg.text(c.chat, t.btnCargo));
+      await h.settle();
+      const said = h.textsTo(c.chat, m);
+      expect(said[0]).toBe(t.photoError);
+      // …and the «📦» asked AFTER the 📷 was answered — the queue moved on.
+      expect(said.length).toBeGreaterThan(1);
+      expect(asked).toEqual([keys[0]]);
+    } finally {
+      storage.get = realGet;
+      __setCabinetPhotoReadMs(null);
+    }
+  }, 10_000);
 });
 
 describe('the prune', () => {

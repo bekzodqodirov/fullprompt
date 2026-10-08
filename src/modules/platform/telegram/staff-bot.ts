@@ -49,7 +49,7 @@ import { canLogInSql, staffPhonesMatch } from '../users/login';
 import { THREAD_PING_TYPES, threadOfPayload } from '../notifications/thread-ref';
 import { isBacklog } from './lifecycle';
 import type { OnceKey } from './once';
-import { armWait, dropWait, nowSec, readWait, waitVerdict } from './waits';
+import { armWait, dropWait, nowSec, readWait, WAIT_REACH_S, waitVerdict } from './waits';
 
 /**
  * The cabinet's phone rule (digits only, the last 9) lives in users/login.ts
@@ -978,7 +978,7 @@ export function takeTaskPending(chatId: bigint, atSec: number = nowSec()): Pendi
 }
 
 /** A press on its own task's prompt older than this finds nothing — the hydrate's own bound. */
-const PRESS_WAIT_MAX_S = 86_400;
+const PRESS_WAIT_MAX_S = WAIT_REACH_S;
 
 /**
  * «✅ Natijasiz»'s door, NAMED and second on purpose (telegram-mechanics-13):

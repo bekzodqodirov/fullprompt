@@ -124,7 +124,9 @@ describe('the rules a shell cannot exercise', () => {
     expect(notes).toBeLessThan(bugun);
     expect(bugun).toBeLessThan(capture);
     expect(capture).toBeLessThan(guard);
-    // …and there is exactly ONE place that takes the pending result.
+    // …and there is exactly ONE place that takes the pending result — counted
+    // whatever its arguments (Q5-8), so an undated second door is a second door.
+    expect([...handlers.matchAll(/\btakeTaskPending\(/g)].length).toBe(1);
     expect(handlers.split('takeTaskPending(chatId, ctx.message.date)').length - 1).toBe(1);
   });
 

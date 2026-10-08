@@ -52,6 +52,7 @@ import { announceNote, noteRecipients } from '@/modules/wms/crm/internal-chat';
 import {
   addThreadMessage,
   calcThreadMessages,
+  calcThreadsOnCard,
   calcThreadSummary,
   markThreadRead,
   myThreads,
@@ -513,6 +514,41 @@ describe('17b. the read mark is AS OF what was drawn', () => {
     await markThreadRead(P.S, ref, '2999-01-01T00:00:00.000Z');
     await addThreadMessage({ ref, body: 'uchinchi savol' }, ctx(P.V));
     expect((await calcThreadSummary(R, P.S)).unread).toBe(true);
+  });
+});
+
+describe('17e. a late Telegram note is new by when it LANDED, not when it was written (Q5-3)', () => {
+  it('my note, then a colleague’s Telegram reply written half an hour before it: the ● rises on the chip, the fold and the dock', async () => {
+    const L = await lead(P.S);
+    const R = await request('lead', L, P.S, P.V);
+    const calc = { kind: 'calc' as const, id: R };
+    const card = { kind: 'lead' as const, id: L };
+    // I write in both threads — my own note is read up to itself…
+    await addThreadMessage({ ref: calc, body: 'sotuvchi savoli' }, ctx(P.S));
+    await addThreadMessage({ ref: card, body: 'sotuvchi izohi' }, ctx(P.S));
+    expect((await calcThreadSummary(R, P.S)).unread).toBe(false);
+    // …then the answers that were typed in Telegram during the deploy land,
+    // filed at the moment they were WRITTEN.
+    const before = new Date(Date.now() - 30 * 60_000).toISOString();
+    await addThreadMessage(
+      { ref: calc, body: 'VED javobi kechikib', tg: { chatId: BigInt((chatSeq += 1)), messageId: 1 }, writtenAt: before },
+      ctx(P.V),
+    );
+    await addThreadMessage(
+      { ref: card, body: 'logist izohi kechikib', tg: { chatId: BigInt((chatSeq += 1)), messageId: 1 }, writtenAt: before },
+      ctx(P.C),
+    );
+    // The calc page's chip.
+    expect((await calcThreadSummary(R, P.S)).unread).toBe(true);
+    // The card's calc fold.
+    const folds = await calcThreadsOnCard({ entityType: 'lead', entityId: L }, P.S);
+    expect(folds.find((f) => f.requestId === R)?.unread).toBe(true);
+    // The dock, both laterals — and its excerpt is the note that landed last.
+    const rows = await myThreads(await actorOf(P.S));
+    const calcRow = rows.find((r) => r.kind === 'calc' && r.id === R);
+    expect(calcRow).toMatchObject({ unread: true, excerpt: 'VED javobi kechikib' });
+    const cardRow = rows.find((r) => r.kind === 'lead' && r.id === L);
+    expect(cardRow).toMatchObject({ unread: true, excerpt: 'logist izohi kechikib' });
   });
 });
 

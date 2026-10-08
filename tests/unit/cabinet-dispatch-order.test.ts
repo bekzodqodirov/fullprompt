@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { __dispatchSettled, dispatch } from '@/modules/platform/telegram/client-cabinet';
+import { describe, expect, it, vi } from 'vitest';
+import { __dispatchSettled, CABINET_ANSWER_MS, dispatch } from '@/modules/platform/telegram/client-cabinet';
 
 /**
  * The cabinet's dispatched answers, one chat at a time (Q5 a, judge W5): a
@@ -49,5 +49,24 @@ describe('dispatch', () => {
     });
     await __dispatchSettled();
     expect(done).toEqual(['manager']);
+  });
+
+  it('an answer that never settles holds its chat for the ceiling and no longer (Q5-1)', async () => {
+    vi.useFakeTimers();
+    try {
+      const done: string[] = [];
+      // A storage read that never answers, a socket nobody closes — whatever
+      // the next unbounded link is, the customer's later taps still come.
+      dispatch('photos', 9_005, () => new Promise(() => {}));
+      dispatch('cargo', 9_005, async () => {
+        done.push('cargo');
+      });
+      await vi.advanceTimersByTimeAsync(CABINET_ANSWER_MS - 1);
+      expect(done).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(done).toEqual(['cargo']);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
