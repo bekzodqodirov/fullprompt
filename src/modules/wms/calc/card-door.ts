@@ -186,13 +186,55 @@ export function calcCardHref(
   actor: CalcCardReader,
   row: { entityType: string; entityId: string; requestId: string; leadOwnerId?: string | null },
 ): string | null {
+  const card = admittedCardHref(actor, row);
+  if (card) return card;
+  if (row.entityType === 'lead' && actor.permissions.has('ved.docs')) return kartaHref(row.requestId);
+  return null;
+}
+
+/**
+ * The CARD arms of every calc link — one sentence, asked by `calcCardHref`
+ * (the lists) and `calcJobHrefFor` (the bot's ✅) alike (#513): a deal for
+ * whoever the deal card admits (`canWriteDeal`), a lead for whoever the CRM
+ * card admits (`mayOpenLead` — `crm.leads` alone is not enough, a seller who
+ * does not own the lead is bounced), else nothing.
+ */
+export function admittedCardHref(
+  reader: CalcCardReader,
+  row: { entityType: string; entityId: string; leadOwnerId?: string | null },
+): string | null {
   if (row.entityType === 'deal') {
-    return canWriteDeal(actor.permissions) ? `/bitimlar/${row.entityId}` : null;
+    return canWriteDeal(reader.permissions) ? `/bitimlar/${row.entityId}` : null;
   }
   if (row.entityType !== 'lead') return null;
-  const reader = { id: actor.id, permissions: actor.permissions as ReadonlySet<string> };
-  if (mayOpenLead(reader, { ownerId: row.leadOwnerId ?? null })) return `/crm/leads/${row.entityId}`;
-  if (actor.permissions.has('ved.docs')) return kartaHref(row.requestId);
+  const lead = { id: reader.id, permissions: reader.permissions as ReadonlySet<string> };
+  return mayOpenLead(lead, { ownerId: row.leadOwnerId ?? null }) ? `/crm/leads/${row.entityId}` : null;
+}
+
+/**
+ * Where «my job landed» links the person who SENT it — the bot's ✅ after a
+ * «Hisoblatish» and the AI-VED's answer to the same person.
+ *
+ * Both printed `/crm/leads/<id>` or `/bitimlar/<id>` to everyone, and a
+ * stranger's lead is created under its SENDER — so the VED (no `crm.leads`)
+ * was handed a card the CRM bounces, and so was warehouse staff, and a seller
+ * whose request joined a colleague's lead by phone.
+ *
+ *   1-2. the card, for whoever it admits (`admittedCardHref`);
+ *   3.   the calculation's own screen `/hisoblash/<request>` for `ved.docs` —
+ *        that page's gate, and `taskLinkFor`'s precedent. The workspace and
+ *        not the karta: the ✅ answers «where is my job», and the workspace
+ *        draws the card one tap away;
+ *   4.   else null — NO link line (#1281: a link that bounces home is a dead
+ *        door).
+ */
+export function calcJobHrefFor(
+  reader: CalcCardReader,
+  job: { entityType: 'lead' | 'deal'; entityId: string; leadOwnerId: string | null; requestId: string | null },
+): string | null {
+  const card = admittedCardHref(reader, job);
+  if (card) return card;
+  if (job.requestId && reader.permissions.has('ved.docs')) return `/hisoblash/${job.requestId}`;
   return null;
 }
 

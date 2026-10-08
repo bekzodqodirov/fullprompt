@@ -117,7 +117,9 @@ describe('the prefill survives a deploy', () => {
     // machine acting. Who ASKED is not lost: it is the notification's
     // recipient, and `calc_requests.requested_by` on the row.
     const jobs = read('src/modules/wms/calc/jobs.ts');
-    expect(jobs).toContain('aiPrefill(requestId, { actorId: null })');
+    // The third argument names who READS the answer — its link is chosen for
+    // them (`calcJobHrefFor`); it carries no authorship, the actor stays null.
+    expect(jobs).toContain('aiPrefill(requestId, { actorId: null }, { replyTo: staffId })');
     expect(jobs).not.toContain('actorId: staffId');
     // …and `staffId` still names who hears about it.
     expect(jobs).toContain('userIds: [staffId]');

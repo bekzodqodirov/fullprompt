@@ -8,7 +8,7 @@ import {
   deals,
   leads,
 } from '../../platform/db/schema';
-import { cardLink } from '../../platform/notifications/links';
+import { userPermissions } from '../../platform/rbac/authorize';
 import { aiConfigured } from '../../platform/ai/model';
 import { aiCalcBudgetLeft, recordAiPass } from './ai-cost';
 import { logger } from '../../platform/logger';
@@ -36,6 +36,7 @@ import {
 } from './workspace';
 import { itemNameNorm, sealedMemoryFor } from './memory';
 import { aiVedReplyText, type AiVedFreight, type AiVedLine } from './ai-reply';
+import { calcJobHrefFor } from './card-door';
 import { dutyText } from './duty-text';
 import { blockerText, freightRefusalText, prefillReplyText } from './prefill-reply';
 import { pickImportRows, type PickAnswer, type PickRequest, type PickUsage } from './prefill-ai';
@@ -125,11 +126,22 @@ export interface PrefillDeps {
   ) => Promise<PickAnswer[] | null>;
   /** Overridable so a test can run without a customs import in the database. */
   configured?: boolean;
+  /**
+   * Who READS `text` — the person the job's worker sends it to. The link is
+   * chosen for them (`calcJobHrefFor`); absent, the reply carries none.
+   */
+  replyTo?: string;
 }
 
 export interface PrefillOutcome {
-  /** The message for the chat that asked. */
+  /** The message for the chat that asked — its link chosen for `replyTo`. */
   text: string;
+  /**
+   * The same reply with NO link, for the card's lenta: a `/hisoblash` link
+   * there bounces the seller reading it, and a card link points at the page
+   * the reader is already on.
+   */
+  lentaText: string;
   customsUsd: number | null;
   freightUsd: number | null;
   codesStamped: number;
@@ -310,8 +322,8 @@ export async function aiPrefill(
   // Who the answer is ABOUT — the card's own code, and the customer's, so a
   // seller with three open jobs can tell which one this is. One query, and
   // only on the shape that prints them.
-  const about = ws && ws.parts.customs ? await requestAbout(requestId) : null;
-  const text =
+  const about = ws && ws.parts.customs ? await requestAbout(requestId, deps.replyTo ?? null) : null;
+  const customsReply = (link: string | null) =>
     ws && ws.parts.customs
       ? aiVedReplyText({
           clientLabel: about?.clientCode ?? null,
@@ -322,28 +334,34 @@ export async function aiPrefill(
           totalUsd: customsUsd,
           hasCertificate: ws.hasCertificate,
           freight: ws.parts.freight ? aiFreight(freight, ws) : null,
-          link: about?.link ?? null,
+          link,
           aiConfigured: hasKey,
           budgetSpent: hasKey && budgetLeft <= 0,
         })
-      : prefillReplyText({
-          customsUsd,
-          freightUsd,
-          hasFreight: ws?.parts.freight ?? false,
-          hasCustoms: ws?.parts.customs ?? parts.customs,
-          blockers: ws?.blockers ?? [],
-          codesStamped,
-          ratesPulled,
-          importFilled: importFilled + picked,
-          link: null,
-          aiConfigured: hasKey,
-          pickCapped,
-          pickRefused,
-          pickOvertaken,
-        });
+      : null;
+  // The freight-only summary has always carried no link.
+  const summary = () =>
+    prefillReplyText({
+      customsUsd,
+      freightUsd,
+      hasFreight: ws?.parts.freight ?? false,
+      hasCustoms: ws?.parts.customs ?? parts.customs,
+      blockers: ws?.blockers ?? [],
+      codesStamped,
+      ratesPulled,
+      importFilled: importFilled + picked,
+      link: null,
+      aiConfigured: hasKey,
+      pickCapped,
+      pickRefused,
+      pickOvertaken,
+    });
+  const text = customsReply(about?.link ?? null) ?? summary();
+  const lentaText = customsReply(null) ?? summary();
 
   return {
     text,
+    lentaText,
     customsUsd,
     freightUsd,
     codesStamped,
@@ -362,29 +380,43 @@ export async function aiPrefill(
  * A deal is named by its CODE and a lead by its name — the same rule
  * `requestLabel` follows one file over — and the client code beside it is
  * what the office actually addresses cargo by (#581).
+ *
+ * The LINK is chosen for the person who reads the reply (`replyTo`) — the
+ * collector, the same person the bot's ✅ answered — by `calcJobHrefFor`, the
+ * ✅'s own rule: a card they can open, the calculation's screen for the VED,
+ * else none. No reader, no link.
  */
 async function requestAbout(
   requestId: string,
+  replyTo: string | null,
 ): Promise<{ clientCode: string | null; cardLabel: string | null; link: string | null } | null> {
   const [row] = await db
     .select({ entityType: calcRequests.entityType, entityId: calcRequests.entityId })
     .from(calcRequests)
     .where(eq(calcRequests.id, requestId));
   if (!row) return null;
-  const link = cardLink(row.entityType === 'lead' ? 'lead' : 'deal', row.entityId) || null;
+  const entityType = row.entityType === 'lead' ? 'lead' : 'deal';
+  const linkFor = async (leadOwnerId: string | null): Promise<string | null> => {
+    if (!replyTo) return null;
+    const href = calcJobHrefFor(
+      { id: replyTo, permissions: await userPermissions(replyTo) },
+      { entityType, entityId: row.entityId, leadOwnerId, requestId },
+    );
+    return href ? `${(process.env.APP_URL ?? '').replace(/\/$/, '')}${href}` : null;
+  };
   if (row.entityType === 'deal') {
     const [deal] = await db
       .select({ code: deals.code, clientCode: clients.clientCode })
       .from(deals)
       .leftJoin(clients, eq(clients.id, deals.clientId))
       .where(eq(deals.id, row.entityId));
-    return { clientCode: deal?.clientCode ?? null, cardLabel: deal?.code ?? null, link };
+    return { clientCode: deal?.clientCode ?? null, cardLabel: deal?.code ?? null, link: await linkFor(null) };
   }
   const [lead] = await db
-    .select({ name: leads.name })
+    .select({ name: leads.name, ownerId: leads.ownerId })
     .from(leads)
     .where(eq(leads.id, row.entityId));
-  return { clientCode: null, cardLabel: lead?.name ?? null, link };
+  return { clientCode: null, cardLabel: lead?.name ?? null, link: await linkFor(lead?.ownerId ?? null) };
 }
 
 /**
