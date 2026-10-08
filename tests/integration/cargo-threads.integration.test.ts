@@ -1105,6 +1105,13 @@ describe('16. the mention path judges the scope', () => {
     expect((await answer(P.opW2, mentionTo, 'Bilmayman'))?.text).toBe(`✅ Javob kartaga yozildi: 🚚 ${truck.code}`);
     const plainTo = await sentPing(P.opW1, 'InternalNote', thread);
     expect((await answer(P.opW1, plainTo, 'Ertaga keladi'))?.text).toBe(`✅ Javob kartaga yozildi: ${route}`);
+
+    // The bare label is the door-LESS group's alone: a @-named door-holder on
+    // the same truck reads it by its route, as its card names it.
+    await post(P.logist, ref, `@${P.opW1.fullName} W1 ga qachon tushadi?`);
+    const held = (await pingsOf(await lastNote(truck.id))).find((p) => p.userId === P.opW1.id)!;
+    expect(held.type).toBe('MentionedInNote');
+    expect(textOf(held.payload).split('\n')[0]).toBe(`📣 ${P.logist.fullName} · ${route}`);
   }, 60_000);
 });
 
