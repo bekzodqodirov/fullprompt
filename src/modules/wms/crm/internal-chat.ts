@@ -629,7 +629,8 @@ async function notifyByLink(
  *
  * Mentions are NOT filtered by the door (E2 a): the named person hears it and
  * may reply from Telegram even when he cannot open the card — the text, with
- * no link (and on a cargo thread no «📍» line). The door is judged with each
+ * no link (and on a cargo thread no «📍» line, and a truck by its code alone —
+ * `doorlessLabel`). The door is judged with each
  * person's grants AND scope (`actorGrants`): a scoped reader judged as
  * unscoped would lose — or wrongly keep — his link. `pre` hands over the
  * thread's facts and frame when `announceNote` loaded them; the contact-log
