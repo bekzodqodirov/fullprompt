@@ -166,10 +166,25 @@ test('the operator, on a phone, finds it in «👥 Ichki», reads it, and answer
       timeout: 15_000,
     });
     await widthFits(page, 360);
-    const send = await page.getByTestId('cargo-thread-send').boundingBox();
+    // The send button is clear of the fixed tab bar. Measured where a thumb
+    // meets it — scrolled to the middle of the screen — because the answer's
+    // own tall bubble has just pushed it below the fold (its box was 810 > 800
+    // straight after the send), and `scrollIntoViewIfNeeded` aligns it to the
+    // viewport's bottom edge, i.e. under the bar by construction. What makes
+    // it reachable is the second half: the document carries at least the
+    // bar's height below the button, so it can always be scrolled above it.
+    const sendButton = page.getByTestId('cargo-thread-send');
+    await sendButton.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+    const send = await sendButton.boundingBox();
     const tabBar = await page.getByTestId('tab-bar').boundingBox();
     expect(send).not.toBeNull();
-    if (tabBar) expect(send!.y + send!.height).toBeLessThanOrEqual(tabBar.y);
+    expect(tabBar, 'the phone draws its tab bar').not.toBeNull();
+    expect(send!.y + send!.height).toBeLessThanOrEqual(tabBar!.y);
+    const room = await sendButton.evaluate((el) => {
+      const bottom = el.getBoundingClientRect().bottom + window.scrollY;
+      return document.documentElement.scrollHeight - bottom;
+    });
+    expect(room, 'room below the button for the tab bar').toBeGreaterThanOrEqual(tabBar!.height);
     await page.getByTestId('cargo-thread').screenshot({ path: `${SHOTS}/prixod-savol-panel-360.png` });
     await page.screenshot({ path: `${SHOTS}/prixod-savol-page-360.png` });
   } finally {
