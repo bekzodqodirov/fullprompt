@@ -145,7 +145,7 @@ export function cargoNowLine(
     }
   }
   if (truck) return truckLine(truck, code, L);
-  if (live.length > 0) return `${L.cargoNow} ${live.join(' · ')}`;
+  if (live.length > 0) return underNow(L, live.join(' · '));
   if (issued.length > 0 || lost.length > 0) {
     const parts = [
       ...(issued.length > 0 ? [fillVars(L.cargoIssuedAt, { codes: issued.join(', ') })] : []),
@@ -172,6 +172,15 @@ export function cargoNowLine(
   return null;
 }
 
+/**
+ * «📍 Yuk hozir: …» — the label carries its own colon (`:` / `：`). A
+ * full-width colon already holds its space, so zh-CN takes none after it
+ * («📍 货物现在：TAS1», never «：␣TAS1»); every other language takes one.
+ */
+function underNow(L: NotificationLabels, text: string): string {
+  return L.cargoNow.endsWith('：') ? `${L.cargoNow}${text}` : `${L.cargoNow} ${text}`;
+}
+
 /** The truck card's line, by `truckWordOf` — its own state, never the audience stage. */
 function truckLine(
   truck: Extract<CargoPlace, { kind: 'truck' }>,
@@ -183,15 +192,15 @@ function truckLine(
   const word = truckWordOf(truck.status, truck.aboard);
   switch (word) {
     case 'loading':
-      return `${L.cargoNow} ${fillVars(L.truckLoading, { code: from })}`;
+      return underNow(L, fillVars(L.truckLoading, { code: from }));
     case 'road':
-      return `${L.cargoNow} ${fillVars(L.truckRoad, { from, to })}`;
+      return underNow(L, fillVars(L.truckRoad, { from, to }));
     case 'unloading':
-      return `${L.cargoNow} ${fillVars(L.truckUnloading, { code: to, n: truck.aboard })}`;
+      return underNow(L, fillVars(L.truckUnloading, { code: to, n: truck.aboard }));
     case 'missing':
-      return `${L.cargoNow} ${fillVars(L.truckMissing, { code: to, n: truck.aboard })}`;
+      return underNow(L, fillVars(L.truckMissing, { code: to, n: truck.aboard }));
     case 'arrived':
-      return `${L.cargoNow} ${fillVars(L.truckArrived, { code: to })}`;
+      return underNow(L, fillVars(L.truckArrived, { code: to }));
     case 'cancelled':
       return fillVars(L.truckCancelled, { code: from });
     case null:

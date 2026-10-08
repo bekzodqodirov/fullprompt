@@ -204,7 +204,7 @@ describe('5. the ONE place line — uz and zh-CN, literal', () => {
   it('a live prixod: its shelves, then what rides — the road word by the TRUCK', () => {
     const live = standOf([shelf(TAS1, 12), road('in_transit', 5)]);
     expect(cargoNowLine(live, CODES, uz)).toBe('📍 Yuk hozir: TAS1 — 12 kor. · yo‘lda YW → TAS1 — 5 kor.');
-    expect(cargoNowLine(live, CODES, zh)).toBe('📍 货物现在： TAS1 — 12 箱 · 在途 YW → TAS1 — 5 箱');
+    expect(cargoNowLine(live, CODES, zh)).toBe('📍 货物现在：TAS1 — 12 箱 · 在途 YW → TAS1 — 5 箱');
     expect(cargoNowLine(standOf([road('arrived', 5)]), CODES, uz)).toBe('📍 Yuk hozir: TAS1 da tushirilmoqda — 5 kor.');
     expect(cargoNowLine(standOf([road('unloaded', 1)]), CODES, uz)).toBe(
       '📍 Yuk hozir: TAS1 da topilmagan (YW → TAS1) — 1 kor.',
@@ -234,7 +234,7 @@ describe('5. the ONE place line — uz and zh-CN, literal', () => {
     expect(line('unloaded', 1)).toBe('📍 Yuk hozir: TAS1 — tushirildi, 1 kor. topilmagan');
     expect(line('closed', 0)).toBe('📍 Yuk hozir: TAS1 — yetib kelgan');
     expect(line('cancelled', 0)).toBe('📍 Mashina bekor qilingan — yuk YW da');
-    expect(line('unloaded', 1, zh)).toBe('📍 货物现在： TAS1 — 已卸货，1 箱未找到');
+    expect(line('unloaded', 1, zh)).toBe('📍 货物现在：TAS1 — 已卸货，1 箱未找到');
   });
 
   it('a warehouse with no code prints «—»; an empty stand has no line', () => {
