@@ -5341,6 +5341,7 @@
       "noStaffAt": "⚠ {codes}: biriktirilgan hodim yo‘q — u yerga xabar bormadi.",
       "noOffice": "⚠ Logist topilmadi — logistlarga xabar bormadi.",
       "nobody": "⚠ Bu xabar Telegramda hech kimga yuborilmadi — faqat kartada turibdi.",
+      "reachUnknown": "⚠ Xabar yozildi, lekin uni Telegramda kim olishini tekshirib bo‘lmadi.",
       "more": "… yana {n} kishi",
       "elsewhere": "❓ Savol-javob logistlar, rahbarlar va yuk hozir turgan sklad hodimlariga ochiq.",
       "errors": {

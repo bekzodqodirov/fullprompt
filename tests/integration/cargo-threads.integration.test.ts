@@ -25,13 +25,14 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
  *
  * Mocks, all hoisted (ESM exports cannot be spied): the session's meta, Next's
  * cache, the job queue, `getActor` (the web action's actor), and ONE toggle
- * object read by the thread writer, the reach check and the role list — each toggle SET inside
+ * object read by the thread writer, the reach check, the card refresh and the role list — each toggle SET inside
  * the one test that needs it and cleared in that test's `finally`.
  */
 const override = vi.hoisted(() => ({
   actor: null as null | Record<string, unknown>,
   addThreadMessage: null as null | unknown,
   reachOf: null as null | unknown,
+  revalidatePath: null as null | unknown,
   usersWithRoles: null as null | string[],
 }));
 vi.mock('@/modules/platform/auth/session', async (original) => ({
@@ -40,7 +41,9 @@ vi.mock('@/modules/platform/auth/session', async (original) => ({
 }));
 vi.mock('next/cache', async (original) => ({
   ...(await original<typeof import('next/cache')>()),
-  revalidatePath: () => {},
+  revalidatePath: () => {
+    if (override.revalidatePath) throw override.revalidatePath;
+  },
 }));
 vi.mock('@/modules/platform/jobs/boss', async (original) => ({
   ...(await original<typeof import('@/modules/platform/jobs/boss')>()),
@@ -1127,6 +1130,7 @@ describe('17. what the box is told — each line one fact', () => {
     expect(out).toEqual(
       expect.objectContaining({ ok: true, noStaffAt: [W.w4.code], nobody: true, unreachable: [], noOffice: false }),
     );
+    expect(out.reachUnknown, 'the check ran: nothing to own up to').toBe(false);
 
     const lot = await makeReceipt(W.w0.id, 1);
     const truck = await planTruck(W.w0.id, W.w4.id, lot.lotId, 1);
@@ -1159,11 +1163,33 @@ describe('17. what the box is told — each line one fact', () => {
     expect(out).toEqual(
       expect.objectContaining({ ok: true, unreachable: [], unreachableMore: 0, noStaffAt: [], nobody: false }),
     );
+    // …and the empty lists are not passed off as «everyone hears it».
+    expect(out.reachUnknown).toBe(true);
     expect(logged).toContain('[thread] cargo reach check failed');
     const [notes] = await db.execute<{ n: number }>(sql`
       SELECT count(*)::int AS n FROM crm_activities WHERE entity_type = 'receipt' AND entity_id = ${r.id}::uuid`);
     expect(notes!.n).toBe(1);
     expect(pinged(await pingsOf(await lastNote(r.id)), P.opW1), 'the announce ran before the failed read').toBe(true);
+  }, 60_000);
+
+  it('a card refresh that throws AFTER the save is logged and never escapes — one press, one note, ok', async () => {
+    const r = await makeReceipt(W.w1.id, 1);
+    const warn = vi.spyOn(logger, 'warn');
+    override.revalidatePath = new Error('Invariant: static generation store missing');
+    let out: CargoThreadState;
+    let logged: unknown[] = [];
+    try {
+      out = await post(P.logist, { kind: 'receipt', id: r.id }, 'Saqlandi, sahifa yangilanmadi');
+      logged = warn.mock.calls.map((call) => call[1]);
+    } finally {
+      override.revalidatePath = null;
+      warn.mockRestore();
+    }
+    expect(out).toEqual(expect.objectContaining({ ok: true, reachUnknown: false }));
+    expect(logged).toContain('[thread] cargo card refresh failed');
+    const [notes] = await db.execute<{ n: number }>(sql`
+      SELECT count(*)::int AS n FROM crm_activities WHERE entity_type = 'receipt' AND entity_id = ${r.id}::uuid`);
+    expect(notes!.n).toBe(1);
   }, 60_000);
 
   it('an unlinked and a muted staffer are named with their reason; seven unlinked → five and «yana 2»', async () => {

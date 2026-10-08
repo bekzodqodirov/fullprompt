@@ -398,13 +398,77 @@ describe('U4 — every code that opens onto a client', () => {
     batchSurvives();
   });
 
-  it('a phone stays a phone when a code inside it was cut first', () => {
-    // A cut leaves its mark where a space used to be; the phone must still
-    // read across it, or «+998 90 555 12 34» posts eight of its digits.
+  it('a phone stays a phone when a code, a marking or a link sits inside it', () => {
     expect(scrub('kurtka +998 90 555 12 34', { knownCodes: new Set(['555']) })).toBe('kurtka');
     expect(scrub('kurtka +998 90 777 11 22', { ownCodes: ['777'] })).toBe('kurtka');
     expect(scrub('kurtka +998 (90) 444 55 66', { markings: ['444'] })).toBe('kurtka');
+    // A link token is cut BEFORE the phone and leaves its mark where it stood;
+    // the phone must still read across it, or «90 123 … 45 67» is posted.
+    expect(scrub('kurtka 90 123 @ 45 67')).toBe('kurtka');
     batchSurvives({ knownCodes: new Set(['555']) });
+  });
+
+  it('a phone is cut before anything can take a piece of it — and the card’s phone eats no quantity', () => {
+    // The lead's own phone used to be split into words («998», «123») and cut
+    // before the phone rule ran: «+ 90 45 67» was posted, six of nine digits.
+    const card = { forbidden: ['Ali Valiyev', '+998 90 123 45 67'] };
+    expect(scrub('kurtka +998 90 123 45 67', card)).toBe('kurtka');
+    expect(scrub('kurtka 90 123 45 67', card)).toBe('kurtka');
+    // …and those digit words ate every goods name that shared one.
+    expect(scrub('Kabel 123 m', card)).toBe('Kabel 123 m');
+    expect(scrub('Suv 998 ml', card)).toBe('Suv 998 ml');
+    expect(scrub('Ali kurtka', card)).toBe('kurtka');
+    // A code or a marking inside a LOCAL phone, cut first, left six digits.
+    expect(scrub('kurtka 90 555 12 34', { knownCodes: new Set(['555']) })).toBe('kurtka');
+    expect(scrub('kurtka 90 777 11 22', { ownCodes: ['777'] })).toBe('kurtka');
+    expect(scrub('kurtka 90 444 55 66', { markings: ['444'] })).toBe('kurtka');
+    // A phone takes what is glued to it, as a code does — the code it
+    // swallowed included («Bobur-444» before a phone) — but never Chinese.
+    expect(scrub('Bobur:+998901234567 kurtka')).toBe('kurtka');
+    expect(scrub('Bobur-444 1234567 kurtka', { knownCodes: new Set(['444']) })).toBe('kurtka');
+    expect(scrub('男士夹克13901234567')).toBe('男士夹克');
+    batchSurvives(card);
+  });
+
+  it('a marking that carries a phone still goes whole — it meets the name with its phone already cut', () => {
+    expect(scrub('Bobur 901234567 sumka', { markings: ['Bobur 901234567'] })).toBe('sumka');
+    expect(scrub('901234567 Bobur sumka', { markings: ['901234567 Bobur'] })).toBe('sumka');
+    expect(scrub('Bobur (90) 123-45-67 sumka', { markings: ['Bobur (90) 123-45-67'] })).toBe('sumka');
+    batchSurvives({ markings: ['Bobur 901234567'] });
+  });
+
+  it('a code takes its whole glued run — any separator, either side — up to whitespace or CJK', () => {
+    // The old token rule dropped the whole token; «-», «_» and «.» alone
+    // posted the person behind every other separator.
+    for (const name of [
+      'GS555/Bobur kurtka',
+      'GS555,Bobur kurtka',
+      'GS555(Bobur) kurtka',
+      'GS555:Bobur kurtka',
+      'GS555+Bobur kurtka',
+      'Bobur/GS555 kurtka',
+      'Bobur:GS555 kurtka',
+    ]) {
+      expect(scrub(name), name).toBe('kurtka');
+    }
+    // The card's own code, the book's (all-digit too), and the system's shapes.
+    const gsr = { codePrefix: 'GSR' };
+    expect(scrub('777/Bobur kurtka', { ...gsr, ownCodes: ['777'] })).toBe('kurtka');
+    expect(scrub('GS555/Bobur kurtka', { ...gsr, knownCodes: new Set(['GS555']) })).toBe('kurtka');
+    expect(scrub('Bobur,444 kurtka', { ...gsr, knownCodes: new Set(['444']) })).toBe('kurtka');
+    expect(scrub('444(Bobur) kurtka', { ...gsr, knownCodes: new Set(['444']) })).toBe('kurtka');
+    expect(scrub('YW26-000123/Bobur kepka', gsr)).toBe('kepka');
+    expect(scrub('Bobur:B-000099 kurtka', gsr)).toBe('kurtka');
+    // CJK ends the run on either side: Chinese goods are written with no spaces.
+    expect(scrub('GS555/男士夹克')).toBe('男士夹克');
+    expect(scrub('男士夹克/GS555')).toBe('男士夹克');
+    expect(scrub('GS777男士夹克')).toBe('男士夹克');
+    expect(scrub('男士夹克GS777')).toBe('男士夹克');
+    // Whitespace ends it too: the seller's own slash beside the code stays.
+    expect(scrub('GS555 kurtka/shim')).toBe('kurtka/shim');
+    // The accepted cost: a glued range goes whole.
+    expect(scrub('Kabel 444/500 m', { knownCodes: new Set(['444']) })).toBe('Kabel m');
+    batchSurvives({ knownCodes: new Set(['444']) });
   });
 
   it('a link, a uuid, an app path or a bare host', () => {

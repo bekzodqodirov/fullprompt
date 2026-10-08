@@ -336,7 +336,7 @@ describe('K10 — the words (#163 — anchored on the code, never bundle-vs-bund
       for (const code of CARGO_THREAD_ERRORS) {
         expect(has(data, `threads.cargo.errors.${code}`), `${locale} threads.cargo.errors.${code}`).toBe(true);
       }
-      for (const field of ['noStaffAt', 'noOffice', 'nobody', 'more']) {
+      for (const field of ['noStaffAt', 'noOffice', 'nobody', 'reachUnknown', 'more']) {
         expect(has(data, `threads.cargo.${field}`), `${locale} threads.cargo.${field}`).toBe(true);
       }
     }
@@ -346,6 +346,13 @@ describe('K10 — the words (#163 — anchored on the code, never bundle-vs-bund
     const box = src('src/components/cargo-thread-box.tsx');
     expect(box).toContain('t(`cargo.errors.${state.error}`)');
     expect(box).not.toMatch(/t\(`errors\./);
+  });
+
+  it('a reach check that failed after the save is said as ONE line — never an empty list that reads «everyone hears it»', () => {
+    // The action's half is behavioural (cargo-threads.integration, «17»); the
+    // box renders what it is told, so its half is the render itself.
+    const box = src('src/components/cargo-thread-box.tsx');
+    expect(box).toMatch(/\{state\.ok && state\.reachUnknown \? \(\s*<p[^>]*data-testid="cargo-thread-reach-unknown"[^>]*>\s*\{t\('cargo\.reachUnknown'\)\}/);
   });
 });
 

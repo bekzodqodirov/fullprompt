@@ -5341,6 +5341,7 @@
       "noStaffAt": "⚠ {codes}：没有分配员工——消息未发送到那里。",
       "noOffice": "⚠ 未找到物流员——消息未发送给物流员。",
       "nobody": "⚠ 此消息未通过 Telegram 发送给任何人——仅保存在卡片上。",
+      "reachUnknown": "⚠ 消息已保存，但无法确认谁会在 Telegram 中收到。",
       "more": "……还有 {n} 人",
       "elsewhere": "❓ 问答仅对物流员、管理层和货物当前所在仓库的员工开放。",
       "errors": {

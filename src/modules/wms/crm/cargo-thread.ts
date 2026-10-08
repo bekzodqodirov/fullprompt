@@ -251,6 +251,8 @@ export interface CargoThreadState {
   noOffice?: boolean;
   /** Nobody at all was sent it in Telegram — it is on the card only. */
   nobody?: boolean;
+  /** The check of who will hear it failed after the save: the lists above are empty because nobody looked. */
+  reachUnknown?: boolean;
   /** A fresh value on every success, so the box clears exactly once per send. */
   sent?: number;
 }

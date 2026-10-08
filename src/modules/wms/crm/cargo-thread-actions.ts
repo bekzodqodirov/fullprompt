@@ -28,7 +28,8 @@ import { addThreadMessage, isThreadWriteBehind, ThreadError, type UnreachableRea
  * rule: who of the arm will not hear it in Telegram and why, the standing
  * warehouses with NOBODY assigned («the message did not go THERE»), a
  * warehouse writer's message that reached no logist, and «nobody was sent
- * it» ONLY when nobody at all was — each line one fact.
+ * it» ONLY when nobody at all was — each line one fact. When the reach check
+ * itself failed, it says THAT (`reachUnknown`) instead of an empty list.
  */
 export async function postCargoThreadAction(_prev: CargoThreadState, form: FormData): Promise<CargoThreadState> {
   const who = await getActor();
@@ -81,6 +82,9 @@ export async function postCargoThreadAction(_prev: CargoThreadState, form: FormD
   let unreachable: { name: string; reason: Exclude<UnreachableReason, 'no_door'> }[] = [];
   let unreachableMore = 0;
   let noStaffAt: string[] = [];
+  // An empty list from a read that FAILED would read as «everyone hears it»:
+  // the box is told the check did not run, in one line of its own.
+  let reachUnknown = false;
   try {
     const reaches = await reachOf(expected, 'InternalNote');
     const unreachableIds = expected
@@ -103,26 +107,35 @@ export async function postCargoThreadAction(_prev: CargoThreadState, form: FormD
     unreachableMore = Math.max(0, unreachableIds.length - shown.length);
     noStaffAt = noStaffIds.map((w) => codes.get(w) ?? '—');
   } catch (err) {
+    reachUnknown = true;
     logger.warn({ err, activityId: landed.activityId }, '[thread] cargo reach check failed');
   }
 
-  switch (ref.kind) {
-    case 'receipt':
-      revalidatePath(`/receipts/${ref.id}`);
-      break;
-    case 'batch':
-      revalidatePath(`/batches/${ref.id}`);
-      break;
-    default: {
-      const never: never = ref.kind;
-      void never;
+  // The card's refresh is bookkeeping after the save too: a throw here would
+  // escape as an action error about a message that IS saved, and the sender
+  // would press again and write it twice. Logged; the answer never changes.
+  try {
+    switch (ref.kind) {
+      case 'receipt':
+        revalidatePath(`/receipts/${ref.id}`);
+        break;
+      case 'batch':
+        revalidatePath(`/batches/${ref.id}`);
+        break;
+      default: {
+        const never: never = ref.kind;
+        void never;
+      }
     }
+  } catch (err) {
+    logger.warn({ err, activityId: landed.activityId }, '[thread] cargo card refresh failed');
   }
   return {
     ok: true,
     unreachable,
     unreachableMore,
     noStaffAt,
+    reachUnknown,
     noOffice: cargo?.to === 'office' && expected.length === 0,
     // Everyone the note addressed in Telegram — past authors and @-named
     // people included; «nobody» is said only when that list is empty.

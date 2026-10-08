@@ -586,6 +586,35 @@ describe('I3b — the card’s OWN code, which only the card knows', () => {
   });
 });
 
+describe('I3c — the card’s own phone, and a person glued to the book’s code', () => {
+  it('the lead’s phone goes whole and eats no quantity; a code takes whatever is glued to it, by any separator', async () => {
+    // The card's phone is `forbiddenFor`'s (the lead's, '+998 90 123 45 67'),
+    // the code the BOOK's: only the two reads together reach these names.
+    const { requestId } = await sealedRequest({
+      card: {
+        entityId: ownLeadId,
+        noteId: null,
+        items: [
+          { name: 'kurtka +998 90 123 45 67', quantity: 10 },
+          { name: 'Kabel 123 m', quantity: 10 },
+          { name: `${MANUAL_CODE}/Bobur shim`, quantity: 10 },
+          { name: `Bobur,${MANUAL_CODE} sumka`, quantity: 10 },
+          { name: `${MANUAL_CODE}(Bobur) kepka`, quantity: 10 },
+        ],
+      },
+    });
+    await drain();
+    const sent = channelSends();
+    expect(sent).toHaveLength(1);
+    const caption = textOf(sent[0]!);
+    expect(caption.split('\n')).toContain('📦 kurtka, Kabel 123 m, shim, sumka, kepka');
+    expect(caption).not.toContain('Bobur');
+    expect(caption).not.toContain(MANUAL_CODE);
+    expect(caption).not.toContain('45 67');
+    expect(await postFor(requestId)).toMatchObject({ status: 'sent' });
+  });
+});
+
 describe('I4 — a «Готово» answer', () => {
   it('posts the amount by hand-given, and neither note', async () => {
     const requestId = await openRequest();

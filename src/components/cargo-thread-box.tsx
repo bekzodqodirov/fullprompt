@@ -19,8 +19,10 @@ import { useClearOnSent } from './thread-box-clear';
  * answer, each line ONE fact: who of the arm will not hear it and why (capped,
  * «… yana N kishi»), the standing warehouses where NOBODY is assigned («u
  * yerga xabar bormadi» — not «nobody got it»: another warehouse may have), a
- * warehouse writer's message that reached no logist, and «nobody was sent it»
- * only when nobody at all was. Its words are the cargo box's own
+ * warehouse writer's message that reached no logist, «nobody was sent it»
+ * only when nobody at all was, and — when that check itself failed after the
+ * save — that it could not be checked, never a silence that reads «everyone
+ * hears it». Its words are the cargo box's own
  * (`threads.cargo.errors.*`) — round 1's say «calculation not found».
  */
 export function CargoThreadBox({
@@ -97,6 +99,11 @@ export function CargoThreadBox({
       {state.ok && state.nobody ? (
         <p className="text-xs text-warn" data-testid="cargo-thread-nobody">
           {t('cargo.nobody')}
+        </p>
+      ) : null}
+      {state.ok && state.reachUnknown ? (
+        <p className="text-xs text-warn" data-testid="cargo-thread-reach-unknown">
+          {t('cargo.reachUnknown')}
         </p>
       ) : null}
     </form>

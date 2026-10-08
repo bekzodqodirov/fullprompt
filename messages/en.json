@@ -5341,6 +5341,7 @@
       "noStaffAt": "⚠ {codes}: no staff assigned — the message did not go there.",
       "noOffice": "⚠ No logist found — the message did not reach the logists.",
       "nobody": "⚠ Nobody was sent this in Telegram — it is on the card only.",
+      "reachUnknown": "⚠ The message is saved, but who receives it in Telegram could not be checked.",
       "more": "… and {n} more",
       "elsewhere": "❓ Questions are open to the logists, the managers and the staff of the warehouse where the cargo is now.",
       "errors": {
