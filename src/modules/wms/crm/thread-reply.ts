@@ -1,9 +1,8 @@
-import { isServerBehind } from '../../platform/db/errors';
 import { logger } from '../../platform/logger';
 import type { ThreadPingType, ThreadRef } from '../../platform/notifications/thread-ref';
-import { announceNote, cardLabel } from './internal-chat';
-import { addThreadMessage, ThreadError } from './thread';
-import { mayWriteThread, threadStanding } from './thread-door';
+import { announceNote, cardLabel, doorlessLabel } from './internal-chat';
+import { addThreadMessage, isThreadWriteBehind, ThreadError } from './thread';
+import { mayWriteThread, threadStanding, type ThreadReader } from './thread-door';
 
 /**
  * A Telegram reply, landed on the card (the owner's E2 a, E3 a; the bot half
@@ -17,7 +16,9 @@ import { mayWriteThread, threadStanding } from './thread-door';
  *   - the replier STANDS on the thread (`threadStanding`, G4 a): the record's
  *     current owner, and a calc request's non-CRM requester.
  * An InternalNote or CalcThread ping to somebody who lost the door since — the
- * handed-on seller (E9 a) — is refused in words.
+ * handed-on seller (E9 a), the operator whose cargo left his warehouse (Q4 a)
+ * — is refused in words. The actor is the bot's `botActorFor`: the grants AND
+ * the scope, because the cargo door is a question about where he works.
  */
 
 /** What the replied-to ping was: one of the thread's own, or the VED's bound calc task copy (E3 a). */
@@ -28,6 +29,7 @@ export type ThreadReplyOutcome =
   | 'landed_calc'
   | 'duplicate'
   | 'no_door'
+  | 'cargo_moved'
   | 'not_found'
   | 'empty'
   | 'too_long'
@@ -43,6 +45,7 @@ export const THREAD_REPLY_WORDS: Record<ThreadReplyOutcome, string> = {
   landed_calc: '✅ Hisob ostiga yozildi: {label}',
   duplicate: '✅ Bu javob allaqachon yozilgan.',
   no_door: 'Bu kartani endi ocha olmaysiz — javob yozilmadi.',
+  cargo_moved: 'Yuk endi sizning skladingizda emas — javob yozilmadi. Kerak bo‘lsa logistga «➕ Topshiriq» bering.',
   not_found: 'Karta topilmadi — javob yozilmadi.',
   empty: 'Bo‘sh xabar.',
   too_long: 'Javob juda uzun — 4000 belgigacha yozing.',
@@ -50,12 +53,17 @@ export const THREAD_REPLY_WORDS: Record<ThreadReplyOutcome, string> = {
 };
 
 export async function landThreadReply(
-  actor: { id: string; permissions: Set<string> },
+  actor: ThreadReader,
   input: {
     ref: ThreadRef;
     ping: ReplyPing;
     text: string;
     tg: { chatId: bigint; messageId: number };
+    /**
+     * When the person WROTE it (Q5 a, ISO): a reply typed during a deploy is
+     * filed at that moment on the card, not at the moment the bot came back.
+     */
+    writtenAt: string;
   },
 ): Promise<{ outcome: ThreadReplyOutcome; text: string }> {
   const say = (outcome: ThreadReplyOutcome, label = '') => ({
@@ -63,14 +71,32 @@ export async function landThreadReply(
     text: THREAD_REPLY_WORDS[outcome].replace('{label}', label),
   });
   try {
-    const admitted =
-      (await mayWriteThread(actor, input.ref)) ||
-      input.ping === 'MentionedInNote' ||
-      (await threadStanding(actor.id, input.ref));
-    if (!admitted) return say('no_door');
+    // The door's own answer is kept: the confirmation below names a truck by
+    // its route only for somebody the door admitted.
+    const door = await mayWriteThread(actor, input.ref);
+    const admitted = door || input.ping === 'MentionedInNote' || (await threadStanding(actor.id, input.ref));
+    if (!admitted) {
+      // A cargo thread refused to a SCOPED person is his cargo having left his
+      // warehouse — said as that, with what to do instead.
+      switch (input.ref.kind) {
+        case 'receipt':
+        case 'batch':
+          return say(actor.warehouseScoped ? 'cargo_moved' : 'no_door');
+        case 'lead':
+        case 'deal':
+        case 'client':
+        case 'calc':
+          return say('no_door');
+        default: {
+          const never: never = input.ref.kind;
+          void never;
+          return say('no_door');
+        }
+      }
+    }
 
     const landed = await addThreadMessage(
-      { ref: input.ref, body: input.text, tg: input.tg },
+      { ref: input.ref, body: input.text, tg: input.tg, writtenAt: input.writtenAt },
       { actorId: actor.id, ip: null, userAgent: null },
     );
     if (landed.duplicate) return say('duplicate');
@@ -89,12 +115,19 @@ export async function landThreadReply(
       logger.warn({ err, activityId: landed.activityId }, '[thread] announce of a telegram reply failed'),
     );
     const label = await cardLabel(landed.entityType, landed.entityId).catch(() => '');
-    return say(landed.calcRequestId ? 'landed_calc' : 'landed_card', label);
+    // Admitted by his mention alone, he is told the card as his ping named it
+    // — a truck by its code, never its route (`doorlessLabel`).
+    return say(
+      landed.calcRequestId ? 'landed_calc' : 'landed_card',
+      door ? label : doorlessLabel(landed.entityType, label),
+    );
   } catch (err) {
     if (err instanceof ThreadError) {
       return say(err.code === 'forbidden' ? 'no_door' : err.code);
     }
-    if (isServerBehind(err)) return say('server_behind');
+    // A release ahead of its database — a missing column (0127) or a CHECK
+    // 0129 has not widened yet: the morning's expected state, never an error.
+    if (isThreadWriteBehind(err)) return say('server_behind');
     logger.error({ err }, '[thread] telegram reply not landed');
     return say('server_behind');
   }

@@ -153,6 +153,20 @@ test('«+ Yangi» offers him no deal, and /bitimlar/new sends him back (G4 a)', 
   await expect(page).toHaveURL(/\/bitimlar(\?.*)?$/);
 });
 
+test('deal C — off his board — still opens by link, read-only (his 6a)', async ({ page }) => {
+  // C carries no calculation and every position is coded: it is NOT his work
+  // set (the board test above found no C). The work set narrows his board, his
+  // totals, ⌘K and his home row — never the card a link opens.
+  await login(page, VED);
+  await page.goto(`/bitimlar/${minted!.dealC}`);
+  await expect(page).toHaveURL(new RegExp(`/bitimlar/${minted!.dealC}$`));
+  await expect(page.locator('h1').first()).toContainText(`${run.marker}-C`);
+  await expect(page.getByTestId('deal-terms-readonly')).toBeVisible();
+  for (const id of ['deal-edit-panel', 'deal-discount-panel']) {
+    await expect(page.getByTestId(id), id).toHaveCount(0);
+  }
+});
+
 test('deal B: no terms, but the positions and the prixod are his', async ({ page }) => {
   await login(page, VED);
   await page.goto(`/bitimlar/${minted!.dealB}`);

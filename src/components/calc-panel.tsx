@@ -314,10 +314,16 @@ export async function CalcPanel({
               }
             >
               <p className="mb-1.5 text-2xs text-ink-500">{tth('cardHint')}</p>
+              {/* The VED writes in this same thread from the card too (his
+                  karta, the deal card), and every seller on it reads what he
+                  types — so the calc page's warning against the floor stands
+                  under THIS box as well (Q1 a: the line under the field is
+                  the whole guard; no screen rule can police text). */}
               <CalcThread
                 requestId={row.requestId}
                 viewerId={actor.id}
                 composer={threadWriters.has(`calc:${row.requestId.toLowerCase()}`)}
+                hint={vedDoor ? tth('calcHint') : null}
               />
             </ThreadFold>
           ))}

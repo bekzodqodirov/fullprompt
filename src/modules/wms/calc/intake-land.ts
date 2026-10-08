@@ -33,6 +33,12 @@ export interface IntakeTarget {
   /** For the confirmation message and the link. */
   label: string;
   /**
+   * A lead's OWNER — what decides whether the sender may open the card the ✅
+   * links (`calcJobHrefFor`): the sender on a lead they created, the row's
+   * owner on one a second request joined, null on a deal.
+   */
+  leadOwnerId: string | null;
+  /**
    * Did it reach the VED queue? The material and the card are saved either
    * way; a false here means the collector must send it from the card, and
    * saying so is the difference between an honest reply and a silent strand.
@@ -127,7 +133,7 @@ export async function dealFor(
     .where(and(eq(deals.clientId, client.id), eq(dealStages.kind, 'open')))
     .orderBy(desc(deals.createdAt))
     .limit(1);
-  if (open) return { kind: 'deal', id: open.id, label: open.code };
+  if (open) return { kind: 'deal', id: open.id, label: open.code, leadOwnerId: null };
 
   const { createDeal } = await import('../deals/service');
   const dealId = await createDeal(
@@ -144,7 +150,7 @@ export async function dealFor(
     .from(deals)
     .where(eq(deals.id, dealId))
     .limit(1);
-  return { kind: 'deal', id: dealId, label: fresh?.code ?? '—' };
+  return { kind: 'deal', id: dealId, label: fresh?.code ?? '—', leadOwnerId: null };
 }
 
 /**
@@ -221,7 +227,7 @@ export async function landIntake(input: {
         // A prospect who asked before already has a card; a second request
         // belongs on it rather than beside it.
         const existing = input.leadPhone ? await openLeadForPhone(input.leadPhone) : null;
-        if (existing) return { kind: 'lead', id: existing.id, label: existing.name };
+        if (existing) return { kind: 'lead', id: existing.id, label: existing.name, leadOwnerId: existing.ownerId };
         const lead = await createLead(
           {
             name: input.leadName,
@@ -230,7 +236,7 @@ export async function landIntake(input: {
           },
           { actorId: input.collectedBy },
         );
-        return { kind: 'lead', id: lead.id, label: lead.name };
+        return { kind: 'lead', id: lead.id, label: lead.name, leadOwnerId: lead.ownerId };
       })();
 
   await addActivity(
@@ -362,16 +368,16 @@ async function moveToCalcStage(target: IntakeTarget, actorId: string): Promise<v
  */
 export async function openLeadForPhone(
   phone: string,
-): Promise<{ id: string; name: string } | null> {
+): Promise<{ id: string; name: string; ownerId: string | null } | null> {
   const digits = phone.replace(/\D/g, '').slice(-9);
   if (digits.length < 7) return null;
   const rows = await db
-    .select({ id: leads.id, name: leads.name, phone: leads.phone, clientId: leads.clientId })
+    .select({ id: leads.id, name: leads.name, phone: leads.phone, clientId: leads.clientId, ownerId: leads.ownerId })
     .from(leads)
     .orderBy(desc(leads.createdAt))
     .limit(500);
   const hit = rows.find(
     (r) => !r.clientId && (r.phone ?? '').replace(/\D/g, '').slice(-9) === digits,
   );
-  return hit ? { id: hit.id, name: hit.name } : null;
+  return hit ? { id: hit.id, name: hit.name, ownerId: hit.ownerId } : null;
 }

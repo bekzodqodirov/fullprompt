@@ -2978,7 +2978,8 @@
       "not_remindable": "无法对该任务发送提醒",
       "not_askable": "无法就该任务提问",
       "empty_text": "消息为空",
-      "nothing_to_send": "没有可发送的内容 — 任务现在在您这里，或其中没有消息"
+      "nothing_to_send": "没有可发送的内容 — 任务现在在您这里，或其中没有消息",
+      "already_done": "已经完成 — 未重复发送"
     },
     "repeat": "重复",
     "repeatNever": "不重复",
@@ -5329,6 +5330,29 @@
       "not_found": "未找到该计算。",
       "server_behind": "系统正在更新——请稍后再发送。",
       "save_failed": "未发送——请重试。"
+    },
+    "cargo": {
+      "title": "❓ 问答 · {n}",
+      "empty": "暂无提问。关于货物的问题请在此提出。",
+      "toStaff": "您的问题将发送给：{list}",
+      "staffCount": "{code} — {n} 人",
+      "staffNone": "⚠ {code}：没有分配员工",
+      "toOffice": "您的问题将发送给物流员。",
+      "noStaffAt": "⚠ {codes}：没有分配员工——消息未发送到那里。",
+      "noOffice": "⚠ 未找到物流员——消息未发送给物流员。",
+      "nobody": "⚠ 此消息未通过 Telegram 发送给任何人——仅保存在卡片上。",
+      "reachUnknown": "⚠ 消息已保存，但无法确认谁会在 Telegram 中收到。",
+      "more": "……还有 {n} 人",
+      "elsewhere": "❓ 问答仅对物流员、管理层和货物当前所在仓库的员工开放。",
+      "errors": {
+        "forbidden": "您无权在此沟通中发言。",
+        "cargo_moved": "货物已不在您的仓库——消息未保存。",
+        "empty": "消息为空。",
+        "too_long": "太长——最多 4000 个字符。",
+        "not_found": "未找到该卡片。",
+        "server_behind": "系统正在更新——请稍后再发送。",
+        "save_failed": "未发送——请重试。"
+      }
     }
   },
   "priceChannel": {

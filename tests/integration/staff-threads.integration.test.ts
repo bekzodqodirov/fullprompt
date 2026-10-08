@@ -46,12 +46,13 @@ import {
   userRoles,
   users,
 } from '@/modules/platform/db/schema';
-import { userPermissions } from '@/modules/platform/rbac/authorize';
+import { actorGrants } from '@/modules/platform/rbac/authorize';
 import { rekeyLeadCalcRequests } from '@/modules/wms/calc/service';
 import { announceNote, noteRecipients } from '@/modules/wms/crm/internal-chat';
 import {
   addThreadMessage,
   calcThreadMessages,
+  calcThreadsOnCard,
   calcThreadSummary,
   markThreadRead,
   myThreads,
@@ -151,7 +152,10 @@ async function request(entityType: 'lead' | 'deal', entityId: string, requestedB
   return row!.id;
 }
 
-const actorOf = async (id: string) => ({ id, permissions: await userPermissions(id) });
+// The thread reader carries its scope since round 2 (0129 — the cargo arm
+// asks WHERE a person works); no CRM arm reads it, so every answer below is
+// the one it was.
+const actorOf = async (id: string) => ({ id, ...(await actorGrants(id)) });
 
 /** The pings one note produced, by its own row id (`payload.thread.activityId`). */
 async function pingsOf(activityId: string) {
@@ -241,6 +245,7 @@ describe('1. the calculation’s Q&A — written on the card of the moment, read
       ping: 'CalcThread',
       text: '12 kub',
       tg: { chatId: await chatOf(P.S), messageId: 501 },
+      writtenAt: new Date().toISOString(),
     });
     expect(answer.outcome).toBe('landed_calc');
     const messages = await calcThreadMessages(R);
@@ -331,6 +336,7 @@ describe('who hears a note — decided at send time', () => {
       ping: 'CalcThread',
       text: '3 kub',
       tg: { chatId: await chatOf(P.W), messageId: 601 },
+      writtenAt: new Date().toISOString(),
     });
     expect(out.outcome).toBe('landed_calc');
     // …and a CRM seller-requester whose lead was handed on has NO standing (E9 a).
@@ -416,8 +422,8 @@ describe('9. a Telegram reply lands once', () => {
     const L = await lead(P.S);
     const R = await request('lead', L, P.S, P.V);
     const tg = { chatId: await chatOf(P.S), messageId: 777 };
-    const first = await landThreadReply(await actorOf(P.S), { ref: { kind: 'calc', id: R }, ping: 'CalcThread', text: 'bir', tg });
-    const second = await landThreadReply(await actorOf(P.S), { ref: { kind: 'calc', id: R }, ping: 'CalcThread', text: 'bir', tg });
+    const first = await landThreadReply(await actorOf(P.S), { ref: { kind: 'calc', id: R }, ping: 'CalcThread', text: 'bir', tg, writtenAt: new Date().toISOString() });
+    const second = await landThreadReply(await actorOf(P.S), { ref: { kind: 'calc', id: R }, ping: 'CalcThread', text: 'bir', tg, writtenAt: new Date().toISOString() });
     expect(first.outcome).toBe('landed_calc');
     expect(second.outcome).toBe('duplicate');
     const notes = await calcThreadMessages(R);
@@ -511,6 +517,41 @@ describe('17b. the read mark is AS OF what was drawn', () => {
     await markThreadRead(P.S, ref, '2999-01-01T00:00:00.000Z');
     await addThreadMessage({ ref, body: 'uchinchi savol' }, ctx(P.V));
     expect((await calcThreadSummary(R, P.S)).unread).toBe(true);
+  });
+});
+
+describe('17e. a late Telegram note is new by when it LANDED, not when it was written (Q5-3)', () => {
+  it('my note, then a colleague’s Telegram reply written half an hour before it: the ● rises on the chip, the fold and the dock', async () => {
+    const L = await lead(P.S);
+    const R = await request('lead', L, P.S, P.V);
+    const calc = { kind: 'calc' as const, id: R };
+    const card = { kind: 'lead' as const, id: L };
+    // I write in both threads — my own note is read up to itself…
+    await addThreadMessage({ ref: calc, body: 'sotuvchi savoli' }, ctx(P.S));
+    await addThreadMessage({ ref: card, body: 'sotuvchi izohi' }, ctx(P.S));
+    expect((await calcThreadSummary(R, P.S)).unread).toBe(false);
+    // …then the answers that were typed in Telegram during the deploy land,
+    // filed at the moment they were WRITTEN.
+    const before = new Date(Date.now() - 30 * 60_000).toISOString();
+    await addThreadMessage(
+      { ref: calc, body: 'VED javobi kechikib', tg: { chatId: BigInt((chatSeq += 1)), messageId: 1 }, writtenAt: before },
+      ctx(P.V),
+    );
+    await addThreadMessage(
+      { ref: card, body: 'logist izohi kechikib', tg: { chatId: BigInt((chatSeq += 1)), messageId: 1 }, writtenAt: before },
+      ctx(P.C),
+    );
+    // The calc page's chip.
+    expect((await calcThreadSummary(R, P.S)).unread).toBe(true);
+    // The card's calc fold.
+    const folds = await calcThreadsOnCard({ entityType: 'lead', entityId: L }, P.S);
+    expect(folds.find((f) => f.requestId === R)?.unread).toBe(true);
+    // The dock, both laterals — and its excerpt is the note that landed last.
+    const rows = await myThreads(await actorOf(P.S));
+    const calcRow = rows.find((r) => r.kind === 'calc' && r.id === R);
+    expect(calcRow).toMatchObject({ unread: true, excerpt: 'VED javobi kechikib' });
+    const cardRow = rows.find((r) => r.kind === 'lead' && r.id === L);
+    expect(cardRow).toMatchObject({ unread: true, excerpt: 'logist izohi kechikib' });
   });
 });
 

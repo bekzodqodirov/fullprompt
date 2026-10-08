@@ -25,6 +25,7 @@ import {
   askFromBot,
   takeTaskPending,
   dropTaskPending,
+  buttonsFor,
 } from '@/modules/platform/telegram/staff-bot';
 import { REPLY_SENTENCES, replyVerdictFor, threadReplyFromBot } from '@/modules/platform/telegram/reply-door';
 import { calcThreadMessages } from '@/modules/wms/crm/thread';
@@ -143,6 +144,7 @@ const reply = (who: string, replyTo: number, text: string, extra: { forwarded?: 
     replyToForwarded: extra.forwarded ?? false,
     text,
     incomingMessageId: (msgSeq += 1),
+    messageDate: Math.floor(Date.now() / 1000),
   });
 
 async function questionsAbout(taskId: string) {
@@ -164,6 +166,10 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // An E4 question is keyed by its Telegram message now (Q5 a) — this file's chats' keys go too.
+  for (const chat of Object.values(CHAT)) {
+    await db.execute(sql`DELETE FROM telegram_once WHERE key LIKE ${`m:${chat}:%`}`);
+  }
   const notes = await db.select({ id: crmActivities.id }).from(crmActivities).where(inArray(crmActivities.entityId, madeLeads));
   await db.delete(notifications).where(inArray(notifications.userId, madeUsers));
   await db.execute(sql`DELETE FROM thread_reads WHERE user_id IN (${sql.join(madeUsers.map((id) => sql`${id}::uuid`), sql`, `)})`);
@@ -277,7 +283,7 @@ describe('13. the armed wait gets its own reply (the judge’s blocker)', () => 
     expect(await reply(P.S, copy, 'qaysi mijoz?')).toBeNull();
     const pending = takeTaskPending(CHAT[P.S]!);
     expect(pending?.kind).toBe('question');
-    expect((await askFromBot(CHAT[P.S]!, pending!.taskId, 'qaysi mijoz?')).result).toBe('done');
+    expect((await askFromBot(CHAT[P.S]!, pending!.taskId, 'qaysi mijoz?', null)).result).toBe('done');
     expect(await questionsAbout(T)).toHaveLength(1);
     expect(peekTaskPending(CHAT[P.S]!)).toBeNull();
   });
@@ -326,4 +332,22 @@ describe('15. what does not land says so — never the paid AI', () => {
     const customer = await sentPing(P.S, 'ClientBotMessage', {});
     expect((await reply(P.S, customer, 'x'))?.text).toBe(REPLY_SENTENCES.customer);
   });
+
+  // Q2 a («hozircha javob qabul qilinmaydi»): the four «Hisob tayyor» pings
+  // are queued with the text alone — no thread, no task — so a swipe-reply
+  // to one is refused in words and writes NOTHING, and the ping carries no
+  // «💬 Javob yozish» button that would promise otherwise. Each payload is
+  // the shape the calc service queues (`notifyStaffTelegram`, text only).
+  it.each(['CalcDone', 'CalcSealed', 'CalcReturned', 'CalcTaken'])(
+    'a reply to a %s ping is «not replyable»: nothing lands, no button offers it',
+    async (type) => {
+      const notesBefore = await db.select({ n: sql<number>`count(*)::int` }).from(crmActivities);
+      const ping = await sentPing(P.S, type, { text: '✅ Hisoblash tayyor' });
+      expect(await replyVerdictFor(CHAT[P.S]!, ping, P.S)).toEqual({ kind: 'not_replyable' });
+      expect((await reply(P.S, ping, `rahmat ${SFX}`))?.text).toBe(REPLY_SENTENCES.not_replyable);
+      const notesAfter = await db.select({ n: sql<number>`count(*)::int` }).from(crmActivities);
+      expect(notesAfter[0]!.n).toBe(notesBefore[0]!.n);
+      expect(buttonsFor(type, { text: '✅ Hisoblash tayyor' })).toBeNull();
+    },
+  );
 });

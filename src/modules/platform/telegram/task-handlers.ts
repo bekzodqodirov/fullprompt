@@ -7,6 +7,11 @@ import { activeIntake } from './calc-intake';
 import { activeCapture } from './note-capture';
 import { editMarkup, editText, sendText } from './send';
 import { REPLY_SENTENCES, threadReplyFromBot } from './reply-door';
+import { answerPress } from './press';
+import { isBacklog } from './lifecycle';
+import { tellBacklogOnce } from './backlog';
+import { messageKey, pressKey } from './once';
+import { flushWaitWrites, nowSec } from './waits';
 import {
   acceptTaskFromBot,
   answerFromBot,
@@ -231,7 +236,7 @@ async function filterPeople(ctx: Context, chatId: bigint, staffId: string, text:
 
 /** The draft's own buttons: a due, «📅 Sana yozish», «🙋 O'zimga», «🗑». */
 export async function handleDraftCallback(ctx: Context, chatId: bigint, step: DraftStep): Promise<void> {
-  await ctx.answerCallbackQuery();
+  await answerPress(ctx);
   if (step === 'self') return pickAssignee(ctx, chatId, 'self');
   const draft = activeDraft(chatId);
   if (!draft) {
@@ -345,10 +350,12 @@ export async function draftText(ctx: Context, chatId: bigint, draft: TaskDraft):
     return;
   }
   if (draft.stage === 'date' && !forwarded) {
-    const due = parseTypedDue(text);
+    // Read on the day it was WRITTEN (Q5 a, §3.8) — one rule in one place.
+    const writtenAt = ctx.message ? new Date(ctx.message.date * 1000) : new Date();
+    const due = parseTypedDue(text, writtenAt);
     if (!due) {
       await ctx.reply(
-        typedDuePast(text)
+        typedDuePast(text, writtenAt)
           ? 'Bu vaqt o‘tib ketgan — keyingi sanani yozing: 12.10, 12.10 15:00 yoki 15:00.'
           : 'Tushunmadim. 12.10, 12.10 15:00 yoki 15:00 ko‘rinishida yozing.',
       );
@@ -475,7 +482,10 @@ export async function draftMedia(ctx: Context, chatId: bigint): Promise<boolean>
   if (!message) return false;
   const staff = await staffForChat(chatId);
   if (!staff) return false;
-  const draft = activeDraft(chatId);
+  // No draft opened by THIS process takes a backlog part (Q5 a): it was
+  // opened after boot, and the part was sent before it.
+  const late = isBacklog(message.date);
+  const draft = late ? null : activeDraft(chatId);
   if (message.sticker) {
     if (!draft) return false;
     await ctx.reply('Stiker topshiriqqa qo‘shilmaydi — matn, ovoz, rasm yoki fayl yuboring.');
@@ -512,6 +522,11 @@ export async function draftMedia(ctx: Context, chatId: bigint): Promise<boolean>
   // take the staff keyboard off the phone, telegram-mechanics-19).
   const ownContact = message.contact && message.contact.user_id === ctx.from?.id;
   if (part.forwarded || (message.contact && !ownContact)) {
+    // A backlog forward is the sentence, once — never a «📌» offer per part.
+    if (late) {
+      await tellBacklogOnce(ctx, chatId);
+      return true;
+    }
     await offerForwardTask(ctx, chatId, part.mediaGroupId ?? null);
     return true;
   }
@@ -553,7 +568,7 @@ export async function handleForwardCallback(
   step: 'task' | 'search',
   replayTail: (text: string) => Promise<void>,
 ): Promise<void> {
-  await ctx.answerCallbackQuery();
+  await answerPress(ctx);
   const asked = ctx.callbackQuery?.message;
   const original = asked && 'reply_to_message' in asked ? asked.reply_to_message : undefined;
   if (!original) {
@@ -681,7 +696,7 @@ export async function handleTaskPress(ctx: Context, chatId: bigint, press: TaskP
 
   if (press.kind === 'task_accept') {
     const result = await acceptTaskFromBot(chatId, press.taskId);
-    await ctx.answerCallbackQuery({ text: result === 'done' ? '👀 Qabul qilindi' : TASK_ANSWERS[result] });
+    await answerPress(ctx, result === 'done' ? '👀 Qabul qilindi' : TASK_ANSWERS[result]);
     const pressed = pressedOf(ctx);
     if ((result === 'done' || result === 'already_accepted') && pressed) {
       // ONE button goes — its row neighbour «✅ Bajarildi» stays
@@ -701,16 +716,16 @@ export async function handleTaskPress(ctx: Context, chatId: bigint, press: TaskP
   if (press.kind === 'task_wait') {
     const check = await taskPressCheck(chatId, press.taskId, 'act');
     if (!check.ok) {
-      await ctx.answerCallbackQuery({ text: TASK_ANSWERS[check.result] });
+      await answerPress(ctx, TASK_ANSWERS[check.result]);
       await ctx.reply(pressRefusalText(check));
       return;
     }
     if (check.task.repeatUnit) {
-      await ctx.answerCallbackQuery({ text: TASK_ANSWERS.repeat_series });
+      await answerPress(ctx, TASK_ANSWERS.repeat_series);
       await ctx.reply(TASK_ANSWERS.repeat_series);
       return;
     }
-    await ctx.answerCallbackQuery();
+    await answerPress(ctx);
     await ctx.reply(`⏰ Qachonga surilsin?\n${check.task.title}`, {
       reply_markup: { inline_keyboard: postponeKeyboard(press.taskId) },
     });
@@ -720,23 +735,36 @@ export async function handleTaskPress(ctx: Context, chatId: bigint, press: TaskP
   if (press.kind === 'task_postpone') {
     if (press.to === 's') {
       if (draftLive(chatId)) {
-        await ctx.answerCallbackQuery({ text: BUSY_DRAFT });
+        await answerPress(ctx, BUSY_DRAFT);
         return;
       }
       const check = await taskPressCheck(chatId, press.taskId, 'act');
-      await ctx.answerCallbackQuery(check.ok ? undefined : { text: TASK_ANSWERS[check.result] });
+      await answerPress(ctx, check.ok ? undefined : TASK_ANSWERS[check.result]);
       if (!check.ok) {
         await ctx.reply(pressRefusalText(check));
         return;
       }
-      noteTaskPending(chatId, press.taskId, null, 'reschedule');
-      await ctx.reply('📅 Yangi sanani yozing: 12.10, 12.10 15:00 yoki 15:00');
+      // Armed AFTER the prompt, at its own date (Q5 a).
+      const asked = await ctx.reply('📅 Yangi sanani yozing: 12.10, 12.10 15:00 yoki 15:00');
+      noteTaskPending(chatId, press.taskId, null, 'reschedule', {
+        armedAt: asked.date,
+        promptMessageId: asked.message_id,
+      });
       return;
     }
     const due = postponeDue(press.to);
     const parsed = parseDue(due.dueAt, due.tzOffsetMin);
-    const result = await rescheduleTaskFromBot(chatId, press.taskId, { dueAt: parsed.dueAt!, allDay: parsed.allDay });
-    await ctx.answerCallbackQuery({ text: result === 'done' ? `⏰ ${due.label}` : TASK_ANSWERS[result] });
+    // Keyed by the «⏰ Qachonga surilsin?» message pressed (Q5 a): the first
+    // choice moves the task; a redelivery or a later tap on the SAME message
+    // hears «allaqachon bajarilgan» — the live keyboard is used up by its own
+    // first edit, so this is exactly what a live press does.
+    const result = await rescheduleTaskFromBot(
+      chatId,
+      press.taskId,
+      { dueAt: parsed.dueAt!, allDay: parsed.allDay },
+      await pressKey(ctx, 'reschedule'),
+    );
+    await answerPress(ctx, result === 'done' ? `⏰ ${due.label}` : TASK_ANSWERS[result]);
     const pressed = pressedOf(ctx);
     if (result === 'done' && pressed) {
       void editText({
@@ -752,19 +780,23 @@ export async function handleTaskPress(ctx: Context, chatId: bigint, press: TaskP
 
   if (press.kind === 'task_question' || press.kind === 'task_reply') {
     if (draftLive(chatId)) {
-      await ctx.answerCallbackQuery({ text: BUSY_DRAFT });
+      await answerPress(ctx, BUSY_DRAFT);
       await ctx.reply(BUSY_DRAFT);
       return;
     }
     const check = await taskPressCheck(chatId, press.taskId, press.kind === 'task_question' ? 'assignee' : 'author');
     if (!check.ok) {
-      await ctx.answerCallbackQuery({ text: TASK_ANSWERS[check.result] });
+      await answerPress(ctx, TASK_ANSWERS[check.result]);
       await ctx.reply(pressRefusalText(check));
       return;
     }
-    await ctx.answerCallbackQuery();
-    noteTaskPending(chatId, press.taskId, null, press.kind === 'task_question' ? 'question' : 'answer');
-    await ctx.reply(press.kind === 'task_question' ? '💬 Savolingizni yozing:' : '💬 Javobingizni yozing:');
+    await answerPress(ctx);
+    // Armed AFTER the prompt, at its own date (Q5 a).
+    const asked = await ctx.reply(press.kind === 'task_question' ? '💬 Savolingizni yozing:' : '💬 Javobingizni yozing:');
+    noteTaskPending(chatId, press.taskId, null, press.kind === 'task_question' ? 'question' : 'answer', {
+      armedAt: asked.date,
+      promptMessageId: asked.message_id,
+    });
     return;
   }
 
@@ -773,8 +805,10 @@ export async function handleTaskPress(ctx: Context, chatId: bigint, press: TaskP
     // when it is for this task, so the original message is closed and the
     // next typed «GS777» is a lookup again.
     const pending = takeTaskPendingFor(chatId, press.taskId);
+    // The DELETE reaches the table before the task closes (Q5 a).
+    if (pending) await flushWaitWrites();
     const result = await completeTaskFromBot(chatId, press.taskId, '', pending?.pressed ?? null);
-    await ctx.answerCallbackQuery({ text: result === 'done' ? '✅ Vazifa yopildi' : TASK_ANSWERS[result] });
+    await answerPress(ctx, result === 'done' ? '✅ Vazifa yopildi' : TASK_ANSWERS[result]);
     const prompt = ctx.callbackQuery?.message;
     if (prompt) void editMarkup({ chatId, messageId: prompt.message_id }).catch(() => {});
     if (result === 'done' || result === 'already_closed') {
@@ -791,7 +825,7 @@ export async function handleTaskPress(ctx: Context, chatId: bigint, press: TaskP
 
   if (press.kind === 'task_remind') {
     const out = await remindTaskFromBot(chatId, press.taskId);
-    await ctx.answerCallbackQuery({ text: out.result === 'done' ? '🔔 Eslatildi' : TASK_ANSWERS[out.result] });
+    await answerPress(ctx, out.result === 'done' ? '🔔 Eslatildi' : TASK_ANSWERS[out.result]);
     await ctx.reply(reachedText('🔔 Eslatma yuborildi.', out));
     return;
   }
@@ -799,7 +833,7 @@ export async function handleTaskPress(ctx: Context, chatId: bigint, press: TaskP
   if (press.kind === 'task_cancel') {
     const pressed = pressedOf(ctx);
     const result = await cancelTaskFromBot(chatId, press.taskId, pressed);
-    await ctx.answerCallbackQuery({ text: result === 'done' ? '🗑 Bekor qilindi' : TASK_ANSWERS[result] });
+    await answerPress(ctx, result === 'done' ? '🗑 Bekor qilindi' : TASK_ANSWERS[result]);
     if ((result === 'done' || result === 'already_closed') && pressed) {
       void editText({
         chatId,
@@ -814,26 +848,32 @@ export async function handleTaskPress(ctx: Context, chatId: bigint, press: TaskP
     return;
   }
 
-  // task_sources — «📤 Yuborildi» only when something WAS queued, and the
-  // author told when the holder will not hear it (review bot-13).
-  const out = await sourcesFromBot(chatId, press.taskId);
-  await ctx.answerCallbackQuery({ text: out.result === 'done' ? '📤 Yuborildi' : TASK_ANSWERS[out.result] });
-  const pressed = pressedOf(ctx);
-  if (out.result !== 'done') {
-    await ctx.reply(await refusalFor(press.taskId, out.result));
+  if (press.kind === 'task_sources') {
+    // «📤 Yuborildi» only when something WAS queued, and the author told when
+    // the holder will not hear it (review bot-13). Keyed by the author's
+    // TaskReassigned copy pressed (Q5 a): the sources go once.
+    const out = await sourcesFromBot(chatId, press.taskId, await pressKey(ctx, 'sources'));
+    await answerPress(ctx, out.result === 'done' ? '📤 Yuborildi' : TASK_ANSWERS[out.result]);
+    const pressed = pressedOf(ctx);
+    if (out.result !== 'done') {
+      await ctx.reply(await refusalFor(press.taskId, out.result));
+      return;
+    }
+    if (pressed) {
+      void editText({
+        chatId,
+        messageId: pressed.messageId,
+        html: appendLine(staffTextHtml(pressed.text, 'TaskReassigned'), '📤 Manba yangi odamga yuborildi'),
+        // The pressed button goes; the «↗️ Ochish» link stays.
+        replyMarkup: keyboardOf(urlRowsOf(pressed.markup)),
+      }).catch(() => {});
+    }
+    const line = out.reach ? reachLine(out.name ?? 'Hodim', out.reach) : null;
+    if (line) await ctx.reply(line);
     return;
   }
-  if (pressed) {
-    void editText({
-      chatId,
-      messageId: pressed.messageId,
-      html: appendLine(staffTextHtml(pressed.text, 'TaskReassigned'), '📤 Manba yangi odamga yuborildi'),
-      // The pressed button goes; the «↗️ Ochish» link stays.
-      replyMarkup: keyboardOf(urlRowsOf(pressed.markup)),
-    }).catch(() => {});
-  }
-  const line = out.reach ? reachLine(out.name ?? 'Hodim', out.reach) : null;
-  if (line) await ctx.reply(line);
+  const never: never = press;
+  logger.warn({ press: never }, '[topshiriq] unknown task press');
 }
 
 /**
@@ -858,10 +898,22 @@ export async function answerPendingText(
   // so a fifth kind would have been silently rescheduled.
   switch (pending.kind) {
     case 'question':
-      await ctx.reply(reachedText('✅ Savol yuborildi.', await askFromBot(chatId, pending.taskId, text)));
+      // Keyed by THIS message, the same effect name the reply door uses: one
+      // message is one question, whichever door took it (Q5 a).
+      await ctx.reply(
+        reachedText(
+          '✅ Savol yuborildi.',
+          await askFromBot(chatId, pending.taskId, text, await messageKey(ctx, 'ask'), writtenAtOf(ctx)),
+        ),
+      );
       return true;
     case 'answer':
-      await ctx.reply(reachedText('✅ Javob yuborildi.', await answerFromBot(chatId, pending.taskId, text)));
+      await ctx.reply(
+        reachedText(
+          '✅ Javob yuborildi.',
+          await answerFromBot(chatId, pending.taskId, text, await messageKey(ctx, 'answer'), writtenAtOf(ctx)),
+        ),
+      );
       return true;
     case 'reply': {
       // «💬 Javob yozish» was pressed: this text lands in the pressed ping's
@@ -872,6 +924,7 @@ export async function answerPendingText(
         replyToForwarded: false,
         text,
         incomingMessageId: ctx.message?.message_id ?? 0,
+        messageDate: ctx.message?.date ?? nowSec(),
         fromWait: true,
       });
       await ctx.reply(out?.text ?? REPLY_SENTENCES.waitNoTarget);
@@ -891,10 +944,20 @@ export async function answerPendingText(
   }
 }
 
-/** A date typed after «⏰ → 📅 Sana yozish». */
+/** When the person WROTE this message — null for a ctx that carries none (a test fake). */
+function writtenAtOf(ctx: Context): Date | null {
+  return ctx.message ? new Date(ctx.message.date * 1000) : null;
+}
+
+/**
+ * A date typed after «⏰ → 📅 Sana yozish» — read on the day it was WRITTEN
+ * (Q5 a, §3.8): «15:00» typed at 14:58 into a durable wait and handled at
+ * 15:02 is TODAY 15:00, as written, never «ertaga 15:00».
+ */
 async function answerReschedule(ctx: Context, chatId: bigint, pending: PendingTask, text: string): Promise<boolean> {
-  const due = parseTypedDue(text);
-  if (!due && typedDuePast(text)) {
+  const writtenAt = ctx.message ? new Date(ctx.message.date * 1000) : new Date();
+  const due = parseTypedDue(text, writtenAt);
+  if (!due && typedDuePast(text, writtenAt)) {
     // A date, only one already gone (review bot-10): consumed, and said.
     await ctx.reply('Bu vaqt o‘tib ketgan — muddat o‘zgarmadi. Kerak bo‘lsa, «⏰» ni qayta bosing.');
     return true;
@@ -908,7 +971,12 @@ async function answerReschedule(ctx: Context, chatId: bigint, pending: PendingTa
     await ctx.reply(TASK_ANSWERS.bad_due_date);
     return true;
   }
-  const result = await rescheduleTaskFromBot(chatId, pending.taskId, { dueAt: parsed.dueAt, allDay: parsed.allDay });
+  const result = await rescheduleTaskFromBot(
+    chatId,
+    pending.taskId,
+    { dueAt: parsed.dueAt, allDay: parsed.allDay },
+    await messageKey(ctx, 'reschedule'),
+  );
   await ctx.reply(result === 'done' ? `⏰ Muddat: ${due.label}` : await refusalFor(pending.taskId, result));
   return true;
 }

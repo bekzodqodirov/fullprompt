@@ -21,7 +21,13 @@ import { askStaffPhone, entryKeyboard, registerStaffBot } from './staff-handlers
 import { replyKeyboardFor } from './keyboards';
 import { ensureBotProfile, offerStaffCommands } from './commands';
 import { botCall, noteBotAnswer } from './send';
-import { registerPriceChannel } from './price-channel-handlers';
+import { membershipSettled, registerPriceChannel } from './price-channel-handlers';
+import { installBotShutdown, isStopping, markBoot, stopTelegramBot, stoppingGuard, updateSummary } from './lifecycle';
+import { pressMiddleware } from './press';
+import { coalesceBacklogLabels } from './backlog';
+import { briefRetry } from './retry';
+import { flushWaitWrites, hydrateWaits, setDurableWaits } from './waits';
+import { messageKey } from './once';
 
 /**
  * Staff-linking bot (spec 4.5): handles `/start <one-time-code>` from the
@@ -30,7 +36,7 @@ import { registerPriceChannel } from './price-channel-handlers';
  * the linking flow.
  */
 
-const globalForBot = globalThis as unknown as { telegramBot?: Bot; botUsername?: string };
+const globalForBot = globalThis as unknown as { telegramBot?: Bot; botUsername?: string; shutdownInstalled?: boolean };
 
 export async function getBotUsername(): Promise<string | null> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -105,6 +111,88 @@ export function startTelegramBot(): void {
 
   const bot = new Bot(token);
   globalForBot.telegramBot = bot;
+  // The backlog line (Q5 a): everything dated before this moment was typed
+  // while no process was polling.
+  markBoot();
+  // A brief 429 waited out on every handler's sends — grammy copies this onto
+  // every update's own Api.
+  bot.api.config.use(briefRetry);
+  registerBotHandlers(bot);
+
+  // What a person reads before pressing Start, in their language (round C).
+  // Off the poller and never fatal: a profile that fails to set is a log line.
+  void ensureBotProfile().catch((err: unknown) => logger.warn({ err }, 'bot profile failed'));
+
+  // A deploy STOPS the bot first (Q5 a, owner's 5 a: five seconds at most),
+  // confirming exactly what finished, then hands the signal to Next.
+  if (!globalForBot.shutdownInstalled) {
+    globalForBot.shutdownInstalled = true;
+    installBotShutdown(process, () => stopTelegramBot({ bot, flush: flushWaitWrites, drain: membershipSettled }));
+  }
+
+  const startPolling = (retryMs: number) => {
+    // After the signal nothing restarts the poll — neither the 409 retry nor
+    // its timer (judge Q5-TG-7).
+    if (isStopping()) return;
+    // `onStart` runs once grammy's getMe has answered — the token WORKS, which
+    // clears a «bot ishlamayapti» left by a revoked one even when nothing is
+    // queued to prove it (B9); `noteRefusedToken` records the opposite.
+    // chat_member is off by default; the price channel's membership (his F8 a)
+    // needs it. Adding it changes nothing else — no other handler listens for it.
+    //
+    // `drop_pending_updates: false` (Q5 a, the owner 2026-10-07: «O'rnatish
+    // paytida botga Telegramda yozilgan javoblar — bot qayta yoqilganda qayta
+    // ishlansin»): what Telegram held while no process polled is handled now,
+    // in order. `limit: 20` caps what a CRASH mid-backlog redelivers (a deploy
+    // stops gracefully and redelivers nothing handled).
+    void bot
+      .start({
+        drop_pending_updates: false,
+        limit: 20,
+        allowed_updates: [...API_CONSTANTS.DEFAULT_UPDATE_TYPES, 'chat_member'],
+        onStart: () => noteBotAnswer(200, '', true),
+      })
+      .catch((err: unknown) => {
+        // A 409 answered to the stop's own confirm is not «another instance».
+        if (isStopping()) return;
+        noteRefusedToken(err);
+        const is409 =
+          typeof err === 'object' && err !== null && 'error_code' in err && err.error_code === 409;
+        if (is409) {
+          // Another instance holds the getUpdates lock (e.g. a dev machine and
+          // a server sharing one token). Keep retrying — when the other side
+          // stops, this instance takes over. Never crashes anything.
+          logger.warn(
+            `telegram: another bot instance is polling this token; retrying in ${retryMs / 1000}s`,
+          );
+        } else {
+          logger.error({ err }, 'telegram bot polling failed; retrying');
+        }
+        setTimeout(() => {
+          if (isStopping()) return;
+          startPolling(Math.min(retryMs * 2, 300_000));
+        }, retryMs);
+      });
+  };
+  // The durable waits are back in memory BEFORE the first getUpdates: the
+  // backlog's first text may be the answer to one of them.
+  setDurableWaits(true);
+  void hydrateWaits()
+    .catch((err: unknown) => logger.warn({ err }, 'telegram waits not restored'))
+    .finally(() => startPolling(30_000));
+  logger.info('telegram bot polling started');
+}
+
+/**
+ * Every handler, in order — exported so the test harness registers the SAME
+ * chain the server runs (Q5 a). The lifecycle guard is the first registration
+ * of any kind (fenced): it holds what arrives after a stop signal and tracks
+ * the update in flight.
+ */
+export function registerBotHandlers(bot: Bot): void {
+  bot.use(stoppingGuard());
+  bot.use(pressMiddleware());
+  bot.use(coalesceBacklogLabels());
 
   // Channel updates first: a command in a channel post would otherwise reach
   // /start and /hodim, whose replies land IN the price channel (his F).
@@ -124,8 +212,10 @@ export function startTelegramBot(): void {
     // remembered, not acted on.
     const adSource = adSourceFromPayload(code);
     if (adSource) {
-      rememberAdVisit(ctx.chat.id, adSource);
-      await ctx.reply(clientLabels(tg).askPhone, { reply_markup: phoneKeyboard(tg) });
+      // Armed AFTER the prompt is out, at its own date (Q5 a): a wait exists
+      // only once its question is on the person's screen.
+      const asked = await ctx.reply(clientLabels(tg).askPhone, { reply_markup: phoneKeyboard(tg) });
+      rememberAdVisit(ctx.chat.id, adSource, asked.date);
       return;
     }
 
@@ -204,7 +294,9 @@ export function startTelegramBot(): void {
       // Not a staff code — maybe a client cabinet code (Phase 2.2). Identity
       // is verified by phone BEFORE anything is linked or shown (owner's
       // incident: a link sent to the wrong person exposed another client).
-      const step = await beginClientLink(code, ctx.chat.id);
+      // Keyed by this /start message (Q5 a): a redelivered or repeated one
+      // warns the minter once.
+      const step = await beginClientLink(code, ctx.chat.id, { once: await messageKey(ctx, 'link_alert') });
       if (step === 'ask_phone') {
         await ctx.reply(clientLabels(tg).askPhone, { reply_markup: phoneKeyboard(tg) });
         return;
@@ -241,9 +333,19 @@ export function startTelegramBot(): void {
     // only when the holder is a DIFFERENT user — re-opening your own link
     // from your own chat stays a re-link, not a refusal.
     const result = await linkStaffChat(link.userId, BigInt(ctx.chat.id), 'link_code');
-    if (result.outcome === 'chat_taken') {
-      await ctx.reply('Bu Telegram boshqa xodimga ulangan. Adminga ayting.');
-      return;
+    // A switch, never an `if (=== 'chat_taken')`: a third outcome would fall
+    // into the success branch below.
+    switch (result.outcome) {
+      case 'chat_taken':
+        await ctx.reply('Bu Telegram boshqa xodimga ulangan. Adminga ayting.');
+        return;
+      case 'not_colleague':
+        // B8: nothing written — the code stays, and works again if the admin
+        // re-activates the person.
+        await ctx.reply('Bu hodim akkaunti faol emas — Telegram ulanmadi. Adminga ayting.');
+        return;
+      case 'linked':
+        break;
     }
     await tellOldChat(ctx, result.previousChatId);
     const user = await db.query.users.findFirst({ where: eq(users.id, link.userId) });
@@ -303,41 +405,8 @@ export function startTelegramBot(): void {
   registerStaffBot(bot);
   registerClientCabinet(bot);
 
-  bot.catch((err) => logger.error({ err: err.error }, 'telegram bot error'));
-
-  // What a person reads before pressing Start, in their language (round C).
-  // Off the poller and never fatal: a profile that fails to set is a log line.
-  void ensureBotProfile().catch((err: unknown) => logger.warn({ err }, 'bot profile failed'));
-
-  const startPolling = (retryMs: number) => {
-    // `onStart` runs once grammy's getMe has answered — the token WORKS, which
-    // clears a «bot ishlamayapti» left by a revoked one even when nothing is
-    // queued to prove it (B9); `noteRefusedToken` records the opposite.
-    // chat_member is off by default; the price channel's membership (his F8 a)
-    // needs it. Adding it changes nothing else — no other handler listens for it.
-    void bot
-      .start({
-        drop_pending_updates: true,
-        allowed_updates: [...API_CONSTANTS.DEFAULT_UPDATE_TYPES, 'chat_member'],
-        onStart: () => noteBotAnswer(200, '', true),
-      })
-      .catch((err: unknown) => {
-        noteRefusedToken(err);
-        const is409 =
-          typeof err === 'object' && err !== null && 'error_code' in err && err.error_code === 409;
-        if (is409) {
-          // Another instance holds the getUpdates lock (e.g. a dev machine and
-          // a server sharing one token). Keep retrying — when the other side
-          // stops, this instance takes over. Never crashes anything.
-          logger.warn(
-            `telegram: another bot instance is polling this token; retrying in ${retryMs / 1000}s`,
-          );
-        } else {
-          logger.error({ err }, 'telegram bot polling failed; retrying');
-        }
-        setTimeout(() => startPolling(Math.min(retryMs * 2, 300_000)), retryMs);
-      });
-  };
-  startPolling(30_000);
-  logger.info('telegram bot polling started');
+  // WHICH update threw, now: the backlog makes «telegram bot error» with no
+  // update id, kind or chat an unanswerable line.
+  bot.catch((err) => logger.error({ err: err.error, update: updateSummary(err.ctx.update) }, 'telegram bot error'));
 }
+

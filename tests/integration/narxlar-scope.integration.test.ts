@@ -99,7 +99,16 @@ beforeAll(async () => {
   vedId = await user(`Narx VED ${SUFFIX}`, '01');
   sellerA = await user(`Narx Sotuvchi A ${SUFFIX}`, '02');
   sellerB = await user(`Narx Sotuvchi B ${SUFFIX}`, '03');
-  const [client] = await db.insert(clients).values({ clientCode: `NS${SUFFIX}`, name: `Narx scope ${SUFFIX}` }).returning();
+  // The client is seller A's (Q8 a): «own» means the offers HE made, never
+  // the offers made to clients he manages — so seller B's offers to A's own
+  // client stay hidden from A. With no manager on the client, a hybrid
+  // `offered_by = me OR clients.sales_manager_id = me` would pass every
+  // assertion below; with A as the manager such a hybrid leaks B's prices to
+  // him and the role sweep below goes red.
+  const [client] = await db
+    .insert(clients)
+    .values({ clientCode: `NS${SUFFIX}`, name: `Narx scope ${SUFFIX}`, salesManagerId: sellerA })
+    .returning();
   clientId = client!.id;
   const stage = await db.query.dealStages.findFirst({ where: eq(dealStages.kind, 'open') });
   const [deal] = await db

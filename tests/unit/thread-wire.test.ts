@@ -70,7 +70,7 @@ describe('the Telegram ladder', () => {
     const draft = body.indexOf('const draft = activeDraft(chatId)');
     const reply = body.indexOf('threadReplyFromBot(chatId, {');
     const doorB = body.indexOf('ctx.message.forward_origin');
-    const wait = body.indexOf('takeTaskPending(chatId)');
+    const wait = body.indexOf('takeTaskPending(chatId, ctx.message.date)');
     expect(draft).toBeGreaterThan(0);
     expect(reply, 'reply block after the draft').toBeGreaterThan(draft);
     expect(doorB, 'Door B after the reply block').toBeGreaterThan(reply);
@@ -143,14 +143,23 @@ describe('the doors', () => {
     expect(dock).toContain('myThreads(actor)');
     const myThreads = between(src('src/modules/wms/crm/thread.ts'), 'export async function myThreads', '\n}\n');
     expect(myThreads).toContain('threadDoorsFor(viewer, refs)');
-    for (const route of ['read', 'pulse']) {
-      expect(src(`src/app/api/threads/${route}/route.ts`), route).toContain('isServerBehind(err)');
-    }
+    // Round 2 (0129): a read mark on a cargo thread breaks the widened CHECK
+    // on a database one migration behind, so the READ route names the wider
+    // rule; the pulse and the dock only read and keep the 42P01/42703 one.
+    expect(src('src/app/api/threads/read/route.ts'), 'read').toContain('isThreadWriteBehind(err)');
+    expect(src('src/app/api/threads/pulse/route.ts'), 'pulse').toContain('isServerBehind(err)');
     expect(dock).toContain('isServerBehind(err)');
+    // The cargo action and both cargo pages ask the thread's door themselves.
+    expect(src('src/modules/wms/crm/cargo-thread-actions.ts')).toContain('mayWriteThread(who, ref)');
+    for (const page of ['src/app/(protected)/receipts/[id]/page.tsx', 'src/app/(protected)/batches/[id]/page.tsx']) {
+      expect(src(page), page).toContain('mayReadThread(actor, cargoRef)');
+    }
   });
 
   it('6. the Telegram landing’s door has exactly two exemptions — the mention and the standing', () => {
-    const door = between(src('src/modules/wms/crm/thread-reply.ts'), 'const admitted =', 'if (!admitted)');
+    // From the door's own ask (kept for the confirmation's label, round 2) to the refusal.
+    const door = between(src('src/modules/wms/crm/thread-reply.ts'), 'const door =', 'if (!admitted)');
+    expect(door).toContain('const admitted = door ||');
     expect(door).toContain('await mayWriteThread(actor, input.ref)');
     expect(door).toContain("input.ping === 'MentionedInNote'");
     expect(door).toContain('await threadStanding(actor.id, input.ref)');
@@ -285,6 +294,9 @@ describe('the read mark follows what is on screen', () => {
       'src/app/(protected)/bitimlar/[id]/page.tsx',
       'src/app/(protected)/admin/clients/[id]/page.tsx',
       'src/app/(protected)/hisoblash/[id]/karta/page.tsx',
+      // Round 2 (0129): the prixod's and the truck's «❓ Savol-javob».
+      'src/app/(protected)/receipts/[id]/page.tsx',
+      'src/app/(protected)/batches/[id]/page.tsx',
     ];
     for (const page of pages) {
       const text = src(page);
@@ -307,6 +319,51 @@ describe('the read mark follows what is on screen', () => {
     const dock = src('src/components/dock.tsx');
     expect(dock).toContain('const tabCount = 1 + Number(canChat) + Number(canThreads);');
     expect(between(dock, 'const tabWord = (active: boolean) =>', ';')).toMatch(/tabCount < 3\s*\? 'ml-1'/);
+  });
+});
+
+describe('the VED’s floor warning (Q1 a: the line under the field is the whole guard)', () => {
+  /** Every `<CalcThread …>` element in src — each is a box the VED can type the calc thread into. */
+  function calcThreadMounts(): Array<{ rel: string; element: string }> {
+    const found: Array<{ rel: string; element: string }> = [];
+    const walk = (dir: string) => {
+      for (const name of readdirSync(join(ROOT, dir))) {
+        const rel = `${dir}/${name}`;
+        if (statSync(join(ROOT, rel)).isDirectory()) {
+          walk(rel);
+          continue;
+        }
+        if (!name.endsWith('.tsx')) continue;
+        const text = src(rel);
+        for (const m of text.matchAll(/<CalcThread\b(?!Box)[\s\S]*?\/>/g)) found.push({ rel, element: m[0] });
+      }
+    };
+    walk('src');
+    return found;
+  }
+
+  it('18. the box prints its hint under the input and the send button, and the thread hands it through', () => {
+    const box = src('src/components/calc-thread-box.tsx');
+    const send = box.indexOf('data-testid="calc-thread-send"');
+    expect(send).toBeGreaterThan(0);
+    expect(box.indexOf('{hint ? <p', send), 'the hint is drawn after the send button').toBeGreaterThan(send);
+    expect(src('src/components/calc-thread.tsx')).toMatch(/<CalcThreadBox\b[^>]*\bhint=\{hint\}/);
+  });
+
+  it('19. EVERY web mount of the calc thread carries calcHint for the VED — the calc page and the card fold', () => {
+    const mounts = calcThreadMounts();
+    expect(mounts.map((m) => m.rel).sort()).toEqual([
+      'src/app/(protected)/hisoblash/[id]/page.tsx',
+      'src/components/calc-panel.tsx',
+    ]);
+    for (const { rel, element } of mounts) expect(element, rel).toMatch(/\bhint=\{[^}]*tth\('calcHint'\)/);
+    // The card fold is read by the seller too: the warning is the VED's, so
+    // it is gated on his permission and nobody else's.
+    const panel = mounts.find((m) => m.rel === 'src/components/calc-panel.tsx')!.element;
+    expect(panel).toContain("hint={vedDoor ? tth('calcHint') : null}");
+    expect(src('src/components/calc-panel.tsx')).toContain("const vedDoor = actor.permissions.has('ved.docs');");
+    // The VED reaches that fold on his karta: the panel is mounted there.
+    expect(src('src/app/(protected)/hisoblash/[id]/karta/page.tsx')).toContain('<CalcPanel');
   });
 });
 
@@ -342,6 +399,12 @@ describe('the words (#163 — anchored on the code, never bundle-vs-bundle)', ()
       'src/components/calc-thread-box.tsx',
       'src/app/(protected)/hisoblash/[id]/page.tsx',
       'src/app/(protected)/profile/page.tsx',
+      // Round 2 (0129): one bubble list for every thread, and the cargo thread's panel, box and pages.
+      'src/components/thread-bubbles.tsx',
+      'src/components/cargo-thread.tsx',
+      'src/components/cargo-thread-box.tsx',
+      'src/app/(protected)/receipts/[id]/page.tsx',
+      'src/app/(protected)/batches/[id]/page.tsx',
     ];
     const keys = new Set<string>();
     for (const rel of files) {

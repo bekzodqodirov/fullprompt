@@ -39,7 +39,7 @@ describe('the AI answer never holds the Telegram poller', () => {
     // property this test exists for, stated more strongly than before.
     const fn = source.slice(source.indexOf('async function answerWithAssistant'));
     const body = fn.slice(0, fn.indexOf('\n}\n'));
-    expect(body).toMatch(/sendText\(\{\s*chatId/);
+    expect(body).toMatch(/sendTextBriefRetry\(\{\s*chatId/);
     expect(body, 'the helper must not need the middleware context').not.toMatch(/\bctx\b/);
   });
 

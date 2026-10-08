@@ -3,21 +3,25 @@ import { v7 as uuidv7 } from 'uuid';
 import { db } from '../../platform/db/client';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { logger } from '../../platform/logger';
-import { isServerBehind } from '../../platform/db/errors';
+import { isServerBehind, violatedCheck } from '../../platform/db/errors';
 import {
   THREAD_INSTANT,
+  THREAD_KINDS,
   THREAD_PING_TYPES,
   THREAD_TEXT_MAX,
   THREAD_UUID,
   THREAD_WINDOW_DAYS,
+  idsByKind,
   threadKey,
+  type CardKind,
   type ThreadKind,
   type ThreadRef,
 } from '../../platform/notifications/thread-ref';
 import { kartaHref, newestRequestOn } from '../calc/card-door';
 import { canWriteDeal } from '../deals/door';
+import { codeIdentity } from '../labels/code-identity';
 import { mayOpenLead } from './lead-door';
-import { threadDoorsFor } from './thread-door';
+import { threadDoorsFor, type ThreadReader } from './thread-door';
 import { involvedInDeal, involvementOf, plainSeller } from './thread-involvement';
 
 /**
@@ -80,7 +84,58 @@ export interface ThreadMessage {
   viaTelegram: boolean;
 }
 
-type CardKind = 'lead' | 'deal' | 'client';
+/**
+ * The two CHECKs 0129 widened with 'receipt','batch'. On a half-applied
+ * deploy (the app new, the migration not yet run) a cargo-thread send breaks
+ * the first and its read mark the second, and that is «the server is
+ * behind» — never a white page, never an error line. Matched by NAME (the
+ * 0125 precedent, calc/basis.ts): a 23514 from `crm_activities_tg_pair_check`
+ * on the same table is a real fault and must stay one.
+ */
+export const WIDENED_THREAD_CHECKS = ['crm_activities_entity_check', 'thread_reads_kind_check'] as const;
+
+export function isThreadWriteBehind(err: unknown): boolean {
+  if (isServerBehind(err)) return true;
+  const name = violatedCheck(err);
+  return name !== null && (WIDENED_THREAD_CHECKS as readonly string[]).includes(name);
+}
+
+/**
+ * Each card kind's table — a `Record` over the union, so a new kind is a
+ * compile error here rather than a fall-through onto `clients` (round 1's
+ * `if/else` filed a prixod's existence under the client book).
+ */
+const CARD_TABLES: Record<CardKind, SqlFragment> = {
+  lead: sql`leads`,
+  deal: sql`deals`,
+  client: sql`clients`,
+  receipt: sql`receipts`,
+  batch: sql`batches`,
+};
+
+/**
+ * WHICH notes are this thread — the one sentence the read marks, the pulse
+ * token and the message list ask (exported for the wire fence): a calc
+ * thread is its tag, a card thread the card's untagged notes.
+ */
+export function threadNotesWhere(ref: ThreadRef, alias = 'a'): SqlFragment {
+  const a = sql.raw(alias);
+  switch (ref.kind) {
+    case 'calc':
+      return sql`${a}.calc_request_id = ${ref.id}::uuid`;
+    case 'lead':
+    case 'deal':
+    case 'client':
+    case 'receipt':
+    case 'batch':
+      return sql`${a}.entity_type = ${ref.kind} AND ${a}.entity_id = ${ref.id}::uuid AND ${a}.calc_request_id IS NULL`;
+    default: {
+      const never: never = ref.kind;
+      void never;
+      return sql`false`;
+    }
+  }
+}
 
 /**
  * A timestamp as the read mark's instant (thread-ref.ts `THREAD_INSTANT`):
@@ -102,20 +157,32 @@ async function targetOf(
   ref: ThreadRef,
 ): Promise<{ entityType: CardKind; entityId: string; calcRequestId: string | null } | null> {
   if (!THREAD_UUID.test(ref.id)) return null;
-  if (ref.kind === 'calc') {
-    const rows = await executor.execute<{ entity_type: string; entity_id: string }>(sql`
-      SELECT entity_type, entity_id::text AS entity_id FROM calc_requests WHERE id = ${ref.id}::uuid
-    `);
-    const row = rows[0];
-    if (!row || (row.entity_type !== 'lead' && row.entity_type !== 'deal')) return null;
-    return { entityType: row.entity_type, entityId: row.entity_id, calcRequestId: ref.id.toLowerCase() };
+  switch (ref.kind) {
+    case 'calc': {
+      const rows = await executor.execute<{ entity_type: string; entity_id: string }>(sql`
+        SELECT entity_type, entity_id::text AS entity_id FROM calc_requests WHERE id = ${ref.id}::uuid
+      `);
+      const row = rows[0];
+      if (!row || (row.entity_type !== 'lead' && row.entity_type !== 'deal')) return null;
+      return { entityType: row.entity_type, entityId: row.entity_id, calcRequestId: ref.id.toLowerCase() };
+    }
+    case 'lead':
+    case 'deal':
+    case 'client':
+    case 'receipt':
+    case 'batch': {
+      const rows = await executor.execute<{ ok: boolean }>(sql`
+        SELECT EXISTS (SELECT 1 FROM ${CARD_TABLES[ref.kind]} t WHERE t.id = ${ref.id}::uuid) AS ok
+      `);
+      if (!rows[0]?.ok) return null;
+      return { entityType: ref.kind, entityId: ref.id.toLowerCase(), calcRequestId: null };
+    }
+    default: {
+      const never: never = ref.kind;
+      void never;
+      return null;
+    }
   }
-  const table = ref.kind === 'lead' ? sql`leads` : ref.kind === 'deal' ? sql`deals` : sql`clients`;
-  const rows = await executor.execute<{ ok: boolean }>(sql`
-    SELECT EXISTS (SELECT 1 FROM ${table} t WHERE t.id = ${ref.id}::uuid) AS ok
-  `);
-  if (!rows[0]?.ok) return null;
-  return { entityType: ref.kind, entityId: ref.id.toLowerCase(), calcRequestId: null };
 }
 
 /**
@@ -130,7 +197,13 @@ async function targetOf(
  * No pooled read inside the transaction (#714): every read goes through `tx`.
  */
 export async function addThreadMessage(
-  input: { ref: ThreadRef; body: string; tg?: { chatId: bigint; messageId: number } },
+  input: {
+    ref: ThreadRef;
+    body: string;
+    tg?: { chatId: bigint; messageId: number };
+    /** A Telegram reply's own moment (ISO, Q5 a) — never later than now. */
+    writtenAt?: string | null;
+  },
   ctx: AuditContext,
 ): Promise<{
   activityId: string;
@@ -154,7 +227,8 @@ export async function addThreadMessage(
       INSERT INTO crm_activities
         (id, entity_type, entity_id, kind, note, happened_at, created_by, calc_request_id, tg_chat_id, tg_message_id)
       VALUES
-        (${uuidv7()}::uuid, ${target.entityType}, ${target.entityId}::uuid, 'note', ${body}, now(), ${ctx.actorId}::uuid,
+        (${uuidv7()}::uuid, ${target.entityType}, ${target.entityId}::uuid, 'note', ${body},
+         LEAST(COALESCE(${input.writtenAt ?? null}::timestamptz, now()), now()), ${ctx.actorId}::uuid,
          ${target.calcRequestId}::uuid, ${tgChat}::bigint, ${tgMessage}::bigint)
       ON CONFLICT (tg_chat_id, tg_message_id) WHERE tg_message_id IS NOT NULL DO NOTHING
       RETURNING id::text AS id, ${instantSql(sql`created_at`)} AS created_at
@@ -228,12 +302,9 @@ export async function threadReadMarks<R extends ThreadRef>(refs: readonly R[]): 
   try {
     for (const ref of refs) {
       if (!THREAD_UUID.test(ref.id)) continue;
-      const where =
-        ref.kind === 'calc'
-          ? sql`a.calc_request_id = ${ref.id}::uuid`
-          : sql`a.entity_type = ${ref.kind} AND a.entity_id = ${ref.id}::uuid AND a.calc_request_id IS NULL`;
       const rows = await db.execute<{ at: string | null }>(sql`
-        SELECT ${instantSql(sql`max(a.created_at)`)} AS at FROM crm_activities a WHERE ${where} AND a.kind = 'note'
+        SELECT ${instantSql(sql`max(a.created_at)`)} AS at FROM crm_activities a
+         WHERE ${threadNotesWhere(ref)} AND a.kind = 'note'
       `);
       out.push({ ...ref, asOf: rows[0]?.at ?? null });
     }
@@ -252,7 +323,16 @@ export function asOfOfToken(token: string): string | null {
 
 /** One calculation's Q&A, in reading order — E5 a: ONLY that calculation's notes. */
 export async function calcThreadMessages(requestId: string, limit = 100): Promise<ThreadMessage[]> {
-  if (!THREAD_UUID.test(requestId)) return [];
+  return threadMessages({ kind: 'calc', id: requestId }, limit);
+}
+
+/**
+ * One thread's messages, in reading order — the newest `limit`, over
+ * `threadNotesWhere` (a calculation's tag, or a card's untagged notes: the
+ * prixod's and the truck's «❓ Savol-javob»).
+ */
+export async function threadMessages(ref: ThreadRef, limit = 100): Promise<ThreadMessage[]> {
+  if (!THREAD_UUID.test(ref.id)) return [];
   const rows = await db.execute<{
     id: string;
     note: string;
@@ -266,7 +346,7 @@ export async function calcThreadMessages(requestId: string, limit = 100): Promis
              u.full_name AS author, (a.tg_message_id IS NOT NULL) AS via_telegram, a.created_at
         FROM crm_activities a
         LEFT JOIN users u ON u.id = a.created_by
-       WHERE a.calc_request_id = ${requestId}::uuid AND a.kind = 'note'
+       WHERE ${threadNotesWhere(ref)} AND a.kind = 'note'
        ORDER BY a.happened_at DESC, a.created_at DESC
        LIMIT ${limit}
     ) newest
@@ -296,7 +376,17 @@ export async function calcThreadAuthors(requestId: string): Promise<string[]> {
   return rows.map((row) => row.id);
 }
 
-/** «Unread» for one reader, DERIVED: the newest note is somebody else's and later than my mark. */
+/**
+ * «Unread» for one reader, DERIVED: the newest note is somebody else's and
+ * later than my mark.
+ *
+ * «Newest» by when the note LANDED (`created_at`), on every reader that asks
+ * this (Q5-3) — the same clock the read mark and the pulse's token are on. A
+ * late Telegram reply is filed at the moment it was WRITTEN (`happened_at`,
+ * so it reads in its place), and picked by that moment it sat under a note
+ * written after it and never raised the ●. Only the reading list keeps the
+ * written order.
+ */
 function unreadSql(viewerId: string, kind: ThreadKind, threadId: SqlFragment, lastBy: SqlFragment, lastAt: SqlFragment) {
   return sql`(${lastAt} IS NOT NULL
     AND ${lastBy} IS DISTINCT FROM ${viewerId}::uuid
@@ -346,7 +436,7 @@ export async function calcThreadsOnCard(
       LEFT JOIN LATERAL (
         SELECT a.created_by, a.created_at FROM crm_activities a
          WHERE a.calc_request_id = r.id AND a.kind = 'note'
-         ORDER BY a.happened_at DESC, a.created_at DESC
+         ORDER BY a.created_at DESC
          LIMIT 1
       ) last ON true
      WHERE r.entity_type = ${entity.entityType} AND r.entity_id = ${entity.entityId}::uuid
@@ -378,7 +468,7 @@ export async function calcThreadSummary(
       LEFT JOIN LATERAL (
         SELECT a.created_by, a.created_at FROM crm_activities a
          WHERE a.calc_request_id = ${requestId}::uuid AND a.kind = 'note'
-         ORDER BY a.happened_at DESC, a.created_at DESC
+         ORDER BY a.created_at DESC
          LIMIT 1
       ) last ON true
   `);
@@ -410,24 +500,14 @@ export async function openCalcThreadOn(entity: { entityType: 'lead' | 'deal'; en
 /** The pulse's token: the thread's note count and its newest moment. */
 export async function threadToken(ref: ThreadRef): Promise<string> {
   if (!THREAD_UUID.test(ref.id)) return '0:';
-  const where =
-    ref.kind === 'calc'
-      ? sql`a.calc_request_id = ${ref.id}::uuid`
-      : sql`a.entity_type = ${ref.kind} AND a.entity_id = ${ref.id}::uuid AND a.calc_request_id IS NULL`;
   const rows = await db.execute<{ n: number | string; at: string | null }>(sql`
     SELECT count(*)::int AS n, ${instantSql(sql`max(a.created_at)`)} AS at
-      FROM crm_activities a WHERE ${where} AND a.kind = 'note'
+      FROM crm_activities a WHERE ${threadNotesWhere(ref)} AND a.kind = 'note'
   `);
   const row = rows[0];
   // The newest moment to the microsecond: the calc page's read mark is taken
   // out of this token (`asOfOfToken`), and a millisecond one sits before its note.
   return `${Number(row?.n ?? 0)}:${row?.at ?? ''}`;
-}
-
-/** What a viewer the href rule needs: who, and the grants. */
-interface Viewer {
-  id: string;
-  permissions: { has(code: string): boolean };
 }
 
 /**
@@ -443,13 +523,19 @@ interface Viewer {
  *   calc   → `/hisoblash/<id>#savol` for `ved.docs`, else the request's
  *            CURRENT card's fold `#calc-thread-<id>` when that card admits the
  *            viewer, else nothing.
+ *   receipt → `/receipts/<id>#ichki`, batch → `/batches/<id>#ichki` (the truck
+ *            card's «Ichidagilar» tab, where the thread sits): unconditional
+ *            like the client arm — every caller asks the thread door beside
+ *            it, and the cargo door implies the card's.
  */
-export async function threadHrefsFor(viewer: Viewer, refs: readonly ThreadRef[]): Promise<Map<string, string | null>> {
+export async function threadHrefsFor(
+  viewer: ThreadReader,
+  refs: readonly ThreadRef[],
+): Promise<Map<string, string | null>> {
   const out = new Map<string, string | null>();
   const valid = refs.filter((ref) => THREAD_UUID.test(ref.id));
   const reader = { id: viewer.id, permissions: viewer.permissions as ReadonlySet<string> };
-  const leadIds = [...new Set(valid.filter((r) => r.kind === 'lead').map((r) => r.id.toLowerCase()))];
-  const calcIds = [...new Set(valid.filter((r) => r.kind === 'calc').map((r) => r.id.toLowerCase()))];
+  const { lead: leadIds, calc: calcIds } = idsByKind(valid);
   const ids = (list: string[]) => sql.join(list.map((id) => sql`${id}::uuid`), sql`, `);
   const [leadRows, calcRows] = await Promise.all([
     leadIds.length
@@ -471,24 +557,40 @@ export async function threadHrefsFor(viewer: Viewer, refs: readonly ThreadRef[])
   for (const ref of valid) {
     const id = ref.id.toLowerCase();
     let href: string | null = null;
-    if (ref.kind === 'lead') {
-      if (owners.has(id) && mayOpenLead(reader, { ownerId: owners.get(id) ?? null })) {
-        href = `/crm/leads/${id}#ichki`;
-      } else if (owners.has(id) && viewer.permissions.has('ved.docs')) {
-        const requestId = await newestRequestOn({ entityType: 'lead', entityId: id });
-        href = requestId ? `${kartaHref(requestId, id)}#ichki` : null;
+    switch (ref.kind) {
+      case 'lead':
+        if (owners.has(id) && mayOpenLead(reader, { ownerId: owners.get(id) ?? null })) {
+          href = `/crm/leads/${id}#ichki`;
+        } else if (owners.has(id) && viewer.permissions.has('ved.docs')) {
+          const requestId = await newestRequestOn({ entityType: 'lead', entityId: id });
+          href = requestId ? `${kartaHref(requestId, id)}#ichki` : null;
+        }
+        break;
+      case 'deal':
+        href = canWriteDeal(viewer.permissions) ? `/bitimlar/${id}#ichki` : null;
+        break;
+      case 'client':
+        href = `/admin/clients/${id}#ichki`;
+        break;
+      case 'receipt':
+        href = `/receipts/${id}#ichki`;
+        break;
+      case 'batch':
+        href = `/batches/${id}#ichki`;
+        break;
+      case 'calc': {
+        const request = requests.get(id);
+        if (viewer.permissions.has('ved.docs')) href = request ? `/hisoblash/${id}#savol` : null;
+        else if (request?.entity_type === 'lead' && mayOpenLead(reader, { ownerId: request.owner_id })) {
+          href = `/crm/leads/${request.entity_id}#calc-thread-${id}`;
+        } else if (request?.entity_type === 'deal' && canWriteDeal(viewer.permissions)) {
+          href = `/bitimlar/${request.entity_id}#calc-thread-${id}`;
+        }
+        break;
       }
-    } else if (ref.kind === 'deal') {
-      href = canWriteDeal(viewer.permissions) ? `/bitimlar/${id}#ichki` : null;
-    } else if (ref.kind === 'client') {
-      href = `/admin/clients/${id}#ichki`;
-    } else {
-      const request = requests.get(id);
-      if (viewer.permissions.has('ved.docs')) href = request ? `/hisoblash/${id}#savol` : null;
-      else if (request?.entity_type === 'lead' && mayOpenLead(reader, { ownerId: request.owner_id })) {
-        href = `/crm/leads/${request.entity_id}#calc-thread-${id}`;
-      } else if (request?.entity_type === 'deal' && canWriteDeal(viewer.permissions)) {
-        href = `/bitimlar/${request.entity_id}#calc-thread-${id}`;
+      default: {
+        const never: never = ref.kind;
+        void never;
       }
     }
     out.set(threadKey(ref), href);
@@ -496,7 +598,7 @@ export async function threadHrefsFor(viewer: Viewer, refs: readonly ThreadRef[])
   return out;
 }
 
-export async function threadHref(viewer: Viewer, ref: ThreadRef): Promise<string | null> {
+export async function threadHref(viewer: ThreadReader, ref: ThreadRef): Promise<string | null> {
   return (await threadHrefsFor(viewer, [ref])).get(threadKey(ref)) ?? null;
 }
 
@@ -525,6 +627,13 @@ export interface DockThreadRow {
 const THREAD_PING_LIST = sql.raw(THREAD_PING_TYPES.map((type) => `'${type}'`).join(', '));
 
 /**
+ * The thread kinds as LITERALS for the dock's ping filter — the module's own
+ * constant, never input (the `THREAD_PING_LIST` idiom). A hand-typed list here
+ * was the round-2 trap: widened kinds compiled and never listed.
+ */
+const THREAD_KIND_LIST = sql.raw(THREAD_KINDS.map((kind) => `'${kind}'`).join(', '));
+
+/**
  * How many of the newest rows of EACH source the dock reads before grouping
  * them into threads. Measured (680 000 notifications, one seller holding
  * 50 000 of them, 5 000 notes he wrote): unbounded, the statement read every
@@ -549,7 +658,7 @@ const DOCK_SCAN_ROWS = 1000;
  * calc notes by `crm_activities_calc_idx`) — an OR between them would defeat
  * both indexes.
  */
-export async function myThreads(viewer: Viewer, limit = 30): Promise<DockThreadRow[]> {
+export async function myThreads(viewer: ThreadReader, limit = 30): Promise<DockThreadRow[]> {
   if (!THREAD_UUID.test(viewer.id)) return [];
   const rows = await db.execute<{
     kind: ThreadKind;
@@ -584,7 +693,7 @@ export async function myThreads(viewer: Viewer, limit = 30): Promise<DockThreadR
            AND n.type IN (${THREAD_PING_LIST})
            AND n.created_at >= now() - make_interval(days => ${THREAD_WINDOW_DAYS})
            AND n.payload ? 'thread'
-           AND n.payload -> 'thread' ->> 'kind' IN ('lead', 'deal', 'client', 'calc')
+           AND n.payload -> 'thread' ->> 'kind' IN (${THREAD_KIND_LIST})
            -- Checked inside, before the outer cast: one malformed payload must not 22P02 the dock.
            AND n.payload -> 'thread' ->> 'id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
          ORDER BY n.created_at DESC
@@ -614,13 +723,13 @@ export async function myThreads(viewer: Viewer, limit = 30): Promise<DockThreadR
         SELECT a.note, a.created_at, a.created_by FROM crm_activities a
          WHERE c.kind <> 'calc' AND a.entity_type = c.kind AND a.entity_id = c.id
            AND a.calc_request_id IS NULL AND a.kind = 'note'
-         ORDER BY a.happened_at DESC
+         ORDER BY a.created_at DESC
          LIMIT 1
       ) card ON true
       LEFT JOIN LATERAL (
         SELECT a.note, a.created_at, a.created_by FROM crm_activities a
          WHERE c.kind = 'calc' AND a.calc_request_id = c.id AND a.kind = 'note'
-         ORDER BY a.happened_at DESC
+         ORDER BY a.created_at DESC
          LIMIT 1
       ) calc ON true
       LEFT JOIN users u ON u.id = COALESCE(card.created_by, calc.created_by)
@@ -667,13 +776,12 @@ export async function myThreads(viewer: Viewer, limit = 30): Promise<DockThreadR
  * because the mention ping reaches him whatever this says.
  */
 async function stillInvolved(
-  viewer: Viewer,
+  viewer: ThreadReader,
   refs: readonly ThreadRef[],
 ): Promise<(ref: ThreadRef) => boolean> {
   if (!plainSeller(viewer.permissions)) return () => true;
-  const dealIds = [...new Set(refs.filter((r) => r.kind === 'deal').map((r) => r.id.toLowerCase()))];
-  const calcIds = [...new Set(refs.filter((r) => r.kind === 'calc').map((r) => r.id.toLowerCase()))];
-  if (!refs.some((r) => r.kind === 'client') && dealIds.length === 0 && calcIds.length === 0) return () => true;
+  const { deal: dealIds, calc: calcIds, client: clientIds } = idsByKind(refs);
+  if (clientIds.length === 0 && dealIds.length === 0 && calcIds.length === 0) return () => true;
   const ids = (list: string[]) => sql.join(list.map((id) => sql`${id}::uuid`), sql`, `);
   const [mine, dealRows, calcRows] = await Promise.all([
     involvementOf(viewer.id),
@@ -696,15 +804,29 @@ async function stillInvolved(
   const calcs = new Map(calcRows.map((r) => [r.id, r] as const));
   return (ref) => {
     const id = ref.id.toLowerCase();
-    if (ref.kind === 'client') return mine.clients.has(id);
-    if (ref.kind === 'deal') return involvedInDeal(mine, { id, clientId: dealClient.get(id) ?? null });
-    if (ref.kind === 'calc') {
-      const calc = calcs.get(id);
-      // A calculation on a LEAD is the lead's door's; one he asked for is his.
-      if (!calc?.deal_id || calc.requested_by === viewer.id) return true;
-      return involvedInDeal(mine, { id: calc.deal_id, clientId: calc.client_id });
+    switch (ref.kind) {
+      case 'client':
+        return mine.clients.has(id);
+      case 'deal':
+        return involvedInDeal(mine, { id, clientId: dealClient.get(id) ?? null });
+      case 'calc': {
+        const calc = calcs.get(id);
+        // A calculation on a LEAD is the lead's door's; one he asked for is his.
+        if (!calc?.deal_id || calc.requested_by === viewer.id) return true;
+        return involvedInDeal(mine, { id: calc.deal_id, clientId: calc.client_id });
+      }
+      // A lead's door does E9 itself; a cargo thread's door is the whole rule
+      // (a plain seller never passes it anyway).
+      case 'lead':
+      case 'receipt':
+      case 'batch':
+        return true;
+      default: {
+        const never: never = ref.kind;
+        void never;
+        return true;
+      }
     }
-    return true;
   };
 }
 
@@ -713,10 +835,16 @@ export async function threadLabels(
   refs: readonly ThreadRef[],
 ): Promise<Map<string, { label: string; section: string | null }>> {
   const out = new Map<string, { label: string; section: string | null }>();
-  const idsOf = (kind: ThreadKind) => [...new Set(refs.filter((r) => r.kind === kind).map((r) => r.id.toLowerCase()))];
   const list = (ids: string[]) => sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `);
-  const [leadIds, dealIds, clientIds, calcIds] = [idsOf('lead'), idsOf('deal'), idsOf('client'), idsOf('calc')];
-  const [leadRows, dealRows, clientRows, calcRows] = await Promise.all([
+  const {
+    lead: leadIds,
+    deal: dealIds,
+    client: clientIds,
+    calc: calcIds,
+    receipt: receiptIds,
+    batch: batchIds,
+  } = idsByKind(refs);
+  const [leadRows, dealRows, clientRows, calcRows, receiptRows, batchRows] = await Promise.all([
     leadIds.length
       ? db.execute<{ id: string; label: string }>(sql`SELECT id::text AS id, name AS label FROM leads WHERE id IN (${list(leadIds)})`)
       : Promise.resolve([] as { id: string; label: string }[]),
@@ -740,10 +868,38 @@ export async function threadLabels(
            WHERE r.id IN (${list(calcIds)})
         `)
       : Promise.resolve([] as { id: string; label: string; section: string | null }[]),
+    receiptIds.length
+      ? db.execute<{ id: string; number: string | null; unclaimed_marking: string | null; client_code: string | null }>(sql`
+          SELECT r.id::text AS id, r.number, r.unclaimed_marking, c.client_code
+            FROM receipts r LEFT JOIN clients c ON c.id = r.client_id
+           WHERE r.id IN (${list(receiptIds)})
+        `)
+      : Promise.resolve([] as { id: string; number: string | null; unclaimed_marking: string | null; client_code: string | null }[]),
+    batchIds.length
+      ? db.execute<{ id: string; code: string; origin: string; dest: string }>(sql`
+          SELECT t.id::text AS id, t.code, o.code AS origin, d.code AS dest
+            FROM batches t
+            JOIN warehouses o ON o.id = t.origin_warehouse_id
+            JOIN warehouses d ON d.id = t.dest_warehouse_id
+           WHERE t.id IN (${list(batchIds)})
+        `)
+      : Promise.resolve([] as { id: string; code: string; origin: string; dest: string }[]),
   ]);
   for (const row of leadRows) out.set(`lead:${row.id}`, { label: row.label, section: null });
   for (const row of dealRows) out.set(`deal:${row.id}`, { label: row.label, section: null });
   for (const row of clientRows) out.set(`client:${row.id}`, { label: row.label, section: null });
   for (const row of calcRows) out.set(`calc:${row.id}`, { label: `🧮 ${row.label}`, section: row.section });
+  // Emoji prefixes, so the dock's label needs no translation. The prixod is
+  // named the way the BOX says it: the marking big, the client code small
+  // (`codeIdentity`, round 100 #687) — here only the big one fits.
+  for (const row of receiptRows) {
+    const marking = row.unclaimed_marking?.trim() || null;
+    const code = row.client_code?.trim() || null;
+    const who = marking || code ? ` · ${codeIdentity(marking, code).main}` : '';
+    out.set(`receipt:${row.id}`, { label: `📦 ${row.number ?? '—'}${who}`, section: null });
+  }
+  for (const row of batchRows) {
+    out.set(`batch:${row.id}`, { label: `🚚 ${row.code} · ${row.origin} → ${row.dest}`, section: null });
+  }
   return out;
 }

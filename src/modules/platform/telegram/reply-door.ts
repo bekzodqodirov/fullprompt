@@ -8,16 +8,18 @@ import { reachLine } from '../notifications/staff';
 import {
   THREAD_PING_TYPES,
   THREAD_UUID,
+  isCargoKind,
   threadOfPayload,
   type ThreadPingType,
   type ThreadRef,
 } from '../notifications/thread-ref';
+import { onceKey, readyKey } from './once';
 import {
   answerFromBot,
   askFromBot,
   botActorFor,
   dropTaskPending,
-  peekTaskPending,
+  peekTaskPendingAny,
   refusalFor,
   staffForChat,
   type ReachedResult,
@@ -64,6 +66,9 @@ export const REPLY_SENTENCES = {
     'Bu yo‘naltirilgan (forward) xabar — javob tizimga tushmaydi. Asosiy xabarga reply qiling; mijozga esa kartadagi chatdan yozing.',
   waitNoTarget: 'Xabar topilmadi — javobni kartada yozing.',
   mediaCard: 'Hozircha javob faqat matn bilan qabul qilinadi — rasm yoki faylni kartaning o‘zida qo‘shing.',
+  // A prixod's or a truck's thread has no 📎 on the card either (E10 a):
+  // «add it on the card» would send the person to a box that refuses files.
+  mediaCargo: 'Bu yozishmaga hozircha faqat matn yoziladi (rasm keyingi bosqichda) — javobni matn bilan yozing.',
   mediaTask:
     'Hozircha javob faqat matn bilan qabul qilinadi — savolni matn bilan yozing, faylni topshiriq sahifasida qo‘shing.',
   pressPrompt: '💬 Javobingizni yozing:',
@@ -140,6 +145,33 @@ export async function replyVerdictFor(
   return { kind: 'not_replyable' };
 }
 
+/**
+ * The sentence a photo, file or voice reply to this verdict is refused with —
+ * or null when the verdict is not one this door owns (the handler falls
+ * through). A cargo thread's words are its own: its card has no 📎 either.
+ * Pure; the cargo test is `isCargoKind`, never a kind literal.
+ */
+export function mediaSentenceFor(verdict: ReplyVerdict): string | null {
+  switch (verdict.kind) {
+    case 'thread':
+      return isCargoKind(verdict.ref.kind) ? REPLY_SENTENCES.mediaCargo : REPLY_SENTENCES.mediaCard;
+    case 'calc_task':
+      return REPLY_SENTENCES.mediaCard;
+    case 'task_question':
+    case 'task_answer':
+      return REPLY_SENTENCES.mediaTask;
+    case 'old_ping':
+    case 'customer':
+    case 'not_replyable':
+      return null;
+    default: {
+      const never: never = verdict;
+      void never;
+      return null;
+    }
+  }
+}
+
 /** The sentence a refused or unlandable verdict reads — or null when it is one that lands. */
 export function verdictSentence(verdict: ReplyVerdict): string | null {
   if (verdict.kind === 'old_ping') return REPLY_SENTENCES.old_ping;
@@ -186,6 +218,12 @@ export async function threadReplyFromBot(
     replyToForwarded: boolean;
     text: string;
     incomingMessageId: number;
+    /**
+     * The incoming message's own `date` (unix seconds), REQUIRED (Q5 a): a
+     * backlog reply is judged against the wait by when it was WRITTEN, and
+     * lands on the card at that moment.
+     */
+    messageDate: number;
     /** True when called from the 'reply' wait (the person pressed «💬 Javob yozish»): never fall through. */
     fromWait?: boolean;
   },
@@ -193,24 +231,24 @@ export async function threadReplyFromBot(
   try {
     const staff = await staffForChat(chatId);
     if (!staff) return null;
-    const pending = input.fromWait ? null : peekTaskPending(chatId);
-    const armedForTask =
-      pending !== null && pending.kind !== 'reply'
-        ? pending.pressed?.messageId === input.replyToMessageId ||
-          (pending.promptMessageId ?? null) === input.replyToMessageId
-        : false;
-    if (armedForTask) return null;
-
-    const verdict = await replyVerdictFor(chatId, input.replyToMessageId, staff.id);
+    // Step 2 over the wait AND how this message relates to it (judge Q5H-3):
+    // an EARLY wait — a ✅ pressed during the outage, its prompt sent after
+    // this backlog reply was written — guards exactly like an armed one, so
+    // the reply falls to the wait (which stays) and never becomes an E4
+    // question carrying the result text.
+    const seen = input.fromWait ? null : peekTaskPendingAny(chatId, input.messageDate);
+    const pending = seen?.verdict === 'answers' ? seen.pending : null;
+    const armed = seen && seen.pending.kind !== 'reply' ? seen.pending : null;
     if (
-      pending !== null &&
-      pending.kind !== 'reply' &&
-      verdict !== null &&
-      'taskId' in verdict &&
-      verdict.taskId === pending.taskId
+      armed &&
+      (armed.pressed?.messageId === input.replyToMessageId ||
+        (armed.promptMessageId ?? null) === input.replyToMessageId)
     ) {
       return null;
     }
+
+    const verdict = await replyVerdictFor(chatId, input.replyToMessageId, staff.id);
+    if (armed && verdict !== null && 'taskId' in verdict && verdict.taskId === armed.taskId) return null;
     if (!verdict) {
       if (input.replyToForwarded) return { text: REPLY_SENTENCES.forwarded };
       return input.fromWait ? { text: REPLY_SENTENCES.waitNoTarget } : null;
@@ -224,24 +262,42 @@ export async function threadReplyFromBot(
       if (!actor) return { text: REPLY_SENTENCES.notLinked };
       // platform never imports wms statically — the landing is wms's.
       const { landThreadReply } = await import('../../wms/crm/thread-reply');
+      // The WHOLE actor: the cargo door is a question about where he works,
+      // and `botActorFor` already carries the scope (`actorGrants`).
       const out = await landThreadReply(
-        { id: actor.id, permissions: actor.permissions },
+        actor,
         {
           ref: verdict.kind === 'thread' ? verdict.ref : { kind: 'calc', id: verdict.requestId },
           ping: verdict.kind === 'thread' ? verdict.ping : 'calc_task',
           text: input.text,
           tg: { chatId, messageId: input.incomingMessageId },
+          writtenAt: new Date(input.messageDate * 1000).toISOString(),
         },
       );
       answer = out.text;
     } else if (verdict.kind === 'task_question') {
       // E4 a: a question to the task's giver — the task stays OPEN. Every
       // refusal has its words (`refusalFor` — an open calc job's carries its page).
-      const out = await askFromBot(chatId, verdict.taskId, input.text);
+      // Keyed by the incoming message (Q5 a): a redelivered reply asks once.
+      // The SAME effect name as the wait's question — one message is one
+      // question whichever door took it.
+      const out = await askFromBot(
+        chatId,
+        verdict.taskId,
+        input.text,
+        input.incomingMessageId ? await readyKey(() => onceKey.message(chatId, input.incomingMessageId, 'ask')) : null,
+        new Date(input.messageDate * 1000),
+      );
       answer =
         out.result === 'done' ? reachedText('✅ Savol yuborildi.', out) : await refusalFor(verdict.taskId, out.result);
     } else if (verdict.kind === 'task_answer') {
-      const out = await answerFromBot(chatId, verdict.taskId, input.text);
+      const out = await answerFromBot(
+        chatId,
+        verdict.taskId,
+        input.text,
+        input.incomingMessageId ? await readyKey(() => onceKey.message(chatId, input.incomingMessageId, 'answer')) : null,
+        new Date(input.messageDate * 1000),
+      );
       answer =
         out.result === 'done' ? reachedText('✅ Javob yuborildi.', out) : await refusalFor(verdict.taskId, out.result);
     } else {
@@ -275,15 +331,10 @@ export async function refuseMediaReply(ctx: Context, chatId: bigint): Promise<bo
     if (!staff) return false;
     const verdict = await replyVerdictFor(chatId, replied.message_id, staff.id);
     if (!verdict) return false;
-    if (verdict.kind === 'thread' || verdict.kind === 'calc_task') {
-      await ctx.reply(REPLY_SENTENCES.mediaCard);
-      return true;
-    }
-    if (verdict.kind === 'task_question' || verdict.kind === 'task_answer') {
-      await ctx.reply(REPLY_SENTENCES.mediaTask);
-      return true;
-    }
-    return false;
+    const sentence = mediaSentenceFor(verdict);
+    if (!sentence) return false;
+    await ctx.reply(sentence);
+    return true;
   } catch (err) {
     logger.warn({ err }, '[thread] media reply check failed');
     return false;

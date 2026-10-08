@@ -1,12 +1,13 @@
 'use client';
 
-import { startTransition, useActionState, useEffect, useRef } from 'react';
+import { startTransition, useActionState, useRef } from 'react';
 import { useTranslations } from 'next-intl';
 import { MentionTextarea } from '@/components/mention-textarea';
 import type { MentionPerson } from '@/modules/wms/crm/mentions';
 import { THREAD_TEXT_MAX } from '@/modules/platform/notifications/thread-ref';
 import type { CalcThreadState } from '@/modules/wms/crm/thread';
 import { postCalcThreadAction } from '@/app/(protected)/hisoblash/[id]/thread-actions';
+import { useClearOnSent } from './thread-box-clear';
 
 /**
  * The calc Q&A composer (§3.5 a/b) — one component for both mounts, the calc
@@ -35,17 +36,7 @@ export function CalcThreadBox({
   const t = useTranslations('threads');
   const [state, submit, pending] = useActionState<CalcThreadState, FormData>(postCalcThreadAction, {});
   const formRef = useRef<HTMLFormElement>(null);
-  const cleared = useRef<number | undefined>(undefined);
-
-  useEffect(() => {
-    if (!state.ok || state.sent === undefined || state.sent === cleared.current) return;
-    cleared.current = state.sent;
-    const box = formRef.current?.querySelector('textarea');
-    if (box) {
-      box.value = '';
-      box.style.height = '';
-    }
-  }, [state]);
+  useClearOnSent(state, formRef);
 
   return (
     <form

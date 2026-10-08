@@ -204,6 +204,18 @@ async function openLeadById(id: string): Promise<{ id: string; ownerId: string |
 }
 
 /**
+ * Has this exact arrival landed before? (Q5 a.) The bot's advert contact is
+ * keyed by its Telegram message (`tg:<chat>:<message>`), and a redelivered
+ * contact must be thanked again without landing a second enquiry. Served by
+ * the partial unique index on (channel, external_id).
+ */
+export async function inboundLanded(channel: InboundArrival['channel'], externalId: string): Promise<boolean> {
+  const rows = await db.execute<{ one: number }>(sql`
+    SELECT 1 AS one FROM lead_intakes WHERE channel = ${channel} AND external_id = ${externalId} LIMIT 1`);
+  return rows.length > 0;
+}
+
+/**
  * Land an arrival.
  *
  * The order is the design: a known CLIENT first (their enquiry belongs on the

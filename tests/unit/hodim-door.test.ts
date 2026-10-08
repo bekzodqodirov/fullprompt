@@ -66,7 +66,7 @@ describe('the /hodim command', () => {
     expect(handlers).toContain('export async function askStaffPhone(');
     // …and the intent the contact handler reads is minted inside it.
     const at = handlers.indexOf('export async function askStaffPhone(');
-    expect(handlers.slice(at, at + 500)).toContain('noteStaffEntry(chatId)');
+    expect(handlers.slice(at, at + 500)).toContain('noteStaffEntry(chatId, asked.date)');
   });
 });
 

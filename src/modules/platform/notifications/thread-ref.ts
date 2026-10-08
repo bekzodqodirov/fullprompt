@@ -10,12 +10,33 @@
  *   - `{ kind: 'calc', id: requestId }` — the notes tagged with that
  *     calculation (`crm_activities.calc_request_id`, 0127), wherever the
  *     request's card was when each was written.
- * Round 2 adds 'receipt' and 'batch' here, a door arm and an audience arm
- * each, and one CHECK widening — nothing else.
+ *   - `{ kind: 'receipt'|'batch', id }` — a prixod's or a truck's untagged
+ *     notes (round 2, 0129): the CARGO threads, read by the office and the
+ *     staff of the warehouse where the cargo stands now (E6 c, E7 b, Q4 a).
+ *
+ * Round 2 was announced here as «a door arm and an audience arm each, and
+ * one CHECK widening — nothing else», and that was understated: every branch
+ * over a thread kind was an `if/else` chain whose last arm was another kind,
+ * so the widened list compiled and filed a prixod under the calc door, the
+ * clients table or «lid». Every such branch is now an exhaustive `switch`
+ * with a `never` default (or a `Record` over the union, `idsByKind`), so the
+ * next kind is a compile error — fenced by tests/unit/cargo-thread-wire.
  */
 
-export const THREAD_KINDS = ['lead', 'deal', 'client', 'calc'] as const;
+export const THREAD_KINDS = ['lead', 'deal', 'client', 'calc', 'receipt', 'batch'] as const;
 export type ThreadKind = (typeof THREAD_KINDS)[number];
+
+/** A thread that IS a card's untagged notes — every kind but the calculation's. */
+export type CardKind = Exclude<ThreadKind, 'calc'>;
+
+/** The two cargo cards (round 2): a prixod and a truck. */
+export const CARGO_KINDS = ['receipt', 'batch'] as const;
+export type CargoKind = (typeof CARGO_KINDS)[number];
+
+/** Is this kind a cargo card's — the one test a branch on «cargo or not» asks, never a literal. */
+export function isCargoKind(kind: string): kind is CargoKind {
+  return (CARGO_KINDS as readonly string[]).includes(kind);
+}
 
 export interface ThreadRef {
   kind: ThreadKind;
@@ -108,6 +129,24 @@ export function threadOfPayload(payload: unknown): (ThreadRef & { activityId: st
   const activityId = (thread as { activityId?: unknown }).activityId;
   if (typeof activityId !== 'string' || !THREAD_UUID.test(activityId)) return null;
   return { kind: thread.kind, id: thread.id.toLowerCase(), activityId: activityId.toLowerCase() };
+}
+
+/**
+ * The ids of a list of refs, grouped by kind — strict-uuid filtered,
+ * lower-cased, deduplicated. A `Record` over the union, seeded from
+ * `THREAD_KINDS`, so a new kind is a key here before anybody asks for it, and
+ * no caller writes its own `.kind === '…'` filter (cargo-thread-wire K1).
+ */
+export function idsByKind(refs: readonly ThreadRef[]): Record<ThreadKind, string[]> {
+  const sets = Object.fromEntries(THREAD_KINDS.map((kind) => [kind, new Set<string>()])) as Record<
+    ThreadKind,
+    Set<string>
+  >;
+  for (const ref of refs) {
+    if (!THREAD_UUID.test(ref.id)) continue;
+    sets[ref.kind]?.add(ref.id.toLowerCase());
+  }
+  return Object.fromEntries(THREAD_KINDS.map((kind) => [kind, [...sets[kind]]])) as Record<ThreadKind, string[]>;
 }
 
 /** `${kind}:${id}` — the key a set of admitted threads is held under. */

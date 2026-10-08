@@ -12,6 +12,11 @@ import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 import { LightboxImg } from '@/components/lightbox-img';
 import { QrlessChip } from '@/components/qrless-chip';
 import { TasksPanel } from '@/components/tasks-panel';
+import { CargoThread } from '@/components/cargo-thread';
+import { ThreadSeen } from '@/components/thread-seen';
+import { isServerBehind } from '@/modules/platform/db/errors';
+import { mayReadThread } from '@/modules/wms/crm/thread-door';
+import { threadReadMarks } from '@/modules/wms/crm/thread';
 import { BatchCard, batchTabMetadata, cargoLine } from './batch-card';
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
@@ -74,6 +79,21 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
   // 109). Gated on `crates.manage` like every other crate surface — the row
   // is a door to the crate card, which redirects whoever may not open it.
   const crateRows = actor.permissions.has('crates.manage') ? await batchCrates(id) : [];
+
+  // «❓ Savol-javob» (round 2, 0129 — E6 c, E7 b): the truck's staff thread,
+  // between the contents and the tasks. `cardLink('batch', id)` lands on THIS
+  // tab, so a ping's `#ichki` scrolls to it; no seventh tab (BATCH_TABS is a
+  // fenced contract). The thread's door, not the card's: the card admits
+  // every seller and the accountant, the thread neither.
+  const cargoRef = { kind: 'batch' as const, id };
+  let cargoThread = false;
+  try {
+    cargoThread = await mayReadThread(actor, cargoRef);
+  } catch (err) {
+    if (!isServerBehind(err)) throw err;
+  }
+  const readMarks = await threadReadMarks([...(cargoThread ? [cargoRef] : [])]);
+  const tth = await getTranslations('threads');
 
   return (
     <BatchCard head={head} actor={actor} active="tarkib">
@@ -187,6 +207,15 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
           }}
         />
       </div>
+
+      {cargoThread ? (
+        <CargoThread threadRef={cargoRef} viewer={actor} />
+      ) : actor.warehouseScoped ? (
+        <p className="text-xs text-ink-500" data-testid="cargo-thread-elsewhere">
+          {tth('cargo.elsewhere')}
+        </p>
+      ) : null}
+      <ThreadSeen refs={readMarks} />
 
       <div className="grid gap-4 md:grid-cols-2 md:items-start">
         <TasksPanel entityType="batch" entityId={id} revalidate={`/batches/${id}`} />

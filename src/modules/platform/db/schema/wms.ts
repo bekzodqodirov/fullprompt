@@ -1801,7 +1801,8 @@ export const crmActivities = pgTable(
     createdAt: createdAt(),
   },
   (t) => [
-    check('crm_activities_entity_check', sql`${t.entityType} IN ('lead', 'client', 'deal')`),
+    // Widened by 0129 with 'receipt','batch' — a prixod's and a truck's staff threads.
+    check('crm_activities_entity_check', sql`${t.entityType} IN ('lead', 'client', 'deal', 'receipt', 'batch')`),
     check('crm_activities_kind_check', sql`${t.kind} IN ('call', 'meeting', 'message', 'note')`),
     index('crm_activities_entity_idx').on(t.entityType, t.entityId, t.happenedAt),
   ],
@@ -1828,8 +1829,8 @@ export const threadReads = pgTable(
   },
   (t) => [
     primaryKey({ name: 'thread_reads_pk', columns: [t.userId, t.threadKind, t.threadId] }),
-    // Round 2 widens this with 'receipt','batch' (a CHECK widening, like 0125).
-    check('thread_reads_kind_check', sql`${t.threadKind} IN ('lead', 'deal', 'client', 'calc')`),
+    // Widened by 0129 with 'receipt','batch' (a CHECK widening, like 0125).
+    check('thread_reads_kind_check', sql`${t.threadKind} IN ('lead', 'deal', 'client', 'calc', 'receipt', 'batch')`),
   ],
 );
 

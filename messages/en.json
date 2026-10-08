@@ -2978,7 +2978,8 @@
       "not_remindable": "A reminder cannot be sent for this task",
       "not_askable": "A question cannot be sent for this task",
       "empty_text": "Empty message",
-      "nothing_to_send": "Nothing to send — the task is with you now, or it carries no messages"
+      "nothing_to_send": "Nothing to send — the task is with you now, or it carries no messages",
+      "already_done": "Already done — not sent again"
     },
     "repeat": "Repeat",
     "repeatNever": "no repeat",
@@ -5329,6 +5330,29 @@
       "not_found": "Calculation not found.",
       "server_behind": "The system is updating — send again in a moment.",
       "save_failed": "Not sent — try again."
+    },
+    "cargo": {
+      "title": "❓ Questions · {n}",
+      "empty": "No questions yet. Ask about the cargo here.",
+      "toStaff": "Your question goes to: {list}",
+      "staffCount": "{code} — {n} people",
+      "staffNone": "⚠ {code}: no staff assigned",
+      "toOffice": "Your question goes to the logists.",
+      "noStaffAt": "⚠ {codes}: no staff assigned — the message did not go there.",
+      "noOffice": "⚠ No logist found — the message did not reach the logists.",
+      "nobody": "⚠ Nobody was sent this in Telegram — it is on the card only.",
+      "reachUnknown": "⚠ The message is saved, but who receives it in Telegram could not be checked.",
+      "more": "… and {n} more",
+      "elsewhere": "❓ Questions are open to the logists, the managers and the staff of the warehouse where the cargo is now.",
+      "errors": {
+        "forbidden": "You cannot write in this thread.",
+        "cargo_moved": "The cargo is no longer at your warehouse — the message was not saved.",
+        "empty": "The message is empty.",
+        "too_long": "Too long — up to 4000 characters.",
+        "not_found": "Card not found.",
+        "server_behind": "The system is updating — send again in a moment.",
+        "save_failed": "Not sent — try again."
+      }
     }
   },
   "priceChannel": {
