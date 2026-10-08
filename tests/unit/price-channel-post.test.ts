@@ -243,6 +243,11 @@ describe('U4 — every code that opens onto a client', () => {
     }
     expect(scrub('Vitamin B-12 kapsula')).toBe('Vitamin B-12 kapsula');
     expect(scrub('B12 vitamin')).toBe('B12 vitamin');
+    // A deal code is six digits or more: a model number and the preposition
+    // «в» (folded to «b») before a quantity are goods.
+    expect(scrub('Printer B-400')).toBe('Printer B-400');
+    expect(scrub('Mikser B-1200')).toBe('Mikser B-1200');
+    expect(scrub('Пакеты в 100000 шт')).toBe('Пакеты в 100000 шт');
     batchSurvives();
   });
 
@@ -252,6 +257,8 @@ describe('U4 — every code that opens onto a client', () => {
     // A two-letter own code: no shape and no length rule knows it — only the card does.
     expect(scrub('kurtka A5', { ownCodes: ['A5'] })).toBe('kurtka');
     expect(scrub('A5-B kurtka', { ownCodes: ['A5'] })).toBe('kurtka');
+    // What is glued to it goes with it — the person behind a code is the leak.
+    expect(scrub('GS777-Bobur kurtka', { ownCodes: ['GS777'], codePrefix: 'GSR' })).toBe('kurtka');
     batchSurvives({ ownCodes: ['A5'] });
   });
 
@@ -301,6 +308,26 @@ describe('U4 — every code that opens onto a client', () => {
     expect(scrub('GS555 kurtka', ctx)).toBe('kurtka');
     expect(scrub('kurtka 445', ctx)).toBe('kurtka 445');
     expect(scrub('A5 qog‘oz', ctx)).toBe('A5 qog‘oz');
+    // Glued by «-», «_» or «.», the tail is the person: «GS555-Bobur».
+    expect(scrub('GS555-Bobur kurtka', ctx)).toBe('kurtka');
+    expect(scrub('GS555_Bobur kurtka', ctx)).toBe('kurtka');
+    expect(scrub('GS555.Bobur kurtka', ctx)).toBe('kurtka');
+    batchSurvives(ctx);
+  });
+
+  it('an all-digit code of the book is never read out of a quantity', () => {
+    const ctx = { knownCodes: new Set(['500', '220', '111', '444']) };
+    expect(scrub('Suv 500 ml', ctx)).toBe('Suv 500 ml');
+    expect(scrub('Бутылка 500 мл', ctx)).toBe('Бутылка 500 мл');
+    expect(scrub('Lampa 220 V', ctx)).toBe('Lampa 220 V');
+    expect(scrub('Pena 111 x 50', ctx)).toBe('Pena 111 x 50');
+    expect(scrub('Pena 50×111', ctx)).toBe('Pena 50×111');
+    expect(scrub('Kley 1.500', ctx)).toBe('Kley 1.500');
+    expect(scrub('Bolt 500.5', ctx)).toBe('Bolt 500.5');
+    // …and still a code where nothing makes it a quantity.
+    expect(scrub('kurtka 444', ctx)).toBe('kurtka');
+    expect(scrub('444-A kurtka', ctx)).toBe('kurtka');
+    expect(scrub('500 kurtka', ctx)).toBe('kurtka');
     batchSurvives(ctx);
   });
 
@@ -316,6 +343,47 @@ describe('U4 — every code that opens onto a client', () => {
     expect(scrub('Ali kurtka shim', ctx)).toBe('shim');
     expect(scrub('kurtka shim', ctx)).toBe('kurtka shim');
     batchSurvives(ctx);
+  });
+
+  it('a marking that starts with a code or a person goes whole, before any piece of it is cut', () => {
+    // GSR: the prefix rule must not be what removes these. Cut piece-first,
+    // the tail («MANIKEN-AL», «Bobur») was posted — and ⌘K finds the lot by it.
+    const gsr = { codePrefix: 'GSR' };
+    const marking = { markings: ['GS500-MANIKEN-AL'] };
+    expect(scrub('GS500-MANIKEN-AL sumka', { ...gsr, ...marking, ownCodes: ['GS500'] })).toBe('sumka');
+    expect(scrub('GS500-MANIKEN-AL sumka', { ...gsr, ...marking, knownCodes: new Set(['GS500']) })).toBe('sumka');
+    expect(scrub('444 Bobur sumka', { ...gsr, knownCodes: new Set(['444']), markings: ['444 Bobur'] })).toBe('sumka');
+    expect(scrub('GS555 BOBUR kurtka', { ...gsr, knownCodes: new Set(['GS555']), markings: ['GS555 BOBUR'] })).toBe('kurtka');
+    expect(scrub('Ali Bobur sumka', { ...gsr, forbidden: ['Ali Valiev'], markings: ['Ali Bobur'] })).toBe('sumka');
+    batchSurvives({ ...gsr, markings: ['444 Bobur', 'Ali Bobur'] });
+  });
+
+  it('a code glued to Chinese text — CJK is no part of a code’s word', () => {
+    expect(scrub('男士夹克GS777', { ownCodes: ['GS777'], codePrefix: 'GSR' })).toBe('男士夹克');
+    expect(scrub('男士夹克444', { knownCodes: new Set(['444']) })).toBe('男士夹克');
+    expect(scrub('444男士夹克', { ownCodes: ['444'] })).toBe('男士夹克');
+    expect(scrub('男士夹克GS555')).toBe('男士夹克');
+    expect(scrub('客户B-000099夹克')).toBe('客户 夹克');
+    expect(scrub('男装YW26-000123')).toBe('男装');
+    // A code BEFORE Chinese keeps the goods, and the Latin edge is unchanged.
+    expect(scrub('GS777男士夹克')).toBe('男士夹克');
+    expect(scrub('GS777-男士夹克', { ownCodes: ['GS777'] })).toBe('男士夹克');
+    expect(scrub('kurtkaGS777')).toBe('kurtkaGS777');
+    expect(scrub('GS555куртка shim')).toBe('shim');
+    expect(scrub('Vitamin B-12 kapsula')).toBe('Vitamin B-12 kapsula');
+    expect(scrub('LED-100')).toBe('LED-100');
+    batchSurvives();
+  });
+
+  it('a separator goes only where a cut left it alone — the seller’s own stay', () => {
+    expect(scrub('Kabel 10 - 20 m')).toBe('Kabel 10 - 20 m');
+    expect(scrub('Stol / stul')).toBe('Stol / stul');
+    expect(scrub('Kurtka № 5')).toBe('Kurtka № 5');
+    expect(scrub('Rang: qora')).toBe('Rang: qora');
+    expect(scrub('kurtka - GS555')).toBe('kurtka');
+    expect(scrub('GS555 | kurtka / shim')).toBe('kurtka / shim');
+    expect(scrub('kurtka ( GS555 ) shim')).toBe('kurtka shim');
+    batchSurvives();
   });
 
   it('a link, a uuid, an app path or a bare host', () => {
@@ -347,6 +415,8 @@ describe('U4 — every code that opens onto a client', () => {
     expect(out).toContain('444');
     expect(out).not.toContain('KURTKA');
     expect(codeCandidates(['ＧＳ５５５'])).toContain('GS555');
+    // Cyrillic А and К: the book is asked about the code they spell.
+    expect(codeCandidates(['АК55 kurtka'])).toContain('AK55');
   });
 });
 

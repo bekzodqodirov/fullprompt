@@ -204,10 +204,58 @@ const CYRILLIC_SPELLING: Record<string, string> = {
 /** A word edge — letters and digits of every script; never JS `\b`, which is ASCII-only (round 37). */
 const EDGE_BEFORE = '(?<![\\p{L}\\p{N}])';
 const EDGE_AFTER = '(?![\\p{L}\\p{N}])';
+interface Edges {
+  before: string;
+  after: string;
+}
+const WORD_EDGES: Edges = { before: EDGE_BEFORE, after: EDGE_AFTER };
+/**
+ * A CODE's edge: the word edge, except that CJK script is not part of a
+ * code's word. Chinese is written with no spaces, so «男士夹克GS777» is a code
+ * standing between edges for every reader but the regex. People's names and
+ * markings keep the plain edge — a name glued to Chinese is a stated residual.
+ */
+const CJK = '\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}\\p{Script=Hangul}';
+const CODE_EDGES: Edges = {
+  before: `(?<!(?![${CJK}])[\\p{L}\\p{N}])`,
+  after: `(?!(?![${CJK}])[\\p{L}\\p{N}])`,
+};
+/** A letter / letter-or-digit a code may run on with — never a CJK one, or «GS777-男士夹克» takes the goods with it. */
+const CODE_LETTER = `(?:(?![${CJK}])\\p{L})`;
+const CODE_ALNUM = `(?:(?![${CJK}])[\\p{L}\\p{N}])`;
 /** What a person puts between a code's letters and its digits: `GS 555`, `GS-555`, `GS#555`. */
 const SEAM = '[\\s\\-_.#№]?';
 /** The search's lot form, `GS777-A`. */
-const LOT = '(?:\\s?-\\s?\\p{L}{1,2})?';
+const LOT = `(?:\\s?-\\s?${CODE_LETTER}{1,2})?`;
+/**
+ * What is glued to a code with `-`, `_` or `.` — `GS555-Bobur`, `GS555_Ali`.
+ * The old token rule dropped the whole token; cutting the bare code would
+ * hand the reader the person glued to it.
+ */
+const GLUED = `(?:[-_.]${CODE_ALNUM}+)*`;
+
+/**
+ * An all-digit code is also a QUANTITY: «Suv 500 ml», «Lampa 220 V», «Pena
+ * 111 x 50». Such a number is a code only when no unit follows it, no «x»
+ * stands before it, and it is not a part of a bigger number (`1.500`,
+ * `500.5`). The units are folded like the shadow, so «мл» meets itself.
+ * Stated cost: «444 L» (a size, or a litre) keeps a code 444; «444-L», the
+ * lot form, still goes.
+ */
+const MEASURE_UNITS = [
+  'ml', 'мл', 'l', 'л', 'litr', 'литр', 'kg', 'кг', 'g', 'г', 'gr', 'гр', 'gramm', 'грамм', 'm', 'м', 'metr', 'метр',
+  'sm', 'см', 'mm', 'мм', 'v', 'в', 'volt', 'w', 'вт', 'gb', 'mb', 'x', '×', 'dona', 'шт', 'sht', 'ta',
+];
+const UNITS = [...new Set(MEASURE_UNITS.map((u) => escapeRegExp(fold(u))))]
+  .sort((a, b) => b.length - a.length)
+  .join('|');
+const QUANTITY_BEFORE = '(?<![x×*]\\s?)(?<!\\d[.,])';
+const QUANTITY_AFTER = `(?![.,]\\d)(?!\\s?(?:(?:${UNITS})${EDGE_AFTER}|[x×*]\\s?\\d|%))`;
+
+/** An all-digit unit wrapped so a quantity is never read as it. */
+function asCode(pattern: string, raw: string): string {
+  return /^\d+$/u.test(raw) ? `${QUANTITY_BEFORE}${pattern}${QUANTITY_AFTER}` : pattern;
+}
 
 /** A code as a pattern over the shadow, a seam allowed wherever a letter meets a digit. */
 function codePattern(code: string): string {
@@ -243,6 +291,10 @@ const LINK_TOKEN: readonly RegExp[] = [
  * lines), so each goes by its minted shape. Crate before box: a crate code
  * ends in a box-shaped tail. Run over the shadow, so `В` arrives as `B`.
  *
+ * A deal code is `B-` and six digits or more (deals/service.ts pads to six),
+ * so «Printer B-400» is a model and «в 100000 шт» a preposition — and the
+ * dash-less arm takes no space for the same reason.
+ *
  * KEPT on purpose: the batch `YW-045`. A truck carries many clients, its
  * contents sit behind `BATCH_READERS`, and `{PREFIX}-{NNN}` cannot be told
  * from «LED-100» — scrubbing it would eat real goods names.
@@ -252,7 +304,7 @@ const SYSTEM_SHAPES: readonly string[] = [
   /* box     */ '[A-Za-z][A-Za-z0-9]*\\d{2}-\\d{6,}',
   /* receipt */ '[A-Za-z0-9]+\\s?-\\s?IN\\s?-\\s?\\d{6}\\s?-\\s?\\d+',
   /* pickup  */ 'ZR-\\d{5,}',
-  /* deal    */ '[BБ](?:\\s?[-‐‑‒–—_]\\s?\\d{3,}|\\s?\\d{6,})',
+  /* deal    */ '[BБ](?:\\s?[-‐‑‒–—_]\\s?\\d{6,}|\\d{6,})',
 ];
 
 /** The name and its folded shadow — the same length, cut at the same indices. */
@@ -260,6 +312,21 @@ interface Text {
   out: string;
   shadow: string;
 }
+
+/**
+ * Where a cut was: one NUL in place of the removed unit, in both strings, so
+ * the remnant pass can tell a separator a cut left standing alone from one
+ * the seller typed («Kabel 10 - 20 m»). Postgres text cannot hold a NUL, and
+ * the scrub clears any that arrive, so it never comes from a name. No rule
+ * reads it as a letter, a digit or a space; the end turns it into a space.
+ */
+const CUT = '\u0000';
+const SEPARATOR = '[-–—_#№:/|]';
+/** A separator that touches a cut and frames nothing else: «YW-045 / YW26-000123» → «YW-045». */
+const ORPHAN_AT_CUT = new RegExp(
+  `(?:(^|\\s)${SEPARATOR}+\\s*|${SEPARATOR}+)?\\u0000(?:\\s*${SEPARATOR}+(?=\\s|$)|${SEPARATOR}+(?=\\s|$))?`,
+  'gu',
+);
 
 /** A label that hugged a removed code: `kod:GS555`, `код: 444`. */
 const HUGGING_LABEL = new RegExp(`${EDGE_BEFORE}(?:kod|${fold('код')}|code)\\s?:\\s?$`, 'iu');
@@ -294,8 +361,8 @@ function cut(text: Text, re: RegExp, when: (match: string) => boolean = () => tr
   for (const m of text.shadow.matchAll(re)) {
     if (m[0].length === 0 || m.index < last || !when(m[0])) continue;
     const [s, e] = hug(text.shadow, m.index, m.index + m[0].length, last);
-    out += `${text.out.slice(last, s)} `;
-    shadow += `${text.shadow.slice(last, s)} `;
+    out += `${text.out.slice(last, s)}${CUT}`;
+    shadow += `${text.shadow.slice(last, s)}${CUT}`;
     last = e;
   }
   return { out: out + text.out.slice(last), shadow: shadow + text.shadow.slice(last) };
@@ -305,9 +372,9 @@ function cut(text: Text, re: RegExp, when: (match: string) => boolean = () => tr
  * Whole units as ONE edge-bounded alternation, longest first — so «MANIKEN-AL»
  * wins over a «MANIKEN» it contains. Null for none.
  */
-function unitsRegex(patterns: Iterable<string>): RegExp | null {
+function unitsRegex(patterns: Iterable<string>, edges: Edges = WORD_EDGES): RegExp | null {
   const list = [...new Set(patterns)].sort((a, b) => b.length - a.length);
-  return list.length === 0 ? null : new RegExp(`${EDGE_BEFORE}(?:${list.join('|')})${EDGE_AFTER}`, 'giu');
+  return list.length === 0 ? null : new RegExp(`${edges.before}(?:${list.join('|')})${edges.after}`, 'giu');
 }
 
 /** The first letter/digit run of a folded unit, lower-cased — what a name must carry WHOLE for the unit to stand in it. */
@@ -326,18 +393,25 @@ export type Scrubber = (name: string) => string;
  * Unicode word edges) and every removal is spliced out of the name itself:
  *   1. TOKENS that are a way to a person or a card (`LINK_TOKEN`) — first, so
  *      no code shape can carve a uuid into debris;
- *   2. the card's PEOPLE, word by word (≥ 3 code points, whole words only —
+ *   2. the MARKINGS (≥ 3), each ONE unit and never split into words, or «Ali
+ *      kurtka» would eat «kurtka» from every name — and BEFORE any piece of
+ *      them can be cut: a marking that starts with a code or a person
+ *      («GS500 MANIKEN», «Ali Bobur») would otherwise lose that piece first,
+ *      stop matching, and post its tail, which ⌘K finds the lot by;
+ *   3. the card's PEOPLE, word by word (≥ 3 code points, whole words only —
  *      «Ali» must not eat «Natalia» or «Alyuminiy»);
- *   3. whole CODES: the card's own (any length), the book's codes the names
- *      carry (≥ 3), each with a seam and the lot suffix; then the markings
- *      (≥ 3), each ONE unit and never split into words, or «Ali kurtka» would
- *      eat «kurtka» from every name;
- *   4. the system's SHAPES (crate, box, receipt, pickup, deal), then the
+ *   4. whole CODES: the card's own (any length), the book's codes the names
+ *      carry (≥ 3), each with a seam, the lot suffix and whatever is glued to
+ *      it by `-`, `_` or `.`; an all-digit one never as a quantity;
+ *   5. the system's SHAPES (crate, box, receipt, pickup, deal), then the
  *      client-code prefix or its Cyrillic spelling followed by a digit — so
  *      a code minted under today's prefix goes even when the book was not asked;
- *   5. a phone in any spelling (≥ 7 digits with spaces, dashes, `+`, dots or
+ *   6. a phone in any spelling (≥ 7 digits with spaces, dashes, `+`, dots or
  *      brackets between them);
- *   6. remnants: empty brackets, orphan separators, whitespace, edge punctuation.
+ *   7. remnants: empty brackets, separators a cut left alone, whitespace, edge
+ *      punctuation — and only what a cut left: a range the seller typed stays.
+ * Codes and shapes take the CODE edge (CJK is not part of their word); people
+ * and markings the plain one.
  * An empty result drops the name.
  *
  * Compiled ONCE per post: a thousand-line invoice against three thousand
@@ -346,8 +420,11 @@ export type Scrubber = (name: string) => string;
  * (the edges make that exact, `markingCandidates`).
  *
  * STATED, not caught: a two-character code of another client («A4» reads like
- * a paper size), a code with no digit, and a CJK marking glued to other
- * letters with no edge.
+ * a paper size), a code with no digit, a CJK marking or name glued to other
+ * letters with no edge, a code glued to a Latin or Cyrillic word with no
+ * separator («kurtkaGS777» — the edge that keeps «GSM modul» a word), an
+ * all-digit code a unit follows («444 L»), and a deal code spelled with a
+ * bare space («B 000099»).
  */
 export function makeScrubber(ctx: ScrubContext): Scrubber {
   const words = new Set<string>();
@@ -359,13 +436,14 @@ export function makeScrubber(ctx: ScrubContext): Scrubber {
   const wordsRe = unitsRegex(words);
 
   const codes: string[] = [];
+  const codeUnit = (code: string) => `${asCode(codePattern(code), code)}${LOT}${GLUED}`;
   for (const code of ctx.ownCodes) {
-    if (code.trim() !== '') codes.push(`${codePattern(code.trim())}${LOT}`);
+    if (code.trim() !== '') codes.push(codeUnit(code.trim()));
   }
   for (const code of ctx.knownCodes) {
-    if ([...code.trim()].length >= 3) codes.push(`${codePattern(code.trim())}${LOT}`);
+    if ([...code.trim()].length >= 3) codes.push(codeUnit(code.trim()));
   }
-  const codesRe = unitsRegex(codes);
+  const codesRe = unitsRegex(codes, CODE_EDGES);
 
   // The markings grouped by their FIRST run: a name is tried only against
   // the groups whose run it carries whole (the edges make that exact, see
@@ -377,7 +455,7 @@ export function makeScrubber(ctx: ScrubContext): Scrubber {
   for (const marking of ctx.markings) {
     const m = fold(nfkc(marking)).trim();
     if ([...m].length < 3) continue;
-    const pattern = m.split(/\s+/u).map(escapeRegExp).join('\\s+');
+    const pattern = asCode(m.split(/\s+/u).map(escapeRegExp).join('\\s+'), m);
     const run = firstRunOf(m);
     if (run === null) runless.push(pattern);
     else markingsByRun.set(run, [...(markingsByRun.get(run) ?? []), pattern]);
@@ -389,22 +467,28 @@ export function makeScrubber(ctx: ScrubContext): Scrubber {
     return groupRe.get(run) ?? null;
   };
 
-  const shapes = SYSTEM_SHAPES.map((shape) => new RegExp(`${EDGE_BEFORE}${shape}${EDGE_AFTER}`, 'giu'));
+  const shapes = SYSTEM_SHAPES.map((shape) => new RegExp(`${CODE_EDGES.before}${shape}${CODE_EDGES.after}`, 'giu'));
   const prefix = nfkc(ctx.codePrefix).trim().toUpperCase();
   let prefixRe: RegExp | null = null;
   if (prefix) {
     const cyrillic = [...prefix].map((ch) => CYRILLIC_SPELLING[ch] ?? ch).join('');
     const spellings = [...new Set([fold(prefix), fold(cyrillic)])].map(escapeRegExp).join('|');
-    prefixRe = new RegExp(`${EDGE_BEFORE}(?:${spellings})${SEAM}\\d[\\p{L}\\p{N}-]*`, 'giu');
+    // The tail runs on through a glued marking («GS500MANIKEN-AL») but never
+    // into CJK — «GS777男士夹克» keeps its goods. Not the ASCII alphabet: the
+    // fold maps eleven look-alikes, so «GS555куртка» would stop at «у», fail
+    // the edge and post the code.
+    prefixRe = new RegExp(
+      `${CODE_EDGES.before}(?:${spellings})${SEAM}\\d(?:${CODE_ALNUM}|-)*${CODE_EDGES.after}`,
+      'giu',
+    );
   }
 
   return (name: string): string => {
-    const normal = nfkc(name);
+    const normal = nfkc(name).replace(/\u0000/gu, ' ');
     let t: Text = { out: normal, shadow: fold(normal) };
 
     t = cut(t, /\S+/gu, (token) => LINK_TOKEN.some((re) => re.test(token)));
-    if (wordsRe) t = cut(t, wordsRe);
-    if (codesRe) t = cut(t, codesRe);
+    // The markings while every piece of them still stands (step 2).
     const runs = new Set([...t.shadow.toLowerCase().matchAll(/[\p{L}\p{N}]+/gu)].map((m) => m[0]));
     for (const run of runs) {
       if (!markingsByRun.has(run)) continue;
@@ -412,6 +496,8 @@ export function makeScrubber(ctx: ScrubContext): Scrubber {
       if (re) t = cut(t, re);
     }
     if (runlessRe) t = cut(t, runlessRe);
+    if (wordsRe) t = cut(t, wordsRe);
+    if (codesRe) t = cut(t, codesRe);
 
     for (const re of shapes) t = cut(t, re);
     if (prefixRe) t = cut(t, prefixRe);
@@ -419,10 +505,12 @@ export function makeScrubber(ctx: ScrubContext): Scrubber {
     t = cut(t, PHONE);
 
     // What framed a removed unit and now frames nothing: empty brackets, a
-    // separator standing alone («YW-045 / YW26-000123» → «YW-045»).
+    // separator a cut left standing alone («YW-045 / YW26-000123» → «YW-045»).
+    // Only at a cut — «Kabel 10 - 20 m» and «Stol / stul» are the seller's.
     return t.out
-      .replace(/[(\[]\s*[)\]]/gu, ' ')
-      .replace(/(^|\s)[-–—_#№:/|]+(?=\s|$)/gu, '$1')
+      .replace(/[(\[][\s\u0000]*[)\]]/gu, ' ')
+      .replace(ORPHAN_AT_CUT, '$1 ')
+      .replace(/\u0000/gu, ' ')
       .replace(/\s+/gu, ' ')
       .trim()
       .replace(/^[\s,;:·\-–—/|]+|[\s,;:·\-–—/|]+$/gu, '')
