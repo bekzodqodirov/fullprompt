@@ -742,6 +742,7 @@ describe('8. the cargo moves under the conversation (Q4 a)', () => {
       ping: 'InternalNote',
       text: 'Kech javob',
       tg: { chatId: P.opW0.chat!, messageId: (msgSeq += 1) },
+      writtenAt: new Date().toISOString(),
     });
     expect(reply.outcome).toBe('cargo_moved');
     expect(await lastNote(r.id), 'nothing was written').toBe(before);
@@ -765,6 +766,7 @@ describe('8. the cargo moves under the conversation (Q4 a)', () => {
       ping: 'InternalNote',
       text: 'Bizda yo‘q',
       tg: { chatId: P.opW1.chat!, messageId: (msgSeq += 1) },
+      writtenAt: new Date().toISOString(),
     });
     expect(reply.outcome).toBe('cargo_moved');
   }, 60_000);
@@ -869,7 +871,7 @@ describe('11. the Telegram landing on a cargo thread', () => {
     const replyTo = await sentPing(P.opW1, 'InternalNote', thread);
     const incoming = (msgSeq += 1);
     const reply = () =>
-      threadReplyFromBot(P.opW1.chat!, { replyToMessageId: replyTo, replyToForwarded: false, text: 'TAS1 da, 2-qator', incomingMessageId: incoming });
+      threadReplyFromBot(P.opW1.chat!, { replyToMessageId: replyTo, replyToForwarded: false, text: 'TAS1 da, 2-qator', incomingMessageId: incoming, messageDate: Math.floor(Date.now() / 1000) });
     const label = `📦 ${await numberOf(r.id)} · SQ${S}`;
     expect((await reply())?.text).toBe(`✅ Javob kartaga yozildi: ${label}`);
     const [landed] = await db.execute<{ id: string }>(sql`
@@ -891,6 +893,7 @@ describe('11. the Telegram landing on a cargo thread', () => {
       replyToForwarded: false,
       text: 'Mijoz ertaga oladi',
       incomingMessageId: (msgSeq += 1),
+      messageDate: Math.floor(Date.now() / 1000),
     });
     // A prixod's label is its identity — the same words for a door-less replier.
     expect(sellerReply?.text, 'E2 a: the named person replies').toBe(`✅ Javob kartaga yozildi: ${label}`);
@@ -902,6 +905,7 @@ describe('11. the Telegram landing on a cargo thread', () => {
       replyToForwarded: false,
       text: 'yana',
       incomingMessageId: (msgSeq += 1),
+      messageDate: Math.floor(Date.now() / 1000),
     });
     expect(refused?.text).toBe('Bu kartani endi ocha olmaysiz — javob yozilmadi.');
   }, 60_000);
@@ -1004,6 +1008,7 @@ describe('13. the half-applied deploy (0129 not landed yet)', () => {
         ping: 'InternalNote',
         text: 'javob',
         tg: { chatId: P.opW1.chat!, messageId: (msgSeq += 1) },
+        writtenAt: new Date().toISOString(),
       });
       expect(reply.outcome).toBe('server_behind');
       expect(errors).not.toHaveBeenCalled();
@@ -1100,7 +1105,7 @@ describe('16. the mention path judges the scope', () => {
     // His answer's confirmation says it the way his ping did; a door-holder's keeps the route.
     const thread = { kind: 'batch', id: truck.id, activityId: asked };
     const answer = (who: Person, replyTo: number, text2: string) =>
-      threadReplyFromBot(who.chat!, { replyToMessageId: replyTo, replyToForwarded: false, text: text2, incomingMessageId: (msgSeq += 1) });
+      threadReplyFromBot(who.chat!, { replyToMessageId: replyTo, replyToForwarded: false, text: text2, incomingMessageId: (msgSeq += 1), messageDate: Math.floor(Date.now() / 1000) });
     const mentionTo = await sentPing(P.opW2, 'MentionedInNote', thread);
     expect((await answer(P.opW2, mentionTo, 'Bilmayman'))?.text).toBe(`✅ Javob kartaga yozildi: 🚚 ${truck.code}`);
     const plainTo = await sentPing(P.opW1, 'InternalNote', thread);
