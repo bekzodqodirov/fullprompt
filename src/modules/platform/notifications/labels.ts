@@ -335,6 +335,97 @@ const DICT = {
   // Round C: the card link at the foot of a staff message becomes a BUTTON
   // (the drain moves it; the stored text keeps the link).
   openInApp: { ru: '↗️ Открыть', uz: '↗️ Ochish', 'zh-CN': '↗️ 打开', en: '↗️ Open' },
+  // Round 2 of the staff threads (0129): a prixod's or a truck's question
+  // reaches a Chinese warehouse, so its FRAME — the reply hint, the reply
+  // button and the «📍» place line — follows the recipient's language
+  // (`payload.textLocale`, `textLocaleOf`). The colleague's own text is never
+  // translated. The uz values of the two reply words are round 1's literals
+  // (internal-chat.ts, staff-bot.ts `THREAD_REPLY_BUTTON`) — a unit test pins
+  // both, so a round-1 ping reads exactly as it did.
+  threadReplyHint: {
+    ru: '↩️ Чтобы ответить, сделайте reply на это сообщение',
+    uz: '↩️ Javob uchun shu xabarga reply qiling',
+    'zh-CN': '↩️ 回复（reply）此消息即可作答',
+    en: '↩️ Reply to this message to answer',
+  },
+  threadReplyButton: { ru: '💬 Ответить', uz: '💬 Javob yozish', 'zh-CN': '💬 回复', en: '💬 Reply' },
+  // The place line — ONE formatter (`cargoNowLine`, wms/crm/cargo-thread.ts)
+  // over these words, read by the web panel AND the ping, so the two cannot
+  // drift. `{code}` `{codes}` `{from}` `{to}` `{n}` are filled by `fillVars`;
+  // the separator after `cargoNow` is part of the label (`:` / `：`), and
+  // the count rides inside each template, where word order differs.
+  cargoNow: { ru: '📍 Груз сейчас:', uz: '📍 Yuk hozir:', 'zh-CN': '📍 货物现在：', en: '📍 Cargo now:' },
+  cargoShelf: { ru: '{code} — {n} кор.', uz: '{code} — {n} kor.', 'zh-CN': '{code} — {n} 箱', en: '{code} — {n} boxes' },
+  cargoRoad: {
+    ru: 'в пути {from} → {to} — {n} кор.',
+    uz: 'yo‘lda {from} → {to} — {n} kor.',
+    'zh-CN': '在途 {from} → {to} — {n} 箱',
+    en: 'on the road {from} → {to} — {n} boxes',
+  },
+  cargoUnloading: {
+    ru: 'разгружается на {to} — {n} кор.',
+    uz: '{to} da tushirilmoqda — {n} kor.',
+    'zh-CN': '正在 {to} 卸货 — {n} 箱',
+    en: 'being unloaded at {to} — {n} boxes',
+  },
+  cargoMissing: {
+    ru: 'не найдено на {to} ({from} → {to}) — {n} кор.',
+    uz: '{to} da topilmagan ({from} → {to}) — {n} kor.',
+    'zh-CN': '在 {to} 未找到（{from} → {to}）— {n} 箱',
+    en: 'not found at {to} ({from} → {to}) — {n} boxes',
+  },
+  cargoNoneLive: { ru: '📍 Груза в работе нет', uz: '📍 Faol yuk yo‘q', 'zh-CN': '📍 暂无在库或在途货物', en: '📍 No live cargo' },
+  cargoIssuedAt: {
+    ru: 'выдал склад: {codes}',
+    uz: 'topshirgan sklad: {codes}',
+    'zh-CN': '交付仓库：{codes}',
+    en: 'handed over by: {codes}',
+  },
+  cargoLostAt: {
+    ru: 'списан как утерянный: {codes}',
+    uz: 'yo‘qolgan deb yozilgan: {codes}',
+    'zh-CN': '登记为丢失：{codes}',
+    en: 'written off as lost: {codes}',
+  },
+  cargoReceivedAt: {
+    ru: 'принял склад: {code}',
+    uz: 'qabul qilgan sklad: {code}',
+    'zh-CN': '收货仓库：{code}',
+    en: 'received by: {code}',
+  },
+  cargoDraft: {
+    ru: '📍 Черновик, ещё не подтверждён — склад: {code}',
+    uz: '📍 Qoralama, hali tasdiqlanmagan — sklad: {code}',
+    'zh-CN': '📍 草稿，尚未确认——仓库：{code}',
+    en: '📍 Draft, not confirmed yet — warehouse: {code}',
+  },
+  cargoVoided: {
+    ru: '📍 Приёмка аннулирована — принял склад: {code}',
+    uz: '📍 Bekor qilingan prixod — qabul qilgan sklad: {code}',
+    'zh-CN': '📍 入库单已作废——收货仓库：{code}',
+    en: '📍 Receipt voided — received by: {code}',
+  },
+  truckLoading: { ru: '{code} — загружается', uz: '{code} — yuklanmoqda', 'zh-CN': '{code} — 装车中', en: '{code} — loading' },
+  truckRoad: { ru: 'в пути {from} → {to}', uz: 'yo‘lda {from} → {to}', 'zh-CN': '在途 {from} → {to}', en: 'on the road {from} → {to}' },
+  truckUnloading: {
+    ru: '{code} — разгружается, осталось {n} кор.',
+    uz: '{code} — tushirilmoqda, {n} kor. qoldi',
+    'zh-CN': '{code} — 卸货中，剩余 {n} 箱',
+    en: '{code} — unloading, {n} boxes left',
+  },
+  truckMissing: {
+    ru: '{code} — разгружен, не найдено {n} кор.',
+    uz: '{code} — tushirildi, {n} kor. topilmagan',
+    'zh-CN': '{code} — 已卸货，{n} 箱未找到',
+    en: '{code} — unloaded, {n} boxes not found',
+  },
+  truckArrived: { ru: '{code} — прибыл', uz: '{code} — yetib kelgan', 'zh-CN': '{code} — 已到达', en: '{code} — arrived' },
+  truckCancelled: {
+    ru: '📍 Рейс отменён — груз на складе {code}',
+    uz: '📍 Mashina bekor qilingan — yuk {code} da',
+    'zh-CN': '📍 车次已取消——货物在 {code}',
+    en: '📍 Truck cancelled — cargo at {code}',
+  },
 } satisfies Record<string, Record<Locale, string>>;
 
 export type NotificationLabels = { [K in keyof typeof DICT]: string };
@@ -347,6 +438,29 @@ export function notificationLabels(locale?: string | null): NotificationLabels {
   return Object.fromEntries(
     Object.entries(DICT).map(([name, values]) => [name, values[key]]),
   ) as NotificationLabels;
+}
+
+/**
+ * The language a PRE-RENDERED text was written in — `payload.textLocale` when
+ * the writer said one (a cargo ping's frame, 0129), else Uzbek: every
+ * pre-rendered text before round 2 was written in Uzbek by its caller, so it
+ * keeps «↗️ Ochish» and «💬 Javob yozish». Read by the drain's open button
+ * (`composeStaffMessage`) and the reply button (`buttonsFor`) — HERE, beside
+ * the dictionary both already import, so neither grows an edge to the other.
+ */
+export function textLocaleOf(payload: Record<string, unknown> | null | undefined): Locale {
+  const value = payload?.textLocale;
+  return typeof value === 'string' && (LOCALES as readonly string[]).includes(value) ? (value as Locale) : 'uz';
+}
+
+/**
+ * `{name}` placeholders filled from `vars` — every occurrence (`cargoMissing`
+ * names `{to}` twice); a var the caller did not give is left as written.
+ */
+export function fillVars(template: string, vars: Record<string, string | number>): string {
+  let out = template;
+  for (const [name, value] of Object.entries(vars)) out = out.replaceAll(`{${name}}`, String(value));
+  return out;
 }
 
 /** «… yana 12 ta» — a count spliced into its sentence. */

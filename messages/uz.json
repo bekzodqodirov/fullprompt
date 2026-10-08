@@ -5329,6 +5329,28 @@
       "not_found": "Hisob topilmadi.",
       "server_behind": "Tizim yangilanmoqda — birozdan keyin qaytadan yuboring.",
       "save_failed": "Yuborilmadi — qaytadan urinib ko‘ring."
+    },
+    "cargo": {
+      "title": "❓ Savol-javob · {n}",
+      "empty": "Hali savol yo‘q. Yuk bo‘yicha savolni shu yerda bering.",
+      "toStaff": "Savolingiz boradi: {list}",
+      "staffCount": "{code} — {n} kishi",
+      "staffNone": "⚠ {code}: biriktirilgan hodim yo‘q",
+      "toOffice": "Savolingiz logistlarga boradi.",
+      "noStaffAt": "⚠ {codes}: biriktirilgan hodim yo‘q — u yerga xabar bormadi.",
+      "noOffice": "⚠ Logist topilmadi — logistlarga xabar bormadi.",
+      "nobody": "⚠ Bu xabar Telegramda hech kimga yuborilmadi — faqat kartada turibdi.",
+      "more": "… yana {n} kishi",
+      "elsewhere": "❓ Savol-javob logistlar, rahbarlar va yuk hozir turgan sklad hodimlariga ochiq.",
+      "errors": {
+        "forbidden": "Bu yozishmaga yozish huquqingiz yo‘q.",
+        "cargo_moved": "Yuk endi sizning skladingizda emas — xabar yozilmadi.",
+        "empty": "Bo‘sh xabar.",
+        "too_long": "Juda uzun — 4000 belgigacha yozing.",
+        "not_found": "Karta topilmadi.",
+        "server_behind": "Tizim yangilanmoqda — birozdan keyin qaytadan yuboring.",
+        "save_failed": "Yuborilmadi — qaytadan urinib ko‘ring."
+      }
     }
   },
   "priceChannel": {

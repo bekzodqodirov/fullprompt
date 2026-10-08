@@ -27,7 +27,8 @@ test.describe.configure({ mode: 'serial' });
 
 const ADMIN = '+998900000001';
 const VED = '+998900000004';
-// A warehouse operator: no chat, no threads — the dock's day alone (CHAT-7).
+// A warehouse operator: no chat; «👥 Ichki» since round 2 (0129 — the cargo
+// threads of his warehouse) beside his day, so a dock of TWO tabs (CHAT-7).
 const OPERATOR = '+998900000006';
 // A plain seller: on HER card the lenta's chip names a fold on the SAME page.
 const SELLER = '+998900000009';
@@ -305,22 +306,30 @@ test('on the seller’s own card the lenta’s chip opens the closed fold — a 
   await expect(fold(page)).toContainText(ANSWER);
 });
 
-test('a dock with one tab keeps its word on a phone (the warehouse operator’s «Mening kunim»)', async ({ page }) => {
+test('a dock with two tabs keeps its words on a phone (the warehouse operator’s «👥 Ichki» and «Mening kunim»)', async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 800 });
   await login(page, OPERATOR);
   await page.getByTestId('dock-button').click();
   await expect(page.getByTestId('dock-panel')).toBeVisible();
   await expect(page.getByTestId('dock-tab-chat')).toHaveCount(0);
-  await expect(page.getByTestId('dock-tab-threads')).toHaveCount(0);
-  // The word is the tab's second span; `sr-only` would make it a 1 px box.
-  const word = page.getByTestId('dock-tab-tasks').locator('span').nth(1);
-  await expect(word).toBeVisible();
-  expect((await word.boundingBox())!.width).toBeGreaterThan(20);
+  // Round 2 (0129, E7 b): the cargo threads of his warehouse land in «👥 Ichki».
+  await expect(page.getByTestId('dock-tab-threads')).toHaveCount(1);
+  // Each word is the tab's second span; `sr-only` would make it a 1 px box.
+  const words = [
+    page.getByTestId('dock-tab-tasks').locator('span').nth(1),
+    page.getByTestId('dock-tab-threads').locator('span').nth(1),
+  ];
+  for (const word of words) {
+    await expect(word).toBeVisible();
+    expect((await word.boundingBox())!.width).toBeGreaterThan(20);
+  }
   await widthFits(page, 360);
   await page.screenshot({ path: `${SHOTS}/ichki-dock-operator-360.png` });
   await page.setViewportSize({ width: 1280, height: 900 });
-  await expect(word).toBeVisible();
-  expect((await word.boundingBox())!.width).toBeGreaterThan(20);
+  for (const word of words) {
+    await expect(word).toBeVisible();
+    expect((await word.boundingBox())!.width).toBeGreaterThan(20);
+  }
   await widthFits(page, 1280);
   await page.screenshot({ path: `${SHOTS}/ichki-dock-operator-1280.png` });
 });

@@ -46,7 +46,7 @@ import {
   userRoles,
   users,
 } from '@/modules/platform/db/schema';
-import { userPermissions } from '@/modules/platform/rbac/authorize';
+import { actorGrants } from '@/modules/platform/rbac/authorize';
 import { rekeyLeadCalcRequests } from '@/modules/wms/calc/service';
 import { announceNote, noteRecipients } from '@/modules/wms/crm/internal-chat';
 import {
@@ -151,7 +151,10 @@ async function request(entityType: 'lead' | 'deal', entityId: string, requestedB
   return row!.id;
 }
 
-const actorOf = async (id: string) => ({ id, permissions: await userPermissions(id) });
+// The thread reader carries its scope since round 2 (0129 — the cargo arm
+// asks WHERE a person works); no CRM arm reads it, so every answer below is
+// the one it was.
+const actorOf = async (id: string) => ({ id, ...(await actorGrants(id)) });
 
 /** The pings one note produced, by its own row id (`payload.thread.activityId`). */
 async function pingsOf(activityId: string) {

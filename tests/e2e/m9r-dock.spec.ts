@@ -36,12 +36,15 @@ async function openDock(page: import('@playwright/test').Page) {
   }).toPass({ timeout: 15_000 });
 }
 
-test('a warehouse operator gets a tasks-only dock, on any page', async ({ page }) => {
+test('a warehouse operator gets no chat tab, on any page', async ({ page }) => {
   await login(page, YW_OPERATOR);
   await page.goto('/stock');
   await openDock(page);
   // No chat tab — reading clients' conversations is not warehouse work.
   await expect(page.getByTestId('dock-tab-chat')).toHaveCount(0);
+  // «👥 Ichki» since round 2 (0129, E7 b): the prixod and truck threads of
+  // the cargo standing at his warehouse land there.
+  await expect(page.getByTestId('dock-tab-threads')).toHaveCount(1);
   await expect(page.getByTestId('dock-tab-tasks')).toBeVisible();
 });
 

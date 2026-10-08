@@ -143,14 +143,23 @@ describe('the doors', () => {
     expect(dock).toContain('myThreads(actor)');
     const myThreads = between(src('src/modules/wms/crm/thread.ts'), 'export async function myThreads', '\n}\n');
     expect(myThreads).toContain('threadDoorsFor(viewer, refs)');
-    for (const route of ['read', 'pulse']) {
-      expect(src(`src/app/api/threads/${route}/route.ts`), route).toContain('isServerBehind(err)');
-    }
+    // Round 2 (0129): a read mark on a cargo thread breaks the widened CHECK
+    // on a database one migration behind, so the READ route names the wider
+    // rule; the pulse and the dock only read and keep the 42P01/42703 one.
+    expect(src('src/app/api/threads/read/route.ts'), 'read').toContain('isThreadWriteBehind(err)');
+    expect(src('src/app/api/threads/pulse/route.ts'), 'pulse').toContain('isServerBehind(err)');
     expect(dock).toContain('isServerBehind(err)');
+    // The cargo action and both cargo pages ask the thread's door themselves.
+    expect(src('src/modules/wms/crm/cargo-thread-actions.ts')).toContain('mayWriteThread(who, ref)');
+    for (const page of ['src/app/(protected)/receipts/[id]/page.tsx', 'src/app/(protected)/batches/[id]/page.tsx']) {
+      expect(src(page), page).toContain('mayReadThread(actor, cargoRef)');
+    }
   });
 
   it('6. the Telegram landing’s door has exactly two exemptions — the mention and the standing', () => {
-    const door = between(src('src/modules/wms/crm/thread-reply.ts'), 'const admitted =', 'if (!admitted)');
+    // From the door's own ask (kept for the confirmation's label, round 2) to the refusal.
+    const door = between(src('src/modules/wms/crm/thread-reply.ts'), 'const door =', 'if (!admitted)');
+    expect(door).toContain('const admitted = door ||');
     expect(door).toContain('await mayWriteThread(actor, input.ref)');
     expect(door).toContain("input.ping === 'MentionedInNote'");
     expect(door).toContain('await threadStanding(actor.id, input.ref)');
@@ -285,6 +294,9 @@ describe('the read mark follows what is on screen', () => {
       'src/app/(protected)/bitimlar/[id]/page.tsx',
       'src/app/(protected)/admin/clients/[id]/page.tsx',
       'src/app/(protected)/hisoblash/[id]/karta/page.tsx',
+      // Round 2 (0129): the prixod's and the truck's «❓ Savol-javob».
+      'src/app/(protected)/receipts/[id]/page.tsx',
+      'src/app/(protected)/batches/[id]/page.tsx',
     ];
     for (const page of pages) {
       const text = src(page);
@@ -387,6 +399,12 @@ describe('the words (#163 — anchored on the code, never bundle-vs-bundle)', ()
       'src/components/calc-thread-box.tsx',
       'src/app/(protected)/hisoblash/[id]/page.tsx',
       'src/app/(protected)/profile/page.tsx',
+      // Round 2 (0129): one bubble list for every thread, and the cargo thread's panel, box and pages.
+      'src/components/thread-bubbles.tsx',
+      'src/components/cargo-thread.tsx',
+      'src/components/cargo-thread-box.tsx',
+      'src/app/(protected)/receipts/[id]/page.tsx',
+      'src/app/(protected)/batches/[id]/page.tsx',
     ];
     const keys = new Set<string>();
     for (const rel of files) {

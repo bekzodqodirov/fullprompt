@@ -32,7 +32,7 @@ import { reachOf, type Reach } from '../notifications/staff';
 import type { DraftFile } from './task-draft';
 import { DAY_BUTTONS } from '../tasks/digest';
 import { logger } from '../logger';
-import { approvalVerdictLine } from '../notifications/labels';
+import { approvalVerdictLine, notificationLabels, textLocaleOf } from '../notifications/labels';
 import {
   appendLine,
   capStaffText,
@@ -576,8 +576,11 @@ export function buttonsFor(type: string, payload: Record<string, unknown>): BotB
   // one-text wait — the same answer a swipe-reply gives, for whoever prefers
   // a button. Only a ping that names its thread: one sent before 0127 has no
   // `payload.thread` and could not be landed anywhere.
+  // Its word in the language the ping's text was written in (`textLocaleOf`,
+  // 0129 — a cargo ping's frame follows its recipient; every other ping is
+  // Uzbek, and the uz word IS `THREAD_REPLY_BUTTON`, pinned by a test).
   if ((THREAD_PING_TYPES as readonly string[]).includes(type) && threadOfPayload(payload)) {
-    return [[{ text: THREAD_REPLY_BUTTON, callback_data: 'jy' }]];
+    return [[{ text: notificationLabels(textLocaleOf(payload)).threadReplyButton, callback_data: 'jy' }]];
   }
   // The author's copy of a question carries the one way to answer it.
   if (type === 'TaskQuestion' && taskId) {

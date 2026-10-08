@@ -8,6 +8,7 @@ import { reachLine } from '../notifications/staff';
 import {
   THREAD_PING_TYPES,
   THREAD_UUID,
+  isCargoKind,
   threadOfPayload,
   type ThreadPingType,
   type ThreadRef,
@@ -64,6 +65,9 @@ export const REPLY_SENTENCES = {
     'Bu yo‘naltirilgan (forward) xabar — javob tizimga tushmaydi. Asosiy xabarga reply qiling; mijozga esa kartadagi chatdan yozing.',
   waitNoTarget: 'Xabar topilmadi — javobni kartada yozing.',
   mediaCard: 'Hozircha javob faqat matn bilan qabul qilinadi — rasm yoki faylni kartaning o‘zida qo‘shing.',
+  // A prixod's or a truck's thread has no 📎 on the card either (E10 a):
+  // «add it on the card» would send the person to a box that refuses files.
+  mediaCargo: 'Bu yozishmaga hozircha faqat matn yoziladi (rasm keyingi bosqichda) — javobni matn bilan yozing.',
   mediaTask:
     'Hozircha javob faqat matn bilan qabul qilinadi — savolni matn bilan yozing, faylni topshiriq sahifasida qo‘shing.',
   pressPrompt: '💬 Javobingizni yozing:',
@@ -138,6 +142,33 @@ export async function replyVerdictFor(
     return { kind: 'task_question', taskId };
   }
   return { kind: 'not_replyable' };
+}
+
+/**
+ * The sentence a photo, file or voice reply to this verdict is refused with —
+ * or null when the verdict is not one this door owns (the handler falls
+ * through). A cargo thread's words are its own: its card has no 📎 either.
+ * Pure; the cargo test is `isCargoKind`, never a kind literal.
+ */
+export function mediaSentenceFor(verdict: ReplyVerdict): string | null {
+  switch (verdict.kind) {
+    case 'thread':
+      return isCargoKind(verdict.ref.kind) ? REPLY_SENTENCES.mediaCargo : REPLY_SENTENCES.mediaCard;
+    case 'calc_task':
+      return REPLY_SENTENCES.mediaCard;
+    case 'task_question':
+    case 'task_answer':
+      return REPLY_SENTENCES.mediaTask;
+    case 'old_ping':
+    case 'customer':
+    case 'not_replyable':
+      return null;
+    default: {
+      const never: never = verdict;
+      void never;
+      return null;
+    }
+  }
 }
 
 /** The sentence a refused or unlandable verdict reads — or null when it is one that lands. */
@@ -224,8 +255,10 @@ export async function threadReplyFromBot(
       if (!actor) return { text: REPLY_SENTENCES.notLinked };
       // platform never imports wms statically — the landing is wms's.
       const { landThreadReply } = await import('../../wms/crm/thread-reply');
+      // The WHOLE actor: the cargo door is a question about where he works,
+      // and `botActorFor` already carries the scope (`actorGrants`).
       const out = await landThreadReply(
-        { id: actor.id, permissions: actor.permissions },
+        actor,
         {
           ref: verdict.kind === 'thread' ? verdict.ref : { kind: 'calc', id: verdict.requestId },
           ping: verdict.kind === 'thread' ? verdict.ping : 'calc_task',
@@ -275,15 +308,10 @@ export async function refuseMediaReply(ctx: Context, chatId: bigint): Promise<bo
     if (!staff) return false;
     const verdict = await replyVerdictFor(chatId, replied.message_id, staff.id);
     if (!verdict) return false;
-    if (verdict.kind === 'thread' || verdict.kind === 'calc_task') {
-      await ctx.reply(REPLY_SENTENCES.mediaCard);
-      return true;
-    }
-    if (verdict.kind === 'task_question' || verdict.kind === 'task_answer') {
-      await ctx.reply(REPLY_SENTENCES.mediaTask);
-      return true;
-    }
-    return false;
+    const sentence = mediaSentenceFor(verdict);
+    if (!sentence) return false;
+    await ctx.reply(sentence);
+    return true;
   } catch (err) {
     logger.warn({ err }, '[thread] media reply check failed');
     return false;

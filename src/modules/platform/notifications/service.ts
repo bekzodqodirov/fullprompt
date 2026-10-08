@@ -18,7 +18,7 @@ import { canLogInSql } from '../users/login';
 import { runAutomationRules } from '../automation/service';
 import { botRefused } from '../diagnostics/signals';
 import { buttonsFor, type BotButton } from '../telegram/staff-bot';
-import { approvalVerdictLine, fillCount, notificationLabels } from './labels';
+import { approvalVerdictLine, fillCount, notificationLabels, textLocaleOf } from './labels';
 import { isTelegramMuted } from './mutes';
 import { sendsSilently } from './night';
 import { groupDigits, h } from '../telegram/format';
@@ -107,13 +107,49 @@ export async function warehouseStaffWithPermission(code: string, warehouseId: st
       and(
         eq(permissions.code, code),
         canLogInSql(),
-        sql`EXISTS (SELECT 1 FROM user_roles wsr JOIN roles wsro ON wsro.id = wsr.role_id
-                     WHERE wsr.user_id = ${users.id} AND wsro.warehouse_scoped)`,
+        scopedRoleSql(sql`${users.id}`),
         sql`EXISTS (SELECT 1 FROM user_warehouses wsw
                      WHERE wsw.user_id = ${users.id} AND wsw.warehouse_id = ${warehouseId}::uuid)`,
       ),
     );
   return [...new Set(rows.map((r) => r.userId))];
+}
+
+/**
+ * «This person holds a warehouse-SCOPED role» — `actorGrants`' own rule (any
+ * scoped role scopes the user), as one clause with two askers: the reroute's
+ * permission list above and the cargo threads' staff list below.
+ */
+function scopedRoleSql(userId: SQL): SQL {
+  return sql`EXISTS (SELECT 1 FROM user_roles wsr JOIN roles wsro ON wsro.id = wsr.role_id
+                      WHERE wsr.user_id = ${userId} AND wsro.warehouse_scoped)`;
+}
+
+/**
+ * The STAFF of these warehouses (round 2, E6 c / E7 b): every person who can
+ * sign in (`canLogInSql`), holds a warehouse-SCOPED role, and is assigned to
+ * one of them — whatever the role's grants. One row per (person, warehouse).
+ * The reroute's helper above asks a PERMISSION («who unloads here»); a
+ * question about cargo is for whoever WORKS there, which is what the owner
+ * says when he ticks a role scoped (0049). The unscoped — the owner, the
+ * admins, the logists — are not here: they hear by role. `user_warehouses`
+ * has no index led by `warehouse_id`; the table is a row per assignment and
+ * tiny — stated.
+ */
+export async function warehouseStaff(
+  warehouseIds: readonly string[],
+): Promise<{ userId: string; warehouseId: string }[]> {
+  const ids = [...new Set(warehouseIds)];
+  if (ids.length === 0) return [];
+  const rows = await db.execute<{ user_id: string; warehouse_id: string }>(sql`
+    SELECT DISTINCT uw.user_id::text AS user_id, uw.warehouse_id::text AS warehouse_id
+      FROM user_warehouses uw
+      JOIN users u ON u.id = uw.user_id
+     WHERE uw.warehouse_id IN (${sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `)})
+       AND ${canLogInSql('u')}
+       AND ${scopedRoleSql(sql`u.id`)}
+  `);
+  return rows.map((row) => ({ userId: row.user_id, warehouseId: row.warehouse_id }));
 }
 
 /**
@@ -1018,8 +1054,10 @@ export function __resetTelegramPause(): void {
  * «↗️ Ochish» button (staff-html.ts). Exported because an EDIT of a sent
  * message (the approval copies below) must rebuild exactly what was sent.
  *
- * A pre-rendered text was written in Uzbek by its caller, so its button is
- * Uzbek too; an event-rendered one is in the reader's own language.
+ * A pre-rendered text's button is in the language the text was WRITTEN in
+ * (`textLocaleOf` — Uzbek unless the writer said otherwise: a cargo ping's
+ * frame follows its recipient, 0129); an event-rendered one is in the
+ * reader's own language.
  */
 export function composeStaffMessage(
   type: string,
@@ -1029,7 +1067,7 @@ export function composeStaffMessage(
   const preRendered = typeof payload.text === 'string' && payload.text.trim() !== '';
   return composeStaffHtml(type, renderTelegramText(type, payload, locale), {
     appUrl: process.env.APP_URL,
-    openLabel: notificationLabels(preRendered ? 'uz' : locale).openInApp,
+    openLabel: notificationLabels(preRendered ? textLocaleOf(payload) : locale).openInApp,
   });
 }
 

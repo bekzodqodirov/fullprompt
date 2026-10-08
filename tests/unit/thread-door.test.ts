@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ROLE_MATRIX, type RoleCode } from '@/modules/platform/rbac/catalog';
+import { ROLE_MATRIX, WAREHOUSE_SCOPED_ROLES, type RoleCode } from '@/modules/platform/rbac/catalog';
 import { lentaReaderOf, threadDoorOf, type ThreadCard } from '@/modules/wms/crm/thread-door';
 
 /**
@@ -24,7 +24,15 @@ const CARDS: Record<string, ThreadCard> = {
   client: { kind: 'client' },
 };
 
-const actor = (role: RoleCode) => ({ id: ME, permissions: new Set<string>(ROLE_MATRIX[role]) });
+// The reader carries its scope since round 2 (the cargo arm asks WHERE a
+// person works) — the CRM arms never read it, so every cell below is the
+// same answer it was. A scoped role here has no warehouse: none is needed.
+const actor = (role: RoleCode) => ({
+  id: ME,
+  permissions: new Set<string>(ROLE_MATRIX[role]),
+  warehouseScoped: WAREHOUSE_SCOPED_ROLES.includes(role),
+  warehouseIds: [] as string[],
+});
 const row = (role: RoleCode) =>
   Object.fromEntries(Object.entries(CARDS).map(([name, card]) => [name, threadDoorOf(actor(role), card)]));
 
@@ -53,7 +61,7 @@ describe('the thread door over every seeded role', () => {
   });
 
   it('a both-hats seller who also calculates reads a colleague’s CALC lead (the karta draws him its box)', () => {
-    const both = { id: ME, permissions: new Set<string>(['crm.leads', 'ved.docs']) };
+    const both = { id: ME, permissions: new Set<string>(['crm.leads', 'ved.docs']), warehouseScoped: false, warehouseIds: [] };
     expect(threadDoorOf(both, CARDS.calcLead!)).toBe(true);
     expect(threadDoorOf(both, CARDS.colleagueLead!)).toBe(false);
   });
