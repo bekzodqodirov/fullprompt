@@ -58,10 +58,16 @@ describe('a ping’s payload.thread, validated', () => {
     expect(threadOfPayload({ thread: { ...thread, kind: 'calc' } })).toEqual({ ...thread, kind: 'calc' });
   });
 
+  it('accepts the two cargo kinds (round 2, 0129) — a prixod’s and a truck’s thread', () => {
+    expect(threadOfPayload({ thread: { ...thread, kind: 'receipt' } })).toEqual({ ...thread, kind: 'receipt' });
+    expect(threadOfPayload({ thread: { ...thread, kind: 'batch' } })).toEqual({ ...thread, kind: 'batch' });
+  });
+
   it('refuses a non-uuid id, an unknown kind, and a missing note id — nobody’s thread', () => {
     expect(threadOfPayload({ thread: { ...thread, id: `${UUID}x` } })).toBeNull();
     expect(threadOfPayload({ thread: { ...thread, id: 'aaaaaaaa-aaaaaaaaaaaaaaaaaaaaaaaaaaa' } })).toBeNull();
-    expect(threadOfPayload({ thread: { ...thread, kind: 'receipt' } })).toBeNull();
+    // A kind that stays unknown — 'receipt' became a thread in round 2.
+    expect(threadOfPayload({ thread: { ...thread, kind: 'shipment' } })).toBeNull();
     expect(threadOfPayload({ thread: { kind: 'lead', id: UUID } })).toBeNull();
     expect(threadOfPayload({ text: 'x' })).toBeNull();
     expect(threadOfPayload(null)).toBeNull();
@@ -70,7 +76,9 @@ describe('a ping’s payload.thread, validated', () => {
   it('the routes’ body validator is the same rule', () => {
     expect(isThreadRef({ kind: 'deal', id: UUID })).toBe(true);
     expect(isThreadRef({ kind: 'deal', id: 'x' })).toBe(false);
-    expect(isThreadRef({ kind: 'batch', id: UUID })).toBe(false);
+    expect(isThreadRef({ kind: 'batch', id: UUID })).toBe(true);
+    expect(isThreadRef({ kind: 'receipt', id: UUID })).toBe(true);
+    expect(isThreadRef({ kind: 'shipment', id: UUID })).toBe(false);
     expect(isThreadRef('lead')).toBe(false);
   });
 });

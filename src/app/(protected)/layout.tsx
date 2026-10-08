@@ -24,6 +24,7 @@ import {
 import { WorkspaceTabs } from '@/components/ui/ws-tabs';
 import { Dock } from '@/components/dock';
 import { canReadTg } from '@/modules/wms/crm/conversations';
+import { mayHaveThreads } from '@/modules/wms/crm/thread-door';
 import { mayEditDealTerms } from '@/modules/wms/deals/door';
 import { primaryItems } from '@/modules/platform/rbac/nav';
 import { REPORT_GROUPS } from '@/modules/platform/rbac/workspaces';
@@ -215,17 +216,12 @@ export default async function ProtectedLayout({ children }: { children: React.Re
           </SearchPalette>
           {/* Chat and tasks from ANY page (owner, items 5+7). The chat tab
               follows the conversation gate; tasks belong to everyone. «👥
-              Ichki» (0127) only for whoever a round-1 thread door can admit —
-              the CRM grants and the VED's; a warehouse role or the accountant
-              can never have a row, so no tab and no fetch (round 2 widens it). */}
-          <Dock
-            canChat={canReadTg(actor)}
-            canThreads={
-              actor.permissions.has('crm.leads') ||
-              actor.permissions.has('clients.manage') ||
-              actor.permissions.has('ved.docs')
-            }
-          />
+              Ichki» (0127) only for whoever a thread door can EVER admit —
+              asked of the door itself (`mayHaveThreads`): the CRM grants, the
+              VED's, the office's cargo grant and, since round 2 (0129), the
+              warehouse staff, whose prixod and truck threads land here. The
+              accountant and the viewer can never have a row: no tab, no fetch. */}
+          <Dock canChat={canReadTg(actor)} canThreads={mayHaveThreads(actor)} />
           <ThemeToggle current={theme} />
           {/* Hidden on a phone — it lives on /profile there. Seven controls
               at 44 px do not fit in 360 px, and flex silently squeezed every

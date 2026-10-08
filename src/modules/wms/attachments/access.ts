@@ -173,6 +173,14 @@ async function decide(
         columns: { entityType: true, entityId: true },
       });
       if (!row) return { allow: false, rule: 'orphan' };
+      // E10 a — prixod and truck threads are TEXT (0129): a file pre-bound to
+      // one of their notes would open for every seller below and stay shut for
+      // the warehouse operator who wrote it. Refused (enforced, a coded deny)
+      // until the photo round asks `mayReadThread` here; the uploader rule
+      // above still opens a person's own upload.
+      if (row.entityType === 'receipt' || row.entityType === 'batch') {
+        return { allow: false, rule: 'cargo-thread-no-files' };
+      }
       if (row.entityType === 'deal') {
         return has('crm.leads', 'clients.manage', 'ved.docs')
           ? { allow: true, rule: 'crm-activity' }

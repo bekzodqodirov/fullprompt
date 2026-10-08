@@ -15,6 +15,7 @@ import { completeTaskAction } from '@/modules/platform/tasks/actions';
 // A TYPE from the pure module the route builds its answer with: the JSON
 // crossing has one shape on both ends (the design judge's eighth finding).
 import type { DockConversation } from '@/modules/wms/crm/conversation-row';
+import type { ThreadKind } from '@/modules/platform/notifications/thread-ref';
 import { OFFICE_TZ } from '@/modules/platform/time/tashkent';
 
 /**
@@ -84,7 +85,7 @@ interface DockThread {
 
 /** One «👥 Ichki» row — the route's `myThreads` answer (wms/crm/thread.ts `DockThreadRow`). */
 interface DockThreadRow {
-  kind: 'lead' | 'deal' | 'client' | 'calc';
+  kind: ThreadKind;
   id: string;
   label: string;
   section: string | null;
@@ -745,9 +746,8 @@ export function Dock({
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-bold">
                           {row.label}
-                          {row.kind === 'calc' && row.section
-                            ? ` · ${tcalc(`sections.${row.section}`)}`
-                            : ''}
+                          {/* `section` is non-null only on a calculation's row (thread.ts `threadLabels`). */}
+                          {row.section ? ` · ${tcalc(`sections.${row.section}`)}` : ''}
                         </span>
                         <span className="block truncate text-xs text-ink-500">
                           {row.author ? `${row.author}: ` : ''}

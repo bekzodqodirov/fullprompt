@@ -68,6 +68,11 @@ import { canLogInSql } from '@/modules/platform/users/login';
 import { lotCheckViewsFor, mayCheckLot, type LotCheckView } from '@/modules/wms/receipts/lot-check';
 import { telegramPhoneUrl } from '@/modules/platform/telegram/map-link';
 import { LotCheckPanel } from './lot-check-panel';
+import { isServerBehind } from '@/modules/platform/db/errors';
+import { mayReadThread } from '@/modules/wms/crm/thread-door';
+import { threadReadMarks } from '@/modules/wms/crm/thread';
+import { CargoThread } from '@/components/cargo-thread';
+import { ThreadSeen } from '@/components/thread-seen';
 
 export default async function ReceiptDetailPage({
   params,
@@ -351,6 +356,21 @@ export default async function ReceiptDetailPage({
     : [];
   // «🧱 Palet qilish» per lot and warehouse (0112, Q10 d) — ONE grouped query.
   const palletDoors = receipt.status === 'confirmed' ? await palletDoorsFor(actor, lotIds) : [];
+
+  // «❓ Savol-javob» (round 2, 0129 — E6 c, E7 b): the prixod's staff thread,
+  // for the office and the staff of the warehouse where the cargo stands NOW.
+  // The thread's door, not the card's: the card admits every seller and the
+  // receiving warehouse for ever, the thread neither. A database a release
+  // behind keeps the rest of the card.
+  const cargoRef = { kind: 'receipt' as const, id };
+  let cargoThread = false;
+  try {
+    cargoThread = await mayReadThread(actor, cargoRef);
+  } catch (err) {
+    if (!isServerBehind(err)) throw err;
+  }
+  const readMarks = await threadReadMarks([...(cargoThread ? [cargoRef] : [])]);
+  const tth = await getTranslations('threads');
 
   return (
     <div className="space-y-6">
@@ -817,6 +837,19 @@ export default async function ReceiptDetailPage({
           }}
         />
       )}
+
+      {cargoThread ? (
+        <CargoThread threadRef={cargoRef} viewer={actor} />
+      ) : actor.warehouseScoped ? (
+        // A SCOPED person the card admits and the thread does not: the
+        // receiving warehouse after the cargo left, a scoped logist on such a
+        // card — one sentence instead of a silently missing panel. An
+        // unscoped non-reader (seller, VED, accountant) sees nothing (E7 b).
+        <p className="text-xs text-ink-500" data-testid="cargo-thread-elsewhere">
+          {tth('cargo.elsewhere')}
+        </p>
+      ) : null}
+      <ThreadSeen refs={readMarks} />
 
       <TasksPanel
         entityType="receipt"
