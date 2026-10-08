@@ -26,7 +26,7 @@ import { installBotShutdown, isStopping, markBoot, stopTelegramBot, stoppingGuar
 import { pressMiddleware } from './press';
 import { coalesceBacklogLabels } from './backlog';
 import { briefRetry } from './retry';
-import { flushWaitWrites, hydrateWaits, useDurableWaits } from './waits';
+import { flushWaitWrites, hydrateWaits, setDurableWaits } from './waits';
 import { messageKey } from './once';
 
 /**
@@ -176,7 +176,7 @@ export function startTelegramBot(): void {
   };
   // The durable waits are back in memory BEFORE the first getUpdates: the
   // backlog's first text may be the answer to one of them.
-  useDurableWaits(true);
+  setDurableWaits(true);
   void hydrateWaits()
     .catch((err: unknown) => logger.warn({ err }, 'telegram waits not restored'))
     .finally(() => startPolling(30_000));

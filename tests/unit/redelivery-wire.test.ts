@@ -167,7 +167,7 @@ describe('(6) the start', () => {
       'bot.api.config.use(briefRetry);',
       'registerBotHandlers(bot);',
       'installBotShutdown(',
-      'useDurableWaits(true);',
+      'setDurableWaits(true);',
       'void hydrateWaits()',
     ].map((needle) => found(start, needle));
     for (let i = 1; i < order.length; i += 1) expect(order[i - 1]!, `step ${i}`).toBeLessThan(order[i]!);

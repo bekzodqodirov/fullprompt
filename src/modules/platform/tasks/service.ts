@@ -1325,15 +1325,6 @@ export async function remindTask(id: string, ctx: TaskContext): Promise<{ reach:
 export const COMMENT_MAX = 1000;
 
 /**
- * «💬 Savol» — the assignee asks the author, through the bot (his 4a). An
- * audit row on the task (action `comment`), so the conversation is on the
- * task's own history and not only in two phones; the author's copy carries
- * «💬 Javob berish».
- *
- * Not on an automation task (the author wrote a rule, not this task) and not
- * on a job whose author is the presser.
- */
-/**
  * «🕒 Yozilgan: …» under a Telegram text that reaches its reader late (Q5 a):
  * a 03:00 question replayed after a deploy must not read as new. Empty when
  * on time or when the moment is unknown.
@@ -1342,6 +1333,15 @@ function writtenLine(writtenAt: Date | null | undefined, now = Date.now()): stri
   return writtenAt && now - writtenAt.getTime() > LATE_FORWARD_MS ? `\n🕒 Yozilgan: ${tashkentMinute(writtenAt)}` : '';
 }
 
+/**
+ * «💬 Savol» — the assignee asks the author, through the bot (his 4a). An
+ * audit row on the task (action `comment`), so the conversation is on the
+ * task's own history and not only in two phones; the author's copy carries
+ * «💬 Javob berish».
+ *
+ * Not on an automation task (the author wrote a rule, not this task) and not
+ * on a job whose author is the presser.
+ */
 export async function askAboutTask(
   id: string,
   text: string,

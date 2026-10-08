@@ -204,16 +204,6 @@ async function openLeadById(id: string): Promise<{ id: string; ownerId: string |
 }
 
 /**
- * Land an arrival.
- *
- * The order is the design: a known CLIENT first (their enquiry belongs on the
- * card that holds their cargo and their money, not on a fresh lead), then an
- * open lead on the same number, then a new lead. Every branch writes a
- * `lead_intakes` row, including the ones that create nothing — a lead row
- * cannot record a lead that was deliberately not created, and «why did the
- * advert produce nothing today» has to be answerable.
- */
-/**
  * Has this exact arrival landed before? (Q5 a.) The bot's advert contact is
  * keyed by its Telegram message (`tg:<chat>:<message>`), and a redelivered
  * contact must be thanked again without landing a second enquiry. Served by
@@ -225,6 +215,16 @@ export async function inboundLanded(channel: InboundArrival['channel'], external
   return rows.length > 0;
 }
 
+/**
+ * Land an arrival.
+ *
+ * The order is the design: a known CLIENT first (their enquiry belongs on the
+ * card that holds their cargo and their money, not on a fresh lead), then an
+ * open lead on the same number, then a new lead. Every branch writes a
+ * `lead_intakes` row, including the ones that create nothing — a lead row
+ * cannot record a lead that was deliberately not created, and «why did the
+ * advert produce nothing today» has to be answerable.
+ */
 export async function landInboundLead(arrival: InboundArrival): Promise<InboundResult> {
   const phone = inboundPhoneDigits(arrival.phone);
   const name = trim(arrival.name, 120);

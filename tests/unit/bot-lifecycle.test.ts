@@ -22,7 +22,9 @@ import {
  * when the poller is idle in its long poll is `bot.stop()` exactly right.
  */
 
-const guard = stoppingGuard();
+const middleware = stoppingGuard();
+/** The guard as a promise — a MiddlewareFn returns MaybePromise<unknown>. */
+const guard = (ctx: Context, next: () => Promise<void>): Promise<unknown> => Promise.resolve(middleware(ctx, next));
 const ctxOf = (id: number) => ({ update: { update_id: id } }) as unknown as Context;
 const never = new Promise<never>(() => {});
 

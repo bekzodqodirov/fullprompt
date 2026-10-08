@@ -21,6 +21,8 @@ export const BOT_ID = 7_000_001;
 export interface ApiCall {
   method: string;
   payload: Record<string, unknown>;
+  /** The id of the message the fake «sent», when the call sends one — a press names it later. */
+  messageId?: number;
 }
 export interface SentCall {
   method: string;
@@ -83,7 +85,8 @@ export function botHarness(): BotHarness {
 
   bot.api.config.use(async (_prev, method, payload) => {
     const body = (payload ?? {}) as Record<string, unknown>;
-    api.push({ method, payload: body });
+    const call: ApiCall = { method, payload: body };
+    api.push(call);
     const failure = takeFailure(method);
     if (failure) return { ok: false, ...failure } as never;
     const chat = { id: Number(body.chat_id ?? 0), type: 'private' };
@@ -93,9 +96,11 @@ export function botHarness(): BotHarness {
       case 'sendDocument':
       case 'copyMessage':
       case 'forwardMessage':
-        return { ok: true, result: { message_id: (messageSeq += 1), date: date(), chat, text: body.text } } as never;
+        call.messageId = messageSeq += 1;
+        return { ok: true, result: { message_id: call.messageId, date: date(), chat, text: body.text } } as never;
       case 'sendMediaGroup':
-        return { ok: true, result: [{ message_id: (messageSeq += 1), date: date(), chat }] } as never;
+        call.messageId = messageSeq += 1;
+        return { ok: true, result: [{ message_id: call.messageId, date: date(), chat }] } as never;
       case 'editMessageText':
         return { ok: true, result: { message_id: Number(body.message_id ?? 0), date: date(), chat, text: body.text } } as never;
       case 'getMe':

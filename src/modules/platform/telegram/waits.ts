@@ -125,7 +125,7 @@ export function dropWait(chatId: bigint | number, kind: WaitKind): void {
 }
 
 /** Production only (startTelegramBot); a test file opts in. Off = memory only, exactly as before 0130. */
-export function useDurableWaits(on: boolean): void {
+export function setDurableWaits(on: boolean): void {
   durable = on;
 }
 

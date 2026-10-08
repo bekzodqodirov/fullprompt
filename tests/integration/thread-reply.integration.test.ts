@@ -166,6 +166,10 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // An E4 question is keyed by its Telegram message now (Q5 a) — this file's chats' keys go too.
+  for (const chat of Object.values(CHAT)) {
+    await db.execute(sql`DELETE FROM telegram_once WHERE key LIKE ${`m:${chat}:%`}`);
+  }
   const notes = await db.select({ id: crmActivities.id }).from(crmActivities).where(inArray(crmActivities.entityId, madeLeads));
   await db.delete(notifications).where(inArray(notifications.userId, madeUsers));
   await db.execute(sql`DELETE FROM thread_reads WHERE user_id IN (${sql.join(madeUsers.map((id) => sql`${id}::uuid`), sql`, `)})`);

@@ -651,6 +651,33 @@ describe('I8 — membership (F8 a)', () => {
     expect(calls.some((c) => c.method === 'sendMessage' && String(c.body.chat_id) === String(TG.stranger))).toBe(true);
   });
 
+  // Q5 a (judge TG-9): the bot keeps its backlog now, so a join request can be
+  // handled minutes late — and Telegram lets a bot write to a requester only
+  // for five minutes, and only until the request is processed.
+  it('I11a a fresh stranger is TOLD before the decline (after it, user_chat_id is dead)', async () => {
+    expect(await answerJoinRequest({ chat: { id: Number(CHAT) }, from: { id: TG.stranger }, user_chat_id: TG.stranger, date: nowSec() })).toBe('declined');
+    const told = calls.findIndex((c) => c.method === 'sendMessage' && String(c.body.chat_id) === String(TG.stranger));
+    const declined = calls.findIndex((c) => c.method === 'declineChatJoinRequest');
+    expect(told, 'the decline sentence').toBeGreaterThan(-1);
+    expect(declined, 'the decline').toBeGreaterThan(-1);
+    expect(told).toBeLessThan(declined);
+  });
+
+  it('I11b a stranger who asked ten minutes ago is declined in silence — the window has closed', async () => {
+    expect(await answerJoinRequest({ chat: { id: Number(CHAT) }, from: { id: TG.stranger }, user_chat_id: TG.stranger, date: nowSec() - 600 })).toBe('declined');
+    expect(calls.some((c) => c.method === 'declineChatJoinRequest')).toBe(true);
+    expect(calls.some((c) => c.method === 'sendMessage')).toBe(false);
+  });
+
+  it('I11c a late decline Telegram refuses (somebody processed it) is «ignored», with nothing said', async () => {
+    override = (method) =>
+      method === 'declineChatJoinRequest'
+        ? { status: 400, json: { ok: false, error_code: 400, description: 'Bad Request: HIDE_REQUESTER_MISSING' } }
+        : undefined;
+    expect(await answerJoinRequest({ chat: { id: Number(CHAT) }, from: { id: TG.stranger }, user_chat_id: TG.stranger, date: nowSec() - 600 })).toBe('ignored');
+    expect(calls.some((c) => c.method === 'sendMessage')).toBe(false);
+  });
+
   it('member updates: a stranger is removed (ban, then unban), a colleague admitted once, an admin left alone', async () => {
     const update = (id: number, status: string, isBot = false) => ({
       chat: { id: Number(CHAT) },
