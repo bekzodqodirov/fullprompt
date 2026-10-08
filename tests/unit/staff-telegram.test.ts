@@ -400,8 +400,11 @@ describe('the buttons that change a message (source shape — the shell needs a 
     const press = branch("if (parsed.kind !== 'approval') return;", 'bot.on(');
     expect(press).toContain("(outcome === 'decided' || outcome === 'already_decided')");
     expect(press).toMatch(/void settlePressedApproval\(/);
-    // Answered FIRST — the phone's spinner stops before any edit is made.
-    expect(press.indexOf('answerCallbackQuery')).toBeLessThan(press.indexOf('settlePressedApproval'));
+    // Answered FIRST — the phone's spinner stops before any edit is made —
+    // through the one wrapper (Q5 a), found before it is compared (#720: an
+    // indexOf of -1 is «less than» everything).
+    expect(press.indexOf('answerPress('), 're-anchor: answerPress').toBeGreaterThan(-1);
+    expect(press.indexOf('answerPress(')).toBeLessThan(press.indexOf('settlePressedApproval'));
   });
 });
 

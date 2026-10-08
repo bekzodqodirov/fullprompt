@@ -197,7 +197,13 @@ async function targetOf(
  * No pooled read inside the transaction (#714): every read goes through `tx`.
  */
 export async function addThreadMessage(
-  input: { ref: ThreadRef; body: string; tg?: { chatId: bigint; messageId: number } },
+  input: {
+    ref: ThreadRef;
+    body: string;
+    tg?: { chatId: bigint; messageId: number };
+    /** A Telegram reply's own moment (ISO, Q5 a) — never later than now. */
+    writtenAt?: string | null;
+  },
   ctx: AuditContext,
 ): Promise<{
   activityId: string;
@@ -221,7 +227,8 @@ export async function addThreadMessage(
       INSERT INTO crm_activities
         (id, entity_type, entity_id, kind, note, happened_at, created_by, calc_request_id, tg_chat_id, tg_message_id)
       VALUES
-        (${uuidv7()}::uuid, ${target.entityType}, ${target.entityId}::uuid, 'note', ${body}, now(), ${ctx.actorId}::uuid,
+        (${uuidv7()}::uuid, ${target.entityType}, ${target.entityId}::uuid, 'note', ${body},
+         LEAST(COALESCE(${input.writtenAt ?? null}::timestamptz, now()), now()), ${ctx.actorId}::uuid,
          ${target.calcRequestId}::uuid, ${tgChat}::bigint, ${tgMessage}::bigint)
       ON CONFLICT (tg_chat_id, tg_message_id) WHERE tg_message_id IS NOT NULL DO NOTHING
       RETURNING id::text AS id, ${instantSql(sql`created_at`)} AS created_at
@@ -369,7 +376,17 @@ export async function calcThreadAuthors(requestId: string): Promise<string[]> {
   return rows.map((row) => row.id);
 }
 
-/** «Unread» for one reader, DERIVED: the newest note is somebody else's and later than my mark. */
+/**
+ * «Unread» for one reader, DERIVED: the newest note is somebody else's and
+ * later than my mark.
+ *
+ * «Newest» by when the note LANDED (`created_at`), on every reader that asks
+ * this (Q5-3) — the same clock the read mark and the pulse's token are on. A
+ * late Telegram reply is filed at the moment it was WRITTEN (`happened_at`,
+ * so it reads in its place), and picked by that moment it sat under a note
+ * written after it and never raised the ●. Only the reading list keeps the
+ * written order.
+ */
 function unreadSql(viewerId: string, kind: ThreadKind, threadId: SqlFragment, lastBy: SqlFragment, lastAt: SqlFragment) {
   return sql`(${lastAt} IS NOT NULL
     AND ${lastBy} IS DISTINCT FROM ${viewerId}::uuid
@@ -419,7 +436,7 @@ export async function calcThreadsOnCard(
       LEFT JOIN LATERAL (
         SELECT a.created_by, a.created_at FROM crm_activities a
          WHERE a.calc_request_id = r.id AND a.kind = 'note'
-         ORDER BY a.happened_at DESC, a.created_at DESC
+         ORDER BY a.created_at DESC
          LIMIT 1
       ) last ON true
      WHERE r.entity_type = ${entity.entityType} AND r.entity_id = ${entity.entityId}::uuid
@@ -451,7 +468,7 @@ export async function calcThreadSummary(
       LEFT JOIN LATERAL (
         SELECT a.created_by, a.created_at FROM crm_activities a
          WHERE a.calc_request_id = ${requestId}::uuid AND a.kind = 'note'
-         ORDER BY a.happened_at DESC, a.created_at DESC
+         ORDER BY a.created_at DESC
          LIMIT 1
       ) last ON true
   `);
@@ -706,13 +723,13 @@ export async function myThreads(viewer: ThreadReader, limit = 30): Promise<DockT
         SELECT a.note, a.created_at, a.created_by FROM crm_activities a
          WHERE c.kind <> 'calc' AND a.entity_type = c.kind AND a.entity_id = c.id
            AND a.calc_request_id IS NULL AND a.kind = 'note'
-         ORDER BY a.happened_at DESC
+         ORDER BY a.created_at DESC
          LIMIT 1
       ) card ON true
       LEFT JOIN LATERAL (
         SELECT a.note, a.created_at, a.created_by FROM crm_activities a
          WHERE c.kind = 'calc' AND a.calc_request_id = c.id AND a.kind = 'note'
-         ORDER BY a.happened_at DESC
+         ORDER BY a.created_at DESC
          LIMIT 1
       ) calc ON true
       LEFT JOIN users u ON u.id = COALESCE(card.created_by, calc.created_by)

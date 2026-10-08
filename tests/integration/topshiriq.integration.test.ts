@@ -1091,7 +1091,7 @@ describe('the bot doors (telegram-mechanics-1/4/13/14)', () => {
     const id = await mintTask(author, first, { sourceMessages: sources });
     await reassignTask(id, second.id, ctxOf(viewer, 'crm.leads.view_all'));
     const assignedBefore = (await queued(second.id, 'TaskAssigned')).length;
-    expect(await sourcesFromBot(author.chat!, id)).toEqual({ result: 'done', reach: 'no_chat', name: second.name });
+    expect(await sourcesFromBot(author.chat!, id, null)).toEqual({ result: 'done', reach: 'no_chat', name: second.name });
     const [copy] = await queued(second.id, 'TaskSources');
     expect(copy!.payload).toMatchObject({ taskId: id, forwards: sources });
     // No buttons ride on it, and no second TaskAssigned was queued.
@@ -1099,7 +1099,7 @@ describe('the bot doors (telegram-mechanics-1/4/13/14)', () => {
     expect(await queued(second.id, 'TaskAssigned')).toHaveLength(assignedBefore);
     // Handed back to the author: there is nobody to send to — said, never «📤 Yuborildi».
     await reassignTask(id, author.id, ctxOf(viewer, 'crm.leads.view_all'));
-    expect(await sourcesFromBot(author.chat!, id)).toEqual({ result: 'nothing_to_send' });
+    expect(await sourcesFromBot(author.chat!, id, null)).toEqual({ result: 'nothing_to_send' });
   });
 
   it('«📤 Men bergan» from the bot, and a 🔔 that says who will not hear it', async () => {

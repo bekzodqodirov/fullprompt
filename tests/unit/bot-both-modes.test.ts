@@ -53,7 +53,7 @@ describe('the wiring the shell cannot prove any other way (source shape)', () =>
   it('the staff catch-all lets cabinet texts through BEFORE the task capture', () => {
     const s = read('src/modules/platform/telegram/staff-handlers.ts');
     const pass = s.indexOf('isCabinetText(ctx.message.text)');
-    const capture = s.indexOf('takeTaskPending(chatId)');
+    const capture = s.indexOf('takeTaskPending(chatId, ctx.message.date)');
     expect(pass).toBeGreaterThan(-1);
     expect(capture).toBeGreaterThan(-1);
     // Order is the guarantee: after the capture, a cabinet button pressed

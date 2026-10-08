@@ -2978,7 +2978,8 @@
       "not_remindable": "A reminder cannot be sent for this task",
       "not_askable": "A question cannot be sent for this task",
       "empty_text": "Empty message",
-      "nothing_to_send": "Nothing to send — the task is with you now, or it carries no messages"
+      "nothing_to_send": "Nothing to send — the task is with you now, or it carries no messages",
+      "already_done": "Already done — not sent again"
     },
     "repeat": "Repeat",
     "repeatNever": "no repeat",

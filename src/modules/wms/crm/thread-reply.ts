@@ -59,6 +59,11 @@ export async function landThreadReply(
     ping: ReplyPing;
     text: string;
     tg: { chatId: bigint; messageId: number };
+    /**
+     * When the person WROTE it (Q5 a, ISO): a reply typed during a deploy is
+     * filed at that moment on the card, not at the moment the bot came back.
+     */
+    writtenAt: string;
   },
 ): Promise<{ outcome: ThreadReplyOutcome; text: string }> {
   const say = (outcome: ThreadReplyOutcome, label = '') => ({
@@ -91,7 +96,7 @@ export async function landThreadReply(
     }
 
     const landed = await addThreadMessage(
-      { ref: input.ref, body: input.text, tg: input.tg },
+      { ref: input.ref, body: input.text, tg: input.tg, writtenAt: input.writtenAt },
       { actorId: actor.id, ip: null, userAgent: null },
     );
     if (landed.duplicate) return say('duplicate');

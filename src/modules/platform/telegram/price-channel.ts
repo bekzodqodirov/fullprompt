@@ -9,6 +9,7 @@ import { usersWithPermission } from '../notifications/service';
 import { canLogInSql } from '../users/login';
 import { enqueue } from '../jobs/boss';
 import { botCall, sendText } from './send';
+import { nowSec } from './waits';
 import {
   decideAdoption,
   decideJoin,
@@ -482,7 +483,18 @@ export interface JoinRequestUpdate {
   chat: { id: number };
   from: TgUser;
   user_chat_id: number;
+  /** When the person asked (unix seconds) — `user_chat_id` works for five minutes from it. */
+  date: number;
 }
+
+/**
+ * Telegram lets a bot write to a requester through `user_chat_id` for 5
+ * minutes, and only until the request is processed (the Bot API's own
+ * words). Less a margin: the bot keeps its backlog now (Q5 a), and a request
+ * a deploy delayed past the window is declined in silence (logged) rather
+ * than with a send Telegram will refuse.
+ */
+export const JOIN_TELL_WINDOW_S = 290;
 
 const WELCOME = '✅ Narx kanaliga qabul qilindingiz.';
 const DECLINED =
@@ -516,12 +528,23 @@ export async function answerJoinRequest(req: JoinRequestUpdate): Promise<'approv
       return 'ignored';
     }
     await admitMember(chatId, String(req.from.id), verdict.userId);
-    await sendText({ chatId: req.user_chat_id, text: WELCOME }).catch(() => {});
+    // Only a real approval is welcomed: USER_ALREADY_PARTICIPANT still upserts
+    // the member row, but the person was told already (a redelivered request)
+    // or admitted by hand.
+    if (answer.ok) await sendText({ chatId: req.user_chat_id, text: WELCOME }).catch(() => {});
     return 'approved';
   }
+  // Said FIRST, and only inside Telegram's window: after the decline the
+  // request is processed and `user_chat_id` is dead, so the sentence sent
+  // after it reached no stranger who had not started the bot.
+  const fresh = nowSec() - req.date < JOIN_TELL_WINDOW_S;
+  if (fresh) await sendText({ chatId: req.user_chat_id, text: DECLINED }).catch(() => {});
+  else logger.info({ chatId, ageS: nowSec() - req.date }, '[price-channel] join decline too late to tell the requester');
   const answer = await botCall('declineChatJoinRequest', { chat_id: chatId, user_id: req.from.id }, 10_000);
-  if (!answer.ok) logger.warn({ chatId, description: answer.description }, '[price-channel] join decline refused');
-  await sendText({ chatId: req.user_chat_id, text: DECLINED }).catch(() => {});
+  if (!answer.ok) {
+    logger.warn({ chatId, description: answer.description }, '[price-channel] join decline refused');
+    return 'ignored';
+  }
   return 'declined';
 }
 

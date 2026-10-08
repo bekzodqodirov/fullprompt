@@ -99,8 +99,8 @@ describe('the rules a shell cannot exercise', () => {
     // the paid model and costs a question out of the daily cap.
     const cabinet = handlers.indexOf('if (isCabinetText(ctx.message.text)) return next();');
     const notes = handlers.indexOf('ctx.message.text === ZAMETKALAR');
-    const capture = handlers.indexOf('const capture = activeCapture(chatId);\n    if (capture) {');
-    const task = handlers.indexOf('const pendingTask = takeTaskPending(chatId);');
+    const capture = handlers.indexOf('const capture = activeCapture(chatId);\n    if (capture && !late) {');
+    const task = handlers.indexOf('const pendingTask = takeTaskPending(chatId, ctx.message.date);');
     expect(cabinet, 're-anchor: the cabinet pass-through moved').toBeGreaterThan(-1);
     expect(notes, 're-anchor: the notes branch moved').toBeGreaterThan(-1);
     expect(capture, 're-anchor: the capture branch moved').toBeGreaterThan(-1);
@@ -117,15 +117,17 @@ describe('the rules a shell cannot exercise', () => {
     // written it was filed into the note.
     const bugun = handlers.indexOf('if (ctx.message.text === BUGUN || ctx.message.text === \'/bugun\')');
     const notes = handlers.indexOf('ctx.message.text === ZAMETKALAR');
-    const capture = handlers.indexOf('const capture = activeCapture(chatId);\n    if (capture) {');
-    const guard = handlers.indexOf('if (!escapesIntake(ctx.message.text)) {\n      const pendingTask = takeTaskPending(chatId);');
+    const capture = handlers.indexOf('const capture = activeCapture(chatId);\n    if (capture && !late) {');
+    const guard = handlers.indexOf('if (!escapesIntake(ctx.message.text)) {\n      const pendingTask = takeTaskPending(chatId, ctx.message.date);');
     expect(bugun, 're-anchor: the Bugun branch moved').toBeGreaterThan(-1);
     expect(guard, 're-anchor: the guarded task capture moved').toBeGreaterThan(-1);
     expect(notes).toBeLessThan(bugun);
     expect(bugun).toBeLessThan(capture);
     expect(capture).toBeLessThan(guard);
-    // …and there is exactly ONE place that takes the pending result.
-    expect(handlers.split('takeTaskPending(chatId)').length - 1).toBe(1);
+    // …and there is exactly ONE place that takes the pending result — counted
+    // whatever its arguments (Q5-8), so an undated second door is a second door.
+    expect([...handlers.matchAll(/\btakeTaskPending\(/g)].length).toBe(1);
+    expect(handlers.split('takeTaskPending(chatId, ctx.message.date)').length - 1).toBe(1);
   });
 
   it('the note is sent to the chat it was asked from, under the chat OWN identity', () => {
@@ -143,7 +145,7 @@ describe('the rules a shell cannot exercise', () => {
     // every customer's cabinet tap, every /start and every arrival flow with
     // it (#706, round 101's own outage).
     expect(handlers).toMatch(/void deliverNote\(/);
-    expect(handlers).toContain("await ctx.answerCallbackQuery({ text: '📤 Yuborilmoqda…' });");
+    expect(handlers).toContain("await answerPress(ctx, '📤 Yuborilmoqda…', { say: false });");
   });
 
   it('every Telegram call in the sender carries a deadline', () => {

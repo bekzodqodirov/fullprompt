@@ -118,6 +118,8 @@ export const WORKER_REGISTRATIONS: [string, (boss: PgBoss) => Promise<void>][] =
     'price-channel-members',
     async (b) => (await import('../telegram/price-channel')).registerPriceChannelMembersWorker(b),
   ],
+  // Q5 a (0130): the bot's redelivery records, pruned past what Telegram can redeliver.
+  ['telegram-prune', async (b) => (await import('../telegram/once')).registerTelegramPruneWorker(b)],
 ];
 
 /** Run each registration at most once per process, whatever failed before. */

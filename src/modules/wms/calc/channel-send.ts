@@ -19,7 +19,8 @@ import {
 } from '@/modules/platform/telegram/price-channel';
 import type { PauseReason } from '@/modules/platform/telegram/price-channel-rules';
 import { photoSource } from '../client-cabinet/bot-text';
-import { PHOTO_READ_MS, ReadTimeout, readWithin, type PhotoBreaker } from '../notices/client-push';
+import { PHOTO_READ_MS, ReadTimeout, readWithin } from '@/modules/platform/files/read-within';
+import type { PhotoBreaker } from '../notices/client-push';
 import { childStateSql, type ChildState } from './chain';
 import { buildChannelPostView, postPhotosFor, queueMissedPrices } from './channel-queue';
 import {

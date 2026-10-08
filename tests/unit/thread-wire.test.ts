@@ -70,7 +70,7 @@ describe('the Telegram ladder', () => {
     const draft = body.indexOf('const draft = activeDraft(chatId)');
     const reply = body.indexOf('threadReplyFromBot(chatId, {');
     const doorB = body.indexOf('ctx.message.forward_origin');
-    const wait = body.indexOf('takeTaskPending(chatId)');
+    const wait = body.indexOf('takeTaskPending(chatId, ctx.message.date)');
     expect(draft).toBeGreaterThan(0);
     expect(reply, 'reply block after the draft').toBeGreaterThan(draft);
     expect(doorB, 'Door B after the reply block').toBeGreaterThan(reply);

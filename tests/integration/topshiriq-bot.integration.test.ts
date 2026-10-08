@@ -75,6 +75,9 @@ function ctxFor(chat: bigint, extra: Record<string, unknown> = {}): { ctx: never
   const ctx = {
     chat: { id: Number(chat), type: 'private' },
     from: { id: Number(chat) },
+    // A real incoming message (Q5 a): the typed-date and question paths key
+    // on its id and read its date — never an id of 0.
+    message: { message_id: (messageSeq += 1), date: Math.floor(Date.now() / 1000), chat: { id: Number(chat), type: 'private' } },
     reply: async (text: string, e?: Record<string, unknown>) => {
       said.replies.push({ text, extra: e });
       return { message_id: (messageSeq += 1) };

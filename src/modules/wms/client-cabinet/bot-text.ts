@@ -11,6 +11,7 @@ import {
 } from '../../platform/telegram/client-labels';
 import { buttonLabel, MAX_TELEGRAM_PHOTO_BYTES } from '../../platform/telegram/limits';
 import { MILESTONES, isMovingStage, milestoneCounts, milestoneOf, type CargoStage } from './stages';
+import { tashkentMinute } from '../../platform/time/tashkent';
 import type { CabinetLot, CargoGroup, DebtSummary, IssuedHandover, ManagerContact } from './service';
 
 /**
@@ -505,6 +506,11 @@ export function forwardStaffText(input: {
   /** What the media IS — a file unless said otherwise. */
   kind?: ForwardedKind;
   cardUrl: string | null;
+  /**
+   * When the customer WROTE it, for a copy that reaches the manager late
+   * (Q5 a — a 03:00 question replayed after a deploy must not read as new).
+   */
+  writtenAt?: Date | null;
 }): string {
   const who = `${input.codes.join(', ')}${input.name?.trim() ? ` (${input.name.trim()})` : ''}`;
   const said = input.text?.trim() ?? '';
@@ -515,6 +521,7 @@ export function forwardStaffText(input: {
       : `💬 ${who} botga yozdi:`,
   ];
   if (quoted) lines.push(`«${quoted}»`);
+  if (input.writtenAt) lines.push(`🕒 Yozilgan: ${tashkentMinute(input.writtenAt)}`);
   if (input.cardUrl) lines.push(input.cardUrl);
   return lines.join('\n');
 }

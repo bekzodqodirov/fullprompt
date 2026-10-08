@@ -24,6 +24,7 @@ import {
 } from '@/modules/platform/db/schema';
 import { getStorage } from '@/modules/platform/files/storage';
 import { __setTelegramTransport } from '@/modules/platform/telegram/send';
+import { nowSec } from '@/modules/platform/telegram/waits';
 import {
   __resetVetMemo,
   answerJoinRequest,
@@ -637,7 +638,7 @@ describe('I7 — a row stuck in «sending» is never re-sent by the machine', ()
 
 describe('I8 — membership (F8 a)', () => {
   it('approves a colleague, declines a stranger and tells them', async () => {
-    expect(await answerJoinRequest({ chat: { id: Number(CHAT) }, from: { id: TG.colleague }, user_chat_id: TG.colleague })).toBe('approved');
+    expect(await answerJoinRequest({ chat: { id: Number(CHAT) }, from: { id: TG.colleague }, user_chat_id: TG.colleague, date: nowSec() })).toBe('approved');
     expect(calls.some((c) => c.method === 'approveChatJoinRequest')).toBe(true);
     const row = await db.query.priceChannelMembers.findFirst({
       where: and(eq(priceChannelMembers.chatId, BigInt(CHAT)), eq(priceChannelMembers.tgUserId, BigInt(TG.colleague))),
@@ -645,9 +646,36 @@ describe('I8 — membership (F8 a)', () => {
     expect(row).toMatchObject({ userId: colleagueId, removedAt: null });
 
     calls = [];
-    expect(await answerJoinRequest({ chat: { id: Number(CHAT) }, from: { id: TG.stranger }, user_chat_id: TG.stranger })).toBe('declined');
+    expect(await answerJoinRequest({ chat: { id: Number(CHAT) }, from: { id: TG.stranger }, user_chat_id: TG.stranger, date: nowSec() })).toBe('declined');
     expect(calls.some((c) => c.method === 'declineChatJoinRequest')).toBe(true);
     expect(calls.some((c) => c.method === 'sendMessage' && String(c.body.chat_id) === String(TG.stranger))).toBe(true);
+  });
+
+  // Q5 a (judge TG-9): the bot keeps its backlog now, so a join request can be
+  // handled minutes late — and Telegram lets a bot write to a requester only
+  // for five minutes, and only until the request is processed.
+  it('I11a a fresh stranger is TOLD before the decline (after it, user_chat_id is dead)', async () => {
+    expect(await answerJoinRequest({ chat: { id: Number(CHAT) }, from: { id: TG.stranger }, user_chat_id: TG.stranger, date: nowSec() })).toBe('declined');
+    const told = calls.findIndex((c) => c.method === 'sendMessage' && String(c.body.chat_id) === String(TG.stranger));
+    const declined = calls.findIndex((c) => c.method === 'declineChatJoinRequest');
+    expect(told, 'the decline sentence').toBeGreaterThan(-1);
+    expect(declined, 'the decline').toBeGreaterThan(-1);
+    expect(told).toBeLessThan(declined);
+  });
+
+  it('I11b a stranger who asked ten minutes ago is declined in silence — the window has closed', async () => {
+    expect(await answerJoinRequest({ chat: { id: Number(CHAT) }, from: { id: TG.stranger }, user_chat_id: TG.stranger, date: nowSec() - 600 })).toBe('declined');
+    expect(calls.some((c) => c.method === 'declineChatJoinRequest')).toBe(true);
+    expect(calls.some((c) => c.method === 'sendMessage')).toBe(false);
+  });
+
+  it('I11c a late decline Telegram refuses (somebody processed it) is «ignored», with nothing said', async () => {
+    override = (method) =>
+      method === 'declineChatJoinRequest'
+        ? { status: 400, json: { ok: false, error_code: 400, description: 'Bad Request: HIDE_REQUESTER_MISSING' } }
+        : undefined;
+    expect(await answerJoinRequest({ chat: { id: Number(CHAT) }, from: { id: TG.stranger }, user_chat_id: TG.stranger, date: nowSec() - 600 })).toBe('ignored');
+    expect(calls.some((c) => c.method === 'sendMessage')).toBe(false);
   });
 
   it('member updates: a stranger is removed (ban, then unban), a colleague admitted once, an admin left alone', async () => {
@@ -674,7 +702,7 @@ describe('I8 — membership (F8 a)', () => {
       .insert(priceChannelMembers)
       .values({ chatId: BigInt(CHAT_A), tgUserId: BigInt(TG.colleague), userId: colleagueId })
       .onConflictDoNothing();
-    await answerJoinRequest({ chat: { id: Number(CHAT) }, from: { id: TG.colleague }, user_chat_id: TG.colleague });
+    await answerJoinRequest({ chat: { id: Number(CHAT) }, from: { id: TG.colleague }, user_chat_id: TG.colleague, date: nowSec() });
     await db.update(users).set({ active: false }).where(eq(users.id, colleagueId));
     calls = [];
     await sweepPriceChannelMembers();
@@ -683,7 +711,7 @@ describe('I8 — membership (F8 a)', () => {
     const rows = await db.select().from(priceChannelMembers).where(eq(priceChannelMembers.userId, colleagueId));
     expect(rows.every((r) => r.removedAt !== null && r.removeReason === 'inactive')).toBe(true);
 
-    await answerJoinRequest({ chat: { id: Number(CHAT) }, from: { id: TG.colleague2 }, user_chat_id: TG.colleague2 });
+    await answerJoinRequest({ chat: { id: Number(CHAT) }, from: { id: TG.colleague2 }, user_chat_id: TG.colleague2, date: nowSec() });
     await db
       .update(telegramLinks)
       .set({ telegramChatId: BigInt(TG.colleague2 + 100) })

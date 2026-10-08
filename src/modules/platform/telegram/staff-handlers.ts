@@ -4,7 +4,13 @@ import { logger } from '../logger';
 import { keyboardOf, staffTextHtml } from '../notifications/staff-html';
 import { sendStaffMessage } from '../notifications/service';
 import { offerStaffCommands } from './commands';
-import { editMarkup, editText, sendText, sendTyping } from './send';
+import { editMarkup, editText, sendText, sendTextBriefRetry, sendTyping } from './send';
+import { answerPress } from './press';
+import { isBacklog } from './lifecycle';
+import { HANDLED_SENTENCE, tellBacklogOnce } from './backlog';
+import { claimOnce, handledAlready, markOnce, messageKey, pressKey, type OnceKey } from './once';
+import { flushWaitWrites } from './waits';
+import { db } from '../db/client';
 import { clientAnswerKeyboard } from './map-link';
 import {
   AI_RASTAMOJKA,
@@ -40,7 +46,6 @@ import {
   staffForChat,
   takeStaffEntry,
   takeTaskPending,
-  notePendingPrompt,
   noteReplyPending,
   pressRefusalText,
   refusalFor,
@@ -310,7 +315,7 @@ export function registerStaffBot(bot: Bot): void {
     const chatId = BigInt(ctx.chat?.id ?? ctx.callbackQuery.from.id);
 
     if (parsed.kind === 'entry') {
-      await ctx.answerCallbackQuery();
+      await answerPress(ctx);
       if (parsed.who === 'client') {
         // The client door is the existing cabinet — nothing more (owner's
         // answer 4). Same phone-verified entry as always, in the phone's
@@ -331,7 +336,7 @@ export function registerStaffBot(bot: Bot): void {
     }
 
     if (parsed.kind === 'calc') {
-      await ctx.answerCallbackQuery();
+      await answerPress(ctx);
       await handleCalcCallback(ctx as unknown as CalcReplyCtx, chatId, parsed.step);
       return;
     }
@@ -339,12 +344,12 @@ export function registerStaffBot(bot: Bot): void {
     if (parsed.kind === 'task_done') {
       const staff = await staffForChat(chatId);
       if (!staff) {
-        await ctx.answerCallbackQuery({ text: 'Ulanmagan' });
+        await answerPress(ctx, 'Ulanmagan');
         return;
       }
       // A draft is live: its text must never become this task's result.
       if (activeDraft(chatId)) {
-        await ctx.answerCallbackQuery({ text: BUSY_DRAFT });
+        await answerPress(ctx, BUSY_DRAFT);
         await ctx.reply(BUSY_DRAFT);
         return;
       }
@@ -354,7 +359,7 @@ export function registerStaffBot(bot: Bot): void {
       // into silence. Closed, not theirs, or an open calc job (with its link).
       const check = await taskPressCheck(chatId, parsed.taskId, 'act');
       if (!check.ok) {
-        await ctx.answerCallbackQuery({ text: TASK_ANSWERS[check.result] });
+        await answerPress(ctx, TASK_ANSWERS[check.result]);
         await ctx.reply(pressRefusalText(check));
         return;
       }
@@ -364,6 +369,18 @@ export function registerStaffBot(bot: Bot): void {
       // close rewrites it — a task's own message whole, a list by one row.
       const pressed = ctx.callbackQuery.message;
       const pressedText = pressed && 'text' in pressed ? pressed.text : undefined;
+      await answerPress(ctx);
+      // On a LIST the prompt names the task — «which one did I just press?»
+      // is not a question the person should have to scroll back to answer.
+      const label = parsed.list ? pressedButtonText(pressed, ctx.callbackQuery.data) : null;
+      // «✅ Natijasiz» so nobody has to type a dash (spec §4); the dash still works.
+      const prompt = await ctx.reply(
+        (label ? `${label}\n` : '') + 'Natijani yozib yuboring (natijasiz yopish uchun «-» yuboring):',
+        { reply_markup: { inline_keyboard: [[{ text: '✅ Natijasiz', callback_data: `tn:${parsed.taskId}` }]] } },
+      );
+      // Armed AFTER the prompt, at the prompt's own date (Q5 a): a wait exists
+      // only once its question is on the screen, and a backlog text written
+      // before it cannot be its answer.
       noteTaskPending(
         chatId,
         parsed.taskId,
@@ -375,17 +392,9 @@ export function registerStaffBot(bot: Bot): void {
               kind: parsed.list ? 'list' : 'single',
             }
           : null,
+        'result',
+        { promptMessageId: prompt.message_id, armedAt: prompt.date },
       );
-      await ctx.answerCallbackQuery();
-      // On a LIST the prompt names the task — «which one did I just press?»
-      // is not a question the person should have to scroll back to answer.
-      const label = parsed.list ? pressedButtonText(pressed, ctx.callbackQuery.data) : null;
-      // «✅ Natijasiz» so nobody has to type a dash (spec §4); the dash still works.
-      const prompt = await ctx.reply(
-        (label ? `${label}\n` : '') + 'Natijani yozib yuboring (natijasiz yopish uchun «-» yuboring):',
-        { reply_markup: { inline_keyboard: [[{ text: '✅ Natijasiz', callback_data: `tn:${parsed.taskId}` }]] } },
-      );
-      notePendingPrompt(chatId, parsed.taskId, prompt.message_id);
       return;
     }
 
@@ -416,18 +425,25 @@ export function registerStaffBot(bot: Bot): void {
       return;
     }
     if (parsed.kind === 'draft_pick') {
-      await ctx.answerCallbackQuery();
+      await answerPress(ctx);
       await pickAssignee(ctx, chatId, parsed.userId);
       return;
     }
     if (parsed.kind === 'forward') {
       const staff = await staffForChat(chatId);
       if (!staff) {
-        await ctx.answerCallbackQuery({ text: 'Ulanmagan' });
+        await answerPress(ctx, 'Ulanmagan');
         return;
       }
+      // A press is an explicit intent and keeps its search; keyed by the
+      // «📌 Topshiriq qilamizmi?» offer (Q5 a): two taps, one model call.
+      const searchKey = parsed.step === 'search' ? await pressKey(ctx, 'search') : null;
       await handleForwardCallback(ctx, chatId, parsed.step, (text) =>
-        answerStaffText(ctx as unknown as StaffTailCtx, chatId, staff.id, text),
+        answerStaffText(ctx as unknown as StaffTailCtx, chatId, staff.id, text, {
+          backlog: false,
+          messageId: null,
+          once: searchKey,
+        }),
       );
       return;
     }
@@ -446,7 +462,7 @@ export function registerStaffBot(bot: Bot): void {
         not_yours: 'Bu lid sizniki emas',
         not_found: 'Lid topilmadi',
       };
-      await ctx.answerCallbackQuery({ text: answers[outcome] });
+      await answerPress(ctx, answers[outcome]);
       const pressed = ctx.callbackQuery.message;
       if (
         (outcome === 'recorded' || outcome === 'already') &&
@@ -490,7 +506,7 @@ export function registerStaffBot(bot: Bot): void {
         not_linked: 'Ulanmagan',
         forbidden: 'Huquqingiz yo‘q',
       };
-      await ctx.answerCallbackQuery({ text: answers[outcome] });
+      await answerPress(ctx, answers[outcome]);
       const pressed = ctx.callbackQuery.message;
       if (
         (outcome === 'confirmed' || outcome === 'dropped' || outcome === 'already' || outcome === 'changed') &&
@@ -535,7 +551,7 @@ export function registerStaffBot(bot: Bot): void {
       not_found: 'So‘rov topilmadi',
       not_your_client: 'Bu mijoz bo‘yicha qaror uning sotuvchisi yoki buxgalterda',
     };
-    await ctx.answerCallbackQuery({ text: answers[outcome] });
+    await answerPress(ctx, answers[outcome]);
     // The pressed copy is settled in place (round C) — ALSO when somebody
     // else decided first: that press is the proof a stale copy was still
     // asking. Off the poller, on the sender's short deadline.
@@ -571,7 +587,21 @@ export function registerStaffBot(bot: Bot): void {
   // customer's shared contact falls through to the cabinet flow untouched.
   bot.on('message:contact', async (ctx, next) => {
     const chatId = BigInt(ctx.chat.id);
-    if (!takeStaffEntry(chatId)) {
+    if (!takeStaffEntry(chatId, ctx.message.date)) {
+      // A crash redelivery of the contact that already linked a colleague
+      // (Q5 a, judge Q5H-5): the first run consumed the intent, so this one
+      // would reach the cabinet's contact door — which links CLIENT codes on
+      // that phone into the staff chat, or answers «raqam topilmadi» with the
+      // keyboard taken away. Keyed on THIS message, never guessed.
+      if ((await handledAlready(chatId, ctx.message.message_id)) === 'staff_link') {
+        const here = await staffForChat(chatId);
+        if (here) {
+          await ctx.reply(`✅ Ulandi: ${here.fullName}. Xabarnomalar shu yerga keladi.`, {
+            reply_markup: await replyKeyboardFor(chatId),
+          });
+          return;
+        }
+      }
       // A contact card in a STAFF chat is «call this person» — the obvious
       // task. The draft or Door B takes it BEFORE the cabinet, whose contact
       // handler answers «send your OWN number» with a one-time keyboard that
@@ -580,6 +610,8 @@ export function registerStaffBot(bot: Bot): void {
       if (!activeIntake(chatId) && !activeCapture(chatId) && (await draftMedia(ctx, chatId))) return;
       return next();
     }
+    // The intent's DELETE reaches the table before anything is linked (Q5 a).
+    await flushWaitWrites();
     const contact = ctx.message.contact;
     // The cabinet's spoof-proof rule: only the sender's OWN number counts.
     // Every refusal below RESTORES the keyboard. The contact request is a
@@ -602,10 +634,20 @@ export function registerStaffBot(bot: Bot): void {
       return;
     }
     const result = await linkStaffChat(staff.id, chatId);
-    if (result.outcome === 'chat_taken') {
-      await restore('Bu Telegram boshqa xodimga ulangan. Adminga ayting.');
-      return;
+    // A switch, never an `if`: a third outcome must not fall into success.
+    switch (result.outcome) {
+      case 'chat_taken':
+        await restore('Bu Telegram boshqa xodimga ulangan. Adminga ayting.');
+        return;
+      case 'not_colleague':
+        // Only reachable in a race — `staffByPhone` already asks canLogIn (B8).
+        await restore('Bu hodim akkaunti faol emas — Telegram ulanmadi. Adminga ayting.');
+        return;
+      case 'linked':
+        break;
     }
+    // What this contact did, so a crash redelivery of it can say so (Q5 a).
+    await markOnce(await messageKey(ctx, 'staff_link'));
     if (result.previousChatId !== null) {
       await ctx.api
         .sendMessage(
@@ -628,13 +670,16 @@ export function registerStaffBot(bot: Bot): void {
   // collection they are somebody else's business — next().
   bot.on(['message:photo', 'message:document'], async (ctx, next) => {
     const chatId = BigInt(ctx.chat.id);
+    // No collector opened by THIS process takes a backlog file (Q5 a): every
+    // one of them was opened after boot, and the file was sent before it.
+    const late = isBacklog(ctx.message.date);
     const state = activeIntake(chatId);
-    if (!state) {
+    if (!state || late) {
       // A zametka being written from the phone takes its parts here. The calc
       // intake is asked FIRST and wins — one collector at a time, and that one
       // is minutes of a seller's forwarding.
       const capture = activeCapture(chatId);
-      if (!capture) {
+      if (!capture || late) {
         // Third: a task draft takes it, or Door B offers to make one of a
         // forward (docs/TELEGRAM-TOPSHIRIQ.md §3); anything else is the
         // cabinet's.
@@ -642,6 +687,12 @@ export function registerStaffBot(bot: Bot): void {
         // A photo or file sent as a REPLY to a thread or task ping — only
         // after every collector declined it (E10 a, text first).
         if (await refuseMediaReply(ctx, chatId)) return;
+        // A staff file into nothing, from the backlog: the cabinet answers a
+        // staff chat with nothing at all, so it is told once instead.
+        if (late && (await staffForChat(chatId))) {
+          await tellBacklogOnce(ctx, chatId);
+          return;
+        }
         return next();
       }
       const owner = await staffForChat(chatId);
@@ -720,17 +771,28 @@ export function registerStaffBot(bot: Bot): void {
     ['message:voice', 'message:audio', 'message:video', 'message:video_note', 'message:location', 'message:sticker'],
     async (ctx, next) => {
       const chatId = BigInt(ctx.chat.id);
-      if (activeIntake(chatId) || activeCapture(chatId)) return next();
+      const late = isBacklog(ctx.message.date);
+      if (!late && (activeIntake(chatId) || activeCapture(chatId))) return next();
       if (await draftMedia(ctx, chatId)) return;
       // A voice note as a REPLY to a thread or task ping (E10 a, text first) —
       // after the draft declined it, so a live draft's part still joins it.
       if (await refuseMediaReply(ctx, chatId)) return;
+      if (late && (await staffForChat(chatId))) {
+        await tellBacklogOnce(ctx, chatId);
+        return;
+      }
       return next();
     },
   );
 
   bot.on('message:text', async (ctx, next) => {
     const chatId = BigInt(ctx.chat.id);
+    // A backlog text (Q5 a): written while the bot was down, so no collector
+    // THIS process opened can have been what it was written for — every one
+    // of them opened after boot. It still reaches the reply door (a swipe-
+    // reply names its own target), the wait (which judges it by its date) and
+    // the free lookups; everything else gets one sentence.
+    const late = isBacklog(ctx.message.date);
 
     // A live collection swallows text: this is the customer's name, or the
     // material itself.
@@ -743,7 +805,7 @@ export function registerStaffBot(bot: Bot): void {
     // broken bot. A new button joins the predicate, in one edit, or it is
     // eaten by this branch.
     const intake = activeIntake(chatId);
-    if (intake && !escapesIntake(ctx.message.text)) {
+    if (intake && !escapesIntake(ctx.message.text) && !late) {
       if (intake.stage === 'section') {
         // The podklyuch door is waiting for «qayerdan?» — a typed word here
         // is not the customer's name yet, and filing it as one would skip
@@ -843,7 +905,7 @@ export function registerStaffBot(bot: Bot): void {
       // The same words and the same «✅» rows as the 08:00 digest, so a task
       // is closed from the list it is read on — and «+ N ta muddatsiz» when
       // the rest of the person's work has no date (spec §7).
-      const sent = await sendText({
+      const sent = await sendTextBriefRetry({
         chatId,
         html: staffTextHtml(day.text, 'TasksDue'),
         replyMarkup: keyboardOf(dayButtons(day.tasks)),
@@ -873,7 +935,7 @@ export function registerStaffBot(bot: Bot): void {
     // first, then everything else — and it sits in the same slot for the same
     // reasons.
     const capture = activeCapture(chatId);
-    if (capture) {
+    if (capture && !late) {
       const staff = await staffForChat(chatId);
       if (!staff) return next();
       await captureText(ctx, chatId, capture, ctx.message.text);
@@ -886,7 +948,7 @@ export function registerStaffBot(bot: Bot): void {
     // the door) and ABOVE the one-text wait, so a draft's line is never
     // anybody's result.
     const draft = activeDraft(chatId);
-    if (draft) {
+    if (draft && !late) {
       const staff = await staffForChat(chatId);
       if (!staff) return next();
       await draftText(ctx, chatId, draft);
@@ -910,6 +972,7 @@ export function registerStaffBot(bot: Bot): void {
         replyToForwarded: 'forward_origin' in replied && Boolean(replied.forward_origin),
         text: ctx.message.text,
         incomingMessageId: ctx.message.message_id,
+        messageDate: ctx.message.date,
       });
       if (out) {
         await ctx.reply(out.text);
@@ -925,6 +988,13 @@ export function registerStaffBot(bot: Bot): void {
     if (ctx.message.forward_origin) {
       const staff = await staffForChat(chatId);
       if (staff) {
+        // A backlog forward is the sentence, once — never one «📌» offer per
+        // message: fifteen forwarded customer messages that were a lost
+        // intake's material are one sentence and no offers (judge W4).
+        if (late) {
+          await tellBacklogOnce(ctx, chatId);
+          return;
+        }
         await offerForwardTask(ctx, chatId, null);
         return;
       }
@@ -934,11 +1004,20 @@ export function registerStaffBot(bot: Bot): void {
     // keyboard's own buttons, which is never anybody's result (every branch
     // above answers them; this is the fence for the next button to join).
     if (!escapesIntake(ctx.message.text)) {
-      const pendingTask = takeTaskPending(chatId);
+      const pendingTask = takeTaskPending(chatId, ctx.message.date);
+      // Judged by the MESSAGE's date (Q5 a): a backlog text written before the
+      // wait's prompt is not its answer, and the wait stays for the real one.
+      // The take's DELETE reaches the table BEFORE the effect: a kill after it
+      // leaves no wait to answer twice, a kill before it is a kill before the
+      // effect.
+      if (pendingTask) await flushWaitWrites();
       if (pendingTask && pendingTask.kind !== 'result') {
         // A question, an answer, or a typed date after ⏰ — the same one wait.
         // A «date» that is not one is not consumed: it falls to the tail.
-        if (await answerPendingText(ctx, chatId, pendingTask, ctx.message.text)) return;
+        if (await answerPendingText(ctx, chatId, pendingTask, ctx.message.text)) {
+          await markOnce(await messageKey(ctx, 'wait'));
+          return;
+        }
       } else if (pendingTask) {
         const result = ctx.message.text.trim() === '-' ? '' : ctx.message.text.trim();
         const outcome = await completeTaskFromBot(chatId, pendingTask.taskId, result, pendingTask.pressed);
@@ -959,6 +1038,9 @@ export function registerStaffBot(bot: Bot): void {
             (err: unknown) => logger.warn({ err }, 'task message not closed'),
           );
         }
+        // What this text did, so a crash redelivery of it hears «answered»
+        // and never «send it again» (judge Q5H-2 a).
+        await markOnce(await messageKey(ctx, 'wait'));
         return;
       }
     }
@@ -970,7 +1052,11 @@ export function registerStaffBot(bot: Bot): void {
     // question ledger.
     const staff = await staffForChat(chatId);
     if (!staff) return next();
-    await answerStaffText(ctx as unknown as StaffTailCtx, chatId, staff.id, ctx.message.text);
+    await answerStaffText(ctx as unknown as StaffTailCtx, chatId, staff.id, ctx.message.text, {
+      backlog: late,
+      messageId: ctx.message.message_id,
+      once: null,
+    });
   });
 }
 
@@ -987,7 +1073,22 @@ type StaffTailCtx = {
  * ladder and by Door B's «🔍 Qidirish», so a forwarded text replays exactly
  * what it did before the topshiriq round.
  */
-async function answerStaffText(ctx: StaffTailCtx, chatId: bigint, staffId: string, text: string): Promise<void> {
+async function answerStaffText(
+  ctx: StaffTailCtx,
+  chatId: bigint,
+  staffId: string,
+  text: string,
+  // REQUIRED (Q5 a): whether this is a backlog text, the incoming message
+  // (null for Door B's «🔍», which replays a forward), and Door B's key.
+  opts: { backlog: boolean; messageId: number | null; once: OnceKey | null },
+): Promise<void> {
+  // A crash redelivery of a text whose wait was already consumed: no wait is
+  // left, so it lands here — and is told it was answered, never «send it
+  // again», which would mint the duplicate (judge Q5H-2 a).
+  if (opts.backlog && opts.messageId !== null && (await handledAlready(chatId, opts.messageId))) {
+    await ctx.reply(HANDLED_SENTENCE);
+    return;
+  }
   const freeLookup = async (query: string) =>
     lookupFromBot(chatId, query).catch((err) => {
       logger.warn({ err }, 'bot lookup failed');
@@ -1013,6 +1114,20 @@ async function answerStaffText(ctx: StaffTailCtx, chatId: bigint, staffId: strin
   // into the paid model, which cannot see this table and would answer
   // «topilmadi» having spent one of the day's forty questions.
   if (await answerFromNotes(ctx, chatId, staffId, text)) return;
+  // A backlog text the free lookups could not answer (Q5 a): its words may be
+  // a lost collector's material — never the AI's question, and never
+  // «Topilmadi», which is the same lie in a cheaper voice. Once per chat.
+  if (opts.backlog) {
+    await tellBacklogOnce(ctx, chatId);
+    return;
+  }
+  // Door B's «🔍 Qidirish» runs once per offer message: two taps, one model call.
+  if (opts.once) {
+    if (!(await claimOnce(db, opts.once))) {
+      await ctx.reply('Bu qidiruv allaqachon bajarilgan.');
+      return;
+    }
+  }
   if (!aiConfigured()) {
     // No key = exactly the day before the AI shipped.
     await ctx.reply(
@@ -1352,7 +1467,7 @@ async function answerWithAssistant(
   // `*` freely), and split rather than refused — the model may write more
   // than one message holds.
   for (const part of splitMessage(answer)) {
-    const sent = await sendText({ chatId, text: part });
+    const sent = await sendTextBriefRetry({ chatId, text: part });
     if (!sent.ok) {
       logger.warn({ description: sent.description }, 'bot assistant reply failed');
       break;
@@ -1764,13 +1879,15 @@ function queueRefusal(code: string | null | undefined): string {
  * the contact handler restores it.
  */
 export async function askStaffPhone(
-  ctx: { reply: (text: string, extra?: Record<string, unknown>) => Promise<unknown> },
+  ctx: { reply: (text: string, extra?: Record<string, unknown>) => Promise<{ date: number }> },
   chatId: bigint,
 ): Promise<void> {
-  noteStaffEntry(chatId);
-  await ctx.reply('Hodim sifatida ulanish uchun telefon raqamingizni yuboring 👇', {
+  const asked = await ctx.reply('Hodim sifatida ulanish uchun telefon raqamingizni yuboring 👇', {
     reply_markup: phoneKeyboard('uz'),
   });
+  // Armed AFTER the prompt, at its own date (Q5 a) — and durable, so a deploy
+  // between «send your phone» and the contact no longer drops the intent.
+  noteStaffEntry(chatId, asked.date);
 }
 
 /**
@@ -1825,28 +1942,28 @@ type NoteReplyCtx = {
 async function handleThreadReplyPress(
   ctx: {
     answerCallbackQuery: (opts?: { text?: string }) => Promise<unknown>;
-    reply: (text: string, extra?: Record<string, unknown>) => Promise<unknown>;
+    reply: (text: string, extra?: Record<string, unknown>) => Promise<{ message_id: number; date: number }>;
     callbackQuery: { message?: { message_id: number } };
   },
   chatId: bigint,
 ): Promise<void> {
   const staff = await staffForChat(chatId);
   if (!staff) {
-    await ctx.answerCallbackQuery({ text: 'Ulanmagan' });
+    await answerPress(ctx, 'Ulanmagan');
     return;
   }
   if (activeIntake(chatId)) {
-    await ctx.answerCallbackQuery({ text: BUSY_INTAKE });
+    await answerPress(ctx, BUSY_INTAKE);
     await ctx.reply(BUSY_INTAKE);
     return;
   }
   if (activeCapture(chatId)) {
-    await ctx.answerCallbackQuery({ text: 'Avval zametkani saqlang' });
+    await answerPress(ctx, 'Avval zametkani saqlang');
     await refuseWhileCapturing(ctx, chatId);
     return;
   }
   if (activeDraft(chatId)) {
-    await ctx.answerCallbackQuery({ text: BUSY_DRAFT });
+    await answerPress(ctx, BUSY_DRAFT);
     await ctx.reply(BUSY_DRAFT);
     return;
   }
@@ -1860,13 +1977,14 @@ async function handleThreadReplyPress(
   const refused = verdict ? verdictSentence(verdict) : REPLY_SENTENCES.not_replyable;
   if (refused || !messageId) {
     const text = refused ?? REPLY_SENTENCES.not_replyable;
-    await ctx.answerCallbackQuery({ text: text.slice(0, 190) });
+    await answerPress(ctx, text);
     await ctx.reply(text);
     return;
   }
-  noteReplyPending(chatId, messageId);
-  await ctx.answerCallbackQuery();
-  await ctx.reply(REPLY_SENTENCES.pressPrompt);
+  await answerPress(ctx);
+  // Armed AFTER the prompt, at its own date (Q5 a).
+  const asked = await ctx.reply(REPLY_SENTENCES.pressPrompt);
+  noteReplyPending(chatId, messageId, { armedAt: asked.date });
 }
 
 /**
@@ -1961,18 +2079,18 @@ async function handleNoteCallback(
 ): Promise<void> {
   const staff = await staffForChat(chatId);
   if (!staff) {
-    await ctx.answerCallbackQuery({ text: 'Ulanmagan' });
+    await answerPress(ctx, 'Ulanmagan');
     return;
   }
 
   if (step === 'page') {
-    await ctx.answerCallbackQuery();
+    await answerPress(ctx);
     await showNotesList(ctx, chatId, staff.id, page ?? 1);
     return;
   }
 
   if (step === 'new') {
-    await ctx.answerCallbackQuery();
+    await answerPress(ctx);
     if (activeIntake(chatId)) {
       await ctx.reply(
         'Hozir hisoblatish davom etyapti. Avval uni tugating yoki bekor qiling.',
@@ -1994,14 +2112,14 @@ async function handleNoteCallback(
   }
 
   if (step === 'cancel') {
-    await ctx.answerCallbackQuery();
+    await answerPress(ctx);
     endCapture(chatId);
     await ctx.reply('Bekor qilindi.');
     return;
   }
 
   if (step === 'share') {
-    await ctx.answerCallbackQuery();
+    await answerPress(ctx);
     const capture = activeCapture(chatId);
     if (!capture) {
       await ctx.reply('Yozilayotgan zametka yo‘q.');
@@ -2021,20 +2139,20 @@ async function handleNoteCallback(
   }
 
   if (step === 'save') {
-    await ctx.answerCallbackQuery();
+    await answerPress(ctx);
     await saveCapturedNote(ctx, chatId, staff.id);
     return;
   }
 
   // send
   if (!noteId) {
-    await ctx.answerCallbackQuery();
+    await answerPress(ctx);
     return;
   }
   // Answered BEFORE anything slow: the callback's own progress bar is what the
   // person is looking at, and it costs no message in the chat — so it leaves
   // no second artefact beside the note they are about to forward.
-  await ctx.answerCallbackQuery({ text: '📤 Yuborilmoqda…' });
+  await answerPress(ctx, '📤 Yuborilmoqda…', { say: false });
   void deliverNote(ctx, chatId, noteId, staff.id);
 }
 

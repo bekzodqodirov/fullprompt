@@ -1,5 +1,6 @@
 import { logger } from '../logger';
 import { htmlToPlain } from './format';
+import { BRIEF_RETRY_MAX_S } from './retry';
 
 /**
  * The ONE way the app talks to the Bot API outside a grammy handler.
@@ -318,6 +319,24 @@ export async function sendText(msg: TextMessage): Promise<SendResult> {
   };
   const { answer, usedFallback } = await sendWithFallbacks('sendMessage', base, 'text', msg.timeoutMs ?? 20_000);
   return verdict(answer, usedFallback);
+}
+
+/**
+ * `sendText`, and once more after a 429 that asks for a moment (Q5 a).
+ *
+ * A NEW name so `sendText`'s «never a sleep» above stays true for every
+ * sweep: this is for the handler-side answers nobody comes back for — the
+ * cabinet's dispatched answers, «📋 Bugun», the AI's parts — which meet the
+ * per-chat rate in the burst after a deploy, when the backlog is answered one
+ * after another.
+ */
+export async function sendTextBriefRetry(msg: TextMessage): Promise<SendResult> {
+  const first = await sendText(msg);
+  if (first.ok || first.status !== 429 || first.retryAfter === null || first.retryAfter > BRIEF_RETRY_MAX_S) {
+    return first;
+  }
+  await new Promise<void>((resolve) => setTimeout(resolve, first.retryAfter! * 1000));
+  return sendText(msg);
 }
 
 export interface PhotoMessage {
