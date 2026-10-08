@@ -239,18 +239,23 @@ const GLUED = `(?:[-_.]${CODE_ALNUM}+)*`;
  * 111 x 50». Such a number is a code only when no unit follows it, no «x»
  * stands before it, and it is not a part of a bigger number (`1.500`,
  * `500.5`). The units are folded like the shadow, so «мл» meets itself.
+ * A Chinese counter («500件», «20公斤») is glued to what follows it, so it
+ * needs no edge — and since the CODE edge lets a number glued to Chinese be a
+ * code, the counters are what keep «男士夹克500件» a quantity.
  * Stated cost: «444 L» (a size, or a litre) keeps a code 444; «444-L», the
  * lot form, still goes.
  */
 const MEASURE_UNITS = [
   'ml', 'мл', 'l', 'л', 'litr', 'литр', 'kg', 'кг', 'g', 'г', 'gr', 'гр', 'gramm', 'грамм', 'm', 'м', 'metr', 'метр',
-  'sm', 'см', 'mm', 'мм', 'v', 'в', 'volt', 'w', 'вт', 'gb', 'mb', 'x', '×', 'dona', 'шт', 'sht', 'ta',
+  'm2', 'm3', 'м2', 'м3', 'kub', 'куб', 'sm', 'см', 'mm', 'мм', 'v', 'в', 'volt', 'w', 'вт', 'gb', 'mb', 'x', '×',
+  'dona', 'шт', 'sht', 'ta',
 ];
-const UNITS = [...new Set(MEASURE_UNITS.map((u) => escapeRegExp(fold(u))))]
+const CJK_COUNTERS = '件个箱套双只条张包袋盒瓶卷台对米克吨升斤';
+const UNITS = [...new Set(MEASURE_UNITS.map((u) => escapeRegExp(fold(nfkc(u)))))]
   .sort((a, b) => b.length - a.length)
   .join('|');
 const QUANTITY_BEFORE = '(?<![x×*]\\s?)(?<!\\d[.,])';
-const QUANTITY_AFTER = `(?![.,]\\d)(?!\\s?(?:(?:${UNITS})${EDGE_AFTER}|[x×*]\\s?\\d|%))`;
+const QUANTITY_AFTER = `(?![.,]\\d)(?!\\s?(?:(?:${UNITS})${EDGE_AFTER}|[${CJK_COUNTERS}]|公斤|千克|[x×*]\\s?\\d|%))`;
 
 /** An all-digit unit wrapped so a quantity is never read as it. */
 function asCode(pattern: string, raw: string): string {

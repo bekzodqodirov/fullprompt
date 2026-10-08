@@ -324,6 +324,12 @@ describe('U4 — every code that opens onto a client', () => {
     expect(scrub('Pena 50×111', ctx)).toBe('Pena 50×111');
     expect(scrub('Kley 1.500', ctx)).toBe('Kley 1.500');
     expect(scrub('Bolt 500.5', ctx)).toBe('Bolt 500.5');
+    expect(scrub('Plitka 500 m2', ctx)).toBe('Plitka 500 m2');
+    // A Chinese counter: glued, and since a code glued to Chinese IS a code
+    // now, the counter is what keeps the number a quantity.
+    expect(scrub('男士夹克500件', ctx)).toBe('男士夹克500件');
+    expect(scrub('500件男士夹克', ctx)).toBe('500件男士夹克');
+    expect(scrub('大米500公斤', ctx)).toBe('大米500公斤');
     // …and still a code where nothing makes it a quantity.
     expect(scrub('kurtka 444', ctx)).toBe('kurtka');
     expect(scrub('444-A kurtka', ctx)).toBe('kurtka');
