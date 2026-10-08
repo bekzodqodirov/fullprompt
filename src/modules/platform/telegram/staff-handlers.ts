@@ -34,6 +34,7 @@ import {
   type BotApprovalResult,
   isCabinetText,
   landCollectedIntake,
+  landingLinkFor,
   linkStaffChat,
   lookupFromBot,
   noteStaffEntry,
@@ -1829,11 +1830,14 @@ async function handleCalcCallback(
   // promised an answer and got silence. pg-boss owns it now, exactly as the
   // customs parse in this same sub-round is owned; the answer comes back
   // through the notification drain rather than a `ctx` that is gone by then.
-  const appUrl = process.env.APP_URL ?? '';
-  const path = target.kind === 'deal' ? 'bitimlar' : 'crm/leads';
+  // The link is the SENDER's — a card they can open, the calculation's own
+  // screen for the VED, or no line at all (`landingLinkFor`): one literal for
+  // everyone handed the VED a CRM card that bounces him.
+  const link = await landingLinkFor(staff.id, target);
   await ctx.reply(
     `✅ Saqlandi — ${target.kind === 'deal' ? 'bitim' : 'lead'}: ${target.label}\n` +
-      `${appUrl}/${path}/${target.id}\n\n` +
+      (link ? `${link}\n` : '') +
+      '\n' +
       // Honest about which half landed: the material is on the card either
       // way, but only a queued request will be calculated by anybody.
       (target.queued

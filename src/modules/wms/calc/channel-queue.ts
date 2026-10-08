@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, like, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, like, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { db } from '@/modules/platform/db/client';
 import {
@@ -23,9 +23,11 @@ import { childStateSql, quoteNoFor, type ChildState } from './chain';
 import { answerCreditSql, isAnswerSql, sealCreditSql } from './credit';
 import { itemNameNorm } from './memory';
 import {
+  codeCandidates,
   fitGoods,
+  makeScrubber,
+  markingCandidates,
   pickPerUnit,
-  scrubIdentity,
   type ChannelPostView,
   type ChannelSection,
   type PostKind,
@@ -160,11 +162,18 @@ function asCurrency(c: string | null): 'USD' | 'UZS' | 'CNY' {
 }
 
 /**
- * The identity the goods names must not carry — the card's own code, name and
- * phones. Held in a local, never returned (F4 a).
+ * The identity the goods names must not carry — the card's PEOPLE (names,
+ * company, phones), split into words by the scrub, and the card's own CODES
+ * (its deal's, its client's), removed whole. Codes stay out of the word list:
+ * split on «-», `B-000124` left a stray «B» in every post. Held in locals,
+ * never returned (F4 a).
  */
-async function forbiddenFor(entityType: string, entityId: string): Promise<string[]> {
-  const out: string[] = [];
+async function forbiddenFor(
+  entityType: string,
+  entityId: string,
+): Promise<{ forbidden: string[]; ownCodes: string[] }> {
+  const forbidden: string[] = [];
+  const ownCodes: string[] = [];
   const addClient = async (clientId: string | null) => {
     if (!clientId) return;
     const [c] = await db
@@ -173,7 +182,8 @@ async function forbiddenFor(entityType: string, entityId: string): Promise<strin
       .where(eq(clients.id, clientId))
       .limit(1);
     if (!c) return;
-    out.push(c.code, c.name, ...(Array.isArray(c.phones) ? (c.phones as unknown[]).map(String) : []));
+    ownCodes.push(c.code);
+    forbidden.push(c.name, ...(Array.isArray(c.phones) ? (c.phones as unknown[]).map(String) : []));
   };
   if (entityType === 'deal') {
     const [d] = await db
@@ -182,7 +192,7 @@ async function forbiddenFor(entityType: string, entityId: string): Promise<strin
       .where(eq(deals.id, entityId))
       .limit(1);
     if (d) {
-      out.push(d.code);
+      ownCodes.push(d.code);
       await addClient(d.clientId);
     }
   } else {
@@ -192,25 +202,75 @@ async function forbiddenFor(entityType: string, entityId: string): Promise<strin
       .where(eq(leads.id, entityId))
       .limit(1);
     if (l) {
-      out.push(l.name, l.company ?? '', l.phone ?? '');
+      forbidden.push(l.name, l.company ?? '', l.phone ?? '');
       await addClient(l.clientId);
     }
   }
-  return out.filter((s) => s.trim() !== '');
+  const kept = (list: string[]) => list.filter((s) => s.trim() !== '');
+  return { forbidden: kept(forbidden), ownCodes: kept(ownCodes) };
+}
+
+/** How many code candidates one read binds — far under postgres's parameter ceiling. */
+const CANDIDATES_PER_READ = 2_000;
+
+/**
+ * What OTHER clients these names carry, read from the data — because a code
+ * opens onto a client wherever it was minted: a manual `444`, a Kashgar
+ * marking imported as a code, one minted under an older prefix (the setting is
+ * editable), and an unclaimed marking, which is free text and has no shape.
+ *
+ * Both reads run on the POOL after the price's commit (this whole builder
+ * does), so #714 does not apply. Codes go through `clients_code_unique` with
+ * `inArray` — a JS array bound into raw SQL is not a postgres array. A
+ * receipt's marking is a needle inside the names, which no index answers, so
+ * the markings are ONE read of the distinct values; «no status filter»,
+ * because ⌘K's lot search by marking has none either.
+ */
+async function identitiesIn(names: readonly string[]): Promise<{ knownCodes: Set<string>; markings: string[] }> {
+  const candidates = codeCandidates(names);
+  const knownCodes = new Set<string>();
+  // In slices: a thousand-item invoice can name more candidates than one
+  // statement may bind (65 535), and a post that cannot be built is retried
+  // for ever.
+  for (let i = 0; i < candidates.length; i += CANDIDATES_PER_READ) {
+    const slice = candidates.slice(i, i + CANDIDATES_PER_READ);
+    const rows = await db.select({ code: clients.clientCode }).from(clients).where(inArray(clients.clientCode, slice));
+    for (const row of rows) knownCodes.add(row.code);
+  }
+  // The DISTINCT markings, matched against the names here and not in SQL.
+  // MEASURED on a 50k-receipt shaped copy (20 000 markings): one bound
+  // haystack under `strpos` was 21 ms for six names and 14.3 s for the
+  // thousand-line invoice the item cap allows — it is markings × haystack.
+  // This read is 15 ms whatever the names, and `markingCandidates` is
+  // markings + names.
+  const rows =
+    names.length === 0
+      ? []
+      : await db.execute<{ marking: string }>(sql`
+          SELECT DISTINCT r.unclaimed_marking AS marking
+            FROM receipts r
+           WHERE r.unclaimed_marking IS NOT NULL
+             AND char_length(btrim(r.unclaimed_marking)) >= 3`);
+  return { knownCodes, markings: markingCandidates(names, rows.map((r) => r.marking)) };
 }
 
 /** Up to six scrubbed, distinct goods names in the request's own order, and how many more there were. */
-async function goodsFor(requestId: string, forbidden: string[]): Promise<{ goods: string[]; goodsMore: number }> {
+async function goodsFor(
+  requestId: string,
+  card: { forbidden: string[]; ownCodes: string[] },
+): Promise<{ goods: string[]; goodsMore: number }> {
   const items = await db
     .select({ name: calcRequestItems.name })
     .from(calcRequestItems)
     .where(eq(calcRequestItems.requestId, requestId))
     .orderBy(asc(calcRequestItems.seq));
   const codePrefix = String((await getSetting('client_code_prefix')) ?? '').trim();
+  const { knownCodes, markings } = await identitiesIn(items.map((i) => i.name));
+  const scrub = makeScrubber({ forbidden: card.forbidden, ownCodes: card.ownCodes, codePrefix, knownCodes, markings });
   const seen = new Set<string>();
   const names: string[] = [];
   for (const item of items) {
-    const clean = clipText(scrubIdentity(item.name, forbidden, codePrefix), 40);
+    const clean = clipText(scrub(item.name), 40);
     if (!clean) continue;
     const key = itemNameNorm(clean);
     if (seen.has(key)) continue;
@@ -358,8 +418,8 @@ export async function buildChannelPostView(row: {
     };
   }
 
-  const forbidden = await forbiddenFor(req.entityType, req.entityId);
-  const { goods, goodsMore } = await goodsFor(row.requestId, forbidden);
+  const card = await forbiddenFor(req.entityType, req.entityId);
+  const { goods, goodsMore } = await goodsFor(row.requestId, card);
   view.goods = goods;
   view.goodsMore = goodsMore;
 

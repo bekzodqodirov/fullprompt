@@ -10,17 +10,20 @@ import {
   calcRequestItems,
   calcRequests,
   calcVersions,
+  clients,
   crmActivities,
   events,
   leads,
   priceChannelChats,
   priceChannelMembers,
   priceChannelPosts,
+  receipts,
   roles,
   tasks,
   telegramLinks,
   userRoles,
   users,
+  warehouses,
 } from '@/modules/platform/db/schema';
 import { getStorage } from '@/modules/platform/files/storage';
 import { __setTelegramTransport } from '@/modules/platform/telegram/send';
@@ -117,6 +120,31 @@ let colleague2Id = '';
 let colleague3Id = '';
 let leadId = '';
 let noteId = '';
+/**
+ * Identity the CARD knows nothing about (F4 a): another client's manual code
+ * and an unclaimed marking claimed to that client. Six digits at most, so the
+ * phone rule cannot be what removes the code — only the book can.
+ */
+const MANUAL_CODE = `4${String(100_000 + Math.floor(Math.random() * 899_999)).slice(-5)}`;
+const MARKING = `MANIKEN${SUFFIX}`;
+/**
+ * A third client of the book whose code carries LETTERS, typed in the goods
+ * with Cyrillic А and К — only the fold in `codeCandidates` asks the book
+ * about it (eight characters, so neither the phone rule nor the prefix can).
+ */
+const LOOKALIKE_CODE = `AK${SUFFIX}`;
+const LOOKALIKE_TYPED = `\u0410\u041a${SUFFIX}`;
+let manualClientId = '';
+let lookalikeClientId = '';
+let markingReceiptId = '';
+/**
+ * A card that OWNS a two-character code: no shape, no prefix and no length
+ * rule of the book knows it, so only `forbiddenFor`'s own codes can take it
+ * out of the post (chosen free in beforeAll).
+ */
+let ownShortCode = '';
+let ownShortClientId = '';
+let ownLeadId = '';
 const photoKey = `test/price-channel/${SUFFIX}.jpg`;
 const madeRequests: string[] = [];
 const ctx = () => ({ actorId: sellerId });
@@ -264,6 +292,48 @@ beforeAll(async () => {
     uploadedBy: sellerId,
   });
 
+  const [manual] = await db
+    .insert(clients)
+    .values({ clientCode: MANUAL_CODE, name: `Boshqa mijoz ${SUFFIX}` })
+    .returning({ id: clients.id });
+  manualClientId = manual!.id;
+  const [lookalike] = await db
+    .insert(clients)
+    .values({ clientCode: LOOKALIKE_CODE, name: `Uchinchi mijoz ${SUFFIX}` })
+    .returning({ id: clients.id });
+  lookalikeClientId = lookalike!.id;
+
+  const taken = new Set(
+    (await db.select({ code: clients.clientCode }).from(clients).where(sql`char_length(${clients.clientCode}) = 2`)).map(
+      (r) => r.code,
+    ),
+  );
+  ownShortCode = [...'QZJWVU'].flatMap((l) => [...'987654321'].map((d) => `${l}${d}`)).find((c) => !taken.has(c))!;
+  const [own] = await db
+    .insert(clients)
+    .values({ clientCode: ownShortCode, name: `Egasi ${SUFFIX}` })
+    .returning({ id: clients.id });
+  ownShortClientId = own!.id;
+  const [ownLead] = await db
+    .insert(leads)
+    .values({
+      name: `Ali Valiyev ${SUFFIX}`,
+      phone: '+998 90 123 45 67',
+      company: 'Valiyev Savdo',
+      stageId: leadStage[0]!.id,
+      clientId: ownShortClientId,
+      createdBy: sellerId,
+    })
+    .returning();
+  ownLeadId = ownLead!.id;
+
+  const [wh] = await db.select({ id: warehouses.id }).from(warehouses).limit(1);
+  const [receipt] = await db
+    .insert(receipts)
+    .values({ warehouseId: wh!.id, clientId: manualClientId, unclaimedMarking: MARKING, createdBy: sellerId })
+    .returning({ id: receipts.id });
+  markingReceiptId = receipt!.id;
+
   await db.insert(priceChannelChats).values({
     chatId: BigInt(CHAT),
     title: 'GSR narx',
@@ -320,6 +390,16 @@ afterAll(async () => {
       await db.delete(tasks).where(inArray(tasks.id, taskIds));
     }
   }
+  // The marking must not stay live: every later post carrying the word would
+  // lose it (#183). Inserted bare, so nothing refers to either row.
+  if (markingReceiptId) await db.delete(receipts).where(eq(receipts.id, markingReceiptId));
+  if (manualClientId) await db.delete(clients).where(eq(clients.id, manualClientId));
+  if (lookalikeClientId) await db.delete(clients).where(eq(clients.id, lookalikeClientId));
+  if (ownLeadId) {
+    await db.delete(crmActivities).where(eq(crmActivities.entityId, ownLeadId));
+    await db.delete(leads).where(eq(leads.id, ownLeadId));
+  }
+  if (ownShortClientId) await db.delete(clients).where(eq(clients.id, ownShortClientId));
   await db.delete(attachments).where(eq(attachments.storageKey, photoKey));
   await getStorage().delete(photoKey).catch(() => {});
   await db.delete(crmActivities).where(eq(crmActivities.entityId, leadId));
@@ -330,22 +410,33 @@ afterAll(async () => {
   await pgClient.end();
 });
 
+interface Card {
+  entityId: string;
+  items: { name: string; quantity: number }[];
+  noteId: string | null;
+}
+
 /** A rastamojka request on the fixture lead, with the identity in its goods and the photo on its note. */
-async function openRequest(section: 'rastamojka' | 'podklyuch' = 'rastamojka') {
+async function openRequest(section: 'rastamojka' | 'podklyuch' = 'rastamojka', card?: Card) {
   const request = await openCalcRequest(
     {
       entityType: 'lead',
-      entityId: leadId,
+      entityId: card?.entityId ?? leadId,
       section,
       fromCity: 'Yiwu',
       toCity: 'Toshkent',
       weightKg: 1500,
       volumeM3: 30,
-      items: [
+      items: card?.items ?? [
         { name: 'GS777 Ali kurtka', quantity: 100 },
         { name: 'GS555 shim', quantity: 50 },
+        { name: 'B-000099 kurtka', quantity: 10 },
+        { name: `${MANUAL_CODE} shim`, quantity: 10 },
+        { name: `${MARKING} sumka`, quantity: 10 },
+        { name: 'YW26-000123 kepka', quantity: 10 },
+        { name: `${LOOKALIKE_TYPED} kepka`, quantity: 10 },
       ],
-      noteId,
+      noteId: card ? card.noteId : noteId,
       source: 'card',
     },
     ctx(),
@@ -392,8 +483,10 @@ async function seal(requestId: string, opts: { discountUsd?: number; band?: numb
   return version!.id;
 }
 
-async function sealedRequest(opts: { discountUsd?: number; band?: number | null; section?: 'rastamojka' | 'podklyuch' } = {}) {
-  const requestId = await openRequest(opts.section);
+async function sealedRequest(
+  opts: { discountUsd?: number; band?: number | null; section?: 'rastamojka' | 'podklyuch'; card?: Card } = {},
+) {
+  const requestId = await openRequest(opts.section, opts.card);
   await priceAll(requestId, opts.section);
   const versionId = await seal(requestId, opts);
   return { requestId, versionId };
@@ -449,14 +542,47 @@ describe('I3 — the post itself', () => {
     expect(caption).toContain(`Sotuvchi Bekmurod ${SUFFIX}`);
     expect(caption).toContain('kurtka');
     expect(caption).toContain('shim');
+    expect(caption).toContain('sumka');
+    expect(caption).toContain('kepka');
     expect(caption).not.toContain('GS777');
     expect(caption).not.toContain('GS555');
+    // F4 a: codes the card does not know — a deal, the book's manual code, an
+    // unclaimed marking, a box.
+    expect(caption).not.toContain('B-000099');
+    expect(caption).not.toContain(MANUAL_CODE);
+    expect(caption).not.toContain(MARKING);
+    expect(caption).not.toContain('YW26');
+    // …and the book's code typed with Cyrillic look-alikes, in neither spelling.
+    expect(caption).not.toContain(LOOKALIKE_TYPED);
+    expect(caption).not.toContain(LOOKALIKE_CODE);
     expect(caption).not.toMatch(/\bAli\b/);
     expect(caption).not.toContain('Valiyev');
     expect(caption).not.toMatch(/\d{7}/);
     const row = await postFor(requestId);
     expect(row).toMatchObject({ status: 'sent', carrier: 'caption', photoCount: 1 });
     expect(row!.messageId).toBe(nextMessageId);
+  });
+});
+
+describe('I3b — the card’s OWN code, which only the card knows', () => {
+  it('a two-character client code of the card goes whole, lot form included, and leaves no debris', async () => {
+    const { requestId } = await sealedRequest({
+      card: {
+        entityId: ownLeadId,
+        noteId: null,
+        items: [
+          { name: `${ownShortCode} kurtka`, quantity: 10 },
+          { name: `${ownShortCode}-B shim`, quantity: 10 },
+        ],
+      },
+    });
+    await drain();
+    const sent = channelSends();
+    expect(sent).toHaveLength(1);
+    const caption = textOf(sent[0]!);
+    expect(caption).not.toMatch(new RegExp(`(?<![\\p{L}\\p{N}])${ownShortCode}(?![\\p{L}\\p{N}])`, 'u'));
+    expect(caption.split('\n')).toContain('📦 kurtka, shim');
+    expect(await postFor(requestId)).toMatchObject({ status: 'sent' });
   });
 });
 

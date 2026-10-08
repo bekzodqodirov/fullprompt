@@ -1240,6 +1240,8 @@ export async function landCollectedIntake(
   kind: 'deal' | 'lead';
   id: string;
   label: string;
+  /** The lead's owner (null on a deal) — what `landingLinkFor` asks the card door about. */
+  leadOwnerId: string | null;
   queued?: boolean;
   requestId?: string | null;
   /** Why not, when it did not (audit A38) — the bot turns it into a sentence. */
@@ -1278,6 +1280,42 @@ export async function landCollectedIntake(
     // expensive call on this path rather than the two cheap ones.
     usage: state.usage,
   });
+}
+
+/**
+ * The link the ✅ after a «Hisoblatish» prints — chosen for the SENDER, never
+ * one literal for everyone: a stranger's lead is created under whoever sent it,
+ * and the VED holds no `crm.leads`, so the CRM card bounced him; so did
+ * warehouse staff, and a seller whose request joined a colleague's lead by
+ * phone.
+ *
+ * The rule is `calcJobHrefFor`, reached by dynamic import (platform never
+ * imports wms statically). Absolute — it goes into a Telegram message. Null =
+ * NO link line. Any throw is null too: a link nobody could check is not sent,
+ * and the reply goes out anyway, because the landing has already committed.
+ */
+export async function landingLinkFor(
+  staffId: string,
+  target: { kind: 'deal' | 'lead'; id: string; leadOwnerId: string | null; requestId?: string | null },
+): Promise<string | null> {
+  try {
+    const permissions = await userPermissions(staffId);
+    const { calcJobHrefFor } = await import('../../wms/calc/card-door');
+    const href = calcJobHrefFor(
+      { id: staffId, permissions },
+      {
+        entityType: target.kind,
+        entityId: target.id,
+        leadOwnerId: target.leadOwnerId,
+        requestId: target.requestId ?? null,
+      },
+    );
+    if (!href) return null;
+    return `${(process.env.APP_URL ?? '').replace(/\/$/, '')}${href}`;
+  } catch (err) {
+    logger.warn({ err, staffId }, '[calc-intake] landing link not resolved — the reply goes without one');
+    return null;
+  }
 }
 
 /**
