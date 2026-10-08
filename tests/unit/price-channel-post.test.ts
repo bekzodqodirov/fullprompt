@@ -334,6 +334,12 @@ describe('U4 — every code that opens onto a client', () => {
     expect(scrub('kurtka 444', ctx)).toBe('kurtka');
     expect(scrub('444-A kurtka', ctx)).toBe('kurtka');
     expect(scrub('500 kurtka', ctx)).toBe('kurtka');
+    // An «x» is a dimension only after a NUMBER: a word that ends in x (or in
+    // Cyrillic х, which folds to it) is no «50 x» — the card's own code too.
+    expect(scrub('Mix 444 shim', ctx)).toBe('Mix shim');
+    expect(scrub('Носки мужских 444', ctx)).toBe('Носки мужских');
+    expect(scrub('Rolex 777 soat', { ownCodes: ['777'] })).toBe('Rolex soat');
+    expect(scrub('Pena 50 x 111', ctx)).toBe('Pena 50 x 111');
     batchSurvives(ctx);
   });
 
@@ -390,6 +396,15 @@ describe('U4 — every code that opens onto a client', () => {
     expect(scrub('GS555 | kurtka / shim')).toBe('kurtka / shim');
     expect(scrub('kurtka ( GS555 ) shim')).toBe('kurtka shim');
     batchSurvives();
+  });
+
+  it('a phone stays a phone when a code inside it was cut first', () => {
+    // A cut leaves its mark where a space used to be; the phone must still
+    // read across it, or «+998 90 555 12 34» posts eight of its digits.
+    expect(scrub('kurtka +998 90 555 12 34', { knownCodes: new Set(['555']) })).toBe('kurtka');
+    expect(scrub('kurtka +998 90 777 11 22', { ownCodes: ['777'] })).toBe('kurtka');
+    expect(scrub('kurtka +998 (90) 444 55 66', { markings: ['444'] })).toBe('kurtka');
+    batchSurvives({ knownCodes: new Set(['555']) });
   });
 
   it('a link, a uuid, an app path or a bare host', () => {

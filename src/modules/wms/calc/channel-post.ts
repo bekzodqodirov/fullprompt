@@ -254,7 +254,9 @@ const CJK_COUNTERS = '件个箱套双只条张包袋盒瓶卷台对米克吨升�
 const UNITS = [...new Set(MEASURE_UNITS.map((u) => escapeRegExp(fold(nfkc(u)))))]
   .sort((a, b) => b.length - a.length)
   .join('|');
-const QUANTITY_BEFORE = '(?<![x×*]\\s?)(?<!\\d[.,])';
+// «x» after a NUMBER («50 x 111»), never after a word that ends in x — «Mix
+// 444», «мужских 444» (Cyrillic х folds to x) would keep the code.
+const QUANTITY_BEFORE = '(?<!\\d\\s?[x×*]\\s?)(?<!\\d[.,])';
 const QUANTITY_AFTER = `(?![.,]\\d)(?!\\s?(?:(?:${UNITS})${EDGE_AFTER}|[${CJK_COUNTERS}]|公斤|千克|[x×*]\\s?\\d|%))`;
 
 /** An all-digit unit wrapped so a quantity is never read as it. */
@@ -387,7 +389,12 @@ function firstRunOf(folded: string): string | null {
   return /[\p{L}\p{N}]+/u.exec(folded.toLowerCase())?.[0] ?? null;
 }
 
-const PHONE = /\+?\d(?:[\s\-+.()]*\d){6,}/gu;
+/**
+ * Seven digits or more, spelled any way. A CUT counts as the space it replaced:
+ * a book code inside the phone («+998 90 555 12 34») is cut first, and a
+ * phone that stopped at the cut would post eight of its digits.
+ */
+const PHONE = /\+?\d(?:[\s\-+.()\u0000]*\d){6,}/gu;
 
 /** One post's scrub, compiled once and run over every goods name. */
 export type Scrubber = (name: string) => string;
