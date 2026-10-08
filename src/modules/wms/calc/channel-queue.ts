@@ -254,7 +254,6 @@ async function identitiesIn(names: readonly string[]): Promise<{ knownCodes: Set
   return { knownCodes, markings: markingCandidates(names, rows.map((r) => r.marking)) };
 }
 
-
 /** Up to six scrubbed, distinct goods names in the request's own order, and how many more there were. */
 async function goodsFor(
   requestId: string,

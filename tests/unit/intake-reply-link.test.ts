@@ -55,6 +55,8 @@ describe('the AI-VED’s answer: the same rule for the reader, and no link on th
     expect(about).not.toContain('cardLink(');
     expect(about).toContain('calcJobHrefFor(');
     expect(about).toMatch(/if \(!replyTo\) return null;/);
+    // A grants read that fails is NO link — never a pass that dies unsent.
+    expect(about).toMatch(/catch \(err\) \{[\s\S]*?return null;/);
   });
 
   it('the job passes the recipient as `replyTo` and writes the linkless text to the lenta', () => {

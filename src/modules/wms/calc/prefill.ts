@@ -398,11 +398,17 @@ async function requestAbout(
   const entityType = row.entityType === 'lead' ? 'lead' : 'deal';
   const linkFor = async (leadOwnerId: string | null): Promise<string | null> => {
     if (!replyTo) return null;
-    const href = calcJobHrefFor(
-      { id: replyTo, permissions: await userPermissions(replyTo) },
-      { entityType, entityId: row.entityId, leadOwnerId, requestId },
-    );
-    return href ? `${(process.env.APP_URL ?? '').replace(/\/$/, '')}${href}` : null;
+    try {
+      const href = calcJobHrefFor(
+        { id: replyTo, permissions: await userPermissions(replyTo) },
+        { entityType, entityId: row.entityId, leadOwnerId, requestId },
+      );
+      return href ? `${(process.env.APP_URL ?? '').replace(/\/$/, '')}${href}` : null;
+    } catch (err) {
+      // A link nobody could check is not sent — and it must not cost the answer.
+      logger.warn({ err, requestId }, '[calc-prefill] reply link not resolved — sent without one');
+      return null;
+    }
   };
   if (row.entityType === 'deal') {
     const [deal] = await db
