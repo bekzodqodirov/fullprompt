@@ -10,17 +10,20 @@ import {
   calcRequestItems,
   calcRequests,
   calcVersions,
+  clients,
   crmActivities,
   events,
   leads,
   priceChannelChats,
   priceChannelMembers,
   priceChannelPosts,
+  receipts,
   roles,
   tasks,
   telegramLinks,
   userRoles,
   users,
+  warehouses,
 } from '@/modules/platform/db/schema';
 import { getStorage } from '@/modules/platform/files/storage';
 import { __setTelegramTransport } from '@/modules/platform/telegram/send';
@@ -116,6 +119,15 @@ let colleague2Id = '';
 let colleague3Id = '';
 let leadId = '';
 let noteId = '';
+/**
+ * Identity the CARD knows nothing about (F4 a): another client's manual code
+ * and an unclaimed marking claimed to that client. Six digits at most, so the
+ * phone rule cannot be what removes the code — only the book can.
+ */
+const MANUAL_CODE = `4${String(100_000 + Math.floor(Math.random() * 899_999)).slice(-5)}`;
+const MARKING = `MANIKEN${SUFFIX}`;
+let manualClientId = '';
+let markingReceiptId = '';
 const photoKey = `test/price-channel/${SUFFIX}.jpg`;
 const madeRequests: string[] = [];
 const ctx = () => ({ actorId: sellerId });
@@ -263,6 +275,18 @@ beforeAll(async () => {
     uploadedBy: sellerId,
   });
 
+  const [manual] = await db
+    .insert(clients)
+    .values({ clientCode: MANUAL_CODE, name: `Boshqa mijoz ${SUFFIX}` })
+    .returning({ id: clients.id });
+  manualClientId = manual!.id;
+  const [wh] = await db.select({ id: warehouses.id }).from(warehouses).limit(1);
+  const [receipt] = await db
+    .insert(receipts)
+    .values({ warehouseId: wh!.id, clientId: manualClientId, unclaimedMarking: MARKING, createdBy: sellerId })
+    .returning({ id: receipts.id });
+  markingReceiptId = receipt!.id;
+
   await db.insert(priceChannelChats).values({
     chatId: BigInt(CHAT),
     title: 'GSR narx',
@@ -319,6 +343,10 @@ afterAll(async () => {
       await db.delete(tasks).where(inArray(tasks.id, taskIds));
     }
   }
+  // The marking must not stay live: every later post carrying the word would
+  // lose it (#183). Inserted bare, so nothing refers to either row.
+  if (markingReceiptId) await db.delete(receipts).where(eq(receipts.id, markingReceiptId));
+  if (manualClientId) await db.delete(clients).where(eq(clients.id, manualClientId));
   await db.delete(attachments).where(eq(attachments.storageKey, photoKey));
   await getStorage().delete(photoKey).catch(() => {});
   await db.delete(crmActivities).where(eq(crmActivities.entityId, leadId));
@@ -343,6 +371,10 @@ async function openRequest(section: 'rastamojka' | 'podklyuch' = 'rastamojka') {
       items: [
         { name: 'GS777 Ali kurtka', quantity: 100 },
         { name: 'GS555 shim', quantity: 50 },
+        { name: 'B-000099 kurtka', quantity: 10 },
+        { name: `${MANUAL_CODE} shim`, quantity: 10 },
+        { name: `${MARKING} sumka`, quantity: 10 },
+        { name: 'YW26-000123 kepka', quantity: 10 },
       ],
       noteId,
       source: 'card',
@@ -448,8 +480,16 @@ describe('I3 — the post itself', () => {
     expect(caption).toContain(`Sotuvchi Bekmurod ${SUFFIX}`);
     expect(caption).toContain('kurtka');
     expect(caption).toContain('shim');
+    expect(caption).toContain('sumka');
+    expect(caption).toContain('kepka');
     expect(caption).not.toContain('GS777');
     expect(caption).not.toContain('GS555');
+    // F4 a: codes the card does not know — a deal, the book's manual code, an
+    // unclaimed marking, a box.
+    expect(caption).not.toContain('B-000099');
+    expect(caption).not.toContain(MANUAL_CODE);
+    expect(caption).not.toContain(MARKING);
+    expect(caption).not.toContain('YW26');
     expect(caption).not.toMatch(/\bAli\b/);
     expect(caption).not.toContain('Valiyev');
     expect(caption).not.toMatch(/\d{7}/);

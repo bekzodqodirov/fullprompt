@@ -9,10 +9,12 @@ import {
   childPostedFor,
   fitGoods,
   markLine,
+  codeCandidates,
   pickPerUnit,
   scrubIdentity,
   type ChannelPostView,
   type PostMark,
+  type ScrubContext,
 } from '@/modules/wms/calc/channel-post';
 import type { ChildState } from '@/modules/wms/calc/chain';
 
@@ -186,18 +188,22 @@ describe('U3 — one per-unit figure, the identity scrub, and the amount’s sou
   });
 
   it('takes the card’s identity out of a goods name — and nothing else', () => {
-    expect(scrubIdentity('GS777 Ali kurtka +998 90 123-45-67', ['GS777', 'Ali'], 'GS')).toBe('kurtka');
-    expect(scrubIdentity('GS555 kurtka', ['GS777'], 'GS')).toBe('kurtka');
-    expect(scrubIdentity('GS500MANIKEN-AL kurtka', ['GS777'], 'GS')).toBe('kurtka');
-    expect(scrubIdentity('Алишер куртка', ['Алишер Валиев'], 'GS')).toBe('куртка');
-    expect(scrubIdentity('Alyuminiy profil', ['Ali'], 'GS')).toBe('Alyuminiy profil');
-    expect(scrubIdentity('Natalia ko‘ylak', ['Ali'], 'GS')).toBe('Natalia ko‘ylak');
-    expect(scrubIdentity('@ali_uz kurtka', [], 'GS')).toBe('kurtka');
-    expect(scrubIdentity('t.me/ali kurtka', [], 'GS')).toBe('kurtka');
-    expect(scrubIdentity('https://x.uz kurtka', [], 'GS')).toBe('kurtka');
-    expect(scrubIdentity('Bo shim', ['Bo'], 'GS')).toBe('Bo shim');
-    expect(scrubIdentity('GS777 Ali', ['GS777', 'Ali'], 'GS')).toBe('');
-    expect(scrubIdentity('GS555 kurtka', [], '')).toBe('GS555 kurtka');
+    // The thirteen cells the channel shipped with, moved onto the context: the
+    // card's words stay `forbidden`, and the book has nothing to add here.
+    const old = (name: string, forbidden: string[], codePrefix: string) =>
+      scrubIdentity(name, { forbidden, ownCodes: [], codePrefix, knownCodes: new Set(), markings: [] });
+    expect(old('GS777 Ali kurtka +998 90 123-45-67', ['GS777', 'Ali'], 'GS')).toBe('kurtka');
+    expect(old('GS555 kurtka', ['GS777'], 'GS')).toBe('kurtka');
+    expect(old('GS500MANIKEN-AL kurtka', ['GS777'], 'GS')).toBe('kurtka');
+    expect(old('Алишер куртка', ['Алишер Валиев'], 'GS')).toBe('куртка');
+    expect(old('Alyuminiy profil', ['Ali'], 'GS')).toBe('Alyuminiy profil');
+    expect(old('Natalia ko‘ylak', ['Ali'], 'GS')).toBe('Natalia ko‘ylak');
+    expect(old('@ali_uz kurtka', [], 'GS')).toBe('kurtka');
+    expect(old('t.me/ali kurtka', [], 'GS')).toBe('kurtka');
+    expect(old('https://x.uz kurtka', [], 'GS')).toBe('kurtka');
+    expect(old('Bo shim', ['Bo'], 'GS')).toBe('Bo shim');
+    expect(old('GS777 Ali', ['GS777', 'Ali'], 'GS')).toBe('');
+    expect(old('GS555 kurtka', [], '')).toBe('GS555 kurtka');
   });
 
   it('the builder reads the price’s own amount, never the card’s, never a note', () => {
@@ -206,5 +212,148 @@ describe('U3 — one per-unit figure, the identity scrub, and the amount’s sou
     expect(src).toMatch(/answer_amount/);
     expect(src).not.toMatch(/quotedAmount|quoted_amount|answerNote|answer_note/);
     expect(src).toContain('client_code_prefix');
+  });
+});
+
+/**
+ * F4 a — «no client identity at all». A code typed into a goods name, or
+ * copied there from an invoice by the AI intake, opens onto a client for
+ * somebody: the deal in ⌘K and by URL, the receipt in ⌘K, the box and the
+ * crate in the bot, the pickup's lines, the client code everywhere. Each shape
+ * is its own `it`, so a red proof strips one rule and names one cell. Every
+ * cell runs with the batch cell beside it, which must stay: a truck code names
+ * no client and cannot be told from a product model.
+ */
+describe('U4 — every code that opens onto a client', () => {
+  const none: ScrubContext = { forbidden: [], ownCodes: [], codePrefix: 'GS', knownCodes: new Set(), markings: [] };
+  const scrub = (name: string, ctx: Partial<ScrubContext> = {}) => scrubIdentity(name, { ...none, ...ctx });
+  const batchSurvives = (ctx: Partial<ScrubContext> = {}) => expect(scrub('YW-045 kurtka', ctx)).toBe('YW-045 kurtka');
+  const UUID = '3f2a9c1e-7b4d-4e8a-9c21-5d6e7f8a9b0c';
+
+  it('a deal code, in every spelling', () => {
+    for (const code of ['B-000099', 'b-000099', 'B000099', 'Б-000099', 'В-000099', 'B\u2011000099']) {
+      expect(scrub(`${code} kurtka`), code).toBe('kurtka');
+    }
+    expect(scrub('Vitamin B-12 kapsula')).toBe('Vitamin B-12 kapsula');
+    expect(scrub('B12 vitamin')).toBe('B12 vitamin');
+    batchSurvives();
+  });
+
+  it('the card’s own codes go whole, at any length, and leave no debris', () => {
+    // The old word split left «kurtka B» behind: `-` cut the deal code in two.
+    expect(scrub('kurtka B-000124', { ownCodes: ['B-000124', 'GS777'] })).toBe('kurtka');
+    // A two-letter own code: no shape and no length rule knows it — only the card does.
+    expect(scrub('kurtka A5', { ownCodes: ['A5'] })).toBe('kurtka');
+    expect(scrub('A5-B kurtka', { ownCodes: ['A5'] })).toBe('kurtka');
+    batchSurvives({ ownCodes: ['A5'] });
+  });
+
+  it('a receipt number', () => {
+    expect(scrub('YW-IN-260915-003 kurtka')).toBe('kurtka');
+    expect(scrub('tas1-in-260915-012 kurtka')).toBe('kurtka');
+    batchSurvives();
+  });
+
+  it('a box code', () => {
+    expect(scrub('YW26-000123 kurtka')).toBe('kurtka');
+    expect(scrub('LED-100 lampa')).toBe('LED-100 lampa');
+    // The truck stays and the box goes — with no «/» left standing alone.
+    expect(scrub('YW-045 / YW26-000123')).toBe('YW-045');
+    batchSurvives();
+  });
+
+  it('a crate code', () => {
+    expect(scrub('CR-YW26-00001 kurtka')).toBe('kurtka');
+    batchSurvives();
+  });
+
+  it('a pickup code', () => {
+    expect(scrub('ZR-00012 kurtka')).toBe('kurtka');
+    expect(scrub('ZR-12 bolt')).toBe('ZR-12 bolt');
+    batchSurvives();
+  });
+
+  it('the client-code prefix, framed, spaced, in Cyrillic, full-width and lower-case', () => {
+    for (const code of ['(GS555)', 'GS-555', 'GS 555', '#GS555', '№GS555', 'kod:GS555', 'ГС555', 'gs555']) {
+      expect(scrub(`${code} kurtka`), code).toBe('kurtka');
+    }
+    expect(scrub('GSM modul')).toBe('GSM modul');
+    batchSurvives();
+  });
+
+  it('a full-width code from a Chinese IME (NFKC)', () => {
+    expect(scrub('ＧＳ５５５ kurtka')).toBe('kurtka');
+    batchSurvives();
+  });
+
+  it('the book’s codes: manual, lot form, and minted under an older prefix', () => {
+    const ctx = { codePrefix: 'GSR', knownCodes: new Set(['444', 'A55', 'GS555']) };
+    expect(scrub('kurtka 444', ctx)).toBe('kurtka');
+    expect(scrub('444-A kurtka', ctx)).toBe('kurtka');
+    expect(scrub('A55 kurtka', ctx)).toBe('kurtka');
+    expect(scrub('GS555 kurtka', ctx)).toBe('kurtka');
+    expect(scrub('kurtka 445', ctx)).toBe('kurtka 445');
+    expect(scrub('A5 qog‘oz', ctx)).toBe('A5 qog‘oz');
+    batchSurvives(ctx);
+  });
+
+  it('a code typed with Cyrillic look-alikes (the fold)', () => {
+    // Cyrillic А and К: on a phone keyboard they ARE the letters of the code.
+    expect(scrub('АК55 kurtka', { knownCodes: new Set(['AK55']) })).toBe('kurtka');
+    batchSurvives({ knownCodes: new Set(['AK55']) });
+  });
+
+  it('an unclaimed marking goes as ONE unit and is never split into words', () => {
+    const ctx = { markings: ['MANIKEN-AL', 'Ali kurtka'] };
+    expect(scrub('MANIKEN-AL sumka', ctx)).toBe('sumka');
+    expect(scrub('Ali kurtka shim', ctx)).toBe('shim');
+    expect(scrub('kurtka shim', ctx)).toBe('kurtka shim');
+    batchSurvives(ctx);
+  });
+
+  it('a link, a uuid, an app path or a bare host', () => {
+    expect(scrub(`gsrwms.uz/bitimlar/${UUID} kurtka`)).toBe('kurtka');
+    expect(scrub(`/crm/leads/${UUID} kurtka`)).toBe('kurtka');
+    expect(scrub(`${UUID} kurtka`)).toBe('kurtka');
+    expect(scrub('/hisoblash/123 kurtka')).toBe('kurtka');
+    expect(scrub('gsrwms.uz kurtka')).toBe('kurtka');
+    expect(scrub('kurtka/shim')).toBe('kurtka/shim');
+    batchSurvives();
+  });
+
+  it('codeCandidates: the runs that could be a code, joined across a seam, never a word', () => {
+    const out = codeCandidates(['kurtka GS 555-A', '444']);
+    expect(out).toContain('GS555');
+    expect(out).toContain('444');
+    expect(out).not.toContain('KURTKA');
+    expect(codeCandidates(['ＧＳ５５５'])).toContain('GS555');
+  });
+});
+
+describe('U5 — the builder hands the scrub the book, the markings and the card’s own codes', () => {
+  const queue = strip(readFileSync('src/modules/wms/calc/channel-queue.ts', 'utf8'));
+  const bodyOf = (name: string) => {
+    const at = queue.search(new RegExp(`function ${name}\\b`));
+    expect(at, `${name} is not in channel-queue.ts`).toBeGreaterThan(-1);
+    const rest = queue.slice(at);
+    return rest.slice(0, rest.indexOf('\n}') + 2);
+  };
+
+  it('the book is read by `inArray` over the candidates, the markings from receipts', () => {
+    const reads = bodyOf('identitiesIn');
+    expect(reads).toMatch(/codeCandidates\(names\)/);
+    expect(reads).toMatch(/inArray\(clients\.clientCode, candidates\)/);
+    expect(reads).toMatch(/unclaimed_marking/);
+    const goods = bodyOf('goodsFor');
+    expect(goods).toMatch(/await identitiesIn\(/);
+    expect(goods).toMatch(/scrubIdentity\(item\.name, \{[^}]*\bknownCodes\b[^}]*\bmarkings\b[^}]*\}/);
+    expect(goods).toMatch(/ownCodes: card\.ownCodes/);
+  });
+
+  it('the card’s codes are own CODES and never forbidden WORDS', () => {
+    const card = bodyOf('forbiddenFor');
+    expect(card).toMatch(/ownCodes\.push\(d\.code\)/);
+    expect(card).toMatch(/ownCodes\.push\(c\.code\)/);
+    expect(card).not.toMatch(/forbidden\.push\([^)]*\b(?:d|c)\.code\b/);
   });
 });

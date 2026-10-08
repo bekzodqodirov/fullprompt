@@ -152,51 +152,263 @@ function escapeRegExp(s: string): string {
 }
 
 /**
- * A goods name with the card's identity taken out (F4 a), step by step:
- *   1. the words of every forbidden string (the client's code, name, phones;
- *      the lead's name, company, phone), split on whitespace and `,;:/()+-`,
- *      kept at ≥ 3 code points;
- *   2. each removed as a WHOLE word, Unicode-aware — never JS `\b` (ASCII-only:
- *      «Алишер» would never match, round 37) and never a bare substring («Ali»
- *      must not eat «Natalia» or «Alyuminiy»);
- *   3. every token starting with the client-code prefix and a digit — a
- *      person's sibling codes (#407), another client's code and an unclaimed
- *      marking are not in the card's list at all;
- *   4. every token with `@`, `t.me/` or `://` (a handle or a link names a person);
- *   5. every run of ≥ 7 digits with spaces, dashes, `+`, dots or brackets
- *      between them (a phone in any spelling);
- *   6. whitespace collapsed and punctuation-only remnants trimmed.
- * An empty result drops the name.
+ * What the scrub is told — every list REQUIRED, so the builder that forgets
+ * one is a compile error and never a quiet leak.
  */
-export function scrubIdentity(name: string, forbidden: string[], codePrefix: string): string {
+export interface ScrubContext {
+  /** The card's PEOPLE: the client's name and phones, the lead's name, company and phone — removed word by word. */
+  forbidden: readonly string[];
+  /** The card's own CODES (its deal's, its client's) — removed as whole units at ANY length. */
+  ownCodes: readonly string[];
+  /** The client-code prefix setting as it stands today. */
+  codePrefix: string;
+  /** Client codes of the BOOK that these names carry (`codeCandidates` → `clients`). */
+  knownCodes: ReadonlySet<string>;
+  /** Unclaimed markings these names carry — free text, so matched by data, never by shape. */
+  markings: readonly string[];
+}
+
+/**
+ * The Cyrillic letters a code is mistyped with — one UTF-16 unit to one, so
+ * every index of the folded shadow is an index of the name (the splice below
+ * depends on it). Б is not here: it is the deal letter SPELLED in Cyrillic,
+ * not a look-alike, and the deal shape names it.
+ */
+const LOOKALIKE: Record<string, string> = {
+  А: 'A', В: 'B', Е: 'E', К: 'K', М: 'M', Н: 'H', О: 'O', Р: 'P', С: 'C', Т: 'T', Х: 'X',
+  а: 'a', в: 'b', е: 'e', к: 'k', м: 'm', н: 'h', о: 'o', р: 'p', с: 'c', т: 't', х: 'x',
+};
+
+function fold(s: string): string {
+  return s.replace(/[АВЕКМНОРСТХавекмнорстх]/gu, (c) => LOOKALIKE[c] ?? c);
+}
+
+/**
+ * NFKC — a Chinese IME types `ＧＳ７７７` — except across `№`, which NFKC
+ * rewrites to the two LETTERS «No» and so would weld itself to the code it
+ * labels. Stated cost: `m²` reads `m2`.
+ */
+export function nfkc(s: string): string {
+  return s
+    .split('№')
+    .map((part) => part.normalize('NFKC'))
+    .join('№');
+}
+
+/** How a Latin code prefix is spelled in Cyrillic (GS → ГС); the scrub folds it like the name. */
+const CYRILLIC_SPELLING: Record<string, string> = {
+  A: 'А', B: 'Б', C: 'С', D: 'Д', E: 'Е', F: 'Ф', G: 'Г', H: 'Х', I: 'И', J: 'Ж', K: 'К', L: 'Л', M: 'М',
+  N: 'Н', O: 'О', P: 'П', Q: 'К', R: 'Р', S: 'С', T: 'Т', U: 'У', V: 'В', W: 'В', X: 'Х', Y: 'Й', Z: 'З',
+};
+
+/** A word edge — letters and digits of every script; never JS `\b`, which is ASCII-only (round 37). */
+const EDGE_BEFORE = '(?<![\\p{L}\\p{N}])';
+const EDGE_AFTER = '(?![\\p{L}\\p{N}])';
+/** What a person puts between a code's letters and its digits: `GS 555`, `GS-555`, `GS#555`. */
+const SEAM = '[\\s\\-_.#№]?';
+/** The search's lot form, `GS777-A`. */
+const LOT = '(?:\\s?-\\s?\\p{L}{1,2})?';
+
+/** A code as a pattern over the shadow, a seam allowed wherever a letter meets a digit. */
+function codePattern(code: string): string {
+  const chars = [...fold(nfkc(code))];
+  let out = '';
+  chars.forEach((ch, i) => {
+    if (i > 0) {
+      const prev = chars[i - 1]!;
+      const letterDigit = (a: string, b: string) => /\p{L}/u.test(a) && /\p{N}/u.test(b);
+      if (letterDigit(prev, ch) || letterDigit(ch, prev)) out += SEAM;
+    }
+    out += escapeRegExp(ch);
+  });
+  return out;
+}
+
+/**
+ * The dropped TOKENS — anything that is a way to a person or a card: a handle,
+ * a Telegram link, any URL, a uuid, one of this app's paths, a bare host.
+ */
+const LINK_TOKEN: readonly RegExp[] = [
+  /@/u,
+  /t\.me\//iu,
+  /:\/\//u,
+  /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/iu,
+  /\/(?:bitimlar|crm|admin|receipts|boxes|batches|hisoblash|finance|stock|o)\//iu,
+  /[a-z0-9-]+\.(?:uz|ru|com|cn|net|org|io|me|app)(?:\/|$)/iu,
+];
+
+/**
+ * The SYSTEM's own codes — every one of them opens onto a client for
+ * somebody (crate and box in the bot, receipt and deal in ⌘K, a pickup's
+ * lines), so each goes by its minted shape. Crate before box: a crate code
+ * ends in a box-shaped tail. Run over the shadow, so `В` arrives as `B`.
+ *
+ * KEPT on purpose: the batch `YW-045`. A truck carries many clients, its
+ * contents sit behind `BATCH_READERS`, and `{PREFIX}-{NNN}` cannot be told
+ * from «LED-100» — scrubbing it would eat real goods names.
+ */
+const SYSTEM_SHAPES: readonly string[] = [
+  /* crate   */ 'CR-[A-Za-z0-9]*\\d{2}-\\d{5,}',
+  /* box     */ '[A-Za-z][A-Za-z0-9]*\\d{2}-\\d{6,}',
+  /* receipt */ '[A-Za-z0-9]+\\s?-\\s?IN\\s?-\\s?\\d{6}\\s?-\\s?\\d+',
+  /* pickup  */ 'ZR-\\d{5,}',
+  /* deal    */ '[BБ](?:\\s?[-‐‑‒–—_]\\s?\\d{3,}|\\s?\\d{6,})',
+];
+
+/** The name and its folded shadow — the same length, cut at the same indices. */
+interface Text {
+  out: string;
+  shadow: string;
+}
+
+/** A label that hugged a removed code: `kod:GS555`, `код: 444`. */
+const HUGGING_LABEL = new RegExp(`${EDGE_BEFORE}(?:kod|${fold('код')}|code)\\s?:\\s?$`, 'iu');
+
+/**
+ * Widen a removal over what only existed to frame it — a `#` or `№` glued to
+ * its front, a pair of brackets around it, a «kod:» label — so «(GS555)»
+ * leaves nothing behind. Never past `floor` (the previous cut).
+ */
+function hug(shadow: string, start: number, end: number, floor: number): [number, number] {
+  let s = start;
+  let e = end;
+  const pairs: Record<string, string> = { '(': ')', '[': ']' };
+  if (s > floor && pairs[shadow[s - 1]!] !== undefined && shadow[e] === pairs[shadow[s - 1]!]) {
+    s -= 1;
+    e += 1;
+  }
+  while (s > floor && (shadow[s - 1] === '#' || shadow[s - 1] === '№')) s -= 1;
+  const label = HUGGING_LABEL.exec(shadow.slice(floor, s));
+  if (label) s -= label[0].length;
+  return [s, e];
+}
+
+/**
+ * Every match of `re` on the shadow (that `when` accepts) spliced out of BOTH
+ * strings at the same indices.
+ */
+function cut(text: Text, re: RegExp, when: (match: string) => boolean = () => true): Text {
+  let out = '';
+  let shadow = '';
+  let last = 0;
+  for (const m of text.shadow.matchAll(re)) {
+    if (m[0].length === 0 || m.index < last || !when(m[0])) continue;
+    const [s, e] = hug(text.shadow, m.index, m.index + m[0].length, last);
+    out += `${text.out.slice(last, s)} `;
+    shadow += `${text.shadow.slice(last, s)} `;
+    last = e;
+  }
+  return { out: out + text.out.slice(last), shadow: shadow + text.shadow.slice(last) };
+}
+
+/** Whole units, longest first — so «MANIKEN-AL» goes before a «MANIKEN» it contains. */
+function cutUnits(text: Text, patterns: readonly string[]): Text {
+  let t = text;
+  for (const p of [...new Set(patterns)].sort((a, b) => b.length - a.length)) {
+    t = cut(t, new RegExp(`${EDGE_BEFORE}(?:${p})${EDGE_AFTER}`, 'giu'));
+  }
+  return t;
+}
+
+/**
+ * A goods name with every way to its client taken out (F4 a). Matching runs on
+ * a folded SHADOW (NFKC, Cyrillic look-alikes as Latin, case-insensitive,
+ * Unicode word edges) and every removal is spliced out of the name itself:
+ *   1. TOKENS that are a way to a person or a card (`LINK_TOKEN`) — first, so
+ *      no code shape can carve a uuid into debris;
+ *   2. the card's PEOPLE, word by word (≥ 3 code points, whole words only —
+ *      «Ali» must not eat «Natalia» or «Alyuminiy»);
+ *   3. whole CODES: the card's own (any length), the book's codes the names
+ *      carry (≥ 3), each with a seam and the lot suffix; the markings (≥ 3),
+ *      each ONE unit and never split into words, or «Ali kurtka» would eat
+ *      «kurtka» from every name;
+ *   4. the system's SHAPES (crate, box, receipt, pickup, deal), then the
+ *      client-code prefix or its Cyrillic spelling followed by a digit — so
+ *      a code minted under today's prefix goes even when the book was not asked;
+ *   5. a phone in any spelling (≥ 7 digits with spaces, dashes, `+`, dots or
+ *      brackets between them);
+ *   6. remnants: empty brackets, orphan separators, whitespace, edge punctuation.
+ * An empty result drops the name.
+ *
+ * STATED, not caught: a two-character code of another client («A4» reads like
+ * a paper size), a code with no digit, and a CJK marking glued to other
+ * letters with no edge.
+ */
+export function scrubIdentity(name: string, ctx: ScrubContext): string {
+  const normal = nfkc(name);
+  let t: Text = { out: normal, shadow: fold(normal) };
+
+  t = cut(t, /\S+/gu, (token) => LINK_TOKEN.some((re) => re.test(token)));
+
   const words = new Set<string>();
-  for (const f of forbidden) {
-    for (const part of f.split(/[\s,;:/()+-]+/u)) {
-      if ([...part].length >= 3) words.add(part.toLocaleLowerCase());
+  for (const f of ctx.forbidden) {
+    for (const part of nfkc(f).split(/[\s,;:/()+-]+/u)) {
+      if ([...part].length >= 3) words.add(escapeRegExp(fold(part)));
     }
   }
-  let out = name;
-  for (const word of words) {
-    out = out.replace(new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(word)}(?![\\p{L}\\p{N}])`, 'giu'), ' ');
+  t = cutUnits(t, [...words]);
+
+  const units: string[] = [];
+  for (const code of ctx.ownCodes) {
+    if (code.trim() !== '') units.push(`${codePattern(code.trim())}${LOT}`);
   }
-  const prefix = codePrefix.trim().toLocaleLowerCase();
-  out = out
-    .split(/\s+/u)
-    .filter((token) => {
-      if (token === '') return false;
-      const lower = token.toLocaleLowerCase();
-      if (prefix && lower.startsWith(prefix) && /\p{N}/u.test([...lower.slice(prefix.length)][0] ?? '')) return false;
-      if (lower.includes('@') || lower.includes('t.me/') || lower.includes('://')) return false;
-      return true;
-    })
-    .join(' ');
-  out = out.replace(/\+?\d(?:[\s\-+.()]*\d){6,}/gu, ' ');
-  out = out
+  for (const code of ctx.knownCodes) {
+    if ([...code.trim()].length >= 3) units.push(`${codePattern(code.trim())}${LOT}`);
+  }
+  t = cutUnits(t, units);
+  const markings: string[] = [];
+  for (const marking of ctx.markings) {
+    const m = fold(nfkc(marking)).trim();
+    if ([...m].length >= 3) markings.push(m.split(/\s+/u).map(escapeRegExp).join('\\s+'));
+  }
+  t = cutUnits(t, markings);
+
+  for (const shape of SYSTEM_SHAPES) {
+    t = cut(t, new RegExp(`${EDGE_BEFORE}${shape}${EDGE_AFTER}`, 'giu'));
+  }
+  const prefix = nfkc(ctx.codePrefix).trim().toUpperCase();
+  if (prefix) {
+    const cyrillic = [...prefix].map((ch) => CYRILLIC_SPELLING[ch] ?? ch).join('');
+    const spellings = [...new Set([fold(prefix), fold(cyrillic)])].map(escapeRegExp).join('|');
+    t = cut(t, new RegExp(`${EDGE_BEFORE}(?:${spellings})${SEAM}\\d[\\p{L}\\p{N}-]*`, 'giu'));
+  }
+
+  t = cut(t, /\+?\d(?:[\s\-+.()]*\d){6,}/gu);
+
+  // What framed a removed unit and now frames nothing: empty brackets, a
+  // separator standing alone («YW-045 / YW26-000123» → «YW-045»).
+  return t.out
+    .replace(/[(\[]\s*[)\]]/gu, ' ')
+    .replace(/(^|\s)[-–—_#№:/|]+(?=\s|$)/gu, '$1')
     .replace(/\s+/gu, ' ')
     .trim()
-    .replace(/^[\s,;:·\-–—]+|[\s,;:·\-–—]+$/gu, '')
+    .replace(/^[\s,;:·\-–—/|]+|[\s,;:·\-–—/|]+$/gu, '')
     .trim();
-  return out;
+}
+
+/**
+ * The client codes these names MIGHT carry — what the builder asks the book
+ * about (`clients_code_unique`). Folded and upper-cased, because a code is
+ * upper-case by CHECK: every ASCII letter/digit run of 2-10 holding a digit,
+ * and every two neighbours joined across one seam (`GS 555` → `GS555`). A lot
+ * suffix needs no rule of its own — `444-A` is the run `444`.
+ */
+export function codeCandidates(names: readonly string[]): string[] {
+  const out = new Set<string>();
+  const candidate = (s: string) => s.length >= 2 && s.length <= 10 && /\d/.test(s);
+  for (const name of names) {
+    const shadow = fold(nfkc(name)).toUpperCase();
+    const runs = [...shadow.matchAll(/[A-Z0-9]+/g)];
+    runs.forEach((run, i) => {
+      if (candidate(run[0])) out.add(run[0]);
+      const next = runs[i + 1];
+      const end = run.index + run[0].length;
+      if (next && next.index === end + 1 && /^[\s\-_.#№]$/u.test(shadow[end]!)) {
+        if (candidate(run[0] + next[0])) out.add(run[0] + next[0]);
+      }
+    });
+  }
+  return [...out];
 }
 
 const SECTION_TITLES: Record<ChannelSection | 'none', string> = {
