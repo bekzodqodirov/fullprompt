@@ -136,6 +136,9 @@ describe('(b) the stop', () => {
     expect(log).toContain('flush-end');
     expect(log.indexOf('flush-end')).toBeLessThan(Math.max(log.indexOf('stop'), log.indexOf('confirm')));
     expect(lastDoneUpdateId()).toBe(40);
+    // …and the throw itself ENDED the wait: a rejection that only the 3 s
+    // budget could end would stall every deploy whose last update failed.
+    expect(out.ms).toBeLessThan(1_000);
   });
 
   it('the membership chain is drained inside the budget, and the flush comes BEFORE the confirm', async () => {
