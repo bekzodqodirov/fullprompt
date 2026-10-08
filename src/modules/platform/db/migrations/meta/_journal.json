@@ -904,6 +904,20 @@
       "when": 1785190000107,
       "tag": "0128_price_channel",
       "breakpoints": true
+    },
+    {
+      "idx": 129,
+      "version": "7",
+      "when": 1785190000108,
+      "tag": "0129_cargo_threads",
+      "breakpoints": true
+    },
+    {
+      "idx": 130,
+      "version": "7",
+      "when": 1785190000109,
+      "tag": "0130_bot_redelivery",
+      "breakpoints": true
     }
   ]
 }
