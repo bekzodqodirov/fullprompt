@@ -76,6 +76,7 @@ import {
   setRatesAction,
   type CalcFormState,
   type TableFormState,
+  type TableSaveFields,
 } from '../actions';
 import { dutyText } from '@/modules/wms/calc/duty-text';
 import { ImportBazaDialog, type PickerTarget } from './import-baza-dialog';
@@ -154,6 +155,27 @@ const EMPTY_SAVE: LastSave = {
   importFilled: [],
   memoryFilled: [],
 };
+
+/**
+ * What a save result says on the bar — ONE reader for every press that saves
+ * (the table, the paste), so a field the server learns to name reaches all of
+ * them at once. The paste listed its fields by hand and silently dropped four
+ * of them (judge S15).
+ */
+function lastSaveOf(result: TableSaveFields): LastSave {
+  return {
+    minted: result.minted ?? [],
+    swept: result.swept ?? 0,
+    merged: result.merged ?? [],
+    measuresCleared: result.measuresCleared ?? [],
+    measuresDropped: result.measuresDropped ?? [],
+    basisSuspect: result.basisSuspect ?? [],
+    basisConflict: result.basisConflict ?? [],
+    alreadySaved: result.alreadySaved ?? 0,
+    importFilled: result.importFilled ?? [],
+    memoryFilled: result.memoryFilled ?? [],
+  };
+}
 
 type SheetTarget = { kind: 'item'; id: string } | { kind: 'ghost'; key: number };
 const sheetKeyOf = (s: SheetTarget | null) => (s === null ? null : s.kind === 'item' ? `item:${s.id}` : `ghost:${s.key}`);
@@ -980,18 +1002,7 @@ export function ItemsTable({
       if (!Number.isFinite(result.rev)) return { error: 'save_failed' };
       knownRev.current = Math.max(knownRev.current, result.rev);
       setPrunedCount(0);
-      setLastSave({
-        minted: result.minted ?? [],
-        swept: result.swept ?? 0,
-        merged: result.merged ?? [],
-        measuresCleared: result.measuresCleared ?? [],
-        measuresDropped: result.measuresDropped ?? [],
-        basisSuspect: result.basisSuspect ?? [],
-        basisConflict: result.basisConflict ?? [],
-        alreadySaved: result.alreadySaved ?? 0,
-        importFilled: result.importFilled ?? [],
-        memoryFilled: result.memoryFilled ?? [],
-      });
+      setLastSave(lastSaveOf(result));
       // Drafts are HELD until the refreshed workspace reaches this rev, so
       // the live figures never flash back to pre-save numbers — and only
       // what this press POSTED settles then.
@@ -1616,15 +1627,7 @@ export function ItemsTable({
         setPasteOpen(false);
         pasteIds.current = { keys: [], ids: [] };
         knownRev.current = Math.max(knownRev.current, result.rev);
-        setLastSave({
-          ...EMPTY_SAVE,
-          minted: result.minted ?? [],
-          swept: result.swept ?? 0,
-          merged: result.merged ?? [],
-          alreadySaved: result.alreadySaved ?? 0,
-          importFilled: result.importFilled ?? [],
-          memoryFilled: result.memoryFilled ?? [],
-        });
+        setLastSave(lastSaveOf(result));
       }
       return result;
     });
