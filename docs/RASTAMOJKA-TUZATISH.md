@@ -31,6 +31,11 @@ Results: 66 confirmed or partial, 2 refuted, 7 critic findings unverified. The u
   - A zero baza and a rate outside 0-100 are refused.
 - `recalcFromSealed` copies `feeUsd: null`.
 
+**Then a five-lens judge read this spec against the tree** (79 findings; its
+corrections are §7, which OVERRIDES §1-§3 wherever they disagree), and the
+lead landed the **kernel addendum** the packages fork from (`6778932`,
+`99fd050`) — listed in §7.0.
+
 ## 0. Rules for every package (binding)
 
 - **Read `CLAUDE.md`.** Footguns 1-6 apply.
@@ -43,7 +48,7 @@ Results: 66 confirmed or partial, 2 refuted, 7 critic findings unverified. The u
 - **Unexpected behaviour:** if you change one of `CLAUDE.md`'s pinned behaviours, an existing test will say so. Change the test only when its SUBJECT changed deliberately, and say so in a comment, as the kernel did for `calc-pricing.test.ts` «a lgota is a real zero».
 - **The live system holds real requests.** Prefer additive changes. Old OPEN requests are healed on the VED's next Saqlash, never by a data rewrite. Sealed versions are never touched.
 - **Branch / commit:**
-  - Each package works in its own git worktree off `f9843cc`, commits there, and reports its branch.
+  - Each package works in its own git worktree off **`99fd050`** (the kernel plus its addendum), commits there, and reports its branch.
   - Commit trailers, exactly:
     `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`
     `Claude-Session: https://claude.ai/code/session_01GKDEroAfbcbPjTyydp62pL`
@@ -397,3 +402,243 @@ These were not refuted, but no refuter ran on them. The owning package must REPR
    - **a ⭐** Kod bo‘yicha jami: deklaratsiyada bitta qator. Hozir shunday.
    - b) Har bir tovar alohida.
 4. **Qo‘shimcha boj (sertifikat yo‘q)** «20 %, kamida $3/juft» kodlarda nominal 20 % bo‘yicha olinadi. Bojxonadan aniqlab bering — hozircha shunday qoldi.
+
+## 7. Binding corrections from the judge (override §1-§3)
+
+### 7.0 Already in the kernel — consume, never restate or move
+
+- `parseGoodsLine` reads **per cell**: two numeric cells never weld
+  («Kurtka; 300; 150 kg» → 300 dona + 150 kg; «Kurtka, 300, 150» →
+  problem `unlabelled`); a 4-8-digit code cell right after the name in a row
+  of ≥3 cells is the code («Kafel plitka\t6907\t\t\t120 m²»); «120 ta juft»
+  → 120 juft. A unit-only cell merges into the number before it.
+- `normalizeTnved(raw)` — digits only; a NUMERIC 9-digit cell is padded to
+  10 (Excel dropped the zero); a TYPED 9-digit string is a `code_short`
+  problem, never padded (MR-18). Every door and the import parser call it.
+- `normalizeRowUnit(row)` — the ONE rule «a number moves to the column its
+  word names» (S7, MR-4, MR-5): target occupied → quantity still cleared,
+  both figures in the note; karobka/unknown → quantity cleared + note;
+  `unit` nulled after a move so it never fires twice. P1's door and P3's
+  heal both call it.
+- `countText(quantity, unit, words)` — a count prints as pieces, never glued
+  to a word naming another column (MR-6). `unitLabel(unit, words)`,
+  `unitWordKey`, `UNIT_WORD_KEYS`.
+- Bundle keys `calc.units.*` (incl. `kgNet` = «Sof og‘irlik (netto), kg», the
+  ONE spelling) and `calc.needs.{sentence,what.*,why.*}` in all four bundles.
+- `needs.ts`: `rowNeeds` emits baza / duty / **excise** needs; `needLawOf(group)`
+  is the only way to build a `NeedLaw`; `needUnitOf`; `needPhraseUz` /
+  `needWhatUz` / `needWhyUz` — the bot's ONE Uzbek sentence for a missing
+  figure.
+- `basis.ts`: `autoBasisFor(group, item)` (law pair → kg law → dona/1000/sm³
+  law → a STATED pair m²/juft/litr → weight only → kg → per piece; never sm³)
+  and `statedPairOf`. `defaultBasisFor(group)` is unchanged and stays
+  law-only (MR-2).
+- **The measure pass keeps a stated pair** (TT-3, MR-3, S2): the stamp and
+  `required` read `basis ?? autoBasisFor(...)`; a row with NO group keeps its
+  pair untouched until its law is known (the uncoded car's sm³).
+  `setItemBaza` stamps with `autoBasisFor` too. Pinned in
+  `calc-basis.integration.test.ts` and `basis-law-writers.test.ts`. **No
+  package moves these lines.** The A2 suspect check keeps `defaultBasisFor`.
+- `unitsForRow` takes a REQUIRED `statedPair`; all four callers pass it
+  (S6, TT-13).
+- Engine: `CustomsRefusalDetail` = `{reason, itemSeq?, itemLabel?, unit?,
+  half?: 'baza'|'duty'|'excise', rate?}`; specific excise is priced
+  (`PricedGroup.exciseSpecific/exciseUnit`, required-nullable);
+  `WorkspaceGroup` carries both as `null` until P2 reads the columns;
+  `SealBlocker 'customs'` carries itemSeq/unit/half/rate; `DUTY_UNITS`.
+- Words: `measureNeedText` / `customsRefusalText` in `hisoblash/[id]/words.ts`
+  (screen); `blockerText`'s customs case in `prefill-reply.ts` (bot); the
+  seal panel's customs case and the phone refusal line already use them.
+- `TableItemEdit`/`TableNewItem` declare `measureUnit?` and `shownBasis?` —
+  **declared, not yet honoured** (P3 honours them, §7.3).
+- `lastSaveOf(result)` in items-table.tsx — every save press reads its bar
+  line through it (S15). P3 extends it; P1's paste calls it.
+
+### 7.1 P1 «Kiritish» — corrections
+
+- **Form geometry (UX1).** The form lives in the card's 24rem RAIL (~358 px)
+  at every desktop width. Each product is a TWO-LINE block, no sideways
+  scroll: line 1 `[Tovar nomi (flex)] [Soni, dona] [✕]`; line 2
+  `[Netto, kg] [miqdor + birlik: m² / juft / litr / m³] [TNVED (bilsangiz)]`.
+  m³ is an option of the unit select (routeAmount sends it to `volume_m3`).
+  TNVED goes LAST. Open with ONE row; Enter/Tab in the last cell adds a row.
+  Check: 358 px at 1280 and 768, ~600 px at 640 — document width = viewport
+  and no horizontal scroll inside the panel.
+- **The `calc-goods` textarea STAYS (UX2, MR-20)** as the quick door,
+  labelled «Tovarlar (har qatorda: nomi, soni — yoki 120 m², 300 dona 150
+  kg)», parsed LIVE through `parseGoodsLine` into the rows below it. A
+  multi-line paste into a name cell splits into rows. No separate «Excel»
+  button. Eleven e2e specs type `calc-goods` with «name, N» lines (m9zo,
+  m9zp, m9zq, m9zr, m9zt, m9zta, m9zu, m9zw, m9zzz-baza-statistika,
+  m9zzz-hisoblash-telefon, m9zzz-ichki-chat): they must keep passing with
+  their numbers unchanged; grep and fix any you break in the same commit.
+- **Only `ambiguous`, `two_pairs` and `unlabelled` block the submit (UX3)**,
+  each resolved by ONE tap (reuse `calc.ambiguous.number`). `cartons_only` /
+  `unknown_unit` add the row with a warn chip («20 karobka — dona sonini VED
+  so‘raydi») and submit; the door writes the note. Cartons live only in the
+  note (MR-25) — no column.
+- **The door** (`openCalcRequest`) calls the kernel's `normalizeRowUnit` and
+  `normalizeTnved` — no rule of its own (S7, MR-18).
+- **Line weight is netto; `loneWeightKg` leaves the card form** for
+  rastamojka/podklyuch (MR-7, UX6, TT-14). The bot keeps it only as a
+  labelled fallback (row note «og‘irlik umumiy (brutto)dan olindi»). Move the
+  #910 fences deliberately, with the reason in the comment.
+- **P1.4's «shipment totals leave REQUIRED_FIELDS» is CANCELLED (MR-9)** —
+  the upsale payout scales by them. Keep asking them as today.
+- **The checklist follows the law (TT-5).** `missingFields(section, facts,
+  laws: ReadonlyMap<string, NeedLaw>)` — `laws` REQUIRED; every caller reads
+  `ratesForCodes` on the pool first (#714). A separate pure
+  `lineNeeds(...) → {index, name, units: NeedUnit[]}[]` feeds the chips;
+  `goodsByRequest` gains tnvedCode/volumeM3/measureUnit/measureQty. Needs are
+  `missingNeeds(rowNeeds(law, autoBasisFor(law, line), line))`. On
+  `/hisoblash/[id]` grouped lines take the GROUP's law (`needLawOf`), so the
+  chip and P3's cell border agree (S9); the bot and the queue use the book.
+  P1 owns both `page.tsx` checklist regions, `calc/labels.ts` FIELD_LABELS
+  and `calc-panel.tsx` (+ its deal-lines load).
+- **One-unit questions only when the LAW pins the unit (UX5)** — a duty need
+  or a law pair. A baza-only need asks «nechta dona yoki necha kg (sof
+  og‘irlik)?». Words come from `needWhatUz`/`needPhraseUz`, never restated.
+  Lists cap at 8 + «… yana N ta qator» (UX18).
+- **A bare number gets BUTTONS (UX4)**: [50 dona] [50 kg] and, only when the
+  law or the line's own word names it, [50 m²]/[50 juft]/[50 litr]; «1,200
+  kg» gets [1.2 kg] [1 200 kg]. The callback must pass the derived
+  callback-parser fence (#937). Text still accepted. A two-figure line
+  (clothing) writes what was given and asks the remainder in the SAME round.
+- **After send the seller sees what is missing (UX13)**: `submitCalcAction`
+  returns the landed request's missing list; the form prints «Yuborildi. VED
+  so‘raydi: 2-qator «Kurtka» — soni (dona)» under ✅. Non-blocking.
+- **The bot's collection prompt is rewritten per section (UX14)**; rastamojka:
+  «Tovar ro‘yxatini yuboring — har qatorda nomi va miqdori (300 dona, 150 kg,
+  120 m², 40 juft), TNVED kodini bilsangiz yozing. Fayl va rasmlar ham
+  bo‘ladi.»; podklyuch adds the route and «umumiy kub/kg».
+- **Deal prefill (UX17)**: «Bitim qatorlaridan to‘ldirish», rendered only
+  when deal_lines exist; fills EMPTY rows and appends, never overwrites.
+- **TNVED header keys (MR-19)**: no bare `hs` / `kod`; use `hs code`,
+  `hs-code`, `тн вэд`, `тнвэд`, `tn ved`, `tnved`, `海关编码`, `商品编码`, and
+  claim the column only when most data cells read as codes.
+- **Landing (TT-16)**: `CalcFacts.goods` gains measureUnit/volumeM3/unit and
+  `landIntake` maps them. The workspace paste is normalised client-side with
+  the kernel and posted as structured `TableNewItem` fields (incl.
+  `measureUnit`, which P3 honours).
+- **Offer PDF (MR-6)**: `countText` + the pair; add `units` (same keys as
+  `calc.units`) to `clientLabels(locale)` for the four client locales.
+- **i18n anchors (S13)**: `calc.sendTable{}` after `calc.send`;
+  `calc.fields.lineNeed` after `fields.goods`; `calc.pasteProblems{}` after
+  `calc.goodsFile`. Never append at an object's end.
+
+### 7.2 P2 «Hisob» — corrections
+
+- **Ownership additions (S9, S14):** `actions.ts` `setRatesAction`,
+  `saveRatesAction`, `recalcAction`, the seal/teach actions;
+  `hisoblash/[id]/recalc-button.tsx`; `calc/labels.ts` WARNING_LABELS;
+  `platform/db/schema/wms.ts`; `pricing.ts` `customsFeeFor`/`FeeRefusal`
+  (the excise engine is DONE in the kernel — do not rewrite it);
+  `hisoblash/[id]/calc-workspace.tsx` (the real path); `prefill-reply.ts`
+  incl. `FEE_REASON` for `fee_bhm_bad`.
+- **Actions widen (TT-6):** `setRatesAction` takes dutyMode/dutySpecific/
+  dutyUnit, excisePct/exciseSpecific/exciseUnit and hasCertificate
+  (null|true|false, absent ≠ null); `source` is DERIVED in `setGroupRates`
+  (stays 'dictionary' when the posted law equals the stored one) — never
+  hardcoded `'typed'`. `saveRatesAction` takes the shape.
+- **RatesForm (MR-14):** the mode select defaults to «lug‘atdagidek» (posts
+  NO mode → the carry); once a code is typed, prefill from `ratesFor(code)`;
+  only an explicit «foiz» posts 'advalor'. Integration test: a RatesForm-shaped
+  post with no mode under 6403 keeps max/3/juft.
+- **GroupFold stays small (UX10):** the law's shape READ-ONLY («20 %, kamida
+  $3/juft — lug‘atdan»), edited only in `/hisoblash/lugatlar`; the excise row
+  only when the code matches `calc/excise.ts` or excise is answered; the
+  certificate select's first option shows its current value.
+- **Warnings (UX9, MR-10/UX8):** `dictionary_moved` fires only when
+  rateSource ≠ 'typed'; `rate_off_dictionary` widens to mode/specific/unit
+  for typed groups. `code_heading` fires ONLY when the typed code is shorter
+  than 10 digits AND deeper book rows carry a DIFFERENT law; «lug‘at: 8528
+  sarlavhasi» is footer INFORMATION, never a ✅-recorded warning.
+- **Excise (MR-11, MR-12, S4, TT-7):** CHECK `NOT (excise_pct IS NOT NULL
+  AND excise_specific IS NOT NULL)`; the specific mode posts excise_pct NULL;
+  «answered» = either non-null. `setGroupRates` refuses (in words) an
+  excise unit outside {kg, dona, 1000_dona} ∪ {the group's own pair duty
+  unit} — so no row ever needs a second pair. Carry both columns through
+  `sameGroupRates`, `recalcFromSealed`'s copy, the seal's breakdown,
+  `setGroupRates`' change detection (unconfirm), `sheet.ts`, `loadWorkspace`
+  (replace the kernel's nulls), the prefill/ai-reply mappers. Unit test:
+  `sameGroupRates` false when only exciseSpecific differs.
+- **recalc re-pull (MR-15, TT-8):** `recalcFromSealed` returns
+  `{ id, relawed: string[] }`; when a re-pull changes a group's dutyUnit, the
+  new request names those rows once on its first load (a `?relawed=` param)
+  and leaves the pairs to the first Saqlash; re-word `SKIPS_THE_PASS`.
+- **Fee (TT-9, S12, MR-24):** keep `Workspace.fxUzsPerUsd: number | null`;
+  ADD `fxDate: string | null`. The seal compares `sawFeeUsd` only when it is
+  not `undefined`, null === null, to the cent, and not at all when the
+  section has no customs half.
+- **Reconcile (MR-8):** drop the kg half of `reconcile.mismatch` (netto vs
+  brutto differ by construction); keep m³.
+- **Partial totals (MR-23):** delete the partial-JAMI branches in ai-reply /
+  prefill-reply and re-anchor their tests on a workspace-derived input.
+- **Stale baza (TT-19, S10):** `WorkspaceItem.bazaStale: boolean` (all three
+  sources) — a chip, not a warning kind. P2 exposes data only; P3 renders.
+- **BlockFooter (S11):** P2 owns its body. Its props are FROZEN, plus ONE
+  optional prop P3 adds: `liveState?: 'ok' | 'unsaved_code'`, which P2 renders
+  beside the live customs. P2 never edits its two call sites.
+- **Wording (UX19):** «2.5 BHM × 412 000 so‘m ÷ 12 650 (kurs 09.10.2026) ≈
+  $81.42»; «Chegirma umumiy summadan katta».
+- **i18n anchors (S13):** `calc.law{}` after `calc.vatFree`; new warnings
+  after `warnings.rateOffDictionary`; `refusals.fee_bhm_bad` after
+  `refusals.not_a_number`; P2 alone edits the `fee_fx_missing` line.
+
+### 7.3 P3 «Ekran» — corrections
+
+- **The measure pass's stated-pair rule and the stamp are the kernel's
+  (§7.0).** P3 adds, in the pass and BEFORE `required` is computed: the heal
+  (P3.4) through `normalizeRowUnit`, only on rows with bazaUsd NULL AND
+  bazaBasis NULL AND an unconfirmed (or no) group (MR-4); result fields
+  `unitsMoved: {seq, to, note}[]` and `sellerUnitUnresolved: {seq, word}[]`.
+- **Pending heals are visible before any save (UX7):** the same predicate at
+  RENDER prints «1-qator: sotuvchi «120 m2» yozgan — dona ustunida turibdi,
+  Saqlashda O‘lchovga o‘tadi» with a warn border; ✅ and the seal wait on a
+  save like the dirty gate. A karobka/unknown row gets two buttons: «Bu
+  karobka — dona sonini yozaman» (posts quantity null) and «Bu dona» (keeps
+  it, posts `unit: null` so the note never fires again).
+- **The display chain switches to `autoBasisFor`** (screen-row.ts
+  `basisOnScreen`/`screenRowOf`/`ghostScreenOf`, items-table `liveGhostItem`
+  / `liveItem`, phone-blocks:326): `ScreenItem` gains the row's figures,
+  drafts merged. NOT switched: BlockFooter's basisNotLaw text,
+  phone-blocks:196, warnings.ts.
+- **`shownBasis` (MR-17, TT-11):** desktop and phone post `shownBasis` with
+  every «avto» price. The save stamps the SHOWN unit when the final law holds
+  it (`!basisConflicts`), and refuses the row in words otherwise. Machine
+  callers post none and keep the kernel stamp; `basisStamped: {seq, basis}[]`
+  joins the result (and `deleteItemAction`'s literal).
+- **`measureUnit` on table edits (S2, UX12):** honoured in the pass — a
+  posted m²/juft/litr/sm³ quantity on a row whose law pins no other pair is
+  STORED as a stated pair (not dropped); a different law pair → dropped and
+  named, as today. The ghost row's unit select posts `measureUnit` only; the
+  basis stays «avto».
+- **P3 owns** `actions.ts` `TableSaveFields`/`saveTableAction`/
+  `deleteItemAction`, `TableItemEdit`/`TableNewItem`/`SaveTableResult`, the
+  save's return and audit literals, and `lastSaveOf` (S8).
+- **Needs at the row (TT-18, UX11):** `ScreenGroup` widens with dutyMode/
+  dutySpecific/dutyFree (+ excise fields); `neededCells(screenRow, item)` is
+  pure in screen-row.ts and builds its law with `needLawOf`. The phone sheet
+  prints the reason as a visible muted line («kerak — boj kamida $3/dona»);
+  desktop uses `title` + the footer words.
+- **Live figure (P3.8, MR-22):** a pure `liveBlocks(workspace, drafts,
+  ghosts)` in screen-row.ts used by the component AND the invariant test;
+  `ungroupedCount` from the DRAFTED rows; a drafted code with no group
+  renders P3's own «saqlang — kod yangi» row, not a BlockFooter.
+- **Headers (UX16):** grid «Dona» and «Netto, kg» (ru «Шт», «Нетто, кг»);
+  long form only from `calc.units.kgNet`. `basisLabel(basis, perUnit)` keeps
+  its signature; P3's own sites move to a words-taking variant built on
+  `unitLabel`.
+- **Phone warnings (S10):** a generic warnings line that iterates
+  `group.warnings` through WARNING_LABELS, plus the `bazaStale` chip.
+- **Refusal words** come from `words.ts` (kernel); P3 places them at the
+  row, the sheet and the bar chip (`#calc-i-<seq>`). `basisConflicts` reads
+  «birlikni tanlang — kod juft bo‘yicha o‘lchaydi».
+- **i18n anchors (S13):** `calc.grid{}` after `calc.table`.
+
+### 7.4 Shared test files (S15)
+
+Each package edits only the `it(…)` blocks whose subject lives in its own
+region and adds new pins in NEW `it` blocks (`calc-phone-safety.test.ts`,
+`basis-law-writers.test.ts`). Build `PricedGroup` fixtures through
+`pricedGroupOf` or a shared helper, so the merge does not break typecheck.
