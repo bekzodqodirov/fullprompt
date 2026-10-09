@@ -25,6 +25,7 @@ export const FIELD_LABELS: Record<CalcField, string> = {
   volumeM3: 'fields.volumeM3',
   goods: 'fields.goods',
   itemMeasure: 'fields.itemMeasure',
+  lineNeed: 'fields.lineNeed',
 };
 
 /** A section string that came off a form or out of the database. */

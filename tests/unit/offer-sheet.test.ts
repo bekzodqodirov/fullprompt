@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import type { OfferSheetItem } from '@/modules/wms/calc/offer-pdf';
+import { offerQtyText, type OfferSheetItem } from '@/modules/wms/calc/offer-pdf';
+import type { UnitWords } from '@/modules/wms/calc/units';
 
 /**
  * The customer's sheet (round 112) prints DESCRIPTORS and the offer's own
@@ -29,10 +30,28 @@ describe('the goods table carries no money', () => {
       unit: null,
       weightKg: null,
       volumeM3: null,
+      measure: { qty: 120, unit: 'm2' },
     };
     const keys = Object.keys(item).sort();
-    expect(keys).toEqual(['label', 'quantity', 'seq', 'unit', 'volumeM3', 'weightKg']);
+    expect(keys).toEqual(['label', 'measure', 'quantity', 'seq', 'unit', 'volumeM3', 'weightKg']);
     for (const key of keys) expect(key).not.toMatch(/usd|price|baza|duty|vat|fee|customs/i);
+    // The pair (P1.7) is a descriptor too: an amount and its unit, no money.
+    expect(Object.keys(item.measure!).sort()).toEqual(['qty', 'unit']);
+  });
+
+  it('the quantity cell prints the measure the row is IN, never a pair as pieces', () => {
+    // Before P1.7 the cell was the piece count with the seller's word glued
+    // on, so a tile row read «120 m2» only by luck and a row whose «unit»
+    // was «kg» printed its pieces as kilos (judge MR-6).
+    const words: UnitWords = {
+      dona: 'шт', kg: 'кг', kgNet: 'кг нетто', m3: 'м³', m2: 'м²', juft: 'пар', litr: 'л', sm3: 'см³', thousandDona: '1000 шт',
+    };
+    expect(offerQtyText({ quantity: null, unit: null, measure: { qty: 120, unit: 'm2' } }, words)).toBe('120 м²');
+    expect(offerQtyText({ quantity: 40, unit: null, measure: { qty: 40, unit: 'juft' } }, words)).toBe('40 пар');
+    expect(offerQtyText({ quantity: 300, unit: null, measure: null }, words)).toBe('300 шт');
+    // A unit word that names ANOTHER column is not glued to a count.
+    expect(offerQtyText({ quantity: 300, unit: 'kg', measure: null }, words)).toBe('300 шт');
+    expect(offerQtyText({ quantity: null, unit: null, measure: null }, words)).toBe('');
   });
 
   it('the route feeds the sheet from the request items, never from the sealed breakdown', () => {

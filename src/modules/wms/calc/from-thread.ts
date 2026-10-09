@@ -9,12 +9,14 @@ import { CalcError, openCalcRequest } from './service';
 import {
   CALC_SECTIONS,
   intakeNoteText,
-  itemFacts,
+  landingItems,
   missingFields,
   type CalcFacts,
   type CalcSection,
 } from './intake';
+import { bookLawsFor } from './book-laws';
 import { parseManualFacts } from './intake-manual';
+import { routeAmount } from './units';
 import { analyzeIntake } from './intake-ai';
 import { calcDealOwnerFor, dealFor } from './intake-land';
 import { queueCalcPrefill } from './prefill-queue';
@@ -166,13 +168,26 @@ export async function threadCalcAnalyze(
     volumeM3: manual.volumeM3 ?? ai?.facts.volumeM3 ?? null,
     goods: (ai?.facts.goods?.length ? ai.facts.goods : manual.goods) ?? [],
   };
+  // The book's law for the read codes — the preview asks what the LAW asks
+  // (judge TT-5), on the pool, before anything lands.
+  const laws = await bookLawsFor((facts.goods ?? []).map((g) => g.tnvedCode));
   return {
     facts,
     steps: ai?.steps ?? [],
-    missing: missingFields(input.section, facts),
+    missing: missingFields(input.section, facts, laws),
     lines: material.lines.length,
     fileCount: material.fileCount,
   };
+}
+
+/** A posted pair kept only in a unit the pair can hold — the kernel's router
+ * decides, so this file keeps no list of units. */
+function pairOf(qty: number | null, unit: unknown) {
+  if (qty === null || typeof unit !== 'string') return { measureUnit: null, measureQty: null };
+  const routed = routeAmount(qty, unit);
+  return 'measureUnit' in routed
+    ? { measureUnit: routed.measureUnit, measureQty: routed.measureQty }
+    : { measureUnit: null, measureQty: null };
 }
 
 /** What the browser may claim about the cargo — its own request, sanitized. */
@@ -198,7 +213,14 @@ function cleanFacts(raw: CalcFacts | null | undefined, material: string): CalcFa
           // a customs job, so a door that sanitises it away would warn about
           // a hole it is itself digging.
           weightKg: num(g?.weightKg),
-          tnvedCode: str(g?.tnvedCode, 10),
+          // …and the line's volume, its pair and its unit word (2026-10-09):
+          // the door routes them, and dropping them here was the same hole.
+          volumeM3: num(g?.volumeM3),
+          ...pairOf(num(g?.measureQty), g?.measureUnit),
+          unit: str(g?.unit, 20),
+          // The door shape-checks the code (`door-row.ts`); the cap here only
+          // bounds a forged post.
+          tnvedCode: str(g?.tnvedCode, 20),
           note: str(g?.note, 300),
         },
       ];
@@ -259,9 +281,11 @@ export async function threadCalcSend(
     target = { kind: landed.kind, id: landed.id };
   }
 
+  const laws = await bookLawsFor((facts.goods ?? []).map((g) => g.tnvedCode));
   const note = intakeNoteText({
     section: input.section,
     facts,
+    laws,
     steps,
     collectedBy: actor.fullName ?? actor.id,
     fileCount: 0,
@@ -278,16 +302,10 @@ export async function threadCalcSend(
       toCity: facts.toCity ?? null,
       weightKg: facts.weightKg ?? null,
       volumeM3: facts.volumeM3 ?? null,
-      // Through `itemFacts` — the same one home the bot door uses, so the
+      // Through `landingItems` — the same one home the bot door uses, so the
       // single-line weight derivation happens once and both doors land the
       // same row for the same job (#513).
-      items: itemFacts(facts).map((g) => ({
-        name: g.name,
-        quantity: g.quantity,
-        weightKg: g.weightKg,
-        tnvedCode: g.tnvedCode,
-        note: g.note,
-      })),
+      items: landingItems(facts),
       note: { id: input.noteId, text: note },
       source: 'card',
       hasMaterials: material.fileCount > 0,

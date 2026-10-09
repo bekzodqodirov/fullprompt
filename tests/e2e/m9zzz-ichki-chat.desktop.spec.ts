@@ -36,7 +36,9 @@ const PASSWORD = 'demo1234';
 const SHOTS = process.env.CHAT_SHOTS ?? 'test-results';
 
 const STAMP = Date.now();
-const GOODS = `ichki chat tovar ${STAMP}`;
+// The stamp sits BEFORE a word (2026-10-09): at a name's end, beside «, 300»,
+// it is a count candidate and the seller's table asks (calc-row-fix-name).
+const GOODS = `ichki chat ${STAMP} tovar`;
 const LEAD = `Ichki chat e2e ${STAMP}`;
 // A token with no break opportunity anywhere — a pasted link, a hash.
 const TOKEN = `x${'q'.repeat(299)}`;

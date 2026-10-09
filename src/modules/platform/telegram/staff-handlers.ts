@@ -70,6 +70,7 @@ import {
   mayCollect,
   startIntake,
   updateIntake,
+  MAX_OFFERS,
   MAX_QUESTION_ROUNDS,
 } from './calc-intake';
 import { phoneKeyboard } from './client-cabinet';
@@ -822,11 +823,11 @@ export function registerStaffBot(bot: Bot): void {
       }
       if (intake.stage === 'client') {
         updateIntake(chatId, { clientHintRaw: ctx.message.text.trim(), stage: 'material' });
-        await ctx.reply(
-          'Endi hamma narsani yuboring: tovar ro‘yxati, fayllar, rasmlar, kub/kg, yo‘nalish.\n' +
-            'Tugagach «Bo‘ldi» ni bosing.',
-          { reply_markup: doneKeyboard },
-        );
+        // Per section (judge UX14): a customs job is asked for the LINES —
+        // «300 dona, 150 kg, 120 m², 40 juft» and the code if known — which
+        // the old «kub/kg» prompt never said could be sent.
+        const { collectPromptText } = await import('../../wms/calc/intake');
+        await ctx.reply(collectPromptText(intake.section), { reply_markup: doneKeyboard });
         return;
       }
       const updated = updateIntake(chatId, {
@@ -1239,8 +1240,11 @@ function pressedButtonText(message: unknown, data: string): string | null {
  *
  * The loop exists because a rastamojka figure needs a measure PER ROW —
  * `unitsForRow` prices per dona on a count and per kg on a weight and can
- * price a row stating neither only by guessing. Asking the seller now costs
- * one message; not asking costs the VED a request they must hand back.
+ * price a row stating neither only by guessing — and, since 2026-10-09, the
+ * figure the row's LAW pins: a 6110 sweater stated in kg still owes its count
+ * under «kamida $X/dona» (`lineNeeds`, read with the book's law). Asking the
+ * seller now costs one message; not asking costs the VED a request they must
+ * hand back.
  *
  * Three questions at most (`MAX_QUESTION_ROUNDS`). A bot that keeps asking is
  * a bot the office stops answering, and the confirm always names what is
@@ -1254,24 +1258,25 @@ async function askNextOrConfirm(
   const { nextLineToAsk, lineQuestionText, intakeSummaryText } = await import(
     '../../wms/calc/intake'
   );
+  const laws = await intakeLaws(state);
+  // BOTH doors ask now (P1.3): the plain «🧮 Hisoblatish» used to land a
+  // ten-line rastamojka job with seven lines nobody had a figure for, and a
+  // summary that named none of them. The same cap holds.
   const line =
-    state.ai && state.round < MAX_QUESTION_ROUNDS
-      ? nextLineToAsk(state.section, state.facts, { after: state.askingIndex })
+    state.round < MAX_QUESTION_ROUNDS
+      ? nextLineToAsk(state.section, state.facts, laws, { skip: state.lineDone })
       : null;
 
   if (line) {
-    const next = updateIntake(chatId, {
+    updateIntake(chatId, {
       stage: 'question',
       askingIndex: line.index,
+      askingTotals: false,
       round: state.round + 1,
       reasked: false,
+      offers: [],
     });
-    await ctx.reply(lineQuestionText(line), {
-      reply_markup: {
-        inline_keyboard: [[{ text: '⏭ Bilmayman, o‘tkazib yubor', callback_data: 'c:skip' }]],
-      },
-    });
-    void next;
+    await ctx.reply(lineQuestionText(line), { reply_markup: skipKeyboard() });
     return;
   }
 
@@ -1290,28 +1295,27 @@ async function askNextOrConfirm(
       askingTotals: true,
       totalsAsked: true,
       reasked: false,
+      offers: [],
     });
     await ctx.reply(
       'Yo‘lkira uchun umumiy hajm va og‘irlik kerak. Masalan: «12 kub 3500 kg»' +
         (state.facts.volumeM3 != null ? `\n(hajm bor: ${state.facts.volumeM3} m³)` : '') +
         (state.facts.weightKg != null ? `\n(og‘irlik bor: ${state.facts.weightKg} kg)` : ''),
-      {
-        reply_markup: {
-          inline_keyboard: [[{ text: '⏭ Bilmayman, o‘tkazib yubor', callback_data: 'c:skip' }]],
-        },
-      },
+      { reply_markup: skipKeyboard() },
     );
     return;
   }
 
   const settled =
-    updateIntake(chatId, { stage: 'review', askingIndex: null, askingTotals: false }) ?? state;
+    updateIntake(chatId, { stage: 'review', askingIndex: null, askingTotals: false, offers: [] }) ?? state;
   await ctx.reply(
     intakeSummaryText({
       section: settled.section,
       facts: settled.facts,
+      laws,
       clientLabel: settled.clientHintRaw || null,
       fileCount: settled.fileCount,
+      ambiguous: settled.ambiguousTotals,
     }) +
       (settled.aiUsed
         ? ''
@@ -1325,15 +1329,67 @@ async function askNextOrConfirm(
   );
 }
 
+/** «⏭ Bilmayman, o‘tkazib yubor» — under every question, the way out. */
+function skipKeyboard() {
+  return { inline_keyboard: [[{ text: '⏭ Bilmayman, o‘tkazib yubor', callback_data: 'c:skip' }]] };
+}
+
 /**
- * The seller's answer to «how many, or how heavy?», written onto the row that
- * was asked about.
+ * The buttons a bare or ambiguous number is answered with (judge UX4): one
+ * tap writes the line. Each button carries its POSITION (`c:pick_N`, a
+ * closed CALC_STEPS word) and the figure lives in `IntakeState.offers`, so
+ * the callback stays inside the parser's vocabulary (#937) and a stale press
+ * picks nothing it was not offered. Pure, so the derived fence can parse
+ * every button it draws.
+ */
+export function lineOfferKeyboard(labels: readonly string[]) {
+  const buttons = labels.slice(0, MAX_OFFERS).map((text, i) => ({ text, callback_data: `c:pick_${i}` }));
+  const rows: { text: string; callback_data: string }[][] = [];
+  for (let i = 0; i < buttons.length; i += 3) rows.push(buttons.slice(i, i + 3));
+  return { inline_keyboard: [...rows, ...skipKeyboard().inline_keyboard] };
+}
+
+/**
+ * The book's law for the collection's codes, read on the pool (#714) —
+ * through a dynamic import, because platform never imports wms statically.
+ * A failed read answers «no law known»: the line is then asked for a count
+ * or a weight, which is the one-measure rule it always had, never a
+ * refusal of the whole collection.
+ */
+async function intakeLaws(state: IntakeState) {
+  try {
+    const { bookLawsFor } = await import('../../wms/calc/book-laws');
+    return await bookLawsFor((state.facts.goods ?? []).map((g) => g.tnvedCode));
+  } catch (err) {
+    logger.warn({ err }, '[calc-intake] rates book unreadable — asking by the one-measure rule');
+    return new Map();
+  }
+}
+
+/** Why an answer could not be read — in words, for the one re-ask. */
+type LineAnswerRefusal = import('../../wms/calc/intake-manual').LineAnswerRefusal;
+
+const LINE_REFUSAL: Record<LineAnswerRefusal, (detail?: string) => string> = {
+  nothing: () => 'Tushunmadim. Masalan: «50 dona», «300 kg», «120 m²» yoki «40 juft».',
+  too_large: () => 'Bu son juda katta — miqdorni qayta yozing. TNVED kodi bo‘lsa: «kod 6403990000».',
+  code_short: (d) => `«${d ?? ''}» — 9 xonali: boshida 0 tushib qolganmi? Kodni 10 xonada yozing.`,
+  cartons: (d) => `${d ?? ''} karobka — karobka soni tovar soni emas. Nechta dona? Masalan: «300 dona».`,
+  unknown_unit: (d) => `«${d ?? ''}» — bu birlikni bilmayman. dona, kg, m², juft yoki litrda yozing.`,
+  two_pairs: () => 'Bitta qatorda ikki xil o‘lchov — bittasini yozing.',
+  unlabelled: () => 'Raqamlarni birlik bilan yozing: «300 dona 150 kg».',
+  repeated: () => 'Bitta birlikda ikki xil son — bittasini yozing.',
+};
+
+/**
+ * The seller's answer to a line question, written onto the row that was
+ * asked about.
  *
  * Addressed by INDEX and never by name: two lines of a packing list are
  * routinely called the same thing. An unreadable answer is re-asked ONCE and
  * then kept as material — the VED reads everything the seller sent, so
- * nothing is lost by moving on, and a wrong reading would be a weight nobody
- * stated with a duty computed on it.
+ * nothing is lost by moving on, and a wrong reading would be a figure nobody
+ * stated with a duty computed on it. A BARE number is never a default unit:
+ * it is the law's one pinned unit, or buttons (P1.3, judge UX4).
  */
 async function applyLineAnswer(
   ctx: CalcReplyCtx,
@@ -1342,7 +1398,16 @@ async function applyLineAnswer(
   text: string,
 ): Promise<void> {
   const { parseLineAnswer, parseManualFacts } = await import('../../wms/calc/intake-manual');
-  const { nextLineToAsk } = await import('../../wms/calc/intake');
+  const {
+    ambiguousTotalText,
+    anyMeasureLine,
+    bareChoices,
+    bareUnitFor,
+    figureLabel,
+    lineNeeds,
+    needFigure,
+    numberText,
+  } = await import('../../wms/calc/intake');
 
   if (state.askingTotals) {
     // Whatever of the two the answer states; the other keeps what it had.
@@ -1354,6 +1419,11 @@ async function applyLineAnswer(
         facts: { ...state.facts, weightKg, volumeM3 },
         material: [...state.material, text],
       }) ?? state;
+    if (read.ambiguous.length > 0 && !kept.reasked) {
+      updateIntake(chatId, { reasked: true });
+      await ctx.reply(read.ambiguous.map((a) => ambiguousTotalText(a)).join('\n'));
+      return;
+    }
     if (read.weightKg == null && read.volumeM3 == null && !kept.reasked) {
       updateIntake(chatId, { reasked: true });
       await ctx.reply('Tushunmadim. «12 kub 3500 kg» ko‘rinishida yozing.');
@@ -1362,42 +1432,142 @@ async function applyLineAnswer(
     await askNextOrConfirm(ctx, chatId, { ...kept, askingTotals: false, reasked: false });
     return;
   }
+
   const index = state.askingIndex ?? 0;
   const goods = state.facts.goods ?? [];
   const row = goods[index];
-  const bareMeans =
-    nextLineToAsk(state.section, state.facts, { after: index - 1 })?.bareMeans ?? 'quantity';
-  const answer = row ? parseLineAnswer(text, { bareMeans }) : null;
+  const answer = row ? parseLineAnswer(text) : parseLineAnswer('');
+  const withText = updateIntake(chatId, { material: [...state.material, text] }) ?? state;
 
-  if (!answer) {
-    // Keep the words either way — the note shows the seller's own material
-    // verbatim (law 11), so an unread answer is still in front of the VED.
-    const kept = updateIntake(chatId, { material: [...state.material, text] }) ?? state;
-    if (!kept.reasked) {
-      updateIntake(chatId, { reasked: true });
-      await ctx.reply('Tushunmadim. «50 dona» yoki «300 kg» ko‘rinishida yozing.');
-      return;
+  if (answer.kind === 'figures') {
+    const patch: Partial<NonNullable<IntakeState['facts']['goods']>[number]> = {};
+    for (const [key, value] of Object.entries(answer.figures)) {
+      if (value !== null) Object.assign(patch, { [key]: value });
     }
-    await askNextOrConfirm(ctx, chatId, { ...kept, reasked: false });
+    if (answer.code) patch.tnvedCode = answer.code;
+    await applyLinePatch(ctx, chatId, withText, index, patch);
     return;
   }
 
-  const patched = goods.map((g, i) =>
-    i === index
-      ? {
-          ...g,
-          quantity: 'quantity' in answer ? answer.quantity : g.quantity,
-          weightKg: 'weightKg' in answer ? answer.weightKg : g.weightKg,
-        }
-      : g,
-  );
+  if (answer.kind === 'bare' || answer.kind === 'ambiguous') {
+    // The code that came with it lands first: it may be what pins the unit.
+    const coded =
+      answer.kind === 'bare' && answer.code
+        ? (updateIntake(chatId, {
+            facts: {
+              ...withText.facts,
+              goods: goods.map((g, i) => (i === index ? { ...g, tnvedCode: answer.code } : g)),
+            },
+          }) ?? withText)
+        : withText;
+    const laws = await intakeLaws(coded);
+    const line =
+      lineNeeds(coded.section, coded.facts, laws).find((l) => l.index === index) ??
+      // The line owes nothing the law pins and states something already: a
+      // bare figure is still offered as a count or a weight.
+      anyMeasureLine(index, row!.name);
+    if (answer.kind === 'bare') {
+      const unit = bareUnitFor(line);
+      if (unit) {
+        await applyLinePatch(ctx, chatId, coded, index, needFigure(unit, answer.value));
+        return;
+      }
+      const offers = bareChoices(line, row!.unit).map((u) => ({ unit: u, value: answer.value }));
+      updateIntake(chatId, { offers });
+      await ctx.reply(`${numberText(answer.value)} — qaysi birlikda?`, {
+        reply_markup: lineOfferKeyboard(offers.map((o) => figureLabel(o.value, o.unit))),
+      });
+      return;
+    }
+    // «1,200 kg» — both readings in the unit it was written in, or in every
+    // unit the line could take when it was written bare.
+    const written = answer.unit ? needUnitOfSeller(answer.unit) : null;
+    const units = answer.unit ? (written ? [written] : []) : bareChoices(line, row!.unit);
+    const offers = units.flatMap((u) => [
+      { unit: u, value: answer.decimal },
+      { unit: u, value: answer.thousands },
+    ]);
+    if (offers.length === 0) {
+      await refuseLine(ctx, chatId, coded, 'cartons');
+      return;
+    }
+    updateIntake(chatId, { offers: offers.slice(0, MAX_OFFERS) });
+    await ctx.reply(`${numberText(answer.decimal)} mi yoki ${numberText(answer.thousands)} mi?`, {
+      reply_markup: lineOfferKeyboard(offers.slice(0, MAX_OFFERS).map((o) => figureLabel(o.value, o.unit))),
+    });
+    return;
+  }
+
+  await refuseLine(ctx, chatId, withText, answer.reason, answer.detail);
+}
+
+/** A unit the seller WROTE, as a figure's unit — a carton is no figure. */
+function needUnitOfSeller(
+  unit: import('../../wms/calc/units').SellerUnit,
+): import('../../wms/calc/needs').NeedUnit | null {
+  return unit === 'karobka' ? null : unit;
+}
+
+/** One re-ask in words, then the line is passed and the next one asked. */
+async function refuseLine(
+  ctx: CalcReplyCtx,
+  chatId: bigint,
+  state: IntakeState,
+  reason: LineAnswerRefusal,
+  detail?: string,
+): Promise<void> {
+  if (!state.reasked) {
+    updateIntake(chatId, { reasked: true });
+    await ctx.reply(LINE_REFUSAL[reason](detail), { reply_markup: skipKeyboard() });
+    return;
+  }
+  const done = state.askingIndex === null ? state.lineDone : [...state.lineDone, state.askingIndex];
+  await askNextOrConfirm(ctx, chatId, { ...state, lineDone: done, reasked: false, offers: [] });
+}
+
+/**
+ * Write a figure onto the asked line, remember it for a re-analysis, and
+ * either ask the SAME line for what it still owes (a clothing line answered
+ * «150 kg» still owes its count — same round, judge UX4) or move on.
+ */
+async function applyLinePatch(
+  ctx: CalcReplyCtx,
+  chatId: bigint,
+  state: IntakeState,
+  index: number,
+  patch: Partial<NonNullable<IntakeState['facts']['goods']>[number]>,
+): Promise<void> {
+  const { lineNeeds, lineQuestionText } = await import('../../wms/calc/intake');
+  const goods = state.facts.goods ?? [];
+  const row = goods[index];
+  if (!row) {
+    await askNextOrConfirm(ctx, chatId, { ...state, reasked: false, offers: [] });
+    return;
+  }
+  const patched = goods.map((g, i) => (i === index ? { ...g, ...patch } : g));
+  const earlier = state.lineAnswers.find((a) => a.index === index);
+  const lineAnswers = [
+    ...state.lineAnswers.filter((a) => a.index !== index),
+    { index, name: row.name, patch: { ...(earlier?.patch ?? {}), ...patch } },
+  ];
   const next =
     updateIntake(chatId, {
       facts: { ...state.facts, goods: patched },
-      material: [...state.material, text],
+      lineAnswers,
       reasked: false,
+      offers: [],
     }) ?? state;
-  await askNextOrConfirm(ctx, chatId, next);
+  const laws = await intakeLaws(next);
+  // Asked again in the SAME round, never as a new one: the seller is still
+  // answering the question they were asked. Each re-ask follows an answer
+  // they typed or tapped, and «⏭» always leaves.
+  const still = lineNeeds(next.section, next.facts, laws).find((l) => l.index === index);
+  if (still) {
+    updateIntake(chatId, { stage: 'question', askingIndex: index });
+    await ctx.reply(`Yozildi. ${lineQuestionText(still)}`, { reply_markup: skipKeyboard() });
+    return;
+  }
+  await askNextOrConfirm(ctx, chatId, { ...next, lineDone: [...next.lineDone, index] });
 }
 
 /**
@@ -1527,13 +1697,19 @@ async function readInvoice(
   const { goodsFromFile } = await import('../../wms/deals/goods-file');
   const goods = await goodsFromFile(body, mime).catch(() => null);
   if (!goods) return null;
+  // Everything the file states reaches the landing (2026-10-09, P1.6): its
+  // unit word (the door routes «м2»/«пар» to the measure pair), its volume
+  // and money, the supplier's own code and what the reader could not use.
   return {
     goods: goods.map((g) => ({
       name: g.description,
       quantity: g.quantity,
+      unit: g.unit,
       weightKg: g.weightKg,
+      volumeM3: g.volumeM3,
+      amount: g.amount,
       tnvedCode: g.tnvedCode,
-      note: null,
+      note: g.note,
     })),
   };
 }
@@ -1777,7 +1953,27 @@ async function handleCalcCallback(
   }
 
   if (step === 'skip') {
-    await askNextOrConfirm(ctx, chatId, { ...state, reasked: false });
+    // The skipped line is DONE for this collection — never asked again, not
+    // even after «➕ Yana ma'lumot» re-reads the material (P1.3).
+    const lineDone =
+      state.stage === 'question' && state.askingIndex !== null && !state.askingTotals
+        ? [...state.lineDone, state.askingIndex]
+        : state.lineDone;
+    await askNextOrConfirm(ctx, chatId, { ...state, lineDone, reasked: false, offers: [] });
+    return;
+  }
+
+  if (step.startsWith('pick_')) {
+    // A button under a bare or ambiguous figure (judge UX4). Only the
+    // pending question's own offers can be picked: a press from an older
+    // message, or after the line moved on, finds nothing and says so.
+    const offer = state.offers[Number(step.slice('pick_'.length))];
+    if (state.stage !== 'question' || state.askingIndex === null || state.askingTotals || !offer) {
+      await ctx.reply('Bu tugma eskirgan.');
+      return;
+    }
+    const { needFigure } = await import('../../wms/calc/intake');
+    await applyLinePatch(ctx, chatId, state, state.askingIndex, needFigure(offer.unit, offer.value));
     return;
   }
 

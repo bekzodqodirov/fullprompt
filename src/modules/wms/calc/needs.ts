@@ -173,6 +173,12 @@ export function needWhatUz(unit: NeedUnit): string {
   return NEED_WHAT_UZ[unit];
 }
 
+/** The unit's own short word — «dona», «m²» — for the bot's examples and
+ * figures, so the bot never spells a unit two ways. */
+export function needShortUz(unit: NeedUnit): string {
+  return NEED_SHORT_UZ[unit];
+}
+
 /** Why the figure is asked: the baza is per it, or the law's floor / a
  * specific excise counts in it — with the rate, so «nega kerak» is answered
  * in the same line. */

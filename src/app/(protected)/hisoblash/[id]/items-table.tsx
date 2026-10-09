@@ -66,7 +66,7 @@ import {
   type RestorePlan,
   type StoredDrafts,
 } from '@/modules/wms/calc/draft-store';
-import { parseGoods, type Cell } from '@/modules/wms/deals/goods-import';
+import { pasteItems } from '@/modules/wms/calc/send-rows';
 import { isBuildStale, reloadFresh } from '@/components/build-check';
 import {
   confirmAllAction,
@@ -1579,41 +1579,13 @@ export function ItemsTable({
     }
   }, []);
 
-  const parsedPaste = useMemo(() => {
-    const lines = pasteText
-      .split('\n')
-      .map((l) => l.replace(/\r$/, ''))
-      .filter((l) => l.trim());
-    if (lines.length === 0) return [];
-    if (lines.some((l) => l.includes('\t'))) {
-      // Excel TSV — the deals importer's own pure parser (headers in four
-      // languages, totals rows dropped).
-      const cells: Cell[][] = lines.map((l) => l.split('\t').map((c) => c.trim()));
-      return parseGoods(cells).goods.map((g) => ({
-        name: g.description,
-        quantity: g.quantity,
-        unit: g.unit,
-        weightKg: g.weightKg,
-        volumeM3: g.volumeM3,
-        tnvedCode: null as string | null,
-      }));
-    }
-    // One product per line: «name, quantity, unit» — calc-send-form's shape.
-    // The quantity is read by the ONE cell reader; an ambiguous one lands
-    // empty rather than as a guess.
-    return lines.map((line) => {
-      const parts = line.split(/[,;]/).map((p) => p.trim());
-      const cell = parts.length > 1 ? readNumberCell(parts[1]!) : null;
-      return {
-        name: parts[0]!,
-        quantity: cell?.state === 'ok' ? cell.value : null,
-        unit: parts[2] || null,
-        weightKg: null,
-        volumeM3: null,
-        tnvedCode: null as string | null,
-      };
-    });
-  }, [pasteText]);
+  // The paste NEVER asks (his B-round answer, pinned in
+  // calc-phone-safety.test.ts) — and since 2026-10-09 it lands each figure
+  // in the column its unit names, with the code and the note, through the
+  // same reading and the same door rule as every other door (P1.6,
+  // `pasteItems`). It used to drop the TNVED column and file «120 m2» in
+  // the piece column.
+  const parsedPaste = useMemo(() => pasteItems(pasteText), [pasteText]);
 
   const applyPaste = () =>
     act(async () => {

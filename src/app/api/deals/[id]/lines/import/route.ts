@@ -51,10 +51,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (goods.length === 0) return NextResponse.json({ error: 'no_goods' }, { status: 400 });
 
   // Memory first (Phase 1.5): a product the book already knows never goes
-  // back to the AI with an empty code.
+  // back to the AI with an empty code. The SUPPLIER's own code, when the file
+  // carries a TNVED column (2026-10-09), is kept over the memory's guess.
   const known = await tnvedFor(goods.map((g) => g.description));
   for (const good of goods) {
-    good.tnvedCode = known.get(productKey(good.description))?.tnvedCode ?? null;
+    good.tnvedCode = good.tnvedCode ?? known.get(productKey(good.description))?.tnvedCode ?? null;
   }
 
   let groups: TnvedGrouping['groups'] | null = null;

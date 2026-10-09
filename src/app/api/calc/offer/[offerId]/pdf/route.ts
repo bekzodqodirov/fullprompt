@@ -132,6 +132,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ offe
       unit: calcRequestItems.unit,
       weightKg: calcRequestItems.weightKg,
       volumeM3: calcRequestItems.volumeM3,
+      // The pair the job was priced on (0092) — «120 m²», never «120» (P1.7).
+      measureUnit: calcRequestItems.measureUnit,
+      measureQty: calcRequestItems.measureQty,
     })
     .from(calcRequestItems)
     .where(eq(calcRequestItems.requestId, req.id))
@@ -186,6 +189,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ offe
         unit: i.unit,
         weightKg: cellNum(i.weightKg),
         volumeM3: cellNum(i.volumeM3),
+        measure:
+          i.measureUnit && cellNum(i.measureQty) !== null
+            ? { qty: cellNum(i.measureQty)!, unit: i.measureUnit }
+            : null,
       })),
     },
     locale,

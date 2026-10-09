@@ -12,6 +12,7 @@ import {
   finishCalcRequest,
   openCalcRequest,
   releaseCalcRequest,
+  requestAsks,
   returnCalcRequest,
   takeCalcRequest,
   type CalcItemInput,
@@ -46,7 +47,7 @@ import {
   saveRates,
   saveTariffBand,
 } from '@/modules/wms/calc/dictionaries';
-import { loneWeightKg } from '@/modules/wms/calc/intake';
+import { landingItems } from '@/modules/wms/calc/intake';
 import { isCalcSection } from '@/modules/wms/calc/labels';
 import { canWriteDeal } from '@/modules/wms/deals/service';
 import { mayEditDealTerms } from '@/modules/wms/deals/door';
@@ -204,6 +205,23 @@ export interface SubmitCalcInput {
 }
 
 /**
+ * What the landed request still owes, as the form prints it under ✅ (judge
+ * UX13) — the same lines and fields the VED's chips name, read back from the
+ * STORED rows with the book's law. Plain data: the form words it.
+ */
+export interface SendAsks {
+  missing: string[];
+  lines: {
+    row: number;
+    label: string;
+    pinned: { unit: string; why: 'baza' | 'duty' | 'excise'; rate: number | null }[];
+    anyMeasure: boolean;
+  }[];
+}
+
+export type SubmitCalcState = CalcFormState & { asks?: SendAsks };
+
+/**
  * The seller's door — «Hisoblatishga yuborish» on a lead or deal card.
  *
  * Asking for a price is the SELLER's move (17a, the karta precedent): on a
@@ -217,7 +235,7 @@ export interface SubmitCalcInput {
  * separately (a server action's body caps at 1 MB, #291) and the caller keeps
  * its typed values across a refusal (#377).
  */
-export async function submitCalcAction(input: SubmitCalcInput): Promise<CalcFormState> {
+export async function submitCalcAction(input: SubmitCalcInput): Promise<SubmitCalcState> {
   const actor = await getActor();
   if (!actor) return { error: 'unauthenticated' };
   if (!canWriteDeal(actor.permissions)) return { error: 'forbidden' };
@@ -230,6 +248,7 @@ export async function submitCalcAction(input: SubmitCalcInput): Promise<CalcForm
     return { error: 'forbidden' };
   }
   const meta = await requestMeta();
+  let asks: SendAsks | undefined;
   try {
     const opened = await openCalcRequest(
       {
@@ -240,13 +259,13 @@ export async function submitCalcAction(input: SubmitCalcInput): Promise<CalcForm
         toCity: input.toCity,
         weightKg: input.weightKg,
         volumeM3: input.volumeM3,
-        // The same derivation both read-doors apply: one line means the
-        // shipment's weight IS that line's weight, and customs is calculated
-        // per line (`loneWeightKg`, the one home for the rule).
-        items: input.goods.map((g) => ({
-          ...g,
-          weightKg: g.weightKg ?? loneWeightKg(input.goods.length, input.weightKg),
-        })),
+        // Through the one home every door lands its items by — with the
+        // line weights STATED: the form has its own «Netto, kg» cell, and
+        // the total box is BRUTTO, so the old «one line takes the shipment's
+        // weight» wrote brutto into the netto column under the per-kg baza
+        // and the «kamida $X/kg» floor (judge MR-7, UX6, TT-14). The door
+        // routes every unit and shape-checks every code (`door-row.ts`).
+        items: landingItems({ weightKg: input.weightKg, goods: input.goods, lineWeightsStated: true }),
         note: input.noteId ? { id: input.noteId, text: input.noteText } : null,
         source: 'card',
       },
@@ -258,6 +277,23 @@ export async function submitCalcAction(input: SubmitCalcInput): Promise<CalcForm
     // their cargo.
     const { queueCalcPrefill } = await import('@/modules/wms/calc/prefill-queue');
     await queueCalcPrefill({ requestId: opened.id, staffId: actor.id, section: input.section });
+    // What the VED will ask, said NOW (UX13). Its own catch: the request is
+    // already queued, and a failed read must not turn a sent job into an
+    // error on the seller's screen.
+    try {
+      const read = await requestAsks(opened.id);
+      asks = {
+        missing: read.missing,
+        lines: read.lines.map((l) => ({
+          row: l.seq,
+          label: l.name,
+          pinned: l.pinned.map((n) => ({ unit: n.unit, why: n.why, rate: n.rate })),
+          anyMeasure: l.anyMeasure,
+        })),
+      };
+    } catch (err) {
+      logger.warn({ err, requestId: opened.id }, '[calc] send: what-is-missing read failed');
+    }
   } catch (err) {
     if (err instanceof CalcError) return { error: err.code };
     if (isServerBehind(err)) {
@@ -268,7 +304,7 @@ export async function submitCalcAction(input: SubmitCalcInput): Promise<CalcForm
   }
   revalidatePath(input.revalidate);
   revalidatePath('/hisoblash');
-  return { ok: true };
+  return { ok: true, asks };
 }
 
 // ---------------------------------------------------------------------------

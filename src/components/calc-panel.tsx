@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { canWriteDeal } from '@/modules/wms/deals/service';
-import { lastCalcAnswerFor, openCalcFor } from '@/modules/wms/calc/service';
+import { dealLinesForCalc, lastCalcAnswerFor, openCalcFor } from '@/modules/wms/calc/service';
 import {
   offerPricesFor,
   offersFor,
@@ -25,7 +25,7 @@ import type { CalcSection } from '@/modules/wms/calc/intake';
 import { isServerBehind } from '@/modules/platform/db/errors';
 import { logger } from '@/modules/platform/logger';
 import { Panel } from './panel';
-import { CalcSendForm } from './calc-send-form';
+import { CalcSendForm, type DealLineSeed } from './calc-send-form';
 import { CalcOfferForm } from './calc-offer';
 import { CalcThread } from './calc-thread';
 import { ThreadFold } from './thread-fold';
@@ -99,6 +99,9 @@ export async function CalcPanel({
   let offers: Awaited<ReturnType<typeof offersFor>> = [];
   let prices: OfferPrice[] = [];
   let chains = new Map<string, ChainVersion[]>();
+  // The deal's «📋 Qatorlar» for the form's «Bitim qatorlaridan to‘ldirish»
+  // (UX17) — read only where the form is drawn, and only on a deal.
+  let dealLines: DealLineSeed[] = [];
   try {
     [open, last, anchors] = await Promise.all([
       openCalcFor(entityType, entityId),
@@ -120,6 +123,7 @@ export async function CalcPanel({
     // Every printed seal's chain, in ONE query (#432): what «V2» counts.
     const sealIds = [...anchors.seals, ...(anchors.deadSeal ? [anchors.deadSeal] : [])].map((s) => s.requestId);
     if (sealIds.length > 0) chains = await chainVersionsFor(sealIds);
+    if (writes && entityType === 'deal') dealLines = await dealLinesForCalc(entityId);
   } catch (err) {
     if (!isServerBehind(err)) throw err;
     logger.error({ err, entityType, entityId }, '[calc] panel: server behind');
@@ -468,7 +472,12 @@ export async function CalcPanel({
         <div className="border-t border-line pt-2">
           <p className="text-2xs text-ink-500 sm:hidden">{t('sendOnPhone')}</p>
           <div className="hidden sm:block">
-            <CalcSendForm entityType={entityType} entityId={entityId} revalidate={revalidate} />
+            <CalcSendForm
+              entityType={entityType}
+              entityId={entityId}
+              revalidate={revalidate}
+              dealLines={dealLines}
+            />
           </div>
         </div>
       ) : null}

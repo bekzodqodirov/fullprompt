@@ -322,7 +322,13 @@ describe('his 3b (2026-10-07): «1,125 — qaysi biri?» is asked by the goods c
         'src/app/(protected)/hisoblash/[id]/phone-blocks.tsx',
         'src/app/(protected)/hisoblash/[id]/row-sheet.tsx',
         'src/app/(protected)/hisoblash/lugatlar/dict-forms.tsx',
+        // 2026-10-09 (P1.1, judge UX3): the seller's goods TABLE asks the
+        // same «1,125 — qaysi biri?» on its cells and its two shipment
+        // totals — a goods cell like the VED's, so the same reader. The form
+        // and its pure row helpers are the two files.
+        'src/components/calc-send-form.tsx',
         'src/modules/wms/calc/row-draft.ts',
+        'src/modules/wms/calc/send-rows.ts',
         // 2026-10-09: free text («1,200 kg» in a line, a bot answer, a pasted
         // list) asks the same question through ONE wrapper, which adds only
         // that a dot thousand is ambiguous in a sentence too.
@@ -352,24 +358,25 @@ describe('his 3b (2026-10-07): «1,125 — qaysi biri?» is asked by the goods c
 
   it('the paste never asks: TSV rows are the deals importer’s, and a line’s unclear count lands empty', () => {
     // The paste is the fourth of the places he left as they were (with the
-    // discount, the band override and the rates). items-table imports the
-    // reader for its cells, so the closed set above cannot see a paste that
-    // starts asking — the paste's own body is read here.
+    // discount, the band override and the rates). Since 2026-10-09 (P1.6,
+    // judge TT-16) its parser is ONE pure function beside the seller's form
+    // — `pasteItems` in send-rows.ts — so this pins that the table hands it
+    // the text and nothing else, and that its body never asks. What it
+    // READS is behavioural now (tests/unit/send-rows.test.ts): an unclear
+    // line lands empty with its own words in the note.
     const at = TABLE.indexOf('const parsedPaste = useMemo(');
     expect(at).toBeGreaterThan(-1);
-    const paste = TABLE.slice(at, TABLE.indexOf('}, [pasteText]);', at));
-    expect(paste).not.toMatch(/readCell\(|ambiguous_number|setTableError\(|setAsked\(/);
-    // A TSV row's figures are the importer's, as it read them…
-    const tsvAt = paste.indexOf("lines.some((l) => l.includes('\\t'))");
-    const lineAt = paste.indexOf('return lines.map(', tsvAt);
-    expect(tsvAt).toBeGreaterThan(-1);
-    expect(lineAt).toBeGreaterThan(tsvAt);
-    const tsv = paste.slice(tsvAt, lineAt);
-    expect(tsv).toContain('parseGoods(cells)');
-    expect(tsv).toContain('quantity: g.quantity,');
-    expect(tsv).not.toContain('readNumberCell');
-    // …and «name, 1,125, dona» lands with an EMPTY count, never a guess and never a question.
-    expect(paste.slice(lineAt)).toContain("quantity: cell?.state === 'ok' ? cell.value : null,");
+    expect(TABLE.slice(at, TABLE.indexOf(';', at) + 1)).toBe(
+      'const parsedPaste = useMemo(() => pasteItems(pasteText), [pasteText]);',
+    );
+    const ROWS = read('src/modules/wms/calc/send-rows.ts');
+    const paste = ROWS.slice(ROWS.indexOf('export function pasteItems('), ROWS.indexOf('export function codeLooksRight('));
+    expect(paste.length).toBeGreaterThan(100);
+    expect(paste).not.toMatch(/readNumberCell\(|readCell\(|ambiguous_number|setTableError\(|setAsked\(/);
+    // A TSV with a header is the importer's, as it read it…
+    expect(paste).toContain('parseGoods(cells)');
+    // …and every line, either way, is the door's own row.
+    expect(paste.split('doorRow(').length - 1).toBe(2);
   });
 });
 

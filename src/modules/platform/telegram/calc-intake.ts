@@ -95,12 +95,41 @@ export interface IntakeState {
   /** Was the LAST answer unreadable? One re-ask per line, then move on. */
   reasked: boolean;
   /**
+   * The lines dealt with this collection — answered, or passed with «⏭» —
+   * by index. Kept across «➕ Yana ma'lumot»: an answered line is never asked
+   * twice (P1.3).
+   */
+  lineDone: number[];
+  /**
+   * What the seller ANSWERED per line, kept so a re-analysis after «➕ Yana
+   * ma'lumot» can put it back. The audit's finding: the re-read rebuilt the
+   * goods from the material and threw every typed count and weight away,
+   * while the seller believed those lines were answered. Matched back by
+   * index AND name — a re-read that reorders the lines must not hand one
+   * line's answer to another.
+   */
+  lineAnswers: {
+    index: number;
+    name: string;
+    patch: Partial<import('../../wms/calc/intake').CalcGoodsFact>;
+  }[];
+  /**
+   * The figures the pending question's buttons stand for («[50 dona] [50
+   * kg]», judge UX4). A button carries only its position (`c:pick_N`); the
+   * figure is read back from here, so a stale or forged press can only pick
+   * among what THIS question offered.
+   */
+  offers: { unit: import('../../wms/calc/needs').NeedUnit; value: number }[];
+  /** Totals the typed material states two ways — the summary asks them. */
+  ambiguousTotals: import('../../wms/calc/intake').AmbiguousTotal[];
+  /**
    * Goods read out of an invoice the seller attached (XLSX/CSV).
    *
-   * Held beside the material rather than merged into it: what the SELLER
-   * typed wins, always, and the invoice answers only when the reading of the
-   * text produced no lines at all. A supplier's spreadsheet is exact about
-   * fifty rows and says nothing about which of them this quote is for.
+   * Held beside the material rather than merged into it. Since 2026-10-09
+   * (P1.6) a file that yields a line IS the goods list — it is exact about
+   * its rows, codes and units, and the model's reading of a caption used to
+   * replace it — while the seller's typed totals, route and per-line
+   * answers still win over anything read.
    */
   invoiceGoods: import('../../wms/calc/intake').CalcFacts['goods'];
   /**
@@ -121,6 +150,33 @@ export interface IntakeState {
 
 /** After this many questions the bot stops asking and offers the confirm. */
 export const MAX_QUESTION_ROUNDS = 3;
+
+/** At most this many buttons answer one question — two readings × three units. */
+export const MAX_OFFERS = 6;
+
+/**
+ * Put the seller's earlier per-line answers back onto a re-read goods list.
+ *
+ * By index when the line there still has the same name; else the first line
+ * of that name; else the answer stays where it already is — in the material,
+ * which the VED reads verbatim. Pure.
+ */
+export function mergeLineAnswers(
+  goods: NonNullable<import('../../wms/calc/intake').CalcFacts['goods']>,
+  answers: IntakeState['lineAnswers'],
+): NonNullable<import('../../wms/calc/intake').CalcFacts['goods']> {
+  const out = goods.map((g) => ({ ...g }));
+  const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+  for (const answer of answers) {
+    const at =
+      out[answer.index] && sameName(out[answer.index]!.name, answer.name)
+        ? answer.index
+        : out.findIndex((g) => sameName(g.name, answer.name));
+    if (at < 0) continue;
+    out[at] = { ...out[at]!, ...answer.patch };
+  }
+  return out;
+}
 
 /** At most this many photographs reach the model. */
 export const MAX_INTAKE_IMAGES = 6;
@@ -156,6 +212,10 @@ export function startIntake(
     askingIndex: null,
     round: 0,
     reasked: false,
+    lineDone: [],
+    lineAnswers: [],
+    offers: [],
+    ambiguousTotals: [],
     invoiceGoods: [],
     pdf: null,
     usage: null,
@@ -227,20 +287,28 @@ export async function analyzeCollected(state: IntakeState): Promise<IntakeState>
     weightKg: manual.weightKg ?? ai?.facts.weightKg ?? null,
     volumeM3: manual.volumeM3 ?? ai?.facts.volumeM3 ?? null,
     /**
-     * Three sources, in the order of who is answering about THIS shipment.
+     * Three sources, in the order of how EXACT they are about the lines.
      *
-     * What the seller wrote (read by the model) is first: they are looking at
-     * the job. An attached invoice is second — exact about its fifty rows and
-     * silent about which of them this quote covers, so it answers only when
-     * the reading produced no lines at all. `manual.goods` is deliberately
-     * always empty (splitting a typed list is the model's job, not a regex's)
-     * and stays last so the shape never changes.
+     * An attached invoice (XLSX/CSV) answers whenever it yields a line
+     * (2026-10-09, P1.6): its rows carry the supplier's own codes, units,
+     * weights and volumes, and a model's reading of a caption or a photo
+     * used to REPLACE them whenever it found one line — the audit's «used
+     * only when the AI found no lines at all». The model's goods answer when
+     * there is no file. `manual.goods` is deliberately always empty
+     * (splitting a typed list is the model's job, not a regex's) and stays
+     * last so the shape never changes.
+     *
+     * …and the seller's per-line answers go back on top (P1.3): a re-read
+     * after «➕ Yana ma'lumot» must not erase them.
      */
-    goods: ai?.facts.goods?.length
-      ? ai.facts.goods
-      : state.invoiceGoods?.length
+    goods: mergeLineAnswers(
+      state.invoiceGoods?.length
         ? state.invoiceGoods
-        : manual.goods,
+        : ai?.facts.goods?.length
+          ? ai.facts.goods
+          : (manual.goods ?? []),
+      state.lineAnswers,
+    ),
   };
   return {
     ...state,
@@ -249,6 +317,9 @@ export async function analyzeCollected(state: IntakeState): Promise<IntakeState>
     aiUsed: Boolean(ai),
     budgetSpent: budgetLeft <= 0,
     usage: ai?.usage ?? null,
+    // A total the material writes two ways is asked, never taken — not even
+    // from the model, which read the same ambiguous text.
+    ambiguousTotals: manual.ambiguous,
     stage: 'review',
   };
 }
