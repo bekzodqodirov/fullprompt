@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
@@ -178,11 +178,16 @@ afterAll(async () => {
   await pgClient.end();
 });
 
+// ORDERED: the last test reads `rows[1]` as «the second event», and an
+// unordered read is not insertion order once the table has churn (67b —
+// measured red in CI on 2026-10-09, `expected 3 to be 4`: rows[1] was the
+// FIRST wave's event). The identity column is the insertion order.
 const readyEvents = () =>
   db
     .select({ id: events.id, payload: events.payload })
     .from(events)
-    .where(and(eq(events.type, 'ReadyForPickup'), eq(events.entityId, batchId)));
+    .where(and(eq(events.type, 'ReadyForPickup'), eq(events.entityId, batchId)))
+    .orderBy(asc(events.id));
 
 describe('the seller hears about a truck ONCE', () => {
   it('scanning three cartons emits no staff event and claims exactly one notice', async () => {
