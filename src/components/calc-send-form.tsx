@@ -533,18 +533,43 @@ function RowBlock({
     const key = unitWordKey(u);
     return key ? t(`units.${key}` as 'units.dona') : u;
   };
-  const cell = (field: CellField, placeholder: string, testId: string, width: string) => (
-    <input
-      className={`input-cell ${width}`}
-      inputMode="decimal"
-      placeholder={placeholder}
-      aria-label={placeholder}
-      data-testid={testId}
-      value={row[field]}
-      readOnly={locked}
-      onChange={(event) => onCell(field, event.target.value)}
-    />
-  );
+  // A number cell names its unit AFTER it is filled too — «300» and «150»
+  // side by side read as nothing once the placeholders are gone, and the
+  // whole point of the table is which column a figure is in. The full name
+  // stays the box's label and its hover.
+  const cell = (
+    field: CellField,
+    label: string,
+    testId: string,
+    width: string,
+    suffix?: { word: string; hint: string },
+  ) => {
+    const input = (
+      <input
+        className={`input-cell ${width}${suffix ? ' !pr-9' : ''}`}
+        inputMode="decimal"
+        placeholder={suffix ? suffix.hint : label}
+        aria-label={label}
+        title={label}
+        data-testid={testId}
+        value={row[field]}
+        readOnly={locked}
+        onChange={(event) => onCell(field, event.target.value)}
+      />
+    );
+    if (!suffix) return input;
+    return (
+      <span className="relative shrink-0">
+        {input}
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-2xs text-ink-500"
+        >
+          {suffix.word}
+        </span>
+      </span>
+    );
+  };
   return (
     <div
       className={`space-y-1 rounded-lg border p-1.5 ${blocking.length > 0 ? 'border-warn' : 'border-line'}`}
@@ -565,7 +590,10 @@ function RowBlock({
             if (onPasteName(event.clipboardData.getData('text'))) event.preventDefault();
           }}
         />
-        {cell('qty', t('sendTable.qty'), 'calc-row-qty', '!w-20')}
+        {cell('qty', t('sendTable.qty'), 'calc-row-qty', '!w-24', {
+          word: t('units.dona'),
+          hint: t('sendTable.qtyShort'),
+        })}
         <button
           type="button"
           tabIndex={-1}
@@ -578,10 +606,13 @@ function RowBlock({
         </button>
       </div>
       <div className="flex items-center gap-1.5">
-        {cell('kg', t('sendTable.kg'), 'calc-row-kg', '!w-20')}
+        {cell('kg', t('sendTable.kg'), 'calc-row-kg', '!w-24', {
+          word: t('units.kg'),
+          hint: t('sendTable.kgShort'),
+        })}
         {cell('amount', t('sendTable.amount'), 'calc-row-amount', '!w-16')}
         <select
-          className="input-cell !w-16 !px-1"
+          className="input-cell !w-14 !px-1"
           aria-label={t('sendTable.unitLabel')}
           data-testid="calc-row-unit"
           value={row.unit}
@@ -595,7 +626,7 @@ function RowBlock({
           ))}
         </select>
         <input
-          className="input-cell min-w-0 flex-1"
+          className="input-cell min-w-0 flex-1 !px-1.5 tabular-nums"
           placeholder={t('sendTable.code')}
           aria-label={t('sendTable.code')}
           data-testid="calc-row-code"

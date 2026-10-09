@@ -3252,6 +3252,8 @@
       "name": "Product name",
       "qty": "Qty, pcs",
       "kg": "Net, kg",
+      "qtyShort": "qty",
+      "kgShort": "net",
       "amount": "Amount",
       "code": "HS code (if known)",
       "unitLabel": "Unit",

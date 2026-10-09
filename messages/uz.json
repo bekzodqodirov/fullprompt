@@ -3252,6 +3252,8 @@
       "name": "Tovar nomi",
       "qty": "Soni, dona",
       "kg": "Netto, kg",
+      "qtyShort": "soni",
+      "kgShort": "netto",
       "amount": "Miqdor",
       "code": "TNVED (bilsangiz)",
       "unitLabel": "Birlik",

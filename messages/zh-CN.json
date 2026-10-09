@@ -3252,6 +3252,8 @@
       "name": "品名",
       "qty": "数量（件）",
       "kg": "净重（公斤）",
+      "qtyShort": "数量",
+      "kgShort": "净重",
       "amount": "数量",
       "code": "海关编码（如知道）",
       "unitLabel": "单位",
