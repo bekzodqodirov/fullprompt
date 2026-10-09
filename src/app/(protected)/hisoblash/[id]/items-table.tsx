@@ -147,6 +147,9 @@ interface LastSave {
   alreadySaved: number;
   importFilled: number[];
   memoryFilled: number[];
+  unitsMoved: { seq: number; to: string; note: string }[];
+  sellerUnitUnresolved: { seq: number; word: string }[];
+  basisStamped: { seq: number; basis: BazaBasis }[];
 }
 const EMPTY_SAVE: LastSave = {
   minted: [],
@@ -159,6 +162,9 @@ const EMPTY_SAVE: LastSave = {
   alreadySaved: 0,
   importFilled: [],
   memoryFilled: [],
+  unitsMoved: [],
+  sellerUnitUnresolved: [],
+  basisStamped: [],
 };
 
 /**
@@ -179,6 +185,9 @@ function lastSaveOf(result: TableSaveFields): LastSave {
     alreadySaved: result.alreadySaved ?? 0,
     importFilled: result.importFilled ?? [],
     memoryFilled: result.memoryFilled ?? [],
+    unitsMoved: result.unitsMoved ?? [],
+    sellerUnitUnresolved: result.sellerUnitUnresolved ?? [],
+    basisStamped: result.basisStamped ?? [],
   };
 }
 
@@ -324,6 +333,8 @@ export function ItemsTable({
   viewerId: string;
 }) {
   const t = useTranslations('calc');
+  /** Unit words in the reader's language — one set (`calc.units`). */
+  const units = useMemo(() => unitWordsOf((k) => t(`units.${k}` as 'units.dona')), [t]);
   const tc = useTranslations('common');
   const router = useRouter();
   const id = workspace.requestId;
@@ -1822,7 +1833,10 @@ export function ItemsTable({
         lastSave.basisConflict.length > 0 ||
         lastSave.alreadySaved > 0 ||
         lastSave.importFilled.length > 0 ||
-        lastSave.memoryFilled.length > 0) ? (
+        lastSave.memoryFilled.length > 0 ||
+        lastSave.unitsMoved.length > 0 ||
+        lastSave.sellerUnitUnresolved.length > 0 ||
+        lastSave.basisStamped.length > 0) ? (
         <p className="text-2xs text-ink-600" data-testid="calc-save-note">
           {[
             lastSave.minted.length > 0
@@ -1851,6 +1865,16 @@ export function ItemsTable({
             lastSave.memoryFilled.length > 0
               ? `🧠 ${t('table.memoryFilled', { count: lastSave.memoryFilled.length })}: ${lastSave.memoryFilled.join(', ')}`
               : '',
+            // The heal and the stamp name every row they touched, each with
+            // its own words — a moved number the VED cannot find is a number
+            // nobody stated.
+            ...lastSave.unitsMoved.map((m) =>
+              t('grid.unitMoved', { row: m.seq, to: unitLabel(m.to, units), note: m.note }),
+            ),
+            ...lastSave.sellerUnitUnresolved.map((m) => `⚠ ${t('grid.sellerWord', { row: m.seq, word: m.word })}`),
+            ...lastSave.basisStamped.map((m) =>
+              `⚠ ${t('grid.basisStamped', { row: m.seq, unit: unitLabel(m.basis, units) })}`,
+            ),
           ]
             .filter(Boolean)
             .join(' · ')}

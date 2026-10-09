@@ -85,6 +85,12 @@ export interface TableSaveFields {
    * authority: a person sealed one, a quarterly file merely contains the
    * other. */
   memoryFilled?: number[];
+  /** Old rows whose seller's unit word moved a number to its own column. */
+  unitsMoved?: { seq: number; to: string; note: string }[];
+  /** Rows whose seller's word is a carton count or unknown — the VED answers. */
+  sellerUnitUnresolved?: { seq: number; word: string }[];
+  /** «avto» prices stamped with no unit on the screen. */
+  basisStamped?: { seq: number; basis: BazaBasis }[];
 }
 
 /**
@@ -421,6 +427,9 @@ export async function deleteItemAction(id: string, itemId: string): Promise<Tabl
       alreadySaved: 0,
       importFilled: [],
       memoryFilled: [],
+      unitsMoved: [],
+      sellerUnitUnresolved: [],
+      basisStamped: [],
       rev,
     };
   }, ws(id));

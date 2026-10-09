@@ -94,7 +94,9 @@ describe('the measure pair has ONE reconciler', () => {
     // required unit both read `autoBasisFor` — the law-only `defaultBasisFor`
     // stays the A2 suspect check's question, below.
     expect(save).toContain('const required = pairUnitFor(law, basis ?? auto);');
-    expect(save).toContain('basis = auto;');
+    // P3 (2026-10-09, judge MR-17): the unit the screen SHOWED wins when
+    // the final law holds it; the figures' «avto» is the fallback.
+    expect(save).toContain('basis = shown ?? auto;');
     expect(save).toContain('const auto = autoBasisFor(');
     expect(save).toContain('const lawBasis = defaultBasisFor({ dutyUnit: law });');
     expect(save).toContain('basisConflict.push(item.seq)');

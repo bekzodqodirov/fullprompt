@@ -3436,6 +3436,7 @@
       "parent_returned": "Bu hisob qaytarilgan, narxi yo‘q — kartadan yangi hisoblatish yuboring",
       "recalc_returned": "Tuzatish qaytarilgan (narxsiz yopilgan) — kartadan yangi hisoblatish yuboring",
       "changed_under": "Bajarilmadi — shu paytda bu qatorni boshqa kishi o‘zgartirdi. O‘zgarishni ko‘rib, qayta bosing.",
+      "basis_shown_changed": "Narx boshqa birlik uchun yozilgan: kod bu birlikni qabul qilmaydi — birlikni tanlang",
       "refresh_timeout": "Saqlanmadi — ekran yangilanmadi. Qatorni ochib, qayta saqlang."
     },
     "openCard": "Karta",
@@ -3751,6 +3752,11 @@
       "basisConflict": "birlik qonunga mos emas (qatorda bitta o‘lchov bo‘ladi) — qator",
       "alreadySaved": "avval saqlangan edi: {count} qator",
       "basisNotLaw": "qonun {unit} bo‘yicha o‘lchaydi — baza boshqa birlikda"
+    },
+    "grid": {
+      "unitMoved": "{row}-qator: sotuvchi birligi bo‘yicha raqam «{to}» ustuniga o‘tkazildi ({note}) — tekshiring",
+      "sellerWord": "{row}-qator: sotuvchi «{word}» yozgan — dona sonini yozing yoki «Bu dona» deb belgilang",
+      "basisStamped": "{row}-qator: baza birligi kodga ko‘ra {unit} bo‘ldi — tekshiring"
     },
     "phone": {
       "hint": "Tovarni bosing — tahrirlash ochiladi. ✅ va muhrlash ham shu yerda.",

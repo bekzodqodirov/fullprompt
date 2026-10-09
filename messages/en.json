@@ -3436,6 +3436,7 @@
       "parent_returned": "This job was handed back and has no price — send a new request from the card",
       "recalc_returned": "The correction was handed back (closed with no price) — send a new request from the card",
       "changed_under": "Not done — someone else changed this row just now. Look at the change and press again.",
+      "basis_shown_changed": "The price was typed for a unit this code does not take — pick the unit",
       "refresh_timeout": "Not saved — the screen did not refresh. Open the row and save again."
     },
     "openCard": "Card",
@@ -3751,6 +3752,11 @@
       "basisConflict": "a unit the law cannot hold (one measure per row) — row",
       "alreadySaved": "already saved earlier: {count}",
       "basisNotLaw": "the law counts in {unit} — the baza is per another unit"
+    },
+    "grid": {
+      "unitMoved": "Row {row}: the number moved to the «{to}» column by the seller’s unit ({note}) — check it",
+      "sellerWord": "Row {row}: the seller wrote «{word}» — type the piece count or mark «These are pieces»",
+      "basisStamped": "Row {row}: the baza unit became {unit} by the code — check it"
     },
     "phone": {
       "hint": "Tap an item to edit it. ✅ and sealing work here too.",

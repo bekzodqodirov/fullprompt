@@ -40,6 +40,7 @@ import {
 import { exciseAnswered, exciseMayApply, exciseUnitsFor } from './excise';
 import { answerFloorStandsSql, currentVersionSql, notSupersededSql } from './version-set';
 import { autoBasisFor, basisConflicts, defaultBasisFor, pairUnitFor, statedPairOf } from './basis';
+import { normalizeRowUnit } from './units';
 import {
   BASIS_FOR_UNIT,
   importRowForCode,
@@ -3152,6 +3153,9 @@ export interface TableItemEdit {
   /** The unit «avto» SHOWED when a price was typed with no unit chosen —
    * posted by the screens only; the machine posts none (judge MR-17). */
   shownBasis?: BazaBasis;
+  /** The seller's unit WORD — posted only to dismiss it («Bu dona»: null), so
+   * a carton or an unknown word stops asking (2026-10-09). */
+  unit?: string | null;
   /**
    * The row's baza (0125's four states — `bazaUsd` undefined leaves it alone):
    * - an amount + a basis — priced per that unit, the VED's word;
@@ -3311,6 +3315,22 @@ export interface TableSaveResult {
    * confirmed price for this product, which outranks the file. Named the
    * same way, for the same reason. */
   memoryFilled: number[];
+  /**
+   * Old rows whose seller's unit word put a number in the wrong column
+   * («120» under «m2» in the piece column, stored before the doors learned
+   * units, 2026-10-09): this save MOVED it to the column the word names
+   * (`normalizeRowUnit`, the one rule every door uses). Named — the VED
+   * checks the row, and the seller's own words stay in its note.
+   */
+  unitsMoved: { seq: number; to: string; note: string }[];
+  /** Rows whose seller's word is a carton count or a word no unit list
+   * knows: nothing is moved — the count is the VED's to answer («Bu karobka»
+   * / «Bu dona»), never the machine's guess. */
+  sellerUnitUnresolved: { seq: number; word: string }[];
+  /** «avto» prices this save stamped with no unit the screen had shown — the
+   * machine's posts, and a new row whose code's law was unknown when it was
+   * typed. Named, so a price is never silently re-unit-ed (judge MR-17). */
+  basisStamped: { seq: number; basis: BazaBasis }[];
   /** The request's rev AFTER this save, as the save itself wrote it — the
    * screen settles exactly what it posted once a refresh reaches this rev
    * (the phone round, D3). Required: every constructor must answer. */
@@ -3805,6 +3825,9 @@ export async function saveTable(
     tnvedCode: e.tnvedCode === undefined ? undefined : tableCode(e.tnvedCode, e.seq),
     note: e.note === undefined ? undefined : (e.note ?? '').trim().slice(0, 500) || null,
     measureQty: e.measureQty === undefined ? undefined : tableMeasure(e.measureQty, e.seq),
+    measureUnit: e.measureUnit,
+    shownBasis: e.shownBasis,
+    unit: e.unit === undefined ? undefined : e.unit?.trim().slice(0, 20) || null,
     bazaUsd: e.bazaUsd,
     bazaBasis: e.bazaBasis,
     importRowId: e.importRowId ?? null,
@@ -3817,12 +3840,14 @@ export async function saveTable(
   for (const e of itemEdits) {
     if (e.name !== undefined && !e.name) throw new CalcError('name_required', e.seq);
     checkBazaPair(e, e.seq);
+    checkUnitClaims(e, e.seq);
   }
   const adds = input.adds.map((r, i) => {
     const seq = -(i + 1);
     const name = r.name.trim().slice(0, 300);
     if (!name) throw new CalcError('name_required', seq);
     checkBazaPair(r, seq);
+    checkUnitClaims(r, seq);
     // A client id is a CLAIM like any other id off a form: it must at least
     // look like one, or a crafted string reaches the uuid column as a 22P02.
     const clientId = r.clientId ?? null;
@@ -3837,6 +3862,8 @@ export async function saveTable(
       tnvedCode: tableCode(r.tnvedCode, seq),
       note: r.note?.trim().slice(0, 500) || null,
       measureQty: tableMeasure(r.measureQty ?? null, seq),
+      measureUnit: r.measureUnit ?? null,
+      shownBasis: r.shownBasis,
       bazaUsd: r.bazaUsd === undefined ? null : r.bazaUsd,
       bazaBasis: r.bazaBasis === undefined ? null : r.bazaBasis,
     };
@@ -4010,6 +4037,9 @@ export async function saveTable(
         tnvedCode: r.tnvedCode !== (stored.tnvedCode ?? null) ? r.tnvedCode : undefined,
         note: r.note !== (stored.note ?? null) ? r.note : undefined,
         measureQty: r.measureQty !== num(stored.measureQty) ? r.measureQty : undefined,
+        measureUnit: r.measureQty !== num(stored.measureQty) ? r.measureUnit : undefined,
+        shownBasis: priceMoved ? r.shownBasis : undefined,
+        unit: undefined,
         bazaUsd: priceMoved ? r.bazaUsd : undefined,
         bazaBasis: priceMoved ? r.bazaBasis : undefined,
         importRowId: null,
@@ -4025,8 +4055,14 @@ export async function saveTable(
     //    unconfirm — the ✅ was about those numbers; a name or note is words).
     const changedCells: { seq: number; field: string; before: unknown; after: unknown }[] = [];
     const touched = new Set<string>();
-    /** item id → posted extended-unit qty (undefined = the cell was not sent). */
-    const postedMeasure = new Map<string, number | null>();
+    /** item id → posted extended-unit qty and, when the screen said it, the
+     * unit it was STATED in (absent = the cell was not sent). */
+    const postedMeasure = new Map<string, { qty: number | null; unit: MeasureUnit | null | undefined }>();
+    /** item id → the unit «avto» SHOWED beside a price typed with none. */
+    const shownBy = new Map<string, BazaBasis>();
+    /** Rows whose COUNT this save posted — the seller's old word no longer
+     * describes that number, so the heal leaves them alone (judge MR-4). */
+    const countPosted = new Set<string>();
     /** Rows whose LAW this save may change — recoded, added, or swept into a
      * group — the only rows A2's «birlikni tekshiring» looks at. */
     const relawed = new Set<string>();
@@ -4042,7 +4078,11 @@ export async function saveTable(
     for (const e of itemEdits) {
       const item = byId.get(e.id);
       if (!item || item.requestId !== requestId) throw new CalcError('not_found', e.seq);
-      if (e.measureQty !== undefined) postedMeasure.set(item.id, e.measureQty);
+      if (e.measureQty !== undefined) postedMeasure.set(item.id, { qty: e.measureQty, unit: e.measureUnit });
+      if (e.quantity !== undefined) countPosted.add(item.id);
+      if (e.bazaUsd !== undefined && e.bazaUsd !== null && (e.bazaBasis ?? null) === null && e.shownBasis) {
+        shownBy.set(item.id, e.shownBasis);
+      }
       const patch: Record<string, unknown> = {};
       const put = (field: string, before: unknown, after: unknown) => {
         patch[field] = after;
@@ -4056,6 +4096,9 @@ export async function saveTable(
         patch.nameNorm = itemNameNorm(e.name);
       }
       if (e.note !== undefined && e.note !== item.note) put('note', item.note, e.note);
+      // Only ever a DISMISSAL («Bu dona»): the word stops asking, the count
+      // stays the VED's — words, not a measure, so no ✅ clears.
+      if (e.unit !== undefined && e.unit !== (item.unit ?? null)) put('unit', item.unit, e.unit);
       let measuresMoved = false;
       const num = (v: string | null) => (v === null ? null : Number(v));
       if (e.quantity !== undefined && e.quantity !== num(item.quantity)) {
@@ -4187,7 +4230,8 @@ export async function saveTable(
         insertedRows.push(row);
         relawed.add(row.id);
         itemGroupBySeq.set(row.seq, null);
-        if (add.measureQty !== null) postedMeasure.set(row.id, add.measureQty);
+        if (add.measureQty !== null) postedMeasure.set(row.id, { qty: add.measureQty, unit: add.measureUnit });
+        if (add.bazaUsd !== null && add.bazaBasis === null && add.shownBasis) shownBy.set(row.id, add.shownBasis);
         const fill = importAuto.byAddIndex.get(add.index);
         if (fill) fillByItem.set(row.id, fill);
         const remembered = memoryAuto.byAddIndex.get(add.index);
@@ -4277,10 +4321,11 @@ export async function saveTable(
     //    UPDATE per item — the pair CHECK is immediate and a lone half
     //    23514s the whole save.
     const groupsFinal = await tx
-      .select({ id: calcGroups.id, dutyUnit: calcGroups.dutyUnit })
+      .select({ id: calcGroups.id, dutyUnit: calcGroups.dutyUnit, confirmedAt: calcGroups.confirmedAt })
       .from(calcGroups)
       .where(eq(calcGroups.requestId, requestId));
     const dutyUnitByGroup = new Map(groupsFinal.map((g) => [g.id, g.dutyUnit]));
+    const confirmedGroups = new Set(groupsFinal.filter((g) => g.confirmedAt !== null).map((g) => g.id));
     const lawOf = (groupId: string | null) =>
       groupId ? (dutyUnitByGroup.get(groupId) ?? null) : null;
     const itemsNow = await tx
@@ -4296,6 +4341,8 @@ export async function saveTable(
         measureQty: calcRequestItems.measureQty,
         bazaUsd: calcRequestItems.bazaUsd,
         bazaBasis: calcRequestItems.bazaBasis,
+        unit: calcRequestItems.unit,
+        note: calcRequestItems.note,
       })
       .from(calcRequestItems)
       .where(eq(calcRequestItems.requestId, requestId));
@@ -4303,15 +4350,80 @@ export async function saveTable(
     const measuresDropped: number[] = [];
     const basisConflict: number[] = [];
     const basisStamped: { seq: number; basis: BazaBasis }[] = [];
+    const unitsMoved: TableSaveResult['unitsMoved'] = [];
+    const sellerUnitUnresolved: TableSaveResult['sellerUnitUnresolved'] = [];
     for (const item of itemsNow) {
       const law = lawOf(item.groupId);
       const set: Record<string, unknown> = {};
+      // THE HEAL (2026-10-09): a row stored before the doors learned units
+      // keeps «120» in the piece column under the seller's «m2», and the
+      // engine reads it as 120 pieces. The ONE rule every door uses
+      // (`normalizeRowUnit`) moves it here — only on a row nobody has priced
+      // or confirmed, and never on a count this save posted: a VED who typed
+      // 300 into a row still wearing «kg» meant pieces (judge MR-4).
+      const healable =
+        item.bazaUsd === null &&
+        item.bazaBasis === null &&
+        (item.groupId === null || !confirmedGroups.has(item.groupId)) &&
+        !countPosted.has(item.id) &&
+        !postedMeasure.has(item.id);
+      if (healable && item.quantity !== null && item.unit) {
+        const healed = normalizeRowUnit({
+          quantity: Number(item.quantity),
+          unit: item.unit,
+          weightKg: item.weightKg === null ? null : Number(item.weightKg),
+          volumeM3: item.volumeM3 === null ? null : Number(item.volumeM3),
+          measureUnit: (item.measureUnit as MeasureUnit | null) ?? null,
+          measureQty: item.measureQty === null ? null : Number(item.measureQty),
+        });
+        const lawPair = law === 'm2' || law === 'juft' || law === 'litr' || law === 'sm3' ? law : null;
+        if (
+          healed.moved &&
+          (healed.to === 'cartons' ||
+            healed.to === 'unknown' ||
+            // «40 m²» under a code that counts in juft is a contradiction for
+            // a person — moved, the pass would clear it as a statement in the
+            // wrong unit and the number would be gone.
+            (lawPair !== null && MEASURE_UNITS.includes(healed.to as MeasureUnit) && healed.to !== lawPair))
+        ) {
+          // A carton count or a word nobody's list knows: the count is the
+          // VED's to answer, never the machine's guess.
+          sellerUnitUnresolved.push({ seq: item.seq, word: item.unit });
+        } else if (healed.moved) {
+          const p = healed.patch;
+          const fixed = (v: number | null, places: number) => (v === null ? null : v.toFixed(places));
+          const note = [item.note, healed.note].filter(Boolean).join(' · ').slice(0, 500);
+          Object.assign(set, {
+            quantity: fixed(p.quantity, 3),
+            unit: p.unit,
+            weightKg: fixed(p.weightKg, 3),
+            volumeM3: fixed(p.volumeM3, 3),
+            measureUnit: p.measureUnit,
+            measureQty: fixed(p.measureQty, 4),
+            note,
+          });
+          // The pass below reads the healed row, not the stored one.
+          item.quantity = fixed(p.quantity, 3);
+          item.unit = p.unit;
+          item.weightKg = fixed(p.weightKg, 3);
+          item.volumeM3 = fixed(p.volumeM3, 3);
+          item.measureUnit = p.measureUnit;
+          item.measureQty = fixed(p.measureQty, 4);
+          item.note = note;
+          unitsMoved.push({ seq: item.seq, to: healed.to, note: healed.note });
+        }
+      }
       // 18a: a price with no basis is «avto» — the law's default, read off
       // the group the row ENDED in. Never off the pre-tx dictionary map: a
       // typed code can join a group whose law a person typed over the book.
       let basis = (item.bazaBasis as BazaBasis | null) ?? null;
       const storedUnit = (item.measureUnit as MeasureUnit | null) ?? null;
       const storedQty = item.measureQty === null ? null : Number(item.measureQty);
+      const posted = postedMeasure.get(item.id);
+      // A unit the screen STATED beside a posted amount (a paste's «120 m²»,
+      // the new row's unit select) counts as the row's statement for «avto».
+      const statedUnit = posted && posted.unit !== undefined ? posted.unit : storedUnit;
+      const statedQty = posted ? posted.qty : storedQty;
       // What «avto» means for THIS row (2026-10-09): the law first, then a
       // pair the row STATES — the seller's «120 m²» on an advalor code is an
       // m² row, and stamping «per piece» over it priced tiles by the count
@@ -4321,17 +4433,23 @@ export async function saveTable(
         {
           quantity: item.quantity === null ? null : Number(item.quantity),
           weightKg: item.weightKg === null ? null : Number(item.weightKg),
-          measureUnit: storedUnit,
-          measureQty: storedQty,
+          measureUnit: statedUnit,
+          measureQty: statedQty,
         },
       );
       if (item.bazaUsd !== null && basis === null) {
-        basis = auto;
+        // The unit the screen SHOWED wins when the final law can hold it — a
+        // price typed against «kg» is stored per kg, whatever the figures
+        // this same save moved (judge MR-17). One the law cannot hold is
+        // refused naming the row: a price never silently changes unit.
+        const shown = shownBy.get(item.id);
+        if (shown !== undefined && basisConflicts(law, shown)) throw new CalcError('basis_shown_changed', item.seq);
+        basis = shown ?? auto;
         set.bazaBasis = basis;
         // Kept in step for the fills and the A2 check below, which read
         // this same snapshot.
         item.bazaBasis = basis;
-        basisStamped.push({ seq: item.seq, basis });
+        if (shown === undefined) basisStamped.push({ seq: item.seq, basis });
       }
       // A unit the law cannot hold — named, never rewritten. The law's own
       // pair stands (pairUnitFor answers the law first).
@@ -4342,9 +4460,23 @@ export async function saveTable(
       // own figure and stands while nothing (no law pair, no chosen basis)
       // names a different one.
       const required = pairUnitFor(law, basis ?? auto);
-      const posted = postedMeasure.get(item.id);
       let write: { unit: MeasureUnit; qty: number } | null | undefined;
-      if (item.groupId === null && posted === undefined) {
+      if (posted !== undefined && posted.qty !== null && posted.unit) {
+        // An amount posted WITH its unit: kept in that unit when it is the
+        // one the row asks for, or — while the row has no law yet — as the
+        // row's statement (the paste's uncoded «Kafel 120 m²», an uncoded
+        // car's sm³). A unit the law or a chosen basis contradicts is a
+        // statement about something else: dropped and NAMED (S2, UX12).
+        if (posted.unit === required || (required === null && item.groupId === null)) {
+          if (storedUnit !== posted.unit || storedQty !== posted.qty) write = { unit: posted.unit, qty: posted.qty };
+        } else {
+          measuresDropped.push(item.seq);
+          if (storedUnit !== null && storedUnit !== required) {
+            write = null;
+            measuresCleared.push(item.seq);
+          }
+        }
+      } else if (item.groupId === null && posted === undefined) {
         // No group = no law known yet (an uncoded row, or a code the sweep
         // could not place). The pair is a statement about the goods, not a
         // leftover of a law, so it waits for the code untouched — the
@@ -4355,16 +4487,16 @@ export async function saveTable(
         // was offered in good faith); a standing pair is cleared and named:
         // keeping «200» under a law (or a basis) that stopped asking for m²
         // is a number nobody stated.
-        if (posted !== undefined && posted !== null) measuresDropped.push(item.seq);
+        if (posted !== undefined && posted.qty !== null) measuresDropped.push(item.seq);
         if (storedUnit !== null) {
           write = null;
           measuresCleared.push(item.seq);
         }
       } else if (posted !== undefined) {
-        if (posted === null) {
+        if (posted.qty === null) {
           if (storedUnit !== null) write = null;
-        } else if (storedUnit !== required || storedQty !== posted) {
-          write = { unit: required, qty: posted };
+        } else if (storedUnit !== required || storedQty !== posted.qty) {
+          write = { unit: required, qty: posted.qty };
         }
       } else if (storedUnit !== null && storedUnit !== required) {
         // A recode (or a new basis) changed the required unit under a
@@ -4515,6 +4647,8 @@ export async function saveTable(
         alreadySaved,
         importFilled,
         memoryFilled,
+        unitsMoved,
+        sellerUnitUnresolved,
       },
     });
     return {
@@ -4529,6 +4663,9 @@ export async function saveTable(
       alreadySaved,
       importFilled,
       memoryFilled,
+      unitsMoved,
+      sellerUnitUnresolved,
+      basisStamped,
       rev: clock.rev,
     };
   });
@@ -4572,6 +4709,21 @@ function checkBazaPair(
   if (!isNumber(e.bazaUsd)) throw new CalcError('bad_number', seq);
   if (!(e.bazaUsd > 0)) throw new CalcError('baza_positive', seq);
   if (e.bazaUsd >= 1e9) throw new CalcError('bad_number', seq);
+}
+
+const MEASURE_UNITS: readonly MeasureUnit[] = ['juft', 'litr', 'm2', 'sm3'];
+
+/** The two unit claims a screen may post beside a row (2026-10-09): the unit
+ * a measure was STATED in, and the unit «avto» SHOWED. Off their lists they
+ * are forged posts, refused naming the row like a forged basis. */
+function checkUnitClaims(
+  e: { measureUnit?: MeasureUnit | null; shownBasis?: BazaBasis },
+  seq: number,
+): void {
+  if (e.measureUnit !== undefined && e.measureUnit !== null && !MEASURE_UNITS.includes(e.measureUnit)) {
+    throw new CalcError('bad_basis', seq);
+  }
+  if (e.shownBasis !== undefined && !isBazaBasis(e.shownBasis)) throw new CalcError('bad_basis', seq);
 }
 
 export interface TableNewItem {

@@ -386,6 +386,113 @@ describe('a pair the row STATES survives every unrelated Saqlash (2026-10-09, ju
   });
 });
 
+describe('the screen’s units reach the row (2026-10-09, P3: S2, UX12, MR-17) and old rows heal (P3.4)', () => {
+  // Same reason as the block above: this file outgrows one requester's open
+  // cap, so each test closes the request it opened.
+  const opened: string[] = [];
+  afterEach(async () => {
+    const mine = madeRequests.filter((r) => !opened.includes(r));
+    if (mine.length === 0) return;
+    opened.push(...mine);
+    await db.update(calcRequests).set({ completedAt: new Date() }).where(inArray(calcRequests.id, mine));
+  });
+  beforeAll(() => {
+    opened.push(...madeRequests);
+  });
+  /** A row as the doors stored it BEFORE they learned units: the number in
+   * the piece column, the seller's word beside it. */
+  const storeOldShape = (requestId: string, seqNo: number, quantity: number, unit: string) =>
+    db
+      .update(calcRequestItems)
+      .set({ quantity: quantity.toFixed(3), unit, measureUnit: null, measureQty: null, weightKg: null })
+      .where(and(eq(calcRequestItems.requestId, requestId), eq(calcRequestItems.seq, seqNo)));
+
+  it('a pasted uncoded «Kafel 120 m²» is STORED in m² — the unit rides the add', async () => {
+    const id = await open([{ name: `bor ${tag()}`, quantity: 1 }]);
+    const result = await save(id, { adds: [{ name: `kafel ${tag()}`, measureQty: 120, measureUnit: 'm2' }] });
+    expect(result.measuresDropped).toEqual([]);
+    expect(await rowOf(id, 2)).toMatchObject({ measureUnit: 'm2', measureQty: '120.0000', quantity: null });
+  });
+
+  it('a pair the code contradicts is dropped and NAMED — 40 m² is not 40 juft', async () => {
+    const id = await open([{ name: `bor ${tag()}`, quantity: 1 }]);
+    const result = await save(id, {
+      adds: [{ name: `tufli ${tag()}`, tnvedCode: '6403', measureQty: 40, measureUnit: 'm2' }],
+    });
+    expect(result.measuresDropped).toEqual([2]);
+    expect(await rowOf(id, 2)).toMatchObject({ measureUnit: null, measureQty: null });
+  });
+
+  it('an old row with «120» under «m2» in the piece column moves to the pair on the next Saqlash', async () => {
+    const id = await open([{ name: `plitka ${tag()}`, quantity: 1 }]);
+    await storeOldShape(id, 1, 120, 'm2');
+    const result = await save(id, {});
+    expect(result.unitsMoved).toEqual([{ seq: 1, to: 'm2', note: 'sotuvchi: 120 m2' }]);
+    const row = await rowOf(id, 1);
+    expect(row).toMatchObject({ quantity: null, unit: null, measureUnit: 'm2', measureQty: '120.0000' });
+    expect(row.note).toContain('sotuvchi: 120 m2');
+    // Once moved, the word is gone — a second press moves nothing.
+    expect((await save(id, {})).unitsMoved).toEqual([]);
+  });
+
+  it('«500» under «kg» moves to the weight; a count the VED types in the same save is left alone', async () => {
+    const id = await open([{ name: `kurtka ${tag()}`, quantity: 1 }, { name: `shim ${tag()}`, quantity: 1 }]);
+    await storeOldShape(id, 1, 500, 'kg');
+    await storeOldShape(id, 2, 500, 'kg');
+    const result = await save(id, { items: [await editOf(id, 2, { quantity: 300 })] });
+    expect(result.unitsMoved.map((m) => m.seq)).toEqual([1]);
+    expect(await rowOf(id, 1)).toMatchObject({ quantity: null, weightKg: '500.000' });
+    expect(await rowOf(id, 2)).toMatchObject({ quantity: '300.000', weightKg: null });
+  });
+
+  it('a carton count is never guessed: named, and «Bu dona» dismisses the word for good', async () => {
+    const id = await open([{ name: `futbolka ${tag()}`, quantity: 1 }]);
+    await storeOldShape(id, 1, 20, 'karobka');
+    const first = await save(id, {});
+    expect(first.unitsMoved).toEqual([]);
+    expect(first.sellerUnitUnresolved).toEqual([{ seq: 1, word: 'karobka' }]);
+    expect(await rowOf(id, 1)).toMatchObject({ quantity: '20.000', unit: 'karobka' });
+    await save(id, { items: [await editOf(id, 1, { unit: null })] });
+    expect(await rowOf(id, 1)).toMatchObject({ quantity: '20.000', unit: null });
+    expect((await save(id, {})).sellerUnitUnresolved).toEqual([]);
+  });
+
+  it('a priced or confirmed row is never healed', async () => {
+    const id = await open([{ name: `oyna ${tag()}`, quantity: 1, tnvedCode: '8528520000' }]);
+    await save(id, { items: [await editOf(id, 1, { bazaUsd: 3, bazaBasis: 'unit' })] });
+    await storeOldShape(id, 1, 120, 'm2');
+    expect((await save(id, {})).unitsMoved).toEqual([]);
+    expect(await rowOf(id, 1)).toMatchObject({ quantity: '120.000', unit: 'm2' });
+  });
+
+  it('«avto» stores the unit the screen SHOWED; with none shown the stamp is named', async () => {
+    const id = await open([
+      { name: `sim ${tag()}`, tnvedCode: '8528520000', weightKg: 40 },
+      { name: `sim ikki ${tag()}`, tnvedCode: '8528520000', weightKg: 40 },
+    ]);
+    await save(id, {});
+    // A weight-only advalor row: «avto» by the figures is kg. The screen
+    // showed «dona» — the price was typed against dona, so it stays dona.
+    const shown = await save(id, {
+      items: [await editOf(id, 1, { bazaUsd: 5, bazaBasis: null, shownBasis: 'unit' })],
+    });
+    expect(shown.basisStamped).toEqual([]);
+    expect(await rowOf(id, 1)).toMatchObject({ bazaBasis: 'unit' });
+    const silent = await save(id, { items: [await editOf(id, 2, { bazaUsd: 5, bazaBasis: null })] });
+    expect(silent.basisStamped).toEqual([{ seq: 2, basis: 'kg' }]);
+    expect(await rowOf(id, 2)).toMatchObject({ bazaBasis: 'kg' });
+  });
+
+  it('a shown unit the final law cannot hold is refused naming the row', async () => {
+    const id = await open([{ name: `etik ${tag()}`, tnvedCode: '6403', quantity: 10 }]);
+    await save(id, {});
+    await expect(
+      save(id, { items: [await editOf(id, 1, { bazaUsd: 5, bazaBasis: null, shownBasis: 'm2' })] }),
+    ).rejects.toMatchObject({ code: 'basis_shown_changed', seq: 1 });
+    expect(await rowOf(id, 1)).toMatchObject({ bazaUsd: null });
+  });
+});
+
 describe('A2: «birlikni tekshiring» — priced rows this save re-lawed, and nothing else', () => {
   it('names a priced row recoded onto a law that counts in another unit, once', async () => {
     const id = await open([{ name: `stul ${tag()}`, quantity: 4, weightKg: 20, tnvedCode: '8528520000' }]);
