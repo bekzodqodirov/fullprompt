@@ -335,7 +335,14 @@ describe('the table refuses by ROW', () => {
     expect(partial!.reconcile.groupKg).toBe(100);
     expect(partial!.reconcile.mismatch).toBe(false);
 
-    // Fully weighed and honestly disagreeing: 100 + 100 against 500.
+    /*
+     * Re-anchored deliberately (2026-10-09, judge MR-8): fully weighed and
+     * disagreeing by KILOS — 100 + 100 against 500 — is no longer a mismatch.
+     * A line's weight is NETTO (the baza is declared on it) and the
+     * shipment's is BRUTTO, so the two sit apart by construction and the
+     * warning stood on every complete job. The volume is one measure on both
+     * sides, and a volume gap still is one.
+     */
     const whole = await open([
       { name: `c ${tag()}`, quantity: 1, tnvedCode: '3924', weightKg: 100 },
       { name: `d ${tag()}`, quantity: 1, tnvedCode: '3924', weightKg: 100 },
@@ -343,7 +350,12 @@ describe('the table refuses by ROW', () => {
     await save(whole, {});
     const full = await loadWorkspace(whole);
     expect(full!.reconcile.groupKg).toBe(200);
-    expect(full!.reconcile.mismatch).toBe(true);
+    expect(full!.reconcile.mismatch).toBe(false);
+    // 2 + 2 m³ against the request's 10 m³ — that disagreement stands.
+    await save(whole, {
+      items: [await editOf(whole, 1, { volumeM3: 2 }), await editOf(whole, 2, { volumeM3: 2 })],
+    });
+    expect((await loadWorkspace(whole))!.reconcile.mismatch).toBe(true);
 
     // …and an UNGROUPED row is the other way to be partial: nothing is
     // wrong with the numbers, the Σ simply is not over the same cargo.

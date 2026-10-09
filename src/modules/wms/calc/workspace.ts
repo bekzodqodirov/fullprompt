@@ -190,6 +190,9 @@ export interface WorkspaceGroup {
   hasCertificate: boolean | null;
   /** Resolved: the group's answer, else the request's. What the engine used. */
   effectiveCertificate: boolean;
+  /** The REQUEST's answer — what «so‘rovdagidek» means on the ⚙ fold, and
+   * what the footer compares a group's own answer against (P2.5). */
+  requestCertificate: boolean;
   rateSource: 'dictionary' | 'typed' | null;
   dutyFree: boolean;
   vatFree: boolean;
@@ -616,6 +619,7 @@ export async function loadWorkspace(
       ...priced,
       hasCertificate: g.hasCertificate,
       effectiveCertificate,
+      requestCertificate: request.hasCertificate,
       rateSource: (g.rateSource as 'dictionary' | 'typed' | null) ?? null,
       aiProposed: g.aiProposed,
       aiConfidence: (g.aiConfidence as 'high' | 'medium' | 'low' | null) ?? null,
@@ -2911,61 +2915,60 @@ export async function proposeGroups(
      * the sealed memory, the intake's book or a person put on a row is this
      * company's answer, and the model re-deciding it turned the memory's 6403
      * into its own 6402 — and the bot then priced the model's guess. Nothing
-     * uncoded is nothing to ask: the pricing tail still runs, no model call
-     * is billed.
+     * uncoded is nothing to ask: the model step is skipped, no call is
+     * billed, and the pricing tail below still runs.
      */
     const items = all.filter((i) => !(i.tnvedCode ?? '').trim());
-    if (items.length === 0) {
-      await releaseAiClaim(requestId);
-      const priced = await priceProposedGroups(requestId, ctx);
-      return { groups: 0, batches: 0, failed: 0, ...priced };
-    }
-
-    const { proposeGoodsGrouping, TnvedError } = await import('../tnved/service');
-    const batches = planBatches(items.length);
-    const results: { offset: number; groups: ProposedGroup[] | null }[] = [];
+    let drafts: ReturnType<typeof mergeProposals> = [];
+    let batchCount = 0;
     let failed = 0;
-    for (const batch of batches) {
-      const slice = items.slice(batch.offset, batch.offset + batch.count);
-      try {
-        const answer = await proposeGoodsGrouping(
-          slice.map((i) => ({ name: i.name, quantity: toNum(i.quantity), unit: i.unit })),
-        );
-        results.push({ offset: batch.offset, groups: answer.groups });
-        // One ledger row per model call (0096), so a real week of this can
-        // be read as a bill. Never throws — see `recordAiPass`.
-        if (answer.usage) {
-          await recordAiPass({
-            requestId,
-            staffId: ctx.actorId ?? null,
-            kind: 'grouping',
-            model: answer.usage.model,
-            inputTokens: answer.usage.inputTokens,
-            outputTokens: answer.usage.outputTokens,
-          });
+    if (items.length > 0) {
+      const { proposeGoodsGrouping, TnvedError } = await import('../tnved/service');
+      const batches = planBatches(items.length);
+      batchCount = batches.length;
+      const results: { offset: number; groups: ProposedGroup[] | null }[] = [];
+      for (const batch of batches) {
+        const slice = items.slice(batch.offset, batch.offset + batch.count);
+        try {
+          const answer = await proposeGoodsGrouping(
+            slice.map((i) => ({ name: i.name, quantity: toNum(i.quantity), unit: i.unit })),
+          );
+          results.push({ offset: batch.offset, groups: answer.groups });
+          // One ledger row per model call (0096), so a real week of this can
+          // be read as a bill. Never throws — see `recordAiPass`.
+          if (answer.usage) {
+            await recordAiPass({
+              requestId,
+              staffId: ctx.actorId ?? null,
+              kind: 'grouping',
+              model: answer.usage.model,
+              inputTokens: answer.usage.inputTokens,
+              outputTokens: answer.usage.outputTokens,
+            });
+          }
+        } catch (err) {
+          // NO KEY IS NOT «THE MODEL DID NOT ANSWER» (audit A25). Every other
+          // failure here is per-batch and survivable; a missing key is a fact
+          // about the SERVER that no later batch can improve, and swallowing it
+          // sent the VED «ИИ не ответил» — a sentence that invites pressing
+          // again — while the honest word existed two lines away in every
+          // bundle. Rethrown unchanged, and the button is not even drawn when
+          // `workspace.aiConfigured` is false.
+          if (err instanceof TnvedError && err.code === 'ai_not_configured') {
+            throw new CalcError('ai_not_configured');
+          }
+          // A batch that failed costs its own goods, not the whole file: eight
+          // hundred classified beats a thousand left for the manager.
+          failed += 1;
+          logger.error({ err, requestId, offset: batch.offset }, '[calc] ai batch failed');
+          results.push({ offset: batch.offset, groups: null });
         }
-      } catch (err) {
-        // NO KEY IS NOT «THE MODEL DID NOT ANSWER» (audit A25). Every other
-        // failure here is per-batch and survivable; a missing key is a fact
-        // about the SERVER that no later batch can improve, and swallowing it
-        // sent the VED «ИИ не ответил» — a sentence that invites pressing
-        // again — while the honest word existed two lines away in every
-        // bundle. Rethrown unchanged, and the button is not even drawn when
-        // `workspace.aiConfigured` is false.
-        if (err instanceof TnvedError && err.code === 'ai_not_configured') {
-          throw new CalcError('ai_not_configured');
-        }
-        // A batch that failed costs its own goods, not the whole file: eight
-        // hundred classified beats a thousand left for the manager.
-        failed += 1;
-        logger.error({ err, requestId, offset: batch.offset }, '[calc] ai batch failed');
-        results.push({ offset: batch.offset, groups: null });
       }
-    }
-    if (failed === batches.length) throw new CalcError('ai_failed');
+      if (failed === batches.length) throw new CalcError('ai_failed');
 
-    const drafts = mergeProposals(results, items.map((i) => i.seq));
-    await applyProposal(requestId, drafts, ctx);
+      drafts = mergeProposals(results, items.map((i) => i.seq));
+      await applyProposal(requestId, drafts, ctx);
+    }
     // …and then the proposal is turned into a CALCULATION.
     //
     // MEASURED before it was written (a probe on a real request): the
@@ -3004,7 +3007,7 @@ export async function proposeGroups(
     // the claim.
     await releaseAiClaim(requestId);
     const priced = await priceProposedGroups(requestId, ctx);
-    return { groups: drafts.length, batches: batches.length, failed, ...priced };
+    return { groups: drafts.length, batches: batchCount, failed, ...priced };
   } finally {
     await releaseAiClaim(requestId);
   }

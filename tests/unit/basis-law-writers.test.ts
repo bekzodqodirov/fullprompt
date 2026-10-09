@@ -75,8 +75,13 @@ const SKIPS_THE_PASS: Record<string, string> = {
   moveItemToGroup: 'no app caller since the table; the pair reconciles on the next Saqlash',
   applyProposal:
     'the ✨ pass: its pricing tail (priceProposedGroups) ends in saveTable, which runs the pass',
+  // Re-worded deliberately (2026-10-09, judge MR-15/TT-8): the correction now
+  // RE-READS today's book for every dictionary group, so the law it copies
+  // may differ from the one the seal stood on. When that moves a group's
+  // unit, the rows are NAMED (`remeasure`, shown once on the new request's
+  // first load) and their pairs wait for the first Saqlash, like the ⚙ door.
   recalcFromSealed:
-    'copies a SEALED request whose pairs the seal already stood on — the law and the pairs travel together',
+    'copies a SEALED request; a re-pulled law that moves a unit names its rows (remeasure) for the first Saqlash',
 };
 
 describe('the measure pair has ONE reconciler', () => {

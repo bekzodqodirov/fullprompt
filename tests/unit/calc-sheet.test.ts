@@ -250,6 +250,10 @@ describe('the sheet cannot carry a client price (law 4)', () => {
         'discountUsd',
         'expired',
         'extrasUsd',
+        // P2.6 (2026-10-09): the fee's INPUTS — the BHM coefficient, its so'm
+        // value, the rate and its day. Money the STATE is paid, never a client
+        // price, so law 4 has nothing to say about it.
+        'fee',
         'feeUsd',
         'freight',
         'goods',

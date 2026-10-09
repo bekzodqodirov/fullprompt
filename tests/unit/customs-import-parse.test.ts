@@ -317,6 +317,21 @@ describe('one row', () => {
     expect(parseRow(row({ pricePerUnit: '' }), header)).toMatchObject({ reason: 'bad_price' });
   });
 
+  it('a NUMERIC nine-digit code is a ten-digit code Excel stripped of its zero (P2.10a)', () => {
+    // 0401 is milk; unpadded, «401100000» longest-prefixed onto 4011 (tyres).
+    // The kernel's one reading of a code decides it — a number cell only.
+    const numeric = parseRow(row({ tnvedCode: 401100000 }), header);
+    expect(numeric.ok && numeric.row.tnvedCode).toBe('0401100000');
+    // Ten digits as a number stay what they are.
+    const ten = parseRow(row({ tnvedCode: 8482109008 }), header);
+    expect(ten.ok && ten.row.tnvedCode).toBe('8482109008');
+    // A nine-digit TEXT cell was typed that way: no guess, a reason.
+    expect(parseRow(row({ tnvedCode: '401100000' }), header)).toMatchObject({ reason: 'bad_code' });
+    // Dots and spaces are formatting, as everywhere a code is read.
+    const dotted = parseRow(row({ tnvedCode: '8482.10.900.8' }), header);
+    expect(dotted.ok && dotted.row.tnvedCode).toBe('8482109008');
+  });
+
   it('a zero price is refused and not stored as a baza of nothing', () => {
     // The column's own CHECK would refuse it; refusing here keeps one bad
     // row from taking a whole thousand-row chunk down with it.

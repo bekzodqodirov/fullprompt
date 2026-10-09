@@ -95,6 +95,10 @@ const EXEMPT: Record<string, string> = {
   // claim's one window — the first reads the clock, the second reads only
   // its arguments.
   requestClock: 'reader — the probe of the clock',
+  // 0131: «do these two blocks carry one law?» — exported so a unit test
+  // asks the rule itself (the excise columns joined it). Reads its two
+  // arguments, writes nothing.
+  sameGroupRates: 'pure',
   aiClaimLive: 'pure',
   // Review PHONE-2: saveTable's compare-and-set, exported so a unit test
   // calls the rule itself. Reads its two arguments, writes nothing.

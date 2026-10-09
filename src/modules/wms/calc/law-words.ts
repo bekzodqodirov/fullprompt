@@ -80,3 +80,14 @@ export function feeInputsValues(fee: {
     usd: fee.usd.toFixed(2),
   };
 }
+
+/** What the re-read book moved on a correction, carried to the new request's
+ * first load (P2.2) — the codes and the rows, nothing else. One spelling for
+ * both recalc buttons (the sealed panel and the answered page). */
+export function relawedQuery(r: { relawed?: string[]; remeasure?: number[] }): string {
+  const q = new URLSearchParams();
+  if (r.relawed && r.relawed.length > 0) q.set('relawed', r.relawed.join(','));
+  if (r.remeasure && r.remeasure.length > 0) q.set('olchov', r.remeasure.join(','));
+  const text = q.toString();
+  return text ? `?${text}` : '';
+}

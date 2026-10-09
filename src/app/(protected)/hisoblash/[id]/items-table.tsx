@@ -1,6 +1,7 @@
 'use client';
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import type { Workspace, WorkspaceGroup, WorkspaceItem } from '@/modules/wms/calc/workspace';
@@ -12,13 +13,17 @@ import {
   totalsFor,
   type BazaBasis,
   type CustomsResult,
+  type DutyUnit,
   type MeasureUnit,
   type PricedItem,
 } from '@/modules/wms/calc/pricing';
 import { basisLabel, defaultBasisFor, uniformBazaOf } from '@/modules/wms/calc/basis';
 import { editBazaPair } from '@/modules/wms/calc/baza-draft';
 import { pasteIdsFor } from '@/modules/wms/calc/paste-ids';
-import { basisNotLaw } from '@/modules/wms/calc/warnings';
+import { basisNotLaw, lawOffBook } from '@/modules/wms/calc/warnings';
+import { exciseAnswered, exciseMayApply, exciseUnitsFor } from '@/modules/wms/calc/excise';
+import { LAW_SHAPE_KEY, dayText, lawValues, rateText, unitWordsOf } from '@/modules/wms/calc/law-words';
+import { unitLabel } from '@/modules/wms/calc/units';
 import { ghostScreenOf, screenRowOf, groupsByCodeOf, postedBasis } from '@/modules/wms/calc/screen-row';
 import { readNumberCell } from '@/modules/wms/calc/number-cell';
 import {
@@ -2401,6 +2406,13 @@ const ItemRowBlock = memo(function ItemRowBlock({
  * self-announcing ones stay VISIBLE here, because a suggestion inside a
  * closed fold announces to nobody at exactly the moment a wrong confirm
  * happens.
+ *
+ * What the book says beside it (2026-10-09, P2.2/P2.3/P2.5): a book that
+ * MOVED under the block names today's law and offers the pull; a short code
+ * that hides other laws says so in words; a code the book answered from its
+ * HEADING says «lug‘at: 8528 sarlavhasi» as information (never a warning —
+ * judge UX8); a block whose own certificate answer differs from the
+ * request's prints both. Words, never a hover title (#420).
  */
 function BlockFooter({
   id,
@@ -2411,6 +2423,7 @@ function BlockFooter({
   busy,
   dirty,
   act,
+  liveState,
 }: {
   id: string;
   group: WorkspaceGroup;
@@ -2420,10 +2433,39 @@ function BlockFooter({
   busy: boolean;
   dirty: boolean;
   act: (work: () => Promise<CalcFormState>) => void;
+  /**
+   * The live figure's standing (judge S11, written by P3): 'unsaved_code' =
+   * a row's code is typed and not saved, so the block the figure prices is
+   * the browser's own until the next Saqlash. Absent reads as 'ok'.
+   */
+  liveState?: 'ok' | 'unsaved_code';
 }) {
   const t = useTranslations('calc');
   const [open, setOpen] = useState(false);
   const customs = liveCustoms ?? group.customs;
+  const words = useMemo(() => unitWordsOf((k) => t(`units.${k}` as 'units.dona')), [t]);
+  const book = group.dictionaryRates;
+  const code = group.tnvedCode?.trim() ?? '';
+  // P2.2: the pull renders whenever the book's row differs from what prices
+  // the block — a percentage, the VAT or the SHAPE — whatever wrote it. It
+  // used to be offered to typed groups only, so a block the BOOK wrote went
+  // on pricing yesterday's law with no door to today's.
+  const pullable =
+    book !== null && (group.dutyPct === null || group.vatPct === null || lawOffBook(group, book));
+  // P2.3's information half: the book answered from a SHORTER row.
+  const heading = book && code && book.matchedCode !== code ? book.matchedCode : null;
+  // P2.5: the block's own certificate answer, when it is not the request's.
+  const certOwn = group.hasCertificate !== null && group.hasCertificate !== group.requestCertificate;
+  const yesNo = (v: boolean) => (v ? t('law.certYes') : t('law.certNo'));
+  const exciseLine =
+    group.excisePct !== null && group.excisePct > 0
+      ? t('law.excisePct', { pct: rateText(group.excisePct) })
+      : group.exciseSpecific !== null && group.exciseUnit !== null
+        ? t('law.exciseSpecific', {
+            amount: rateText(group.exciseSpecific),
+            unit: unitLabel(group.exciseUnit, words),
+          })
+        : null;
 
   return (
     <>
@@ -2455,6 +2497,16 @@ function BlockFooter({
             {group.dutyFree ? t('dutyFree') : dutyText(group)} ·{' '}
             {group.vatFree ? t('vatFree') : `${t('vat')} ${group.vatPct ?? '—'}%`}
           </span>
+          {heading ? (
+            <span className="ml-1 text-2xs text-ink-500" data-testid="calc-group-heading">
+              ({t('law.heading', { code: heading })})
+            </span>
+          ) : null}
+          {exciseLine ? (
+            <span className="ml-1 text-2xs text-ink-700" data-testid="calc-group-excise">
+              · {exciseLine}
+            </span>
+          ) : null}
           {/* The book answered WITH a condition (the clauseCut vehicle rows) —
               a visible chip, not a hover title: a placeholder announces to
               nobody, and the confirm records `rate_noted`. */}
@@ -2466,6 +2518,14 @@ function BlockFooter({
           {customs.ok && customs.addDutyUsd > 0 ? (
             <span className="ml-1 text-2xs text-warn">
               +{customs.addDutyPct}% (${customs.addDutyUsd.toFixed(2)})
+            </span>
+          ) : null}
+          {certOwn ? (
+            <span className="ml-1 text-2xs text-warn" data-testid="calc-group-certificate">
+              {t('law.certOwn', {
+                answer: yesNo(group.hasCertificate === true),
+                request: yesNo(group.requestCertificate),
+              })}
             </span>
           ) : null}
           {/* Item 1 (the owner's own example): the block's one baza is the
@@ -2491,7 +2551,30 @@ function BlockFooter({
               {t('value')} ${customs.valueUsd.toFixed(2)}
             </span>
           ) : null}
-          {group.dictionaryRates && group.rateSource !== 'dictionary' && !dirty ? (
+          {/* The three warnings this round added, each in its own words —
+              the ✅ records them, so the person pressing it must have SEEN
+              them (a recorded warning nobody was shown records nothing). */}
+          {group.warnings.includes('dictionary_moved') && book ? (
+            <span className="ml-2 text-2xs text-warn" data-testid="calc-dictionary-moved">
+              ⚠ {t('law.bookMoved', { law: `${dutyText(book)} / ${t('vat')} ${book.vatPct}%` })}
+            </span>
+          ) : null}
+          {group.warnings.includes('code_heading') && group.codeHeading ? (
+            <span className="ml-2 text-2xs text-warn" data-testid="calc-code-heading">
+              ⚠{' '}
+              {t('law.headingHides', {
+                code,
+                deeper: group.codeHeading.code,
+                law: dutyText(group.codeHeading),
+              })}
+            </span>
+          ) : null}
+          {group.warnings.includes('excise_unanswered') ? (
+            <span className="ml-2 text-2xs text-warn" data-testid="calc-excise-unanswered">
+              ⚠ {t('warnings.exciseUnanswered')}
+            </span>
+          ) : null}
+          {pullable && book && !dirty ? (
             <button
               type="button"
               className="ml-2 text-2xs underline"
@@ -2499,7 +2582,7 @@ function BlockFooter({
               data-testid="calc-pull-rates"
               onClick={() => act(() => pullRatesAction(id, group.id))}
             >
-              {t('pullRates')}: {dutyText(group.dictionaryRates)} / {group.dictionaryRates.vatPct}%
+              {t('pullRates')}: {dutyText(book)} / {book.vatPct}%
             </button>
           ) : null}
           {group.rateSource === 'typed' &&
@@ -2507,10 +2590,7 @@ function BlockFooter({
           group.dutyPct !== null &&
           group.vatPct !== null &&
           !dirty &&
-          (!group.dictionaryRates ||
-            group.dictionaryRates.dutyPct !== group.dutyPct ||
-            group.dictionaryRates.vatPct !== group.vatPct ||
-            group.dictionaryRates.feeUsd !== (group.feeUsd ?? 0)) ? (
+          (!book || lawOffBook(group, book) || book.feeUsd !== (group.feeUsd ?? 0)) ? (
             <button
               type="button"
               className="ml-2 text-2xs underline"
@@ -2522,6 +2602,12 @@ function BlockFooter({
                     tnvedCode: group.tnvedCode!,
                     dutyPct: group.dutyPct!,
                     vatPct: group.vatPct!,
+                    // The block's WHOLE law (P2.1): a teach that posted the
+                    // percentage alone wrote an advalor row over a heading's
+                    // floor, and the next job under the code lost it.
+                    dutyMode: group.dutyMode,
+                    dutySpecific: group.dutySpecific,
+                    dutyUnit: group.dutyUnit,
                     effectiveDate: tashkentDay(),
                     source: 'correction',
                   }),
@@ -2556,6 +2642,9 @@ function BlockFooter({
               {t('lgotaLast')}
               {group.lgotaLast.dutyFree ? ` · ${t('dutyFree')}` : ''}
               {group.lgotaLast.vatFree ? ` · ${t('vatFree')}` : ''}
+              {/* «o‘tgan safar» is a claim about WHEN — the reader decides
+                  whether it still applies. */}
+              {` · ${dayText(group.lgotaLast.sealedAt)}`}
             </button>
           ) : null}
           {group.confirmedAt === null && !dirty ? (
@@ -2580,6 +2669,11 @@ function BlockFooter({
                 : customs.reason}
             </span>
           )}
+          {liveState === 'unsaved_code' ? (
+            <span className="block text-2xs font-sans text-warn" data-testid="calc-group-live-unsaved">
+              {t('law.unsavedCode')}
+            </span>
+          ) : null}
         </td>
         <td className="p-1.5 text-center">
           <button
@@ -2603,6 +2697,14 @@ function BlockFooter({
  * would let the block's identity drift from its members'. Rendered as a
  * full-width fold, never a popover: the grid's own scroll container clips
  * anything absolutely positioned inside it.
+ *
+ * Small on purpose (2026-10-09, judge UX10): the law's SHAPE is read-only
+ * here — «20 %, kamida $3/juft — lug‘atdan» — and edited only in
+ * /hisoblash/lugatlar, where it is the BOOK's word for every later job; a
+ * per-job shape edit would be a law nobody else ever sees. A rate typed here
+ * keeps the stored shape (the action posts no mode). The fold gains what is
+ * per JOB: the excise (only where the code may carry one, or it is already
+ * answered) and the block's own certificate answer.
  */
 function GroupFold({
   id,
@@ -2617,18 +2719,60 @@ function GroupFold({
   act: (work: () => Promise<CalcFormState>) => void;
   onDone: () => void;
 }) {
+  type ExciseMode = 'unasked' | 'none' | 'pct' | 'specific';
   const t = useTranslations('calc');
   const tc = useTranslations('common');
+  const words = useMemo(() => unitWordsOf((k) => t(`units.${k}` as 'units.dona')), [t]);
   const [duty, setDuty] = useState(group.dutyPct === null ? '' : String(group.dutyPct));
   const [vat, setVat] = useState(group.vatPct === null ? '' : String(group.vatPct));
   const [dutyFree, setDutyFree] = useState(group.dutyFree);
   const [vatFree, setVatFree] = useState(group.vatFree);
+  // The excise's four states (0131): unanswered, «yo‘q» (0 %), a percentage,
+  // or dollars per unit — one shape at a time, as the CHECKs say.
+  const [exciseMode, setExciseMode] = useState<ExciseMode>(
+    group.exciseSpecific !== null
+      ? 'specific'
+      : group.excisePct === null
+        ? 'unasked'
+        : group.excisePct > 0
+          ? 'pct'
+          : 'none',
+  );
+  const [exciseAmount, setExciseAmount] = useState(
+    group.exciseSpecific !== null
+      ? String(group.exciseSpecific)
+      : group.excisePct !== null && group.excisePct > 0
+        ? String(group.excisePct)
+        : '',
+  );
+  // The units a specific excise may count in beside THIS law (judge S4); a
+  // stored unit the law no longer admits stays listed, so the refusal that
+  // names it is the server's sentence and not a silently swapped select.
+  const exciseUnits = useMemo(() => {
+    const allowed = exciseUnitsFor(group.dutyUnit);
+    return group.exciseUnit && !allowed.includes(group.exciseUnit) ? [...allowed, group.exciseUnit] : allowed;
+  }, [group.dutyUnit, group.exciseUnit]);
+  const [exciseUnit, setExciseUnit] = useState<string>(group.exciseUnit ?? exciseUnits[0]!);
+  const [cert, setCert] = useState<'inherit' | 'yes' | 'no'>(
+    group.hasCertificate === null ? 'inherit' : group.hasCertificate ? 'yes' : 'no',
+  );
+  const showExcise = exciseMayApply(group.tnvedCode) || exciseAnswered(group);
   const num = (v: string) => (v.trim() === '' ? null : Number(v.replace(',', '.')));
+  const yesNo = (v: boolean) => (v ? t('law.certYes') : t('law.certNo'));
 
   return (
     <tr className="border-b border-line bg-surface-sunken">
       <td className="p-2" colSpan={8}>
         <div className="flex flex-wrap items-end gap-2" data-testid="calc-group-form">
+          {group.dutyMode !== 'advalor' ? (
+            <p className="basis-full text-2xs text-ink-600" data-testid="calc-group-shape">
+              {t(LAW_SHAPE_KEY[group.dutyMode], lawValues(group, words))} —{' '}
+              {group.rateSource === 'typed' ? t('law.typed') : t('law.fromBook')} ·{' '}
+              <Link className="underline" href="/hisoblash/lugatlar">
+                {t('law.shapeEditHint')}
+              </Link>
+            </p>
+          ) : null}
           <label className="text-2xs">
             <span className="label">{t('duty')} %</span>
             <input className="input input-sm !w-20" data-testid="calc-duty" value={duty} onChange={(e) => setDuty(e.target.value)} />
@@ -2651,6 +2795,69 @@ function GroupFold({
             <input type="checkbox" checked={vatFree} onChange={(e) => setVatFree(e.target.checked)} />
             {t('vatFree')}
           </label>
+          {/* P2.5: a sborniy truck mixes senders, and one sender without a
+              certificate must not flip the whole declaration — the block's
+              own answer. The first option SHOWS what «inherit» means today. */}
+          <label className="text-2xs">
+            <span className="label">{t('law.certificate')}</span>
+            <select
+              className="input input-sm !w-auto"
+              data-testid="calc-group-cert"
+              value={cert}
+              onChange={(e) => setCert(e.target.value as 'inherit' | 'yes' | 'no')}
+            >
+              <option value="inherit">{t('law.certInherit', { answer: yesNo(group.requestCertificate) })}</option>
+              <option value="yes">{t('law.certYes')}</option>
+              <option value="no">{t('law.certNo')}</option>
+            </select>
+          </label>
+          {showExcise ? (
+            <div className="flex basis-full flex-wrap items-end gap-2" data-testid="calc-excise-row">
+              <label className="text-2xs">
+                <span className="label">{t('law.excise')}</span>
+                <select
+                  className="input input-sm !w-auto"
+                  data-testid="calc-excise-mode"
+                  value={exciseMode}
+                  onChange={(e) => setExciseMode(e.target.value as ExciseMode)}
+                >
+                  <option value="unasked">{t('law.exciseUnasked')}</option>
+                  <option value="none">{t('law.exciseNone')}</option>
+                  <option value="pct">{t('law.excisePctMode')}</option>
+                  <option value="specific">{t('law.exciseSpecificMode')}</option>
+                </select>
+              </label>
+              {exciseMode === 'pct' || exciseMode === 'specific' ? (
+                <label className="text-2xs">
+                  <span className="label">{exciseMode === 'pct' ? '%' : '$'}</span>
+                  <input
+                    className="input input-sm !w-20 font-mono tabular-nums"
+                    inputMode="decimal"
+                    data-testid="calc-excise-amount"
+                    value={exciseAmount}
+                    onChange={(e) => setExciseAmount(e.target.value)}
+                  />
+                </label>
+              ) : null}
+              {exciseMode === 'specific' ? (
+                <label className="text-2xs">
+                  <span className="label">{t('law.unit')}</span>
+                  <select
+                    className="input input-sm !w-auto"
+                    data-testid="calc-excise-unit"
+                    value={exciseUnit}
+                    onChange={(e) => setExciseUnit(e.target.value)}
+                  >
+                    {exciseUnits.map((u) => (
+                      <option key={u} value={u}>
+                        {unitLabel(u, words)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+            </div>
+          ) : null}
           <button
             type="button"
             className="btn-primary"
@@ -2658,6 +2865,22 @@ function GroupFold({
             data-testid="calc-save-rates"
             onClick={() =>
               act(async () => {
+                const amount = num(exciseAmount);
+                // A percentage or a per-unit excise with no number is no
+                // answer at all — refused here in the server's own words,
+                // never posted as «unanswered» behind the person's back.
+                if ((exciseMode === 'pct' || exciseMode === 'specific') && amount === null) {
+                  return { error: 'excise_shape' };
+                }
+                const excise = !showExcise
+                  ? {}
+                  : exciseMode === 'specific'
+                    ? { excisePct: null, exciseSpecific: amount, exciseUnit: exciseUnit as DutyUnit }
+                    : {
+                        excisePct: exciseMode === 'unasked' ? null : exciseMode === 'none' ? 0 : amount,
+                        exciseSpecific: null,
+                        exciseUnit: null,
+                      };
                 const result = await setRatesAction(id, group.id, {
                   label: group.label,
                   tnvedCode: group.tnvedCode ?? '',
@@ -2665,6 +2888,8 @@ function GroupFold({
                   vatPct: num(vat),
                   dutyFree,
                   vatFree,
+                  hasCertificate: cert === 'inherit' ? null : cert === 'yes',
+                  ...excise,
                 });
                 if (!result.error) onDone();
                 return result;
